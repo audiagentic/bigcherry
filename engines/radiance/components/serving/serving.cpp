@@ -46,6 +46,8 @@ const std::vector<Field>& schema_fields() {
         };
         add("schema_version", "integer", 1, "RSC01: first versioned serving contract",
             "policy", "startup-only", 1, 1);
+        add("service.profile", "string", "production", "RSC06: production rejects diagnostic settings",
+            "policy", "startup-only", 0, 0, {"production", "experiment"});
         add("service.objective", "string", "balanced",
             "RSC01: neutral policy for existing mixed prefill/decode launcher", "policy",
             "startup-only", 0, 0, {"throughput", "latency", "balanced"});
@@ -88,8 +90,9 @@ const std::vector<Field>& schema_fields() {
         add("handoff.gemv_large_rows", "integer", 32,
             "launcher COMMON R3_MOE_WORKER_GEMV_LARGE_ROWS=32", "tuned",
             "startup-only", 1);
-        add("handoff.moe_down_tile", "boolean", true,
-            "launcher COMMON R3_MOE_WORKER_MOE_DOWN_TILE=1");
+        add("handoff.moe_down_tile", "integer", 1,
+            "launcher COMMON R3_MOE_WORKER_MOE_DOWN_TILE=1; plugin accepts 0..2",
+            "tuned", "startup-only", 0, 2);
         add("handoff.skip_owned", "boolean", true,
             "launcher COMMON R3_MOE_WORKER_SKIP_OWNED=1");
         add("handoff.heat", "string", nullptr,
@@ -122,6 +125,58 @@ const std::vector<Field>& schema_fields() {
             "tuned", "startup-only", 1, 1024);
         add("helper.cpu_set_auto", "boolean", true,
             "WorkerConfig cpu_set_auto=true (auto vs all)");
+        // RSC06: effective defaults from the helper implementation and component
+        // inventory, without deriving configuration from a shell environment.
+        add("helper.balance", "boolean", false, "worker_owners.h: BALANCE disabled by default");
+        add("helper.balance_speeds", "number_array", Json::array({1.0, 1.0}),
+            "worker_owners.h: each helper has unit speed", "tuned");
+        add("helper.small_lanes", "integer_array", Json::array(),
+            "worker_shape.h: empty selects small_rows", "tuned", "startup-only", 1, 4096);
+        add("helper.gemv", "integer", 1, "moe_remote_gpu.h / component.toml: decode GEMV enabled",
+            "tuned", "startup-only", 0, 2);
+        add("helper.gemv_wide", "boolean", true, "moe_remote_gpu.h: FP8 wide on by default");
+        add("helper.gemv_h2", "integer", 2, "moe_remote_gpu.h: FP8 H2 has two rows",
+            "tuned", "startup-only", 0, 4);
+        add("helper.gemv_w4h2", "boolean", true,
+            "moe_remote_gpu.h / component.toml: W4NL64 H2 on");
+        add("helper.gemv_mr", "boolean", false, "moe_remote_gpu.h: MR disabled");
+        add("helper.rows", "boolean", false, "moe_remote_gpu.h: ROWS disabled");
+        add("helper.rows_small", "boolean", false, "moe_remote_gpu.h: ROWS_SMALL disabled");
+        add("helper.fuseroute", "boolean", true, "moe_remote_gpu.h: FUSEROUTE enabled");
+        add("helper.vecio", "boolean", true, "moe_remote_gpu.h: VECIO enabled");
+        add("helper.sparse_act", "boolean", true, "moe_remote_gpu.h: SPARSE_ACT enabled");
+        add("helper.lane_quant", "boolean", true, "moe_remote_gpu.h: LANE_QUANT enabled");
+        add("helper.moe_form", "integer", 0, "moe_remote_gpu.h: plugin-selected tile form",
+            "tuned", "startup-only", 0, 2);
+        add("helper.moe_long_rows", "integer", 0, "moe_remote_gpu.h: long rows disabled",
+            "tuned", "startup-only", 0, 4096);
+        add("experiment.helper.plugin", "optional_string", "",
+            "moe_remote_gpu.h / component.toml: diagnostic full plugin override",
+            "experiment");
+        add("helper.native", "boolean", true, "r3_moe_worker.cpp: NATIVE on");
+        add("helper.fp16", "boolean", true, "r3_moe_worker.cpp: FP16 on");
+        add("helper.ahalf", "boolean", true, "r3_moe_worker.cpp: AHALF on");
+        add("experiment.helper.moe_probe", "integer", 0,
+            "libr3: timing ablation disabled (outputs invalid when nonzero)",
+            "experiment", "startup-only", 0, 2);
+        add("experiment.helper.refusal_trace", "boolean", false,
+            "libr4d: refusal diagnostics disabled", "experiment");
+        add("experiment.helper.poison", "string", "0", "moe_remote_gpu.h: poison disabled",
+            "experiment", "startup-only", 0, 0, {"0", "zero", "1"});
+        add("experiment.helper.capture", "optional_string", "",
+            "worker_harness.h: capture disabled", "experiment");
+        add("experiment.helper.capture_every", "integer", 37,
+            "worker_harness.h / component.toml: sample every 37th request",
+            "experiment", "startup-only", 1);
+        add("experiment.helper.capture_max", "integer", 16,
+            "worker_harness.h / component.toml: cap at 16 requests",
+            "experiment", "startup-only", 1);
+        add("experiment.helper.trace", "integer", 0,
+            "worker_harness.h: tracing disabled", "experiment");
+        add("experiment.helper.test_stop_at", "optional_string", "",
+            "worker_container.h: test SIGSTOP disabled", "experiment");
+        add("experiment.helper.sweep_fast", "boolean", false,
+            "r3_moe_worker.cpp: full reference comparisons", "experiment");
         add("engine.model", "string", nullptr,
             "required: no portable model-file default", "policy");
         add("engine.radiance_home", "string", nullptr,
@@ -233,10 +288,12 @@ Json toml_to_json(const toml::node& node) {
         for (const auto& item : *a) j.push_back(toml_to_json(item));
         return j;
     }
-    if (auto s = node.value<std::string>()) return *s;
-    if (auto n = node.value<int64_t>()) return *n;
-    if (auto b = node.value<bool>()) return *b;
-    if (auto d = node.value<double>()) return *d;
+    // TOML value<T>() permits conversions (including bool to integer).
+    // Preserve the parsed type so --set and site files satisfy the typed schema.
+    if (auto s = node.as_string()) return s->get();
+    if (auto n = node.as_integer()) return n->get();
+    if (auto b = node.as_boolean()) return b->get();
+    if (auto d = node.as_floating_point()) return d->get();
     throw std::runtime_error("unsupported TOML value type (date/time is not a serving field)");
 }
 
@@ -263,9 +320,9 @@ void validate_value(const Field& field, const Json& v, const std::string& source
     const std::string where = source + ": " + field.key;
     if (field.kind == "boolean") {
         if (!v.is_boolean()) throw std::runtime_error(where + ": expected boolean");
-    } else if (field.kind == "string") {
+    } else if (field.kind == "string" || field.kind == "optional_string") {
         if (!v.is_string()) throw std::runtime_error(where + ": expected string");
-        if (v.get<std::string>().empty())
+        if (v.get<std::string>().empty() && field.kind != "optional_string")
             throw std::runtime_error(where + ": string must not be empty");
         if (!field.choices.empty() &&
             std::find(field.choices.begin(), field.choices.end(),
@@ -287,6 +344,12 @@ void validate_value(const Field& field, const Json& v, const std::string& source
             if (!v.is_array()) throw std::runtime_error(where + ": expected integer array");
             for (const auto& x : v) check(x);
         }
+    } else if (field.kind == "number_array") {
+        if (!v.is_array()) throw std::runtime_error(where + ": expected number array");
+        for (const auto& n : v)
+            if (!n.is_number() || !std::isfinite(n.get<double>()) || n.get<double>() <= 0.0 ||
+                n.get<double>() > 1000000.0)
+                throw std::runtime_error(where + ": want finite speeds in (0,1000000]");
     } else if (field.kind == "string_array") {
         if (!v.is_array()) throw std::runtime_error(where + ": expected string array");
         for (const auto& x : v)
@@ -301,25 +364,41 @@ void put(Json& values, Json& provenance, const Field& field, const Json& value,
          const std::string& origin, const std::string& source,
          const Json& inputs = Json::array()) {
     validate_value(field, value, source);
-    auto point = field.key.find('.');
-    if (point == std::string::npos) values[field.key] = value;
-    else values[field.key.substr(0, point)][field.key.substr(point + 1)] = value;
+    Json* at = &values;
+    size_t begin = 0;
+    for (size_t dot = field.key.find('.'); dot != std::string::npos;
+         dot = field.key.find('.', begin)) {
+        at = &(*at)[field.key.substr(begin, dot - begin)];
+        begin = dot + 1;
+    }
+    (*at)[field.key.substr(begin)] = value;
     provenance[field.key] = {{"origin", origin}, {"source", source},
                              {"inputs", inputs}, {"lifecycle", field.lifecycle},
                              {"class", field.category}, {"confidence", "exact"}};
 }
 
 Json value_at(const Json& values, const std::string& name) {
-    const auto dot = name.find('.');
-    if (dot == std::string::npos) return values.at(name);
-    return values.at(name.substr(0, dot)).at(name.substr(dot + 1));
+    const Json* p = &values;
+    size_t begin = 0;
+    for (size_t dot = name.find('.'); dot != std::string::npos;
+         dot = name.find('.', begin)) {
+        p = &p->at(name.substr(begin, dot - begin));
+        begin = dot + 1;
+    }
+    return p->at(name.substr(begin));
 }
 
 bool exists(const Json& values, const std::string& name) {
-    const auto dot = name.find('.');
-    if (dot == std::string::npos) return values.contains(name);
-    return values.contains(name.substr(0, dot)) &&
-           values.at(name.substr(0, dot)).contains(name.substr(dot + 1));
+    const Json* p = &values;
+    size_t begin = 0;
+    while (true) {
+        const size_t dot = name.find('.', begin);
+        const auto key = name.substr(begin, dot == std::string::npos ? dot : dot - begin);
+        if (!p->is_object() || !p->contains(key)) return false;
+        p = &p->at(key);
+        if (dot == std::string::npos) return true;
+        begin = dot + 1;
+    }
 }
 
 void layer(Json& values, Json& provenance, Json input,
@@ -349,7 +428,7 @@ Json parse_set(const std::string& key, const std::string& raw) {
                                      " (nearest valid key: " + closest(key) + ")");
     // Unquoted strings are convenient for paths and simple enums; arrays
     // and numeric/bool values must still be valid TOML of the correct type.
-    const bool string_field = f->kind == "string";
+    const bool string_field = f->kind == "string" || f->kind == "optional_string";
     try {
         auto parsed = toml::parse("v = " + (string_field && !raw.empty() &&
                 raw.front() != '"' && raw.front() != '\'' ? quote_str(raw) : raw));
@@ -633,8 +712,12 @@ Json json_schema() {
         } else if (f.kind == "string_array") {
             prop["type"] = "array";
             prop["items"] = {{"type", "string"}, {"minLength", 1}};
+        } else if (f.kind == "number_array") {
+            prop["type"] = "array";
+            prop["items"] = {{"type", "number"}, {"exclusiveMinimum", 0},
+                             {"maximum", 1000000}};
         } else {
-            prop["type"] = f.kind;
+            prop["type"] = f.kind == "optional_string" ? "string" : f.kind;
             if (f.kind == "string") prop["minLength"] = 1;
         }
         if (!f.choices.empty()) prop["enum"] = f.choices;
@@ -643,26 +726,25 @@ Json json_schema() {
         prop["x-class"] = f.category;
         prop["x-lifecycle"] = f.lifecycle;
         if (f.derived) prop["readOnly"] = true;
-        const auto dot = f.key.find('.');
-        if (dot == std::string::npos) {
-            root["properties"][f.key] = prop;
-            if (f.fallback.is_null() && !f.derived)
-                root["required"].push_back(f.key);
-        } else {
-            const std::string section = f.key.substr(0, dot);
-            const std::string key = f.key.substr(dot + 1);
-            if (!root["properties"].contains(section))
-                root["properties"][section] = {
+        Json* group = &root;
+        size_t begin = 0;
+        size_t dot = f.key.find('.');
+        while (dot != std::string::npos) {
+            const std::string section = f.key.substr(begin, dot - begin);
+            if (!(*group)["properties"].contains(section))
+                (*group)["properties"][section] = {
                     {"type", "object"}, {"additionalProperties", false},
                     {"properties", Json::object()}
                 };
-            root["properties"][section]["properties"][key] = prop;
-            if (f.fallback.is_null() && !f.derived &&
-                (section == "engine" || section == "handoff")) {
-                auto& group = root["properties"][section];
-                if (!group.contains("required")) group["required"] = Json::array();
-                group["required"].push_back(key);
-            }
+            group = &(*group)["properties"][section];
+            begin = dot + 1;
+            dot = f.key.find('.', begin);
+        }
+        const std::string key = f.key.substr(begin);
+        (*group)["properties"][key] = prop;
+        if (f.fallback.is_null() && !f.derived) {
+            if (!group->contains("required")) (*group)["required"] = Json::array();
+            (*group)["required"].push_back(key);
         }
     }
     // Site-only constraint namespace; it never becomes a resolved value.
@@ -693,6 +775,21 @@ Resolved resolve(const Options& options, const Json& facts) {
     const Json site = read_toml(options.site), profile = read_toml(options.profile);
     if (profile.contains("hard_caps"))
         throw std::runtime_error(options.profile.string() + ": hard_caps: site-only; profile cannot change hard caps");
+    auto explicit_experiment = [](const Json& input) {
+        return input.contains("experiment") && !input.at("experiment").empty();
+    };
+    bool is_experiment = false;
+    for (const Json& source : {site, profile})
+        if (source.contains("service") && source.at("service").is_object() &&
+            source.at("service").value("profile", std::string("production")) == "experiment")
+            is_experiment = true;
+    for (const auto& set : options.sets)
+        if (set == "service.profile=experiment") is_experiment = true;
+    if (!is_experiment && (explicit_experiment(site) || explicit_experiment(profile) ||
+        std::any_of(options.sets.begin(), options.sets.end(), [](const auto& v) {
+            return v.rfind("experiment.", 0) == 0;
+        })))
+        throw std::runtime_error("experiment.helper: rejected in production profile");
     std::string name = value_at(values, "layout.name").get<std::string>();
     name = selection_name(site, name);
     name = selection_name(profile, name);
@@ -804,6 +901,16 @@ Resolved resolve(const Options& options, const Json& facts) {
     const auto large = value_at(values, "handoff.gemv_large_rows").get<uint64_t>();
     if (small > max_rows || large < small || large > max_rows)
         throw std::runtime_error("handoff: require small_rows <= gemv_large_rows <= max_rows");
+    const auto h2 = value_at(values, "helper.gemv_h2").get<uint32_t>();
+    if (h2 != 0 && h2 != 1 && h2 != 2 && h2 != 4)
+        throw std::runtime_error("helper.gemv_h2: must be 0, 1, 2 or 4");
+    const auto lanes = value_at(values, "helper.small_lanes").get<std::vector<uint32_t>>();
+    if (lanes.size() > 4)
+        throw std::runtime_error("helper.small_lanes: too many classes");
+    for (size_t i = 0; i < lanes.size(); ++i)
+        if (lanes[i] > max_rows || (i && lanes[i] <= lanes[i - 1]))
+            throw std::runtime_error("helper.small_lanes: classes must ascend within max_rows");
+
     const auto shm = value_at(values, "handoff.shm").get<std::string>();
     if (shm[0] != '/' || shm.size() <= 1 || shm.find('/', 1) != std::string::npos)
         throw std::runtime_error("handoff.shm must be a POSIX shm name /name");
@@ -908,4 +1015,205 @@ Resolved resolve(const Options& options, const Json& facts) {
     r.manifest["content_sha256"] = r.hash;
     return r;
 }
+
+namespace {
+void exact_keys(const Json& obj, const std::set<std::string>& allowed,
+                const std::string& where) {
+    if (!obj.is_object()) throw std::runtime_error(where + ": expected object");
+    for (auto it = obj.begin(); it != obj.end(); ++it)
+        if (!allowed.count(it.key()))
+            throw std::runtime_error(where + ": unknown key " + it.key());
+    for (const auto& key : allowed)
+        if (!obj.contains(key))
+            throw std::runtime_error(where + ": missing key " + key);
+}
+void check_manifest_values(const Json& values, const Json& provenance) {
+    std::vector<std::pair<std::string, Json>> flat;
+    flatten(values, "", flat);
+    std::set<std::string> keys;
+    for (const auto& [key, v] : flat) {
+        const Field* field = field_for(key);
+        if (!field) throw std::runtime_error("manifest.values: unknown key " + key);
+        validate_value(*field, v, "manifest.values");
+        if (!keys.insert(key).second)
+            throw std::runtime_error("manifest.values: duplicate key " + key);
+    }
+    for (const auto& field : schema_fields())
+        if (!keys.count(field.key))
+            throw std::runtime_error("manifest.values: missing key " + field.key);
+    if (!provenance.is_object() || provenance.size() != keys.size())
+        throw std::runtime_error("manifest.provenance: incorrect key count");
+    for (const auto& field : schema_fields()) {
+        if (!provenance.contains(field.key))
+            throw std::runtime_error("manifest.provenance: missing key " + field.key);
+        const auto& entry = provenance.at(field.key);
+        exact_keys(entry, {"origin","source","inputs","lifecycle","class","confidence"},
+                   "manifest.provenance." + field.key);
+        for (const char* k : {"origin", "source", "lifecycle", "class", "confidence"})
+            if (!entry.at(k).is_string())
+                throw std::runtime_error("manifest.provenance." + field.key + "." + k);
+        if (!entry.at("inputs").is_array())
+            throw std::runtime_error("manifest.provenance." + field.key + ".inputs");
+    }
+}
+}
+Json read_manifest(const std::filesystem::path& path) {
+    std::ifstream in(path, std::ios::binary);
+    if (!in) throw std::runtime_error("cannot open manifest " + path.string());
+    Json manifest;
+    try { in >> manifest; }
+    catch (const Json::exception& e) {
+        throw std::runtime_error("manifest JSON: " + std::string(e.what()));
+    }
+    if (!in.eof()) {
+        in >> std::ws;
+        if (!in.eof()) throw std::runtime_error("manifest: trailing text");
+    }
+    exact_keys(manifest, {"schema_version","values","provenance","facts",
+                          "process_helpers","hash_algorithm","content_sha256"},
+               "manifest");
+    if (manifest.at("schema_version") != 1 ||
+        manifest.at("hash_algorithm") != "sha256" ||
+        !manifest.at("content_sha256").is_string())
+        throw std::runtime_error("manifest: unsupported version or hash algorithm");
+    const std::string digest = manifest.at("content_sha256").get<std::string>();
+    Json copy = manifest;
+    copy.erase("content_sha256");
+    if (digest != sha256_hex(copy.dump()))
+        throw std::runtime_error("manifest.content_sha256 mismatch");
+    const auto& v = manifest.at("values");
+    check_manifest_values(v, manifest.at("provenance"));
+    if (!manifest.at("facts").is_object())
+        throw std::runtime_error("manifest.facts: expected object");
+    if (value_at(v,"service.profile") == "production") {
+        for (auto it = manifest.at("provenance").begin();
+             it != manifest.at("provenance").end(); ++it)
+            if (it.key().rfind("experiment.helper.", 0) == 0 &&
+                it.value().at("origin") != "schema-default")
+                throw std::runtime_error("experiment.helper: rejected in production profile");
+    }
+    const auto count = value_at(v,"helper.count").get<size_t>();
+    const auto& ph = manifest.at("process_helpers");
+    if (!ph.is_array() || ph.size() != count || count < 1 || count > 4)
+        throw std::runtime_error("manifest.process_helpers: count mismatch");
+    if (value_at(v,"layout.helper_cards").size() != count ||
+        value_at(v,"memory.helper_budgets_mib").size() != count)
+        throw std::runtime_error("manifest: helper layout/budget count mismatch");
+    const auto max_rows = value_at(v,"handoff.max_rows").get<uint32_t>();
+    const auto small_rows = value_at(v,"handoff.small_rows").get<uint32_t>();
+    const auto large_rows = value_at(v,"handoff.gemv_large_rows").get<uint32_t>();
+    if (!max_rows || max_rows > 4096 || small_rows > max_rows ||
+        large_rows < small_rows || large_rows > max_rows)
+        throw std::runtime_error("manifest.handoff: invalid row bounds");
+    const auto shm = value_at(v,"handoff.shm").get<std::string>();
+    if (shm.size() < 2 || shm[0] != '/' || shm.find('/', 1) != std::string::npos)
+        throw std::runtime_error("manifest.handoff.shm: invalid POSIX name");
+    const auto lanes = value_at(v, "helper.small_lanes").get<std::vector<uint32_t>>();
+    if (lanes.size() > 4)
+        throw std::runtime_error("manifest.helper.small_lanes: too many classes");
+    for (size_t i = 0; i < lanes.size(); ++i)
+        if (lanes[i] > max_rows || (i && lanes[i] <= lanes[i - 1]))
+            throw std::runtime_error("manifest.helper.small_lanes: must ascend within max_rows");
+    const auto h2 = value_at(v,"helper.gemv_h2").get<uint32_t>();
+    if (h2 == 3) throw std::runtime_error("manifest.helper.gemv_h2: want 0,1,2,4");
+    const auto speeds = value_at(v,"helper.balance_speeds");
+    if (speeds.size() != count && speeds.size() != 2)
+        throw std::runtime_error("manifest.helper.balance_speeds: count mismatch");
+    for (size_t i = 0; i < count; ++i) {
+        const auto& p = ph.at(i);
+        exact_keys(p, {"config","bdf","arch","budget_mib","hip_ordinal",
+                       "plugin_file","formats","rows_kernel","placement","share","provenance"},
+                   "manifest.process_helpers[" + std::to_string(i) + "]");
+        Json expected = v.at("helper");
+        expected["index"] = i;
+        if (p.at("config") != expected)
+            throw std::runtime_error("manifest.process_helpers[" + std::to_string(i) + "].config mismatch");
+        if (p.at("bdf") != v.at("layout").at("helper_cards").at(i) ||
+            p.at("budget_mib") != v.at("memory").at("helper_budgets_mib").at(i))
+            throw std::runtime_error("manifest.process_helpers[" + std::to_string(i) + "]: layout mismatch");
+        if (!p.at("plugin_file").is_string() ||
+            p.at("plugin_file").get<std::string>().empty() ||
+            !p.at("formats").is_array() || p.at("formats").empty() ||
+            !p.at("rows_kernel").is_boolean() ||
+            !p.at("share").is_number_unsigned() ||
+            !p.at("hip_ordinal").is_number_integer() ||
+            !p.at("arch").is_string() || !p.at("placement").is_string())
+            throw std::runtime_error("manifest.process_helpers[" + std::to_string(i) + "]: invalid types");
+        for (const auto& f : p.at("formats"))
+            if (!f.is_string() || (f != "w4nl64" && f != "fp8_e4m3_block"))
+                throw std::runtime_error("manifest.process_helpers.formats: unknown format");
+        exact_keys(p.at("provenance"), {"origin","inputs","lifecycle"},
+                   "manifest.process_helpers.provenance");
+    }
+    return manifest;
+}
+
+HelperSettings load_helper_settings(const std::filesystem::path& path, const std::string& role) {
+    const Json m = read_manifest(path);
+    if (role.size() < 7 || role.rfind("helper", 0) != 0 ||
+        role[6] < '0' || role[6] > '9' ||
+        (role.size() > 7 && role[6] == '0') ||
+        !std::all_of(role.begin() + 6, role.end(), [](char c) { return c >= '0' && c <= '9'; }))
+        throw std::runtime_error("unknown role " + role);
+    const size_t index = std::stoul(role.substr(6));
+    const auto& ph = m.at("process_helpers");
+    if (index >= ph.size())
+        throw std::runtime_error("unknown role " + role);
+    const auto& v = m.at("values");
+    const auto& h = ph.at(index).at("config");
+    const auto& a = v.at("handoff");
+    const auto& x = v.at("experiment").at("helper");
+    HelperSettings s;
+    s.role = role;
+    s.content_sha256 = m.at("content_sha256");
+    s.model = v.at("engine").at("model");
+    s.radiance_home = v.at("engine").at("radiance_home");
+    s.helper = {h.at("count"), h.at("index"), h.at("engine_ranks"),
+                h.at("cpu"), h.at("power_save"), h.at("queue_warm"),
+                h.at("combine"), h.at("combine_min_rows"), h.at("combine_threads"),
+                h.at("cpu_set_auto")};
+    s.handoff = {a.at("shm"),a.at("heat"),a.at("histogram"),a.at("placement"),
+                 a.at("max_rows"),a.at("small_rows"),a.at("gemv_large_rows"),
+                 a.at("histogram_period_s"),a.at("moe_down_tile"),a.at("skip_owned")};
+    s.plugin = x.at("plugin");
+    s.plugin_file = ph.at(index).at("plugin_file");
+    for (const auto& f : ph.at(index).at("formats")) {
+        if (!s.formats.empty()) s.formats += ",";
+        s.formats += f.get<std::string>();
+    }
+    s.budget_mib = ph.at(index).at("budget_mib");
+    s.budgets_mib = v.at("memory").at("helper_budgets_mib").get<std::vector<uint64_t>>();
+    for (const auto& p : ph) s.shares.push_back(p.at("share").get<uint64_t>());
+    s.balance_speeds = h.at("balance_speeds").get<std::vector<double>>();
+    s.small_lanes = h.at("small_lanes").get<std::vector<uint32_t>>();
+    s.gemv = h.at("gemv");
+    s.gemv_h2 = h.at("gemv_h2");
+    s.gemv_wide = h.at("gemv_wide");
+    s.gemv_w4h2 = h.at("gemv_w4h2");
+    s.gemv_mr = h.at("gemv_mr");
+    s.rows_kernel = ph.at(index).at("rows_kernel");
+    s.rows = h.at("rows").get<bool>() || s.rows_kernel;
+    s.rows_small = h.at("rows_small");
+    s.fuseroute = h.at("fuseroute");
+    s.vecio = h.at("vecio");
+    s.sparse_act = h.at("sparse_act");
+    s.lane_quant = h.at("lane_quant");
+    s.moe_form = h.at("moe_form");
+    s.moe_long_rows = h.at("moe_long_rows");
+    s.native = h.at("native");
+    s.fp16 = h.at("fp16");
+    s.ahalf = h.at("ahalf");
+    s.balance = h.at("balance");
+    s.capture = x.at("capture");
+    s.poison = x.at("poison");
+    s.test_stop_at = x.at("test_stop_at");
+    s.capture_every = x.at("capture_every");
+    s.capture_max = x.at("capture_max");
+    s.trace = x.at("trace");
+    s.moe_probe = x.at("moe_probe");
+    s.refusal_trace = x.at("refusal_trace");
+    s.sweep_fast = x.at("sweep_fast");
+    return s;
+}
+
 } // namespace bc::serving

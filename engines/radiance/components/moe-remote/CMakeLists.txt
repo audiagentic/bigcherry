@@ -28,9 +28,20 @@ set(RADIANCE_SRC "" CACHE PATH "radiance source tree (the plugin ABI headers are
 if(NOT EXISTS "${RADIANCE_SRC}/abi")
   message(FATAL_ERROR "moe-remote: -DRADIANCE_SRC must name a radiance source tree (no ${RADIANCE_SRC}/abi)")
 endif()
+# RSC06's helper ABI is mandatory; never build an environment-dependent helper path.
+if(NOT EXISTS "${RADIANCE_SRC}/libr4d/bc_helper_config.h")
+  message(FATAL_ERROR "Apply managed patch rad0009_helper_kernel_config to RADIANCE_SRC before building this component")
+endif()
+
 if(NOT RAD_HIP_RUNTIME)
   find_library(RAD_HIP_RUNTIME amdhip64 HINTS /opt/rocm/lib ENV ROCM_PATH PATH_SUFFIXES lib REQUIRED)
 endif()
+
+# RSC06: build the single serving implementation in the helper build. The
+# static-library link edge guarantees schema/manifest code is built before the
+# HIP worker and avoids copying TOML/JSON logic or resolving an older install.
+add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../serving"
+                 "${CMAKE_CURRENT_BINARY_DIR}/bc-serving")
 
 # The helper process. It consumes only the installed container ABI. Its GPU mailbox service owns one HIP stream per
 # producer rank; engine-side publication/join are the plugin's kernels.
@@ -43,7 +54,7 @@ target_compile_definitions(r3_moe_worker PRIVATE __HIP_PLATFORM_AMD__)
 if(NOT RAD_HSA_RUNTIME)
   find_library(RAD_HSA_RUNTIME hsa-runtime64 HINTS /opt/rocm/lib ENV ROCM_PATH PATH_SUFFIXES lib REQUIRED)
 endif()
-target_link_libraries(r3_moe_worker PRIVATE radiance::abi ${CMAKE_DL_LIBS} ${RAD_HIP_RUNTIME} ${RAD_HSA_RUNTIME} Threads::Threads)
+target_link_libraries(r3_moe_worker PRIVATE radiance::abi bc_serving ${CMAKE_DL_LIBS} ${RAD_HIP_RUNTIME} ${RAD_HSA_RUNTIME} Threads::Threads)
 set_target_properties(r3_moe_worker PROPERTIES HIP_STANDARD 17 HIP_STANDARD_REQUIRED ON
   RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/helpers)
 
@@ -61,6 +72,8 @@ target_compile_definitions(libr3moe PRIVATE R3MOE_TARGETS="${r3moe_targets_csv}"
 target_include_directories(libr3moe PRIVATE ${RADIANCE_SRC}/abi)
 set_target_properties(libr3moe PROPERTIES HIP_STANDARD 17 HIP_STANDARD_REQUIRED ON)
 target_link_libraries(libr3moe PRIVATE ${CMAKE_DL_LIBS})
+# A package built through libr3moe also needs its matching bc-serve binary.
+add_dependencies(r3_moe_worker bc-serve)
 add_dependencies(libr3moe r3_moe_worker)
 
 include(CTest)
@@ -74,6 +87,21 @@ if(BUILD_TESTING)
     set_target_properties(${name} PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
     add_test(NAME ${name} COMMAND ${name})
   endforeach()
+  add_executable(r3_helper_settings_test EXCLUDE_FROM_ALL helper_settings_test.cpp)
+  target_link_libraries(r3_helper_settings_test PRIVATE bc_serving)
+  target_include_directories(r3_helper_settings_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+  target_compile_features(r3_helper_settings_test PRIVATE cxx_std_20)
+  add_test(NAME r3_helper_settings_test COMMAND r3_helper_settings_test)
+  # Exercise the real config ABI and both helper/engine access paths without HIP.
+  add_library(r3_helper_plugin_fixture SHARED EXCLUDE_FROM_ALL helper_plugin_fixture.cpp)
+  target_include_directories(r3_helper_plugin_fixture PRIVATE ${RADIANCE_SRC}/libr4d ${RADIANCE_SRC}/abi)
+  target_link_options(r3_helper_plugin_fixture PRIVATE -Wl,-Bsymbolic-functions)
+  target_compile_features(r3_helper_plugin_fixture PRIVATE cxx_std_17)
+  add_executable(r3_helper_plugin_config_test EXCLUDE_FROM_ALL helper_plugin_config_test.cpp)
+  target_include_directories(r3_helper_plugin_config_test PRIVATE ${RADIANCE_SRC}/libr4d)
+  target_link_libraries(r3_helper_plugin_config_test PRIVATE bc_serving ${CMAKE_DL_LIBS})
+  add_dependencies(r3_helper_plugin_config_test r3_helper_plugin_fixture)
+  add_test(NAME r3_helper_plugin_config_test COMMAND r3_helper_plugin_config_test $<TARGET_FILE:r3_helper_plugin_fixture>)
   target_link_libraries(r3_moe_shm_test PRIVATE Threads::Threads)
   target_link_libraries(r3_combine_pool_test PRIVATE Threads::Threads)
   # RAD29: route compaction vs the per-route-atomic loop it replaced (equivalence; --bench for timing). Needs a GPU.

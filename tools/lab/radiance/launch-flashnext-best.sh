@@ -11,8 +11,8 @@
 # than on the cold run's chunk grid: re-sent prefixes cost 0.2-0.3 s a turn instead of 0.6-0.8 s, at the price of greedy text
 # that can differ from a cold run's near ties. The cache takes the VRAM the experts leave, which costs no decode or
 # 4K-prefill speed (RAD37 measurements, qwen3.8-flash-next.md); one sequence is 30% slower at decode, so keep two.
-# Helper kernels on by default (R3_MOE_FP16, R3_MOE_AHALF, R3_MOE_NATIVE, R3_MOE_WORKER_VECIO, FUSESTAGE, FUSEROUTE) are
-# not repeated here.
+# Helper kernel settings are in the manifest. The libr3 native/FP16/activation-half
+# switches still need a typed plugin interface before their settings can take effect.
 #
 # Which cards play which part is a layout (engines/radiance/layouts.toml, `bigcherry layout list|show NAME`), resolved against this host's device
 # inventory; card types (plugin, weight formats, few-rows kernel) are engines/radiance/archs.toml. --layout NAME (or FLASHNEXT_LAYOUT) picks one,
@@ -54,7 +54,7 @@
 # --gpu-power (or GPU_POWER=1): apply the cards' configured power settings ([host.*.devices.power]) for this run and
 # put back what the cards ran before at stop. Without write access it lists the setup steps still missing and runs
 # with the cards as they are.
-# HELPER_WRAP=<command>: run each helper under it (e.g. a profiler wrapper; R3_MOE_WORKER_INDEX tells it which helper).
+# HELPER_WRAP=<command>: run each helper under it (e.g. a profiler wrapper; --role helperN identifies it).
 # ENGINE_WRAP=<command>: run the engine under it (a debugger, numactl, strace; the stop command signals the engine through the
 #   wrapper, so it must forward SIGINT/SIGTERM). Not rocprofv3: radiance drives the card through its own AQL backend and fails
 #   at start under rocprof's interception (2026-11-01); for the engine's per-op device times use --engine-arg --profile-ops.
@@ -144,7 +144,8 @@ fi
 RAD_BIN=$BUILD/bin/radiance
 RAD_HOME=$BUILD/radiance_home
 HELPER=$RAD_HOME/helpers/r3_moe_worker
-[ -x "$RAD_BIN" ] && [ -x "$HELPER" ] || { echo "FLASHNEXT_EXIT=99 no build with bin/radiance and the r3_moe_worker helper (--build '$BUILD')"; exit 99; }
+SERVE=$RAD_HOME/bin/bc-serve
+[ -x "$RAD_BIN" ] && [ -x "$HELPER" ] && [ -x "$SERVE" ] || { echo "FLASHNEXT_EXIT=99 no build with bin/radiance and the r3_moe_worker helper (--build '$BUILD')"; exit 99; }
 
 # Warn (never block) when the host lacks settings the tooling expects: configured per-card power settings not applied,
 # CPU energy counters unreadable (`bigcherry host-check`, PWR04).
@@ -200,7 +201,38 @@ if [ -n "$RECORD" ]; then
   echo "  python3 tools/lab/radiance/heat-placement/heat-watch.py --heat $HEAT --live $RECORD.rank0 --out $RUN/heat.reranked.hot-first" >&2
 fi
 
+# RSC06 bridge: resolve one manifest from this build. The helper processes
+# read their own role; this is not an environment-to-argv conversion.
+BUDGET_CSV=
+for kv in "${LAYOUT_COMMON[@]}"; do
+  case "$kv" in R3_MOE_WORKER_MIBS=*) BUDGET_CSV=${kv#*=} ;; esac
+done
+[ -n "$BUDGET_CSV" ] || { echo "FLASHNEXT_EXIT=99 layout has no helper budgets"; exit 99; }
+MANIFEST_SETS=(
+  --set "layout.name=$LAYOUT"
+  --set "engine.model=$MODEL"
+  --set "engine.radiance_home=$RAD_HOME"
+  --set "engine.port=$PORT"
+  --set "handoff.shm=$SHM"
+  --set "handoff.heat=$HEAT"
+  --set "handoff.histogram=${RECORD:-off}"
+  --set "handoff.histogram_period_s=$RECORD_PERIOD"
+  --set "memory.helper_budgets_mib=[$BUDGET_CSV]"
+  --set "memory.host_pool_mib=$HOST_POOL_MIB"
+  --set "memory.host_kv_mib=$HOST_KV_MIB"
+  --set "service.max_sessions=$SEQS"
+  --set "service.max_context=$MAX_LEN"
+  --set "engine.max_num_batched_tokens=$CHUNK"
+  --set "engine.kv_cache_dtype=$KV_DTYPE"
+  --set "engine.ngram_placement=$NGRAM"
+  --set "engine.rope_scaling=$ROPE"
+  --set "engine.prefix_resume=$PREFIX_RESUME"
+)
 mkdir -p "$PIDS"
+# bc-serve refuses overwrites; the existing-running guard above is checked first.
+rm -f "$RUN/manifest.json"
+"$SERVE" --dry-run --out "$RUN/manifest.json" "${MANIFEST_SETS[@]}" ||
+  { echo "FLASHNEXT_EXIT=99 serving manifest resolution failed"; exit 99; }
 STAMP=$(date +%m%d-%H%M%S)
 rm -f "/dev/shm${SHM}"
 trap 'echo "start failed; stopping what was started" >&2; stop_all; exit 1' ERR
@@ -209,8 +241,13 @@ trap 'echo "start failed; stopping what was started" >&2; stop_all; exit 1' ERR
 for i in "${!HELPERS[@]}"; do
   log=$RUN/helper$i-$STAMP.log
   declare -n hv="LAYOUT_HELPER_$i"
-  env "${COMMON[@]}" "${hv[@]}" \
-    setsid ${HELPER_WRAP:-} "$HELPER" "$MODEL" > "$log" 2>&1 &
+  # Keep only GPU visibility; all R3_* values come from the manifest.
+  helper_visibility=()
+  for kv in "${hv[@]}"; do
+    case "$kv" in ROCR_VISIBLE_DEVICES=*|HIP_VISIBLE_DEVICES=*) helper_visibility+=("$kv") ;; esac
+  done
+  env "${helper_visibility[@]}" \
+    setsid ${HELPER_WRAP:-} "$HELPER" --manifest "$RUN/manifest.json" --role "helper$i" > "$log" 2>&1 &
   echo $! > "$PIDS/helper$i"
   unset -n hv
   echo "helper$i (pid $!, log $log): waiting for ready..." >&2

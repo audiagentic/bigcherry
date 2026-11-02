@@ -50,76 +50,87 @@ class RadianceSidecarSpecTests(unittest.TestCase):
     def test_no_helper_switch_means_no_sidecars(self):
         self.assertEqual(adapter("radiance").sidecars(self.arm(), {"HIP_VISIBLE_DEVICES": "2"}, Path("run"), Path("/b/bin/radiance")), [])
 
+    @staticmethod
+    def with_manifest(**kwargs):
+        return {"BC_SERVING_MANIFEST": "/run/manifest.json", **kwargs}
+
     def test_one_spec_per_helper_device_in_order(self):
-        env = {
-            "HIP_VISIBLE_DEVICES": "2", "ROCR_VISIBLE_DEVICES": "2", "R3_MOE_WORKER": "1",
-            "R3_MOE_WORKER_DEVICES": "0 1", "R3_MOE_WORKER_MIB": "22528", "R3_MOE_WORKER_ENGINE_RANKS": "1", "PATH": "/bin",
-        }
+        env = self.with_manifest(
+            HIP_VISIBLE_DEVICES="2", ROCR_VISIBLE_DEVICES="2",
+            R3_MOE_WORKER="1", R3_MOE_WORKER_DEVICES="0 1",
+            R3_MOE_WORKER_MIB="22528", R3_MOE_WORKER_ENGINE_RANKS="1",
+            PATH="/bin",
+        )
         run_dir = Path("run/cell")
         specs = adapter("radiance").sidecars(self.arm(), env, run_dir, Path("/b/bin/radiance"))
         self.assertEqual([s.name for s in specs], ["helper0", "helper1"])
         home = Path("/b/bin/radiance").parent.parent / "radiance_home"
         for index, (spec, device) in enumerate(zip(specs, ("0", "1"))):
-            self.assertEqual(spec.argv, (str(home / "helpers" / "r3_moe_worker"), str(Path("/models/fn.rad"))))
+            self.assertEqual(
+                spec.argv,
+                (str(home / "helpers" / "r3_moe_worker"),
+                 "--manifest", "/run/manifest.json", "--role", f"helper{index}"),
+            )
             self.assertEqual(spec.env["HIP_VISIBLE_DEVICES"], "0")
             self.assertEqual(spec.env["ROCR_VISIBLE_DEVICES"], device)
-            self.assertEqual(spec.env["R3_MOE_WORKER_INDEX"], str(index))
-            self.assertEqual(spec.env["R3_MOE_WORKER_COUNT"], "2")
-            self.assertEqual(spec.env["R3_MOE_WORKER_MIB"], "22528")
-            self.assertEqual(spec.env["R3_MOE_WORKER_ENGINE_RANKS"], "1")
-            self.assertEqual(spec.env["R3_MOE_WORKER_PLUGIN_FILE"], "libr3.so")   # the card type's plugin, from archs.toml and the inventory
-            self.assertEqual(spec.env["R3_MOE_WORKER_FORMATS"], "w4nl64,fp8_e4m3_block")
-            self.assertNotIn("R3_MOE_WORKER_ROWS", spec.env)
-            self.assertEqual(spec.env["RADIANCE_HOME"], str(home))
             self.assertEqual(spec.env["PATH"], "/bin")
-            self.assertNotIn("R3_MOE_WORKER", spec.env)
-            self.assertNotIn("R3_MOE_WORKER_DEVICES", spec.env)
+            self.assertNotIn("BC_SERVING_MANIFEST", spec.env)
+            self.assertNotIn("RADIANCE_HOME", spec.env)
+            self.assertFalse(any(key.startswith("R3_") for key in spec.env))
             self.assertEqual(spec.log_path, run_dir / f"helper{index}.log")
             self.assertEqual(spec.pre_start_cleanup, (Path("/dev/shm/r3-moe-helper"),))
-            self.assertRegex("r3_moe_worker: waiting for engine runtime expert maps\n", spec.ready_pattern.replace("^", "(?m)^"))
-        self.assertEqual(env["HIP_VISIBLE_DEVICES"], "2")  # the server's environment is not touched
+            self.assertRegex("r3_moe_worker: waiting for engine runtime expert maps\n",
+                             spec.ready_pattern.replace("^", "(?m)^"))
+        self.assertEqual(env["HIP_VISIBLE_DEVICES"], "2")
+
+    def test_manifest_required_when_helpers_enabled(self):
+        with self.assertRaisesRegex(ValueError, "BC_SERVING_MANIFEST is required"):
+            adapter("radiance").sidecars(
+                self.arm(), {"R3_MOE_WORKER": "1", "R3_MOE_WORKER_DEVICES": "0"},
+                Path("r"), Path("/b/bin/radiance"))
 
     def test_custom_shm_cleanup_and_bad_devices(self):
         rad = adapter("radiance")
-        env = {"R3_MOE_WORKER": "1", "R3_MOE_WORKER_DEVICES": "0", "R3_MOE_WORKER_SHM": "/other"}
-        self.assertEqual(rad.sidecars(self.arm(), env, Path("r"), Path("/b/bin/radiance"))[0].pre_start_cleanup, (Path("/dev/shm/other"),))
+        env = self.with_manifest(R3_MOE_WORKER="1", R3_MOE_WORKER_DEVICES="0",
+                                 R3_MOE_WORKER_SHM="/other")
+        self.assertEqual(rad.sidecars(self.arm(), env, Path("r"), Path("/b/bin/radiance"))[0].pre_start_cleanup,
+                         (Path("/dev/shm/other"),))
         for devices in ("", "0 0", "x", "9"):
             with self.subTest(devices=devices), self.assertRaises(ValueError):
-                rad.sidecars(self.arm(), {"R3_MOE_WORKER": "1", "R3_MOE_WORKER_DEVICES": devices}, Path("r"), Path("/b/bin/radiance"))
+                rad.sidecars(self.arm(), self.with_manifest(
+                    R3_MOE_WORKER="1", R3_MOE_WORKER_DEVICES=devices), Path("r"),
+                    Path("/b/bin/radiance"))
 
-    def test_a_card_type_decides_its_plugin_formats_and_kernel(self):
-        specs = adapter("radiance").sidecars(self.arm(), {"R3_MOE_WORKER": "1", "R3_MOE_WORKER_DEVICES": "0 3"}, Path("r"), Path("/b/bin/radiance"))
-        self.assertEqual([s.env["R3_MOE_WORKER_PLUGIN_FILE"] for s in specs], ["libr3.so", "libr2.so"])
-        self.assertEqual([s.env["R3_MOE_WORKER_FORMATS"] for s in specs], ["w4nl64,fp8_e4m3_block", "w4nl64"])
-        self.assertNotIn("R3_MOE_WORKER_ROWS", specs[0].env)
-        self.assertEqual(specs[1].env["R3_MOE_WORKER_ROWS"], "1")
-        # a setting the arm names itself wins over the card type's default
-        named = adapter("radiance").sidecars(self.arm(), {"R3_MOE_WORKER": "1", "R3_MOE_WORKER_DEVICES": "3", "R3_MOE_WORKER_ROWS": "0"}, Path("r"), Path("/b/bin/radiance"))
-        self.assertEqual(named[0].env["R3_MOE_WORKER_ROWS"], "0")
+    def test_card_inventory_decides_helper_visibility_only(self):
+        specs = adapter("radiance").sidecars(
+            self.arm(), self.with_manifest(R3_MOE_WORKER="1", R3_MOE_WORKER_DEVICES="0 3"),
+            Path("r"), Path("/b/bin/radiance"))
+        self.assertEqual([s.env["ROCR_VISIBLE_DEVICES"] for s in specs], ["0", "3"])
+        self.assertEqual([s.argv[-1] for s in specs], ["helper0", "helper1"])
+        for spec in specs:
+            self.assertFalse(any(key.startswith("R3_") for key in spec.env))
 
-    def test_a_named_layout_fixes_cards_budgets_and_placement(self):
-        specs = adapter("radiance").sidecars(self.arm(), {"R3_MOE_WORKER": "1", "R3_MOE_WORKER_LAYOUT": "flashnext-2xtx-rdna2-tail"}, Path("r"), Path("/b/bin/radiance"))
+    def test_named_layout_fixes_helper_order(self):
+        specs = adapter("radiance").sidecars(self.arm(), self.with_manifest(
+            R3_MOE_WORKER="1", R3_MOE_WORKER_LAYOUT="flashnext-2xtx-rdna2-tail"),
+            Path("r"), Path("/b/bin/radiance"))
         self.assertEqual([s.env["ROCR_VISIBLE_DEVICES"] for s in specs], ["0", "1", "3"])
-        for s in specs:
-            self.assertEqual(s.env["R3_MOE_WORKER_COUNT"], "3")
-            self.assertEqual(s.env["R3_MOE_WORKER_MIBS"], "22528,22528,2048")
-            self.assertEqual(s.env["R3_MOE_WORKER_PLACEMENT"], "tail")
-            self.assertNotIn("R3_MOE_WORKER_LAYOUT", s.env)
-        self.assertEqual(specs[2].env["R3_MOE_WORKER_PLUGIN_FILE"], "libr2.so")
-        for env in ({"R3_MOE_WORKER": "1", "R3_MOE_WORKER_LAYOUT": "flashnext-2xtx", "R3_MOE_WORKER_DEVICES": "0 1"},
-                    {"R3_MOE_WORKER": "1", "R3_MOE_WORKER_LAYOUT": "no-such-layout"}):
+        for index, spec in enumerate(specs):
+            self.assertEqual(spec.argv[-1], f"helper{index}")
+            self.assertFalse(any(key.startswith("R3_") for key in spec.env))
+        for env in (
+            self.with_manifest(R3_MOE_WORKER="1", R3_MOE_WORKER_LAYOUT="flashnext-2xtx",
+                               R3_MOE_WORKER_DEVICES="0 1"),
+            self.with_manifest(R3_MOE_WORKER="1", R3_MOE_WORKER_LAYOUT="no-such-layout"),
+        ):
             with self.subTest(env=env), self.assertRaises(ValueError):
                 adapter("radiance").sidecars(self.arm(), env, Path("r"), Path("/b/bin/radiance"))
 
-    def test_an_arm_setting_may_not_contradict_a_named_layout(self):
-        for key, value in (("R3_MOE_WORKER_MIBS", "1,1,1"), ("R3_MOE_WORKER_PLUGIN_FILE", "libr4d.so"), ("R3_MOE_WORKER_PLACEMENT", "")):
-            env = {"R3_MOE_WORKER": "1", "R3_MOE_WORKER_LAYOUT": "flashnext-2xtx-rdna2-tail", key: value}
-            with self.subTest(key=key), self.assertRaisesRegex(ValueError, "contradicts layout"):
-                adapter("radiance").sidecars(self.arm(), env, Path("r"), Path("/b/bin/radiance"))
-
-    def test_explicit_devices_are_held_to_the_card_roles_and_the_protocol_bound(self):
+    def test_explicit_devices_are_held_to_the_card_roles_and_protocol_bound(self):
         with self.assertRaisesRegex(ValueError, "exceed the protocol"):
-            adapter("radiance").sidecars(self.arm(), {"R3_MOE_WORKER": "1", "R3_MOE_WORKER_DEVICES": "0 1 2 3 4"}, Path("r"), Path("/b/bin/radiance"))
+            adapter("radiance").sidecars(self.arm(), self.with_manifest(
+                R3_MOE_WORKER="1", R3_MOE_WORKER_DEVICES="0 1 2 3 4"),
+                Path("r"), Path("/b/bin/radiance"))
 
 
 FAKE = textwrap.dedent('''
@@ -279,7 +290,8 @@ class ArmCaptureSidecarTests(unittest.TestCase):
             "bigcherry.campaign.bench_runner.run_bench_runner_server_bench", return_value={"tg512_tps": 1.0}):
             result = run_server_arm_capture(
                 engine="radiance", health_timeout_s=180, binary=Path("/b/bin/radiance"), model=Path("m.rad"), extra_args=(),
-                output=Path(tmp), pair=0, side="on", position=0, env={"R3_MOE_WORKER": "1", "R3_MOE_WORKER_DEVICES": "0"},
+                output=Path(tmp), pair=0, side="on", position=0, env={"R3_MOE_WORKER": "1", "R3_MOE_WORKER_DEVICES": "0",
+                     "BC_SERVING_MANIFEST": "/run/manifest.json"},
                 settings={"R3_MOE_WORKER": "1"}, bench_configs="tg512", runner_root=Path("r"),
                 required_metrics=("tg512_tps",), execution_evidence="observe",
             )

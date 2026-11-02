@@ -6,27 +6,12 @@ namespace {
 
 
 uint64_t helper_budget_bytes() {
-    const char* e = std::getenv("R3_MOE_WORKER_MIB");
-    if (!e || !*e) return 28672ull * 1024ull * 1024ull;
-    char* end = nullptr;
-    errno = 0;
-    const unsigned long long mib = std::strtoull(e, &end, 10);
-    if (errno || !end || *end || mib == 0 ||
-        mib > std::numeric_limits<uint64_t>::max() / (1024ull * 1024ull)) return 0;
-    return (uint64_t)mib * 1024ull * 1024ull;
+    return r3_serving::settings().budget_mib * 1024ull * 1024ull;
 }
-
-uint32_t env_rows(const char* e, uint32_t fallback) {
-    if (!e || !*e) return fallback;
-    char* end = nullptr;
-    errno = 0;
-    const unsigned long v = std::strtoul(e, &end, 10);
-    if (errno || !end || *end || v == 0) return fallback;
-    return (uint32_t)std::min<unsigned long>(v, kMaxRows);
+uint32_t helper_max_rows() { return r3_serving::settings().handoff.max_rows; }
+uint32_t helper_small_rows() {
+    return std::min(r3_serving::settings().handoff.small_rows, helper_max_rows());
 }
-/* The largest step handed off (the engine reads the same variable) and the small, pre-queued lane size. */
-uint32_t helper_max_rows() { return env_rows(std::getenv("R3_MOE_WORKER_MAX_ROWS"), 64); }
-uint32_t helper_small_rows() { return std::min(env_rows(std::getenv("R3_MOE_WORKER_SMALL_ROWS"), 64), helper_max_rows()); }
 
 /* The pre-queued small-lane sizes (RAD12): R3_MOE_WORKER_SMALL_LANES="4,8,16,24" (up to kSmallClasses, strictly ascending,
  * each within the large-lane capacity), else the single size R3_MOE_WORKER_SMALL_ROWS gives (the production behaviour). */
@@ -36,31 +21,12 @@ struct SmallClasses {
 };
 SmallClasses helper_small_classes() {
     SmallClasses sc;
-    const char* list = std::getenv("R3_MOE_WORKER_SMALL_LANES");
-    if (!list || !*list) {
+    const auto& lanes = r3_serving::settings().small_lanes;
+    if (lanes.empty()) {
         sc.rows[0] = helper_small_rows();
         sc.count = 1;
-        return sc;
-    }
-    const uint32_t cap = helper_max_rows();
-    const char* p = list;
-    while (*p && sc.count < r3::moe_shm::kSmallClasses) {
-        char* end = nullptr;
-        const long v = std::strtol(p, &end, 10);
-        if (end == p || v <= 0 || (uint32_t)v > cap || (sc.count && (uint32_t)v <= sc.rows[sc.count - 1])) {
-            std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_SMALL_LANES=%s must be up to %u ascending sizes within %u rows\n",
-                         list, (unsigned)r3::moe_shm::kSmallClasses, cap);
-            return SmallClasses{};
-        }
-        sc.rows[sc.count++] = (uint32_t)v;
-        p = end;
-        if (*p == ',') ++p;
-        else break;
-    }
-    if (*p) {
-        std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_SMALL_LANES=%s has more than %u sizes or trailing text\n", list,
-                     (unsigned)r3::moe_shm::kSmallClasses);
-        return SmallClasses{};
+    } else {
+        for (uint32_t v : lanes) sc.rows[sc.count++] = v;
     }
     return sc;
 }
@@ -147,7 +113,7 @@ bool container_shape(const Container& f, MoeShape* s) {
  * set by the launcher and the harness). A card type is data: nothing here knows which architectures exist. */
 bool helper_backend(const char* arch, r3::moe_backend::Backend* out) {
     uint32_t mask = 0;
-    const char* env = std::getenv("R3_MOE_WORKER_FORMATS");
+    const char* env = r3_serving::settings().formats.c_str();
     if (!r3::moe_backend::parse_formats(env, &mask)) {
         std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_FORMATS must list the weight formats this card runs (w4nl64, fp8_e4m3_block), got '%s'; "
                              "the card types are engines/radiance/archs.toml\n", env ? env : "");

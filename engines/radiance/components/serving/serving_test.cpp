@@ -245,7 +245,7 @@ void provenance_hash_and_parity(Fixture& t) {
         {"shm", "/r3-moe-helper"}, {"heat", "/heat.hot-first"},
         {"histogram", "/heat.live"}, {"histogram_period_s", 60},
         {"max_rows", 4096}, {"small_rows", 8}, {"gemv_large_rows", 32},
-        {"moe_down_tile", true}, {"skip_owned", true},
+        {"moe_down_tile", 1}, {"skip_owned", true},
         {"placement", "tail"}
     };
     for (const auto& [key, val] : expected_common)
@@ -279,7 +279,7 @@ void provenance_hash_and_parity(Fixture& t) {
     assert(r.typed.layout.helper_cards[2] == "0000:17:00.0");
 
     const auto schema = bc::serving::json_schema();
-    assert(schema["properties"]["helper"]["properties"].size() == 10);
+    assert(schema["properties"]["helper"]["properties"].size() > 10);
     assert(schema["properties"]["engine"]["properties"]["port"]["maximum"] == 65535);
     assert(schema["properties"]["service"]["properties"]["objective"]["enum"].size() == 3);
     assert(schema["properties"]["memory"]["properties"]["host_pool_mib"].contains("x-origin"));

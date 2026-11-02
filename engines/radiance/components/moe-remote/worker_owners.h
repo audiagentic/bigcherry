@@ -30,7 +30,7 @@ bool select_owned(const Container& f, r3_moe_gpu::Runner* gpu, const uint64_t* b
     std::vector<RadFileProfile> flat;
     /* R3_MOE_WORKER_HEAT: route counts a profiling run wrote (R3_MOE_WORKER_HISTOGRAM). Coldest first, so the
      * engine keeps the experts most tokens route to and a decode step hands off as little as possible. */
-    if (const char* hp = std::getenv("R3_MOE_WORKER_HEAT"); hp && *hp) {
+    if (const char* hp = r3_serving::settings().handoff.heat.c_str(); hp && *hp) {
         std::vector<uint32_t> heat((size_t)kMaxLayers * f.experts, 0);
         FILE* hf = std::fopen(hp, "rb");
         const size_t got = hf ? std::fread(heat.data(), sizeof(uint32_t), heat.size(), hf) : 0;
@@ -78,12 +78,12 @@ bool select_owned(const Container& f, r3_moe_gpu::Runner* gpu, const uint64_t* b
      * (a fixed weight-tile part when the expert is active plus a part a routed row, and the same for a decode step).
      * The heat file holds max + 1 - count (so the hottest sort first); the counts are max - value.
      * R3_MOE_WORKER_BALANCE_SPEED="s0,s1" scales a helper's cost by 1/s (a slower card takes less). */
-    if (const char* bv = std::getenv("R3_MOE_WORKER_BALANCE"); bv && *bv && std::strcmp(bv, "0") != 0) {
+    if (r3_serving::settings().balance) {
         if (helpers != 2 || flat.empty() || budgets[0] != budgets[1]) {
             std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_BALANCE needs R3_MOE_WORKER_HEAT, two helpers and one budget for both\n");
             return false;
         }
-        if (const char* pv = std::getenv("R3_MOE_WORKER_PLACEMENT"); pv && *pv && std::strcmp(pv, "roundrobin") != 0) {
+        if (const char* pv = r3_serving::settings().handoff.placement.c_str(); pv && *pv && std::strcmp(pv, "roundrobin") != 0) {
             std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_BALANCE splits the experts of two equal helpers; it does not combine with R3_MOE_WORKER_PLACEMENT=%s\n", pv);
             return false;
         }
@@ -98,11 +98,8 @@ bool select_owned(const Container& f, r3_moe_gpu::Runner* gpu, const uint64_t* b
             const double lam = tokens * (double)kTopK * share, lam_d = decode * (double)kTopK * share;
             return (1.0 - std::exp(-lam)) * c0 + c1 * lam + (1.0 - std::exp(-lam_d)) * d0;
         };
-        double speed[2] = {1.0, 1.0};
-        if (const char* sv = std::getenv("R3_MOE_WORKER_BALANCE_SPEED"); sv && *sv) {
-            double a = 0.0, b = 0.0;
-            if (std::sscanf(sv, "%lf,%lf", &a, &b) == 2 && a > 0.0 && b > 0.0) { speed[0] = a; speed[1] = b; }
-        }
+        double speed[2] = {r3_serving::settings().balance_speeds[0],
+                           r3_serving::settings().balance_speeds[1]};
         /* The jointly owned set: exactly the alternation's picks (both helpers' budgets filled in turn). */
         std::vector<Pick> joint;
         {
@@ -166,14 +163,12 @@ bool select_owned(const Container& f, r3_moe_gpu::Runner* gpu, const uint64_t* b
     /* R3_MOE_WORKER_SHARES="w0,w1,..": the helpers' parts of the ranking (default equal). A slower card takes a smaller part; a part of 0
      * is a helper that owns nothing. Every helper reads the same list and takes the same decision (worker_share.h). */
     uint32_t shares[r3::worker_share::kMaxHelperShares] = {};
-    if (!r3::worker_share::parse_shares(std::getenv("R3_MOE_WORKER_SHARES"), helpers, shares)) {
-        std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_SHARES must list one non-negative weight for each of the %u helpers, not all 0\n", helpers);
-        return false;
-    }
+    for (uint32_t i = 0; i < helpers; ++i)
+        shares[i] = (uint32_t)r3_serving::settings().shares.at(i);
     /* R3_MOE_WORKER_PLACEMENT: "roundrobin" (default) deals the ranking out by the shares; "tail" deals it to the head helpers 0..H-2 by their
      * shares, each up to its own budget, and gives the LAST helper what no head helper had room for (RAD23: the cold tail on a small card). */
     bool tail = false;
-    if (const char* pv = std::getenv("R3_MOE_WORKER_PLACEMENT"); pv && *pv) {
+    if (const char* pv = r3_serving::settings().handoff.placement.c_str(); pv && *pv) {
         if (std::strcmp(pv, "tail") == 0) tail = true;
         else if (std::strcmp(pv, "roundrobin") != 0) {
             std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_PLACEMENT is roundrobin or tail, not %s\n", pv);

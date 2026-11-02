@@ -19,7 +19,7 @@ void on_signal(int) { request_stop(); }
  * reaches <point>, so the test can SIGKILL it at exactly that moment. Points: park_drain (a small lane has set
  * kParkDraining and not yet re-checked the burst). Unset in every real run. */
 inline void test_stop_at(const char* point, uint32_t helper_index) {
-    static const char* const want = std::getenv("R3_MOE_WORKER_TEST_STOP_AT");
+    const char* const want = r3_serving::settings().test_stop_at.c_str();
     if (!want || !*want) return;
     const size_t n = std::strlen(point);
     if (std::strncmp(want, point, n) != 0 || want[n] != ':' || (uint32_t)std::atoi(want + n + 1) != helper_index) return;

@@ -1,14 +1,10 @@
 #!/bin/bash
-# RAD06: replay sweep - build the branch once, then ONE r3_moe_worker process (one model load, one expert allocation)
-# replays every captured request once per variant; rocprofv3's kernel trace gives per-call grouped-GEMM times and the
-# helper's engine_join line gives rel_l2 against the CPU engine reference (R3_MOE_SWEEP_FAST=0, ~2 min a run) or, by
-# default, each variant's output is compared bit for bit with the first variant's (sweep_cmp mismatches=N). No server, no per-variant load stage.
-# CAPDIR=<dir> replays another capture set (e.g. small_capture.py output) instead of $W/captures.
-# Usage: helper-sweep.sh <branch|-> "<variant>;<variant>..." [captures=4] [fixed env, e.g. R3_MOE_FP16=1 ...]
-#   variant = "NAME=v,NAME=v" (an empty variant = environment as launched); anything libr3 reads at launch can vary
-#   (R3_MOE_FP16, R3_MOE_PITCH16, R3_MOE_PROBE). `-` as branch reuses the newest build.
+# RSC06: replay captures under one immutable helper manifest. To compare
+# tuning variants, run this script separately with one bc-serve manifest per
+# variant; changing environment variables within a worker is forbidden.
+# Usage: helper-sweep.sh <branch|-> <manifest.json> [captures=4]
 set -u
-BR=$1; VARIANTS=$2; N=${3:-4}
+BR=$1; MANIFEST=$2; N=${3:-4}
 W=${BC_WORK_ROOT}
 if [ "$BR" != "-" ]; then
   cd $W/wt-pr8 && git fetch -q origin && git checkout -q --detach $BR && git log --oneline -1
@@ -21,17 +17,17 @@ B=$(ls -td ${BC_DEV_ROOT}/projects/bigcherry/workspaces/main/work/builds/*/*/ | 
 M=${BC_MODEL_ROOT}/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad
 FILES=$(ls -S ${CAPDIR:-$W/captures}/*.bin | head -$N | tr '\n' ' ')
 out=$W/sweep-out; rm -rf $out
-env HIP_VISIBLE_DEVICES=0 ROCR_VISIBLE_DEVICES=0 $(PYTHONPATH=tools python3 -m bigcherry layout card-env 0) R3_MOE_WORKER_MIB=22528 R3_MOE_WORKER_SMALL_ROWS=${SMALL_ROWS:-8} R3_MOE_WORKER_SMALL_LANES=${SMALL_LANES:-} R3_MOE_WORKER_MAX_ROWS=4096 \
-  R3_MOE_NATIVE=1 R3_MOE_WORKER_MOE_DOWN_TILE=1 R3_MOE_WORKER_HEAT=$W/runs/perf51/heat.rank0.hot-first RADIANCE_HOME=$B/radiance_home \
-  R3_MOE_SWEEP_FAST=${R3_MOE_SWEEP_FAST:-1} timeout 3600 rocprofv3 --kernel-trace --output-format csv -d $out -o run -- \
-  $B/radiance_home/helpers/r3_moe_worker --replay-sweep $M "$VARIANTS" $FILES > $out.log 2>&1
+env HIP_VISIBLE_DEVICES=0 ROCR_VISIBLE_DEVICES=0 \
+  timeout 3600 rocprofv3 --kernel-trace --output-format csv -d $out -o run -- \
+  "$B/radiance_home/helpers/r3_moe_worker" --manifest "$MANIFEST" --role helper0 \
+    --replay-sweep "$M" $FILES > $out.log 2>&1
 echo "rc=$?"
 python3 - $out.log $(find $out -name '*kernel_trace.csv' | head -1) <<'PY'
 import csv, re, sys, collections
 log, trace = sys.argv[1], sys.argv[2]
 runs = []   # (idx, capture, layer, variant, rel_l2)
 for line in open(log):
-    m = re.match(r'SWEEP run (\d+) capture (\d+) layer (\d+) variant \[(.*)\]', line)
+    m = re.match(r'SWEEP run (\d+) capture (\d+) layer (\d+) manifest \[(.*)\]', line)
     if m: runs.append([int(m[1]), int(m[2]), int(m[3]), m[4], None]); continue
     m = re.search(r'engine_join .*rel_l2=(\S+) max_abs=(\S+)', line)
     if m and runs and runs[-1][4] is None: runs[-1][4] = 'rel_l2=' + m[1]
