@@ -269,6 +269,10 @@ int main() {
     refused(kBase + "\n[[field]]\npath = \"/spec/t\"\nkind = \"array\"\nitem_kind = \"tuple\"\ntuple = [\"group\", \"uint\"]\n"
                     "doc = \"x\"\n",
             "tuple elements must be integer defs", "a tuple element that is not an integer def");
+    refused(kBase + "\n[[field]]\npath = \"/spec/s\"\nkind = \"string\"\npattern = \"^a+$\"\ndoc = \"x\"\n",
+            "a pattern needs a max_length", "a pattern without a max_length (spec §11 amendment 7)");
+    refused(kBase + "\n[[field]]\npath = \"/spec/s\"\nkind = \"string\"\npattern = \"^a+$\"\nmax_length = 200000\ndoc = \"x\"\n",
+            "at most 1024", "a pattern max_length past 1024");
     refused(kBase + "\n[[field]]\npath = \"/spec/s\"\nkind = \"string\"\nmin_length = -1\ndoc = \"x\"\n",
             "min_length is not negative", "a negative string length");
     refused(kBase + "\n[[field]]\npath = \"/spec/e\"\nkind = \"enum\"\nvalues = [\"a.b\", \"a_b\"]\ncpp_type = \"E\"\ndoc = \"x\"\n",
@@ -308,6 +312,18 @@ int main() {
                      "[[class_default]]\npath = \"/spec\"\nclass = \"policy\"\n\n[[class_default]]\npath = \"/spec\"\nclass = \"fact\""),
             "two class defaults", "a repeated class default");
 
+    check(r.max_depth == 4, "the fixture's depth: root, spec, calibration array, entry = 4, is " + std::to_string(r.max_depth));
+    refused(kBase + "\n[[field]]\npath = \"$defs/group/self\"\nkind = \"ref\"\nref = \"group\"\noptional = true\ndoc = \"x\"\n",
+            "reaches itself", "a recursive $ref (amendment 8)");
+    refused(replaced("[[def]]\nname = \"groupPatch\"",
+                     "[[def]]\nname = \"other\"\nkind = \"object\"\ncpp = \"Other\"\ndoc = \"x\"\n\n"
+                     "[[field]]\npath = \"$defs/other/back\"\nkind = \"ref\"\nref = \"group\"\noptional = true\ndoc = \"x\"\n\n"
+                     "[[field]]\npath = \"$defs/group/next\"\nkind = \"ref\"\nref = \"other\"\noptional = true\ndoc = \"x\"\n\n"
+                     "[[def]]\nname = \"groupPatch\""),
+            "reaches itself", "a ref cycle through two defs");
+    refused(kBase + "\n[[field]]\npath = \"$defs/group/patch\"\nkind = \"ref\"\nref = \"groupPatch\"\noptional = true\ndoc = \"x\"\n",
+            "reaches itself", "a def that refers to its own patch");
+
     // the real registry loads and generates
     std::ifstream in(std::string(BC_CONTRACT_SOURCE_DIR) + "/contract/serving-v1.toml", std::ios::binary);
     std::ostringstream text;
@@ -315,7 +331,7 @@ int main() {
     bc::contract::Registry real;
     check(bc::contract::load_registry(text.str(), "serving-v1.toml", &real, &why), "the v1 registry loads: " + why);
     if (failures) return 1;
-    check(bc::contract::generate_all(real).size() == 4, "four generated files");
+    check(bc::contract::generate_all(real).size() == 6, "six generated files");
     std::printf("ok\n");
     return 0;
 }

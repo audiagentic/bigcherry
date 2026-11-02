@@ -87,6 +87,12 @@ Admission, from the #534 re-review (GPT, 2026-11-02; lead decisions):
 - Stable facts (S3): the host and checkpoint comparisons become the exact equalities §5.2 specifies, each with a negative test: a live host consumer with fewer bytes, a missing expected consumer, a changed residence, a changed checkpoints.want_slots and a changed host_pool_mib are each PLAN_MISMATCH. An automatic placement (ngram_placement = auto, embedding fallback) that resolves differently from the measured plan is PLAN_MISMATCH (S2).
 - Vectors still to add to docs/design/serving-manifest-v1/admission-vectors.json once the model covers them (S5): a multi-rank uneven split, the kv_streams round-up of kv_one, and all_vram / layer_offload placement (no staging region).
 
+
+
+Slice 2 gates left open by #536 (lead, 2026-11-02). Each blocks the cutover (A4, slices 5-6):
+- Provenance coverage (spec section 7). Every non-schema-default effective leaf is covered, and a schema-default claim never hides a site, derived, calibrated or experiment value. This needs schema defaults as a registry field, taken only from the spec text or a measured source and never guessed. Until then the reader checks pointers, input cycles and amendment-6 identity coverage only.
+- Exact owned-set bytes. spec.plan.owner_map.helpers[].bytes equals the GPU-free bc::experts::select_owned sizing for the model's expert formats. #536 refuses only bytes that contradict emptiness.
+
 ## Notes
 
 Feeds: RSC01, RSC02, RSC03, RSC06, RSC07.
@@ -102,7 +108,6 @@ Slice 2 (shared strict reader) requirement, from the lead's #530 review (2026-11
 
 ## Ledger-events
 
-
 - chg_20261102_121239_the-serving-manifest-v1-format_6543
 - chg_20261102_121824_the-serving-component-can-prod_8129
 - 2026-11-02T12:18:29.161474+00:00 (updated-by): Updated: section:ledger-events
@@ -115,3 +120,6 @@ Slice 2 (shared strict reader) requirement, from the lead's #530 review (2026-11
 - 2026-11-02T16:40:58.669519+00:00 (updated-by): Updated: section:acceptance_criteria
 - chg_20261102_170003_the-serving-manifest-v1-schema_4690
 - 2026-11-02T17:00:07.344057+00:00 (updated-by): Updated: section:ledger-events
+- chg_20261102_172348_bc-serve-the-engine-and-the-h_2822
+- 2026-11-02T17:23:52.577413+00:00 (updated-by): Updated: section:ledger-events
+- 2026-11-02T17:53:14.387976+00:00 (updated-by): Updated: section:acceptance_criteria

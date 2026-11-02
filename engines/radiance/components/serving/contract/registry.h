@@ -30,7 +30,8 @@ struct Node {
     std::string ref;                  // ref nodes: the def name
     std::optional<nlohmann::json> constant;
     std::vector<nlohmann::json> values;          // enum / int_enum
-    std::optional<int64_t> minimum, maximum, exclusive_maximum, min_length, min_items, max_items, min_properties;
+    std::optional<int64_t> minimum, maximum, exclusive_maximum, min_length, max_length, min_items, max_items,
+        min_properties;
     std::string pattern, format;
     bool unique_items = false;
     std::vector<std::string> tuple;              // tuple nodes: each element's def name
@@ -41,6 +42,9 @@ struct Node {
     std::string cls;                             // provenance class (resolved from [[class_default]])
     std::vector<size_t> children;                // object members in order; arrays: their one item; maps: the value
     bool patch = false;                          // inside a patch def: every member optional, objects nonempty
+    size_t patch_of = SIZE_MAX;                  // patch nodes: the node they copy
+    std::string error_class;                     // the decoder's code for this subtree's faults ("" = by fault)
+    std::string mismatch;                        // const nodes: the code when the value differs ("" = invalid_value)
 };
 
 struct Def {
@@ -61,6 +65,7 @@ struct Registry {
     std::vector<Def> defs;                       // in file order
     std::vector<CalibrationKey> calibration;
     std::map<std::string, size_t> by_path;
+    int64_t max_depth = 0;   // the deepest legal nesting of JSON containers (the root object is 1)
 };
 
 /* Parse and check a registry. False with `why` naming the first fault (and its path) on: any non-integer number, an
@@ -75,13 +80,17 @@ std::string emit_schema(const Registry& r);
  * change it; any change to what validates does, including literal const/enum data. */
 std::string fingerprint(const Registry& r);
 /* "sha256:" + SHA-256 of the JCS of the annotation-free schema plus the semantics the schema does not express: every
- * field's provenance class, the lifecycle, the Radiance bindings and the calibration keys.
+ * field's provenance class, the lifecycle, the Radiance bindings, the reader's error codes and the calibration keys.
  * The closed-v1 identity: either fingerprint changing is a bigcherry/v2 change. */
 std::string semantic_fingerprint(const Registry& r);
 /* serving_types.h: the typed model (namespace from [contract]), its enums with their wire names, the field table. */
 std::string emit_types(const Registry& r);
 /* serving-fields.md: the field reference. */
 std::string emit_fields_md(const Registry& r);
+/* serving_codec.h / serving_codec.cpp: one strict decoder per struct (v1/error.h codes: unknown, missing, type,
+ * value, by subtree error_class), and apply() for each patch def (spec §2.2: present leaves replace, objects recurse). */
+std::string emit_codec_h(const Registry& r);
+std::string emit_codec_cpp(const Registry& r);
 
 /* Every generated file, by its name in generated/. */
 std::map<std::string, std::string> generate_all(const Registry& r);
