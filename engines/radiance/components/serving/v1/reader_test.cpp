@@ -404,6 +404,23 @@ int main() {
               "an extra live consumer");
     }
 
+    {   // re-review P1: a 70,000-record dependency chain is walked without recursion; a cycle at its end is found
+        const size_t n = 70000;
+        const std::string prefix = "/spec/processes/engine/runtime/kernels/";
+        Json j = prod;
+        j["spec"]["processes"]["engine"]["runtime"]["kernels"] = Json::array();
+        for (size_t i = 0; i < n; ++i) j["spec"]["processes"]["engine"]["runtime"]["kernels"].push_back("x");
+        Json rec = prod["provenance"][""];
+        for (size_t i = 0; i < n; ++i) {
+            rec["inputs"] = i + 1 < n ? Json::array({prefix + std::to_string(i + 1)}) : Json::array();
+            j["provenance"][prefix + std::to_string(i)] = rec;
+        }
+        // acyclic: provenance passes, and the reader goes on to the (changed) cache key
+        expect(from(rehashed(j)), C::plan_mismatch, "cache_key", "a 70,000-record acyclic chain");
+        j["provenance"][prefix + std::to_string(n - 1)]["inputs"] = Json::array({prefix + "0"});
+        expect(from(rehashed(j)), C::provenance_invalid, "dependency cycle", "a 70,000-record chain closing a cycle");
+    }
+
     // ---- renderers (errors.md §3, §4) ----
     {
         ConfigError e = make_error(C::experiment_forbidden, "spec.experiment",

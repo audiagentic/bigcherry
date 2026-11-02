@@ -81,22 +81,30 @@ Status provenance(const Json& doc) {
             if (!doc.contains(Json::json_pointer(in.get<std::string>())))
                 return err(C::provenance_invalid, at(key), "input " + in.dump() + " names no value in the manifest");
     }
+    // Iterative depth-first search with explicit visiting / done states: a chain of dependencies as long as the
+    // document allows (tens of thousands of records) must not recurse on the C++ stack.
     std::map<std::string, int> state;   // 1 visiting, 2 done
-    std::function<Status(const std::string&)> visit = [&](const std::string& key) -> Status {
-        state[key] = 1;
-        for (const Json& in : prov.at(key).at("inputs")) {
-            const std::string k = in.get<std::string>();
+    for (const auto& [root, unused] : prov.items()) {
+        if (state[root] != 0) continue;
+        std::vector<std::pair<std::string, size_t>> stack{{root, 0}};
+        state[root] = 1;
+        while (!stack.empty()) {
+            auto& [key, next] = stack.back();
+            const Json& inputs = prov.at(key).at("inputs");
+            if (next == inputs.size()) {
+                state[key] = 2;
+                stack.pop_back();
+                continue;
+            }
+            const std::string k = inputs[next++].get<std::string>();
             if (!prov.contains(k)) continue;
             if (state[k] == 1) return err(C::provenance_invalid, at(key), "dependency cycle through " + Json(k).dump());
-            if (state[k] == 0)
-                if (auto e = visit(k)) return e;
+            if (state[k] == 0) {
+                state[k] = 1;
+                stack.emplace_back(k, 0);
+            }
         }
-        state[key] = 2;
-        return std::nullopt;
-    };
-    for (const auto& [key, record] : prov.items())
-        if (state[key] == 0)
-            if (auto e = visit(key)) return e;
+    }
     return std::nullopt;
 }
 
