@@ -1,5 +1,15 @@
 # 1329_alloc_top_trace
 
+## Summary
+
+Diagnostic only. With `BIGCHERRY_ALLOC_TOP=N`, `ggml_gallocr_reserve_n` logs for every reserved graph the N largest non-view node tensors (MiB, op, name, shape, buffer id) and the summed bytes per op. Used to attribute the compute-buffer growth from -ub 512 to 1024 (MoE intermediates vs attention / QSA indexer / mask buffers) before designing chunked prefill scratch.
+
+## Outcome
+
+Recorded state: `validated` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 ## Promotion record
 
 Promotion record (BPB01 lightweight promotion tier, pin b11474, dev 2026-10-08). Diagnostic-only neutral enabler; it remains off unless its environment variable is set.

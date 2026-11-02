@@ -1,5 +1,15 @@
 # 0200_dispatch_hook framework validation
 
+## Summary
+
+Inserts a single guarded hook (ggml_hip_dispatch_mul_mat) at the top of upstream's ggml_cuda_mul_mat entry points; the hook returns false whenever it declines, so upstream's own ladder runs untouched. Also exposes the previously-static cuBLAS entry point so the BLAS candidate can reach it.
+
+## Outcome
+
+Recorded state: `validated` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 Inserts a single guarded hook (`ggml_hip_dispatch_mul_mat`) at the top of
 upstream's dense-matmul selector entry points (`ggml_cuda_mul_mat` and the
 cuBLAS entry point, the latter newly exposed for this purpose). The hook

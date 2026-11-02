@@ -3,6 +3,15 @@
 Organized into topical subfolders. Cross-cutting/auto-generated docs stay
 at the top level.
 
+## Engines
+
+- [llama.cpp](engines/llamacpp/README.md) — HIP measured dispatch, patch
+  packages and the [complete patch catalog](engines/llamacpp/PATCHES.md).
+- [Radiance](engines/radiance/README.md) — device kernel components, remote
+  MoE work, and the [patch and component catalog](engines/radiance/ENHANCEMENTS.md).
+- [Per-change documentation format](DOC_STRUCTURE.md) — owning Summary,
+  Outcome and Detail pages, with generated indexes.
+
 ## Architecture
 
 | Document | What it is | When to read it |

@@ -1,5 +1,15 @@
 # 1263 (PRBE41 / AMD-SSM-001): channels-major SSM_CONV input
 
+## Summary
+
+Changes SSM_CONV inputs to channels-major layout for Qwen3.5/3.6 delta-net models, with CPU and HIP implementations and fallback on unsupported backends. The recurrent-state storage layout changes with it.
+
+## Outcome
+
+Recorded state: `untested` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 ## Scope
 
 Ports nasone commit `33611a98a53af8a327f4a0e01a42631eb5fcd576` (AMD):

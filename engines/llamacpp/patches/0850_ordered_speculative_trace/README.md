@@ -1,5 +1,15 @@
 # 0850: ordered per-verify-step speculative-decode acceptance trace
 
+## Summary
+
+Records one (draft_n, accepted_n) pair per speculative-decode verify step (not just the aggregate totals llama-server already exposed) and serializes it as `draft_trace` in the `/completion` response's `timings` object, alongside the existing `draft_n`/`draft_n_accepted` scalars.
+
+## Outcome
+
+Recorded state: `untested` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 ## Scope
 
 Records one `(draft_n, accepted_n)` pair per speculative-decode verify step

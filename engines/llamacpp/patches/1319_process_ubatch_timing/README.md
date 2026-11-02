@@ -1,5 +1,15 @@
 # 1319_process_ubatch_timing
 
+## Summary
+
+Diagnostic only. `BIGCHERRY_SUBMIT_TIMING=1` logs one `BIGCHERRY_SUBMIT_TIMING` line per process_ubatch call (context, n_tokens, graph reused, graph build/reuse us, set_inputs us, graph_compute host us). Splits the 5-7 ms target verify submit time measured by 1317 into graph, inputs and scheduler/launch time.
+
+## Outcome
+
+Recorded state: `validated` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 ## Promotion record
 
 Promotion record (QFP18 lightweight evidence-reuse tier, pin b11474 / b9acf138, 2026-10-08). A diagnostic, promoted as a

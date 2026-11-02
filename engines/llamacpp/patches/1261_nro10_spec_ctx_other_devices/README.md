@@ -1,5 +1,15 @@
 # 1261 PNRO10 — ctx_other speculative scheduler devices
 
+## Summary
+
+**State: untested; source placement blocker (2026-10-14).** The patch intends to register missing target-model physical device backends in a separate draft context, after draft-model backends and before ACCEL/CPU.
+
+## Outcome
+
+Recorded state: `untested` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 **State: untested; source placement blocker (2026-10-14).** The patch intends to register missing target-model physical device backends in a separate draft context, after draft-model backends and before ACCEL/CPU. It does not optimize native same-device/tensor-split MTP.
 
 Current `patch.py` inserts after the first `backends.emplace_back(backend);`, which is **inside** the ordinary model-device loop at pinned llama.cpp b11552. Empty draft lists skip foreign devices; overlap with a later ordinary device can duplicate a backend. PNRO10 owns the exact fix and validation. Do not promote 1261 until the anchor is moved outside the loop and source/compile/correctness gates pass.

@@ -1,5 +1,15 @@
 # 1347_f32_thin_transposed_mmvf
 
+## Summary
+
+An F32 matmul whose weight has 2 to 8 rows and whose activation has more than 8 columns runs through the float vector kernel (`mul_mat_vec_f`) with the roles swapped, instead of rocBLAS SGEMM: the activation matrix is the matrix, the weight rows are the vectors.
+
+## Outcome
+
+Recorded state: `validated` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 Promotion record (QFP18 lightweight evidence-reuse tier, pin b11402 / d89651a7, 2026-10-07). Mechanism is in
 SUMMARY.md: an F32 matmul with a 2..8-row weight and more than 8 columns runs through the float vector kernel with the
 roles swapped instead of rocBLAS SGEMM. On by default; `BIGCHERRY_F32_THIN_MMVF=0` restores SGEMM.

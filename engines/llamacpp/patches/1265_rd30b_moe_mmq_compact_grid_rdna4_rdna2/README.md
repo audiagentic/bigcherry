@@ -1,5 +1,15 @@
 # 1265_rd30b_moe_mmq_compact_grid_rdna4_rdna2
 
+## Summary
+
+Widens 1237's compact MoE MMQ launch-grid gate from gfx1100 only to also admit RDNA4 (gfx1201) and RDNA2 (gfx1030).
+
+## Outcome
+
+Recorded state: `validated` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 Plan `RD30`; requires `1237_rd30_moe_mmq_compact_grid` (promoted 2026-09-26, in `validated-enhancements`, so the scaffold control already carries it gated off on these cards).
 
 One edit to `ggml/src/ggml-cuda/mmq.cuh`: `ggml_cuda_mmq_moe_compact_enabled()` returns true for `cc == GGML_CUDA_CC_RDNA3 || GGML_CUDA_CC_IS_RDNA4(cc) || GGML_CUDA_CC_IS_RDNA2(cc)`. RDNA3.5 stays excluded (no hardware).

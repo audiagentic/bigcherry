@@ -23,6 +23,9 @@ binary = "bin/radiance"
 # quantisers into radiance_home as part of its default target.
 runtime-targets = ["all"]
 runtime-home = "radiance_home"
+# What radiance's CMake (and libr3's, moe-remote's) would search /opt/rocm and $ROCM_PATH for, as paths under the selected
+# ROCm SDK root: the build passes each one explicitly, so a build links and compiles against that SDK and no other.
+rocm-paths = { RAD_HIPCC = "bin/hipcc", CMAKE_HIP_COMPILER = "lib/llvm/bin/clang++", RAD_HIP_RUNTIME = "lib/libamdhip64.so", RAD_HSA_RUNTIME = "lib/libhsa-runtime64.so" }
 
 # Where `bigcherry patch-promote` puts a validated patch (MEN25): the production patch set it joins, and the production
 # source its promotion gates and rebase checks compose it over.
@@ -59,6 +62,7 @@ libr2 = "engines/radiance/components/libr2"
 moe-remote = "engines/radiance/components/moe-remote"
 ngram-helper = "engines/radiance/components/ngram-helper"
 bc-gfx12 = "engines/radiance/components/bc-gfx12"
+serving = "engines/radiance/components/serving"
 
 # RAM-only smoke test (MEN15): `bigcherry --engine radiance smoke-cpu --build <dir>` serves this tiny container on the
 # CPU kernel plugins (libavx, libref; --tp 1) with no GPU visible. `model` is relative to the model root (--model-root,

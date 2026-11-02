@@ -1,5 +1,15 @@
 # 0400_mmvf_forced_block framework validation
 
+## Summary
+
+Threads a forced block-size/accumulator-mode value down through appended, defaulted parameters from ggml_cuda_mul_mat_vec_f to its launcher, touching only the call chain a forced value actually travels (replace_all edits with asserted match counts).
+
+## Outcome
+
+Recorded state: `validated` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 Threads a forced MMVF block-size/accumulator-mode value down to the launcher
 via explicit, appended, defaulted parameters (`ggml_cuda_mul_mat_vec_f` ->
 `mul_mat_vec_f_cuda` -> `..._switch_ncols_dst` -> `launch_..._cuda`), rather

@@ -4,6 +4,12 @@ How the radiance engine is built, configured and measured through the same platf
 [PLATFORM_DESIGN.md](PLATFORM_DESIGN.md)). The measurement log is
 [engines/radiance/README.md](../../../../engines/radiance/README.md).
 
+**Serving start-up note (2026-11):** this page describes the pre-manifest
+configuration path. The [active serving-configuration work](../../../planning/active/run-serving-configuration/README.md)
+is moving to a strict schema/loader and a canonical manifest loaded by each
+process. Build and measurement instructions here are reference material;
+launcher flags, profiles and environment knobs are not the final serving API.
+
 ## What lives where
 
 | Piece | Location |

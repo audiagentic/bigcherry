@@ -1,5 +1,15 @@
 # rad0008_hc_upmix_rt_sweep
 
+## Summary
+
+Adds a runtime switch (`RAD_HC_UPMIX_RT`, values "128"/"256"/"384") at the PF2 up-mix launch call site inside `hc_pf2_launch` (vendor/radiance/libr4d/r4d_hc_bf16.hip, ~line 3167 as of the 1.9.0 pin).
+
+## Outcome
+
+Recorded state: `validated` ([patch.toml](patch.toml)); qualification and limitations are documented below.
+
+## Detail
+
 **Status:** validated
 **Plan item:** RAD17/RAD18
 

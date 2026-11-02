@@ -39,6 +39,7 @@ from bigcherry.campaign.smoke import RuntimeSmokeSpec  # noqa: E402
 from bigcherry.campaign import workers as campaign_workers  # noqa: E402
 from bigcherry.campaign.build import CampaignBuildError  # noqa: E402
 from bigcherry.campaign import build as campaign_build  # noqa: E402
+from bigcherry.core import engines  # noqa: E402
 from bigcherry.build.builds import BuildPlan, build_directory  # noqa: E402
 from bigcherry.source.identity import (  # noqa: E402
     SourceAttestation,
@@ -473,7 +474,7 @@ class ExecuteCampaignLaneTests(unittest.TestCase):
             self.assertEqual(platform.targets, ("gfx1100",))
             args = campaign_build.cmake_configure_args(
                 captured["build"], platform, root / "source", root / "build",
-            targets_option="AMDGPU_TARGETS")
+            targets_option="AMDGPU_TARGETS", rocm_paths=())
             self.assertIn("-DAMDGPU_TARGETS=gfx1100", args)
 
     def test_hip_and_vulkan_produce_different_build_plan_id(self):
@@ -958,6 +959,103 @@ class SmokeEnvironmentHelperTests(unittest.TestCase):
     def test_path_is_preserved(self):
         env = dict(smoke_environment_for_backend("vulkan", "0"))
         self.assertIn("PATH", env)
+
+
+class SelectedRocmSdkTests(unittest.TestCase):
+    """An engine that pins its ROCm lookups (engine.toml build.rocm-paths) builds against the selected SDK only: the
+    lane puts that SDK's paths into both the BuildPlan and the configure argv, and the SDK is part of build_plan_id."""
+
+    PINNED = (("RAD_HIP_RUNTIME", "lib/libamdhip64.so"), ("RAD_HSA_RUNTIME", "lib/libhsa-runtime64.so"))
+
+    @staticmethod
+    def _sdk(root: Path, version: str, *, without: str = "") -> Path:
+        for _, relative in SelectedRocmSdkTests.PINNED:
+            if relative != without:
+                (root / relative).parent.mkdir(parents=True, exist_ok=True)
+                (root / relative).write_bytes(b"")
+        (root / ".info").mkdir(parents=True, exist_ok=True)
+        (root / ".info" / "version").write_text(version + "\n", encoding="utf-8")
+        return root
+
+    def _run(self, sdk: Path):
+        real_load = engines.load
+
+        def pinned_layout(repo_root, engine):
+            return replace(real_load(repo_root, engine), rocm_paths=self.PINNED)
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            upstream, revision = _init_upstream(root)
+            harness = _Harness(root, upstream, revision)
+            _, fake_build, fake_smoke = harness.fake_workers()
+            captured: dict[str, object] = {}
+
+            def capturing_build_worker(**kwargs):
+                captured.update({"platform": kwargs["platform"], "build": kwargs["build"]})
+                return fake_build(**kwargs)
+
+            with (
+                patch.dict("os.environ", {"BC_ROCM_ROOT": str(sdk)}),
+                patch("bigcherry.campaign.lane.engines.load", side_effect=pinned_layout),
+                patch("bigcherry.campaign.lane.campaign_workers.make_generate_worker",
+                      side_effect=Re25ProvenanceLineageTests._fake_generate_worker()),
+                patch("bigcherry.campaign.lane.campaign_workers.make_build_worker", side_effect=capturing_build_worker),
+                patch("bigcherry.campaign.lane.campaign_workers.make_smoke_worker", side_effect=fake_smoke),
+            ):
+                plan = execute_campaign_lane(
+                    harness.spec(), cfg=harness.cfg, context=harness.context,
+                    store=harness.store, run_id="run1", allow_dirty_bigcherry=True,
+                ).build_plan
+                argv = campaign_build.cmake_configure_args(
+                    captured["build"], captured["platform"], root / "source", root / "build",
+                    targets_option="AMDGPU_TARGETS", rocm_paths=self.PINNED)
+            return plan, argv
+
+    def test_the_selected_sdk_reaches_the_build_plan_and_the_configure_argv(self):
+        with tempfile.TemporaryDirectory() as directory:
+            sdk = self._sdk(Path(directory) / "rocm-7.14", "7.14.0").resolve()
+            plan, argv = self._run(sdk)
+        options = dict(plan.cmake_options)
+        self.assertEqual(options["RAD_HIP_RUNTIME"], f"{sdk.as_posix()}/lib/libamdhip64.so")
+        self.assertEqual(options["RAD_HSA_RUNTIME"], f"{sdk.as_posix()}/lib/libhsa-runtime64.so")
+        self.assertIn(f"-DRAD_HIP_RUNTIME={sdk.as_posix()}/lib/libamdhip64.so", argv)
+        self.assertIn(f"-DRAD_HSA_RUNTIME={sdk.as_posix()}/lib/libhsa-runtime64.so", argv)
+        toolchain = dict(plan.toolchain_request)
+        self.assertEqual(toolchain["rocm_root"], sdk.as_posix())
+        self.assertEqual(toolchain["rocm_version"], "7.14.0")
+
+    def test_a_symlinked_root_is_resolved_to_the_install_it_names(self):
+        with tempfile.TemporaryDirectory() as directory:
+            sdk = self._sdk(Path(directory) / "rocm-7.2.4", "7.2.4").resolve()
+            link = Path(directory) / "rocm"
+            link.symlink_to(sdk)
+            plan, _ = self._run(link)
+        self.assertEqual(dict(plan.cmake_options)["RAD_HIP_RUNTIME"], f"{sdk.as_posix()}/lib/libamdhip64.so")
+
+    def test_two_sdks_never_share_a_build_plan_id(self):
+        with tempfile.TemporaryDirectory() as directory:
+            a, _ = self._run(self._sdk(Path(directory) / "rocm-7.2.4", "7.2.4"))
+            b, _ = self._run(self._sdk(Path(directory) / "rocm-7.14", "7.14.0"))
+        self.assertNotEqual(a.build_plan_id, b.build_plan_id)
+
+    def test_an_in_place_upgrade_at_the_same_root_changes_the_build_plan_id(self):
+        with tempfile.TemporaryDirectory() as directory:
+            sdk = Path(directory) / "rocm"
+            before, _ = self._run(self._sdk(sdk, "7.2.4"))
+            after, _ = self._run(self._sdk(sdk, "7.2.5"))
+        self.assertEqual(dict(before.cmake_options), dict(after.cmake_options))
+        self.assertNotEqual(before.build_plan_id, after.build_plan_id)
+
+    def test_an_sdk_missing_a_pinned_library_fails_before_any_build(self):
+        with tempfile.TemporaryDirectory() as directory:
+            sdk = self._sdk(Path(directory) / "rocm-7.14", "7.14.0", without="lib/libhsa-runtime64.so")
+            with self.assertRaisesRegex(CampaignBuildError, "lib/libhsa-runtime64.so"):
+                self._run(sdk)
+
+    def test_an_unselected_sdk_fails_closed_rather_than_using_opt_rocm(self):
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(CampaignBuildError, "not a directory"):
+                self._run(Path(directory) / "no-such-sdk")
 
 
 if __name__ == "__main__":

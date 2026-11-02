@@ -1,0 +1,700 @@
+{
+  "content_sha256": "83c1fafe8b6418431c43ba0e2c1b3e56416814d79ab0a5d4c4ce171707688ec5",
+  "facts": {
+    "gpus": [
+      {
+        "arch": "gfx1100",
+        "bdf": "0000:41:00.0",
+        "current_link_speed": "16.0 GT/s PCIe",
+        "current_link_width": 16,
+        "drm_render_minor": 128,
+        "gfx_target_version": 110000,
+        "hip_ordinal": 0,
+        "kfd_node": 1,
+        "max_link_speed": "16.0 GT/s PCIe",
+        "max_link_width": 16,
+        "numa_node": -1,
+        "simd_count": 192,
+        "vram_available_mib": 24496,
+        "vram_total_mib": 24560,
+        "vram_used_mib": 64
+      },
+      {
+        "arch": "gfx1100",
+        "bdf": "0000:42:00.0",
+        "current_link_speed": "16.0 GT/s PCIe",
+        "current_link_width": 16,
+        "drm_render_minor": 129,
+        "gfx_target_version": 110000,
+        "hip_ordinal": 1,
+        "kfd_node": 2,
+        "max_link_speed": "16.0 GT/s PCIe",
+        "max_link_width": 16,
+        "numa_node": -1,
+        "simd_count": 192,
+        "vram_available_mib": 24496,
+        "vram_total_mib": 24560,
+        "vram_used_mib": 64
+      },
+      {
+        "arch": "gfx1201",
+        "bdf": "0000:43:00.0",
+        "current_link_speed": "32.0 GT/s PCIe",
+        "current_link_width": 16,
+        "drm_render_minor": 130,
+        "gfx_target_version": 120001,
+        "hip_ordinal": 2,
+        "kfd_node": 3,
+        "max_link_speed": "32.0 GT/s PCIe",
+        "max_link_width": 16,
+        "numa_node": -1,
+        "simd_count": 128,
+        "vram_available_mib": 32560,
+        "vram_total_mib": 32624,
+        "vram_used_mib": 64
+      },
+      {
+        "arch": "gfx1030",
+        "bdf": "0000:44:00.0",
+        "current_link_speed": "16.0 GT/s PCIe",
+        "current_link_width": 16,
+        "drm_render_minor": 131,
+        "gfx_target_version": 100300,
+        "hip_ordinal": 3,
+        "kfd_node": 4,
+        "max_link_speed": "16.0 GT/s PCIe",
+        "max_link_width": 16,
+        "numa_node": -1,
+        "simd_count": 160,
+        "vram_available_mib": 16304,
+        "vram_total_mib": 16368,
+        "vram_used_mib": 64
+      }
+    ],
+    "host": {
+      "cpu_count": 20,
+      "mem_available_mib": 87890,
+      "mem_total_mib": 96000,
+      "shm_available_mib": 1582112,
+      "shm_total_mib": 3155826,
+      "swap_total_mib": 0
+    },
+    "source": "kfd+sysfs+proc+statvfs"
+  },
+  "hash_algorithm": "sha256",
+  "process_helpers": [
+    {
+      "arch": "gfx1100",
+      "bdf": "0000:41:00.0",
+      "budget_mib": 22528,
+      "config": {
+        "combine": true,
+        "combine_min_rows": 256,
+        "combine_threads": 8,
+        "count": 3,
+        "cpu": false,
+        "cpu_set_auto": true,
+        "engine_ranks": 1,
+        "index": 0,
+        "power_save": true,
+        "queue_warm": false
+      },
+      "formats": [
+        "w4nl64",
+        "fp8_e4m3_block"
+      ],
+      "hip_ordinal": 0,
+      "placement": "head",
+      "plugin_file": "libr3.so",
+      "provenance": {
+        "inputs": [
+          "layout.name",
+          "facts.gpus"
+        ],
+        "lifecycle": "startup-only",
+        "origin": "archs.toml + layouts.toml + KFD"
+      },
+      "rows_kernel": false,
+      "share": 1
+    },
+    {
+      "arch": "gfx1100",
+      "bdf": "0000:42:00.0",
+      "budget_mib": 22528,
+      "config": {
+        "combine": true,
+        "combine_min_rows": 256,
+        "combine_threads": 8,
+        "count": 3,
+        "cpu": false,
+        "cpu_set_auto": true,
+        "engine_ranks": 1,
+        "index": 1,
+        "power_save": true,
+        "queue_warm": false
+      },
+      "formats": [
+        "w4nl64",
+        "fp8_e4m3_block"
+      ],
+      "hip_ordinal": 1,
+      "placement": "head",
+      "plugin_file": "libr3.so",
+      "provenance": {
+        "inputs": [
+          "layout.name",
+          "facts.gpus"
+        ],
+        "lifecycle": "startup-only",
+        "origin": "archs.toml + layouts.toml + KFD"
+      },
+      "rows_kernel": false,
+      "share": 1
+    },
+    {
+      "arch": "gfx1030",
+      "bdf": "0000:44:00.0",
+      "budget_mib": 14336,
+      "config": {
+        "combine": true,
+        "combine_min_rows": 256,
+        "combine_threads": 8,
+        "count": 3,
+        "cpu": false,
+        "cpu_set_auto": true,
+        "engine_ranks": 1,
+        "index": 2,
+        "power_save": true,
+        "queue_warm": false
+      },
+      "formats": [
+        "w4nl64"
+      ],
+      "hip_ordinal": 3,
+      "placement": "tail",
+      "plugin_file": "libr2.so",
+      "provenance": {
+        "inputs": [
+          "layout.name",
+          "facts.gpus"
+        ],
+        "lifecycle": "startup-only",
+        "origin": "archs.toml + layouts.toml + KFD"
+      },
+      "rows_kernel": true,
+      "share": 0
+    }
+  ],
+  "provenance": {
+    "engine.checkpoint_interval": {
+      "class": "derived",
+      "confidence": "exact",
+      "inputs": [],
+      "lifecycle": "startup-only",
+      "origin": "schema-default",
+      "source": "launcher --checkpoint-interval 4096"
+    },
+    "engine.host_pool_mib": {
+      "class": "derived",
+      "confidence": "exact",
+      "inputs": [
+        "memory.host_pool_mib"
+      ],
+      "lifecycle": "startup-only",
+      "origin": "derived",
+      "source": "RSC01 memory/pool projection"
+    },
+    "engine.kernels": {
+      "class": "discovered",
+      "confidence": "exact",
+      "inputs": [
+        "layout.engine_card"
+      ],
+      "lifecycle": "startup-only",
+      "origin": "derived",
+      "source": "engines/radiance/archs.toml gfx1201 plugin; launcher ENGINE_KERNELS"
+    },
+    "engine.kv_cache_dtype": {
+      "class": "policy",
+      "confidence": "exact",
+      "inputs": [],
+      "lifecycle": "startup-only",
+      "origin": "schema-default",
+      "source": "launcher KV_DTYPE=fp8"
+    },
+    "engine.max_model_len": {
+      "class": "derived",
+      "confidence": "exact",
+      "inputs": [
+        "service.max_context"
+      ],
+      "lifecycle": "startup-only",
+      "origin": "derived",
+      "source": "RSC01 service/context projection"
+    },
+    "engine.max_num_batched_tokens": {
+      "class": "derived",
+      "confidence": "exact",
+      "inputs": [],
+      "lifecycle": "startup-only",
+      "origin": "schema-default",
+      "source": "launcher CHUNK=2048; derive geometry RSC03"
+    },
+    "engine.max_num_seqs": {
+      "class": "derived",
+      "confidence": "exact",
+      "inputs": [
+        "service.max_sessions"
+      ],
+      "lifecycle": "startup-only",
+      "origin": "derived",
+      "source": "RSC01 service/session projection"
+    },
+    "engine.model": {
+      "class": "policy",
+      "confidence": "exact",
+      "inputs": [
+        "engine.model=/models/flash-next.rad"
+      ],
+      "lifecycle": "startup-only",
+      "origin": "cli",
+      "source": "--set"
+    },
+    "engine.ngram_placement": {
+      "class": "policy",
+      "confidence": "exact",
+      "inputs": [],
+      "lifecycle": "startup-only",
+      "origin": "schema-default",
+      "source": "launcher NGRAM=ram"
+    },
+    "engine.num_speculative_tokens": {
+      "class": "derived",
+      "confidence": "exact",
+      "inputs": [],
+      "lifecycle": "startup-only",
+      "origin": "schema-default",
+      "source": "launcher --num-speculative-tokens 3; model MTP depth"
+    },
+    "engine.placement": {
+      "class": "policy",
+      "confidence": "exact",
+      "inputs": [],
+      "lifecycle": "startup-only",
+      "origin": "schema-default",
+      "source": "launcher --placement expert_tiered"
+    },
+    "engine.port": {
+      "class": "policy",
+      "confidence": "exact",
+      "inputs": [],
+      "lifecycle": "startup-only",
+      "origin": "schema-default",
+      "source": "launcher PORT=36080"
+    },
+    "engine.prefix_cache_mib": {
+      "class": "derived",
+      "confidence": "exact",
+      "inputs": [
+        "memory.host_kv_mib"
+      ],
+      "lifecycle": "startup-only",
+      "origin": "derived",
+      "source": "RSC01 memory/host KV projection"
+    },
+    "engine.prefix_resume": {
+      "class": "policy",
+      "confidence": "exact",
+      "inputs": [],
+      "lifecycle": "startup-only",
+      "origin": "schema-default",
+      "source": "launcher PREFIX_RESUME=nearest"
+    },
+    "engine.radiance_home": {
+      "class": "discovered",
+      "confidence": "exact",
+      "inputs": [
+        "engine.radiance_home=/opt/radiance/radiance_home"
+      ],
+      "lifecycle": "startup-only",
+      "origin": "cli",
+      "source": "--set"
+    },
+    "engine.rope_scaling": {
+      "class": "policy",
+      "confidence": "exact",
+      "inputs": [],
+      "lifecycle": "startup-only",
+      "origin": "schema-default",
+      "source": "launcher ROPE=none; model trained context"
+    },
+    "engine.tp": {
+      "class": "derived",
+      "confidence": "exact",
+      "inputs": [],
+      "lifecycle": "startup-only",
+      "origin": "schema-default",
+      "source": "launcher --tp 1 (one engine card)"
+    },
+    "handoff.gemv_large_rows": {
+      "class": "tuned",
+      "confidence": "exact",
+      "inputs": [],
+      "lifecycle": "startup-only",
+      "origin": "schema-default",
+      "source": "launcher COMMON R3_MOE_WORKER_GEMV_LARGE_ROWS=32"
+    },
+    "handoff.heat": {
+      "class": "policy",
+      "confidence": "exact",
+      "inputs": [
+        "handoff.heat=/models/flash-next.heat"
+      ],
+      "lifecycle": "startup-only",
+      "origin": "cli",
+      "source": "--set"
+    },
+    "handoff.histogram": {
+      "class": "policy",
+      "confidence": "exact",
+      "inputs": [
+        "handoff.histogram=/models/flash-next.hist"
+      ],
+      "lifecycle": "startup-only",
+      "origin": "cli",
+      "source": "--set"
+    },
+    "handoff.histogram_period_s": {
+      "class": "policy",
+      "confidence": "exact",
+      "inputs": [],
+      "lifecycle": "live",
+      "origin": "schema-default",
+      "source": "launcher RECORD_PERIOD=60; RHP02"
+    },
+    "handoff.max_rows": {
+      "class": "derived",
+      "confidence": "exact",
+      "inputs": [],
+      "lifecycle": "startup-only",
+      "origin": "schema-default",
+      "source": "launcher COMMON R3_MOE_WORKER_MAX_ROWS=4096"
+    },
+    "handoff.moe_down_tile": {
+      "class": "policy",
+      "confidence": "exact",
+      "inputs": [],
+      "lifecycle": "startup-only",
+      "origin": "schema-default",
+      "source": "launcher COMMON R3_MOE_WORKER_MOE_DOWN_TILE=1"
+    },
+    "handoff.placement": {
+      "class": "derived",
+      "confidence": "exact",
+      "inputs": [
+        "layout.name"
+      ],
+      "lifecycle": "step-boundary",
+      "origin": "discovered",
+      "source": "engines/radiance/layouts.toml flashnext-4gpu"
+    },
+    "handoff.shm": {
+      "class": "policy",
+      "confidence": "exact",
+      "inputs": [],
+      "lifecycle": "startup-only",
+      "origin": "schema-default",
+      "source": "launcher COMMON R3_MOE_WORKER_SHM; per-instance identity RSC02"
+    },
+    "handoff.skip_owned": {
+      "class": "policy",
+      "confidence": "exact",
+      "inputs": [],
+      "lifecycle": "startup-only",
+      "origin": "schema-default",
+      "source": "launcher COMMON R3_MOE_WORKER_SKIP_OWNED=1"
+    },
+    "handoff.small_rows": {
+      "class": "tuned",
+      "confidence": "exact",
+      "inputs": [],
+      "lifecycle": "startup-only",
+      "origin": "schema-default",
+      "source": "launcher COMMON R3_MOE_WORKER_SMALL_ROWS=8"
+    },
+    "helper.combine": {
+      "class": "policy",
+      "confidence": "exact",
+      "inputs": [
+        "layout.name"
+      ],
+      "lifecycle": "startup-only",
+      "origin": "discovered",
+      "source": "engines/radiance/layouts.toml flashnext-4gpu"
+    },
+    "helper.combine_min_rows": {
+      "class": "tuned",
+      "confidence": "exact",
+      "inputs": [],
+      "lifecycle": "startup-only",
+      "origin": "schema-default",
+      "source": "WorkerConfig combine_min_rows=256"
+    },
+    "helper.combine_threads": {
+      "class": "tuned",
+      "confidence": "exact",
+      "inputs": [],
+      "lifecycle": "startup-only",
+      "origin": "schema-default",
+      "source": "WorkerConfig combine_threads=8 (also capped by discovered CPUs)"
+    },
+    "helper.count": {
+      "class": "discovered",
+      "confidence": "exact",
+      "inputs": [
+        "layout.helper_cards"
+      ],
+      "lifecycle": "startup-only",
+      "origin": "discovered",
+      "source": "RSC05 KFD selection"
+    },
+    "helper.cpu": {
+      "class": "policy",
+      "confidence": "exact",
+      "inputs": [],
+      "lifecycle": "startup-only",
+      "origin": "schema-default",
+      "source": "WorkerConfig cpu=false"
+    },
+    "helper.cpu_set_auto": {
+      "class": "policy",
+      "confidence": "exact",
+      "inputs": [],
+      "lifecycle": "startup-only",
+      "origin": "schema-default",
+      "source": "WorkerConfig cpu_set_auto=true (auto vs all)"
+    },
+    "helper.engine_ranks": {
+      "class": "derived",
+      "confidence": "exact",
+      "inputs": [
+        "layout.engine_card"
+      ],
+      "lifecycle": "startup-only",
+      "origin": "discovered",
+      "source": "launcher --tp 1 and layout env"
+    },
+    "helper.index": {
+      "class": "derived",
+      "confidence": "exact",
+      "inputs": [],
+      "lifecycle": "startup-only",
+      "origin": "schema-default",
+      "source": "WorkerConfig helper_index=0; RSC06 derives process ordinal"
+    },
+    "helper.power_save": {
+      "class": "policy",
+      "confidence": "exact",
+      "inputs": [],
+      "lifecycle": "startup-only",
+      "origin": "schema-default",
+      "source": "WorkerConfig power_save=true"
+    },
+    "helper.queue_warm": {
+      "class": "policy",
+      "confidence": "exact",
+      "inputs": [],
+      "lifecycle": "startup-only",
+      "origin": "schema-default",
+      "source": "WorkerConfig queue_warm=false"
+    },
+    "layout.engine_card": {
+      "class": "discovered",
+      "confidence": "exact",
+      "inputs": [
+        "layout.name",
+        "facts.gpus"
+      ],
+      "lifecycle": "startup-only",
+      "origin": "discovered",
+      "source": "KFD and PCI inventory, flashnext-4gpu"
+    },
+    "layout.helper_cards": {
+      "class": "discovered",
+      "confidence": "exact",
+      "inputs": [
+        "layout.name",
+        "facts.gpus"
+      ],
+      "lifecycle": "step-boundary",
+      "origin": "discovered",
+      "source": "KFD and PCI inventory, flashnext-4gpu"
+    },
+    "layout.name": {
+      "class": "policy",
+      "confidence": "exact",
+      "inputs": [],
+      "lifecycle": "startup-only",
+      "origin": "schema-default",
+      "source": "launcher LAYOUT default; named layouts in engines/radiance/layouts.toml"
+    },
+    "memory.helper_budgets_mib": {
+      "class": "derived",
+      "confidence": "exact",
+      "inputs": [
+        "layout.name",
+        "facts.gpus"
+      ],
+      "lifecycle": "step-boundary",
+      "origin": "discovered",
+      "source": "engines/radiance/layouts.toml flashnext-4gpu (interim; RSC03)"
+    },
+    "memory.host_kv_mib": {
+      "class": "derived",
+      "confidence": "exact",
+      "inputs": [],
+      "lifecycle": "startup-only",
+      "origin": "schema-default",
+      "source": "launcher HOST_KV_MIB=12288 measured interim; derive RSC03"
+    },
+    "memory.host_pool_mib": {
+      "class": "derived",
+      "confidence": "exact",
+      "inputs": [],
+      "lifecycle": "startup-only",
+      "origin": "schema-default",
+      "source": "launcher HOST_POOL_MIB=9216 measured interim; derive RSC03"
+    },
+    "memory.tail_budget_mib": {
+      "class": "derived",
+      "confidence": "exact",
+      "inputs": [
+        "memory.helper_budgets_mib"
+      ],
+      "lifecycle": "step-boundary",
+      "origin": "derived",
+      "source": "final helper tail budget (RSC03 interim)"
+    },
+    "schema_version": {
+      "class": "policy",
+      "confidence": "exact",
+      "inputs": [],
+      "lifecycle": "startup-only",
+      "origin": "schema-default",
+      "source": "RSC01: first versioned serving contract"
+    },
+    "service.max_context": {
+      "class": "policy",
+      "confidence": "exact",
+      "inputs": [],
+      "lifecycle": "startup-only",
+      "origin": "schema-default",
+      "source": "launcher MAX_LEN=262144; trained model context"
+    },
+    "service.max_sessions": {
+      "class": "policy",
+      "confidence": "exact",
+      "inputs": [],
+      "lifecycle": "startup-only",
+      "origin": "schema-default",
+      "source": "launcher SEQS=8; model and session policy"
+    },
+    "service.objective": {
+      "class": "policy",
+      "confidence": "exact",
+      "inputs": [],
+      "lifecycle": "startup-only",
+      "origin": "schema-default",
+      "source": "RSC01: neutral policy for existing mixed prefill/decode launcher"
+    },
+    "service.quality": {
+      "class": "policy",
+      "confidence": "exact",
+      "inputs": [],
+      "lifecycle": "startup-only",
+      "origin": "schema-default",
+      "source": "launcher: baseline fp8 KV policy"
+    },
+    "service.retention": {
+      "class": "policy",
+      "confidence": "exact",
+      "inputs": [],
+      "lifecycle": "live",
+      "origin": "schema-default",
+      "source": "launcher: finished-session prefix cache retention"
+    }
+  },
+  "schema_version": 1,
+  "values": {
+    "engine": {
+      "checkpoint_interval": 4096,
+      "host_pool_mib": 9216,
+      "kernels": "libr4d,libr3moe,libref",
+      "kv_cache_dtype": "fp8",
+      "max_model_len": 262144,
+      "max_num_batched_tokens": 2048,
+      "max_num_seqs": 8,
+      "model": "/models/flash-next.rad",
+      "ngram_placement": "ram",
+      "num_speculative_tokens": 3,
+      "placement": "expert_tiered",
+      "port": 36080,
+      "prefix_cache_mib": 12288,
+      "prefix_resume": "nearest",
+      "radiance_home": "/opt/radiance/radiance_home",
+      "rope_scaling": "none",
+      "tp": 1
+    },
+    "handoff": {
+      "gemv_large_rows": 32,
+      "heat": "/models/flash-next.heat",
+      "histogram": "/models/flash-next.hist",
+      "histogram_period_s": 60,
+      "max_rows": 4096,
+      "moe_down_tile": true,
+      "placement": "tail",
+      "shm": "/r3-moe-helper",
+      "skip_owned": true,
+      "small_rows": 8
+    },
+    "helper": {
+      "combine": true,
+      "combine_min_rows": 256,
+      "combine_threads": 8,
+      "count": 3,
+      "cpu": false,
+      "cpu_set_auto": true,
+      "engine_ranks": 1,
+      "index": 0,
+      "power_save": true,
+      "queue_warm": false
+    },
+    "layout": {
+      "engine_card": "0000:43:00.0",
+      "helper_cards": [
+        "0000:41:00.0",
+        "0000:42:00.0",
+        "0000:44:00.0"
+      ],
+      "name": "flashnext-4gpu"
+    },
+    "memory": {
+      "helper_budgets_mib": [
+        22528,
+        22528,
+        14336
+      ],
+      "host_kv_mib": 12288,
+      "host_pool_mib": 9216,
+      "tail_budget_mib": 14336
+    },
+    "schema_version": 1,
+    "service": {
+      "max_context": 262144,
+      "max_sessions": 8,
+      "objective": "balanced",
+      "quality": "baseline",
+      "retention": "keep"
+    }
+  }
+}

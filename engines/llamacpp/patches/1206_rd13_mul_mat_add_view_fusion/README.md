@@ -1,5 +1,15 @@
 # RD13: mul_mat + RESHAPE + add fusion
 
+## Summary
+
+Extends the existing mul_mat+add fusion in ggml_cuda_try_fuse to accept one RESHAPE or qualified zero-offset contiguous VIEW node between the matmul and the add (using ggml_can_fuse_subgraph, verifying the view's src[0] is the matmul), instead of only matching an add directly after the matmul.
+
+## Outcome
+
+Recorded state: `untested` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 ## Current package status (2026-10-09)
 
 > **2026-10-12 b11552 safety addendum (BCOP147):** Equal byte count and contiguous VIEW/RESHAPE are insufficient for `ggml_cuda_mul_mat_vec_f/q` destination indexing. The 1206 matcher checks ADD-operand shapes but not `mm_node` versus fused ADD `dst` geometry; both kernels assert no-IDs `dst->ne[1]==1` and derive row/stride indexing from `dst`. Treat shape-changing candidates as unqualified pending PRBE12's graph census and bounded negative fixtures. No GPU failure or performance change has been measured; patch remains default-off/untested.

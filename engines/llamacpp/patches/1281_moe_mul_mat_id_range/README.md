@@ -1,5 +1,15 @@
 # 1281_moe_mul_mat_id_range
 
+## Summary
+
+Promotion record (QFP18 lightweight evidence-reuse tier, pin b11402 / d89651a7). Mechanism is in SUMMARY.md.
+
+## Outcome
+
+Recorded state: `validated` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 Promotion record (QFP18 lightweight evidence-reuse tier, pin b11402 / d89651a7). Mechanism is in SUMMARY.md. The
 patch is a neutral enabler: it adds a variant of MUL_MAT_ID whose weight tensor holds only the experts
 [id_base, id_base + n) and which yields an exact zero for every other selected expert. Nothing builds that variant

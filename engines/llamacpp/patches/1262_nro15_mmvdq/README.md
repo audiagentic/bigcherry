@@ -1,5 +1,15 @@
 # 1262 (NRO15 / PNRO15): dequant-float matvec (mmvdq) for Q4_K/Q5_K/Q6_K
 
+## Summary
+
+Adds a dequant-float matvec (mmvdq) for Q4_K/Q5_K/Q6_K single-token decode: weights are dequantized to float and dotted against the F32 activation, skipping the Q8_1 activation quantize that mmvq needs. Default on for RDNA3.5 only; `GGML_CUDA_DQ_MMV=1` enables it elsewhere (`GGML_CUDA_DQ_Q6K`, `GGML_CUDA_DQ_ROWS` refine it).
+
+## Outcome
+
+Recorded state: `rejected` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 ## Scope
 
 Ports nasone commit `670512936d83d12dd41d27c8b30e4bb416a47f31` (AMD). For

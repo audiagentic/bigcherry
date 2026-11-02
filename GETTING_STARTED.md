@@ -1,9 +1,10 @@
-# Getting started (agents / new contexts)
+# Getting started
 
-Task-specific context (which plan item, which patch, which experiment) lives in
-`docs/planning/`. This file is the opposite: how to build, test, and run
-things in this repo regardless of what task brought you here. See `README.md`
-for the architecture (src/patches overlay model, MMQ catalog design).
+Build, test and validate BigCherry changes across its two supported engines.
+The [root README](README.md) introduces the project; the
+[engine guides](docs/reference/README.md#engines) explain the individual
+patches and extensions. Plans and live project decisions are under
+`docs/planning/`.
 
 For exploratory qualification before formal planning, follow
 [`docs/reference/experiments/EXPERIMENTAL_WORKFLOW.md`](docs/reference/experiments/EXPERIMENTAL_WORKFLOW.md).

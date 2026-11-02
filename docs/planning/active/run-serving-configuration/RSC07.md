@@ -62,5 +62,11 @@ A patch on upstream is a carried cost that we accept, so that no command-line co
 
 ## Ledger-events
 
+
+
 - chg_20261102_035356_serving-start-up-plan-one-str_4985
 - 2026-11-02T03:54:15.306393+00:00 (updated-by): Updated: section:ledger-events
+- chg_20261102_062607_the-engine-can-now-start-from_6939
+- 2026-11-02T06:26:11.482128+00:00 (updated-by): Updated: section:ledger-events
+- chg_20261102_083154_fixed-the-engines---manifest_6959
+- 2026-11-02T08:31:58.528730+00:00 (updated-by): Updated: section:ledger-events

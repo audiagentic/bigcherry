@@ -1,5 +1,15 @@
 # 1315_mtp_draft_trace
 
+## Summary
+
+Promotion record (QFP18 lightweight tier, pin b11474, dev 2026-10-08).
+
+## Outcome
+
+Recorded state: `validated` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 ## Promotion record
 
 Promotion record (QFP18 lightweight tier, pin b11474, dev 2026-10-08).
@@ -12,5 +22,3 @@ Promotion record (QFP18 lightweight tier, pin b11474, dev 2026-10-08).
 - This patch's observed activation signal: **92 DRAFT_TRACE**.
 
 The diagnostic is dormant at its default settings and makes no performance claim.
-
-

@@ -1,5 +1,15 @@
 # 1200_rd19_single_gpu_meta_bypass: skip the Meta device wrapper with a single GPU (RD19)
 
+## Summary
+
+Uses the plain device instead of the Meta wrapper in llama_prepare_model_devices when n_devices == 1 (both the explicit-device-list and default-selection branches), leaving the multi-GPU Meta path untouched.
+
+## Outcome
+
+Recorded state: `validated` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 Patch id: `1200_rd19_single_gpu_meta_bypass`. Plan item: `RD19`. The existing `RD19-SINGLE-GPU-META-BYPASS` Experiment Contract is now bound in `patch.toml`, with the static required-capability adapter in `validation.toml`. This closes the missing-definition lint failure; it does not backfill historical evidence.
 
 ## Scope

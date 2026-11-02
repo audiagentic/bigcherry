@@ -1,5 +1,15 @@
 # 0500_mmf_forced_nwarps framework validation
 
+## Summary
+
+Same explicit-appended-defaulted-parameter shape as HI07, applied to MMF's three dispatchers (which share an identical signature/call tail); shared-memory sizes are recomputed from the forced nwarps immediately after the scan so allocation stays correct.
+
+## Outcome
+
+Recorded state: `validated` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 Same shape as 0400 (HI07): a forced MMF nwarps value travels as an explicit,
 appended, defaulted parameter through MMF's three dispatchers, which share
 an identical signature/call tail, so the native path stays byte-identical to
