@@ -65,5 +65,13 @@ First step: inventory the stream-sensitive settings (lane rows and slots, ring s
 
 Live-placement roadmap stage 2 with RHP09: one calibration schema and implementation. RHP09 owns cost-model validity; RCS10 owns default-on start-up integration with opt-out, topology-keyed tune cache, and derived lane/kernel settings. RAD12 lane sizing folds in here: publish request actual_rows before its sequence; pre-queued decode kernels bound work by actual_rows, capacity only controls allocation and launch geometry; no extra polling loop or armed queue (RAD20 power findings). Acceptance: a 4-row request in a 24-row lane executes within ~3% of the 4-row lane helper execution time.
 
-
 Owner direction 2026-11-01: resource budgets are tunables too. Derived settings cover memory as well as kernels and lanes - the engine host pool (sized after helper ownership is known; today a hand-picked 22,528 MiB that pins ~16 GiB unused), helper VRAM budgets, the host KV tier, checkpoint slots and n-gram placement, all from discovered RAM/VRAM and the chosen layout. The inventory of remaining literals is in patching-radiance-heat-placement/README.md ("Derived, not hand-picked"); stage 2 is done when it is empty for the default launch path. Needs a managed radiance patch for an automatic host pool sized after ownership is published.
+
+## Ledger-events
+
+- chg_20261102_002943_planning-every-resource-budge_5643
+
+## Change Log
+
+- 2026-11-02T00:29:49.283929+00:00 (updated-by): Updated: section:ledger-events
+

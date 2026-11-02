@@ -229,15 +229,15 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
 
     r3::moe_shm::LayoutShape shape{};
     Layout lay{};
-    if (!segment_shape(model, r3::moe_shm::kLegacySlots, &shape, &lay)) return 1;
+    if (!segment_shape(model, 1, &shape, &lay)) return 1;
     void* map = mmap(nullptr, lay.bytes, PROT_READ | PROT_WRITE,
                      MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
     if (map == MAP_FAILED) {
         std::fprintf(stderr, "r3_moe_worker: --compare mmap: %s\n", std::strerror(errno));
         return 1;
     }
-    if (!init(map, model.layers, shape, r3::moe_shm::kLegacySlots)) return 1;
-    publish_owned(map, owned, 0);
+    if (!init(map, model.layers, shape, 1)) return 1;
+    if (!publish_owned(map, owned, 0)) return 1;
     Header* h = static_cast<Header*>(map);
     h->helper_count = 1;
     std::memcpy(layer_slots(map, layer), runtime_slot.data(), runtime_slot.size() * sizeof(int32_t));

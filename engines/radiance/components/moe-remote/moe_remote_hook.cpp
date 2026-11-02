@@ -208,11 +208,29 @@ void burst_transition(int active) {
     }
 }
 
+/* The canonical generation has one owner byte per model-global expert. */
 int owner_query(int layer, int expert) {
     if (!g.hdr || layer < 0 || expert < 0) return 0;
-    for (uint32_t h = 0; h < g.hdr->helper_count && h < kMaxHelpers; ++h)
-        if (owns(g.map, (uint32_t)layer, (uint32_t)expert, h)) return 1;
-    return 0;
+    const uint32_t slot = placement_control(g.map)->active_slot;
+    return owner_at(g.map, slot, (uint32_t)layer, (uint32_t)expert) < g.hdr->helper_count;
+}
+
+/* Preserve the v22 per-helper GPU bitset format until slice D installs epoch buffers.
+ * All bitsets are derived from the active canonical generation, never a second owner source. */
+std::vector<uint8_t> derive_device_owners() {
+    const Header* h = g.hdr;
+    const uint32_t stride = device_owner_slot_bytes(h->expert_count);
+    std::vector<uint8_t> bits((size_t)h->slot_count * stride, 0);
+    const uint32_t gen = placement_control(g.map)->active_slot;
+    for (uint32_t l = 0; l < h->layer_count; ++l) {
+        for (uint32_t e = 0; e < h->expert_count; ++e) {
+            const uint8_t owner = owner_at(g.map, gen, l, e);
+            if (owner >= h->helper_count) continue;
+            const size_t bit = (size_t)l * h->expert_count + e;
+            bits[(size_t)owner * stride + (bit >> 3)] |= (uint8_t)(1u << (bit & 7u));
+        }
+    }
+    return bits;
 }
 
 void register_mailbox() {
@@ -303,9 +321,14 @@ void register_mailbox() {
     (void)::setenv("R3_MOE_REMOTE_MIN_ROWS", "0", 0);
     const std::string mr = std::to_string((long long)max_rows());
     (void)::setenv("R3_MOE_REMOTE_MAX_ROWS", mr.c_str(), 0);
+    uint32_t owned = 0;
+    const uint32_t active = placement_control(g.map)->active_slot;
+    for (uint32_t l = 0; l < g.hdr->layer_count; ++l)
+        for (uint32_t e = 0; e < g.hdr->expert_count; ++e)
+            owned += owner_at(g.map, active, l, e) < g.hdr->helper_count;
     std::fprintf(stderr,
         "libr3: R3_MOE_WORKER GPU mailbox ready, %u owned experts, decode rows <= %lld\n",
-        g.hdr->owned_count, (long long)max_rows());
+        owned, (long long)max_rows());
     if (poison_env()) std::fprintf(stderr, "libr3: R3_MOE_WORKER poison\n");
     if (shadow_env()) std::fprintf(stderr, "libr3: R3_MOE_WORKER_SHADOW enabled\n");
     if (mask_only_env()) std::fprintf(stderr, "libr3: R3_MOE_WORKER_MASK_ONLY enabled\n");
@@ -455,10 +478,16 @@ extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevic
                      helpers, world_size);
         return RAD_E_STATE;
     }
-    if (!hip_ok(hipMalloc(reinterpret_cast<void**>(&s.owner), (size_t)g.hdr->slot_count * g.hdr->owner_slot_bytes),
+    const std::vector<uint8_t> owner_bitmap = derive_device_owners();
+    /* Bootstrap digest belongs to the engine; the live protocol has no transaction in slice A. */
+    const uint32_t active_slot = placement_control(g.map)->active_slot;
+    const uint64_t digest = generation_digest(g.map, active_slot);
+    generation_header(g.map, active_slot)->digest = digest;
+    placement_control(g.map)->active_digest = digest;
+    if (!hip_ok(hipMalloc(reinterpret_cast<void**>(&s.owner), owner_bitmap.size()),
                 "hipMalloc ownership bitmap"))
         return RAD_E_NOMEM;
-    if (!hip_ok(hipMemcpy(s.owner, owner_bits(g.map, 0), (size_t)g.hdr->slot_count * g.hdr->owner_slot_bytes,
+    if (!hip_ok(hipMemcpy(s.owner, owner_bitmap.data(), owner_bitmap.size(),
                           hipMemcpyHostToDevice), "upload ownership bitmap")) {
         (void)hipFree(s.owner);
         s.owner = nullptr;

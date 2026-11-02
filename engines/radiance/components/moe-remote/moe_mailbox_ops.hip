@@ -183,7 +183,7 @@ __global__ void mailbox_publish_kernel(
     }
     for (uint32_t k = 0; k < helpers; ++k) {
         const uint32_t slot = step_slot(k, rank, helpers);
-        const uint8_t* own = owner + (size_t)k * h->owner_slot_bytes;
+        const uint8_t* own = owner + (size_t)k * device_owner_slot_bytes(h->expert_count);
         if (threadIdx.x == 0) nr = 0;
         __syncthreads();
         Route* route = reinterpret_cast<Route*>(base + h->route_offset[slot]);
@@ -252,6 +252,11 @@ __global__ void mailbox_publish_kernel(
         Request* q = ring + lane * kLaneSlots + ((seq - 1u) % kLaneSlots);
         if (threadIdx.x == 0) {
             q->completion_sequence = 0;
+            q->completion_epoch = 0;
+            q->completion_slot = 0;
+            q->reserved_tail = 0;
+            q->generation_slot = 0;   /* slice A: static generation, no live switch */
+            q->placement_epoch = 1;
             q->status = 0;
             q->layer = layer;
             q->rank = slot;
