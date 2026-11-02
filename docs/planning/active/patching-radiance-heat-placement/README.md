@@ -39,6 +39,31 @@ Heat recording in pinned host memory (#500/#502), drift watch (#501), and heat-o
 
 Live swap, not restart. Calibration default-on with opt-out. **Stage 1 first**, using current capacity/heat-order costs and proving no degradation before calibration. Layout-agnostic decisions, with no device architecture, ordinal, count or budget hard-coded. Returning to a known layout must pass RHP12 or restore known-good settings. Same-expert execution should be bit-identical; compare KLD when execution path changes.
 
+## Derived, not hand-picked (owner direction 2026-11-01)
+
+Every resource budget and tunable is part of dynamic topology execution: derived from the discovered environment (RAM,
+VRAM, cards, links) and the chosen layout, and re-derived when either changes, through the same discovery/calibration
+path as kernel and helper tuning (stage 2: RHP09 + RCS10) and, at runtime, the single host-RAM/VRAM budget of RHP13.
+A literal budget in a launcher or layout is a defect to remove. Found the hard way: the engine's pinned host pool was a
+hand-picked 22,528 MiB (an XTX helper VRAM figure reused in #392) after the helpers came to own 24,571 of 24,576 experts;
+it pinned ~16 GiB it never used while the host ran out of RAM, so no host KV tier was possible, finished sessions held
+VRAM, the KV cache's expert loan collapsed and prefill halved on a long-running server (RHP10).
+
+| Literal today | Where | Derived from |
+| --- | --- | --- |
+| host pool 22,528 MiB | launcher `HOST_POOL_MIB` | engine-needed expert units once helper ownership is known + embedding + margin; resized with ownership (RHP13) |
+| helper budgets 22,528 / 14,336 MiB | `layouts.toml` `budget-mib` | discovered VRAM minus runtime reserves per card (RHP09) |
+| host KV tier (off) | engine `--prefix-cache-mib` | host RAM left after fixed consumers, by policy (RHP13) |
+| n-gram table in RAM (47.7 GiB) | launcher `NGRAM` | RAM budget against the drafter's measured value |
+| checkpoint slots (5.9 GiB) | engine auto | sessions x context inside the RAM budget |
+| chunk 2,048, checkpoint interval 4,096 | launcher | model chunk geometry + calibrated prefill cost (RCS10) |
+| small lane 8, GEMV large rows 32, max rows 4,096 | launcher | sessions x (1 + draft depth) and calibrated crossovers (RCS10) |
+| sessions 8, context 262,144 | launcher | serving profile, checked against the memory budget |
+| speculative tokens 3, heat record period 60 s | launcher | calibration / policy |
+
+Stage 2 is complete only when this table is empty for the default launch path; every derived value is recorded with the
+layout's RHP12 baseline so returning to a layout reproduces it.
+
 ## Policy boundaries
 
 Deterministic mode keeps placement fixed. Score per **(model-global layer, model-global expert)** with rank/phase/coverage provenance; protected experts follow the runtime slot map. Keep scoring off the critical path. No SQLite/Prometheus-per-expert or raw prompts in persisted heat; bounded aggregates and epoch-journal snapshots suffice. Remote ownership is not a local Radiance tier: readiness, publication and retirement are coordinated across processes.
