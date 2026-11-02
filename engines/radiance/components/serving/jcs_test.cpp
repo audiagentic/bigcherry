@@ -74,6 +74,42 @@ int main() {
     check(refusal(Json(std::string("\xc0\xaf", 2))).find("not valid UTF-8") != std::string::npos, "overlong refused");
     check(refusal(Json::parse(R"({"a/b":{"c~d":1.5}})")).find("/a~1b/c~0d:") == 0, "pointer escaping in refusals");
 
+    // U+2028 and U+2029 are left unescaped (RFC 8785 escapes only what JSON requires).
+    check(canon(Json("\xe2\x80\xa8\xe2\x80\xa9")) == "\"\xe2\x80\xa8\xe2\x80\xa9\"", "U+2028/U+2029 unescaped");
+    // More invalid UTF-8: truncated multibyte, a 4-byte overlong, a code point above U+10FFFF, in a member name too.
+    check(refusal(Json(std::string("\xe2\x82", 2))).find("not valid UTF-8") != std::string::npos, "truncated refused");
+    check(refusal(Json(std::string("\xf0\x82\x82\xac", 4))).find("not valid UTF-8") != std::string::npos,
+          "4-byte overlong refused");
+    check(refusal(Json(std::string("\xf4\x90\x80\x80", 4))).find("not valid UTF-8") != std::string::npos,
+          "above U+10FFFF refused");
+    {
+        Json bad_name = Json::object();
+        bad_name[std::string("k\xc3", 2)] = 1;
+        check(refusal(bad_name).find("member name is not valid UTF-8") != std::string::npos, "invalid member name refused");
+    }
+    // An unsigned value above INT64_MAX (and so above 2^53 - 1) is refused, not wrapped.
+    check(refusal(Json(uint64_t(9223372036854775813ull))).find("integer outside") != std::string::npos,
+          "unsigned above INT64_MAX refused");
+    // The bare token -0 parses as the integer 0 and canonicalizes to 0, consistent with RFC 8785 (ECMAScript renders
+    // -0 as "0"). Refusing the -0 spelling would be the token-aware v1 reader's job, and only if the spec required it.
+    check(Json::parse("-0").is_number_integer() && canon(Json::parse("-0")) == "0", "-0 canonicalizes to 0");
+    // content_digest: absent is fine, a string is replaced, any other type is refused naming the member.
+    {
+        Json m = Json::parse(R"({"metadata":{"x":1},"spec":{}})");
+        std::string d, why;
+        check(bc::serving::manifest_content_digest(m, &d, &why), "absent content_digest digests: " + why);
+        m["metadata"]["content_digest"] = "sha256:anything";
+        std::string d2;
+        check(bc::serving::manifest_content_digest(m, &d2, &why) && d2 == d, "a string content_digest is excluded");
+        for (const Json& wrong : {Json(nullptr), Json(5), Json::object(), Json::array()}) {
+            m["metadata"]["content_digest"] = wrong;
+            why.clear();
+            check(!bc::serving::manifest_content_digest(m, &d2, &why) &&
+                      why == "/metadata/content_digest: must be a string when present",
+                  "content_digest of type " + std::string(wrong.type_name()) + " refused: " + why);
+        }
+    }
+
     // The committed examples: their recorded content_digest is the JCS SHA-256 without that member.
     for (const char* name : {"example.flashnext-4gpu.json", "example.lab-experiment.json"}) {
         const Json m = read_json(std::string(BC_CONTRACT_DIR) + "/" + name);

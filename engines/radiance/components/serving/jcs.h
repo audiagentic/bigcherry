@@ -11,8 +11,9 @@ namespace bc::serving {
  * JSON Pointer and the reason. */
 bool jcs_canonicalize(const nlohmann::json& value, std::string* out, std::string* why);
 
-/* "sha256:<64 hex>" over the JCS bytes of `manifest` with metadata.content_digest removed (spec §8). False, with `why`,
- * when the document cannot be canonicalized. */
+/* "sha256:<64 hex>" over the JCS bytes of `manifest` with metadata.content_digest removed (spec §8). The member may be
+ * absent (a producer digests before inserting it); present, it must be a string. Its format is the reader's check.
+ * False, with `why`, when the document cannot be canonicalized or the member has another type. */
 bool manifest_content_digest(const nlohmann::json& manifest, std::string* digest, std::string* why);
 
 }  // namespace bc::serving

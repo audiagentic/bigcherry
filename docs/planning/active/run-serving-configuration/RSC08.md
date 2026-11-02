@@ -65,6 +65,13 @@ Cutover criteria (GPT review §F):
 - Invalid, old-version or partly migrated manifests always fail before any GPU work.
 - The release packages exactly one supported schema and its matching binaries.
 
+
+Slice 2 (shared strict reader) gates. Each is a required negative test, each failing with its stated code before any configuration is applied:
+- Duplicate JSON members are refused at parse time with BC_CFG_DUPLICATE_FIELD (RAD_E_DUPLICATE) and the holding object's pointer. That includes escape-equivalent names that collide after decoding (e.g. "a" and "a"), duplicates nested and inside arrays, and not same-named members of sibling objects. A document whose only fault is a duplicate reports the duplicate, never a digest mismatch.
+- metadata.content_digest of the wrong type (not a string), or of the wrong format (not exactly `sha256:` followed by 64 lowercase hex digits), is refused with BC_CFG_DIGEST_MISMATCH.
+- A correctly re-hashed but semantically invalid manifest (owner map, memory plan, role or GPU references) fails with its semantic code, not a digest error.
+- The input size limit and the UTF-8 checks are enforced before the document is accepted: oversize input, and invalid UTF-8 anywhere including member names, fail with BC_CFG_INVALID_FORMAT.
+
 ## Notes
 
 Feeds: RSC01, RSC02, RSC03, RSC06, RSC07.
@@ -85,3 +92,4 @@ Slice 2 (shared strict reader) requirement, from the lead's #530 review (2026-11
 - 2026-11-02T12:18:29.161474+00:00 (updated-by): Updated: section:ledger-events
 - chg_20261102_124002_every-components-card-free-te_9438
 - 2026-11-02T12:44:46.508959+00:00 (updated-by): Updated: section:notes
+- 2026-11-02T13:01:00.152027+00:00 (updated-by): Updated: section:acceptance_criteria

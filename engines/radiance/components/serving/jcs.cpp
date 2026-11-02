@@ -156,6 +156,12 @@ bool manifest_content_digest(const Json& manifest, std::string* digest, std::str
         if (why) *why = "(root): a manifest is an object with a metadata object";
         return false;
     }
+    const Json& meta = manifest.at("metadata");
+    if (const auto it = meta.find("content_digest"); it != meta.end() && !it->is_string()) {
+        // Absent is allowed (a producer digests before inserting it); present, it is the digest string or wrong.
+        if (why) *why = "/metadata/content_digest: must be a string when present";
+        return false;
+    }
     Json copy = manifest;
     copy["metadata"].erase("content_digest");
     std::string bytes;
