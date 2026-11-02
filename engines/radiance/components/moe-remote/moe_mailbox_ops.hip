@@ -1,6 +1,7 @@
 #include <atomic>
 #include <cstdio>
 #include "moe_remote_hook.h"
+#include "step_ticket_kernel.h"
 #include "moe_remote_shm.h"
 #include "rad_abi.h"
 
@@ -130,7 +131,7 @@ __global__ void mailbox_stage_kernel(
 }
 
 __global__ void mailbox_publish_kernel(
-    uint8_t* base, const uint8_t* owner, uint32_t* sequence, uint32_t* published, uint32_t rank,
+    uint8_t* base, const uint8_t* owner, const StepTicket* ticket_cell, uint32_t* sequence, uint32_t* published, uint32_t rank,
     uint32_t helpers, int32_t* ids, const uint16_t* ew, uint32_t* heat,
     const uint8_t* aq, const uint8_t* aq_base,
     uint32_t layer, uint32_t rows, uint32_t hidden, uint32_t top_k,
@@ -144,6 +145,11 @@ __global__ void mailbox_publish_kernel(
     __shared__ uint32_t step_heat[kExperts];
 
     Header* h = reinterpret_cast<Header*>(base);
+    /* Every published request takes its immutable epoch/slot from this play's
+     * ticket. Later mailbox kernels refer to the Request, not this cell. */
+    const StepTicket ticket = *ticket_cell;
+    if (!ticket.ticket_id || !ticket.placement_epoch || ticket.generation_slot > 1)
+        __builtin_trap();
     if (threadIdx.x <= kMaxSlots) published[threadIdx.x] = 0;   /* [kMaxSlots]: the combine generation */
     __syncthreads();
     if (rows == 0 || rows > max_rows || rows > kMaxRows ||
@@ -255,8 +261,8 @@ __global__ void mailbox_publish_kernel(
             q->completion_epoch = 0;
             q->completion_slot = 0;
             q->reserved_tail = 0;
-            q->generation_slot = 0;   /* slice A: static generation, no live switch */
-            q->placement_epoch = 1;
+            q->generation_slot = ticket.generation_slot;
+            q->placement_epoch = ticket.placement_epoch;
             q->status = 0;
             q->layer = layer;
             q->rank = slot;
@@ -713,7 +719,7 @@ int publish_launch(const RadArgs* a, RadStream stream) {
                        static_cast<const uint16_t*>(a->t[2].data), (uint32_t)rows, (uint32_t)hidden,
                        d->cpu_ref);
     hipLaunchKernelGGL(mailbox_publish_kernel, dim3(1), dim3(256), 0, (hipStream_t)stream,
-                       static_cast<uint8_t*>(d->mailbox), d->owner, d->sequence, d->published, d->rank,
+                       static_cast<uint8_t*>(d->mailbox), d->owner, d->ticket, d->sequence, d->published, d->rank,
                        d->helpers, static_cast<int32_t*>(a->t[0].data),
                        static_cast<const uint16_t*>(a->t[1].data), d->heat,
                        static_cast<const uint8_t*>(a->t[3].data),
@@ -919,6 +925,15 @@ const RadKernelInfo kShadow = [] {
 }();
 
 }  // namespace
+
+int r3_moe_ticket_launch(StepTicket* dst, StepTicket value, void* stream) {
+    if (!dst || !stream || !value.ticket_id || !value.placement_epoch || value.generation_slot > 1)
+        return RAD_E_STATE;
+    /* This kernel is deliberately not r4dchain*: AQL emits its barrier bit. */
+    hipLaunchKernelGGL(mailbox_set_ticket_kernel, dim3(1), dim3(1), 0, (hipStream_t)stream,
+                       dst, value);
+    return hipGetLastError() == hipSuccess ? RAD_OK : RAD_E_DEVICE;
+}
 
 extern "C" int r3_moe_mailbox_schema_count(void) { return NELEM(kSchemas); }
 extern "C" const RadOpSchema* r3_moe_mailbox_schema_at(int i) {
