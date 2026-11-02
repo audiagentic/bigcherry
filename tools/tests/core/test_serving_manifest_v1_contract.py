@@ -178,6 +178,20 @@ class ServingManifestV1ContractTests(unittest.TestCase):
         switch = next(v for v in vectors if v["name"] == "lab-stage-payer-switch-600000")
         self.assertLess(switch["live"]["vram"]["kv"], switch["expected"]["vram"]["kv"])
 
+    def test_schema_is_the_generated_one(self) -> None:
+        """The specification's schema is the contract generator's output, byte for byte (contract/serving-v1.toml; the
+        C++ bc_contract_check regenerates it in CI), and the registry the generator reads is integer-only."""
+        generated = ROOT / "engines/radiance/components/serving/generated/serving-v1.schema.json"
+        self.assertEqual(SCHEMA.read_bytes(), generated.read_bytes(),
+                         "regenerate: bc_contract_gen contract/serving-v1.toml generated/, then copy the schema")
+        import tomllib
+        registry = tomllib.loads((ROOT / "engines/radiance/components/serving/contract/serving-v1.toml")
+                                 .read_text(encoding="utf-8"))
+        floats = [path for path, value in _walk(registry) if isinstance(value, float)]
+        self.assertEqual(floats, [], "the registry is integer-only (spec §11, amendment 3)")
+        fingerprint = (ROOT / "engines/radiance/components/serving/generated/contract.fingerprint").read_text()
+        self.assertRegex(fingerprint, r"^schema sha256:[0-9a-f]{64}\nsemantics sha256:[0-9a-f]{64}\n$")
+
     def test_schema_and_examples_validate(self) -> None:
         try:
             import jsonschema

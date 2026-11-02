@@ -1,0 +1,1639 @@
+# Serving manifest v1 field registry: the one authoritative description of the v1 contract
+# (docs/design/serving-manifest-v1/spec.md). contract/generate.cpp turns it into the JSON Schema, the typed model,
+# the field reference and the contract fingerprint (engines/radiance/components/serving/generated/); CI regenerates
+# them and byte-diffs the committed copies. v1 is closed (spec §8): a change that moves either fingerprint (what
+# validates, or a field's class or Radiance binding) is a bigcherry/v2 change; correcting a doc is not (README.md).
+#
+# Format (see contract/README.md): [contract] identity; [[def]] shared types ($defs); [[class_default]] provenance
+# class defaults by path prefix; [[calibration_key]] the calibrated keys and each value's type; [[field]] one entry per
+# schema node, parents before children, members in document order. Paths are JSON Pointers from the document root, or
+# from a def as "$defs/<name>/..."; "[]" is an array's item and "*" a map's value. Numbers are integers only.
+
+[contract]
+api_version = "bigcherry/v1"
+kind = "ServingManifest"
+contract_version = 1
+schema_dialect = "https://json-schema.org/draft/2020-12/schema"
+schema_id = "urn:bigcherry:serving-manifest:v1"
+title = "BigCherry ServingManifest v1 (wire)"
+namespace = "bc::serving::v1"
+lifecycle = "startup_only"
+
+# Provenance class of each subtree (the longest matching prefix wins). `envelope` marks the integrity fields that
+# identify the document; it is not a provenance record class and decides nothing about coverage (spec §7; README.md).
+
+[[class_default]]
+path = "/apiVersion"
+class = "envelope"
+
+[[class_default]]
+path = "/kind"
+class = "envelope"
+
+[[class_default]]
+path = "/metadata"
+class = "envelope"
+
+[[class_default]]
+path = "/provenance"
+class = "envelope"
+
+[[class_default]]
+path = "/spec/intent"
+class = "policy"
+
+[[class_default]]
+path = "/spec/facts"
+class = "fact"
+
+[[class_default]]
+path = "/spec/calibration"
+class = "tuned"
+
+[[class_default]]
+path = "/spec/resources"
+class = "derived"
+
+[[class_default]]
+path = "/spec/handoff"
+class = "derived"
+
+[[class_default]]
+path = "/spec/handoff/telemetry"
+class = "policy"
+
+[[class_default]]
+path = "/spec/processes/engine"
+class = "derived"
+
+[[class_default]]
+path = "/spec/processes/engine/runtime"
+class = "policy"
+
+[[class_default]]
+path = "/spec/processes/engine/server"
+class = "policy"
+
+[[class_default]]
+path = "/spec/processes/engine/execution"
+class = "policy"
+
+[[class_default]]
+path = "/spec/processes/helper_common"
+class = "policy"
+
+[[class_default]]
+path = "/spec/processes/helpers"
+class = "derived"
+
+[[class_default]]
+path = "/spec/processes/helpers/[]/settings"
+class = "policy"
+
+[[class_default]]
+path = "/spec/plan"
+class = "derived"
+
+[[class_default]]
+path = "/spec/experiment"
+class = "diagnostic"
+
+[[class_default]]
+path = "$defs/helperCommon"
+class = "policy"
+
+[[class_default]]
+path = "$defs/enginePlan"
+class = "derived"
+
+# Calibrated keys, in schema order; each value's type (spec §11, amendment 1: integers only).
+
+[[calibration_key]]
+key = "host_reserve.floor_mib"
+value_kind = "ref"
+value_ref = "uint"
+doc = "Smallest host reserve, MiB."
+
+[[calibration_key]]
+key = "host_reserve.total_fraction_ppm"
+value_kind = "integer"
+value_minimum = 0
+value_exclusive_maximum = 1000000
+doc = "Host reserve as a fraction of MemTotal, ppm."
+
+[[calibration_key]]
+key = "kv_backing_floor.fraction_ppm"
+value_kind = "integer"
+value_minimum = 0
+value_exclusive_maximum = 1000000
+doc = "KV backing floor as a fraction of the total KV ceiling, ppm (spec §5.2)."
+
+[[calibration_key]]
+key = "checkpoint_share"
+value_kind = "enum"
+value_values = ["tier_first", "want", "floor"]
+doc = "How checkpoint memory is shared with the KV tier."
+
+[[calibration_key]]
+key = "host_kv_tier.target_mib"
+value_kind = "ref"
+value_ref = "uint"
+doc = "Host KV tier target, MiB."
+
+# ---- shared types ($defs), in schema order ----
+
+[[def]]
+name = "uint"
+kind = "integer"
+minimum = 0
+maximum = 9007199254740991
+doc = "Unsigned integer within I-JSON's safe range."
+
+[[def]]
+name = "positive"
+kind = "integer"
+minimum = 1
+maximum = 9007199254740991
+doc = "Positive integer within I-JSON's safe range."
+
+[[def]]
+name = "hex64"
+kind = "string"
+pattern = "^[0-9a-f]{64}$"
+doc = "64 lowercase hexadecimal digits."
+
+[[def]]
+name = "digest"
+kind = "string"
+pattern = "^sha256:[0-9a-f]{64}$"
+doc = "`sha256:` followed by 64 lowercase hexadecimal digits."
+
+[[def]]
+name = "bdf"
+kind = "string"
+pattern = "^[0-9a-f]{4}:[0-9a-f]{2}:[0-1][0-9a-f]\\.[0-7]$"
+doc = "PCI address, `dddd:bb:dd.f`, lowercase."
+
+[[def]]
+name = "jsonPointer"
+kind = "string"
+pattern = "^(|/(?:[^~/]|~[01])*(?:/(?:[^~/]|~[01])*)*)$"
+doc = "RFC 6901 JSON Pointer; \"\" is the root."
+
+[[def]]
+name = "helperCommon"
+kind = "object"
+cpp = "HelperCommon"
+doc = "The seven helper concern groups (spec §2.1)."
+
+[[field]]
+path = "$defs/helperCommon/cpu"
+kind = "object"
+cpp = "HelperCpu"
+doc = "CPU paths."
+
+[[field]]
+path = "$defs/helperCommon/cpu/reference"
+kind = "boolean"
+doc = "Use the CPU reference path."
+
+[[field]]
+path = "$defs/helperCommon/cpu/affinity"
+kind = "enum"
+values = ["auto", "all"]
+cpp_type = "Affinity"
+doc = "Worker CPU affinity: `auto` or `all`."
+
+[[field]]
+path = "$defs/helperCommon/runtime"
+kind = "object"
+cpp = "HelperRuntime"
+doc = "Helper runtime behaviour."
+
+[[field]]
+path = "$defs/helperCommon/runtime/power_save"
+kind = "boolean"
+doc = "Let the helper idle its GPU between requests."
+
+[[field]]
+path = "$defs/helperCommon/runtime/queue_warm"
+kind = "boolean"
+doc = "Keep the helper's queues warm."
+
+[[field]]
+path = "$defs/helperCommon/gemv"
+kind = "object"
+cpp = "HelperGemv"
+doc = "GEMV kernels."
+
+[[field]]
+path = "$defs/helperCommon/gemv/mode"
+kind = "int_enum"
+values = [0, 1, 2]
+doc = "GEMV mode (0, 1 or 2)."
+
+[[field]]
+path = "$defs/helperCommon/gemv/wide"
+kind = "boolean"
+doc = "Use the wide GEMV kernel."
+
+[[field]]
+path = "$defs/helperCommon/gemv/h2"
+kind = "int_enum"
+values = [0, 1, 2, 4]
+doc = "Half-precision pair mode (0, 1, 2 or 4)."
+
+[[field]]
+path = "$defs/helperCommon/gemv/w4h2"
+kind = "boolean"
+doc = "Use the W4 H2 kernel."
+
+[[field]]
+path = "$defs/helperCommon/gemv/mr"
+kind = "boolean"
+doc = "Use the multi-row GEMV kernel."
+
+[[field]]
+path = "$defs/helperCommon/lanes"
+kind = "object"
+cpp = "HelperLanes"
+doc = "Request lanes."
+
+[[field]]
+path = "$defs/helperCommon/lanes/small_lanes"
+kind = "array"
+item_kind = "ref"
+item_ref = "positive"
+min_items = 0
+max_items = 4
+doc = "Up to four sorted small-lane row thresholds."
+
+[[field]]
+path = "$defs/helperCommon/lanes/rows"
+kind = "boolean"
+doc = "Use the rows kernel by policy (active also when the architecture requires it)."
+
+[[field]]
+path = "$defs/helperCommon/lanes/rows_small"
+kind = "boolean"
+doc = "Use the rows kernel for small lanes."
+
+[[field]]
+path = "$defs/helperCommon/combine"
+kind = "object"
+cpp = "HelperCombine"
+doc = "Helper-side combine."
+
+[[field]]
+path = "$defs/helperCommon/combine/enabled"
+kind = "boolean"
+doc = "Combine expert outputs on the helper."
+
+[[field]]
+path = "$defs/helperCommon/combine/min_rows"
+kind = "ref"
+ref = "positive"
+doc = "Fewest rows a combine is used for."
+
+[[field]]
+path = "$defs/helperCommon/combine/threads"
+kind = "ref"
+ref = "positive"
+doc = "Combine worker threads."
+
+[[field]]
+path = "$defs/helperCommon/kernels"
+kind = "object"
+cpp = "HelperKernels"
+doc = "Kernel choices."
+
+[[field]]
+path = "$defs/helperCommon/kernels/native"
+kind = "boolean"
+doc = "Use native kernels."
+
+[[field]]
+path = "$defs/helperCommon/kernels/fp16"
+kind = "boolean"
+doc = "Use fp16 kernels."
+
+[[field]]
+path = "$defs/helperCommon/kernels/ahalf"
+kind = "boolean"
+doc = "Use half-precision activations."
+
+[[field]]
+path = "$defs/helperCommon/kernels/moe_form"
+kind = "int_enum"
+values = [0, 1, 2]
+doc = "MoE kernel form (0, 1 or 2)."
+
+[[field]]
+path = "$defs/helperCommon/kernels/moe_long_rows"
+kind = "ref"
+ref = "uint"
+doc = "Row count from which the long-rows MoE kernel is used."
+
+[[field]]
+path = "$defs/helperCommon/kernels/fuseroute"
+kind = "boolean"
+doc = "Fuse routing into the MoE kernel."
+
+[[field]]
+path = "$defs/helperCommon/kernels/vecio"
+kind = "boolean"
+doc = "Vectorized I/O."
+
+[[field]]
+path = "$defs/helperCommon/kernels/sparse_act"
+kind = "boolean"
+doc = "Sparse activations."
+
+[[field]]
+path = "$defs/helperCommon/kernels/lane_quant"
+kind = "boolean"
+doc = "Quantize per lane."
+
+[[field]]
+path = "$defs/helperCommon/placement"
+kind = "object"
+cpp = "HelperPlacement"
+doc = "Load balancing across helpers."
+
+[[field]]
+path = "$defs/helperCommon/placement/balance"
+kind = "boolean"
+doc = "Balance load across helpers by speed."
+
+[[field]]
+path = "$defs/helperCommon/placement/balance_speeds_milli"
+optional = true
+kind = "array"
+item_kind = "integer"
+item_minimum = 1
+doc = "Per-helper relative speed in thousandths (1000 = 1.0); one value per helper, only when balance is true."
+
+[[def]]
+name = "helperPatch"
+kind = "patch"
+of = "helperCommon"
+cpp = "HelperPatch"
+doc = "A partial `helperCommon`: each present group is a nonempty partial field map (spec §2.2)."
+
+[[def]]
+name = "enginePlan"
+kind = "object"
+cpp = "EnginePlan"
+doc = "rad0011's measured memory plan, plan_version 1 (spec §5)."
+
+[[field]]
+path = "$defs/enginePlan/plan_version"
+kind = "integer"
+const = 1
+doc = "Plan format; exactly 1."
+
+[[field]]
+path = "$defs/enginePlan/producer"
+kind = "string"
+const = "radiance --plan-memory (rad0011)"
+doc = "Plan producer; exactly `radiance --plan-memory (rad0011)`."
+
+[[field]]
+path = "$defs/enginePlan/host"
+kind = "array"
+item_kind = "object"
+min_items = 0
+doc = "Pinned host consumers."
+
+[[field]]
+path = "$defs/enginePlan/host/[]"
+kind = "object"
+cpp = "PlanHostConsumer"
+doc = "One host consumer."
+
+[[field]]
+path = "$defs/enginePlan/host/[]/name"
+kind = "string"
+min_length = 1
+doc = "Consumer name."
+
+[[field]]
+path = "$defs/enginePlan/host/[]/bytes"
+kind = "ref"
+ref = "uint"
+doc = "Bytes the consumer holds."
+
+[[field]]
+path = "$defs/enginePlan/host/[]/residence"
+kind = "enum"
+values = ["pinned", "mlocked", "pageable"]
+cpp_type = "Residence"
+doc = "`pinned`, `mlocked` or `pageable`."
+
+[[field]]
+path = "$defs/enginePlan/host/[]/from"
+kind = "string"
+min_length = 1
+doc = "Where the engine computes it."
+
+[[field]]
+path = "$defs/enginePlan/host/[]/remedy"
+kind = "string"
+doc = "What reduces it, or empty."
+
+[[field]]
+path = "$defs/enginePlan/checkpoints"
+kind = "object"
+cpp = "PlanCheckpoints"
+doc = "Prefix checkpoint store."
+
+[[field]]
+path = "$defs/enginePlan/checkpoints/slot_bytes"
+kind = "ref"
+ref = "uint"
+doc = "Bytes per checkpoint slot."
+
+[[field]]
+path = "$defs/enginePlan/checkpoints/floor_slots"
+kind = "ref"
+ref = "uint"
+doc = "Slots the store must have."
+
+[[field]]
+path = "$defs/enginePlan/checkpoints/want_slots"
+kind = "ref"
+ref = "uint"
+doc = "Slots the store would use."
+
+[[field]]
+path = "$defs/enginePlan/checkpoints/from"
+kind = "string"
+min_length = 1
+doc = "Where the engine computes it."
+
+[[field]]
+path = "$defs/enginePlan/kv_one_session"
+kind = "object"
+cpp = "PlanKvOneSession"
+doc = "KV of one full-length session."
+
+[[field]]
+path = "$defs/enginePlan/kv_one_session/bytes"
+kind = "ref"
+ref = "uint"
+doc = "Bytes."
+
+[[field]]
+path = "$defs/enginePlan/kv_one_session/from"
+kind = "string"
+min_length = 1
+doc = "Where the engine computes it."
+
+[[field]]
+path = "$defs/enginePlan/vram"
+kind = "object"
+cpp = "PlanVram"
+doc = "The engine card's VRAM split (vram_budget_resolve)."
+
+[[field]]
+path = "$defs/enginePlan/vram/claimable"
+kind = "ref"
+ref = "uint"
+doc = "VRAM claimable after fixed costs (live)."
+
+[[field]]
+path = "$defs/enginePlan/vram/statics"
+kind = "ref"
+ref = "uint"
+doc = "Static weights (stable)."
+
+[[field]]
+path = "$defs/enginePlan/vram/elastic"
+kind = "ref"
+ref = "uint"
+doc = "Claimable minus statics (live)."
+
+[[field]]
+path = "$defs/enginePlan/vram/experts"
+kind = "ref"
+ref = "uint"
+doc = "Expert residency (live)."
+
+[[field]]
+path = "$defs/enginePlan/vram/kv"
+kind = "ref"
+ref = "uint"
+doc = "KV share before MiB rounding (live; never an admission input)."
+
+[[field]]
+path = "$defs/enginePlan/vram/stage"
+kind = "ref"
+ref = "uint"
+doc = "Prefill staging region (live)."
+
+[[field]]
+path = "$defs/enginePlan/vram/kv_resolved"
+kind = "ref"
+ref = "uint"
+doc = "Common KV budget after the staging split and MiB rounding (live; spec §5.2)."
+
+[[field]]
+path = "$defs/enginePlan/vram/expert_floor"
+kind = "ref"
+ref = "uint"
+doc = "Expert residency the host pool cannot hold (stable)."
+
+[[field]]
+path = "$defs/enginePlan/vram/kv_ceiling"
+kind = "ref"
+ref = "uint"
+doc = "KV for every session at full length (stable)."
+
+[[field]]
+path = "$defs/enginePlan/vram/expert_ceiling"
+kind = "ref"
+ref = "uint"
+doc = "Every expert resident (stable)."
+
+[[field]]
+path = "$defs/enginePlan/vram/from"
+kind = "string"
+min_length = 1
+doc = "Where the engine computes it."
+
+[[field]]
+path = "$defs/enginePlan/vram/cards"
+kind = "array"
+item_kind = "object"
+min_items = 1
+doc = "Per-card facts, in rank order."
+
+[[field]]
+path = "$defs/enginePlan/vram/cards/[]"
+kind = "object"
+cpp = "PlanCard"
+doc = "One card."
+
+[[field]]
+path = "$defs/enginePlan/vram/cards/[]/capacity"
+kind = "ref"
+ref = "uint"
+doc = "Card VRAM (minimum bound)."
+
+[[field]]
+path = "$defs/enginePlan/vram/cards/[]/free"
+kind = "ref"
+ref = "uint"
+doc = "Free VRAM at measurement (live)."
+
+[[field]]
+path = "$defs/enginePlan/vram/cards/[]/engine_expert_plane"
+kind = "ref"
+ref = "uint"
+doc = "Engine expert plane bytes (stable)."
+
+[[field]]
+path = "$defs/enginePlan/vram/cards/[]/expert_unit_max"
+kind = "ref"
+ref = "uint"
+doc = "Largest expert unit (stable)."
+
+[[field]]
+path = "$defs/enginePlan/host_pool_mib"
+kind = "ref"
+ref = "uint"
+doc = "Receipt echo; equals `spec.resources.host.pool_mib`."
+
+# ---- the document ----
+
+[[field]]
+path = ""
+kind = "object"
+cpp = "Manifest"
+doc = "A serving manifest v1 document."
+
+[[field]]
+path = "/apiVersion"
+cpp_member = "api_version"
+kind = "string"
+const = "bigcherry/v1"
+doc = "Contract identity; exactly `bigcherry/v1`."
+
+[[field]]
+path = "/kind"
+kind = "string"
+const = "ServingManifest"
+doc = "Document kind; exactly `ServingManifest`."
+
+[[field]]
+path = "/metadata"
+kind = "object"
+cpp = "Metadata"
+doc = "Identity of this resolved serving instance and its producer."
+
+[[field]]
+path = "/metadata/instance_id"
+kind = "string"
+pattern = "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+doc = "Canonical lowercase UUIDv4, created once per resolved serving instance; every process of one launch reads the same ID."
+
+[[field]]
+path = "/metadata/producer"
+kind = "object"
+cpp = "Producer"
+doc = "The executable that resolved this manifest."
+
+[[field]]
+path = "/metadata/producer/name"
+kind = "string"
+const = "bc-serve"
+doc = "Producer name; exactly `bc-serve`."
+
+[[field]]
+path = "/metadata/producer/build_sha256"
+kind = "ref"
+ref = "hex64"
+doc = "SHA-256 of the installed bc-serve executable (64 lowercase hex)."
+
+[[field]]
+path = "/metadata/contract_version"
+kind = "integer"
+const = 1
+doc = "Contract version; exactly 1, matching the apiVersion suffix."
+
+[[field]]
+path = "/metadata/content_digest"
+kind = "ref"
+ref = "digest"
+doc = "`sha256:` + JCS SHA-256 of the manifest with this member removed (spec §8)."
+
+[[field]]
+path = "/spec"
+kind = "object"
+cpp = "Spec"
+constraints = '''
+[
+  {"if": {"properties": {"intent": {"properties": {"service": {"properties": {"profile": {"const": "production"}}, "required": ["profile"]}}, "required": ["service"]}}, "required": ["intent"]}, "then": {"not": {"required": ["experiment"]}}},
+  {"if": {"required": ["experiment"]}, "then": {"properties": {"intent": {"properties": {"service": {"properties": {"profile": {"const": "lab"}}}}}}}}
+]'''
+doc = "The resolved serving configuration. `experiment` is present only when the profile is `lab`."
+
+[[field]]
+path = "/spec/intent"
+kind = "object"
+cpp = "Intent"
+doc = "What the operator asked for: model, layout and service policy."
+
+[[field]]
+path = "/spec/intent/model"
+radiance_option = "--model"
+radiance_config = "Config.model"
+kind = "string"
+min_length = 1
+doc = "Model container path the engine loads (`--model`)."
+
+[[field]]
+path = "/spec/intent/layout"
+kind = "string"
+min_length = 1
+doc = "Named GPU layout (engines/radiance/layouts.toml)."
+
+[[field]]
+path = "/spec/intent/service"
+kind = "object"
+cpp = "Service"
+doc = "Service objective and policy."
+
+[[field]]
+path = "/spec/intent/service/profile"
+kind = "enum"
+values = ["production", "lab"]
+cpp_type = "Profile"
+doc = "`production`, or `lab`, which alone permits `spec.experiment`."
+
+[[field]]
+path = "/spec/intent/service/objective"
+kind = "enum"
+values = ["latency", "balanced", "throughput"]
+cpp_type = "Objective"
+doc = "Service objective that selects calibration and derivations."
+
+[[field]]
+path = "/spec/intent/service/max_sessions"
+radiance_option = "--max-num-seqs"
+radiance_config = "Config.max_seqs"
+kind = "ref"
+ref = "positive"
+doc = "Concurrent sessions served (`--max-num-seqs`)."
+
+[[field]]
+path = "/spec/intent/service/max_context_tokens"
+radiance_option = "--max-model-len"
+radiance_config = "Config.max_ctx"
+kind = "ref"
+ref = "positive"
+doc = "Longest session in tokens (`--max-model-len`)."
+
+[[field]]
+path = "/spec/intent/service/retention"
+kind = "enum"
+values = ["keep", "discard"]
+cpp_type = "Retention"
+doc = "Whether finished sessions' prefix state is kept for reuse."
+
+[[field]]
+path = "/spec/intent/service/quality"
+kind = "enum"
+values = ["baseline", "strict"]
+cpp_type = "Quality"
+doc = "Numerical quality policy: baseline, or strict reference-equivalent paths."
+
+[[field]]
+path = "/spec/facts"
+kind = "object"
+cpp = "Facts"
+doc = "Detected host and GPU facts the resolution used."
+
+[[field]]
+path = "/spec/facts/source"
+kind = "string"
+min_length = 1
+doc = "Detector that produced these facts."
+
+[[field]]
+path = "/spec/facts/host"
+kind = "object"
+cpp = "HostFacts"
+doc = "Host facts."
+
+[[field]]
+path = "/spec/facts/host/memory"
+kind = "object"
+cpp = "HostMemory"
+doc = "Host memory limits."
+
+[[field]]
+path = "/spec/facts/host/memory/total_mib"
+kind = "ref"
+ref = "positive"
+doc = "MemTotal, MiB."
+
+[[field]]
+path = "/spec/facts/host/memory/available_mib"
+kind = "ref"
+ref = "uint"
+doc = "MemAvailable at resolution, MiB."
+
+[[field]]
+path = "/spec/facts/host/memory/swap_total_mib"
+kind = "ref"
+ref = "uint"
+doc = "SwapTotal, MiB."
+
+[[field]]
+path = "/spec/facts/host/memory/shm_available_mib"
+kind = "ref"
+ref = "uint"
+doc = "Free space in /dev/shm, MiB."
+
+[[field]]
+path = "/spec/facts/host/memory/cgroup_limits"
+kind = "array"
+item_kind = "object"
+min_items = 0
+doc = "Memory limits of each enclosing cgroup, innermost first."
+
+[[field]]
+path = "/spec/facts/host/memory/cgroup_limits/[]"
+kind = "object"
+cpp = "CgroupLimit"
+doc = "One cgroup's memory limit."
+
+[[field]]
+path = "/spec/facts/host/memory/cgroup_limits/[]/path"
+kind = "string"
+min_length = 1
+doc = "cgroup path."
+
+[[field]]
+path = "/spec/facts/host/memory/cgroup_limits/[]/room_mib"
+kind = "ref"
+ref = "uint"
+doc = "Room left under that cgroup's limit, MiB."
+
+[[field]]
+path = "/spec/facts/host/memory/pin_cap_mib"
+kind = "ref"
+ref = "uint"
+nullable = true
+doc = "amdgpu pinned-memory cap, MiB; null when the driver sets none."
+
+[[field]]
+path = "/spec/facts/host/memory/memlock_limit_mib"
+kind = "ref"
+ref = "uint"
+nullable = true
+doc = "RLIMIT_MEMLOCK, MiB; null when unlimited."
+
+[[field]]
+path = "/spec/facts/host/cpu"
+kind = "object"
+cpp = "HostCpu"
+doc = "Host CPU facts."
+
+[[field]]
+path = "/spec/facts/host/cpu/count"
+kind = "ref"
+ref = "positive"
+doc = "Online CPUs."
+
+[[field]]
+path = "/spec/facts/gpus"
+kind = "array"
+item_kind = "object"
+min_items = 1
+max_items = 32
+doc = "Detected GPUs, in KFD order."
+
+[[field]]
+path = "/spec/facts/gpus/[]"
+kind = "object"
+cpp = "GpuFact"
+doc = "One detected GPU."
+
+[[field]]
+path = "/spec/facts/gpus/[]/bdf"
+kind = "ref"
+ref = "bdf"
+doc = "PCI address."
+
+[[field]]
+path = "/spec/facts/gpus/[]/arch"
+kind = "string"
+pattern = "^gfx[0-9a-f]+$"
+doc = "GPU architecture (gfx target)."
+
+[[field]]
+path = "/spec/facts/gpus/[]/hip_ordinal"
+kind = "ref"
+ref = "uint"
+doc = "HIP device ordinal (KFD node order)."
+
+[[field]]
+path = "/spec/facts/gpus/[]/vram"
+kind = "object"
+cpp = "GpuVram"
+doc = "VRAM facts."
+
+[[field]]
+path = "/spec/facts/gpus/[]/vram/total_mib"
+kind = "ref"
+ref = "positive"
+doc = "VRAM size, MiB."
+
+[[field]]
+path = "/spec/facts/gpus/[]/vram/available_mib"
+kind = "ref"
+ref = "uint"
+doc = "Unused VRAM at resolution, MiB."
+
+[[field]]
+path = "/spec/calibration"
+kind = "array"
+item_kind = "object"
+min_items = 1
+max_items = 64
+doc = "Selected calibrated parameters, each with its evidence."
+
+[[field]]
+path = "/spec/calibration/[]"
+kind = "object"
+cpp = "CalibrationEntry"
+doc = "One calibrated parameter."
+
+[[field]]
+path = "/spec/calibration/[]/key"
+kind = "calibration_key"
+doc = "Calibrated parameter; its value's type is fixed per key (contract `calibration_key` table)."
+
+[[field]]
+path = "/spec/calibration/[]/value"
+kind = "calibration_value"
+doc = "The parameter's value: an unsigned integer, a string or a boolean, as its key requires."
+
+[[field]]
+path = "/spec/calibration/[]/source"
+kind = "enum"
+values = ["seed", "cache"]
+cpp_type = "CalibrationSource"
+doc = "`seed` (committed calibration) or `cache` (measured on this host)."
+
+[[field]]
+path = "/spec/calibration/[]/seeded"
+kind = "string"
+format = "date"
+doc = "Date the evidence was recorded (YYYY-MM-DD)."
+
+[[field]]
+path = "/spec/calibration/[]/evidence"
+kind = "string"
+min_length = 1
+doc = "Where the evidence for this value is recorded."
+
+[[field]]
+path = "/spec/resources"
+kind = "object"
+cpp = "Resources"
+doc = "Derived resource allocation."
+
+[[field]]
+path = "/spec/resources/host"
+kind = "object"
+cpp = "HostResources"
+doc = "Host memory allocation (RSC03 ledger)."
+
+[[field]]
+path = "/spec/resources/host/pool_mib"
+radiance_option = "--host-pool-mib"
+radiance_config = "Config.host_pool_mib"
+kind = "ref"
+ref = "uint"
+doc = "Pinned host pool for experts and the KV tier, MiB (`--host-pool-mib`)."
+
+[[field]]
+path = "/spec/resources/host/kv_mib"
+radiance_option = "--prefix-cache-mib"
+radiance_config = "Config.prefix_cache_mib"
+kind = "ref"
+ref = "uint"
+doc = "Host KV tier, MiB (`--prefix-cache-mib`)."
+
+[[field]]
+path = "/spec/resources/host/reserve_mib"
+radiance_option = "--host-headroom-mib"
+radiance_config = "Config.host_headroom_mib"
+kind = "ref"
+ref = "positive"
+doc = "Host memory held back for the system, MiB (`--host-headroom-mib`)."
+
+[[field]]
+path = "/spec/resources/host/checkpoint_slots"
+radiance_option = "--checkpoint-slots"
+radiance_config = "native checkpoint limit"
+kind = "ref"
+ref = "uint"
+doc = "Prefix checkpoint slots (`--checkpoint-slots`)."
+
+[[field]]
+path = "/spec/handoff"
+kind = "object"
+cpp = "Handoff"
+doc = "The one shared remote-MoE handoff configuration."
+
+[[field]]
+path = "/spec/handoff/transport"
+kind = "object"
+cpp = "HandoffTransport"
+doc = "Shared-memory transport between the engine and helpers."
+
+[[field]]
+path = "/spec/handoff/transport/shm"
+kind = "string"
+pattern = "^/[A-Za-z0-9][A-Za-z0-9._-]*$"
+doc = "POSIX shared-memory name of the handoff segment."
+
+[[field]]
+path = "/spec/handoff/transport/max_rows"
+kind = "ref"
+ref = "positive"
+doc = "Largest row batch a request carries."
+
+[[field]]
+path = "/spec/handoff/transport/small_rows"
+kind = "ref"
+ref = "positive"
+doc = "Row count at or below which a request uses a small lane."
+
+[[field]]
+path = "/spec/handoff/transport/gemv_large_rows"
+kind = "ref"
+ref = "positive"
+doc = "Row count from which helpers use the large GEMV path."
+
+[[field]]
+path = "/spec/handoff/transport/skip_owned"
+kind = "boolean"
+doc = "The engine skips experts a helper owns."
+
+[[field]]
+path = "/spec/handoff/placement"
+kind = "object"
+cpp = "HandoffPlacement"
+doc = "Expert placement policy."
+
+[[field]]
+path = "/spec/handoff/placement/strategy"
+kind = "enum"
+values = ["tail", "roundrobin"]
+cpp_type = "PlacementStrategy"
+doc = "Owner assignment: `tail` (the tail helper takes the cold end) or `roundrobin`."
+
+[[field]]
+path = "/spec/handoff/placement/heat_file"
+kind = "string"
+min_length = 1
+doc = "Expert heat file the owner map is planned from."
+
+[[field]]
+path = "/spec/handoff/telemetry"
+kind = "object"
+cpp = "HandoffTelemetry"
+doc = "Expert-use telemetry."
+
+[[field]]
+path = "/spec/handoff/telemetry/histogram_file"
+kind = "string"
+min_length = 1
+nullable = true
+doc = "Live expert histogram file; null disables it."
+
+[[field]]
+path = "/spec/handoff/telemetry/period_s"
+kind = "ref"
+ref = "uint"
+doc = "Histogram period, seconds."
+
+[[field]]
+path = "/spec/handoff/kernels"
+kind = "object"
+cpp = "HandoffKernels"
+doc = "Handoff kernel selection."
+
+[[field]]
+path = "/spec/handoff/kernels/moe_down_tile"
+kind = "int_enum"
+values = [0, 1, 2]
+doc = "MoE down-projection tile mode (0, 1 or 2)."
+
+[[field]]
+path = "/spec/processes"
+kind = "object"
+cpp = "Processes"
+doc = "Per-process settings."
+
+[[field]]
+path = "/spec/processes/engine"
+kind = "object"
+cpp = "EngineProcess"
+doc = "Engine process settings."
+
+[[field]]
+path = "/spec/processes/engine/device"
+kind = "object"
+cpp = "EngineDevice"
+doc = "Engine GPUs."
+
+[[field]]
+path = "/spec/processes/engine/device/gpus"
+kind = "array"
+item_kind = "ref"
+item_ref = "bdf"
+min_items = 1
+doc = "Engine GPU addresses, in rank order."
+
+[[field]]
+path = "/spec/processes/engine/runtime"
+kind = "object"
+cpp = "EngineRuntime"
+doc = "Engine runtime."
+
+[[field]]
+path = "/spec/processes/engine/runtime/radiance_home"
+radiance_option = "--radiance-home"
+radiance_config = "Config.radiance_home"
+kind = "string"
+min_length = 1
+doc = "Radiance install root (`--radiance-home`)."
+
+[[field]]
+path = "/spec/processes/engine/runtime/kernels"
+radiance_option = "--kernels"
+radiance_config = "Config.kernel_hierarchy"
+kind = "array"
+item_kind = "string"
+item_min_length = 1
+min_items = 1
+doc = "Kernel libraries in search order (`--kernels`)."
+
+[[field]]
+path = "/spec/processes/engine/server"
+kind = "object"
+cpp = "EngineServer"
+doc = "HTTP server."
+
+[[field]]
+path = "/spec/processes/engine/server/port"
+radiance_option = "--port"
+radiance_config = "native port"
+kind = "integer"
+minimum = 1
+maximum = 65535
+doc = "TCP port (`--port`)."
+
+[[field]]
+path = "/spec/processes/engine/scheduler"
+kind = "object"
+cpp = "EngineScheduler"
+doc = "Scheduler sizes."
+
+[[field]]
+path = "/spec/processes/engine/scheduler/tp"
+radiance_option = "--tp"
+radiance_config = "Config.tp"
+kind = "ref"
+ref = "positive"
+doc = "Tensor-parallel ranks (`--tp`)."
+
+[[field]]
+path = "/spec/processes/engine/scheduler/max_num_batched_tokens"
+radiance_option = "--max-num-batched-tokens"
+radiance_config = "Config.max_tok"
+kind = "ref"
+ref = "positive"
+doc = "Tokens per step (`--max-num-batched-tokens`)."
+
+[[field]]
+path = "/spec/processes/engine/scheduler/checkpoint_interval"
+radiance_option = "--checkpoint-interval"
+radiance_config = "native interval"
+kind = "ref"
+ref = "uint"
+doc = "Tokens between prefix checkpoints (`--checkpoint-interval`)."
+
+[[field]]
+path = "/spec/processes/engine/execution"
+kind = "object"
+cpp = "EngineExecution"
+doc = "Execution choices."
+
+[[field]]
+path = "/spec/processes/engine/execution/placement"
+radiance_option = "--placement"
+radiance_config = "native placement mode"
+kind = "enum"
+values = ["expert_tiered", "all_vram", "layer_offload", "auto"]
+cpp_type = "WeightPlacement"
+doc = "Weight placement mode (`--placement`)."
+
+[[field]]
+path = "/spec/processes/engine/execution/ngram_placement"
+radiance_option = "--ngram-placement"
+radiance_config = "native table placement"
+kind = "enum"
+values = ["ram", "disk", "vram", "auto"]
+cpp_type = "NgramPlacement"
+doc = "N-gram table placement (`--ngram-placement`)."
+
+[[field]]
+path = "/spec/processes/engine/execution/kv_cache_dtype"
+radiance_option = "--kv-cache-dtype"
+radiance_config = "native dtype"
+kind = "enum"
+values = ["bf16", "fp8", "fp8_v4", "k6_v4"]
+cpp_type = "KvCacheDtype"
+doc = "KV cache data type (`--kv-cache-dtype`)."
+
+[[field]]
+path = "/spec/processes/engine/execution/num_speculative_tokens"
+radiance_option = "--num-speculative-tokens"
+radiance_config = "Config.n_spec"
+kind = "ref"
+ref = "uint"
+doc = "Speculative tokens per step (`--num-speculative-tokens`)."
+
+[[field]]
+path = "/spec/processes/engine/execution/rope_scaling"
+radiance_option = "--rope-scaling"
+radiance_config = "Config.rope_scaling"
+kind = "string"
+min_length = 1
+doc = "RoPE scaling specification (`--rope-scaling`)."
+
+[[field]]
+path = "/spec/processes/engine/execution/prefix_resume"
+radiance_option = "--prefix-resume"
+radiance_config = "Config.prefix_exact"
+kind = "enum"
+values = ["nearest", "exact"]
+cpp_type = "PrefixResume"
+doc = "Prefix resume policy (`--prefix-resume`)."
+
+[[field]]
+path = "/spec/processes/helper_common"
+kind = "ref"
+ref = "helperCommon"
+doc = "Settings shared by every helper; per-role and lab patches apply on top (spec §2.2)."
+
+[[field]]
+path = "/spec/processes/helpers"
+kind = "array"
+item_kind = "object"
+min_items = 1
+max_items = 4
+doc = "Helper processes, ordered helper0, helper1, ...; a helper's index is its position."
+
+[[field]]
+path = "/spec/processes/helpers/[]"
+kind = "object"
+cpp = "HelperProcess"
+doc = "One helper process."
+
+[[field]]
+path = "/spec/processes/helpers/[]/role"
+kind = "string"
+pattern = "^helper(?:0|[1-9][0-9]*)$"
+doc = "Role name, `helper<index>`."
+
+[[field]]
+path = "/spec/processes/helpers/[]/gpu"
+kind = "ref"
+ref = "bdf"
+doc = "The helper's GPU address."
+
+[[field]]
+path = "/spec/processes/helpers/[]/vram_budget_mib"
+kind = "ref"
+ref = "positive"
+doc = "VRAM the helper may use, MiB."
+
+[[field]]
+path = "/spec/processes/helpers/[]/plugin_file"
+kind = "string"
+min_length = 1
+doc = "Kernel plugin library."
+
+[[field]]
+path = "/spec/processes/helpers/[]/formats"
+kind = "array"
+item_kind = "enum"
+item_values = ["w4nl64", "fp8_e4m3_block"]
+min_items = 1
+unique_items = true
+cpp_type = "ExpertFormat"
+doc = "Expert weight formats the helper serves."
+
+[[field]]
+path = "/spec/processes/helpers/[]/rows_kernel"
+kind = "boolean"
+doc = "The architecture requires the rows kernel."
+
+[[field]]
+path = "/spec/processes/helpers/[]/tier"
+kind = "enum"
+values = ["head", "tail"]
+cpp_type = "HelperTier"
+doc = "`head` or `tail` helper tier."
+
+[[field]]
+path = "/spec/processes/helpers/[]/share"
+kind = "ref"
+ref = "uint"
+doc = "Relative share of owned experts."
+
+[[field]]
+path = "/spec/processes/helpers/[]/settings"
+optional = true
+kind = "ref"
+ref = "helperPatch"
+doc = "This role's partial override of `helper_common`."
+
+[[field]]
+path = "/spec/plan"
+kind = "object"
+cpp = "Plan"
+doc = "Measured and planned state the engine and helpers verify at start-up."
+
+[[field]]
+path = "/spec/plan/owner_map"
+kind = "object"
+cpp = "OwnerMap"
+doc = "Initial expert ownership; the live mailbox epochs own later placement (spec §4)."
+
+[[field]]
+path = "/spec/plan/owner_map/owner_map_sha256"
+kind = "ref"
+ref = "hex64"
+doc = "Digest of all helpers' owned sets in helper order (spec §4)."
+
+[[field]]
+path = "/spec/plan/owner_map/helpers"
+kind = "array"
+item_kind = "object"
+min_items = 1
+max_items = 4
+doc = "Owned sets, aligned by index with `processes.helpers`."
+
+[[field]]
+path = "/spec/plan/owner_map/helpers/[]"
+kind = "object"
+cpp = "OwnedSet"
+doc = "One helper's owned set."
+
+[[field]]
+path = "/spec/plan/owner_map/helpers/[]/owned_sha256"
+kind = "ref"
+ref = "hex64"
+doc = "Digest of this helper's owned set (spec §4)."
+
+[[field]]
+path = "/spec/plan/owner_map/helpers/[]/count"
+kind = "ref"
+ref = "uint"
+doc = "Number of owned experts; equals `experts.length`."
+
+[[field]]
+path = "/spec/plan/owner_map/helpers/[]/bytes"
+kind = "ref"
+ref = "uint"
+doc = "Device bytes of the owned experts."
+
+[[field]]
+path = "/spec/plan/owner_map/helpers/[]/experts"
+kind = "array"
+item_kind = "tuple"
+tuple = ["uint", "uint"]
+min_items = 0
+doc = "Owned `[layer, expert]` pairs in selection order."
+
+[[field]]
+path = "/spec/plan/engine_memory"
+kind = "object"
+cpp = "EngineMemory"
+doc = "The engine's measured memory plan and its cache identity (spec §5)."
+
+[[field]]
+path = "/spec/plan/engine_memory/cache_version"
+kind = "integer"
+const = 1
+doc = "Plan cache format; exactly 1."
+
+[[field]]
+path = "/spec/plan/engine_memory/cache_key"
+kind = "ref"
+ref = "hex64"
+doc = "Plan cache key (spec §5.1)."
+
+[[field]]
+path = "/spec/plan/engine_memory/model_identity"
+kind = "ref"
+ref = "hex64"
+doc = "Model container identity."
+
+[[field]]
+path = "/spec/plan/engine_memory/engine_identity"
+kind = "ref"
+ref = "hex64"
+doc = "Radiance binary and runtime identity."
+
+[[field]]
+path = "/spec/plan/engine_memory/expected"
+kind = "ref"
+ref = "enginePlan"
+doc = "The measured plan the live plan is checked against (spec §5.2)."
+
+[[field]]
+path = "/spec/experiment"
+optional = true
+kind = "object"
+cpp = "Experiment"
+min_properties = 1
+doc = "Lab-only experiments; forbidden when the profile is `production`."
+
+[[field]]
+path = "/spec/experiment/placement"
+optional = true
+kind = "object"
+cpp = "ExperimentPlacement"
+constraints = '''
+[
+  {"if": {"properties": {"mode": {"const": "forced_churn"}}, "required": ["mode"]}, "then": {"required": ["at_step"]}},
+  {"if": {"properties": {"mode": {"const": "observe"}}, "required": ["mode"]}, "then": {"not": {"required": ["at_step"]}}}
+]'''
+doc = "Live placement experiment."
+
+[[field]]
+path = "/spec/experiment/placement/mode"
+kind = "enum"
+values = ["observe", "forced_churn"]
+cpp_type = "PlacementMode"
+doc = "`observe` (no change) or `forced_churn` (requires `at_step`)."
+
+[[field]]
+path = "/spec/experiment/placement/at_step"
+optional = true
+kind = "ref"
+ref = "positive"
+doc = "Step at which a forced churn happens."
+
+[[field]]
+path = "/spec/experiment/shape"
+optional = true
+kind = "object"
+cpp = "ExperimentShape"
+min_properties = 1
+doc = "Lab overlay of helper settings, applied after the per-role patches."
+
+[[field]]
+path = "/spec/experiment/shape/helper_common"
+optional = true
+kind = "ref"
+ref = "helperPatch"
+doc = "Partial override for every helper."
+
+[[field]]
+path = "/spec/experiment/shape/helpers"
+optional = true
+kind = "array"
+item_kind = "object"
+min_items = 1
+max_items = 4
+doc = "Per-role partial overrides."
+
+[[field]]
+path = "/spec/experiment/shape/helpers/[]"
+kind = "object"
+cpp = "ShapePatch"
+doc = "One role's lab override."
+
+[[field]]
+path = "/spec/experiment/shape/helpers/[]/role"
+kind = "string"
+pattern = "^helper(?:0|[1-9][0-9]*)$"
+doc = "Role the override applies to."
+
+[[field]]
+path = "/spec/experiment/shape/helpers/[]/settings"
+kind = "ref"
+ref = "helperPatch"
+doc = "Partial helper settings for that role."
+
+[[field]]
+path = "/spec/experiment/diagnostics"
+optional = true
+kind = "object"
+cpp = "Diagnostics"
+min_properties = 1
+doc = "Lab diagnostics by concern."
+
+[[field]]
+path = "/spec/experiment/diagnostics/gemv"
+optional = true
+kind = "object"
+cpp = "GemvDiagnostics"
+min_properties = 1
+doc = "GEMV diagnostics."
+
+[[field]]
+path = "/spec/experiment/diagnostics/gemv/probe_mode"
+optional = true
+kind = "int_enum"
+values = [0, 1, 2]
+doc = "GEMV probe mode (0, 1 or 2)."
+
+[[field]]
+path = "/spec/experiment/diagnostics/gemv/refusal_trace"
+optional = true
+kind = "boolean"
+doc = "Trace GEMV path refusals."
+
+[[field]]
+path = "/spec/experiment/diagnostics/lanes"
+optional = true
+kind = "object"
+cpp = "LaneDiagnostics"
+min_properties = 1
+doc = "Lane diagnostics."
+
+[[field]]
+path = "/spec/experiment/diagnostics/lanes/capture_file"
+optional = true
+kind = "string"
+min_length = 1
+nullable = true
+doc = "Lane capture file; null disables capture."
+
+[[field]]
+path = "/spec/experiment/diagnostics/lanes/capture_every"
+optional = true
+kind = "ref"
+ref = "positive"
+doc = "Capture every Nth request."
+
+[[field]]
+path = "/spec/experiment/diagnostics/lanes/capture_max"
+optional = true
+kind = "ref"
+ref = "positive"
+doc = "Most requests captured."
+
+[[field]]
+path = "/spec/experiment/diagnostics/lanes/trace_level"
+optional = true
+kind = "ref"
+ref = "uint"
+doc = "Lane trace verbosity."
+
+[[field]]
+path = "/spec/experiment/diagnostics/lanes/test_stop_at"
+optional = true
+kind = "string"
+min_length = 1
+nullable = true
+doc = "Test hook stop point; null disables it."
+
+[[field]]
+path = "/spec/experiment/diagnostics/kernels"
+optional = true
+kind = "object"
+cpp = "KernelDiagnostics"
+min_properties = 1
+doc = "Kernel diagnostics."
+
+[[field]]
+path = "/spec/experiment/diagnostics/kernels/plugin_override"
+optional = true
+kind = "string"
+min_length = 1
+nullable = true
+doc = "Plugin library to load instead; null keeps the configured one."
+
+[[field]]
+path = "/spec/experiment/diagnostics/kernels/poison"
+optional = true
+kind = "enum"
+values = ["off", "zero", "one"]
+cpp_type = "Poison"
+doc = "Fill pattern for uninitialized outputs."
+
+[[field]]
+path = "/spec/experiment/diagnostics/kernels/sweep_fast"
+optional = true
+kind = "boolean"
+doc = "Shorten kernel sweeps."
+
+[[field]]
+path = "/provenance"
+kind = "map"
+key_ref = "jsonPointer"
+required_keys = [""]
+min_properties = 1
+doc = "Map from a JSON Pointer to the record of where that value (and its descendants) came from; the root \"\" record is required (spec §7)."
+
+[[field]]
+path = "/provenance/*"
+kind = "object"
+cpp = "ProvenanceRecord"
+doc = "Provenance of the value at the key's JSON Pointer."
+
+[[field]]
+path = "/provenance/*/origin"
+kind = "enum"
+values = ["schema_default", "site", "profile", "cli", "detected", "derived", "calibrated", "experiment"]
+cpp_type = "Origin"
+doc = "Input layer that set the value."
+
+[[field]]
+path = "/provenance/*/source"
+kind = "string"
+min_length = 1
+doc = "Human-readable source: file and key, detector or derivation."
+
+[[field]]
+path = "/provenance/*/class"
+cpp_member = "value_class"
+kind = "enum"
+values = ["policy", "fact", "derived", "tuned", "diagnostic"]
+cpp_type = "ValueClass"
+doc = "Kind of value: operator policy, detected fact, derived, tuned (calibrated) or diagnostic."
+
+[[field]]
+path = "/provenance/*/lifecycle"
+kind = "enum"
+values = ["startup_only", "step_boundary", "live"]
+cpp_type = "Lifecycle"
+doc = "When the value may change: only at start-up, at a step boundary, or live."
+
+[[field]]
+path = "/provenance/*/confidence"
+kind = "enum"
+values = ["exact", "measured", "estimate"]
+cpp_type = "Confidence"
+doc = "Exact, measured or estimated."
+
+[[field]]
+path = "/provenance/*/inputs"
+kind = "array"
+item_kind = "ref"
+item_ref = "jsonPointer"
+min_items = 0
+doc = "JSON Pointers of the values this one was derived from."

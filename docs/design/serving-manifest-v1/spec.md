@@ -283,6 +283,8 @@ Align the startup `given` report with this source model. `bc-serve --explain PAT
 
 Use JSON Schema Draft 2020-12 for **structural** validation and one C++ semantic validator for cross-field invariants. The schema requires closed object types. **Every JSON number in a v1 document is an integer** (I-JSON-compatible, at most 2^53−1); a fraction is a fixed-scale integer with the scale in its name (`_ppm`, `_milli`). There are no non-integer numbers, NaN or Infinity, no duplicate JSON properties, deterministic arrays and UTF-8 text.
 
+`serving-manifest.v1.schema.json` is **generated**: the field registry `engines/radiance/components/serving/contract/serving-v1.toml` is the one source of the schema, the typed C++ model, the field reference and the contract fingerprint (`contract/README.md`). Edit the registry and regenerate; CI fails when a committed copy differs from the generator's output.
+
 **JCS SHA-256 procedure**:
 1. Serialize the fully validated manifest as JSON.
 2. Temporarily remove `metadata.content_digest` (do not replace it with null).
