@@ -17,6 +17,24 @@
 #include <thread>
 #include <vector>
 
+/* Block until the engine is inside an inference burst (Header::burst odd) or asks this lane to drain
+ * (LaneSignal::drain_request). The engine stores the drain request before it moves the burst word (ending a burst,
+ * or adding 2 to an idle word), so a waiter that sleeps on the old word wakes and then sees the request. False once
+ * this helper is stopping. */
+inline bool wait_burst(r3::moe_shm::Header* h, uint32_t lane) {
+    using namespace r3::moe_shm;
+    for (;;) {
+        const uint32_t b = load(&h->burst);
+        if ((b & kBurstStop) || stopping()) return false;
+        if ((b & 1u) || __atomic_load_n(&h->lane[lane].drain_request, __ATOMIC_ACQUIRE)) return true;
+        if (futex_wait(&h->burst, b) < 0 && errno != EINTR && errno != EAGAIN) {
+            std::fprintf(stderr, "r3_moe_worker: futex_wait(burst): %s\n", std::strerror(errno));
+            request_stop();
+            return false;
+        }
+    }
+}
+
 /* The engine's large-lane rows added on the CPU by helper 0 (RAD18, worker_combine.h); the other helpers signal their syncs. */
 struct Combine {
     bool on = false;
@@ -128,25 +146,24 @@ private:
     uint64_t drain_requested(uint32_t lane) const {
         return __atomic_load_n(&h_->lane[lane].drain_request, __ATOMIC_ACQUIRE);
     }
-    /* Bounded cancellation polling while admission is closed. The five-ms
-     * quantum matches the host ledger's interruptible admission wait. */
-    void wait_lane_notice(uint32_t lane, uint64_t closure = 0) {
-        const uint32_t generation = r3::moe_shm::load(&h_->notify);
-        // Recheck after reading the wake generation: never miss burst/reopen.
-        if (stopping() || (closure ? drain_requested(lane) != closure :
-            (drain_requested(lane) || (r3::moe_shm::load(&h_->burst) & 1u)))) return;
-        const timespec quantum{0, 5'000'000};
-        if (::syscall(SYS_futex, &h_->notify, FUTEX_WAIT, generation, &quantum, nullptr, 0) < 0 &&
-            errno != EAGAIN && errno != EINTR && errno != ETIMEDOUT) request_stop();
-    }
+    /* ACK one closure after this lane's stream drained, then sleep on Header::notify until the engine clears the
+     * request at reopen (it notifies after clearing). Outside every serving spin. */
     void acknowledge_drain(uint32_t lane, uint64_t closure) {
-        if (!r3::moe_shm::acknowledge_lane_drain(h_->lane[lane], closure,
-                                               [&] { return gpu_.sync_lane(lane); })) {
+        using namespace r3::moe_shm;
+        if (!acknowledge_lane_drain(h_->lane[lane], closure, [&] { return gpu_.sync_lane(lane); })) {
             request_stop();
             return;
         }
-        r3::moe_shm::notify(h_);
-        while (!stopping() && drain_requested(lane) == closure) wait_lane_notice(lane, closure);
+        notify(h_);
+        for (;;) {
+            const uint32_t generation = load(&h_->notify);
+            if (stopping() || drain_requested(lane) != closure) return;
+            if (futex_wait(&h_->notify, generation) < 0 && errno != EINTR && errno != EAGAIN) {
+                std::fprintf(stderr, "r3_moe_worker: futex_wait(notify): %s\n", std::strerror(errno));
+                request_stop();
+                return;
+            }
+        }
     }
 
     /* Large lane: wait for the engine's request word, read its rows, launch that size. The engine publishes from GPU
@@ -155,16 +172,17 @@ private:
         using namespace r3::moe_shm;
         for (uint32_t next = 1; !stopping();) {
             if (seq_after(next, load(&h_->lane[lane].request_sequence))) {
-                /* Idle only: a drain is requested after admission closed and every admitted parent retired, so no
-                 * request is outstanding when one arrives, and the serving spin reads nothing it did not on main. */
-                if (const uint64_t closure = drain_requested(lane)) {
-                    /* This thread owns combine_step too; reaching here proves its
-                     * CPU jobs have returned as well as its GPU stream. */
-                    acknowledge_drain(lane, closure);
-                    continue;
+                if (!(load(&h_->burst) & 1u)) {
+                    /* Outside a burst only: the engine holds the word even while it asks for a drain, after
+                     * admission closed and every parent retired, so no request is outstanding. This thread owns
+                     * combine_step too; reaching here proves its CPU jobs have returned as well as its stream. */
+                    if (const uint64_t closure = drain_requested(lane)) {
+                        acknowledge_drain(lane, closure);
+                        continue;
+                    }
+                    if (!wait_burst(h_, lane)) break;
                 }
-                if (!(load(&h_->burst) & 1u)) wait_lane_notice(lane);
-                else std::this_thread::yield();
+                std::this_thread::yield();
                 continue;
             }
             const Request* q = lane_request(map_, lane, next);
@@ -223,14 +241,14 @@ private:
         };
         uint32_t* park = &h_->lane[lane].park;
         bool armed = false;
-        while (!stopping()) {
+        while (wait_burst(h_, lane)) {
+            /* The burst word is held even during a drain, so wait_burst returned for the request. */
             if (const uint64_t closure = drain_requested(lane)) {
                 if (armed && park_lane(lane, park, next, &done_seen, true) == Park::Failed) break;
                 armed = false;
                 acknowledge_drain(lane, closure);
                 continue;
             }
-            if (!(load(&h_->burst) & 1u)) { wait_lane_notice(lane); continue; }
             if (!armed) {
                 next = done_seen + 1u;
                 if (!fill()) { request_stop(); break; }
@@ -240,8 +258,6 @@ private:
             while (!stopping()) {
                 const uint32_t done = load(&h_->lane[lane].done_sequence);
                 if (!seq_after(done, done_seen)) {
-                    /* Idle only, as on the large lane: no completion is due once a drain is requested. */
-                    if (drain_requested(lane)) break;
                     if (!(load(&h_->burst) & 1u)) break;   /* the burst ended */
                     std::this_thread::yield();
                     continue;
@@ -252,8 +268,8 @@ private:
                 if (!fill()) { request_stop(); break; }
             }
             if (stopping()) break;
-            if (drain_requested(lane)) continue; /* force drain even without power save */
-            if (!cfg_.power_save) continue;   /* stay armed; the outer loop waits for burst or drain */
+            if (drain_requested(lane)) continue;   /* the burst ended for a drain: park by force at the loop top */
+            if (!cfg_.power_save) continue;   /* stay armed; wait_burst sleeps until the next burst or a drain */
             const Park p = park_lane(lane, park, next, &done_seen);
             if (p == Park::Failed) break;
             armed = p == Park::Reopened;

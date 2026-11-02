@@ -94,6 +94,12 @@ struct HookState {
     uint32_t engine_ranks = 0; /* scheduler-owned; published once before the controller starts */
     bool drain_verified = false; /* reopen requires a successful full drain */
     std::thread placement_thread;
+    /* Header::burst ownership: burst_transition (scheduler) and the helper drain (placement thread). While a drain
+     * is requested the word is held even, so the helpers' burst spins end without reading drain words; radiance's
+     * wanted state is applied at reopen. */
+    std::mutex burst_mu;
+    bool burst_want = false;
+    bool burst_draining = false;
     std::atomic<bool> placement_stop{false};
     std::mutex mu;
     std::thread snapshotter;          /* R3_MOE_WORKER_HISTOGRAM_PERIOD_S: writes the live route histogram */
@@ -285,11 +291,22 @@ bool served_lane(uint32_t lane) {
     return (g.hdr->helper_count <= 1 || lane % kMaxSlots < g.hdr->helper_count) &&
            (!lane_is_small(lane) || lane_class(lane) < g.hdr->small_class_count);
 }
+void hold_burst_for_drain(Header* h);
+
+/* Admission is closed and every admitted parent has retired, so ending the burst cuts off no work. The drain words
+ * are stored before the burst word moves: a helper that sees the move (burst spin ends, or its futex wait on the word
+ * returns) then sees its drain request. An idle word moves by 2, so it stays even and still wakes sleepers. */
 void request_helper_drain(uint64_t closure) {
+    Header* h = g.hdr;
     for (uint32_t lane = 0; lane < kLanes; ++lane)
         if (served_lane(lane))
-            __atomic_store_n(&g.hdr->lane[lane].drain_request, closure, __ATOMIC_RELEASE);
-    notify(g.hdr);
+            __atomic_store_n(&h->lane[lane].drain_request, closure, __ATOMIC_RELEASE);
+    {
+        std::lock_guard<std::mutex> lock(g.burst_mu);
+        g.burst_draining = true;
+        hold_burst_for_drain(h);
+    }
+    notify(h);   /* acknowledge_drain's closure wait and the engine's park waits use the generation word */
 }
 
 bool helper_drained(uint64_t closure) {
@@ -361,6 +378,35 @@ void publish_layer_map(int layer, int n_expert, const int32_t* slot_of_expert) {
         std::fprintf(stderr, "libr3: R3_MOE_WORKER layer %d: helper failed before consuming its map\n", layer);
 }
 
+/* Begin: wait only for lanes a helper is still draining (Header::burst; normally none, so no sleep), so nothing is
+ * published into released waits. A fault leaves the engine's next GPU wait to trap; nothing to wait for here. */
+void wait_parks(Header* h) {
+    for (uint32_t lane = 0; lane < kLanes; ++lane) {
+        uint32_t* park = &h->lane[lane].park;
+        if (wait_for(h, nullptr, [&] { return __atomic_load_n(park, __ATOMIC_SEQ_CST) != kParkDraining; }) ==
+            WaitResult::Error)
+            raise_fault(h);   /* the drain was not seen to finish: never publish into released waits */
+    }
+}
+
+/* Under g.burst_mu: move the word to `active`'s parity. True when it opened a burst (the caller waits for parks). */
+bool apply_burst(Header* h, bool active) {
+    const uint32_t b = load(&h->burst) & ~kBurstStop;
+    if (active == (bool)(b & 1u)) return false;
+    if (active) g.watch.notice();
+    (void)__atomic_fetch_add(&h->burst, 1u, __ATOMIC_SEQ_CST);
+    (void)futex_wake(&h->burst);
+    return active;
+}
+
+/* Under g.burst_mu, with burst_draining set: end a running burst, or move an idle word by 2 (parity unchanged), so
+ * burst spins exit and futex sleepers on the word wake to read their drain request. */
+void hold_burst_for_drain(Header* h) {
+    const uint32_t b = load(&h->burst) & ~kBurstStop;
+    (void)__atomic_fetch_add(&h->burst, (b & 1u) ? 1u : 2u, __ATOMIC_SEQ_CST);
+    (void)futex_wake(&h->burst);
+}
+
 /* An inference burst begins or ends (RAD20: the helpers arm GPU waits only inside a burst, so their queues are
  * empty and the GPUs idle between bursts). R3_MOE_WORKER_BURST_TRACE=1 logs each transition with a monotonic
  * timestamp, for checking begin/end pairing across single-stream, multi-stream and MTP runs. */
@@ -371,25 +417,17 @@ void burst_transition(int active) {
     }();
     static std::atomic<uint64_t> begins{0}, ends{0};
     const uint64_t n = active ? begins.fetch_add(1) + 1 : ends.fetch_add(1) + 1;
-    /* One engine process drives the segment's burst word. Begin: open the burst, then wait only for lanes a helper is
-     * still draining (Header::burst; normally none, so no sleep), so nothing is published into released waits. End:
-     * close it. A helper that stops clears its drain flags and sets helper_fault. */
+    /* One engine process drives the segment's burst word. During a helper drain only radiance's wanted state is
+     * recorded; reopen applies it. A helper that stops clears its drain flags and sets helper_fault. */
     if (g.hdr) {
         Header* h = g.hdr;
-        const uint32_t b = load(&h->burst) & ~kBurstStop;
-        if (active == (int)(b & 1u)) return;
-        if (active) g.watch.notice();
-        (void)__atomic_fetch_add(&h->burst, 1u, __ATOMIC_SEQ_CST);
-        (void)futex_wake(&h->burst);
-        notify(h); /* lane waiters also observe explicit admission-drain requests */
-        if (active)
-            for (uint32_t lane = 0; lane < kLanes; ++lane) {
-                uint32_t* park = &h->lane[lane].park;
-                /* Fault: the engine's GPU wait traps on the next remote step; nothing to wait for here. */
-                if (wait_for(h, nullptr, [&] { return __atomic_load_n(park, __ATOMIC_SEQ_CST) != kParkDraining; }) ==
-                    WaitResult::Error)
-                    raise_fault(h);   /* the drain was not seen to finish: never publish into released waits */
-            }
+        bool opened = false;
+        {
+            std::lock_guard<std::mutex> lock(g.burst_mu);
+            g.burst_want = active != 0;
+            if (!g.burst_draining) opened = apply_burst(h, g.burst_want);
+        }
+        if (opened) wait_parks(h);
     }
     if (trace) {
         timespec ts{};
@@ -397,6 +435,18 @@ void burst_transition(int active) {
         std::fprintf(stderr, "libr3moe: burst %s #%llu t=%lld.%06ld\n", active ? "begin" : "end",
                      (unsigned long long)n, (long long)ts.tv_sec, ts.tv_nsec / 1000);
     }
+}
+
+/* Reopen, after the drain was verified and the drain words cleared: radiance's wanted burst state takes the word
+ * again, parks waited for as at a begin, before admission lets the scheduler publish. */
+void resume_burst_after_drain(Header* h) {
+    bool opened = false;
+    {
+        std::lock_guard<std::mutex> lock(g.burst_mu);
+        g.burst_draining = false;
+        opened = apply_burst(h, g.burst_want);
+    }
+    if (opened) wait_parks(h);
 }
 
 /* The canonical generation has one owner byte per model-global expert. */
@@ -782,19 +832,20 @@ extern "C" int r3_moe_wait_drained(const R3MoeDrainSnapshot* snap,
 extern "C" int r3_moe_reopen_admission(uint32_t epoch, uint32_t slot) {
     uint32_t committed_epoch = 0;
     uint8_t committed_slot = 0;
-    {
-        std::lock_guard<std::mutex> lock(g.mu);
-        if (!g.drain_verified ||
-            !committed(&committed_epoch, &committed_slot) ||
-            committed_epoch != epoch || committed_slot != slot ||
-            !g.ledger.reopen(epoch, (uint8_t)slot))
-            return RAD_E_STATE;
-        for (uint32_t lane = 0; lane < kLanes; ++lane)
-            __atomic_store_n(&g.hdr->lane[lane].drain_request, uint64_t(0), __ATOMIC_RELEASE);
-        notify(g.hdr);
-        g.drain_verified = false;
-        g.closed_snapshot = {};
-    }
+    std::lock_guard<std::mutex> lock(g.mu);
+    if (!g.drain_verified ||
+        !committed(&committed_epoch, &committed_slot) ||
+        committed_epoch != epoch || committed_slot != slot)
+        return RAD_E_STATE;
+    /* Helpers leave their closure wait, then the burst word returns to radiance's state (with its park wait), and
+     * only then may the scheduler publish: the ledger reopens last. */
+    for (uint32_t lane = 0; lane < kLanes; ++lane)
+        __atomic_store_n(&g.hdr->lane[lane].drain_request, uint64_t(0), __ATOMIC_RELEASE);
+    notify(g.hdr);
+    resume_burst_after_drain(g.hdr);
+    if (!g.ledger.reopen(epoch, (uint8_t)slot)) return RAD_E_STATE;
+    g.drain_verified = false;
+    g.closed_snapshot = {};
     return RAD_OK;
 }
 

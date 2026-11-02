@@ -163,7 +163,17 @@ ledger drains, each small helper lane stops refilling, suppresses phantom
 completion publication, releases its prequeued waits and drains its stream,
 even with power saving disabled. Large lanes ACK after their stream and
 CPU combine jobs finish. ACKs are specific to the closure; helpers remain
-parked until reopen. This handshake is separate from burst power management.
+parked until reopen.
+
+The request reaches the helpers through the burst word, never through reads in
+their serving spins: the engine stores each lane's drain_request, then ends a
+running burst (or moves an idle word by 2, parity unchanged, so futex sleepers
+wake) and holds it even until reopen. radiance's own burst transitions during
+the drain are recorded and applied at reopen, after the drain words are
+cleared and before the ledger reopens. A lane reads drain_request only where it
+has seen the burst end or in wait_burst, so its serving and waiting spins read
+exactly what main's do. Hybrid A/B (swapping only the helper binary) showed
+per-iteration drain reads in those spins cost about 0.5% decode.
 
 ## No-op epoch cycle through PlacementControl
 
