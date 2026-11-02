@@ -57,6 +57,14 @@ Replay kernel time against W4H2 on identical captures in each row regime; end-to
 
 Owner direction 2026-11-01: park and deep-analyse rather than discard. Kernel changes stay in the bigcherry moe-remote component (managed). The worker harness's W4 CPU reference is broken (rel_l2 ~1.0 for the default kernel, RAD15), so correctness is by KLD until it is fixed.
 
+GPT deep analysis 2026-11-02 (gateway request req_main_8fe06a9b63c2): W4MR loses mainly by giving up route-level parallelism, not by bad arithmetic. At 104 routes over ~65 touched experts (1.5-1.7 rows/expert, ~60% of experts one row) it schedules ~37.5% fewer useful blocks (gate/up 1,300 vs 2,080; down 2,600 vs 4,160) and also launches blocks for every owned-but-untouched expert (grid X = experts(), ~194); it reserves 4x the LDS (20.8 KB vs 5.2 KB at K=2560) and walks an expert's rows serially in 4-row passes. W4H2's repeated per-route reads are partly cache hits: its gate/up requested-byte rate ~950 GB/s is at the XTX's DRAM peak, and the down working set (~55 MB) fits the 96 MB Infinity Cache (gate/up ~110 MB does not). Distinct-weight DRAM floor ~172 us for the request vs W4H2 340 us measured, so W4H2 is not at a pure bandwidth roofline. Expected crossover for the current W4MR ~5-7 rows per touched expert; a better kernel could cross at ~3-4. Ranked next experiments: (1) measure the real rows-per-expert histogram and DRAM / L2 / MALL counters (rocprofv3 TCC_* / TCC_EA_* / SQ_*) on replay; (2) a two-row specialisation compared with two W4H2 blocks; (3) a compact hybrid dispatch - one task list of (expert, first_row, row_count, n_tile), single-row W4H2 tasks for 1-row experts, independently scheduled row groups (no serial 4-row loop) for busy experts, no blocks for untouched experts; (4) rows across waves, split-K for gate/up. For 128-256-row steps prefer the grouped GEMM. Stop/go: continue a variant only if it beats W4H2 by >=5% in its target regime with no >2% regression on 1-row-dominated captures.
+
 ## Change Log
 
 - 2026-11-01T22:24:03.382106+00:00 (created-by): Created by agent
+- 2026-11-02T02:40:39.027180+00:00 (updated-by): Updated: section:notes
+
+## Ledger-events
+
+- chg_20261102_024204_planning-records-updated-with_6210
+- 2026-11-02T02:42:08.723212+00:00 (updated-by): Updated: section:ledger-events
