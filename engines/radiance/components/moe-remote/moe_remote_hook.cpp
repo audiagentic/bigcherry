@@ -380,13 +380,17 @@ void publish_layer_map(int layer, int n_expert, const int32_t* slot_of_expert) {
 
 /* Begin: wait only for lanes a helper is still draining (Header::burst; normally none, so no sleep), so nothing is
  * published into released waits. A fault leaves the engine's next GPU wait to trap; nothing to wait for here. */
-void wait_parks(Header* h) {
+bool wait_parks(Header* h) {
     for (uint32_t lane = 0; lane < kLanes; ++lane) {
         uint32_t* park = &h->lane[lane].park;
-        if (wait_for(h, nullptr, [&] { return __atomic_load_n(park, __ATOMIC_SEQ_CST) != kParkDraining; }) ==
-            WaitResult::Error)
+        const WaitResult r =
+            wait_for(h, nullptr, [&] { return __atomic_load_n(park, __ATOMIC_SEQ_CST) != kParkDraining; });
+        if (r != WaitResult::Ready) {
             raise_fault(h);   /* the drain was not seen to finish: never publish into released waits */
+            return false;
+        }
     }
+    return true;
 }
 
 /* Under g.burst_mu: move the word to `active`'s parity. True when it opened a burst (the caller waits for parks). */
@@ -427,7 +431,7 @@ void burst_transition(int active) {
             g.burst_want = active != 0;
             if (!g.burst_draining) opened = apply_burst(h, g.burst_want);
         }
-        if (opened) wait_parks(h);
+        if (opened) (void)wait_parks(h);   /* a failure raised helper_fault; the next pass fails closed on it */
     }
     if (trace) {
         timespec ts{};
@@ -439,14 +443,14 @@ void burst_transition(int active) {
 
 /* Reopen, after the drain was verified and the drain words cleared: radiance's wanted burst state takes the word
  * again, parks waited for as at a begin, before admission lets the scheduler publish. */
-void resume_burst_after_drain(Header* h) {
+bool resume_burst_after_drain(Header* h) {
     bool opened = false;
     {
         std::lock_guard<std::mutex> lock(g.burst_mu);
         g.burst_draining = false;
         opened = apply_burst(h, g.burst_want);
     }
-    if (opened) wait_parks(h);
+    return !opened || wait_parks(h);
 }
 
 /* The canonical generation has one owner byte per model-global expert. */
@@ -842,7 +846,12 @@ extern "C" int r3_moe_reopen_admission(uint32_t epoch, uint32_t slot) {
     for (uint32_t lane = 0; lane < kLanes; ++lane)
         __atomic_store_n(&g.hdr->lane[lane].drain_request, uint64_t(0), __ATOMIC_RELEASE);
     notify(g.hdr);
-    resume_burst_after_drain(g.hdr);
+    /* Fail closed: a park wait that did not see every lane return, or a helper fault since the commit, keeps
+     * admission shut. */
+    if (!resume_burst_after_drain(g.hdr) || helper_faulted()) {
+        g.ledger.fault();
+        return RAD_E_STATE;
+    }
     if (!g.ledger.reopen(epoch, (uint8_t)slot)) return RAD_E_STATE;
     g.drain_verified = false;
     g.closed_snapshot = {};

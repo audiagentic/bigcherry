@@ -158,6 +158,8 @@ private:
         for (;;) {
             const uint32_t generation = load(&h_->notify);
             if (stopping() || drain_requested(lane) != closure) return;
+            /* A faulted placement never reopens: stop rather than stay parked (the engine's next pass fails closed). */
+            if (load(&h_->helper_fault)) { request_stop(); return; }
             if (futex_wait(&h_->notify, generation) < 0 && errno != EINTR && errno != EAGAIN) {
                 std::fprintf(stderr, "r3_moe_worker: futex_wait(notify): %s\n", std::strerror(errno));
                 request_stop();
