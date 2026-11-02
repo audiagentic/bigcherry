@@ -1388,7 +1388,7 @@
     "jsonPointer": {
       "description": "RFC 6901 JSON Pointer; \"\" is the root.",
       "type": "string",
-      "maxLength": 4096,
+      "maxLength": 1024,
       "pattern": "^(|/(?:[^~/]|~[01])*(?:/(?:[^~/]|~[01])*)*)$"
     },
     "helperCommon": {

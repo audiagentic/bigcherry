@@ -18,10 +18,10 @@ inline constexpr std::string_view kApiVersion = "bigcherry/v1";
 inline constexpr std::string_view kKind = "ServingManifest";
 inline constexpr int64_t kContractVersion = 1;
 // sha256 of the JCS validation schema without annotations (contract/README.md); the build pins it.
-inline constexpr std::string_view kFingerprint = "sha256:3f1f0027d5ffe9fc83808df81591639866ed2b28512dbfad7ea99c8606b81515";
+inline constexpr std::string_view kFingerprint = "sha256:e0ec5b5d6d05808b3eb3fd1f69e160a408a534cfb8f749676f610a266e696fe3";
 // sha256 of the schema plus the frozen semantics it does not express (classes, lifecycle, Radiance bindings,
 // reader error codes); README.md.
-inline constexpr std::string_view kSemanticFingerprint = "sha256:dd2f27e4e21f4ad6d222ae3bc5118cb49ff13d3918443521c22f96ff07bb69b0";
+inline constexpr std::string_view kSemanticFingerprint = "sha256:f9c9198530061c43a5f5e8926e59c634ab224a2aea362954f51c02d4a98b08a0";
 // spec §11 amendment 8: the deepest container nesting a valid document can have (the root object is 1),
 // derived from the closed schema by the generator. The strict reader refuses anything deeper.
 inline constexpr size_t kMaxDepth = 9;

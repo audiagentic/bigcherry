@@ -162,8 +162,9 @@ void check_scalar(const Node& n, const std::string& at) {
     if (n.min_length && *n.min_length < 0) fault(at, "min_length is not negative");
     // spec §11 amendment 7: std::regex recurses per repetition, so a pattern only ever sees a bounded string
     if (!n.pattern.empty() && !n.max_length) fault(at, "a pattern needs a max_length (spec §11 amendment 7)");
-    if (!n.pattern.empty() && n.max_length && *n.max_length > 4096)
-        fault(at, "a pattern's max_length is at most 4096 characters (16,384 UTF-8 bytes; spec §11 amendment 7)");
+    if (!n.pattern.empty() && n.max_length && *n.max_length > 1024)
+        fault(at, "a pattern's max_length is at most 1024 characters (4,096 UTF-8 bytes, 5x under the measured-safe "
+                  "20,000; spec §11 amendment 7)");
     if (n.max_length && (*n.max_length < 1 || (n.min_length && *n.min_length > *n.max_length)))
         fault(at, "max_length is positive and not below min_length");
     if (n.values.size() > 256) fault(at, "an enum has at most 256 values (uint8_t)");

@@ -181,7 +181,7 @@ doc = "PCI address, `dddd:bb:dd.f`, lowercase."
 name = "jsonPointer"
 kind = "string"
 pattern = "^(|/(?:[^~/]|~[01])*(?:/(?:[^~/]|~[01])*)*)$"
-max_length = 4096
+max_length = 1024
 doc = "RFC 6901 JSON Pointer; \"\" is the root."
 
 [[def]]

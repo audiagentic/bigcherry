@@ -329,19 +329,25 @@ int main() {
         for (int i = 0; i < 100000; ++i) deep += "/a";
         Json j = prod;
         j["provenance"][deep] = prod["provenance"][""];
-        expect(from(rehashed(j)), C::provenance_invalid, "longer than 4096", "a 100k-segment pointer, refused cleanly");
+        expect(from(rehashed(j)), C::provenance_invalid, "longer than 1024", "a 100k-segment pointer, refused cleanly");
         std::string ptr;
-        for (int i = 0; i < 2048; ++i) ptr += "/a";   // 4096 characters, 2048 levels deep
+        for (int i = 0; i < 512; ++i) ptr += "/a";   // 1024 characters, 512 levels deep
         ProvenanceRecord rec;
         const Json base_rec = prod["provenance"][""];
         Json at_limit = base_rec;
         at_limit["inputs"] = Json::array({ptr});
-        check(ptr.size() == 4096 && !decode(at_limit, "provenance[\"\"]", &rec), "a 4096-character pointer passes");
+        check(ptr.size() == 1024 && !decode(at_limit, "provenance[\"\"]", &rec), "a 1024-character pointer passes");
+        std::string wide = "/";
+        for (int i = 0; i < 1023; ++i) wide += "\xf0\x9f\x98\x80";   // 1024 characters of up to four bytes each
+        Json at_wide = base_rec;
+        at_wide["inputs"] = Json::array({wide});
+        check(wide.size() == 4093 && !decode(at_wide, "provenance[\"\"]", &rec),
+              "a 1024-character pointer of four-byte characters passes (the worst case reaching the pattern)");
         Json over = base_rec;
         over["inputs"] = Json::array({ptr + "b"});
         const Status s4097 = decode(over, "provenance[\"\"]", &rec);
-        check(s4097 && s4097->code == C::provenance_invalid && s4097->message.find("longer than 4096") != std::string::npos,
-              "a 4097-character pointer is refused");
+        check(s4097 && s4097->code == C::provenance_invalid && s4097->message.find("longer than 1024") != std::string::npos,
+              "a 1025-character pointer is refused");
         Metadata md;
         Json meta = prod["metadata"];
         check(meta["content_digest"].get<std::string>().size() == 71 && !decode(meta, "metadata", &md), "a 71-character digest");
@@ -376,7 +382,7 @@ int main() {
         dup["spec"]["processes"]["helpers"][0]["formats"] = Json::array({"w4nl64", "w4nl64"});
         expect(from(rehashed(dup)), C::duplicate_field, "repeats item 0", "a repeated format");
         std::string ptr = "/";
-        for (int i = 0; i < 3000; ++i) ptr += "\xc3\xa9";   // 3,001 characters, 6,001 bytes
+        for (int i = 0; i < 1000; ++i) ptr += "\xc3\xa9";   // 1,001 characters, 2,001 bytes
         ProvenanceRecord rec;
         Json r1 = prod["provenance"][""];
         r1["inputs"] = Json::array({ptr});

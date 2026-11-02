@@ -365,7 +365,7 @@ Status d9(const Json& j, const std::string& at, std::string* out) {  // $defs/bd
 
 Status d10(const Json& j, const std::string& at, std::string* out) {  // $defs/jsonPointer
     static const std::regex re(R"re(^(|/(?:[^~/]|~[01])*(?:/(?:[^~/]|~[01])*)*)$)re", std::regex::ECMAScript);
-    return str_in(j, at, C::invalid_type, C::invalid_value, -1, 4096, &re, "^(|/(?:[^~/]|~[01])*(?:/(?:[^~/]|~[01])*)*)$", false, out);
+    return str_in(j, at, C::invalid_type, C::invalid_value, -1, 1024, &re, "^(|/(?:[^~/]|~[01])*(?:/(?:[^~/]|~[01])*)*)$", false, out);
 }
 
 Status d15(const Json& j, const std::string& at, bool* out) {  // $defs/helperCommon/cpu/reference
@@ -1406,7 +1406,7 @@ Status d239(const Json& j, const std::string& at, Confidence* out) {  // /proven
 
 Status d241(const Json& j, const std::string& at, std::string* out) {  // /provenance/*/inputs/[]
     static const std::regex re(R"re(^(|/(?:[^~/]|~[01])*(?:/(?:[^~/]|~[01])*)*)$)re", std::regex::ECMAScript);
-    return str_in(j, at, C::provenance_invalid, C::provenance_invalid, -1, 4096, &re, "^(|/(?:[^~/]|~[01])*(?:/(?:[^~/]|~[01])*)*)$", false, out);
+    return str_in(j, at, C::provenance_invalid, C::provenance_invalid, -1, 1024, &re, "^(|/(?:[^~/]|~[01])*(?:/(?:[^~/]|~[01])*)*)$", false, out);
 }
 
 Status d240(const Json& j, const std::string& at, std::vector<std::string>* out) {  // /provenance/*/inputs
@@ -1428,7 +1428,7 @@ Status d233(const Json& j, const std::string& at, std::map<std::string, Provenan
     static const std::regex re(R"re(^(|/(?:[^~/]|~[01])*(?:/(?:[^~/]|~[01])*)*)$)re", std::regex::ECMAScript);
     out->clear();
     for (const auto& [k, v] : j.items()) {
-        if (characters(k) > 4096) return fault(C::provenance_invalid, keyed(at, k.substr(0, 64) + "..."), "key is " + std::to_string(characters(k)) + " characters, longer than 4096");
+        if (characters(k) > 1024) return fault(C::provenance_invalid, keyed(at, k.substr(0, 64) + "..."), "key is " + std::to_string(characters(k)) + " characters, longer than 1024");
         if (!std::regex_search(k, re)) return fault(C::provenance_invalid, keyed(at, k), "key is not a valid jsonPointer");
         ProvenanceRecord x{};
         if (auto e = decode(v, keyed(at, k), &x)) return e;
