@@ -112,10 +112,35 @@ static void V23Digest_ExactAndImmutable() {
     std::puts("V23Digest_ExactAndImmutable: PASS");
 }
 
+/* RAD42: every combined chunk has exactly one poller (its first block) whatever that token's routing, and every routed
+ * block of the chunk waits on the mirror the poller writes, so no waiter is left without a writer. */
+static void CombineChunkWait_FirstBlockAlwaysPolls() {
+    for (uint32_t pattern = 0; pattern < 16; ++pattern) {   /* routing of a chunk's tokens 0..3, plus a far token */
+        for (uint32_t chunk = 0; chunk < kCombineChunks; ++chunk) {
+            const uint32_t first = chunk * kCombineChunkRows;
+            uint32_t pollers = 0, waiters = 0;
+            for (uint32_t t = 0; t < kCombineChunkRows; ++t) {
+                const bool routed = t < 4 ? ((pattern >> t) & 1u) != 0u : (t == kCombineChunkRows - 1u);
+                const CombineChunkWait w = combine_chunk_wait(true, first + t, routed);
+                pollers += w == CombineChunkWait::Poll;
+                waiters += w == CombineChunkWait::Mirror;
+                if (!routed && t != 0) check(w == CombineChunkWait::None, "CombineChunkWait unrouted non-first block waits");
+            }
+            check(pollers == 1, "CombineChunkWait exactly one poller per chunk");
+            check(waiters == 0 || pollers == 1, "CombineChunkWait waiter without a writer");
+        }
+    }
+    /* The hang's shape: first token engine-local, a later token remote. */
+    check(combine_chunk_wait(true, 0, false) == CombineChunkWait::Poll, "CombineChunkWait local first token still polls");
+    check(combine_chunk_wait(true, 1, true) == CombineChunkWait::Mirror, "CombineChunkWait routed later token waits");
+    check(combine_chunk_wait(false, 0, true) == CombineChunkWait::None, "CombineChunkWait uncombined step never waits");
+}
+
 int main() {
     V23Layout_ExactOffsetsAndBounds();
     V23Map_LocalProtectedAndDisjoint();
     V23Digest_ExactAndImmutable();
+    CombineChunkWait_FirstBlockAlwaysPolls();
     const std::string name = "/r3-moe-shm-test-" + std::to_string((long long)getpid());
     Layout l{};
     check(layout_for(legacy_shape(), 48, kLegacySlots, &l), "V23Layout_ExactOffsetsAndBounds initial layout");
