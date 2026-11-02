@@ -550,14 +550,26 @@ void host_ledger_plan() {
     assert(bc::serving::Calibration::standard().get("calibration.checkpoint_share", {"m", "flashnext-4gpu", "latency"})
                .value == "want");
 
-    // The engine plan is strict.
-    const Json plan = {{"plan_version", 1}, {"producer", "radiance --plan-memory (rad0011)"},
-                       {"inputs_sha256", "ab12"},
-                       {"host", Json::array({{{"name", "ngram_table"}, {"bytes", 1024}, {"residence", "pinned"},
-                                              {"from", "weight_footprint"}, {"remedy", ""}}})},
-                       {"kv_bytes_per_token", {{"bytes", 4096}, {"from", "kv plan_groups"}}}};
+    // The engine plan (rad0011's JSON) is strict.
+    const Json plan = Json::parse(R"json({
+      "plan_version": 1, "producer": "radiance --plan-memory (rad0011)",
+      "host": [{"name": "ngram_table", "bytes": 51196575744, "residence": "pinned",
+                "from": "engine plan (rad0011: weight_footprint, resolve_table_placement)",
+                "remedy": "set engine.ngram_placement = \"disk\""}],
+      "checkpoints": {"slot_bytes": 117941452, "floor_slots": 8, "want_slots": 72,
+                      "from": "engine plan (rad0011: KVManager::checkpoint_bytes, checkpoint_slots_want)"},
+      "kv_one_session": {"bytes": 4000000000, "from": "engine plan (rad0011: VramFacts::kv_one)"},
+      "vram": {"claimable": 31224000000, "statics": 5800000000, "elastic": 25400000000, "experts": 0,
+               "kv": 22800000000, "stage": 2600000000, "expert_floor": 0, "kv_ceiling": 40000000000,
+               "expert_ceiling": 9000000000, "from": "engine plan (rad0011: vram_budget_resolve)",
+               "cards": [{"capacity": 34208743424, "free": 33900000000, "engine_expert_plane": 9000000000,
+                          "expert_unit_max": 2537472}]},
+      "host_pool_mib": 9216})json");
     const auto parsed = bc::serving::parse_engine_plan(plan);
-    assert(parsed.host.size() == 1 && parsed.host[0].residence == Residence::pinned && parsed.kv_bytes_per_token == 4096);
+    assert(parsed.host.size() == 1 && parsed.host[0].residence == Residence::pinned);
+    assert(parsed.checkpoint_want_slots == 72 && parsed.checkpoint_floor_slots == 8);
+    assert(parsed.kv_one_session_bytes == 4000000000ull && parsed.host_pool_mib == 9216);
+    assert(parsed.vram.at("cards").size() == 1);
     auto rejects = [](Json j, const std::string& needle) {
         try { (void)bc::serving::parse_engine_plan(j); } catch (const std::exception& e) {
             if (std::string(e.what()).find(needle) != std::string::npos) return;
@@ -571,6 +583,10 @@ void host_ledger_plan() {
     bad = plan; bad["host"][0]["bytes"] = -1; rejects(bad, "byte count");
     bad = plan; bad["host"].push_back(plan["host"][0]); rejects(bad, "duplicate consumer ngram_table");
     bad = plan; bad["host"][0].erase("from"); rejects(bad, "missing from");
+    bad = plan; bad["checkpoints"]["floor_slots"] = 99; rejects(bad, "floor_slots exceeds want_slots");
+    bad = plan; bad["vram"].erase("kv"); rejects(bad, "missing kv");
+    bad = plan; bad["vram"]["cards"] = Json::array(); rejects(bad, "non-empty array");
+    bad = plan; bad["vram"]["cards"][0]["arch"] = "gfx1201"; rejects(bad, "unknown key arch");
 }
 
 int main() {

@@ -27,7 +27,7 @@ required-state = "untested"
 # Start from a resolved serving manifest (rad0009, RSC07): `--manifest PATH` replaces command-line flags. Untested until a
 # manifest launch is shown to parse to the same config as the argv launch on hardware, then moved to serving-core.
 [patch-set.serving-manifest]
-patches = ["rad0009_serving_manifest"]
+patches = ["rad0009_serving_manifest", "rad0011_plan_memory"]
 required-state = "untested"
 
 # The remote-MoE hand-off and its diagnostics (shadow compare, mask-only). Diagnostic builds only: patch-lint fails

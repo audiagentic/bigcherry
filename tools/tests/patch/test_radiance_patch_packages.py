@@ -30,6 +30,7 @@ RAD0002 = "rad0002_moe_remote_handoff"
 RAD0003 = "rad0003_mtp_full_head_switch"
 RAD0004 = "rad0004_moe_remote_diagnostics"
 RAD0009 = "rad0009_serving_manifest"
+RAD0011 = "rad0011_plan_memory"
 
 #: package -> (file, a line that must be unique in it as applied, its replacement that breaks the anchor)
 CASES = {
@@ -538,3 +539,75 @@ class TestServingManifestPatch(unittest.TestCase):
             self.assertIn("ok", run.stdout)
         finally:
             temp.cleanup()
+
+
+class TestPlanMemoryPatch(unittest.TestCase):
+    """rad0011: `--plan-memory FILE` writes Engine::plan()'s sizes and exits; thin hooks into core/bc_plan_memory.*."""
+
+    def _applied(self):
+        temp = tempfile.TemporaryDirectory()
+        root = Path(temp.name)
+        shutil.copytree(FIXTURE, root, dirs_exist_ok=True)
+        self.assertTrue(all(result.ok for result in apply_all(list(_load(RAD0009)) + list(_load(RAD0011)), root)))
+        return temp, root
+
+    def _added_code(self, root, path):
+        added = TestRadiancePatchPackages._added_lines(
+            (FIXTURE / path).read_text(encoding="utf-8"), (root / path).read_text(encoding="utf-8"))
+        return [line.strip() for line in added if line.strip() and not line.strip().startswith(("/*", "*"))]
+
+    def test_upstream_edits_are_thin_calls_into_the_extension_point(self):
+        patches = _load(RAD0011)
+        self.assertEqual({p.path for p in patches if not p.create}, {"core/main.cpp", "core/engine_bringup.cpp"})
+        self.assertEqual({p.path for p in patches if p.create}, {"core/bc_plan_memory.h", "core/bc_plan_memory.cpp"})
+        temp, root = self._applied()
+        try:
+            self.assertEqual(self._added_code(root, "core/main.cpp"), [
+                '#include "bc_serving_manifest.h"',
+                '#include "bc_plan_memory.h"',
+                "if (!bc_plan_memory_take_flag(&argc, &argv)) return 2;",
+                "if (!bc_serving_engine_argv(&argc, &argv)) return 2;",
+                "if (!bc_serving_mark_given(&cfg.given)) return 2;",
+            ])
+            self.assertEqual(self._added_code(root, "core/engine_bringup.cpp"), [
+                '#include "bc_plan_memory.h"',
+                "bc_plan_memory_note(cfg_, facts, vb, emb_bytes, wfs, ngram_bytes, ck_slot, host_arenas, kv_floor, ctx, "
+                "geo_.checkpoint_interval);",
+                "RAD_TRY(bc_plan_memory_done());",
+            ])
+        finally:
+            temp.cleanup()
+
+    def test_flag_is_taken_before_the_manifest_reader_and_the_plan_exits_before_weights_load(self):
+        temp, root = self._applied()
+        try:
+            main = (root / "core/main.cpp").read_text(encoding="utf-8")
+            self.assertLess(main.index("bc_plan_memory_take_flag(&argc, &argv)"),
+                            main.index("bc_serving_engine_argv(&argc, &argv)"))
+            bringup = (root / "core/engine_bringup.cpp").read_text(encoding="utf-8")
+            self.assertIn("    RAD_TRY(plan());\n    RAD_TRY(bc_plan_memory_done());\n    RAD_TRY(load_weights());", bringup)
+            resolve = bringup.index("RAD_TRY(vram_budget_resolve(cfg_, facts, &vb));")
+            note = bringup.index("bc_plan_memory_note(cfg_, facts, vb,")
+            self.assertLess(resolve, note)
+            self.assertLess(note, bringup.index("int Engine::start()"))
+        finally:
+            temp.cleanup()
+
+    def test_second_apply_is_a_no_op(self):
+        temp, root = self._applied()
+        try:
+            before = {p: (root / p).read_text(encoding="utf-8") for p in ("core/main.cpp", "core/engine_bringup.cpp")}
+            self.assertTrue(all(r.ok for r in apply_all(list(_load(RAD0009)) + list(_load(RAD0011)), root)))
+            self.assertEqual(before, {p: (root / p).read_text(encoding="utf-8") for p in before})
+        finally:
+            temp.cleanup()
+
+    def test_without_rad0009_it_fails_closed_and_writes_nothing(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            shutil.copytree(FIXTURE, root, dirs_exist_ok=True)
+            results = apply_all(list(_load(RAD0011)), root)
+            self.assertFalse(all(r.ok for r in results))
+            self.assertEqual((root / "core/main.cpp").read_text(encoding="utf-8"),
+                             (FIXTURE / "core/main.cpp").read_text(encoding="utf-8"))
+            self.assertFalse((root / "core/bc_plan_memory.cpp").exists())
