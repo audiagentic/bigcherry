@@ -58,6 +58,10 @@ No P2P: only CPU stores into a BAR and host-memory chunks. Depends on RAD40.
 
 DEFECT 2026-11-02 (open): the chunked combine hangs on the two-helper layout under big concurrent prefill. flashnext-2xtx-combine (no RX 6900 XT tail), W4H2 + 32-row path, 9 GiB host pool + 12 GiB KV tier, 8-session ~1M-token run: the engine watchdog reported 'a synchronisation has seen no queue advance for 5 s' with one queue at 'barrier-and dep[0]=1' and another stuck in mailbox_add_rows_kernel (written 384066 / read 382054), then 'the engine stopped on an error and is not serving (device error)', failing all eight requests. The same layout served 6 x short prompts and a 49K prefill cleanly (run tail-budget), and the four-helper flashnext-4gpu layout with the same combine runs the 8-session load at 3,043-3,045 tok/s. The engine log also shows 'runtime slot map changed across ranks' for layers 34/44/46/47 at start. Logs preserved: /work/development/tmp/bigcherry/notail-hang/ (engine.log, excerpt.txt, helper0/1 logs); run /work/bigcherry/runs/tail-budget2 (notail arm). Next: reproduce in the worker harness with two helpers at 2,048-row chunks (chunk words for a helper with no rows in a chunk, the leader-poll mirror, and helper 0 combining with one other helper are the suspects); no layout without the tail can become a default until fixed.
 
+
+
+Hang fixed 2026-11-02 (PR #520). Cause: in a combined step, only a chunk's first block polled chunks.done[c] and mirrored it to device memory, and it did so only when its own token had a helper route. A chunk whose first token was entirely engine-local left the chunk's routed blocks spinning on a mirror nobody wrote. Fix: combine_chunk_wait() is shared by the kernel and r3_moe_shm_test; the first block always polls in a combined step. The test fails on the old guard. Hardware: flashnext-2xtx-combine (no tail), 8 sessions, 1,032,070 prompt tokens, completed in 422 s (2,452 tok/s prefill-dominated). Helper 0 ran 22,704 combine steps over 23,804 large-lane requests, about 4x past the 5,957 requests where it hung before. Run: /work/bigcherry/runs/rad42-fix.
+
 ## Change Log
 
 - 2026-11-01T11:26:21.039480+00:00 (created-by): Created by agent
@@ -84,8 +88,6 @@ Design b (pushing the combined plane into engine VRAM through the BAR) is not do
 
 ## Ledger-events
 
-
-
 - chg_20261101_141636_flash-next-on-four-gpus-serves_8287
 - 2026-11-01T14:16:40.613683+00:00 (updated-by): Updated: section:ledger-events
 - 2026-11-02T02:41:48.629382+00:00 (updated-by): Updated: section:notes
@@ -93,3 +95,4 @@ Design b (pushing the combined plane into engine VRAM through the BAR) is not do
 - 2026-11-02T02:42:29.034602+00:00 (updated-by): Updated: section:ledger-events
 - chg_20261102_042612_fixed-a-hang-with-many-concurr_2245
 - 2026-11-02T04:26:16.739750+00:00 (updated-by): Updated: section:ledger-events
+- 2026-11-02T04:46:35.372778+00:00 (updated-by): Updated: section:notes
