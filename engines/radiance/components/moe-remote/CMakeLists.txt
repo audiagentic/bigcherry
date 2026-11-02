@@ -43,7 +43,9 @@ target_compile_definitions(r3_moe_worker PRIVATE __HIP_PLATFORM_AMD__)
 if(NOT RAD_HSA_RUNTIME)
   find_library(RAD_HSA_RUNTIME hsa-runtime64 HINTS /opt/rocm/lib ENV ROCM_PATH PATH_SUFFIXES lib REQUIRED)
 endif()
-target_link_libraries(r3_moe_worker PRIVATE radiance::abi ${CMAKE_DL_LIBS} ${RAD_HIP_RUNTIME} ${RAD_HSA_RUNTIME} Threads::Threads)
+# Expert ownership and the container reader are bc_experts, the one implementation bc-serve plans owner maps with.
+include("${CMAKE_CURRENT_SOURCE_DIR}/../serving/bc_experts.cmake")
+target_link_libraries(r3_moe_worker PRIVATE radiance::abi bc_experts ${CMAKE_DL_LIBS} ${RAD_HIP_RUNTIME} ${RAD_HSA_RUNTIME} Threads::Threads)
 set_target_properties(r3_moe_worker PROPERTIES HIP_STANDARD 17 HIP_STANDARD_REQUIRED ON
   RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/helpers)
 

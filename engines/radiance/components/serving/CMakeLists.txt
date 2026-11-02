@@ -22,6 +22,9 @@ target_include_directories(bc_contract PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/contr
 add_executable(bc_contract_gen contract/generate.cpp)
 target_link_libraries(bc_contract_gen PRIVATE bc_contract)
 
+# The helpers' expert ownership, shared with moe-remote's r3_moe_worker (bc_experts.cmake).
+include("${CMAKE_CURRENT_SOURCE_DIR}/bc_experts.cmake")
+
 add_library(bc_serving STATIC serving.cpp)
 target_link_libraries(bc_serving PUBLIC bc_jcs)
 target_compile_features(bc_serving PUBLIC cxx_std_20)
@@ -43,6 +46,9 @@ if(BUILD_TESTING)
   target_compile_definitions(bc_jcs_test PRIVATE
     BC_CONTRACT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../../../docs/design/serving-manifest-v1")
   add_test(NAME bc_jcs_test COMMAND bc_jcs_test)
+  add_executable(bc_experts_test EXCLUDE_FROM_ALL experts_test.cpp)
+  target_link_libraries(bc_experts_test PRIVATE bc_experts bc_jcs)
+  add_test(NAME bc_experts_test COMMAND bc_experts_test)
   add_executable(bc_contract_test EXCLUDE_FROM_ALL contract/registry_test.cpp)
   target_link_libraries(bc_contract_test PRIVATE bc_contract)
   target_compile_definitions(bc_contract_test PRIVATE BC_CONTRACT_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
