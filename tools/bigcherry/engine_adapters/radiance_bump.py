@@ -181,19 +181,11 @@ class ComponentGate:
         return failures
 
     def component_tests(self) -> list[str]:
-        """Build each component's declared test targets and run them with ctest in the component's build tree."""
+        """Each component's declared test targets, built and run by runtime_bundle.run_component_tests (the same run
+        PR CI makes)."""
         self._require_built()
-        failures = []
-        for name, component in sorted(self.declared.items()):
-            if not component.test_targets:
-                continue
-            tree = runtime_bundle.component_build_dir(self.build_dir, name)
-            try:
-                self.runner(["cmake", "--build", str(tree), "-j", "--target", *component.test_targets], self.source_dir)
-                self.runner(["ctest", "--test-dir", str(tree), "--output-on-failure"], self.source_dir)
-            except subprocess.CalledProcessError as exc:
-                failures.append(f"{name}: `{' '.join(map(str, exc.cmd))}` exited {exc.returncode}")
-        return failures
+        return runtime_bundle.run_component_tests(self.engine, source_root=self.source_dir, build_dir=self.build_dir,
+                                                  runner=self.runner)
 
 
 def compile_checks(

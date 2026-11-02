@@ -92,3 +92,33 @@ def build_runtime(
             shutil.copy2(produced[0], target)
         built[name] = component.content_digest()
     return built
+
+
+def component_test_log(build_dir: Path, name: str) -> Path:
+    """Where ``run_component_tests`` writes component ``name``'s ctest log."""
+    return component_build_dir(build_dir, name) / "ctest-component-tests.log"
+
+
+def run_component_tests(engine: str, *, source_root: Path, build_dir: Path, runner: Runner = _run) -> list[str]:
+    """Build every component's declared test targets (component.toml ``[test] targets``) in its build tree and run
+    exactly those tests with ctest, one log per component. Returns one failure line per component that did not pass,
+    naming the command and its log. The pin-bump gate and PR CI both run this; nothing else runs component tests.
+
+    Only the declared tests run (``-R`` on their names, ``--no-tests=error``): a tree may register tests that need a
+    GPU and are deliberately not declared, and a declared target without a test of the same name is a failure, not an
+    empty pass."""
+    failures = []
+    for name, component in sorted(components.load_all(paths.REPO_ROOT, engine).items()):
+        if not component.test_targets:
+            continue
+        tree = component_build_dir(build_dir, name)
+        log = component_test_log(build_dir, name)
+        pattern = "^(" + "|".join(component.test_targets) + ")$"
+        try:
+            runner(["cmake", "--build", str(tree), "-j", "--target", *component.test_targets], source_root)
+            runner(["ctest", "--test-dir", str(tree), "--output-on-failure", "--no-tests=error", "-R", pattern,
+                    "--output-log", str(log)], source_root)
+        except subprocess.CalledProcessError as exc:
+            failures.append(f"{name}: `{' '.join(map(str, exc.cmd))}` exited {exc.returncode}; log: {log}")
+    return failures
+

@@ -21,6 +21,7 @@ on:
       - 'tools/bigcherry/build/**'
       - 'config/environment.example.toml'
       - 'tools/bigcherry/engine_adapters/radiance*.py'
+      - 'tools/bigcherry/cli/component_tests.py'
       - '.github/workflows/radiance-build.yml'
       - '.github/workflows/radiance-build-image.yml'
       - '.github/docker/radiance-build/**'
@@ -100,5 +101,18 @@ jobs:
             else
               git clone --bare https://codeberg.org/StillDeadcode/radiance.git work/upstream/radiance.git
             fi
-            python3 -m bigcherry build --lane radiance-lab:stock:linux-radiance
+            python3 -m bigcherry build --lane radiance-lab:stock:linux-radiance | tee work/lane-build.log
+            plan=$(grep -oE "ok build_plan_id=[0-9a-f]+" work/lane-build.log | tail -1 | cut -d= -f2)
+            test -n "$plan"
+            # The card-free component tests, exactly as the pin-bump gate runs them (runtime_bundle.run_component_tests):
+            # each component's declared [test] targets, one ctest log per component, named on failure.
+            python3 -m bigcherry --engine radiance component-tests --build "$(ls -d work/builds/*/"$plan")"
           '
+
+      - name: Component test logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: component-test-logs
+          path: work/builds/*/*/components/*/ctest-component-tests.log
+          if-no-files-found: ignore

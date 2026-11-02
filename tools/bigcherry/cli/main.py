@@ -48,6 +48,7 @@ from .accept import cmd_accept
 from .profiling import cmd_profile_campaign
 from .runtime import cmd_reference_ladder, cmd_runtime_matrix
 from .smoke import cmd_smoke_cpu
+from .component_tests import cmd_component_tests
 from .source import cmd_audit, cmd_pull
 from .slice import (
     cmd_slice_finish,
@@ -819,6 +820,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="default: as the engine declares; sigint for a build without the engine's shutdown route",
     )
     smoke_cpu_cmd.set_defaults(func=cmd_smoke_cpu)
+
+    component_tests_cmd = sub.add_parser(
+        "component-tests",
+        help="card-free component tests: build each component's declared [test] targets in a lane build's component "
+        "trees and run exactly those with ctest, one log per component (the run the pin-bump gate makes)",
+    )
+    component_tests_cmd.add_argument("--build", required=True, help="the lane's build directory (holds components/)")
+    component_tests_cmd.set_defaults(func=cmd_component_tests)
 
     release_notes_cmd = sub.add_parser(
         "release-notes",

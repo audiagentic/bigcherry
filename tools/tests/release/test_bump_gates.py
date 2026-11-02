@@ -11,6 +11,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from bigcherry.campaign import runtime_bundle
 from bigcherry.core import components, engines, paths
 from bigcherry.core import config as campaign_config
 from bigcherry.core.context import ProjectContext
@@ -51,7 +52,12 @@ class AdapterDispatchTests(unittest.TestCase):
 
     def test_moe_remote_declares_its_offline_tests(self):
         moe_remote = components.load_all(paths.REPO_ROOT, engines.RADIANCE)["moe-remote"]
-        self.assertEqual(moe_remote.test_targets, ("r3_moe_shm_test", "r3_moe_backend_test", "r3_moe_fp8_ref_test"))
+        self.assertEqual(moe_remote.test_targets, (
+            "r3_moe_shm_test", "r3_moe_backend_test", "r3_worker_share_test", "r3_worker_heat_test",
+            "r3_moe_epoch_test", "r3_moe_fp8_ref_test", "r3_combine_f16_test", "r3_combine_pool_test"))
+        # registered with CTest but GPU-only: never declared, so the card-free run never selects them
+        for gpu_only in ("r3_route_compact_test", "r3_ticket_replay_test"):
+            self.assertNotIn(gpu_only, moe_remote.test_targets)
 
 
 class AbiHeaderTests(unittest.TestCase):
@@ -210,6 +216,33 @@ class ComponentGateTests(unittest.TestCase):
             checks["component-plugin-abi"].run()
         with self.assertRaises(BumpCheckError):
             checks["component-tests"].run()
+
+    def test_component_tests_run_exactly_the_declared_tests_with_a_log_each(self):
+        checks = self.checks()
+        self.assertEqual(checks["components-build"].run(), [])
+        self.assertEqual(checks["component-tests"].run(), [])
+        ctests = {Path(c[c.index("--test-dir") + 1]).name: c for c in self.calls if c[:2] == ["ctest", "--test-dir"]}
+        for name, component in components.load_all(paths.REPO_ROOT, "radiance").items():
+            if not component.test_targets:
+                self.assertNotIn(name, ctests)
+                continue
+            call = ctests[name]
+            self.assertIn("--no-tests=error", call)
+            self.assertEqual(call[call.index("-R") + 1], "^(" + "|".join(component.test_targets) + ")$")
+            self.assertEqual(call[call.index("--output-log") + 1],
+                             str(runtime_bundle.component_test_log(self.work / "radiance-build", name)))
+        # the GPU-only tests are registered with CTest but never declared, so CI's card-free run never selects them
+        moe = ctests["moe-remote"][ctests["moe-remote"].index("-R") + 1]
+        self.assertNotIn("r3_route_compact_test", moe)
+        self.assertNotIn("r3_ticket_replay_test", moe)
+
+    def test_a_failing_component_test_names_its_log(self):
+        checks = self.checks()
+        self.assertEqual(checks["components-build"].run(), [])
+        self.failing = "ctest"
+        failures = checks["component-tests"].run()
+        self.assertTrue(failures)
+        self.assertTrue(all("; log: " in f and f.endswith("ctest-component-tests.log") for f in failures))
 
     def test_component_test_failure_stops_the_bump_with_a_structured_code(self):
         self.failing = "ctest"

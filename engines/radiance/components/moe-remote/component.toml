@@ -15,8 +15,12 @@ outputs = ["kernels/libr3moe.so", "helpers/r3_moe_worker"]
 configure = { RADIANCE_SRC = "{engine_source}" }   # the helper builds for every card type in engines/radiance/archs.toml (CMakeLists.txt)
 
 # Offline tests the bump gate builds and runs with ctest in the component's build tree.
+# Card-free tests, run by the pin-bump gate and PR CI (bigcherry component-tests). The GPU tests r3_route_compact_test
+# (RAD29) and r3_ticket_replay_test (RHP11) are registered with CTest but deliberately not declared: they need a GPU,
+# which the CI runner does not have, and run only under an explicit gpu lease.
 [test]
-targets = ["r3_moe_shm_test", "r3_moe_backend_test", "r3_moe_fp8_ref_test"]
+targets = ["r3_moe_shm_test", "r3_moe_backend_test", "r3_worker_share_test", "r3_worker_heat_test",
+           "r3_moe_epoch_test", "r3_moe_fp8_ref_test", "r3_combine_f16_test", "r3_combine_pool_test"]
 
 # Runtime settings: see libr3/component.toml for the status vocabulary.
 
