@@ -42,12 +42,23 @@ value = 0.60
 seeded = "2026-11-02"
 evidence = "run tail-size on flashnext-4gpu: the 8 GiB tail point (64% backing) keeps decode within 1% of the smallest tail (361 vs 364 tok/s) and TTFT at 1.67 s, with 8-session prefill +4% (2,520 vs 2,422 tok/s); balanced takes about 60%"
 
-# Checkpoint store share: how many linear-state snapshots the plan gives the engine's checkpoint store before the host
-# KV tier takes the rest of host RAM. "want" plans the checkpoint policy's own want (radiance checkpoint_slots_want for
-# max_sessions, max_context and checkpoint_interval); "floor" plans only its floor. With "want" the ledger still shrinks
-# the store toward the floor when the tier would otherwise hold no full-length session.
+# Checkpoint store share: how host RAM left after every fixed consumer and the reserve is split between the host KV tier
+# and the engine's checkpoint store. "tier_first" gives the tier its target (calibration.host_kv_tier.target_mib) first and
+# the store the remainder, between its floor and the checkpoint policy's want, as the engine's own auto-size does;
+# "want" plans the store's want first and the tier the rest; "floor" plans only the floor. Explain shows want and floor
+# whichever applies, so the trade-off stays visible.
+# Refit criterion: RHP12's retained-session cohort (step time and prefix resume after a long fill) decides whether to move
+# toward "want".
 [[entry]]
 key = "calibration.checkpoint_share"
-value = "want"
+value = "tier_first"
 seeded = "2026-11-02"
-evidence = "the checkpoint policy wants 72 snapshots for 8 x 262144 at a 4096 interval (9 a sequence, 112.48 MiB each, 7.91 GiB): the engine sized all 72 with the host KV tier off (run host-pool, 2026-11-02), and only 43 (4.72 GiB) with today's launcher's 9 GiB pool and 12 GiB tier (run rsc03-plan step 2), the tier having taken the rest; planning the want keeps prefix resume at the policy's granularity for long retained sessions, the RHP12 retained-session cohort the plan is judged by; whether the tier should win RAM from checkpoints is for that cohort to refit"
+evidence = "reproduces today's launch (no regression): with the 9 GiB host pool and the 12 GiB host KV tier the engine auto-sized 43 snapshots of 112.48 MiB (4.72 GiB) of a want of 72 (9 a sequence for 8 x 262144 at a 4096 interval), the tier having been placed first (run rsc03-plan step 2, 2026-11-02); with the tier off it sized all 72 (7.91 GiB, run host-pool); planning the want first would itself change today's behaviour"
+
+# The host KV tier's target under checkpoint_share = tier_first: finished sessions' KV kept in pinned host memory.
+[[entry]]
+key = "calibration.host_kv_tier.target_mib"
+match = { layout = "flashnext-4gpu" }
+value = 12288
+seeded = "2026-11-02"
+evidence = "today's launch (HOST_KV_MIB=12288): the 9 GiB pool plus a 12 GiB tier took post-fill prefill from 1,901 to 3,165 tok/s (the KV-loan collapse avoided), and 6-stream decode after an ~1M-token session fill from 52.8 to 46.9 ms a step, with the n-gram table kept in RAM; a 32 GiB tier (n-gram table on disk) left 0 GiB free and is refused by the reserve"

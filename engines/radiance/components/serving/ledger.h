@@ -41,7 +41,8 @@ EnginePlan parse_engine_plan(const nlohmann::json& plan);
 struct CheckpointStore {
     uint64_t slot_bytes = 0, floor_slots = 0, want_slots = 0;
     std::string from;
-    // calibration.checkpoint_share: "want" plans want_slots; "floor" plans floor_slots.
+    // calibration.checkpoint_share: "want" plans want_slots; "floor" plans floor_slots; "tier_first" gives the host KV
+    // tier its calibrated target first and the store the remainder, between floor and want.
     std::string share = "want";
     std::string share_from;
 };
@@ -53,6 +54,7 @@ struct LedgerInputs {
     CheckpointStore checkpoints;
     bool retention_keep = true;              // service.retention: keep finished sessions in the host KV tier
     uint64_t min_tier_bytes = 0;             // below this the tier holds no full session: it is 0
+    uint64_t tier_target_bytes = 0;          // calibration.host_kv_tier.target_mib, used by share tier_first
 };
 
 struct Ledger {

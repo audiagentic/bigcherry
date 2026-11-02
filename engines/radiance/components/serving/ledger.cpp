@@ -119,8 +119,8 @@ Ledger host_ledger(const LedgerInputs& in) {
 
     const uint64_t reserve = in.reserve_mib * kMiB;
     const CheckpointStore& ck = in.checkpoints;
-    if (ck.share != "want" && ck.share != "floor")
-        throw std::runtime_error("calibration.checkpoint_share must be want or floor, not " + ck.share);
+    if (ck.share != "want" && ck.share != "floor" && ck.share != "tier_first")
+        throw std::runtime_error("calibration.checkpoint_share must be want, floor or tier_first, not " + ck.share);
     if (ck.floor_slots > ck.want_slots)
         throw std::runtime_error("checkpoint store: floor_slots exceeds want_slots");
     Json consumers = Json::array();
@@ -165,6 +165,7 @@ Ledger host_ledger(const LedgerInputs& in) {
         return r;
     };
 
+    const bool tier_first = ck.share == "tier_first";
     const uint64_t planned = ck.share == "want" ? ck.want_slots : ck.floor_slots;
     uint64_t slots = planned;
     std::string ck_why = "the calibrated share (" + ck.share + "): " + ck.share_from;
@@ -172,7 +173,21 @@ Ledger host_ledger(const LedgerInputs& in) {
     (void)room_with(ck.floor_slots);
     Room room = room_with(slots);
     const bool keep = in.retention_keep;
-    if (keep && room.bytes < in.min_tier_bytes && slots > ck.floor_slots && ck.slot_bytes) {
+    // tier_first: the tier takes its calibrated target out of the room the floor leaves, and the store the remainder,
+    // between its floor and its want, as the engine's own auto-size gives it.
+    uint64_t tier_bytes = 0;
+    if (tier_first) {
+        const Room at_floor = room_with(ck.floor_slots);
+        tier_bytes = keep ? std::min<uint64_t>(in.tier_target_bytes, at_floor.bytes) : 0;
+        if (tier_bytes < in.min_tier_bytes) tier_bytes = 0;
+        const uint64_t left = at_floor.bytes - tier_bytes;
+        slots = std::min<uint64_t>(ck.want_slots, ck.floor_slots + (ck.slot_bytes ? left / ck.slot_bytes : 0));
+        room = room_with(slots);
+        ck_why = "the calibrated share (tier_first: " + ck.share_from + "): the host KV tier takes " +
+                 std::to_string(tier_bytes / kMiB) + " MiB first and the store the remainder, " + std::to_string(slots) +
+                 " of a want of " + std::to_string(ck.want_slots) + " (floor " + std::to_string(ck.floor_slots) + ")";
+    }
+    if (!tier_first && keep && room.bytes < in.min_tier_bytes && slots > ck.floor_slots && ck.slot_bytes) {
         // Step 1: give the tier its minimum out of the store, never below the floor.
         const uint64_t short_by = in.min_tier_bytes - room.bytes;
         const uint64_t give = std::min<uint64_t>(slots - ck.floor_slots, (short_by + ck.slot_bytes - 1) / ck.slot_bytes);
@@ -188,11 +203,16 @@ Ledger host_ledger(const LedgerInputs& in) {
     std::string tier_why;
     if (!keep) {
         tier_why = "service.retention = evict: finished sessions are not kept";
-    } else if (room.bytes < in.min_tier_bytes) {
+    } else if (tier_first ? tier_bytes == 0 : room.bytes < in.min_tier_bytes) {
         tier_why = "the room left (" + std::to_string(room.bytes / kMiB) + " MiB under " + room.limit +
                    ", with the checkpoint store at its floor of " + std::to_string(slots) +
                    " slot(s)) is less than one full-length session's KV (" + std::to_string(mib_up(in.min_tier_bytes)) +
                    " MiB), so the tier would hold no whole session";
+    } else if (tier_first) {
+        out.host_kv_mib = tier_bytes / kMiB;
+        tier_why = tier_bytes == in.tier_target_bytes
+                       ? "its calibrated target (calibration.host_kv_tier.target_mib), taken before the checkpoint store"
+                       : "the room left under " + room.limit + " with the store at its floor, below its calibrated target";
     } else {
         out.host_kv_mib = room.bytes / kMiB;
         tier_why = "the room left under " + room.limit + " after every consumer, the checkpoint store and the reserve";

@@ -15,7 +15,7 @@ nlohmann::json base() {
                 "remedy": "set engine.ngram_placement = \"disk\""}],
       "checkpoints": {"slot_bytes": 100, "floor_slots": 8, "want_slots": 72, "from": "engine plan (rad0011: ckpt)"},
       "kv_one_session": {"bytes": 500, "from": "engine plan (rad0011: kv_one)"},
-      "vram": {"claimable": 9000, "statics": 3000, "elastic": 6000, "experts": 0, "kv": 6000, "stage": 200,
+      "vram": {"claimable": 9000, "statics": 3000, "elastic": 6000, "experts": 0, "kv": 5000, "stage": 200,
                "expert_floor": 0, "kv_ceiling": 7000, "expert_ceiling": 100, "from": "engine plan (rad0011: vram)",
                "cards": [{"capacity": 10000, "free": 9900, "engine_expert_plane": 100, "expert_unit_max": 10}]},
       "host_pool_mib": 9216})json");
@@ -53,8 +53,10 @@ int main() {
     expect(false, live, "VRAM statics: live 3001");
     live = base(); live["vram"]["stage"] = 201;
     expect(false, live, "VRAM stage: live 201");
-    live = base(); live["vram"]["claimable"] = 8999;
-    expect(false, live, "claimable VRAM: live 8999 bytes fall short of the planned 9000 bytes");
+    live = base(); live["vram"]["claimable"] = 9000 - 100;    // a live reading that moved a little: the split still fits
+    expect(true, live, "");
+    live = base(); live["vram"]["claimable"] = 8199;           // the planned split is 3000 + 5000 + 0 + 200 = 8200
+    expect(false, live, "claimable VRAM (for the planned split: statics + kv + experts + stage): live 8199 bytes fall short of the planned 8200 bytes");
     live = base(); live["vram"]["cards"][0]["capacity"] = 9999;
     expect(false, live, "card 0 capacity: live 9999 bytes fall short of the planned 10000");
     live = base(); live["vram"]["cards"].push_back(live["vram"]["cards"][0]);

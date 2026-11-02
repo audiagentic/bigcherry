@@ -181,8 +181,8 @@ _BC_PLAN_MEMORY_CHECK_H = r"""/* bc_plan_memory_check.h -- BigCherry managed pat
 /* True when nothing the live plan needs exceeds what the expected plan provided for. Otherwise false, with `why` naming
  * the first consumer that grew, the two byte counts, where the live number came from and what to do. Checked: every
  * host consumer (one the expected plan does not have counts as grown from 0), the checkpoint slot and floor, one
- * full-length session's KV, the static weights, the prefill staging, and the card's claimable VRAM and capacity
- * (which must not shrink). */
+ * full-length session's KV, the static weights, the prefill staging, and the card's capacity (which must not shrink).
+ * Claimable VRAM, a live reading, must hold the planned split: statics + kv + experts + stage. */
 bool bc_plan_memory_check(const nlohmann::json& expected, const nlohmann::json& live, std::string* why);
 """
 
@@ -240,8 +240,12 @@ bool bc_plan_memory_check(const nlohmann::json& expected, const nlohmann::json& 
     for (const char* k : {"statics", "stage"})
         if (num(lv, k) > num(ev, k))
             return fail(why, std::string("VRAM ") + k, num(lv, k), num(ev, k), lv.at("from").get<std::string>(), "", "exceed");
-    if (num(lv, "claimable") < num(ev, "claimable"))
-        return fail(why, "claimable VRAM", num(lv, "claimable"), num(ev, "claimable"), lv.at("from").get<std::string>(),
+    /* Claimable VRAM is a live reading (the driver's resident bytes move by a few KiB between starts), so it is checked
+     * for what it is for: the planned split (statics, KV, experts, staging) must fit in what is claimable now. */
+    const int64_t split = num(ev, "statics") + num(ev, "kv") + num(ev, "experts") + num(ev, "stage");
+    if (num(lv, "claimable") < split)
+        return fail(why, "claimable VRAM (for the planned split: statics + kv + experts + stage)", num(lv, "claimable"),
+                    split, lv.at("from").get<std::string>(),
                     "free the engine card or measure the plan again (bc-serve --plan-memory)", "fall short of");
     const auto& lcards = lv.at("cards");
     const auto& ecards = ev.at("cards");

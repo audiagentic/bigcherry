@@ -132,6 +132,16 @@ resolve() wiring: deferred to the v1 migration (lead decision 2026-11-02, option
 
 5. Start-up plan check (slice 3), also deferred to v1. The manifest carries the expected plan, the measured plan document the budgets were derived from (or its cache key plus the document), and the engine runs bc_plan_memory_check(expected, live) at start-up, right after plan(), failing closed when any live need exceeds the expected value. The check itself is written and tested: rad0011 core/bc_plan_memory_check.{h,cpp}, a pure function of two plan documents, compiled and run by test_radiance_patch_packages.TestPlanMemoryPatch.test_plan_check_compiled_and_run. v1 only supplies the expected document and the one thin call.
 
+
+6. Design question for the v1 review: planning without live helpers. The engine's plan() footprint depends on the helper-owned expert units (rad0002's bc_moe_remote_mark_footprint reads the helpers' published map through the libr3moe mailbox), so measuring a plan needs the helpers up. Interim (lead pre-decision): if the 2026-11-02 hardware run's 1a confirms this, `bc-serve --plan-memory` becomes "start the helpers from the manifest, then the engine with --plan-memory, then stop all", sharing RSC02's supervision code rather than duplicating it. Target: the helper-owned set is known before start-up (plan_owners, the same select_owned the helpers run), so v1 lets the engine take it from the manifest (owner_map_sha256 plus the owned sets) for planning, and uses the live shm only to verify it at start-up. Then --plan-memory needs only the engine card, and the start-up check compares like with like.
+
+
+   Confirmed evidence for item 6 (hardware, 2026-11-02, run rsc03-plan step 1a): `bc-serve --plan-memory` with the engine alone (no helpers) failed closed after 4.9 s. The engine reached plan(), but start-up stopped "out of memory" ("weights-from-disk: 33.13 GiB of weights a rank are read from the container on disk"): with no helper-owned units, plan() computes a different plan. A plan exists only with the owner map, which supports "the engine plans from the manifest's owned sets".
+
+Decisions after the hardware run (lead, 2026-11-02):
+- Slice 3's claimable check treats claimable as a live fact. Live claimable must be at least the planned statics + kv + experts + stage, with no tolerance constant. The run showed free VRAM moving by 8192 bytes between two starts. The other consumers stay exact.
+- calibration.checkpoint_share is seeded tier_first, with calibration.host_kv_tier.target_mib = 12288 for flashnext-4gpu. This reproduces today's launch, which gives 43 snapshots (4.72 GiB) of a want of 72 with the 12 GiB tier. Want and floor stay visible in explain. Refit criterion: RHP12's retained-session cohort decides whether to move toward want.
+
 ## Change Log
 
 - 2026-11-02T00:53:06.703369+00:00 (created-by): Created by agent
@@ -149,3 +159,5 @@ resolve() wiring: deferred to the v1 migration (lead decision 2026-11-02, option
 - 2026-11-02T09:08:56.161715+00:00 (updated-by): Updated: section:notes
 - 2026-11-02T09:13:27.207054+00:00 (updated-by): Updated: section:notes
 - 2026-11-02T09:16:58.106092+00:00 (updated-by): Updated: section:notes
+- 2026-11-02T09:35:39.506296+00:00 (updated-by): Updated: section:notes
+- 2026-11-02T09:46:22.035505+00:00 (updated-by): Updated: section:notes

@@ -546,12 +546,30 @@ void host_ledger_plan() {
     in.checkpoints.share = "most";
     refused = false;
     try { (void)bc::serving::host_ledger(in); } catch (const std::exception& e) {
-        refused = std::string(e.what()).find("want or floor") != std::string::npos;
+        refused = std::string(e.what()).find("want, floor or tier_first") != std::string::npos;
     }
     assert(refused);
-    // The compiled-in share is the evidence-carrying "want".
-    assert(bc::serving::Calibration::standard().get("calibration.checkpoint_share", {"m", "flashnext-4gpu", "latency"})
-               .value == "want");
+    // tier_first: the tier takes its target out of what the floor leaves, the store the remainder, up to its want.
+    in.checkpoints.share = "tier_first";
+    in.tier_target_bytes = 12288 * MiB;
+    l = bc::serving::host_ledger(in);
+    // floor 16 x 112 MiB leaves 83020 - (48824 + 7300 + 3072) - 1792 - 4705 = 17327 MiB; the tier takes 12288 and the
+    // store 16 + (17327 - 12288) / 112 = 60 slots of a want of 72.
+    assert(l.host_kv_mib == 12288 && l.checkpoint_slots == 60);
+    assert(l.explain.at("checkpoints").at("want_slots") == 72 && l.explain.at("checkpoints").at("floor_slots") == 16);
+    assert(l.explain.at("checkpoints").at("why").get<std::string>().find("takes 12288 MiB first") != std::string::npos);
+    assert(l.explain.at("host_kv_why").get<std::string>().find("calibrated target") != std::string::npos);
+    // A target larger than the room: the tier takes the room the floor leaves and the store stays at its floor.
+    in.tier_target_bytes = 40000 * MiB;
+    l = bc::serving::host_ledger(in);
+    assert(l.host_kv_mib == 17327 && l.checkpoint_slots == 16);
+    assert(l.explain.at("host_kv_why").get<std::string>().find("below its calibrated target") != std::string::npos);
+    in.checkpoints.share = "want";
+    in.tier_target_bytes = 0;
+    // The compiled-in share reproduces today's launch: tier first, 12 GiB.
+    const auto standard = bc::serving::Calibration::standard();
+    assert(standard.get("calibration.checkpoint_share", {"m", "flashnext-4gpu", "latency"}).value == "tier_first");
+    assert(standard.number("calibration.host_kv_tier.target_mib", {"m", "flashnext-4gpu", "latency"}) == 12288);
 
     // The engine plan (rad0011's JSON) is strict.
     const Json plan = Json::parse(R"json({
