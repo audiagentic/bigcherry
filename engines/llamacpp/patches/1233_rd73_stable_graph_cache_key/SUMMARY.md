@@ -248,7 +248,7 @@ updated to say so at the time, which is itself a process gap worth noting.]
 
 ## DEMOTION (2026-09-09): HI162's balanced A/B measures this as a real regression
 
-Filed as `docs/planning/completed/hip-autotune/HI162.md` (P0, 2026-09-05,
+Filed as `docs/planning/completed/tuning-hip-autotune/HI162.md` (P0, 2026-09-05,
 `created-by: claude-opus-5`). An order-balanced, composition-verified 4-arm
 comparison on the SAME contract workload (MTP speculative decode, model
 `tierL-qwen27b-q8`, gfx1100 x2, `-sm tensor`) as the GOVERNED QUALIFICATION

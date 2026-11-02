@@ -63,7 +63,7 @@ stable fingerprint no longer collapses non-identical shapes onto a
 shared allocation-dependent pointer) for higher hit rates. This
 contract's `resource_limits.graph_cache_entries.max_value = 800` is
 subject peak (651) plus ~23% documented engineering headroom. Full
-methodology is recorded in `docs/planning/active/validation-package-standard/VA06.md`.
+methodology is recorded in `docs/planning/active/build-validation-package-standard/VA06.md`.
 
 ## How to invoke validation
 

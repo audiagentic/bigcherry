@@ -80,7 +80,7 @@ record->tune->promote->export->replay->bench->report campaign, bound to a
 machine-checked correctness-evidence record) -- that is what actually
 gates STATE='validated' here, not prose claims about manual testing, no
 matter how real the manual testing was. See
-docs/planning/active/rdna-boost-experiments/RD30.md for the full evidence
+docs/planning/active/patching-rdna-boost-experiments/RD30.md for the full evidence
 trail and this note.
 """
 

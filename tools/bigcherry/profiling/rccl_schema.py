@@ -6,7 +6,7 @@ qualification result's admissibility can be scoped to the EXACT RCCL build
 that produced it, per the runbook's P2.1 requirement
 (docs/reference/testing/RCCL_HETEROGENEOUS_RUNBOOK.md).
 
-This exists because GP06 (docs/planning/active/gpu-collectives/GP06.md)
+This exists because GP06 (docs/planning/active/run-gpu-collectives/GP06.md)
 found real hardware evidence that a topology's RCCL viability is NOT
 portable across RCCL builds that report similar version strings: RCCL
 2.30.4 from two independently-built ROCm installs (a TheRock dev build and

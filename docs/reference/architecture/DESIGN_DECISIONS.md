@@ -128,7 +128,7 @@ be tuned:
   *end-to-end* regression under the exact workload where graph replay
   matters, despite the candidate's own per-call output being numerically
   correct. Demoted (`engines/llamacpp/patches/1233_rd73_stable_graph_cache_key`,
-  `docs/planning/completed/hip-autotune/HI162.md`) specifically because
+  `docs/planning/completed/tuning-hip-autotune/HI162.md`) specifically because
   per-candidate correctness evidence alone didn't catch it.
 - **Precision propagation.** `numerical_class` (`exact_baseline` /
   `equivalent_within_backend_tolerance` / `reduced_precision`, HI17) exists

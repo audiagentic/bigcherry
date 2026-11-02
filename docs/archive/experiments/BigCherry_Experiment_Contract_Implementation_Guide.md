@@ -293,10 +293,10 @@ Reuse the existing generalized-key proof. Current policy defaults require at lea
 - tools/bigcherry/source_identity.py
 - tools/bigcherry/identity_separation.py
 - patches/0820_measurement_signature_shapes/patch.py
-- docs/planning/active/rdna-boost-experiments/RD24.md
-- docs/planning/active/rdna-boost-experiments/RD25.md
-- docs/planning/active/rdna-boost-experiments/RD26.md
-- docs/planning/active/rdna-boost-experiments/RD27.md
+- docs/planning/active/patching-rdna-boost-experiments/RD24.md
+- docs/planning/active/patching-rdna-boost-experiments/RD25.md
+- docs/planning/active/patching-rdna-boost-experiments/RD26.md
+- docs/planning/active/patching-rdna-boost-experiments/RD27.md
 
 ## Appendix A. Patch-aware implementation map
 

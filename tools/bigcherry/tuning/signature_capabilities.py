@@ -11,7 +11,7 @@ This is the central distinction the whole HI121 redesign exists for:
 Getting the applicability rule below backwards (checking "is this content
 flag currently set" instead of "could this semantic question apply to this
 signature's class") silently recreates that exact ambiguity one level up --
-see docs/planning/active/hip-autotune/HI121.md's round-8/9 findings for the
+see docs/planning/active/tuning-hip-autotune/HI121.md's round-8/9 findings for the
 concrete RD17 counterexample that first exposed this.
 
 Deliberately NOT a giant (op, fusion, glu_op) -> mask Cartesian dict: the

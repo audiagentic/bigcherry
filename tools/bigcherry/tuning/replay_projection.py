@@ -1,7 +1,7 @@
 """HI121 M4: offline, capability-gated compatibility projection of a
 measurements JSONL for a specific target build.
 
-Framing (see docs/planning/active/hip-autotune/HI121.md): the dispatch_db
+Framing (see docs/planning/active/tuning-hip-autotune/HI121.md): the dispatch_db
 measurement history is a durable, multi-generation knowledge store; a
 replay cache is a cheap, TARGET-SPECIFIC PROJECTION of only the
 measurements known to be safe for that one binary. This module produces

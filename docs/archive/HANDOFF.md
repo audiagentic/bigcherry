@@ -7,7 +7,7 @@ Written 2026-08-05. Read this first if you are picking the work up, here or on
 
 ## Where things stand
 
-Phases 0–3 of `docs/planning/active/hip-autotune/OVERVIEW.md` are complete and
+Phases 0–3 of `docs/planning/active/tuning-hip-autotune/OVERVIEW.md` are complete and
 verified **on hardware** (gfx1100, RX 7900 GRE). The dispatch layer runs end to
 end: signature construction, blake2b hashing, dispatch-key derivation, process
 cache, replay lookup, native fallback, miss recording, coverage reporting.
@@ -321,7 +321,7 @@ Screening retention is specified and was missing from the plan:
 
 ### 4. HI19 / HI17 / HI18 — the taxonomy and the remaining opaque paths
 
-Added 2026-08-05. `docs/planning/active/hip-autotune/FAMILY_MODEL.md` has the
+Added 2026-08-05. `docs/planning/active/tuning-hip-autotune/FAMILY_MODEL.md` has the
 source-level verification; do not re-derive it.
 
 **HI19 first** — the four-record separation (signature / context / candidate /

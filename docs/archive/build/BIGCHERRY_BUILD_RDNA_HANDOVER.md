@@ -16,8 +16,8 @@ Governing repository references:
 - `docs/reference/build/BUILD.md` + `docs/reference/testing/TEST.md` — dev build/test procedures and GPU indices.
 - `docs/standards/HIP_AUTOTUNE_STANDARDS.md` — candidate, identity, precision, replay, and evidence rules.
 - `recipes.toml` — current strict v2 campaign configuration.
-- `docs/planning/active/reusable-build-campaign/RE03.md` through `RE15.md` — build campaign work items.
-- `docs/planning/active/rdna-boost-experiments/RD01.md` through `RD23.md` — RDNA planning set.
+- `docs/planning/active/tuning-reusable-build-campaign/RE03.md` through `RE15.md` — build campaign work items.
+- `docs/planning/active/patching-rdna-boost-experiments/RD01.md` through `RD23.md` — RDNA planning set.
 
 ## Repository state and commits
 

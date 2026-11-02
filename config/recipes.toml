@@ -115,7 +115,7 @@ required-state = "validated"
 # Adding one is a deliberate act with a real consequence: production runs it.
 # Record what qualified it and what the evidence does NOT cover.
 #
-# DEMOTED 2026-09-09 (HI162, docs/planning/completed/hip-autotune/HI162.md):
+# DEMOTED 2026-09-09 (HI162, docs/planning/completed/tuning-hip-autotune/HI162.md):
 # 1233_rd73_stable_graph_cache_key (RD73) was promoted 2026-09-05 on
 # +1.8886% end-to-end, 95% CI [1.4754, 2.3523], 6 pre-registered sessions,
 # 0.0% control regression, bit-identical output (contract

@@ -9,7 +9,7 @@ hardware (GGML_HIP_DISPATCH_MODE=record against a live instance of the
 registered test case, 2026-08-25) -- not a hand-picked example -- and
 asserts the produced line matches what was independently confirmed on
 that same hardware to reproduce the identical recorded signature via
---moe-glu-file. See docs/planning/active/hip-autotune/HI119.md for the
+--moe-glu-file. See docs/planning/active/tuning-hip-autotune/HI119.md for the
 full real-hardware trail."""
 
 from __future__ import annotations

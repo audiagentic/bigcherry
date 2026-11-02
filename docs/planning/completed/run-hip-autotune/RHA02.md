@@ -44,10 +44,10 @@ tools/bigcherry/graph_lifecycle_evidence.py
 tools/tests/test_multi_gpu_validate.py
 tools/tests/test_graph_lifecycle_evidence.py
 docs/evidence/2026-08-23-hi14-graph-lifecycle/ (follow-up artifact if re-run)
-docs/planning/completed/hip-autotune/HI14.md
-docs/planning/completed/hip-autotune/HI90.md
+docs/planning/completed/tuning-hip-autotune/HI14.md
+docs/planning/completed/tuning-hip-autotune/HI90.md
 
-tools/bigcherry/multi_gpu_validate.py\ntools/bigcherry/graph_lifecycle_evidence.py\ntools/tests/test_multi_gpu_validate.py\ntools/tests/test_graph_lifecycle_evidence.py\ndocs/planning/completed/hip-autotune/HI14.md\ndocs/planning/completed/hip-autotune/HI90.md\ndocs/planning/active/run-hip-autotune/RHA09.md
+tools/bigcherry/multi_gpu_validate.py\ntools/bigcherry/graph_lifecycle_evidence.py\ntools/tests/test_multi_gpu_validate.py\ntools/tests/test_graph_lifecycle_evidence.py\ndocs/planning/completed/tuning-hip-autotune/HI14.md\ndocs/planning/completed/tuning-hip-autotune/HI90.md\ndocs/planning/active/run-hip-autotune/RHA09.md
 
 ## Validation
 

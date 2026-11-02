@@ -53,7 +53,7 @@ class TestingReferenceTests(unittest.TestCase):
         self.assertIn("eligible_for_validated_state", document)
         self.assertIn("Diagnostic PASS", document)
         self.assertNotIn(
-            "docs/planning/active/validation-package-standard/VA14.md", document
+            "docs/planning/active/build-validation-package-standard/VA14.md", document
         )
 
     def test_validation_policy_separates_lifecycle_axes(self) -> None:
@@ -115,7 +115,7 @@ class TestingReferenceTests(unittest.TestCase):
             document = path.read_text(encoding="utf-8")
             self.assertIsNone(
                 re.search(
-                    r"docs/planning/active/validation-package-standard/VA14\.md",
+                    r"docs/planning/active/build-validation-package-standard/VA14\.md",
                     document,
                 ),
                 path.name,

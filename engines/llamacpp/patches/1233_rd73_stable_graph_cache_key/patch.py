@@ -13,7 +13,7 @@ external-sources.toml by tools/tests/test_external_sources.py):
   reviewed:          2026-08-23 (RD69-RD76 fork investigation, re-scoped
                      from the item's original "prebuild verify widths"
                      framing to the real mechanism -- see
-                     docs/planning/active/rdna-boost-experiments/RD73.md
+                     docs/planning/active/patching-rdna-boost-experiments/RD73.md
                      and RD69-76_FORK_FINDINGS.md).
 
 What it does: `ggml_cuda_graph_get_key()` previously returned

@@ -4,7 +4,7 @@ production MoE FFN produces, so BigCherry's correctness-evidence tooling
 can generate real evidence for the fused dispatches HI108 found stuck at
 rejected_no_correctness_evidence.
 
-Context (full trail in docs/planning/completed/hip-autotune/HI108.md,
+Context (full trail in docs/planning/completed/tuning-hip-autotune/HI108.md,
 HI118.md, and the active HI119.md): HI80/HI105's existing mapper pattern
 (signature_to_test_file_line() -> test-backend-ops' --test-file/
 test_generic_op escape hatch) can only build ONE op per test case
@@ -183,7 +183,7 @@ _REGISTRATION = '''    test_cases.emplace_back(new test_opt_step_adamw(GGML_TYPE
     // Registering fixed instances here is a stopgap for HI119's own step 7
     // (parameterize generically from an arbitrary real dispatch signature,
     // not hard-coded shapes) -- tracked as still open in
-    // docs/planning/active/hip-autotune/HI119.md.
+    // docs/planning/active/tuning-hip-autotune/HI119.md.
     for (ggml_glu_op glu_op : {GGML_GLU_OP_SWIGLU, GGML_GLU_OP_GEGLU}) {
         test_cases.emplace_back(new test_bigcherry_moe_glu_fusion(
             GGML_TYPE_Q8_0, glu_op, /*k=*/2048, /*n=*/256, /*m=*/1, /*n_mats=*/256, /*n_used=*/8, /*b=*/true));

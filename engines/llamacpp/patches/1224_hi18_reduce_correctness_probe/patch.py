@@ -35,7 +35,7 @@ that guard rather than rewriting the probe).
 GROUP = "core"
 # Mechanism compiled and hardware-validated on dev (63/63 synthetic
 # RCCL/META/AUTO executions across 6 numerical patterns, 3 seeds, and
-# swapped device order -- see docs/planning/active/hip-autotune/HI18.md).
+# swapped device order -- see docs/planning/active/tuning-hip-autotune/HI18.md).
 # GP04 (2026-09-02) closed the remaining gate this comment named: all 10
 # real recorded production reduction signatures (9 from a real Qwen3.8-27B
 # MTP dual-XTX capture plus RV59's signature) run across all 3 providers,

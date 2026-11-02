@@ -31,7 +31,7 @@ The patch lifecycle and behavioral-gate semantics are separate axes. PHA07 must 
 
 ## Files
 
-patches/0850_ordered_speculative_trace/patch.toml; patches/0850_ordered_speculative_trace/patch.py; config/recipes.toml; tools/bigcherry/tuning/behavioral_gate.py; tools/tests/patch/test_hi166_ordered_speculative_trace.py; tools/tests/tuning/test_behavioral_gate.py; docs/planning/active/hip-autotune/HI166.md
+patches/0850_ordered_speculative_trace/patch.toml; patches/0850_ordered_speculative_trace/patch.py; config/recipes.toml; tools/bigcherry/tuning/behavioral_gate.py; tools/tests/patch/test_hi166_ordered_speculative_trace.py; tools/tests/tuning/test_behavioral_gate.py; docs/planning/active/tuning-hip-autotune/HI166.md
 
 ## Validation
 

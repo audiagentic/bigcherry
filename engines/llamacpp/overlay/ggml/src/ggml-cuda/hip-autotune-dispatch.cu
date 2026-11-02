@@ -1924,7 +1924,7 @@ bool ggml_hip_mmq_can_execute(const ggml_hip_candidate_descriptor * self,
         return false;
     }
 
-    // EX02 quarantine, 2026-08-11 (docs/planning/active/external-fixes/EX02.md,
+    // EX02 quarantine, 2026-08-11 (docs/planning/active/patching-external-fixes/EX02.md,
     // docs/reference/FINDINGS.md): mmq:q6_k:j112:fb0:t256:o2:i128:sram-q6_k:
     // k256:sk0:v1 was recorded failing with an illegal memory access on
     // gfx1100, reproduced deterministically three times across two independent
