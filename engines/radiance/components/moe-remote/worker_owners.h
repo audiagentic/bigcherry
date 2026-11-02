@@ -10,26 +10,23 @@ using bc::experts::Owned;
  * really takes, or no budget arithmetic can be trusted. */
 bool select_owned(const Container& f, r3_moe_gpu::Runner* gpu, const uint64_t* budgets, uint32_t helper,
                   uint32_t helpers, Owned* out) {
-    if (gpu) {
+    const std::function<bool()> layout_check = [&]() {
+        if (!gpu) return true;
         const int64_t want = laid_out_bytes(f, gpu, 0, 0), got = gpu->expert_bytes(0, 0);
         if (want != got) {
             std::fprintf(stderr, "r3_moe_worker: expert size disagrees with the device layout (contract %lld, layout %lld)\n",
                          (long long)want, (long long)got);
             return false;
         }
-    }
+        return true;
+    };
     /* This helper's ownership settings, from its environment as before (R3_MOE_WORKER_HEAT, _PLACEMENT, _FORMATS,
      * _SHARES, _BALANCE, _BALANCE_SPEED); the selection itself is the shared one. */
     bc::experts::OwnerPolicy policy;
     if (const char* v = std::getenv("R3_MOE_WORKER_HEAT")) policy.heat = v;
     if (const char* v = std::getenv("R3_MOE_WORKER_PLACEMENT")) policy.placement = v;
     if (const char* v = std::getenv("R3_MOE_WORKER_FORMATS")) policy.formats = v;
-    uint32_t shares[r3::worker_share::kMaxHelperShares] = {};
-    if (!r3::worker_share::parse_shares(std::getenv("R3_MOE_WORKER_SHARES"), helpers, shares)) {
-        std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_SHARES must list one non-negative weight for each of the %u helpers, not all 0\n", helpers);
-        return false;
-    }
-    policy.shares.assign(shares, shares + helpers);
+    if (const char* v = std::getenv("R3_MOE_WORKER_SHARES")) policy.shares = v;   // parsed by the selection, where the worker parsed it
     const char* bv = std::getenv("R3_MOE_WORKER_BALANCE");
     policy.balance = bv && *bv && std::strcmp(bv, "0") != 0;
     policy.balance_speeds = {1.0, 1.0};
@@ -37,8 +34,8 @@ bool select_owned(const Container& f, r3_moe_gpu::Runner* gpu, const uint64_t* b
         double a = 0.0, b = 0.0;
         if (std::sscanf(sv, "%lf,%lf", &a, &b) == 2 && a > 0.0 && b > 0.0) policy.balance_speeds = {a, b};
     }
-    return bc::experts::select_owned(f, policy, gpu ? gpu->arch() : std::string("host"), gpu != nullptr, budgets,
-                                     helper, helpers, out);
+    return bc::experts::select_owned(f, policy, gpu ? gpu->arch() : std::string("host"), gpu != nullptr, layout_check,
+                                     budgets, helper, helpers, out);
 }
 
 /* Bootstrap only: helpers publish their deterministic, disjoint selections into slot 0.

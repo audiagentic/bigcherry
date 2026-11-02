@@ -30,7 +30,7 @@ target_link_libraries(bc_serving_v1 PUBLIC bc_jcs radiance::abi)
 target_include_directories(bc_serving_v1 PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/v1" "${CMAKE_CURRENT_SOURCE_DIR}/generated"
                            "${CMAKE_CURRENT_SOURCE_DIR}")
 
-# The helpers' expert ownership, shared with moe-remote's r3_moe_worker (bc_experts.cmake).
+# The helpers' expert ownership, shared with moe-remote's r3_moe_worker (bc_experts.cmake). bc-serve does not call it yet: it is built and tested here (bc_experts_test) and bc-serve starts planning with it in a later slice.
 include("${CMAKE_CURRENT_SOURCE_DIR}/bc_experts.cmake")
 
 add_library(bc_serving STATIC serving.cpp)
@@ -56,7 +56,7 @@ if(BUILD_TESTING)
   add_test(NAME bc_jcs_test COMMAND bc_jcs_test)
   add_executable(bc_experts_test EXCLUDE_FROM_ALL experts_test.cpp)
   target_link_libraries(bc_experts_test PRIVATE bc_experts bc_jcs)
-  add_test(NAME bc_experts_test COMMAND bc_experts_test)
+  add_test(NAME bc_experts_test COMMAND bc_experts_test "${CMAKE_CURRENT_SOURCE_DIR}/golden/owned_golden.txt")
   add_executable(bc_contract_test EXCLUDE_FROM_ALL contract/registry_test.cpp)
   target_link_libraries(bc_contract_test PRIVATE bc_contract)
   target_compile_definitions(bc_contract_test PRIVATE BC_CONTRACT_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")

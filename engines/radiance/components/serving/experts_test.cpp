@@ -6,11 +6,14 @@
 #include "experts.h"
 #include "sha256.h"
 #include "test_rad_fixture.h"
+#include "golden/golden_cases.h"
 
 #include <cassert>
 #include <cstdio>
 #include <filesystem>
+#include <cstdlib>
 #include <fstream>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -28,7 +31,8 @@ std::string digest(const bc::experts::OwnerMap& m) {
 }
 }  // namespace
 
-int main() {
+int main(int argc, char** argv) {
+    assert(argc == 2 && "usage: bc_experts_test <golden/owned_golden.txt>");
     const fs::path root = fs::current_path() / "bc-experts-fixture";
     fs::remove_all(root);
     fs::create_directories(root);
@@ -52,7 +56,7 @@ int main() {
         p.heat = heat_path.string();
         p.placement = "tail";
         p.formats = formats;
-        p.shares = {1, 1, 1};
+        p.shares = "1,1,1";
         p.balance_speeds = {1.0, 1.0};
         return p;
     };
@@ -71,7 +75,7 @@ int main() {
     uint64_t b[3] = {20 * e, 20 * e, 10 * e};
     for (uint32_t h = 0; h < 3; ++h) {
         bc::experts::Owned own;
-        assert(bc::experts::select_owned(f, pols[h], archs[h], true, b, h, 3, &own));
+        assert(bc::experts::select_owned(f, pols[h], archs[h], true, {}, b, h, 3, &own));
         assert(own.expert == map.helpers[h].expert && own.bytes == map.helpers[h].bytes);
     }
     // The digest is stable, and any change of budget changes it.
@@ -89,6 +93,77 @@ int main() {
     assert(why.find("helper 2 (gfx1030)") != std::string::npos);
     assert(!bc::experts::plan_owners(f, pols, archs, {20 * e, 20 * e}, &map, &why));
     assert(why.find("one policy, card and budget per helper") != std::string::npos);
+    // The same cases the pre-move worker selection ran (golden/README.md): every helper's owned set, line for line.
+    {
+        std::string got;
+        for (const golden::Case& c : golden::cases()) {
+            bc::experts::OwnerPolicy p;
+            p.formats = "w4nl64";
+            p.balance_speeds = {1.0, 1.0};
+            for (const auto& [k, v] : c.env) {
+                const std::string key = k;
+                if (key == "HEAT") p.heat = v == "@heat" ? heat_path.string() : v;
+                else if (key == "PLACEMENT") p.placement = v;
+                else if (key == "FORMATS") p.formats = v;
+                else if (key == "SHARES") p.shares = v;
+                else if (key == "BALANCE") p.balance = !v.empty() && v != "0";
+                else if (key == "BALANCE_SPEED") {
+                    double a = 0.0, b = 0.0;
+                    if (std::sscanf(v.c_str(), "%lf,%lf", &a, &b) == 2 && a > 0.0 && b > 0.0) p.balance_speeds = {a, b};
+                }
+            }
+            std::vector<uint64_t> budgets;
+            for (uint64_t n : c.budget_experts) budgets.push_back(n * golden::kExpertBytes);
+            for (uint32_t i = 0; i < c.helpers; ++i) {
+                bc::experts::Owned o;
+                const bool ok = bc::experts::select_owned(f, p, "host", false, {}, budgets.data(), i, c.helpers, &o);
+                got += std::string(c.name) + " " + std::to_string(i) + (ok ? " ok " : " refused ") + std::to_string(ok ? o.bytes : 0);
+                if (ok) for (auto [l, e] : o.expert) got += " " + std::to_string(l) + ":" + std::to_string(e);
+                got += "\n";
+            }
+        }
+        std::ifstream gin(argv[1]);
+        std::ostringstream want;
+        want << gin.rdbuf();
+        if (got != want.str()) {
+            std::ofstream(root / "owned_got.txt") << got;
+            std::fprintf(stderr, "owned sets differ from %s (ours in %s)\n", argv[1], (root / "owned_got.txt").c_str());
+        }
+        assert(got == want.str());
+    }
+    // Policies the worker's environment parser would never build are refused at the library boundary, never thrown on or truncated.
+    {
+        bc::experts::Owned own;
+        const uint64_t two[2] = {20 * e, 20 * e};
+        bc::experts::OwnerPolicy bal = policy("w4nl64");
+        bal.placement = "roundrobin";
+        bal.balance = true;
+        // balance mode does not read the shares, as on main: not-all-zero shares are not required there
+        bal.shares = "0,0";
+        assert(bc::experts::select_owned(f, bal, "gfx1100", true, {}, two, 0, 2, &own) && !own.expert.empty());
+        // without balance the same shares are refused
+        bc::experts::OwnerPolicy plain = bal;
+        plain.balance = false;
+        assert(!bc::experts::select_owned(f, plain, "gfx1100", true, {}, two, 0, 2, &own));
+        plain.shares = "4294967296,1";
+        assert(!bc::experts::select_owned(f, plain, "gfx1100", true, {}, two, 0, 2, &own));
+        // balance with no or one speed is refused
+        bal.balance_speeds.clear();
+        assert(!bc::experts::select_owned(f, bal, "gfx1100", true, {}, two, 0, 2, &own));
+        bal.balance_speeds = {1.0};
+        assert(!bc::experts::select_owned(f, bal, "gfx1100", true, {}, two, 0, 2, &own));
+        // error order: no budget, then backend, then the layout check, then the shares
+        bool layout_called = false;
+        const auto layout = [&] { layout_called = true; return false; };
+        const uint64_t none[2] = {0, 20 * e};
+        plain.shares = "0,0";
+        assert(!bc::experts::select_owned(f, plain, "gfx1100", true, layout, none, 0, 2, &own) && !layout_called);
+        assert(!bc::experts::select_owned(f, plain, "gfx1100", true, layout, two, 0, 2, &own) && layout_called);
+        // more helpers than the runtime protocol holds
+        std::vector<bc::experts::OwnerPolicy> many(r3::moe_shm::kMaxHelpers + 1, policy("w4nl64"));
+        assert(!bc::experts::plan_owners(f, many, std::vector<std::string>(many.size(), "gfx1100"),
+                                         std::vector<uint64_t>(many.size(), 4 * e), &map, &why));
+    }
     fs::remove_all(root);
     std::printf("ok\n");
     return 0;
