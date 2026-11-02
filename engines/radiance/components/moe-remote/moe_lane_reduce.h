@@ -163,8 +163,10 @@ __global__ void lane_publish_done(r3::moe_shm::Request* q, uint32_t* done_sequen
     q->completion_sequence = sequence;
     q->completion_epoch = q->placement_epoch;
     q->completion_slot = q->generation_slot;
-    __hip_atomic_store(done_epoch, q->placement_epoch, __ATOMIC_RELEASE, __HIP_MEMORY_SCOPE_SYSTEM);
-    lane_store_sys_rel(done_slot, q->generation_slot);
+    /* One system-scope release, as on main: the release of done_sequence publishes the completion words and the lane's
+     * epoch/slot written before it, so those are relaxed (each release is a fence the engine's wait would sit behind). */
+    __hip_atomic_store(done_epoch, q->placement_epoch, __ATOMIC_RELAXED, __HIP_MEMORY_SCOPE_SYSTEM);
+    __hip_atomic_store(done_slot, q->generation_slot, __ATOMIC_RELAXED, __HIP_MEMORY_SCOPE_SYSTEM);
     lane_store_sys_rel(done_sequence, sequence);
 }
 
