@@ -84,4 +84,13 @@ if(BUILD_TESTING)
   target_link_libraries(r3_route_compact_test PRIVATE radiance::abi ${RAD_HIP_RUNTIME})
   set_target_properties(r3_route_compact_test PROPERTIES HIP_STANDARD 17 HIP_STANDARD_REQUIRED ON)
   add_test(NAME r3_route_compact_test COMMAND r3_route_compact_test)
+  # RHP11: GPU-only HIP graph proxy for the immutable AQL kernarg pointer.
+  # This target is built card-free but must only run under an explicit GPU lease.
+  add_executable(r3_ticket_replay_test EXCLUDE_FROM_ALL ${CMAKE_CURRENT_SOURCE_DIR}/ticket_replay_test.hip)
+  set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/ticket_replay_test.hip PROPERTIES LANGUAGE HIP)
+  set_property(TARGET r3_ticket_replay_test PROPERTY HIP_ARCHITECTURES ${R3MOE_TARGETS})
+  target_include_directories(r3_ticket_replay_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+  target_link_libraries(r3_ticket_replay_test PRIVATE ${RAD_HIP_RUNTIME})
+  set_target_properties(r3_ticket_replay_test PROPERTIES HIP_STANDARD 17 HIP_STANDARD_REQUIRED ON)
+  add_test(NAME r3_ticket_replay_test COMMAND r3_ticket_replay_test)
 endif()
