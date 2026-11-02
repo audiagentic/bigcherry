@@ -1,5 +1,15 @@
 # 0900_pool_workspace_metrics framework validation
 
+## Summary
+
+Adds a bc_requested_size counter to ggml_cuda_pool's base struct, incremented/decremented at the single choke point (ggml_cuda_pool_alloc's two call sites) where every pool alloc/free in the CUDA/HIP backend passes through, tracking each candidate's requested size rather than the pool's actual-size bookkeeping.
+
+## Outcome
+
+Recorded state: `validated` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 Adds requested-byte pool high-water accounting to `ggml_cuda_pool`'s base
 struct: a per-`ggml_cuda_pool_alloc` `bc_requested_size` field plus
 `bc_workspace_in_use`/`bc_workspace_peak` counters (with

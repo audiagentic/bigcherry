@@ -1,5 +1,15 @@
 # 1234_rd58_pin_state_buffer_multigpu_restore: pin the host state buffer during multi-GPU state restore (RD58)
 
+## Summary
+
+Registers the state-restore buffer in llama_context::state_seq_set_data() as portable pinned host memory (RAII-scoped, host-only path, >=1 MiB threshold) around the async H2D copy, and flattens any Meta-typed scheduling wrapper into its real per-device backends before the registration loop so pinning actually activates under -sm tensor, not just -sm layer.
+
+## Outcome
+
+Recorded state: `untested` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 Patch id: `1234_rd58_pin_state_buffer_multigpu_restore`. Plan item:
 `RD58`. Bound Experiment Contract:
 `RD58-PIN-STATE-BUFFER-MULTIGPU-RESTORE`

@@ -1,5 +1,15 @@
 # 1333_mixed_batch_on_demand
 
+## Summary
+
+Promotion record (QFP18 lightweight evidence-reuse tier, pin b11402 / d89651a7). Mechanism and the bisect are in SUMMARY.md; this file records why the patch is promoted into `[patch-set.validated-enhancements]`.
+
+## Outcome
+
+Recorded state: `validated` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 Promotion record (QFP18 lightweight evidence-reuse tier, pin b11402 / d89651a7). Mechanism and the bisect are in
 SUMMARY.md; this file records why the patch is promoted into `[patch-set.validated-enhancements]`.
 

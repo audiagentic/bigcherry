@@ -1,5 +1,15 @@
 # 1335_tiled_lightning_indexer
 
+## Summary
+
+Promotion record (QFP18 lightweight evidence-reuse tier, pin b11402 / d89651a7). Mechanism is in SUMMARY.md; this file records why the patch is promoted into `[patch-set.validated-enhancements]`.
+
+## Outcome
+
+Recorded state: `superseded` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 Promotion record (QFP18 lightweight evidence-reuse tier, pin b11402 / d89651a7). Mechanism is in SUMMARY.md; this
 file records why the patch is promoted into `[patch-set.validated-enhancements]`. The path is on by default
 (`BIGCHERRY_INDEXER_TILE=0` is the off switch); it only applies to 4-head QSA indexers with 8 or more tokens in the

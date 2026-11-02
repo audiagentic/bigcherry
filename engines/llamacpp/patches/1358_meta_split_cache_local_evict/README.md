@@ -1,5 +1,15 @@
 # 1358_meta_split_cache_local_evict
 
+## Summary
+
+The Meta backend memoises each tensor's split state under its address, with a copy of the tensor to detect an address that was recycled for another tensor. On a mismatch upstream clears the whole cache; this patch erases only the stale entry. On by default; `BIGCHERRY_META_SPLIT_CACHE_EVICT=0` restores the whole-cache clear.
+
+## Outcome
+
+Recorded state: `validated` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 Not promoted. Mechanism and the indirect evidence are in SUMMARY.md.
 
 ## Still to show

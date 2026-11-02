@@ -1,5 +1,15 @@
 # 1325_sched_split_timing
 
+## Summary
+
+Diagnostic only. With `BIGCHERRY_SUBMIT_TIMING=1` every scheduler split logs `BIGCHERRY_SCHED_SPLIT` with its backend, input count, input-handling host time (synchronize/copies between backends) and async-compute submit host time (synchronous for CPU splits).
+
+## Outcome
+
+Recorded state: `validated` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 ## Promotion record
 
 Promotion record (QFP18 lightweight evidence-reuse tier, pin b11474 / b9acf138, 2026-10-08). A diagnostic, promoted as a

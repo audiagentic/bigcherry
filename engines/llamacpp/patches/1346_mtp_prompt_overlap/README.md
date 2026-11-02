@@ -1,5 +1,15 @@
 # 1346_mtp_prompt_overlap
 
+## Summary
+
+Default-off MTP prompt timing diagnostic. The historical package id is retained, but the unqualified `BIGCHERRY_MTP_PROMPT_WINDOW` optimization has been removed.
+
+## Outcome
+
+Recorded state: `validated` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 QFP31 timing diagnostic. The historical package id is retained; the unqualified prompt-window optimization has been
 removed. The package now changes no model work or ordering and emits output only when its timing flag is enabled.
 

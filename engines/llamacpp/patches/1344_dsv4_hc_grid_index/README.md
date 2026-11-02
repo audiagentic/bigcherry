@@ -1,5 +1,15 @@
 # 1344_dsv4_hc_grid_index
 
+## Summary
+
+The Qwen4Exp hyper-connection PRE and POST kernels (`ggml-cuda/dsv4-hc.cu`) take their coordinates from the launch grid: PRE runs on a 2-D grid (embedding index in blocks of 256, token), POST on a 3-D grid (embedding index, destination stream, token). On by default; `BIGCHERRY_HC_GRID_INDEX=0` restores the flat kernels.
+
+## Outcome
+
+Recorded state: `validated` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 Promotion record (QFP18 lightweight evidence-reuse tier, pin b11402 / d89651a7, 2026-10-07). Mechanism is in
 SUMMARY.md: the Qwen4Exp hyper-connection PRE / POST kernels take their coordinates from a 2-D / 3-D launch grid
 instead of 64-bit `%` and `/` per output element. On by default; `BIGCHERRY_HC_GRID_INDEX=0` restores the flat kernels.

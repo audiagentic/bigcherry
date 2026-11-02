@@ -1,5 +1,15 @@
 # 1231 (HI14): real graph capture-lifecycle activation evidence
 
+## Summary
+
+Instruments the four real HIP graph API call sites (cudaStreamBeginCapture/EndCapture/GraphInstantiate/GraphLaunch) with a once-per-process, opt-in GGML_LOG_WARN marker (BIGCHERRY_GRAPH_LIFECYCLE_TRACE), and adds a parser (graph_lifecycle_evidence.py) that turns captured markers into the validator's capture_lifecycle schema.
+
+## Outcome
+
+Recorded state: `untested` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 ## Scope
 
 Instruments the four real HIP graph API call sites in `ggml-cuda.cu`'s

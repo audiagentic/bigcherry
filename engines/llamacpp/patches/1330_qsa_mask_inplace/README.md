@@ -1,5 +1,15 @@
 # 1330_qsa_mask_inplace
 
+## Summary
+
+With `BIGCHERRY_QSA_MASK_INPLACE=1`, the dense fallback in `build_qsa_sel` adds the causal `kq_mask` into the QSA selection mask in place (`ggml_add_inplace`) instead of allocating a second dense `[n_kv, T]` F16 tensor.
+
+## Outcome
+
+Recorded state: `evaluated` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 QFP17 dense-QSA memory enabler against llama.cpp b11474.
 
 ## Switch

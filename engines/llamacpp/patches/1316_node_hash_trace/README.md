@@ -1,5 +1,15 @@
 # 1316_node_hash_trace
 
+## Summary
+
+Diagnostic only. `BIGCHERRY_NODE_HASH=from:count` installs a scheduler eval callback (when the caller set none) that, for each llama_context's graph_compute calls `from .. from+count-1`, hashes observable simple-buffer node outputs and logs `BIGCHERRY_NODE_HASH ctx g i name op ne h=<FNV-1a>`.
+
+## Outcome
+
+Recorded state: `validated` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 ## Usage
 
 Set `BIGCHERRY_NODE_HASH=from:count`, where both values are decimal integers, `from >= 0` and `count > 0`.

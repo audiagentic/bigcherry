@@ -1,5 +1,15 @@
 # 0830_split_reduce_telemetry framework validation
 
+## Summary
+
+Instruments the SPLIT_REDUCE path to record which reduction provider (RCCL/meta) actually handled a given reduction and the handoff between them.
+
+## Outcome
+
+Recorded state: `validated` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 Instruments the SPLIT_REDUCE allreduce boundary (`ggml-cuda.cu`) to record
 which reduction provider (RCCL/meta) actually handled a given reduction and
 the handoff between providers, at the existing allreduce context rather than

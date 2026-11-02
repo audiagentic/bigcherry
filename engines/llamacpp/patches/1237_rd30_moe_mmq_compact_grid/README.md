@@ -1,5 +1,15 @@
 # 1237 (RD30 / AMD-MOE-001): compact the MoE MMQ launch grid
 
+## Summary
+
+Adds a prep kernel (mmq_build_moe_block_map) that flattens (expert, expert-local-tile) pairs into one linear grid dimension sized to a host-computable upper bound of the real tile count (padded blocks exit on-device), instead of upstream's rectangular grid sized from the worst-case expert width times n_expert; falls back to the exact legacy grid whenever the compact map would exceed grid or shared-memory limits.
+
+## Outcome
+
+Recorded state: `validated` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 **Current authoritative status (2026-10-15):** `patch.toml` and `config/recipes.toml` mark 1237 **validated** for gfx1100 following the b11126 four-session formal contract PASS (2026-09-26). The earlier `untested` discussion below is historical and superseded; `validation.toml` and its producer now exist. Dependent 1265 extends the gate to exact gfx1201/gfx1030. QFP44/BCOP228 own only residual receipt-first headroom.
 
 **Precise launch semantics:** `mmq_build_moe_block_map` writes the real `R=block_start[n_experts]`, but the host launches the safe bound `B=ceil((ncols_dst+n_experts*(J-1))/J)` in `grid.y`, not exactly R. `m_block>=R` returns before accessing `block_expert[m]`. A skewed 256-expert/J128 example with 256 assignments to one expert has B=256, R=2 (254 padded no-work blocks). No GPU readback or extra synchronization is used. This does not invalidate the formal b11126 measured gain, but limits claims about eliminated launches. See QFP44.

@@ -1,5 +1,15 @@
 # 0650_mmvq_native_variant framework validation
 
+## Summary
+
+Threads a forced-geometry struct down the existing native chain (ggml_cuda_mul_mat_vec_q -> mul_mat_vec_q_switch_ncols_dst) to the point where quantization/strides are already computed, diverging only at the launch call via ggml_hip_mmvq_find_instance.
+
+## Outcome
+
+Recorded state: `validated` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 Makes the compiled MMVQ geometry instances from 0600 actually reachable.
 Threads a forced-geometry struct down the existing native call chain
 (`ggml_cuda_mul_mat_vec_q` -> `mul_mat_vec_q_switch_ncols_dst`) to the point

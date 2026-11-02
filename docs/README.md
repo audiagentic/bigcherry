@@ -9,13 +9,14 @@ runbook.
 
 Use this ownership model when adding or moving documentation:
 
-- `docs/reference/` contains maintained, cross-cutting guidance only.
+- `docs/reference/` contains maintained, cross-cutting guidance and concise engine indexes.
 - `docs/planning/{active,completed}/<plan>/` contains plan-item design, status,
   decisions, reviews, and work history.
 - `docs/evidence/<run-id>/` contains compact, tracked evidence required for
   reproducible validation.
 - `artifacts/<run-id>/` contains large, transient, or machine-local campaign
   outputs and raw traces.
+- `engines/radiance/patches/<patch-id>/` and `engines/radiance/components/<name>/` own Radiance patch and component documentation.
 - `engines/llamacpp/patches/<patch-id>/` contains patch-specific rationale, validation, fixtures,
   evidence, and support files.
 - `docs/archive/` contains historical or superseded prose and review snapshots;
