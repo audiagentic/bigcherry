@@ -63,5 +63,8 @@ Depends on the RSC01 schema. The engine side is RSC07; the supervisor is RSC02.
 
 ## Ledger-events
 
+
 - chg_20261102_035356_serving-start-up-plan-one-str_4985
 - 2026-11-02T03:54:11.557458+00:00 (updated-by): Updated: section:ledger-events
+- chg_20261102_081026_remote-moe-helpers-now-start-f_3487
+- 2026-11-02T08:10:30.816806+00:00 (updated-by): Updated: section:ledger-events
