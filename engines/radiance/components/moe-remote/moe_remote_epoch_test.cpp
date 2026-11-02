@@ -1,4 +1,6 @@
 #include "worker_epoch.h"
+#include "admission_ledger.h"
+#include <sys/mman.h>
 #include "worker_residency.h"
 #include "worker_heat.h"
 #include <algorithm>
@@ -282,7 +284,109 @@ static void V23Policy_HeatEqualCostAndSwap() {
         check(p.delta.size()<=2 && p.used[0]<=40 && p.used[1]<=50,"oracle budgets");
     }
 }
+static void V23Cycle_SamePlacementAndSharedProtocol() {
+    FakeClock clk; FakeTransport tr;
+    Controller c(tr,clk,55,2,2);
+    check(c.begin_epoch_cycle() && same_placement_cycle(c.control()) && !c.commit(),
+          "cycle closes with unchanged placement, requires drain");
+    const auto first = c.control();
+    tr.all(c.control(),AckPhase::QUIESCED);
+    check(c.poll()==Poll::ADVANCED && c.commit(), "cycle commits only exact drained actors");
+    tr.all(c.control(),AckPhase::COMMITTED);
+    check(c.poll()==Poll::ADVANCED && c.control().state==uint32_t(PlacementState::ACTIVE) &&
+          c.control().active_epoch==1 && c.control().active_slot==0 && c.control().active_digest==55,
+          "no-op cycle never retires its live generation");
+    check(c.begin_epoch_cycle() && c.control().transaction_id==first.transaction_id+1,
+          "cycle transaction IDs advance");
+    tr.all(first,AckPhase::QUIESCED);
+    check(c.poll()==Poll::WAITING, "previous cycle drain proof rejected");
+    clk.elapse(31'000'000'000ULL);
+    check(c.poll()==Poll::FAILED && c.failed_closed(), "missing cycle ACK fails closed");
+    FakeTransport fixed_tr;
+    Controller fixed(fixed_tr,clk,55,1,1,{}, {},true);
+    check(!fixed.begin_epoch_cycle(), "deterministic controller disables cycles");
+
+    // The real shared PlacementControl/ACK transport and periodic helper
+    // driver, with CPU admission and simulated GPU/lane completion proofs.
+    const LayoutShape shape{128,2,3,8,128,64};
+    Layout layout{};
+    check(layout_for(shape,2,2,&layout), "cycle layout");
+    void* base=mmap(nullptr,layout.bytes,PROT_READ|PROT_WRITE,MAP_PRIVATE|MAP_ANONYMOUS,-1,0);
+    check(base!=MAP_FAILED && init(base,2,shape,2), "cycle segment");
+    auto* h=static_cast<Header*>(base);
+    h->helper_count=2;
+    auto* control=placement_control(base);
+    control->expected_ranks=3;
+    const auto digest=control->active_digest;
+    const std::vector<uint8_t> owners(generation_map(base,0),generation_map(base,0)+h->owner_map_bytes);
+    FakeClock shared_clock;
+    EpochCycle disabled(base,0,shared_clock,std::chrono::nanoseconds{0});
+    shared_clock.elapse(100);
+    check(disabled.tick() && control->transaction_id==0 && control->seq==0, "zero period is a no-op");
+    EpochCycle helper0(base,0,shared_clock,std::chrono::nanoseconds{100});
+    EpochCycle helper1(base,1,shared_clock,std::chrono::nanoseconds{100});
+    check(helper0.tick() && helper1.tick(), "shared coordinator bootstraps actual ranks");
+    shared_clock.elapse(100);
+    check(helper0.tick() && control->state==uint32_t(PlacementState::ACTIVE), "idle burst does not start cycle");
+    h->burst=1;
+    r3::admission::Ledger ledger(5);
+    check(ledger.initialize(1,0), "cycle ledger");
+    for (uint64_t cycle=1;cycle<=1000;++cycle) {
+        StepTicket ticket{};
+        check(ledger.admit(2,&ticket)==r3::admission::Ledger::Result::Ok &&
+              ledger.bind(ticket.ticket_id,cycle), "serving parent before cycle");
+        check(helper0.tick() && control->state==uint32_t(PlacementState::QUIESCING) &&
+              control->transaction_id==cycle, "period starts shared QUIESCING");
+        const auto cutoff=ledger.close_admission();
+        check(!ledger.drained(1,cutoff.latest_ticket) && helper0.tick() && helper1.tick() &&
+              control->state==uint32_t(PlacementState::QUIESCING), "no ACK without drain");
+        // Even after burst ends, an in-flight transaction must make progress.
+        h->burst=0;
+        check(ledger.host_complete(ticket.ticket_id), "cycle host completion");
+        for (unsigned rank=0;rank<2;++rank)
+            check(ledger.gpu_complete(ticket.ticket_id,rank) && ledger.consumed(ticket.ticket_id,rank),
+                  "cycle terminal and consumption proof");
+        check(ledger.drained(1,cutoff.latest_ticket), "ledger drain proof");
+        for (uint32_t lane=0;lane<kLanes;++lane) {
+            if (lane % kMaxSlots >= 2 || (lane_is_small(lane) && lane_class(lane)>=h->small_class_count)) continue;
+            h->lane[lane].drain_request=cycle;
+            // Previous closure must not satisfy the new transaction.
+            h->lane[lane].drain_ack=cycle-1;
+        }
+        check(helper0.tick() && helper1.tick() && control->state==uint32_t(PlacementState::QUIESCING),
+              "stale lane drain ACK cannot commit");
+        for (auto& lane:h->lane)
+            lane.drain_ack=lane.drain_request;
+        PlacementControl snapshot{};
+        check(placement_snapshot(base,&snapshot), "cycle stable snapshot");
+        publish_ack(base,kMaxHelpers,snapshot,AckPhase::QUIESCED,cutoff.latest_ticket);
+        publish_ack(base,kMaxHelpers+1,snapshot,AckPhase::QUIESCED,cutoff.latest_ticket);
+        check(helper1.tick() && helper0.tick() && control->state==uint32_t(PlacementState::COMMIT),
+              "all real protocol participants allow COMMIT");
+        check(helper0.tick() && control->state==uint32_t(PlacementState::COMMIT), "no reopen before all commit ACKs");
+        check(placement_snapshot(base,&snapshot), "commit snapshot");
+        publish_ack(base,kMaxHelpers,snapshot,AckPhase::COMMITTED,cutoff.latest_ticket);
+        publish_ack(base,kMaxHelpers+1,snapshot,AckPhase::COMMITTED,cutoff.latest_ticket);
+        check(helper1.tick() && helper0.tick() && control->state==uint32_t(PlacementState::ACTIVE),
+              "all commit ACKs publish ACTIVE");
+        shared_clock.elapse(100);
+        h->burst=1;
+        check(helper0.tick() && control->transaction_id==cycle, "next cycle waits for actual reopen");
+        check(ledger.reopen(1,0), "same epoch slot reopens");
+        for (auto& lane:h->lane) lane.drain_request=0;
+        check(helper0.tick(), "observe reopen");
+        shared_clock.elapse(100);
+        check(control->active_epoch==1 && control->active_slot==0 && control->active_digest==digest &&
+              std::equal(owners.begin(),owners.end(),generation_map(base,0)), "placement bytes unchanged");
+    }
+    check(helper0.tick() && control->state==uint32_t(PlacementState::QUIESCING), "timeout transaction");
+    shared_clock.elapse(31'000'000'000ULL);
+    check(!helper0.tick() && control->fault_code==uint32_t(FaultCode::QUIESCE_TIMEOUT),
+          "driver checks deadlines even while lanes have not drained");
+    munmap(base,layout.bytes);
+}
 int main() {
+    V23Cycle_SamePlacementAndSharedProtocol();
     V23Epoch_ForwardOnlyAbortRetry();
     V23Ack_OldTxnDelayedDuplicateLost();
     V23Ack_CorruptCurrentAndFault();

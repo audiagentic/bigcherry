@@ -155,10 +155,16 @@ __global__ void lane_stage_stamp(r3::moe_shm::Request* q, uint32_t i) {
     q->stage_trace[i] = wall_clock64();
 }
 
-__global__ void lane_publish_done(r3::moe_shm::Request* q, uint32_t* done_sequence, uint32_t sequence,
+__global__ void lane_publish_done(r3::moe_shm::Request* q, uint32_t* done_sequence,
+                                  uint64_t* done_epoch, uint32_t* done_slot, uint32_t sequence,
                                   const uint32_t* publish_limit) {
     if (blockIdx.x || threadIdx.x || sequence > __atomic_load_n(publish_limit, __ATOMIC_RELAXED)) return;
     q->trace[4] = wall_clock64();   /* R3_MOE_WORKER_TRACE: this device's clock */
+    q->completion_sequence = sequence;
+    q->completion_epoch = q->placement_epoch;
+    q->completion_slot = q->generation_slot;
+    __hip_atomic_store(done_epoch, q->placement_epoch, __ATOMIC_RELEASE, __HIP_MEMORY_SCOPE_SYSTEM);
+    lane_store_sys_rel(done_slot, q->generation_slot);
     lane_store_sys_rel(done_sequence, sequence);
 }
 

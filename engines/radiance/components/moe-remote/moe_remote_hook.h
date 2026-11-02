@@ -39,10 +39,23 @@ struct StepTicket {
 };
 static_assert(sizeof(StepTicket) == 16 && offsetof(StepTicket, ticket_id) == 8);
 
+/* One completion slot per outstanding parent per rank. Its allocation is
+ * current parent + run-ahead depth, matching AdmissionLedger::capacity().
+ * The GPU writes fields before publishing ticket_id with a system fence. */
+struct ConsumptionStamp {
+    uint64_t ticket_id = 0;
+    uint32_t placement_epoch = 0;
+    uint32_t generation_slot = 0;
+    uint32_t published_count = 0;
+    uint32_t consumed_count = 0;
+};
+static_assert(sizeof(ConsumptionStamp) == 24);
 struct R3MoeMailboxDevice {
     void* mailbox = nullptr;
     const uint8_t* owner = nullptr;
     StepTicket* ticket = nullptr;  /* fixed device address, independent per engine rank */
+    ConsumptionStamp* consumed = nullptr;  /* mapped coherent rank-local completion ring */
+    uint32_t consumed_capacity = 0;
     uint32_t* sequence = nullptr;   /* [kMaxSlots slots][2 lane classes] request counters */
     uint32_t* published = nullptr;  /* [kMaxSlots slots]: 0, or 1 + the lane class of this step's request; then [kMaxSlots]:
                                        the step's R3_MOE_WORKER_COMBINE generation, 0 when the step merges two rows; then
@@ -70,6 +83,20 @@ struct R3MoeMailboxDevice {
 /* Called by the engine hook before every run_pass. An ordinary (non-chained,
  * barrier-bit) dispatch is used so queued tape plays cannot overtake it. */
 int r3_moe_ticket_launch(StepTicket* dst, StepTicket value, void* stream);
+
+/* Controller-facing quiescence API. Absolute CLOCK_MONOTONIC nanosecond
+ * deadline; only these APIs wait. No GPU device synchronization is used. */
+struct R3MoeDrainSnapshot {
+    uint64_t closure_id;
+    uint64_t cutoff_ticket_id;
+    uint32_t old_epoch;
+    uint32_t outstanding;
+    uint32_t high_water;
+    uint32_t capacity;
+};
+extern "C" int r3_moe_close_admission(R3MoeDrainSnapshot* snapshot);
+extern "C" int r3_moe_wait_drained(const R3MoeDrainSnapshot* snapshot, uint64_t deadline_monotonic_ns);
+extern "C" int r3_moe_reopen_admission(uint32_t epoch, uint32_t generation_slot);
 
 extern "C" int r3_moe_mailbox_enabled(void);
 extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevice** out);

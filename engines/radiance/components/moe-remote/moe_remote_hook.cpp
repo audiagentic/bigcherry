@@ -1,4 +1,6 @@
 #include "moe_remote_hook.h"
+#include "admission_ledger.h"
+#include "worker_epoch.h"
 #include "moe_helper_watch.h"
 #include "moe_remote_shm.h"
 #include "rad_abi.h"
@@ -18,6 +20,8 @@
 #include <ctime>
 #include <fcntl.h>
 #include <mutex>
+#include <map>
+#include <array>
 #include <thread>
 #include <string>
 #include <vector>
@@ -33,6 +37,7 @@ struct RankState {
     int device = -1;
     uint8_t* owner = nullptr;
     StepTicket* ticket = nullptr;
+    ConsumptionStamp* consumed_host = nullptr;
     uint32_t* sequence = nullptr;
     uint32_t* published = nullptr;
     uint16_t* mask_ref = nullptr;
@@ -48,10 +53,26 @@ struct EnginePlugin {
     void (*layer_map)(int layer, int n_expert, const int32_t* slot_of_expert);
     int (*owns_expert)(int layer, int expert);
     void (*burst)(int active);
-    int (*before_pass)(int rank, uint64_t parent_ticket_id, void* stream);
+    int (*before_pass)(int rank, StepTicket ticket, int64_t remote_expected, void* stream);
+    int (*admit)(StepTicket* out, int try_only, int world_size);
+    int (*bind)(StepTicket ticket, int64_t scheduler_step);
+    int (*cancel)(StepTicket ticket);
+    int (*host_done)(StepTicket ticket);
+    int (*rank_done)(int rank, StepTicket ticket, void* stream);
+    void (*poll)(void);
+    void (*shutdown)(void);
+    int (*capacity)(uint32_t parent_limit);
 };
 using RegisterFn = int (*)(const EnginePlugin*);
 
+/* Each admission owns its events; never reuse one global step-end event
+ * as evidence of several queued parents. An event is recorded after every
+ * parent GPU effect, before issue-ahead, and queried only after host_done. */
+struct ParentEvents {
+    std::array<hipEvent_t, kMaxEngineRanks> event{};
+    std::array<bool, kMaxEngineRanks> recorded{};
+    std::array<bool, kMaxEngineRanks> initialized{};
+};
 struct HookState {
     int fd = -1;
     void* map = MAP_FAILED;
@@ -59,6 +80,14 @@ struct HookState {
     Header* hdr = nullptr;
     bool pinned = false;
     RegisterFn engine_register = nullptr;
+    r3::admission::Ledger ledger{0}; /* configured by the engine before map replay */
+    std::map<uint64_t, ParentEvents> parents;
+    R3MoeDrainSnapshot closed_snapshot{};
+    uint64_t closure_id = 0;
+    uint32_t engine_ranks = 0; /* scheduler-owned; published once before the controller starts */
+    bool drain_verified = false; /* reopen requires a successful full drain */
+    std::thread placement_thread;
+    std::atomic<bool> placement_stop{false};
     std::mutex mu;
     std::thread snapshotter;          /* R3_MOE_WORKER_HISTOGRAM_PERIOD_S: writes the live route histogram */
     std::atomic<bool> snapshot_stop{false};
@@ -127,34 +156,201 @@ bool layer_enabled(int layer) {
     return layer >= range.first && layer <= range.second;
 }
 
-/* Bootstrap binding, not admission: the scheduler's RadBatch::step is common
- * to the trunk and its draft children, so step+1 identifies their parent.
- * Step 2 must retain one admitted epoch/slot across that whole parent. */
-int before_pass(int rank, uint64_t parent_ticket_id, void* stream) {
-    if (rank < 0 || rank >= (int)kMaxEngineRanks || !stream || !parent_ticket_id)
+/* All parent tickets originate in this coordinator. Neither a scheduler
+ * number nor an in-flight tape's arguments are admission authority. */
+bool committed(uint32_t* epoch, uint8_t* slot) {
+    if (!g.hdr || !g.pinned || load(&g.hdr->helper_fault)) return false;
+    const PlacementControl* c = placement_control(g.map);
+    const uint32_t a = load(&c->seq);
+    const uint64_t e = __atomic_load_n(&c->active_epoch, __ATOMIC_ACQUIRE);
+    const uint32_t sl = load(&c->active_slot);
+    if ((a & 1u) || load(&c->seq) != a ||
+        load(&c->state) != (uint32_t)PlacementState::ACTIVE ||
+        !e || e > UINT32_MAX || sl > 1) return false;
+    *epoch = (uint32_t)e;
+    *slot = (uint8_t)sl;
+    return true;
+}
+
+bool helper_faulted() { return g.hdr && load(&g.hdr->helper_fault); }
+
+void poll_tickets();
+
+int admit_ticket(StepTicket* out, int try_only, int world_size) {
+    if (!out) return RAD_E_INVAL;
+    *out = StepTicket{};
+    if (world_size < 1 || world_size > (int)kMaxEngineRanks) return RAD_E_INVAL;
+    const uint32_t ranks = (uint32_t)world_size;
+    if (!g.engine_ranks) {
+        g.engine_ranks = ranks;
+        __atomic_store_n(&placement_control(g.map)->expected_ranks, (1u << ranks) - 1u, __ATOMIC_RELEASE);
+    } else if (g.engine_ranks != ranks) {
+        g.ledger.fault();
         return RAD_E_STATE;
-    StepTicket* device_ticket = nullptr;
-    StepTicket value{};
+    }
+    /* Reclaim with event queries only; no serving-path waits for capacity. */
+    poll_tickets();
+    using Result = r3::admission::Ledger::Result;
+    const Result r = try_only ? g.ledger.try_admit(ranks, out)
+        : g.ledger.admit(ranks, out,
+                         [] { return helper_faulted(); },
+                         [] { poll_tickets(); });
+    if (try_only && (r == Result::Closed || r == Result::Full)) return 1;
+    if (r != Result::Ok) {
+        if (r == Result::Full)
+            std::fprintf(stderr, "libr3moe: admission route-ring ceiling exhausted; high-water %zu, capacity %zu\n",
+                         g.ledger.high_water(), g.ledger.capacity());
+        g.ledger.fault();
+        return RAD_E_STATE;
+    }
+    return RAD_OK;
+}
+
+int bind_ticket(StepTicket ticket, int64_t step) {
+    return ticket.ticket_id && g.ledger.bind(ticket.ticket_id, step) ? RAD_OK : RAD_E_STATE;
+}
+int cancel_ticket(StepTicket ticket) {
+    return !ticket.ticket_id || g.ledger.cancel(ticket.ticket_id) ? RAD_OK : RAD_E_STATE;
+}
+int host_done_ticket(StepTicket ticket) {
+    if (!ticket.ticket_id) return RAD_OK;
+    if (!g.ledger.host_complete(ticket.ticket_id)) return RAD_E_STATE;
+    poll_tickets();
+    return g.ledger.stopped() ? RAD_E_STATE : RAD_OK;
+}
+
+/* The setter takes the exact admitted ticket. Every pass belonging to one
+ * scheduler parent (trunk, history and draft passes) receives the same value,
+ * including the pass issued ahead before that parent's host commit. */
+int before_pass(int rank, StepTicket value, int64_t /*remote_expected*/, void* stream) {
+    if (rank < 0 || rank >= (int)kMaxEngineRanks || !stream ||
+        !g.ledger.valid(value, (uint32_t)rank)) return RAD_E_STATE;
+    StepTicket* dst = nullptr;
     {
         std::lock_guard<std::mutex> lock(g.mu);
-        if (!g.hdr || !g.pinned || !g.rank[rank].ready || !g.rank[rank].ticket)
-            return RAD_E_STATE;
-        const PlacementControl* c = placement_control(g.map);
-        /* Fail closed if anything changes before the admission protocol
-         * exists; never truncate a 64-bit epoch into the wire ticket. */
-        const uint32_t seq0 = load(&c->seq);
-        const uint64_t epoch = __atomic_load_n(&c->active_epoch, __ATOMIC_ACQUIRE);
-        const uint32_t slot = load(&c->active_slot);
-        if ((seq0 & 1u) || seq0 != load(&c->seq) ||
-            load(&c->state) != (uint32_t)PlacementState::ACTIVE ||
-            epoch == 0 || epoch > UINT32_MAX || slot > 1)
-            return RAD_E_STATE;
-        value.placement_epoch = (uint32_t)epoch;
-        value.generation_slot = (uint8_t)slot;
-        value.ticket_id = parent_ticket_id;
-        device_ticket = g.rank[rank].ticket;
+        if (!g.hdr || !g.pinned || !g.rank[rank].ready || !g.rank[rank].ticket ||
+            load(&g.hdr->helper_fault)) return RAD_E_STATE;
+        dst = g.rank[rank].ticket;
+        ParentEvents& parent = g.parents[value.ticket_id];
+        if (!parent.initialized[(size_t)rank]) {
+            ConsumptionStamp& stamp = g.rank[rank].consumed_host[value.ticket_id % g.ledger.capacity()];
+            stamp = ConsumptionStamp{value.ticket_id, value.placement_epoch, value.generation_slot, 0, 0};
+            parent.initialized[(size_t)rank] = true;
+        }
     }
-    return r3_moe_ticket_launch(device_ticket, value, stream);
+    return r3_moe_ticket_launch(dst, value, stream);
+}
+
+/* Distinct events per admitted parent AND per rank, recorded by the
+ * scheduler after all parent GPU effects, before issue-ahead. */
+int rank_done_ticket(int rank, StepTicket ticket, void* stream) {
+    if (!ticket.ticket_id) return RAD_OK;
+    if (!stream || rank < 0 || rank >= (int)kMaxEngineRanks ||
+        !g.ledger.valid(ticket, (uint32_t)rank)) return RAD_E_STATE;
+    std::lock_guard<std::mutex> lock(g.mu);
+    ParentEvents& p = g.parents[ticket.ticket_id];
+    if (p.recorded[(size_t)rank]) return RAD_E_STATE;
+    if (!p.event[(size_t)rank]) {
+        if (!hip_ok(hipEventCreateWithFlags(&p.event[(size_t)rank], hipEventDisableTiming),
+                    "parent rank completion event")) {
+            g.ledger.fault();
+            return RAD_E_DEVICE;
+        }
+    }
+    if (!hip_ok(hipEventRecord(p.event[(size_t)rank], (hipStream_t)stream),
+                "record parent rank completion")) {
+        g.ledger.fault();
+        return RAD_E_DEVICE;
+    }
+    p.recorded[(size_t)rank] = true;
+    return RAD_OK;
+}
+
+void poll_tickets() {
+    const auto outstanding = g.ledger.entries();
+    std::lock_guard<std::mutex> lock(g.mu);
+    if (helper_faulted()) { g.ledger.fault(); return; }
+    for (const auto& e : outstanding) {
+        if (!e.host_done) continue; /* never treat an intermediate event as terminal */
+        auto it = g.parents.find(e.ticket.ticket_id);
+        if (it == g.parents.end()) continue;
+        for (uint32_t rank = 0; rank < e.ranks; ++rank) {
+            const uint32_t mask = 1u << rank;
+            if (e.gpu_mask & mask && e.consumed_mask & mask) continue;
+            const ParentEvents& p = it->second;
+            if (!p.recorded[rank] || !p.event[rank]) continue;
+            int previous_device = -1;
+            if (hipGetDevice(&previous_device) != hipSuccess ||
+                hipSetDevice(g.rank[rank].device) != hipSuccess) { g.ledger.fault(); return; }
+            const hipError_t status = hipEventQuery(p.event[rank]);
+            if (hipSetDevice(previous_device) != hipSuccess) { g.ledger.fault(); return; }
+            if (status == hipErrorNotReady) continue;
+            if (status != hipSuccess) { g.ledger.fault(); return; }
+            const RankState& rs = g.rank[rank];
+            if (!p.initialized[rank]) { g.ledger.fault(); return; }
+            {
+                if (!rs.consumed_host) { g.ledger.fault(); return; }
+                const ConsumptionStamp* stamp =
+                    rs.consumed_host + e.ticket.ticket_id % g.ledger.capacity();
+                const uint64_t id = __atomic_load_n(&stamp->ticket_id, __ATOMIC_ACQUIRE);
+                if (id != e.ticket.ticket_id ||
+                    stamp->placement_epoch != e.ticket.placement_epoch ||
+                    stamp->generation_slot != e.ticket.generation_slot ||
+                    __atomic_load_n(&stamp->published_count, __ATOMIC_ACQUIRE) !=
+                    __atomic_load_n(&stamp->consumed_count, __ATOMIC_ACQUIRE))
+                    continue; /* event complete but no matching consumed proof */
+            }
+            (void)g.ledger.gpu_complete(e.ticket.ticket_id, rank);
+            (void)g.ledger.consumed(e.ticket.ticket_id, rank);
+        }
+    }
+    /* Reclaim only when the ledger has retired an event's parent. */
+    for (auto it = g.parents.begin(); it != g.parents.end();) {
+        if (g.ledger.is_live(it->first)) { ++it; continue; }
+        int previous_device = -1;
+        if (hipGetDevice(&previous_device) != hipSuccess) { g.ledger.fault(); return; }
+        for (uint32_t rank = 0; rank < kMaxEngineRanks; ++rank) {
+            if (!it->second.event[rank]) continue;
+            if (hipSetDevice(g.rank[rank].device) != hipSuccess ||
+                hipEventDestroy(it->second.event[rank]) != hipSuccess) g.ledger.fault();
+        }
+        if (hipSetDevice(previous_device) != hipSuccess) g.ledger.fault();
+        it = g.parents.erase(it);
+    }
+}
+
+bool served_lane(uint32_t lane) {
+    return (g.hdr->helper_count <= 1 || lane % kMaxSlots < g.hdr->helper_count) &&
+           (!lane_is_small(lane) || lane_class(lane) < g.hdr->small_class_count);
+}
+void request_helper_drain(uint64_t closure) {
+    for (uint32_t lane = 0; lane < kLanes; ++lane)
+        if (served_lane(lane))
+            __atomic_store_n(&g.hdr->lane[lane].drain_request, closure, __ATOMIC_RELEASE);
+    notify(g.hdr);
+}
+
+bool helper_drained(uint64_t closure) {
+    if (!g.hdr || load(&g.hdr->helper_fault)) return false;
+    const Header* h = g.hdr;
+    for (uint32_t lane = 0; lane < kLanes; ++lane) {
+        const LaneSignal& l = h->lane[lane];
+        if (served_lane(lane) &&
+            __atomic_load_n(&l.drain_ack, __ATOMIC_ACQUIRE) != closure) return false;
+        const uint32_t seq = load(&l.request_sequence);
+        if (load(&l.done_sequence) != seq || load(&l.consumed_sequence) != seq)
+            return false;
+        if (seq &&
+            (__atomic_load_n(&l.done_epoch, __ATOMIC_ACQUIRE) !=
+             __atomic_load_n(&l.consumed_epoch, __ATOMIC_ACQUIRE) ||
+             load(&l.done_slot) != load(&l.consumed_slot)))
+            return false;
+    }
+    if (h->combine.request &&
+        (load(&h->combine.done) != load(&h->combine.request) ||
+         load(&h->combine.result_consumed_generation) != load(&h->combine.request)))
+        return false;
+    return true;
 }
 
 void publish_layer_map(int layer, int n_expert, const int32_t* slot_of_expert) {
@@ -223,6 +419,7 @@ void burst_transition(int active) {
         if (active) g.watch.notice();
         (void)__atomic_fetch_add(&h->burst, 1u, __ATOMIC_SEQ_CST);
         (void)futex_wake(&h->burst);
+        notify(h); /* lane waiters also observe explicit admission-drain requests */
         if (active)
             for (uint32_t lane = 0; lane < kLanes; ++lane) {
                 uint32_t* park = &h->lane[lane].park;
@@ -264,6 +461,8 @@ std::vector<uint8_t> derive_device_owners() {
     }
     return bits;
 }
+
+void placement_loop();
 
 void register_mailbox() {
     if (!enabled_env()) return;
@@ -335,7 +534,17 @@ void register_mailbox() {
             raise_fault(g.hdr);
         }
     }
-    static const EnginePlugin plugin{sizeof(EnginePlugin), publish_layer_map, owner_query, burst_transition, before_pass};
+    uint32_t epoch = 0;
+    uint8_t slot = 0;
+    if (!committed(&epoch, &slot) || !g.ledger.initialize(epoch, slot)) {
+        raise_fault(g.hdr);
+        return;
+    }
+    static const EnginePlugin plugin{sizeof(EnginePlugin), publish_layer_map, owner_query, burst_transition,
+                                     before_pass, admit_ticket, bind_ticket, cancel_ticket,
+                                     host_done_ticket, rank_done_ticket, poll_tickets,
+                                     [] { g.ledger.interrupt(); },
+                                     [](uint32_t limit) -> int { return g.ledger.configure(limit) ? RAD_OK : RAD_E_STATE; }};
     if (g.engine_register(&plugin) != 0) {
         std::fprintf(stderr, "libr3: R3_MOE_WORKER engine rejected the plugin registration (struct size)\n");
         g.watch.stop();
@@ -364,6 +573,51 @@ void register_mailbox() {
     if (poison_env()) std::fprintf(stderr, "libr3: R3_MOE_WORKER poison\n");
     if (shadow_env()) std::fprintf(stderr, "libr3: R3_MOE_WORKER_SHADOW enabled\n");
     if (mask_only_env()) std::fprintf(stderr, "libr3: R3_MOE_WORKER_MASK_ONLY enabled\n");
+    g.placement_thread = std::thread(placement_loop);
+}
+
+/* Protocol participant; the helper-side controller owns cycle timing. */
+void placement_loop() {
+    R3MoeDrainSnapshot snap{};
+    uint64_t transaction = 0;
+    while (!g.placement_stop.load(std::memory_order_acquire)) {
+        PlacementControl c{};
+        if (helper_faulted() || g.ledger.stopped()) break;
+        if (!placement_snapshot(g.map, &c)) { std::this_thread::yield(); continue; }
+        if (c.fault_code) { g.ledger.fault(); break; }
+        const auto state = PlacementState(c.state);
+        if (state == PlacementState::QUIESCING && c.transaction_id != transaction) {
+            // Only the no-op protocol is wired in this slice. Never accept a
+            // different owner generation without the later migration slices.
+            if (!r3::epoch::same_placement_cycle(c) ||
+                r3_moe_close_admission(&snap) < 0 ||
+                r3_moe_wait_drained(&snap, c.deadline_ns) < 0) {
+                g.ledger.fault(); raise_fault(g.hdr); break;
+            }
+            transaction = c.transaction_id;
+            for (uint32_t rank = 0; rank < kMaxEngineRanks; ++rank)
+                if (c.expected_ranks & (1u << rank))
+                    r3::epoch::publish_ack(g.map, kMaxHelpers + rank, c, AckPhase::QUIESCED,
+                                           snap.cutoff_ticket_id);
+        } else if (state == PlacementState::COMMIT && transaction == c.transaction_id && transaction) {
+            if (!r3::epoch::same_placement_cycle(c)) {
+                g.ledger.fault(); raise_fault(g.hdr); break;
+            }
+            for (uint32_t rank = 0; rank < kMaxEngineRanks; ++rank)
+                if (c.expected_ranks & (1u << rank))
+                    r3::epoch::publish_ack(g.map, kMaxHelpers + rank, c, AckPhase::COMMITTED,
+                                           snap.cutoff_ticket_id);
+        } else if (state == PlacementState::ACTIVE && transaction && snap.closure_id) {
+            if (c.transaction_id != transaction || c.active_epoch != snap.old_epoch ||
+                r3_moe_reopen_admission((uint32_t)c.active_epoch, c.active_slot) < 0) {
+                g.ledger.fault(); raise_fault(g.hdr); break;
+            }
+            snap = {};
+            std::fprintf(stderr, "libr3moe: placement cycle %llu reopened epoch %llu slot %u\n",
+                         (unsigned long long)transaction, (unsigned long long)c.active_epoch, c.active_slot);
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    }
 }
 
 void report_shadow(uint32_t rank, RankState& s) {
@@ -443,10 +697,23 @@ void snapshot_loop(double period_s) {
 }
 
 void close_mailbox() {
+    g.placement_stop.store(true, std::memory_order_release);
+    g.ledger.interrupt(); /* wakes quiescence and blocked scheduler admission */
+    if (g.placement_thread.joinable()) g.placement_thread.join();
     g.snapshot_stop = true;
     if (g.snapshotter.joinable()) g.snapshotter.join();
     std::lock_guard<std::mutex> lock(g.mu);
+    if (g.engine_register)
+        std::fprintf(stderr, "libr3moe: admission high-water %zu, capacity %zu, outstanding %zu\n",
+                     g.ledger.high_water(), g.ledger.capacity(), g.ledger.outstanding());
     g.watch.stop();   /* first: helpers may exit while the engine tears down, and that is not a fault */
+    for (auto& [id, p] : g.parents)
+        for (uint32_t rank = 0; rank < kMaxEngineRanks; ++rank)
+            if (p.event[rank]) {
+                (void)hipSetDevice(g.rank[rank].device);
+                (void)hipEventDestroy(p.event[rank]);
+            }
+    g.parents.clear();
     for (uint32_t r = 0; r < kMaxEngineRanks; ++r) {
         RankState& s = g.rank[r];
         if (!s.ready) continue;
@@ -463,6 +730,7 @@ void close_mailbox() {
         if (s.sequence) (void)hipFree(s.sequence);
         if (s.owner) (void)hipFree(s.owner);
         if (s.ticket) (void)hipFree(s.ticket);
+        if (s.consumed_host) (void)hipHostFree(s.consumed_host);
         s = RankState{};
     }
     if (g.engine_register) (void)g.engine_register(nullptr);
@@ -482,6 +750,95 @@ struct HookLifetime {
 } g_lifetime;
 
 }  // namespace
+
+extern "C" int r3_moe_close_admission(R3MoeDrainSnapshot* out) {
+    if (!out || !g.hdr || !g.pinned || helper_faulted()) return RAD_E_STATE;
+    {
+        std::lock_guard<std::mutex> lock(g.mu);
+        if (g.closed_snapshot.closure_id || g.closure_id == UINT64_MAX || g.ledger.stopped()) return RAD_E_STATE;
+        const auto snap = g.ledger.close_admission();
+        *out = R3MoeDrainSnapshot{++g.closure_id, snap.latest_ticket, snap.old_epoch,
+                                 (uint32_t)snap.outstanding, (uint32_t)snap.high_water,
+                                 (uint32_t)snap.capacity};
+        g.closed_snapshot = *out;
+        g.drain_verified = false;
+    }
+    std::fprintf(stderr, "libr3moe: placement admission closed; outstanding %u, "
+                         "high-water %u, capacity %u\n",
+                 out->outstanding, out->high_water, out->capacity);
+    return RAD_OK;
+}
+
+extern "C" int r3_moe_wait_drained(const R3MoeDrainSnapshot* snap,
+                                    uint64_t deadline_monotonic_ns) {
+    if (!snap || !g.hdr || !g.pinned || !deadline_monotonic_ns) return RAD_E_INVAL;
+    {
+        std::lock_guard<std::mutex> lock(g.mu);
+        if (!snap->closure_id || snap->closure_id != g.closed_snapshot.closure_id ||
+            snap->cutoff_ticket_id != g.closed_snapshot.cutoff_ticket_id ||
+            snap->old_epoch != g.closed_snapshot.old_epoch)
+            return RAD_E_STATE;
+    }
+    timespec now{};
+    (void)clock_gettime(CLOCK_MONOTONIC, &now);
+    const uint64_t now_ns = (uint64_t)now.tv_sec * 1000000000u + (uint64_t)now.tv_nsec;
+    const auto now_clock = std::chrono::steady_clock::now();
+    const auto maximum = std::chrono::duration_cast<std::chrono::nanoseconds>(
+        std::chrono::steady_clock::time_point::max() - now_clock).count();
+    if (deadline_monotonic_ns <= now_ns ||
+        deadline_monotonic_ns - now_ns > (uint64_t)maximum) {
+        g.ledger.fault();
+        return RAD_E_INVAL;
+    }
+    const auto limit = now_clock + std::chrono::nanoseconds(deadline_monotonic_ns - now_ns);
+    using Result = r3::admission::Ledger::Result;
+    const Result drained = g.ledger.wait_drained(snap->old_epoch, snap->cutoff_ticket_id,
+                                                 limit, [] { poll_tickets(); },
+                                                 [] { return helper_faulted(); });
+    if (drained != Result::Ok) { g.ledger.fault(); return RAD_E_STATE; }
+    /* A successful event query guarantees helper wait and consumption before
+     * the event, but explicitly check every lane before controller COMMIT. */
+    {
+        std::lock_guard<std::mutex> lock(g.mu);
+        if (snap->closure_id != g.closed_snapshot.closure_id) return RAD_E_STATE;
+        request_helper_drain(snap->closure_id);
+    }
+    while (!helper_drained(snap->closure_id)) {
+        if (g.ledger.stopped() || helper_faulted() || std::chrono::steady_clock::now() >= limit) {
+            g.ledger.fault();
+            return RAD_E_STATE;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    }
+    {
+        std::lock_guard<std::mutex> lock(g.mu);
+        if (g.ledger.stopped() || helper_faulted() ||
+            snap->closure_id != g.closed_snapshot.closure_id ||
+            !g.ledger.drained(snap->old_epoch, snap->cutoff_ticket_id))
+            return RAD_E_STATE;
+        g.drain_verified = true;
+    }
+    return RAD_OK;
+}
+
+extern "C" int r3_moe_reopen_admission(uint32_t epoch, uint32_t slot) {
+    uint32_t committed_epoch = 0;
+    uint8_t committed_slot = 0;
+    {
+        std::lock_guard<std::mutex> lock(g.mu);
+        if (!g.drain_verified ||
+            !committed(&committed_epoch, &committed_slot) ||
+            committed_epoch != epoch || committed_slot != slot ||
+            !g.ledger.reopen(epoch, (uint8_t)slot))
+            return RAD_E_STATE;
+        for (uint32_t lane = 0; lane < kLanes; ++lane)
+            __atomic_store_n(&g.hdr->lane[lane].drain_request, uint64_t(0), __ATOMIC_RELEASE);
+        notify(g.hdr);
+        g.drain_verified = false;
+        g.closed_snapshot = {};
+    }
+    return RAD_OK;
+}
 
 extern "C" int r3_moe_mailbox_enabled(void) {
     return g.hdr && g.pinned;
@@ -529,9 +886,9 @@ extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevic
     if (!hip_ok(hipMalloc(reinterpret_cast<void**>(&s.sequence), kLanes * sizeof(uint32_t)),
                 "hipMalloc lane sequence counters") ||
         !hip_ok(hipMemset(s.sequence, 0, kLanes * sizeof(uint32_t)), "zero lane sequence counters") ||
-        !hip_ok(hipMalloc(reinterpret_cast<void**>(&s.published), (kMaxSlots + 1 + kCombineChunks) * sizeof(uint32_t)),
+        !hip_ok(hipMalloc(reinterpret_cast<void**>(&s.published), (kMaxSlots + 1 + kCombineChunks + 4) * sizeof(uint32_t)),
                 "hipMalloc published flags") ||
-        !hip_ok(hipMemset(s.published, 0, (kMaxSlots + 1 + kCombineChunks) * sizeof(uint32_t)), "zero published flags") ||
+        !hip_ok(hipMemset(s.published, 0, (kMaxSlots + 1 + kCombineChunks + 4) * sizeof(uint32_t)), "zero published flags") ||
         !hip_ok(hipMalloc(&s.maps, (size_t)max_rows() * g.hdr->top_k * (sizeof(int32_t) + sizeof(uint32_t))),
                 "hipMalloc merge slot maps") ||
         !hip_ok(hipMalloc(reinterpret_cast<void**>(&s.ticket), sizeof(StepTicket)),
@@ -600,6 +957,29 @@ extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevic
         return RAD_E_DEVICE;
     }
 
+    /* One stable mapped completion buffer per rank, with distinct slots for
+     * all permitted concurrent parents. Must be allocated before publishing
+     * s.ready so tape kernels capture its fixed device pointer. */
+    const size_t consume_bytes = g.ledger.capacity() * sizeof(ConsumptionStamp);
+    if (!hip_ok(hipHostMalloc(reinterpret_cast<void**>(&s.consumed_host), consume_bytes,
+                              hipHostMallocMapped | hipHostMallocCoherent),
+                "rank parent consumption ring") ||
+        !hip_ok(hipHostGetDevicePointer(reinterpret_cast<void**>(&s.dev.consumed),
+                                       s.consumed_host, 0), "map consumption ring")) {
+        if (s.consumed_host) (void)hipHostFree(s.consumed_host);
+        if (shadow_first) (void)hipFree(shadow_first);
+        if (shadow_stats) (void)hipFree(shadow_stats);
+        if (s.mask_ref) (void)hipFree(s.mask_ref);
+        if (s.ticket) (void)hipFree(s.ticket);
+        if (s.maps) (void)hipFree(s.maps);
+        if (s.published) (void)hipFree(s.published);
+        if (s.sequence) (void)hipFree(s.sequence);
+        if (s.owner) (void)hipFree(s.owner);
+        s = RankState{};
+        return RAD_E_DEVICE;
+    }
+    std::memset(s.consumed_host, 0, consume_bytes);
+    s.dev.consumed_capacity = (uint32_t)g.ledger.capacity();
     s.device = device;
     s.dev.mailbox = dev_map;
     s.dev.owner = s.owner;

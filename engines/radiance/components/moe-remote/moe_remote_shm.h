@@ -213,9 +213,28 @@ struct alignas(64) LaneSignal {
     uint32_t consumed_slot;
     uint64_t done_epoch;
     uint64_t consumed_epoch;
-    uint32_t reserved[6];
+    /* Engine closes admission and retires parents before requesting a drain.
+     * Helpers ACK only after their queued waits/compute/combine work drained.
+     * Closure IDs prevent an old park from certifying a newer quiescence. */
+    uint64_t drain_request;
+    uint64_t drain_ack;
+    uint32_t reserved[2];
 };
 static_assert(sizeof(LaneSignal) == 64);
+static_assert(offsetof(LaneSignal, drain_request) == 40 && offsetof(LaneSignal, drain_ack) == 48);
+
+/* A helper ACK is a post-drain proof for exactly one closure. The callback
+ * owns its stream/CPU-combine drain; failures and stale requests never ACK.
+ * Kept card-free so cancellation and stale-proof behavior are unit tested. */
+template<class Drain>
+inline bool acknowledge_lane_drain(LaneSignal& lane, uint64_t closure, Drain&& drain) {
+    if (!closure || __atomic_load_n(&lane.drain_request, __ATOMIC_ACQUIRE) != closure)
+        return false;
+    if (!drain() || __atomic_load_n(&lane.drain_request, __ATOMIC_ACQUIRE) != closure)
+        return false;
+    __atomic_store_n(&lane.drain_ack, closure, __ATOMIC_RELEASE);
+    return true;
+}
 
 /* R3_MOE_WORKER_COMBINE (two to kMaxHelpers helpers behind a one-rank engine, large lane only): helper 0 adds every helper's
  * bf16 rows on the CPU into result plane [0][1] as fp16, so the engine reads one row a token over its link instead of one a

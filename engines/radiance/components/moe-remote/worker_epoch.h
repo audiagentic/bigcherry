@@ -1,8 +1,11 @@
 #pragma once
-// Pure CPU placement-epoch coordinator. The transport owns any publication mechanism;
-// neither this state machine nor its tests touch shared memory, HIP or a worker thread.
+// CPU placement-epoch coordinator plus the v23 shared-memory cycle transport.
+// The state machine uses injectable clocks/transport; no HIP or GPU work here.
 #include "moe_remote_shm.h"
 #include <cstdint>
+#include <chrono>
+#include <cstring>
+#include <memory>
 #include <limits>
 
 namespace r3::epoch {
@@ -27,7 +30,7 @@ struct Transport {
     virtual ~Transport() = default;
     virtual PlacementAck read_ack(uint32_t actor) const = 0;
     // Atomically publish a coherent snapshot and two-record diagnostic journal.
-    // The concrete implementation of seqlock/notify lives in a later slice.
+    // SharedTransport below implements the v23 seqlock/notify publication.
     virtual void publish(const PlacementControl&, const PlacementJournal&) = 0;
 };
 struct Deadlines {
@@ -56,6 +59,7 @@ class Controller {
     bool deterministic_ = false;
     bool quiesced_ = false;
     bool pending_published_ = false;
+    bool cycle_ = false;
     uint32_t reserved_helpers_ = 0, reserved_ranks_ = 0;
     uint32_t last_committed_index_ = UINT32_MAX;
     bool timeout(uint64_t duration) {
@@ -207,13 +211,41 @@ public:
         j.old_slot = c_.active_slot; j.new_slot = c_.pending_slot;
         j.start_ns = clock_.now_ns();
         reset_masks(); reserved_helpers_ = reserved_ranks_ = 0;
-        quiesced_ = pending_published_ = false;
+        quiesced_ = pending_published_ = cycle_ = false;
         return enter(PlacementState::PROPOSED, deadlines_.ready_ns);
+    }
+    // A diagnostic transaction recommits the SAME immutable generation.
+    // It bypasses staging and retirement: there is no old generation to free.
+    // Transaction IDs and exact phase ACKs still prevent stale drain proofs.
+    bool begin_epoch_cycle() {
+        if (!can_propose()) return false;
+        ++c_.transaction_id;
+        c_.pending_epoch = c_.active_epoch;
+        c_.pending_slot = c_.active_slot;
+        c_.pending_digest = c_.active_digest;
+        c_.journal_index = last_committed_index_ < 2 ? 1u - last_committed_index_ : 0u;
+        auto& j = journal_.entry[c_.journal_index];
+        j = {};
+        j.transaction_id = c_.transaction_id;
+        j.before_epoch = j.after_epoch = c_.active_epoch;
+        j.before_digest = j.candidate_digest = c_.active_digest;
+        j.old_slot = j.new_slot = c_.active_slot;
+        j.start_ns = clock_.now_ns();
+        reset_masks();
+        quiesced_ = pending_published_ = false;
+        cycle_ = true;
+        return enter(PlacementState::QUIESCING, deadlines_.quiesce_ns);
     }
     bool start_reserving() {
         return !failed_closed_ && c_.state == uint32_t(PlacementState::PROPOSED) &&
                enter(PlacementState::RESERVING, deadlines_.reserve_ns);
     }
+    // Live transport integration: r3_moe_close_admission snapshots the hook
+    // ledger; r3_moe_wait_drained(snapshot, deadline_ns) proves per-rank GPU
+    // completion, result consumption and helper queue/combine drain. Only
+    // after that proof may QUIESCED ACKs/commit proceed. Reopen with the
+    // committed epoch/slot after all COMMITTED ACKs; failures stay closed.
+    // These APIs live in moe_remote_hook.h, keeping this model card-free.
     bool begin_quiesce() {
         return !failed_closed_ && c_.state == uint32_t(PlacementState::PREPARED) &&
                enter(PlacementState::QUIESCING, deadlines_.quiesce_ns);
@@ -271,15 +303,15 @@ public:
             quiesced_ = true; emit();
             return Poll::ADVANCED; // external admission authority must explicitly commit
         }
-        if (state == PlacementState::COMMIT)
+        if (state == PlacementState::COMMIT && !cycle_)
             return enter(PlacementState::RETIRING, deadlines_.retire_ns) ? Poll::ADVANCED : Poll::FAILED;
-        if (state == PlacementState::RETIRING) {
+        if (state == PlacementState::RETIRING || (state == PlacementState::COMMIT && cycle_)) {
             auto& j = journal_.entry[c_.journal_index];
             j.finish_ns = clock_.now_ns(); j.state = uint32_t(PlacementState::ACTIVE);
             last_committed_index_ = c_.journal_index;
             c_.state = uint32_t(PlacementState::ACTIVE);
             c_.pending_epoch = 0; c_.pending_digest = 0; c_.pending_slot = UINT32_MAX;
-            c_.deadline_ns = 0; reset_masks(); quiesced_ = pending_published_ = false;
+            c_.deadline_ns = 0; reset_masks(); quiesced_ = pending_published_ = cycle_ = false;
             return emit() ? Poll::ADVANCED : Poll::FAILED;
         }
         return Poll::FAILED;
@@ -308,6 +340,159 @@ public:
         const auto& j = journal_.entry[c_.journal_index];
         if (!j.commit_ns || !j.before_digest || j.before_digest == c_.active_digest) return false;
         return propose(j.before_digest);
+    }
+};
+// A no-op cycle has no new owner table or pointer generation. Other pending
+// placements must use the later migration protocol, never this fast path.
+inline bool same_placement_cycle(const PlacementControl& c) {
+    return c.transaction_id && c.pending_epoch == c.active_epoch &&
+           c.pending_slot == c.active_slot && c.pending_digest == c.active_digest &&
+           c.active_epoch && c.active_digest && c.active_slot < 2;
+}
+
+// One writer per actor. Phase is the release publication word; invalidate it
+// before updating identity, and acquire/recheck it when collecting an ACK.
+inline PlacementAck read_shared_ack(const void* map, uint32_t actor) {
+    const auto* a = placement_ack(map, actor);
+    PlacementAck out{};
+    if (!a) return out;
+    const uint32_t phase = __atomic_load_n(&a->phase, __ATOMIC_ACQUIRE);
+    if (!phase) return out;
+    out.transaction_id = __atomic_load_n(&a->transaction_id, __ATOMIC_ACQUIRE);
+    out.epoch = __atomic_load_n(&a->epoch, __ATOMIC_RELAXED);
+    out.digest = __atomic_load_n(&a->digest, __ATOMIC_RELAXED);
+    out.drained_step = __atomic_load_n(&a->drained_step, __ATOMIC_RELAXED);
+    out.generation_slot = __atomic_load_n(&a->generation_slot, __ATOMIC_RELAXED);
+    out.fault_code = __atomic_load_n(&a->fault_code, __ATOMIC_RELAXED);
+    if (__atomic_load_n(&a->phase, __ATOMIC_ACQUIRE) != phase ||
+        __atomic_load_n(&a->transaction_id, __ATOMIC_ACQUIRE) != out.transaction_id)
+        return PlacementAck{};
+    out.phase = phase;
+    return out;
+}
+inline void publish_ack(void* map, uint32_t actor, const PlacementControl& c,
+                        AckPhase phase, uint64_t cutoff = 0) {
+    auto* a = placement_ack(map, actor);
+    if (!a) return;
+    const auto previous = read_shared_ack(map, actor);
+    if (previous.transaction_id == c.transaction_id && previous.phase == uint32_t(phase))
+        return;
+    __atomic_store_n(&a->phase, uint32_t(AckPhase::NONE), __ATOMIC_SEQ_CST);
+    __atomic_store_n(&a->transaction_id, c.transaction_id, __ATOMIC_RELAXED);
+    __atomic_store_n(&a->epoch, c.pending_epoch, __ATOMIC_RELAXED);
+    __atomic_store_n(&a->digest, c.pending_digest, __ATOMIC_RELAXED);
+    __atomic_store_n(&a->drained_step, cutoff, __ATOMIC_RELAXED);
+    __atomic_store_n(&a->generation_slot, c.pending_slot, __ATOMIC_RELAXED);
+    __atomic_store_n(&a->fault_code, uint32_t(0), __ATOMIC_RELAXED);
+    __atomic_store_n(&a->phase, uint32_t(phase), __ATOMIC_RELEASE);
+    notify(static_cast<Header*>(map));
+}
+class SharedTransport : public Transport {
+    void* map_;
+public:
+    explicit SharedTransport(void* map) : map_(map) {}
+    PlacementAck read_ack(uint32_t actor) const override { return read_shared_ack(map_, actor); }
+    void publish(const PlacementControl& c, const PlacementJournal& j) override {
+        auto* target = placement_control(map_);
+        __atomic_store_n(&target->seq, c.seq - 1u, __ATOMIC_SEQ_CST);
+        std::memcpy(reinterpret_cast<uint8_t*>(target) + sizeof(c.seq),
+                    reinterpret_cast<const uint8_t*>(&c) + sizeof(c.seq), sizeof(c) - sizeof(c.seq));
+        *placement_journal(map_) = j;
+        __atomic_store_n(&target->seq, c.seq, __ATOMIC_RELEASE);
+        notify(static_cast<Header*>(map_));
+    }
+};
+
+// Helper-side periodic driver. The caller polls it beside the serving lanes;
+// only helper zero publishes PlacementControl. No environment settings here.
+class EpochCycle {
+    void* map_;
+    uint32_t helper_;
+    const Clock& clock_;
+    std::chrono::nanoseconds period_;
+    uint64_t next_ns_ = 0;
+    uint64_t awaiting_reopen_ = 0;
+    SharedTransport transport_;
+    std::unique_ptr<Controller> controller_;
+    bool failed_ = false;
+    bool schedule() {
+        const uint64_t now = clock_.now_ns();
+        const uint64_t period = uint64_t(period_.count());
+        if (period > UINT64_MAX - now) return false;
+        next_ns_ = now + period;
+        return true;
+    }
+public:
+    EpochCycle(void* map, uint32_t helper, const Clock& clock,
+               std::chrono::nanoseconds period)
+        : map_(map), helper_(helper), clock_(clock), period_(period), transport_(map) {
+        failed_ = !map || helper >= static_cast<Header*>(map)->helper_count || period.count() < 0;
+    }
+    bool enabled() const { return period_.count() != 0; }
+    bool tick() {
+        if (failed_) return false;
+        if (period_.count() == 0) return true; // typed setting disables the experiment
+        auto* h = static_cast<Header*>(map_);
+        if (load(&h->helper_fault)) return false;
+        PlacementControl c{};
+        if (!placement_snapshot(map_, &c)) return true;
+        // Wait for the engine to publish its actual participating rank mask.
+        if (!c.expected_ranks) return true;
+        if (helper_ == 0 && !controller_) {
+            if (c.state != uint32_t(PlacementState::ACTIVE) || c.fault_code ||
+                c.expected_ranks >= (1u << kMaxEngineRanks) ||
+                (c.expected_ranks & (c.expected_ranks + 1u))) return false;
+            uint32_t ranks = 0;
+            for (uint32_t mask = c.expected_ranks; mask; mask >>= 1) ++ranks;
+            controller_ = std::make_unique<Controller>(transport_, clock_, c.active_digest,
+                h->helper_count, ranks, Deadlines{},
+                Bootstrap{c.active_epoch, c.active_slot, c.seq, c.transaction_id});
+            if (!schedule()) return false;
+            c = controller_->control();
+        }
+        if (c.fault_code) return false;
+        if (c.state == uint32_t(PlacementState::QUIESCING) ||
+            c.state == uint32_t(PlacementState::COMMIT)) {
+            if (!same_placement_cycle(c)) return false;
+            // Every served lane must prove this closure; parked prequeued waits
+            // and large-lane CPU combine work are covered by drain_ack.
+            uint64_t closure = 0;
+            bool drained = true;
+            for (uint32_t lane = 0; lane < kLanes; ++lane) {
+                if ((h->helper_count > 1 && lane % kMaxSlots != helper_) ||
+                    (lane_is_small(lane) && lane_class(lane) >= h->small_class_count)) continue;
+                const auto& signal = h->lane[lane];
+                const uint64_t requested = __atomic_load_n(&signal.drain_request, __ATOMIC_ACQUIRE);
+                const uint64_t ack = __atomic_load_n(&signal.drain_ack, __ATOMIC_ACQUIRE);
+                if (!requested || ack != requested || (closure && closure != requested)) drained = false;
+                closure = requested;
+            }
+            const auto previous = read_shared_ack(map_, helper_);
+            if (drained && (c.state == uint32_t(PlacementState::QUIESCING) ||
+                (previous.transaction_id == c.transaction_id && previous.phase == uint32_t(AckPhase::QUIESCED))))
+                publish_ack(map_, helper_, c, c.state == uint32_t(PlacementState::QUIESCING) ?
+                            AckPhase::QUIESCED : AckPhase::COMMITTED);
+        }
+        if (helper_ != 0) return true;
+        if (c.state == uint32_t(PlacementState::ACTIVE)) {
+            // ACTIVE publication precedes engine reopen. Do not start the next
+            // cycle until its lane drain requests have actually been cleared.
+            if (awaiting_reopen_) {
+                for (const auto& lane : h->lane)
+                    if (__atomic_load_n(&lane.drain_request, __ATOMIC_ACQUIRE)) return true;
+                awaiting_reopen_ = 0;
+                if (!schedule()) return false;
+            }
+            if (!(load(&h->burst) & 1u) || clock_.now_ns() < next_ns_) return true;
+            return controller_->begin_epoch_cycle();
+        }
+        const Poll result = controller_->poll();
+        if (result == Poll::FAILED) return false;
+        if (result == Poll::ADVANCED && c.state == uint32_t(PlacementState::QUIESCING))
+            return controller_->commit();
+        if (result == Poll::ADVANCED && c.state == uint32_t(PlacementState::COMMIT))
+            awaiting_reopen_ = c.transaction_id;
+        return true;
     }
 };
 } // namespace r3::epoch
