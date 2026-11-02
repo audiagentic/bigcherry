@@ -119,6 +119,9 @@ class EngineLayout:
     runtime_targets: tuple[str, ...] = ()
     #: build-tree directory components install their outputs into; empty when the engine has none
     runtime_home: str = ""
+    #: (CMake cache variable, path under the selected ROCm SDK root) for each ROCm tool or library the engine's own
+    #: CMake would otherwise search for; empty when the engine finds ROCm only through its compiler (llama.cpp)
+    rocm_paths: tuple[tuple[str, str], ...] = ()
     #: (name, repository-relative directory) of each component the engine builds, from [components]
     components: tuple[tuple[str, str], ...] = ()
     #: repository-relative registry of the external sources (forks, upstream PRs) this engine's patches are ported
@@ -301,7 +304,7 @@ def _acceptance(value: object, name: str) -> tuple[AcceptanceEntry, ...]:
 def _build_table(table: object, name: str) -> dict[str, object]:
     if not isinstance(table, dict):
         raise EngineError(f"engine {name!r}: missing [build] table")
-    unknown = sorted(set(table) - {"targets-option", "binary", "runtime-targets", "runtime-home"})
+    unknown = sorted(set(table) - {"targets-option", "binary", "runtime-targets", "runtime-home", "rocm-paths"})
     if unknown:
         raise EngineError(f"engine {name!r}: unknown build key(s): {', '.join(unknown)}")
     return {
@@ -309,6 +312,10 @@ def _build_table(table: object, name: str) -> dict[str, object]:
         "build_binary": _relative(table.get("binary"), "build.binary", name),
         "runtime_targets": tuple(table.get("runtime-targets", ())),
         "runtime_home": _relative(table["runtime-home"], "build.runtime-home", name) if "runtime-home" in table else "",
+        "rocm_paths": tuple(sorted(
+            (key, _relative(value, f"build.rocm-paths.{key}", name))
+            for key, value in _pairs(table, "rocm-paths", "build", name)
+        )),
     }
 
 

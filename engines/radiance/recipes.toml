@@ -94,11 +94,12 @@ tune-context = 4096
 production-context = 8192
 min-free-vram-bytes-per-device = 268435456
 
-# dev: radiance's host code needs GCC 14 (C++23); HIP is found by radiance's own CMake from ROCm on PATH.
+# dev: radiance's host code needs GCC 14 (C++23); hipcc, the HIP compiler and the ROCm runtime come from the selected ROCm
+# SDK (engine.toml build.rocm-paths; docs/reference/ENVIRONMENT.md, ROCm).
 # RAD_GPU_TARGETS names libr4d's kernel targets (gfx12 only); the gfx1100 kernels come from the libr3 component.
 # ${VAR} values come from the environment or config/environment.local.toml [env].
 [platform.linux-radiance]
-description = "dev: radiance engine build (GCC 14 host compiler; ROCm from PATH)"
+description = "dev: radiance engine build (GCC 14 host compiler; HIP from the selected ROCm SDK)"
 targets = ["gfx1201"]
 # ccache wraps every compiler CMake invokes (host C/C++ AND the HIP device-code compiler) so a
 # from-scratch build after a small source change only recompiles the touched translation units --

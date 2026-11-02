@@ -535,6 +535,7 @@ def make_build_worker(
                 if cmake_generated_root.exists():
                     shutil.rmtree(cmake_generated_root)
                 shutil.copytree(generated_root, cmake_generated_root)
+            layout = engines.load(paths.REPO_ROOT, context.engine)
             configure_args = campaign_build.cmake_configure_args(
                 build,
                 platform,
@@ -545,7 +546,8 @@ def make_build_worker(
                 c_compiler=platform.c_compiler,
                 cxx_compiler=platform.cxx_compiler,
                 backend=backend,
-                targets_option=engines.load(paths.REPO_ROOT, context.engine).targets_option,
+                targets_option=layout.targets_option,
+                rocm_paths=layout.rocm_paths,
             )
             # Adversarial-review follow-up: the worker-entry check above and
             # the post-compile check below leave a real window between them
