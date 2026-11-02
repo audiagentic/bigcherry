@@ -1,5 +1,5 @@
 """RSC06: explicit per-process helper settings for libr4d and its gfx11/gfx10 ports."""
-from bigcherry.patch.apply import Edit, FilePatch
+from bigcherry.patcher import Edit, FilePatch
 
 HELPER_CONFIG_H = r"""/* BigCherry helper configuration. Install once, before any plugin callback or worker thread.
  * An unconfigured library belongs to the engine; its environment reads remain for RSC07.
