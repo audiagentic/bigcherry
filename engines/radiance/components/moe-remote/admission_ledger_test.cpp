@@ -136,8 +136,8 @@ static void completion_ring() {
     check(rank[1].record(c.ticket_id, stream), "recorded");
     check(q.host_complete(c.ticket_id) && !q.poll(prove) && q.stopped(), "complete event for an unarmed rank faults closed");
 
-    /* A request still unconsumed at the seal: the sealed counts differ and the
-     * parent never retires, even after its event completes. */
+    /* A request still unconsumed at the seal: once its event completes, the
+     * sealed counts differ and the ledger faults closed. */
     Ledger u(cap);
     RankGpu g1;
     Completion r1;
@@ -148,8 +148,8 @@ static void completion_ring() {
     check(r1.record(c.ticket_id, stream), "record");
     *S::last = 1;
     auto prove1 = [&](const StepTicket& t, uint32_t) { return r1.prove(t); };
-    check(u.host_complete(c.ticket_id) && u.poll(prove1) && u.outstanding()==1,
-          "a published request without its finish keeps the parent");
+    check(u.host_complete(c.ticket_id) && !u.poll(prove1) && u.stopped() && u.outstanding()==1,
+          "a published request without its finish faults once the event completes");
     /* A stamp sealed for an older parent of the same slot does not prove this one. */
     Ledger o(cap);
     RankGpu g2;
@@ -170,8 +170,8 @@ static void completion_ring() {
     }
     check(r2.record(d.ticket_id, stream), "record without seal");   /* seal skipped: host slot still holds id 1 */
     *S::last = 1;
-    check(o.host_complete(d.ticket_id) && o.poll([&](const StepTicket& t, uint32_t) { return r2.prove(t); }) &&
-          o.outstanding()==1, "an older parent's sealed stamp never proves a newer one");
+    check(o.host_complete(d.ticket_id) && !o.poll([&](const StepTicket& t, uint32_t) { return r2.prove(t); }) &&
+          o.stopped() && o.outstanding()==1, "an older parent's sealed stamp faults, never proves a newer one");
 
     Ledger e(cap);
     check(e.initialize(6,0) && e.admit(1,&c)==R::Ok && e.bind(c.ticket_id,1), "error fixture");

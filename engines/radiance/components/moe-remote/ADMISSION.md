@@ -42,15 +42,23 @@ parent step.
   every pass arms the slot on the parent's first pass on that rank
   (consumption::arm); later passes of the same parent keep its counts.
 * mailbox_publish_kernel checks the slot belongs to its pass's ticket and adds
-  one to published_count per released helper request (device-scope atomic,
-  no returned value). mailbox_add_finish_kernel checks the same slot from the
-  pass's ticket copy, adds one to consumed_count per lane the pass published,
-  and records the lane's (and a combined step's) consumed sequence with the
+  the number of helper requests the pass will release to published_count, in
+  one device-scope atomic (no returned value) before any is released.
+  mailbox_add_finish_kernel checks the same slot from the pass's ticket copy,
+  adds the number of lanes the pass published to consumed_count in one atomic
+  (a block count), and records the lane's (and a combined step's) consumed sequence with the
   pass's epoch/slot in ConsumedRecords, also device memory.
-* mailbox_wait_helpers keeps main's acquire of done_sequence and reads the
-  helper's completion epoch/slot/sequence with relaxed loads issued alongside
-  main's status read, compared against the pass's ticket copy: no extra
-  serialized round trip.
+* mailbox_wait_helpers keeps main's acquire of done_sequence == seq, then reads
+  the lane's done_epoch/done_slot (the same cache line) with relaxed loads
+  issued alongside main's status read, compared against the pass's ticket
+  copy. The helper stores done_epoch/done_slot from the request's own
+  epoch/slot before releasing done_sequence (lane_publish_done), so these
+  prove which request completed under which placement; the Request's own
+  completion words are not read on the engine's hot path.
+* Once a parent's terminal event on a rank is complete, a sealed stamp that
+  does not match its ticket/epoch/slot, or whose published and consumed counts
+  differ, faults the ledger at once, naming the parent: the event follows the
+  seal on the same stream, so nothing can still change the stamp.
 * At seal, before the parent's terminal event on each rank,
   mailbox_seal_kernel copies the changed lane/combine records into
   LaneSignal::consumed_* and CombineSignal::result_consumed_* (the quiescence

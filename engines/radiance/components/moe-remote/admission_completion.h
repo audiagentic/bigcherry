@@ -21,6 +21,7 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <memory>
 #include <new>
 
@@ -80,8 +81,12 @@ public:
     }
     /* Proven needs: this parent's own terminal event complete, the rank armed
      * for it, and its sealed stamp matching ticket/epoch/slot with published
-     * equal to consumed. A complete event without the matching stamp stays
-     * pending. */
+     * equal to consumed. The event completes only after the seal and every
+     * earlier operation of the parent on this stream, and its system-scope
+     * release makes the sealed stamp visible: a complete event whose stamp
+     * does not match is a broken protocol, so it faults at once (naming the
+     * parent) instead of holding the parent until capacity or a drain
+     * deadline reports it indirectly. */
     Ledger::Proof prove(const StepTicket& t) const {
         using P = Ledger::Proof;
         if (!ready()) return P::Pending;
@@ -92,11 +97,19 @@ public:
         if (status < 0) return P::Fault;
         if (armed_[i].load(std::memory_order_acquire) != t.ticket_id) return P::Fault;
         const ConsumptionStamp* s = stamps_ + i;
-        if (__atomic_load_n(&s->ticket_id, __ATOMIC_ACQUIRE) != t.ticket_id ||
-            s->placement_epoch != t.placement_epoch || s->generation_slot != t.generation_slot ||
-            __atomic_load_n(&s->published_count, __ATOMIC_ACQUIRE) !=
-            __atomic_load_n(&s->consumed_count, __ATOMIC_ACQUIRE))
-            return P::Pending;
+        const uint64_t id = __atomic_load_n(&s->ticket_id, __ATOMIC_ACQUIRE);
+        const uint32_t published = __atomic_load_n(&s->published_count, __ATOMIC_ACQUIRE);
+        const uint32_t consumed = __atomic_load_n(&s->consumed_count, __ATOMIC_ACQUIRE);
+        if (id != t.ticket_id || s->placement_epoch != t.placement_epoch ||
+            s->generation_slot != t.generation_slot || published != consumed) {
+            std::fprintf(stderr,
+                         "moe-remote admission: parent %llu completed with an invalid seal: stamp ticket %llu "
+                         "epoch %llu slot %u (expected epoch %llu slot %u), published %u consumed %u\n",
+                         (unsigned long long)t.ticket_id, (unsigned long long)id,
+                         (unsigned long long)s->placement_epoch, s->generation_slot,
+                         (unsigned long long)t.placement_epoch, t.generation_slot, published, consumed);
+            return P::Fault;
+        }
         return P::Proven;
     }
 private:

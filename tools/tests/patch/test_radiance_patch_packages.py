@@ -73,7 +73,7 @@ PIN_BLOBS = {
         "core/engine.h": ("b10743c", "11473eb"),
         "core/engine_bringup.cpp": ("3ecdba8", "fe411f0"),
         "core/place/bc_moe_remote.cpp": (None, "89dfe33"),
-        "core/place/bc_moe_remote_engine.h": (None, "f72094b"),
+        "core/place/bc_moe_remote_engine.h": (None, "035572c"),
         "core/place/bc_moe_remote_place.h": (None, "da896b6"),
         "core/place/planner.cpp": ("2ea4220", "7944888"),
         "core/runtime/ctx.cpp": ("ff0f746", "2ff379e"),
@@ -361,8 +361,7 @@ class TestRadiancePatchPackages(unittest.TestCase):
             stub.mkdir(parents=True)
             (stub / "device.h").write_text(
                 "#pragma once\n"
-                "enum { RAD_OK=0, RAD_E_STATE=-1, RAD_E_DEVICE=-2 };\n"
-                "inline int rad_dev_set(int) { return 0; }\n",
+                "enum { RAD_OK=0, RAD_E_STATE=-1, RAD_E_DEVICE=-2 };\n",   # no rad_dev_set: the bridge never switches device
                 encoding="utf-8",
             )
             binary = root / "admission-bridge-test"

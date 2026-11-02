@@ -387,20 +387,18 @@ public:
     BcMoeRemoteTicket issued_ticket() const { return issued_; }
     /* After mark_step_end, before issue_ahead: covers scheduler-issued
      * resolve/checkpoint work and lane-joined model/draft passes.
-     * Each parent owns distinct events; step_end_ is never copied as proof. */
+     * Each parent owns distinct events; step_end_ is never copied as proof.
+     * No current-device switch: rank_done launches its seal kernel and
+     * records its event on the rank's own engine stream, and the AQL backend
+     * dispatches both on that stream's device (hipLaunchKernel resolves the
+     * kernel for the stream's ordinal; rad_event_record enqueues a barrier on
+     * the stream). */
     template<class Ranks>
     int seal(const Ranks& ranks) {
         if (!current_.ticket_id) return RAD_OK;
-        int rc = RAD_OK;
-        for (const auto& r : ranks) {
-            if (rad_dev_set(r->device) < 0 ||
-                bc_moe_remote_rank_done(r->index, current_, r->ctx.stream()) < 0) {
-                rc = RAD_E_DEVICE;
-                break;
-            }
-        }
-        if (rad_dev_set(ranks[0]->device) < 0) rc = RAD_E_DEVICE;
-        return rc;
+        for (const auto& r : ranks)
+            if (bc_moe_remote_rank_done(r->index, current_, r->ctx.stream()) < 0) return RAD_E_DEVICE;
+        return RAD_OK;
     }
     int host_done() { return bc_moe_remote_host_done(current_); }
 };

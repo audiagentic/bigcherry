@@ -247,6 +247,12 @@ __global__ void mailbox_publish_kernel(
             if (s == 0) __builtin_trap();
             step_seq[k] = s;
         }
+        /* One device-scope add for every request this pass publishes, before any is released (L2, no link trip).
+         * Ordered before this parent's seal by the stream; the seal checks consumed <= published. */
+        uint32_t requests = 0;
+        for (uint32_t k = 0; k < helpers; ++k) requests += step_seq[k] != 0u;
+        if (requests)
+            (void)__hip_atomic_fetch_add(&stamp->published_count, requests, __ATOMIC_RELAXED, __HIP_MEMORY_SCOPE_AGENT);
         /* helper 0 combines, so it needs a request of its own, and at least one other helper must have one */
         bool others = false;
         for (uint32_t k = 1; k < helpers; ++k) others |= step_nr[k] != 0u;
@@ -312,9 +318,6 @@ __global__ void mailbox_publish_kernel(
         __threadfence_system();
         __syncthreads();
         if (threadIdx.x == 0) {
-            /* Device-scope, result unused: a non-returning L2 atomic, no link round trip. Ordered before this
-             * parent's seal by the stream; the seal checks consumed <= published. */
-            (void)__hip_atomic_fetch_add(&stamp->published_count, 1u, __ATOMIC_RELAXED, __HIP_MEMORY_SCOPE_AGENT);
             store_sys_rel(&h->lane[lane].request_sequence, seq);
             published[slot] = 1u + cls;   /* 0: nothing published to this slot; else 1 + the lane class */
         }
@@ -386,19 +389,17 @@ __device__ void mailbox_wait_helpers(uint8_t* base, const uint32_t* sequence, co
         seen_at[k] = wall_clock64();
         traced[k] = reinterpret_cast<Request*>(base + h->ring_offset) + lane * kLaneSlots + ((seq - 1u) % kLaneSlots);
         /* The acquire of done_sequence above orders everything the helper wrote before it, so these are relaxed and
-         * independent: they issue together and cost the one link round trip main's status read already paid. The
-         * expected epoch/slot come from this pass's ticket copy (device memory), not from the Request. */
+         * independent. The helper stores done_epoch/done_slot from this request's own epoch/slot and then releases
+         * done_sequence == seq (lane_publish_done), so the three lane words, in the cache line just acquired, prove
+         * which request completed under which placement: the Request's status is the only other read, as on main.
+         * The expected epoch/slot come from this pass's ticket copy (device memory), not from the Request. */
         const uint64_t done_epoch = __hip_atomic_load(&h->lane[lane].done_epoch, __ATOMIC_RELAXED, __HIP_MEMORY_SCOPE_SYSTEM);
         const uint32_t done_slot = __hip_atomic_load(&h->lane[lane].done_slot, __ATOMIC_RELAXED, __HIP_MEMORY_SCOPE_SYSTEM);
         const uint32_t status = traced[k]->status;
-        const uint32_t c_seq = traced[k]->completion_sequence;
-        const uint64_t c_epoch = traced[k]->completion_epoch;
-        const uint32_t c_slot = traced[k]->completion_slot;
         const uint32_t epoch = published[kPublishedTicketOffset + 2], gslot = published[kPublishedTicketOffset + 3];
-        /* A failed helper request fails now (the route check skips it on a chunked step), as does a completion for any
-         * other request or epoch/slot. Bitwise, so no branch waits on one load before the others issue. */
-        if ((status != 0) | (done_epoch != epoch) | (done_slot != gslot) | (c_seq != seq) | (c_epoch != epoch) |
-            (c_slot != gslot))
+        /* A failed helper request fails now (the route check skips it on a chunked step), as does a completion under
+         * any other epoch/slot. Bitwise, so no branch waits on one load before the others issue. */
+        if ((status != 0) | (done_epoch != epoch) | (done_slot != gslot))
             __builtin_trap();
     }
     for (uint32_t k = 0; k < helpers && k < kMaxHelpers; ++k) {
@@ -684,6 +685,7 @@ __global__ void mailbox_add_finish_kernel(const uint32_t* sequence, uint32_t* pu
                                           uint32_t capacity, ConsumedRecords* rec) {
     if (blockIdx.x || threadIdx.x >= kMaxSlots + 1u) return;
     const uint32_t idx = threadIdx.x;
+    uint32_t consumed = 0;
     const uint64_t id = (uint64_t)published[kPublishedTicketOffset] |
                         ((uint64_t)published[kPublishedTicketOffset+1] << 32);
     const uint32_t epoch = published[kPublishedTicketOffset+2], gslot = published[kPublishedTicketOffset+3];
@@ -696,7 +698,7 @@ __global__ void mailbox_add_finish_kernel(const uint32_t* sequence, uint32_t* pu
         r.slot = gslot;
         r.epoch = epoch;
         r.sequence = sequence[lane];
-        (void)__hip_atomic_fetch_add(&out->consumed_count, 1u, __ATOMIC_RELAXED, __HIP_MEMORY_SCOPE_AGENT);
+        consumed = 1;
     }
     if (idx == 0)
         if (const uint32_t cg = published[kMaxSlots]) {
@@ -704,7 +706,10 @@ __global__ void mailbox_add_finish_kernel(const uint32_t* sequence, uint32_t* pu
             rec->combine.epoch = epoch;
             rec->combine.sequence = cg;
         }
-    __syncthreads();
+    /* One device-scope add for the whole pass, not one a lane. */
+    const uint32_t lanes = (uint32_t)__syncthreads_count(consumed);
+    if (idx == 0 && lanes)
+        (void)__hip_atomic_fetch_add(&out->consumed_count, lanes, __ATOMIC_RELAXED, __HIP_MEMORY_SCOPE_AGENT);
     published[idx] = 0;
 }
 
