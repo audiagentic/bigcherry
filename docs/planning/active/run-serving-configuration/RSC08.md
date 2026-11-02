@@ -72,6 +72,13 @@ Slice 2 (shared strict reader) gates. Each is a required negative test, each fai
 - A correctly re-hashed but semantically invalid manifest (owner map, memory plan, role or GPU references) fails with its semantic code, not a digest error.
 - The input size limit and the UTF-8 checks are enforced before the document is accepted: oversize input, and invalid UTF-8 anywhere including member names, fail with BC_CFG_INVALID_FORMAT.
 
+
+
+Admission wiring (slice 5 / RSC03 A2; deferred from the #534 review, S3):
+- bc_plan_memory_check (rad0011) returns a structured result, not bool plus text, that separates invalid input (BC_CFG_CALIBRATION_INVALID or BC_CFG_INVALID_FORMAT for a bad ppm or byte count), stable-plan drift (BC_CFG_PLAN_MISMATCH, RAD_E_SCHEMA, exit 2) and resource refusal (BC_CFG_ADMISSION_REFUSED, RAD_E_NOMEM, exit 4).
+- A production caller runs it at engine start-up, before weights: it takes the expected plan from the validated manifest's spec.plan.engine_memory.expected, and kv_backing_floor_ppm only from the selected spec.calibration entry kv_backing_floor.fraction_ppm (0 when none is selected). The live plan comes from the same plan() call that sizes the engine.
+- The engine's check and the contract agree on docs/design/serving-manifest-v1/admission-vectors.json: every vector gives the same verdict and code class through the production entry point, not only through the card-free check test.
+
 ## Notes
 
 Feeds: RSC01, RSC02, RSC03, RSC06, RSC07.
@@ -87,9 +94,13 @@ Slice 2 (shared strict reader) requirement, from the lead's #530 review (2026-11
 
 ## Ledger-events
 
+
 - chg_20261102_121239_the-serving-manifest-v1-format_6543
 - chg_20261102_121824_the-serving-component-can-prod_8129
 - 2026-11-02T12:18:29.161474+00:00 (updated-by): Updated: section:ledger-events
 - chg_20261102_124002_every-components-card-free-te_9438
 - 2026-11-02T12:44:46.508959+00:00 (updated-by): Updated: section:notes
 - 2026-11-02T13:01:00.152027+00:00 (updated-by): Updated: section:acceptance_criteria
+- 2026-11-02T16:24:11.913385+00:00 (updated-by): Updated: section:acceptance_criteria
+- chg_20261102_162418_engine-start-up-admission-no-l_6822
+- 2026-11-02T16:24:22.385758+00:00 (updated-by): Updated: section:ledger-events
