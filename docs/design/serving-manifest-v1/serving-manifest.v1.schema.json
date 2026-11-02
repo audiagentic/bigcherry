@@ -2,6 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:bigcherry:serving-manifest:v1",
   "title": "BigCherry ServingManifest v1 (wire)",
+  "description": "A serving manifest v1 document.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -13,12 +14,15 @@
   ],
   "properties": {
     "apiVersion": {
+      "description": "Contract identity; exactly `bigcherry/v1`.",
       "const": "bigcherry/v1"
     },
     "kind": {
+      "description": "Document kind; exactly `ServingManifest`.",
       "const": "ServingManifest"
     },
     "metadata": {
+      "description": "Identity of this resolved serving instance and its producer.",
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -29,10 +33,12 @@
       ],
       "properties": {
         "instance_id": {
+          "description": "Canonical lowercase UUIDv4, created once per resolved serving instance; every process of one launch reads the same ID.",
           "type": "string",
           "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
         },
         "producer": {
+          "description": "The executable that resolved this manifest.",
           "type": "object",
           "additionalProperties": false,
           "required": [
@@ -41,22 +47,27 @@
           ],
           "properties": {
             "name": {
+              "description": "Producer name; exactly `bc-serve`.",
               "const": "bc-serve"
             },
             "build_sha256": {
+              "description": "SHA-256 of the installed bc-serve executable (64 lowercase hex).",
               "$ref": "#/$defs/hex64"
             }
           }
         },
         "contract_version": {
+          "description": "Contract version; exactly 1, matching the apiVersion suffix.",
           "const": 1
         },
         "content_digest": {
+          "description": "`sha256:` + JCS SHA-256 of the manifest with this member removed (spec §8).",
           "$ref": "#/$defs/digest"
         }
       }
     },
     "spec": {
+      "description": "The resolved serving configuration. `experiment` is present only when the profile is `lab`.",
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -70,6 +81,7 @@
       ],
       "properties": {
         "intent": {
+          "description": "What the operator asked for: model, layout and service policy.",
           "type": "object",
           "additionalProperties": false,
           "required": [
@@ -79,14 +91,17 @@
           ],
           "properties": {
             "model": {
+              "description": "Model container path the engine loads (`--model`).",
               "type": "string",
               "minLength": 1
             },
             "layout": {
+              "description": "Named GPU layout (engines/radiance/layouts.toml).",
               "type": "string",
               "minLength": 1
             },
             "service": {
+              "description": "Service objective and policy.",
               "type": "object",
               "additionalProperties": false,
               "required": [
@@ -99,12 +114,14 @@
               ],
               "properties": {
                 "profile": {
+                  "description": "`production`, or `lab`, which alone permits `spec.experiment`.",
                   "enum": [
                     "production",
                     "lab"
                   ]
                 },
                 "objective": {
+                  "description": "Service objective that selects calibration and derivations.",
                   "enum": [
                     "latency",
                     "balanced",
@@ -112,18 +129,22 @@
                   ]
                 },
                 "max_sessions": {
+                  "description": "Concurrent sessions served (`--max-num-seqs`).",
                   "$ref": "#/$defs/positive"
                 },
                 "max_context_tokens": {
+                  "description": "Longest session in tokens (`--max-model-len`).",
                   "$ref": "#/$defs/positive"
                 },
                 "retention": {
+                  "description": "Whether finished sessions' prefix state is kept for reuse.",
                   "enum": [
                     "keep",
                     "discard"
                   ]
                 },
                 "quality": {
+                  "description": "Numerical quality policy: baseline, or strict reference-equivalent paths.",
                   "enum": [
                     "baseline",
                     "strict"
@@ -134,6 +155,7 @@
           }
         },
         "facts": {
+          "description": "Detected host and GPU facts the resolution used.",
           "type": "object",
           "additionalProperties": false,
           "required": [
@@ -143,10 +165,12 @@
           ],
           "properties": {
             "source": {
+              "description": "Detector that produced these facts.",
               "type": "string",
               "minLength": 1
             },
             "host": {
+              "description": "Host facts.",
               "type": "object",
               "additionalProperties": false,
               "required": [
@@ -155,6 +179,7 @@
               ],
               "properties": {
                 "memory": {
+                  "description": "Host memory limits.",
                   "type": "object",
                   "additionalProperties": false,
                   "required": [
@@ -168,18 +193,23 @@
                   ],
                   "properties": {
                     "total_mib": {
+                      "description": "MemTotal, MiB.",
                       "$ref": "#/$defs/positive"
                     },
                     "available_mib": {
+                      "description": "MemAvailable at resolution, MiB.",
                       "$ref": "#/$defs/uint"
                     },
                     "swap_total_mib": {
+                      "description": "SwapTotal, MiB.",
                       "$ref": "#/$defs/uint"
                     },
                     "shm_available_mib": {
+                      "description": "Free space in /dev/shm, MiB.",
                       "$ref": "#/$defs/uint"
                     },
                     "cgroup_limits": {
+                      "description": "Memory limits of each enclosing cgroup, innermost first.",
                       "type": "array",
                       "items": {
                         "type": "object",
@@ -190,10 +220,12 @@
                         ],
                         "properties": {
                           "path": {
+                            "description": "cgroup path.",
                             "type": "string",
                             "minLength": 1
                           },
                           "room_mib": {
+                            "description": "Room left under that cgroup's limit, MiB.",
                             "$ref": "#/$defs/uint"
                           }
                         }
@@ -201,6 +233,7 @@
                       "minItems": 0
                     },
                     "pin_cap_mib": {
+                      "description": "amdgpu pinned-memory cap, MiB; null when the driver sets none.",
                       "oneOf": [
                         {
                           "$ref": "#/$defs/uint"
@@ -211,6 +244,7 @@
                       ]
                     },
                     "memlock_limit_mib": {
+                      "description": "RLIMIT_MEMLOCK, MiB; null when unlimited.",
                       "oneOf": [
                         {
                           "$ref": "#/$defs/uint"
@@ -223,6 +257,7 @@
                   }
                 },
                 "cpu": {
+                  "description": "Host CPU facts.",
                   "type": "object",
                   "additionalProperties": false,
                   "required": [
@@ -230,6 +265,7 @@
                   ],
                   "properties": {
                     "count": {
+                      "description": "Online CPUs.",
                       "$ref": "#/$defs/positive"
                     }
                   }
@@ -237,6 +273,7 @@
               }
             },
             "gpus": {
+              "description": "Detected GPUs, in KFD order.",
               "type": "array",
               "items": {
                 "type": "object",
@@ -249,16 +286,20 @@
                 ],
                 "properties": {
                   "bdf": {
+                    "description": "PCI address.",
                     "$ref": "#/$defs/bdf"
                   },
                   "arch": {
+                    "description": "GPU architecture (gfx target).",
                     "type": "string",
                     "pattern": "^gfx[0-9a-f]+$"
                   },
                   "hip_ordinal": {
+                    "description": "HIP device ordinal (KFD node order).",
                     "$ref": "#/$defs/uint"
                   },
                   "vram": {
+                    "description": "VRAM facts.",
                     "type": "object",
                     "additionalProperties": false,
                     "required": [
@@ -267,9 +308,11 @@
                     ],
                     "properties": {
                       "total_mib": {
+                        "description": "VRAM size, MiB.",
                         "$ref": "#/$defs/positive"
                       },
                       "available_mib": {
+                        "description": "Unused VRAM at resolution, MiB.",
                         "$ref": "#/$defs/uint"
                       }
                     }
@@ -282,6 +325,7 @@
           }
         },
         "calibration": {
+          "description": "Selected calibrated parameters, each with its evidence.",
           "type": "array",
           "items": {
             "type": "object",
@@ -295,6 +339,7 @@
             ],
             "properties": {
               "key": {
+                "description": "Calibrated parameter; its value's type is fixed per key (contract `calibration_key` table).",
                 "enum": [
                   "host_reserve.floor_mib",
                   "host_reserve.total_fraction_ppm",
@@ -304,6 +349,7 @@
                 ]
               },
               "value": {
+                "description": "The parameter's value: an unsigned integer, a string or a boolean, as its key requires.",
                 "anyOf": [
                   {
                     "type": "integer",
@@ -319,16 +365,19 @@
                 ]
               },
               "source": {
+                "description": "`seed` (committed calibration) or `cache` (measured on this host).",
                 "enum": [
                   "seed",
                   "cache"
                 ]
               },
               "seeded": {
+                "description": "Date the evidence was recorded (YYYY-MM-DD).",
                 "type": "string",
                 "format": "date"
               },
               "evidence": {
+                "description": "Where the evidence for this value is recorded.",
                 "type": "string",
                 "minLength": 1
               }
@@ -357,7 +406,7 @@
                 "if": {
                   "properties": {
                     "key": {
-                      "const": "host_kv_tier.target_mib"
+                      "const": "host_reserve.total_fraction_ppm"
                     }
                   },
                   "required": [
@@ -367,7 +416,9 @@
                 "then": {
                   "properties": {
                     "value": {
-                      "$ref": "#/$defs/uint"
+                      "type": "integer",
+                      "minimum": 0,
+                      "exclusiveMaximum": 1000000
                     }
                   }
                 }
@@ -376,10 +427,7 @@
                 "if": {
                   "properties": {
                     "key": {
-                      "enum": [
-                        "host_reserve.total_fraction_ppm",
-                        "kv_backing_floor.fraction_ppm"
-                      ]
+                      "const": "kv_backing_floor.fraction_ppm"
                     }
                   },
                   "required": [
@@ -418,6 +466,25 @@
                     }
                   }
                 }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "key": {
+                      "const": "host_kv_tier.target_mib"
+                    }
+                  },
+                  "required": [
+                    "key"
+                  ]
+                },
+                "then": {
+                  "properties": {
+                    "value": {
+                      "$ref": "#/$defs/uint"
+                    }
+                  }
+                }
               }
             ]
           },
@@ -425,6 +492,7 @@
           "maxItems": 64
         },
         "resources": {
+          "description": "Derived resource allocation.",
           "type": "object",
           "additionalProperties": false,
           "required": [
@@ -432,6 +500,7 @@
           ],
           "properties": {
             "host": {
+              "description": "Host memory allocation (RSC03 ledger).",
               "type": "object",
               "additionalProperties": false,
               "required": [
@@ -442,15 +511,19 @@
               ],
               "properties": {
                 "pool_mib": {
+                  "description": "Pinned host pool for experts and the KV tier, MiB (`--host-pool-mib`).",
                   "$ref": "#/$defs/uint"
                 },
                 "kv_mib": {
+                  "description": "Host KV tier, MiB (`--prefix-cache-mib`).",
                   "$ref": "#/$defs/uint"
                 },
                 "reserve_mib": {
+                  "description": "Host memory held back for the system, MiB (`--host-headroom-mib`).",
                   "$ref": "#/$defs/positive"
                 },
                 "checkpoint_slots": {
+                  "description": "Prefix checkpoint slots (`--checkpoint-slots`).",
                   "$ref": "#/$defs/uint"
                 }
               }
@@ -458,6 +531,7 @@
           }
         },
         "handoff": {
+          "description": "The one shared remote-MoE handoff configuration.",
           "type": "object",
           "additionalProperties": false,
           "required": [
@@ -468,6 +542,7 @@
           ],
           "properties": {
             "transport": {
+              "description": "Shared-memory transport between the engine and helpers.",
               "type": "object",
               "additionalProperties": false,
               "required": [
@@ -479,24 +554,30 @@
               ],
               "properties": {
                 "shm": {
+                  "description": "POSIX shared-memory name of the handoff segment.",
                   "type": "string",
                   "pattern": "^/[A-Za-z0-9][A-Za-z0-9._-]*$"
                 },
                 "max_rows": {
+                  "description": "Largest row batch a request carries.",
                   "$ref": "#/$defs/positive"
                 },
                 "small_rows": {
+                  "description": "Row count at or below which a request uses a small lane.",
                   "$ref": "#/$defs/positive"
                 },
                 "gemv_large_rows": {
+                  "description": "Row count from which helpers use the large GEMV path.",
                   "$ref": "#/$defs/positive"
                 },
                 "skip_owned": {
+                  "description": "The engine skips experts a helper owns.",
                   "type": "boolean"
                 }
               }
             },
             "placement": {
+              "description": "Expert placement policy.",
               "type": "object",
               "additionalProperties": false,
               "required": [
@@ -505,18 +586,21 @@
               ],
               "properties": {
                 "strategy": {
+                  "description": "Owner assignment: `tail` (the tail helper takes the cold end) or `roundrobin`.",
                   "enum": [
                     "tail",
                     "roundrobin"
                   ]
                 },
                 "heat_file": {
+                  "description": "Expert heat file the owner map is planned from.",
                   "type": "string",
                   "minLength": 1
                 }
               }
             },
             "telemetry": {
+              "description": "Expert-use telemetry.",
               "type": "object",
               "additionalProperties": false,
               "required": [
@@ -525,6 +609,7 @@
               ],
               "properties": {
                 "histogram_file": {
+                  "description": "Live expert histogram file; null disables it.",
                   "oneOf": [
                     {
                       "type": "string",
@@ -536,11 +621,13 @@
                   ]
                 },
                 "period_s": {
+                  "description": "Histogram period, seconds.",
                   "$ref": "#/$defs/uint"
                 }
               }
             },
             "kernels": {
+              "description": "Handoff kernel selection.",
               "type": "object",
               "additionalProperties": false,
               "required": [
@@ -548,6 +635,7 @@
               ],
               "properties": {
                 "moe_down_tile": {
+                  "description": "MoE down-projection tile mode (0, 1 or 2).",
                   "enum": [
                     0,
                     1,
@@ -559,6 +647,7 @@
           }
         },
         "processes": {
+          "description": "Per-process settings.",
           "type": "object",
           "additionalProperties": false,
           "required": [
@@ -568,6 +657,7 @@
           ],
           "properties": {
             "engine": {
+              "description": "Engine process settings.",
               "type": "object",
               "additionalProperties": false,
               "required": [
@@ -579,6 +669,7 @@
               ],
               "properties": {
                 "device": {
+                  "description": "Engine GPUs.",
                   "type": "object",
                   "additionalProperties": false,
                   "required": [
@@ -586,6 +677,7 @@
                   ],
                   "properties": {
                     "gpus": {
+                      "description": "Engine GPU addresses, in rank order.",
                       "type": "array",
                       "items": {
                         "$ref": "#/$defs/bdf"
@@ -595,6 +687,7 @@
                   }
                 },
                 "runtime": {
+                  "description": "Engine runtime.",
                   "type": "object",
                   "additionalProperties": false,
                   "required": [
@@ -603,10 +696,12 @@
                   ],
                   "properties": {
                     "radiance_home": {
+                      "description": "Radiance install root (`--radiance-home`).",
                       "type": "string",
                       "minLength": 1
                     },
                     "kernels": {
+                      "description": "Kernel libraries in search order (`--kernels`).",
                       "type": "array",
                       "items": {
                         "type": "string",
@@ -617,6 +712,7 @@
                   }
                 },
                 "server": {
+                  "description": "HTTP server.",
                   "type": "object",
                   "additionalProperties": false,
                   "required": [
@@ -624,6 +720,7 @@
                   ],
                   "properties": {
                     "port": {
+                      "description": "TCP port (`--port`).",
                       "type": "integer",
                       "minimum": 1,
                       "maximum": 65535
@@ -631,6 +728,7 @@
                   }
                 },
                 "scheduler": {
+                  "description": "Scheduler sizes.",
                   "type": "object",
                   "additionalProperties": false,
                   "required": [
@@ -640,17 +738,21 @@
                   ],
                   "properties": {
                     "tp": {
+                      "description": "Tensor-parallel ranks (`--tp`).",
                       "$ref": "#/$defs/positive"
                     },
                     "max_num_batched_tokens": {
+                      "description": "Tokens per step (`--max-num-batched-tokens`).",
                       "$ref": "#/$defs/positive"
                     },
                     "checkpoint_interval": {
+                      "description": "Tokens between prefix checkpoints (`--checkpoint-interval`).",
                       "$ref": "#/$defs/uint"
                     }
                   }
                 },
                 "execution": {
+                  "description": "Execution choices.",
                   "type": "object",
                   "additionalProperties": false,
                   "required": [
@@ -663,6 +765,7 @@
                   ],
                   "properties": {
                     "placement": {
+                      "description": "Weight placement mode (`--placement`).",
                       "enum": [
                         "expert_tiered",
                         "all_vram",
@@ -671,6 +774,7 @@
                       ]
                     },
                     "ngram_placement": {
+                      "description": "N-gram table placement (`--ngram-placement`).",
                       "enum": [
                         "ram",
                         "disk",
@@ -679,6 +783,7 @@
                       ]
                     },
                     "kv_cache_dtype": {
+                      "description": "KV cache data type (`--kv-cache-dtype`).",
                       "enum": [
                         "bf16",
                         "fp8",
@@ -687,13 +792,16 @@
                       ]
                     },
                     "num_speculative_tokens": {
+                      "description": "Speculative tokens per step (`--num-speculative-tokens`).",
                       "$ref": "#/$defs/uint"
                     },
                     "rope_scaling": {
+                      "description": "RoPE scaling specification (`--rope-scaling`).",
                       "type": "string",
                       "minLength": 1
                     },
                     "prefix_resume": {
+                      "description": "Prefix resume policy (`--prefix-resume`).",
                       "enum": [
                         "nearest",
                         "exact"
@@ -704,9 +812,11 @@
               }
             },
             "helper_common": {
+              "description": "Settings shared by every helper; per-role and lab patches apply on top (spec §2.2).",
               "$ref": "#/$defs/helperCommon"
             },
             "helpers": {
+              "description": "Helper processes, ordered helper0, helper1, ...; a helper's index is its position.",
               "type": "array",
               "items": {
                 "type": "object",
@@ -723,20 +833,25 @@
                 ],
                 "properties": {
                   "role": {
+                    "description": "Role name, `helper<index>`.",
                     "type": "string",
                     "pattern": "^helper(?:0|[1-9][0-9]*)$"
                   },
                   "gpu": {
+                    "description": "The helper's GPU address.",
                     "$ref": "#/$defs/bdf"
                   },
                   "vram_budget_mib": {
+                    "description": "VRAM the helper may use, MiB.",
                     "$ref": "#/$defs/positive"
                   },
                   "plugin_file": {
+                    "description": "Kernel plugin library.",
                     "type": "string",
                     "minLength": 1
                   },
                   "formats": {
+                    "description": "Expert weight formats the helper serves.",
                     "type": "array",
                     "items": {
                       "enum": [
@@ -748,18 +863,22 @@
                     "uniqueItems": true
                   },
                   "rows_kernel": {
+                    "description": "The architecture requires the rows kernel.",
                     "type": "boolean"
                   },
                   "tier": {
+                    "description": "`head` or `tail` helper tier.",
                     "enum": [
                       "head",
                       "tail"
                     ]
                   },
                   "share": {
+                    "description": "Relative share of owned experts.",
                     "$ref": "#/$defs/uint"
                   },
                   "settings": {
+                    "description": "This role's partial override of `helper_common`.",
                     "$ref": "#/$defs/helperPatch"
                   }
                 }
@@ -770,6 +889,7 @@
           }
         },
         "plan": {
+          "description": "Measured and planned state the engine and helpers verify at start-up.",
           "type": "object",
           "additionalProperties": false,
           "required": [
@@ -778,6 +898,7 @@
           ],
           "properties": {
             "owner_map": {
+              "description": "Initial expert ownership; the live mailbox epochs own later placement (spec §4).",
               "type": "object",
               "additionalProperties": false,
               "required": [
@@ -786,9 +907,11 @@
               ],
               "properties": {
                 "owner_map_sha256": {
+                  "description": "Digest of all helpers' owned sets in helper order (spec §4).",
                   "$ref": "#/$defs/hex64"
                 },
                 "helpers": {
+                  "description": "Owned sets, aligned by index with `processes.helpers`.",
                   "type": "array",
                   "items": {
                     "type": "object",
@@ -801,15 +924,19 @@
                     ],
                     "properties": {
                       "owned_sha256": {
+                        "description": "Digest of this helper's owned set (spec §4).",
                         "$ref": "#/$defs/hex64"
                       },
                       "count": {
+                        "description": "Number of owned experts; equals `experts.length`.",
                         "$ref": "#/$defs/uint"
                       },
                       "bytes": {
+                        "description": "Device bytes of the owned experts.",
                         "$ref": "#/$defs/uint"
                       },
                       "experts": {
+                        "description": "Owned `[layer, expert]` pairs in selection order.",
                         "type": "array",
                         "items": {
                           "type": "array",
@@ -835,6 +962,7 @@
               }
             },
             "engine_memory": {
+              "description": "The engine's measured memory plan and its cache identity (spec §5).",
               "type": "object",
               "additionalProperties": false,
               "required": [
@@ -846,18 +974,23 @@
               ],
               "properties": {
                 "cache_version": {
+                  "description": "Plan cache format; exactly 1.",
                   "const": 1
                 },
                 "cache_key": {
+                  "description": "Plan cache key (spec §5.1).",
                   "$ref": "#/$defs/hex64"
                 },
                 "model_identity": {
+                  "description": "Model container identity.",
                   "$ref": "#/$defs/hex64"
                 },
                 "engine_identity": {
+                  "description": "Radiance binary and runtime identity.",
                   "$ref": "#/$defs/hex64"
                 },
                 "expected": {
+                  "description": "The measured plan the live plan is checked against (spec §5.2).",
                   "$ref": "#/$defs/enginePlan"
                 }
               }
@@ -865,11 +998,13 @@
           }
         },
         "experiment": {
+          "description": "Lab-only experiments; forbidden when the profile is `production`.",
           "type": "object",
           "additionalProperties": false,
           "required": [],
           "properties": {
             "placement": {
+              "description": "Live placement experiment.",
               "type": "object",
               "additionalProperties": false,
               "required": [
@@ -877,12 +1012,14 @@
               ],
               "properties": {
                 "mode": {
+                  "description": "`observe` (no change) or `forced_churn` (requires `at_step`).",
                   "enum": [
                     "observe",
                     "forced_churn"
                   ]
                 },
                 "at_step": {
+                  "description": "Step at which a forced churn happens.",
                   "$ref": "#/$defs/positive"
                 }
               },
@@ -926,14 +1063,17 @@
               ]
             },
             "shape": {
+              "description": "Lab overlay of helper settings, applied after the per-role patches.",
               "type": "object",
               "additionalProperties": false,
               "required": [],
               "properties": {
                 "helper_common": {
+                  "description": "Partial override for every helper.",
                   "$ref": "#/$defs/helperPatch"
                 },
                 "helpers": {
+                  "description": "Per-role partial overrides.",
                   "type": "array",
                   "items": {
                     "type": "object",
@@ -944,10 +1084,12 @@
                     ],
                     "properties": {
                       "role": {
+                        "description": "Role the override applies to.",
                         "type": "string",
                         "pattern": "^helper(?:0|[1-9][0-9]*)$"
                       },
                       "settings": {
+                        "description": "Partial helper settings for that role.",
                         "$ref": "#/$defs/helperPatch"
                       }
                     }
@@ -959,16 +1101,19 @@
               "minProperties": 1
             },
             "diagnostics": {
+              "description": "Lab diagnostics by concern.",
               "type": "object",
               "additionalProperties": false,
               "required": [],
               "properties": {
                 "gemv": {
+                  "description": "GEMV diagnostics.",
                   "type": "object",
                   "additionalProperties": false,
                   "required": [],
                   "properties": {
                     "probe_mode": {
+                      "description": "GEMV probe mode (0, 1 or 2).",
                       "enum": [
                         0,
                         1,
@@ -976,17 +1121,20 @@
                       ]
                     },
                     "refusal_trace": {
+                      "description": "Trace GEMV path refusals.",
                       "type": "boolean"
                     }
                   },
                   "minProperties": 1
                 },
                 "lanes": {
+                  "description": "Lane diagnostics.",
                   "type": "object",
                   "additionalProperties": false,
                   "required": [],
                   "properties": {
                     "capture_file": {
+                      "description": "Lane capture file; null disables capture.",
                       "oneOf": [
                         {
                           "type": "string",
@@ -998,15 +1146,19 @@
                       ]
                     },
                     "capture_every": {
+                      "description": "Capture every Nth request.",
                       "$ref": "#/$defs/positive"
                     },
                     "capture_max": {
+                      "description": "Most requests captured.",
                       "$ref": "#/$defs/positive"
                     },
                     "trace_level": {
+                      "description": "Lane trace verbosity.",
                       "$ref": "#/$defs/uint"
                     },
                     "test_stop_at": {
+                      "description": "Test hook stop point; null disables it.",
                       "oneOf": [
                         {
                           "type": "string",
@@ -1021,11 +1173,13 @@
                   "minProperties": 1
                 },
                 "kernels": {
+                  "description": "Kernel diagnostics.",
                   "type": "object",
                   "additionalProperties": false,
                   "required": [],
                   "properties": {
                     "plugin_override": {
+                      "description": "Plugin library to load instead; null keeps the configured one.",
                       "oneOf": [
                         {
                           "type": "string",
@@ -1037,6 +1191,7 @@
                       ]
                     },
                     "poison": {
+                      "description": "Fill pattern for uninitialized outputs.",
                       "enum": [
                         "off",
                         "zero",
@@ -1044,6 +1199,7 @@
                       ]
                     },
                     "sweep_fast": {
+                      "description": "Shorten kernel sweeps.",
                       "type": "boolean"
                     }
                   },
@@ -1115,6 +1271,7 @@
       ]
     },
     "provenance": {
+      "description": "Map from a JSON Pointer to the record of where that value (and its descendants) came from; the root \"\" record is required (spec §7).",
       "type": "object",
       "required": [
         ""
@@ -1124,6 +1281,7 @@
         "$ref": "#/$defs/jsonPointer"
       },
       "additionalProperties": {
+        "description": "Provenance of the value at the key's JSON Pointer.",
         "type": "object",
         "additionalProperties": false,
         "required": [
@@ -1136,6 +1294,7 @@
         ],
         "properties": {
           "origin": {
+            "description": "Input layer that set the value.",
             "enum": [
               "schema_default",
               "site",
@@ -1148,10 +1307,12 @@
             ]
           },
           "source": {
+            "description": "Human-readable source: file and key, detector or derivation.",
             "type": "string",
             "minLength": 1
           },
           "class": {
+            "description": "Kind of value: operator policy, detected fact, derived, tuned (calibrated) or diagnostic.",
             "enum": [
               "policy",
               "fact",
@@ -1161,6 +1322,7 @@
             ]
           },
           "lifecycle": {
+            "description": "When the value may change: only at start-up, at a step boundary, or live.",
             "enum": [
               "startup_only",
               "step_boundary",
@@ -1168,6 +1330,7 @@
             ]
           },
           "confidence": {
+            "description": "Exact, measured or estimated.",
             "enum": [
               "exact",
               "measured",
@@ -1175,6 +1338,7 @@
             ]
           },
           "inputs": {
+            "description": "JSON Pointers of the values this one was derived from.",
             "type": "array",
             "items": {
               "$ref": "#/$defs/jsonPointer"
@@ -1187,32 +1351,39 @@
   },
   "$defs": {
     "uint": {
+      "description": "Unsigned integer within I-JSON's safe range.",
       "type": "integer",
       "minimum": 0,
       "maximum": 9007199254740991
     },
     "positive": {
+      "description": "Positive integer within I-JSON's safe range.",
       "type": "integer",
       "minimum": 1,
       "maximum": 9007199254740991
     },
     "hex64": {
+      "description": "64 lowercase hexadecimal digits.",
       "type": "string",
       "pattern": "^[0-9a-f]{64}$"
     },
     "digest": {
+      "description": "`sha256:` followed by 64 lowercase hexadecimal digits.",
       "type": "string",
       "pattern": "^sha256:[0-9a-f]{64}$"
     },
     "bdf": {
+      "description": "PCI address, `dddd:bb:dd.f`, lowercase.",
       "type": "string",
       "pattern": "^[0-9a-f]{4}:[0-9a-f]{2}:[0-1][0-9a-f]\\.[0-7]$"
     },
     "jsonPointer": {
+      "description": "RFC 6901 JSON Pointer; \"\" is the root.",
       "type": "string",
       "pattern": "^(|/(?:[^~/]|~[01])*(?:/(?:[^~/]|~[01])*)*)$"
     },
     "helperCommon": {
+      "description": "The seven helper concern groups (spec §2.1).",
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -1226,6 +1397,7 @@
       ],
       "properties": {
         "cpu": {
+          "description": "CPU paths.",
           "type": "object",
           "additionalProperties": false,
           "required": [
@@ -1234,9 +1406,11 @@
           ],
           "properties": {
             "reference": {
+              "description": "Use the CPU reference path.",
               "type": "boolean"
             },
             "affinity": {
+              "description": "Worker CPU affinity: `auto` or `all`.",
               "enum": [
                 "auto",
                 "all"
@@ -1245,6 +1419,7 @@
           }
         },
         "runtime": {
+          "description": "Helper runtime behaviour.",
           "type": "object",
           "additionalProperties": false,
           "required": [
@@ -1253,14 +1428,17 @@
           ],
           "properties": {
             "power_save": {
+              "description": "Let the helper idle its GPU between requests.",
               "type": "boolean"
             },
             "queue_warm": {
+              "description": "Keep the helper's queues warm.",
               "type": "boolean"
             }
           }
         },
         "gemv": {
+          "description": "GEMV kernels.",
           "type": "object",
           "additionalProperties": false,
           "required": [
@@ -1272,6 +1450,7 @@
           ],
           "properties": {
             "mode": {
+              "description": "GEMV mode (0, 1 or 2).",
               "enum": [
                 0,
                 1,
@@ -1279,9 +1458,11 @@
               ]
             },
             "wide": {
+              "description": "Use the wide GEMV kernel.",
               "type": "boolean"
             },
             "h2": {
+              "description": "Half-precision pair mode (0, 1, 2 or 4).",
               "enum": [
                 0,
                 1,
@@ -1290,14 +1471,17 @@
               ]
             },
             "w4h2": {
+              "description": "Use the W4 H2 kernel.",
               "type": "boolean"
             },
             "mr": {
+              "description": "Use the multi-row GEMV kernel.",
               "type": "boolean"
             }
           }
         },
         "lanes": {
+          "description": "Request lanes.",
           "type": "object",
           "additionalProperties": false,
           "required": [
@@ -1307,6 +1491,7 @@
           ],
           "properties": {
             "small_lanes": {
+              "description": "Up to four sorted small-lane row thresholds.",
               "type": "array",
               "items": {
                 "$ref": "#/$defs/positive"
@@ -1315,14 +1500,17 @@
               "maxItems": 4
             },
             "rows": {
+              "description": "Use the rows kernel by policy (active also when the architecture requires it).",
               "type": "boolean"
             },
             "rows_small": {
+              "description": "Use the rows kernel for small lanes.",
               "type": "boolean"
             }
           }
         },
         "combine": {
+          "description": "Helper-side combine.",
           "type": "object",
           "additionalProperties": false,
           "required": [
@@ -1332,17 +1520,21 @@
           ],
           "properties": {
             "enabled": {
+              "description": "Combine expert outputs on the helper.",
               "type": "boolean"
             },
             "min_rows": {
+              "description": "Fewest rows a combine is used for.",
               "$ref": "#/$defs/positive"
             },
             "threads": {
+              "description": "Combine worker threads.",
               "$ref": "#/$defs/positive"
             }
           }
         },
         "kernels": {
+          "description": "Kernel choices.",
           "type": "object",
           "additionalProperties": false,
           "required": [
@@ -1358,15 +1550,19 @@
           ],
           "properties": {
             "native": {
+              "description": "Use native kernels.",
               "type": "boolean"
             },
             "fp16": {
+              "description": "Use fp16 kernels.",
               "type": "boolean"
             },
             "ahalf": {
+              "description": "Use half-precision activations.",
               "type": "boolean"
             },
             "moe_form": {
+              "description": "MoE kernel form (0, 1 or 2).",
               "enum": [
                 0,
                 1,
@@ -1374,23 +1570,29 @@
               ]
             },
             "moe_long_rows": {
+              "description": "Row count from which the long-rows MoE kernel is used.",
               "$ref": "#/$defs/uint"
             },
             "fuseroute": {
+              "description": "Fuse routing into the MoE kernel.",
               "type": "boolean"
             },
             "vecio": {
+              "description": "Vectorized I/O.",
               "type": "boolean"
             },
             "sparse_act": {
+              "description": "Sparse activations.",
               "type": "boolean"
             },
             "lane_quant": {
+              "description": "Quantize per lane.",
               "type": "boolean"
             }
           }
         },
         "placement": {
+          "description": "Load balancing across helpers.",
           "type": "object",
           "additionalProperties": false,
           "required": [
@@ -1398,60 +1600,68 @@
           ],
           "properties": {
             "balance": {
+              "description": "Balance load across helpers by speed.",
               "type": "boolean"
             },
             "balance_speeds_milli": {
+              "description": "Per-helper relative speed in thousandths (1000 = 1.0); one value per helper, only when balance is true.",
               "type": "array",
               "items": {
                 "type": "integer",
                 "minimum": 1
-              },
-              "description": "per-helper relative speed in thousandths (1000 = 1.0); one value per selected helper"
+              }
             }
           }
         }
       }
     },
     "helperPatch": {
+      "description": "A partial `helperCommon`: each present group is a nonempty partial field map (spec §2.2).",
       "type": "object",
       "additionalProperties": false,
-      "minProperties": 1,
       "properties": {
         "cpu": {
+          "description": "CPU paths.",
           "type": "object",
-          "minProperties": 1,
           "additionalProperties": false,
           "properties": {
             "reference": {
+              "description": "Use the CPU reference path.",
               "type": "boolean"
             },
             "affinity": {
+              "description": "Worker CPU affinity: `auto` or `all`.",
               "enum": [
                 "auto",
                 "all"
               ]
             }
-          }
+          },
+          "minProperties": 1
         },
         "runtime": {
+          "description": "Helper runtime behaviour.",
           "type": "object",
-          "minProperties": 1,
           "additionalProperties": false,
           "properties": {
             "power_save": {
+              "description": "Let the helper idle its GPU between requests.",
               "type": "boolean"
             },
             "queue_warm": {
+              "description": "Keep the helper's queues warm.",
               "type": "boolean"
             }
-          }
+          },
+          "minProperties": 1
         },
         "gemv": {
+          "description": "GEMV kernels.",
           "type": "object",
-          "minProperties": 1,
           "additionalProperties": false,
           "properties": {
             "mode": {
+              "description": "GEMV mode (0, 1 or 2).",
               "enum": [
                 0,
                 1,
@@ -1459,9 +1669,11 @@
               ]
             },
             "wide": {
+              "description": "Use the wide GEMV kernel.",
               "type": "boolean"
             },
             "h2": {
+              "description": "Half-precision pair mode (0, 1, 2 or 4).",
               "enum": [
                 0,
                 1,
@@ -1470,19 +1682,23 @@
               ]
             },
             "w4h2": {
+              "description": "Use the W4 H2 kernel.",
               "type": "boolean"
             },
             "mr": {
+              "description": "Use the multi-row GEMV kernel.",
               "type": "boolean"
             }
-          }
+          },
+          "minProperties": 1
         },
         "lanes": {
+          "description": "Request lanes.",
           "type": "object",
-          "minProperties": 1,
           "additionalProperties": false,
           "properties": {
             "small_lanes": {
+              "description": "Up to four sorted small-lane row thresholds.",
               "type": "array",
               "items": {
                 "$ref": "#/$defs/positive"
@@ -1491,44 +1707,55 @@
               "maxItems": 4
             },
             "rows": {
+              "description": "Use the rows kernel by policy (active also when the architecture requires it).",
               "type": "boolean"
             },
             "rows_small": {
+              "description": "Use the rows kernel for small lanes.",
               "type": "boolean"
             }
-          }
+          },
+          "minProperties": 1
         },
         "combine": {
+          "description": "Helper-side combine.",
           "type": "object",
-          "minProperties": 1,
           "additionalProperties": false,
           "properties": {
             "enabled": {
+              "description": "Combine expert outputs on the helper.",
               "type": "boolean"
             },
             "min_rows": {
+              "description": "Fewest rows a combine is used for.",
               "$ref": "#/$defs/positive"
             },
             "threads": {
+              "description": "Combine worker threads.",
               "$ref": "#/$defs/positive"
             }
-          }
+          },
+          "minProperties": 1
         },
         "kernels": {
+          "description": "Kernel choices.",
           "type": "object",
-          "minProperties": 1,
           "additionalProperties": false,
           "properties": {
             "native": {
+              "description": "Use native kernels.",
               "type": "boolean"
             },
             "fp16": {
+              "description": "Use fp16 kernels.",
               "type": "boolean"
             },
             "ahalf": {
+              "description": "Use half-precision activations.",
               "type": "boolean"
             },
             "moe_form": {
+              "description": "MoE kernel form (0, 1 or 2).",
               "enum": [
                 0,
                 1,
@@ -1536,43 +1763,53 @@
               ]
             },
             "moe_long_rows": {
+              "description": "Row count from which the long-rows MoE kernel is used.",
               "$ref": "#/$defs/uint"
             },
             "fuseroute": {
+              "description": "Fuse routing into the MoE kernel.",
               "type": "boolean"
             },
             "vecio": {
+              "description": "Vectorized I/O.",
               "type": "boolean"
             },
             "sparse_act": {
+              "description": "Sparse activations.",
               "type": "boolean"
             },
             "lane_quant": {
+              "description": "Quantize per lane.",
               "type": "boolean"
             }
-          }
+          },
+          "minProperties": 1
         },
         "placement": {
+          "description": "Load balancing across helpers.",
           "type": "object",
-          "minProperties": 1,
           "additionalProperties": false,
           "properties": {
             "balance": {
+              "description": "Balance load across helpers by speed.",
               "type": "boolean"
             },
             "balance_speeds_milli": {
+              "description": "Per-helper relative speed in thousandths (1000 = 1.0); one value per helper, only when balance is true.",
               "type": "array",
               "items": {
                 "type": "integer",
                 "minimum": 1
-              },
-              "description": "per-helper relative speed in thousandths (1000 = 1.0); one value per selected helper"
+              }
             }
-          }
+          },
+          "minProperties": 1
         }
-      }
+      },
+      "minProperties": 1
     },
     "enginePlan": {
+      "description": "rad0011's measured memory plan, plan_version 1 (spec §5).",
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -1586,12 +1823,15 @@
       ],
       "properties": {
         "plan_version": {
+          "description": "Plan format; exactly 1.",
           "const": 1
         },
         "producer": {
+          "description": "Plan producer; exactly `radiance --plan-memory (rad0011)`.",
           "const": "radiance --plan-memory (rad0011)"
         },
         "host": {
+          "description": "Pinned host consumers.",
           "type": "array",
           "items": {
             "type": "object",
@@ -1605,13 +1845,16 @@
             ],
             "properties": {
               "name": {
+                "description": "Consumer name.",
                 "type": "string",
                 "minLength": 1
               },
               "bytes": {
+                "description": "Bytes the consumer holds.",
                 "$ref": "#/$defs/uint"
               },
               "residence": {
+                "description": "`pinned`, `mlocked` or `pageable`.",
                 "enum": [
                   "pinned",
                   "mlocked",
@@ -1619,10 +1862,12 @@
                 ]
               },
               "from": {
+                "description": "Where the engine computes it.",
                 "type": "string",
                 "minLength": 1
               },
               "remedy": {
+                "description": "What reduces it, or empty.",
                 "type": "string"
               }
             }
@@ -1630,6 +1875,7 @@
           "minItems": 0
         },
         "checkpoints": {
+          "description": "Prefix checkpoint store.",
           "type": "object",
           "additionalProperties": false,
           "required": [
@@ -1640,21 +1886,26 @@
           ],
           "properties": {
             "slot_bytes": {
+              "description": "Bytes per checkpoint slot.",
               "$ref": "#/$defs/uint"
             },
             "floor_slots": {
+              "description": "Slots the store must have.",
               "$ref": "#/$defs/uint"
             },
             "want_slots": {
+              "description": "Slots the store would use.",
               "$ref": "#/$defs/uint"
             },
             "from": {
+              "description": "Where the engine computes it.",
               "type": "string",
               "minLength": 1
             }
           }
         },
         "kv_one_session": {
+          "description": "KV of one full-length session.",
           "type": "object",
           "additionalProperties": false,
           "required": [
@@ -1663,15 +1914,18 @@
           ],
           "properties": {
             "bytes": {
+              "description": "Bytes.",
               "$ref": "#/$defs/uint"
             },
             "from": {
+              "description": "Where the engine computes it.",
               "type": "string",
               "minLength": 1
             }
           }
         },
         "vram": {
+          "description": "The engine card's VRAM split (vram_budget_resolve).",
           "type": "object",
           "additionalProperties": false,
           "required": [
@@ -1690,40 +1944,52 @@
           ],
           "properties": {
             "claimable": {
+              "description": "VRAM claimable after fixed costs (live).",
               "$ref": "#/$defs/uint"
             },
             "statics": {
+              "description": "Static weights (stable).",
               "$ref": "#/$defs/uint"
             },
             "elastic": {
+              "description": "Claimable minus statics (live).",
               "$ref": "#/$defs/uint"
             },
             "experts": {
+              "description": "Expert residency (live).",
               "$ref": "#/$defs/uint"
             },
             "kv": {
+              "description": "KV share before MiB rounding (live; never an admission input).",
               "$ref": "#/$defs/uint"
             },
             "stage": {
+              "description": "Prefill staging region (live).",
               "$ref": "#/$defs/uint"
             },
             "kv_resolved": {
+              "description": "Common KV budget after the staging split and MiB rounding (live; spec §5.2).",
               "$ref": "#/$defs/uint"
             },
             "expert_floor": {
+              "description": "Expert residency the host pool cannot hold (stable).",
               "$ref": "#/$defs/uint"
             },
             "kv_ceiling": {
+              "description": "KV for every session at full length (stable).",
               "$ref": "#/$defs/uint"
             },
             "expert_ceiling": {
+              "description": "Every expert resident (stable).",
               "$ref": "#/$defs/uint"
             },
             "from": {
+              "description": "Where the engine computes it.",
               "type": "string",
               "minLength": 1
             },
             "cards": {
+              "description": "Per-card facts, in rank order.",
               "type": "array",
               "items": {
                 "type": "object",
@@ -1736,15 +2002,19 @@
                 ],
                 "properties": {
                   "capacity": {
+                    "description": "Card VRAM (minimum bound).",
                     "$ref": "#/$defs/uint"
                   },
                   "free": {
+                    "description": "Free VRAM at measurement (live).",
                     "$ref": "#/$defs/uint"
                   },
                   "engine_expert_plane": {
+                    "description": "Engine expert plane bytes (stable).",
                     "$ref": "#/$defs/uint"
                   },
                   "expert_unit_max": {
+                    "description": "Largest expert unit (stable).",
                     "$ref": "#/$defs/uint"
                   }
                 }
@@ -1754,6 +2024,7 @@
           }
         },
         "host_pool_mib": {
+          "description": "Receipt echo; equals `spec.resources.host.pool_mib`.",
           "$ref": "#/$defs/uint"
         }
       }

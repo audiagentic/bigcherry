@@ -8,7 +8,22 @@ if(NOT EXISTS "${RADIANCE_SRC}/vendor/nlohmann/json.hpp")
   message(FATAL_ERROR "serving: -DRADIANCE_SRC must contain vendor/nlohmann/json.hpp")
 endif()
 
-add_library(bc_serving STATIC serving.cpp jcs.cpp)
+# RFC 8785 JCS and SHA-256: shared by bc_serving and the contract generator.
+add_library(bc_jcs STATIC jcs.cpp sha256.cpp)
+target_compile_features(bc_jcs PUBLIC cxx_std_20)
+target_include_directories(bc_jcs PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}" "${RADIANCE_SRC}/vendor")
+
+# The serving manifest v1 contract (contract/README.md): the field registry contract/serving-v1.toml and its generator.
+# GPU-free and independent of bc_serving, whose typed model it generates (generated/, committed; bc_contract_check
+# fails CI when a committed file differs from the generator's output).
+add_library(bc_contract STATIC contract/registry.cpp)
+target_link_libraries(bc_contract PUBLIC bc_jcs)
+target_include_directories(bc_contract PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/contract")
+add_executable(bc_contract_gen contract/generate.cpp)
+target_link_libraries(bc_contract_gen PRIVATE bc_contract)
+
+add_library(bc_serving STATIC serving.cpp)
+target_link_libraries(bc_serving PUBLIC bc_jcs)
 target_compile_features(bc_serving PUBLIC cxx_std_20)
 target_include_directories(bc_serving PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}" "${RADIANCE_SRC}/vendor")
 target_include_directories(bc_serving PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/third_party")
@@ -28,4 +43,13 @@ if(BUILD_TESTING)
   target_compile_definitions(bc_jcs_test PRIVATE
     BC_CONTRACT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../../../docs/design/serving-manifest-v1")
   add_test(NAME bc_jcs_test COMMAND bc_jcs_test)
+  add_executable(bc_contract_test EXCLUDE_FROM_ALL contract/registry_test.cpp)
+  target_link_libraries(bc_contract_test PRIVATE bc_contract)
+  target_compile_definitions(bc_contract_test PRIVATE BC_CONTRACT_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+  add_test(NAME bc_contract_test COMMAND bc_contract_test)
+  add_executable(bc_contract_check EXCLUDE_FROM_ALL contract/contract_check.cpp)
+  target_link_libraries(bc_contract_check PRIVATE bc_contract)
+  target_compile_definitions(bc_contract_check PRIVATE BC_CONTRACT_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
+    BC_CONTRACT_DOCS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../../../docs/design/serving-manifest-v1")
+  add_test(NAME bc_contract_check COMMAND bc_contract_check)
 endif()

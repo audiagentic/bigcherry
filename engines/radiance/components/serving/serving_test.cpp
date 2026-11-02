@@ -2,6 +2,7 @@
 #undef NDEBUG // Assertions are test requirements even in RelWithDebInfo.
 #endif
 #include "serving.h"
+#include "sha256.h"
 
 #undef NDEBUG   /* the checks below are assert()s: keep them live in Release component builds */
 #include <cassert>
