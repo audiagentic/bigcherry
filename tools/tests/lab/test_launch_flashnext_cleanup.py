@@ -193,13 +193,36 @@ class LaunchCleanupTests(unittest.TestCase):
             second = subprocess.run([*self._args()[:-3], "--chunk", "1024", "--record-heat", "off"], env=self.env, cwd=REPO,
                                     capture_output=True, text=True, timeout=60)
             self.assertEqual(second.returncode, 98, second.stdout + second.stderr)
-            self.assertIn("another launch is in progress", second.stdout)
+            self.assertIn("is in progress", second.stdout)
             self.assertEqual(self._alive_pids(), alive, "the refused launch must not stop or start anything")
             first.send_signal(signal.SIGINT)
             first.communicate(timeout=60)
         finally:
             if first.poll() is None:
                 first.kill()
+        self.assertEqual(self._alive_pids(), [])
+
+    def test_stop_during_a_launch_is_refused_and_does_not_disturb_it(self) -> None:
+        first = subprocess.Popen(self._args(), env={**self.env, "FAKE_MEASURE_HANG": "1"}, cwd=REPO,
+                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        try:
+            deadline = time.time() + 90
+            while not self.measuring.exists() and time.time() < deadline and first.poll() is None:
+                time.sleep(0.2)
+            self.assertTrue(self.measuring.exists(), "the first launch never reached its measuring start")
+            alive = self._alive_pids()
+            stop = subprocess.run(["bash", str(LAUNCHER), "stop", "--build", str(self.build), "--port", str(self.port), "--gpu-power"],
+                                  env=self.env, cwd=REPO, capture_output=True, text=True, timeout=60)
+            self.assertEqual(stop.returncode, 98, stop.stdout + stop.stderr)
+            self.assertNotIn("stopped", stop.stdout)
+            self.assertEqual(self._alive_pids(), alive)
+            self.assertEqual(self._events(), ["apply"], "the refused stop must not restore the power settings under the launch")
+            first.send_signal(signal.SIGINT)
+            first.communicate(timeout=60)
+        finally:
+            if first.poll() is None:
+                first.kill()
+        self.assertEqual(self._events(), ["apply", "restore"])
         self.assertEqual(self._alive_pids(), [])
 
     def test_a_successful_start_keeps_the_processes_and_the_power_settings_until_stop(self) -> None:

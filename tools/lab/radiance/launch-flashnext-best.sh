@@ -142,14 +142,15 @@ stop_all() {
   fi
 }
 
-if [ "$CMD" = stop ]; then stop_all; echo "stopped"; exit 0; fi
-
 # One launch at a time: the already-running check, the measuring start and the plan store share the run folder (the PID files,
 # the helper segment, the measured-plan file), so two concurrent launches could store one's plan under the other's key.
-# The lock is released at the hand-off; the engine and helpers never inherit it.
+# `stop` takes the same lock, so it cannot slip in between a launch's power marker and its apply, or report "stopped" while a
+# launch goes on. The lock is released at the hand-off; the engine and helpers never inherit it.
 mkdir -p "$RUN"
 exec 9> "$RUN/launch.lock"
-flock -n 9 || { echo "FLASHNEXT_EXIT=98 another launch is in progress ($RUN/launch.lock); wait for it, or run '$0 stop'"; exit 98; }
+flock -n 9 || { echo "FLASHNEXT_EXIT=98 another launch (or stop) is in progress ($RUN/launch.lock); wait for it, or interrupt it with ^C"; exit 98; }
+
+if [ "$CMD" = stop ]; then stop_all; echo "stopped"; exit 0; fi
 
 for name in engine $(cd "$PIDS" 2>/dev/null && ls helper* 2>/dev/null); do
   if [ -f "$PIDS/$name" ] && kill -0 "$(cat "$PIDS/$name")" 2>/dev/null; then

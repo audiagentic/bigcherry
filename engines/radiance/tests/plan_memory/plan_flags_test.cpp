@@ -186,8 +186,10 @@ int main(int argc, char** argv) {
                     check(err.find("kv_backing_floor_ppm must be in [0, 1000000)") != std::string::npos && err.find("BC_CFG_INVALID_VALUE") != std::string::npos,
                           "vector " + name + ": the floor refusal names the range: " + err);
                 else
-                    check(err.find("BC_CFG_") != std::string::npos && err.find("vec-expected.json") != std::string::npos,
-                          "vector " + name + ": the expected-plan refusal names the file and a config error: " + err);
+                    // the strict reader refuses a byte count past I-JSON's 2^53 - 1 before decoding, naming the member and the file
+                    check(err.find("BC_CFG_INVALID_FORMAT") != std::string::npos && err.find("vram.kv_ceiling") != std::string::npos &&
+                              err.find("outside I-JSON's +/-(2^53 - 1)") != std::string::npos && err.find("vec-expected.json") != std::string::npos,
+                          "vector " + name + ": the expected-plan refusal is invalid_format at vram.kv_ceiling naming the file: " + err);
                 continue;
             }
             check(rc == 0, "vector " + name + ": the flags are accepted: " + err);
