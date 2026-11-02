@@ -121,6 +121,7 @@ while [ $# -gt 0 ]; do
 done
 
 stop_procs() {
+  local stuck=0
   # engine first (SIGINT is its clean shutdown), then the helpers; each gets 60 s before SIGKILL
   for name in engine $(cd "$PIDS" 2>/dev/null && ls -r helper* 2>/dev/null); do
     [ -f "$PIDS/$name" ] || continue
@@ -129,9 +130,18 @@ stop_procs() {
       kill -INT "$pid"
       for _ in $(seq 60); do kill -0 "$pid" 2>/dev/null || break; sleep 1; done
       kill -0 "$pid" 2>/dev/null && { echo "$name ($pid) did not stop; killing" >&2; kill -KILL "$pid"; }
+      # Fail closed: a process of this launch that is still alive (its mappings, its GPU context) would share the cards and
+      # a recreated /dev/shm segment name with whatever starts next, so nothing proceeds while it lives.
+      for _ in $(seq 60); do kill -0 "$pid" 2>/dev/null || break; sleep 1; done
+      if kill -0 "$pid" 2>/dev/null; then
+        echo "stop: $name ($pid) is still alive after SIGKILL; not continuing while it holds the cards" >&2
+        stuck=1
+        continue   # keep its pid file so a later stop sees it
+      fi
     fi
     rm -f "$PIDS/$name"
   done
+  return $stuck
 }
 
 stop_all() {
@@ -245,6 +255,9 @@ STAMP=$(date +%m%d-%H%M%S)
 start_helpers() {
   for i in "${!HELPERS[@]}"; do
     log=$RUN/helper$i-$STAMP.log
+    # A fresh log, made here before the helper exists: the measuring start used this same name moments ago, and its
+    # "ready" line must never be mistaken for the new helper's.
+    : > "$log"
     declare -n hv="LAYOUT_HELPER_$i"
     env "${COMMON[@]}" "${hv[@]}" \
       setsid ${HELPER_WRAP:-} "$HELPER" "$MODEL" > "$log" 2>&1 9>&- &
@@ -307,7 +320,7 @@ plan_check_start_engine_measure() {
   local pid=$! rc=0
   echo $pid > "$PIDS/engine"
   wait $pid || rc=$?
-  stop_procs   # processes only: the power settings the real start still needs stay applied
+  stop_procs || { echo "plan check: the measuring start's processes did not exit; not starting for real" >&2; return 1; }   # processes only: the power settings the real start still needs stay applied
   [ $rc = 0 ] && [ -s "$PLAN_MEASURE_FILE" ]
 }
 

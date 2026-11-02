@@ -33,7 +33,9 @@ exec "$REAL_PYTHON" "$@"
 FAKE_HELPER = r"""#!/bin/bash
 echo $$ >> "$FAKE_PIDS"
 [ "${FAKE_FAIL_HELPER:-}" = "$FAKE_ID" ] && { echo "r3_moe_worker: cannot start" ; exit 1; }
+sleep "${FAKE_READY_DELAY:-0}"
 echo "r3_moe_worker: ready (helper $FAKE_ID)"
+echo "helper-ready $FAKE_ID $(date +%s.%N)" >> "$FAKE_TIMES"
 exec "$REAL_PYTHON" -c 'import signal, sys, time; signal.signal(signal.SIGINT, lambda *a: sys.exit(0)); signal.signal(signal.SIGTERM, lambda *a: sys.exit(0)); time.sleep(600)'
 """
 
@@ -43,6 +45,7 @@ plan=""; port=""
 while [ $# -gt 0 ]; do
   case "$1" in --plan-memory) plan=$2; shift 2 ;; --port) port=$2; shift 2 ;; *) shift ;; esac
 done
+echo "engine-start ${plan:+measure} $(date +%s.%N)" >> "$FAKE_TIMES"
 if [ -n "$plan" ]; then
   touch "$FAKE_MEASURING"
   [ -n "${FAKE_MEASURE_HANG:-}" ] && exec "$REAL_PYTHON" -c 'import signal, sys, time; signal.signal(signal.SIGINT, lambda *a: sys.exit(0)); signal.signal(signal.SIGTERM, lambda *a: sys.exit(0)); time.sleep(600)'
@@ -104,7 +107,7 @@ class LaunchCleanupTests(unittest.TestCase):
         self.env = {**os.environ, "BC_WORK_ROOT": str(self.work), "ROCM_PATH": "/opt/rocm", "MODEL": str(self.root / "model.rad"),
                     "PATH": f"{self.root / 'fakebin'}:{os.environ['PATH']}", "REAL_PYTHON": sys.executable,
                     "FAKE_LOG": str(self.log), "FAKE_LAYOUT_ENV": str(self.root / "layout.env"), "FAKE_PIDS": str(self.pids),
-                    "FAKE_MEASURING": str(self.measuring)}
+                    "FAKE_MEASURING": str(self.measuring), "FAKE_TIMES": str(self.root / "times.log")}
         self.addCleanup(self._kill_leftovers)
 
     @staticmethod
@@ -180,6 +183,25 @@ class LaunchCleanupTests(unittest.TestCase):
         self.assertEqual(self._events()[0], "apply")
         self.assertIn("restore", self._events()[1:])
         self.assertEqual(self._alive_pids(), [])
+
+    def test_the_real_start_waits_for_its_own_helpers_not_the_measuring_starts_logs(self) -> None:
+        # a cache miss reuses the helper log names of the measuring start moments earlier; the real start's engine must not
+        # start until each of ITS helpers has said ready (they take 3 s here)
+        env = {**self.env, "FAKE_READY_DELAY": "3"}
+        done = subprocess.run(self._args(), env=env, cwd=REPO, capture_output=True, text=True, timeout=180)
+        try:
+            self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+            rows = [l.split() for l in (self.root / "times.log").read_text().splitlines()]
+            engines = [r for r in rows if r[0] == "engine-start"]
+            real = [r for r in engines if r[1] != "measure"]
+            self.assertEqual(len(engines), 2, rows)
+            real_start = float(real[0][-1])
+            phase2_ready = [float(r[-1]) for r in rows if r[0] == "helper-ready" and float(r[-1]) > float([e for e in engines if e[1] == "measure"][0][-1])]
+            self.assertEqual(len(phase2_ready), 3, rows)
+            self.assertGreaterEqual(real_start, max(phase2_ready), "the real engine started before its own helpers were ready")
+        finally:
+            subprocess.run(["bash", str(LAUNCHER), "stop", "--build", str(self.build), "--port", str(self.port), "--gpu-power"],
+                           env=self.env, cwd=REPO, capture_output=True, text=True, timeout=120)
 
     def test_a_second_launch_while_one_is_measuring_is_refused_and_disturbs_nothing(self) -> None:
         first = subprocess.Popen(self._args(), env={**self.env, "FAKE_MEASURE_HANG": "1"}, cwd=REPO,
