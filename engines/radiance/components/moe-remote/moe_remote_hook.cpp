@@ -1,5 +1,6 @@
 #include "moe_remote_hook.h"
 #include "admission_ledger.h"
+#include "admission_completion.h"
 #include "worker_epoch.h"
 #include "moe_helper_watch.h"
 #include "moe_remote_shm.h"
@@ -21,8 +22,6 @@
 #include <ctime>
 #include <fcntl.h>
 #include <mutex>
-#include <map>
-#include <array>
 #include <thread>
 #include <string>
 #include <vector>
@@ -68,12 +67,17 @@ using RegisterFn = int (*)(const EnginePlugin*);
 
 /* Each admission owns its events; never reuse one global step-end event
  * as evidence of several queued parents. An event is recorded after every
- * parent GPU effect, before issue-ahead, and queried only after host_done. */
-struct ParentEvents {
-    std::array<RadEvent, kMaxEngineRanks> event{};
-    std::array<bool, kMaxEngineRanks> recorded{};
-    std::array<bool, kMaxEngineRanks> initialized{};
+ * parent GPU effect, before issue-ahead, and queried only after host_done.
+ * Events come from a per-rank pool sized to the ledger ring (one per slot,
+ * admission_completion.h); queries and records need no current device. */
+struct RadEvents {
+    using Event = RadEvent;
+    static int create(RadEvent* e) { return rad_event_create(e); }
+    static void destroy(RadEvent e) { rad_event_destroy(e); }
+    static int record(RadEvent e, void* stream) { return rad_event_record(e, (RadStream)stream); }
+    static int query(RadEvent e) { return rad_event_query(e); }
 };
+using RankCompletion = r3::admission::RankCompletion<RadEvents>;
 struct HookState {
     int fd = -1;
     void* map = MAP_FAILED;
@@ -82,7 +86,7 @@ struct HookState {
     bool pinned = false;
     RegisterFn engine_register = nullptr;
     r3::admission::Ledger ledger{0}; /* configured by the engine before map replay */
-    std::map<uint64_t, ParentEvents> parents;
+    RankCompletion completion[kMaxEngineRanks];
     R3MoeDrainSnapshot closed_snapshot{};
     uint64_t closure_id = 0;
     uint32_t engine_ranks = 0; /* scheduler-owned; published once before the controller starts */
@@ -232,92 +236,40 @@ int before_pass(int rank, StepTicket value, int64_t /*remote_expected*/, void* s
         if (!g.hdr || !g.pinned || !g.rank[rank].ready || !g.rank[rank].ticket ||
             load(&g.hdr->helper_fault)) return RAD_E_STATE;
         dst = g.rank[rank].ticket;
-        ParentEvents& parent = g.parents[value.ticket_id];
-        if (!parent.initialized[(size_t)rank]) {
-            ConsumptionStamp& stamp = g.rank[rank].consumed_host[value.ticket_id % g.ledger.capacity()];
-            stamp = ConsumptionStamp{value.ticket_id, value.placement_epoch, value.generation_slot, 0, 0};
-            parent.initialized[(size_t)rank] = true;
-        }
+        if (!g.completion[rank].arm(value)) return RAD_E_STATE;
     }
     return r3_moe_ticket_launch(dst, value, stream);
 }
 
 /* Distinct events per admitted parent AND per rank, recorded by the
- * scheduler after all parent GPU effects, before issue-ahead. */
+ * scheduler after all parent GPU effects, before issue-ahead. g.mu only
+ * orders against close_mailbox; the ranks are parked here. */
 int rank_done_ticket(int rank, StepTicket ticket, void* stream) {
     if (!ticket.ticket_id) return RAD_OK;
     if (!stream || rank < 0 || rank >= (int)kMaxEngineRanks ||
         !g.ledger.valid(ticket, (uint32_t)rank)) return RAD_E_STATE;
     std::lock_guard<std::mutex> lock(g.mu);
-    ParentEvents& p = g.parents[ticket.ticket_id];
-    if (p.recorded[(size_t)rank]) return RAD_E_STATE;
-    if (!p.event[(size_t)rank]) {
-        if (rad_event_create(&p.event[(size_t)rank]) != RAD_OK || !p.event[(size_t)rank]) {
-            std::fprintf(stderr, "libr3moe: parent rank completion event: rad_event_create failed\n");
-            g.ledger.fault();
-            return RAD_E_DEVICE;
-        }
-    }
-    if (rad_event_record(p.event[(size_t)rank], (RadStream)stream) != RAD_OK) {
-        std::fprintf(stderr, "libr3moe: record parent rank completion: rad_event_record failed\n");
+    if (!g.completion[rank].record(ticket.ticket_id, stream)) {
+        std::fprintf(stderr, "libr3moe: record parent rank completion: rad_event_record failed or repeated\n");
         g.ledger.fault();
         return RAD_E_DEVICE;
     }
-    p.recorded[(size_t)rank] = true;
     return RAD_OK;
 }
 
+bool rank_completion_ok(bool prepared) {
+    if (!prepared)
+        std::fprintf(stderr, "libr3moe: rank parent completion events: rad_event_create failed\n");
+    return prepared;
+}
+
+/* One ledger pass over host-complete parents; per rank it stops at the
+ * first pending event (Ledger::poll). No allocation, no device switch. */
 void poll_tickets() {
-    const auto outstanding = g.ledger.entries();
-    std::lock_guard<std::mutex> lock(g.mu);
     if (helper_faulted()) { g.ledger.fault(); return; }
-    for (const auto& e : outstanding) {
-        if (!e.host_done) continue; /* never treat an intermediate event as terminal */
-        auto it = g.parents.find(e.ticket.ticket_id);
-        if (it == g.parents.end()) continue;
-        for (uint32_t rank = 0; rank < e.ranks; ++rank) {
-            const uint32_t mask = 1u << rank;
-            if (e.gpu_mask & mask && e.consumed_mask & mask) continue;
-            const ParentEvents& p = it->second;
-            if (!p.recorded[rank] || !p.event[rank]) continue;
-            int previous_device = -1;
-            if (hipGetDevice(&previous_device) != hipSuccess ||
-                hipSetDevice(g.rank[rank].device) != hipSuccess) { g.ledger.fault(); return; }
-            const int status = rad_event_query(p.event[rank]);   /* 1 complete, 0 pending, <0 error */
-            if (hipSetDevice(previous_device) != hipSuccess) { g.ledger.fault(); return; }
-            if (status == 0) continue;
-            if (status < 0) { g.ledger.fault(); return; }
-            const RankState& rs = g.rank[rank];
-            if (!p.initialized[rank]) { g.ledger.fault(); return; }
-            {
-                if (!rs.consumed_host) { g.ledger.fault(); return; }
-                const ConsumptionStamp* stamp =
-                    rs.consumed_host + e.ticket.ticket_id % g.ledger.capacity();
-                const uint64_t id = __atomic_load_n(&stamp->ticket_id, __ATOMIC_ACQUIRE);
-                if (id != e.ticket.ticket_id ||
-                    stamp->placement_epoch != e.ticket.placement_epoch ||
-                    stamp->generation_slot != e.ticket.generation_slot ||
-                    __atomic_load_n(&stamp->published_count, __ATOMIC_ACQUIRE) !=
-                    __atomic_load_n(&stamp->consumed_count, __ATOMIC_ACQUIRE))
-                    continue; /* event complete but no matching consumed proof */
-            }
-            (void)g.ledger.gpu_complete(e.ticket.ticket_id, rank);
-            (void)g.ledger.consumed(e.ticket.ticket_id, rank);
-        }
-    }
-    /* Reclaim only when the ledger has retired an event's parent. */
-    for (auto it = g.parents.begin(); it != g.parents.end();) {
-        if (g.ledger.is_live(it->first)) { ++it; continue; }
-        int previous_device = -1;
-        if (hipGetDevice(&previous_device) != hipSuccess) { g.ledger.fault(); return; }
-        for (uint32_t rank = 0; rank < kMaxEngineRanks; ++rank) {
-            if (!it->second.event[rank]) continue;
-            if (hipSetDevice(g.rank[rank].device) != hipSuccess) { g.ledger.fault(); continue; }
-            rad_event_destroy(it->second.event[rank]);
-        }
-        if (hipSetDevice(previous_device) != hipSuccess) g.ledger.fault();
-        it = g.parents.erase(it);
-    }
+    (void)g.ledger.poll([](const StepTicket& t, uint32_t rank) {
+        return g.completion[rank].prove(t);
+    });
 }
 
 bool served_lane(uint32_t lane) {
@@ -708,13 +660,7 @@ void close_mailbox() {
         std::fprintf(stderr, "libr3moe: admission high-water %zu, capacity %zu, outstanding %zu\n",
                      g.ledger.high_water(), g.ledger.capacity(), g.ledger.outstanding());
     g.watch.stop();   /* first: helpers may exit while the engine tears down, and that is not a fault */
-    for (auto& [id, p] : g.parents)
-        for (uint32_t rank = 0; rank < kMaxEngineRanks; ++rank)
-            if (p.event[rank]) {
-                (void)hipSetDevice(g.rank[rank].device);
-                rad_event_destroy(p.event[rank]);
-            }
-    g.parents.clear();
+    for (RankCompletion& c : g.completion) c.release();   /* after interrupt(): no poll can query them */
     for (uint32_t r = 0; r < kMaxEngineRanks; ++r) {
         RankState& s = g.rank[r];
         if (!s.ready) continue;
@@ -966,7 +912,8 @@ extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevic
                               hipHostMallocMapped | hipHostMallocCoherent),
                 "rank parent consumption ring") ||
         !hip_ok(hipHostGetDevicePointer(reinterpret_cast<void**>(&s.dev.consumed),
-                                       s.consumed_host, 0), "map consumption ring")) {
+                                       s.consumed_host, 0), "map consumption ring") ||
+        !rank_completion_ok(g.completion[rank].prepare(g.ledger.capacity(), s.consumed_host))) {
         if (s.consumed_host) (void)hipHostFree(s.consumed_host);
         if (shadow_first) (void)hipFree(shadow_first);
         if (shadow_stats) (void)hipFree(shadow_stats);

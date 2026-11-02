@@ -3,8 +3,11 @@
  * Pure CPU bookkeeping; no HIP, no shared-memory side effects. The hook
  * coordinator owns one of these per engine, not per rank. The engine supplies
  * the ceiling from its RouteSlot ring plus its explicit issue-ahead depth.
- * The deque grows on demand to that ceiling; draft passes share their parent.
- * Full fails closed without a serving-path GPU wait. See ADMISSION.md.
+ * Outstanding IDs are consecutive, so entries live in a fixed ring allocated
+ * once at configure and indexed by ticket_id % capacity, the same modulus as
+ * the per-rank ConsumptionStamp ring: no per-step allocation or search. Draft
+ * passes share their parent. Full fails closed without a serving-path GPU
+ * wait. See ADMISSION.md.
  */
 #pragma once
 #include "moe_remote_hook.h"
@@ -14,10 +17,10 @@
 #include <condition_variable>
 #include <cstddef>
 #include <cstdint>
-#include <deque>
 #include <functional>
 #include <mutex>
 #include <new>
+#include <vector>
 
 namespace r3 {
 namespace admission {
@@ -25,6 +28,8 @@ namespace admission {
 class Ledger {
 public:
     enum class Result { Ok, Closed, Full, Interrupted, Fault, Invalid, Timeout };
+    /* One rank's completion proof for one host-complete parent. */
+    enum class Proof { Pending, Proven, Fault };
     struct Entry {
         StepTicket ticket{};
         int64_t scheduler_step = -1;
@@ -42,14 +47,12 @@ public:
         size_t capacity = 0;
     };
 
-    explicit Ledger(size_t capacity) : capacity_(capacity) {}
+    explicit Ledger(size_t capacity) { if (capacity) reserve(capacity); }
     bool configure(size_t capacity) {
         std::lock_guard<std::mutex> lock(mu_);
         if (!capacity || interrupted_ || fault_) return false;
         if (capacity_) return capacity_ == capacity;
-        if (!q_.empty()) return false;
-        capacity_ = capacity;
-        return true;
+        return reserve(capacity);
     }
     bool initialize(uint32_t epoch, uint8_t slot) {
         std::lock_guard<std::mutex> lock(mu_);
@@ -116,8 +119,10 @@ public:
     bool cancel(uint64_t id) {
         std::lock_guard<std::mutex> lock(mu_);
         /* Only unused, unbound tail reservations can be returned. */
-        if (q_.empty() || q_.back().ticket.ticket_id != id || q_.back().bound) return false;
-        q_.pop_back();
+        if (!count_ || at(last_id_).bound) return false;
+        if (at(last_id_).ticket.ticket_id != id) return false;
+        at(last_id_) = Entry{};
+        --count_;
         /* The cancelled reservation was never bound or handed to a GPU.
          * Reclaim its provisional sequence number so outstanding IDs stay
          * consecutive: the fixed per-rank consumption ring uses id%capacity
@@ -137,6 +142,35 @@ public:
     /* Rank signals are monotone, repeatable and may complete out of order. A
      * rank is complete only after its per-parent event is observed AND its
      * request-consumed stamps are verified. */
+    /* The serving-path form of gpu_complete + consumed: one lock for every
+     * host-complete parent. prove(ticket, rank) runs under the ledger lock and
+     * must not re-enter it. A rank's terminal events are recorded in admission
+     * order on one stream, so once a rank is pending no younger parent is asked
+     * for that rank; the scan ends when every rank is pending. Cost is
+     * O(outstanding ranks newly proven + one pending query per rank). */
+    template<class Prove>
+    bool poll(Prove&& prove) {
+        std::lock_guard<std::mutex> lock(mu_);
+        if (interrupted_ || fault_) return false;
+        uint32_t pending = 0;
+        for (size_t i = 0; i < count_; ++i) {
+            Entry& e = at(last_id_ - count_ + 1 + i);
+            const uint32_t all = (1u << e.ranks) - 1u;
+            if (!e.host_done) continue; /* never treat an intermediate event as terminal */
+            for (uint32_t rank = 0; rank < e.ranks; ++rank) {
+                const uint32_t bit = 1u << rank;
+                if ((pending & bit) || ((e.gpu_mask & bit) && (e.consumed_mask & bit))) continue;
+                const Proof p = prove(static_cast<const StepTicket&>(e.ticket), rank);
+                if (p == Proof::Fault) { fault_ = true; cv_.notify_all(); return false; }
+                if (p == Proof::Pending) { pending |= bit; continue; }
+                e.gpu_mask |= bit;
+                e.consumed_mask |= bit;
+            }
+            if ((pending & all) == all) break;
+        }
+        retire_locked();
+        return true;
+    }
     bool gpu_complete(uint64_t id, uint32_t rank) {
         std::lock_guard<std::mutex> lock(mu_);
         Entry* e = get(id);
@@ -157,14 +191,14 @@ public:
         std::lock_guard<std::mutex> lock(mu_);
         closed_ = true;
         Snapshot s{last_id_, active_epoch_,
-                   q_.size(), high_water_, capacity_};
+                   count_, high_water_, capacity_};
         cv_.notify_all();
         return s;
     }
     /* Only reopen once every older epoch has retired. */
     bool reopen(uint32_t epoch, uint8_t slot) {
         std::lock_guard<std::mutex> lock(mu_);
-        if (interrupted_ || fault_ || !closed_ || !q_.empty() || epoch == 0 || epoch < active_epoch_ || slot > 1 ||
+        if (interrupted_ || fault_ || !closed_ || count_ || epoch == 0 || epoch < active_epoch_ || slot > 1 ||
             (epoch == active_epoch_ && slot != active_slot_)) return false;
         active_epoch_ = epoch;
         active_slot_ = slot;
@@ -174,10 +208,7 @@ public:
     }
     bool drained(uint32_t old_epoch, uint64_t cutoff_id) const {
         std::lock_guard<std::mutex> lock(mu_);
-        for (const Entry& e : q_)
-            if (e.ticket.ticket_id <= cutoff_id && e.ticket.placement_epoch == old_epoch)
-                return false;
-        return true;
+        return !pending_locked(old_epoch, cutoff_id);
     }
     Result wait_drained(uint32_t old_epoch, uint64_t cutoff_id,
                         std::chrono::steady_clock::time_point deadline,
@@ -191,11 +222,7 @@ public:
                     fault_ = true;
                     return Result::Fault;
                 }
-                bool pending = false;
-                for (const Entry& e : q_)
-                    pending |= e.ticket.ticket_id <= cutoff_id &&
-                               e.ticket.placement_epoch == old_epoch;
-                if (!pending) return Result::Ok;
+                if (!pending_locked(old_epoch, cutoff_id)) return Result::Ok;
                 if (std::chrono::steady_clock::now() >= deadline) {
                     fault_ = true;
                     cv_.notify_all();
@@ -218,12 +245,15 @@ public:
     }
     size_t outstanding() const {
         std::lock_guard<std::mutex> lock(mu_);
-        return q_.size();
+        return count_;
     }
-    /* Snapshot copies never expose mutable internal pointers. */
-    std::deque<Entry> entries() const {
+    /* Snapshot copies, oldest first, never expose mutable internal pointers. */
+    std::vector<Entry> entries() const {
         std::lock_guard<std::mutex> lock(mu_);
-        return q_;
+        std::vector<Entry> out;
+        out.reserve(count_);
+        for (size_t i = 0; i < count_; ++i) out.push_back(at(last_id_ - count_ + 1 + i));
+        return out;
     }
 private:
     Result allocate(uint32_t epoch, uint8_t slot, uint32_t ranks, StepTicket* out) {
@@ -234,41 +264,62 @@ private:
             ranks > r3::moe_shm::kMaxEngineRanks ||
             (active_epoch_ && epoch != active_epoch_)) return Result::Invalid;
         if (last_id_ == UINT64_MAX) return Result::Fault;
-        if (q_.size() >= capacity_) return Result::Full;
+        if (count_ >= capacity_) return Result::Full;
         if (!active_epoch_) active_epoch_ = epoch; /* no silent epoch drift before close/reopen */
-        Entry e{};
+        Entry& e = at(last_id_ + 1);
+        e = Entry{};
         e.ticket.placement_epoch = epoch;
         e.ticket.generation_slot = slot;
         e.ticket.ticket_id = last_id_ + 1;
         e.ranks = ranks;
-        try { q_.push_back(e); }
-        catch (const std::bad_alloc&) { fault_ = true; cv_.notify_all(); return Result::Fault; }
         last_id_ = e.ticket.ticket_id;
+        ++count_;
         *out = e.ticket;
-        high_water_ = std::max(high_water_, q_.size());
+        high_water_ = std::max(high_water_, count_);
         return Result::Ok;
     }
+    /* The ring is sized once to the derived ceiling; serving never allocates. */
+    bool reserve(size_t capacity) {
+        try { ring_.assign(capacity, Entry{}); }
+        catch (const std::bad_alloc&) { fault_ = true; return false; }
+        capacity_ = capacity;
+        return true;
+    }
+    Entry& at(uint64_t id) { return ring_[id % capacity_]; }
+    const Entry& at(uint64_t id) const { return ring_[id % capacity_]; }
+    /* Live IDs are exactly (last_id_ - count_, last_id_]. */
     Entry* get(uint64_t id) {
-        for (Entry& e : q_) if (e.ticket.ticket_id == id) return &e;
-        return nullptr;
+        if (!count_ || id > last_id_ || id <= last_id_ - count_) return nullptr;
+        return &at(id);
     }
     const Entry* get(uint64_t id) const {
-        for (const Entry& e : q_) if (e.ticket.ticket_id == id) return &e;
-        return nullptr;
+        if (!count_ || id > last_id_ || id <= last_id_ - count_) return nullptr;
+        return &at(id);
+    }
+    bool pending_locked(uint32_t old_epoch, uint64_t cutoff_id) const {
+        for (size_t i = 0; i < count_; ++i) {
+            const Entry& e = at(last_id_ - count_ + 1 + i);
+            if (e.ticket.ticket_id <= cutoff_id && e.ticket.placement_epoch == old_epoch) return true;
+        }
+        return false;
     }
     void retire_locked() {
-        while (!q_.empty()) {
-            const Entry& e = q_.front();
+        bool retired = false;
+        while (count_) {
+            Entry& e = at(last_id_ - count_ + 1);
             const uint32_t all = (1u << e.ranks) - 1u;
             if (!e.host_done || e.gpu_mask != all || e.consumed_mask != all) break;
-            q_.pop_front();
-            cv_.notify_all();
+            e = Entry{};
+            --count_;
+            retired = true;
         }
+        if (retired) cv_.notify_all();
     }
-    size_t capacity_;
+    size_t capacity_ = 0;
     mutable std::mutex mu_;
     std::condition_variable cv_;
-    std::deque<Entry> q_;
+    std::vector<Entry> ring_;
+    size_t count_ = 0;
     uint64_t last_id_ = 0;
     uint32_t active_epoch_ = 0;
     uint8_t active_slot_ = 0;

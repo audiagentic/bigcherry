@@ -23,8 +23,11 @@ A parent retires in admission order only after all three predicates hold:
 
 * Host logical completion, after finish_block_drafter/finish_serial_drafter.
 * Its own terminal event on every actual participating rank, recorded after
-  mark_step_end and before issue-ahead. Events are queried, never synchronized,
-  and are destroyed on their owning devices only after retirement.
+  mark_step_end and before issue-ahead. Events are queried, never synchronized.
+  Each rank owns one event per ledger ring slot (admission_completion.h),
+  created once when the rank's stamp ring is allocated and destroyed at
+  shutdown; a slot's event is re-recorded only after its previous parent
+  retired. Recording and querying need no device switch.
 * Every rank's matching ticket/epoch/slot consumption proof, with equal
   published-request and consumed-request counts. Zero requests need no ACK.
 
@@ -62,10 +65,14 @@ plugin before replaying layer maps or lowering rank graphs. There is no
 environment override, workload seed, or default capacity. Unconfigured
 admission fails closed.
 
-The CPU deque grows on demand up to that ceiling. Its high-water is retained
+The CPU ledger is a fixed ring of that ceiling, allocated once and indexed by
+ticket_id % ceiling like the stamps; serving allocates nothing. Completion
+polling (Ledger::poll) visits host-complete parents under one lock and, per
+rank, stops at the first pending event: a rank's terminal events are recorded
+in admission order on one stream. The ledger high-water is retained
 and reported with outstanding count and ceiling on every close and shutdown.
 Rank consumption stamps allocate the ceiling once, before graph capture:
-their address and ticket-ID modulus never change as the deque grows.
+their address and ticket-ID modulus never change.
 Cancelled, unused tail reservations reclaim their IDs so live IDs cannot
 alias the fixed stamp ring. A full issue-ahead reservation is skipped; a full
 ordinary admission or allocation failure faults closed without a serving-path

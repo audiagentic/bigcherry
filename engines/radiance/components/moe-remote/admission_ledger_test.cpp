@@ -1,16 +1,110 @@
 #include "admission_ledger.h"
+#include "admission_completion.h"
 #include <atomic>
 #include <cassert>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
+#include <map>
 #include <thread>
 using r3::admission::Ledger;
 using R = Ledger::Result;
 static void check(bool b, const char* why) {
     if (!b) { std::fprintf(stderr,"FAIL: %s\n",why); std::abort(); }
 }
+/* Stub event API: an event is an index into a status table. */
+struct StubEvents {
+    using Event = int*;
+    static int status[64];
+    static int created, destroyed, records, queries;
+    static int create(Event* e) { if (created >= 64) return -1; *e = &status[created++]; **e = 1; return 0; }
+    static void destroy(Event) { ++destroyed; }
+    static Event last;
+    static int record(Event e, void*) { ++records; *e = 0; last = e; return 0; }
+    static int query(Event e) { ++queries; return *e; }
+};
+int StubEvents::status[64];
+StubEvents::Event StubEvents::last = nullptr;
+int StubEvents::created = 0, StubEvents::destroyed = 0, StubEvents::records = 0, StubEvents::queries = 0;
+using Completion = r3::admission::RankCompletion<StubEvents>;
+
+/* Ledger::poll with per-rank pooled events and consumption stamps. */
+static void completion_ring() {
+    using S = StubEvents;
+    constexpr size_t cap = 3;
+    ConsumptionStamp stamps[2][cap]{};
+    Completion rank[2];
+    Ledger q(cap);
+    check(q.initialize(5,1), "completion fixture");
+    check(rank[0].prepare(cap, stamps[0]) && rank[1].prepare(cap, stamps[1]) && S::created == 2*(int)cap,
+          "one event per ring slot per rank, made once");
+    check(!rank[0].prepare(cap, stamps[0]), "pool is prepared once");
+    void* stream = &stamps;
+    std::map<uint64_t, int*> ev[2];
+    auto prove = [&](const StepTicket& t, uint32_t r) { return rank[r].prove(t); };
+    /* Simulate one rank's parent: armed per pass, one request published and consumed. */
+    auto run = [&](const StepTicket& t, uint32_t r, unsigned passes) {
+        for (unsigned p = 0; p < passes; ++p) check(rank[r].arm(t), "arm every pass");
+        ConsumptionStamp& s = stamps[r][t.ticket_id % cap];
+        ++s.published_count;
+        check(rank[r].record(t.ticket_id, stream), "terminal record");
+        ev[r][t.ticket_id] = S::last;
+        check(!rank[r].record(t.ticket_id, stream), "one terminal record per parent and rank");
+    };
+    auto finish = [&](const StepTicket& t, uint32_t r) {  /* the GPU reaches the event */
+        ++stamps[r][t.ticket_id % cap].consumed_count;
+        *ev[r][t.ticket_id] = 1;
+    };
+    StepTicket a{}, b{};
+    check(q.admit(2,&a)==R::Ok && q.bind(a.ticket_id,1), "parent a");
+    run(a,0,3); run(a,1,3);
+    check(stamps[0][a.ticket_id%cap].published_count==1, "later passes of a parent keep its stamp");
+    check(q.try_admit(2,&b)==R::Ok && q.bind(b.ticket_id,2), "ahead parent b");
+    run(b,0,2); run(b,1,2);
+    const int before = S::queries;
+    check(q.poll(prove) && S::queries==before, "nothing is queried before host completion");
+    check(q.host_complete(a.ticket_id) && q.host_complete(b.ticket_id), "host complete");
+    check(q.poll(prove) && S::queries==before+2 && q.outstanding()==2,
+          "a pending rank is not queried for younger parents");
+    finish(b,0); finish(b,1);
+    check(q.poll(prove) && q.outstanding()==2, "younger parent cannot retire first");
+    *ev[0][a.ticket_id] = 1;          /* event done, request not yet consumed */
+    *ev[1][a.ticket_id] = 1;
+    ++stamps[1][a.ticket_id%cap].consumed_count;
+    check(q.poll(prove) && q.outstanding()==2, "complete event without consumed proof stays pending");
+    ++stamps[0][a.ticket_id%cap].consumed_count;
+    check(q.poll(prove) && q.outstanding()==0, "in-order retirement on all three predicates");
+    /* Steady state: many parents through the same slots, no new events. */
+    for (int i = 0; i < 50; ++i) {
+        StepTicket t{};
+        check(q.admit(2,&t)==R::Ok && q.bind(t.ticket_id,10+i), "steady admit");
+        run(t,0,1); run(t,1,1);
+        check(q.host_complete(t.ticket_id), "steady host");
+        finish(t,0); finish(t,1);
+        check(q.poll(prove) && q.outstanding()==0, "steady retire");
+    }
+    check(S::created == 2*(int)cap, "no event created in the steady state");
+    StepTicket c{};
+    check(q.admit(2,&c)==R::Ok && q.bind(c.ticket_id,99), "unarmed parent");
+    check(rank[0].record(c.ticket_id, stream), "recorded");
+    *S::last = 1;
+    check(rank[1].record(c.ticket_id, stream), "recorded");
+    check(q.host_complete(c.ticket_id) && !q.poll(prove) && q.stopped(), "complete event for an unarmed rank faults closed");
+    Ledger e(cap);
+    check(e.initialize(6,0) && e.admit(1,&c)==R::Ok && e.bind(c.ticket_id,1), "error fixture");
+    Completion r0;
+    ConsumptionStamp st[cap]{};
+    check(r0.prepare(cap, st) && r0.arm(c) && r0.record(c.ticket_id, stream), "error parent");
+    *S::last = -1;
+    check(e.host_complete(c.ticket_id) &&
+          !e.poll([&](const StepTicket& t, uint32_t) { return r0.prove(t); }) && e.stopped(),
+          "event query error faults closed");
+    for (Completion& r : rank) r.release();
+    r0.release();
+    check(S::destroyed == S::created, "every pooled event destroyed once");
+}
 int main() {
+    completion_ring();
     Ledger q(0);
     check(q.initialize(3,0) && q.try_admit(1, nullptr)==R::Invalid, "unconfigured fails closed");
     check(q.configure(2) && q.configure(2) && !q.configure(3), "engine ceiling configured once");
