@@ -236,6 +236,30 @@ On this host GPU reads of host memory also contend: while XTX 0 pulls, the other
 rate (writes and CPU pushes into a card's VRAM through its resizable BAR do not), so helper 1 is about 0.2 ms slower a
 request than helper 0.
 
+### Long-running servers: a host KV tier from the oversized host pool (2026-11-02)
+
+Finished sessions keep their KV in VRAM when there is no host KV tier, so after a long session history the KV cache
+stops lending its spare VRAM to the engine's expert slab (radiance `loan_tick` / `spare_tokens`), ~2,500 expert units
+fall back to the pinned host pool and are streamed on every prefill step. After an 8-session fill (~1M retained tokens)
+a 49-50K prefill on new text drops from 3,837 to 1,901 tok/s and 6-stream decode stalls double; the engine's mover then
+copies ~1.2 TB host-to-card in one run. The launcher now pins a 9 GiB host pool (the old 22,528 MiB was a hand-picked
+number of which the engine used ~7.1 GiB once the helpers owned almost every expert) and gives the freed RAM to a 12 GiB
+host KV tier (`--host-kv-mib`, engine `--prefix-cache-mib`):
+
+| after the ~1M-token fill, probes on new text | before | 9 GiB pool + 12 GiB tier |
+|---|---|---|
+| 8 sessions cold | 2,499 tok/s | 2,945 tok/s |
+| 50K prefill | 1,901 tok/s | 3,165 tok/s |
+| 6-stream: slowest first token / event gap p95 | 3.6 s / 114 ms | 2.2 s / 50 ms |
+| mover host-to-card | 1,160 GiB | 600 GiB |
+
+Fresh-server prefill is unchanged (44K: 3,825 vs 3,837 tok/s) and the arithmetic is the same (no KLD needed). Moving the
+47.7 GiB n-gram table to disk to fund a larger tier costs ~10%; a 24 GiB tier with the table in RAM is refused by the
+engine's memory check. The remaining gap to a fresh server is the engine's loan policy (RHP10/RHP13), and both numbers
+are interim until RSC03 derives them. Prefill throughput is flat at ~3.6-4.1k tok/s from 1K to ~150K tokens (peak at one
+2,048-token chunk), so short prompts are not slower per token; several short prompts together are, on the four-card
+layout (the tail helper straggles on small batches).
+
 ### Multi-stream decode: the W4 decode GEMV on the 32-row path (2026-11-01)
 
 At 6 streams a decode step is 24 rows (6 x (1 + 3 MTP drafts)), above the helpers' pre-queued 8-row small lane, so it took the

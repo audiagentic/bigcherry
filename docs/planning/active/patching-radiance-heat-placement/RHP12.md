@@ -65,8 +65,11 @@ REVISION 2026-11-02 (GPT configuration assessment, reviewed): (1) Scope of 'retu
 ## Ledger-events
 
 
+
 - chg_20261101_225732_planning-a-staged-roadmap-for_4092
 - 2026-11-01T22:57:54.713409+00:00 (updated-by): Updated: section:ledger-events
 - 2026-11-02T00:53:25.263305+00:00 (updated-by): Updated: section:notes
 - chg_20261102_005338_planning-one-serve-command_5259
 - 2026-11-02T00:54:00.299817+00:00 (updated-by): Updated: section:ledger-events
+- chg_20261102_012258_long-running-flash-next-server_6339
+- 2026-11-02T01:23:06.428488+00:00 (updated-by): Updated: section:ledger-events
