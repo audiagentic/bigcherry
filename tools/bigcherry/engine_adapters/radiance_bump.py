@@ -112,7 +112,7 @@ class ComponentGate:
 
     def __init__(
         self, context: ProjectContext, source_dir: Path, workdir: Path, runner: Runner, abi_reader: AbiReader,
-        platform_name: str | None,
+        platform_name: str | None, lister: runtime_bundle.TestLister,
     ):
         self.engine = context.engine
         self.layout = context.layout
@@ -120,6 +120,7 @@ class ComponentGate:
         self.build_dir = workdir / f"{context.engine}-build"
         self.runner = runner
         self.abi_reader = abi_reader
+        self.lister = lister
         self.declared = components.load_all(paths.REPO_ROOT, context.engine)
         self.platform = _build_platform(context.engine, platform_name) if self.declared else None
         self.built = False
@@ -181,26 +182,18 @@ class ComponentGate:
         return failures
 
     def component_tests(self) -> list[str]:
-        """Build each component's declared test targets and run them with ctest in the component's build tree."""
+        """Each component's declared test targets, built and run by runtime_bundle.run_component_tests (the same run
+        PR CI makes)."""
         self._require_built()
-        failures = []
-        for name, component in sorted(self.declared.items()):
-            if not component.test_targets:
-                continue
-            tree = runtime_bundle.component_build_dir(self.build_dir, name)
-            try:
-                self.runner(["cmake", "--build", str(tree), "-j", "--target", *component.test_targets], self.source_dir)
-                self.runner(["ctest", "--test-dir", str(tree), "--output-on-failure"], self.source_dir)
-            except subprocess.CalledProcessError as exc:
-                failures.append(f"{name}: `{' '.join(map(str, exc.cmd))}` exited {exc.returncode}")
-        return failures
+        return runtime_bundle.run_component_tests(self.engine, source_root=self.source_dir, build_dir=self.build_dir,
+                                                  runner=self.runner, lister=self.lister)
 
 
 def compile_checks(
     context: ProjectContext, source_dir: Path, workdir: Path, *, platform_name: str | None, runner: Runner = _run,
-    abi_reader: AbiReader = read_plugin_abi,
+    abi_reader: AbiReader = read_plugin_abi, lister: runtime_bundle.TestLister = runtime_bundle.ctest_tests,
 ) -> tuple[BumpCheck, ...]:
-    gate = ComponentGate(context, source_dir, workdir, runner, abi_reader, platform_name)
+    gate = ComponentGate(context, source_dir, workdir, runner, abi_reader, platform_name, lister)
     cmake_hint = "install cmake and ninja (Ubuntu/Debian: sudo apt-get install cmake ninja-build) on a host with the ROCm toolchain"
     return (
         BumpCheck("components-build", "COMPONENT_BUILD_FAILED", ("cmake", "ninja"), cmake_hint, gate.build),
