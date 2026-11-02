@@ -8,7 +8,7 @@
       "build_sha256": "4d97aa62b5551ca084b683f8eba2dfb963f77c4a55a3ea2ddde75016b1ebd37d"
     },
     "contract_version": 1,
-    "content_digest": "sha256:299386ed201c93ec4a2898506c9b70b0a4b414d1cb02bbc75708772628193986"
+    "content_digest": "sha256:b80e32ef933b9ee4e5d31f45fdb5bc3308a8972b40f7e121f99fe6bf623dc262"
   },
   "spec": {
     "intent": {
@@ -357,6 +357,7 @@
             "experts": 0,
             "kv": 22812035064,
             "stage": 2586132480,
+            "kv_resolved": 22810722304,
             "expert_floor": 0,
             "kv_ceiling": 31511797760,
             "expert_ceiling": 6351237120,
