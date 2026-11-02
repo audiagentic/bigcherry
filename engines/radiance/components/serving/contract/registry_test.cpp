@@ -193,6 +193,47 @@ int main() {
             "an unknown class");
     refused(replaced("value_ref = \"uint\"", "value_ref = \"nat\""), "names no def", "a calibration value of no def");
 
+    // review of #535: the fingerprint follows literal const data inside constraints, not annotations; the semantic
+    // fingerprint also follows classes and bindings
+    {
+        const std::string with_a = replaced("cpp = \"Spec\"\ndoc = \"Spec.\"",
+                                            "cpp = \"Spec\"\nconstraints = '[{\"not\": {\"const\": {\"description\": \"A\"}}}]'\ndoc = \"Spec.\"");
+        const std::string with_b = replaced("cpp = \"Spec\"\ndoc = \"Spec.\"",
+                                            "cpp = \"Spec\"\nconstraints = '[{\"not\": {\"const\": {\"description\": \"B\"}}}]'\ndoc = \"Spec.\"");
+        bc::contract::Registry a, b, titled, classed;
+        check(bc::contract::load_registry(with_a, "t", &a, &why) && bc::contract::load_registry(with_b, "t", &b, &why),
+              "const fixtures load: " + why);
+        check(bc::contract::fingerprint(a) != bc::contract::fingerprint(b),
+              "a change to object-valued const data changes the fingerprint");
+        check(bc::contract::load_registry(replaced("title = \"test\"", "title = \"renamed\""), "t", &titled, &why), "title");
+        check(bc::contract::fingerprint(titled) == bc::contract::fingerprint(r) &&
+                  bc::contract::semantic_fingerprint(titled) == bc::contract::semantic_fingerprint(r),
+              "a title change keeps both fingerprints");
+        check(bc::contract::load_registry(replaced("class = \"policy\"", "class = \"derived\""), "t", &classed, &why), "class");
+        check(bc::contract::fingerprint(classed) == bc::contract::fingerprint(r) &&
+                  bc::contract::semantic_fingerprint(classed) != bc::contract::semantic_fingerprint(r),
+              "a class change keeps the schema fingerprint and changes the semantic one");
+    }
+    refused(kBase + "\n[[field]]\npath = \"/spec/t\"\nkind = \"array\"\nitem_kind = \"tuple\"\ntuple = [\"uint\", \"uint\"]\n"
+                    "item_minimum = 1\ndoc = \"x\"\n",
+            "takes only 'tuple'", "a scalar attribute on a tuple item");
+    refused(kBase + "\n[[field]]\npath = \"/spec/m\"\nkind = \"map\"\nkey_ref = \"uint\"\nrequired_keys = []\ndoc = \"x\"\n"
+                    "\n[[field]]\npath = \"/spec/m/*\"\nkind = \"boolean\"\ndoc = \"x\"\n",
+            "key_ref must name a string def", "a map keyed by an integer def");
+    refused(kBase + "\n[[field]]\npath = \"/spec/a\"\nkind = \"array\"\nitem_kind = \"boolean\"\nmin_items = -1\ndoc = \"x\"\n",
+            "not negative", "a negative count");
+    refused(kBase + "\n[[field]]\npath = \"/spec/x\"\nkind = \"boolean\"\ncpp_member = \"n\"\ndoc = \"x\"\n",
+            "C++ member n is repeated", "two members with one C++ name");
+    refused(replaced("[[def]]\nname = \"uint\"", "[[calibration_key]]\nkey = \"a_b.mib\"\nvalue_kind = \"ref\"\n"
+                                                  "value_ref = \"uint\"\ndoc = \"x\"\n\n[[def]]\nname = \"uint\""),
+            "twice", "calibration keys with one C++ enumerator");
+    refused(kBase + "\n[[field]]\npath = \"/spec/e\"\nkind = \"enum\"\nvalues = [\"a/b\"]\ncpp_type = \"E\"\ndoc = \"x\"\n",
+            "invalid C++ enumerator", "an enum value that is no C++ identifier");
+    refused(replaced("namespace = \"bc::serving::test\"", "namespace = \"bc::1x\""), "namespace", "a bad namespace");
+    refused(replaced("[[class_default]]\npath = \"/spec\"\nclass = \"policy\"",
+                     "[[class_default]]\npath = \"/spec\"\nclass = \"policy\"\n\n[[class_default]]\npath = \"/spec\"\nclass = \"fact\""),
+            "two class defaults", "a repeated class default");
+
     // the real registry loads and generates
     std::ifstream in(std::string(BC_CONTRACT_SOURCE_DIR) + "/contract/serving-v1.toml", std::ios::binary);
     std::ostringstream text;

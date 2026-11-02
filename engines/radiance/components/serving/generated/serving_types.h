@@ -17,8 +17,11 @@ namespace bc::serving::v1 {
 inline constexpr std::string_view kApiVersion = "bigcherry/v1";
 inline constexpr std::string_view kKind = "ServingManifest";
 inline constexpr int64_t kContractVersion = 1;
-// sha256 of the JCS schema without descriptions (contract/README.md); the build pins it.
-inline constexpr std::string_view kFingerprint = "sha256:de76f63b04f5a49c742908219eb228d99880d801d735d01144d3abacd4fdc409";
+// sha256 of the JCS validation schema without annotations (contract/README.md); the build pins it.
+inline constexpr std::string_view kFingerprint = "sha256:9ca159d90125c696ea1afcfc737bab68824e39552a12d2f178947bd20a79b027";
+// sha256 of the schema plus the frozen semantics it does not express (classes, lifecycle, Radiance bindings,
+// reader error codes); README.md.
+inline constexpr std::string_view kSemanticFingerprint = "sha256:dc4763ea0f00df27217a1e4ff2dd86117e38bc0b927063fc1438ec0788fb4f96";
 
 // Calibrated parameters (contract [[calibration_key]]), in wire order.
 enum class CalibrationKey : uint8_t {
