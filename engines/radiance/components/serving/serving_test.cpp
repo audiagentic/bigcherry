@@ -2,11 +2,13 @@
 #undef NDEBUG // Assertions are test requirements even in RelWithDebInfo.
 #endif
 #include "serving.h"
+#include "calibration.h"
 #include "sha256.h"
 
 #undef NDEBUG   /* the checks below are assert()s: keep them live in Release component builds */
 #include <cassert>
 #include <filesystem>
+#include <functional>
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
@@ -358,6 +360,101 @@ static void sha256_vectors() {   /* FIPS 180-4 examples, incl. the two-block 56-
            "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1");
 }
 
+void calibration_store(Fixture& t) {
+    using bc::serving::Calibration;
+    using bc::serving::CalibrationMatch;
+    const std::string seed =
+        "schema_version = 1\n"
+        "[[entry]]\nkey = \"calibration.x.v\"\nvalue = 1\nseeded = \"2026-01-01\"\nevidence = \"any\"\n"
+        "[[entry]]\nkey = \"calibration.x.v\"\nmatch = { layout = \"L\" }\nvalue = 2\nseeded = \"2026-01-02\"\n"
+        "evidence = \"layout L\"\n"
+        "[[entry]]\nkey = \"calibration.x.v\"\nmatch = { layout = \"L\", objective = \"latency\" }\nvalue = 3\n"
+        "seeded = \"2026-01-03\"\nevidence = \"L latency\"\n";
+    const Calibration c = Calibration::load(seed);
+    assert(c.number("calibration.x.v", {"m", "other", "latency"}) == 1);
+    assert(c.number("calibration.x.v", {"m", "L", "throughput"}) == 2);
+    assert(c.number("calibration.x.v", {"m", "L", "latency"}) == 3);
+    const auto got = c.get("calibration.x.v", {"m", "L", "latency"});
+    assert(got.source == "seed" && got.seeded == "2026-01-03");
+    assert(got.describe("calibration.x.v") == "calibrated (seed: 2026-01-03) calibration.x.v: L latency");
+    // A cache refit wins at equal specificity, and a less specific cache entry does not beat a narrower seed.
+    const auto cache = t.file("refit.toml",
+        "schema_version = 1\n"
+        "[[entry]]\nkey = \"calibration.x.v\"\nmatch = { layout = \"L\" }\nvalue = 20\nseeded = \"2026-02-01\"\n"
+        "evidence = \"RHP12 refit\"\n");
+    const Calibration r = Calibration::load(seed, cache);
+    assert(r.number("calibration.x.v", {"m", "L", "throughput"}) == 20);
+    assert(r.get("calibration.x.v", {"m", "L", "throughput"}).source == "cache");
+    assert(r.number("calibration.x.v", {"m", "L", "latency"}) == 3);
+    auto refused = [](const std::function<void()>& f, const std::string& needle) {
+        try { f(); } catch (const std::exception& e) {
+            if (std::string(e.what()).find(needle) != std::string::npos) return;
+            throw std::runtime_error("wrong calibration diagnostic for " + needle + ": " + e.what());
+        }
+        throw std::runtime_error("expected calibration refusal containing " + needle);
+    };
+    refused([&] { (void)c.get("calibration.y.v", {"m", "L", "latency"}); }, "no entry for calibration.y.v");
+    refused([&] { (void)Calibration::load("schema_version = 1\n[[entry]]\nkey = \"calibration.a\"\nvalue = 1\n"
+                                          "seeded = \"d\"\nevidence = \"e\"\nnote = 1\n"); }, "unknown key note");
+    refused([&] { (void)Calibration::load("schema_version = 1\n[[entry]]\nkey = \"calibration.a\"\nvalue = 1\n"
+                                          "seeded = \"d\"\nevidence = \"e\"\nmatch = { host = \"h\" }\n"); },
+            "allowed: model, layout, objective");
+    refused([&] { (void)Calibration::load("schema_version = 1\n[[entry]]\nkey = \"calibration.a\"\nvalue = 1\n"
+                                          "seeded = \"d\"\nevidence = \"\"\n"); }, "evidence must be a non-empty");
+    refused([&] { (void)Calibration::load(seed + "[[entry]]\nkey = \"calibration.x.v\"\nvalue = 9\n"
+                                          "seeded = \"d\"\nevidence = \"e\"\n"); }, "duplicate entry");
+    // The compiled-in seeds parse and carry evidence for every rule parameter the plan reads.
+    const Calibration standard = Calibration::standard();
+    for (const char* objective : {"latency", "balanced"})
+        assert(!standard.get("calibration.kv_backing_floor.fraction",
+                             {"m", "flashnext-4gpu", objective}).evidence.empty());
+    refused([&] { (void)standard.get("calibration.kv_backing_floor.fraction", {"m", "flashnext-4gpu", "throughput"}); },
+            "no entry");
+}
+
+void host_reserve(Fixture& t) {
+    // 128 GiB fixture: 5% of 131072 MiB is 6554 MiB, above the 4096 MiB floor.
+    auto r = bc::serving::resolve(t.standard(), t.facts);
+    assert(r.values.at("memory").at("host_reserve_mib") == 6554);
+    const Json& p = r.provenance.at("memory.host_reserve_mib");
+    assert(p.at("origin") == "calibrated");
+    assert(p.at("source").get<std::string>().find("calibrated (seed: 2026-11-02) calibration.host_reserve.floor_mib") !=
+           std::string::npos);
+    assert(p.at("inputs").size() == 3);
+    // The site may only raise it.
+    auto opts = t.standard();
+    opts.site = t.file("floor-site.toml", "[engine]\nmodel = \"/model.rad\"\nradiance_home = \"/runtime\"\n"
+                                          "[handoff]\nheat = \"/heat.hot-first\"\nhistogram = \"/heat.live\"\n"
+                                          "[hard_floors.memory]\nhost_reserve_mib = 8192\n");
+    r = bc::serving::resolve(opts, t.facts);
+    assert(r.values.at("memory").at("host_reserve_mib") == 8192);
+    assert(r.provenance.at("memory.host_reserve_mib").at("origin") == "site");
+    opts.site = t.file("low-floor-site.toml", "[engine]\nmodel = \"/model.rad\"\nradiance_home = \"/runtime\"\n"
+                                              "[handoff]\nheat = \"/heat.hot-first\"\nhistogram = \"/heat.live\"\n"
+                                              "[hard_floors.memory]\nhost_reserve_mib = 1024\n");
+    r = bc::serving::resolve(opts, t.facts);
+    assert(r.values.at("memory").at("host_reserve_mib") == 6554);
+    opts.site = t.file("bad-floor-site.toml", "[engine]\nmodel = \"/model.rad\"\nradiance_home = \"/runtime\"\n"
+                                              "[handoff]\nheat = \"/heat.hot-first\"\nhistogram = \"/heat.live\"\n"
+                                              "[hard_floors.memory]\nhost_pool_mib = 1024\n");
+    fail(opts, t.facts, "unknown floor hard_floors.memory.host_pool_mib");
+    opts = t.standard();
+    opts.profile = t.file("floor-profile.toml", "[hard_floors.memory]\nhost_reserve_mib = 8192\n");
+    fail(opts, t.facts, "hard_floors: site-only");
+    opts = t.standard();
+    opts.sets = {"memory.host_reserve_mib=1"};
+    fail(opts, t.facts, "derived, cannot override");
+    // A refit in the calibration cache moves the reserve, and explain names the cache.
+    opts = t.standard();
+    opts.calibration_cache = t.file("reserve-refit.toml",
+        "schema_version = 1\n[[entry]]\nkey = \"calibration.host_reserve.total_fraction\"\n"
+        "match = { layout = \"flashnext-4gpu\" }\nvalue = 0.1\nseeded = \"2026-12-01\"\nevidence = \"refit\"\n");
+    r = bc::serving::resolve(opts, t.facts);
+    assert(r.values.at("memory").at("host_reserve_mib") == 13108);
+    assert(r.provenance.at("memory.host_reserve_mib").at("source").get<std::string>().find(
+               "calibrated (cache: 2026-12-01)") != std::string::npos);
+}
+
 int main() {
     try {
         sha256_vectors();
@@ -368,8 +465,11 @@ int main() {
         type_range_required(t);
         precedence_and_caps(t);
         provenance_hash_and_parity(t);
+        calibration_store(t);
+        host_reserve(t);
         std::cout << "PASS: fake KFD/PCI/proc detection; strict keys; types/ranges; required; "
-                     "precedence/caps; provenance/hash; launcher engine/WorkerConfig parity\n";
+                     "precedence/caps; provenance/hash; launcher engine/WorkerConfig parity; "
+                     "calibration store; calibrated host reserve\n";
         return 0;
     } catch (const std::exception& e) {
         std::cerr << "FAIL: " << e.what() << '\n';

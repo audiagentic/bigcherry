@@ -19,6 +19,7 @@ void usage() {
                  "  --validate <site.toml> [profile.toml] [--set key=value]\n"
                  "  --explain [--json] [--site FILE] [--profile FILE] [--set key=value]\n"
                  "  --dry-run --out manifest.json [--site FILE] [--profile FILE] [--set key=value]\n"
+                 "  --calibration FILE  (with --validate, --explain, --dry-run) a calibration cache over the seeds\n"
                  "No process is started by these commands.\n";
 }
 
@@ -67,6 +68,7 @@ int main(int argc, char** argv) {
             else if (arg == "--sys-root") opts.sys_root = need_arg("--sys-root");
             else if (arg == "--site") opts.site = need_arg("--site");
             else if (arg == "--profile") opts.profile = need_arg("--profile");
+            else if (arg == "--calibration") opts.calibration_cache = need_arg("--calibration");
             else if (arg == "--set") opts.sets.push_back(need_arg("--set"));
             else if (arg == "--out") out = need_arg("--out");
             else if (!arg.empty() && arg.front() == '-')
@@ -83,7 +85,7 @@ int main(int argc, char** argv) {
         }
         if (detection) {
             if (!positional.empty() || !opts.site.empty() || !opts.profile.empty() ||
-                !opts.sets.empty() || !out.empty())
+                !opts.sets.empty() || !out.empty() || !opts.calibration_cache.empty())
                 throw std::runtime_error("--detect takes only --sys-root and --json");
             auto facts = bc::serving::detect(opts.sys_root);
             if (json) std::cout << facts.dump(2) << '\n';

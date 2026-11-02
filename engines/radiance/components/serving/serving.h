@@ -17,7 +17,7 @@ struct Layout {
     std::vector<std::string> helper_cards;
 };
 struct Memory {
-    uint64_t host_pool_mib = 0, host_kv_mib = 0, tail_budget_mib = 0;
+    uint64_t host_pool_mib = 0, host_kv_mib = 0, host_reserve_mib = 0, tail_budget_mib = 0;
     std::vector<uint64_t> helper_budgets_mib;
 };
 // Shared launcher COMMON fields live outside the exact WorkerConfig struct.
@@ -53,6 +53,8 @@ struct Config {
 struct Options {
     std::filesystem::path sys_root = "/";
     std::filesystem::path site, profile;
+    // A calibration cache (RHP12 refits) layered over the compiled-in seeds; empty: seeds only.
+    std::filesystem::path calibration_cache;
     std::vector<std::string> sets;
 };
 struct Resolved {

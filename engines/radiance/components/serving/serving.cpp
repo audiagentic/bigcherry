@@ -1,4 +1,5 @@
 #include "serving.h"
+#include "calibration.h"
 #include "sha256.h"
 #include "third_party/toml.hpp"
 
@@ -72,6 +73,10 @@ const std::vector<Field>& schema_fields() {
         add("memory.host_kv_mib", "integer", 12288,
             "launcher HOST_KV_MIB=12288 measured interim; derive RSC03", "derived",
             "startup-only", 0, UINT32_MAX);
+        add("memory.host_reserve_mib", "integer", nullptr,
+            "calibrated: max(calibration.host_reserve.floor_mib, calibration.host_reserve.total_fraction x "
+            "MemTotal); a site hard_floors entry may only raise it", "derived", "startup-only",
+            0, UINT32_MAX, {}, true);
         add("memory.tail_budget_mib", "integer", nullptr,
             "layouts.toml tail budget; derive RSC03", "derived", "step-boundary",
             0, UINT32_MAX, {}, true);
@@ -327,6 +332,7 @@ void layer(Json& values, Json& provenance, Json input,
            const std::string& origin, const std::string& path) {
     if (!input.is_object()) throw std::runtime_error(path + ": expected TOML table");
     input.erase("hard_caps");
+    input.erase("hard_floors");
     std::vector<std::pair<std::string, Json>> entries;
     flatten(input, "", entries);
     for (const auto& [key, v] : entries) {
@@ -767,6 +773,13 @@ Json json_schema() {
     caps["properties"]["memory"] = mem;
     caps["description"] = "site file only; maxima can only tighten";
     root["properties"]["hard_caps"] = caps;
+    const auto* reserve = field_for("memory.host_reserve_mib");
+    root["properties"]["hard_floors"] = {
+        {"type", "object"}, {"additionalProperties", false},
+        {"description", "site file only; minima can only raise"},
+        {"properties", {{"memory", {{"type", "object"}, {"additionalProperties", false},
+            {"properties", {{"host_reserve_mib", {{"type", "integer"}, {"minimum", reserve->lo},
+                                                  {"maximum", reserve->hi}}}}}}}}}};
     return root;
 }
 
@@ -778,6 +791,8 @@ Resolved resolve(const Options& options, const Json& facts) {
     const Json site = read_toml(options.site), profile = read_toml(options.profile);
     if (profile.contains("hard_caps"))
         throw std::runtime_error(options.profile.string() + ": hard_caps: site-only; profile cannot change hard caps");
+    if (profile.contains("hard_floors"))
+        throw std::runtime_error(options.profile.string() + ": hard_floors: site-only; profile cannot change hard floors");
     std::string name = value_at(values, "layout.name").get<std::string>();
     name = selection_name(site, name);
     name = selection_name(profile, name);
@@ -847,6 +862,48 @@ Resolved resolve(const Options& options, const Json& facts) {
     }
     if (value_at(values, "layout.name") != name)
         throw std::runtime_error("layout.name: resolution inconsistency");
+    {
+        // The host RAM reserve: calibrated rule parameters for this layout and objective, then the site's floor.
+        const Calibration calibration = Calibration::standard(options.calibration_cache);
+        const CalibrationMatch at{"", name, value_at(values, "service.objective").get<std::string>()};
+        const Calibrated floor = calibration.get("calibration.host_reserve.floor_mib", at);
+        const Calibrated fraction = calibration.get("calibration.host_reserve.total_fraction", at);
+        if (!floor.value.is_number_integer() || floor.value.get<int64_t>() < 0 || !fraction.value.is_number() ||
+            fraction.value.get<double>() < 0 ||
+            fraction.value.get<double>() >= 1)
+            throw std::runtime_error("calibration.host_reserve: floor_mib must be a whole MiB count and "
+                                     "total_fraction in [0, 1)");
+        const uint64_t total = facts.at("host").at("mem_total_mib").get<uint64_t>();
+        const uint64_t scaled = uint64_t(std::ceil(fraction.value.get<double>() * double(total)));
+        const uint64_t reserve = std::max(floor.value.get<uint64_t>(), scaled);
+        const Field& field = *field_for("memory.host_reserve_mib");
+        put(values, provenance, field, reserve, "calibrated",
+            "max(" + std::to_string(floor.value.get<uint64_t>()) + " MiB, " + fraction.value.dump() + " x " +
+            std::to_string(total) + " MiB MemTotal); " + floor.describe("calibration.host_reserve.floor_mib") +
+            "; " + fraction.describe("calibration.host_reserve.total_fraction"),
+            Json::array({"facts.host.mem_total_mib", "calibration.host_reserve.floor_mib",
+                         "calibration.host_reserve.total_fraction"}));
+        if (site.contains("hard_floors")) {
+            const Json& floors = site.at("hard_floors");
+            std::vector<std::pair<std::string, Json>> entries;
+            if (!floors.is_object()) throw std::runtime_error(options.site.string() + ": hard_floors must be a table");
+            flatten(floors, "hard_floors", entries);
+            for (const auto& [key, v] : entries) {
+                if (key != "hard_floors.memory.host_reserve_mib")
+                    throw std::runtime_error(options.site.string() + ": unknown floor " + key +
+                                             " (allowed: hard_floors.memory.host_reserve_mib)");
+                validate_value(field, v, options.site.string() + ":hard floor");
+                if (v.get<uint64_t>() > total)
+                    throw std::runtime_error(options.site.string() + ": " + key + " exceeds detected RAM");
+                if (v.get<uint64_t>() > reserve)
+                    put(values, provenance, field, v, "site",
+                        options.site.string() + ": hard floor raises the calibrated reserve of " +
+                        std::to_string(reserve) + " MiB",
+                        Json::array({options.site.string() + ":" + key, "calibration.host_reserve.floor_mib",
+                                     "calibration.host_reserve.total_fraction"}));
+            }
+        }
+    }
     if (layout.tail) {
         const Json b = value_at(values, "memory.helper_budgets_mib");
         if (b.empty())
@@ -944,7 +1001,7 @@ Resolved resolve(const Options& options, const Json& facts) {
     c.layout = {l.at("name"), l.at("engine_card"),
                 l.at("helper_cards").get<std::vector<std::string>>()};
     const auto& m = values.at("memory");
-    c.memory = {m.at("host_pool_mib"), m.at("host_kv_mib"),
+    c.memory = {m.at("host_pool_mib"), m.at("host_kv_mib"), m.at("host_reserve_mib"),
                 m.at("tail_budget_mib"),
                 m.at("helper_budgets_mib").get<std::vector<uint64_t>>()};
     const auto& a = values.at("handoff");

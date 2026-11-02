@@ -1,0 +1,43 @@
+# Calibration seeds for the serving resource plan (RSC03). Each entry is one parameter of a derivation rule in
+# serving.cpp, never a resolved budget: the rule turns it into MiB from the detected facts, the model's own sizes
+# (radiance --plan-memory) and the layout. A seed is fitted to the measurements named in its evidence; RHP12's
+# auto-calibration refits an entry by writing the same key, with a narrower match, to the calibration cache
+# (bc-serve --calibration FILE), which wins over a seed of equal or lesser specificity. Calibration fills only these
+# parameters: it never overrides a site hard cap or floor.
+#
+#   key       the rule parameter (calibration.<rule>.<parameter>)
+#   match     model (container model_name), layout and objective it applies to; an absent field matches any
+#   value     the parameter, in the unit the key names
+#   seeded    the date of the measurement it was fitted to
+#   evidence  the runs and readings, decode and prefill separately
+schema_version = 1
+
+# Host RAM reserve: what start-up leaves free after every planned consumer, max(floor_mib, total_fraction x MemTotal).
+[[entry]]
+key = "calibration.host_reserve.floor_mib"
+value = 4096
+seeded = "2026-11-02"
+evidence = "run kv-tier/host-pool2 on flashnext-4gpu (91 GiB host): host pool 9 GiB + host KV tier 12 GiB left 4 GiB available and served (post-fill prefill 1,901 -> 3,165 tok/s, KV-loan collapse avoided); a 32 GiB tier with the n-gram table on disk left 0 GiB available, refused"
+
+[[entry]]
+key = "calibration.host_reserve.total_fraction"
+value = 0.05
+seeded = "2026-11-02"
+evidence = "the 4 GiB that served on a 91 GiB host is 4.4% of MemTotal; 5% scales that margin to larger hosts"
+
+# Engine KV backing floor: the share of max_sessions x max_context the engine card's KV must back before it keeps
+# experts local. Latency keeps experts engine-local down to this floor; what does not fit still goes to the tail before
+# the host pool. Throughput takes no floor: it keeps no experts local while the tail has room.
+[[entry]]
+key = "calibration.kv_backing_floor.fraction"
+match = { layout = "flashnext-4gpu", objective = "latency" }
+value = 0.50
+seeded = "2026-11-02"
+evidence = "run tail-size on flashnext-4gpu, tail 4/8/14 GiB: KV backing 53/64/71% of 8 x 262144; 6-stream decode 364/361/354 tok/s; short-prompt TTFT 1.36/1.67/2.18 s; 219K prefill 3,389/3,464/3,591 tok/s; 8-session prefill 2,422/2,520/3,028 tok/s (no tail, run rad42-fix: 2,452); latency takes the smallest tail point, about 50%"
+
+[[entry]]
+key = "calibration.kv_backing_floor.fraction"
+match = { layout = "flashnext-4gpu", objective = "balanced" }
+value = 0.60
+seeded = "2026-11-02"
+evidence = "run tail-size on flashnext-4gpu: the 8 GiB tail point (64% backing) keeps decode within 1% of the smallest tail (361 vs 364 tok/s) and TTFT at 1.67 s, with 8-session prefill +4% (2,520 vs 2,422 tok/s); balanced takes about 60%"
