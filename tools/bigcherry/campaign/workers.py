@@ -67,6 +67,8 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from ..build import logs as build_logs
+from ..core.process import run_logged
 from ..tuning import catalog as autotune_catalog
 from . import build as campaign_build
 from ..build import generated_tree
@@ -375,6 +377,8 @@ def make_build_worker(
             compile_inputs_hash = None
 
         build_dir = build_directory(context, source_slice_id, build_plan)
+        if logs := build_logs.current.get():
+            logs.set_build(build_plan.build_plan_id, build_dir)
         build_dir.mkdir(parents=True, exist_ok=True)
         binary = build_dir / binary_relative_path
 
@@ -566,10 +570,11 @@ def make_build_worker(
                 if actual_inputs != compile_inputs_hash:
                     raise generated_tree.GeneratedTreeError("compiled-copy input hash disagrees with generation evidence")
                 compile_inputs_hash = actual_inputs
-            subprocess.run(configure_args, cwd=source_root, check=True)
+            with build_logs.stage("configure"):
+                run_logged(configure_args, cwd=source_root, check=True)
             if has_generate_stage:
                 generated_tree.verify_tree(cmake_generated_root, tree_document)
-            subprocess.run(
+            run_logged(
                 campaign_build.cmake_build_args(build_dir, targets=cmake_targets),
                 cwd=source_root,
                 check=True,
@@ -899,7 +904,7 @@ def make_smoke_worker(
         # confirmed live during the first real Windows local-GPU
         # build+smoke-test run. Merge onto the real environment instead.
         merged_env = {**os.environ, **environment} if environment is not None else None
-        completed = subprocess.run(
+        completed = run_logged(
             argv,
             capture_output=True,
             text=True,

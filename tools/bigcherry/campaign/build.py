@@ -28,6 +28,7 @@ import uuid
 from pathlib import Path
 from typing import Any, Callable
 
+from ..core.process import run_logged
 from . import source as campaign_source
 from ..core import config as campaign_config
 from ..core import engines, paths
@@ -181,7 +182,7 @@ def _resolve_compiler_path(
 
 def _version_probe(argv: list[str]) -> str | None:
     try:
-        completed = subprocess.run(
+        completed = run_logged(
             argv, capture_output=True, text=True, check=True, timeout=10
         )
     except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
@@ -263,7 +264,7 @@ def rocm_identity(rocm_paths: tuple[tuple[str, str], ...]) -> dict[str, str]:
 
 
 def _default_runner(args: list[str], cwd: Path) -> None:
-    subprocess.run(args, cwd=cwd, check=True)
+    run_logged(args, cwd=cwd, check=True)
 
 
 def _backend_configure_options(
@@ -486,7 +487,7 @@ def _verify_by_rematerialization(
         # never raises on a directory that's already gone, so this cleanup
         # can never itself fail regardless of how far materialize() got.
         shutil.rmtree(scratch_dir, ignore_errors=True)
-        subprocess.run(
+        run_logged(
             ["git", "worktree", "prune"], cwd=context.upstream_repo, check=False,
             capture_output=True,
         )
@@ -825,7 +826,7 @@ def _render_build_patch_doc_best_effort(
         from ..patch import docs as patch_docs
 
         bigcherry_revision = "unknown"
-        rev_result = subprocess.run(
+        rev_result = run_logged(
             ["git", "-C", str(context.project_root), "rev-parse", "HEAD"],
             capture_output=True, text=True,
         )

@@ -21,6 +21,28 @@ not just runtime-smoke) can hit the same class of Windows loader error.
 
 from __future__ import annotations
 
+import subprocess
+from contextvars import ContextVar
+
+# The build boundary registers sinks; captured child output stays off console.
+output_logs: ContextVar[tuple] = ContextVar("process_output_logs", default=())
+
+
+def run_logged(*args, **kwargs):
+    """Run a child and persist captured output as well as inherited output."""
+    try:
+        result = subprocess.run(*args, **kwargs)
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+        for sink in output_logs.get():
+            sink.write(exc.stdout or b"")
+            sink.write(exc.stderr or b"")
+        raise
+    for sink in output_logs.get():
+        sink.write(result.stdout or b"")
+        sink.write(result.stderr or b"")
+    return result
+
+
 # NTSTATUS values worth naming in a native-binary build/smoke context.
 # Not an exhaustive NTSTATUS table -- just the ones plausible here: loader
 # failures (DLL_NOT_FOUND, ENTRYPOINT_NOT_FOUND, DLL_INIT_FAILED, INVALID_

@@ -21,7 +21,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/lab-env.sh"
 OUT=$BC_WORK_ROOT/runs/rad20-helper-kill-$(date +%m%d%H%M); mkdir -p $OUT
 git log -1 --format='commit %H %s' > $OUT/summary.txt
 source tools/lab/radiance/lab-build.sh
-B=$(rad_build $OUT/build.log) || exit 1
+B=$(rad_build) || exit 1
 echo "build $B" >> $OUT/summary.txt
 L=tools/lab/radiance/launch-flashnext-best.sh
 RUN=$BC_WORK_ROOT/flashnext   # the launcher's pid files and logs

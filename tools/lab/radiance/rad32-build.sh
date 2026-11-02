@@ -9,11 +9,10 @@ source "$(dirname "${BASH_SOURCE[0]}")/lab-build.sh"
 OUT=$BC_WORK_ROOT/runs/rad32-build-$(date +%m%d%H%M); mkdir -p "$OUT"
 git log -1 --format='commit %H %s' | tee "$OUT/summary.txt"
 grep -E '^pinned' engines/radiance/recipes.toml | tee -a "$OUT/summary.txt"
-if B=$(rad_build "$OUT/build.log"); then
+if B=$(rad_build); then
     echo "BUILD_OK $B" | tee -a "$OUT/summary.txt"
     ls "$B/bin/radiance" "$B/radiance_home/helpers/r3_moe_worker" | tee -a "$OUT/summary.txt"
 else
-    echo "BUILD_FAILED (log $OUT/build.log)" | tee -a "$OUT/summary.txt"
-    grep -E ' error:|FAILED|error ' "$OUT/build.log" | sort -u | head -20
+    echo "BUILD_FAILED (see persistent build logs above)" | tee -a "$OUT/summary.txt"
     exit 1
 fi

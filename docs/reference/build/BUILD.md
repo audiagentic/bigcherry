@@ -4,6 +4,58 @@ Environment setup and build commands for bigcherry recipes and manual configurat
 
 See also: [TEST.md](../testing/TEST.md) — testing, tuning workflows, and coverage.
 
+## Persistent build logs (BRBC04)
+
+Every `bigcherry build` invocation gets an exclusive directory below the
+configured work root. Supply `--run-id` or use the generated UTC timestamp
+plus random suffix. Reusing an explicit ID is rejected; existing diagnostics
+are never overwritten. IDs may contain letters, digits, dot, underscore
+and hyphen; `unspecified` is rejected.
+
+```text
+<work-root>/
+  build-logs/<run-id>/
+    build.log
+    summary.json
+    <portable-lane-name>-<digest>/
+      materialize.log
+      generate.log
+      configure.log
+      build.log
+      runtime-smoke.log
+      lane.log
+  build-advisories/<run-id>/advisories.json
+  builds/<source-slice-id>/<build-plan-id>/build-logs/<run-id>/
+    ...copy of the invocation logs and summary...
+```
+
+Stage files exist for executed stages. Stock lanes omit generation; a reused
+build omits configure. `lane.log` records errors outside a scheduled stage
+and the final lane exception. Configure runs inside the build worker, so its
+output and exceptions also appear in that lane's `build.log`. Runtime component
+configure/compile/install output belongs to the build log.
+
+The invocation log tees existing console output. Captured child output
+(including runtime-smoke stdout/stderr) and full chained worker tracebacks
+are persisted without adding them to the console. Failure lines name both
+the invocation log and failed stage logs. The command prints
+`build: logs=<directory>`. Lab `rad_build` prints the location on stderr
+and keeps stdout as the selected build directory.
+
+`summary.json` records invocation/lane status and duration, original lane
+IDs, build-plan IDs and build directories when resolved, and each executed
+stage's status, duration, log path and first error diagnostic. Unresolved
+identity fields are null. It is refreshed at stage/lane boundaries,
+including failure, and finalized before successful build-directory copies
+are made. Copies survive independent deletion of central logs.
+
+Retention follows the current work-root cleaner's conservative policy:
+`bigcherry clean --verbose` inventories each `build-logs/<run-id>` as protected
+diagnostics, retained indefinitely until explicitly removed. Automatic
+age-based deletion is not implemented; the cleaner remains read-only.
+Copies in build directories follow those directories' retention. The
+build-run-cleanup group currently provides no destructive log GC.
+
 ## Start here: production end-to-end comparisons
 
 Use the campaign engine and server test bench, not the manual CMake or

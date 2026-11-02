@@ -18,7 +18,7 @@ XTX_DEVICES=""; for b in $XTX_BDFS; do XTX_DEVICES="$XTX_DEVICES $(rocr "$b")"; 
 export XTX_DEVICES=${XTX_DEVICES# }
 [[ "$R9700_ROCR" =~ ^[0-9]+$ && "$XTX_DEVICES" =~ ^[0-9]+(\ [0-9]+)*$ ]] || { echo "device lookup failed: '$R9700_ROCR' '$XTX_DEVICES'"; exit 1; }
 build() {   # $1 label, $2 checkout (built, or reused when its radiance source tree matches: lab-build.sh)
-    (cd "$2" && source "$OLDPWD/tools/lab/radiance/lab-build.sh" && rad_build $OUT/build-$1.log)
+    (cd "$2" && source "$OLDPWD/tools/lab/radiance/lab-build.sh" && rad_build)
 }
 # The baseline arm: a detached origin/main worktree under the work root for this run only, removed on exit.
 MAIN_WT=$BC_WORK_ROOT/worktrees/rad20-ab-main-$(basename $OUT)

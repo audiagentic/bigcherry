@@ -182,7 +182,7 @@ def evaluate_build_result(results: Mapping[str, Any]) -> RunEvaluation:
         if isinstance(result, Exception):
             findings.append(RunAdvisory(
                 "BUILD_FAILURE", f"Build lane {lane!s} failed.",
-                ("Inspect the worker exception before consuming any downstream artifact.",), "stop"
+                ("Inspect the exception and stage logs named in the build failure before consuming any downstream artifact.",), "stop"
             ))
             continue
         if not getattr(result, "build_plan_id", None):

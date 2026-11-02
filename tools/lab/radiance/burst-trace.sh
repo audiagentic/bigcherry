@@ -10,6 +10,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/lab-env.sh"
 OUT=$BC_WORK_ROOT/runs/rad20-burst-trace-$(date +%m%d%H%M); mkdir -p $OUT
 PYTHONPATH=tools timeout 5400 python3 -m bigcherry build --lane radiance-lab:stock:linux-radiance \
     --experiment moe-remote-handoff > $OUT/build.log 2>&1
+    grep '^build: logs=' $OUT/build.log >&2 || true
 plan=$(grep -oE 'ok build_plan_id=[0-9a-f]+' $OUT/build.log | tail -1 | cut -d= -f2)
 [ -n "$plan" ] || { grep -E ' error:|FAILED' $OUT/build.log | sort -u | head; exit 1; }
 B=$(ls -d $BC_WORK_ROOT/builds/*/$plan)
