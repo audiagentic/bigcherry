@@ -45,6 +45,7 @@ jobs:
           engines/**
           config/**
           docs/reference/**
+          docs/design/serving-manifest-v1/**
           .github/workflows/core-offline-validation.yml
           .github/workflows/pr-ci.yml
           .github/scripts/changed_paths.py
