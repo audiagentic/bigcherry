@@ -4,6 +4,10 @@
 #include "rad_format.h"
 
 #include <algorithm>
+#include <cerrno>
+#include <cstring>
+#include <spawn.h>
+#include <sys/wait.h>
 #include <chrono>
 #include <cstdio>
 #include <ctime>
@@ -12,6 +16,8 @@
 #include <sstream>
 #include <stdexcept>
 #include <vector>
+
+extern "C" char** environ;
 
 namespace bc::serving {
 namespace {
@@ -126,6 +132,49 @@ CachedPlan plan_cache_store(const fs::path& dir, const Json& key_inputs, const J
     }
     fs::rename(tmp, file);
     return c;
+}
+
+Json measure_engine_plan(const fs::path& binary, const fs::path& manifest, uint32_t engine_card_ordinal,
+                         const fs::path& out, double* wall_seconds) {
+    if (!fs::is_regular_file(binary)) throw std::runtime_error("engine binary " + binary.string() + " is not a file");
+    std::error_code ec;
+    fs::remove(out, ec);
+    // The child's environment: this one, less any device selection, plus the engine card alone.
+    std::vector<std::string> env;
+    for (char** e = environ; e && *e; ++e) {
+        const std::string kv = *e;
+        if (kv.rfind("ROCR_VISIBLE_DEVICES=", 0) == 0 || kv.rfind("HIP_VISIBLE_DEVICES=", 0) == 0 ||
+            kv.rfind("CUDA_VISIBLE_DEVICES=", 0) == 0 || kv.rfind("GPU_DEVICE_ORDINAL=", 0) == 0)
+            continue;
+        env.push_back(kv);
+    }
+    env.push_back("ROCR_VISIBLE_DEVICES=" + std::to_string(engine_card_ordinal));
+    env.push_back("HIP_VISIBLE_DEVICES=0");
+    std::vector<std::string> args = {binary.string(), "--manifest", manifest.string(), "--role", "engine",
+                                     "--plan-memory", out.string()};
+    std::vector<char*> argv, envp;
+    for (auto& a : args) argv.push_back(a.data());
+    argv.push_back(nullptr);
+    for (auto& e : env) envp.push_back(e.data());
+    envp.push_back(nullptr);
+    const auto t0 = std::chrono::steady_clock::now();
+    pid_t pid = 0;
+    if (const int rc = ::posix_spawn(&pid, argv[0], nullptr, nullptr, argv.data(), envp.data()); rc != 0)
+        throw std::runtime_error("cannot start " + binary.string() + ": " + std::strerror(rc));
+    int status = 0;
+    while (::waitpid(pid, &status, 0) < 0)
+        if (errno != EINTR) throw std::runtime_error("waiting for " + binary.string() + ": " + std::strerror(errno));
+    if (wall_seconds)
+        *wall_seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+    if (!WIFEXITED(status) || WEXITSTATUS(status) != 0)
+        throw std::runtime_error(binary.string() + " --plan-memory " +
+                                 (WIFEXITED(status) ? "exited " + std::to_string(WEXITSTATUS(status))
+                                                    : "was killed by signal " + std::to_string(WTERMSIG(status))) +
+                                 "; its log says why");
+    const Json plan = Json::parse(read_file(out), nullptr, false);
+    if (plan.is_discarded()) throw std::runtime_error(out.string() + ": the engine's plan is not JSON");
+    (void)parse_engine_plan(plan);
+    return plan;
 }
 
 }  // namespace bc::serving

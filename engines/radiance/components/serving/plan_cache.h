@@ -42,4 +42,12 @@ std::optional<CachedPlan> plan_cache_lookup(const std::filesystem::path& dir, co
 CachedPlan plan_cache_store(const std::filesystem::path& dir, const nlohmann::json& key_inputs,
                             const nlohmann::json& plan_json);
 
+/* Measures the plan: runs `binary --manifest MANIFEST --role engine --plan-memory OUT` with only the engine card
+ * visible (ROCR_VISIBLE_DEVICES = its HIP ordinal, HIP_VISIBLE_DEVICES = 0, as a launch does), waits for it and returns
+ * the JSON it wrote, checked by the strict parse. The engine runs its real bring-up up to its memory plan on that card,
+ * so the caller holds the gpu lease; this never takes one. `wall_seconds` is set to the engine's run time. */
+nlohmann::json measure_engine_plan(const std::filesystem::path& binary, const std::filesystem::path& manifest,
+                                   uint32_t engine_card_ordinal, const std::filesystem::path& out,
+                                   double* wall_seconds);
+
 }  // namespace bc::serving

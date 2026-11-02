@@ -1,7 +1,9 @@
 #include "serving.h"
+#include "plan_cache.h"
 
 #include <filesystem>
 #include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <stdexcept>
 #include <string>
@@ -20,7 +22,10 @@ void usage() {
                  "  --explain [--json] [--site FILE] [--profile FILE] [--set key=value]\n"
                  "  --dry-run --out manifest.json [--site FILE] [--profile FILE] [--set key=value]\n"
                  "  --calibration FILE  (with --validate, --explain, --dry-run) a calibration cache over the seeds\n"
-                 "No process is started by these commands.\n";
+                 "  --plan-memory --plan-cache DIR --engine-binary PATH [--site FILE] [--profile FILE] [--set key=value]\n"
+                 "      measures the engine's memory plan on the engine card (radiance --plan-memory) unless DIR already\n"
+                 "      holds it for this configuration; run it under the gpu lease (agent-lease acquire gpu -- ...)\n"
+                 "No process is started by these commands, except --plan-memory on a cache miss.\n";
 }
 
 void explain(const bc::serving::Resolved& result) {
@@ -48,7 +53,8 @@ int main(int argc, char** argv) {
     try {
         Options opts;
         bool detection = false, schema = false, validation = false;
-        bool explanation = false, dry = false, json = false;
+        bool explanation = false, dry = false, json = false, plan_memory = false;
+        fs::path plan_cache, engine_binary;
         fs::path out;
         std::vector<fs::path> positional;
         for (int i = 1; i < argc; ++i) {
@@ -69,6 +75,9 @@ int main(int argc, char** argv) {
             else if (arg == "--site") opts.site = need_arg("--site");
             else if (arg == "--profile") opts.profile = need_arg("--profile");
             else if (arg == "--calibration") opts.calibration_cache = need_arg("--calibration");
+            else if (arg == "--plan-memory") plan_memory = true;
+            else if (arg == "--plan-cache") plan_cache = need_arg("--plan-cache");
+            else if (arg == "--engine-binary") engine_binary = need_arg("--engine-binary");
             else if (arg == "--set") opts.sets.push_back(need_arg("--set"));
             else if (arg == "--out") out = need_arg("--out");
             else if (!arg.empty() && arg.front() == '-')
@@ -76,7 +85,9 @@ int main(int argc, char** argv) {
             else positional.push_back(arg);
         }
         const int modes = int(detection) + int(schema) + int(validation) +
-                          int(explanation) + int(dry);
+                          int(explanation) + int(dry) + int(plan_memory);
+        if (!plan_memory && (!plan_cache.empty() || !engine_binary.empty()))
+            throw std::runtime_error("--plan-cache and --engine-binary go with --plan-memory");
         if (modes != 1) throw std::runtime_error("choose one mode (see --help)");
         if (schema) {
             if (!positional.empty()) throw std::runtime_error("--schema takes no files");
@@ -114,6 +125,44 @@ int main(int argc, char** argv) {
             if (positional.size() == 2) opts.profile = positional[1];
         } else if (!positional.empty()) {
             throw std::runtime_error("unexpected file; use --site or --profile");
+        }
+        if (plan_memory) {
+            if (!positional.empty() || !out.empty())
+                throw std::runtime_error("--plan-memory takes --site, --profile, --set and --calibration only");
+            if (plan_cache.empty() || engine_binary.empty())
+                throw std::runtime_error("--plan-memory needs --plan-cache DIR and --engine-binary PATH");
+            const auto facts = bc::serving::detect(opts.sys_root);
+            const auto r = bc::serving::resolve(opts, facts);
+            const auto& v = r.values;
+            const fs::path home = v.at("engine").at("radiance_home").get<std::string>();
+            const auto key_inputs = bc::serving::plan_key_inputs(
+                v, facts, bc::serving::container_identity(v.at("engine").at("model").get<std::string>()),
+                bc::serving::engine_identity(engine_binary, home));
+            if (const auto hit = bc::serving::plan_cache_lookup(plan_cache, key_inputs)) {
+                std::cout << "plan: cached " << hit->key << " (measured " << hit->measured_at << ")\n";
+                return 0;
+            }
+            const std::string card = v.at("layout").at("engine_card").get<std::string>();
+            uint32_t ordinal = UINT32_MAX;
+            for (const auto& g : facts.at("gpus"))
+                if (g.at("bdf") == card) ordinal = g.at("hip_ordinal").get<uint32_t>();
+            if (ordinal == UINT32_MAX) throw std::runtime_error("the engine card " + card + " is not detected");
+            fs::create_directories(plan_cache);
+            const std::string key = bc::serving::plan_key(key_inputs);
+            const fs::path manifest = plan_cache / (key + ".manifest.json"), measured = plan_cache / (key + ".plan.json");
+            {
+                std::ofstream m(manifest, std::ios::binary | std::ios::trunc);
+                m << r.manifest.dump(2) << '\n';
+                if (!m) throw std::runtime_error("cannot write " + manifest.string());
+            }
+            double wall = 0;
+            const auto plan = bc::serving::measure_engine_plan(engine_binary, manifest, ordinal, measured, &wall);
+            const auto stored = bc::serving::plan_cache_store(plan_cache, key_inputs, plan);
+            fs::remove(manifest);
+            fs::remove(measured);
+            std::cout << "plan: measured " << stored.key << " on " << card << " in " << std::fixed
+                      << std::setprecision(1) << wall << " s\n";
+            return 0;
         }
         if (dry && out.empty()) throw std::runtime_error("--dry-run requires --out");
         if (!dry && !out.empty()) throw std::runtime_error("--out requires --dry-run");
