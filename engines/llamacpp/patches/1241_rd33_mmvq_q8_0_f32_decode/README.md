@@ -1,5 +1,15 @@
 # 1241 (RD33 / AMD-MMV-001): dense Q8_0 single-column decode without activation quantization
 
+## Summary
+
+Adds a defaulted f32_act template parameter to mul_mat_vec_q and a new vec_dot_q8_0_f32 device helper that dequantizes the Q8_0 weight block directly and dot-products it against the original F32 activation (F32 accumulation), skipping the Q8_1 activation-quantization stage entirely; gated to dense (non-MoE), Q8_0, ncols_dst==1, gfx1100, and only when nothing has been forced.
+
+## Outcome
+
+Recorded state: `validated` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 ## Scope
 
 Adds an `f32_act` MMVQ path and `vec_dot_q8_0_f32` helper that dequantizes Q8_0 weights and dots them against the original F32 activation, skipping Q8_1 activation quantization. Eligibility is deliberately narrow: dense/non-MoE Q8_0, `ne1 == 1`, gfx1100/RDNA3_0, and no forced autotune candidate.

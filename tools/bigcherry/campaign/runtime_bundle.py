@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Callable
 
 from ..core import components, engines, paths
+from .build import rocm_configure_options
 
 Runner = Callable[[list[str], Path], None]
 
@@ -61,6 +62,8 @@ def build_runtime(
     if not layout.runtime_home:
         raise RuntimeBundleError(f"engine {engine!r} declares components but no build.runtime-home")
     home = build_dir / layout.runtime_home
+    # Components run the same ROCm lookups as the engine, in their own configure: pin them to the same SDK.
+    rocm_options = rocm_configure_options(layout.rocm_paths)
     prefix = build_dir / "runtime-prefix"
     if prefix.exists():
         shutil.rmtree(prefix)
@@ -71,6 +74,7 @@ def build_runtime(
         options = {key: value.format(**values) for key, value in component.configure}
         for key, value in launcher_options:
             options.setdefault(key, value)
+        options.update(rocm_options)
         options["CMAKE_PREFIX_PATH"] = str(prefix)
         if c_compiler:
             options["CMAKE_C_COMPILER"] = c_compiler

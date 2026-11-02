@@ -1,4 +1,19 @@
-# serving (RSC01 slice 1)
+# serving
+
+## Summary
+
+The `bc_serving` C++ library and `bc-serve` tool provide a strict typed
+TOML loader, hardware detection, configuration validation and a canonical
+serving manifest with provenance.
+
+## Outcome
+
+RSC01's initial schema, loader and `bc-serve` commands are implemented
+and have CPU-only tests. The RSC07 engine manifest entry point has also
+landed, but helper manifest consumption (RSC06) and process supervision
+(RSC02) are not complete. This component alone does not start a server.
+
+## Detail
 
 CPU-only static library `bc_serving` and `bc-serve`, packaged at
 `radiance_home/bin/bc-serve`. One C++ schema and strict TOML loader;

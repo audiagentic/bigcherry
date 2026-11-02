@@ -699,10 +699,11 @@ def _execute_build_phase(
     # static build.options) for GGML_VULKAN/AMDGPU_TARGETS could otherwise
     # produce the SAME build_plan_id while compiling different commands.
     backend = cfg.sources[spec.source_name].backend
+    layout = engines.load(paths.REPO_ROOT, cfg.engine)
     merged_options = dict(platform_cfg.options)
     merged_options.update(dict(build_cfg.options))
     merged_options.update(campaign_build._backend_configure_options(
-        backend, platform_cfg, engines.load(paths.REPO_ROOT, cfg.engine).targets_option))
+        backend, platform_cfg, layout.targets_option, layout.rocm_paths))
 
     # RE30 P0-3 (external review, 2026-08-20): resolve_lane() already
     # enforced patch-set-name/state policy at materialize time, but never
@@ -787,12 +788,12 @@ def _execute_build_phase(
                 [(name, ref.content_hash) for name, ref in input_refs.items()]
                 # RAD01 PR 8b: the engine's runtime (plugin targets, components by content) is part of what a build
                 # produces, so it is part of the build's identity.
-                + [(f"runtime-target:{target}", "") for target in engines.load(paths.REPO_ROOT, cfg.engine).runtime_targets]
+                + [(f"runtime-target:{target}", "") for target in layout.runtime_targets]
                 + [(f"component:{name}", component.content_digest())
                    for name, component in components.load_all(paths.REPO_ROOT, cfg.engine).items()]
             )
         ),
-        toolchain_request=campaign_build.toolchain_request_for_platform(platform_cfg),
+        toolchain_request=campaign_build.toolchain_request_for_platform(platform_cfg, layout.rocm_paths),
         environment=campaign_build.resolve_build_environment(),
     )
 

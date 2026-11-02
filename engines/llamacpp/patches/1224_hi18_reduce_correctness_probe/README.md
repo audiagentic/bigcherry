@@ -1,5 +1,15 @@
 # 1224 (HI18/GP04): standalone SPLIT_REDUCE correctness probe, test-hip-reduce
 
+## Summary
+
+Wires a standalone host executable (source in the overlay) into the build that drives the real production META backend through GGML_HIP_REDUCE_PLAN=auto|rccl|meta with a minimal 2-node graph and reports machine-readable execution facts for tools/bigcherry/reduce_correctness.py.
+
+## Outcome
+
+Recorded state: `validated` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 ## Scope
 
 Wires a standalone host executable (source in the overlay) into the build

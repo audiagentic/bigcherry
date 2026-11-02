@@ -1,5 +1,15 @@
 # 1348_mtp_deferred_catchup
 
+## Summary
+
+Prompt-only MTP catch-up is deferred by one target chunk. After target chunk k finishes, its unmasked NextN rows and token metadata are copied into one of two MTP-owned host snapshots. The draft decode is not run yet. The server submits target chunk k+1 first; then catch-up k runs on the same CPU thread while k+1 is executing on the target GPUs.
+
+## Outcome
+
+Recorded state: `validated` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 QFP31 implementation against llama.cpp b11474 (`b9acf138a1e2`).
 
 The measured prompt path was ~354 ms per 512-token target chunk without the MTP draft and ~437 ms with it. Native MTP synchronizes the target, then performs ~83 ms of draft catch-up before the next target chunk is submitted. This patch preserves the target synchronization needed to copy NextN safely, but defers the draft decode: target k+1 is submitted before catch-up k is run.

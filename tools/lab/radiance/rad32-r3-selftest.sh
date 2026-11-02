@@ -13,13 +13,16 @@ OUT=$BC_WORK_ROOT/runs/rad32-r3-selftest-$(date +%m%d%H%M); mkdir -p "$OUT"
 git log -1 --format='commit %H %s' | tee "$OUT/summary.txt"
 B=$(rad_build "$OUT/build.log") || { echo "BUILD_FAILED"; exit 1; }
 # The build's own libr3 tree names the (since removed) worktree it was configured from, so configure a fresh tree from
-# this checkout with that build's settings (compilers, engine prefix, materialised engine source, targets).
+# this checkout with that build's settings (compilers, engine prefix, materialised engine source, targets, and the
+# ROCm SDK paths the build pinned).
 C="$B/components/libr3/CMakeCache.txt"
 opt() { grep -E "^$1:" "$C" | head -1 | cut -d= -f2-; }
 cmake -S engines/radiance/components/libr3 -B "$OUT/libr3" -G Ninja \
     -DCMAKE_CXX_COMPILER="$(opt CMAKE_CXX_COMPILER)" -DCMAKE_C_COMPILER="$(opt CMAKE_C_COMPILER)" \
     -DCMAKE_PREFIX_PATH="$(opt CMAKE_PREFIX_PATH)" -DRADIANCE_SRC="$(opt RADIANCE_SRC)" \
-    -DR3_NATIVE="$(opt R3_NATIVE)" -DR3_TARGETS="$(opt R3_TARGETS)" > "$OUT/selftest-build.log" 2>&1 \
+    -DR3_NATIVE="$(opt R3_NATIVE)" -DR3_TARGETS="$(opt R3_TARGETS)" \
+    -DRAD_HIPCC="$(opt RAD_HIPCC)" -DCMAKE_HIP_COMPILER="$(opt CMAKE_HIP_COMPILER)" \
+    -DRAD_HIP_RUNTIME="$(opt RAD_HIP_RUNTIME)" -DRAD_HSA_RUNTIME="$(opt RAD_HSA_RUNTIME)" > "$OUT/selftest-build.log" 2>&1 \
   && cmake --build "$OUT/libr3" --target r3_selftest >> "$OUT/selftest-build.log" 2>&1 \
     || { grep -E 'error|Error' "$OUT/selftest-build.log" | sort -u | head -20; exit 1; }
 SELF=$(find "$OUT/libr3" -maxdepth 2 -name r3_selftest -type f | head -1)

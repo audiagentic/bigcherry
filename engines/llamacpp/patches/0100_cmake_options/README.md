@@ -1,5 +1,15 @@
 # 0100 framework validation
 
+## Summary
+
+Adds GGML_HIP_DISPATCH_REPLAY and related build options to ggml/CMakeLists.txt (with configure-time validation) and turns them into HIP-backend compile definitions plus the production dispatch/replay source list in ggml/src/ggml-hip/CMakeLists.txt.
+
+## Outcome
+
+Recorded state: `validated` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 PA27 narrowed this package to the replay/serving half of the former
 0100_cmake_options; the campaign tune/record/coverage half moved to
 0110_campaign_tune_record_build. HI168 owns the diagnostic-isolation review

@@ -1,5 +1,15 @@
 # 1250_nro01_allreduce_q8_wire
 
+## Summary
+
+Extends `1252_nro03_allreduce_p2p_provider` with Q8_0 transport using the codec and finish primitives owned by `1272_ar_host_compressed_wire`. When P2P is available, 1272's Q8 copy-engine route uses peer copies; otherwise it retains 1272's host-staging fallback. PNRO02 optionally folds a following mirrored F32 ADD into the same shared finish.
+
+## Outcome
+
+Recorded state: `evaluated` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 ## 2026-10-14 b11552 qualification (BCOP212)
 **Evaluated, not adopted; no production re-anchor.** Requires rejected 1252 P2P and untested 1272 Q8 codec; host Q8 fallback is unqualified. Residual fusion is Q8-only, two-rank and >=1 MiB Q8 copy-engine threshold. At width 5120 the first eligible whole-token batch is 193 tokens; plain decode/MTP <=6 cannot enter. Three-rank 1291 CPU-root has no 1250 fused hook. PNRO02 owns future exact-F32 epilogue, PGC11 wire. A trace marker is not a numerical or performance proof.
 

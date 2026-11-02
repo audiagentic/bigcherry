@@ -1,5 +1,15 @@
 # 1331_alloc_peak_live
 
+## Summary
+
+With `BIGCHERRY_ALLOC_PEAK=N`, the graph allocator tracks live bytes per compute buffer and, at each buffer's peak, logs the node being allocated, the N largest tensors live at that moment and live bytes per op (`BIGCHERRY_ALLOC_PEAK ...` lines at sched_reserve).
+
+## Outcome
+
+Recorded state: `validated` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 ## Promotion record
 
 Promotion record (BPB01 lightweight promotion tier, pin b11474, dev 2026-10-08). Diagnostic-only neutral enabler; it remains off unless its environment variable is set.

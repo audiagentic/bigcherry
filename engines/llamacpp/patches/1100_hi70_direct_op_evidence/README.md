@@ -1,5 +1,15 @@
 # 1100_hi70_direct_op_evidence framework validation
 
+## Summary
+
+Adds a small, deterministic, CPU-referenceable test_mul_mat corpus to test-backend-ops that constructs the exact tensor shapes (fallback MMQ M%128!=0, and MMF f16 batch widths 1-16) that well-formed production models structurally never produce.
+
+## Outcome
+
+Recorded state: `validated` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 Adds a small, deterministic `test_mul_mat` corpus to `test-backend-ops` --
 four M=127,K=256,N=128 quant cases (MMQ fallback: row count not a multiple
 of 128) plus an exhaustive F16 N=1..16 sweep (MMF narrow-batch widths) --

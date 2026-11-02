@@ -1,5 +1,15 @@
 # 1307_q81_activation_cache_mmvq — merged Q8_1 activation cache mechanism
 
+## Summary
+
+Single package for the Q8_1 activation-cache mechanism: per-context stable cache foundation, MMVQ lookup/publish, RMSNorm+MUL Q8_1 producer, plain/gated activation producer, hyper-connection producer, and fused unary*MUL producer. The former package IDs 1235, 1309, 1310, 1311 and 1312 are retired into this package; runtime flags and activation markers are unchanged.
+
+## Outcome
+
+Recorded state: `validated` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 ## PA44-E merge record
 
 Packaging-only merge. 1307 now owns the former 1235 foundation plus 1309/1310/1311/1312 producers. All runtime off-switches, emitted source edits, activation markers, and existing evidence are retained. Retired IDs are not selectable packages after this slice.
@@ -409,4 +419,3 @@ promoted base (A) vs base + Flash-Next set (B), `tools/lab/flash-next/queue-p27b
 
 Greedy text identical between A and B at both depths. 1303 fails closed when BIGCHERRY_ATTN_TS is set for a
 non-qwen4exp model (observed on the first 27B attempt), so the flag cannot silently misplace another model's KV.
-

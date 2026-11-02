@@ -1,5 +1,15 @@
 # 1350_mmq_few_tile_streamk
 
+## Summary
+
+Compiles a second specialization of llama.cpp b11474's existing MMQ Stream-K kernel/fixup path.
+
+## Outcome
+
+Recorded state: `validated` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 QFP37 implementation against llama.cpp b11474 (`b9acf138a1e2`).
 
 b11474 already has the Stream-K MMQ algorithm and deterministic fixup. This package only compiles a forced specialization and narrowly selects it for ordinary few-tile Q8_0 prefill on qualified gfx1100/gfx1201 shapes. MUL_MAT_ID/MoE remains on the validated compact-grid path.

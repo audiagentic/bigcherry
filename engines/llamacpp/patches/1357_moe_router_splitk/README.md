@@ -1,5 +1,15 @@
 # 1357_moe_router_splitk
 
+## Summary
+
+The MoE router matmul (F32 weight `[n_embd, n_expert]` against a chunk of tokens, once per layer) runs through a BigCherry split-K GEMM instead of rocBLAS SGEMM: K is cut into 8 parts, one workgroup per 64 x 64 output tile and part, and a second kernel adds the parts in ascending order. Off by default; `BIGCHERRY_MOE_ROUTER_SPLITK=1` turns it on.
+
+## Outcome
+
+Recorded state: `validated` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 Validated and profile-promoted on 2026-10-10 at pin b11474 (see `releases/evidence/1357_moe_router_splitk-promotion.md`); flag remains default-off and is enabled only by the Flash-Next runtime profile. Mechanism is in SUMMARY.md: the marked MoE router matmul runs through a split-K F32 GEMM with a
 **Status: validated (2026-10-10), included in validated-enhancements and enabled by the Flash-Next runtime profile.** Mechanism is in SUMMARY.md: the marked MoE router matmul runs through a split-K F32 GEMM with a
 fixed-order reduction instead of rocBLAS SGEMM. Off by default; `BIGCHERRY_MOE_ROUTER_SPLITK=1` turns it on.

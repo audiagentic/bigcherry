@@ -1,5 +1,15 @@
 # HI85 heterogeneous-architecture guard
 
+## Summary
+
+Adds `ggml_backend_cuda_comm_rccl_admission_ok()` -- a shared, ordinal-independent admission check queried once per device via the real HIP runtime attribute `hipDeviceAttributeHostNativeAtomicSupported` -- and calls it before `ncclCommInitAll` in `ggml_backend_cuda_comm_init_nccl()`, aborting with a clear, named `GGML_ABORT` (not the uncatchable HIP SIGABRT the crash would otherwise produce) when any participating device lacks PCIe AtomicOps completion capability.
+
+## Outcome
+
+Recorded state: `validated` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 This package contains the optional NCCL/RCCL heterogeneous-architecture
 fail-closed guard (HI85). The durable contract is: mixed-architecture
 communicator initialization must reject before launch; homogeneous and

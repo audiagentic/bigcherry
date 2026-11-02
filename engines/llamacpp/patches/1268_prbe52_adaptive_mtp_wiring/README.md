@@ -1,5 +1,15 @@
 # 1268 PRBE52 adaptive MTP wiring
 
+## Summary
+
+Evaluated runtime wiring for 1255. Default remains fixed-depth: `n_min_adaptive=0` disables the controller.
+
+## Outcome
+
+Recorded state: `rejected` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 Evaluated runtime wiring for 1255. Default remains fixed-depth: `n_min_adaptive=0` disables the controller.
 
 ## Composition

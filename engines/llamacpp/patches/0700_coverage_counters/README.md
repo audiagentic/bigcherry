@@ -1,5 +1,15 @@
 # 0700 framework validation
 
+## Summary
+
+Adds counters at every real family entry point (not just the dense selector) to measure what fraction of matmul launches actually reach measured dispatch, since the graph optimizer calls MMVQ/MMVF directly for fused patterns, bypassing the dense selector.
+
+## Outcome
+
+Recorded state: `validated` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 HI168 owns this package's diagnostic-isolation review. This local framework
 adapter has no Experiment Contract: it checks emitted instrumentation, not a
 claimed kernel speedup. Historical `validated` state is not current qualification.

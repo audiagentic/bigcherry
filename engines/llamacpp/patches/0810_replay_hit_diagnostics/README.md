@@ -1,5 +1,15 @@
 # 0810_replay_hit_diagnostics framework validation
 
+## Summary
+
+Gates a hit-recorder and aggregated JSONL hit log behind GGML_HIP_REPLAY_DIAGNOSTICS/GGML_HIP_DISPATCH_HIT_LOG so production replay builds compile out the diagnostics branch and its synchronization cost entirely.
+
+## Outcome
+
+Recorded state: `validated` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 Adds the opt-in `GGML_HIP_REPLAY_DIAGNOSTICS` build option and the hit
 recorder/aggregated-JSONL-log plumbing it gates (via
 `GGML_HIP_DISPATCH_HIT_LOG`). Production replay builds do not enable this

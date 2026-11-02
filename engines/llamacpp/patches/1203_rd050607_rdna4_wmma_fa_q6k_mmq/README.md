@@ -1,5 +1,15 @@
 # 1203 (RD05/RD06/RD07): RDNA4 WMMA flash-attn + Q6_K mmq prefill performance
 
+## Summary
+
+Fixes a head-256 WMMA flash-attn combine race and a tile_Q reuse race, tunes and enables the WMMA flash-attn path up to head 576 on RDNA4 by default, and hoists/folds Q6_K mmq sub-scales into the row base-scale to remove an int-mul from the scale chain (fork: Q6_K mmq 40 -> 58 TFLOPS). Also adds op-timing instrumentation and test cases.
+
+## Outcome
+
+Recorded state: `rejected` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 ## Scope
 
 Bundles three related fork changes into one net patch (causally coupled, one

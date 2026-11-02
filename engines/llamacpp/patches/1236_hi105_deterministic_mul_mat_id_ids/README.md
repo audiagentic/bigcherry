@@ -1,5 +1,15 @@
 # 1236_hi105_deterministic_mul_mat_id_ids
 
+## Summary
+
+Fixes test_generic_op's GGML_OP_MUL_MAT_ID branch to use a seeded shuffle (reusing patch 1222's helpers) of the full [0, n_expert) index range truncated to n_expert_used, instead of its own std::random_device engine and a range confined to [0, n_expert_used) that could never select experts from the rest of the pool.
+
+## Outcome
+
+Recorded state: `untested` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 Plan item HI105 (completed). See `SUMMARY.md` for the mechanism.
 
 ## Real hardware evidence (2026-08-24, dev, dual gfx1100)

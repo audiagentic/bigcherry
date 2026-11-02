@@ -1,5 +1,15 @@
 # 1276: adaptive AllReduce over the N=3 root path
 
+## Summary
+
+Composes 0840 adaptive AllReduce with 1244's N=3 root path: reductions below `--allreduce-switch-bytes` use the internal root3 provider and reductions at or above it use RCCL. `BIGCHERRY_AR_ROOT3_ROOT=0|1|2` selects the root rank at pipeline initialization; the default is rank 0.
+
+## Outcome
+
+Recorded state: `untested` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 ## Scope
 
 Composes 0840's adaptive AllReduce with 1244's three-rank root path: reductions below

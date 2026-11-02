@@ -85,7 +85,7 @@ PIN_BLOBS = {
     },
     RAD0009: {
         "core/bc_serving_manifest.h": (None, "4ad1a40"),
-        "core/bc_serving_manifest.cpp": (None, "2297489"),
+        "core/bc_serving_manifest.cpp": (None, "124ef4d"),
         "core/main.cpp": ("4cb6d43", "7feb7b6"),
     },
 }
@@ -521,7 +521,19 @@ class TestServingManifestPatch(unittest.TestCase):
                 capture_output=True, text=True,
             )
             self.assertEqual(build.returncode, 0, build.stderr)
-            run = subprocess.run([str(exe), str(scratch)], capture_output=True, text=True)
+            # radiance's real option table (g_flags at the pin), so the C++ test uses exactly the engine's option names
+            # and value shapes, not a hand-written list
+            config = (FIXTURE / "core" / "config.cpp").read_text(encoding="utf-8")
+            table = config[config.index("static const Flag g_flags[] = {"):]
+            table = table[: table.index("\n};")]
+            rows = re.findall(r'\{\s*"(--?[a-z0-9-]+)",\s*("[^"]*"|nullptr)', table)
+            self.assertGreater(len(rows), 100)
+            options = Path(scratch) / "options.tsv"
+            # config_option_names() leaves out --help, as the engine does (core/config.cpp)
+            options.write_text("".join(f"{n}\t{'-' if a == 'nullptr' else a.strip(chr(34))}\n"
+                                       for n, a in rows if n != "--help"))
+            run = subprocess.run([str(exe), str(scratch), str(test.parent / "bc_serve_dry_run.json"), str(options)],
+                                 capture_output=True, text=True)
             self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
             self.assertIn("ok", run.stdout)
         finally:

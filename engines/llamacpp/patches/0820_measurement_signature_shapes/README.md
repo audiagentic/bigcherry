@@ -1,5 +1,15 @@
 # 0820_measurement_signature_shapes framework validation
 
+## Summary
+
+Stores the canonical signature shape alongside each tuning measurement record.
+
+## Outcome
+
+Recorded state: `superseded` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 Stores the canonical signature JSON shape alongside each tuning measurement
 result, computed once on the cold path (`ggml_hip_signature_json`) and
 serialized into the measurement's JSON output. Downstream tooling needs the
