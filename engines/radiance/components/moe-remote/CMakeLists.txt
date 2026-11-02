@@ -93,4 +93,6 @@ if(BUILD_TESTING)
   target_link_libraries(r3_ticket_replay_test PRIVATE ${RAD_HIP_RUNTIME})
   set_target_properties(r3_ticket_replay_test PROPERTIES HIP_STANDARD 17 HIP_STANDARD_REQUIRED ON)
   add_test(NAME r3_ticket_replay_test COMMAND r3_ticket_replay_test)
+  # Both need a GPU: labelled so the card-free run (bigcherry component-tests) knows they are deliberately not declared.
+  set_tests_properties(r3_route_compact_test r3_ticket_replay_test PROPERTIES LABELS gpu)
 endif()

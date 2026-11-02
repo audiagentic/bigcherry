@@ -10,6 +10,7 @@ or components (llama.cpp) gets nothing here.
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -19,8 +20,10 @@ from ..core import components, engines, paths
 from .build import rocm_configure_options
 
 Runner = Callable[[list[str], Path], None]
-#: (component build tree, ctest -R pattern, cwd) -> the names of the CTest tests registered there that match
-TestLister = Callable[[Path, str, Path], list[str]]
+#: (component build tree, cwd) -> every CTest test registered there, by name, with its labels
+TestLister = Callable[[Path, Path], dict[str, list[str]]]
+#: the CTest label a test that needs a GPU carries; such a test is registered but never declared card-free
+GPU_LABEL = "gpu"
 
 
 def _run(argv: list[str], cwd: Path) -> None:
@@ -102,39 +105,63 @@ def component_test_log(build_dir: Path, name: str) -> Path:
     return component_build_dir(build_dir, name) / "ctest-component-tests.log"
 
 
-def ctest_test_names(tree: Path, pattern: str, cwd: Path) -> list[str]:
-    """The CTest tests registered in ``tree`` whose names match ``pattern`` (ctest --show-only=json-v1)."""
-    done = subprocess.run(["ctest", "--test-dir", str(tree), "--show-only=json-v1", "-R", pattern],
+def ctest_tests(tree: Path, cwd: Path) -> dict[str, list[str]]:
+    """Every CTest test registered in ``tree``, with its labels (ctest --show-only=json-v1)."""
+    done = subprocess.run(["ctest", "--test-dir", str(tree), "--show-only=json-v1"],
                           cwd=cwd, check=True, capture_output=True, text=True)
-    return [test["name"] for test in json.loads(done.stdout).get("tests", [])]
+    tests = {}
+    for test in json.loads(done.stdout).get("tests", []):
+        labels = next((p["value"] for p in test.get("properties", []) if p.get("name") == "LABELS"), [])
+        tests[test["name"]] = list(labels)
+    return tests
 
 
 def run_component_tests(engine: str, *, source_root: Path, build_dir: Path, runner: Runner = _run,
-                        lister: TestLister = ctest_test_names) -> list[str]:
+                        lister: TestLister = ctest_tests) -> list[str]:
     """Build every component's declared test targets (component.toml ``[test] targets``) in its build tree and run
-    exactly those tests with ctest, one log per component. Returns one failure line per component that did not pass,
-    naming the command and its log. The pin-bump gate and PR CI both run this; nothing else runs component tests.
+    exactly those tests with ctest, one log per component. Returns one failure line per component that did not pass.
+    The pin-bump gate and PR CI both run this; nothing else runs component tests.
 
-    Only the declared tests run (``-R`` on their exact names): a tree may register tests that need a GPU and are
-    deliberately not declared. Every declared target must have a registered CTest test of the same name; one without is
-    a failure naming it, checked before anything runs (``--no-tests=error`` alone only catches a pattern matching none)."""
+    Before anything runs, the tree's registered tests must match the declaration exactly: every declared target has a
+    registered CTest test of the same name, and every registered test is either declared or labelled ``gpu`` (it needs a
+    GPU, so it is deliberately not run card-free). Only the declared tests run (``-R`` on their escaped names)."""
     failures = []
     for name, component in sorted(components.load_all(paths.REPO_ROOT, engine).items()):
         if not component.test_targets:
             continue
+        declared = list(component.test_targets)
+        repeated = sorted({t for t in declared if declared.count(t) > 1})
+        if repeated:
+            failures.append(f"{name}: test target(s) {', '.join(repeated)} declared more than once in component.toml")
+            continue
         tree = component_build_dir(build_dir, name)
         log = component_test_log(build_dir, name)
-        pattern = "^(" + "|".join(component.test_targets) + ")$"
+        build = ["cmake", "--build", str(tree), "-j", "--target", *declared]
         try:
-            runner(["cmake", "--build", str(tree), "-j", "--target", *component.test_targets], source_root)
-            registered = set(lister(tree, pattern, source_root))
-            missing = [target for target in component.test_targets if target not in registered]
+            runner(build, source_root)
+        except subprocess.CalledProcessError as exc:
+            failures.append(f"{name}: building the test targets failed (`{' '.join(build)}` exited {exc.returncode}); "
+                            "the build output above says why")
+            continue
+        try:
+            registered = lister(tree, source_root)
+        except subprocess.CalledProcessError as exc:
+            failures.append(f"{name}: listing the CTest tests in {tree} failed (exit {exc.returncode})")
+            continue
+        missing = [t for t in declared if t not in registered]
+        undeclared = sorted(t for t, labels in registered.items() if t not in declared and GPU_LABEL not in labels)
+        if missing or undeclared:
             if missing:
-                failures.append(f"{name}: declared test target(s) {', '.join(missing)} have no CTest test of that name "
-                                f"in {tree} (add_test NAME must equal the target)")
-                continue
+                failures.append(f"{name}: declared test target(s) {', '.join(missing)} have no CTest test of that "
+                                f"name in {tree} (add_test NAME must equal the target)")
+            if undeclared:
+                failures.append(f"{name}: CTest test(s) {', '.join(undeclared)} are registered but neither declared in "
+                                f"component.toml [test] targets nor labelled {GPU_LABEL!r}")
+            continue
+        pattern = "^(" + "|".join(re.escape(t) for t in declared) + ")$"
+        try:
             runner(["ctest", "--test-dir", str(tree), "--output-on-failure", "--no-tests=error", "-R", pattern,
                     "--output-log", str(log)], source_root)
         except subprocess.CalledProcessError as exc:
-            failures.append(f"{name}: `{' '.join(map(str, exc.cmd))}` exited {exc.returncode}; log: {log}")
+            failures.append(f"{name}: the tests failed (ctest exited {exc.returncode}); log: {log}")
     return failures

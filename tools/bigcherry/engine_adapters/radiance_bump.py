@@ -191,7 +191,7 @@ class ComponentGate:
 
 def compile_checks(
     context: ProjectContext, source_dir: Path, workdir: Path, *, platform_name: str | None, runner: Runner = _run,
-    abi_reader: AbiReader = read_plugin_abi, lister: runtime_bundle.TestLister = runtime_bundle.ctest_test_names,
+    abi_reader: AbiReader = read_plugin_abi, lister: runtime_bundle.TestLister = runtime_bundle.ctest_tests,
 ) -> tuple[BumpCheck, ...]:
     gate = ComponentGate(context, source_dir, workdir, runner, abi_reader, platform_name, lister)
     cmake_hint = "install cmake and ninja (Ubuntu/Debian: sudo apt-get install cmake ninja-build) on a host with the ROCm toolchain"

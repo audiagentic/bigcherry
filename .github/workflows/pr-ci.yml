@@ -165,6 +165,8 @@ jobs:
           config/environment.example.toml
           tools/bigcherry/engine_adapters/radiance*.py
           tools/bigcherry/cli/component_tests.py
+          tools/bigcherry/cli/main.py
+          tools/bigcherry/cli/engine_scope.py
           .github/workflows/radiance-build.yml
           .github/workflows/radiance-build-image.yml
           .github/docker/radiance-build/**

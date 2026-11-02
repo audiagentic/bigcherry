@@ -22,6 +22,8 @@ on:
       - 'config/environment.example.toml'
       - 'tools/bigcherry/engine_adapters/radiance*.py'
       - 'tools/bigcherry/cli/component_tests.py'
+      - 'tools/bigcherry/cli/main.py'
+      - 'tools/bigcherry/cli/engine_scope.py'
       - '.github/workflows/radiance-build.yml'
       - '.github/workflows/radiance-build-image.yml'
       - '.github/docker/radiance-build/**'
@@ -106,7 +108,12 @@ jobs:
             test -n "$plan"
             # The card-free component tests, exactly as the pin-bump gate runs them (runtime_bundle.run_component_tests):
             # each component's declared [test] targets, one ctest log per component, named on failure.
-            python3 -m bigcherry --engine radiance component-tests --build "$(ls -d work/builds/*/"$plan")"
+            builds=(work/builds/*/"$plan")
+            if [ "${#builds[@]}" -ne 1 ] || [ ! -d "${builds[0]}" ]; then
+              echo "component-tests: want exactly one build directory for plan $plan, found: ${builds[*]}" >&2
+              exit 1
+            fi
+            python3 -m bigcherry --engine radiance component-tests --build "${builds[0]}"
           '
 
       - name: Component test logs
