@@ -110,12 +110,14 @@ For a memory admission failure:
 ```text
 radiance: config: BC_CFG_ADMISSION_REFUSED (RAD_E_NOMEM, -6)
   spec.plan.engine_memory.expected.vram:
-  live claimable VRAM 31,198,242,808 bytes is less than the
-  planned statics + KV + experts + staging, 31,198,251,000 bytes
-  hint: free the selected engine GPU, remeasure the plan and resolve a new manifest
+  live claimable VRAM 27,293,294,591 bytes is less than the required
+  statics + experts + staging + kv_required, 27,293,294,592 bytes
+  (kv_required 18,907,078,656 bytes: the larger of one full-length
+  session's KV and the calibrated backing floor)
+  hint: free the selected engine GPU, or choose a smaller service intent, and resolve a new manifest
 ```
 
-Those byte amounts illustrate the 8,192-byte free-VRAM sensitivity observed in RSC03; they are not measurements performed while writing this document.
+The byte amounts are the production example's required split (spec §5.2, amendment 5) with a live reading one byte short; they are illustrative, not a measurement.
 
 Every process uses its own executable prefix (`bc-serve`, `radiance`, `r3_moe_worker`) followed by `: config:`. The shared library **never prints** an error while returning it. An adapter must not print and then let a caller print the same failure again. No secrets, entire contents of a calibration file, or large manifest fragments appear in error messages.
 
@@ -140,7 +142,7 @@ Exit 4 is used for a real resource-admission refusal even if the operator could 
 - Bad hash ⇒ `BC_CFG_DIGEST_MISMATCH` / -14 / exit 2.
 - Correctly rehashed invalid owner map ⇒ `BC_CFG_OWNERSHIP_MISMATCH` / -9 / exit 2.
 - Correctly rehashed stable memory-plan drift ⇒ `BC_CFG_PLAN_MISMATCH` / -9 / exit 2.
-- Live claimable VRAM 1 byte short of planned split ⇒ `BC_CFG_ADMISSION_REFUSED` / -6 / exit 4; equality passes.
+- Live claimable VRAM 1 byte short of the required split (statics + experts + stage + kv_required) ⇒ `BC_CFG_ADMISSION_REFUSED` / -6 / exit 4; equality passes; a reading below the old measured split but at or above the required split passes.
 - Missing `helper2` or a nonexistent GPU BDF ⇒ `BC_CFG_UNRESOLVED_REFERENCE` / -17 / exit 2.
 - Invalid `bc_r4d_configure_helper` struct version ⇒ `BC_CFG_ABI_MISMATCH` / -10 / exit 2.
 - Missing manifest file ⇒ `BC_CFG_IO_FAILURE` / -13 / exit 3.

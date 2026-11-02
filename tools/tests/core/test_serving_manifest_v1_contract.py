@@ -85,6 +85,27 @@ class ServingManifestV1ContractTests(unittest.TestCase):
         self.assertNotIn('"balance_speeds"', schema)
         self.assertIn("## 11. Amendments against the review draft", (CONTRACT / "spec.md").read_text(encoding="utf-8"))
 
+    def test_admission_uses_the_required_kv(self) -> None:
+        """§5.2 as amended (§11, amendment 5): live claimable >= statics + experts + stage + kv_required, where
+        kv_required is the larger of one full-length session and the calibrated backing floor of kv_ceiling."""
+        spec = (CONTRACT / "spec.md").read_text(encoding="utf-8")
+        self.assertIn("`live.vram.claimable >= expected.vram.statics + expected.vram.experts + expected.vram.stage + "
+                      "kv_required`", spec)
+        self.assertIn("5. **Admission uses the required KV, not the measured share**", spec)
+        for name in EXAMPLES:
+            with self.subTest(name=name):
+                manifest = _load(name)
+                expected = manifest["spec"]["plan"]["engine_memory"]["expected"]
+                vram = expected["vram"]
+                ppm = next((c["value"] for c in manifest["spec"]["calibration"]
+                            if c["key"] == "kv_backing_floor.fraction_ppm"), 0)
+                kv_required = max(expected["kv_one_session"]["bytes"], -(-vram["kv_ceiling"] * ppm // 1_000_000))
+                required = vram["statics"] + vram["experts"] + vram["stage"] + kv_required
+                # each example is admissible against its own measured plan under the requirement rule
+                self.assertLessEqual(required, vram["claimable"])
+                # the measured split leaves no margin, which is why it is not the admission input
+                self.assertEqual(vram["statics"] + vram["kv"] + vram["experts"] + vram["stage"], vram["claimable"])
+
     def test_schema_and_examples_validate(self) -> None:
         try:
             import jsonschema
