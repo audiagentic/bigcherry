@@ -25,24 +25,44 @@ and host-memory use are being tuned together. BigCherry carries these
 changes as separate components and narrow upstream patches, not as a
 permanent Radiance fork.
 
-## Selected measured results
+## Measured throughput
 
-Qwen3.8-Flash-Next (113.6 GiB container, 512 experts, top-10 routing).
-These are results from the recorded four-card layout, not general hardware
-benchmarks.
+Qwen3.8-Flash-Next, 113.6 GiB (512 experts, top-10 routing). The measured
+system uses an R9700 engine, two RX 7900 XTX helpers and an RX 6900 XT
+helper. Results below are from 31 October–2 November 2026.
 
-| Workload | Earlier configuration | Measured result |
-| --- | --- | --- |
-| Eight sessions, 1.04M prompt tokens in total | R9700 + two XTX helpers: **1,353 tok/s** | Add the RDNA2 helper with row combine: **2,369 tok/s** |
-| New 50K-token prefill after ~1M retained session tokens | No host KV tier: **1,901 tok/s** | 9 GiB host pool + 12 GiB KV tier: **3,165 tok/s** |
-| Six-stream decode, 512-token prompts | Grouped helper GEMM: **55.1–56.3 ms/step** | Packed-f16 W4 GEMV: **45.9–48.5 ms/step** |
-| Fresh-server prefill, roughly 44–49K tokens | — | **3,825–3,837 tok/s** |
+### Prefill
 
-The first row compares layouts; the second isolates retained-session memory
-pressure; the third is decode step latency, not generated tokens per second.
-These measurements were recorded on 1–2 November 2026. See the
-[Flash-Next results and controls](docs/reference/engines/radiance/models/qwen3.8-flash-next.md)
-for run conditions, quality checks and known limits.
+| Workload | Baseline | Best recorded |
+| --- | ---: | ---: |
+| Eight sessions, 1.04M prompt tokens in total | Two XTX helpers: **1,353 tok/s** | Three helpers, chunked combine: **2,513 tok/s** |
+| Eight-session cold prefill after ~1M tokens retained | No host KV tier: **2,499 tok/s** | 12 GiB host KV tier: **2,945 tok/s** |
+| New 50K-token prefill after ~1M tokens retained | No host KV tier: **1,901 tok/s** | 12 GiB host KV tier: **3,165 tok/s** |
+| Fresh-server prefill, ~44K tokens | — | **3,837 tok/s** |
+| Extended context, ~340K tokens | Unchunked combine: **3,089 tok/s** | Chunked combine: **3,397 tok/s** |
+| Extended context, ~650–690K tokens | Unchunked combine: **2,663 tok/s** | Chunked combine: **2,796 tok/s** |
+
+### Multi-stream decode
+
+Aggregate *engine decode* throughput on the four-card layout, using the W4H2
+helper GEMV. The workload uses 512-token prompts, 512 generated tokens and
+three MTP draft tokens.
+
+| Concurrent streams | Engine decode |
+| ---: | ---: |
+| 1 | **144–146 tok/s** |
+| 2 | **176–201 tok/s** |
+| 4 | **249–255 tok/s** |
+| 6 | **330–342 tok/s** |
+
+The prefill figures cover different conditions: cold sessions, retained KV
+state, and extended-context prompts. The eight-session layout comparison
+spans successive improvements rather than a single controlled A/B; the
+~650–690K comparison also uses slightly different prompt lengths. Decode
+throughput depends on draft acceptance and is not the same as step latency
+or per-stream output speed. See the
+[Flash-Next measurements](docs/reference/engines/radiance/models/qwen3.8-flash-next.md)
+for test conditions, quality checks and individual runs.
 
 ## Other work
 
