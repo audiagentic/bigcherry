@@ -142,11 +142,21 @@ Decisions after the hardware run (lead, 2026-11-02):
 - Slice 3's claimable check treats claimable as a live fact. Live claimable must be at least the planned statics + kv + experts + stage, with no tolerance constant. The run showed free VRAM moving by 8192 bytes between two starts. The other consumers stay exact.
 - calibration.checkpoint_share is seeded tier_first, with calibration.host_kv_tier.target_mib = 12288 for flashnext-4gpu. This reproduces today's launch, which gives 43 snapshots (4.72 GiB) of a want of 72 with the 12 GiB tier. Want and floor stay visible in explain. Refit criterion: RHP12's retained-session cohort decides whether to move toward want.
 
+
+Owner decision (2026-11-02, via bigcherry-1): v1 goes ahead as proposed in GPT review req_main_c69d1519f282, with curated engine options, a manifest that owns the initial owner map, and a one-release cutover, refined as it goes. This settles item 6: the engine plans from the manifest's owned sets, and the live shm only verifies them. RSC03's pieces (calibration store, host ledger, owner map via bc_experts, measured-plan cache, rad0011 --plan-memory and bc_plan_memory_check) are inputs to v1's plan section. The wiring list above (items 1 to 6) is the migration's checklist for RSC03.
+
+
+v1 contract decisions affecting RSC03 (lead, 2026-11-02; v1 slice 1 design approved):
+- Manifests carry integers only. Fractions use fixed-scale integers with the scale in the field name (e.g. calibration fractions as *_ppm, balance speeds as *_milli). Calibration evidence keeps decimals only in its free-text string. The calibration seeds' fractional values (host_reserve.total_fraction, kv_backing_floor.fraction) move to that form in v1.
+- ServingInputV1 has one `constraints` namespace holding site-only, tighten-only caps (max) and floors (min). This replaces today's hard_caps and hard_floors tables.
+- The engine binary is not an input: bc-serve resolves it relative to its own installed location (radiance_home/../bin/radiance), covered by the package identity. The plan cache directory is derived from the work root in site config (<work-root>/plan-cache). Neither is a CLI flag in v1, so today's `bc-serve --plan-memory --plan-cache DIR --engine-binary PATH` flags (and wiring list item 1's Options.plan_cache / --engine-binary) are replaced at the v1 cutover.
+
 ## Change Log
 
 - 2026-11-02T00:53:06.703369+00:00 (created-by): Created by agent
 
 ## Ledger-events
+
 
 - chg_20261102_005338_planning-one-serve-command_5259
 - 2026-11-02T00:53:52.338745+00:00 (updated-by): Updated: section:ledger-events
@@ -161,3 +171,7 @@ Decisions after the hardware run (lead, 2026-11-02):
 - 2026-11-02T09:16:58.106092+00:00 (updated-by): Updated: section:notes
 - 2026-11-02T09:35:39.506296+00:00 (updated-by): Updated: section:notes
 - 2026-11-02T09:46:22.035505+00:00 (updated-by): Updated: section:notes
+- 2026-11-02T09:56:31.372057+00:00 (updated-by): Updated: section:notes
+- 2026-11-02T09:58:14.772754+00:00 (updated-by): Updated: section:notes
+- chg_20261102_155533_the-start-up-memory-check-no-l_8617
+- 2026-11-02T15:55:37.776302+00:00 (updated-by): Updated: section:ledger-events
