@@ -4,6 +4,8 @@
 #include "serving.h"
 #include "calibration.h"
 #include "ledger.h"
+#include "plan_cache.h"
+#include "test_rad_fixture.h"
 #include "sha256.h"
 
 #undef NDEBUG   /* the checks below are assert()s: keep them live in Release component builds */
@@ -589,6 +591,67 @@ void host_ledger_plan() {
     bad = plan; bad["vram"]["cards"][0]["arch"] = "gfx1201"; rejects(bad, "unknown key arch");
 }
 
+void measured_plan_cache(Fixture& t) {
+    namespace sv = bc::serving;
+    // Container identity: the metadata tables, not the payload.
+    const auto model = t.root / "plan-model.rad";
+    bc::test::write_rad(model, 2, 8, 128, 128);
+    const std::string id = sv::container_identity(model);
+    assert(id.size() == 64 && sv::container_identity(model) == id);
+    bc::test::write_rad(model, 2, 9, 128, 128);
+    assert(sv::container_identity(model) != id);
+    // Engine identity: the binary and every runtime-home file.
+    const auto bin = t.file("engine/bin/radiance", "engine-binary-v1");
+    (void)t.file("engine/home/kernels/libr4d.so", "kernels-v1");
+    const std::string eid = sv::engine_identity(bin, t.root / "engine/home");
+    (void)t.file("engine/home/kernels/libr4d.so", "kernels-v2");
+    assert(sv::engine_identity(bin, t.root / "engine/home") != eid);
+    // The key covers the planning inputs and the card, not the memory outputs the plan feeds.
+    const auto r = sv::resolve(t.standard(), t.facts);
+    const Json k = sv::plan_key_inputs(r.values, t.facts, id, eid);
+    assert(k.at("card").at("arch") == "gfx1201" && k.at("card").at("vram_total_mib") == 32624);
+    assert(k.at("layout") == "flashnext-4gpu");
+    for (const char* derived : {"host_pool_mib", "prefix_cache_mib", "host_headroom_mib"})
+        assert(!k.at("engine").contains(derived));
+    Json v = r.values;
+    v["engine"]["host_pool_mib"] = 1;
+    assert(sv::plan_key(sv::plan_key_inputs(v, t.facts, id, eid)) == sv::plan_key(k));
+    v = r.values;
+    v["engine"]["checkpoint_interval"] = 2048;
+    assert(sv::plan_key(sv::plan_key_inputs(v, t.facts, id, eid)) != sv::plan_key(k));
+    // Store, then lookup; a miss is nothing; a tampered entry is an error.
+    const auto dir = t.root / "plan-cache";
+    assert(!sv::plan_cache_lookup(dir, k).has_value());
+    const Json plan = Json::parse(R"json({
+      "plan_version": 1, "producer": "radiance --plan-memory (rad0011)", "host": [],
+      "checkpoints": {"slot_bytes": 1048576, "floor_slots": 8, "want_slots": 72, "from": "engine plan (test)"},
+      "kv_one_session": {"bytes": 4096, "from": "engine plan (test)"},
+      "vram": {"claimable": 10, "statics": 1, "elastic": 9, "experts": 0, "kv": 9, "stage": 0, "expert_floor": 0,
+               "kv_ceiling": 9, "expert_ceiling": 0, "from": "engine plan (test)",
+               "cards": [{"capacity": 10, "free": 10, "engine_expert_plane": 0, "expert_unit_max": 1}]},
+      "host_pool_mib": 9216})json");
+    const auto stored = sv::plan_cache_store(dir, k, plan);
+    const auto found = sv::plan_cache_lookup(dir, k);
+    assert(found && found->key == stored.key && found->plan.checkpoint_want_slots == 72 && !found->measured_at.empty());
+    {
+        const auto file = dir / (stored.key + ".json");
+        Json e = Json::parse(std::ifstream(file));
+        e["key_inputs"]["layout"] = "other";
+        std::ofstream(file, std::ios::trunc) << e.dump();
+    }
+    bool refused = false;
+    try { (void)sv::plan_cache_lookup(dir, k); } catch (const std::exception& e) {
+        refused = std::string(e.what()).find("key inputs differ") != std::string::npos;
+    }
+    assert(refused);
+    Json bad = plan; bad.erase("vram");
+    refused = false;
+    try { (void)sv::plan_cache_store(dir, k, bad); } catch (const std::exception& e) {
+        refused = std::string(e.what()).find("missing vram") != std::string::npos;
+    }
+    assert(refused);
+}
+
 int main() {
     try {
         sha256_vectors();
@@ -602,9 +665,10 @@ int main() {
         calibration_store(t);
         host_reserve(t);
         host_ledger_plan();
+        measured_plan_cache(t);
         std::cout << "PASS: fake KFD/PCI/proc detection; strict keys; types/ranges; required; "
                      "precedence/caps; provenance/hash; launcher engine/WorkerConfig parity; "
-                     "calibration store; calibrated host reserve; host ledger\n";
+                     "calibration store; calibrated host reserve; host ledger; measured plan cache\n";
         return 0;
     } catch (const std::exception& e) {
         std::cerr << "FAIL: " << e.what() << '\n';
