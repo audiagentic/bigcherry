@@ -1,0 +1,2620 @@
+# Reference registry (RSC01): the audited inventory of every serving setting, with its owner, class
+# (policy, discovered, derived, tuned, experiment, retire), lifecycle and derivation inputs. The C++
+# serving schema (engines/radiance/components/serving) is built from it. Operators do not edit it, and
+# nothing reads it at run time. Class reflects the intended ownership, not what is dynamic today.
+schema = 1
+
+[[setting]]
+key = "engine.--model"
+type = "str"
+class = "discovered"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "engine.--download-dir"
+type = "str"
+class = "discovered"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "engine.--radiance-home"
+type = "str"
+class = "discovered"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "engine.--kernels"
+type = "str"
+class = "discovered"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "engine.--tp"
+type = "int"
+class = "policy"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "engine.--tp-wire"
+type = "str"
+class = "tuned"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+derive_from = "model and topology keyed calibration, shape and serving objective (RCS10/RHP09)"
+
+[[setting]]
+key = "engine.--tp-wire-min-kb"
+type = "int"
+class = "tuned"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+derive_from = "model and topology keyed calibration, shape and serving objective (RCS10/RHP09)"
+
+[[setting]]
+key = "engine.--tp-attn-split"
+type = "str"
+class = "tuned"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+derive_from = "model and topology keyed calibration, shape and serving objective (RCS10/RHP09)"
+
+[[setting]]
+key = "engine.--weight-prefetch"
+type = "str"
+class = "tuned"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+derive_from = "model and topology keyed calibration, shape and serving objective (RCS10/RHP09)"
+
+[[setting]]
+key = "engine.--p2p"
+type = "str"
+class = "tuned"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+derive_from = "model and topology keyed calibration, shape and serving objective (RCS10/RHP09)"
+
+[[setting]]
+key = "engine.--max-num-batched-tokens"
+type = "int"
+class = "derived"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+derive_from = "model geometry, sessions, draft depth and calibrated step cost (RCS10)"
+
+[[setting]]
+key = "engine.--busy-prefill-chunk"
+type = "str"
+class = "derived"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+derive_from = "model geometry, sessions, draft depth and calibrated step cost (RCS10)"
+
+[[setting]]
+key = "engine.--prefill-interleave"
+type = "int"
+class = "tuned"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+derive_from = "model and topology keyed calibration, shape and serving objective (RCS10/RHP09)"
+
+[[setting]]
+key = "engine.--max-num-seqs"
+type = "int"
+class = "policy"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "engine.--max-model-len"
+type = "int"
+class = "policy"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "engine.--rope-scaling"
+type = "str"
+class = "policy"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "engine.--gpu-headroom-mib"
+type = "int"
+class = "derived"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+derive_from = "host/VRAM discovery, model tensor sizes and runtime reserves (RSC03)"
+
+[[setting]]
+key = "engine.--kv-cache-dtype"
+type = "str"
+class = "policy"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "engine.--state-cache-dtype"
+type = "str"
+class = "policy"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "engine.--attn-prefill-fp8"
+type = "str"
+class = "tuned"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+derive_from = "model and topology keyed calibration, shape and serving objective (RCS10/RHP09)"
+
+[[setting]]
+key = "engine.--kv-resident"
+type = "int"
+class = "derived"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+derive_from = "container geometry, host topology, policy profile and calibrated costs"
+
+[[setting]]
+key = "engine.--host-pool-mib"
+type = "int"
+class = "derived"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+derive_from = "host/VRAM discovery, model tensor sizes and runtime reserves (RSC03)"
+
+[[setting]]
+key = "engine.--host-headroom-mib"
+type = "int"
+class = "derived"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+derive_from = "host/VRAM discovery, model tensor sizes and runtime reserves (RSC03)"
+
+[[setting]]
+key = "engine.--embedding-placement"
+type = "str"
+class = "derived"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+derive_from = "available cards, resolved layout, route heat and placement plan (RHP11)"
+
+[[setting]]
+key = "engine.--vision-tower-placement"
+type = "str"
+class = "policy"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "engine.--ngram-placement"
+type = "str"
+class = "derived"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+derive_from = "available cards, resolved layout, route heat and placement plan (RHP11)"
+
+[[setting]]
+key = "engine.--weights-disk-tier"
+type = "bool"
+class = "policy"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "engine.--prefix-cache-mib"
+type = "int"
+class = "derived"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+derive_from = "host/VRAM discovery, model tensor sizes and runtime reserves (RSC03)"
+
+[[setting]]
+key = "engine.--prefix-cache-ttl"
+type = "int"
+class = "policy"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "engine.--lora"
+type = "str"
+class = "policy"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "engine.--lora-dir"
+type = "str"
+class = "policy"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "engine.--max-loras"
+type = "int"
+class = "policy"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "engine.--max-lora-rank"
+type = "int"
+class = "policy"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "engine.--lora-target-modules"
+type = "str"
+class = "policy"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "engine.--placement"
+type = "str"
+class = "policy"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "engine.--control-vector"
+type = "str"
+class = "policy"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "engine.--deterministic"
+type = "bool"
+class = "policy"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "engine.--checkpoint-interval"
+type = "int"
+class = "derived"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+derive_from = "model geometry, sessions, draft depth and calibrated step cost (RCS10)"
+
+[[setting]]
+key = "engine.--prefill-span"
+type = "int"
+class = "policy"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "engine.--checkpoint-slots"
+type = "int"
+class = "derived"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+derive_from = "model geometry, sessions, draft depth and calibrated step cost (RCS10)"
+
+[[setting]]
+key = "engine.--no-prefix-cache"
+type = "bool"
+class = "policy"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "engine.--prefix-resume"
+type = "str"
+class = "tuned"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+derive_from = "model and topology keyed calibration, shape and serving objective (RCS10/RHP09)"
+
+[[setting]]
+key = "engine.--checkpoint-policy"
+type = "str"
+class = "policy"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "engine.--num-speculative-tokens"
+type = "int"
+class = "tuned"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+derive_from = "model and topology keyed calibration, shape and serving objective (RCS10/RHP09)"
+
+[[setting]]
+key = "engine.--draft-window"
+type = "str"
+class = "tuned"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+derive_from = "model and topology keyed calibration, shape and serving objective (RCS10/RHP09)"
+
+[[setting]]
+key = "engine.--draft-short-from"
+type = "int"
+class = "tuned"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+derive_from = "model and topology keyed calibration, shape and serving objective (RCS10/RHP09)"
+
+[[setting]]
+key = "engine.--draft-coupling"
+type = "str"
+class = "tuned"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+derive_from = "model and topology keyed calibration, shape and serving objective (RCS10/RHP09)"
+
+[[setting]]
+key = "engine.--draft-model"
+type = "str"
+class = "policy"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "engine.--host"
+type = "str"
+class = "policy"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "engine.--port"
+type = "int"
+class = "policy"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "engine.--api-key"
+type = "str"
+class = "policy"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "engine.--served-model-name"
+type = "str"
+class = "policy"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "engine.--mm-max-patches"
+type = "int"
+class = "policy"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "engine.--generation-config"
+type = "str"
+class = "policy"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "engine.--override-chat-template"
+type = "str"
+class = "policy"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "engine.--temp"
+type = "float"
+class = "policy"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "engine.--top-k"
+type = "int"
+class = "policy"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "engine.--top-p"
+type = "float"
+class = "policy"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "engine.--min-p"
+type = "float"
+class = "policy"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "engine.--reasoning-effort"
+type = "int"
+class = "policy"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "engine.--reasoning-effort-map"
+type = "str"
+class = "policy"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "engine.--thinking-token-budget"
+type = "int"
+class = "policy"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "engine.--typical-p"
+type = "float"
+class = "policy"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "engine.--presence-penalty"
+type = "float"
+class = "policy"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "engine.--frequency-penalty"
+type = "float"
+class = "policy"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "engine.--repetition-penalty"
+type = "float"
+class = "policy"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "engine.--repeat-last-n"
+type = "int"
+class = "policy"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "engine.--dry-multiplier"
+type = "float"
+class = "policy"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "engine.--dry-base"
+type = "float"
+class = "policy"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "engine.--dry-allowed-length"
+type = "int"
+class = "policy"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "engine.--dry-penalty-last-n"
+type = "int"
+class = "policy"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "engine.--dry-sequence-breakers"
+type = "str"
+class = "policy"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "engine.--xtc-probability"
+type = "float"
+class = "policy"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "engine.--xtc-threshold"
+type = "float"
+class = "policy"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "engine.--default-max-tokens"
+type = "int"
+class = "policy"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "engine.--max-tokens-cap"
+type = "int"
+class = "policy"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "engine.--max-n"
+type = "int"
+class = "derived"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+derive_from = "container geometry, host topology, policy profile and calibrated costs"
+
+[[setting]]
+key = "engine.--max-queued-requests"
+type = "int"
+class = "derived"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+derive_from = "container geometry, host topology, policy profile and calibrated costs"
+
+[[setting]]
+key = "engine.--max-stop-strings"
+type = "int"
+class = "policy"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "engine.--max-stop-bytes"
+type = "int"
+class = "policy"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "engine.--chat-template-kwargs"
+type = "str"
+class = "policy"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "engine.--reasoning-format"
+type = "str"
+class = "policy"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "engine.--http-threads"
+type = "int"
+class = "policy"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "engine.--read-timeout"
+type = "int"
+class = "policy"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "engine.--write-timeout"
+type = "int"
+class = "policy"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "engine.--keep-alive-timeout"
+type = "int"
+class = "policy"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "engine.--max-body-mib"
+type = "int"
+class = "policy"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "engine.--retry-after"
+type = "int"
+class = "policy"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "engine.--no-cors"
+type = "bool"
+class = "policy"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "engine.--image-min-pixels"
+type = "int"
+class = "policy"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "engine.--image-max-pixels"
+type = "int"
+class = "policy"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "engine.--video-min-pixels"
+type = "int"
+class = "policy"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "engine.--video-max-pixels"
+type = "int"
+class = "policy"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "engine.--video-fps"
+type = "float"
+class = "policy"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "engine.--video-min-frames"
+type = "int"
+class = "policy"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "engine.--video-max-frames"
+type = "int"
+class = "policy"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "engine.--video-max-frame-tokens"
+type = "int"
+class = "policy"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "engine.--image-tokens"
+type = "int"
+class = "policy"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "engine.--max-source-pixels"
+type = "int"
+class = "policy"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "engine.--kld-record"
+type = "str"
+class = "experiment"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "engine.--kld-ref"
+type = "str"
+class = "experiment"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "engine.--kld-corpus"
+type = "str"
+class = "experiment"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "engine.--kld-out"
+type = "str"
+class = "experiment"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "engine.--kld-lora"
+type = "str"
+class = "experiment"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "engine.--kld-lora-sources"
+type = "str"
+class = "experiment"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "engine.--debug-graph"
+type = "bool"
+class = "experiment"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "engine.--debug-selection"
+type = "bool"
+class = "experiment"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "engine.--debug-placement"
+type = "bool"
+class = "experiment"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "engine.--debug-accept-reference-kernels"
+type = "bool"
+class = "experiment"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "engine.--profile-ops"
+type = "bool"
+class = "experiment"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "engine.--expert-stats"
+type = "str"
+class = "experiment"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "engine.--expert-profile"
+type = "str"
+class = "experiment"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "engine.--expert-pin-top"
+type = "float"
+class = "tuned"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+derive_from = "model and topology keyed calibration, shape and serving objective (RCS10/RHP09)"
+
+[[setting]]
+key = "engine.--draft-expert-placement"
+type = "str"
+class = "tuned"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+derive_from = "model and topology keyed calibration, shape and serving objective (RCS10/RHP09)"
+
+[[setting]]
+key = "engine.--live"
+type = "bool"
+class = "experiment"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "engine.--help"
+type = "bool"
+class = "retire"
+owner = "radiance/core/config.cpp"
+source = "radiance CLI option; runtime default when omitted"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "env.BC_GFX12_MOE_GEMV"
+type = "bool"
+class = "tuned"
+owner = "engines/radiance/components/bc-gfx12/component.toml"
+source = "component default / lifecycle status"
+lifecycle = "startup-only"
+derive_from = "model and topology keyed calibration, shape and serving objective (RCS10/RHP09)"
+default = "1"
+status = "validated"
+
+[[setting]]
+key = "env.R3_ATTN_NATIVE"
+type = "bool"
+class = "tuned"
+owner = "engines/radiance/components/libr3/component.toml"
+source = "component default / lifecycle status"
+lifecycle = "startup-only"
+derive_from = "model and topology keyed calibration, shape and serving objective (RCS10/RHP09)"
+default = "1"
+status = "production"
+
+[[setting]]
+key = "env.R3_GDN_NATIVE"
+type = "bool"
+class = "tuned"
+owner = "engines/radiance/components/libr3/component.toml"
+source = "component default / lifecycle status"
+lifecycle = "startup-only"
+derive_from = "model and topology keyed calibration, shape and serving objective (RCS10/RHP09)"
+default = "0"
+status = "evaluated"
+
+[[setting]]
+key = "env.R3_AR_WIRE4"
+type = "bool"
+class = "tuned"
+owner = "engines/radiance/components/libr3/component.toml"
+source = "component default / lifecycle status"
+lifecycle = "startup-only"
+derive_from = "model and topology keyed calibration, shape and serving objective (RCS10/RHP09)"
+default = "0"
+status = "experimental"
+
+[[setting]]
+key = "env.R3_AR_PIPE"
+type = "bool"
+class = "tuned"
+owner = "engines/radiance/components/libr3/component.toml"
+source = "component default / lifecycle status"
+lifecycle = "startup-only"
+derive_from = "model and topology keyed calibration, shape and serving objective (RCS10/RHP09)"
+default = "0"
+status = "evaluated"
+
+[[setting]]
+key = "env.R3_AR_TIMING"
+type = "bool"
+class = "experiment"
+owner = "engines/radiance/components/libr3/component.toml"
+source = "component default / lifecycle status"
+lifecycle = "startup-only"
+default = "0"
+status = "diagnostic"
+
+[[setting]]
+key = "env.R3_GDN_COMPARE"
+type = "bool"
+class = "experiment"
+owner = "engines/radiance/components/libr3/component.toml"
+source = "component default / lifecycle status"
+lifecycle = "startup-only"
+default = "0"
+status = "diagnostic"
+
+[[setting]]
+key = "env.R3_BT"
+type = "bool"
+class = "tuned"
+owner = "engines/radiance/components/libr3/component.toml"
+source = "component default / lifecycle status"
+lifecycle = "startup-only"
+default = "0"
+status = "evaluated"
+derive_from = "model/topology calibration and measured runtime overhead (RCS10/RHP09)"
+
+[[setting]]
+key = "env.R3_BT_B"
+type = "str"
+class = "tuned"
+owner = "engines/radiance/components/libr3/component.toml"
+source = "component default / lifecycle status"
+lifecycle = "startup-only"
+default = ""
+status = "tuning"
+derive_from = "model/topology calibration and measured runtime overhead (RCS10/RHP09)"
+
+[[setting]]
+key = "env.R3_BT_NT"
+type = "str"
+class = "tuned"
+owner = "engines/radiance/components/libr3/component.toml"
+source = "component default / lifecycle status"
+lifecycle = "startup-only"
+default = ""
+status = "tuning"
+derive_from = "model/topology calibration and measured runtime overhead (RCS10/RHP09)"
+
+[[setting]]
+key = "env.R3_BT_ABL"
+type = "bool"
+class = "experiment"
+owner = "engines/radiance/components/libr3/component.toml"
+source = "component default / lifecycle status"
+lifecycle = "startup-only"
+default = "0"
+status = "diagnostic"
+
+[[setting]]
+key = "env.R3_BT_ORACLE"
+type = "bool"
+class = "experiment"
+owner = "engines/radiance/components/libr3/component.toml"
+source = "component default / lifecycle status"
+lifecycle = "startup-only"
+default = "0"
+status = "diagnostic"
+
+[[setting]]
+key = "env.R3_DEC11"
+type = "bool"
+class = "tuned"
+owner = "engines/radiance/components/libr3/component.toml"
+source = "component default / lifecycle status"
+lifecycle = "startup-only"
+default = "0"
+status = "experimental"
+derive_from = "model/topology calibration and measured runtime overhead (RCS10/RHP09)"
+
+[[setting]]
+key = "env.R3_D11_MODE"
+type = "str"
+class = "tuned"
+owner = "engines/radiance/components/libr3/component.toml"
+source = "component default / lifecycle status"
+lifecycle = "startup-only"
+default = ""
+status = "tuning"
+derive_from = "model/topology calibration and measured runtime overhead (RCS10/RHP09)"
+
+[[setting]]
+key = "env.R3_GEMV"
+type = "str"
+class = "tuned"
+owner = "engines/radiance/components/libr3/component.toml"
+source = "component default / lifecycle status"
+lifecycle = "startup-only"
+derive_from = "model and topology keyed calibration, shape and serving objective (RCS10/RHP09)"
+default = ""
+status = "tuning"
+
+[[setting]]
+key = "env.R3_MXD_BK"
+type = "str"
+class = "tuned"
+owner = "engines/radiance/components/libr3/component.toml"
+source = "component default / lifecycle status"
+lifecycle = "startup-only"
+derive_from = "model and topology keyed calibration, shape and serving objective (RCS10/RHP09)"
+default = ""
+status = "tuning"
+
+[[setting]]
+key = "env.R3_MXD_KS"
+type = "str"
+class = "tuned"
+owner = "engines/radiance/components/libr3/component.toml"
+source = "component default / lifecycle status"
+lifecycle = "startup-only"
+derive_from = "model and topology keyed calibration, shape and serving objective (RCS10/RHP09)"
+default = ""
+status = "tuning"
+
+[[setting]]
+key = "env.R3_MXD_NT"
+type = "str"
+class = "tuned"
+owner = "engines/radiance/components/libr3/component.toml"
+source = "component default / lifecycle status"
+lifecycle = "startup-only"
+derive_from = "model and topology keyed calibration, shape and serving objective (RCS10/RHP09)"
+default = ""
+status = "tuning"
+
+[[setting]]
+key = "env.R3_MOE_NATIVE"
+type = "bool"
+class = "tuned"
+owner = "engines/radiance/components/libr3/component.toml"
+source = "component default / lifecycle status"
+lifecycle = "startup-only"
+derive_from = "model and topology keyed calibration, shape and serving objective (RCS10/RHP09)"
+default = "1"
+status = "experimental"
+
+[[setting]]
+key = "env.R3_MOE_FP16"
+type = "bool"
+class = "tuned"
+owner = "engines/radiance/components/libr3/component.toml"
+source = "component default / lifecycle status"
+lifecycle = "startup-only"
+derive_from = "model and topology keyed calibration, shape and serving objective (RCS10/RHP09)"
+default = "1"
+status = "validated"
+
+[[setting]]
+key = "env.R3_MOE_PROBE"
+type = "str"
+class = "experiment"
+owner = "engines/radiance/components/libr3/component.toml"
+source = "component default / lifecycle status"
+lifecycle = "startup-only"
+default = ""
+status = "diagnostic"
+
+[[setting]]
+key = "env.R3_MOE_AHALF"
+type = "bool"
+class = "tuned"
+owner = "engines/radiance/components/libr3/component.toml"
+source = "component default / lifecycle status"
+lifecycle = "startup-only"
+derive_from = "model and topology keyed calibration, shape and serving objective (RCS10/RHP09)"
+default = "1"
+status = "validated"
+
+[[setting]]
+key = "env.R3_MOE_COMPARE"
+type = "bool"
+class = "experiment"
+owner = "engines/radiance/components/libr3/component.toml"
+source = "component default / lifecycle status"
+lifecycle = "startup-only"
+default = "0"
+status = "diagnostic"
+
+[[setting]]
+key = "env.R3_MOE_WORKER"
+type = "str"
+class = "policy"
+owner = "engines/radiance/components/moe-remote/component.toml"
+source = "component default / lifecycle status"
+lifecycle = "startup-only"
+default = ""
+status = "experimental"
+
+[[setting]]
+key = "env.R3_MOE_WORKER_DEVICES"
+type = "str"
+class = "retire"
+owner = "engines/radiance/components/moe-remote/component.toml"
+source = "component default / lifecycle status"
+lifecycle = "startup-only"
+default = ""
+status = "experimental"
+
+[[setting]]
+key = "env.R3_MOE_WORKER_LAYOUT"
+type = "str"
+class = "retire"
+owner = "engines/radiance/components/moe-remote/component.toml"
+source = "component default / lifecycle status"
+lifecycle = "startup-only"
+default = ""
+status = "experimental"
+
+[[setting]]
+key = "env.R3_MOE_WORKER_SHM"
+type = "str"
+class = "discovered"
+owner = "engines/radiance/components/moe-remote/component.toml"
+source = "component default / lifecycle status"
+lifecycle = "startup-only"
+default = "/r3-moe-helper"
+status = "diagnostic"
+
+[[setting]]
+key = "env.R3_MOE_WORKER_CPU"
+type = "bool"
+class = "discovered"
+owner = "engines/radiance/components/moe-remote/component.toml"
+source = "component default / lifecycle status"
+lifecycle = "startup-only"
+default = "0"
+status = "diagnostic"
+
+[[setting]]
+key = "env.R3_MOE_WORKER_MIB"
+type = "int"
+class = "retire"
+owner = "engines/radiance/components/moe-remote/component.toml"
+source = "component default / lifecycle status"
+lifecycle = "startup-only"
+default = "28672"
+status = "experimental"
+
+[[setting]]
+key = "env.R3_MOE_WORKER_PLUGIN_FILE"
+type = "str"
+class = "discovered"
+owner = "engines/radiance/components/moe-remote/component.toml"
+source = "component default / lifecycle status"
+lifecycle = "startup-only"
+default = ""
+status = "experimental"
+
+[[setting]]
+key = "env.R3_MOE_WORKER_FORMATS"
+type = "str"
+class = "discovered"
+owner = "engines/radiance/components/moe-remote/component.toml"
+source = "component default / lifecycle status"
+lifecycle = "startup-only"
+default = ""
+status = "experimental"
+
+[[setting]]
+key = "env.R3_MOE_WORKER_MIBS"
+type = "str"
+class = "derived"
+owner = "engines/radiance/components/moe-remote/component.toml"
+source = "component default / lifecycle status"
+lifecycle = "startup-only"
+derive_from = "host/VRAM discovery, model tensor sizes and runtime reserves (RSC03)"
+default = ""
+status = "experimental"
+
+[[setting]]
+key = "env.R3_MOE_WORKER_PLACEMENT"
+type = "str"
+class = "derived"
+owner = "engines/radiance/components/moe-remote/component.toml"
+source = "component default / lifecycle status"
+lifecycle = "startup-only"
+derive_from = "available cards, resolved layout, route heat and placement plan (RHP11)"
+default = "roundrobin"
+status = "experimental"
+
+[[setting]]
+key = "env.R3_MOE_WORKER_SHARES"
+type = "str"
+class = "derived"
+owner = "engines/radiance/components/moe-remote/component.toml"
+source = "component default / lifecycle status"
+lifecycle = "startup-only"
+derive_from = "available cards, resolved layout, route heat and placement plan (RHP11)"
+default = ""
+status = "experimental"
+
+[[setting]]
+key = "env.R3_MOE_WORKER_MAX_ROWS"
+type = "int"
+class = "derived"
+owner = "engines/radiance/components/moe-remote/component.toml"
+source = "component default / lifecycle status"
+lifecycle = "startup-only"
+derive_from = "model geometry, sessions, draft depth and calibrated step cost (RCS10)"
+default = "64"
+status = "experimental"
+
+[[setting]]
+key = "env.R3_MOE_WORKER_ENGINE_RANKS"
+type = "int"
+class = "derived"
+owner = "engines/radiance/components/moe-remote/component.toml"
+source = "component default / lifecycle status"
+lifecycle = "startup-only"
+derive_from = "container geometry, host topology, policy profile and calibrated costs"
+default = "2"
+status = "experimental"
+
+[[setting]]
+key = "env.R3_MOE_WORKER_COUNT"
+type = "bool"
+class = "derived"
+owner = "engines/radiance/components/moe-remote/component.toml"
+source = "component default / lifecycle status"
+lifecycle = "startup-only"
+derive_from = "available cards, resolved layout, route heat and placement plan (RHP11)"
+default = "1"
+status = "experimental"
+
+[[setting]]
+key = "env.R3_MOE_WORKER_HISTOGRAM"
+type = "str"
+class = "experiment"
+owner = "engines/radiance/components/moe-remote/component.toml"
+source = "component default / lifecycle status"
+lifecycle = "startup-only"
+default = ""
+status = "diagnostic"
+
+[[setting]]
+key = "env.R3_MOE_WORKER_HISTOGRAM_PERIOD_S"
+type = "bool"
+class = "tuned"
+owner = "engines/radiance/components/moe-remote/component.toml"
+source = "component default / lifecycle status"
+lifecycle = "startup-only"
+default = "0"
+status = "diagnostic"
+derive_from = "model/topology calibration and measured runtime overhead (RCS10/RHP09)"
+
+[[setting]]
+key = "env.R3_MOE_WORKER_HEAT"
+type = "str"
+class = "discovered"
+owner = "engines/radiance/components/moe-remote/component.toml"
+source = "component default / lifecycle status"
+lifecycle = "startup-only"
+default = ""
+status = "experimental"
+
+[[setting]]
+key = "env.R3_MOE_WORKER_GEMV"
+type = "bool"
+class = "tuned"
+owner = "engines/radiance/components/moe-remote/component.toml"
+source = "component default / lifecycle status"
+lifecycle = "startup-only"
+derive_from = "model and topology keyed calibration, shape and serving objective (RCS10/RHP09)"
+default = "1"
+status = "experimental"
+
+[[setting]]
+key = "env.R3_MOE_WORKER_GEMV_WIDE"
+type = "bool"
+class = "tuned"
+owner = "engines/radiance/components/moe-remote/component.toml"
+source = "component default / lifecycle status"
+lifecycle = "startup-only"
+derive_from = "model and topology keyed calibration, shape and serving objective (RCS10/RHP09)"
+default = "1"
+status = "experimental"
+
+[[setting]]
+key = "env.R3_MOE_WORKER_GEMV_H2"
+type = "int"
+class = "tuned"
+owner = "engines/radiance/components/moe-remote/component.toml"
+source = "component default / lifecycle status"
+lifecycle = "startup-only"
+derive_from = "model and topology keyed calibration, shape and serving objective (RCS10/RHP09)"
+default = "2"
+status = "experimental"
+
+[[setting]]
+key = "env.R3_MOE_WORKER_GEMV_W4H2"
+type = "bool"
+class = "tuned"
+owner = "engines/radiance/components/moe-remote/component.toml"
+source = "component default / lifecycle status"
+lifecycle = "startup-only"
+derive_from = "model and topology keyed calibration, shape and serving objective (RCS10/RHP09)"
+default = "1"
+status = "validated"
+
+[[setting]]
+key = "env.R3_MOE_WORKER_GEMV_MR"
+type = "bool"
+class = "tuned"
+owner = "engines/radiance/components/moe-remote/component.toml"
+source = "component default / lifecycle status"
+lifecycle = "startup-only"
+default = "0"
+status = "evaluated"
+derive_from = "model/topology calibration and measured runtime overhead (RCS10/RHP09)"
+
+[[setting]]
+key = "env.R3_MOE_WORKER_MOE_FORM"
+type = "bool"
+class = "tuned"
+owner = "engines/radiance/components/moe-remote/component.toml"
+source = "component default / lifecycle status"
+lifecycle = "startup-only"
+derive_from = "model and topology keyed calibration, shape and serving objective (RCS10/RHP09)"
+default = "0"
+status = "experimental"
+
+[[setting]]
+key = "env.R3_MOE_WORKER_MOE_DOWN_TILE"
+type = "str"
+class = "tuned"
+owner = "engines/radiance/components/moe-remote/component.toml"
+source = "component default / lifecycle status"
+lifecycle = "startup-only"
+derive_from = "model and topology keyed calibration, shape and serving objective (RCS10/RHP09)"
+default = ""
+status = "experimental"
+
+[[setting]]
+key = "env.R3_MOE_WORKER_MOE_LONG_ROWS"
+type = "str"
+class = "tuned"
+owner = "engines/radiance/components/moe-remote/component.toml"
+source = "component default / lifecycle status"
+lifecycle = "startup-only"
+derive_from = "model and topology keyed calibration, shape and serving objective (RCS10/RHP09)"
+default = ""
+status = "evaluated"
+
+[[setting]]
+key = "env.R3_MOE_WORKER_SPARSE_ACT"
+type = "bool"
+class = "tuned"
+owner = "engines/radiance/components/moe-remote/component.toml"
+source = "component default / lifecycle status"
+lifecycle = "startup-only"
+default = "1"
+status = "experimental"
+derive_from = "model/topology calibration and measured runtime overhead (RCS10/RHP09)"
+
+[[setting]]
+key = "env.R3_MOE_WORKER_LANE_QUANT"
+type = "bool"
+class = "tuned"
+owner = "engines/radiance/components/moe-remote/component.toml"
+source = "component default / lifecycle status"
+lifecycle = "startup-only"
+default = "1"
+status = "experimental"
+derive_from = "model/topology calibration and measured runtime overhead (RCS10/RHP09)"
+
+[[setting]]
+key = "env.R3_MOE_WORKER_VECIO"
+type = "bool"
+class = "tuned"
+owner = "engines/radiance/components/moe-remote/component.toml"
+source = "component default / lifecycle status"
+lifecycle = "startup-only"
+derive_from = "model and topology keyed calibration, shape and serving objective (RCS10/RHP09)"
+default = "1"
+status = "validated"
+
+[[setting]]
+key = "env.R3_MOE_WORKER_COMBINE"
+type = "str"
+class = "tuned"
+owner = "engines/radiance/components/moe-remote/component.toml"
+source = "component default / lifecycle status"
+lifecycle = "startup-only"
+derive_from = "model and topology keyed calibration, shape and serving objective (RCS10/RHP09)"
+default = ""
+status = "experimental"
+
+[[setting]]
+key = "env.R3_MOE_WORKER_COMBINE_MIN_ROWS"
+type = "int"
+class = "tuned"
+owner = "engines/radiance/components/moe-remote/component.toml"
+source = "component default / lifecycle status"
+lifecycle = "startup-only"
+derive_from = "model and topology keyed calibration, shape and serving objective (RCS10/RHP09)"
+default = "256"
+status = "experimental"
+
+[[setting]]
+key = "env.R3_MOE_WORKER_COMBINE_THREADS"
+type = "int"
+class = "tuned"
+owner = "engines/radiance/components/moe-remote/component.toml"
+source = "component default / lifecycle status"
+lifecycle = "startup-only"
+default = "8"
+status = "experimental"
+derive_from = "model/topology calibration and measured runtime overhead (RCS10/RHP09)"
+
+[[setting]]
+key = "env.R3_MOE_WORKER_BALANCE"
+type = "str"
+class = "tuned"
+owner = "engines/radiance/components/moe-remote/component.toml"
+source = "component default / lifecycle status"
+lifecycle = "startup-only"
+derive_from = "model and topology keyed calibration, shape and serving objective (RCS10/RHP09)"
+default = ""
+status = "evaluated"
+
+[[setting]]
+key = "env.R3_MOE_WORKER_BALANCE_SPEED"
+type = "str"
+class = "tuned"
+owner = "engines/radiance/components/moe-remote/component.toml"
+source = "component default / lifecycle status"
+lifecycle = "startup-only"
+default = ""
+status = "evaluated"
+derive_from = "model/topology calibration and measured runtime overhead (RCS10/RHP09)"
+
+[[setting]]
+key = "env.R3_MOE_WORKER_FUSEROUTE"
+type = "bool"
+class = "tuned"
+owner = "engines/radiance/components/moe-remote/component.toml"
+source = "component default / lifecycle status"
+lifecycle = "startup-only"
+derive_from = "model and topology keyed calibration, shape and serving objective (RCS10/RHP09)"
+default = "1"
+status = "validated"
+
+[[setting]]
+key = "env.R3_MOE_WORKER_ROWS_SMALL"
+type = "str"
+class = "retire"
+owner = "engines/radiance/components/moe-remote/component.toml"
+source = "component default / lifecycle status"
+lifecycle = "startup-only"
+default = ""
+status = "evaluated"
+
+[[setting]]
+key = "env.R3_MOE_WORKER_FUSESTAGE"
+type = "bool"
+class = "tuned"
+owner = "engines/radiance/components/moe-remote/component.toml"
+source = "component default / lifecycle status"
+lifecycle = "startup-only"
+derive_from = "model and topology keyed calibration, shape and serving objective (RCS10/RHP09)"
+default = "1"
+status = "validated"
+
+[[setting]]
+key = "env.R3_MOE_WORKER_TRACE"
+type = "str"
+class = "experiment"
+owner = "engines/radiance/components/moe-remote/component.toml"
+source = "component default / lifecycle status"
+lifecycle = "startup-only"
+default = ""
+status = "diagnostic"
+
+[[setting]]
+key = "env.R3_MOE_WORKER_BURST_TRACE"
+type = "str"
+class = "experiment"
+owner = "engines/radiance/components/moe-remote/component.toml"
+source = "component default / lifecycle status"
+lifecycle = "startup-only"
+default = ""
+status = "diagnostic"
+
+[[setting]]
+key = "env.R3_MOE_WORKER_POWER_SAVE"
+type = "bool"
+class = "tuned"
+owner = "engines/radiance/components/moe-remote/component.toml"
+source = "component default / lifecycle status"
+lifecycle = "startup-only"
+derive_from = "model and topology keyed calibration, shape and serving objective (RCS10/RHP09)"
+default = "1"
+status = "experimental"
+
+[[setting]]
+key = "env.R3_MOE_WORKER_QUEUE_WARM"
+type = "str"
+class = "tuned"
+owner = "engines/radiance/components/moe-remote/component.toml"
+source = "component default / lifecycle status"
+lifecycle = "startup-only"
+derive_from = "model and topology keyed calibration, shape and serving objective (RCS10/RHP09)"
+default = ""
+status = "evaluated"
+
+[[setting]]
+key = "env.R3_MOE_SWEEP_FAST"
+type = "str"
+class = "experiment"
+owner = "engines/radiance/components/moe-remote/component.toml"
+source = "component default / lifecycle status"
+lifecycle = "startup-only"
+default = ""
+status = "diagnostic"
+
+[[setting]]
+key = "env.R3_MOE_WORKER_LAYERS"
+type = "str"
+class = "experiment"
+owner = "engines/radiance/components/moe-remote/component.toml"
+source = "component default / lifecycle status"
+lifecycle = "startup-only"
+default = ""
+status = "diagnostic"
+
+[[setting]]
+key = "env.R3_MOE_WORKER_CAPTURE"
+type = "str"
+class = "experiment"
+owner = "engines/radiance/components/moe-remote/component.toml"
+source = "component default / lifecycle status"
+lifecycle = "startup-only"
+default = ""
+status = "diagnostic"
+
+[[setting]]
+key = "env.R3_MOE_WORKER_CAPTURE_EVERY"
+type = "int"
+class = "experiment"
+owner = "engines/radiance/components/moe-remote/component.toml"
+source = "component default / lifecycle status"
+lifecycle = "startup-only"
+default = "37"
+status = "diagnostic"
+
+[[setting]]
+key = "env.R3_MOE_WORKER_CAPTURE_MAX"
+type = "int"
+class = "experiment"
+owner = "engines/radiance/components/moe-remote/component.toml"
+source = "component default / lifecycle status"
+lifecycle = "startup-only"
+default = "16"
+status = "diagnostic"
+
+[[setting]]
+key = "env.R3_MOE_WORKER_GEMV_LARGE_ROWS"
+type = "bool"
+class = "derived"
+owner = "engines/radiance/components/moe-remote/component.toml"
+source = "component default / lifecycle status"
+lifecycle = "startup-only"
+derive_from = "model geometry, sessions, draft depth and calibrated step cost (RCS10)"
+default = "0"
+status = "evaluated"
+
+[[setting]]
+key = "env.R3_MOE_WORKER_ROWS"
+type = "bool"
+class = "derived"
+owner = "engines/radiance/components/moe-remote/component.toml"
+source = "component default / lifecycle status"
+lifecycle = "startup-only"
+derive_from = "model geometry, sessions, draft depth and calibrated step cost (RCS10)"
+default = "0"
+status = "experimental"
+
+[[setting]]
+key = "env.R3_MOE_WORKER_INDEX"
+type = "bool"
+class = "discovered"
+owner = "engines/radiance/components/moe-remote/component.toml"
+source = "component default / lifecycle status"
+lifecycle = "startup-only"
+default = "0"
+status = "experimental"
+
+[[setting]]
+key = "env.R3_MOE_WORKER_SMALL_ROWS"
+type = "int"
+class = "derived"
+owner = "engines/radiance/components/moe-remote/component.toml"
+source = "component default / lifecycle status"
+lifecycle = "startup-only"
+derive_from = "model geometry, sessions, draft depth and calibrated step cost (RCS10)"
+default = "64"
+status = "experimental"
+
+[[setting]]
+key = "env.R3_MOE_WORKER_SMALL_LANES"
+type = "str"
+class = "tuned"
+owner = "engines/radiance/components/moe-remote/component.toml"
+source = "component default / lifecycle status"
+lifecycle = "startup-only"
+default = ""
+status = "experimental"
+derive_from = "model/topology calibration and measured runtime overhead (RCS10/RHP09)"
+
+[[setting]]
+key = "env.R3_MOE_WORKER_POISON"
+type = "bool"
+class = "experiment"
+owner = "engines/radiance/components/moe-remote/component.toml"
+source = "component default / lifecycle status"
+lifecycle = "startup-only"
+default = "0"
+status = "diagnostic"
+
+[[setting]]
+key = "env.R3_MOE_WORKER_SHADOW"
+type = "bool"
+class = "experiment"
+owner = "engines/radiance/components/moe-remote/component.toml"
+source = "component default / lifecycle status"
+lifecycle = "startup-only"
+default = "0"
+status = "diagnostic"
+
+[[setting]]
+key = "env.R3_MOE_WORKER_MASK_ONLY"
+type = "bool"
+class = "experiment"
+owner = "engines/radiance/components/moe-remote/component.toml"
+source = "component default / lifecycle status"
+lifecycle = "startup-only"
+default = "0"
+status = "diagnostic"
+
+[[setting]]
+key = "env.R3_MOE_WORKER_PLUGIN"
+type = "str"
+class = "retire"
+owner = "engines/radiance/components/moe-remote/component.toml"
+source = "component default / lifecycle status"
+lifecycle = "startup-only"
+default = ""
+status = "diagnostic"
+
+[[setting]]
+key = "env.R3_MOE_WORKER_TEST_STOP_AT"
+type = "str"
+class = "experiment"
+owner = "engines/radiance/components/moe-remote/component.toml"
+source = "component default / lifecycle status"
+lifecycle = "startup-only"
+default = ""
+status = "diagnostic"
+
+[[setting]]
+key = "env.R3_MOE_WORKER_CPU_SET"
+type = "str"
+class = "discovered"
+owner = "engines/radiance/components/moe-remote/component.toml"
+source = "component default / lifecycle status"
+lifecycle = "startup-only"
+default = "auto"
+status = "production"
+
+[[setting]]
+key = "env.R3_NGRAM_DEV"
+type = "str"
+class = "discovered"
+owner = "engines/radiance/components/ngram-helper/component.toml"
+source = "component default / lifecycle status"
+lifecycle = "startup-only"
+default = ""
+status = "evaluated"
+
+[[setting]]
+key = "env.R3_NGRAM_HELPER_SO"
+type = "str"
+class = "discovered"
+owner = "engines/radiance/components/ngram-helper/component.toml"
+source = "component default / lifecycle status"
+lifecycle = "startup-only"
+default = ""
+status = "evaluated"
+
+[[setting]]
+key = "env.R3_NGRAM_AVX"
+type = "str"
+class = "discovered"
+owner = "engines/radiance/components/ngram-helper/component.toml"
+source = "component default / lifecycle status"
+lifecycle = "startup-only"
+default = ""
+status = "evaluated"
+
+[[setting]]
+key = "env.R3_NGRAM_RAM"
+type = "bool"
+class = "policy"
+owner = "engines/radiance/components/ngram-helper/component.toml"
+source = "component default / lifecycle status"
+lifecycle = "startup-only"
+default = "1"
+status = "evaluated"
+
+[[setting]]
+key = "env.R3_NGRAM_MIB"
+type = "str"
+class = "tuned"
+owner = "engines/radiance/components/ngram-helper/component.toml"
+source = "component default / lifecycle status"
+lifecycle = "startup-only"
+derive_from = "model and topology keyed calibration, shape and serving objective (RCS10/RHP09)"
+default = ""
+status = "evaluated"
+
+[[setting]]
+key = "env.R3_NGRAM_RESERVE_MIB"
+type = "int"
+class = "tuned"
+owner = "engines/radiance/components/ngram-helper/component.toml"
+source = "component default / lifecycle status"
+lifecycle = "startup-only"
+derive_from = "model and topology keyed calibration, shape and serving objective (RCS10/RHP09)"
+default = "2048"
+status = "evaluated"
+
+[[setting]]
+key = "env.R3_NGRAM_MAX_M"
+type = "int"
+class = "tuned"
+owner = "engines/radiance/components/ngram-helper/component.toml"
+source = "component default / lifecycle status"
+lifecycle = "startup-only"
+derive_from = "model and topology keyed calibration, shape and serving objective (RCS10/RHP09)"
+default = "32768"
+status = "evaluated"
+
+[[setting]]
+key = "env.R3_MOE_WORKER_SKIP_OWNED"
+type = "bool"
+class = "derived"
+owner = "engines/radiance/patches/rad0002_moe_remote_handoff/patch.py"
+source = "patch-owned, launcher COMMON"
+lifecycle = "startup-only"
+derive_from = "container geometry, host topology, policy profile and calibrated costs"
+default = "1"
+
+[[setting]]
+key = "env.RADIANCE_HOME"
+type = "str"
+class = "discovered"
+owner = "tools/bigcherry/engine_adapters/radiance_layout.py"
+source = "resolved build / GPU visibility"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "env.ROCR_VISIBLE_DEVICES"
+type = "str"
+class = "discovered"
+owner = "tools/bigcherry/engine_adapters/radiance_layout.py"
+source = "resolved build / GPU visibility"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "env.HIP_VISIBLE_DEVICES"
+type = "str"
+class = "derived"
+owner = "tools/bigcherry/engine_adapters/radiance_layout.py"
+source = "resolved build / GPU visibility"
+lifecycle = "startup-only"
+derive_from = "available cards, resolved layout, route heat and placement plan (RHP11)"
+
+[[setting]]
+key = "layout.engine.arch"
+type = "str"
+class = "policy"
+owner = "engines/radiance/layouts.toml"
+source = "engines/radiance/layouts.toml"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "layout.engine.devices"
+type = "array[int]"
+class = "discovered"
+owner = "engines/radiance/layouts.toml"
+source = "engines/radiance/layouts.toml"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "layout.helper.arch"
+type = "str"
+class = "policy"
+owner = "engines/radiance/layouts.toml"
+source = "engines/radiance/layouts.toml"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "layout.helper.devices"
+type = "array[int]"
+class = "discovered"
+owner = "engines/radiance/layouts.toml"
+source = "engines/radiance/layouts.toml"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "layout.helper.count"
+type = "int|all"
+class = "policy"
+owner = "engines/radiance/layouts.toml"
+source = "engines/radiance/layouts.toml"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "layout.helper.budget-mib"
+type = "int"
+class = "derived"
+owner = "engines/radiance/layouts.toml"
+source = "engines/radiance/layouts.toml"
+lifecycle = "startup-only"
+derive_from = "host/VRAM discovery, model tensor sizes and runtime reserves (RSC03)"
+
+[[setting]]
+key = "layout.helper.placement"
+type = "str"
+class = "tuned"
+owner = "engines/radiance/layouts.toml"
+source = "engines/radiance/layouts.toml"
+lifecycle = "startup-only"
+derive_from = "model and topology keyed calibration, shape and serving objective (RCS10/RHP09)"
+
+[[setting]]
+key = "layout.helper.share"
+type = "int"
+class = "tuned"
+owner = "engines/radiance/layouts.toml"
+source = "engines/radiance/layouts.toml"
+lifecycle = "startup-only"
+derive_from = "model and topology keyed calibration, shape and serving objective (RCS10/RHP09)"
+
+[[setting]]
+key = "layout.env"
+type = "table"
+class = "policy"
+owner = "engines/radiance/layouts.toml"
+source = "engines/radiance/layouts.toml"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "layout.description"
+type = "str"
+class = "retire"
+owner = "engines/radiance/layouts.toml"
+source = "engines/radiance/layouts.toml"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "arch.plugin"
+type = "str"
+class = "discovered"
+owner = "engines/radiance/archs.toml"
+source = "engines/radiance/archs.toml"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "arch.formats"
+type = "array[str]"
+class = "discovered"
+owner = "engines/radiance/archs.toml"
+source = "engines/radiance/archs.toml"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "arch.rows-kernel"
+type = "bool"
+class = "tuned"
+owner = "engines/radiance/archs.toml"
+source = "engines/radiance/archs.toml"
+lifecycle = "startup-only"
+derive_from = "model and topology keyed calibration, shape and serving objective (RCS10/RHP09)"
+
+[[setting]]
+key = "arch.reserve-mib"
+type = "int"
+class = "derived"
+owner = "engines/radiance/archs.toml"
+source = "engines/radiance/archs.toml"
+lifecycle = "startup-only"
+derive_from = "host/VRAM discovery, model tensor sizes and runtime reserves (RSC03)"
+
+[[setting]]
+key = "arch.roles"
+type = "array[str]"
+class = "discovered"
+owner = "engines/radiance/archs.toml"
+source = "engines/radiance/archs.toml"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "host.devices.arch"
+type = "str"
+class = "discovered"
+owner = "config/environment.local.toml"
+source = "config/environment.local.toml"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "host.devices.index"
+type = "int"
+class = "discovered"
+owner = "config/environment.local.toml"
+source = "config/environment.local.toml"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "host.devices.vram-mib"
+type = "int"
+class = "discovered"
+owner = "config/environment.local.toml"
+source = "config/environment.local.toml"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "launcher.WORK"
+type = "str"
+class = "discovered"
+owner = "tools/lab/radiance/launch-flashnext-best.sh"
+source = "launcher variable assignment"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "launcher.RUN"
+type = "str"
+class = "discovered"
+owner = "tools/lab/radiance/launch-flashnext-best.sh"
+source = "launcher variable assignment"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "launcher.PIDS"
+type = "str"
+class = "discovered"
+owner = "tools/lab/radiance/launch-flashnext-best.sh"
+source = "launcher variable assignment"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "launcher.SHM"
+type = "str"
+class = "policy"
+owner = "tools/lab/radiance/launch-flashnext-best.sh"
+source = "launcher variable assignment"
+lifecycle = "startup-only"
+default = "/r3-moe-helper"
+
+[[setting]]
+key = "launcher.PORT"
+type = "int"
+class = "policy"
+owner = "tools/lab/radiance/launch-flashnext-best.sh"
+source = "launcher variable assignment"
+lifecycle = "startup-only"
+default = "36080"
+
+[[setting]]
+key = "launcher.HEAT"
+type = "str"
+class = "discovered"
+owner = "tools/lab/radiance/launch-flashnext-best.sh"
+source = "launcher variable assignment"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "launcher.BUILD"
+type = "str"
+class = "experiment"
+owner = "tools/lab/radiance/launch-flashnext-best.sh"
+source = "launcher variable assignment"
+lifecycle = "startup-only"
+default = "\"\""
+
+[[setting]]
+key = "launcher.GPU_POWER"
+type = "bool"
+class = "policy"
+owner = "tools/lab/radiance/launch-flashnext-best.sh"
+source = "launcher variable assignment"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "launcher.LAYOUT"
+type = "str"
+class = "policy"
+owner = "tools/lab/radiance/launch-flashnext-best.sh"
+source = "launcher variable assignment"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "launcher.BUDGETS"
+type = "array[str]"
+class = "experiment"
+owner = "tools/lab/radiance/launch-flashnext-best.sh"
+source = "launcher variable assignment"
+lifecycle = "startup-only"
+default = "()"
+
+[[setting]]
+key = "launcher.RECORD"
+type = "str"
+class = "derived"
+owner = "tools/lab/radiance/launch-flashnext-best.sh"
+source = "launcher variable assignment"
+lifecycle = "startup-only"
+derive_from = "container geometry, host topology, policy profile and calibrated costs"
+
+[[setting]]
+key = "launcher.HOST_POOL_MIB"
+type = "int"
+class = "derived"
+owner = "tools/lab/radiance/launch-flashnext-best.sh"
+source = "launcher variable assignment"
+lifecycle = "startup-only"
+derive_from = "host/VRAM discovery, model tensor sizes and runtime reserves (RSC03)"
+default = "9216"
+
+[[setting]]
+key = "launcher.HOST_KV_MIB"
+type = "int"
+class = "derived"
+owner = "tools/lab/radiance/launch-flashnext-best.sh"
+source = "launcher variable assignment"
+lifecycle = "startup-only"
+derive_from = "host/VRAM discovery, model tensor sizes and runtime reserves (RSC03)"
+default = "12288"
+
+[[setting]]
+key = "launcher.CHUNK"
+type = "int"
+class = "derived"
+owner = "tools/lab/radiance/launch-flashnext-best.sh"
+source = "launcher variable assignment"
+lifecycle = "startup-only"
+derive_from = "model geometry, sessions, draft depth and calibrated step cost (RCS10)"
+default = "2048"
+
+[[setting]]
+key = "launcher.NGRAM"
+type = "str"
+class = "policy"
+owner = "tools/lab/radiance/launch-flashnext-best.sh"
+source = "launcher variable assignment"
+lifecycle = "startup-only"
+default = "ram"
+
+[[setting]]
+key = "launcher.KV_DTYPE"
+type = "str"
+class = "policy"
+owner = "tools/lab/radiance/launch-flashnext-best.sh"
+source = "launcher variable assignment"
+lifecycle = "startup-only"
+default = "fp8"
+
+[[setting]]
+key = "launcher.ENGINE_ARGS"
+type = "array[str]"
+class = "experiment"
+owner = "tools/lab/radiance/launch-flashnext-best.sh"
+source = "launcher variable assignment"
+lifecycle = "startup-only"
+default = "()"
+
+[[setting]]
+key = "launcher.NGRAM_DEV"
+type = "str"
+class = "discovered"
+owner = "tools/lab/radiance/launch-flashnext-best.sh"
+source = "launcher variable assignment"
+lifecycle = "startup-only"
+default = "\"\""
+
+[[setting]]
+key = "launcher.MAX_LEN"
+type = "int"
+class = "policy"
+owner = "tools/lab/radiance/launch-flashnext-best.sh"
+source = "launcher variable assignment"
+lifecycle = "startup-only"
+default = "262144"
+
+[[setting]]
+key = "launcher.ROPE"
+type = "str"
+class = "policy"
+owner = "tools/lab/radiance/launch-flashnext-best.sh"
+source = "launcher variable assignment"
+lifecycle = "startup-only"
+default = "none"
+
+[[setting]]
+key = "launcher.SEQS"
+type = "int"
+class = "policy"
+owner = "tools/lab/radiance/launch-flashnext-best.sh"
+source = "launcher variable assignment"
+lifecycle = "startup-only"
+default = "8"
+
+[[setting]]
+key = "launcher.PREFIX_RESUME"
+type = "str"
+class = "policy"
+owner = "tools/lab/radiance/launch-flashnext-best.sh"
+source = "launcher variable assignment"
+lifecycle = "startup-only"
+default = "nearest"
+
+[[setting]]
+key = "launcher.RECORD_PERIOD"
+type = "int"
+class = "derived"
+owner = "tools/lab/radiance/launch-flashnext-best.sh"
+source = "launcher variable assignment"
+lifecycle = "startup-only"
+derive_from = "container geometry, host topology, policy profile and calibrated costs"
+default = "60"
+
+[[setting]]
+key = "launcher.MODEL"
+type = "str"
+class = "discovered"
+owner = "tools/lab/radiance/launch-flashnext-best.sh"
+source = "launcher variable assignment"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "launcher.RAD_BIN"
+type = "str"
+class = "discovered"
+owner = "tools/lab/radiance/launch-flashnext-best.sh"
+source = "launcher variable assignment"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "launcher.RAD_HOME"
+type = "str"
+class = "discovered"
+owner = "tools/lab/radiance/launch-flashnext-best.sh"
+source = "launcher variable assignment"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "launcher.HELPER"
+type = "str"
+class = "discovered"
+owner = "tools/lab/radiance/launch-flashnext-best.sh"
+source = "launcher variable assignment"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "launcher.HELPER_WRAP"
+type = "str"
+class = "experiment"
+owner = "tools/lab/radiance/launch-flashnext-best.sh"
+source = "launcher variable assignment"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "launcher.ENGINE_WRAP"
+type = "str"
+class = "experiment"
+owner = "tools/lab/radiance/launch-flashnext-best.sh"
+source = "launcher variable assignment"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "launcher.CMD"
+type = "str"
+class = "experiment"
+owner = "tools/lab/radiance/launch-flashnext-best.sh"
+source = "launcher variable assignment"
+lifecycle = "startup-only"
+default = "start"
+
+[[setting]]
+key = "launcher.literal.--tp"
+type = "str"
+class = "derived"
+owner = "tools/lab/radiance/launch-flashnext-best.sh"
+source = "literal in COMMON or engine argv"
+lifecycle = "startup-only"
+derive_from = "container geometry, host topology, policy profile and calibrated costs"
+default = "1"
+
+[[setting]]
+key = "launcher.literal.--placement"
+type = "str"
+class = "policy"
+owner = "tools/lab/radiance/launch-flashnext-best.sh"
+source = "literal in COMMON or engine argv"
+lifecycle = "startup-only"
+default = "expert_tiered"
+
+[[setting]]
+key = "launcher.literal.--checkpoint-interval"
+type = "str"
+class = "derived"
+owner = "tools/lab/radiance/launch-flashnext-best.sh"
+source = "literal in COMMON or engine argv"
+lifecycle = "startup-only"
+derive_from = "model geometry, sessions, draft depth and calibrated step cost (RCS10)"
+default = "4096"
+
+[[setting]]
+key = "launcher.literal.--num-speculative-tokens"
+type = "str"
+class = "tuned"
+owner = "tools/lab/radiance/launch-flashnext-best.sh"
+source = "literal in COMMON or engine argv"
+lifecycle = "startup-only"
+derive_from = "model and topology keyed calibration, shape and serving objective (RCS10/RHP09)"
+default = "3"
+
+[[setting]]
+key = "launcher.literal.R3_MOE_WORKER_MAX_ROWS"
+type = "str"
+class = "derived"
+owner = "tools/lab/radiance/launch-flashnext-best.sh"
+source = "literal in COMMON or engine argv"
+lifecycle = "startup-only"
+derive_from = "model geometry, sessions, draft depth and calibrated step cost (RCS10)"
+default = "4096"
+
+[[setting]]
+key = "launcher.literal.R3_MOE_WORKER_SMALL_ROWS"
+type = "str"
+class = "derived"
+owner = "tools/lab/radiance/launch-flashnext-best.sh"
+source = "literal in COMMON or engine argv"
+lifecycle = "startup-only"
+derive_from = "model geometry, sessions, draft depth and calibrated step cost (RCS10)"
+default = "8"
+
+[[setting]]
+key = "launcher.literal.R3_MOE_WORKER_GEMV_LARGE_ROWS"
+type = "str"
+class = "derived"
+owner = "tools/lab/radiance/launch-flashnext-best.sh"
+source = "literal in COMMON or engine argv"
+lifecycle = "startup-only"
+derive_from = "model geometry, sessions, draft depth and calibrated step cost (RCS10)"
+default = "32"
+
+[[setting]]
+key = "launcher.literal.R3_MOE_WORKER_MOE_DOWN_TILE"
+type = "str"
+class = "tuned"
+owner = "tools/lab/radiance/launch-flashnext-best.sh"
+source = "literal in COMMON or engine argv"
+lifecycle = "startup-only"
+derive_from = "model and topology keyed calibration, shape and serving objective (RCS10/RHP09)"
+default = "1"
+
+[[setting]]
+key = "launcher.literal.R3_MOE_WORKER_SKIP_OWNED"
+type = "str"
+class = "derived"
+owner = "tools/lab/radiance/launch-flashnext-best.sh"
+source = "literal in COMMON or engine argv"
+lifecycle = "startup-only"
+derive_from = "container geometry, host topology, policy profile and calibrated costs"
+default = "1"
+
+[[setting]]
+key = "launcher.literal.R3_MOE_WORKER_HISTOGRAM_PERIOD_S"
+type = "str"
+class = "policy"
+owner = "tools/lab/radiance/launch-flashnext-best.sh"
+source = "literal in COMMON or engine argv"
+lifecycle = "startup-only"
+default = "60"
+
+[[setting]]
+key = "service.objective"
+type = "enum"
+class = "policy"
+owner = "tools/bigcherry/serving_config.py"
+source = "typed site/profile/override value"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "service.max_sessions"
+type = "positive"
+class = "policy"
+owner = "tools/bigcherry/serving_config.py"
+source = "typed site/profile/override value"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "service.max_context"
+type = "positive"
+class = "policy"
+owner = "tools/bigcherry/serving_config.py"
+source = "typed site/profile/override value"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "service.retention"
+type = "enum"
+class = "policy"
+owner = "tools/bigcherry/serving_config.py"
+source = "typed site/profile/override value"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "service.quality"
+type = "enum"
+class = "policy"
+owner = "tools/bigcherry/serving_config.py"
+source = "typed site/profile/override value"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "runtime.chunk_tokens"
+type = "positive"
+class = "derived"
+owner = "tools/bigcherry/serving_config.py"
+source = "typed site/profile/override value"
+lifecycle = "startup-only"
+derive_from = "model geometry, sessions, draft depth and calibrated step cost (RCS10)"
+
+[[setting]]
+key = "runtime.checkpoint_interval"
+type = "positive"
+class = "derived"
+owner = "tools/bigcherry/serving_config.py"
+source = "typed site/profile/override value"
+lifecycle = "startup-only"
+derive_from = "model geometry, sessions, draft depth and calibrated step cost (RCS10)"
+
+[[setting]]
+key = "runtime.speculative_tokens"
+type = "nonnegative"
+class = "derived"
+owner = "tools/bigcherry/serving_config.py"
+source = "typed site/profile/override value"
+lifecycle = "startup-only"
+derive_from = "container geometry, host topology, policy profile and calibrated costs"
+
+[[setting]]
+key = "runtime.ngram_placement"
+type = "enum"
+class = "tuned"
+owner = "tools/bigcherry/serving_config.py"
+source = "typed site/profile/override value"
+lifecycle = "startup-only"
+derive_from = "model and topology keyed calibration, shape and serving objective (RCS10/RHP09)"
+
+[[setting]]
+key = "runtime.kv_dtype"
+type = "enum"
+class = "tuned"
+owner = "tools/bigcherry/serving_config.py"
+source = "typed site/profile/override value"
+lifecycle = "startup-only"
+derive_from = "model and topology keyed calibration, shape and serving objective (RCS10/RHP09)"
+
+[[setting]]
+key = "runtime.prefix_resume"
+type = "enum"
+class = "tuned"
+owner = "tools/bigcherry/serving_config.py"
+source = "typed site/profile/override value"
+lifecycle = "startup-only"
+derive_from = "model and topology keyed calibration, shape and serving objective (RCS10/RHP09)"
+
+[[setting]]
+key = "runtime.record_period_s"
+type = "positive"
+class = "tuned"
+owner = "tools/bigcherry/serving_config.py"
+source = "typed site/profile/override value"
+lifecycle = "startup-only"
+derive_from = "model and topology keyed calibration, shape and serving objective (RCS10/RHP09)"
+
+[[setting]]
+key = "runtime.record_heat"
+type = "bool"
+class = "tuned"
+owner = "tools/bigcherry/serving_config.py"
+source = "typed site/profile/override value"
+lifecycle = "startup-only"
+derive_from = "model and topology keyed calibration, shape and serving objective (RCS10/RHP09)"
+
+[[setting]]
+key = "runtime.rope_scaling"
+type = "str"
+class = "tuned"
+owner = "tools/bigcherry/serving_config.py"
+source = "typed site/profile/override value"
+lifecycle = "startup-only"
+derive_from = "model and topology keyed calibration, shape and serving objective (RCS10/RHP09)"
+
+[[setting]]
+key = "runtime.port"
+type = "port"
+class = "tuned"
+owner = "tools/bigcherry/serving_config.py"
+source = "typed site/profile/override value"
+lifecycle = "startup-only"
+derive_from = "model and topology keyed calibration, shape and serving objective (RCS10/RHP09)"
+
+[[setting]]
+key = "runtime.heat_file"
+type = "str"
+class = "tuned"
+owner = "tools/bigcherry/serving_config.py"
+source = "typed site/profile/override value"
+lifecycle = "startup-only"
+derive_from = "model and topology keyed calibration, shape and serving objective (RCS10/RHP09)"
+
+[[setting]]
+key = "memory.host_pool_mib"
+type = "nonnegative"
+class = "derived"
+owner = "tools/bigcherry/serving_config.py"
+source = "typed site/profile/override value"
+lifecycle = "startup-only"
+derive_from = "host/VRAM discovery, model tensor sizes and runtime reserves (RSC03)"
+
+[[setting]]
+key = "memory.host_kv_mib"
+type = "nonnegative"
+class = "derived"
+owner = "tools/bigcherry/serving_config.py"
+source = "typed site/profile/override value"
+lifecycle = "startup-only"
+derive_from = "host/VRAM discovery, model tensor sizes and runtime reserves (RSC03)"
+
+[[setting]]
+key = "memory.max_host_mib"
+type = "positive"
+class = "policy"
+owner = "tools/bigcherry/serving_config.py"
+source = "typed site/profile/override value"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "memory.max_helper_budget_mib"
+type = "positive"
+class = "policy"
+owner = "tools/bigcherry/serving_config.py"
+source = "typed site/profile/override value"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "hardware.allowed_arches"
+type = "strlist"
+class = "policy"
+owner = "tools/bigcherry/serving_config.py"
+source = "typed site/profile/override value"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "hardware.max_helpers"
+type = "positive"
+class = "policy"
+owner = "tools/bigcherry/serving_config.py"
+source = "typed site/profile/override value"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "hardware.max_sessions"
+type = "positive"
+class = "policy"
+owner = "tools/bigcherry/serving_config.py"
+source = "typed site/profile/override value"
+lifecycle = "startup-only"
+
+[[setting]]
+key = "hardware.max_context"
+type = "positive"
+class = "policy"
+owner = "tools/bigcherry/serving_config.py"
+source = "typed site/profile/override value"
+lifecycle = "startup-only"
