@@ -269,6 +269,8 @@ int main() {
     refused(kBase + "\n[[field]]\npath = \"/spec/t\"\nkind = \"array\"\nitem_kind = \"tuple\"\ntuple = [\"group\", \"uint\"]\n"
                     "doc = \"x\"\n",
             "tuple elements must be integer defs", "a tuple element that is not an integer def");
+    refused(kBase + "\n[[field]]\npath = \"/spec/s\"\nkind = \"string\"\npattern = \"^a+$\"\ndoc = \"x\"\n",
+            "a pattern needs a max_length", "a pattern without a max_length (spec §11 amendment 7)");
     refused(kBase + "\n[[field]]\npath = \"/spec/s\"\nkind = \"string\"\nmin_length = -1\ndoc = \"x\"\n",
             "min_length is not negative", "a negative string length");
     refused(kBase + "\n[[field]]\npath = \"/spec/e\"\nkind = \"enum\"\nvalues = [\"a.b\", \"a_b\"]\ncpp_type = \"E\"\ndoc = \"x\"\n",

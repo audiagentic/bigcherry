@@ -44,7 +44,12 @@ struct HelperView {
     const OwnedSet& owned;
     const Handoff& handoff;
     HelperCommon settings;
+    bool rows_active;   // spec §2.2: the rows kernel runs when the architecture requires it or the policy asks for it
 };
+
+/* spec §5.1: the plan cache key, lowercase hex SHA-256 of the JCS key_inputs built from the manifest and the effective
+ * helper settings. read_manifest refuses a manifest whose spec.plan.engine_memory.cache_key differs. */
+std::string plan_cache_key(const Manifest& m);
 /* BC_CFG_UNRESOLVED_REFERENCE when no helper has `role`. */
 Result<HelperView> helper_view(const Manifest& m, std::string_view role);
 

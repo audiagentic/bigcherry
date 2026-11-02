@@ -66,12 +66,15 @@ bool calendar_date(const std::string& s) {
     return d <= kDays[m - 1] + (m == 2 && leap ? 1 : 0);
 }
 
-Status str_in(const Json& j, const std::string& at, C tc, C vc, int64_t min_length, const std::regex* re,
-              const char* pattern, bool date, std::string* out) {
+Status str_in(const Json& j, const std::string& at, C tc, C vc, int64_t min_length, int64_t max_length,
+              const std::regex* re, const char* pattern, bool date, std::string* out) {
     if (!j.is_string()) return type_fault(tc, at, "a string", j);
     const std::string& v = j.get_ref<const std::string&>();
     if (min_length >= 0 && static_cast<int64_t>(v.size()) < min_length)
         return fault(vc, at, min_length == 1 ? "must not be empty" : "is shorter than " + std::to_string(min_length));
+    // before the pattern: std::regex recurses per repetition, so it only sees bounded strings (amendment 7)
+    if (max_length >= 0 && static_cast<int64_t>(v.size()) > max_length)
+        return fault(vc, at, "is " + std::to_string(v.size()) + " bytes, longer than " + std::to_string(max_length));
     if (re && !std::regex_search(v, *re)) return fault(vc, at, Json(v).dump() + " does not match " + pattern);
     if (date && !calendar_date(v)) return fault(vc, at, Json(v).dump() + " is not a YYYY-MM-DD date");
     *out = v;
@@ -339,22 +342,22 @@ Status d6(const Json& j, const std::string& at, int64_t* out) {  // $defs/positi
 
 Status d7(const Json& j, const std::string& at, std::string* out) {  // $defs/hex64
     static const std::regex re(R"re(^[0-9a-f]{64}$)re", std::regex::ECMAScript);
-    return str_in(j, at, C::invalid_type, C::invalid_value, -1, &re, "^[0-9a-f]{64}$", false, out);
+    return str_in(j, at, C::invalid_type, C::invalid_value, -1, 64, &re, "^[0-9a-f]{64}$", false, out);
 }
 
 Status d8(const Json& j, const std::string& at, std::string* out) {  // $defs/digest
     static const std::regex re(R"re(^sha256:[0-9a-f]{64}$)re", std::regex::ECMAScript);
-    return str_in(j, at, C::invalid_type, C::invalid_value, -1, &re, "^sha256:[0-9a-f]{64}$", false, out);
+    return str_in(j, at, C::invalid_type, C::invalid_value, -1, 71, &re, "^sha256:[0-9a-f]{64}$", false, out);
 }
 
 Status d9(const Json& j, const std::string& at, std::string* out) {  // $defs/bdf
     static const std::regex re(R"re(^[0-9a-f]{4}:[0-9a-f]{2}:[0-1][0-9a-f]\.[0-7]$)re", std::regex::ECMAScript);
-    return str_in(j, at, C::invalid_type, C::invalid_value, -1, &re, "^[0-9a-f]{4}:[0-9a-f]{2}:[0-1][0-9a-f]\\.[0-7]$", false, out);
+    return str_in(j, at, C::invalid_type, C::invalid_value, -1, 12, &re, "^[0-9a-f]{4}:[0-9a-f]{2}:[0-1][0-9a-f]\\.[0-7]$", false, out);
 }
 
 Status d10(const Json& j, const std::string& at, std::string* out) {  // $defs/jsonPointer
     static const std::regex re(R"re(^(|/(?:[^~/]|~[01])*(?:/(?:[^~/]|~[01])*)*)$)re", std::regex::ECMAScript);
-    return str_in(j, at, C::invalid_type, C::invalid_value, -1, &re, "^(|/(?:[^~/]|~[01])*(?:/(?:[^~/]|~[01])*)*)$", false, out);
+    return str_in(j, at, C::invalid_type, C::invalid_value, -1, 4096, &re, "^(|/(?:[^~/]|~[01])*(?:/(?:[^~/]|~[01])*)*)$", false, out);
 }
 
 Status d15(const Json& j, const std::string& at, bool* out) {  // $defs/helperCommon/cpu/reference
@@ -698,7 +701,7 @@ Status d50(const Json& j, const std::string& at, std::string* out) {  // $defs/e
 }
 
 Status d53(const Json& j, const std::string& at, std::string* out) {  // $defs/enginePlan/host/[]/name
-    return str_in(j, at, C::invalid_type, C::invalid_value, 1, nullptr, "", false, out);
+    return str_in(j, at, C::invalid_type, C::invalid_value, 1, -1, nullptr, "", false, out);
 }
 
 Status d54(const Json& j, const std::string& at, int64_t* out) {  // $defs/enginePlan/host/[]/bytes
@@ -710,11 +713,11 @@ Status d55(const Json& j, const std::string& at, Residence* out) {  // $defs/eng
 }
 
 Status d56(const Json& j, const std::string& at, std::string* out) {  // $defs/enginePlan/host/[]/from
-    return str_in(j, at, C::invalid_type, C::invalid_value, 1, nullptr, "", false, out);
+    return str_in(j, at, C::invalid_type, C::invalid_value, 1, -1, nullptr, "", false, out);
 }
 
 Status d57(const Json& j, const std::string& at, std::string* out) {  // $defs/enginePlan/host/[]/remedy
-    return str_in(j, at, C::invalid_type, C::invalid_value, -1, nullptr, "", false, out);
+    return str_in(j, at, C::invalid_type, C::invalid_value, -1, -1, nullptr, "", false, out);
 }
 
 Status d51(const Json& j, const std::string& at, std::vector<PlanHostConsumer>* out) {  // $defs/enginePlan/host
@@ -742,7 +745,7 @@ Status d61(const Json& j, const std::string& at, int64_t* out) {  // $defs/engin
 }
 
 Status d62(const Json& j, const std::string& at, std::string* out) {  // $defs/enginePlan/checkpoints/from
-    return str_in(j, at, C::invalid_type, C::invalid_value, 1, nullptr, "", false, out);
+    return str_in(j, at, C::invalid_type, C::invalid_value, 1, -1, nullptr, "", false, out);
 }
 
 Status d64(const Json& j, const std::string& at, int64_t* out) {  // $defs/enginePlan/kv_one_session/bytes
@@ -750,7 +753,7 @@ Status d64(const Json& j, const std::string& at, int64_t* out) {  // $defs/engin
 }
 
 Status d65(const Json& j, const std::string& at, std::string* out) {  // $defs/enginePlan/kv_one_session/from
-    return str_in(j, at, C::invalid_type, C::invalid_value, 1, nullptr, "", false, out);
+    return str_in(j, at, C::invalid_type, C::invalid_value, 1, -1, nullptr, "", false, out);
 }
 
 Status d67(const Json& j, const std::string& at, int64_t* out) {  // $defs/enginePlan/vram/claimable
@@ -794,7 +797,7 @@ Status d76(const Json& j, const std::string& at, int64_t* out) {  // $defs/engin
 }
 
 Status d77(const Json& j, const std::string& at, std::string* out) {  // $defs/enginePlan/vram/from
-    return str_in(j, at, C::invalid_type, C::invalid_value, 1, nullptr, "", false, out);
+    return str_in(j, at, C::invalid_type, C::invalid_value, 1, -1, nullptr, "", false, out);
 }
 
 Status d80(const Json& j, const std::string& at, int64_t* out) {  // $defs/enginePlan/vram/cards/[]/capacity
@@ -846,7 +849,7 @@ Status d87(const Json& j, const std::string& at, std::string* out) {  // /kind
 
 Status d89(const Json& j, const std::string& at, std::string* out) {  // /metadata/instance_id
     static const std::regex re(R"re(^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$)re", std::regex::ECMAScript);
-    return str_in(j, at, C::invalid_type, C::invalid_value, -1, &re, "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$", false, out);
+    return str_in(j, at, C::invalid_type, C::invalid_value, -1, 36, &re, "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$", false, out);
 }
 
 Status d91(const Json& j, const std::string& at, std::string* out) {  // /metadata/producer/name
@@ -858,7 +861,7 @@ Status d91(const Json& j, const std::string& at, std::string* out) {  // /metada
 
 Status d92(const Json& j, const std::string& at, std::string* out) {  // /metadata/producer/build_sha256
     static const std::regex re(R"re(^[0-9a-f]{64}$)re", std::regex::ECMAScript);
-    return str_in(j, at, C::invalid_type, C::invalid_value, -1, &re, "^[0-9a-f]{64}$", false, out);
+    return str_in(j, at, C::invalid_type, C::invalid_value, -1, 64, &re, "^[0-9a-f]{64}$", false, out);
 }
 
 Status d93(const Json& j, const std::string& at, int64_t* out) {  // /metadata/contract_version
@@ -870,15 +873,15 @@ Status d93(const Json& j, const std::string& at, int64_t* out) {  // /metadata/c
 
 Status d94(const Json& j, const std::string& at, std::string* out) {  // /metadata/content_digest
     static const std::regex re(R"re(^sha256:[0-9a-f]{64}$)re", std::regex::ECMAScript);
-    return str_in(j, at, C::invalid_type, C::invalid_value, -1, &re, "^sha256:[0-9a-f]{64}$", false, out);
+    return str_in(j, at, C::invalid_type, C::invalid_value, -1, 71, &re, "^sha256:[0-9a-f]{64}$", false, out);
 }
 
 Status d97(const Json& j, const std::string& at, std::string* out) {  // /spec/intent/model
-    return str_in(j, at, C::invalid_type, C::invalid_value, 1, nullptr, "", false, out);
+    return str_in(j, at, C::invalid_type, C::invalid_value, 1, -1, nullptr, "", false, out);
 }
 
 Status d98(const Json& j, const std::string& at, std::string* out) {  // /spec/intent/layout
-    return str_in(j, at, C::invalid_type, C::invalid_value, 1, nullptr, "", false, out);
+    return str_in(j, at, C::invalid_type, C::invalid_value, 1, -1, nullptr, "", false, out);
 }
 
 Status d100(const Json& j, const std::string& at, Profile* out) {  // /spec/intent/service/profile
@@ -906,7 +909,7 @@ Status d105(const Json& j, const std::string& at, Quality* out) {  // /spec/inte
 }
 
 Status d107(const Json& j, const std::string& at, std::string* out) {  // /spec/facts/source
-    return str_in(j, at, C::invalid_type, C::invalid_value, 1, nullptr, "", false, out);
+    return str_in(j, at, C::invalid_type, C::invalid_value, 1, -1, nullptr, "", false, out);
 }
 
 Status d110(const Json& j, const std::string& at, int64_t* out) {  // /spec/facts/host/memory/total_mib
@@ -926,7 +929,7 @@ Status d113(const Json& j, const std::string& at, int64_t* out) {  // /spec/fact
 }
 
 Status d116(const Json& j, const std::string& at, std::string* out) {  // /spec/facts/host/memory/cgroup_limits/[]/path
-    return str_in(j, at, C::invalid_type, C::invalid_value, 1, nullptr, "", false, out);
+    return str_in(j, at, C::invalid_type, C::invalid_value, 1, -1, nullptr, "", false, out);
 }
 
 Status d117(const Json& j, const std::string& at, int64_t* out) {  // /spec/facts/host/memory/cgroup_limits/[]/room_mib
@@ -959,12 +962,12 @@ Status d121(const Json& j, const std::string& at, int64_t* out) {  // /spec/fact
 
 Status d124(const Json& j, const std::string& at, std::string* out) {  // /spec/facts/gpus/[]/bdf
     static const std::regex re(R"re(^[0-9a-f]{4}:[0-9a-f]{2}:[0-1][0-9a-f]\.[0-7]$)re", std::regex::ECMAScript);
-    return str_in(j, at, C::invalid_type, C::invalid_value, -1, &re, "^[0-9a-f]{4}:[0-9a-f]{2}:[0-1][0-9a-f]\\.[0-7]$", false, out);
+    return str_in(j, at, C::invalid_type, C::invalid_value, -1, 12, &re, "^[0-9a-f]{4}:[0-9a-f]{2}:[0-1][0-9a-f]\\.[0-7]$", false, out);
 }
 
 Status d125(const Json& j, const std::string& at, std::string* out) {  // /spec/facts/gpus/[]/arch
     static const std::regex re(R"re(^gfx[0-9a-f]+$)re", std::regex::ECMAScript);
-    return str_in(j, at, C::invalid_type, C::invalid_value, -1, &re, "^gfx[0-9a-f]+$", false, out);
+    return str_in(j, at, C::invalid_type, C::invalid_value, -1, 32, &re, "^gfx[0-9a-f]+$", false, out);
 }
 
 Status d126(const Json& j, const std::string& at, int64_t* out) {  // /spec/facts/gpus/[]/hip_ordinal
@@ -1002,11 +1005,11 @@ Status d134(const Json& j, const std::string& at, CalibrationSource* out) {  // 
 }
 
 Status d135(const Json& j, const std::string& at, std::string* out) {  // /spec/calibration/[]/seeded
-    return str_in(j, at, C::calibration_invalid, C::calibration_invalid, -1, nullptr, "", true, out);
+    return str_in(j, at, C::calibration_invalid, C::calibration_invalid, -1, -1, nullptr, "", true, out);
 }
 
 Status d136(const Json& j, const std::string& at, std::string* out) {  // /spec/calibration/[]/evidence
-    return str_in(j, at, C::calibration_invalid, C::calibration_invalid, 1, nullptr, "", false, out);
+    return str_in(j, at, C::calibration_invalid, C::calibration_invalid, 1, -1, nullptr, "", false, out);
 }
 
 Status d130(const Json& j, const std::string& at, std::vector<CalibrationEntry>* out) {  // /spec/calibration
@@ -1041,7 +1044,7 @@ Status d142(const Json& j, const std::string& at, int64_t* out) {  // /spec/reso
 
 Status d145(const Json& j, const std::string& at, std::string* out) {  // /spec/handoff/transport/shm
     static const std::regex re(R"re(^/[A-Za-z0-9][A-Za-z0-9._-]*$)re", std::regex::ECMAScript);
-    return str_in(j, at, C::invalid_type, C::invalid_value, -1, &re, "^/[A-Za-z0-9][A-Za-z0-9._-]*$", false, out);
+    return str_in(j, at, C::invalid_type, C::invalid_value, -1, 255, &re, "^/[A-Za-z0-9][A-Za-z0-9._-]*$", false, out);
 }
 
 Status d146(const Json& j, const std::string& at, int64_t* out) {  // /spec/handoff/transport/max_rows
@@ -1067,11 +1070,11 @@ Status d151(const Json& j, const std::string& at, PlacementStrategy* out) {  // 
 }
 
 Status d152(const Json& j, const std::string& at, std::string* out) {  // /spec/handoff/placement/heat_file
-    return str_in(j, at, C::invalid_type, C::invalid_value, 1, nullptr, "", false, out);
+    return str_in(j, at, C::invalid_type, C::invalid_value, 1, -1, nullptr, "", false, out);
 }
 
 Status d154(const Json& j, const std::string& at, std::string* out) {  // /spec/handoff/telemetry/histogram_file
-    return str_in(j, at, C::invalid_type, C::invalid_value, 1, nullptr, "", false, out);
+    return str_in(j, at, C::invalid_type, C::invalid_value, 1, -1, nullptr, "", false, out);
 }
 
 Status d155(const Json& j, const std::string& at, int64_t* out) {  // /spec/handoff/telemetry/period_s
@@ -1084,7 +1087,7 @@ Status d157(const Json& j, const std::string& at, int64_t* out) {  // /spec/hand
 
 Status d162(const Json& j, const std::string& at, std::string* out) {  // /spec/processes/engine/device/gpus/[]
     static const std::regex re(R"re(^[0-9a-f]{4}:[0-9a-f]{2}:[0-1][0-9a-f]\.[0-7]$)re", std::regex::ECMAScript);
-    return str_in(j, at, C::invalid_type, C::invalid_value, -1, &re, "^[0-9a-f]{4}:[0-9a-f]{2}:[0-1][0-9a-f]\\.[0-7]$", false, out);
+    return str_in(j, at, C::invalid_type, C::invalid_value, -1, 12, &re, "^[0-9a-f]{4}:[0-9a-f]{2}:[0-1][0-9a-f]\\.[0-7]$", false, out);
 }
 
 Status d161(const Json& j, const std::string& at, std::vector<std::string>* out) {  // /spec/processes/engine/device/gpus
@@ -1101,11 +1104,11 @@ Status d161(const Json& j, const std::string& at, std::vector<std::string>* out)
 }
 
 Status d164(const Json& j, const std::string& at, std::string* out) {  // /spec/processes/engine/runtime/radiance_home
-    return str_in(j, at, C::invalid_type, C::invalid_value, 1, nullptr, "", false, out);
+    return str_in(j, at, C::invalid_type, C::invalid_value, 1, -1, nullptr, "", false, out);
 }
 
 Status d166(const Json& j, const std::string& at, std::string* out) {  // /spec/processes/engine/runtime/kernels/[]
-    return str_in(j, at, C::invalid_type, C::invalid_value, 1, nullptr, "", false, out);
+    return str_in(j, at, C::invalid_type, C::invalid_value, 1, -1, nullptr, "", false, out);
 }
 
 Status d165(const Json& j, const std::string& at, std::vector<std::string>* out) {  // /spec/processes/engine/runtime/kernels
@@ -1154,7 +1157,7 @@ Status d177(const Json& j, const std::string& at, int64_t* out) {  // /spec/proc
 }
 
 Status d178(const Json& j, const std::string& at, std::string* out) {  // /spec/processes/engine/execution/rope_scaling
-    return str_in(j, at, C::invalid_type, C::invalid_value, 1, nullptr, "", false, out);
+    return str_in(j, at, C::invalid_type, C::invalid_value, 1, -1, nullptr, "", false, out);
 }
 
 Status d179(const Json& j, const std::string& at, PrefixResume* out) {  // /spec/processes/engine/execution/prefix_resume
@@ -1163,12 +1166,12 @@ Status d179(const Json& j, const std::string& at, PrefixResume* out) {  // /spec
 
 Status d183(const Json& j, const std::string& at, std::string* out) {  // /spec/processes/helpers/[]/role
     static const std::regex re(R"re(^helper(?:0|[1-9][0-9]*)$)re", std::regex::ECMAScript);
-    return str_in(j, at, C::invalid_type, C::invalid_value, -1, &re, "^helper(?:0|[1-9][0-9]*)$", false, out);
+    return str_in(j, at, C::invalid_type, C::invalid_value, -1, 32, &re, "^helper(?:0|[1-9][0-9]*)$", false, out);
 }
 
 Status d184(const Json& j, const std::string& at, std::string* out) {  // /spec/processes/helpers/[]/gpu
     static const std::regex re(R"re(^[0-9a-f]{4}:[0-9a-f]{2}:[0-1][0-9a-f]\.[0-7]$)re", std::regex::ECMAScript);
-    return str_in(j, at, C::invalid_type, C::invalid_value, -1, &re, "^[0-9a-f]{4}:[0-9a-f]{2}:[0-1][0-9a-f]\\.[0-7]$", false, out);
+    return str_in(j, at, C::invalid_type, C::invalid_value, -1, 12, &re, "^[0-9a-f]{4}:[0-9a-f]{2}:[0-1][0-9a-f]\\.[0-7]$", false, out);
 }
 
 Status d185(const Json& j, const std::string& at, int64_t* out) {  // /spec/processes/helpers/[]/vram_budget_mib
@@ -1176,7 +1179,7 @@ Status d185(const Json& j, const std::string& at, int64_t* out) {  // /spec/proc
 }
 
 Status d186(const Json& j, const std::string& at, std::string* out) {  // /spec/processes/helpers/[]/plugin_file
-    return str_in(j, at, C::invalid_type, C::invalid_value, 1, nullptr, "", false, out);
+    return str_in(j, at, C::invalid_type, C::invalid_value, 1, -1, nullptr, "", false, out);
 }
 
 Status d188(const Json& j, const std::string& at, ExpertFormat* out) {  // /spec/processes/helpers/[]/formats/[]
@@ -1229,12 +1232,12 @@ Status d181(const Json& j, const std::string& at, std::vector<HelperProcess>* ou
 
 Status d195(const Json& j, const std::string& at, std::string* out) {  // /spec/plan/owner_map/owner_map_sha256
     static const std::regex re(R"re(^[0-9a-f]{64}$)re", std::regex::ECMAScript);
-    return str_in(j, at, C::ownership_mismatch, C::ownership_mismatch, -1, &re, "^[0-9a-f]{64}$", false, out);
+    return str_in(j, at, C::ownership_mismatch, C::ownership_mismatch, -1, 64, &re, "^[0-9a-f]{64}$", false, out);
 }
 
 Status d198(const Json& j, const std::string& at, std::string* out) {  // /spec/plan/owner_map/helpers/[]/owned_sha256
     static const std::regex re(R"re(^[0-9a-f]{64}$)re", std::regex::ECMAScript);
-    return str_in(j, at, C::ownership_mismatch, C::ownership_mismatch, -1, &re, "^[0-9a-f]{64}$", false, out);
+    return str_in(j, at, C::ownership_mismatch, C::ownership_mismatch, -1, 64, &re, "^[0-9a-f]{64}$", false, out);
 }
 
 Status d199(const Json& j, const std::string& at, int64_t* out) {  // /spec/plan/owner_map/helpers/[]/count
@@ -1288,17 +1291,17 @@ Status d204(const Json& j, const std::string& at, int64_t* out) {  // /spec/plan
 
 Status d205(const Json& j, const std::string& at, std::string* out) {  // /spec/plan/engine_memory/cache_key
     static const std::regex re(R"re(^[0-9a-f]{64}$)re", std::regex::ECMAScript);
-    return str_in(j, at, C::invalid_type, C::invalid_value, -1, &re, "^[0-9a-f]{64}$", false, out);
+    return str_in(j, at, C::invalid_type, C::invalid_value, -1, 64, &re, "^[0-9a-f]{64}$", false, out);
 }
 
 Status d206(const Json& j, const std::string& at, std::string* out) {  // /spec/plan/engine_memory/model_identity
     static const std::regex re(R"re(^[0-9a-f]{64}$)re", std::regex::ECMAScript);
-    return str_in(j, at, C::invalid_type, C::invalid_value, -1, &re, "^[0-9a-f]{64}$", false, out);
+    return str_in(j, at, C::invalid_type, C::invalid_value, -1, 64, &re, "^[0-9a-f]{64}$", false, out);
 }
 
 Status d207(const Json& j, const std::string& at, std::string* out) {  // /spec/plan/engine_memory/engine_identity
     static const std::regex re(R"re(^[0-9a-f]{64}$)re", std::regex::ECMAScript);
-    return str_in(j, at, C::invalid_type, C::invalid_value, -1, &re, "^[0-9a-f]{64}$", false, out);
+    return str_in(j, at, C::invalid_type, C::invalid_value, -1, 64, &re, "^[0-9a-f]{64}$", false, out);
 }
 
 Status d211(const Json& j, const std::string& at, PlacementMode* out) {  // /spec/experiment/placement/mode
@@ -1311,7 +1314,7 @@ Status d212(const Json& j, const std::string& at, int64_t* out) {  // /spec/expe
 
 Status d217(const Json& j, const std::string& at, std::string* out) {  // /spec/experiment/shape/helpers/[]/role
     static const std::regex re(R"re(^helper(?:0|[1-9][0-9]*)$)re", std::regex::ECMAScript);
-    return str_in(j, at, C::invalid_type, C::invalid_value, -1, &re, "^helper(?:0|[1-9][0-9]*)$", false, out);
+    return str_in(j, at, C::invalid_type, C::invalid_value, -1, 32, &re, "^helper(?:0|[1-9][0-9]*)$", false, out);
 }
 
 Status d215(const Json& j, const std::string& at, std::vector<ShapePatch>* out) {  // /spec/experiment/shape/helpers
@@ -1339,7 +1342,7 @@ Status d222(const Json& j, const std::string& at, bool* out) {  // /spec/experim
 }
 
 Status d224(const Json& j, const std::string& at, std::string* out) {  // /spec/experiment/diagnostics/lanes/capture_file
-    return str_in(j, at, C::invalid_type, C::invalid_value, 1, nullptr, "", false, out);
+    return str_in(j, at, C::invalid_type, C::invalid_value, 1, -1, nullptr, "", false, out);
 }
 
 Status d225(const Json& j, const std::string& at, int64_t* out) {  // /spec/experiment/diagnostics/lanes/capture_every
@@ -1355,11 +1358,11 @@ Status d227(const Json& j, const std::string& at, int64_t* out) {  // /spec/expe
 }
 
 Status d228(const Json& j, const std::string& at, std::string* out) {  // /spec/experiment/diagnostics/lanes/test_stop_at
-    return str_in(j, at, C::invalid_type, C::invalid_value, 1, nullptr, "", false, out);
+    return str_in(j, at, C::invalid_type, C::invalid_value, 1, -1, nullptr, "", false, out);
 }
 
 Status d230(const Json& j, const std::string& at, std::string* out) {  // /spec/experiment/diagnostics/kernels/plugin_override
-    return str_in(j, at, C::invalid_type, C::invalid_value, 1, nullptr, "", false, out);
+    return str_in(j, at, C::invalid_type, C::invalid_value, 1, -1, nullptr, "", false, out);
 }
 
 Status d231(const Json& j, const std::string& at, Poison* out) {  // /spec/experiment/diagnostics/kernels/poison
@@ -1377,7 +1380,7 @@ Status d235(const Json& j, const std::string& at, Origin* out) {  // /provenance
 }
 
 Status d236(const Json& j, const std::string& at, std::string* out) {  // /provenance/*/source
-    return str_in(j, at, C::provenance_invalid, C::provenance_invalid, 1, nullptr, "", false, out);
+    return str_in(j, at, C::provenance_invalid, C::provenance_invalid, 1, -1, nullptr, "", false, out);
 }
 
 Status d237(const Json& j, const std::string& at, ValueClass* out) {  // /provenance/*/class
@@ -1394,7 +1397,7 @@ Status d239(const Json& j, const std::string& at, Confidence* out) {  // /proven
 
 Status d241(const Json& j, const std::string& at, std::string* out) {  // /provenance/*/inputs/[]
     static const std::regex re(R"re(^(|/(?:[^~/]|~[01])*(?:/(?:[^~/]|~[01])*)*)$)re", std::regex::ECMAScript);
-    return str_in(j, at, C::provenance_invalid, C::provenance_invalid, -1, &re, "^(|/(?:[^~/]|~[01])*(?:/(?:[^~/]|~[01])*)*)$", false, out);
+    return str_in(j, at, C::provenance_invalid, C::provenance_invalid, -1, 4096, &re, "^(|/(?:[^~/]|~[01])*(?:/(?:[^~/]|~[01])*)*)$", false, out);
 }
 
 Status d240(const Json& j, const std::string& at, std::vector<std::string>* out) {  // /provenance/*/inputs
@@ -1416,6 +1419,7 @@ Status d233(const Json& j, const std::string& at, std::map<std::string, Provenan
     static const std::regex re(R"re(^(|/(?:[^~/]|~[01])*(?:/(?:[^~/]|~[01])*)*)$)re", std::regex::ECMAScript);
     out->clear();
     for (const auto& [k, v] : j.items()) {
+        if (k.size() > 4096) return fault(C::provenance_invalid, keyed(at, k.substr(0, 64) + "..."), "key is " + std::to_string(k.size()) + " bytes, longer than 4096");
         if (!std::regex_search(k, re)) return fault(C::provenance_invalid, keyed(at, k), "key is not a valid jsonPointer");
         ProvenanceRecord x{};
         if (auto e = decode(v, keyed(at, k), &x)) return e;
@@ -3472,6 +3476,570 @@ Status decode(const Json& j, const std::string& at, Manifest* out) {  // ""
         out->provenance = std::move(v);
     }
     return std::nullopt;
+}
+
+nlohmann::json encode(const HelperCpu& value) {
+    Json j = Json::object();
+    j["reference"] = Json(value.reference);
+    j["affinity"] = Json(kAffinityNames[static_cast<size_t>(value.affinity)]);
+    return j;
+}
+
+nlohmann::json encode(const HelperRuntime& value) {
+    Json j = Json::object();
+    j["power_save"] = Json(value.power_save);
+    j["queue_warm"] = Json(value.queue_warm);
+    return j;
+}
+
+nlohmann::json encode(const HelperGemv& value) {
+    Json j = Json::object();
+    j["mode"] = Json(value.mode);
+    j["wide"] = Json(value.wide);
+    j["h2"] = Json(value.h2);
+    j["w4h2"] = Json(value.w4h2);
+    j["mr"] = Json(value.mr);
+    return j;
+}
+
+nlohmann::json encode(const HelperLanes& value) {
+    Json j = Json::object();
+    j["small_lanes"] = [&] { Json a = Json::array(); for (const auto& x0 : value.small_lanes) a.push_back(Json(x0)); return a; }();
+    j["rows"] = Json(value.rows);
+    j["rows_small"] = Json(value.rows_small);
+    return j;
+}
+
+nlohmann::json encode(const HelperCombine& value) {
+    Json j = Json::object();
+    j["enabled"] = Json(value.enabled);
+    j["min_rows"] = Json(value.min_rows);
+    j["threads"] = Json(value.threads);
+    return j;
+}
+
+nlohmann::json encode(const HelperKernels& value) {
+    Json j = Json::object();
+    j["native"] = Json(value.native);
+    j["fp16"] = Json(value.fp16);
+    j["ahalf"] = Json(value.ahalf);
+    j["moe_form"] = Json(value.moe_form);
+    j["moe_long_rows"] = Json(value.moe_long_rows);
+    j["fuseroute"] = Json(value.fuseroute);
+    j["vecio"] = Json(value.vecio);
+    j["sparse_act"] = Json(value.sparse_act);
+    j["lane_quant"] = Json(value.lane_quant);
+    return j;
+}
+
+nlohmann::json encode(const HelperPlacement& value) {
+    Json j = Json::object();
+    j["balance"] = Json(value.balance);
+    if (value.balance_speeds_milli) j["balance_speeds_milli"] = [&] { Json a = Json::array(); for (const auto& x0 : *value.balance_speeds_milli) a.push_back(Json(x0)); return a; }();
+    return j;
+}
+
+nlohmann::json encode(const HelperCommon& value) {
+    Json j = Json::object();
+    j["cpu"] = encode(value.cpu);
+    j["runtime"] = encode(value.runtime);
+    j["gemv"] = encode(value.gemv);
+    j["lanes"] = encode(value.lanes);
+    j["combine"] = encode(value.combine);
+    j["kernels"] = encode(value.kernels);
+    j["placement"] = encode(value.placement);
+    return j;
+}
+
+nlohmann::json encode(const HelperCpuPatch& value) {
+    Json j = Json::object();
+    if (value.reference) j["reference"] = Json(*value.reference);
+    if (value.affinity) j["affinity"] = Json(kAffinityNames[static_cast<size_t>(*value.affinity)]);
+    return j;
+}
+
+nlohmann::json encode(const HelperRuntimePatch& value) {
+    Json j = Json::object();
+    if (value.power_save) j["power_save"] = Json(*value.power_save);
+    if (value.queue_warm) j["queue_warm"] = Json(*value.queue_warm);
+    return j;
+}
+
+nlohmann::json encode(const HelperGemvPatch& value) {
+    Json j = Json::object();
+    if (value.mode) j["mode"] = Json(*value.mode);
+    if (value.wide) j["wide"] = Json(*value.wide);
+    if (value.h2) j["h2"] = Json(*value.h2);
+    if (value.w4h2) j["w4h2"] = Json(*value.w4h2);
+    if (value.mr) j["mr"] = Json(*value.mr);
+    return j;
+}
+
+nlohmann::json encode(const HelperLanesPatch& value) {
+    Json j = Json::object();
+    if (value.small_lanes) j["small_lanes"] = [&] { Json a = Json::array(); for (const auto& x0 : *value.small_lanes) a.push_back(Json(x0)); return a; }();
+    if (value.rows) j["rows"] = Json(*value.rows);
+    if (value.rows_small) j["rows_small"] = Json(*value.rows_small);
+    return j;
+}
+
+nlohmann::json encode(const HelperCombinePatch& value) {
+    Json j = Json::object();
+    if (value.enabled) j["enabled"] = Json(*value.enabled);
+    if (value.min_rows) j["min_rows"] = Json(*value.min_rows);
+    if (value.threads) j["threads"] = Json(*value.threads);
+    return j;
+}
+
+nlohmann::json encode(const HelperKernelsPatch& value) {
+    Json j = Json::object();
+    if (value.native) j["native"] = Json(*value.native);
+    if (value.fp16) j["fp16"] = Json(*value.fp16);
+    if (value.ahalf) j["ahalf"] = Json(*value.ahalf);
+    if (value.moe_form) j["moe_form"] = Json(*value.moe_form);
+    if (value.moe_long_rows) j["moe_long_rows"] = Json(*value.moe_long_rows);
+    if (value.fuseroute) j["fuseroute"] = Json(*value.fuseroute);
+    if (value.vecio) j["vecio"] = Json(*value.vecio);
+    if (value.sparse_act) j["sparse_act"] = Json(*value.sparse_act);
+    if (value.lane_quant) j["lane_quant"] = Json(*value.lane_quant);
+    return j;
+}
+
+nlohmann::json encode(const HelperPlacementPatch& value) {
+    Json j = Json::object();
+    if (value.balance) j["balance"] = Json(*value.balance);
+    if (value.balance_speeds_milli) j["balance_speeds_milli"] = [&] { Json a = Json::array(); for (const auto& x0 : *value.balance_speeds_milli) a.push_back(Json(x0)); return a; }();
+    return j;
+}
+
+nlohmann::json encode(const HelperPatch& value) {
+    Json j = Json::object();
+    if (value.cpu) j["cpu"] = encode(*value.cpu);
+    if (value.runtime) j["runtime"] = encode(*value.runtime);
+    if (value.gemv) j["gemv"] = encode(*value.gemv);
+    if (value.lanes) j["lanes"] = encode(*value.lanes);
+    if (value.combine) j["combine"] = encode(*value.combine);
+    if (value.kernels) j["kernels"] = encode(*value.kernels);
+    if (value.placement) j["placement"] = encode(*value.placement);
+    return j;
+}
+
+nlohmann::json encode(const PlanHostConsumer& value) {
+    Json j = Json::object();
+    j["name"] = Json(value.name);
+    j["bytes"] = Json(value.bytes);
+    j["residence"] = Json(kResidenceNames[static_cast<size_t>(value.residence)]);
+    j["from"] = Json(value.from);
+    j["remedy"] = Json(value.remedy);
+    return j;
+}
+
+nlohmann::json encode(const PlanCheckpoints& value) {
+    Json j = Json::object();
+    j["slot_bytes"] = Json(value.slot_bytes);
+    j["floor_slots"] = Json(value.floor_slots);
+    j["want_slots"] = Json(value.want_slots);
+    j["from"] = Json(value.from);
+    return j;
+}
+
+nlohmann::json encode(const PlanKvOneSession& value) {
+    Json j = Json::object();
+    j["bytes"] = Json(value.bytes);
+    j["from"] = Json(value.from);
+    return j;
+}
+
+nlohmann::json encode(const PlanCard& value) {
+    Json j = Json::object();
+    j["capacity"] = Json(value.capacity);
+    j["free"] = Json(value.free);
+    j["engine_expert_plane"] = Json(value.engine_expert_plane);
+    j["expert_unit_max"] = Json(value.expert_unit_max);
+    return j;
+}
+
+nlohmann::json encode(const PlanVram& value) {
+    Json j = Json::object();
+    j["claimable"] = Json(value.claimable);
+    j["statics"] = Json(value.statics);
+    j["elastic"] = Json(value.elastic);
+    j["experts"] = Json(value.experts);
+    j["kv"] = Json(value.kv);
+    j["stage"] = Json(value.stage);
+    j["kv_resolved"] = Json(value.kv_resolved);
+    j["expert_floor"] = Json(value.expert_floor);
+    j["kv_ceiling"] = Json(value.kv_ceiling);
+    j["expert_ceiling"] = Json(value.expert_ceiling);
+    j["from"] = Json(value.from);
+    j["cards"] = [&] { Json a = Json::array(); for (const auto& x0 : value.cards) a.push_back(encode(x0)); return a; }();
+    return j;
+}
+
+nlohmann::json encode(const EnginePlan& value) {
+    Json j = Json::object();
+    j["plan_version"] = Json(value.plan_version);
+    j["producer"] = Json(value.producer);
+    j["host"] = [&] { Json a = Json::array(); for (const auto& x0 : value.host) a.push_back(encode(x0)); return a; }();
+    j["checkpoints"] = encode(value.checkpoints);
+    j["kv_one_session"] = encode(value.kv_one_session);
+    j["vram"] = encode(value.vram);
+    j["host_pool_mib"] = Json(value.host_pool_mib);
+    return j;
+}
+
+nlohmann::json encode(const Producer& value) {
+    Json j = Json::object();
+    j["name"] = Json(value.name);
+    j["build_sha256"] = Json(value.build_sha256);
+    return j;
+}
+
+nlohmann::json encode(const Metadata& value) {
+    Json j = Json::object();
+    j["instance_id"] = Json(value.instance_id);
+    j["producer"] = encode(value.producer);
+    j["contract_version"] = Json(value.contract_version);
+    j["content_digest"] = Json(value.content_digest);
+    return j;
+}
+
+nlohmann::json encode(const Service& value) {
+    Json j = Json::object();
+    j["profile"] = Json(kProfileNames[static_cast<size_t>(value.profile)]);
+    j["objective"] = Json(kObjectiveNames[static_cast<size_t>(value.objective)]);
+    j["max_sessions"] = Json(value.max_sessions);
+    j["max_context_tokens"] = Json(value.max_context_tokens);
+    j["retention"] = Json(kRetentionNames[static_cast<size_t>(value.retention)]);
+    j["quality"] = Json(kQualityNames[static_cast<size_t>(value.quality)]);
+    return j;
+}
+
+nlohmann::json encode(const Intent& value) {
+    Json j = Json::object();
+    j["model"] = Json(value.model);
+    j["layout"] = Json(value.layout);
+    j["service"] = encode(value.service);
+    return j;
+}
+
+nlohmann::json encode(const CgroupLimit& value) {
+    Json j = Json::object();
+    j["path"] = Json(value.path);
+    j["room_mib"] = Json(value.room_mib);
+    return j;
+}
+
+nlohmann::json encode(const HostMemory& value) {
+    Json j = Json::object();
+    j["total_mib"] = Json(value.total_mib);
+    j["available_mib"] = Json(value.available_mib);
+    j["swap_total_mib"] = Json(value.swap_total_mib);
+    j["shm_available_mib"] = Json(value.shm_available_mib);
+    j["cgroup_limits"] = [&] { Json a = Json::array(); for (const auto& x0 : value.cgroup_limits) a.push_back(encode(x0)); return a; }();
+    j["pin_cap_mib"] = value.pin_cap_mib ? Json(*value.pin_cap_mib) : Json(nullptr);
+    j["memlock_limit_mib"] = value.memlock_limit_mib ? Json(*value.memlock_limit_mib) : Json(nullptr);
+    return j;
+}
+
+nlohmann::json encode(const HostCpu& value) {
+    Json j = Json::object();
+    j["count"] = Json(value.count);
+    return j;
+}
+
+nlohmann::json encode(const HostFacts& value) {
+    Json j = Json::object();
+    j["memory"] = encode(value.memory);
+    j["cpu"] = encode(value.cpu);
+    return j;
+}
+
+nlohmann::json encode(const GpuVram& value) {
+    Json j = Json::object();
+    j["total_mib"] = Json(value.total_mib);
+    j["available_mib"] = Json(value.available_mib);
+    return j;
+}
+
+nlohmann::json encode(const GpuFact& value) {
+    Json j = Json::object();
+    j["bdf"] = Json(value.bdf);
+    j["arch"] = Json(value.arch);
+    j["hip_ordinal"] = Json(value.hip_ordinal);
+    j["vram"] = encode(value.vram);
+    return j;
+}
+
+nlohmann::json encode(const Facts& value) {
+    Json j = Json::object();
+    j["source"] = Json(value.source);
+    j["host"] = encode(value.host);
+    j["gpus"] = [&] { Json a = Json::array(); for (const auto& x0 : value.gpus) a.push_back(encode(x0)); return a; }();
+    return j;
+}
+
+nlohmann::json encode(const CalibrationEntry& value) {
+    Json j = Json::object();
+    j["key"] = Json(kCalibrationKeyNames[static_cast<size_t>(value.key)]);
+    j["value"] = std::visit([](const auto& cv) { return Json(cv); }, value.value);
+    j["source"] = Json(kCalibrationSourceNames[static_cast<size_t>(value.source)]);
+    j["seeded"] = Json(value.seeded);
+    j["evidence"] = Json(value.evidence);
+    return j;
+}
+
+nlohmann::json encode(const HostResources& value) {
+    Json j = Json::object();
+    j["pool_mib"] = Json(value.pool_mib);
+    j["kv_mib"] = Json(value.kv_mib);
+    j["reserve_mib"] = Json(value.reserve_mib);
+    j["checkpoint_slots"] = Json(value.checkpoint_slots);
+    return j;
+}
+
+nlohmann::json encode(const Resources& value) {
+    Json j = Json::object();
+    j["host"] = encode(value.host);
+    return j;
+}
+
+nlohmann::json encode(const HandoffTransport& value) {
+    Json j = Json::object();
+    j["shm"] = Json(value.shm);
+    j["max_rows"] = Json(value.max_rows);
+    j["small_rows"] = Json(value.small_rows);
+    j["gemv_large_rows"] = Json(value.gemv_large_rows);
+    j["skip_owned"] = Json(value.skip_owned);
+    return j;
+}
+
+nlohmann::json encode(const HandoffPlacement& value) {
+    Json j = Json::object();
+    j["strategy"] = Json(kPlacementStrategyNames[static_cast<size_t>(value.strategy)]);
+    j["heat_file"] = Json(value.heat_file);
+    return j;
+}
+
+nlohmann::json encode(const HandoffTelemetry& value) {
+    Json j = Json::object();
+    j["histogram_file"] = value.histogram_file ? Json(*value.histogram_file) : Json(nullptr);
+    j["period_s"] = Json(value.period_s);
+    return j;
+}
+
+nlohmann::json encode(const HandoffKernels& value) {
+    Json j = Json::object();
+    j["moe_down_tile"] = Json(value.moe_down_tile);
+    return j;
+}
+
+nlohmann::json encode(const Handoff& value) {
+    Json j = Json::object();
+    j["transport"] = encode(value.transport);
+    j["placement"] = encode(value.placement);
+    j["telemetry"] = encode(value.telemetry);
+    j["kernels"] = encode(value.kernels);
+    return j;
+}
+
+nlohmann::json encode(const EngineDevice& value) {
+    Json j = Json::object();
+    j["gpus"] = [&] { Json a = Json::array(); for (const auto& x0 : value.gpus) a.push_back(Json(x0)); return a; }();
+    return j;
+}
+
+nlohmann::json encode(const EngineRuntime& value) {
+    Json j = Json::object();
+    j["radiance_home"] = Json(value.radiance_home);
+    j["kernels"] = [&] { Json a = Json::array(); for (const auto& x0 : value.kernels) a.push_back(Json(x0)); return a; }();
+    return j;
+}
+
+nlohmann::json encode(const EngineServer& value) {
+    Json j = Json::object();
+    j["port"] = Json(value.port);
+    return j;
+}
+
+nlohmann::json encode(const EngineScheduler& value) {
+    Json j = Json::object();
+    j["tp"] = Json(value.tp);
+    j["max_num_batched_tokens"] = Json(value.max_num_batched_tokens);
+    j["checkpoint_interval"] = Json(value.checkpoint_interval);
+    return j;
+}
+
+nlohmann::json encode(const EngineExecution& value) {
+    Json j = Json::object();
+    j["placement"] = Json(kWeightPlacementNames[static_cast<size_t>(value.placement)]);
+    j["ngram_placement"] = Json(kNgramPlacementNames[static_cast<size_t>(value.ngram_placement)]);
+    j["kv_cache_dtype"] = Json(kKvCacheDtypeNames[static_cast<size_t>(value.kv_cache_dtype)]);
+    j["num_speculative_tokens"] = Json(value.num_speculative_tokens);
+    j["rope_scaling"] = Json(value.rope_scaling);
+    j["prefix_resume"] = Json(kPrefixResumeNames[static_cast<size_t>(value.prefix_resume)]);
+    return j;
+}
+
+nlohmann::json encode(const EngineProcess& value) {
+    Json j = Json::object();
+    j["device"] = encode(value.device);
+    j["runtime"] = encode(value.runtime);
+    j["server"] = encode(value.server);
+    j["scheduler"] = encode(value.scheduler);
+    j["execution"] = encode(value.execution);
+    return j;
+}
+
+nlohmann::json encode(const HelperProcess& value) {
+    Json j = Json::object();
+    j["role"] = Json(value.role);
+    j["gpu"] = Json(value.gpu);
+    j["vram_budget_mib"] = Json(value.vram_budget_mib);
+    j["plugin_file"] = Json(value.plugin_file);
+    j["formats"] = [&] { Json a = Json::array(); for (const auto& x0 : value.formats) a.push_back(Json(kExpertFormatNames[static_cast<size_t>(x0)])); return a; }();
+    j["rows_kernel"] = Json(value.rows_kernel);
+    j["tier"] = Json(kHelperTierNames[static_cast<size_t>(value.tier)]);
+    j["share"] = Json(value.share);
+    if (value.settings) j["settings"] = encode(*value.settings);
+    return j;
+}
+
+nlohmann::json encode(const Processes& value) {
+    Json j = Json::object();
+    j["engine"] = encode(value.engine);
+    j["helper_common"] = encode(value.helper_common);
+    j["helpers"] = [&] { Json a = Json::array(); for (const auto& x0 : value.helpers) a.push_back(encode(x0)); return a; }();
+    return j;
+}
+
+nlohmann::json encode(const OwnedSet& value) {
+    Json j = Json::object();
+    j["owned_sha256"] = Json(value.owned_sha256);
+    j["count"] = Json(value.count);
+    j["bytes"] = Json(value.bytes);
+    j["experts"] = [&] { Json a = Json::array(); for (const auto& x0 : value.experts) a.push_back(Json(x0)); return a; }();
+    return j;
+}
+
+nlohmann::json encode(const OwnerMap& value) {
+    Json j = Json::object();
+    j["owner_map_sha256"] = Json(value.owner_map_sha256);
+    j["helpers"] = [&] { Json a = Json::array(); for (const auto& x0 : value.helpers) a.push_back(encode(x0)); return a; }();
+    return j;
+}
+
+nlohmann::json encode(const EngineMemory& value) {
+    Json j = Json::object();
+    j["cache_version"] = Json(value.cache_version);
+    j["cache_key"] = Json(value.cache_key);
+    j["model_identity"] = Json(value.model_identity);
+    j["engine_identity"] = Json(value.engine_identity);
+    j["expected"] = encode(value.expected);
+    return j;
+}
+
+nlohmann::json encode(const Plan& value) {
+    Json j = Json::object();
+    j["owner_map"] = encode(value.owner_map);
+    j["engine_memory"] = encode(value.engine_memory);
+    return j;
+}
+
+nlohmann::json encode(const ExperimentPlacement& value) {
+    Json j = Json::object();
+    j["mode"] = Json(kPlacementModeNames[static_cast<size_t>(value.mode)]);
+    if (value.at_step) j["at_step"] = Json(*value.at_step);
+    return j;
+}
+
+nlohmann::json encode(const ShapePatch& value) {
+    Json j = Json::object();
+    j["role"] = Json(value.role);
+    j["settings"] = encode(value.settings);
+    return j;
+}
+
+nlohmann::json encode(const ExperimentShape& value) {
+    Json j = Json::object();
+    if (value.helper_common) j["helper_common"] = encode(*value.helper_common);
+    if (value.helpers) j["helpers"] = [&] { Json a = Json::array(); for (const auto& x0 : *value.helpers) a.push_back(encode(x0)); return a; }();
+    return j;
+}
+
+nlohmann::json encode(const GemvDiagnostics& value) {
+    Json j = Json::object();
+    if (value.probe_mode) j["probe_mode"] = Json(*value.probe_mode);
+    if (value.refusal_trace) j["refusal_trace"] = Json(*value.refusal_trace);
+    return j;
+}
+
+nlohmann::json encode(const LaneDiagnostics& value) {
+    Json j = Json::object();
+    if (value.capture_file) j["capture_file"] = *value.capture_file ? Json(**value.capture_file) : Json(nullptr);
+    if (value.capture_every) j["capture_every"] = Json(*value.capture_every);
+    if (value.capture_max) j["capture_max"] = Json(*value.capture_max);
+    if (value.trace_level) j["trace_level"] = Json(*value.trace_level);
+    if (value.test_stop_at) j["test_stop_at"] = *value.test_stop_at ? Json(**value.test_stop_at) : Json(nullptr);
+    return j;
+}
+
+nlohmann::json encode(const KernelDiagnostics& value) {
+    Json j = Json::object();
+    if (value.plugin_override) j["plugin_override"] = *value.plugin_override ? Json(**value.plugin_override) : Json(nullptr);
+    if (value.poison) j["poison"] = Json(kPoisonNames[static_cast<size_t>(*value.poison)]);
+    if (value.sweep_fast) j["sweep_fast"] = Json(*value.sweep_fast);
+    return j;
+}
+
+nlohmann::json encode(const Diagnostics& value) {
+    Json j = Json::object();
+    if (value.gemv) j["gemv"] = encode(*value.gemv);
+    if (value.lanes) j["lanes"] = encode(*value.lanes);
+    if (value.kernels) j["kernels"] = encode(*value.kernels);
+    return j;
+}
+
+nlohmann::json encode(const Experiment& value) {
+    Json j = Json::object();
+    if (value.placement) j["placement"] = encode(*value.placement);
+    if (value.shape) j["shape"] = encode(*value.shape);
+    if (value.diagnostics) j["diagnostics"] = encode(*value.diagnostics);
+    return j;
+}
+
+nlohmann::json encode(const Spec& value) {
+    Json j = Json::object();
+    j["intent"] = encode(value.intent);
+    j["facts"] = encode(value.facts);
+    j["calibration"] = [&] { Json a = Json::array(); for (const auto& x0 : value.calibration) a.push_back(encode(x0)); return a; }();
+    j["resources"] = encode(value.resources);
+    j["handoff"] = encode(value.handoff);
+    j["processes"] = encode(value.processes);
+    j["plan"] = encode(value.plan);
+    if (value.experiment) j["experiment"] = encode(*value.experiment);
+    return j;
+}
+
+nlohmann::json encode(const ProvenanceRecord& value) {
+    Json j = Json::object();
+    j["origin"] = Json(kOriginNames[static_cast<size_t>(value.origin)]);
+    j["source"] = Json(value.source);
+    j["class"] = Json(kValueClassNames[static_cast<size_t>(value.value_class)]);
+    j["lifecycle"] = Json(kLifecycleNames[static_cast<size_t>(value.lifecycle)]);
+    j["confidence"] = Json(kConfidenceNames[static_cast<size_t>(value.confidence)]);
+    j["inputs"] = [&] { Json a = Json::array(); for (const auto& x0 : value.inputs) a.push_back(Json(x0)); return a; }();
+    return j;
+}
+
+nlohmann::json encode(const Manifest& value) {
+    Json j = Json::object();
+    j["apiVersion"] = Json(value.api_version);
+    j["kind"] = Json(value.kind);
+    j["metadata"] = encode(value.metadata);
+    j["spec"] = encode(value.spec);
+    j["provenance"] = [&] { Json o = Json::object(); for (const auto& [k0, x0] : value.provenance) o[k0] = encode(x0); return o; }();
+    return j;
 }
 
 void apply(HelperCpu& base, const HelperCpuPatch& patch) {

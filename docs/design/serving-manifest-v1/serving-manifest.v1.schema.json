@@ -35,6 +35,7 @@
         "instance_id": {
           "description": "Canonical lowercase UUIDv4, created once per resolved serving instance; every process of one launch reads the same ID.",
           "type": "string",
+          "maxLength": 36,
           "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
         },
         "producer": {
@@ -292,6 +293,7 @@
                   "arch": {
                     "description": "GPU architecture (gfx target).",
                     "type": "string",
+                    "maxLength": 32,
                     "pattern": "^gfx[0-9a-f]+$"
                   },
                   "hip_ordinal": {
@@ -556,6 +558,7 @@
                 "shm": {
                   "description": "POSIX shared-memory name of the handoff segment.",
                   "type": "string",
+                  "maxLength": 255,
                   "pattern": "^/[A-Za-z0-9][A-Za-z0-9._-]*$"
                 },
                 "max_rows": {
@@ -835,6 +838,7 @@
                   "role": {
                     "description": "Role name, `helper<index>`.",
                     "type": "string",
+                    "maxLength": 32,
                     "pattern": "^helper(?:0|[1-9][0-9]*)$"
                   },
                   "gpu": {
@@ -1086,6 +1090,7 @@
                       "role": {
                         "description": "Role the override applies to.",
                         "type": "string",
+                        "maxLength": 32,
                         "pattern": "^helper(?:0|[1-9][0-9]*)$"
                       },
                       "settings": {
@@ -1365,21 +1370,25 @@
     "hex64": {
       "description": "64 lowercase hexadecimal digits.",
       "type": "string",
+      "maxLength": 64,
       "pattern": "^[0-9a-f]{64}$"
     },
     "digest": {
       "description": "`sha256:` followed by 64 lowercase hexadecimal digits.",
       "type": "string",
+      "maxLength": 71,
       "pattern": "^sha256:[0-9a-f]{64}$"
     },
     "bdf": {
       "description": "PCI address, `dddd:bb:dd.f`, lowercase.",
       "type": "string",
+      "maxLength": 12,
       "pattern": "^[0-9a-f]{4}:[0-9a-f]{2}:[0-1][0-9a-f]\\.[0-7]$"
     },
     "jsonPointer": {
       "description": "RFC 6901 JSON Pointer; \"\" is the root.",
       "type": "string",
+      "maxLength": 4096,
       "pattern": "^(|/(?:[^~/]|~[01])*(?:/(?:[^~/]|~[01])*)*)$"
     },
     "helperCommon": {

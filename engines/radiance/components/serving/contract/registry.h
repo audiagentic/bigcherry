@@ -30,7 +30,8 @@ struct Node {
     std::string ref;                  // ref nodes: the def name
     std::optional<nlohmann::json> constant;
     std::vector<nlohmann::json> values;          // enum / int_enum
-    std::optional<int64_t> minimum, maximum, exclusive_maximum, min_length, min_items, max_items, min_properties;
+    std::optional<int64_t> minimum, maximum, exclusive_maximum, min_length, max_length, min_items, max_items,
+        min_properties;
     std::string pattern, format;
     bool unique_items = false;
     std::vector<std::string> tuple;              // tuple nodes: each element's def name

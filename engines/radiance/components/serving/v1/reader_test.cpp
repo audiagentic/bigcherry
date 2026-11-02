@@ -44,15 +44,17 @@ Json rehashed(Json m) {
     return m;
 }
 
+/* The code (and so the status), a needle in the message, and when given the path's start: checked separately, so a
+ * message that merely mentions the expected path cannot stand in for the path. */
 template <class T>
-void expect(const Result<T>& r, C code, const std::string& needle, const std::string& what) {
+void expect(const Result<T>& r, C code, const std::string& needle, const std::string& what, const std::string& path = "") {
     if (r) {
         check(false, what + ": loaded");
         return;
     }
     const ConfigError& e = r.error();
-    check(e.code == code && e.status == status_of(code) &&
-              (e.message.find(needle) != std::string::npos || e.path.find(needle) != std::string::npos),
+    check(e.code == code && e.status == status_of(code) && e.message.find(needle) != std::string::npos &&
+              e.path.rfind(path, 0) == 0,
           what + ": " + std::string(machine_name(e.code)) + " at '" + e.path + "': " + e.message);
 }
 
@@ -117,7 +119,8 @@ int main() {
     {
         Json j = prod;
         j["spec"]["processes"]["engine"]["execution"]["bogus"] = 1;
-        expect(from(rehashed(j)), C::unknown_field, "spec.processes.engine.execution.bogus", "unknown engine.execution key");
+        expect(from(rehashed(j)), C::unknown_field, "unknown member", "unknown engine.execution key",
+               "spec.processes.engine.execution.bogus");
         check(exit_code_of(from(rehashed(j)).error()) == 2 && status_of(C::unknown_field) == -9, "unknown field: -9, exit 2");
     }
     {
@@ -190,7 +193,8 @@ int main() {
         Json k = prod;
         for (Json& c : k["spec"]["calibration"])
             if (c["key"] == "kv_backing_floor.fraction_ppm") c["value"] = "lots";
-        expect(from(rehashed(k)), C::calibration_invalid, "spec.calibration", "a calibration value of the wrong type");
+        expect(from(rehashed(k)), C::calibration_invalid, "expected an integer", "a calibration value of the wrong type",
+               "spec.calibration[");
         Json q = prod;
         q["provenance"]["/spec/nothing_here"] = q["provenance"][""];
         expect(from(rehashed(q)), C::provenance_invalid, "names no value", "provenance for a value that does not exist");
@@ -227,6 +231,123 @@ int main() {
               "a non-exempt /metadata leaf without a record is refused: " + (s ? s->message : std::string("passed")));
         k["provenance"]["/metadata/build_host"] = prod["provenance"][""];
         check(!check_identity_coverage(k), "the same leaf with its own record passes");
+    }
+
+    // ---- #536 review: the host inventory, cache identity, plan and owner invariants, duplicates, views ----
+    {
+        const EnginePlan& plan = p.value().spec.plan.engine_memory.expected;
+        auto refused_plan = [&](EnginePlan live, C code, const std::string& needle, const std::string& what) {
+            const Status st = check_engine_plan(plan, live, 600000);
+            check(st && st->code == code && st->message.find(needle) != std::string::npos,
+                  what + ": " + (st ? std::string(machine_name(st->code)) + " " + st->message : std::string("admitted")));
+        };
+        check(plan.host.size() >= 3, "the production plan has three host consumers");
+        EnginePlan live = plan;
+        live.host[2] = live.host[1];   // same length, one consumer swapped for a repeat of another
+        refused_plan(live, C::plan_mismatch, "repeated in the live inventory", "a same-length host substitution");
+        live = plan;
+        live.host[0].bytes -= 1;
+        refused_plan(live, C::plan_mismatch, "differ from the planned", "fewer live host-consumer bytes");
+        live = plan;
+        live.host.pop_back();
+        refused_plan(live, C::plan_mismatch, "missing from the live plan", "a missing expected consumer");
+        live = plan;
+        live.host[0].residence = Residence::kPageable;
+        refused_plan(live, C::plan_mismatch, "residence", "a changed residence");
+        live = plan;
+        live.checkpoints.want_slots += 1;
+        refused_plan(live, C::plan_mismatch, "checkpoint want", "a changed want_slots");
+        live = plan;
+        live.host_pool_mib += 1;
+        refused_plan(live, C::plan_mismatch, "host pool", "a changed host_pool_mib");
+        live = plan;
+        live.host[0].bytes = -1;
+        refused_plan(live, C::invalid_value, "byte counts", "a negative live byte count is invalid input, not drift");
+        live = plan;
+        live.host[0].residence = static_cast<Residence>(7);
+        refused_plan(live, C::invalid_value, "unknown residence", "an out-of-range residence");
+    }
+    {
+        Json j = lab;   // a lab shape change keeps the old measured plan's cache_key
+        j["spec"]["experiment"]["shape"]["helper_common"]["gemv"]["h2"] = 2;
+        expect(from(rehashed(j)), C::plan_mismatch, "spec §5.1", "a stale cache_key after a shape change",
+               "spec.plan.engine_memory.cache_key");
+        check(plan_cache_key(p.value()) == prod["spec"]["plan"]["engine_memory"]["cache_key"].get<std::string>(),
+              "the production example's cache_key is §5.1's");
+        Json k = prod;
+        k["spec"]["plan"]["engine_memory"]["expected"]["checkpoints"]["floor_slots"] =
+            k["spec"]["plan"]["engine_memory"]["expected"]["checkpoints"]["want_slots"].get<int64_t>() + 1;
+        expect(from(rehashed(k)), C::invalid_value, "exceed want_slots", "floor_slots above want_slots");
+        Json o = prod;
+        o["spec"]["plan"]["owner_map"]["helpers"][0]["bytes"] = 0;
+        expect(from(rehashed(o)), C::ownership_mismatch, "device bytes", "a nonempty owned set of zero bytes");
+        Json d = prod;
+        d["spec"]["processes"]["helpers"][1]["role"] = "helper0";
+        expect(from(rehashed(d)), C::duplicate_field, "repeated", "a duplicate helper role");
+        Json g = prod;
+        g["spec"]["facts"]["gpus"].push_back(g["spec"]["facts"]["gpus"][0]);
+        expect(from(rehashed(g)), C::duplicate_field, "detected twice", "a duplicate detected GPU");
+        // §2.2: rows_kernel (capability) or lanes.rows (policy) makes the rows kernel active; the typed manifest is
+        // edited directly (a rehashed JSON edit would also move the cache key, which covers effective settings)
+        Manifest rm = p.value();
+        rm.spec.processes.helpers[0].rows_kernel = true;
+        HelperLanesPatch lanes;
+        lanes.rows = false;
+        HelperPatch off;
+        off.lanes = lanes;
+        rm.spec.processes.helpers[0].settings = off;
+        Result<HelperView> hv = helper_view(rm, "helper0");
+        check(hv && !hv.value().settings.lanes.rows && hv.value().rows_active, "rows_kernel makes the rows kernel active");
+    }
+    {   // the decoder: sibling members of one name are fine; absent, null and a value stay distinct; patches apply 0/false
+        check(parse_strict_json("{\"a\":{\"x\":1},\"b\":{\"x\":1}}", "t").ok(), "the same name in sibling objects");
+        LaneDiagnostics ld;
+        check(!decode(Json::parse("{\"trace_level\":1}"), "lanes", &ld) && !ld.capture_file, "absent capture_file");
+        check(!decode(Json::parse("{\"capture_file\":null}"), "lanes", &ld) && ld.capture_file && !*ld.capture_file,
+              "null capture_file");
+        check(!decode(Json::parse("{\"capture_file\":\"f\"}"), "lanes", &ld) && ld.capture_file && **ld.capture_file == "f",
+              "capture_file value");
+        check(decode(Json::parse("{}"), "lanes", &ld).has_value(), "an empty diagnostics group is refused");
+        HelperCommon base = p.value().spec.processes.helper_common;
+        base.combine.enabled = true;
+        base.kernels.moe_long_rows = 9;
+        HelperPatch patch;
+        if (!decode(Json::parse("{\"combine\":{\"enabled\":false},\"kernels\":{\"moe_long_rows\":0}}"), "patch", &patch)) {
+            apply(base, patch);
+            check(!base.combine.enabled && base.kernels.moe_long_rows == 0, "a patch applies false and 0 as values");
+        } else {
+            check(false, "the patch decodes");
+        }
+        check(decode(Json::parse("{\"cpu\":{}}"), "patch", &patch).has_value(), "an empty override group is refused");
+        Json c = prod;
+        c["spec"]["calibration"][0]["seeded"] = "2026-02-30";
+        expect(from(rehashed(c)), C::calibration_invalid, "YYYY-MM-DD", "a malformed date");
+    }
+    // spec §11 amendment 7: pattern strings are bounded before the regex sees them
+    {
+        std::string deep;
+        for (int i = 0; i < 100000; ++i) deep += "/a";
+        Json j = prod;
+        j["provenance"][deep] = prod["provenance"][""];
+        expect(from(rehashed(j)), C::provenance_invalid, "longer than 4096", "a 100k-segment pointer, refused cleanly");
+        std::string ptr;
+        for (int i = 0; i < 2048; ++i) ptr += "/a";   // 4096 characters, 2048 levels deep
+        ProvenanceRecord rec;
+        const Json base_rec = prod["provenance"][""];
+        Json at_limit = base_rec;
+        at_limit["inputs"] = Json::array({ptr});
+        check(ptr.size() == 4096 && !decode(at_limit, "provenance[\"\"]", &rec), "a 4096-character pointer passes");
+        Json over = base_rec;
+        over["inputs"] = Json::array({ptr + "b"});
+        const Status s4097 = decode(over, "provenance[\"\"]", &rec);
+        check(s4097 && s4097->code == C::provenance_invalid && s4097->message.find("longer than 4096") != std::string::npos,
+              "a 4097-character pointer is refused");
+        Metadata md;
+        Json meta = prod["metadata"];
+        check(meta["content_digest"].get<std::string>().size() == 71 && !decode(meta, "metadata", &md), "a 71-character digest");
+        meta["content_digest"] = meta["content_digest"].get<std::string>() + "0";
+        const Status s72 = decode(meta, "metadata", &md);
+        check(s72 && s72->message.find("longer than 71") != std::string::npos, "a 72-character digest is refused");
     }
 
     // ---- renderers (errors.md §3, §4) ----
@@ -266,7 +387,7 @@ int main() {
     // ---- the typed admission check against the shared vectors ----
     {
         const Json doc = Json::parse(read("admission-vectors.json"));
-        int run = 0;
+        int run = 0, decode_refusals = 0;
         for (const Json& v : doc.at("vectors")) {
             const std::string name = v.at("name").get<std::string>();
             const Json& verdict = v.at("verdict");
@@ -274,9 +395,12 @@ int main() {
             Status de = decode(v.at("expected"), "expected", &expected);
             Status dl = de ? de : decode(v.at("live"), "live", &live);
             ++run;
-            if (de || dl) {   // a plan the contract cannot even decode is invalid input
-                check(!verdict.at("admit").get<bool>() && verdict.at("class") == "input",
-                      "vector " + name + " does not decode: " + (de ? de : dl)->message);
+            if (de || dl) {   // a plan the contract cannot even decode is invalid input, with the decoder's exact code
+                const ConfigError& e = de ? *de : *dl;
+                const C want = name == "kv-resolved-missing" ? C::missing_field : C::invalid_value;
+                check(!verdict.at("admit").get<bool>() && verdict.at("class") == "input" && e.code == want,
+                      "vector " + name + " does not decode: " + std::string(machine_name(e.code)) + " " + e.message);
+                ++decode_refusals;
                 continue;
             }
             Status s = check_engine_plan(expected, live, v.at("ppm").get<int64_t>());
@@ -292,6 +416,18 @@ int main() {
             if (s && s->code == C::admission_refused) check(exit_code_of(*s) == 4, "vector " + name + ": exit 4");
         }
         check(run >= 46, "all admission vectors ran");
+        check(decode_refusals == 2, "exactly the two out-of-contract vectors fail decoding: " + std::to_string(decode_refusals));
+        // errors.md §4's memory admission example is this vector's rendering, byte for byte
+        for (const Json& v : doc.at("vectors"))
+            if (v.at("name") == "prod-kv-truncation-below") {
+                EnginePlan e, l;
+                decode(v.at("expected"), "", &e);
+                decode(v.at("live"), "", &l);
+                const Status st = check_engine_plan(e, l, v.at("ppm").get<int64_t>());
+                const std::string doc_md = read("errors.md");
+                check(st && doc_md.find(render_human("radiance", *st)) != std::string::npos,
+                      "errors.md §4 shows the admission refusal as render_human writes it");
+            }
     }
 
     if (failures) return 1;

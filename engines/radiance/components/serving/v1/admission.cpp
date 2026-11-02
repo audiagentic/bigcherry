@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <map>
 #include <string>
+#include <vector>
 
 namespace bc::serving::v1 {
 namespace {
@@ -41,22 +42,46 @@ Status check_engine_plan(const EnginePlan& expected, const EnginePlan& live, int
                           "select a kv_backing_floor.fraction_ppm calibration in range");
     const PlanVram& ev = expected.vram;
     const PlanVram& lv = live.vram;
-    for (const PlanVram* v : {&ev, &lv})
-        for (int64_t t : {v->claimable, v->statics, v->experts, v->stage, v->kv_resolved, v->kv_ceiling, v->expert_floor,
-                          v->expert_ceiling})
+    // Input: every count this check reads is a byte or slot count, every enum in range, the checkpoint floor within
+    // the want; before any comparison, so a malformed plan is never reported as drift.
+    for (const auto& [plan, where] : {std::pair<const EnginePlan*, const char*>{&expected, "expected"}, {&live, "live"}}) {
+        const PlanVram& v = plan->vram;
+        std::vector<int64_t> counts = {v.claimable, v.statics, v.elastic, v.experts, v.kv, v.stage, v.kv_resolved,
+                                       v.expert_floor, v.kv_ceiling, v.expert_ceiling, plan->kv_one_session.bytes,
+                                       plan->checkpoints.slot_bytes, plan->checkpoints.floor_slots,
+                                       plan->checkpoints.want_slots, plan->host_pool_mib};
+        for (const PlanHostConsumer& c : plan->host) counts.push_back(c.bytes);
+        for (const PlanCard& c : v.cards)
+            for (int64_t t : {c.capacity, c.free, c.engine_expert_plane, c.expert_unit_max}) counts.push_back(t);
+        for (int64_t t : counts)
             if (t < 0 || t > kMaxBytes)
-                return make_error(ConfigErrorCode::invalid_value, kAt + ".vram",
-                                  "plan check: the VRAM terms must be byte counts in [0, 2^53 - 1]", kMeasure);
-    if (expected.kv_one_session.bytes < 0 || expected.kv_one_session.bytes > kMaxBytes)
-        return make_error(ConfigErrorCode::invalid_value, kAt + ".kv_one_session.bytes",
-                          "plan check: the VRAM terms must be byte counts in [0, 2^53 - 1]", kMeasure);
+                return make_error(ConfigErrorCode::invalid_value, kAt,
+                                  std::string("plan check: the ") + where +
+                                      " plan's VRAM terms must be byte counts in [0, 2^53 - 1]",
+                                  kMeasure);
+        for (const PlanHostConsumer& c : plan->host)
+            if (static_cast<size_t>(c.residence) >= kResidenceNames.size())
+                return make_error(ConfigErrorCode::invalid_value, kAt + ".host",
+                                  std::string("plan check: the ") + where + " plan has an unknown residence", kMeasure);
+        if (plan->checkpoints.floor_slots > plan->checkpoints.want_slots)
+            return make_error(ConfigErrorCode::invalid_value, kAt + ".checkpoints",
+                              std::string("plan check: the ") + where + " plan's floor_slots exceed its want_slots",
+                              kMeasure);
+    }
 
-    // Stable facts: what the weights, the model's geometry and the measured placement fix (spec §5.2).
-    std::map<std::string, const PlanHostConsumer*> planned;
-    for (const PlanHostConsumer& c : expected.host) planned[c.name] = &c;
+    // Stable facts: what the weights, the model's geometry and the measured placement fix (spec §5.2). The host
+    // inventory matches exactly: the same names, each once, with the same bytes and residence.
+    std::map<std::string, const PlanHostConsumer*> planned, seen;
+    for (const PlanHostConsumer& c : expected.host)
+        if (!planned.emplace(c.name, &c).second)
+            return make_error(ConfigErrorCode::plan_mismatch, kAt + ".host",
+                              "host consumer " + c.name + " is repeated in the planned inventory", kMeasure);
     for (size_t i = 0; i < live.host.size(); ++i) {
         const PlanHostConsumer& c = live.host[i];
         const std::string at = kAt + ".host[" + std::to_string(i) + "]";
+        if (!seen.emplace(c.name, &c).second)
+            return make_error(ConfigErrorCode::plan_mismatch, at,
+                              "host consumer " + c.name + " is repeated in the live inventory", kMeasure);
         const auto it = planned.find(c.name);
         if (it == planned.end())
             return make_error(ConfigErrorCode::plan_mismatch, at,
@@ -66,18 +91,15 @@ Status check_engine_plan(const EnginePlan& expected, const EnginePlan& live, int
         if (c.residence != it->second->residence)
             return make_error(ConfigErrorCode::plan_mismatch, at,
                               "host consumer " + c.name + ": live residence " +
-                                  std::string(kResidenceNames[static_cast<size_t>(c.residence)]) + " differs from the planned " +
+                                  std::string(kResidenceNames[static_cast<size_t>(c.residence)]) +
+                                  " differs from the planned " +
                                   std::string(kResidenceNames[static_cast<size_t>(it->second->residence)]),
                               kMeasure);
     }
-    if (live.host.size() != expected.host.size()) {
-        for (const PlanHostConsumer& c : expected.host)
-            if (std::none_of(live.host.begin(), live.host.end(), [&](const PlanHostConsumer& l) { return l.name == c.name; }))
-                return make_error(ConfigErrorCode::plan_mismatch, kAt + ".host",
-                                  "the planned host consumer " + c.name + " is missing from the live plan", kMeasure);
-        return make_error(ConfigErrorCode::plan_mismatch, kAt + ".host", "a host consumer is repeated in the live plan",
-                          kMeasure);
-    }
+    for (const PlanHostConsumer& c : expected.host)
+        if (!seen.count(c.name))
+            return make_error(ConfigErrorCode::plan_mismatch, kAt + ".host",
+                              "the planned host consumer " + c.name + " is missing from the live plan", kMeasure);
     const PlanCheckpoints& ec = expected.checkpoints;
     const PlanCheckpoints& lc = live.checkpoints;
     if (lc.slot_bytes != ec.slot_bytes) return differ(kAt + ".checkpoints.slot_bytes", "checkpoint slot", lc.slot_bytes, ec.slot_bytes);

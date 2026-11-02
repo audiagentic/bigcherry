@@ -143,6 +143,7 @@ void scalar_attrs(const toml::table& t, const std::string& prefix, const std::st
     n->maximum = integer(t, k("maximum").c_str(), at);
     n->exclusive_maximum = integer(t, k("exclusive_maximum").c_str(), at);
     n->min_length = integer(t, k("min_length").c_str(), at);
+    n->max_length = integer(t, k("max_length").c_str(), at);
     n->pattern = str(t, k("pattern").c_str(), at, false);
     n->format = str(t, k("format").c_str(), at, false);
     if (const auto* c = t.get(k("const"))) n->constant = to_json(*c, at + "." + k("const"));
@@ -153,12 +154,16 @@ void scalar_attrs(const toml::table& t, const std::string& prefix, const std::st
 /* What each kind may carry; anything else set on it is a fault. */
 void check_scalar(const Node& n, const std::string& at) {
     const bool num = n.minimum || n.maximum || n.exclusive_maximum;
-    const bool text = n.min_length || !n.pattern.empty() || !n.format.empty();
+    const bool text = n.min_length || n.max_length || !n.pattern.empty() || !n.format.empty();
     auto refuse = [&](bool bad, const char* what) {
         if (bad) fault(at, std::string("kind '") + n.kind + "' cannot have " + what);
     };
     if (n.kind == "number") fault(at, "kind 'number': the v1 contract has integers only");
     if (n.min_length && *n.min_length < 0) fault(at, "min_length is not negative");
+    // spec §11 amendment 7: std::regex recurses per repetition, so a pattern only ever sees a bounded string
+    if (!n.pattern.empty() && !n.max_length) fault(at, "a pattern needs a max_length (spec §11 amendment 7)");
+    if (n.max_length && (*n.max_length < 1 || (n.min_length && *n.min_length > *n.max_length)))
+        fault(at, "max_length is positive and not below min_length");
     if (n.values.size() > 256) fault(at, "an enum has at most 256 values (uint8_t)");
     if (!kKinds.count(n.kind) && n.kind != "tuple") fault(at, "unknown kind '" + n.kind + "'");
     refuse(n.kind != "integer" && num, "a numeric bound");
@@ -234,8 +239,9 @@ struct Loader {
 
     void field(const toml::table& t, const std::string& at) {
         only_keys(t, {"path", "kind", "optional", "nullable", "doc", "cpp", "cpp_type", "cpp_member", "ref", "const",
-                      "values", "minimum", "maximum", "exclusive_maximum", "min_length", "pattern", "format",
-                      "item_kind", "item_ref", "item_min_length", "item_minimum", "item_values", "item_pattern",
+                      "values", "minimum", "maximum", "exclusive_maximum", "min_length", "max_length", "pattern", "format",
+                      "item_kind", "item_ref", "item_min_length", "item_max_length", "item_minimum", "item_values",
+                      "item_pattern",
                       "min_items", "max_items", "unique_items", "tuple", "key_ref", "required_keys", "min_properties",
                       "constraints", "radiance_option", "radiance_config", "error_class", "mismatch"},
                   at);
@@ -290,13 +296,13 @@ struct Loader {
             scalar_attrs(t, "", where, &n);
             check_scalar(n, where);
         } else {
-            for (const char* k : {"minimum", "maximum", "exclusive_maximum", "min_length", "pattern", "format", "const",
-                                  "values", "ref"})
+            for (const char* k : {"minimum", "maximum", "exclusive_maximum", "min_length", "max_length", "pattern",
+                                  "format", "const", "values", "ref"})
                 if (t.get(k)) fault(where, std::string("a container cannot have '") + k + "'");
         }
         if (n.kind != "array")
-            for (const char* k : {"item_kind", "item_ref", "item_min_length", "item_minimum", "item_values",
-                                  "item_pattern", "tuple"})
+            for (const char* k : {"item_kind", "item_ref", "item_min_length", "item_max_length", "item_minimum",
+                                  "item_values", "item_pattern", "tuple"})
                 if (t.get(k)) fault(where, std::string("only arrays have '") + k + "'");
         if (n.kind == "array" && !n.cpp_type.empty() && str(t, "item_kind", where) != "enum")
             fault(where, "cpp_type on an array names its enum items");
@@ -323,7 +329,8 @@ struct Loader {
     void array_item(const toml::table& t, size_t array, const std::string& cpp_type, const std::string& at) {
         const std::string item_kind = str(t, "item_kind", at);
         if (item_kind == "object") {
-            for (const char* k : {"item_ref", "item_min_length", "item_minimum", "item_values", "item_pattern", "tuple"})
+            for (const char* k : {"item_ref", "item_min_length", "item_max_length", "item_minimum", "item_values",
+                                  "item_pattern", "tuple"})
                 if (t.get(k)) fault(at, std::string("an object item is its own [[field]]; '") + k + "' does not apply");
             return;   // its [[field]] must follow; checked in finish()
         }
@@ -331,7 +338,8 @@ struct Loader {
         item.path = r.nodes[array].path + "/[]";
         item.kind = item_kind;
         if (item_kind == "tuple") {
-            for (const char* k : {"item_ref", "item_min_length", "item_minimum", "item_values", "item_pattern"})
+            for (const char* k : {"item_ref", "item_min_length", "item_max_length", "item_minimum", "item_values",
+                                  "item_pattern"})
                 if (t.get(k)) fault(at, std::string("a tuple item takes only 'tuple'; '") + k + "' does not apply");
             if (!cpp_type.empty()) fault(at, "a tuple item has no cpp_type");
             item.tuple = strings(t, "tuple", at);
@@ -341,6 +349,7 @@ struct Loader {
             Node probe;
             scalar_attrs(t, "item_", at, &probe);
             item.minimum = probe.minimum; item.maximum = probe.maximum; item.min_length = probe.min_length;
+            item.max_length = probe.max_length;
             item.pattern = probe.pattern; item.values = probe.values; item.ref = probe.ref;
             item.cpp_type = cpp_type;
             if (item_kind == "object" || item_kind == "map" || item_kind == "array")
@@ -378,8 +387,8 @@ struct Loader {
                 fault(where, "'of' is for patch defs");
             }
         } else {
-            only_keys(t, {"name", "kind", "doc", "minimum", "maximum", "exclusive_maximum", "min_length", "pattern",
-                          "format"},
+            only_keys(t, {"name", "kind", "doc", "minimum", "maximum", "exclusive_maximum", "min_length", "max_length",
+                          "pattern", "format"},
                       where);
             n.kind = d.kind;
             scalar_attrs(t, "", where, &n);
@@ -392,7 +401,8 @@ struct Loader {
 
     void calibration_key(const toml::table& t, const std::string& at) {
         only_keys(t, {"key", "doc", "value_kind", "value_ref", "value_minimum", "value_maximum",
-                      "value_exclusive_maximum", "value_min_length", "value_pattern", "value_values"},
+                      "value_exclusive_maximum", "value_min_length", "value_max_length", "value_pattern",
+                      "value_values"},
                   at);
         CalibrationKey c;
         c.key = str(t, "key", at);
@@ -583,6 +593,7 @@ struct SchemaWriter {
         if (n.maximum) s["maximum"] = *n.maximum;
         if (n.exclusive_maximum) s["exclusiveMaximum"] = *n.exclusive_maximum;
         if (n.min_length) s["minLength"] = *n.min_length;
+        if (n.max_length) s["maxLength"] = *n.max_length;
         if (!n.pattern.empty()) s["pattern"] = n.pattern;
         if (!n.format.empty()) s["format"] = n.format;
         return s;
@@ -875,6 +886,7 @@ struct FieldsWriter {
                 if (n.exclusive_maximum) t += "<" + std::to_string(*n.exclusive_maximum);
             }
             if (n.min_length) t += ", length ≥ " + std::to_string(*n.min_length);
+            if (n.max_length) t += ", length ≤ " + std::to_string(*n.max_length);
             if (!n.pattern.empty()) t += ", `" + n.pattern + "`";
             if (!n.format.empty()) t += ", " + n.format;
         }
@@ -1005,6 +1017,7 @@ struct CodecWriter {
                 o << "    static const std::regex re(" << raw(spec.pattern) << ", std::regex::ECMAScript);\n";
             o << "    return str_in(j, at, " << tc << ", " << vc << ", "
               << (spec.min_length ? std::to_string(*spec.min_length) : std::string("-1")) << ", "
+              << (spec.max_length ? std::to_string(*spec.max_length) : std::string("-1")) << ", "
               << (spec.pattern.empty() ? std::string("nullptr") : std::string("&re")) << ", "
               << (spec.pattern.empty() ? std::string("\"\"") : literal(spec.pattern)) << ", "
               << (spec.format == "date" ? "true" : "false") << ", out);\n";
@@ -1071,6 +1084,10 @@ struct CodecWriter {
                   << *n.min_properties << " entr(ies)\");\n";
             if (!key.pattern.empty()) o << "    static const std::regex re(" << raw(key.pattern) << ", std::regex::ECMAScript);\n";
             o << "    out->clear();\n    for (const auto& [k, v] : j.items()) {\n";
+            if (key.max_length)
+                o << "        if (k.size() > " << *key.max_length << ") return fault(" << vc
+                  << ", keyed(at, k.substr(0, 64) + \"...\"), \"key is \" + std::to_string(k.size()) + \" bytes, longer than "
+                  << *key.max_length << "\");\n";
             if (!key.pattern.empty())
                 o << "        if (!std::regex_search(k, re)) return fault(" << vc
                   << ", keyed(at, k), \"key is not a valid " << n.key_ref << "\");\n";
@@ -1131,6 +1148,23 @@ struct CodecWriter {
         o << "    return std::nullopt;\n}\n\n";
     }
 
+    /* A C++ expression giving the JSON of node i's value `v` (its base type; optional wrapping handled by the caller). */
+    std::string enc(size_t i, const std::string& v, int depth = 0) const {
+        const Node& n = r.nodes[i];
+        const std::string x = "x" + std::to_string(depth);
+        if (n.kind == "object" || object_ref(n)) return "encode(" + v + ")";
+        if (n.kind == "enum") return "Json(k" + n.cpp_type + "Names[static_cast<size_t>(" + v + ")])";
+        if (n.kind == "calibration_key") return "Json(kCalibrationKeyNames[static_cast<size_t>(" + v + ")])";
+        if (n.kind == "calibration_value") return "std::visit([](const auto& cv) { return Json(cv); }, " + v + ")";
+        if (n.kind == "array")
+            return "[&] { Json a = Json::array(); for (const auto& " + x + " : " + v + ") a.push_back(" +
+                   enc(n.children.at(0), x, depth + 1) + "); return a; }()";
+        if (n.kind == "map")
+            return "[&] { Json o = Json::object(); for (const auto& [k" + std::to_string(depth) + ", " + x + "] : " + v +
+                   ") o[k" + std::to_string(depth) + "] = " + enc(n.children.at(0), x, depth + 1) + "; return o; }()";
+        return "Json(" + v + ")";   // integers, strings, booleans, int enums, tuples
+    }
+
     std::vector<size_t> structs() const {
         std::vector<size_t> out;
         std::set<std::string> seen;
@@ -1171,6 +1205,8 @@ struct CodecWriter {
         for (size_t i : structs()) {
             o << "Status decode(const nlohmann::json& j, const std::string& path, " << r.nodes[i].cpp << "* out);\n";
         }
+        o << "\n// The writer: each struct's JSON (absent optionals omitted, nullable nulls written as null).\n";
+        for (size_t i : structs()) o << "nlohmann::json encode(const " << r.nodes[i].cpp << "& value);\n";
         o << "\n// Patches (spec §2.2): every present leaf replaces the base's; present groups recurse.\n";
         for (size_t i : structs())
             if (r.nodes[i].patch)
@@ -1244,12 +1280,15 @@ bool calendar_date(const std::string& s) {
     return d <= kDays[m - 1] + (m == 2 && leap ? 1 : 0);
 }
 
-Status str_in(const Json& j, const std::string& at, C tc, C vc, int64_t min_length, const std::regex* re,
-              const char* pattern, bool date, std::string* out) {
+Status str_in(const Json& j, const std::string& at, C tc, C vc, int64_t min_length, int64_t max_length,
+              const std::regex* re, const char* pattern, bool date, std::string* out) {
     if (!j.is_string()) return type_fault(tc, at, "a string", j);
     const std::string& v = j.get_ref<const std::string&>();
     if (min_length >= 0 && static_cast<int64_t>(v.size()) < min_length)
         return fault(vc, at, min_length == 1 ? "must not be empty" : "is shorter than " + std::to_string(min_length));
+    // before the pattern: std::regex recurses per repetition, so it only sees bounded strings (amendment 7)
+    if (max_length >= 0 && static_cast<int64_t>(v.size()) > max_length)
+        return fault(vc, at, "is " + std::to_string(v.size()) + " bytes, longer than " + std::to_string(max_length));
     if (re && !std::regex_search(v, *re)) return fault(vc, at, Json(v).dump() + " does not match " + pattern);
     if (date && !calendar_date(v)) return fault(vc, at, Json(v).dump() + " is not a YYYY-MM-DD date");
     *out = v;
@@ -1306,6 +1345,25 @@ Status int_enum_in(const Json& j, const std::string& at, C tc, C vc, std::initia
         for (size_t i : sc) node_fn(o, i);
         o << "}  // namespace\n\n";
         for (size_t i : structs()) struct_fn(o, i);
+        for (size_t i : structs()) {
+            const Node& n = r.nodes[i];
+            o << "nlohmann::json encode(const " << n.cpp << "& value) {\n    Json j = Json::object();\n";
+            for (size_t c : n.children) {
+                const Node& m = r.nodes[c];
+                const std::string name = "value." + (m.cpp_member.empty() ? m.key : m.cpp_member);
+                const std::string key = literal(m.key);
+                if (m.optional && m.nullable)
+                    o << "    if (" << name << ") j[" << key << "] = *" << name << " ? " << enc(c, "**" + name)
+                      << " : Json(nullptr);\n";
+                else if (m.optional)
+                    o << "    if (" << name << ") j[" << key << "] = " << enc(c, "*" + name) << ";\n";
+                else if (m.nullable)
+                    o << "    j[" << key << "] = " << name << " ? " << enc(c, "*" + name) << " : Json(nullptr);\n";
+                else
+                    o << "    j[" << key << "] = " << enc(c, name) << ";\n";
+            }
+            o << "    return j;\n}\n\n";
+        }
         for (size_t i : structs()) {
             const Node& n = r.nodes[i];
             if (!n.patch) continue;

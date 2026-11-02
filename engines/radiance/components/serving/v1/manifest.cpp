@@ -158,6 +158,52 @@ std::string owner_segment(size_t helper, const std::vector<std::array<int64_t, 2
     return s;
 }
 
+std::string plan_cache_key(const Manifest& m) {
+    const Spec& s = m.spec;
+    std::map<std::string, const GpuFact*> gpus;
+    for (const GpuFact& g : s.facts.gpus) gpus[g.bdf] = &g;
+    const EngineProcess& e = s.processes.engine;
+    const GpuFact* card = e.device.gpus.empty() || !gpus.count(e.device.gpus[0]) ? nullptr : gpus.at(e.device.gpus[0]);
+    Json helpers = Json::array();
+    for (size_t i = 0; i < s.processes.helpers.size(); ++i) {
+        const HelperProcess& h = s.processes.helpers[i];
+        Json formats = Json::array();
+        for (ExpertFormat f : h.formats) formats.push_back(kExpertFormatNames[static_cast<size_t>(f)]);
+        helpers.push_back(Json{{"role", h.role}, {"arch", gpus.count(h.gpu) ? gpus.at(h.gpu)->arch : std::string()},
+                               {"plugin_file", h.plugin_file}, {"formats", formats}, {"rows_kernel", h.rows_kernel},
+                               {"settings", encode(effective(m, i))}});
+    }
+    const Service& sv = s.intent.service;
+    const EngineExecution& x = e.execution;
+    const Json inputs = {
+        {"cache_version", 1},
+        {"model", s.plan.engine_memory.model_identity},
+        {"engine_build", s.plan.engine_memory.engine_identity},
+        {"card", {{"arch", card ? card->arch : std::string()}, {"vram_total_mib", card ? card->vram.total_mib : 0}}},
+        {"layout", s.intent.layout},
+        {"owner_map_sha256", s.plan.owner_map.owner_map_sha256},
+        {"planning_options",
+         {{"objective", kObjectiveNames[static_cast<size_t>(sv.objective)]},
+          {"retention", kRetentionNames[static_cast<size_t>(sv.retention)]},
+          {"max_sessions", sv.max_sessions},
+          {"max_context_tokens", sv.max_context_tokens},
+          {"tp", e.scheduler.tp},
+          {"max_num_batched_tokens", e.scheduler.max_num_batched_tokens},
+          {"checkpoint_interval", e.scheduler.checkpoint_interval},
+          {"placement", kWeightPlacementNames[static_cast<size_t>(x.placement)]},
+          {"ngram_placement", kNgramPlacementNames[static_cast<size_t>(x.ngram_placement)]},
+          {"kv_cache_dtype", kKvCacheDtypeNames[static_cast<size_t>(x.kv_cache_dtype)]},
+          {"num_speculative_tokens", x.num_speculative_tokens},
+          {"rope_scaling", x.rope_scaling},
+          {"prefix_resume", kPrefixResumeNames[static_cast<size_t>(x.prefix_resume)]},
+          {"kernels", e.runtime.kernels},
+          {"handoff_max_rows", s.handoff.transport.max_rows},
+          {"helpers", helpers}}}};
+    std::string bytes, why;
+    if (!bc::serving::jcs_canonicalize(inputs, &bytes, &why)) return "";
+    return bc::serving::sha256_hex(bytes);
+}
+
 Status validate_semantics(const Manifest& m) {
     const Spec& s = m.spec;
     // §6: experiments are lab-only; a lab placement experiment's step follows its mode
@@ -177,6 +223,11 @@ Status validate_semantics(const Manifest& m) {
         return err(C::invalid_value, "spec.plan.engine_memory.expected.host_pool_mib",
                    "the measured plan's host_pool_mib " + std::to_string(s.plan.engine_memory.expected.host_pool_mib) +
                        " must equal spec.resources.host.pool_mib " + std::to_string(s.resources.host.pool_mib));
+    // §5: the measured checkpoint floor is within the want
+    const PlanCheckpoints& ck = s.plan.engine_memory.expected.checkpoints;
+    if (ck.floor_slots > ck.want_slots)
+        return err(C::invalid_value, "spec.plan.engine_memory.expected.checkpoints.floor_slots",
+                   "floor_slots " + std::to_string(ck.floor_slots) + " exceed want_slots " + std::to_string(ck.want_slots));
     // calibration: one entry per key
     std::set<CalibrationKey> keys;
     for (size_t i = 0; i < s.calibration.size(); ++i)
@@ -186,7 +237,10 @@ Status validate_semantics(const Manifest& m) {
                            " is selected twice");
     // GPUs: every reference resolves, none is used twice
     std::set<std::string> detected;
-    for (const GpuFact& g : s.facts.gpus) detected.insert(g.bdf);
+    for (size_t i = 0; i < s.facts.gpus.size(); ++i)
+        if (!detected.insert(s.facts.gpus[i].bdf).second)
+            return err(C::duplicate_field, "spec.facts.gpus[" + std::to_string(i) + "].bdf",
+                       "GPU " + s.facts.gpus[i].bdf + " is detected twice");
     std::set<std::string> used;
     const std::vector<std::string>& engine_gpus = s.processes.engine.device.gpus;
     for (size_t i = 0; i < engine_gpus.size(); ++i) {
@@ -201,6 +255,12 @@ Status validate_semantics(const Manifest& m) {
                        std::to_string(engine_gpus.size()) + " GPU(s)");
     // §2.2: helpers are helper0, helper1, ... on distinct detected GPUs
     const std::vector<HelperProcess>& helpers = s.processes.helpers;
+    {
+        std::set<std::string> roles;
+        for (size_t i = 0; i < helpers.size(); ++i)
+            if (!roles.insert(helpers[i].role).second)
+                return err(C::duplicate_field, helper_at(i) + ".role", "role " + helpers[i].role + " is repeated");
+    }
     for (size_t i = 0; i < helpers.size(); ++i) {
         if (helpers[i].role != "helper" + std::to_string(i))
             return err(C::invalid_value, helper_at(i) + ".role",
@@ -252,6 +312,10 @@ Status validate_semantics(const Manifest& m) {
     for (size_t i = 0; i < om.helpers.size(); ++i) {
         const OwnedSet& o = om.helpers[i];
         const std::string at = "spec.plan.owner_map.helpers[" + std::to_string(i) + "]";
+        if ((o.bytes == 0) != o.experts.empty())
+            return err(C::ownership_mismatch, at + ".bytes",
+                       std::to_string(o.experts.size()) + " owned expert(s) cannot take " + std::to_string(o.bytes) +
+                           " device bytes");
         if (o.count != static_cast<int64_t>(o.experts.size()))
             return err(C::ownership_mismatch, at + ".count",
                        "count " + std::to_string(o.count) + " but " + std::to_string(o.experts.size()) + " owned experts");
@@ -268,6 +332,13 @@ Status validate_semantics(const Manifest& m) {
     if (bc::serving::sha256_hex(all) != om.owner_map_sha256)
         return err(C::ownership_mismatch, "spec.plan.owner_map.owner_map_sha256",
                    "owner_map_sha256 does not match the owned sets");
+    // §5.1: the measured plan belongs to exactly this configuration
+    const std::string key = plan_cache_key(m);
+    if (key != s.plan.engine_memory.cache_key)
+        return err(C::plan_mismatch, "spec.plan.engine_memory.cache_key",
+                   "the measured plan's cache_key " + s.plan.engine_memory.cache_key +
+                       " is not this configuration's " + key + " (spec §5.1)",
+                   "measure the plan again (bc-serve --plan-memory) and resolve a new manifest");
     return std::nullopt;
 }
 
@@ -313,14 +384,21 @@ Result<Manifest> load_manifest(const std::filesystem::path& path) {
         return e;
     }
     std::ifstream in(path, std::ios::binary);
-    std::ostringstream text;
-    text << in.rdbuf();
-    if (!in.good() && !in.eof()) {
+    if (!in) {
+        ConfigError e = err(C::io_failure, "", "cannot open the manifest");
+        e.source_file = path.string();
+        return e;
+    }
+    // at most one byte past the limit, however the file changes while it is read
+    std::string text(kMaxDocumentBytes + 1, '\0');
+    in.read(text.data(), static_cast<std::streamsize>(text.size()));
+    if (in.bad()) {
         ConfigError e = err(C::io_failure, "", "cannot read the manifest");
         e.source_file = path.string();
         return e;
     }
-    return read_manifest(text.str(), path.string());
+    text.resize(static_cast<size_t>(in.gcount()));
+    return read_manifest(text, path.string());
 }
 
 EngineView engine_view(const Manifest& m) {
@@ -334,8 +412,11 @@ EngineView engine_view(const Manifest& m) {
 Result<HelperView> helper_view(const Manifest& m, std::string_view role) {
     const auto& helpers = m.spec.processes.helpers;
     for (size_t i = 0; i < helpers.size(); ++i)
-        if (helpers[i].role == role)
-            return HelperView{i, helpers[i], m.spec.plan.owner_map.helpers.at(i), m.spec.handoff, effective(m, i)};
+        if (helpers[i].role == role) {
+            HelperCommon settings = effective(m, i);
+            const bool rows = helpers[i].rows_kernel || settings.lanes.rows;
+            return HelperView{i, helpers[i], m.spec.plan.owner_map.helpers.at(i), m.spec.handoff, std::move(settings), rows};
+        }
     return err(C::unresolved_reference, "spec.processes.helpers", "no helper has role " + std::string(role),
                "start the helper with a role the manifest defines");
 }

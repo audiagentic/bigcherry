@@ -74,8 +74,8 @@ refused. Every table's keys are closed: an unknown key is refused, naming it.
     `required_keys`, `min_properties`; its value is the `[[field]]` `<path>/*`), `array` (`item_kind`: `object`, whose
     item is the `[[field]]` `<path>/[]`, `tuple` with `tuple` = element defs, or a scalar kind with `item_ref`,
     `item_min_length`, `item_minimum`, `item_values`, `item_pattern`; `min_items`, `max_items`, `unique_items`),
-    `integer` (`minimum`, `maximum`, `exclusive_maximum`, `const`), `string` (`min_length`, `pattern`, `format`,
-    `const`), `boolean`, `enum` (string `values`, `cpp_type`), `int_enum` (integer `values`), `ref` (`ref` = a def),
+    `integer` (`minimum`, `maximum`, `exclusive_maximum`, `const`), `string` (`min_length`, `max_length`, `pattern`,
+    `format`, `const`; a `pattern` requires a `max_length`, spec §11 amendment 7), `boolean`, `enum` (string `values`, `cpp_type`), `int_enum` (integer `values`), `ref` (`ref` = a def),
     `calibration_key` and `calibration_value` (the two members of `/spec/calibration/[]`).
   - `doc` (required, nonempty); `optional` (not in the parent's `required`); `nullable` (also accepts `null`; not for
     containers); `cpp_member` (when the JSON name is not a C++ identifier, e.g. `class`); `radiance_option` and
