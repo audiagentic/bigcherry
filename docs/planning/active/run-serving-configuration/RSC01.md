@@ -76,7 +76,6 @@ Source: GPT configuration assessment 2026-11-02 (gateway request req_main_fa1c9e
 - 2026-11-02T00:53:44.556553+00:00 (updated-by): Updated: section:ledger-events
 
 - chg_20261102_035356_serving-start-up-plan-one-str_4985
-- chg_20261102_121239_the-serving-manifest-v1-format_6543
 ## Reviews
 
 - RV4224
