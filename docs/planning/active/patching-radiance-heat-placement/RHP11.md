@@ -70,6 +70,7 @@ PROGRESS 2026-11-03 slice C step 2 (branch feat/rhp11-slice-c-admission): per-st
 ## Ledger-events
 
 
+
 - chg_20261101_225732_planning-a-staged-roadmap-for_4092
 - 2026-11-01T22:57:50.943098+00:00 (updated-by): Updated: section:ledger-events
 - chg_20261101_233905_design-spec-for-moving-experts_5737
@@ -86,3 +87,5 @@ PROGRESS 2026-11-03 slice C step 2 (branch feat/rhp11-slice-c-admission): per-st
 - 2026-11-03T00:02:36.089233+00:00 (updated-by): Updated: section:notes
 - chg_20261103_000523_the-engine-can-now-pause-drai_4810
 - 2026-11-03T00:05:27.792971+00:00 (updated-by): Updated: section:ledger-events
+- chg_20261103_190740_the-engine-side-of-live-expert_4409
+- 2026-11-03T19:07:44.686043+00:00 (updated-by): Updated: section:ledger-events
