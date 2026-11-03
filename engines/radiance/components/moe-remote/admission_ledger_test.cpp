@@ -278,7 +278,8 @@ int main() {
     blocked.join();
     check(outcome==R::Ok && after.placement_epoch==21 && after.generation_slot==1,
           "blocked scheduler receives new immutable epoch");
-    check(gate.bind(after.ticket_id,1) && !gate.cancel(after.ticket_id), "bound admission cannot cancel");
+    check(gate.bind(after.ticket_id,1) && !gate.cancel(after.ticket_id) && gate.stopped(),
+          "a rejected cancel (bound admission) faults the ledger");
     StepTicket forged=after; ++forged.placement_epoch;
     check(!gate.valid(forged,0) && !gate.valid(after,1), "forged ticket and invalid rank rejected");
     gate.close_admission();

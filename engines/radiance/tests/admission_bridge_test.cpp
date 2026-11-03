@@ -6,7 +6,7 @@
 
 static uint64_t sequence = 0, cancelled = 0, host = 0;
 static uint32_t epoch = 7;
-static bool closed = false, fault = false;
+static bool closed = false, fault = false, reject_cancel = false;
 static std::vector<uint64_t> terminal;
 
 extern "C" int bc_moe_remote_admit(BcMoeRemoteTicket* out, int try_only, int ranks) {
@@ -21,7 +21,11 @@ extern "C" int bc_moe_remote_bind(BcMoeRemoteTicket t, int64_t step) {
     assert(t.ticket_id && step >= 40); // scheduler IDs are unrelated to tickets
     return 0;
 }
-extern "C" void bc_moe_remote_cancel(BcMoeRemoteTicket t) { cancelled = t.ticket_id; }
+extern "C" int bc_moe_remote_cancel(BcMoeRemoteTicket t) {
+    if (reject_cancel) return -1;
+    cancelled = t.ticket_id;
+    return 0;
+}
 extern "C" int bc_moe_remote_host_done(BcMoeRemoteTicket t) { host = t.ticket_id; return 0; }
 extern "C" int bc_moe_remote_rank_done(int rank, BcMoeRemoteTicket t, void* stream) {
     assert(rank >= 0 && rank < 2 && stream);
@@ -32,7 +36,8 @@ struct Batch { int64_t step = 40; };
 struct Scheduler {
     Batch batch;
     int steps = 0, promotions = 0;
-    const Batch* step() { assert(sequence); ++steps; return &batch; }
+    bool empty = false;
+    const Batch* step() { assert(sequence); ++steps; return empty ? nullptr : &batch; }
     void promote_next() { ++promotions; }
 };
 struct Ctx { void* stream() const { return (void*)uintptr_t(1); } };
@@ -75,4 +80,14 @@ int main() {
     fault = true;
     assert(!bridge.try_ahead(2) && bridge.ahead_status() < 0);
     assert(bridge.step(false, b, scheduler, 2) < 0 && scheduler.steps == 2);
+
+    // A rejected cancellation fails closed on both paths that return a reservation.
+    fault = false;
+    reject_cancel = true;
+    assert(bridge.try_ahead(2));
+    assert(bridge.bind_ahead<Batch>(nullptr) < 0);
+    scheduler.empty = true;
+    assert(bridge.step(false, b, scheduler, 2) < 0);
+    reject_cancel = false;
+    assert(bridge.step(false, b, scheduler, 2) == 0 && bridge.issued_ticket().ticket_id == 0); // accepted cancel
 }

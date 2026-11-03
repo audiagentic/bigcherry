@@ -10,7 +10,8 @@ scheduler step number.
 The bridge admits before Scheduler::step, checkpoint restoration and
 prepare_release. An issue-ahead reservation uses try_admit; a closed or full
 gate skips run-ahead without waiting, allowing the current parent to finish.
-An empty batch cancels only its unused tail reservation. A promoted batch
+An empty batch cancels only its unused tail reservation; a rejected cancel
+faults the ledger and stops the step loop (RAD_E_STATE). A promoted batch
 inherits its admission.
 
 The existing rank barrier publishes the issued ticket. Each rank installs

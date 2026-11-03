@@ -73,7 +73,8 @@ void bc_moe_remote_engine_idle(void);
  * With no remote plugin the returned ticket is zero and calls are no-ops. */
 int bc_moe_remote_admit(BcMoeRemoteTicket* ticket, int try_only, int world_size);
 int bc_moe_remote_bind(BcMoeRemoteTicket ticket, int64_t scheduler_step);
-void bc_moe_remote_cancel(BcMoeRemoteTicket ticket);
+/* Returns an unused tail reservation; negative when the plugin rejects it (the ledger has faulted). */
+int bc_moe_remote_cancel(BcMoeRemoteTicket ticket);
 int bc_moe_remote_host_done(BcMoeRemoteTicket ticket);
 void bc_moe_remote_poll(void);
 void bc_moe_remote_shutdown(void);
@@ -251,14 +252,14 @@ extern "C" int bc_moe_remote_bind(BcMoeRemoteTicket ticket, int64_t step) {
     }
     return fn ? fn(ticket, step) : -1;
 }
-extern "C" void bc_moe_remote_cancel(BcMoeRemoteTicket ticket) {
-    if (!ticket.ticket_id) return;
+extern "C" int bc_moe_remote_cancel(BcMoeRemoteTicket ticket) {
+    if (!ticket.ticket_id) return 0;
     int (*fn)(BcMoeRemoteTicket) = nullptr;
     {
         std::lock_guard<std::mutex> lock(g_mu);
         fn = g_plugin.cancel;
     }
-    if (fn) (void)fn(ticket);
+    return fn ? fn(ticket) : -1;
 }
 extern "C" int bc_moe_remote_host_done(BcMoeRemoteTicket ticket) {
     if (!ticket.ticket_id) return 0;
@@ -360,7 +361,7 @@ public:
             if (bc_moe_remote_admit(&current_, 0, ranks) < 0) return RAD_E_STATE;
             b = scheduler.step();
             if (!b) {
-                bc_moe_remote_cancel(current_);
+                if (bc_moe_remote_cancel(current_) < 0) return RAD_E_STATE;
                 current_ = {};
             } else if (bc_moe_remote_bind(current_, b->step) < 0) return RAD_E_STATE;
         }
@@ -376,7 +377,7 @@ public:
     template<class Batch>
     int bind_ahead(const Batch* b) {
         if (!b) {
-            bc_moe_remote_cancel(ahead_);
+            if (bc_moe_remote_cancel(ahead_) < 0) return RAD_E_STATE;
             ahead_ = {};
             return RAD_OK;
         }

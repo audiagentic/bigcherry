@@ -118,9 +118,13 @@ public:
     }
     bool cancel(uint64_t id) {
         std::lock_guard<std::mutex> lock(mu_);
-        /* Only unused, unbound tail reservations can be returned. */
-        if (!count_ || at(last_id_).bound) return false;
-        if (at(last_id_).ticket.ticket_id != id) return false;
+        /* Only unused, unbound tail reservations can be returned. Anything
+         * else means the bridge lost track of a reservation: fail closed. */
+        if (!count_ || at(last_id_).bound || at(last_id_).ticket.ticket_id != id) {
+            fault_ = true;
+            cv_.notify_all();
+            return false;
+        }
         at(last_id_) = Entry{};
         --count_;
         /* The cancelled reservation was never bound or handed to a GPU.
