@@ -2167,7 +2167,7 @@ def _run_phases(
                 _record_release_note(
                     vendor_root,
                     f"pin-bump lane build: {lane} build_plan_id={outcome.build_plan_id} "
-                    f"binary_sha256={outcome.binary_sha256} build_dir={outcome.build_dir}",
+                    f"binary_sha256={outcome.binary_sha256}",  # the plan id names the build; the release record never carries a local path
                     phase="lane-build",
                 )
             state.completed_phases.append("lane-build")

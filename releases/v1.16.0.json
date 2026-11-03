@@ -14,7 +14,7 @@
   "bigcherry_revision": "3a22d26a6f2912c3bfb3b5e6e5655cae17941fd9",
   "first_seen": "2026-11-03T11:08:44.470808+00:00",
   "manifest_hash": "",
-  "notes": "pin-bump lane build: radiance:stock:linux-radiance build_plan_id=634453dc1cd981f83b71ac9a8ee72a0f binary_sha256=8e3a19db795407ceaf3dc22a3f09837215f78f9695579079583cd6a3f447c58b build_dir=/work/bigcherry/builds/e0968731eb6da813f90edbf4f08a1fbc/634453dc1cd981f83b71ac9a8ee72a0f\npin-bump lane build: radiance:stock:linux-radiance build_plan_id=6d933f0c5d28de8dc1274f959b047470 binary_sha256=8e3a19db795407ceaf3dc22a3f09837215f78f9695579079583cd6a3f447c58b build_dir=/work/bigcherry/builds/e0968731eb6da813f90edbf4f08a1fbc/6d933f0c5d28de8dc1274f959b047470",
+  "notes": "pin-bump lane build: radiance:stock:linux-radiance build_plan_id=634453dc1cd981f83b71ac9a8ee72a0f binary_sha256=8e3a19db795407ceaf3dc22a3f09837215f78f9695579079583cd6a3f447c58b\npin-bump lane build: radiance:stock:linux-radiance build_plan_id=6d933f0c5d28de8dc1274f959b047470 binary_sha256=8e3a19db795407ceaf3dc22a3f09837215f78f9695579079583cd6a3f447c58b",
   "patches": {
     "applied_cleanly": true,
     "failed_edits": [],

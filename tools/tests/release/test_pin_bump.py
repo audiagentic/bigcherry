@@ -1786,6 +1786,7 @@ class LaneBuildPhaseTests(unittest.TestCase):
         self.assertEqual(saved["lane_build"]["build_plan_id"], "plan-123")
         self.assertEqual(saved["lane_build"]["build"], "stock")
         self.assertIn("build_plan_id=plan-123", self.record.notes)
+        self.assertNotIn("/builds/", self.record.notes)  # no local build path in the release record
         self.assertIn("binary_sha256=" + "f" * 64, self.record.notes)
         self.assertIn("bigcherry:stock:linux-radiance", self.record.notes)
         completed = result.state.completed_phases
