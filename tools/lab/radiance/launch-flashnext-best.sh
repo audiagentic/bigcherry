@@ -145,11 +145,14 @@ stop_procs() {
 }
 
 stop_all() {
-  stop_procs
-  # power settings this launcher applied go back to what the cards ran before, once the processes are gone
+  local rc=0
+  stop_procs || rc=1
+  # power settings this launcher applied go back to what the cards ran before; attempted even when a process survived,
+  # and the failure of either is the result
   if [ -f "$RUN/gpu-power" ]; then
-    PYTHONPATH=tools python3 -m bigcherry gpu-power restore >&2 && rm -f "$RUN/gpu-power"
+    if PYTHONPATH=tools python3 -m bigcherry gpu-power restore >&2; then rm -f "$RUN/gpu-power"; else rc=1; fi
   fi
+  return $rc
 }
 
 # One launch at a time: the already-running check, the measuring start and the plan store share the run folder (the PID files,
@@ -160,7 +163,11 @@ mkdir -p "$RUN"
 exec 9> "$RUN/launch.lock"
 flock -n 9 || { echo "FLASHNEXT_EXIT=98 another launch (or stop) is in progress ($RUN/launch.lock); wait for it, or interrupt it with ^C"; exit 98; }
 
-if [ "$CMD" = stop ]; then stop_all; echo "stopped"; exit 0; fi
+if [ "$CMD" = stop ]; then
+  if stop_all; then echo "stopped"; exit 0; fi
+  echo "stop failed: a process or the power settings could not be put back (above); nothing is reported stopped" >&2
+  exit 1
+fi
 
 for name in engine $(cd "$PIDS" 2>/dev/null && ls helper* 2>/dev/null); do
   if [ -f "$PIDS/$name" ] && kill -0 "$(cat "$PIDS/$name")" 2>/dev/null; then
@@ -189,7 +196,7 @@ launch_cleanup() {
   [ "$LAUNCH_HANDED_OFF" = 1 ] && return 0
   trap - EXIT
   echo "launch did not complete; stopping what was started" >&2
-  stop_all
+  stop_all || echo "launch cleanup: a process or the power settings could not be put back (above)" >&2
 }
 trap launch_cleanup EXIT
 trap 'exit 130' INT

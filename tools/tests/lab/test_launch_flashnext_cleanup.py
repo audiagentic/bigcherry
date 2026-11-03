@@ -184,6 +184,20 @@ class LaunchCleanupTests(unittest.TestCase):
         self.assertIn("restore", self._events()[1:])
         self.assertEqual(self._alive_pids(), [])
 
+    def test_the_parent_truncates_each_helper_log_before_it_spawns_the_helper(self) -> None:
+        # the race (a stale 'ready' line read before the new helper's own redirection truncates the log) cannot be forced
+        # from outside, so the ordering is asserted on the launcher itself: the truncation precedes the spawn in start_helpers
+        body = LAUNCHER.read_text().split("start_helpers() {")[1].split("\n}\n")[0]
+        self.assertIn(': > "$log"', body)
+        self.assertLess(body.index(': > "$log"'), body.index('setsid ${HELPER_WRAP:-} "$HELPER"'))
+
+    def test_a_stop_that_cannot_stop_a_process_is_not_reported_as_stopped(self) -> None:
+        # stop_all returns non-zero when stop_procs does; the stop command then says so and exits 1
+        text = LAUNCHER.read_text()
+        self.assertIn("stop_procs || rc=1", text)
+        self.assertIn('if stop_all; then echo "stopped"; exit 0; fi', text)
+        self.assertIn("stop failed:", text)
+
     def test_the_real_start_waits_for_its_own_helpers_not_the_measuring_starts_logs(self) -> None:
         # a cache miss reuses the helper log names of the measuring start moments earlier; the real start's engine must not
         # start until each of ITS helpers has said ready (they take 3 s here)
