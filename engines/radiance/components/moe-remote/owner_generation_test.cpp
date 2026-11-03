@@ -3,6 +3,9 @@
 #include "worker_bootstrap.h"
 #include <cstdio>
 #include <cstdlib>
+#include <atomic>
+#include <chrono>
+#include <thread>
 #include <sys/mman.h>
 using namespace r3::moe_shm;
 using r3::admission::Ledger;
@@ -204,8 +207,104 @@ static void V23EngineOwners_RetirementUnlocksUpload() {
           !uploader.ready(0,2,f.digest[0]), "ready requires exact generation and completed event");
     std::puts("V23EngineOwners_RetirementUnlocksUpload: PASS");
 }
+/* The measuring-start engine registers the callback while the helpers
+ * own a provisional generation. Its layer callbacks publish runtime maps,
+ * helpers consume/drop owners, and kernel rank init may run before helper 0
+ * finishes the final load/filter and seals. Test the exact rank wait that
+ * r3_moe_mailbox_device calls, on the actual shared-memory writer functions. */
+static void V23EngineOwners_MeasuringStartWaitsForFinalSeal() {
+    const LayoutShape shape{128, 2, 3, 8, 128, 64};
+    Layout layout{};
+    check(layout_for(shape, 2, slots_for(3), &layout), "startup segment layout");
+    void* map = mmap(nullptr, layout.bytes, PROT_READ | PROT_WRITE,
+                     MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    check(map != MAP_FAILED && init(map, 2, shape, 3), "startup init");
+    auto* h = static_cast<Header*>(map);
+    h->helper_count = 3; // helper 0 publishes this last before engine registration
+
+    struct Selected { std::vector<std::pair<uint32_t,uint32_t>> expert; };
+    check(r3::epoch::publish_owned(map, Selected{{{0,0},{1,0}}}, 0) &&
+          r3::epoch::publish_owned(map, Selected{{{0,1},{1,1}}}, 1) &&
+          r3::epoch::publish_owned(map, Selected{{{1,2}}}, 2),
+          "all three helper ownership publications precede engine registration");
+    auto* c = placement_control(map);
+    check(c->seq == 0 && c->expected_ranks == 0 && !bootstrap_generation_sealed(map),
+          "engine register sees unsealed initial metadata without rank write");
+    const uint64_t original_digest = c->active_digest;
+    check(original_digest == generation_header(map, 0)->digest,
+          "engine registration does not change either provisional digest");
+
+    // Engine layer-map callbacks: the first map rejects an expert locally.
+    auto* slots0 = layer_slots(map, 0);
+    auto* slots1 = layer_slots(map, 1);
+    for (uint32_t e = 0; e < h->expert_count; ++e) {
+        slots0[e] = -1; // engine marks the entire protected layer local
+        slots1[e] = int32_t(e);
+    }
+    store(&h->layer_map_ready[0], 1);
+    store(&h->layer_map_ready[1], 1);
+    check(r3::epoch::drop_bootstrap_owner(map, 0, 0, 0),
+          "helper 0 filters protected expert after engine layer map");
+    check(r3::epoch::drop_bootstrap_owner(map, 0, 1, 1),
+          "helper 1 drops its protected layer ownership");
+    store(&h->layer_map_consumed[0], 1);
+    store(&h->layer_map_consumed[1], 1);
+    check(r3::epoch::mark_bootstrap_filtered(map, 1) &&
+          r3::epoch::mark_bootstrap_filtered(map, 2),
+          "two helpers filtered before helper 0");
+    check(c->seq == 0 && !bootstrap_generation_sealed(map),
+          "rank setup is earlier than helper 0 seal");
+    r3::epoch::SharedTransport transport(map);
+    check(!transport.seal_bootstrap(), "filtered mask forbids an early seal");
+
+    timespec deadline{};
+    check(clock_gettime(CLOCK_MONOTONIC, &deadline) == 0, "rank startup clock");
+    deadline.tv_sec += 3; // test deadline only; production uses kStartupWaitSeconds
+    std::atomic<bool> began{false};
+    std::atomic<int> result{-1};
+    std::thread rank([&] {
+        began.store(true, std::memory_order_release);
+        const WaitResult w = r3::owner_generation::wait_bootstrap_seal(map, &deadline);
+        result.store(int(w), std::memory_order_release);
+    });
+    while (!began.load(std::memory_order_acquire)) std::this_thread::yield();
+    std::this_thread::sleep_for(std::chrono::milliseconds(30));
+    const bool waited_for_seal = result.load(std::memory_order_acquire) == -1;
+    // Finish the same helper 0 filter/seal order as the real worker, while
+    // rank init remains in its blocking startup boundary.
+    check(r3::epoch::mark_bootstrap_filtered(map, 0), "last helper filtered");
+    const bool sealed = transport.seal_bootstrap();
+    rank.join();
+    check(waited_for_seal, "engine rank must not reject or accept the unsealed map early");
+    check(sealed && result.load() == int(WaitResult::Ready),
+          "engine rank wakes only after helper 0 seals");
+
+    std::vector<uint8_t> bits;
+    check(c->seq == 2 && c->active_digest == generation_digest(map, 0) &&
+          c->active_digest != original_digest &&
+          build_bitmap(map, 0, c->active_epoch, c->active_digest, &bits),
+          "rank uploads filtered sealed generation, not provisional bytes");
+    check(!has(bits.data(), 0, 0, 0, 2, 3) &&
+          !has(bits.data(), 1, 0, 1, 2, 3) &&
+          has(bits.data(), 0, 1, 0, 2, 3) &&
+          has(bits.data(), 1, 1, 1, 2, 3) &&
+          has(bits.data(), 2, 1, 2, 2, 3),
+          "rank sees the runtime-filtered map across all helpers");
+    // Rank setup's ready publication is local to the engine; admission then
+    // writes expected_ranks into the control, never before the seal.
+    __atomic_store_n(&c->expected_ranks, 1u, __ATOMIC_RELEASE);
+    check(c->expected_ranks == 1 && c->seq == 2 &&
+          !transport.seal_bootstrap(), "rank readiness does not re-seal or overwrite");
+    c->active_digest ^= 1;
+    check(r3::owner_generation::wait_bootstrap_seal(map, &deadline) == WaitResult::Error,
+          "a published but corrupt seal is rejected, never treated as ready");
+    munmap(map, layout.bytes);
+    std::puts("V23EngineOwners_MeasuringStartWaitsForFinalSeal: PASS");
+}
+
 int main() {
     V23EngineOwners_NoStepMixesGenerations();
+    V23EngineOwners_MeasuringStartWaitsForFinalSeal();
     V23EngineOwners_NonByteAlignedHelperStrides();
     V23EngineOwners_UnretiredTicketRefusesUpload();
     V23EngineOwners_RetirementUnlocksUpload();

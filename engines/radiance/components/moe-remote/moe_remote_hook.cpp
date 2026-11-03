@@ -1207,6 +1207,28 @@ extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevic
         rank < 0 || rank >= world_size)
         return RAD_E_INVAL;
 
+    /* Radiance declares the kernel instances while the helpers can still
+     * be loading/filtering runtime maps. This wait must be BEFORE g.mu:
+     * publish_layer_map needs that mutex to unblock the helpers, which in
+     * turn let helper 0 seal the canonical generation. */
+    if (!(g.bootstrap_ready_ranks.load(std::memory_order_acquire) & (1u << rank))) {
+        timespec deadline{};
+        if (clock_gettime(CLOCK_MONOTONIC, &deadline) != 0) return RAD_E_STATE;
+        deadline.tv_sec += kStartupWaitSeconds;
+        const WaitResult waited = r3::owner_generation::wait_bootstrap_seal(g.map, &deadline);
+        if (waited != WaitResult::Ready) {
+            const auto* control = placement_control(g.map);
+            const auto* generation = generation_header(g.map, 0);
+            std::fprintf(stderr,
+                "libr3moe: bootstrap rank %d seal wait refused (result=%u seq=%u filtered=0x%x ready=0x%x expected=0x%x fault=%u)\n",
+                rank, uint32_t(waited), load(&control->seq),
+                load(&g.hdr->bootstrap_filtered_helpers),
+                generation ? load(&generation->ready_helpers) : 0u,
+                control->expected_helpers, load(&g.hdr->helper_fault));
+            return RAD_E_STATE;
+        }
+    }
+
     std::lock_guard<std::mutex> lock(g.mu);
     RankState& s = g.rank[rank];
     int device = -1;

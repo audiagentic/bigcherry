@@ -399,7 +399,17 @@ A bad candidate digest is no longer repaired by the engine.
 
 Engine ownership lookups used during layer-map construction recheck the
 seqlock before accepting generation header and owner bytes, preventing a
-false fault during the single publication. The rank bootstrap
+false fault during the single publication. In measuring-start the engine
+registers its layer-map callback and can reach GPU kernel declaration
+before helper 0 seals. The former eager rejection caused the plan-check
+failure and subsequent launcher teardown/worker stop. Rank setup now waits
+outside the registration mutex for the final even-sequence publication
+within the same startup window as segment attach, then verifies the
+complete filtered mask and digest; a malformed seal still fails closed.
+The waiter never mutates the shared control. Helper 0 alone seals exactly
+once, logging individual failed preconditions and values; the worker
+diagnoses stop-before-seal separately. No serving hot-path operation changes.
+The rank bootstrap
 `r3_moe_mailbox_device` refuses unsealed maps. It builds its bitmap and
 binding only from the sealed control epoch/digest; it synchronizes the
 private HIP upload event **before** advertising that rank ready. No parent

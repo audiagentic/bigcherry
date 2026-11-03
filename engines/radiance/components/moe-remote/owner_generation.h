@@ -10,6 +10,21 @@
 
 namespace r3 { namespace owner_generation {
 using namespace moe_shm;
+
+/* Engine rank construction can follow plugin registration while helpers are
+ * still filtering the runtime layer maps. Wait for helper 0's completed
+ * seqlock publication, not for a provisional digest or one helper's bit.
+ * This boundary is also used verbatim in card-free startup-order tests. */
+inline WaitResult wait_bootstrap_seal(void* map, const timespec* deadline) {
+    if (!map || !deadline) return WaitResult::Error;
+    Header* h = static_cast<Header*>(map);
+    const WaitResult waited = wait_for(h, deadline, [&] {
+        const uint32_t seq = load(&placement_control(map)->seq);
+        return seq != 0 && !(seq & 1u); // helper 0 publishes even only after the final digest and mask
+    });
+    if (waited != WaitResult::Ready) return waited;
+    return bootstrap_generation_sealed(map) ? WaitResult::Ready : WaitResult::Error;
+}
 inline bool build_bitmap(const void* map, uint32_t slot, uint64_t epoch,
                          uint64_t digest, std::vector<uint8_t>* out) {
     if (!map || !out || slot > 1 || !epoch || epoch > UINT32_MAX || !digest)

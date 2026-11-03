@@ -19,6 +19,9 @@ namespace r3::moe_shm {
 constexpr uint64_t kMagic = 0x31454f4d33485253ull; /* "SRH3MOE1": reject unrelated/stale shm. */
 constexpr uint32_t kVersion = 23;  /* placement generations; no v22 compatibility */
 constexpr uint32_t kPage = 4096;
+/* One existing helper segment-attach/startup window, shared by helper
+ * helper publication/filter sealing and the engine's first rank bitmap upload. */
+constexpr int kStartupWaitSeconds = 1800;
 /* R3_MOE_WORKER_COMBINE: first element of a combined fp16 row the combiner could not hold in fp16 range (a NaN payload
  * no arithmetic produces; a real NaN converts to 0x7E00); the engine then reads that row from the two helper planes. */
 constexpr uint16_t kCombineFallback = 0x7E01;

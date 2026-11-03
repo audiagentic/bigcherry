@@ -642,22 +642,55 @@ public:
      * Helper 0 alone writes the control's seqlock (the future controller's
      * only writer). Include the generation header update inside odd/even. */
     bool seal_bootstrap() {
-        if (!map_) return false;
+        if (!map_) {
+            std::fprintf(stderr, "r3_moe_worker: seal_bootstrap refused: missing mapping\n");
+            return false;
+        }
         auto* h = static_cast<Header*>(map_);
         PlacementControl c{};
-        if (!placement_snapshot(map_, &c) || c.seq != 0 ||
-            c.state != uint32_t(PlacementState::ACTIVE) ||
-            c.active_slot != 0 || c.active_epoch != 1 || c.fault_code ||
-            !h->helper_count || h->helper_count > kMaxHelpers ||
-            c.expected_helpers != ((1u << h->helper_count) - 1u) ||
-            __atomic_load_n(&h->bootstrap_filtered_helpers, __ATOMIC_ACQUIRE) != c.expected_helpers)
-            return false;
         auto* g = generation_header(map_, 0);
-        if (!g || g->epoch != 1 || g->state != uint32_t(GenerationState::ACTIVE) ||
-            g->ready_helpers || g->map_bytes != h->owner_map_bytes ||
-            g->digest != c.active_digest) return false;
+        /* Give the failing predicate AND both sides of its comparison.
+         * Startup is one-shot; this logging is never on a serving path. */
+        auto reject = [&](const char* reason) {
+            std::fprintf(stderr,
+                "r3_moe_worker: seal_bootstrap refused: %s "
+                "(seq=%u raw_seq=%u state=%u slot=%u epoch=%llu fault=%u "
+                "helpers=%u expected=0x%x filtered=0x%x "
+                "gen_epoch=%llu gen_state=%u gen_ready=0x%x "
+                "gen_bytes=%u owner_bytes=%u gen_digest=0x%llx "
+                "control_digest=0x%llx actual_digest=0x%llx)\n",
+                reason, c.seq, load(&placement_control(map_)->seq),
+                c.state, c.active_slot, (unsigned long long)c.active_epoch,
+                c.fault_code, load(&h->helper_count), c.expected_helpers,
+                load(&h->bootstrap_filtered_helpers),
+                (unsigned long long)(g ? g->epoch : 0u),
+                g ? g->state : 0u,
+                g ? load(&g->ready_helpers) : 0u,
+                g ? g->map_bytes : 0u, h->owner_map_bytes,
+                (unsigned long long)(g ? g->digest : 0u),
+                (unsigned long long)c.active_digest,
+                (unsigned long long)generation_digest(map_, 0));
+            return false;
+        };
+        if (!placement_snapshot(map_, &c)) return reject("placement_snapshot");
+        if (c.seq != 0) return reject("control.seq != 0");
+        if (c.state != uint32_t(PlacementState::ACTIVE)) return reject("control.state != ACTIVE");
+        if (c.active_slot != 0) return reject("control.active_slot != 0");
+        if (c.active_epoch != 1) return reject("control.active_epoch != 1");
+        if (c.fault_code) return reject("control.fault_code != 0");
+        if (!h->helper_count || h->helper_count > kMaxHelpers) return reject("header.helper_count");
+        if (c.expected_helpers != ((1u << h->helper_count) - 1u))
+            return reject("control.expected_helpers");
+        if (__atomic_load_n(&h->bootstrap_filtered_helpers, __ATOMIC_ACQUIRE) != c.expected_helpers)
+            return reject("header.bootstrap_filtered_helpers");
+        if (!g) return reject("generation[0] missing");
+        if (g->epoch != 1) return reject("generation[0].epoch != 1");
+        if (g->state != uint32_t(GenerationState::ACTIVE)) return reject("generation[0].state");
+        if (load(&g->ready_helpers)) return reject("generation[0].ready_helpers already set");
+        if (g->map_bytes != h->owner_map_bytes) return reject("generation[0].map_bytes");
+        if (g->digest != c.active_digest) return reject("generation[0].digest != control.active_digest");
         const uint64_t digest = generation_digest(map_, 0);
-        if (!digest) return false;
+        if (!digest) return reject("generation_digest == 0");
         c.active_digest = digest;
         c.seq = 2;
         auto* target = placement_control(map_);

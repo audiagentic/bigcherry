@@ -348,7 +348,7 @@ int main(int argc, char** argv) {
     sa.sa_flags = 0;
     sigaction(SIGINT, &sa, nullptr); sigaction(SIGTERM, &sa, nullptr);
     Segment seg;
-    if (!seg.open(shm_name(), lay.bytes, helper_index == 0, 1800)) return 1;
+    if (!seg.open(shm_name(), lay.bytes, helper_index == 0, kStartupWaitSeconds)) return 1;
     void* const map = seg.host();
     Header* const h = seg.header();
     const char* const name = seg.name();
@@ -362,7 +362,7 @@ int main(int argc, char** argv) {
         (void)futex_wake(&h->helper_count);
     } else {
         /* Woken by helper 0's publication; the one-second bound keeps a signal-driven stop prompt. */
-        for (int i = 0; i < 1800 && !stopping(); ++i) {
+        for (int i = 0; i < kStartupWaitSeconds && !stopping(); ++i) {
             const uint32_t seen = load(&h->helper_count);
             if (seen == helper_count) break;
             struct timespec ts{1, 0};
@@ -444,15 +444,18 @@ int main(int argc, char** argv) {
             raise_fault(h);
             return 1;
         }
-        deadline.tv_sec += 1800; // same bounded startup window as segment attach
+        deadline.tv_sec += kStartupWaitSeconds; // same shared deadline as segment attach
         const uint32_t expected=(1u << helper_count) - 1u;
         const WaitResult ready=wait_for(h, &deadline, [&] {
             return __atomic_load_n(&h->bootstrap_filtered_helpers, __ATOMIC_ACQUIRE) == expected;
         });
         r3::epoch::SharedTransport transport(map);
-        if (ready != WaitResult::Ready || stopping() || !transport.seal_bootstrap()) {
-            std::fprintf(stderr, "r3_moe_worker: bootstrap owner seal refused (ready=%u, filtered=0x%x, expected=0x%x)\n",
-                         uint32_t(ready), load(&h->bootstrap_filtered_helpers), expected);
+        const bool stopped = stopping();
+        const bool sealed = ready == WaitResult::Ready && !stopped && transport.seal_bootstrap();
+        if (!sealed) {
+            std::fprintf(stderr, "r3_moe_worker: bootstrap owner seal refused (wait=%u, stopping=%u, filtered=0x%x, expected=0x%x, helper_fault=%u)\n",
+                         uint32_t(ready), uint32_t(stopped),
+                         load(&h->bootstrap_filtered_helpers), expected, load(&h->helper_fault));
             raise_fault(h);
             return 1;
         }
