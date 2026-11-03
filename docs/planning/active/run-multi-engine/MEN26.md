@@ -78,9 +78,12 @@ PROGRESS 2026-11-03, step 1 done (/work/bigcherry/runs/men26-kld; config kld.jso
 
 
 
+
 - chg_20261103_022951_measured-that-offloading-exper_7122
 - 2026-11-03T02:29:55.053712+00:00 (updated-by): Updated: section:ledger-events
 - chg_20261103_032135_the-remote-moe-hand-off-that-l_3451
 - 2026-11-03T03:21:43.122618+00:00 (updated-by): Updated: section:ledger-events
 - chg_20261103_040351_release-automation-now-reads-p_1524
 - 2026-11-03T04:03:55.298434+00:00 (updated-by): Updated: section:ledger-events
+- chg_20261103_043749_lab-builds-now-use-the-product_3642
+- 2026-11-03T04:37:54.009723+00:00 (updated-by): Updated: section:ledger-events
