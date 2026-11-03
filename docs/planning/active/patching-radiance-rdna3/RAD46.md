@@ -1,0 +1,74 @@
+---
+id: RAD46
+order: 0
+plan: patching-radiance-rdna3
+state: pending
+created-at: '2026-11-03T02:29:34.417938+00:00'
+breadth: ''
+skill: advanced
+created-by: agent
+work: M
+priority: P1
+---
+
+# RDNA2 tail helper degrades Flash-Next tail quality: KLD p99.9 +1.17 over the two-XTX helpers on 2.3% of routes
+
+## Description
+
+Found by the MEN26 current-pin quality capture (2026-11-03). Production Flash-Next serves the tail layout: R9700 engine, two 7900 XTX helpers, plus the 6900 XT (gfx1030, RDNA2) tail helper. engines/radiance/archs.toml gives gfx1030 'no matrix instructions', plugin libr2.so, formats w4nl64 only, rows-kernel. Against a freshly recorded engine-local reference (TP2 exact over the two XTX, radiance 1.14.0, origin/main 2f5fc39df, corpus rad-kld-corpus-4.jsonl, 8240 positions, deterministic: three captures bit-identical), measured as change vs the R9700-alone control:
+
+| arm | KLD mean | median | p99 | p99.9 | top-1 drop | ppl ratio |
+|---|---|---|---|---|---|---|
+| two XTX helpers (devices 0 1) | +0.003 | +0.0006 | -0.034 | +0.41 | 0.36 pts | +1.2% |
+| production tail (devices 0 1 3, MIBS 22528,22528,14336, PLACEMENT tail) | +0.007 | -0.0005 | +0.146 | +1.58 | 0.46 pts | +1.2% |
+| limit (tools/lab/radiance/helper-kld.json) | 0.02 | 0.01 | 0.2 | 0.5 | 1.0 | 5% |
+
+The two-XTX arm passes every limit; the tail arm fails only p99.9. The 6900 XT served 5,312 requests and 42,729 routes, about 2.3% of the roughly 1.8M routes each XTX served, yet adds about +1.17 nats to the worst 0.1% of tokens. The worst positions are the same hard tokens in every arm, clustered in corpus document kld-docs-02 (positions about 5000-5500, e.g. 5022-5026, 5409, 5456-5458, 6096): the tail amplifies existing error, it does not create new error. Evidence: /work/bigcherry/runs/men26-kld/{capture,capture2,capture3,capture-isolate} (run.json quality block, per-position *.kld.json.rows, helper logs).
+
+## Steps
+
+1. Attribute: re-run the tail arm with R3_MOE_WORKER_TRACE / per-request route capture over the outlier positions, and map each outlier token's routes to (layer, expert, helper). Confirm the outliers' tail-routed experts carry the extra error (compare per-layer partial outputs vs the XTX path using the existing shadow-compare diagnostics, rad0004 / moe-remote-diag, on the same requests).
+2. Isolate the kernel: run the gfx1030 libr2 expert path for the identified experts against the reference fp32 expert computation (moe_fp8_ref_test-style, card-free where possible) and measure per-expert relative L2. Candidates: w4nl64 dequant precision, accumulation type or order in the rows kernel (no matrix instructions), FP8 activation handling on a card without native FP8, and down-projection reduction order.
+3. Fix in the helper kernel (managed component code, never an upstream rewrite), or, if the RDNA2 path cannot reach parity, constrain which experts may be tail-owned (e.g. exclude the layers or experts that carry the error) and derive that exclusion from measured per-expert error, not a hand-picked list.
+4. Re-measure with the MEN26 capture config (kld-isolate.json, three arms); the tail arm must pass all six limits.
+
+## Detailed Solution & Technical Design
+
+
+
+## Code Samples & Guidance
+
+
+
+## Files
+
+
+
+## Validation
+
+MEN26 KLD capture against the same recorded reference: the production tail arm passes all limits (p99.9 increase <= 0.5 vs the R9700-alone control), deterministic across two captures; plus a decode/prefill A/B showing the fix costs no tail-helper throughput beyond noise (decode and prefill reported separately).
+
+## Effort & Risk
+
+
+
+## Standards
+
+
+
+## Acceptance Criteria
+
+Production tail layout passes the helper-kld.json quality limits at the current pin; root cause documented with per-expert error numbers; no regression in decode or prefill.
+
+## Notes
+
+Interim production choice is the owner's: keep the tail layout (more expert capacity and context, known tail-quality cost) or serve on the two XTX helpers only (passes quality, less capacity). rad0002's promotion (MEN26) rests on the two-XTX evidence and is not blocked by this item: the issue is in the gfx1030 helper kernel path (moe-remote component and libr2), not in the engine hand-off patch.
+
+## Change Log
+
+- 2026-11-03T02:29:34.417938+00:00 (created-by): Created by agent
+
+## Ledger-events
+
+- chg_20261103_022951_measured-that-offloading-exper_7122
+- 2026-11-03T02:29:58.843319+00:00 (updated-by): Updated: section:ledger-events
