@@ -107,6 +107,17 @@ v1::Status preconditions(const v1::Manifest& m) {
                                               std::string(v1::kPlacementStrategyNames[static_cast<size_t>(m.spec.handoff.placement.strategy)]) +
                                               " makes this helper a " + (want == v1::HelperTier::kTail ? "tail" : "head") + " helper");
         const v1::HelperCommon effective = v1::effective_helper_settings(m, i);
+        // the reader's effective-setting invariants (spec 2.2): speeds absent when balance is off, one positive speed per helper when on
+        const std::string speeds_at = at + " (effective) placement.balance_speeds_milli";
+        if (!effective.placement.balance && effective.placement.balance_speeds_milli)
+            return invalid(speeds_at, "balance_speeds_milli must be absent when balance is false");
+        if (effective.placement.balance) {
+            const auto& speeds = effective.placement.balance_speeds_milli;
+            if (!speeds || speeds->size() != helpers.size())
+                return invalid(speeds_at, "balance needs one speed per helper (" + std::to_string(helpers.size()) + ")");
+            for (int64_t s : *speeds)
+                if (s < 1) return invalid(speeds_at, "a balance speed is at least 1 (1000 = 1.0), not " + std::to_string(s));
+        }
         if (effective.placement.balance != first_balance || effective.placement.balance_speeds_milli != v1::effective_helper_settings(m, 0).placement.balance_speeds_milli)
             return invalid(at + " (effective) placement.balance", "balance and its speeds must be the same for every helper (set by helper_common, a role's settings or the experiment shape)");
         any_balance = any_balance || effective.placement.balance;
