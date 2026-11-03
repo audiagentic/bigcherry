@@ -160,7 +160,7 @@ The engine MUST compute its pre-allocation footprint using **these manifest-owne
 
 The manifest owns **only initial placement**. After startup, RHP11's mailbox placement epochs are the live authority; epoch flips and later owner sets MUST NOT rewrite or rehash the startup manifest. The startup digest remains the audit identity of the initial state.
 
-Evidence: RSC03 `experts.h` defines `Owned{expert,bytes}`; `experts.cpp:347-384` plans ownership; `serving.cpp:751-758` computes map digest. `/work/bigcherry/runs/rsc03-plan/RESULT.md:3-15` confirms engine-only `plan()` without helper ownership computed a different footprint and failed out of memory.
+Evidence: RSC03 `experts.h` defines `Owned{expert,bytes}`; `experts.cpp:347-384` plans ownership; `serving.cpp:751-758` computes map digest. [tracked RSC03 hardware check](../../evidence/RSC03/PLAN_MEMORY_HARDWARE.md) confirms engine-only `plan()` without helper ownership computed a different footprint and failed out of memory.
 
 ## 5. Strict expected engine memory plan and cache identity
 
@@ -308,7 +308,7 @@ Startup order: open and size-limit JSON → reject duplicate JSON members → ch
 
 **Card-free release gates:** schema meta-validation; producer-generated fixture regeneration and diff; each consumer loading the same fixture; JCS known-answer vectors; mismatched-hash and correctly rehashed invalid-semantic negatives; lab-only enforcement; exact role/owner-map checks; calibrated ledger invariants; cache key invalidation when owner map or helper shape changes; real Radiance native Config parity; no remaining application `R3_*` getters or synthetic argv; patch rebase tests. GPU performance/identity checks are separate leased tests and were **not** run to author this specification.
 
-Reference inputs reviewed: `RSC03.md:94-145`; `plan_cache.{h,cpp}`; `ledger.{h,cpp}`; `rad0011_plan_memory/patch.py:88-263`; `experts.{h,cpp}`; `/work/bigcherry/runs/rsc03-plan/RESULT.md`.
+Reference inputs reviewed: `RSC03.md:94-145`; `plan_cache.{h,cpp}`; `ledger.{h,cpp}`; `rad0011_plan_memory/patch.py:88-263`; `experts.{h,cpp}`; [RSC03 hardware check](../../evidence/RSC03/PLAN_MEMORY_HARDWARE.md).
 
 ## 10. Stable errors and process exits
 

@@ -26,6 +26,19 @@ LOCAL_FILE = "config/environment.local.toml"
 HOOKS_DIR = ".githooks"
 
 GENERIC = (
+    # Reject credential-shaped values without storing a real secret in the code.
+    ("credential token", re.compile(
+        r"\b(?:sk-(?:proj-)?[A-Za-z0-9_-]{30,}"
+        r"|github_pat_[A-Za-z0-9_]{40,}"
+        r"|gh[pousr]_[A-Za-z0-9_]{30,}"
+        r"|AKIA[A-Z0-9]{16})\b")),
+    ("credential assignment", re.compile(
+        r"""(?i)\b(?:API_KEY|ACCESS_TOKEN|AUTH_TOKEN|CLIENT_SECRET)\b
+            ["']?\s*[:=]\s*["'][A-Za-z0-9+/=._-]{28,}["']""", re.X)),
+    ("private-key header", re.compile(
+        r"-----BEGIN (?:RSA |OPENSSH |EC |DSA )?PRIVATE KEY-----")),
+    ("local build or run path", re.compile(
+        r"/work/bigcherry/(?:builds|runs)/[A-Za-z0-9]")),
     ("absolute mount path", re.compile(r"/mnt/[A-Za-z0-9]")),
     ("absolute home path", re.compile(r"/home/[a-z][a-z0-9_-]*/")),
     ("drive-letter path", re.compile(r"\b[A-Za-z]:\\\\?[A-Za-z]{2,}")),
