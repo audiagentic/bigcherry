@@ -454,6 +454,40 @@ class PatchPromoteTests(unittest.TestCase):
             pp._update_recipes(self.root, layout, ("rad0099_demo",))
         self.assertEqual(layout.recipes_path(self.root).read_text(encoding="utf-8"), before)
 
+    def test_promotion_refuses_when_an_experiment_build_would_lose_the_patch(self):
+        # the real radiance shape before the lab source carried production: lab + the hand-off experiment
+        layout = self._rad_patch(_RAD_RECIPES.replace(
+            '[source.radiance]\nref = "pinned"\npatch-sets = ["serving-core"]',
+            '[patch-set.lab-fixes]\npatches = []\n\n'
+            '[source.radiance]\nref = "pinned"\npatch-sets = ["serving-core"]\n\n'
+            '[source.radiance-native]\nref = "pinned"\npatch-sets = []\n\n'
+            '[source.radiance-lab]\nref = "pinned"\npatch-sets = ["lab-fixes"]',
+        ))
+        before = layout.recipes_path(self.root).read_text(encoding="utf-8")
+        with self.assertRaisesRegex(pp.PatchPromoteError, "rad-demo.*radiance-lab.*serving-core"):
+            pp._update_recipes(self.root, layout, ("rad0099_demo",))
+        self.assertEqual(layout.recipes_path(self.root).read_text(encoding="utf-8"), before)
+
+    def test_removal_keeps_comments_and_can_empty_a_set(self):
+        layout = self._rad_patch(_RAD_RECIPES.replace(
+            "[experiment.rad-demo]",
+            '[patch-set.demo-diag]\npatches = [\n  "rad0099_demo", # promoted\n  # why the diagnostic stays\n'
+            '  "rad0098_diag", # kept for context\n]\nrequired-state = "untested"\n\n'
+            '[patch-set.only-demo]\npatches = ["rad0099_demo"]\n\n'
+            "[experiment.rad-demo]",
+        ).replace(
+            '[source.radiance]\nref = "pinned"\npatch-sets = ["serving-core"]',
+            '[source.radiance]\nref = "pinned"\npatch-sets = ["serving-core", "demo-diag", "only-demo"]',
+        ))
+        pp._update_recipes(self.root, layout, ("rad0099_demo",))
+        text = layout.recipes_path(self.root).read_text(encoding="utf-8")
+        recipes = tomllib.loads(text)
+        self.assertEqual(recipes["patch-set"]["demo-diag"]["patches"], ["rad0098_diag"])
+        self.assertIn("# why the diagnostic stays", text)
+        self.assertIn('"rad0098_diag", # kept for context', text)
+        self.assertNotIn("# promoted", text)
+        self.assertEqual(recipes["patch-set"]["only-demo"]["patches"], [])
+
     def test_engine_without_a_promotion_table_cannot_promote(self):
         toml = self.root / "engines" / "radiance" / "engine.toml"
         text = toml.read_text(encoding="utf-8")

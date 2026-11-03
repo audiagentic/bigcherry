@@ -283,6 +283,32 @@ def _replace_section_patches(text: str, section: str, patches: Iterable[str], re
     return text[: match.start(2)] + new_body + text[match.end(2) :]
 
 
+def _remove_section_patches(text: str, section: str, current: Iterable[str], removed: Iterable[str],
+                            recipes: str) -> str:
+    """Remove ids from a section's patches array in place: every other line, comment and indent is kept."""
+    removed = set(removed)
+    current = list(current)
+    if not removed & set(current):
+        return text
+    section_re = re.compile(rf"(?ms)(^\[{re.escape(section)}\]\s*\n)(.*?)(?=^\[|\Z)")
+    match = section_re.search(text)
+    if not match:
+        raise PatchPromoteError(f"{recipes}: missing [{section}]")
+    array = re.search(r"(?ms)^patches\s*=\s*\[[ \t]*\n(.*?)^\]", match.group(2))
+    if not array:
+        # a one-line or empty array has no per-entry comments to keep
+        return _replace_section_patches(text, section, [p for p in current if p not in removed], recipes)
+    kept = []
+    for line in array.group(1).splitlines(keepends=True):
+        entry = re.match(r'\s*"([^"]+)"\s*,?', line)
+        if entry and entry.group(1) in removed:
+            continue
+        kept.append(line)
+    body = match.group(2)
+    new_body = body[: array.start(1)] + "".join(kept) + body[array.end(1):]
+    return text[: match.start(2)] + new_body + text[match.end(2):]
+
+
 def _append_section_patches(text: str, section: str, current: Iterable[str], added: Iterable[str],
                             recipes: str) -> str:
     """Append ids to a section's patches array in place: every existing line, comment and indent is kept."""
@@ -350,14 +376,25 @@ def _update_recipes(root: Path, layout: engines.EngineLayout, patch_ids: tuple[s
                     f"production set {target!r}; promoting would drop it from that source. Add {target!r} to the "
                     "source first."
                 )
-        text = _replace_section_patches(text, f"patch-set.{set_name}", reduced, layout.recipes)
+        text = _remove_section_patches(text, f"patch-set.{set_name}", selected, promoted, layout.recipes)
 
+    # Experiments are combined with any source at build time. Removing the patch from an experiment is safe only if
+    # every patched source now carries it through the production set; a patched source without the production set
+    # would build that experiment without the patch, silently. Native sources (no patch sets) are the unpatched
+    # baseline by definition and are not considered.
     experiments = raw.get("experiment", {})
+    lacking = sorted(n for n, src in sources.items() if src.get("patch-sets") and target not in src["patch-sets"])
     for name, config in experiments.items():
         selected = list(config.get("patches", []))
-        reduced = [p for p in selected if p not in patch_ids]
-        if reduced != selected:
-            text = _replace_section_patches(text, f"experiment.{name}", reduced, layout.recipes)
+        if not promoted & set(selected):
+            continue
+        if lacking:
+            raise PatchPromoteError(
+                f"experiment {name!r} carries {', '.join(sorted(promoted & set(selected)))}, and patched source(s) "
+                f"{', '.join(lacking)} do not select the production set {target!r}: builds of that experiment on "
+                f"those sources would lose the patch. Add {target!r} to them first."
+            )
+        text = _remove_section_patches(text, f"experiment.{name}", selected, promoted, layout.recipes)
     path.write_text(text, encoding="utf-8", newline="\n")
     # Parse the emitted TOML so a formatting bug cannot escape to the checks.
     tomllib.loads(text)
