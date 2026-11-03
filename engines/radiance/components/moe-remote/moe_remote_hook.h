@@ -83,6 +83,14 @@ R3_MOE_OWNER_HD inline const uint8_t* r3_moe_select_owner_bitmap(
         return nullptr;
     return ticket.generation_slot ? slot1 : slot0;
 }
+/* One host/device bit predicate; producer and fake tests share the exact
+ * layer-major, helper-strided, byte-and-bit interpretation. */
+R3_MOE_OWNER_HD inline bool r3_moe_owner_has(const uint8_t* bits,
+        uint32_t layer,uint32_t expert,uint32_t experts) {
+    if (!bits) return false;
+    const uint64_t bit=(uint64_t)layer*experts+expert;
+    return (bits[bit>>3] & uint8_t(1u<<(bit&7u))) != 0;
+}
 #undef R3_MOE_OWNER_HD
 namespace r3 { namespace moe_shm { struct ConsumedRecords; } }
 struct R3MoeMailboxDevice {

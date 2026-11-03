@@ -384,15 +384,15 @@ void publish_layer_map(int layer, int n_expert, const int32_t* slot_of_expert) {
 
 /* Begin: wait only for lanes a helper is still draining (Header::burst; normally none, so no sleep), so nothing is
  * published into released waits. A fault leaves the engine's next GPU wait to trap; nothing to wait for here. */
-bool wait_parks(Header* h) {
-    for (uint32_t lane = 0; lane < kLanes; ++lane) {
-        uint32_t* park = &h->lane[lane].park;
-        const WaitResult r =
-            wait_for(h, nullptr, [&] { return __atomic_load_n(park, __ATOMIC_SEQ_CST) != kParkDraining; });
-        if (r != WaitResult::Ready) {
-            raise_fault(h);   /* the drain was not seen to finish: never publish into released waits */
-            return false;
-        }
+bool wait_parks(Header* h,const timespec* deadline = nullptr) {
+    const WaitResult r=r3::epoch::wait_parks_checked(h,deadline);
+    if (r != WaitResult::Ready) {
+        std::fprintf(stderr,
+            "libr3moe: park barrier failed fault=%u wait=%u\n",
+            uint32_t(r==WaitResult::Timeout ? r3::epoch::FaultCode::QUIESCE_TIMEOUT :
+                     r==WaitResult::Fault ? r3::epoch::FaultCode::HELPER_DEAD :
+                                            r3::epoch::FaultCode::DEVICE),uint32_t(r));
+        return false; // wait_parks_checked already raised the sticky fault
     }
     return true;
 }
@@ -454,7 +454,23 @@ bool resume_burst_after_drain(Header* h) {
         g.burst_draining = false;
         opened = apply_burst(h, g.burst_want);
     }
-    return !opened || wait_parks(h);
+    if (!opened) return true;
+    // The phase deadline is cleared when the controller enters ACTIVE.
+    // Derive a fresh bound from the existing quiescence phase duration.
+    timespec deadline{};
+    if (clock_gettime(CLOCK_MONOTONIC,&deadline) != 0) {
+        raise_fault(h);
+        return false;
+    }
+    const std::chrono::nanoseconds bound(r3::epoch::Deadlines{}.quiesce_ns);
+    const auto seconds=std::chrono::duration_cast<std::chrono::seconds>(bound);
+    deadline.tv_sec += seconds.count();
+    deadline.tv_nsec += (bound-seconds).count();
+    if (deadline.tv_nsec >= std::nano::den) {
+        ++deadline.tv_sec;
+        deadline.tv_nsec -= std::nano::den;
+    }
+    return wait_parks(h,&deadline);
 }
 
 /* This callback is engine weight-residency setup, not a step route. The
@@ -682,8 +698,9 @@ void register_mailbox() {
 void placement_loop() {
     R3MoeDrainSnapshot snap{};
     uint64_t uploaded_transaction = 0;
+    uint64_t reserved_transaction = 0;
     uint64_t closed_transaction = 0;
-    uint32_t issued_mask = 0, ready_mask = 0, committed_mask = 0;
+    uint32_t reserved_mask = 0, issued_mask = 0, ready_mask = 0, committed_mask = 0;
     while (!g.placement_stop.load(std::memory_order_acquire)) {
         PlacementControl c{};
         if (helper_faulted() || g.ledger.stopped()) break;
@@ -709,7 +726,43 @@ void placement_loop() {
                 if (ranks & (1u << rank))
                     r3::epoch::publish_fault_ack(g.map,kMaxHelpers+rank,c,AckPhase::READY,code);
         };
-        if (state == PlacementState::COPYING) {
+        if (state == PlacementState::RESERVING) {
+            if (c.transaction_id != reserved_transaction) {
+                reserved_transaction = c.transaction_id;
+                reserved_mask = 0;
+            }
+            if (closed_transaction || !current_cycle()) {
+                for (uint32_t rank=0;rank<kMaxEngineRanks;++rank)
+                    if (ranks & (1u<<rank))
+                        r3::epoch::publish_fault_ack(g.map,kMaxHelpers+rank,c,
+                            AckPhase::RESERVED,r3::epoch::FaultCode::CHECKSUM);
+            } else {
+                const uint32_t actual=g.engine_ranks.load(std::memory_order_acquire);
+                const uint32_t actual_mask=(1u<<actual)-1u;
+                for (uint32_t rank=0;rank<kMaxEngineRanks;++rank) {
+                    const uint32_t bit=1u<<rank;
+                    if (!(ranks & bit) || (reserved_mask & bit)) continue;
+                    bool registered=false;
+                    {
+                        std::lock_guard<std::mutex> lock(g.mu);
+                        registered=g.rank[rank].ready;
+                    }
+                    if (!registered) continue; // controller enforces deadline
+                    const int ready=r3_moe_owner_generation_ready((int)rank,
+                        c.active_slot,c.active_epoch,c.active_digest);
+                    if (ready == RAD_E_DEVICE) {
+                        r3::epoch::publish_fault_ack(g.map,kMaxHelpers+rank,c,
+                            AckPhase::RESERVED,r3::epoch::FaultCode::DEVICE);
+                    } else if (r3::epoch::service_rank_reservation(g.map,c,rank,
+                               actual_mask,registered,ready==RAD_OK)) {
+                        reserved_mask |= bit;
+                    } else if (ready == RAD_E_STATE) {
+                        r3::epoch::publish_fault_ack(g.map,kMaxHelpers+rank,c,
+                            AckPhase::RESERVED,r3::epoch::FaultCode::CHECKSUM);
+                    }
+                }
+            }
+        } else if (state == PlacementState::COPYING) {
             if (c.transaction_id != uploaded_transaction) {
                 uploaded_transaction = c.transaction_id;
                 issued_mask = ready_mask = committed_mask = 0;
@@ -1110,9 +1163,24 @@ extern "C" int r3_moe_reopen_admission(uint32_t epoch, uint32_t slot) {
         g.ledger.fault();
         return RAD_E_STATE;
     }
-    if (!g.ledger.reopen(epoch, (uint8_t)slot)) return RAD_E_STATE;
+    PlacementControl c{};
+    if (!placement_snapshot(g.map,&c) ||
+        c.state != uint32_t(PlacementState::ACTIVE) ||
+        c.active_epoch != epoch || c.active_slot != slot ||
+        !c.active_digest || !c.transaction_id) {
+        g.ledger.fault();
+        return RAD_E_STATE;
+    }
+    if (!g.ledger.reopen(epoch, (uint8_t)slot) ||
+        !g.ledger.can_replace_generation(1u-slot)) {
+        g.ledger.fault();
+        return RAD_E_STATE;
+    }
     g.drain_verified = false;
     g.closed_snapshot = {};
+    /* Release-published only after successful parks AND ledger.reopen.
+     * Helper zero cannot stage the old slot based on cleared drain words. */
+    r3::epoch::publish_reopen_ack(g.map,c);
     return RAD_OK;
 }
 

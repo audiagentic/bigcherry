@@ -371,7 +371,11 @@ helper drain-ACK identity/`r3_moe_wait_drained` proof.
 Request fields, stores or fences per helper completion. The route-mark
 already read `Request::sequence`; this slice also reads its epoch
 (u64), generation slot (u32) and layer (u32) there for identity/ownership,
-plus one already accepted device bitmap bit test per route. There is no
+without a new bitmap bit test per route. The publish kernel checks the
+exact pass-selected device bitmap once per block (the owner binding is
+loaded by thread zero, shared with the block), and route-mark reconstructs
+the pass ticket only once per block. Its per-route loop performs the main
+weight check and atomic mark, not an extra owner bitmap lookup. There is no
 second epoch/slot/sequence Request reread in the wait or finish. Ticket
 metadata and consumption stamps remain rank-local device memory. Parent
 seal adds a constant-time predicate but no new mapped stores, fences or
@@ -397,7 +401,14 @@ required from every expected helper and actual engine rank.
 
 The engine coordinator in `moe_remote_hook.cpp::placement_loop`:
 
-1. **COPYING/PREPARED.** For each actual rank, issues
+1. **RESERVING.** Every real engine rank validates the actual contiguous
+   rank mask, its registration and completed active generation event, the
+   exact current transaction and candidate STAGING metadata/digest via
+   the shared `service_rank_reservation` predicate, then release-publishes
+   its own RESERVED ACK. No synthesized rank ACK is used by the tests.
+   Mismatched/corrupt rank metadata reports a current-phase fault, never
+   a serving fault before admission closes.
+2. **COPYING/PREPARED.** For each actual rank, issues
    `r3_moe_owner_generation_upload(rank,pending_slot,pending_epoch,
    pending_digest)` once, on its rank-private asynchronous stream.
    It publishes a rank READY ACK **only after**
@@ -409,7 +420,7 @@ The engine coordinator in `moe_remote_hook.cpp::placement_loop`:
    and a later attempt is a new transaction. Incomplete event readiness
    holds COPYING until its deadline, then fails READY_TIMEOUT; no GPU
    host sync is introduced.
-2. **QUIESCING.** Exactly once for this transaction, closes the
+3. **QUIESCING.** Exactly once for this transaction, closes the
    **existing** admission ledger, calls `r3_moe_wait_drained` with the
    phase deadline (waits for all parent/rank terminal events and sealed
    consumption stamps, requests helper drain, verifies every
@@ -417,13 +428,13 @@ The engine coordinator in `moe_remote_hook.cpp::placement_loop`:
    `r3_moe_all_ranks_consumed(snapshot)==1` before publishing rank
    QUIESCED ACKs. The helper actors also require the matching lane drain
    ACKs before acknowledging. No second gate.
-3. **COMMIT.** The existing helper-zero `Controller::commit`
+4. **COMMIT.** The existing helper-zero `Controller::commit`
    release-publishes the new active `{epoch,slot,digest}` through the
    shared PlacementControl seqlock; no separate engine writer exists.
    The helper marks the new GenerationHeader ACTIVE; the engine ranks
    acknowledge COMMITTED only after checking this exact new active
    generation and their own recorded upload readiness.
-4. **RETIRING.** The engine repeats the exact closed-snapshot
+5. **RETIRING.** The engine repeats the exact closed-snapshot
    all-ranks-consumed query, verifies the same drain proof,
    `helper_drained`/lane identities and absence of any unretired
    ticket referencing old slot N; only then does each engine rank
@@ -436,12 +447,34 @@ The engine coordinator in `moe_remote_hook.cpp::placement_loop`:
    upload of the now-inactive slot N on the next transaction.
    Before admission reopens the engine also reconfirms each new
    generation upload event/epoch/digest against the active map.
+6. **REOPEN barrier.** The existing engine gate clears drain words, restores
+   the burst state and waits for every park with one absolute monotonic
+   deadline derived from `Deadlines{}.quiesce_ns`. A timeout raises the
+   sticky serving fault and prevents admission reopen. Only after
+   `ledger.reopen(epoch,slot)` succeeds does it release-publish a
+   transaction/epoch/digest/slot-exact REOPENED ACK in the no-longer-collected
+   rank-0 actor slot. Helper zero requires that exact ACK; cleared drain
+   words alone cannot authorize a new generation upload. The old slot is
+   kept intact until the ledger's replacement guard permits reuse.
 
 The diagnostic remains a **no-move** path only; a candidate that changes
 owner placement cannot be committed by this cycle. No helper GPU hot-path
-stores, fences or additional engine per-route checks were introduced.
+stores, fences or extra engine bitmap reads per route were introduced.
 The CPU transition does map digest checks and HIP event queries off the
-serving path. The 1,000-cycle card-free shared-transport test now
-exercises real slot alternation, fake per-rank upload events, missing
-ACKs, consumption/retirement ordering and a retryable precommit
-timeout, but it cannot replace a hardware timing/safety run.
+serving path. A precommit diagnostic staging or RESERVED/READY fault
+journals an abort and retains ACTIVE(N), with all helpers still serving;
+only a closed admission gate or a committed/published bad generation is
+terminal. The helper logs phase, transaction and fault code before any
+epoch fault-driven exit.
+
+The 1,000-cycle card-free shared-transport tests run each **supported**
+shape separately: one helper with two ranks and three helpers with one
+rank (including the tail helper). They drive the same production
+`service_rank_reservation` participant, fake per-rank upload events,
+missing and corrupted ACKs, consumption/retirement ordering, old-slot
+guards, exact post-ledger reopen and retryable precommit timeout.
+Additional card-free tests cover a live parent through abort/retry,
+an invalid staged candidate, stalled parks, and non-byte-aligned
+helper-strided bitmap packing. These tests cannot replace hardware
+safety or timing measurements; the cycles-off 1-stream delta after
+the per-route bitmap removal has not yet been measured.

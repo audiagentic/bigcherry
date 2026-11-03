@@ -505,10 +505,35 @@ int main(int argc, char** argv) {
         // R3_MOE_WORKER_EPOCH_CYCLE_S on every helper (moves to experiment.helper.epoch_cycle_s with manifest v1).
         r3::epoch::EpochCycle epoch_cycle(map, helper_index, epoch_clock, std::chrono::seconds{cfg.epoch_cycle_s});
         for (uint32_t v; (v = g_stop_word.load(std::memory_order_acquire)) == 0;) {
-            if (!epoch_cycle.tick()) { raise_fault(h); request_stop(); break; }
+            if (!epoch_cycle.tick()) {
+                PlacementControl failed{};
+                (void)placement_snapshot(map,&failed);
+                const uint32_t code=failed.fault_code ? failed.fault_code :
+                    (failed.journal_index < 2 ?
+                        placement_journal(map)->entry[failed.journal_index].fault : 0u);
+                std::fprintf(stderr,
+                    "r3_moe_worker: epoch participant %u exiting phase=%u transaction=%llu fault=%u\n",
+                    helper_index,failed.state,(unsigned long long)failed.transaction_id,code);
+                raise_fault(h); request_stop(); break;
+            }
             const timespec quantum{0, 2'000'000};
             (void)::syscall(SYS_futex, reinterpret_cast<uint32_t*>(&g_stop_word), FUTEX_WAIT_PRIVATE, v,
                             epoch_cycle.enabled() ? &quantum : nullptr, nullptr, 0);
+        }
+        /* The lane subsystem can request a stop on an enqueue, collect or
+         * sync failure without printing an error. Report phase/transaction
+         * and fault code BEFORE stop_and_join raises helper_fault and the
+         * engine's helper-wait GPU kernels fail closed. This also makes an
+         * externally requested clean stop distinguishable (both codes 0). */
+        PlacementControl stopping_phase{};
+        if (placement_snapshot(map,&stopping_phase)) {
+            const auto& record=placement_journal(map)->entry[
+                stopping_phase.journal_index < 2 ? stopping_phase.journal_index : 0];
+            std::fprintf(stderr,
+                "r3_moe_worker: helper %u stopping phase=%u transaction=%llu placement_fault=%u journal_fault=%u\n",
+                helper_index,stopping_phase.state,
+                (unsigned long long)stopping_phase.transaction_id,
+                stopping_phase.fault_code,record.fault);
         }
         lanes.stop_and_join();
         if (epoch_cycle.enabled() && helper_index == 0)

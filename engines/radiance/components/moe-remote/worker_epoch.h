@@ -213,6 +213,23 @@ public:
         quiesced_ = pending_published_ = false;
         return enter(PlacementState::PROPOSED, deadlines_.ready_ns);
     }
+    /* Invalid precommit staging is a rejected transaction, not a serving
+     * failure. Preserve ACTIVE(N), issue a fresh journal identity, and leave
+     * the ledger and current generation untouched. */
+    bool reject_staging(FaultCode code) {
+        if (!can_propose() || code == FaultCode::NONE) return false;
+        ++c_.transaction_id;
+        c_.journal_index = last_committed_index_ < 2 ? 1u-last_committed_index_ : 0u;
+        auto& j=journal_.entry[c_.journal_index];
+        j={};
+        j.transaction_id=c_.transaction_id;
+        j.before_epoch=c_.active_epoch;
+        j.before_digest=c_.active_digest;
+        j.start_ns=clock_.now_ns();
+        fail_without_emit(code,actor_id(ActorKind::COORDINATOR,0));
+        c_.fault_code=0;
+        return emit();
+    }
     // Diagnostic no-move transaction: identical owner bytes, but a genuinely
     // NEW epoch and alternate generation slot. Unlike the previous shortcut,
     // it passes RESERVED, COPYING, PREPARED, QUIESCING, COMMIT and RETIRING;
@@ -431,6 +448,28 @@ inline bool same_map_cycle(const void* map,const PlacementControl& c) {
 /* Production engine-rank ACK predicates, also run in card-free fake-device
  * tests. An ACK is not a claim about attempted uploads: every rank's event
  * must be complete with this exact immutable epoch/digest/slot. */
+/* The engine-rank reservation participant is shared with fake-device tests.
+ * Registered means its serving device is live; active_event_ready proves its
+ * current generation finished H2D before the new one can be reserved. */
+inline bool rank_reservation_ready(const void* map,const PlacementControl& c,
+                                   uint32_t rank,uint32_t actual_rank_mask,
+                                   bool registered,bool active_event_ready) {
+    if (!map || c.state != uint32_t(PlacementState::RESERVING) ||
+        c.fault_code || rank >= kMaxEngineRanks || !actual_rank_mask ||
+        (actual_rank_mask & (actual_rank_mask + 1u)) ||
+        c.expected_ranks != actual_rank_mask ||
+        !(actual_rank_mask & (1u<<rank)) || !registered ||
+        !active_event_ready || !same_map_cycle(map,c)) return false;
+    const auto* active = generation_header(map,c.active_slot);
+    const auto* candidate = generation_header(map,c.pending_slot);
+    return active && candidate &&
+           active->state == uint32_t(GenerationState::ACTIVE) &&
+           active->epoch == c.active_epoch && active->digest == c.active_digest &&
+           candidate->state == uint32_t(GenerationState::STAGING) &&
+           candidate->epoch == c.pending_epoch &&
+           candidate->digest == c.pending_digest;
+}
+
 inline bool rank_upload_prepared(const PlacementControl& c,uint32_t rank,
                                 bool uploaded,bool event_ready,
                                 uint64_t epoch,uint64_t digest,uint32_t slot) {
@@ -511,6 +550,66 @@ inline void publish_ack(void* map, uint32_t actor, const PlacementControl& c,
     __atomic_store_n(&a->fault_code, uint32_t(0), __ATOMIC_RELAXED);
     __atomic_store_n(&a->phase, uint32_t(phase), __ATOMIC_RELEASE);
     notify(static_cast<Header*>(map));
+}
+
+/* Both the real rank thread and card-free fake devices invoke this exact
+ * participant: validation and release publication cannot drift apart. */
+inline bool service_rank_reservation(void* map,const PlacementControl& c,
+                                     uint32_t rank,uint32_t actual_rank_mask,
+                                     bool registered,bool active_event_ready) {
+    if (!rank_reservation_ready(map,c,rank,actual_rank_mask,registered,active_event_ready))
+        return false;
+    publish_ack(map,kMaxHelpers+rank,c,AckPhase::RESERVED);
+    return true;
+}
+
+/* The coordinator's one global ledger publishes a transaction-specific ACK
+ * AFTER admission reopens. The rank-0 retired ACK slot is no longer collected
+ * by the controller after ACTIVE, so it carries this completion fence. */
+inline void publish_reopen_ack(void* map,const PlacementControl& c) {
+    if (!map || c.state != uint32_t(PlacementState::ACTIVE) ||
+        !c.transaction_id || !c.active_epoch || c.active_slot > 1 ||
+        !c.active_digest) return;
+    auto* a = placement_ack(map,kMaxHelpers);
+    if (!a) return;
+    __atomic_store_n(&a->phase,uint32_t(AckPhase::NONE),__ATOMIC_SEQ_CST);
+    __atomic_store_n(&a->transaction_id,c.transaction_id,__ATOMIC_RELAXED);
+    __atomic_store_n(&a->epoch,c.active_epoch,__ATOMIC_RELAXED);
+    __atomic_store_n(&a->digest,c.active_digest,__ATOMIC_RELAXED);
+    __atomic_store_n(&a->generation_slot,c.active_slot,__ATOMIC_RELAXED);
+    __atomic_store_n(&a->fault_code,0u,__ATOMIC_RELAXED);
+    __atomic_store_n(&a->phase,uint32_t(AckPhase::REOPENED),__ATOMIC_RELEASE);
+    notify(static_cast<Header*>(map));
+}
+inline bool reopened_exactly(const void* map,const PlacementControl& c,
+                             uint64_t transaction) {
+    if (!map || !transaction || c.state != uint32_t(PlacementState::ACTIVE) ||
+        c.transaction_id != transaction || c.fault_code) return false;
+    const PlacementAck a = read_shared_ack(map,kMaxHelpers);
+    return a.phase == uint32_t(AckPhase::REOPENED) &&
+           a.transaction_id == transaction && !a.fault_code &&
+           a.epoch == c.active_epoch && a.digest == c.active_digest &&
+           a.generation_slot == c.active_slot;
+}
+
+/* One absolute monotonic deadline covers ALL lane parks, not one duration
+ * per lane. Timeout does not authorize reopening. */
+inline WaitResult wait_parks_until(Header* h,const timespec* deadline) {
+    if (!h) return WaitResult::Error;
+    for (uint32_t lane=0;lane<kLanes;++lane) {
+        const auto r=wait_for(h,deadline,[&] {
+            return __atomic_load_n(&h->lane[lane].park,__ATOMIC_SEQ_CST) != kParkDraining;
+        });
+        if (r != WaitResult::Ready) return r;
+    }
+    return WaitResult::Ready;
+}
+/* Production and card-free test share the same sticky-fault publication.
+ * A park timeout cannot be misread as a completed drain/reopen. */
+inline WaitResult wait_parks_checked(Header* h,const timespec* deadline) {
+    const auto result=wait_parks_until(h,deadline);
+    if (result!=WaitResult::Ready && h) raise_fault(h);
+    return result;
 }
 class SharedTransport : public Transport {
     void* map_;
@@ -605,7 +704,10 @@ public:
             uint64_t closure = 0;
             bool drained = true;
             for (uint32_t lane = 0; lane < kLanes; ++lane) {
-                if ((h->helper_count > 1 && lane % kMaxSlots != helper_) ||
+                const uint32_t slot=lane % kMaxSlots;
+                const bool served=h->helper_count > 1 ? slot == helper_ :
+                    (c.expected_ranks & (1u<<slot)) != 0;
+                if (!served ||
                     (lane_is_small(lane) && lane_class(lane) >= h->small_class_count)) continue;
                 const auto& signal = h->lane[lane];
                 const uint64_t requested = __atomic_load_n(&signal.drain_request, __ATOMIC_ACQUIRE);
@@ -632,21 +734,32 @@ public:
             // ACTIVE publication follows all RETIRED rank/helper ACKs; wait
             // for engine reopen before a new cycle can stage the old slot.
             if (awaiting_reopen_) {
-                for (const auto& lane : h->lane)
-                    if (__atomic_load_n(&lane.drain_request, __ATOMIC_ACQUIRE)) return true;
+                // Drain words clear BEFORE burst restoration, parks and the
+                // ledger gate. Only the exact post-ledger ACK permits staging.
+                if (!reopened_exactly(map_,c,awaiting_reopen_)) return true;
                 awaiting_reopen_ = 0;
                 ++completed_;
                 if (!schedule()) return false;
             }
             if (!(load(&h->burst) & 1u) || clock_.now_ns() < next_ns_) return true;
-            return stage_same_map_generation(map_) && controller_->begin_epoch_cycle();
+            if (!stage_same_map_generation(map_)) {
+                if (!controller_->reject_staging(FaultCode::INVALID_MAP)) return false;
+                return schedule(); // forward abort on N; serving is untouched
+            }
+            return controller_->begin_epoch_cycle();
         }
-        if (phase == PlacementState::PROPOSED)
-            return controller_->start_reserving();
+        if (phase == PlacementState::PROPOSED) {
+            if (controller_->start_reserving()) return true;
+            (void)controller_->fail(FaultCode::DEVICE);
+            return !controller_->failed_closed() && schedule();
+        }
         if (phase == PlacementState::PREPARED) {
             auto* candidate=generation_header(map_,c.pending_slot);
             if (!candidate || c.ready_helpers != c.expected_helpers ||
-                c.ready_ranks != c.expected_ranks) return false;
+                c.ready_ranks != c.expected_ranks) {
+                (void)controller_->fail(FaultCode::EPOCH_MISMATCH);
+                return !controller_->failed_closed() && schedule();
+            }
             candidate->ready_helpers=c.ready_helpers;
             candidate->ready_ranks=c.ready_ranks;
             candidate->state=uint32_t(GenerationState::READY);

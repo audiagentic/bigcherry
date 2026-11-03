@@ -45,8 +45,7 @@ struct Fixture {
 static bool has(const uint8_t* bits, uint32_t helper, uint32_t layer, uint32_t expert,
                 uint32_t layers, uint32_t experts) {
     const uint32_t stride = (layers * experts + 7u) / 8u;
-    const uint32_t bit = layer * experts + expert;
-    return (bits[(size_t)helper * stride + (bit >> 3)] & (1u << (bit & 7u))) != 0;
+    return r3_moe_owner_has(bits+(size_t)helper*stride,layer,expert,experts);
 }
 
 static void V23EngineOwners_NoStepMixesGenerations() {
@@ -88,6 +87,36 @@ static void V23EngineOwners_NoStepMixesGenerations() {
     std::puts("V23EngineOwners_NoStepMixesGenerations: PASS");
 }
 
+static void V23EngineOwners_NonByteAlignedHelperStrides() {
+    const LayoutShape shape{128,3,5,8,128,64};
+    Layout layout{};
+    check(layout_for(shape,3,slots_for(3),&layout),"odd bitmap layout");
+    void* map=mmap(nullptr,layout.bytes,PROT_READ|PROT_WRITE,
+                   MAP_PRIVATE|MAP_ANONYMOUS,-1,0);
+    check(map!=MAP_FAILED && init(map,3,shape,3),"odd bitmap segment");
+    auto* h=static_cast<Header*>(map);
+    h->helper_count=3;
+    uint8_t* owners=generation_map(map,0);
+    owners[0]=0; owners[7]=1; owners[8]=1; owners[14]=2;
+    const uint64_t digest=generation_digest(map,0);
+    generation_header(map,0)->digest=digest;
+    placement_control(map)->active_digest=digest;
+    std::vector<uint8_t> bits;
+    check(build_bitmap(map,0,1,digest,&bits) && bits.size()==6,
+          "three helpers times ceil(15/8) stride");
+    const uint32_t stride=(3*5+7)/8;
+    for (uint32_t owner=0;owner<3;++owner)
+        for (uint32_t layer=0;layer<3;++layer)
+            for (uint32_t expert=0;expert<5;++expert) {
+                const uint32_t index=layer*5+expert;
+                const bool expected=(index==0 && owner==0) ||
+                    ((index==7 || index==8) && owner==1) ||
+                    (index==14 && owner==2);
+                check(r3_moe_owner_has(bits.data()+owner*stride,layer,expert,5)==expected,
+                      "bit and helper stride exact across byte boundary");
+            }
+    munmap(map,layout.bytes);
+}
 struct FakeOwnerStream {
     std::vector<uint8_t> owner[2];
     R3MoeOwnerBinding binding[2]{};
@@ -162,6 +191,7 @@ static void V23EngineOwners_RetirementUnlocksUpload() {
 }
 int main() {
     V23EngineOwners_NoStepMixesGenerations();
+    V23EngineOwners_NonByteAlignedHelperStrides();
     V23EngineOwners_UnretiredTicketRefusesUpload();
     V23EngineOwners_RetirementUnlocksUpload();
     return 0;

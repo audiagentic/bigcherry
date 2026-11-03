@@ -90,11 +90,6 @@ __device__ __forceinline__ void store_sys_rel(uint32_t* p, uint32_t v) {
 __device__ __forceinline__ uint32_t load_sys_acq(const uint32_t* p) {
     return __hip_atomic_load(p, __ATOMIC_ACQUIRE, __HIP_MEMORY_SCOPE_SYSTEM);
 }
-__device__ __forceinline__ bool owner_has(const uint8_t* bits, uint32_t layer, uint32_t expert, uint32_t experts) {
-    const uint64_t bit = (uint64_t)layer * experts + expert;
-    return (bits[bit >> 3] & (uint8_t)(1u << (bit & 7u))) != 0;
-}
-
 /* Which rank slots this step publishes to: a two-rank engine uses its own slot (helper 0 serves both); a
  * one-rank engine with two helpers uses slot h for helper h, the routes split by which helper owns the expert. */
 __device__ __forceinline__ uint32_t step_slot(uint32_t k, uint32_t rank, uint32_t helpers) {
@@ -147,6 +142,7 @@ __global__ void mailbox_publish_kernel(
     uint32_t shadow, uint32_t world,
     const uint8_t* st_aq, const float* st_as, const uint16_t* st_x, uint32_t st_bf16, uint32_t combine) {
     __shared__ uint32_t nr;
+    __shared__ const uint8_t* selected_owner;
     __shared__ uint32_t step_nr[kMaxSlots], step_seq[kMaxSlots], gen;
     /* R3_MOE_WORKER_HISTOGRAM (RHP02): this step's routes are counted in LDS and added to the histogram (pinned host memory)
      * once an expert. This kernel is one block and a rank's steps run in order, so the adds are plain loads and stores. */
@@ -161,11 +157,12 @@ __global__ void mailbox_publish_kernel(
     ConsumptionStamp* stamp = stamps + ticket.ticket_id % capacity;
     if (!r3::consumption::owns(*stamp, ticket.ticket_id, ticket.placement_epoch, ticket.generation_slot))
         __builtin_trap();
-    /* This pass already loads its ticket once; slot selection is a device
-     * binding read and a pointer index, never a rank-global active pointer. */
-    const uint8_t* owner = r3_moe_select_owner_bitmap(ticket, bindings, owner0, owner1);
-    if (!owner) __builtin_trap();
+    /* One thread loads the binding ONCE per pass. Routes and their immutable
+     * ticket words all derive from this selected generation, then a block
+     * barrier makes the pointer available to every route-writing thread. */
     if (threadIdx.x == 0) {
+        selected_owner=r3_moe_select_owner_bitmap(ticket,bindings,owner0,owner1);
+        if (!selected_owner) __builtin_trap();
         published[kPublishedTicketOffset+0] = (uint32_t)ticket.ticket_id;
         published[kPublishedTicketOffset+1] = (uint32_t)(ticket.ticket_id >> 32);
         published[kPublishedTicketOffset+2] = ticket.placement_epoch;
@@ -173,6 +170,7 @@ __global__ void mailbox_publish_kernel(
     }
     if (threadIdx.x <= kMaxSlots) published[threadIdx.x] = 0;   /* [kMaxSlots]: the combine generation */
     __syncthreads();
+    const uint8_t* owner=selected_owner;
     if (rows == 0 || rows > max_rows || rows > kMaxRows ||
         layer >= h->layer_count || !load_sys_acq(&h->layer_map_ready[layer])) return;
 
@@ -219,7 +217,7 @@ __global__ void mailbox_publish_kernel(
             const bool in_range = le >= 0 && (uint32_t)le < n_expert && (uint32_t)le < h->expert_count;
             /* R3_MOE_WORKER_HISTOGRAM: every route this step makes, owned or not, counted once (first slot), in LDS. */
             if (heat && k == 0 && in_range && (uint32_t)le < kExperts) atomicAdd(&step_heat[(uint32_t)le], 1u);
-            if (!in_range || slot_map[(uint32_t)le] < 0 || !owner_has(own, layer, (uint32_t)le, h->expert_count))
+            if (!in_range || slot_map[(uint32_t)le] < 0 || !r3_moe_owner_has(own, layer, (uint32_t)le, h->expert_count))
                 continue;
             const uint32_t p = atomicAdd(&nr, 1u);
             route[p].token = (int32_t)(i / top_k);
@@ -441,17 +439,18 @@ __global__ void mailbox_mask_ref_kernel(
  * inv[flat] is the engine's sorted row for a slot it computed locally (-1 otherwise). Linear in the step,
  * so a 4096-row prefill step costs the same per row as a decode step. */
 __global__ void mailbox_route_mark_kernel(
-    uint8_t* base, const uint8_t* owner0, const uint8_t* owner1,
-    const R3MoeOwnerBinding* bindings, const uint32_t* sequence,
+    uint8_t* base, const uint32_t* sequence,
     const uint32_t* published, uint32_t rank, uint32_t helpers,
     const uint16_t* ew, uint32_t* rmask, uint32_t rows, uint32_t hidden, uint32_t top_k) {
     Header* h = reinterpret_cast<Header*>(base);
-    /* The pass copy is written by publish; the rank ticket cell may already
-     * have been overwritten by a queued next parent. */
-    StepTicket ticket{};
-    if (!r3::mailbox_completion::pass_ticket(published, &ticket)) __builtin_trap();
-    const uint8_t* owner = r3_moe_select_owner_bitmap(ticket, bindings, owner0, owner1);
-    if (!owner) __builtin_trap();
+    /* Publish already checked the ticket-selected owner binding and emitted
+     * these routes from that bitmap. Do not repeat the bitmap work per route.
+     * Decode the immutable pass words once per block, not in every thread. */
+    __shared__ alignas(StepTicket) uint8_t ticket_words[sizeof(StepTicket)];
+    StepTicket* const ticket=reinterpret_cast<StepTicket*>(ticket_words);
+    if (threadIdx.x == 0 &&
+        !r3::mailbox_completion::pass_ticket(published, ticket)) __builtin_trap();
+    __syncthreads();
     for (uint32_t k = 0; k < helpers; ++k) {
         const uint32_t slot = step_slot(k, rank, helpers);
         const Request* q = slot_request(base, sequence, published, slot);
@@ -463,22 +462,20 @@ __global__ void mailbox_route_mark_kernel(
         const bool chunked = published[kMaxSlots] != 0u;
         if (!chunked && (load_sys_acq(&h->lane[lane].done_sequence) != sequence[lane] || q->status != 0))
             __builtin_trap();
-        if (!r3::mailbox_completion::matches_request(ticket, sequence[lane], *q) ||
+        if (!r3::mailbox_completion::matches_request(*ticket, sequence[lane], *q) ||
             q->rank != slot || q->rows != rows ||
             q->hidden != hidden || q->route_count == 0 || q->route_count > rows * top_k ||
             q->layer >= h->layer_count)
             __builtin_trap();
-        const uint8_t* own = owner + (size_t)k * ((h->owner_map_bytes + 7u) / 8u);
         const Route* route = reinterpret_cast<const Route*>(base + q->route_offset);
         for (uint32_t j = blockIdx.x * blockDim.x + threadIdx.x; j < q->route_count;
              j += gridDim.x * blockDim.x) {
             const Route r = route[j];
             if (r.token < 0 || (uint32_t)r.token >= rows || r.slot >= top_k) __builtin_trap();
             const uint32_t flat = (uint32_t)r.token * top_k + r.slot;
-            if (r.weight_bf16 != ew[flat] ||
-                r.expert < 0 || (uint32_t)r.expert >= h->expert_count ||
-                !owner_has(own, q->layer, (uint32_t)r.expert, h->expert_count))
-                __builtin_trap();
+            /* Publish generated this Route from the ticket-selected bitmap;
+             * route-mark only checks its identity and router-weight integrity. */
+            if (r.weight_bf16 != ew[flat]) __builtin_trap();
             if (atomicCAS(rmask + flat, 0u, k + 1u) != 0u) __builtin_trap();   /* two routes for one slot */
         }
     }
@@ -901,7 +898,6 @@ int launch_maps(R3MoeMailboxDevice* d, RadStream stream, const int32_t* sorted, 
         return RAD_E_DEVICE;
     hipLaunchKernelGGL(mailbox_route_mark_kernel, dim3((slots + 255u) / 256u), dim3(256), 0,
                        (hipStream_t)stream, static_cast<uint8_t*>(d->mailbox),
-                       d->owner[0], d->owner[1], d->owner_binding,
                        d->sequence, d->published, d->rank, d->helpers, ew, d->rmask, rows, hidden, top_k);
     hipLaunchKernelGGL(mailbox_inverse_kernel, dim3((slots + 255u) / 256u), dim3(256), 0,
                        (hipStream_t)stream, sorted, d->inv, slots);

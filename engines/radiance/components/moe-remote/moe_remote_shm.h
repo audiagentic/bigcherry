@@ -82,7 +82,7 @@ enum class PlacementState : uint32_t {
     ACTIVE=0, PROPOSED=1, RESERVING=2, COPYING=3,
     PREPARED=4, QUIESCING=5, COMMIT=6, RETIRING=7
 };
-enum class AckPhase : uint32_t { NONE=0, RESERVED=1, READY=2, QUIESCED=3, COMMITTED=4, RETIRED=5 };
+enum class AckPhase : uint32_t { NONE=0, RESERVED=1, READY=2, QUIESCED=3, COMMITTED=4, RETIRED=5, REOPENED=6 };
 enum class GenerationState : uint32_t { EMPTY=0, STAGING=1, READY=2, ACTIVE=3, RETIRED=4 };
 
 struct alignas(64) PlacementControl {
