@@ -68,6 +68,14 @@ inline constexpr std::array<std::string_view, 7> kIdentityExempt = {
  * future version adds needs a record. Run by read_manifest on the raw document. */
 Status check_identity_coverage(const nlohmann::json& doc);
 
+/* spec §7 coverage of the effective configuration (amendment 9): every leaf under /spec has a provenance record at the
+ * leaf or a proper ancestor, or else is covered by the root "" record alone, which is only a claim of the schema default:
+ * the leaf must then have a registry default (a field's `default`, verified against its source at generation time) and
+ * equal it. A record at a non-root pointer must be of the class its covered leaves have in the registry (it covers only
+ * homogeneous leaves), and a record whose origin is schema_default must be true: a default exists and the leaf equals it.
+ * BC_CFG_PROVENANCE_INVALID naming the leaf otherwise. Run by read_manifest on the raw document. */
+Status check_provenance_coverage(const nlohmann::json& doc);
+
 /* spec §4: the owner-map digest segment of helper i. */
 std::string owner_segment(size_t helper, const std::vector<std::array<int64_t, 2>>& experts);
 

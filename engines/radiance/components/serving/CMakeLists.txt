@@ -65,7 +65,8 @@ if(BUILD_TESTING)
   add_executable(bc_contract_check EXCLUDE_FROM_ALL contract/contract_check.cpp)
   target_link_libraries(bc_contract_check PRIVATE bc_contract)
   target_compile_definitions(bc_contract_check PRIVATE BC_CONTRACT_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
-    BC_CONTRACT_DOCS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../../../docs/design/serving-manifest-v1")
+    BC_CONTRACT_DOCS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../../../docs/design/serving-manifest-v1"
+    BC_CONTRACT_RADIANCE_SRC="${RADIANCE_SRC}")
   add_test(NAME bc_contract_check COMMAND bc_contract_check)
   add_executable(bc_v1_test EXCLUDE_FROM_ALL v1/reader_test.cpp)
   target_link_libraries(bc_v1_test PRIVATE bc_serving_v1)

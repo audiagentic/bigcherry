@@ -8,7 +8,7 @@
       "build_sha256": "4d97aa62b5551ca084b683f8eba2dfb963f77c4a55a3ea2ddde75016b1ebd37d"
     },
     "contract_version": 1,
-    "content_digest": "sha256:aa107bff0c73825f8749f3af235d22c1f3b387fb0b641dfcc35d2ce2d9945a33"
+    "content_digest": "sha256:e2e8066eafd896b92313cdf596bd57886b22515527da786f270efe99d2f78f4f"
   },
   "spec": {
     "intent": {
@@ -450,6 +450,14 @@
         "/metadata/instance_id"
       ]
     },
+    "/spec/handoff/transport": {
+      "origin": "profile",
+      "source": "flashnext-balanced.toml: transport literals (interim launcher values; candidates to derive or calibrate, RSC08)",
+      "class": "derived",
+      "lifecycle": "startup_only",
+      "confidence": "estimate",
+      "inputs": []
+    },
     "/spec/handoff/placement": {
       "origin": "derived",
       "source": "layout and heat policy",
@@ -466,6 +474,14 @@
       "class": "policy",
       "lifecycle": "startup_only",
       "confidence": "exact",
+      "inputs": []
+    },
+    "/spec/handoff/kernels": {
+      "origin": "profile",
+      "source": "flashnext-balanced.toml: kernel literals (interim launcher values; candidates to derive or calibrate, RSC08)",
+      "class": "derived",
+      "lifecycle": "startup_only",
+      "confidence": "estimate",
       "inputs": []
     },
     "/spec/processes/engine/device": {
