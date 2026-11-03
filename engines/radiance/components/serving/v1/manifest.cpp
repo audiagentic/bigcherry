@@ -5,6 +5,7 @@
 #include "sha256.h"
 #include "strict_json.h"
 
+#include <algorithm>
 #include <fstream>
 #include <functional>
 #include <map>
@@ -156,6 +157,137 @@ Status check_identity_coverage(const nlohmann::json& doc) {
         if (!covered)
             return err(C::provenance_invalid, "provenance",
                        "identity field " + leaf + " is not exempt (spec §11 amendment 6) and has no provenance record");
+    }
+    return std::nullopt;
+}
+
+namespace {
+std::string unescape_token(const std::string& t) {
+    std::string out;
+    for (size_t i = 0; i < t.size(); ++i) {
+        if (t[i] == '~' && i + 1 < t.size() && (t[i + 1] == '0' || t[i + 1] == '1')) out += t[++i] == '0' ? '~' : '/';
+        else out += t[i];
+    }
+    return out;
+}
+
+const FieldInfo* field_at(const std::string& path) {
+    static const std::map<std::string, const FieldInfo*> index = [] {
+        std::map<std::string, const FieldInfo*> m;
+        for (const FieldInfo& f : kFields) m[std::string(f.path)] = &f;
+        return m;
+    }();
+    const auto it = index.find(path);
+    return it == index.end() ? nullptr : it->second;
+}
+
+/* The registry field a document pointer (as tokens) describes: arrays step to `[]`, maps to `*`, a ref jumps into its
+ * shared type (a patch def into the object def it patches). Null when the registry has no such field. */
+const FieldInfo* resolve_field(const std::vector<std::string>& tokens, std::string* position) {
+    std::string cur;
+    position->clear();
+    const FieldInfo* f = field_at("");
+    for (const std::string& token : tokens) {
+        if (!f) return nullptr;
+        if (f->kind == "ref") {
+            std::string def(f->ref_def);
+            for (const auto& [patch, of] : kPatchDefs)
+                if (def == patch) def = std::string(of);
+            cur = "$defs/" + def;
+        }
+        const std::string step = f->kind == "array" ? "[]" : f->kind == "map" ? "*" : unescape_token(token);
+        cur += "/" + step;
+        *position += "/" + step;
+        f = field_at(cur);
+    }
+    return f;
+}
+
+/* The provenance class at a document position: the longest [[class_default]] prefix of it (spec section 7; a shared type
+ * takes the class of where it is used), else the field's own. */
+std::string class_at(const std::string& position, const FieldInfo& f) {
+    size_t best = 0;
+    std::string cls(f.value_class);
+    for (const auto& [path, c] : kClassDefaults)
+        if ((position == path || position.rfind(std::string(path) + "/", 0) == 0) && path.size() + 1 > best) {
+            best = path.size() + 1;
+            cls = std::string(c);
+        }
+    return cls;
+}
+
+std::string pointer_of(const std::vector<std::string>& tokens) {
+    std::string p;
+    for (const std::string& t : tokens) p += "/" + t;
+    return p;
+}
+
+/* A leaf is a scalar, an empty container, or an array that is not a list of objects. */
+void effective_leaves(const Json& v, std::vector<std::string>* tokens, std::vector<std::vector<std::string>>* out) {
+    auto escape = [](const std::string& k) {
+        std::string t;
+        for (char ch : k) t += ch == '~' ? std::string("~0") : ch == '/' ? std::string("~1") : std::string(1, ch);
+        return t;
+    };
+    const bool objects = v.is_array() && !v.empty() &&
+                         std::all_of(v.begin(), v.end(), [](const Json& e) { return e.is_object(); });
+    if (v.is_object() && !v.empty()) {
+        for (const auto& [k, sub] : v.items()) {
+            tokens->push_back(escape(k));
+            effective_leaves(sub, tokens, out);
+            tokens->pop_back();
+        }
+    } else if (objects) {
+        for (size_t i = 0; i < v.size(); ++i) {
+            tokens->push_back(std::to_string(i));
+            effective_leaves(v[i], tokens, out);
+            tokens->pop_back();
+        }
+    } else {
+        out->push_back(*tokens);
+    }
+}
+}  // namespace
+
+Status check_provenance_coverage(const nlohmann::json& doc) {
+    if (!doc.contains("spec") || !doc.at("spec").is_object() || !doc.contains("provenance") ||
+        !doc.at("provenance").is_object())
+        return std::nullopt;   // decode refused the document already
+    const Json& prov = doc.at("provenance");
+    std::vector<std::vector<std::string>> leaves;
+    std::vector<std::string> tokens = {"spec"};
+    effective_leaves(doc.at("spec"), &tokens, &leaves);
+    auto fail = [](const std::string& leaf, const std::string& why) {
+        return err(C::provenance_invalid, "provenance", "effective leaf " + leaf + ": " + why,
+                   "give the leaf (or a homogeneous ancestor) a provenance record, or write the schema default");
+    };
+    for (const std::vector<std::string>& t : leaves) {
+        const std::string leaf = pointer_of(t);
+        std::string position;
+        const FieldInfo* f = resolve_field(t, &position);
+        if (!f) return fail(leaf, "no registry field describes it");
+        const Json& value = doc.at(Json::json_pointer(leaf));
+        std::string covering = leaf;   // the nearest record: the leaf itself, then each proper ancestor, then the root
+        while (!covering.empty() && !prov.contains(covering)) covering = covering.substr(0, covering.rfind('/'));
+        const Json* rec = prov.contains(covering) ? &prov.at(covering) : nullptr;
+        if (!rec) return fail(leaf, "no provenance record covers it, not even the root");
+        const bool root_only = covering.empty();
+        const bool claims_default = rec->at("origin") == "schema_default";
+        if (root_only || claims_default) {
+            // a claim of the schema default: the registry has one for this field and the leaf equals it
+            if (f->default_json.empty())
+                return fail(leaf, std::string("it is covered only by a schema-default claim ") +
+                                      (root_only ? "(the root record)" : "(" + covering + ")") +
+                                      " but the field has no schema default; it needs its own record");
+            if (value != Json::parse(std::string(f->default_json)))
+                return fail(leaf, "value " + value.dump() + " is not the schema default " + std::string(f->default_json) +
+                                      "; it needs its own record, not a default claim");
+            continue;
+        }
+        const std::string cls = class_at(position, *f);
+        if (rec->at("class") != cls)
+            return fail(leaf, "record " + covering + " has class " + rec->at("class").dump() + " but the leaf's class is \"" + cls +
+                                  "\"; a record covers only leaves of its own class");
     }
     return std::nullopt;
 }
@@ -372,6 +504,7 @@ Result<Manifest> read_manifest(std::string_view bytes, const std::string& source
     if (auto e = decode(doc, "", &m)) return sourced(*e);
     if (auto e = provenance(doc)) return sourced(*e);
     if (auto e = check_identity_coverage(doc)) return sourced(*e);
+    if (auto e = check_provenance_coverage(doc)) return sourced(*e);
     if (auto e = validate_semantics(m)) return sourced(*e);
     return m;
 }

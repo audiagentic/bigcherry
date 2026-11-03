@@ -501,6 +501,61 @@ int main() {
             }
     }
 
+    // ---- spec §7 coverage of the effective configuration (amendment 9) ----
+    {
+        auto record = [](const char* origin, const char* cls) {
+            return Json{{"origin", origin}, {"source", "test"}, {"class", cls}, {"lifecycle", "startup_only"},
+                        {"confidence", "exact"}, {"inputs", Json::array()}};
+        };
+        auto doc = [&](Json scheduler, Json prov) {
+            return Json{{"spec", {{"processes", {{"engine", {{"scheduler", std::move(scheduler)}}}}}}}, {"provenance", std::move(prov)}};
+        };
+        const Json root_default = record("schema_default", "policy");
+        const char* sched = "/spec/processes/engine/scheduler";
+        auto refused = [&](const Json& d, const std::string& needle, const std::string& what) {
+            const Status s = check_provenance_coverage(d);
+            check(s && s->code == C::provenance_invalid && s->message.find(needle) != std::string::npos,
+                  what + ": " + (s ? s->message : std::string("accepted")));
+        };
+        // a leaf equal to its schema default may rest on the root record alone; the sourced defaults are what they are
+        check(!check_provenance_coverage(doc({{"tp", 1}}, {{"", root_default}})), "tp at its schema default (1) rests on the root");
+        check(!check_provenance_coverage(doc({{"tp", 1}, {"max_num_batched_tokens", 2048}}, {{"", root_default}})),
+              "two leaves at their schema defaults");
+        // not equal to the default: the root cannot hide it
+        refused(doc({{"tp", 2}}, {{"", root_default}}), "is not the schema default 1", "tp 2 under the root");
+        // no schema default for the field: the root cannot cover it
+        refused(doc({{"checkpoint_interval", 4096}}, {{"", root_default}}), "has no schema default", "a field without a default");
+        // no record at all, not even the root
+        refused(doc({{"tp", 1}}, Json::object()), "no provenance record covers it", "no record");
+        // an explicit record of the leaf's own class covers a non-default value, at the leaf or a homogeneous ancestor
+        check(!check_provenance_coverage(doc({{"tp", 2}}, {{"", root_default}, {sched, record("profile", "derived")}})),
+              "an ancestor record of the right class covers tp 2");
+        check(!check_provenance_coverage(doc({{"tp", 2}}, {{"", root_default}, {std::string(sched) + "/tp", record("site", "derived")}})),
+              "a record at the leaf");
+        // a record covers only leaves of its own class
+        refused(doc({{"tp", 2}}, {{"", root_default}, {sched, record("profile", "policy")}}), "a record covers only leaves of its own class",
+                "a policy record over a derived leaf");
+        // a schema-default claim below the root is true or refused
+        refused(doc({{"tp", 2}}, {{"", root_default}, {sched, record("schema_default", "derived")}}), "is not the schema default",
+                "a false default claim at an ancestor");
+        refused(doc({{"checkpoint_interval", 4096}}, {{"", root_default}, {sched, record("schema_default", "derived")}}),
+                "has no schema default", "a default claim over a field with none");
+        // the document position decides the class: a shared type used under /spec/experiment is diagnostic there
+        const Json shaped = Json{{"spec", {{"experiment", {{"shape", {{"helper_common", {{"gemv", {{"h2", 1}}}}}}}}}}}, {"provenance", {{"", root_default}, {"/spec/experiment", record("lab", "diagnostic")}}}};
+        check(!check_provenance_coverage(shaped), "a leaf of a shared type takes the class of where it is used");
+        // both examples: every effective leaf resolves to a registry field and is covered
+        check(!check_provenance_coverage(prod) && !check_provenance_coverage(lab), "the examples are covered");
+        // and the examples need the records this rule asks for: without them the five launcher literals are uncovered
+        for (const Json* ex : {&prod, &lab}) {
+            Json d = *ex;
+            d["provenance"].erase("/spec/handoff/transport");
+            refused(d, "/spec/handoff/transport/", "the transport literals without their record");
+            d = *ex;
+            d["provenance"].erase("/spec/handoff/kernels");
+            refused(d, "/spec/handoff/kernels/moe_down_tile", "the kernel literal without its record");
+        }
+    }
+
     if (failures) return 1;
     std::printf("ok\n");
     return 0;

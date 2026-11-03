@@ -5,7 +5,11 @@
 #include "third_party/toml.hpp"
 
 #include <algorithm>
+#include <cctype>
+#include <fstream>
 #include <functional>
+#include <optional>
+#include <regex>
 #include <set>
 #include <sstream>
 #include <stdexcept>
@@ -151,6 +155,40 @@ void scalar_attrs(const toml::table& t, const std::string& prefix, const std::st
     n->ref = str(t, k("ref").c_str(), at, false);
 }
 
+/* A default is a literal of the field's own kind that its schema accepts, from a named place (spec section 7). */
+void check_default(const Node& field, const Node& n, const std::string& at) {
+    // `field` carries the default; `n` is the node whose kind and bounds it must fit (the field itself, or the scalar def it refs)
+    if (!field.default_value) return;
+    const Json& d = *field.default_value;
+    if (n.kind == "integer") {
+        if (!d.is_number_integer()) fault(at, "an integer default must be an integer");
+        const int64_t v = d.get<int64_t>();
+        if ((n.minimum && v < *n.minimum) || (n.maximum && v > *n.maximum) ||
+            (n.exclusive_maximum && v >= *n.exclusive_maximum))
+            fault(at, "the default " + d.dump() + " is outside the field's numeric bounds");
+    } else if (n.kind == "boolean") {
+        if (!d.is_boolean()) fault(at, "a boolean default must be true or false");
+    } else if (n.kind == "string") {
+        if (!d.is_string()) fault(at, "a string default must be a string");
+        const int64_t len = static_cast<int64_t>(d.get<std::string>().size());
+        if ((n.min_length && len < *n.min_length) || (n.max_length && len > *n.max_length))
+            fault(at, "the default is outside the field's length bounds");
+    } else if (n.kind == "enum" || n.kind == "int_enum") {
+        if (std::find(n.values.begin(), n.values.end(), d) == n.values.end())
+            fault(at, "the default " + d.dump() + " is not one of the field's values");
+    } else {
+        fault(at, std::string("kind '") + n.kind + "' cannot have a default");
+    }
+    const std::string& s = field.default_source;
+    if (s.rfind("radiance:Config.", 0) == 0) {
+        if (field.radiance_config != s.substr(std::string("radiance:").size()))
+            fault(at, "default_source " + s + " must name the field's own radiance_config (" +
+                          (field.radiance_config.empty() ? std::string("none") : field.radiance_config) + ")");
+    } else if (s.rfind("setting:R3_", 0) != 0 || s.size() <= std::string("setting:R3_").size()) {
+        fault(at, "default_source is \"radiance:Config.<member>\" or \"setting:R3_<NAME>\"");
+    }
+}
+
 /* What each kind may carry; anything else set on it is a fault. */
 void check_scalar(const Node& n, const std::string& at) {
     const bool num = n.minimum || n.maximum || n.exclusive_maximum;
@@ -246,7 +284,8 @@ struct Loader {
                       "item_kind", "item_ref", "item_min_length", "item_max_length", "item_minimum", "item_values",
                       "item_pattern",
                       "min_items", "max_items", "unique_items", "tuple", "key_ref", "required_keys", "min_properties",
-                      "constraints", "radiance_option", "radiance_config", "error_class", "mismatch"},
+                      "constraints", "radiance_option", "radiance_config", "error_class", "mismatch", "default",
+                      "default_source"},
                   at);
         Node n;
         n.path = str(t, "path", at);
@@ -295,10 +334,15 @@ struct Loader {
         if (n.min_properties && n.kind != "object" && n.kind != "map") fault(where, "min_properties is for objects");
         if ((n.min_items || n.max_items || n.unique_items) && n.kind != "array") fault(where, "item counts are for arrays");
         if (n.nullable && container) fault(where, "containers are not nullable");
+        if (const auto* d = t.get("default")) n.default_value = to_json(*d, where + ".default");
+        n.default_source = str(t, "default_source", where, false);
+        if (n.default_value.has_value() != !n.default_source.empty())
+            fault(where, "default and default_source go together: a default names the place it comes from");
         if (!container) {
             scalar_attrs(t, "", where, &n);
             check_scalar(n, where);
         } else {
+            if (n.default_value) fault(where, "a container cannot have a default");
             for (const char* k : {"minimum", "maximum", "exclusive_maximum", "min_length", "max_length", "pattern",
                                   "format", "const", "values", "ref"})
                 if (t.get(k)) fault(where, std::string("a container cannot have '") + k + "'");
@@ -571,6 +615,7 @@ struct Loader {
                     if (p == path) fault(at, "path '" + path + "' has two class defaults");
                 rules.emplace_back(path, cls);
             }
+        r.class_defaults = rules;
         for (Node& n : r.nodes) {
             if (n.path.rfind("calibration:", 0) == 0) continue;
             size_t best = 0;
@@ -596,6 +641,12 @@ struct SchemaWriter {
     OrderedJson ref(const std::string& name) const { return OrderedJson{{"$ref", "#/$defs/" + name}}; }
 
     OrderedJson scalar(const Node& n) const {
+        OrderedJson s = scalar_body(n);
+        if (n.default_value && !n.patch) s["default"] = OrderedJson::parse(n.default_value->dump());
+        return s;
+    }
+
+    OrderedJson scalar_body(const Node& n) const {
         OrderedJson s = OrderedJson::object();
         if (n.kind == "ref") return ref(n.ref);
         if (n.constant) { s["const"] = *n.constant; return s; }
@@ -853,7 +904,8 @@ struct TypesWriter {
             rows << "    {" << literal(n.path) << ", " << literal(n.kind) << ", " << literal(n.cls) << ", "
                  << (n.optional ? "false" : "true") << ", " << (n.nullable ? "true" : "false") << ",\n     "
                  << literal(n.radiance_option) << ", " << literal(n.radiance_config) << ",\n     " << literal(n.doc)
-                 << "},\n";
+                 << ", " << literal(n.default_value ? n.default_value->dump() : std::string()) << ", "
+                 << literal(n.default_source) << ", " << literal(n.ref) << "},\n";
             ++count;
         }
         o << "// Every registry field (patch copies excepted), in registry order: the metadata explain and provenance use.\n";
@@ -866,8 +918,29 @@ struct TypesWriter {
              "    std::string_view radiance_option;  // the engine flag the field binds to, or empty\n"
              "    std::string_view radiance_config;  // its native Config destination, or empty\n"
              "    std::string_view doc;\n"
+             "    std::string_view default_json;     // the schema default as JSON, or empty (spec section 7)\n"
+             "    std::string_view default_source;   // where the default comes from, or empty\n"
+             "    std::string_view ref_def;          // kind \"ref\": the shared type it uses, else empty\n"
              "};\n";
         o << "inline constexpr std::array<FieldInfo, " << count << "> kFields = {{\n" << rows.str() << "}};\n";
+        // A patch def copies the members of the object def it patches: a field below one is described by the copied member.
+        std::ostringstream patches;
+        size_t patch_count = 0;
+        for (const Def& d : r.defs)
+            if (d.kind == "patch") {
+                patches << "    {" << literal(d.name) << ", " << literal(d.of) << "},\n";
+                ++patch_count;
+            }
+        // A value's provenance class follows where it sits in the document, not the shared type it uses: the longest
+        // matching position prefix wins ("[]" stands for an array index).
+        std::ostringstream classes;
+        for (const auto& [path, cls] : r.class_defaults) classes << "    {" << literal(path) << ", " << literal(cls) << "},\n";
+        o << "\n// [[class_default]] rules: the provenance class of everything at or under a document position.\n";
+        o << "inline constexpr std::array<std::array<std::string_view, 2>, " << r.class_defaults.size()
+          << "> kClassDefaults = {{\n" << classes.str() << "}};\n";
+        o << "\n// The patch defs and the object def each one patches (spec section 2.2).\n";
+        o << "inline constexpr std::array<std::array<std::string_view, 2>, " << patch_count << "> kPatchDefs = {{\n"
+          << patches.str() << "}};\n";
     }
 };
 
@@ -919,6 +992,7 @@ struct FieldsWriter {
             if (!n.format.empty()) t += ", " + n.format;
         }
         if (n.nullable) t += " or null";
+        if (n.default_value) t += "; default `" + n.default_value->dump() + "` (" + n.default_source + ")";
         return t;
     }
 
@@ -1479,6 +1553,17 @@ bool load_registry(const std::string& toml_text, const std::string& source_name,
         each("def", [&](const toml::table& t, const std::string& at) { l.def(t, at); });
         each("field", [&](const toml::table& t, const std::string& at) { l.field(t, at); });
         l.finish();
+        for (const Node& n : l.r.nodes) {   // every default fits the scalar it is a default of (a ref field: the def's scalar)
+            if (!n.default_value) continue;
+            const std::string where = n.path.empty() ? "\"\"" : n.path;
+            if (n.kind == "ref") {
+                const auto def = std::find_if(l.r.defs.begin(), l.r.defs.end(), [&](const Def& x) { return x.name == n.ref; });
+                if (def == l.r.defs.end()) fault(where, "unknown ref '" + n.ref + "'");
+                check_default(n, l.r.nodes[def->node], where);
+            } else {
+                check_default(n, n, where);
+            }
+        }
         {
             std::set<std::string> visiting;
             std::map<size_t, int64_t> memo;
@@ -1520,6 +1605,121 @@ std::string jcs_sha256(const Json& j, const char* what) {
 
 std::string fingerprint(const Registry& r) { return jcs_sha256(validation_schema(r), "schema"); }
 
+// ---- defaults against their sources ----------------------------------------------------------------------------------
+
+namespace {
+std::string read_text_file(const std::string& path) {
+    std::ifstream in(path, std::ios::binary);
+    if (!in) throw std::runtime_error("cannot read " + path);
+    std::ostringstream s;
+    s << in.rdbuf();
+    return s.str();
+}
+
+/* The text between the braces of `struct Config {`, comments included (they are skipped when matching). */
+std::string config_body(const std::string& header) {
+    const size_t at = header.find("struct Config {");
+    if (at == std::string::npos) throw std::runtime_error("no `struct Config {` in core/rad_core.h");
+    size_t i = header.find('{', at), depth = 0;
+    const size_t start = i + 1;
+    for (; i < header.size(); ++i) {
+        if (header.compare(i, 2, "/*") == 0) { i = header.find("*/", i); if (i == std::string::npos) break; ++i; continue; }
+        if (header.compare(i, 2, "//") == 0) { i = header.find('\n', i); if (i == std::string::npos) break; continue; }
+        if (header[i] == '{') ++depth;
+        else if (header[i] == '}' && --depth == 0) return header.substr(start, i - start);
+    }
+    throw std::runtime_error("unterminated `struct Config` in core/rad_core.h");
+}
+
+/* The simple literal an initialiser is: an integer, true/false, or a plain string. Anything else is no source. */
+std::optional<Json> simple_literal(std::string text) {
+    while (!text.empty() && std::isspace(static_cast<unsigned char>(text.back()))) text.pop_back();
+    while (!text.empty() && std::isspace(static_cast<unsigned char>(text.front()))) text.erase(text.begin());
+    if (text == "true") return Json(true);
+    if (text == "false") return Json(false);
+    if (text.size() >= 2 && text.front() == '"' && text.back() == '"' && text.find('"', 1) == text.size() - 1 &&
+        text.find('\\') == std::string::npos)
+        return Json(text.substr(1, text.size() - 2));
+    size_t i = text[0] == '-' ? 1 : 0;
+    if (i >= text.size()) return std::nullopt;
+    for (size_t k = i; k < text.size(); ++k)
+        if (!std::isdigit(static_cast<unsigned char>(text[k]))) return std::nullopt;
+    try { return Json(static_cast<int64_t>(std::stoll(text))); } catch (...) { return std::nullopt; }
+}
+
+/* Does the source value `src` equal the registry default `want` for a field of `kind`? Integers 0/1 stand for a boolean
+ * (radiance declares many flags as int). */
+bool same_value(const std::string& kind, const Json& want, const Json& src) {
+    if (kind == "boolean") {
+        if (src.is_boolean()) return src == want;
+        if (src.is_number_integer() && (src.get<int64_t>() == 0 || src.get<int64_t>() == 1))
+            return (src.get<int64_t>() == 1) == want.get<bool>();
+        return false;
+    }
+    return src == want;
+}
+}  // namespace
+
+bool verify_defaults(const Registry& r, const std::string& radiance_src, const std::vector<std::string>& component_tomls,
+                     std::string* why) {
+    try {
+        std::string config;   // read once, on first use
+        std::vector<toml::table> settings;
+        bool settings_read = false;
+        for (const Node& n : r.nodes) {
+            if (!n.default_value) continue;
+            const std::string at = n.path + " default " + n.default_value->dump() + " from " + n.default_source;
+            std::string kind = n.kind;   // a ref field is compared as the scalar def it uses
+            if (kind == "ref") {
+                const auto def = std::find_if(r.defs.begin(), r.defs.end(), [&](const Def& x) { return x.name == n.ref; });
+                if (def != r.defs.end()) kind = r.nodes[def->node].kind;
+            }
+            Json source;
+            if (n.default_source.rfind("radiance:Config.", 0) == 0) {
+                if (config.empty()) config = config_body(read_text_file(radiance_src + "/core/rad_core.h"));
+                const std::string member = n.default_source.substr(std::string("radiance:Config.").size());
+                const std::regex declared("(?:^|[;{}\\n])[^;{}=()]*[ \\t*&]" + member + R"(\s*=\s*([^;]*);)");
+                std::smatch m;
+                if (!std::regex_search(config, m, declared))
+                    throw std::runtime_error(at + ": Config::" + member + " has no `= <literal>;` initialiser in core/rad_core.h");
+                const auto lit = simple_literal(m[1].str());
+                if (!lit) throw std::runtime_error(at + ": the initialiser `" + m[1].str() + "` is not a simple literal; leave the default absent");
+                source = *lit;
+            } else {
+                const std::string name = n.default_source.substr(std::string("setting:").size());
+                if (!settings_read) {
+                    for (const std::string& f : component_tomls) settings.push_back(toml::parse(read_text_file(f), f));
+                    settings_read = true;
+                }
+                const toml::table* found = nullptr;
+                for (const toml::table& doc : settings)
+                    if (const auto* s = doc["setting"][name].as_table()) found = s;
+                if (!found) throw std::runtime_error(at + ": no [setting." + name + "] in the component files");
+                const auto* d = (*found)["default"].as_string();
+                if (!d) throw std::runtime_error(at + ": [setting." + name + "] has no string default");
+                const std::string text = **d;
+                if (kind == "integer" || kind == "int_enum") {
+                    const auto lit = simple_literal(text);
+                    if (!lit || !lit->is_number_integer()) throw std::runtime_error(at + ": the setting default '" + text + "' is not an integer");
+                    source = *lit;
+                } else if (kind == "boolean") {
+                    if (text == "1" || text == "true") source = true;
+                    else if (text == "0" || text == "false") source = false;
+                    else throw std::runtime_error(at + ": the setting default '" + text + "' is not 1/0/true/false");
+                } else {
+                    source = text;
+                }
+            }
+            if (!same_value(kind, *n.default_value, source))
+                throw std::runtime_error(at + ": the source says " + source.dump() + " (the registry and its source diverge)");
+        }
+        return true;
+    } catch (const std::exception& e) {
+        if (why) *why = e.what();
+        return false;
+    }
+}
+
 std::string semantic_fingerprint(const Registry& r) {
     // The validation schema plus everything else the contract freezes that the schema does not express: each field's
     // provenance class and lifecycle, its Radiance binding, the reader's error codes, the calibration key order. C++
@@ -1527,9 +1727,16 @@ std::string semantic_fingerprint(const Registry& r) {
     Json fields = Json::array();
     for (const Node& n : r.nodes) {
         if (n.path.rfind("calibration:", 0) == 0) continue;
-        fields.push_back(Json{{"path", n.path}, {"class", n.cls}, {"radiance_option", n.radiance_option},
-                              {"radiance_config", n.radiance_config}, {"error_class", n.error_class},
-                              {"mismatch", n.mismatch}});
+        Json f = Json{{"path", n.path}, {"class", n.cls}, {"radiance_option", n.radiance_option},
+                      {"radiance_config", n.radiance_config}, {"error_class", n.error_class},
+                      {"mismatch", n.mismatch}};
+        // spec section 7 / section 11 amendment 9: a default decides which leaves need a provenance record, so it is
+        // contract semantics (present only where a field has one)
+        if (n.default_value) {
+            f["default"] = *n.default_value;
+            f["default_source"] = n.default_source;
+        }
+        fields.push_back(std::move(f));
     }
     Json keys = Json::array();
     for (const CalibrationKey& c : r.calibration) keys.push_back(c.key);

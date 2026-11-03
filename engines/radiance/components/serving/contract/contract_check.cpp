@@ -8,9 +8,14 @@
 #include <cstdio>
 #include <fstream>
 #include <sstream>
+#include <string>
+#include <vector>
 
 #ifndef BC_CONTRACT_SOURCE_DIR
 #error "BC_CONTRACT_SOURCE_DIR must name engines/radiance/components/serving"
+#endif
+#ifndef BC_CONTRACT_RADIANCE_SRC
+#error "BC_CONTRACT_RADIANCE_SRC must name the radiance source tree (core/rad_core.h)"
 #endif
 #ifndef BC_CONTRACT_DOCS_DIR
 #error "BC_CONTRACT_DOCS_DIR must name docs/design/serving-manifest-v1"
@@ -48,8 +53,15 @@ int main() {
         std::printf("FAIL: %s\n", why.c_str());
         return 1;
     }
-    const auto files = bc::contract::generate_all(r);
     int failures = 0;
+    // a default is never copied in by hand: each must equal the value of the place it names (spec section 7)
+    const std::vector<std::string> components = {src + "/../moe-remote/component.toml", src + "/../libr3/component.toml",
+                                                 src + "/../ngram-helper/component.toml"};
+    if (!bc::contract::verify_defaults(r, BC_CONTRACT_RADIANCE_SRC, components, &why)) {
+        std::printf("FAIL: a default diverges from its source: %s\n", why.c_str());
+        ++failures;
+    }
+    const auto files = bc::contract::generate_all(r);
     auto compare = [&](const std::string& committed_path, const std::string& want) {
         std::string have;
         if (!read(committed_path, &have)) {

@@ -131,7 +131,8 @@
                 },
                 "max_sessions": {
                   "description": "Concurrent sessions served (`--max-num-seqs`).",
-                  "$ref": "#/$defs/positive"
+                  "$ref": "#/$defs/positive",
+                  "default": 256
                 },
                 "max_context_tokens": {
                   "description": "Longest session in tokens (`--max-model-len`).",
@@ -522,7 +523,8 @@
                 },
                 "reserve_mib": {
                   "description": "Host memory held back for the system, MiB (`--host-headroom-mib`).",
-                  "$ref": "#/$defs/positive"
+                  "$ref": "#/$defs/positive",
+                  "default": 4096
                 },
                 "checkpoint_slots": {
                   "description": "Prefix checkpoint slots (`--checkpoint-slots`).",
@@ -742,11 +744,13 @@
                   "properties": {
                     "tp": {
                       "description": "Tensor-parallel ranks (`--tp`).",
-                      "$ref": "#/$defs/positive"
+                      "$ref": "#/$defs/positive",
+                      "default": 1
                     },
                     "max_num_batched_tokens": {
                       "description": "Tokens per step (`--max-num-batched-tokens`).",
-                      "$ref": "#/$defs/positive"
+                      "$ref": "#/$defs/positive",
+                      "default": 2048
                     },
                     "checkpoint_interval": {
                       "description": "Tokens between prefix checkpoints (`--checkpoint-interval`).",
@@ -1438,7 +1442,8 @@
           "properties": {
             "power_save": {
               "description": "Let the helper idle its GPU between requests.",
-              "type": "boolean"
+              "type": "boolean",
+              "default": true
             },
             "queue_warm": {
               "description": "Keep the helper's queues warm.",
@@ -1477,15 +1482,18 @@
                 1,
                 2,
                 4
-              ]
+              ],
+              "default": 2
             },
             "w4h2": {
               "description": "Use the W4 H2 kernel.",
-              "type": "boolean"
+              "type": "boolean",
+              "default": true
             },
             "mr": {
               "description": "Use the multi-row GEMV kernel.",
-              "type": "boolean"
+              "type": "boolean",
+              "default": false
             }
           }
         },

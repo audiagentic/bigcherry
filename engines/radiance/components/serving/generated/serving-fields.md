@@ -23,7 +23,7 @@ Contract fingerprint `sha256:e0ec5b5d6d05808b3eb3fd1f69e160a408a534cfb8f749676f6
 | `/spec/intent/service` | object `Service` | yes | policy |  | Service objective and policy. |
 | `/spec/intent/service/profile` | one of `"production"`, `"lab"` | yes | policy |  | `production`, or `lab`, which alone permits `spec.experiment`. |
 | `/spec/intent/service/objective` | one of `"latency"`, `"balanced"`, `"throughput"` | yes | policy |  | Service objective that selects calibration and derivations. |
-| `/spec/intent/service/max_sessions` | `positive` | yes | policy | `--max-num-seqs` / Config.max_seqs | Concurrent sessions served (`--max-num-seqs`). |
+| `/spec/intent/service/max_sessions` | `positive`; default `256` (radiance:Config.max_seqs) | yes | policy | `--max-num-seqs` / Config.max_seqs | Concurrent sessions served (`--max-num-seqs`). |
 | `/spec/intent/service/max_context_tokens` | `positive` | yes | policy | `--max-model-len` / Config.max_ctx | Longest session in tokens (`--max-model-len`). |
 | `/spec/intent/service/retention` | one of `"keep"`, `"discard"` | yes | policy |  | Whether finished sessions' prefix state is kept for reuse. |
 | `/spec/intent/service/quality` | one of `"baseline"`, `"strict"` | yes | policy |  | Numerical quality policy: baseline, or strict reference-equivalent paths. |
@@ -62,7 +62,7 @@ Contract fingerprint `sha256:e0ec5b5d6d05808b3eb3fd1f69e160a408a534cfb8f749676f6
 | `/spec/resources/host` | object `HostResources` | yes | derived |  | Host memory allocation (RSC03 ledger). |
 | `/spec/resources/host/pool_mib` | `uint` | yes | derived | `--host-pool-mib` / Config.host_pool_mib | Pinned host pool for experts and the KV tier, MiB (`--host-pool-mib`). |
 | `/spec/resources/host/kv_mib` | `uint` | yes | derived | `--prefix-cache-mib` / Config.prefix_cache_mib | Host KV tier, MiB (`--prefix-cache-mib`). |
-| `/spec/resources/host/reserve_mib` | `positive` | yes | derived | `--host-headroom-mib` / Config.host_headroom_mib | Host memory held back for the system, MiB (`--host-headroom-mib`). |
+| `/spec/resources/host/reserve_mib` | `positive`; default `4096` (radiance:Config.host_headroom_mib) | yes | derived | `--host-headroom-mib` / Config.host_headroom_mib | Host memory held back for the system, MiB (`--host-headroom-mib`). |
 | `/spec/resources/host/checkpoint_slots` | `uint` | yes | derived | `--checkpoint-slots` / native checkpoint limit | Prefix checkpoint slots (`--checkpoint-slots`). |
 | `/spec/handoff` | object `Handoff` | yes | derived |  | The one shared remote-MoE handoff configuration. |
 | `/spec/handoff/transport` | object `HandoffTransport` | yes | derived |  | Shared-memory transport between the engine and helpers. |
@@ -89,8 +89,8 @@ Contract fingerprint `sha256:e0ec5b5d6d05808b3eb3fd1f69e160a408a534cfb8f749676f6
 | `/spec/processes/engine/server` | object `EngineServer` | yes | policy |  | HTTP server. |
 | `/spec/processes/engine/server/port` | integer 1..65535 | yes | policy | `--port` / native port | TCP port (`--port`). |
 | `/spec/processes/engine/scheduler` | object `EngineScheduler` | yes | derived |  | Scheduler sizes. |
-| `/spec/processes/engine/scheduler/tp` | `positive` | yes | derived | `--tp` / Config.tp | Tensor-parallel ranks (`--tp`). |
-| `/spec/processes/engine/scheduler/max_num_batched_tokens` | `positive` | yes | derived | `--max-num-batched-tokens` / Config.max_tok | Tokens per step (`--max-num-batched-tokens`). |
+| `/spec/processes/engine/scheduler/tp` | `positive`; default `1` (radiance:Config.tp) | yes | derived | `--tp` / Config.tp | Tensor-parallel ranks (`--tp`). |
+| `/spec/processes/engine/scheduler/max_num_batched_tokens` | `positive`; default `2048` (radiance:Config.max_tok) | yes | derived | `--max-num-batched-tokens` / Config.max_tok | Tokens per step (`--max-num-batched-tokens`). |
 | `/spec/processes/engine/scheduler/checkpoint_interval` | `uint` | yes | derived | `--checkpoint-interval` / native interval | Tokens between prefix checkpoints (`--checkpoint-interval`). |
 | `/spec/processes/engine/execution` | object `EngineExecution` | yes | policy |  | Execution choices. |
 | `/spec/processes/engine/execution/placement` | one of `"expert_tiered"`, `"all_vram"`, `"layer_offload"`, `"auto"` | yes | policy | `--placement` / native placement mode | Weight placement mode (`--placement`). |
@@ -195,14 +195,14 @@ The seven helper concern groups (spec §2.1). C++ `HelperCommon`.
 | `$defs/helperCommon/cpu/reference` | boolean | yes | policy |  | Use the CPU reference path. |
 | `$defs/helperCommon/cpu/affinity` | one of `"auto"`, `"all"` | yes | policy |  | Worker CPU affinity: `auto` or `all`. |
 | `$defs/helperCommon/runtime` | object `HelperRuntime` | yes | policy |  | Helper runtime behaviour. |
-| `$defs/helperCommon/runtime/power_save` | boolean | yes | policy |  | Let the helper idle its GPU between requests. |
+| `$defs/helperCommon/runtime/power_save` | boolean; default `true` (setting:R3_MOE_WORKER_POWER_SAVE) | yes | policy |  | Let the helper idle its GPU between requests. |
 | `$defs/helperCommon/runtime/queue_warm` | boolean | yes | policy |  | Keep the helper's queues warm. |
 | `$defs/helperCommon/gemv` | object `HelperGemv` | yes | policy |  | GEMV kernels. |
 | `$defs/helperCommon/gemv/mode` | one of `0`, `1`, `2` | yes | policy |  | GEMV mode (0, 1 or 2). |
 | `$defs/helperCommon/gemv/wide` | boolean | yes | policy |  | Use the wide GEMV kernel. |
-| `$defs/helperCommon/gemv/h2` | one of `0`, `1`, `2`, `4` | yes | policy |  | Half-precision pair mode (0, 1, 2 or 4). |
-| `$defs/helperCommon/gemv/w4h2` | boolean | yes | policy |  | Use the W4 H2 kernel. |
-| `$defs/helperCommon/gemv/mr` | boolean | yes | policy |  | Use the multi-row GEMV kernel. |
+| `$defs/helperCommon/gemv/h2` | one of `0`, `1`, `2`, `4`; default `2` (setting:R3_MOE_WORKER_GEMV_H2) | yes | policy |  | Half-precision pair mode (0, 1, 2 or 4). |
+| `$defs/helperCommon/gemv/w4h2` | boolean; default `true` (setting:R3_MOE_WORKER_GEMV_W4H2) | yes | policy |  | Use the W4 H2 kernel. |
+| `$defs/helperCommon/gemv/mr` | boolean; default `false` (setting:R3_MOE_WORKER_GEMV_MR) | yes | policy |  | Use the multi-row GEMV kernel. |
 | `$defs/helperCommon/lanes` | object `HelperLanes` | yes | policy |  | Request lanes. |
 | `$defs/helperCommon/lanes/small_lanes` | array of `positive` (0–4) | yes | policy |  | Up to four sorted small-lane row thresholds. |
 | `$defs/helperCommon/lanes/rows` | boolean | yes | policy |  | Use the rows kernel by policy (active also when the architecture requires it). |

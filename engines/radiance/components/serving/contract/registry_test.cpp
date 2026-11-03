@@ -3,6 +3,7 @@
 #include "registry.h"
 
 #include <cstdio>
+#include <filesystem>
 #include <fstream>
 #include <sstream>
 #include <string>
@@ -325,6 +326,63 @@ int main() {
             "reaches itself", "a def that refers to its own patch");
 
     // the real registry loads and generates
+    // ---- defaults (spec section 7): a literal of the field's own kind, from a named place, fitting the field's bounds ----
+    {
+        auto with = [&](const std::string& extra) {
+            return replaced("[[field]]\npath = \"/spec/n\"\nkind = \"ref\"\nref = \"uint\"\n",
+                            "[[field]]\npath = \"/spec/n\"\nkind = \"ref\"\nref = \"uint\"\n" + extra);
+        };
+        bc::contract::Registry d;
+        check(bc::contract::load_registry(with("default = 7\ndefault_source = \"setting:R3_SOME_COUNT\"\n"), "t", &d, &why),
+              "a default on a ref to an integer def loads: " + why);
+        check(bc::contract::fingerprint(d) == bc::contract::fingerprint(r),
+              "a default is an annotation: the validation fingerprint does not move");
+        check(bc::contract::semantic_fingerprint(d) != bc::contract::semantic_fingerprint(r),
+              "but it is contract semantics: the semantic fingerprint does");
+        const auto schema2 = nlohmann::json::parse(bc::contract::emit_schema(d));
+        check(schema2["properties"]["spec"]["properties"]["n"]["default"] == 7, "the schema carries the default");
+        check(bc::contract::emit_types(d).find("\"7\", \"setting:R3_SOME_COUNT\"") != std::string::npos,
+              "the field table carries the default and its source");
+        refused(with("default = 7\n"), "go together", "a default without its source");
+        refused(with("default_source = \"setting:R3_SOME_COUNT\"\n"), "go together", "a source without its default");
+        refused(with("default = \"7\"\ndefault_source = \"setting:R3_X\"\n"), "integer default must be an integer", "a wrong-typed default");
+        refused(with("default = -1\ndefault_source = \"setting:R3_X\"\n"), "outside the field's numeric bounds", "a default below the bound");
+        refused(with("default = 7\ndefault_source = \"somewhere\"\n"), "default_source is", "an unknown kind of source");
+        refused(with("default = 7\ndefault_source = \"radiance:Config.max_seqs\"\n"), "must name the field's own radiance_config",
+                "a radiance source that is not the field's binding");
+        refused(replaced("path = \"/spec\"\nkind = \"object\"\ncpp = \"Spec\"\n",
+                         "path = \"/spec\"\nkind = \"object\"\ncpp = \"Spec\"\ndefault = 1\ndefault_source = \"setting:R3_X\"\n"),
+                "cannot have a default", "a default on a container");
+
+        // verification against the sources: equal passes; a divergence names both values; a non-literal is no source
+        const std::filesystem::path tmp = std::filesystem::temp_directory_path() / "bc-contract-defaults";
+        std::filesystem::create_directories(tmp / "core");
+        auto write = [&](const std::filesystem::path& file, const std::string& body) { std::ofstream(file, std::ios::trunc) << body; };
+        write(tmp / "core" / "rad_core.h", "struct Config {\n    int64_t max_seqs = 256;   /* comment (with parens) */\n    int64_t derived = compute();\n};\n");
+        write(tmp / "comp.toml", "[setting.R3_SOME_COUNT]\ndefault = \"7\"\nstatus = \"x\"\n");
+        auto verify = [&](const std::string& registry_text, std::string* out) {
+            bc::contract::Registry v;
+            std::string e;
+            if (!bc::contract::load_registry(registry_text, "t", &v, &e)) { *out = "load: " + e; return false; }
+            return bc::contract::verify_defaults(v, tmp.string(), {(tmp / "comp.toml").string()}, out);
+        };
+        std::string msg;
+        check(verify(with("default = 7\ndefault_source = \"setting:R3_SOME_COUNT\"\n"), &msg), "a setting default equal to its source: " + msg);
+        check(!verify(with("default = 8\ndefault_source = \"setting:R3_SOME_COUNT\"\n"), &msg) && msg.find("source says 7") != std::string::npos,
+              "a diverging setting default: " + msg);
+        check(!verify(with("default = 8\ndefault_source = \"setting:R3_MISSING\"\n"), &msg) && msg.find("no [setting.R3_MISSING]") != std::string::npos,
+              "a setting the component files do not have: " + msg);
+        const std::string cfg = "radiance_option = \"--max-num-seqs\"\nradiance_config = \"Config.max_seqs\"\n";
+        check(verify(with(cfg + "default = 256\ndefault_source = \"radiance:Config.max_seqs\"\n"), &msg),
+              "a Config default equal to its initialiser, a comment with parentheses notwithstanding: " + msg);
+        check(!verify(with(cfg + "default = 255\ndefault_source = \"radiance:Config.max_seqs\"\n"), &msg) && msg.find("source says 256") != std::string::npos,
+              "a diverging Config default: " + msg);
+        const std::string cfg2 = "radiance_option = \"--derived\"\nradiance_config = \"Config.derived\"\n";
+        check(!verify(with(cfg2 + "default = 1\ndefault_source = \"radiance:Config.derived\"\n"), &msg) && msg.find("not a simple literal") != std::string::npos,
+              "an initialiser that is an expression is no source: " + msg);
+        std::filesystem::remove_all(tmp);
+    }
+
     std::ifstream in(std::string(BC_CONTRACT_SOURCE_DIR) + "/contract/serving-v1.toml", std::ios::binary);
     std::ostringstream text;
     text << in.rdbuf();

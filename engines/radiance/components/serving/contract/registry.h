@@ -29,6 +29,8 @@ struct Node {
     std::string cpp_member;           // member name when the JSON name is not a C++ identifier
     std::string ref;                  // ref nodes: the def name
     std::optional<nlohmann::json> constant;
+    std::optional<nlohmann::json> default_value;  // the schema default (spec section 7); absent = a provenance record is required
+    std::string default_source;                   // where the default comes from: "radiance:Config.<member>" or "setting:R3_<NAME>"
     std::vector<nlohmann::json> values;          // enum / int_enum
     std::optional<int64_t> minimum, maximum, exclusive_maximum, min_length, max_length, min_items, max_items,
         min_properties;
@@ -65,6 +67,7 @@ struct Registry {
     std::vector<Def> defs;                       // in file order
     std::vector<CalibrationKey> calibration;
     std::map<std::string, size_t> by_path;
+    std::vector<std::pair<std::string, std::string>> class_defaults;   // [[class_default]] path -> class, in file order
     int64_t max_depth = 0;   // the deepest legal nesting of JSON containers (the root object is 1)
 };
 
@@ -91,6 +94,14 @@ std::string emit_fields_md(const Registry& r);
  * value, by subtree error_class), and apply() for each patch def (spec §2.2: present leaves replace, objects recurse). */
 std::string emit_codec_h(const Registry& r);
 std::string emit_codec_cpp(const Registry& r);
+
+/* Checks every default against the place it names (spec section 7; a default is never copied in by hand): a
+ * "radiance:Config.<member>" default against the `<member> = <literal>;` initialiser in `struct Config` of
+ * <radiance_src>/core/rad_core.h, a "setting:R3_<NAME>" default against `default = "..."` of [setting.R3_<NAME>] in one of
+ * `component_tomls`. An initialiser that is not a simple literal (an expression, a derived value) is not a source: that
+ * field must leave its default absent. False with `why` naming the field and both values on the first divergence. */
+bool verify_defaults(const Registry& r, const std::string& radiance_src, const std::vector<std::string>& component_tomls,
+                     std::string* why);
 
 /* Every generated file, by its name in generated/. */
 std::map<std::string, std::string> generate_all(const Registry& r);

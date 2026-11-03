@@ -93,10 +93,13 @@ Admission, from the #534 re-review (GPT, 2026-11-02; lead decisions):
 
 
 Slice 2 gates left open by #536 (lead, 2026-11-02). Each blocks the cutover (A4, slices 5-6):
+- DONE (S1c, 2026-11-03; spec section 11 amendment 9) Provenance coverage (spec section 7). Registry defaults with a verified source, the reader's coverage rule, and the two examples' honest records are in. Remaining: more defaults can be sourced (only 8 fields have one so far); each addition after this is a v2 change, so sourcing is complete only when the owner says the set is. Original text:
 - Provenance coverage (spec section 7). Every non-schema-default effective leaf is covered, and a schema-default claim never hides a site, derived, calibrated or experiment value. This needs schema defaults as a registry field, taken only from the spec text or a measured source and never guessed. Until then the reader checks pointers, input cycles and amendment-6 identity coverage only.
 - Exact owned-set bytes. spec.plan.owner_map.helpers[].bytes equals the GPU-free bc::experts::select_owned sizing for the model's expert formats. #536 refuses only bytes that contradict emptiness.
 
 
+
+Candidates to derive or calibrate (lead, 2026-11-03): the five handoff literals the flashnext profile sets, `max_rows` 4096, `small_rows` 8, `gemv_large_rows` 32, `skip_owned` true and `moe_down_tile` 1, are hand-picked tunables. The examples record them as profile-origin, derived-class, confidence `estimate` (they differ from the component settings' defaults, so they are not schema defaults); the profile must not be treated as their final source. Derive or calibrate them like RHP16.
 
 Interim engine plan-check flags (A3, lead decision 2026-11-02). Removed at the cutover (slices 5-6), not before and not after:
 - The flags are `--plan-check FILE --plan-check-floor-ppm N` on radiance (rad0011), `bc-serve --plan-check-args`, `--plan-store` and `--plan-key`, and the launcher's plan step (tools/lab/radiance/lib/plan-check.sh). They exist because no producer writes a v1 manifest with spec.plan.engine_memory yet.
