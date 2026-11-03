@@ -117,6 +117,18 @@ public:
                 gained_.push_back(uint32_t(i));
             }
         }
+        // The physical staging allowance is transient, never steady-state
+        // capacity. Refuse any postcommit residency above the expert budget
+        // before reserving a physical slot or issuing a transfer.
+        const uint64_t budget=ledger_.hard()-ledger_.headroom();
+        if (lost_.size()>UINT64_MAX/stride_ || gained_.size()>UINT64_MAX/stride_)
+            return fail(FaultCode::CAPACITY);
+        const uint64_t departing=uint64_t(lost_.size())*stride_;
+        const uint64_t arriving=uint64_t(gained_.size())*stride_;
+        if (departing>ledger_.charged() ||
+            ledger_.charged()-departing>budget ||
+            arriving>budget-(ledger_.charged()-departing))
+            return fail(FaultCode::CAPACITY);
         // The engine's layer_slot map is immutable and was sealed at
         // bootstrap. A newly owned expert uses its predeclared index, not a
         // different free index (which would change routing on the hot path).

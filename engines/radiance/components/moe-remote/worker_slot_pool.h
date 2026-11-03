@@ -58,12 +58,12 @@ class Pool {
     uint8_t* arena_ = nullptr;
     uint8_t* incoming_ = nullptr;
 public:
-    Pool(uint64_t expert_budget, uint64_t stride, uint32_t selected_experts, Allocator& allocator)
+    Pool(uint64_t expert_budget, uint64_t stride, uint32_t capacity, Allocator& allocator)
         : ledger_(stride && expert_budget <= UINT64_MAX - stride ? expert_budget + stride : 0,
-                  0, stride, selected_experts < UINT32_MAX ? selected_experts + 1 : 0),
-          allocator_(allocator), experts_(selected_experts), stride_(stride),
-          valid_(stride && selected_experts < UINT32_MAX &&
-                 selected_experts <= expert_budget / stride &&
+                  0, stride, capacity < UINT32_MAX ? capacity + 1 : 0),
+          allocator_(allocator), experts_(capacity), stride_(stride),
+          valid_(stride && capacity < UINT32_MAX &&
+                 capacity <= expert_budget / stride &&
                  expert_budget <= UINT64_MAX - stride) {}
     Pool(const Pool&) = delete;
     Pool& operator=(const Pool&) = delete;
@@ -84,6 +84,25 @@ public:
         return id == experts_ ? incoming_ : nullptr;
     }
 
+    // Allocate the budget-sized arena and incoming slot at startup, including
+    // helpers without bootstrap residents. No GPU weight allocation is needed
+    // for a subsequent arrival.
+    bool prepare() {
+        if (!valid()) return false;
+        if (arena_ && incoming_) return true;
+        void *arena = nullptr, *incoming = nullptr;
+        if (!arena_bytes() || arena_bytes() > SIZE_MAX ||
+            !allocator_.allocate(arena_bytes(), &arena) || !arena)
+            return false;
+        if (stride_ > SIZE_MAX || !allocator_.allocate(stride_, &incoming) || !incoming) {
+            allocator_.release(arena);
+            return false;
+        }
+        arena_ = static_cast<uint8_t*>(arena);
+        incoming_ = static_cast<uint8_t*>(incoming);
+        return true;
+    }
+
     residency::Result bootstrap(uint32_t expert, uint64_t bytes, uint64_t epoch,
                                 uint32_t* id) {
         if (!id || !bytes || bytes > stride_ || !epoch || !valid())
@@ -93,18 +112,7 @@ public:
         // The staging slot is never consumed by bootstrap even when the
         // expert budget happens to have unused bytes after selection.
         if (ledger_.slots().size() >= experts_) return residency::Result::DEFERRED_CAPACITY;
-        if (!arena_) {
-            void *arena = nullptr, *incoming = nullptr;
-            if (!arena_bytes() || arena_bytes() > SIZE_MAX ||
-                !allocator_.allocate(arena_bytes(), &arena) || !arena)
-                return residency::Result::DEFERRED_CAPACITY;
-            if (stride_ > SIZE_MAX || !allocator_.allocate(stride_, &incoming) || !incoming) {
-                allocator_.release(arena);
-                return residency::Result::DEFERRED_CAPACITY;
-            }
-            arena_ = static_cast<uint8_t*>(arena);
-            incoming_ = static_cast<uint8_t*>(incoming);
-        }
+        if (!prepare()) return residency::Result::DEFERRED_CAPACITY;
         return ledger_.bootstrap(expert, stride_, epoch, id);
     }
 };

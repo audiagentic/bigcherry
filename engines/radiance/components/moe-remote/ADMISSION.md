@@ -710,3 +710,63 @@ individually break the event-before-READY, bank-before-READY,
 active-bank, capacity, sticky-fault and REOPENED gates and require a failing
 card-free test. GPU execution and real VRAM/timing validation are not
 claimed by those tests.
+
+## Slice E part 5: review fixes (helper migration)
+
+**Owner classification is sealed at bootstrap.** The shared
+placement_candidate_valid predicate compares each old/new canonical
+owner byte, journal, digests and indices. Engine-local experts remain
+engine-local; experts initially owned by a helper can move only to
+another helper. The engine never allocates local weights for an expert
+it did not load at bootstrap. Engine-rank coordinator, helper epoch
+driver and slot migration participant invoke this same predicate
+before RESERVING. A single helper has no legal changed-owner move;
+the one-helper/two-rank fixture exercises unchanged-map cycles and
+both prohibited directions, while two- and three-helper fixtures
+exercise real helper-to-helper swaps.
+
+**Committed budget differs from transient physical capacity.** The slot
+ledger still charges ACTIVE, RESERVED, READY and RETIRING physical slots
+against the expert budget plus exactly one incoming staging stride
+until reclaim/cancel. Before reserving, the participant separately
+projects charged - departing + arriving expert bytes and requires them
+to fit the configured *expert-only* budget, excluding staging. An
+arrival at an already full helper without a departure is CAPACITY
+and aborts forward; a one-for-one full-budget swap stages in the
+extra physical slot. Tests assert both bounds across 1,000 cycles.
+
+**Preallocated full-budget arena.** Runner::allocate now sizes its
+weight arena by slot_plan.expert_capacity * stride, not the number
+of bootstrap residents. Pool::prepare allocates the entire arena and
+incoming slot at startup, including helpers starting with no experts;
+the hipMemGetInfo check includes both. The card-free zero-bootstrap
+test reserves, copies and activates its first expert without calling
+bootstrap. For flashnext-4gpu at 2,534,400 bytes/expert, arenas are
+23,620,608,000 bytes (9,320 slots) for each of helpers 0 and 1,
+and 15,031,526,400 bytes (5,931 slots) for helper 2. Main already
+selected exactly these weight bytes for this layout. Each helper
+also needs one separate 2,534,400-byte incoming staging slot. On
+underfilled layouts, allocation may need more VRAM than the previous
+selected-only arena and can now fail the startup free-memory check
+rather than advertise nonexistent future capacity.
+
+**Exact transaction closure is a proposal precondition.** Controller
+tracks the previous transaction until a committed transaction has
+the engine post-ledger REOPENED ACK and CLEANED ACKs from every helper
+after reclamation. For a precommit forward abort, each helper CLEANED
+ACK follows its upload synchronization and reservation cancellation,
+and every engine rank CLEANED follows completion of any candidate
+bitmap upload. These use existing per-actor ACK slots, release
+publication, and exact transaction/active-epoch/digest/slot identity.
+RankOperations::abort_upload_done checks an already-queued rank
+upload event after the candidate was removed; normal READY must not
+be reused after abort because the pending map identity no longer
+exists. Both Controller::propose and same-map auto-staging refuse
+to race an outstanding cleanup. Missing proof holds future placement,
+not unrelated ACTIVE serving.
+
+All checks run on the placement control plane, not in lane processing.
+Against part 3 there are zero additional per-request Request-field
+reads, system-scope stores/fences, host round trips, barriers or GPU
+launches. The existing generation-slot read still selects the
+immutable pointer bank. These CPU tests are not GPU timing evidence.

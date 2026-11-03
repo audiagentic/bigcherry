@@ -51,6 +51,20 @@ struct FakeTransport : Transport {
         for (uint32_t i=0;i<kMaxEngineRanks;++i)
             if (c.expected_ranks & (1u<<i)) ack(c,p,kMaxHelpers+i);
     }
+    void close_actor(const PlacementControl& c,uint32_t actor,AckPhase phase) {
+        auto& x=a.at(actor);
+        x={}; x.transaction_id=c.transaction_id; x.epoch=c.active_epoch;
+        x.digest=c.active_digest; x.generation_slot=c.active_slot;
+        x.phase=uint32_t(phase);
+    }
+    void close(const PlacementControl& c,bool committed) {
+        for (uint32_t i=0;i<kMaxHelpers;++i)
+            if (c.expected_helpers & (1u<<i)) close_actor(c,i,AckPhase::CLEANED);
+        for (uint32_t i=0;i<kMaxEngineRanks;++i)
+            if (c.expected_ranks & (1u<<i))
+                close_actor(c,kMaxHelpers+i,
+                            committed && i==0 ? AckPhase::REOPENED : AckPhase::CLEANED);
+    }
 };
 static void complete(Controller& c,FakeTransport& t) {
     check(c.start_reserving(),"reserving");
@@ -66,6 +80,9 @@ static void complete(Controller& c,FakeTransport& t) {
     check(c.poll()==Poll::ADVANCED && c.control().state==uint32_t(PlacementState::RETIRING),"committed -> retire");
     t.all(c.control(),AckPhase::RETIRED);
     check(c.poll()==Poll::ADVANCED && c.control().state==uint32_t(PlacementState::ACTIVE),"retired -> active");
+    check(!c.can_propose(),"retirement alone cannot authorize next proposal");
+    t.close(c.control(),true);
+    check(c.can_propose(),"reopen plus all helper cleanups authorize proposal");
 }
 static void V23Epoch_ForwardOnlyAbortRetry() {
     FakeClock clk; FakeTransport tr;
@@ -81,6 +98,8 @@ static void V23Epoch_ForwardOnlyAbortRetry() {
           c.control().pending_epoch==0 && !c.failed_closed(),"abort ACTIVE(1) unchanged");
     check(c.journal().entry[c.control().journal_index].fault==uint32_t(FaultCode::CAPACITY),
           "two-entry abort journal");
+    check(!c.can_propose(),"abort publication is not participant cleanup");
+    tr.close(c.control(),false);
     check(c.propose(202) && c.control().pending_epoch==2 &&
           c.control().transaction_id==2,"retry uses new transaction id, not new epoch");
     complete(c,tr);
@@ -93,6 +112,8 @@ static void V23Epoch_ForwardOnlyAbortRetry() {
           c.journal().entry[0].transaction_id==2 &&
           c.journal().entry[1].transaction_id==3,"two-entry journal rollover");
     check(c.propose(202) && c.fail(FaultCode::CAPACITY),"post-success aborted attempt");
+    check(!c.can_propose(),"post-success abort must await cleanup");
+    tr.close(c.control(),false);
     check(c.propose(202) && c.fail(FaultCode::CAPACITY),"second aborted attempt");
     check(c.journal().entry[1].transaction_id==3 &&
           c.journal().entry[1].commit_ns!=0,
@@ -163,10 +184,13 @@ static void V23Fault_BeforeAndAfterCommit() {
     FakeClock clk;FakeTransport tr;Controller c(tr,clk,123,1,1);
     check(c.propose(234) && c.start_reserving(),"begin");
     check(c.fail(FaultCode::HELPER_DEAD,0) && !c.failed_closed(),"helper death before commit aborts");
+    check(!c.can_propose(),"helper death waits for abort cleanup");
+    tr.close(c.control(),false);
     check(c.propose(234) && c.start_reserving(),"retry after helper death");
     tr.all(c.control(),AckPhase::RESERVED);
     check(c.poll()==Poll::ADVANCED && c.fail(FaultCode::UPLOAD,0),"mid-copy error precommit");
     check(c.control().active_epoch==1,"upload fault never advances active");
+    tr.close(c.control(),false);
     check(c.propose(234) && c.start_reserving(),"second retry");
     tr.all(c.control(),AckPhase::RESERVED);
     check(c.poll()==Poll::ADVANCED,"copying");
@@ -353,6 +377,14 @@ struct FakeRankOperations final : RankOperations {
                d.binding[slot].epoch == epoch && d.binding[slot].digest == digest ?
                RankResult::Ready : RankResult::Pending;
     }
+    RankResult abort_upload_done(uint32_t rank,uint32_t slot,uint64_t epoch,
+                                 uint64_t digest) override {
+        if (rank>=rank_count || slot>1) return RankResult::DeviceError;
+        const auto& d=gpu[rank];
+        if (!d.issued[slot] || d.binding[slot].epoch!=epoch ||
+            d.binding[slot].digest!=digest) return RankResult::DeviceError;
+        return d.event_ready[slot] ? RankResult::Ready : RankResult::Pending;
+    }
     bool exact_binding(uint32_t rank,uint32_t slot,uint64_t epoch,uint64_t digest) override {
         return rank < rank_count && slot < 2 &&
                gpu[rank].issued[slot] &&
@@ -435,6 +467,8 @@ static void V23Cycle_UnreadyAndAbortPreserveOldGeneration() {
           c.control().active_epoch==1 && c.control().active_slot==0 &&
           c.control().active_digest==97, "abort before commit preserves epoch slot owner digest");
     const uint64_t failed_txn=c.control().transaction_id;
+    check(!c.can_propose(),"aborted upload requires participant cleanup");
+    tr.close(c.control(),false);
     check(c.begin_epoch_cycle() && c.control().transaction_id==failed_txn+1 &&
           c.control().active_epoch==1 && c.control().pending_epoch==2,
           "retry is a fresh transaction without phantom epoch advance");
@@ -513,6 +547,9 @@ static void V23Cycle_PrecommitAbortDuringLiveServing() {
           ledger.poll([](const StepTicket&,uint32_t) {
               return r3::admission::Ledger::Proof::Proven;
           }),"next parent consumption and completion");
+    check(!leader.proposal_controller()->can_propose(),"manual rank fault needs cleanup");
+    publish_cleanup_ack(map,kMaxHelpers,*c);
+    check(leader.proposal_controller()->can_propose(),"rank abort cleanup gates retry");
     // Candidate-only metadata corruption must not turn into a helper exit.
     // The active generation and the admission ledger remain valid.
     auto* inactive=generation_header(map,1);
@@ -528,6 +565,7 @@ static void V23Cycle_PrecommitAbortDuringLiveServing() {
           !ledger.stopped(),
           "bad inactive candidate journals abort without helper exit or trap");
     inactive->map_bytes=map_bytes;
+    publish_cleanup_ack(map,kMaxHelpers,*c);
     clock.elapse(100);
     check(leader.tick() && c->transaction_id==snapshot.transaction_id+2 &&
           c->state==uint32_t(PlacementState::PROPOSED) &&
@@ -909,6 +947,8 @@ static void V23Cycle_SamePlacementAndSharedProtocol(
         }
         check(helper0.tick() && helper0.completed()==cycle,
               "exact post-ledger ACK completes transaction and permits staging");
+        check(peer_ticks() && helper0.proposal_controller()->can_propose(),
+              "every helper cleanup completed before new proposal");
         slot=new_slot;
         clock.elapse(100);
     }
@@ -1038,8 +1078,9 @@ static void V23Move_PhysicalSlotLimitIndependentOfByteBudget() {
 }
 
 static void V23Move_ChangedMapThroughProduction(uint32_t helpers,uint32_t ranks) {
-    check((helpers==1 && ranks==2)||(helpers==3 && ranks==1),
-          "supported migration shapes");
+    check((helpers==1 && ranks==2) ||
+          ((helpers==2 || helpers==3) && ranks==1),
+          "single-helper negative and multi-helper migration shapes");
     const LayoutShape shape{128,helpers,3,8,128,64};
     Layout layout{};
     check(layout_for(shape,2,slots_for(helpers),&layout),"move layout");
@@ -1055,10 +1096,10 @@ static void V23Move_ChangedMapThroughProduction(uint32_t helpers,uint32_t ranks)
     // The tail has a genuinely smaller physical budget/arena. The second
     // layer's third expert stays local in both arrangements.
     selected[0].expert={{0,0},{1,0}};
-    if (helpers==3) {
-        selected[1].expert={{0,1},{1,1}};
-        selected[2].expert={{0,2}};
-    }
+    if (helpers>1) selected[1].expert={{0,1},{1,1}};
+    // The tail begins with zero residents, but has one expert of budget:
+    // its first incoming expert must use an arena allocated at startup.
+    if (helpers==3) selected[2].expert={};
     for (uint32_t i=0;i<helpers;++i)
         check(publish_owned(map,selected[i],i),"move bootstrap owners");
     for (uint32_t i=0;i<helpers;++i)
@@ -1078,9 +1119,13 @@ static void V23Move_ChangedMapThroughProduction(uint32_t helpers,uint32_t ranks)
     FakeClock clock;
     for (uint32_t helper=0;helper<helpers;++helper) {
         alloc.emplace_back(std::make_unique<MoveAllocator>());
-        const auto capacity=uint32_t(selected[helper].expert.size());
+        const auto capacity=uint32_t(selected[helper].expert.size())+
+            (helpers==3 && helper==2 ? 1u : 0u);
         pools.emplace_back(std::make_unique<MovePool>(capacity*stride,stride,
                                                      capacity,*alloc.back()));
+        check(pools.back()->prepare() && pools.back()->address(0) &&
+              pools.back()->address(pools.back()->staging_id()),
+              "budget-wide arena and spare exist before bootstrap, including zero owners");
         std::vector<int32_t> locals(size_t(shape.experts)*2,-1);
         for (auto [l,e]:selected[helper].expert) {
             const uint32_t id=l*shape.experts+e;
@@ -1117,9 +1162,60 @@ static void V23Move_ChangedMapThroughProduction(uint32_t helpers,uint32_t ranks)
     }
     FakeRankOperations rank_ops(map,ledger,gpu,ranks);
     EngineRankCoordinator coordinator;
+
+    // Invalid bootstrap classification changes fail on both participants
+    // before anyone can reserve or upload. Run both directions with the
+    // production Controller, rank coordinator and migration participant.
+    for (int direction=0; direction<2; ++direction) {
+        auto* pending=generation_header(map,1);
+        std::memcpy(generation_map(map,1),generation_map(map,0),h->owner_map_bytes);
+        const uint32_t expert=direction ? 2u : 0u;
+        const uint8_t original=generation_map(map,0)[expert];
+        check((direction ? original==kOwnerLocal : original==0),
+              "bootstrap local/helper negative fixture");
+        generation_map(map,1)[expert]=direction ? uint8_t(0) : kOwnerLocal;
+        pending->epoch=2;
+        pending->digest=generation_digest(map,1);
+        pending->state=uint32_t(GenerationState::STAGING);
+        pending->ready_helpers=pending->ready_ranks=0;
+        check(controller->propose(pending->digest),
+              "Controller receives illegal-classification proposal");
+        check(controller->start_reserving(),
+              "invalid candidate reaches reservation for participant tests");
+        check(migration[0]->reserve(map,*control)==FaultCode::CHECKSUM,
+              "production HelperMigration rejects changed local classification");
+        check(!placement_candidate_valid(map,*control),
+              "shared validator rejects illegal local classification");
+        PlacementControl snapshot{};
+        check(placement_snapshot(map,&snapshot) &&
+              coordinator.step(map,snapshot,rank_ops),
+              "engine rank coordinator publishes invalid-map fault");
+        for (uint32_t rank=0;rank<ranks;++rank)
+            check(read_shared_ack(map,kMaxHelpers+rank).fault_code==
+                      uint32_t(FaultCode::CHECKSUM),
+                  "both engine rank reservations reject local classification");
+        check(participants[0]->tick() &&
+              control->state==uint32_t(PlacementState::ACTIVE) &&
+              control->active_epoch==1 && control->active_digest==original_digest &&
+              !controller->can_propose(),
+              "epoch driver aborts invalid placement forward and blocks retry");
+        peers();
+        check(participants[0]->tick() && !controller->can_propose(),
+              "helper abort cleaned is insufficient until rank is cleaned");
+        check(placement_snapshot(map,&snapshot) &&
+              coordinator.step(map,snapshot,rank_ops) &&
+              controller->can_propose(),
+              "rank abort cleanup closes rejected transaction");
+    }
+    // The single-helper shape can only run same-map cycles. Its impossible
+    // local/helper moves were covered negatively above.
+    if (helpers==1) {
+        check(munmap(map,layout.bytes)==0,"one-helper negative unmap");
+        return;
+    }
     const uint64_t fixed_bytes[3] = {
         alloc[0]->bytes,
-        helpers==3?alloc[1]->bytes:0,
+        helpers>1?alloc[1]->bytes:0,
         helpers==3?alloc[2]->bytes:0
     };
 
@@ -1129,13 +1225,9 @@ static void V23Move_ChangedMapThroughProduction(uint32_t helpers,uint32_t ranks)
     {
         auto* pending=generation_header(map,1);
         std::memcpy(generation_map(map,1),generation_map(map,0),h->owner_map_bytes);
-        if (helpers==3) {
-            generation_map(map,1)[0]=1;  // helper 1 gains two while holding its two
-            generation_map(map,1)[shape.experts]=1;
-        } else {
-            generation_map(map,1)[1]=0; // helper 0 gains two while holding its two
-            generation_map(map,1)[2]=0;
-        }
+        // One incoming expert at a full-budget destination, no departure:
+        // the staging slot exists, but postcommit residency is illegal.
+        generation_map(map,1)[0]=1;
         pending->epoch=2;
         pending->digest=generation_digest(map,1);
         pending->state=uint32_t(GenerationState::STAGING);
@@ -1146,10 +1238,9 @@ static void V23Move_ChangedMapThroughProduction(uint32_t helpers,uint32_t ranks)
               control->state==uint32_t(PlacementState::RESERVING),
               "capacity proposal enters reservation");
         peers();
-        if (helpers==3)
-            check(read_shared_ack(map,1).fault_code==uint32_t(FaultCode::CAPACITY) &&
-                  migration[1]->reserve(map,*control)==FaultCode::CAPACITY,
-                  "capacity fault stays sticky across duplicate reservation ticks");
+        check(read_shared_ack(map,1).fault_code==uint32_t(FaultCode::CAPACITY) &&
+              migration[1]->reserve(map,*control)==FaultCode::CAPACITY,
+              "full-budget gain without departure is sticky CAPACITY");
         check(participants[0]->tick(),"capacity detection by helper");
         check(participants[0]->tick() &&
               control->state==uint32_t(PlacementState::ACTIVE) &&
@@ -1160,6 +1251,12 @@ static void V23Move_ChangedMapThroughProduction(uint32_t helpers,uint32_t ranks)
               "capacity ACK aborts forward without changing ACTIVE(N)");
         peers();
         check(participants[0]->tick(),"cancel precommit reservations after capacity abort");
+        check(!controller->can_propose(),
+              "abort blocks fresh proposal until rank abort cleanup");
+        PlacementControl aborted{};
+        check(placement_snapshot(map,&aborted) && coordinator.step(map,aborted,rank_ops),
+              "production rank participant publishes abort-cleaned ACKs");
+        check(controller->can_propose(),"all abort-cleaned ACKs release proposal gate");
         for (uint32_t helper=0;helper<helpers;++helper) {
             check(migration[helper]->transaction()==0 &&
                   pools[helper]->ledger().charged()==
@@ -1171,13 +1268,62 @@ static void V23Move_ChangedMapThroughProduction(uint32_t helpers,uint32_t ranks)
         }
     }
 
+    // Aborting after rank GPU upload is queued must wait for that rank's
+    // independent DMA event, even though ACTIVE cleared pending map identity.
+    // Normal READY cannot validate an aborted candidate; the coordinator's
+    // production abort_upload_done callback proves event completion instead.
+    {
+        auto* pending=generation_header(map,1);
+        std::memcpy(generation_map(map,1),generation_map(map,0),h->owner_map_bytes);
+        generation_map(map,1)[0]=uint8_t(helpers==3 ? 2 : 1);
+        generation_map(map,1)[1]=0;
+        pending->epoch=2;
+        pending->digest=generation_digest(map,1);
+        pending->state=uint32_t(GenerationState::STAGING);
+        pending->ready_helpers=pending->ready_ranks=0;
+        check(controller->propose(pending->digest),
+              "abort-inflight candidate proposed through controller");
+        check(participants[0]->tick() &&
+              control->state==uint32_t(PlacementState::RESERVING),
+              "abort-inflight enters reservation");
+        peers();
+        check(participants[0]->tick(),"abort-inflight helper reserve");
+        PlacementControl snapshot{};
+        check(placement_snapshot(map,&snapshot) &&
+              coordinator.step(map,snapshot,rank_ops),
+              "abort-inflight engine reservation");
+        check(participants[0]->tick() &&
+              control->state==uint32_t(PlacementState::COPYING),
+              "abort-inflight reaches COPYING");
+        check(placement_snapshot(map,&snapshot) &&
+              coordinator.step(map,snapshot,rank_ops) &&
+              gpu[0].issued[1] && !gpu[0].event_ready[1],
+              "engine rank enqueues bitmap upload with pending event");
+        check(controller->fail(FaultCode::UPLOAD) &&
+              control->state==uint32_t(PlacementState::ACTIVE) &&
+              !controller->can_propose(),
+              "forward abort blocks proposal before rank DMA completion");
+        peers();
+        check(participants[0]->tick(),
+              "abort-inflight helper cancel before rank upload proof");
+        check(placement_snapshot(map,&snapshot) &&
+              coordinator.step(map,snapshot,rank_ops) &&
+              !controller->can_propose() &&
+              read_shared_ack(map,kMaxHelpers).phase!=uint32_t(AckPhase::CLEANED),
+              "rank must not acknowledge abort while bitmap DMA is pending");
+        gpu[0].complete(1);
+        check(coordinator.step(map,snapshot,rank_ops) &&
+              read_shared_ack(map,kMaxHelpers).phase==uint32_t(AckPhase::CLEANED) &&
+              controller->can_propose(),
+              "rank event completion publishes abort cleanup and unblocks proposal");
+    }
+
     for (uint32_t cycle=1;cycle<=1000;++cycle) {
         const uint32_t old_slot=control->active_slot,new_slot=1u-old_slot;
         const uint64_t old_digest=control->active_digest;
         const uint8_t old_owner=owner_at(map,old_slot,0,0);
-        const uint8_t new_owner=(helpers==3 && cycle<=4) ?
-            (cycle==2 || cycle==3 ? uint8_t(1) : uint8_t(0)) :
-            ((cycle&1) ? (helpers==3 ? uint8_t(1) : kOwnerLocal) : uint8_t(0));
+        const uint8_t new_owner=(cycle&1) ?
+            uint8_t(helpers==3 ? 2 : 1) : uint8_t(0);
         const std::vector<uint8_t> old_map(
             generation_map(map,old_slot),
             generation_map(map,old_slot)+h->owner_map_bytes);
@@ -1191,14 +1337,9 @@ static void V23Move_ChangedMapThroughProduction(uint32_t helpers,uint32_t ranks)
         std::memcpy(generation_map(map,new_slot),
                     generation_map(map,old_slot),h->owner_map_bytes);
         generation_map(map,new_slot)[0]=new_owner;
-        // Produce two free destination slots via three safe one-expert
-        // moves, then transfer K=2 experts from helper 1 to helper 0 in
-        // one real transaction. Both uploads have independent fake events.
-        if (helpers==3 && cycle==1) generation_map(map,new_slot)[1]=0;
-        if (helpers==3 && cycle==3)
-            generation_map(map,new_slot)[shape.experts]=1;
-        if (helpers==3 && cycle==4)
-            generation_map(map,new_slot)[shape.experts]=0;
+        // Concurrent legal transfers: helper 0 swaps at full budget.
+        // In the three-helper shape the empty tail receives its first expert.
+        generation_map(map,new_slot)[1]=(cycle&1) ? 0 : 1;
         check(!std::equal(old_map.begin(),old_map.end(),
                           generation_map(map,new_slot)),
               "candidate changes at least one canonical owner");
@@ -1225,16 +1366,26 @@ static void V23Move_ChangedMapThroughProduction(uint32_t helpers,uint32_t ranks)
               coordinator.step(map,snapshot,rank_ops),"move engine reserve");
         check(participants[0]->tick() &&
               control->state==uint32_t(PlacementState::COPYING),"move copying phase");
+        for (uint32_t helper=0;helper<helpers;++helper) {
+            const auto& physical=*pools[helper];
+            const uint64_t physical_peak_budget=
+                physical.ledger().hard(); // steady budget + incoming stride
+            check(physical.ledger().charged()<=physical_peak_budget &&
+                  alloc[helper]->bytes<=physical_peak_budget &&
+                  physical.ledger().valid(),
+                  "physical peak bounded by expert budget plus staging slot");
+        }
         peers();
         check(participants[0]->tick(),"move initiate helper uploads");
         // The gained expert's fake event is deliberately incomplete while a
         // parent under N reads the exact old bank, and READY is still absent.
-        const uint32_t destination=(new_owner==kOwnerLocal ? UINT32_MAX : new_owner);
-        if (destination!=UINT32_MAX) {
-            check(ops[destination]->busy &&
-                  read_shared_ack(map,destination).phase!=uint32_t(AckPhase::READY),
-                  "READY cannot precede incoming expert's last upload event");
-        }
+        const uint32_t destination=new_owner;
+        check(ops[destination]->busy &&
+              read_shared_ack(map,destination).phase!=uint32_t(AckPhase::READY),
+              "READY cannot precede incoming expert's last upload event");
+        check(ops[0]->busy && (helpers!=3 || cycle!=1 ||
+              pools[2]->ledger().slots()[0].state==r3::residency::State::COPYING),
+              "zero-bootstrap tail receives its first upload via physical slot");
         for (uint32_t helper=0;helper<helpers;++helper) {
             const auto& old_bindings=ops[helper]->physical[old_slot];
             for (size_t i=0;i<old_bindings.size();++i)
@@ -1245,11 +1396,10 @@ static void V23Move_ChangedMapThroughProduction(uint32_t helpers,uint32_t ranks)
         check(participants[0]->tick() &&
               control->state==uint32_t(PlacementState::COPYING),
               "incomplete helper events prevent global READY");
-        if (destination!=UINT32_MAX)
-            check(read_shared_ack(map,destination).phase!=uint32_t(AckPhase::READY) &&
-                  !migration[destination]->bank_built() &&
-                  !ops[destination]->ready[new_slot],
-                  "unfinished expert event must not ACK READY or build its bank");
+        check(read_shared_ack(map,destination).phase!=uint32_t(AckPhase::READY) &&
+              !migration[destination]->bank_built() &&
+              !ops[destination]->ready[new_slot],
+              "unfinished expert event must not ACK READY or build its bank");
         // If two experts arrive, completion of the first event only
         // starts the next transfer; it does not unlock the READY ACK.
         bool all_built=false;
@@ -1258,20 +1408,14 @@ static void V23Move_ChangedMapThroughProduction(uint32_t helpers,uint32_t ranks)
                 if (ops[helper]->busy) ops[helper]->complete();
             peers();
             check(participants[0]->tick(),"move poll independent expert upload events");
-            if (helpers==3 && cycle==4 && round==0)
-                check(ops[0]->busy &&
-                      read_shared_ack(map,0).phase!=uint32_t(AckPhase::READY) &&
-                      !migration[0]->bank_built(),
-                      "K=2 must wait for second expert's distinct event");
+
             all_built=true;
             for (uint32_t helper=0;helper<helpers;++helper)
                 all_built=all_built && migration[helper]->bank_built();
             if (all_built) break;
         }
         check(all_built,"all gained experts finished before candidate READY");
-        if (helpers==3 && cycle==4)
-            check(ops[0]->upload_count==3 && ops[0]->events_seen==3,
-                  "K=2 move used two separate completed copy events");
+
         for (uint32_t helper=0;helper<helpers;++helper)
             check(read_shared_ack(map,helper).phase==uint32_t(AckPhase::READY) &&
                   migration[helper]->bank_built() &&
@@ -1333,6 +1477,8 @@ static void V23Move_ChangedMapThroughProduction(uint32_t helpers,uint32_t ranks)
               generation_header(map,old_slot)->state==
                   uint32_t(GenerationState::RETIRED),
               "move publish committed generation");
+        check(!controller->can_propose(),
+              "ACTIVE before engine REOPENED refuses next proposal");
         for (uint32_t helper=0;helper<helpers;++helper)
             check(!migration[helper]->reclaim(map,*control),
                   "old physical slot unreclaimable before REOPENED");
@@ -1340,16 +1486,22 @@ static void V23Move_ChangedMapThroughProduction(uint32_t helpers,uint32_t ranks)
               coordinator.step(map,snapshot,rank_ops) &&
               reopened_exactly(map,*control,transaction),
               "move engine ledger reopens and publishes exact REOPENED");
+        check(!controller->can_propose(),
+              "REOPENED alone cannot bypass last helper cleanup");
         peers();
+        if (helpers>1) check(!controller->can_propose(),
+              "peer cleanup cannot replace helper-zero reclamation");
         check(participants[0]->tick(),"move slot reclamation after REOPENED");
+        check(controller->can_propose(),
+              "only all post-REOPENED helper cleanups admit next proposal");
         for (uint32_t helper=0;helper<helpers;++helper) {
             check(migration[helper]->transaction()==0 &&
                   ops[helper]->active==new_slot &&
                   pools[helper]->ledger().valid() &&
                   alloc[helper]->bytes==fixed_bytes[helper] &&
                   pools[helper]->ledger().charged()<=
-                      (selected[helper].expert.size()+1)*stride,
-                  "move/return leaves no slot leaks or physical allocation growth");
+                      pools[helper]->ledger().hard()-pools[helper]->ledger().headroom(),
+                  "move/return leaves no committed-budget excess or slot growth");
             for (const auto& slot:pools[helper]->ledger().slots())
                 check(slot.state==r3::residency::State::FREE ||
                       slot.state==r3::residency::State::ACTIVE,
@@ -1357,13 +1509,15 @@ static void V23Move_ChangedMapThroughProduction(uint32_t helpers,uint32_t ranks)
             check(migration[helper]->local(new_slot).size()==h->owner_map_bytes,
                   "new helper bank remains fully bound");
         }
+        check(pools[0]->ledger().charged()==
+                  selected[0].expert.size()*stride,
+              "helper zero full-budget swap never exceeds committed expert budget");
         check(ops[0]->serving(new_slot,0)==
               (new_owner==0 ? migration[0]->physical(new_slot)[0] : -1),
               "moved expert bound in correct helper bank");
-        if (helpers==3)
-            check(ops[1]->serving(new_slot,0)==
-                  (new_owner==1 ? migration[1]->physical(new_slot)[0] : -1),
-                  "moved expert bound in receiving helper bank");
+        check(ops[destination]->serving(new_slot,0)==
+              migration[destination]->physical(new_slot)[0],
+              "moved expert bound in receiving helper bank");
         check((old_owner==0 ? ops[0]->serving(old_slot,0)>=0 :
                                ops[0]->serving(old_slot,0)==-1),
               "old generation bank retains the prior owner, not the new one");
@@ -1383,6 +1537,7 @@ int main() {
     V23Cycle_SamePlacementAndSharedProtocol(3,1);
     V23Move_PhysicalSlotLimitIndependentOfByteBudget();
     V23Move_ChangedMapThroughProduction(1,2);
+    V23Move_ChangedMapThroughProduction(2,1);
     V23Move_ChangedMapThroughProduction(3,1);
     V23Cycle_SamePlacementAndSharedProtocol(1,2,true);
     V23Epoch_ForwardOnlyAbortRetry();

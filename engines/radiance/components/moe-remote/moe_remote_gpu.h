@@ -242,7 +242,7 @@ public:
         }
         const r3::worker_slots::DeviceMemory memory{
             plan.lanes, plan.tables, plan.slot_map, plan.stride,
-            uint64_t(owned.size()) * plan.stride
+            uint64_t(plan.expert_capacity) * plan.stride
         };
         size_t free_now = 0, total_now = 0;
         if (!lane_free_sampled_ ||
@@ -262,8 +262,8 @@ public:
             return false;
         }
         slots_ = std::make_unique<r3::worker_slots::Pool<HipSlotAllocator>>(
-            budget, plan.stride, uint32_t(owned.size()), slot_allocator_);
-        if (!slots_->valid()) return false;
+            budget, plan.stride, plan.expert_capacity, slot_allocator_);
+        if (!slots_->prepare()) return false;
         const size_t slot_map_bytes = size_t(plan.slot_map);
         const size_t table_bytes = size_t(model_.layers) * sizeof(DeviceLayerTables);
         layer_loaded_.assign(model_.layers, 0);

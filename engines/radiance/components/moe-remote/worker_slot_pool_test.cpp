@@ -238,11 +238,40 @@ static void production_layout_parity() {
                   Result::DEFERRED_CAPACITY, "only one incoming slot");
             if(name=="flashnext-4gpu") {
                 const uint32_t expected[]={9320,9320,5931};
-                check(h<3 && worker.expert.size()==expected[h],
-                      "Flash-Next counts equal main: 9320/9320/5931");
+                const uint64_t arena[]={23620608000ull,23620608000ull,15031526400ull};
+                check(h<3 && worker.expert.size()==expected[h] &&
+                      plan.expert_bytes==arena[h] &&
+                      worker.expert.size()*stride==arena[h],
+                      "budget-wide Flash-Next arenas exactly equal main allocations");
             }
         }
     }
+}
+static void empty_bootstrap_can_gain() {
+    FakeAllocator alloc;
+    {
+        Pool<FakeAllocator> pool(300,100,3,alloc);
+        check(pool.prepare() && pool.prepare() &&
+              alloc.attempts==2 && alloc.charged==400 &&
+              pool.arena_bytes()==300 && pool.address(0) &&
+              pool.address(2) && pool.address(pool.staging_id()) &&
+              pool.ledger().charged()==0,
+              "zero-resident helper preallocates full budget and incoming slot");
+        uint32_t id=UINT32_MAX;
+        check(pool.ledger().reserve(21,100,2,true,&id)==Result::OK &&
+              id==0 && pool.address(id) &&
+              pool.ledger().start_copy(id)==Result::OK,
+              "first arrival uses preallocated address with no bootstrap call");
+        for (uint32_t plane=0;plane<4;++plane)
+            check(pool.ledger().plane_complete(id,plane)==Result::OK,
+                  "all first expert planes completed");
+        check(pool.ledger().ready(id)==Result::OK &&
+              pool.ledger().activate(id,2)==Result::OK &&
+              pool.ledger().charged()==100,
+              "first expert activates after its upload");
+    }
+    check(alloc.live.empty() && !alloc.charged,
+          "zero-bootstrap arena and stage released without leak");
 }
 static void free_memory_guards() {
     using r3::worker_slots::check_device_memory;
@@ -261,6 +290,7 @@ static void free_memory_guards() {
 }
 int main() {
     production_layout_parity();
+    empty_bootstrap_can_gain();
     free_memory_guards();
     four_plane_tables();
     shape(2,1,UINT32_MAX);
