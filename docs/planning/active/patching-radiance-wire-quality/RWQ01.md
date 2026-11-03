@@ -15,7 +15,7 @@ work: M
 
 ## Description
 
-Measured Flash-Next two-XTX exact vs WHT6: 42,761 teacher-forced positions, WHT6 mean KLD 0.0746 and 87.18% top-1, versus exact-wire self-reference 0/100%. Separate 7.2K-prompt profiling found 1,263 tok/s exact versus 1,343 tok/s WHT6 (~6.3% improvement). Qwen3.8-27B behaves differently: exact baseline 0.003665 mean KL versus R9700, WHT6 0.004422 (+0.000757) and +38% prefill. Before redesigning the code, identify WHICH Flash-Next collective, layer, and activation distribution explains that sensitivity. These results are distinct comparisons (the Flash-Next KL uses itself as reference). Sources: engines/radiance/README.md sections 'The lossy two-card wire', 'The cross-card sum, timed', and 'Flash-Next ... first runs'.
+Measured Flash-Next two-XTX exact vs WHT6: 42,761 teacher-forced positions, WHT6 mean KLD 0.0746 and 87.18% top-1, versus exact-wire self-reference 0/100%. Separate 7.2K-prompt profiling found 1,263 tok/s exact versus 1,343 tok/s WHT6 (~6.3% improvement). Qwen3.8-27B behaves differently: exact baseline 0.003665 mean KL versus R9700, WHT6 0.004422 (+0.000757) and +38% prefill. Before redesigning the code, identify WHICH Flash-Next collective, layer, and activation distribution explains that sensitivity. These results are distinct comparisons (the Flash-Next KL uses itself as reference). Sources: docs/archive/radiance/LAB_HISTORY.md sections 'The lossy two-card wire', 'The cross-card sum, timed', and 'Flash-Next ... first runs'.
 
 ## Steps
 
@@ -36,7 +36,7 @@ Emit records keyed by {engine_pin, build_hash, model_sha256, profile, layer, op,
 
 ## Files
 
-engines/radiance/README.md (append measured outcomes only); tools/lab/radiance/wire-quality/codec_mock.py, README.md; tools/tests/radiance/test_wire_quality_mock.py; docs/evidence/RWQ01/; optional scoped R3_AR_WIRE_TRACE instrumentation in engines/radiance/components/libr3/native/r4d_ar_entry.hip.rw; docs/reference/engines/RADIANCE_WIRE_QUALITY_DESIGN.md.
+docs/archive/radiance/LAB_HISTORY.md (append measured outcomes only); tools/lab/radiance/wire-quality/codec_mock.py, README.md; tools/tests/radiance/test_wire_quality_mock.py; docs/evidence/RWQ01/; optional scoped R3_AR_WIRE_TRACE instrumentation in engines/radiance/components/libr3/native/r4d_ar_entry.hip.rw; docs/reference/engines/RADIANCE_WIRE_QUALITY_DESIGN.md.
 
 ## Validation
 

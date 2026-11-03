@@ -1,66 +1,54 @@
-# Radiance on BigCherry: runbook
+# Radiance build and validation
 
-How the radiance engine is built, configured and measured through the same platform as llama.cpp (RAD01; design in
-[PLATFORM_DESIGN.md](PLATFORM_DESIGN.md)). The measurement log is
-[engines/radiance/README.md](../../../../engines/radiance/README.md).
+The pinned source is **Radiance v1.14.0**. BigCherry selects upstream
+patches through `engines/radiance/recipes.toml` and builds separate
+components against the same pin. Those components are installed in
+`radiance_home` alongside the engine binary and its kernel libraries.
 
-**Serving start-up note (2026-11):** this page describes the pre-manifest
-configuration path. The [active serving-configuration work](../../../planning/active/run-serving-configuration/README.md)
-is moving to a strict schema/loader and a canonical manifest loaded by each
-process. Build and measurement instructions here are reference material;
-launcher flags, profiles and environment knobs are not the final serving API.
+## Source selection
 
-## What lives where
+| Source | Contents |
+| --- | --- |
+| `radiance-native` | Unmodified pinned upstream engine |
+| `radiance` | The declared serving-core, host-compatibility and serving-manifest patch sets |
+| `radiance-lab` | Host compatibility and evaluated fixes; the remote-MoE hook is added by the `moe-remote-handoff` experiment |
+| `radiance-diag` | Diagnostic patch set, including remote-MoE diagnostics |
 
-| Piece | Location |
-|---|---|
-| Engine declaration (upstream, layout, build, serve, components) | `engines/radiance/engine.toml` |
-| Recipes: pin, patch sets, sources, builds, experiments, runtime profiles, platform | `engines/radiance/recipes.toml` |
-| Engine patches (packages against the pinned radiance) | `engines/radiance/patches/<id>/` |
-| libr3, the gfx1100 kernel plugin (component, not a patch) | `engines/radiance/components/libr3/` |
-| libr3 runtime settings (R3_*: default, status, activation marker) | `engines/radiance/components/libr3/component.toml` |
-| moe-remote (the remote-MoE helper `r3_moe_worker` and the `libr3moe` plugin; R3_MOE_* settings) | `engines/radiance/components/moe-remote/` and its `component.toml` |
-| A/B configurations | `tools/lab/radiance/*.json` |
+A source's inclusion in a recipe does **not** imply every patch has
+validated hardware evidence. The [patch catalogue](ENHANCEMENTS.md) and
+each package's `patch.toml` give the recorded states.
 
-## One-time host setup (build host)
+## Build and measurement
 
-1. Upstream mirror, beside llama.cpp's under the work root:
+The Flash-Next helper layout currently uses the lab source and
+`moe-remote-handoff` experiment. For example:
 
-       git clone --bare <a radiance clone> <work>/upstream/radiance.git
-       git -C <work>/upstream/radiance.git remote set-url origin https://codeberg.org/StillDeadcode/radiance.git
+```sh
+PYTHONPATH=tools python -m bigcherry build \
+  --lane radiance-lab:stock:linux-radiance \
+  --experiment moe-remote-handoff
+```
 
-   The pin (`engines/radiance/recipes.toml` `pinned`) must resolve in it.
-2. Host compilers in `config/environment.local.toml` `[env]` (radiance needs GCC 14 for its host code):
+The build includes the pinned engine, `libr3`, `libr2` and remote-MoE
+components needed for the selected targets. A/B measurements use
+`bigcherry ab-benchmark` with model-specific configurations under
+`tools/lab/radiance/`. Quantitative comparisons must identify the
+source, model container, GPU layout, prompt/decode workload, cache
+policy and quality checks.
 
-       RADIANCE_HOST_CC = "<gcc-14>"
-       RADIANCE_HOST_CXX = "<g++-14>"
+The current supported results are on the
+[Flash-Next](models/qwen3.8-flash-next.md),
+[27B](models/qwen3.8-27b.md) and
+[35B-A3B](models/qwen3.6-35b-a3b.md) pages. Historical experiments and
+old pinned builds remain in the
+[dated lab record](../../../../docs/archive/radiance/LAB_HISTORY.md), not in the
+current result tables.
 
-3. ROCm on `PATH` when building (`export ROCM_PATH=/opt/rocm-7.2.4 PATH=$ROCM_PATH/bin:$PATH`); radiance's own CMake
-   finds HIP from it. A worktree build points `BIGCHERRY_ENVIRONMENT` at the host file.
+## Serving configuration
 
-## Build
-
-    python -m bigcherry build --lane radiance-lab:stock:linux-radiance
-
-The lane materialises the pin with the source's patch sets applied by the patch system, builds `bin/radiance` and
-radiance's default target (its plugins, architectures and quantisers into `radiance_home`), then builds each
-component (libr3) against the engine installed from that build and the materialised source, and copies its outputs
-into `radiance_home`. The build's identity includes the runtime targets and the components' content.
-
-Sources: `radiance-native` (the pin), `radiance` (validated patch sets), `radiance-lab` (evaluated engine fixes).
-One engine patch per experiment (`[experiment.*]`).
-
-## Measure
-
-A/B through `bigcherry ab-benchmark --server-config <json> --pairs N`. The configuration names `"engine": "radiance"`;
-arms run in mode `stock` with `execution_evidence: "observe"` (device attestation is parsed for llama.cpp only).
-Quality gates: a `quality` block in the same configuration (`tools/lab/radiance/helper-kld.json`) runs radiance's KL
-mode per arm, `tools/bigcherry/experiment/engine_quality.py` parses the `--kld-out` JSON and gates a subject against
-its control; a component setting with an `activation` marker yields activation evidence from the
-two arms' server logs.
-
-## Profiles
-
-`[runtime-profile.*]` in the recipes hold only what they switch: `server-args` and an `environment` checked against
-the components (no undeclared R3_*, no restated default). `flashnext-2xtx` and `qwen38-27b-2xtx` are the starting
-profiles.
+`bc-serve` supplies strict configuration loading and manifest inspection;
+the engine has a manifest entry point. The [v1 manifest contract](../../../design/serving-manifest-v1/spec.md)
+is implemented incrementally. Until process-role loading and supervision
+land together, the legacy launcher/configuration paths are not a stable
+public interface. The source and build recipes remain authoritative for
+what is actually packaged.

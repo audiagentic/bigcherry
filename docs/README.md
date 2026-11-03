@@ -19,5 +19,10 @@ under `engines/llamacpp/patches/`, `engines/radiance/patches/` or
 [patch and component documentation format](reference/DOC_STRUCTURE.md)
 defines the section headings used by the generated catalogues.
 
+The [dated Radiance lab history](archive/radiance/LAB_HISTORY.md) and
+[old port/design notes](archive/radiance/) are archived; the current
+[model pages](reference/engines/radiance/README.md#best-measured-models)
+show results for the pinned engine.
+
 Transient traces and large run outputs are stored separately under
 `artifacts/`; they are not part of the maintained reference.

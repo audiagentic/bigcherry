@@ -36,7 +36,7 @@ Experiment axes: model × wire × context-depth × chunk × operation-family-pol
 
 ## Files
 
-tools/lab/radiance/wire-quality/ hardware wrapper only if existing ab-benchmark config cannot express it; engines/radiance/recipes.toml experiment profiles; tools/bigcherry/experiment/engine_quality.py only if engine-neutral quality metrics need extending; docs/evidence/RWQ05/; engines/radiance/README.md after measurements.
+tools/lab/radiance/wire-quality/ hardware wrapper only if existing ab-benchmark config cannot express it; engines/radiance/recipes.toml experiment profiles; tools/bigcherry/experiment/engine_quality.py only if engine-neutral quality metrics need extending; docs/evidence/RWQ05/; docs/archive/radiance/LAB_HISTORY.md after measurements.
 
 ## Validation
 

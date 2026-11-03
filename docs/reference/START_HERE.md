@@ -35,7 +35,7 @@ matches, native upstream dispatch is used.
   state relates to the available evidence.
 - [Experiment contracts](experiments/EXPERIMENT_CONTRACT.md) — workload
   identity, controls and measurements.
-- [Radiance model pages](engines/radiance/README.md#model-specific-results) —
+- [Radiance model pages](engines/radiance/README.md#best-measured-models) —
   dated performance and quality results for specific models and layouts.
 
 An improvement for one model and hardware layout is not a general hardware
