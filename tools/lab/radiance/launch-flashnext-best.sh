@@ -360,11 +360,17 @@ for _ in $(seq 180); do
 done
 [ $up = 1 ] || { echo "FLASHNEXT_EXIT=1 engine did not come up; see $LOG"; tail -n 30 "$LOG"; false; }
 start_canary() {
-  local body answer
+  local body answer reply
   body=$(CANARY_PROMPT="$CANARY_PROMPT" python3 -c 'import json,os;print(json.dumps({"model":"default","prompt":os.environ["CANARY_PROMPT"],"max_tokens":24,"temperature":0}))')
-  answer=$(curl -s --max-time 120 "http://127.0.0.1:$PORT/v1/completions" -H 'content-type: application/json' -d "$body" \
-    | python3 -c 'import json,sys;print(json.load(sys.stdin)["choices"][0]["text"])' 2>&1)
-  case "${answer,,}" in *"${CANARY_EXPECT,,}"*) echo "start canary: ok (answered '$(printf %s "$answer" | head -c 60)')" >&2; return 0 ;; esac
+  # Transport and parsing must each succeed on their own: a failed or non-2xx request, or a reply that is not a completion, is a
+  # canary failure whatever text it happens to contain.
+  if ! reply=$(curl -fsS --max-time 120 "http://127.0.0.1:$PORT/v1/completions" -H 'content-type: application/json' -d "$body" 2>&1); then
+    answer="<request failed: $(printf %s "$reply" | head -c 80)>"
+  elif ! answer=$(printf %s "$reply" | python3 -c 'import json,sys;print(json.load(sys.stdin)["choices"][0]["text"])' 2>/dev/null); then
+    answer="<not a completion: $(printf %s "$reply" | head -c 60)>"
+  else
+    case "${answer,,}" in *"${CANARY_EXPECT,,}"*) echo "start canary: ok (answered '$(printf %s "$answer" | head -c 60)')" >&2; return 0 ;; esac
+  fi
   echo "FLASHNEXT_EXIT=96 start canary failed: the engine is up but answered '$(printf %s "$answer" | head -c 80)' to '$CANARY_PROMPT' (expected it to contain '$CANARY_EXPECT'); stopping everything this launch started; engine log $LOG" >&2
   return 1
 }

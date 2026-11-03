@@ -62,7 +62,9 @@ class H(http.server.BaseHTTPRequestHandler):
     def do_POST(self):
         self.rfile.read(int(self.headers.get("content-length", 0)))
         text = os.environ.get("FAKE_ANSWER", " Paris. The capital of Germany is Berlin.")
-        self.send_response(200); self.send_header("content-type", "application/json"); self.end_headers()
+        self.send_response(int(os.environ.get("FAKE_STATUS", "200"))); self.send_header("content-type", "application/json"); self.end_headers()
+        if os.environ.get("FAKE_MALFORMED"):
+            self.wfile.write(b"Traceback: not json"); return
         self.wfile.write(json.dumps({"choices": [{"text": text}]}).encode())
     def log_message(self, *a): pass
 http.server.HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()' "$port"
@@ -275,6 +277,19 @@ class LaunchCleanupTests(unittest.TestCase):
         self.assertNotIn("FLASHNEXT_EXIT=0", done.stdout)
         self.assertEqual(self._events(), ["apply", "restore"])
         self.assertEqual(self._alive_pids(), [])
+
+    def test_a_failed_request_or_a_reply_that_is_not_a_completion_never_passes_the_canary(self) -> None:
+        # valid completion text over a non-2xx status, and a non-JSON body that merely contains the expected word
+        for name, extra, args in (("http 500 with the right text", {"FAKE_STATUS": "500"}, []),
+                                  ("malformed body containing the expected word", {"FAKE_MALFORMED": "1"}, ["--canary-expect", "Traceback"])):
+            with self.subTest(case=name):
+                if self.log.exists():
+                    self.log.unlink()
+                done = subprocess.run([*self._args(), *args], env={**self.env, **extra}, cwd=REPO, capture_output=True, text=True, timeout=180)
+                self.assertEqual(done.returncode, 96, done.stdout + done.stderr)
+                self.assertIn("start canary failed", done.stdout + done.stderr)
+                self.assertEqual(self._events(), ["apply", "restore"])
+                self.assertEqual(self._alive_pids(), [])
 
     def test_the_canary_is_semantic_and_overridable(self) -> None:
         # a model that answers differently gets its own prompt/expectation; the match is case-insensitive substring
