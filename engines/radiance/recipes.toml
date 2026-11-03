@@ -27,7 +27,7 @@ required-state = "untested"
 # Start from a resolved serving manifest (rad0009, RSC07): `--manifest PATH` replaces command-line flags. Untested until a
 # manifest launch is shown to parse to the same config as the argv launch on hardware, then moved to serving-core.
 [patch-set.serving-manifest]
-patches = ["rad0009_serving_manifest"]
+patches = ["rad0009_serving_manifest", "rad0011_plan_memory"]
 required-state = "untested"
 
 # The remote-MoE hand-off and its diagnostics (shadow compare, mask-only). Diagnostic builds only: patch-lint fails
@@ -47,9 +47,9 @@ overlay = false
 patch-sets = ["serving-core", "host-compat", "serving-manifest"]
 
 [source.radiance-lab]
-description = "radiance 1.14.0 with the evaluated engine fixes the Flash-Next two-XTX configuration needs (none at present)."
+description = "radiance 1.14.0 as source.radiance (production patch sets) plus the evaluated engine fixes the Flash-Next two-XTX configuration needs (none at present). Never a different base: the lab runs what production runs."
 overlay = false
-patch-sets = ["engine-fixes-evaluated", "host-compat"]
+patch-sets = ["serving-core", "engine-fixes-evaluated", "host-compat", "serving-manifest"]
 
 [source.radiance-diag]
 description = "radiance 1.14.0 with the validated engine patch sets plus the remote-MoE hand-off and its diagnostics (rad0004); build it with build.moe-diag."

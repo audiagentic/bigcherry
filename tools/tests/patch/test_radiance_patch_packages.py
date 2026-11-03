@@ -14,6 +14,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import tomllib
 import unittest
 from pathlib import Path
 
@@ -30,6 +31,7 @@ RAD0002 = "rad0002_moe_remote_handoff"
 RAD0003 = "rad0003_mtp_full_head_switch"
 RAD0004 = "rad0004_moe_remote_diagnostics"
 RAD0009 = "rad0009_serving_manifest"
+RAD0011 = "rad0011_plan_memory"
 
 #: package -> (file, a line that must be unique in it as applied, its replacement that breaks the anchor)
 CASES = {
@@ -572,3 +574,169 @@ class TestServingManifestPatch(unittest.TestCase):
             self.assertIn("ok", run.stdout)
         finally:
             temp.cleanup()
+
+
+class TestPlanMemoryPatch(unittest.TestCase):
+    """rad0011: the engine's memory plan as a serving manifest v1 EnginePlan: `--plan-memory FILE` measures it,
+    `--plan-check FILE --plan-check-floor-ppm N` checks it at start-up; thin hooks into core/bc_plan_*.* and a fail-closed
+    link of the shared bc_serving_v1 library into rad_core."""
+
+    SERVING = REPO / "engines" / "radiance" / "components" / "serving"
+
+    def _applied(self):
+        temp = tempfile.TemporaryDirectory()
+        root = Path(temp.name)
+        shutil.copytree(FIXTURE, root, dirs_exist_ok=True)
+        self.assertTrue(all(result.ok for result in apply_all(list(_load(RAD0009)) + list(_load(RAD0011)), root)))
+        return temp, root
+
+    def _added_code(self, root, path):
+        added = TestRadiancePatchPackages._added_lines(
+            (FIXTURE / path).read_text(encoding="utf-8"), (root / path).read_text(encoding="utf-8"))
+        return [line.strip() for line in added if line.strip() and not line.strip().startswith(("/*", "*", "#"))]
+
+    def test_upstream_edits_are_thin_calls_into_the_extension_point(self):
+        patches = _load(RAD0011)
+        self.assertEqual({p.path for p in patches if not p.create},
+                         {"core/main.cpp", "core/engine_bringup.cpp", "core/CMakeLists.txt"})
+        self.assertEqual({p.path for p in patches if p.create},
+                         {"core/bc_plan_memory.h", "core/bc_plan_memory.cpp", "core/bc_plan_check.h",
+                          "core/bc_plan_check.cpp"})
+        temp, root = self._applied()
+        try:
+            self.assertEqual(self._added_code(root, "core/main.cpp"), [
+                "if (int rc = bc_plan_memory_take_flag(&argc, &argv)) return rc;",
+                "if (!bc_serving_engine_argv(&argc, &argv)) return 2;",
+                "if (!bc_serving_mark_given(&cfg.given)) return 2;",
+            ])
+            self.assertEqual(self._added_code(root, "core/engine_bringup.cpp"), [
+                "bc_plan_memory_note(cfg_, facts, vb, emb_bytes, wfs, ngram_bytes, ck_slot, host_arenas, kv_floor, ctx, "
+                "ranks_[0]->program);",
+                "RAD_TRY(bc_plan_memory_done());",
+            ])
+        finally:
+            temp.cleanup()
+
+    def test_flag_is_taken_before_the_manifest_reader_and_the_check_precedes_the_pools(self):
+        temp, root = self._applied()
+        try:
+            main = (root / "core/main.cpp").read_text(encoding="utf-8")
+            self.assertLess(main.index("bc_plan_memory_take_flag(&argc, &argv)"),
+                            main.index("bc_serving_engine_argv(&argc, &argv)"))
+            bringup = (root / "core/engine_bringup.cpp").read_text(encoding="utf-8")
+            self.assertIn("    RAD_TRY(plan());\n    RAD_TRY(bc_plan_memory_done());\n    RAD_TRY(load_weights());", bringup)
+            resolve = bringup.index("RAD_TRY(vram_budget_resolve(cfg_, facts, &vb));")
+            note = bringup.index("bc_plan_memory_note(cfg_, facts, vb,")
+            self.assertLess(resolve, note)
+            # RSC08 S4: the live plan is checked right after the VRAM split, before any pool is configured
+            self.assertLess(note, bringup.index("r->pools.configure("))
+            self.assertLess(note, bringup.index("int Engine::start()"))
+        finally:
+            temp.cleanup()
+
+    def test_the_core_link_is_added_and_fails_closed(self):
+        temp, root = self._applied()
+        try:
+            cmake = (root / "core/CMakeLists.txt").read_text(encoding="utf-8")
+            guard = cmake.index("if(NOT DEFINED BC_SERVING_V1_CMAKE)")
+            self.assertLess(cmake.index("target_link_libraries(rad_core PUBLIC rad_abi"), guard)
+            self.assertIn("message(FATAL_ERROR", cmake[guard:guard + 400])
+            self.assertLess(guard, cmake.index('include("${BC_SERVING_V1_CMAKE}")'))
+            self.assertLess(cmake.index('include("${BC_SERVING_V1_CMAKE}")'),
+                            cmake.index("target_link_libraries(rad_core PUBLIC bc_serving_v1)"))
+            self.assertEqual(self._added_code(root, "core/CMakeLists.txt"), [
+                "if(NOT DEFINED BC_SERVING_V1_CMAKE)",
+                'message(FATAL_ERROR "rad0011: -DBC_SERVING_V1_CMAKE=<bigcherry>/engines/radiance/components/serving/bc_serving_v1.cmake "',
+                '"is required (the shared serving manifest v1 library); the BigCherry lane passes it")',
+                "endif()",
+                'set(BC_SERVING_V1_NLOHMANN_INCLUDE "${CMAKE_SOURCE_DIR}/vendor")',
+                'include("${BC_SERVING_V1_CMAKE}")',
+                "target_link_libraries(rad_core PUBLIC bc_serving_v1)",
+            ])
+        finally:
+            temp.cleanup()
+
+    def test_both_builds_compile_one_source_list(self):
+        """The serving component and radiance's core include the same bc_serving_v1.cmake: the library is defined there
+        and nowhere else, and the lane hands the engine that file."""
+        for cmake in (self.SERVING / "CMakeLists.txt", *self.SERVING.glob("*.cmake")):
+            text = cmake.read_text(encoding="utf-8")
+            if cmake.name == "bc_serving_v1.cmake":
+                self.assertEqual(text.count("add_library(bc_serving_v1 "), 1)
+                self.assertEqual(text.count("add_library(bc_jcs "), 1)
+            else:
+                self.assertNotIn("add_library(bc_serving_v1", text, cmake.name)
+                self.assertNotIn("add_library(bc_jcs", text, cmake.name)
+        self.assertIn('include("${CMAKE_CURRENT_SOURCE_DIR}/bc_serving_v1.cmake")',
+                      (self.SERVING / "CMakeLists.txt").read_text(encoding="utf-8"))
+        engine = tomllib.loads((REPO / "engines" / "radiance" / "engine.toml").read_text(encoding="utf-8"))
+        self.assertEqual(engine["build"]["repo-paths"]["BC_SERVING_V1_CMAKE"],
+                         "engines/radiance/components/serving/bc_serving_v1.cmake")
+        listed = re.findall(r'"\$\{_bc_v1_dir\}/([^"]+\.cpp)"', (self.SERVING / "bc_serving_v1.cmake").read_text(encoding="utf-8"))
+        self.assertTrue(listed and all((self.SERVING / f).is_file() for f in listed), listed)
+
+    def test_second_apply_is_a_no_op(self):
+        temp, root = self._applied()
+        try:
+            names = ("core/main.cpp", "core/engine_bringup.cpp", "core/CMakeLists.txt")
+            before = {p: (root / p).read_text(encoding="utf-8") for p in names}
+            self.assertTrue(all(r.ok for r in apply_all(list(_load(RAD0009)) + list(_load(RAD0011)), root)))
+            self.assertEqual(before, {p: (root / p).read_text(encoding="utf-8") for p in before})
+        finally:
+            temp.cleanup()
+
+    def test_without_rad0009_it_fails_closed_and_writes_nothing(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            shutil.copytree(FIXTURE, root, dirs_exist_ok=True)
+            results = apply_all(list(_load(RAD0011)), root)
+            self.assertFalse(all(r.ok for r in results))
+            self.assertEqual((root / "core/main.cpp").read_text(encoding="utf-8"),
+                             (FIXTURE / "core/main.cpp").read_text(encoding="utf-8"))
+            self.assertFalse((root / "core/bc_plan_memory.cpp").exists())
+
+    def test_plan_flags_compiled_and_run(self):
+        """Compile the patch's own bc_plan_check.cpp with the shared v1 sources, under radiance's own warning flags
+        (-Wall -Wextra, C++20) plus -Werror, and run its card-free test: the flags, the expected plan read, the one
+        start-up line and its refusals."""
+        compiler = shutil.which("g++") or shutil.which("c++")
+        candidates = [os.environ.get("BC_NLOHMANN_INCLUDE", ""), str(REPO / "vendor" / "llama.cpp" / "vendor")]
+        include = next((c for c in candidates if c and (Path(c) / "nlohmann" / "json.hpp").is_file()), None)
+        if compiler is None or include is None:
+            message = "needs a C++ compiler and nlohmann/json.hpp (set BC_NLOHMANN_INCLUDE to its parent dir)"
+            if os.environ.get("CI"):
+                self.fail(message)   # in CI the test must run, never skip
+            self.skipTest(message)
+        temp, root = self._applied()
+        try:
+            work = Path(temp.name)
+            flags = ["-std=c++20", "-O0", "-Wall", "-Wextra", "-Wno-unused-parameter", "-Wno-missing-field-initializers",
+                     "-Werror", f"-I{root / 'core'}", f"-I{root / 'abi'}", f"-I{self.SERVING}", f"-I{self.SERVING / 'v1'}",
+                     f"-I{self.SERVING / 'generated'}", f"-I{include}"]
+            sources = [root / "core" / "bc_plan_check.cpp",
+                       REPO / "engines" / "radiance" / "tests" / "plan_memory" / "plan_flags_test.cpp",
+                       *(self.SERVING / "v1" / n for n in ("error.cpp", "strict_json.cpp", "manifest.cpp", "admission.cpp")),
+                       self.SERVING / "generated" / "serving_codec.cpp", self.SERVING / "jcs.cpp", self.SERVING / "sha256.cpp"]
+            objects = []
+            procs = []
+            for index, source in enumerate(sources):
+                obj = work / f"{index}-{source.stem}.o"
+                objects.append(obj)
+                procs.append((source, subprocess.Popen([compiler, *flags, "-c", str(source), "-o", str(obj)],
+                                                       stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)))
+            for source, proc in procs:
+                _, err = proc.communicate()
+                self.assertEqual(proc.returncode, 0, f"{source.name}: {err}")
+            exe = work / "plan_flags_test"
+            link = subprocess.run([compiler, *map(str, objects), "-o", str(exe)], capture_output=True, text=True)
+            self.assertEqual(link.returncode, 0, link.stderr)
+            vectors = REPO / "docs" / "design" / "serving-manifest-v1" / "admission-vectors.json"
+            scratch = work / "scratch"
+            scratch.mkdir()
+            run = subprocess.run([str(exe), str(vectors), str(scratch)], capture_output=True, text=True)
+            self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
+            self.assertIn("ok", run.stdout)
+        finally:
+            temp.cleanup()
+
+

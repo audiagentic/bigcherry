@@ -35,11 +35,22 @@ int64_t kv_required(int64_t kv_ceiling, int64_t kv_one_session, int64_t ppm) {
     return std::max(kv_one_session, floor);
 }
 
-Status check_engine_plan(const EnginePlan& expected, const EnginePlan& live, int64_t ppm) {
+Status check_kv_backing_floor_ppm(int64_t ppm) {
     if (ppm < 0 || ppm >= 1000000)
         return make_error(ConfigErrorCode::invalid_value, "spec.calibration",
                           "plan check: kv_backing_floor_ppm must be in [0, 1000000), is " + std::to_string(ppm),
                           "select a kv_backing_floor.fraction_ppm calibration in range");
+    return std::nullopt;
+}
+
+AdmissionMargins admission_margins(const EnginePlan& expected, const EnginePlan& live, int64_t ppm) {
+    const int64_t need = kv_required(expected.vram.kv_ceiling, expected.kv_one_session.bytes, ppm);
+    return {need, expected.vram.statics + live.vram.experts + live.vram.stage + need, live.vram.claimable,
+            live.vram.kv_resolved};
+}
+
+Status check_engine_plan(const EnginePlan& expected, const EnginePlan& live, int64_t ppm) {
+    if (auto e = check_kv_backing_floor_ppm(ppm)) return e;
     const PlanVram& ev = expected.vram;
     const PlanVram& lv = live.vram;
     // Input: every count this check reads is a byte or slot count, every enum in range, the checkpoint floor within

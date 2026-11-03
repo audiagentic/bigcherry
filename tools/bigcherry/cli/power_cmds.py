@@ -171,7 +171,10 @@ def cmd_restore(args: Namespace) -> int:
         for path, value in gpu_power.restore_writes(loc, driver, hw, before, gpu_power.Setting(**saved[loc]["setting"])):
             _write(path, value)
         now = gpu_power.read_state(loc, driver, hw)
+        setting = gpu_power.Setting(**saved[loc]["setting"])
         same = (now.vddgfx_offset_mv, now.sclk_max_mhz) == (before.vddgfx_offset_mv, before.sclk_max_mhz)
+        if setting.power_cap_w is not None:   # the cap is restored only when apply changed it, and then it is verified too
+            same = same and now.power_cap_uw == before.power_cap_uw
         print(f"{loc}: " + ("restored to what ran before" if same else
                             f"NOT RESTORED: running {now}, recorded {before}"))
         if same:

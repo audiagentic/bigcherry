@@ -141,7 +141,7 @@ class ComponentGate:
             argv = campaign_build.cmake_configure_args(
                 _GATE_BUILD, replace(platform, targets=tuple(targets)), self.source_dir, self.build_dir,
                 c_compiler=platform.c_compiler, cxx_compiler=platform.cxx_compiler, targets_option=self.layout.targets_option,
-                rocm_paths=self.layout.rocm_paths)
+                rocm_paths=self.layout.rocm_paths, engine_options=self.layout.repo_path_options(paths.REPO_ROOT))
             self.runner(argv, self.source_dir)
             self.runner(["cmake", "--build", str(self.build_dir), "-j"], self.source_dir)
             # RAD18: forward the platform's compiler-launcher options (e.g. ccache) into each component's own

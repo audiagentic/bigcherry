@@ -1,0 +1,11 @@
+schema = 1
+id = "rad0011_plan_memory"
+order = 11
+state = "untested"
+kind = "enhancement"
+origin = "local"
+backend = "agnostic"
+plan-item = "RSC03"
+plan-ids = ["RSC03"]
+requires = ["rad0009_serving_manifest"]
+conflicts = []

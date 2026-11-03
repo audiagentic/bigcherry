@@ -122,6 +122,10 @@ class EngineLayout:
     #: (CMake cache variable, path under the selected ROCm SDK root) for each ROCm tool or library the engine's own
     #: CMake would otherwise search for; empty when the engine finds ROCm only through its compiler (llama.cpp)
     rocm_paths: tuple[tuple[str, str], ...] = ()
+    #: (CMake cache variable, repository-relative file) for each BigCherry source file the engine's own CMake includes
+    #: (managed patch rad0011 builds the shared serving manifest v1 library from the repository's own source list); the
+    #: build passes each as an absolute path, so an engine tree never carries a copy
+    repo_paths: tuple[tuple[str, str], ...] = ()
     #: (name, repository-relative directory) of each component the engine builds, from [components]
     components: tuple[tuple[str, str], ...] = ()
     #: repository-relative registry of the external sources (forks, upstream PRs) this engine's patches are ported
@@ -146,6 +150,17 @@ class EngineLayout:
 
     def external_sources_path(self, project_root: Path) -> Path | None:
         return project_root / self.external_sources if self.external_sources else None
+
+    def repo_path_options(self, project_root: Path) -> dict[str, str]:
+        """The engine configure's CMake cache values for the repository files it includes (``repo_paths``), as absolute
+        paths. A declared file that is missing is an error here, not a CMake failure later."""
+        options: dict[str, str] = {}
+        for key, relative in self.repo_paths:
+            path = (project_root / relative).resolve()
+            if not path.is_file():
+                raise EngineError(f"engine {self.name!r}: build.repo-paths.{key} names {relative}, which is not a file in {project_root}")
+            options[key] = path.as_posix()
+        return options
 
     def recipes_path(self, project_root: Path) -> Path:
         return project_root / self.recipes
@@ -304,7 +319,7 @@ def _acceptance(value: object, name: str) -> tuple[AcceptanceEntry, ...]:
 def _build_table(table: object, name: str) -> dict[str, object]:
     if not isinstance(table, dict):
         raise EngineError(f"engine {name!r}: missing [build] table")
-    unknown = sorted(set(table) - {"targets-option", "binary", "runtime-targets", "runtime-home", "rocm-paths"})
+    unknown = sorted(set(table) - {"targets-option", "binary", "runtime-targets", "runtime-home", "rocm-paths", "repo-paths"})
     if unknown:
         raise EngineError(f"engine {name!r}: unknown build key(s): {', '.join(unknown)}")
     return {
@@ -315,6 +330,10 @@ def _build_table(table: object, name: str) -> dict[str, object]:
         "rocm_paths": tuple(sorted(
             (key, _relative(value, f"build.rocm-paths.{key}", name))
             for key, value in _pairs(table, "rocm-paths", "build", name)
+        )),
+        "repo_paths": tuple(sorted(
+            (key, _relative(value, f"build.repo-paths.{key}", name))
+            for key, value in _pairs(table, "repo-paths", "build", name)
         )),
     }
 

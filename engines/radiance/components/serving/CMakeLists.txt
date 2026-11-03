@@ -8,10 +8,10 @@ if(NOT EXISTS "${RADIANCE_SRC}/vendor/nlohmann/json.hpp")
   message(FATAL_ERROR "serving: -DRADIANCE_SRC must contain vendor/nlohmann/json.hpp")
 endif()
 
-# RFC 8785 JCS and SHA-256: shared by bc_serving and the contract generator.
-add_library(bc_jcs STATIC jcs.cpp sha256.cpp)
-target_compile_features(bc_jcs PUBLIC cxx_std_20)
-target_include_directories(bc_jcs PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}" "${RADIANCE_SRC}/vendor")
+# RFC 8785 JCS, SHA-256 and the shared strict v1 reader (RSC08 slice 2): one source list, bc_serving_v1.cmake, which
+# radiance's core also builds (managed patch rad0011).
+set(BC_SERVING_V1_NLOHMANN_INCLUDE "${RADIANCE_SRC}/vendor")
+include("${CMAKE_CURRENT_SOURCE_DIR}/bc_serving_v1.cmake")
 
 # The serving manifest v1 contract (contract/README.md): the field registry contract/serving-v1.toml and its generator.
 # GPU-free and independent of bc_serving, whose typed model it generates (generated/, committed; bc_contract_check
@@ -22,22 +22,22 @@ target_include_directories(bc_contract PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/contr
 add_executable(bc_contract_gen contract/generate.cpp)
 target_link_libraries(bc_contract_gen PRIVATE bc_contract)
 
-# The shared strict v1 reader (RSC08 slice 2): structured errors, strict JSON, the generated codec, semantics, typed
-# views and the admission check. Linked by bc-serve, radiance and r3_moe_worker; GPU-free.
-add_library(bc_serving_v1 STATIC v1/error.cpp v1/strict_json.cpp v1/manifest.cpp v1/admission.cpp
-            generated/serving_codec.cpp)
-target_link_libraries(bc_serving_v1 PUBLIC bc_jcs radiance::abi)
-target_include_directories(bc_serving_v1 PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/v1" "${CMAKE_CURRENT_SOURCE_DIR}/generated"
-                           "${CMAKE_CURRENT_SOURCE_DIR}")
-
 # The helpers' expert ownership, shared with moe-remote's r3_moe_worker (bc_experts.cmake). bc-serve does not call it yet: it is built and tested here (bc_experts_test) and bc-serve starts planning with it in a later slice.
 include("${CMAKE_CURRENT_SOURCE_DIR}/bc_experts.cmake")
 
-add_library(bc_serving STATIC serving.cpp)
-target_link_libraries(bc_serving PUBLIC bc_jcs)
+# calibration.toml is compiled in: the seeds bc-serve derives with, each carrying its evidence.
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/calibration.toml" bc_calibration_seed)
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/generated/calibration_seed.inc"
+     "R\"bccal(${bc_calibration_seed})bccal\"\n")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/calibration.toml")
+
+add_library(bc_serving STATIC serving.cpp calibration.cpp ledger.cpp plan_cache.cpp)
+target_link_libraries(bc_serving PUBLIC bc_jcs bc_serving_v1)
 target_compile_features(bc_serving PUBLIC cxx_std_20)
 target_include_directories(bc_serving PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}" "${RADIANCE_SRC}/vendor")
-target_include_directories(bc_serving PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/third_party")
+target_link_libraries(bc_serving PUBLIC radiance::abi)
+target_include_directories(bc_serving PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/third_party"
+                           "${CMAKE_CURRENT_BINARY_DIR}/generated")
 
 add_executable(bc-serve main.cpp)
 target_link_libraries(bc-serve PRIVATE bc_serving)

@@ -25,6 +25,10 @@ runtime-targets = ["all"]
 runtime-home = "radiance_home"
 # What radiance's CMake (and libr3's, moe-remote's) would search /opt/rocm and $ROCM_PATH for, as paths under the selected
 # ROCm SDK root: the build passes each one explicitly, so a build links and compiles against that SDK and no other.
+# BigCherry source files radiance's CMake includes, as repository-relative paths the build passes as absolute -D values:
+# managed patch rad0011 links the shared serving manifest v1 library (one source list for the serving component and the
+# engine; it fails closed when this is not passed).
+repo-paths = { BC_SERVING_V1_CMAKE = "engines/radiance/components/serving/bc_serving_v1.cmake" }
 rocm-paths = { RAD_HIPCC = "bin/hipcc", CMAKE_HIP_COMPILER = "lib/llvm/bin/clang++", RAD_HIP_RUNTIME = "lib/libamdhip64.so", RAD_HSA_RUNTIME = "lib/libhsa-runtime64.so" }
 
 # Where `bigcherry patch-promote` puts a validated patch (MEN25): the production patch set it joins, and the production

@@ -9,7 +9,7 @@ different statuses. See [the engine overview](README.md) first.
 
 _Generated from package documentation and metadata by `tools/docs/generate_engine_enhancement_summaries.py`. Do not edit this section by hand._
 
-## Engine patches (9)
+## Engine patches (10)
 
 | Package | State | Summary |
 | --- | --- | --- |
@@ -22,6 +22,7 @@ _Generated from package documentation and metadata by `tools/docs/generate_engin
 | [rad0007_hc_pf2_fp8_down](../../../../engines/radiance/patches/rad0007_hc_pf2_fp8_down/SUMMARY.md) | `untested` | Inert scaffold for an FP8 WMMA down-product in hc_read's PF2 prefill form (gfx1201, Qwen3.8-Flash-Next). Adds three new kernels to `libr4d/r4d_hc_bf16.hip` -- none of them are called yet; this revision only proves the anchors apply and the new code compiles against the real pinned source. |
 | [rad0008_hc_upmix_rt_sweep](../../../../engines/radiance/patches/rad0008_hc_upmix_rt_sweep/SUMMARY.md) | `validated` | Adds a runtime switch (`RAD_HC_UPMIX_RT`, values "128"/"256"/"384") at the PF2 up-mix launch call site inside `hc_pf2_launch` (vendor/radiance/libr4d/r4d_hc_bf16.hip, ~line 3167 as of the 1.9.0 pin). |
 | [rad0009_serving_manifest](../../../../engines/radiance/patches/rad0009_serving_manifest/SUMMARY.md) | `untested` | Lets the engine start from a resolved serving manifest: `engine --manifest PATH [--role engine] [-v\|-vv]`, with no command-line converter in our tooling. |
+| [rad0011_plan_memory](../../../../engines/radiance/patches/rad0011_plan_memory/SUMMARY.md) | `untested` | The engine's own memory plan (`Engine::plan()`) as a serving manifest v1 `EnginePlan`, measured or checked, through the shared v1 library `bc_serving_v1`. |
 
 ## Components (6)
 
