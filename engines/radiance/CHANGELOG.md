@@ -1,5 +1,12 @@
 # Changelog
 
+## [1140.0.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-180.0.0...bc-radiance-1140.0.0) (2026-11-03)
+
+
+### New and changed
+
+* **radiance:** pin radiance v1.14.0; production patch sets serving-core [rad0008, rad0002 promoted in #546], host-compat, serving-manifest. Release record, hardware evidence and known open items: docs/releases/notes/bc-radiance-1140.0.0.md
+
 ## [180.1.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-180.0.0...bc-radiance-180.1.0) (2026-10-21)
 
 
