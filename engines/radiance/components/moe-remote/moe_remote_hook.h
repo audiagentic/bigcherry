@@ -58,10 +58,37 @@ struct ConsumptionStamp {
     uint32_t consumed_count = 0;
 };
 static_assert(sizeof(ConsumptionStamp) == 24);
+/* Bound to each device generation after its bitmap copy on the private stream. */
+struct R3MoeOwnerBinding {
+    uint64_t epoch = 0;
+    uint64_t digest = 0;
+};
+static_assert(sizeof(R3MoeOwnerBinding) == 16);
+#if defined(__HIPCC__)
+#define R3_MOE_OWNER_HD __host__ __device__
+#else
+#define R3_MOE_OWNER_HD
+#endif
+R3_MOE_OWNER_HD inline bool r3_moe_owner_binding_valid(const StepTicket& t,
+                                                        const R3MoeOwnerBinding& b) {
+    return t.ticket_id && t.placement_epoch && t.generation_slot < 2 &&
+           !t.reserved[0] && !t.reserved[1] && !t.reserved[2] &&
+           b.epoch == t.placement_epoch && b.digest != 0;
+}
+R3_MOE_OWNER_HD inline const uint8_t* r3_moe_select_owner_bitmap(
+        const StepTicket& ticket, const R3MoeOwnerBinding* binding,
+        const uint8_t* slot0, const uint8_t* slot1) {
+    if (ticket.generation_slot > 1 || !binding) return nullptr;
+    if (!r3_moe_owner_binding_valid(ticket, binding[ticket.generation_slot]))
+        return nullptr;
+    return ticket.generation_slot ? slot1 : slot0;
+}
+#undef R3_MOE_OWNER_HD
 namespace r3 { namespace moe_shm { struct ConsumedRecords; } }
 struct R3MoeMailboxDevice {
     void* mailbox = nullptr;
-    const uint8_t* owner = nullptr;
+    const uint8_t* owner[2]{};  /* fixed pointers, indexed by this pass's ticket */
+    const R3MoeOwnerBinding* owner_binding = nullptr; /* device-resident metadata per slot */
     StepTicket* ticket = nullptr;  /* fixed device address, independent per engine rank */
     ConsumptionStamp* consumed = nullptr;  /* mapped coherent rank-local completion ring (seal kernel writes) */
     ConsumptionStamp* stamps = nullptr;    /* device-memory counting ring, same index */
@@ -113,8 +140,17 @@ struct R3MoeDrainSnapshot {
 };
 extern "C" int r3_moe_close_admission(R3MoeDrainSnapshot* snapshot);
 extern "C" int r3_moe_wait_drained(const R3MoeDrainSnapshot* snapshot, uint64_t deadline_monotonic_ns);
+/* Nonblocking, 1 only when every ticket admitted under this exact closed
+ * snapshot has retired after every rank's seal/event. 0 = pending,
+ * negative = invalid snapshot or fault; no helper drain or GPU sync. */
+extern "C" int r3_moe_all_ranks_consumed(const R3MoeDrainSnapshot* snapshot);
 extern "C" int r3_moe_reopen_admission(uint32_t epoch, uint32_t generation_slot);
 
 extern "C" int r3_moe_mailbox_enabled(void);
 extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevice** out);
 extern "C" int r3_moe_mailbox_schema_count(void);
+
+/* Transition-only API: asynchronous upload on a rank-private stream; event
+ * query does not synchronize serving. Live coordinator wiring is later work. */
+extern "C" int r3_moe_owner_generation_upload(int rank, uint32_t slot, uint64_t epoch, uint64_t digest);
+extern "C" int r3_moe_owner_generation_ready(int rank, uint32_t slot, uint64_t epoch, uint64_t digest);

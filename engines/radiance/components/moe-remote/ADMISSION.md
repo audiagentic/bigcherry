@@ -267,3 +267,181 @@ fault.
 * The admission ceiling is derived from the pinned engine's RouteSlot ring
   plus its issue-ahead depth; a workload with more outstanding no-output
   prefill parents than that fails closed rather than waiting.
+
+## Slice D part 1: engine-side owner generations (no live commit yet)
+
+Each engine rank owns two stable GPU bitmap allocations, with one byte-addressed
+helper bitset per generation derived from the canonical v23 generation map.
+The stride is ceil(actual layer_count * expert_count / 8), not a protocol-maximum
+layer allocation. The two pointers are immutable for the lifetime of captured
+graphs. The publish kernel uses the StepTicket already loaded per pass, indexes
+the appropriate pointer and validates the GPU-resident epoch/digest binding.
+The route-mark kernel uses the immutable pass ticket copy (not the rank cell)
+to select the same generation and to cross-check routes. No mutable global
+device active-owner selector is read. The host owns-expert callback remains a
+bootstrap engine-weight-residency check; Stage 1 never changes local versus
+remote eligibility.
+
+Each rank has one private HIP upload stream, two events and pinned per-slot
+staging buffers. The inactive slot's map/digest is validated against
+PlacementControl and its complete GenerationHeader before packing. The
+binding metadata is copied after the bitmap on that same stream; the event
+follows both. Querying readiness is nonblocking and is not a serving-path
+sync. The bootstrap active generation is synchronized once during startup.
+
+Upload rejects the active slot and any unretired ledger entry for its target
+slot. Host-complete alone does not release a ticket: retirement requires
+all ranks' terminal events and exact sealed consumption proof. The event and
+staging buffer cannot be reused while an upload is in progress. No independent
+in-flight counters or wall-clock retirement rules exist.
+
+The Part-1 bitmap/upload boundary is now wired into the Part-3 coordinator
+below for no-move cycles; it still refuses reuse of the active or any
+unretired generation slot. This historical section describes the Part-1
+mechanism, not the current completeness of the slice.
+
+## Slice D part 2: exact engine Request identity and per-parent consumed ACK
+
+**No helper per-request epoch publication is introduced.** The helper GPU
+still release-publishes only `LaneSignal::done_sequence`, as in slice C;
+`Request::completion_epoch/slot` are not written by `lane_publish_done`.
+The helper CPU copies its last completed Request's epoch/slot into
+`LaneSignal::done_epoch/slot` **after** its stream drain and before its
+closure-specific drain ACK. An engine wait cannot independently certify
+which helper generation actually executed using a second per-request helper
+stamp. The actual strict check possible at this boundary is:
+
+* `mailbox_wait_helpers` retains **main's exact** helper
+  `done_sequence == sequence` system-scope acquire and the existing
+  `Request::status` check. It does **not** decode a ticket or reread
+  `Request::sequence`, `placement_epoch` or `generation_slot` on this
+  per-request hot path. Helper epoch/slot are independently corroborated at
+  drain ACK, not by repeated reads of the engine's own Request words.
+* `mailbox_route_mark_kernel` (already on both output-reading paths)
+  decodes the immutable device pass ticket and validates the engine-owned
+  Request's sequence/epoch/slot through the shared
+  `mailbox_completion::matches_request` predicate. The existing
+  `launch_maps` queues route-mark **before** `mailbox_add_rows_kernel` on
+  normal and combined steps and before `mailbox_shadow_rows_kernel` in
+  shadow mode. There is no helper-output reader bypassing that route-mark.
+  The original route-mark already read `Request::sequence` (u32), rank,
+  rows, hidden, route count/offset and (for noncombined steps) status;
+  Part 1 added only the `Request::placement_epoch` (u64),
+  `Request::generation_slot` (u32), and `Request::layer` (u32)
+  identity/owner checks **inside those existing per-request route-mark
+  Request accesses**. It also added the accepted owner_has test per
+  routed expert. No new Request read or owner check was added in Part 3.
+  Thus a combined chunk cannot be read with a mismatching Request even
+  though its final helper done_sequence arrives after the chunkwise add.
+* `mailbox_add_finish_kernel` is ordered after route-mark, add/shadow result
+  reading, and the normal or combined tail wait on the **same rank stream**.
+  It checks the device copy of the pass ticket against the already armed
+  device-memory consumption stamp, records the consumed sequence/epoch/slot
+  in device memory and increments the existing one-per-pass count. It does
+  not reread the mapped Request after those preceding checks.
+
+**Result-consumed ACK is per parent and rank**, not per helper request:
+`mailbox_seal_kernel` follows the parent's **last** add/finish, all trunk and
+MTP/draft passes, and any combined tail/shadow consumption. It now explicitly
+rejects a stamp not belonging to its exact `StepTicket` or whose published
+and consumed counts differ. The existing seal publishes
+`ConsumptionStamp{ticket_id, placement_epoch, generation_slot,
+published_count, consumed_count}` once to the mapped host ring, with
+`ticket_id` as the release publication word. At the same boundary it
+flushes only changed per-lane and combined-plane consumed identities to
+shared memory. The rank's **existing** terminal radiance event is recorded
+after this seal, and the CPU ledger accepts the stamp only after that event
+completes on every actual rank. There is no second per-step host sync,
+event, or per-request system-scope publication.
+
+`r3_moe_all_ranks_consumed(snapshot)` is the nonblocking coordinator query
+now used by Part 3 at QUIESCING and RETIRING: it returns **1** only for the exact active closure ID,
+cutoff and epoch whose ledger is empty *after* polling the existing rank
+events and matching consumption stamps; **0** while any rank/parent remains,
+and a **negative** result for stale closure, shutdown or fault. The gate
+must already be closed by `r3_moe_close_admission`; no second admission
+gate exists. An unused tail reservation cancelled after closure does not
+invalidate the snapshot. The query does **not** initiate a helper drain
+and alone does not authorize PREPARED/RETIRING or reopen admission.
+Part 3 also requires all rank upload-ready events and the existing
+helper drain-ACK identity/`r3_moe_wait_drained` proof.
+
+**Hot-path delta (source level, not hardware-measured):** the wait is now
+**byte-semantically main's wait**: zero extra system-scope loads or mapped
+Request fields, stores or fences per helper completion. The route-mark
+already read `Request::sequence`; this slice also reads its epoch
+(u64), generation slot (u32) and layer (u32) there for identity/ownership,
+plus one already accepted device bitmap bit test per route. There is no
+second epoch/slot/sequence Request reread in the wait or finish. Ticket
+metadata and consumption stamps remain rank-local device memory. Parent
+seal adds a constant-time predicate but no new mapped stores, fences or
+event beyond slice C. Coordinator upload/ready/retire is entirely
+outside serving. Hardware latency remains unmeasured.
+
+
+## Slice D part 3: true two-generation diagnostic cycles and coordinator
+
+`R3_MOE_WORKER_EPOCH_CYCLE_S` now drives a **real** same-owner-map epoch
+transition, rather than recommitting the same epoch/slot. Helper zero
+copies the canonical owner map into the inactive generation's separate
+shared-memory slot as `STAGING`, with `pending_epoch=active_epoch+1`,
+`pending_slot=1-active_slot`, a digest equal to the active map's digest,
+and distinct transaction ID. The source and destination bytes, shape,
+digest and per-transaction journal identities are checked by
+`same_map_cycle`; any moved expert is refused. This does **not** migrate
+helper weights or pointer tables (slice E) or implement forced moves
+(slice G). The CPU helper driver now traverses the full
+PROPOSED/RESERVING/COPYING/PREPARED/QUIESCING/COMMIT/RETIRING/ACTIVE state
+machine; exact RESERVED, READY, QUIESCED, COMMITTED and RETIRED ACKs are
+required from every expected helper and actual engine rank.
+
+The engine coordinator in `moe_remote_hook.cpp::placement_loop`:
+
+1. **COPYING/PREPARED.** For each actual rank, issues
+   `r3_moe_owner_generation_upload(rank,pending_slot,pending_epoch,
+   pending_digest)` once, on its rank-private asynchronous stream.
+   It publishes a rank READY ACK **only after**
+   `r3_moe_owner_generation_ready` confirms its real HIP event complete
+   for the exact candidate epoch/digest/slot and the shared canonical
+   map still matches. A missing/incomplete event cannot count. Upload
+   failures publish a current-phase UPLOAD/DEVICE/CHECKSUM fault code;
+   the controller aborts precommit to ACTIVE(N) with a journal fault,
+   and a later attempt is a new transaction. Incomplete event readiness
+   holds COPYING until its deadline, then fails READY_TIMEOUT; no GPU
+   host sync is introduced.
+2. **QUIESCING.** Exactly once for this transaction, closes the
+   **existing** admission ledger, calls `r3_moe_wait_drained` with the
+   phase deadline (waits for all parent/rank terminal events and sealed
+   consumption stamps, requests helper drain, verifies every
+   `lane_quiesced` identity), and requires
+   `r3_moe_all_ranks_consumed(snapshot)==1` before publishing rank
+   QUIESCED ACKs. The helper actors also require the matching lane drain
+   ACKs before acknowledging. No second gate.
+3. **COMMIT.** The existing helper-zero `Controller::commit`
+   release-publishes the new active `{epoch,slot,digest}` through the
+   shared PlacementControl seqlock; no separate engine writer exists.
+   The helper marks the new GenerationHeader ACTIVE; the engine ranks
+   acknowledge COMMITTED only after checking this exact new active
+   generation and their own recorded upload readiness.
+4. **RETIRING.** The engine repeats the exact closed-snapshot
+   all-ranks-consumed query, verifies the same drain proof,
+   `helper_drained`/lane identities and absence of any unretired
+   ticket referencing old slot N; only then does each engine rank
+   publish RETIRED. The helper actors must also acknowledge the
+   closure. Controller collects **every** RETIRED ACK before it
+   marks the old GenerationHeader RETIRED and publishes ACTIVE(N+1).
+   The Part-1 ledger guard still forbids uploading the old slot
+   **until** the existing `r3_moe_reopen_admission` switches the
+   ledger's active slot to N+1. After reopen, that same guard allows
+   upload of the now-inactive slot N on the next transaction.
+   Before admission reopens the engine also reconfirms each new
+   generation upload event/epoch/digest against the active map.
+
+The diagnostic remains a **no-move** path only; a candidate that changes
+owner placement cannot be committed by this cycle. No helper GPU hot-path
+stores, fences or additional engine per-route checks were introduced.
+The CPU transition does map digest checks and HIP event queries off the
+serving path. The 1,000-cycle card-free shared-transport test now
+exercises real slot alternation, fake per-rank upload events, missing
+ACKs, consumption/retirement ordering and a retryable precommit
+timeout, but it cannot replace a hardware timing/safety run.

@@ -59,7 +59,6 @@ class Controller {
     bool deterministic_ = false;
     bool quiesced_ = false;
     bool pending_published_ = false;
-    bool cycle_ = false;
     uint32_t reserved_helpers_ = 0, reserved_ranks_ = 0;
     uint32_t last_committed_index_ = UINT32_MAX;
     bool timeout(uint64_t duration) {
@@ -211,30 +210,32 @@ public:
         j.old_slot = c_.active_slot; j.new_slot = c_.pending_slot;
         j.start_ns = clock_.now_ns();
         reset_masks(); reserved_helpers_ = reserved_ranks_ = 0;
-        quiesced_ = pending_published_ = cycle_ = false;
+        quiesced_ = pending_published_ = false;
         return enter(PlacementState::PROPOSED, deadlines_.ready_ns);
     }
-    // A diagnostic transaction recommits the SAME immutable generation.
-    // It bypasses staging and retirement: there is no old generation to free.
-    // Transaction IDs and exact phase ACKs still prevent stale drain proofs.
+    // Diagnostic no-move transaction: identical owner bytes, but a genuinely
+    // NEW epoch and alternate generation slot. Unlike the previous shortcut,
+    // it passes RESERVED, COPYING, PREPARED, QUIESCING, COMMIT and RETIRING;
+    // the engine ranks must upload and prove the inactive bitmap's event.
+    // The caller stages the canonical same-map generation before publishing.
     bool begin_epoch_cycle() {
-        if (!can_propose()) return false;
+        if (!can_propose() || c_.active_epoch >= UINT32_MAX) return false;
         ++c_.transaction_id;
-        c_.pending_epoch = c_.active_epoch;
-        c_.pending_slot = c_.active_slot;
+        c_.pending_epoch = c_.active_epoch + 1;
+        c_.pending_slot = 1u - c_.active_slot;
         c_.pending_digest = c_.active_digest;
         c_.journal_index = last_committed_index_ < 2 ? 1u - last_committed_index_ : 0u;
         auto& j = journal_.entry[c_.journal_index];
         j = {};
         j.transaction_id = c_.transaction_id;
-        j.before_epoch = j.after_epoch = c_.active_epoch;
+        j.before_epoch = c_.active_epoch;
+        j.after_epoch = c_.pending_epoch;
         j.before_digest = j.candidate_digest = c_.active_digest;
-        j.old_slot = j.new_slot = c_.active_slot;
+        j.old_slot = c_.active_slot; j.new_slot = c_.pending_slot;
         j.start_ns = clock_.now_ns();
-        reset_masks();
+        reset_masks(); reserved_helpers_ = reserved_ranks_ = 0;
         quiesced_ = pending_published_ = false;
-        cycle_ = true;
-        return enter(PlacementState::QUIESCING, deadlines_.quiesce_ns);
+        return enter(PlacementState::PROPOSED, deadlines_.ready_ns);
     }
     bool start_reserving() {
         return !failed_closed_ && c_.state == uint32_t(PlacementState::PROPOSED) &&
@@ -303,15 +304,15 @@ public:
             quiesced_ = true; emit();
             return Poll::ADVANCED; // external admission authority must explicitly commit
         }
-        if (state == PlacementState::COMMIT && !cycle_)
+        if (state == PlacementState::COMMIT)
             return enter(PlacementState::RETIRING, deadlines_.retire_ns) ? Poll::ADVANCED : Poll::FAILED;
-        if (state == PlacementState::RETIRING || (state == PlacementState::COMMIT && cycle_)) {
+        if (state == PlacementState::RETIRING) {
             auto& j = journal_.entry[c_.journal_index];
             j.finish_ns = clock_.now_ns(); j.state = uint32_t(PlacementState::ACTIVE);
             last_committed_index_ = c_.journal_index;
             c_.state = uint32_t(PlacementState::ACTIVE);
             c_.pending_epoch = 0; c_.pending_digest = 0; c_.pending_slot = UINT32_MAX;
-            c_.deadline_ns = 0; reset_masks(); quiesced_ = pending_published_ = cycle_ = false;
+            c_.deadline_ns = 0; reset_masks(); quiesced_ = pending_published_ = false;
             return emit() ? Poll::ADVANCED : Poll::FAILED;
         }
         return Poll::FAILED;
@@ -342,12 +343,136 @@ public:
         return propose(j.before_digest);
     }
 };
-// A no-op cycle has no new owner table or pointer generation. Other pending
-// placements must use the later migration protocol, never this fast path.
+// The diagnostic is a real two-slot epoch transition with the SAME owner
+// bytes/digest. No new owner placement or helper weight/table migration is
+// inferred: moved-owner transactions remain outside slice D.
 inline bool same_placement_cycle(const PlacementControl& c) {
-    return c.transaction_id && c.pending_epoch == c.active_epoch &&
-           c.pending_slot == c.active_slot && c.pending_digest == c.active_digest &&
-           c.active_epoch && c.active_digest && c.active_slot < 2;
+    if (!c.transaction_id || !c.active_epoch || !c.active_digest ||
+        c.active_epoch > UINT32_MAX || c.pending_slot > 1 ||
+        c.active_slot > 1 || c.pending_digest != c.active_digest) return false;
+    if (c.state < uint32_t(PlacementState::COMMIT))
+        return c.pending_epoch == c.active_epoch + 1 &&
+               c.pending_slot == 1u - c.active_slot;
+    return c.pending_epoch == c.active_epoch &&
+           c.pending_slot == c.active_slot;
+}
+
+/* Stage the unchanged canonical map into a distinct generation, before
+ * PROPOSED publication. Previously retired generations may be overwritten
+ * only when the later ledger guard also permits upload. Active bytes and
+ * header are never modified here. */
+inline bool stage_same_map_generation(void* map) {
+    PlacementControl c{};
+    if (!map || !placement_snapshot(map, &c) ||
+        c.state != uint32_t(PlacementState::ACTIVE) || c.fault_code ||
+        !c.active_epoch || c.active_epoch >= UINT32_MAX ||
+        !c.active_digest || c.active_slot > 1) return false;
+    const Header* h = static_cast<const Header*>(map);
+    GenerationHeader* active = generation_header(map,c.active_slot);
+    GenerationHeader* inactive = generation_header(map,1u-c.active_slot);
+    if (!active || !inactive || !h->owner_map_bytes ||
+        active->epoch != c.active_epoch || active->digest != c.active_digest ||
+        active->state != uint32_t(GenerationState::ACTIVE) ||
+        (inactive->state != uint32_t(GenerationState::EMPTY) &&
+         inactive->state != uint32_t(GenerationState::RETIRED) &&
+         inactive->state != uint32_t(GenerationState::STAGING) &&
+         inactive->state != uint32_t(GenerationState::READY)) ||
+        active->map_bytes != h->owner_map_bytes ||
+        inactive->map_bytes != h->owner_map_bytes ||
+        generation_digest(map,c.active_slot) != c.active_digest) return false;
+    std::memcpy(generation_map(map,1u-c.active_slot),generation_map(map,c.active_slot),
+                h->owner_map_bytes);
+    inactive->epoch = c.active_epoch+1;
+    inactive->digest = c.active_digest;
+    inactive->ready_helpers = inactive->ready_ranks = 0;
+    inactive->state = uint32_t(GenerationState::STAGING);
+    return generation_digest(map,1u-c.active_slot)==c.active_digest;
+}
+
+/* Shared no-move control-map proof, used by both helper CPU participant and
+ * engine coordinator. It also checks the transaction's journal identities,
+ * so a stale same-digest generation cannot masquerade as this transition. */
+inline bool same_map_cycle(const void* map,const PlacementControl& c) {
+    if (!map || !same_placement_cycle(c) || c.journal_index > 1) return false;
+    const auto& j=placement_journal(map)->entry[c.journal_index];
+    const uint32_t old_slot=j.old_slot, new_slot=j.new_slot;
+    if (j.transaction_id != c.transaction_id || old_slot > 1 ||
+        new_slot != 1u-old_slot || j.before_digest != j.candidate_digest ||
+        j.before_digest != c.active_digest || j.before_epoch == 0 ||
+        j.before_epoch >= UINT32_MAX || j.after_epoch != j.before_epoch+1 ||
+        j.new_slot != c.pending_slot || j.after_epoch != c.pending_epoch ||
+        (c.state < uint32_t(PlacementState::COMMIT) ?
+             (c.active_slot != old_slot || c.active_epoch != j.before_epoch) :
+             (c.active_slot != new_slot || c.active_epoch != j.after_epoch)))
+        return false;
+    const auto* h=static_cast<const Header*>(map);
+    const auto* oldg=generation_header(map,old_slot);
+    const auto* newg=generation_header(map,new_slot);
+    if (!oldg || !newg || !h->owner_map_bytes ||
+        oldg->epoch != j.before_epoch || newg->epoch != j.after_epoch ||
+        oldg->digest != j.before_digest || newg->digest != j.candidate_digest ||
+        oldg->state != uint32_t(GenerationState::ACTIVE) ||
+        (newg->state != uint32_t(GenerationState::STAGING) &&
+         newg->state != uint32_t(GenerationState::READY) &&
+         newg->state != uint32_t(GenerationState::ACTIVE)) ||
+        (c.state < uint32_t(PlacementState::COMMIT) &&
+         newg->state == uint32_t(GenerationState::ACTIVE)) ||
+        (c.state == uint32_t(PlacementState::RETIRING) &&
+         newg->state != uint32_t(GenerationState::ACTIVE)) ||
+        oldg->map_bytes != h->owner_map_bytes ||
+        newg->map_bytes != h->owner_map_bytes ||
+        generation_digest(map,old_slot)!=c.active_digest ||
+        generation_digest(map,new_slot)!=c.pending_digest)
+        return false;
+    return std::memcmp(generation_map(map,old_slot),
+                       generation_map(map,new_slot),h->owner_map_bytes)==0;
+}
+
+/* Production engine-rank ACK predicates, also run in card-free fake-device
+ * tests. An ACK is not a claim about attempted uploads: every rank's event
+ * must be complete with this exact immutable epoch/digest/slot. */
+inline bool rank_upload_prepared(const PlacementControl& c,uint32_t rank,
+                                bool uploaded,bool event_ready,
+                                uint64_t epoch,uint64_t digest,uint32_t slot) {
+    return c.state == uint32_t(PlacementState::COPYING) &&
+           rank < kMaxEngineRanks && (c.expected_ranks & (1u<<rank)) &&
+           same_placement_cycle(c) && uploaded && event_ready &&
+           epoch == c.pending_epoch && digest == c.pending_digest &&
+           slot == c.pending_slot;
+}
+
+/* RETIRING requires the *same* closed-epoch consumption and helper-drain
+ * proof used in QUIESCING, plus an unreferenced old generation. Until
+ * admission reopens on N+1, the Part-1 guard still prevents uploading the
+ * ledger's active (old) slot. This gate does not weaken that guard. */
+inline bool rank_retirement_proved(const PlacementControl& c,
+                                   uint32_t old_epoch,uint32_t old_slot,
+                                   bool all_consumed,bool drain_verified,
+                                   bool helper_quiesced,bool no_old_refs,
+                                   bool ready_on_all_ranks,bool committed_on_all_ranks) {
+    return c.state == uint32_t(PlacementState::RETIRING) &&
+           same_placement_cycle(c) && old_epoch && old_epoch < UINT32_MAX &&
+           old_epoch+1 == c.active_epoch && old_slot < 2 &&
+           old_slot == 1u-c.active_slot &&
+           all_consumed && drain_verified && helper_quiesced &&
+           no_old_refs && ready_on_all_ranks && committed_on_all_ranks;
+}
+
+/* A current-phase fault is an explicit actor ACK, not a sticky helper fault
+ * before COMMIT. The owner controller can abort PROPOSED/RESERVING/COPYING
+ * forward, retain ACTIVE(N), then retry with a new transaction. */
+inline void publish_fault_ack(void* map,uint32_t actor,const PlacementControl& c,
+                              AckPhase phase,FaultCode code) {
+    auto* a=placement_ack(map,actor);
+    if (!a || code == FaultCode::NONE) return;
+    __atomic_store_n(&a->phase,uint32_t(AckPhase::NONE),__ATOMIC_SEQ_CST);
+    __atomic_store_n(&a->transaction_id,c.transaction_id,__ATOMIC_RELAXED);
+    __atomic_store_n(&a->epoch,c.pending_epoch,__ATOMIC_RELAXED);
+    __atomic_store_n(&a->digest,c.pending_digest,__ATOMIC_RELAXED);
+    __atomic_store_n(&a->generation_slot,c.pending_slot,__ATOMIC_RELAXED);
+    __atomic_store_n(&a->fault_code,uint32_t(code),__ATOMIC_RELAXED);
+    __atomic_store_n(&a->phase,uint32_t(phase),__ATOMIC_RELEASE);
+    notify(static_cast<Header*>(map));
 }
 
 // One writer per actor. Phase is the release publication word; invalidate it
@@ -453,11 +578,30 @@ public:
             c = controller_->control();
         }
         if (c.fault_code) return false;
-        if (c.state == uint32_t(PlacementState::QUIESCING) ||
-            c.state == uint32_t(PlacementState::COMMIT)) {
-            if (!same_placement_cycle(c)) return false;
-            // Every served lane must prove this closure; parked prequeued waits
-            // and large-lane CPU combine work are covered by drain_ack.
+        const auto phase = PlacementState(c.state);
+        if (phase != PlacementState::ACTIVE && !same_map_cycle(map_,c)) {
+            /* Before quiescence a bad candidate must abort the transaction,
+             * not stop serving epoch N. Controller::fail publishes ACTIVE(N)
+             * unchanged, with a fault recorded in the journal. */
+            if (phase < PlacementState::QUIESCING) {
+                if (helper_ == 0) {
+                    (void)controller_->fail(FaultCode::CHECKSUM);
+                    return schedule();
+                }
+                return true;
+            }
+            return false; /* after the admission gate closes, fail closed */
+        }
+        /* Every helper confirms the identical generation; there is no
+         * helper-side upload or table switch in this no-move diagnostic. */
+        if (phase == PlacementState::RESERVING)
+            publish_ack(map_, helper_, c, AckPhase::RESERVED);
+        if (phase == PlacementState::COPYING)
+            publish_ack(map_, helper_, c, AckPhase::READY);
+        if (phase == PlacementState::QUIESCING || phase == PlacementState::COMMIT ||
+            phase == PlacementState::RETIRING) {
+            // Slice C drain identities are published once on the lane CPU
+            // at the closure ACK, not as per-request helper GPU stores.
             uint64_t closure = 0;
             bool drained = true;
             for (uint32_t lane = 0; lane < kLanes; ++lane) {
@@ -469,16 +613,24 @@ public:
                 if (!requested || ack != requested || (closure && closure != requested)) drained = false;
                 closure = requested;
             }
-            const auto previous = read_shared_ack(map_, helper_);
-            if (drained && (c.state == uint32_t(PlacementState::QUIESCING) ||
-                (previous.transaction_id == c.transaction_id && previous.phase == uint32_t(AckPhase::QUIESCED))))
-                publish_ack(map_, helper_, c, c.state == uint32_t(PlacementState::QUIESCING) ?
-                            AckPhase::QUIESCED : AckPhase::COMMITTED);
+            if (drained) {
+                const auto previous=read_shared_ack(map_,helper_);
+                if (phase == PlacementState::QUIESCING)
+                    publish_ack(map_,helper_,c,AckPhase::QUIESCED);
+                else if (phase == PlacementState::COMMIT &&
+                         previous.transaction_id == c.transaction_id &&
+                         previous.phase == uint32_t(AckPhase::QUIESCED))
+                    publish_ack(map_,helper_,c,AckPhase::COMMITTED);
+                else if (phase == PlacementState::RETIRING &&
+                         previous.transaction_id == c.transaction_id &&
+                         previous.phase == uint32_t(AckPhase::COMMITTED))
+                    publish_ack(map_,helper_,c,AckPhase::RETIRED);
+            }
         }
         if (helper_ != 0) return true;
-        if (c.state == uint32_t(PlacementState::ACTIVE)) {
-            // ACTIVE publication precedes engine reopen. Do not start the next
-            // cycle until its lane drain requests have actually been cleared.
+        if (phase == PlacementState::ACTIVE) {
+            // ACTIVE publication follows all RETIRED rank/helper ACKs; wait
+            // for engine reopen before a new cycle can stage the old slot.
             if (awaiting_reopen_) {
                 for (const auto& lane : h->lane)
                     if (__atomic_load_n(&lane.drain_request, __ATOMIC_ACQUIRE)) return true;
@@ -487,14 +639,42 @@ public:
                 if (!schedule()) return false;
             }
             if (!(load(&h->burst) & 1u) || clock_.now_ns() < next_ns_) return true;
-            return controller_->begin_epoch_cycle();
+            return stage_same_map_generation(map_) && controller_->begin_epoch_cycle();
+        }
+        if (phase == PlacementState::PROPOSED)
+            return controller_->start_reserving();
+        if (phase == PlacementState::PREPARED) {
+            auto* candidate=generation_header(map_,c.pending_slot);
+            if (!candidate || c.ready_helpers != c.expected_helpers ||
+                c.ready_ranks != c.expected_ranks) return false;
+            candidate->ready_helpers=c.ready_helpers;
+            candidate->ready_ranks=c.ready_ranks;
+            candidate->state=uint32_t(GenerationState::READY);
+            return controller_->begin_quiesce();
+        }
+        if (phase == PlacementState::COMMIT) {
+            /* Commit has already published active_epoch/slot under the
+             * existing shared-control seqlock. Admission stays closed. */
+            generation_header(map_,c.active_slot)->state=uint32_t(GenerationState::ACTIVE);
         }
         const Poll result = controller_->poll();
-        if (result == Poll::FAILED) return false;
-        if (result == Poll::ADVANCED && c.state == uint32_t(PlacementState::QUIESCING))
+        if (result == Poll::FAILED) {
+            /* A precommit failure leaves ACTIVE(old) and permits a later
+             * fresh transaction; after QUIESCING we fail closed. */
+            if (!controller_->failed_closed() &&
+                controller_->control().state == uint32_t(PlacementState::ACTIVE))
+                return schedule();
+            return false;
+        }
+        if (result == Poll::ADVANCED && phase == PlacementState::QUIESCING)
             return controller_->commit();
-        if (result == Poll::ADVANCED && c.state == uint32_t(PlacementState::COMMIT))
+        if (result == Poll::ADVANCED && phase == PlacementState::RETIRING) {
+            const auto committed = controller_->control();
+            if (committed.state != uint32_t(PlacementState::ACTIVE)) return false;
+            generation_header(map_,1u-committed.active_slot)->state=
+                uint32_t(GenerationState::RETIRED);
             awaiting_reopen_ = c.transaction_id;
+        }
         return true;
     }
 };

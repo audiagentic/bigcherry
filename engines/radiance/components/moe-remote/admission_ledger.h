@@ -191,6 +191,17 @@ public:
         cv_.notify_all();
         return true;
     }
+    /* Nonblocking host query for the coordinator, using the SAME retirement
+     * authority as the quiescence wait: host_done, every actual rank's
+     * completion event, exact sealed consumption counts, and ordered retire.
+     * It is meaningful only under the closed gate and exact close cutoff.
+     * An unused tail admission may be cancelled after closure, lowering
+     * last_id_; this is safe because no new admission is possible. */
+    bool all_ranks_consumed(uint32_t epoch, uint64_t cutoff_id) const {
+        std::lock_guard<std::mutex> lock(mu_);
+        return !interrupted_ && !fault_ && closed_ && active_epoch_ == epoch &&
+               epoch && cutoff_id >= last_id_ && count_ == 0;
+    }
     bool drained(uint32_t old_epoch, uint64_t cutoff_id) const {
         std::lock_guard<std::mutex> lock(mu_);
         return !pending_locked(old_epoch, cutoff_id);
@@ -227,6 +238,21 @@ public:
     size_t capacity() const {
         std::lock_guard<std::mutex> lock(mu_);
         return capacity_;
+    }
+    /* An admitted ticket owns its generation until all rank events and
+     * consumption proofs retire it; host completion is not sufficient.
+     * The active slot is never eligible for staging. */
+    bool can_replace_generation(uint32_t slot) const {
+        std::lock_guard<std::mutex> lock(mu_);
+        if (!capacity_ || interrupted_ || fault_ || !active_epoch_ ||
+            slot > 1 || slot == active_slot_) return false;
+        return !references_slot_locked(slot);
+    }
+    /* Observable for the fake GPU boundary test: includes host-done parents
+     * still waiting for sealed rank consumption and terminal events. */
+    bool generation_referenced(uint32_t slot) const {
+        std::lock_guard<std::mutex> lock(mu_);
+        return !capacity_ || slot > 1 || references_slot_locked(slot);
     }
     size_t outstanding() const {
         std::lock_guard<std::mutex> lock(mu_);
@@ -280,6 +306,12 @@ private:
     const Entry* get(uint64_t id) const {
         if (!count_ || id > last_id_ || id <= last_id_ - count_) return nullptr;
         return &at(id);
+    }
+    bool references_slot_locked(uint32_t slot) const {
+        for (size_t i = 0; i < count_; ++i)
+            if (at(last_id_ - count_ + 1 + i).ticket.generation_slot == slot)
+                return true;
+        return false;
     }
     bool pending_locked(uint32_t old_epoch, uint64_t cutoff_id) const {
         for (size_t i = 0; i < count_; ++i) {

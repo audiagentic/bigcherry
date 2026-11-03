@@ -33,5 +33,18 @@ R3_CONSUMPTION_HD inline bool owns(const ConsumptionStamp& s, uint64_t id, uint3
     return id && s.ticket_id == id && s.placement_epoch == epoch && s.generation_slot == slot;
 }
 
+/* Seal is the sole per-parent result-consumed ACK, after every add/finish
+ * (including the last combined-plane reader) on this rank's ordered stream.
+ * The terminal rank event follows the seal. Incomplete counts MUST NOT
+ * become an ACK even if a scheduler host-completes the parent early. */
+R3_CONSUMPTION_HD inline bool seal_ready(const ConsumptionStamp& s,
+                                         const StepTicket& t) {
+    return t.generation_slot < 2 &&
+           !t.reserved[0] && !t.reserved[1] && !t.reserved[2] &&
+           owns(s, t.ticket_id, t.placement_epoch, t.generation_slot) &&
+           s.published_count == s.consumed_count;
+}
+
+
 } // namespace consumption
 } // namespace r3

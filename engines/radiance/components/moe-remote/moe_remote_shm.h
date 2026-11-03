@@ -413,10 +413,6 @@ constexpr uint64_t align_page(uint64_t n) { return (n + kPage - 1) & ~(uint64_t(
 constexpr uint32_t route_slot_bytes() { return kMaxRoutes * sizeof(Route); }
 constexpr uint32_t activation_slot_bytes() { return kActivationBf16Bytes + kActivationQBytes + kActivationScaleBytes; }
 constexpr uint32_t result_slot_bytes() { return kMaxRows * kHidden * sizeof(uint16_t); }
-/* Only a derived device bitmap uses this v22-compatible stride; shared ownership is canonical bytes. */
-constexpr uint32_t device_owner_slot_bytes(uint32_t experts) {
-    return kMaxLayers * ((experts + 7u) / 8u);
-}
 constexpr uint32_t layer_map_slot_bytes() { return kMaxLayers * kExperts * sizeof(int32_t); }
 
 struct Layout {
