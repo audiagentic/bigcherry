@@ -38,8 +38,8 @@ bool select_owned(const Container& f, r3_moe_gpu::Runner* gpu, const uint64_t* b
         double a = 0.0, b = 0.0;
         if (std::sscanf(sv, "%lf,%lf", &a, &b) == 2 && a > 0.0 && b > 0.0) policy.balance_speeds = {a, b};
     }
-    return bc::experts::select_owned(f, policy, gpu ? gpu->arch() : std::string("host"), gpu != nullptr, layout_check,
-                                     budgets, helper, helpers, out);
+    return bc::experts::select_owned(f, policy, gpu ? gpu->arch() : std::string("host"), gpu != nullptr,
+                                     layout_check, budgets, helper, helpers, out);
 }
 
 bool parse_u32(const char* s, uint32_t lo, uint32_t hi, uint32_t* out) {

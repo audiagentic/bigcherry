@@ -117,20 +117,23 @@ __global__ void lane_prepare_activation_sparse(
 }
 
 __global__ void lane_select_tables(
-    const r3::moe_shm::Request* q, const DeviceLayerTables* layers_table,
+    r3::moe_shm::Request* q, const DeviceLayerTables* layers_table,
     uint32_t layers, uint32_t rank, uint32_t slice, uint32_t sequence, uint32_t max_rows, uint32_t experts,
     void** guc0, void** gus0, void** dnc0, void** dns0,
     void** guc1, void** gus1, void** dnc1, void** dns1, LaneShape shape) {
     using namespace r3::moe_shm;
+    const uint32_t generation = q->generation_slot; // +36: the existing validation's first 64-byte line
     const uint32_t i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= experts / 2) return;
-    const bool valid = lane_request_valid(q, rank, sequence, max_rows, layers, shape);
+    const bool valid = lane_request_valid(q, rank, sequence, max_rows, layers, shape) &&
+                       r3::worker_tables::valid_generation(generation);
     if (!valid) {
+        if (i == 0 && q && !r3::worker_tables::valid_generation(generation)) q->status = -EINVAL;
         guc0[i] = gus0[i] = dnc0[i] = dns0[i] = nullptr;
         guc1[i] = gus1[i] = dnc1[i] = dns1[i] = nullptr;
         return;
     }
-    const DeviceLayerTables t = layers_table[q->layer];
+    const DeviceLayerTables t = layers_table[r3::worker_tables::table_index(generation, q->layer, layers)];
     guc0[i] = static_cast<void**>(t.gu_code[slice][0])[i];
     gus0[i] = static_cast<void**>(t.gu_scale[slice][0])[i];
     dnc0[i] = static_cast<void**>(t.dn_code[slice][0])[i];
@@ -143,19 +146,20 @@ __global__ void lane_select_tables(
 
 __global__ void lane_route_count(
     const r3::moe_shm::Route* route, r3::moe_shm::Request* q,
-    const DeviceLayerTables* layers_table,
+    const uint16_t* runtime_slots,
     uint32_t rank, uint32_t sequence, uint32_t max_rows, uint32_t layers, uint32_t experts,
     uint32_t* counts, int32_t* flat, uint16_t* ew, LaneShape shape) {
     using namespace r3::moe_shm;
     const uint32_t i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (!lane_request_valid(q, rank, sequence, max_rows, layers, shape) || i >= q->route_count) return;
+    if (!lane_request_valid(q, rank, sequence, max_rows, layers, shape) ||
+        i >= q->route_count) return;
     const Route r = route[i];
     if (r.token < 0 || (uint32_t)r.token >= q->rows || r.expert < 0 ||
         r.expert >= (int32_t)experts || r.slot >= shape.top_k) {
         flat[i] = -1;
         return;
     }
-    const uint16_t es = layers_table[q->layer].expert_slot[(uint32_t)r.expert];
+    const uint16_t es = runtime_slots[size_t(q->layer) * experts + (uint32_t)r.expert];
     if (es >= experts) {
         flat[i] = -1;
         atomicExch(&q->status, -EINVAL);
@@ -194,7 +198,7 @@ __global__ __launch_bounds__(N) void lane_route_prefix(const uint32_t* counts, i
 
 __global__ void lane_route_scatter(
     const r3::moe_shm::Route* route, const r3::moe_shm::Request* q,
-    const DeviceLayerTables* layers_table,
+    const uint16_t* runtime_slots,
     uint32_t rank, uint32_t sequence, uint32_t max_rows, uint32_t layers, uint32_t experts,
     const int32_t* flat, uint32_t* cursor, int32_t* sorted, int32_t* sorted_expert, LaneShape shape) {
     using namespace r3::moe_shm;
@@ -202,7 +206,7 @@ __global__ void lane_route_scatter(
     if (!lane_request_valid(q, rank, sequence, max_rows, layers, shape) ||
         i >= q->route_count || flat[i] < 0) return;
     const uint32_t e = (uint32_t)route[i].expert;
-    const uint32_t es = layers_table[q->layer].expert_slot[e];
+    const uint32_t es = runtime_slots[size_t(q->layer) * experts + e];
     if (es >= experts) return;
     const uint32_t pos = atomicAdd(cursor + es, 1u);
     sorted[pos] = flat[i];
@@ -221,7 +225,7 @@ constexpr uint32_t kFuseMaxRoutes = 256;
 template <uint32_t N>
 __global__ __launch_bounds__(N) void lane_front_small(
     const r3::moe_shm::Route* route, r3::moe_shm::Request* q, const DeviceLayerTables* layers_table,
-    const uint4* src_q, const uint4* src_s, uint4* dst_q, uint4* dst_s, uint64_t* stats,
+    const uint16_t* runtime_slots, const uint4* src_q, const uint4* src_s, uint4* dst_q, uint4* dst_s, uint64_t* stats,
     uint32_t rank, uint32_t slice, uint32_t sequence, uint32_t max_rows, uint32_t layers, uint32_t routes_cap,
     uint32_t experts, int32_t* off, int32_t* sorted, int32_t* inv, uint16_t* ew,
     void** guc0, void** gus0, void** dnc0, void** dns0, void** guc1, void** gus1, void** dnc1, void** dns1, LaneShape shape) {
@@ -233,10 +237,12 @@ __global__ __launch_bounds__(N) void lane_front_small(
     __shared__ uint16_t r_es[kFuseMaxRoutes];
     __shared__ int32_t r_f[kFuseMaxRoutes];
     const uint32_t t = threadIdx.x;
+    const uint32_t generation = q->generation_slot; // +36: the existing validation's first 64-byte line
     /* What lane_prepare_activation_v and lane_select_tables did, ahead of the routing: the request's own status and
      * stats, the activation rows copied from the engine's mapped host memory (their PCIe reads in flight together
      * with the routes' below), and the lane's expert tables. */
-    const bool valid0 = lane_request_valid(q, rank, sequence, max_rows, layers, shape);
+    const bool valid0 = lane_request_valid(q, rank, sequence, max_rows, layers, shape) &&
+                        r3::worker_tables::valid_generation(generation);
     if (t == 0) {
         q->status = valid0 ? 0 : -EINVAL;
         q->trace[3] = wall_clock64();   /* R3_MOE_WORKER_TRACE: this device's clock */
@@ -260,7 +266,7 @@ __global__ __launch_bounds__(N) void lane_front_small(
             guc0[i] = gus0[i] = dnc0[i] = dns0[i] = nullptr;
             guc1[i] = gus1[i] = dnc1[i] = dns1[i] = nullptr;
         } else {
-            const DeviceLayerTables tl = layers_table[q->layer];
+            const DeviceLayerTables tl = layers_table[r3::worker_tables::table_index(generation, q->layer, layers)];
             guc0[i] = static_cast<void**>(tl.gu_code[slice][0])[i];
             gus0[i] = static_cast<void**>(tl.gu_scale[slice][0])[i];
             dnc0[i] = static_cast<void**>(tl.dn_code[slice][0])[i];
@@ -278,8 +284,7 @@ __global__ __launch_bounds__(N) void lane_front_small(
         ew[i] = 0;
     }
     s_cnt[t] = 0;
-    const bool valid = lane_request_valid(q, rank, sequence, max_rows, layers, shape) &&
-                       q->route_count <= kFuseMaxRoutes && q->route_count <= routes_cap;
+    const bool valid = valid0 && q->route_count <= kFuseMaxRoutes && q->route_count <= routes_cap;
     const uint32_t nr = valid ? q->route_count : 0u;
     __syncthreads();
     if (t < nr) {
@@ -288,7 +293,7 @@ __global__ __launch_bounds__(N) void lane_front_small(
         r_es[t] = 0;
         if (!(r.token < 0 || (uint32_t)r.token >= q->rows || r.expert < 0 || r.expert >= (int32_t)experts ||
               r.slot >= shape.top_k)) {
-            const uint16_t es = layers_table[q->layer].expert_slot[(uint32_t)r.expert];
+            const uint16_t es = runtime_slots[size_t(q->layer) * experts + (uint32_t)r.expert];
             if (es >= experts) {
                 atomicExch(&q->status, -EINVAL);
             } else {

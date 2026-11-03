@@ -253,6 +253,16 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_MIBS must list one budget in MiB for each of the %u helpers\n", cfg.helper_count);
         return 2;
     }
+    const SmallClasses lane_classes = helper_small_classes();
+    if (!lane_classes.count) return 1;
+    const uint32_t lane_large_rows = helper_max_rows();
+    // Allocate actual lane buffers and plugin scratch before checking device
+    // free VRAM. The expert-weight budget remains untouched for ownership.
+    if (gpu &&
+        (!gpu->prime_weight_layout() ||
+         !gpu->prepare_lanes(lane_classes.rows, lane_classes.count, lane_large_rows,
+                             lanes_open(cfg.power_save, helper_count, helper_index, lane_classes.count))))
+        return 1;
     Owned owned;
     if (g_replay) {
         /* A replay owns exactly the experts the captured request routes to: the capturing helper's ownership
@@ -269,10 +279,7 @@ int main(int argc, char** argv) {
     } else if (!select_owned(model, gpu.get(), budgets, helper_index, helper_count, &owned)) {
         return 1;
     }
-    if (gpu && !gpu->allocate(owned.expert)) return 1;
-    const SmallClasses lane_classes = helper_small_classes();
-    if (!lane_classes.count) return 1;
-    const uint32_t lane_large_rows = helper_max_rows();
+    if (gpu && !gpu->allocate(owned.expert, budgets[helper_index])) return 1;
     std::string lane_list;                       /* "4,8,16,24", for the log */
     for (uint32_t c = 0; c < lane_classes.count; ++c)
         lane_list += (c ? "," : "") + std::to_string(lane_classes.rows[c]);
@@ -462,9 +469,6 @@ int main(int argc, char** argv) {
     }
     const auto lanes_served = served_lanes(helper_count, helper_index, lane_classes.count);
     std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_POWER_SAVE %s\n", cfg.power_save ? "on" : "off");
-    if (gpu && !gpu->prepare_lanes(lane_classes.rows, lane_classes.count, lane_large_rows,
-                                   lanes_open(cfg.power_save, helper_count, helper_index, lane_classes.count)))
-        return 1;
     if (gpu) (void)posix_fadvise(model.fd, 0, 0, POSIX_FADV_DONTNEED);
     std::fprintf(stderr, "r3_moe_worker: runtime map owns %zu experts, %.3f GiB\n",
                  owned.expert.size(), (double)owned.bytes / (1024.0 * 1024.0 * 1024.0));

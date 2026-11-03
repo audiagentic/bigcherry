@@ -585,3 +585,59 @@ delayed older REOPENED ACKs. Removing the production RESERVED handler,
 the REOPENED publisher, or changing the shared bootstrap lock order
 makes the corresponding tests fail. No hot-path publish, route-mark,
 wait, add/finish, seal, or helper GPU kernel was modified.
+
+## Slice E parts 1–3: expert-weight arena, two generation tables, runtime free-memory gate
+
+The budget in layouts.toml / R3_MOE_WORKER_MIBS is **an expert-weight
+budget**, not a whole-card VRAM budget. The helper and the GPU-free
+bc::experts::plan_owners / verify_owner_map use the same budgets and
+select_owned policy, with no table/lane/staging subtraction. The
+weight slot stride is the largest four-plane expert with each plane 256-byte
+aligned. Exactly the selected experts are packed into one device arena
+at id * stride. The slice-B residency ledger charges the physical strides.
+Preflight and allocation failures cannot charge a phantom ACTIVE slot.
+A **separate** one-stride incoming staging allocation resides in the card's
+remaining VRAM and has one extra ledger ID for a future move. It cannot be
+taken by bootstrap.
+
+Before allocating the arena, the worker calls hipMemGetInfo. It took
+an initial free-memory sample before preparing enabled lanes (which allocates
+real plugin scratch via RadScratchFn and every corresponding GPU buffer).
+It compares lane_bytes + two pointer-table banks + frozen runtime
+slot map + one incoming staging slot + selected-expert arena against
+that initial free memory, and the *not-yet-allocated* subset against the
+runtime's **current** free memory. This avoids double-counting already
+allocated lane buffers. A shortage or size overflow fails startup closed
+with the required bytes, free samples and shortfall; no experts are silently
+dropped. HIP allocation errors also abort startup. Both immutable GPU
+pointer banks contain separate arrays for each generation and have the same
+resident experts at bootstrap. The runtime eligibility slot-map stays frozen.
+
+The real Flash-Next W4 49-layer/512-expert geometry has 2,534,400 bytes
+per padded four-plane expert (zero 256-byte padding overhead). The full
+expert-weight budgets select 9,320 / 9,320 / 5,931 experts on
+the 22,528 / 22,528 / 14,336 MiB helper layout, as on main.
+Card-free tests parse every production layout and compare ordered expert
+IDs and bytes from the helper selector against the manifest planner,
+and exercise the manifest verifier itself on a decoded example. No GPU
+run or empirical free-VRAM observation has been made.
+
+The still-unpublished v23 Request is revised on both sides together:
+generation_slot moves from byte +204 (64-byte line 3) to byte +36
+(line 0), swapping with diagnostic-only row_base. The unfused
+lane_select_tables already validates sequence/rank/rank_count/layer/
+rows/hidden/route_count and activation strides in **lines 0 and 1**.
+The fused lane_front_small validates those same lines and writes
+trace[3] in **line 2**. Neither needs line 3 for generation selection
+after this revision. placement_epoch remains at +232 in line 3:
+the helper CPU uses it at drain, not in the selection kernels.
+No new per-request system-scope stores/fences/host round trips or GPU
+block barriers were added. The engine publisher uses the shared Request
+field names and offset assertions; there is no older layout path.
+
+**Still incomplete, not ready for changed-map migration:** incoming expert
+async H2D upload events, candidate-table construction while the old table
+serves, READY gating, retire/consumption-proof reclamation, the participant
+changed-map path and the 1,000-cycle real-move test remain future slice E
+work. Fake generation-selection/retirement tests do not make production
+changed-map migration safe.

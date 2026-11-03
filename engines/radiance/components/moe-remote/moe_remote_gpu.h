@@ -6,6 +6,9 @@
 #include "moe_lane_quant.h"
 #include "moe_lane_reduce.h"
 #include "moe_lane_host.h"
+#include "worker_slot_pool.h"
+#include "worker_generation_tables.h"
+#include <memory>
 #include "rad_abi_layout.h"
 
 namespace r3_moe_gpu {
@@ -188,29 +191,77 @@ public:
         return pg.code.bytes + pg.scale.bytes + pd.code.bytes + pd.scale.bytes;
     }
 
-    bool allocate(const std::vector<std::pair<uint32_t, uint32_t>>& owned) {
+    struct SlotPlan {
+        uint64_t stride = 0, lanes = 0, tables = 0, slot_map = 0;
+        uint32_t expert_capacity = 0;
+    };
+    // The configured budget is for expert weights ONLY. Prepared lane
+    // allocations, the two pointer banks, frozen map and one incoming slot
+    // are card-memory requirements and never reduce ownership selection.
+    bool slot_plan(uint64_t budget, SlotPlan* out) const {
+        if (!out) return false;
+        uint64_t largest = 0;
+        for (uint32_t l = 0; l < model_.layers; ++l)
+            for (uint32_t e = 0; e < experts(); ++e)
+                if (model_.weight(l, e, 0) && model_.weight(l, e, 1)) {
+                    const uint64_t n = slot_cost(l, e);
+                    if (!n) return false;
+                    largest = std::max(largest, n);
+                }
+        const uint64_t n = uint64_t(model_.layers) * experts();
+        const uint64_t table_bytes = uint64_t(model_.layers) * sizeof(DeviceLayerTables);
+        const uint64_t tables = r3::worker_tables::kGenerations *
+            (table_bytes + uint64_t(model_.layers) * stored_slices() * 2u * 4u *
+             (experts() / 2u) * sizeof(void*));
+        uint64_t lanes = 0;
+        for (const LaneWork& w : lane_) lanes += lane_bytes(w);
+        const auto plan = r3::worker_slots::budget_plan(budget, largest, n);
+        *out = {largest, lanes, tables, n * sizeof(uint16_t), plan.expert_slots};
+        return largest && plan.expert_slots > 0;
+    }
+
+    bool allocate(const std::vector<std::pair<uint32_t, uint32_t>>& owned, uint64_t budget) {
         constexpr size_t kLoadBounceBytes = 64ull * 1024ull * 1024ull;
-        if (!load_bounce_.ensure(kLoadBounceBytes)) return false;
-        size_t total = 0;
-        for (auto [l, e] : owned) {
-            for (uint32_t rank = 0; rank < stored_slices(); ++rank) {
-                int64_t cb = 0, sb = 0;
-                if (!slice_bytes(model_.weight(l, e, 0), true, 0, rank, &cb, &sb)) return false;
-                total += arena_round(cb) + arena_round(sb);
-                if (!slice_bytes(model_.weight(l, e, 1), false, 0, rank, &cb, &sb)) return false;
-                total += arena_round(cb) + arena_round(sb);
-            }
+        if (!load_bounce_.ensure(kLoadBounceBytes) || !budget) return false;
+        SlotPlan plan{};
+        if (!slot_plan(budget, &plan) || owned.size() > plan.expert_capacity ||
+            owned.size() > UINT32_MAX || uint64_t(owned.size()) > UINT64_MAX / plan.stride) {
+            std::fprintf(stderr, "r3_moe_worker: selected expert weights exceed expert budget\n");
+            return false;
         }
-        if (!hip_ok(hipMalloc(&arena_, total ? total : 16), "hipMalloc resident expert arena")) return false;
-        persistent_.push_back(arena_);
-        arena_size_ = total; arena_used_ = 0;
+        const r3::worker_slots::DeviceMemory memory{
+            plan.lanes, plan.tables, plan.slot_map, plan.stride,
+            uint64_t(owned.size()) * plan.stride
+        };
+        size_t free_now = 0, total_now = 0;
+        if (!lane_free_sampled_ ||
+            !hip_ok(hipMemGetInfo(&free_now, &total_now), "hipMemGetInfo before expert arena"))
+            return false;
+        const auto fit = r3::worker_slots::check_device_memory(memory, free_before_lanes_, free_now);
+        if (!fit.fits) {
+            std::fprintf(stderr, "r3_moe_worker: insufficient free VRAM for unchanged expert selection: "
+                         "shortfall %llu bytes, required %llu (arena %llu + lanes %llu + "
+                         "pointer banks %llu + slot map %llu + incoming %llu), "
+                         "free before lanes %llu, free now %zu, future need %llu\n",
+                         (unsigned long long)fit.shortfall, (unsigned long long)fit.total,
+                         (unsigned long long)memory.arena, (unsigned long long)memory.lanes,
+                         (unsigned long long)memory.tables, (unsigned long long)memory.slot_map,
+                         (unsigned long long)memory.staging, (unsigned long long)free_before_lanes_,
+                         free_now, (unsigned long long)fit.future);
+            return false;
+        }
+        slots_ = std::make_unique<r3::worker_slots::Pool<HipSlotAllocator>>(
+            budget, plan.stride, uint32_t(owned.size()), slot_allocator_);
+        if (!slots_->valid()) return false;
+        const size_t slot_map_bytes = size_t(plan.slot_map);
+        const size_t table_bytes = size_t(model_.layers) * sizeof(DeviceLayerTables);
         layer_loaded_.assign(model_.layers, 0);
-        const size_t slot_bytes = (size_t)model_.layers * experts() * sizeof(uint16_t);
-        const size_t table_bytes = (size_t)model_.layers * sizeof(DeviceLayerTables);
-        return d_expert_slot_.ensure(slot_bytes) &&
-               d_layer_tables_.ensure(table_bytes) &&
-               hip_ok(hipMemset(d_expert_slot_.p, 0xff, slot_bytes), "initialize expert slot map") &&
-               hip_ok(hipMemset(d_layer_tables_.p, 0, table_bytes), "initialize layer table index");
+        return d_expert_slot_.ensure(slot_map_bytes) &&
+               d_layer_tables_.ensure(r3::worker_tables::kGenerations * table_bytes) &&
+               hip_ok(hipMemset(d_expert_slot_.p, 0xff, slot_map_bytes), "initialize expert slot map") &&
+               hip_ok(hipMemset(d_layer_tables_.p, 0,
+                                r3::worker_tables::kGenerations * table_bytes),
+                      "initialize generation layer tables");
     }
 
     bool load_layer(uint32_t layer,
@@ -235,12 +286,26 @@ public:
             if (l != layer || slot_of_expert[e] < 0) continue;
             const uint32_t es = (uint32_t)slot_of_expert[e];
             Expert& x = experts_[(size_t)l * experts() + e];
-            if (!upload_weight(model_.weight(l, e, 0), true, es, &x.gu) ||
-                !upload_weight(model_.weight(l, e, 1), false, es, &x.dn))
+            uint32_t id = 0;
+            const uint64_t bytes = slot_cost(l, e);
+            if (!slots_ || !bytes ||
+                slots_->bootstrap(uint32_t(size_t(l) * experts() + e), bytes, 1, &id) !=
+                    r3::residency::Result::OK) {
+                std::fprintf(stderr, "r3_moe_worker: expert slot capacity refused layer %u expert %u\n", l, e);
                 return false;
+            }
+            loading_base_ = static_cast<uint8_t*>(slots_->address(id));
+            loading_size_ = bytes;
+            loading_used_ = 0;
+            if (!upload_weight(model_.weight(l, e, 0), true, es, &x.gu) ||
+                !upload_weight(model_.weight(l, e, 1), false, es, &x.dn) ||
+                loading_used_ != loading_size_) return false;
+            loading_base_ = nullptr;
+            loading_size_ = loading_used_ = 0;
             x.live = true;
         }
-        if (!build_layer_table(layer, slot_of_expert)) return false;
+        for (uint32_t generation = 0; generation < r3::worker_tables::kGenerations; ++generation)
+            if (!build_layer_table(layer, slot_of_expert, generation)) return false;
         layer_loaded_[layer] = 1;
         return true;
     }
@@ -365,16 +430,39 @@ public:
         return hip_ok(hipStreamSynchronize(stream_), "helper stream sync") ? 0 : -EIO;
     }
 
+    // Resolve the actual plugin weight dtypes before sizing per-lane scratch.
+    // A later upload must agree with these types (upload_weight checks it).
+    bool prime_weight_layout() {
+        for (uint32_t l = 0; l < model_.layers; ++l)
+            for (uint32_t e = 0; e < experts(); ++e) {
+                const auto* gu_entry = model_.weight(l, e, 0);
+                const auto* dn_entry = model_.weight(l, e, 1);
+                if (!gu_entry || !dn_entry) continue;
+                WeightPlan gu{}, dn{};
+                if (!plan_weight(gu_entry, true, &gu) ||
+                    !plan_weight(dn_entry, false, &dn)) return false;
+                gu_code_dtype_ = gu.code.dtype; gu_scale_dtype_ = gu.scale.dtype;
+                dn_code_dtype_ = dn.code.dtype; dn_scale_dtype_ = dn.scale.dtype;
+                return true;
+            }
+        return false;
+    }
+
     /* Small lanes are sized to their class's rows and pre-queued; the large lane to large_rows, launched per request.
      * `count` small classes are enabled (ascending `sizes`); the other small lanes are left unprepared (cap_rows 0). */
     bool prepare_lanes(const std::array<uint32_t, r3::moe_shm::kSmallClasses>& sizes, uint32_t count, uint32_t large_rows,
                        const std::array<bool, r3::moe_shm::kLanes>& open) {
         using namespace r3::moe_shm;
-        if (count == 0 || count > kSmallClasses || large_rows == 0 || large_rows > kMaxRows || !d_layer_tables_.p)
+        if (count == 0 || count > kSmallClasses || large_rows == 0 || large_rows > kMaxRows || !gu_code_dtype_)
             return false;
         for (uint32_t c = 0; c < count; ++c)
             if (sizes[c] == 0 || sizes[c] > kMaxRows || sizes[c] > large_rows || (c && sizes[c] <= sizes[c - 1]))
                 return false;
+        size_t free_bytes = 0, total_bytes = 0;
+        if (!hip_ok(hipMemGetInfo(&free_bytes, &total_bytes), "hipMemGetInfo before lane preparation"))
+            return false;
+        free_before_lanes_ = free_bytes;
+        lane_free_sampled_ = true;
         class_count_ = count;
         class_rows_ = sizes;
         large_rows_ = large_rows;
@@ -570,6 +658,7 @@ public:
                 constexpr uint32_t N = decltype(block_n)::value;
                 hipLaunchKernelGGL((lane_front_small<N>), dim3(1), dim3(N), 0, w.stream,
                                    route, q, static_cast<const DeviceLayerTables*>(d_layer_tables_.p),
+                                   static_cast<const uint16_t*>(d_expert_slot_.p),
                                    reinterpret_cast<const uint4*>(act_q), reinterpret_cast<const uint4*>(act_s),
                                    reinterpret_cast<uint4*>(w.d_aq.p), reinterpret_cast<uint4*>(w.d_as.p),
                                    static_cast<uint64_t*>(w.d_stats.p),
@@ -589,7 +678,7 @@ public:
             }
         } else {
         hipLaunchKernelGGL(lane_route_count, route_grid, block, 0, w.stream,
-                           route, q, static_cast<const DeviceLayerTables*>(d_layer_tables_.p),
+                           route, q, static_cast<const uint16_t*>(d_expert_slot_.p),
                            rank, sequence, rows, model_.layers, experts(),
                            static_cast<uint32_t*>(w.d_counts.p),
                            static_cast<int32_t*>(w.d_flat.p),
@@ -608,7 +697,7 @@ public:
             default: return -EINVAL;
         }
         hipLaunchKernelGGL(lane_route_scatter, route_grid, block, 0, w.stream,
-                           route, q, static_cast<const DeviceLayerTables*>(d_layer_tables_.p),
+                           route, q, static_cast<const uint16_t*>(d_expert_slot_.p),
                            rank, sequence, rows, model_.layers, experts(),
                            static_cast<const int32_t*>(w.d_flat.p),
                            static_cast<uint32_t*>(w.d_cursor.p),
@@ -966,8 +1055,31 @@ private:
     std::vector<LayerTables> tables_;
     std::vector<uint8_t> layer_loaded_;
     std::vector<void*> persistent_;
-    void* arena_ = nullptr;
-    size_t arena_size_ = 0, arena_used_ = 0;
+    static uint64_t lane_bytes(const LaneWork& w) {
+        const Buffer* b[] = {&w.d_counts, &w.d_cursor, &w.d_flat,
+            &w.d_sorted, &w.d_off, &w.d_ew, &w.d_inv, &w.d_dbg,
+            &w.d_rowmask, &w.d_act, &w.d_aq, &w.d_as, &w.d_gu,
+            &w.d_mid, &w.d_mid_s, &w.d_down, &w.d_stats,
+            &w.scratch, &w.d_chunk_cnt, &w.d_publish_limit};
+        uint64_t n = 0;
+        for (const Buffer* p : b) n += p->bytes;
+        for (unsigned i = 0; i < 2; ++i)
+            n += w.gu_code[i].bytes + w.gu_scale[i].bytes +
+                 w.dn_code[i].bytes + w.dn_scale[i].bytes;
+        return n;
+    }
+
+    struct HipSlotAllocator {
+        bool allocate(uint64_t bytes, void** out) {
+            return bytes <= SIZE_MAX && hip_ok(hipMalloc(out, size_t(bytes)), "hipMalloc expert slot");
+        }
+        void release(void* p) { (void)hipFree(p); }
+    } slot_allocator_;
+    std::unique_ptr<r3::worker_slots::Pool<HipSlotAllocator>> slots_;
+    uint64_t free_before_lanes_ = 0;
+    bool lane_free_sampled_ = false;
+    uint8_t* loading_base_ = nullptr;
+    uint64_t loading_size_ = 0, loading_used_ = 0;
 
     HostBounce load_bounce_;
     Buffer d_act_, d_aq_, d_as_, d_sorted_, d_off_, d_ew_, d_gu_;
@@ -1171,14 +1283,28 @@ private:
         return true;
     }
 
+    uint64_t slot_cost(uint32_t l, uint32_t e) const {
+        uint64_t total = 0;
+        for (uint32_t rank = 0; rank < stored_slices(); ++rank)
+            for (uint32_t weight = 0; weight < 2; ++weight) {
+                int64_t cb = 0, sb = 0;
+                if (!slice_bytes(model_.weight(l, e, weight), weight == 0,
+                                 0, rank, &cb, &sb) || cb <= 0 || sb <= 0) return 0;
+                const uint64_t add = arena_round(cb) + arena_round(sb);
+                if (add > UINT64_MAX - total) return 0;
+                total += add;
+            }
+        return total;
+    }
     void* arena_take(size_t n) {
         const size_t r = arena_round((int64_t)n);
-        if (!arena_ || arena_used_ + r > arena_size_) {
-            std::fprintf(stderr, "r3_moe_worker: resident expert arena overflow\n");
+        if (!loading_base_ || loading_used_ > loading_size_ ||
+            r > loading_size_ - loading_used_) {
+            std::fprintf(stderr, "r3_moe_worker: resident expert slot overflow\n");
             return nullptr;
         }
-        void* p = (uint8_t*)arena_ + arena_used_;
-        arena_used_ += r;
+        void* p = loading_base_ + loading_used_;
+        loading_used_ += r;
         return p;
     }
 
@@ -1427,9 +1553,10 @@ private:
                                         hipMemcpyHostToDevice), "upload expert pointer table");
     }
 
-    bool build_layer_table(uint32_t l, const int32_t* slot_of_expert) {
+    bool build_layer_table(uint32_t l, const int32_t* slot_of_expert, uint32_t generation) {
         using namespace r3::moe_shm;
-        if (l >= model_.layers || !slot_of_expert) return false;
+        if (l >= model_.layers || !slot_of_expert ||
+            generation >= r3::worker_tables::kGenerations) return false;
         const size_t nclass = experts() / 2;
         std::vector<uint16_t> slot_map(experts(), 0);
         std::fill(slot_map.begin(), slot_map.end(), (uint16_t)0xffffu);
@@ -1438,7 +1565,8 @@ private:
             if (es >= 0) slot_map[e] = (uint16_t)es;
         }
 
-        LayerTables& lt = tables_[l];
+        LayerTables shadow{};
+        LayerTables& lt = generation ? shadow : tables_[l];
         lt.gu_code_dtype = gu_code_dtype_; lt.gu_scale_dtype = gu_scale_dtype_;
         lt.dn_code_dtype = dn_code_dtype_; lt.dn_scale_dtype = dn_scale_dtype_;
         for (uint32_t rank = 0; rank < stored_slices(); ++rank) {
@@ -1463,9 +1591,10 @@ private:
         }
 
         const size_t slot_off = (size_t)l * experts() * sizeof(uint16_t);
-        if (!hip_ok(hipMemcpy(static_cast<uint8_t*>(d_expert_slot_.p) + slot_off,
+        if (generation == 0 &&
+            !hip_ok(hipMemcpy(static_cast<uint8_t*>(d_expert_slot_.p) + slot_off,
                               slot_map.data(), slot_map.size() * sizeof(uint16_t), hipMemcpyHostToDevice),
-                    "upload runtime expert slot map"))
+                    "upload immutable runtime expert slot map"))
             return false;
 
         DeviceLayerTables dt{};
@@ -1479,9 +1608,10 @@ private:
         }
         dt.expert_slot = static_cast<const uint16_t*>(d_expert_slot_.p) + (size_t)l * experts();
         return hip_ok(hipMemcpy(static_cast<uint8_t*>(d_layer_tables_.p) +
-                                    (size_t)l * sizeof(DeviceLayerTables),
+                                    r3::worker_tables::table_index(generation, l, model_.layers) *
+                                        sizeof(DeviceLayerTables),
                                 &dt, sizeof(dt), hipMemcpyHostToDevice),
-                      "upload runtime layer table index");
+                      "upload immutable generation layer table");
     }
 
     bool owns(uint32_t layer, uint32_t expert) const {
