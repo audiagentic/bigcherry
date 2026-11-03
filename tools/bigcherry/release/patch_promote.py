@@ -283,6 +283,36 @@ def _replace_section_patches(text: str, section: str, patches: Iterable[str], re
     return text[: match.start(2)] + new_body + text[match.end(2) :]
 
 
+def _remove_section_patches(text: str, section: str, current: Iterable[str], removed: Iterable[str],
+                            recipes: str) -> str:
+    """Remove ids from a section's patches array in place: every other line, comment and indent is kept."""
+    removed = set(removed)
+    current = list(current)
+    if not removed & set(current):
+        return text
+    section_re = re.compile(rf"(?ms)(^\[{re.escape(section)}\]\s*\n)(.*?)(?=^\[|\Z)")
+    match = section_re.search(text)
+    if not match:
+        raise PatchPromoteError(f"{recipes}: missing [{section}]")
+    array = re.search(r"(?ms)^patches\s*=\s*\[[ \t]*\n(.*?)^[ \t]*\]", match.group(2))
+    if not array:
+        # a one-line or empty array has no per-entry comments to keep
+        return _replace_section_patches(text, section, [p for p in current if p not in removed], recipes)
+    kept = []
+    item = re.compile(r'"([^"]+)"[ \t]*,?[ \t]*')
+    for line in array.group(1).splitlines(keepends=True):
+        code, hash_, comment = line.partition("#")
+        new_code = item.sub(lambda m: "" if m.group(1) in removed else m.group(0), code)
+        if new_code == code:
+            kept.append(line)
+        elif new_code.strip():   # other entries stay on this line, with its comment
+            kept.append(new_code.rstrip() + (" " + hash_ + comment if hash_ else "\n"))
+        # a line that held only removed entries goes, with the comment that annotated them
+    body = match.group(2)
+    new_body = body[: array.start(1)] + "".join(kept) + body[array.end(1):]
+    return text[: match.start(2)] + new_body + text[match.end(2):]
+
+
 def _append_section_patches(text: str, section: str, current: Iterable[str], added: Iterable[str],
                             recipes: str) -> str:
     """Append ids to a section's patches array in place: every existing line, comment and indent is kept."""
@@ -328,12 +358,58 @@ def _update_recipes(root: Path, layout: engines.EngineLayout, patch_ids: tuple[s
         text, f"patch-set.{target}", production, [p for p in patch_ids if p not in production], layout.recipes
     )
 
+    # A promoted patch lives only in the production set: it leaves every other patch set (e.g. a diagnostic set that
+    # carried it while untested), so it cannot sit in a set whose required state no longer describes it. A source that
+    # reached the patch through such a set without also selecting the production set would silently lose it, so that
+    # fails the promotion instead.
+    promoted = set(patch_ids)
+    sources = raw.get("source", {})
+    for set_name, config in sets.items():
+        if set_name == target:
+            continue
+        selected = list(config.get("patches", []))
+        reduced = [p for p in selected if p not in promoted]
+        if reduced == selected:
+            continue
+        for source_name, source in sources.items():
+            source_sets = list(source.get("patch-sets", []))
+            if set_name in source_sets and target not in source_sets:
+                lost = sorted(promoted & set(selected))
+                raise PatchPromoteError(
+                    f"source {source_name!r} selects {', '.join(lost)} through patch set {set_name!r} but not the "
+                    f"production set {target!r}; promoting would drop it from that source. Add {target!r} to the "
+                    "source first."
+                )
+        text = _remove_section_patches(text, f"patch-set.{set_name}", selected, promoted, layout.recipes)
+
+    # Experiments: the promoted patch leaves them, because an experiment layered on a source that now carries it
+    # through the production set would repeat a base module, which resolution refuses. A source that pairs an
+    # experiment with a base lacking the production set (a control or native baseline) builds that experiment
+    # without the patch afterwards: that is the promotion retiring the experiment, not a silent loss. Production-
+    # derived sources must carry the production set (radiance: test_radiance_sources_share_production).
     experiments = raw.get("experiment", {})
     for name, config in experiments.items():
         selected = list(config.get("patches", []))
-        reduced = [p for p in selected if p not in patch_ids]
-        if reduced != selected:
-            text = _replace_section_patches(text, f"experiment.{name}", reduced, layout.recipes)
+        if promoted & set(selected):
+            text = _remove_section_patches(text, f"experiment.{name}", selected, promoted, layout.recipes)
+    expected = {
+        **{f"patch-set.{n}": [p for p in c.get("patches", []) if n == target or p not in promoted]
+           for n, c in sets.items()},
+        **{f"experiment.{n}": [p for p in c.get("patches", []) if p not in promoted] for n, c in experiments.items()},
+    }
+    expected[f"patch-set.{target}"] = production + [p for p in patch_ids if p not in production]
+    # Semantic postcondition: whatever the array layout, the edited file must hold exactly these lists.
+    try:
+        edited = tomllib.loads(text)
+    except tomllib.TOMLDecodeError as exc:
+        raise PatchPromoteError(f"{layout.recipes}: recipe edit produced invalid TOML: {exc}") from exc
+    actual = {
+        **{f"patch-set.{n}": list(c.get("patches", [])) for n, c in edited.get("patch-set", {}).items()},
+        **{f"experiment.{n}": list(c.get("patches", [])) for n, c in edited.get("experiment", {}).items()},
+    }
+    if actual != expected:
+        wrong = sorted(k for k in expected if actual.get(k) != expected[k])
+        raise PatchPromoteError(f"{layout.recipes}: recipe edit did not produce the expected patch lists: {wrong}")
     path.write_text(text, encoding="utf-8", newline="\n")
     # Parse the emitted TOML so a formatting bug cannot escape to the checks.
     tomllib.loads(text)
