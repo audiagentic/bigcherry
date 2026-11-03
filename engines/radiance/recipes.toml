@@ -9,7 +9,10 @@ pinned-version = "1.14.0"
 
 # Validated engine fixes only; the set starts empty rather than claiming a validated state no package has.
 [patch-set.serving-core]
-patches = ["rad0008_hc_upmix_rt_sweep"]
+patches = [
+  "rad0008_hc_upmix_rt_sweep",
+  "rad0002_moe_remote_handoff",
+]
 
 # Empty: rad0001 (shutdown drain) is superseded by radiance 1.7.0 (1e968f6 drains the mover stream in Engine::~Engine).
 # The set stays declared as the home for evaluated engine fixes the lab source needs.
@@ -33,7 +36,10 @@ required-state = "untested"
 # The remote-MoE hand-off and its diagnostics (shadow compare, mask-only). Diagnostic builds only: patch-lint fails
 # if a patch declaring `diagnostic-build` (rad0004) enters any recipe not named *-diag.
 [patch-set.moe-remote-diag]
-patches = ["rad0002_moe_remote_handoff", "rad0004_moe_remote_diagnostics", "rad0006_heat_freeze_diagnostic"]
+patches = [
+  "rad0004_moe_remote_diagnostics",
+  "rad0006_heat_freeze_diagnostic",
+]
 required-state = "untested"
 
 [source.radiance-native]
@@ -70,7 +76,7 @@ needs = []
 
 # One focal engine patch per experiment; the 0002-0003 stack is never one indivisible experiment.
 [experiment.moe-remote-handoff]
-patches = ["rad0002_moe_remote_handoff"]
+patches = []
 
 [experiment.mtp-full-head-switch]
 patches = ["rad0003_mtp_full_head_switch"]

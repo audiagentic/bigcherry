@@ -199,6 +199,15 @@ int main(int, char**) {
         m.spec.processes.helpers[1].settings = v1::HelperPatch{};
         m.spec.processes.helpers[1].settings->placement = v1::HelperPlacementPatch{true, std::vector<int64_t>{1000, 1000, 1000}};
         assert(refused_code(m, v1::ConfigErrorCode::invalid_value, "spec.processes.helpers[1] (effective) placement.balance"));
+        m = good;   // speeds with balance off, and balance on with the wrong number or a non-positive speed
+        m.spec.processes.helper_common.placement.balance_speeds_milli = std::vector<int64_t>{1000, 1000, 1000};
+        assert(refused_code(m, v1::ConfigErrorCode::invalid_value, "spec.processes.helpers[0] (effective) placement.balance_speeds_milli"));
+        m = good;
+        m.spec.processes.helper_common.placement.balance = true;
+        m.spec.processes.helper_common.placement.balance_speeds_milli = std::vector<int64_t>{1000, 1000};
+        assert(refused_code(m, v1::ConfigErrorCode::invalid_value, "spec.processes.helpers[0] (effective) placement.balance_speeds_milli"));
+        m.spec.processes.helper_common.placement.balance_speeds_milli = std::vector<int64_t>{1000, 0, 1000};
+        assert(refused_code(m, v1::ConfigErrorCode::invalid_value, "spec.processes.helpers[0] (effective) placement.balance_speeds_milli"));
         m = good;   // two helpers on one GPU, and a helper on the engine's GPU
         m.spec.processes.helpers[1].gpu = m.spec.processes.helpers[0].gpu;
         assert(refused_code(m, v1::ConfigErrorCode::duplicate_field, "spec.processes.helpers[1].gpu"));
