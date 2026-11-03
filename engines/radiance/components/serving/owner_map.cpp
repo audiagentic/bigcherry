@@ -1,6 +1,8 @@
 #include "owner_map.h"
 
+#include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <map>
 
 namespace bc::serving {
@@ -32,11 +34,11 @@ std::vector<bc::experts::OwnerPolicy> owner_policies(const v1::Manifest& m) {
         for (v1::ExpertFormat f : h.formats) formats.push_back(std::string(v1::kExpertFormatNames[static_cast<size_t>(f)]));
         p.formats = join(formats);
         p.shares = join(shares);
-        const v1::Result<v1::HelperView> view = v1::helper_view(m, h.role);
-        p.balance = view.ok() && view.value().settings.placement.balance;
+        const v1::HelperCommon settings = v1::effective_helper_settings(m, i);
+        p.balance = settings.placement.balance;
         p.balance_speeds = {1.0, 1.0};
-        if (p.balance && view.value().settings.placement.balance_speeds_milli) {
-            const auto& speeds = *view.value().settings.placement.balance_speeds_milli;
+        if (p.balance && settings.placement.balance_speeds_milli) {
+            const auto& speeds = *settings.placement.balance_speeds_milli;
             p.balance_speeds.clear();
             for (int64_t s : speeds) p.balance_speeds.push_back(static_cast<double>(s) / 1000.0);
         }
@@ -55,11 +57,67 @@ std::vector<std::string> helper_archs(const v1::Manifest& m) {
 
 std::vector<uint64_t> helper_budgets(const v1::Manifest& m) {
     std::vector<uint64_t> out;
-    for (const v1::HelperProcess& h : m.spec.processes.helpers) out.push_back(static_cast<uint64_t>(h.vram_budget_mib) << 20);
+    // never wraps: a budget past what 64 bits of bytes can count saturates (verify_owner_map refuses it before it gets here)
+    for (const v1::HelperProcess& h : m.spec.processes.helpers)
+        out.push_back(static_cast<uint64_t>(std::min<int64_t>(h.vram_budget_mib, static_cast<int64_t>(UINT64_MAX >> 20))) << 20);
     return out;
 }
 
+namespace {
+v1::Status invalid(const std::string& path, const std::string& message) { return v1::make_error(C::invalid_value, path, message); }
+
+/* What the verifier needs of the manifest before it plans anything: it is a public entry point for producers, so it does
+ * not rely on the reader having run. Every refusal names the field that is wrong. */
+v1::Status preconditions(const v1::Manifest& m) {
+    const auto& helpers = m.spec.processes.helpers;
+    const auto& got = m.spec.plan.owner_map.helpers;
+    if (helpers.empty()) return mismatch("spec.processes.helpers", "no helpers to own experts");
+    if (got.size() != helpers.size())
+        return mismatch("spec.plan.owner_map.helpers", std::to_string(got.size()) + " owned set(s) in the manifest, " +
+                                                          std::to_string(helpers.size()) + " helper(s)");
+    std::map<std::string, std::string> arch;
+    for (const v1::GpuFact& g : m.spec.facts.gpus) arch[g.bdf] = g.arch;
+    const bool tail = m.spec.handoff.placement.strategy == v1::PlacementStrategy::kTail;
+    uint64_t total_share = 0;
+    bool any_balance = false;
+    for (size_t i = 0; i < helpers.size(); ++i) {
+        const v1::HelperProcess& h = helpers[i];
+        const std::string at = "spec.processes.helpers[" + std::to_string(i) + "]";
+        if (!arch.count(h.gpu))
+            return v1::make_error(C::unresolved_reference, at + ".gpu", "GPU " + h.gpu + " is not among spec.facts.gpus");
+        if (h.vram_budget_mib > static_cast<int64_t>(UINT64_MAX >> 20))
+            return invalid(at + ".vram_budget_mib", std::to_string(h.vram_budget_mib) + " MiB does not fit 64 bits of bytes");
+        if (h.share > 1000000)
+            return invalid(at + ".share", std::to_string(h.share) + " is above 1000000, the largest share the ownership selector accepts");
+        total_share += static_cast<uint64_t>(h.share);
+        // the declared tier is the arrangement the placement strategy implies: tail gives the cold end to the last helper
+        const v1::HelperTier want = tail && i + 1 == helpers.size() && helpers.size() > 1 ? v1::HelperTier::kTail : v1::HelperTier::kHead;
+        if (h.tier != want)
+            return mismatch(at + ".tier", std::string("the placement strategy ") +
+                                              std::string(v1::kPlacementStrategyNames[static_cast<size_t>(m.spec.handoff.placement.strategy)]) +
+                                              " makes this helper a " + (want == v1::HelperTier::kTail ? "tail" : "head") + " helper");
+        any_balance = any_balance || v1::effective_helper_settings(m, i).placement.balance;
+    }
+    if (any_balance) {
+        // the selector splits the experts of exactly two equal helpers, by round robin, from a heat file
+        const std::string at = "spec.processes.helper_common.placement.balance";
+        if (helpers.size() != 2) return invalid(at, "balance splits the experts of exactly two helpers, not " + std::to_string(helpers.size()));
+        if (helpers[0].vram_budget_mib != helpers[1].vram_budget_mib)
+            return invalid(at, "balance needs one budget for both helpers");
+        if (tail) return invalid(at, "balance does not combine with the tail placement strategy");
+    } else if (total_share == 0) {
+        return invalid("spec.processes.helpers", "every helper's share is 0: nobody would own an expert");
+    }
+    for (size_t i = 0; i < got.size(); ++i)
+        if (got[i].count != static_cast<int64_t>(got[i].experts.size()))
+            return mismatch("spec.plan.owner_map.helpers[" + std::to_string(i) + "].count",
+                            "count " + std::to_string(got[i].count) + " but " + std::to_string(got[i].experts.size()) + " owned experts");
+    return std::nullopt;
+}
+}  // namespace
+
 v1::Status verify_owner_map(const v1::Manifest& m, const bc::experts::Container& model) {
+    if (auto e = preconditions(m)) return e;
     bc::experts::OwnerMap planned;
     std::string why;
     if (!bc::experts::plan_owners(model, owner_policies(m), helper_archs(m), helper_budgets(m), &planned, &why))
