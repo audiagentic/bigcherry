@@ -1,7 +1,9 @@
 #pragma once
 // Included only by r3_moe_worker.cpp. The helper's process-wide settings, read from the environment once and
 // validated: a malformed or out-of-range value is an error at start-up, never a silent default.
+#include <algorithm>
 #include <charconv>
+#include <chrono>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
@@ -17,6 +19,11 @@ struct WorkerConfig {
     bool combine = false;           /* R3_MOE_WORKER_COMBINE (RAD18): helper 0 adds both helpers' rows on the CPU */
     uint32_t combine_min_rows = 256;   /* R3_MOE_WORKER_COMBINE_MIN_ROWS */
     uint32_t combine_threads = 8;      /* R3_MOE_WORKER_COMBINE_THREADS, capped at the CPU count */
+    /* The period becomes std::chrono::nanoseconds in r3::epoch::EpochCycle (whose deadline addition is itself
+     * overflow-checked): the bound is the largest whole-second period that type represents, clipped to the parsed
+     * type. Not a policy limit. */
+    static constexpr uint32_t kMaxEpochCycleS = (uint32_t)std::min<uint64_t>(
+        UINT32_MAX, (uint64_t)std::chrono::duration_cast<std::chrono::seconds>(std::chrono::nanoseconds::max()).count());
     uint32_t epoch_cycle_s = 0;        /* R3_MOE_WORKER_EPOCH_CYCLE_S (RHP11 slice C validation): helper 0 runs a no-op
                                           placement epoch cycle (close, drain, recommit the same placement, reopen) every
                                           N seconds of burst; 0 = off. Moves to experiment.helper.epoch_cycle_s in v1. */
@@ -34,7 +41,7 @@ struct WorkerConfig {
                flag("R3_MOE_WORKER_COMBINE", &combine, err) &&
                u32("R3_MOE_WORKER_COMBINE_MIN_ROWS", 1, UINT32_MAX, &combine_min_rows, err) &&
                u32("R3_MOE_WORKER_COMBINE_THREADS", 1, 1024, &combine_threads, err) &&
-               u32("R3_MOE_WORKER_EPOCH_CYCLE_S", 0, 3600, &epoch_cycle_s, err) &&
+               u32("R3_MOE_WORKER_EPOCH_CYCLE_S", 0, kMaxEpochCycleS, &epoch_cycle_s, err) &&
                choice("R3_MOE_WORKER_CPU_SET", "auto", "all", &cpu_set_auto, err) &&
                check(helper_index < helper_count, "R3_MOE_WORKER_INDEX must be below R3_MOE_WORKER_COUNT", err);
     }

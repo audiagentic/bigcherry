@@ -198,8 +198,8 @@ summary = "RAD18: with R3_MOE_WORKER_COMBINE, CPU threads in helper 0's combine 
 
 [setting.R3_MOE_WORKER_EPOCH_CYCLE_S]
 default = "0"
-status = "experimental"
-summary = "RHP11 slice C validation: every N seconds of burst, helper 0 runs a no-op placement epoch cycle through the v23 PlacementControl protocol (close admission, drain old-epoch work, recommit the same placement, reopen); 0 = off. Set on every helper. Moves to experiment.helper.epoch_cycle_s with manifest v1."
+status = "diagnostic"
+summary = "RHP11 slice C validation: every N seconds of burst, helper 0 runs a no-op placement epoch cycle through the v23 PlacementControl protocol (close admission, drain old-epoch work, recommit the same placement, reopen); 0 = off. Set on every helper. Moves to experiment.helper.epoch_cycle_s with the v1 manifest (RSC08)."
 
 [setting.R3_MOE_WORKER_BALANCE]
 default = ""

@@ -208,17 +208,22 @@ Only the resulting ACTIVE publication permits the engine to reopen the
 same epoch/slot and release the lanes. Deadlines are checked even if no
 lane drains or a burst ends mid-cycle. Faults, shutdown, stale ACKs and
 missing participants cannot reopen admission. There is no hook-side
-periodic test driver or new environment variable.
+periodic test driver.
 
-**Single RSC06 integration point:** the marked EpochCycle construction in
-r3_moe_worker.cpp currently passes chrono::seconds{0}. After the bc_serving
-schema merges, pass the validated typed
-`experiment.helper.epoch_cycle_s` value there as a chrono duration on
-**every helper**, via the typed helper launch configuration. Preserve zero
-as disabled; reject negative, non-finite or unrepresentable durations in
-that schema/decoder. No environment bridge is needed. The controller,
-shared transport, helper polling and engine protocol participant are
-already wired. Routing through two owner generations and live helper
+**Interim interface: R3_MOE_WORKER_EPOCH_CYCLE_S (diagnostic).** The cycle
+period reaches the helpers through this environment variable, set on every
+helper (component.toml; 0 = off, the default). worker_config.h parses it as
+whole seconds bounded only by what EpochCycle's std::chrono::nanoseconds
+period represents, and r3_moe_worker.cpp hands it to EpochCycle as a chrono
+duration. It is a validation diagnostic, not a serving setting.
+
+**Migration (RSC08):** the variable moves to the typed
+`experiment.helper.epoch_cycle_s` of the v1 bc_serving manifest, passed to
+every helper through the typed helper launch configuration. Zero stays
+disabled; the schema/decoder rejects negative, non-finite or unrepresentable
+durations; the environment variable is then removed, not kept beside it. The
+controller, shared transport, helper polling and engine protocol participant
+need no change. Routing through two owner generations and live helper
 weight/table migration remain later slices.
 
 ## Validation
@@ -239,10 +244,26 @@ Run the component ctests excluding r3_route_compact_test and
 r3_ticket_replay_test, which require hardware. Compile the worker/plugin and
 syntax-check the managed engine files without running the GPU.
 
-Hardware acceptance remains required: an engine run with admission closed
-and reopened periodically under 6 streams with MTP, expecting no hang,
-identical single-stream text and step time within noise against main.
-Enable the typed epoch-cycle period after the RSC06 integration above.
-Test power saving both enabled and disabled, and record the ledger high-water
-for the matched workload. Card-free checks do not establish this hardware
-acceptance; no GPU validation was performed in this revision.
+### Hardware evidence
+
+runs/rhp11-c2-ab7 measured this slice (commit 71c6af599) against main on the
+four-card Flash-Next layout: nine interleaved arms (three main, three slice C
+with cycles off, three with R3_MOE_WORKER_EPOCH_CYCLE_S=2), each a 1-stream
+512-token and a 6-stream 2048-token soak with MTP. Median engine decode step
+against main: +0.14% at 1 stream with cycles off, +0.34% with cycles on (6
+streams: -0.46% off, +0.30% on). 1-stream text was byte-identical in every
+arm, and each cycling arm completed 28 placement epoch cycles with no hang or
+fault.
+
+### Remaining limitations
+
+* RHP15: an encoder-only (media) pass has no scheduler-parent ticket, and
+  before_pass rejects it, so multimodal serving with remote MoE fails closed
+  until admission distinguishes encoder passes. Text-only serving is
+  unaffected.
+* The epoch cycle is a same-placement no-op; moving owners between two
+  generations and migrating helper weights/tables are later slices.
+* The period is the interim diagnostic environment variable until RSC08.
+* The admission ceiling is derived from the pinned engine's RouteSlot ring
+  plus its issue-ahead depth; a workload with more outstanding no-output
+  prefill parents than that fails closed rather than waiting.

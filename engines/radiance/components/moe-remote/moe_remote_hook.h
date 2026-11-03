@@ -40,8 +40,11 @@ struct StepTicket {
 static_assert(sizeof(StepTicket) == 16 && offsetof(StepTicket, ticket_id) == 8);
 
 /* One completion slot per outstanding parent per rank, indexed by
- * ticket_id % capacity (capacity = AdmissionLedger::capacity(): current
- * parent + run-ahead depth). Two rings of this layout per rank:
+ * ticket_id % capacity. capacity is the admission ledger's ceiling
+ * (Ledger::capacity()), which rad0002 derives from the engine as its
+ * RouteSlot ring extent plus its issue-ahead depth (ADMISSION.md); live
+ * ticket IDs are consecutive and never exceed it, so slots never alias.
+ * Two rings of this layout per rank:
  *  - device memory: the ticket setter arms the slot on a parent's first pass;
  *    publish and finish count with device-scope atomics, no host traffic;
  *  - host-mapped: once per parent step the seal kernel copies the device slot
