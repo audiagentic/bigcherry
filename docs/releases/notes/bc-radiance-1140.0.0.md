@@ -1,6 +1,6 @@
 # bc-radiance-1140.0.0
 
-BigCherry on radiance `v1.14.0` (`4a61d7296bc5`), BigCherry commit `9a397d04ba01`.
+BigCherry on radiance `v1.14.0` (`4a61d7296bc5`), BigCherry commit `9b3eb87701cc`.
 First tagged release.
 
 ## Bump record
