@@ -294,16 +294,20 @@ def _remove_section_patches(text: str, section: str, current: Iterable[str], rem
     match = section_re.search(text)
     if not match:
         raise PatchPromoteError(f"{recipes}: missing [{section}]")
-    array = re.search(r"(?ms)^patches\s*=\s*\[[ \t]*\n(.*?)^\]", match.group(2))
+    array = re.search(r"(?ms)^patches\s*=\s*\[[ \t]*\n(.*?)^[ \t]*\]", match.group(2))
     if not array:
         # a one-line or empty array has no per-entry comments to keep
         return _replace_section_patches(text, section, [p for p in current if p not in removed], recipes)
     kept = []
+    item = re.compile(r'"([^"]+)"[ \t]*,?[ \t]*')
     for line in array.group(1).splitlines(keepends=True):
-        entry = re.match(r'\s*"([^"]+)"\s*,?', line)
-        if entry and entry.group(1) in removed:
-            continue
-        kept.append(line)
+        code, hash_, comment = line.partition("#")
+        new_code = item.sub(lambda m: "" if m.group(1) in removed else m.group(0), code)
+        if new_code == code:
+            kept.append(line)
+        elif new_code.strip():   # other entries stay on this line, with its comment
+            kept.append(new_code.rstrip() + (" " + hash_ + comment if hash_ else "\n"))
+        # a line that held only removed entries goes, with the comment that annotated them
     body = match.group(2)
     new_body = body[: array.start(1)] + "".join(kept) + body[array.end(1):]
     return text[: match.start(2)] + new_body + text[match.end(2):]
@@ -378,23 +382,31 @@ def _update_recipes(root: Path, layout: engines.EngineLayout, patch_ids: tuple[s
                 )
         text = _remove_section_patches(text, f"patch-set.{set_name}", selected, promoted, layout.recipes)
 
-    # Experiments are combined with any source at build time. Removing the patch from an experiment is safe only if
-    # every patched source now carries it through the production set; a patched source without the production set
-    # would build that experiment without the patch, silently. Native sources (no patch sets) are the unpatched
-    # baseline by definition and are not considered.
+    # Experiments: the promoted patch leaves them, because an experiment layered on a source that now carries it
+    # through the production set would repeat a base module, which resolution refuses. A source that pairs an
+    # experiment with a base lacking the production set (a control or native baseline) builds that experiment
+    # without the patch afterwards: that is the promotion retiring the experiment, not a silent loss. Production-
+    # derived sources must carry the production set (radiance: test_radiance_sources_share_production).
     experiments = raw.get("experiment", {})
-    lacking = sorted(n for n, src in sources.items() if src.get("patch-sets") and target not in src["patch-sets"])
     for name, config in experiments.items():
         selected = list(config.get("patches", []))
-        if not promoted & set(selected):
-            continue
-        if lacking:
-            raise PatchPromoteError(
-                f"experiment {name!r} carries {', '.join(sorted(promoted & set(selected)))}, and patched source(s) "
-                f"{', '.join(lacking)} do not select the production set {target!r}: builds of that experiment on "
-                f"those sources would lose the patch. Add {target!r} to them first."
-            )
-        text = _remove_section_patches(text, f"experiment.{name}", selected, promoted, layout.recipes)
+        if promoted & set(selected):
+            text = _remove_section_patches(text, f"experiment.{name}", selected, promoted, layout.recipes)
+    expected = {
+        **{f"patch-set.{n}": [p for p in c.get("patches", []) if n == target or p not in promoted]
+           for n, c in sets.items()},
+        **{f"experiment.{n}": [p for p in c.get("patches", []) if p not in promoted] for n, c in experiments.items()},
+    }
+    expected[f"patch-set.{target}"] = production + [p for p in patch_ids if p not in production]
+    # Semantic postcondition: whatever the array layout, the edited file must hold exactly these lists.
+    edited = tomllib.loads(text)
+    actual = {
+        **{f"patch-set.{n}": list(c.get("patches", [])) for n, c in edited.get("patch-set", {}).items()},
+        **{f"experiment.{n}": list(c.get("patches", [])) for n, c in edited.get("experiment", {}).items()},
+    }
+    if actual != expected:
+        wrong = sorted(k for k in expected if actual.get(k) != expected[k])
+        raise PatchPromoteError(f"{layout.recipes}: recipe edit did not produce the expected patch lists: {wrong}")
     path.write_text(text, encoding="utf-8", newline="\n")
     # Parse the emitted TOML so a formatting bug cannot escape to the checks.
     tomllib.loads(text)
