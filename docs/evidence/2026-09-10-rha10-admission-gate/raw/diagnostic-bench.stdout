@@ -24,7 +24,7 @@ Variant:      unknown
 Model:        Qwen3.8-27B-Q8_0
 Device:       
 Toggles:      {"prompt_length": 1, "generation_length": 512, "ubatch_size": 512, "gpu_layers": 99, "kv_cache_type_k": "f16", "kv_cache_type_v": "f16", "flash_attn": "auto", "repetitions": 1, "batch_size": 2048, "threads": 8, "load_mode": "mmap"}
-Env vars:     {"SERVER_URL": "http://127.0.0.1:34324", "API_KEY": "sk-27aVkVVAlzzrw7GCE3jlkGzoX1R9EESjRmTa6Yh0wpzQnpG6ziIr9nhvjDG3mFtK"}
+Env vars:     {"SERVER_URL": "http://127.0.0.1:34324", "API_KEY": "[REDACTED]"}
 ============================================================
 
 Extracted Results (3 config(s)):
