@@ -21,7 +21,8 @@ configure = { RADIANCE_SRC = "{engine_source}" }   # the helper builds for every
 # be declared here, or component-tests fails.
 [test]
 targets = ["r3_moe_shm_test", "r3_moe_backend_test", "r3_worker_share_test", "r3_worker_heat_test",
-           "r3_moe_epoch_test", "r3_moe_fp8_ref_test", "r3_combine_f16_test", "r3_combine_pool_test"]
+           "r3_moe_epoch_test", "r3_moe_fp8_ref_test", "r3_combine_f16_test", "r3_combine_pool_test",
+           "r3_admission_ledger_test"]
 
 # Runtime settings: see libr3/component.toml for the status vocabulary.
 
@@ -194,6 +195,11 @@ summary = "RAD18: with R3_MOE_WORKER_COMBINE, the smallest large-lane step (rows
 default = "8"
 status = "experimental"
 summary = "RAD18: with R3_MOE_WORKER_COMBINE, CPU threads in helper 0's combine pool (persistent, sleeping on futex words between steps; the calling thread is one of them)"
+
+[setting.R3_MOE_WORKER_EPOCH_CYCLE_S]
+default = "0"
+status = "diagnostic"
+summary = "RHP11 slice C validation: every N seconds of burst, helper 0 runs a no-op placement epoch cycle through the v23 PlacementControl protocol (close admission, drain old-epoch work, recommit the same placement, reopen); 0 = off. Set on every helper. Moves to experiment.helper.epoch_cycle_s with the v1 manifest (RSC08)."
 
 [setting.R3_MOE_WORKER_BALANCE]
 default = ""

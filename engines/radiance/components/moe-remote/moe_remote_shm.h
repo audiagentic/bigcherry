@@ -213,9 +213,28 @@ struct alignas(64) LaneSignal {
     uint32_t consumed_slot;
     uint64_t done_epoch;
     uint64_t consumed_epoch;
-    uint32_t reserved[6];
+    /* Engine closes admission and retires parents before requesting a drain.
+     * Helpers ACK only after their queued waits/compute/combine work drained.
+     * Closure IDs prevent an old park from certifying a newer quiescence. */
+    uint64_t drain_request;
+    uint64_t drain_ack;
+    uint32_t reserved[2];
 };
 static_assert(sizeof(LaneSignal) == 64);
+static_assert(offsetof(LaneSignal, drain_request) == 40 && offsetof(LaneSignal, drain_ack) == 48);
+
+/* A helper ACK is a post-drain proof for exactly one closure. The callback
+ * owns its stream/CPU-combine drain; failures and stale requests never ACK.
+ * Kept card-free so cancellation and stale-proof behavior are unit tested. */
+template<class Drain>
+inline bool acknowledge_lane_drain(LaneSignal& lane, uint64_t closure, Drain&& drain) {
+    if (!closure || __atomic_load_n(&lane.drain_request, __ATOMIC_ACQUIRE) != closure)
+        return false;
+    if (!drain() || __atomic_load_n(&lane.drain_request, __ATOMIC_ACQUIRE) != closure)
+        return false;
+    __atomic_store_n(&lane.drain_ack, closure, __ATOMIC_RELEASE);
+    return true;
+}
 
 /* R3_MOE_WORKER_COMBINE (two to kMaxHelpers helpers behind a one-rank engine, large lane only): helper 0 adds every helper's
  * bf16 rows on the CPU into result plane [0][1] as fp16, so the engine reads one row a token over its link instead of one a
@@ -241,6 +260,24 @@ struct alignas(64) CombineSignal {
     uint32_t reserved[14];
 };
 static_assert(sizeof(CombineSignal) == 128);
+
+/* Engine-GPU consumption records, rank-local device memory (never mapped).
+ * mailbox_add_finish_kernel updates them every layer without host traffic;
+ * the per-parent seal kernel copies changed records into LaneSignal::consumed_*
+ * and CombineSignal::result_consumed_* (what the quiescence check reads).
+ * `flushed` is the sequence/generation the seal last copied. */
+struct ConsumedRecord {
+    uint32_t sequence;
+    uint32_t slot;
+    uint64_t epoch;
+    uint32_t flushed;
+    uint32_t reserved;
+};
+static_assert(sizeof(ConsumedRecord) == 24);
+struct ConsumedRecords {
+    ConsumedRecord lane[kLanes];
+    ConsumedRecord combine;
+};
 
 /* R3_MOE_WORKER_COMBINE, chunked (RAD42): a large-lane step's rows in chunks of kCombineChunkRows. Helper k's reduce kernel
  * stores its request sequence in seq[k][c] once every row of chunk c is written (system-scope release from its GPU);
@@ -777,6 +814,35 @@ inline int futex_wake(uint32_t* p) {
 inline void notify(Header* h) {
     (void)__atomic_fetch_add(&h->notify, 1u, __ATOMIC_SEQ_CST);
     (void)futex_wake(&h->notify);
+}
+
+/* Helper drain (after the lane's stream is drained): publish the identity of the lane's last completed request
+ * (epoch/slot) for the engine's quiescence check. The ring slot must still hold that request (admission closed and
+ * every parent retired, so nothing newer was published) and carry a valid epoch/slot; otherwise refuse the ACK
+ * rather than copy another request's identity. acknowledge_lane_drain's release of drain_ack publishes the words. */
+inline bool publish_done_identity(void* base, uint32_t lane) {
+    LaneSignal& l = static_cast<Header*>(base)->lane[lane];
+    const uint32_t seq = load(&l.done_sequence);
+    if (!seq) return true;
+    const Request* q = lane_request(base, lane, seq);
+    if (!q || load(&q->sequence) != seq) return false;
+    const uint64_t epoch = __atomic_load_n(&q->placement_epoch, __ATOMIC_ACQUIRE);
+    const uint32_t slot = load(&q->generation_slot);
+    if (!epoch || slot > 1) return false;
+    __atomic_store_n(&l.done_epoch, epoch, __ATOMIC_RELAXED);
+    __atomic_store_n(&l.done_slot, slot, __ATOMIC_RELAXED);
+    return true;
+}
+
+/* Engine quiescence, one lane: a served lane acknowledged exactly this closure, every published request is done and
+ * consumed, and the helper's done identity equals the engine's consumed identity for the last one. */
+inline bool lane_quiesced(const Header* h, uint32_t lane, uint64_t closure, bool served) {
+    const LaneSignal& l = h->lane[lane];
+    if (served && __atomic_load_n(&l.drain_ack, __ATOMIC_ACQUIRE) != closure) return false;
+    const uint32_t seq = load(&l.request_sequence);
+    if (load(&l.done_sequence) != seq || load(&l.consumed_sequence) != seq) return false;
+    return !seq || (__atomic_load_n(&l.done_epoch, __ATOMIC_ACQUIRE) == __atomic_load_n(&l.consumed_epoch, __ATOMIC_ACQUIRE) &&
+                    load(&l.done_slot) == load(&l.consumed_slot));
 }
 /* Raise helper_fault (sticky) and wake every CPU waiter. */
 inline void raise_fault(Header* h) {
