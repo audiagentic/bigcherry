@@ -242,16 +242,14 @@ static void V23EngineOwners_MeasuringStartWaitsForFinalSeal() {
         slots1[e] = int32_t(e);
     }
     store(&h->layer_map_ready[0], 1);
-    store(&h->layer_map_ready[1], 1);
+    // Leave layer 1 outstanding: the concurrent rank's seal wait must
+    // release the setup mutex so this callback can publish it.
     check(r3::epoch::drop_bootstrap_owner(map, 0, 0, 0),
           "helper 0 filters protected expert after engine layer map");
     check(r3::epoch::drop_bootstrap_owner(map, 0, 1, 1),
           "helper 1 drops its protected layer ownership");
     store(&h->layer_map_consumed[0], 1);
-    store(&h->layer_map_consumed[1], 1);
-    check(r3::epoch::mark_bootstrap_filtered(map, 1) &&
-          r3::epoch::mark_bootstrap_filtered(map, 2),
-          "two helpers filtered before helper 0");
+    check(!load(&h->layer_map_ready[1]), "second layer map pending");
     check(c->seq == 0 && !bootstrap_generation_sealed(map),
           "rank setup is earlier than helper 0 seal");
     r3::epoch::SharedTransport transport(map);
@@ -260,24 +258,48 @@ static void V23EngineOwners_MeasuringStartWaitsForFinalSeal() {
     timespec deadline{};
     check(clock_gettime(CLOCK_MONOTONIC, &deadline) == 0, "rank startup clock");
     deadline.tv_sec += 3; // test deadline only; production uses kStartupWaitSeconds
+    std::mutex engine_mu;   // the SAME mutex boundary production rank setup uses
+    std::atomic<uint32_t> ready_ranks{0};
     std::atomic<bool> began{false};
     std::atomic<int> result{-1};
     std::thread rank([&] {
         began.store(true, std::memory_order_release);
-        const WaitResult w = r3::owner_generation::wait_bootstrap_seal(map, &deadline);
-        result.store(int(w), std::memory_order_release);
+        const int w = r3::owner_generation::with_bootstrap_rank_lock(
+            map, ready_ranks, 0, engine_mu, &deadline,
+            [&]() -> int {
+                std::vector<uint8_t> bits;
+                if (!build_bitmap(map,0,1,placement_control(map)->active_digest,&bits))
+                    return int(WaitResult::Error);
+                ready_ranks.fetch_or(1u,std::memory_order_release);
+                return int(WaitResult::Ready);
+            },
+            [&](WaitResult error) -> int { return int(error); });
+        result.store(w, std::memory_order_release);
     });
     while (!began.load(std::memory_order_acquire)) std::this_thread::yield();
     std::this_thread::sleep_for(std::chrono::milliseconds(30));
     const bool waited_for_seal = result.load(std::memory_order_acquire) == -1;
-    // Finish the same helper 0 filter/seal order as the real worker, while
-    // rank init remains in its blocking startup boundary.
-    check(r3::epoch::mark_bootstrap_filtered(map, 0), "last helper filtered");
+    // The *production* lock-order boundary must leave engine_mu available
+    // while waiting for this second runtime layer map to be published.
+    std::unique_lock<std::mutex> layer_publication(engine_mu,std::try_to_lock);
+    const bool could_publish_layer = layer_publication.owns_lock();
+    if (could_publish_layer) layer_publication.unlock();
+    // Even a deliberately broken lock-order mutation must release the
+    // waiting rank, join its thread and then fail the assertion cleanly.
+    store(&h->layer_map_ready[1],1);
+    store(&h->layer_map_consumed[1],1);
+    check(r3::epoch::mark_bootstrap_filtered(map,1) &&
+          r3::epoch::mark_bootstrap_filtered(map,2) &&
+          r3::epoch::mark_bootstrap_filtered(map,0),
+          "all helper layer maps filtered after publication");
     const bool sealed = transport.seal_bootstrap();
     rank.join();
+    check(could_publish_layer,
+          "concurrent layer-map callback progresses during rank seal wait");
     check(waited_for_seal, "engine rank must not reject or accept the unsealed map early");
-    check(sealed && result.load() == int(WaitResult::Ready),
-          "engine rank wakes only after helper 0 seals");
+    check(sealed && result.load() == int(WaitResult::Ready) &&
+          ready_ranks.load(std::memory_order_acquire) == 1u,
+          "engine rank takes setup lock and uploads only after final seal");
 
     std::vector<uint8_t> bits;
     check(c->seq == 2 && c->active_digest == generation_digest(map, 0) &&

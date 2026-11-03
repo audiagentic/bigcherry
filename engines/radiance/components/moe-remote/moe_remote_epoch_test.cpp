@@ -1,4 +1,5 @@
 #include "worker_epoch.h"
+#include "engine_rank_coordinator.h"
 #include "worker_bootstrap.h"
 #include "admission_ledger.h"
 #include "owner_generation.h"
@@ -312,6 +313,95 @@ struct FakeCycleUpload {
     }
 };
 
+// Injectable fake GPU ranks, running the production EngineRankCoordinator.
+// Every rank phase is acknowledged BY that coordinator. The fake implements
+// the same ledger closure, bitmap upload, event-query and lane-identity checks.
+struct FakeRankOperations final : RankOperations {
+    void* map;
+    r3::admission::Ledger& ledger;
+    FakeCycleUpload* gpu;
+    uint32_t rank_count;
+    bool closed=false, faulted=false;
+    uint64_t closure=0, closed_cutoff=0;
+    uint32_t previous_epoch=0;
+    FakeRankOperations(void* m, r3::admission::Ledger& l,
+                       FakeCycleUpload* d, uint32_t n)
+        : map(m),ledger(l),gpu(d),rank_count(n) {}
+    r3::admission::Ledger::Snapshot prepare_close() {
+        // The fake advances the clocked admission gate to CLOSED before
+        // injecting per-rank event proofs, just like a real drain waiter.
+        return ledger.close_admission();
+    }
+    uint32_t actual_ranks() override { return rank_count; }
+    bool registered(uint32_t rank) override { return rank < rank_count; }
+    RankResult upload(uint32_t rank,uint32_t slot,uint64_t epoch,uint64_t digest) override {
+        PlacementControl c{};
+        if (rank >= rank_count || !placement_snapshot(map,&c) ||
+            c.pending_slot != slot || c.pending_epoch != epoch ||
+            c.pending_digest != digest) return RankResult::Pending;
+        return gpu[rank].upload(map,ledger,c) ? RankResult::Ready : RankResult::Pending;
+    }
+    RankResult ready(uint32_t rank,uint32_t slot,uint64_t epoch,uint64_t digest) override {
+        if (rank >= rank_count || slot > 1) return RankResult::Pending;
+        const auto& d=gpu[rank];
+        return d.issued[slot] && d.event_ready[slot] &&
+               d.binding[slot].epoch == epoch && d.binding[slot].digest == digest ?
+               RankResult::Ready : RankResult::Pending;
+    }
+    bool exact_binding(uint32_t rank,uint32_t slot,uint64_t epoch,uint64_t digest) override {
+        return rank < rank_count && slot < 2 &&
+               gpu[rank].issued[slot] &&
+               gpu[rank].binding[slot].epoch == epoch &&
+               gpu[rank].binding[slot].digest == digest;
+    }
+    bool lanes_quiesced() const {
+        const auto* h=static_cast<Header*>(map);
+        for (uint32_t lane=0; lane<kLanes; ++lane) {
+            const uint32_t slot=lane%kMaxSlots;
+            const bool served=(h->helper_count > 1 ? slot<h->helper_count :
+                                  (1u<<slot & ((1u<<rank_count)-1u)) != 0) &&
+                               (!lane_is_small(lane) || lane_class(lane)<h->small_class_count);
+            if (!lane_quiesced(h,lane,closure,served)) return false;
+        }
+        return true;
+    }
+    bool close_and_wait(uint64_t deadline,uint64_t* cutoff,uint32_t* old_epoch) override {
+        if (closed || !deadline || faulted) return false;
+        const auto snapshot=ledger.close_admission();
+        PlacementControl c{};
+        if (!placement_snapshot(map,&c)) return false;
+        closure=c.transaction_id;
+        previous_epoch=snapshot.old_epoch;
+        closed_cutoff=snapshot.latest_ticket;
+        closed=true;
+        if (!ledger.drained(snapshot.old_epoch,snapshot.latest_ticket) ||
+            !ledger.all_ranks_consumed(snapshot.old_epoch,snapshot.latest_ticket) ||
+            !lanes_quiesced()) return false;
+        *cutoff=snapshot.latest_ticket;
+        *old_epoch=snapshot.old_epoch;
+        return true;
+    }
+    bool consumed() override {
+        return closed && ledger.all_ranks_consumed(previous_epoch,closed_cutoff);
+    }
+    bool drain_verified() override { return closed && lanes_quiesced(); }
+    bool helper_quiesced() override { return closed && lanes_quiesced(); }
+    bool generation_referenced(uint32_t slot) override {
+        return ledger.generation_referenced(slot);
+    }
+    bool can_replace(uint32_t slot) override { return ledger.can_replace_generation(slot); }
+    bool reopen(uint32_t epoch,uint32_t slot) override {
+        if (!closed || !lanes_quiesced() || !ledger.reopen(epoch,(uint8_t)slot))
+            return false;
+        // Simulated engine drain-word clearing after all ranks and helper lanes.
+        auto* h=static_cast<Header*>(map);
+        for (auto& lane:h->lane) lane.drain_request=0;
+        closed=false;
+        return true;
+    }
+    bool stopped() override { return faulted || ledger.stopped(); }
+    void fatal() override { faulted=true; ledger.fault(); }
+};
 static void V23Cycle_UnreadyAndAbortPreserveOldGeneration() {
     FakeClock clk; FakeTransport tr;
     Controller c(tr,clk,97,2,2);
@@ -508,7 +598,7 @@ static void V23Bootstrap_UnsealedTickReportsInvalidMap() {
  * two-slot same-map diagnostic, with fake rank GPU uploads and consumption
  * events. No GPU or background threads. */
 static void V23Cycle_SamePlacementAndSharedProtocol(
-    uint32_t helper_count,uint32_t rank_count) {
+    uint32_t helper_count,uint32_t rank_count,bool lose_reopen_ack=false) {
     check((helper_count==1 && rank_count==2) ||
           (helper_count==3 && rank_count==1),"only supported production shapes");
     const LayoutShape shape{128,helper_count,3,8,128,64};
@@ -591,8 +681,10 @@ static void V23Cycle_SamePlacementAndSharedProtocol(
         gpu[rank].binding[0]={1,digest};
         gpu[rank].issued[0]=gpu[rank].event_ready[0]=true;
     }
+    EngineRankCoordinator coordinator;
+    FakeRankOperations rank_ops(base,ledger,gpu,rank_count);
     uint32_t slot=0;
-    const uint64_t cycles=1000;
+    const uint64_t cycles=lose_reopen_ack ? 1 : 1000;
     for (uint64_t cycle=1; cycle<=cycles; ++cycle) {
         const uint32_t old_slot=slot,new_slot=1u-slot;
         StepTicket ticket{};
@@ -639,17 +731,17 @@ static void V23Cycle_SamePlacementAndSharedProtocol(
                       "reservation refuses changed candidate map bytes");
                 candidate[0]=first;
             }
-            check(service_rank_reservation(base,snapshot,rank,rank_mask,true,
-                device.issued[old_slot] && device.event_ready[old_slot] &&
-                device.binding[old_slot].epoch==cycle &&
-                device.binding[old_slot].digest==digest),
-                "production rank publishes its own RESERVED ACK");
         }
+        check(coordinator.step(base,snapshot,rank_ops),
+              "production coordinator dispatches RESERVED for every rank");
+        for (uint32_t rank=0;rank<rank_count;++rank)
+            check(read_shared_ack(base,kMaxHelpers+rank).phase==uint32_t(AckPhase::RESERVED),
+                  "engine rank RESERVED publication comes from coordinator");
         check(helper0.tick() && control->state==uint32_t(PlacementState::COPYING),
               "actual rank reservation reaches COPYING");
-        for (uint32_t rank=0;rank<rank_count;++rank)
-            check(gpu[rank].upload(base,ledger,*control),
-                  "fake rank issues inactive upload without overwriting old ticket");
+        check(placement_snapshot(base,&snapshot) &&
+              coordinator.step(base,snapshot,rank_ops),
+              "production coordinator issues rank inactive uploads");
         for (uint32_t rank=0;rank<rank_count;++rank)
             check(!gpu[rank].prepared(*control,rank),
                   "incomplete upload event blocks PREPARED");
@@ -658,21 +750,27 @@ static void V23Cycle_SamePlacementAndSharedProtocol(
               "helpers READY alone cannot publish PREPARED");
         check(placement_snapshot(base,&snapshot), "copying snapshot");
         gpu[0].complete(new_slot);
-        check(gpu[0].prepared(*control,0), "rank 0 exact event ready");
-        publish_ack(base,kMaxHelpers,snapshot,AckPhase::READY);
+        check(gpu[0].prepared(*control,0) &&
+              coordinator.step(base,snapshot,rank_ops), "rank 0 exact event ready through coordinator");
+        check(read_shared_ack(base,kMaxHelpers).phase==uint32_t(AckPhase::READY),
+              "coordinator publishes rank 0 READY");
         if (rank_count==2) {
             check(helper0.tick() && control->state==uint32_t(PlacementState::COPYING),
                   "missing second rank READY blocks PREPARED");
             gpu[1].complete(new_slot);
-            check(gpu[1].prepared(*control,1), "rank 1 exact event ready");
-            publish_ack(base,kMaxHelpers+1,snapshot,AckPhase::READY);
+            check(gpu[1].prepared(*control,1) &&
+                  coordinator.step(base,snapshot,rank_ops), "rank 1 exact event ready through coordinator");
+            check(read_shared_ack(base,kMaxHelpers+1).phase==uint32_t(AckPhase::READY),
+                  "coordinator publishes rank 1 READY");
         }
         check(helper0.tick() && control->state==uint32_t(PlacementState::PREPARED),
               "all exact READY ACKs allow PREPARED");
         check(helper0.tick() && control->state==uint32_t(PlacementState::QUIESCING) &&
               generation_header(base,new_slot)->state==uint32_t(GenerationState::READY),
               "QUIESCING only after prepared second generation");
-        const auto cutoff=ledger.close_admission();
+        // The fake closes the ledger before it can inject event proofs;
+        // close_and_wait in the real coordinator verifies the same snapshot.
+        const auto cutoff=rank_ops.prepare_close();
         check(!ledger.all_ranks_consumed((uint32_t)cycle,cutoff.latest_ticket) &&
               helper0.tick() && peer_ticks() &&
               control->state==uint32_t(PlacementState::QUIESCING),
@@ -701,9 +799,11 @@ static void V23Cycle_SamePlacementAndSharedProtocol(
               "stale helper drain ACK cannot commit");
         for (auto& lane:h->lane) lane.drain_ack=lane.drain_request;
         check(placement_snapshot(base,&snapshot), "quiesce snapshot");
-        publish_ack(base,kMaxHelpers,snapshot,AckPhase::QUIESCED,cutoff.latest_ticket);
-        if (rank_count==2)
-            publish_ack(base,kMaxHelpers+1,snapshot,AckPhase::QUIESCED,cutoff.latest_ticket);
+        check(coordinator.step(base,snapshot,rank_ops),
+              "coordinator closes admission and waits for fake event/lane drain");
+        for (uint32_t rank=0;rank<rank_count;++rank)
+            check(read_shared_ack(base,kMaxHelpers+rank).phase==uint32_t(AckPhase::QUIESCED),
+                  "production coordinator publishes QUIESCED after real proofs");
         check(peer_ticks() && helper0.tick() &&
               control->state==uint32_t(PlacementState::COMMIT) &&
               control->active_epoch==cycle+1 &&
@@ -713,14 +813,12 @@ static void V23Cycle_SamePlacementAndSharedProtocol(
         check(helper0.tick() && generation_header(base,new_slot)->state==
               uint32_t(GenerationState::ACTIVE), "new generation marked ACTIVE during COMMIT");
         check(placement_snapshot(base,&snapshot), "committed snapshot");
-        publish_ack(base,kMaxHelpers,snapshot,AckPhase::COMMITTED,cutoff.latest_ticket);
+        check(coordinator.step(base,snapshot,rank_ops),
+              "production coordinator observes helper ACTIVE header then publishes COMMITTED");
+        for (uint32_t rank=0;rank<rank_count;++rank)
+            check(read_shared_ack(base,kMaxHelpers+rank).phase==uint32_t(AckPhase::COMMITTED),
+                  "engine rank COMMITTED ACK originates in coordinator");
         check(peer_ticks(),"other helpers acknowledge commit");
-        if (rank_count==2)
-            check(helper0.tick() &&
-                  control->state==uint32_t(PlacementState::COMMIT),
-                  "missing rank COMMITTED ACK blocks RETIRING");
-        if (rank_count==2)
-            publish_ack(base,kMaxHelpers+1,snapshot,AckPhase::COMMITTED,cutoff.latest_ticket);
         check(helper0.tick() && control->state==uint32_t(PlacementState::RETIRING),
               "all rank COMMITTED ACKs enter RETIRING");
         check(rank_retirement_proved(*control,(uint32_t)cycle,old_slot,
@@ -733,12 +831,11 @@ static void V23Cycle_SamePlacementAndSharedProtocol(
               "retirement requires consumed proof and drain; old slot upload still refused");
         check(peer_ticks() && helper0.tick(), "helpers acknowledge retirement");
         check(placement_snapshot(base,&snapshot), "retiring snapshot");
-        publish_ack(base,kMaxHelpers,snapshot,AckPhase::RETIRED,cutoff.latest_ticket);
-        if (rank_count==2)
-            check(helper0.tick() && control->state==uint32_t(PlacementState::RETIRING),
-                  "missing rank RETIRED ACK blocks retirement");
-        if (rank_count==2)
-            publish_ack(base,kMaxHelpers+1,snapshot,AckPhase::RETIRED,cutoff.latest_ticket);
+        check(coordinator.step(base,snapshot,rank_ops),
+              "production coordinator proves retired rank identities and consumed cutoff");
+        for (uint32_t rank=0;rank<rank_count;++rank)
+            check(read_shared_ack(base,kMaxHelpers+rank).phase==uint32_t(AckPhase::RETIRED),
+                  "production coordinator publishes RETIRED");
         check(helper0.tick() && control->state==uint32_t(PlacementState::ACTIVE) &&
               generation_header(base,old_slot)->state==uint32_t(GenerationState::RETIRED),
               "all rank RETIRED ACKs finish cycle and retire old header");
@@ -752,17 +849,37 @@ static void V23Cycle_SamePlacementAndSharedProtocol(
               std::equal(owners.begin(),owners.end(),generation_map(base,new_slot)),
               "full no-op cycle returns ACTIVE, slots swapped, bytes unchanged");
         h->burst=1;
-        for (auto& lane:h->lane) lane.drain_request=0;
         check(helper0.tick() && helper0.completed()==cycle-1,
-              "cleared drain requests do NOT certify ledger reopen");
-        check(ledger.reopen((uint32_t)cycle+1,new_slot) &&
-              ledger.can_replace_generation(old_slot),
-              "only drained ledger can reopen on next epoch");
-        check(helper0.tick() && helper0.completed()==cycle-1,
-              "gate-open without release-published transaction ACK is insufficient");
-        check(placement_snapshot(base,&snapshot),"reopen snapshot");
-        publish_reopen_ack(base,snapshot);
-        if (cycle==1) {
+              "engine has not reopened admission or published REOPENED");
+        check(placement_snapshot(base,&snapshot) &&
+              coordinator.step(base,snapshot,rank_ops) &&
+              ledger.can_replace_generation(old_slot) &&
+              read_shared_ack(base,kMaxHelpers).phase==uint32_t(AckPhase::REOPENED),
+              "coordinator reopens guarded ledger and release-publishes REOPENED");
+        if (lose_reopen_ack) {
+            auto* ack=placement_ack(base,kMaxHelpers);
+            __atomic_store_n(&ack->phase,uint32_t(AckPhase::NONE),__ATOMIC_RELEASE);
+            clock.elapse(Deadlines{}.retire_ns-1u);
+            check(helper0.tick() && helper0.completed()==cycle-1,
+                  "one nanosecond before the real REOPENED deadline is retryable");
+            clock.elapse(1);
+            check(helper0.tick() && helper0.tick() && peer_ticks() &&
+                  control->state==uint32_t(PlacementState::ACTIVE) &&
+                  control->active_epoch==cycle+1 && control->active_slot==new_slot &&
+                  !control->fault_code && !h->helper_fault && !ledger.stopped() &&
+                  placement_journal(base)->entry[control->journal_index].fault==
+                      uint32_t(FaultCode::REOPEN_TIMEOUT),
+                  "missing ACK publishes terminal placement-only fault after deadline");
+            const uint64_t frozen_transaction=control->transaction_id;
+            clock.elapse(Deadlines{}.retire_ns);
+            check(helper0.tick() && control->transaction_id==frozen_transaction &&
+                  helper0.completed()==cycle-1 && !load(&h->helper_fault) &&
+                  !ledger.stopped(),
+                  "placement stays disabled while worker and committed serving stay alive");
+            munmap(base,layout.bytes);
+            return;
+        }
+        if (cycle<=2) {
             PlacementAck* ack=placement_ack(base,kMaxHelpers);
             const uint64_t correct_txn=ack->transaction_id;
             __atomic_store_n(&ack->transaction_id,correct_txn-1u,__ATOMIC_RELAXED);
@@ -811,6 +928,7 @@ int main() {
     V23Bootstrap_UnsealedTickReportsInvalidMap();
     V23Cycle_SamePlacementAndSharedProtocol(1,2);
     V23Cycle_SamePlacementAndSharedProtocol(3,1);
+    V23Cycle_SamePlacementAndSharedProtocol(1,2,true);
     V23Epoch_ForwardOnlyAbortRetry();
     V23Ack_OldTxnDelayedDuplicateLost();
     V23Ack_CorruptCurrentAndFault();

@@ -4,6 +4,8 @@
 #include "admission_ledger.h"
 #include "moe_remote_shm.h"
 #include <cstddef>
+#include <atomic>
+#include <mutex>
 #include <cstdint>
 #include <utility>
 #include <vector>
@@ -24,6 +26,21 @@ inline WaitResult wait_bootstrap_seal(void* map, const timespec* deadline) {
     });
     if (waited != WaitResult::Ready) return waited;
     return bootstrap_generation_sealed(map) ? WaitResult::Ready : WaitResult::Error;
+}
+// Rank initialization's lock ordering is a production invariant: engine
+// layer-map callbacks need this mutex to let helper zero publish the seal.
+// Tests enter this exact function and attempt concurrent layer publication.
+template <class Work, class OnWaitError>
+auto with_bootstrap_rank_lock(void* map,
+        const std::atomic<uint32_t>& ready_mask, uint32_t rank,
+        std::mutex& mu, const timespec* deadline, Work&& work,
+        OnWaitError&& on_wait_error) -> decltype(work()) {
+    if (!(ready_mask.load(std::memory_order_acquire) & (1u << rank))) {
+        const WaitResult result = wait_bootstrap_seal(map,deadline);
+        if (result != WaitResult::Ready) return on_wait_error(result);
+    }
+    std::lock_guard<std::mutex> lock(mu);
+    return work();
 }
 inline bool build_bitmap(const void* map, uint32_t slot, uint64_t epoch,
                          uint64_t digest, std::vector<uint8_t>* out) {

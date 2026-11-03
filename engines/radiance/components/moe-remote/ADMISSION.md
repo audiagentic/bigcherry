@@ -440,7 +440,7 @@ PROPOSED/RESERVING/COPYING/PREPARED/QUIESCING/COMMIT/RETIRING/ACTIVE state
 machine; exact RESERVED, READY, QUIESCED, COMMITTED and RETIRED ACKs are
 required from every expected helper and actual engine rank.
 
-The engine coordinator in `moe_remote_hook.cpp::placement_loop`:
+The production engine-rank coordinator in `engine_rank_coordinator.h::EngineRankCoordinator::step`, called once per placement snapshot by `moe_remote_hook.cpp::placement_loop`:
 
 1. **RESERVING.** Every real engine rank validates the actual contiguous
    rank mask, its registration and completed active generation event, the
@@ -519,3 +519,69 @@ an invalid staged candidate, stalled parks, and non-byte-aligned
 helper-strided bitmap packing. These tests cannot replace hardware
 safety or timing measurements; the cycles-off 1-stream delta after
 the per-route bitmap removal has not yet been measured.
+
+
+## Slice D fix round 4: local-only admission, final reopen timeout, shared rank coordinator
+
+**Handoff-declared policy and admission.** The patch's
+`bc_moe_remote_wanted_upto` is the single source of truth about whether
+remote mailbox kernels can be declared. The host extension resolves that
+very same exported function after installing its default row bounds and
+caches the conservative answer for all permitted step rows. For
+`R3_MOE_REMOTE_MIN_ROWS=1 R3_MOE_REMOTE_MAX_ROWS=0`, the function
+says no mailbox can run: a scheduler admission returns success with a
+zero ticket without requiring initialized HIP ranks. The zero-ticket
+per-pass callback is also a local-only no-op. With remote handoff
+possible, `engine_admission_gate.h::admission_bootstrap` requires the
+entire actual rank-ready mask before allowing admission; a partial or
+uninitialized rank always fails. No independent row-policy parser or
+second environment flag is added. The path costs exactly **one cached
+atomic acquire of the rank mask** per remote admission, and **zero**
+such reads for local-only admission. No mapped Request reads, GPU round
+trips or additional kernel operations are introduced.
+
+**Post-commit final ACK.** The helper's
+`EpochCycle::awaiting_reopen_` now receives a transaction-bound
+absolute deadline at RETIRING -> ACTIVE, derived from
+`Deadlines::retire_ns`. A delayed ACK from an older transaction does
+not satisfy `reopened_exactly`. Missing the current REOPENED ACK at
+the deadline journals a `REOPEN_TIMEOUT` terminal placement fault,
+stops future cycles without returning a worker-loop error, and leaves
+the helper lanes, committed ACTIVE generation and serving admission intact. A deadline counter overflow faults placement.
+The controller does *not* set shared `PlacementControl.fault_code`
+for this already-committed, post-ledger diagnostic failure, as doing
+so would shut down serving on the healthy committed generation.
+
+**Rank coordinator, production and tests.** `EngineRankCoordinator::step`
+is the sole participant producing rank RESERVED, READY, QUIESCED,
+COMMITTED, RETIRED and final REOPENED publications. The production
+`placement_loop` constructs one coordinator and a
+`LiveRankOperations` adapter: its callbacks hold the real rank-setup
+mutex when reading HIP bindings, query actual upload events, invoke
+`r3_moe_close_admission`/`r3_moe_wait_drained` and the existing
+ledger's result-consumed and generation-reuse proofs, and reopen through
+`r3_moe_reopen_admission`. The latter no longer publishes REOPENED
+itself: the shared coordinator publishes exactly once after its
+`reopen` callback succeeds. The fake-device test supplies the same
+interface with real host-side ledger closure/proofs, per-lane
+`lane_quiesced` checks and fake upload events. The 1,000-cycle loops
+for both legal shapes (one helper/two ranks, three helpers/one rank)
+use the actual production phase dispatcher; they cannot synthesize
+rank ACKs on their own.
+
+**Bootstrap lock order.** Engine rank setup delegates to
+`owner_generation::with_bootstrap_rank_lock`. Its seal wait is outside
+the engine mutex; the user callback executes the entire verified rank
+setup under that mutex. The concurrent startup test calls that same
+boundary and publishes an outstanding runtime layer map while the rank
+waits. Reversing this order is caught by the test: the layer callback
+cannot acquire the setup mutex. The ready bit is still published only
+after the fully sealed map and private-stream upload event.
+
+The card-free policy-to-admission test compiles the generated
+`rad0002` policy itself and exercises disabled and enabled rows through
+the same admission predicate. The epoch tests include missing and
+delayed older REOPENED ACKs. Removing the production RESERVED handler,
+the REOPENED publisher, or changing the shared bootstrap lock order
+makes the corresponding tests fail. No hot-path publish, route-mark,
+wait, add/finish, seal, or helper GPU kernel was modified.

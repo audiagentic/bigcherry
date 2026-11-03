@@ -18,7 +18,7 @@ enum class FaultCode : uint32_t {
     DEVICE=6, HELPER_DEAD=7, READY_TIMEOUT=8, QUIESCE_TIMEOUT=9,
     EPOCH_MISMATCH=10, COMMIT_TIMEOUT=11, RETIRE_TIMEOUT=12,
     RESULT_NOT_CONSUMED=13, SEQUENCE_EXHAUSTED=14, INCOMPATIBLE_LAYOUT=15,
-    RANK_DEAD=16
+    RANK_DEAD=16, REOPEN_TIMEOUT=17
 };
 enum class ActorKind : uint16_t { COORDINATOR=0, HELPER=1, ENGINE_RANK=2 };
 inline uint32_t actor_id(ActorKind kind,uint16_t index) {
@@ -352,6 +352,18 @@ public:
         } else failed_closed_ = true;
         emit();
         return !committed;
+    }
+    // A lost post-ledger reopen ACK is terminal for placement, NOT serving.
+    // Retain the already committed ACTIVE generation and publish a journal
+    // fault; control.fault_code would poison the engine admission ledger.
+    bool stop_placement_after_commit(FaultCode code) {
+        if (code == FaultCode::NONE || c_.state != uint32_t(PlacementState::ACTIVE) ||
+            last_committed_index_ > 1 || failed_closed_) return false;
+        auto& j = journal_.entry[last_committed_index_];
+        if (!j.fault) j.fault = uint32_t(code);
+        j.finish_ns = clock_.now_ns();
+        failed_closed_ = true;
+        return emit();
     }
     // Rollback is a proposal of the last committed map, requiring a *new* epoch.
     // A postcommit fault is not recoverable here without external stream/residency proof.
@@ -724,10 +736,13 @@ class EpochCycle {
     std::chrono::nanoseconds period_;
     uint64_t next_ns_ = 0;
     uint64_t awaiting_reopen_ = 0;
+    uint64_t reopen_deadline_ns_ = 0;
+    Deadlines deadlines_{};
     uint64_t completed_ = 0;   // full close-drain-recommit-reopen cycles, for the run's evidence
     SharedTransport transport_;
     std::unique_ptr<Controller> controller_;
     bool failed_ = false;
+    bool placement_halted_ = false; // terminal placement diagnostic, not a helper failure
     bool schedule() {
         const uint64_t now = clock_.now_ns();
         const uint64_t period = uint64_t(period_.count());
@@ -737,8 +752,9 @@ class EpochCycle {
     }
 public:
     EpochCycle(void* map, uint32_t helper, const Clock& clock,
-               std::chrono::nanoseconds period)
-        : map_(map), helper_(helper), clock_(clock), period_(period), transport_(map) {
+               std::chrono::nanoseconds period, Deadlines deadlines = {})
+        : map_(map), helper_(helper), clock_(clock), period_(period),
+          deadlines_(deadlines), transport_(map) {
         failed_ = !map || helper >= static_cast<Header*>(map)->helper_count || period.count() < 0;
     }
     bool enabled() const { return period_.count() != 0; }
@@ -748,6 +764,7 @@ public:
         if (period_.count() == 0) return true; // typed setting disables the experiment
         auto* h = static_cast<Header*>(map_);
         if (load(&h->helper_fault)) return false;
+        if (placement_halted_) return true; // keep serving, but still respect real helper faults
         PlacementControl c{};
         if (!placement_snapshot(map_, &c)) return true;
         // Wait for the engine to publish its actual participating rank mask.
@@ -824,8 +841,14 @@ public:
             if (awaiting_reopen_) {
                 // Drain words clear BEFORE burst restoration, parks and the
                 // ledger gate. Only the exact post-ledger ACK permits staging.
-                if (!reopened_exactly(map_,c,awaiting_reopen_)) return true;
+                if (!reopened_exactly(map_,c,awaiting_reopen_)) {
+                    if (clock_.now_ns() < reopen_deadline_ns_) return true;
+                    (void)controller_->stop_placement_after_commit(FaultCode::REOPEN_TIMEOUT);
+                    placement_halted_ = true; // terminal placement-only state
+                    return true; // worker loop must keep serving the committed generation
+                }
                 awaiting_reopen_ = 0;
+                reopen_deadline_ns_ = 0;
                 ++completed_;
                 if (!schedule()) return false;
             }
@@ -875,6 +898,13 @@ public:
             generation_header(map_,1u-committed.active_slot)->state=
                 uint32_t(GenerationState::RETIRED);
             awaiting_reopen_ = c.transaction_id;
+            const uint64_t now = clock_.now_ns();
+            if (deadlines_.retire_ns > UINT64_MAX - now) {
+                (void)controller_->stop_placement_after_commit(FaultCode::SEQUENCE_EXHAUSTED);
+                placement_halted_ = true;
+                return true; // journal a terminal diagnostic, do not kill serving
+            }
+            reopen_deadline_ns_ = now + deadlines_.retire_ns;
         }
         return true;
     }
