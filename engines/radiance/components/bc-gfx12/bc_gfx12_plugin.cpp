@@ -7,6 +7,7 @@
 // hc_read (hyper-connections read, Qwen3.8-Flash-Next): decode-sized steps only (M <= 16), E4M3 mixing matrices.
 // moe_gemm_q (fp8a8 grouped expert GEMM, the 35B): decode-sized steps only (M <= 16), the packed-f16 GEMV.
 #include "rad_abi.h"
+#include "rad_abi_layout.h"
 
 #include <dlfcn.h>
 #include <link.h>
@@ -186,6 +187,7 @@ const RadKernelInfo kRows[] = {
 }  // namespace
 
 extern "C" uint32_t rad_plugin_abi_version(void) { return RAD_ABI_VERSION; }
+RAD_PLUGIN_ABI_LAYOUT_EXPORT  /* the loader refuses a plugin whose struct layout differs from the engine's */
 extern "C" const RadPluginInfo* rad_plugin_info(void) {
     static const RadPluginInfo info = {
         RAD_PLUGIN_KERNEL, "libbcgfx12", "0.0.1", "BigCherry gfx1201 kernel rows ahead of libr4d (RAD15)", "gfx1201",

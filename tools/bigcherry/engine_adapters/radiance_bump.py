@@ -33,14 +33,16 @@ if TYPE_CHECKING:
     from ..source.audit import AuditContext
 
 Runner = Callable[[list[str], Path], None]
-#: reads ``rad_plugin_abi_version()`` of a built plugin
-AbiReader = Callable[[Path], int]
+#: reads ``rad_plugin_abi_version()`` and ``rad_plugin_abi_layout()`` of a built plugin
+AbiReader = Callable[[Path], "tuple[int, int | None]"]
 
 #: the engine's plugin ABI header, relative to the engine source (the components include ``${RADIANCE_SRC}/abi``)
 ABI_HEADER = Path("abi") / "rad_abi.h"
 ABI_MACRO = "RAD_ABI_VERSION"
 #: the engine loads every library in this directory of its runtime home as a plugin and refuses one without the symbol
 PLUGIN_DIR = "kernels"
+#: the engine's own kernel plugin, built from the engine's abi/ headers: its layout fingerprint is the reference
+REFERENCE_PLUGIN = "libr4d.so"
 _ABI_DECLARATION = re.compile(rf"^[ \t]*(?:#[ \t]*define[ \t]+{ABI_MACRO}[ \t]+|.*\b{ABI_MACRO}\b[ \t]*=[ \t]*)\(?[ \t]*(\d+)", re.MULTILINE)
 
 
@@ -74,15 +76,17 @@ _READ_ABI = (
     "if not h: sys.exit((libc.dlerror() or b'dlopen failed').decode())\n"
     "p = libc.dlsym(h, b'rad_plugin_abi_version')\n"
     "if not p: sys.exit('no rad_plugin_abi_version export')\n"
-    "print(ctypes.CFUNCTYPE(ctypes.c_uint32)(p)())\n"
+    "q = libc.dlsym(h, b'rad_plugin_abi_layout')\n"
+    "print(ctypes.CFUNCTYPE(ctypes.c_uint32)(p)(), ctypes.CFUNCTYPE(ctypes.c_uint64)(q)() if q else '-')\n"
 )
 
 
-def read_plugin_abi(so: Path) -> int:
+def read_plugin_abi(so: Path) -> tuple[int, int | None]:
     """dlopen the plugin and call its exported ``rad_plugin_abi_version`` -- the engine's own handshake (the helper's
     ``load_plugin`` does the same). ``nm`` could only show the symbol exists, not its value, and the value is what must
     match. Done in a child process so a plugin that crashes on load cannot take pin-bump down with it. Loaded lazily
-    (see _READ_ABI) so a plugin that uses functions only the engine executable exports can still be read."""
+    (see _READ_ABI) so a plugin that uses functions only the engine executable exports can still be read. Returns the
+    ABI version and the ``rad_plugin_abi_layout`` fingerprint (None when the plugin does not export one)."""
     try:
         result = subprocess.run([sys.executable, "-c", _READ_ABI, str(so)], capture_output=True, text=True, timeout=120)
     except (OSError, subprocess.TimeoutExpired) as exc:
@@ -91,7 +95,8 @@ def read_plugin_abi(so: Path) -> int:
         detail = result.stderr.strip().splitlines()[-1] if result.stderr.strip() else f"exit {result.returncode}"
         raise BumpCheckError(f"cannot read rad_plugin_abi_version from {so}: {detail}")
     try:
-        return int(result.stdout.strip())
+        version, layout = result.stdout.split()
+        return int(version), None if layout == "-" else int(layout)
     except ValueError as exc:
         raise BumpCheckError(f"{so}: unexpected rad_plugin_abi_version output {result.stdout.strip()!r}") from exc
 
@@ -173,7 +178,9 @@ class ComponentGate:
             raise BumpCheckError("the engine and components were not built (the components-build check did not pass)")
 
     def plugin_abi(self) -> list[str]:
-        """Every plugin in the runtime home (the engine's own and the components') must report the declared ABI."""
+        """Every plugin in the runtime home (the engine's own and the components') must report the declared ABI version
+        and export the struct-layout fingerprint of the engine's own kernel plugin (libr4d, built from the same abi/
+        headers); the engine's loader refuses a plugin with no fingerprint or a different one."""
         if not self.declared:
             return []
         self._require_built()
@@ -184,11 +191,21 @@ class ComponentGate:
         for output in (o for component in self.declared.values() for o in component.outputs):
             if output.startswith(f"{PLUGIN_DIR}/") and not (self.home / output).is_file():
                 raise BumpCheckError(f"declared plugin {output} is missing from {self.home}")
+        reference = self.home / PLUGIN_DIR / REFERENCE_PLUGIN
+        if not reference.is_file():
+            raise BumpCheckError(f"the engine's own plugin {REFERENCE_PLUGIN} is missing from {self.home / PLUGIN_DIR}")
+        _, expected_layout = self.abi_reader(reference)
+        if expected_layout is None:
+            raise BumpCheckError(f"{REFERENCE_PLUGIN} exports no rad_plugin_abi_layout; the ABI check needs updating for this revision")
         failures = []
         for so in plugins:
-            actual = self.abi_reader(so)
-            if actual != expected:
-                failures.append(f"{so.name}: rad_plugin_abi_version() is {actual}, the engine source declares {ABI_MACRO} {expected}")
+            version, layout = self.abi_reader(so)
+            if version != expected:
+                failures.append(f"{so.name}: rad_plugin_abi_version() is {version}, the engine source declares {ABI_MACRO} {expected}")
+            if layout is None:
+                failures.append(f"{so.name}: exports no rad_plugin_abi_layout (add RAD_PLUGIN_ABI_LAYOUT_EXPORT, rad_abi_layout.h)")
+            elif layout != expected_layout:
+                failures.append(f"{so.name}: rad_plugin_abi_layout() is {layout:#018x}, {REFERENCE_PLUGIN} reports {expected_layout:#018x}")
         return failures
 
     def component_tests(self) -> list[str]:
