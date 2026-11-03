@@ -11,7 +11,7 @@
       "warnings": 0
     }
   },
-  "bigcherry_revision": "98890edd419fcd7e8f7d259252f8020b70655114",
+  "bigcherry_revision": "9a3980beae47040fece3cc1f7387bbb430aff9a0",
   "first_seen": "2026-11-03T11:08:44.470808+00:00",
   "manifest_hash": "",
   "notes": "pin-bump lane build: radiance:stock:linux-radiance build_plan_id=634453dc1cd981f83b71ac9a8ee72a0f binary_sha256=8e3a19db795407ceaf3dc22a3f09837215f78f9695579079583cd6a3f447c58b build_dir=/work/bigcherry/builds/e0968731eb6da813f90edbf4f08a1fbc/634453dc1cd981f83b71ac9a8ee72a0f",
@@ -115,5 +115,5 @@
   "revision": "769b4c64a671e4b52c43507e50fba1cf591bd139",
   "stage": "patched",
   "tree_state": "",
-  "updated_at": "2026-11-03T12:27:07.975005+00:00"
+  "updated_at": "2026-11-03T12:40:13.113649+00:00"
 }
