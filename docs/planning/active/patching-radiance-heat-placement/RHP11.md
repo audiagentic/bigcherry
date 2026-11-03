@@ -59,12 +59,15 @@ Plan source: GPT staged plan 2026-11-01 (gateway session ses_335f497feb31449a, r
 
 PROGRESS 2026-11-02: spec merged (#508, docs/design/moe-remote-placement-epochs-v23.md, offsets compile-checked). Slice A merged (#513): v23 layout - canonical owner generations, PlacementControl, journal, ACKs, per-request epoch/slot, consumed stamps; old ownership-bitmap API removed; hardware identity vs main passed (24,571 owned experts, byte-identical single-stream text, step time within noise). Slice B (#515): CPU epoch controller (worker_epoch.h), helper slot ledger (worker_residency.h), peak-load heat policy with bounded swaps (worker_heat.h), card-free tests incl. exhaustive policy oracle. Next: slice C (engine step admission in the managed rad0002 patch) - research on step boundaries, MTP lifetime, graph replay and the last consumer of the result plane in progress (gateway request req_main_e70e447f5747).
 
+
+
+PROGRESS 2026-11-03 slice C step 2 (branch feat/rhp11-slice-c-admission): per-step admission ledger with derived capacity (route banks + 1); per-rank device-memory consumption counts sealed to the host once per parent behind a radiance event; fail closed on an invalid seal; no-op placement epoch cycles through PlacementControl; helper drain via the burst word (lanes keep main's serving/waiting loops); drain-time lane identity published by the helper CPU at drain ACK. Hardware: identical text throughout; cycles complete (27-30 per cycling arm) with no hang. Performance history: the first correct form cost +2.6% 1-stream decode; rounds 1-6 reached +0.8-1.0%; hybrid builds (swapping only the helper binary) put the cost in the helper; a cumulative helper bisect (main engine; H0 main sources, H1 shm layout, H2 epoch coordinator, H3 lane loops, H4 completion stores: +0.14/+0.06/(stall)/+0.09/+0.62%) and bisect 3 (round 6 without the stores: +0.81% to +0.30%) isolated the two per-request system-scope stores of done_epoch/done_slot in lane_publish_done. Round 7 (71c6af599) restores main's completion kernel and moves those words to the drain ACK: 1-stream decode +0.14% (cycles off) / +0.28% (cycles on) vs main, within noise (runs/rhp11-c2-ab7). The intermittent +60% after-idle stall seen during this work also occurs on main, so it is not slice C's. Follow-ups: RHP15 (media encoder passes vs admission), RHP16 (calibrated move triggers).
+
 ## Change Log
 
 - 2026-11-01T22:51:14.829553+00:00 (updated-by): Updated: section:title, order=10, work='L', priority='P0', section:description, section:steps, section:detailed_solution, section:validation, section:acceptance_criteria, section:notes
 
 ## Ledger-events
-
 
 
 - chg_20261101_225732_planning-a-staged-roadmap-for_4092
@@ -80,3 +83,6 @@ PROGRESS 2026-11-02: spec merged (#508, docs/design/moe-remote-placement-epochs-
 - 2026-11-02T02:42:16.533832+00:00 (updated-by): Updated: section:ledger-events
 - chg_20261102_055505_groundwork-for-live-expert-pla_6885
 - 2026-11-02T05:55:09.623001+00:00 (updated-by): Updated: section:ledger-events
+- 2026-11-03T00:02:36.089233+00:00 (updated-by): Updated: section:notes
+- chg_20261103_000523_the-engine-can-now-pause-drai_4810
+- 2026-11-03T00:05:27.792971+00:00 (updated-by): Updated: section:ledger-events
