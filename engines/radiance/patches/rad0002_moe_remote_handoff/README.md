@@ -1,6 +1,16 @@
 # rad0002_moe_remote_handoff
 
-## Promotion record
+## Summary
+
+The Radiance v1.14.0 production hand-off patch delegates routed experts to GPU helpers.
+
+## Outcome
+
+Validated on 3 November 2026 for Qwen3.8-Flash-Next fp8-iq4r-moe, an R9700 engine and RX 7900 XTX helpers. The recorded quality and helper-activation checks passed for this profile.
+
+## Detail
+
+### Promotion record
 
 Promotion evidence, profile-evidence tier, radiance pin v1.14.0, 2026-11-03. Profile-scoped: Qwen3.8-Flash-Next is the only model served with remote-MoE helper offload.
 
