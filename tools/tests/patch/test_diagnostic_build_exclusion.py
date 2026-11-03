@@ -58,7 +58,9 @@ class DiagnosticBuildExclusionTests(unittest.TestCase):
         self.assertTrue(set(production.patch_sets) <= set(diag.patch_sets))
         extra = set(diag.patch_sets) - set(production.patch_sets)
         self.assertEqual(extra, {"moe-remote-diag"})
-        self.assertEqual(cfg.patch_sets["moe-remote-diag"].patches, (RAD0002, RAD0004, RAD0006))
+        self.assertEqual(cfg.patch_sets["moe-remote-diag"].patches, (RAD0004, RAD0006))
+        self.assertIn(RAD0002, cfg.patch_sets["serving-core"].patches)
+        self.assertNotIn("moe-remote-handoff", cfg.experiments)
         self.assertIn(("CMAKE_CXX_FLAGS", "-DBC_MOE_REMOTE_DIAG"), cfg.builds["moe-diag"].options)
 
     def test_a_production_patch_set_with_rad0004_fails(self):
@@ -75,11 +77,11 @@ class DiagnosticBuildExclusionTests(unittest.TestCase):
         self.assertEqual(len(problems), 1)
         self.assertIn("source 'radiance'", problems[0])
 
-    def test_a_production_experiment_with_rad0004_fails(self):
-        cfg = _recipes(f'[experiment.moe-remote-handoff]\npatches = ["{RAD0002}", "{RAD0004}"]\n')
+    def test_a_non_diagnostic_experiment_with_rad0004_fails(self):
+        cfg = _recipes(f'[experiment.bad-probe]\npatches = ["{RAD0002}", "{RAD0004}"]\n')
         problems = gates.diagnostic_build_problems(_registry(RAD0004, plain=(RAD0002,)), cfg)
         self.assertEqual(len(problems), 1)
-        self.assertIn("experiment 'moe-remote-handoff'", problems[0])
+        self.assertIn("experiment 'bad-probe'", problems[0])
 
     def test_diag_named_recipes_may_carry_it(self):
         cfg = _recipes(f'[patch-set.moe-remote-diag]\npatches = ["{RAD0002}", "{RAD0004}"]\n'
