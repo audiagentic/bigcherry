@@ -42,7 +42,7 @@ typedef struct BcMoeRemotePlugin {
      * failure. The engine calls this on lane 0 before capture/replay. */
     /* Immutable scheduler-parent admission value, copied into each rank
      * thread before its trunk/history/draft pass. */
-    int (*before_pass)(int rank, struct BcMoeRemoteTicket ticket, int64_t remote_expected, void* stream);
+    int (*before_pass)(int rank, struct BcMoeRemoteTicket ticket, void* stream);
     int (*admit)(struct BcMoeRemoteTicket* out, int try_only, int world_size);
     int (*bind)(struct BcMoeRemoteTicket ticket, int64_t scheduler_step);
     int (*cancel)(struct BcMoeRemoteTicket ticket);
@@ -290,13 +290,13 @@ static thread_local BcMoeRemoteTicket g_rank_ticket{};
 extern "C" void bc_moe_remote_rank_ticket(BcMoeRemoteTicket t) { g_rank_ticket = t; }
 extern "C" BcMoeRemoteTicket bc_moe_remote_current_ticket(void) { return g_rank_ticket; }
 extern "C" int bc_moe_remote_before_pass(int rank, BcMoeRemoteTicket ticket, int64_t rows, void* stream) {
-    int (*fn)(int, BcMoeRemoteTicket, int64_t, void*) = nullptr;
+    int (*fn)(int, BcMoeRemoteTicket, void*) = nullptr;
     {
         std::lock_guard<std::mutex> lock(g_mu);
         fn = g_plugin.before_pass;
     }
-    return fn ? fn(rank, ticket, bc_moe_remote_wanted(rows), stream)
-              : (bc_moe_remote_wanted(rows) ? -1 : 0);
+    /* rows only decides the no-plugin case: a pass that wanted the remote path cannot run without it. */
+    return fn ? fn(rank, ticket, stream) : (bc_moe_remote_wanted(rows) ? -1 : 0);
 }
 extern "C" int bc_moe_remote_rank_done(int rank, BcMoeRemoteTicket ticket, void* stream) {
     if (!ticket.ticket_id) return 0;

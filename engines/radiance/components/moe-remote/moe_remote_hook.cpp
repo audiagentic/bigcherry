@@ -55,7 +55,7 @@ struct EnginePlugin {
     void (*layer_map)(int layer, int n_expert, const int32_t* slot_of_expert);
     int (*owns_expert)(int layer, int expert);
     void (*burst)(int active);
-    int (*before_pass)(int rank, StepTicket ticket, int64_t remote_expected, void* stream);
+    int (*before_pass)(int rank, StepTicket ticket, void* stream);
     int (*admit)(StepTicket* out, int try_only, int world_size);
     int (*bind)(StepTicket ticket, int64_t scheduler_step);
     int (*cancel)(StepTicket ticket);
@@ -235,7 +235,7 @@ int host_done_ticket(StepTicket ticket) {
 /* The setter takes the exact admitted ticket. Every pass belonging to one
  * scheduler parent (trunk, history and draft passes) receives the same value,
  * including the pass issued ahead before that parent's host commit. */
-int before_pass(int rank, StepTicket value, int64_t /*remote_expected*/, void* stream) {
+int before_pass(int rank, StepTicket value, void* stream) {
     if (rank < 0 || rank >= (int)kMaxEngineRanks || !stream ||
         !g.ledger.valid(value, (uint32_t)rank)) return RAD_E_STATE;
     const R3MoeMailboxDevice* dev = nullptr;
