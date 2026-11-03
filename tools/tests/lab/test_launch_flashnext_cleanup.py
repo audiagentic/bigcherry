@@ -53,12 +53,17 @@ if [ -n "$plan" ]; then
   echo '{"plan_version": 1}' > "$plan"; exit 0
 fi
 exec "$REAL_PYTHON" -c '
-import http.server, os, signal, sys
+import http.server, json, os, signal, sys
 signal.signal(signal.SIGINT, lambda *a: os._exit(0))
 signal.signal(signal.SIGTERM, lambda *a: os._exit(0))
 class H(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200); self.end_headers(); self.wfile.write(b"ok")
+    def do_POST(self):
+        self.rfile.read(int(self.headers.get("content-length", 0)))
+        text = os.environ.get("FAKE_ANSWER", " Paris. The capital of Germany is Berlin.")
+        self.send_response(200); self.send_header("content-type", "application/json"); self.end_headers()
+        self.wfile.write(json.dumps({"choices": [{"text": text}]}).encode())
     def log_message(self, *a): pass
 http.server.HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()' "$port"
 """
@@ -260,6 +265,27 @@ class LaunchCleanupTests(unittest.TestCase):
                 first.kill()
         self.assertEqual(self._events(), ["apply", "restore"])
         self.assertEqual(self._alive_pids(), [])
+
+    def test_an_engine_that_is_up_but_answers_garbage_fails_the_start_and_leaves_nothing(self) -> None:
+        # the '!!!' class: /health is fine, every token is '!'. The canary must stop the launch before the hand-off.
+        done = subprocess.run(self._args(), env={**self.env, "FAKE_ANSWER": "!!!!!!!!!!!!!!!!"}, cwd=REPO,
+                              capture_output=True, text=True, timeout=180)
+        self.assertEqual(done.returncode, 96, done.stdout + done.stderr)
+        self.assertIn("start canary failed", done.stdout + done.stderr)
+        self.assertNotIn("FLASHNEXT_EXIT=0", done.stdout)
+        self.assertEqual(self._events(), ["apply", "restore"])
+        self.assertEqual(self._alive_pids(), [])
+
+    def test_the_canary_is_semantic_and_overridable(self) -> None:
+        # a model that answers differently gets its own prompt/expectation; the match is case-insensitive substring
+        done = subprocess.run([*self._args(), "--canary-prompt", "2+2=", "--canary-expect", "FOUR"],
+                              env={**self.env, "FAKE_ANSWER": " four."}, cwd=REPO, capture_output=True, text=True, timeout=180)
+        try:
+            self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+            self.assertIn("start canary: ok", done.stderr)
+        finally:
+            subprocess.run(["bash", str(LAUNCHER), "stop", "--build", str(self.build), "--port", str(self.port), "--gpu-power"],
+                           env=self.env, cwd=REPO, capture_output=True, text=True, timeout=120)
 
     def test_a_successful_start_keeps_the_processes_and_the_power_settings_until_stop(self) -> None:
         done = subprocess.run(self._args(), env=self.env, cwd=REPO, capture_output=True, text=True, timeout=180)

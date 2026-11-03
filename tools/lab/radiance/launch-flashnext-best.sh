@@ -23,7 +23,8 @@
 #   bigcherry build --lane radiance:stock:linux-radiance --experiment moe-remote-handoff
 #
 # Usage:
-#   bash tools/lab/radiance/launch-flashnext-best.sh [start] [--build DIR] [--port N] [--heat FILE] [--host-pool-mib N] [--host-kv-mib N] [--chunk TOKENS] [--ngram-placement ram|disk|vram] [--kv-dtype fp8|fp8_v4|k6_v4] [--engine-arg ARG ...] [--ngram-device INDEX] [--max-model-len TOKENS] [--record-heat PREFIX|off [--record-period S]] [--gpu-power] [--layout NAME] [--budget ARCH=MIB]
+#   bash tools/lab/radiance/launch-flashnext-best.sh [start] [--build DIR] [--port N] [--heat FILE] [--host-pool-mib N] [--host-kv-mib N] [--chunk TOKENS] [--ngram-placement ram|disk|vram] [--kv-dtype fp8|fp8_v4|k6_v4] [--engine-arg ARG ...] [--ngram-device INDEX] [--max-model-len TOKENS] [--record-heat PREFIX|off [--record-period S]] [--gpu-power] [--layout NAME] [--budget ARCH=MIB] [--canary-prompt TEXT --canary-expect FACT]
+#     (every start ends with a canary completion that must contain the fact, default 'The capital of France is' -> Paris; a failure stops the launch, exit 96)
 #   bash tools/lab/radiance/launch-flashnext-best.sh stop
 # Without --build, the newest build under $BC_WORK_ROOT/builds that has the helper binary is used.
 # --heat FILE: the route-heat file that ranks the experts, hottest first (default $WORK/heat/flashnext-mixed.hot-first, C++/HIP source and
@@ -93,6 +94,12 @@ ROPE=none
 SEQS=8
 PREFIX_RESUME=nearest
 RECORD_PERIOD=60
+# The start canary: after /health, every start (cold, measured or cached) sends this one deterministic completion and the answer
+# must contain the expected fact (case-insensitive, semantic, not a hash), or everything this launch started is stopped and the
+# launch fails (exit 96). It catches an engine that is up but answering garbage before any client does. The prompt is a fact the
+# served model answers; a model that cannot answer it gets its own with --canary-prompt/--canary-expect.
+CANARY_PROMPT="The capital of France is"
+CANARY_EXPECT="Paris"
 CMD=start
 [ $# -gt 0 ] && case "$1" in start|stop) CMD=$1; shift ;; esac
 while [ $# -gt 0 ]; do
@@ -116,6 +123,8 @@ while [ $# -gt 0 ]; do
     --ngram-placement) NGRAM=$2; shift 2 ;;
     --record-heat) RECORD=$2; shift 2 ;;
     --record-period) RECORD_PERIOD=$2; shift 2 ;;
+    --canary-prompt) CANARY_PROMPT=$2; shift 2 ;;
+    --canary-expect) CANARY_EXPECT=$2; shift 2 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
 done
@@ -350,6 +359,16 @@ for _ in $(seq 180); do
   sleep 5
 done
 [ $up = 1 ] || { echo "FLASHNEXT_EXIT=1 engine did not come up; see $LOG"; tail -n 30 "$LOG"; false; }
+start_canary() {
+  local body answer
+  body=$(CANARY_PROMPT="$CANARY_PROMPT" python3 -c 'import json,os;print(json.dumps({"model":"default","prompt":os.environ["CANARY_PROMPT"],"max_tokens":24,"temperature":0}))')
+  answer=$(curl -s --max-time 120 "http://127.0.0.1:$PORT/v1/completions" -H 'content-type: application/json' -d "$body" \
+    | python3 -c 'import json,sys;print(json.load(sys.stdin)["choices"][0]["text"])' 2>&1)
+  case "${answer,,}" in *"${CANARY_EXPECT,,}"*) echo "start canary: ok (answered '$(printf %s "$answer" | head -c 60)')" >&2; return 0 ;; esac
+  echo "FLASHNEXT_EXIT=96 start canary failed: the engine is up but answered '$(printf %s "$answer" | head -c 80)' to '$CANARY_PROMPT' (expected it to contain '$CANARY_EXPECT'); stopping everything this launch started; engine log $LOG" >&2
+  return 1
+}
+start_canary || exit 96
 trap - ERR
 LAUNCH_HANDED_OFF=1
 trap - EXIT INT TERM HUP
