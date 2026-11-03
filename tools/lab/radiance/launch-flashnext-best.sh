@@ -20,7 +20,7 @@
 # --budget gfx1030=4096). A layout that needs a card the host does not have, or a plugin the build lacks, stops here with the reason.
 #
 # Needs a radiance build of production source with the helper hand-off:
-#   bigcherry build --lane radiance:stock:linux-radiance --experiment moe-remote-handoff
+#   bigcherry build --lane radiance-lab:stock:linux-radiance
 #
 # Usage:
 #   bash tools/lab/radiance/launch-flashnext-best.sh [start] [--build DIR] [--port N] [--heat FILE] [--host-pool-mib N] [--host-kv-mib N] [--chunk TOKENS] [--ngram-placement ram|disk|vram] [--kv-dtype fp8|fp8_v4|k6_v4] [--engine-arg ARG ...] [--ngram-device INDEX] [--max-model-len TOKENS] [--record-heat PREFIX|off [--record-period S]] [--gpu-power] [--layout NAME] [--budget ARCH=MIB] [--canary-prompt TEXT --canary-expect FACT]

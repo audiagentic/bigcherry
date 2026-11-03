@@ -1,5 +1,5 @@
 {
- "_comment": "RAD18: end-to-end A/B of R3_MOE_WORKER_COMBINE (helper 0 adds the two helpers' rows on the CPU) in the working Flash-Next layout (R9700 engine + two XTX helpers). One binary built with --experiment moe-remote-handoff; the arms differ only in R3_MOE_WORKER_COMBINE. --host-pool-mib 22528 (not 30720) so the pinned n-gram table fits free host RAM; equal in both arms. Set RAD_BIN, RAD_HOME and R9700_BDF before use.",
+ "_comment": "RAD18: end-to-end A/B of R3_MOE_WORKER_COMBINE (helper 0 adds the two helpers' rows on the CPU) in the working Flash-Next layout (R9700 engine + two XTX helpers). One binary built from the production lab lane; the arms differ only in R3_MOE_WORKER_COMBINE. --host-pool-mib 22528 (not 30720) so the pinned n-gram table fits free host RAM; equal in both arms. Set RAD_BIN, RAD_HOME and R9700_BDF before use.",
  "schema_version": 1,
  "engine": "radiance",
  "evidence_role": "diagnostic",

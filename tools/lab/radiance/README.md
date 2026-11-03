@@ -1,61 +1,30 @@
-# Radiance: second-engine lab (MEN01, MEN02)
+# Radiance lab operations
 
-**Question.** Can standalone radiance (codeberg.org/StillDeadcode/radiance, Apache-2.0, C++/HIP) be built and run from
-source on the lab host, on which of our cards, and how fast is it measured our way? Plan group `run-multi-engine`.
+Start with the [Radiance runbook](../../../docs/reference/engines/radiance/RUNBOOK.md) for production/lab source composition, launcher arguments, plan-check cache, layouts, and exit codes. The lab source is **production plus evaluated fixes and explicit experiments**; the validated remote-MoE hand-off is already in production. Build without a hand-off experiment:
 
-**Why.** On one R9700 with a 4-bit Qwen3.8-27B the vLLM + radiance container prefills about 2.3-2.9x faster than
-BigCherry llama.cpp (2026-10-09, `tools/lab/reference-vllm/`). Radiance is the engine behind that result and now a
-standalone server with a llama-server-compatible API.
+```sh
+PYTHONPATH=tools python3 -m bigcherry build --lane radiance-lab:stock:linux-radiance
+```
 
-## Files
+`lab-build.sh` provides `rad_build LOG` to sourced lab scripts. It reuses builds only for matching recorded engine/config trees and ROCm SDK, requiring both the engine and helper binaries. For an explicit build, give `--build DIR` to `launch-flashnext-best.sh`.
 
-- `build.sh`: configures and builds radiance at the checked-out (or given) commit for `gfx1201`, runs its card-free
-  tests, and records commit, toolchain, binaries and plugins. Run as a queue `SCRIPT` job.
+## Launch and quality
 
-- `fetch-gcc14.sh`: unpacks Ubuntu's g++-14 packages into a private directory for hosts that only have g++ 13
-  (radiance does not build with g++ 13 or with ROCm's clang as host compiler). Nothing is installed system-wide.
+Hold the exclusive **gpu lease** for launches and measurements, not just the benchmark request: the first launch of a new configuration measures the engine's memory plan with helpers running (**about 1–2 minutes**). Every start arms `--plan-check` even when a cached plan exists, waits for `/health`, then runs the mandatory start canary. The launcher returns **96** for a failed canary, **97** for plan measurement/storage/setup failure, or **98** for a held launch lock/already-running server. Stop before clearing `$BC_WORK_ROOT/flashnext/plan-cache` to force remeasurement.
 
-- `run-radiance.sh`: serves a model from that build on the R9700 alone (`--tp 1`, fp8 KV) and measures it with
-  `bigcherry engine-bench --engine radiance` at the reference-lane depths, with the drafter on and off. Each arm
-  writes `<arm>.engine-bench.json`, the same record `run-llamacpp-r9700.sh` writes for llama.cpp.
+Use `--layout NAME` (`bigcherry layout list|show`) for device composition. The RDNA2 RX 6900 XT tail can improve placement capacity but has a known **worst-case quality penalty (RAD46)**; compare outputs against the two-XTX layout rather than inferring quality from throughput.
 
-- `helper-ab.json`, `helper-kld.json`: `ab-benchmark --server-config` examples for the R9700 engine with two XTX helper
-  sidecars: speed (R3_MOE_WORKER_ROWS 0 vs 1) and KL quality (MEN11). They replaced the `fn-r9700-engine.sh`,
-  `fn-helper-gate.sh`, `fn-helper-kld.sh` and `fn-r9700-kld.sh` lab scripts.
+For KL quality, use `helper-kld.json` with `PYTHONPATH=tools python3 -m bigcherry.campaign.benchmark --server-config tools/lab/radiance/helper-kld.json`. Record the reference **once** with `quality.record` and `quality.corpus` present, then remove those keys and reuse the same reference directory for subsequent deterministic captures. See [patch validation](../../../docs/reference/testing/PATCH_VALIDATION.md). `helper-ab.json` is the speed harness; `fn-profile.sh` and `fn-profile-compare.py` support GPU kernel/copy traces.
 
-- `fn-helper.sh`, `fn-profile.sh`, `fn-profile-compare.py`: rocprofv3 kernel/copy traces of one prefill and their
-  comparison; the harness does not trace, so these stay.
+## Comparative benchmark harness
 
-- `rad20-barrier-wake.cpp`, `rad20-barrier-wake.sh`: RAD20 option B measurement. How long after the R9700 (or a host
-  thread) releases a wait on an XTX queue does the next XTX kernel start? Arm A waits with an AQL `BARRIER_AND` on an
-  HSA signal (raw HSA queue), arm B with `hipStreamWaitValue32` on host-registered shared memory; single process and
-  the production two-process split (helper creates an IPC signal, engine attaches it). Needs `R9700_BDF` and
-  `XTX_BDF`; hold the `gpu` lease. In two processes `hsa_amd_ipc_signal_attach` maps the signal for the host only,
-  so the engine attaches the signal's page again with `hsa_amd_ipc_memory_attach` for its R9700 kernel's store.
-  `--dump FILE` writes one CSV row per iteration. In two processes the first arm released by an R9700 kernel,
-  whichever wait it uses, pays a one-time warm-up: about 350-530 us on its first iteration and 11-39 us for the next
-  ~15 ms; a single process does not show it. Compare arms after that warm-up, or put a throwaway arm first.
-  Run it with `bash` (lab scripts are not executable in the repo):
-  `R9700_BDF=0000:09:00.0 XTX_BDF=0000:03:00.0 agent-lease acquire gpu --ttl 30m --purpose "RAD20 barrier wake" -- bash tools/lab/radiance/rad20-barrier-wake.sh`.
-  Result (2026-10-26): the barrier wakes about 0.8 us slower than `hipStreamWaitValue32` at p50 (two processes, R9700
-  release, n=2000: 7.55 vs 6.77 us), and a pending wait of either kind holds the XTX at about 96-98 W against 12 W
-  idle, so option B saves no power while a wait is armed.
+Prefer the maintained `bigcherry ab-benchmark` for paired experiments. For a specialised engine/helper hardware bisect, follow the **structure**, not the host-specific paths, of the RHP11 C2 `run.sh` and `analyse.py` reference:
 
-## Build result on dev (2026-10-09)
+1. Pin **each arm** to a fixed commit in its own throwaway **detached worktree**. Never build from or reset the live slice worktree. Record the commit, build directory, source/composition and settings; clean up only the throwaway worktrees.
+2. Build **all arms before acquiring the gpu lease**. Coordinate with concurrent build/measurement work using a **hold file**: the runner signals `builds-ready`, then waits while `hold` exists; the other owner clears it only when no build can overlap the measurement. Acquire the lease after the hold is cleared.
+3. Rotate arm order (for example ABC/CBA/ABC); use equal workloads and temperatures, check each start/stop, and collect per-rep output, helper logs and activation counts. When isolating engine versus helper costs and the shared-memory ABI/layout is unchanged, **swap only the helper binary** between builds.
+4. In the analyser, assert that **every arm has exactly one nonempty completion text SHA-256 hash and that it equals main's single hash**. Fail otherwise; an aggregate `all ok` line is not a correctness assertion.
+5. Report **decode** (engine step ms and tokens/s) and **prefill** (TTFT or prefill tokens/s) **separately**, by stream count. Give medians, ranges, sample counts, per-position comparisons, and identified outliers. Occasional whole-rep stalls of about **+60% occur on main too**; explicitly identify/exclude stalled reps under a stated rule rather than treating them as a patch effect.
+6. Bisect helper features **cumulatively** (add one component at a time), and use engine `--profile-ops` plus host `perf` to distinguish host scheduling from device time. Retain raw per-rep evidence and a summary of the caveats.
 
-Builds in 104 s for gfx1201 with ROCm 7.2.4 and g++ 14.2 (unpacked by `fetch-gcc14.sh`). 38 of 39 card-free tests
-pass; `plugin_test` fails because it probes device 0, an RX 7900 XTX, and the log states the reason: libr4d has code
-objects for gfx1201 only, so its 201 device kernels are left out of selection on a gfx1100 card.
-
-## Facts from the source (radiance 1.3.0, commit 89cee7ce)
-
-- Kernel library `libr4d` covers gfx1200 / gfx1201 only. `libref` is the reference implementation and `libavx` the
-  CPU host backend. A 7900 XTX (gfx1100) or 6900 XT (gfx1030) needs a kernel library plugin (`docs/PLUGIN.md`).
-- Tensor parallelism (`--tp N`) needs every rank on a covered card, so this host runs `--tp 1` on the R9700.
-- Flash-Next ships as `qwen3.8-next-flash-fp8-iq4r-moe.rad` (114 GiB) with serve flags written for two R9700s.
-- Its `ggml` quantiser reuses llama.cpp's quantize functions, so GGUF quantisation choices carry over.
-
-## Disposition
-
-Experiment-only until MEN01 and MEN02 conclude. If radiance stays, these scripts move behind the engine adapter
-(MEN03); if not, the topic is removed.
+Do not copy the reference harness's absolute paths, device identifiers or mutable head selections into new runs. The benchmark skill (`.claude/skills/bigcherry-benchmark/SKILL.md`) describes the general attribution rules.

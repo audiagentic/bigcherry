@@ -1,5 +1,5 @@
 #!/bin/bash
-# RAD20 Option A speed A/B: builds the moe-remote-handoff experiment from origin/main (in a worktree under this
+# RAD20 Option A speed A/B: builds the production lab source from origin/main (in a worktree under this
 # checkout's worktrees/) and from this branch, then runs rad20-burst-ab.json through ab-benchmark (paired, order-balanced).
 # Devices come from the environment: R9700_BDF (engine GPU PCI address) and XTX_BDFS (helper GPU PCI addresses); the
 # ROCr indices are looked up from them.

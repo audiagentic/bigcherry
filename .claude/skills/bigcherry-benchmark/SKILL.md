@@ -111,6 +111,14 @@ an explicit statement of what the result does NOT attribute;
 
 outliers named and excluded with a reason.
 
+## Radiance helper-bisect lessons
+
+- Assert text identity explicitly: **each arm must produce exactly one nonempty text hash, equal to main's single hash**. A previous `all ok` summary concealed a garbage-output arm.
+- Occasional whole-repetition stalls of about **+60%** also occur on main. Use medians; identify stalled reps and exclude them explicitly under a recorded rule.
+- To split engine-side from helper-side cost, swap **only the helper binary** between builds when their shared-memory layouts/ABI match; keep the engine and settings fixed.
+- In a helper bisect, add components **cumulatively**, rather than comparing independent, differently composed variants.
+- Engine `--profile-ops` and host `perf` can distinguish device-kernel time from host scheduling/CPU overhead. Record the same arm's observations.
+
 ## The five failure modes
 
 Every one of these produced a reported-then-retracted result. Check each
