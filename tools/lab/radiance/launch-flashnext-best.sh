@@ -366,7 +366,7 @@ start_canary() {
   # canary failure whatever text it happens to contain.
   if ! reply=$(curl -fsS --max-time 120 "http://127.0.0.1:$PORT/v1/completions" -H 'content-type: application/json' -d "$body" 2>&1); then
     answer="<request failed: $(printf %s "$reply" | head -c 80)>"
-  elif ! answer=$(printf %s "$reply" | python3 -c 'import json,sys;print(json.load(sys.stdin)["choices"][0]["text"])' 2>/dev/null); then
+  elif ! answer=$(printf %s "$reply" | python3 -c 'import json,sys;t=json.load(sys.stdin)["choices"][0]["text"];sys.exit(1) if not isinstance(t,str) else print(t)' 2>/dev/null); then
     answer="<not a completion: $(printf %s "$reply" | head -c 60)>"
   else
     case "${answer,,}" in *"${CANARY_EXPECT,,}"*) echo "start canary: ok (answered '$(printf %s "$answer" | head -c 60)')" >&2; return 0 ;; esac

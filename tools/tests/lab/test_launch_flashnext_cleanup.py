@@ -65,6 +65,8 @@ class H(http.server.BaseHTTPRequestHandler):
         self.send_response(int(os.environ.get("FAKE_STATUS", "200"))); self.send_header("content-type", "application/json"); self.end_headers()
         if os.environ.get("FAKE_MALFORMED"):
             self.wfile.write(b"Traceback: not json"); return
+        if os.environ.get("FAKE_OBJECT_TEXT"):
+            self.wfile.write(json.dumps({"choices": [{"text": {"Paris": "not a string"}}]}).encode()); return
         self.wfile.write(json.dumps({"choices": [{"text": text}]}).encode())
     def log_message(self, *a): pass
 http.server.HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()' "$port"
@@ -281,7 +283,8 @@ class LaunchCleanupTests(unittest.TestCase):
     def test_a_failed_request_or_a_reply_that_is_not_a_completion_never_passes_the_canary(self) -> None:
         # valid completion text over a non-2xx status, and a non-JSON body that merely contains the expected word
         for name, extra, args in (("http 500 with the right text", {"FAKE_STATUS": "500"}, []),
-                                  ("malformed body containing the expected word", {"FAKE_MALFORMED": "1"}, ["--canary-expect", "Traceback"])):
+                                  ("malformed body containing the expected word", {"FAKE_MALFORMED": "1"}, ["--canary-expect", "Traceback"]),
+                                  ("text that is an object, not a string", {"FAKE_OBJECT_TEXT": "1"}, [])):
             with self.subTest(case=name):
                 if self.log.exists():
                     self.log.unlink()
