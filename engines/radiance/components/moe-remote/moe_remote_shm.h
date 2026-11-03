@@ -157,7 +157,11 @@ struct alignas(64) JournalRecord {
     uint32_t commit_ranks;
     uint32_t retire_helpers;
     uint32_t retire_ranks;
-    uint32_t reserved[6];
+    // Terminal placement-only cleanup diagnostic, distinct from a precommit
+    // abort's original fault; these occupy previously reserved journal words.
+    uint32_t cleanup_fault;
+    uint32_t cleanup_actor;
+    uint32_t reserved[4];
 };
 struct alignas(64) PlacementJournal {
     JournalRecord entry[2];

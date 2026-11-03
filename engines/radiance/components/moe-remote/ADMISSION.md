@@ -765,6 +765,36 @@ exists. Both Controller::propose and same-map auto-staging refuse
 to race an outstanding cleanup. Missing proof holds future placement,
 not unrelated ACTIVE serving.
 
+**Bounded cleanup and abort event errors (slice E part 6).** The
+controller starts a monotonic absolute cleanup deadline as the transaction
+becomes ACTIVE: the existing `Deadlines::retire_ns` for a committed
+RETIRING->ACTIVE transition (120 s by default), or
+`Deadlines::copy_ns` for precommit abort cleanup (180 s by default).
+Helper zero checks exact CLEANED identities on each ACTIVE tick, including
+when the synthetic epoch period is zero. Lost, duplicate, stale, and
+mismatched ACKs cannot prove cleanup. A missing participant at expiration
+halts *placement only*, leaving ACTIVE serving and the unsafe inactive
+bank/slot protected. The journal retains the original abort reason in
+`fault`, and records the terminal cause and first missing actor in
+`cleanup_fault` and `cleanup_actor` (previously reserved journal
+words); `control.fault_actor` also identifies that participant.
+`control.fault_code` stays zero so admitted parent steps remain valid.
+Helpers may retry an incomplete precommit upload drain without publishing
+CLEANED or setting `helper_fault`; the controller's deadline handles a
+participant that never finishes. A lost REOPENED ACK halts each helper
+locally after its reopen deadline; only helper zero owns the controller
+and journals REOPEN_TIMEOUT, while other helpers keep old residency
+untouched.
+
+An aborted rank bitmap event returning a HIP query/device/identity error
+is `RankResult::DeviceError`, not Pending. The production rank participant
+publishes a transaction- and ACTIVE-identity-exact CLEANED-phase DEVICE
+fault, which helper zero records immediately as a terminal placement-only
+condition. The rank coordinator remembers the error so a later success
+cannot certify that inactive generation as CLEANED; the old serving
+generation stays operational. Only a genuine Pending event retries,
+bounded by the abort cleanup deadline.
+
 All checks run on the placement control plane, not in lane processing.
 Against part 3 there are zero additional per-request Request-field
 reads, system-scope stores/fences, host round trips, barriers or GPU

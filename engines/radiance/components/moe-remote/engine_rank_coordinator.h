@@ -36,6 +36,10 @@ struct RankOperations {
 class EngineRankCoordinator {
     uint64_t uploaded_ = 0, reserved_ = 0, closed_ = 0;
     uint64_t cutoff_ = 0;
+    // A failed aborted DMA event cannot authorize reuse even if it later
+    // reports success. The controller records the exact CLEANED-phase fault.
+    uint64_t abort_faulted_ = 0;
+    uint32_t abort_fault_rank_ = UINT32_MAX;
     uint32_t old_epoch_ = 0;
     uint32_t reserved_mask_ = 0, issued_mask_ = 0, ready_mask_ = 0, committed_mask_ = 0;
 public:
@@ -184,13 +188,26 @@ public:
             if (j.transaction_id==c.transaction_id && j.fault && !j.commit_ns) {
                 // An aborted bitmap upload may still be DMA-in-flight. Query
                 // its event before certifying that the inactive bank is reusable.
+                if (abort_faulted_==c.transaction_id) {
+                    publish_cleanup_fault_ack(map,kMaxHelpers+abort_fault_rank_,c,
+                                              FaultCode::DEVICE);
+                    return true; // placement-only terminal; keep serving ACTIVE(N)
+                }
                 bool complete=true;
                 if (uploaded_==c.transaction_id) {
-                    for (uint32_t rank=0;rank<kMaxEngineRanks;++rank)
-                        if ((issued_mask_ & (1u<<rank)) &&
-                            ops.abort_upload_done(rank,j.new_slot,j.after_epoch,
-                                                  j.candidate_digest)!=RankResult::Ready)
-                            complete=false;
+                    for (uint32_t rank=0;rank<kMaxEngineRanks;++rank) {
+                        if (!(issued_mask_ & (1u<<rank))) continue;
+                        const RankResult result=ops.abort_upload_done(
+                            rank,j.new_slot,j.after_epoch,j.candidate_digest);
+                        if (result==RankResult::DeviceError) {
+                            abort_faulted_=c.transaction_id;
+                            abort_fault_rank_=rank;
+                            publish_cleanup_fault_ack(map,kMaxHelpers+rank,c,
+                                                      FaultCode::DEVICE);
+                            return true; // never mark the inactive upload reusable
+                        }
+                        if (result==RankResult::Pending) complete=false;
+                    }
                 }
                 if (complete) {
                     for (uint32_t rank=0;rank<kMaxEngineRanks;++rank)

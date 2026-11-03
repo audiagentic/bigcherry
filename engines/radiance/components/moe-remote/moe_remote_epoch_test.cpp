@@ -84,6 +84,77 @@ static void complete(Controller& c,FakeTransport& t) {
     t.close(c.control(),true);
     check(c.can_propose(),"reopen plus all helper cleanups authorize proposal");
 }
+static void V23Cleanup_DeadlineAndExactAcks() {
+    for (bool committed : {false,true}) {
+        for (bool missing_rank : {false,true}) {
+            // Aborted transactions need all rank CLEANED ACKs; committed
+            // transactions need REOPENED and every helper CLEANED ACK.
+            if (committed && missing_rank) continue;
+            FakeClock clock;
+            FakeTransport transport;
+            Deadlines d{};
+            d.copy_ns=200; d.retire_ns=100;
+            Controller c(transport,clock,101,3,2,d);
+            if (committed) {
+                check(c.begin_epoch_cycle(),"cleanup test committed begin");
+                complete(c,transport); // genuine COMMIT and RETIRING through Controller
+            } else {
+                check(c.propose(202) && c.start_reserving() &&
+                      c.fail(FaultCode::CAPACITY),
+                      "cleanup test abort before committed generation");
+                transport.close(c.control(),false);
+            }
+            const uint32_t actor=missing_rank ? kMaxHelpers+1 : 2;
+            const uint32_t expected_actor=missing_rank ?
+                actor_id(ActorKind::ENGINE_RANK,1) :
+                actor_id(ActorKind::HELPER,2);
+            const PlacementAck exact=transport.a[actor];
+            check(c.poll_cleanup() && c.can_propose(),
+                  "only all exact cleanup ACKs allow subsequent transaction");
+            // Duplicating a valid CLEANED does not change its proof.
+            transport.close_actor(c.control(),actor,AckPhase::CLEANED);
+            check(c.poll_cleanup() && c.can_propose(),
+                  "duplicate CLEANED remains exact and harmless");
+            // The controller must ignore a delayed old transaction, wrong
+            // phase, wrong active identity, and even stale fault publications.
+            for (uint32_t bad=0;bad<6;++bad) {
+                transport.a[actor]=exact;
+                auto& a=transport.a[actor];
+                if (bad==0) --a.transaction_id;
+                if (bad==1) a.phase=uint32_t(AckPhase::RETIRED);
+                if (bad==2) ++a.epoch;
+                if (bad==3) a.digest^=1u;
+                if (bad==4) a.generation_slot=1u-a.generation_slot;
+                if (bad==5) { --a.transaction_id; a.fault_code=uint32_t(FaultCode::DEVICE); }
+                check(!c.can_propose() && c.poll_cleanup() && !c.failed_closed(),
+                      "stale, wrong-phase, mismatched CLEANED not counted as proof or fault");
+            }
+            transport.a[actor]=exact;
+            check(c.can_propose(),"restored exact cleanup identity");
+            transport.a[actor]={}; // lost (or dead participant)
+            check(!c.can_propose(),"lost CLEANED blocks proposals");
+            clock.elapse((committed ? d.retire_ns : d.copy_ns)-1u);
+            check(c.poll_cleanup() && !c.failed_closed() &&
+                  !c.can_propose(),"cleanup waits until absolute deadline");
+            clock.elapse(1u);
+            check(!c.poll_cleanup() && c.failed_closed() &&
+                  c.control().state==uint32_t(PlacementState::ACTIVE) &&
+                  c.control().active_epoch==(committed ? 2u : 1u) &&
+                  c.control().active_slot==(committed ? 1u : 0u) &&
+                  c.control().fault_code==0 &&
+                  c.control().fault_actor==expected_actor &&
+                  c.journal().entry[c.control().journal_index].cleanup_fault==
+                      uint32_t(FaultCode::CLEANUP_TIMEOUT) &&
+                  c.journal().entry[c.control().journal_index].cleanup_actor==expected_actor &&
+                  (!committed ? c.journal().entry[c.control().journal_index].fault==
+                       uint32_t(FaultCode::CAPACITY) : true),
+                  "expiry records missing participant and retains committed/old ACTIVE generation");
+            transport.a[actor]=exact;
+            check(!c.can_propose() && !c.poll_cleanup(),
+                  "late cleanup cannot undo terminal placement halt");
+        }
+    }
+}
 static void V23Epoch_ForwardOnlyAbortRetry() {
     FakeClock clk; FakeTransport tr;
     Controller c(tr,clk,101,2,1);
@@ -351,6 +422,7 @@ struct FakeRankOperations final : RankOperations {
     FakeCycleUpload* gpu;
     uint32_t rank_count;
     bool closed=false, faulted=false;
+    int abort_event_error_rank=-1; // simulate hipEventQuery returning a real device error
     uint64_t closure=0, closed_cutoff=0;
     uint32_t previous_epoch=0;
     FakeRankOperations(void* m, r3::admission::Ledger& l,
@@ -383,6 +455,7 @@ struct FakeRankOperations final : RankOperations {
         const auto& d=gpu[rank];
         if (!d.issued[slot] || d.binding[slot].epoch!=epoch ||
             d.binding[slot].digest!=digest) return RankResult::DeviceError;
+        if (abort_event_error_rank==int(rank)) return RankResult::DeviceError;
         return d.event_ready[slot] ? RankResult::Ready : RankResult::Pending;
     }
     bool exact_binding(uint32_t rank,uint32_t slot,uint64_t epoch,uint64_t digest) override {
@@ -505,9 +578,21 @@ static void V23Cycle_PrecommitAbortDuringLiveServing() {
     check(transport.seal_bootstrap(),"abort segment bootstrap seal");
     const uint64_t digest=generation_digest(map,0);
     FakeClock clock;
+    struct StuckAbort : HelperMigration {
+        uint64_t pending=0;
+        uint32_t attempts=0;
+        FaultCode reserve(const void*,const PlacementControl&) override {
+            return FaultCode::NONE;
+        }
+        HelperCopy copy() override { return HelperCopy::READY; }
+        bool commit(const PlacementControl&) override { return true; }
+        bool reclaim(const void*,const PlacementControl&) override { return true; }
+        bool abort() override { ++attempts; return false; } // pending upload drain
+        uint64_t transaction() const override { return pending; }
+    } stuck;
     EpochCycle leader(map,0,clock,std::chrono::nanoseconds{100});
     EpochCycle peer1(map,1,clock,std::chrono::nanoseconds{100});
-    EpochCycle peer2(map,2,clock,std::chrono::nanoseconds{100});
+    EpochCycle peer2(map,2,clock,std::chrono::nanoseconds{100},Deadlines{},&stuck);
     r3::admission::Ledger ledger(5);
     check(ledger.initialize(1,0),"active serving ledger");
     check(leader.tick() && peer1.tick() && peer2.tick(),"live participants bootstrap");
@@ -571,6 +656,43 @@ static void V23Cycle_PrecommitAbortDuringLiveServing() {
           c->state==uint32_t(PlacementState::PROPOSED) &&
           c->active_epoch==1 && h->helper_fault==0,
           "retry after invalid candidate gets fresh transaction and N");
+    // Third abort: one peer cannot complete a queued migration upload.
+    // It must keep serving and withhold CLEANED until the deadline, rather
+    // than exiting with helper_fault because abort() is still pending.
+    const uint64_t stuck_transaction=c->transaction_id;
+    check(leader.proposal_controller()->fail(FaultCode::UPLOAD),
+          "stuck upload precommit forward abort");
+    stuck.pending=stuck_transaction;
+    check(peer1.tick() && peer2.tick() && leader.tick() &&
+          stuck.attempts==1 && !peer2.placement_halted() &&
+          !leader.proposal_controller()->can_propose() && !h->helper_fault,
+          "incomplete abort retries without faking CLEANED or killing helper");
+    publish_cleanup_ack(map,kMaxHelpers,*c);
+    clock.elapse(Deadlines{}.copy_ns-1u);
+    check(peer2.tick() && leader.tick() && stuck.attempts>=2 &&
+          !peer2.placement_halted() && !h->helper_fault,
+          "incomplete helper abort bounded by copy-derived cleanup deadline");
+    clock.elapse(1u);
+    check(peer2.tick() && leader.tick() && peer2.tick() &&
+          leader.proposal_controller()->failed_closed() &&
+          leader.placement_halted() && peer2.placement_halted() &&
+          peer2.placement_fault()==FaultCode::CLEANUP_TIMEOUT &&
+          c->active_epoch==1 && c->active_slot==0 && c->fault_code==0 &&
+          placement_journal(map)->entry[c->journal_index].cleanup_fault==
+              uint32_t(FaultCode::CLEANUP_TIMEOUT) &&
+          placement_journal(map)->entry[c->journal_index].cleanup_actor==
+              actor_id(ActorKind::HELPER,2) &&
+          !h->helper_fault && !ledger.stopped(),
+          "missing helper CLEANED yields safe placement-only terminal condition");
+    StepTicket after_stuck{};
+    check(ledger.admit(1,&after_stuck)==r3::admission::Ledger::Result::Ok &&
+          after_stuck.placement_epoch==1 && after_stuck.generation_slot==0 &&
+          ledger.bind(after_stuck.ticket_id,9) &&
+          ledger.host_complete(after_stuck.ticket_id) &&
+          ledger.poll([](const StepTicket&,uint32_t) {
+              return r3::admission::Ledger::Proof::Proven;
+          }),
+          "live generation keeps serving after abort cleanup deadline");
     munmap(map,layout.bytes);
 }
 static void V23Cycle_StalledParkFaultsAndKeepsAdmissionClosed() {
@@ -903,10 +1025,19 @@ static void V23Cycle_SamePlacementAndSharedProtocol(
             auto* ack=placement_ack(base,kMaxHelpers);
             __atomic_store_n(&ack->phase,uint32_t(AckPhase::NONE),__ATOMIC_RELEASE);
             clock.elapse(Deadlines{}.retire_ns-1u);
-            check(helper0.tick() && helper0.completed()==cycle-1,
-                  "one nanosecond before the real REOPENED deadline is retryable");
+            check(helper0.tick() && peer_ticks() && helper0.completed()==cycle-1,
+                  "all helpers remain retryable before REOPENED deadline");
             clock.elapse(1);
-            check(helper0.tick() && helper0.tick() && peer_ticks() &&
+            // Drive NON-leaders through their production reopen-timeout branch
+            // first: they own no Controller, and must not dereference one.
+            check(peer_ticks() && helper0.tick() && helper0.tick() &&
+                  std::all_of(peers.begin(),peers.end(),
+                      [](const auto& p) {
+                          return p->placement_halted() &&
+                                 p->placement_fault()==FaultCode::REOPEN_TIMEOUT;
+                      }) &&
+                  helper0.placement_halted() &&
+                  helper0.placement_fault()==FaultCode::REOPEN_TIMEOUT &&
                   control->state==uint32_t(PlacementState::ACTIVE) &&
                   control->active_epoch==cycle+1 && control->active_slot==new_slot &&
                   !control->fault_code && !h->helper_fault && !ledger.stopped() &&
@@ -915,10 +1046,21 @@ static void V23Cycle_SamePlacementAndSharedProtocol(
                   "missing ACK publishes terminal placement-only fault after deadline");
             const uint64_t frozen_transaction=control->transaction_id;
             clock.elapse(Deadlines{}.retire_ns);
-            check(helper0.tick() && control->transaction_id==frozen_transaction &&
+            check(peer_ticks() && helper0.tick() &&
+                  control->transaction_id==frozen_transaction &&
                   helper0.completed()==cycle-1 && !load(&h->helper_fault) &&
                   !ledger.stopped(),
                   "placement stays disabled while worker and committed serving stay alive");
+            StepTicket still_serving{};
+            check(ledger.admit(1,&still_serving)==r3::admission::Ledger::Result::Ok &&
+                  still_serving.placement_epoch==cycle+1 &&
+                  still_serving.generation_slot==new_slot &&
+                  ledger.bind(still_serving.ticket_id,cycle+1000) &&
+                  ledger.host_complete(still_serving.ticket_id) &&
+                  ledger.poll([](const StepTicket&,uint32_t) {
+                      return r3::admission::Ledger::Proof::Proven;
+                  }),
+                  "lost REOPENED on three helpers still serves committed requests");
             munmap(base,layout.bytes);
             return;
         }
@@ -1522,6 +1664,72 @@ static void V23Move_ChangedMapThroughProduction(uint32_t helpers,uint32_t ranks)
                                ops[0]->serving(old_slot,0)==-1),
               "old generation bank retains the prior owner, not the new one");
     }
+    if (helpers==3) {
+        // Production coordinator with the same event-query contract as the
+        // HIP adapter: the queued inactive bitmap encounters an event ERROR,
+        // not merely hipErrorNotReady. Keep serving the existing active map.
+        const uint32_t active_slot=control->active_slot;
+        const uint32_t inactive_slot=1u-active_slot;
+        const uint64_t active_epoch=control->active_epoch;
+        check(stage_same_map_generation(map) && controller->begin_epoch_cycle(),
+              "device error candidate staged through real helper controller");
+        check(participants[0]->tick() &&
+              control->state==uint32_t(PlacementState::RESERVING),
+              "device error enters reservation");
+        peers();
+        check(participants[0]->tick(),"device error helper reserve");
+        PlacementControl aborted{};
+        check(placement_snapshot(map,&aborted) &&
+              coordinator.step(map,aborted,rank_ops),
+              "device error rank reserve");
+        check(participants[0]->tick() &&
+              control->state==uint32_t(PlacementState::COPYING),
+              "device error reaches COPYING");
+        check(placement_snapshot(map,&aborted) &&
+              coordinator.step(map,aborted,rank_ops) &&
+              gpu[0].issued[inactive_slot] && !gpu[0].event_ready[inactive_slot],
+              "device error rank enqueues actual inactive upload event");
+        check(controller->fail(FaultCode::UPLOAD) &&
+              control->state==uint32_t(PlacementState::ACTIVE) &&
+              !controller->can_propose(),
+              "device error forward abort keeps old generation");
+        peers();
+        check(participants[0]->tick(),"device error helper cancels reservations");
+        rank_ops.abort_event_error_rank=0;
+        check(placement_snapshot(map,&aborted) &&
+              coordinator.step(map,aborted,rank_ops) &&
+              read_shared_ack(map,kMaxHelpers).phase==uint32_t(AckPhase::CLEANED) &&
+              read_shared_ack(map,kMaxHelpers).fault_code==uint32_t(FaultCode::DEVICE),
+              "production rank coordinator publishes abort HIP event error");
+        check(participants[0]->tick() && participants[0]->placement_halted() &&
+              !controller->can_propose() && controller->failed_closed() &&
+              control->state==uint32_t(PlacementState::ACTIVE) &&
+              control->active_epoch==active_epoch &&
+              control->active_slot==active_slot && !control->fault_code &&
+              !h->helper_fault && !ledger.stopped() &&
+              placement_journal(map)->entry[control->journal_index].cleanup_fault==
+                  uint32_t(FaultCode::DEVICE) &&
+              placement_journal(map)->entry[control->journal_index].cleanup_actor==
+                  actor_id(ActorKind::ENGINE_RANK,0),
+              "event query error stops placement immediately, not serving");
+        // Later event completion cannot convert the sticky error into CLEANED.
+        rank_ops.abort_event_error_rank=-1;
+        gpu[0].complete(inactive_slot);
+        check(coordinator.step(map,aborted,rank_ops) &&
+              read_shared_ack(map,kMaxHelpers).fault_code==uint32_t(FaultCode::DEVICE) &&
+              !controller->can_propose(),
+              "aborted event failure remains sticky after eventual completion");
+        StepTicket still_serving{};
+        check(ledger.admit(1,&still_serving)==r3::admission::Ledger::Result::Ok &&
+              still_serving.placement_epoch==active_epoch &&
+              still_serving.generation_slot==active_slot &&
+              ledger.bind(still_serving.ticket_id,2000) &&
+              ledger.host_complete(still_serving.ticket_id) &&
+              ledger.poll([](const StepTicket&,uint32_t) {
+                  return r3::admission::Ledger::Proof::Proven;
+              }),
+              "rank abort device error retains committed serving generation");
+    }
     for (uint32_t helper=0;helper<helpers;++helper)
         check(alloc[helper]->peak==alloc[helper]->bytes,
               "fake physical allocation is fixed across 1000 real-move cycles");
@@ -1540,6 +1748,8 @@ int main() {
     V23Move_ChangedMapThroughProduction(2,1);
     V23Move_ChangedMapThroughProduction(3,1);
     V23Cycle_SamePlacementAndSharedProtocol(1,2,true);
+    V23Cycle_SamePlacementAndSharedProtocol(3,1,true);
+    V23Cleanup_DeadlineAndExactAcks();
     V23Epoch_ForwardOnlyAbortRetry();
     V23Ack_OldTxnDelayedDuplicateLost();
     V23Ack_CorruptCurrentAndFault();
