@@ -85,7 +85,10 @@ Admission, from the #534 re-review (GPT, 2026-11-02; lead decisions):
 - Multi-rank (S1, hard criterion): kv_resolved is the common KV budget the admission checks guarantee. After vram_budget_rank_split, every rank's split KV must cover the same paged-token capacity, and the check refuses, naming the rank, when any rank's split falls short of kv_required's token count.
 - Placement and boundary (S4): the check runs after the final live budget is resolved and before Pools::configure() (Engine::plan() already configures the pools, so "after plan()" is too late). All input validation (ppm, byte-count ranges, calibration selection) precedes the stable-plan and admission comparisons.
 - Stable facts (S3): the host and checkpoint comparisons become the exact equalities §5.2 specifies, each with a negative test: a live host consumer with fewer bytes, a missing expected consumer, a changed residence, a changed checkpoints.want_slots and a changed host_pool_mib are each PLAN_MISMATCH. An automatic placement (ngram_placement = auto, embedding fallback) that resolves differently from the measured plan is PLAN_MISMATCH (S2).
-- Vectors still to add to docs/design/serving-manifest-v1/admission-vectors.json once the model covers them (S5): a multi-rank uneven split, the kv_streams round-up of kv_one, and all_vram / layer_offload placement (no staging region).
+- Vectors (S1b, 2026-11-03): added to docs/design/serving-manifest-v1/admission-vectors.json (now 58): all_vram and layer_offload placements with no staging region (stage 0), and an uneven world of cards with different capacity, expert plane and unit (a per-card capacity minimum, per-card stable plane and unit, a card-count change, and one common resolved KV). Each is checked by the Python model, the C++ checker (bc_v1_test) and the engine's production entry point (plan_flags_test).
+- Named gates still open (lead, 2026-11-03; production is tp=1, so none is exercised on hardware yet):
+  - TP>1 hardware coverage of the admission check. The plan carries one common `kv_resolved` and no per-rank KV; adding a per-rank field would change what validates (a v2 change). The check for TP>1 must be per-rank paged-TOKEN capacity after `vram_budget_rank_split` (each rank's `probes[i]->paged_tokens(rank_cfg_[i].vram_kv_mib)` covering kv_required's token count, refusing naming the rank). It must NOT be a minimum over ranks of KV MiB: upstream re-splits a cheaper rank to FEWER MiB so that it pages the same token count, so a min over MiB would refuse a valid uneven world. The hook runs before the rank split today, so this needs the call moved after the split (engine_bringup.cpp, between the rank split and `Pools::configure`) and a TP=2 hardware run.
+  - The kv_streams round-up of kv_one is the engine's computation (`VramFacts::kv_one`, reported as `kv_one_session.bytes`), not a checker rule; its coverage is an engine-side test, still to be written.
 
 
 
@@ -122,6 +125,7 @@ Slice 2 (shared strict reader) requirement, from the lead's #530 review (2026-11
 
 ## Ledger-events
 
+
 - chg_20261102_121239_the-serving-manifest-v1-format_6543
 - chg_20261102_121824_the-serving-component-can-prod_8129
 - 2026-11-02T12:18:29.161474+00:00 (updated-by): Updated: section:ledger-events
@@ -140,3 +144,5 @@ Slice 2 (shared strict reader) requirement, from the lead's #530 review (2026-11
 - 2026-11-02T19:29:34.542005+00:00 (updated-by): Updated: section:acceptance_criteria
 - chg_20261102_193311_the-engine-now-checks-at-ever_1908
 - 2026-11-02T19:33:20.254177+00:00 (updated-by): Updated: section:ledger-events
+- chg_20261103_033321_the-serving-manifests-owned-e_3536
+- 2026-11-03T03:33:25.449820+00:00 (updated-by): Updated: section:ledger-events

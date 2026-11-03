@@ -24,6 +24,7 @@ target_link_libraries(bc_contract_gen PRIVATE bc_contract)
 
 # The helpers' expert ownership, shared with moe-remote's r3_moe_worker (bc_experts.cmake). bc-serve does not call it yet: it is built and tested here (bc_experts_test) and bc-serve starts planning with it in a later slice.
 include("${CMAKE_CURRENT_SOURCE_DIR}/bc_experts.cmake")
+include("${CMAKE_CURRENT_SOURCE_DIR}/owner_map.cmake")
 
 # calibration.toml is compiled in: the seeds bc-serve derives with, each carrying its evidence.
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/calibration.toml" bc_calibration_seed)
@@ -71,4 +72,9 @@ if(BUILD_TESTING)
   target_compile_definitions(bc_v1_test PRIVATE
     BC_CONTRACT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../../../docs/design/serving-manifest-v1")
   add_test(NAME bc_v1_test COMMAND bc_v1_test)
+  add_executable(bc_owner_map_test EXCLUDE_FROM_ALL owner_map_test.cpp)
+  target_link_libraries(bc_owner_map_test PRIVATE bc_owner_map bc_jcs)
+  target_compile_definitions(bc_owner_map_test PRIVATE
+    BC_CONTRACT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../../../docs/design/serving-manifest-v1")
+  add_test(NAME bc_owner_map_test COMMAND bc_owner_map_test)
 endif()
