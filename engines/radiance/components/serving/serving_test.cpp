@@ -622,10 +622,10 @@ void measured_plan_cache(Fixture& t) {
     namespace sv = bc::serving;
     // Container identity: the metadata tables, not the payload.
     const auto model = t.root / "plan-model.rad";
-    bc::test::write_rad(model, 2, 8, 128, 128);
+    bc::test::write_rad(model, 2, 8, 128, 128, {});
     const std::string id = sv::container_identity(model);
     assert(id.size() == 64 && sv::container_identity(model) == id);
-    bc::test::write_rad(model, 2, 9, 128, 128);
+    bc::test::write_rad(model, 2, 9, 128, 128, {});
     assert(sv::container_identity(model) != id);
     // Engine identity: the binary and every runtime-home file.
     const auto bin = t.file("engine/bin/radiance", "engine-binary-v1");
