@@ -58,6 +58,23 @@ Flash-Next serves from a bc-radiance release build whose patches are validated w
 
 Owner direction 2026-11-02: use the evidence we already have; do not re-run for its own sake. Only measurements no existing run performed are added (step 1, and rad0009 via A4).
 
+
+
+PROGRESS 2026-11-03, step 1 done (/work/bigcherry/runs/men26-kld; config kld.json, kld-isolate.json from tools/lab/radiance/helper-kld.json).
+- Build: origin/main 2f5fc39df (slice C merged); rad0002 patch_validation_subject_digest 663b0856fbc4da97703a059711349be1c5c3cd0373211e701f6e8864f215c947.
+- Reference: freshly recorded engine-local reference (TP2 exact over the two XTX, corpus rad-kld-corpus-4.jsonl, 8240 positions).
+- Determinism: three captures are bit-identical.
+- Helper offload on the two XTX helpers PASSES every limit vs the R9700-alone control: KLD mean +0.003, median +0.0006, p99 -0.034, p99.9 +0.41 (limit 0.5), top-1 -0.36 pts, ppl +1.2%. All helpers served.
+- This is the rad0002 identity evidence (profile-scoped: Flash-Next is the only helper-offload model).
+- The production tail layout (adds the 6900 XT) fails p99.9 (+1.58); tracked as RAD46. That is a gfx1030 helper-kernel issue, not rad0002.
+- Next: steps 2-3 once #538 (lab source includes production) and #543 (patch-promote leaves other sets) merge.
+
 ## Change Log
 
 - 2026-11-03T00:02:59.199386+00:00 (created-by): Created by agent
+- 2026-11-03T02:29:45.375114+00:00 (updated-by): Updated: section:notes
+
+## Ledger-events
+
+- chg_20261103_022951_measured-that-offloading-exper_7122
+- 2026-11-03T02:29:55.053712+00:00 (updated-by): Updated: section:ledger-events
