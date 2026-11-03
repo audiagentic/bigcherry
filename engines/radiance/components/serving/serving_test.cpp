@@ -4,11 +4,15 @@
 #include "serving.h"
 #include "calibration.h"
 #include "ledger.h"
+#include "manifest_writer.h"
+#include "v1/manifest.h"
 #include "plan_cache.h"
 #include "test_rad_fixture.h"
 #include "sha256.h"
 
 #undef NDEBUG   /* the checks below are assert()s: keep them live in Release component builds */
+#include <sys/stat.h>
+
 #include <cassert>
 #include <cstdlib>
 #include <filesystem>
@@ -860,6 +864,82 @@ void measuring_step(Fixture& t) {
     assert(sv::plan_cache_lookup(t.root / "fake-engine/cache", key)->plan.checkpoints.want_slots == 72);
 }
 
+void manifest_writer_step(Fixture& t) {
+    namespace sv = bc::serving;
+    // The container, its heat ranking and the measured plan this configuration's manifest is built from.
+    const auto model = t.root / "writer-model.rad";
+    bc::test::write_rad(model, 4, 16, 128, 128, {});
+    const auto heat = t.root / "writer.hot-first";
+    {
+        std::vector<uint32_t> counts(128 * 16, 0);
+        for (uint32_t l = 0; l < 4; ++l)
+            for (uint32_t e = 0; e < 16; ++e) counts[l * 16 + e] = (e * 7 + l * 3) % 16 + 1;
+        std::ofstream(heat, std::ios::binary).write(reinterpret_cast<const char*>(counts.data()), counts.size() * 4);
+    }
+    Options opts;
+    opts.site = t.file("writer-site.toml", "[engine]\nmodel = \"" + model.string() + "\"\nradiance_home = \"/runtime\"\n"
+                                          "[handoff]\nheat = \"" + heat.string() + "\"\nhistogram = \"/heat.live\"\n");
+    const auto r = sv::resolve(opts, t.facts);
+    const Json plan = Json::parse(R"json({
+      "plan_version": 1, "producer": "radiance --plan-memory (rad0011)",
+      "host": [{"name": "ngram_table", "bytes": 1048576, "residence": "pinned", "from": "engine plan (test)", "remedy": ""}],
+      "checkpoints": {"slot_bytes": 1048576, "floor_slots": 8, "want_slots": 72, "from": "engine plan (test)"},
+      "kv_one_session": {"bytes": 4096, "from": "engine plan (test)"},
+      "vram": {"claimable": 10, "statics": 1, "elastic": 9, "experts": 0, "kv": 9, "stage": 0, "kv_resolved": 9, "expert_floor": 0,
+               "kv_ceiling": 9, "expert_ceiling": 0, "from": "engine plan (test)",
+               "cards": [{"capacity": 10, "free": 10, "engine_expert_plane": 0, "expert_unit_max": 1}]},
+      "host_pool_mib": 9216})json");
+    sv::ManifestInputs in;
+    in.resolved = r;
+    in.instance_id = "11111111-1111-4111-8111-111111111111";
+    in.producer_sha256 = std::string(64, 'a');
+    in.plan.plan = sv::decode_engine_plan(plan, "writer plan");
+    in.plan.plan_json = plan;
+    in.plan_key_inputs = sv::plan_key_inputs(r.values, t.facts, sv::container_identity(model), std::string(64, 'b'), "");
+
+    const auto built = sv::build_manifest(in);
+    // It is a v1 manifest a consumer accepts, and says what the resolver resolved.
+    const auto back = bc::serving::v1::read_manifest(built.text, "writer test");
+    assert(back.ok());
+    const Json& d = built.document;
+    assert(d.at("metadata").at("content_digest") == built.digest && built.digest.rfind("sha256:", 0) == 0);
+    const Json& spec = d.at("spec");
+    assert(spec.at("intent").at("layout") == "flashnext-4gpu" && spec.at("intent").at("model") == model.string());
+    assert(spec.at("processes").at("helpers").size() == 3 && spec.at("processes").at("helpers")[2].at("tier") == "tail");
+    assert(spec.at("processes").at("helpers")[2].at("rows_kernel") == true && spec.at("processes").at("helpers")[2].at("share") == 0);
+    assert(spec.at("processes").at("engine").at("scheduler").at("tp") == r.values.at("engine").at("tp"));
+    assert(spec.at("handoff").at("transport").at("max_rows") == r.values.at("handoff").at("max_rows"));
+    assert(spec.at("handoff").at("kernels").at("moe_down_tile") == 1);
+    assert(spec.at("resources").at("host").at("pool_mib") == r.values.at("memory").at("host_pool_mib"));
+    size_t leaves = 0;
+    for (const auto& [group, body] : spec.at("processes").at("helper_common").items()) leaves += body.size();
+    assert(leaves == 25);   // every helper_common leaf of helper_profile.toml; balance_speeds_milli is absent while balance is off
+    size_t owned = 0;
+    for (const Json& h : spec.at("plan").at("owner_map").at("helpers")) owned += h.at("count").get<size_t>();
+    assert(owned == 64);   // 4 layers x 16 experts: with budgets this large the helpers own them all
+    assert(spec.at("plan").at("engine_memory").at("expected") == plan);
+    // Same inputs, same bytes; another instance, another digest; nothing else moves it.
+    assert(sv::build_manifest(in).text == built.text);
+    sv::ManifestInputs other = in;
+    other.instance_id = "22222222-2222-4222-8222-222222222222";
+    assert(sv::build_manifest(other).digest != built.digest);
+    // A model it cannot open, or a plan that is not this configuration's, is an error, never a file.
+    sv::ManifestInputs bad = in;
+    bad.resolved.values["engine"]["model"] = (t.root / "no-such.rad").string();
+    try { (void)sv::build_manifest(bad); assert(false); } catch (const std::runtime_error& e) {
+        assert(std::string(e.what()).find("cannot open the model container") != std::string::npos);
+    }
+    // Written once, read-only, atomically; an existing path is never replaced.
+    const auto path = t.root / "written-manifest.json";
+    sv::write_manifest_file(path, built.text);
+    struct stat st{};
+    assert(::stat(path.c_str(), &st) == 0 && (st.st_mode & 0777) == 0444 && !fs::exists(path.string() + ".tmp"));
+    assert(bc::serving::v1::load_manifest(path).ok());
+    try { sv::write_manifest_file(path, built.text); assert(false); } catch (const std::runtime_error& e) {
+        assert(std::string(e.what()).find("immutable") != std::string::npos);
+    }
+}
+
 int main() {
     try {
         sha256_vectors();
@@ -875,9 +955,10 @@ int main() {
         host_ledger_plan();
         measured_plan_cache(t);
         measuring_step(t);
+        manifest_writer_step(t);
         std::cout << "PASS: fake KFD/PCI/proc detection; strict keys; types/ranges; required; "
                      "precedence/caps; provenance/hash; launcher engine/WorkerConfig parity; "
-                     "calibration store; calibrated host reserve; host ledger; measured plan cache; measuring step\n";
+                     "calibration store; calibrated host reserve; host ledger; measured plan cache; measuring step; v1 manifest writer\n";
         return 0;
     } catch (const std::exception& e) {
         std::cerr << "FAIL: " << e.what() << '\n';

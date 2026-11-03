@@ -48,8 +48,9 @@ OTHER_SECTIONS = {
     "R3_MOE_WORKER_PLUGIN_FILE": "processes.helpers[].plugin_file",
     "R3_MOE_WORKER_FORMATS": "processes.helpers[].formats",
 }
-# a per-helper export that is a role patch of a helper_common leaf, by setting: (leaf, value)
-ROLE_PATCHES = {"R3_MOE_WORKER_ROWS": ("lanes/rows", True)}
+# a per-helper export that the manifest carries as the helper's own field, not a helper_common leaf: setting -> field
+# (R3_MOE_WORKER_ROWS=1 is the architecture requiring the rows kernel: processes.helpers[].rows_kernel; lanes.rows stays false)
+PER_HELPER_FIELDS = {"R3_MOE_WORKER_ROWS": "processes.helpers[].rows_kernel"}
 
 
 def _component_settings() -> dict[str, dict]:
@@ -140,16 +141,15 @@ class HelperProfileParityTests(unittest.TestCase):
             seen |= {k for k in env if k.startswith("R3_MOE_")}
         for name in sorted(seen):
             with self.subTest(setting=name):
-                self.assertTrue(name in by_setting or name in OTHER_SECTIONS or name in ROLE_PATCHES,
-                                f"{name} is exported but is neither a helper_common row, another section's, nor a role patch")
+                self.assertTrue(name in by_setting or name in OTHER_SECTIONS or name in PER_HELPER_FIELDS,
+                                f"{name} is exported but is neither a helper_common row, another section's, nor a helper's own field")
 
-    def test_per_helper_exports_are_role_patches_with_the_expected_leaf(self) -> None:
+    def test_per_helper_exports_are_the_helpers_own_fields(self) -> None:
+        resolved = rl.resolve("flashnext-4gpu", LAB_HOST)
         for i, env in enumerate(self.layout_helpers):
-            for name, text in env.items():
-                if name in ROLE_PATCHES:
-                    leaf, value = ROLE_PATCHES[name]
-                    self.assertEqual(_as_value(text), value, f"helper{i}: {name}")
-                    self.assertIn(leaf, {r["leaf"] for r in self.rows}, "a role patch targets a helper_common leaf")
+            requires = resolved.helpers[i].arch.rows_kernel
+            exported = _as_value(env["R3_MOE_WORKER_ROWS"]) if "R3_MOE_WORKER_ROWS" in env else False
+            self.assertEqual(exported, requires, f"helper{i}: the rows kernel is exported exactly when its architecture requires it")
 
     def test_other_sections_entries_are_not_stale(self) -> None:
         seen = set(self.launcher) | set(self.layout_common)
