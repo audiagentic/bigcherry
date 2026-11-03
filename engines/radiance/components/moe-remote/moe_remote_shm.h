@@ -19,6 +19,9 @@ namespace r3::moe_shm {
 constexpr uint64_t kMagic = 0x31454f4d33485253ull; /* "SRH3MOE1": reject unrelated/stale shm. */
 constexpr uint32_t kVersion = 23;  /* placement generations; no v22 compatibility */
 constexpr uint32_t kPage = 4096;
+/* One existing helper segment-attach/startup window, shared by helper
+ * helper publication/filter sealing and the engine's first rank bitmap upload. */
+constexpr int kStartupWaitSeconds = 1800;
 /* R3_MOE_WORKER_COMBINE: first element of a combined fp16 row the combiner could not hold in fp16 range (a NaN payload
  * no arithmetic produces; a real NaN converts to 0x7E00); the engine then reads that row from the two helper planes. */
 constexpr uint16_t kCombineFallback = 0x7E01;
@@ -82,7 +85,7 @@ enum class PlacementState : uint32_t {
     ACTIVE=0, PROPOSED=1, RESERVING=2, COPYING=3,
     PREPARED=4, QUIESCING=5, COMMIT=6, RETIRING=7
 };
-enum class AckPhase : uint32_t { NONE=0, RESERVED=1, READY=2, QUIESCED=3, COMMITTED=4, RETIRED=5 };
+enum class AckPhase : uint32_t { NONE=0, RESERVED=1, READY=2, QUIESCED=3, COMMITTED=4, RETIRED=5, REOPENED=6 };
 enum class GenerationState : uint32_t { EMPTY=0, STAGING=1, READY=2, ACTIVE=3, RETIRED=4 };
 
 struct alignas(64) PlacementControl {
@@ -369,7 +372,9 @@ struct alignas(kPage) Header {
      * for (a layer map consumed, a lane park cleared, helper_fault raised). Waiters snapshot it before checking their
      * condition and sleep on it (wait_for), so a change between the check and the sleep is never missed. */
     uint32_t notify;
-    uint32_t reserved32[24 - 3 * kMaxHelpers - 1];
+    /* Bootstrap-only: each helper publishes its final filtered map before helper 0 seals slot 0. */
+    uint32_t bootstrap_filtered_helpers;
+    uint32_t reserved32[24 - 3 * kMaxHelpers - 2];
     CombineSignal combine;
     CombineChunks chunks;
     uint64_t placement_offset;         /* +3264 */
@@ -413,10 +418,6 @@ constexpr uint64_t align_page(uint64_t n) { return (n + kPage - 1) & ~(uint64_t(
 constexpr uint32_t route_slot_bytes() { return kMaxRoutes * sizeof(Route); }
 constexpr uint32_t activation_slot_bytes() { return kActivationBf16Bytes + kActivationQBytes + kActivationScaleBytes; }
 constexpr uint32_t result_slot_bytes() { return kMaxRows * kHidden * sizeof(uint16_t); }
-/* Only a derived device bitmap uses this v22-compatible stride; shared ownership is canonical bytes. */
-constexpr uint32_t device_owner_slot_bytes(uint32_t experts) {
-    return kMaxLayers * ((experts + 7u) / 8u);
-}
 constexpr uint32_t layer_map_slot_bytes() { return kMaxLayers * kExperts * sizeof(int32_t); }
 
 struct Layout {
@@ -622,6 +623,8 @@ inline bool valid(const Header* h, size_t mapped, const LayoutShape& expect) {
         h->placement_control_bytes != sizeof(PlacementControl) ||
         h->placement_ack_count != kMaxHelpers + kMaxEngineRanks ||
         h->segment_bytes != l.bytes || mapped < l.bytes) return false;
+    if (h->bootstrap_filtered_helpers & ~((1u << h->helper_count) - 1u))
+        return false;
     for (uint32_t v : h->reserved32) if (v) return false;
     for (uint32_t c = 0; c < h->small_class_count; ++c)
         if (h->small_class_rows[c] == 0 || h->small_class_rows[c] > h->max_rows ||
@@ -780,6 +783,25 @@ inline uint64_t generation_digest(const void* base, uint32_t slot) {
     const uint8_t* map = h ? generation_map(base, slot) : nullptr;
     return map ? placement_digest(h->shape_hash, h->layer_count, h->expert_count,
                                   h->helper_count, map) : 0;
+}
+
+/* The bootstrap publication is a distinct controller seqlock transition.
+ * The initial init() digest alone is not a seal, and must never be uploaded. */
+inline bool bootstrap_generation_sealed(const void* base) {
+    if (!base) return false;
+    const auto* h = static_cast<const Header*>(base);
+    PlacementControl c{};
+    if (!placement_snapshot(base, &c) || c.seq < 2 || (c.seq & 1u) ||
+        !h->helper_count || h->helper_count > kMaxHelpers ||
+        c.active_slot != 0 || c.active_epoch != 1 || c.fault_code ||
+        c.expected_helpers != ((1u << h->helper_count) - 1u) ||
+        __atomic_load_n(&h->bootstrap_filtered_helpers, __ATOMIC_ACQUIRE) != c.expected_helpers)
+        return false;
+    const auto* g = generation_header(base, 0);
+    return g && g->state == uint32_t(GenerationState::ACTIVE) && g->epoch == 1 &&
+           __atomic_load_n(&g->ready_helpers, __ATOMIC_ACQUIRE) == c.expected_helpers &&
+           g->digest == c.active_digest && c.active_digest &&
+           generation_digest(base, 0) == c.active_digest;
 }
 
 inline int32_t* layer_slots(void* base, uint32_t layer) {

@@ -1,5 +1,8 @@
 #include "worker_epoch.h"
+#include "engine_rank_coordinator.h"
+#include "worker_bootstrap.h"
 #include "admission_ledger.h"
+#include "owner_generation.h"
 #include <sys/mman.h>
 #include "worker_residency.h"
 #include "worker_heat.h"
@@ -284,110 +287,648 @@ static void V23Policy_HeatEqualCostAndSwap() {
         check(p.delta.size()<=2 && p.used[0]<=40 && p.used[1]<=50,"oracle budgets");
     }
 }
-static void V23Cycle_SamePlacementAndSharedProtocol() {
-    FakeClock clk; FakeTransport tr;
-    Controller c(tr,clk,55,2,2);
-    check(c.begin_epoch_cycle() && same_placement_cycle(c.control()) && !c.commit(),
-          "cycle closes with unchanged placement, requires drain");
-    const auto first = c.control();
-    tr.all(c.control(),AckPhase::QUIESCED);
-    check(c.poll()==Poll::ADVANCED && c.commit(), "cycle commits only exact drained actors");
-    tr.all(c.control(),AckPhase::COMMITTED);
-    check(c.poll()==Poll::ADVANCED && c.control().state==uint32_t(PlacementState::ACTIVE) &&
-          c.control().active_epoch==1 && c.control().active_slot==0 && c.control().active_digest==55,
-          "no-op cycle never retires its live generation");
-    check(c.begin_epoch_cycle() && c.control().transaction_id==first.transaction_id+1,
-          "cycle transaction IDs advance");
-    tr.all(first,AckPhase::QUIESCED);
-    check(c.poll()==Poll::WAITING, "previous cycle drain proof rejected");
-    clk.elapse(31'000'000'000ULL);
-    check(c.poll()==Poll::FAILED && c.failed_closed(), "missing cycle ACK fails closed");
-    FakeTransport fixed_tr;
-    Controller fixed(fixed_tr,clk,55,1,1,{}, {},true);
-    check(!fixed.begin_epoch_cycle(), "deterministic controller disables cycles");
+/* Card-free fake HIP upload streams/events, using the exact same
+ * build_bitmap/ledger and engine ACK predicates as the real coordinator. */
+struct FakeCycleUpload {
+    std::vector<uint8_t> bits[2];
+    R3MoeOwnerBinding binding[2]{};
+    bool issued[2]{}, event_ready[2]{};
+    bool upload(const void* map,const r3::admission::Ledger& ledger,
+                const PlacementControl& c) {
+        const uint32_t slot=c.pending_slot;
+        if (slot > 1 || !r3::owner_generation::may_upload(ledger,slot) ||
+            !r3::owner_generation::build_bitmap(map,slot,c.pending_epoch,
+                                                 c.pending_digest,&bits[slot]))
+            return false;
+        binding[slot]={c.pending_epoch,c.pending_digest};
+        issued[slot]=true;
+        event_ready[slot]=false;
+        return true;
+    }
+    void complete(uint32_t slot) { event_ready[slot]=true; }
+    bool prepared(const PlacementControl& c,uint32_t rank) const {
+        const uint32_t slot=c.pending_slot;
+        return slot < 2 && r3::epoch::rank_upload_prepared(c,rank,
+            issued[slot],event_ready[slot],binding[slot].epoch,binding[slot].digest,slot);
+    }
+};
 
-    // The real shared PlacementControl/ACK transport and periodic helper
-    // driver, with CPU admission and simulated GPU/lane completion proofs.
-    const LayoutShape shape{128,2,3,8,128,64};
+// Injectable fake GPU ranks, running the production EngineRankCoordinator.
+// Every rank phase is acknowledged BY that coordinator. The fake implements
+// the same ledger closure, bitmap upload, event-query and lane-identity checks.
+struct FakeRankOperations final : RankOperations {
+    void* map;
+    r3::admission::Ledger& ledger;
+    FakeCycleUpload* gpu;
+    uint32_t rank_count;
+    bool closed=false, faulted=false;
+    uint64_t closure=0, closed_cutoff=0;
+    uint32_t previous_epoch=0;
+    FakeRankOperations(void* m, r3::admission::Ledger& l,
+                       FakeCycleUpload* d, uint32_t n)
+        : map(m),ledger(l),gpu(d),rank_count(n) {}
+    r3::admission::Ledger::Snapshot prepare_close() {
+        // The fake advances the clocked admission gate to CLOSED before
+        // injecting per-rank event proofs, just like a real drain waiter.
+        return ledger.close_admission();
+    }
+    uint32_t actual_ranks() override { return rank_count; }
+    bool registered(uint32_t rank) override { return rank < rank_count; }
+    RankResult upload(uint32_t rank,uint32_t slot,uint64_t epoch,uint64_t digest) override {
+        PlacementControl c{};
+        if (rank >= rank_count || !placement_snapshot(map,&c) ||
+            c.pending_slot != slot || c.pending_epoch != epoch ||
+            c.pending_digest != digest) return RankResult::Pending;
+        return gpu[rank].upload(map,ledger,c) ? RankResult::Ready : RankResult::Pending;
+    }
+    RankResult ready(uint32_t rank,uint32_t slot,uint64_t epoch,uint64_t digest) override {
+        if (rank >= rank_count || slot > 1) return RankResult::Pending;
+        const auto& d=gpu[rank];
+        return d.issued[slot] && d.event_ready[slot] &&
+               d.binding[slot].epoch == epoch && d.binding[slot].digest == digest ?
+               RankResult::Ready : RankResult::Pending;
+    }
+    bool exact_binding(uint32_t rank,uint32_t slot,uint64_t epoch,uint64_t digest) override {
+        return rank < rank_count && slot < 2 &&
+               gpu[rank].issued[slot] &&
+               gpu[rank].binding[slot].epoch == epoch &&
+               gpu[rank].binding[slot].digest == digest;
+    }
+    bool lanes_quiesced() const {
+        const auto* h=static_cast<Header*>(map);
+        for (uint32_t lane=0; lane<kLanes; ++lane) {
+            const uint32_t slot=lane%kMaxSlots;
+            const bool served=(h->helper_count > 1 ? slot<h->helper_count :
+                                  (1u<<slot & ((1u<<rank_count)-1u)) != 0) &&
+                               (!lane_is_small(lane) || lane_class(lane)<h->small_class_count);
+            if (!lane_quiesced(h,lane,closure,served)) return false;
+        }
+        return true;
+    }
+    bool close_and_wait(uint64_t deadline,uint64_t* cutoff,uint32_t* old_epoch) override {
+        if (closed || !deadline || faulted) return false;
+        const auto snapshot=ledger.close_admission();
+        PlacementControl c{};
+        if (!placement_snapshot(map,&c)) return false;
+        closure=c.transaction_id;
+        previous_epoch=snapshot.old_epoch;
+        closed_cutoff=snapshot.latest_ticket;
+        closed=true;
+        if (!ledger.drained(snapshot.old_epoch,snapshot.latest_ticket) ||
+            !ledger.all_ranks_consumed(snapshot.old_epoch,snapshot.latest_ticket) ||
+            !lanes_quiesced()) return false;
+        *cutoff=snapshot.latest_ticket;
+        *old_epoch=snapshot.old_epoch;
+        return true;
+    }
+    bool consumed() override {
+        return closed && ledger.all_ranks_consumed(previous_epoch,closed_cutoff);
+    }
+    bool drain_verified() override { return closed && lanes_quiesced(); }
+    bool helper_quiesced() override { return closed && lanes_quiesced(); }
+    bool generation_referenced(uint32_t slot) override {
+        return ledger.generation_referenced(slot);
+    }
+    bool can_replace(uint32_t slot) override { return ledger.can_replace_generation(slot); }
+    bool reopen(uint32_t epoch,uint32_t slot) override {
+        if (!closed || !lanes_quiesced() || !ledger.reopen(epoch,(uint8_t)slot))
+            return false;
+        // Simulated engine drain-word clearing after all ranks and helper lanes.
+        auto* h=static_cast<Header*>(map);
+        for (auto& lane:h->lane) lane.drain_request=0;
+        closed=false;
+        return true;
+    }
+    bool stopped() override { return faulted || ledger.stopped(); }
+    void fatal() override { faulted=true; ledger.fault(); }
+};
+static void V23Cycle_UnreadyAndAbortPreserveOldGeneration() {
+    FakeClock clk; FakeTransport tr;
+    Controller c(tr,clk,97,2,2);
+    check(c.begin_epoch_cycle() && c.control().state==uint32_t(PlacementState::PROPOSED) &&
+          c.control().pending_slot==1 && c.control().pending_epoch==2 &&
+          c.control().active_slot==0 && c.control().active_epoch==1,
+          "real two-slot diagnostic proposal preserves active");
+    check(c.start_reserving(), "diagnostic reserve begins");
+    tr.all(c.control(),AckPhase::RESERVED);
+    check(c.poll()==Poll::ADVANCED &&
+          c.control().state==uint32_t(PlacementState::COPYING), "diagnostic COPY waits for events");
+    FakeCycleUpload upload[2]{};
+    const auto& pending=c.control();
+    for (uint32_t r=0;r<2;++r)
+        check(!r3::epoch::rank_upload_prepared(pending,r,true,false,2,97,1),
+              "upload-not-ready blocks PREPARED per rank");
+    tr.ack(c.control(),AckPhase::READY,0);
+    tr.ack(c.control(),AckPhase::READY,1);
+    tr.ack(c.control(),AckPhase::READY,kMaxHelpers);
+    check(c.poll()==Poll::WAITING &&
+          c.control().state==uint32_t(PlacementState::COPYING),
+          "missing second rank READY prevents PREPARED");
+    clk.elapse(181'000'000'000ULL);
+    check(c.poll()==Poll::FAILED && !c.failed_closed() &&
+          c.control().state==uint32_t(PlacementState::ACTIVE) &&
+          c.control().active_epoch==1 && c.control().active_slot==0 &&
+          c.control().active_digest==97, "abort before commit preserves epoch slot owner digest");
+    const uint64_t failed_txn=c.control().transaction_id;
+    check(c.begin_epoch_cycle() && c.control().transaction_id==failed_txn+1 &&
+          c.control().active_epoch==1 && c.control().pending_epoch==2,
+          "retry is a fresh transaction without phantom epoch advance");
+    check(!r3::epoch::rank_retirement_proved(
+          c.control(),1,0,true,true,true,true,true,true),
+          "retirement refused before COMMIT and RETIRING");
+    (void)upload;
+}
+
+/* A rejected diagnostic proposal cannot kill a serving helper, poison the
+ * shared GPU waits, close admission, or make the next parent use epoch N+1.
+ * Exercise all actual helper EpochCycle participants without GPUs. */
+static void V23Cycle_PrecommitAbortDuringLiveServing() {
+    const LayoutShape shape{128,3,5,8,128,64};
     Layout layout{};
-    check(layout_for(shape,2,2,&layout), "cycle layout");
+    check(layout_for(shape,3,slots_for(3),&layout),"abort segment layout");
+    void* map=mmap(nullptr,layout.bytes,PROT_READ|PROT_WRITE,
+                   MAP_PRIVATE|MAP_ANONYMOUS,-1,0);
+    check(map!=MAP_FAILED && init(map,3,shape,slots_for(3)),
+          "abort segment created");
+    auto* h=static_cast<Header*>(map);
+    h->helper_count=3;
+    auto* c=placement_control(map);
+    c->expected_ranks=1;
+    struct Selected { std::vector<std::pair<uint32_t,uint32_t>> expert; };
+    check(r3::epoch::publish_owned(map,Selected{{{0,0}}},0) &&
+          r3::epoch::publish_owned(map,Selected{{{1,2}}},1) &&
+          r3::epoch::publish_owned(map,Selected{{{2,4}}},2),
+          "abort segment real owner publication");
+    for (uint32_t helper=0;helper<3;++helper)
+        check(r3::epoch::mark_bootstrap_filtered(map,helper),
+              "abort segment real helper filtering completion");
+    SharedTransport transport(map);
+    check(transport.seal_bootstrap(),"abort segment bootstrap seal");
+    const uint64_t digest=generation_digest(map,0);
+    FakeClock clock;
+    EpochCycle leader(map,0,clock,std::chrono::nanoseconds{100});
+    EpochCycle peer1(map,1,clock,std::chrono::nanoseconds{100});
+    EpochCycle peer2(map,2,clock,std::chrono::nanoseconds{100});
+    r3::admission::Ledger ledger(5);
+    check(ledger.initialize(1,0),"active serving ledger");
+    check(leader.tick() && peer1.tick() && peer2.tick(),"live participants bootstrap");
+    h->burst=1;
+    clock.elapse(100);
+    check(leader.tick() && c->state==uint32_t(PlacementState::PROPOSED),
+          "live parent still admitted while candidate is proposed");
+    StepTicket before{};
+    check(ledger.admit(1,&before)==r3::admission::Ledger::Result::Ok &&
+          ledger.bind(before.ticket_id,7) && before.placement_epoch==1 &&
+          before.generation_slot==0,"live parent step before abort on N");
+    check(peer1.tick() && peer2.tick(),"peers survive proposal");
+    check(leader.tick() && c->state==uint32_t(PlacementState::RESERVING),
+          "reservation begins without closing serving");
+    PlacementControl snapshot{};
+    check(placement_snapshot(map,&snapshot),"abort cycle snapshot");
+    publish_fault_ack(map,kMaxHelpers,snapshot,AckPhase::RESERVED,FaultCode::SOURCE);
+    check(leader.tick() && c->state==uint32_t(PlacementState::ACTIVE) &&
+          c->active_epoch==1 && c->active_slot==0 &&
+          c->active_digest==digest && c->fault_code==0,
+          "precommit actor fault aborts to exact ACTIVE N");
+    check(placement_journal(map)->entry[c->journal_index].fault==
+          uint32_t(FaultCode::SOURCE),"precommit fault journal retained");
+    check(peer1.tick() && peer2.tick() && leader.tick() &&
+          h->helper_fault==0 && !ledger.stopped(),
+          "all helpers stay alive; no sticky GPU trap; admission open");
+    check(ledger.host_complete(before.ticket_id) &&
+          ledger.poll([](const StepTicket&,uint32_t) {
+              return r3::admission::Ledger::Proof::Proven;
+          }),"in-flight parent N retires after abort");
+    StepTicket after{};
+    check(ledger.admit(1,&after)==r3::admission::Ledger::Result::Ok &&
+          ledger.bind(after.ticket_id,8) &&
+          after.placement_epoch==1 && after.generation_slot==0 &&
+          h->helper_fault==0,"next parent served under N after abort");
+    check(ledger.host_complete(after.ticket_id) &&
+          ledger.poll([](const StepTicket&,uint32_t) {
+              return r3::admission::Ledger::Proof::Proven;
+          }),"next parent consumption and completion");
+    // Candidate-only metadata corruption must not turn into a helper exit.
+    // The active generation and the admission ledger remain valid.
+    auto* inactive=generation_header(map,1);
+    const uint32_t map_bytes=inactive->map_bytes;
+    inactive->map_bytes=0;
+    clock.elapse(100);
+    check(leader.tick() && c->state==uint32_t(PlacementState::ACTIVE) &&
+          c->active_epoch==1 && c->active_slot==0 &&
+          c->transaction_id==snapshot.transaction_id+1 &&
+          placement_journal(map)->entry[c->journal_index].fault==
+              uint32_t(FaultCode::INVALID_MAP) &&
+          peer1.tick() && peer2.tick() && h->helper_fault==0 &&
+          !ledger.stopped(),
+          "bad inactive candidate journals abort without helper exit or trap");
+    inactive->map_bytes=map_bytes;
+    clock.elapse(100);
+    check(leader.tick() && c->transaction_id==snapshot.transaction_id+2 &&
+          c->state==uint32_t(PlacementState::PROPOSED) &&
+          c->active_epoch==1 && h->helper_fault==0,
+          "retry after invalid candidate gets fresh transaction and N");
+    munmap(map,layout.bytes);
+}
+static void V23Cycle_StalledParkFaultsAndKeepsAdmissionClosed() {
+    const LayoutShape shape{128,1,3,8,128,64};
+    Layout layout{};
+    check(layout_for(shape,2,slots_for(1),&layout),"park layout");
+    void* map=mmap(nullptr,layout.bytes,PROT_READ|PROT_WRITE,
+                   MAP_PRIVATE|MAP_ANONYMOUS,-1,0);
+    check(map!=MAP_FAILED && init(map,2,shape,slots_for(1)),"park segment");
+    auto* h=static_cast<Header*>(map);
+    h->lane[0].park=kParkDraining;
+    r3::admission::Ledger ledger(2);
+    check(ledger.initialize(1,0),"park gate ledger");
+    const auto closed=ledger.close_admission();
+    check(ledger.drained(closed.old_epoch,closed.latest_ticket),
+          "park gate initially drained");
+    timespec deadline{};
+    check(clock_gettime(CLOCK_MONOTONIC,&deadline)==0,"monotonic clock");
+    // Expired absolute deadline: no arbitrary duration or GPU execution.
+    deadline.tv_sec-=1;
+    check(wait_parks_checked(h,&deadline)==WaitResult::Timeout &&
+          load(&h->helper_fault)!=0,"stalled park times out and raises sticky fault");
+    ledger.fault();
+    check(ledger.stopped() && !ledger.reopen(2,1),
+          "stalled park never reopens admission or releases old generation");
+    munmap(map,layout.bytes);
+}
+
+/* The unsealed production path must reject the cycle with the exact
+ * INVALID_MAP journal code, not silently repair the old all-local digest. */
+static void V23Bootstrap_UnsealedTickReportsInvalidMap() {
+    const LayoutShape shape{128,3,3,8,128,64};
+    Layout layout{};
+    check(layout_for(shape,2,slots_for(3),&layout),"bootstrap negative layout");
     void* base=mmap(nullptr,layout.bytes,PROT_READ|PROT_WRITE,MAP_PRIVATE|MAP_ANONYMOUS,-1,0);
-    check(base!=MAP_FAILED && init(base,2,shape,2), "cycle segment");
+    check(base!=MAP_FAILED && init(base,2,shape,3),"bootstrap negative init");
     auto* h=static_cast<Header*>(base);
-    h->helper_count=2;
+    h->helper_count=3;
+    placement_control(base)->expected_ranks=1;
+    struct Selected { std::vector<std::pair<uint32_t,uint32_t>> expert; };
+    Selected selected{{{0,0},{1,0}}};
+    check(r3::epoch::publish_owned(base,selected,0) &&
+          r3::epoch::drop_bootstrap_owner(base,1,0,0),
+          "bootstrap negative real publish and filter");
+    for (uint32_t helper=0;helper<3;++helper)
+        check(r3::epoch::mark_bootstrap_filtered(base,helper),
+              "bootstrap negative all peers filtered");
+    check(!bootstrap_generation_sealed(base) &&
+          generation_digest(base,0)!=placement_control(base)->active_digest,
+          "unsealed canonical map cannot be used");
+    FakeClock clk;
+    EpochCycle helper0(base,0,clk,std::chrono::nanoseconds{100});
+    check(helper0.tick(),"construct real controller for unsealed startup");
+    h->burst=1;
+    clk.elapse(100);
+    check(helper0.tick(),"unsealed cycle rejected without terminating serving");
+    const auto* c=placement_control(base);
+    const auto& j=placement_journal(base)->entry[c->journal_index];
+    check(c->state==uint32_t(PlacementState::ACTIVE) &&
+          c->active_epoch==1 && c->active_slot==0 &&
+          j.fault==uint32_t(FaultCode::INVALID_MAP) &&
+          !load(&h->helper_fault),
+          "unsealed real startup yields transaction-local INVALID_MAP");
+    munmap(base,layout.bytes);
+}
+
+/* The actual SharedTransport/Helper EpochCycle state machine under a
+ * two-slot same-map diagnostic, with fake rank GPU uploads and consumption
+ * events. No GPU or background threads. */
+static void V23Cycle_SamePlacementAndSharedProtocol(
+    uint32_t helper_count,uint32_t rank_count,bool lose_reopen_ack=false) {
+    check((helper_count==1 && rank_count==2) ||
+          (helper_count==3 && rank_count==1),"only supported production shapes");
+    const LayoutShape shape{128,helper_count,3,8,128,64};
+    Layout layout{};
+    check(layout_for(shape,2,slots_for(helper_count),&layout), "cycle layout");
+    void* base=mmap(nullptr,layout.bytes,PROT_READ|PROT_WRITE,MAP_PRIVATE|MAP_ANONYMOUS,-1,0);
+    check(base!=MAP_FAILED && init(base,2,shape,helper_count), "cycle segment");
+    auto* h=static_cast<Header*>(base);
+    h->helper_count=helper_count;
     auto* control=placement_control(base);
-    control->expected_ranks=3;
-    const auto digest=control->active_digest;
-    const std::vector<uint8_t> owners(generation_map(base,0),generation_map(base,0)+h->owner_map_bytes);
-    FakeClock shared_clock;
-    EpochCycle disabled(base,0,shared_clock,std::chrono::nanoseconds{0});
-    shared_clock.elapse(100);
-    check(disabled.tick() && control->transaction_id==0 && control->seq==0, "zero period is a no-op");
-    EpochCycle helper0(base,0,shared_clock,std::chrono::nanoseconds{100});
-    EpochCycle helper1(base,1,shared_clock,std::chrono::nanoseconds{100});
-    check(helper0.tick() && helper1.tick(), "shared coordinator bootstraps actual ranks");
-    shared_clock.elapse(100);
-    check(helper0.tick() && control->state==uint32_t(PlacementState::ACTIVE), "idle burst does not start cycle");
+    control->expected_ranks=(1u<<rank_count)-1u;
+    check(!stage_same_map_generation(base),
+          "init all-local map with matching digest is not a sealed generation");
+    /* Real worker bootstrap: init's digest is of the initial all-local map.
+     * Helpers publish disjoint ownership and discard protected runtime
+     * experts, then helper 0 seals exactly once after every peer is done. */
+    struct Selected { std::vector<std::pair<uint32_t,uint32_t>> expert; };
+    std::vector<Selected> selection(helper_count);
+    for (uint32_t l=0;l<2;++l)
+        for (uint32_t e=0;e<3;++e)
+            selection[e%helper_count].expert.emplace_back(l,e);
+    for (uint32_t helper=0;helper<helper_count;++helper)
+        check(r3::epoch::publish_owned(base,selection[helper],helper),
+              "real helper publish_owned");
+    check(r3::epoch::drop_bootstrap_owner(base,1,0,0),
+          "real helper protected-layer drop_bootstrap_owner");
+    check(generation_digest(base,0) != control->active_digest &&
+          !bootstrap_generation_sealed(base) && !stage_same_map_generation(base),
+          "unsealed real bootstrap cannot stage same-map generation");
+    SharedTransport bootstrap(base);
+    check(!bootstrap.seal_bootstrap(), "incomplete helper completion mask cannot seal");
+    for (uint32_t helper=0;helper<helper_count;++helper)
+        check(r3::epoch::mark_bootstrap_filtered(base,helper),
+              "real helper marks filtered owner bytes complete");
+    check(bootstrap.seal_bootstrap() && !bootstrap.seal_bootstrap(),
+          "helper zero publishes single coherent bootstrap seal");
+    const uint64_t digest=generation_digest(base,0);
+    check(bootstrap_generation_sealed(base) && control->active_digest==digest &&
+          generation_header(base,0)->digest==digest &&
+          generation_header(base,0)->ready_helpers==control->expected_helpers,
+          "sealed owner digest and helper readiness agree under seqlock");
+    Selected newly_unowned{{{1,0}}}; // explicitly dropped above: CAS would succeed without the seal guard
+    check(!r3::epoch::publish_owned(base,newly_unowned,0) &&
+          !r3::epoch::drop_bootstrap_owner(base,0,0,0) &&
+          !r3::epoch::mark_bootstrap_filtered(base,0),
+          "after seal every bootstrap map mutation and duplicate completion fails closed");
+    uint8_t* active_owners=generation_map(base,0);
+    const uint8_t original=active_owners[0];
+    active_owners[0]=kOwnerLocal; // corrupt a sealed, actually-owned expert
+    check(!stage_same_map_generation(base) &&
+          generation_header(base,1)->state==uint32_t(GenerationState::EMPTY),
+          "invalid active digest refuses staging before modifying inactive generation");
+    active_owners[0]=original;
+    const std::vector<uint8_t> owners(active_owners,active_owners+h->owner_map_bytes);
+    FakeClock clock;
+    EpochCycle disabled(base,0,clock,std::chrono::nanoseconds{0});
+    clock.elapse(100);
+    check(disabled.tick() && control->transaction_id==0 && control->seq==2,
+          "zero period disables cycle");
+    EpochCycle helper0(base,0,clock,std::chrono::nanoseconds{100});
+    std::vector<std::unique_ptr<EpochCycle>> peers;
+    for (uint32_t helper=1;helper<helper_count;++helper)
+        peers.emplace_back(std::make_unique<EpochCycle>(
+            base,helper,clock,std::chrono::nanoseconds{100}));
+    auto peer_ticks=[&]() {
+        for (auto& peer:peers) if (!peer->tick()) return false;
+        return true;
+    };
+    check(helper0.tick() && peer_ticks(), "bootstrap controller with actual ranks");
+    clock.elapse(100);
+    check(helper0.tick() && control->state==uint32_t(PlacementState::ACTIVE),
+          "idle burst does not start cycle");
     h->burst=1;
     r3::admission::Ledger ledger(5);
     check(ledger.initialize(1,0), "cycle ledger");
-    for (uint64_t cycle=1;cycle<=1000;++cycle) {
+    FakeCycleUpload gpu[2];
+    for (uint32_t rank=0;rank<rank_count;++rank) {
+        check(r3::owner_generation::build_bitmap(base,0,1,digest,&gpu[rank].bits[0]),
+              "bootstrap active bitmap");
+        gpu[rank].binding[0]={1,digest};
+        gpu[rank].issued[0]=gpu[rank].event_ready[0]=true;
+    }
+    EngineRankCoordinator coordinator;
+    FakeRankOperations rank_ops(base,ledger,gpu,rank_count);
+    uint32_t slot=0;
+    const uint64_t cycles=lose_reopen_ack ? 1 : 1000;
+    for (uint64_t cycle=1; cycle<=cycles; ++cycle) {
+        const uint32_t old_slot=slot,new_slot=1u-slot;
         StepTicket ticket{};
         check(ledger.admit(2,&ticket)==r3::admission::Ledger::Result::Ok &&
-              ledger.bind(ticket.ticket_id,cycle), "serving parent before cycle");
+              ledger.bind(ticket.ticket_id,cycle) &&
+              ticket.generation_slot==old_slot &&
+              ticket.placement_epoch==cycle, "serving parent belongs to currently active generation");
+        check(helper0.tick() && control->state==uint32_t(PlacementState::PROPOSED) &&
+              control->transaction_id==cycle &&
+              control->active_slot==old_slot &&
+              control->pending_slot==new_slot &&
+              control->pending_epoch==cycle+1 &&
+              same_map_cycle(base,*control), "cycle PROPOSED contains new exact same-map generation");
+        check(generation_header(base,new_slot)->state==uint32_t(GenerationState::STAGING) &&
+              std::equal(owners.begin(),owners.end(),generation_map(base,new_slot)),
+              "genuinely separate inactive canonical map staged unchanged");
+        check(peer_ticks() && helper0.tick() &&
+              control->state==uint32_t(PlacementState::RESERVING),
+              "proposal enters reservation");
+        check(peer_ticks() && helper0.tick(), "helpers publish reserved ACK");
+        PlacementControl snapshot{};
+        check(placement_snapshot(base,&snapshot), "reserving snapshot");
+        const uint32_t rank_mask=(1u<<rank_count)-1u;
+        for (uint32_t rank=0;rank<rank_count;++rank) {
+            auto& device=gpu[rank];
+            check(!service_rank_reservation(base,snapshot,rank,rank_mask,false,true) &&
+                  !service_rank_reservation(base,snapshot,rank,rank_mask,true,false),
+                  "production rank participant refuses unregistered or unready device");
+            if (rank==0)
+                check(!service_rank_reservation(base,snapshot,rank,
+                        rank_count==1 ? 3u : 1u,true,true),
+                      "production rank refuses valid but mismatched actual rank mask");
+            if (cycle==1 && rank==0) {
+                GenerationHeader* pending=generation_header(base,new_slot);
+                const uint64_t saved=pending->digest;
+                pending->digest^=1u;
+                check(!service_rank_reservation(base,snapshot,rank,rank_mask,true,true),
+                      "reservation refuses wrong candidate digest");
+                pending->digest=saved;
+                uint8_t* const candidate=generation_map(base,new_slot);
+                const uint8_t first=candidate[0];
+                candidate[0]=uint8_t(first==0 ? 1 : 0);
+                check(!service_rank_reservation(base,snapshot,rank,rank_mask,true,true),
+                      "reservation refuses changed candidate map bytes");
+                candidate[0]=first;
+            }
+        }
+        check(coordinator.step(base,snapshot,rank_ops),
+              "production coordinator dispatches RESERVED for every rank");
+        for (uint32_t rank=0;rank<rank_count;++rank)
+            check(read_shared_ack(base,kMaxHelpers+rank).phase==uint32_t(AckPhase::RESERVED),
+                  "engine rank RESERVED publication comes from coordinator");
+        check(helper0.tick() && control->state==uint32_t(PlacementState::COPYING),
+              "actual rank reservation reaches COPYING");
+        check(placement_snapshot(base,&snapshot) &&
+              coordinator.step(base,snapshot,rank_ops),
+              "production coordinator issues rank inactive uploads");
+        for (uint32_t rank=0;rank<rank_count;++rank)
+            check(!gpu[rank].prepared(*control,rank),
+                  "incomplete upload event blocks PREPARED");
+        check(peer_ticks() && helper0.tick() &&
+              control->state==uint32_t(PlacementState::COPYING),
+              "helpers READY alone cannot publish PREPARED");
+        check(placement_snapshot(base,&snapshot), "copying snapshot");
+        gpu[0].complete(new_slot);
+        check(gpu[0].prepared(*control,0) &&
+              coordinator.step(base,snapshot,rank_ops), "rank 0 exact event ready through coordinator");
+        check(read_shared_ack(base,kMaxHelpers).phase==uint32_t(AckPhase::READY),
+              "coordinator publishes rank 0 READY");
+        if (rank_count==2) {
+            check(helper0.tick() && control->state==uint32_t(PlacementState::COPYING),
+                  "missing second rank READY blocks PREPARED");
+            gpu[1].complete(new_slot);
+            check(gpu[1].prepared(*control,1) &&
+                  coordinator.step(base,snapshot,rank_ops), "rank 1 exact event ready through coordinator");
+            check(read_shared_ack(base,kMaxHelpers+1).phase==uint32_t(AckPhase::READY),
+                  "coordinator publishes rank 1 READY");
+        }
+        check(helper0.tick() && control->state==uint32_t(PlacementState::PREPARED),
+              "all exact READY ACKs allow PREPARED");
         check(helper0.tick() && control->state==uint32_t(PlacementState::QUIESCING) &&
-              control->transaction_id==cycle, "period starts shared QUIESCING");
-        const auto cutoff=ledger.close_admission();
-        check(!ledger.drained(1,cutoff.latest_ticket) && helper0.tick() && helper1.tick() &&
-              control->state==uint32_t(PlacementState::QUIESCING), "no ACK without drain");
-        // Even after burst ends, an in-flight transaction must make progress.
+              generation_header(base,new_slot)->state==uint32_t(GenerationState::READY),
+              "QUIESCING only after prepared second generation");
+        // The fake closes the ledger before it can inject event proofs;
+        // close_and_wait in the real coordinator verifies the same snapshot.
+        const auto cutoff=rank_ops.prepare_close();
+        check(!ledger.all_ranks_consumed((uint32_t)cycle,cutoff.latest_ticket) &&
+              helper0.tick() && peer_ticks() &&
+              control->state==uint32_t(PlacementState::QUIESCING),
+              "no QUIESCED ACK while parent not consumed");
         h->burst=0;
-        check(ledger.host_complete(ticket.ticket_id), "cycle host completion");
-        check(ledger.poll([&](const StepTicket& t, uint32_t) {
-                  return t.ticket_id==ticket.ticket_id ? r3::admission::Ledger::Proof::Proven
-                                                       : r3::admission::Ledger::Proof::Pending;
-              }), "cycle terminal and consumption proof");
-        check(ledger.drained(1,cutoff.latest_ticket), "ledger drain proof");
+        check(ledger.host_complete(ticket.ticket_id), "parent host done");
+        check(ledger.poll([&](const StepTicket&,uint32_t rank) {
+              return rank==0?r3::admission::Ledger::Proof::Proven:
+                             r3::admission::Ledger::Proof::Pending;
+              }) && !ledger.all_ranks_consumed((uint32_t)cycle,cutoff.latest_ticket),
+              "last rank's missing proof prevents early consumed ACK");
+        check(ledger.poll([](const StepTicket&,uint32_t) {
+              return r3::admission::Ledger::Proof::Proven;
+              }) && ledger.all_ranks_consumed((uint32_t)cycle,cutoff.latest_ticket),
+              "every rank and ticket in closed epoch consumed");
         for (uint32_t lane=0;lane<kLanes;++lane) {
-            if (lane % kMaxSlots >= 2 || (lane_is_small(lane) && lane_class(lane)>=h->small_class_count)) continue;
+            const uint32_t slot_id=lane%kMaxSlots;
+            if ((helper_count>1 ? slot_id>=helper_count :
+                        !(control->expected_ranks & (1u<<slot_id))) ||
+                (lane_is_small(lane) && lane_class(lane)>=h->small_class_count)) continue;
             h->lane[lane].drain_request=cycle;
-            // Previous closure must not satisfy the new transaction.
             h->lane[lane].drain_ack=cycle-1;
         }
-        check(helper0.tick() && helper1.tick() && control->state==uint32_t(PlacementState::QUIESCING),
-              "stale lane drain ACK cannot commit");
-        for (auto& lane:h->lane)
-            lane.drain_ack=lane.drain_request;
-        PlacementControl snapshot{};
-        check(placement_snapshot(base,&snapshot), "cycle stable snapshot");
-        publish_ack(base,kMaxHelpers,snapshot,AckPhase::QUIESCED,cutoff.latest_ticket);
-        publish_ack(base,kMaxHelpers+1,snapshot,AckPhase::QUIESCED,cutoff.latest_ticket);
-        check(helper1.tick() && helper0.tick() && control->state==uint32_t(PlacementState::COMMIT),
-              "all real protocol participants allow COMMIT");
-        check(helper0.tick() && control->state==uint32_t(PlacementState::COMMIT), "no reopen before all commit ACKs");
-        check(placement_snapshot(base,&snapshot), "commit snapshot");
-        publish_ack(base,kMaxHelpers,snapshot,AckPhase::COMMITTED,cutoff.latest_ticket);
-        publish_ack(base,kMaxHelpers+1,snapshot,AckPhase::COMMITTED,cutoff.latest_ticket);
-        check(helper1.tick() && helper0.tick() && control->state==uint32_t(PlacementState::ACTIVE),
-              "all commit ACKs publish ACTIVE");
-        shared_clock.elapse(100);
+        check(helper0.tick() && peer_ticks() &&
+              control->state==uint32_t(PlacementState::QUIESCING),
+              "stale helper drain ACK cannot commit");
+        for (auto& lane:h->lane) lane.drain_ack=lane.drain_request;
+        check(placement_snapshot(base,&snapshot), "quiesce snapshot");
+        check(coordinator.step(base,snapshot,rank_ops),
+              "coordinator closes admission and waits for fake event/lane drain");
+        for (uint32_t rank=0;rank<rank_count;++rank)
+            check(read_shared_ack(base,kMaxHelpers+rank).phase==uint32_t(AckPhase::QUIESCED),
+                  "production coordinator publishes QUIESCED after real proofs");
+        check(peer_ticks() && helper0.tick() &&
+              control->state==uint32_t(PlacementState::COMMIT) &&
+              control->active_epoch==cycle+1 &&
+              control->active_slot==new_slot, "all drain proofs commit a truly swapped generation");
+        check(generation_header(base,new_slot)->state==uint32_t(GenerationState::READY),
+              "new generation not advertised ACTIVE before helper marks it");
+        check(helper0.tick() && generation_header(base,new_slot)->state==
+              uint32_t(GenerationState::ACTIVE), "new generation marked ACTIVE during COMMIT");
+        check(placement_snapshot(base,&snapshot), "committed snapshot");
+        check(coordinator.step(base,snapshot,rank_ops),
+              "production coordinator observes helper ACTIVE header then publishes COMMITTED");
+        for (uint32_t rank=0;rank<rank_count;++rank)
+            check(read_shared_ack(base,kMaxHelpers+rank).phase==uint32_t(AckPhase::COMMITTED),
+                  "engine rank COMMITTED ACK originates in coordinator");
+        check(peer_ticks(),"other helpers acknowledge commit");
+        check(helper0.tick() && control->state==uint32_t(PlacementState::RETIRING),
+              "all rank COMMITTED ACKs enter RETIRING");
+        check(rank_retirement_proved(*control,(uint32_t)cycle,old_slot,
+                true,true,true,!ledger.generation_referenced(old_slot),true,true) &&
+              !rank_retirement_proved(*control,(uint32_t)cycle,old_slot,
+                false,true,true,true,true,true) &&
+              !rank_retirement_proved(*control,(uint32_t)cycle,old_slot,
+                true,false,true,true,true,true) &&
+              !ledger.can_replace_generation(old_slot),
+              "retirement requires consumed proof and drain; old slot upload still refused");
+        check(peer_ticks() && helper0.tick(), "helpers acknowledge retirement");
+        check(placement_snapshot(base,&snapshot), "retiring snapshot");
+        check(coordinator.step(base,snapshot,rank_ops),
+              "production coordinator proves retired rank identities and consumed cutoff");
+        for (uint32_t rank=0;rank<rank_count;++rank)
+            check(read_shared_ack(base,kMaxHelpers+rank).phase==uint32_t(AckPhase::RETIRED),
+                  "production coordinator publishes RETIRED");
+        check(helper0.tick() && control->state==uint32_t(PlacementState::ACTIVE) &&
+              generation_header(base,old_slot)->state==uint32_t(GenerationState::RETIRED),
+              "all rank RETIRED ACKs finish cycle and retire old header");
+        std::vector<uint8_t> active_bits;
+        check(r3::owner_generation::build_bitmap(base,new_slot,cycle+1,digest,&active_bits) &&
+              active_bits == gpu[0].bits[new_slot] &&
+              (rank_count==1 || active_bits == gpu[1].bits[new_slot]),
+              "committed ACTIVE bitmap remains exact-event verifiable on both ranks");
+        check(control->active_epoch==cycle+1 && control->active_slot==new_slot &&
+              control->active_digest==digest &&
+              std::equal(owners.begin(),owners.end(),generation_map(base,new_slot)),
+              "full no-op cycle returns ACTIVE, slots swapped, bytes unchanged");
         h->burst=1;
-        check(helper0.tick() && control->transaction_id==cycle, "next cycle waits for actual reopen");
-        check(ledger.reopen(1,0), "same epoch slot reopens");
-        for (auto& lane:h->lane) lane.drain_request=0;
-        check(helper0.tick(), "observe reopen");
-        shared_clock.elapse(100);
-        check(control->active_epoch==1 && control->active_slot==0 && control->active_digest==digest &&
-              std::equal(owners.begin(),owners.end(),generation_map(base,0)), "placement bytes unchanged");
+        check(helper0.tick() && helper0.completed()==cycle-1,
+              "engine has not reopened admission or published REOPENED");
+        check(placement_snapshot(base,&snapshot) &&
+              coordinator.step(base,snapshot,rank_ops) &&
+              ledger.can_replace_generation(old_slot) &&
+              read_shared_ack(base,kMaxHelpers).phase==uint32_t(AckPhase::REOPENED),
+              "coordinator reopens guarded ledger and release-publishes REOPENED");
+        if (lose_reopen_ack) {
+            auto* ack=placement_ack(base,kMaxHelpers);
+            __atomic_store_n(&ack->phase,uint32_t(AckPhase::NONE),__ATOMIC_RELEASE);
+            clock.elapse(Deadlines{}.retire_ns-1u);
+            check(helper0.tick() && helper0.completed()==cycle-1,
+                  "one nanosecond before the real REOPENED deadline is retryable");
+            clock.elapse(1);
+            check(helper0.tick() && helper0.tick() && peer_ticks() &&
+                  control->state==uint32_t(PlacementState::ACTIVE) &&
+                  control->active_epoch==cycle+1 && control->active_slot==new_slot &&
+                  !control->fault_code && !h->helper_fault && !ledger.stopped() &&
+                  placement_journal(base)->entry[control->journal_index].fault==
+                      uint32_t(FaultCode::REOPEN_TIMEOUT),
+                  "missing ACK publishes terminal placement-only fault after deadline");
+            const uint64_t frozen_transaction=control->transaction_id;
+            clock.elapse(Deadlines{}.retire_ns);
+            check(helper0.tick() && control->transaction_id==frozen_transaction &&
+                  helper0.completed()==cycle-1 && !load(&h->helper_fault) &&
+                  !ledger.stopped(),
+                  "placement stays disabled while worker and committed serving stay alive");
+            munmap(base,layout.bytes);
+            return;
+        }
+        if (cycle<=2) {
+            PlacementAck* ack=placement_ack(base,kMaxHelpers);
+            const uint64_t correct_txn=ack->transaction_id;
+            __atomic_store_n(&ack->transaction_id,correct_txn-1u,__ATOMIC_RELAXED);
+            check(helper0.tick() && helper0.completed()==cycle-1,
+                  "stale reopen transaction cannot stage a new generation");
+            __atomic_store_n(&ack->transaction_id,correct_txn,__ATOMIC_RELAXED);
+            const uint64_t correct_epoch=ack->epoch;
+            __atomic_store_n(&ack->epoch,correct_epoch+1u,__ATOMIC_RELAXED);
+            check(helper0.tick() && helper0.completed()==cycle-1,
+                  "wrong reopen epoch cannot stage");
+            __atomic_store_n(&ack->epoch,correct_epoch,__ATOMIC_RELAXED);
+            const uint64_t correct_digest=ack->digest;
+            __atomic_store_n(&ack->digest,correct_digest^1u,__ATOMIC_RELAXED);
+            check(helper0.tick() && helper0.completed()==cycle-1,
+                  "wrong reopen digest cannot stage");
+            __atomic_store_n(&ack->digest,correct_digest,__ATOMIC_RELAXED);
+            const uint32_t correct_slot=ack->generation_slot;
+            __atomic_store_n(&ack->generation_slot,1u-correct_slot,__ATOMIC_RELAXED);
+            check(helper0.tick() && helper0.completed()==cycle-1,
+                  "wrong reopen generation cannot stage");
+            __atomic_store_n(&ack->generation_slot,correct_slot,__ATOMIC_RELAXED);
+        }
+        check(helper0.tick() && helper0.completed()==cycle,
+              "exact post-ledger ACK completes transaction and permits staging");
+        slot=new_slot;
+        clock.elapse(100);
     }
-    check(helper0.tick() && control->state==uint32_t(PlacementState::QUIESCING), "timeout transaction");
-    shared_clock.elapse(31'000'000'000ULL);
-    check(!helper0.tick() && control->fault_code==uint32_t(FaultCode::QUIESCE_TIMEOUT),
-          "driver checks deadlines even while lanes have not drained");
+    check(helper0.tick() && control->state==uint32_t(PlacementState::PROPOSED),
+          "next full cycle starts a distinct transaction");
+    check(helper0.tick() && control->state==uint32_t(PlacementState::RESERVING),
+          "timed-out transaction enters reservation");
+    clock.elapse(61'000'000'000ULL);
+    check(helper0.tick() && control->state==uint32_t(PlacementState::ACTIVE) &&
+          !control->fault_code &&
+          placement_journal(base)->entry[control->journal_index].fault==
+              uint32_t(FaultCode::READY_TIMEOUT),
+          "reservation timeout is recoverable and leaves all helpers serving");
+    check(control->active_epoch==cycles+1 &&
+          control->active_slot==slot,"precommit timeout never switches active epoch or slot");
     munmap(base,layout.bytes);
 }
 int main() {
-    V23Cycle_SamePlacementAndSharedProtocol();
+    V23Cycle_UnreadyAndAbortPreserveOldGeneration();
+    V23Cycle_PrecommitAbortDuringLiveServing();
+    V23Cycle_StalledParkFaultsAndKeepsAdmissionClosed();
+    V23Bootstrap_UnsealedTickReportsInvalidMap();
+    V23Cycle_SamePlacementAndSharedProtocol(1,2);
+    V23Cycle_SamePlacementAndSharedProtocol(3,1);
+    V23Cycle_SamePlacementAndSharedProtocol(1,2,true);
     V23Epoch_ForwardOnlyAbortRetry();
     V23Ack_OldTxnDelayedDuplicateLost();
     V23Ack_CorruptCurrentAndFault();

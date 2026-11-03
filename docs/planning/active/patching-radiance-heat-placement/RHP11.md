@@ -63,12 +63,13 @@ PROGRESS 2026-11-02: spec merged (#508, docs/design/moe-remote-placement-epochs-
 
 PROGRESS 2026-11-03 slice C step 2 (branch feat/rhp11-slice-c-admission): per-step admission ledger with derived capacity (route banks + 1); per-rank device-memory consumption counts sealed to the host once per parent behind a radiance event; fail closed on an invalid seal; no-op placement epoch cycles through PlacementControl; helper drain via the burst word (lanes keep main's serving/waiting loops); drain-time lane identity published by the helper CPU at drain ACK. Hardware: identical text throughout; cycles complete (27-30 per cycling arm) with no hang. Performance history: the first correct form cost +2.6% 1-stream decode; rounds 1-6 reached +0.8-1.0%; hybrid builds (swapping only the helper binary) put the cost in the helper; a cumulative helper bisect (main engine; H0 main sources, H1 shm layout, H2 epoch coordinator, H3 lane loops, H4 completion stores: +0.14/+0.06/(stall)/+0.09/+0.62%) and bisect 3 (round 6 without the stores: +0.81% to +0.30%) isolated the two per-request system-scope stores of done_epoch/done_slot in lane_publish_done. Round 7 (71c6af599) restores main's completion kernel and moves those words to the drain ACK: 1-stream decode +0.14% (cycles off) / +0.28% (cycles on) vs main, within noise (runs/rhp11-c2-ab7). The intermittent +60% after-idle stall seen during this work also occurs on main, so it is not slice C's. Follow-ups: RHP15 (media encoder passes vs admission), RHP16 (calibrated move triggers).
 
+PROGRESS 2026-11-03 slice D (PR #557, branch feat/rhp11-slice-d-engine-gpu): two owner-bitmap generations per engine rank, selected by the pass StepTicket; route-mark identity check once per request; exact per-parent consumption seal and r3_moe_all_ranks_consumed; full transaction driven by one production EngineRankCoordinator (engine RESERVED, per-rank upload/readiness, quiesce, commit, retire, bounded REOPENED); helper 0 seals the filtered bootstrap owner map once and engine rank setup waits for it; precommit faults abort forward with serving untouched; local-only admission when the patch policy declares no mailbox ops. Hardware path to parity: first form +1.5% 1-stream (per-route owner lookup) and every cycle aborted (no engine RESERVED, then an unsealed bootstrap digest -> INVALID_MAP, then the engine refusing the unsealed map at kernel declaration); four fix rounds plus two independent reviews. Final evidence on radiance 1.16 (runs/rhp11-d-ab5, ab6): decode step 1-stream -0.42% (off) / +0.08% (cycling), 6-stream -0.31% / -0.29%, prefill unchanged, text identical, 27-54 same-map epoch cycles per cycling arm with no fault; 6-stream MTP acceptance varies 0.56-0.64 per round in every arm and run (noise, not slice D). The handoff-disabled configuration cannot start Flash-Next on this layout (engine OOM without helpers), so B1's fix is covered card-free through the real patch policy. Next: slice E (helper GPU slot migration, worktree feat/rhp11-slice-e-helper-slots, in progress).
+
 ## Change Log
 
 - 2026-11-01T22:51:14.829553+00:00 (updated-by): Updated: section:title, order=10, work='L', priority='P0', section:description, section:steps, section:detailed_solution, section:validation, section:acceptance_criteria, section:notes
 
 ## Ledger-events
-
 
 - chg_20261101_225732_planning-a-staged-roadmap-for_4092
 - 2026-11-01T22:57:50.943098+00:00 (updated-by): Updated: section:ledger-events
@@ -86,3 +87,6 @@ PROGRESS 2026-11-03 slice C step 2 (branch feat/rhp11-slice-c-admission): per-st
 - 2026-11-03T00:02:36.089233+00:00 (updated-by): Updated: section:notes
 - chg_20261103_000523_the-engine-can-now-pause-drai_4810
 - 2026-11-03T00:05:27.792971+00:00 (updated-by): Updated: section:ledger-events
+- chg_20261103_190740_the-engine-side-of-live-expert_4409
+- 2026-11-03T19:07:44.686043+00:00 (updated-by): Updated: section:ledger-events
+- 2026-11-03T19:08:17.653290+00:00 (updated-by): Updated: section:notes
