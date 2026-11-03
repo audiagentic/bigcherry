@@ -1,6 +1,6 @@
 # rad0002_moe_remote_handoff
 
-**Status:** untested
+**Status:** validated
 **Plan item:** RAD01
 
 ## Summary
