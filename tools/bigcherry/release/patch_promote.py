@@ -328,6 +328,30 @@ def _update_recipes(root: Path, layout: engines.EngineLayout, patch_ids: tuple[s
         text, f"patch-set.{target}", production, [p for p in patch_ids if p not in production], layout.recipes
     )
 
+    # A promoted patch lives only in the production set: it leaves every other patch set (e.g. a diagnostic set that
+    # carried it while untested), so it cannot sit in a set whose required state no longer describes it. A source that
+    # reached the patch through such a set without also selecting the production set would silently lose it, so that
+    # fails the promotion instead.
+    promoted = set(patch_ids)
+    sources = raw.get("source", {})
+    for set_name, config in sets.items():
+        if set_name == target:
+            continue
+        selected = list(config.get("patches", []))
+        reduced = [p for p in selected if p not in promoted]
+        if reduced == selected:
+            continue
+        for source_name, source in sources.items():
+            source_sets = list(source.get("patch-sets", []))
+            if set_name in source_sets and target not in source_sets:
+                lost = sorted(promoted & set(selected))
+                raise PatchPromoteError(
+                    f"source {source_name!r} selects {', '.join(lost)} through patch set {set_name!r} but not the "
+                    f"production set {target!r}; promoting would drop it from that source. Add {target!r} to the "
+                    "source first."
+                )
+        text = _replace_section_patches(text, f"patch-set.{set_name}", reduced, layout.recipes)
+
     experiments = raw.get("experiment", {})
     for name, config in experiments.items():
         selected = list(config.get("patches", []))

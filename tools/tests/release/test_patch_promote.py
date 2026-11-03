@@ -411,6 +411,49 @@ class PatchPromoteTests(unittest.TestCase):
         llama = tomllib.loads((self.root / "config" / "recipes.toml").read_text(encoding="utf-8"))
         self.assertEqual(llama["patch-set"]["validated-enhancements"]["patches"], ["1000_base"])
 
+    def _rad_patch(self, recipes: str):
+        layout = pp._layout(self.root, "radiance")
+        patch = self.root / "engines" / "radiance" / "patches" / "rad0099_demo"
+        patch.mkdir(parents=True, exist_ok=True)
+        (patch / "patch.toml").write_text(
+            _PATCH_TOML.replace('"1348_demo"', '"rad0099_demo"').replace("order = 1348", "order = 99"),
+            encoding="utf-8",
+        )
+        (patch / "patch.py").write_text(_PATCH_PY, encoding="utf-8")
+        layout.recipes_path(self.root).write_text(recipes, encoding="utf-8")
+        return layout
+
+    def test_promoted_patch_leaves_every_other_patch_set(self):
+        layout = self._rad_patch(_RAD_RECIPES.replace(
+            "[experiment.rad-demo]",
+            '[patch-set.demo-diag]\npatches = ["rad0099_demo", "rad0098_diag"]\nrequired-state = "untested"\n\n'
+            "[experiment.rad-demo]",
+        ).replace(
+            '[source.radiance]\nref = "pinned"\npatch-sets = ["serving-core"]',
+            '[source.radiance]\nref = "pinned"\npatch-sets = ["serving-core"]\n\n'
+            '[source.radiance-diag]\nref = "pinned"\npatch-sets = ["serving-core", "demo-diag"]',
+        ))
+        pp._update_recipes(self.root, layout, ("rad0099_demo",))
+        recipes = tomllib.loads(layout.recipes_path(self.root).read_text(encoding="utf-8"))
+        self.assertEqual(recipes["patch-set"]["serving-core"]["patches"], ["rad0099_demo"])
+        # it leaves the diagnostic set; the diagnostic-only patch stays there
+        self.assertEqual(recipes["patch-set"]["demo-diag"]["patches"], ["rad0098_diag"])
+
+    def test_promotion_refuses_when_a_source_would_lose_the_patch(self):
+        layout = self._rad_patch(_RAD_RECIPES.replace(
+            "[experiment.rad-demo]",
+            '[patch-set.demo-diag]\npatches = ["rad0099_demo"]\nrequired-state = "untested"\n\n'
+            "[experiment.rad-demo]",
+        ).replace(
+            '[source.radiance]\nref = "pinned"\npatch-sets = ["serving-core"]',
+            '[source.radiance]\nref = "pinned"\npatch-sets = ["serving-core"]\n\n'
+            '[source.radiance-diag-only]\nref = "pinned"\npatch-sets = ["demo-diag"]',
+        ))
+        before = layout.recipes_path(self.root).read_text(encoding="utf-8")
+        with self.assertRaisesRegex(pp.PatchPromoteError, "radiance-diag-only.*serving-core"):
+            pp._update_recipes(self.root, layout, ("rad0099_demo",))
+        self.assertEqual(layout.recipes_path(self.root).read_text(encoding="utf-8"), before)
+
     def test_engine_without_a_promotion_table_cannot_promote(self):
         toml = self.root / "engines" / "radiance" / "engine.toml"
         text = toml.read_text(encoding="utf-8")
