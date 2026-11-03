@@ -284,7 +284,8 @@ Status check_provenance_coverage(const nlohmann::json& doc) {
             if (value != Json::parse(std::string(f->default_json)))
                 return fail(leaf, "value " + value.dump() + " is not the schema default " + std::string(f->default_json) +
                                       "; it needs its own record, not a default claim");
-            continue;
+            // the root's default claim is exempt from the class rule; an explicit record is not (it covers homogeneous leaves)
+            if (root_only) continue;
         }
         const std::string cls = class_at(position, *f);
         if (rec->at("class") != cls)

@@ -170,15 +170,25 @@ void check_default(const Node& field, const Node& n, const std::string& at) {
         if (!d.is_boolean()) fault(at, "a boolean default must be true or false");
     } else if (n.kind == "string") {
         if (!d.is_string()) fault(at, "a string default must be a string");
-        const int64_t len = static_cast<int64_t>(d.get<std::string>().size());
+        const std::string& text = d.get_ref<const std::string&>();
+        // length is counted in characters, as JSON Schema counts it (UTF-8 continuation bytes are not characters)
+        int64_t len = 0;
+        for (unsigned char c : text) len += (c & 0xC0) != 0x80;
         if ((n.min_length && len < *n.min_length) || (n.max_length && len > *n.max_length))
             fault(at, "the default is outside the field's length bounds");
+        if (!n.pattern.empty() && !std::regex_search(text, std::regex(n.pattern)))
+            fault(at, "the default " + d.dump() + " does not match the field's pattern");
+        if (n.format == "date" && !std::regex_match(text, std::regex(R"(\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01]))")))
+            fault(at, "the default " + d.dump() + " is not a date (YYYY-MM-DD)");
     } else if (n.kind == "enum" || n.kind == "int_enum") {
         if (std::find(n.values.begin(), n.values.end(), d) == n.values.end())
             fault(at, "the default " + d.dump() + " is not one of the field's values");
     } else {
         fault(at, std::string("kind '") + n.kind + "' cannot have a default");
     }
+    // the default must be what the schema accepts: a const field has one value
+    if (const Json* c = field.constant ? &*field.constant : (n.constant ? &*n.constant : nullptr))
+        if (d != *c) fault(at, "the default " + d.dump() + " is not the field's const " + c->dump());
     const std::string& s = field.default_source;
     if (s.rfind("radiance:Config.", 0) == 0) {
         if (field.radiance_config != s.substr(std::string("radiance:").size()))
@@ -1616,8 +1626,41 @@ std::string read_text_file(const std::string& path) {
     return s.str();
 }
 
-/* The text between the braces of `struct Config {`, comments included (they are skipped when matching). */
-std::string config_body(const std::string& header) {
+/* The header with every comment replaced by spaces (newlines kept) and every string or character literal emptied to its
+ * quotes, so a commented-out declaration, or a brace or `=` inside a literal, is never read as code. */
+std::string code_only(const std::string& src) {
+    std::string out;
+    out.reserve(src.size());
+    for (size_t i = 0; i < src.size();) {
+        if (src.compare(i, 2, "//") == 0) {
+            while (i < src.size() && src[i] != '\n') { out += ' '; ++i; }
+        } else if (src.compare(i, 2, "/*") == 0) {
+            const size_t end = src.find("*/", i + 2);
+            const size_t stop = end == std::string::npos ? src.size() : end + 2;
+            for (; i < stop; ++i) out += src[i] == '\n' ? '\n' : ' ';
+        } else if (src[i] == '"' || src[i] == '\'') {
+            const char quote = src[i];
+            out += quote;
+            ++i;
+            std::string body;
+            while (i < src.size() && src[i] != quote && src[i] != '\n') {
+                if (src[i] == '\\' && i + 1 < src.size()) body += src[i++];
+                body += src[i++];
+            }
+            if (i < src.size() && src[i] == quote) ++i;
+            // keep a plain string literal's text (a string default compares against it); blank the rest
+            out += quote == '"' && body.find('\\') == std::string::npos ? body : std::string();
+            out += quote;
+        } else {
+            out += src[i++];
+        }
+    }
+    return out;
+}
+
+/* The text between the braces of `struct Config {`, as code only. */
+std::string config_body(const std::string& source) {
+    const std::string header = code_only(source);
     const size_t at = header.find("struct Config {");
     if (at == std::string::npos) throw std::runtime_error("no `struct Config {` in core/rad_core.h");
     size_t i = header.find('{', at), depth = 0;
@@ -1682,6 +1725,10 @@ bool verify_defaults(const Registry& r, const std::string& radiance_src, const s
                 std::smatch m;
                 if (!std::regex_search(config, m, declared))
                     throw std::runtime_error(at + ": Config::" + member + " has no `= <literal>;` initialiser in core/rad_core.h");
+                // two readings of the same name are ambiguous: refuse rather than certify the first
+                const std::string rest = m.suffix().str();
+                if (std::regex_search(rest, declared))
+                    throw std::runtime_error(at + ": Config::" + member + " is declared more than once in core/rad_core.h");
                 const auto lit = simple_literal(m[1].str());
                 if (!lit) throw std::runtime_error(at + ": the initialiser `" + m[1].str() + "` is not a simple literal; leave the default absent");
                 source = *lit;

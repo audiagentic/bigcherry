@@ -354,6 +354,27 @@ int main() {
                          "path = \"/spec\"\nkind = \"object\"\ncpp = \"Spec\"\ndefault = 1\ndefault_source = \"setting:R3_X\"\n"),
                 "cannot have a default", "a default on a container");
 
+        // a default must be what its own schema accepts: a const, a pattern, a date format
+        refused(replaced("path = \"/metadata/contract_version\"\nkind = \"integer\"\nconst = 1\n",
+                         "path = \"/metadata/contract_version\"\nkind = \"integer\"\nconst = 1\ndefault = 2\ndefault_source = \"setting:R3_X\"\n"),
+                "is not the field's const", "a default that is not the const");
+        check(bc::contract::load_registry(replaced("path = \"/metadata/contract_version\"\nkind = \"integer\"\nconst = 1\n",
+                                                  "path = \"/metadata/contract_version\"\nkind = \"integer\"\nconst = 1\ndefault = 1\ndefault_source = \"setting:R3_X\"\n"),
+                                        "t", &d, &why),
+              "a default equal to the const loads: " + why);
+
+        auto string_field = [&](const std::string& attrs) {
+            return std::string(kBase) + "\n[[field]]\npath = \"/spec/s\"\nkind = \"string\"\n" + attrs + "doc = \"A string.\"\n";
+        };
+        const std::string src = "default_source = \"setting:R3_X\"\n";
+        refused(string_field("pattern = \"^gfx[0-9a-f]+$\"\nmax_length = 32\ndefault = \"invalid\"\n" + src), "does not match the field's pattern",
+                "a default that does not match the pattern");
+        check(bc::contract::load_registry(string_field("pattern = \"^gfx[0-9a-f]+$\"\nmax_length = 32\ndefault = \"gfx1100\"\n" + src), "t", &d, &why),
+              "a default that matches the pattern loads: " + why);
+        refused(string_field("format = \"date\"\ndefault = \"2026-13-40\"\n" + src), "is not a date", "a default that is not a date");
+        check(bc::contract::load_registry(string_field("format = \"date\"\ndefault = \"2026-11-03\"\n" + src), "t", &d, &why),
+              "a date default loads: " + why);
+
         // verification against the sources: equal passes; a divergence names both values; a non-literal is no source
         const std::filesystem::path tmp = std::filesystem::temp_directory_path() / "bc-contract-defaults";
         std::filesystem::create_directories(tmp / "core");
@@ -380,6 +401,17 @@ int main() {
         const std::string cfg2 = "radiance_option = \"--derived\"\nradiance_config = \"Config.derived\"\n";
         check(!verify(with(cfg2 + "default = 1\ndefault_source = \"radiance:Config.derived\"\n"), &msg) && msg.find("not a simple literal") != std::string::npos,
               "an initialiser that is an expression is no source: " + msg);
+        // a commented-out initialiser is not the declaration, nor is text inside a string; two real ones are ambiguous
+        write(tmp / "core" / "rad_core.h",
+              "struct Config {\n    int64_t max_seqs = 256;\n    // int64_t host_headroom_mib = 4096;\n    int64_t host_headroom_mib = 1;\n"
+              "    /* int64_t hidden = 5; */ const char* s = \"int64_t quoted = 9;\";\n};\n");
+        const std::string cfg3 = "radiance_option = \"--host-headroom-mib\"\nradiance_config = \"Config.host_headroom_mib\"\n";
+        check(!verify(with(cfg3 + "default = 4096\ndefault_source = \"radiance:Config.host_headroom_mib\"\n"), &msg) && msg.find("source says 1") != std::string::npos,
+              "the real initialiser (1), not the commented one (4096), is the source: " + msg);
+        check(verify(with(cfg3 + "default = 1\ndefault_source = \"radiance:Config.host_headroom_mib\"\n"), &msg), "and the real one verifies: " + msg);
+        write(tmp / "core" / "rad_core.h", "struct Config {\n    int64_t max_seqs = 256;\n    int64_t max_seqs = 256;\n};\n");
+        check(!verify(with(cfg + "default = 256\ndefault_source = \"radiance:Config.max_seqs\"\n"), &msg) && msg.find("declared more than once") != std::string::npos,
+              "a member declared twice is ambiguous: " + msg);
         std::filesystem::remove_all(tmp);
     }
 

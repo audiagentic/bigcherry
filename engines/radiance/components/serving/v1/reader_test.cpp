@@ -535,6 +535,13 @@ int main() {
         // a record covers only leaves of its own class
         refused(doc({{"tp", 2}}, {{"", root_default}, {sched, record("profile", "policy")}}), "a record covers only leaves of its own class",
                 "a policy record over a derived leaf");
+        // a schema-default claim below the root has the class of its leaves too (the root's is exempt)
+        refused(doc({{"tp", 1}}, {{"", root_default}, {std::string(sched) + "/tp", record("schema_default", "policy")}}),
+                "a record covers only leaves of its own class", "a default claim at the leaf with the wrong class");
+        refused(doc({{"tp", 1}}, {{"", root_default}, {sched, record("schema_default", "policy")}}),
+                "a record covers only leaves of its own class", "a default claim at an ancestor with the wrong class");
+        check(!check_provenance_coverage(doc({{"tp", 1}}, {{"", root_default}, {sched, record("schema_default", "derived")}})),
+              "a true default claim of the right class at an ancestor");
         // a schema-default claim below the root is true or refused
         refused(doc({{"tp", 2}}, {{"", root_default}, {sched, record("schema_default", "derived")}}), "is not the schema default",
                 "a false default claim at an ancestor");
