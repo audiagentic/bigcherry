@@ -67,23 +67,25 @@ PREREQUISITES = {RAD0004: (RAD0002,)}
 # prerequisites, after they are applied), `after` the file with the package applied.
 PIN_BLOBS = {
     RAD0002: {
-        "abi/bc_moe_remote.h": (None, "2040fb8"),
+        "abi/bc_moe_remote.h": (None, "d3748b9"),
         "arch/common/bc_moe_remote_block.h": (None, "271a9a6"),
         "arch/common/rad_block_hc.h": ("3a602e5", "d1124d5"),
-        "arch/common/rad_block_moe_fp8.h": ("614db0e", "4606519"),
-        "core/place/bc_moe_remote.cpp": (None, "5242c9e"),
-        "core/place/bc_moe_remote_place.h": (None, "e89a83b"),
-        "core/place/planner.cpp": ("2ea4220", "aecd5af"),
+        "arch/common/rad_block_moe_fp8.h": ("614db0e", "5777cc8"),
+        "core/engine.cpp": ("7544310", "c0c5357"),
+        "core/engine.h": ("b10743c", "11473eb"),
         "core/engine_bringup.cpp": ("3ecdba8", "fe411f0"),
-        "core/engine.cpp": ("7544310", "7f75e0b"),
-        "core/runtime/ctx.cpp": ("ff0f746", "c96e914"),
+        "core/place/bc_moe_remote.cpp": (None, "381430e"),
+        "core/place/bc_moe_remote_engine.h": (None, "cfb316a"),
+        "core/place/bc_moe_remote_place.h": (None, "da896b6"),
+        "core/place/planner.cpp": ("2ea4220", "7944888"),
+        "core/runtime/ctx.cpp": ("ff0f746", "2ff379e"),
     },
     RAD0003: {
         "arch/common/rad_block_mtp_fp8.h": ("c571d45", "235cebb"),
     },
     RAD0004: {
         "arch/common/bc_moe_remote_diag.h": (None, "3998d25"),
-        "arch/common/rad_block_moe_fp8.h": ("4606519", "fb0956d"),
+        "arch/common/rad_block_moe_fp8.h": ("5777cc8", "feb3865"),
     },
     RAD0009: {
         "core/bc_serving_manifest.h": (None, "4ad1a40"),
@@ -97,6 +99,7 @@ RAD0002_CORE_FILES = (
     "arch/common/rad_block_hc.h",
     "arch/common/rad_block_moe_fp8.h",
     "core/engine.cpp",
+    "core/engine.h",
     "core/engine_bringup.cpp",
     "core/place/planner.cpp",
     "core/runtime/ctx.cpp",
@@ -220,14 +223,14 @@ class TestRadiancePatchPackages(unittest.TestCase):
 
     def test_rad0002_core_edits_are_thin_calls_into_the_extension_point(self):
         """Policy lives in rad0002's own files and the plugin: every added code line in an upstream file calls the
-        extension point (the one exception is rank_units' preplaced filter, which cannot move out of the core)."""
+        extension point, including the preplaced filter."""
         temp, root = self._tree()
         try:
             patches = _load(RAD0002)
             core_edits = {p.path: len(p.edits) for p in patches if not p.create}
             self.assertEqual(set(core_edits), set(RAD0002_CORE_FILES))
-            self.assertEqual(sum(core_edits.values()), 19)
-            self.assertEqual(sum(1 for p in patches if p.create), 4)
+            self.assertEqual(sum(core_edits.values()), 28)
+            self.assertEqual(sum(1 for p in patches if p.create), 5)
             self.assertTrue(all(result.ok for result in apply_all(list(patches), root)))
             for relative in RAD0002_CORE_FILES:
                 added = self._added_lines(
@@ -236,11 +239,8 @@ class TestRadiancePatchPackages(unittest.TestCase):
                 )
                 code = [line.strip() for line in added if line.strip() and not line.strip().startswith(("/*", "*"))]
                 for line in code:
-                    if "preplaced()" in line or line.startswith("for (int32_t i = 0; i < (int32_t)p->units.size()"):
-                        self.assertEqual(relative, "core/place/planner.cpp")
-                        continue
                     self.assertRegex(
-                        line, r"bc_moe_remote|bc_remote|BcMoeRemote|&&$|^\(op_combine \|\| !gather_taken", f"{relative}: {line}"
+                        line, r"bc_moe_remote|bc_remote|BcMoeRemote", f"{relative}: {line}"
                     )
                 text = (root / relative).read_text(encoding="utf-8")
                 self.assertNotIn("rad_moe_remote", text, relative)
@@ -284,7 +284,7 @@ class TestRadiancePatchPackages(unittest.TestCase):
             planner = (root / "core/place/planner.cpp").read_text(encoding="utf-8")
             self.assertIn("if (bc_moe_remote_pin_unit(mu, in_.config->max_tok)) continue;", planner)
             self.assertIn("bc_moe_remote_mark_footprint(units);", planner)
-            self.assertIn("if (!p->units[(size_t)i].preplaced()) order->push_back(i);", planner)
+            self.assertIn("bc_moe_remote_rank_units(p, order);", planner)
             bringup = (root / "core/engine_bringup.cpp").read_text(encoding="utf-8")
             placeholder = "if (bc_moe_remote_publish_placeholder(cfg_.max_tok, w, e, *file_, r->mover, (rad_weight)i)) continue;"
             self.assertIn(placeholder, bringup)
@@ -349,6 +349,37 @@ class TestRadiancePatchPackages(unittest.TestCase):
         finally:
             temp.cleanup()
 
+    def test_admission_bridge_preserves_parent_across_issue_ahead(self):
+        """Exercise the generated bridge with fake scheduler/device callbacks."""
+        import subprocess
+
+        compiler = shutil.which("c++")
+        if not compiler:
+            self.skipTest("C++ compiler unavailable")
+        temp, root = self._tree()
+        try:
+            self.assertTrue(all(result.ok for result in apply_all(list(_load(RAD0002)), root)))
+            stub = root / "card-free" / "device"
+            stub.mkdir(parents=True)
+            (stub / "device.h").write_text(
+                "#pragma once\n"
+                "enum { RAD_OK=0, RAD_E_STATE=-1, RAD_E_DEVICE=-2 };\n",   # no rad_dev_set: the bridge never switches device
+                encoding="utf-8",
+            )
+            binary = root / "admission-bridge-test"
+            source = REPO / "engines/radiance/tests/admission_bridge_test.cpp"
+            compiled = subprocess.run(
+                [compiler, "-std=c++17", "-I", str(root / "card-free"),
+                 "-I", str(root / "abi"), "-I", str(root / "core/place"),
+                 str(source), "-o", str(binary)],
+                capture_output=True, text=True,
+            )
+            self.assertEqual(compiled.returncode, 0, compiled.stderr)
+            result = subprocess.run([str(binary)], capture_output=True, text=True, timeout=10)
+            self.assertEqual(result.returncode, 0, result.stderr)
+        finally:
+            temp.cleanup()
+
     def test_plugin_registration_struct_matches_the_engine_abi(self):
         """libr3moe mirrors BcMoeRemotePlugin (it builds against an unpatched tree); the two must not drift."""
         temp, root = self._tree()
@@ -360,6 +391,7 @@ class TestRadiancePatchPackages(unittest.TestCase):
             def fields(text: str, opener: str) -> list[str]:
                 body = text.split(opener, 1)[1].split("}", 1)[0]
                 body = re.sub(r"/\*.*?\*/", "", body, flags=re.S)
+                body = body.replace("struct BcMoeRemoteTicket", "StepTicket")
                 return [re.sub(r"\s+", " ", f.strip()) for f in body.split(";") if f.strip()]
 
             self.assertEqual(
@@ -401,7 +433,9 @@ class TestRadiancePatchPackages(unittest.TestCase):
         self.assertIn('if (mask_only && m && local_index[slot] >= 0) __builtin_trap();', ops)
         self.assertIn('hipMemsetAsync(d->mask_ref, 0', ops)
         self.assertIn('dlsym(RTLD_DEFAULT, "bc_moe_remote_register")', hook)
-        self.assertIn("static const EnginePlugin plugin{sizeof(EnginePlugin), publish_layer_map, owner_query, burst_transition, before_pass};", hook)
+        self.assertIn("static const EnginePlugin plugin{sizeof(EnginePlugin), publish_layer_map, owner_query, burst_transition,", hook)
+        self.assertIn("before_pass, admit_ticket, bind_ticket, cancel_ticket,", hook)
+        self.assertIn("host_done_ticket, rank_done_ticket, poll_tickets,", hook)
         self.assertIn('g.engine_register(&plugin)', hook)
         self.assertNotIn('rad_moe_remote', hook)
         self.assertIn('layer_map_consumed', hook)

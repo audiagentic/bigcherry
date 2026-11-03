@@ -159,6 +159,12 @@ __global__ void lane_publish_done(r3::moe_shm::Request* q, uint32_t* done_sequen
                                   const uint32_t* publish_limit) {
     if (blockIdx.x || threadIdx.x || sequence > __atomic_load_n(publish_limit, __ATOMIC_RELAXED)) return;
     q->trace[4] = wall_clock64();   /* R3_MOE_WORKER_TRACE: this device's clock */
+    /* No Request completion words: the GPU engine proves completion by the lane's done_sequence alone, and each mapped
+     * store here would sit between the helper's work and the release the engine waits on. The lane's epoch/slot are for
+     * the quiescence check (r3_moe_wait_drained), not for the per-layer wait. */
+    /* Main's completion: one release of done_sequence and nothing else over the link. The lane's done epoch/slot are
+     * written by the helper CPU when it acknowledges a drain (worker_lanes.h), not here on every request: hardware
+     * bisect showed these two per-request stores cost most of slice C's decode overhead. */
     lane_store_sys_rel(done_sequence, sequence);
 }
 
