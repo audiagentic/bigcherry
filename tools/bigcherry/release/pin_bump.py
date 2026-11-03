@@ -36,7 +36,7 @@ from pathlib import Path
 from typing import Any, Sequence
 
 from ..build import source_compile_check
-from ..core import paths
+from ..core import engines, paths
 from ..core import tree_activity
 from ..core.context import ProjectContext
 from ..engine_adapters import BumpCheckError, adapter
@@ -878,15 +878,37 @@ def _selected_file_patches(
     return loaded
 
 
+def _component_tree_ids(engine: str) -> list[str]:
+    """The committed tree of every component the engine builds (its [components] directories in this repository).
+    The compile gate and the lane build compile them into the same runtime home as the vendor tree, so a component
+    fix must invalidate a passed compile exactly as a vendor change does. Preflight refuses a dirty controller
+    checkout, so the committed tree is what gets built."""
+    ids = []
+    for name, directory in engines.load(paths.REPO_ROOT, engine).components:
+        result = subprocess.run(["git", "-C", str(paths.REPO_ROOT), "rev-parse", f"HEAD:{directory}"],
+                                capture_output=True, text=True)
+        if result.returncode != 0:
+            raise PinBumpStop(
+                "compile",
+                "SOURCE_COMPILE_FAILED",
+                f"could not identify component {name!r} ({directory}) before compile: {result.stderr.strip()}",
+                evidence={"component": name, "directory": directory},
+                recommended_actions=["commit the component directory, then rerun bigcherry --engine <engine> pin-bump --resume"],
+            )
+        ids.append(f"{name}={result.stdout.strip()}")
+    return ids
+
+
 def _compile_tree_oid(engine: str, vendor_root: Path, patch_ids: Sequence[str]) -> str:
-    """Exact effective source-tree identity used to invalidate compile resume."""
+    """Exact effective source identity used to invalidate compile resume: the patched vendor tree and every built
+    component's committed tree."""
 
     allowed_untracked = set(patch_rebase._overlay_texts(engine))
     for _, file_patch in _selected_file_patches(engine, patch_ids):
         if file_patch.create:
             allowed_untracked.add(file_patch.path)
     try:
-        return source_identity.git_tree_oid(
+        vendor = source_identity.git_tree_oid(
             vendor_root, allowed_untracked=allowed_untracked
         )
     except source_identity.SourceIdentityError as exc:
@@ -900,6 +922,10 @@ def _compile_tree_oid(engine: str, vendor_root: Path, patch_ids: Sequence[str]) 
                 "rerun bigcherry --engine <engine> pin-bump --resume",
             ],
         ) from exc
+    components = _component_tree_ids(engine)
+    if not components:
+        return vendor
+    return hashlib.sha1("\n".join([vendor, *components]).encode()).hexdigest()
 
 
 def _git_head_text(root: Path, relative: str) -> str | None:
