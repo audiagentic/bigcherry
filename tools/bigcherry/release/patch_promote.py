@@ -399,7 +399,10 @@ def _update_recipes(root: Path, layout: engines.EngineLayout, patch_ids: tuple[s
     }
     expected[f"patch-set.{target}"] = production + [p for p in patch_ids if p not in production]
     # Semantic postcondition: whatever the array layout, the edited file must hold exactly these lists.
-    edited = tomllib.loads(text)
+    try:
+        edited = tomllib.loads(text)
+    except tomllib.TOMLDecodeError as exc:
+        raise PatchPromoteError(f"{layout.recipes}: recipe edit produced invalid TOML: {exc}") from exc
     actual = {
         **{f"patch-set.{n}": list(c.get("patches", [])) for n, c in edited.get("patch-set", {}).items()},
         **{f"experiment.{n}": list(c.get("patches", [])) for n, c in edited.get("experiment", {}).items()},
