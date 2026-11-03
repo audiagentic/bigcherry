@@ -276,9 +276,10 @@ The stride is ceil(actual layer_count * expert_count / 8), not a protocol-maximu
 layer allocation. The two pointers are immutable for the lifetime of captured
 graphs. The publish kernel uses the StepTicket already loaded per pass, indexes
 the appropriate pointer and validates the GPU-resident epoch/digest binding.
-The route-mark kernel uses the immutable pass ticket copy (not the rank cell)
-to select the same generation and to cross-check routes. No mutable global
-device active-owner selector is read. The host owns-expert callback remains a
+The route-mark kernel uses the immutable per-pass ticket (not the rank cell)
+to validate each Request before any helper-output read. It does not reselect
+the owner pointer or recheck each route's ownership; no mutable global device
+active-owner selector is read. The host owns-expert callback remains a
 bootstrap engine-weight-residency check; Stage 1 never changes local versus
 remote eligibility.
 
@@ -287,7 +288,8 @@ staging buffers. The inactive slot's map/digest is validated against
 PlacementControl and its complete GenerationHeader before packing. The
 binding metadata is copied after the bitmap on that same stream; the event
 follows both. Querying readiness is nonblocking and is not a serving-path
-sync. The bootstrap active generation is synchronized once during startup.
+sync. The bootstrap active generation is synchronized once during startup,
+after its final owner map is sealed.
 
 Upload rejects the active slot and any unretired ledger entry for its target
 slot. Host-complete alone does not release a ticket: retirement requires
@@ -324,13 +326,12 @@ stamp. The actual strict check possible at this boundary is:
   `launch_maps` queues route-mark **before** `mailbox_add_rows_kernel` on
   normal and combined steps and before `mailbox_shadow_rows_kernel` in
   shadow mode. There is no helper-output reader bypassing that route-mark.
-  The original route-mark already read `Request::sequence` (u32), rank,
-  rows, hidden, route count/offset and (for noncombined steps) status;
-  Part 1 added only the `Request::placement_epoch` (u64),
-  `Request::generation_slot` (u32), and `Request::layer` (u32)
-  identity/owner checks **inside those existing per-request route-mark
-  Request accesses**. It also added the accepted owner_has test per
-  routed expert. No new Request read or owner check was added in Part 3.
+  Main's route-mark already read Request sequence, rank, rows, hidden,
+  route count/offset and (on noncombined steps) status. This slice reuses the
+  sequence comparison and reads Request placement_epoch (u64) and
+  generation_slot (u32) there. The rank/rows/hidden comparisons and the
+  later-added layer check were redundant: publish generated those immutable
+  engine-owned fields. There is no per-route owner-bit test or new barrier.
   Thus a combined chunk cannot be read with a mismatching Request even
   though its final helper done_sequence arrives after the chunkwise add.
 * `mailbox_add_finish_kernel` is ordered after route-mark, add/shadow result
@@ -366,22 +367,52 @@ and alone does not authorize PREPARED/RETIRING or reopen admission.
 Part 3 also requires all rank upload-ready events and the existing
 helper drain-ACK identity/`r3_moe_wait_drained` proof.
 
-**Hot-path delta (source level, not hardware-measured):** the wait is now
-**byte-semantically main's wait**: zero extra system-scope loads or mapped
-Request fields, stores or fences per helper completion. The route-mark
-already read `Request::sequence`; this slice also reads its epoch
-(u64), generation slot (u32) and layer (u32) there for identity/ownership,
-without a new bitmap bit test per route. The publish kernel checks the
-exact pass-selected device bitmap once per block (the owner binding is
-loaded by thread zero, shared with the block), and route-mark reconstructs
-the pass ticket only once per block. Its per-route loop performs the main
-weight check and atomic mark, not an extra owner bitmap lookup. There is no
-second epoch/slot/sequence Request reread in the wait or finish. Ticket
-metadata and consumption stamps remain rank-local device memory. Parent
-seal adds a constant-time predicate but no new mapped stores, fences or
-event beyond slice C. Coordinator upload/ready/retire is entirely
-outside serving. Hardware latency remains unmeasured.
+**Hot-path delta vs origin/main (source-level load/compare/barrier accounting;
+not an ISA disassembly or a GPU timing result):**
 
+| Kernel | Remaining source-level additions (and removals) | Synchronization and validation |
+| --- | --- | --- |
+| `mailbox_publish_kernel` | One thread-0 device ticket read; comparisons of the device stamp ID/epoch/slot, and generation binding epoch/digest; select one of two bitmap pointers; write four u32 ticket words to `published[]`. Per helper Request: stores for placement_epoch (u64) and generation_slot (u32). The device-scope published-count add was already present on main. Relative to main, the stamp validation is **no longer repeated by every thread**. | Uses existing block barrier, with no new barrier/fence. Wrong ticket, stamp or owner binding traps before request release. |
+| `mailbox_route_mark_kernel` | Each participating thread reads four u32 ticket words from `published[]` (two ID halves, epoch, slot), compares nonzero ID/epoch and slot ≤ 1, and compares two additional mapped Request fields (epoch u64, slot u32). It reuses main's existing Request sequence comparison, but **removes** main's rank/rows/hidden comparisons and the later-added layer comparison. Existing per-route loop has no extra owner-bit lookup. | **Zero new `__syncthreads`**; previous extra shared-memory ticket exchange and block barrier removed. `matches_request` is the stream-ordered sequence/epoch/slot gate before every normal, combined and shadow helper-output reader. |
+| `mailbox_wait_helpers` and combined tail | Zero extra per-request ticket/Request loads, comparisons, stores or fences vs main. | Retains existing system-scope done_sequence acquire, sequence match and status check. Helper generation corroboration occurs at post-drain CPU ACK. |
+| `mailbox_add_finish_kernel` | Decodes the same four device ticket words as main; `pass_ticket` newly rejects zero epoch/invalid slot. **Removes** repeated device stamp `owns` loads/comparisons and lane-class validation. Same per-lane consumed record and one per-pass agent-scope consumed-count add as main. | Reuses original `__syncthreads_count`; no extra barrier. Stamp identity validated at publish and again at the parent seal. |
+| `mailbox_seal_kernel` | Main read one device stamp and rejected consumed > published. `seal_ready` now also compares stamp ticket ID, epoch and slot to the exact parent and requires published == consumed. | Behind last combined/shadow/normal result-plane reader, before existing rank terminal event. One parent-level host release only; no new per-request system-scope traffic. |
+
+The host admission hot path performs one acquired cached per-rank readiness
+mask check, set only after successful sealed bootstrap upload/event/complete
+rank initialization. It never recalculates the owner map's digest per parent.
+No new GPU kernels or helper per-request system-scope stores were added. The
+hardware 0.3% decode-regression target remains **unverified**.
+
+### Round 2: one-time canonical bootstrap seal
+
+`init` seeds slot 0 with all-local owner bytes and a digest of **that initial
+map only**. The real workers then publish disjoint ownership and drop the
+protected or absent runtime-layer owners. Every helper marks its final map
+filtered only **after** the last such drop and layer load. Helper 0, the sole
+control publisher before the epoch controller starts, waits for all helpers,
+computes the final digest, and publishes GenerationHeader 0's digest and
+`ready_helpers` plus PlacementControl's `active_digest` through the existing
+controller's coherent odd/even seqlock (seq 0 -> odd 1 -> even 2). It is
+explicitly **one-time**: subsequent publish/drop/mark calls reject the seal.
+A bad candidate digest is no longer repaired by the engine.
+
+Engine ownership lookups used during layer-map construction recheck the
+seqlock before accepting generation header and owner bytes, preventing a
+false fault during the single publication. The rank bootstrap
+`r3_moe_mailbox_device` refuses unsealed maps. It builds its bitmap and
+binding only from the sealed control epoch/digest; it synchronizes the
+private HIP upload event **before** advertising that rank ready. No parent
+admission is allowed before every participating rank's ready bit, so initial
+GPU routing cannot use the temporary all-local digest. Later generation
+uploads follow the existing exact event/ledger guards.
+
+The card-free 1,000-cycle fixtures for the one-helper/two-rank and
+three-helper/one-rank shapes now use actual `init`,
+`publish_owned`/`drop_bootstrap_owner`, filtered-mask and
+`SharedTransport::seal_bootstrap`. An unsealed real `EpochCycle` records
+INVALID_MAP without killing serving. `stage_same_map_generation` diagnoses
+each distinct failed predicate once, not once per tick.
 
 ## Slice D part 3: true two-generation diagnostic cycles and coordinator
 

@@ -29,6 +29,7 @@ inline bool build_bitmap(const void* map, uint32_t slot, uint64_t epoch,
                          control.state >= uint32_t(PlacementState::COPYING) &&
                          control.state <= uint32_t(PlacementState::PREPARED);
     if (!active && !pending) return false;
+    if (active && epoch == 1 && slot == 0 && !bootstrap_generation_sealed(map)) return false;
     const auto* g = generation_header(map, slot);
     if (!g || g->slot != slot || g->epoch != epoch || g->digest != digest ||
         g->map_bytes != h->owner_map_bytes || g->layer_count != h->layer_count ||

@@ -431,6 +431,32 @@ int main(int argc, char** argv) {
         if (eb > 0) runtime_owned.bytes += (uint64_t)eb;
     }
     owned = std::move(runtime_owned);
+    /* The final owner removal is above. Each helper release-publishes that
+     * it can no longer mutate generation 0. Helper 0 is the sole control
+     * writer until EpochCycle starts; seal once under the same seqlock. */
+    if (!r3::epoch::mark_bootstrap_filtered(map, helper_index)) {
+        raise_fault(h);
+        return 1;
+    }
+    if (helper_index == 0) {
+        timespec deadline{};
+        if (clock_gettime(CLOCK_MONOTONIC, &deadline) != 0) {
+            raise_fault(h);
+            return 1;
+        }
+        deadline.tv_sec += 1800; // same bounded startup window as segment attach
+        const uint32_t expected=(1u << helper_count) - 1u;
+        const WaitResult ready=wait_for(h, &deadline, [&] {
+            return __atomic_load_n(&h->bootstrap_filtered_helpers, __ATOMIC_ACQUIRE) == expected;
+        });
+        r3::epoch::SharedTransport transport(map);
+        if (ready != WaitResult::Ready || stopping() || !transport.seal_bootstrap()) {
+            std::fprintf(stderr, "r3_moe_worker: bootstrap owner seal refused (ready=%u, filtered=0x%x, expected=0x%x)\n",
+                         uint32_t(ready), load(&h->bootstrap_filtered_helpers), expected);
+            raise_fault(h);
+            return 1;
+        }
+    }
     const auto lanes_served = served_lanes(helper_count, helper_index, lane_classes.count);
     std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_POWER_SAVE %s\n", cfg.power_save ? "on" : "off");
     if (gpu && !gpu->prepare_lanes(lane_classes.rows, lane_classes.count, lane_large_rows,

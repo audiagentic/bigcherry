@@ -100,6 +100,9 @@ struct HookState {
     R3MoeDrainSnapshot closed_snapshot{};
     uint64_t closure_id = 0;
     std::atomic<uint32_t> engine_ranks{0}; /* scheduler-owned; published once before controller starts */
+    /* Rank setup proves bootstrap seal/upload once. Admission tests only this
+     * cached mask, never rehashes the canonical map on the hot path. */
+    std::atomic<uint32_t> bootstrap_ready_ranks{0};
     bool drain_verified = false; /* reopen requires a successful full drain */
     std::thread placement_thread;
     /* Header::burst ownership: burst_transition (scheduler) and the helper drain (placement thread). While a drain
@@ -202,6 +205,9 @@ int admit_ticket(StepTicket* out, int try_only, int world_size) {
     *out = StepTicket{};
     if (world_size < 1 || world_size > (int)kMaxEngineRanks) return RAD_E_INVAL;
     const uint32_t ranks = (uint32_t)world_size;
+    const uint32_t mask = (1u << ranks) - 1u;
+    if ((g.bootstrap_ready_ranks.load(std::memory_order_acquire) & mask) != mask)
+        return RAD_E_STATE;
     uint32_t expected = g.engine_ranks.load(std::memory_order_acquire);
     if (!expected) {
         uint32_t empty = 0;
@@ -476,23 +482,31 @@ bool resume_burst_after_drain(Header* h) {
 /* This callback is engine weight-residency setup, not a step route. The
  * local/remote split stays immutable in Stage 1; GPU routes select by ticket. */
 int owner_query(int layer, int expert) {
-    if (!g.hdr || layer < 0 || expert < 0) return 0;
-    PlacementControl c{};
-    if (!placement_snapshot(g.map, &c) || !c.active_epoch || c.active_slot > 1 ||
-        c.fault_code || c.active_digest != generation_header(g.map, c.active_slot)->digest ||
-        generation_header(g.map, c.active_slot)->epoch != c.active_epoch ||
+    if (!g.hdr || layer < 0 || expert < 0 ||
         layer >= (int)g.hdr->layer_count || expert >= (int)g.hdr->expert_count) {
-        g.ledger.fault();
-        raise_fault(g.hdr);
+        if (g.hdr) { g.ledger.fault(); raise_fault(g.hdr); }
         return 0;
     }
-    const uint8_t owner = owner_at(g.map, c.active_slot, (uint32_t)layer, (uint32_t)expert);
-    if (owner != kOwnerLocal && owner >= g.hdr->helper_count) {
-        g.ledger.fault();
-        raise_fault(g.hdr);
-        return 0;
+    /* Helper 0 can seal the final owner map while engine residency is being
+     * constructed. Read generation metadata within the control seqlock:
+     * do not mistake an in-flight coherent bootstrap publication for a bad
+     * digest and poison serving. Owner bytes are already final at the seal. */
+    for (uint32_t attempt=0;attempt<64;++attempt) {
+        PlacementControl c{};
+        if (!placement_snapshot(g.map, &c)) continue;
+        if (!c.active_epoch || c.active_slot > 1 || c.fault_code) break;
+        const auto* generation = generation_header(g.map,c.active_slot);
+        const uint64_t epoch = generation->epoch, digest = generation->digest;
+        const uint8_t owner = owner_at(g.map,c.active_slot,(uint32_t)layer,(uint32_t)expert);
+        if (__atomic_load_n(&placement_control(g.map)->seq, __ATOMIC_ACQUIRE) != c.seq)
+            continue;
+        if (epoch != c.active_epoch || digest != c.active_digest ||
+            (owner != kOwnerLocal && owner >= g.hdr->helper_count)) break;
+        return owner < g.hdr->helper_count;
     }
-    return owner < g.hdr->helper_count;
+    g.ledger.fault();
+    raise_fault(g.hdr);
+    return 0;
 }
 
 void free_owner_generations(RankState& s) {
@@ -1212,26 +1226,27 @@ extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevic
                      helpers, world_size);
         return RAD_E_STATE;
     }
-    /* The initial canonical map is finalized after helpers consume the runtime
-     * layer maps. Rebind its bootstrap digest once, before any rank's GPU work.
-     * Subsequent generation uploads require exact pre-published digests. */
-    const uint32_t active_slot = placement_control(g.map)->active_slot;
-    if (active_slot > 1 || g.ledger.outstanding()) return RAD_E_STATE;
-    const uint64_t digest = generation_digest(g.map, active_slot);
-    if (!digest) return RAD_E_STATE;
+    /* Helper 0 already sealed the fully filtered map under the controller
+     * seqlock. Do not repair its digest here: the rank upload must consume
+     * exactly that immutable publication, or fail closed. */
+    PlacementControl sealed{};
+    if (!bootstrap_generation_sealed(g.map) ||
+        !placement_snapshot(g.map, &sealed) ||
+        g.ledger.outstanding()) return RAD_E_STATE;
+    const uint32_t active_slot = sealed.active_slot;
+    const uint64_t digest = sealed.active_digest;
     for (const RankState& other : g.rank)
         if (other.ready && (other.owner_expected[active_slot].epoch !=
-                                placement_control(g.map)->active_epoch ||
+                                sealed.active_epoch ||
                             other.owner_expected[active_slot].digest != digest))
             return RAD_E_STATE;
-    generation_header(g.map, active_slot)->digest = digest;
-    placement_control(g.map)->active_digest = digest;
+    /* Digests are controller publications, never rewritten by rank setup. */
     std::vector<uint8_t> owner_bitmap;
     if (!r3::owner_generation::build_bitmap(g.map, active_slot,
-            placement_control(g.map)->active_epoch, digest, &owner_bitmap))
+            sealed.active_epoch, digest, &owner_bitmap))
         return RAD_E_STATE;
     if (!allocate_owner_generations(s, owner_bitmap.size()) ||
-        !queue_owner_upload(s, active_slot, placement_control(g.map)->active_epoch,
+        !queue_owner_upload(s, active_slot, sealed.active_epoch,
                             digest, owner_bitmap) ||
         !hip_ok(hipEventSynchronize(s.owner_event[active_slot]),
                 "finish bootstrap owner upload")) {
@@ -1396,6 +1411,7 @@ extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevic
             std::fprintf(stderr, "libr3moe: R3_MOE_WORKER_COMBINE on - helper 0 combines the helpers' rows on the large lane\n");
     }
     s.ready = true;
+    g.bootstrap_ready_ranks.fetch_or(1u << rank, std::memory_order_release);
     *out = &s.dev;
     return RAD_OK;
 }

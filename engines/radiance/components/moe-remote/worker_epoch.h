@@ -3,6 +3,8 @@
 // The state machine uses injectable clocks/transport; no HIP or GPU work here.
 #include "moe_remote_shm.h"
 #include <cstdint>
+#include <atomic>
+#include <cstdio>
 #include <chrono>
 #include <cstring>
 #include <memory>
@@ -379,31 +381,51 @@ inline bool same_placement_cycle(const PlacementControl& c) {
  * only when the later ledger guard also permits upload. Active bytes and
  * header are never modified here. */
 inline bool stage_same_map_generation(void* map) {
+    enum Reason : uint32_t { SNAPSHOT, CONTROL, ACTIVE_HEADER, INACTIVE_HEADER,
+                             LAYOUT, ACTIVE_DIGEST, COPIED_DIGEST };
+    auto fail = [](Reason reason, const char* why) {
+        static std::atomic<uint32_t> seen{0};
+        const uint32_t bit=1u << uint32_t(reason);
+        if (!(seen.fetch_or(bit, std::memory_order_relaxed) & bit))
+            std::fprintf(stderr, "moe-remote: stage_same_map_generation refused: %s\n", why);
+        return false;
+    };
     PlacementControl c{};
-    if (!map || !placement_snapshot(map, &c) ||
-        c.state != uint32_t(PlacementState::ACTIVE) || c.fault_code ||
+    if (!map || !placement_snapshot(map, &c))
+        return fail(SNAPSHOT, "missing map or control seqlock snapshot");
+    if (c.state != uint32_t(PlacementState::ACTIVE) || c.fault_code ||
         !c.active_epoch || c.active_epoch >= UINT32_MAX ||
-        !c.active_digest || c.active_slot > 1) return false;
+        !c.active_digest || c.active_slot > 1)
+        return fail(CONTROL, "invalid ACTIVE control epoch/digest/slot/state");
     const Header* h = static_cast<const Header*>(map);
     GenerationHeader* active = generation_header(map,c.active_slot);
     GenerationHeader* inactive = generation_header(map,1u-c.active_slot);
-    if (!active || !inactive || !h->owner_map_bytes ||
-        active->epoch != c.active_epoch || active->digest != c.active_digest ||
+    if (!active || active->epoch != c.active_epoch ||
+        active->digest != c.active_digest ||
         active->state != uint32_t(GenerationState::ACTIVE) ||
+        !active->ready_helpers || active->ready_helpers != c.expected_helpers)
+        return fail(ACTIVE_HEADER, "active generation epoch/digest/state/ready_helpers mismatch");
+    if (!inactive ||
         (inactive->state != uint32_t(GenerationState::EMPTY) &&
          inactive->state != uint32_t(GenerationState::RETIRED) &&
          inactive->state != uint32_t(GenerationState::STAGING) &&
-         inactive->state != uint32_t(GenerationState::READY)) ||
+         inactive->state != uint32_t(GenerationState::READY)))
+        return fail(INACTIVE_HEADER, "inactive generation state invalid");
+    if (!h->owner_map_bytes ||
         active->map_bytes != h->owner_map_bytes ||
-        inactive->map_bytes != h->owner_map_bytes ||
-        generation_digest(map,c.active_slot) != c.active_digest) return false;
+        inactive->map_bytes != h->owner_map_bytes)
+        return fail(LAYOUT, "generation owner map length invalid");
+    if (generation_digest(map,c.active_slot) != c.active_digest)
+        return fail(ACTIVE_DIGEST, "active owner bytes differ from published digest");
     std::memcpy(generation_map(map,1u-c.active_slot),generation_map(map,c.active_slot),
                 h->owner_map_bytes);
     inactive->epoch = c.active_epoch+1;
     inactive->digest = c.active_digest;
     inactive->ready_helpers = inactive->ready_ranks = 0;
     inactive->state = uint32_t(GenerationState::STAGING);
-    return generation_digest(map,1u-c.active_slot)==c.active_digest;
+    if (generation_digest(map,1u-c.active_slot)!=c.active_digest)
+        return fail(COPIED_DIGEST, "staged owner bytes differ from published digest");
+    return true;
 }
 
 /* Shared no-move control-map proof, used by both helper CPU participant and
@@ -615,6 +637,39 @@ class SharedTransport : public Transport {
     void* map_;
 public:
     explicit SharedTransport(void* map) : map_(map) {}
+    /* Exactly once, after all helpers have finished runtime filtering and
+     * before any engine rank uploads the initial bitmap or admits a parent.
+     * Helper 0 alone writes the control's seqlock (the future controller's
+     * only writer). Include the generation header update inside odd/even. */
+    bool seal_bootstrap() {
+        if (!map_) return false;
+        auto* h = static_cast<Header*>(map_);
+        PlacementControl c{};
+        if (!placement_snapshot(map_, &c) || c.seq != 0 ||
+            c.state != uint32_t(PlacementState::ACTIVE) ||
+            c.active_slot != 0 || c.active_epoch != 1 || c.fault_code ||
+            !h->helper_count || h->helper_count > kMaxHelpers ||
+            c.expected_helpers != ((1u << h->helper_count) - 1u) ||
+            __atomic_load_n(&h->bootstrap_filtered_helpers, __ATOMIC_ACQUIRE) != c.expected_helpers)
+            return false;
+        auto* g = generation_header(map_, 0);
+        if (!g || g->epoch != 1 || g->state != uint32_t(GenerationState::ACTIVE) ||
+            g->ready_helpers || g->map_bytes != h->owner_map_bytes ||
+            g->digest != c.active_digest) return false;
+        const uint64_t digest = generation_digest(map_, 0);
+        if (!digest) return false;
+        c.active_digest = digest;
+        c.seq = 2;
+        auto* target = placement_control(map_);
+        __atomic_store_n(&target->seq, 1u, __ATOMIC_SEQ_CST);
+        g->digest = digest;
+        __atomic_store_n(&g->ready_helpers, c.expected_helpers, __ATOMIC_RELEASE);
+        std::memcpy(reinterpret_cast<uint8_t*>(target) + sizeof(c.seq),
+                    reinterpret_cast<const uint8_t*>(&c) + sizeof(c.seq), sizeof(c) - sizeof(c.seq));
+        __atomic_store_n(&target->seq, c.seq, __ATOMIC_RELEASE);
+        notify(h);
+        return true;
+    }
     PlacementAck read_ack(uint32_t actor) const override { return read_shared_ack(map_, actor); }
     void publish(const PlacementControl& c, const PlacementJournal& j) override {
         auto* target = placement_control(map_);

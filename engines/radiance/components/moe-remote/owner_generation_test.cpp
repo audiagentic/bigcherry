@@ -1,4 +1,6 @@
 #include "owner_generation.h"
+#include "worker_epoch.h"
+#include "worker_bootstrap.h"
 #include <cstdio>
 #include <cstdlib>
 #include <sys/mman.h>
@@ -23,19 +25,27 @@ struct Fixture {
         base = mmap(nullptr, l.bytes, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
         check(base != MAP_FAILED && init(base, 2, shape, 2), "initialize shared segment");
         static_cast<Header*>(base)->helper_count = 2; /* helper bootstrap publication */
-        uint8_t* a = generation_map(base, 0);
         uint8_t* b = generation_map(base, 1);
-        a[0] = 0; a[1] = 1; a[3] = 0;
+        struct Selected { std::vector<std::pair<uint32_t,uint32_t>> expert; };
+        std::vector<uint8_t> premature;
+        check(!build_bitmap(base,0,1,placement_control(base)->active_digest,&premature),
+              "no initial GPU upload before seal");
+        check(r3::epoch::publish_owned(base,Selected{{{0,0},{1,0}}},0) &&
+              r3::epoch::publish_owned(base,Selected{{{0,1}}},1),
+              "real owner publish for bitmap test");
+        for (uint32_t helper=0;helper<2;++helper)
+            check(r3::epoch::mark_bootstrap_filtered(base,helper),"bitmap helpers filtered");
+        r3::epoch::SharedTransport transport(base);
+        check(transport.seal_bootstrap() && bootstrap_generation_sealed(base),
+              "real bootstrap seal before bitmap conversion");
+        digest[0] = placement_control(base)->active_digest;
         b[0] = 1; b[1] = 0; b[3] = 1;
         auto* c = placement_control(base);
-        for (uint32_t slot = 0; slot < 2; ++slot) {
-            auto* g = generation_header(base, slot);
-            g->epoch = slot + 1;
-            g->state = uint32_t(slot ? GenerationState::STAGING : GenerationState::ACTIVE);
-            digest[slot] = generation_digest(base, slot);
-            g->digest = digest[slot];
-        }
-        c->active_digest = digest[0];
+        auto* pending = generation_header(base,1);
+        pending->epoch = 2;
+        pending->state = uint32_t(GenerationState::STAGING);
+        digest[1] = generation_digest(base,1);
+        pending->digest = digest[1];
         c->pending_slot = 1; c->pending_epoch = 2; c->pending_digest = digest[1];
         c->state = uint32_t(PlacementState::COPYING);
     }
@@ -96,11 +106,16 @@ static void V23EngineOwners_NonByteAlignedHelperStrides() {
     check(map!=MAP_FAILED && init(map,3,shape,3),"odd bitmap segment");
     auto* h=static_cast<Header*>(map);
     h->helper_count=3;
-    uint8_t* owners=generation_map(map,0);
-    owners[0]=0; owners[7]=1; owners[8]=1; owners[14]=2;
+    struct Selected { std::vector<std::pair<uint32_t,uint32_t>> expert; };
+    check(r3::epoch::publish_owned(map,Selected{{{0,0}}},0) &&
+          r3::epoch::publish_owned(map,Selected{{{1,2},{1,3}}},1) &&
+          r3::epoch::publish_owned(map,Selected{{{2,4}}},2),
+          "nonbyte real bootstrap publishes owners");
+    for (uint32_t helper=0;helper<3;++helper)
+        check(r3::epoch::mark_bootstrap_filtered(map,helper),"nonbyte helpers filtered");
+    r3::epoch::SharedTransport transport(map);
+    check(transport.seal_bootstrap(),"nonbyte bootstrap seal");
     const uint64_t digest=generation_digest(map,0);
-    generation_header(map,0)->digest=digest;
-    placement_control(map)->active_digest=digest;
     std::vector<uint8_t> bits;
     check(build_bitmap(map,0,1,digest,&bits) && bits.size()==6,
           "three helpers times ceil(15/8) stride");

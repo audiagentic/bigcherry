@@ -1,4 +1,5 @@
 #include "worker_epoch.h"
+#include "worker_bootstrap.h"
 #include "admission_ledger.h"
 #include "owner_generation.h"
 #include <sys/mman.h>
@@ -363,11 +364,17 @@ static void V23Cycle_PrecommitAbortDuringLiveServing() {
     h->helper_count=3;
     auto* c=placement_control(map);
     c->expected_ranks=1;
-    uint8_t* owner=generation_map(map,0);
-    owner[0]=0;owner[7]=1;owner[14]=2;
+    struct Selected { std::vector<std::pair<uint32_t,uint32_t>> expert; };
+    check(r3::epoch::publish_owned(map,Selected{{{0,0}}},0) &&
+          r3::epoch::publish_owned(map,Selected{{{1,2}}},1) &&
+          r3::epoch::publish_owned(map,Selected{{{2,4}}},2),
+          "abort segment real owner publication");
+    for (uint32_t helper=0;helper<3;++helper)
+        check(r3::epoch::mark_bootstrap_filtered(map,helper),
+              "abort segment real helper filtering completion");
+    SharedTransport transport(map);
+    check(transport.seal_bootstrap(),"abort segment bootstrap seal");
     const uint64_t digest=generation_digest(map,0);
-    generation_header(map,0)->digest=digest;
-    c->active_digest=digest;
     FakeClock clock;
     EpochCycle leader(map,0,clock,std::chrono::nanoseconds{100});
     EpochCycle peer1(map,1,clock,std::chrono::nanoseconds{100});
@@ -459,6 +466,44 @@ static void V23Cycle_StalledParkFaultsAndKeepsAdmissionClosed() {
     munmap(map,layout.bytes);
 }
 
+/* The unsealed production path must reject the cycle with the exact
+ * INVALID_MAP journal code, not silently repair the old all-local digest. */
+static void V23Bootstrap_UnsealedTickReportsInvalidMap() {
+    const LayoutShape shape{128,3,3,8,128,64};
+    Layout layout{};
+    check(layout_for(shape,2,slots_for(3),&layout),"bootstrap negative layout");
+    void* base=mmap(nullptr,layout.bytes,PROT_READ|PROT_WRITE,MAP_PRIVATE|MAP_ANONYMOUS,-1,0);
+    check(base!=MAP_FAILED && init(base,2,shape,3),"bootstrap negative init");
+    auto* h=static_cast<Header*>(base);
+    h->helper_count=3;
+    placement_control(base)->expected_ranks=1;
+    struct Selected { std::vector<std::pair<uint32_t,uint32_t>> expert; };
+    Selected selected{{{0,0},{1,0}}};
+    check(r3::epoch::publish_owned(base,selected,0) &&
+          r3::epoch::drop_bootstrap_owner(base,1,0,0),
+          "bootstrap negative real publish and filter");
+    for (uint32_t helper=0;helper<3;++helper)
+        check(r3::epoch::mark_bootstrap_filtered(base,helper),
+              "bootstrap negative all peers filtered");
+    check(!bootstrap_generation_sealed(base) &&
+          generation_digest(base,0)!=placement_control(base)->active_digest,
+          "unsealed canonical map cannot be used");
+    FakeClock clk;
+    EpochCycle helper0(base,0,clk,std::chrono::nanoseconds{100});
+    check(helper0.tick(),"construct real controller for unsealed startup");
+    h->burst=1;
+    clk.elapse(100);
+    check(helper0.tick(),"unsealed cycle rejected without terminating serving");
+    const auto* c=placement_control(base);
+    const auto& j=placement_journal(base)->entry[c->journal_index];
+    check(c->state==uint32_t(PlacementState::ACTIVE) &&
+          c->active_epoch==1 && c->active_slot==0 &&
+          j.fault==uint32_t(FaultCode::INVALID_MAP) &&
+          !load(&h->helper_fault),
+          "unsealed real startup yields transaction-local INVALID_MAP");
+    munmap(base,layout.bytes);
+}
+
 /* The actual SharedTransport/Helper EpochCycle state machine under a
  * two-slot same-map diagnostic, with fake rank GPU uploads and consumption
  * events. No GPU or background threads. */
@@ -470,24 +515,58 @@ static void V23Cycle_SamePlacementAndSharedProtocol(
     Layout layout{};
     check(layout_for(shape,2,slots_for(helper_count),&layout), "cycle layout");
     void* base=mmap(nullptr,layout.bytes,PROT_READ|PROT_WRITE,MAP_PRIVATE|MAP_ANONYMOUS,-1,0);
-    check(base!=MAP_FAILED && init(base,2,shape,slots_for(helper_count)), "cycle segment");
+    check(base!=MAP_FAILED && init(base,2,shape,helper_count), "cycle segment");
     auto* h=static_cast<Header*>(base);
     h->helper_count=helper_count;
     auto* control=placement_control(base);
     control->expected_ranks=(1u<<rank_count)-1u;
-    uint8_t* active_owners=generation_map(base,0);
-    active_owners[0]=0; active_owners[1]=helper_count>1 ? 1:0;
-    active_owners[2]=helper_count>2 ? 2:0;
-    active_owners[3]=helper_count>1 ? 1:0;
-    active_owners[4]=0;
+    check(!stage_same_map_generation(base),
+          "init all-local map with matching digest is not a sealed generation");
+    /* Real worker bootstrap: init's digest is of the initial all-local map.
+     * Helpers publish disjoint ownership and discard protected runtime
+     * experts, then helper 0 seals exactly once after every peer is done. */
+    struct Selected { std::vector<std::pair<uint32_t,uint32_t>> expert; };
+    std::vector<Selected> selection(helper_count);
+    for (uint32_t l=0;l<2;++l)
+        for (uint32_t e=0;e<3;++e)
+            selection[e%helper_count].expert.emplace_back(l,e);
+    for (uint32_t helper=0;helper<helper_count;++helper)
+        check(r3::epoch::publish_owned(base,selection[helper],helper),
+              "real helper publish_owned");
+    check(r3::epoch::drop_bootstrap_owner(base,1,0,0),
+          "real helper protected-layer drop_bootstrap_owner");
+    check(generation_digest(base,0) != control->active_digest &&
+          !bootstrap_generation_sealed(base) && !stage_same_map_generation(base),
+          "unsealed real bootstrap cannot stage same-map generation");
+    SharedTransport bootstrap(base);
+    check(!bootstrap.seal_bootstrap(), "incomplete helper completion mask cannot seal");
+    for (uint32_t helper=0;helper<helper_count;++helper)
+        check(r3::epoch::mark_bootstrap_filtered(base,helper),
+              "real helper marks filtered owner bytes complete");
+    check(bootstrap.seal_bootstrap() && !bootstrap.seal_bootstrap(),
+          "helper zero publishes single coherent bootstrap seal");
     const uint64_t digest=generation_digest(base,0);
-    generation_header(base,0)->digest=digest;
-    control->active_digest=digest;
+    check(bootstrap_generation_sealed(base) && control->active_digest==digest &&
+          generation_header(base,0)->digest==digest &&
+          generation_header(base,0)->ready_helpers==control->expected_helpers,
+          "sealed owner digest and helper readiness agree under seqlock");
+    Selected newly_unowned{{{1,0}}}; // explicitly dropped above: CAS would succeed without the seal guard
+    check(!r3::epoch::publish_owned(base,newly_unowned,0) &&
+          !r3::epoch::drop_bootstrap_owner(base,0,0,0) &&
+          !r3::epoch::mark_bootstrap_filtered(base,0),
+          "after seal every bootstrap map mutation and duplicate completion fails closed");
+    uint8_t* active_owners=generation_map(base,0);
+    const uint8_t original=active_owners[0];
+    active_owners[0]=kOwnerLocal; // corrupt a sealed, actually-owned expert
+    check(!stage_same_map_generation(base) &&
+          generation_header(base,1)->state==uint32_t(GenerationState::EMPTY),
+          "invalid active digest refuses staging before modifying inactive generation");
+    active_owners[0]=original;
     const std::vector<uint8_t> owners(active_owners,active_owners+h->owner_map_bytes);
     FakeClock clock;
     EpochCycle disabled(base,0,clock,std::chrono::nanoseconds{0});
     clock.elapse(100);
-    check(disabled.tick() && control->transaction_id==0 && control->seq==0,
+    check(disabled.tick() && control->transaction_id==0 && control->seq==2,
           "zero period disables cycle");
     EpochCycle helper0(base,0,clock,std::chrono::nanoseconds{100});
     std::vector<std::unique_ptr<EpochCycle>> peers;
@@ -729,6 +808,7 @@ int main() {
     V23Cycle_UnreadyAndAbortPreserveOldGeneration();
     V23Cycle_PrecommitAbortDuringLiveServing();
     V23Cycle_StalledParkFaultsAndKeepsAdmissionClosed();
+    V23Bootstrap_UnsealedTickReportsInvalidMap();
     V23Cycle_SamePlacementAndSharedProtocol(1,2);
     V23Cycle_SamePlacementAndSharedProtocol(3,1);
     V23Epoch_ForwardOnlyAbortRetry();

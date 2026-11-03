@@ -151,16 +151,17 @@ __global__ void mailbox_publish_kernel(
     Header* h = reinterpret_cast<Header*>(base);
     /* Every published request takes its immutable epoch/slot from this play's
      * ticket. Later mailbox kernels refer to the Request, not this cell. */
-    const StepTicket ticket = *ticket_cell;
-    if (!stamps || !capacity) __builtin_trap();
-    /* Device memory, armed by this parent's ticket setter: no host-mapped read. */
-    ConsumptionStamp* stamp = stamps + ticket.ticket_id % capacity;
-    if (!r3::consumption::owns(*stamp, ticket.ticket_id, ticket.placement_epoch, ticket.generation_slot))
-        __builtin_trap();
-    /* One thread loads the binding ONCE per pass. Routes and their immutable
-     * ticket words all derive from this selected generation, then a block
-     * barrier makes the pointer available to every route-writing thread. */
+    StepTicket ticket{};
+    ConsumptionStamp* stamp = nullptr;
+    /* One thread validates the ticket, device stamp and owner binding ONCE
+     * per pass, before the already-existing block barrier. Other threads
+     * neither load the ticket cell nor repeat device-stamp comparisons. */
     if (threadIdx.x == 0) {
+        ticket = *ticket_cell;
+        if (!stamps || !capacity) __builtin_trap();
+        stamp = stamps + ticket.ticket_id % capacity;
+        if (!r3::consumption::owns(*stamp, ticket.ticket_id, ticket.placement_epoch,
+                                   ticket.generation_slot)) __builtin_trap();
         selected_owner=r3_moe_select_owner_bitmap(ticket,bindings,owner0,owner1);
         if (!selected_owner) __builtin_trap();
         published[kPublishedTicketOffset+0] = (uint32_t)ticket.ticket_id;
@@ -443,14 +444,11 @@ __global__ void mailbox_route_mark_kernel(
     const uint32_t* published, uint32_t rank, uint32_t helpers,
     const uint16_t* ew, uint32_t* rmask, uint32_t rows, uint32_t hidden, uint32_t top_k) {
     Header* h = reinterpret_cast<Header*>(base);
-    /* Publish already checked the ticket-selected owner binding and emitted
-     * these routes from that bitmap. Do not repeat the bitmap work per route.
-     * Decode the immutable pass words once per block, not in every thread. */
-    __shared__ alignas(StepTicket) uint8_t ticket_words[sizeof(StepTicket)];
-    StepTicket* const ticket=reinterpret_cast<StepTicket*>(ticket_words);
-    if (threadIdx.x == 0 &&
-        !r3::mailbox_completion::pass_ticket(published, ticket)) __builtin_trap();
-    __syncthreads();
+    /* The four immutable ticket words are L2-resident from publish, and
+     * independent threads can decode them. No per-block LDS exchange/barrier.
+     * This is the only Request identity gate before all add/shadow reads. */
+    StepTicket ticket{};
+    if (!r3::mailbox_completion::pass_ticket(published, &ticket)) __builtin_trap();
     for (uint32_t k = 0; k < helpers; ++k) {
         const uint32_t slot = step_slot(k, rank, helpers);
         const Request* q = slot_request(base, sequence, published, slot);
@@ -462,10 +460,11 @@ __global__ void mailbox_route_mark_kernel(
         const bool chunked = published[kMaxSlots] != 0u;
         if (!chunked && (load_sys_acq(&h->lane[lane].done_sequence) != sequence[lane] || q->status != 0))
             __builtin_trap();
-        if (!r3::mailbox_completion::matches_request(*ticket, sequence[lane], *q) ||
-            q->rank != slot || q->rows != rows ||
-            q->hidden != hidden || q->route_count == 0 || q->route_count > rows * top_k ||
-            q->layer >= h->layer_count)
+        /* publish wrote rank/rows/hidden/layer, with the layer already
+         * range-checked. They are engine-owned, immutable until retirement.
+         * Only the sequence/epoch/slot must be revalidated at the consumer. */
+        if (!r3::mailbox_completion::matches_request(ticket, sequence[lane], *q) ||
+            q->route_count == 0 || q->route_count > rows * top_k)
             __builtin_trap();
         const Route* route = reinterpret_cast<const Route*>(base + q->route_offset);
         for (uint32_t j = blockIdx.x * blockDim.x + threadIdx.x; j < q->route_count;
@@ -704,13 +703,13 @@ __global__ void mailbox_add_finish_kernel(const uint32_t* sequence, uint32_t* pu
     StepTicket pass{};
     if (!r3::mailbox_completion::pass_ticket(published, &pass) ||
         !sequence || !stamps || !capacity || !rec) __builtin_trap();
+    /* publish validated stamp identity; finish is on that same stream.
+     * seal_ready validates it again after the last result consumer. */
     ConsumptionStamp* out = stamps + pass.ticket_id % capacity;
-    if (!r3::consumption::owns(*out, pass.ticket_id, pass.placement_epoch,
-                              pass.generation_slot)) __builtin_trap();
     uint32_t consumed = 0;
     if (idx < kMaxSlots && published[idx]) {
         const uint32_t klass = published[idx] - 1u;
-        if (klass > kSmallClasses) __builtin_trap();
+        /* publish selected the legal lane class and wrote this word. */
         const uint32_t lane = lane_of(idx, klass);
         ConsumedRecord& r = rec->lane[lane];
         r.slot = pass.generation_slot;
