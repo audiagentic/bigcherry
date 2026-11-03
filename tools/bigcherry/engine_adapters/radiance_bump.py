@@ -61,18 +61,28 @@ def expected_abi_version(source_dir: Path) -> int:
     return int(match.group(1))
 
 
+# Lazy binding: a plugin may call functions the radiance executable exports (libr3moe uses rad_event_*), which are
+# absent outside the engine. ctypes.CDLL always binds now and refuses such a plugin; dlopen with RTLD_LAZY resolves a
+# function only when it is first called, and rad_plugin_abi_version calls none.
 _READ_ABI = (
-    "import ctypes, sys\n"
-    "fn = ctypes.CDLL(sys.argv[1]).rad_plugin_abi_version\n"
-    "fn.restype = ctypes.c_uint32\n"
-    "print(fn())\n"
+    "import ctypes, os, sys\n"
+    "libc = ctypes.CDLL(None)\n"
+    "libc.dlopen.restype = ctypes.c_void_p; libc.dlopen.argtypes = [ctypes.c_char_p, ctypes.c_int]\n"
+    "libc.dlsym.restype = ctypes.c_void_p; libc.dlsym.argtypes = [ctypes.c_void_p, ctypes.c_char_p]\n"
+    "libc.dlerror.restype = ctypes.c_char_p\n"
+    "h = libc.dlopen(sys.argv[1].encode(), os.RTLD_LAZY | os.RTLD_LOCAL)\n"
+    "if not h: sys.exit((libc.dlerror() or b'dlopen failed').decode())\n"
+    "p = libc.dlsym(h, b'rad_plugin_abi_version')\n"
+    "if not p: sys.exit('no rad_plugin_abi_version export')\n"
+    "print(ctypes.CFUNCTYPE(ctypes.c_uint32)(p)())\n"
 )
 
 
 def read_plugin_abi(so: Path) -> int:
     """dlopen the plugin and call its exported ``rad_plugin_abi_version`` -- the engine's own handshake (the helper's
     ``load_plugin`` does the same). ``nm`` could only show the symbol exists, not its value, and the value is what must
-    match. Done in a child process so a plugin that crashes on load cannot take pin-bump down with it."""
+    match. Done in a child process so a plugin that crashes on load cannot take pin-bump down with it. Loaded lazily
+    (see _READ_ABI) so a plugin that uses functions only the engine executable exports can still be read."""
     try:
         result = subprocess.run([sys.executable, "-c", _READ_ABI, str(so)], capture_output=True, text=True, timeout=120)
     except (OSError, subprocess.TimeoutExpired) as exc:

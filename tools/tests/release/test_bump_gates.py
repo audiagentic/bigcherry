@@ -390,5 +390,33 @@ class RadianceAuditTests(unittest.TestCase):
         self.assertNotIn("root.is_ggml_cuda_checkout", ids)
 
 
+class ReadPluginAbiTests(unittest.TestCase):
+    """read_plugin_abi on a real shared object (no mock): a plugin that calls functions only the engine executable
+    exports (libr3moe uses rad_event_*) must still report its ABI version outside the engine."""
+
+    def _plugin(self, tmp: Path, body: str) -> Path:
+        cc = shutil.which("cc") or shutil.which("gcc") or shutil.which("clang")
+        if cc is None:
+            self.skipTest("no C compiler")
+        src, so = tmp / "plugin.c", tmp / "libplugin.so"
+        src.write_text(body, encoding="utf-8")
+        subprocess.run([cc, "-shared", "-fPIC", "-o", str(so), str(src)], check=True, capture_output=True)
+        return so
+
+    def test_reads_version_of_plugin_with_engine_only_symbols(self):
+        with tempfile.TemporaryDirectory(dir=os.environ.get("TMPDIR")) as tmp:
+            so = self._plugin(Path(tmp),
+                              "void rad_event_destroy(void* e);\n"
+                              "unsigned rad_plugin_abi_version(void) { return 33u; }\n"
+                              "void uses_engine(void* e) { rad_event_destroy(e); }\n")
+            self.assertEqual(radiance_bump.read_plugin_abi(so), 33)
+
+    def test_missing_version_export_is_a_check_error(self):
+        with tempfile.TemporaryDirectory(dir=os.environ.get("TMPDIR")) as tmp:
+            so = self._plugin(Path(tmp), "unsigned other(void) { return 1u; }\n")
+            with self.assertRaises(BumpCheckError):
+                radiance_bump.read_plugin_abi(so)
+
+
 if __name__ == "__main__":
     unittest.main()
