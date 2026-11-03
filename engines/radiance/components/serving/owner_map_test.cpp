@@ -194,7 +194,28 @@ int main(int, char**) {
         m.spec.experiment->shape = v1::ExperimentShape{};
         m.spec.experiment->shape->helper_common = v1::HelperPatch{};
         m.spec.experiment->shape->helper_common->placement = v1::HelperPlacementPatch{true, std::vector<int64_t>{1000, 1000, 1000}};
-        assert(refused_code(m, v1::ConfigErrorCode::invalid_value, "spec.processes.helper_common.placement.balance"));
+        assert(refused_code(m, v1::ConfigErrorCode::invalid_value, "spec.processes.helpers[0] (effective) placement.balance"));
+        m = good;   // a helper's own settings turn balance on for it alone: inconsistent helpers are a configuration error
+        m.spec.processes.helpers[1].settings = v1::HelperPatch{};
+        m.spec.processes.helpers[1].settings->placement = v1::HelperPlacementPatch{true, std::vector<int64_t>{1000, 1000, 1000}};
+        assert(refused_code(m, v1::ConfigErrorCode::invalid_value, "spec.processes.helpers[1] (effective) placement.balance"));
+        m = good;   // two helpers on one GPU, and a helper on the engine's GPU
+        m.spec.processes.helpers[1].gpu = m.spec.processes.helpers[0].gpu;
+        assert(refused_code(m, v1::ConfigErrorCode::duplicate_field, "spec.processes.helpers[1].gpu"));
+        m = good;
+        m.spec.processes.engine.device.gpus = {m.spec.processes.helpers[2].gpu};
+        assert(refused_code(m, v1::ConfigErrorCode::duplicate_field, "spec.processes.helpers[2].gpu"));
+        m = good;   // negative share and budget
+        m.spec.processes.helpers[0].share = -1;
+        assert(refused_code(m, v1::ConfigErrorCode::invalid_value, "spec.processes.helpers[0].share"));
+        m = good;
+        m.spec.processes.helpers[0].vram_budget_mib = -1;
+        assert(refused_code(m, v1::ConfigErrorCode::invalid_value, "spec.processes.helpers[0].vram_budget_mib"));
+        assert(bc::serving::helper_budgets(m)[0] == 0);   // clamped at both ends, never wrapped
+        m = good;   // the tail strategy with one helper is the strategy's fault, not the owner map's
+        m.spec.processes.helpers.resize(1);
+        m.spec.plan.owner_map.helpers.resize(1);
+        assert(refused_code(m, v1::ConfigErrorCode::invalid_value, "spec.handoff.placement.strategy"));
     }
     // Two-helper balance with non-default speeds, set through the experiment shape: the manifest's implied policy carries
     // them, and a map planned for them verifies.

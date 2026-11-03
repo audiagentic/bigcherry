@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstdint>
 #include <map>
+#include <set>
 
 namespace bc::serving {
 namespace {
@@ -57,9 +58,9 @@ std::vector<std::string> helper_archs(const v1::Manifest& m) {
 
 std::vector<uint64_t> helper_budgets(const v1::Manifest& m) {
     std::vector<uint64_t> out;
-    // never wraps: a budget past what 64 bits of bytes can count saturates (verify_owner_map refuses it before it gets here)
+    // never wraps: a budget outside what 64 bits of bytes can count (negative or too large) is clamped to the range (verify_owner_map refuses it before it gets here)
     for (const v1::HelperProcess& h : m.spec.processes.helpers)
-        out.push_back(static_cast<uint64_t>(std::min<int64_t>(h.vram_budget_mib, static_cast<int64_t>(UINT64_MAX >> 20))) << 20);
+        out.push_back(static_cast<uint64_t>(std::clamp<int64_t>(h.vram_budget_mib, 0, static_cast<int64_t>(UINT64_MAX >> 20))) << 20);
     return out;
 }
 
@@ -78,15 +79,24 @@ v1::Status preconditions(const v1::Manifest& m) {
     std::map<std::string, std::string> arch;
     for (const v1::GpuFact& g : m.spec.facts.gpus) arch[g.bdf] = g.arch;
     const bool tail = m.spec.handoff.placement.strategy == v1::PlacementStrategy::kTail;
+    if (tail && helpers.size() < 2)
+        return invalid("spec.handoff.placement.strategy", "the tail strategy needs at least two helpers, not " + std::to_string(helpers.size()));
+    std::set<std::string> used(m.spec.processes.engine.device.gpus.begin(), m.spec.processes.engine.device.gpus.end());
     uint64_t total_share = 0;
     bool any_balance = false;
+    const bool first_balance = v1::effective_helper_settings(m, 0).placement.balance;
     for (size_t i = 0; i < helpers.size(); ++i) {
         const v1::HelperProcess& h = helpers[i];
         const std::string at = "spec.processes.helpers[" + std::to_string(i) + "]";
         if (!arch.count(h.gpu))
             return v1::make_error(C::unresolved_reference, at + ".gpu", "GPU " + h.gpu + " is not among spec.facts.gpus");
+        if (!used.insert(h.gpu).second)
+            return v1::make_error(C::duplicate_field, at + ".gpu", "GPU " + h.gpu + " is already used by the engine or an earlier helper");
+        if (h.vram_budget_mib <= 0)
+            return invalid(at + ".vram_budget_mib", std::to_string(h.vram_budget_mib) + " MiB is not a budget");
         if (h.vram_budget_mib > static_cast<int64_t>(UINT64_MAX >> 20))
             return invalid(at + ".vram_budget_mib", std::to_string(h.vram_budget_mib) + " MiB does not fit 64 bits of bytes");
+        if (h.share < 0) return invalid(at + ".share", std::to_string(h.share) + " is negative");
         if (h.share > 1000000)
             return invalid(at + ".share", std::to_string(h.share) + " is above 1000000, the largest share the ownership selector accepts");
         total_share += static_cast<uint64_t>(h.share);
@@ -96,11 +106,15 @@ v1::Status preconditions(const v1::Manifest& m) {
             return mismatch(at + ".tier", std::string("the placement strategy ") +
                                               std::string(v1::kPlacementStrategyNames[static_cast<size_t>(m.spec.handoff.placement.strategy)]) +
                                               " makes this helper a " + (want == v1::HelperTier::kTail ? "tail" : "head") + " helper");
-        any_balance = any_balance || v1::effective_helper_settings(m, i).placement.balance;
+        const v1::HelperCommon effective = v1::effective_helper_settings(m, i);
+        if (effective.placement.balance != first_balance || effective.placement.balance_speeds_milli != v1::effective_helper_settings(m, 0).placement.balance_speeds_milli)
+            return invalid(at + " (effective) placement.balance", "balance and its speeds must be the same for every helper (set by helper_common, a role's settings or the experiment shape)");
+        any_balance = any_balance || effective.placement.balance;
     }
     if (any_balance) {
-        // the selector splits the experts of exactly two equal helpers, by round robin, from a heat file
-        const std::string at = "spec.processes.helper_common.placement.balance";
+        // the selector splits the experts of exactly two equal helpers, by round robin, from a heat file; the effective
+        // setting is named at the helper (it may come from helper_common, a role patch or the experiment shape)
+        const std::string at = "spec.processes.helpers[0] (effective) placement.balance";
         if (helpers.size() != 2) return invalid(at, "balance splits the experts of exactly two helpers, not " + std::to_string(helpers.size()));
         if (helpers[0].vram_budget_mib != helpers[1].vram_budget_mib)
             return invalid(at, "balance needs one budget for both helpers");
