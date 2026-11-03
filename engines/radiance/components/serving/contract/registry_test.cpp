@@ -431,6 +431,13 @@ int main() {
         check(verify(string_field(strcfg + "default = \"exact\"\ndefault_source = \"radiance:Config.mode\"\n"), &msg), "a string default equal to its initialiser: " + msg);
         check(!verify(string_field(strcfg + "default = \"wht6\"\ndefault_source = \"radiance:Config.mode\"\n"), &msg) && msg.find("source says \"exact\"") != std::string::npos,
               "a string default diverging from its initialiser (the commented value is not it): " + msg);
+        // a raw string with quotes inside it (plain and every encoding prefix) hides the declaration-like text it holds
+        for (const char* prefix : {"", "u8", "u", "U", "L"}) {
+            write(tmp / "core" / "rad_core.h",
+                  std::string("struct Config {\n    const char* decoy = ") + prefix + "R\"z(x\"; int64_t max_seqs = 256; \"y)z\";\n};\n");
+            check(!verify(with(cfg + "default = 256\ndefault_source = \"radiance:Config.max_seqs\"\n"), &msg) && msg.find("no `= <literal>;` initialiser") != std::string::npos,
+                  std::string("a declaration inside a ") + prefix + "R raw string with quotes certifies nothing: " + msg);
+        }
         write(tmp / "core" / "rad_core.h", "struct Config {\n    int64_t max_seqs = 256;\n    int64_t max_seqs = 256;\n};\n");
         check(!verify(with(cfg + "default = 256\ndefault_source = \"radiance:Config.max_seqs\"\n"), &msg) && msg.find("declared more than once") != std::string::npos,
               "a member declared twice is ambiguous: " + msg);

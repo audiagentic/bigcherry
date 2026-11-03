@@ -1638,6 +1638,22 @@ std::string read_text_file(const std::string& path) {
     return s.str();
 }
 
+/* The length of the raw-string prefix (R, u8R, uR, UR, LR) right before the quote at src[quote], or 0 when the quote does
+ * not open a raw string (the R must not be the tail of a longer identifier). */
+size_t raw_prefix_length(const std::string& src, size_t quote) {
+    if (quote == 0 || src[quote - 1] != 'R') return 0;
+    size_t len = 1;
+    for (const char* prefix : {"u8", "u", "U", "L"}) {
+        const size_t n = std::char_traits<char>::length(prefix);
+        if (quote >= 1 + n && src.compare(quote - 1 - n, n, prefix) == 0) { len = 1 + n; break; }
+    }
+    if (quote > len) {
+        const unsigned char before = static_cast<unsigned char>(src[quote - len - 1]);
+        if (std::isalnum(before) || before == '_') return 0;
+    }
+    return len;
+}
+
 /* The header as code only. Comments become spaces (newlines kept). A string literal's text moves to `literals` and the
  * code keeps only `"<index>"` in the quotes, so a `;`, `=`, brace or declaration inside a literal is never read as code,
  * while a legitimate string initialiser can still be looked up. A character literal is emptied to its quotes. A digit
@@ -1657,13 +1673,13 @@ std::string code_only(const std::string& src, std::vector<std::string>* literals
             const size_t end = src.find("*/", i + 2);
             const size_t stop = end == std::string::npos ? src.size() : end + 2;
             for (; i < stop; ++i) out += src[i] == '\n' ? '\n' : ' ';
-        } else if (c == '"' && i > 0 && src[i - 1] == 'R' && (i < 2 || !std::isalnum(static_cast<unsigned char>(src[i - 2])))) {
-            // raw string: R"delim( ... )delim"
+        } else if (c == '"' && raw_prefix_length(src, i) > 0) {
+            // raw string: R"delim( ... )delim" (optionally u8R, uR, UR or LR)
             const size_t open = src.find('(', i + 1);
             const std::string delim = open == std::string::npos ? std::string() : src.substr(i + 1, open - i - 1);
             const size_t close = open == std::string::npos ? std::string::npos : src.find(")" + delim + "\"", open + 1);
             if (close == std::string::npos) { out += c; ++i; continue; }
-            out.pop_back();   // the R
+            out.resize(out.size() - raw_prefix_length(src, i));   // the R and its encoding prefix
             out += keep(src.substr(open + 1, close - open - 1));
             for (size_t k = i; k < close + delim.size() + 2; ++k) if (src[k] == '\n') out += '\n';
             i = close + delim.size() + 2;
