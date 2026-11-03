@@ -75,7 +75,8 @@ def patches(engine: str, issues: list[str]) -> list[Entry]:
         name = metadata.parent.name
         if attrs.get("id") != name:
             issues.append(f"{metadata.relative_to(ROOT)} package id does not match its directory")
-        entry = read_package(name, metadata, ("README.md", "SUMMARY.md"), issues, attrs.get("state", "unknown"))
+        candidates = ("SUMMARY.md", "README.md") if engine == "radiance" else ("README.md", "SUMMARY.md")
+        entry = read_package(name, metadata, candidates, issues, attrs.get("state", "unknown"))
         if entry:
             entries.append(entry)
     return entries

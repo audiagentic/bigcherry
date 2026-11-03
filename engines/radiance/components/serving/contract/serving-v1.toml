@@ -217,6 +217,8 @@ doc = "Helper runtime behaviour."
 [[field]]
 path = "$defs/helperCommon/runtime/power_save"
 kind = "boolean"
+default = true
+default_source = "setting:R3_MOE_WORKER_POWER_SAVE"
 doc = "Let the helper idle its GPU between requests."
 
 [[field]]
@@ -245,16 +247,22 @@ doc = "Use the wide GEMV kernel."
 path = "$defs/helperCommon/gemv/h2"
 kind = "int_enum"
 values = [0, 1, 2, 4]
+default = 2
+default_source = "setting:R3_MOE_WORKER_GEMV_H2"
 doc = "Half-precision pair mode (0, 1, 2 or 4)."
 
 [[field]]
 path = "$defs/helperCommon/gemv/w4h2"
 kind = "boolean"
+default = true
+default_source = "setting:R3_MOE_WORKER_GEMV_W4H2"
 doc = "Use the W4 H2 kernel."
 
 [[field]]
 path = "$defs/helperCommon/gemv/mr"
 kind = "boolean"
+default = false
+default_source = "setting:R3_MOE_WORKER_GEMV_MR"
 doc = "Use the multi-row GEMV kernel."
 
 [[field]]
@@ -733,6 +741,8 @@ radiance_option = "--max-num-seqs"
 radiance_config = "Config.max_seqs"
 kind = "ref"
 ref = "positive"
+default = 256
+default_source = "radiance:Config.max_seqs"
 doc = "Concurrent sessions served (`--max-num-seqs`)."
 
 [[field]]
@@ -985,6 +995,8 @@ radiance_option = "--host-headroom-mib"
 radiance_config = "Config.host_headroom_mib"
 kind = "ref"
 ref = "positive"
+default = 4096
+default_source = "radiance:Config.host_headroom_mib"
 doc = "Host memory held back for the system, MiB (`--host-headroom-mib`)."
 
 [[field]]
@@ -1164,6 +1176,8 @@ radiance_option = "--tp"
 radiance_config = "Config.tp"
 kind = "ref"
 ref = "positive"
+default = 1
+default_source = "radiance:Config.tp"
 doc = "Tensor-parallel ranks (`--tp`)."
 
 [[field]]
@@ -1172,6 +1186,8 @@ radiance_option = "--max-num-batched-tokens"
 radiance_config = "Config.max_tok"
 kind = "ref"
 ref = "positive"
+default = 2048
+default_source = "radiance:Config.max_tok"
 doc = "Tokens per step (`--max-num-batched-tokens`)."
 
 [[field]]

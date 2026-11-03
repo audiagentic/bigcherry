@@ -85,13 +85,33 @@ Admission, from the #534 re-review (GPT, 2026-11-02; lead decisions):
 - Multi-rank (S1, hard criterion): kv_resolved is the common KV budget the admission checks guarantee. After vram_budget_rank_split, every rank's split KV must cover the same paged-token capacity, and the check refuses, naming the rank, when any rank's split falls short of kv_required's token count.
 - Placement and boundary (S4): the check runs after the final live budget is resolved and before Pools::configure() (Engine::plan() already configures the pools, so "after plan()" is too late). All input validation (ppm, byte-count ranges, calibration selection) precedes the stable-plan and admission comparisons.
 - Stable facts (S3): the host and checkpoint comparisons become the exact equalities §5.2 specifies, each with a negative test: a live host consumer with fewer bytes, a missing expected consumer, a changed residence, a changed checkpoints.want_slots and a changed host_pool_mib are each PLAN_MISMATCH. An automatic placement (ngram_placement = auto, embedding fallback) that resolves differently from the measured plan is PLAN_MISMATCH (S2).
-- Vectors still to add to docs/design/serving-manifest-v1/admission-vectors.json once the model covers them (S5): a multi-rank uneven split, the kv_streams round-up of kv_one, and all_vram / layer_offload placement (no staging region).
+- Vectors (S1b, 2026-11-03): added to docs/design/serving-manifest-v1/admission-vectors.json (now 58): all_vram and layer_offload placements with no staging region (stage 0), and an uneven world of cards with different capacity, expert plane and unit (a per-card capacity minimum, per-card stable plane and unit, a card-count change, and one common resolved KV). Each is checked by the Python model, the C++ checker (bc_v1_test) and the engine's production entry point (plan_flags_test).
+- Named gates still open (lead, 2026-11-03; production is tp=1, so none is exercised on hardware yet):
+  - TP>1 hardware coverage of the admission check. The plan carries one common `kv_resolved` and no per-rank KV; adding a per-rank field would change what validates (a v2 change). The check for TP>1 must be per-rank paged-TOKEN capacity after `vram_budget_rank_split` (each rank's `probes[i]->paged_tokens(rank_cfg_[i].vram_kv_mib)` covering kv_required's token count, refusing naming the rank). It must NOT be a minimum over ranks of KV MiB: upstream re-splits a cheaper rank to FEWER MiB so that it pages the same token count, so a min over MiB would refuse a valid uneven world. The hook runs before the rank split today, so this needs the call moved after the split (engine_bringup.cpp, between the rank split and `Pools::configure`) and a TP=2 hardware run.
+  - The kv_streams round-up of kv_one is the engine's computation (`VramFacts::kv_one`, reported as `kv_one_session.bytes`), not a checker rule; its coverage is an engine-side test, still to be written.
 
 
 
 Slice 2 gates left open by #536 (lead, 2026-11-02). Each blocks the cutover (A4, slices 5-6):
+- DONE (S1c, 2026-11-03; spec section 11 amendment 9) Provenance coverage (spec section 7). Registry defaults with a verified source, the reader's coverage rule, and the two examples' honest records are in. Remaining: more defaults can be sourced (only 8 fields have one so far); each addition after this is a v2 change, so sourcing is complete only when the owner says the set is. Original text:
 - Provenance coverage (spec section 7). Every non-schema-default effective leaf is covered, and a schema-default claim never hides a site, derived, calibrated or experiment value. This needs schema defaults as a registry field, taken only from the spec text or a measured source and never guessed. Until then the reader checks pointers, input cycles and amendment-6 identity coverage only.
 - Exact owned-set bytes. spec.plan.owner_map.helpers[].bytes equals the GPU-free bc::experts::select_owned sizing for the model's expert formats. #536 refuses only bytes that contradict emptiness.
+
+
+
+Candidates to derive or calibrate (lead, 2026-11-03): the five handoff literals the flashnext profile sets, `max_rows` 4096, `small_rows` 8, `gemv_large_rows` 32, `skip_owned` true and `moe_down_tile` 1, are hand-picked tunables. The examples record them as profile-origin, derived-class, confidence `estimate` (they differ from the component settings' defaults, so they are not schema defaults); the profile must not be treated as their final source. Derive or calibrate them like RHP16.
+
+Interim engine plan-check flags (A3, lead decision 2026-11-02). Removed at the cutover (slices 5-6), not before and not after:
+- The flags are `--plan-check FILE --plan-check-floor-ppm N` on radiance (rad0011), `bc-serve --plan-check-args`, `--plan-store` and `--plan-key`, and the launcher's plan step (tools/lab/radiance/lib/plan-check.sh). They exist because no producer writes a v1 manifest with spec.plan.engine_memory yet.
+- At the cutover the engine reads its expected plan and floor with engine_view(manifest); all of the above is deleted in the same change, with no shim.
+- tools/tests/lab/test_interim_plan_flags_removed_at_cutover.py fails as soon as an engine-side caller uses engine_view while any flag site still names plan-check-floor-ppm, so the flags cannot outlive the cutover.
+- bc-serve alone cannot measure the plan (without helper-owned experts the engine's plan is a different one, RSC03 hardware step 1a). Until the v1 owner map exists, the launcher's measuring start (helpers up, engine --plan-memory) is the only producer. The v1 producer replaces it.
+
+Open correctness item from the A3 hardware gate (2026-11-02, #538 at 296bda44b), unresolved:
+- The first #538 start of a cold plan cache (measuring start, then the real start, one launcher invocation) served garbage: every token `!`, draft acceptance 1.00, 4.0 tok/step, 6 streams identical (text hash 6bcedd0e). The next start of the same build and flags (cache hit) and every main arm were correct (8ba4f122, decode within noise). Evidence: /work/bigcherry/runs/a3-gate (off2/off3 results, keep/ logs).
+- Its engine and helper logs match the correct start's apart from timing noise and the checkpoint slot count; no warning separates them.
+- Seven cold-cache launches afterwards (immediate, after a 20 s pause, after a main arm) all served correct text, every PID of the measuring start was gone and the shm inode changed each time. No first-run state (files, caches) was found. The failure is therefore not reproduced and its cause is unknown; #538 stays failed.
+- Hardening added regardless: fresh helper logs per start, fail-closed stop (no continuing while a process of the measuring start lives), and a first-serve text assertion in the gate. The re-gate on the fixed build (a new build id, so a true first run) must serve the reference text on every launch, the first cold one included.
 
 ## Notes
 
@@ -108,6 +128,8 @@ Slice 2 (shared strict reader) requirement, from the lead's #530 review (2026-11
 
 ## Ledger-events
 
+
+
 - chg_20261102_121239_the-serving-manifest-v1-format_6543
 - chg_20261102_121824_the-serving-component-can-prod_8129
 - 2026-11-02T12:18:29.161474+00:00 (updated-by): Updated: section:ledger-events
@@ -123,3 +145,10 @@ Slice 2 (shared strict reader) requirement, from the lead's #530 review (2026-11
 - chg_20261102_172348_bc-serve-the-engine-and-the-h_2822
 - 2026-11-02T17:23:52.577413+00:00 (updated-by): Updated: section:ledger-events
 - 2026-11-02T17:53:14.387976+00:00 (updated-by): Updated: section:acceptance_criteria
+- 2026-11-02T19:29:34.542005+00:00 (updated-by): Updated: section:acceptance_criteria
+- chg_20261102_193311_the-engine-now-checks-at-ever_1908
+- 2026-11-02T19:33:20.254177+00:00 (updated-by): Updated: section:ledger-events
+- chg_20261103_033321_the-serving-manifests-owned-e_3536
+- 2026-11-03T03:33:25.449820+00:00 (updated-by): Updated: section:ledger-events
+- chg_20261103_042644_the-serving-manifest-now-enfor_8446
+- 2026-11-03T04:26:49.257727+00:00 (updated-by): Updated: section:ledger-events

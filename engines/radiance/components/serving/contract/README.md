@@ -80,6 +80,12 @@ refused. Every table's keys are closed: an unknown key is refused, naming it.
   - `doc` (required, nonempty); `optional` (not in the parent's `required`); `nullable` (also accepts `null`; not for
     containers); `cpp_member` (when the JSON name is not a C++ identifier, e.g. `class`); `radiance_option` and
     `radiance_config` (the engine flag and native `Config` destination the field binds to, spec §3).
+  - `default` and `default_source` (together or neither; scalar fields, or a ref to a scalar def): the schema default
+    (spec §7, §11 amendment 9) and where it comes from, `radiance:Config.<member>` (must equal the field's own
+    `radiance_config`) or `setting:R3_<NAME>`. `bc_contract_gen RADIANCE_SRC COMPONENT_TOML...` and `bc_contract_check`
+    compare the value with the `Config` initialiser in `core/rad_core.h` or the setting's `default` and fail on any
+    difference; an initialiser that is not a simple literal is no source, so such a field has no default. The default
+    is a schema annotation (the validation fingerprint ignores it) and part of the semantic fingerprint.
   - `error_class`: the decoder's code for every fault in this subtree (`provenance_invalid`, `calibration_invalid`,
     `ownership_mismatch`, `plan_mismatch`, `invalid_value`, `unsupported_version`); `mismatch`: a const field's code when
     the value differs (default `invalid_value`).

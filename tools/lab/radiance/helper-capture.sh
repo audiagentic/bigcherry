@@ -9,7 +9,7 @@ BR=$1; CAP=${2:-${BC_WORK_ROOT}/captures}; EVERY=${3:-11}; MAX=${4:-24}
 W=${BC_WORK_ROOT}
 cd $W/wt-pr8 && git fetch -q origin && git checkout -q --detach $BR && git log --oneline -1
 export BIGCHERRY_ENVIRONMENT=${BC_DEV_ROOT}/projects/bigcherry/workspaces/main/config/environment.local.toml; source "$(dirname "${BASH_SOURCE[0]}")/lab-env.sh"; export PATH=$ROCM_PATH/bin:$PATH
-PYTHONPATH=tools timeout 5400 python3 -m bigcherry build --lane radiance-lab:stock:linux-radiance --experiment moe-remote-handoff > $W/capture-build.log 2>&1
+PYTHONPATH=tools timeout 5400 python3 -m bigcherry build --lane radiance-lab:stock:linux-radiance > $W/capture-build.log 2>&1
 grep -E 'ok build|FAILED' $W/capture-build.log | tail -1; grep -E ' error:|r3_rewrite.py failed' $W/capture-build.log | sort -u | head
 B=$(ls -td ${BC_DEV_ROOT}/projects/bigcherry/workspaces/main/work/builds/*/*/ | head -1)
 mkdir -p $CAP

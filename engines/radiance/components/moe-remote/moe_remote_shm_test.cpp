@@ -136,8 +136,53 @@ static void CombineChunkWait_FirstBlockAlwaysPolls() {
     check(combine_chunk_wait(false, 0, true) == CombineChunkWait::None, "CombineChunkWait uncombined step never waits");
 }
 
+/* RHP11 slice C drain proof: the helper refuses to ACK, and the engine refuses quiescence, when the lane's last
+ * request no longer carries the identity both sides recorded. */
+static void DrainIdentity_RefusesCorruptLastRequest() {
+    const LayoutShape shape{128, 2, 3, 8, 128, 64};
+    Layout l{};
+    check(layout_for(shape, 2, 2, &l), "drain identity layout");
+    void* base = mmap(nullptr, l.bytes, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    check(base != MAP_FAILED && init(base, 2, shape, 2), "drain identity init");
+    auto* h = static_cast<Header*>(base);
+    const uint32_t lane = 0, seq = 3;
+    const uint64_t closure = 9;
+    LaneSignal& s = h->lane[lane];
+    Request* q = lane_request(base, lane, seq);
+    auto reset = [&] {
+        s.request_sequence = s.done_sequence = s.consumed_sequence = seq;
+        s.done_epoch = 0; s.done_slot = 0;
+        s.consumed_epoch = 5; s.consumed_slot = 1;     /* the engine's sealed consumed identity */
+        s.drain_request = closure; s.drain_ack = 0;
+        q->sequence = seq; q->placement_epoch = 5; q->generation_slot = 1;
+    };
+    auto ack = [&] { return acknowledge_lane_drain(s, closure, [&] { return publish_done_identity(base, lane); }); };
+    reset();
+    check(ack() && s.done_epoch == 5 && s.done_slot == 1 && lane_quiesced(h, lane, closure, true),
+          "an intact last request is acknowledged and quiesces");
+    reset(); q->sequence = seq + kLaneSlots;   /* the ring slot was reused by a newer request */
+    check(!ack() && s.drain_ack == 0 && !lane_quiesced(h, lane, closure, true), "a reused ring slot refuses the ACK");
+    reset(); q->placement_epoch = 0;
+    check(!ack() && s.drain_ack == 0, "an invalid epoch refuses the ACK");
+    reset(); q->generation_slot = 2;
+    check(!ack() && s.drain_ack == 0, "an invalid generation slot refuses the ACK");
+    reset(); q->placement_epoch = 6;            /* the helper served another epoch than the engine consumed */
+    check(ack() && !lane_quiesced(h, lane, closure, true), "a mismatched epoch fails engine quiescence");
+    reset(); q->generation_slot = 0;
+    check(ack() && !lane_quiesced(h, lane, closure, true), "a mismatched slot fails engine quiescence");
+    reset();
+    check(ack(), "re-acknowledged");
+    s.consumed_sequence = seq - 1;
+    check(!lane_quiesced(h, lane, closure, true), "an unconsumed request fails engine quiescence");
+    s.consumed_sequence = seq;
+    check(!lane_quiesced(h, lane, closure + 1, true), "a stale closure ACK fails engine quiescence");
+    munmap(base, l.bytes);
+    std::puts("DrainIdentity_RefusesCorruptLastRequest: PASS");
+}
+
 int main() {
     V23Layout_ExactOffsetsAndBounds();
+    DrainIdentity_RefusesCorruptLastRequest();
     V23Map_LocalProtectedAndDisjoint();
     V23Digest_ExactAndImmutable();
     CombineChunkWait_FirstBlockAlwaysPolls();

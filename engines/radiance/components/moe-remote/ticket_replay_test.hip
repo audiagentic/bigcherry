@@ -80,6 +80,7 @@ bool hip_ok(hipError_t e, const char* where) {
 
 struct Rank {
     StepTicket* cell = nullptr;
+    ConsumptionStamp* stamps = nullptr;   /* one counting slot a play: tickets 1..kPlays never alias */
     RequestCopy* requests = nullptr;
     Seen* observed = nullptr;
     hipStream_t main = nullptr, lane1 = nullptr;
@@ -98,11 +99,13 @@ struct Rank {
         if (observed) (void)hipFree(observed);
         if (requests) (void)hipFree(requests);
         if (cell) (void)hipFree(cell);
+        if (stamps) (void)hipFree(stamps);
     }
 };
 
 bool init(Rank& r) {
     if (!hip_ok(hipMalloc((void**)&r.cell, sizeof(StepTicket)), "cell allocation") ||
+        !hip_ok(hipMalloc((void**)&r.stamps, kPlays * sizeof(ConsumptionStamp)), "stamp allocation") ||
         !hip_ok(hipMalloc((void**)&r.requests, kPlays * sizeof(RequestCopy)), "request allocation") ||
         !hip_ok(hipMalloc((void**)&r.observed, kPlays * kStages * sizeof(Seen)), "observation allocation") ||
         !hip_ok(hipStreamCreateWithFlags(&r.main, hipStreamNonBlocking), "main queue") ||
@@ -139,6 +142,7 @@ StepTicket make_ticket(int i, int rank) {
 bool execute(std::array<Rank,kRanks>& ranks, bool join) {
     for (auto& r : ranks) {
         if (!hip_ok(hipMemset(r.requests, 0, kPlays*sizeof(RequestCopy)), "clear requests") ||
+            !hip_ok(hipMemset(r.stamps, 0, kPlays*sizeof(ConsumptionStamp)), "clear stamps") ||
             !hip_ok(hipMemset(r.observed, 0, kPlays*kStages*sizeof(Seen)), "clear observations"))
             return false;
     }
@@ -153,7 +157,7 @@ bool execute(std::array<Rank,kRanks>& ranks, bool join) {
         /* The setter and graph launch are asynchronous. No event or sync
          * separates this loop's iterations or the two rank-local cells. */
         hipLaunchKernelGGL(mailbox_set_ticket_kernel, dim3(1), dim3(1), 0, r.main,
-                           r.cell, t);
+                           r.cell, r.stamps, (uint32_t)kPlays, t);
         if (!hip_ok(hipGraphLaunch(r.replay, r.main), "replay") ||
             !hip_ok(hipEventRecord(r.ready[i], r.main), "ready record") ||
             !hip_ok(hipStreamWaitEvent(r.lane1, r.ready[i], 0), "lane1 wait"))
@@ -165,10 +169,24 @@ bool execute(std::array<Rank,kRanks>& ranks, bool join) {
         if (join && !hip_ok(hipStreamWaitEvent(r.main, r.joined[i], 0), "join wait"))
             return false;
     }
-    for (auto& r : ranks) {
+    for (int k = 0; k < kRanks; ++k) {
+        Rank& r = ranks[k];
         if (!hip_ok(hipStreamSynchronize(r.main), "final main sync") ||
             !hip_ok(hipStreamSynchronize(r.lane1), "final lane1 sync"))
             return false;
+        /* Every play armed its own counting slot exactly once, with its ticket. */
+        std::array<ConsumptionStamp, kPlays> armed{};
+        if (!hip_ok(hipMemcpy(armed.data(), r.stamps, sizeof armed, hipMemcpyDeviceToHost), "read stamps"))
+            return false;
+        for (int i = 0; i < kPlays; ++i) {
+            const StepTicket t = make_ticket(i, k);
+            const ConsumptionStamp& s = armed[t.ticket_id % kPlays];
+            if (s.ticket_id != t.ticket_id || s.placement_epoch != t.placement_epoch ||
+                s.generation_slot != t.generation_slot || s.published_count || s.consumed_count) {
+                std::fprintf(stderr, "rank %d play %d: counting slot not armed with its ticket\n", k, i);
+                return false;
+            }
+        }
     }
     return true;
 }

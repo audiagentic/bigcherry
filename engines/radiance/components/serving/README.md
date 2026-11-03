@@ -8,10 +8,14 @@ serving manifest with provenance.
 
 ## Outcome
 
-RSC01's initial schema, loader and `bc-serve` commands are implemented
-and have CPU-only tests. The RSC07 engine manifest entry point has also
-landed, but helper manifest consumption (RSC06) and process supervision
-(RSC02) are not complete. This component alone does not start a server.
+The strict TOML loader, `bc-serve` inspection and manifest generation,
+the shared v1 reader, and the engine-side memory-plan measurement and
+admission check are implemented. The serving component now includes an
+owner-map verifier that checks the planner's owned expert sets and exact
+device byte totals. Card-free tests cover the verifier. End-to-end
+role-specific startup and helper manifest consumption remain unfinished;
+these additions do not constitute a fully qualified v1 launch.
+
 
 ## Detail
 
@@ -76,9 +80,9 @@ RSC05 work.
 The manifest uses sorted-key nlohmann JSON. Its `content_sha256` is
 SHA256 of the canonical serialized manifest before the hash field is
 added; the hash covers values, provenance, facts and process_helpers.
-RSC06/RSC07 will wire the manifest into each process, replacing
-environment variables and individual engine flags. RSC02 will add
-supervision. This slice does **not** start processes.
+The v1 reader and engine entry point have landed. Full helper-side
+manifest consumption and process supervision are still pending.
+This component does **not** start processes.
 
 Vendor: toml++ v3.4.0 root single header and MIT license (`third_party/`; the repository ignores every `vendor/` directory);
 reuse radiance's existing nlohmann/json v3.12.0.

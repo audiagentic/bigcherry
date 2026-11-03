@@ -53,6 +53,10 @@ std::string plan_cache_key(const Manifest& m);
 /* BC_CFG_UNRESOLVED_REFERENCE when no helper has `role`. */
 Result<HelperView> helper_view(const Manifest& m, std::string_view role);
 
+/* One helper's effective settings: helper_common, then its role patch, then the lab experiment shape's common and role
+ * patches (spec §2.2). Needs no owner map, so a producer can call it before it has one. */
+HelperCommon effective_helper_settings(const Manifest& m, size_t helper);
+
 /* spec §7 and §11 amendment 6: the document-identity leaves exempt from a provenance record of their own (the root ""
  * record covers them), by name. */
 inline constexpr std::array<std::string_view, 7> kIdentityExempt = {
@@ -63,6 +67,14 @@ inline constexpr std::array<std::string_view, 7> kIdentityExempt = {
  * exempt has a provenance record at the leaf or at a proper ancestor other than "". Fails closed: a /metadata leaf a
  * future version adds needs a record. Run by read_manifest on the raw document. */
 Status check_identity_coverage(const nlohmann::json& doc);
+
+/* spec §7 coverage of the effective configuration (amendment 9): every leaf under /spec has a provenance record at the
+ * leaf or a proper ancestor, or else is covered by the root "" record alone, which is only a claim of the schema default:
+ * the leaf must then have a registry default (a field's `default`, verified against its source at generation time) and
+ * equal it. A record at a non-root pointer must be of the class its covered leaves have in the registry (it covers only
+ * homogeneous leaves), and a record whose origin is schema_default must be true: a default exists and the leaf equals it.
+ * BC_CFG_PROVENANCE_INVALID naming the leaf otherwise. Run by read_manifest on the raw document. */
+Status check_provenance_coverage(const nlohmann::json& doc);
 
 /* spec §4: the owner-map digest segment of helper i. */
 std::string owner_segment(size_t helper, const std::vector<std::array<int64_t, 2>>& experts);

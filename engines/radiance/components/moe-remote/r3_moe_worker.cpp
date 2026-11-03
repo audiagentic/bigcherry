@@ -43,6 +43,7 @@
 #include "worker_segment.h"
 #include "worker_lanes.h"
 #include "worker_queue_warm.h"
+#include "worker_epoch.h"
 
 int main(int argc, char** argv) {
     /* EVERY LANE STREAM ON ITS OWN HARDWARE QUEUE. A small lane pre-queues "wait for the next request" packets;
@@ -494,9 +495,25 @@ int main(int argc, char** argv) {
         if (!warm.start(h, cfg.power_save && cfg.queue_warm)) return 1;
         Lanes lanes(h, map, dev_map, *gpu, lane_classes, cfg, lanes_served, combine);
         if (!lanes.start()) return 1;
-        for (uint32_t v; (v = g_stop_word.load(std::memory_order_acquire)) == 0;)
-            (void)::syscall(SYS_futex, reinterpret_cast<uint32_t*>(&g_stop_word), FUTEX_WAIT_PRIVATE, v, nullptr, nullptr, 0);
+        struct EpochClock final : r3::epoch::Clock {
+            uint64_t now_ns() const override {
+                timespec now{};
+                (void)clock_gettime(CLOCK_MONOTONIC, &now);
+                return uint64_t(now.tv_sec) * 1'000'000'000ULL + uint64_t(now.tv_nsec);
+            }
+        } epoch_clock;
+        // R3_MOE_WORKER_EPOCH_CYCLE_S on every helper (moves to experiment.helper.epoch_cycle_s with manifest v1).
+        r3::epoch::EpochCycle epoch_cycle(map, helper_index, epoch_clock, std::chrono::seconds{cfg.epoch_cycle_s});
+        for (uint32_t v; (v = g_stop_word.load(std::memory_order_acquire)) == 0;) {
+            if (!epoch_cycle.tick()) { raise_fault(h); request_stop(); break; }
+            const timespec quantum{0, 2'000'000};
+            (void)::syscall(SYS_futex, reinterpret_cast<uint32_t*>(&g_stop_word), FUTEX_WAIT_PRIVATE, v,
+                            epoch_cycle.enabled() ? &quantum : nullptr, nullptr, 0);
+        }
         lanes.stop_and_join();
+        if (epoch_cycle.enabled() && helper_index == 0)
+            std::fprintf(stderr, "r3_moe_worker: placement epoch cycles completed %llu (every %u s of burst)\n",
+                         (unsigned long long)epoch_cycle.completed(), cfg.epoch_cycle_s);
         warm.stop();
         if (combine.pool) {
             store(&h->combine.enabled, 0u);

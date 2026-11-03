@@ -25,6 +25,8 @@ tracked TR00 evidence bundle at
 That bundle is historical evidence and is not edited to change current
 ownership.
 
+Radiance patches also use `bigcherry --engine radiance patch-promote <id> --evidence @file [--profile-only]`; promotion is not llama.cpp-only. It moves the patch to the configured production set and retires it from every other set and experiment, refusing any source that would lose it. Quality evidence uses the deterministic KL capture in `tools/lab/radiance/helper-kld.json`: record the reference once (`quality.record` plus `quality.corpus`) and then reuse it without those keys.
+
 ## Steps
 
 ## Detailed Solution & Technical Design
@@ -490,7 +492,7 @@ ownership.
 | `tools/lab/radiance/rad20-burst-ab.json` | **TRANSITIONAL** | `radiance` lab topic file; RAD20 Option A ab-benchmark server config: main vs the burst-armed helper build in the production Flash-Next layout, each arm with its own binary and radiance home. |
 | `tools/lab/radiance/rad20-burst-ab.sh` | **TRANSITIONAL** | `radiance` lab topic file; RAD20 Option A speed A/B runner: builds origin/main and the branch, resolves devices from R9700_BDF / XTX_BDFS, runs rad20-burst-ab.json through ab-benchmark. |
 | `tools/lab/radiance/rad20-burst-streams-ab.json` | **TRANSITIONAL** | `radiance` lab topic file; RAD20 concurrency A/B server config: main vs the burst-armed helper build at 1, 2, 4 and 6 streams (stream_bench), combine on in both arms; run through rad20-burst-ab.sh. |
-| `tools/lab/radiance/lab-build.sh` | **TRANSITIONAL** | `radiance` lab topic file; sourced by radiance lab scripts: builds the moe-remote-handoff experiment, or reuses a build whose recorded engines/radiance + config source trees match the checkout (a lab-script-only change does not rebuild). |
+| `tools/lab/radiance/lab-build.sh` | **TRANSITIONAL** | `radiance` lab topic file; sourced by radiance lab scripts: builds the production Radiance lab lane with the hand-off, or reuses a build whose recorded engines/radiance + config source trees match the checkout (a lab-script-only change does not rebuild). |
 | `tools/lab/radiance/lab-env.sh` | **TRANSITIONAL** | `radiance` lab topic file; sourced by radiance lab scripts: ROCM_PATH (default: the host rocm-root) and the engine/helper device ordinals come from the environment settings instead of literals in scripts. |
 | `tools/lab/radiance/rad25-event-wake.cpp` | **TRANSITIONAL** | `radiance` lab topic file; RAD25 harness: small-lane completion observed by yield spin vs a blocking HIP event, with an engine thread releasing pre-queued stream waits at decode cadence; reports starvation and lane CPU. |
 | `tools/lab/radiance/rad25-event-wake.sh` | **TRANSITIONAL** | `radiance` lab topic file; runner for rad25-event-wake.cpp on the first gfx1100 in the device inventory, alternating modes over several cadences. |
@@ -537,11 +539,11 @@ ownership.
 | `tools/lab/radiance/qwen35b-engine-ab.json` | **TRANSITIONAL** | `radiance` lab topic file; ab-benchmark server configuration, Qwen3.6-35B-A3B FP8 on the engine alone, 1/2/4/6 streams (RCS09 genericity check). |
 | `tools/lab/radiance/qwen35b-helper-ab.json` | **TRANSITIONAL** | `radiance` lab topic file; ab-benchmark server configuration, the same model with the XTX helpers; refused by the W4-only helper until RAD11 (RCS09). |
 | `tools/lab/radiance/qwen35b-run.sh` | **TRANSITIONAL** | `radiance` lab topic file; builds the pinned radiance and runs qwen35b-engine-ab.json (RCS09). |
-| `tools/lab/radiance/qwen35b-helper-run.sh` | **TRANSITIONAL** | `radiance` lab topic file; builds the moe-remote-handoff experiment and runs qwen35b-helper-ab.json (RCS09). |
+| `tools/lab/radiance/qwen35b-helper-run.sh` | **TRANSITIONAL** | `radiance` lab topic file; builds the production Radiance lab lane and runs qwen35b-helper-ab.json (RCS09). |
 | `tools/lab/radiance/qwen35b-helper-kld.json` | **TRANSITIONAL** | `radiance` lab topic file; ab-benchmark quality configuration, KL of the 35B XTX workers against the engine alone (RAD13). |
 | `tools/lab/radiance/qwen35b-helper-kld-wide.json` | **TRANSITIONAL** | `radiance` lab topic file; ab-benchmark quality configuration, KL of the 35B XTX workers against the engine alone (RAD13). |
 | `tools/lab/radiance/qwen35b-helper-kld-default.json` | **TRANSITIONAL** | `radiance` lab topic file; ab-benchmark quality configuration, KL of the 35B XTX workers against the engine alone (RAD13). |
-| `tools/lab/radiance/qwen35b-helper-kld-run.sh` | **TRANSITIONAL** | `radiance` lab topic file; builds the moe-remote-handoff experiment and runs qwen35b-helper-kld.json (RAD13). |
+| `tools/lab/radiance/qwen35b-helper-kld-run.sh` | **TRANSITIONAL** | `radiance` lab topic file; builds the production Radiance lab lane and runs qwen35b-helper-kld.json (RAD13). |
 | `tools/lab/radiance/qwen35b-helper-capture.json` | **TRANSITIONAL** | `radiance` lab topic file; ab-benchmark quality configuration that captures real worker requests of the 35B (RAD13). |
 | `tools/lab/radiance/qwen35b-helper-capture-decode.json` | **TRANSITIONAL** | `radiance` lab topic file; ab-benchmark quality configuration that captures real worker requests of the 35B (RAD13). |
 | `tools/lab/radiance/qwen35b-helper-capture-run.sh` | **TRANSITIONAL** | `radiance` lab topic file; builds the experiment and runs qwen35b-helper-capture.json (RAD13). |
@@ -582,6 +584,7 @@ ownership.
 | `tools/lab/radiance/hc-pf2-quant-reduce.hip` | **TRANSITIONAL** | `radiance` lab topic file; isolated test of the cross-thread amax reduction hc_down_pf2_kernel's real FP8 down-product needs, validated against real ground-truth data (RAD15). |
 | `tools/lab/radiance/hc-down-fp8-e2e.hip` | **TRANSITIONAL** | `radiance` lab topic file; end-to-end combination of the proven cross-thread quantiser and the proven WMMA down-product kernel on real ground-truth activation data (RAD15). |
 | `tools/lab/radiance/launch-flashnext-best.sh` | **TRANSITIONAL** | `radiance` lab topic file; launches Qwen3.8-Flash-Next with the current best known layout (R9700 engine + two XTX expert helpers) and prints connection details. |
+| `tools/lab/radiance/lib/plan-check.sh` | **TRANSITIONAL** | `radiance` lab topic file; sourced by the launcher: asks bc-serve for the engine's plan-check flags for the exact configuration being launched, measures the plan first on a cache miss, and never starts the engine without the check. Interim until the v1 manifest's engine_view replaces the flags (RSC08 cutover). |
 | `tools/lab/radiance/qwen35b-gemv-large-ab.json` | **TRANSITIONAL** | `radiance` lab topic file; ab-benchmark server configuration, the FP8 decode GEMV on large-lane steps (R3_MOE_WORKER_GEMV_LARGE_ROWS) on concurrent streams (RAD14). |
 | `tools/lab/radiance/qwen35b-engine-mtp1.json` | **TRANSITIONAL** | `radiance` lab topic file; ab-benchmark server configuration, the 35B engine alone with 1 speculative token(s), A/A, to bisect the MTP acceptance collapse (RAD14). |
 | `tools/lab/radiance/qwen35b-engine-mtp2.json` | **TRANSITIONAL** | `radiance` lab topic file; ab-benchmark server configuration, the 35B engine alone with 2 speculative token(s), A/A, to bisect the MTP acceptance collapse (RAD14). |

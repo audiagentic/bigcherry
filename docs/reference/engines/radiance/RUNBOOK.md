@@ -1,54 +1,51 @@
-# Radiance build and validation
+# Radiance build and serving runbook
 
-The pinned source is **Radiance v1.14.0**. BigCherry selects upstream
-patches through `engines/radiance/recipes.toml` and builds separate
-components against the same pin. Those components are installed in
-`radiance_home` alongside the engine binary and its kernel libraries.
+Radiance is the primary serving engine. Its upstream pin, patches, sources, and build platforms are declared in `engines/radiance/recipes.toml`; separate components are installed alongside the engine in `radiance_home`.
 
-## Source selection
+## Source composition and build
 
-| Source | Contents |
+| Source | Composition |
 | --- | --- |
-| `radiance-native` | Unmodified pinned upstream engine |
-| `radiance` | The declared serving-core, host-compatibility and serving-manifest patch sets |
-| `radiance-lab` | Host compatibility and evaluated fixes; the remote-MoE hook is added by the `moe-remote-handoff` experiment |
-| `radiance-diag` | Diagnostic patch set, including remote-MoE diagnostics |
+| `radiance-native` | Unmodified pinned upstream source |
+| `radiance` | Production: `serving-core`, `host-compat`, and `serving-manifest` |
+| `radiance-lab` | **Production plus** `engine-fixes-evaluated` (and explicit active experiments only) |
+| `radiance-diag` | Production plus `moe-remote-diag`, built with `moe-diag` |
 
-A source's inclusion in a recipe does **not** imply every patch has
-validated hardware evidence. The [patch catalogue](ENHANCEMENTS.md) and
-each package's `patch.toml` give the recorded states.
+The validated remote-MoE hand-off (`rad0002_moe_remote_handoff`) belongs to production `serving-core`, not an experiment. Lab builds inherit it without extra flags. Diagnostic patches remain isolated from production; the lab-source superset is covered by `test_radiance_sources_share_production.py`.
 
-## Build and measurement
-
-The Flash-Next helper layout currently uses the lab source and
-`moe-remote-handoff` experiment. For example:
+From a configured checkout:
 
 ```sh
-PYTHONPATH=tools python -m bigcherry build \
-  --lane radiance-lab:stock:linux-radiance \
-  --experiment moe-remote-handoff
+PYTHONPATH=tools python3 -m bigcherry build --lane radiance-lab:stock:linux-radiance
 ```
 
-The build includes the pinned engine, `libr3`, `libr2` and remote-MoE
-components needed for the selected targets. A/B measurements use
-`bigcherry ab-benchmark` with model-specific configurations under
-`tools/lab/radiance/`. Quantitative comparisons must identify the
-source, model container, GPU layout, prompt/decode workload, cache
-policy and quality checks.
+For builds with helper offload, confirm both `bin/radiance` and `radiance_home/helpers/r3_moe_worker` exist. See the [enhancement catalogue](ENHANCEMENTS.md) for each patch's validation state; recipe inclusion alone is not evidence.
 
-The current supported results are on the
-[Flash-Next](models/qwen3.8-flash-next.md),
-[27B](models/qwen3.8-27b.md) and
-[35B-A3B](models/qwen3.6-35b-a3b.md) pages. Historical experiments and
-old pinned builds remain in the
-[dated lab record](../../../../docs/archive/radiance/LAB_HISTORY.md), not in the
-current result tables.
+## Launch Flash-Next
 
-## Serving configuration
+Use `tools/lab/radiance/launch-flashnext-best.sh` with an explicit `--build DIR` when reproducibility matters:
 
-`bc-serve` supplies strict configuration loading and manifest inspection;
-the engine has a manifest entry point. The [v1 manifest contract](../../../design/serving-manifest-v1/spec.md)
-is implemented incrementally. Until process-role loading and supervision
-land together, the legacy launcher/configuration paths are not a stable
-public interface. The source and build recipes remain authoritative for
-what is actually packaged.
+```sh
+bash tools/lab/radiance/launch-flashnext-best.sh start --build DIR --layout flashnext-2xtx
+bash tools/lab/radiance/launch-flashnext-best.sh stop
+```
+
+Obtain the exclusive `gpu` lease before any launch or measurement (including the first launch). A cold configuration first starts helpers and measures the engine memory plan, usually **1–2 minutes**, before starting the serving engine. Every start, including a cached start, arms the mandatory engine `--plan-check` against that measured plan. After `/health`, every start also sends a completion **canary**; failure stops the processes and restores applied power settings.
+
+| Exit | Meaning |
+| --- | --- |
+| `96` | Start canary failed (wrong, malformed, or failed completion) |
+| `97` | Memory plan measurement, cache/store, or plan-check setup failed |
+| `98` | Launch lock is held by another start/stop, or a server is already running |
+
+Plans are cached under `$BC_WORK_ROOT/flashnext/plan-cache`. To force a fresh measurement, **stop the server first**, then remove that directory (`rm -rf "$BC_WORK_ROOT/flashnext/plan-cache"`). Different layouts, contexts, memory budgets, and other launch parameters have distinct cache entries. Logs and the launch lock live in `$BC_WORK_ROOT/flashnext`.
+
+## Layouts and measurement
+
+Select a topology using `--layout NAME` or `FLASHNEXT_LAYOUT`; enumerate definitions with `bigcherry layout list` and `bigcherry layout show NAME` (from `engines/radiance/layouts.toml`). The default uses all available cards; `flashnext-2xtx` excludes the RX 6900 XT, while `flashnext-2xtx-rdna2-tail` includes the RDNA2 tail. `--budget ARCH=MIB` overrides a card group's memory budget. Missing cards or plugins fail the layout check.
+
+**RAD46 quality caveat:** putting experts on the RX 6900 XT tail has a known *worst-case quality cost*. Do not treat an improved throughput result as an unconditional quality win; evaluate the workload's output/quality and, when needed, compare with the two-XTX layout.
+
+Use `bigcherry ab-benchmark --server-config` for paired experiments and `bigcherry stream-bench` for stream-count studies. Report **prefill** and **decode** separately, with model, topology, prompts, sample count, build identity, and text/quality checks. See [Flash-Next](models/qwen3.8-flash-next.md), [27B](models/qwen3.8-27b.md), [35B-A3B](models/qwen3.6-35b-a3b.md), and the [lab guide](../../../../tools/lab/radiance/README.md).
+
+The strict [serving manifest v1 contract](../../../design/serving-manifest-v1/spec.md) describes the target configuration interface; current launcher flags remain the operational reference until cutover.
