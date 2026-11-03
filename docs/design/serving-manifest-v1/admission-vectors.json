@@ -4631,6 +4631,1296 @@
     "needle": "card 0 engine_expert_plane: live 101 bytes differ from the planned 100 bytes"
    },
    "why": "the card's expert plane is a stable fact"
+  },
+  {
+   "expected": {
+    "checkpoints": {
+     "floor_slots": 8,
+     "from": "engine plan (vectors)",
+     "slot_bytes": 117938964,
+     "want_slots": 72
+    },
+    "host": [
+     {
+      "bytes": 11665408,
+      "from": "engine plan (rad0011: arena_host_bytes)",
+      "name": "host_arenas",
+      "remedy": "",
+      "residence": "pinned"
+     }
+    ],
+    "host_pool_mib": 9216,
+    "kv_one_session": {
+     "bytes": 500,
+     "from": "engine plan (vectors)"
+    },
+    "plan_version": 1,
+    "producer": "radiance --plan-memory (rad0011)",
+    "vram": {
+     "cards": [
+      {
+       "capacity": 10000,
+       "engine_expert_plane": 100,
+       "expert_unit_max": 10,
+       "free": 9900
+      }
+     ],
+     "claimable": 7300,
+     "elastic": 6000,
+     "expert_ceiling": 100,
+     "expert_floor": 100,
+     "experts": 100,
+     "from": "engine plan (vectors)",
+     "kv": 5000,
+     "kv_ceiling": 7000,
+     "kv_resolved": 4200,
+     "stage": 0,
+     "statics": 3000
+    }
+   },
+   "kind": "boundary",
+   "live": {
+    "checkpoints": {
+     "floor_slots": 8,
+     "from": "engine plan (vectors)",
+     "slot_bytes": 117938964,
+     "want_slots": 72
+    },
+    "host": [
+     {
+      "bytes": 11665408,
+      "from": "engine plan (rad0011: arena_host_bytes)",
+      "name": "host_arenas",
+      "remedy": "",
+      "residence": "pinned"
+     }
+    ],
+    "host_pool_mib": 9216,
+    "kv_one_session": {
+     "bytes": 500,
+     "from": "engine plan (vectors)"
+    },
+    "plan_version": 1,
+    "producer": "radiance --plan-memory (rad0011)",
+    "vram": {
+     "cards": [
+      {
+       "capacity": 10000,
+       "engine_expert_plane": 100,
+       "expert_unit_max": 10,
+       "free": 9900
+      }
+     ],
+     "claimable": 7300,
+     "elastic": 6000,
+     "expert_ceiling": 100,
+     "expert_floor": 100,
+     "experts": 100,
+     "from": "engine plan (vectors)",
+     "kv": 5000,
+     "kv_ceiling": 7000,
+     "kv_resolved": 4200,
+     "stage": 0,
+     "statics": 3000
+    }
+   },
+   "name": "all-vram-capacity-equal",
+   "ppm": 600000,
+   "verdict": {
+    "admit": true,
+    "kv_required": 4200
+   },
+   "why": "all_vram, no staging region: claimable equals statics + experts + kv_required: admitted"
+  },
+  {
+   "expected": {
+    "checkpoints": {
+     "floor_slots": 8,
+     "from": "engine plan (vectors)",
+     "slot_bytes": 117938964,
+     "want_slots": 72
+    },
+    "host": [
+     {
+      "bytes": 11665408,
+      "from": "engine plan (rad0011: arena_host_bytes)",
+      "name": "host_arenas",
+      "remedy": "",
+      "residence": "pinned"
+     }
+    ],
+    "host_pool_mib": 9216,
+    "kv_one_session": {
+     "bytes": 500,
+     "from": "engine plan (vectors)"
+    },
+    "plan_version": 1,
+    "producer": "radiance --plan-memory (rad0011)",
+    "vram": {
+     "cards": [
+      {
+       "capacity": 10000,
+       "engine_expert_plane": 100,
+       "expert_unit_max": 10,
+       "free": 9900
+      }
+     ],
+     "claimable": 7300,
+     "elastic": 6000,
+     "expert_ceiling": 100,
+     "expert_floor": 100,
+     "experts": 100,
+     "from": "engine plan (vectors)",
+     "kv": 5000,
+     "kv_ceiling": 7000,
+     "kv_resolved": 4200,
+     "stage": 0,
+     "statics": 3000
+    }
+   },
+   "kind": "boundary",
+   "live": {
+    "checkpoints": {
+     "floor_slots": 8,
+     "from": "engine plan (vectors)",
+     "slot_bytes": 117938964,
+     "want_slots": 72
+    },
+    "host": [
+     {
+      "bytes": 11665408,
+      "from": "engine plan (rad0011: arena_host_bytes)",
+      "name": "host_arenas",
+      "remedy": "",
+      "residence": "pinned"
+     }
+    ],
+    "host_pool_mib": 9216,
+    "kv_one_session": {
+     "bytes": 500,
+     "from": "engine plan (vectors)"
+    },
+    "plan_version": 1,
+    "producer": "radiance --plan-memory (rad0011)",
+    "vram": {
+     "cards": [
+      {
+       "capacity": 10000,
+       "engine_expert_plane": 100,
+       "expert_unit_max": 10,
+       "free": 9900
+      }
+     ],
+     "claimable": 7299,
+     "elastic": 6000,
+     "expert_ceiling": 100,
+     "expert_floor": 100,
+     "experts": 100,
+     "from": "engine plan (vectors)",
+     "kv": 5000,
+     "kv_ceiling": 7000,
+     "kv_resolved": 4200,
+     "stage": 0,
+     "statics": 3000
+    }
+   },
+   "name": "all-vram-capacity-one-short",
+   "ppm": 600000,
+   "verdict": {
+    "admit": false,
+    "class": "admission",
+    "kv_required": 4200,
+    "needle": "admission: claimable VRAM: live 7299 bytes fall short of the required 7300 bytes"
+   },
+   "why": "all_vram: one byte short of that total: refused"
+  },
+  {
+   "expected": {
+    "checkpoints": {
+     "floor_slots": 8,
+     "from": "engine plan (vectors)",
+     "slot_bytes": 117938964,
+     "want_slots": 72
+    },
+    "host": [
+     {
+      "bytes": 11665408,
+      "from": "engine plan (rad0011: arena_host_bytes)",
+      "name": "host_arenas",
+      "remedy": "",
+      "residence": "pinned"
+     }
+    ],
+    "host_pool_mib": 9216,
+    "kv_one_session": {
+     "bytes": 500,
+     "from": "engine plan (vectors)"
+    },
+    "plan_version": 1,
+    "producer": "radiance --plan-memory (rad0011)",
+    "vram": {
+     "cards": [
+      {
+       "capacity": 10000,
+       "engine_expert_plane": 100,
+       "expert_unit_max": 10,
+       "free": 9900
+      }
+     ],
+     "claimable": 7300,
+     "elastic": 6000,
+     "expert_ceiling": 100,
+     "expert_floor": 100,
+     "experts": 100,
+     "from": "engine plan (vectors)",
+     "kv": 5000,
+     "kv_ceiling": 7000,
+     "kv_resolved": 4200,
+     "stage": 0,
+     "statics": 3000
+    }
+   },
+   "kind": "boundary",
+   "live": {
+    "checkpoints": {
+     "floor_slots": 8,
+     "from": "engine plan (vectors)",
+     "slot_bytes": 117938964,
+     "want_slots": 72
+    },
+    "host": [
+     {
+      "bytes": 11665408,
+      "from": "engine plan (rad0011: arena_host_bytes)",
+      "name": "host_arenas",
+      "remedy": "",
+      "residence": "pinned"
+     }
+    ],
+    "host_pool_mib": 9216,
+    "kv_one_session": {
+     "bytes": 500,
+     "from": "engine plan (vectors)"
+    },
+    "plan_version": 1,
+    "producer": "radiance --plan-memory (rad0011)",
+    "vram": {
+     "cards": [
+      {
+       "capacity": 10000,
+       "engine_expert_plane": 100,
+       "expert_unit_max": 10,
+       "free": 9900
+      }
+     ],
+     "claimable": 7300,
+     "elastic": 6000,
+     "expert_ceiling": 100,
+     "expert_floor": 100,
+     "experts": 99,
+     "from": "engine plan (vectors)",
+     "kv": 5000,
+     "kv_ceiling": 7000,
+     "kv_resolved": 4200,
+     "stage": 0,
+     "statics": 3000
+    }
+   },
+   "name": "all-vram-experts-below-floor",
+   "ppm": 600000,
+   "verdict": {
+    "admit": false,
+    "class": "admission",
+    "kv_required": 4200,
+    "needle": "admission: expert residency: live 99 bytes fall short of the required 100 bytes"
+   },
+   "why": "all_vram: a resident expert byte missing is below the floor: refused"
+  },
+  {
+   "expected": {
+    "checkpoints": {
+     "floor_slots": 8,
+     "from": "engine plan (vectors)",
+     "slot_bytes": 117938964,
+     "want_slots": 72
+    },
+    "host": [
+     {
+      "bytes": 11665408,
+      "from": "engine plan (rad0011: arena_host_bytes)",
+      "name": "host_arenas",
+      "remedy": "",
+      "residence": "pinned"
+     }
+    ],
+    "host_pool_mib": 9216,
+    "kv_one_session": {
+     "bytes": 500,
+     "from": "engine plan (vectors)"
+    },
+    "plan_version": 1,
+    "producer": "radiance --plan-memory (rad0011)",
+    "vram": {
+     "cards": [
+      {
+       "capacity": 10000,
+       "engine_expert_plane": 100,
+       "expert_unit_max": 10,
+       "free": 9900
+      }
+     ],
+     "claimable": 7200,
+     "elastic": 6000,
+     "expert_ceiling": 100,
+     "expert_floor": 0,
+     "experts": 0,
+     "from": "engine plan (vectors)",
+     "kv": 5000,
+     "kv_ceiling": 7000,
+     "kv_resolved": 4200,
+     "stage": 0,
+     "statics": 3000
+    }
+   },
+   "kind": "boundary",
+   "live": {
+    "checkpoints": {
+     "floor_slots": 8,
+     "from": "engine plan (vectors)",
+     "slot_bytes": 117938964,
+     "want_slots": 72
+    },
+    "host": [
+     {
+      "bytes": 11665408,
+      "from": "engine plan (rad0011: arena_host_bytes)",
+      "name": "host_arenas",
+      "remedy": "",
+      "residence": "pinned"
+     }
+    ],
+    "host_pool_mib": 9216,
+    "kv_one_session": {
+     "bytes": 500,
+     "from": "engine plan (vectors)"
+    },
+    "plan_version": 1,
+    "producer": "radiance --plan-memory (rad0011)",
+    "vram": {
+     "cards": [
+      {
+       "capacity": 10000,
+       "engine_expert_plane": 100,
+       "expert_unit_max": 10,
+       "free": 9900
+      }
+     ],
+     "claimable": 7200,
+     "elastic": 6000,
+     "expert_ceiling": 100,
+     "expert_floor": 0,
+     "experts": 0,
+     "from": "engine plan (vectors)",
+     "kv": 5000,
+     "kv_ceiling": 7000,
+     "kv_resolved": 4200,
+     "stage": 0,
+     "statics": 3000
+    }
+   },
+   "name": "layer-offload-capacity-equal",
+   "ppm": 600000,
+   "verdict": {
+    "admit": true,
+    "kv_required": 4200
+   },
+   "why": "layer_offload, no staging region, no resident experts: claimable equals statics + kv_required: admitted"
+  },
+  {
+   "expected": {
+    "checkpoints": {
+     "floor_slots": 8,
+     "from": "engine plan (vectors)",
+     "slot_bytes": 117938964,
+     "want_slots": 72
+    },
+    "host": [
+     {
+      "bytes": 11665408,
+      "from": "engine plan (rad0011: arena_host_bytes)",
+      "name": "host_arenas",
+      "remedy": "",
+      "residence": "pinned"
+     }
+    ],
+    "host_pool_mib": 9216,
+    "kv_one_session": {
+     "bytes": 500,
+     "from": "engine plan (vectors)"
+    },
+    "plan_version": 1,
+    "producer": "radiance --plan-memory (rad0011)",
+    "vram": {
+     "cards": [
+      {
+       "capacity": 10000,
+       "engine_expert_plane": 100,
+       "expert_unit_max": 10,
+       "free": 9900
+      }
+     ],
+     "claimable": 7200,
+     "elastic": 6000,
+     "expert_ceiling": 100,
+     "expert_floor": 0,
+     "experts": 0,
+     "from": "engine plan (vectors)",
+     "kv": 5000,
+     "kv_ceiling": 7000,
+     "kv_resolved": 4200,
+     "stage": 0,
+     "statics": 3000
+    }
+   },
+   "kind": "boundary",
+   "live": {
+    "checkpoints": {
+     "floor_slots": 8,
+     "from": "engine plan (vectors)",
+     "slot_bytes": 117938964,
+     "want_slots": 72
+    },
+    "host": [
+     {
+      "bytes": 11665408,
+      "from": "engine plan (rad0011: arena_host_bytes)",
+      "name": "host_arenas",
+      "remedy": "",
+      "residence": "pinned"
+     }
+    ],
+    "host_pool_mib": 9216,
+    "kv_one_session": {
+     "bytes": 500,
+     "from": "engine plan (vectors)"
+    },
+    "plan_version": 1,
+    "producer": "radiance --plan-memory (rad0011)",
+    "vram": {
+     "cards": [
+      {
+       "capacity": 10000,
+       "engine_expert_plane": 100,
+       "expert_unit_max": 10,
+       "free": 9900
+      }
+     ],
+     "claimable": 7199,
+     "elastic": 6000,
+     "expert_ceiling": 100,
+     "expert_floor": 0,
+     "experts": 0,
+     "from": "engine plan (vectors)",
+     "kv": 5000,
+     "kv_ceiling": 7000,
+     "kv_resolved": 4200,
+     "stage": 0,
+     "statics": 3000
+    }
+   },
+   "name": "layer-offload-capacity-one-short",
+   "ppm": 600000,
+   "verdict": {
+    "admit": false,
+    "class": "admission",
+    "kv_required": 4200,
+    "needle": "admission: claimable VRAM: live 7199 bytes fall short of the required 7200 bytes"
+   },
+   "why": "layer_offload: one byte short: refused"
+  },
+  {
+   "expected": {
+    "checkpoints": {
+     "floor_slots": 8,
+     "from": "engine plan (vectors)",
+     "slot_bytes": 117938964,
+     "want_slots": 72
+    },
+    "host": [
+     {
+      "bytes": 11665408,
+      "from": "engine plan (rad0011: arena_host_bytes)",
+      "name": "host_arenas",
+      "remedy": "",
+      "residence": "pinned"
+     }
+    ],
+    "host_pool_mib": 9216,
+    "kv_one_session": {
+     "bytes": 500,
+     "from": "engine plan (vectors)"
+    },
+    "plan_version": 1,
+    "producer": "radiance --plan-memory (rad0011)",
+    "vram": {
+     "cards": [
+      {
+       "capacity": 10000,
+       "engine_expert_plane": 100,
+       "expert_unit_max": 10,
+       "free": 9900
+      },
+      {
+       "capacity": 6000,
+       "engine_expert_plane": 80,
+       "expert_unit_max": 20,
+       "free": 5900
+      }
+     ],
+     "claimable": 9000,
+     "elastic": 6000,
+     "expert_ceiling": 100,
+     "expert_floor": 0,
+     "experts": 0,
+     "from": "engine plan (vectors)",
+     "kv": 5000,
+     "kv_ceiling": 7000,
+     "kv_resolved": 5000,
+     "stage": 200,
+     "statics": 3000
+    }
+   },
+   "kind": "boundary",
+   "live": {
+    "checkpoints": {
+     "floor_slots": 8,
+     "from": "engine plan (vectors)",
+     "slot_bytes": 117938964,
+     "want_slots": 72
+    },
+    "host": [
+     {
+      "bytes": 11665408,
+      "from": "engine plan (rad0011: arena_host_bytes)",
+      "name": "host_arenas",
+      "remedy": "",
+      "residence": "pinned"
+     }
+    ],
+    "host_pool_mib": 9216,
+    "kv_one_session": {
+     "bytes": 500,
+     "from": "engine plan (vectors)"
+    },
+    "plan_version": 1,
+    "producer": "radiance --plan-memory (rad0011)",
+    "vram": {
+     "cards": [
+      {
+       "capacity": 10000,
+       "engine_expert_plane": 100,
+       "expert_unit_max": 10,
+       "free": 9900
+      },
+      {
+       "capacity": 6000,
+       "engine_expert_plane": 80,
+       "expert_unit_max": 20,
+       "free": 5900
+      }
+     ],
+     "claimable": 9000,
+     "elastic": 6000,
+     "expert_ceiling": 100,
+     "expert_floor": 0,
+     "experts": 0,
+     "from": "engine plan (vectors)",
+     "kv": 5000,
+     "kv_ceiling": 7000,
+     "kv_resolved": 5000,
+     "stage": 200,
+     "statics": 3000
+    }
+   },
+   "name": "uneven-cards-admit",
+   "ppm": 600000,
+   "verdict": {
+    "admit": true,
+    "kv_required": 4200
+   },
+   "why": "two cards of different capacity, plane and unit, nothing changed: admitted"
+  },
+  {
+   "expected": {
+    "checkpoints": {
+     "floor_slots": 8,
+     "from": "engine plan (vectors)",
+     "slot_bytes": 117938964,
+     "want_slots": 72
+    },
+    "host": [
+     {
+      "bytes": 11665408,
+      "from": "engine plan (rad0011: arena_host_bytes)",
+      "name": "host_arenas",
+      "remedy": "",
+      "residence": "pinned"
+     }
+    ],
+    "host_pool_mib": 9216,
+    "kv_one_session": {
+     "bytes": 500,
+     "from": "engine plan (vectors)"
+    },
+    "plan_version": 1,
+    "producer": "radiance --plan-memory (rad0011)",
+    "vram": {
+     "cards": [
+      {
+       "capacity": 10000,
+       "engine_expert_plane": 100,
+       "expert_unit_max": 10,
+       "free": 9900
+      },
+      {
+       "capacity": 6000,
+       "engine_expert_plane": 80,
+       "expert_unit_max": 20,
+       "free": 5900
+      }
+     ],
+     "claimable": 9000,
+     "elastic": 6000,
+     "expert_ceiling": 100,
+     "expert_floor": 0,
+     "experts": 0,
+     "from": "engine plan (vectors)",
+     "kv": 5000,
+     "kv_ceiling": 7000,
+     "kv_resolved": 5000,
+     "stage": 200,
+     "statics": 3000
+    }
+   },
+   "kind": "boundary",
+   "live": {
+    "checkpoints": {
+     "floor_slots": 8,
+     "from": "engine plan (vectors)",
+     "slot_bytes": 117938964,
+     "want_slots": 72
+    },
+    "host": [
+     {
+      "bytes": 11665408,
+      "from": "engine plan (rad0011: arena_host_bytes)",
+      "name": "host_arenas",
+      "remedy": "",
+      "residence": "pinned"
+     }
+    ],
+    "host_pool_mib": 9216,
+    "kv_one_session": {
+     "bytes": 500,
+     "from": "engine plan (vectors)"
+    },
+    "plan_version": 1,
+    "producer": "radiance --plan-memory (rad0011)",
+    "vram": {
+     "cards": [
+      {
+       "capacity": 10000,
+       "engine_expert_plane": 100,
+       "expert_unit_max": 10,
+       "free": 9900
+      },
+      {
+       "capacity": 6001,
+       "engine_expert_plane": 80,
+       "expert_unit_max": 20,
+       "free": 5901
+      }
+     ],
+     "claimable": 9000,
+     "elastic": 6000,
+     "expert_ceiling": 100,
+     "expert_floor": 0,
+     "experts": 0,
+     "from": "engine plan (vectors)",
+     "kv": 5000,
+     "kv_ceiling": 7000,
+     "kv_resolved": 5000,
+     "stage": 200,
+     "statics": 3000
+    }
+   },
+   "name": "uneven-cards-second-larger",
+   "ppm": 600000,
+   "verdict": {
+    "admit": true,
+    "kv_required": 4200
+   },
+   "why": "the second card has more VRAM live than planned (a minimum): admitted"
+  },
+  {
+   "expected": {
+    "checkpoints": {
+     "floor_slots": 8,
+     "from": "engine plan (vectors)",
+     "slot_bytes": 117938964,
+     "want_slots": 72
+    },
+    "host": [
+     {
+      "bytes": 11665408,
+      "from": "engine plan (rad0011: arena_host_bytes)",
+      "name": "host_arenas",
+      "remedy": "",
+      "residence": "pinned"
+     }
+    ],
+    "host_pool_mib": 9216,
+    "kv_one_session": {
+     "bytes": 500,
+     "from": "engine plan (vectors)"
+    },
+    "plan_version": 1,
+    "producer": "radiance --plan-memory (rad0011)",
+    "vram": {
+     "cards": [
+      {
+       "capacity": 10000,
+       "engine_expert_plane": 100,
+       "expert_unit_max": 10,
+       "free": 9900
+      },
+      {
+       "capacity": 6000,
+       "engine_expert_plane": 80,
+       "expert_unit_max": 20,
+       "free": 5900
+      }
+     ],
+     "claimable": 9000,
+     "elastic": 6000,
+     "expert_ceiling": 100,
+     "expert_floor": 0,
+     "experts": 0,
+     "from": "engine plan (vectors)",
+     "kv": 5000,
+     "kv_ceiling": 7000,
+     "kv_resolved": 5000,
+     "stage": 200,
+     "statics": 3000
+    }
+   },
+   "kind": "boundary",
+   "live": {
+    "checkpoints": {
+     "floor_slots": 8,
+     "from": "engine plan (vectors)",
+     "slot_bytes": 117938964,
+     "want_slots": 72
+    },
+    "host": [
+     {
+      "bytes": 11665408,
+      "from": "engine plan (rad0011: arena_host_bytes)",
+      "name": "host_arenas",
+      "remedy": "",
+      "residence": "pinned"
+     }
+    ],
+    "host_pool_mib": 9216,
+    "kv_one_session": {
+     "bytes": 500,
+     "from": "engine plan (vectors)"
+    },
+    "plan_version": 1,
+    "producer": "radiance --plan-memory (rad0011)",
+    "vram": {
+     "cards": [
+      {
+       "capacity": 10000,
+       "engine_expert_plane": 100,
+       "expert_unit_max": 10,
+       "free": 9900
+      },
+      {
+       "capacity": 5999,
+       "engine_expert_plane": 80,
+       "expert_unit_max": 20,
+       "free": 5899
+      }
+     ],
+     "claimable": 9000,
+     "elastic": 6000,
+     "expert_ceiling": 100,
+     "expert_floor": 0,
+     "experts": 0,
+     "from": "engine plan (vectors)",
+     "kv": 5000,
+     "kv_ceiling": 7000,
+     "kv_resolved": 5000,
+     "stage": 200,
+     "statics": 3000
+    }
+   },
+   "name": "uneven-cards-second-capacity-short",
+   "ppm": 600000,
+   "verdict": {
+    "admit": false,
+    "class": "plan",
+    "needle": "card 1 capacity: live 5999 bytes fall short of the planned 6000 bytes"
+   },
+   "why": "the second card has less VRAM live than planned: plan drift naming card 1"
+  },
+  {
+   "expected": {
+    "checkpoints": {
+     "floor_slots": 8,
+     "from": "engine plan (vectors)",
+     "slot_bytes": 117938964,
+     "want_slots": 72
+    },
+    "host": [
+     {
+      "bytes": 11665408,
+      "from": "engine plan (rad0011: arena_host_bytes)",
+      "name": "host_arenas",
+      "remedy": "",
+      "residence": "pinned"
+     }
+    ],
+    "host_pool_mib": 9216,
+    "kv_one_session": {
+     "bytes": 500,
+     "from": "engine plan (vectors)"
+    },
+    "plan_version": 1,
+    "producer": "radiance --plan-memory (rad0011)",
+    "vram": {
+     "cards": [
+      {
+       "capacity": 10000,
+       "engine_expert_plane": 100,
+       "expert_unit_max": 10,
+       "free": 9900
+      },
+      {
+       "capacity": 6000,
+       "engine_expert_plane": 80,
+       "expert_unit_max": 20,
+       "free": 5900
+      }
+     ],
+     "claimable": 9000,
+     "elastic": 6000,
+     "expert_ceiling": 100,
+     "expert_floor": 0,
+     "experts": 0,
+     "from": "engine plan (vectors)",
+     "kv": 5000,
+     "kv_ceiling": 7000,
+     "kv_resolved": 5000,
+     "stage": 200,
+     "statics": 3000
+    }
+   },
+   "kind": "boundary",
+   "live": {
+    "checkpoints": {
+     "floor_slots": 8,
+     "from": "engine plan (vectors)",
+     "slot_bytes": 117938964,
+     "want_slots": 72
+    },
+    "host": [
+     {
+      "bytes": 11665408,
+      "from": "engine plan (rad0011: arena_host_bytes)",
+      "name": "host_arenas",
+      "remedy": "",
+      "residence": "pinned"
+     }
+    ],
+    "host_pool_mib": 9216,
+    "kv_one_session": {
+     "bytes": 500,
+     "from": "engine plan (vectors)"
+    },
+    "plan_version": 1,
+    "producer": "radiance --plan-memory (rad0011)",
+    "vram": {
+     "cards": [
+      {
+       "capacity": 10000,
+       "engine_expert_plane": 100,
+       "expert_unit_max": 10,
+       "free": 9900
+      },
+      {
+       "capacity": 6000,
+       "engine_expert_plane": 81,
+       "expert_unit_max": 20,
+       "free": 5900
+      }
+     ],
+     "claimable": 9000,
+     "elastic": 6000,
+     "expert_ceiling": 100,
+     "expert_floor": 0,
+     "experts": 0,
+     "from": "engine plan (vectors)",
+     "kv": 5000,
+     "kv_ceiling": 7000,
+     "kv_resolved": 5000,
+     "stage": 200,
+     "statics": 3000
+    }
+   },
+   "name": "uneven-cards-second-plane-differs",
+   "ppm": 600000,
+   "verdict": {
+    "admit": false,
+    "class": "plan",
+    "needle": "card 1 engine_expert_plane: live 81 bytes differ from the planned 80 bytes"
+   },
+   "why": "the second card's expert plane is a stable fact: plan drift naming card 1"
+  },
+  {
+   "expected": {
+    "checkpoints": {
+     "floor_slots": 8,
+     "from": "engine plan (vectors)",
+     "slot_bytes": 117938964,
+     "want_slots": 72
+    },
+    "host": [
+     {
+      "bytes": 11665408,
+      "from": "engine plan (rad0011: arena_host_bytes)",
+      "name": "host_arenas",
+      "remedy": "",
+      "residence": "pinned"
+     }
+    ],
+    "host_pool_mib": 9216,
+    "kv_one_session": {
+     "bytes": 500,
+     "from": "engine plan (vectors)"
+    },
+    "plan_version": 1,
+    "producer": "radiance --plan-memory (rad0011)",
+    "vram": {
+     "cards": [
+      {
+       "capacity": 10000,
+       "engine_expert_plane": 100,
+       "expert_unit_max": 10,
+       "free": 9900
+      },
+      {
+       "capacity": 6000,
+       "engine_expert_plane": 80,
+       "expert_unit_max": 20,
+       "free": 5900
+      }
+     ],
+     "claimable": 9000,
+     "elastic": 6000,
+     "expert_ceiling": 100,
+     "expert_floor": 0,
+     "experts": 0,
+     "from": "engine plan (vectors)",
+     "kv": 5000,
+     "kv_ceiling": 7000,
+     "kv_resolved": 5000,
+     "stage": 200,
+     "statics": 3000
+    }
+   },
+   "kind": "boundary",
+   "live": {
+    "checkpoints": {
+     "floor_slots": 8,
+     "from": "engine plan (vectors)",
+     "slot_bytes": 117938964,
+     "want_slots": 72
+    },
+    "host": [
+     {
+      "bytes": 11665408,
+      "from": "engine plan (rad0011: arena_host_bytes)",
+      "name": "host_arenas",
+      "remedy": "",
+      "residence": "pinned"
+     }
+    ],
+    "host_pool_mib": 9216,
+    "kv_one_session": {
+     "bytes": 500,
+     "from": "engine plan (vectors)"
+    },
+    "plan_version": 1,
+    "producer": "radiance --plan-memory (rad0011)",
+    "vram": {
+     "cards": [
+      {
+       "capacity": 10000,
+       "engine_expert_plane": 100,
+       "expert_unit_max": 10,
+       "free": 9900
+      },
+      {
+       "capacity": 6000,
+       "engine_expert_plane": 80,
+       "expert_unit_max": 21,
+       "free": 5900
+      }
+     ],
+     "claimable": 9000,
+     "elastic": 6000,
+     "expert_ceiling": 100,
+     "expert_floor": 0,
+     "experts": 0,
+     "from": "engine plan (vectors)",
+     "kv": 5000,
+     "kv_ceiling": 7000,
+     "kv_resolved": 5000,
+     "stage": 200,
+     "statics": 3000
+    }
+   },
+   "name": "uneven-cards-second-unit-differs",
+   "ppm": 600000,
+   "verdict": {
+    "admit": false,
+    "class": "plan",
+    "needle": "card 1 expert_unit_max: live 21 bytes differ from the planned 20 bytes"
+   },
+   "why": "the second card's largest expert unit is a stable fact: plan drift naming card 1"
+  },
+  {
+   "expected": {
+    "checkpoints": {
+     "floor_slots": 8,
+     "from": "engine plan (vectors)",
+     "slot_bytes": 117938964,
+     "want_slots": 72
+    },
+    "host": [
+     {
+      "bytes": 11665408,
+      "from": "engine plan (rad0011: arena_host_bytes)",
+      "name": "host_arenas",
+      "remedy": "",
+      "residence": "pinned"
+     }
+    ],
+    "host_pool_mib": 9216,
+    "kv_one_session": {
+     "bytes": 500,
+     "from": "engine plan (vectors)"
+    },
+    "plan_version": 1,
+    "producer": "radiance --plan-memory (rad0011)",
+    "vram": {
+     "cards": [
+      {
+       "capacity": 10000,
+       "engine_expert_plane": 100,
+       "expert_unit_max": 10,
+       "free": 9900
+      },
+      {
+       "capacity": 6000,
+       "engine_expert_plane": 80,
+       "expert_unit_max": 20,
+       "free": 5900
+      }
+     ],
+     "claimable": 9000,
+     "elastic": 6000,
+     "expert_ceiling": 100,
+     "expert_floor": 0,
+     "experts": 0,
+     "from": "engine plan (vectors)",
+     "kv": 5000,
+     "kv_ceiling": 7000,
+     "kv_resolved": 5000,
+     "stage": 200,
+     "statics": 3000
+    }
+   },
+   "kind": "boundary",
+   "live": {
+    "checkpoints": {
+     "floor_slots": 8,
+     "from": "engine plan (vectors)",
+     "slot_bytes": 117938964,
+     "want_slots": 72
+    },
+    "host": [
+     {
+      "bytes": 11665408,
+      "from": "engine plan (rad0011: arena_host_bytes)",
+      "name": "host_arenas",
+      "remedy": "",
+      "residence": "pinned"
+     }
+    ],
+    "host_pool_mib": 9216,
+    "kv_one_session": {
+     "bytes": 500,
+     "from": "engine plan (vectors)"
+    },
+    "plan_version": 1,
+    "producer": "radiance --plan-memory (rad0011)",
+    "vram": {
+     "cards": [
+      {
+       "capacity": 10000,
+       "engine_expert_plane": 100,
+       "expert_unit_max": 10,
+       "free": 9900
+      }
+     ],
+     "claimable": 9000,
+     "elastic": 6000,
+     "expert_ceiling": 100,
+     "expert_floor": 0,
+     "experts": 0,
+     "from": "engine plan (vectors)",
+     "kv": 5000,
+     "kv_ceiling": 7000,
+     "kv_resolved": 5000,
+     "stage": 200,
+     "statics": 3000
+    }
+   },
+   "name": "uneven-cards-card-count-differs",
+   "ppm": 600000,
+   "verdict": {
+    "admit": false,
+    "class": "plan",
+    "needle": "plan check: the live plan has 1 card(s), the manifest's 2"
+   },
+   "why": "a live plan with one card for two planned: plan drift"
+  },
+  {
+   "expected": {
+    "checkpoints": {
+     "floor_slots": 8,
+     "from": "engine plan (vectors)",
+     "slot_bytes": 117938964,
+     "want_slots": 72
+    },
+    "host": [
+     {
+      "bytes": 11665408,
+      "from": "engine plan (rad0011: arena_host_bytes)",
+      "name": "host_arenas",
+      "remedy": "",
+      "residence": "pinned"
+     }
+    ],
+    "host_pool_mib": 9216,
+    "kv_one_session": {
+     "bytes": 500,
+     "from": "engine plan (vectors)"
+    },
+    "plan_version": 1,
+    "producer": "radiance --plan-memory (rad0011)",
+    "vram": {
+     "cards": [
+      {
+       "capacity": 10000,
+       "engine_expert_plane": 100,
+       "expert_unit_max": 10,
+       "free": 9900
+      },
+      {
+       "capacity": 6000,
+       "engine_expert_plane": 80,
+       "expert_unit_max": 20,
+       "free": 5900
+      }
+     ],
+     "claimable": 9000,
+     "elastic": 6000,
+     "expert_ceiling": 100,
+     "expert_floor": 0,
+     "experts": 0,
+     "from": "engine plan (vectors)",
+     "kv": 5000,
+     "kv_ceiling": 7000,
+     "kv_resolved": 5000,
+     "stage": 200,
+     "statics": 3000
+    }
+   },
+   "kind": "boundary",
+   "live": {
+    "checkpoints": {
+     "floor_slots": 8,
+     "from": "engine plan (vectors)",
+     "slot_bytes": 117938964,
+     "want_slots": 72
+    },
+    "host": [
+     {
+      "bytes": 11665408,
+      "from": "engine plan (rad0011: arena_host_bytes)",
+      "name": "host_arenas",
+      "remedy": "",
+      "residence": "pinned"
+     }
+    ],
+    "host_pool_mib": 9216,
+    "kv_one_session": {
+     "bytes": 500,
+     "from": "engine plan (vectors)"
+    },
+    "plan_version": 1,
+    "producer": "radiance --plan-memory (rad0011)",
+    "vram": {
+     "cards": [
+      {
+       "capacity": 10000,
+       "engine_expert_plane": 100,
+       "expert_unit_max": 10,
+       "free": 9900
+      },
+      {
+       "capacity": 6000,
+       "engine_expert_plane": 80,
+       "expert_unit_max": 20,
+       "free": 5900
+      }
+     ],
+     "claimable": 9000,
+     "elastic": 6000,
+     "expert_ceiling": 100,
+     "expert_floor": 0,
+     "experts": 0,
+     "from": "engine plan (vectors)",
+     "kv": 5000,
+     "kv_ceiling": 7000,
+     "kv_resolved": 4199,
+     "stage": 200,
+     "statics": 3000
+    }
+   },
+   "name": "uneven-cards-common-kv-short",
+   "ppm": 600000,
+   "verdict": {
+    "admit": false,
+    "class": "admission",
+    "kv_required": 4200,
+    "needle": "admission: resolved KV: live 4199 bytes fall short of the required 4200 bytes"
+   },
+   "why": "one common resolved KV budget, one byte short of kv_required: refused whatever the cards"
   }
  ],
  "vectors_version": 1

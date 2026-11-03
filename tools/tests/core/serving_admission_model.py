@@ -279,9 +279,13 @@ def _small(**vram) -> dict:
     v = {"claimable": 9000, "statics": 3000, "elastic": 6000, "experts": 0, "kv": 5000, "stage": 200,
          "kv_resolved": 5000, "expert_floor": 0, "kv_ceiling": 7000, "expert_ceiling": 100}
     kv_one = vram.pop("kv_one", 500)
+    cards = vram.pop("cards", None)   # [(capacity, engine_expert_plane, expert_unit_max)] for a world of several cards
     v.update(vram)
     p = plan(v, kv_one=kv_one, capacity=10000, unit_max=10)
     p["vram"]["cards"][0]["free"] = 9900
+    if cards:
+        p["vram"]["cards"] = [{"capacity": c, "free": c - 100, "engine_expert_plane": plane, "expert_unit_max": unit}
+                              for c, plane, unit in cards]
     return p
 
 
@@ -339,6 +343,37 @@ def boundary_vectors() -> list[dict]:
     plane = _small()
     plane["vram"]["cards"][0]["engine_expert_plane"] = 101
     add("card-plane-differs", "the card's expert plane is a stable fact", plane)
+    # Placements with no staging region (all_vram keeps every expert resident, layer_offload keeps none): stage is 0 and the
+    # requirement is statics + experts + kv_required with nothing for staging (7000 + 4200 resident, 3000 + 4200 offloaded).
+    resident = _small(expert_floor=100, experts=100, stage=0, claimable=7300, kv_resolved=4200)
+    add("all-vram-capacity-equal", "all_vram, no staging region: claimable equals statics + experts + kv_required: admitted",
+        _small(expert_floor=100, experts=100, stage=0, claimable=7300, kv_resolved=4200), expected=resident)
+    add("all-vram-capacity-one-short", "all_vram: one byte short of that total: refused",
+        _small(expert_floor=100, experts=100, stage=0, claimable=7299, kv_resolved=4200), expected=resident)
+    add("all-vram-experts-below-floor", "all_vram: a resident expert byte missing is below the floor: refused",
+        _small(expert_floor=100, experts=99, stage=0, claimable=7300, kv_resolved=4200), expected=resident)
+    offloaded = _small(stage=0, claimable=7200, kv_resolved=4200)
+    add("layer-offload-capacity-equal", "layer_offload, no staging region, no resident experts: claimable equals statics + kv_required: admitted",
+        _small(stage=0, claimable=7200, kv_resolved=4200), expected=offloaded)
+    add("layer-offload-capacity-one-short", "layer_offload: one byte short: refused",
+        _small(stage=0, claimable=7199, kv_resolved=4200), expected=offloaded)
+    # An uneven world: cards of different size, plane and unit. KV is one common budget (kv_resolved); capacity is a
+    # per-card minimum; plane and unit are per-card stable facts. Per-rank KV is the engine's split, not a plan field.
+    cards = [(10000, 100, 10), (6000, 80, 20)]
+    uneven = _small(cards=cards)
+    add("uneven-cards-admit", "two cards of different capacity, plane and unit, nothing changed: admitted", uneven, expected=uneven)
+    add("uneven-cards-second-larger", "the second card has more VRAM live than planned (a minimum): admitted",
+        _small(cards=[(10000, 100, 10), (6001, 80, 20)]), expected=uneven)
+    add("uneven-cards-second-capacity-short", "the second card has less VRAM live than planned: plan drift naming card 1",
+        _small(cards=[(10000, 100, 10), (5999, 80, 20)]), expected=uneven)
+    add("uneven-cards-second-plane-differs", "the second card's expert plane is a stable fact: plan drift naming card 1",
+        _small(cards=[(10000, 100, 10), (6000, 81, 20)]), expected=uneven)
+    add("uneven-cards-second-unit-differs", "the second card's largest expert unit is a stable fact: plan drift naming card 1",
+        _small(cards=[(10000, 100, 10), (6000, 80, 21)]), expected=uneven)
+    add("uneven-cards-card-count-differs", "a live plan with one card for two planned: plan drift",
+        _small(), expected=uneven)
+    add("uneven-cards-common-kv-short", "one common resolved KV budget, one byte short of kv_required: refused whatever the cards",
+        _small(cards=cards, kv_resolved=4199), expected=uneven)
     return out
 
 

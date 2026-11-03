@@ -162,7 +162,7 @@ int main(int argc, char** argv) {
     // Every normative admission vector through the engine's own entry points: --plan-check/--plan-check-floor-ppm parsing,
     // then bc_plan::check. The exit code and the message must be what the vector says (admit 0, admission 4, plan or input 2).
     {
-        // Where each vector meets production code: 42 reach bc_plan::check; the rest are refused earlier, at the engine's flag and
+        // Where each vector meets production code: 54 reach bc_plan::check; the rest are refused earlier, at the engine's flag and
         // expected-plan validation (3), or are a live plan the contract cannot even decode (1: the engine builds its live plan in
         // process, as a typed struct, so a missing field there is a decode failure of the vector, not a runtime input).
         int ran = 0, through_check = 0, refused_at_flags = 0, live_undecodable = 0;
@@ -210,8 +210,8 @@ int main(int argc, char** argv) {
                 check(err.find("plan check: admitted") != std::string::npos, "vector " + name + ": admitted line: " + err);
         }
         check(ran >= 46 && through_check + refused_at_flags + live_undecodable == ran, "every vector met production code");
-        check(through_check == 42 && refused_at_flags == 3 && live_undecodable == 1,
-              "42 through bc_plan::check, 3 refused at the flags, 1 undecodable live plan (got " + std::to_string(through_check) + "/" +
+        check(through_check == 54 && refused_at_flags == 3 && live_undecodable == 1,
+              "54 through bc_plan::check, 3 refused at the flags, 1 undecodable live plan (got " + std::to_string(through_check) + "/" +
                   std::to_string(refused_at_flags) + "/" + std::to_string(live_undecodable) + ")");
     }
 
