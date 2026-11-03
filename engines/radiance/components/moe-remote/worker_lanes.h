@@ -152,22 +152,7 @@ private:
         using namespace r3::moe_shm;
         /* After the lane's stream is drained, publish the identity of its last completed request (epoch/slot) for the
          * engine's quiescence check, once per drain rather than on every completion. */
-        auto drain = [&] {
-            if (!gpu_.sync_lane(lane)) return false;
-            LaneSignal& l = h_->lane[lane];
-            if (const uint32_t seq = load(&l.done_sequence)) {
-                /* The ring slot must still hold that request (admission closed and every parent retired, so nothing
-                 * newer was published): refuse the ACK rather than copy another request's identity. */
-                const Request* q = lane_request(map_, lane, seq);
-                if (!q || load(&q->sequence) != seq) return false;
-                const uint64_t epoch = __atomic_load_n(&q->placement_epoch, __ATOMIC_ACQUIRE);
-                const uint32_t slot = load(&q->generation_slot);
-                if (!epoch || slot > 1) return false;
-                __atomic_store_n(&l.done_epoch, epoch, __ATOMIC_RELAXED);
-                __atomic_store_n(&l.done_slot, slot, __ATOMIC_RELAXED);
-            }
-            return true;   /* acknowledge_lane_drain's release of drain_ack publishes them */
-        };
+        auto drain = [&] { return gpu_.sync_lane(lane) && publish_done_identity(map_, lane); };
         if (!acknowledge_lane_drain(h_->lane[lane], closure, drain)) {
             request_stop();
             return;

@@ -815,6 +815,35 @@ inline void notify(Header* h) {
     (void)__atomic_fetch_add(&h->notify, 1u, __ATOMIC_SEQ_CST);
     (void)futex_wake(&h->notify);
 }
+
+/* Helper drain (after the lane's stream is drained): publish the identity of the lane's last completed request
+ * (epoch/slot) for the engine's quiescence check. The ring slot must still hold that request (admission closed and
+ * every parent retired, so nothing newer was published) and carry a valid epoch/slot; otherwise refuse the ACK
+ * rather than copy another request's identity. acknowledge_lane_drain's release of drain_ack publishes the words. */
+inline bool publish_done_identity(void* base, uint32_t lane) {
+    LaneSignal& l = static_cast<Header*>(base)->lane[lane];
+    const uint32_t seq = load(&l.done_sequence);
+    if (!seq) return true;
+    const Request* q = lane_request(base, lane, seq);
+    if (!q || load(&q->sequence) != seq) return false;
+    const uint64_t epoch = __atomic_load_n(&q->placement_epoch, __ATOMIC_ACQUIRE);
+    const uint32_t slot = load(&q->generation_slot);
+    if (!epoch || slot > 1) return false;
+    __atomic_store_n(&l.done_epoch, epoch, __ATOMIC_RELAXED);
+    __atomic_store_n(&l.done_slot, slot, __ATOMIC_RELAXED);
+    return true;
+}
+
+/* Engine quiescence, one lane: a served lane acknowledged exactly this closure, every published request is done and
+ * consumed, and the helper's done identity equals the engine's consumed identity for the last one. */
+inline bool lane_quiesced(const Header* h, uint32_t lane, uint64_t closure, bool served) {
+    const LaneSignal& l = h->lane[lane];
+    if (served && __atomic_load_n(&l.drain_ack, __ATOMIC_ACQUIRE) != closure) return false;
+    const uint32_t seq = load(&l.request_sequence);
+    if (load(&l.done_sequence) != seq || load(&l.consumed_sequence) != seq) return false;
+    return !seq || (__atomic_load_n(&l.done_epoch, __ATOMIC_ACQUIRE) == __atomic_load_n(&l.consumed_epoch, __ATOMIC_ACQUIRE) &&
+                    load(&l.done_slot) == load(&l.consumed_slot));
+}
 /* Raise helper_fault (sticky) and wake every CPU waiter. */
 inline void raise_fault(Header* h) {
     __atomic_store_n(&h->helper_fault, 1u, __ATOMIC_SEQ_CST);

@@ -312,19 +312,8 @@ void request_helper_drain(uint64_t closure) {
 bool helper_drained(uint64_t closure) {
     if (!g.hdr || load(&g.hdr->helper_fault)) return false;
     const Header* h = g.hdr;
-    for (uint32_t lane = 0; lane < kLanes; ++lane) {
-        const LaneSignal& l = h->lane[lane];
-        if (served_lane(lane) &&
-            __atomic_load_n(&l.drain_ack, __ATOMIC_ACQUIRE) != closure) return false;
-        const uint32_t seq = load(&l.request_sequence);
-        if (load(&l.done_sequence) != seq || load(&l.consumed_sequence) != seq)
-            return false;
-        if (seq &&
-            (__atomic_load_n(&l.done_epoch, __ATOMIC_ACQUIRE) !=
-             __atomic_load_n(&l.consumed_epoch, __ATOMIC_ACQUIRE) ||
-             load(&l.done_slot) != load(&l.consumed_slot)))
-            return false;
-    }
+    for (uint32_t lane = 0; lane < kLanes; ++lane)
+        if (!lane_quiesced(h, lane, closure, served_lane(lane))) return false;
     if (h->combine.request &&
         (load(&h->combine.done) != load(&h->combine.request) ||
          load(&h->combine.result_consumed_generation) != load(&h->combine.request)))
