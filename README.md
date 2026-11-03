@@ -14,11 +14,11 @@ and kernel tuning.
 
 | Engine | Pinned upstream | BigCherry packages | Focus |
 | --- | --- | --- | --- |
-| [Radiance](docs/reference/engines/radiance/README.md) | **v1.14.0** | **9 patches**, 6 components | Mixed-generation AMD kernels, remote experts and serving |
+| [Radiance](docs/reference/engines/radiance/README.md) | **v1.14.0** | **10 patches**, 6 components | Mixed-generation AMD kernels, remote experts and serving |
 | [llama.cpp](docs/reference/engines/llamacpp/README.md) | **b11552** | **151 patches** | HIP kernel tuning, dispatch replay and engine fixes |
 
 These counts are the catalogued packages, not the number included in every
-build. Radiance has 1 validated patch; llama.cpp has 70.
+build. Radiance has 2 validated patches; llama.cpp has 70.
 See the [Radiance changes](docs/reference/engines/radiance/ENHANCEMENTS.md)
 and [llama.cpp patches](docs/reference/engines/llamacpp/PATCHES.md) for
 individual states and inclusion rules. Pins and source selections are defined

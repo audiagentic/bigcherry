@@ -6,6 +6,7 @@
 #include "moe_lane_quant.h"
 #include "moe_lane_reduce.h"
 #include "moe_lane_host.h"
+#include "rad_abi_layout.h"
 
 namespace r3_moe_gpu {
 
@@ -1051,14 +1052,23 @@ private:
         int (*count)() = nullptr;
         const RadKernelInfo* (*at)(int) = nullptr;
         int (*open_fn)() = nullptr;
-        if (!symbol("rad_plugin_abi_version", &abi) || !symbol("rad_plugin_info", &info) ||
-            !symbol("rad_kernel_count", &count) || !symbol("rad_kernel_at", &at)) return false;
+        uint64_t (*layout)() = nullptr;
+        if (!symbol("rad_plugin_abi_version", &abi) || !symbol("rad_plugin_abi_layout", &layout) ||
+            !symbol("rad_plugin_info", &info) || !symbol("rad_kernel_count", &count) ||
+            !symbol("rad_kernel_at", &at)) return false;
         /* rad_plugin_open/close are optional in the ABI (rad_abi.h); libr4d exports neither. */
         (void)symbol("rad_plugin_open", &open_fn, false);
         (void)symbol("rad_plugin_close", &plugin_close_, false);
         if (abi() != RAD_ABI_VERSION) {
             std::fprintf(stderr, "r3_moe_worker: libr4d ABI %u, helper ABI %u\n",
                          abi(), (unsigned)RAD_ABI_VERSION);
+            return false;
+        }
+        /* The same version number can name two struct layouts; the engine's loader refuses a plugin whose layout
+         * fingerprint differs, and so does the helper. */
+        if (layout() != rad_abi_layout()) {
+            std::fprintf(stderr, "r3_moe_worker: %s ABI layout %016llx, helper layout %016llx\n", path.c_str(),
+                         (unsigned long long)layout(), (unsigned long long)rad_abi_layout());
             return false;
         }
         const RadPluginInfo* inf = info();

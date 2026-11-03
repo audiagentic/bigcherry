@@ -32,10 +32,10 @@ configuration comparison, not a stock-engine speedup.
 | [serving](../../../../engines/radiance/components/serving/README.md) | Strict configuration loader, inspection and manifest generation |
 | [ngram-helper](../../../../engines/radiance/components/ngram-helper/README.md) | Shelved n-gram gather experiment |
 
-The [patch and component catalogue](ENHANCEMENTS.md) lists all nine
+The [patch and component catalogue](ENHANCEMENTS.md) lists all ten
 Radiance patch packages, their recorded states and the six components.
-Only one patch is currently marked validated. A component or experimental
-setting is not automatically part of the production build.
+Two patches are currently marked validated, including the remote-MoE hand-off.
+A component or experimental setting is not automatically part of the production build.
 
 ## Architecture and current limits
 
