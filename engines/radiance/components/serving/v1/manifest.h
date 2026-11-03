@@ -53,6 +53,10 @@ std::string plan_cache_key(const Manifest& m);
 /* BC_CFG_UNRESOLVED_REFERENCE when no helper has `role`. */
 Result<HelperView> helper_view(const Manifest& m, std::string_view role);
 
+/* One helper's effective settings: helper_common, then its role patch, then the lab experiment shape's common and role
+ * patches (spec §2.2). Needs no owner map, so a producer can call it before it has one. */
+HelperCommon effective_helper_settings(const Manifest& m, size_t helper);
+
 /* spec §7 and §11 amendment 6: the document-identity leaves exempt from a provenance record of their own (the root ""
  * record covers them), by name. */
 inline constexpr std::array<std::string_view, 7> kIdentityExempt = {

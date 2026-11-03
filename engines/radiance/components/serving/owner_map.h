@@ -27,7 +27,12 @@ std::vector<uint64_t> helper_budgets(const v1::Manifest& m);
 
 /* Recomputes the owner map with the shared planner and compares it with the manifest's, helper by helper: the owned
  * experts and their order, the count, and the exact device bytes. BC_CFG_OWNERSHIP_MISMATCH naming the first
- * disagreeing pointer (or the planner's refusal) otherwise. The digests are not rechecked here: the reader verifies them
+ * disagreeing pointer (or the planner's refusal) otherwise. It does not rely on the reader having run: before it plans,
+ * it refuses (naming the field) an owner map that does not have one set per helper, a count that is not its experts', a
+ * helper GPU absent from the facts (unresolved reference), a budget that does not fit 64 bits of bytes, a share above the
+ * selector's 1,000,000 or all shares 0, a tier that contradicts the strategy (tail: the last helper is the tail helper,
+ * every other is head; roundrobin: all head), and a balance the selector cannot run (not exactly two helpers of equal
+ * budget, or with the tail strategy). The digests are not rechecked here: the reader verifies them
  * against the document's own experts, so equal experts mean equal digests. */
 v1::Status verify_owner_map(const v1::Manifest& m, const bc::experts::Container& model);
 

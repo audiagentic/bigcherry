@@ -144,6 +144,8 @@ HelperCommon effective(const Manifest& m, size_t i) {
 
 }  // namespace
 
+HelperCommon effective_helper_settings(const Manifest& m, size_t helper) { return effective(m, helper); }
+
 Status check_identity_coverage(const nlohmann::json& doc) {
     std::vector<std::string> leaves;
     for (const char* top : {"apiVersion", "kind", "metadata"})

@@ -111,6 +111,13 @@ int main(int, char**) {
                implied[i].shares == hand[i].shares && implied[i].balance == hand[i].balance);
     assert(bc::serving::helper_archs(good) == archs && bc::serving::helper_budgets(good) == budgets);
 
+    // The standalone verifier refuses what the reader would, itself, naming the field (it is a producer entry point).
+    auto refused_code = [&](const v1::Manifest& m, v1::ConfigErrorCode code, const std::string& path) {
+        const v1::Status s = bc::serving::verify_owner_map(m, model);
+        if (!s || s->code != code || s->path.find(path) != 0)
+            std::fprintf(stderr, "wanted %d at %s, got %s\n", static_cast<int>(code), path.c_str(), s ? (s->path + ": " + s->message).c_str() : "accepted");
+        return s && s->code == code && s->path.find(path) == 0;
+    };
     // an owner map equal to the planner's is accepted
     assert(!bc::serving::verify_owner_map(good, model));
 
@@ -148,13 +155,91 @@ int main(int, char**) {
     {
         v1::Manifest m = good;
         m.spec.handoff.placement.strategy = v1::PlacementStrategy::kRoundrobin;
-        assert(refused_at(m, model, "spec.plan.owner_map.helpers["));
+        assert(refused_code(m, v1::ConfigErrorCode::ownership_mismatch, "spec.processes.helpers[2].tier"));   // the tier follows the strategy
+        m.spec.processes.helpers[2].tier = v1::HelperTier::kHead;
+        assert(refused_at(m, model, "spec.plan.owner_map.helpers["));   // and with the tier consistent, the selection differs
     }
     // a placement the planner refuses (a format the tail card cannot run) names the owner map
     {
         v1::Manifest m = good;
         m.spec.processes.helpers[2].formats = {v1::ExpertFormat::kFp8E4m3Block};
         assert(refused_at(m, model, "spec.plan.owner_map"));
+    }
+    {
+        v1::Manifest m = good;
+        m.spec.plan.owner_map.helpers.pop_back();   // one owned set short of the helpers: reported, not thrown
+        assert(refused_code(m, v1::ConfigErrorCode::ownership_mismatch, "spec.plan.owner_map.helpers"));
+        m = good;
+        m.spec.plan.owner_map.helpers[0].count += 1;   // count is not its experts' number
+        assert(refused_code(m, v1::ConfigErrorCode::ownership_mismatch, "spec.plan.owner_map.helpers[0].count"));
+        m = good;
+        m.spec.processes.helpers[0].gpu = "0000:ff:00.0";   // not among the facts
+        assert(refused_code(m, v1::ConfigErrorCode::unresolved_reference, "spec.processes.helpers[0].gpu"));
+        m = good;
+        m.spec.processes.helpers[1].vram_budget_mib = 17592186044426;   // times 2^20 wraps to 10 MiB
+        assert(refused_code(m, v1::ConfigErrorCode::invalid_value, "spec.processes.helpers[1].vram_budget_mib"));
+        assert(bc::serving::helper_budgets(m)[1] == (UINT64_MAX >> 20 << 20));   // and the converter itself saturates, never wraps
+        m = good;
+        m.spec.processes.helpers[0].share = 1000001;
+        assert(refused_code(m, v1::ConfigErrorCode::invalid_value, "spec.processes.helpers[0].share"));
+        m = good;
+        for (auto& h : m.spec.processes.helpers) h.share = 0;
+        assert(refused_code(m, v1::ConfigErrorCode::invalid_value, "spec.processes.helpers"));
+        m = good;   // the tier contradicts the tail strategy: the first helper declared the tail helper, the last a head
+        m.spec.processes.helpers[0].tier = v1::HelperTier::kTail;
+        m.spec.processes.helpers[2].tier = v1::HelperTier::kHead;
+        assert(refused_code(m, v1::ConfigErrorCode::ownership_mismatch, "spec.processes.helpers[0].tier"));
+        m = good;   // balance with three helpers (via the experiment shape) is not a selector policy
+        m.spec.experiment = v1::Experiment{};
+        m.spec.experiment->shape = v1::ExperimentShape{};
+        m.spec.experiment->shape->helper_common = v1::HelperPatch{};
+        m.spec.experiment->shape->helper_common->placement = v1::HelperPlacementPatch{true, std::vector<int64_t>{1000, 1000, 1000}};
+        assert(refused_code(m, v1::ConfigErrorCode::invalid_value, "spec.processes.helper_common.placement.balance"));
+    }
+    // Two-helper balance with non-default speeds, set through the experiment shape: the manifest's implied policy carries
+    // them, and a map planned for them verifies.
+    {
+        Json jb = j;
+        jb["spec"]["handoff"]["placement"]["strategy"] = "roundrobin";
+        Json two = Json::array({jb["spec"]["processes"]["helpers"][0], jb["spec"]["processes"]["helpers"][1]});
+        two[0]["share"] = 1;
+        two[1]["share"] = 1;
+        jb["spec"]["processes"]["helpers"] = two;
+        const v1::Manifest base2 = decode_json(jb);   // owner map is wrong for two helpers: only the policies are used below
+        v1::Manifest m = base2;
+        m.spec.experiment = v1::Experiment{};
+        m.spec.experiment->shape = v1::ExperimentShape{};
+        m.spec.experiment->shape->helper_common = v1::HelperPatch{};
+        m.spec.experiment->shape->helper_common->placement = v1::HelperPlacementPatch{true, std::vector<int64_t>{2000, 1000}};
+        const auto pol = bc::serving::owner_policies(m);
+        assert(pol.size() == 2 && pol[0].balance && pol[1].balance && pol[0].balance_speeds == std::vector<double>({2.0, 1.0}));
+        bc::experts::OwnerPolicy hb;
+        hb.heat = heat.string();
+        hb.placement = "roundrobin";
+        hb.formats = "w4nl64,fp8_e4m3_block";
+        hb.shares = "1,1";
+        hb.balance = true;
+        hb.balance_speeds = {2.0, 1.0};
+        const std::vector<bc::experts::OwnerPolicy> hand2 = {hb, hb};
+        bc::experts::OwnerMap bal;
+        const std::vector<uint64_t> eq = {16 * 25344ull * 2, 16 * 25344ull * 2};   // MiB-aligned below
+        std::vector<uint64_t> budgets2 = {20ull << 20, 20ull << 20};
+        assert(bc::experts::plan_owners(model, hand2, {"gfx1100", "gfx1100"}, budgets2, &bal, &why));
+        assert(!bal.helpers[0].expert.empty() && !bal.helpers[1].expert.empty());
+        (void)eq;
+        // the manifest records that map (the digests are the reader's to check); the verifier accepts it, and not the same map for speeds 1:1
+        m.spec.processes.helpers[0].vram_budget_mib = m.spec.processes.helpers[1].vram_budget_mib = 20;
+        m.spec.plan.owner_map.helpers.clear();
+        for (const bc::experts::Owned& o : bal.helpers) {
+            v1::OwnedSet set{};
+            set.count = static_cast<int64_t>(o.expert.size());
+            set.bytes = static_cast<int64_t>(o.bytes);
+            for (auto [l, e] : o.expert) set.experts.push_back({static_cast<int64_t>(l), static_cast<int64_t>(e)});
+            m.spec.plan.owner_map.helpers.push_back(std::move(set));
+        }
+        assert(!bc::serving::verify_owner_map(m, model));
+        m.spec.experiment->shape->helper_common->placement->balance_speeds_milli = std::vector<int64_t>{1000, 1000};
+        assert(refused_at(m, model, "spec.plan.owner_map.helpers["));   // other speeds split the experts differently
     }
     fs::remove_all(root);
     std::printf("ok\n");
