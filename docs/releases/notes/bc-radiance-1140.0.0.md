@@ -5,7 +5,7 @@ First tagged release.
 
 ## Bump record
 
-pin-bump lane build: radiance:stock:linux-radiance build_plan_id=459d86718e56e15a3aea8860aa5a9ebc binary_sha256=b9233dc8cd1987a4db4f9f736061396717559bc1fe8d8e5a2dd2cab94194fcb0 build_dir=/work/bigcherry/builds/4b1757e6f6c2003ad8e4b351cbdc37b2/459d86718e56e15a3aea8860aa5a9ebc
+pin-bump lane build: radiance:stock:linux-radiance build_plan_id=459d86718e56e15a3aea8860aa5a9ebc binary_sha256=b9233dc8cd1987a4db4f9f736061396717559bc1fe8d8e5a2dd2cab94194fcb0
 
 release 1140.0.0 2026-11-03
 upstream: radiance v1.14.0 (revision 4a61d7296bc5b4fec5932949dac4a2fadf9b61ca)

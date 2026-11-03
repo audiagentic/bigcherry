@@ -73,7 +73,7 @@ dated 2026-04-16): MES 0x81, SMC 00.104.74.00.
 0 MHz, MCLK 96 MHz, VDDGFX 29 mV, 15.00 W average SoC. `power_dpm_force_performance_level=low`: FCLK 582 -> 313 MHz,
 15.0 -> 14.0 W. `pp_power_profile_mode` POWER_SAVING: no change.
 
-**Internal context:** run /work/bigcherry/runs/r9700-idle (result.txt); plan item PWR06 (firmware trial); GPT R9700
+**Internal context:** local run `r9700-idle` (`result.txt`, not retained in Git); plan item PWR06 (firmware trial); GPT R9700
 idle-power deep dive 2026-11-02. Distinct from the gfx1100 wait-packet poll below (RAD20), whose MES 0x88 trial did not
 help.
 
