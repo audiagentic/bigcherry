@@ -7,13 +7,14 @@
 #include "moe_lane_reduce.h"
 #include "moe_lane_host.h"
 #include "worker_slot_pool.h"
+#include "worker_move_slots.h"
 #include "worker_generation_tables.h"
 #include <memory>
 #include "rad_abi_layout.h"
 
 namespace r3_moe_gpu {
 
-class Runner {
+class Runner : public r3::worker_moves::Operations {
 public:
     explicit Runner(const Container& model) : model_(model) {}
     /* The decode GEMV for the weight format in use (W4 nonlinear nibbles or FP8 block-scaled). */
@@ -111,6 +112,14 @@ public:
         return n <= 1024 ? n : 0u;
     }
     ~Runner() {
+        if (copy_event_) (void)hipEventDestroy(copy_event_);
+        if (copy_stream_) {
+            // Pinned H2D source and resident arena must outlive any queued
+            // private-stream read, even if shutdown interrupted a proposal.
+            (void)hipStreamSynchronize(copy_stream_);
+            (void)hipStreamDestroy(copy_stream_);
+        }
+        if (move_host_) (void)hipHostFree(move_host_);
         if (stream_) (void)hipStreamDestroy(stream_);
         for (auto& l : lane_) {
             if (l.sample_start) (void)hipEventDestroy(l.sample_start);
@@ -174,7 +183,9 @@ public:
         if (!load_plugin()) return false;
         if (!hip_ok(hipStreamCreateWithFlags(&stream_, hipStreamNonBlocking), "hipStreamCreate")) return false;
         experts_.resize((size_t)model_.layers * experts());
-        tables_.resize(model_.layers);
+        tables_.resize(size_t(r3::worker_tables::kGenerations) * model_.layers);
+        initial_locals_.assign(size_t(model_.layers)*experts(),-1);
+        fixed_locals_.assign(size_t(model_.layers)*experts(),-1);
         /* hidden width and expert count are the container's; row capacity, top-k and group are the protocol's until negotiated */
         return set_shape(r3::moe_shm::LayoutShape{model_.hidden, model_.top_k ? model_.top_k : r3::moe_shm::kTopK, model_.experts, r3::moe_shm::kMaxRows,
                                                   r3::moe_shm::kActGroup, model_.intermediate});
@@ -282,8 +293,11 @@ public:
         }
         for (uint32_t es = 0; es < nreg; ++es) if (!seen[es]) return false;
 
+        for (uint32_t e=0;e<experts();++e)
+            fixed_locals_[size_t(layer)*experts()+e]=slot_of_expert[e];
         for (auto [l, e] : owned) {
             if (l != layer || slot_of_expert[e] < 0) continue;
+            initial_locals_[size_t(l)*experts()+e] = slot_of_expert[e];
             const uint32_t es = (uint32_t)slot_of_expert[e];
             Expert& x = experts_[(size_t)l * experts() + e];
             uint32_t id = 0;
@@ -308,6 +322,85 @@ public:
             if (!build_layer_table(layer, slot_of_expert, generation)) return false;
         layer_loaded_[layer] = 1;
         return true;
+    }
+
+    r3::residency::Ledger* move_ledger() {
+        return slots_ ? &slots_->ledger() : nullptr;
+    }
+    const std::vector<int32_t>& initial_locals() const { return initial_locals_; }
+    uint64_t expert_stride() const { return slots_ ? slots_->stride() : 0; }
+    int32_t preferred_local(uint32_t expert) const override {
+        return expert<fixed_locals_.size() ? fixed_locals_[expert] : -1;
+    }
+    void activate_bank(uint32_t slot) override { active_generation_=slot; }
+    bool start_upload(uint32_t expert, uint32_t physical, uint32_t local) override {
+        if (!slots_ || copy_pending_ || staging_upload_ || expert>=experts_.size() ||
+            local>=experts() || preferred_local(expert)!=int32_t(local) ||
+            !slots_->address(physical) ||
+            experts_[expert].live) return false;
+        if (!copy_stream_ &&
+            !hip_ok(hipStreamCreateWithFlags(&copy_stream_,hipStreamNonBlocking),
+                    "create expert copy stream")) return false;
+        if (!move_host_ &&
+            !hip_ok(hipHostMalloc(reinterpret_cast<void**>(&move_host_),
+                                  size_t(slots_->stride()),hipHostMallocDefault),
+                    "pin incoming expert host staging")) return false;
+        const uint32_t l=expert/experts(), e=expert%experts();
+        const uint64_t bytes=slot_cost(l,e);
+        if (!bytes || bytes>slots_->stride()) return false;
+        loading_base_=static_cast<uint8_t*>(slots_->address(physical));
+        loading_size_=bytes; loading_used_=0; staging_upload_=true;
+        std::memset(move_host_,0,size_t(slots_->stride()));
+        Expert& x=experts_[expert];
+        const bool encoded=
+            upload_weight(model_.weight(l,e,0),true,local,&x.gu) &&
+            upload_weight(model_.weight(l,e,1),false,local,&x.dn) &&
+            loading_used_==bytes;
+        staging_upload_=false; loading_base_=nullptr;
+        loading_size_=loading_used_=0;
+        if (!encoded) { x={}; return false; }
+        if (!hip_ok(hipEventCreateWithFlags(&copy_event_,hipEventDisableTiming),
+                    "create per-expert copy event")) { x={}; return false; }
+        if (!hip_ok(hipMemcpyAsync(slots_->address(physical),move_host_,
+                                   size_t(bytes),hipMemcpyHostToDevice,copy_stream_),
+                    "upload incoming expert on private stream") ||
+            !hip_ok(hipEventRecord(copy_event_,copy_stream_),
+                    "record expert copy completion")) {
+            (void)hipStreamSynchronize(copy_stream_);
+            (void)hipEventDestroy(copy_event_); copy_event_=nullptr; x={}; return false;
+        }
+        move_expert_=expert; copy_pending_=true;
+        return true;
+    }
+    r3::worker_moves::Event upload_event() override {
+        using r3::worker_moves::Event;
+        if (!copy_pending_ || !copy_event_) return Event::FAILED;
+        const hipError_t status=hipEventQuery(copy_event_);
+        if (status==hipErrorNotReady) return Event::PENDING;
+        if (status!=hipSuccess) return Event::FAILED;
+        (void)hipEventDestroy(copy_event_); copy_event_=nullptr;
+        experts_[move_expert_].live=true;
+        move_expert_=UINT32_MAX; copy_pending_=false;
+        return Event::COMPLETE;
+    }
+    bool build_bank(uint32_t generation,const std::vector<int32_t>& locals) override {
+        if (!slots_ || generation>1 || generation==active_generation_ ||
+            copy_pending_ || locals.size()!=size_t(model_.layers)*experts())
+            return false; // the active pointer bank is never writable
+        for (uint32_t layer=0; layer<model_.layers; ++layer)
+            if (!build_layer_table(layer,locals.data()+size_t(layer)*experts(),generation))
+                return false;
+        return true;
+    }
+    bool drain_upload() override {
+        if (copy_stream_ && !hip_ok(hipStreamSynchronize(copy_stream_),
+                                   "drain precommit expert copy")) return false;
+        if (copy_event_) { (void)hipEventDestroy(copy_event_); copy_event_=nullptr; }
+        move_expert_=UINT32_MAX; copy_pending_=false; staging_upload_=false;
+        return true;
+    }
+    void forget(uint32_t expert) override {
+        if (expert<experts_.size()) experts_[expert]={};
     }
 
     int compute(void* map, r3::moe_shm::Request* q) {
@@ -1078,6 +1171,14 @@ private:
     std::unique_ptr<r3::worker_slots::Pool<HipSlotAllocator>> slots_;
     uint64_t free_before_lanes_ = 0;
     bool lane_free_sampled_ = false;
+    std::vector<int32_t> initial_locals_; // bootstrap's retained per-layer logical index
+    std::vector<int32_t> fixed_locals_; // engine's immutable per-layer expert map
+    uint8_t* move_host_ = nullptr; // pinned mirror of one physical staging stride
+    hipStream_t copy_stream_ = nullptr; // never used by serving streams
+    hipEvent_t copy_event_ = nullptr; // a fresh event for each gained expert
+    uint32_t move_expert_ = UINT32_MAX;
+    bool staging_upload_ = false, copy_pending_ = false;
+    uint32_t active_generation_ = 0;
     uint8_t* loading_base_ = nullptr;
     uint64_t loading_size_ = 0, loading_used_ = 0;
 
@@ -1414,6 +1515,18 @@ private:
         return true;
     }
 
+    bool transfer_plane(void* dst, const void* src, size_t bytes, const char* label) {
+        if (!staging_upload_) return hip_ok(hipMemcpy(dst, src, bytes, hipMemcpyHostToDevice),label);
+        // Device pointers are opaque host addresses. Compare integer offsets,
+        // not C++ pointers from unrelated virtual address spaces.
+        const uintptr_t base=reinterpret_cast<uintptr_t>(loading_base_);
+        const uintptr_t address=reinterpret_cast<uintptr_t>(dst);
+        if (!move_host_ || !loading_base_ || address<base ||
+            address-base>loading_size_ ||
+            bytes>loading_size_-(address-base)) return false;
+        std::memcpy(move_host_+(address-base),src,bytes);
+        return true;
+    }
     bool upload_weight(const RadFileEntry* e, bool gate_up, uint32_t expert_slot,
                        std::array<StoredWeight, r3::moe_shm::kMaxEngineRanks>* out) {
         WeightPlan p;
@@ -1441,8 +1554,8 @@ private:
             w.code = arena_take(code.size());
             w.scale = arena_take(scale.size());
             if (!w.code || !w.scale ||
-                !hip_ok(hipMemcpy(w.code, code.data(), code.size(), hipMemcpyHostToDevice), "upload expert codes") ||
-                !hip_ok(hipMemcpy(w.scale, scale.data(), scale.size(), hipMemcpyHostToDevice), "upload expert scales"))
+                !transfer_plane(w.code, code.data(), code.size(), "upload expert codes") ||
+                !transfer_plane(w.scale, scale.data(), scale.size(), "upload expert scales"))
                 return false;
             w.code_dtype = p.code.dtype;
             w.scale_dtype = p.scale.dtype;
@@ -1526,10 +1639,8 @@ private:
             w.code = arena_take(code.size());
             w.scale = arena_take(scale.size());
             if (!w.code || !w.scale ||
-                !hip_ok(hipMemcpy(w.code, code.data(), code.size(), hipMemcpyHostToDevice),
-                        "upload sliced expert codes") ||
-                !hip_ok(hipMemcpy(w.scale, scale.data(), scale.size(), hipMemcpyHostToDevice),
-                        "upload sliced expert scales"))
+                !transfer_plane(w.code, code.data(), code.size(), "upload sliced expert codes") ||
+                !transfer_plane(w.scale, scale.data(), scale.size(), "upload sliced expert scales"))
                 return false;
             w.code_dtype = p.code.dtype;
             w.scale_dtype = p.scale.dtype;
@@ -1548,7 +1659,7 @@ private:
     }
 
     bool build_one_table(const std::vector<void*>& host, void** dev) {
-        *dev = alloc_persistent(host.size() * sizeof(void*));
+        if (!*dev) *dev = alloc_persistent(host.size() * sizeof(void*));
         return *dev && hip_ok(hipMemcpy(*dev, host.data(), host.size() * sizeof(void*),
                                         hipMemcpyHostToDevice), "upload expert pointer table");
     }
@@ -1565,8 +1676,7 @@ private:
             if (es >= 0) slot_map[e] = (uint16_t)es;
         }
 
-        LayerTables shadow{};
-        LayerTables& lt = generation ? shadow : tables_[l];
+        LayerTables& lt = tables_[r3::worker_tables::table_index(generation,l,model_.layers)];
         lt.gu_code_dtype = gu_code_dtype_; lt.gu_scale_dtype = gu_scale_dtype_;
         lt.dn_code_dtype = dn_code_dtype_; lt.dn_scale_dtype = dn_scale_dtype_;
         for (uint32_t rank = 0; rank < stored_slices(); ++rank) {
@@ -1591,9 +1701,10 @@ private:
         }
 
         const size_t slot_off = (size_t)l * experts() * sizeof(uint16_t);
-        if (generation == 0 &&
+        if (generation==0 && !layer_loaded_[l] &&
             !hip_ok(hipMemcpy(static_cast<uint8_t*>(d_expert_slot_.p) + slot_off,
-                              slot_map.data(), slot_map.size() * sizeof(uint16_t), hipMemcpyHostToDevice),
+                              slot_map.data(),slot_map.size()*sizeof(uint16_t),
+                              hipMemcpyHostToDevice),
                     "upload immutable runtime expert slot map"))
             return false;
 
@@ -1606,7 +1717,8 @@ private:
                 dt.dn_scale[rank][parity] = lt.dn_scale[rank][parity];
             }
         }
-        dt.expert_slot = static_cast<const uint16_t*>(d_expert_slot_.p) + (size_t)l * experts();
+        dt.expert_slot = static_cast<const uint16_t*>(d_expert_slot_.p) +
+            size_t(l)*experts();
         return hip_ok(hipMemcpy(static_cast<uint8_t*>(d_layer_tables_.p) +
                                     r3::worker_tables::table_index(generation, l, model_.layers) *
                                         sizeof(DeviceLayerTables),

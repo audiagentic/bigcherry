@@ -40,7 +40,7 @@ public:
         const uint32_t ranks = c.expected_ranks;
         const uint32_t actual = ops.actual_ranks();
         const bool current = actual && actual <= kMaxEngineRanks &&
-            ranks == ((1u << actual) - 1u) && same_map_cycle(map,c);
+            ranks == ((1u << actual) - 1u) && placement_candidate_valid(map,c);
         auto fail = [&]() -> bool { ops.fatal(); return false; };
         auto fault_ranks = [&](AckPhase phase, FaultCode code) {
             for (uint32_t rank=0; rank<kMaxEngineRanks; ++rank)

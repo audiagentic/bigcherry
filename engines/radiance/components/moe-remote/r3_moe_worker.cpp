@@ -535,8 +535,24 @@ int main(int argc, char** argv) {
                 return uint64_t(now.tv_sec) * 1'000'000'000ULL + uint64_t(now.tv_nsec);
             }
         } epoch_clock;
-        // R3_MOE_WORKER_EPOCH_CYCLE_S on every helper (moves to experiment.helper.epoch_cycle_s with manifest v1).
-        r3::epoch::EpochCycle epoch_cycle(map, helper_index, epoch_clock, std::chrono::seconds{cfg.epoch_cycle_s});
+        // Every helper owns its physical slot participant; proposals still
+        // enter exclusively through the existing placement Controller.
+        PlacementControl bootstrap_control{};
+        if (!placement_snapshot(map,&bootstrap_control) ||
+            bootstrap_control.state != uint32_t(PlacementState::ACTIVE) ||
+            !gpu->move_ledger()) return 1;
+        r3::worker_moves::Participant migration(
+            *gpu->move_ledger(), *gpu, helper_index, model.layers, model.experts,
+            gpu->expert_stride());
+        if (!migration.initialize(map,bootstrap_control.active_slot,gpu->initial_locals())) {
+            std::fprintf(stderr,"r3_moe_worker: failed to verify bootstrap resident slots\n");
+            return 1;
+        }
+        // A zero diagnostic period disables only synthetic same-map cycles;
+        // the participant must still service actual proposals and reopen ACKs.
+        r3::epoch::EpochCycle epoch_cycle(
+            map, helper_index, epoch_clock, std::chrono::seconds{cfg.epoch_cycle_s},
+            {}, &migration);
         for (uint32_t v; (v = g_stop_word.load(std::memory_order_acquire)) == 0;) {
             if (!epoch_cycle.tick()) {
                 PlacementControl failed{};

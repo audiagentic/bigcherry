@@ -5,6 +5,11 @@
 #include "owner_generation.h"
 #include <sys/mman.h>
 #include "worker_residency.h"
+#include "worker_move_slots.h"
+#include "worker_slot_pool.h"
+#include "worker_generation_tables.h"
+#include <map>
+#include <new>
 #include "worker_heat.h"
 #include <algorithm>
 #include <array>
@@ -921,6 +926,454 @@ static void V23Cycle_SamePlacementAndSharedProtocol(
           control->active_slot==slot,"precommit timeout never switches active epoch or slot");
     munmap(base,layout.bytes);
 }
+
+// Live-move tests use production Pool/Ledger/Participant/EpochCycle/Controller/
+// EngineRankCoordinator. Only device HIP allocations, copy events and rank
+// operations are faked; the controller proposal is the real entry point.
+struct MoveAllocator {
+    std::map<void*,uint64_t> live;
+    uint64_t bytes=0, peak=0;
+    bool allocate(uint64_t n,void** out) {
+        if (!n || n>SIZE_MAX) return false;
+        *out=new(std::nothrow) uint8_t[size_t(n)];
+        if (!*out) return false;
+        live.emplace(*out,n);
+        bytes+=n; peak=std::max(peak,bytes);
+        return true;
+    }
+    void release(void* p) {
+        auto it=live.find(p);
+        check(it!=live.end(),"fake allocator owns each released physical arena");
+        bytes-=it->second;
+        live.erase(it); delete[] static_cast<uint8_t*>(p);
+    }
+};
+struct MoveOperations : r3::worker_moves::Operations {
+    r3::residency::Ledger& ledger;
+    uint32_t active=0, layers=0, experts=0;
+    std::vector<int32_t> locals[2], physical[2];
+    bool ready[2]{true,false};
+    bool busy=false, event_ready=false;
+    uint32_t pending_expert=UINT32_MAX, upload_count=0, events_seen=0, banks_built=0;
+    MoveOperations(r3::residency::Ledger& l,uint32_t ls,uint32_t es,
+                   const std::vector<int32_t>& initial)
+        : ledger(l),layers(ls),experts(es) {
+        locals[0]=initial;
+        physical[0].assign(initial.size(),-1);
+        for (const auto& s: ledger.slots())
+            if (s.state==r3::residency::State::ACTIVE)
+                physical[0][s.expert]=int32_t(s.id);
+    }
+    bool start_upload(uint32_t expert,uint32_t slot,uint32_t local) override {
+        if (busy || slot>=ledger.slots().size() ||
+            ledger.slots()[slot].state!=r3::residency::State::COPYING ||
+            ledger.slots()[slot].expert!=expert || local>=experts)
+            return false;
+        busy=true;event_ready=false;
+        pending_expert=expert;
+        ++upload_count;
+        return true;
+    }
+    r3::worker_moves::Event upload_event() override {
+        if (!busy) return r3::worker_moves::Event::FAILED;
+        if (!event_ready) return r3::worker_moves::Event::PENDING;
+        busy=false;event_ready=false; pending_expert=UINT32_MAX;
+        ++events_seen;
+        return r3::worker_moves::Event::COMPLETE;
+    }
+    bool build_bank(uint32_t generation,const std::vector<int32_t>& values) override {
+        if (generation==active || generation>1 || busy ||
+            values.size()!=size_t(layers)*experts || upload_count!=events_seen)
+            return false; // guard: no active-bank writes or early READY
+        std::vector<int32_t> proposed(values.size(),-1);
+        for (size_t i=0;i<values.size();++i) {
+            if (values[i]<0) continue;
+            for (const auto& slot:ledger.slots())
+                if (slot.expert==i &&
+                    (slot.state==r3::residency::State::ACTIVE ||
+                     slot.state==r3::residency::State::READY)) {
+                    proposed[i]=int32_t(slot.id);
+                    break;
+                }
+            if (proposed[i]<0) return false;
+        }
+        locals[generation]=values;physical[generation]=proposed;
+        ready[generation]=true;++banks_built;
+        return true;
+    }
+    bool drain_upload() override {
+        busy=false;event_ready=false;pending_expert=UINT32_MAX;
+        return true;
+    }
+    void forget(uint32_t) override {}
+    void activate_bank(uint32_t generation) override {
+        check(generation!=active && generation<2 && ready[generation],
+              "activate built inactive bank");
+        active=generation;
+    }
+    int32_t preferred_local(uint32_t expert) const override {
+        return expert<layers*experts ? int32_t(expert%experts) : -1;
+    }
+    void complete() { check(busy,"fake event is for outstanding expert");event_ready=true; }
+    int32_t serving(uint32_t gen,uint32_t expert) const {
+        if (gen>1 || !ready[gen] || expert>=physical[gen].size()) return -1;
+        return physical[gen][expert];
+    }
+};
+
+static void V23Move_PhysicalSlotLimitIndependentOfByteBudget() {
+    MoveAllocator allocator;
+    // The physical slot count is fixed even if budget leaves extra unused
+    // bytes. A fourth ledger ID would have no physical GPU address.
+    r3::worker_slots::Pool<MoveAllocator> pool(4*256,256,2,allocator);
+    uint32_t a=UINT32_MAX,b=UINT32_MAX,c=UINT32_MAX,d=UINT32_MAX;
+    check(pool.bootstrap(0,256,1,&a)==r3::residency::Result::OK &&
+          pool.bootstrap(1,256,1,&b)==r3::residency::Result::OK &&
+          pool.ledger().reserve(2,256,2,true,&c)==r3::residency::Result::OK &&
+          c==2 && pool.address(c) &&
+          pool.ledger().reserve(3,256,2,true,&d)==
+              r3::residency::Result::DEFERRED_CAPACITY &&
+          pool.address(3)==nullptr,
+          "physical max slots rejects capacity despite unused byte budget");
+}
+
+static void V23Move_ChangedMapThroughProduction(uint32_t helpers,uint32_t ranks) {
+    check((helpers==1 && ranks==2)||(helpers==3 && ranks==1),
+          "supported migration shapes");
+    const LayoutShape shape{128,helpers,3,8,128,64};
+    Layout layout{};
+    check(layout_for(shape,2,slots_for(helpers),&layout),"move layout");
+    void* map=mmap(nullptr,layout.bytes,PROT_READ|PROT_WRITE,
+                   MAP_PRIVATE|MAP_ANONYMOUS,-1,0);
+    check(map!=MAP_FAILED && init(map,2,shape,helpers),"move segment");
+    auto* h=static_cast<Header*>(map);
+    h->helper_count=helpers;
+    auto* control=placement_control(map);
+    control->expected_ranks=(1u<<ranks)-1u;
+    struct Selected {std::vector<std::pair<uint32_t,uint32_t>> expert;};
+    std::vector<Selected> selected(helpers);
+    // The tail has a genuinely smaller physical budget/arena. The second
+    // layer's third expert stays local in both arrangements.
+    selected[0].expert={{0,0},{1,0}};
+    if (helpers==3) {
+        selected[1].expert={{0,1},{1,1}};
+        selected[2].expert={{0,2}};
+    }
+    for (uint32_t i=0;i<helpers;++i)
+        check(publish_owned(map,selected[i],i),"move bootstrap owners");
+    for (uint32_t i=0;i<helpers;++i)
+        check(mark_bootstrap_filtered(map,i),"move bootstrap filtered");
+    SharedTransport bootstrap(map);
+    check(bootstrap.seal_bootstrap(),"move bootstrap seal");
+    const uint64_t original_digest=generation_digest(map,0);
+    check(original_digest==control->active_digest,"move sealed active digest");
+
+    constexpr uint64_t stride=256; // fake payload, not production slot constant
+    std::vector<std::unique_ptr<MoveAllocator>> alloc;
+    using MovePool=r3::worker_slots::Pool<MoveAllocator>;
+    std::vector<std::unique_ptr<MovePool>> pools;
+    std::vector<std::unique_ptr<MoveOperations>> ops;
+    std::vector<std::unique_ptr<r3::worker_moves::Participant>> migration;
+    std::vector<std::unique_ptr<EpochCycle>> participants;
+    FakeClock clock;
+    for (uint32_t helper=0;helper<helpers;++helper) {
+        alloc.emplace_back(std::make_unique<MoveAllocator>());
+        const auto capacity=uint32_t(selected[helper].expert.size());
+        pools.emplace_back(std::make_unique<MovePool>(capacity*stride,stride,
+                                                     capacity,*alloc.back()));
+        std::vector<int32_t> locals(size_t(shape.experts)*2,-1);
+        for (auto [l,e]:selected[helper].expert) {
+            const uint32_t id=l*shape.experts+e;
+            uint32_t physical=UINT32_MAX;
+            locals[id]=int32_t(e);
+            check(pools.back()->bootstrap(id,stride,1,&physical)==
+                  r3::residency::Result::OK,"move bootstrap physical slot");
+        }
+        ops.emplace_back(std::make_unique<MoveOperations>(
+            pools.back()->ledger(),2,shape.experts,locals));
+        check(!ops.back()->build_bank(0,locals),
+              "active pointer bank is never writable while serving N");
+        migration.emplace_back(std::make_unique<r3::worker_moves::Participant>(
+            pools.back()->ledger(),*ops.back(),helper,2,shape.experts,stride));
+        check(migration.back()->initialize(map,0,locals),"move initialize ledger");
+        participants.emplace_back(std::make_unique<EpochCycle>(
+            map,helper,clock,std::chrono::nanoseconds{0},Deadlines{},migration.back().get()));
+    }
+    auto peers=[&]() {
+        for (uint32_t i=1;i<helpers;++i)
+            check(participants[i]->tick(),"move peer phase");
+    };
+    check(participants[0]->tick(),"move controller bootstrap");
+    Controller* controller=participants[0]->proposal_controller();
+    check(controller && controller->can_propose(),"move proposal uses existing controller");
+    r3::admission::Ledger ledger(5);
+    check(ledger.initialize(1,0),"move engine admission ledger");
+    FakeCycleUpload gpu[2];
+    for (uint32_t rank=0;rank<ranks;++rank) {
+        check(r3::owner_generation::build_bitmap(map,0,1,original_digest,&gpu[rank].bits[0]),
+              "move rank bootstrap bitmap");
+        gpu[rank].binding[0]={1,original_digest};
+        gpu[rank].issued[0]=gpu[rank].event_ready[0]=true;
+    }
+    FakeRankOperations rank_ops(map,ledger,gpu,ranks);
+    EngineRankCoordinator coordinator;
+    const uint64_t fixed_bytes[3] = {
+        alloc[0]->bytes,
+        helpers==3?alloc[1]->bytes:0,
+        helpers==3?alloc[2]->bytes:0
+    };
+
+    // More incoming experts than physically free slots is a current-phase
+    // CAPACITY fault. The initially selected physical slots are still held
+    // by ACTIVE(N), including those scheduled to leave this very transaction.
+    {
+        auto* pending=generation_header(map,1);
+        std::memcpy(generation_map(map,1),generation_map(map,0),h->owner_map_bytes);
+        if (helpers==3) {
+            generation_map(map,1)[0]=1;  // helper 1 gains two while holding its two
+            generation_map(map,1)[shape.experts]=1;
+        } else {
+            generation_map(map,1)[1]=0; // helper 0 gains two while holding its two
+            generation_map(map,1)[2]=0;
+        }
+        pending->epoch=2;
+        pending->digest=generation_digest(map,1);
+        pending->state=uint32_t(GenerationState::STAGING);
+        pending->ready_helpers=pending->ready_ranks=0;
+        const uint64_t saved_digest=control->active_digest;
+        check(controller->propose(pending->digest),"capacity candidate proposed through controller");
+        check(participants[0]->tick() &&
+              control->state==uint32_t(PlacementState::RESERVING),
+              "capacity proposal enters reservation");
+        peers();
+        if (helpers==3)
+            check(read_shared_ack(map,1).fault_code==uint32_t(FaultCode::CAPACITY) &&
+                  migration[1]->reserve(map,*control)==FaultCode::CAPACITY,
+                  "capacity fault stays sticky across duplicate reservation ticks");
+        check(participants[0]->tick(),"capacity detection by helper");
+        check(participants[0]->tick() &&
+              control->state==uint32_t(PlacementState::ACTIVE) &&
+              control->active_epoch==1 && control->active_slot==0 &&
+              control->active_digest==saved_digest &&
+              placement_journal(map)->entry[control->journal_index].fault==
+                  uint32_t(FaultCode::CAPACITY),
+              "capacity ACK aborts forward without changing ACTIVE(N)");
+        peers();
+        check(participants[0]->tick(),"cancel precommit reservations after capacity abort");
+        for (uint32_t helper=0;helper<helpers;++helper) {
+            check(migration[helper]->transaction()==0 &&
+                  pools[helper]->ledger().charged()==
+                      selected[helper].expert.size()*stride &&
+                  alloc[helper]->bytes==fixed_bytes[helper] &&
+                  ops[helper]->active==0 &&
+                  ops[helper]->banks_built==0,
+                  "capacity rollback leaves every old slot/bank and physical allocation untouched");
+        }
+    }
+
+    for (uint32_t cycle=1;cycle<=1000;++cycle) {
+        const uint32_t old_slot=control->active_slot,new_slot=1u-old_slot;
+        const uint64_t old_digest=control->active_digest;
+        const uint8_t old_owner=owner_at(map,old_slot,0,0);
+        const uint8_t new_owner=(helpers==3 && cycle<=4) ?
+            (cycle==2 || cycle==3 ? uint8_t(1) : uint8_t(0)) :
+            ((cycle&1) ? (helpers==3 ? uint8_t(1) : kOwnerLocal) : uint8_t(0));
+        const std::vector<uint8_t> old_map(
+            generation_map(map,old_slot),
+            generation_map(map,old_slot)+h->owner_map_bytes);
+        StepTicket ticket{};
+        check(ledger.admit(2,&ticket)==r3::admission::Ledger::Result::Ok &&
+              ledger.bind(ticket.ticket_id,cycle) &&
+              ticket.generation_slot==old_slot &&
+              ticket.placement_epoch==cycle,
+              "move actual request admitted on immutable old generation");
+        auto* pending=generation_header(map,new_slot);
+        std::memcpy(generation_map(map,new_slot),
+                    generation_map(map,old_slot),h->owner_map_bytes);
+        generation_map(map,new_slot)[0]=new_owner;
+        // Produce two free destination slots via three safe one-expert
+        // moves, then transfer K=2 experts from helper 1 to helper 0 in
+        // one real transaction. Both uploads have independent fake events.
+        if (helpers==3 && cycle==1) generation_map(map,new_slot)[1]=0;
+        if (helpers==3 && cycle==3)
+            generation_map(map,new_slot)[shape.experts]=1;
+        if (helpers==3 && cycle==4)
+            generation_map(map,new_slot)[shape.experts]=0;
+        check(!std::equal(old_map.begin(),old_map.end(),
+                          generation_map(map,new_slot)),
+              "candidate changes at least one canonical owner");
+        pending->epoch=control->active_epoch+1;
+        pending->digest=generation_digest(map,new_slot);
+        pending->ready_helpers=pending->ready_ranks=0;
+        pending->state=uint32_t(GenerationState::STAGING);
+        for (uint32_t helper=0;helper<helpers;++helper)
+            ops[helper]->ready[new_slot]=false;
+        check(controller->propose(pending->digest),"move proposed via controller");
+        const uint64_t transaction=control->transaction_id;
+        check(control->active_slot==old_slot &&
+              control->active_digest==old_digest &&
+              std::equal(old_map.begin(),old_map.end(),
+                         generation_map(map,old_slot)),
+              "proposing never mutates active generation");
+        check(participants[0]->tick() &&
+              control->state==uint32_t(PlacementState::RESERVING),
+              "move proposal enters RESERVING");
+        peers();
+        check(participants[0]->tick(),"move helper reserve");
+        PlacementControl snapshot{};
+        check(placement_snapshot(map,&snapshot) &&
+              coordinator.step(map,snapshot,rank_ops),"move engine reserve");
+        check(participants[0]->tick() &&
+              control->state==uint32_t(PlacementState::COPYING),"move copying phase");
+        peers();
+        check(participants[0]->tick(),"move initiate helper uploads");
+        // The gained expert's fake event is deliberately incomplete while a
+        // parent under N reads the exact old bank, and READY is still absent.
+        const uint32_t destination=(new_owner==kOwnerLocal ? UINT32_MAX : new_owner);
+        if (destination!=UINT32_MAX) {
+            check(ops[destination]->busy &&
+                  read_shared_ack(map,destination).phase!=uint32_t(AckPhase::READY),
+                  "READY cannot precede incoming expert's last upload event");
+        }
+        for (uint32_t helper=0;helper<helpers;++helper) {
+            const auto& old_bindings=ops[helper]->physical[old_slot];
+            for (size_t i=0;i<old_bindings.size();++i)
+                check(ops[helper]->serving(old_slot,uint32_t(i))==old_bindings[i],
+                      "old request uses old bank throughout COPYING");
+        }
+        peers();
+        check(participants[0]->tick() &&
+              control->state==uint32_t(PlacementState::COPYING),
+              "incomplete helper events prevent global READY");
+        if (destination!=UINT32_MAX)
+            check(read_shared_ack(map,destination).phase!=uint32_t(AckPhase::READY) &&
+                  !migration[destination]->bank_built() &&
+                  !ops[destination]->ready[new_slot],
+                  "unfinished expert event must not ACK READY or build its bank");
+        // If two experts arrive, completion of the first event only
+        // starts the next transfer; it does not unlock the READY ACK.
+        bool all_built=false;
+        for (uint32_t round=0;round<3;++round) {
+            for (uint32_t helper=0;helper<helpers;++helper)
+                if (ops[helper]->busy) ops[helper]->complete();
+            peers();
+            check(participants[0]->tick(),"move poll independent expert upload events");
+            if (helpers==3 && cycle==4 && round==0)
+                check(ops[0]->busy &&
+                      read_shared_ack(map,0).phase!=uint32_t(AckPhase::READY) &&
+                      !migration[0]->bank_built(),
+                      "K=2 must wait for second expert's distinct event");
+            all_built=true;
+            for (uint32_t helper=0;helper<helpers;++helper)
+                all_built=all_built && migration[helper]->bank_built();
+            if (all_built) break;
+        }
+        check(all_built,"all gained experts finished before candidate READY");
+        if (helpers==3 && cycle==4)
+            check(ops[0]->upload_count==3 && ops[0]->events_seen==3,
+                  "K=2 move used two separate completed copy events");
+        for (uint32_t helper=0;helper<helpers;++helper)
+            check(read_shared_ack(map,helper).phase==uint32_t(AckPhase::READY) &&
+                  migration[helper]->bank_built() &&
+                  ops[helper]->ready[new_slot],
+                  "all helper READY ACKs require complete built banks");
+        check(placement_snapshot(map,&snapshot) &&
+              coordinator.step(map,snapshot,rank_ops),
+              "move ranks issue and record pending bitmap events");
+        for (uint32_t rank=0;rank<ranks;++rank)
+            gpu[rank].complete(new_slot);
+        check(coordinator.step(map,snapshot,rank_ops),
+              "move rank READY after event");
+        check(participants[0]->tick() &&
+              control->state==uint32_t(PlacementState::PREPARED),
+              "move all helper and rank ready");
+        check(participants[0]->tick() &&
+              control->state==uint32_t(PlacementState::QUIESCING),
+              "move quiescing");
+        const auto close=rank_ops.prepare_close();
+        check(ledger.host_complete(ticket.ticket_id) &&
+              ledger.poll([](const StepTicket&,uint32_t) {
+                  return r3::admission::Ledger::Proof::Proven;
+              }) &&
+              ledger.all_ranks_consumed(uint32_t(cycle),close.latest_ticket),
+              "move all ranks consumed");
+        for (uint32_t lane=0;lane<kLanes;++lane) {
+            const uint32_t lane_slot=lane%kMaxSlots;
+            const bool served=(helpers>1 ? lane_slot<helpers :
+                (control->expected_ranks & (1u<<lane_slot))!=0) &&
+                (!lane_is_small(lane)||lane_class(lane)<h->small_class_count);
+            if (!served) continue;
+            h->lane[lane].drain_request=transaction;
+            h->lane[lane].drain_ack=transaction;
+        }
+        check(placement_snapshot(map,&snapshot) &&
+              coordinator.step(map,snapshot,rank_ops),"move drain and close");
+        peers();
+        check(participants[0]->tick() &&
+              control->state==uint32_t(PlacementState::COMMIT),
+              "move commit only after rank/helper quiescence");
+        check(participants[0]->tick() &&
+              generation_header(map,new_slot)->state==
+                  uint32_t(GenerationState::ACTIVE),
+              "move helper marks new generation ACTIVE");
+        peers();
+        check(placement_snapshot(map,&snapshot) &&
+              coordinator.step(map,snapshot,rank_ops),
+              "move all engine ranks commit");
+        check(participants[0]->tick() &&
+              control->state==uint32_t(PlacementState::RETIRING),
+              "move retiring");
+        peers();
+        check(participants[0]->tick(),"move helper retirement ACKs");
+        check(placement_snapshot(map,&snapshot) &&
+              coordinator.step(map,snapshot,rank_ops),
+              "move engine retirement proofs");
+        check(participants[0]->tick() &&
+              control->state==uint32_t(PlacementState::ACTIVE) &&
+              generation_header(map,old_slot)->state==
+                  uint32_t(GenerationState::RETIRED),
+              "move publish committed generation");
+        for (uint32_t helper=0;helper<helpers;++helper)
+            check(!migration[helper]->reclaim(map,*control),
+                  "old physical slot unreclaimable before REOPENED");
+        check(placement_snapshot(map,&snapshot) &&
+              coordinator.step(map,snapshot,rank_ops) &&
+              reopened_exactly(map,*control,transaction),
+              "move engine ledger reopens and publishes exact REOPENED");
+        peers();
+        check(participants[0]->tick(),"move slot reclamation after REOPENED");
+        for (uint32_t helper=0;helper<helpers;++helper) {
+            check(migration[helper]->transaction()==0 &&
+                  ops[helper]->active==new_slot &&
+                  pools[helper]->ledger().valid() &&
+                  alloc[helper]->bytes==fixed_bytes[helper] &&
+                  pools[helper]->ledger().charged()<=
+                      (selected[helper].expert.size()+1)*stride,
+                  "move/return leaves no slot leaks or physical allocation growth");
+            for (const auto& slot:pools[helper]->ledger().slots())
+                check(slot.state==r3::residency::State::FREE ||
+                      slot.state==r3::residency::State::ACTIVE,
+                      "no retained slot stuck in staging or retirement");
+            check(migration[helper]->local(new_slot).size()==h->owner_map_bytes,
+                  "new helper bank remains fully bound");
+        }
+        check(ops[0]->serving(new_slot,0)==
+              (new_owner==0 ? migration[0]->physical(new_slot)[0] : -1),
+              "moved expert bound in correct helper bank");
+        if (helpers==3)
+            check(ops[1]->serving(new_slot,0)==
+                  (new_owner==1 ? migration[1]->physical(new_slot)[0] : -1),
+                  "moved expert bound in receiving helper bank");
+        check((old_owner==0 ? ops[0]->serving(old_slot,0)>=0 :
+                               ops[0]->serving(old_slot,0)==-1),
+              "old generation bank retains the prior owner, not the new one");
+    }
+    for (uint32_t helper=0;helper<helpers;++helper)
+        check(alloc[helper]->peak==alloc[helper]->bytes,
+              "fake physical allocation is fixed across 1000 real-move cycles");
+    check(munmap(map,layout.bytes)==0,"move unmap segment");
+}
+
 int main() {
     V23Cycle_UnreadyAndAbortPreserveOldGeneration();
     V23Cycle_PrecommitAbortDuringLiveServing();
@@ -928,6 +1381,9 @@ int main() {
     V23Bootstrap_UnsealedTickReportsInvalidMap();
     V23Cycle_SamePlacementAndSharedProtocol(1,2);
     V23Cycle_SamePlacementAndSharedProtocol(3,1);
+    V23Move_PhysicalSlotLimitIndependentOfByteBudget();
+    V23Move_ChangedMapThroughProduction(1,2);
+    V23Move_ChangedMapThroughProduction(3,1);
     V23Cycle_SamePlacementAndSharedProtocol(1,2,true);
     V23Epoch_ForwardOnlyAbortRetry();
     V23Ack_OldTxnDelayedDuplicateLost();
