@@ -554,6 +554,35 @@ def _trigger_pr_checks(plan: Plan, pr: dict, phase: str, log=print) -> None:
     log(f"  {phase:<8} required checks had not started; closed and reopened PR #{pr['number']} once to trigger them")
 
 
+def _check_rows(plan: Plan, pr: dict, phase: str) -> list[dict]:
+    """The PR's checks as {name, state, link} rows, read from `gh pr view --json statusCheckRollup` (supported by every
+    gh release in use; `gh pr checks --json` is not). A check run's state is its conclusion once it has one, else its
+    status (QUEUED/IN_PROGRESS); a commit status context reports its own state."""
+    result = _run(plan.repo_root, "gh", "pr", "view", str(pr["number"]), "--json", "statusCheckRollup", check=False)
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout or "").strip()
+        raise PinReleaseError(phase, f"could not read checks for pull request {pr['number']}: {detail[-400:]}")
+    try:
+        rollup = json.loads(result.stdout or "{}").get("statusCheckRollup") or []
+    except (json.JSONDecodeError, AttributeError) as exc:
+        raise PinReleaseError(phase, f"could not parse checks for pull request {pr['number']}") from exc
+    if not isinstance(rollup, list):
+        raise PinReleaseError(phase, f"checks for pull request {pr['number']} are not a list")
+    rows = []
+    for item in rollup:
+        if not isinstance(item, dict):
+            continue
+        name = item.get("name") or item.get("context")
+        # A job of a called (reusable) workflow is listed as "<caller job> / <job>"; its check run, which is what the
+        # ruleset's required context names, is "<job>".
+        if isinstance(name, str) and " / " in name:
+            name = name.rsplit(" / ", 1)[1]
+        state = item.get("conclusion") or item.get("status") or item.get("state") or ""
+        link = item.get("detailsUrl") or item.get("targetUrl") or ""
+        rows.append({"name": name, "state": str(state).upper(), "link": link})
+    return rows
+
+
 def _wait_required_checks(
     plan: Plan,
     pr: dict,
@@ -570,25 +599,7 @@ def _wait_required_checks(
     triggered = False
 
     while True:
-        result = _run(
-            plan.repo_root, "gh", "pr", "checks", str(pr["number"]),
-            "--json", "name,state,link", check=False,
-        )
-        raw = result.stdout.strip()
-        if raw:
-            try:
-                rows = json.loads(raw)
-            except json.JSONDecodeError as exc:
-                raise PinReleaseError(phase, f"could not parse checks for pull request {pr['number']}") from exc
-            if not isinstance(rows, list):
-                raise PinReleaseError(phase, f"checks for pull request {pr['number']} are not a list")
-        else:
-            detail = (result.stderr or "").strip()
-            if result.returncode != 0 and "no checks reported" not in detail.lower():
-                raise PinReleaseError(
-                    phase, f"could not read checks for pull request {pr['number']}: {detail[-400:]}",
-                )
-            rows = []
+        rows = _check_rows(plan, pr, phase)
 
         by_name = {
             row.get("name"): row for row in rows

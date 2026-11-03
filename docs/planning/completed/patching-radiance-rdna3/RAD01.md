@@ -70,7 +70,10 @@ Related: run-multi-engine (MEN*). Rules that apply: shelved work kept on main; b
 
 ## Ledger-events
 
+
 - chg_20261013_030412_radiance-is-now-built-patched_5466
 - 2026-10-13T03:04:20.242361+00:00 (updated-by): Updated: section:ledger-events
 - 2026-10-13T03:04:40.209258+00:00 (updated-by): Updated: section:acceptance_criteria
 - 2026-10-13T03:04:47.177533+00:00 (state-transition): State: pending → completed
+- chg_20261103_032135_the-remote-moe-hand-off-that-l_3451
+- 2026-11-03T03:21:39.347070+00:00 (updated-by): Updated: section:ledger-events
