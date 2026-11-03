@@ -2,6 +2,7 @@
 #undef NDEBUG // Assertions are test requirements even in RelWithDebInfo.
 #endif
 #include "serving.h"
+#include "sha256.h"
 
 #undef NDEBUG   /* the checks below are assert()s: keep them live in Release component builds */
 #include <cassert>
@@ -66,6 +67,8 @@ struct Fixture {
               "SwapTotal:       8388608 kB\n");
         fs::create_directories(root / "dev/shm");
         facts = bc::serving::detect(root);
+        // detect() counts this machine's CPUs; the fixture fixes the count so the result does not depend on the runner.
+        facts["host"]["cpu_count"] = 32;
     }
     ~Fixture() { fs::remove_all(root); }
     fs::path file(const char* name, const std::string& content) {
@@ -156,6 +159,11 @@ void type_range_required(Fixture& t) {
     fail(opts, t.facts, "unknown named layout");
     opts.profile = t.file("derived.toml", "[engine]\nmax_num_seqs = 99\n");
     fail(opts, t.facts, "derived and cannot be overridden");
+    {   // the standard profile's 8 combine threads on a 4-CPU host
+        Json few = t.facts;
+        few["host"]["cpu_count"] = 4;
+        fail(t.standard(), few, "helper.combine_threads exceeds discovered CPU count");
+    }
 }
 
 void precedence_and_caps(Fixture& t) {

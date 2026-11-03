@@ -1,38 +1,28 @@
-# Documentation ownership
+# Documentation
 
-New to the project? Start with the agent orientation guide at
-[`reference/START_HERE.md`](reference/START_HERE.md).
+BigCherry's documentation is organised by the part of the project it
+describes.
 
-For exploratory qualification before formal planning, use the
-[`reference/experiments/EXPERIMENTAL_WORKFLOW.md`](reference/experiments/EXPERIMENTAL_WORKFLOW.md)
-runbook.
+| Location | Contents |
+| --- | --- |
+| [Reference](reference/README.md) | Engine architecture, dispatch, components, patch contracts, testing and build detail |
+| [Radiance](reference/engines/radiance/README.md) | Primary engine: heterogeneous AMD kernels, remote MoE and model results |
+| [llama.cpp](reference/engines/llamacpp/README.md) | Active secondary engine: measured HIP dispatch and patch catalogue |
+| [Planning](planning/) | Active technical designs, decisions and implementation status |
+| [Evidence](evidence/) | Retained measurements and qualification results |
+| [Releases](releases/) | Release notes and recorded changes |
+| [Archive](archive/) | Superseded designs and historical findings |
 
-Use this ownership model when adding or moving documentation:
+The technical detail for each patch or component lives with its source,
+under `engines/llamacpp/patches/`, `engines/radiance/patches/` or
+`engines/radiance/components/`. The
+[patch and component documentation format](reference/DOC_STRUCTURE.md)
+defines the section headings used by the generated catalogues.
 
-- `docs/reference/` contains maintained, cross-cutting guidance and concise engine indexes.
-- `docs/planning/{active,completed}/<plan>/` contains plan-item design, status,
-  decisions, reviews, and work history.
-- `docs/evidence/<run-id>/` contains compact, tracked evidence required for
-  reproducible validation.
-- `artifacts/<run-id>/` contains large, transient, or machine-local campaign
-  outputs and raw traces.
-- `engines/radiance/patches/<patch-id>/` and `engines/radiance/components/<name>/` own Radiance patch and component documentation.
-- `engines/llamacpp/patches/<patch-id>/` contains patch-specific rationale, validation, fixtures,
-  evidence, and support files.
-- `docs/archive/` contains historical or superseded prose and review snapshots;
-  it is never a live authority and is not part of the maintained reference
-  corpus. Historical material has one canonical path here; do not add forwarding
-  copies under `docs/reference/`.
-- `tools/tests/fixtures/` contains permanent deterministic test inputs.
+The [dated Radiance lab history](archive/radiance/LAB_HISTORY.md) and
+[old port/design notes](archive/radiance/) are archived; the current
+[model pages](reference/engines/radiance/README.md#best-measured-models)
+show results for the pinned engine.
 
-When relocating a document, update its consumers in the same change. Preserve
-historical provenance at the canonical `docs/archive/` path rather than keeping
-duplicate redirect files.
-
-Scratch, raw traces, generated corpora, and machine-local outputs are not
-documentation: keep them in ignored `artifacts/`, `work/`, or host-local storage.
-Deterministic inputs required by tests belong under `tools/tests/fixtures/`.
-
-Completed lab work must be distilled before its lab directory is retired: keep only compact decision-grade evidence under `docs/evidence/` and the owning plan/patch record. Raw run trees, copied upstream source, and migration working packs belong in ignored artifacts/host storage or Git history, not the live tree.
-
-Tracked evidence may include a raw measurement sidecar only when it is required to recompute or independently inspect a retained claim and its evidence README identifies that role. Large traces, transient logs, SQLite databases, and regenerable intermediate outputs stay out of Git. Prefer one canonical copy; duplicate payloads are acceptable only when an evidence bundle must remain independently auditable.
+Transient traces and large run outputs are stored separately under
+`artifacts/`; they are not part of the maintained reference.

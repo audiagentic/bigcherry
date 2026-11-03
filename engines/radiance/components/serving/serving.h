@@ -63,5 +63,4 @@ struct Resolved {
 Json detect(const std::filesystem::path& root = "/");
 Json json_schema();
 Resolved resolve(const Options& options, const Json& facts);
-std::string sha256_hex(const std::string& text);
 } // namespace bc::serving
