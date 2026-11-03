@@ -4,7 +4,7 @@ name = "serving"
 engine = "radiance"
 # Existing engine targets; this component itself has no GPU code.
 targets = ["gfx1100", "gfx1201"]
-built-against = "v1.14.0"
+built-against = "v1.16.0"
 outputs = ["bin/bc-serve"]
 
 [build]

@@ -23,6 +23,7 @@ from bigcherry.release import pin_bump
 from bigcherry.source import audit as source_audit
 
 PLATFORM = "linux-radiance"
+LAYOUT = 0x1234abcd5678ef90
 FAKE_HOST = {"RADIANCE_HOST_CC": "/fake/gcc-14", "RADIANCE_HOST_CXX": "/fake/g++-14"}
 HEADER = "#pragma once\n#define RAD_ABI_VERSION 7u\n"
 
@@ -138,11 +139,13 @@ class ComponentGateTests(unittest.TestCase):
         real[component] = dataclasses.replace(real[component], test_targets=targets)
         return patch.object(runtime_bundle.components, "load_all", return_value=real)
 
-    def checks(self, abi: int = 7):
+    def checks(self, abi: int = 7, layouts: dict[str, int | None] | None = None):
+        """`layouts` overrides the layout fingerprint a named plugin reports (None: no export); the rest report LAYOUT."""
+        layouts = layouts or {}
         with patch.dict(os.environ, FAKE_HOST):
             return {c.id: c for c in radiance_bump.compile_checks(
                 self.context, self.source, self.work, platform_name=PLATFORM, runner=self.runner,
-                abi_reader=lambda so: abi, lister=self.lister)}
+                abi_reader=lambda so: (abi, layouts.get(so.name, LAYOUT)), lister=self.lister)}
 
     def run_phase(self, checks):
         with (
@@ -230,6 +233,26 @@ class ComponentGateTests(unittest.TestCase):
         self.assertTrue(failures)
         self.assertTrue(all("is 6" in f and "RAD_ABI_VERSION 7" in f for f in failures))
         self.assertTrue(any(f.startswith("libr3.so") for f in failures))
+
+    def test_plugin_without_layout_export_fails(self):
+        checks = self.checks(layouts={"libr3.so": None})
+        checks["components-build"].run()
+        failures = checks["component-plugin-abi"].run()
+        self.assertEqual(len(failures), 1)
+        self.assertTrue(failures[0].startswith("libr3.so") and "RAD_PLUGIN_ABI_LAYOUT_EXPORT" in failures[0])
+
+    def test_plugin_layout_differing_from_libr4d_fails(self):
+        checks = self.checks(layouts={"libr3.so": LAYOUT + 1})
+        checks["components-build"].run()
+        failures = checks["component-plugin-abi"].run()
+        self.assertEqual(len(failures), 1)
+        self.assertTrue(failures[0].startswith("libr3.so") and "libr4d.so reports" in failures[0])
+
+    def test_reference_plugin_without_layout_refuses_to_judge(self):
+        checks = self.checks(layouts={"libr4d.so": None})
+        checks["components-build"].run()
+        with self.assertRaises(BumpCheckError):
+            checks["component-plugin-abi"].run()
 
     def test_checks_after_a_failed_build_refuse_to_run(self):
         self.failing = "cmake"
@@ -388,6 +411,34 @@ class RadianceAuditTests(unittest.TestCase):
         ids = {c["id"] for c in report["checks"]}
         self.assertIn("overlay.vendor_sync", ids)
         self.assertNotIn("root.is_ggml_cuda_checkout", ids)
+
+
+class ReadPluginAbiTests(unittest.TestCase):
+    """read_plugin_abi on a real shared object (no mock): a plugin that calls functions only the engine executable
+    exports (libr3moe uses rad_event_*) must still report its ABI version outside the engine."""
+
+    def _plugin(self, tmp: Path, body: str) -> Path:
+        cc = shutil.which("cc") or shutil.which("gcc") or shutil.which("clang")
+        if cc is None:
+            self.skipTest("no C compiler")
+        src, so = tmp / "plugin.c", tmp / "libplugin.so"
+        src.write_text(body, encoding="utf-8")
+        subprocess.run([cc, "-shared", "-fPIC", "-o", str(so), str(src)], check=True, capture_output=True)
+        return so
+
+    def test_reads_version_of_plugin_with_engine_only_symbols(self):
+        with tempfile.TemporaryDirectory(dir=os.environ.get("TMPDIR")) as tmp:
+            so = self._plugin(Path(tmp),
+                              "void rad_event_destroy(void* e);\n"
+                              "unsigned rad_plugin_abi_version(void) { return 33u; }\n"
+                              "void uses_engine(void* e) { rad_event_destroy(e); }\n")
+            self.assertEqual(radiance_bump.read_plugin_abi(so), (33, None))
+
+    def test_missing_version_export_is_a_check_error(self):
+        with tempfile.TemporaryDirectory(dir=os.environ.get("TMPDIR")) as tmp:
+            so = self._plugin(Path(tmp), "unsigned other(void) { return 1u; }\n")
+            with self.assertRaises(BumpCheckError):
+                radiance_bump.read_plugin_abi(so)
 
 
 if __name__ == "__main__":
