@@ -343,9 +343,10 @@ static void V23Cycle_SamePlacementAndSharedProtocol() {
         // Even after burst ends, an in-flight transaction must make progress.
         h->burst=0;
         check(ledger.host_complete(ticket.ticket_id), "cycle host completion");
-        for (unsigned rank=0;rank<2;++rank)
-            check(ledger.gpu_complete(ticket.ticket_id,rank) && ledger.consumed(ticket.ticket_id,rank),
-                  "cycle terminal and consumption proof");
+        check(ledger.poll([&](const StepTicket& t, uint32_t) {
+                  return t.ticket_id==ticket.ticket_id ? r3::admission::Ledger::Proof::Proven
+                                                       : r3::admission::Ledger::Proof::Pending;
+              }), "cycle terminal and consumption proof");
         check(ledger.drained(1,cutoff.latest_ticket), "ledger drain proof");
         for (uint32_t lane=0;lane<kLanes;++lane) {
             if (lane % kMaxSlots >= 2 || (lane_is_small(lane) && lane_class(lane)>=h->small_class_count)) continue;

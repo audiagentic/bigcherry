@@ -36,8 +36,7 @@ public:
         bool bound = false;
         bool host_done = false;
         uint32_t ranks = 0;
-        uint32_t gpu_mask = 0;
-        uint32_t consumed_mask = 0;
+        uint32_t proven_mask = 0;   /* ranks whose event and consumption proof both held (poll) */
     };
     struct Snapshot {
         uint64_t latest_ticket = 0;
@@ -143,11 +142,10 @@ public:
         retire_locked();
         return true;
     }
-    /* Rank signals are monotone, repeatable and may complete out of order. A
-     * rank is complete only after its per-parent event is observed AND its
-     * request-consumed stamps are verified. */
-    /* The serving-path form of gpu_complete + consumed: one lock for every
-     * host-complete parent. prove(ticket, rank) runs under the ledger lock and
+    /* The only way a rank completes a parent: one lock for every host-complete
+     * parent. prove(ticket, rank) proves a rank only after its per-parent event
+     * is observed AND its request-consumed stamp is verified (RankCompletion);
+     * ranks may complete out of order. prove runs under the ledger lock and
      * must not re-enter it. A rank's terminal events are recorded in admission
      * order on one stream, so once a rank is pending no younger parent is asked
      * for that rank; the scan ends when every rank is pending. Cost is
@@ -163,31 +161,14 @@ public:
             if (!e.host_done) continue; /* never treat an intermediate event as terminal */
             for (uint32_t rank = 0; rank < e.ranks; ++rank) {
                 const uint32_t bit = 1u << rank;
-                if ((pending & bit) || ((e.gpu_mask & bit) && (e.consumed_mask & bit))) continue;
+                if ((pending & bit) || (e.proven_mask & bit)) continue;
                 const Proof p = prove(static_cast<const StepTicket&>(e.ticket), rank);
                 if (p == Proof::Fault) { fault_ = true; cv_.notify_all(); return false; }
                 if (p == Proof::Pending) { pending |= bit; continue; }
-                e.gpu_mask |= bit;
-                e.consumed_mask |= bit;
+                e.proven_mask |= bit;
             }
             if ((pending & all) == all) break;
         }
-        retire_locked();
-        return true;
-    }
-    bool gpu_complete(uint64_t id, uint32_t rank) {
-        std::lock_guard<std::mutex> lock(mu_);
-        Entry* e = get(id);
-        if (!e || rank >= e->ranks) return false;
-        e->gpu_mask |= (1u << rank);
-        retire_locked();
-        return true;
-    }
-    bool consumed(uint64_t id, uint32_t rank) {
-        std::lock_guard<std::mutex> lock(mu_);
-        Entry* e = get(id);
-        if (!e || rank >= e->ranks) return false;
-        e->consumed_mask |= (1u << rank);
         retire_locked();
         return true;
     }
@@ -312,7 +293,7 @@ private:
         while (count_) {
             Entry& e = at(last_id_ - count_ + 1);
             const uint32_t all = (1u << e.ranks) - 1u;
-            if (!e.host_done || e.gpu_mask != all || e.consumed_mask != all) break;
+            if (!e.host_done || e.proven_mask != all) break;
             e = Entry{};
             --count_;
             retired = true;

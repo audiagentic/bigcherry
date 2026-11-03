@@ -10,6 +10,14 @@
 #include <thread>
 using r3::admission::Ledger;
 using R = Ledger::Result;
+using P = Ledger::Proof;
+/* Completion only through poll(): an injected proof that holds for exactly one
+ * (parent, rank); every other rank stays pending. */
+static bool prove_rank(Ledger& q, uint64_t id, uint32_t rank) {
+    return q.poll([&](const StepTicket& t, uint32_t r) {
+        return t.ticket_id == id && r == rank ? P::Proven : P::Pending;
+    });
+}
 static void check(bool b, const char* why) {
     if (!b) { std::fprintf(stderr,"FAIL: %s\n",why); std::abort(); }
 }
@@ -203,13 +211,13 @@ int main() {
     check(q.try_admit(2,&c)==R::Full,"bounded outstanding");
     check(q.admit(2,&c)==R::Full,"full serving admission returns without a GPU wait");
     check(q.host_complete(b.ticket_id),"ahead host done");
-    check(q.gpu_complete(b.ticket_id,1) && q.consumed(b.ticket_id,1),"ahead rank1");
-    check(q.gpu_complete(b.ticket_id,0) && q.consumed(b.ticket_id,0),"ahead rank0");
+    check(prove_rank(q,b.ticket_id,1),"ahead rank1");
+    check(prove_rank(q,b.ticket_id,0),"ahead rank0");
     check(q.outstanding()==2,"out of order cannot retire");
     check(q.host_complete(a.ticket_id),"first host done");
-    check(q.gpu_complete(a.ticket_id,0) && q.consumed(a.ticket_id,0),"first rank0");
+    check(prove_rank(q,a.ticket_id,0),"first rank0");
     check(q.outstanding()==2,"first rank1 remains");
-    check(q.gpu_complete(a.ticket_id,1) && q.consumed(a.ticket_id,1),"first rank1");
+    check(prove_rank(q,a.ticket_id,1),"first rank1");
     check(q.outstanding()==0,"in-order cascading retirement");
     check(q.try_admit(1,&c)==R::Ok,"after retirement");
     check(q.cancel(c.ticket_id),"unused reservation cancelled");
@@ -225,9 +233,9 @@ int main() {
     check(q.try_admit(1,&n)==R::Closed,"try-admit fails immediately during quiesce");
     check(!q.drained(3,snap.latest_ticket),"pending old epoch");
     check(q.host_complete(c.ticket_id),"last host complete");
-    check(q.gpu_complete(c.ticket_id,0),"last gpu complete");
-    check(!q.drained(3,snap.latest_ticket),"consumed is independent predicate");
-    check(q.consumed(c.ticket_id,0),"last consumption");
+    check(q.poll([](const StepTicket&, uint32_t) { return P::Pending; }) &&
+          !q.drained(3,snap.latest_ticket),"a pending proof keeps the old epoch");
+    check(prove_rank(q,c.ticket_id,0),"last proof");
     check(q.wait_drained(3,snap.latest_ticket,
           std::chrono::steady_clock::now()+std::chrono::milliseconds(50))==R::Ok,
           "drain returns only after retirement");
@@ -292,8 +300,8 @@ int main() {
     external.close_admission();
     check(external.admit(1,&after,[]{return true;})==R::Fault &&
           !external.reopen(31,1), "helper fault interrupts closed admission and remains sticky");
-    check(t.host_complete(y.ticket_id) && t.gpu_complete(y.ticket_id,0) && t.consumed(y.ticket_id,0),
-          "complete timed-out parent");
+    check(t.host_complete(y.ticket_id) && !prove_rank(t,y.ticket_id,0) && t.outstanding()==1,
+          "a timed-out (faulted) ledger proves nothing more");
     check(!t.reopen(12,1), "timeout stays failed closed even after retirement");
     // No-output prefill can leave many host-complete parents pending GPU
     // proof. Grow on demand to an engine-supplied ceiling, preserving the
@@ -306,10 +314,7 @@ int main() {
     }
     check(backlog.high_water()==33 && backlog.try_admit(2,&x)==R::Full,
           "derived ceiling exhausted without GPU wait");
-    for (const auto& e : backlog.entries())
-        for (unsigned rank=0;rank<2;++rank)
-            check(backlog.gpu_complete(e.ticket.ticket_id,rank) &&
-                  backlog.consumed(e.ticket.ticket_id,rank), "prefill completion");
+    check(backlog.poll([](const StepTicket&, uint32_t) { return P::Proven; }), "prefill completion");
     check(backlog.outstanding()==0 && backlog.high_water()==33, "prefill high-water retained");
     r3::moe_shm::LaneSignal lane{};
     unsigned drains=0;
