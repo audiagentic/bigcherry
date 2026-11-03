@@ -372,6 +372,14 @@ int main() {
         check(bc::contract::load_registry(string_field("pattern = \"^gfx[0-9a-f]+$\"\nmax_length = 32\ndefault = \"gfx1100\"\n" + src), "t", &d, &why),
               "a default that matches the pattern loads: " + why);
         refused(string_field("format = \"date\"\ndefault = \"2026-13-40\"\n" + src), "is not a date", "a default that is not a date");
+        refused(string_field("format = \"date\"\ndefault = \"2026-02-31\"\n" + src), "is not a date", "a day that does not exist");
+        refused(string_field("format = \"date\"\ndefault = \"2025-02-29\"\n" + src), "is not a date", "29 February in a common year");
+        check(bc::contract::load_registry(string_field("format = \"date\"\ndefault = \"2024-02-29\"\n" + src), "t", &d, &why),
+              "29 February in a leap year loads: " + why);
+        // length is counted in characters, not bytes
+        refused(string_field("min_length = 2\nmax_length = 2\ndefault = \"\xC3\xA9\"\n" + src), "length bounds", "one multibyte character is below min_length 2");
+        check(bc::contract::load_registry(string_field("min_length = 1\nmax_length = 1\ndefault = \"\xC3\xA9\"\n" + src), "t", &d, &why),
+              "one multibyte character fits length 1: " + why);
         check(bc::contract::load_registry(string_field("format = \"date\"\ndefault = \"2026-11-03\"\n" + src), "t", &d, &why),
               "a date default loads: " + why);
 
@@ -409,6 +417,20 @@ int main() {
         check(!verify(with(cfg3 + "default = 4096\ndefault_source = \"radiance:Config.host_headroom_mib\"\n"), &msg) && msg.find("source says 1") != std::string::npos,
               "the real initialiser (1), not the commented one (4096), is the source: " + msg);
         check(verify(with(cfg3 + "default = 1\ndefault_source = \"radiance:Config.host_headroom_mib\"\n"), &msg), "and the real one verifies: " + msg);
+        // text inside a string literal is never a declaration; a raw string or a digit separator does not confuse the scan
+        write(tmp / "core" / "rad_core.h", "struct Config {\n    const char* decoy = \"; int64_t max_seqs = 256;\";\n};\n");
+        check(!verify(with(cfg + "default = 256\ndefault_source = \"radiance:Config.max_seqs\"\n"), &msg) && msg.find("no `= <literal>;` initialiser") != std::string::npos,
+              "a declaration inside a string literal certifies nothing: " + msg);
+        write(tmp / "core" / "rad_core.h", "struct Config {\n    const char* raw = R\"x(; int64_t max_seqs = 256;)x\";\n    int64_t max_seqs = 1'000;\n};\n");
+        check(!verify(with(cfg + "default = 256\ndefault_source = \"radiance:Config.max_seqs\"\n"), &msg) && msg.find("source says 1000") != std::string::npos,
+              "a raw string is a literal and 1'000 reads as 1000: " + msg);
+        check(verify(with(cfg + "default = 1000\ndefault_source = \"radiance:Config.max_seqs\"\n"), &msg), "the digit-separated initialiser verifies: " + msg);
+        // a string default against a plain string initialiser (the literal's text comes back from the code-only scan)
+        write(tmp / "core" / "rad_core.h", "struct Config {\n    const char* mode = \"exact\";   // \"wht6\"\n};\n");
+        const std::string strcfg = "radiance_option = \"--mode\"\nradiance_config = \"Config.mode\"\n";
+        check(verify(string_field(strcfg + "default = \"exact\"\ndefault_source = \"radiance:Config.mode\"\n"), &msg), "a string default equal to its initialiser: " + msg);
+        check(!verify(string_field(strcfg + "default = \"wht6\"\ndefault_source = \"radiance:Config.mode\"\n"), &msg) && msg.find("source says \"exact\"") != std::string::npos,
+              "a string default diverging from its initialiser (the commented value is not it): " + msg);
         write(tmp / "core" / "rad_core.h", "struct Config {\n    int64_t max_seqs = 256;\n    int64_t max_seqs = 256;\n};\n");
         check(!verify(with(cfg + "default = 256\ndefault_source = \"radiance:Config.max_seqs\"\n"), &msg) && msg.find("declared more than once") != std::string::npos,
               "a member declared twice is ambiguous: " + msg);

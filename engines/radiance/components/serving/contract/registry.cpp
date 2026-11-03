@@ -155,6 +155,18 @@ void scalar_attrs(const toml::table& t, const std::string& prefix, const std::st
     n->ref = str(t, k("ref").c_str(), at, false);
 }
 
+/* YYYY-MM-DD naming a real day, leap years included: the rule the generated reader applies to a date at run time. */
+bool default_is_calendar_date(const std::string& s) {
+    if (s.size() != 10 || s[4] != '-' || s[7] != '-') return false;
+    for (size_t i : {0u, 1u, 2u, 3u, 5u, 6u, 8u, 9u})
+        if (s[i] < '0' || s[i] > '9') return false;
+    const int y = std::stoi(s.substr(0, 4)), m = std::stoi(s.substr(5, 2)), d = std::stoi(s.substr(8, 2));
+    static const int kDays[12] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+    if (m < 1 || m > 12 || d < 1) return false;
+    const bool leap = (y % 4 == 0 && y % 100 != 0) || y % 400 == 0;
+    return d <= kDays[m - 1] + (m == 2 && leap ? 1 : 0);
+}
+
 /* A default is a literal of the field's own kind that its schema accepts, from a named place (spec section 7). */
 void check_default(const Node& field, const Node& n, const std::string& at) {
     // `field` carries the default; `n` is the node whose kind and bounds it must fit (the field itself, or the scalar def it refs)
@@ -178,7 +190,7 @@ void check_default(const Node& field, const Node& n, const std::string& at) {
             fault(at, "the default is outside the field's length bounds");
         if (!n.pattern.empty() && !std::regex_search(text, std::regex(n.pattern)))
             fault(at, "the default " + d.dump() + " does not match the field's pattern");
-        if (n.format == "date" && !std::regex_match(text, std::regex(R"(\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01]))")))
+        if (n.format == "date" && !default_is_calendar_date(text))
             fault(at, "the default " + d.dump() + " is not a date (YYYY-MM-DD)");
     } else if (n.kind == "enum" || n.kind == "int_enum") {
         if (std::find(n.values.begin(), n.values.end(), d) == n.values.end())
@@ -1626,41 +1638,64 @@ std::string read_text_file(const std::string& path) {
     return s.str();
 }
 
-/* The header with every comment replaced by spaces (newlines kept) and every string or character literal emptied to its
- * quotes, so a commented-out declaration, or a brace or `=` inside a literal, is never read as code. */
-std::string code_only(const std::string& src) {
+/* The header as code only. Comments become spaces (newlines kept). A string literal's text moves to `literals` and the
+ * code keeps only `"<index>"` in the quotes, so a `;`, `=`, brace or declaration inside a literal is never read as code,
+ * while a legitimate string initialiser can still be looked up. A character literal is emptied to its quotes. A digit
+ * separator (1'000) is not a character literal, and a raw string R"d(...)d" is a string literal. */
+std::string code_only(const std::string& src, std::vector<std::string>* literals) {
     std::string out;
     out.reserve(src.size());
+    auto keep = [&](std::string body) {
+        literals->push_back(std::move(body));
+        return "\"" + std::to_string(literals->size() - 1) + "\"";
+    };
     for (size_t i = 0; i < src.size();) {
+        const char c = src[i];
         if (src.compare(i, 2, "//") == 0) {
             while (i < src.size() && src[i] != '\n') { out += ' '; ++i; }
         } else if (src.compare(i, 2, "/*") == 0) {
             const size_t end = src.find("*/", i + 2);
             const size_t stop = end == std::string::npos ? src.size() : end + 2;
             for (; i < stop; ++i) out += src[i] == '\n' ? '\n' : ' ';
-        } else if (src[i] == '"' || src[i] == '\'') {
-            const char quote = src[i];
-            out += quote;
-            ++i;
+        } else if (c == '"' && i > 0 && src[i - 1] == 'R' && (i < 2 || !std::isalnum(static_cast<unsigned char>(src[i - 2])))) {
+            // raw string: R"delim( ... )delim"
+            const size_t open = src.find('(', i + 1);
+            const std::string delim = open == std::string::npos ? std::string() : src.substr(i + 1, open - i - 1);
+            const size_t close = open == std::string::npos ? std::string::npos : src.find(")" + delim + "\"", open + 1);
+            if (close == std::string::npos) { out += c; ++i; continue; }
+            out.pop_back();   // the R
+            out += keep(src.substr(open + 1, close - open - 1));
+            for (size_t k = i; k < close + delim.size() + 2; ++k) if (src[k] == '\n') out += '\n';
+            i = close + delim.size() + 2;
+        } else if (c == '"') {
             std::string body;
-            while (i < src.size() && src[i] != quote && src[i] != '\n') {
+            ++i;
+            while (i < src.size() && src[i] != '"' && src[i] != '\n') {
                 if (src[i] == '\\' && i + 1 < src.size()) body += src[i++];
                 body += src[i++];
             }
-            if (i < src.size() && src[i] == quote) ++i;
-            // keep a plain string literal's text (a string default compares against it); blank the rest
-            out += quote == '"' && body.find('\\') == std::string::npos ? body : std::string();
-            out += quote;
+            if (i < src.size() && src[i] == '"') ++i;
+            // only a plain literal (no escapes) is usable as a value; any other is kept as text no initialiser matches
+            out += keep(body.find('\\') == std::string::npos ? body : std::string("\\"));
+        } else if (c == '\'' && i > 0 && std::isalnum(static_cast<unsigned char>(src[i - 1])) && i + 1 < src.size() &&
+                   std::isalnum(static_cast<unsigned char>(src[i + 1]))) {
+            ++i;   // a digit separator inside a number: dropped, so 1'000 reads as 1000
+        } else if (c == '\'') {
+            ++i;
+            while (i < src.size() && src[i] != '\'' && src[i] != '\n') { if (src[i] == '\\') ++i; ++i; }
+            if (i < src.size() && src[i] == '\'') ++i;
+            out += "''";
         } else {
-            out += src[i++];
+            out += c;
+            ++i;
         }
     }
     return out;
 }
 
 /* The text between the braces of `struct Config {`, as code only. */
-std::string config_body(const std::string& source) {
-    const std::string header = code_only(source);
+std::string config_body(const std::string& source, std::vector<std::string>* literals) {
+    const std::string header = code_only(source, literals);
     const size_t at = header.find("struct Config {");
     if (at == std::string::npos) throw std::runtime_error("no `struct Config {` in core/rad_core.h");
     size_t i = header.find('{', at), depth = 0;
@@ -1707,6 +1742,7 @@ bool verify_defaults(const Registry& r, const std::string& radiance_src, const s
                      std::string* why) {
     try {
         std::string config;   // read once, on first use
+        std::vector<std::string> literals;   // the text of the string literals in it, by index
         std::vector<toml::table> settings;
         bool settings_read = false;
         for (const Node& n : r.nodes) {
@@ -1719,7 +1755,7 @@ bool verify_defaults(const Registry& r, const std::string& radiance_src, const s
             }
             Json source;
             if (n.default_source.rfind("radiance:Config.", 0) == 0) {
-                if (config.empty()) config = config_body(read_text_file(radiance_src + "/core/rad_core.h"));
+                if (config.empty()) config = config_body(read_text_file(radiance_src + "/core/rad_core.h"), &literals);
                 const std::string member = n.default_source.substr(std::string("radiance:Config.").size());
                 const std::regex declared("(?:^|[;{}\\n])[^;{}=()]*[ \\t*&]" + member + R"(\s*=\s*([^;]*);)");
                 std::smatch m;
@@ -1729,7 +1765,13 @@ bool verify_defaults(const Registry& r, const std::string& radiance_src, const s
                 const std::string rest = m.suffix().str();
                 if (std::regex_search(rest, declared))
                     throw std::runtime_error(at + ": Config::" + member + " is declared more than once in core/rad_core.h");
-                const auto lit = simple_literal(m[1].str());
+                std::string init = m[1].str();
+                // a string initialiser is `"<index>"` in the code-only text: give it back its text
+                static const std::regex quoted(R"re(^\s*"(\d+)"\s*$)re");
+                std::smatch q;
+                if (std::regex_match(init, q, quoted) && std::stoul(q[1].str()) < literals.size())
+                    init = "\"" + literals[std::stoul(q[1].str())] + "\"";
+                const auto lit = simple_literal(init);
                 if (!lit) throw std::runtime_error(at + ": the initialiser `" + m[1].str() + "` is not a simple literal; leave the default absent");
                 source = *lit;
             } else {
