@@ -1,16 +1,16 @@
 # Radiance performance limits
 
-BigCherry currently targets **Radiance v1.14.0**. Results for different
-models, quantisations, topologies and prompt lengths should not be ranked
-as though they were one benchmark.
+BigCherry currently targets **Radiance v1.16.0**. The results below were
+recorded on **v1.14.0** and have not been reverified on the current pin.
+Different models, topologies and prompts are not directly comparable.
 
-## Current measured workloads
+## Last recorded workloads (v1.14.0)
 
-| Model | Strongest current-pin result | Main limitation |
+| Model | Best recorded result | Main limitation |
 | --- | --- | --- |
 | [Qwen3.8-Flash-Next](models/qwen3.8-flash-next.md) | Four-card prefill **3,837 tokens/s** (~44K fresh prompt); six-stream engine decode **330–342 tokens/s** | Host-memory traffic, helper balance and retained KV |
-| [Qwen3.8-27B](models/qwen3.8-27b.md) | R9700 six-stream client output **245–248 tokens/s** | Current-pin prefill and two-XTX drafter run not measured |
-| [Qwen3.6-35B-A3B](models/qwen3.6-35b-a3b.md) | R9700 single-stream output **171–219 tokens/s** across prompts | Current-pin multi-stream prefix-cache behaviour not qualified |
+| [Qwen3.8-27B](models/qwen3.8-27b.md) | R9700 six-stream client output **245–248 tokens/s** | Prefill and two-XTX drafter throughput not recorded on v1.14.0 |
+| [Qwen3.6-35B-A3B](models/qwen3.6-35b-a3b.md) | R9700 single-stream output **171–219 tokens/s** across prompts | Multi-stream prefix-cache behaviour not qualified on v1.14.0 |
 
 For Flash-Next, the R9700 engine and RDNA3/RDNA2 helper cards exchange
 routed activations through pinned host memory. Its four-card 8-session

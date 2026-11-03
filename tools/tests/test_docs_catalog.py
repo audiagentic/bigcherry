@@ -57,10 +57,13 @@ def test_root_readme_pins_and_inventory_match_sources() -> None:
     llama = tomllib.loads((ROOT / "config/recipes.toml").read_text(encoding="utf-8"))
 
     assert f"**v{radiance['pinned-version']}**" in readme
+    assert f"**v{radiance['pinned-version']}**" in (
+        ROOT / "docs/reference/engines/radiance/README.md").read_text(encoding="utf-8")
     assert f"**{llama['pinned']}**" in readme
 
     for engine in ("radiance", "llamacpp"):
-        patches = list((ROOT / "engines" / engine / "patches").glob("*/patch.toml"))
+        patches = [p for p in (ROOT / "engines" / engine / "patches").glob("*/patch.toml")
+                   if not p.parent.name.startswith("_")]
         count = len(patches)
         validated = sum(tomllib.loads(p.read_text(encoding="utf-8"))["state"] == "validated"
                         for p in patches)
