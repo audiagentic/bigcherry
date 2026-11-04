@@ -498,9 +498,11 @@ The production engine-rank coordinator in `engine_rank_coordinator.h::EngineRank
    words alone cannot authorize a new generation upload. The old slot is
    kept intact until the ledger's replacement guard permits reuse.
 
-The diagnostic remains a **no-move** path only; a candidate that changes
-owner placement cannot be committed by this cycle. No helper GPU hot-path
-stores, fences or extra engine bitmap reads per route were introduced.
+The periodic diagnostic itself remains a **no-move** proposal source.
+The slice-E participant now accepts changed-owner candidates from the same
+Controller transaction without adding any forced or heat-driven proposal
+policy. No helper GPU hot-path stores, fences or extra engine bitmap reads
+per route were introduced.
 The CPU transition does map digest checks and HIP event queries off the
 serving path. A precommit diagnostic staging or RESERVED/READY fault
 journals an abort and retains ACTIVE(N), with all helpers still serving;
@@ -585,3 +587,216 @@ delayed older REOPENED ACKs. Removing the production RESERVED handler,
 the REOPENED publisher, or changing the shared bootstrap lock order
 makes the corresponding tests fail. No hot-path publish, route-mark,
 wait, add/finish, seal, or helper GPU kernel was modified.
+
+## Slice E parts 1–3: expert-weight arena, two generation tables, runtime free-memory gate
+
+The budget in layouts.toml / R3_MOE_WORKER_MIBS is **an expert-weight
+budget**, not a whole-card VRAM budget. The helper and the GPU-free
+bc::experts::plan_owners / verify_owner_map use the same budgets and
+select_owned policy, with no table/lane/staging subtraction. The
+weight slot stride is the largest four-plane expert with each plane 256-byte
+aligned. Exactly the selected experts are packed into one device arena
+at id * stride. The slice-B residency ledger charges the physical strides.
+Preflight and allocation failures cannot charge a phantom ACTIVE slot.
+A **separate** one-stride incoming staging allocation resides in the card's
+remaining VRAM and has one extra ledger ID for a future move. It cannot be
+taken by bootstrap.
+
+Before allocating the arena, the worker calls hipMemGetInfo. It took
+an initial free-memory sample before preparing enabled lanes (which allocates
+real plugin scratch via RadScratchFn and every corresponding GPU buffer).
+It compares lane_bytes + two pointer-table banks + frozen runtime
+slot map + one incoming staging slot + selected-expert arena against
+that initial free memory, and the *not-yet-allocated* subset against the
+runtime's **current** free memory. This avoids double-counting already
+allocated lane buffers. A shortage or size overflow fails startup closed
+with the required bytes, free samples and shortfall; no experts are silently
+dropped. HIP allocation errors also abort startup. Both immutable GPU
+pointer banks contain separate arrays for each generation and have the same
+resident experts at bootstrap. The runtime eligibility slot-map stays frozen.
+
+The real Flash-Next W4 49-layer/512-expert geometry has 2,534,400 bytes
+per padded four-plane expert (zero 256-byte padding overhead). The full
+expert-weight budgets select 9,320 / 9,320 / 5,931 experts on
+the 22,528 / 22,528 / 14,336 MiB helper layout, as on main.
+Card-free tests parse every production layout and compare ordered expert
+IDs and bytes from the helper selector against the manifest planner,
+and exercise the manifest verifier itself on a decoded example. No GPU
+run or empirical free-VRAM observation has been made.
+
+The still-unpublished v23 Request is revised on both sides together:
+generation_slot moves from byte +204 (64-byte line 3) to byte +36
+(line 0), swapping with diagnostic-only row_base. The unfused
+lane_select_tables already validates sequence/rank/rank_count/layer/
+rows/hidden/route_count and activation strides in **lines 0 and 1**.
+The fused lane_front_small validates those same lines and writes
+trace[3] in **line 2**. Neither needs line 3 for generation selection
+after this revision. placement_epoch remains at +232 in line 3:
+the helper CPU uses it at drain, not in the selection kernels.
+No new per-request system-scope stores/fences/host round trips or GPU
+block barriers were added. The engine publisher uses the shared Request
+field names and offset assertions; there is no older layout path.
+
+The production changed-map implementation is described in the part-4
+section below. The fake GPU tests prove the CPU slot/protocol contract;
+the HIP upload path still needs hardware safety and timing measurements.
+
+
+## Slice E part 4: live changed-owner staging and retirement
+
+A changed map enters through the **same** helper-zero
+`Controller::propose(candidate_digest)` and the existing PROPOSED/RESERVING
+protocol. The periodic `epoch_cycle_s` experiment still proposes *only*
+same-map generations. There is no forced move or heat policy here, and no
+new engine-side transaction path. `placement_candidate_valid` is shared
+by the helper and engine-rank participants: it verifies old and new canonical
+owner bytes, digest/header/journal identity, valid owner indices and exact
+epoch/slot pairing. A current-phase fault aborts before quiescence.
+
+Per helper, `worker_moves::Participant` compares the two canonical owner
+maps and tracks retained, gained and lost expert IDs. `worker_slots::Pool`
+and the slice-B residency ledger are the only physical-slot authority. A
+retained expert keeps its already allocated slot. An incoming expert reserves
+an unreferenced slot; the budget and physical slot count still include every
+old slot, even one that will leave in this transaction. With no free slot,
+the current-phase RESERVED ACK carries `CAPACITY` (sticky across polling)
+and the controller aborts forward to unchanged ACTIVE(N). The helper drains
+any precommit copy and cancels its reservations after that abort.
+
+During COPYING the GPU runner decodes each gained expert's existing model
+planes into one pinned host staging stride. It issues one H2D transfer of
+the packed expert planes (up to one stride) on the **private nonblocking stream**, records a **fresh
+disabled-timing HIP event per expert**, and queries that event. There is
+at most one outstanding copy, matching the single separately budgeted
+incoming slot. Only after that event completes are the expert's four
+planes marked complete/READY in the residency ledger. If several free
+physical IDs exist they are copied sequentially, not concurrently. The
+candidate's per-layer pointer arrays are built in the *inactive* generation
+bank **after every gained expert is ready**; their device allocations are
+reused on later epochs (no unbounded table allocations). Failed uploads,
+bindings or event checks cannot publish helper READY.
+
+The engine's runtime expert-index/eligibility map is immutable from
+bootstrap and remains **one** GPU array, exactly as in part 3. Retained
+experts and newly gained experts use their already-declared engine
+`layer_slot` value. The candidate pointer table omits experts leaving
+this helper, and includes the fully uploaded arrivals. A lane picks its
+pointer table using `Request::generation_slot` at +36, already read by
+the part-3 validation kernels; the engine slot mapping and routing kernels
+do not change. **Relative to part 3 there are zero additional per-request
+reads, stores, fences, host round trips, branches or HIP launches.** All
+planning, checksum, HIP event queries and table construction are confined
+to control-plane placement polling. The active bank and its physical
+weights are not written while ACTIVE(N) can still serve.
+
+COMMIT activates incoming physical slots and marks departing slots
+RETIRING **without releasing their ledger charges or weights**. The helper
+must observe its lane drain closure, the engine coordinator's closed
+all-ranks-consumed proof and all rank/helper RETIRED ACKs. Only after the
+engine actually reopens admission for N+1 and publishes an
+epoch/digest/slot/**transaction-exact REOPENED** proof does each helper
+reclaim its departing physical slots. The next candidate can then reserve
+them; a missing reopen proof leaves them held. The pool's device
+allocations and the per-generation table buffers remain fixed.
+
+The expanded `r3_moe_epoch_test` runs changed-map transactions through the
+actual Pool, residency ledger, Controller, EpochCycle helper participant and
+EngineRankCoordinator with fake GPU rank operations and fake independent
+copy events. It exercises CAPACITY and rollback before COMMIT, immutable
+old-bank service during COPYING, premature READY and reclamation refusal,
+and 1,000 alternating move/return cycles on each supported helper/rank
+topology (including the smaller tail allocation). Mutation checks
+individually break the event-before-READY, bank-before-READY,
+active-bank, capacity, sticky-fault and REOPENED gates and require a failing
+card-free test. GPU execution and real VRAM/timing validation are not
+claimed by those tests.
+
+## Slice E part 5: review fixes (helper migration)
+
+**Owner classification is sealed at bootstrap.** The shared
+placement_candidate_valid predicate compares each old/new canonical
+owner byte, journal, digests and indices. Engine-local experts remain
+engine-local; experts initially owned by a helper can move only to
+another helper. The engine never allocates local weights for an expert
+it did not load at bootstrap. Engine-rank coordinator, helper epoch
+driver and slot migration participant invoke this same predicate
+before RESERVING. A single helper has no legal changed-owner move;
+the one-helper/two-rank fixture exercises unchanged-map cycles and
+both prohibited directions, while two- and three-helper fixtures
+exercise real helper-to-helper swaps.
+
+**Committed budget differs from transient physical capacity.** The slot
+ledger still charges ACTIVE, RESERVED, READY and RETIRING physical slots
+against the expert budget plus exactly one incoming staging stride
+until reclaim/cancel. Before reserving, the participant separately
+projects charged - departing + arriving expert bytes and requires them
+to fit the configured *expert-only* budget, excluding staging. An
+arrival at an already full helper without a departure is CAPACITY
+and aborts forward; a one-for-one full-budget swap stages in the
+extra physical slot. Tests assert both bounds across 1,000 cycles.
+
+**Preallocated full-budget arena.** Runner::allocate now sizes its
+weight arena by slot_plan.expert_capacity * stride, not the number
+of bootstrap residents. Pool::prepare allocates the entire arena and
+incoming slot at startup, including helpers starting with no experts;
+the hipMemGetInfo check includes both. The card-free zero-bootstrap
+test reserves, copies and activates its first expert without calling
+bootstrap. For flashnext-4gpu at 2,534,400 bytes/expert, arenas are
+23,620,608,000 bytes (9,320 slots) for each of helpers 0 and 1,
+and 15,031,526,400 bytes (5,931 slots) for helper 2. Main already
+selected exactly these weight bytes for this layout. Each helper
+also needs one separate 2,534,400-byte incoming staging slot. On
+underfilled layouts, allocation may need more VRAM than the previous
+selected-only arena and can now fail the startup free-memory check
+rather than advertise nonexistent future capacity.
+
+**Exact transaction closure is a proposal precondition.** Controller
+tracks the previous transaction until a committed transaction has
+the engine post-ledger REOPENED ACK and CLEANED ACKs from every helper
+after reclamation. For a precommit forward abort, each helper CLEANED
+ACK follows its upload synchronization and reservation cancellation,
+and every engine rank CLEANED follows completion of any candidate
+bitmap upload. These use existing per-actor ACK slots, release
+publication, and exact transaction/active-epoch/digest/slot identity.
+RankOperations::abort_upload_done checks an already-queued rank
+upload event after the candidate was removed; normal READY must not
+be reused after abort because the pending map identity no longer
+exists. Both Controller::propose and same-map auto-staging refuse
+to race an outstanding cleanup. Missing proof holds future placement,
+not unrelated ACTIVE serving.
+
+**Bounded cleanup and abort event errors (slice E part 6).** The
+controller starts a monotonic absolute cleanup deadline as the transaction
+becomes ACTIVE: the existing `Deadlines::retire_ns` for a committed
+RETIRING->ACTIVE transition (120 s by default), or
+`Deadlines::copy_ns` for precommit abort cleanup (180 s by default).
+Helper zero checks exact CLEANED identities on each ACTIVE tick, including
+when the synthetic epoch period is zero. Lost, duplicate, stale, and
+mismatched ACKs cannot prove cleanup. A missing participant at expiration
+halts *placement only*, leaving ACTIVE serving and the unsafe inactive
+bank/slot protected. The journal retains the original abort reason in
+`fault`, and records the terminal cause and first missing actor in
+`cleanup_fault` and `cleanup_actor` (previously reserved journal
+words); `control.fault_actor` also identifies that participant.
+`control.fault_code` stays zero so admitted parent steps remain valid.
+Helpers may retry an incomplete precommit upload drain without publishing
+CLEANED or setting `helper_fault`; the controller's deadline handles a
+participant that never finishes. A lost REOPENED ACK halts each helper
+locally after its reopen deadline; only helper zero owns the controller
+and journals REOPEN_TIMEOUT, while other helpers keep old residency
+untouched.
+
+An aborted rank bitmap event returning a HIP query/device/identity error
+is `RankResult::DeviceError`, not Pending. The production rank participant
+publishes a transaction- and ACTIVE-identity-exact CLEANED-phase DEVICE
+fault, which helper zero records immediately as a terminal placement-only
+condition. The rank coordinator remembers the error so a later success
+cannot certify that inactive generation as CLEANED; the old serving
+generation stays operational. Only a genuine Pending event retries,
+bounded by the abort cleanup deadline.
+
+All checks run on the placement control plane, not in lane processing.
+Against part 3 there are zero additional per-request Request-field
+reads, system-scope stores/fences, host round trips, barriers or GPU
+launches. The existing generation-slot read still selects the
+immutable pointer bank. These CPU tests are not GPU timing evidence.

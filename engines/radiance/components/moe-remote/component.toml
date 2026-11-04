@@ -22,7 +22,8 @@ configure = { RADIANCE_SRC = "{engine_source}" }   # the helper builds for every
 [test]
 targets = ["r3_moe_shm_test", "r3_moe_backend_test", "r3_worker_share_test", "r3_worker_heat_test",
            "r3_moe_epoch_test", "r3_moe_fp8_ref_test", "r3_combine_f16_test", "r3_combine_pool_test",
-           "r3_admission_ledger_test", "r3_mailbox_completion_test", "r3_owner_generation_test"]
+           "r3_admission_ledger_test", "r3_mailbox_completion_test", "r3_owner_generation_test",
+           "r3_worker_slot_pool_test"]
 
 # Runtime settings: see libr3/component.toml for the status vocabulary.
 

@@ -18,7 +18,7 @@ enum class FaultCode : uint32_t {
     DEVICE=6, HELPER_DEAD=7, READY_TIMEOUT=8, QUIESCE_TIMEOUT=9,
     EPOCH_MISMATCH=10, COMMIT_TIMEOUT=11, RETIRE_TIMEOUT=12,
     RESULT_NOT_CONSUMED=13, SEQUENCE_EXHAUSTED=14, INCOMPATIBLE_LAYOUT=15,
-    RANK_DEAD=16, REOPEN_TIMEOUT=17
+    RANK_DEAD=16, REOPEN_TIMEOUT=17, CLEANUP_TIMEOUT=18
 };
 enum class ActorKind : uint16_t { COORDINATOR=0, HELPER=1, ENGINE_RANK=2 };
 inline uint32_t actor_id(ActorKind kind,uint16_t index) {
@@ -63,6 +63,57 @@ class Controller {
     bool pending_published_ = false;
     uint32_t reserved_helpers_ = 0, reserved_ranks_ = 0;
     uint32_t last_committed_index_ = UINT32_MAX;
+    uint64_t awaiting_cleanup_ = 0;
+    bool cleanup_committed_ = false;
+    uint64_t cleanup_deadline_ns_ = 0;
+    void await_cleanup(bool committed) {
+        awaiting_cleanup_ = c_.transaction_id;
+        cleanup_committed_ = committed;
+        const uint64_t now = clock_.now_ns();
+        // Committed cleanup includes reopen and reclamation; aborted cleanup
+        // includes outstanding rank DMA and helper cancellation.
+        const uint64_t window = committed ? deadlines_.retire_ns : deadlines_.copy_ns;
+        cleanup_deadline_ns_ = window > UINT64_MAX - now ? now : now + window;
+    }
+    bool close_ack(uint32_t actor, AckPhase phase) const {
+        const auto a = transport_.read_ack(actor);
+        return a.phase == uint32_t(phase) && !a.fault_code &&
+               a.transaction_id == awaiting_cleanup_ &&
+               a.epoch == c_.active_epoch && a.digest == c_.active_digest &&
+               a.generation_slot == c_.active_slot;
+    }
+    uint32_t missing_cleanup_actor() const {
+        if (cleanup_committed_) {
+            if (!close_ack(kMaxHelpers,AckPhase::REOPENED))
+                return actor_id(ActorKind::ENGINE_RANK,0);
+        } else {
+            for (uint32_t i=0; i<kMaxEngineRanks; ++i)
+                if ((c_.expected_ranks & (1u<<i)) &&
+                    !close_ack(kMaxHelpers+i,AckPhase::CLEANED))
+                    return actor_id(ActorKind::ENGINE_RANK,uint16_t(i));
+        }
+        for (uint32_t i=0; i<kMaxHelpers; ++i)
+            if ((c_.expected_helpers & (1u<<i)) &&
+                !close_ack(i,AckPhase::CLEANED))
+                return actor_id(ActorKind::HELPER,uint16_t(i));
+        return actor_id(ActorKind::COORDINATOR,0);
+    }
+    // No new proposal may overwrite a generation or its ACK identity until
+    // engine reopen and every helper reclaim (or all aborts) have completed.
+    bool previous_closed() const {
+        if (!awaiting_cleanup_) return true;
+        if (cleanup_committed_) {
+            if (!close_ack(kMaxHelpers,AckPhase::REOPENED)) return false;
+        } else {
+            for (uint32_t i=0;i<kMaxEngineRanks;++i)
+                if ((c_.expected_ranks & (1u<<i)) &&
+                    !close_ack(kMaxHelpers+i,AckPhase::CLEANED)) return false;
+        }
+        for (uint32_t i=0;i<kMaxHelpers;++i)
+            if ((c_.expected_helpers & (1u<<i)) &&
+                !close_ack(i,AckPhase::CLEANED)) return false;
+        return true;
+    }
     bool timeout(uint64_t duration) {
         const uint64_t now = clock_.now_ns();
         if (duration > UINT64_MAX - now) { fail(FaultCode::SEQUENCE_EXHAUSTED); return false; }
@@ -184,13 +235,15 @@ public:
         c_.expected_helpers = (1u << helper_count) - 1u;
         c_.expected_ranks = (1u << actual_rank_count) - 1u;
         c_.journal_index = 1; // first transaction occupies entry 0
+        if (seed.transaction_id) await_cleanup(true);
         emit();
     }
     const PlacementControl& control() const { return c_; }
     const PlacementJournal& journal() const { return journal_; }
     bool failed_closed() const { return failed_closed_; }
     bool can_propose() const {
-        return !failed_closed_ && !deterministic_ && !c_.fault_code && c_.state == uint32_t(PlacementState::ACTIVE) &&
+        return !failed_closed_ && !deterministic_ && !c_.fault_code &&
+               c_.state == uint32_t(PlacementState::ACTIVE) && previous_closed() &&
                c_.active_epoch != UINT64_MAX && c_.transaction_id != UINT64_MAX &&
                c_.seq <= UINT32_MAX - 128;
     }
@@ -229,6 +282,7 @@ public:
         j.before_digest=c_.active_digest;
         j.start_ns=clock_.now_ns();
         fail_without_emit(code,actor_id(ActorKind::COORDINATOR,0));
+        await_cleanup(false);
         c_.fault_code=0;
         return emit();
     }
@@ -329,6 +383,7 @@ public:
             auto& j = journal_.entry[c_.journal_index];
             j.finish_ns = clock_.now_ns(); j.state = uint32_t(PlacementState::ACTIVE);
             last_committed_index_ = c_.journal_index;
+            await_cleanup(true);
             c_.state = uint32_t(PlacementState::ACTIVE);
             c_.pending_epoch = 0; c_.pending_digest = 0; c_.pending_slot = UINT32_MAX;
             c_.deadline_ns = 0; reset_masks(); quiesced_ = pending_published_ = false;
@@ -344,6 +399,9 @@ public:
         const bool quiescing = c_.state >= uint32_t(PlacementState::QUIESCING);
         fail_without_emit(code, actor);
         if (!committed) {
+            if (!quiescing) {
+                await_cleanup(false);
+            }
             c_.state = uint32_t(PlacementState::ACTIVE);
             c_.pending_epoch = 0; c_.pending_digest = 0; c_.pending_slot = UINT32_MAX;
             c_.deadline_ns = 0; reset_masks(); quiesced_ = false;
@@ -353,17 +411,60 @@ public:
         emit();
         return !committed;
     }
-    // A lost post-ledger reopen ACK is terminal for placement, NOT serving.
-    // Retain the already committed ACTIVE generation and publish a journal
-    // fault; control.fault_code would poison the engine admission ledger.
-    bool stop_placement_after_commit(FaultCode code) {
-        if (code == FaultCode::NONE || c_.state != uint32_t(PlacementState::ACTIVE) ||
-            last_committed_index_ > 1 || failed_closed_) return false;
-        auto& j = journal_.entry[last_committed_index_];
-        if (!j.fault) j.fault = uint32_t(code);
-        j.finish_ns = clock_.now_ns();
-        failed_closed_ = true;
+    // Cleanup failure is terminal for placement, NOT serving. The inactive
+    // generation remains protected because can_propose() never passes again.
+    // Do not set control.fault_code: the live admission ledger must keep serving.
+    bool stop_placement_after_cleanup(FaultCode code,uint32_t actor=0) {
+        if (code==FaultCode::NONE || c_.state!=uint32_t(PlacementState::ACTIVE) ||
+            c_.journal_index>1 || failed_closed_) return false;
+        auto& j=journal_.entry[c_.journal_index];
+        if (!j.transaction_id) j.transaction_id=c_.transaction_id;
+        if (!j.fault) j.fault=uint32_t(code);
+        j.cleanup_fault=uint32_t(code);
+        j.cleanup_actor=actor;
+        j.finish_ns=clock_.now_ns();
+        c_.fault_actor=actor;
+        failed_closed_=true;
         return emit();
+    }
+    bool stop_placement_after_commit(FaultCode code) {
+        return cleanup_committed_ && stop_placement_after_cleanup(code);
+    }
+    // Helper zero calls this on every ACTIVE control-plane tick. Only exact
+    // current-transaction CLEANED faults stop placement immediately; missing,
+    // duplicate, stale and mismatched ACKs never constitute cleanup proof.
+    bool poll_cleanup() {
+        if (failed_closed_) return false;
+        if (!awaiting_cleanup_ || c_.state!=uint32_t(PlacementState::ACTIVE))
+            return true;
+        auto check_fault = [&](uint32_t transport_actor,uint32_t actor,
+                               AckPhase phase) {
+            const auto a=transport_.read_ack(transport_actor);
+            if (a.phase==uint32_t(phase) && a.fault_code &&
+                a.transaction_id==awaiting_cleanup_ &&
+                a.epoch==c_.active_epoch && a.digest==c_.active_digest &&
+                a.generation_slot==c_.active_slot) {
+                (void)stop_placement_after_cleanup(FaultCode::DEVICE,actor);
+                return false;
+            }
+            return true;
+        };
+        if (!cleanup_committed_)
+            for (uint32_t i=0;i<kMaxEngineRanks;++i)
+                if ((c_.expected_ranks & (1u<<i)) &&
+                    !check_fault(kMaxHelpers+i,actor_id(ActorKind::ENGINE_RANK,uint16_t(i)),
+                                 AckPhase::CLEANED)) return false;
+        for (uint32_t i=0;i<kMaxHelpers;++i)
+            if ((c_.expected_helpers & (1u<<i)) &&
+                !check_fault(i,actor_id(ActorKind::HELPER,uint16_t(i)),
+                             AckPhase::CLEANED)) return false;
+        if (previous_closed()) return true;
+        if (clock_.now_ns() >= cleanup_deadline_ns_) {
+            (void)stop_placement_after_cleanup(FaultCode::CLEANUP_TIMEOUT,
+                                               missing_cleanup_actor());
+            return false;
+        }
+        return true;
     }
     // Rollback is a proposal of the last committed map, requiring a *new* epoch.
     // A postcommit fault is not recoverable here without external stream/residency proof.
@@ -440,6 +541,66 @@ inline bool stage_same_map_generation(void* map) {
     return true;
 }
 
+// Structural predicate shared by the production rank and helper participants.
+// Unlike the diagnostic-only same_map_cycle, it permits a *different* map
+// through the existing controller proposal and verifies both complete digests.
+inline bool placement_epoch_valid(const PlacementControl& c) {
+    if (!c.transaction_id || !c.active_epoch || !c.active_digest ||
+        !c.pending_digest || c.active_epoch > UINT32_MAX ||
+        c.pending_slot > 1 || c.active_slot > 1) return false;
+    if (c.state < uint32_t(PlacementState::COMMIT))
+        return c.pending_epoch == c.active_epoch+1 &&
+               c.pending_slot == 1u-c.active_slot;
+    return c.pending_epoch == c.active_epoch &&
+           c.pending_slot == c.active_slot;
+}
+inline bool placement_candidate_valid(const void* map,const PlacementControl& c) {
+    if (!map || !placement_epoch_valid(c) || c.journal_index > 1) return false;
+    const auto& j=placement_journal(map)->entry[c.journal_index];
+    if (j.transaction_id!=c.transaction_id || j.old_slot>1 ||
+        j.new_slot!=1u-j.old_slot ||
+        !j.before_epoch || j.before_epoch>=UINT32_MAX ||
+        j.after_epoch!=j.before_epoch+1 ||
+        j.before_digest==0 || j.candidate_digest==0 ||
+        j.candidate_digest!=c.pending_digest) return false;
+    const bool committed=c.state>=uint32_t(PlacementState::COMMIT);
+    if (committed ?
+        (c.active_slot!=j.new_slot || c.active_epoch!=j.after_epoch ||
+         c.active_digest!=j.candidate_digest || c.pending_slot!=j.new_slot) :
+        (c.active_slot!=j.old_slot || c.active_epoch!=j.before_epoch ||
+         c.active_digest!=j.before_digest || c.pending_slot!=j.new_slot ||
+         c.pending_epoch!=j.after_epoch)) return false;
+    const auto* h=static_cast<const Header*>(map);
+    const auto* oldg=generation_header(map,j.old_slot);
+    const auto* newg=generation_header(map,j.new_slot);
+    if (!oldg || !newg || !h->owner_map_bytes ||
+        oldg->epoch!=j.before_epoch || oldg->digest!=j.before_digest ||
+        oldg->state!=uint32_t(GenerationState::ACTIVE) ||
+        newg->epoch!=j.after_epoch || newg->digest!=j.candidate_digest ||
+        (newg->state!=uint32_t(GenerationState::STAGING) &&
+         newg->state!=uint32_t(GenerationState::READY) &&
+         newg->state!=uint32_t(GenerationState::ACTIVE)) ||
+        (!committed && newg->state==uint32_t(GenerationState::ACTIVE)) ||
+        (c.state==uint32_t(PlacementState::RETIRING) &&
+         newg->state!=uint32_t(GenerationState::ACTIVE)) ||
+        oldg->map_bytes!=h->owner_map_bytes ||
+        newg->map_bytes!=h->owner_map_bytes ||
+        generation_digest(map,j.old_slot)!=j.before_digest ||
+        generation_digest(map,j.new_slot)!=j.candidate_digest)
+        return false;
+    const auto* candidate=generation_map(map,j.new_slot);
+    const auto* original=generation_map(map,j.old_slot);
+    for (uint32_t i=0;i<h->owner_map_bytes;++i) {
+        if ((original[i]!=kOwnerLocal && original[i]>=h->helper_count) ||
+            (candidate[i]!=kOwnerLocal && candidate[i]>=h->helper_count) ||
+            // Bootstrap determines which experts' weights exist on the engine.
+            // Placement can exchange helpers, never engine/local residency.
+            ((original[i]==kOwnerLocal)!=(candidate[i]==kOwnerLocal)))
+            return false;
+    }
+    return true;
+}
+
 /* Shared no-move control-map proof, used by both helper CPU participant and
  * engine coordinator. It also checks the transaction's journal identities,
  * so a stale same-digest generation cannot masquerade as this transition. */
@@ -493,7 +654,7 @@ inline bool rank_reservation_ready(const void* map,const PlacementControl& c,
         (actual_rank_mask & (actual_rank_mask + 1u)) ||
         c.expected_ranks != actual_rank_mask ||
         !(actual_rank_mask & (1u<<rank)) || !registered ||
-        !active_event_ready || !same_map_cycle(map,c)) return false;
+        !active_event_ready || !placement_candidate_valid(map,c)) return false;
     const auto* active = generation_header(map,c.active_slot);
     const auto* candidate = generation_header(map,c.pending_slot);
     return active && candidate &&
@@ -509,7 +670,7 @@ inline bool rank_upload_prepared(const PlacementControl& c,uint32_t rank,
                                 uint64_t epoch,uint64_t digest,uint32_t slot) {
     return c.state == uint32_t(PlacementState::COPYING) &&
            rank < kMaxEngineRanks && (c.expected_ranks & (1u<<rank)) &&
-           same_placement_cycle(c) && uploaded && event_ready &&
+           placement_epoch_valid(c) && uploaded && event_ready &&
            epoch == c.pending_epoch && digest == c.pending_digest &&
            slot == c.pending_slot;
 }
@@ -524,7 +685,7 @@ inline bool rank_retirement_proved(const PlacementControl& c,
                                    bool helper_quiesced,bool no_old_refs,
                                    bool ready_on_all_ranks,bool committed_on_all_ranks) {
     return c.state == uint32_t(PlacementState::RETIRING) &&
-           same_placement_cycle(c) && old_epoch && old_epoch < UINT32_MAX &&
+           placement_epoch_valid(c) && old_epoch && old_epoch < UINT32_MAX &&
            old_epoch+1 == c.active_epoch && old_slot < 2 &&
            old_slot == 1u-c.active_slot &&
            all_consumed && drain_verified && helper_quiesced &&
@@ -583,6 +744,43 @@ inline void publish_ack(void* map, uint32_t actor, const PlacementControl& c,
     __atomic_store_n(&a->generation_slot, c.pending_slot, __ATOMIC_RELAXED);
     __atomic_store_n(&a->fault_code, uint32_t(0), __ATOMIC_RELAXED);
     __atomic_store_n(&a->phase, uint32_t(phase), __ATOMIC_RELEASE);
+    notify(static_cast<Header*>(map));
+}
+
+// Cleanup ACKs use ACTIVE's epoch/digest/slot, not the cleared pending
+// identity. One writer per participant and release publication as above.
+inline void publish_cleanup_fault_ack(void* map,uint32_t actor,
+                                      const PlacementControl& c,FaultCode code) {
+    if (!map || code==FaultCode::NONE || !c.transaction_id ||
+        c.state!=uint32_t(PlacementState::ACTIVE) || c.fault_code) return;
+    auto* a=placement_ack(map,actor);
+    if (!a) return;
+    __atomic_store_n(&a->phase,uint32_t(AckPhase::NONE),__ATOMIC_SEQ_CST);
+    __atomic_store_n(&a->transaction_id,c.transaction_id,__ATOMIC_RELAXED);
+    __atomic_store_n(&a->epoch,c.active_epoch,__ATOMIC_RELAXED);
+    __atomic_store_n(&a->digest,c.active_digest,__ATOMIC_RELAXED);
+    __atomic_store_n(&a->generation_slot,c.active_slot,__ATOMIC_RELAXED);
+    __atomic_store_n(&a->fault_code,uint32_t(code),__ATOMIC_RELAXED);
+    __atomic_store_n(&a->phase,uint32_t(AckPhase::CLEANED),__ATOMIC_RELEASE);
+    notify(static_cast<Header*>(map));
+}
+inline void publish_cleanup_ack(void* map,uint32_t actor,const PlacementControl& c) {
+    if (!map || !c.transaction_id ||
+        c.state!=uint32_t(PlacementState::ACTIVE) || c.fault_code) return;
+    auto* a=placement_ack(map,actor);
+    if (!a) return;
+    const auto previous=read_shared_ack(map,actor);
+    if (previous.phase==uint32_t(AckPhase::CLEANED) &&
+        previous.transaction_id==c.transaction_id &&
+        previous.epoch==c.active_epoch && previous.digest==c.active_digest &&
+        previous.generation_slot==c.active_slot) return;
+    __atomic_store_n(&a->phase,uint32_t(AckPhase::NONE),__ATOMIC_SEQ_CST);
+    __atomic_store_n(&a->transaction_id,c.transaction_id,__ATOMIC_RELAXED);
+    __atomic_store_n(&a->epoch,c.active_epoch,__ATOMIC_RELAXED);
+    __atomic_store_n(&a->digest,c.active_digest,__ATOMIC_RELAXED);
+    __atomic_store_n(&a->generation_slot,c.active_slot,__ATOMIC_RELAXED);
+    __atomic_store_n(&a->fault_code,0u,__ATOMIC_RELAXED);
+    __atomic_store_n(&a->phase,uint32_t(AckPhase::CLEANED),__ATOMIC_RELEASE);
     notify(static_cast<Header*>(map));
 }
 
@@ -727,6 +925,19 @@ public:
     }
 };
 
+enum class HelperCopy : uint8_t { WAITING, READY, FAILED };
+// Called by the existing epoch driver in its ordinary controller phases.
+// Implemented by the HIP-independent slot participant, backed by Runner.
+struct HelperMigration {
+    virtual ~HelperMigration() = default;
+    virtual FaultCode reserve(const void*, const PlacementControl&) = 0;
+    virtual HelperCopy copy() = 0;
+    virtual bool commit(const PlacementControl&) = 0;
+    virtual bool reclaim(const void*, const PlacementControl&) = 0;
+    virtual bool abort() = 0;
+    virtual uint64_t transaction() const = 0;
+};
+
 // Helper-side periodic driver. The caller polls it beside the serving lanes;
 // only helper zero publishes PlacementControl. No environment settings here.
 class EpochCycle {
@@ -743,6 +954,8 @@ class EpochCycle {
     std::unique_ptr<Controller> controller_;
     bool failed_ = false;
     bool placement_halted_ = false; // terminal placement diagnostic, not a helper failure
+    FaultCode placement_fault_ = FaultCode::NONE;
+    HelperMigration* migration_ = nullptr;
     bool schedule() {
         const uint64_t now = clock_.now_ns();
         const uint64_t period = uint64_t(period_.count());
@@ -752,16 +965,22 @@ class EpochCycle {
     }
 public:
     EpochCycle(void* map, uint32_t helper, const Clock& clock,
-               std::chrono::nanoseconds period, Deadlines deadlines = {})
+               std::chrono::nanoseconds period, Deadlines deadlines = {},
+               HelperMigration* migration = nullptr)
         : map_(map), helper_(helper), clock_(clock), period_(period),
-          deadlines_(deadlines), transport_(map) {
+          deadlines_(deadlines), transport_(map), migration_(migration) {
         failed_ = !map || helper >= static_cast<Header*>(map)->helper_count || period.count() < 0;
     }
-    bool enabled() const { return period_.count() != 0; }
+    bool enabled() const { return period_.count() != 0 || migration_ != nullptr; }
+    // The tests inject their candidate through Controller::propose, not a
+    // second path or a synthetic forced-move policy.
+    Controller* proposal_controller() { return controller_.get(); }
     uint64_t completed() const { return completed_; }
+    bool placement_halted() const { return placement_halted_; }
+    FaultCode placement_fault() const { return placement_fault_; }
     bool tick() {
         if (failed_) return false;
-        if (period_.count() == 0) return true; // typed setting disables the experiment
+        if (!enabled()) return true; // no diagnostic cycle or migration participant
         auto* h = static_cast<Header*>(map_);
         if (load(&h->helper_fault)) return false;
         if (placement_halted_) return true; // keep serving, but still respect real helper faults
@@ -776,14 +995,14 @@ public:
             uint32_t ranks = 0;
             for (uint32_t mask = c.expected_ranks; mask; mask >>= 1) ++ranks;
             controller_ = std::make_unique<Controller>(transport_, clock_, c.active_digest,
-                h->helper_count, ranks, Deadlines{},
+                h->helper_count, ranks, deadlines_,
                 Bootstrap{c.active_epoch, c.active_slot, c.seq, c.transaction_id});
             if (!schedule()) return false;
             c = controller_->control();
         }
         if (c.fault_code) return false;
         const auto phase = PlacementState(c.state);
-        if (phase != PlacementState::ACTIVE && !same_map_cycle(map_,c)) {
+        if (phase != PlacementState::ACTIVE && !placement_candidate_valid(map_,c)) {
             /* Before quiescence a bad candidate must abort the transaction,
              * not stop serving epoch N. Controller::fail publishes ACTIVE(N)
              * unchanged, with a fault recorded in the journal. */
@@ -796,12 +1015,22 @@ public:
             }
             return false; /* after the admission gate closes, fail closed */
         }
-        /* Every helper confirms the identical generation; there is no
-         * helper-side upload or table switch in this no-move diagnostic. */
-        if (phase == PlacementState::RESERVING)
-            publish_ack(map_, helper_, c, AckPhase::RESERVED);
-        if (phase == PlacementState::COPYING)
-            publish_ack(map_, helper_, c, AckPhase::READY);
+        if (phase == PlacementState::RESERVING) {
+            const FaultCode issue=migration_ ? migration_->reserve(map_,c) :
+                (same_map_cycle(map_,c) ? FaultCode::NONE : FaultCode::CAPACITY);
+            if (issue==FaultCode::NONE) publish_ack(map_,helper_,c,AckPhase::RESERVED);
+            else publish_fault_ack(map_,helper_,c,AckPhase::RESERVED,issue);
+        }
+        if (phase == PlacementState::COPYING) {
+            const HelperCopy result=migration_ ? migration_->copy() :
+                (same_map_cycle(map_,c) ? HelperCopy::READY : HelperCopy::FAILED);
+            if (result==HelperCopy::READY)
+                publish_ack(map_,helper_,c,AckPhase::READY);
+            else if (result==HelperCopy::FAILED)
+                publish_fault_ack(map_,helper_,c,AckPhase::READY,FaultCode::UPLOAD);
+        }
+        if (phase == PlacementState::COMMIT && migration_ &&
+            !migration_->commit(c)) return false; // cannot ACK COMMITTED without actual slots
         if (phase == PlacementState::QUIESCING || phase == PlacementState::COMMIT ||
             phase == PlacementState::RETIRING) {
             // Slice C drain identities are published once on the lane CPU
@@ -832,10 +1061,54 @@ public:
                          previous.transaction_id == c.transaction_id &&
                          previous.phase == uint32_t(AckPhase::COMMITTED))
                     publish_ack(map_,helper_,c,AckPhase::RETIRED);
+                if (phase == PlacementState::RETIRING &&
+                    previous.transaction_id == c.transaction_id &&
+                    previous.phase == uint32_t(AckPhase::COMMITTED))
+                    {
+                        awaiting_reopen_=c.transaction_id;
+                        const uint64_t now=clock_.now_ns();
+                        if (deadlines_.retire_ns > UINT64_MAX-now) {
+                            // A non-leader has no controller to journal this.
+                            // Keep the committed residency and do not raise helper_fault.
+                            reopen_deadline_ns_=now;
+                            placement_halted_=true;
+                            placement_fault_=FaultCode::SEQUENCE_EXHAUSTED;
+                        } else reopen_deadline_ns_=now+deadlines_.retire_ns;
+                    }
             }
         }
-        if (helper_ != 0) return true;
         if (phase == PlacementState::ACTIVE) {
+            // A peer must retain staged slots after terminal placement failure;
+            // do not turn a cleanup timeout into a serving/helper fault.
+            if (c.transaction_id && c.journal_index<=1) {
+                const auto& j=placement_journal(map_)->entry[c.journal_index];
+                if (j.transaction_id==c.transaction_id && j.cleanup_fault) {
+                    placement_halted_=true;
+                    placement_fault_=FaultCode(j.cleanup_fault);
+                    return true;
+                }
+            }
+            // A precommit abort may have an in-flight helper upload. Until
+            // drain_upload proves completion, do NOT publish CLEANED and do
+            // NOT kill the serving worker. The leader's cleanup deadline bounds
+            // retry and records the participant that never finished.
+            if (migration_ && migration_->transaction() && !awaiting_reopen_ &&
+                !migration_->abort()) {
+                const auto& j=placement_journal(map_)->entry[
+                    c.journal_index<=1 ? c.journal_index : 0];
+                if (c.journal_index>1 || j.transaction_id!=c.transaction_id ||
+                    !j.fault || j.commit_ns) return false;
+                if (helper_==0 && !controller_->poll_cleanup()) {
+                    placement_halted_=true;
+                    placement_fault_=FaultCode::CLEANUP_TIMEOUT;
+                }
+                return true;
+            }
+            if (!awaiting_reopen_ && c.transaction_id && c.journal_index<=1) {
+                const auto& j=placement_journal(map_)->entry[c.journal_index];
+                if (j.transaction_id==c.transaction_id && j.fault && !j.commit_ns)
+                    publish_cleanup_ack(map_,helper_,c);
+            }
             // ACTIVE publication follows all RETIRED rank/helper ACKs; wait
             // for engine reopen before a new cycle can stage the old slot.
             if (awaiting_reopen_) {
@@ -843,22 +1116,37 @@ public:
                 // ledger gate. Only the exact post-ledger ACK permits staging.
                 if (!reopened_exactly(map_,c,awaiting_reopen_)) {
                     if (clock_.now_ns() < reopen_deadline_ns_) return true;
-                    (void)controller_->stop_placement_after_commit(FaultCode::REOPEN_TIMEOUT);
-                    placement_halted_ = true; // terminal placement-only state
+                    if (helper_ == 0)
+                        (void)controller_->stop_placement_after_commit(FaultCode::REOPEN_TIMEOUT);
+                    placement_halted_ = true; // every helper keeps old residency on timeout
+                    placement_fault_ = FaultCode::REOPEN_TIMEOUT;
                     return true; // worker loop must keep serving the committed generation
                 }
+                if (migration_ && !migration_->reclaim(map_,c)) return false;
+                publish_cleanup_ack(map_,helper_,c);
                 awaiting_reopen_ = 0;
                 reopen_deadline_ns_ = 0;
-                ++completed_;
-                if (!schedule()) return false;
+                if (helper_ == 0) {
+                    ++completed_;
+                    if (!schedule()) return false;
+                }
             }
-            if (!(load(&h->burst) & 1u) || clock_.now_ns() < next_ns_) return true;
+            if (helper_ == 0 && !controller_->poll_cleanup()) {
+                placement_halted_ = true;
+                placement_fault_ = FaultCode(controller_->journal().entry[
+                    controller_->control().journal_index].cleanup_fault);
+                return true;
+            }
+            if (helper_ != 0 || period_.count() == 0) return true;
+            if (!controller_->can_propose() ||
+                !(load(&h->burst) & 1u) || clock_.now_ns() < next_ns_) return true;
             if (!stage_same_map_generation(map_)) {
                 if (!controller_->reject_staging(FaultCode::INVALID_MAP)) return false;
                 return schedule(); // forward abort on N; serving is untouched
             }
             return controller_->begin_epoch_cycle();
         }
+        if (helper_ != 0) return true;
         if (phase == PlacementState::PROPOSED) {
             if (controller_->start_reserving()) return true;
             (void)controller_->fail(FaultCode::DEVICE);
@@ -902,6 +1190,7 @@ public:
             if (deadlines_.retire_ns > UINT64_MAX - now) {
                 (void)controller_->stop_placement_after_commit(FaultCode::SEQUENCE_EXHAUSTED);
                 placement_halted_ = true;
+                placement_fault_ = FaultCode::SEQUENCE_EXHAUSTED;
                 return true; // journal a terminal diagnostic, do not kill serving
             }
             reopen_deadline_ns_ = now + deadlines_.retire_ns;

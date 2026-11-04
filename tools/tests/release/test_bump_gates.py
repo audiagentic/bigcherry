@@ -58,7 +58,8 @@ class AdapterDispatchTests(unittest.TestCase):
         self.assertEqual(moe_remote.test_targets, (
             "r3_moe_shm_test", "r3_moe_backend_test", "r3_worker_share_test", "r3_worker_heat_test",
             "r3_moe_epoch_test", "r3_moe_fp8_ref_test", "r3_combine_f16_test", "r3_combine_pool_test",
-            "r3_admission_ledger_test", "r3_mailbox_completion_test", "r3_owner_generation_test"))
+            "r3_admission_ledger_test", "r3_mailbox_completion_test", "r3_owner_generation_test",
+            "r3_worker_slot_pool_test"))
         # registered with CTest but GPU-only: never declared, so the card-free run never selects them
         for gpu_only in ("r3_route_compact_test", "r3_ticket_replay_test"):
             self.assertNotIn(gpu_only, moe_remote.test_targets)
