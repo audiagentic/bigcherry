@@ -38,7 +38,6 @@ Exports:
 | `BC_WORK_ROOT` | the single root of BigCherry's working storage; `builds/` (content-addressed), `runs/`, `worktrees/`, `toolchains/`, `remote-runs/` and `upstream/` are fixed subfolders |
 | `BC_MODEL_ROOT` | gguf model root |
 | `BC_BENCH_HARNESS` | the documented `run_bench.py` server-bench harness |
-| `BC_ROCM_ROOT` | the default ROCm install (`rocm-root`) |
 | `BC_TEST_PORT` | port for tests, benchmarks and ad-hoc servers |
 | `BC_PRODUCTION_PORT` | the production service port (must never be used by a test) |
 | `BC_DEVICES` | `index:arch` pairs, e.g. `0:gfx1100 1:gfx1100 2:gfx1201 3:gfx1030` |
@@ -49,33 +48,33 @@ the host's keys above.
 
 ## ROCm
 
-`rocm-root` is the default ROCm install. Other SDKs are named in the host's
-`rocm-sdks` table, mapping a version name to a root:
+There is no default ROCm install. Every build names one: a platform (`engines/*/recipes.toml`,
+`config/recipes.toml`) sets `stack = "<name>"`, the stack names an SDK version (`sdk = "7.2"` in
+`config/recipes.toml`), and the host's `rocm-sdks` table maps that version to a root:
 
 ```toml
-[host.dev]
-rocm-root = "/opt/rocm"
-
 [host.dev.rocm-sdks]
 "7.2"  = "/opt/rocm-7.2.4"
 "10.1" = "vendor/rocm/10.1.0rc2"   # a relative root is resolved against repo-root
 ```
 
-Recipe stacks name a version, never a path: `sdk = "7.2"` in
-`config/recipes.toml`. Adding or removing an SDK is an edit to the `rocm-sdks`
-table; no recipe changes.
+A platform without a `stack` is a configuration error, and so is a stack whose SDK is not in the table. Map a version
+to its versioned directory, not to the `/opt/rocm` symlink. A platform's compilers are written under `${SDK_ROOT}`, the
+root of its stack's SDK. Adding or removing an SDK is an edit to the `rocm-sdks` table; no recipe changes.
 
 An engine whose own CMake searches for ROCm (radiance: `hipcc`, the HIP
 compiler, `amdhip64`, `hsa-runtime64`, with `HINTS /opt/rocm` ahead of
 `$ROCM_PATH`) declares those lookups in its `engine.toml` as
 `[build] rocm-paths`, each a path under an SDK root. A build passes every one
-explicitly from the selected SDK, which today is `rocm-root` (or
-`BC_ROCM_ROOT`) with symlinks resolved, since no lane selects a stack yet. The
-build fails before configure when that root is missing or lacks a declared
-path; it never falls back to `/opt/rocm`. The root and its `.info/version`
-are part of the build's `build_plan_id`, so builds against two SDKs, or
-against one SDK before and after an in-place upgrade, never share a build
-directory.
+explicitly from the platform's named SDK (symlinks resolved). It fails before configure when the SDK is not
+installed, when its `.info/version` is not the version the stack names, or when it lacks a declared path; it never
+falls back to `/opt/rocm`. The stack, root, `.info/version` and a content digest of the files taken from the SDK
+(compiler, hipcc, HIP and HSA runtime) are part of the build's `build_plan_id`, so builds against two SDKs, one SDK
+before and after an in-place upgrade, or one SDK with a replaced library never share a build directory.
+
+CI: `.github/docker/radiance-build/Dockerfile` installs `ARG ROCM_VERSION` at `/opt/rocm-<version>`; that version must
+match the SDK of the stack the CI lane (`platform.linux-radiance`) names and the example host's `rocm-sdks` entry, or
+the layer key (`.github/scripts/ci_build_layers.py`) cannot be made. The SDK identity is part of every layer key.
 
 The real clang driver lives under `<root>/llvm/bin`. `/opt/rocm` ships
 `amdclang` and `amdclang++` there, and the compile check looks for `llvm/bin`

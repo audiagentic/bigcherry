@@ -4,6 +4,7 @@ settings it applied when the start fails, is interrupted, or succeeds (GPT revie
 The fakes: python3 (bigcherry subcommands), bc-serve, the engine and the helpers. Everything else is the real launcher."""
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import signal
@@ -110,6 +111,11 @@ class LaunchCleanupTests(unittest.TestCase):
         (self.work / "heat" / "flashnext-mixed.hot-first").write_bytes(b"\0")
         (self.root / "model.rad").write_bytes(b"\0")
         (home / "kernels" / "libp.so").write_bytes(b"\0")
+        # a real build records the ROCm SDK it was built against; the launcher refuses to start without one
+        sdk = self.root / "rocm-7.2.4"
+        sdk.mkdir()
+        (build / "bigcherry-build-metadata-radiance.json").write_text(
+            json.dumps({"toolchain": [["rocm_root", str(sdk)], ["rocm_version", "7.2.4"]]}), encoding="utf-8")
         self._exe(build / "bin" / "radiance", FAKE_ENGINE)
         self._exe(home / "helpers" / "r3_moe_worker", FAKE_HELPER)
         self._exe(home / "bin" / "bc-serve", FAKE_SERVE)
@@ -120,7 +126,7 @@ class LaunchCleanupTests(unittest.TestCase):
         self.pids = self.root / "pids.log"
         self.measuring = self.root / "measuring"
         self.port = _free_port()
-        self.env = {**os.environ, "BC_WORK_ROOT": str(self.work), "ROCM_PATH": "/opt/rocm", "MODEL": str(self.root / "model.rad"),
+        self.env = {**os.environ, "BC_WORK_ROOT": str(self.work), "ROCM_PATH": str(self.root / "rocm-7.2.4"), "HIP_PATH": str(self.root / "rocm-7.2.4"), "LD_LIBRARY_PATH": "", "MODEL": str(self.root / "model.rad"),
                     "PATH": f"{self.root / 'fakebin'}:{os.environ['PATH']}", "REAL_PYTHON": sys.executable,
                     "FAKE_LOG": str(self.log), "FAKE_LAYOUT_ENV": str(self.root / "layout.env"), "FAKE_PIDS": str(self.pids),
                     "FAKE_MEASURING": str(self.measuring), "FAKE_TIMES": str(self.root / "times.log"),

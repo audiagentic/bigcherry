@@ -24,10 +24,10 @@ class EngineRepoPathsTests(unittest.TestCase):
     def test_the_lane_configure_args_include_it(self) -> None:
         layout = engines.load(paths.REPO_ROOT, "radiance")
         build = campaign_config.Build(name="stock", options=(), variant_set=None, needs=frozenset())
-        platform = campaign_config.Platform(name="p", targets=("gfx1100",), options=())
+        platform = campaign_config.Platform(stack="rocm-test", sdk=None, sdk_root=None, name="p", targets=("gfx1100",), options=())
         args = campaign_build.cmake_configure_args(
             build, platform, Path("/src"), Path("/build"), targets_option=layout.targets_option,
-            rocm_paths=layout.rocm_paths, engine_options=layout.repo_path_options(paths.REPO_ROOT))
+            rocm_paths=(), engine_options=layout.repo_path_options(paths.REPO_ROOT))
         want = (paths.REPO_ROOT / "engines/radiance/components/serving/bc_serving_v1.cmake").resolve().as_posix()
         self.assertIn(f"-DBC_SERVING_V1_CMAKE={want}", args)
 

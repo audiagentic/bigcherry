@@ -58,7 +58,7 @@ class CmakeArgsTests(unittest.TestCase):
         build = campaign_config.Build(
             name="tune", options=(("GGML_HIP_AUTOTUNE", "ON"),),
             variant_set="workload-max", needs=frozenset({"inventory"}))
-        platform = campaign_config.Platform(
+        platform = campaign_config.Platform(stack="rocm-test", sdk=None, sdk_root=None,
             name="linux-multi", targets=("gfx1100", "gfx1030"),
             options=(("GGML_HIP", "ON"),))
         return build, platform
@@ -77,7 +77,7 @@ class CmakeArgsTests(unittest.TestCase):
     def test_generated_root_and_inventory_only_apply_with_variant_set(self):
         build = campaign_config.Build(
             name="stock", options=(), variant_set=None, needs=frozenset())
-        platform = campaign_config.Platform(
+        platform = campaign_config.Platform(stack="rocm-test", sdk=None, sdk_root=None,
             name="p", targets=("gfx1100",), options=())
         args = cmake_configure_args(
             build, platform, Path("/src"), Path("/build"),
@@ -110,7 +110,7 @@ class CmakeArgsTests(unittest.TestCase):
 
     def test_vulkan_backend_omits_amdgpu_targets_and_sets_ggml_vulkan(self):
         build = campaign_config.Build(name="vulkan-stock", options=(), variant_set=None, needs=frozenset())
-        platform = campaign_config.Platform(name="p", targets=(), options=())
+        platform = campaign_config.Platform(stack="rocm-test", sdk=None, sdk_root=None, name="p", targets=(), options=())
         args = cmake_configure_args(
             build, platform, Path("/src"), Path("/build"), backend="vulkan", targets_option="AMDGPU_TARGETS", rocm_paths=(), engine_options={})
         joined = " ".join(args)
@@ -137,7 +137,7 @@ class ToolchainRequestTests(unittest.TestCase):
     # own dedicated tests below, deterministic regardless of what cmake/
     # ninja/compilers happen to be installed on whatever machine runs this.
     def test_includes_compilers_when_declared(self):
-        platform = campaign_config.Platform(
+        platform = campaign_config.Platform(stack="rocm-test", sdk=None, sdk_root=None,
             name="linux-multi", targets=("gfx1100",), options=(),
             c_compiler="/opt/rocm/llvm/bin/clang", cxx_compiler="/opt/rocm/llvm/bin/clang++")
         with patch("bigcherry.campaign.build.resolve_toolchain_versions", return_value={}):
@@ -148,7 +148,7 @@ class ToolchainRequestTests(unittest.TestCase):
                  ("CMAKE_GENERATOR", "Ninja")))
 
     def test_omits_compilers_when_not_declared(self):
-        platform = campaign_config.Platform(
+        platform = campaign_config.Platform(stack="rocm-test", sdk=None, sdk_root=None,
             name="windows-gfx1100", targets=("gfx1100",), options=())
         with patch("bigcherry.campaign.build.resolve_toolchain_versions", return_value={}):
             self.assertEqual(
@@ -156,7 +156,7 @@ class ToolchainRequestTests(unittest.TestCase):
                 (("CMAKE_GENERATOR", "Ninja"),))
 
     def test_real_version_resolution_feeds_into_the_result(self):
-        platform = campaign_config.Platform(
+        platform = campaign_config.Platform(stack="rocm-test", sdk=None, sdk_root=None,
             name="linux-multi", targets=("gfx1100",), options=(),
             c_compiler="/opt/rocm/llvm/bin/clang", cxx_compiler=None)
         with patch("bigcherry.campaign.build.resolve_toolchain_versions",
@@ -259,7 +259,7 @@ class CmakePrefixPathTests(unittest.TestCase):
             hip_config.write_text("", encoding="utf-8")
 
             build = campaign_config.Build(name="tune", options=(), variant_set=None, needs=frozenset())
-            platform = campaign_config.Platform(name="p", targets=("gfx1100",), options=())
+            platform = campaign_config.Platform(stack="rocm-test", sdk=None, sdk_root=None, name="p", targets=("gfx1100",), options=())
             args = cmake_configure_args(
                 build, platform, Path("/src"), Path("/build"), c_compiler=str(clang), targets_option="AMDGPU_TARGETS", rocm_paths=(), engine_options={})
 
@@ -273,7 +273,7 @@ class CmakePrefixPathTests(unittest.TestCase):
             clang.write_text("", encoding="utf-8")
 
             build = campaign_config.Build(name="tune", options=(), variant_set=None, needs=frozenset())
-            platform = campaign_config.Platform(name="p", targets=("gfx1100",), options=())
+            platform = campaign_config.Platform(stack="rocm-test", sdk=None, sdk_root=None, name="p", targets=("gfx1100",), options=())
             args = cmake_configure_args(
                 build, platform, Path("/src"), Path("/build"), c_compiler=str(clang), targets_option="AMDGPU_TARGETS", rocm_paths=(), engine_options={})
 
@@ -528,7 +528,7 @@ class ExecuteBuildStageTests(unittest.TestCase):
                 targets=("gfx1100",))
             build = campaign_config.Build(
                 name="stock", options=(), variant_set=None, needs=frozenset())
-            platform = campaign_config.Platform(
+            platform = campaign_config.Platform(stack="rocm-test", sdk=None, sdk_root=None,
                 name="linux-multi", targets=("gfx1100",), options=())
             store = ArtifactStore(context.work_root / "artifacts")
 

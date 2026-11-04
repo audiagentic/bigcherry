@@ -767,16 +767,19 @@ needs = []
 description = "dev, all GPUs. RCCL on -- required for anything multi-GPU."
 targets = ["gfx1100", "gfx1201", "gfx1030"]
 options = { GGML_HIP = "ON", GGML_HIP_RCCL = "ON", LLAMA_BUILD_TESTS = "ON", LLAMA_BUILD_TOOLS = "ON", LLAMA_BUILD_SERVER = "ON", CMAKE_C_COMPILER_LAUNCHER = "ccache", CMAKE_CXX_COMPILER_LAUNCHER = "ccache", CMAKE_HIP_COMPILER_LAUNCHER = "ccache" }
-# Host-specific install locations are never committed: ${VAR} references
-# are expanded from the environment (tools/env/rocm-env.sh sets ROCM_PATH).
-c-compiler = "${ROCM_PATH}/llvm/bin/clang"
-cxx-compiler = "${ROCM_PATH}/llvm/bin/clang++"
+# Every platform names a [stack.*] (platform.<name>.stack); a build never takes whatever ROCm the host resolves. A
+# ROCm platform's compilers are written under ${SDK_ROOT}, the root of the SDK its stack names (config/recipes.toml
+# [stack.*], host [host.<name>.rocm-sdks]).
+stack = "rocm-7-2"
+c-compiler = "${SDK_ROOT}/llvm/bin/clang"
+cxx-compiler = "${SDK_ROOT}/llvm/bin/clang++"
 
 [platform.windows-gfx1100]
 description = "Local workstation, single card."
 targets = ["gfx1100"]
 options = { GGML_HIP = "ON", LLAMA_BUILD_TESTS = "ON" }
 # HIP_PATH is set by the AMD HIP SDK installer (or tools/env/rocm-env.ps1).
+stack = "hip-sdk-windows"
 c-compiler = "${HIP_PATH}/bin/clang.exe"
 cxx-compiler = "${HIP_PATH}/bin/clang++.exe"
 
@@ -789,6 +792,7 @@ description = "Linux Vulkan build on dev; physical GPU architecture and ICD (RAD
 # (see campaign_build._backend_configure_options). Replace with real
 # device/ICD identity in a later RE30 phase.
 targets = ["vulkan-stub"]
+stack = "vulkan-radv"
 options = { LLAMA_BUILD_TESTS = "ON", LLAMA_BUILD_TOOLS = "ON", LLAMA_BUILD_SERVER = "ON", CMAKE_C_COMPILER_LAUNCHER = "ccache", CMAKE_CXX_COMPILER_LAUNCHER = "ccache" }
 
 # Backend software-stack profiles are request identities, separate from
@@ -812,6 +816,11 @@ required-providers = ["hip", "rocblas"]
 backend = "hip"
 sdk = "10.1"
 required-providers = ["hip", "rocblas"]
+
+# The Windows HIP SDK is the installer's, found through HIP_PATH; it has no version in the host rocm-sdks table, so an
+# engine that pins ROCm paths cannot build against it.
+[stack.hip-sdk-windows]
+backend = "hip"
 
 [stack.vulkan-radv]
 backend = "vulkan"

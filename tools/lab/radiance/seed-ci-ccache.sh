@@ -15,5 +15,5 @@ export CCACHE_NOHASHDIR=true CCACHE_COMPILERCHECK=content
 export RADIANCE_HOST_CC="${RADIANCE_HOST_CC:-gcc-14}"
 export RADIANCE_HOST_CXX="${RADIANCE_HOST_CXX:-g++-14}"
 source "$repo_root/tools/lab/radiance/lab-env.sh"
-export BC_ROCM_ROOT="${BC_ROCM_ROOT:-$ROCM_PATH}"
+
 exec python3 "$repo_root/tools/lab/radiance/ci_ccache.py" fetch --work-root "$BC_WORK_ROOT" "$@"

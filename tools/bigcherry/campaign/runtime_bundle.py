@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Callable
 
 from ..core import components, engines, paths
+from ..core import config as campaign_config
 from .build import rocm_configure_options
 
 Runner = Callable[[list[str], Path], None]
@@ -44,9 +45,7 @@ def build_runtime(
     *,
     source_root: Path,
     build_dir: Path,
-    c_compiler: str | None,
-    cxx_compiler: str | None,
-    launcher_options: tuple[tuple[str, str], ...] = (),
+    platform: campaign_config.Platform,
     runner: Runner = _run,
 ) -> dict[str, str]:
     """Build ``engine``'s runtime targets and components into ``build_dir``. Returns {component: content digest}.
@@ -59,6 +58,8 @@ def build_runtime(
     source, while the main engine build (which DOES get the launcher via the top-level configure) showed real cache
     hits. A component's own declared ``configure`` entries still win if they already set the same key."""
     layout = engines.load(paths.REPO_ROOT, engine)
+    c_compiler, cxx_compiler = platform.c_compiler, platform.cxx_compiler
+    launcher_options = tuple((k, v) for k, v in platform.options if k.endswith("_COMPILER_LAUNCHER"))
     built: dict[str, str] = {}
     if layout.runtime_targets:
         runner(["cmake", "--build", str(build_dir), "-j", "--target", *layout.runtime_targets], source_root)
@@ -69,7 +70,7 @@ def build_runtime(
         raise RuntimeBundleError(f"engine {engine!r} declares components but no build.runtime-home")
     home = build_dir / layout.runtime_home
     # Components run the same ROCm lookups as the engine, in their own configure: pin them to the same SDK.
-    rocm_options = rocm_configure_options(layout.rocm_paths)
+    rocm_options = rocm_configure_options(platform, layout.rocm_paths)
     prefix = build_dir / "runtime-prefix"
     if prefix.exists():
         shutil.rmtree(prefix)

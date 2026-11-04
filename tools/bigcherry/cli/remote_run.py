@@ -128,8 +128,6 @@ def _wrapper(host: environment.Host, run_dir: str, argv: tuple[str, ...]) -> str
         f'echo $$ > {q(run_dir + "/pid")}',
         f"cd {q(host.repo_root)}",
     ]
-    if host.rocm_root:
-        lines += [f"export ROCM_PATH={q(host.rocm_root)}", 'export PATH="$ROCM_PATH/bin:$PATH"']
     lines += [
         f"export BIGCHERRY_ENVIRONMENT={q(host.environment_file)}",
         "export PYTHONPATH=tools",
