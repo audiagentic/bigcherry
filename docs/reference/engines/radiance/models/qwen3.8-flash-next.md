@@ -43,8 +43,8 @@ the draft acceptance of whatever was sampled (the RAD23 record found 93% against
 two builds with identical draft counts and no kernel change). With `temperature: 0`
 on pinned prompts, launcher decode is 100 to 140 tokens/s at one stream
 ([RAD23](../../../../planning/active/patching-radiance-rdna3/RAD23.md), decode paragraph),
-and a temperature-0 run on 2026-11-04 measured 91 to 122 at one stream and 211 to 249 at
-six streams across four builds of the layout. Compare builds only with temperature 0
+and temperature-0 runs on 2026-11-04 measured 91 to 110 at one stream and 211 to 249 at
+six streams on three builds of the four-card layout (with the live placement policy on). Compare builds only with temperature 0
 (or a seed) pinned.
 
 ## What changed the result
