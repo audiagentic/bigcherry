@@ -113,6 +113,13 @@ class CILayersTests(unittest.TestCase):
         a.write_text("one")
         self.assertNotEqual(layers.fingerprint_files(self.root, ["b"]), old)
 
+    def test_export_container_receives_the_image_digest_the_restore_binds(self):
+        # The manifest key written inside the export container is recomputed on the host at restore, with the
+        # compiler image digest; an export that does not receive it writes keys no restore can match.
+        workflow = (SCRIPT.parents[1] / "workflows/radiance-build.yml").read_text()
+        step = workflow.split("ci_build_layers.py export", 1)[0].rsplit("docker run", 1)[1]
+        self.assertIn("-e CI_LAYER_IMAGE_ID", step.split("\n", 1)[0])
+
 
 if __name__ == "__main__":
     unittest.main()
