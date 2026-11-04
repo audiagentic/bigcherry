@@ -29,7 +29,8 @@ then run `ctest --output-on-failure`. Tests are CPU-only, including a
 synthetic KFD/PCI/proc/sysfs tree and launcher-value parity.
 
 Commands: `--detect [--json]`, `--schema`, `--validate <site> [profile]`,
-`--explain [--json]`, `--dry-run --out <manifest.json>`.
+`--explain [--json]`, `--write-manifest OUT` (the serving manifest v1; with `--plan-cache` and `--engine-binary`),
+`--plan-key`, `--plan-check-args`, `--plan-store`.
 Use `--site FILE`, `--profile FILE`, and repeated
 `--set section.key=value` with the latter three.
 `--sys-root DIR` overrides the filesystem root for fake-tree tests.
@@ -77,11 +78,10 @@ than reading any per-host configured GPU index list. Unsupported layouts
 and unavailable GPUs fail closed; layout/catalog generalization is later
 RSC05 work.
 
-The manifest uses sorted-key nlohmann JSON. Its `content_sha256` is
-SHA256 of the canonical serialized manifest before the hash field is
-added; the hash covers values, provenance, facts and process_helpers.
-The v1 reader and engine entry point have landed. Full helper-side
-manifest consumption and process supervision are still pending.
+The one document processes load is the serving manifest v1 (`--write-manifest`; spec in
+`docs/design/serving-manifest-v1/`), read by the shared strict reader. The resolver's own record (`--explain --json`,
+the hash `--validate` prints) is not a file any process reads. The engine starts from the v1 manifest (rad0009, shared
+`bc_serving_v1` library); helper-side manifest consumption and process supervision are still pending.
 This component does **not** start processes.
 
 Vendor: toml++ v3.4.0 root single header and MIT license (`third_party/`; the repository ignores every `vendor/` directory);

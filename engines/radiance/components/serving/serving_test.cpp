@@ -282,9 +282,8 @@ void provenance_hash_and_parity(Fixture& t) {
     const auto again = bc::serving::resolve(opts, t.facts);
     assert(r.hash == again.hash);
     assert(r.manifest.dump() == again.manifest.dump());
-    Json unhashed = r.manifest;
-    unhashed.erase("content_sha256");
-    assert(bc::serving::sha256_hex(unhashed.dump()) == r.hash);
+    assert(bc::serving::sha256_hex(r.manifest.dump()) == r.hash);
+    assert(!r.manifest.contains("content_sha256") && !r.manifest.contains("hash_algorithm"));   // no second manifest format
     std::vector<std::string> keys;
     flatten_keys(r.values, "", keys);
     assert(keys.size() == r.provenance.size());
@@ -820,53 +819,6 @@ void measured_plan_cache(Fixture& t) {
     assert(refused);
 }
 
-void measuring_step(Fixture& t) {
-    namespace sv = bc::serving;
-    const Json plan = Json::parse(R"json({
-      "plan_version": 1, "producer": "radiance --plan-memory (rad0011)", "host": [],
-      "checkpoints": {"slot_bytes": 1048576, "floor_slots": 8, "want_slots": 72, "from": "engine plan (test)"},
-      "kv_one_session": {"bytes": 4096, "from": "engine plan (test)"},
-      "vram": {"claimable": 10, "statics": 1, "elastic": 9, "experts": 0, "kv": 9, "stage": 0, "kv_resolved": 9, "expert_floor": 0,
-               "kv_ceiling": 9, "expert_ceiling": 0, "from": "engine plan (test)",
-               "cards": [{"capacity": 10, "free": 10, "engine_expert_plane": 0, "expert_unit_max": 1}]},
-      "host_pool_mib": 9216})json");
-    // A stand-in engine: checks it sees only the engine card and its arguments, then writes the plan where asked.
-    const auto engine = t.file("fake-engine/radiance",
-        "#!/bin/sh\n"
-        "[ \"$ROCR_VISIBLE_DEVICES\" = 2 ] && [ \"$HIP_VISIBLE_DEVICES\" = 0 ] || exit 7\n"
-        "[ \"$1\" = --manifest ] && [ \"$3\" = --role ] && [ \"$4\" = engine ] && [ \"$5\" = --plan-memory ] || exit 8\n"
-        "cat > \"$6\" <<'PLAN'\n" + plan.dump() + "\nPLAN\n");
-    fs::permissions(engine, fs::perms::owner_all);
-    const auto manifest = t.file("fake-engine/manifest.json", "{}");
-    double wall = -1;
-    const Json got = sv::measure_engine_plan(engine, manifest, 2, t.root / "fake-engine/plan.json", &wall);
-    assert(got == plan && wall >= 0);
-    // The device selection is the engine card's, whatever the caller's environment had.
-    setenv("ROCR_VISIBLE_DEVICES", "0,1,2,3", 1);
-    assert(sv::measure_engine_plan(engine, manifest, 2, t.root / "fake-engine/plan.json", &wall) == plan);
-    unsetenv("ROCR_VISIBLE_DEVICES");
-    auto refused = [&](uint32_t ordinal, const std::string& needle) {
-        try { (void)sv::measure_engine_plan(engine, manifest, ordinal, t.root / "fake-engine/plan.json", &wall); }
-        catch (const std::exception& e) {
-            if (std::string(e.what()).find(needle) != std::string::npos) return;
-            throw std::runtime_error("wrong measuring diagnostic for " + needle + ": " + e.what());
-        }
-        throw std::runtime_error("expected measuring refusal containing " + needle);
-    };
-    refused(1, "exited 7");
-    const auto bad = t.file("fake-engine/bad", "#!/bin/sh\necho '{\"plan_version\": 1}' > \"$6\"\n");
-    fs::permissions(bad, fs::perms::owner_all);
-    bool strict = false;
-    try { (void)sv::measure_engine_plan(bad, manifest, 0, t.root / "fake-engine/plan.json", &wall); }
-    catch (const std::exception& e) { strict = std::string(e.what()).find("missing") != std::string::npos; }
-    assert(strict);
-    // What it measured goes into the cache under its key.
-    const Json key = {{"cache_version", 1}, {"model", "m"}, {"engine_build", "e"}, {"card", {{"arch", "gfx1201"}}},
-                      {"layout", "flashnext-4gpu"}, {"engine", Json::object()}};
-    sv::plan_cache_store(t.root / "fake-engine/cache", key, got);
-    assert(sv::plan_cache_lookup(t.root / "fake-engine/cache", key)->plan.checkpoints.want_slots == 72);
-}
-
 void manifest_writer_step(Fixture& t) {
     namespace sv = bc::serving;
     // The container, its heat ranking and the measured plan this configuration's manifest is built from.
@@ -1011,7 +963,6 @@ int main() {
         host_reserve(t);
         host_ledger_plan();
         measured_plan_cache(t);
-        measuring_step(t);
         manifest_writer_step(t);
         std::cout << "PASS: fake KFD/PCI/proc detection; strict keys; types/ranges; required; "
                      "precedence/caps; provenance/hash; launcher engine/WorkerConfig parity; "

@@ -8,7 +8,7 @@ _BC_PLAN_MEMORY_H = r"""/* bc_plan_memory.h -- BigCherry managed patch rad0011 (
  * Engine::plan() records its sizes here as a serving manifest v1 EnginePlan (components/serving, bc_serving_v1).
  *   --plan-memory FILE                          start-up stops after plan(): FILE gets the plan (v1 JSON, written by
  *                                               the generated encoder) and the process exits before any weight loads.
- *   --plan-check FILE --plan-check-floor-ppm N  FILE is the expected plan (the one bc-serve --plan-memory measured);
+ *   --plan-check FILE --plan-check-floor-ppm N  FILE is the expected plan (the one the engine's own --plan-memory measured, stored by bc-serve --plan-store);
  *                                               right after the VRAM split, before any pool is configured, the live
  *                                               plan is checked against it (spec section 5.2) and the result printed
  *                                               once; a refusal exits with its exit code.
@@ -106,7 +106,7 @@ int read_expected(const std::string& file) {
     if (!in) {
         v1::ConfigError e = v1::make_error(v1::ConfigErrorCode::io_failure, "--plan-check",
                                            "cannot read the expected plan " + file,
-                                           "measure it first: bc-serve --plan-memory --plan-cache DIR");
+                                           "measure it first: the engine's --plan-memory with its helpers up, then bc-serve --plan-store");
         e.source_file = file;
         return report(e);
     }
@@ -317,19 +317,6 @@ int bc_plan_memory_done() {
 }
 """
 
-# The shared library comes from the BigCherry tree, never a copy: the lane passes its .cmake (components/serving).
-_CORE_LINK = r"""
-# BigCherry rad0011 (RSC08 A3): the engine's plan check runs the shared serving manifest v1 library, built here from
-# its one source list (BigCherry's components/serving/bc_serving_v1.cmake) with this tree's abi and vendored JSON.
-if(NOT DEFINED BC_SERVING_V1_CMAKE)
-  message(FATAL_ERROR "rad0011: -DBC_SERVING_V1_CMAKE=<bigcherry>/engines/radiance/components/serving/bc_serving_v1.cmake "
-                      "is required (the shared serving manifest v1 library); the BigCherry lane passes it")
-endif()
-set(BC_SERVING_V1_NLOHMANN_INCLUDE "${CMAKE_SOURCE_DIR}/vendor")
-include("${BC_SERVING_V1_CMAKE}")
-target_link_libraries(rad_core PUBLIC bc_serving_v1)"""
-
-
 def _created(path: str, text: str, guard: str, description: str) -> FilePatch:
     return FilePatch(
         path=path,
@@ -356,20 +343,6 @@ PATCHES = (
              "Create the engine-independent plan flags and check."),
     _created("core/bc_plan_check.cpp", _BC_PLAN_CHECK_CPP, r"^int take_flags\(int\* argc, char\*\*\* argv\) \{$",
              "Create the plan flags, the expected-plan read and the check through bc_serving_v1."),
-    FilePatch(
-        path="core/CMakeLists.txt",
-        description="Link the shared serving manifest v1 library, built from BigCherry's source list, into rad_core.",
-        edits=(Edit(
-            id="link-bc-serving-v1",
-            anchor=r"^target_link_libraries\(rad_core PUBLIC rad_abi \$\{CMAKE_DL_LIBS\} Threads::Threads\)$",
-            text=_CORE_LINK,
-            guard=r"include\(\"\$\{BC_SERVING_V1_CMAKE\}\"\)",
-            max_span_lines=1,
-            expect_matches=1,
-            rationale="rad_core's unique link line; the shared library is included and linked right after it, failing "
-                      "closed when the lane did not pass its .cmake.",
-        ),),
-    ),
     FilePatch(
         path="core/main.cpp",
         description="Take the plan flags off the command line before rad0009's manifest reader sees them.",
