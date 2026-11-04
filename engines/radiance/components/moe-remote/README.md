@@ -15,3 +15,30 @@ For live placement control, read [ADMISSION.md](ADMISSION.md): the per-step **ad
 `R3_MOE_WORKER_EPOCH_CYCLE_S` is a **diagnostic-only** environment variable: zero (default) disables periodic same-placement epoch cycles. A positive representable integer period in seconds exercises the drain/reopen protocol; it is not a normal serving policy or a live expert migration setting. See ADMISSION.md for semantics, limits and validation evidence.
 
 Worker settings are defined in `component.toml`. `R3_MOE_WORKER` enables the helper; `R3_MOE_WORKER_DEVICES` selects devices in the benchmark harness; `R3_MOE_WORKER_SHM` names the diagnostic shared-memory segment; `R3_MOE_WORKER_CPU` uses the CPU reference computation. Card-free component tests include `r3_moe_shm_test`, `r3_moe_backend_test`, `r3_moe_fp8_ref_test`, and the admission/epoch tests.
+
+## RAD46 gfx1030 accurate W4 rows
+
+W4 rows use **accurate arithmetic by default**. The old large-lane kernel
+narrowed scale-multiplied operands to fp16 before accumulation, affecting
+small products and failing the tail quality gate. The production W4 rows
+path uses unscaled fp16 dot8 terms, an ordered four-dot16 K64 sum, f32
+weight scales, and an f32 K128 activation scale before one BF16 narrow.
+
+Dispatch uses the already-known request row count and selects **by stage**:
+output-lane for at most 309 rows in gate/up and at most 922 in down;
+quad-DPP (RB16) above each crossover. These boundaries are calculated
+from the signed measured quad-minus-output-lane latency differences at
+64 and 2048 rows in `rad46_rows_policy.h`, not arbitrary tuning switches.
+The W4 rows path requires complete K128 tiles and fails closed otherwise;
+it does not fall back to the old inaccurate kernel.
+
+For kernel-only investigation, `--replay-sweep` alone accepts
+`RAD46_SWEEP_VARIANT` values `stock`, `output_lane`, `quad`,
+`quad_v2`, `production`, `rowlane16`, and `rowlane8`. A separate
+`moe_lane_rows_stock_replay.h` isolates the historical incorrect kernel
+for comparison only, never normal serving. `rowlane16` and `rowlane8`
+are unmeasured gate/up candidates: quartet lanes own different routed
+rows, share packed weight words via quad shuffles, and construct each
+row's four K64 partials in K order without per-row DPP reductions.
+Their down stages use production dispatch. New candidate hash identity,
+per-stage speed, and end-to-end KLD/throughput remain measurement gates.
