@@ -20,7 +20,152 @@ namespace { inline bool stopping() { return false; } }
 static void check(bool ok,const char* why) {
     if(!ok) {std::fprintf(stderr,"r3_combine_epoch_test: %s\n",why);std::exit(1);}
 }
+// Mirrors the publisher's one-rank multi-helper large-lane layout: a request
+// exists only for a helper with routes; helper slots (not engine ranks) are the
+// Request::rank values, and every participating helper shares the pass row_base.
+static void publisher_shaped_combine(uint32_t helpers, bool empty_tail) {
+    using namespace r3::moe_shm;
+    constexpr uint32_t rows = 2 * kCombineChunkRows + 9;
+    const LayoutShape shape{128, 2, 3, rows, 128, 64};
+    Layout layout{};
+    check(layout_for(shape, 2, slots_for(helpers), &layout), "publisher layout");
+    void* map = mmap(nullptr, layout.bytes, PROT_READ | PROT_WRITE,
+                     MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    check(map != MAP_FAILED && init(map, 2, shape, helpers), "publisher init");
+    auto* h = static_cast<Header*>(map);
+    h->helper_count = helpers;
+    auto* ctrl = placement_control(map);
+    ctrl->expected_ranks = 1;
+    for (uint32_t k = 0; k < helpers; ++k)
+        check(r3::epoch::mark_bootstrap_filtered(map, k), "publisher bootstrap filtered");
+    r3::epoch::SharedTransport bootstrap(map);
+    check(bootstrap.seal_bootstrap(), "publisher bootstrap sealed");
+
+    // Distinct real route lists overlap in every chunk and also leave
+    // unrouted rows. The third helper has zero routes in one three-helper step.
+    const std::array<std::array<uint32_t, 6>, 3> routed{{
+        {{0, 1, 256, 257, 512, rows - 1}},
+        {{1, 255, 256, 512, rows - 1, rows - 2}},
+        {{1, 2, 255, 257, 512, rows - 1}}
+    }};
+    constexpr uint16_t bf16[3] = {0x3f80, 0x4000, 0x4080}; // 1, 2, 4
+    constexpr uint16_t fp16[8] = {
+        0xbeef, 0x3c00, 0x4000, 0x4200, 0x4400, 0x4500, 0x4600, 0x4700
+    };
+    const uint32_t generation = 7;
+    h->combine.request = generation;
+    h->combine.rows = rows;
+    std::vector<uint8_t> expected(rows, 0);
+    Request* q[kCombineHelpers] = {};
+    for (uint32_t k = 0; k < helpers; ++k) {
+        const uint32_t lane = lane_of(k, kSmallClasses);
+        h->combine.lane[k] = lane;
+        const uint32_t seq = k + 5; // independent producer lane counters
+        if (empty_tail && k == helpers - 1) {
+            h->combine.seq[k] = 0; // published by the kernel, no Request
+            continue;
+        }
+        h->combine.seq[k] = seq;
+        q[k] = lane_request(map, lane, seq);
+        check(q[k] != nullptr, "publisher ring");
+        q[k]->sequence = seq;
+        q[k]->layer = 1;
+        q[k]->rank = k;
+        q[k]->rank_count = 1;
+        q[k]->rows = rows;
+        q[k]->hidden = h->hidden;
+        q[k]->route_count = (uint32_t)routed[k].size();
+        q[k]->row_base = 19;
+        q[k]->route_offset = h->route_offset[k];
+        q[k]->activation_offset = h->activation_offset[k];
+        q[k]->activation_stride = h->hidden * sizeof(uint16_t);
+        q[k]->activation_q_stride = h->hidden;
+        q[k]->activation_s_stride = h->hidden / shape.act_group * sizeof(float);
+        q[k]->placement_epoch = ctrl->active_epoch;
+        q[k]->generation_slot = ctrl->active_slot;
+        q[k]->combine_generation = k == 0 ? generation : 0;
+        auto* routes = ptr<Route>(map, q[k]->route_offset);
+        for (uint32_t i = 0; i < q[k]->route_count; ++i) {
+            const uint32_t token = routed[k][i];
+            routes[i] = Route{(int32_t)token, (int32_t)k, 0x3f80, (uint16_t)i};
+            expected[token] |= (uint8_t)(1u << k);
+        }
+        auto* plane = ptr<uint16_t>(map, h->result_offset[result_index(k, 0)]);
+        std::fill_n(plane, (size_t)rows * h->hidden, bf16[k]);
+        for (uint32_t c = 0; c < (rows + kCombineChunkRows - 1) / kCombineChunkRows; ++c)
+            h->chunks.seq[k][c] = seq;
+        h->lane[lane].request_sequence = seq;
+        h->lane[lane].done_sequence = seq;
+    }
+    check(q[0] && q[1] && (!empty_tail || !q[helpers - 1]), "publisher participation");
+    check(expected[0] == 1 && expected[1] == (empty_tail || helpers == 2 ? 3 : 7) &&
+          expected[3] == 0 && expected[256] == 3 &&
+          expected[512] == (empty_tail || helpers == 2 ? 3 : 7), "route mask geometry");
+    auto* out = ptr<uint16_t>(map, h->result_offset[result_index(0, 1)]);
+    std::fill_n(out, (size_t)rows * h->hidden, fp16[0]);
+    CombinePool pool(3);
+    std::vector<uint8_t> mask(h->max_rows);
+    CombineStats stats{};
+    auto run = [&] { return combine_step(map, q[0], helpers, &pool, &mask, &stats); };
+
+    // Every validation executes before the first chunk is published. Each
+    // mutated request represents a corruption of an actual publisher field.
+    auto reject = [&](uint32_t& field, uint32_t wrong, const char* why) {
+        const uint32_t original = field;
+        field = wrong;
+        h->combine.done = 0;
+        for (auto& done : h->chunks.done) done = 0;
+        check(!run() && !h->combine.done && !h->chunks.done[0], why);
+        field = original;
+    };
+    reject(q[0]->rank, 1, "helper zero must have rank zero");
+    reject(q[1]->rank, 0, "helper one's rank must equal its slot");
+    reject(q[0]->rank_count, 2, "helper zero requires world one");
+    reject(q[1]->rank_count, 2, "helper one requires world one");
+    reject(q[1]->row_base, q[1]->row_base + 1, "shared pass row_base");
+    reject(q[0]->row_base, q[0]->row_base + 1, "helper zero pass row_base");
+    if (q[2]) reject(q[2]->rank, 1, "third helper's rank must equal its slot");
+
+    // The real lane completion is required even when all chunks are present.
+    // A full three-helper step exercises the second peer's terminal word.
+    if (helpers == 3 && !empty_tail) {
+        const uint32_t lane = h->combine.lane[2];
+        const uint32_t seq = h->combine.seq[2];
+        h->lane[lane].done_sequence = 0;
+        std::atomic<bool> completed{false};
+        bool success = false;
+        std::thread pending([&] {
+            success = run();
+            completed.store(true, std::memory_order_release);
+        });
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        check(!completed.load(std::memory_order_acquire) && !h->combine.done,
+              "third helper completion gates combined done");
+        store(&h->lane[lane].done_sequence, seq);
+        pending.join();
+        check(success, "three-helper production completion");
+    } else {
+        check(run(), "publisher-shaped combine success");
+    }
+    check(h->combine.done == generation && stats.steps == 1,
+          "combined generation and stats");
+    for (uint32_t c = 0; c < (rows + kCombineChunkRows - 1) / kCombineChunkRows; ++c)
+        check(h->chunks.done[c] == generation, "every chunk completion generation");
+    for (uint32_t r = 0; r < rows; ++r)
+        for (uint32_t j = 0; j < h->hidden; ++j)
+            check(out[(size_t)r * h->hidden + j] == fp16[expected[r]],
+                  "combined fp16 output matches actual route masks");
+    if (empty_tail)
+        check(h->combine.seq[helpers - 1] == 0 &&
+              h->lane[lane_of(helpers - 1, kSmallClasses)].done_sequence == 0,
+              "empty tail never publishes a request or completion");
+    check(munmap(map, layout.bytes) == 0, "publisher unmap");
+}
+
 int main() {
+    publisher_shaped_combine(2, false);
+    publisher_shaped_combine(3, false);
+    publisher_shaped_combine(3, true);
     using namespace r3::moe_shm;
     const LayoutShape shape{128,2,3,8,128,64};
     Layout layout{};
@@ -93,9 +238,9 @@ int main() {
     check(!run() && !h->combine.done && !h->chunks.done[0],
           "non-active epoch never publishes an early chunk");
     q0->placement_epoch=q1->placement_epoch=epoch;
-    check(run() && h->combine.done==1 && h->chunks.done[0]==1,
-          "production combine success with matching participants");
-    h->combine.done=h->chunks.done[0]=0;
+    // This single-row fixture tests rejected protocol states only. Positive
+    // combine cases above use publisher-shaped routes, lanes and real chunks.
+    check(!h->combine.done && !h->chunks.done[0], "negative-only fixture stays uncompleted");
 
 
     // Fake non-power-saving small lane: all kLaneSlots waits remain queued

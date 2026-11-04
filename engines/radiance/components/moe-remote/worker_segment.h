@@ -6,10 +6,12 @@
 // only the creator unlinks the name. Everything that uses the mapping (lane threads, the queue warm-up) must be stopped
 // and joined before this object is destroyed, which declaring it first in the serving scope guarantees.
 #include <cerrno>
+#include <chrono>
 #include <cstdio>
 #include <cstring>
 #include <fcntl.h>
 #include <sys/mman.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 class Segment {
@@ -24,18 +26,35 @@ public:
     bool open(const char* name, size_t bytes, bool creator, int attach_wait_s) {
         name_ = name;
         bytes_ = bytes;
+        // One startup deadline covers name creation, sizing, and header publication.
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(attach_wait_s);
         if (creator) {
             fd_ = shm_open(name, O_CREAT | O_EXCL | O_RDWR | O_CLOEXEC, 0600);
             if (fd_ < 0) return fail("shm_open");
             unlink_ = true;
             if (ftruncate(fd_, (off_t)bytes) != 0) return fail("ftruncate");
         } else {
-            /* Nothing to wait on before the file exists, so a bounded retry: startup only. */
-            for (int i = 0; i < attach_wait_s && fd_ < 0 && !stopping(); ++i) {
+            // Opening the name is not enough: the creator has not necessarily ftruncated yet.
+            while (fd_ < 0 && !stopping() && std::chrono::steady_clock::now() < deadline) {
                 fd_ = shm_open(name, O_RDWR | O_CLOEXEC, 0);
                 if (fd_ < 0) ::sleep(1);
             }
             if (fd_ < 0) return fail("shm_open");
+            bool sized = false;
+            while (!stopping() && std::chrono::steady_clock::now() < deadline) {
+                struct stat st {};
+                if (fstat(fd_, &st) != 0) return fail("fstat");
+                if (st.st_size == static_cast<off_t>(bytes)) { sized = true; break; }
+                if (st.st_size > static_cast<off_t>(bytes)) {
+                    std::fprintf(stderr, "r3_moe_worker: mailbox size exceeds expected layout\n");
+                    return false;
+                }
+                ::sleep(1);
+            }
+            if (!sized) {
+                std::fprintf(stderr, "r3_moe_worker: mailbox not sized before attach deadline\n");
+                return false;
+            }
         }
         void* m = mmap(nullptr, bytes, PROT_READ | PROT_WRITE, MAP_SHARED, fd_, 0);
         if (m == MAP_FAILED) return fail("mmap");
@@ -45,7 +64,7 @@ public:
         // before publishing helper_count. Full shape validation follows
         // that startup barrier (and again before GPU registration).
         if (!creator) {
-            for (int i=0;i<attach_wait_s && !stopping();++i) {
+            while (!stopping() && std::chrono::steady_clock::now() < deadline) {
                 const uint32_t version=__atomic_load_n(&header()->version,__ATOMIC_ACQUIRE);
                 if (version && version!=r3::moe_shm::kVersion) {
                     std::fprintf(stderr,"r3_moe_worker: refusing non-v23 mailbox\n");

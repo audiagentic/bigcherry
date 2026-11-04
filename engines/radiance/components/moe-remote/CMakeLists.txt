@@ -98,6 +98,7 @@ foreach(t moe_remote_shm_test:r3_moe_shm_test moe_backend_test:r3_moe_backend_te
   target_link_libraries(r3_moe_shm_test PRIVATE Threads::Threads)
   target_link_libraries(r3_combine_pool_test PRIVATE Threads::Threads)
   target_link_libraries(r3_combine_epoch_test PRIVATE Threads::Threads)
+  target_link_libraries(r3_segment_version_test PRIVATE Threads::Threads)
   # RAD29: route compaction vs the per-route-atomic loop it replaced (equivalence; --bench for timing). Needs a GPU.
   add_executable(r3_route_compact_test EXCLUDE_FROM_ALL ${CMAKE_CURRENT_SOURCE_DIR}/route_compact_test.hip)
   set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/route_compact_test.hip PROPERTIES LANGUAGE HIP)

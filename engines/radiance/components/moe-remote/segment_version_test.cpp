@@ -1,7 +1,12 @@
 // RHP11 F: Segment::open refuses a non-v23 shared mailbox before
 // registration. HIP functions are stubs: this test uses NO GPU.
 #include "moe_remote_shm.h"
+#include <atomic>
+#include <chrono>
 #include <cstdio>
+#include <fcntl.h>
+#include <sys/mman.h>
+#include <thread>
 #include <cstdlib>
 #include <string>
 #include <unistd.h>
@@ -52,5 +57,48 @@ int main() {
               "bad v23 generation never registered");
         g->digest=saved;
     }
+    // The name can exist before ftruncate: an attacher must not mmap and
+    // read a zero-length object (SIGBUS), even when shm_open succeeds.
+    const std::string delayed_name = "/bc-v23-sizing-" + std::to_string(getpid());
+    const int delayed_fd = shm_open(delayed_name.c_str(),
+                                   O_CREAT | O_EXCL | O_RDWR | O_CLOEXEC, 0600);
+    check(delayed_fd >= 0, "open unsized mailbox");
+    std::atomic<bool> entered{false}, finished{false}, accepted{false};
+    std::thread attacher([&] {
+        Segment segment;
+        entered.store(true, std::memory_order_release);
+        const bool ok = segment.open(delayed_name.c_str(), layout.bytes, false, 5);
+        accepted.store(ok && segment.header() && segment.header()->version == kVersion,
+                       std::memory_order_release);
+        finished.store(true, std::memory_order_release);
+    });
+    while (!entered.load(std::memory_order_acquire)) std::this_thread::yield();
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    check(!finished.load(std::memory_order_acquire),
+          "unsized segment cannot finish attaching or access the header");
+    check(ftruncate(delayed_fd, (off_t)layout.bytes) == 0, "late ftruncate");
+    void* delayed_map = mmap(nullptr, layout.bytes, PROT_READ | PROT_WRITE,
+                             MAP_SHARED, delayed_fd, 0);
+    check(delayed_map != MAP_FAILED, "map sized creator segment");
+    check(init(delayed_map, 2, shape, 2), "initialize late-sized v23");
+    static_cast<Header*>(delayed_map)->helper_count = 2;
+    attacher.join();
+    check(accepted.load(std::memory_order_acquire), "attacher waits for sizing and v23");
+    check(munmap(delayed_map, layout.bytes) == 0, "unmap late segment");
+    check(::close(delayed_fd) == 0 && shm_unlink(delayed_name.c_str()) == 0,
+          "remove late segment");
+
+    const std::string short_name = "/bc-v23-short-" + std::to_string(getpid());
+    const int short_fd = shm_open(short_name.c_str(),
+                                  O_CREAT | O_EXCL | O_RDWR | O_CLOEXEC, 0600);
+    check(short_fd >= 0 && ftruncate(short_fd, (off_t)layout.bytes - 1) == 0,
+          "create undersized segment");
+    {
+        Segment short_attach;
+        check(!short_attach.open(short_name.c_str(), layout.bytes, false, 1) &&
+              !short_attach.host(), "undersized segment must time out before mmap");
+    }
+    check(::close(short_fd) == 0 && shm_unlink(short_name.c_str()) == 0,
+          "remove undersized segment");
     std::puts("r3_segment_version_test: ok");
 }

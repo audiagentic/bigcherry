@@ -40,11 +40,14 @@ inline bool combine_ticket_valid(const CombineIdentity& t,uint32_t helpers) {
 inline bool combine_request_valid(const r3::moe_shm::Request& first,
                                   const r3::moe_shm::Request& other,
                                   const r3::moe_shm::PlacementControl& active,
-                                  uint32_t rows,uint32_t sequence) {
+                                  uint32_t rows,uint32_t sequence,uint32_t helper_slot) {
+    // The publisher uses step_slot(k, rank, helpers) == k for a one-rank engine
+    // with multiple helpers, and stamps world == 1 on every request.
+    // row_base comes from the same activation pointer for every helper in a pass.
     return sequence && other.sequence==sequence &&
+        other.rank==helper_slot && other.rank_count==1 &&
         other.rows==rows && other.layer==first.layer &&
-        other.rank_count==first.rank_count &&
-        /* rank is each helper's own slot (publish writes q->rank = slot); slot identity is checked by the caller */
+        other.row_base==first.row_base &&
         other.hidden==first.hidden && other.placement_epoch==first.placement_epoch &&
         other.generation_slot==first.generation_slot &&
         first.placement_epoch==active.active_epoch &&
@@ -147,7 +150,7 @@ inline bool combine_step(void* map, const r3::moe_shm::Request* q0, uint32_t hel
         if (h->combine.seq[i]) participants|=1u<<i;
     const CombineIdentity ticket{q0->placement_epoch,q0->generation_slot,g,participants};
     if (!combine_ticket_valid(ticket,helpers) ||
-        !combine_request_valid(*q0,*q0,active,rows,q0->sequence) ||
+        !combine_request_valid(*q0,*q0,active,rows,q0->sequence,0) ||
         load(&h->combine.request)!=g ||
         h->combine.lane[0]!=lane_of(0,kSmallClasses)) return false;
     if (helpers < 2 || helpers > kCombineHelpers || rows == 0 || rows > h->max_rows || q0->rows != rows ||
@@ -173,7 +176,7 @@ inline bool combine_step(void* map, const r3::moe_shm::Request* q0, uint32_t hel
             std::this_thread::yield();
         }
         if (lane_class(lanek)!=kSmallClasses ||
-            !combine_request_valid(*q0,*qk,active,rows,seqk)) {
+            !combine_request_valid(*q0,*qk,active,rows,seqk,k)) {
             std::fprintf(stderr, "r3_moe_worker: combine stopped: helper %u's request does not match\n", k);
             return false;
         }
