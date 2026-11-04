@@ -17,8 +17,7 @@ def selected(paths):
         "!engines/radiance/**/docs/**",
         "tools/bigcherry/build/**",
     ]
-    compiled = [(mod.glob_to_regex(p.lstrip("!")), not p.startswith("!")) for p in patterns]
-    return any(mod.path_selected(path, compiled) for path in paths)
+    return mod.first_match(paths, patterns) is not None
 
 
 def test_radiance_markdown_and_docs_skip():
@@ -41,8 +40,8 @@ def test_buildable_changes_still_run():
     assert selected(["engines/radiance/README.md", "engines/radiance/patches/fix.patch"])
 
 
-def test_last_match_wins_and_other_jobs_unchanged():
-    match = mod.glob_to_regex
-    rules = [(match("x/**"), True), (match("x/**/*.md"), False), (match("x/important.md"), True)]
-    assert mod.path_selected("x/important.md", rules)
-    assert not mod.path_selected("x/other.md", rules)
+def test_exclusions_win_regardless_of_rule_order():
+    rules = ["x/**", "!x/**/*.md", "x/important.md"]
+    assert mod.first_match(["x/important.md"], rules) is None
+    assert mod.first_match(["x/other.md"], rules) is None
+    assert mod.first_match(["x/src.cpp"], rules) == "x/src.cpp"
