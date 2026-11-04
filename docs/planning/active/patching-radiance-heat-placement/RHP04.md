@@ -159,6 +159,7 @@ Run policy-live-7, same workload and settings as policy-live-5 (slice H) and pol
 ## Ledger-events
 
 
+
 - chg_20261101_225732_planning-a-staged-roadmap-for_4092
 - 2026-11-01T22:57:35.857193+00:00 (updated-by): Updated: section:ledger-events
 - chg_20261102_022722_groundwork-for-live-expert-pla_5619
@@ -174,3 +175,5 @@ Run policy-live-7, same workload and settings as policy-live-5 (slice H) and pol
 - 2026-11-04T16:36:49.024917+00:00 (updated-by): Updated: section:notes
 - chg_20261104_163653_recorded-why-the-first-automat_1569
 - 2026-11-04T16:36:57.133298+00:00 (updated-by): Updated: section:ledger-events
+- chg_20261104_205414_live-expert-placement-now-hold_8315
+- 2026-11-04T20:54:20.931133+00:00 (updated-by): Updated: section:ledger-events
