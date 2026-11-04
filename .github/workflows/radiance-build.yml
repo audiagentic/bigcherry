@@ -119,49 +119,49 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: work/ci-prebuilt/engine
-          key: radiance-prebuilt-v2-${{ steps.layer_keys.outputs.engine }}
+          key: radiance-prebuilt-v3-${{ steps.layer_keys.outputs.engine }}
 
       - name: Restore prebuilt libr3 layer (from main)
         id: layer_libr3
         uses: actions/cache/restore@v4
         with:
           path: work/ci-prebuilt/libr3
-          key: radiance-prebuilt-v2-${{ steps.layer_keys.outputs.libr3 }}
+          key: radiance-prebuilt-v3-${{ steps.layer_keys.outputs.libr3 }}
 
       - name: Restore prebuilt libr2 layer (from main)
         id: layer_libr2
         uses: actions/cache/restore@v4
         with:
           path: work/ci-prebuilt/libr2
-          key: radiance-prebuilt-v2-${{ steps.layer_keys.outputs.libr2 }}
+          key: radiance-prebuilt-v3-${{ steps.layer_keys.outputs.libr2 }}
 
       - name: Restore prebuilt moe-remote layer (from main)
         id: layer_moe_remote
         uses: actions/cache/restore@v4
         with:
           path: work/ci-prebuilt/moe_remote
-          key: radiance-prebuilt-v2-${{ steps.layer_keys.outputs.moe_remote }}
+          key: radiance-prebuilt-v3-${{ steps.layer_keys.outputs.moe_remote }}
 
       - name: Restore prebuilt ngram-helper layer (from main)
         id: layer_ngram_helper
         uses: actions/cache/restore@v4
         with:
           path: work/ci-prebuilt/ngram_helper
-          key: radiance-prebuilt-v2-${{ steps.layer_keys.outputs.ngram_helper }}
+          key: radiance-prebuilt-v3-${{ steps.layer_keys.outputs.ngram_helper }}
 
       - name: Restore prebuilt bc-gfx12 layer (from main)
         id: layer_bc_gfx12
         uses: actions/cache/restore@v4
         with:
           path: work/ci-prebuilt/bc_gfx12
-          key: radiance-prebuilt-v2-${{ steps.layer_keys.outputs.bc_gfx12 }}
+          key: radiance-prebuilt-v3-${{ steps.layer_keys.outputs.bc_gfx12 }}
 
       - name: Restore prebuilt serving layer (from main)
         id: layer_serving
         uses: actions/cache/restore@v4
         with:
           path: work/ci-prebuilt/serving
-          key: radiance-prebuilt-v2-${{ steps.layer_keys.outputs.serving }}
+          key: radiance-prebuilt-v3-${{ steps.layer_keys.outputs.serving }}
 
       - name: Validate and install verified prebuilt layers
         run: python3 .github/scripts/ci_build_layers.py restore
@@ -234,49 +234,49 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: work/ci-prebuilt/engine
-          key: radiance-prebuilt-v2-${{ steps.layer_keys.outputs.engine }}
+          key: radiance-prebuilt-v3-${{ steps.layer_keys.outputs.engine }}
 
       - name: Seed libr3 prebuilt layer from main
         if: github.ref == 'refs/heads/main' && github.event_name == 'push' && steps.layer_libr3.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: work/ci-prebuilt/libr3
-          key: radiance-prebuilt-v2-${{ steps.layer_keys.outputs.libr3 }}
+          key: radiance-prebuilt-v3-${{ steps.layer_keys.outputs.libr3 }}
 
       - name: Seed libr2 prebuilt layer from main
         if: github.ref == 'refs/heads/main' && github.event_name == 'push' && steps.layer_libr2.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: work/ci-prebuilt/libr2
-          key: radiance-prebuilt-v2-${{ steps.layer_keys.outputs.libr2 }}
+          key: radiance-prebuilt-v3-${{ steps.layer_keys.outputs.libr2 }}
 
       - name: Seed moe-remote prebuilt layer from main
         if: github.ref == 'refs/heads/main' && github.event_name == 'push' && steps.layer_moe_remote.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: work/ci-prebuilt/moe_remote
-          key: radiance-prebuilt-v2-${{ steps.layer_keys.outputs.moe_remote }}
+          key: radiance-prebuilt-v3-${{ steps.layer_keys.outputs.moe_remote }}
 
       - name: Seed ngram-helper prebuilt layer from main
         if: github.ref == 'refs/heads/main' && github.event_name == 'push' && steps.layer_ngram_helper.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: work/ci-prebuilt/ngram_helper
-          key: radiance-prebuilt-v2-${{ steps.layer_keys.outputs.ngram_helper }}
+          key: radiance-prebuilt-v3-${{ steps.layer_keys.outputs.ngram_helper }}
 
       - name: Seed bc-gfx12 prebuilt layer from main
         if: github.ref == 'refs/heads/main' && github.event_name == 'push' && steps.layer_bc_gfx12.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: work/ci-prebuilt/bc_gfx12
-          key: radiance-prebuilt-v2-${{ steps.layer_keys.outputs.bc_gfx12 }}
+          key: radiance-prebuilt-v3-${{ steps.layer_keys.outputs.bc_gfx12 }}
 
       - name: Seed serving prebuilt layer from main
         if: github.ref == 'refs/heads/main' && github.event_name == 'push' && steps.layer_serving.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: work/ci-prebuilt/serving
-          key: radiance-prebuilt-v2-${{ steps.layer_keys.outputs.serving }}
+          key: radiance-prebuilt-v3-${{ steps.layer_keys.outputs.serving }}
       - name: Report HIP compilation timings
         if: always()
         continue-on-error: true
