@@ -216,9 +216,10 @@ plan_check_flags && printf 'ARGS:%s\\n' "${{PLAN_CHECK_ARGS[*]}}"
     def test_the_launcher_has_no_way_to_start_the_engine_without_the_check(self) -> None:
         text = LAUNCHER.read_text()
         self.assertEqual(text.count('start_engine "$LOG" "${PLAN_CHECK_ARGS[@]}"'), 1)
-        # the one real engine start passes the armed flags; the only other start_engine call is the measuring start
+        # the one real engine start passes the armed flags; the two other calls are the helper and dense memory-plan measurements
         calls = [l.strip() for l in text.splitlines() if l.strip().startswith("start_engine ") and "()" not in l]
-        self.assertEqual(len(calls), 2, calls)
+        self.assertEqual(len(calls), 3, calls)
+        self.assertEqual(sum("--plan-memory" in c for c in calls), 2)
         self.assertTrue(any("--plan-memory" in c for c in calls))
         self.assertTrue(any("PLAN_CHECK_ARGS" in c for c in calls))
         # the check is armed, and fails the launch, before anything starts for real
