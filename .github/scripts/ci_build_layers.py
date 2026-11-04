@@ -154,7 +154,14 @@ def export_layers(root: Path, builds: Path, cache: Path) -> None:
         with tarfile.open(staged, "w:gz", compresslevel=1) as tar:
             for path in files:
                 rel = f"{rel_build}/{path.relative_to(build).as_posix()}"
-                tar.add(path, arcname=rel, recursive=False)
+                info = tar.gettarinfo(path, arcname=rel)
+                if info.issym():
+                    info.linkname = _relative_sources_link(builds, rel, info.linkname)
+                if info.isfile():
+                    with path.open("rb") as stream:
+                        tar.addfile(info, stream)
+                else:
+                    tar.addfile(info)
         staged.replace(archive)
         document = {
             "schema": SCHEMA, "name": name, "key": key,
@@ -179,6 +186,36 @@ def validate_manifest(folder: Path, name: str, key: str) -> dict:
     return doc
 
 
+def _is_sources_link(dest: str) -> bool:
+    """A link target (relative to the builds directory) inside one content-addressed source tree."""
+    parts = PurePosixPath(dest).parts
+    return (len(parts) > 3 and parts[:2] == ("..", "sources") and len(parts[2]) == 32
+            and all(c in "0123456789abcdef" for c in parts[2]) and ".." not in parts[2:])
+
+
+def _relative_sources_link(builds: Path, member: str, linkname: str) -> str:
+    """The build tree links its include directory into the content-addressed source tree by absolute path
+    (rad_include/arch). The sources directory is the builds directory's sibling, so the same link written relative
+    resolves on any host or container that mounts the work root, which an absolute one cannot."""
+    if not posixpath.isabs(linkname):
+        return linkname
+    sources = (builds.resolve().parent / "sources").as_posix()
+    if not linkname.startswith(sources + "/"):
+        return linkname   # still absolute: the restore refuses it, as before
+    link_dir = (builds.resolve() / PurePosixPath(member).parent).as_posix()
+    return posixpath.relpath(linkname, link_dir)
+
+
+def _extract_filter(member: tarfile.TarInfo, path: str) -> tarfile.TarInfo | None:
+    # The data filter refuses any link that leaves the extraction directory; the one shape _validate_archive allows
+    # to (a link into a content-addressed source tree) is taken as it is, nothing else is.
+    if member.issym():
+        dest = posixpath.normpath(posixpath.join(posixpath.dirname(member.name), member.linkname))
+        if _is_sources_link(dest):
+            return member
+    return tarfile.data_filter(member, path)
+
+
 def _validate_archive(tar: tarfile.TarFile, rel_build: str, name: str) -> None:
     total, count = 0, 0
     prefix = rel_build + ("/components/" + name + "/" if name != "engine" else "/")
@@ -197,7 +234,7 @@ def _validate_archive(tar: tarfile.TarFile, rel_build: str, name: str) -> None:
             if posixpath.isabs(member.linkname):
                 raise LayerError(f"{name}: absolute symlink in cache")
             dest = posixpath.normpath(posixpath.join(posixpath.dirname(member.name), member.linkname))
-            if not dest.startswith(rel_build + "/"):
+            if not (dest.startswith(rel_build + "/") or _is_sources_link(dest)):
                 raise LayerError(f"{name}: escaping symlink in cache")
 
 
@@ -224,7 +261,7 @@ def restore_layers(root: Path, builds: Path, cache: Path) -> None:
             _validate_archive(tar, doc["build"], name)
             # tar members are verified content-hashed above and restricted to
             # the content-addressed build directory; no arbitrary paths.
-            tar.extractall(builds, filter="data")
+            tar.extractall(builds, filter=_extract_filter)
         print(f"restored prebuilt {name} layer: {doc['files']} files")
     if missing:
         build = builds / base_doc["build"]
