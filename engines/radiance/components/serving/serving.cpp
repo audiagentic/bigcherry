@@ -57,10 +57,10 @@ const std::vector<Field>& schema_fields() {
             "launcher MAX_LEN=262144; trained model context", "policy", "startup-only", 1);
         add("service.retention", "string", "keep",
             "launcher: finished-session prefix cache retention", "policy", "live",
-            0, 0, {"keep", "evict"});
+            0, 0, {"keep", "discard"});
         add("service.quality", "string", "baseline",
             "launcher: baseline fp8 KV policy", "policy", "startup-only",
-            0, 0, {"baseline", "lossless"});
+            0, 0, {"baseline", "strict"});
         add("layout.name", "string", "flashnext-4gpu",
             "launcher LAYOUT default; named layouts in engines/radiance/layouts.toml");
         add("layout.engine_card", "string", nullptr,
@@ -176,7 +176,7 @@ const std::vector<Field>& schema_fields() {
             "startup-only", 0, 0, {"none", "yarn:4"});
         add("engine.prefix_resume", "string", "nearest",
             "launcher PREFIX_RESUME=nearest", "policy", "startup-only", 0, 0,
-            {"nearest", "off"});
+            {"nearest", "exact"});
         return f;
     }();
     return all;
