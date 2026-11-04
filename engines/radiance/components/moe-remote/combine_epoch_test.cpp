@@ -88,6 +88,11 @@ int main() {
     q0->placement_epoch=epoch+1;
     check(!run() && !h->combine.done,"helper zero wrong active epoch rejected");
     q0->placement_epoch=epoch;
+    // Both helpers can agree with each other yet carry a non-active epoch.
+    q0->placement_epoch=q1->placement_epoch=epoch+1;
+    check(!run() && !h->combine.done && !h->chunks.done[0],
+          "non-active epoch never publishes an early chunk");
+    q0->placement_epoch=q1->placement_epoch=epoch;
     check(run() && h->combine.done==1 && h->chunks.done[0]==1,
           "production combine success with matching participants");
     h->combine.done=h->chunks.done[0]=0;

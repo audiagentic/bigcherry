@@ -76,12 +76,13 @@ private:
             return false;
         }
         if (has_one) {
-            r3::forced::Move m;
-            if (!r3::forced::parse_move(one,&m)) {
-                *err="R3_MOE_PLACEMENT_FORCE_MOVE: want layer:expert:destination_helper";
+            r3::forced::Step step;
+            if (!r3::forced::parse_step(one,&step) ||
+                step.kind==r3::forced::Step::Kind::AUTO_SWAP) {
+                *err="R3_MOE_PLACEMENT_FORCE_MOVE: want layer:expert:helper or swap:layerA:expertA:layerB:expertB";
                 return false;
             }
-            force_schedule.steps.push_back(m);
+            force_schedule.steps.push_back(step);
         } else if (has_file && !r3::forced::read_schedule(file,&force_schedule,err)) {
             return false;
         }

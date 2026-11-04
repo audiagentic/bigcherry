@@ -346,6 +346,7 @@ public:
     }
     const std::vector<int32_t>& initial_locals() const { return initial_locals_; }
     uint64_t expert_stride() const { return slots_ ? slots_->stride() : 0; }
+    uint64_t move_bytes_staged() const { return move_bytes_staged_; }
     int32_t preferred_local(uint32_t expert) const override {
         return expert<fixed_locals_.size() ? fixed_locals_[expert] : -1;
     }
@@ -387,6 +388,7 @@ public:
             (void)hipEventDestroy(copy_event_); copy_event_=nullptr; x={}; return false;
         }
         move_expert_=expert; copy_pending_=true;
+        move_bytes_staged_ += bytes; // successfully staged on the private stream, never per-request
         return true;
     }
     r3::worker_moves::Event upload_event() override {
@@ -1195,6 +1197,7 @@ private:
     hipEvent_t copy_event_ = nullptr; // a fresh event for each gained expert
     uint32_t move_expert_ = UINT32_MAX;
     bool staging_upload_ = false, copy_pending_ = false;
+    uint64_t move_bytes_staged_ = 0;
     uint32_t active_generation_ = 0;
     uint8_t* loading_base_ = nullptr;
     uint64_t loading_size_ = 0, loading_used_ = 0;

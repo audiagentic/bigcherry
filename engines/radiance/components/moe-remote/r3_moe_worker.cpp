@@ -614,10 +614,11 @@ int main(int argc, char** argv) {
                 forced->observe(*epoch_cycle.proposal_controller(),epoch_clock.now_ns());
             if (g_force_report_requested) {
                 g_force_report_requested=0;
-                if (forced) forced->report(map,gpu->move_ledger()->charged(),helper_index);
+                if (forced) forced->report(map,gpu->move_ledger()->charged(),gpu->move_bytes_staged(),helper_index);
                 else std::fprintf(stderr,
-                    "placement helper=%u ledger_charged=%llu\n",helper_index,
-                    (unsigned long long)gpu->move_ledger()->charged());
+                    "placement helper=%u ledger_charged=%llu local_bytes_staged=%llu\n",helper_index,
+                    (unsigned long long)gpu->move_ledger()->charged(),
+                    (unsigned long long)gpu->move_bytes_staged());
             }
             const timespec quantum{0, 2'000'000};
             (void)::syscall(SYS_futex, reinterpret_cast<uint32_t*>(&g_stop_word), FUTEX_WAIT_PRIVATE, v,
@@ -642,8 +643,12 @@ int main(int argc, char** argv) {
         if (forced) {
             if (epoch_cycle.proposal_controller())
                 forced->observe(*epoch_cycle.proposal_controller(),epoch_clock.now_ns());
-            forced->report(map,gpu->move_ledger()->charged(),helper_index);
+            forced->report(map,gpu->move_ledger()->charged(),gpu->move_bytes_staged(),helper_index);
         }
+        if (!forced) std::fprintf(stderr,
+            "placement helper=%u ledger_charged=%llu local_bytes_staged=%llu\n", helper_index,
+            (unsigned long long)gpu->move_ledger()->charged(),
+            (unsigned long long)gpu->move_bytes_staged());
         if (epoch_cycle.enabled() && helper_index == 0)
             std::fprintf(stderr, "r3_moe_worker: placement epoch cycles completed %llu (every %u s of burst)\n",
                          (unsigned long long)epoch_cycle.completed(), cfg.epoch_cycle_s);

@@ -17,6 +17,22 @@ using r3::epoch::Controller;
 using r3::epoch::FaultCode;
 
 struct Move { uint32_t layer=0, expert=0, destination=0; };
+struct Step {
+    enum class Kind : uint8_t { MOVE, SWAP, AUTO_SWAP };
+    Kind kind=Kind::MOVE;
+    Move move{};
+    uint32_t layer_b=0, expert_b=0;
+    Step()=default;
+    Step(Move m):move(m){}
+    static Step swap(uint32_t a_layer,uint32_t a_expert,
+                     uint32_t b_layer,uint32_t b_expert) {
+        Step s; s.kind=Kind::SWAP; s.move={a_layer,a_expert,0};
+        s.layer_b=b_layer;s.expert_b=b_expert;return s;
+    }
+    static Step automatic(uint32_t x,uint32_t y) {
+        Step s; s.kind=Kind::AUTO_SWAP; s.move={x,y,0};return s;
+    }
+};
 inline bool number(const std::string& s,uint32_t* p) {
     if (!p || s.empty()) return false;
     for(char c:s) if(c<'0'||c>'9') return false;
@@ -32,16 +48,39 @@ inline bool parse_move(const std::string& s,Move* m) {
         number(s.substr(a+1,b-a-1),&m->expert) &&
         number(s.substr(b+1),&m->destination);
 }
-// A file contains one layer:expert:destination per line. Optional FIRST
-// directive repeat=N repeats all lines. For churn list both move and return:
-// repeat=500, 0:3:1, 0:3:0 => 1,000 legal proposals.
+inline bool parse_step(const std::string& s,Step* out) {
+    if(!out) return false;
+    if(s.compare(0,5,"swap:")!=0) {
+        Move m;
+        if(!parse_move(s,&m)) return false;
+        *out=Step{m};return true;
+    }
+    if(s.compare(0,10,"swap:auto:")==0) {
+        const auto a=s.find(':',10);
+        uint32_t x=0,y=0;
+        if(a==std::string::npos || s.find(':',a+1)!=std::string::npos ||
+           !number(s.substr(10,a-10),&x) || !number(s.substr(a+1),&y)) return false;
+        *out=Step::automatic(x,y);return true;
+    }
+    std::array<uint32_t,4> n{};
+    size_t start=5;
+    for(size_t i=0;i<4;++i) {
+        const auto end=s.find(':',start);
+        if((i==3)!=(end==std::string::npos) ||
+           !number(s.substr(start,end==std::string::npos?end:end-start),&n[i])) return false;
+        start=end+1;
+    }
+    *out=Step::swap(n[0],n[1],n[2],n[3]);return true;
+}
+// A schedule has optional FIRST repeat=N and ordered move, explicit swap or
+// swap:auto:x:y rows. Exactly one proposal is issued per row.
 struct Schedule {
-    std::vector<Move> steps;
+    std::vector<Step> steps;
     uint32_t repeat=1;
     uint64_t issued=0;
     uint64_t count() const {return uint64_t(steps.size())*repeat;}
     bool pending() const {return issued<count();}
-    Move next() const {return steps[size_t(issued%steps.size())];}
+    Step next() const {return steps[size_t(issued%steps.size())];}
     void advance() {++issued;}
 };
 inline bool read_schedule(const std::string& file,Schedule* out,std::string* err) {
@@ -60,66 +99,136 @@ inline bool read_schedule(const std::string& file,Schedule* out,std::string* err
                 if(err)*err="invalid repeat on line "+std::to_string(no);return false;
             }
         } else {
-            Move m;
-            if(!parse_move(line,&m)) {
-                if(err)*err="invalid triple on line "+std::to_string(no);return false;
+            Step step;
+            if(!parse_step(line,&step)) {
+                if(err)*err="invalid placement step on line "+std::to_string(no);return false;
             }
-            s.steps.push_back(m);
+            s.steps.push_back(step);
         }
         first=false;
     }
-    // The transaction/epoch sequence is bounded by the v23 32-bit epoch.
     if(!in.eof()||s.steps.empty()||s.steps.size()>UINT32_MAX/s.repeat) {
         if(err)*err="unreadable, empty or epoch-exhausting schedule";return false;
     }
     *out=std::move(s);return true;
 }
-using Source = std::function<bool(uint32_t,uint32_t)>;
-// Validate the sealed map, frozen runtime slot, source and steady-state budget
-// BEFORE staging. Transient physical capacity is checked again by the real
-// Participant, which can reject RESERVING without changing ownership.
-inline FaultCode eligible(const void* map,const Move& m,
-             const std::vector<uint64_t>& budgets,uint64_t stride,
-             const Source& source) {
+using Source=std::function<bool(uint32_t,uint32_t)>;
+inline constexpr std::array<uint32_t,2> kNoPrevious{{UINT32_MAX,UINT32_MAX}};
+struct Resolved {
+    std::array<Move,2> changes{};
+    std::array<uint32_t,2> ids{{UINT32_MAX,UINT32_MAX}};
+    uint32_t count=0;
+};
+// Resolve from ACTIVE only; previous contains the expert IDs moved in the
+// last committed transaction. AUTO picks the first eligible distinct pair
+// in ascending (layer,expert), excluding *both* previous IDs.
+inline FaultCode resolve(const void* map,const Step& step,
+    const std::vector<uint64_t>& budgets,uint64_t stride,const Source& source,
+    const std::array<uint32_t,2>& previous,Resolved* result) {
     PlacementControl c{};
-    if(!map||!placement_snapshot(map,&c)) return FaultCode::INVALID_MAP;
+    if(!result||!map||!placement_snapshot(map,&c))return FaultCode::INVALID_MAP;
     const auto* h=static_cast<const Header*>(map);
     if(c.state!=uint32_t(PlacementState::ACTIVE)||c.fault_code||
        c.active_slot>1||!c.active_digest||!stride||
        generation_digest(map,c.active_slot)!=c.active_digest||
-       budgets.size()!=h->helper_count||m.layer>=h->layer_count||
-       m.expert>=h->expert_count||m.destination>=h->helper_count)
+       budgets.size()!=h->helper_count||!h->owner_map_bytes)
         return FaultCode::INVALID_MAP;
-    const size_t id=size_t(m.layer)*h->expert_count+m.expert;
     const auto* owners=generation_map(map,c.active_slot);
-    if(owners[id]==kOwnerLocal||owners[id]>=h->helper_count||
-       owners[id]==m.destination||!load(&h->layer_map_ready[m.layer])||
-       layer_slot(map,m.layer,m.expert)<0) return FaultCode::INVALID_MAP;
-    if(!source||!source(m.layer,m.expert)) return FaultCode::SOURCE;
-    uint64_t held=0;
-    for(uint32_t i=0;i<h->owner_map_bytes;++i) held+=owners[i]==m.destination;
-    if(held>=budgets[m.destination]/stride) return FaultCode::CAPACITY;
+    auto in_range=[&](uint32_t layer,uint32_t expert) {
+        return layer<h->layer_count&&expert<h->expert_count;
+    };
+    auto runtime=[&](uint32_t layer,uint32_t expert) {
+        return load(&h->layer_map_ready[layer]) &&
+               layer_slot(map,layer,expert)>=0;
+    };
+    Resolved r;
+    if(step.kind==Step::Kind::MOVE) {
+        const auto& m=step.move;
+        if(!in_range(m.layer,m.expert)||m.destination>=h->helper_count)
+            return FaultCode::INVALID_MAP;
+        const size_t id=size_t(m.layer)*h->expert_count+m.expert;
+        if(owners[id]>=h->helper_count||owners[id]==m.destination||
+           !runtime(m.layer,m.expert))return FaultCode::INVALID_MAP;
+        if(!source||!source(m.layer,m.expert))return FaultCode::SOURCE;
+        r.count=1;r.ids[0]=uint32_t(id);r.changes[0]=m;
+    } else {
+        uint32_t al=step.move.layer,ae=step.move.expert;
+        uint32_t bl=step.layer_b,be=step.expert_b;
+        if(step.kind==Step::Kind::AUTO_SWAP) {
+            const uint32_t x=step.move.layer,y=step.move.expert;
+            if(x>=h->helper_count||y>=h->helper_count||x==y)
+                return FaultCode::INVALID_MAP;
+            bool found=false;
+            for(uint32_t l=0;l<h->layer_count&&!found;++l) {
+                if(!load(&h->layer_map_ready[l]))continue;
+                uint32_t ex=UINT32_MAX,ey=UINT32_MAX;
+                for(uint32_t e=0;e<h->expert_count;++e) {
+                    const size_t id=size_t(l)*h->expert_count+e;
+                    if(id==previous[0]||id==previous[1]||
+                       layer_slot(map,l,e)<0||!source||!source(l,e))continue;
+                    if(owners[id]==x && ex==UINT32_MAX)ex=e;
+                    if(owners[id]==y && ey==UINT32_MAX)ey=e;
+                    if(ex!=UINT32_MAX&&ey!=UINT32_MAX)break;
+                }
+                if(ex!=UINT32_MAX&&ey!=UINT32_MAX) {
+                    al=bl=l;ae=ex;be=ey;found=true;
+                }
+            }
+            if(!found)return FaultCode::SOURCE;
+        }
+        if(!in_range(al,ae)||!in_range(bl,be)||
+           (al==bl&&ae==be))return FaultCode::INVALID_MAP;
+        const size_t a=size_t(al)*h->expert_count+ae;
+        const size_t b=size_t(bl)*h->expert_count+be;
+        const uint32_t x=owners[a],y=owners[b];
+        if(x>=h->helper_count||y>=h->helper_count||x==y||
+           !runtime(al,ae)||!runtime(bl,be))return FaultCode::INVALID_MAP;
+        if(!source||!source(al,ae)||!source(bl,be))return FaultCode::SOURCE;
+        r.count=2;r.ids={uint32_t(a),uint32_t(b)};
+        r.changes[0]={al,ae,y};r.changes[1]={bl,be,x};
+    }
+    // Postcommit residency, not transient peak: subtract all departures
+    // before admitting arrivals. A full helper can exchange one-for-one.
+    std::vector<uint64_t> counts(h->helper_count,0);
+    for(uint32_t id=0;id<h->owner_map_bytes;++id)
+        if(owners[id]<h->helper_count)++counts[owners[id]];
+    for(uint32_t i=0;i<r.count;++i) {
+        const uint32_t src=owners[r.ids[i]];
+        if(!counts[src])return FaultCode::INVALID_MAP;
+        --counts[src];
+    }
+    for(uint32_t i=0;i<r.count;++i)++counts[r.changes[i].destination];
+    for(uint32_t i=0;i<h->helper_count;++i)
+        if(counts[i]>budgets[i]/stride)return FaultCode::CAPACITY;
+    *result=r;
     return FaultCode::NONE;
 }
-inline bool propose(void* map,Controller& controller,const Move& m,
-            const std::vector<uint64_t>& budgets,uint64_t stride,
-            const Source& source,FaultCode* outcome=nullptr) {
-    if(!controller.can_propose()) return false;
-    FaultCode fault=eligible(map,m,budgets,stride,source);
-    if(fault==FaultCode::NONE && !r3::epoch::stage_same_map_generation(map))
+inline FaultCode eligible(const void* map,const Step& step,
+    const std::vector<uint64_t>& budgets,uint64_t stride,const Source& source) {
+    Resolved ignored;
+    return resolve(map,step,budgets,stride,source,kNoPrevious,&ignored);
+}
+inline bool propose(void* map,Controller& controller,const Step& step,
+    const std::vector<uint64_t>& budgets,uint64_t stride,const Source& source,
+    const std::array<uint32_t,2>& previous=kNoPrevious,FaultCode* outcome=nullptr,
+    Resolved* chosen=nullptr) {
+    if(!controller.can_propose())return false;
+    Resolved r;
+    FaultCode fault=resolve(map,step,budgets,stride,source,previous,&r);
+    if(fault==FaultCode::NONE&&!r3::epoch::stage_same_map_generation(map))
         fault=FaultCode::INVALID_MAP;
     if(fault==FaultCode::NONE) {
-        const auto* h=static_cast<const Header*>(map);
         const uint32_t next=1u-controller.control().active_slot;
-        generation_map(map,next)[size_t(m.layer)*h->expert_count+m.expert]=
-            uint8_t(m.destination);
+        for(uint32_t i=0;i<r.count;++i)
+            generation_map(map,next)[r.ids[i]]=uint8_t(r.changes[i].destination);
         auto* gh=generation_header(map,next);
         gh->digest=generation_digest(map,next);
         if(!gh->digest||gh->digest==controller.control().active_digest||
-           !controller.propose(gh->digest)) fault=FaultCode::DEVICE;
+           !controller.propose(gh->digest))fault=FaultCode::DEVICE;
     }
     if(outcome)*outcome=fault;
-    return fault==FaultCode::NONE || controller.reject_staging(fault);
+    if(chosen&&fault==FaultCode::NONE)*chosen=r;
+    return fault==FaultCode::NONE||controller.reject_staging(fault);
 }
 // Fixed 64-bin, logarithmic duration histogram. Memory is independent of
 // churn count; median is explicitly approximate (lower bucket boundary).
@@ -145,6 +254,8 @@ class Driver {
     uint64_t txn_=0,started_=0,pause_=0,attempted_=0,committed_=0,aborted_=0,bytes_=0;
     uint32_t phase_=0;
     bool inflight_=false;
+    std::array<uint32_t,2> previous_{{UINT32_MAX,UINT32_MAX}};
+    std::array<uint32_t,2> pending_ids_{{UINT32_MAX,UINT32_MAX}};
     std::array<Duration,8> durations_{};
     Duration pauses_{};
     std::array<uint64_t,18> faults_{};
@@ -159,10 +270,23 @@ public:
     bool submit(void* map,Controller& c,uint64_t now) {
         if(inflight_||!pending()||!c.can_propose()) return true;
         FaultCode fault=FaultCode::NONE;
-        if(!propose(map,c,schedule_.next(),budgets_,stride_,source_,&fault))
+        Resolved chosen;
+        const Step step=schedule_.next();
+        if(!propose(map,c,step,budgets_,stride_,source_,previous_,&fault,&chosen))
             return false;
         schedule_.advance(); ++attempted_;
-        if(fault==FaultCode::NONE) bytes_+=stride_;
+        pending_ids_=chosen.ids;
+        if(fault==FaultCode::NONE) {
+            bytes_+=stride_*chosen.count;
+            if(chosen.count==2)
+                std::fprintf(stderr,
+                    "forced resolved transaction=%llu epoch=%llu swap=%u:%u:%u:%u helpers=%u:%u\n",
+                    (unsigned long long)c.control().transaction_id,
+                    (unsigned long long)c.control().pending_epoch,
+                    chosen.changes[0].layer,chosen.changes[0].expert,
+                    chosen.changes[1].layer,chosen.changes[1].expert,
+                    chosen.changes[1].destination,chosen.changes[0].destination);
+        }
         inflight_=true;txn_=c.control().transaction_id;
         phase_=c.control().state;started_=now;pause_=0;
         return true;
@@ -183,19 +307,21 @@ public:
             return;
         const auto& j=controller.journal().entry[c.journal_index];
         if(j.transaction_id!=txn_)return;
-        if(j.commit_ns)++committed_; else ++aborted_;
-        if(j.fault<faults_.size()&&j.fault)++faults_[j.fault];
+        if(j.commit_ns) {++committed_;previous_=pending_ids_;}
+        else ++aborted_;
+        const uint32_t fault=j.cleanup_fault ? j.cleanup_fault : j.fault;
+        if(fault<faults_.size()&&fault)++faults_[fault];
         if(pause_)pauses_.add(now-pause_);
         inflight_=false;
     }
-    void report(const void* map,uint64_t charged,uint32_t helper) const {
+    void report(const void* map,uint64_t charged,uint64_t local_bytes_staged,uint32_t helper) const {
         PlacementControl c{};
         if(!placement_snapshot(map,&c))return;
         std::fprintf(stderr,
-          "forced placement helper=%u attempted=%llu committed=%llu aborted=%llu inflight=%u bytes_staged=%llu active_epoch=%llu active_digest=%016llx active_slot=%u pending_epoch=%llu pending_digest=%016llx ledger_charged=%llu\n",
+          "forced placement helper=%u attempted=%llu committed=%llu aborted=%llu inflight=%u bytes_planned=%llu local_bytes_staged=%llu active_epoch=%llu active_digest=%016llx active_slot=%u pending_epoch=%llu pending_digest=%016llx ledger_charged=%llu\n",
           helper,(unsigned long long)attempted_,(unsigned long long)committed_,
           (unsigned long long)aborted_,unsigned(inflight_),(unsigned long long)bytes_,
-          (unsigned long long)c.active_epoch,(unsigned long long)c.active_digest,
+          (unsigned long long)local_bytes_staged,(unsigned long long)c.active_epoch,(unsigned long long)c.active_digest,
           c.active_slot,(unsigned long long)c.pending_epoch,
           (unsigned long long)c.pending_digest,(unsigned long long)charged);
         for(size_t i=0;i<durations_.size();++i)if(durations_[i].n)
