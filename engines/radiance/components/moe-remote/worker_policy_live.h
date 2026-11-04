@@ -68,7 +68,7 @@ inline bool derive_active_ledgers(const OwnerSnapshot& owners,
         if (v.slots.size() >= UINT32_MAX)
             return reject("policy: synthetic slot index overflow");
         v.slots.push_back({id,uint32_t(i),stride,owners.epoch,
-                           residency::State::ACTIVE,15});
+                           residency::State::ACTIVE,residency::kCompletePlaneMask});
         v.charged += stride;
     }
     *out=std::move(result);

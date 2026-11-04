@@ -4,6 +4,8 @@
 #include "worker_policy_config.h"
 #include "worker_policy_live.h"
 #include "worker_epoch.h"
+#include <algorithm>
+#include <atomic>
 #include <condition_variable>
 #include <cstdio>
 #include <map>
@@ -14,6 +16,7 @@
 
 namespace r3::policy {
 class Driver {
+    friend struct DriverTestAccess;
 public:
     struct Negative {
         uint64_t observed_ns=0, until_ns=0;
@@ -32,15 +35,17 @@ private:
         OwnerSnapshot owners;
         std::vector<uint64_t> last_move;
         std::map<std::pair<uint32_t,uint32_t>, Negative> excluded;
-        uint64_t now_ns=0, cooldown_until_ns=0;
+        uint64_t now_ns=0, cooldown_until_ns=0, terminal_generation=0;
     };
     struct Result {
         OwnerSnapshot owners;
         heat::Plan plan;
         std::string reason;
         bool evaluated=false, unwatermarked=false;
+        uint64_t terminal_generation=0, valid_until_ns=0;
     };
     Settings settings_;
+    const r3::epoch::Clock& clock_;
     std::unique_ptr<HeatSource> source_;
     std::vector<uint64_t> budgets_;
     uint64_t stride_=0;
@@ -49,7 +54,9 @@ private:
     uint64_t consumed_=0;
     MoveHistory history_;
     bool seeded_=false, inflight_=false;
-    uint64_t due_ns_=0, cooldown_until_ns_=0, txn_=0;
+    uint64_t due_ns_=0, cooldown_until_ns_=0, txn_=0, terminal_generation_=0;
+    uint64_t started_ns_=0, next_heartbeat_ns_=0;
+    std::atomic<uint64_t> last_feed_advance_ns_{0};
     heat::Plan pending_plan_;
     std::map<std::pair<uint32_t,uint32_t>,Negative> negatives_;
     Evidence evidence_;
@@ -62,6 +69,24 @@ private:
     static uint64_t add_saturating(uint64_t a,uint64_t b) {
         return b > UINT64_MAX-a ? UINT64_MAX : a+b;
     }
+    uint64_t feed_window_ns() const {
+        // Derived solely from mandatory explicit age and poll cadence controls.
+        return add_saturating(settings_.cadence_ns,settings_.controls.max_heat_age_ns);
+    }
+    bool no_live_feed(uint64_t now_ns) const {
+        const uint64_t advanced=last_feed_advance_ns_.load(std::memory_order_acquire);
+        const uint64_t since=advanced ? advanced : started_ns_;
+        return started_ns_ && now_ns>=add_saturating(since,feed_window_ns());
+    }
+    void prune_expired(uint64_t now_ns) {
+        bool changed=false;
+        for(auto it=negatives_.begin();it!=negatives_.end();)
+            if(now_ns>=it->second.until_ns) {
+                it=negatives_.erase(it);
+                changed=true;
+            } else ++it;
+        if(changed)++terminal_generation_; // expired cache snapshot invalidates queued work
+    }
     void record_no_change(const std::string& why) {
         ++evidence_.no_change;
         ++evidence_.reasons[why.empty()?"unspecified":why];
@@ -69,6 +94,7 @@ private:
     Result evaluate(const Snapshot& copy) {
         Result r;
         r.owners=copy.owners;
+        r.terminal_generation=copy.terminal_generation;
         timespec rt{};
         if(clock_gettime(CLOCK_REALTIME,&rt)!=0 || rt.tv_sec<0) {
             r.reason="realtime_clock";return r;
@@ -76,7 +102,14 @@ private:
         const uint64_t realtime=uint64_t(rt.tv_sec)*1000000000ULL+uint64_t(rt.tv_nsec);
         HeatDelta delta{};
         std::string why;
-        const auto status=source_->poll(copy.now_ns,realtime,&delta,&why);
+        // Poll timestamp is sampled after queue delays, not at job capture.
+        const uint64_t poll_now=clock_.now_ns();
+        if(!poll_now) {r.reason="monotonic_clock";return r;}
+        r.valid_until_ns=poll_now;
+        const auto status=source_->poll(poll_now,realtime,&delta,&why);
+        if(source_->authenticated_histogram_file() &&
+           delta.file_advanced && status!=HeatPoll::INVALID)
+            last_feed_advance_ns_.store(poll_now,std::memory_order_release);
         if(status==HeatPoll::INVALID) {r.reason="heat_invalid";return r;}
         if(status==HeatPoll::BASELINE) {
             // A discontinuity invalidates prior coverage. Rebase, never
@@ -90,7 +123,8 @@ private:
         const bool unwatermarked=!delta.complete_observations;
         if(unwatermarked &&
            !(settings_.accept_unwatermarked_heat &&
-             delta.provenance==HeatProvenance::ENGINE_HISTOGRAM_FILE)) {
+             delta.provenance==HeatProvenance::ENGINE_HISTOGRAM_FILE &&
+             source_->authenticated_histogram_file())) {
             r.reason="heat_unwatermarked";return r;
         }
         if(delta.age_ns>settings_.controls.max_heat_age_ns) {
@@ -99,6 +133,9 @@ private:
             consumed_=delta.observation_count;
             r.reason="heat_stale";return r;
         }
+        // Absolute expiry uses original file observation age at the poll.
+        r.valid_until_ns=add_saturating(
+            poll_now,settings_.controls.max_heat_age_ns-delta.age_ns);
         if(!consume_heat(delta,&heat_,&consumed_,
                          settings_.accept_unwatermarked_heat)) {
             r.reason="heat_invalid_coverage";return r;
@@ -126,14 +163,14 @@ private:
             // authoritative: v23 fail-closes a refused destination.
             for(uint32_t d=0;d<copy.owners.helpers;++d) {
                 const auto it=copy.excluded.find({uint32_t(i),d});
-                const bool banned=it!=copy.excluded.end() && copy.now_ns<it->second.until_ns;
+                const bool banned=it!=copy.excluded.end() && poll_now<it->second.until_ns;
                 e.target_eligible[d]=uint8_t(d==uint32_t(from) ||
                    (!e.protected_expert && budgets_[d]>=stride_ && !banned));
             }
         }
         heat::Input input;
         if(!build_input(copy.owners,experts,ledgers,heat_,delta,settings_.controls,
-                        copy.now_ns,copy.cooldown_until_ns,false,&input,
+                        poll_now,copy.cooldown_until_ns,false,&input,
                         &why,settings_.accept_unwatermarked_heat)) {
             r.reason="input_invalid";return r;
         }
@@ -141,7 +178,7 @@ private:
         r.plan=heat::propose(input);
         if(!r.plan.valid)r.reason="plan_invalid";
         else if(r.plan.no_change) {
-            if(copy.now_ns<copy.cooldown_until_ns)r.reason="abort_cooldown";
+            if(poll_now<copy.cooldown_until_ns)r.reason="abort_cooldown";
             else if(r.plan.baseline==0)r.reason="flat_heat";
             else r.reason="no_improvement_or_margin";
         }
@@ -167,10 +204,28 @@ private:
         }
     }
 public:
+    // Each barrier is independent, so a terminal transaction, cooldown,
+    // heat expiry or live ban is rechecked against the CURRENT state.
+    static const char* proposal_rejection(
+        uint64_t result_generation,uint64_t current_generation,
+        uint64_t valid_until_ns,uint64_t now_ns,uint64_t cooldown_until_ns,
+        const heat::Plan& plan,
+        const std::map<std::pair<uint32_t,uint32_t>,Negative>& negatives) {
+        if(result_generation!=current_generation)return "stale_terminal_generation";
+        if(now_ns<cooldown_until_ns)return "abort_cooldown";
+        if(!valid_until_ns || now_ns>=valid_until_ns)return "heat_expired_before_proposal";
+        for(const auto& move:plan.delta) {
+            if(move.to<0)return "invalid_destination";
+            const auto it=negatives.find({move.expert,uint32_t(move.to)});
+            if(it!=negatives.end() && now_ns<it->second.until_ns)
+                return "negative_destination";
+        }
+        return nullptr;
+    }
     Driver(Settings settings,std::unique_ptr<HeatSource> source,
            std::vector<uint64_t> budgets,uint64_t stride,
-           std::vector<uint8_t> protected_experts)
-        :settings_(std::move(settings)),source_(std::move(source)),
+           std::vector<uint8_t> protected_experts,const r3::epoch::Clock& clock)
+        :settings_(std::move(settings)),clock_(clock),source_(std::move(source)),
          budgets_(std::move(budgets)),stride_(stride),
          protected_(std::move(protected_experts)),
          heat_(uint32_t(protected_.size()),1,settings_.controls.half_life_observations) {
@@ -187,6 +242,9 @@ public:
            settings_.learned_eligibility_ttl_ns==0 ||
            budgets_.size()!=settings_.costs.size() ||
            budgets_.size()!=settings_.layer_caps.size()) return false;
+        started_ns_=clock_.now_ns();
+        if(!started_ns_)return false;
+        next_heartbeat_ns_=add_saturating(started_ns_,feed_window_ns());
         worker_=std::thread([this]{loop();});
         return true;
     }
@@ -201,6 +259,14 @@ public:
         if(worker_.joinable())worker_.join();
     }
     const Evidence& evidence() const {return evidence_;}
+    void heartbeat(uint64_t now_ns) {
+        if(!settings_.enabled || !started_ns_ || now_ns<next_heartbeat_ns_)return;
+        if(no_live_feed(now_ns))
+            std::fprintf(stderr,
+                "policy no_live_feed=1 window_ns=%llu (engine needs R3_MOE_WORKER_HISTOGRAM_PERIOD_S)\n",
+                (unsigned long long)feed_window_ns());
+        next_heartbeat_ns_=add_saturating(now_ns,feed_window_ns());
+    }
     size_t negative_count(uint64_t now_ns) const {
         size_t n=0;
         for(const auto& [key,entry]:negatives_)if(now_ns<entry.until_ns)++n;
@@ -215,6 +281,7 @@ public:
             if(!ready_ && (queued_ || now_ns<due_ns_ ||
                            now_ns<cooldown_until_ns_))return true;
         }
+        prune_expired(now_ns);
         OwnerSnapshot active;
         if(!capture_owners(map,&active)) {record_no_change("active_snapshot");return true;}
         if(active.owner.size()!=protected_.size() || active.helpers!=budgets_.size())
@@ -241,6 +308,11 @@ public:
             else if(!result.plan.valid || result.plan.no_change ||
                     !heat::delta_matches(result.plan,active.owner) ||
                     result.plan.delta.empty())record_no_change("invalid_delta");
+            else if(const char* reject=proposal_rejection(
+                        result.terminal_generation,terminal_generation_,
+                        result.valid_until_ns,clock_.now_ns(),cooldown_until_ns_,
+                        result.plan,negatives_))
+                record_no_change(reject);
             else {
                 // Pre-proposal ACTIVE revalidation; one Controller proposal,
                 // never direct publication. The full candidate map is staged.
@@ -276,6 +348,7 @@ public:
             job_.owners=std::move(active);
             job_.last_move=history_.times();
             job_.excluded=negatives_;
+            job_.terminal_generation=terminal_generation_;
             job_.now_ns=now_ns;
             job_.cooldown_until_ns=cooldown_until_ns_;
             queued_=true;
@@ -316,6 +389,8 @@ public:
             evidence_.transition_ns_total=add_saturating(evidence_.transition_ns_total,elapsed);
             evidence_.transition_ns_max=std::max(evidence_.transition_ns_max,elapsed);
         }
+        ++terminal_generation_; // invalidate results queued before any closed txn
+        prune_expired(now_ns);
         inflight_=false;
         pending_plan_={};
     }
@@ -323,7 +398,7 @@ public:
         moe_shm::PlacementControl c{};
         if(!moe_shm::placement_snapshot(map,&c))return;
         std::fprintf(stderr,
-            "policy placement helper=%u evaluated=%llu no_change=%llu proposed=%llu committed=%llu aborted=%llu learned_ineligible=%llu cache_active=%zu inflight=%u bytes_moved=%llu predicted_saving=%.6f transition_samples=%llu transition_ns_total=%llu transition_ns_max=%llu unwatermarked_heat=%u active_epoch=%llu active_digest=%016llx\n",
+            "policy placement helper=%u evaluated=%llu no_change=%llu proposed=%llu committed=%llu aborted=%llu learned_ineligible=%llu cache_active=%zu inflight=%u bytes_moved=%llu predicted_saving=%.6f transition_samples=%llu transition_ns_total=%llu transition_ns_max=%llu unwatermarked_heat=%u no_live_feed=%u active_epoch=%llu active_digest=%016llx\n",
             helper,(unsigned long long)evidence_.evaluated,
             (unsigned long long)evidence_.no_change,
             (unsigned long long)evidence_.proposed,
@@ -336,13 +411,29 @@ public:
             (unsigned long long)evidence_.transition_samples,
             (unsigned long long)evidence_.transition_ns_total,
             (unsigned long long)evidence_.transition_ns_max,
-            unsigned(evidence_.unwatermarked_heat),
+            unsigned(evidence_.unwatermarked_heat),unsigned(no_live_feed(now_ns)),
             (unsigned long long)c.active_epoch,
             (unsigned long long)c.active_digest);
         for(const auto& [reason,count]:evidence_.reasons)
             std::fprintf(stderr,"policy no_change_reason=%s count=%llu\n",
                          reason.c_str(),(unsigned long long)count);
-        for(const auto& [pair,entry]:negatives_)
+        // Synchronous evidence detail is capped by explicitly configured
+        // max moves and the actual helper count, regardless of cache shape.
+        using Entry=std::pair<std::pair<uint32_t,uint32_t>,Negative>;
+        std::vector<Entry> newest;
+        const size_t limit=std::min<size_t>(settings_.controls.max_moves,budgets_.size());
+        for(const auto& item:negatives_) {
+            if(now_ns>=item.second.until_ns || !limit)continue;
+            newest.push_back(item);
+            std::sort(newest.begin(),newest.end(),[](const Entry& a,const Entry& b) {
+                return a.second.observed_ns>b.second.observed_ns ||
+                    (a.second.observed_ns==b.second.observed_ns && a.first<b.first);
+            });
+            if(newest.size()>limit)newest.pop_back();
+        }
+        std::fprintf(stderr,"policy cache_details=%zu cache_detail_limit=%zu\n",
+                     newest.size(),limit);
+        for(const auto& [pair,entry]:newest)
             std::fprintf(stderr,"policy learned expert=%u destination=%u reason=%u observed_ns=%llu expires_ns=%llu\n",
                          pair.first,pair.second,entry.reason,
                          (unsigned long long)entry.observed_ns,

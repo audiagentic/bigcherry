@@ -632,7 +632,7 @@ int main(int argc, char** argv) {
             policy_driver=std::make_unique<r3::policy::Driver>(
                 cfg.policy,std::move(source),
                 std::vector<uint64_t>(budgets,budgets+helper_count),
-                gpu->expert_stride(),std::move(protected_experts));
+                gpu->expert_stride(),std::move(protected_experts),epoch_clock);
             if(!policy_driver->start()) {
                 std::fprintf(stderr,"r3_moe_worker: policy worker cannot start (invalid settings, source or budgets)\n");
                 raise_fault(h); lanes.stop_and_join(); return 2;
@@ -657,6 +657,8 @@ int main(int argc, char** argv) {
                 forced->observe(*epoch_cycle.proposal_controller(),epoch_clock.now_ns());
             if (policy_driver && epoch_cycle.proposal_controller())
                 policy_driver->observe(*epoch_cycle.proposal_controller(),map,epoch_clock.now_ns());
+            if (policy_driver)
+                policy_driver->heartbeat(epoch_clock.now_ns());
             if (g_force_report_requested) {
                 g_force_report_requested=0;
                 if (forced) forced->report(map,gpu->move_ledger()->charged(),gpu->move_bytes_staged(),helper_index);

@@ -33,9 +33,33 @@ struct Settings {
         }
         return true;
     }
+    // ASCII decimal only: no whitespace, hex, inf/nan, separators or
+    // locale-specific spellings. Conversion still checks overflow/underflow.
+    static bool decimal_token(const char* s,size_t n) {
+        size_t i=0;
+        if(i<n && s[i]=='+')++i;
+        size_t digits=0;
+        while(i<n && s[i]>='0' && s[i]<='9') {++i;++digits;}
+        if(i<n && s[i]=='.') {
+            ++i;
+            while(i<n && s[i]>='0' && s[i]<='9') {++i;++digits;}
+        }
+        if(!digits)return false;
+        if(i<n && (s[i]=='e'||s[i]=='E')) {
+            ++i;
+            if(i<n && (s[i]=='+'||s[i]=='-'))++i;
+            const size_t start=i;
+            while(i<n && s[i]>='0' && s[i]<='9')++i;
+            if(i==start)return false;
+        }
+        return i==n;
+    }
     static bool real(const char* key, double* out, bool can_zero, std::string* error) {
         const char* s=std::getenv(key);
         if (!s || !*s) {*error=std::string(key)+": required for policy; no default";return false;}
+        if(!decimal_token(s,std::strlen(s))) {
+            *error=std::string(key)+": expected strict finite decimal";return false;
+        }
         char* end=nullptr;errno=0;*out=std::strtod(s,&end);
         if(errno||end==s||*end||!std::isfinite(*out)||*out<0||
            (!can_zero && *out==0)) {
@@ -53,6 +77,9 @@ struct Settings {
             const size_t end=s.find(',',start);
             const std::string token=s.substr(start,end==std::string::npos?end:end-start);
             if(token.empty()) {*error=std::string(key)+": empty entry";return false;}
+            if(!decimal_token(token.c_str(),token.size())) {
+                *error=std::string(key)+": expected strict finite decimal";return false;
+            }
             char* tail=nullptr;errno=0;const double d=std::strtod(token.c_str(),&tail);
             if(errno||tail==token.c_str()||*tail||!std::isfinite(d)||
                d<0||(!can_zero && d==0)) {

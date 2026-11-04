@@ -1,6 +1,12 @@
 // Card-free production Controller + PolicyDriver fake-device integration.
 #include "worker_policy_driver.h"
 #include "worker_bootstrap.h"
+#include "worker_move_slots.h"
+#include <condition_variable>
+#include <mutex>
+#include <fcntl.h>
+#include <filesystem>
+#include <unistd.h>
 #include <array>
 #include <atomic>
 #include <chrono>
@@ -15,9 +21,9 @@ static void check(bool b,const char* message) {
     if(!b) {std::fprintf(stderr,"policy driver FAIL: %s\n",message);std::exit(1);}
 }
 struct ClockTest : Clock {
-    uint64_t t=1000000000ULL;
-    uint64_t now_ns() const override {return t;}
-    void advance(uint64_t ns) {t+=ns;}
+    std::atomic<uint64_t> t{1000000000ULL};
+    uint64_t now_ns() const override {return t.load();}
+    void advance(uint64_t ns) {t.fetch_add(ns);}
 };
 struct Bridge : Transport {
     void* map;
@@ -74,6 +80,58 @@ struct HeatFake : HeatSource {
         out->age_ns=stale.load()?100000000ULL:1ULL;
         return HeatPoll::DELTA;
     }
+};
+
+// Only test access: stage a large learned cache and synchronize with a ready
+// result without adding test-only hooks to production policy behavior.
+namespace r3::policy {
+struct DriverTestAccess {
+    static bool ready(Driver& d) {
+        std::lock_guard<std::mutex> guard(d.lock_);
+        return d.ready_;
+    }
+    static void seed_cache(Driver& d,uint64_t now) {
+        for(uint32_t i=0;i<512;++i)
+            d.negatives_[{i,i%2}]={now+i,now+1000000,3};
+    }
+    static size_t storage(Driver& d) {return d.negatives_.size();}
+};
+}
+struct PausedHeat : HeatFake {
+    std::mutex lock;
+    std::condition_variable cv;
+    int entered=0, released=0;
+    HeatPoll poll(uint64_t mono,uint64_t real,HeatDelta* out,std::string* error) override {
+        std::unique_lock<std::mutex> guard(lock);
+        const int index=++entered;
+        cv.notify_all();
+        cv.wait(guard,[&] {return released>=index;});
+        guard.unlock();
+        return HeatFake::poll(mono,real,out,error);
+    }
+    void wait_for_call(int n) {
+        std::unique_lock<std::mutex> guard(lock);
+        check(cv.wait_for(guard,std::chrono::seconds(2),[&]{return entered>=n;}),
+              "controlled source entered target poll");
+    }
+    void release(int n) {
+        std::lock_guard<std::mutex> guard(lock);
+        released=n;
+        cv.notify_all();
+    }
+};
+struct MissingSourceOps : r3::worker_moves::Operations {
+    uint32_t owner;
+    explicit MissingSourceOps(uint32_t h):owner(h){}
+    int32_t preferred_local(uint32_t expert) const override {
+        return expert/2==owner?int32_t(expert%2):-1;
+    }
+    bool start_upload(uint32_t,uint32_t,uint32_t) override {return false;}
+    r3::worker_moves::Event upload_event() override {return r3::worker_moves::Event::FAILED;}
+    bool build_bank(uint32_t,const std::vector<int32_t>&) override {return false;}
+    bool drain_upload() override {return true;}
+    void forget(uint32_t) override {}
+    void activate_bank(uint32_t) override {}
 };
 struct Fixture {
     LayoutShape shape{128,1,4,8,128,64};
@@ -169,11 +227,14 @@ static bool pump(Fixture& f,Driver& d,bool want_move,int limit=200) {
     }
     return !want_move;
 }
+static bool matches_rejection(const char* got,const char* expected) {
+    return got && std::strcmp(got,expected)==0;
+}
 int main() {
     {
         Fixture f;
         auto source=std::make_unique<HeatFake>();auto* h=source.get();
-        Driver d(settings(),std::move(source),{20,20},10,{0,0,0,0});
+        Driver d(settings(),std::move(source),{20,20},10,{0,0,0,0},f.clock);
         check(d.start()&&d.running(),"background worker started only when enabled");
         h->stale=true;
         check(pump(f,d,false,12)&&d.evidence().proposed==0,
@@ -228,7 +289,7 @@ int main() {
     {
         Fixture f;
         auto source=std::make_unique<HeatFake>();
-        Driver d(settings(),std::move(source),{20,20},10,{1,0,0,1});
+        Driver d(settings(),std::move(source),{20,20},10,{1,0,0,1},f.clock);
         check(d.start()&&pump(f,d,true),"abort proposal");
         const uint64_t epoch=f.controller->control().active_epoch;
         f.abort();f.clock.advance(1001);
@@ -254,7 +315,7 @@ int main() {
         Fixture f;
         auto s=settings();
         auto source=std::make_unique<HeatFake>();source->unwatermarked=true;
-        Driver d(s,std::move(source),{20,20},10,{0,0,0,0});
+        Driver d(s,std::move(source),{20,20},10,{0,0,0,0},f.clock);
         check(d.start()&&pump(f,d,false,10),"unwatermarked refused by default");
         check(d.evidence().proposed==0,"refusal is fail closed");
         d.stop();
@@ -263,9 +324,10 @@ int main() {
         Fixture f;
         auto s=settings();s.accept_unwatermarked_heat=true;
         auto source=std::make_unique<HeatFake>();source->unwatermarked=true;
-        Driver d(s,std::move(source),{20,20},10,{0,0,0,0});
-        check(d.start()&&pump(f,d,true),"explicit experimental file opt-in");
-        check(d.evidence().unwatermarked_heat,"evidence flags unwatermarked use");
+        Driver d(s,std::move(source),{20,20},10,{0,0,0,0},f.clock);
+        check(d.start()&&pump(f,d,false,10),"fake with forged file label rejected");
+        check(d.evidence().proposed==0 && !d.evidence().unwatermarked_heat,
+              "source identity cannot be forged through delta.provenance");
         d.stop();
     }
     {
@@ -273,10 +335,226 @@ int main() {
         auto s=settings();s.accept_unwatermarked_heat=true;
         auto source=std::make_unique<HeatFake>();
         source->unwatermarked=true;source->unknown=true;
-        Driver d(s,std::move(source),{20,20},10,{0,0,0,0});
+        Driver d(s,std::move(source),{20,20},10,{0,0,0,0},f.clock);
         check(d.start()&&pump(f,d,false,10),"unknown unwatermarked source rejected");
         check(d.evidence().proposed==0,"opt-in never weakens other sources");
         d.stop();
+    }
+
+    // Independent proposal guards: each branch must fail in isolation, so
+    // removing any one conditional is caught even while others stay enabled.
+    {
+        r3::heat::Plan plan;
+        plan.valid=true;plan.delta.push_back({1,0,1,1.0});
+        const uint64_t now=100000;
+        const std::map<std::pair<uint32_t,uint32_t>,Driver::Negative> none;
+        check(!Driver::proposal_rejection(1,1,now+1000,now,0,plan,none),
+              "fresh plan with no bans passes");
+        check(matches_rejection(Driver::proposal_rejection(0,1,now+1000,now,0,plan,none),
+              "stale_terminal_generation"),"terminal generation guard");
+        check(matches_rejection(Driver::proposal_rejection(1,1,now+1000,now,now+10,plan,none),
+              "abort_cooldown"),"proposal time cooldown guard");
+        check(matches_rejection(Driver::proposal_rejection(1,1,now,now,0,plan,none),
+              "heat_expired_before_proposal"),"proposal time heat-age guard");
+        auto banned=none;
+        banned[{1,1}]={now-10,now+100,3};
+        check(matches_rejection(Driver::proposal_rejection(1,1,now+1000,now,0,plan,banned),
+              "negative_destination"),"proposal time learned destination ban");
+    }
+    // B1: B is queued while A evaluates, then frozen after A is ready.
+    // After A aborts the ACTIVE map is unchanged, but B is not admissible.
+    {
+        Fixture f;
+        auto src=std::make_unique<PausedHeat>();auto* paused=src.get();
+        Driver d(settings(),std::move(src),{20,20},10,{0,0,0,0},f.clock);
+        check(d.start(),"paused policy start");
+        check(d.submit(f.map,*f.controller,f.clock.now_ns()),"queue A");
+        paused->wait_for_call(1);
+        f.clock.advance(1001);
+        check(d.submit(f.map,*f.controller,f.clock.now_ns()),"queue B while A runs");
+        paused->release(1);
+        paused->wait_for_call(2);
+        check(d.submit(f.map,*f.controller,f.clock.now_ns()),"consume A");
+        check(f.controller->control().state==uint32_t(PlacementState::PROPOSED),
+              "A proposed while B frozen");
+        f.abort();f.clock.advance(1);
+        d.observe(*f.controller,f.map,f.clock.now_ns());
+        check(d.evidence().aborted==1,"A aborted before B finishes");
+        paused->release(2);
+        for(int i=0;i<200&&!r3::policy::DriverTestAccess::ready(d);++i)
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        check(r3::policy::DriverTestAccess::ready(d),"B ready after A abort");
+        check(d.submit(f.map,*f.controller,f.clock.now_ns()),"consume stale B");
+        check(d.evidence().proposed==1 &&
+              d.evidence().reasons.count("stale_terminal_generation"),
+              "B cannot bypass closed abort");
+        d.stop();
+    }
+    // B2: evaluation completes with fresh heat; control thread then misses
+    // the absolute deadline before it consumes the ready result.
+    {
+        Fixture f;
+        auto src=std::make_unique<HeatFake>();
+        Driver d(settings(),std::move(src),{20,20},10,{0,0,0,0},f.clock);
+        check(d.start() && d.submit(f.map,*f.controller,f.clock.now_ns()),
+              "queue delayed-ready result");
+        for(int i=0;i<200&&!r3::policy::DriverTestAccess::ready(d);++i)
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        check(r3::policy::DriverTestAccess::ready(d),"ready before delay");
+        f.clock.advance(settings().controls.max_heat_age_ns+1);
+        check(d.submit(f.map,*f.controller,f.clock.now_ns()),"submit after deadline");
+        check(d.evidence().proposed==0 &&
+              d.evidence().reasons.count("heat_expired_before_proposal"),
+              "expired ready result never reaches Controller");
+        d.stop();
+    }
+    // S1: actual helper Participant with no immutable source for incoming
+    // expert refuses RESERVING and the existing Controller abort is learned.
+    {
+        Fixture f;
+        auto src=std::make_unique<HeatFake>();
+        Driver d(settings(),std::move(src),{20,20},10,{0,0,0,0},f.clock);
+        check(d.start()&&pump(f,d,true),"optimistic policy proposal");
+        r3::residency::Ledger l0(30,0,10),l1(30,0,10);
+        uint32_t id=0;
+        check(l0.bootstrap(0,10,1,&id)==r3::residency::Result::OK &&
+              l0.bootstrap(1,10,1,&id)==r3::residency::Result::OK &&
+              l1.bootstrap(2,10,1,&id)==r3::residency::Result::OK &&
+              l1.bootstrap(3,10,1,&id)==r3::residency::Result::OK,"real resident slots");
+        MissingSourceOps o0(0),o1(1);
+        r3::worker_moves::Participant p0(l0,o0,0,1,4,10),p1(l1,o1,1,1,4,10);
+        check(p0.initialize(f.map,f.controller->control().active_slot,{0,1,-1,-1}) &&
+              p1.initialize(f.map,f.controller->control().active_slot,{-1,-1,0,1}),
+              "real Participants accept frozen ACTIVE slots");
+        check(f.controller->start_reserving(),"forward to real receivers");
+        const auto a=p0.reserve(f.map,f.controller->control());
+        const auto b=p1.reserve(f.map,f.controller->control());
+        check(a==FaultCode::SOURCE || b==FaultCode::SOURCE,
+              "missing target preferred_local refused at reserve");
+        check(f.controller->fail(FaultCode::SOURCE),"forward abort");
+        if(p0.transaction())check(p0.abort(),"participant 0 cleanup");
+        if(p1.transaction())check(p1.abort(),"participant 1 cleanup");
+        f.bridge->close(f.controller->control(),false);
+        check(f.controller->poll_cleanup()&&f.controller->can_propose(),"forward abort fully closed");
+        d.observe(*f.controller,f.map,f.clock.now_ns());
+        check(d.evidence().aborted==1 && d.negative_count(f.clock.now_ns())>0,
+              "real source refusal learned by policy");
+        check(d.evidence().proposed==1,"speculative abort rate limited by cooldown");
+        d.stop();
+    }
+    // Stopping an in-flight policy worker never publishes or overwrites the
+    // Controller transaction; stop joins and closed abort observation remains safe.
+    {
+        Fixture f;
+        auto src=std::make_unique<HeatFake>();
+        Driver d(settings(),std::move(src),{20,20},10,{0,0,0,0},f.clock);
+        check(d.start()&&pump(f,d,true),"inflight stop proposal");
+        const uint64_t txn=f.controller->control().transaction_id;
+        d.stop();
+        check(!d.running() && f.controller->control().transaction_id==txn &&
+              f.controller->control().state==uint32_t(PlacementState::PROPOSED),
+              "stop does not mutate transaction");
+        f.abort();
+        d.observe(*f.controller,f.map,f.clock.now_ns());
+        check(d.evidence().aborted==1,"post-stop journal observed");
+    }
+    // S4: an oversized historical cache prints at most a config-derived
+    // number of newest entries, and expired entries are pruned on submit.
+    {
+        Fixture f;
+        auto src=std::make_unique<HeatFake>();
+        Driver d(settings(),std::move(src),{20,20},10,{0,0,0,0},f.clock);
+        const uint64_t now=f.clock.now_ns();
+        r3::policy::DriverTestAccess::seed_cache(d,now);
+        FILE* output=std::tmpfile();
+        check(output!=nullptr,"report capture temporary file");
+        std::fflush(stderr);
+        const int original=dup(fileno(stderr));
+        check(original>=0 && dup2(fileno(output),fileno(stderr))>=0,"redirect report");
+        d.report(f.map,0,now);
+        std::fflush(stderr);
+        check(dup2(original,fileno(stderr))>=0,"restore stderr");
+        close(original);
+        std::rewind(output);
+        std::string captured;char line[512];
+        while(std::fgets(line,sizeof(line),output))captured+=line;
+        std::fclose(output);
+        size_t details=0,pos=0;
+        while((pos=captured.find("policy learned expert=",pos))!=std::string::npos)
+            {++details;++pos;}
+        check(details==settings().controls.max_moves &&
+              captured.find("cache_active=512")!=std::string::npos &&
+              captured.find("expert=511")!=std::string::npos,
+              "large cache prints bounded newest entries only");
+        f.clock.advance(1000001);
+        check(d.start() && d.submit(f.map,*f.controller,f.clock.now_ns()),
+              "cleanup after expiry");
+        check(r3::policy::DriverTestAccess::storage(d)==0,
+              "expired negative cache physically pruned");
+        d.stop();
+    }
+
+    // S5: a configured policy with a silent producer emits a periodic, explicit
+    // no-live-feed heartbeat and carries the state in its evidence report.
+    {
+        Fixture f;
+        auto src=std::make_unique<HeatFake>();
+        Driver d(settings(),std::move(src),{20,20},10,{0,0,0,0},f.clock);
+        check(d.start(),"start for missing live feed");
+        f.clock.advance(settings().controls.max_heat_age_ns+settings().cadence_ns);
+        FILE* output=std::tmpfile();
+        check(output!=nullptr,"feed heartbeat capture");
+        std::fflush(stderr);const int original=dup(fileno(stderr));
+        check(original>=0 && dup2(fileno(output),fileno(stderr))>=0,"redirect feed diagnostic");
+        d.heartbeat(f.clock.now_ns());
+        d.report(f.map,0,f.clock.now_ns());
+        std::fflush(stderr);check(dup2(original,fileno(stderr))>=0,"restore feed stderr");
+        close(original);
+        std::rewind(output);std::string captured;char line[512];
+        while(std::fgets(line,sizeof(line),output))captured+=line;
+        std::fclose(output);
+        check(captured.find("policy no_live_feed=1 window_ns=")!=std::string::npos &&
+              captured.find("R3_MOE_WORKER_HISTOGRAM_PERIOD_S")!=std::string::npos &&
+              captured.find("unwatermarked_heat=0 no_live_feed=1")!=std::string::npos,
+              "silent producer heartbeat is explicit and bounded");
+        d.stop();
+    }
+    // Authentic file source remains eligible for the explicit unwatermarked
+    // experiment; the same provenance claimed by HeatFake is not eligible.
+    {
+        Fixture f;
+        auto s=settings();s.accept_unwatermarked_heat=true;
+        s.controls.max_heat_age_ns=5000000000ULL;
+        const std::string temp=std::filesystem::temp_directory_path().string()+
+                               "/policy_histogram_XXXXXX";
+        std::vector<char> path(temp.begin(),temp.end());path.push_back(0);
+        const int first=mkstemp(path.data());
+        check(first>=0,"histogram temp file");
+        close(first);
+        const std::string name(path.data());
+        auto write_snapshot=[&](const std::vector<uint32_t>& first_row) {
+            std::string staged=name+".XXXXXX";
+            std::vector<char> next(staged.begin(),staged.end());next.push_back(0);
+            const int fd=mkstemp(next.data());
+            check(fd>=0,"histogram atomic stage file");
+            std::vector<uint32_t> cells(size_t(kMaxLayers)*4,0);
+            for(size_t i=0;i<first_row.size();++i)cells[i]=first_row[i];
+            const size_t bytes=cells.size()*sizeof(uint32_t);
+            check(::write(fd,cells.data(),bytes)==ssize_t(bytes),"write full histogram");
+            check(::close(fd)==0 && ::rename(next.data(),name.c_str())==0,
+                  "publish atomic histogram");
+        };
+        write_snapshot({0,0,0,0});
+        auto source=std::make_unique<HistogramFileSource>(name,1,4);
+        Driver d(s,std::move(source),{20,20},10,{0,0,0,0},f.clock);
+        check(d.start()&&pump(f,d,false,15),"actual histogram baseline");
+        check(d.evidence().reasons.count("heat_baseline")>0,"file baseline captured");
+        write_snapshot({500,450,1,1});
+        check(pump(f,d,true,200),"true HistogramFileSource admits opted-in delta");
+        check(d.evidence().unwatermarked_heat,
+              "genuine source allowed and evidence stays unwatermarked");
+        d.stop();
+        check(::unlink(name.c_str())==0,"histogram temp cleanup");
     }
     puts("policy driver: commit, drift, abort/cache, age, opt-in passed");
 }

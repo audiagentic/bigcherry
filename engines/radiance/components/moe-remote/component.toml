@@ -108,7 +108,7 @@ summary = "path prefix: the engine counts every routed (layer, expert) in VRAM a
 [setting.R3_MOE_WORKER_HISTOGRAM_PERIOD_S]
 default = "0"
 status = "diagnostic"
-summary = "RHP02: with R3_MOE_WORKER_HISTOGRAM, also rewrite the cumulative route histogram <path>.rank<r> every this many seconds (at least 1) while the engine runs, by rename, so a reader sees complete files and differences two snapshots for the routes between them; 0 writes only at shutdown"
+summary = "Engine-side required for live policy input: set this to a positive period in the ENGINE process (not only in the helper); with R3_MOE_WORKER_HISTOGRAM, also rewrite the cumulative route histogram <path>.rank<r> every this many seconds (at least 1) while the engine runs, by rename, so a reader sees complete files and differences two snapshots for the routes between them; 0 writes only at shutdown"
 
 [setting.R3_MOE_WORKER_HEAT]
 default = ""
@@ -141,7 +141,7 @@ summary = "Enable the experimental background stage-1 heat placement driver; dis
 [setting.R3_MOE_POLICY_ACCEPT_UNWATERMARKED_HEAT]
 default = "0"
 status = "experimental"
-summary = "Explicit experiment-only opt-in for unwatermarked R3_MOE_WORKER_HISTOGRAM rank file; no other incomplete source is accepted; evidence marks its use"
+summary = "Explicit experiment-only opt-in for actual HistogramFileSource (verified by a private constructor-minted source capability, not a mutable observation label); policy requires engine-side R3_MOE_WORKER_HISTOGRAM_PERIOD_S > 0 for live updates and reports no_live_feed if no progress inside CADENCE_NS + MAX_HEAT_AGE_NS"
 
 [setting.R3_MOE_POLICY_CADENCE_NS]
 default = ""
