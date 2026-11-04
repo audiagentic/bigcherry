@@ -118,7 +118,7 @@ Validation: Exact static-tail reproduction (static_tail is plan_tail), determini
 
 ## Slice I hardware result (2026-11-04): the effect gate does not stop the post-shift loss
 
-Run policy-live-6: slice I build, EFFECT_GATE=1 (window 32 samples per lane class, 3 quiet-window pairs, noise multiplier 3.0, revert blacklist 600 s; experiment values, not calibrated), 27B-free Flash-Next on four GPUs, eight 27k-token filler prefills then ten ~50k-token docs prefills, same sequence as policy-live-5 (gate off).
+Run policy-live-6: slice I build, EFFECT_GATE=1 (window 32 samples per lane class, 3 quiet-window pairs, noise multiplier 3.0, revert blacklist 600 s; experiment values, not calibrated), Flash-Next (Qwen3.8 MoE) on four GPUs, layout flashnext-4gpu, eight 27k-token filler prefills then ten ~50k-token docs prefills, same sequence as policy-live-5 (gate off).
 
 | | gate off (policy-live-5) | gate on (policy-live-6) |
 |---|---|---|
