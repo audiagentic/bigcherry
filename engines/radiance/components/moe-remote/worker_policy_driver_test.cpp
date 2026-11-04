@@ -95,6 +95,16 @@ struct DriverTestAccess {
             d.negatives_[{i,i%2}]={now+i,now+1000000,3};
     }
     static size_t storage(Driver& d) {return d.negatives_.size();}
+    static bool measured_worse(Driver& d,uint64_t now,uint64_t ttl) {
+        bool any=false;
+        for(const auto& [key,entry]:d.negatives_) {
+            if(entry.reason!=Driver::kMeasuredWorseReason)return false;
+            if(entry.observed_ns!=now || entry.until_ns!=now+ttl)return false;
+            any=true;
+        }
+        return any;
+    }
+    static bool revert_blocked(Driver& d) {return d.revert_failed_;}
 };
 }
 struct PausedHeat : HeatFake {
@@ -226,6 +236,46 @@ static bool pump(Fixture& f,Driver& d,bool want_move,int limit=200) {
             std::fprintf(stderr,"reason %s %llu\n",key.c_str(),(unsigned long long)value);
     }
     return !want_move;
+}
+// Synthetic window totals drive the SAME EffectGate and Controller as runtime.
+struct FakeService : ServiceSource {
+    ServiceSnapshot now{};
+    bool available=true;
+    bool snapshot(ServiceSnapshot* out) const override {
+        if(!available)return false;
+        *out=now;return true;
+    }
+    void add(double ns_per_row,unsigned n=2) {
+        auto& l=now.lane[1]; // live gate's synchronized large-lane class
+        l.samples+=n;l.rows+=10*n;
+        l.time_ns+=uint64_t(std::llround(ns_per_row*10*n));
+    }
+};
+static Settings measured_settings() {
+    Settings s=settings();s.effect_gate=true;
+    s.effect_window_samples=2;
+    s.effect_min_quiet_windows=2;
+    s.effect_noise_multiplier=2.0;
+    s.effect_revert_ttl_ns=30000;
+    return s;
+}
+static bool pump_effect(Fixture& f,Driver& d,FakeService& service,int limit=200) {
+    for(int i=0;i<limit;++i) {
+        service.add(100+(i%3));
+        check(d.submit(f.map,*f.controller,f.clock.now_ns()),"effect submit");
+        if(f.controller->control().state==uint32_t(PlacementState::PROPOSED))
+            return true;
+        f.clock.advance(1001);
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    const auto& ev=d.evidence();
+    std::fprintf(stderr,"effect pump evaluated=%llu proposed=%llu judged=%llu\n",
+         (unsigned long long)ev.evaluated,
+         (unsigned long long)ev.proposed,
+         (unsigned long long)ev.effect_windows_judged);
+    for(const auto& [name,count]:ev.reasons)
+        std::fprintf(stderr,"effect reason %s=%llu\n",name.c_str(),(unsigned long long)count);
+    return false;
 }
 static bool matches_rejection(const char* got,const char* expected) {
     return got && std::strcmp(got,expected)==0;
@@ -555,6 +605,147 @@ int main() {
               "genuine source allowed and evidence stays unwatermarked");
         d.stop();
         check(::unlink(name.c_str())==0,"histogram temp cleanup");
+    }
+    // Real Controller integration and synthetic per-lane service counters.
+    // With no completed quiet window a plan must NEVER reach PROPOSED.
+    {
+        Fixture f;FakeService service;
+        auto source=std::make_unique<HeatFake>();
+        Driver d(measured_settings(),std::move(source),{20,20},10,
+                 {0,0,0,0},f.clock,&service);
+        check(d.start(),"effect enabled with real service source");
+        check(pump(f,d,false,14) && d.evidence().proposed==0,
+              "no proposal without minimum consecutive quiet windows");
+        const auto before=f.owners();
+        check(pump_effect(f,d,service),"measured noise permits forward proposal");
+        f.commit();f.clock.advance(1001);
+        d.observe(*f.controller,f.map,f.clock.now_ns());
+        const auto after=f.owners();
+        check(after.owner!=before.owner,"forward moved exactly through Controller");
+        check(pump(f,d,false,5) && d.evidence().effect_windows_judged==0,
+              "no verdict without enough postcommit sampled requests");
+        service.add(125,2);
+        check(d.submit(f.map,*f.controller,f.clock.now_ns()),
+              "postcommit regression drives proposal");
+        check(f.controller->control().state==uint32_t(PlacementState::PROPOSED) &&
+              d.evidence().effect_revert_attempts==1 &&
+              d.evidence().effect_windows_judged==1,
+              "worse result sends inverse through real Controller::propose");
+        check(DriverTestAccess::measured_worse(
+                  d,f.clock.now_ns(),measured_settings().effect_revert_ttl_ns),
+              "cache stores distinct measured-worse reason and exact TTL");
+        f.commit();f.clock.advance(1001);
+        d.observe(*f.controller,f.map,f.clock.now_ns());
+        const auto returned=f.owners();
+        check(returned.owner==before.owner && returned.epoch==before.epoch+2 &&
+              d.evidence().effect_reverted==1,
+              "verified inverse restores ENTIRE previous ACTIVE ownership");
+        check(d.negative_count(f.clock.now_ns())==2,
+              "worse destinations are blacklisted with declared TTL");
+        d.stop();
+    }
+    {
+        Fixture f;FakeService service;
+        auto source=std::make_unique<HeatFake>();
+        Driver d(measured_settings(),std::move(source),{20,20},10,
+                 {0,0,0,0},f.clock,&service);
+        check(d.start()&&pump_effect(f,d,service),"good move proposed");
+        f.commit();f.clock.advance(1001);d.observe(*f.controller,f.map,f.clock.now_ns());
+        const auto after=f.owners();
+        service.add(75,2);
+        check(d.submit(f.map,*f.controller,f.clock.now_ns()),"good move judged");
+        check(d.evidence().effect_windows_judged==1 &&
+              d.evidence().effect_kept==1 &&
+              d.evidence().effect_reverted==0 &&
+              f.owners().owner==after.owner,
+              "measured faster service keeps owner map");
+        d.stop();
+    }
+    {
+        Fixture f;FakeService service;
+        auto source=std::make_unique<HeatFake>();
+        Driver d(measured_settings(),std::move(source),{20,20},10,
+                 {0,0,0,0},f.clock,&service);
+        check(d.start()&&pump_effect(f,d,service),"noise move proposed");
+        f.commit();f.clock.advance(1001);d.observe(*f.controller,f.map,f.clock.now_ns());
+        const auto after=f.owners();
+        service.add(101,2);
+        check(d.submit(f.map,*f.controller,f.clock.now_ns()),"noise move judged");
+        check(d.evidence().effect_undecided==1 &&
+              d.evidence().effect_windows_judged==1 &&
+              d.evidence().effect_reverted==0 &&
+              f.owners().owner==after.owner,
+              "noise-sized changes undecided and NOT reverted");
+        d.stop();
+    }
+    {
+        Fixture f;FakeService service;
+        auto source=std::make_unique<HeatFake>();
+        Driver d(measured_settings(),std::move(source),{20,20},10,
+                 {0,0,0,0},f.clock,&service);
+        check(d.start()&&pump_effect(f,d,service),"abort test forward proposal");
+        f.commit();f.clock.advance(1001);d.observe(*f.controller,f.map,f.clock.now_ns());
+        const auto degraded=f.owners();
+        service.add(125,2);
+        check(d.submit(f.map,*f.controller,f.clock.now_ns()) &&
+              d.evidence().effect_revert_attempts==1,"revert proposed");
+        f.abort();f.clock.advance(1001);d.observe(*f.controller,f.map,f.clock.now_ns());
+        check(d.evidence().effect_revert_aborts==1 &&
+              f.owners().owner==degraded.owner &&
+              DriverTestAccess::revert_blocked(d),
+              "revert abort retains ACTIVE and blocks another attempt");
+        check(DriverTestAccess::measured_worse(
+                  d,f.clock.now_ns()-1001,measured_settings().effect_revert_ttl_ns),
+              "rollback abort cannot overwrite the measured-worse exclusion");
+        const uint64_t proposals=d.evidence().proposed;
+        f.clock.advance(60000);
+        service.add(130,2);
+        check(pump(f,d,false,12)&&d.evidence().proposed==proposals,
+              "revert abort blocks further attempts; no retry loop");
+        d.stop();
+    }
+    {
+        Fixture f;FakeService service;
+        auto source=std::make_unique<HeatFake>();
+        Driver old(measured_settings(),std::move(source),{20,20},10,
+                   {0,0,0,0},f.clock,&service);
+        check(old.start()&&pump_effect(f,old,service),"restart old driver proposal");
+        f.commit();f.clock.advance(1001);old.observe(*f.controller,f.map,f.clock.now_ns());
+        old.stop();
+        // A new driver has no learned exclusions, last move timestamps or
+        // calibrated noise, even though ACTIVE survived in shared memory.
+        auto next_source=std::make_unique<HeatFake>();
+        FakeService next_service;
+        Driver restarted(measured_settings(),std::move(next_source),{20,20},10,
+                         {0,0,0,0},f.clock,&next_service);
+        check(restarted.start() && pump(f,restarted,false,10) &&
+              restarted.evidence().proposed==0 &&
+              restarted.negative_count(f.clock.now_ns())==0,
+              "restart forgets process-local noise and history safely");
+        restarted.stop();
+    }
+    {
+        Fixture f;
+        auto s=measured_settings();
+        auto source=std::make_unique<HeatFake>();
+        Driver no_source(s,std::move(source),{20,20},10,{0,0,0,0},f.clock);
+        check(!no_source.start(),"gate enabled needs a source");
+        s.effect_gate=false; // explicit opt-out, preserve old policy behavior
+        auto next_source=std::make_unique<HeatFake>();
+        Driver off(s,std::move(next_source),{20,20},10,{0,0,0,0},f.clock);
+        check(off.start(),"gate off does not require a signal source");
+        FILE* output=std::tmpfile();check(output!=nullptr,"report temp file");
+        const int original=dup(fileno(stderr));check(original>=0,"stderr backup");
+        check(dup2(fileno(output),fileno(stderr))>=0,"capture effect gate off");
+        off.report(f.map,0,f.clock.now_ns());
+        std::fflush(stderr);check(dup2(original,fileno(stderr))>=0,"restore stderr");
+        close(original);std::rewind(output);
+        std::string captured;char line[1024];
+        while(std::fgets(line,sizeof(line),output))captured+=line;
+        std::fclose(output);
+        check(captured.find("policy effect_gate=0")!=std::string::npos,
+              "explicitly off MUST appear in evidence");
+        off.stop();
     }
     puts("policy driver: commit, drift, abort/cache, age, opt-in passed");
 }

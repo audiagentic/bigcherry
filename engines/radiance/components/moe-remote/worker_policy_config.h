@@ -12,8 +12,10 @@
 
 namespace r3::policy {
 struct Settings {
-    bool enabled = false, accept_unwatermarked_heat = false;
+    bool enabled = false, accept_unwatermarked_heat = false, effect_gate = false;
     uint64_t cadence_ns = 0, abort_cooldown_ns = 0, learned_eligibility_ttl_ns = 0;
+    uint64_t effect_window_samples = 0, effect_min_quiet_windows = 0, effect_revert_ttl_ns = 0;
+    double effect_noise_multiplier = 0;
     PolicyControls controls{};
     std::vector<double> costs, layer_caps;
     std::vector<uint32_t> protected_layers;
@@ -126,6 +128,11 @@ struct Settings {
                       std::getenv("R3_MOE_POLICY_ACCEPT_UNWATERMARKED_HEAT"),
                       &accept_unwatermarked_heat,error)) return false;
         if(!enabled)return true; // no policy thread, no activation settings
+        const char* gate_raw=std::getenv("R3_MOE_POLICY_EFFECT_GATE");
+        if(!gate_raw || !*gate_raw) {
+            *error="R3_MOE_POLICY_EFFECT_GATE: required for policy; no default";return false;
+        }
+        if(!read_flag("R3_MOE_POLICY_EFFECT_GATE",gate_raw,&effect_gate,error))return false;
         if(forced_enabled) {
             *error="R3_MOE_POLICY_ENABLE conflicts with R3_MOE_PLACEMENT_FORCE_MOVE / FORCE_SCHEDULE";
             return false;
@@ -146,6 +153,10 @@ struct Settings {
             {"R3_MOE_POLICY_DEVICE_COSTS",std::getenv("R3_MOE_POLICY_DEVICE_COSTS")},
             {"R3_MOE_POLICY_LAYER_CAPS",std::getenv("R3_MOE_POLICY_LAYER_CAPS")},
             {"R3_MOE_POLICY_PROTECTED_LAYERS",std::getenv("R3_MOE_POLICY_PROTECTED_LAYERS")},
+            {"R3_MOE_POLICY_EFFECT_WINDOW_SAMPLES",std::getenv("R3_MOE_POLICY_EFFECT_WINDOW_SAMPLES")},
+            {"R3_MOE_POLICY_EFFECT_MIN_QUIET_WINDOWS",std::getenv("R3_MOE_POLICY_EFFECT_MIN_QUIET_WINDOWS")},
+            {"R3_MOE_POLICY_EFFECT_NOISE_MULTIPLIER",std::getenv("R3_MOE_POLICY_EFFECT_NOISE_MULTIPLIER")},
+            {"R3_MOE_POLICY_EFFECT_REVERT_TTL_NS",std::getenv("R3_MOE_POLICY_EFFECT_REVERT_TTL_NS")},
         };
         for(const auto& item:required) if(!item.raw || !*item.raw) {
             *error=std::string(item.key)+": required for policy; no default";
@@ -166,7 +177,11 @@ struct Settings {
            !values("R3_MOE_POLICY_DEVICE_COSTS",helpers,false,&costs,error) ||
            !values("R3_MOE_POLICY_LAYER_CAPS",helpers,true,&layer_caps,error) ||
            !layers(std::getenv("R3_MOE_POLICY_PROTECTED_LAYERS"),
-                   &protected_layers,error))
+                   &protected_layers,error) ||
+           !u64("R3_MOE_POLICY_EFFECT_WINDOW_SAMPLES",&effect_window_samples,error) ||
+           !u64("R3_MOE_POLICY_EFFECT_MIN_QUIET_WINDOWS",&effect_min_quiet_windows,error) ||
+           !real("R3_MOE_POLICY_EFFECT_NOISE_MULTIPLIER",&effect_noise_multiplier,false,error) ||
+           !u64("R3_MOE_POLICY_EFFECT_REVERT_TTL_NS",&effect_revert_ttl_ns,error))
             return false;
         if(moves>UINT32_MAX||controls.margin>=1.0||
            cadence_ns > uint64_t(std::chrono::nanoseconds::max().count())) {

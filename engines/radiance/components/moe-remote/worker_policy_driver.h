@@ -3,6 +3,7 @@
 // The worker only reads copies, never a mailbox, lane, GPU or private pool.
 #include "worker_policy_config.h"
 #include "worker_policy_live.h"
+#include "worker_policy_effect.h"
 #include "worker_epoch.h"
 #include <algorithm>
 #include <atomic>
@@ -18,6 +19,7 @@ namespace r3::policy {
 class Driver {
     friend struct DriverTestAccess;
 public:
+    static constexpr uint32_t kMeasuredWorseReason=0x4d57; // distinct from Controller faults
     struct Negative {
         uint64_t observed_ns=0, until_ns=0;
         uint32_t reason=0;
@@ -27,6 +29,9 @@ public:
         uint64_t learned_ineligible=0, bytes_moved=0;
         uint64_t transition_samples=0, transition_ns_total=0, transition_ns_max=0;
         double predicted_saving=0;
+        uint64_t effect_windows_judged=0, effect_kept=0, effect_reverted=0;
+        uint64_t effect_undecided=0, effect_revert_attempts=0, effect_revert_aborts=0;
+        double effect_noise_floor=0, effect_last_ratio=0;
         bool unwatermarked_heat=false;
         std::map<std::string,uint64_t> reasons;
     };
@@ -46,6 +51,10 @@ private:
     };
     Settings settings_;
     const r3::epoch::Clock& clock_;
+    ServiceSource* service_=nullptr;
+    EffectGate effect_;
+    OwnerSnapshot revert_before_{},revert_after_{};
+    bool revert_requested_=false,reverting_=false,revert_failed_=false;
     std::unique_ptr<HeatSource> source_;
     std::vector<uint64_t> budgets_;
     uint64_t stride_=0;
@@ -224,8 +233,11 @@ public:
     }
     Driver(Settings settings,std::unique_ptr<HeatSource> source,
            std::vector<uint64_t> budgets,uint64_t stride,
-           std::vector<uint8_t> protected_experts,const r3::epoch::Clock& clock)
-        :settings_(std::move(settings)),clock_(clock),source_(std::move(source)),
+           std::vector<uint8_t> protected_experts,const r3::epoch::Clock& clock,
+           ServiceSource* service=nullptr)
+        :settings_(std::move(settings)),clock_(clock),service_(service),
+         effect_({settings_.effect_window_samples,settings_.effect_min_quiet_windows,
+                  settings_.effect_noise_multiplier}),source_(std::move(source)),
          budgets_(std::move(budgets)),stride_(stride),
          protected_(std::move(protected_experts)),
          heat_(uint32_t(protected_.size()),1,settings_.controls.half_life_observations) {
@@ -240,6 +252,8 @@ public:
         if(!source_ || !stride_ || budgets_.empty() || !controls_valid(settings_.controls) ||
            settings_.cadence_ns==0 || settings_.abort_cooldown_ns==0 ||
            settings_.learned_eligibility_ttl_ns==0 ||
+           (settings_.effect_gate &&
+               (!service_ || !effect_.valid() || !settings_.effect_revert_ttl_ns)) ||
            budgets_.size()!=settings_.costs.size() ||
            budgets_.size()!=settings_.layer_caps.size()) return false;
         started_ns_=clock_.now_ns();
@@ -274,6 +288,86 @@ public:
     }
     bool submit(void* map,r3::epoch::Controller& controller,uint64_t now_ns) {
         if(!settings_.enabled || !controller.can_propose() || inflight_)return true;
+        if(settings_.effect_gate) {
+            if(revert_failed_)return true; // a failed rollback is terminal until restart
+            ServiceSnapshot service{};
+            if(!service_ || !service_->snapshot(&service)) {
+                record_no_change("effect_signal_unavailable");return true;
+            }
+            if(effect_.waiting()) {
+                const auto verdict=effect_.judge(service);
+                if(verdict==EffectVerdict::WAITING)return true; // no other proposal while assessing
+                if(verdict==EffectVerdict::INVALID) {
+                    revert_failed_=true;
+                    record_no_change("effect_post_signal_invalid");
+                    return true; // fail closed, never guess a verdict
+                }
+                ++evidence_.effect_windows_judged;
+                evidence_.effect_noise_floor=effect_.noise_floor();
+                evidence_.effect_last_ratio=effect_.last_ratio();
+                if(verdict==EffectVerdict::WORSE) {
+                    // Exclude the destinations that produced the REGRESSION,
+                    // not the destinations in the map we are restoring.
+                    for(const auto& m:pending_plan_.delta) {
+                        auto& entry=negatives_[{m.expert,uint32_t(m.to)}];
+                        entry={now_ns,add_saturating(now_ns,
+                               settings_.effect_revert_ttl_ns),kMeasuredWorseReason};
+                        ++evidence_.learned_ineligible;
+                    }
+                    ++terminal_generation_;
+                    revert_requested_=true;
+                } else if(verdict==EffectVerdict::KEPT) {
+                    ++evidence_.effect_kept;
+                    pending_plan_={};
+                } else {
+                    ++evidence_.effect_undecided;
+                    pending_plan_={};
+                }
+            } else if(!revert_requested_) {
+                effect_.quiet(service,now_ns);
+                evidence_.effect_noise_floor=effect_.noise_floor();
+            }
+            if(revert_requested_) {
+                // Restore the ENTIRE prior ACTIVE generation through the same
+                // Controller protocol, not a best-effort inverse delta.
+                OwnerSnapshot active;
+                if(!capture_owners(map,&active) ||
+                   active.epoch!=revert_after_.epoch ||
+                   active.digest!=revert_after_.digest ||
+                   active.owner!=revert_after_.owner ||
+                   active.runtime!=revert_before_.runtime ||
+                   !r3::epoch::stage_same_map_generation(map)) {
+                    revert_failed_=true;revert_requested_=false;
+                    record_no_change("effect_revert_active_mismatch");return true;
+                }
+                const uint32_t dest=1u-controller.control().active_slot;
+                auto* owners=moe_shm::generation_map(map,dest);
+                for(size_t i=0;i<revert_before_.owner.size();++i) {
+                    if(revert_before_.owner[i]<-1 ||
+                       revert_before_.owner[i]>=int32_t(active.helpers)) {
+                        revert_failed_=true;revert_requested_=false;
+                        record_no_change("effect_revert_invalid_owner");
+                        return controller.reject_staging(r3::epoch::FaultCode::INVALID_MAP);
+                    }
+                    owners[i]=revert_before_.owner[i]<0?moe_shm::kOwnerLocal:
+                              uint8_t(revert_before_.owner[i]);
+                }
+                auto* gh=moe_shm::generation_header(map,dest);
+                gh->digest=moe_shm::generation_digest(map,dest);
+                if(!gh->digest || gh->digest==active.digest ||
+                   !controller.propose(gh->digest)) {
+                    revert_failed_=true;revert_requested_=false;
+                    record_no_change("effect_revert_proposal_refused");
+                    return controller.reject_staging(r3::epoch::FaultCode::DEVICE);
+                }
+                revert_requested_=false;reverting_=true;inflight_=true;
+                txn_=controller.control().transaction_id;
+                ++evidence_.proposed;
+                ++evidence_.effect_revert_attempts;
+                due_ns_=add_saturating(now_ns,settings_.cadence_ns);
+                return true;
+            }
+        }
         // No shared-map walk on every 2 ms control-plane tick while the CPU
         // job is pending, before cadence, or during a post-abort cooldown.
         {
@@ -313,26 +407,40 @@ public:
                         result.valid_until_ns,clock_.now_ns(),cooldown_until_ns_,
                         result.plan,negatives_))
                 record_no_change(reject);
+            else if(settings_.effect_gate &&
+                    !effect_.ready(clock_.now_ns(),settings_.controls.max_heat_age_ns))
+                record_no_change("effect_not_calibrated");
             else {
                 // Pre-proposal ACTIVE revalidation; one Controller proposal,
                 // never direct publication. The full candidate map is staged.
-                if(!r3::epoch::stage_same_map_generation(map))
+                if(settings_.effect_gate &&
+                   !effect_.begin(clock_.now_ns(),settings_.controls.max_heat_age_ns)) {
+                    record_no_change("effect_pre_window_stale");return true;
+                }
+                if(!r3::epoch::stage_same_map_generation(map)) {
+                    if(settings_.effect_gate)effect_.abort();
                     return controller.reject_staging(r3::epoch::FaultCode::INVALID_MAP);
+                }
                 const uint32_t dest_slot=1u-controller.control().active_slot;
                 auto* owners=moe_shm::generation_map(map,dest_slot);
                 for(const auto& m:result.plan.delta) {
                     if(m.expert>=active.owner.size() || m.to<0 ||
                        m.to>=int32_t(active.helpers) ||
                        active.owner[m.expert]!=m.from ||
-                       protected_[m.expert] || !active.runtime[m.expert])
+                       protected_[m.expert] || !active.runtime[m.expert]) {
+                        if(settings_.effect_gate)effect_.abort();
                         return controller.reject_staging(r3::epoch::FaultCode::INVALID_MAP);
+                    }
                     owners[m.expert]=uint8_t(m.to);
                 }
                 auto* gh=moe_shm::generation_header(map,dest_slot);
                 gh->digest=moe_shm::generation_digest(map,dest_slot);
                 if(!gh->digest || gh->digest==active.digest ||
-                   !controller.propose(gh->digest))
+                   !controller.propose(gh->digest)) {
+                    if(settings_.effect_gate)effect_.abort();
                     return controller.reject_staging(r3::epoch::FaultCode::DEVICE);
+                }
+                if(settings_.effect_gate)revert_before_=active;
                 pending_plan_=std::move(result.plan);
                 txn_=controller.control().transaction_id;
                 inflight_=true;
@@ -368,20 +476,47 @@ public:
         if(!capture_owners(map,&active))return;
         const auto obs=history_.observe_closed(j,active,now_ns);
         if(obs==HistoryObservation::COMMITTED) {
+            const bool was_revert=reverting_;
+            if(reverting_) {
+                if(active.owner!=revert_before_.owner ||
+                   active.runtime!=revert_before_.runtime ||
+                   active.epoch!=revert_after_.epoch+1) {
+                    revert_failed_=true;
+                    record_no_change("effect_revert_verification_failed");
+                } else ++evidence_.effect_reverted;
+                reverting_=false;
+            } else if(settings_.effect_gate) {
+                revert_after_=active;
+                ServiceSnapshot service{};
+                if(!service_ || !service_->snapshot(&service)) {
+                    revert_failed_=true;
+                    record_no_change("effect_commit_signal_unavailable");
+                    effect_.abort();
+                } else effect_.committed(service);
+            }
             ++evidence_.committed;
             for(const auto& m:pending_plan_.delta)
                 evidence_.bytes_moved=add_saturating(evidence_.bytes_moved,stride_);
-            evidence_.predicted_saving+=pending_plan_.baseline-pending_plan_.predicted;
+            if(!was_revert)
+                evidence_.predicted_saving+=pending_plan_.baseline-pending_plan_.predicted;
         } else if(obs==HistoryObservation::ABORTED) {
+            const bool was_revert=reverting_;
+            if(reverting_) {
+                reverting_=false;revert_failed_=true;
+                ++evidence_.effect_revert_aborts;
+                record_no_change("effect_revert_aborted_no_retry");
+            } else if(settings_.effect_gate)effect_.abort();
             ++evidence_.aborted;
             cooldown_until_ns_=add_saturating(now_ns,settings_.abort_cooldown_ns);
-            const uint32_t reason=j.cleanup_fault?j.cleanup_fault:j.fault;
-            for(const auto& m:pending_plan_.delta) {
-                auto& entry=negatives_[{m.expert,uint32_t(m.to)}];
-                entry={now_ns,add_saturating(now_ns,
-                       settings_.learned_eligibility_ttl_ns),reason};
-                ++evidence_.learned_ineligible;
-            }
+            if(!was_revert) {
+                const uint32_t reason=j.cleanup_fault?j.cleanup_fault:j.fault;
+                for(const auto& m:pending_plan_.delta) {
+                    auto& entry=negatives_[{m.expert,uint32_t(m.to)}];
+                    entry={now_ns,add_saturating(now_ns,
+                           settings_.learned_eligibility_ttl_ns),reason};
+                    ++evidence_.learned_ineligible;
+                }
+            } // preserve measured-worse TTL/reason if rollback itself aborts
         } else return; // evidence remains inflight on unverified journal
         if(j.finish_ns>=j.start_ns) {
             const uint64_t elapsed=j.finish_ns-j.start_ns;
@@ -392,11 +527,26 @@ public:
         ++terminal_generation_; // invalidate results queued before any closed txn
         prune_expired(now_ns);
         inflight_=false;
-        pending_plan_={};
+        if(!settings_.effect_gate || !effect_.waiting())pending_plan_={};
     }
     void report(const void* map,uint32_t helper,uint64_t now_ns) const {
         moe_shm::PlacementControl c{};
         if(!moe_shm::placement_snapshot(map,&c))return;
+        std::fprintf(stderr,
+            "policy effect_gate=%u effect_window_samples=%llu effect_min_quiet_windows=%llu effect_noise_multiplier=%.6f effect_revert_ttl_ns=%llu windows_judged=%llu kept=%llu reverted=%llu undecided=%llu noise_floor=%.9f last_signal_ratio=%.9f revert_attempts=%llu revert_aborts=%llu revert_blocked=%u\n",
+            unsigned(settings_.effect_gate),
+            (unsigned long long)settings_.effect_window_samples,
+            (unsigned long long)settings_.effect_min_quiet_windows,
+            settings_.effect_noise_multiplier,
+            (unsigned long long)settings_.effect_revert_ttl_ns,
+            (unsigned long long)evidence_.effect_windows_judged,
+            (unsigned long long)evidence_.effect_kept,
+            (unsigned long long)evidence_.effect_reverted,
+            (unsigned long long)evidence_.effect_undecided,
+            evidence_.effect_noise_floor,evidence_.effect_last_ratio,
+            (unsigned long long)evidence_.effect_revert_attempts,
+            (unsigned long long)evidence_.effect_revert_aborts,
+            unsigned(revert_failed_));
         std::fprintf(stderr,
             "policy placement helper=%u evaluated=%llu no_change=%llu proposed=%llu committed=%llu aborted=%llu learned_ineligible=%llu cache_active=%zu inflight=%u bytes_moved=%llu predicted_saving=%.6f transition_samples=%llu transition_ns_total=%llu transition_ns_max=%llu unwatermarked_heat=%u no_live_feed=%u active_epoch=%llu active_digest=%016llx\n",
             helper,(unsigned long long)evidence_.evaluated,
@@ -434,8 +584,9 @@ public:
         std::fprintf(stderr,"policy cache_details=%zu cache_detail_limit=%zu\n",
                      newest.size(),limit);
         for(const auto& [pair,entry]:newest)
-            std::fprintf(stderr,"policy learned expert=%u destination=%u reason=%u observed_ns=%llu expires_ns=%llu\n",
+            std::fprintf(stderr,"policy learned expert=%u destination=%u reason=%u reason_name=%s observed_ns=%llu expires_ns=%llu\n",
                          pair.first,pair.second,entry.reason,
+                         entry.reason==kMeasuredWorseReason?"measured-worse":"controller-abort",
                          (unsigned long long)entry.observed_ns,
                          (unsigned long long)entry.until_ns);
     }

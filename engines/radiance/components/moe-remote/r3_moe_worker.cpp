@@ -559,7 +559,10 @@ int main(int argc, char** argv) {
          * the lanes, so it is destroyed after they have published the stop. */
         QueueWarm warm;
         if (!warm.start(h, cfg.power_save && cfg.queue_warm)) return 1;
+        r3::policy::LaneServiceSource lane_service_signal; // process-private, helper 0 only read
         Lanes lanes(h, map, dev_map, *gpu, lane_classes, cfg, lanes_served, combine);
+        if(helper_index==0 && cfg.policy.enabled && cfg.policy.effect_gate)
+            lanes.set_service_signal(&lane_service_signal);
         if (!lanes.start()) return 1;
         struct EpochClock final : r3::epoch::Clock {
             uint64_t now_ns() const override {
@@ -632,7 +635,8 @@ int main(int argc, char** argv) {
             policy_driver=std::make_unique<r3::policy::Driver>(
                 cfg.policy,std::move(source),
                 std::vector<uint64_t>(budgets,budgets+helper_count),
-                gpu->expert_stride(),std::move(protected_experts),epoch_clock);
+                gpu->expert_stride(),std::move(protected_experts),epoch_clock,
+                &lane_service_signal);
             if(!policy_driver->start()) {
                 std::fprintf(stderr,"r3_moe_worker: policy worker cannot start (invalid settings, source or budgets)\n");
                 raise_fault(h); lanes.stop_and_join(); return 2;

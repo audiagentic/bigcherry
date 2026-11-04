@@ -20,7 +20,7 @@ configure = { RADIANCE_SRC = "{engine_source}" }   # the helper builds for every
 # need a GPU, which the CI runner does not have, and run only under an explicit gpu lease. Any other registered test must
 # be declared here, or component-tests fails.
 [test]
-targets = ["r3_moe_shm_test", "r3_moe_backend_test", "r3_worker_share_test", "r3_worker_heat_test", "r3_heat_source_test", "r3_policy_input_test", "r3_policy_live_test", "r3_policy_config_test", "r3_policy_driver_test",
+targets = ["r3_moe_shm_test", "r3_moe_backend_test", "r3_worker_share_test", "r3_worker_heat_test", "r3_heat_source_test", "r3_policy_input_test", "r3_policy_live_test", "r3_policy_config_test", "r3_policy_driver_test", "r3_policy_effect_test",
            "r3_moe_epoch_test", "r3_moe_fp8_ref_test", "r3_combine_f16_test", "r3_combine_pool_test",
            "r3_admission_ledger_test", "r3_mailbox_completion_test", "r3_owner_generation_test",
            "r3_worker_slot_pool_test", "r3_replay_bootstrap_test", "r3_rad46_rows_policy_test", "r3_combine_epoch_test",
@@ -127,6 +127,35 @@ summary = "RHP11 slice G test mode: a schedule file of forced exchanges (one per
 
 
 # RHP slice H: live stage-1 policy (no experimental trigger or size defaults).
+
+# RHP slice I: required measured-effect settings, even when EFFECT_GATE=0.
+# The policy must explicitly opt in or out; all sizes remain unset by default.
+[setting.R3_MOE_POLICY_EFFECT_GATE]
+default = ""
+status = "experimental"
+summary = "Required 0 or 1 when live policy enabled: 1 gates each move on quiet work-normalised helper-0 lane service timing, with measured rollback; 0 explicitly disables the measured-effect experiment and is printed in evidence"
+
+[setting.R3_MOE_POLICY_EFFECT_WINDOW_SAMPLES]
+default = ""
+status = "experimental"
+summary = "Required timed requests PER LANE CLASS in each disjoint quiet or postcommit measurement window; only sampled completed requests, no class mixing"
+
+[setting.R3_MOE_POLICY_EFFECT_MIN_QUIET_WINDOWS]
+default = ""
+status = "experimental"
+summary = "Required consecutive quiet-window PAIRS before any judged proposal (N+1 complete non-overlapping windows); each pair contributes an observed relative noise deviation"
+
+[setting.R3_MOE_POLICY_EFFECT_NOISE_MULTIPLIER]
+default = ""
+status = "experimental"
+summary = "Required positive finite decimal multiple of the measured worst absolute fractional quiet-window rate change; no hard-coded service regression threshold"
+
+[setting.R3_MOE_POLICY_EFFECT_REVERT_TTL_NS]
+default = ""
+status = "experimental"
+summary = "Required positive monotonic duration that a forward destination judged measured-worse is blacklisted after a verified worse window"
+
+
 
 [setting.R3_MOE_POLICY_PROTECTED_LAYERS]
 default = ""
