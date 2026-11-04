@@ -115,5 +115,5 @@ server-args = [
   "--max-num-seqs", "6",
   "--max-num-batched-tokens", "2048",
   "--kv-cache-dtype", "fp8",
-  "--num-speculative-tokens", "0",
+  "--num-speculative-tokens", "3",
 ]
