@@ -113,6 +113,41 @@ class CILayersTests(unittest.TestCase):
         a.write_text("one")
         self.assertNotEqual(layers.fingerprint_files(self.root, ["b"]), old)
 
+    def test_export_container_receives_the_image_digest_the_restore_binds(self):
+        # The manifest key written inside the export container is recomputed on the host at restore, with the
+        # compiler image digest; an export that does not receive it writes keys no restore can match.
+        workflow = (SCRIPT.parents[1] / "workflows/radiance-build.yml").read_text()
+        step = workflow.split("ci_build_layers.py export", 1)[0].rsplit("docker run", 1)[1]
+        self.assertIn("-e CI_LAYER_IMAGE_ID", step.split("\n", 1)[0])
+
+    def test_source_tree_link_survives_export_and_restore(self):
+        # The engine build links rad_include/arch into the content-addressed source tree by absolute path; the layer
+        # stores it relative to the sources directory (the builds directory's sibling) and the restore accepts that
+        # shape and no other escaping link.
+        sources = self.root / "sources" / ("e" * 32) / "arch/common"
+        sources.mkdir(parents=True)
+        include = self.build / "rad_include"
+        include.mkdir()
+        (include / "arch").symlink_to(sources)
+        self.export()
+        out = self.root / "restored-links"
+        self.restore(out)
+        link = out / ("a" * 32) / ("b" * 32) / "rad_include/arch"
+        self.assertTrue(link.is_symlink())
+        self.assertEqual(link.resolve(), (self.root / "sources" / ("e" * 32) / "arch/common").resolve())
+
+    def test_link_outside_builds_and_sources_is_refused(self):
+        for target in ("/etc", "../../../../elsewhere/x", "../../../../sources/short/x"):
+            with tempfile.NamedTemporaryFile(suffix=".tar") as temp:
+                with tarfile.open(temp.name, "w") as tar:
+                    info = tarfile.TarInfo("a" * 32 + "/" + "b" * 32 + "/rad_include/arch")
+                    info.type = tarfile.SYMTYPE
+                    info.linkname = target
+                    tar.addfile(info)
+                with tarfile.open(temp.name, "r") as tar:
+                    with self.assertRaises(layers.LayerError):
+                        layers._validate_archive(tar, "a" * 32 + "/" + "b" * 32, "engine")
+
 
 if __name__ == "__main__":
     unittest.main()
