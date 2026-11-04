@@ -138,6 +138,20 @@ Removed with the objective: the per-device cost vector and the per-layer cap (`R
 
 Known limit by design: moves between the two head helpers do not change the tail's heat share, so head-to-head balance is only corrected as part of groups that also improve the tail; the measured-effect gate of slice I judges each transaction.
 
+## Slice J hardware result (2026-11-04): the post-shift loss is gone
+
+Run policy-live-7, same workload and settings as policy-live-5 (slice H) and policy-live-6 (slice I): Flash-Next on four GPUs (`flashnext-4gpu`), eight 27k-token filler prefills then ten ~50k-token documentation prefills, effect gate on (experiment values, not calibrated).
+
+| | slice H, gate off | slice I, gate on | slice J (target map), gate on |
+|---|---|---|---|
+| filler TTFT, prefill 1 to 8 | 19.5 to 16.3 s | 19.1 to 16.1 s | 19.2 to 13.4 s |
+| documentation prefill, 1 to 10 | 3,656 to 2,973 tok/s | 3,695 to 2,994 tok/s | 3,702 to 3,687 tok/s |
+
+- Filler improves 30% (19.2 to 13.4 s) against 19% for the stage-1 objective, and documentation stays flat across the ten prompts (3,702 to 3,687, within 0.5%) where stage 1 lost 19-20%. Documentation ends 2% under the 3,749 tok/s default placement, not 20-25% under; filler did not reach the static placement's 3,725 tok/s equivalent (its TTFT is the better figure to compare, 13.4 s).
+- The measured-effect gate still blacklisted three moves as measured-worse.
+- Decode after the run: 109.6 tok/s at one stream, 248.9 at six (the same prompts were not decoded in the earlier runs, so no decode comparison is made).
+- Not yet shown: the KLD/top-1 gate against BF16 with this build's policy active, and heavy churn; one run each.
+
 ## Change Log
 
 - 2026-11-01T22:51:22.513641+00:00 (updated-by): Updated: section:title, order=12, priority='P0', section:description, section:detailed_solution, section:validation, section:acceptance_criteria, section:notes
