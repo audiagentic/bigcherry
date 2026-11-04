@@ -132,6 +132,64 @@ class PinReleaseTests(unittest.TestCase):
         with self.assertRaises(_notes.ReleaseNotesError):
             _notes.pin_version(paths.REPO_ROOT, llama, "48f7b8eb6d70")
 
+    def test_radiance_cli_reads_summary_file_and_passes_it_to_release(self):
+        from bigcherry.cli import main as _cli
+
+        with tempfile.TemporaryDirectory() as td:
+            summary_file = Path(td) / "public.md"
+            summary_file.write_text("## Changes\n\n- Verified release.\n", encoding="utf-8")
+            argv = ["--engine", "radiance", "pin-release", "v1.16.0",
+                    "--evidence", "test hardware PASS", "--summary", "@" + str(summary_file)]
+            args = _cli.build_parser().parse_args(argv)
+            args.engine = args.global_engine  # Normalised by the CLI entrypoint.
+            with mock.patch.object(_pr, "run", return_value=0) as release:
+                self.assertEqual(_cli.cmd_pin_release(args), 0)
+            self.assertEqual(release.call_args.kwargs["public_summary"],
+                             "## Changes\n\n- Verified release.\n")
+            args.summary = "@" + str(summary_file.with_name("not-found.md"))
+            with mock.patch.object(_pr, "run") as release:
+                with mock.patch("sys.stderr"):
+                    self.assertEqual(_cli.cmd_pin_release(args), 2)
+                release.assert_not_called()
+
+    def test_radiance_record_requires_a_public_summary_and_preserves_audit(self):
+        from dataclasses import replace
+
+        with tempfile.TemporaryDirectory() as td:
+            root = self._repo(td)
+            plan = replace(self._plan(root), engine="radiance")
+            with self.assertRaisesRegex(_pr.PinReleaseError, "public_summary"):
+                _pr.phase_record(plan, "VERDICT consistent", "Hardware gate PASS")
+            self.assertEqual(_git(root, "status", "--porcelain"), "")
+            summary = "## Changes\n\n- Remote experts and serving config."
+            self.assertTrue(_pr.phase_record(plan, "VERDICT consistent", "Hardware gate PASS", summary))
+            record = json.loads((root / "releases/b11474.json").read_text(encoding="utf-8"))
+            self.assertEqual(record["public_summary"], summary)
+            self.assertIn("Hardware gate PASS", record["notes"])
+            self.assertIn("VERDICT consistent", record["notes"])
+            self.assertFalse(_pr.phase_record(plan, "", "", ""))
+            with self.assertRaisesRegex(_pr.PinReleaseError, "different public_summary"):
+                _pr.phase_record(plan, "", "", "## Changes\n\n- Changed after recording.")
+
+    def test_radiance_resume_can_add_summary_without_repeating_hardware_evidence(self):
+        from dataclasses import replace
+
+        with tempfile.TemporaryDirectory() as td:
+            root = self._repo(td)
+            plan = replace(self._plan(root), engine="radiance")
+            path = root / "releases/b11474.json"
+            source_note = "release 11474.0.0\nhardware evidence: already committed"
+            path.write_text(json.dumps({"notes": source_note}), encoding="utf-8")
+            _git(root, "add", str(path.relative_to(root)))
+            _git(root, "commit", "-q", "-m", "record complete without public summary")
+            summary = "## Changes\n\n- A reviewed release note."
+            self.assertTrue(_pr.phase_record(plan, "", "", summary))
+            new = json.loads(path.read_text(encoding="utf-8"))
+            self.assertEqual(new["notes"], source_note)
+            self.assertEqual(new["public_summary"], summary)
+            self.assertFalse(_pr.phase_record(plan, "", "", ""))
+            self.assertEqual(_git(root, "status", "--porcelain"), "")
+
     def test_record_needs_evidence_then_records_once(self):
         with tempfile.TemporaryDirectory() as td:
             root = self._repo(td)

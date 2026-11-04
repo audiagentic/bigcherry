@@ -855,6 +855,11 @@ def build_parser() -> argparse.ArgumentParser:
         "Recorded verbatim in the release record; required until the record carries it",
     )
     pin_release_cmd.add_argument(
+        "--summary", default="",
+        help="Radiance public release summary in Markdown, or @file. Required for an initial release record; "
+             "internal --evidence is kept out of the GitHub release description",
+    )
+    pin_release_cmd.add_argument(
         "--through", default="sync", choices=("gate", "record", "notes", "main", "release", "unpin", "sync"),
         help="stop after this phase (default: sync, the whole release)",
     )
@@ -2158,9 +2163,16 @@ def cmd_pin_release(args: argparse.Namespace) -> int:
         except OSError as exc:
             print(f"pin-release: cannot read the evidence file: {exc}", file=_sys.stderr)
             return 2
+    public_summary = args.summary
+    if public_summary.startswith("@"):
+        try:
+            public_summary = open(public_summary[1:], encoding="utf-8").read()
+        except OSError as exc:
+            print(f"pin-release: cannot read the summary file: {exc}", file=_sys.stderr)
+            return 2
     try:
         return _pin_release.run(_paths.REPO_ROOT, args.engine, args.llama_tag, evidence, through=args.through, dry_run=args.dry_run,
-                                version=args.version, bump=args.bump, yes=args.yes)
+                                version=args.version, bump=args.bump, yes=args.yes, public_summary=public_summary)
     except _pin_release.PinReleaseError as exc:
         print(f"pin-release: STOPPED at phase {exc.phase!r}: {exc}", file=_sys.stderr)
         print("  fix the cause and run the same command again; finished phases are skipped", file=_sys.stderr)
