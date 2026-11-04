@@ -1,0 +1,78 @@
+# Native gfx11 form of the 8-bit prefill tile's int8 instantiations (gemm_i8a8_tiled and its rb8 / rb32 / IQR twins).
+#
+# Why: through the compatibility layer every iu8 WMMA moves both operands (2 x 2 dwords) and the whole accumulator
+# across lanes, 16 cross-lane moves per WMMA, so the tile ran at 28 TFLOP/s of the ~246 the gfx11 integer WMMA
+# allows (rad-kbench, gemm_nt_q at i8a8h, N=34816 K=5120 M=2048, one RX 7900 XTX).
+#
+# libr4d: the weight (WMMA A) arrives in gfx12 fragment order from global; the activation (B) is staged in shared
+# memory as bytes and read as an 8-byte fragment; the int32 accumulator is the gfx12 layout through the K loop.
+#
+# Native (the int8 instantiations only; the fp8 ones keep the compatibility layer):
+#   - the accumulator stays in the gfx11 layout through a scale block's 128 K (an int32 sum, exact) and is moved to
+#     the gfx12 layout once per block, in front of the unchanged fold; the WMMA takes it as its C operand.
+#   - the activation fragment is read from shared memory as the gfx11 row (16 bytes of the staged row, two 8-byte
+#     reads), in the k order r3_bytes_12_to_11 gives the weight, so both operands carry the same permutation of K;
+#     nothing is moved across lanes for it.
+#   - the weight fragment is converted to the gfx11 row once per K step and reused by the kPTA activation tiles.
+
+@@ find 1
+            i2v bf[kPTA];
+#pragma unroll
+            for (uint32_t j = 0; j < kPTA; ++j) bf[j] = frag<kPFK>(s_a[half], arow + j * 16u, ks * kK, lane);
+#pragma unroll
+            for (uint32_t i = 0; i < kPTW; ++i) {
+                const i2v af = frag_of(cur[i], ks);
+#pragma unroll
+                for (uint32_t j = 0; j < kPTA; ++j)
+                    raw[i][j] = mma8<I8>(af, bf[j],
+                                         (half == 0u && ks == 0u) ? rb_first<RB>() : raw[i][j]);
+            }
+@@ replace
+            if constexpr (I8) {
+                // libr3 native: gfx11 rows for both operands, the accumulator in the gfx11 layout
+                r3_i4 b11[kPTA];
+#pragma unroll
+                for (uint32_t j = 0; j < kPTA; ++j) {
+                    const uint8_t* const rowp = s_a[half] + (size_t)(arow + j * 16u + (lane & 15u)) * P + ks * kK;
+                    const uint2 v0 = *(const uint2*)rowp, v1 = *(const uint2*)(rowp + 8);
+                    b11[j] = r3_i4{ (int)v0.x, (int)v1.x, (int)v0.y, (int)v1.y };
+                }
+#pragma unroll
+                for (uint32_t i = 0; i < kPTW; ++i) {
+                    const i2v af = frag_of(cur[i], ks);
+                    const r3_i4 a11 = r3_bytes_12_to_11(r3_i2{ af[0], af[1] }, lane);
+#pragma unroll
+                    for (uint32_t j = 0; j < kPTA; ++j)
+                        raw[i][j] = __builtin_bit_cast(f8v, __builtin_amdgcn_wmma_i32_16x16x16_iu8_w32(
+                            true, a11, true, b11[j],
+                            __builtin_bit_cast(r3_i8, (half == 0u && ks == 0u) ? rb_first<RB>() : raw[i][j]),
+                            false));
+                }
+            } else {
+                i2v bf[kPTA];
+#pragma unroll
+                for (uint32_t j = 0; j < kPTA; ++j) bf[j] = frag<kPFK>(s_a[half], arow + j * 16u, ks * kK, lane);
+#pragma unroll
+                for (uint32_t i = 0; i < kPTW; ++i) {
+                    const i2v af = frag_of(cur[i], ks);
+#pragma unroll
+                    for (uint32_t j = 0; j < kPTA; ++j)
+                        raw[i][j] = mma8<I8>(af, bf[j],
+                                             (half == 0u && ks == 0u) ? rb_first<RB>() : raw[i][j]);
+                }
+            }
+@@ end
+
+@@ find 1
+        tile(kb, 1u, w1, w0);
+@@ replace
+        tile(kb, 1u, w1, w0);
+        if constexpr (I8) {
+            // libr3 native: the block's sums are in the gfx11 layout; the fold reads the gfx12 one
+#pragma unroll
+            for (uint32_t i = 0; i < kPTW; ++i)
+#pragma unroll
+                for (uint32_t j = 0; j < kPTA; ++j)
+                    raw[i][j] = __builtin_bit_cast(f8v, r3_acc_i32_11_to_12(__builtin_bit_cast(r3_i8, raw[i][j]), lane));
+        }
+@@ end
