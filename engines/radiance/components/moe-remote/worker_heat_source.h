@@ -14,18 +14,29 @@
 #include <vector>
 
 namespace r3::policy {
+enum class HeatProvenance : uint8_t { UNKNOWN, ENGINE_HISTOGRAM_FILE };
 struct HeatDelta {
+    HeatProvenance provenance = HeatProvenance::UNKNOWN;
     uint32_t layers = 0, experts = 0;
     std::vector<int32_t> counts;       // interval deltas; row-major model-global IDs
     uint64_t observation_count = 0;   // cumulative routed selections (not engine steps)
     uint64_t interval_observations = 0;
     uint64_t age_ns = 0;              // age of the source file at read time
+    bool file_advanced = false; // a new atomic snapshot even with zero route delta
     bool complete_cells = false;     // exact byte shape, no counter regression
     bool complete_observations = false; // step/bank provenance proved by producer
 };
 enum class HeatPoll : uint8_t { BASELINE, UNCHANGED, DELTA, INVALID };
 class HeatSource {
+    // Only the actual final file reader can mint this construction-time
+    // capability; untrusted HeatDelta fields cannot grant it.
+    bool histogram_file_authority_ = false;
+    friend class HistogramFileSource;
 public:
+    HeatSource() = default;
+    HeatSource(const HeatSource&) = delete;
+    HeatSource& operator=(const HeatSource&) = delete;
+    bool authenticated_histogram_file() const { return histogram_file_authority_; }
     virtual ~HeatSource() = default;
     // Both timestamps MUST be sampled by the caller at poll time:
     // steady clock for residency, realtime for filesystem mtimes.
@@ -59,7 +70,7 @@ class HistogramFileSource final : public HeatSource {
     }
 public:
     HistogramFileSource(std::string path, uint32_t layers, uint32_t experts)
-        : path_(std::move(path)), layers_(layers), experts_(experts) {}
+        : path_(std::move(path)), layers_(layers), experts_(experts) { histogram_file_authority_ = true; }
     HeatPoll poll(uint64_t mono, uint64_t realtime, HeatDelta* out,
                   std::string* error) override {
         auto invalid = [&](const char* why) {
@@ -100,6 +111,7 @@ public:
         const uint64_t age = realtime - mtime;
         *out = {};
         out->layers = layers_; out->experts = experts_; out->age_ns = age;
+        out->provenance = HeatProvenance::ENGINE_HISTOGRAM_FILE;
         out->observation_count = total_;
         out->counts.assign(size_t(layers_) * experts_, 0);
         out->complete_cells = true;
@@ -137,6 +149,7 @@ public:
         }
         previous_ = std::move(values);
         stamp_ = incoming;
+        out->file_advanced = true;
         total_ += interval;
         out->observation_count = total_;
         out->interval_observations = interval;

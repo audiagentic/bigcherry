@@ -44,7 +44,9 @@ int main() {
     f.write();
     check(src.poll(1000000000ULL,realtime(),&delta,&err)==HeatPoll::BASELINE,"baseline");
     check(delta.complete_cells && !delta.complete_observations &&
-          delta.counts.size()==8 && delta.observation_count==0,"file coverage not falsely credited");
+          delta.provenance==HeatProvenance::ENGINE_HISTOGRAM_FILE &&
+          delta.counts.size()==8 && delta.observation_count==0,
+          "file coverage and exact provenance for experimental opt-in");
     check(src.poll(1000000000ULL,realtime(),&delta,&err)==HeatPoll::UNCHANGED,"same inode unchanged");
     f.counts[0]=30; f.counts[3]=7; f.counts[4]=11;
     f.write();

@@ -9,6 +9,7 @@
 #include <cstring>
 #include <string>
 #include "worker_forced_move.h"
+#include "worker_policy_config.h"
 
 struct WorkerConfig {
     uint32_t helper_count = 1;      /* R3_MOE_WORKER_COUNT: helpers sharing the segment, 1..kMaxHelpers */
@@ -29,6 +30,7 @@ struct WorkerConfig {
                                           placement epoch cycle (close, drain, recommit the same placement, reopen) every
                                           N seconds of burst; 0 = off. Moves to experiment.helper.epoch_cycle_s in v1. */
     bool force_enabled = false;
+    r3::policy::Settings policy;
     r3::forced::Schedule force_schedule;
     bool cpu_set_auto = true;          /* R3_MOE_WORKER_CPU_SET (PWR03): auto = on the efficiency cores when the CPU has
                                           them (worker_cpu.h), all = no pinning */
@@ -47,7 +49,8 @@ struct WorkerConfig {
                u32("R3_MOE_WORKER_EPOCH_CYCLE_S", 0, kMaxEpochCycleS, &epoch_cycle_s, err) &&
                choice("R3_MOE_WORKER_CPU_SET", "auto", "all", &cpu_set_auto, err) &&
                check(helper_index < helper_count, "R3_MOE_WORKER_INDEX must be below R3_MOE_WORKER_COUNT", err) &&
-               read_force(err);
+               read_force(err) &&
+               policy.from_environment(helper_count,force_enabled,err);
     }
 
     /* Before any configuration is read (GPU_MAX_HW_QUEUES must be set before HIP initialises): the same parse, but a

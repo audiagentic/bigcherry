@@ -116,11 +116,49 @@ Steps:
 
 Validation: Exact static-tail reproduction (static_tail is plan_tail), deterministic ties, zero-budget helpers, mixed expert sizes, per-layer max-not-sum objective, insufficient-coverage rejection, calibration error, quality comparison.
 
+## Slice I hardware result (2026-11-04): the effect gate does not stop the post-shift loss
+
+Run policy-live-6: slice I build, EFFECT_GATE=1 (window 32 samples per lane class, 3 quiet-window pairs, noise multiplier 3.0, revert blacklist 600 s; experiment values, not calibrated), Flash-Next (Qwen3.8 MoE) on four GPUs, layout flashnext-4gpu, eight 27k-token filler prefills then ten ~50k-token docs prefills, same sequence as policy-live-5 (gate off).
+
+| | gate off (policy-live-5) | gate on (policy-live-6) |
+|---|---|---|
+| filler TTFT, 27k tokens, prefill 1 -> 8 | 19.5 s -> 16.3 s | 19.1 s -> 16.1 s |
+| docs prefill 1 -> 10 | 3,656 -> 2,973 tok/s | 3,695 -> 2,994 tok/s |
+
+- The gain on the filler workload is unchanged by the gate (about 17%).
+- The loss after the workload shift is unchanged too: docs prefill ends about 20% under its start, and below the 3,749 tok/s default placement.
+- The gate did act: three moves were judged measured-worse and blacklisted (learned entries, reason measured-worse). It judges helper-0 lane service rate in quiet windows, which does not see the prefill throughput lost when the heat that justified the moves is no longer the traffic.
+- Conclusion: slice I stays opt-in experimental and is not evidence that the policy is safe by default. The remaining loss needs the slice J objective (target-map: score the placement against the current traffic, not the per-move lane rate).
+
+## Slice J implemented (2026-11-04): the live plan is the static placer's plan for the live heat
+
+`heat::propose(input, head_shares)` replaces the stage-1 balancing objective. The target owner map is `worker_share::plan_tail` over the helper-owned experts ranked by live decayed heat (hottest first, ties by index), with the launch's `R3_MOE_WORKER_SHARES` and the helpers' budgets. The diff against the current map is applied hottest first in whole groups: a move that overflows its destination at the end of the transaction pulls in the coldest move out of that destination, and so on along the chain, so budgets hold at the one atomic epoch; a group that does not fit `max_moves` / `max_moved_bytes` is skipped whole. The plan's score is the share of helper-owned heat on the tail helper (lower is closer to the static plan); `margin` is the fractional improvement of that share. The static layout of its own heat is a fixed point (no proposals).
+
+Removed with the objective: the per-device cost vector and the per-layer cap (`R3_MOE_POLICY_DEVICE_COSTS`, `R3_MOE_POLICY_LAYER_CAPS`, `Device::cost`, `Device::layer_cap`, `Input::layer`), and the exhaustive oracle that checked it. Unit tests cover the fixed point, convergence to `plan_tail`, atomic groups and chains through three full helpers, move and byte caps, unmovable experts, gates, and an independent oracle in the epoch test. Not yet measured on hardware: the success test is the same workload-shift run as slice H and I (8 filler prompts, then 10 documentation prompts): filler should approach 3,700 and documentation should return to about 3,750, never below the default.
+
+Known limit by design: moves between the two head helpers do not change the tail's heat share, so head-to-head balance is only corrected as part of groups that also improve the tail; the measured-effect gate of slice I judges each transaction.
+
+## Slice J hardware result (2026-11-04): the post-shift loss is gone
+
+Run policy-live-7, same workload and settings as policy-live-5 (slice H) and policy-live-6 (slice I): Flash-Next on four GPUs (`flashnext-4gpu`), eight 27k-token filler prefills then ten ~50k-token documentation prefills, effect gate on (experiment values, not calibrated).
+
+| | slice H, gate off | slice I, gate on | slice J (target map), gate on |
+|---|---|---|---|
+| filler TTFT, prefill 1 to 8 | 19.5 to 16.3 s | 19.1 to 16.1 s | 19.2 to 13.4 s |
+| documentation prefill, 1 to 10 | 3,656 to 2,973 tok/s | 3,695 to 2,994 tok/s | 3,702 to 3,687 tok/s |
+
+- Filler improves 30% (19.2 to 13.4 s) against 19% for the stage-1 objective, and documentation stays flat across the ten prompts (3,702 to 3,687, within 0.5%) where stage 1 lost 19-20%. Documentation ends 2% under the 3,749 tok/s default placement, not 20-25% under; filler did not reach the static placement's 3,725 tok/s equivalent (its TTFT is the better figure to compare, 13.4 s).
+- The measured-effect gate still blacklisted three moves as measured-worse.
+- Decode after the run: 109.6 tok/s at one stream, 248.9 at six (the same prompts were not decoded in the earlier runs, so no decode comparison is made).
+- KLD/top-1 against BF16, 8,240 positions, same build and reference. Tail placement with the policy on committed no transaction during the short scoring and is identical to its static twin (mean 0.0646, p99.9 2.245, top-1 88.50%; engine-only control 0.0678 / 2.376 / 88.57%), so it shows only that the static layout is sound. The churn gate starts from round-robin placement and runs the policy at a 1 s cadence with the effect gate off: 15 transactions committed, 4.87 GB moved, 0 aborted; static round-robin mean 0.0602 / p99.9 2.221 / top-1 88.69%, with the policy 0.0613 / 1.695 / 88.51%: +0.001 mean and -0.18 points top-1 against the twin, inside the gate (+0.02, 1.0 points). One run each.
+- Not yet shown: churn together with the effect gate on, and repeat runs.
+
 ## Change Log
 
 - 2026-11-01T22:51:22.513641+00:00 (updated-by): Updated: section:title, order=12, priority='P0', section:description, section:detailed_solution, section:validation, section:acceptance_criteria, section:notes
 
 ## Ledger-events
+
 
 
 - chg_20261101_225732_planning-a-staged-roadmap-for_4092
@@ -138,3 +176,5 @@ Validation: Exact static-tail reproduction (static_tail is plan_tail), determini
 - 2026-11-04T16:36:49.024917+00:00 (updated-by): Updated: section:notes
 - chg_20261104_163653_recorded-why-the-first-automat_1569
 - 2026-11-04T16:36:57.133298+00:00 (updated-by): Updated: section:ledger-events
+- chg_20261104_205414_live-expert-placement-now-hold_8315
+- 2026-11-04T20:54:20.931133+00:00 (updated-by): Updated: section:ledger-events

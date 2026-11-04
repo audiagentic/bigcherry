@@ -6,6 +6,7 @@
 #include <vector>
 
 namespace r3::residency {
+inline constexpr uint8_t kCompletePlaneMask = (1u<<4)-1u;
 
 enum class State : uint8_t { FREE, RESERVED, COPYING, READY, ACTIVE, RETIRING };
 enum class Result : uint8_t { OK, INVALID, DEFERRED_CAPACITY, SOURCE_UNAVAILABLE, BUSY };
@@ -74,7 +75,7 @@ public:
     Result bootstrap(uint32_t expert, uint64_t bytes, uint64_t epoch, uint32_t* id) {
         if (!id) return Result::INVALID;
         const auto allowed = bootstrap_possible(expert, bytes, epoch);
-        return allowed == Result::OK ? insert(expert, bytes, epoch, State::ACTIVE, 15, id) : allowed;
+        return allowed == Result::OK ? insert(expert, bytes, epoch, State::ACTIVE, kCompletePlaneMask, id) : allowed;
     }
     Result reserve(uint32_t expert, uint64_t bytes, uint64_t epoch, bool source_available, uint32_t* id) {
         if (!source_available) return Result::SOURCE_UNAVAILABLE;
@@ -101,7 +102,7 @@ public:
     }
     Result ready(uint32_t id) {
         Slot* s = find(id);
-        if (!s || s->state != State::COPYING || s->completed_planes != 15) return Result::INVALID;
+        if (!s || s->state != State::COPYING || s->completed_planes != kCompletePlaneMask) return Result::INVALID;
         s->state = State::READY; --copying_;
         return Result::OK;
     }

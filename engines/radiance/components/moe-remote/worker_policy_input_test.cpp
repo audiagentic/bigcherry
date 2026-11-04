@@ -50,7 +50,7 @@ struct Fixture {
         }
         uint32_t slot=0;
         check(b.bootstrap(3,10,1,&slot)==r3::residency::Result::OK,"bootstrap ledger B");
-        ledgers={copy_ledger(a,1.0,0),copy_ledger(b,1.0,0)};
+        ledgers={copy_ledger(a),copy_ledger(b)};
         heat.counts={90,75,45,10,10000};
         heat.samples.assign(5,10);
         delta.layers=1;delta.experts=5;delta.counts={90,75,45,10,0};
@@ -74,10 +74,10 @@ int main() {
     check(input.current[4]==-1 && input.allowed[4]==std::vector<uint8_t>({0,0}) &&
           input.devices[0].budget==40 && input.devices[1].budget==40,
           "protected slot fixed and helper residency budget derived");
-    const auto plan=r3::heat::propose(input);
+    const auto plan=r3::heat::propose(input,{1,1});
     check(plan.valid && !plan.no_change &&
           r3::heat::delta_matches(plan,input.current) && plan.owner[4]==-1,
-          "stage-1 policy may balance only helper-owned experts");
+          "the live plan moves only helper-owned experts");
     r3::heat::Heat accumulated(1,5,1000);
     uint64_t consumed=0;
     check(consume_heat(f.delta,&accumulated,&consumed) && consumed==220 &&
