@@ -6,6 +6,9 @@ inside the workflow: every job is always created and a job skipped by its `if:` 
 required status check accepts (a workflow-level `paths:` filter creates no check at all and blocks a merge).
 Fails safe: any error prints run=true, so the real job runs.
 
+A pattern line starting with `!` excludes: a changed file counts only if some include pattern matches it and no
+exclude pattern does (an exclude always wins, wherever it is listed). A list of only excludes matches nothing.
+
 Usage: changed_paths.py BASE_SHA HEAD_SHA < patterns (one glob a line; `**` crosses directories, `*` does not)
 """
 import re
@@ -29,13 +32,21 @@ def glob_to_regex(pattern: str) -> re.Pattern[str]:
     return re.compile(out + r"\Z")
 
 
+def first_match(changed: list[str], patterns: list[str]) -> str | None:
+    """The first changed file some include pattern matches and no `!` exclude pattern does."""
+    include = [glob_to_regex(p) for p in patterns if not p.startswith("!")]
+    exclude = [glob_to_regex(p[1:]) for p in patterns if p.startswith("!")]
+    return next((f for f in changed
+                 if any(p.match(f) for p in include) and not any(p.match(f) for p in exclude)), None)
+
+
 def main() -> int:
     try:
         base, head = sys.argv[1], sys.argv[2]
-        patterns = [glob_to_regex(p.strip()) for p in sys.stdin if p.strip() and not p.strip().startswith("#")]
+        patterns = [p.strip() for p in sys.stdin if p.strip() and not p.strip().startswith("#")]
         changed = subprocess.run(["git", "diff", "--name-only", f"{base}...{head}"], check=True,
                                  capture_output=True, text=True).stdout.split()
-        hit = next((f for f in changed if any(p.match(f) for p in patterns)), None)
+        hit = first_match(changed, patterns)
         print(f"run={'true' if hit else 'false'}")
         print(f"changed {len(changed)} file(s); first match: {hit or '-'}", file=sys.stderr)
     except Exception as exc:  # fail safe: run the checks
