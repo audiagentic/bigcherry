@@ -339,7 +339,10 @@ int main(int argc, char** argv) {
                     if (comma == std::string::npos) break;
                     pos = comma + 1;
                 }
-                gpu->refresh_rad46_rows_mode();  // changes only at replay variant boundaries
+                if (!gpu->set_rad46_sweep_variant(std::getenv("RAD46_SWEEP_VARIANT"))) {
+                    std::fprintf(stderr, "r3_moe_worker: replay sweep needs a known RAD46_SWEEP_VARIANT\n");
+                    return 2;
+                }
                 std::printf("SWEEP run %d capture %zu layer %u variant [%s]\n", run++, c, g_replay->hd.layer, v.c_str());
                 std::fflush(stdout);
                 rc |= compare_mode(model, *gpu, owned, g_replay->hd.layer, g_replay->hd.rows, lane_classes,
