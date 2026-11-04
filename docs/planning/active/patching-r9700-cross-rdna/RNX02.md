@@ -90,6 +90,10 @@ Implementation update (2026-10-03): created advisory package 1300_rnx02_q8kv_vec
 
 Review RV4206 assessment: the QSA path has a separate cross-start greedy determinism defect in tied radix TOP_K selection; keep that as a distinct 1301 analysis/repair and do not fold it into 1300. The 1300 experiment remains justified by the measured verify-width q8_0->f16 attention cost, but requires backend parity and deterministic output checks.
 
+
+
+BACKLOG TRIAGE 2026-11-04 (revalidated against main 6eb31a708): the proposed disposition "MERGE into QFP25" was NOT applied; this item stays open. Why: docs/planning/active/patching-r9700-cross-rdna/RNX02.md:14-22,26-57 includes a distinct default-off Q8_0/D256 *decode* selector; engines/llamacpp/patches/1300_rnx02_q8kv_vec_decode/patch.toml:4 is untested and patch.py:13-30 selects the native vector path. docs/planning/active/patching-qwen-flash-next/QFP25.md:14-29 concerns selected-index sparse *prefill*, so a full merger would discard the live 1300 decode A/B. Active items that reference this one: BCOP202, BCOP295, BCOP313, BCOP325, BCOP327, BCOP329, BCOP45, BCOP48, PRVP04, PRVP06. Keep RNX02's guarded Q8_0 D256 decode-selector qualification separate from QFP25's selected-index QSA prefill kernel.
+
 ## Goal
 
 Extract the r9700-stack head-dim-256 decode/paged-attention and sparse QSA/indexer ideas that reduce launch/memory cost in Qwen4Exp, without duplicating BigCherry's existing FlashAttention tile tuning. Treat dense attention and QSA score/top-k as separate acceptance units unless profiling proves they must be fused together.
@@ -130,9 +134,6 @@ For the QSA/indexer path, map graph construction in `src/models/qwen4exp.cpp` to
 
 ## Ledger-events
 
-
-
-
 - chg_20261003_022112_added-a-safe-opt-in-q8-attent_5492
 - 2026-10-03T02:21:15.702342+00:00 (updated-by): Updated: section:ledger-events
 - 2026-10-03T02:23:15.628294+00:00 (updated-by): Updated: section:notes
@@ -142,7 +143,6 @@ For the QSA/indexer path, map graph construction in `src/models/qwen4exp.cpp` to
 - 2026-10-03T08:42:51.875082+00:00 (updated-by): Updated: section:ledger-events
 - chg_20261003_104706_faster-long-context-decoding-f_1057
 - 2026-10-03T10:47:17.743572+00:00 (updated-by): Updated: section:ledger-events
-
 
 ## 2026-10-07 optimisation audit — quantized-KV vector attention ownership
 
@@ -216,6 +216,7 @@ RNX02 retains D=256 quantized-KV attention selector/1300 ownership. The historic
 RNX02 alone owns D256 quantized-KV VEC source/selector; 1300 remains an untested Q8-only control. BCOP320's recently audited native Q8 TILE admission (#30792) is **distinct** from this new Q4 VEC GQA reuse and must not be double-counted. QFP04/1295 owns sparse QSA decode, PRBE02/1266 owns WMMA sync, PRBE54/1271 Q5 F16 conversion, QFP07 placement, QFP15 acceptance. No changes to their active plans or implementation. vLLM's [ROCm Triton attention backend](https://vllm.ai/blog/2026-03-04-vllm-triton-backend-deep-dive) and [KV dtype table](https://docs.vllm.ai/en/v0.25.1/design/attention_backends/) provide a grouped-query/paged-KV test comparator; its per-token-head INT4/INT8 layouts are not ggml Q4_0/Q8_0 and cannot be transplanted without independent AMD tests. **Novelty:** #30803 was opened 2026-10-19 09:42 UTC, after the earlier RNX02/BCOP320 audit; it supplies a new GQA-reuse kernel and direct gfx1201 Q4_0 measurements. Last repository-visible independent RNX02 work was outside the preceding 12 hours; no matching BigCherry PR, patch or queued receipt was found. Protected RCS09-04/05/06/07, RCS05, RAD11, RAD12, RAD10, WSL and release work remains untouched. Off-repository hardware queues are unverified.
 
 ## 2026-10-19 b11552 kernel audit — vector-FA KQ shared-memory WAR, BCOP313
+
 **Disposition: upstream fence is non-HIP, with NVIDIA-only sanitizer evidence; no HIP kernel change admitted.** This is a new, narrow synchronization finding, not a repeat of the 1300 selector proposal. Upstream [llama.cpp #30573](https://github.com/ggml-org/llama.cpp/pull/30573), open at 2026-10-18 20:10 UTC, adds `ggml_cuda_syncwarp()` after the V-accumulation loop of `flash_attn_ext_vec`. The author reports 800,742 NVIDIA sm_86 compute-sanitizer WAR warnings before and zero after; 3,993/3,993 selected FA correctness cases passed after. **Those are NVIDIA measurements, not AMD race or speed evidence.**
 ### Exact source and AMD dispatch (pinned b11552, `23b0202a189c44a54625aadcb37a946dd1d6278`)
 - `ggml/src/ggml-cuda/fattn-vec.cuh::flash_attn_ext_vec<D,ncols,type_K,type_V,use_logit_softcap>`: 128-thread CTA, 4 wave32 warps on RDNA. Quantized RDNA K uses `nthreads_KQ_q=2`; D256 quantized V uses `nthreads_V_q=32`. KQ scratch is `KQ[j*nthreads+tid]`, where `tid=WARP_SIZE*threadIdx.y+threadIdx.x`. The V loop reads `KQ[j*nthreads+k]`, where `k=threadIdx.y*WARP_SIZE+k0+(nthreads_V==WARP_SIZE?0:threadIdx.x/nthreads_V)`. For legal divisors of WARP_SIZE, each read stays inside the **same wave's** written 32-lane segment. This proves lane-index ownership, **not** synchronization/codegen safety.
@@ -227,3 +228,4 @@ RNX02 alone owns D256 quantized-KV VEC source/selector; 1300 remains an untested
 Host-only `warp_kq_ownership_oracle.py` checked **99 wave-local, complete-coverage cases and 216,576 modeled shared reads** for wave32/64, legal V lane divisors, 1/2 columns and 1/2/8 KV partitions; all passed. Source inspection verified the HIP no-op wrapper. These are **not** HIP tests or sanitizer results. No new GPU benchmark, kernel ISA, model logits, KLD or MTP run was performed. Existing BigCherry 1298 MTP3 vector override was ~6% slower (58.9 ms/step vs 56.1/54.3 ms controls at ~30K), but that is not a KQ-fence A/B.
 **Terminal by default:** `UPSTREAM_NON_HIP_ONLY` / `NATIVE_VEC_ALREADY_SELECTED`; no patch, new flag or GPU queue. Reopen only on (a) a reproducible gfx1100/gfx1201 KQ WAR or miscompile receipt tied to this kernel and exact compiler/pin, or (b) a current-pin n=1 Q8_0/D256 kernel-critical-path receipt proving an independent >=3% E2E removable ceiling. For (a), first inspect wave32 ISA and compare stock vs a disposable **HIP-valid** wave-level fence (not `ggml_cuda_syncwarp`), preserving all-wave participation; test full KQ read-before-write, short/long KV tails, multi-request/ubatch, graph replay, logits/KLD/greedy and MTP. For (b), use the existing RNX02 `nthreads_KQ_q` sweep and rocprof lane, not the redundant 1300 override. A/B requires paired same-pin gfx1100/gfx1201 runs, unchanged physical work/bytes, CI95-low >=3% E2E and <=1% controls; otherwise reject. gfx1030 is a negative control, not an assumed beneficiary.
 **External comparison:** vLLM ROCm's paged-attention backend and AITER attention kernels use different cache layouts, formats and synchronization ownership; they are references for AMD qualification methodology, not a drop-in GGUF Q8_0 `flash_attn_ext_vec` barrier. See [vLLM ROCm attention](https://github.com/vllm-project/vllm/blob/main/vllm/v1/attention/backends/rocm_attn.py) and [ROCm AITER](https://github.com/ROCm/aiter).
+- 2026-11-04T04:25:01.519348+00:00 (updated-by): Updated: section:notes

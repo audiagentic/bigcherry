@@ -526,7 +526,7 @@ def run_server_arm_capture(
     """
     from dataclasses import asdict
     from bigcherry.campaign.bench_runner import run_bench_runner_server_bench
-    from bigcherry.engine_adapters import SidecarSet, adapter as engine_adapter
+    from bigcherry.engine_adapters import SidecarSet, adapter as engine_adapter, failed_sidecars
     from bigcherry.tuning.server_runner import ServerRunner
 
     if not required_metrics:
@@ -657,7 +657,15 @@ def run_server_arm_capture(
         run["elapsed_s"] = time.monotonic() - started
         run["shutdown"] = asdict(server.last_shutdown) if server.last_shutdown else None
         run["sidecars"] = sidecars.stop()
-        bad = [r["name"] for r in run["sidecars"] if r["killed"] or r["exited_before_stop"]]
+        # An already-exited helper is benign only after a clean shutdown
+        # with every required metric captured.
+        clean_completion = (
+            run["returncode"] == 0
+            and server.last_shutdown is not None and server.last_shutdown.clean
+            and isinstance(run.get("metrics"), dict)
+            and all(metric in run["metrics"] for metric in required_metrics)
+        )
+        bad = failed_sidecars(run["sidecars"], clean_completion=clean_completion)
         if bad:
             run["returncode"] = 1
             run.pop("metrics", None)

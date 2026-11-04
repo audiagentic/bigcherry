@@ -19,6 +19,43 @@ One-off migration, run once the tools above exist: inventory runs/ (4,635 entrie
 (`run adopt`), harvest what is worth keeping, and list the rest with sizes for the owner. Items that belong to other sessions or are undocumented (legacy-cache, test-clone, rccl-analysis, pvps02-*,
 rd04-*, rd08-*, runs-kl, framework-validation-*) are listed for the owner and not removed by default. Outcome: a work root where every directory is explained by a manifest, and free space back.
 
+## Steps
+
+
+
+## Detailed Solution & Technical Design
+
+
+
+## Code Samples & Guidance
+
+
+
+## Files
+
+
+
+## Validation
+
+After adoption `bigcherry clean` in dry-run mode accounts for every byte under the work root (no unexplained directories); the owner signs off the list of items that are not ours before any is removed.
+- 2026-10-24: deprecated by owner decision (host-wide legacy inventory is not the way).
+
+## Effort & Risk
+
+
+
+## Standards
+
+
+
+## Acceptance Criteria
+
+
+
+## Notes
+
+2026-11-04 wip legacy-inventory branch archived as experiments/radiance/WSL06-wsl06a-legacy-inventory/change.patch.
+
 ## Execution gate review (2026-10-23)
 
 - **WSL06-A, read-only discovery PR:** classify every legacy directory by actual path owner, manifest/provenance, use/reference graph, rebuildability, last active process/lease, exact occupied bytes and suggested disposition. Cover `runs/`, existing worktrees, vault work folders, build trees and legacy caches. Do not equate absence of references in an index with deletion safety.
@@ -26,7 +63,6 @@ rd04-*, rd08-*, runs-kl, framework-validation-*) are listed for the owner and no
 - **WSL06-C, owner-authorized cleanup PR:** use WSL03 quarantine mechanism and WSL04 rebuildability gate, never `rm -rf` on ambiguous items. Preserve worktree Git pointers, stored kernels, raw experiment data and release/evidence records unless the authority and mirrors have been verified. Never purge `legacy-cache`, `wt-pr8`, or any foreign directory based only on stale metadata.
 - Acceptance: inventory reconciles used bytes and unknown objects, remains reproducible across repeated runs, and explicitly documents which paths were not reclaimed and why. No cleanup of physical-host data until dry runs, explicit owner approval, and verification of off-host copies when relevant.
 
-## Validation
+## Change Log
 
-After adoption `bigcherry clean` in dry-run mode accounts for every byte under the work root (no unexplained directories); the owner signs off the list of items that are not ours before any is removed.
-- 2026-10-24: deprecated by owner decision (host-wide legacy inventory is not the way).
+- 2026-11-04T06:16:04.791925+00:00 (updated-by): Updated: section:notes

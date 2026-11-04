@@ -22,7 +22,9 @@ configure = { RADIANCE_SRC = "{engine_source}" }   # the helper builds for every
 [test]
 targets = ["r3_moe_shm_test", "r3_moe_backend_test", "r3_worker_share_test", "r3_worker_heat_test",
            "r3_moe_epoch_test", "r3_moe_fp8_ref_test", "r3_combine_f16_test", "r3_combine_pool_test",
-           "r3_admission_ledger_test", "r3_mailbox_completion_test", "r3_owner_generation_test"]
+           "r3_admission_ledger_test", "r3_mailbox_completion_test", "r3_owner_generation_test",
+           "r3_worker_slot_pool_test", "r3_replay_bootstrap_test", "r3_rad46_rows_policy_test", "r3_combine_epoch_test",
+           "r3_forced_move_test", "r3_segment_version_test"]
 
 # Runtime settings: see libr3/component.toml for the status vocabulary.
 
@@ -112,6 +114,16 @@ summary = "RHP02: with R3_MOE_WORKER_HISTOGRAM, also rewrite the cumulative rout
 default = ""
 status = "experimental"
 summary = "a R3_MOE_WORKER_HISTOGRAM file: the helper owns the coldest experts first, so the engine keeps the hot ones and decode hands off less"
+
+[setting.R3_MOE_PLACEMENT_FORCE_MOVE]
+default = ""
+status = "diagnostic"
+summary = "RHP11 slice G test mode: one forced expert exchange through the full placement transaction while serving (layer:expert:helper, or swap:layerA:expertA:layerB:expertB; swap:auto:X:Y resolves the pair from the canonical owner map). Conflicts with R3_MOE_PLACEMENT_FORCE_SCHEDULE. For quality and stability gates only, never for serving: the helper prints attempted/committed/aborted counts on exit or SIGUSR1"
+
+[setting.R3_MOE_PLACEMENT_FORCE_SCHEDULE]
+default = ""
+status = "diagnostic"
+summary = "RHP11 slice G test mode: a schedule file of forced exchanges (one per line, repeat=N repeats a line) driven through the full placement transaction while serving. Conflicts with R3_MOE_PLACEMENT_FORCE_MOVE. For quality and stability gates only, never for serving"
 
 [setting.R3_MOE_WORKER_GEMV]
 default = "1"

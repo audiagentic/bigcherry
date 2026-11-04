@@ -1,17 +1,10 @@
-"""Per-bump release notes (``bigcherry release-notes``).
+"""Engine release notes for GitHub.
 
-One release per pin bump of an engine, named ``<tag-prefix><upstream tag>`` (the engine's ``[engine.<name>]`` table in config/release.toml; an engine without one has no release line yet). release-please on GitHub
-owns the release PR, the tag and the GitHub release (release-please-config.json, .github/workflows/release-please.yml);
-this module produces the release text it publishes. The notes are assembled from three sources, each bounded by the
-previous release:
-
-- the change ledger: events newer than the previous release tag's commit that touched the engine's files, grouped by
-  change class;
-- the patch registry: patches added, removed, whose state changed, or whose implementation changed between the
-  previous release tag and the release commit, and which entered or left the production build;
-- the bump's release record: its notes field (smoke numbers, regressions found and their disposition).
-
-Everything is read from git objects and tracked files, so the same inputs always produce the same notes.
+Release-please owns the version, tag, changelog and GitHub release.
+llama.cpp's notes use the release ledger, patch history and bump record.
+Radiance's public notes use a short reviewed summary in the release record;
+the full gate output and hardware receipts are kept in that record but are
+not copied into the public release body.
 """
 
 from __future__ import annotations
@@ -259,12 +252,44 @@ def release_version(pin: PinVersion, version: str | None = None) -> str:
     return version
 
 
+def radiance_public_summary(record: dict) -> str:
+    """The reviewed release text, kept separate from gate logs in notes."""
+    summary = record.get("public_summary")
+    if not isinstance(summary, str) or not summary.strip():
+        raise ReleaseNotesError(
+            "Radiance release record has no public_summary: pass "
+            "--summary @file to pin-release with concise, reviewed Markdown"
+        )
+    summary = summary.strip()
+    if len(summary) > 2500 or len(summary.splitlines()) > 35:
+        raise ReleaseNotesError("Radiance public_summary exceeds 2500 characters or 35 lines")
+    if not summary.startswith("## "):
+        raise ReleaseNotesError("Radiance public_summary must begin with a Markdown ## heading")
+    if re.search(r"(?i)pin-status:|completion gate:|build_plan_id=|binary_sha256=|vendor HEAD|"
+                 r"^\s*releases\s+\w{8,}", summary, re.MULTILINE):
+        raise ReleaseNotesError("Radiance public_summary contains internal gate/build output")
+    return summary
+
+
+def render_radiance_release(release_tag: str, pin: str, record: dict) -> str:
+    """Short GitHub release body; raw audit and evidence stay in the record."""
+    summary = radiance_public_summary(record)
+    revision = str(record.get("revision") or "")[:12]
+    if not revision:
+        raise ReleaseNotesError("Radiance release record is missing its upstream revision")
+    return (f"# {release_tag}\n\n"
+            f"BigCherry on Radiance `{pin}` (upstream `{revision}`).\n\n"
+            f"{summary}\n")
+
+
 def render(repo_root: Path, config: ReleaseConfig, llama_tag: str, ref: str = "HEAD", version: str | None = None) -> str:
     release_tag = config.tag_prefix + release_version(pin_version(repo_root, config, llama_tag, ref), version)
     record_text = _show(repo_root, ref, f"{config.release_records}/{llama_tag}.json")
     if record_text is None:
         raise ReleaseNotesError(f"no release record {config.release_records}/{llama_tag}.json at {ref}")
     record = json.loads(record_text)
+    if config.engine == engines.RADIANCE:
+        return render_radiance_release(release_tag, llama_tag, record)
     previous = previous_release_tag(repo_root, config, release_tag, ref)
     after = datetime.fromisoformat(_git(repo_root, "log", "-1", "--format=%cI", previous).strip()) if previous else None
 

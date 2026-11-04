@@ -241,7 +241,8 @@ class SidecarLifecycleTests(unittest.TestCase):
 class ArmCaptureSidecarTests(unittest.TestCase):
     """run_server_arm_capture starts sidecars before the server and stops them after it, even on failure."""
 
-    def run_cell(self, order, *, server_fails=False, sidecar_start_error=None):
+    def run_cell(self, order, *, server_fails=False, sidecar_start_error=None,
+                 exited_before_stop=False, killed=False, metrics=None, shutdown_clean=True):
         from bigcherry.campaign.benchmark import run_server_arm_capture
 
         class FakeSet:
@@ -255,7 +256,7 @@ class ArmCaptureSidecarTests(unittest.TestCase):
 
             def stop(self):
                 order.append("sidecar-stop")
-                return [{"name": "helper0", "log": "x", "killed": False, "exited_before_stop": False}]
+                return [{"name": "helper0", "log": "x", "killed": killed, "exited_before_stop": exited_before_stop}]
 
         class Server:
             def __init__(self, **kwargs):
@@ -272,14 +273,16 @@ class ArmCaptureSidecarTests(unittest.TestCase):
 
             def __exit__(self, *args):
                 order.append("server-stop")
-                self.last_shutdown = ShutdownResult("sigint", True, False, 0)
+                self.last_shutdown = ShutdownResult("sigint", shutdown_clean, False, 0)
 
+        if metrics is None:
+            metrics = {"tg512_tps": 1.0}
         with tempfile.TemporaryDirectory() as tmp, patch("bigcherry.engine_adapters.SidecarSet", FakeSet), patch(
             "bigcherry.tuning.server_runner.ServerRunner", Server), patch(
-            "bigcherry.campaign.bench_runner.run_bench_runner_server_bench", return_value={"tg512_tps": 1.0}):
+            "bigcherry.campaign.bench_runner.run_bench_runner_server_bench", return_value=metrics):
             result = run_server_arm_capture(
                 engine="radiance", health_timeout_s=180, binary=Path("/b/bin/radiance"), model=Path("m.rad"), extra_args=(),
-                output=Path(tmp), pair=0, side="on", position=0, env={"R3_MOE_WORKER": "1", "R3_MOE_WORKER_DEVICES": "0"},
+                output=Path(tmp), pair=0, side="on", position=0, env={},
                 settings={"R3_MOE_WORKER": "1"}, bench_configs="tg512", runner_root=Path("r"),
                 required_metrics=("tg512_tps",), execution_evidence="observe",
             )
@@ -307,6 +310,36 @@ class ArmCaptureSidecarTests(unittest.TestCase):
         self.assertEqual(result["returncode"], 1)
         self.assertIn("helper0 not ready", result["metric_error"])
         self.assertNotIn("metrics", result)
+
+    def test_self_exit_after_clean_capture_preserves_metrics(self):
+        result, persisted = self.run_cell([], exited_before_stop=True)
+        self.assertEqual(result["returncode"], 0)
+        self.assertEqual(result["metrics"], {"tg512_tps": 1.0})
+        self.assertNotIn("metric_error", result)
+        self.assertTrue(persisted["sidecars"][0]["exited_before_stop"])
+
+    def test_self_exit_during_failed_capture_remains_a_failure(self):
+        result, _ = self.run_cell([], server_fails=True, exited_before_stop=True)
+        self.assertEqual(result["returncode"], 1)
+        self.assertNotIn("metrics", result)
+        self.assertIn("server refused", result["metric_error"])
+
+    def test_forced_sidecar_kill_always_fails_capture(self):
+        for server_fails in (False, True):
+            with self.subTest(server_fails=server_fails):
+                result, persisted = self.run_cell(
+                    [], server_fails=server_fails, killed=True)
+                self.assertEqual(result["returncode"], 1)
+                self.assertNotIn("metrics", result)
+                self.assertTrue(persisted["sidecars"][0]["killed"])
+
+    def test_self_exit_without_all_metrics_or_clean_shutdown_fails(self):
+        for kwargs in ({"metrics": {}}, {"shutdown_clean": False}):
+            with self.subTest(kwargs=kwargs):
+                result, _ = self.run_cell([], exited_before_stop=True, **kwargs)
+                self.assertEqual(result["returncode"], 1)
+                self.assertNotIn("metrics", result)
+                self.assertIn("sidecar(s) helper0" if "metrics" in kwargs else "server teardown was not clean", result["metric_error"])
 
 
 if __name__ == "__main__":

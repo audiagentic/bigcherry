@@ -257,6 +257,18 @@ class _Running:
     ready_s: float | None = None
 
 
+def failed_sidecars(records: list[dict[str, Any]], *, clean_completion: bool) -> list[str]:
+    """Flag forced kills and exits without a clean primary run.
+
+    An already-exited sidecar at teardown may have exited normally when the
+    primary completed; it is not by itself evidence of failure.
+    """
+    return [
+        record["name"] for record in records
+        if record["killed"] or (record["exited_before_stop"] and not clean_completion)
+    ]
+
+
 @dataclass
 class SidecarSet:
     """Starts a cell sidecars in order and stops them in reverse order. Always call :meth:`stop` in a finally."""

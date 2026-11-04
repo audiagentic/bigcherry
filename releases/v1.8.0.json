@@ -29,5 +29,6 @@
   "revision": "7a7707a95559c0b85277e75b7799fcf2ca8b8bc5",
   "stage": "patched",
   "tree_state": "",
-  "updated_at": "2026-10-18T13:59:38.201985+00:00"
+  "updated_at": "2026-10-18T13:59:38.201985+00:00",
+  "public_summary": "## Changes\n\n- Ported the custom build and AMD kernel components to upstream v1.8.0. Added the FFmpeg 6 MP4-writer compatibility patch.\n\n## Measurements and validation\n\n- Hardware acceptance passed on the two-XTX Flash-Next layout: prefill 3,389 tokens/s (4K input), 3,439 tokens/s (1K input); decode 146 tokens/s (512 output).\n- Helper KLD was within its recorded acceptance limits. Source, plugin ABI and CPU smoke checks passed.\n\n## Limits\n\n- These are workload-specific acceptance results compared with stored baselines, not a like-for-like stock Radiance speedup."
 }

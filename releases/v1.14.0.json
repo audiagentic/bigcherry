@@ -32,5 +32,6 @@
   "revision": "4a61d7296bc5b4fec5932949dac4a2fadf9b61ca",
   "stage": "patched",
   "tree_state": "",
-  "updated_at": "2026-10-30T09:23:05.650593+00:00"
+  "updated_at": "2026-10-30T09:23:05.650593+00:00",
+  "public_summary": "## Changes\n\n- Updated the serving build to upstream v1.14.0, retaining remote-MoE hand-off, memory-plan admission and the integrated kernel components.\n\n## Measurements and validation\n\n- Flash-Next A/B on R9700 + two XTX helpers + RX 6900 XT tail: one-stream decode changed by +0.14% in step time and six-stream decode by -0.46%; 28 placement-epoch cycles per cycling arm completed without hanging.\n- Engine startup canary, memory-plan checks and eight repeated completion comparisons passed. Two-XTX helper offload passed its KLD limits.\n\n## Limits\n\n- The RX 6900 XT tail-helper layout failed the KLD p99.9 limit (+1.58 versus +0.5); see RAD46.\n- The HyperConn up-mix selector requires revalidation on this upstream pin. There is no matched stock-engine throughput comparison."
 }

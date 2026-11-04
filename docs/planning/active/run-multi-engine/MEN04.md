@@ -57,7 +57,19 @@ A lane string selects engine, build and platform, and every result, build and re
 
 No legacy path: every existing source gets the explicit field in the same change. Do after MEN03 so the lane has something to run.
 
+
+
+BACKLOG TRIAGE 2026-11-04 (SUPERSEDED; revalidated against main 6eb31a708, verdict CONFIRM): engines/radiance/engine.toml and recipes.toml declare upstream, pin, vendor tree and build profile; engine is a declared axis. Evidence: engines/radiance/engine.toml and recipes.toml declare upstream, pin, vendor tree and build profile; engine is a declared axis. Still referenced by: MEN07, MEN08, MEN09. Original content kept below for history.
+
+
+
+REOPENED 2026-11-04: an independent revalidation (against main 6eb31a708) rejected the closure recorded above, which had been based on a lighter check. It stays open. Why: engines/radiance/engine.toml:9-28 and campaign/lane.py:702 show declared engine/source/build selection. However MEN04.md:24 requires replacing llama_root() with engine_root() and migrating every caller, while tools/bigcherry/core/paths.py:90-100 still exports llama_root and CLI engine_scope.py:95-103 retains its --llama-root special case.
+
 ## Change Log
 
 - 2026-10-08T20:36:21.075596+00:00 (created-by): Created by agent
 - 2026-10-08T20:48:02.956123+00:00 (updated-by): Updated: section:title, order=5, section:description, section:steps, section:files, section:validation, section:acceptance_criteria
+- 2026-11-04T03:45:59.173838+00:00 (updated-by): Updated: section:notes
+- 2026-11-04T03:46:03.350062+00:00 (state-transition): State: pending → superseded
+- 2026-11-04T04:43:48.305115+00:00 (updated-by): Updated: section:notes
+- 2026-11-04T04:43:56.666192+00:00 (state-transition): State: superseded → pending

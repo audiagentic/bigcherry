@@ -13,10 +13,6 @@ priority: P0
 
 # Chunk GDN MTP prefill prefix while preserving snapshot tail
 
-## 2026-10-15 upstream snapshot/ownership fence (BCOP225)
-
-1253 is validated **only for its K=1 BF16 GDN path** on older b11126 receipts; 1254 remains independently untested and must not inherit its status. Merged llama.cpp [#29353](https://github.com/ggml-org/llama.cpp/pull/29353) adds an MMA GDN path and changes the general GGML contract so that when n_tokens>K only snapshot slot 0 is guaranteed. That does **not** establish 1254's stronger exact K-slot prefix/tail rollback semantics. On future b11552+ rebase/port, compare K=2/4/7 every snapshot, final F32 recurrent state, accepted-draft rollback and graph replay before permitting upstream dispatch. The 1253 BF16 KKT switch admits GQA ratios only {1,2,3,4,6,8}; 1254 must preserve a pre-launch ratio guard or sequential fallback if it reuses that kernel. No new MTP qualification or patch was run here.
-
 ## Description
 
 TODO, NOT-READY (rescoped). Verified via patch.py: 1254 only defines the eligibility predicate `bigcherry_nro05_mtp_prefix_candidate()` -- prefix execution, temporary state ownership, the K-token sequential tail, snapshot publication, and fallback are all unwired (nothing actually runs the prefix/tail split). Qualify the MTP-specific GDN prefix/tail composition independently from PNRO04's raw kernel once wired.
@@ -84,6 +80,14 @@ Migration: capability-rebaseline-v3-2026-09
 
 2026-09-26: correctness redesigned (owner-approved recommendation). backend_reference now requires BOTH (1) test-backend-ops GATED_DELTA_NET on both arms within the CPU-reference tolerance, with 1254 adding S_v 128 / K>1 / n>K+64 prefix-tail cases (n=100,200 K=5; n=130 K=2; boundary n=70/69 K=5) and the same 5e-2 bf16 gate 1253 uses, control = baseline + 1253; and (2) greedy temperature-0 MTP (draft-n-max 4) generation of 64 tokens with identical token ids on both arms. Activation requires the marker in the subject's test-backend-ops output and server log. Serial-2 1254 jobs to be re-enabled on the new producer.
 
+
+
+BACKLOG TRIAGE 2026-11-04 (revalidated against main 6eb31a708): the proposed disposition "MERGE into llama-only QFP17 GDN lane, not core" was NOT applied; this item stays open. Why: engines/llamacpp/patches/1254_nro05_gdn_mtp_prefix_tail/patch.py:30 contains actual BF16 prefix plus sequential tail and patch.toml:4 remains untested; the old predicate-only summary is stale. docs/planning/active/patching-nasone-rdna-optimizations/PNRO05.md:16-65 demands exact per-K snapshot/rollback/failure and MTP acceptance qualification, while docs/planning/active/patching-qwen-flash-next/QFP17.md:75-89 addresses general prefill GDN and does not expressly own these MTP-tail invariants. Active items that reference this one: BCOP113, BCOP225, PRBE18. Keep the independent 1254 MTP snapshot and rollback qualification until QFP17 explicitly accepts all slots, fallback and failure-atomic publication.
+
+## 2026-10-15 upstream snapshot/ownership fence (BCOP225)
+
+1253 is validated **only for its K=1 BF16 GDN path** on older b11126 receipts; 1254 remains independently untested and must not inherit its status. Merged llama.cpp [#29353](https://github.com/ggml-org/llama.cpp/pull/29353) adds an MMA GDN path and changes the general GGML contract so that when n_tokens>K only snapshot slot 0 is guaranteed. That does **not** establish 1254's stronger exact K-slot prefix/tail rollback semantics. On future b11552+ rebase/port, compare K=2/4/7 every snapshot, final F32 recurrent state, accepted-draft rollback and graph replay before permitting upstream dispatch. The 1253 BF16 KKT switch admits GQA ratios only {1,2,3,4,6,8}; 1254 must preserve a pre-launch ratio guard or sequential fallback if it reuses that kernel. No new MTP qualification or patch was run here.
+
 ## Change Log
 
 - 2026-09-09T10:52:33.316789+00:00 (created-by): Created by capability-rebaseline-v3
@@ -104,3 +108,4 @@ Migration: capability-rebaseline-v3-2026-09
 - 2026-09-25T04:23:45.397057+00:00 (state-transition): State: pending → in_progress
 - 2026-09-25T14:14:50.103255+00:00 (updated-by): Updated: section:notes
 - 2026-09-25T19:42:52.791498+00:00 (updated-by): Updated: section:notes
+- 2026-11-04T04:24:44.688947+00:00 (updated-by): Updated: section:notes

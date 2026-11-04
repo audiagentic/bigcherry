@@ -62,6 +62,10 @@ Scope limit: the cache refuses the tensor split and multiple devices, so this do
 - Until then 1338 stays `untested` with a known_broken disposition bound to b11552, its test is skipped with that reason, and it must drop `requires = 1337` when rebuilt (base is upstream).
 - First step of the rebuild: re-measure upstream's cache as shipped (LRU only) on the MET01 setup, since the +60% decode result was taken with our backport.
 
+
+
+BACKLOG TRIAGE 2026-11-04 absorbed items (superseded into this one; their notes keep the full history): PNRO08: Merge llama.cpp cache hit/eviction, immutable-generation, forced-miss, fidelity and PCIe traffic tests into MET07; retire the obsolete proposed 1262 duplicate, without claiming a tensor-split cache.
+
 ## Change Log
 
 - 2026-10-06T14:52:56.714383+00:00 (created-by): Created by agent
@@ -71,3 +75,4 @@ Scope limit: the cache refuses the tensor split and multiple devices, so this do
 
 - chg_20261011_201458_bigcherry-now-builds-on-llama_8427
 - 2026-10-11T20:15:20.721396+00:00 (updated-by): Updated: section:ledger-events
+- 2026-11-04T04:12:04.489706+00:00 (updated-by): Updated: section:notes

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "rad_abi.h"
+#include "worker_generation_tables.h"
 #include <hip/hip_runtime.h>
 
 #include <algorithm>

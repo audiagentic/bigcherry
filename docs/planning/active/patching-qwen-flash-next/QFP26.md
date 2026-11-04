@@ -364,7 +364,17 @@ QFP17 acceptance umbrella; reuse 1237's map and 1239's production fusion contrac
 
 1237's real benefit is dispatch/block compaction, not removing full wasted compute; QFP26 therefore starts from its compact map and specifically targets residual imbalance/repeated activation traffic. Upstream dense #29948 is mechanism evidence only.
 
+
+
+BACKLOG TRIAGE 2026-11-04 absorbed items (superseded into this one; their notes keep the full history): QFP44: Transfer QFP44's B/R upper-bound, duplicate-ID, padding, physical tile and route-witness tests into QFP26; archive the separate #30493 draft-copy negative screen without creating another patch.
+
+
+
+BACKLOG TRIAGE 2026-11-04 (revalidated against main 6eb31a708): the proposed disposition "MERGE into llama QFP17 measurement lane" was NOT applied; this item stays open. Why: docs/planning/active/patching-qwen-flash-next/QFP26.md:16-35 defines new compact-map scheduler experiments and routed gate/up+GLU fusion; :335-360 calls QFP26 the implementation owner and demands task-tail and fusion acceptance. docs/planning/active/patching-qwen-flash-next/QFP17.md:59-70 covers prefill attribution and a general MOE-MMQ-PP2 tile gate, not these additional kernel implementation/correctness contracts; engines/llamacpp/patches/1237_rd30_moe_mmq_compact_grid/patch.py:154 and :250-256 implement the current direct compact map only. Active items that reference this one: QFP17, QFP25. Keep QFP26 as the llama.cpp residual compact MoE scheduler/fused-MMQ implementation owner, using QFP17 solely as the measurement umbrella.
+
 ## Change Log
 
 - 2026-10-05T00:00:00+00:00 (created-by): Created as QFP17 MOE-MMQ-PP2 implementation owner.
 - 2026-10-05: Added source-shaped scheduler/fusion code grounded in 1237 compact-map implementation and 1239 production MUL_MAT_ID+GLU test topology.
+- 2026-11-04T04:12:20.554192+00:00 (updated-by): Updated: section:notes
+- 2026-11-04T04:26:47.886261+00:00 (updated-by): Updated: section:notes

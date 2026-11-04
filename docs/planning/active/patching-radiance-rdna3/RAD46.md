@@ -23,7 +23,7 @@ Found by the MEN26 current-pin quality capture (2026-11-03). Production Flash-Ne
 | production tail (devices 0 1 3, MIBS 22528,22528,14336, PLACEMENT tail) | +0.007 | -0.0005 | +0.146 | +1.58 | 0.46 pts | +1.2% |
 | limit (tools/lab/radiance/helper-kld.json) | 0.02 | 0.01 | 0.2 | 0.5 | 1.0 | 5% |
 
-The two-XTX arm passes every limit; the tail arm fails only p99.9. The 6900 XT served 5,312 requests and 42,729 routes, about 2.3% of the roughly 1.8M routes each XTX served, yet adds about +1.17 nats to the worst 0.1% of tokens. The worst positions are the same hard tokens in every arm, clustered in corpus document kld-docs-02 (positions about 5000-5500, e.g. 5022-5026, 5409, 5456-5458, 6096): the tail amplifies existing error, it does not create new error. Evidence: /work/bigcherry/runs/men26-kld/{capture,capture2,capture3,capture-isolate} (run.json quality block, per-position *.kld.json.rows, helper logs).
+The two-XTX arm passes every limit; the tail arm fails only p99.9. The 6900 XT served 5,312 requests and 42,729 routes, about 2.3% of the roughly 1.8M routes each XTX served, yet adds about +1.17 nats to the worst 0.1% of tokens. The worst positions are the same hard tokens in every arm, clustered in corpus document kld-docs-02 (positions about 5000-5500, e.g. 5022-5026, 5409, 5456-5458, 6096): the tail amplifies existing error, it does not create new error. Evidence: runs/men26-kld/ (work root) {capture,capture2,capture3,capture-isolate} (run.json quality block, per-position *.kld.json.rows, helper logs).
 
 ## Steps
 
@@ -64,11 +64,20 @@ Production tail layout passes the helper-kld.json quality limits at the current 
 
 Interim production choice is the owner's: keep the tail layout (more expert capacity and context, known tail-quality cost) or serve on the two XTX helpers only (passes quality, less capacity). rad0002's promotion (MEN26) rests on the two-XTX evidence and is not blocked by this item: the issue is in the gfx1030 helper kernel path (moe-remote component and libr2), not in the engine hand-off patch.
 
+2026-11-04 experiment archive: ten Codex variants (outputlane, rb16, groupfold, stageprobe, pairdecode, pairdpp, quadadd, quadasm, quaddpp, attribution) are archived as inert patches in experiments/radiance/RAD46-*; the session's original notes and reviews are in experiments/radiance/RAD46-rad46/. Outcomes: docs/research/radiance-history/RAD46-rows-kernel-accuracy-2026-11.md. Where to resume: quad-DPP ordered-assembly variant (quadasm/quaddpp) - passes hashes, gate/up 1084 us vs 710 us original; needs full KLD and the matched pp1024/tg512 A/B. Output-lane passes quality but costs 31.5% prefill. Evidence copied to runs/rad46-evidence/ (work root), one folder per variant.
+
+2026-11-04 CORRECTION to the archive note above: the resume point is not just quad-DPP. Production (feat/rad46-accurate-rows, 90ecda12f) selects per stage by request rows: output-lane RB8 at or below derived crossovers (gate/up 309 rows, down 922), quad-DPP RB16 above. KLD on the 6900 XT tail passes, decode at parity, 4k prefill about 5-10% slower, large gate/up about 1.4x slower than the old kernel in isolation. Unmeasured: row-owned rowlane16/rowlane8 gate/up candidate (Codex report 3) - only if large-prefill speed matters. PR still needs r3_rad46_rows_policy_test declared in component.toml and tools/tests/release/test_bump_gates.py. Evidence runs rad46-speed2 under runs/ belong to the PR; do not touch.
+
 ## Change Log
 
 - 2026-11-03T02:29:34.417938+00:00 (created-by): Created by agent
 
 ## Ledger-events
 
+
 - chg_20261103_022951_measured-that-offloading-exper_7122
 - 2026-11-03T02:29:58.843319+00:00 (updated-by): Updated: section:ledger-events
+- 2026-11-04T06:15:41.758211+00:00 (updated-by): Updated: section:notes
+- 2026-11-04T06:57:23.943415+00:00 (updated-by): Updated: section:notes
+- chg_20261104_071139_the-rx-6900-xt-expert-helper-n_8892
+- 2026-11-04T07:11:43.593853+00:00 (updated-by): Updated: section:ledger-events

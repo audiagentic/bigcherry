@@ -79,6 +79,10 @@ Primary llama.cpp target: `ggml/src/ggml-cuda/gated_delta_net.cu`; graph/shape c
 
 GPT design pass (req_83e7cdc000be4b9e): 1253 is validated and 1254 already implements the K>1 single-sequence MTP BF16 prefix plus exact sequential tail route for RDNA3/RDNA4. Next action is coverage validation, not new code.
 
+
+
+BACKLOG TRIAGE 2026-11-04 (revalidated against main 6eb31a708): the proposed disposition "MERGE into QFP17" was NOT applied; this item stays open. Why: docs/planning/active/patching-r9700-cross-rdna/RNX03.md:16-27,42-53 requires independently selected one-launch GDN decode/MTP-tail 1302 and short-prefill 1312, beyond the already-owned 1253/1254 long-prefix. docs/planning/active/patching-qwen-flash-next/QFP17.md:75-89 covers prefill profiling/GDN chunk tuning, not the separate MTP-tail and decode fusion acceptance. Active items that reference this one: PRBE21, RNX09. Retain residual decode/MTP-tail GDN ownership while QFP17 handles overlapping long-/short-prefill measurement.
+
 ## Goal
 
 Port the two r9700 GDN ideas that are not already represented by BigCherry's long-prefill chunked recurrence: (1) one-launch speculative/MTP decode recurrence + state update + gated normalization, and (2) a one-launch sequential recurrence for short prefills where launch overhead dominates chunked math. Keep these as separate acceptance units.
@@ -127,3 +131,4 @@ Promote 1302 and 1312 independently. If the source behavior is already subsumed 
 ## Reviews
 
 - RV4208
+- 2026-11-04T04:25:05.471350+00:00 (updated-by): Updated: section:notes

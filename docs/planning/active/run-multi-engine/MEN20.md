@@ -57,6 +57,18 @@ A real run of one setting through the command yields the same evidence an earlie
 
 Part of MEN14 consolidation. Component lint (RCS08) reads the same evidence.
 
+
+
+BACKLOG TRIAGE 2026-11-04 (MERGE into RCS08; revalidated against main 6eb31a708, verdict CONFIRM): RCS08 (component status/evidence CLI) exists and is open; no duplicate command. Evidence: RCS08 (component status/evidence CLI) exists and is open; no duplicate command. Still referenced by: RAD10, MEN14, WSL05. Original content kept below for history.
+
+
+
+REOPENED 2026-11-04: an independent revalidation (against main 6eb31a708) rejected the closure recorded above, which had been based on a lighter check. It stays open. Why: MEN20.md:18-31 specifies a bigcherry component-evidence command that launches, verifies and stages a per-setting run and optionally promotes it. RCS08.md:18-27 only defines lint on existing setting declarations/evidence, with no runner or promotion command; the only literal component-evidence verb in the current tree appears in MEN20's plan.
+
 ## Change Log
 
 - 2026-10-18T13:04:07.928445+00:00 (created-by): Created by agent
+- 2026-11-04T03:47:27.994982+00:00 (updated-by): Updated: section:notes
+- 2026-11-04T03:47:31.963094+00:00 (state-transition): State: pending → superseded
+- 2026-11-04T04:45:22.125658+00:00 (updated-by): Updated: section:notes
+- 2026-11-04T04:45:26.281835+00:00 (state-transition): State: superseded → pending

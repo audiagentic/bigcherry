@@ -1,6 +1,6 @@
 # Radiance in BigCherry
 
-Radiance is BigCherry's primary engine. The pinned **v1.14.0** build
+Radiance is BigCherry's primary engine. The pinned **v1.16.0** build
 adds AMD RDNA2 and RDNA3 kernel components, remote MoE helpers and narrow
 engine patches alongside the RDNA4 engine kernels.
 
