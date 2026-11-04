@@ -50,6 +50,29 @@ has not been remeasured in this configuration on the current pin. There is
 no like-for-like stock Radiance comparison or full-precision reference
 quality measurement for this run.
 
+## Two RX 7900 XTX (`qwen27b-2xtx`), measured 2026-11-04
+
+Radiance v1.16.0, MXFP4 container, tensor parallel over both cards with the
+host-memory `wht6` all-reduce, FP8 KV, 512-token prompts, 256 generated tokens,
+temperature 0 (same prompt per row; draft acceptance 0.68 to 0.74 at depth 3).
+Aggregate decode tok/s:
+
+| Streams | no speculation | 3 draft tokens | depth 3 step time |
+|---|---|---|---|
+| 1 | 48.0 | 96.7 | 28.1 ms |
+| 2 | 85.8 | 125.9 | 38.6 ms |
+| 4 | 126.0 | 168.1 | 52.8 ms |
+| 6 | 150.1 | 156.7 | 81.8 ms |
+
+Depth 7 was worse at every stream count measured (91.9, 118.6 and 114.7 tok/s at
+1, 2 and 4 streams), so the layout uses 3. The gain shrinks as streams are added
+because the step grows into the row band where the selected MXFP4 kernel is slow
+on this card (RAD47). Cold prefill of a prompt of about 6,880 tokens: 2.57 s with
+`wht6` (2,680 tok/s), 3.18 s with the exact all-reduce, 4.16 s on one card; the
+large prefill GEMMs already run at 85 to 107 TFLOP/s per card. One prompt per
+row, one run each: the single-stream figures are repeatable (identical across
+four prompts earlier), the multi-stream ones are not yet repeated.
+
 ## Evidence
 
 [RAD37, current-pin model checks](../../../../planning/completed/patching-radiance-rdna3/RAD37.md)

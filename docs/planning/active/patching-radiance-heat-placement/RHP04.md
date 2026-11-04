@@ -62,6 +62,10 @@ Depends on RHP02–03; no automatic activation before RHP05.
 
 Plan source: GPT staged plan 2026-11-01. The worker_heat.h header ("nothing here changes a live ownership map") is what stage 1 changes.
 
+
+
+MEASURED 2026-11-04: what placement fit is worth (restart-based upper bound for live placement). Production layout flashnext-4gpu, radiance v1.16.0 main build, fresh server per arm, 2 GiB host KV tier, cold prompts, no prefix-cache hits. Cold prefill, tokens/s: stream-bench FILLER text (about 45K tokens per prompt) with the default placement (flashnext-mixed.hot-first, fitted to code + documentation): 2,316 2,347 2,372 2,358 2,349 2,338 (mean about 2,347). The same text after recording the route heat on it, inverting it with heat-invert.py and restarting with --heat: 3,593 3,812 3,770 (mean about 3,725, +59%) on three NEW filler prompts. DOCUMENTATION text (about 48K tokens): default placement 3,685 3,810 3,753 (mean about 3,749, matching the recorded 3,837 for that text); on the filler-fitted placement 2,509 2,681 2,500 (mean about 2,563, -32%). Decode barely moves: 6-stream engine decode 328.2 -> 338.0 tok/s (+3%). Conclusion: for prefill, a static placement is worth about +-1.5x depending on how well its heat matches the workload; the run-to-run spread is under 3%. A live loop that follows the workload can recover the mismatch loss without a restart, so slice H (policy-driven live placement) has a large measured prize on shifted workloads. Not yet measured: a mixed workload (the best static compromise versus a live loop), the transition cost of the moves themselves (forced swaps cost about +4% decode while 1,000 swaps ran), and how fast heat must be followed. Also found: prefill numbers are only comparable for the same prompt text; the RAD46 and v1.14-vs-v1.16 comparisons above used the filler text (RAD46 costs about 2%, the pin bump cost nothing).
+
 ## Implementation-grade notes (2026-10-15)
 
 ### Objective and constraints
@@ -111,10 +115,12 @@ Validation: Exact static-tail reproduction (static_tail is plan_tail), determini
 ## Ledger-events
 
 
-
 - chg_20261101_225732_planning-a-staged-roadmap-for_4092
 - 2026-11-01T22:57:35.857193+00:00 (updated-by): Updated: section:ledger-events
 - chg_20261102_022722_groundwork-for-live-expert-pla_5619
 - 2026-11-02T02:27:34.555558+00:00 (updated-by): Updated: section:ledger-events
 - chg_20261104_115252_groundwork-for-moving-hot-expe_1653
 - 2026-11-04T11:52:56.238098+00:00 (updated-by): Updated: section:ledger-events
+- 2026-11-04T13:20:59.621024+00:00 (updated-by): Updated: section:notes
+- chg_20261104_132107_measured-that-matching-expert_1370
+- 2026-11-04T13:21:11.445572+00:00 (updated-by): Updated: section:ledger-events

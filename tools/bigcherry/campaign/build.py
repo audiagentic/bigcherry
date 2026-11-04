@@ -370,7 +370,11 @@ def cmake_configure_args(
 
 
 def cmake_build_args(build_dir: Path, *, targets: tuple[str, ...] = ()) -> list[str]:
-    args = ["cmake", "--build", str(build_dir), "-j"]
+    # A bare -j overrides CMAKE_BUILD_PARALLEL_LEVEL with Ninjas native default.
+    # Keep the historical default, but honour an explicit concurrency cap.
+    args = ["cmake", "--build", str(build_dir)]
+    if not os.environ.get("CMAKE_BUILD_PARALLEL_LEVEL"):
+        args.append("-j")
     if targets:
         args += ["--target", *targets]
     return args
