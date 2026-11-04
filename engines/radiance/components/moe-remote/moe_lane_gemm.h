@@ -800,4 +800,319 @@ __global__ __launch_bounds__(256) void lane_moe_rows_w4(
 }
 
 
+/* RAD46 output-owned-lane experiment. Host dispatch restricts this kernel to the validated W4
+ * geometry; the existing rows kernel remains the fallback. One thread owns one output column,
+ * reusing its decoded weights over RB rows. Packed weights are loaded cooperatively along K,
+ * then transposed in LDS so output lanes read adjacent columns. The padded column pitch avoids
+ * the worst transpose bank conflicts. Activation and weight tiles are double-buffered.
+ *
+ * Arithmetic is the group-fold experiment's: two independently reset dot8 values form each
+ * dot16, four dot16 values accumulate sequentially per 64 K, then two weighted groups fold
+ * under one activation scale per 128 K. No cross-lane arithmetic and no final reduction.
+ * This preserves group-fold's operation order; it does not claim libr2 equivalence on all inputs. */
+constexpr uint32_t kOutputLaneN = 128, kOutputLaneK = 128, kOutputLaneRB = 8;
+template <bool TOKEN, uint32_t RB>
+__global__ __launch_bounds__(128) void lane_moe_rows_w4_outputlane(
+    const uint8_t* aq, const float* as, const int32_t* sorted, const int32_t* off, uint32_t top_k,
+    void* const* code0, void* const* scale0, void* const* code1, void* const* scale1,
+    uint32_t n0, uint32_t n1, uint32_t k0, uint32_t k1, uint32_t a_stride, uint32_t out_stride,
+    uint16_t* out, uint32_t part_pitch) {
+#pragma clang fp contract(off)
+#pragma clang fp reassociate(off)
+    static_assert(RB > 0 && RB <= 16, "output-lane row batch must fit the staging geometry");
+    const uint32_t e = blockIdx.x, tid = threadIdx.x;
+    const uint32_t rs = (uint32_t)off[e], re = (uint32_t)off[e + 1];
+    if (rs >= re) return;
+    const uint32_t cls = e & 1u, ix = e >> 1;
+    const uint32_t N = cls ? n1 : n0, K = cls ? k1 : k0;
+    const uint32_t n_base = blockIdx.y * kOutputLaneN, n = n_base + tid;
+    if (n_base >= N) return;
+    const uint8_t* codes = static_cast<const uint8_t*>(cls ? code1[ix] : code0[ix]);
+    const uint8_t* scales = static_cast<const uint8_t*>(cls ? scale1[ix] : scale0[ix]);
+    if (!codes || !scales) return;
+    constexpr uint32_t words = kOutputLaneK / 8;
+    __shared__ uint32_t weight[2][words][kOutputLaneN + 1];
+    __shared__ uint4 activation[2][RB][words];
+    __shared__ float activation_scale[2][RB];
+    __shared__ uint32_t arow[RB];
+    __shared__ float lut[16];
+    if (tid < 16) lut[tid] = kGemvW4nl[tid];
+    auto pack = [](_Float16 x, _Float16 y) {
+        return (uint32_t)__builtin_bit_cast(uint16_t, x) |
+               ((uint32_t)__builtin_bit_cast(uint16_t, y) << 16);
+    };
+    auto decode = [&](uint32_t w) {
+        // Packed dword order: low nibbles are K0..3, high nibbles are K4..7.
+        return make_uint4(
+            pack((_Float16)lut[w & 15u], (_Float16)lut[(w >> 8) & 15u]),
+            pack((_Float16)lut[(w >> 16) & 15u], (_Float16)lut[(w >> 24) & 15u]),
+            pack((_Float16)lut[(w >> 4) & 15u], (_Float16)lut[(w >> 12) & 15u]),
+            pack((_Float16)lut[(w >> 20) & 15u], (_Float16)lut[(w >> 28) & 15u]));
+    };
+    auto dot8 = [](uint4 x, uint4 w) {
+        float s = 0.0f;
+        asm("v_dot2_f32_f16 %0, %1, %2, %0" : "+v"(s) : "v"(x.x), "v"(w.x));
+        asm("v_dot2_f32_f16 %0, %1, %2, %0" : "+v"(s) : "v"(x.y), "v"(w.y));
+        asm("v_dot2_f32_f16 %0, %1, %2, %0" : "+v"(s) : "v"(x.z), "v"(w.z));
+        asm("v_dot2_f32_f16 %0, %1, %2, %0" : "+v"(s) : "v"(x.w), "v"(w.w));
+        return s;
+    };
+    for (uint32_t r0 = rs; r0 < re; r0 += RB) {
+        const uint32_t nr = re - r0 < RB ? re - r0 : RB;
+        if (tid < nr) arow[tid] = TOKEN ? (uint32_t)sorted[r0 + tid] / top_k : r0 + tid;
+        float acc[RB];
+#pragma unroll
+        for (uint32_t r = 0; r < RB; ++r) acc[r] = 0.0f;
+        uint32_t prefetched[words];
+        uint16_t prefetched_scales;
+        auto fetch = [&](uint32_t kc) {
+            // A half wave reads sixteen consecutive packed words from one output row.
+#pragma unroll
+            for (uint32_t p = 0; p < words; ++p) {
+                const uint32_t i = tid + p * kOutputLaneN, col = i / words, kw = i % words;
+                const uint32_t wn = n_base + col;
+                prefetched[p] = wn < N ? reinterpret_cast<const uint32_t*>(
+                    codes + (uint64_t)wn * (K / 2u))[kc / 8u + kw] : 0u;
+            }
+            // Both 64-K scales of this thread's column, already in K order.
+            prefetched_scales = n < N ? reinterpret_cast<const uint16_t*>(
+                scales + (uint64_t)n * (K / 64u))[kc / kOutputLaneK] : (uint16_t)0;
+        };
+        auto stage = [&](uint32_t kc, uint32_t buf) {
+#pragma unroll
+            for (uint32_t p = 0; p < words; ++p) {
+                const uint32_t i = tid + p * kOutputLaneN;
+                weight[buf][i % words][i / words] = prefetched[p];
+            }
+            if (tid < nr)
+                activation_scale[buf][tid] = as[(uint64_t)arow[tid] * (a_stride / 128u) + kc / 128u];
+            for (uint32_t i = tid; i < RB * (kOutputLaneK / 16u); i += kOutputLaneN) {
+                const uint32_t r = i / (kOutputLaneK / 16u), p16 = i % (kOutputLaneK / 16u);
+                if (r >= nr) continue;
+                const uint4 q = *reinterpret_cast<const uint4*>(
+                    aq + (uint64_t)arow[r] * a_stride + kc + 16u * p16);
+                const uint32_t qw[4] = {q.x, q.y, q.z, q.w};
+                uint32_t hw[8];
+#pragma unroll
+                for (uint32_t j = 0; j < 4; ++j) {
+                    hw[2 * j] = pack((_Float16)gemv_e4m3(qw[j] & 255u),
+                                     (_Float16)gemv_e4m3((qw[j] >> 8) & 255u));
+                    hw[2 * j + 1] = pack((_Float16)gemv_e4m3((qw[j] >> 16) & 255u),
+                                         (_Float16)gemv_e4m3(qw[j] >> 24));
+                }
+                activation[buf][r][2 * p16] = make_uint4(hw[0], hw[1], hw[2], hw[3]);
+                activation[buf][r][2 * p16 + 1] = make_uint4(hw[4], hw[5], hw[6], hw[7]);
+            }
+        };
+        fetch(0);
+        __syncthreads(); // row map, LUT, and the preceding row batch's shared reads
+        stage(0, 0);
+        __syncthreads();
+        uint32_t cur = 0;
+        // Deliberately leave K rolled; each chunk's two groups/four partials are fixed-size.
+        for (uint32_t kc = 0; kc < K; kc += kOutputLaneK, cur ^= 1u) {
+            const uint16_t ws = prefetched_scales;
+            const float ws0 = gemv_e4m3(ws & 255u) * 0x1p-13f;
+            const float ws1 = gemv_e4m3(ws >> 8) * 0x1p-13f;
+            if (kc + kOutputLaneK < K) fetch(kc + kOutputLaneK);
+            float first_weighted[RB];
+#pragma unroll
+            for (uint32_t group = 0; group < 2; ++group) {
+                float raw[RB];
+#pragma unroll
+                for (uint32_t pair = 0; pair < 4; ++pair) {
+                    const uint32_t kw = group * 8u + pair * 2u;
+                    const uint4 w0 = decode(weight[cur][kw][tid]);
+                    const uint4 w1 = decode(weight[cur][kw + 1u][tid]);
+#pragma unroll
+                    for (uint32_t r = 0; r < RB; ++r) {
+                        if (r >= nr) continue;
+                        const float lo = dot8(activation[cur][r][kw], w0);
+                        const float hi = dot8(activation[cur][r][kw + 1u], w1);
+                        const float partial = lo + hi;
+                        if (pair == 0) raw[r] = partial;
+                        else raw[r] += partial;
+                    }
+                }
+#pragma unroll
+                for (uint32_t r = 0; r < RB; ++r) {
+                    if (r >= nr) continue;
+                    if (group == 0) first_weighted[r] = raw[r] * ws0;
+                    else {
+                        const float second_weighted = raw[r] * ws1;
+                        const float folded = first_weighted[r] + second_weighted;
+                        acc[r] += folded * activation_scale[cur][r];
+                    }
+                }
+            }
+            if (kc + kOutputLaneK < K) stage(kc + kOutputLaneK, cur ^ 1u);
+            __syncthreads();
+        }
+        if (n < N) {
+            const uint32_t col = TOKEN && part_pitch && n >= N / 2 ? n - N / 2 + part_pitch : n;
+#pragma unroll
+            for (uint32_t r = 0; r < RB; ++r) {
+                if (r >= nr) continue;
+                uint32_t u = __float_as_uint(acc[r]);
+                u += 0x7fffu + ((u >> 16) & 1u);
+                out[(uint64_t)(r0 + r) * out_stride + col] = (uint16_t)(u >> 16);
+            }
+        }
+    }
+}
+
+/* RAD46 quad-DPP experiment: four adjacent lanes own one output column. Each
+ * computes one dot16 in a K64 group. Only quad lane zero's ordered DPP fold is
+ * used; other lanes must remain active as DPP sources, including padded rows.
+ * Dot8 resets, dot16 additions, K64 ordering and the K128 scale fold match the
+ * output-lane experiment. This is not a claim of universal libr2 equivalence.
+ * Host dispatch admits only complete K128 groups and complete N32 tiles. */
+constexpr uint32_t kQuadDppN = 32, kQuadDppRB = 16;
+// RAD46 v2: halve the 16-row live accumulation/staging set for gate/up.
+// Each row has an independent, bit-identical K-fold; the down path keeps the
+// established 16-row batch until its separate regression gate is measured.
+constexpr uint32_t kQuadV2GuRB = kQuadDppRB / 2;
+template <bool TOKEN, uint32_t RB>
+__global__ __launch_bounds__(128) void lane_moe_rows_w4_quaddpp(
+    const uint8_t* aq, const float* as, const int32_t* sorted, const int32_t* off, uint32_t top_k,
+    void* const* code0, void* const* scale0, void* const* code1, void* const* scale1,
+    uint32_t n0, uint32_t n1, uint32_t k0, uint32_t k1, uint32_t a_stride, uint32_t out_stride,
+    uint16_t* out, uint32_t part_pitch) {
+#pragma clang fp contract(off)
+#pragma clang fp reassociate(off)
+    static_assert(RB > 0 && RB <= 16, "quad-DPP row batch exceeds staging geometry");
+    const uint32_t e = blockIdx.x, tid = threadIdx.x, qlane = tid & 3u;
+    const uint32_t rs = (uint32_t)off[e], re = (uint32_t)off[e + 1];
+    if (rs >= re) return;
+    const uint32_t cls = e & 1u, ix = e >> 1;
+    const uint32_t N = cls ? n1 : n0, K = cls ? k1 : k0;
+    const uint32_t n_base = blockIdx.y * kQuadDppN, n = n_base + tid / 4u;
+    if (n_base >= N) return;
+    const uint8_t* codes = static_cast<const uint8_t*>(cls ? code1[ix] : code0[ix]);
+    const uint8_t* scales = static_cast<const uint8_t*>(cls ? scale1[ix] : scale0[ix]);
+    if (!codes || !scales) return;
+    __shared__ uint4 activation[2][RB][16];
+    __shared__ float activation_scale[2][RB];
+    __shared__ uint32_t arow[RB];
+    __shared__ uint32_t lut[16];
+    // Store exact half bits: weight decode needs no float-to-half conversions.
+    if (tid < 16) lut[tid] = __builtin_bit_cast(uint16_t, (_Float16)kGemvW4nl[tid]);
+    auto pack = [](_Float16 x, _Float16 y) {
+        return (uint32_t)__builtin_bit_cast(uint16_t, x) |
+               ((uint32_t)__builtin_bit_cast(uint16_t, y) << 16);
+    };
+    auto decode = [&](uint32_t w) {
+        return make_uint4(
+            lut[w & 15u] | (lut[(w >> 8) & 15u] << 16),
+            lut[(w >> 16) & 15u] | (lut[(w >> 24) & 15u] << 16),
+            lut[(w >> 4) & 15u] | (lut[(w >> 12) & 15u] << 16),
+            lut[(w >> 20) & 15u] | (lut[(w >> 28) & 15u] << 16));
+    };
+    auto dot8 = [](uint4 x, uint4 w) {
+        float s = 0.0f;
+        asm("v_dot2_f32_f16 %0, %1, %2, %0" : "+v"(s) : "v"(x.x), "v"(w.x));
+        asm("v_dot2_f32_f16 %0, %1, %2, %0" : "+v"(s) : "v"(x.y), "v"(w.y));
+        asm("v_dot2_f32_f16 %0, %1, %2, %0" : "+v"(s) : "v"(x.z), "v"(w.z));
+        asm("v_dot2_f32_f16 %0, %1, %2, %0" : "+v"(s) : "v"(x.w), "v"(w.w));
+        return s;
+    };
+    auto quad_sum = [](float partial) {
+        // Keep each broadcast next to its consuming add. Separate intrinsics
+        // let LLVM hoist 96 broadcast results across next-tile staging. Both
+        // early-clobbers prevent either temporary overwriting the source that
+        // the later broadcasts still need. All four source lanes stay active.
+        float sum, exchanged;
+        asm("v_mov_b32_dpp %1, %2 quad_perm:[1,1,1,1] row_mask:0xf bank_mask:0xf\n\t"
+            "v_add_f32 %0, %2, %1\n\t"
+            "v_mov_b32_dpp %1, %2 quad_perm:[2,2,2,2] row_mask:0xf bank_mask:0xf\n\t"
+            "v_add_f32 %0, %0, %1\n\t"
+            "v_mov_b32_dpp %1, %2 quad_perm:[3,3,3,3] row_mask:0xf bank_mask:0xf\n\t"
+            "v_add_f32 %0, %0, %1"
+            : "=&v"(sum), "=&v"(exchanged) : "v"(partial));
+        return sum;
+    };
+    for (uint32_t r0 = rs; r0 < re; r0 += RB) {
+        const uint32_t nr = re - r0 < RB ? re - r0 : RB;
+        if (tid < RB)
+            arow[tid] = tid < nr ? (TOKEN ? (uint32_t)sorted[r0 + tid] / top_k : r0 + tid) : 0u;
+        float acc[RB];
+#pragma unroll
+        for (uint32_t r = 0; r < RB; ++r) acc[r] = 0.0f;
+        uint2 prefetched[2];
+        uint16_t prefetched_scales;
+        auto fetch = [&](uint32_t kc) {
+#pragma unroll
+            for (uint32_t group = 0; group < 2; ++group)
+                prefetched[group] = *reinterpret_cast<const uint2*>(
+                    codes + (uint64_t)n * (K / 2u) + kc / 2u + group * 32u + qlane * 8u);
+            prefetched_scales = reinterpret_cast<const uint16_t*>(
+                scales + (uint64_t)n * (K / 64u))[kc / 128u];
+        };
+        auto stage = [&](uint32_t kc, uint32_t buf) {
+            if (tid < RB)
+                activation_scale[buf][tid] = tid < nr ?
+                    as[(uint64_t)arow[tid] * (a_stride / 128u) + kc / 128u] : 0.0f;
+            for (uint32_t i = tid; i < RB * 8u; i += 128u) {
+                const uint32_t r = i / 8u, p16 = i % 8u;
+                // Zero every invalid row, so the hot arithmetic has no row predicates.
+                const uint4 q = r < nr ? *reinterpret_cast<const uint4*>(
+                    aq + (uint64_t)arow[r] * a_stride + kc + p16 * 16u) : make_uint4(0, 0, 0, 0);
+                const uint32_t qw[4] = {q.x, q.y, q.z, q.w};
+                uint32_t hw[8];
+#pragma unroll
+                for (uint32_t j = 0; j < 4; ++j) {
+                    hw[2 * j] = pack((_Float16)gemv_e4m3(qw[j] & 255u),
+                                    (_Float16)gemv_e4m3((qw[j] >> 8) & 255u));
+                    hw[2 * j + 1] = pack((_Float16)gemv_e4m3((qw[j] >> 16) & 255u),
+                                        (_Float16)gemv_e4m3(qw[j] >> 24));
+                }
+                activation[buf][r][2 * p16] = make_uint4(hw[0], hw[1], hw[2], hw[3]);
+                activation[buf][r][2 * p16 + 1] = make_uint4(hw[4], hw[5], hw[6], hw[7]);
+            }
+        };
+        fetch(0);
+        __syncthreads();
+        stage(0, 0);
+        __syncthreads();
+        uint32_t cur = 0;
+        for (uint32_t kc = 0; kc < K; kc += 128u, cur ^= 1u) {
+            const uint2 current[2] = {prefetched[0], prefetched[1]};
+            const uint16_t ws = prefetched_scales;
+            const float ws0 = gemv_e4m3(ws & 255u) * 0x1p-13f;
+            const float ws1 = gemv_e4m3(ws >> 8) * 0x1p-13f;
+            if (kc + 128u < K) fetch(kc + 128u);
+            float first_weighted[RB];
+#pragma unroll
+            for (uint32_t group = 0; group < 2; ++group) {
+                const uint4 w0 = decode(current[group].x), w1 = decode(current[group].y);
+                const uint32_t kw = group * 8u + qlane * 2u;
+#pragma unroll
+                for (uint32_t r = 0; r < RB; ++r) {
+                    const float lo = dot8(activation[cur][r][kw], w0);
+                    const float hi = dot8(activation[cur][r][kw + 1u], w1);
+                    const float raw = quad_sum(lo + hi);
+                    if (group == 0) first_weighted[r] = raw * ws0;
+                    else {
+                        const float second_weighted = raw * ws1;
+                        const float folded = first_weighted[r] + second_weighted;
+                        acc[r] += folded * activation_scale[cur][r];
+                    }
+                }
+            }
+            if (kc + 128u < K) stage(kc + 128u, cur ^ 1u);
+            __syncthreads();
+        }
+        if (qlane == 0) {
+            const uint32_t col = TOKEN && part_pitch && n >= N / 2 ? n - N / 2 + part_pitch : n;
+#pragma unroll
+            for (uint32_t r = 0; r < RB; ++r) {
+                if (r >= nr) continue;
+                uint32_t u = __float_as_uint(acc[r]);
+                u += 0x7fffu + ((u >> 16) & 1u);
+                out[(uint64_t)(r0 + r) * out_stride + col] = (uint16_t)(u >> 16);
+            }
+        }
+    }
+}
+
 }  // namespace r3_moe_gpu
