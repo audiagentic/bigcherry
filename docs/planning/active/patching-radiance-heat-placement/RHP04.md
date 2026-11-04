@@ -66,6 +66,10 @@ Plan source: GPT staged plan 2026-11-01. The worker_heat.h header ("nothing here
 
 MEASURED 2026-11-04: what placement fit is worth (restart-based upper bound for live placement). Production layout flashnext-4gpu, radiance v1.16.0 main build, fresh server per arm, 2 GiB host KV tier, cold prompts, no prefix-cache hits. Cold prefill, tokens/s: stream-bench FILLER text (about 45K tokens per prompt) with the default placement (flashnext-mixed.hot-first, fitted to code + documentation): 2,316 2,347 2,372 2,358 2,349 2,338 (mean about 2,347). The same text after recording the route heat on it, inverting it with heat-invert.py and restarting with --heat: 3,593 3,812 3,770 (mean about 3,725, +59%) on three NEW filler prompts. DOCUMENTATION text (about 48K tokens): default placement 3,685 3,810 3,753 (mean about 3,749, matching the recorded 3,837 for that text); on the filler-fitted placement 2,509 2,681 2,500 (mean about 2,563, -32%). Decode barely moves: 6-stream engine decode 328.2 -> 338.0 tok/s (+3%). Conclusion: for prefill, a static placement is worth about +-1.5x depending on how well its heat matches the workload; the run-to-run spread is under 3%. A live loop that follows the workload can recover the mismatch loss without a restart, so slice H (policy-driven live placement) has a large measured prize on shifted workloads. Not yet measured: a mixed workload (the best static compromise versus a live loop), the transition cost of the moves themselves (forced swaps cost about +4% decode while 1,000 swaps ran), and how fast heat must be followed. Also found: prefill numbers are only comparable for the same prompt text; the RAD46 and v1.14-vs-v1.16 comparisons above used the filler text (RAD46 costs about 2%, the pin bump cost nothing).
 
+
+
+LIVE STAGE-1 POLICY, FIRST HARDWARE RESULTS 2026-11-04 (PR 597, slice H; production layout flashnext-4gpu, v1.16.0 build with the driver, 2 GiB host KV tier, cold prompts, experiment settings not calibrated). Start from the default code+docs placement. (1) Filler text, policy off: 2,291-2,314 tok/s flat. (2) Equal device costs 1,1,1 and margin 0.10: one transaction of 64 experts, prefill 2,206 -> about 1,900 (-17%): the policy balanced load onto the 3.8x slower 6900 XT tail. (3) Costs derived from the helpers' measured large-lane stage times (3,278 / 3,504 / 12,484 us per request, normalised 1 : 1.07 : 3.81) and margin 0.10: one transaction, 2,189 -> 2,520-2,595 (+11-13%), then stalls on the margin ('no_improvement_or_margin'). (4) Derived costs and margin 0.005: 18 transactions, 0 aborts, 674 MB (about 260 experts), 19 s total transition (max 1.8 s); prefill 2,392 -> plateau about 2,820 (+22.6%) after about 9 prompts; decode 24.8 ms/step (1 stream) and 45.9 ms/step (6 streams) against 24.6 and 47.4-48.4 for the control. Static filler-fitted placement reaches 3,725, so the loop recovers about 36% of that gain. (5) WORKLOAD SHIFT: after adapting to filler, documentation prompts run 3,731 3,634 3,550 3,252 3,058 2,859 2,988 2,905 2,882 3,003 tok/s: the first is near the default placement's 3,749, then prefill FALLS 20-25% below it as the loop adapts to docs heat (42 transactions, 5.7 GB moved, 0 aborts), decode unaffected. Conclusions: (a) the cost model decides help versus harm: costs must come from measurement (RHP16), never 1,1,1; (b) the stage-1 objective (per-layer peak weighted helper load, margin on the global peak) is too weak a proxy for prefill throughput: it helps when the placement is far from the workload and hurts when the placement was already near-optimal, because it ignores the engine-local/helper split and the true critical path, and it has no feedback; (c) NEXT: a measured-effect gate (commit a batch, measure engine step time or prefill rate over the next window against the pre-move window, move back on a regression beyond the measured noise floor) and the stage-3 critical-path objective with calibrated curves; (d) the transition cost itself is small (about 1-2 s per transaction, decode within 3% while moving). Never enable by default until (c) is done.
+
 ## Implementation-grade notes (2026-10-15)
 
 ### Objective and constraints
@@ -115,7 +119,6 @@ Validation: Exact static-tail reproduction (static_tail is plan_tail), determini
 ## Ledger-events
 
 
-
 - chg_20261101_225732_planning-a-staged-roadmap-for_4092
 - 2026-11-01T22:57:35.857193+00:00 (updated-by): Updated: section:ledger-events
 - chg_20261102_022722_groundwork-for-live-expert-pla_5619
@@ -125,5 +128,6 @@ Validation: Exact static-tail reproduction (static_tail is plan_tail), determini
 - 2026-11-04T13:20:59.621024+00:00 (updated-by): Updated: section:notes
 - chg_20261104_132107_measured-that-matching-expert_1370
 - 2026-11-04T13:21:11.445572+00:00 (updated-by): Updated: section:ledger-events
-- chg_20261104_150859_flash-next-can-now-move-hot-ex_3589
-- 2026-11-04T15:09:03.545088+00:00 (updated-by): Updated: section:ledger-events
+- 2026-11-04T15:19:25.517005+00:00 (updated-by): Updated: section:notes
+- chg_20261104_151929_the-first-live-test-of-automat_6614
+- 2026-11-04T15:19:33.501744+00:00 (updated-by): Updated: section:ledger-events
