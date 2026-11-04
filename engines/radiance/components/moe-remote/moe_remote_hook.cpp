@@ -759,6 +759,22 @@ struct LiveRankOperations final : r3::epoch::RankOperations {
                r == RAD_E_DEVICE ? r3::epoch::RankResult::DeviceError :
                                    r3::epoch::RankResult::Pending;
     }
+    r3::epoch::RankResult abort_upload_done(uint32_t rank,uint32_t slot,
+                                              uint64_t epoch,uint64_t digest) override {
+        std::lock_guard<std::mutex> lock(g.mu);
+        if (rank>=r3::moe_shm::kMaxEngineRanks || slot>1) return r3::epoch::RankResult::DeviceError;
+        const RankState& s=g.rank[rank];
+        if (!s.ready || !s.owner_queued[slot] ||
+            s.owner_expected[slot].epoch!=epoch || s.owner_expected[slot].digest!=digest)
+            return r3::epoch::RankResult::DeviceError;
+        if (!hip_ok(hipSetDevice(s.device),"select aborted owner event device"))
+            return r3::epoch::RankResult::DeviceError;
+        const auto status=hipEventQuery(s.owner_event[slot]);
+        if (status==hipSuccess) return r3::epoch::RankResult::Ready;
+        if (status==hipErrorNotReady) return r3::epoch::RankResult::Pending;
+        (void)hip_ok(status,"query aborted owner upload event");
+        return r3::epoch::RankResult::DeviceError;
+    }
     bool exact_binding(uint32_t rank,uint32_t slot,
                        uint64_t epoch,uint64_t digest) override {
         std::lock_guard<std::mutex> lock(g.mu);

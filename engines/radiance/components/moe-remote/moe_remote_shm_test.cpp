@@ -28,6 +28,15 @@ static void V23Layout_ExactOffsetsAndBounds() {
     check(sizeof(Header) == kPage && sizeof(Request) == 256 &&
           sizeof(LaneSignal) == 64 && sizeof(CombineSignal) == 128,
           "V23Layout ABI sizes");
+    // Unfused selector reads Request lines [0,1]; fused additionally writes
+    // trace[3] in line 2. Generation +204 would require line 3 in both.
+    check(offsetof(Request, generation_slot) == 36 &&
+          offsetof(Request, generation_slot) / 64 == offsetof(Request, rank) / 64 &&
+          offsetof(Request, activation_s_stride) / 64 == 1 &&
+          (offsetof(Request, trace) + 3 * sizeof(uint64_t)) / 64 == 2 &&
+          offsetof(Request, row_base) == 204 &&
+          offsetof(Request, placement_epoch) / 64 == 3,
+          "v23 helper selector generation stays on the already-read first cache line");
     std::puts("V23Layout_ExactOffsetsAndBounds: PASS");
 }
 

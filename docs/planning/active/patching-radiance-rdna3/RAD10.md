@@ -69,7 +69,12 @@ Rejected for now: replacing radiance with Paiton, dynamic expert migration befor
 
 Separate items to raise (IDs to be reconciled with the planning index): W3A8 kernel/quality feasibility, GTT execution microbenchmark, Paiton reference-only engine (phase 0: pin revision/container digest, record external benchmarks, no patches; licence review first: plugin Apache-2.0, compiler proprietary, weights/drafter licences unknown), Paiton concurrency/quality comparison, and 2xP2P R9700 hardware evidence (external hardware).
 
+
+
+BACKLOG TRIAGE 2026-11-04 (revalidated against main 6eb31a708): the proposed disposition "MERGE correctness/soak and fairness into RHP12; keep narrow regression cases" was NOT applied; this item stays open. Why: RHP12.md:18-43,57-59 gates layout baselines, retained-session behaviour and placement regressions, not RAD10.md:24-27,44's cross-session greedy identity, cancellation, captured replay, 100 session start/stop cycles, fairness or aggregation. RCS10.md:56 references stream-bench only as calibration validation. Active items that reference this one: BCOP313, BCOP315, BCOP322, PRBE18, PRVP05, RAD11, RAD12, RCS10, RHP07, RNX02. Keep RAD10 as the owner of unfinished concurrent-session correctness, fairness, replay and cancellation tests; reuse RHP12 for layout regressions.
+
 ## Change Log
 
 - 2026-10-18T13:15:19.382833+00:00 (created-by): Created by agent
 - 2026-10-18T14:07:22.367325+00:00 (updated-by): Updated: section:notes
+- 2026-11-04T04:23:46.501600+00:00 (updated-by): Updated: section:notes

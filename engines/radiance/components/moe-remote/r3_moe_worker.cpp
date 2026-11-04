@@ -44,6 +44,9 @@
 #include "worker_lanes.h"
 #include "worker_queue_warm.h"
 #include "worker_epoch.h"
+#include "worker_forced_move.h"
+
+static volatile sig_atomic_t g_force_report_requested=0;
 
 int main(int argc, char** argv) {
     /* EVERY LANE STREAM ON ITS OWN HARDWARE QUEUE. A small lane pre-queues "wait for the next request" packets;
@@ -214,7 +217,10 @@ int main(int argc, char** argv) {
     if (!cpu) {
         gpu = std::make_unique<r3_moe_gpu::Runner>(model);
         if (cfg.engine_ranks) gpu->engine_ranks_ = cfg.engine_ranks;
-        if (!gpu->open()) return 1;
+        if (!gpu->open()) {
+            std::fprintf(stderr, "r3_moe_worker: GPU backend open failed\n");
+            return 1;
+        }
         {   // the container's own weight format picks the kernels (RAD13); an unsupported one was refused by name above
             MoeExpertDesc first{};
             for (uint32_t l = 0; l < model.layers && !first.weight.format; ++l)
@@ -234,7 +240,10 @@ int main(int argc, char** argv) {
                         return 1;
                     }
                 }
-            if (!gpu->set_weight_format(first.weight.format)) return 1;
+            if (!gpu->set_weight_format(first.weight.format)) {
+                std::fprintf(stderr, "r3_moe_worker: GPU weight-format setup failed\n");
+                return 1;
+            }
         }
     }
 
@@ -253,6 +262,21 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_MIBS must list one budget in MiB for each of the %u helpers\n", cfg.helper_count);
         return 2;
     }
+    const SmallClasses lane_classes = helper_small_classes();
+    if (!lane_classes.count) {
+        std::fprintf(stderr, "r3_moe_worker: no small lane classes available\n");
+        return 1;
+    }
+    const uint32_t lane_large_rows = helper_max_rows();
+    // Allocate actual lane buffers and plugin scratch before checking device
+    // free VRAM. The expert-weight budget remains untouched for ownership.
+    if (gpu &&
+        (!gpu->prime_weight_layout() ||
+         !gpu->prepare_lanes(lane_classes.rows, lane_classes.count, lane_large_rows,
+                             lanes_open(cfg.power_save, helper_count, helper_index, lane_classes.count)))) {
+        std::fprintf(stderr, "r3_moe_worker: GPU lane preparation failed\n");
+        return 1;
+    }
     Owned owned;
     if (g_replay) {
         /* A replay owns exactly the experts the captured request routes to: the capturing helper's ownership
@@ -266,13 +290,24 @@ int main(int argc, char** argv) {
         };
         if (sweep_replays.empty()) own_routes(*g_replay);
         else for (const ReplayInput& ri : sweep_replays) own_routes(ri);
+        for (auto [l, e] : owned.expert) {
+            const int64_t bytes = laid_out_bytes(model, gpu.get(), l, e);
+            if (bytes <= 0 || uint64_t(bytes) > UINT64_MAX - owned.bytes) {
+                std::fprintf(stderr, "r3_moe_worker: replay expert (%u,%u) cannot be laid out\n", l, e);
+                return 1;
+            }
+            owned.bytes += uint64_t(bytes);
+        }
+        std::fprintf(stderr,
+            "r3_moe_worker: replay selects only capture-routed experts, not the full serving budget set\n");
     } else if (!select_owned(model, gpu.get(), budgets, helper_index, helper_count, &owned)) {
         return 1;
     }
-    if (gpu && !gpu->allocate(owned.expert)) return 1;
-    const SmallClasses lane_classes = helper_small_classes();
-    if (!lane_classes.count) return 1;
-    const uint32_t lane_large_rows = helper_max_rows();
+    if (gpu && !gpu->allocate(owned.expert, budgets[helper_index])) {
+        std::fprintf(stderr, "r3_moe_worker: failed to prepare expert arena/pool for %zu selected experts\n",
+                     owned.expert.size());
+        return 1;
+    }
     std::string lane_list;                       /* "4,8,16,24", for the log */
     for (uint32_t c = 0; c < lane_classes.count; ++c)
         lane_list += (c ? "," : "") + std::to_string(lane_classes.rows[c]);
@@ -306,6 +341,10 @@ int main(int argc, char** argv) {
                     }
                     if (comma == std::string::npos) break;
                     pos = comma + 1;
+                }
+                if (!gpu->set_rad46_sweep_variant(std::getenv("RAD46_SWEEP_VARIANT"))) {
+                    std::fprintf(stderr, "r3_moe_worker: replay sweep needs a known RAD46_SWEEP_VARIANT\n");
+                    return 2;
                 }
                 std::printf("SWEEP run %d capture %zu layer %u variant [%s]\n", run++, c, g_replay->hd.layer, v.c_str());
                 std::fflush(stdout);
@@ -347,6 +386,10 @@ int main(int argc, char** argv) {
     sigemptyset(&sa.sa_mask);
     sa.sa_flags = 0;
     sigaction(SIGINT, &sa, nullptr); sigaction(SIGTERM, &sa, nullptr);
+    struct sigaction report_sa{};
+    report_sa.sa_handler=[](int) { g_force_report_requested=1; };
+    sigemptyset(&report_sa.sa_mask);
+    sigaction(SIGUSR1,&report_sa,nullptr);
     Segment seg;
     if (!seg.open(shm_name(), lay.bytes, helper_index == 0, kStartupWaitSeconds)) return 1;
     void* const map = seg.host();
@@ -403,25 +446,21 @@ int main(int argc, char** argv) {
             struct timespec ts{1, 0};
             (void)::syscall(SYS_futex, &h->layer_map_ready[layer], FUTEX_WAIT, 0, &ts, nullptr, 0);
         }
-        if (!load(&h->layer_map_ready[layer])) {
+        if (!load(&h->layer_map_ready[layer]))
             std::fprintf(stderr, "r3_moe_worker: layer %u has no runtime map (not declared by the engine); not owned\n",
                          layer);
-            for (auto [l, e] : owned.expert)
-                if (l == layer) (void)drop_bootstrap_owner(map, l, e, helper_index);
-            continue;
-        }
-        any_map = true;
-        const int32_t* slots = layer_slots(map, layer);
-        if (!slots) return 1;
-        for (auto [l, e] : owned.expert)
-            if (l == layer && slots[e] < 0) (void)drop_bootstrap_owner(map, l, e, helper_index);
-        if (gpu && !gpu->load_layer(layer, owned.expert, slots)) {
-            std::fprintf(stderr, "r3_moe_worker: layer %u runtime table build failed\n", layer);
-            raise_fault(h);   /* not consumed: the engine's map wait fails instead of using a map this helper lacks */
+        else any_map = true;
+        const char* layer_error = nullptr;
+        if (!r3::epoch::bootstrap_runtime_layer(
+                map, owned, helper_index, layer,
+                [&](uint32_t l, const int32_t* slots) {
+                    return !gpu || gpu->load_layer(l, owned.expert, slots);
+                }, &layer_error)) {
+            std::fprintf(stderr, "r3_moe_worker: layer %u bootstrap: %s\n",
+                         layer, layer_error ? layer_error : "unknown error");
+            raise_fault(h);
             return 1;
         }
-        store(&h->layer_map_consumed[layer], 1);
-        notify(h);
     }
     Owned runtime_owned;
     for (auto [l, e] : owned.expert) {
@@ -462,9 +501,6 @@ int main(int argc, char** argv) {
     }
     const auto lanes_served = served_lanes(helper_count, helper_index, lane_classes.count);
     std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_POWER_SAVE %s\n", cfg.power_save ? "on" : "off");
-    if (gpu && !gpu->prepare_lanes(lane_classes.rows, lane_classes.count, lane_large_rows,
-                                   lanes_open(cfg.power_save, helper_count, helper_index, lane_classes.count)))
-        return 1;
     if (gpu) (void)posix_fadvise(model.fd, 0, 0, POSIX_FADV_DONTNEED);
     std::fprintf(stderr, "r3_moe_worker: runtime map owns %zu experts, %.3f GiB\n",
                  owned.expert.size(), (double)owned.bytes / (1024.0 * 1024.0 * 1024.0));
@@ -531,8 +567,41 @@ int main(int argc, char** argv) {
                 return uint64_t(now.tv_sec) * 1'000'000'000ULL + uint64_t(now.tv_nsec);
             }
         } epoch_clock;
-        // R3_MOE_WORKER_EPOCH_CYCLE_S on every helper (moves to experiment.helper.epoch_cycle_s with manifest v1).
-        r3::epoch::EpochCycle epoch_cycle(map, helper_index, epoch_clock, std::chrono::seconds{cfg.epoch_cycle_s});
+        // Every helper owns its physical slot participant; proposals still
+        // enter exclusively through the existing placement Controller.
+        PlacementControl bootstrap_control{};
+        if (!placement_snapshot(map,&bootstrap_control) ||
+            bootstrap_control.state != uint32_t(PlacementState::ACTIVE) ||
+            !gpu->move_ledger()) return 1;
+        r3::worker_moves::Participant migration(
+            *gpu->move_ledger(), *gpu, helper_index, model.layers, model.experts,
+            gpu->expert_stride());
+        if (!migration.initialize(map,bootstrap_control.active_slot,gpu->initial_locals())) {
+            std::fprintf(stderr,"r3_moe_worker: failed to verify bootstrap resident slots\n");
+            return 1;
+        }
+        // A zero diagnostic period disables only synthetic same-map cycles;
+        // the participant must still service actual proposals and reopen ACKs.
+        r3::epoch::EpochCycle epoch_cycle(
+            map, helper_index, epoch_clock, std::chrono::seconds{cfg.epoch_cycle_s},
+            {}, &migration);
+        std::unique_ptr<r3::forced::Driver> forced;
+        if (helper_index==0 && cfg.force_enabled) {
+            if (cfg.force_schedule.count()>UINT32_MAX-bootstrap_control.active_epoch) {
+                std::fprintf(stderr,"r3_moe_worker: forced schedule exhausts v23 epoch space\n");
+                raise_fault(h); lanes.stop_and_join(); return 1;
+            }
+            const r3::forced::Source source=[&](uint32_t l,uint32_t e) {
+                return model.weight(l,e,0) && model.weight(l,e,1) &&
+                       gpu->preferred_local(l*model.experts+e)>=0;
+            };
+            forced=std::make_unique<r3::forced::Driver>(
+                cfg.force_schedule,std::vector<uint64_t>(budgets,budgets+helper_count),
+                gpu->expert_stride(),source);
+            epoch_cycle.set_forced_proposal([&](void* shared,r3::epoch::Controller& c) {
+                return forced->submit(shared,c,epoch_clock.now_ns());
+            });
+        }
         for (uint32_t v; (v = g_stop_word.load(std::memory_order_acquire)) == 0;) {
             if (!epoch_cycle.tick()) {
                 PlacementControl failed{};
@@ -544,6 +613,16 @@ int main(int argc, char** argv) {
                     "r3_moe_worker: epoch participant %u exiting phase=%u transaction=%llu fault=%u\n",
                     helper_index,failed.state,(unsigned long long)failed.transaction_id,code);
                 raise_fault(h); request_stop(); break;
+            }
+            if (forced && epoch_cycle.proposal_controller())
+                forced->observe(*epoch_cycle.proposal_controller(),epoch_clock.now_ns());
+            if (g_force_report_requested) {
+                g_force_report_requested=0;
+                if (forced) forced->report(map,gpu->move_ledger()->charged(),gpu->move_bytes_staged(),helper_index);
+                else std::fprintf(stderr,
+                    "placement helper=%u ledger_charged=%llu local_bytes_staged=%llu\n",helper_index,
+                    (unsigned long long)gpu->move_ledger()->charged(),
+                    (unsigned long long)gpu->move_bytes_staged());
             }
             const timespec quantum{0, 2'000'000};
             (void)::syscall(SYS_futex, reinterpret_cast<uint32_t*>(&g_stop_word), FUTEX_WAIT_PRIVATE, v,
@@ -565,6 +644,15 @@ int main(int argc, char** argv) {
                 stopping_phase.fault_code,record.fault);
         }
         lanes.stop_and_join();
+        if (forced) {
+            if (epoch_cycle.proposal_controller())
+                forced->observe(*epoch_cycle.proposal_controller(),epoch_clock.now_ns());
+            forced->report(map,gpu->move_ledger()->charged(),gpu->move_bytes_staged(),helper_index);
+        }
+        if (!forced) std::fprintf(stderr,
+            "placement helper=%u ledger_charged=%llu local_bytes_staged=%llu\n", helper_index,
+            (unsigned long long)gpu->move_ledger()->charged(),
+            (unsigned long long)gpu->move_bytes_staged());
         if (epoch_cycle.enabled() && helper_index == 0)
             std::fprintf(stderr, "r3_moe_worker: placement epoch cycles completed %llu (every %u s of burst)\n",
                          (unsigned long long)epoch_cycle.completed(), cfg.epoch_cycle_s);

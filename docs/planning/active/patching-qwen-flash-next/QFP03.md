@@ -13,6 +13,50 @@ work: S
 
 # 1294 deterministic TOP_K ties (lowest-index tie-break in HIP radix top-k)
 
+## Description
+
+Patch 1294_topk_deterministic_ties (evaluated, in production profile): HIP radix TOP_K picked tied QSA cells in atomic order (ReLU-sum scores give many exact zeros), so long-context greedy output differed between server starts. Lowest-index tie-break makes 32K/80K output identical across starts. Speed neutral. Conflicts with 1256.
+
+## Steps
+
+
+
+## Detailed Solution & Technical Design
+
+
+
+## Code Samples & Guidance
+
+
+
+## Files
+
+
+
+## Validation
+
+Same prompt, two server starts, greedy identical at 32K and 80K; ms/step unchanged.
+
+## Effort & Risk
+
+
+
+## Standards
+
+
+
+## Acceptance Criteria
+
+
+
+## Notes
+
+Upstream fact (GPT online search): QSA HIP's >1K-context cliff was TOP_K falling back to CPU, fixed by upstream radix TOP_K, so TOP_K is on the critical path. Distinct from PNRO06/PNRO07 (TOP_K speed). GPT review in flight: req_af96db92b8e34cfe.
+
+
+
+BACKLOG TRIAGE 2026-11-04 (revalidated against main 6eb31a708): the proposed disposition "MERGE into llama quality harness QFP15" was NOT applied; this item stays open. Why: docs/planning/active/patching-qwen-flash-next/QFP03.md:16-62 identifies dead reset/atomic-gather launches ahead of default-on deterministic ordered TOP_K, with exact-index-order and GPU qualification still outstanding. docs/planning/active/patching-qwen-flash-next/QFP15.md:14-40 owns target-versus-draft MTP seed/acceptance nondeterminism, not the 1294 ordered-radix gather-elision implementation; the validated 1294 patch does not itself prove that residual optimization. Active items that reference this one: BCOP162, BCOP202, BCOP205, BCOP288, BCOP293, BCOP313, QFP04, QFP17, RNX02. Retain the distinct 1294 gather-elision correctness and performance gate; QFP15 remains a consumer of deterministic outcomes, not its implementation owner.
+
 ## 2026-10-14 QFP03 implementation audit — remove redundant ordered-radix gather (planning only)
 
 **Disposition:** keep patch `1294_topk_deterministic_ties` **validated** and enabled for its proven deterministic-selection purpose. QFP03 remains **pending only for a default-on ordered-path simplification and exact-pin qualification**, not a second TOP_K implementation. No new HIP result, build, patch application, or speedup is claimed here. Source audit: pinned llama.cpp **b11552** (`23b0202a189c44a54625aadcb37a946dd1d6278d`), current upstream `ggml/src/ggml-cuda/top-k.cu`, BigCherry `1294/patch.py` and owned `bc-topk-ties.cuh` source. Current upstream retains the same radix gather and has no BigCherry deterministic ordered pass.
@@ -67,46 +111,7 @@ QFP03 owns **only** deterministic radix TOP_K semantics and this in-place dead-g
 
 Upstream llama.cpp [PR #28713](https://github.com/ggml-org/llama.cpp/pull/28713) supplies the bounded row-chunk/dispatch baseline, **not** ordered deterministic radix output. [vLLM issue #54521](https://github.com/vllm-project/vllm/issues/54521) independently distinguishes unstable **set** under ties from unstable **order** without ties in sparse TOP_K; [SGLang's DSA backend](https://github.com/sgl-project/sglang/blob/main/python/sglang/srt/layers/attention/dsa/dsa_topk_backend.py) exposes deterministic tie-break selection via FlashInfer. These corroborate the semantic contract, not an AMD-portable speedup or a reason to replace 1294.
 
-## Description
-
-Patch 1294_topk_deterministic_ties (evaluated, in production profile): HIP radix TOP_K picked tied QSA cells in atomic order (ReLU-sum scores give many exact zeros), so long-context greedy output differed between server starts. Lowest-index tie-break makes 32K/80K output identical across starts. Speed neutral. Conflicts with 1256.
-
-## Steps
-
-
-
-## Detailed Solution & Technical Design
-
-
-
-## Code Samples & Guidance
-
-
-
-## Files
-
-
-
-## Validation
-
-Same prompt, two server starts, greedy identical at 32K and 80K; ms/step unchanged.
-
-## Effort & Risk
-
-
-
-## Standards
-
-
-
-## Acceptance Criteria
-
-
-
-## Notes
-
-Upstream fact (GPT online search): QSA HIP's >1K-context cliff was TOP_K falling back to CPU, fixed by upstream radix TOP_K, so TOP_K is on the critical path. Distinct from PNRO06/PNRO07 (TOP_K speed). GPT review in flight: req_af96db92b8e34cfe.
-
 ## Change Log
 
 - 2026-10-03T15:20:25.602966+00:00 (created-by): Created by agent
+- 2026-11-04T04:25:56.899376+00:00 (updated-by): Updated: section:notes

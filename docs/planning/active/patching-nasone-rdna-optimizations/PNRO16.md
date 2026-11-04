@@ -63,6 +63,10 @@ Original spike's own topology.dev.example.json expert budgets were explicitly NO
 
 2026-09-24 GPT review req_215c89d0b13a4bb7 applied: confirmed this item cannot satisfy the review's patch-package handoff contract since it is explicitly tooling, not a patches/ change -- no Edit() package should be fabricated for it. Required the previously NEEDS-VERIFICATION/TBD items (exact vendored GGUFReader import/API, concrete evidence path/target model) to be resolved as explicit prerequisite steps before implementation, rather than left open at authoring time.
 
+
+
+BACKLOG TRIAGE 2026-11-04 (revalidated against main 6eb31a708): the proposed disposition "MERGE model-fingerprint logic into MET11 if resumed" was NOT applied; this item stays open. Why: docs/planning/active/patching-nasone-rdna-optimizations/PNRO16.md:16-40 specifies an offline GGUF inventory, deterministic budget compiler, model fingerprint and routing replay, with real-model evidence still TBD. docs/planning/active/patching-moe-expert-tiering/MET11.md:14-35 is an active load-time expert permutation task that could consume a fingerprint but does not replace the offline tooling and replay acceptance criteria. Active items that reference this one: BCOP101. Keep the distinct llama.cpp offline inventory/compiler/replay scope, or explicitly retire its untransferred outputs before merging only fingerprint checks into MET11.
+
 ## Change Log
 
 - 2026-09-11T04:32:00.691672+00:00 (created-by): Created by agent
@@ -76,3 +80,4 @@ Original spike's own topology.dev.example.json expert budgets were explicitly NO
 - 2026-09-24T02:31:44.348953+00:00 (updated-by): Updated: section:detailed_solution, section:code_samples, section:files, section:validation, section:effort_risk
 - 2026-09-24T02:32:04.448145+00:00 (updated-by): Updated: section:notes
 - 2026-09-24T04:51:51.108221+00:00 (updated-by): Updated: section:description, section:steps, section:notes
+- 2026-11-04T04:24:53.199541+00:00 (updated-by): Updated: section:notes

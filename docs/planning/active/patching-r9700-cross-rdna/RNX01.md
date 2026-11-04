@@ -89,6 +89,10 @@ Source: `bkvargyas/r9700-stack@8dfda41f25f8ff6837cce48bd52b7fd249648f0e`
 
 GPT design pass (request req_83e7cdc000be4b9e, completed): lock each optimization to an exact source-to-target mapping before implementation. Historical candidates included Q8 attention-vector, HC inject gate and PLE H2D attribution. **HC inject gate/POST is already delivered** by QFP35/1355 with 1344 indexing; RNX04 retains only a profile-gated router question. Keep verified facts, hypotheses, and hardware-only claims separate.
 
+
+
+BACKLOG TRIAGE 2026-11-04 (revalidated against main 6eb31a708): the proposed disposition "MERGE any live census into QFP13; do not start the old umbrella" was NOT applied; this item stays open. Why: docs/planning/active/patching-r9700-cross-rdna/RNX01.md:18-26 requires source-to-llama.cpp mapping, full RDNA capability matrix and operator baselines across decode/MTP/prefill, while docs/planning/active/patching-qwen-flash-next/QFP13.md:60-78 owns only local Flash-Next decode launch census and routing candidates to their implementation owner. RNX09.md:20-31 continues to depend on the cross-RDNA intake/mapping. Active items that reference this one: RNX09. Do not collapse the R9X source/capability and multi-phase architecture intake into QFP13's decode-only launch census.
+
 ## Goal
 
 Produce the evidence bundle that makes R9X02–R9X08 implementation-safe: exact source/target mappings, overlap dispositions against existing BigCherry patches, live operator census on Qwen4Exp, and an RDNA4/RDNA3/RDNA2 capability matrix. No optimization patch should start before this is complete for its operator family.
@@ -134,3 +138,4 @@ R9X01 completes only when every R9X02–R9X08 candidate has a concrete target sy
 
 - chg_20261003_040736_removed-redundant-host-synchro_1519
 - 2026-10-03T04:07:39.321793+00:00 (updated-by): Updated: section:ledger-events
+- 2026-11-04T04:24:57.493843+00:00 (updated-by): Updated: section:notes

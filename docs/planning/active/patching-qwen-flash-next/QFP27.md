@@ -25,40 +25,6 @@ Ownership:
 - QFP27: upstream #29963 compatibility, lifetime proof and consolidation decision.
 - MET06/#29963: transient MoE host-weight policy; QFP27 must not duplicate expert-selection logic.
 
-## Fresh upstream mechanism
-
-PR #29963 (`pp-host-weights`, head `d4823011e342332459aeb7a5413b9448a6d3256d`, opened 2026-10-04) adds to `ggml_backend_sched`:
-
-```cpp
-ggml_backend_event_t input_events[GGML_SCHED_MAX_BACKENDS][GGML_SCHED_MAX_COPIES];
-bool graph_in_flight;
-int64_t n_moe_ids_max;
-```
-
-Before submitting splits it computes the next scheduler copy and waits only for that generation's previous input uploads:
-
-```cpp
-const int next_copy = (sched->cur_copy + 1) % sched->n_copies;
-for (int b = 0; b < sched->n_backends; ++b) {
-    if (sched->input_events[b][next_copy] != nullptr) {
-        ggml_backend_event_synchronize(sched->input_events[b][next_copy]);
-    }
-}
-```
-
-It then uploads user inputs early and records completion on each destination backend stream:
-
-```cpp
-ggml_backend_tensor_set_async(
-    sched->backends[split->backend_id], input_cpy,
-    input->data, 0, ggml_nbytes(input));
-...
-ggml_backend_event_record(
-    sched->input_events[b][sched->cur_copy], sched->backends[b]);
-```
-
-This is the same fundamental invariant QFP24 needs: source generation N cannot be reused until every destination DMA consuming generation N has completed. Prefer extending this invariant to Meta fanout rather than maintaining `bc_async_input_slot::done[]` as a second protocol.
-
 ## Steps
 
 1. Prove split-mode, copy count, Meta event support and exact current-pin source semantics before attempting any upstream transplant; #29963 is layer-pipeline-only, not a tensor-split solution.
@@ -125,6 +91,83 @@ Keep a bounded per-copy size-class pool. No per-ubatch `hipHostMalloc`, no point
 
 QFP24 currently proposes a second ring, its own generations, per-slot child events, a tracked Meta `set_tensor_async`, and potentially a new event-query proc. #29963 demonstrates that the generic scheduler already needs copy-indexed input completion for pipeline parallelism. Consolidating there removes two independent notions of when an input is safe to overwrite and makes ordinary user inputs and transient host weights share one tested lifetime invariant.
 
+## Code Samples & Guidance
+
+
+
+## Files
+
+
+
+## Validation
+
+Matrix:
+- copy depth 2/3/4;
+- pageable vs pinned backing;
+- simple HIP backend vs 3-child Meta fanout;
+- 1K/24K/80K/200K prefill, ub512/1024 where memory permits;
+- MTP and no-MTP;
+- two sequential requests plus concurrent server slots;
+- deliberate delayed child stream and immediate producer overwrite.
+
+Record: generation mismatches, wait_us per reused copy, H2D GB/s, copy-engine overlap, prefill t/s, TTFT, peak VRAM, pageable/pinned host high-water and fallback count.
+
+Correctness gate: zero stale-generation reads in >=10,000 reuse cycles and no reuse before the slowest child completes.
+
+Performance gate: adopt pinned backing only for >=5% median prefill or TTFT improvement, positive CI95-low over the same #29963-style event lifecycle. Event-query work is allowed only if copy-reuse synchronization itself is >=1% of prefill wall.
+
+## Effort & Risk
+
+
+
+## Standards
+
+
+
+## Acceptance Criteria
+
+
+
+## Notes
+
+
+
+BACKLOG TRIAGE 2026-11-04 absorbed items (superseded into this one; their notes keep the full history): QFP24: Move the QFP24 pinned-memory cost gate, every-child completion, cap, overwrite/wrap tests and fallback obligations into QFP27/1326; leave the historical private ring rejected.
+
+## Fresh upstream mechanism
+
+PR #29963 (`pp-host-weights`, head `d4823011e342332459aeb7a5413b9448a6d3256d`, opened 2026-10-04) adds to `ggml_backend_sched`:
+
+```cpp
+ggml_backend_event_t input_events[GGML_SCHED_MAX_BACKENDS][GGML_SCHED_MAX_COPIES];
+bool graph_in_flight;
+int64_t n_moe_ids_max;
+```
+
+Before submitting splits it computes the next scheduler copy and waits only for that generation's previous input uploads:
+
+```cpp
+const int next_copy = (sched->cur_copy + 1) % sched->n_copies;
+for (int b = 0; b < sched->n_backends; ++b) {
+    if (sched->input_events[b][next_copy] != nullptr) {
+        ggml_backend_event_synchronize(sched->input_events[b][next_copy]);
+    }
+}
+```
+
+It then uploads user inputs early and records completion on each destination backend stream:
+
+```cpp
+ggml_backend_tensor_set_async(
+    sched->backends[split->backend_id], input_cpy,
+    input->data, 0, ggml_nbytes(input));
+...
+ggml_backend_event_record(
+    sched->input_events[b][sched->cur_copy], sched->backends[b]);
+```
+
+This is the same fundamental invariant QFP24 needs: source generation N cannot be reused until every destination DMA consuming generation N has completed. Prefer extending this invariant to Meta fanout rather than maintaining `bc_async_input_slot::done[]` as a second protocol.
+
 ## 2026-10-13 exact-pin applicability correction (b11552; upstream #29963 head 273cd26)
 
 **Source-confirmed disposition: upstream input-event pipeline is NOT an applicable lifetime fix for BigCherry's production `-sm tensor` / Meta input copies.** It remains an **open** upstream PR (updated 2026-10-12), not a merged pin or an AMD-qualified improvement.
@@ -146,23 +189,6 @@ QFP24 currently proposes a second ring, its own generations, per-slot child even
 Upstream: [llama.cpp #29963](https://github.com/ggml-org/llama.cpp/pull/29963) (open, head `273cd26`, updated 2026-10-12). Other-engine mechanism: [vLLM multimodal H2D](https://github.com/vllm-project/vllm/blob/main/vllm/multimodal/inputs.py) pins dense CPU inputs before nonblocking transfer; it supplies neither Meta fanout completion nor transferable AMD speedup.
 
 **Evidence performed:** 10/10 actual-source static assertions; 9/9 source-shaped host-model tests and Python compile. No repository pytest, patch application, HIP/Vulkan build, GPU run or new throughput measurement.
-
-## Validation
-
-Matrix:
-- copy depth 2/3/4;
-- pageable vs pinned backing;
-- simple HIP backend vs 3-child Meta fanout;
-- 1K/24K/80K/200K prefill, ub512/1024 where memory permits;
-- MTP and no-MTP;
-- two sequential requests plus concurrent server slots;
-- deliberate delayed child stream and immediate producer overwrite.
-
-Record: generation mismatches, wait_us per reused copy, H2D GB/s, copy-engine overlap, prefill t/s, TTFT, peak VRAM, pageable/pinned host high-water and fallback count.
-
-Correctness gate: zero stale-generation reads in >=10,000 reuse cycles and no reuse before the slowest child completes.
-
-Performance gate: adopt pinned backing only for >=5% median prefill or TTFT improvement, positive CI95-low over the same #29963-style event lifecycle. Event-query work is allowed only if copy-reuse synchronization itself is >=1% of prefill wall.
 
 ## External References
 
@@ -193,3 +219,4 @@ QFP16, QFP24, MET06, QFP22. QFP27 should be closed once the lifetime protocol is
 **Current upstream:** [llama.cpp #29963](https://github.com/ggml-org/llama.cpp/pull/29963) is open, head `6325cf421`, updated 2026-10-15 06:13 UTC. Its inspected diff still uses `input_events` only for layer-pipeline `n_copies>1`, while BigCherry Meta tensor split uses `n_copies=1` and `caps.events=false`. The rebase does not supply Meta completion; do not port its host-weight placement/copy aliasing. [vLLM CPU KV offload](https://github.com/vllm-project/vllm/blob/main/vllm/v1/kv_offload/cpu/gpu_worker.py) explicitly registers host regions and owns transfer completion, but provides no transferable AMD performance measurement.
 
 **Evidence:** 10/10 actual 1326-source assertions, 7/7 host-model tests and Python compilation passed. No repository pytest, HIP build, GPU run, RSS measurement or new benchmark. Existing v5c measured +9.4% decode ~8K, +7.8% ~64K; unsafe-source prefill gains were withdrawn and staged v5c prefill was -2.3%/-2% before the 4 MiB cap. None measures this proposed scratch correction.
+- 2026-11-04T04:12:16.546848+00:00 (updated-by): Updated: section:notes

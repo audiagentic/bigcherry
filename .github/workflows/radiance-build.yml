@@ -16,6 +16,7 @@ on:
     branches: [main]
     paths:
       - 'engines/radiance/**'
+      - '!engines/radiance/**/*.md'
       - 'tools/bigcherry/campaign/**'
       - 'tools/bigcherry/core/**'
       - 'tools/bigcherry/build/**'

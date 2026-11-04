@@ -85,7 +85,7 @@ enum class PlacementState : uint32_t {
     ACTIVE=0, PROPOSED=1, RESERVING=2, COPYING=3,
     PREPARED=4, QUIESCING=5, COMMIT=6, RETIRING=7
 };
-enum class AckPhase : uint32_t { NONE=0, RESERVED=1, READY=2, QUIESCED=3, COMMITTED=4, RETIRED=5, REOPENED=6 };
+enum class AckPhase : uint32_t { NONE=0, RESERVED=1, READY=2, QUIESCED=3, COMMITTED=4, RETIRED=5, REOPENED=6, CLEANED=7 };
 enum class GenerationState : uint32_t { EMPTY=0, STAGING=1, READY=2, ACTIVE=3, RETIRED=4 };
 
 struct alignas(64) PlacementControl {
@@ -157,7 +157,11 @@ struct alignas(64) JournalRecord {
     uint32_t commit_ranks;
     uint32_t retire_helpers;
     uint32_t retire_ranks;
-    uint32_t reserved[6];
+    // Terminal placement-only cleanup diagnostic, distinct from a precommit
+    // abort's original fault; these occupy previously reserved journal words.
+    uint32_t cleanup_fault;
+    uint32_t cleanup_actor;
+    uint32_t reserved[4];
 };
 struct alignas(64) PlacementJournal {
     JournalRecord entry[2];
@@ -174,7 +178,7 @@ struct alignas(64) Request {
     uint32_t rows;                 /* number of activation/result rows in this pass. */
     uint32_t hidden;               /* must be 2560; explicit so ABI/model mismatch fails closed. */
     uint32_t route_count;          /* number of Route records valid at route_offset. */
-    uint32_t row_base;             /* pass r0 in the step; diagnostic only. */
+    uint32_t generation_slot;     /* immutable ownership generation, +36: same cache line as selector validation. */
     uint64_t route_offset;         /* routed (token,expert,weight) list for this rank. */
     uint64_t activation_offset;    /* staged BF16 input rows; compare/CPU-reference only. */
     uint64_t activation_q_offset;  /* exact E4M3 operand consumed by the local gate/up GEMM. */
@@ -192,7 +196,7 @@ struct alignas(64) Request {
     /* R3_MOE_WORKER_COMBINE: nonzero on helper 0's request of a step whose rows helper 0 combines (the generation it then
      * stores in Header::combine.done); written before the request is released, so helper 0 never polls for it. */
     uint32_t combine_generation;
-    uint32_t generation_slot;     /* immutable ownership generation of this request, +204. */
+    uint32_t row_base;             /* diagnostic-only pass r0, +204; not a helper selector input. */
     /* R3_MOE_WORKER_TRACE, per request (RAD40): 0 helper lane's activations and routes ready, 1 its gate/up, quant and
      * down done (both wall_clock64 on the helper's clock, with trace[3]/[4] around them); 2 helper 0 only, on the step it
      * combines: microseconds waiting for the other helpers' done words (low 32 bits) and combining (high 32 bits). */
@@ -203,8 +207,8 @@ struct alignas(64) Request {
     uint32_t reserved_tail;        /* +252, zero on publication. */
 };
 static_assert(sizeof(Request) % 64 == 0);
-/* The ring ends on the same page boundary for 192- and 256-byte requests, so the header's size checks cannot tell two
- * layouts apart: a layout change must bump kVersion, and this fires so it cannot be forgotten. */
+/* Slice E revised the still-unpublished v23 Request: generation_slot is +36, row_base +204.
+ * Both engine publisher and helper include this one definition; no prior-v23 compatibility path. */
 static_assert(sizeof(Request) == 256, "Request layout changed: bump kVersion");
 
 struct alignas(64) LaneSignal {
@@ -389,7 +393,8 @@ struct alignas(kPage) Header {
 static_assert(kVersion == 23 && kRingSlots == kLanes * kLaneSlots);
 static_assert(sizeof(Header) == 4096 && alignof(Header) == 4096);
 static_assert(sizeof(Request) == 256 && alignof(Request) == 64);
-static_assert(offsetof(Request, generation_slot) == 204);
+static_assert(offsetof(Request, generation_slot) == 36);
+static_assert(offsetof(Request, row_base) == 204);
 static_assert(offsetof(Request, placement_epoch) == 232);
 static_assert(offsetof(Request, completion_epoch) == 240);
 static_assert(offsetof(Request, completion_slot) == 248);

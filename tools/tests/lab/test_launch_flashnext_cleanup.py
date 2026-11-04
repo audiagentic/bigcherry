@@ -41,6 +41,8 @@ exec "$REAL_PYTHON" -c 'import signal, sys, time; signal.signal(signal.SIGINT, l
 
 FAKE_ENGINE = r"""#!/bin/bash
 echo $$ >> "$FAKE_PIDS"
+printf '%s\n' "$@" > "$FAKE_ENGINE_ARGS"
+printf '%s|%s|%s\n' "$ROCR_VISIBLE_DEVICES" "$HIP_VISIBLE_DEVICES" "${R3_MOE_WORKER-unset}" > "$FAKE_ENGINE_ENV"
 plan=""; port=""
 while [ $# -gt 0 ]; do
   case "$1" in --plan-memory) plan=$2; shift 2 ;; --port) port=$2; shift 2 ;; *) shift ;; esac
@@ -73,6 +75,11 @@ http.server.HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()' "$po
 """
 
 LAYOUT_ENV = """LAYOUT_ENGINE_DEVICE=0
+LAYOUT_ENGINE_DEVICES=0
+LAYOUT_ENGINE_RANKS=1
+LAYOUT_MODEL=fake.rad
+LAYOUT_TP_WIRE=''
+LAYOUT_SERVER_ARGS=()
 LAYOUT_HELPER_COUNT=3
 LAYOUT_HELPER_0=(R3_MOE_WORKER_PLUGIN_FILE=libp.so FAKE_ID=0)
 LAYOUT_HELPER_1=(R3_MOE_WORKER_PLUGIN_FILE=libp.so FAKE_ID=1)
@@ -116,7 +123,8 @@ class LaunchCleanupTests(unittest.TestCase):
         self.env = {**os.environ, "BC_WORK_ROOT": str(self.work), "ROCM_PATH": "/opt/rocm", "MODEL": str(self.root / "model.rad"),
                     "PATH": f"{self.root / 'fakebin'}:{os.environ['PATH']}", "REAL_PYTHON": sys.executable,
                     "FAKE_LOG": str(self.log), "FAKE_LAYOUT_ENV": str(self.root / "layout.env"), "FAKE_PIDS": str(self.pids),
-                    "FAKE_MEASURING": str(self.measuring), "FAKE_TIMES": str(self.root / "times.log")}
+                    "FAKE_MEASURING": str(self.measuring), "FAKE_TIMES": str(self.root / "times.log"),
+                    "FAKE_ENGINE_ARGS": str(self.root / "engine-args"), "FAKE_ENGINE_ENV": str(self.root / "engine-env")}
         self.addCleanup(self._kill_leftovers)
 
     @staticmethod
@@ -146,6 +154,73 @@ class LaunchCleanupTests(unittest.TestCase):
 
     def _events(self) -> list[str]:
         return self.log.read_text().split() if self.log.exists() else []
+
+    def test_dense_layout_runs_two_ranks_without_moe_helpers_using_layout_argv(self) -> None:
+        from bigcherry.engine_adapters import radiance_layout as rl
+        from bigcherry.cli.layout_cmds import _env_lines
+        from bigcherry.core.environment import Device
+        from types import SimpleNamespace
+
+        inventory = SimpleNamespace(devices=(
+            Device(0, "gfx1100", "a", 24560), Device(1, "gfx1100", "b", 24560),
+            Device(2, "gfx1201", "c", 32624),
+        ))
+        resolved = rl.resolve("qwen27b-2xtx", inventory)
+        (self.root / "layout.env").write_text("\n".join(_env_lines(resolved)) + "\n")
+        model = self.root / resolved.model
+        model.parent.mkdir(parents=True, exist_ok=True)
+        model.write_bytes(b"model")
+        (self.build / "radiance_home" / "kernels" / "libr3.so").write_bytes(b"plugin")
+        dense_env = {k: v for k, v in self.env.items() if k != "MODEL"}
+        dense_env["BC_MODEL_ROOT"] = str(self.root)
+        args = ["bash", str(LAUNCHER), "--build", str(self.build), "--port", str(self.port), "--layout", resolved.name]
+        done = subprocess.run(args, env=dense_env, cwd=REPO, capture_output=True, text=True, timeout=120)
+        try:
+            self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+            self.assertIn("dense memory plan measured", done.stderr)
+            self.assertIn("start canary: ok", done.stderr)
+            self.assertEqual(list(self.work.joinpath("flashnext/pids").glob("helper*")), [])
+            actual = (self.root / "engine-args").read_text().splitlines()
+            self.assertEqual(actual[actual.index("--model") + 1], str(model))
+            self.assertEqual(actual[actual.index("--kernels") + 1], "libr3,libref")
+            self.assertEqual(actual[actual.index("--tp") + 1], "2")
+            self.assertEqual(actual[actual.index("--tp-wire") + 1], "wht6")
+            self.assertEqual(actual[actual.index("--p2p") + 1], "off")
+            self.assertEqual(actual[actual.index("--max-model-len") + 1], "8192")
+            self.assertNotIn("--placement", actual)
+            self.assertEqual((self.root / "engine-env").read_text().strip(), "0,1|0,1|unset")
+        finally:
+            subprocess.run(["bash", str(LAUNCHER), "stop"], env=dense_env,
+                           cwd=REPO, capture_output=True, text=True, timeout=120)
+        self.assertEqual(self._alive_pids(), [])
+
+    def test_dense_rejects_helper_only_options_and_missing_model(self) -> None:
+        env_text = """LAYOUT_ENGINE_DEVICE=0
+LAYOUT_ENGINE_DEVICES=0,1
+LAYOUT_ENGINE_RANKS=2
+LAYOUT_ENGINE_PLUGIN=libr3
+LAYOUT_MODEL=missing.rad
+LAYOUT_TP_WIRE=wht6
+LAYOUT_SERVER_ARGS=()
+LAYOUT_HELPER_COUNT=0
+LAYOUT_COMMON=()
+LAYOUT_SUMMARY=dense
+"""
+        (self.root / "layout.env").write_text(env_text)
+        args = ["bash", str(LAUNCHER), "--build", str(self.build), "--port", str(self.port), "--layout", "dense"]
+        option = subprocess.run(args + ["--heat", "x"], env=self.env, cwd=REPO,
+                                capture_output=True, text=True, timeout=30)
+        self.assertEqual(option.returncode, 2)
+        self.assertIn("helper-free", option.stderr)
+        overridden = subprocess.run(args, env=self.env, cwd=REPO, capture_output=True, text=True, timeout=30)
+        self.assertEqual(overridden.returncode, 2)
+        self.assertIn("unset MODEL", overridden.stderr)
+        env = {k: v for k, v in self.env.items() if k != "MODEL"}
+        env["BC_MODEL_ROOT"] = str(self.root)
+        missing = subprocess.run(args, env=env, cwd=REPO, capture_output=True, text=True, timeout=30)
+        self.assertEqual(missing.returncode, 99)
+        self.assertIn("model not found", missing.stdout + missing.stderr)
+        self.assertFalse((self.root / "engine-args").exists())
 
     def test_a_failed_measurement_stops_everything_and_restores_the_power_settings(self) -> None:
         done = subprocess.run(self._args(), env={**self.env, "FAKE_MEASURE_FAIL": "1"}, cwd=REPO, capture_output=True, text=True, timeout=120)
@@ -276,7 +351,7 @@ class LaunchCleanupTests(unittest.TestCase):
                               capture_output=True, text=True, timeout=180)
         self.assertEqual(done.returncode, 96, done.stdout + done.stderr)
         self.assertIn("start canary failed", done.stdout + done.stderr)
-        self.assertNotIn("FLASHNEXT_EXIT=0", done.stdout)
+        self.assertNotIn("RADIANCE_EXIT=0", done.stdout)
         self.assertEqual(self._events(), ["apply", "restore"])
         self.assertEqual(self._alive_pids(), [])
 
@@ -309,7 +384,7 @@ class LaunchCleanupTests(unittest.TestCase):
         done = subprocess.run(self._args(), env=self.env, cwd=REPO, capture_output=True, text=True, timeout=180)
         try:
             self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
-            self.assertIn("FLASHNEXT_EXIT=0", done.stdout)
+            self.assertIn("RADIANCE_EXIT=0", done.stdout)
             self.assertEqual(self._events(), ["apply"])
             self.assertGreaterEqual(len(self._alive_pids()), 4)
         finally:

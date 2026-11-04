@@ -33,10 +33,23 @@ def _resolve(args: Namespace) -> radiance_layout.Resolved:
 
 def _env_lines(r: radiance_layout.Resolved) -> list[str]:
     q = shlex.quote
-    lines = [f"LAYOUT_ENGINE_DEVICE={q(str(r.engine_index))}", f"LAYOUT_ENGINE_PLUGIN={q(r.engine_plugin[:-3])}", f"LAYOUT_HELPER_COUNT={len(r.helpers)}", "LAYOUT_COMMON=(" + " ".join(q(f"{k}={v}") for k, v in r.common_env.items()) + ")"]
+    lines = [
+        f"LAYOUT_ENGINE_DEVICE={r.engine_index}",
+        "LAYOUT_ENGINE_DEVICES=" + q(",".join(map(str, r.engine_indices))),
+        f"LAYOUT_ENGINE_RANKS={len(r.engine_indices)}",
+        "LAYOUT_ENGINE_PLUGIN=" + q(r.engine_plugin[:-3]),
+        "LAYOUT_MODEL=" + q(r.model),
+        "LAYOUT_TP_WIRE=" + q(r.tp_wire or ""),
+        "LAYOUT_SERVER_ARGS=(" + " ".join(q(arg) for arg in r.server_args) + ")",
+        f"LAYOUT_HELPER_COUNT={len(r.helpers)}",
+        "LAYOUT_COMMON=(" + " ".join(q(f"{k}={v}") for k, v in r.common_env.items()) + ")",
+    ]
     for i in range(len(r.helpers)):
         lines.append(f"LAYOUT_HELPER_{i}=(" + " ".join(q(f"{k}={v}") for k, v in r.helper_env(i).items()) + ")")
-    lines.append("LAYOUT_SUMMARY=" + q("; ".join(f"helper{i}: card {h.index} {h.arch.name} {h.budget_mib} MiB {h.placement}" for i, h in enumerate(r.helpers))))
+    summary = ("; ".join(f"helper{i}: card {h.index} {h.arch.name} {h.budget_mib} MiB {h.placement}"
+                         for i, h in enumerate(r.helpers)) if r.helpers
+               else f"TP ranks: {','.join(map(str, r.engine_indices))} ({r.engine_arch}), wire {r.tp_wire or 'default'}")
+    lines.append("LAYOUT_SUMMARY=" + q(summary))
     return lines
 
 
@@ -62,7 +75,7 @@ def _run(args: Namespace) -> int:
             print("\n".join(_env_lines(r)))
             return 0
         print(json.dumps({
-            "layout": r.name, "engine": {"device": r.engine_index, "arch": r.engine_arch, "plugin": r.engine_plugin},
+            "layout": r.name, "model": r.model, "engine": {"device": r.engine_index, "devices": list(r.engine_indices), "tp": len(r.engine_indices), "tp_wire": r.tp_wire, "arch": r.engine_arch, "plugin": r.engine_plugin, "server_args": list(r.server_args)},
             "helpers": [{"helper": i, "device": h.index, "arch": h.arch.name, "vram_mib": h.vram_mib, "budget_mib": h.budget_mib, "placement": h.placement,
                          "share": h.share, "plugin": h.arch.plugin, "formats": list(h.arch.formats), "rows_kernel": h.arch.rows_kernel} for i, h in enumerate(r.helpers)],
             "common_env": r.common_env}, indent=2))

@@ -111,6 +111,16 @@ int main(int, char**) {
                implied[i].shares == hand[i].shares && implied[i].balance == hand[i].balance);
     assert(bc::serving::helper_archs(good) == archs && bc::serving::helper_budgets(good) == budgets);
 
+    // Independent worker selector agrees exactly with the decoded manifest's
+    // validated owner-map IDs, order and bytes.
+    for (uint32_t h = 0; h < hand.size(); ++h) {
+        bc::experts::Owned worker;
+        assert(bc::experts::select_owned(model, implied[h], archs[h], true, {},
+                                         budgets.data(), h, uint32_t(hand.size()), &worker));
+        assert(worker.expert == planned.helpers[h].expert &&
+               worker.bytes == planned.helpers[h].bytes);
+    }
+
     // The standalone verifier refuses what the reader would, itself, naming the field (it is a producer entry point).
     auto refused_code = [&](const v1::Manifest& m, v1::ConfigErrorCode code, const std::string& path) {
         const v1::Status s = bc::serving::verify_owner_map(m, model);

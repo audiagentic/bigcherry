@@ -27,9 +27,13 @@ older tag family, and extra repository paths owned by the engine). The package p
 
        python -m bigcherry --engine <name> release-notes <pin> [--version V] [--stdout]
 
-   Generated from the engine's own events since its previous release tag, the engine's patch registry changes (added,
-   promoted, changed, retired, entered or left the production build) and the bump's release record
-   (`releases/<pin>.json`). Output: `docs/releases/notes/<tag-prefix><version>.md`. Never edit it by hand.
+   llama.cpp notes use the engine's ledger events, patch changes and bump record.
+   Radiance notes use a short, reviewed `public_summary` in `releases/<pin>.json`, separate from the internal
+   audit and hardware evidence in `notes`. Supply it using `pin-release --summary @file`
+   (up to 2500 characters, beginning with a Markdown level-two heading). The summary should cover what changed,
+   measured results, checks and known limitations; it must not contain raw gate output. A missing summary stops
+   the Radiance release at the record phase.
+   Output: `docs/releases/notes/<tag-prefix><version>.md`. Never edit generated notes by hand.
 3. **release-please PR.** The notes commit sets the engine package's `release-as` in `release-please-config.json`;
    after it reaches `main`, release-please opens that package's release PR (changelog, manifest version).
 4. **Merge and tag.** Merging the release PR makes the tag of record `<tag-prefix><version>` and the GitHub release.
@@ -37,7 +41,7 @@ older tag family, and extra repository paths owned by the engine). The package p
    notes file.
 5. **Pin-release record.**
 
-       python -m bigcherry --engine <name> pin-release <pin> --evidence @<file> [--bump minor|patch] [--dry-run]
+       python -m bigcherry --engine <name> pin-release <pin> --evidence @<file> [--summary @<file>] [--bump minor|patch] [--dry-run]
 
    runs stages 2 to 4 as resumable phases (`gate`, `record`, `notes`, `main`, `release`, `unpin`, `sync`) and writes the
    gate output and hardware evidence into the pin's release record. `--dry-run` prints the concrete actions and writes

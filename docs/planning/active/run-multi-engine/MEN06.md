@@ -56,6 +56,18 @@ One evidence record format serves both engines and patch-promote reads it.
 
 After MEN03. Do not generalise scripts that are spent.
 
+
+
+BACKLOG TRIAGE 2026-11-04 (SUPERSEDED; revalidated against main 6eb31a708, verdict CONFIRM): `ab-benchmark` and `stream-bench` are engine-neutral and used for every radiance A/B (e.g. runs/rhp11-e-ab*, rad116-ab1). Evidence: `ab-benchmark` and `stream-bench` are engine-neutral and used for every radiance A/B (e.g. runs/rhp11-e-ab*, rad116-ab1). Still referenced by: MEN07, MEN09. Original content kept below for history.
+
+
+
+REOPENED 2026-11-04: an independent revalidation (against main 6eb31a708) rejected the closure recorded above, which had been based on a lighter check. It stays open. Why: campaign/benchmark.py:529-659 supports engine-specific sidecars and normalized A/B cells, and release/patch_promote.py:350-364 is engine-neutral. MEN06.md:39-53 additionally calls for re-expressing llama.cpp patch 1350 with the same verdict and a container settings A/B in the common record; neither acceptance fixture/evidence was located, while MEN07 and MEN09 still reference this prerequisite.
+
 ## Change Log
 
 - 2026-10-08T20:36:35.018575+00:00 (created-by): Created by agent
+- 2026-11-04T03:46:07.449803+00:00 (updated-by): Updated: section:notes
+- 2026-11-04T03:46:11.544377+00:00 (state-transition): State: pending → superseded
+- 2026-11-04T04:44:07.152237+00:00 (updated-by): Updated: section:notes
+- 2026-11-04T04:44:15.360225+00:00 (state-transition): State: superseded → pending

@@ -19,6 +19,52 @@ _REPO = Path(__file__).resolve().parents[3]
 
 
 class ReleaseNotesTests(unittest.TestCase):
+    def test_radiance_public_notes_match_the_four_released_records(self):
+        for pin in ("v1.7.0", "v1.8.0", "v1.14.0", "v1.16.0"):
+            with self.subTest(pin=pin):
+                record = json.loads((_REPO / "releases" / f"{pin}.json").read_text(encoding="utf-8"))
+                major = int(pin[1:].replace(".", ""))
+                label = f"bc-radiance-{major}.0.0"
+                expected = (_REPO / "docs" / "releases" / "notes" / f"{label}.md").read_text(encoding="utf-8")
+                output = notes.render_radiance_release(label, pin, record)
+                self.assertEqual(output, expected)
+                self.assertLess(len(output), 1500)
+                self.assertNotIn("Bump record", output)
+                self.assertNotIn("completion gate", output)
+                self.assertNotIn("binary_sha256", output)
+                self.assertNotIn("pin-status:", output)
+
+    def test_radiance_summary_is_required_and_rejects_gate_output(self):
+        record = {"revision": "123456789abcdef0", "notes": "completion gate: PRIVATE LOG"}
+        with self.assertRaisesRegex(notes.ReleaseNotesError, "public_summary"):
+            notes.render_radiance_release("bc-radiance-1160.0.0", "v1.16.0", record)
+        for body in ("text without a Markdown heading",
+                     "## Measurements\n" + "a" * 2500,
+                     "## Validation\n\npin-status: local\n  vendor HEAD something",
+                     "## Validation\n\nbuild_plan_id=abcdef",
+                     "## Validation\n\nbinary_sha256=abcdef"):
+            with self.subTest(body=body[:30]):
+                with self.assertRaises(notes.ReleaseNotesError):
+                    notes.render_radiance_release(
+                        "bc-radiance-1160.0.0", "v1.16.0", {**record, "public_summary": body})
+        clean = {"revision": "123456789abcdef0", "notes": "completion gate: PRIVATE LOG",
+                 "public_summary": "## Changes\n\n- Ported kernel components."}
+        text = notes.render_radiance_release("bc-radiance-1160.0.0", "v1.16.0", clean)
+        self.assertIn("Ported kernel components", text)
+        self.assertNotIn("PRIVATE LOG", text)
+
+    def test_radiance_render_does_not_read_ledger_or_dump_record_notes(self):
+        config = notes.load_config(_REPO, "radiance")
+        record = {"revision": "123456789abcdef0", "notes": "secret audit material",
+                  "public_summary": "## Changes\n\n- Updated upstream pin."}
+        with mock.patch.object(notes, "pin_version", return_value=notes.PinVersion(1160, "1.16.0")), \
+                mock.patch.object(notes, "_show", return_value=json.dumps(record)), \
+                mock.patch.object(notes, "previous_release_tag", side_effect=AssertionError("unexpected tag scan")), \
+                mock.patch.object(notes, "ledger_events", side_effect=AssertionError("unexpected ledger read")):
+            rendered = notes.render(_REPO, config, "v1.16.0")
+        self.assertIn("Updated upstream pin", rendered)
+        self.assertNotIn("secret audit material", rendered)
+
     def test_config_loads_and_names_the_llamacpp_release_line(self):
         config = notes.load_config(_REPO, "llamacpp")
         self.assertEqual(config.tag_prefix, "bc-llamacpp-")
@@ -139,8 +185,9 @@ class ReleasePleaseWiringTests(unittest.TestCase):
         self.assertEqual(sorted(packages), [".", "engines/llamacpp", "engines/radiance"])
         self.assertEqual(packages["engines/llamacpp"]["component"], "bc-llamacpp")
         self.assertEqual(packages["."]["component"], "bc-platform")
-        # an engine-only commit must not also move the platform line
-        self.assertEqual(packages["."]["exclude-paths"], ["engines"])
+        # an engine-only commit must not also move the platform line, and neither may an engine's generated release notes
+        # (committed outside engines with a Release-As footer: they once forced the platform PR to 11552.0.0)
+        self.assertEqual(packages["."]["exclude-paths"], ["engines", "docs/releases/notes"])
         self.assertTrue(self.config["separate-pull-requests"])
         self.assertTrue(self.config["include-component-in-tag"])
         self.assertFalse(self.config["include-v-in-tag"])

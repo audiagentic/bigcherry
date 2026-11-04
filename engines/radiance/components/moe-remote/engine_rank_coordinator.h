@@ -14,6 +14,11 @@ struct RankOperations {
     virtual bool registered(uint32_t rank) = 0;
     virtual RankResult upload(uint32_t rank, uint32_t slot, uint64_t epoch, uint64_t digest) = 0;
     virtual RankResult ready(uint32_t rank, uint32_t slot, uint64_t epoch, uint64_t digest) = 0;
+    // After a forward abort the control no longer exposes a pending map.
+    // Synchronize the already-queued transfer using its sealed rank identity
+    // and event, not the normal candidate-map READY predicate.
+    virtual RankResult abort_upload_done(uint32_t rank, uint32_t slot,
+                                         uint64_t epoch, uint64_t digest) = 0;
     virtual bool exact_binding(uint32_t rank, uint32_t slot, uint64_t epoch, uint64_t digest) = 0;
     // Owns the actual admission close, ledger/event wait and helper lane drain;
     // returns the sealed snapshot's cutoff and old epoch, never a fabricated ACK.
@@ -31,6 +36,10 @@ struct RankOperations {
 class EngineRankCoordinator {
     uint64_t uploaded_ = 0, reserved_ = 0, closed_ = 0;
     uint64_t cutoff_ = 0;
+    // A failed aborted DMA event cannot authorize reuse even if it later
+    // reports success. The controller records the exact CLEANED-phase fault.
+    uint64_t abort_faulted_ = 0;
+    uint32_t abort_fault_rank_ = UINT32_MAX;
     uint32_t old_epoch_ = 0;
     uint32_t reserved_mask_ = 0, issued_mask_ = 0, ready_mask_ = 0, committed_mask_ = 0;
 public:
@@ -40,7 +49,7 @@ public:
         const uint32_t ranks = c.expected_ranks;
         const uint32_t actual = ops.actual_ranks();
         const bool current = actual && actual <= kMaxEngineRanks &&
-            ranks == ((1u << actual) - 1u) && same_map_cycle(map,c);
+            ranks == ((1u << actual) - 1u) && placement_candidate_valid(map,c);
         auto fail = [&]() -> bool { ops.fatal(); return false; };
         auto fault_ranks = [&](AckPhase phase, FaultCode code) {
             for (uint32_t rank=0; rank<kMaxEngineRanks; ++rank)
@@ -174,10 +183,40 @@ public:
                 closed_ = 0;
             }
         } else if (state == PlacementState::ACTIVE && !closed_ &&
-                   uploaded_ && uploaded_ == c.transaction_id) {
-            // Precommit abort: keep serving old generation; retry new txn.
-            issued_mask_ = ready_mask_ = committed_mask_ = 0;
-            uploaded_ = 0;
+                   c.transaction_id && c.journal_index<=1) {
+            const auto& j=placement_journal(map)->entry[c.journal_index];
+            if (j.transaction_id==c.transaction_id && j.fault && !j.commit_ns) {
+                // An aborted bitmap upload may still be DMA-in-flight. Query
+                // its event before certifying that the inactive bank is reusable.
+                if (abort_faulted_==c.transaction_id) {
+                    publish_cleanup_fault_ack(map,kMaxHelpers+abort_fault_rank_,c,
+                                              FaultCode::DEVICE);
+                    return true; // placement-only terminal; keep serving ACTIVE(N)
+                }
+                bool complete=true;
+                if (uploaded_==c.transaction_id) {
+                    for (uint32_t rank=0;rank<kMaxEngineRanks;++rank) {
+                        if (!(issued_mask_ & (1u<<rank))) continue;
+                        const RankResult result=ops.abort_upload_done(
+                            rank,j.new_slot,j.after_epoch,j.candidate_digest);
+                        if (result==RankResult::DeviceError) {
+                            abort_faulted_=c.transaction_id;
+                            abort_fault_rank_=rank;
+                            publish_cleanup_fault_ack(map,kMaxHelpers+rank,c,
+                                                      FaultCode::DEVICE);
+                            return true; // never mark the inactive upload reusable
+                        }
+                        if (result==RankResult::Pending) complete=false;
+                    }
+                }
+                if (complete) {
+                    for (uint32_t rank=0;rank<kMaxEngineRanks;++rank)
+                        if (ranks & (1u<<rank))
+                            publish_cleanup_ack(map,kMaxHelpers+rank,c);
+                    issued_mask_ = ready_mask_ = committed_mask_ = 0;
+                    uploaded_ = reserved_ = 0;
+                }
+            }
         }
         return true;
     }
