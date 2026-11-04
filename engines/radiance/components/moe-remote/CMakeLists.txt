@@ -56,7 +56,10 @@ set_target_properties(r3_moe_worker PROPERTIES HIP_STANDARD 17 HIP_STANDARD_REQU
 # engine core.
 rad_add_plugin(libr3moe kernels
   SOURCES     ${CMAKE_CURRENT_SOURCE_DIR}/moe_mailbox_plugin.cpp ${CMAKE_CURRENT_SOURCE_DIR}/moe_remote_hook.cpp
+  # BU01: inverse-map device kernel is isolated so edits do not rebuild the
+  # substantially larger mailbox publish/merge/route-mark device-code unit.
   HIP_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/moe_mailbox_ops.hip
+              ${CMAKE_CURRENT_SOURCE_DIR}/mailbox_inverse_kernel.hip
   GPU_TARGETS ${R3MOE_TARGETS}
   INCLUDES    ${CMAKE_CURRENT_SOURCE_DIR})
 string(REPLACE ";" "," r3moe_targets_csv "${R3MOE_TARGETS}")

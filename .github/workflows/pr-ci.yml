@@ -159,6 +159,9 @@ jobs:
         run: |
           python3 .github/scripts/changed_paths.py "$BASE" "$HEAD" >> "$GITHUB_OUTPUT" <<'PATTERNS'
           engines/radiance/**
+          !engines/radiance/**/*.md
+          !engines/radiance/**/*.mdx
+          !engines/radiance/**/docs/**
           tools/bigcherry/campaign/**
           tools/bigcherry/core/**
           tools/bigcherry/build/**

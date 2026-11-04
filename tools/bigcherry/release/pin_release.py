@@ -17,18 +17,21 @@ package-scoped `release-as` key; commit-message Release-As footers are not used.
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 import subprocess
 import sys
 import tempfile
 import time
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
 from ..core import engines
 from .. import pin_transition
 from . import notes as _notes
+from . import runtime_assets as _runtime_assets
 
 PHASES = ("gate", "record", "notes", "main", "release", "unpin", "sync")
 
@@ -281,6 +284,37 @@ def phase_gate(plan: Plan) -> str:
     return out
 
 
+def _asset_environment(plan: Plan) -> tuple[Path, Path]:
+    from ..core import environment
+    from ..core.context import ProjectContext
+    work = ProjectContext.resolve(engine=plan.engine, project_root=plan.repo_root).work_root
+    sdk = os.environ.get("ROCM_PATH") or os.environ.get("BC_ROCM_ROOT")
+    if not sdk:
+        sdk = environment.load_default().host(None).rocm_root
+    return work, Path(sdk)
+
+
+def _prepare_runtime_asset(plan: Plan, record: dict) -> None:
+    if plan.engine != engines.RADIANCE:
+        return
+    try:
+        # Re-resolve and build the CURRENT stock lane, rather than trusting
+        # a historical pin-bump note that predates later patch promotions.
+        from .pin_bump import execute_lane_build, LaneBuildError
+        lane = "radiance:stock:linux-radiance"
+        outcome = execute_lane_build(
+            engine=plan.engine, lane=lane,
+            run_id=f"bu01-release-{plan.version.replace(chr(46), chr(45))}-{uuid.uuid4().hex[:8]}")
+        record["notes"] += (f"\nrelease asset lane build: {lane} "
+                            f"build_plan_id={outcome.build_plan_id} "
+                            f"binary_sha256={outcome.binary_sha256}\n")
+        work, sdk = _asset_environment(plan)
+        asset = _runtime_assets.pack(record, plan.repo_root, work, sdk, plan.release_tag)
+    except (OSError, ValueError, _runtime_assets.BundleError, LaneBuildError) as exc:
+        raise PinReleaseError("record", f"could not package verified Radiance lane build: {exc}") from exc
+    record.setdefault("runtime_assets", {})[plan.release_tag] = asset
+
+
 def phase_record(plan: Plan, gate_output: str, evidence: str, public_summary: str = "") -> bool:
     """Completion into the release record, transition marker removed. Returns False when already done."""
     root = plan.repo_root
@@ -319,6 +353,7 @@ def phase_record(plan: Plan, gate_output: str, evidence: str, public_summary: st
             f"upstream: {plan.upstream_name} {plan.llama_tag} (revision {record.get('revision', '')})\n\ncompletion gate (pin-status --complete --all-remotes):\n{gate_output.strip()}\n\n"
             f"hardware evidence:\n{evidence.strip()}\n")
     record["notes"] = ((record.get("notes") or "").rstrip() + "\n\n" + note).lstrip()
+    _prepare_runtime_asset(plan, record)
     record_path.write_text(json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8", newline="\n")
     _git(root, "add", str(record_path.relative_to(root)).replace("\\", "/"))
     if marker.exists():
@@ -765,9 +800,24 @@ def _verify_release_pr_files(plan: Plan, pr: dict) -> None:
                                          f"expected {sorted(expected)}, got {sorted(x for x in actual if x)}")
 
 
+def _publish_runtime_asset(plan: Plan) -> None:
+    if plan.engine != engines.RADIANCE:
+        return
+    record_path = plan.repo_root / "releases" / f"{plan.llama_tag}.json"
+    record = json.loads(record_path.read_text())
+    if plan.release_tag not in record.get("runtime_assets", {}):
+        raise PinReleaseError("release", "Radiance release has no recorded runtime bundle; complete the lane build and record phase first")
+    try:
+        work, _ = _asset_environment(plan)
+        _runtime_assets.publish(record, plan.repo_root, work, plan.release_tag)
+    except (OSError, ValueError, _runtime_assets.BundleError) as exc:
+        raise PinReleaseError("release", f"runtime asset upload not complete: {exc}") from exc
+
+
 def phase_release(plan: Plan, wait_s: int = 900, poll_s: int = 20, log=print) -> bool:
     """release-please's PR merged and the release tag present. Returns False when the tag already exists."""
     if _tag_exists(plan):
+        _publish_runtime_asset(plan)
         return False
     deadline = time.time() + wait_s
     pr = None
@@ -791,6 +841,7 @@ def phase_release(plan: Plan, wait_s: int = 900, poll_s: int = 20, log=print) ->
             raise PinReleaseError("release", f"{pr['url']} is merged but tag {plan.release_tag} has not appeared after {wait_s} s: "
                                              "check the release-please workflow run on main, then run again")
         time.sleep(poll_s)
+    _publish_runtime_asset(plan)
     return True
 
 

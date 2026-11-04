@@ -29,13 +29,21 @@ def glob_to_regex(pattern: str) -> re.Pattern[str]:
     return re.compile(out + r"\Z")
 
 
+def path_selected(path, patterns):
+    selected = False
+    for regex, include in patterns:
+        if regex.match(path):
+            selected = include
+    return selected
+
+
 def main() -> int:
     try:
         base, head = sys.argv[1], sys.argv[2]
-        patterns = [glob_to_regex(p.strip()) for p in sys.stdin if p.strip() and not p.strip().startswith("#")]
+        patterns = [(glob_to_regex(p.strip().lstrip("!")), not p.strip().startswith("!")) for p in sys.stdin if p.strip() and not p.strip().startswith("#")]
         changed = subprocess.run(["git", "diff", "--name-only", f"{base}...{head}"], check=True,
                                  capture_output=True, text=True).stdout.split()
-        hit = next((f for f in changed if any(p.match(f) for p in patterns)), None)
+        hit = next((f for f in changed if path_selected(f, patterns)), None)
         print(f"run={'true' if hit else 'false'}")
         print(f"changed {len(changed)} file(s); first match: {hit or '-'}", file=sys.stderr)
     except Exception as exc:  # fail safe: run the checks
