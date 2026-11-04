@@ -90,6 +90,15 @@ class CmakeArgsTests(unittest.TestCase):
         args = cmake_build_args(Path("/build"), targets=("llama-server",))
         self.assertEqual(args, ["cmake", "--build", str(Path("/build")), "-j", "--target", "llama-server"])
 
+    def test_parallel_level_override_is_not_masked_by_bare_j(self):
+        with patch.dict("os.environ", {"CMAKE_BUILD_PARALLEL_LEVEL": "2"}):
+            self.assertEqual(
+                cmake_build_args(Path("/build"), targets=("llama-server",)),
+                ["cmake", "--build", "/build", "--target", "llama-server"],
+            )
+        with patch.dict("os.environ", {"CMAKE_BUILD_PARALLEL_LEVEL": ""}):
+            self.assertIn("-j", cmake_build_args(Path("/build")))
+
     def test_default_backend_is_hip_unchanged(self):
         """RE30 phase 1 regression proof: adding the ``backend`` kwarg must
         not change a single byte of output for any existing (HIP) caller."""

@@ -29,6 +29,18 @@ on:
       - '.github/workflows/radiance-build-image.yml'
       - '.github/docker/radiance-build/**'
   workflow_dispatch:
+    inputs:
+      compile_jobs:
+        description: Ninja compiler concurrency for cold-build comparison
+        type: choice
+        options:
+          - "2"
+          - "6"
+        default: "2"
+      cold:
+        description: Disable ccache to benchmark an identical cold source build
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -36,7 +48,7 @@ permissions:
 
 concurrency:
   # called from pr-ci.yml for pull requests: that caller already serializes per PR, so key on the caller run
-  group: radiance-build-${{ github.event_name == 'pull_request' && github.run_id || github.ref }}
+  group: radiance-build-${{ (github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch') && github.run_id || github.ref }}
   cancel-in-progress: true
 
 # Host settings are untracked; CI uses the tracked example host (it declares the rocm-sdks the recipes name).
@@ -86,11 +98,23 @@ jobs:
             radiance-ccache-
 
       - name: Build in the ROCm image
+        env:
+          CI_COMPILE_JOBS: ${{ inputs.compile_jobs || '2' }}
+          CI_FORCE_COLD: ${{ inputs.cold || 'false' }}
         run: |
-          docker run --rm --shm-size=1g -e BIGCHERRY_ENVIRONMENT -e BC_WORK_ROOT=/src/work -v "$GITHUB_WORKSPACE:/src" -w /src '${{ needs.image.outputs.image }}' bash -euxo pipefail -c '
+          docker run --rm --shm-size=1g -e BIGCHERRY_ENVIRONMENT -e CI_COMPILE_JOBS -e CI_FORCE_COLD -e BC_WORK_ROOT=/src/work -v "$GITHUB_WORKSPACE:/src" -w /src '${{ needs.image.outputs.image }}' bash -euxo pipefail -c '
             git config --global --add safe.directory /src
             git config --global --add safe.directory /src/work/upstream/radiance.git
             export RADIANCE_HOST_CC=gcc-14 RADIANCE_HOST_CXX=g++-14 ROCM_PATH=/opt/rocm PYTHONPATH=tools
+            # GitHub 4-vCPU runners use Ninja -j6 by default, which may overcommit
+            # memory when several very large HIP units miss ccache at once.
+            # Trial cap: compare 2 with the uncapped baseline before acceptance.
+            case "$CI_COMPILE_JOBS" in 2|6) ;; *) echo "Invalid CI build concurrency" >&2; exit 2;; esac
+            export CMAKE_BUILD_PARALLEL_LEVEL="$CI_COMPILE_JOBS"
+            if [ "$CI_FORCE_COLD" = "true" ]; then
+              export CCACHE_DISABLE=1
+            fi
+            echo "CI build concurrency: ${CMAKE_BUILD_PARALLEL_LEVEL}; cold trial: $CI_FORCE_COLD"
             export CCACHE_DIR=/src/work/.ccache
             # Absolute paths (include dirs, generated libr3 unit wrappers) are rewritten relative to /src so a
             # build-tree path that differs between runs cannot turn an unchanged unit into a miss.
@@ -116,6 +140,11 @@ jobs:
             fi
             python3 -m bigcherry --engine radiance component-tests --build "${builds[0]}"
           '
+
+      - name: Report HIP compilation timings
+        if: always()
+        continue-on-error: true
+        run: python3 .github/scripts/ci_build_profile.py work/builds
 
       - name: Component test logs
         if: failure()
