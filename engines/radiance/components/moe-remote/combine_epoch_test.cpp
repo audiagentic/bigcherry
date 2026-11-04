@@ -42,7 +42,7 @@ int main() {
     Request* q1=lane_request(map,lane1,1);
     for(Request* q : {q0,q1}) {
         q->sequence=1; q->rows=1; q->hidden=h->hidden;
-        q->rank_count=1; q->rank=0; q->layer=0;
+        q->rank_count=1; q->rank=(q==q0?0:1); q->layer=0;   /* as publish writes it: rank = this helper's slot */
         q->placement_epoch=ctrl->active_epoch;
         q->generation_slot=ctrl->active_slot;
         q->route_count=0; q->route_offset=h->route_offset[q==q0?0:1];

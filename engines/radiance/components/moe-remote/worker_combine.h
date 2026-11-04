@@ -43,7 +43,8 @@ inline bool combine_request_valid(const r3::moe_shm::Request& first,
                                   uint32_t rows,uint32_t sequence) {
     return sequence && other.sequence==sequence &&
         other.rows==rows && other.layer==first.layer &&
-        other.rank_count==first.rank_count && other.rank==first.rank &&
+        other.rank_count==first.rank_count &&
+        /* rank is each helper's own slot (publish writes q->rank = slot); slot identity is checked by the caller */
         other.hidden==first.hidden && other.placement_epoch==first.placement_epoch &&
         other.generation_slot==first.generation_slot &&
         first.placement_epoch==active.active_epoch &&
