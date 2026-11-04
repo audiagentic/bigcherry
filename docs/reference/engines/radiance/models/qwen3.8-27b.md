@@ -33,6 +33,17 @@ helpers. The alternative two-RX-7900-XTX path uses `libr3`, tensor
 parallelism and `wht6` cross-card communication, but there is no matched
 v1.14.0 performance result to rank it against the R9700 setup here.
 
+To exercise the alternative layout without hardcoded card indices, use
+`qwen27b-2xtx` in `engines/radiance/layouts.toml` with
+`bash tools/lab/radiance/launch-flashnext-best.sh start --layout qwen27b-2xtx`
+after sourcing the host environment and acquiring the GPU lease. This selects
+the two inventoried `gfx1100` cards, TP=2, `libr3`, `wht6` and host-memory
+cross-card transport (`--p2p off`); there are no remote-MoE helpers. The
+interim calibrated `bc-serve` plan-check does not cover dense TP layouts; the
+launcher instead requires a fresh successful memory-plan measurement. Hardware
+startup, memory headroom, throughput and output quality remain unverified on
+the current build.
+
 The current multi-stream run uses the model's MXFP4 container rather than
 the separate FP8 + DFlash2 container. The 27B DFlash2 drafter at depth 7
 has not been remeasured in this configuration on the current pin. There is
