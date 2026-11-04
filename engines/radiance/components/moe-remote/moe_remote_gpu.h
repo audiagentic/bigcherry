@@ -3,6 +3,8 @@
 #include "moe_lane_common.h"
 #include "moe_lane_front.h"
 #include "moe_lane_gemm.h"
+#include "moe_lane_rows_stock_replay.h"  // diagnostic-only baseline for --replay-sweep
+#include "rad46_rows_policy.h"
 #include "moe_lane_quant.h"
 #include "moe_lane_reduce.h"
 #include "moe_lane_host.h"
@@ -104,6 +106,20 @@ public:
         }
         shape_ = s;
         lane_shape_ = LaneShape{s.hidden, s.top_k, s.act_group, s.experts};
+        return true;
+    }
+    // Only --replay-sweep calls this method; production never reads RAD46
+    // switches and always uses the measured, stage-specific accurate policy.
+    bool set_rad46_sweep_variant(const char* name) {
+        if (!name) return false;
+        if (std::strcmp(name, "stock") == 0) rad46_sweep_ = Rad46Sweep::Stock;
+        else if (std::strcmp(name, "output_lane") == 0) rad46_sweep_ = Rad46Sweep::OutputLane;
+        else if (std::strcmp(name, "quad") == 0) rad46_sweep_ = Rad46Sweep::Quad;
+        else if (std::strcmp(name, "quad_v2") == 0) rad46_sweep_ = Rad46Sweep::QuadV2;
+        else if (std::strcmp(name, "production") == 0) rad46_sweep_ = Rad46Sweep::Production;
+        else if (std::strcmp(name, "rowlane16") == 0) rad46_sweep_ = Rad46Sweep::RowLane16;
+        else if (std::strcmp(name, "rowlane8") == 0) rad46_sweep_ = Rad46Sweep::RowLane8;
+        else return false;
         return true;
     }
     uint32_t route_block() const {
@@ -346,6 +362,7 @@ public:
     }
     const std::vector<int32_t>& initial_locals() const { return initial_locals_; }
     uint64_t expert_stride() const { return slots_ ? slots_->stride() : 0; }
+    uint64_t move_bytes_staged() const { return move_bytes_staged_; }
     int32_t preferred_local(uint32_t expert) const override {
         return expert<fixed_locals_.size() ? fixed_locals_[expert] : -1;
     }
@@ -387,6 +404,7 @@ public:
             (void)hipEventDestroy(copy_event_); copy_event_=nullptr; x={}; return false;
         }
         move_expert_=expert; copy_pending_=true;
+        move_bytes_staged_ += bytes; // successfully staged on the private stream, never per-request
         return true;
     }
     r3::worker_moves::Event upload_event() override {
@@ -848,6 +866,21 @@ public:
             const bool rows_small = rs_env && std::strcmp(rs_env, "0") != 0 &&
                                     lane_is_small(lane) && rows <= 16u;
             const bool rowk = (rows_ && !lane_is_small(lane)) || rows_small;
+            // Accurate W4 rows only. The historical inaccurate fp16-scaled
+            // path is absent from production; unsupported tile geometry fails
+            // closed instead of quietly restoring the precision regression.
+            const bool w4_rows = rowk && weight_format_ == MOE_FMT_W4NL64;
+            const bool accurate_geometry =
+                shape_.hidden % kOutputLaneK == 0 &&
+                w0 > 0 && w1 > 0 && w0 <= mid_w() && w1 <= mid_w() &&
+                w0 % kOutputLaneK == 0 && w1 % kOutputLaneK == 0 &&
+                mid_w() % kOutputLaneK == 0;
+            if (w4_rows && !accurate_geometry) {
+                std::fprintf(stderr, "r3_moe_worker: accurate W4 rows need complete K128 groups\n");
+                return -EINVAL;
+            }
+            const Rad46RowsForm gu_form = rad46_rows_form(rad46_sweep_, true, rows);
+            const Rad46RowsForm dn_form = rad46_rows_form(rad46_sweep_, false, rows);
             const dim3 rows_grid_gu(experts(), (uint32_t)((2 * std::max(w0, w1) + kRowsTileN - 1) / kRowsTileN));
             const dim3 rows_grid_dn(experts(), (uint32_t)((shape_.hidden + kRowsTileN - 1) / kRowsTileN));
             const dim3 w4_grid_gu(experts(), (uint32_t)((2 * std::max(w0, w1) + 8 * kRowsGuOut - 1) / (8 * kRowsGuOut)));
@@ -867,8 +900,9 @@ public:
                                    (uint32_t)(2 * w0), (uint32_t)(2 * w1), (uint32_t)shape_.hidden, (uint32_t)shape_.hidden,
                                    (uint32_t)shape_.hidden, (uint32_t)(2 * mid_w()), static_cast<uint16_t*>(w.d_gu.p),
                                    (uint32_t)mid_w());
-                else
-                    hipLaunchKernelGGL((lane_moe_rows_w4<true, kRowsGuRB, kRowsGuOut>), w4_grid_gu, dim3(256), 0, w.stream,
+                else if (gu_form == Rad46RowsForm::Quad8)
+                    hipLaunchKernelGGL((lane_moe_rows_w4_quaddpp<true, kQuadV2GuRB>),
+                                   dim3(experts(), (uint32_t)(2 * std::max(w0, w1) / kQuadDppN)), dim3(128), 0, w.stream,
                                    static_cast<const uint8_t*>(w.d_aq.p), static_cast<const float*>(w.d_as.p),
                                    static_cast<const int32_t*>(w.d_sorted.p), static_cast<const int32_t*>(w.d_off.p),
                                    (uint32_t)shape_.top_k,
@@ -877,6 +911,61 @@ public:
                                    (uint32_t)(2 * w0), (uint32_t)(2 * w1), (uint32_t)shape_.hidden, (uint32_t)shape_.hidden,
                                    (uint32_t)shape_.hidden, (uint32_t)(2 * mid_w()), static_cast<uint16_t*>(w.d_gu.p),
                                    (uint32_t)mid_w());
+                else if (gu_form == Rad46RowsForm::Quad16)
+                    hipLaunchKernelGGL((lane_moe_rows_w4_quaddpp<true, kQuadDppRB>),
+                                   dim3(experts(), (uint32_t)(2 * std::max(w0, w1) / kQuadDppN)), dim3(128), 0, w.stream,
+                                   static_cast<const uint8_t*>(w.d_aq.p), static_cast<const float*>(w.d_as.p),
+                                   static_cast<const int32_t*>(w.d_sorted.p), static_cast<const int32_t*>(w.d_off.p),
+                                   (uint32_t)shape_.top_k,
+                                   static_cast<void* const*>(w.gu_code[0].p), static_cast<void* const*>(w.gu_scale[0].p),
+                                   static_cast<void* const*>(w.gu_code[1].p), static_cast<void* const*>(w.gu_scale[1].p),
+                                   (uint32_t)(2 * w0), (uint32_t)(2 * w1), (uint32_t)shape_.hidden, (uint32_t)shape_.hidden,
+                                   (uint32_t)shape_.hidden, (uint32_t)(2 * mid_w()), static_cast<uint16_t*>(w.d_gu.p),
+                                   (uint32_t)mid_w());
+                else if (gu_form == Rad46RowsForm::RowLane16)
+                    hipLaunchKernelGGL((lane_moe_rows_w4_rowlane<true, kQuadDppRB>),
+                                   dim3(experts(), (uint32_t)(2 * std::max(w0, w1) / kQuadDppN)), dim3(128), 0, w.stream,
+                                   static_cast<const uint8_t*>(w.d_aq.p), static_cast<const float*>(w.d_as.p),
+                                   static_cast<const int32_t*>(w.d_sorted.p), static_cast<const int32_t*>(w.d_off.p),
+                                   (uint32_t)shape_.top_k,
+                                   static_cast<void* const*>(w.gu_code[0].p), static_cast<void* const*>(w.gu_scale[0].p),
+                                   static_cast<void* const*>(w.gu_code[1].p), static_cast<void* const*>(w.gu_scale[1].p),
+                                   (uint32_t)(2 * w0), (uint32_t)(2 * w1), (uint32_t)shape_.hidden, (uint32_t)shape_.hidden,
+                                   (uint32_t)shape_.hidden, (uint32_t)(2 * mid_w()), static_cast<uint16_t*>(w.d_gu.p),
+                                   (uint32_t)mid_w());
+                else if (gu_form == Rad46RowsForm::RowLane8)
+                    hipLaunchKernelGGL((lane_moe_rows_w4_rowlane<true, kQuadV2GuRB>),
+                                   dim3(experts(), (uint32_t)(2 * std::max(w0, w1) / kQuadDppN)), dim3(128), 0, w.stream,
+                                   static_cast<const uint8_t*>(w.d_aq.p), static_cast<const float*>(w.d_as.p),
+                                   static_cast<const int32_t*>(w.d_sorted.p), static_cast<const int32_t*>(w.d_off.p),
+                                   (uint32_t)shape_.top_k,
+                                   static_cast<void* const*>(w.gu_code[0].p), static_cast<void* const*>(w.gu_scale[0].p),
+                                   static_cast<void* const*>(w.gu_code[1].p), static_cast<void* const*>(w.gu_scale[1].p),
+                                   (uint32_t)(2 * w0), (uint32_t)(2 * w1), (uint32_t)shape_.hidden, (uint32_t)shape_.hidden,
+                                   (uint32_t)shape_.hidden, (uint32_t)(2 * mid_w()), static_cast<uint16_t*>(w.d_gu.p),
+                                   (uint32_t)mid_w());
+                else if (gu_form == Rad46RowsForm::OutputLane)
+                    hipLaunchKernelGGL((lane_moe_rows_w4_outputlane<true, kOutputLaneRB>),
+                                   dim3(experts(), (uint32_t)(2 * std::max(w0, w1) / kOutputLaneN)), dim3(kOutputLaneN), 0, w.stream,
+                                   static_cast<const uint8_t*>(w.d_aq.p), static_cast<const float*>(w.d_as.p),
+                                   static_cast<const int32_t*>(w.d_sorted.p), static_cast<const int32_t*>(w.d_off.p),
+                                   (uint32_t)shape_.top_k,
+                                   static_cast<void* const*>(w.gu_code[0].p), static_cast<void* const*>(w.gu_scale[0].p),
+                                   static_cast<void* const*>(w.gu_code[1].p), static_cast<void* const*>(w.gu_scale[1].p),
+                                   (uint32_t)(2 * w0), (uint32_t)(2 * w1), (uint32_t)shape_.hidden, (uint32_t)shape_.hidden,
+                                   (uint32_t)shape_.hidden, (uint32_t)(2 * mid_w()), static_cast<uint16_t*>(w.d_gu.p),
+                                   (uint32_t)mid_w());
+                else if (gu_form == Rad46RowsForm::StockReplay)
+                    hipLaunchKernelGGL((lane_moe_rows_w4_stock_replay<true, kRowsGuRB, kRowsGuOut>), w4_grid_gu, dim3(256), 0, w.stream,
+                                   static_cast<const uint8_t*>(w.d_aq.p), static_cast<const float*>(w.d_as.p),
+                                   static_cast<const int32_t*>(w.d_sorted.p), static_cast<const int32_t*>(w.d_off.p),
+                                   (uint32_t)shape_.top_k,
+                                   static_cast<void* const*>(w.gu_code[0].p), static_cast<void* const*>(w.gu_scale[0].p),
+                                   static_cast<void* const*>(w.gu_code[1].p), static_cast<void* const*>(w.gu_scale[1].p),
+                                   (uint32_t)(2 * w0), (uint32_t)(2 * w1), (uint32_t)shape_.hidden, (uint32_t)shape_.hidden,
+                                   (uint32_t)shape_.hidden, (uint32_t)(2 * mid_w()), static_cast<uint16_t*>(w.d_gu.p),
+                                   (uint32_t)mid_w());
+                else return -EINVAL;
                 if (!hip_ok(hipGetLastError(), "lane gate/up rows")) return -EIO;
             } else if (gemv) {
                 launch_gemv<true>(gemv_grid_gu, w.stream,
@@ -961,8 +1050,9 @@ public:
                                    static_cast<void* const*>(w.dn_code[1].p), static_cast<void* const*>(w.dn_scale[1].p),
                                    (uint32_t)shape_.hidden, (uint32_t)shape_.hidden, (uint32_t)w0, (uint32_t)w1,
                                    (uint32_t)mid_w(), (uint32_t)shape_.hidden, static_cast<uint16_t*>(out_down), 0u);
-                else
-                    hipLaunchKernelGGL((lane_moe_rows_w4<false, kRowsDnRB, kRowsDnOut>), w4_grid_dn, dim3(256), 0, w.stream,
+                else if (dn_form == Rad46RowsForm::Quad16 || dn_form == Rad46RowsForm::Quad8)
+                    hipLaunchKernelGGL((lane_moe_rows_w4_quaddpp<false, kQuadDppRB>),
+                                   dim3(experts(), (uint32_t)(shape_.hidden / kQuadDppN)), dim3(128), 0, w.stream,
                                    static_cast<const uint8_t*>(w.d_mid.p), static_cast<const float*>(w.d_mid_s.p),
                                    static_cast<const int32_t*>(w.d_sorted.p), static_cast<const int32_t*>(w.d_off.p),
                                    (uint32_t)shape_.top_k,
@@ -970,6 +1060,26 @@ public:
                                    static_cast<void* const*>(w.dn_code[1].p), static_cast<void* const*>(w.dn_scale[1].p),
                                    (uint32_t)shape_.hidden, (uint32_t)shape_.hidden, (uint32_t)w0, (uint32_t)w1,
                                    (uint32_t)mid_w(), (uint32_t)shape_.hidden, static_cast<uint16_t*>(out_down), 0u);
+                else if (dn_form == Rad46RowsForm::OutputLane)
+                    hipLaunchKernelGGL((lane_moe_rows_w4_outputlane<false, kOutputLaneRB>),
+                                   dim3(experts(), (uint32_t)(shape_.hidden / kOutputLaneN)), dim3(kOutputLaneN), 0, w.stream,
+                                   static_cast<const uint8_t*>(w.d_mid.p), static_cast<const float*>(w.d_mid_s.p),
+                                   static_cast<const int32_t*>(w.d_sorted.p), static_cast<const int32_t*>(w.d_off.p),
+                                   (uint32_t)shape_.top_k,
+                                   static_cast<void* const*>(w.dn_code[0].p), static_cast<void* const*>(w.dn_scale[0].p),
+                                   static_cast<void* const*>(w.dn_code[1].p), static_cast<void* const*>(w.dn_scale[1].p),
+                                   (uint32_t)shape_.hidden, (uint32_t)shape_.hidden, (uint32_t)w0, (uint32_t)w1,
+                                   (uint32_t)mid_w(), (uint32_t)shape_.hidden, static_cast<uint16_t*>(out_down), 0u);
+                else if (dn_form == Rad46RowsForm::StockReplay)
+                    hipLaunchKernelGGL((lane_moe_rows_w4_stock_replay<false, kRowsDnRB, kRowsDnOut>), w4_grid_dn, dim3(256), 0, w.stream,
+                                   static_cast<const uint8_t*>(w.d_mid.p), static_cast<const float*>(w.d_mid_s.p),
+                                   static_cast<const int32_t*>(w.d_sorted.p), static_cast<const int32_t*>(w.d_off.p),
+                                   (uint32_t)shape_.top_k,
+                                   static_cast<void* const*>(w.dn_code[0].p), static_cast<void* const*>(w.dn_scale[0].p),
+                                   static_cast<void* const*>(w.dn_code[1].p), static_cast<void* const*>(w.dn_scale[1].p),
+                                   (uint32_t)shape_.hidden, (uint32_t)shape_.hidden, (uint32_t)w0, (uint32_t)w1,
+                                   (uint32_t)mid_w(), (uint32_t)shape_.hidden, static_cast<uint16_t*>(out_down), 0u);
+                else return -EINVAL;
                 if (!hip_ok(hipGetLastError(), "lane down rows")) return -EIO;
             } else if (gemv) {
                 launch_gemv<false>(gemv_grid_dn, w.stream,
@@ -1195,6 +1305,7 @@ private:
     hipEvent_t copy_event_ = nullptr; // a fresh event for each gained expert
     uint32_t move_expert_ = UINT32_MAX;
     bool staging_upload_ = false, copy_pending_ = false;
+    uint64_t move_bytes_staged_ = 0;
     uint32_t active_generation_ = 0;
     uint8_t* loading_base_ = nullptr;
     uint64_t loading_size_ = 0, loading_used_ = 0;
@@ -1228,6 +1339,7 @@ private:
     bool gemv_mr_ = false;      /* R3_MOE_WORKER_GEMV_MR: the wide FP8 GEMV batching an expert's rows (RAD14) */
     int gemv_wide_env_ = -1;    /* R3_MOE_WORKER_GEMV_WIDE as set: -1 unset, 0 off, 1 on */
     bool gemv_wide_ = false;    /* R3_MOE_WORKER_GEMV_WIDE: sixteen-byte FP8 loads in the decode GEMV (RAD14) */
+    Rad46Sweep rad46_sweep_ = Rad46Sweep::Production; // replay-sweep overrides only between runs
     bool rows_ = false;         /* R3_MOE_WORKER_ROWS: few-rows-a-expert kernel on the large lane (RAD06) */
     uint32_t chunk_helper_ = UINT32_MAX;   /* R3_MOE_WORKER_COMBINE: this helper's index for the chunk words (RAD42) */
     bool trace_ = [] { const char* v = std::getenv("R3_MOE_WORKER_TRACE"); return v && *v && std::atoi(v) > 0; }();   /* RAD40 stage stamps */

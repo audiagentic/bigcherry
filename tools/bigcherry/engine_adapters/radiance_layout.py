@@ -51,12 +51,19 @@ class HelperCard:
 @dataclass(frozen=True)
 class Resolved:
     name: str
-    engine_index: int
+    engine_indices: tuple[int, ...]  # inventory indices, in TP-rank order
     engine_arch: str
-    engine_plugin: str            # the engine card's kernel plugin file (archs.toml)
+    engine_plugin: str            # shared engine kernel plugin (archs.toml)
+    model: str                    # portable path, relative to BC_MODEL_ROOT
+    tp_wire: str | None
+    server_args: tuple[str, ...]
     helpers: tuple[HelperCard, ...]
     #: environment for every process of the offload (engine and helpers)
     common_env: dict[str, str] = field(default_factory=dict)
+
+    @property
+    def engine_index(self) -> int:
+        return self.engine_indices[0]
 
     def helper_env(self, i: int) -> dict[str, str]:
         """What helper ``i`` needs on top of the common environment: its card, its plugin, the formats its backend runs."""
@@ -190,19 +197,53 @@ def resolve(name: str, host: environment.Host, *, budgets: dict[str, int] | None
         raise LayoutError(f"unknown layout {name!r}; known: {sorted(layouts)}")
     lay = layouts[name]
     where = f"layout.{name}"
-    _allow(lay, {"description", "engine", "helper", "env"}, where)
+    _allow(lay, {"description", "model", "engine", "tp-wire", "server-args", "helper", "env"}, where)
+    model = lay.get("model")
+    if not isinstance(model, str) or not model or model.startswith("/") or not model.endswith(".rad") or any(
+        part in ("", ".", "..") for part in model.split("/")
+    ):
+        raise LayoutError(f"{where}.model: expected a .rad path relative to BC_MODEL_ROOT, without traversal")
     budgets = dict(budgets or {})
     taken: set[int] = set()
     engine_spec = lay.get("engine")
     if not isinstance(engine_spec, dict):
         raise LayoutError(f"{where}: engine is required")
-    _allow(engine_spec, {"arch", "devices"}, f"{where}.engine")
+    _allow(engine_spec, {"arch", "devices", "count"}, f"{where}.engine")
     engine = _pick(host.devices, engine_spec, "engine", archs, f"{where}.engine", taken)
-    if len(engine) != 1:
-        raise LayoutError(f"{where}.engine: exactly one card runs the model, got {len(engine)}")
+    if not engine:
+        raise LayoutError(f"{where}.engine: at least one engine card is required")
+    # All ranks use the same plugin, chosen by the card architecture.
+    if len({d.arch for d in engine}) != 1:
+        raise LayoutError(f"{where}.engine: all tensor-parallel ranks must share an architecture")
     groups = lay.get("helper") or []
+    if groups and len(engine) != 1:
+        raise LayoutError(f"{where}: remote-MoE helpers require exactly one engine rank")
+    tp_wire = lay.get("tp-wire")
+    if len(engine) > 1:
+        if groups or tp_wire not in ("exact", "wht6"):
+            raise LayoutError(f"{where}: multi-rank engine requires a helper-free layout and tp-wire exact or wht6")
+    elif tp_wire is not None:
+        raise LayoutError(f"{where}: tp-wire is only for multiple engine ranks")
+    server_args = lay.get("server-args", [])
+    # Reject data that could override model, rank/card, host transport,
+    # kernel selection or the plan safety flags.
+    allowed = {"--max-model-len", "--max-num-seqs", "--max-num-batched-tokens",
+               "--kv-cache-dtype", "--num-speculative-tokens", "--checkpoint-interval"}
+    if (not isinstance(server_args, list) or len(server_args) % 2
+            or any(not isinstance(x, str) for x in server_args)
+            or any(server_args[i] not in allowed or not server_args[i + 1]
+                   or server_args[i + 1].startswith("-") for i in range(0, len(server_args), 2))
+            or len(set(server_args[::2])) != len(server_args[::2])):
+        raise LayoutError(f"{where}.server-args: expected unique, allowed option/value pairs")
+    if groups and server_args:
+        raise LayoutError(f"{where}: server-args are for helper-free layouts only")
     if not groups:
-        raise LayoutError(f"{where}: at least one helper group is required")
+        if budgets:
+            raise LayoutError(f"{where}: budget overrides require remote-MoE helpers")
+        if lay.get("env"):
+            raise LayoutError(f"{where}: R3_MOE_WORKER_* settings require remote-MoE helpers")
+        return Resolved(name, tuple(d.index for d in engine), engine[0].arch,
+                        archs[engine[0].arch].plugin, model, tp_wire, tuple(server_args), (), {})
     helpers: list[HelperCard] = []
     used_overrides: set[str] = set()
     for gi, g in enumerate(groups):
@@ -260,4 +301,5 @@ def resolve(name: str, host: environment.Host, *, budgets: dict[str, int] | None
     if common.get("R3_MOE_WORKER_COMBINE") == "1" and len(helpers) < 2:
         # the combine adds the rows of two to kCombineHelpers (= kMaxHelpers, the bound checked above) helpers; one has nothing to add
         raise LayoutError(f"{where}: the helper-row combine needs at least two helpers; {len(helpers)} would run with it silently off")
-    return Resolved(name, engine[0].index, engine[0].arch, archs[engine[0].arch].plugin, tuple(helpers), {k: v for k, v in common.items() if v != ""})
+    return Resolved(name, (engine[0].index,), engine[0].arch, archs[engine[0].arch].plugin,
+                    model, None, (), tuple(helpers), {k: v for k, v in common.items() if v != ""})

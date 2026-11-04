@@ -800,3 +800,63 @@ Against part 3 there are zero additional per-request Request-field
 reads, system-scope stores/fences, host round trips, barriers or GPU
 launches. The existing generation-slot read still selects the
 immutable pointer bank. These CPU tests are not GPU timing evidence.
+
+## RHP11 slice F/G: combine identity and test-only forced transactions
+
+The helper's v23 bootstrap owner map is sealed only after all helpers have
+filtered frozen engine-local slots. Every helper owns an EpochCycle actor and
+residency-backed migration Participant; the engine ranks supply their own
+RESERVED/READY/QUIESCED/COMMITTED/RETIRED and REOPENED proofs. Lane closure
+drains all prequeued waits even with power-save disabled and publishes its
+last request/consumed epoch/slot identity only after stream synchronization.
+Segment attach rejects non-v23 headers before GPU registration.
+
+CPU CombinePool and combine_step now check their existing combine generation,
+active epoch/generation slot, each contributing helper's request identity,
+and the participant/lane-class set before publishing any chunk. They check
+the active identity again before terminal done. The epoch and participant
+checks are CPU combine-step validation; they introduce no extra GPU kernel,
+GPU-mapped Request traffic, or per-lane kernel work.
+
+The two **test-only, default-off** controls are
+\`R3_MOE_PLACEMENT_FORCE_MOVE=layer:expert:destination_helper\` (single
+move, only when the destination has committed expert-weight headroom) or
+\`R3_MOE_PLACEMENT_FORCE_MOVE=swap:layerA:expertA:layerB:expertB\`
+(two helper-owned experts exchange owners in **one** transaction), and
+\`R3_MOE_PLACEMENT_FORCE_SCHEDULE=/absolute/path/to/file\`.
+They are mutually exclusive and read by helper 0 once at startup.
+A schedule accepts either form and \`swap:auto:helperX:helperY\`, which
+resolves from the sealed ACTIVE canonical map **when proposed**: the
+lowest layer with a pair of eligible experts, then lowest expert IDs,
+excluding both experts from the last committed transaction. Every
+resolved pair is logged with its transaction and epoch. Comments begin
+with \`#\`; an optional first noncomment \`repeat=N\` repeats the ordered
+steps, each after exact REOPENED and CLEANED ACKs.
+
+Invalid inputs fail at startup; illegal live targets journal a precommit
+fault without changing ACTIVE. Both swap sources must be helper-owned,
+distinct and runtime-eligible; the exchange must fit each helper's
+postcommit budget and independent incoming staging slot. Single moves
+keep the same checks. Forced mode bypasses policy gain/dwell only, never
+canonical digest, source, frozen layer, budget, rank/helper ACKs,
+or step-admission and retirement barriers. All movements use the
+production Controller and per-helper Participant. No GPU hot path changes.
+
+Send SIGUSR1 to request bounded aggregate reporting. On exit helper 0
+reports attempted/committed/aborted transactions, per-phase logarithmic
+min/approximate-median/max nanoseconds, fault counts, approximate
+admission pause durations, active/pending epoch and digest, last actor
+ACKs, and \`bytes_planned\` (two expert payloads per accepted swap).
+Each helper reports \`local_bytes_staged\` (successful private-stream H2D
+enqueues) and ledger charge; sum helper-local staged bytes over all
+helpers. These measurements are not exact device-completion times or
+a substitute for RHP12 hardware equality/performance gates.
+
+On normal \`flashnext-4gpu\`, all three helpers fill their expert
+weight budgets (22528/22528/14336 MiB), so normal rebalancing requires
+a full two-way exchange rather than freeing one helper. The
+\`/work/development/tmp/bigcherry/rhp11-g/flashnext-4gpu-swaps-1000.schedule\`
+harness rotates automatic pair selections through (0,1), (0,2),
+(1,2) for 1,000 transactions; this is a test harness, not a
+production placement policy. There is no alternate layout.
+No GPU testing was performed during this implementation pass.

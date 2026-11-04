@@ -66,12 +66,18 @@ Interim production choice is the owner's: keep the tail layout (more expert capa
 
 2026-11-04 experiment archive: ten Codex variants (outputlane, rb16, groupfold, stageprobe, pairdecode, pairdpp, quadadd, quadasm, quaddpp, attribution) are archived as inert patches in experiments/radiance/RAD46-*; the session's original notes and reviews are in experiments/radiance/RAD46-rad46/. Outcomes: docs/research/radiance-history/RAD46-rows-kernel-accuracy-2026-11.md. Where to resume: quad-DPP ordered-assembly variant (quadasm/quaddpp) - passes hashes, gate/up 1084 us vs 710 us original; needs full KLD and the matched pp1024/tg512 A/B. Output-lane passes quality but costs 31.5% prefill. Evidence copied to runs/rad46-evidence/ (work root), one folder per variant.
 
+2026-11-04 CORRECTION to the archive note above: the resume point is not just quad-DPP. Production (feat/rad46-accurate-rows, 90ecda12f) selects per stage by request rows: output-lane RB8 at or below derived crossovers (gate/up 309 rows, down 922), quad-DPP RB16 above. KLD on the 6900 XT tail passes, decode at parity, 4k prefill about 5-10% slower, large gate/up about 1.4x slower than the old kernel in isolation. Unmeasured: row-owned rowlane16/rowlane8 gate/up candidate (Codex report 3) - only if large-prefill speed matters. PR still needs r3_rad46_rows_policy_test declared in component.toml and tools/tests/release/test_bump_gates.py. Evidence runs rad46-speed2 under runs/ belong to the PR; do not touch.
+
 ## Change Log
 
 - 2026-11-03T02:29:34.417938+00:00 (created-by): Created by agent
 
 ## Ledger-events
 
+
 - chg_20261103_022951_measured-that-offloading-exper_7122
 - 2026-11-03T02:29:58.843319+00:00 (updated-by): Updated: section:ledger-events
 - 2026-11-04T06:15:41.758211+00:00 (updated-by): Updated: section:notes
+- 2026-11-04T06:57:23.943415+00:00 (updated-by): Updated: section:notes
+- chg_20261104_071139_the-rx-6900-xt-expert-helper-n_8892
+- 2026-11-04T07:11:43.593853+00:00 (updated-by): Updated: section:ledger-events

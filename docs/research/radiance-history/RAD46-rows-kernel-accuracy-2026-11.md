@@ -29,5 +29,7 @@ over control.
 
 - Accuracy and speed trade against each other: every variant that matched grouped GEMM bit for bit was slower in
   prefill. The remaining target is matching the arithmetic with far fewer cross-lane operations.
-- The quad-DPP ordered-assembly variant is the lead to continue. It needs full KLD and the matched prefill/decode A/B.
+- Production resolution (lead, 2026-11-04, branch `feat/rad46-accurate-rows`, commit `90ecda12f`): the kernel is chosen per stage by request rows. Output-lane RB8 at or below derived crossovers (gate/up 309 rows, down 922 rows), quad-DPP RB16 above. KLD on the 6900 XT tail passes; decode is at parity; 4k prefill costs about 5-10%; large gate/up is still about 1.4x slower than the old inaccurate kernel in isolation.
+- Not yet measured: the row-owned `rowlane16`/`rowlane8` gate/up candidate (Codex report 3). Resume there only if large-prefill speed matters.
+- The PR also needs `r3_rad46_rows_policy_test` declared in `component.toml` and `tools/tests/release/test_bump_gates.py` (CI requires both).
 - Quality evidence: `artifacts/RAD46-diagnostic/capture-{attested-1,gemm}` and `artifacts/RAD46-outputlane/{capture-1,capture-2,throughput-ab}` inside the `codex/rad46*` worktrees. Copied to `runs/rad46-evidence/<variant>/` in the work root.

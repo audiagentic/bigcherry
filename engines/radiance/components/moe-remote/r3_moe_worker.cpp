@@ -44,6 +44,9 @@
 #include "worker_lanes.h"
 #include "worker_queue_warm.h"
 #include "worker_epoch.h"
+#include "worker_forced_move.h"
+
+static volatile sig_atomic_t g_force_report_requested=0;
 
 int main(int argc, char** argv) {
     /* EVERY LANE STREAM ON ITS OWN HARDWARE QUEUE. A small lane pre-queues "wait for the next request" packets;
@@ -339,6 +342,10 @@ int main(int argc, char** argv) {
                     if (comma == std::string::npos) break;
                     pos = comma + 1;
                 }
+                if (!gpu->set_rad46_sweep_variant(std::getenv("RAD46_SWEEP_VARIANT"))) {
+                    std::fprintf(stderr, "r3_moe_worker: replay sweep needs a known RAD46_SWEEP_VARIANT\n");
+                    return 2;
+                }
                 std::printf("SWEEP run %d capture %zu layer %u variant [%s]\n", run++, c, g_replay->hd.layer, v.c_str());
                 std::fflush(stdout);
                 rc |= compare_mode(model, *gpu, owned, g_replay->hd.layer, g_replay->hd.rows, lane_classes,
@@ -379,6 +386,10 @@ int main(int argc, char** argv) {
     sigemptyset(&sa.sa_mask);
     sa.sa_flags = 0;
     sigaction(SIGINT, &sa, nullptr); sigaction(SIGTERM, &sa, nullptr);
+    struct sigaction report_sa{};
+    report_sa.sa_handler=[](int) { g_force_report_requested=1; };
+    sigemptyset(&report_sa.sa_mask);
+    sigaction(SIGUSR1,&report_sa,nullptr);
     Segment seg;
     if (!seg.open(shm_name(), lay.bytes, helper_index == 0, kStartupWaitSeconds)) return 1;
     void* const map = seg.host();
@@ -574,6 +585,23 @@ int main(int argc, char** argv) {
         r3::epoch::EpochCycle epoch_cycle(
             map, helper_index, epoch_clock, std::chrono::seconds{cfg.epoch_cycle_s},
             {}, &migration);
+        std::unique_ptr<r3::forced::Driver> forced;
+        if (helper_index==0 && cfg.force_enabled) {
+            if (cfg.force_schedule.count()>UINT32_MAX-bootstrap_control.active_epoch) {
+                std::fprintf(stderr,"r3_moe_worker: forced schedule exhausts v23 epoch space\n");
+                raise_fault(h); lanes.stop_and_join(); return 1;
+            }
+            const r3::forced::Source source=[&](uint32_t l,uint32_t e) {
+                return model.weight(l,e,0) && model.weight(l,e,1) &&
+                       gpu->preferred_local(l*model.experts+e)>=0;
+            };
+            forced=std::make_unique<r3::forced::Driver>(
+                cfg.force_schedule,std::vector<uint64_t>(budgets,budgets+helper_count),
+                gpu->expert_stride(),source);
+            epoch_cycle.set_forced_proposal([&](void* shared,r3::epoch::Controller& c) {
+                return forced->submit(shared,c,epoch_clock.now_ns());
+            });
+        }
         for (uint32_t v; (v = g_stop_word.load(std::memory_order_acquire)) == 0;) {
             if (!epoch_cycle.tick()) {
                 PlacementControl failed{};
@@ -585,6 +613,16 @@ int main(int argc, char** argv) {
                     "r3_moe_worker: epoch participant %u exiting phase=%u transaction=%llu fault=%u\n",
                     helper_index,failed.state,(unsigned long long)failed.transaction_id,code);
                 raise_fault(h); request_stop(); break;
+            }
+            if (forced && epoch_cycle.proposal_controller())
+                forced->observe(*epoch_cycle.proposal_controller(),epoch_clock.now_ns());
+            if (g_force_report_requested) {
+                g_force_report_requested=0;
+                if (forced) forced->report(map,gpu->move_ledger()->charged(),gpu->move_bytes_staged(),helper_index);
+                else std::fprintf(stderr,
+                    "placement helper=%u ledger_charged=%llu local_bytes_staged=%llu\n",helper_index,
+                    (unsigned long long)gpu->move_ledger()->charged(),
+                    (unsigned long long)gpu->move_bytes_staged());
             }
             const timespec quantum{0, 2'000'000};
             (void)::syscall(SYS_futex, reinterpret_cast<uint32_t*>(&g_stop_word), FUTEX_WAIT_PRIVATE, v,
@@ -606,6 +644,15 @@ int main(int argc, char** argv) {
                 stopping_phase.fault_code,record.fault);
         }
         lanes.stop_and_join();
+        if (forced) {
+            if (epoch_cycle.proposal_controller())
+                forced->observe(*epoch_cycle.proposal_controller(),epoch_clock.now_ns());
+            forced->report(map,gpu->move_ledger()->charged(),gpu->move_bytes_staged(),helper_index);
+        }
+        if (!forced) std::fprintf(stderr,
+            "placement helper=%u ledger_charged=%llu local_bytes_staged=%llu\n", helper_index,
+            (unsigned long long)gpu->move_ledger()->charged(),
+            (unsigned long long)gpu->move_bytes_staged());
         if (epoch_cycle.enabled() && helper_index == 0)
             std::fprintf(stderr, "r3_moe_worker: placement epoch cycles completed %llu (every %u s of burst)\n",
                          (unsigned long long)epoch_cycle.completed(), cfg.epoch_cycle_s);
