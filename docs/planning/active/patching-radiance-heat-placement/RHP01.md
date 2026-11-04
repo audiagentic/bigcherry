@@ -114,11 +114,13 @@ Steps:
 
 Validation: Exact-count synthetic oracle, bank-generation reuse, delayed events, duplicate rejection, overflow accounting, finite shutdown drain; at least 99% completed-report coverage or the loss documented; no mandatory GPU synchronisation or material throughput change.
 
-## Change Log
-
-- 2026-11-04T10:07:56.063649+00:00 (updated-by): Updated: section:notes
-
 ## Ledger-events
 
+- chg_20261104_085322_a-diagnostic-build-option-now_9638
 - chg_20261104_100802_measured-that-the-expert-usage_9903
+
+## Change Log
+
+- 2026-11-04T08:53:26.797834+00:00 (updated-by): Updated: section:ledger-events
+- 2026-11-04T10:07:56.063649+00:00 (updated-by): Updated: section:notes
 - 2026-11-04T10:08:06.091603+00:00 (updated-by): Updated: section:ledger-events
