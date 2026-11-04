@@ -64,6 +64,8 @@ Production tail layout passes the helper-kld.json quality limits at the current 
 
 Interim production choice is the owner's: keep the tail layout (more expert capacity and context, known tail-quality cost) or serve on the two XTX helpers only (passes quality, less capacity). rad0002's promotion (MEN26) rests on the two-XTX evidence and is not blocked by this item: the issue is in the gfx1030 helper kernel path (moe-remote component and libr2), not in the engine hand-off patch.
 
+2026-11-04 experiment archive: ten Codex variants (outputlane, rb16, groupfold, stageprobe, pairdecode, pairdpp, quadadd, quadasm, quaddpp, attribution) are archived as inert patches in experiments/radiance/RAD46-*; the session's original notes and reviews are in experiments/radiance/RAD46-rad46/. Outcomes: docs/research/radiance-history/RAD46-rows-kernel-accuracy-2026-11.md. Where to resume: quad-DPP ordered-assembly variant (quadasm/quaddpp) - passes hashes, gate/up 1084 us vs 710 us original; needs full KLD and the matched pp1024/tg512 A/B. Output-lane passes quality but costs 31.5% prefill. Evidence under artifacts/RAD46-* in the codex/rad46* worktrees (machine-local) - copy to runs/ before removing them.
+
 ## Change Log
 
 - 2026-11-03T02:29:34.417938+00:00 (created-by): Created by agent
@@ -72,3 +74,4 @@ Interim production choice is the owner's: keep the tail layout (more expert capa
 
 - chg_20261103_022951_measured-that-offloading-exper_7122
 - 2026-11-03T02:29:58.843319+00:00 (updated-by): Updated: section:ledger-events
+- 2026-11-04T06:15:41.758211+00:00 (updated-by): Updated: section:notes
