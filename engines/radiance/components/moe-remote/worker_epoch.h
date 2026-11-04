@@ -9,6 +9,7 @@
 #include <cstring>
 #include <memory>
 #include <limits>
+#include <functional>
 
 namespace r3::epoch {
 using namespace r3::moe_shm;
@@ -956,6 +957,7 @@ class EpochCycle {
     bool placement_halted_ = false; // terminal placement diagnostic, not a helper failure
     FaultCode placement_fault_ = FaultCode::NONE;
     HelperMigration* migration_ = nullptr;
+    std::function<bool(void*,Controller&)> forced_proposal_;
     bool schedule() {
         const uint64_t now = clock_.now_ns();
         const uint64_t period = uint64_t(period_.count());
@@ -975,6 +977,9 @@ public:
     // The tests inject their candidate through Controller::propose, not a
     // second path or a synthetic forced-move policy.
     Controller* proposal_controller() { return controller_.get(); }
+    void set_forced_proposal(std::function<bool(void*,Controller&)> proposal) {
+        forced_proposal_=std::move(proposal);
+    }
     uint64_t completed() const { return completed_; }
     bool placement_halted() const { return placement_halted_; }
     FaultCode placement_fault() const { return placement_fault_; }
@@ -1137,7 +1142,14 @@ public:
                     controller_->control().journal_index].cleanup_fault);
                 return true;
             }
-            if (helper_ != 0 || period_.count() == 0) return true;
+            if (helper_ != 0) return true;
+            if (forced_proposal_) {
+                // Exactly the existing Controller, after previous REOPENED
+                // and CLEANED acknowledgments; no synthetic policy path.
+                return controller_->can_propose() ?
+                    forced_proposal_(map_,*controller_) : true;
+            }
+            if (period_.count() == 0) return true;
             if (!controller_->can_propose() ||
                 !(load(&h->burst) & 1u) || clock_.now_ns() < next_ns_) return true;
             if (!stage_same_map_generation(map_)) {

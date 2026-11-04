@@ -8,6 +8,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <string>
+#include "worker_forced_move.h"
 
 struct WorkerConfig {
     uint32_t helper_count = 1;      /* R3_MOE_WORKER_COUNT: helpers sharing the segment, 1..kMaxHelpers */
@@ -27,6 +28,8 @@ struct WorkerConfig {
     uint32_t epoch_cycle_s = 0;        /* R3_MOE_WORKER_EPOCH_CYCLE_S (RHP11 slice C validation): helper 0 runs a no-op
                                           placement epoch cycle (close, drain, recommit the same placement, reopen) every
                                           N seconds of burst; 0 = off. Moves to experiment.helper.epoch_cycle_s in v1. */
+    bool force_enabled = false;
+    r3::forced::Schedule force_schedule;
     bool cpu_set_auto = true;          /* R3_MOE_WORKER_CPU_SET (PWR03): auto = on the efficiency cores when the CPU has
                                           them (worker_cpu.h), all = no pinning */
 
@@ -43,7 +46,8 @@ struct WorkerConfig {
                u32("R3_MOE_WORKER_COMBINE_THREADS", 1, 1024, &combine_threads, err) &&
                u32("R3_MOE_WORKER_EPOCH_CYCLE_S", 0, kMaxEpochCycleS, &epoch_cycle_s, err) &&
                choice("R3_MOE_WORKER_CPU_SET", "auto", "all", &cpu_set_auto, err) &&
-               check(helper_index < helper_count, "R3_MOE_WORKER_INDEX must be below R3_MOE_WORKER_COUNT", err);
+               check(helper_index < helper_count, "R3_MOE_WORKER_INDEX must be below R3_MOE_WORKER_COUNT", err) &&
+               read_force(err);
     }
 
     /* Before any configuration is read (GPU_MAX_HW_QUEUES must be set before HIP initialises): the same parse, but a
@@ -60,6 +64,31 @@ struct WorkerConfig {
     }
 
 private:
+    bool read_force(std::string* err) {
+        // Only the coordinator reads test controls; other helpers merely
+        // service canonical proposals and never open a harness file.
+        if (helper_index != 0) return true;
+        const char* one=std::getenv("R3_MOE_PLACEMENT_FORCE_MOVE");
+        const char* file=std::getenv("R3_MOE_PLACEMENT_FORCE_SCHEDULE");
+        const bool has_one=one && *one, has_file=file && *file;
+        if (has_one && has_file) {
+            *err="R3_MOE_PLACEMENT_FORCE_MOVE conflicts with FORCE_SCHEDULE";
+            return false;
+        }
+        if (has_one) {
+            r3::forced::Step step;
+            if (!r3::forced::parse_step(one,&step) ||
+                step.kind==r3::forced::Step::Kind::AUTO_SWAP) {
+                *err="R3_MOE_PLACEMENT_FORCE_MOVE: want layer:expert:helper or swap:layerA:expertA:layerB:expertB";
+                return false;
+            }
+            force_schedule.steps.push_back(step);
+        } else if (has_file && !r3::forced::read_schedule(file,&force_schedule,err)) {
+            return false;
+        }
+        force_enabled=has_one || has_file;
+        return true;
+    }
     /* Unset or empty keeps *out. */
     static bool u32(const char* name, uint32_t lo, uint32_t hi, uint32_t* out, std::string* err) {
         const char* s = std::getenv(name);
