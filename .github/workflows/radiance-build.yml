@@ -28,6 +28,7 @@ on:
       - 'tools/bigcherry/cli/main.py'
       - 'tools/bigcherry/cli/engine_scope.py'
       - '.github/workflows/radiance-build.yml'
+      - '.github/scripts/ci_build_layers.py'
       - '.github/workflows/radiance-build-image.yml'
       - '.github/docker/radiance-build/**'
   workflow_dispatch:
@@ -87,6 +88,71 @@ jobs:
           restore-keys: |
             radiance-ccache-
 
+      - name: Bind prebuilt layers to the exact compiler image
+        run: |
+          image_id=$(docker image inspect '${{ needs.image.outputs.image }}' --format '{{.Id}}')
+          test -n "$image_id"
+          echo "CI_LAYER_IMAGE_ID=$image_id" >> "$GITHUB_ENV"
+
+      # BU03: one trusted build snapshot per engine and independently versioned
+      # component. Keys include the pinned source, toolchain, all build code,
+      # and (for components) that component's exact tracked file contents.
+      - name: Fingerprint prebuilt layer inputs
+        id: layer_keys
+        run: python3 .github/scripts/ci_build_layers.py keys --output "$GITHUB_OUTPUT"
+
+      - name: Restore prebuilt engine layer (from main)
+        id: layer_engine
+        uses: actions/cache/restore@v4
+        with:
+          path: work/ci-prebuilt/engine
+          key: radiance-prebuilt-v1-${{ steps.layer_keys.outputs.engine }}
+
+      - name: Restore prebuilt libr3 layer (from main)
+        id: layer_libr3
+        uses: actions/cache/restore@v4
+        with:
+          path: work/ci-prebuilt/libr3
+          key: radiance-prebuilt-v1-${{ steps.layer_keys.outputs.libr3 }}
+
+      - name: Restore prebuilt libr2 layer (from main)
+        id: layer_libr2
+        uses: actions/cache/restore@v4
+        with:
+          path: work/ci-prebuilt/libr2
+          key: radiance-prebuilt-v1-${{ steps.layer_keys.outputs.libr2 }}
+
+      - name: Restore prebuilt moe-remote layer (from main)
+        id: layer_moe_remote
+        uses: actions/cache/restore@v4
+        with:
+          path: work/ci-prebuilt/moe_remote
+          key: radiance-prebuilt-v1-${{ steps.layer_keys.outputs.moe_remote }}
+
+      - name: Restore prebuilt ngram-helper layer (from main)
+        id: layer_ngram_helper
+        uses: actions/cache/restore@v4
+        with:
+          path: work/ci-prebuilt/ngram_helper
+          key: radiance-prebuilt-v1-${{ steps.layer_keys.outputs.ngram_helper }}
+
+      - name: Restore prebuilt bc-gfx12 layer (from main)
+        id: layer_bc_gfx12
+        uses: actions/cache/restore@v4
+        with:
+          path: work/ci-prebuilt/bc_gfx12
+          key: radiance-prebuilt-v1-${{ steps.layer_keys.outputs.bc_gfx12 }}
+
+      - name: Restore prebuilt serving layer (from main)
+        id: layer_serving
+        uses: actions/cache/restore@v4
+        with:
+          path: work/ci-prebuilt/serving
+          key: radiance-prebuilt-v1-${{ steps.layer_keys.outputs.serving }}
+
+      - name: Validate and install verified prebuilt layers
+        run: python3 .github/scripts/ci_build_layers.py restore
+
       - name: Build in the ROCm image
         run: |
           docker run --rm --shm-size=1g -e BIGCHERRY_ENVIRONMENT -e BC_WORK_ROOT=/src/work -v "$GITHUB_WORKSPACE:/src" -w /src '${{ needs.image.outputs.image }}' bash -euxo pipefail -c '
@@ -120,6 +186,61 @@ jobs:
             # Fingerprint the successful build inside the CI compiler image.
             python3 tools/lab/radiance/ci_ccache.py fingerprint --output work/ci-ccache-artifact/compiler.json
           '
+
+      # Only successful main builds may seed reusable binaries; PRs are
+      # restore-only. Export after running the real component test gate.
+      - name: Export verified prebuilt engine and component layers
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: python3 .github/scripts/ci_build_layers.py export
+
+      - name: Seed engine prebuilt layer from main
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push' && steps.layer_engine.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: work/ci-prebuilt/engine
+          key: radiance-prebuilt-v1-${{ steps.layer_keys.outputs.engine }}
+
+      - name: Seed libr3 prebuilt layer from main
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push' && steps.layer_libr3.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: work/ci-prebuilt/libr3
+          key: radiance-prebuilt-v1-${{ steps.layer_keys.outputs.libr3 }}
+
+      - name: Seed libr2 prebuilt layer from main
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push' && steps.layer_libr2.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: work/ci-prebuilt/libr2
+          key: radiance-prebuilt-v1-${{ steps.layer_keys.outputs.libr2 }}
+
+      - name: Seed moe-remote prebuilt layer from main
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push' && steps.layer_moe_remote.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: work/ci-prebuilt/moe_remote
+          key: radiance-prebuilt-v1-${{ steps.layer_keys.outputs.moe_remote }}
+
+      - name: Seed ngram-helper prebuilt layer from main
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push' && steps.layer_ngram_helper.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: work/ci-prebuilt/ngram_helper
+          key: radiance-prebuilt-v1-${{ steps.layer_keys.outputs.ngram_helper }}
+
+      - name: Seed bc-gfx12 prebuilt layer from main
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push' && steps.layer_bc_gfx12.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: work/ci-prebuilt/bc_gfx12
+          key: radiance-prebuilt-v1-${{ steps.layer_keys.outputs.bc_gfx12 }}
+
+      - name: Seed serving prebuilt layer from main
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push' && steps.layer_serving.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: work/ci-prebuilt/serving
+          key: radiance-prebuilt-v1-${{ steps.layer_keys.outputs.serving }}
 
       # Only main is a trusted seed: never publish a PR's compiler objects.
       - name: Package ccache for the lab

@@ -171,6 +171,7 @@ jobs:
           tools/bigcherry/cli/main.py
           tools/bigcherry/cli/engine_scope.py
           .github/workflows/radiance-build.yml
+          .github/scripts/ci_build_layers.py
           .github/workflows/radiance-build-image.yml
           .github/docker/radiance-build/**
           .github/workflows/pr-ci.yml
