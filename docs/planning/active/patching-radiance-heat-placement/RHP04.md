@@ -115,6 +115,7 @@ Validation: Exact static-tail reproduction (static_tail is plan_tail), determini
 ## Ledger-events
 
 
+
 - chg_20261101_225732_planning-a-staged-roadmap-for_4092
 - 2026-11-01T22:57:35.857193+00:00 (updated-by): Updated: section:ledger-events
 - chg_20261102_022722_groundwork-for-live-expert-pla_5619
@@ -124,3 +125,5 @@ Validation: Exact static-tail reproduction (static_tail is plan_tail), determini
 - 2026-11-04T13:20:59.621024+00:00 (updated-by): Updated: section:notes
 - chg_20261104_132107_measured-that-matching-expert_1370
 - 2026-11-04T13:21:11.445572+00:00 (updated-by): Updated: section:ledger-events
+- chg_20261104_150859_flash-next-can-now-move-hot-ex_3589
+- 2026-11-04T15:09:03.545088+00:00 (updated-by): Updated: section:ledger-events
