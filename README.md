@@ -31,20 +31,24 @@ Package counts include experimental, superseded and rejected work, not only
 patches selected for production. Radiance has 2 validated patches;
 llama.cpp has 70.
 
-## Best recorded Radiance throughput
+## Current-pin throughput
 
-These results were measured on **v1.14.0**, not yet revalidated on the
-current v1.16.0 pin. Rates are tokens per second, with different workloads.
+The pinned upstream is Radiance **v1.16.0**. No qualified fresh prefill
+tokens/s or aggregate multi-stream client output or engine decode tokens/s
+have yet been recorded for this pin. The v1.16.0 release contains a
+one- and six-stream latency comparison with v1.14.0, not a matched
+unmodified-stock throughput A/B. Do not treat the earlier layout results
+as current-pin speedups.
 
-| Model | Prefill | Generated output |
-| --- | --- | --- |
-| [Qwen3.8-Flash-Next](docs/reference/engines/radiance/models/qwen3.8-flash-next.md), four AMD cards | **3,837** (fresh ~44K prompt) | **330–342**, 6-stream aggregate *engine decode* |
-| [Qwen3.8-27B](docs/reference/engines/radiance/models/qwen3.8-27b.md), R9700 | — | **245–248**, 6-stream aggregate *client output* |
-| [Qwen3.6-35B-A3B](docs/reference/engines/radiance/models/qwen3.6-35b-a3b.md), R9700 | — | **171–219**, single-stream client output across prompts |
+| Model and layout | Prefill tokens/s | Aggregate output tokens/s |
+| --- | ---: | ---: |
+| [Flash-Next](docs/reference/engines/radiance/models/qwen3.8-flash-next.md), R9700 + two RX 7900 XTX + RX 6900 XT | Not qualified | Not qualified |
+| [Qwen3.8-27B MXFP4](docs/reference/engines/radiance/models/qwen3.8-27b.md), R9700; two-XTX alternative unqualified | Not qualified | Not qualified |
+| [Qwen3.6-35B-A3B FP8](docs/reference/engines/radiance/models/qwen3.6-35b-a3b.md), R9700 | Not qualified | Not qualified |
 
-There is no matched stock-engine comparison for these workloads. The
-four-card Flash-Next layout also has a documented quality trade-off; see
-the model page before using its throughput as a configuration choice.
+Earlier v1.14.0 results, including long-context and concurrent serving
+measurements, are retained in the [archive](docs/archive/radiance/v1.14-model-results/).
+The Flash-Next four-card layout has a documented quality trade-off.
 
 [Build and use](GETTING_STARTED.md) ·
 [Technical reference](docs/reference/README.md) ·
