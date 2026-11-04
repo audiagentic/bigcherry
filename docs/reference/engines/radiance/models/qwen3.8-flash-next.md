@@ -37,6 +37,16 @@ tokens, three speculative drafts and the W4H2 helper GEMV. These are
 *engine decode* figures; actual client output varies with draft acceptance,
 text and concurrent prefill.
 
+**These decode figures are from an unpinned client.** The benchmark client that
+produced them sent no temperature, so the text was sampled and the rate follows
+the draft acceptance of whatever was sampled (the RAD23 record found 93% against 43% on
+two builds with identical draft counts and no kernel change). With `temperature: 0`
+on pinned prompts, launcher decode is 100 to 140 tokens/s at one stream
+([RAD23](../../../../planning/active/patching-radiance-rdna3/RAD23.md), decode paragraph),
+and temperature-0 runs on 2026-11-04 measured 91 to 110 at one stream and 211 to 249 at
+six streams on three builds of the four-card layout (with the live placement policy on). Compare builds only with temperature 0
+(or a seed) pinned.
+
 ## What changed the result
 
 | Same-model comparison | Baseline | Updated configuration |
@@ -54,6 +64,29 @@ RDNA2 tail. The engine sends activations and collects partial outputs through
 a pinned-host mailbox. Heat-ranked placement keeps frequently used experts
 on the faster cards. Chunked combine overlaps the reduction of helper
 outputs with their arrival instead of serialising the whole exchange.
+
+## RX 6900 XT tail size, measured 2026-11-04
+
+Two RX 7900 XTX helpers behind the R9700 engine, with and without the RX 6900 XT as a
+tail helper (`flashnext-2xtx` and `flashnext-2xtx-rdna2-tail --budget gfx1030=N`), the
+default mixed heat file, no live policy, temperature 0. Three cold ~50K-token prompts, and
+decode with 512-token prompts and 256 generated tokens; one run of each. KLD and top-1
+against BF16 over 8,240 positions, in two contrasts against the same engine-only control
+(the campaign tool takes at most three arms).
+
+| Tail | Prefill, tokens/s | Decode, 4 streams | Decode, 8 streams | KLD mean | p99.9 | Top-1 |
+|---|---:|---:|---:|---:|---:|---:|
+| none (control row: KLD of engine-only) | 3,158-3,216 | 213 | 291 | 0.0678 | 2.376 | 88.57% |
+| 2 GiB | 3,128-3,180 | 211 | 289 | 0.0631 | 2.348 | 88.34% |
+| 4 GiB | 3,085-3,172 | 208 | 290 | 0.0733 | 3.320 | 87.99% |
+| 8 GiB | 3,087-3,195 | 196 | 266 | 0.0605 | 1.761 | 88.83% |
+
+On this heat file a tail of 2 to 8 GiB adds no prefill or decode speed, and 8 GiB costs about
+8% of multi-stream decode: the slower card takes experts that carry traffic. The 4 GiB row
+breaches the p99.9 gate (+0.94 against +0.5) while 2 and 8 GiB pass; p99.9 over 8,240
+positions rests on about eight positions and placement alone has moved it by around one
+between runs, so a repeat is needed before reading it as a trend. The recorded four-card
+result above uses a 14 GiB tail, where the placement fits the workload.
 
 ## Limits and quality
 
