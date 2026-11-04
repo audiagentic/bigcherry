@@ -33,7 +33,7 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-from ..engine_adapters import EngineAdapter, QualityCommand, SidecarError, SidecarSet
+from ..engine_adapters import EngineAdapter, QualityCommand, SidecarError, SidecarSet, failed_sidecars
 from ..experiment.engine_quality import (
     KldResult, QualityParseError, QualityThresholds, parse_radiance_kld_json, quality_gate,
 )
@@ -190,7 +190,7 @@ def run_quality_capture(
             entry["error"] = str(exc)
         finally:
             entry["sidecars"] = sidecars.stop()
-        bad = [r["name"] for r in entry["sidecars"] if r["killed"] or r["exited_before_stop"]]
+        bad = failed_sidecars(entry["sidecars"], clean_completion=entry.get("returncode") == 0)
         if bad and "error" not in entry:
             entry["error"] = f"sidecar(s) {', '.join(bad)} died or had to be killed"
         if entry.get("returncode") not in (None, 0):
