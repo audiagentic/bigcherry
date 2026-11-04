@@ -26,7 +26,7 @@ plugin = "libr3.so"
 formats = ["w4nl64", "fp8_e4m3_block"]
 rows-kernel = false
 reserve-mib = 1024
-roles = ["helper"]
+roles = ["engine", "helper"]
 
 [arch.gfx1030]
 description = "RDNA2 (Radeon RX 6900 XT): no matrix instructions; PCIe 3.0 x4 on this host"
