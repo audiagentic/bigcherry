@@ -45,6 +45,7 @@
 #include "worker_queue_warm.h"
 #include "worker_epoch.h"
 #include "worker_forced_move.h"
+#include "worker_policy_driver.h"
 
 static volatile sig_atomic_t g_force_report_requested=0;
 
@@ -602,6 +603,44 @@ int main(int argc, char** argv) {
                 return forced->submit(shared,c,epoch_clock.now_ns());
             });
         }
+        std::unique_ptr<r3::policy::Driver> policy_driver;
+        if (helper_index==0 && cfg.policy.enabled) {
+            const char* histogram_prefix=std::getenv("R3_MOE_WORKER_HISTOGRAM");
+            if (!histogram_prefix || !*histogram_prefix || !gpu ||
+                gpu->engine_ranks_!=1 || !gpu->expert_stride()) {
+                std::fprintf(stderr,
+                    "r3_moe_worker: R3_MOE_POLICY_ENABLE needs a one-rank engine, exact expert stride and R3_MOE_WORKER_HISTOGRAM prefix\n");
+                raise_fault(h); lanes.stop_and_join(); return 2;
+            }
+            for(uint32_t layer:cfg.policy.protected_layers)
+                if(layer>=model.layers) {
+                    std::fprintf(stderr,
+                        "r3_moe_worker: R3_MOE_POLICY_PROTECTED_LAYERS contains out-of-model layer %u\n",
+                        layer);
+                    raise_fault(h); lanes.stop_and_join(); return 2;
+                }
+            std::vector<uint8_t> protected_experts(
+                size_t(model.layers)*model.experts,0);
+            for(uint32_t l=0;l<model.layers;++l)
+                for(uint32_t e=0;e<model.experts;++e)
+                    if(std::binary_search(cfg.policy.protected_layers.begin(),
+                                          cfg.policy.protected_layers.end(),l) ||
+                       !model.weight(l,e,0)||!model.weight(l,e,1))
+                        protected_experts[size_t(l)*model.experts+e]=1;
+            auto source=std::make_unique<r3::policy::HistogramFileSource>(
+                std::string(histogram_prefix)+".rank0",model.layers,model.experts);
+            policy_driver=std::make_unique<r3::policy::Driver>(
+                cfg.policy,std::move(source),
+                std::vector<uint64_t>(budgets,budgets+helper_count),
+                gpu->expert_stride(),std::move(protected_experts));
+            if(!policy_driver->start()) {
+                std::fprintf(stderr,"r3_moe_worker: policy worker cannot start (invalid settings, source or budgets)\n");
+                raise_fault(h); lanes.stop_and_join(); return 2;
+            }
+            epoch_cycle.set_forced_proposal([&](void* shared,r3::epoch::Controller& controller) {
+                return policy_driver->submit(shared,controller,epoch_clock.now_ns());
+            });
+        }
         for (uint32_t v; (v = g_stop_word.load(std::memory_order_acquire)) == 0;) {
             if (!epoch_cycle.tick()) {
                 PlacementControl failed{};
@@ -616,9 +655,13 @@ int main(int argc, char** argv) {
             }
             if (forced && epoch_cycle.proposal_controller())
                 forced->observe(*epoch_cycle.proposal_controller(),epoch_clock.now_ns());
+            if (policy_driver && epoch_cycle.proposal_controller())
+                policy_driver->observe(*epoch_cycle.proposal_controller(),map,epoch_clock.now_ns());
             if (g_force_report_requested) {
                 g_force_report_requested=0;
                 if (forced) forced->report(map,gpu->move_ledger()->charged(),gpu->move_bytes_staged(),helper_index);
+                else if (policy_driver)
+                    policy_driver->report(map,helper_index,epoch_clock.now_ns());
                 else std::fprintf(stderr,
                     "placement helper=%u ledger_charged=%llu local_bytes_staged=%llu\n",helper_index,
                     (unsigned long long)gpu->move_ledger()->charged(),
@@ -643,13 +686,19 @@ int main(int argc, char** argv) {
                 (unsigned long long)stopping_phase.transaction_id,
                 stopping_phase.fault_code,record.fault);
         }
+        if (policy_driver) {
+            policy_driver->stop();
+            if (epoch_cycle.proposal_controller())
+                policy_driver->observe(*epoch_cycle.proposal_controller(),map,epoch_clock.now_ns());
+            policy_driver->report(map,helper_index,epoch_clock.now_ns());
+        }
         lanes.stop_and_join();
         if (forced) {
             if (epoch_cycle.proposal_controller())
                 forced->observe(*epoch_cycle.proposal_controller(),epoch_clock.now_ns());
             forced->report(map,gpu->move_ledger()->charged(),gpu->move_bytes_staged(),helper_index);
         }
-        if (!forced) std::fprintf(stderr,
+        if (!forced && !policy_driver) std::fprintf(stderr,
             "placement helper=%u ledger_charged=%llu local_bytes_staged=%llu\n", helper_index,
             (unsigned long long)gpu->move_ledger()->charged(),
             (unsigned long long)gpu->move_bytes_staged());

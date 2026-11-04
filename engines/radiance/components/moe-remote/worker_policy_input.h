@@ -88,9 +88,10 @@ inline LedgerView copy_ledger(const residency::Ledger& ledger, double cost, doub
 // observation sequence never decays heat twice. Incomplete diagnostic-file
 // windows are intentionally not accepted as policy evidence.
 inline bool consume_heat(const HeatDelta& delta, heat::Heat* heat,
-                         uint64_t* previously_consumed) {
+                         uint64_t* previously_consumed, bool accept_unwatermarked_heat = false) {
     if (!heat || !previously_consumed || !delta.complete_cells ||
-        !delta.complete_observations ||
+        !(delta.complete_observations || (accept_unwatermarked_heat &&
+          delta.provenance == HeatProvenance::ENGINE_HISTOGRAM_FILE)) ||
         delta.layers != heat->layers || delta.experts != heat->experts ||
         delta.counts.size() != heat->counts.size() ||
         !delta.interval_observations ||
@@ -139,7 +140,8 @@ inline bool build_input(const OwnerSnapshot& owners,
                         const PolicyControls& controls,
                         uint64_t now_ns, uint64_t cooldown_until_ns,
                         bool deterministic, heat::Input* result,
-                        std::string* why = nullptr) {
+                        std::string* why = nullptr,
+                        bool accept_unwatermarked_heat = false) {
     auto reject = [&](const char* explanation) {
         if (why) *why = explanation;
         return false;
@@ -155,7 +157,9 @@ inline bool build_input(const OwnerSnapshot& owners,
         observation.layers != owners.layers || observation.experts != owners.experts ||
         observation.counts.size() != n || !observation.complete_cells)
         return reject("policy: incomplete or mismatched live snapshot");
-    if (!observation.complete_observations)
+    if (!observation.complete_observations &&
+        !(accept_unwatermarked_heat &&
+          observation.provenance == HeatProvenance::ENGINE_HISTOGRAM_FILE))
         return reject("policy: heat source lacks coherent observation coverage");
     if (!observation.observation_count || !observation.interval_observations ||
         observation.age_ns > controls.max_heat_age_ns ||
@@ -187,7 +191,7 @@ inline bool build_input(const OwnerSnapshot& owners,
         if (!e.bytes || e.target_eligible.size() != owners.helpers ||
             e.last_move_ns > now_ns || owner < -1 || owner >= int32_t(owners.helpers))
             return reject("policy: invalid expert metadata");
-        if (owner >= 0 && (!owners.runtime[i] || e.protected_expert ||
+        if (owner >= 0 && (!owners.runtime[i] ||
                            !e.target_eligible[size_t(owner)]))
             return reject("policy: active owner violates runtime eligibility");
         in.bytes.push_back(e.bytes);
@@ -196,9 +200,10 @@ inline bool build_input(const OwnerSnapshot& owners,
         std::vector<uint8_t> allowed(owners.helpers, 0);
         // Local experts are fixed in stage 1. Protected experts may never
         // be moved, even if a source file happens to exist on a helper.
-        if (owner >= 0 && owners.runtime[i] && !e.protected_expert)
+        if (owner >= 0 && owners.runtime[i])
             for (uint32_t d = 0; d < owners.helpers; ++d)
-                allowed[d] = uint8_t(e.target_eligible[d] == 1);
+                allowed[d] = uint8_t(e.target_eligible[d] == 1 &&
+                                     (!e.protected_expert || d == uint32_t(owner)));
         in.allowed.push_back(std::move(allowed));
         if (owner >= 0) {
             const size_t d = size_t(owner);

@@ -20,7 +20,7 @@ configure = { RADIANCE_SRC = "{engine_source}" }   # the helper builds for every
 # need a GPU, which the CI runner does not have, and run only under an explicit gpu lease. Any other registered test must
 # be declared here, or component-tests fails.
 [test]
-targets = ["r3_moe_shm_test", "r3_moe_backend_test", "r3_worker_share_test", "r3_worker_heat_test", "r3_heat_source_test", "r3_policy_input_test",
+targets = ["r3_moe_shm_test", "r3_moe_backend_test", "r3_worker_share_test", "r3_worker_heat_test", "r3_heat_source_test", "r3_policy_input_test", "r3_policy_live_test", "r3_policy_config_test", "r3_policy_driver_test",
            "r3_moe_epoch_test", "r3_moe_fp8_ref_test", "r3_combine_f16_test", "r3_combine_pool_test",
            "r3_admission_ledger_test", "r3_mailbox_completion_test", "r3_owner_generation_test",
            "r3_worker_slot_pool_test", "r3_replay_bootstrap_test", "r3_rad46_rows_policy_test", "r3_combine_epoch_test",
@@ -124,6 +124,84 @@ summary = "RHP11 slice G test mode: one forced expert exchange through the full 
 default = ""
 status = "diagnostic"
 summary = "RHP11 slice G test mode: a schedule file of forced exchanges (one per line, repeat=N repeats a line) driven through the full placement transaction while serving. Conflicts with R3_MOE_PLACEMENT_FORCE_MOVE. For quality and stability gates only, never for serving"
+
+
+# RHP slice H: live stage-1 policy (no experimental trigger or size defaults).
+
+[setting.R3_MOE_POLICY_PROTECTED_LAYERS]
+default = ""
+status = "experimental"
+summary = "Required explicitly when policy enabled: sorted model-global MTP or other nonmovable layer IDs (e.g. 2,3), or literal none after verifying no protected active layers; no automatic MTP inference"
+
+[setting.R3_MOE_POLICY_ENABLE]
+default = "0"
+status = "experimental"
+summary = "Enable the experimental background stage-1 heat placement driver; disabled by default and exclusive with forced placement mode"
+
+[setting.R3_MOE_POLICY_ACCEPT_UNWATERMARKED_HEAT]
+default = "0"
+status = "experimental"
+summary = "Explicit experiment-only opt-in for unwatermarked R3_MOE_WORKER_HISTOGRAM rank file; no other incomplete source is accepted; evidence marks its use"
+
+[setting.R3_MOE_POLICY_CADENCE_NS]
+default = ""
+status = "experimental"
+summary = "Monotonic nanosecond evaluation cadence, required when enabled"
+
+[setting.R3_MOE_POLICY_MARGIN]
+default = ""
+status = "experimental"
+summary = "Required fractional predicted peak-load improvement threshold in (0,1)"
+
+[setting.R3_MOE_POLICY_MAX_MOVES]
+default = ""
+status = "experimental"
+summary = "Required maximum expert owner changes in one transaction"
+
+[setting.R3_MOE_POLICY_MAX_MOVED_BYTES]
+default = ""
+status = "experimental"
+summary = "Required maximum sum of physical expert slot strides moved per transaction"
+
+[setting.R3_MOE_POLICY_MIN_RESIDENCY_NS]
+default = ""
+status = "experimental"
+summary = "Required monotonic nanosecond minimum dwell since a committed move"
+
+[setting.R3_MOE_POLICY_HEAT_HALF_LIFE_OBSERVATIONS]
+default = ""
+status = "experimental"
+summary = "Required heat half-life in routed expert observations, not seconds"
+
+[setting.R3_MOE_POLICY_MAX_HEAT_AGE_NS]
+default = ""
+status = "experimental"
+summary = "Required maximum histogram file/source age in nanoseconds"
+
+[setting.R3_MOE_POLICY_MIN_SAMPLES]
+default = ""
+status = "experimental"
+summary = "Required minimum credited heat windows per expert"
+
+[setting.R3_MOE_POLICY_ABORT_COOLDOWN_NS]
+default = ""
+status = "experimental"
+summary = "Required cooldown between an aborted transaction and any retry"
+
+[setting.R3_MOE_POLICY_LEARNED_ELIGIBILITY_TTL_NS]
+default = ""
+status = "experimental"
+summary = "Required monotonic duration that aborted (expert,destination) remains ineligible"
+
+[setting.R3_MOE_POLICY_DEVICE_COSTS]
+default = ""
+status = "experimental"
+summary = "Required per-helper comma-separated measured/experiment cost factors; no inferred defaults"
+
+[setting.R3_MOE_POLICY_LAYER_CAPS]
+default = ""
+status = "experimental"
+summary = "Required comma-separated per-helper policy layer caps; explicitly specify 0 for unlimited"
 
 [setting.R3_MOE_WORKER_GEMV]
 default = "1"

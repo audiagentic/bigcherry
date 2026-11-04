@@ -14,7 +14,9 @@
 #include <vector>
 
 namespace r3::policy {
+enum class HeatProvenance : uint8_t { UNKNOWN, ENGINE_HISTOGRAM_FILE };
 struct HeatDelta {
+    HeatProvenance provenance = HeatProvenance::UNKNOWN;
     uint32_t layers = 0, experts = 0;
     std::vector<int32_t> counts;       // interval deltas; row-major model-global IDs
     uint64_t observation_count = 0;   // cumulative routed selections (not engine steps)
@@ -100,6 +102,7 @@ public:
         const uint64_t age = realtime - mtime;
         *out = {};
         out->layers = layers_; out->experts = experts_; out->age_ns = age;
+        out->provenance = HeatProvenance::ENGINE_HISTOGRAM_FILE;
         out->observation_count = total_;
         out->counts.assign(size_t(layers_) * experts_, 0);
         out->complete_cells = true;
