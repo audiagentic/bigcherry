@@ -25,5 +25,6 @@
   "revision": "1e968f6e1d86e2544455b00e9e57c09690d9ea10",
   "stage": "patched",
   "tree_state": "",
-  "updated_at": "2026-10-17T08:54:27.440848+00:00"
+  "updated_at": "2026-10-17T08:54:27.440848+00:00",
+  "public_summary": "## Changes\n\n- Ported the custom Radiance build and RDNA3 expert helpers to upstream v1.7.0. The remote-MoE hand-off, plugin ABI checks and diagnostic build remain available.\n\n## Measurements and validation\n\n- Flash-Next, R9700 + two RX 7900 XTX: prefill 2,049–2,050 tokens/s at 4K input; decode 122–126 tokens/s (512 output) and 140–141 tokens/s (2K output).\n- CPU smoke, plugin ABI checks, strict audit and helper KLD checks passed. The 27B MXFP4 attention comparison also passed.\n\n## Limits\n\n- The helper-row experiment was slower and remains disabled. Performance figures are for the stated model and topology, not a stock-engine comparison."
 }
