@@ -13,3 +13,5 @@ is closed or deleted. The detailed notes are linked; the code lives on the named
 | Multi-row packed-f16 W4 decode GEMV (`GEMV_W4MR`) | RAD23 | Closed unmerged (#506), default-off draft | Never validated end to end; needed its own A/B and KLD. | PR #506 |
 | Rows-kernel accuracy variants (groupfold, outputlane, rb16, quad-DPP and others) | RAD46 | Quality fixed, speed not | See the note. | `RAD46-rows-kernel-accuracy-2026-11.md`; branches `codex/rad46*` |
 | WSL06-A legacy inventory | WSL06 | Superseded | Work-in-progress path inventory; item completed another way. | branch `feat/wsl06a-legacy-inventory` |
+
+Code for every row with a branch is archived as an inert patch under `experiments/radiance/<ITEM>-<name>/` (see `experiments/README.md`); the branches can be deleted. The Codex session's original RAD46 notes and reviews are in `experiments/radiance/RAD46-rad46/`.
