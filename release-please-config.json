@@ -98,7 +98,8 @@
       "release-type": "simple",
       "component": "bc-platform",
       "exclude-paths": [
-        "engines"
+        "engines",
+        "docs/releases/notes"
       ],
       "changelog-path": "docs/releases/PLATFORM_CHANGELOG.md",
       "bump-minor-pre-major": true,
