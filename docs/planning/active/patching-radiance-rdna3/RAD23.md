@@ -261,7 +261,7 @@ stamps, and the budgeted experiments (step 4).
 
 Earlier notes in this item called the third helper's experts "cold" while the XTX helpers' were left unnamed; the launcher owns the
 HOTTEST experts on the XTXs (`heat.rank0.hot-first`, ranking order = hottest first, each helper takes its share of the top). From that
-file (`/work/bigcherry/runs/perf51/heat.rank0.hot-first`, 48 routed layers x 512 experts, 4,421,376 recorded routes; recorded
+file (`run perf51 (heat file)`, 48 routed layers x 512 experts, 4,421,376 recorded routes; recorded
 2026-10-17, the workload that profile run used):
 
 - Two XTX helpers at 22 GiB each own 18,640 experts (9,320 each, 2.417 MiB an expert) = 99.3% of routes.

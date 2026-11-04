@@ -60,7 +60,7 @@ Owner direction 2026-11-02: use the evidence we already have; do not re-run for 
 
 
 
-PROGRESS 2026-11-03, step 1 done (/work/bigcherry/runs/men26-kld; config kld.json, kld-isolate.json from tools/lab/radiance/helper-kld.json).
+PROGRESS 2026-11-03, step 1 done (run men26-kld; config kld.json, kld-isolate.json from tools/lab/radiance/helper-kld.json).
 - Build: origin/main 2f5fc39df (slice C merged); rad0002 patch_validation_subject_digest 663b0856fbc4da97703a059711349be1c5c3cd0373211e701f6e8864f215c947.
 - Reference: freshly recorded engine-local reference (TP2 exact over the two XTX, corpus rad-kld-corpus-4.jsonl, 8240 positions).
 - Determinism: three captures are bit-identical.
