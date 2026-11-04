@@ -17,6 +17,8 @@ on:
     paths:
       - 'engines/radiance/**'
       - '!engines/radiance/**/*.md'
+      - '!engines/radiance/**/*.mdx'
+      - '!engines/radiance/**/docs/**'
       - 'tools/bigcherry/campaign/**'
       - 'tools/bigcherry/core/**'
       - 'tools/bigcherry/build/**'
@@ -122,7 +124,7 @@ jobs:
             export CCACHE_DIR=/src/work/.ccache
             # Absolute paths (include dirs, generated libr3 unit wrappers) are rewritten relative to /src so a
             # build-tree path that differs between runs cannot turn an unchanged unit into a miss.
-            export CCACHE_BASEDIR=/src CCACHE_NOHASHDIR=true
+            export CCACHE_BASEDIR=/src CCACHE_NOHASHDIR=true CCACHE_COMPILERCHECK=content
             mkdir -p work/upstream work/.ccache
             ccache -z
             trap "ccache -s" EXIT
@@ -143,12 +145,29 @@ jobs:
               exit 1
             fi
             python3 -m bigcherry --engine radiance component-tests --build "${builds[0]}"
+            # Fingerprint the successful build inside the CI compiler image.
+            python3 tools/lab/radiance/ci_ccache.py fingerprint --output work/ci-ccache-artifact/compiler.json
           '
 
       - name: Report HIP compilation timings
         if: always()
         continue-on-error: true
         run: python3 .github/scripts/ci_build_profile.py work/builds
+
+      # Only main is a trusted seed: never publish a PR's compiler objects.
+      - name: Package ccache for the lab
+        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        run: python3 tools/lab/radiance/ci_ccache.py pack --cache work/.ccache --out work/ci-ccache-artifact
+
+      - name: Publish verified main ccache
+        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        uses: actions/upload-artifact@v4
+        with:
+          name: radiance-ccache-main
+          path: work/ci-ccache-artifact/*
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
 
       - name: Component test logs
         if: failure()

@@ -1,0 +1,174 @@
+# The helper_common values bc-serve writes into a v1 manifest (spec.processes.helper_common), one row per leaf: the
+# R3_* setting the helper reads today, the value it runs with, and why that is the value (RSC08 S2a).
+#
+# This table is interim. Until S4 the helpers still read their R3_* environment, so the manifest's helper section
+# describes what the launcher runs; at S4 the helpers read the manifest and this table is the one source the writer keeps
+# (the launcher's exports go, nothing runs beside them). tools/tests/lab/test_helper_profile_parity.py diffs it both ways
+# against the component settings, the launcher's exports and `bigcherry layout env`, and fails on any key missing on
+# either side or any value that differs.
+#
+# from: an optional resolver key (`group.name`); the writer takes the resolved value for the leaf from it, so a layout, site
+# file or --set is never overridden by this table. `value` is then the schema default, checked against the setting.
+#
+# basis:
+#   component_default  the value is the setting's `default` in its component.toml (checked equal)
+#   unset_means        the setting's component default is empty: unset is the helper's built-in off/empty/zero, which is
+#                      the value written here (documented per row; the helper code is the authority)
+#   layout             the value comes from the layout: `bigcherry layout env` exports the setting (checked equal)
+#   resolved           the value is the resolver's (a layout, a site file or --set decides it): `value` is only the schema
+#                      default, the writer takes the resolved value named by `from`; checked for every layout
+#   launcher_literal   a hand-picked value the launcher sets itself; a tunable to derive or calibrate, not a final default
+#                      (none in helper_common today; the five handoff literals are in the handoff section)
+
+[[row]]
+leaf = "cpu/reference"
+setting = "R3_MOE_WORKER_CPU"
+value = false
+basis = "component_default"
+
+[[row]]
+leaf = "cpu/affinity"
+setting = "R3_MOE_WORKER_CPU_SET"
+value = "auto"
+basis = "component_default"
+
+[[row]]
+leaf = "runtime/power_save"
+setting = "R3_MOE_WORKER_POWER_SAVE"
+value = true
+basis = "component_default"
+
+[[row]]
+leaf = "runtime/queue_warm"
+setting = "R3_MOE_WORKER_QUEUE_WARM"
+value = false
+basis = "unset_means"
+
+[[row]]
+leaf = "gemv/mode"
+setting = "R3_MOE_WORKER_GEMV"
+value = 1
+basis = "component_default"
+
+[[row]]
+leaf = "gemv/wide"
+setting = "R3_MOE_WORKER_GEMV_WIDE"
+value = true
+basis = "component_default"
+
+[[row]]
+leaf = "gemv/h2"
+setting = "R3_MOE_WORKER_GEMV_H2"
+value = 2
+basis = "component_default"
+
+[[row]]
+leaf = "gemv/w4h2"
+setting = "R3_MOE_WORKER_GEMV_W4H2"
+value = true
+basis = "component_default"
+
+[[row]]
+leaf = "gemv/mr"
+setting = "R3_MOE_WORKER_GEMV_MR"
+value = false
+basis = "component_default"
+
+[[row]]
+leaf = "lanes/small_lanes"
+setting = "R3_MOE_WORKER_SMALL_LANES"
+value = []
+basis = "unset_means"
+
+[[row]]
+leaf = "lanes/rows"
+setting = "R3_MOE_WORKER_ROWS"
+value = false
+basis = "component_default"
+
+[[row]]
+leaf = "lanes/rows_small"
+setting = "R3_MOE_WORKER_ROWS_SMALL"
+value = false
+basis = "unset_means"
+
+[[row]]
+leaf = "combine/enabled"
+setting = "R3_MOE_WORKER_COMBINE"
+value = false
+basis = "resolved"
+from = "helper.combine"
+
+[[row]]
+leaf = "combine/min_rows"
+setting = "R3_MOE_WORKER_COMBINE_MIN_ROWS"
+value = 256
+basis = "component_default"
+from = "helper.combine_min_rows"
+
+[[row]]
+leaf = "combine/threads"
+setting = "R3_MOE_WORKER_COMBINE_THREADS"
+value = 8
+basis = "component_default"
+from = "helper.combine_threads"
+
+[[row]]
+leaf = "kernels/native"
+setting = "R3_MOE_NATIVE"
+value = true
+basis = "component_default"
+
+[[row]]
+leaf = "kernels/fp16"
+setting = "R3_MOE_FP16"
+value = true
+basis = "component_default"
+
+[[row]]
+leaf = "kernels/ahalf"
+setting = "R3_MOE_AHALF"
+value = true
+basis = "component_default"
+
+[[row]]
+leaf = "kernels/moe_form"
+setting = "R3_MOE_WORKER_MOE_FORM"
+value = 0
+basis = "component_default"
+
+[[row]]
+leaf = "kernels/moe_long_rows"
+setting = "R3_MOE_WORKER_MOE_LONG_ROWS"
+value = 0
+basis = "unset_means"
+
+[[row]]
+leaf = "kernels/fuseroute"
+setting = "R3_MOE_WORKER_FUSEROUTE"
+value = true
+basis = "component_default"
+
+[[row]]
+leaf = "kernels/vecio"
+setting = "R3_MOE_WORKER_VECIO"
+value = true
+basis = "component_default"
+
+[[row]]
+leaf = "kernels/sparse_act"
+setting = "R3_MOE_WORKER_SPARSE_ACT"
+value = true
+basis = "component_default"
+
+[[row]]
+leaf = "kernels/lane_quant"
+setting = "R3_MOE_WORKER_LANE_QUANT"
+value = true
+basis = "component_default"
+
+[[row]]
+leaf = "placement/balance"
+setting = "R3_MOE_WORKER_BALANCE"
+value = false
+basis = "unset_means"
