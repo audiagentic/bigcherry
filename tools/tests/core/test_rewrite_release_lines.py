@@ -42,12 +42,14 @@ class RewriteTests(unittest.TestCase):
         odd = f"* subject with no issue link ([aaaaaaa](https://github.com/o/r/commit/{SHA_A}))"
         self.assertEqual(mod.rewrite(odd, RULES), odd)
 
-    def test_the_shipped_rules_load_and_never_contain_the_words_they_replace(self):
+    def test_the_shipped_rules_load_and_carry_plain_replacement_text(self):
+        # The forbidden-terms scan guards the rule file itself, so this test must not name the rejected words:
+        # it checks structure only (a full sha, no environment-variable-style tokens in the replacement).
         rules = mod.load_rules(ROOT / ".github" / "release-line-rewrites.toml")
         self.assertGreaterEqual(len(rules), 2)
         for sha, text in rules.items():
             self.assertEqual(len(sha), 40)
-            self.assertNotRegex(text, r"(?i)brutus|BC_CACHE_ROOT")
+            self.assertNotRegex(text, r"\b[A-Z][A-Z0-9]*_[A-Z0-9_]+\b")
 
     def test_rule_file_validation_fails_closed(self):
         for bad in ('[[line]]\nsha = "abc"\ntext = "x"\n', f'[[line]]\nsha = "{SHA_A}"\ntext = " "\n',
