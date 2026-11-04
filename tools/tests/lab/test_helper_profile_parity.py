@@ -117,6 +117,9 @@ class HelperProfileParityTests(unittest.TestCase):
         # The writer takes helper.combine from the resolver, whose recipe_for() snapshots layouts.toml: for every layout the
         # recipe's combine flag is what the layout exports as R3_MOE_WORKER_COMBINE (unset: the setting's default, off).
         layouts = tomllib.loads((REPO / "engines" / "radiance" / "layouts.toml").read_text(encoding="utf-8"))["layout"]
+        # a layout with no helpers (qwen27b-2xtx: two engine ranks, no expert offload) is not a remote-MoE serving layout; the
+        # resolver refuses it by name ("unknown named layout, no fallback") until bc-serve serves tensor-parallel dense models
+        layouts = {n: b for n, b in layouts.items() if b.get("helper")}
         text = (SERVING / "serving.cpp").read_text(encoding="utf-8")
         recipes = {}
         for m in re.finditer(r'if \(name == "([a-z0-9-]+)"\)\s*return \{(true|false), (true|false), (true|false),', text):
