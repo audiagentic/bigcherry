@@ -59,6 +59,8 @@ No hand-picked constants (derive from the container, layout and runtime); no com
 
 Source: model-constants audit 2026-11-04 (55 findings; report and findings.json kept in the work root, not in git). Plan ownership per the audit: RCS09 shape negotiation and per-kernel limits, RCS10 generic-model coverage, RSC05 layout and device resolution, RSC06 typed helper loader, RSC07 engine loader, RSC08 unified manifest and launch cutover, RSC03 calibrated resource plan, RAD19 performance experiments. These are assignments, not completed items.
 
+2026-11-04: step 1 STATIC half done. tools/bigcherry/model_constants.py scans engines/radiance/components, patch payloads and tools/lab/radiance for model-shaped literals (2560, 640, 384, 160, 49, .rad paths) and the symbols the audit found them behind (kActivationBf16Bytes, kActivationQBytes, kLegacyIntermediate, kExpertWidth, kRankWidth, kHidden, kMaxRoutes); engines/radiance/model_constant_guard.toml classifies the 99 current hits (94 entries, A/B/C/D/E). C and D entries name an OPEN plan item as owner and become invalid when it completes, so fixing a finding means deleting its entry in the same change. tools/tests/core/test_model_constants.py runs it on the real tree and mutation-checks the checker on a synthetic tree. NOT done: the DYNAMIC half (Container/fake geometry and layout_for at Flash-Next plus two synthetic shapes, a C++ card-free test), the getenv(R3_*) and numeric 512/10 scans (declared settings are audited by the component gate; the bare numbers are too ambiguous to scan without dataflow), and steps 2-7 (the fixes).
+
 ## Change Log
 
 - 2026-11-04T08:38:41.932631+00:00 (created-by): Created by agent
@@ -66,5 +68,9 @@ Source: model-constants audit 2026-11-04 (55 findings; report and findings.json 
 
 ## Ledger-events
 
+
 - chg_20261104_083930_a-plan-item-now-tracks-making_2415
 - 2026-11-04T08:39:34.906520+00:00 (updated-by): Updated: section:ledger-events
+- 2026-11-04T22:37:02.085119+00:00 (updated-by): Updated: section:notes
+- chg_20261104_223702_a-new-test-blocks-model-specif_4673
+- 2026-11-04T22:37:06.168768+00:00 (updated-by): Updated: section:ledger-events
