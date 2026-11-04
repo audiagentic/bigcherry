@@ -232,6 +232,8 @@ class ReleaseRecord:
     promotion: dict[str, Any] | None = None
     #: Free-form notes -- in practice, why a release is `broken`.
     notes: str = ""
+    # BU01: one immutable, verified runtime asset receipt per GitHub release tag.
+    runtime_assets: dict[str, dict[str, str]] = field(default_factory=dict)
     first_seen: str = ""
     updated_at: str = ""
 
@@ -277,6 +279,8 @@ class ReleaseRecord:
     def validate(self) -> None:
         """Reject malformed persisted records before they become evidence."""
         _validate_stage(self.stage)
+        if not isinstance(self.runtime_assets, dict) or any(not isinstance(k, str) or not isinstance(v, dict) for k, v in self.runtime_assets.items()):
+            raise ValueError("release record runtime_assets must map release tags to asset receipts")
         if not isinstance(self.revision, str) or not self.revision.strip():
             raise ValueError("release record has no source revision")
         if not isinstance(self.release_tag, str):

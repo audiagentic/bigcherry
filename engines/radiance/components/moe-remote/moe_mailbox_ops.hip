@@ -3,6 +3,7 @@
 #include "moe_remote_hook.h"
 #include "step_ticket_kernel.h"
 #include "mailbox_completion.h"
+#include "mailbox_inverse_kernel.h"
 #include "moe_remote_shm.h"
 #include "rad_abi.h"
 
@@ -480,12 +481,6 @@ __global__ void mailbox_route_mark_kernel(
     }
 }
 
-__global__ void mailbox_inverse_kernel(const int32_t* sorted, int32_t* inv, uint32_t slots) {
-    const uint32_t i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i >= slots) return;
-    const int32_t flat = sorted[i];
-    if (flat >= 0 && (uint32_t)flat < slots) inv[flat] = (int32_t)i;
-}
 
 /* Stream-ordered identity gate: launch_maps runs mailbox_route_mark_kernel
  * first and verifies each engine-owned Request's sequence/epoch/slot against
@@ -898,7 +893,7 @@ int launch_maps(R3MoeMailboxDevice* d, RadStream stream, const int32_t* sorted, 
     hipLaunchKernelGGL(mailbox_route_mark_kernel, dim3((slots + 255u) / 256u), dim3(256), 0,
                        (hipStream_t)stream, static_cast<uint8_t*>(d->mailbox),
                        d->sequence, d->published, d->rank, d->helpers, ew, d->rmask, rows, hidden, top_k);
-    hipLaunchKernelGGL(mailbox_inverse_kernel, dim3((slots + 255u) / 256u), dim3(256), 0,
+    hipLaunchKernelGGL(r3_mailbox_inverse::mailbox_inverse_kernel, dim3((slots + 255u) / 256u), dim3(256), 0,
                        (hipStream_t)stream, sorted, d->inv, slots);
     return hipGetLastError() == hipSuccess ? RAD_OK : RAD_E_DEVICE;
 }

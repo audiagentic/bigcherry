@@ -1,0 +1,437 @@
+#include "manifest_writer.h"
+
+#include "calibration.h"
+#include "experts.h"
+#include "jcs.h"
+#include "ledger.h"
+#include "owner_map.h"
+#include "serving_codec.h"
+#include "sha256.h"
+#include "third_party/toml.hpp"
+#include "v1/manifest.h"
+
+#include <fcntl.h>
+#include <linux/fs.h>
+#include <sys/stat.h>
+#include <sys/syscall.h>
+#include <unistd.h>
+
+#include <cerrno>
+#include <cstring>
+
+#include <fstream>
+#include <map>
+#include <sstream>
+#include <stdexcept>
+
+namespace bc::serving {
+namespace {
+using Json = nlohmann::json;
+namespace fs = std::filesystem;
+
+// serving/helper_profile.toml, embedded at build time (CMakeLists.txt writes helper_profile_seed.inc).
+constexpr const char kHelperProfile[] =
+#include "helper_profile_seed.inc"
+    ;
+
+[[noreturn]] void fail(const std::string& what) { throw std::runtime_error(what); }
+
+std::string slurp(const fs::path& p) {
+    std::ifstream in(p, std::ios::binary);
+    if (!in) fail("cannot read " + p.string());
+    std::ostringstream s;
+    s << in.rdbuf();
+    return s.str();
+}
+
+Json record(const char* origin, const char* source, const char* cls, const char* confidence,
+            Json inputs = Json::array()) {
+    return {{"origin", origin}, {"source", source}, {"class", cls}, {"lifecycle", "startup_only"},
+            {"confidence", confidence}, {"inputs", std::move(inputs)}};
+}
+
+std::vector<std::string> split(const std::string& text, char sep) {
+    std::vector<std::string> out;
+    std::string cur;
+    for (char c : text) {
+        if (c == sep) { out.push_back(cur); cur.clear(); }
+        else cur += c;
+    }
+    if (!cur.empty()) out.push_back(cur);
+    return out;
+}
+
+/* spec.processes.helper_common from helper_profile.toml: one row a leaf, "group/field". */
+Json helper_common(const Json& values) {
+    Json out = Json::object();
+    toml::table doc;
+    try { doc = toml::parse(std::string_view(kHelperProfile), std::string_view("helper_profile.toml")); }
+    catch (const toml::parse_error& e) { fail(std::string("helper_profile.toml: ") + e.what()); }
+    const auto* rows = doc["row"].as_array();
+    if (!rows) fail("helper_profile.toml: no rows");
+    for (const toml::node& n : *rows) {
+        const auto* row = n.as_table();
+        const auto* leaf = row ? (*row)["leaf"].as_string() : nullptr;
+        const toml::node* value = row ? row->get("value") : nullptr;
+        if (!leaf || !value) fail("helper_profile.toml: a row needs leaf and value");
+        const std::vector<std::string> path = split(leaf->get(), '/');
+        if (path.size() != 2) fail("helper_profile.toml: leaf " + leaf->get() + " is not group/field");
+        Json v;
+        if (auto b = value->as_boolean()) v = b->get();
+        else if (auto i = value->as_integer()) v = i->get();
+        else if (auto s = value->as_string()) v = s->get();
+        else if (auto a = value->as_array(); a && a->empty()) v = Json::array();
+        else fail("helper_profile.toml: leaf " + leaf->get() + " has a value of no supported kind");
+        // A row naming a resolver key takes the resolved value (layout, site file or --set), not the table's default.
+        if (const auto* from = (*row)["from"].as_string()) {
+            const std::vector<std::string> key = split(from->get(), '.');
+            if (key.size() != 2 || !values.contains(key[0]) || !values.at(key[0]).contains(key[1]))
+                fail("helper_profile.toml: leaf " + leaf->get() + " names resolver key " + from->get() + " which is not resolved");
+            v = values.at(key[0]).at(key[1]);
+        }
+        out[path[0]][path[1]] = std::move(v);
+    }
+    return out;
+}
+
+Json facts_of(const Json& f) {
+    const Json& h = f.at("host");
+    Json cgroups = Json::array();
+    for (const Json& c : h.at("memory_cgroups"))
+        cgroups.push_back({{"path", c.at("dir")}, {"room_mib", c.at("room_mib")}});
+    Json gpus = Json::array();
+    for (const Json& g : f.at("gpus"))
+        gpus.push_back({{"bdf", g.at("bdf")}, {"arch", g.at("arch")}, {"hip_ordinal", g.at("hip_ordinal")},
+                        {"vram", {{"total_mib", g.at("vram_total_mib")}, {"available_mib", g.at("vram_available_mib")}}}});
+    const Json& pin = h.at("amdgpu_pin");
+    return {{"source", f.at("source")},
+            {"host",
+             {{"memory",
+               {{"total_mib", h.at("mem_total_mib")}, {"available_mib", h.at("mem_available_mib")},
+                {"swap_total_mib", h.at("swap_total_mib")}, {"shm_available_mib", h.at("shm_available_mib")},
+                {"cgroup_limits", cgroups},
+                {"pin_cap_mib", pin.at("lifted").get<bool>() || !pin.at("loaded").get<bool>() ? Json(nullptr) : pin.at("cap_mib")},
+                {"memlock_limit_mib", h.at("memlock").at("limit_mib")}}},
+              {"cpu", {{"count", h.at("cpu_count")}}}}},
+            {"gpus", gpus}};
+}
+
+Residence residence_of(v1::Residence r) {
+    switch (r) {
+        case v1::Residence::kPinned: return Residence::pinned;
+        case v1::Residence::kMlocked: return Residence::mlocked;
+        case v1::Residence::kPageable: return Residence::pageable;
+    }
+    return Residence::pageable;
+}
+
+Json calibration_entries(const Resolved& r, const fs::path& cache) {
+    const Calibration cal = Calibration::standard(cache);
+    const CalibrationMatch at{"", r.values.at("layout").at("name").get<std::string>(),
+                              r.values.at("service").at("objective").get<std::string>()};
+    Json out = Json::array();
+    for (std::string_view key : v1::kCalibrationKeyNames) {
+        const auto c = cal.find("calibration." + std::string(key), at);
+        if (!c) continue;   // a parameter the objective does not use (e.g. no KV backing floor for throughput)
+        out.push_back({{"key", key}, {"value", c->value}, {"source", c->source}, {"seeded", c->seeded}, {"evidence", c->evidence}});
+    }
+    return out;
+}
+
+/* spec.resources.host: the values the launcher runs with, and the checkpoint slots the RSC03 host ledger plans for
+ * them (measured consumers and checkpoint store from the plan, the calibrated share and host KV tier target). */
+Json resources_of(const ManifestInputs& in, const Json& calibration) {
+    const Json& mem = in.resolved.values.at("memory");
+    auto cal = [&](const char* key) -> const Json* {
+        for (const Json& e : calibration)
+            if (e.at("key") == key) return &e.at("value");
+        return nullptr;
+    };
+    LedgerInputs li;
+    li.host_facts = in.resolved.facts.at("host");
+    li.reserve_mib = mem.at("host_reserve_mib");
+    for (const v1::PlanHostConsumer& c : in.plan.plan.host)
+        li.consumers.push_back({c.name, static_cast<uint64_t>(c.bytes), residence_of(c.residence), c.from, c.remedy});
+    li.checkpoints = {static_cast<uint64_t>(in.plan.plan.checkpoints.slot_bytes), static_cast<uint64_t>(in.plan.plan.checkpoints.floor_slots),
+                      static_cast<uint64_t>(in.plan.plan.checkpoints.want_slots), in.plan.plan.checkpoints.from, "want", "plan"};
+    if (const Json* share = cal("checkpoint_share")) {
+        li.checkpoints.share = share->get<std::string>();
+        li.checkpoints.share_from = "calibration.checkpoint_share";
+    }
+    li.retention_keep = in.resolved.values.at("service").at("retention") == "keep";
+    li.min_tier_bytes = static_cast<uint64_t>(in.plan.plan.kv_one_session.bytes);
+    // One value for the host KV tier: the manifest's resources.host.kv_mib is what the launcher runs with, so the ledger
+    // plans for exactly that. A calibration target that disagrees would make the ledger plan for a tier the run does not
+    // get; refuse it rather than pick one.
+    const uint64_t kv_mib = mem.at("host_kv_mib").get<uint64_t>();
+    if (const Json* target = cal("host_kv_tier.target_mib"))
+        if (target->get<uint64_t>() != kv_mib)
+            fail("resources.host.kv_mib (" + std::to_string(kv_mib) + ") differs from calibration host_kv_tier.target_mib (" +
+                 std::to_string(target->get<uint64_t>()) + "): the memory plan would not match the run");
+    li.tier_target_bytes = kv_mib << 20;
+    const Ledger ledger = host_ledger(li);
+    return {{"pool_mib", mem.at("host_pool_mib")}, {"kv_mib", mem.at("host_kv_mib")}, {"reserve_mib", mem.at("host_reserve_mib")},
+            {"checkpoint_slots", ledger.checkpoint_slots}};
+}
+
+Json handoff_of(const Json& v) {
+    const Json& h = v.at("handoff");
+    return {{"transport",
+             {{"shm", h.at("shm")}, {"max_rows", h.at("max_rows")}, {"small_rows", h.at("small_rows")},
+              {"gemv_large_rows", h.at("gemv_large_rows")}, {"skip_owned", h.at("skip_owned")}}},
+            {"placement", {{"strategy", h.at("placement")}, {"heat_file", h.at("heat")}}},
+            {"telemetry",
+             {{"histogram_file", h.at("histogram").get<std::string>().empty() ? Json(nullptr) : h.at("histogram")},
+              {"period_s", h.at("histogram_period_s")}}},
+            {"kernels", {{"moe_down_tile", h.at("moe_down_tile").get<bool>() ? 1 : 0}}}};
+}
+
+Json engine_of(const Json& v) {
+    const Json& e = v.at("engine");
+    return {{"device", {{"gpus", Json::array({v.at("layout").at("engine_card")})}}},
+            {"runtime", {{"radiance_home", e.at("radiance_home")}, {"kernels", split(e.at("kernels"), ',')}}},
+            {"server", {{"port", e.at("port")}}},
+            {"scheduler", {{"tp", e.at("tp")}, {"max_num_batched_tokens", e.at("max_num_batched_tokens")},
+                           {"checkpoint_interval", e.at("checkpoint_interval")}}},
+            {"execution",
+             {{"placement", e.at("placement")}, {"ngram_placement", e.at("ngram_placement")},
+              {"kv_cache_dtype", e.at("kv_cache_dtype")}, {"num_speculative_tokens", e.at("num_speculative_tokens")},
+              {"rope_scaling", e.at("rope_scaling")}, {"prefix_resume", e.at("prefix_resume")}}}};
+}
+
+Json helpers_of(const Resolved& r) {
+    Json out = Json::array();
+    const Json& ph = r.manifest.at("process_helpers");
+    for (size_t i = 0; i < ph.size(); ++i) {
+        const Json& h = ph[i];
+        out.push_back({{"role", "helper" + std::to_string(i)}, {"gpu", h.at("bdf")}, {"vram_budget_mib", h.at("budget_mib")},
+                       {"plugin_file", h.at("plugin_file")}, {"formats", h.at("formats")}, {"rows_kernel", h.at("rows_kernel")},
+                       {"tier", h.at("placement")}, {"share", h.at("share")}});
+    }
+    return out;
+}
+
+Json static_provenance() {
+    Json p = Json::object();
+    p[""] = record("schema_default", "serving contract v1", "policy", "exact");
+    p["/spec/intent/model"] = record("site", "site.toml:engine.model", "policy", "exact");
+    p["/spec/intent/layout"] = record("profile", "layout selection (layouts.toml)", "policy", "exact");
+    p["/spec/intent/service"] = record("profile", "serving profile (bc-serve --profile)", "policy", "exact");
+    p["/spec/facts"] = record("detected", "bc-serve detect: kfd+sysfs+proc+statvfs+cgroup", "fact", "exact");
+    p["/spec/calibration"] = record("calibrated", "calibration seeds and cache selected by layout and objective", "tuned", "measured",
+                                    Json::array({"/spec/intent/layout", "/spec/intent/service/objective"}));
+    p["/spec/resources"] = record("derived", "RSC03 host ledger over the measured plan", "derived", "estimate",
+                                  Json::array({"/spec/facts/host", "/spec/calibration", "/spec/plan/engine_memory/expected"}));
+    p["/spec/handoff/transport/shm"] = record("derived", "launcher shared-memory name", "derived", "exact");
+    p["/spec/handoff/transport"] = record("profile", "flashnext launcher transport literals (interim hand-picked tunables; RSC08: derive or calibrate)", "derived", "estimate");
+    p["/spec/handoff/placement"] = record("derived", "layout and heat policy", "derived", "exact", Json::array({"/spec/intent/layout"}));
+    p["/spec/handoff/telemetry"] = record("site", "site.toml:handoff", "policy", "exact");
+    p["/spec/handoff/kernels"] = record("profile", "flashnext launcher kernel literals (interim hand-picked tunables; RSC08: derive or calibrate)", "derived", "estimate");
+    p["/spec/processes/engine/device"] = record("derived", "layout engine card", "derived", "exact", Json::array({"/spec/facts/gpus", "/spec/intent/layout"}));
+    p["/spec/processes/engine/runtime"] = record("site", "site.toml:engine runtime; architecture catalogue", "policy", "exact");
+    p["/spec/processes/engine/server"] = record("site", "site.toml:engine port", "policy", "exact");
+    p["/spec/processes/engine/scheduler"] = record("profile", "bc-serve resolver defaults and serving intent (interim)", "derived", "estimate", Json::array({"/spec/intent/service"}));
+    p["/spec/processes/engine/execution"] = record("profile", "serving profile", "policy", "exact");
+    p["/spec/processes/helper_common"] = record("profile", "serving/helper_profile.toml (parity-tested against the launcher and component settings)", "policy", "exact");
+    p["/spec/processes/helpers"] = record("derived", "archs.toml, layout and budget derivation", "derived", "estimate",
+                                          Json::array({"/spec/facts/gpus", "/spec/intent/layout", "/spec/calibration"}));
+    p["/spec/plan"] = record("derived", "bc::experts owner selection and the rad0011 measured plan", "derived", "estimate",
+                             Json::array({"/spec/intent", "/spec/facts", "/spec/calibration"}));
+    return p;
+}
+
+/* resolver key -> the manifest leaf it becomes. Only these leaves can carry a resolved origin of their own. */
+const std::map<std::string, std::string>& leaf_of_key() {
+    static const std::map<std::string, std::string> m = {
+        {"engine.model", "/spec/intent/model"}, {"layout.name", "/spec/intent/layout"},
+        {"service.objective", "/spec/intent/service/objective"}, {"service.max_sessions", "/spec/intent/service/max_sessions"},
+        {"service.max_context", "/spec/intent/service/max_context_tokens"}, {"service.retention", "/spec/intent/service/retention"},
+        {"service.quality", "/spec/intent/service/quality"},
+        {"engine.radiance_home", "/spec/processes/engine/runtime/radiance_home"}, {"engine.kernels", "/spec/processes/engine/runtime/kernels"},
+        {"engine.port", "/spec/processes/engine/server/port"}, {"engine.tp", "/spec/processes/engine/scheduler/tp"},
+        {"engine.max_num_batched_tokens", "/spec/processes/engine/scheduler/max_num_batched_tokens"},
+        {"engine.checkpoint_interval", "/spec/processes/engine/scheduler/checkpoint_interval"},
+        {"engine.placement", "/spec/processes/engine/execution/placement"}, {"engine.ngram_placement", "/spec/processes/engine/execution/ngram_placement"},
+        {"engine.kv_cache_dtype", "/spec/processes/engine/execution/kv_cache_dtype"},
+        {"engine.num_speculative_tokens", "/spec/processes/engine/execution/num_speculative_tokens"},
+        {"engine.rope_scaling", "/spec/processes/engine/execution/rope_scaling"}, {"engine.prefix_resume", "/spec/processes/engine/execution/prefix_resume"},
+        {"memory.host_pool_mib", "/spec/resources/host/pool_mib"}, {"memory.host_kv_mib", "/spec/resources/host/kv_mib"},
+        {"memory.host_reserve_mib", "/spec/resources/host/reserve_mib"},
+        {"handoff.shm", "/spec/handoff/transport/shm"}, {"handoff.max_rows", "/spec/handoff/transport/max_rows"},
+        {"handoff.small_rows", "/spec/handoff/transport/small_rows"}, {"handoff.gemv_large_rows", "/spec/handoff/transport/gemv_large_rows"},
+        {"handoff.skip_owned", "/spec/handoff/transport/skip_owned"}, {"handoff.moe_down_tile", "/spec/handoff/kernels/moe_down_tile"},
+        {"handoff.histogram", "/spec/handoff/telemetry/histogram_file"}, {"handoff.histogram_period_s", "/spec/handoff/telemetry/period_s"},
+        {"handoff.placement", "/spec/handoff/placement/strategy"}, {"handoff.heat", "/spec/handoff/placement/heat_file"},
+        {"helper.combine", "/spec/processes/helper_common/combine/enabled"},
+        {"helper.combine_min_rows", "/spec/processes/helper_common/combine/min_rows"},
+        {"helper.combine_threads", "/spec/processes/helper_common/combine/threads"},
+    };
+    return m;
+}
+
+/* The record at the nearest ancestor of `pointer` in `p` (the class and confidence its leaves already have). */
+const Json* covering(const Json& p, std::string pointer) {
+    while (true) {
+        if (p.contains(pointer)) return &p.at(pointer);
+        if (pointer.empty()) return nullptr;
+        pointer.erase(pointer.find_last_of('/'));
+    }
+}
+
+/* Records for the manifest: the static records say how each section is produced; a leaf the operator set (--set, the site
+ * file, the serving profile) gets its own record from Resolved::provenance, so an override is never filed under the
+ * section's default origin. Class stays the class the leaf has at its position (the covering record's). */
+Json provenance_of(const Resolved& r) {
+    Json p = static_provenance();
+    for (const auto& [key, pointer] : leaf_of_key()) {
+        if (!r.provenance.contains(key)) continue;
+        const Json& rp = r.provenance.at(key);
+        const std::string origin = rp.at("origin").get<std::string>();
+        if (origin != "cli" && origin != "site" && origin != "profile") continue;
+        const Json* base = covering(p, pointer);
+        if (!base) continue;
+        p[pointer] = record(origin.c_str(), rp.at("source").get<std::string>().c_str(), base->at("class").get<std::string>().c_str(),
+                            "exact");
+    }
+    return p;
+}
+
+std::string digest_of(Json doc) {
+    doc["metadata"].erase("content_digest");
+    std::string bytes, why;
+    if (!jcs_canonicalize(doc, &bytes, &why)) fail("cannot canonicalize the manifest: " + why);
+    return "sha256:" + sha256_hex(bytes);
+}
+
+v1::Manifest checked_decode(const Json& doc, const char* step) {
+    v1::Manifest m;
+    if (const v1::Status e = v1::decode(doc, "", &m))
+        fail(std::string(step) + ": " + (e->path.empty() ? std::string() : e->path + ": ") + e->message);
+    return m;
+}
+
+std::string sha_hex_of_zero() { return std::string(64, '0'); }
+}  // namespace
+
+std::string new_instance_id() {
+    std::string id = slurp("/proc/sys/kernel/random/uuid");
+    while (!id.empty() && (id.back() == '\n' || id.back() == ' ')) id.pop_back();
+    if (id.size() != 36) fail("the kernel gave no UUID");
+    return id;
+}
+
+std::string file_sha256(const fs::path& file) { return sha256_hex(slurp(file)); }
+
+BuiltManifest build_manifest(const ManifestInputs& in) {
+    const Json& values = in.resolved.values;
+    const Json calibration = calibration_entries(in.resolved, in.calibration_cache);
+    const std::string model = values.at("engine").at("model");
+    bc::experts::Container container;
+    if (!container.open(model.c_str())) fail("cannot open the model container " + model);
+
+    Json spec = {{"intent",
+                  {{"model", model}, {"layout", values.at("layout").at("name")},
+                   {"service",
+                    {{"profile", in.profile}, {"objective", values.at("service").at("objective")},
+                     {"max_sessions", values.at("service").at("max_sessions")},
+                     {"max_context_tokens", values.at("service").at("max_context")},
+                     {"retention", values.at("service").at("retention")}, {"quality", values.at("service").at("quality")}}}}},
+                 {"facts", facts_of(in.resolved.facts)},
+                 {"calibration", calibration},
+                 {"resources", {{"host", resources_of(in, calibration)}}},
+                 {"handoff", handoff_of(values)},
+                 {"processes",
+                  {{"engine", engine_of(values)}, {"helper_common", helper_common(values)}, {"helpers", helpers_of(in.resolved)}}},
+                 {"plan",
+                  {{"owner_map", {{"owner_map_sha256", sha_hex_of_zero()}, {"helpers", Json::array()}}},
+                   {"engine_memory",
+                    {{"cache_version", 1}, {"cache_key", sha_hex_of_zero()},
+                     {"model_identity", in.plan_key_inputs.at("model")}, {"engine_identity", in.plan_key_inputs.at("engine_build")},
+                     {"expected", in.plan.plan_json}, }}}}};
+    Json doc = {{"apiVersion", v1::kApiVersion}, {"kind", v1::kKind},
+                {"metadata",
+                 {{"instance_id", in.instance_id}, {"producer", {{"name", "bc-serve"}, {"build_sha256", in.producer_sha256}}},
+                  {"contract_version", v1::kContractVersion}, {"content_digest", "sha256:" + sha_hex_of_zero()}}},
+                {"spec", std::move(spec)}, {"provenance", provenance_of(in.resolved)}};
+
+    // The owner map is the planner's answer for the placement this very document declares: decode a draft with an empty
+    // map, ask the shared planner (the policies come from the draft), write its sets and digests into the document.
+    {
+        const std::size_t helper_count = doc.at("spec").at("processes").at("helpers").size();
+        Json draft = doc;
+        Json empty = Json::array();
+        for (std::size_t i = 0; i < helper_count; ++i)
+            empty.push_back({{"owned_sha256", sha_hex_of_zero()}, {"count", 0}, {"bytes", 0}, {"experts", Json::array()}});
+        draft["spec"]["plan"]["owner_map"]["helpers"] = empty;
+        const v1::Manifest m = checked_decode(draft, "draft manifest");
+        bc::experts::OwnerMap planned;
+        std::string why;
+        if (!bc::experts::plan_owners(container, owner_policies(m), helper_archs(m), helper_budgets(m), &planned, &why))
+            fail("the declared placement cannot be planned for this model: " + why);
+        Json helpers = Json::array();
+        std::string all;
+        for (std::size_t i = 0; i < planned.helpers.size(); ++i) {
+            Json experts = Json::array();
+            std::vector<std::array<int64_t, 2>> pairs;
+            for (auto [l, e] : planned.helpers[i].expert) {
+                experts.push_back(Json::array({l, e}));
+                pairs.push_back({static_cast<int64_t>(l), static_cast<int64_t>(e)});
+            }
+            const std::string segment = v1::owner_segment(i, pairs);
+            all += segment;
+            helpers.push_back({{"owned_sha256", sha256_hex(segment)}, {"count", experts.size()},
+                               {"bytes", planned.helpers[i].bytes}, {"experts", experts}});
+        }
+        doc["spec"]["plan"]["owner_map"] = {{"owner_map_sha256", sha256_hex(all)}, {"helpers", helpers}};
+    }
+    // The plan cache key follows from the document (spec section 5.1), so it is computed last but one; the digest last.
+    doc["spec"]["plan"]["engine_memory"]["cache_key"] = v1::plan_cache_key(checked_decode(doc, "manifest with its owner map"));
+    const std::string digest = digest_of(doc);
+    doc["metadata"]["content_digest"] = digest;
+
+    BuiltManifest out;
+    out.text = doc.dump(2) + "\n";
+    out.digest = digest;
+    out.document = std::move(doc);
+    // The gate: what a consumer will do with these bytes.
+    v1::Result<v1::Manifest> back = v1::read_manifest(out.text, "the manifest bc-serve built");
+    if (!back.ok()) fail(v1::render_human("bc-serve", back.error()));
+    if (const v1::Status e = verify_owner_map(back.value(), container)) fail(v1::render_human("bc-serve", *e));
+    return out;
+}
+
+void write_manifest_file(const fs::path& path, const std::string& text) {
+    // A manifest is immutable and its digest names it: never replace an existing one, even when two writers race.
+    // Write a unique temporary file in the same directory, make it durable, then link it into place without replacing
+    // (renameat2 RENAME_NOREPLACE fails with EEXIST if the target appeared since we started).
+    const fs::path dir = path.has_parent_path() ? path.parent_path() : fs::path(".");
+    std::string tmpl = (dir / (path.filename().string() + ".tmp.XXXXXX")).string();
+    const int fd = ::mkstemp(tmpl.data());
+    if (fd < 0) fail("cannot create a temporary file beside " + path.string() + ": " + std::strerror(errno));
+    auto cleanup = [&] { ::unlink(tmpl.c_str()); };
+    const char* p = text.data();
+    size_t left = text.size();
+    while (left > 0) {
+        const ssize_t n = ::write(fd, p, left);
+        if (n < 0) {
+            if (errno == EINTR) continue;
+            const int e = errno; ::close(fd); cleanup();
+            fail("cannot write " + tmpl + ": " + std::strerror(e));
+        }
+        p += n; left -= static_cast<size_t>(n);
+    }
+    if (::fchmod(fd, 0444) != 0 || ::fsync(fd) != 0) {
+        const int e = errno; ::close(fd); cleanup();
+        fail("cannot make " + tmpl + " durable: " + std::strerror(e));
+    }
+    ::close(fd);
+    if (::syscall(SYS_renameat2, AT_FDCWD, tmpl.c_str(), AT_FDCWD, path.c_str(), RENAME_NOREPLACE) != 0) {
+        const int e = errno; cleanup();
+        if (e == EEXIST) fail("refusing to replace " + path.string() + ": a manifest is immutable");
+        fail("cannot place " + path.string() + ": " + std::strerror(e));
+    }
+    const int dfd = ::open(dir.c_str(), O_RDONLY | O_DIRECTORY);
+    if (dfd >= 0) { ::fsync(dfd); ::close(dfd); }
+}
+
+}  // namespace bc::serving
