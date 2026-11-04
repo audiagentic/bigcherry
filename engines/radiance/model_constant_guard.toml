@@ -1,0 +1,621 @@
+# Model-constant execution guard (RCS12): the model-shaped literals and symbols the audit found, each with a category and a reason.
+# C and D entries name an OPEN plan item as owner and stop being valid when it completes. See tools/bigcherry/model_constants.py.
+
+[scope]
+roots = ["engines/radiance/components", "engines/radiance/patches", "tools/lab/radiance"]
+extensions = [".h", ".hip", ".cpp", ".cc", ".py", ".sh", ".rw", ".txt", ".toml"]
+literals = [2560, 640, 384, 160, 49]
+symbols = ["kActivationBf16Bytes", "kActivationQBytes", "kLegacyIntermediate", "kExpertWidth", "kRankWidth", "kHidden", "kMaxRoutes"]
+test_patterns = ["_test\\.cpp$", "/test_[^/]*$", "/tests/", "_fixture\\.h$", "replay"]
+
+[[allow]]
+path = "engines/radiance/components/bc-gfx12/bc_gfx12_plugin.cpp"
+anchor = "\"M <= 16, K <= 2560, token-order activation (gate/up); otherwise as libr4d's moe_gemm_fp8a8\","
+category = "E"
+reason = "row description string"
+
+[[allow]]
+path = "engines/radiance/components/bc-gfx12/bc_moe_gemv.hip"
+anchor = "constexpr uint32_t kMaxK = 2560;    /* the activation row staged in LDS */"
+category = "C"
+reason = "GEMV activation row staged in LDS at K <= 2560 (audit MC-004..005)"
+owner = "RCS12"
+
+[[allow]]
+path = "engines/radiance/components/libr3/native/r4d_selftest.cpp.rw"
+anchor = "mxfp4a8_numeric(pl, \"gemm_mxfp4a8_decode\", 8, 272, 640, 0, false);"
+category = "B"
+reason = "self-test numerics at fixed shapes"
+
+[[allow]]
+path = "engines/radiance/components/libr3/native/r4d_selftest.cpp.rw"
+anchor = "mxfp4a8_numeric(pl, \"gemm_mxfp4a8_decode\", 1, 272, 640, 0, false);   // libr3: M = 1"
+category = "B"
+reason = "self-test numerics at fixed shapes"
+
+[[allow]]
+path = "engines/radiance/components/libr3/native/r4d_selftest.cpp.rw"
+anchor = "mxfp4a8_numeric(pl, \"gemm_mxfp4a8_decode\", 1, 272, 640, 0, true);"
+category = "B"
+reason = "self-test numerics at fixed shapes"
+
+[[allow]]
+path = "engines/radiance/components/libr3/native/r4d_selftest.cpp.rw"
+anchor = "mxfp4a8_numeric(pl, \"gemm_mxfp4a8_decode\", 1, 400, 2560, 0, true);"
+category = "B"
+reason = "self-test numerics at fixed shapes"
+
+[[allow]]
+path = "engines/radiance/components/libr3/native/r4d_selftest.cpp.rw"
+anchor = "mxfp4a8_numeric(pl, \"gemm_mxfp4a8_decode\", 3, 272, 640, 0, true);    // libr3: the 4-row strip"
+category = "B"
+reason = "self-test numerics at fixed shapes"
+
+[[allow]]
+path = "engines/radiance/components/libr3/native/r4d_selftest.cpp.rw"
+anchor = "mxfp4a8_numeric(pl, \"gemm_mxfp4a8_decode\", 16, 400, 2560, 0, true);  // libr3: a full 16-row fragmen"
+category = "B"
+reason = "self-test numerics at fixed shapes"
+
+[[allow]]
+path = "engines/radiance/components/libr3/rewrites.txt"
+anchor = "C_GE(\"M\", 33), C_LE(\"M\", 64), C_GE(\"N\", 8192), C_LE(\"N\", 36864), C_LE(\"K\", 2560), C_DIV(\"K\", 64), =="
+category = "A"
+reason = "row constraint mirrors the GEMV rows' checked K bound"
+
+[[allow]]
+path = "engines/radiance/components/moe-remote/moe_lane_common.h"
+anchor = "constexpr int64_t kExpertWidth = 640;"
+category = "C"
+reason = "lane widths fixed at expert width 640 and rank width 384 (audit MC-013)"
+owner = "RCS12"
+
+[[allow]]
+path = "engines/radiance/components/moe-remote/moe_lane_common.h"
+anchor = "constexpr int64_t kGateUpWidth = 2 * kExpertWidth;"
+category = "C"
+reason = "lane widths fixed at expert width 640 and rank width 384 (audit MC-013)"
+owner = "RCS12"
+
+[[allow]]
+path = "engines/radiance/components/moe-remote/moe_lane_common.h"
+anchor = "constexpr int64_t kRankWidth = 384;"
+category = "C"
+reason = "lane widths fixed at expert width 640 and rank width 384 (audit MC-013)"
+owner = "RCS12"
+
+[[allow]]
+path = "engines/radiance/components/moe-remote/moe_lane_common.h"
+anchor = "constexpr int64_t kRankGateUpWidth = 2 * kRankWidth;"
+category = "C"
+reason = "lane widths fixed at expert width 640 and rank width 384 (audit MC-013)"
+owner = "RCS12"
+
+[[allow]]
+path = "engines/radiance/components/moe-remote/moe_lane_common.h"
+anchor = "return rank == parity ? 0 : kRankWidth;"
+category = "C"
+reason = "lane widths fixed at expert width 640 and rank width 384 (audit MC-013)"
+owner = "RCS12"
+
+[[allow]]
+path = "engines/radiance/components/moe-remote/moe_lane_common.h"
+anchor = "return rank == parity ? kRankWidth : kExpertWidth - kRankWidth;"
+category = "C"
+reason = "lane widths fixed at expert width 640 and rank width 384 (audit MC-013)"
+owner = "RCS12"
+
+[[allow]]
+path = "engines/radiance/components/moe-remote/moe_lane_gemm.h"
+anchor = "constexpr uint32_t kGemvMaxK = 2560;"
+category = "C"
+reason = "GEMV K bound 2560 returns early after the dispatcher chose it by row count (audit MC-004..005)"
+owner = "RCS12"
+
+[[allow]]
+path = "engines/radiance/components/moe-remote/moe_mailbox_ops.hip"
+anchor = "uint8_t* staged_q = base + h->activation_offset[slot] + kActivationBf16Bytes;"
+category = "C"
+reason = "engine-side staged Q plane offset assumes hidden 2560 (audit MC-001..003)"
+owner = "RCS12"
+
+[[allow]]
+path = "engines/radiance/components/moe-remote/moe_mailbox_ops.hip"
+anchor = "base + h->activation_offset[slot] + kActivationBf16Bytes + kActivationQBytes);"
+category = "C"
+reason = "engine-side staged Q plane offset assumes hidden 2560 (audit MC-001..003)"
+owner = "RCS12"
+
+[[allow]]
+path = "engines/radiance/components/moe-remote/moe_mailbox_ops.hip"
+anchor = "uint8_t* staged_q = base + h->activation_offset[slot0] + kActivationBf16Bytes;"
+category = "C"
+reason = "engine-side staged Q plane offset assumes hidden 2560 (audit MC-001..003)"
+owner = "RCS12"
+
+[[allow]]
+path = "engines/radiance/components/moe-remote/moe_mailbox_ops.hip"
+anchor = "base + h->activation_offset[slot0] + kActivationBf16Bytes + kActivationQBytes);"
+category = "C"
+reason = "engine-side staged Q plane offset assumes hidden 2560 (audit MC-001..003)"
+owner = "RCS12"
+
+[[allow]]
+path = "engines/radiance/components/moe-remote/moe_mailbox_ops.hip"
+anchor = "q->activation_q_offset = h->activation_offset[slot] + kActivationBf16Bytes;"
+category = "C"
+reason = "engine-side staged Q plane offset assumes hidden 2560 (audit MC-001..003)"
+owner = "RCS12"
+
+[[allow]]
+path = "engines/radiance/components/moe-remote/moe_mailbox_ops.hip"
+anchor = "h->activation_offset[slot] + kActivationBf16Bytes + kActivationQBytes;"
+category = "C"
+reason = "engine-side staged Q plane offset assumes hidden 2560 (audit MC-001..003)"
+owner = "RCS12"
+
+[[allow]]
+path = "engines/radiance/components/moe-remote/moe_mailbox_ops.hip"
+anchor = "x.shape = \"decode rows, hidden=2560, top_k=10\";"
+category = "E"
+reason = "descriptive shape string of a declared op"
+
+[[allow]]
+path = "engines/radiance/components/moe-remote/moe_remote_gpu.h"
+anchor = "if (!full_width() && s.intermediate != kExpertWidth) {   // the two-rank slice split (384 + 256) is "
+category = "A"
+reason = "the two-rank 384+256 slice split refuses any expert width but 640"
+
+[[allow]]
+path = "engines/radiance/components/moe-remote/moe_remote_gpu.h"
+anchor = "std::fprintf(stderr, \"r3_moe_worker: two-rank slicing is defined for expert width %lld, not %u\\n\", ("
+category = "A"
+reason = "the two-rank 384+256 slice split refuses any expert width but 640"
+
+[[allow]]
+path = "engines/radiance/components/moe-remote/moe_remote_gpu.h"
+anchor = "q->route_count == 0 || q->route_count > kMaxRoutes ||"
+category = "A"
+reason = "bounded route capacity, the request is refused above it"
+
+[[allow]]
+path = "engines/radiance/components/moe-remote/moe_remote_gpu.h"
+anchor = "pi(\"M\", q->route_count), pi(\"n\", kRankWidth), pi(\"group\", kGroup),"
+category = "C"
+reason = "two-rank slice width kRankWidth=384 assumes expert width 640 (audit MC-013)"
+owner = "RCS12"
+
+[[allow]]
+path = "engines/radiance/components/moe-remote/moe_remote_gpu.h"
+anchor = "tensor(d_mid_.p, RAD_F8E4M3, {q->route_count, kRankWidth}),"
+category = "C"
+reason = "two-rank slice width kRankWidth=384 assumes expert width 640 (audit MC-013)"
+owner = "RCS12"
+
+[[allow]]
+path = "engines/radiance/components/moe-remote/moe_remote_gpu.h"
+anchor = "tensor(d_mid_s_.p, RAD_F32, {q->route_count, kRankWidth / kGroup}),"
+category = "C"
+reason = "two-rank slice width kRankWidth=384 assumes expert width 640 (audit MC-013)"
+owner = "RCS12"
+
+[[allow]]
+path = "engines/radiance/components/moe-remote/moe_remote_gpu.h"
+anchor = "{ tensor(d_mid_.p, RAD_F8E4M3, {tr, kRankWidth}),"
+category = "C"
+reason = "two-rank slice width kRankWidth=384 assumes expert width 640 (audit MC-013)"
+owner = "RCS12"
+
+[[allow]]
+path = "engines/radiance/components/moe-remote/moe_remote_gpu.h"
+anchor = "tensor(d_mid_s_.p, RAD_F32, {tr, kRankWidth / kGroup}),"
+category = "C"
+reason = "two-rank slice width kRankWidth=384 assumes expert width 640 (audit MC-013)"
+owner = "RCS12"
+
+[[allow]]
+path = "engines/radiance/components/moe-remote/moe_remote_gpu.h"
+anchor = "auto* hq = ptr<uint8_t>(host_map, h->activation_offset[rank] + kActivationBf16Bytes);"
+category = "C"
+reason = "staged Q plane offset assumes hidden 2560 on the helper side (audit MC-001..003)"
+owner = "RCS12"
+
+[[allow]]
+path = "engines/radiance/components/moe-remote/moe_remote_gpu.h"
+anchor = "h->activation_offset[rank] + kActivationBf16Bytes + kActivationQBytes);"
+category = "C"
+reason = "staged Q plane offset assumes hidden 2560 on the helper side (audit MC-001..003)"
+owner = "RCS12"
+
+[[allow]]
+path = "engines/radiance/components/moe-remote/moe_remote_gpu.h"
+anchor = "hhost->activation_offset[rank] + kActivationBf16Bytes)));"
+category = "C"
+reason = "staged Q plane offset assumes hidden 2560 on the helper side (audit MC-001..003)"
+owner = "RCS12"
+
+[[allow]]
+path = "engines/radiance/components/moe-remote/moe_remote_gpu.h"
+anchor = "hhost->activation_offset[rank] + kActivationBf16Bytes + kActivationQBytes)));"
+category = "C"
+reason = "staged Q plane offset assumes hidden 2560 on the helper side (audit MC-001..003)"
+owner = "RCS12"
+
+[[allow]]
+path = "engines/radiance/components/moe-remote/moe_remote_gpu.h"
+anchor = "int64_t mid_w() const { return full_width() ? (int64_t)shape_.intermediate : kRankWidth; }"
+category = "C"
+reason = "two-rank slice width kRankWidth=384 assumes expert width 640 (audit MC-013)"
+owner = "RCS12"
+
+[[allow]]
+path = "engines/radiance/components/moe-remote/moe_remote_gpu.h"
+anchor = "d_mid_.ensure((size_t)tr * kRankWidth) &&"
+category = "C"
+reason = "two-rank slice width kRankWidth=384 assumes expert width 640 (audit MC-013)"
+owner = "RCS12"
+
+[[allow]]
+path = "engines/radiance/components/moe-remote/moe_remote_gpu.h"
+anchor = "d_mid_s_.ensure((size_t)tr * (kRankWidth / kGroup) * 4) &&"
+category = "C"
+reason = "two-rank slice width kRankWidth=384 assumes expert width 640 (audit MC-013)"
+owner = "RCS12"
+
+[[allow]]
+path = "engines/radiance/components/moe-remote/moe_remote_shm.h"
+anchor = "constexpr uint32_t kHidden = 2560;"
+category = "C"
+reason = "segment constants fixed at Flash-Next hidden 2560 / top-k 10 (audit MC-001..011)"
+owner = "RCS12"
+
+[[allow]]
+path = "engines/radiance/components/moe-remote/moe_remote_shm.h"
+anchor = "constexpr uint32_t kMaxRoutes = kMaxRows * kTopK;"
+category = "C"
+reason = "segment constants fixed at Flash-Next hidden 2560 / top-k 10 (audit MC-001..011)"
+owner = "RCS12"
+
+[[allow]]
+path = "engines/radiance/components/moe-remote/moe_remote_shm.h"
+anchor = "constexpr uint32_t kActivationBf16Bytes = kMaxRows * kHidden * sizeof(uint16_t);"
+category = "C"
+reason = "segment constants fixed at Flash-Next hidden 2560 / top-k 10 (audit MC-001..011)"
+owner = "RCS12"
+
+[[allow]]
+path = "engines/radiance/components/moe-remote/moe_remote_shm.h"
+anchor = "constexpr uint32_t kActivationQBytes = kMaxRows * kHidden;"
+category = "C"
+reason = "segment constants fixed at Flash-Next hidden 2560 / top-k 10 (audit MC-001..011)"
+owner = "RCS12"
+
+[[allow]]
+path = "engines/radiance/components/moe-remote/moe_remote_shm.h"
+anchor = "kMaxRows * (kHidden / kActGroup) * sizeof(float);"
+category = "C"
+reason = "segment constants fixed at Flash-Next hidden 2560 / top-k 10 (audit MC-001..011)"
+owner = "RCS12"
+
+[[allow]]
+path = "engines/radiance/components/moe-remote/moe_remote_shm.h"
+anchor = "constexpr uint32_t route_slot_bytes() { return kMaxRoutes * sizeof(Route); }"
+category = "C"
+reason = "segment constants fixed at Flash-Next hidden 2560 / top-k 10 (audit MC-001..011)"
+owner = "RCS12"
+
+[[allow]]
+path = "engines/radiance/components/moe-remote/moe_remote_shm.h"
+anchor = "constexpr uint32_t activation_slot_bytes() { return kActivationBf16Bytes + kActivationQBytes + kActi"
+category = "C"
+reason = "segment constants fixed at Flash-Next hidden 2560 / top-k 10 (audit MC-001..011)"
+owner = "RCS12"
+
+[[allow]]
+path = "engines/radiance/components/moe-remote/moe_remote_shm.h"
+anchor = "constexpr uint32_t result_slot_bytes() { return kMaxRows * kHidden * sizeof(uint16_t); }"
+category = "C"
+reason = "segment constants fixed at Flash-Next hidden 2560 / top-k 10 (audit MC-001..011)"
+owner = "RCS12"
+
+[[allow]]
+path = "engines/radiance/components/moe-remote/moe_remote_shm.h"
+anchor = "constexpr uint32_t kLegacyIntermediate = 640;   /* Flash-Next's expert width, the only one the execu"
+category = "C"
+reason = "Flash-Next's expert width 640 is the only one the execution paths take until the shape is read end to end"
+owner = "RCS09"
+
+[[allow]]
+path = "engines/radiance/components/moe-remote/moe_remote_shm.h"
+anchor = "constexpr LayoutShape legacy_shape() { return LayoutShape{kHidden, kTopK, kExperts, kMaxRows, kActGr"
+category = "C"
+reason = "Flash-Next's expert width 640 is the only one the execution paths take until the shape is read end to end"
+owner = "RCS09"
+
+[[allow]]
+path = "engines/radiance/components/moe-remote/r3_moe_worker.cpp"
+anchor = "std::fprintf(stderr, \"usage: r3_moe_worker --compare MODEL.rad --rows M\\n\");"
+category = "E"
+reason = "usage message names the container extension"
+
+[[allow]]
+path = "engines/radiance/components/moe-remote/r3_moe_worker.cpp"
+anchor = "\"usage: r3_moe_worker --compare MODEL.rad [--layer L] --rows M [--synthetic-protect]\\n\");"
+category = "E"
+reason = "usage message names the container extension"
+
+[[allow]]
+path = "engines/radiance/components/moe-remote/r3_moe_worker.cpp"
+anchor = "std::fprintf(stderr, \"usage: r3_moe_worker MODEL.rad\\n\");"
+category = "E"
+reason = "usage message names the container extension"
+
+[[allow]]
+path = "engines/radiance/components/moe-remote/worker_harness.h"
+anchor = "out->hd.layer < kMaxLayers && out->hd.rows > 0 && out->hd.rows <= kMaxRows && out->hd.route_count <="
+category = "A"
+reason = "bounded route capacity, the request is refused above it"
+
+[[allow]]
+path = "engines/radiance/components/moe-remote/worker_harness.h"
+anchor = "q->activation_q_offset = h->activation_offset[rank] + kActivationBf16Bytes;"
+category = "C"
+reason = "replay harness restages the Q plane at the fixed offset (audit MC-001..003)"
+owner = "RCS12"
+
+[[allow]]
+path = "engines/radiance/components/moe-remote/worker_harness.h"
+anchor = "h->activation_offset[rank] + kActivationBf16Bytes + kActivationQBytes;"
+category = "C"
+reason = "replay harness restages the Q plane at the fixed offset (audit MC-001..003)"
+owner = "RCS12"
+
+[[allow]]
+path = "engines/radiance/components/moe-remote/worker_hostref.h"
+anchor = "q->route_count > kMaxRoutes || q->activation_stride != hid * 2)"
+category = "A"
+reason = "bounded route capacity, the request is refused above it"
+
+[[allow]]
+path = "engines/radiance/components/moe-remote/worker_hostref.h"
+anchor = "const int64_t lo = wide ? 0 : 384;"
+category = "C"
+reason = "CPU helper reference splits 384+256 for width 640 with no refusal for other widths (audit MC-013..014)"
+owner = "RCS12"
+
+[[allow]]
+path = "engines/radiance/components/moe-remote/worker_hostref.h"
+anchor = "const int64_t width = wide ? 384 : 256;"
+category = "C"
+reason = "CPU helper reference splits 384+256 for width 640 with no refusal for other widths (audit MC-013..014)"
+owner = "RCS12"
+
+[[allow]]
+path = "engines/radiance/components/moe-remote/worker_hostref.h"
+anchor = "q->hidden != hid || q->route_count > kMaxRoutes || q->activation_stride != hid*2) return -EINVAL;"
+category = "A"
+reason = "bounded route capacity, the request is refused above it"
+
+[[allow]]
+path = "engines/radiance/components/moe-remote/worker_hostref.h"
+anchor = "const int parity=(int)((uint32_t)es&1u); const bool wide=((int)q->rank==parity); const int64_t lo=wi"
+category = "C"
+reason = "CPU helper reference splits 384+256 for width 640 with no refusal for other widths (audit MC-013..014)"
+owner = "RCS12"
+
+[[allow]]
+path = "engines/radiance/components/moe-remote/worker_selftest.h"
+anchor = "const LaneShape lane_shape{kHidden, kTopK, kActGroup, experts};   // passed to the kernels as an arg"
+category = "B"
+reason = "self-test fixture at Flash-Next's shape"
+
+[[allow]]
+path = "engines/radiance/components/moe-remote/worker_selftest.h"
+anchor = "q.sequence = 1; q.rank = 0; q.rank_count = 1; q.layer = 0; q.rows = rows; q.hidden = kHidden; q.rout"
+category = "B"
+reason = "self-test fixture at Flash-Next's shape"
+
+[[allow]]
+path = "engines/radiance/components/moe-remote/worker_selftest.h"
+anchor = "q.activation_stride = kHidden * (uint32_t)sizeof(uint16_t);"
+category = "B"
+reason = "self-test fixture at Flash-Next's shape"
+
+[[allow]]
+path = "engines/radiance/components/moe-remote/worker_selftest.h"
+anchor = "q.activation_q_stride = kHidden;"
+category = "B"
+reason = "self-test fixture at Flash-Next's shape"
+
+[[allow]]
+path = "engines/radiance/components/moe-remote/worker_selftest.h"
+anchor = "q.activation_s_stride = (kHidden / kActGroup) * (uint32_t)sizeof(float);"
+category = "B"
+reason = "self-test fixture at Flash-Next's shape"
+
+[[allow]]
+path = "engines/radiance/components/moe-remote/worker_selftest.h"
+anchor = "const size_t q_per_row = kHidden / 16, s_per_row = (kHidden / kActGroup) * 4 / 16;"
+category = "B"
+reason = "self-test fixture at Flash-Next's shape"
+
+[[allow]]
+path = "engines/radiance/components/ngram-helper/r3_ngram_host.cpp"
+anchor = "RAD_CEQ(\"n_embd\", 160),"
+category = "C"
+reason = "n-gram kernel registration requires an exact embedding width (audit MC-020..021)"
+owner = "RCS12"
+
+[[allow]]
+path = "engines/radiance/components/serving/golden/gen_golden_main.cpp"
+anchor = "const std::string model = scratch + \"/owners.rad\", heat = scratch + \"/owners.hot-first\";"
+category = "B"
+reason = "golden-file generator writes scratch containers"
+
+[[allow]]
+path = "engines/radiance/components/serving/golden/gen_golden_main.cpp"
+anchor = "const std::string model_prof = scratch + \"/owners-profile.rad\";"
+category = "B"
+reason = "golden-file generator writes scratch containers"
+
+[[allow]]
+path = "engines/radiance/components/serving/plan_cache.cpp"
+anchor = "if (size < sizeof(RadFileHeader)) throw std::runtime_error(model.string() + \": too small to be a .ra"
+category = "E"
+reason = "error message names the container extension"
+
+[[allow]]
+path = "engines/radiance/components/serving/plan_cache.cpp"
+anchor = "throw std::runtime_error(model.string() + \": not a .rad container of format \" + std::to_string(RAD_F"
+category = "E"
+reason = "error message names the container extension"
+
+[[allow]]
+path = "engines/radiance/patches/rad0008_hc_upmix_rt_sweep/patch.py"
+anchor = "fill, which is already ample at this shape (n/kWideCH = 2560/16 = 160 column tiles, so even the"
+category = "A"
+reason = "kernel row-tile variants; any other value takes the default launch"
+
+[[allow]]
+path = "engines/radiance/patches/rad0008_hc_upmix_rt_sweep/patch.py"
+anchor = "production value), RT=256 (== kPf2UpRT, today's unconditional default), and RT=384 (one and a half)."
+category = "A"
+reason = "kernel row-tile variants; any other value takes the default launch"
+
+[[allow]]
+path = "engines/radiance/patches/rad0008_hc_upmix_rt_sweep/patch.py"
+anchor = "(65536)\") when actually compiling that instantiation standalone. RT=384 is the largest legal value"
+category = "A"
+reason = "kernel row-tile variants; any other value takes the default launch"
+
+[[allow]]
+path = "engines/radiance/patches/rad0008_hc_upmix_rt_sweep/patch.py"
+anchor = "original launch), 384 is diagnostic only. No new kernel body, no new scratch allocation, no numerics"
+category = "A"
+reason = "kernel row-tile variants; any other value takes the default launch"
+
+[[allow]]
+path = "engines/radiance/patches/rad0008_hc_upmix_rt_sweep/patch.py"
+anchor = "\"     * RAD_HC_UPMIX_RT=256 restores the original launch; 384 is kept for diagnostics. The\\n\""
+category = "A"
+reason = "kernel row-tile variants; any other value takes the default launch"
+
+[[allow]]
+path = "engines/radiance/patches/rad0008_hc_upmix_rt_sweep/patch.py"
+anchor = "\"        return (rt == 256 || rt == 384) ? rt : 128;\\n\""
+category = "A"
+reason = "kernel row-tile variants; any other value takes the default launch"
+
+[[allow]]
+path = "engines/radiance/patches/rad0008_hc_upmix_rt_sweep/patch.py"
+anchor = "\"    case 384:\\n\""
+category = "A"
+reason = "kernel row-tile variants; any other value takes the default launch"
+
+[[allow]]
+path = "engines/radiance/patches/rad0008_hc_upmix_rt_sweep/patch.py"
+anchor = "\"        hipLaunchKernelGGL((hc_up_mix_wide_kernel<4, false, 384>),\\n\""
+category = "A"
+reason = "kernel row-tile variants; any other value takes the default launch"
+
+[[allow]]
+path = "engines/radiance/patches/rad0008_hc_upmix_rt_sweep/patch.py"
+anchor = "\"                           dim3((unsigned)(n / kWideCH), (unsigned)((rows + 384 - 1) / 384)),\\n\""
+category = "A"
+reason = "kernel row-tile variants; any other value takes the default launch"
+
+[[allow]]
+path = "tools/lab/radiance/capture_upgrade.py"
+anchor = "Files are rewritten in place; Flash-Next is hidden 2560, 512 experts, top-k 10, group 128."
+category = "B"
+reason = "lab diagnostic tool, not an execution path of the product"
+
+[[allow]]
+path = "tools/lab/radiance/capture_upgrade.py"
+anchor = "if version != 2 or hidden != 2560:"
+category = "B"
+reason = "lab diagnostic tool, not an execution path of the product"
+
+[[allow]]
+path = "tools/lab/radiance/fn-helper.sh"
+anchor = "model=${MODEL:?set MODEL to the Flash-Next .rad container}"
+category = "D"
+reason = "hard-coded container path belongs in the layout's model entry"
+owner = "RSC08"
+
+[[allow]]
+path = "tools/lab/radiance/gfx1030/rowsk.hip"
+anchor = "const uint32_t K = gu ? 2560 : 640, N = gu ? 1280 : 2560, M = gu ? T : R;   // activation rows"
+category = "B"
+reason = "lab diagnostic tool, not an execution path of the product"
+
+[[allow]]
+path = "tools/lab/radiance/hc-upmix-epilogue-diag.hip"
+anchor = "const int64_t M = 2048, K = 320, HC = 4, n = 2560;"
+category = "B"
+reason = "lab diagnostic tool, not an execution path of the product"
+
+[[allow]]
+path = "tools/lab/radiance/heat-placement/balance_score.py"
+anchor = "python3 balance_score.py HEAT.raw [--layers 49] [--per-helper 9320] [--tokens 2048] [--top-k 10]"
+category = "D"
+reason = "default layer count of Flash-Next belongs in the container metadata"
+owner = "RCS12"
+
+[[allow]]
+path = "tools/lab/radiance/heat-placement/balance_score.py"
+anchor = "ap.add_argument('--layers', type=int, default=49)"
+category = "D"
+reason = "default layer count of Flash-Next belongs in the container metadata"
+owner = "RCS12"
+
+[[allow]]
+path = "tools/lab/radiance/helper-combine-bench.hip"
+anchor = "constexpr uint32_t kHidden = 2560;"
+category = "B"
+reason = "lab diagnostic tool, not an execution path of the product"
+
+[[allow]]
+path = "tools/lab/radiance/helper-combine-bench.hip"
+anchor = "const size_t n = (size_t)rows * kHidden, bytes = n * 2;"
+category = "B"
+reason = "lab diagnostic tool, not an execution path of the product"
+
+[[allow]]
+path = "tools/lab/radiance/helper-long-rows.sh"
+anchor = "M=${BC_MODEL_ROOT}/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4"
+category = "D"
+reason = "hard-coded container path belongs in the layout's model entry"
+owner = "RSC08"
+
+[[allow]]
+path = "tools/lab/radiance/helper-sweep.sh"
+anchor = "M=${BC_MODEL_ROOT}/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4"
+category = "D"
+reason = "hard-coded container path belongs in the layout's model entry"
+owner = "RSC08"
+
+[[allow]]
+path = "tools/lab/radiance/idle-gap-bench.hip"
+anchor = "hipLaunchKernelGGL(stream_read, dim3(384), dim3(256), 0, s, w + (i % sets) * n, n, st + 2 * i, sink)"
+category = "B"
+reason = "lab diagnostic tool, not an execution path of the product"
+
+[[allow]]
+path = "tools/lab/radiance/rad32-perf.sh"
+anchor = "MODEL=${MODEL_27B:-${BC_MODEL_ROOT}/radiance/StillDeadcode/qwen3.8-27b-mxfp4/qwen3.8-27b-mxfp4.rad}"
+category = "D"
+reason = "hard-coded container path belongs in the layout's model entry"
+owner = "RSC08"
+
+[[allow]]
+path = "tools/lab/radiance/rdna2-draft-bench.hip"
+anchor = "const uint32_t H = 2560, VOCAB = 248320, NFF = 640;  // n_ff from rad-info --meta; MTP shape TBD bey"
+category = "B"
+reason = "lab diagnostic tool, not an execution path of the product"
+
+[[allow]]
+path = "tools/lab/radiance/small_capture.py"
+anchor = "HIDDEN = 2560"
+category = "B"
+reason = "lab diagnostic tool, not an execution path of the product"
