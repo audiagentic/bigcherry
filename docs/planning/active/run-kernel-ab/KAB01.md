@@ -66,5 +66,8 @@ Managed tooling under tools/ with card-free tests; GPU measurement under the gpu
 
 ## Ledger-events
 
+
 - chg_20261104_083700_a-plan-item-now-tracks-a-fast_9840
 - 2026-11-04T08:37:08.326286+00:00 (updated-by): Updated: section:ledger-events
+- chg_20261104_110929_a-tool-now-runs-and-compares-k_4952
+- 2026-11-04T11:09:33.611568+00:00 (updated-by): Updated: section:ledger-events

@@ -75,3 +75,101 @@ Prefer the maintained `bigcherry ab-benchmark` for paired experiments. For a spe
 6. Bisect helper features **cumulatively** (add one component at a time), and use engine `--profile-ops` plus host `perf` to distinguish host scheduling from device time. Retain raw per-rep evidence and a summary of the caveats.
 
 Do not copy the reference harness's absolute paths, device identifiers or mutable head selections into new runs. The benchmark skill (`.claude/skills/bigcherry-benchmark/SKILL.md`) describes the general attribution rules.
+
+## Kernel A/B before end-to-end A/B (KAB01)
+
+Test proposed kernel changes first with tools/lab/radiance/kbench_ab.py on a
+single recorded fixture, then run an end-to-end benchmark only for plausible
+kernel improvements. Build both libraries before taking the GPU lease. The
+caller holds the lease for the entire timing pass: this driver never acquires
+or releases it and does not launch a server.
+
+Provide sides.json with exactly two entries, a and b, each containing a unique
+name, kernels (list or colon-delimited string), radiance_home or build_dir, and
+optional env overrides. For a build directory, bin/rad-kbench and
+radiance_home/ must exist. Example:
+
+    {
+      "a": {"name": "baseline", "radiance_home": "build-a/radiance_home",
+            "kernels": ["libr3", "libref"]},
+      "b": {"name": "candidate", "build_dir": "build-b",
+            "kernels": ["libr3d", "libref"]}
+    }
+
+The caller must choose a finite, positive timeout in seconds for **each**
+rad-kbench invocation. There is no default timeout. Use a one-case probe
+under the caller-held GPU lease to measure one operation and size the full
+run; the probe runs only side a, only one --op, and forces --max-cases 1:
+
+    PYTHONPATH=tools python3 tools/lab/radiance/kbench_ab.py probe \
+      --sides sides.json --fixture fixture.rkb --out probe-results \
+      --device 0 --side a --op gemm_nt --timeout-s "$PROBE_TIMEOUT_S" \
+      --seed 23 --bench-flush 256
+
+The probe prints its wall seconds and Speed row count. It writes a per-op
+report, logs, run.json and progress.log. It uses --timing-only and does not
+perform a correctness check. After acquiring or continuing to hold the lease,
+run the full A/B experiment from the repository root:
+
+    PYTHONPATH=tools python3 tools/lab/radiance/kbench_ab.py run \
+      --sides sides.json --fixture fixture.rkb --out results \
+      --device 0 --op gemm_nt --op gemm_nt_q --seed 23 \
+      --max-cases 4 --bench-flush 256 \
+      --timeout-s "$PER_OP_TIMEOUT_S" --repeat-a
+
+    PYTHONPATH=tools python3 tools/lab/radiance/kbench_ab.py run \
+      --sides sides.json --fixture fixture.rkb --out results \
+      --device 0 --op gemm_nt --op gemm_nt_q --seed 23 \
+      --max-cases 4 --bench-flush 256 \
+      --timeout-s "$PER_OP_TIMEOUT_S" --repeat-a --resume
+
+    PYTHONPATH=tools python3 tools/lab/radiance/kbench_ab.py compare \
+      results/baseline results/candidate \
+      --again results/baseline.again \
+      --graph graph.txt --rows 4 --out results/ab
+
+One invocation is executed for each requested op on each side, in sequence,
+followed by an optional repeat of the first side. Reports are written to
+results/<side>/<op>.report.md, and repeat reports to
+results/<side>.again/<op>.report.md. Each invocation has its own timeout;
+failures and timeouts are recorded in run.json and do not stop later ops.
+progress.log has one immediately flushed tab-separated line for each
+finished invocation: side, op, wall seconds and exit code (or timeout).
+Each operation also has its own stdout/stderr logs in its side directory.
+The runner returns a nonzero status if any invocation in that pass fails.
+
+Use --resume with the *same* fixture, binaries, side definitions, ops and
+benchmark settings to skip existing **nonempty** reports; empty or missing
+reports are retried. The timeout may be resized between attempts. A nonempty
+report is skipped even if its earlier process failed: inspect run.json before
+accepting it. Resume refuses conflicting run settings to avoid mixed evidence.
+Comparison accepts either a single .report.md on each side (existing
+behaviour) or a directory of per-op reports, including mixed forms, and
+checks fixture provenance on **every** report. It explicitly lists operations
+missing from either side, including ops absent on **both** sides when a
+matching run.json provides the expected op list. Otherwise, supply repeatable
+--expected-op flags to compare for an explicit expected set. Incomplete or
+malformed reports fail closed.
+
+The run uses --timing-only, which DOES NOT check correctness or produce
+margins. Obtain checked rad-kbench --bench --report results separately under
+the lease before interpreting a speed gain as a correctness-validated win.
+
+The comparison reuses kbench_step.py speed parsing and graph matching.
+Without --graph, the summary uses equal calls per matched case and says so.
+With --graph, it uses actual graph instance counts at the largest timed
+M/q_len step size not above --rows, excluding vision as in kbench_step.py.
+It lists unmatched graph instances and all A-only or B-only rows. Different
+kernel names, shapes and operand footprints are NOT joined speculatively.
+The time-weighted B/A is sum(calls * B_us) / sum(calls * A_us).
+Failed or vacuous cases cannot be wins. A/B/A noise is measured from the
+per-case A vs A-again spread, never assumed from a fixed percentage.
+
+Fixture recording is separate (rad-kbench --skeleton/--record). Keep raw
+fixtures, graphs, run.json, logs, and reports in the measurement work root,
+not in git. run.json stores exact child argv, explicit child environment,
+wall time, exit code, and report path; its runtime paths are local by design.
+Do not place credentials in side environment overrides. Use equal fixture,
+seed, warm-up, flush footprint, filters and runtime policy on both sides.
+An omitted flag uses rad-kbench's own default, so specify it to make a
+measurement fully pinned.
