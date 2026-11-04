@@ -64,6 +64,14 @@ Aggregate decode tok/s:
 | 4 | 126.0 | 168.1 | 52.8 ms |
 | 6 | 150.1 | 156.7 | 81.8 ms |
 
+With the gfx1100 MXFP4 row selection of RAD47 (calls of more than 16 rows use the tiled
+kernel instead of the skinny rows tuned for gfx1201) the same layout measures 97.5, 125.5,
+213.2 and 215.1 tok/s at 1, 2, 4 and 6 streams (step time 27.9, 38.2, 34.4 and 53.3 ms):
+unchanged at 1 and 2 streams, +27% at 4 and +37% at 6. Draft acceptance is unchanged and cold
+prefill is unchanged (about 2,790 tok/s). Greedy single-stream output is identical to the
+previous selection on 8 prompts; with several streams the output differs in the same way two
+runs of the previous selection differ from each other (batch composition decides which rows run).
+
 Depth 7 was worse at every stream count measured (91.9, 118.6 and 114.7 tok/s at
 1, 2 and 4 streams), so the layout uses 3. The gain shrinks as streams are added
 because the step grows into the row band where the selected MXFP4 kernel is slow
