@@ -324,6 +324,23 @@ public:
         return true;
     }
 
+    /* Replay admission uses the same bootstrapped physical residency ledger
+     * and rank-specific weight bindings that serving will read. */
+    bool compare_resident(uint32_t layer, uint32_t expert, uint32_t rank, uint32_t local) const {
+        if (layer >= model_.layers || expert >= experts() ||
+            rank >= stored_slices() || !slots_) return false;
+        const size_t key = size_t(layer) * experts() + expert;
+        const Expert& x = experts_[key];
+        if (!x.live || initial_locals_[key] != int32_t(local) ||
+            !x.gu[rank].code || !x.gu[rank].scale ||
+            !x.dn[rank].code || !x.dn[rank].scale) return false;
+        for (const auto& s : slots_->ledger().slots())
+            if (s.expert == key && s.state == r3::residency::State::ACTIVE &&
+                s.completed_planes == 15 && s.bytes == slots_->stride())
+                return true;
+        return false;
+    }
+
     r3::residency::Ledger* move_ledger() {
         return slots_ ? &slots_->ledger() : nullptr;
     }
