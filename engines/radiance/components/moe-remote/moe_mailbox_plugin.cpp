@@ -2,6 +2,7 @@
 // owns the shared segment. A plugin of its own, built for gfx1100 and gfx1201, so the same hand-off runs
 // beside libr3 on the XTX ranks and beside libr4d on an R9700 engine (RAD02).
 #include "rad_abi.h"
+#include "rad_abi_layout.h"
 
 extern "C" {
 int r3_moe_mailbox_enabled(void);
@@ -23,6 +24,7 @@ int live_count() {
 }  // namespace
 
 extern "C" uint32_t rad_plugin_abi_version(void) { return RAD_ABI_VERSION; }
+RAD_PLUGIN_ABI_LAYOUT_EXPORT  /* the loader refuses a plugin whose struct layout differs from the engine's */
 extern "C" const RadPluginInfo* rad_plugin_info(void) {
     static const RadPluginInfo info = {
         RAD_PLUGIN_KERNEL, "libr3moe", "0.0.1",

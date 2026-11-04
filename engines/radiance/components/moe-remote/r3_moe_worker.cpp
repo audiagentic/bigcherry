@@ -214,7 +214,10 @@ int main(int argc, char** argv) {
     if (!cpu) {
         gpu = std::make_unique<r3_moe_gpu::Runner>(model);
         if (cfg.engine_ranks) gpu->engine_ranks_ = cfg.engine_ranks;
-        if (!gpu->open()) return 1;
+        if (!gpu->open()) {
+            std::fprintf(stderr, "r3_moe_worker: GPU backend open failed\n");
+            return 1;
+        }
         {   // the container's own weight format picks the kernels (RAD13); an unsupported one was refused by name above
             MoeExpertDesc first{};
             for (uint32_t l = 0; l < model.layers && !first.weight.format; ++l)
@@ -234,7 +237,10 @@ int main(int argc, char** argv) {
                         return 1;
                     }
                 }
-            if (!gpu->set_weight_format(first.weight.format)) return 1;
+            if (!gpu->set_weight_format(first.weight.format)) {
+                std::fprintf(stderr, "r3_moe_worker: GPU weight-format setup failed\n");
+                return 1;
+            }
         }
     }
 
@@ -253,6 +259,21 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_MIBS must list one budget in MiB for each of the %u helpers\n", cfg.helper_count);
         return 2;
     }
+    const SmallClasses lane_classes = helper_small_classes();
+    if (!lane_classes.count) {
+        std::fprintf(stderr, "r3_moe_worker: no small lane classes available\n");
+        return 1;
+    }
+    const uint32_t lane_large_rows = helper_max_rows();
+    // Allocate actual lane buffers and plugin scratch before checking device
+    // free VRAM. The expert-weight budget remains untouched for ownership.
+    if (gpu &&
+        (!gpu->prime_weight_layout() ||
+         !gpu->prepare_lanes(lane_classes.rows, lane_classes.count, lane_large_rows,
+                             lanes_open(cfg.power_save, helper_count, helper_index, lane_classes.count)))) {
+        std::fprintf(stderr, "r3_moe_worker: GPU lane preparation failed\n");
+        return 1;
+    }
     Owned owned;
     if (g_replay) {
         /* A replay owns exactly the experts the captured request routes to: the capturing helper's ownership
@@ -266,13 +287,24 @@ int main(int argc, char** argv) {
         };
         if (sweep_replays.empty()) own_routes(*g_replay);
         else for (const ReplayInput& ri : sweep_replays) own_routes(ri);
+        for (auto [l, e] : owned.expert) {
+            const int64_t bytes = laid_out_bytes(model, gpu.get(), l, e);
+            if (bytes <= 0 || uint64_t(bytes) > UINT64_MAX - owned.bytes) {
+                std::fprintf(stderr, "r3_moe_worker: replay expert (%u,%u) cannot be laid out\n", l, e);
+                return 1;
+            }
+            owned.bytes += uint64_t(bytes);
+        }
+        std::fprintf(stderr,
+            "r3_moe_worker: replay selects only capture-routed experts, not the full serving budget set\n");
     } else if (!select_owned(model, gpu.get(), budgets, helper_index, helper_count, &owned)) {
         return 1;
     }
-    if (gpu && !gpu->allocate(owned.expert)) return 1;
-    const SmallClasses lane_classes = helper_small_classes();
-    if (!lane_classes.count) return 1;
-    const uint32_t lane_large_rows = helper_max_rows();
+    if (gpu && !gpu->allocate(owned.expert, budgets[helper_index])) {
+        std::fprintf(stderr, "r3_moe_worker: failed to prepare expert arena/pool for %zu selected experts\n",
+                     owned.expert.size());
+        return 1;
+    }
     std::string lane_list;                       /* "4,8,16,24", for the log */
     for (uint32_t c = 0; c < lane_classes.count; ++c)
         lane_list += (c ? "," : "") + std::to_string(lane_classes.rows[c]);
@@ -348,7 +380,7 @@ int main(int argc, char** argv) {
     sa.sa_flags = 0;
     sigaction(SIGINT, &sa, nullptr); sigaction(SIGTERM, &sa, nullptr);
     Segment seg;
-    if (!seg.open(shm_name(), lay.bytes, helper_index == 0, 1800)) return 1;
+    if (!seg.open(shm_name(), lay.bytes, helper_index == 0, kStartupWaitSeconds)) return 1;
     void* const map = seg.host();
     Header* const h = seg.header();
     const char* const name = seg.name();
@@ -362,7 +394,7 @@ int main(int argc, char** argv) {
         (void)futex_wake(&h->helper_count);
     } else {
         /* Woken by helper 0's publication; the one-second bound keeps a signal-driven stop prompt. */
-        for (int i = 0; i < 1800 && !stopping(); ++i) {
+        for (int i = 0; i < kStartupWaitSeconds && !stopping(); ++i) {
             const uint32_t seen = load(&h->helper_count);
             if (seen == helper_count) break;
             struct timespec ts{1, 0};
@@ -403,25 +435,21 @@ int main(int argc, char** argv) {
             struct timespec ts{1, 0};
             (void)::syscall(SYS_futex, &h->layer_map_ready[layer], FUTEX_WAIT, 0, &ts, nullptr, 0);
         }
-        if (!load(&h->layer_map_ready[layer])) {
+        if (!load(&h->layer_map_ready[layer]))
             std::fprintf(stderr, "r3_moe_worker: layer %u has no runtime map (not declared by the engine); not owned\n",
                          layer);
-            for (auto [l, e] : owned.expert)
-                if (l == layer) (void)drop_bootstrap_owner(map, l, e, helper_index);
-            continue;
-        }
-        any_map = true;
-        const int32_t* slots = layer_slots(map, layer);
-        if (!slots) return 1;
-        for (auto [l, e] : owned.expert)
-            if (l == layer && slots[e] < 0) (void)drop_bootstrap_owner(map, l, e, helper_index);
-        if (gpu && !gpu->load_layer(layer, owned.expert, slots)) {
-            std::fprintf(stderr, "r3_moe_worker: layer %u runtime table build failed\n", layer);
-            raise_fault(h);   /* not consumed: the engine's map wait fails instead of using a map this helper lacks */
+        else any_map = true;
+        const char* layer_error = nullptr;
+        if (!r3::epoch::bootstrap_runtime_layer(
+                map, owned, helper_index, layer,
+                [&](uint32_t l, const int32_t* slots) {
+                    return !gpu || gpu->load_layer(l, owned.expert, slots);
+                }, &layer_error)) {
+            std::fprintf(stderr, "r3_moe_worker: layer %u bootstrap: %s\n",
+                         layer, layer_error ? layer_error : "unknown error");
+            raise_fault(h);
             return 1;
         }
-        store(&h->layer_map_consumed[layer], 1);
-        notify(h);
     }
     Owned runtime_owned;
     for (auto [l, e] : owned.expert) {
@@ -431,11 +459,37 @@ int main(int argc, char** argv) {
         if (eb > 0) runtime_owned.bytes += (uint64_t)eb;
     }
     owned = std::move(runtime_owned);
+    /* The final owner removal is above. Each helper release-publishes that
+     * it can no longer mutate generation 0. Helper 0 is the sole control
+     * writer until EpochCycle starts; seal once under the same seqlock. */
+    if (!r3::epoch::mark_bootstrap_filtered(map, helper_index)) {
+        raise_fault(h);
+        return 1;
+    }
+    if (helper_index == 0) {
+        timespec deadline{};
+        if (clock_gettime(CLOCK_MONOTONIC, &deadline) != 0) {
+            raise_fault(h);
+            return 1;
+        }
+        deadline.tv_sec += kStartupWaitSeconds; // same shared deadline as segment attach
+        const uint32_t expected=(1u << helper_count) - 1u;
+        const WaitResult ready=wait_for(h, &deadline, [&] {
+            return __atomic_load_n(&h->bootstrap_filtered_helpers, __ATOMIC_ACQUIRE) == expected;
+        });
+        r3::epoch::SharedTransport transport(map);
+        const bool stopped = stopping();
+        const bool sealed = ready == WaitResult::Ready && !stopped && transport.seal_bootstrap();
+        if (!sealed) {
+            std::fprintf(stderr, "r3_moe_worker: bootstrap owner seal refused (wait=%u, stopping=%u, filtered=0x%x, expected=0x%x, helper_fault=%u)\n",
+                         uint32_t(ready), uint32_t(stopped),
+                         load(&h->bootstrap_filtered_helpers), expected, load(&h->helper_fault));
+            raise_fault(h);
+            return 1;
+        }
+    }
     const auto lanes_served = served_lanes(helper_count, helper_index, lane_classes.count);
     std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_POWER_SAVE %s\n", cfg.power_save ? "on" : "off");
-    if (gpu && !gpu->prepare_lanes(lane_classes.rows, lane_classes.count, lane_large_rows,
-                                   lanes_open(cfg.power_save, helper_count, helper_index, lane_classes.count)))
-        return 1;
     if (gpu) (void)posix_fadvise(model.fd, 0, 0, POSIX_FADV_DONTNEED);
     std::fprintf(stderr, "r3_moe_worker: runtime map owns %zu experts, %.3f GiB\n",
                  owned.expert.size(), (double)owned.bytes / (1024.0 * 1024.0 * 1024.0));
@@ -502,13 +556,54 @@ int main(int argc, char** argv) {
                 return uint64_t(now.tv_sec) * 1'000'000'000ULL + uint64_t(now.tv_nsec);
             }
         } epoch_clock;
-        // R3_MOE_WORKER_EPOCH_CYCLE_S on every helper (moves to experiment.helper.epoch_cycle_s with manifest v1).
-        r3::epoch::EpochCycle epoch_cycle(map, helper_index, epoch_clock, std::chrono::seconds{cfg.epoch_cycle_s});
+        // Every helper owns its physical slot participant; proposals still
+        // enter exclusively through the existing placement Controller.
+        PlacementControl bootstrap_control{};
+        if (!placement_snapshot(map,&bootstrap_control) ||
+            bootstrap_control.state != uint32_t(PlacementState::ACTIVE) ||
+            !gpu->move_ledger()) return 1;
+        r3::worker_moves::Participant migration(
+            *gpu->move_ledger(), *gpu, helper_index, model.layers, model.experts,
+            gpu->expert_stride());
+        if (!migration.initialize(map,bootstrap_control.active_slot,gpu->initial_locals())) {
+            std::fprintf(stderr,"r3_moe_worker: failed to verify bootstrap resident slots\n");
+            return 1;
+        }
+        // A zero diagnostic period disables only synthetic same-map cycles;
+        // the participant must still service actual proposals and reopen ACKs.
+        r3::epoch::EpochCycle epoch_cycle(
+            map, helper_index, epoch_clock, std::chrono::seconds{cfg.epoch_cycle_s},
+            {}, &migration);
         for (uint32_t v; (v = g_stop_word.load(std::memory_order_acquire)) == 0;) {
-            if (!epoch_cycle.tick()) { raise_fault(h); request_stop(); break; }
+            if (!epoch_cycle.tick()) {
+                PlacementControl failed{};
+                (void)placement_snapshot(map,&failed);
+                const uint32_t code=failed.fault_code ? failed.fault_code :
+                    (failed.journal_index < 2 ?
+                        placement_journal(map)->entry[failed.journal_index].fault : 0u);
+                std::fprintf(stderr,
+                    "r3_moe_worker: epoch participant %u exiting phase=%u transaction=%llu fault=%u\n",
+                    helper_index,failed.state,(unsigned long long)failed.transaction_id,code);
+                raise_fault(h); request_stop(); break;
+            }
             const timespec quantum{0, 2'000'000};
             (void)::syscall(SYS_futex, reinterpret_cast<uint32_t*>(&g_stop_word), FUTEX_WAIT_PRIVATE, v,
                             epoch_cycle.enabled() ? &quantum : nullptr, nullptr, 0);
+        }
+        /* The lane subsystem can request a stop on an enqueue, collect or
+         * sync failure without printing an error. Report phase/transaction
+         * and fault code BEFORE stop_and_join raises helper_fault and the
+         * engine's helper-wait GPU kernels fail closed. This also makes an
+         * externally requested clean stop distinguishable (both codes 0). */
+        PlacementControl stopping_phase{};
+        if (placement_snapshot(map,&stopping_phase)) {
+            const auto& record=placement_journal(map)->entry[
+                stopping_phase.journal_index < 2 ? stopping_phase.journal_index : 0];
+            std::fprintf(stderr,
+                "r3_moe_worker: helper %u stopping phase=%u transaction=%llu placement_fault=%u journal_fault=%u\n",
+                helper_index,stopping_phase.state,
+                (unsigned long long)stopping_phase.transaction_id,
+                stopping_phase.fault_code,record.fault);
         }
         lanes.stop_and_join();
         if (epoch_cycle.enabled() && helper_index == 0)

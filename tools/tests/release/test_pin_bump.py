@@ -1589,6 +1589,29 @@ class SourceCompilePhaseTests(unittest.TestCase):
         self.assertEqual(state.compile_tree_oid, "")
         self.assertEqual(state.compile_status, "")
 
+    def test_compile_identity_covers_component_trees(self):
+        """A component fix (same vendor tree) must change the compile identity, so a passed compile and lane build
+        are rebuilt on --resume rather than reused."""
+        with (
+            patch.object(pin_bump.source_identity, "git_tree_oid", return_value="vendor-oid"),
+            patch.object(pin_bump, "_selected_file_patches", return_value=[]),
+            patch.object(pin_bump.patch_rebase, "_overlay_texts", return_value={}),
+        ):
+            with patch.object(pin_bump, "_component_tree_ids", return_value=["libr3=aaa", "moe-remote=bbb"]):
+                before = pin_bump._compile_tree_oid("radiance", Path("/vendor"), ())
+            with patch.object(pin_bump, "_component_tree_ids", return_value=["libr3=aaa", "moe-remote=ccc"]):
+                after = pin_bump._compile_tree_oid("radiance", Path("/vendor"), ())
+            with patch.object(pin_bump, "_component_tree_ids", return_value=[]):
+                vendor_only = pin_bump._compile_tree_oid("llamacpp", Path("/vendor"), ())
+        self.assertNotEqual(before, after)
+        self.assertEqual(vendor_only, "vendor-oid")
+
+    def test_component_tree_ids_name_every_radiance_component(self):
+        ids = pin_bump._component_tree_ids("radiance")
+        names = {entry.split("=", 1)[0] for entry in ids}
+        self.assertIn("moe-remote", names)
+        self.assertTrue(all(len(entry.split("=", 1)[1]) == 40 for entry in ids))
+
 
     def test_changed_patch_inputs_rewind_compile_resume_to_pull(self):
         state = self._state(
@@ -1763,6 +1786,7 @@ class LaneBuildPhaseTests(unittest.TestCase):
         self.assertEqual(saved["lane_build"]["build_plan_id"], "plan-123")
         self.assertEqual(saved["lane_build"]["build"], "stock")
         self.assertIn("build_plan_id=plan-123", self.record.notes)
+        self.assertNotIn("/builds/", self.record.notes)  # no local build path in the release record
         self.assertIn("binary_sha256=" + "f" * 64, self.record.notes)
         self.assertIn("bigcherry:stock:linux-radiance", self.record.notes)
         completed = result.state.completed_phases

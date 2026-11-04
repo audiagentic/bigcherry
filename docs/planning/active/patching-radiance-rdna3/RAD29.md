@@ -56,6 +56,9 @@ publish kernel time improves; downstream results identical (helper reduction ord
 
 From the DeepEP/MORI-EP brief. Local shared-memory atomic, much cheaper than MORI's remote allocator: expect a modest gain, mostly prefill. No mailbox ABI change.
 
+2026-11-04 code (route_compact.h wave-aggregated compaction in mailbox publish, plus equivalence/timing test) archived as experiments/radiance/RAD29-rad29-route-compaction/change.patch. No hardware result was recorded; to resume, reapply, run the equivalence test, then the publish-kernel timing and prefill A/B.
+
 ## Change Log
 
 - 2026-10-27T02:35:08.802114+00:00 (created-by): Created by agent
+- 2026-11-04T06:15:49.347709+00:00 (updated-by): Updated: section:notes

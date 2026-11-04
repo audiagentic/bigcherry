@@ -64,6 +64,14 @@ logical bytes over time), and rank the whole drafter step's kernels; (2) a bf16 
 TN=2; (4) a TN=4 that keeps one s fragment live, only if the resource data says it can avoid spills. No split-K (it
 changes the sum order). Full text: /work/development/tmp/bigcherry/rad32-gemv/gpt-review-req_main_7ee5e132f3b2.md.
 
+
+
+BACKLOG TRIAGE 2026-11-04 (CLOSE; revalidated against main 6eb31a708, verdict CONFIRM): Close only from the Flash-Next four-card optimisation queue; retain the measured 27B drafter gap for a separately prioritised 27B effort. Evidence: RAD36.md:14-35 targets the separate two-XTX Qwen3.8-27B dflash2 MXFP4 verification kernel, not the current one-rank Flash-Next four-GPU serving layout; it records ~58-91 tok/s against a 100 tok/s target but no accepted new implementation. No other active plan file references RAD36; closing this four-GPU backlog item does not imply the distinct 27B serving/product workload is obsolete. Original content kept below for history.
+
+
+
+REOPENED 2026-11-04 (owner decision): Qwen3.8-27B is a live target, so this item is not obsolete. The triage closed it only because it is outside the Flash-Next four-card queue; that is a priority question, not a reason to close. It stays pending at its own priority and is not part of the core-first order (hot placement, RAD46).
+
 ## Change Log
 
 - 2026-10-29T05:25:15.204887+00:00 (created-by): Created by agent
@@ -72,3 +80,7 @@ changes the sum order). Full text: /work/development/tmp/bigcherry/rad32-gemv/gp
 
 - chg_20261029_080817_radiance-updated-to-1130-th_5672
 - 2026-11-01T22:15:52.872320+00:00 (updated-by): Updated: section:ledger-events
+- 2026-11-04T04:10:01.375676+00:00 (updated-by): Updated: section:notes
+- 2026-11-04T04:10:05.317193+00:00 (state-transition): State: pending → deprecated
+- 2026-11-04T05:03:36.282723+00:00 (updated-by): Updated: section:notes
+- 2026-11-04T05:03:42.318908+00:00 (state-transition): State: deprecated → pending

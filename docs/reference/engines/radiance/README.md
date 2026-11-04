@@ -1,53 +1,41 @@
 # Radiance
 
-BigCherry's main target is a custom **Radiance v1.14.0** build for
-heterogeneous AMD GPUs. It runs the engine on one card and can send routed
-MoE experts to RDNA3 and RDNA2 helper cards. Additional kernel libraries,
-helper processes and narrow engine patch packages are built against the
-pinned upstream source.
+Radiance **v1.16.0** is BigCherry's primary upstream target. The custom
+build uses RDNA2 and RDNA3 helpers alongside an RDNA4 engine GPU, with
+expert placement adapted to differing GPU memory and bandwidth.
 
-## Best measured models
+## Main additions and patches
 
-These runs use the **v1.14.0** pin and different model-specific workloads.
-Rates are tokens/s; detailed conditions and evidence are on each model page.
+| Area | BigCherry change | Owning code or patches |
+| --- | --- | --- |
+| AMD kernels | RDNA3 attention and GEMMs; RDNA2 expert-kernel subset; selected RDNA4 overrides | [libr3](../../../../engines/radiance/components/libr3/README.md), [libr2](../../../../engines/radiance/components/libr2/README.md), [bc-gfx12](../../../../engines/radiance/components/bc-gfx12/README.md) |
+| Remote MoE | Routed experts on helper GPUs, pinned-host mailbox, heat-ranked placement and GPU-side admission/owner generations | [moe-remote](../../../../engines/radiance/components/moe-remote/README.md), [remote hand-off patch](../../../../engines/radiance/patches/rad0002_moe_remote_handoff/SUMMARY.md) |
+| HyperConn tuning | Selectable PF2 up-mix launch shape on RDNA4 | [up-mix patch](../../../../engines/radiance/patches/rad0008_hc_upmix_rt_sweep/SUMMARY.md) |
+| Serving configuration | Strict TOML loader, manifest reader and engine memory plan; full manifest-driven process startup remains incomplete | [serving](../../../../engines/radiance/components/serving/README.md), [manifest patch](../../../../engines/radiance/patches/rad0009_serving_manifest/SUMMARY.md), [memory-plan patch](../../../../engines/radiance/patches/rad0011_plan_memory/SUMMARY.md) |
 
-| Model | Hardware | Best prefill | Generated output |
-| --- | --- | --- | --- |
-| [Qwen3.8-Flash-Next](models/qwen3.8-flash-next.md) | R9700 + 2 × RX 7900 XTX + RX 6900 XT | **3,837** (fresh ~44K); **2,513** (8 sessions, 1.04M tokens) | **330–342** aggregate engine decode, 6 streams |
-| [Qwen3.8-27B MXFP4](models/qwen3.8-27b.md) | R9700 | Not measured on current pin | **245–248** aggregate client output, 6 streams |
-| [Qwen3.6-35B-A3B FP8](models/qwen3.6-35b-a3b.md) | R9700 | Not measured on current pin | **171–219** across prompts, 1 stream |
+There are **10 engine patch packages** and **6 components**. The hand-off
+and up-mix patches are recorded as validated; other patches include
+diagnostic and unfinished work. See the [full catalogue](ENHANCEMENTS.md)
+for states and evidence. Recipe inclusion is not proof of qualification.
 
-No matched stock v1.14.0 benchmark has been retained for these workloads;
-the Flash-Next comparison against fewer helper cards is a BigCherry
-configuration comparison, not a stock-engine speedup.
+## Best recorded model results
 
-## Components
+These figures are from **Radiance v1.14.0**, not yet remeasured on v1.16.0.
+They are different workloads, not a like-for-like model ranking.
 
-| Component | Role |
-| --- | --- |
-| [libr3](../../../../engines/radiance/components/libr3/README.md) | RDNA3 kernels, including attention and quantised GEMMs |
-| [libr2](../../../../engines/radiance/components/libr2/README.md) | RDNA2 expert-kernel subset |
-| [bc-gfx12](../../../../engines/radiance/components/bc-gfx12/README.md) | Selected RDNA4 kernel overrides |
-| [moe-remote](../../../../engines/radiance/components/moe-remote/README.md) | Expert helpers, routing, mailbox and placement |
-| [serving](../../../../engines/radiance/components/serving/README.md) | Strict configuration loader, inspection and manifest generation |
-| [ngram-helper](../../../../engines/radiance/components/ngram-helper/README.md) | Shelved n-gram gather experiment |
+| Model | Prefill | Generated output |
+| --- | --- | --- |
+| [Qwen3.8-Flash-Next](models/qwen3.8-flash-next.md), R9700 + 2 × RX 7900 XTX + RX 6900 XT | **3,837 tok/s** (fresh ~44K) | **330–342 tok/s** aggregate engine decode, 6 streams |
+| [Qwen3.8-27B MXFP4](models/qwen3.8-27b.md), R9700 | Not measured | **245–248 tok/s** aggregate client output, 6 streams |
+| [Qwen3.6-35B-A3B FP8](models/qwen3.6-35b-a3b.md), R9700 | Not measured | **171–219 tok/s** client output across prompts, 1 stream |
 
-The [patch and component catalogue](ENHANCEMENTS.md) lists all nine
-Radiance patch packages, their recorded states and the six components.
-Only one patch is currently marked validated. A component or experimental
-setting is not automatically part of the production build.
+No matched stock Radiance benchmark is available for these runs. The
+four-card Flash-Next tail-helper layout carries a documented quality
+trade-off. The model pages give conditions, checks and limitations.
 
-## Architecture and current limits
+## Further detail
 
-The engine and remote helpers exchange activations and partial outputs
-through pinned host memory. Expert placement reflects each card's memory
-and throughput, and large prefills use chunked helper-row combine. The
-configuration is described in [layouts](LAYOUTS.md); the
-[build and test reference](RUNBOOK.md) describes source selections and
-measurement.
-
-The v1 manifest contract and its C++ reader have landed, as have
-`bc-serve` and the engine's manifest entry point. Full role-specific
-startup and resource-plan integration are still under development; see
-the [v1 specification](../../../design/serving-manifest-v1/spec.md).
-Do not treat legacy launcher flags as the final configuration interface.
+The [build and serving runbook](RUNBOOK.md) covers composition and
+measurement; [GPU layouts](LAYOUTS.md) covers helper card budgets.
+Manifest startup is still being integrated against the
+[v1 specification](../../../design/serving-manifest-v1/spec.md).

@@ -29,14 +29,48 @@ The radiance 1.9.0 bump (2026-10-20) took about an hour, but measured compile ti
 8. Fewer in-source rewrites: move self-contained enhancements out of libr3/native/*.rw into kernel files of our own with their own rows (candidates: the all-reduce timing hook and 4-bit wire, the pipelined norm), leaving rewrites only for what must change inside upstream code. New enhancements (RAD15) are written as rows from the start.
 9. Keep the gate suite green: failing tests on main are fixed or precisely skipped, never waved through as pre-existing.
 
+## Detailed Solution & Technical Design
+
+
+
+## Code Samples & Guidance
+
+
+
+## Files
+
+
+
 ## Validation
 
 The next radiance bump records per-phase times; target under 15 minutes end to end when no rewrites drift; one engine build per bump; a radiance bump runs no llama.cpp tests; the nightly drift job reports on upstream main.
+
+## Effort & Risk
+
+
+
+## Standards
+
+
+
+## Acceptance Criteria
+
+
 
 ## Notes
 
 Measured 2026-10-20 from the .ninja_log files of lane build 4babe498 and a local run of tools/tests/patch. Related: MEN10-MEN19 (managed engine workflow), RAD15 (engine rows instead of rewrites).
 
+
+
+BACKLOG TRIAGE 2026-11-04 absorbed items (superseded into this one; their notes keep the full history): MEN19: pin-bump has the drift phase (NATIVE_REWRITE_DRIFT) and caught the v1.16 rewrite break; remaining pin-release confirmation work is MEN24.
+
+
+
+CORRECTION 2026-11-04: the earlier note that MEN19 were absorbed into this item is withdrawn. An independent revalidation found each either still has open scope of its own (reopened) or was delivered outright. This item's scope is unchanged.
+
 ## Change Log
 
 - 2026-10-21T00:30:00+00:00 (created-by): Created by agent
+- 2026-11-04T03:47:59.755603+00:00 (updated-by): Updated: section:notes
+- 2026-11-04T04:45:51.868013+00:00 (updated-by): Updated: section:notes

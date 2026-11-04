@@ -59,8 +59,20 @@ KV precision rule applies: fp8 is acceptable, nothing below 8 bits. Depends on M
 
 2026-10-09 first working lane (steps 1 and 2 done). Source build of radiance 1.3.0 (89cee7ce; ROCm 7.2.4, g++ 14.2 unpacked privately) serving the published container StillDeadcode/qwen3.8-27b-mxfp4 (19,377,119,232 bytes, sha256 a4908940...df4f8 verified) on the R9700 alone: --tp 1 --max-num-seqs 8 --max-model-len 180000 --kv-cache-dtype fp8. Measured with tools/lab/reference-vllm/bench-openai.py, two repeats (script tools/lab/radiance/run-radiance.sh). Prefill t/s at ~2.3K / ~9K / ~35K / ~111K prompt tokens: 3,088-3,267 / 2,565-3,158 / 2,801-2,834 / 2,050-2,069 (same with the drafter off). Decode t/s with the container's DFlash2 drafter (auto): 106-134 / 96-99 / 96-106 / 77-80, acceptance 34.7% overall (position 0: 77.9%, position 1: 74.3%). Decode with the drafter off: 37.9 / 37.1 / 34.4 / 28.5. VRAM in use on the R9700 about 34.1 GB (the card's full reported capacity). Against BigCherry llama.cpp on the same card (UD-Q4_K_M, f16 KV): prefill 2.4x ours (1,141-1,291 to 35K, 844-857 at 111K, no drafter); decode with no drafter 20-25% faster (30.5 / 28.1 / 23.0); decode with a drafter about 2x our MTP (51-69 / 49-52 / 32-44). Against the vLLM + radiance container measured earlier: same prefill to 35K (~3,000), lower at 111K (2,050 against ~2,470), higher decode at 111K (77-80 against ~50). Operational findings: radiance's built-in Hugging Face fetch was cancelled mid-stream by the server and restarted from zero, and its helper (libexec/radiance/hfget.sh + curl) survives a kill of the server and keeps the queue's lock file descriptors open; fetch containers outside the GPU lock with a resumable client and verify size and sha256 before serving. Remaining steps: 3 (llama-server-native API against long-ctx-profile.sh), 4 (limits: Flash-Next container needs two RDNA4 cards for --tp 2; --tp 1 with expert tiering untested; an RX 7900 XTX has no kernel library), 5 (quality, MEN05).
 
+
+
+BACKLOG TRIAGE 2026-11-04 (SUPERSEDED; revalidated against main 6eb31a708, verdict CONFIRM): Radiance serves on the R9700 in the lab every day (Flash-Next 4-GPU runs, releases bc-radiance-1140/1160); the original 27B bring-up is covered by the current benchmark lane. Evidence: Radiance serves on the R9700 in the lab every day (Flash-Next 4-GPU runs, releases bc-radiance-1140/1160); the original 27B bring-up is covered by the current benchmark lane. Still referenced by: MEN07, MEN08, MEN03. Original content kept below for history.
+
+
+
+REOPENED 2026-11-04: an independent revalidation (against main 6eb31a708) rejected the closure recorded above, which had been based on a lighter check. It stays open. Why: MEN02.md:60 documents the real Radiance 1.3 R9700 27B measurement, but expressly leaves its native /completion API comparison, model/card/context limits and quality handoff undone. docs/reference/engines/radiance/models/qwen3.8-27b.md:25-37 says current-pin fresh prefill, DFlash2 and matched reference measurements are not recorded.
+
 ## Change Log
 
 - 2026-10-08T20:36:07.241630+00:00 (created-by): Created by agent
 - 2026-10-08T20:47:49.090866+00:00 (updated-by): Updated: section:title, section:description, section:steps, section:validation, section:acceptance_criteria
 - 2026-10-09T01:50:33.540603+00:00 (updated-by): Updated: section:notes
+- 2026-11-04T03:45:42.443403+00:00 (updated-by): Updated: section:notes
+- 2026-11-04T03:45:46.556463+00:00 (state-transition): State: pending → superseded
+- 2026-11-04T04:43:06.965527+00:00 (updated-by): Updated: section:notes
+- 2026-11-04T04:43:17.279731+00:00 (state-transition): State: superseded → pending

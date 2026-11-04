@@ -68,6 +68,11 @@ High: graph declaration/selection can silently skip/add collectives; fused/nonfu
 
 Depends RWQ01 and preferably RWQ02; can start exact-vs-WHT6 family isolation before WHT8 is ready. Explicitly do not conflate the global --tp-wire setting with the internally dispatched fused op variant.
 
+
+
+BACKLOG TRIAGE 2026-11-04 (revalidated against main 6eb31a708): the proposed disposition "MERGE into RWQ02/RWQ05" was NOT applied; this item stays open. Why: docs/planning/active/patching-radiance-wire-quality/RWQ03.md:16-32,58-64 requires immutable per-site/layer/phase selection, policy-hash rank agreement, and one correct collective route per operation. docs/planning/active/patching-radiance-wire-quality/RWQ02.md:19-29,65-68 is WHT8 codec/kernel work and explicitly says independent wire=8 per-site selection needs RWQ03; RWQ05 is hardware A/B, not a graph policy implementation owner. Active items that reference this one: RWQ01, RWQ02, RWQ04, RWQ05. Keep RWQ03 as the separate rank-consistent graph policy/operation-tag implementation; feed qualified variants to RWQ05.
+
 ## Change Log
 
 - 2026-10-15T00:00:00+00:00 (created-by): Initial plan; unimplemented GPU work remains pending.
+- 2026-11-04T04:25:37.195399+00:00 (updated-by): Updated: section:notes

@@ -61,8 +61,20 @@ KL vs exact reference must be exact (same arithmetic, reordered issue); ab-bench
 
 2026-10-14 source survey (radiance 1.3.0, 89cee7c): the runtime already has the second lane this item needs -- Ctx::set_lane / lane_join (abi rad_lane, rad_lane_join), rad_buf_concurrent in the builder, and ctx.h documents the rules: every collective on lane 1 (ar seq/double-buffer parity), device-wide counters keyed per stream (split-K split_ctr already per stream in libr4d), concurrent buffers named via rad_buf_concurrent, and slices must stay in the same bucket band (a 4096 chunk halves to 2048+2048 = same band; no more than two slices). The comment budgets ~15% prefill from overlapping the AR. No arch uses the lane yet (grep: only abi/core). Remaining work is the arch side: the blocks (rad_block_attn_gated_fp8 / gdn_fp8 / mlp_fp8) take a whole RadBatch and fixed brows(b_x, n_tok) from row 0, so a half step needs either a row-offset sub-batch path in each block or per-half residual buffers; B's attention reads A's KV and B's GDN continues A's state, so per-layer order A.l then B.l is valid. Also check libr3 (gfx1100) ar kernels and any libr3 device-wide counters against rule TWO before putting anything on lane 1. GPT request req_d2210f41d8004623 was orphaned 14 h with no output and was abandoned; branch feat/rad04-two-half holds only the seed commit.
 
+
+
+BACKLOG TRIAGE 2026-11-04 (CLOSE; revalidated against main 6eb31a708, verdict CONFIRM): Archive this 27B two-XTX overlap experiment unless a future trace justifies its distinct topology. Evidence: RAD04.md:18-40 proposes an unbuilt 27B two-XTX TP all-reduce/half-step schedule, while docs/reference/engines/radiance/README.md:15-18 reports 27B running on the R9700 alone. Active-plan references to RAD04 are historical exclusions or analogies, not REQUIRES/blocker relationships for the current Flash-Next topology. Still referenced by: BCOP203, BCOP205, BCOP206, BCOP207, BCOP208, BCOP209, BCOP210, BCOP211, BCOP212, BCOP213, BCOP214, BCOP216, BCOP217, FKE01, MET12, PHA04, PRBE04, PRBE110, PRBE54, QFP47, QFP52, RAD06. Original content kept below for history.
+
+
+
+REOPENED 2026-11-04 (owner decision): Qwen3.8-27B is a live target, so this item is not obsolete. The triage closed it only because it is outside the Flash-Next four-card queue; that is a priority question, not a reason to close. It stays pending at its own priority and is not part of the core-first order (hot placement, RAD46).
+
 ## Change Log
 
 - 2026-10-14T04:55:19.264169+00:00 (created-by): Created by agent
 - 2026-10-14T05:01:27.920591+00:00 (updated-by): Updated: section:detailed_solution, section:validation
 - 2026-10-14T08:41:26.958185+00:00 (updated-by): Updated: section:notes
+- 2026-11-04T04:08:48.592007+00:00 (updated-by): Updated: section:notes
+- 2026-11-04T04:08:52.630642+00:00 (state-transition): State: pending → deprecated
+- 2026-11-04T05:03:24.093263+00:00 (updated-by): Updated: section:notes
+- 2026-11-04T05:03:30.099114+00:00 (state-transition): State: deprecated → pending

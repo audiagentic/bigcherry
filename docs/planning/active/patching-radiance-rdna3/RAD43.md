@@ -56,11 +56,19 @@ Per-stage harness numbers before and after each change; live 42K probe and 8-ses
 
 Measurement first; only changes with a harness-measured gain go on.
 
+
+
+BACKLOG TRIAGE 2026-11-04 absorbed items (superseded into this one; their notes keep the full history): MEN21: RAD43 (helper kernel hot-path profiling) and RCS08 exist and are open; capture/replay tooling already in tools/lab/radiance and worker --replay.
+
+
+
+CORRECTION 2026-11-04: the earlier note that MEN21 were absorbed into this item is withdrawn. An independent revalidation found each either still has open scope of its own (reopened) or was delivered outright. This item's scope is unchanged.
+
 ## Change Log
 
 - 2026-11-01T11:26:24.954166+00:00 (created-by): Created by agent
 
-## XTX head, replay against live (2026-11-01, `runs/rad43-capx`)
+## XTX head, replay against live (2026-11-01, )
 
 60 captures of helper 0's large-lane requests in the 42K probe (flashnext-4gpu), 20 replayed under rocprof on the XTX: the
 grouped GEMMs (gate/up and down, the unnamed kernel) 2 x 1,203 us = 2.41 ms a request, the reduce/write 722 us, the
@@ -76,7 +84,7 @@ Tile knobs on the same 20 head captures (rocprof total of the grouped GEMMs, all
 (libr4d moe_gemm_w4a8 launch rc=-18, the replay then waits forever). The default is already the best of the plugin's knobs:
 a head gain needs new kernel work (few-row experts to the few-rows kernel in the same request; the grouped GEMM itself).
 
-## Where the XTX grouped GEMM's time goes (2026-11-01, scoping, `runs/rad43-capx/pr-*`)
+## Where the XTX grouped GEMM's time goes (2026-11-01, scoping, )
 
 The kernel is libr4d's `moe_gemm_q_kernel` (radiance 1.14.0 `libr4d/r4d_moe.hip`, ~1,100 of its 3,800 lines; templated on
 MT/NTL/WGM/WGN, the w4nl path decodes weights to f16 and multiplies with f16 WMMA). Its timing probe (R3_MOE_PROBE, outputs
@@ -86,4 +94,5 @@ weight decode, LDS staging, global loads and barriers. A rewrite would target th
 straight into WMMA fragments, double-buffered weight tiles, fewer barriers), not the arithmetic. Size: L (one large kernel
 family, five template axes, two weight formats); expected gain if the non-math part halves: ~1/3 of the head GEMM, ~0.8
 ms a head request, the heads being last on 62% of prefill layers.
-
+- 2026-11-04T03:48:07.632610+00:00 (updated-by): Updated: section:notes
+- 2026-11-04T04:46:00.212430+00:00 (updated-by): Updated: section:notes

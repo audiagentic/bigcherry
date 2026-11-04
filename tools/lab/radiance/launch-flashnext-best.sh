@@ -1,4 +1,7 @@
 #!/bin/bash
+# Layout-driven Radiance launch. Flash-Next helper defaults below apply only to
+# layouts with helpers; helper-free dense TP uses model, rank count and serving
+# arguments resolved from engines/radiance/layouts.toml.
 # Launch Qwen3.8-Flash-Next on dev in the current best layout, per
 # docs/reference/engines/radiance/models/qwen3.8-flash-next.md ("Current best layout and numbers") and the harness config
 # tools/lab/radiance/helper-ab.json, which this mirrors outside the harness.
@@ -20,7 +23,7 @@
 # --budget gfx1030=4096). A layout that needs a card the host does not have, or a plugin the build lacks, stops here with the reason.
 #
 # Needs a radiance build of production source with the helper hand-off:
-#   bigcherry build --lane radiance:stock:linux-radiance --experiment moe-remote-handoff
+#   bigcherry build --lane radiance-lab:stock:linux-radiance
 #
 # Usage:
 #   bash tools/lab/radiance/launch-flashnext-best.sh [start] [--build DIR] [--port N] [--heat FILE] [--host-pool-mib N] [--host-kv-mib N] [--chunk TOKENS] [--ngram-placement ram|disk|vram] [--kv-dtype fp8|fp8_v4|k6_v4] [--engine-arg ARG ...] [--ngram-device INDEX] [--max-model-len TOKENS] [--record-heat PREFIX|off [--record-period S]] [--gpu-power] [--layout NAME] [--budget ARCH=MIB] [--canary-prompt TEXT --canary-expect FACT]
@@ -88,6 +91,7 @@ NUM_SPEC=3                # the engine's --num-speculative-tokens (MTP depth); l
 NGRAM=ram
 KV_DTYPE=fp8
 ENGINE_ARGS=()
+CUSTOM_SERVE_OPTIONS=()
 NGRAM_DEV=""
 MAX_LEN=262144
 ROPE=none
@@ -106,23 +110,23 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --build) BUILD=$2; shift 2 ;;
     --port) PORT=$2; shift 2 ;;
-    --heat) HEAT=$2; shift 2 ;;
+    --heat) CUSTOM_SERVE_OPTIONS+=(--heat); HEAT=$2; shift 2 ;;
     --gpu-power) GPU_POWER=1; shift ;;
     --layout) LAYOUT=$2; shift 2 ;;
     --budget) BUDGETS+=("$2"); shift 2 ;;
-    --host-pool-mib) HOST_POOL_MIB=$2; shift 2 ;;
-    --host-kv-mib) HOST_KV_MIB=$2; shift 2 ;;
-    --chunk) CHUNK=$2; shift 2 ;;
-    --kv-dtype) KV_DTYPE=$2; shift 2 ;;
-    --engine-arg) ENGINE_ARGS+=("$2"); shift 2 ;;
-    --ngram-device) NGRAM_DEV=$2; shift 2 ;;
-    --max-model-len) MAX_LEN=$2; shift 2 ;;
-    --rope-scaling) ROPE=$2; shift 2 ;;
-    --max-num-seqs) SEQS=$2; shift 2 ;;
-    --prefix-resume) PREFIX_RESUME=$2; shift 2 ;;
-    --ngram-placement) NGRAM=$2; shift 2 ;;
-    --record-heat) RECORD=$2; shift 2 ;;
-    --record-period) RECORD_PERIOD=$2; shift 2 ;;
+    --host-pool-mib) CUSTOM_SERVE_OPTIONS+=(--host-pool-mib); HOST_POOL_MIB=$2; shift 2 ;;
+    --host-kv-mib) CUSTOM_SERVE_OPTIONS+=(--host-kv-mib); HOST_KV_MIB=$2; shift 2 ;;
+    --chunk) CUSTOM_SERVE_OPTIONS+=(--chunk); CHUNK=$2; shift 2 ;;
+    --kv-dtype) CUSTOM_SERVE_OPTIONS+=(--kv-dtype); KV_DTYPE=$2; shift 2 ;;
+    --engine-arg) CUSTOM_SERVE_OPTIONS+=(--engine-arg); ENGINE_ARGS+=("$2"); shift 2 ;;
+    --ngram-device) CUSTOM_SERVE_OPTIONS+=(--ngram-device); NGRAM_DEV=$2; shift 2 ;;
+    --max-model-len) CUSTOM_SERVE_OPTIONS+=(--max-model-len); MAX_LEN=$2; shift 2 ;;
+    --rope-scaling) CUSTOM_SERVE_OPTIONS+=(--rope-scaling); ROPE=$2; shift 2 ;;
+    --max-num-seqs) CUSTOM_SERVE_OPTIONS+=(--max-num-seqs); SEQS=$2; shift 2 ;;
+    --prefix-resume) CUSTOM_SERVE_OPTIONS+=(--prefix-resume); PREFIX_RESUME=$2; shift 2 ;;
+    --ngram-placement) CUSTOM_SERVE_OPTIONS+=(--ngram-placement); NGRAM=$2; shift 2 ;;
+    --record-heat) CUSTOM_SERVE_OPTIONS+=(--record-heat); RECORD=$2; shift 2 ;;
+    --record-period) CUSTOM_SERVE_OPTIONS+=(--record-period); RECORD_PERIOD=$2; shift 2 ;;
     --canary-prompt) CANARY_PROMPT=$2; shift 2 ;;
     --canary-expect) CANARY_EXPECT=$2; shift 2 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
@@ -170,7 +174,7 @@ stop_all() {
 # launch goes on. The lock is released at the hand-off; the engine and helpers never inherit it.
 mkdir -p "$RUN"
 exec 9> "$RUN/launch.lock"
-flock -n 9 || { echo "FLASHNEXT_EXIT=98 another launch (or stop) is in progress ($RUN/launch.lock); wait for it, or interrupt it with ^C"; exit 98; }
+flock -n 9 || { echo "RADIANCE_EXIT=98 another launch (or stop) is in progress ($RUN/launch.lock); wait for it, or interrupt it with ^C"; exit 98; }
 
 if [ "$CMD" = stop ]; then
   if stop_all; then echo "stopped"; exit 0; fi
@@ -180,19 +184,28 @@ fi
 
 for name in engine $(cd "$PIDS" 2>/dev/null && ls helper* 2>/dev/null); do
   if [ -f "$PIDS/$name" ] && kill -0 "$(cat "$PIDS/$name")" 2>/dev/null; then
-    echo "FLASHNEXT_EXIT=98 already running ($name pid $(cat "$PIDS/$name")); run '$0 stop' first"; exit 98
+    echo "RADIANCE_EXIT=98 already running ($name pid $(cat "$PIDS/$name")); run '$0 stop' first"; exit 98
   fi
 done
 
+# Resolve the layout before choosing binaries and the model container.
+BUDGET_ARGS=(); for b in "${BUDGETS[@]:-}"; do [ -n "$b" ] && BUDGET_ARGS+=(--budget "$b"); done
+LAYOUT_OUT=$(PYTHONPATH=tools python3 -m bigcherry layout env "$LAYOUT" "${BUDGET_ARGS[@]}") || { echo "RADIANCE_EXIT=99 layout '$LAYOUT' does not resolve on this host (above)"; exit 99; }
+eval "$LAYOUT_OUT"
+if [ "$LAYOUT_HELPER_COUNT" = 0 ] && [ "${#CUSTOM_SERVE_OPTIONS[@]}" -ne 0 ]; then
+  echo "RADIANCE_EXIT=2 these options configure helper-offload serving, not the helper-free layout $LAYOUT: ${CUSTOM_SERVE_OPTIONS[*]}; use its server-args in layouts.toml" >&2
+  exit 2
+fi
+
 if [ -z "$BUILD" ]; then
   for d in $(ls -td "$WORK"/builds/*/*/ 2>/dev/null); do
-    [ -x "${d}radiance_home/helpers/r3_moe_worker" ] && [ -x "${d}bin/radiance" ] && { BUILD=${d%/}; break; }
+    [ -x "${d}bin/radiance" ] && { [ "$LAYOUT_HELPER_COUNT" = 0 ] || [ -x "${d}radiance_home/helpers/r3_moe_worker" ]; } && { BUILD=${d%/}; break; }
   done
 fi
 RAD_BIN=$BUILD/bin/radiance
 RAD_HOME=$BUILD/radiance_home
 HELPER=$RAD_HOME/helpers/r3_moe_worker
-[ -x "$RAD_BIN" ] && [ -x "$HELPER" ] || { echo "FLASHNEXT_EXIT=99 no build with bin/radiance and the r3_moe_worker helper (--build '$BUILD')"; exit 99; }
+[ -x "$RAD_BIN" ] && { [ "$LAYOUT_HELPER_COUNT" = 0 ] || [ -x "$HELPER" ]; } || { echo "RADIANCE_EXIT=99 no build for layout $LAYOUT (--build '$BUILD')"; exit 99; }
 
 # Warn (never block) when the host lacks settings the tooling expects: configured per-card power settings not applied,
 # CPU energy counters unreadable (`bigcherry host-check`, PWR04).
@@ -225,43 +238,45 @@ if [ "$GPU_POWER" = 1 ]; then
   fi
 fi
 
-MODEL=${MODEL:-${BC_MODEL_ROOT}/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad}
-[ -f "$MODEL" ] || { echo "FLASHNEXT_EXIT=99 model not found: $MODEL"; exit 99; }
-[ -f "$HEAT" ] || { echo "FLASHNEXT_EXIT=99 route-heat file not found: $HEAT (hottest-first placement is part of the best layout)"; exit 99; }
+if [ "$LAYOUT_HELPER_COUNT" = 0 ] && [ -n "${MODEL:-}" ]; then
+  echo "RADIANCE_EXIT=2 the helper-free model is selected by layouts.toml; unset MODEL" >&2
+  exit 2
+fi
+MODEL=${MODEL:-${BC_MODEL_ROOT:?set BC_MODEL_ROOT (source tools/env/bigcherry-env.sh)}/$LAYOUT_MODEL}
+[ -f "$MODEL" ] || { echo "RADIANCE_EXIT=99 model not found: $MODEL"; exit 99; }
+if [ "$LAYOUT_HELPER_COUNT" -gt 0 ]; then
+  [ -f "$HEAT" ] || { echo "RADIANCE_EXIT=99 route-heat file not found: $HEAT"; exit 99; }
+fi
 
 source "$(dirname "${BASH_SOURCE[0]}")/lab-env.sh"
-# Which card does what comes from the layout (engines/radiance/layouts.toml) resolved against this host's device inventory, and what a card
-# type needs (plugin, weight formats, few-rows kernel) from engines/radiance/archs.toml: nothing about cards is named here.
-BUDGET_ARGS=(); for b in "${BUDGETS[@]:-}"; do [ -n "$b" ] && BUDGET_ARGS+=(--budget "$b"); done
-LAYOUT_OUT=$(PYTHONPATH=tools python3 -m bigcherry layout env "$LAYOUT" "${BUDGET_ARGS[@]}") || { echo "FLASHNEXT_EXIT=99 layout '$LAYOUT' does not resolve on this host (above)"; exit 99; }
-eval "$LAYOUT_OUT"
-R9700=$LAYOUT_ENGINE_DEVICE
+[ -f "$RAD_HOME/kernels/$LAYOUT_ENGINE_PLUGIN.so" ] || { echo "RADIANCE_EXIT=99 layout $LAYOUT requires kernels/$LAYOUT_ENGINE_PLUGIN.so"; exit 99; }
 HELPERS=(); for ((i = 0; i < LAYOUT_HELPER_COUNT; i++)); do HELPERS+=("$i"); done
 for ((i = 0; i < LAYOUT_HELPER_COUNT; i++)); do
   declare -n h="LAYOUT_HELPER_$i"
   plugin=$(printf '%s\n' "${h[@]}" | sed -n 's/^R3_MOE_WORKER_PLUGIN_FILE=//p')
-  [ -f "$RAD_HOME/kernels/$plugin" ] || { echo "FLASHNEXT_EXIT=99 layout '$LAYOUT' needs kernels/$plugin in the build ($RAD_HOME); rebuild with the radiance-lab lane"; exit 99; }
+  [ -f "$RAD_HOME/kernels/$plugin" ] || { echo "RADIANCE_EXIT=99 layout '$LAYOUT' needs kernels/$plugin in the build ($RAD_HOME); rebuild with the radiance-lab lane"; exit 99; }
   unset -n h
 done
-echo "layout $LAYOUT: engine card $LAYOUT_ENGINE_DEVICE; $LAYOUT_SUMMARY" >&2
+echo "layout $LAYOUT: engine cards $LAYOUT_ENGINE_DEVICES; $LAYOUT_SUMMARY" >&2
 
 # shared by the engine and the helpers (helper-ab.json "environment" + arm settings), then what the layout says
-COMMON=(
-  RADIANCE_HOME="$RAD_HOME"
-  R3_MOE_WORKER_SHM="$SHM"
-  R3_MOE_WORKER_MAX_ROWS=4096
-  R3_MOE_WORKER_SMALL_ROWS=8
-  R3_MOE_WORKER_GEMV_LARGE_ROWS=32
-  R3_MOE_WORKER_MOE_DOWN_TILE=1
-  R3_MOE_WORKER_HEAT="$HEAT"
-  R3_MOE_WORKER_SKIP_OWNED=1
-  "${LAYOUT_COMMON[@]}"
-)
-[ "$RECORD" = off ] && RECORD=""
-if [ -n "$RECORD" ]; then
-  COMMON+=(R3_MOE_WORKER_HISTOGRAM="$RECORD" R3_MOE_WORKER_HISTOGRAM_PERIOD_S="$RECORD_PERIOD")
-  echo "recording the route histogram to $RECORD.rank0 every ${RECORD_PERIOD}s; whether --heat still fits the traffic:" >&2
-  echo "  python3 tools/lab/radiance/heat-placement/heat-watch.py --heat $HEAT --live $RECORD.rank0 --out $RUN/heat.reranked.hot-first" >&2
+COMMON=(RADIANCE_HOME="$RAD_HOME")
+if [ "$LAYOUT_HELPER_COUNT" -gt 0 ]; then
+  COMMON+=(
+    R3_MOE_WORKER_SHM="$SHM"
+    R3_MOE_WORKER_MAX_ROWS=4096
+    R3_MOE_WORKER_SMALL_ROWS=8
+    R3_MOE_WORKER_GEMV_LARGE_ROWS=32
+    R3_MOE_WORKER_MOE_DOWN_TILE=1
+    R3_MOE_WORKER_HEAT="$HEAT"
+    R3_MOE_WORKER_SKIP_OWNED=1
+    "${LAYOUT_COMMON[@]}"
+  )
+  [ "$RECORD" = off ] && RECORD=""
+  if [ -n "$RECORD" ]; then
+    COMMON+=(R3_MOE_WORKER_HISTOGRAM="$RECORD" R3_MOE_WORKER_HISTOGRAM_PERIOD_S="$RECORD_PERIOD")
+    echo "recording the route histogram to $RECORD.rank0 every ${RECORD_PERIOD}s" >&2
+  fi
 fi
 
 mkdir -p "$PIDS"
@@ -286,45 +301,49 @@ start_helpers() {
       kill -0 "$(cat "$PIDS/helper$i")" 2>/dev/null || break
       sleep 1
     done
-    [ $ready = 1 ] || { echo "FLASHNEXT_EXIT=1 helper$i not ready; see $log"; tail -n 20 "$log"; return 1; }
+    [ $ready = 1 ] || { echo "RADIANCE_EXIT=1 helper$i not ready; see $log"; tail -n 20 "$log"; return 1; }
   done
 }
 
-RESUME_ARGS=(); [ "$PREFIX_RESUME" = off ] || RESUME_ARGS=(--prefix-resume "$PREFIX_RESUME")
-ENGINE_KERNELS="$LAYOUT_ENGINE_PLUGIN,libr3moe,libref"
-ENGINE_VISIBLE="$R9700"
-ENGINE_HIP=0
+# Rank-to-card order comes from the resolved inventory. The engine process
+# sees consecutive HIP ordinals; TP traffic is forced through host memory.
+ENGINE_VISIBLE="$LAYOUT_ENGINE_DEVICES"
+ENGINE_HIP=""
+for ((i = 0; i < LAYOUT_ENGINE_RANKS; i++)); do
+  [ -z "$ENGINE_HIP" ] && ENGINE_HIP="$i" || ENGINE_HIP="$ENGINE_HIP,$i"
+done
+ENGINE_KERNELS="$LAYOUT_ENGINE_PLUGIN,libref"
+ENGINE_TOPO_ARGS=(--tp "$LAYOUT_ENGINE_RANKS")
+ENGINE_ENV=("${COMMON[@]}")
 NGRAM_ENV=()
-if [ -n "$NGRAM_DEV" ]; then
-  # the n-gram card is visible to the engine process as HIP device 1 (the engine card is 0); the plugin goes ahead of the engine's library
-  ENGINE_KERNELS="libr3ngram,$ENGINE_KERNELS"
-  ENGINE_VISIBLE="$R9700,$NGRAM_DEV"
-  ENGINE_HIP="0,1"
-  NGRAM_ENV=(R3_NGRAM_DEV=1 R3_NGRAM_HELPER_SO="$RAD_HOME/helpers/libr3_ngram_helper.so" R3_NGRAM_AVX="$RAD_HOME/kernels/libavx.so")
+if [ "$LAYOUT_ENGINE_RANKS" -gt 1 ]; then
+  [ -n "$LAYOUT_TP_WIRE" ] || { echo "RADIANCE_EXIT=99 multi-rank layout missing tp-wire" >&2; exit 99; }
+  ENGINE_TOPO_ARGS+=(--tp-wire "$LAYOUT_TP_WIRE" --p2p off)
 fi
-# start_engine LOG [ARG ...]: the engine, with the launcher's own configuration (the one plan_check_describe tells bc-serve
-# about) and ARG... after it.
+if [ "$LAYOUT_HELPER_COUNT" -gt 0 ]; then
+  ENGINE_KERNELS="$LAYOUT_ENGINE_PLUGIN,libr3moe,libref"
+  ENGINE_ENV+=(R3_MOE_WORKER=1)
+  RESUME_ARGS=(); [ "$PREFIX_RESUME" = off ] || RESUME_ARGS=(--prefix-resume "$PREFIX_RESUME")
+  ENGINE_CONFIG_ARGS=(
+    --placement expert_tiered --ngram-placement "$NGRAM"
+    --host-pool-mib "$HOST_POOL_MIB" --prefix-cache-mib "$HOST_KV_MIB"
+    --max-num-seqs "$SEQS" --max-num-batched-tokens "$CHUNK"
+    --checkpoint-interval "$CKPT_INTERVAL" --kv-cache-dtype "$KV_DTYPE"
+    --num-speculative-tokens "$NUM_SPEC" --max-model-len "$MAX_LEN"
+    --rope-scaling "$ROPE" "${RESUME_ARGS[@]}"
+  )
+  if [ -n "$NGRAM_DEV" ]; then
+    ENGINE_KERNELS="libr3ngram,$ENGINE_KERNELS"
+    ENGINE_VISIBLE="$ENGINE_VISIBLE,$NGRAM_DEV"
+    ENGINE_HIP="$ENGINE_HIP,$LAYOUT_ENGINE_RANKS"
+    NGRAM_ENV=(R3_NGRAM_DEV="$LAYOUT_ENGINE_RANKS" R3_NGRAM_HELPER_SO="$RAD_HOME/helpers/libr3_ngram_helper.so" R3_NGRAM_AVX="$RAD_HOME/kernels/libavx.so")
+  fi
+else
+  ENGINE_CONFIG_ARGS=("${LAYOUT_SERVER_ARGS[@]}")
+fi
 start_engine() {
   local log=$1; shift
-  env "${COMMON[@]}" "${NGRAM_ENV[@]}" R3_MOE_WORKER=1 ROCR_VISIBLE_DEVICES="$ENGINE_VISIBLE" HIP_VISIBLE_DEVICES="$ENGINE_HIP" \
-    setsid ${ENGINE_WRAP:-} "$RAD_BIN" --model "$MODEL" --radiance-home "$RAD_HOME" --port "$PORT" \
-      --kernels "$ENGINE_KERNELS" \
-      --placement expert_tiered \
-      --ngram-placement "$NGRAM" \
-      --host-pool-mib "$HOST_POOL_MIB" \
-      --prefix-cache-mib "$HOST_KV_MIB" \
-      --tp 1 \
-      --max-num-seqs "$SEQS" \
-      --max-num-batched-tokens "$CHUNK" \
-      --checkpoint-interval "$CKPT_INTERVAL" \
-      --kv-cache-dtype "$KV_DTYPE" \
-      --num-speculative-tokens "$NUM_SPEC" \
-      --max-model-len "$MAX_LEN" \
-      --rope-scaling "$ROPE" \
-      "${RESUME_ARGS[@]}" \
-      "${ENGINE_ARGS[@]}" \
-      "$@" \
-    > "$log" 2>&1 9>&- &
+  env "${ENGINE_ENV[@]}" "${NGRAM_ENV[@]}" ROCR_VISIBLE_DEVICES="$ENGINE_VISIBLE" HIP_VISIBLE_DEVICES="$ENGINE_HIP"     setsid ${ENGINE_WRAP:-} "$RAD_BIN" --model "$MODEL" --radiance-home "$RAD_HOME" --port "$PORT"       --kernels "$ENGINE_KERNELS" "${ENGINE_TOPO_ARGS[@]}" "${ENGINE_CONFIG_ARGS[@]}"       "${ENGINE_ARGS[@]}" "$@" > "$log" 2>&1 9>&- &
 }
 
 # The measuring start of the plan check (plan-check.sh): helpers up, the engine runs to the end of its memory plan and
@@ -340,10 +359,28 @@ plan_check_start_engine_measure() {
   [ $rc = 0 ] && [ -s "$PLAN_MEASURE_FILE" ]
 }
 
-source "$(dirname "${BASH_SOURCE[0]}")/lib/plan-check.sh"
-# The check is armed before anything is started for real; if it cannot be (no bc-serve, a measuring start that failed, a
-# plan that does not decode) the engine does not start. There is no way to skip it.
-plan_check_flags || { echo "FLASHNEXT_EXIT=97 the engine plan check could not be armed (above); nothing was started for serving"; exit 97; }
+PLAN_CHECK_ARGS=()
+if [ "$LAYOUT_HELPER_COUNT" -gt 0 ]; then
+  source "$(dirname "${BASH_SOURCE[0]}")/lib/plan-check.sh"
+  plan_check_flags || { echo "RADIANCE_EXIT=97 the engine plan check could not be armed (above); nothing was started for serving"; exit 97; }
+else
+  # The interim bc-serve recipes only understand the single-engine-card
+  # remote-MoE layout. Require a fresh engine memory plan for dense TP.
+  # This is not a calibrated --plan-check; do not reuse a MoE plan here.
+  PLAN_MEASURE_FILE="$RUN/plan-dense.json"
+  rm -f "$PLAN_MEASURE_FILE"
+  start_engine "$RUN/engine-measure.log" --plan-memory "$PLAN_MEASURE_FILE"
+  measure_pid=$!
+  echo "$measure_pid" > "$PIDS/engine"
+  measure_rc=0
+  wait "$measure_pid" || measure_rc=$?
+  stop_procs || { echo "RADIANCE_EXIT=97 dense plan measurement did not stop cleanly" >&2; exit 97; }
+  if [ "$measure_rc" != 0 ] || [ ! -s "$PLAN_MEASURE_FILE" ] || ! python3 -m json.tool "$PLAN_MEASURE_FILE" >/dev/null 2>&1; then
+    echo "RADIANCE_EXIT=97 dense engine plan measurement failed; see $RUN/engine-measure.log" >&2
+    exit 97
+  fi
+  echo "dense memory plan measured; calibrated bc-serve plan-check is not yet available for TP layouts" >&2
+fi
 
 trap 'exit 1' ERR
 rm -f "/dev/shm${SHM}"
@@ -351,14 +388,14 @@ start_helpers
 LOG=$RUN/engine-$STAMP.log
 start_engine "$LOG" "${PLAN_CHECK_ARGS[@]}"
 echo $! > "$PIDS/engine"
-echo "engine on R9700 (pid $!, log $LOG): waiting for /health..." >&2
+echo "engine TP=$LAYOUT_ENGINE_RANKS cards $LAYOUT_ENGINE_DEVICES (pid $!, log $LOG): waiting for /health..." >&2
 up=0
 for _ in $(seq 180); do
   curl -sf "http://127.0.0.1:$PORT/health" > /dev/null 2>&1 && { up=1; break; }
   kill -0 "$(cat "$PIDS/engine")" 2>/dev/null || break
   sleep 5
 done
-[ $up = 1 ] || { echo "FLASHNEXT_EXIT=1 engine did not come up; see $LOG"; tail -n 30 "$LOG"; false; }
+[ $up = 1 ] || { echo "RADIANCE_EXIT=1 engine did not come up; see $LOG"; tail -n 30 "$LOG"; false; }
 start_canary() {
   local body answer reply
   body=$(CANARY_PROMPT="$CANARY_PROMPT" python3 -c 'import json,os;print(json.dumps({"model":"default","prompt":os.environ["CANARY_PROMPT"],"max_tokens":24,"temperature":0}))')
@@ -371,7 +408,7 @@ start_canary() {
   else
     case "${answer,,}" in *"${CANARY_EXPECT,,}"*) echo "start canary: ok (answered '$(printf %s "$answer" | head -c 60)')" >&2; return 0 ;; esac
   fi
-  echo "FLASHNEXT_EXIT=96 start canary failed: the engine is up but answered '$(printf %s "$answer" | head -c 80)' to '$CANARY_PROMPT' (expected it to contain '$CANARY_EXPECT'); stopping everything this launch started; engine log $LOG" >&2
+  echo "RADIANCE_EXIT=96 start canary failed: the engine is up but answered '$(printf %s "$answer" | head -c 80)' to '$CANARY_PROMPT' (expected it to contain '$CANARY_EXPECT'); stopping everything this launch started; engine log $LOG" >&2
   return 1
 }
 start_canary || exit 96
@@ -381,10 +418,10 @@ trap - EXIT INT TERM HUP
 exec 9>&-
 
 cat <<INFO
-FLASHNEXT_EXIT=0
-Flash-Next is up: http://127.0.0.1:$PORT (OpenAI-compatible /v1/chat/completions, /v1/completions)
+RADIANCE_EXIT=0
+Radiance layout $LAYOUT is up: http://127.0.0.1:$PORT (OpenAI-compatible /v1/chat/completions, /v1/completions)
   build    $BUILD
-  engine   R9700 pid $(cat "$PIDS/engine"), log $LOG
-  layout   $LAYOUT: $LAYOUT_SUMMARY\n  helpers  pids $(for p in "$PIDS"/helper*; do printf "%s " "$(cat "$p")"; done), logs $RUN/helper*-$STAMP.log
+  engine   TP=$LAYOUT_ENGINE_RANKS cards $LAYOUT_ENGINE_DEVICES pid $(cat "$PIDS/engine"), log $LOG
+  layout   $LAYOUT: $LAYOUT_SUMMARY\n  helpers  $(if [ "$LAYOUT_HELPER_COUNT" -eq 0 ]; then echo none; else for p in "$PIDS"/helper*; do printf "%s " "$(cat "$p")"; done; fi)
   stop     bash $0 stop
 INFO

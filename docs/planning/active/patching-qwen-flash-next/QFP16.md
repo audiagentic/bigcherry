@@ -78,6 +78,10 @@ Source: FMTP01 Gate 0 notes 2026-10-04. Related: QFP06 (HIP graph working set), 
 
 2026-10-04 1325 scheduler split timing at ~10K (flashnext-schedsplit-d10k): target verify graph = 2 splits: CPU (4 nodes, token_embd/per_layer_token_embd get_rows) compute 0.27 ms; Meta(ROCm0-2) split with 28 inputs: input handling 2.63 ms median + launch 2.23 ms (= 1320's meta total). Draft (ROCm3) split, 15 inputs: input handling 0.40-0.45 ms per call (~4 calls per round incl. process) + launch 0.01-0.02 ms. ROOT CAUSE of the remaining submit time: ggml_backend_sched_compute_splits copies split inputs synchronously - the CUDA/meta backends' cpy_tensor_async does not accept a CPU source, so each input takes the fallback (ggml_backend_synchronize(input_backend), event/backend synchronize of the split backend, blocking ggml_backend_tensor_copy), and mirrored meta inputs go to all 3 devices. Fix candidates (new patch, ~4 ms/round = ~10%): (a) allocate the CPU split outputs/inputs in a pinned host buffer (cuda host buffer type) and in the scheduler fallback use the split backend's set_tensor_async from host memory when the source buffer is host-resident (ordering is safe: the copy is enqueued on the split backend's stream before its compute; the split-backend event wait already protects reuse of the input copy); (b) meta backend: implement set_tensor_async/cpy_tensor_async for host->mirrored by fanning out per-device async copies. Priority above the one-graph-per-device capture (~2 ms).
 
+
+
+BACKLOG TRIAGE 2026-11-04 (revalidated against main 6eb31a708): the proposed disposition "CLOSE as Radiance task" was NOT applied; this item stays open. Why: docs/planning/active/patching-qwen-flash-next/QFP16.md:14-41,93-131 records a real 1326 validated <=4 MiB decode-input improvement but still gates larger prefill input staging, multi-device slot lifetime and post-1326 host-submit profiling. engines/llamacpp/patches/1320_meta_compute_timing/SUMMARY.md:1-9 confirms a llama Meta diagnostic; docs/planning/active/patching-qwen-flash-next/QFP27.md:14-30 also depends on bounded 1326 retention, so closing merely because Radiance differs would discard live llama work. Active items that reference this one: BCOP182, BCOP205, BCOP206, BCOP209, BCOP223, BCOP236, BCOP252, BCOP348, BCOP40, QFP04. Keep the post-1326 prefill/pinned-slot and host-submit residual gate on llama.cpp, linked to QFP27 and QFP24.
+
 ## Change Log
 
 - 2026-10-04T05:13:42.699438+00:00 (created-by): Created by agent
@@ -87,7 +91,6 @@ Source: FMTP01 Gate 0 notes 2026-10-04. Related: QFP06 (HIP graph working set), 
 - 2026-10-04T06:32:01.947191+00:00 (updated-by): Updated: section:detailed_solution
 - 2026-10-04T06:45:39.484407+00:00 (updated-by): Updated: section:notes
 - 2026-10-04T07:05:05.821690+00:00 (updated-by): Updated: section:notes
-
 
 ## 2026-10-06 post-1326 ownership and residual gate
 
@@ -129,3 +132,4 @@ The historical step-3(d) hypothesis is retired: `llama_context::process_ubatch` 
 ## 2026-10-16 BCOP236: pageable staging ownership
 
 QFP16/1326 is the **sole implementation owner** of the existing <=4 MiB pageable staging retention risk. Its function-local `thread_local` map retains a vector per distinct `input_cpy` pointer and is not cleared by scheduler free/reset; live RSS growth is **unmeasured**. QFP27 now specifies bounded scheduler-owned POD scratch, the `calloc/free` constructor constraint, Meta all-child host-consumption admission, lifecycle tests and fallback. This is not approval for pinned backing or a new scheduler. QFP24 remains conditional on >=1 ms AND >=3% measured exposed prefill input cost. Preserve validated 1326 decode behaviour and same-process MTP/logits correctness; do not claim a throughput improvement from reduced retained capacity.
+- 2026-11-04T04:26:28.474647+00:00 (updated-by): Updated: section:notes

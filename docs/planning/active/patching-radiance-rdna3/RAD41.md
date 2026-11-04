@@ -55,6 +55,11 @@ Harness table for all formats; chosen format reaches lower engine-link bytes wit
 
 f32 is not reopened on its own: it only pays if bytes stop mattering. The CPU combine already writes one fp16 plane; a narrower combined row is part of this item.
 
+
+
+BACKLOG TRIAGE 2026-11-04 absorbed items (superseded into this one; their notes keep the full history): RAD31: Carry RAD31's FP16-versus-E4M3 scaled-row comparisons and quality limits as RAD41 capture-harness variants.
+
 ## Change Log
 
 - 2026-11-01T11:26:14.112101+00:00 (created-by): Created by agent
+- 2026-11-04T04:11:56.511176+00:00 (updated-by): Updated: section:notes

@@ -9,7 +9,14 @@ Engine-side hooks (14 call sites, 4 files) for the whole-expert MoE remote hand-
 
 ## Outcome
 
-untested: package exists, extension point in place, not yet run on hardware as its own qualification.
+Validated for the Radiance v1.14.0 production `serving-core` patch set on
+3 November 2026. Qualification is profile-scoped to Qwen3.8-Flash-Next
+fp8-iq4r-moe on an R9700 engine with RX 7900 XTX expert helpers. The
+recorded quality, repeatability and helper-activation checks passed; this
+does not establish equivalent behaviour on other models or layouts.
+See the [promotion evidence](evidence/promotion.json) and
+[qualification record](README.md).
+
 
 ## Detail
 
@@ -38,8 +45,18 @@ The seam allows a helper GPU to compute cold routed experts rather than making t
 
 ## Evidence
 
-The motivation is documented in `docs/research/radiance-history/kernels-README-2026-10-12.md` (the kernels README from the unmerged feat/rad11-gfx1100-bootstrap branch, kept for history), section “Flash-Next: radiance's own prefill stager, switched on”, which records cold-expert transfer pressure and the R9700 helper context. The 1.3.0 form reached the RAD09 acceptance (helper vs engine rel_l2 0.0011, prefill 2,760 tok/s, decode ~108.5, identical completion hash, 2026-10-15). This 1.7.0 re-authoring has had no build or GPU run; only application, idempotence and output identity against the 1.7.0 fixtures are checked, so the package remains `untested`.
+The [v1.14.0 promotion record](README.md) gives the matched quality
+checks, helper activity, captures and limits. The
+[recorded promotion evidence](evidence/promotion.json) identifies the
+qualified package. The older 1.3.0 measurements and 1.7.0 port history
+are historical context, not current-pin performance evidence; see
+[the Radiance archive](../../../../docs/archive/radiance/).
+
 
 ## Upstream
 
-Local BigCherry change, re-authored for Radiance 1.7.0 (pin `48f7b8eb6d703cd5318346b5a351a292afaf4bf9`, MEN12; 1.7.0 only). It was first written against 1.3.0 (`89cee7ce414486c717aa2085c99e1f522e4c0ea6`, `engines/radiance/engine-patches/0002-moe-remote-handoff.patch` on `feat/rad11-gfx1100-bootstrap`). 1.7.0 has no equivalent; the all-reduce hook sits in `issues_ar()`, which `pass()` and the pipelined prefill callers share.
+Local BigCherry integration patch, now validated against the pinned
+Radiance v1.14.0 source. The original implementation was developed
+against Radiance 1.3.0 and reworked for 1.7.0 before this promotion.
+The production patch is selected by `serving-core` in
+[`engines/radiance/recipes.toml`](../../recipes.toml).

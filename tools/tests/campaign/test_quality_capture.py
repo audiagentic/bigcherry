@@ -4,9 +4,11 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from dataclasses import replace
+from unittest.mock import patch
 
 from bigcherry.campaign import quality_capture as qc
-from bigcherry.engine_adapters import adapter
+from bigcherry.engine_adapters import SidecarSpec, adapter
 from bigcherry.engine_adapters.base import QualityCommand
 from bigcherry.engine_adapters.radiance import RadianceAdapter
 
@@ -114,6 +116,99 @@ class RunQualityTests(unittest.TestCase):
         self.assertFalse(section["passed"])
         self.assertFalse(section["arms"]["bad"]["gate"]["passed"])
         self.assertTrue(section["arms"]["bad"]["gate"]["problems"])
+
+
+class SidecarExitQualityTests(unittest.TestCase):
+    def capture(self, *, primary_fails=False, exited=True, killed=False, real_sidecar=False):
+        class ScoringAdapter(FakeAdapter):
+            def quality_command(self, kind, arm, env, run_dir, binary, model, quality):
+                command = super().quality_command(kind, arm, env, run_dir, binary, model, quality)
+                if primary_fails:
+                    # Keep the real sidecar alive long enough to serve the
+                    # primary, then let it exit before the primary fails.
+                    script = ("import time,sys;time.sleep(0.35);sys.exit(7)"
+                              if real_sidecar else "import sys;sys.exit(7)")
+                    return replace(command, argv=(sys.executable, "-c", script))
+                return command
+
+            def sidecars(self, arm, env, run_dir, binary):
+                if not real_sidecar:
+                    return []
+                program = "import time,sys;print('ready',flush=True);time.sleep(0.03);sys.exit(3)"
+                return [SidecarSpec(
+                    name="helper0", argv=(sys.executable, "-c", program), env={},
+                    ready_pattern=r"^ready$", ready_timeout_s=4.0,
+                    log_path=run_dir / "helper0.log", stop_timeout_s=1.0,
+                )]
+
+        class FakeSet:
+            def __init__(self, specs):
+                pass
+
+            def start(self):
+                pass
+
+            def stop(self):
+                return [{
+                    "name": "helper0", "argv": ["fake"], "log": "helper0.log",
+                    "ready_s": 0.0, "returncode": 3 if exited else 0,
+                    "exited_before_stop": exited, "killed": killed,
+                }]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            output = Path(tmp)
+            quality = {"reference_dir": "ref", "control": "control", "gate": "baselines", "args": []}
+            prepared = {"control": {
+                "binary": Path("b/bin/radiance"), "model": Path("m"), "env": {}, "settings": {},
+            }}
+            def run():
+                return qc.run_quality_capture(
+                    adapter=ScoringAdapter(), quality=quality, prepared=prepared,
+                    names=["control"], output=output, reference_env={},
+                )
+            if real_sidecar:
+                section, cells = run()
+            else:
+                with patch.object(qc, "SidecarSet", FakeSet):
+                    section, cells = run()
+            return section, cells
+
+    def test_self_exit_after_zero_returncode_passes_and_retains_result(self):
+        section, cells = self.capture()
+        self.assertTrue(section["passed"], section)
+        arm = section["arms"]["control"]
+        self.assertEqual(arm["returncode"], 0)
+        self.assertIn("result", arm)
+        self.assertNotIn("error", arm)
+        self.assertTrue(arm["sidecars"][0]["exited_before_stop"])
+        self.assertEqual(cells[0]["returncode"], 0)
+
+    def test_self_exit_with_nonzero_primary_returncode_fails(self):
+        section, cells = self.capture(primary_fails=True)
+        self.assertFalse(section["passed"])
+        arm = section["arms"]["control"]
+        self.assertEqual(arm["returncode"], 7)
+        self.assertIn("sidecar(s) helper0", arm["error"])
+        self.assertEqual(cells[0]["returncode"], 1)
+
+    def test_sigkill_always_fails_even_when_primary_succeeds(self):
+        for primary_fails in (False, True):
+            with self.subTest(primary_fails=primary_fails):
+                section, cells = self.capture(
+                    primary_fails=primary_fails, exited=False, killed=True)
+                self.assertFalse(section["passed"])
+                self.assertIn("sidecar(s) helper0", section["arms"]["control"]["error"])
+                self.assertEqual(cells[0]["returncode"], 1)
+
+    def test_real_sidecar_exits_during_failed_primary(self):
+        section, cells = self.capture(primary_fails=True, real_sidecar=True)
+        self.assertFalse(section["passed"])
+        arm = section["arms"]["control"]
+        self.assertEqual(arm["returncode"], 7)
+        self.assertTrue(arm["sidecars"][0]["exited_before_stop"])
+        self.assertEqual(arm["sidecars"][0]["returncode"], 3)
+        self.assertIn("sidecar(s) helper0", arm["error"])
+        self.assertEqual(cells[0]["returncode"], 1)
 
 
 if __name__ == "__main__":

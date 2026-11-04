@@ -13,22 +13,6 @@ work: M
 
 # Qualify RDNA4 ROCmI4 W4A4 target verification before any BigCherry port
 
-## 2026-10-16 BCOP252 — MTP verify-width route gate before W4A4 qualification
-
-**Disposition: NO_VERIFIED_MTP_W4A4_ROUTE.** The prior premise that MTP verification necessarily enters batched W4A4 MMQ is unproven and may be false on the production four-token verify path. This is a planning/dispatch eligibility issue, **not** a reproduced GPU defect or measured performance loss.
-
-**Fork mechanism:** [OwNhj RDNA4 ROCmI4 README](https://github.com/OwNhj/llama.cpp-RDNA4-FP/blob/master/README.md) explicitly documents `Q4_0_ROCMI4` W8A8/MMVQ with Q8_1 activations for **up to eight rows**, and W4A4/IU4 `v_wmma_i32_16x16x32_iu4` for **larger** MMQ batches when `GGML_HIP_ROCMI4_W4A4=ON`. The fork's latest selector C++ was not retrieved: treat this as fork-documented routing until a source diff and executed kernel witness confirm it. [llama.cpp #29953](https://github.com/ggml-org/llama.cpp/pull/29953) changes MMQ J/tile and RDNA3/4 routed-MoE effective-column selection, **not** ROCmI4 support. Do not port generic W4A4/NVIDIA precision policy as a replacement.
-
-**BigCherry path:** [QFP16](QFP16.md) records target verify widths `1..n_max+1` and a historical four-token verification: a single MTP4 request has **at most five target rows**. Under the fork's documented <=8 boundary this stays on W8A8, so changing the W4A4 build flag may change **zero** executed target-verification kernels. This is a host arithmetic discriminator, not a current-binary trace. Real multi-request batches, larger depth, quant/shape-specific dispatch or graph fusions could differ; inspect `ggml/src/ggml-cuda/mmq.cu`, `mmq.cuh`, `ggml_cuda_mul_mat_q`, MMVQ selector, `Q4_0_ROCMI4` registration and compiled architecture/precision gates on the **exact external fork commit**. Do not infer the path from `-b`, `-ub`, graph capacity or draft proposal count. A verified no-IU4 MTP route has a theoretical W4A4 **target-verify and E2E saving ceiling of zero**.
-
-**Bounded Gate 0 (no hardware reservation):** obtain the exact fork selector source and existing *terminal* R9700 traces if available. Record GGUF/source/quantizer SHA, `ssm_out.weight` protected tensor manifest, GPU UUID/gfx1201, per-round actual target `n_tokens`, per-operator MMVQ/MMQ rows, executed IU4 symbol, graph replay and MTP accepted/proposed work. Host selector cases must cover rows 1/5/8/9, flag off/on, absent/positive/negative kernel witness and bad widths. If no terminal trace exists, disposition `NO_ROUTE_EVIDENCE`; do not queue another run just to speculate. If all representative verifies are <=8 or no IU4 executes, `NO_VERIFY_W4A4_ROUTE`: **close the MTP port hypothesis**. Do not artificially inflate batch width, change draft depth or mix multiple requests to manufacture a win. A separate prefill-only opportunity remains QFP29 with QFP17 performance ownership, not a substitute MTP claim.
-
-**Conditional Gate 1:** only an actual IU4 MTP witness permits same-`Q4_0_ROCMI4`-GGUF W4A4-off/on comparisons at identical concurrency, context, target/draft work and all-resident placement. Fork PPL 4.6937 off vs 5.4493 on (~16.1% relative increase) is an external quality warning, not BigCherry KLD. Require fixed-prompt top-1, mean/p99 KLD/probability, exact-answer regressions, MTP acceptance, logits and long-context/multi-request/ubatch correctness; then >=10% target-verify wall reduction, >=5% E2E at short and ~24K, <=2% ~80K regression, no host spill/SSM error or disappearing work. Otherwise `QUALITY_FAIL`, `NO_E2E_GAIN` or `NO_PORT`.
-
-**Ownership:** QFP29 only owns ROCmI4 target-matmul and the port decision; QFP16/FMTP owns verify-width traces, QFP05 MTP policy, QFP17 prefill, QFP23 profile identity, MET01/RPL01 residency, and existing 1307-1313 standard quant paths remain authoritative. No new scheduler, dispatch table, quant cache, allocator, or hardware queue.
-
-**Actually run:** disposable host-only `rocmi4_route_gate.py` 8/8 unittest PASS and Python compile PASS. No external fork C++/HIP build, BigCherry pytest, model load, GPU run or new performance measurement.
-
 ## Description
 
 Authoritative owner for the ROCmI4/IU4 experiment. Sources inspected at implementation level:
@@ -56,6 +40,78 @@ The RDNA4 fork reports on one R9700:
 - The fork also reports a tuned SYM4 tensor assignment that improves KL metrics at the same size/speed, but this is a separate quantization-quality mechanism and is **not** part of the first BigCherry W4A4 gate.
 
 These numbers establish feasibility, not a BigCherry performance claim. The original ROCmFPX gfx1151 result (+18.66% mean MTP decode) is also mechanism evidence only.
+
+## Steps
+
+
+
+## Detailed Solution & Technical Design
+
+
+
+## Code Samples & Guidance
+
+
+
+## Files
+
+
+
+## Validation
+
+Correctness/performance order:
+
+1. quant artifact validation and CPU/reference dequant check;
+2. fork backend/op tests, W4A4 off then on;
+3. deterministic target-only quality/KLD gate;
+4. target-only prefill ABBA;
+5. MTP short/24K/80K ABBA with verify/acceptance telemetry;
+6. only after all above pass, BigCherry patch composition tests and R9700 hardware qualification.
+
+For any BigCherry port, also require repeated requests in one process, multi-ubatch prompts, long-context graph-allocation stability and memory-safety testing. A faster lane with reduced target work, broken SSM tensors, acceptance collapse or host spill is a failure.
+
+## Effort & Risk
+
+
+
+## Standards
+
+
+
+## Acceptance Criteria
+
+- Actual gfx1201 implementation is used; no inference from gfx1151-only numbers.
+- Same ROCmI4 GGUF is compared W4A4-off versus W4A4-on.
+- `ssm_out.weight` is explicitly protected from ROCmI4.
+- IU4 activation is proven.
+- Quality/KLD and MTP acceptance are measured before throughput promotion.
+- Actual IU4 target-verification execution is proven first; then >=5% end-to-end MTP decode gain at required contexts plus >=10% target-verify reduction is demonstrated before any BigCherry port.
+- No new MTP scheduler/cache/placement mechanism is introduced.
+- If the external gate fails, QFP29 terminates without a BigCherry code patch.
+
+## Notes
+
+The RDNA4 fork is the important new evidence: it removes the architecture-availability question for gfx1201 and makes the external A/B cheap enough to run before touching BigCherry. The R9700's x4 host link does not invalidate an all-resident ROCmI4 lane; it does invalidate any result that silently relies on host expert churn.
+
+
+
+BACKLOG TRIAGE 2026-11-04 (revalidated against main 6eb31a708): the proposed disposition "CLOSE from current target; independent 27B experiment" was NOT applied; this item stays open. Why: docs/planning/active/patching-qwen-flash-next/QFP29.md:17-43 finds no executed IU4 MTP-verification route yet, but explicitly preserves a separate gfx1201 ROCmI4 27B prefill possibility; :151-174 assigns the port/quality decision to QFP29, with external W4A4 feasibility but no first-party qualification. docs/planning/active/patching-bc-optimizations/BCOP252.md:14-22 still identifies QFP29 as the sole ROCmI4 owner, so a blanket CLOSE would orphan that bounded independent llama experiment. Active items that reference this one: BCOP252. Keep QFP29 gated at exact-fork IU4 route and quality proof; close the MTP-specific hypothesis only if the <=8-row no-route check is confirmed, preserving the 27B prefill option.
+
+## 2026-10-16 BCOP252 — MTP verify-width route gate before W4A4 qualification
+
+**Disposition: NO_VERIFIED_MTP_W4A4_ROUTE.** The prior premise that MTP verification necessarily enters batched W4A4 MMQ is unproven and may be false on the production four-token verify path. This is a planning/dispatch eligibility issue, **not** a reproduced GPU defect or measured performance loss.
+
+**Fork mechanism:** [OwNhj RDNA4 ROCmI4 README](https://github.com/OwNhj/llama.cpp-RDNA4-FP/blob/master/README.md) explicitly documents `Q4_0_ROCMI4` W8A8/MMVQ with Q8_1 activations for **up to eight rows**, and W4A4/IU4 `v_wmma_i32_16x16x32_iu4` for **larger** MMQ batches when `GGML_HIP_ROCMI4_W4A4=ON`. The fork's latest selector C++ was not retrieved: treat this as fork-documented routing until a source diff and executed kernel witness confirm it. [llama.cpp #29953](https://github.com/ggml-org/llama.cpp/pull/29953) changes MMQ J/tile and RDNA3/4 routed-MoE effective-column selection, **not** ROCmI4 support. Do not port generic W4A4/NVIDIA precision policy as a replacement.
+
+**BigCherry path:** [QFP16](QFP16.md) records target verify widths `1..n_max+1` and a historical four-token verification: a single MTP4 request has **at most five target rows**. Under the fork's documented <=8 boundary this stays on W8A8, so changing the W4A4 build flag may change **zero** executed target-verification kernels. This is a host arithmetic discriminator, not a current-binary trace. Real multi-request batches, larger depth, quant/shape-specific dispatch or graph fusions could differ; inspect `ggml/src/ggml-cuda/mmq.cu`, `mmq.cuh`, `ggml_cuda_mul_mat_q`, MMVQ selector, `Q4_0_ROCMI4` registration and compiled architecture/precision gates on the **exact external fork commit**. Do not infer the path from `-b`, `-ub`, graph capacity or draft proposal count. A verified no-IU4 MTP route has a theoretical W4A4 **target-verify and E2E saving ceiling of zero**.
+
+**Bounded Gate 0 (no hardware reservation):** obtain the exact fork selector source and existing *terminal* R9700 traces if available. Record GGUF/source/quantizer SHA, `ssm_out.weight` protected tensor manifest, GPU UUID/gfx1201, per-round actual target `n_tokens`, per-operator MMVQ/MMQ rows, executed IU4 symbol, graph replay and MTP accepted/proposed work. Host selector cases must cover rows 1/5/8/9, flag off/on, absent/positive/negative kernel witness and bad widths. If no terminal trace exists, disposition `NO_ROUTE_EVIDENCE`; do not queue another run just to speculate. If all representative verifies are <=8 or no IU4 executes, `NO_VERIFY_W4A4_ROUTE`: **close the MTP port hypothesis**. Do not artificially inflate batch width, change draft depth or mix multiple requests to manufacture a win. A separate prefill-only opportunity remains QFP29 with QFP17 performance ownership, not a substitute MTP claim.
+
+**Conditional Gate 1:** only an actual IU4 MTP witness permits same-`Q4_0_ROCMI4`-GGUF W4A4-off/on comparisons at identical concurrency, context, target/draft work and all-resident placement. Fork PPL 4.6937 off vs 5.4493 on (~16.1% relative increase) is an external quality warning, not BigCherry KLD. Require fixed-prompt top-1, mean/p99 KLD/probability, exact-answer regressions, MTP acceptance, logits and long-context/multi-request/ubatch correctness; then >=10% target-verify wall reduction, >=5% E2E at short and ~24K, <=2% ~80K regression, no host spill/SSM error or disappearing work. Otherwise `QUALITY_FAIL`, `NO_E2E_GAIN` or `NO_PORT`.
+
+**Ownership:** QFP29 only owns ROCmI4 target-matmul and the port decision; QFP16/FMTP owns verify-width traces, QFP05 MTP policy, QFP17 prefill, QFP23 profile identity, MET01/RPL01 residency, and existing 1307-1313 standard quant paths remain authoritative. No new scheduler, dispatch table, quant cache, allocator, or hardware queue.
+
+**Actually run:** disposable host-only `rocmi4_route_gate.py` 8/8 unittest PASS and Python compile PASS. No external fork C++/HIP build, BigCherry pytest, model load, GPU run or new performance measurement.
 
 ## Code-level mechanism
 
@@ -138,19 +194,6 @@ Architecture gate: compile and dispatch only for gfx1201 initially. Do not enabl
 
 Reuse existing BigCherry MTP scheduling and telemetry. Do not create a ROCmI4-private MTP controller, graph cache, placement policy, KV path or benchmark harness.
 
-## Validation
-
-Correctness/performance order:
-
-1. quant artifact validation and CPU/reference dequant check;
-2. fork backend/op tests, W4A4 off then on;
-3. deterministic target-only quality/KLD gate;
-4. target-only prefill ABBA;
-5. MTP short/24K/80K ABBA with verify/acceptance telemetry;
-6. only after all above pass, BigCherry patch composition tests and R9700 hardware qualification.
-
-For any BigCherry port, also require repeated requests in one process, multi-ubatch prompts, long-context graph-allocation stability and memory-safety testing. A faster lane with reduced target work, broken SSM tensors, acceptance collapse or host spill is a failure.
-
 ## Ownership / consolidation
 
 - QFP29 owns only ROCmI4/IU4 target-matmul qualification.
@@ -159,23 +202,9 @@ For any BigCherry port, also require repeated requests in one process, multi-uba
 - MET01/RPL01 own host residency/placement; QFP29 must not add a cache or offload mechanism.
 - Any SYM4/tensor-class quantization-quality experiment is separate follow-up work and must not be bundled into the first W4A4 gate.
 
-## Acceptance Criteria
-
-- Actual gfx1201 implementation is used; no inference from gfx1151-only numbers.
-- Same ROCmI4 GGUF is compared W4A4-off versus W4A4-on.
-- `ssm_out.weight` is explicitly protected from ROCmI4.
-- IU4 activation is proven.
-- Quality/KLD and MTP acceptance are measured before throughput promotion.
-- Actual IU4 target-verification execution is proven first; then >=5% end-to-end MTP decode gain at required contexts plus >=10% target-verify reduction is demonstrated before any BigCherry port.
-- No new MTP scheduler/cache/placement mechanism is introduced.
-- If the external gate fails, QFP29 terminates without a BigCherry code patch.
-
-## Notes
-
-The RDNA4 fork is the important new evidence: it removes the architecture-availability question for gfx1201 and makes the external A/B cheap enough to run before touching BigCherry. The R9700's x4 host link does not invalidate an all-resident ROCmI4 lane; it does invalidate any result that silently relies on host expert churn.
-
 ## Change Log
 
 - 2026-10-05T09:37:29.282620+00:00 (created-by): Created by claude
 - 2026-10-05T09:37:46.705264+00:00 (updated-by): Initial ROCmFPX assessment.
 - 2026-10-06: Deep audit: inspected ROCmFPX IU4 code and independent RDNA4 port; replaced speculative gfx1100/gfx1201 investigation with a bounded gfx1201 external-fork A/B and explicit quality/termination gates.
+- 2026-11-04T04:26:55.718873+00:00 (updated-by): Updated: section:notes

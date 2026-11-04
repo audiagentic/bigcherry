@@ -157,6 +157,10 @@ required follow-up.
 
 Do not alter unrelated axes.
 
+## Radiance promotion and experiment retirement
+
+`bigcherry --engine radiance patch-promote <id> --evidence @file [--profile-only]` is supported; do not assume promotion is llama.cpp-only. The configured Radiance production set is `serving-core`. Promotion places the patch there and retires it from **every other patch set and experiment**; it must refuse promotion if that would cause a source to lose the patch. The lab source inherits production plus evaluated fixes and any active experiments. Retire empty experiment declarations and migrate all build callers in the same change; no compatibility aliases. Use the CLI and qualified evidence for actual promotion, not hand-edited state.
+
 Independent axes
 
 Always classify the requested change before mutating anything.

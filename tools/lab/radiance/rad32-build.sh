@@ -1,5 +1,5 @@
 #!/bin/bash
-# RAD32: build this checkout's radiance pin with the helper hand-off (the moe-remote-handoff experiment: patches applied,
+# RAD32: build this checkout's radiance pin with the helper hand-off (the production lab source: patches applied,
 # libr3moe and the helper compiled against that pin's ABI) on the lab host, reusing a build of the same source tree.
 # Usage (from a checkout, e.g. through `bigcherry slice lab`): rad32-build.sh
 set -u

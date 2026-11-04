@@ -60,7 +60,7 @@ Owner direction 2026-11-02: use the evidence we already have; do not re-run for 
 
 
 
-PROGRESS 2026-11-03, step 1 done (/work/bigcherry/runs/men26-kld; config kld.json, kld-isolate.json from tools/lab/radiance/helper-kld.json).
+PROGRESS 2026-11-03, step 1 done (run men26-kld; config kld.json, kld-isolate.json from tools/lab/radiance/helper-kld.json).
 - Build: origin/main 2f5fc39df (slice C merged); rad0002 patch_validation_subject_digest 663b0856fbc4da97703a059711349be1c5c3cd0373211e701f6e8864f215c947.
 - Reference: freshly recorded engine-local reference (TP2 exact over the two XTX, corpus rad-kld-corpus-4.jsonl, 8240 positions).
 - Determinism: three captures are bit-identical.
@@ -69,6 +69,10 @@ PROGRESS 2026-11-03, step 1 done (/work/bigcherry/runs/men26-kld; config kld.jso
 - The production tail layout (adds the 6900 XT) fails p99.9 (+1.58); tracked as RAD46. That is a gfx1030 helper-kernel issue, not rad0002.
 - Next: steps 2-3 once #538 (lab source includes production) and #543 (patch-promote leaves other sets) merge.
 
+
+
+BACKLOG TRIAGE 2026-11-04 absorbed items (superseded into this one; their notes keep the full history): RAD17: Transfer rad0008 current-pin qualification to MEN26 while retaining rad0007 as a documented default-off negative experiment.
+
 ## Change Log
 
 - 2026-11-03T00:02:59.199386+00:00 (created-by): Created by agent
@@ -76,11 +80,12 @@ PROGRESS 2026-11-03, step 1 done (/work/bigcherry/runs/men26-kld; config kld.jso
 
 ## Ledger-events
 
-
-
 - chg_20261103_022951_measured-that-offloading-exper_7122
 - 2026-11-03T02:29:55.053712+00:00 (updated-by): Updated: section:ledger-events
 - chg_20261103_032135_the-remote-moe-hand-off-that-l_3451
 - 2026-11-03T03:21:43.122618+00:00 (updated-by): Updated: section:ledger-events
 - chg_20261103_040351_release-automation-now-reads-p_1524
 - 2026-11-03T04:03:55.298434+00:00 (updated-by): Updated: section:ledger-events
+- chg_20261103_043749_lab-builds-now-use-the-product_3642
+- 2026-11-03T04:37:54.009723+00:00 (updated-by): Updated: section:ledger-events
+- 2026-11-04T04:11:52.530832+00:00 (updated-by): Updated: section:notes

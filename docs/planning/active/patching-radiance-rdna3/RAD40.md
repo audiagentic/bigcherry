@@ -56,11 +56,15 @@ Every mode reproduces the 2026-11-01 numbers above within 5%; results for all fo
 
 No P2P on this host (memory no-p2p-on-dev-host). Feeds RAD41-RAD43.
 
+
+
+BACKLOG TRIAGE 2026-11-04 (revalidated against main 6eb31a708): the proposed disposition "MERGE remaining transfer A/B into RAD41" was NOT applied; this item stays open. Why: PR #496 added stage stamps, and RAD40.md:59-80 records PCIe-mode, contention, BAR and chunk measurements; RAD42.md:22,57 still names RAD40 as a harness dependency. RAD41.md:14-31 is confined to result formats/sparse bytes, not RAD40's all-pair transfer-mode and CPU BAR versus GPU-pull validation, so its remaining acceptance criteria cannot be merged there unchanged. Active items that reference this one: RAD42. Keep the transfer-physics harness and missing mode/pair coverage until the transfer experiment's owner is explicitly designated.
+
 ## Change Log
 
 - 2026-11-01T11:26:10.176424+00:00 (created-by): Created by agent
 
-## Harness results (2026-11-01, `/work/development/tmp/bigcherry/rad40/linkx.hip`, `runs/rad40-harness`)
+## Harness results (2026-11-01, , )
 
 Alone, 21 MiB a pass (GB/s): kernel pull from coherent, non-coherent and write-combined host memory are identical (XTX
 13.3, R9700 6.7, 6900 XT 3.6); SDMA H2D on one or two streams the same; SDMA D2H and GPU writes 14.2 / 6.9-7.1 / 3.6; CPU
@@ -79,6 +83,7 @@ than write-then-read. A 6900 XT producer hung the device-flag variant (consumer 
 protocol first, as the review says.
 
 ## Review (GPT, 2026-11-01) -- adopted
+
 - One trace contract for every item: per layer-step publish, activation-ready per helper, compute start/end, result-write
   done, combine start/end, engine add start/end, bytes per endpoint; host monotonic clock across processes, HIP events
   for GPU durations. Go gate: >2% on the 42K probe or 8 sessions, no p99 regression >5%.
@@ -86,3 +91,4 @@ protocol first, as the review says.
 - Contention attribution with root: `lspci -vv` (MPS, MRRS, relaxed ordering, extended tags) for the cards and their root
   ports; swapping XTX 0 and XTX 1 physically separates slot from card.
 - Next: a complete per-layer critical-path trace of the engine and the three helpers before kernel or protocol work.
+- 2026-11-04T04:24:23.232307+00:00 (updated-by): Updated: section:notes

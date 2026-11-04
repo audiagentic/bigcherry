@@ -40,8 +40,6 @@ Design:
 
 Order: (a) parser + context plumbing + supported-engines table; (b) patch/* and source/* libraries; (c) cli/patch.py; (d) release/*; (e) delete obsolete scripts; (f) component bump gate; (g) regression tests: each verb resolves radiance paths with --engine radiance, llama.cpp unchanged, llama-only verbs refuse radiance.
 
-
-
 ## Code Samples & Guidance
 
 
@@ -66,8 +64,6 @@ Engine separation (owner, 2026-10-15: keep each engine's logic and tools separat
 - Allowed comparisons on engine: isolation guards (a patch/module belongs to the engine asked for) and the declaration loader. The one existing behavioural branch (campaign/benchmark.py:809/828, execution evidence for llama.cpp) moves into the adapter.
 - Lint for it: a test that fails on a new `== engines.LLAMACPP` / `"llamacpp"` / `"radiance"` literal outside core/engines.py, adapters and tests.
 
-
-
 ## Acceptance Criteria
 
 
@@ -84,8 +80,15 @@ Step c (3cb74f3c): patch read commands engine-scoped. Follow-ups: patch_lifecycl
 
 2026-10-15: steps a-d merged (#239, #240, #242); steps e and g in the cleanup PR (60d8e9e3). Paused for quota: step f (component bump gate; per-engine pin-bump compile profile and audit checks - both are ggml-cuda invariants today) and MEN12. Engine-literal allowlist entries still 'threading pending': check.py, doctor.py, patch_admission.py (admit -> gates -> catalog.require_admission -> cli apply), plus cli/jobs.py + jobs/worker.py (engine in job payload) and campaign/benchmark.py's execution-evidence branch (move into an adapter).
 
-## Ledger-events
 
+
+BACKLOG TRIAGE 2026-11-04 (SUPERSEDED; revalidated against main 6eb31a708, verdict CONFIRM): `pin-bump` and `pin-release --engine radiance` ran end to end for v1.14.0 and v1.16.0 (#555, #556). Evidence: `pin-bump` and `pin-release --engine radiance` ran end to end for v1.14.0 and v1.16.0 (#555, #556). Still referenced by: FMTP07, QFP44, RNX11, BCOP238, BCOP237, BCOP227, BCOP220, BCOP252. Original content kept below for history.
+
+
+
+REOPENED 2026-11-04: an independent revalidation (against main 6eb31a708) rejected the closure recorded above, which had been based on a lighter check. It stays open. Why: tools/bigcherry/engine_adapters/radiance_bump.py:219-227 has component ABI checks and :270-283 native rewrite-drift checks, and cli/engine_scope.py:31-53 scopes core pin commands per engine. However MEN10.md:35-55 requires migrating every caller with no default shim: cli/engine_scope.py:61-74 still treats all unlisted commands as llama.cpp-only and tools/bigcherry/patch/validation_campaign.py:128,1438 still hard-codes llama.cpp contexts; scope completion is unproven.
+
+## Ledger-events
 
 - chg_20261014_233548_radiance-builds-that-apply-pat_7437
 - 2026-10-14T23:35:52.705077+00:00 (updated-by): Updated: section:ledger-events
@@ -101,8 +104,13 @@ Step c (3cb74f3c): patch read commands engine-scoped. Follow-ups: patch_lifecycl
 - 2026-10-15T02:45:47.734006+00:00 (updated-by): Updated: section:notes
 
 - chg_20261017_014810_health-checks-and-the-job-syst_8713
+
 ## Change Log
 
 - 2026-10-14T22:16:07.786755+00:00 (created-by): Created by agent
 - 2026-10-14T22:29:45.466300+00:00 (updated-by): Updated: section:notes
 - 2026-10-17T01:48:14.114861+00:00 (updated-by): Updated: section:ledger-events
+- 2026-11-04T03:46:40.151641+00:00 (updated-by): Updated: section:notes
+- 2026-11-04T03:46:44.239777+00:00 (state-transition): State: pending → superseded
+- 2026-11-04T04:44:36.679776+00:00 (updated-by): Updated: section:notes
+- 2026-11-04T04:44:44.213053+00:00 (state-transition): State: superseded → pending

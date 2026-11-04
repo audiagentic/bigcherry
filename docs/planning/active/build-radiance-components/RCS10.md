@@ -46,10 +46,34 @@ Everything the calibration chooses is recorded in the run record, so a result is
    (RAD12), and a second, synthetic shape must calibrate without hand help.
 5. Online adaptation behind a flag, after 1 to 4 are proven.
 
+## Detailed Solution & Technical Design
+
+
+
+## Code Samples & Guidance
+
+
+
+## Files
+
+
+
 ## Validation
 
 Calibration time within budget on the dev helpers; chosen settings within noise of the hand-tuned ones in the clean-cell stream A/B; a model the lab has never seen starts, calibrates, and serves
 with no profile beyond its container; cache hit on the second start; results (outputs) are unchanged by tuning, only timing.
+
+## Effort & Risk
+
+
+
+## Standards
+
+
+
+## Acceptance Criteria
+
+
 
 ## Notes
 
@@ -67,6 +91,10 @@ Live-placement roadmap stage 2 with RHP09: one calibration schema and implementa
 
 Owner direction 2026-11-01: resource budgets are tunables too. Derived settings cover memory as well as kernels and lanes - the engine host pool (sized after helper ownership is known; today a hand-picked 22,528 MiB that pins ~16 GiB unused), helper VRAM budgets, the host KV tier, checkpoint slots and n-gram placement, all from discovered RAM/VRAM and the chosen layout. The inventory of remaining literals is in patching-radiance-heat-placement/README.md ("Derived, not hand-picked"); stage 2 is done when it is empty for the default launch path. Needs a managed radiance patch for an automatic host pool sized after ownership is published.
 
+
+
+BACKLOG TRIAGE 2026-11-04 absorbed items (superseded into this one; their notes keep the full history): RAD12: Fold automatic lane-size choice into RCS10 while retaining the negative four-class A/B as evidence.; RAD14: Move outstanding shape-aware geometry and dispatch tuning to RCS10 with RAD14's kernel baselines.
+
 ## Ledger-events
 
 - chg_20261102_002943_planning-every-resource-budge_5643
@@ -74,4 +102,4 @@ Owner direction 2026-11-01: resource budgets are tunables too. Derived settings 
 ## Change Log
 
 - 2026-11-02T00:29:49.283929+00:00 (updated-by): Updated: section:ledger-events
-
+- 2026-11-04T04:11:48.561589+00:00 (updated-by): Updated: section:notes

@@ -17,6 +17,44 @@ priority: P2
 
 **RNX10 is a profiling-gated scalar shared-expert gate-tail experiment**, not another GLU, MoE GEMM, router, cache, or stream-overlap implementation. No new patch or hardware job is authorized before Gate 1. Historical patch number `1310` is **occupied by production `1310_act_q81` (QFP18)** and must not be reused.
 
+## Steps
+
+
+
+## Detailed Solution & Technical Design
+
+
+
+## Code Samples & Guidance
+
+
+
+## Files
+
+
+
+## Validation
+
+
+
+## Effort & Risk
+
+
+
+## Standards
+
+
+
+## Acceptance Criteria
+
+Gate 1 <5% tail wall-share or unproven ownership -> terminal no-patch disposition. Gate 1 pass -> only the bounded guarded pointwise experiment above; any correctness or CI gate failure -> reject. No speculative skinny GEMM or MXFP4 work is in RNX10 scope.
+
+## Notes
+
+
+
+BACKLOG TRIAGE 2026-11-04 (revalidated against main 6eb31a708): the proposed disposition "MERGE into QFP13 if a remaining physical launch is proven" was NOT applied; this item stays open. Why: docs/planning/active/patching-r9700-cross-rdna/RNX10.md:16-37 isolates a still-unmeasured SIGMOID+broadcast-MUL+ADD scalar shared-expert tail and its shape/alias correctness gate. docs/planning/active/patching-qwen-flash-next/QFP13.md:60-78 explicitly does NOT own matcher/kernel implementations, only profiles and routes proven launch reductions; RNX09.md:58-65 still lists this as a dependent candidate. Active items that reference this one: BCOP144, BCOP315, BCOP60, QFN01, QFP09, QFP13, RNX08, RNX09. Preserve the RNX10 local pointwise fusion ownership and conditional proof; feed its profiling result to QFP13 without merging away implementation semantics.
+
 ## Implementation audit — pinned b11474 (2026-10-08)
 
 - `src/models/qwen4exp.cpp::graph::build_layer_ffn` (1142–1189) constructs routed `build_moe_ffn`, shared `build_ffn(..., LLM_FFN_SILU, LLM_FFN_PAR)`, then shared-gate `build_lora_mm(ffn_gate_inp_shexp,cur)` -> `ggml_sigmoid` -> `ggml_mul(ffn_shexp,gate)` -> `ggml_add(moe_out,ffn_shexp)`. Gate weight `{n_embd}` yields expected gate shape `[1,M]`; shared output `[H,M]`. Confirm live graph shape, type, strides and device before counting physical kernels.
@@ -41,11 +79,6 @@ priority: P2
 vLLM issue #43187 proposes a single GEMV+sigmoid+broadcast scale kernel; MI355x single-run-per-cell external means +4.65% balanced/+6.36% decode-heavy/+10.29% prefill-heavy, issue closed stale 2026-09-19. SGLang `qwen2_moe.py::_append_shared_expert_ids_and_weights` and `fused_moe_triton_kernels.py::fused_append_shared_experts_with_weights(fuse_gate=True)` combine gate GEMV/sigmoid into AITER shared-expert ID append. llama.cpp GGUF does not use that append contract: **mechanism reference only**, not a direct port or RDNA3/4 benchmark. Pinned b11474 and inspected upstream master retain the existing CUDA fusion restrictions.
 
 **Ownership:** RNX10 alone owns the scalar shared-expert tail; RNX09 owns cross-RDNA promotion. RNX04 owns HC/router, QFP35/native owns GLU, 1207/PRBE14 owns routed top-k scaling, 1215+1216/PRBE35 owns shared/routed stream overlap, and QFP18/1310 owns activation Q8_1. Do not edit protected QFP35/QFP43/MTP/patch tooling in this run. RNX10's last independent plan change was 2026-10-03 15:24 UTC; no new RNX10 patch/PR/queue was found. No build, GPU test or new hardware benchmark ran.
-
-## Acceptance criteria
-
-Gate 1 <5% tail wall-share or unproven ownership -> terminal no-patch disposition. Gate 1 pass -> only the bounded guarded pointwise experiment above; any correctness or CI gate failure -> reject. No speculative skinny GEMM or MXFP4 work is in RNX10 scope.
-
 
 ## Archived legacy proposal (non-normative; superseded above)
 
@@ -106,3 +139,4 @@ Do not fuse routed-expert top-k weighting owned by 1207 into this patch. Do not 
 - RV4205
 - 2026-10-03T02:23:22.204124+00:00 (updated-by): Updated: section:detailed_solution, section:notes
 - 2026-10-03T15:21:48.339442+00:00 (updated-by): Updated: section:notes
+- 2026-11-04T04:25:29.286095+00:00 (updated-by): Updated: section:notes

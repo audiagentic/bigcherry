@@ -21,6 +21,7 @@ struct Slot {
 class Ledger {
     uint64_t hard_, scratch_, headroom_, charged_ = 0;
     uint32_t copying_ = 0;
+    uint32_t max_slots_ = UINT32_MAX;
     std::vector<Slot> slots_;
     static bool fits(uint64_t add, uint64_t used, uint64_t hard) {
         return used <= hard && add <= hard - used;
@@ -37,7 +38,7 @@ class Ledger {
             charged_ += bytes;
             return Result::OK;
         }
-        if (slots_.size() >= UINT32_MAX) return Result::INVALID;
+        if (slots_.size() >= max_slots_) return Result::DEFERRED_CAPACITY;
         *id = static_cast<uint32_t>(slots_.size());
         slots_.push_back({*id, expert, bytes, epoch, state, planes});
         charged_ += bytes;
@@ -46,22 +47,34 @@ class Ledger {
 public:
     // Reserve headroom for an incoming expert even after a steady-state bootstrap.
     // Scratch includes lane workspace and all pinned/transfer staging charged to this helper.
-    Ledger(uint64_t hard, uint64_t scratch, uint64_t incoming_reserve)
-        : hard_(hard), scratch_(scratch), headroom_(incoming_reserve) {}
+    Ledger(uint64_t hard, uint64_t scratch, uint64_t incoming_reserve,
+           uint32_t max_slots = UINT32_MAX)
+        : hard_(hard), scratch_(scratch), headroom_(incoming_reserve), max_slots_(max_slots) {}
     uint64_t hard() const { return hard_; }
     uint64_t charged() const { return charged_; }
     uint64_t total() const { return charged_ + scratch_; }
     uint64_t headroom() const { return headroom_; }
     const std::vector<Slot>& slots() const { return slots_; }
     bool valid() const { return scratch_ <= hard_ && charged_ <= hard_ - scratch_; }
-    // Only bootstrap may bypass state transitions. It must still leave incoming headroom.
-    Result bootstrap(uint32_t expert, uint64_t bytes, uint64_t epoch, uint32_t* id) {
-        if (!id || !bytes || !epoch || !valid()) return Result::INVALID;
+    // Preflight BEFORE touching device memory: physical allocation cannot
+    // transiently exceed this helper's budget or its explicit slot limit.
+    Result bootstrap_possible(uint32_t expert, uint64_t bytes, uint64_t epoch) const {
+        if (!bytes || !epoch || !valid()) return Result::INVALID;
         if (bytes > hard_ - scratch_ - charged_ ||
             headroom_ > hard_ - scratch_ - charged_ - bytes) return Result::DEFERRED_CAPACITY;
-        for (const auto& s : slots_)
+        bool has_free = false;
+        for (const auto& s : slots_) {
             if (s.expert == expert && s.state != State::FREE) return Result::INVALID;
-        return insert(expert, bytes, epoch, State::ACTIVE, 15, id);
+            if (s.state == State::FREE) has_free = true;
+        }
+        if (!has_free && slots_.size() >= max_slots_) return Result::DEFERRED_CAPACITY;
+        return Result::OK;
+    }
+    // Only bootstrap may bypass state transitions. It must still leave incoming headroom.
+    Result bootstrap(uint32_t expert, uint64_t bytes, uint64_t epoch, uint32_t* id) {
+        if (!id) return Result::INVALID;
+        const auto allowed = bootstrap_possible(expert, bytes, epoch);
+        return allowed == Result::OK ? insert(expert, bytes, epoch, State::ACTIVE, 15, id) : allowed;
     }
     Result reserve(uint32_t expert, uint64_t bytes, uint64_t epoch, bool source_available, uint32_t* id) {
         if (!source_available) return Result::SOURCE_UNAVAILABLE;

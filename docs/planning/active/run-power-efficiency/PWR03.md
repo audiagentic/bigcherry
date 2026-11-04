@@ -59,8 +59,11 @@ Depends on PWR01 for the baseline; most useful after RAD25.
 
 2026-10-27 owner rule: nothing CPU-vendor specific without a hardware switch. Use the generic cpufreq energy_performance_preference (present for intel_pstate and amd-pstate) and cpuidle residency; efficiency cores are found generically (cpu_capacity asymmetry, else the hybrid PMU) and the E-core A/B skips hosts without them (pwr03-ecore-ab.sh).
 
+2026-11-04 harness (pwr03-ecore-ab.sh, idle diagnosis with helpers on efficiency cores) archived as experiments/radiance/PWR03-pwr03-cpu-placement/change.patch. No result recorded. Depends on RAD26 for CPU-state comparison.
+
 ## Change Log
 
 - 2026-10-27T02:15:48.543469+00:00 (created-by): Created by agent
 - 2026-10-27T08:23:38.621255+00:00 (updated-by): Updated: section:title, section:notes
 - 2026-10-27T11:53:12.335444+00:00 (updated-by): Updated: section:notes
+- 2026-11-04T06:15:53.149502+00:00 (updated-by): Updated: section:notes

@@ -103,6 +103,8 @@ GPT review 2026-10-26 (req_bigcherry_ffa2a770369f): recommend A' (burst/step-sco
 
 2026-10-27: full record of the wait/queue/idle-power attempts, measurements and the assessed alternatives (GPT req_bigcherry_8ac7a7f2625d + architecture note, checked against the code): docs/research/radiance-history/RAD20-helper-waits-2026-10.md. Next: HIP blocking completion events for the small lane; harness for host-callback/graph-host-node -> eventfd wake on the large lane only (small-lane per-request callbacks rejected: engine stream stall per MoE layer).
 
+2026-11-04 measurement-only wait-kernel and barrier-value-bench code from feat/rad20-blocking-lanes archived as experiments/radiance/RAD20-rad20-blocking-lanes/change.patch (19 files). Outcomes: docs/research/radiance-history/RAD20-helper-waits-2026-10.md and EXPERIMENT-REGISTER.md.
+
 ## Execution gate review (2026-10-23)
 
 - **Blocking P0:** do not enqueue an *additional* `hipStreamWaitValue32` on host-registered cross-process shared memory until the documented signal-memory contract and cross-process system visibility have been proven. The existing engine-to-helper wait is not evidence that the proposed arrived-event path is safe. Treat cancellation, generation wrap, and device progress independently.
@@ -129,3 +131,4 @@ GPT review 2026-10-26 (req_bigcherry_ffa2a770369f): recommend A' (burst/step-sco
 - 2026-10-26T02:32:05.617898+00:00 (updated-by): Updated: section:notes
 - 2026-10-27T00:12:46.369115+00:00 (updated-by): Updated: section:notes
 - 2026-10-27T06:41:36.043860+00:00 (state-transition): State: pending → completed
+- 2026-11-04T06:16:00.827282+00:00 (updated-by): Updated: section:notes

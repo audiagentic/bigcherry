@@ -44,7 +44,9 @@ Determine whether OCP-MXFP4-weight × FP8-activation grouped MoE and skinny FP8 
 
 ## Validation
 
-Bit/ULP unpack, scales, padding, expert-boundary and output tests; hostile routing; M crossover; 1/2/3-GPU split; conversion/load cost, VRAM bytes, kernel/E2E speed, and source-license provenance.
+Bit/ULP tests for unpack, scales, padding rows, expert boundaries and output; hostile routing distributions; all M crossover points; 1/2/3-GPU split. Measure conversion/load cost and VRAM bytes as well as kernel/E2E speed. Validate source license/provenance: retain required attribution for adapted source and do not silently copy third-party code with different provenance.
+
+Acceptance requires a real GGUF/model path and E2E win. A synthetic FP8 GEMM win without a deployable storage/conversion path is insufficient.
 
 ## Effort & Risk
 
@@ -74,6 +76,10 @@ Depends on: R9X01
 External source: `kernels/r9k_moe_mxfp4a8.hip`, `kernels/r9k_gemm_fp8.hip`, `r9700_vllm/kernels/moe.py`, `tools/gen_kmag.py`, `tests/test_fold_mxfp4.py`
 Existing BigCherry owners: 1203, 1208, 1237, 1241, 1245, 1262, 1265, 1267, 1273, 1274
 
+
+
+BACKLOG TRIAGE 2026-11-04 (revalidated against main 6eb31a708): the proposed disposition "CLOSE from radiance backlog; keep scoped llama experiment elsewhere" was NOT applied; this item stays open. Why: docs/planning/active/patching-r9700-cross-rdna/RNX05.md:16-25,44-57 gates MXFP4/FP8 llama.cpp grouped-MoE on real GGUF storage/quant conversion and hardware, not Radiance's unrelated helper W4 support. docs/planning/active/patching-r9700-cross-rdna/RNX09.md:58-65 still lists RNX02–RNX08 candidates as promotion dependencies, which encompasses RNX05; no alternate open owner for this format-specific llama work is identified. Active items that reference this one: RNX09. Retain the llama.cpp-only format feasibility gate until RNX09's dependency and explicit fail/no-GGUF disposition are reconciled.
+
 ## Goal
 
 Determine whether r9700-stack's OCP-MXFP4-weight × FP8-activation grouped MoE and skinny FP8 GEMM concepts can become useful llama.cpp quantized kernels, and which parts can be generalized to RDNA3/RDNA2. This is format work, so it must not be mixed with ordinary MMQ tile tuning.
@@ -98,15 +104,8 @@ Answer: (a) can GGUF represent the source weight/scales exactly or via a clean n
 
 RDNA4: native FP8/MXFP4 path is the reference. RDNA3: distinguish algorithm portability from native datatype support; if gfx11 cannot execute the same low-precision matrix op efficiently, reuse packed layout/activation quantization only if an MFMA/vector unpack path wins E2E. RDNA2: treat native FP8 assumptions as unsupported; test a concept port into existing Q4/Q8 or FP16/BF16 kernels rather than software-emulating FP8 for its own sake.
 
-## Validation
-
-Bit/ULP tests for unpack, scales, padding rows, expert boundaries and output; hostile routing distributions; all M crossover points; 1/2/3-GPU split. Measure conversion/load cost and VRAM bytes as well as kernel/E2E speed. Validate source license/provenance: retain required attribution for adapted source and do not silently copy third-party code with different provenance.
-
-Acceptance requires a real GGUF/model path and E2E win. A synthetic FP8 GEMM win without a deployable storage/conversion path is insufficient.
-
-
-
 ## Change Log
 
 - 2026-10-03T01:33:08.311145+00:00 (created-by): Created by codex
 - 2026-10-03T01:38:49.432431+00:00 (updated-by): Updated: section:notes
+- 2026-11-04T04:25:13.508538+00:00 (updated-by): Updated: section:notes

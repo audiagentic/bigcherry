@@ -317,6 +317,71 @@ class TestRadiancePatchPackages(unittest.TestCase):
         finally:
             temp.cleanup()
 
+    def test_rad0002_actual_declare_policy_to_engine_admission_gate(self):
+        # Compile the ACTUAL managed-patch policy functions, not a duplicated
+        # Python parser of MIN_ROWS/MAX_ROWS. Feed their output to the exact
+        # header called by moe_remote_hook.cpp::admit_ticket. No GPU required.
+        temp, root = self._tree()
+        try:
+            self.assertTrue(all(result.ok for result in apply_all(list(_load(RAD0002)), root)))
+            core = (root / "core/place/bc_moe_remote.cpp").read_text(encoding="utf-8")
+            policy_helpers = core[core.index("#ifdef BC_MOE_REMOTE_DIAG"):
+                                  core.index("std::mutex g_mu;")] + "\n}\n"
+            policy_entry = core[core.index('extern "C" int bc_moe_remote_wanted('):
+                                core.index('extern "C" int bc_moe_remote_shadow(')]
+            gate_header = REPO / "engines/radiance/components/moe-remote"
+            hook = (gate_header / "moe_remote_hook.cpp").read_text(encoding="utf-8")
+            self.assertIn('dlsym(RTLD_DEFAULT,"bc_moe_remote_wanted_upto")', hook)
+            self.assertIn('admission_bootstrap(\n        g.remote_possible,g.bootstrap_ready_ranks,mask)', hook)
+            program = """
+#include <atomic>
+#include <climits>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <map>
+#include <mutex>
+#include <vector>
+#include "engine_admission_gate.h"
+""" + policy_helpers + policy_entry + """
+int main(int argc, char** argv) {
+    if (argc != 4) return 7;
+    setenv("R3_MOE_REMOTE_MIN_ROWS", argv[1], 1);
+    setenv("R3_MOE_REMOTE_MAX_ROWS", argv[2], 1);
+    const bool declared = bc_moe_remote_wanted_upto(128) != 0;
+    const bool any_remote = bc_moe_remote_wanted_upto(LLONG_MAX) != 0;
+    const bool expect = argv[3][0] == '1';
+    if (declared != expect || any_remote != expect) return 8;
+    std::atomic<uint32_t> ready{0};
+    using r3::epoch::AdmissionBootstrap;
+    const auto before = r3::epoch::admission_bootstrap(any_remote, ready, 3);
+    if (before != (expect ? AdmissionBootstrap::Uninitialized :
+                            AdmissionBootstrap::LocalOnly)) return 9;
+    ready.store(1u,std::memory_order_release);
+    if (r3::epoch::admission_bootstrap(any_remote, ready, 3) !=
+        (expect ? AdmissionBootstrap::Uninitialized :
+                  AdmissionBootstrap::LocalOnly)) return 10;
+    ready.store(3u,std::memory_order_release);
+    if (r3::epoch::admission_bootstrap(any_remote, ready, 3) !=
+        (expect ? AdmissionBootstrap::Ready :
+                  AdmissionBootstrap::LocalOnly)) return 11;
+    return 0;
+}
+"""
+            with tempfile.TemporaryDirectory() as build:
+                exe = Path(build) / "policy_gate"
+                compiled = subprocess.run(["c++", "-std=c++17", "-x", "c++",
+                    "-", "-o", str(exe), "-I", str(gate_header)],
+                    input=program, text=True, capture_output=True, check=False)
+                self.assertEqual(compiled.returncode, 0, compiled.stderr)
+                for lo, hi, allowed in (("1", "0", "0"), ("1", "64", "1")):
+                    case = subprocess.run([str(exe), lo, hi, allowed],
+                                          capture_output=True, text=True, check=False)
+                    self.assertEqual(case.returncode, 0,
+                                     f"actual engine policy min={lo} max={hi}: {case.stderr}")
+        finally:
+            temp.cleanup()
+
     def test_rad0004_diagnostics_are_compiled_out_without_the_macro(self):
         temp, root = self._prepared(RAD0004)
         try:
