@@ -1,5 +1,5 @@
 From 8a9110f8aafd71b863243c82058738e91de58ddf Mon Sep 17 00:00:00 2001
-From: Audumla <Audumla@users.noreply.github.com>
+From: bigcherry
 Date: Wed, 4 Nov 2026 05:50:53 +0000
 Subject: [PATCH] chore(release): scope platform releases to explicit change
  entries
