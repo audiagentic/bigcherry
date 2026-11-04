@@ -219,7 +219,13 @@ jobs:
       # restore-only. Export after running the real component test gate.
       - name: Export verified prebuilt engine and component layers
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-        run: python3 .github/scripts/ci_build_layers.py export
+        run: |
+          # CMake build trees and runtime outputs belong to root inside the
+          # build image. Export there too so cache publication is writable.
+          docker run --rm -v "$GITHUB_WORKSPACE:/src" -w /src '${{ needs.image.outputs.image }}' bash -euo pipefail -c '
+            git config --global --add safe.directory /src
+            python3 .github/scripts/ci_build_layers.py export
+          '
 
       - name: Seed engine prebuilt layer from main
         if: github.ref == 'refs/heads/main' && github.event_name == 'push' && steps.layer_engine.outputs.cache-hit != 'true'
@@ -277,7 +283,10 @@ jobs:
       # Only main is a trusted seed: never publish a PR's compiler objects.
       - name: Package ccache for the lab
         if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-        run: python3 tools/lab/radiance/ci_ccache.py pack --cache work/.ccache --out work/ci-ccache-artifact
+        # fingerprint/compiler.json is written by root in Docker; packing on
+        # the host user failed with PermissionError on every main build.
+        run: |
+          docker run --rm -v "$GITHUB_WORKSPACE:/src" -w /src '${{ needs.image.outputs.image }}' python3 tools/lab/radiance/ci_ccache.py pack --cache work/.ccache --out work/ci-ccache-artifact
 
       - name: Publish verified main ccache
         if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
