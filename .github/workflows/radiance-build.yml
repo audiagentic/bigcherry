@@ -34,9 +34,10 @@ on:
         description: Ninja compiler concurrency for cold-build comparison
         type: choice
         options:
+          - default
           - "2"
           - "6"
-        default: "2"
+        default: default
       cold:
         description: Disable ccache to benchmark an identical cold source build
         type: boolean
@@ -99,22 +100,25 @@ jobs:
 
       - name: Build in the ROCm image
         env:
-          CI_COMPILE_JOBS: ${{ inputs.compile_jobs || '2' }}
+          CI_COMPILE_JOBS: ${{ inputs.compile_jobs || 'default' }}
           CI_FORCE_COLD: ${{ inputs.cold || 'false' }}
         run: |
           docker run --rm --shm-size=1g -e BIGCHERRY_ENVIRONMENT -e CI_COMPILE_JOBS -e CI_FORCE_COLD -e BC_WORK_ROOT=/src/work -v "$GITHUB_WORKSPACE:/src" -w /src '${{ needs.image.outputs.image }}' bash -euxo pipefail -c '
             git config --global --add safe.directory /src
             git config --global --add safe.directory /src/work/upstream/radiance.git
             export RADIANCE_HOST_CC=gcc-14 RADIANCE_HOST_CXX=g++-14 ROCM_PATH=/opt/rocm PYTHONPATH=tools
-            # GitHub 4-vCPU runners use Ninja -j6 by default, which may overcommit
-            # memory when several very large HIP units miss ccache at once.
-            # Trial cap: compare 2 with the uncapped baseline before acceptance.
-            case "$CI_COMPILE_JOBS" in 2|6) ;; *) echo "Invalid CI build concurrency" >&2; exit 2;; esac
-            export CMAKE_BUILD_PARALLEL_LEVEL="$CI_COMPILE_JOBS"
+            # Leave the hosted runner default untouched for normal PR builds.
+            # Explicit manual 2/6-job cold trials set CMake parallelism; an
+            # experimental cap must not reach main before it is measured.
+            case "$CI_COMPILE_JOBS" in
+              default) unset CMAKE_BUILD_PARALLEL_LEVEL ;;
+              2|6) export CMAKE_BUILD_PARALLEL_LEVEL="$CI_COMPILE_JOBS" ;;
+              *) echo "Invalid CI build concurrency" >&2; exit 2 ;;
+            esac
             if [ "$CI_FORCE_COLD" = "true" ]; then
               export CCACHE_DISABLE=1
             fi
-            echo "CI build concurrency: ${CMAKE_BUILD_PARALLEL_LEVEL}; cold trial: $CI_FORCE_COLD"
+            echo "CI build concurrency: $CI_COMPILE_JOBS; cold trial: $CI_FORCE_COLD"
             export CCACHE_DIR=/src/work/.ccache
             # Absolute paths (include dirs, generated libr3 unit wrappers) are rewritten relative to /src so a
             # build-tree path that differs between runs cannot turn an unchanged unit into a miss.
