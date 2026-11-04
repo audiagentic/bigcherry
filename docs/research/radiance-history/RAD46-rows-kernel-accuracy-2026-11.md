@@ -30,4 +30,4 @@ over control.
 - Accuracy and speed trade against each other: every variant that matched grouped GEMM bit for bit was slower in
   prefill. The remaining target is matching the arithmetic with far fewer cross-lane operations.
 - The quad-DPP ordered-assembly variant is the lead to continue. It needs full KLD and the matched prefill/decode A/B.
-- Quality evidence: `artifacts/RAD46-diagnostic/capture-{attested-1,gemm}` and `artifacts/RAD46-outputlane/{capture-1,capture-2,throughput-ab}` inside the `codex/rad46*` worktrees. These paths are machine-local; keep the worktrees until the evidence is copied to `/work/bigcherry/runs/`.
+- Quality evidence: `artifacts/RAD46-diagnostic/capture-{attested-1,gemm}` and `artifacts/RAD46-outputlane/{capture-1,capture-2,throughput-ab}` inside the `codex/rad46*` worktrees. Copied to `runs/rad46-evidence/<variant>/` in the work root.
