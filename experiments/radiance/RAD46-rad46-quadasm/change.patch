@@ -1,0 +1,638 @@
+diff --git a/engines/radiance/components/moe-remote/moe_lane_gemm.h b/engines/radiance/components/moe-remote/moe_lane_gemm.h
+index 7dfb7d0dc..b928c39f8 100644
+--- a/engines/radiance/components/moe-remote/moe_lane_gemm.h
++++ b/engines/radiance/components/moe-remote/moe_lane_gemm.h
+@@ -658,16 +658,10 @@ __global__ __launch_bounds__(256) void lane_moe_rows_fp8(
+ }
+ 
+ 
+-/* lane_moe_rows for w4nl weights (RAD23, the gfx1030 tail's large lane): fp16 operands and v_dot2_f32_f16, two products a
+- * dword with an f32 accumulator. The chunk's activations are staged in LDS as fp16 (e4m3 times its scale), each output's 8
+- * decoded weights a lane as fp16 pairs (table value times the e4m3 row scale, at most 22 x 448, inside fp16), so the
+- * inner loop is one 16-byte LDS read a row and four dot2 an output, against eight f32 FMAs and two reads. The instruction
+- * is written as asm: __builtin_amdgcn_fdot2 gives wrong sums on gfx1030 (libr2 r3_mma16.h). RB rows a pass, OUTW outputs a
+- * wave (a block 8 x OUTW outputs): gate/up 16 x 4, down 12 x 2 measured best on a 6900 XT with the live tail's rows-an-expert
+- * mix (tools/lab/radiance/gfx1030/rowsk.hip: gate/up 2563 -> 1911 us, down 1994 -> 1568 us a request; output against the
+- * f32 kernel rel_l2 8.7e-4, the bf16 narrow). The activation tile is double-buffered: the next chunk is staged while this one
+- * is computed, one barrier a chunk instead of two (gate/up 1924 -> 1765 us, down 1568 -> 1406 us; bit-identical). Not
+- * bit-exact with the f32 form. */
++/* W4 rows kernel for the gfx1030 tail. E4M3 activations and W4 levels are exactly representable in fp16.
++ * Keep them unscaled for dot2 and apply the per-128 activation and per-64 weight scales to each eight-element
++ * partial in f32. Scaling the operands before converting to fp16 loses precision on small intermediate values.
++ * The dot instruction uses asm because __builtin_amdgcn_fdot2 gives wrong sums on gfx1030. */
+ constexpr uint32_t kRowsGuRB = 16, kRowsGuOut = 4;   /* gate/up */
+ constexpr uint32_t kRowsDnRB = 12, kRowsDnOut = 2;   /* down */
+ template <bool TOKEN, uint32_t RB, uint32_t OUTW>
+@@ -687,6 +681,7 @@ __global__ __launch_bounds__(256) void lane_moe_rows_w4(
+     const uint8_t* scales = static_cast<const uint8_t*>(cls ? scale1[ix] : scale0[ix]);
+     if (!codes || !scales) return;
+     __shared__ uint4 a[2][RB][kRowsKC / 8];   /* 8 fp16 activations a uint4 */
++    __shared__ float ascales[2][RB][kRowsKC / 128];
+     __shared__ uint32_t arow[RB];
+     __shared__ float lut[16];
+     if (threadIdx.x < 16) lut[threadIdx.x] = kGemvW4nl[threadIdx.x];
+@@ -720,14 +715,15 @@ __global__ __launch_bounds__(256) void lane_moe_rows_w4(
+                 const uint32_t r = idx / pieces, p16 = idx % pieces;
+                 if (r < nr && 16u * p16 < kls) {
+                     const uint32_t ar = arow[r], k = kcs + 16u * p16;
++                    if ((p16 & 7u) == 0)
++                        ascales[buf][r][p16 / 8u] = as[(uint64_t)ar * (a_stride / 128u) + k / 128u];
+                     const uint4 q = *reinterpret_cast<const uint4*>(aq + (uint64_t)ar * a_stride + k);
+-                    const float sc = as[(uint64_t)ar * (a_stride / 128u) + k / 128u];
+                     const uint32_t qw[4] = {q.x, q.y, q.z, q.w};
+                     uint32_t hw[8];
+ #pragma unroll
+                     for (uint32_t w = 0; w < 4; ++w) {
+-                        const _Float16 h0 = (_Float16)(gemv_e4m3(qw[w] & 0xFFu) * sc), h1 = (_Float16)(gemv_e4m3((qw[w] >> 8) & 0xFFu) * sc);
+-                        const _Float16 h2 = (_Float16)(gemv_e4m3((qw[w] >> 16) & 0xFFu) * sc), h3 = (_Float16)(gemv_e4m3(qw[w] >> 24) * sc);
++                        const _Float16 h0 = (_Float16)(gemv_e4m3(qw[w] & 0xFFu)), h1 = (_Float16)(gemv_e4m3((qw[w] >> 8) & 0xFFu));
++                        const _Float16 h2 = (_Float16)(gemv_e4m3((qw[w] >> 16) & 0xFFu)), h3 = (_Float16)(gemv_e4m3(qw[w] >> 24));
+                         hw[2 * w] = (uint32_t)__builtin_bit_cast(uint16_t, h0) | ((uint32_t)__builtin_bit_cast(uint16_t, h1) << 16);
+                         hw[2 * w + 1] = (uint32_t)__builtin_bit_cast(uint16_t, h2) | ((uint32_t)__builtin_bit_cast(uint16_t, h3) << 16);
+                     }
+@@ -748,17 +744,17 @@ __global__ __launch_bounds__(256) void lane_moe_rows_w4(
+             for (uint32_t j = 0; j < OUTW; ++j) { cw[j] = pw[j]; cs[j] = ps[j]; }
+             if (kc + kRowsKC < K) fetch(kc + kRowsKC);
+             if (const uint32_t d = lane; d < kl / 8u) {
++                float weight_scale[OUTW];
+                 uint32_t wv[OUTW][4];   /* the 8 decoded weights of each output as fp16 pairs, in K order */
+ #pragma unroll
+                 for (uint32_t j = 0; j < OUTW; ++j) {
+-                    const uint32_t n = n_first + j;
+-                    const float s = n < N ? gemv_e4m3(cs[j]) : 0.0f;
++                    weight_scale[j] = gemv_e4m3(cs[j]);
+                     const uint32_t w = cw[j];
+                     /* K order 8d+0..7: low nibbles of bytes 0..3 are K 0..3, high nibbles K 4..7 */
+-                    const _Float16 k0 = (_Float16)(lut[w & 15u] * s), k1 = (_Float16)(lut[(w >> 8) & 15u] * s);
+-                    const _Float16 k2 = (_Float16)(lut[(w >> 16) & 15u] * s), k3 = (_Float16)(lut[(w >> 24) & 15u] * s);
+-                    const _Float16 k4 = (_Float16)(lut[(w >> 4) & 15u] * s), k5 = (_Float16)(lut[(w >> 12) & 15u] * s);
+-                    const _Float16 k6 = (_Float16)(lut[(w >> 20) & 15u] * s), k7 = (_Float16)(lut[(w >> 28) & 15u] * s);
++                    const _Float16 k0 = (_Float16)(lut[w & 15u]), k1 = (_Float16)(lut[(w >> 8) & 15u]);
++                    const _Float16 k2 = (_Float16)(lut[(w >> 16) & 15u]), k3 = (_Float16)(lut[(w >> 24) & 15u]);
++                    const _Float16 k4 = (_Float16)(lut[(w >> 4) & 15u]), k5 = (_Float16)(lut[(w >> 12) & 15u]);
++                    const _Float16 k6 = (_Float16)(lut[(w >> 20) & 15u]), k7 = (_Float16)(lut[(w >> 28) & 15u]);
+                     auto pk = [](_Float16 x, _Float16 y) { return (uint32_t)__builtin_bit_cast(uint16_t, x) | ((uint32_t)__builtin_bit_cast(uint16_t, y) << 16); };
+                     wv[j][0] = pk(k0, k1); wv[j][1] = pk(k2, k3); wv[j][2] = pk(k4, k5); wv[j][3] = pk(k6, k7);
+                 }
+@@ -766,14 +762,15 @@ __global__ __launch_bounds__(256) void lane_moe_rows_w4(
+                 for (uint32_t r = 0; r < RB; ++r) {
+                     if (r >= nr) continue;
+                     const uint4 x = a[cur][r][d];
++                    const float asc = ascales[cur][r][d / 16u];
+ #pragma unroll
+                     for (uint32_t j = 0; j < OUTW; ++j) {
+-                        float s = acc[j][r];
++                        float s = 0.0f;
+                         asm("v_dot2_f32_f16 %0, %1, %2, %0" : "+v"(s) : "v"(x.x), "v"(wv[j][0]));
+                         asm("v_dot2_f32_f16 %0, %1, %2, %0" : "+v"(s) : "v"(x.y), "v"(wv[j][1]));
+                         asm("v_dot2_f32_f16 %0, %1, %2, %0" : "+v"(s) : "v"(x.z), "v"(wv[j][2]));
+                         asm("v_dot2_f32_f16 %0, %1, %2, %0" : "+v"(s) : "v"(x.w), "v"(wv[j][3]));
+-                        acc[j][r] = s;
++                        acc[j][r] += (s * asc) * weight_scale[j];
+                     }
+                 }
+             }
+@@ -800,4 +797,315 @@ __global__ __launch_bounds__(256) void lane_moe_rows_w4(
+ }
+ 
+ 
++/* RAD46 output-owned-lane experiment. Host dispatch restricts this kernel to the validated W4
++ * geometry; the existing rows kernel remains the fallback. One thread owns one output column,
++ * reusing its decoded weights over RB rows. Packed weights are loaded cooperatively along K,
++ * then transposed in LDS so output lanes read adjacent columns. The padded column pitch avoids
++ * the worst transpose bank conflicts. Activation and weight tiles are double-buffered.
++ *
++ * Arithmetic is the group-fold experiment's: two independently reset dot8 values form each
++ * dot16, four dot16 values accumulate sequentially per 64 K, then two weighted groups fold
++ * under one activation scale per 128 K. No cross-lane arithmetic and no final reduction.
++ * This preserves group-fold's operation order; it does not claim libr2 equivalence on all inputs. */
++constexpr uint32_t kOutputLaneN = 128, kOutputLaneK = 128, kOutputLaneRB = 8;
++template <bool TOKEN, uint32_t RB>
++__global__ __launch_bounds__(128) void lane_moe_rows_w4_outputlane(
++    const uint8_t* aq, const float* as, const int32_t* sorted, const int32_t* off, uint32_t top_k,
++    void* const* code0, void* const* scale0, void* const* code1, void* const* scale1,
++    uint32_t n0, uint32_t n1, uint32_t k0, uint32_t k1, uint32_t a_stride, uint32_t out_stride,
++    uint16_t* out, uint32_t part_pitch) {
++#pragma clang fp contract(off)
++#pragma clang fp reassociate(off)
++    static_assert(RB > 0 && RB <= 16, "output-lane row batch must fit the staging geometry");
++    const uint32_t e = blockIdx.x, tid = threadIdx.x;
++    const uint32_t rs = (uint32_t)off[e], re = (uint32_t)off[e + 1];
++    if (rs >= re) return;
++    const uint32_t cls = e & 1u, ix = e >> 1;
++    const uint32_t N = cls ? n1 : n0, K = cls ? k1 : k0;
++    const uint32_t n_base = blockIdx.y * kOutputLaneN, n = n_base + tid;
++    if (n_base >= N) return;
++    const uint8_t* codes = static_cast<const uint8_t*>(cls ? code1[ix] : code0[ix]);
++    const uint8_t* scales = static_cast<const uint8_t*>(cls ? scale1[ix] : scale0[ix]);
++    if (!codes || !scales) return;
++    constexpr uint32_t words = kOutputLaneK / 8;
++    __shared__ uint32_t weight[2][words][kOutputLaneN + 1];
++    __shared__ uint4 activation[2][RB][words];
++    __shared__ float activation_scale[2][RB];
++    __shared__ uint32_t arow[RB];
++    __shared__ float lut[16];
++    if (tid < 16) lut[tid] = kGemvW4nl[tid];
++    auto pack = [](_Float16 x, _Float16 y) {
++        return (uint32_t)__builtin_bit_cast(uint16_t, x) |
++               ((uint32_t)__builtin_bit_cast(uint16_t, y) << 16);
++    };
++    auto decode = [&](uint32_t w) {
++        // Packed dword order: low nibbles are K0..3, high nibbles are K4..7.
++        return make_uint4(
++            pack((_Float16)lut[w & 15u], (_Float16)lut[(w >> 8) & 15u]),
++            pack((_Float16)lut[(w >> 16) & 15u], (_Float16)lut[(w >> 24) & 15u]),
++            pack((_Float16)lut[(w >> 4) & 15u], (_Float16)lut[(w >> 12) & 15u]),
++            pack((_Float16)lut[(w >> 20) & 15u], (_Float16)lut[(w >> 28) & 15u]));
++    };
++    auto dot8 = [](uint4 x, uint4 w) {
++        float s = 0.0f;
++        asm("v_dot2_f32_f16 %0, %1, %2, %0" : "+v"(s) : "v"(x.x), "v"(w.x));
++        asm("v_dot2_f32_f16 %0, %1, %2, %0" : "+v"(s) : "v"(x.y), "v"(w.y));
++        asm("v_dot2_f32_f16 %0, %1, %2, %0" : "+v"(s) : "v"(x.z), "v"(w.z));
++        asm("v_dot2_f32_f16 %0, %1, %2, %0" : "+v"(s) : "v"(x.w), "v"(w.w));
++        return s;
++    };
++    for (uint32_t r0 = rs; r0 < re; r0 += RB) {
++        const uint32_t nr = re - r0 < RB ? re - r0 : RB;
++        if (tid < nr) arow[tid] = TOKEN ? (uint32_t)sorted[r0 + tid] / top_k : r0 + tid;
++        float acc[RB];
++#pragma unroll
++        for (uint32_t r = 0; r < RB; ++r) acc[r] = 0.0f;
++        uint32_t prefetched[words];
++        uint16_t prefetched_scales;
++        auto fetch = [&](uint32_t kc) {
++            // A half wave reads sixteen consecutive packed words from one output row.
++#pragma unroll
++            for (uint32_t p = 0; p < words; ++p) {
++                const uint32_t i = tid + p * kOutputLaneN, col = i / words, kw = i % words;
++                const uint32_t wn = n_base + col;
++                prefetched[p] = wn < N ? reinterpret_cast<const uint32_t*>(
++                    codes + (uint64_t)wn * (K / 2u))[kc / 8u + kw] : 0u;
++            }
++            // Both 64-K scales of this thread's column, already in K order.
++            prefetched_scales = n < N ? reinterpret_cast<const uint16_t*>(
++                scales + (uint64_t)n * (K / 64u))[kc / kOutputLaneK] : (uint16_t)0;
++        };
++        auto stage = [&](uint32_t kc, uint32_t buf) {
++#pragma unroll
++            for (uint32_t p = 0; p < words; ++p) {
++                const uint32_t i = tid + p * kOutputLaneN;
++                weight[buf][i % words][i / words] = prefetched[p];
++            }
++            if (tid < nr)
++                activation_scale[buf][tid] = as[(uint64_t)arow[tid] * (a_stride / 128u) + kc / 128u];
++            for (uint32_t i = tid; i < RB * (kOutputLaneK / 16u); i += kOutputLaneN) {
++                const uint32_t r = i / (kOutputLaneK / 16u), p16 = i % (kOutputLaneK / 16u);
++                if (r >= nr) continue;
++                const uint4 q = *reinterpret_cast<const uint4*>(
++                    aq + (uint64_t)arow[r] * a_stride + kc + 16u * p16);
++                const uint32_t qw[4] = {q.x, q.y, q.z, q.w};
++                uint32_t hw[8];
++#pragma unroll
++                for (uint32_t j = 0; j < 4; ++j) {
++                    hw[2 * j] = pack((_Float16)gemv_e4m3(qw[j] & 255u),
++                                     (_Float16)gemv_e4m3((qw[j] >> 8) & 255u));
++                    hw[2 * j + 1] = pack((_Float16)gemv_e4m3((qw[j] >> 16) & 255u),
++                                         (_Float16)gemv_e4m3(qw[j] >> 24));
++                }
++                activation[buf][r][2 * p16] = make_uint4(hw[0], hw[1], hw[2], hw[3]);
++                activation[buf][r][2 * p16 + 1] = make_uint4(hw[4], hw[5], hw[6], hw[7]);
++            }
++        };
++        fetch(0);
++        __syncthreads(); // row map, LUT, and the preceding row batch's shared reads
++        stage(0, 0);
++        __syncthreads();
++        uint32_t cur = 0;
++        // Deliberately leave K rolled; each chunk's two groups/four partials are fixed-size.
++        for (uint32_t kc = 0; kc < K; kc += kOutputLaneK, cur ^= 1u) {
++            const uint16_t ws = prefetched_scales;
++            const float ws0 = gemv_e4m3(ws & 255u) * 0x1p-13f;
++            const float ws1 = gemv_e4m3(ws >> 8) * 0x1p-13f;
++            if (kc + kOutputLaneK < K) fetch(kc + kOutputLaneK);
++            float first_weighted[RB];
++#pragma unroll
++            for (uint32_t group = 0; group < 2; ++group) {
++                float raw[RB];
++#pragma unroll
++                for (uint32_t pair = 0; pair < 4; ++pair) {
++                    const uint32_t kw = group * 8u + pair * 2u;
++                    const uint4 w0 = decode(weight[cur][kw][tid]);
++                    const uint4 w1 = decode(weight[cur][kw + 1u][tid]);
++#pragma unroll
++                    for (uint32_t r = 0; r < RB; ++r) {
++                        if (r >= nr) continue;
++                        const float lo = dot8(activation[cur][r][kw], w0);
++                        const float hi = dot8(activation[cur][r][kw + 1u], w1);
++                        const float partial = lo + hi;
++                        if (pair == 0) raw[r] = partial;
++                        else raw[r] += partial;
++                    }
++                }
++#pragma unroll
++                for (uint32_t r = 0; r < RB; ++r) {
++                    if (r >= nr) continue;
++                    if (group == 0) first_weighted[r] = raw[r] * ws0;
++                    else {
++                        const float second_weighted = raw[r] * ws1;
++                        const float folded = first_weighted[r] + second_weighted;
++                        acc[r] += folded * activation_scale[cur][r];
++                    }
++                }
++            }
++            if (kc + kOutputLaneK < K) stage(kc + kOutputLaneK, cur ^ 1u);
++            __syncthreads();
++        }
++        if (n < N) {
++            const uint32_t col = TOKEN && part_pitch && n >= N / 2 ? n - N / 2 + part_pitch : n;
++#pragma unroll
++            for (uint32_t r = 0; r < RB; ++r) {
++                if (r >= nr) continue;
++                uint32_t u = __float_as_uint(acc[r]);
++                u += 0x7fffu + ((u >> 16) & 1u);
++                out[(uint64_t)(r0 + r) * out_stride + col] = (uint16_t)(u >> 16);
++            }
++        }
++    }
++}
++
++/* RAD46 quad-DPP experiment: four adjacent lanes own one output column. Each
++ * computes one dot16 in a K64 group. Only quad lane zero's ordered DPP fold is
++ * used; other lanes must remain active as DPP sources, including padded rows.
++ * Dot8 resets, dot16 additions, K64 ordering and the K128 scale fold match the
++ * output-lane experiment. This is not a claim of universal libr2 equivalence.
++ * Host dispatch admits only complete K128 groups and complete N32 tiles. */
++constexpr uint32_t kQuadDppN = 32, kQuadDppRB = 16;
++template <bool TOKEN, uint32_t RB>
++__global__ __launch_bounds__(128) void lane_moe_rows_w4_quaddpp(
++    const uint8_t* aq, const float* as, const int32_t* sorted, const int32_t* off, uint32_t top_k,
++    void* const* code0, void* const* scale0, void* const* code1, void* const* scale1,
++    uint32_t n0, uint32_t n1, uint32_t k0, uint32_t k1, uint32_t a_stride, uint32_t out_stride,
++    uint16_t* out, uint32_t part_pitch) {
++#pragma clang fp contract(off)
++#pragma clang fp reassociate(off)
++    static_assert(RB > 0 && RB <= 16, "quad-DPP row batch exceeds staging geometry");
++    const uint32_t e = blockIdx.x, tid = threadIdx.x, qlane = tid & 3u;
++    const uint32_t rs = (uint32_t)off[e], re = (uint32_t)off[e + 1];
++    if (rs >= re) return;
++    const uint32_t cls = e & 1u, ix = e >> 1;
++    const uint32_t N = cls ? n1 : n0, K = cls ? k1 : k0;
++    const uint32_t n_base = blockIdx.y * kQuadDppN, n = n_base + tid / 4u;
++    if (n_base >= N) return;
++    const uint8_t* codes = static_cast<const uint8_t*>(cls ? code1[ix] : code0[ix]);
++    const uint8_t* scales = static_cast<const uint8_t*>(cls ? scale1[ix] : scale0[ix]);
++    if (!codes || !scales) return;
++    __shared__ uint4 activation[2][RB][16];
++    __shared__ float activation_scale[2][RB];
++    __shared__ uint32_t arow[RB];
++    __shared__ uint32_t lut[16];
++    // Store exact half bits: weight decode needs no float-to-half conversions.
++    if (tid < 16) lut[tid] = __builtin_bit_cast(uint16_t, (_Float16)kGemvW4nl[tid]);
++    auto pack = [](_Float16 x, _Float16 y) {
++        return (uint32_t)__builtin_bit_cast(uint16_t, x) |
++               ((uint32_t)__builtin_bit_cast(uint16_t, y) << 16);
++    };
++    auto decode = [&](uint32_t w) {
++        return make_uint4(
++            lut[w & 15u] | (lut[(w >> 8) & 15u] << 16),
++            lut[(w >> 16) & 15u] | (lut[(w >> 24) & 15u] << 16),
++            lut[(w >> 4) & 15u] | (lut[(w >> 12) & 15u] << 16),
++            lut[(w >> 20) & 15u] | (lut[(w >> 28) & 15u] << 16));
++    };
++    auto dot8 = [](uint4 x, uint4 w) {
++        float s = 0.0f;
++        asm("v_dot2_f32_f16 %0, %1, %2, %0" : "+v"(s) : "v"(x.x), "v"(w.x));
++        asm("v_dot2_f32_f16 %0, %1, %2, %0" : "+v"(s) : "v"(x.y), "v"(w.y));
++        asm("v_dot2_f32_f16 %0, %1, %2, %0" : "+v"(s) : "v"(x.z), "v"(w.z));
++        asm("v_dot2_f32_f16 %0, %1, %2, %0" : "+v"(s) : "v"(x.w), "v"(w.w));
++        return s;
++    };
++    auto quad_sum = [](float partial) {
++        // Keep each broadcast next to its consuming add. Separate intrinsics
++        // let LLVM hoist 96 broadcast results across next-tile staging. Both
++        // early-clobbers prevent either temporary overwriting the source that
++        // the later broadcasts still need. All four source lanes stay active.
++        float sum, exchanged;
++        asm("v_mov_b32_dpp %1, %2 quad_perm:[1,1,1,1] row_mask:0xf bank_mask:0xf\n\t"
++            "v_add_f32 %0, %2, %1\n\t"
++            "v_mov_b32_dpp %1, %2 quad_perm:[2,2,2,2] row_mask:0xf bank_mask:0xf\n\t"
++            "v_add_f32 %0, %0, %1\n\t"
++            "v_mov_b32_dpp %1, %2 quad_perm:[3,3,3,3] row_mask:0xf bank_mask:0xf\n\t"
++            "v_add_f32 %0, %0, %1"
++            : "=&v"(sum), "=&v"(exchanged) : "v"(partial));
++        return sum;
++    };
++    for (uint32_t r0 = rs; r0 < re; r0 += RB) {
++        const uint32_t nr = re - r0 < RB ? re - r0 : RB;
++        if (tid < RB)
++            arow[tid] = tid < nr ? (TOKEN ? (uint32_t)sorted[r0 + tid] / top_k : r0 + tid) : 0u;
++        float acc[RB];
++#pragma unroll
++        for (uint32_t r = 0; r < RB; ++r) acc[r] = 0.0f;
++        uint2 prefetched[2];
++        uint16_t prefetched_scales;
++        auto fetch = [&](uint32_t kc) {
++#pragma unroll
++            for (uint32_t group = 0; group < 2; ++group)
++                prefetched[group] = *reinterpret_cast<const uint2*>(
++                    codes + (uint64_t)n * (K / 2u) + kc / 2u + group * 32u + qlane * 8u);
++            prefetched_scales = reinterpret_cast<const uint16_t*>(
++                scales + (uint64_t)n * (K / 64u))[kc / 128u];
++        };
++        auto stage = [&](uint32_t kc, uint32_t buf) {
++            if (tid < RB)
++                activation_scale[buf][tid] = tid < nr ?
++                    as[(uint64_t)arow[tid] * (a_stride / 128u) + kc / 128u] : 0.0f;
++            for (uint32_t i = tid; i < RB * 8u; i += 128u) {
++                const uint32_t r = i / 8u, p16 = i % 8u;
++                // Zero every invalid row, so the hot arithmetic has no row predicates.
++                const uint4 q = r < nr ? *reinterpret_cast<const uint4*>(
++                    aq + (uint64_t)arow[r] * a_stride + kc + p16 * 16u) : make_uint4(0, 0, 0, 0);
++                const uint32_t qw[4] = {q.x, q.y, q.z, q.w};
++                uint32_t hw[8];
++#pragma unroll
++                for (uint32_t j = 0; j < 4; ++j) {
++                    hw[2 * j] = pack((_Float16)gemv_e4m3(qw[j] & 255u),
++                                    (_Float16)gemv_e4m3((qw[j] >> 8) & 255u));
++                    hw[2 * j + 1] = pack((_Float16)gemv_e4m3((qw[j] >> 16) & 255u),
++                                        (_Float16)gemv_e4m3(qw[j] >> 24));
++                }
++                activation[buf][r][2 * p16] = make_uint4(hw[0], hw[1], hw[2], hw[3]);
++                activation[buf][r][2 * p16 + 1] = make_uint4(hw[4], hw[5], hw[6], hw[7]);
++            }
++        };
++        fetch(0);
++        __syncthreads();
++        stage(0, 0);
++        __syncthreads();
++        uint32_t cur = 0;
++        for (uint32_t kc = 0; kc < K; kc += 128u, cur ^= 1u) {
++            const uint2 current[2] = {prefetched[0], prefetched[1]};
++            const uint16_t ws = prefetched_scales;
++            const float ws0 = gemv_e4m3(ws & 255u) * 0x1p-13f;
++            const float ws1 = gemv_e4m3(ws >> 8) * 0x1p-13f;
++            if (kc + 128u < K) fetch(kc + 128u);
++            float first_weighted[RB];
++#pragma unroll
++            for (uint32_t group = 0; group < 2; ++group) {
++                const uint4 w0 = decode(current[group].x), w1 = decode(current[group].y);
++                const uint32_t kw = group * 8u + qlane * 2u;
++#pragma unroll
++                for (uint32_t r = 0; r < RB; ++r) {
++                    const float lo = dot8(activation[cur][r][kw], w0);
++                    const float hi = dot8(activation[cur][r][kw + 1u], w1);
++                    const float raw = quad_sum(lo + hi);
++                    if (group == 0) first_weighted[r] = raw * ws0;
++                    else {
++                        const float second_weighted = raw * ws1;
++                        const float folded = first_weighted[r] + second_weighted;
++                        acc[r] += folded * activation_scale[cur][r];
++                    }
++                }
++            }
++            if (kc + 128u < K) stage(kc + 128u, cur ^ 1u);
++            __syncthreads();
++        }
++        if (qlane == 0) {
++            const uint32_t col = TOKEN && part_pitch && n >= N / 2 ? n - N / 2 + part_pitch : n;
++#pragma unroll
++            for (uint32_t r = 0; r < RB; ++r) {
++                if (r >= nr) continue;
++                uint32_t u = __float_as_uint(acc[r]);
++                u += 0x7fffu + ((u >> 16) & 1u);
++                out[(uint64_t)(r0 + r) * out_stride + col] = (uint16_t)(u >> 16);
++            }
++        }
++    }
++}
++
+ }  // namespace r3_moe_gpu
+diff --git a/engines/radiance/components/moe-remote/moe_remote_gpu.h b/engines/radiance/components/moe-remote/moe_remote_gpu.h
+index 3cd4a38d0..8a7ba5205 100644
+--- a/engines/radiance/components/moe-remote/moe_remote_gpu.h
++++ b/engines/radiance/components/moe-remote/moe_remote_gpu.h
+@@ -648,6 +648,33 @@ public:
+             const bool rows_small = rs_env && std::strcmp(rs_env, "0") != 0 &&
+                                     lane_is_small(lane) && rows <= 16u;
+             const bool rowk = (rows_ && !lane_is_small(lane)) || rows_small;
++            /* RAD46 experiment, opt-in and restricted to the gfx1030 Flash-Next shapes whose
++             * complete 128-K groups and gate/up part pitches the prototype implements. Any
++             * other device, format, lane or geometry keeps the existing dispatch below. */
++            const char* ol_env = std::getenv("R3_MOE_WORKER_OUTPUT_LANE");
++            const auto output_width_ok = [](int64_t v) { return v == 256 || v == 384 || v == 640; };
++            const bool output_lane_geometry = rowk && !lane_is_small(lane) &&
++                arch_ == "gfx1030" && weight_format_ == MOE_FMT_W4NL64 &&
++                shape_.hidden == 2560 && shape_.intermediate == 640 &&
++                output_width_ok(w0) && output_width_ok(w1) && output_width_ok(mid_w()) &&
++                w0 <= mid_w() && w1 <= mid_w();
++            const bool output_lane = output_lane_geometry && ol_env && *ol_env && std::strcmp(ol_env, "0") != 0;
++            const char* qd_env = std::getenv("R3_MOE_WORKER_QUAD_DPP");
++            const bool quad_dpp = output_lane_geometry && qd_env && *qd_env && std::strcmp(qd_env, "0") != 0;
++            if (quad_dpp) {
++                static const bool announced = [] {
++                    std::fprintf(stderr, "r3_moe_worker: RAD46 quad-DPP rows kernel active\n");
++                    return true;
++                }();
++                (void)announced;
++            }
++            if (output_lane && !quad_dpp) {
++                static const bool announced = [] {
++                    std::fprintf(stderr, "r3_moe_worker: RAD46 output-lane rows kernel active\n");
++                    return true;
++                }();
++                (void)announced;
++            }
+             const dim3 rows_grid_gu(experts(), (uint32_t)((2 * std::max(w0, w1) + kRowsTileN - 1) / kRowsTileN));
+             const dim3 rows_grid_dn(experts(), (uint32_t)((shape_.hidden + kRowsTileN - 1) / kRowsTileN));
+             const dim3 w4_grid_gu(experts(), (uint32_t)((2 * std::max(w0, w1) + 8 * kRowsGuOut - 1) / (8 * kRowsGuOut)));
+@@ -667,6 +694,28 @@ public:
+                                    (uint32_t)(2 * w0), (uint32_t)(2 * w1), (uint32_t)shape_.hidden, (uint32_t)shape_.hidden,
+                                    (uint32_t)shape_.hidden, (uint32_t)(2 * mid_w()), static_cast<uint16_t*>(w.d_gu.p),
+                                    (uint32_t)mid_w());
++                else if (quad_dpp)
++                    hipLaunchKernelGGL((lane_moe_rows_w4_quaddpp<true, kQuadDppRB>),
++                                   dim3(experts(), (uint32_t)(2 * std::max(w0, w1) / kQuadDppN)), dim3(128), 0, w.stream,
++                                   static_cast<const uint8_t*>(w.d_aq.p), static_cast<const float*>(w.d_as.p),
++                                   static_cast<const int32_t*>(w.d_sorted.p), static_cast<const int32_t*>(w.d_off.p),
++                                   (uint32_t)shape_.top_k,
++                                   static_cast<void* const*>(w.gu_code[0].p), static_cast<void* const*>(w.gu_scale[0].p),
++                                   static_cast<void* const*>(w.gu_code[1].p), static_cast<void* const*>(w.gu_scale[1].p),
++                                   (uint32_t)(2 * w0), (uint32_t)(2 * w1), (uint32_t)shape_.hidden, (uint32_t)shape_.hidden,
++                                   (uint32_t)shape_.hidden, (uint32_t)(2 * mid_w()), static_cast<uint16_t*>(w.d_gu.p),
++                                   (uint32_t)mid_w());
++                else if (output_lane)
++                    hipLaunchKernelGGL((lane_moe_rows_w4_outputlane<true, kOutputLaneRB>),
++                                   dim3(experts(), (uint32_t)(2 * std::max(w0, w1) / kOutputLaneN)), dim3(kOutputLaneN), 0, w.stream,
++                                   static_cast<const uint8_t*>(w.d_aq.p), static_cast<const float*>(w.d_as.p),
++                                   static_cast<const int32_t*>(w.d_sorted.p), static_cast<const int32_t*>(w.d_off.p),
++                                   (uint32_t)shape_.top_k,
++                                   static_cast<void* const*>(w.gu_code[0].p), static_cast<void* const*>(w.gu_scale[0].p),
++                                   static_cast<void* const*>(w.gu_code[1].p), static_cast<void* const*>(w.gu_scale[1].p),
++                                   (uint32_t)(2 * w0), (uint32_t)(2 * w1), (uint32_t)shape_.hidden, (uint32_t)shape_.hidden,
++                                   (uint32_t)shape_.hidden, (uint32_t)(2 * mid_w()), static_cast<uint16_t*>(w.d_gu.p),
++                                   (uint32_t)mid_w());
+                 else
+                     hipLaunchKernelGGL((lane_moe_rows_w4<true, kRowsGuRB, kRowsGuOut>), w4_grid_gu, dim3(256), 0, w.stream,
+                                    static_cast<const uint8_t*>(w.d_aq.p), static_cast<const float*>(w.d_as.p),
+@@ -761,6 +810,26 @@ public:
+                                    static_cast<void* const*>(w.dn_code[1].p), static_cast<void* const*>(w.dn_scale[1].p),
+                                    (uint32_t)shape_.hidden, (uint32_t)shape_.hidden, (uint32_t)w0, (uint32_t)w1,
+                                    (uint32_t)mid_w(), (uint32_t)shape_.hidden, static_cast<uint16_t*>(out_down), 0u);
++                else if (quad_dpp)
++                    hipLaunchKernelGGL((lane_moe_rows_w4_quaddpp<false, kQuadDppRB>),
++                                   dim3(experts(), (uint32_t)(shape_.hidden / kQuadDppN)), dim3(128), 0, w.stream,
++                                   static_cast<const uint8_t*>(w.d_mid.p), static_cast<const float*>(w.d_mid_s.p),
++                                   static_cast<const int32_t*>(w.d_sorted.p), static_cast<const int32_t*>(w.d_off.p),
++                                   (uint32_t)shape_.top_k,
++                                   static_cast<void* const*>(w.dn_code[0].p), static_cast<void* const*>(w.dn_scale[0].p),
++                                   static_cast<void* const*>(w.dn_code[1].p), static_cast<void* const*>(w.dn_scale[1].p),
++                                   (uint32_t)shape_.hidden, (uint32_t)shape_.hidden, (uint32_t)w0, (uint32_t)w1,
++                                   (uint32_t)mid_w(), (uint32_t)shape_.hidden, static_cast<uint16_t*>(out_down), 0u);
++                else if (output_lane)
++                    hipLaunchKernelGGL((lane_moe_rows_w4_outputlane<false, kOutputLaneRB>),
++                                   dim3(experts(), (uint32_t)(shape_.hidden / kOutputLaneN)), dim3(kOutputLaneN), 0, w.stream,
++                                   static_cast<const uint8_t*>(w.d_mid.p), static_cast<const float*>(w.d_mid_s.p),
++                                   static_cast<const int32_t*>(w.d_sorted.p), static_cast<const int32_t*>(w.d_off.p),
++                                   (uint32_t)shape_.top_k,
++                                   static_cast<void* const*>(w.dn_code[0].p), static_cast<void* const*>(w.dn_scale[0].p),
++                                   static_cast<void* const*>(w.dn_code[1].p), static_cast<void* const*>(w.dn_scale[1].p),
++                                   (uint32_t)shape_.hidden, (uint32_t)shape_.hidden, (uint32_t)w0, (uint32_t)w1,
++                                   (uint32_t)mid_w(), (uint32_t)shape_.hidden, static_cast<uint16_t*>(out_down), 0u);
+                 else
+                     hipLaunchKernelGGL((lane_moe_rows_w4<false, kRowsDnRB, kRowsDnOut>), w4_grid_dn, dim3(256), 0, w.stream,
+                                    static_cast<const uint8_t*>(w.d_mid.p), static_cast<const float*>(w.d_mid_s.p),
+diff --git a/engines/radiance/components/moe-remote/worker_harness.h b/engines/radiance/components/moe-remote/worker_harness.h
+index 46f6b424c..67e328436 100644
+--- a/engines/radiance/components/moe-remote/worker_harness.h
++++ b/engines/radiance/components/moe-remote/worker_harness.h
+@@ -116,6 +116,11 @@ bool load_replay(const char* path, ReplayInput* out) {
+ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& owned,
+                  uint32_t layer, uint32_t rows, const SmallClasses& classes, uint32_t lane_large_rows,
+                  bool synthetic_protect) {
++    if (!g_sweep_fast && gpu.engine_ranks_ != kMaxEngineRanks) {
++        std::fprintf(stderr, "r3_moe_worker: --compare and reference replay require R3_MOE_WORKER_ENGINE_RANKS=%u\n",
++                     kMaxEngineRanks);
++        return 1;
++    }
+     /* the request is built for the model's own shape (the lane checks every request against it) */
+     const uint32_t hid = gpu.shape_.hidden, topk = gpu.shape_.top_k;
+     if (g_replay) {  // a captured real request replaces the synthetic layer, rows, routes and activations
+@@ -371,8 +376,8 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
+         }
+ 
+         std::vector<uint16_t> want_route;
+-        const int hrc = gpu.weight_format() == MOE_FMT_FP8_E4M3_BLOCK ? compute_host_engine_fp8(model, map, q, &want_route)
+-                                                                      : compute_host_engine(model, map, q, &want_route);
++        const int hrc = gpu.weight_format() == MOE_FMT_FP8_E4M3_BLOCK ? compute_host_engine_fp8(model, map, q, &want_route, g_replay != nullptr)
++                                                                      : compute_host_engine(model, map, q, &want_route, g_replay != nullptr);
+         if (hrc != 0 || want_route.size() != (size_t)nr * hid) {
+             std::fprintf(stderr,
+                          "r3_moe_worker: --compare local-path host rank %u failed rc=%d\n",
+@@ -387,11 +392,19 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
+         long double num = 0.0L, den = 0.0L;
+         double max_abs = 0.0;
+         uint32_t tokens = 0;
++        std::vector<long double> expert_num(model.experts, 0.0L), expert_den(model.experts, 0.0L);
++        std::vector<uint32_t> expert_tokens(model.experts, 0);
+         for (uint32_t t = 0; t < rows; ++t) {
+-            bool any = false;
+-            for (uint32_t slot = 0; slot < topk; ++slot) any = any || route_of[(size_t)t * topk + slot] >= 0;
+-            if (!any) continue;
++            int32_t only_route = -1;
++            uint32_t route_count = 0;
++            for (uint32_t slot = 0; slot < topk; ++slot) {
++                const int32_t j = route_of[(size_t)t * topk + slot];
++                if (j >= 0) { only_route = j; ++route_count; }
++            }
++            if (!route_count) continue;
+             ++tokens;
++            const int32_t expert = route_count == 1 ? published[(uint32_t)only_route].expert : -1;
++            if (expert >= 0) ++expert_tokens[(uint32_t)expert];
+             for (uint32_t col = 0; col < hid; ++col) {
+                 float acc = 0.0f;
+                 for (uint32_t slot = 0; slot < topk; ++slot) {
+@@ -406,8 +419,19 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
+                 num += (long double)d * d;
+                 den += (long double)b * b;
+                 max_abs = std::max(max_abs, std::abs(d));
++                if (expert >= 0) {
++                    expert_num[(uint32_t)expert] += (long double)d * d;
++                    expert_den[(uint32_t)expert] += (long double)b * b;
++                }
+             }
+         }
++        for (uint32_t e = 0; e < model.experts; ++e) {
++            if (!expert_tokens[e]) continue;
++            const double rel_e = std::sqrt((double)(expert_num[e] /
++                std::max<long double>(expert_den[e], 1.0e-30L)));
++            std::printf("expert_join layer %u rank %u expert %u tokens=%u rel_l2=%.8g\n",
++                        layer, rank, e, expert_tokens[e], rel_e);
++        }
+         const double rel =
+             std::sqrt((double)(num / std::max<long double>(den, 1.0e-30L)));
+         std::printf("engine_join layer %u rank %u lane %u routes=%u tokens=%u rel_l2=%.8g max_abs=%.8g\n",
+diff --git a/engines/radiance/components/moe-remote/worker_hostref.h b/engines/radiance/components/moe-remote/worker_hostref.h
+index 5cc439ba3..eb64963fb 100644
+--- a/engines/radiance/components/moe-remote/worker_hostref.h
++++ b/engines/radiance/components/moe-remote/worker_hostref.h
+@@ -150,7 +150,7 @@ bool quant_plain_engine(float* v, size_t n) {
+ }
+ 
+ int compute_host_engine(const Container& f, void* map, Request* q,
+-                        std::vector<uint16_t>* route_down = nullptr) {
++                        std::vector<uint16_t>* route_down = nullptr, bool captured_quant = false) {
+     const uint32_t hid = static_cast<const Header*>(map)->hidden, topk = static_cast<const Header*>(map)->top_k;
+     const int64_t hdr_intermediate = static_cast<const Header*>(map)->intermediate;
+     if (q->rank_count != kMaxEngineRanks || q->rank >= kMaxSlots || q->layer >= f.layers ||
+@@ -163,9 +163,17 @@ int compute_host_engine(const Container& f, void* map, Request* q,
+     uint16_t* dst = ptr<uint16_t>(map, q->result_offset[out_rank_of(q->rank, q->rank_count)]);
+ 
+     std::vector<float> aq((size_t)q->rows * hid);
+-    for (size_t i = 0; i < aq.size(); ++i) aq[i] = bf16(act[i]);
+-    for (uint32_t t = 0; t < q->rows; ++t)
+-        if (!quant_had_engine(aq.data() + (size_t)t * hid, hid)) return -EINVAL;
++    if (captured_quant) {
++        // Captured input is already quantised; W4 input is also Hadamard rotated.
++        const uint8_t* codes = ptr<uint8_t>(map, q->activation_q_offset);
++        const float* scales = ptr<float>(map, q->activation_s_offset);
++        for (size_t i = 0; i < aq.size(); ++i)
++            aq[i] = f8e4m3(codes[i]) * scales[i / kActGroup];
++    } else {
++        for (size_t i = 0; i < aq.size(); ++i) aq[i] = bf16(act[i]);
++        for (uint32_t t = 0; t < q->rows; ++t)
++            if (!quant_had_engine(aq.data() + (size_t)t * hid, hid)) return -EINVAL;
++    }
+ 
+     std::vector<std::vector<uint32_t>> by_exp(f.experts);
+     std::vector<int32_t> slot_route((size_t)q->rows * topk, -1);
+@@ -248,7 +256,7 @@ int compute_host_engine(const Container& f, void* map, Request* q,
+ }
+ 
+ int compute_host_engine_fp8(const Container& f, void* map, Request* q,
+-                        std::vector<uint16_t>* route_down = nullptr) {
++                        std::vector<uint16_t>* route_down = nullptr, bool captured_quant = false) {
+     const uint32_t hid = static_cast<const Header*>(map)->hidden, topk = static_cast<const Header*>(map)->top_k;
+     const int64_t hdr_intermediate = static_cast<const Header*>(map)->intermediate;
+     if (q->rank_count != kMaxEngineRanks || q->rank >= kMaxSlots || q->layer >= f.layers ||
+@@ -261,9 +269,17 @@ int compute_host_engine_fp8(const Container& f, void* map, Request* q,
+     uint16_t* dst = ptr<uint16_t>(map, q->result_offset[out_rank_of(q->rank, q->rank_count)]);
+ 
+     std::vector<float> aq((size_t)q->rows * hid);
+-    for (size_t i = 0; i < aq.size(); ++i) aq[i] = bf16(act[i]);
+-    for (uint32_t t = 0; t < q->rows; ++t)
+-        if (!quant_plain_engine(aq.data() + (size_t)t * hid, hid)) return -EINVAL;
++    if (captured_quant) {
++        // Captured input is already quantised; W4 input is also Hadamard rotated.
++        const uint8_t* codes = ptr<uint8_t>(map, q->activation_q_offset);
++        const float* scales = ptr<float>(map, q->activation_s_offset);
++        for (size_t i = 0; i < aq.size(); ++i)
++            aq[i] = f8e4m3(codes[i]) * scales[i / kActGroup];
++    } else {
++        for (size_t i = 0; i < aq.size(); ++i) aq[i] = bf16(act[i]);
++        for (uint32_t t = 0; t < q->rows; ++t)
++            if (!quant_plain_engine(aq.data() + (size_t)t * hid, hid)) return -EINVAL;
++    }
+ 
+     std::vector<std::vector<uint32_t>> by_exp(f.experts);
+     std::vector<int32_t> slot_route((size_t)q->rows * topk, -1);

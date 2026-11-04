@@ -100,6 +100,8 @@ STATUS 2026-11-02 ~02:40. Merged since the 2026-11-01 status: W4H2 + 32-row GEMV
 
 BACKLOG TRIAGE 2026-11-04 (revalidated against main 6eb31a708): the proposed disposition "SUPERSEDED; optional output method in RAD41" was NOT applied; this item stays open. Why: PRs #485/#488 and engines/radiance/components/moe-remote/moe_remote_shm.h:32-36,246-254 deliver runtime helper slots and up-to-four-helper CPU combine. But r3_moe_worker.cpp:523-542 still provides a boolean CPU AVX2/F16C combine path, not off|cpu|gpu|auto with GPU kernels, measured auto selection and the per-method KLD/A/B required by RAD23.md:18-35,60-70. Active items that reference this one: RAD19, RAD39, RAD22, RCS07, RHP04, RHP03, RHP06, RHP10, RHP07, RHP09. Keep the unfinished GPU-combine, negotiated method, topology-derived auto policy and comparative validation as explicit acceptance criteria.
 
+2026-11-04 closed PR #506 (multi-row packed-f16 W4 decode GEMV, R3_MOE_WORKER_GEMV_W4MR, default-off) archived as experiments/radiance/RAD23-w4-gemv-mr/change.patch; never validated end to end (needs per-kernel time, --replay-sweep vs W4H2/CPU reference, then A/B and KLD). PR #482 (LANE_QUANT) was superseded by #481.
+
 ## Execution gate review (2026-10-23)
 
 **Split RAD23 into sequential implementation PRs; do not ship a monolithic topology change.** Before editing the ABI, retrieve and reconcile the recorded N-helper design addendum `req_bigcherry_3bb6b763ab97`; this planning note does **not** assert that private review was retrieved here.
@@ -572,3 +574,4 @@ the R9700's 16-20 W idle (ASPM, root). Stage A of hot placement is in place reco
 - 2026-11-02T02:40:51.819910+00:00 (updated-by): Updated: section:notes
 - 2026-11-02T02:42:21.800564+00:00 (updated-by): Updated: section:ledger-events
 - 2026-11-04T04:24:06.680031+00:00 (updated-by): Updated: section:notes
+- 2026-11-04T06:15:57.005197+00:00 (updated-by): Updated: section:notes
