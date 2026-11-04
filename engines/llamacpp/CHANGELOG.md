@@ -1,5 +1,18 @@
 # Changelog
 
+## [11552.4.0](https://github.com/audiagentic/bigcherry/compare/bc-llamacpp-11552.3.0...bc-llamacpp-11552.4.0) (2026-11-04)
+
+
+### New and changed
+
+* **radiance:** helper-row combine (off by default), blocking waits, and the internal-refs redaction ([#394](https://github.com/audiagentic/bigcherry/issues/394)) ([892f74d](https://github.com/audiagentic/bigcherry/commit/892f74d9e736e7889e039141e46b31ceec3a5d25))
+* **release:** engine-agnostic patch-promote (MEN25) ([#390](https://github.com/audiagentic/bigcherry/issues/390)) ([2540b55](https://github.com/audiagentic/bigcherry/commit/2540b55d0e7eab4207fc2674eb2e54b719252bf9))
+
+
+### Fixes
+
+* **tests:** repair the eight standing test failures on main ([#395](https://github.com/audiagentic/bigcherry/issues/395)) ([59faa2f](https://github.com/audiagentic/bigcherry/commit/59faa2fc9b0dfb3b4563402e623d47be971b7ab9))
+
 ## [11552.3.0](https://github.com/audiagentic/bigcherry/compare/bc-llamacpp-11552.2.1...bc-llamacpp-11552.3.0) (2026-10-21)
 
 

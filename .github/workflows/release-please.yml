@@ -130,3 +130,15 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RP_TAG: ${{ steps.release.outputs['.--tag_name'] }}
         run: gh release edit "${RP_TAG}" --title "${RP_TAG}"
+
+      # The generated notes quote old commit subjects that the forbidden-terms scan rejects; rewrite those lines in the open
+      # release PRs (rules: .github/release-line-rewrites.toml) so their checks can pass. Runs after release-please on every push.
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          path: rewrite-src
+      - name: rewrite known-bad lines in the open release PRs
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: python3 rewrite-src/.github/scripts/rewrite_release_lines.py rewrite-src/.github/release-line-rewrites.toml

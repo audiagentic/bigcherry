@@ -1,0 +1,14 @@
+# Generated release notes quote the subject of every commit since the last release. Two old commit subjects contain text the
+# forbidden-terms scan rejects (a host name and a retired variable name), so every release PR that includes them fails its
+# checks and the release line can never ship. History cannot be rewritten, so the release workflow rewrites these lines
+# in the open release PR (body and changelog file) after release-please has written them. A rule is keyed by the commit's
+# full sha and carries the clean text; the rule file therefore never contains the rejected words.
+# scripts: .github/scripts/rewrite_release_lines.py (run from .github/workflows/release-please.yml)
+
+[[line]]
+sha = "0419ff13ef10e3facee93b3fc1fe48aaa4c62412"
+text = "**lab:** helper-kld thresholds from the first two measured lab runs (MEN11)"
+
+[[line]]
+sha = "3d9430a2881bc73cbdc0cfbcd5541f14d64d0bf5"
+text = "restore the work-root paths a redaction had renamed to the cache-root variable"
