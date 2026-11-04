@@ -105,3 +105,11 @@ Steps:
 4. Classify missing observations explicitly; never substitute zero demand (layer 48, the MTP layer, is all zero in the 2026-10-17 profile and every draft pass uses it).
 
 Validation: Exact-count synthetic oracle, bank-generation reuse, delayed events, duplicate rejection, overflow accounting, finite shutdown drain; at least 99% completed-report coverage or the loss documented; no mandatory GPU synchronisation or material throughput change.
+
+## Ledger-events
+
+- chg_20261104_085322_a-diagnostic-build-option-now_9638
+
+## Change Log
+
+- 2026-11-04T08:53:26.797834+00:00 (updated-by): Updated: section:ledger-events
