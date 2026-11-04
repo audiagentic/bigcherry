@@ -1,66 +1,52 @@
 # BigCherry
 
-BigCherry is a platform for building, patching and testing LLM inference engines.
-It pins upstream source revisions, applies selected patches, builds engine
-components and records correctness and performance results.
+BigCherry builds, patches and tests LLM inference engines against pinned
+upstream releases. The main focus is **Radiance** on heterogeneous AMD
+systems: RDNA2 and RDNA3 GPUs run alongside RDNA4, with remote MoE experts
+distributed across cards. **llama.cpp** remains an active secondary engine.
 
-The current focus is a custom **Radiance** build for heterogeneous AMD GPUs:
-RDNA2 and RDNA3 cards can run MoE experts alongside an RDNA4 engine GPU,
-without requiring a uniform multi-GPU setup. **llama.cpp** remains actively
-maintained as the secondary engine, particularly its measured HIP dispatch
-and kernel tuning.
+## Engines and changes
 
-## Current engines
-
-| Engine | Pinned upstream | BigCherry packages | Focus |
+| Engine | Upstream pin | Catalogued changes | Main additions |
 | --- | --- | --- | --- |
-| [Radiance](docs/reference/engines/radiance/README.md) | **v1.14.0** | **10 patches**, 6 components | Mixed-generation AMD kernels, remote experts and serving |
-| [llama.cpp](docs/reference/engines/llamacpp/README.md) | **b11552** | **151 patches** | HIP kernel tuning, dispatch replay and engine fixes |
+| [Radiance](docs/reference/engines/radiance/README.md) | **v1.16.0** | **10 patches**, 6 components | RDNA2/3/4 kernels, remote experts, placement and serving manifest |
+| [llama.cpp](docs/reference/engines/llamacpp/README.md) | **b11552** | **150 patches** | HIP kernel tuning, measured dispatch, multi-GPU reductions |
 
-These counts are the catalogued packages, not the number included in every
-build. Radiance has 2 validated patches; llama.cpp has 70.
-See the [Radiance changes](docs/reference/engines/radiance/ENHANCEMENTS.md)
-and [llama.cpp patches](docs/reference/engines/llamacpp/PATCHES.md) for
-individual states and inclusion rules. Pins and source selections are defined
-in `engines/radiance/recipes.toml` and `config/recipes.toml`.
+**Radiance.** The `libr2`, `libr3` and `bc-gfx12` components add kernels
+for different AMD generations. Remote-MoE workers exchange routed expert
+results with the engine over pinned host memory. The main validated engine
+patches provide the remote hand-off and a HyperConn up-mix kernel selector.
+The strict serving loader and manifest are being integrated; full
+manifest-driven startup is not yet qualified.
+[Components and patches](docs/reference/engines/radiance/ENHANCEMENTS.md).
 
-## Best recorded Radiance results
+**llama.cpp.** BigCherry records real HIP matrix operations, measures kernel
+candidates and replays selected implementations, falling back to upstream
+dispatch on a miss. Patch packages add dispatch hooks, kernel geometry
+controls, adaptive AllReduce and selected AMD kernel fixes.
+[Main changes](docs/reference/engines/llamacpp/README.md) ·
+[Patch catalogue](docs/reference/engines/llamacpp/PATCHES.md).
 
-All throughput figures are **tokens per second**. These are distinct workloads,
-not interchangeable benchmark scores.
+Package counts include experimental, superseded and rejected work, not only
+patches selected for production. Radiance has 2 validated patches;
+llama.cpp has 70.
 
-| Model and hardware | Prefill | Generated output |
+## Best recorded Radiance throughput
+
+These results were measured on **v1.14.0**, not yet revalidated on the
+current v1.16.0 pin. Rates are tokens per second, with different workloads.
+
+| Model | Prefill | Generated output |
 | --- | --- | --- |
-| [Qwen3.8-Flash-Next](docs/reference/engines/radiance/models/qwen3.8-flash-next.md), R9700 + 2 × RX 7900 XTX + RX 6900 XT | **3,837** (fresh ~44K prompt); **2,513** (eight sessions, 1.04M tokens) | **330–342 aggregate** at 6 streams |
-| [Qwen3.8-27B MXFP4](docs/reference/engines/radiance/models/qwen3.8-27b.md), R9700 | Not measured on v1.14.0 in the recorded multi-stream run | **245–248 aggregate** at 6 streams |
-| [Qwen3.6-35B-A3B FP8](docs/reference/engines/radiance/models/qwen3.6-35b-a3b.md), R9700 | Not measured on v1.14.0 in the recorded decode run | **171–219** at 1 stream, depending on prompt |
+| [Qwen3.8-Flash-Next](docs/reference/engines/radiance/models/qwen3.8-flash-next.md), four AMD cards | **3,837** (fresh ~44K prompt) | **330–342**, 6-stream aggregate *engine decode* |
+| [Qwen3.8-27B](docs/reference/engines/radiance/models/qwen3.8-27b.md), R9700 | — | **245–248**, 6-stream aggregate *client output* |
+| [Qwen3.6-35B-A3B](docs/reference/engines/radiance/models/qwen3.6-35b-a3b.md), R9700 | — | **171–219**, single-stream client output across prompts |
 
-Flash-Next also recorded **3,165 tok/s** for a fresh 50K prefill *after*
-about one million tokens had been retained by other sessions. Its six-stream
-result is engine decode throughput; the 27B figure is client aggregate
-generation throughput. The 35B range is from story, code and counting
-prompts. Each model page gives the exact workload and limitations.
+There is no matched stock-engine comparison for these workloads. The
+four-card Flash-Next layout also has a documented quality trade-off; see
+the model page before using its throughput as a configuration choice.
 
-**Stock comparison:** there is no verified like-for-like throughput run
-against unmodified Radiance v1.14.0 for these model and hardware
-configurations. Improvements between BigCherry layouts are recorded on the
-model pages, but are not presented as stock speedups.
-
-## How it is built
-
-Radiance adds RDNA2, RDNA3 and RDNA4 kernel components and remote-MoE workers.
-Narrow engine patches provide the integration points; the runtime combines
-compute across the cards through a pinned-host mailbox. Serving
-configuration is moving to a strict v1 manifest; the complete process
-handoff is not yet qualified.
-
-llama.cpp uses patch packages for upstream-owned edits and an overlay for
-BigCherry-owned files. Its HIP tuner measures eligible kernels and records
-winners in a replay cache; unknown shapes fall back to upstream dispatch.
-
-The [technical reference](docs/reference/README.md) covers architecture,
-builds and validation. Individual [Radiance patches and components](docs/reference/engines/radiance/ENHANCEMENTS.md),
-[llama.cpp patches](docs/reference/engines/llamacpp/PATCHES.md) and the
-[model results](docs/reference/engines/radiance/README.md#best-measured-models) carry the
-details. For current work, see [designs](docs/planning/) and
-[evidence](docs/evidence/).
+[Build and use](GETTING_STARTED.md) ·
+[Technical reference](docs/reference/README.md) ·
+[Evidence](docs/evidence/) ·
+[Current designs](docs/planning/)

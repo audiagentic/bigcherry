@@ -24,8 +24,13 @@ class RepoDataTests(unittest.TestCase):
         self.assertEqual({"gfx1201", "gfx1100", "gfx1030"} <= set(archs), True)
         for name in rl.names():
             r = rl.resolve(name, host(*WITH_6900))
-            self.assertEqual(r.engine_index, 2)
-            self.assertGreaterEqual(len(r.helpers), 2)
+            if name == "qwen27b-2xtx":
+                self.assertEqual(r.engine_indices, (0, 1))
+                self.assertEqual(len(r.helpers), 0)
+                self.assertEqual(r.tp_wire, "wht6")
+            else:
+                self.assertEqual(r.engine_indices, (2,))
+                self.assertGreaterEqual(len(r.helpers), 2)
 
     def test_the_protocol_bound_is_read_from_the_header(self):
         header = (paths.REPO_ROOT / "engines/radiance/components/moe-remote/moe_remote_shm.h").read_text(encoding="utf-8")
@@ -58,6 +63,46 @@ class BuildTargetsTests(unittest.TestCase):
 
 
 class ResolveTests(unittest.TestCase):
+    def test_dense_two_rank_layout_and_shell_environment(self):
+        from bigcherry.cli.layout_cmds import _env_lines
+        from bigcherry.core.environment import Device
+
+        r = rl.resolve("qwen27b-2xtx", host(*WITH_6900))
+        self.assertEqual(r.engine_indices, (0, 1))
+        self.assertEqual(r.engine_arch, "gfx1100")
+        self.assertEqual(r.engine_plugin, "libr3.so")
+        self.assertEqual(r.model, "radiance/StillDeadcode/qwen3.8-27b-mxfp4/qwen3.8-27b-mxfp4.rad")
+        self.assertEqual(r.server_args[:2], ("--max-model-len", "8192"))
+        self.assertEqual(r.common_env, {})
+        self.assertEqual(r.helpers, ())
+        lines = "\n".join(_env_lines(r))
+        self.assertIn("LAYOUT_ENGINE_DEVICES=0,1", lines)
+        self.assertIn("LAYOUT_ENGINE_RANKS=2", lines)
+        self.assertIn("LAYOUT_HELPER_COUNT=0", lines)
+        self.assertIn("LAYOUT_TP_WIRE=wht6", lines)
+
+        moved = host(Device(6, "gfx1100", "x", 24560), Device(9, "gfx1100", "x", 24560))
+        self.assertEqual(rl.resolve("qwen27b-2xtx", moved).engine_indices, (6, 9))
+        with self.assertRaisesRegex(rl.LayoutError, "wants 2"):
+            rl.resolve("qwen27b-2xtx", host(Device(6, "gfx1100", "x", 24560)))
+        with self.assertRaisesRegex(rl.LayoutError, "budget overrides require"):
+            rl.resolve("qwen27b-2xtx", host(*XTX2), budgets={"gfx1100": 1000})
+
+    def test_dense_layout_rejects_topology_and_argument_injection(self):
+        archs = FileRuleTests.ARCHS.replace('roles = ["helper"]', 'roles = ["engine", "helper"]', 1)
+        cases = [
+            ('engine = { arch = "gfx1100", count = 2 }', "multi-rank engine requires"),
+            ('engine = { devices = [0, 2] }\ntp-wire = "wht6"', "share an architecture"),
+            ('engine = { arch = "gfx1100", count = 2 }\ntp-wire = "wht6"\nserver-args = ["--p2p", "on"]', "server-args"),
+            ('engine = { arch = "gfx1100", count = 2 }\ntp-wire = "wht6"\nserver-args = ["--tp", "1"]', "server-args"),
+            ('engine = { arch = "gfx1100", count = 2 }\ntp-wire = "wht6"\n[[layout.t.helper]]\narch = "gfx1030"\nbudget-mib = 100', "remote-MoE helpers require"),
+        ]
+        for recipe, expected in cases:
+            with self.subTest(recipe=recipe):
+                root = FileRuleTests.roots(self, archs, 'schema = 1\n[layout.t]\nmodel = "m.rad"\n'+recipe+'\n')
+                with self.assertRaisesRegex(rl.LayoutError, expected):
+                    rl.resolve("t", host(*WITH_6900), repo_root=root)
+
     def test_two_xtx(self):
         r = rl.resolve("flashnext-2xtx", host(*XTX2))
         self.assertEqual([h.index for h in r.helpers], [0, 1])
@@ -134,6 +179,7 @@ roles = ["helper"]
 '''
 
     def resolve(self, layouts, devices=WITH_6900):
+        layouts = layouts.replace("[layout.t]\n", '[layout.t]\nmodel = "m.rad"\n', 1)
         root = self.roots(self.ARCHS, "schema = 1\n" + layouts)
         return rl.resolve("t", host(*devices), repo_root=root)
 

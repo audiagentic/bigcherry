@@ -42,7 +42,24 @@ The command first attempts to download and verify both release assets, the entir
 
 Hold the exclusive **gpu lease** for launches and measurements, not just the benchmark request: the first launch of a new configuration measures the engine's memory plan with helpers running (**about 1–2 minutes**). Every start arms `--plan-check` even when a cached plan exists, waits for `/health`, then runs the mandatory start canary. The launcher returns **96** for a failed canary, **97** for plan measurement/storage/setup failure, or **98** for a held launch lock/already-running server. Stop before clearing `$BC_WORK_ROOT/flashnext/plan-cache` to force remeasurement.
 
-Use `--layout NAME` (`bigcherry layout list|show`) for device composition. The RDNA2 RX 6900 XT tail can improve placement capacity but has a known **worst-case quality penalty (RAD46)**; compare outputs against the two-XTX layout rather than inferring quality from throughput.
+Use `--layout NAME` (`bigcherry layout list|show`) for device composition.
+
+The helper-free dense Qwen3.8-27B MXFP4 layout is `qwen27b-2xtx`: it selects both
+`gfx1100` cards from the host inventory and launches one engine with two tensor
+ranks, `libr3`, `--tp-wire wht6` and `--p2p off`. It needs no route-heat file or
+remote-MoE helper. From the repository root, after sourcing
+`tools/env/bigcherry-env.sh` and acquiring the GPU lease, start it with:
+
+```sh
+bash tools/lab/radiance/launch-flashnext-best.sh start --layout qwen27b-2xtx
+```
+
+The dense path requires a successful fresh engine `--plan-memory` preflight and
+the normal response canary. The interim `bc-serve` calibrated plan-check only
+understands Flash-Next helper layouts, so it is **not** yet enforced for TP dense.
+Do not treat this as a hardware-validated launch or a calibrated safety result.
+
+The RDNA2 RX 6900 XT tail can improve placement capacity but has a known **worst-case quality penalty (RAD46)**; compare outputs against the two-XTX layout rather than inferring quality from throughput.
 
 For KL quality, use `helper-kld.json` with `PYTHONPATH=tools python3 -m bigcherry.campaign.benchmark --server-config tools/lab/radiance/helper-kld.json`. Record the reference **once** with `quality.record` and `quality.corpus` present, then remove those keys and reuse the same reference directory for subsequent deterministic captures. See [patch validation](../../../docs/reference/testing/PATCH_VALIDATION.md). `helper-ab.json` is the speed harness; `fn-profile.sh` and `fn-profile-compare.py` support GPU kernel/copy traces.
 

@@ -2,8 +2,10 @@
 # cards from the host's inventory (config/environment.local.toml [[host.*.devices]]) by architecture, or by index with `devices`, and says what each
 # does. The card types themselves are engines/radiance/archs.toml. `bigcherry layout show NAME` resolves one against this host.
 #
-#   [layout.NAME]                  description, engine
-#   engine = { arch = "gfx1201" }  the card that runs the model (exactly one); `devices = [2]` pins an index
+#   [layout.NAME]                  description, model (relative to BC_MODEL_ROOT), engine
+#   engine = { arch = "gfx1201" }  engine card(s); count = 2 makes two TP ranks; devices pins explicit indices
+#   tp-wire                         required for TP > 1 (host-memory transport, no P2P)
+#   server-args                     optional allowed engine tuning flags for helper-free layouts
 #   [[layout.NAME.helper]]         a group of helper cards, in order (helper 0 first; helper 0 creates the shared segment)
 #     arch      architecture to take from the inventory         devices  explicit indices instead of arch
 #     count     how many of that arch ("all" or a number)       budget-mib  VRAM for experts on each card
@@ -14,6 +16,7 @@
 schema = 1
 
 [layout.flashnext-2xtx]
+model = "radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad"
 description = "Flash-Next as it has run since RAD02: the R9700 runs the model, both 7900 XTX cards hold the hottest experts (22 GiB each)"
 engine = { arch = "gfx1201" }
 [[layout.flashnext-2xtx.helper]]
@@ -23,6 +26,7 @@ budget-mib = 22528
 placement = "head"
 
 [layout.flashnext-2xtx-rdna2-tail]
+model = "radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad"
 description = "flashnext-2xtx plus the RX 6900 XT as a third helper holding a small tail of the coldest experts (RAD23: 2 GiB passes the KLD gate cleanly)"
 engine = { arch = "gfx1201" }
 [[layout.flashnext-2xtx-rdna2-tail.helper]]
@@ -37,6 +41,7 @@ budget-mib = 2048
 placement = "tail"
 
 [layout.flashnext-2xtx-rdna2-head]
+model = "radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad"
 description = "flashnext-2xtx plus the RX 6900 XT as a head helper with a small share: it takes a weighted slice of the hottest experts, sized so it finishes with the XTX cards (RAD23)"
 engine = { arch = "gfx1201" }
 [[layout.flashnext-2xtx-rdna2-head.helper]]
@@ -53,6 +58,7 @@ placement = "head"
 share = 1
 
 [layout.flashnext-2xtx-combine]
+model = "radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad"
 description = "flashnext-2xtx with the helper-row combine (RAD18): the two XTX helpers' result rows are added on the CPU so the R9700 reads one plane; the 3,600 tok/s prefill of the model page against ~3,200 without"
 engine = { arch = "gfx1201" }
 [[layout.flashnext-2xtx-combine.helper]]
@@ -64,6 +70,7 @@ placement = "head"
 R3_MOE_WORKER_COMBINE = "1"
 
 [layout.flashnext-2xtx-rdna2-tail-combine]
+model = "radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad"
 description = "flashnext-2xtx-rdna2-tail with the helper-row combine over all three helpers (RAD23): helper 0 adds the XTX and RX 6900 XT rows on the CPU so the R9700 reads one plane"
 engine = { arch = "gfx1201" }
 [[layout.flashnext-2xtx-rdna2-tail-combine.helper]]
@@ -80,6 +87,7 @@ placement = "tail"
 R3_MOE_WORKER_COMBINE = "1"
 
 [layout.flashnext-4gpu]
+model = "radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad"
 description = "All four cards, the launcher default (RAD23): the R9700 runs the model, both 7900 XTX cards hold the hottest experts (22 GiB each), the RX 6900 XT the 14 GiB of coldest experts left (tail placement), and helper 0 combines all three helpers' rows on the CPU so the R9700 reads one plane over its link. 8 sessions filling the cache (1.04M prompt tokens): 2,369 tok/s against 1,353 for flashnext-2xtx (+75%) and 2,003 with a 10 GiB tail; a 42K prefill 14.3 s against 16.7 s without the combine and the dot2 tail kernel. Record heat (launcher --record-heat) for the workload served: with stale heat the tail holds experts that are hot for the text."
 engine = { arch = "gfx1201" }
 [[layout.flashnext-4gpu.helper]]
@@ -94,3 +102,18 @@ budget-mib = 14336
 placement = "tail"
 [layout.flashnext-4gpu.env]
 R3_MOE_WORKER_COMBINE = "1"
+
+# Dense tensor-parallel lane: the model is sharded across both selected XTX
+# engine cards. There are no remote-MoE helper processes or route-heat inputs.
+[layout.qwen27b-2xtx]
+description = "Qwen3.8-27B MXFP4, two RDNA3 engine ranks with host-memory wht6 all-reduce"
+model = "radiance/StillDeadcode/qwen3.8-27b-mxfp4/qwen3.8-27b-mxfp4.rad"
+engine = { arch = "gfx1100", count = 2 }
+tp-wire = "wht6"
+server-args = [
+  "--max-model-len", "8192",
+  "--max-num-seqs", "6",
+  "--max-num-batched-tokens", "2048",
+  "--kv-cache-dtype", "fp8",
+  "--num-speculative-tokens", "0",
+]
