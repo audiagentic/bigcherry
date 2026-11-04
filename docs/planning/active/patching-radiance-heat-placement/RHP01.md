@@ -116,11 +116,14 @@ Validation: Exact-count synthetic oracle, bank-generation reuse, delayed events,
 
 ## Ledger-events
 
+
 - chg_20261104_085322_a-diagnostic-build-option-now_9638
 - chg_20261104_100802_measured-that-the-expert-usage_9903
 
+- chg_20261104_141856_fixed-the-documentation-index_8382
 ## Change Log
 
 - 2026-11-04T08:53:26.797834+00:00 (updated-by): Updated: section:ledger-events
 - 2026-11-04T10:07:56.063649+00:00 (updated-by): Updated: section:notes
 - 2026-11-04T10:08:06.091603+00:00 (updated-by): Updated: section:ledger-events
+- 2026-11-04T14:19:00.419056+00:00 (updated-by): Updated: section:ledger-events

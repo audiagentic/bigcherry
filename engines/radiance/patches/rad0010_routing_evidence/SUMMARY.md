@@ -1,7 +1,20 @@
-# rad0010 — opt-in routing-histogram lifecycle evidence
+# rad0010_routing_evidence
 
 **Status:** untested
 **Plan item:** RHP01
+
+## Summary
+
+Opt-in counters at the engine's existing per-layer routing-histogram producer and reader that say how many histograms were issued, completed, credited, overwritten or left pending, per rank and phase (prefill, decode, mixed, draft). Built only into the separate `radiance-routing-evidence` source; off unless `RAD_ROUTING_EVIDENCE=1`.
+
+## Outcome
+
+untested as a package on a card, but measured on the production four-GPU layout (RHP01): across decode, a 6-stream soak, 8K and 32K prefills and four concurrent 8K prefills at chunk sizes 2048 and 4096, every histogram was credited (0 overwritten, no engine drops, credit delay p50 1 and p95 2 steps) at no measurable decode cost (24.58 ms/step against 24.6).
+
+## Detail
+
+See below.
+
 
 RHP01 steps 1–3 only. An isolated `radiance-routing-evidence` source recipe adds read-only instrumentation at the existing per-layer asynchronous histogram producer, DMA event, landed-bank reader, credit and teardown seams. Production recipes are unchanged. All upstream additions are one-line calls into package-owned `core/runtime/bc_moe_remote_evidence.h`. The 32-bank capacity is obtained from Radiance's `kRouteBanks`, never independently configured.
 
