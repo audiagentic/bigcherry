@@ -116,6 +116,20 @@ Steps:
 
 Validation: Exact static-tail reproduction (static_tail is plan_tail), deterministic ties, zero-budget helpers, mixed expert sizes, per-layer max-not-sum objective, insufficient-coverage rejection, calibration error, quality comparison.
 
+## Slice I hardware result (2026-11-04): the effect gate does not stop the post-shift loss
+
+Run policy-live-6: slice I build, EFFECT_GATE=1 (window 32 samples per lane class, 3 quiet-window pairs, noise multiplier 3.0, revert blacklist 600 s; experiment values, not calibrated), 27B-free Flash-Next on four GPUs, eight 27k-token filler prefills then ten ~50k-token docs prefills, same sequence as policy-live-5 (gate off).
+
+| | gate off (policy-live-5) | gate on (policy-live-6) |
+|---|---|---|
+| filler TTFT, 27k tokens, prefill 1 -> 8 | 19.5 s -> 16.3 s | 19.1 s -> 16.1 s |
+| docs prefill 1 -> 10 | 3,656 -> 2,973 tok/s | 3,695 -> 2,994 tok/s |
+
+- The gain on the filler workload is unchanged by the gate (about 17%).
+- The loss after the workload shift is unchanged too: docs prefill ends about 20% under its start, and below the 3,749 tok/s default placement.
+- The gate did act: three moves were judged measured-worse and blacklisted (learned entries, reason measured-worse). It judges helper-0 lane service rate in quiet windows, which does not see the prefill throughput lost when the heat that justified the moves is no longer the traffic.
+- Conclusion: slice I stays opt-in experimental and is not evidence that the policy is safe by default. The remaining loss needs the slice J objective (target-map: score the placement against the current traffic, not the per-move lane rate).
+
 ## Change Log
 
 - 2026-11-01T22:51:22.513641+00:00 (updated-by): Updated: section:title, order=12, priority='P0', section:description, section:detailed_solution, section:validation, section:acceptance_criteria, section:notes
