@@ -70,3 +70,4 @@ Evidence for the gaps: lab build ab39ffd2 CMake cache CMAKE_HIP_COMPILER=/opt/ro
 - 2026-11-04T22:50:00.649519+00:00 (updated-by): Updated: section:ledger-events
 - chg_20261104_230800_builds-now-always-name-the-roc_2582
 - 2026-11-04T23:08:04.294463+00:00 (updated-by): Updated: section:ledger-events
+- 2026-11-04 (bigcherry-2): items 1-6 implemented in PR #611 except the bc-serve part of item 5. Open follow-up kept here: bc-serve refuses to start when the build's recorded rocm_root differs from the environment (the launcher check, lib/sdk-check.sh, is in #611). Item 7 (7.14 acquisition and A/B) is on hold until the owner confirms the download.
