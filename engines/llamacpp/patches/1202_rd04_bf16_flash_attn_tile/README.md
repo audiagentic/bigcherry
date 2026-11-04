@@ -1,5 +1,15 @@
 # 1202_rd04_bf16_flash_attn_tile: native-BF16 flash-attn tile kernel series (RD04)
 
+## Summary
+
+Makes the flash-attn TILE kernel read BF16 K/V natively on RDNA3+ with FP32 accumulation (rather than F16 accumulators that flush small values at deep context), adds a packed BF16 PV path, and stores the softmax KQ buffer as BF16 to halve SRAM use; non-RDNA3 targets keep the existing F16 tile path.
+
+## Outcome
+
+Recorded state: `untested` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 Patch id: `1202_rd04_bf16_flash_attn_tile`. Plan item: `RD04`. Bound
 Experiment Contract: `RD04-BF16-FLASH-ATTN-TILE`
 (`config/experiment-contracts.toml`).
@@ -153,4 +163,3 @@ outside this tracked patch directory. The compact, tracked record is
 `-fa on -ctk bf16 -ctv bf16` requests BF16 KV; it does **not** prove 1202's BF16 TILE kernel executed. Pinned b11474 selects VEC, TILE or MMA_F16 from shape/GQA/mask/architecture. On masked, padded GQA=4/8 and head 64/128/256, pp512 selects MMA_F16 on gfx1100/gfx1201; q_rows=1 with GQA=4/8 selects TILE. Unmasked/non-GQA cases can differ. 1202 changes TILE's BF16 staging only; MMA_F16 retains F16 staging and VEC already has native BF16 upstream (#20525). Do not use pp512 GQA performance as positive 1202 activation evidence.
 
 The patch still has **no activation marker**; `validation/producer.toml` sets `trace_probe="skip"`. The producer maps a single PPL comparison to both `backend_reference` and `ppl_equality`; this is not a separate logits reference. All nine tracked validation records remain ineligible; b11126 PPL failures mean an unparseable final PPL line, not demonstrated model-numerics divergence. Preserve the historical measurements, but do not promote until exact TILE routing, per-run activation, real logits/KLD, graph/repeated-request correctness and current-pin paired performance pass. Authoritative gates: `docs/planning/active/patching-rdna-boost-experiments/PRBE01.md`.
-

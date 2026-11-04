@@ -3,6 +3,7 @@
 // the gfx11 kernel overrides or the MoE path. Its op's schema is declared by the engine's kernel library (libr4d or libr3),
 // so this plugin declares none. Shelved (evaluated, default off; the R9700 is compute, owner 2026-10-13).
 #include "rad_abi.h"
+#include "rad_abi_layout.h"
 
 extern "C" {
 int r3_ngram_enabled(void);
@@ -10,6 +11,7 @@ const RadKernelInfo* r3_ngram_row(void);
 }
 
 extern "C" uint32_t rad_plugin_abi_version(void) { return RAD_ABI_VERSION; }
+RAD_PLUGIN_ABI_LAYOUT_EXPORT  /* the loader refuses a plugin whose struct layout differs from the engine's */
 extern "C" const RadPluginInfo* rad_plugin_info(void) {
     static const RadPluginInfo info = {
         RAD_PLUGIN_KERNEL, "libr3ngram", "0.0.1",

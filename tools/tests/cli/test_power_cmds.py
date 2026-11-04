@@ -95,6 +95,52 @@ class ApplyRestoreTests(unittest.TestCase):
         self.assertIn("SETUP STEPS", err.getvalue())
 
 
+class RestoreVerifiesThePowerCapTests(ApplyRestoreTests):
+    """A restore reports success only when the cap is back as well, when apply set one."""
+
+    def setUp(self):
+        super().setUp()
+        self.card["cap"] = 300_000_000
+        self.cap_sticks = False   # the card refuses the restore write of the cap
+
+    def _read_state(self, loc, driver, hw):
+        return gpu_power.State(self.card["offset"], self.card["sclk"], self.card["cap"], 303_000_000)
+
+    def _write(self, path, value):
+        if path.endswith("power1_cap"):
+            if self.cap_sticks and int(value) == 300_000_000:
+                return
+            self.card["cap"] = int(value)
+            return
+        super()._write(path, value)
+
+    def _run(self, fn):
+        with mock.patch.object(power_cmds, "_configured", lambda a: [(Device(
+                index=0, arch="gfx1100", model="", vram_mib=0, locator=LOC,
+                power=DevicePower(vddgfx_offset_mv=-125, power_cap_w=240, evidence="x")), "amdgpu", "/h")]):
+            return super()._run(fn)
+
+    def _patches(self):
+        return super()._patches()[:1] + super()._patches()[2:]   # the module-level _configured patch is replaced above
+
+    # the base class's tests do not model a cap; only the cap test below runs here
+    test_restore_returns_to_the_values_before_apply = None
+    test_a_second_apply_keeps_the_first_record = None
+    test_restore_without_apply_changes_nothing = None
+    test_blocked_apply_writes_nothing_and_prints_the_setup = None
+
+    def test_a_restore_that_leaves_the_cap_is_not_reported_as_restored(self):
+        self.assertEqual(self._run(power_cmds.cmd_apply), 0)
+        self.assertEqual(self.card["cap"], 240_000_000)
+        self.cap_sticks = True
+        self.assertEqual(self._run(power_cmds.cmd_restore), 1)
+        self.assertTrue(self.state.exists(), "the record stays so a later restore can try again")
+        self.cap_sticks = False
+        self.assertEqual(self._run(power_cmds.cmd_restore), 0)
+        self.assertEqual(self.card["cap"], 300_000_000)
+        self.assertFalse(self.state.exists())
+
+
 class GrantTests(unittest.TestCase):
     def _grant(self, gid, euid=0, print_=False):
         args = Namespace(group=power_cmds.GROUP, print=print_)

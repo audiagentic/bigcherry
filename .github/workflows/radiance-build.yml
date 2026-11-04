@@ -21,6 +21,9 @@ on:
       - 'tools/bigcherry/build/**'
       - 'config/environment.example.toml'
       - 'tools/bigcherry/engine_adapters/radiance*.py'
+      - 'tools/bigcherry/cli/component_tests.py'
+      - 'tools/bigcherry/cli/main.py'
+      - 'tools/bigcherry/cli/engine_scope.py'
       - '.github/workflows/radiance-build.yml'
       - '.github/workflows/radiance-build-image.yml'
       - '.github/docker/radiance-build/**'
@@ -83,7 +86,7 @@ jobs:
 
       - name: Build in the ROCm image
         run: |
-          docker run --rm -e BIGCHERRY_ENVIRONMENT -e BC_WORK_ROOT=/src/work -v "$GITHUB_WORKSPACE:/src" -w /src '${{ needs.image.outputs.image }}' bash -euxo pipefail -c '
+          docker run --rm --shm-size=1g -e BIGCHERRY_ENVIRONMENT -e BC_WORK_ROOT=/src/work -v "$GITHUB_WORKSPACE:/src" -w /src '${{ needs.image.outputs.image }}' bash -euxo pipefail -c '
             git config --global --add safe.directory /src
             git config --global --add safe.directory /src/work/upstream/radiance.git
             export RADIANCE_HOST_CC=gcc-14 RADIANCE_HOST_CXX=g++-14 ROCM_PATH=/opt/rocm PYTHONPATH=tools
@@ -100,5 +103,23 @@ jobs:
             else
               git clone --bare https://codeberg.org/StillDeadcode/radiance.git work/upstream/radiance.git
             fi
-            python3 -m bigcherry build --lane radiance-lab:stock:linux-radiance
+            python3 -m bigcherry build --lane radiance-lab:stock:linux-radiance | tee work/lane-build.log
+            plan=$(grep -oE "ok build_plan_id=[0-9a-f]+" work/lane-build.log | tail -1 | cut -d= -f2)
+            test -n "$plan"
+            # The card-free component tests, exactly as the pin-bump gate runs them (runtime_bundle.run_component_tests):
+            # each declared [test] target of every component, one ctest log per component, named on failure.
+            builds=(work/builds/*/"$plan")
+            if [ "${#builds[@]}" -ne 1 ] || [ ! -d "${builds[0]}" ]; then
+              echo "component-tests: want exactly one build directory for plan $plan, found: ${builds[*]}" >&2
+              exit 1
+            fi
+            python3 -m bigcherry --engine radiance component-tests --build "${builds[0]}"
           '
+
+      - name: Component test logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: component-test-logs
+          path: work/builds/*/*/components/*/ctest-component-tests.log
+          if-no-files-found: ignore

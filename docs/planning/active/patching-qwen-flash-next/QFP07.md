@@ -137,6 +137,10 @@ Background: with 2 KV heads and 3 GPUs the default split rotates heads so each G
 
 2026-10-05, folded in from BCOP19 (audit backfill) - sequence-sharded long-context attention gate: pursue only if online-softmax partial-state exchange over the no-P2P topology beats measured XTX attention skew; benchmark exact partial-state transfer before full implementation and promote only for >=5% long-context decode on two lanes with communication <=50% of attention time saved and correctness passing.
 
+
+
+BACKLOG TRIAGE 2026-11-04 (revalidated against main 6eb31a708): the proposed disposition "SUPERSEDED for 4GPU target by RHP13/RSC, retain llama separate" was NOT applied; this item stays open. Why: docs/planning/active/patching-qwen-flash-next/QFP07.md:14-47,92-124 and 143-164 still require Qwen4Exp 248K collapse attribution, static attention/KV split sweeps and a transport-gated sequence-shard trial; engines/llamacpp/patches/1303_attn_kv_tensor_split/patch.py remains a live separate-engine implementation (promotion commit ba5ada692). Radiance RHP12/RSC layout work cannot discharge llama.cpp's two-head Meta graph, max-context and correctness gates. Active items that reference this one: BCOP144, BCOP207, BCOP213, BCOP325, QFN04, QFP09, QFP11, QFP15, QFP17, QFP22. Retain llama.cpp 1303/attention capacity and placement qualification as its own lane; Radiance work does not supersede it.
+
 ## 2026-10-14 BCOP207: two-KV-head placement admission before sequence sharding
 
 **Scope/evidence.** Source/host audit of pinned llama.cpp b11552 (`23b0202a189c44a54625aadcb37a946dd1d6278`) and validated 1303; no new HIP measurement. Historical 1303 ABBA (+3% at ~10K, +7% at ~80K, f16 KV 240K fit, greedy identity) supports retaining `BIGCHERRY_ATTN_TS=1,1,0; BIGCHERRY_ATTN_ROTATE=0`. QFP09's historical 160K XTX FA (~3.4-3.7 ms/token) and R9700 collective wait (~5.7 ms/token) suggest potential exposed skew but do not establish a faster replacement. The 248K prefill collapse remains unattributed.
@@ -176,3 +180,4 @@ Current upstream `llama_meta_device_get_split_state` supports weighted head-axis
 - chg_20261003_235207_the-flash-next-only-gpu-split_2755
 - 2026-10-03T23:52:10.433314+00:00 (updated-by): Updated: section:ledger-events
 - 2026-10-05T04:54:56.316602+00:00 (updated-by): Updated: section:notes
+- 2026-11-04T04:26:08.749564+00:00 (updated-by): Updated: section:notes

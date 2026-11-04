@@ -6,7 +6,7 @@ BR=${1:-origin/feat/rad06-fp16-wmma}; PAIRS=${2:-2}
 W=${BC_WORK_ROOT}
 cd $W/wt-pr8 && git fetch -q origin && git checkout -q --detach $BR && git log --oneline -1
 export BIGCHERRY_ENVIRONMENT=${BC_DEV_ROOT}/projects/bigcherry/workspaces/main/config/environment.local.toml; source "$(dirname "${BASH_SOURCE[0]}")/lab-env.sh"; export PATH=$ROCM_PATH/bin:$PATH
-PYTHONPATH=tools timeout 5400 python3 -m bigcherry build --lane radiance-lab:stock:linux-radiance --experiment moe-remote-handoff > $W/fp16e2e-build.log 2>&1
+PYTHONPATH=tools timeout 5400 python3 -m bigcherry build --lane radiance-lab:stock:linux-radiance > $W/fp16e2e-build.log 2>&1
 grep '^build: logs=' $W/fp16e2e-build.log >&2 || true
 grep -E 'ok build|FAILED' $W/fp16e2e-build.log | tail -1; grep -E ' error:|r3_rewrite.py failed' $W/fp16e2e-build.log | sort -u | head
 B=$(ls -td ${BC_DEV_ROOT}/projects/bigcherry/workspaces/main/work/builds/*/*/ | head -1)

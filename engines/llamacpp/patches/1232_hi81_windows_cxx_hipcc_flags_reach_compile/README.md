@@ -1,5 +1,15 @@
 # 1232 (HI81): route CMAKE_HIP_FLAGS-gated options through the real CXX compile rule on Windows
 
+## Summary
+
+Under the CXX_IS_HIPCC branch (always taken on Windows, since CMake's HIP language isn't used there), appends the same flags to the ROCm source files' real CXX COMPILE_FLAGS via set_property(APPEND_STRING), composing with the pre-existing Windows-Debug workaround already at that spot.
+
+## Outcome
+
+Recorded state: `validated` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 ## Scope
 
 On Windows, `CXX_IS_HIPCC` is forced `TRUE` unconditionally in

@@ -33,14 +33,16 @@ if TYPE_CHECKING:
     from ..source.audit import AuditContext
 
 Runner = Callable[[list[str], Path], None]
-#: reads ``rad_plugin_abi_version()`` of a built plugin
-AbiReader = Callable[[Path], int]
+#: reads ``rad_plugin_abi_version()`` and ``rad_plugin_abi_layout()`` of a built plugin
+AbiReader = Callable[[Path], "tuple[int, int | None]"]
 
 #: the engine's plugin ABI header, relative to the engine source (the components include ``${RADIANCE_SRC}/abi``)
 ABI_HEADER = Path("abi") / "rad_abi.h"
 ABI_MACRO = "RAD_ABI_VERSION"
 #: the engine loads every library in this directory of its runtime home as a plugin and refuses one without the symbol
 PLUGIN_DIR = "kernels"
+#: the engine's own kernel plugin, built from the engine's abi/ headers: its layout fingerprint is the reference
+REFERENCE_PLUGIN = "libr4d.so"
 _ABI_DECLARATION = re.compile(rf"^[ \t]*(?:#[ \t]*define[ \t]+{ABI_MACRO}[ \t]+|.*\b{ABI_MACRO}\b[ \t]*=[ \t]*)\(?[ \t]*(\d+)", re.MULTILINE)
 
 
@@ -61,18 +63,30 @@ def expected_abi_version(source_dir: Path) -> int:
     return int(match.group(1))
 
 
+# Lazy binding: a plugin may call functions the radiance executable exports (libr3moe uses rad_event_*), which are
+# absent outside the engine. ctypes.CDLL always binds now and refuses such a plugin; dlopen with RTLD_LAZY resolves a
+# function only when it is first called, and rad_plugin_abi_version calls none.
 _READ_ABI = (
-    "import ctypes, sys\n"
-    "fn = ctypes.CDLL(sys.argv[1]).rad_plugin_abi_version\n"
-    "fn.restype = ctypes.c_uint32\n"
-    "print(fn())\n"
+    "import ctypes, os, sys\n"
+    "libc = ctypes.CDLL(None)\n"
+    "libc.dlopen.restype = ctypes.c_void_p; libc.dlopen.argtypes = [ctypes.c_char_p, ctypes.c_int]\n"
+    "libc.dlsym.restype = ctypes.c_void_p; libc.dlsym.argtypes = [ctypes.c_void_p, ctypes.c_char_p]\n"
+    "libc.dlerror.restype = ctypes.c_char_p\n"
+    "h = libc.dlopen(sys.argv[1].encode(), os.RTLD_LAZY | os.RTLD_LOCAL)\n"
+    "if not h: sys.exit((libc.dlerror() or b'dlopen failed').decode())\n"
+    "p = libc.dlsym(h, b'rad_plugin_abi_version')\n"
+    "if not p: sys.exit('no rad_plugin_abi_version export')\n"
+    "q = libc.dlsym(h, b'rad_plugin_abi_layout')\n"
+    "print(ctypes.CFUNCTYPE(ctypes.c_uint32)(p)(), ctypes.CFUNCTYPE(ctypes.c_uint64)(q)() if q else '-')\n"
 )
 
 
-def read_plugin_abi(so: Path) -> int:
+def read_plugin_abi(so: Path) -> tuple[int, int | None]:
     """dlopen the plugin and call its exported ``rad_plugin_abi_version`` -- the engine's own handshake (the helper's
     ``load_plugin`` does the same). ``nm`` could only show the symbol exists, not its value, and the value is what must
-    match. Done in a child process so a plugin that crashes on load cannot take pin-bump down with it."""
+    match. Done in a child process so a plugin that crashes on load cannot take pin-bump down with it. Loaded lazily
+    (see _READ_ABI) so a plugin that uses functions only the engine executable exports can still be read. Returns the
+    ABI version and the ``rad_plugin_abi_layout`` fingerprint (None when the plugin does not export one)."""
     try:
         result = subprocess.run([sys.executable, "-c", _READ_ABI, str(so)], capture_output=True, text=True, timeout=120)
     except (OSError, subprocess.TimeoutExpired) as exc:
@@ -81,7 +95,8 @@ def read_plugin_abi(so: Path) -> int:
         detail = result.stderr.strip().splitlines()[-1] if result.stderr.strip() else f"exit {result.returncode}"
         raise BumpCheckError(f"cannot read rad_plugin_abi_version from {so}: {detail}")
     try:
-        return int(result.stdout.strip())
+        version, layout = result.stdout.split()
+        return int(version), None if layout == "-" else int(layout)
     except ValueError as exc:
         raise BumpCheckError(f"{so}: unexpected rad_plugin_abi_version output {result.stdout.strip()!r}") from exc
 
@@ -112,7 +127,7 @@ class ComponentGate:
 
     def __init__(
         self, context: ProjectContext, source_dir: Path, workdir: Path, runner: Runner, abi_reader: AbiReader,
-        platform_name: str | None,
+        platform_name: str | None, lister: runtime_bundle.TestLister,
     ):
         self.engine = context.engine
         self.layout = context.layout
@@ -120,6 +135,7 @@ class ComponentGate:
         self.build_dir = workdir / f"{context.engine}-build"
         self.runner = runner
         self.abi_reader = abi_reader
+        self.lister = lister
         self.declared = components.load_all(paths.REPO_ROOT, context.engine)
         self.platform = _build_platform(context.engine, platform_name) if self.declared else None
         self.built = False
@@ -140,7 +156,7 @@ class ComponentGate:
             argv = campaign_build.cmake_configure_args(
                 _GATE_BUILD, replace(platform, targets=tuple(targets)), self.source_dir, self.build_dir,
                 c_compiler=platform.c_compiler, cxx_compiler=platform.cxx_compiler, targets_option=self.layout.targets_option,
-                rocm_paths=self.layout.rocm_paths)
+                rocm_paths=self.layout.rocm_paths, engine_options=self.layout.repo_path_options(paths.REPO_ROOT))
             self.runner(argv, self.source_dir)
             self.runner(["cmake", "--build", str(self.build_dir), "-j"], self.source_dir)
             # RAD18: forward the platform's compiler-launcher options (e.g. ccache) into each component's own
@@ -162,7 +178,9 @@ class ComponentGate:
             raise BumpCheckError("the engine and components were not built (the components-build check did not pass)")
 
     def plugin_abi(self) -> list[str]:
-        """Every plugin in the runtime home (the engine's own and the components') must report the declared ABI."""
+        """Every plugin in the runtime home (the engine's own and the components') must report the declared ABI version
+        and export the struct-layout fingerprint of the engine's own kernel plugin (libr4d, built from the same abi/
+        headers); the engine's loader refuses a plugin with no fingerprint or a different one."""
         if not self.declared:
             return []
         self._require_built()
@@ -173,34 +191,36 @@ class ComponentGate:
         for output in (o for component in self.declared.values() for o in component.outputs):
             if output.startswith(f"{PLUGIN_DIR}/") and not (self.home / output).is_file():
                 raise BumpCheckError(f"declared plugin {output} is missing from {self.home}")
+        reference = self.home / PLUGIN_DIR / REFERENCE_PLUGIN
+        if not reference.is_file():
+            raise BumpCheckError(f"the engine's own plugin {REFERENCE_PLUGIN} is missing from {self.home / PLUGIN_DIR}")
+        _, expected_layout = self.abi_reader(reference)
+        if expected_layout is None:
+            raise BumpCheckError(f"{REFERENCE_PLUGIN} exports no rad_plugin_abi_layout; the ABI check needs updating for this revision")
         failures = []
         for so in plugins:
-            actual = self.abi_reader(so)
-            if actual != expected:
-                failures.append(f"{so.name}: rad_plugin_abi_version() is {actual}, the engine source declares {ABI_MACRO} {expected}")
+            version, layout = self.abi_reader(so)
+            if version != expected:
+                failures.append(f"{so.name}: rad_plugin_abi_version() is {version}, the engine source declares {ABI_MACRO} {expected}")
+            if layout is None:
+                failures.append(f"{so.name}: exports no rad_plugin_abi_layout (add RAD_PLUGIN_ABI_LAYOUT_EXPORT, rad_abi_layout.h)")
+            elif layout != expected_layout:
+                failures.append(f"{so.name}: rad_plugin_abi_layout() is {layout:#018x}, {REFERENCE_PLUGIN} reports {expected_layout:#018x}")
         return failures
 
     def component_tests(self) -> list[str]:
-        """Build each component's declared test targets and run them with ctest in the component's build tree."""
+        """Each component's declared test targets, built and run by runtime_bundle.run_component_tests (the same run
+        PR CI makes)."""
         self._require_built()
-        failures = []
-        for name, component in sorted(self.declared.items()):
-            if not component.test_targets:
-                continue
-            tree = runtime_bundle.component_build_dir(self.build_dir, name)
-            try:
-                self.runner(["cmake", "--build", str(tree), "-j", "--target", *component.test_targets], self.source_dir)
-                self.runner(["ctest", "--test-dir", str(tree), "--output-on-failure"], self.source_dir)
-            except subprocess.CalledProcessError as exc:
-                failures.append(f"{name}: `{' '.join(map(str, exc.cmd))}` exited {exc.returncode}")
-        return failures
+        return runtime_bundle.run_component_tests(self.engine, source_root=self.source_dir, build_dir=self.build_dir,
+                                                  runner=self.runner, lister=self.lister)
 
 
 def compile_checks(
     context: ProjectContext, source_dir: Path, workdir: Path, *, platform_name: str | None, runner: Runner = _run,
-    abi_reader: AbiReader = read_plugin_abi,
+    abi_reader: AbiReader = read_plugin_abi, lister: runtime_bundle.TestLister = runtime_bundle.ctest_tests,
 ) -> tuple[BumpCheck, ...]:
-    gate = ComponentGate(context, source_dir, workdir, runner, abi_reader, platform_name)
+    gate = ComponentGate(context, source_dir, workdir, runner, abi_reader, platform_name, lister)
     cmake_hint = "install cmake and ninja (Ubuntu/Debian: sudo apt-get install cmake ninja-build) on a host with the ROCm toolchain"
     return (
         BumpCheck("components-build", "COMPONENT_BUILD_FAILED", ("cmake", "ninja"), cmake_hint, gate.build),

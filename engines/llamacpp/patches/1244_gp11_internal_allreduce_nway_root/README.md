@@ -1,5 +1,15 @@
 # 1244_gp11_internal_allreduce_nway_root
 
+## Summary
+
+Generalises patch 1001's internal allreduce beyond the hardcoded two-device case to an N-way fused-root reduction: device[0] is the root, every other device contributes into it, and the result is broadcast back. Gated narrowly — F32 tensors only, and only for sizes already eligible for the chunked kernel.
+
+## Outcome
+
+Recorded state: `untested` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 Plan item GP11 (superseded by PGC02, `patching-gpu-collectives`). See
 `SUMMARY.md` for the full mechanism, bug history, and real-hardware
 evidence gathered so far -- do not duplicate it here.

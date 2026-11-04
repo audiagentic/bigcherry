@@ -20,6 +20,20 @@ def _result(stdout: str = "", stderr: str = "", returncode: int = 0) -> SimpleNa
     return SimpleNamespace(stdout=stdout, stderr=stderr, returncode=returncode)
 
 
+
+def _rollup(rows_json: str) -> str:
+    """The `gh pr view --json statusCheckRollup` shape for {name, state, link} rows."""
+    out = []
+    for r in json.loads(rows_json):
+        st = r["state"]
+        item = {"name": r["name"], "detailsUrl": r["link"]}
+        if st in ("PENDING", "QUEUED", "IN_PROGRESS"):
+            item.update(status=st, conclusion="")
+        else:
+            item.update(status="COMPLETED", conclusion=st)
+        out.append(item)
+    return json.dumps({"statusCheckRollup": out})
+
 class RequiredChecksTests(unittest.TestCase):
     def setUp(self):
         self.plan = SimpleNamespace(repo_root=Path("/repo"), main="main", remote="origin")
@@ -109,7 +123,7 @@ class RequiredChecksTests(unittest.TestCase):
             {"name": "index-line-endings", "state": "SUCCESS", "link": "u/endings"},
         ])
         with mock.patch.object(_pr, "_required_checks", return_value=("conventional-title", "index-line-endings")), \
-                mock.patch.object(_pr, "_run", side_effect=[_result(pending, returncode=8), _result(passed)]), \
+                mock.patch.object(_pr, "_run", side_effect=[_result(_rollup(pending)), _result(_rollup(passed))]), \
                 mock.patch.object(_pr.time, "sleep"):
             _pr._wait_required_checks(self.plan, self.pr, "release", wait_s=10, poll_s=0, grace_s=10)
 
@@ -118,7 +132,7 @@ class RequiredChecksTests(unittest.TestCase):
             {"name": "conventional-title", "state": "FAILURE", "link": "https://ci.invalid/title"},
         ])
         with mock.patch.object(_pr, "_required_checks", return_value=("conventional-title",)), \
-                mock.patch.object(_pr, "_run", return_value=_result(failed)):
+                mock.patch.object(_pr, "_run", return_value=_result(_rollup(failed))):
             with self.assertRaisesRegex(
                 _pr.PinReleaseError,
                 r"conventional-title failed: https://ci\.invalid/title",
@@ -131,7 +145,7 @@ class RequiredChecksTests(unittest.TestCase):
             {"name": "index-line-endings", "state": "SUCCESS", "link": "u/endings"},
         ])
         with mock.patch.object(_pr, "_required_checks", return_value=("conventional-title", "index-line-endings")), \
-                mock.patch.object(_pr, "_run", side_effect=[_result("[]"), _result(passed)]), \
+                mock.patch.object(_pr, "_run", side_effect=[_result(_rollup("[]")), _result(_rollup(passed))]), \
                 mock.patch.object(_pr, "_trigger_pr_checks") as trigger, \
                 mock.patch.object(_pr.time, "sleep"):
             _pr._wait_required_checks(self.plan, self.pr, "release", wait_s=10, poll_s=0, grace_s=0)
@@ -198,13 +212,11 @@ class FakeGh:
     def __call__(self, root, *cmd, check=True, timeout=600):
         self.calls.append(cmd)
         sub = cmd[1:3]
+        if sub == ("pr", "view") and "statusCheckRollup" in cmd:
+            return _result(_rollup(self.checks_after_reopen) if self.reopened else _rollup("[]"))
         if sub == ("pr", "view"):
             return _result(json.dumps({"mergeStateStatus": self.merge_state, "mergeable": "MERGEABLE", "state": "OPEN",
                                        "url": "u/17", "headRefName": "release-please--branches--main--components--bc-radiance"}))
-        if sub == ("pr", "checks"):
-            if not self.reopened:
-                return _result("", "no checks reported on the release branch", 1)
-            return _result(self.checks_after_reopen)
         if sub == ("pr", "close"):
             return _result()
         if sub == ("pr", "reopen"):
@@ -216,6 +228,26 @@ class FakeGh:
 
     def verbs(self) -> list[str]:
         return [c[2] for c in self.calls if c[1] == "pr"]
+
+
+class CheckRowsTests(unittest.TestCase):
+    def test_reusable_workflow_job_matches_its_required_context(self):
+        rollup = json.dumps({"statusCheckRollup": [
+            {"name": "index-line-endings / index-line-endings", "status": "COMPLETED", "conclusion": "SUCCESS",
+             "detailsUrl": "u"},
+            {"context": "legacy-status", "state": "PENDING", "targetUrl": "t"},
+        ]})
+        plan = SimpleNamespace(repo_root=Path("/repo"))
+        with mock.patch.object(_pr, "_run", return_value=_result(rollup)):
+            rows = _pr._check_rows(plan, {"number": 1}, "main")
+        self.assertEqual(rows, [{"name": "index-line-endings", "state": "SUCCESS", "link": "u"},
+                                {"name": "legacy-status", "state": "PENDING", "link": "t"}])
+
+    def test_unreadable_checks_fail_the_phase(self):
+        plan = SimpleNamespace(repo_root=Path("/repo"))
+        with mock.patch.object(_pr, "_run", return_value=_result("", "boom", 1)):
+            with self.assertRaisesRegex(_pr.PinReleaseError, "could not read checks"):
+                _pr._check_rows(plan, {"number": 1}, "main")
 
 
 class ReleasePrChecksTests(unittest.TestCase):

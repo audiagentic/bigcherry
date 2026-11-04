@@ -1,0 +1,284 @@
+diff --git a/engines/radiance/components/moe-remote/moe_lane_gemm.h b/engines/radiance/components/moe-remote/moe_lane_gemm.h
+index 7dfb7d0dc..b8e47fd13 100644
+--- a/engines/radiance/components/moe-remote/moe_lane_gemm.h
++++ b/engines/radiance/components/moe-remote/moe_lane_gemm.h
+@@ -658,16 +658,13 @@ __global__ __launch_bounds__(256) void lane_moe_rows_fp8(
+ }
+ 
+ 
+-/* lane_moe_rows for w4nl weights (RAD23, the gfx1030 tail's large lane): fp16 operands and v_dot2_f32_f16, two products a
+- * dword with an f32 accumulator. The chunk's activations are staged in LDS as fp16 (e4m3 times its scale), each output's 8
+- * decoded weights a lane as fp16 pairs (table value times the e4m3 row scale, at most 22 x 448, inside fp16), so the
+- * inner loop is one 16-byte LDS read a row and four dot2 an output, against eight f32 FMAs and two reads. The instruction
+- * is written as asm: __builtin_amdgcn_fdot2 gives wrong sums on gfx1030 (libr2 r3_mma16.h). RB rows a pass, OUTW outputs a
+- * wave (a block 8 x OUTW outputs): gate/up 16 x 4, down 12 x 2 measured best on a 6900 XT with the live tail's rows-an-expert
+- * mix (tools/lab/radiance/gfx1030/rowsk.hip: gate/up 2563 -> 1911 us, down 1994 -> 1568 us a request; output against the
+- * f32 kernel rel_l2 8.7e-4, the bf16 narrow). The activation tile is double-buffered: the next chunk is staged while this one
+- * is computed, one barrier a chunk instead of two (gate/up 1924 -> 1765 us, down 1568 -> 1406 us; bit-identical). Not
+- * bit-exact with the f32 form. */
++/* W4 rows kernel for the gfx1030 tail. E4M3 activations and W4 levels are exactly representable in fp16.
++ * RAD46 experiment: retain the unscaled eight-element dot2 partials, but pair them into sixteen-element
++ * partials, sum four pairs in K order per weight group, then reproduce grouped GEMM's two weight-scale
++ * folds and one activation-scale fold per 128 K. Output accumulates these blocks in K order. This matches
++ * the scale/reduction hierarchy, NOT libr2's scalar-FMA order within each sixteen-element partial.
++ * Whole 128-K groups use the experiment; other geometry retains the previous arithmetic below.
++ * The dot instruction uses asm because __builtin_amdgcn_fdot2 gives wrong sums on gfx1030. */
+ constexpr uint32_t kRowsGuRB = 16, kRowsGuOut = 4;   /* gate/up */
+ constexpr uint32_t kRowsDnRB = 12, kRowsDnOut = 2;   /* down */
+ template <bool TOKEN, uint32_t RB, uint32_t OUTW>
+@@ -683,10 +680,14 @@ __global__ __launch_bounds__(256) void lane_moe_rows_w4(
+     const uint32_t N = cls ? n1 : n0, K = cls ? k1 : k0;
+     const uint32_t n_base = blockIdx.y * (8u * OUTW);
+     if (n_base >= N || K % 8u) return;
++    static_assert(kRowsKC == 256, "group-fold experiment stages two 128-K groups");
++    const bool group_fold = warpSize == 32 && blockDim.x == 256 && K != 0 && K % 128u == 0 &&
++                            a_stride % 128u == 0 && K <= a_stride;
+     const uint8_t* codes = static_cast<const uint8_t*>(cls ? code1[ix] : code0[ix]);
+     const uint8_t* scales = static_cast<const uint8_t*>(cls ? scale1[ix] : scale0[ix]);
+     if (!codes || !scales) return;
+     __shared__ uint4 a[2][RB][kRowsKC / 8];   /* 8 fp16 activations a uint4 */
++    __shared__ float ascales[2][RB][kRowsKC / 128];
+     __shared__ uint32_t arow[RB];
+     __shared__ float lut[16];
+     if (threadIdx.x < 16) lut[threadIdx.x] = kGemvW4nl[threadIdx.x];
+@@ -720,14 +721,15 @@ __global__ __launch_bounds__(256) void lane_moe_rows_w4(
+                 const uint32_t r = idx / pieces, p16 = idx % pieces;
+                 if (r < nr && 16u * p16 < kls) {
+                     const uint32_t ar = arow[r], k = kcs + 16u * p16;
++                    if ((p16 & 7u) == 0)
++                        ascales[buf][r][p16 / 8u] = as[(uint64_t)ar * (a_stride / 128u) + k / 128u];
+                     const uint4 q = *reinterpret_cast<const uint4*>(aq + (uint64_t)ar * a_stride + k);
+-                    const float sc = as[(uint64_t)ar * (a_stride / 128u) + k / 128u];
+                     const uint32_t qw[4] = {q.x, q.y, q.z, q.w};
+                     uint32_t hw[8];
+ #pragma unroll
+                     for (uint32_t w = 0; w < 4; ++w) {
+-                        const _Float16 h0 = (_Float16)(gemv_e4m3(qw[w] & 0xFFu) * sc), h1 = (_Float16)(gemv_e4m3((qw[w] >> 8) & 0xFFu) * sc);
+-                        const _Float16 h2 = (_Float16)(gemv_e4m3((qw[w] >> 16) & 0xFFu) * sc), h3 = (_Float16)(gemv_e4m3(qw[w] >> 24) * sc);
++                        const _Float16 h0 = (_Float16)(gemv_e4m3(qw[w] & 0xFFu)), h1 = (_Float16)(gemv_e4m3((qw[w] >> 8) & 0xFFu));
++                        const _Float16 h2 = (_Float16)(gemv_e4m3((qw[w] >> 16) & 0xFFu)), h3 = (_Float16)(gemv_e4m3(qw[w] >> 24));
+                         hw[2 * w] = (uint32_t)__builtin_bit_cast(uint16_t, h0) | ((uint32_t)__builtin_bit_cast(uint16_t, h1) << 16);
+                         hw[2 * w + 1] = (uint32_t)__builtin_bit_cast(uint16_t, h2) | ((uint32_t)__builtin_bit_cast(uint16_t, h3) << 16);
+                     }
+@@ -747,33 +749,62 @@ __global__ __launch_bounds__(256) void lane_moe_rows_w4(
+ #pragma unroll
+             for (uint32_t j = 0; j < OUTW; ++j) { cw[j] = pw[j]; cs[j] = ps[j]; }
+             if (kc + kRowsKC < K) fetch(kc + kRowsKC);
+-            if (const uint32_t d = lane; d < kl / 8u) {
++            if (const uint32_t d = lane; group_fold || d < kl / 8u) {
++                float weight_scale[OUTW];
+                 uint32_t wv[OUTW][4];   /* the 8 decoded weights of each output as fp16 pairs, in K order */
+ #pragma unroll
+                 for (uint32_t j = 0; j < OUTW; ++j) {
+-                    const uint32_t n = n_first + j;
+-                    const float s = n < N ? gemv_e4m3(cs[j]) : 0.0f;
++                    weight_scale[j] = gemv_e4m3(cs[j]);
+                     const uint32_t w = cw[j];
+                     /* K order 8d+0..7: low nibbles of bytes 0..3 are K 0..3, high nibbles K 4..7 */
+-                    const _Float16 k0 = (_Float16)(lut[w & 15u] * s), k1 = (_Float16)(lut[(w >> 8) & 15u] * s);
+-                    const _Float16 k2 = (_Float16)(lut[(w >> 16) & 15u] * s), k3 = (_Float16)(lut[(w >> 24) & 15u] * s);
+-                    const _Float16 k4 = (_Float16)(lut[(w >> 4) & 15u] * s), k5 = (_Float16)(lut[(w >> 12) & 15u] * s);
+-                    const _Float16 k6 = (_Float16)(lut[(w >> 20) & 15u] * s), k7 = (_Float16)(lut[(w >> 28) & 15u] * s);
++                    const _Float16 k0 = (_Float16)(lut[w & 15u]), k1 = (_Float16)(lut[(w >> 8) & 15u]);
++                    const _Float16 k2 = (_Float16)(lut[(w >> 16) & 15u]), k3 = (_Float16)(lut[(w >> 24) & 15u]);
++                    const _Float16 k4 = (_Float16)(lut[(w >> 4) & 15u]), k5 = (_Float16)(lut[(w >> 12) & 15u]);
++                    const _Float16 k6 = (_Float16)(lut[(w >> 20) & 15u]), k7 = (_Float16)(lut[(w >> 28) & 15u]);
+                     auto pk = [](_Float16 x, _Float16 y) { return (uint32_t)__builtin_bit_cast(uint16_t, x) | ((uint32_t)__builtin_bit_cast(uint16_t, y) << 16); };
+                     wv[j][0] = pk(k0, k1); wv[j][1] = pk(k2, k3); wv[j][2] = pk(k4, k5); wv[j][3] = pk(k6, k7);
+                 }
+ #pragma unroll
+                 for (uint32_t r = 0; r < RB; ++r) {
+                     if (r >= nr) continue;
+-                    const uint4 x = a[cur][r][d];
++                    // A 128-K tail still needs all lanes at the shuffles; its upper half is zero.
++                    const uint4 x = d < kl / 8u ? a[cur][r][d] : make_uint4(0, 0, 0, 0);
++                    const float asc = d < kl / 8u ? ascales[cur][r][d / 16u] : 0.0f;
+ #pragma unroll
+                     for (uint32_t j = 0; j < OUTW; ++j) {
+-                        float s = acc[j][r];
++                        float s = 0.0f;
+                         asm("v_dot2_f32_f16 %0, %1, %2, %0" : "+v"(s) : "v"(x.x), "v"(wv[j][0]));
+                         asm("v_dot2_f32_f16 %0, %1, %2, %0" : "+v"(s) : "v"(x.y), "v"(wv[j][1]));
+                         asm("v_dot2_f32_f16 %0, %1, %2, %0" : "+v"(s) : "v"(x.z), "v"(wv[j][2]));
+                         asm("v_dot2_f32_f16 %0, %1, %2, %0" : "+v"(s) : "v"(x.w), "v"(wv[j][3]));
+-                        acc[j][r] = s;
++                        if (group_fold) {
++#pragma clang fp contract(off)
++#pragma clang fp reassociate(off)
++                            // Adjacent lanes cover sixteen K values. The four resulting partials
++                            // are added sequentially, as grouped GEMM adds its four 16-K tiles.
++                            const float pair = s + __shfl_xor(s, 1);
++                            const uint32_t g64 = d & ~7u;
++                            float raw64 = __shfl(pair, g64);
++                            raw64 += __shfl(pair, g64 + 2u);
++                            raw64 += __shfl(pair, g64 + 4u);
++                            raw64 += __shfl(pair, g64 + 6u);
++                            const float ws = weight_scale[j] * 0x1p-13f;
++                            const float weighted = raw64 * ws;
++                            const uint32_t g128 = d & ~15u;
++                            float folded = __shfl(weighted, g128);
++                            folded += __shfl(weighted, g128 + 8u);
++                            folded *= asc;
++                            // All lanes execute the broadcasts, including the zeroed tail lanes.
++                            // Only lane zero owns the final sum; no final cross-K reduction remains.
++                            const float first = __shfl(folded, 0);
++                            const float second = __shfl(folded, 16);
++                            if (lane == 0) {
++                                acc[j][r] += first;
++                                if (kl > 128u) acc[j][r] += second;
++                            }
++                        } else {
++                            acc[j][r] += (s * asc) * weight_scale[j];
++                        }
+                     }
+                 }
+             }
+@@ -787,9 +818,12 @@ __global__ __launch_bounds__(256) void lane_moe_rows_w4(
+             for (uint32_t r = 0; r < RB; ++r) {
+                 if (r >= nr) continue;
+                 float v = acc[j][r];
+-                for (uint32_t o = warpSize / 2; o; o >>= 1) v += __shfl_down(v, o);
++                if (!group_fold) {
++                    for (uint32_t o = warpSize / 2; o; o >>= 1) v += __shfl_down(v, o);
++                    v *= 0x1p-13f;
++                }
+                 if (lane == 0 && n < N) {
+-                    uint32_t u = __float_as_uint(v * 0x1p-13f);
++                    uint32_t u = __float_as_uint(v);
+                     u += 0x7fffu + ((u >> 16) & 1u);
+                     const uint32_t col = TOKEN && part_pitch && n >= N / 2 ? n - N / 2 + part_pitch : n;
+                     out[(uint64_t)(r0 + r) * out_stride + col] = (uint16_t)(u >> 16);
+diff --git a/engines/radiance/components/moe-remote/worker_harness.h b/engines/radiance/components/moe-remote/worker_harness.h
+index 46f6b424c..67e328436 100644
+--- a/engines/radiance/components/moe-remote/worker_harness.h
++++ b/engines/radiance/components/moe-remote/worker_harness.h
+@@ -116,6 +116,11 @@ bool load_replay(const char* path, ReplayInput* out) {
+ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& owned,
+                  uint32_t layer, uint32_t rows, const SmallClasses& classes, uint32_t lane_large_rows,
+                  bool synthetic_protect) {
++    if (!g_sweep_fast && gpu.engine_ranks_ != kMaxEngineRanks) {
++        std::fprintf(stderr, "r3_moe_worker: --compare and reference replay require R3_MOE_WORKER_ENGINE_RANKS=%u\n",
++                     kMaxEngineRanks);
++        return 1;
++    }
+     /* the request is built for the model's own shape (the lane checks every request against it) */
+     const uint32_t hid = gpu.shape_.hidden, topk = gpu.shape_.top_k;
+     if (g_replay) {  // a captured real request replaces the synthetic layer, rows, routes and activations
+@@ -371,8 +376,8 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
+         }
+ 
+         std::vector<uint16_t> want_route;
+-        const int hrc = gpu.weight_format() == MOE_FMT_FP8_E4M3_BLOCK ? compute_host_engine_fp8(model, map, q, &want_route)
+-                                                                      : compute_host_engine(model, map, q, &want_route);
++        const int hrc = gpu.weight_format() == MOE_FMT_FP8_E4M3_BLOCK ? compute_host_engine_fp8(model, map, q, &want_route, g_replay != nullptr)
++                                                                      : compute_host_engine(model, map, q, &want_route, g_replay != nullptr);
+         if (hrc != 0 || want_route.size() != (size_t)nr * hid) {
+             std::fprintf(stderr,
+                          "r3_moe_worker: --compare local-path host rank %u failed rc=%d\n",
+@@ -387,11 +392,19 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
+         long double num = 0.0L, den = 0.0L;
+         double max_abs = 0.0;
+         uint32_t tokens = 0;
++        std::vector<long double> expert_num(model.experts, 0.0L), expert_den(model.experts, 0.0L);
++        std::vector<uint32_t> expert_tokens(model.experts, 0);
+         for (uint32_t t = 0; t < rows; ++t) {
+-            bool any = false;
+-            for (uint32_t slot = 0; slot < topk; ++slot) any = any || route_of[(size_t)t * topk + slot] >= 0;
+-            if (!any) continue;
++            int32_t only_route = -1;
++            uint32_t route_count = 0;
++            for (uint32_t slot = 0; slot < topk; ++slot) {
++                const int32_t j = route_of[(size_t)t * topk + slot];
++                if (j >= 0) { only_route = j; ++route_count; }
++            }
++            if (!route_count) continue;
+             ++tokens;
++            const int32_t expert = route_count == 1 ? published[(uint32_t)only_route].expert : -1;
++            if (expert >= 0) ++expert_tokens[(uint32_t)expert];
+             for (uint32_t col = 0; col < hid; ++col) {
+                 float acc = 0.0f;
+                 for (uint32_t slot = 0; slot < topk; ++slot) {
+@@ -406,8 +419,19 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
+                 num += (long double)d * d;
+                 den += (long double)b * b;
+                 max_abs = std::max(max_abs, std::abs(d));
++                if (expert >= 0) {
++                    expert_num[(uint32_t)expert] += (long double)d * d;
++                    expert_den[(uint32_t)expert] += (long double)b * b;
++                }
+             }
+         }
++        for (uint32_t e = 0; e < model.experts; ++e) {
++            if (!expert_tokens[e]) continue;
++            const double rel_e = std::sqrt((double)(expert_num[e] /
++                std::max<long double>(expert_den[e], 1.0e-30L)));
++            std::printf("expert_join layer %u rank %u expert %u tokens=%u rel_l2=%.8g\n",
++                        layer, rank, e, expert_tokens[e], rel_e);
++        }
+         const double rel =
+             std::sqrt((double)(num / std::max<long double>(den, 1.0e-30L)));
+         std::printf("engine_join layer %u rank %u lane %u routes=%u tokens=%u rel_l2=%.8g max_abs=%.8g\n",
+diff --git a/engines/radiance/components/moe-remote/worker_hostref.h b/engines/radiance/components/moe-remote/worker_hostref.h
+index 5cc439ba3..eb64963fb 100644
+--- a/engines/radiance/components/moe-remote/worker_hostref.h
++++ b/engines/radiance/components/moe-remote/worker_hostref.h
+@@ -150,7 +150,7 @@ bool quant_plain_engine(float* v, size_t n) {
+ }
+ 
+ int compute_host_engine(const Container& f, void* map, Request* q,
+-                        std::vector<uint16_t>* route_down = nullptr) {
++                        std::vector<uint16_t>* route_down = nullptr, bool captured_quant = false) {
+     const uint32_t hid = static_cast<const Header*>(map)->hidden, topk = static_cast<const Header*>(map)->top_k;
+     const int64_t hdr_intermediate = static_cast<const Header*>(map)->intermediate;
+     if (q->rank_count != kMaxEngineRanks || q->rank >= kMaxSlots || q->layer >= f.layers ||
+@@ -163,9 +163,17 @@ int compute_host_engine(const Container& f, void* map, Request* q,
+     uint16_t* dst = ptr<uint16_t>(map, q->result_offset[out_rank_of(q->rank, q->rank_count)]);
+ 
+     std::vector<float> aq((size_t)q->rows * hid);
+-    for (size_t i = 0; i < aq.size(); ++i) aq[i] = bf16(act[i]);
+-    for (uint32_t t = 0; t < q->rows; ++t)
+-        if (!quant_had_engine(aq.data() + (size_t)t * hid, hid)) return -EINVAL;
++    if (captured_quant) {
++        // Captured input is already quantised; W4 input is also Hadamard rotated.
++        const uint8_t* codes = ptr<uint8_t>(map, q->activation_q_offset);
++        const float* scales = ptr<float>(map, q->activation_s_offset);
++        for (size_t i = 0; i < aq.size(); ++i)
++            aq[i] = f8e4m3(codes[i]) * scales[i / kActGroup];
++    } else {
++        for (size_t i = 0; i < aq.size(); ++i) aq[i] = bf16(act[i]);
++        for (uint32_t t = 0; t < q->rows; ++t)
++            if (!quant_had_engine(aq.data() + (size_t)t * hid, hid)) return -EINVAL;
++    }
+ 
+     std::vector<std::vector<uint32_t>> by_exp(f.experts);
+     std::vector<int32_t> slot_route((size_t)q->rows * topk, -1);
+@@ -248,7 +256,7 @@ int compute_host_engine(const Container& f, void* map, Request* q,
+ }
+ 
+ int compute_host_engine_fp8(const Container& f, void* map, Request* q,
+-                        std::vector<uint16_t>* route_down = nullptr) {
++                        std::vector<uint16_t>* route_down = nullptr, bool captured_quant = false) {
+     const uint32_t hid = static_cast<const Header*>(map)->hidden, topk = static_cast<const Header*>(map)->top_k;
+     const int64_t hdr_intermediate = static_cast<const Header*>(map)->intermediate;
+     if (q->rank_count != kMaxEngineRanks || q->rank >= kMaxSlots || q->layer >= f.layers ||
+@@ -261,9 +269,17 @@ int compute_host_engine_fp8(const Container& f, void* map, Request* q,
+     uint16_t* dst = ptr<uint16_t>(map, q->result_offset[out_rank_of(q->rank, q->rank_count)]);
+ 
+     std::vector<float> aq((size_t)q->rows * hid);
+-    for (size_t i = 0; i < aq.size(); ++i) aq[i] = bf16(act[i]);
+-    for (uint32_t t = 0; t < q->rows; ++t)
+-        if (!quant_plain_engine(aq.data() + (size_t)t * hid, hid)) return -EINVAL;
++    if (captured_quant) {
++        // Captured input is already quantised; W4 input is also Hadamard rotated.
++        const uint8_t* codes = ptr<uint8_t>(map, q->activation_q_offset);
++        const float* scales = ptr<float>(map, q->activation_s_offset);
++        for (size_t i = 0; i < aq.size(); ++i)
++            aq[i] = f8e4m3(codes[i]) * scales[i / kActGroup];
++    } else {
++        for (size_t i = 0; i < aq.size(); ++i) aq[i] = bf16(act[i]);
++        for (uint32_t t = 0; t < q->rows; ++t)
++            if (!quant_plain_engine(aq.data() + (size_t)t * hid, hid)) return -EINVAL;
++    }
+ 
+     std::vector<std::vector<uint32_t>> by_exp(f.experts);
+     std::vector<int32_t> slot_route((size_t)q->rows * topk, -1);

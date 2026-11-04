@@ -1,7 +1,14 @@
 #include "moe_remote_hook.h"
+#include "admission_ledger.h"
+#include "admission_completion.h"
+#include "owner_generation.h"
+#include "worker_epoch.h"
+#include "engine_rank_coordinator.h"
+#include "engine_admission_gate.h"
 #include "moe_helper_watch.h"
 #include "moe_remote_shm.h"
 #include "rad_abi.h"
+#include "rad_device.h"   /* engine streams take only radiance events (rad_event_*), never raw HIP events */
 
 #include <hip/hip_runtime.h>
 
@@ -11,6 +18,7 @@
 #include <atomic>
 #include <chrono>
 #include <cmath>
+#include <climits>
 #include <cstdio>
 #include <utility>
 #include <cstdlib>
@@ -31,8 +39,18 @@ using namespace r3::moe_shm;
 struct RankState {
     R3MoeMailboxDevice dev{};
     int device = -1;
-    uint8_t* owner = nullptr;
+    uint8_t* owner[2]{};
+    R3MoeOwnerBinding* owner_binding = nullptr;
+    hipStream_t owner_stream = nullptr; /* transition H2D, never the serving stream */
+    hipEvent_t owner_event[2]{};
+    uint8_t* owner_stage[2]{}; /* pinned until the corresponding event completes */
+    size_t owner_bytes = 0;
+    R3MoeOwnerBinding owner_expected[2]{};
+    bool owner_queued[2]{};
     StepTicket* ticket = nullptr;
+    ConsumptionStamp* consumed_host = nullptr;
+    ConsumptionStamp* stamps = nullptr;          /* device-memory counting ring */
+    ConsumedRecords* consumed_rec = nullptr;     /* device-memory consumed lane/combine records */
     uint32_t* sequence = nullptr;
     uint32_t* published = nullptr;
     uint16_t* mask_ref = nullptr;
@@ -48,10 +66,31 @@ struct EnginePlugin {
     void (*layer_map)(int layer, int n_expert, const int32_t* slot_of_expert);
     int (*owns_expert)(int layer, int expert);
     void (*burst)(int active);
-    int (*before_pass)(int rank, uint64_t parent_ticket_id, void* stream);
+    int (*before_pass)(int rank, StepTicket ticket, void* stream);
+    int (*admit)(StepTicket* out, int try_only, int world_size);
+    int (*bind)(StepTicket ticket, int64_t scheduler_step);
+    int (*cancel)(StepTicket ticket);
+    int (*host_done)(StepTicket ticket);
+    int (*rank_done)(int rank, StepTicket ticket, void* stream);
+    void (*poll)(void);
+    void (*shutdown)(void);
+    int (*capacity)(uint32_t parent_limit);
 };
 using RegisterFn = int (*)(const EnginePlugin*);
 
+/* Each admission owns its events; never reuse one global step-end event
+ * as evidence of several queued parents. An event is recorded after every
+ * parent GPU effect, before issue-ahead, and queried only after host_done.
+ * Events come from a per-rank pool sized to the ledger ring (one per slot,
+ * admission_completion.h); queries and records need no current device. */
+struct RadEvents {
+    using Event = RadEvent;
+    static int create(RadEvent* e) { return rad_event_create(e); }
+    static void destroy(RadEvent e) { rad_event_destroy(e); }
+    static int record(RadEvent e, void* stream) { return rad_event_record(e, (RadStream)stream); }
+    static int query(RadEvent e) { return rad_event_query(e); }
+};
+using RankCompletion = r3::admission::RankCompletion<RadEvents>;
 struct HookState {
     int fd = -1;
     void* map = MAP_FAILED;
@@ -59,6 +98,26 @@ struct HookState {
     Header* hdr = nullptr;
     bool pinned = false;
     RegisterFn engine_register = nullptr;
+    r3::admission::Ledger ledger{0}; /* configured by the engine before map replay */
+    RankCompletion completion[kMaxEngineRanks];
+    R3MoeDrainSnapshot closed_snapshot{};
+    uint64_t closure_id = 0;
+    std::atomic<uint32_t> engine_ranks{0}; /* scheduler-owned; published once before controller starts */
+    /* Rank setup proves bootstrap seal/upload once. Admission tests only this
+     * cached mask, never rehashes the canonical map on the hot path. */
+    std::atomic<uint32_t> bootstrap_ready_ranks{0};
+    // Cached result of the engine's EXACT bc_moe_remote_wanted_upto policy.
+    // No independent environment parser or second source of declaration policy.
+    bool remote_possible = true;
+    bool drain_verified = false; /* reopen requires a successful full drain */
+    std::thread placement_thread;
+    /* Header::burst ownership: burst_transition (scheduler) and the helper drain (placement thread). While a drain
+     * is requested the word is held even, so the helpers' burst spins end without reading drain words; radiance's
+     * wanted state is applied at reopen. */
+    std::mutex burst_mu;
+    bool burst_want = false;
+    bool burst_draining = false;
+    std::atomic<bool> placement_stop{false};
     std::mutex mu;
     std::thread snapshotter;          /* R3_MOE_WORKER_HISTOGRAM_PERIOD_S: writes the live route histogram */
     std::atomic<bool> snapshot_stop{false};
@@ -127,34 +186,171 @@ bool layer_enabled(int layer) {
     return layer >= range.first && layer <= range.second;
 }
 
-/* Bootstrap binding, not admission: the scheduler's RadBatch::step is common
- * to the trunk and its draft children, so step+1 identifies their parent.
- * Step 2 must retain one admitted epoch/slot across that whole parent. */
-int before_pass(int rank, uint64_t parent_ticket_id, void* stream) {
-    if (rank < 0 || rank >= (int)kMaxEngineRanks || !stream || !parent_ticket_id)
+/* All parent tickets originate in this coordinator. Neither a scheduler
+ * number nor an in-flight tape's arguments are admission authority. */
+bool committed(uint32_t* epoch, uint8_t* slot) {
+    if (!g.hdr || !g.pinned || load(&g.hdr->helper_fault)) return false;
+    const PlacementControl* c = placement_control(g.map);
+    const uint32_t a = load(&c->seq);
+    const uint64_t e = __atomic_load_n(&c->active_epoch, __ATOMIC_ACQUIRE);
+    const uint32_t sl = load(&c->active_slot);
+    if ((a & 1u) || load(&c->seq) != a ||
+        load(&c->state) != (uint32_t)PlacementState::ACTIVE ||
+        !e || e > UINT32_MAX || sl > 1) return false;
+    *epoch = (uint32_t)e;
+    *slot = (uint8_t)sl;
+    return true;
+}
+
+bool helper_faulted() { return g.hdr && load(&g.hdr->helper_fault); }
+
+void poll_tickets();
+
+int admit_ticket(StepTicket* out, int try_only, int world_size) {
+    if (!out) return RAD_E_INVAL;
+    *out = StepTicket{};
+    if (world_size < 1 || world_size > (int)kMaxEngineRanks) return RAD_E_INVAL;
+    const uint32_t ranks = (uint32_t)world_size;
+    const uint32_t mask = (1u << ranks) - 1u;
+    // When engine policy declares no mailbox ops, admission is a no-op.
+    // No ticket/seal is possible (and none is needed for local-only steps).
+    const auto bootstrap = r3::epoch::admission_bootstrap(
+        g.remote_possible,g.bootstrap_ready_ranks,mask);
+    if (bootstrap == r3::epoch::AdmissionBootstrap::LocalOnly) return RAD_OK;
+    if (bootstrap != r3::epoch::AdmissionBootstrap::Ready) return RAD_E_STATE;
+    uint32_t expected = g.engine_ranks.load(std::memory_order_acquire);
+    if (!expected) {
+        uint32_t empty = 0;
+        if (g.engine_ranks.compare_exchange_strong(empty,ranks,
+                std::memory_order_acq_rel,std::memory_order_acquire)) {
+            __atomic_store_n(&placement_control(g.map)->expected_ranks,
+                             (1u << ranks) - 1u, __ATOMIC_RELEASE);
+            expected = ranks;
+        } else expected = empty;
+    }
+    if (expected != ranks) {
+        g.ledger.fault();
         return RAD_E_STATE;
-    StepTicket* device_ticket = nullptr;
-    StepTicket value{};
+    }
+    /* Reclaim with event queries only; no serving-path waits for capacity. */
+    poll_tickets();
+    using Result = r3::admission::Ledger::Result;
+    const Result r = try_only ? g.ledger.try_admit(ranks, out)
+        : g.ledger.admit(ranks, out,
+                         [] { return helper_faulted(); },
+                         [] { poll_tickets(); });
+    if (try_only && (r == Result::Closed || r == Result::Full)) return 1;
+    if (r != Result::Ok) {
+        if (r == Result::Full)
+            std::fprintf(stderr, "libr3moe: admission route-ring ceiling exhausted; high-water %zu, capacity %zu\n",
+                         g.ledger.high_water(), g.ledger.capacity());
+        g.ledger.fault();
+        return RAD_E_STATE;
+    }
+    return RAD_OK;
+}
+
+int bind_ticket(StepTicket ticket, int64_t step) {
+    return ticket.ticket_id && g.ledger.bind(ticket.ticket_id, step) ? RAD_OK : RAD_E_STATE;
+}
+int cancel_ticket(StepTicket ticket) {
+    return !ticket.ticket_id || g.ledger.cancel(ticket.ticket_id) ? RAD_OK : RAD_E_STATE;
+}
+int host_done_ticket(StepTicket ticket) {
+    if (!ticket.ticket_id) return RAD_OK;
+    if (!g.ledger.host_complete(ticket.ticket_id)) return RAD_E_STATE;
+    poll_tickets();
+    return g.ledger.stopped() ? RAD_E_STATE : RAD_OK;
+}
+
+/* The setter takes the exact admitted ticket. Every pass belonging to one
+ * scheduler parent (trunk, history and draft passes) receives the same value,
+ * including the pass issued ahead before that parent's host commit. */
+int before_pass(int rank, StepTicket value, void* stream) {
+    if (!value.ticket_id && !g.remote_possible) return RAD_OK;
+    if (rank < 0 || rank >= (int)kMaxEngineRanks || !stream ||
+        !g.ledger.valid(value, (uint32_t)rank)) return RAD_E_STATE;
+    const R3MoeMailboxDevice* dev = nullptr;
     {
         std::lock_guard<std::mutex> lock(g.mu);
-        if (!g.hdr || !g.pinned || !g.rank[rank].ready || !g.rank[rank].ticket)
-            return RAD_E_STATE;
-        const PlacementControl* c = placement_control(g.map);
-        /* Fail closed if anything changes before the admission protocol
-         * exists; never truncate a 64-bit epoch into the wire ticket. */
-        const uint32_t seq0 = load(&c->seq);
-        const uint64_t epoch = __atomic_load_n(&c->active_epoch, __ATOMIC_ACQUIRE);
-        const uint32_t slot = load(&c->active_slot);
-        if ((seq0 & 1u) || seq0 != load(&c->seq) ||
-            load(&c->state) != (uint32_t)PlacementState::ACTIVE ||
-            epoch == 0 || epoch > UINT32_MAX || slot > 1)
-            return RAD_E_STATE;
-        value.placement_epoch = (uint32_t)epoch;
-        value.generation_slot = (uint8_t)slot;
-        value.ticket_id = parent_ticket_id;
-        device_ticket = g.rank[rank].ticket;
+        if (!g.hdr || !g.pinned || !g.rank[rank].ready || !g.rank[rank].ticket ||
+            load(&g.hdr->helper_fault)) return RAD_E_STATE;
+        dev = &g.rank[rank].dev;
+        if (!g.completion[rank].arm(value)) return RAD_E_STATE;
     }
-    return r3_moe_ticket_launch(device_ticket, value, stream);
+    return r3_moe_ticket_launch(dev, value, stream);   /* also arms the device counting slot */
+}
+
+/* Distinct events per admitted parent AND per rank, recorded by the
+ * scheduler after all parent GPU effects, before issue-ahead. g.mu only
+ * orders against close_mailbox; the ranks are parked here. */
+int rank_done_ticket(int rank, StepTicket ticket, void* stream) {
+    if (!ticket.ticket_id) return RAD_OK;
+    if (!stream || rank < 0 || rank >= (int)kMaxEngineRanks ||
+        !g.ledger.valid(ticket, (uint32_t)rank)) return RAD_E_STATE;
+    std::lock_guard<std::mutex> lock(g.mu);
+    /* The seal copies the parent's device counts to the host-mapped stamp; the event recorded behind it is the proof
+     * that they (and every earlier effect of the parent) reached host-visible memory. */
+    if (!g.rank[rank].ready || r3_moe_seal_launch(&g.rank[rank].dev, ticket, stream) != RAD_OK) {
+        std::fprintf(stderr, "libr3moe: parent rank seal kernel launch failed\n");
+        g.ledger.fault();
+        return RAD_E_DEVICE;
+    }
+    if (!g.completion[rank].record(ticket.ticket_id, stream)) {
+        std::fprintf(stderr, "libr3moe: record parent rank completion: rad_event_record failed or repeated\n");
+        g.ledger.fault();
+        return RAD_E_DEVICE;
+    }
+    return RAD_OK;
+}
+
+bool rank_completion_ok(bool prepared) {
+    if (!prepared)
+        std::fprintf(stderr, "libr3moe: rank parent completion events: rad_event_create failed\n");
+    return prepared;
+}
+
+/* One ledger pass over host-complete parents; per rank it stops at the
+ * first pending event (Ledger::poll). No allocation, no device switch. */
+void poll_tickets() {
+    if (helper_faulted()) { g.ledger.fault(); return; }
+    (void)g.ledger.poll([](const StepTicket& t, uint32_t rank) {
+        return g.completion[rank].prove(t);
+    });
+}
+
+bool served_lane(uint32_t lane) {
+    return (g.hdr->helper_count <= 1 || lane % kMaxSlots < g.hdr->helper_count) &&
+           (!lane_is_small(lane) || lane_class(lane) < g.hdr->small_class_count);
+}
+void hold_burst_for_drain(Header* h);
+
+/* Admission is closed and every admitted parent has retired, so ending the burst cuts off no work. The drain words
+ * are stored before the burst word moves: a helper that sees the move (burst spin ends, or its futex wait on the word
+ * returns) then sees its drain request. An idle word moves by 2, so it stays even and still wakes sleepers. */
+void request_helper_drain(uint64_t closure) {
+    Header* h = g.hdr;
+    for (uint32_t lane = 0; lane < kLanes; ++lane)
+        if (served_lane(lane))
+            __atomic_store_n(&h->lane[lane].drain_request, closure, __ATOMIC_RELEASE);
+    {
+        std::lock_guard<std::mutex> lock(g.burst_mu);
+        g.burst_draining = true;
+        hold_burst_for_drain(h);
+    }
+    notify(h);   /* acknowledge_drain's closure wait and the engine's park waits use the generation word */
+}
+
+bool helper_drained(uint64_t closure) {
+    if (!g.hdr || load(&g.hdr->helper_fault)) return false;
+    const Header* h = g.hdr;
+    for (uint32_t lane = 0; lane < kLanes; ++lane)
+        if (!lane_quiesced(h, lane, closure, served_lane(lane))) return false;
+    if (h->combine.request &&
+        (load(&h->combine.done) != load(&h->combine.request) ||
+         load(&h->combine.result_consumed_generation) != load(&h->combine.request)))
+        return false;
+    return true;
 }
 
 void publish_layer_map(int layer, int n_expert, const int32_t* slot_of_expert) {
@@ -203,6 +399,39 @@ void publish_layer_map(int layer, int n_expert, const int32_t* slot_of_expert) {
         std::fprintf(stderr, "libr3: R3_MOE_WORKER layer %d: helper failed before consuming its map\n", layer);
 }
 
+/* Begin: wait only for lanes a helper is still draining (Header::burst; normally none, so no sleep), so nothing is
+ * published into released waits. A fault leaves the engine's next GPU wait to trap; nothing to wait for here. */
+bool wait_parks(Header* h,const timespec* deadline = nullptr) {
+    const WaitResult r=r3::epoch::wait_parks_checked(h,deadline);
+    if (r != WaitResult::Ready) {
+        std::fprintf(stderr,
+            "libr3moe: park barrier failed fault=%u wait=%u\n",
+            uint32_t(r==WaitResult::Timeout ? r3::epoch::FaultCode::QUIESCE_TIMEOUT :
+                     r==WaitResult::Fault ? r3::epoch::FaultCode::HELPER_DEAD :
+                                            r3::epoch::FaultCode::DEVICE),uint32_t(r));
+        return false; // wait_parks_checked already raised the sticky fault
+    }
+    return true;
+}
+
+/* Under g.burst_mu: move the word to `active`'s parity. True when it opened a burst (the caller waits for parks). */
+bool apply_burst(Header* h, bool active) {
+    const uint32_t b = load(&h->burst) & ~kBurstStop;
+    if (active == (bool)(b & 1u)) return false;
+    if (active) g.watch.notice();
+    (void)__atomic_fetch_add(&h->burst, 1u, __ATOMIC_SEQ_CST);
+    (void)futex_wake(&h->burst);
+    return active;
+}
+
+/* Under g.burst_mu, with burst_draining set: end a running burst, or move an idle word by 2 (parity unchanged), so
+ * burst spins exit and futex sleepers on the word wake to read their drain request. */
+void hold_burst_for_drain(Header* h) {
+    const uint32_t b = load(&h->burst) & ~kBurstStop;
+    (void)__atomic_fetch_add(&h->burst, (b & 1u) ? 1u : 2u, __ATOMIC_SEQ_CST);
+    (void)futex_wake(&h->burst);
+}
+
 /* An inference burst begins or ends (RAD20: the helpers arm GPU waits only inside a burst, so their queues are
  * empty and the GPUs idle between bursts). R3_MOE_WORKER_BURST_TRACE=1 logs each transition with a monotonic
  * timestamp, for checking begin/end pairing across single-stream, multi-stream and MTP runs. */
@@ -213,24 +442,17 @@ void burst_transition(int active) {
     }();
     static std::atomic<uint64_t> begins{0}, ends{0};
     const uint64_t n = active ? begins.fetch_add(1) + 1 : ends.fetch_add(1) + 1;
-    /* One engine process drives the segment's burst word. Begin: open the burst, then wait only for lanes a helper is
-     * still draining (Header::burst; normally none, so no sleep), so nothing is published into released waits. End:
-     * close it. A helper that stops clears its drain flags and sets helper_fault. */
+    /* One engine process drives the segment's burst word. During a helper drain only radiance's wanted state is
+     * recorded; reopen applies it. A helper that stops clears its drain flags and sets helper_fault. */
     if (g.hdr) {
         Header* h = g.hdr;
-        const uint32_t b = load(&h->burst) & ~kBurstStop;
-        if (active == (int)(b & 1u)) return;
-        if (active) g.watch.notice();
-        (void)__atomic_fetch_add(&h->burst, 1u, __ATOMIC_SEQ_CST);
-        (void)futex_wake(&h->burst);
-        if (active)
-            for (uint32_t lane = 0; lane < kLanes; ++lane) {
-                uint32_t* park = &h->lane[lane].park;
-                /* Fault: the engine's GPU wait traps on the next remote step; nothing to wait for here. */
-                if (wait_for(h, nullptr, [&] { return __atomic_load_n(park, __ATOMIC_SEQ_CST) != kParkDraining; }) ==
-                    WaitResult::Error)
-                    raise_fault(h);   /* the drain was not seen to finish: never publish into released waits */
-            }
+        bool opened = false;
+        {
+            std::lock_guard<std::mutex> lock(g.burst_mu);
+            g.burst_want = active != 0;
+            if (!g.burst_draining) opened = apply_burst(h, g.burst_want);
+        }
+        if (opened) (void)wait_parks(h);   /* a failure raised helper_fault; the next pass fails closed on it */
     }
     if (trace) {
         timespec ts{};
@@ -240,30 +462,143 @@ void burst_transition(int active) {
     }
 }
 
-/* The canonical generation has one owner byte per model-global expert. */
-int owner_query(int layer, int expert) {
-    if (!g.hdr || layer < 0 || expert < 0) return 0;
-    const uint32_t slot = placement_control(g.map)->active_slot;
-    return owner_at(g.map, slot, (uint32_t)layer, (uint32_t)expert) < g.hdr->helper_count;
+/* Reopen, after the drain was verified and the drain words cleared: radiance's wanted burst state takes the word
+ * again, parks waited for as at a begin, before admission lets the scheduler publish. */
+bool resume_burst_after_drain(Header* h) {
+    bool opened = false;
+    {
+        std::lock_guard<std::mutex> lock(g.burst_mu);
+        g.burst_draining = false;
+        opened = apply_burst(h, g.burst_want);
+    }
+    if (!opened) return true;
+    // The phase deadline is cleared when the controller enters ACTIVE.
+    // Derive a fresh bound from the existing quiescence phase duration.
+    timespec deadline{};
+    if (clock_gettime(CLOCK_MONOTONIC,&deadline) != 0) {
+        raise_fault(h);
+        return false;
+    }
+    const std::chrono::nanoseconds bound(r3::epoch::Deadlines{}.quiesce_ns);
+    const auto seconds=std::chrono::duration_cast<std::chrono::seconds>(bound);
+    deadline.tv_sec += seconds.count();
+    deadline.tv_nsec += (bound-seconds).count();
+    if (deadline.tv_nsec >= std::nano::den) {
+        ++deadline.tv_sec;
+        deadline.tv_nsec -= std::nano::den;
+    }
+    return wait_parks(h,&deadline);
 }
 
-/* Preserve the v22 per-helper GPU bitset format until slice D installs epoch buffers.
- * All bitsets are derived from the active canonical generation, never a second owner source. */
-std::vector<uint8_t> derive_device_owners() {
-    const Header* h = g.hdr;
-    const uint32_t stride = device_owner_slot_bytes(h->expert_count);
-    std::vector<uint8_t> bits((size_t)h->slot_count * stride, 0);
-    const uint32_t gen = placement_control(g.map)->active_slot;
-    for (uint32_t l = 0; l < h->layer_count; ++l) {
-        for (uint32_t e = 0; e < h->expert_count; ++e) {
-            const uint8_t owner = owner_at(g.map, gen, l, e);
-            if (owner >= h->helper_count) continue;
-            const size_t bit = (size_t)l * h->expert_count + e;
-            bits[(size_t)owner * stride + (bit >> 3)] |= (uint8_t)(1u << (bit & 7u));
-        }
+/* This callback is engine weight-residency setup, not a step route. The
+ * local/remote split stays immutable in Stage 1; GPU routes select by ticket. */
+int owner_query(int layer, int expert) {
+    if (!g.hdr || layer < 0 || expert < 0 ||
+        layer >= (int)g.hdr->layer_count || expert >= (int)g.hdr->expert_count) {
+        if (g.hdr) { g.ledger.fault(); raise_fault(g.hdr); }
+        return 0;
     }
-    return bits;
+    /* Helper 0 can seal the final owner map while engine residency is being
+     * constructed. Read generation metadata within the control seqlock:
+     * do not mistake an in-flight coherent bootstrap publication for a bad
+     * digest and poison serving. Owner bytes are already final at the seal. */
+    for (uint32_t attempt=0;attempt<64;++attempt) {
+        PlacementControl c{};
+        if (!placement_snapshot(g.map, &c)) continue;
+        if (!c.active_epoch || c.active_slot > 1 || c.fault_code) break;
+        const auto* generation = generation_header(g.map,c.active_slot);
+        const uint64_t epoch = generation->epoch, digest = generation->digest;
+        const uint8_t owner = owner_at(g.map,c.active_slot,(uint32_t)layer,(uint32_t)expert);
+        if (__atomic_load_n(&placement_control(g.map)->seq, __ATOMIC_ACQUIRE) != c.seq)
+            continue;
+        if (epoch != c.active_epoch || digest != c.active_digest ||
+            (owner != kOwnerLocal && owner >= g.hdr->helper_count)) break;
+        return owner < g.hdr->helper_count;
+    }
+    g.ledger.fault();
+    raise_fault(g.hdr);
+    return 0;
 }
+
+void free_owner_generations(RankState& s) {
+    if (s.owner_stream) (void)hipStreamSynchronize(s.owner_stream); /* shutdown/failed startup only */
+    for (uint32_t slot = 0; slot < 2; ++slot) {
+        if (s.owner_event[slot]) (void)hipEventDestroy(s.owner_event[slot]);
+        if (s.owner_stage[slot]) (void)hipHostFree(s.owner_stage[slot]);
+        if (s.owner[slot]) (void)hipFree(s.owner[slot]);
+        s.owner_event[slot] = nullptr;
+        s.owner_stage[slot] = nullptr;
+        s.owner[slot] = nullptr;
+        s.owner_expected[slot] = {};
+        s.owner_queued[slot] = false;
+    }
+    if (s.owner_binding) (void)hipFree(s.owner_binding);
+    if (s.owner_stream) (void)hipStreamDestroy(s.owner_stream);
+    s.owner_binding = nullptr;
+    s.owner_stream = nullptr;
+    s.owner_bytes = 0;
+}
+
+/* Under g.mu, on the owning device. The host bitmap and binding live in
+ * pinned per-slot staging until the rank-private event completes. No host
+ * stream wait or system-scope GPU operation is added to inference. */
+bool queue_owner_upload(RankState& s, uint32_t slot, uint64_t epoch, uint64_t digest,
+                        const std::vector<uint8_t>& bitmap) {
+    if (slot > 1 || !epoch || epoch > UINT32_MAX || !digest ||
+        !s.owner_stream || !s.owner_event[slot] || !s.owner_stage[slot] ||
+        !s.owner[slot] || !s.owner_binding || bitmap.size() != s.owner_bytes) return false;
+    if (s.owner_queued[slot]) {
+        const hipError_t q = hipEventQuery(s.owner_event[slot]);
+        if (q != hipSuccess) return false; /* still copying or an error: fail closed */
+    }
+    /* A failed second enqueue or event record must not leave an earlier
+     * completed event claiming a partially replaced generation is ready.
+     * Synchronize only on error, so pinned staging cannot be overwritten
+     * while a preceding copy is still in flight. */
+    s.owner_queued[slot] = false;
+    s.owner_expected[slot] = {};
+    const R3MoeOwnerBinding binding{epoch, digest};
+    std::memcpy(s.owner_stage[slot], &binding, sizeof(binding));
+    std::memcpy(s.owner_stage[slot] + sizeof(binding), bitmap.data(), bitmap.size());
+    const bool issued =
+        hip_ok(hipMemcpyAsync(s.owner[slot], s.owner_stage[slot] + sizeof(binding),
+                              bitmap.size(), hipMemcpyHostToDevice, s.owner_stream),
+               "upload owner bitmap") &&
+        hip_ok(hipMemcpyAsync(s.owner_binding + slot, s.owner_stage[slot],
+                              sizeof(binding), hipMemcpyHostToDevice, s.owner_stream),
+               "upload owner binding") &&
+        hip_ok(hipEventRecord(s.owner_event[slot], s.owner_stream),
+               "record owner upload event");
+    if (!issued) {
+        (void)hip_ok(hipStreamSynchronize(s.owner_stream), "drain failed owner upload");
+        return false;
+    }
+    s.owner_expected[slot] = binding;
+    s.owner_queued[slot] = true;
+    return true;
+}
+
+bool allocate_owner_generations(RankState& s, size_t bitmap_bytes) {
+    if (!bitmap_bytes ||
+        !hip_ok(hipStreamCreateWithFlags(&s.owner_stream, hipStreamNonBlocking),
+                "create owner upload stream") ||
+        !hip_ok(hipMalloc(reinterpret_cast<void**>(&s.owner_binding),
+                          2 * sizeof(R3MoeOwnerBinding)), "allocate owner bindings") ||
+        !hip_ok(hipMemset(s.owner_binding, 0, 2 * sizeof(R3MoeOwnerBinding)),
+                "zero owner bindings")) return false;
+    s.owner_bytes = bitmap_bytes;
+    for (uint32_t slot = 0; slot < 2; ++slot)
+        if (!hip_ok(hipMalloc(reinterpret_cast<void**>(&s.owner[slot]), bitmap_bytes),
+                    "allocate generation bitmap") ||
+            !hip_ok(hipHostMalloc(reinterpret_cast<void**>(&s.owner_stage[slot]),
+                                  sizeof(R3MoeOwnerBinding) + bitmap_bytes, hipHostMallocDefault),
+                    "allocate pinned owner upload staging") ||
+            !hip_ok(hipEventCreateWithFlags(&s.owner_event[slot], hipEventDisableTiming),
+                    "create generation upload event")) return false;
+    return true;
+}
+
+void placement_loop();
 
 void register_mailbox() {
     if (!enabled_env()) return;
@@ -335,7 +670,34 @@ void register_mailbox() {
             raise_fault(g.hdr);
         }
     }
-    static const EnginePlugin plugin{sizeof(EnginePlugin), publish_layer_map, owner_query, burst_transition, before_pass};
+    uint32_t epoch = 0;
+    uint8_t slot = 0;
+    if (!committed(&epoch, &slot) || !g.ledger.initialize(epoch, slot)) {
+        raise_fault(g.hdr);
+        return;
+    }
+    // The block's declare() and the plugin's admission must share ONE policy.
+    // The symbol is supplied by the managed rad0002 engine extension; fail
+    // closed if it is missing. Environment defaults are set BEFORE querying.
+    (void)::setenv("R3_MOE_REMOTE_MIN_ROWS", "0", 0);
+    const std::string mr = std::to_string((long long)max_rows());
+    (void)::setenv("R3_MOE_REMOTE_MAX_ROWS", mr.c_str(), 0);
+    using WantedUpto = int (*)(int64_t);
+    dlerror();
+    const auto wanted = reinterpret_cast<WantedUpto>(
+        dlsym(RTLD_DEFAULT,"bc_moe_remote_wanted_upto"));
+    if (const char* e = dlerror(); e || !wanted) {
+        std::fprintf(stderr,"libr3moe: remote declaration policy missing (%s)\n",
+                     e ? e : "missing symbol");
+        raise_fault(g.hdr);
+        return;
+    }
+    g.remote_possible = wanted(LLONG_MAX) != 0;
+    static const EnginePlugin plugin{sizeof(EnginePlugin), publish_layer_map, owner_query, burst_transition,
+                                     before_pass, admit_ticket, bind_ticket, cancel_ticket,
+                                     host_done_ticket, rank_done_ticket, poll_tickets,
+                                     [] { g.ledger.interrupt(); },
+                                     [](uint32_t limit) -> int { return g.ledger.configure(limit) ? RAD_OK : RAD_E_STATE; }};
     if (g.engine_register(&plugin) != 0) {
         std::fprintf(stderr, "libr3: R3_MOE_WORKER engine rejected the plugin registration (struct size)\n");
         g.watch.stop();
@@ -350,9 +712,6 @@ void register_mailbox() {
      * All route selection and synchronisation stays on the rank GPU. */
     /* Explicit engine bounds are policy. Supply defaults only when the caller did not set them;
      * in particular R3_MOE_REMOTE_MAX_ROWS=0 must disable hand-off without disabling the helper. */
-    (void)::setenv("R3_MOE_REMOTE_MIN_ROWS", "0", 0);
-    const std::string mr = std::to_string((long long)max_rows());
-    (void)::setenv("R3_MOE_REMOTE_MAX_ROWS", mr.c_str(), 0);
     uint32_t owned = 0;
     const uint32_t active = placement_control(g.map)->active_slot;
     for (uint32_t l = 0; l < g.hdr->layer_count; ++l)
@@ -364,6 +723,113 @@ void register_mailbox() {
     if (poison_env()) std::fprintf(stderr, "libr3: R3_MOE_WORKER poison\n");
     if (shadow_env()) std::fprintf(stderr, "libr3: R3_MOE_WORKER_SHADOW enabled\n");
     if (mask_only_env()) std::fprintf(stderr, "libr3: R3_MOE_WORKER_MASK_ONLY enabled\n");
+    g.placement_thread = std::thread(placement_loop);
+}
+
+/* Engine participant of the shared helper-zero placement coordinator.
+ * Same-map diagnostic cycles use TWO real generations and the complete
+ * RESERVED/COPYING/PREPARED/QUIESCING/COMMIT/RETIRING path. Actual owner
+ * movement and helper weight-table changes remain later slices.
+ *
+ * All GPU uploads/events are on private rank upload streams. This thread
+ * polls events away from serving, and reuses the slice-C admission ledger,
+ * parent seal/events, helper drain and reopen; there is no second gate. */
+// Implement the extracted per-phase engine-rank coordinator with real HIP,
+// admission, park and identity operations. Only this adapter touches g.mu.
+struct LiveRankOperations final : r3::epoch::RankOperations {
+    R3MoeDrainSnapshot snap{};
+    uint32_t actual_ranks() override {
+        return g.engine_ranks.load(std::memory_order_acquire);
+    }
+    bool registered(uint32_t rank) override {
+        std::lock_guard<std::mutex> lock(g.mu);
+        return g.rank[rank].ready;
+    }
+    r3::epoch::RankResult upload(uint32_t rank,uint32_t slot,
+                                 uint64_t epoch,uint64_t digest) override {
+        const int r=r3_moe_owner_generation_upload((int)rank,slot,epoch,digest);
+        return r == RAD_OK ? r3::epoch::RankResult::Ready :
+               r == RAD_E_DEVICE ? r3::epoch::RankResult::DeviceError :
+                                   r3::epoch::RankResult::Pending;
+    }
+    r3::epoch::RankResult ready(uint32_t rank,uint32_t slot,
+                                uint64_t epoch,uint64_t digest) override {
+        const int r=r3_moe_owner_generation_ready((int)rank,slot,epoch,digest);
+        return r == RAD_OK ? r3::epoch::RankResult::Ready :
+               r == RAD_E_DEVICE ? r3::epoch::RankResult::DeviceError :
+                                   r3::epoch::RankResult::Pending;
+    }
+    r3::epoch::RankResult abort_upload_done(uint32_t rank,uint32_t slot,
+                                              uint64_t epoch,uint64_t digest) override {
+        std::lock_guard<std::mutex> lock(g.mu);
+        if (rank>=r3::moe_shm::kMaxEngineRanks || slot>1) return r3::epoch::RankResult::DeviceError;
+        const RankState& s=g.rank[rank];
+        if (!s.ready || !s.owner_queued[slot] ||
+            s.owner_expected[slot].epoch!=epoch || s.owner_expected[slot].digest!=digest)
+            return r3::epoch::RankResult::DeviceError;
+        if (!hip_ok(hipSetDevice(s.device),"select aborted owner event device"))
+            return r3::epoch::RankResult::DeviceError;
+        const auto status=hipEventQuery(s.owner_event[slot]);
+        if (status==hipSuccess) return r3::epoch::RankResult::Ready;
+        if (status==hipErrorNotReady) return r3::epoch::RankResult::Pending;
+        (void)hip_ok(status,"query aborted owner upload event");
+        return r3::epoch::RankResult::DeviceError;
+    }
+    bool exact_binding(uint32_t rank,uint32_t slot,
+                       uint64_t epoch,uint64_t digest) override {
+        std::lock_guard<std::mutex> lock(g.mu);
+        const RankState& s=g.rank[rank];
+        return slot < 2 && s.ready && s.owner_queued[slot] &&
+               s.owner_expected[slot].epoch == epoch &&
+               s.owner_expected[slot].digest == digest;
+    }
+    bool close_and_wait(uint64_t deadline,uint64_t* cutoff,uint32_t* old_epoch) override {
+        if (r3_moe_close_admission(&snap) != RAD_OK ||
+            r3_moe_wait_drained(&snap,deadline) != RAD_OK ||
+            r3_moe_all_ranks_consumed(&snap) != 1) return false;
+        *cutoff=snap.cutoff_ticket_id;
+        *old_epoch=snap.old_epoch;
+        return true;
+    }
+    bool consumed() override { return r3_moe_all_ranks_consumed(&snap) == 1; }
+    bool drain_verified() override {
+        std::lock_guard<std::mutex> lock(g.mu);
+        return g.drain_verified && snap.closure_id &&
+               g.closed_snapshot.closure_id == snap.closure_id;
+    }
+    bool helper_quiesced() override { return helper_drained(snap.closure_id); }
+    bool generation_referenced(uint32_t slot) override {
+        return g.ledger.generation_referenced(slot);
+    }
+    bool can_replace(uint32_t slot) override {
+        return g.ledger.can_replace_generation(slot);
+    }
+    bool reopen(uint32_t epoch,uint32_t slot) override {
+        if (r3_moe_reopen_admission(epoch,slot) != RAD_OK) return false;
+        std::fprintf(stderr,
+            "libr3moe: placement cycle %llu reopened epoch %u slot %u\n",
+            (unsigned long long)snap.closure_id,epoch,slot);
+        snap={};
+        return true;
+    }
+    bool stopped() override { return g.ledger.stopped() || helper_faulted(); }
+    void fatal() override { g.ledger.fault(); raise_fault(g.hdr); }
+};
+
+void placement_loop() {
+    r3::epoch::EngineRankCoordinator coordinator;
+    LiveRankOperations ops;
+    while (!g.placement_stop.load(std::memory_order_acquire)) {
+        PlacementControl c{};
+        if (ops.stopped()) break;
+        if (!placement_snapshot(g.map,&c)) {
+            std::this_thread::yield();
+            continue;
+        }
+        if (c.fault_code) { g.ledger.fault(); break; }
+        if (!coordinator.step(g.map,c,ops)) break;
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    }
 }
 
 void report_shadow(uint32_t rank, RankState& s) {
@@ -443,10 +909,17 @@ void snapshot_loop(double period_s) {
 }
 
 void close_mailbox() {
+    g.placement_stop.store(true, std::memory_order_release);
+    g.ledger.interrupt(); /* wakes quiescence and blocked scheduler admission */
+    if (g.placement_thread.joinable()) g.placement_thread.join();
     g.snapshot_stop = true;
     if (g.snapshotter.joinable()) g.snapshotter.join();
     std::lock_guard<std::mutex> lock(g.mu);
+    if (g.engine_register)
+        std::fprintf(stderr, "libr3moe: admission high-water %zu, capacity %zu, outstanding %zu\n",
+                     g.ledger.high_water(), g.ledger.capacity(), g.ledger.outstanding());
     g.watch.stop();   /* first: helpers may exit while the engine tears down, and that is not a fault */
+    for (RankCompletion& c : g.completion) c.release();   /* after interrupt(): no poll can query them */
     for (uint32_t r = 0; r < kMaxEngineRanks; ++r) {
         RankState& s = g.rank[r];
         if (!s.ready) continue;
@@ -461,8 +934,11 @@ void close_mailbox() {
         if (s.maps) (void)hipFree(s.maps);
         if (s.published) (void)hipFree(s.published);
         if (s.sequence) (void)hipFree(s.sequence);
-        if (s.owner) (void)hipFree(s.owner);
+        free_owner_generations(s);
         if (s.ticket) (void)hipFree(s.ticket);
+        if (s.consumed_host) (void)hipHostFree(s.consumed_host);
+        if (s.stamps) (void)hipFree(s.stamps);
+        if (s.consumed_rec) (void)hipFree(s.consumed_rec);
         s = RankState{};
     }
     if (g.engine_register) (void)g.engine_register(nullptr);
@@ -483,6 +959,138 @@ struct HookLifetime {
 
 }  // namespace
 
+extern "C" int r3_moe_close_admission(R3MoeDrainSnapshot* out) {
+    if (!out || !g.hdr || !g.pinned || helper_faulted()) return RAD_E_STATE;
+    {
+        std::lock_guard<std::mutex> lock(g.mu);
+        if (g.closed_snapshot.closure_id || g.closure_id == UINT64_MAX || g.ledger.stopped()) return RAD_E_STATE;
+        const auto snap = g.ledger.close_admission();
+        *out = R3MoeDrainSnapshot{++g.closure_id, snap.latest_ticket, snap.old_epoch,
+                                 (uint32_t)snap.outstanding, (uint32_t)snap.high_water,
+                                 (uint32_t)snap.capacity};
+        g.closed_snapshot = *out;
+        g.drain_verified = false;
+    }
+    std::fprintf(stderr, "libr3moe: placement admission closed; outstanding %u, "
+                         "high-water %u, capacity %u\n",
+                 out->outstanding, out->high_water, out->capacity);
+    return RAD_OK;
+}
+
+/* Read-only coordinator query. A unique closure ID and exact cutoff bind
+ * this proof to the existing admission gate; it cannot claim success while
+ * new epoch-N parents can still be admitted. poll_tickets checks every
+ * participating rank's existing seal+terminal event, and retires in order.
+ * No GPU synchronization, new host stamp or helper hot-path traffic. */
+extern "C" int r3_moe_all_ranks_consumed(const R3MoeDrainSnapshot* snap) {
+    if (!snap) return RAD_E_INVAL;
+    std::lock_guard<std::mutex> lock(g.mu);
+    const R3MoeDrainSnapshot& closed = g.closed_snapshot;
+    if (!g.hdr || !g.pinned || !closed.closure_id ||
+        snap->closure_id != closed.closure_id ||
+        snap->cutoff_ticket_id != closed.cutoff_ticket_id ||
+        snap->old_epoch != closed.old_epoch ||
+        snap->outstanding != closed.outstanding ||
+        snap->high_water != closed.high_water ||
+        snap->capacity != closed.capacity ||
+        g.ledger.stopped() || helper_faulted())
+        return RAD_E_STATE;
+    poll_tickets();
+    if (g.ledger.stopped() || helper_faulted()) return RAD_E_STATE;
+    return g.ledger.all_ranks_consumed(snap->old_epoch, snap->cutoff_ticket_id) ? 1 : 0;
+}
+
+extern "C" int r3_moe_wait_drained(const R3MoeDrainSnapshot* snap,
+                                    uint64_t deadline_monotonic_ns) {
+    if (!snap || !g.hdr || !g.pinned || !deadline_monotonic_ns) return RAD_E_INVAL;
+    {
+        std::lock_guard<std::mutex> lock(g.mu);
+        if (!snap->closure_id || snap->closure_id != g.closed_snapshot.closure_id ||
+            snap->cutoff_ticket_id != g.closed_snapshot.cutoff_ticket_id ||
+            snap->old_epoch != g.closed_snapshot.old_epoch)
+            return RAD_E_STATE;
+    }
+    timespec now{};
+    (void)clock_gettime(CLOCK_MONOTONIC, &now);
+    const uint64_t now_ns = (uint64_t)now.tv_sec * 1000000000u + (uint64_t)now.tv_nsec;
+    const auto now_clock = std::chrono::steady_clock::now();
+    const auto maximum = std::chrono::duration_cast<std::chrono::nanoseconds>(
+        std::chrono::steady_clock::time_point::max() - now_clock).count();
+    if (deadline_monotonic_ns <= now_ns ||
+        deadline_monotonic_ns - now_ns > (uint64_t)maximum) {
+        g.ledger.fault();
+        return RAD_E_INVAL;
+    }
+    const auto limit = now_clock + std::chrono::nanoseconds(deadline_monotonic_ns - now_ns);
+    using Result = r3::admission::Ledger::Result;
+    const Result drained = g.ledger.wait_drained(snap->old_epoch, snap->cutoff_ticket_id,
+                                                 limit, [] { poll_tickets(); },
+                                                 [] { return helper_faulted(); });
+    if (drained != Result::Ok) { g.ledger.fault(); return RAD_E_STATE; }
+    /* A successful event query guarantees helper wait and consumption before
+     * the event, but explicitly check every lane before controller COMMIT. */
+    {
+        std::lock_guard<std::mutex> lock(g.mu);
+        if (snap->closure_id != g.closed_snapshot.closure_id) return RAD_E_STATE;
+        request_helper_drain(snap->closure_id);
+    }
+    while (!helper_drained(snap->closure_id)) {
+        if (g.ledger.stopped() || helper_faulted() || std::chrono::steady_clock::now() >= limit) {
+            g.ledger.fault();
+            return RAD_E_STATE;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    }
+    {
+        std::lock_guard<std::mutex> lock(g.mu);
+        if (g.ledger.stopped() || helper_faulted() ||
+            snap->closure_id != g.closed_snapshot.closure_id ||
+            !g.ledger.drained(snap->old_epoch, snap->cutoff_ticket_id))
+            return RAD_E_STATE;
+        g.drain_verified = true;
+    }
+    return RAD_OK;
+}
+
+extern "C" int r3_moe_reopen_admission(uint32_t epoch, uint32_t slot) {
+    uint32_t committed_epoch = 0;
+    uint8_t committed_slot = 0;
+    std::lock_guard<std::mutex> lock(g.mu);
+    if (!g.drain_verified ||
+        !committed(&committed_epoch, &committed_slot) ||
+        committed_epoch != epoch || committed_slot != slot)
+        return RAD_E_STATE;
+    /* Helpers leave their closure wait, then the burst word returns to radiance's state (with its park wait), and
+     * only then may the scheduler publish: the ledger reopens last. */
+    for (uint32_t lane = 0; lane < kLanes; ++lane)
+        __atomic_store_n(&g.hdr->lane[lane].drain_request, uint64_t(0), __ATOMIC_RELEASE);
+    notify(g.hdr);
+    /* Fail closed: a park wait that did not see every lane return, or a helper fault since the commit, keeps
+     * admission shut. */
+    if (!resume_burst_after_drain(g.hdr) || helper_faulted()) {
+        g.ledger.fault();
+        return RAD_E_STATE;
+    }
+    PlacementControl c{};
+    if (!placement_snapshot(g.map,&c) ||
+        c.state != uint32_t(PlacementState::ACTIVE) ||
+        c.active_epoch != epoch || c.active_slot != slot ||
+        !c.active_digest || !c.transaction_id) {
+        g.ledger.fault();
+        return RAD_E_STATE;
+    }
+    if (!g.ledger.reopen(epoch, (uint8_t)slot) ||
+        !g.ledger.can_replace_generation(1u-slot)) {
+        g.ledger.fault();
+        return RAD_E_STATE;
+    }
+    g.drain_verified = false;
+    g.closed_snapshot = {};
+    /* Release-published only after successful parks AND ledger.reopen.
+     * Helper zero cannot stage the old slot based on cleared drain words. */
+    return RAD_OK;
+}
+
 extern "C" int r3_moe_mailbox_enabled(void) {
     return g.hdr && g.pinned;
 }
@@ -492,7 +1100,14 @@ extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevic
         rank < 0 || rank >= world_size)
         return RAD_E_INVAL;
 
-    std::lock_guard<std::mutex> lock(g.mu);
+    // The shared production lock-order boundary waits for the sealed
+    // generation BEFORE taking g.mu; layer-map publication needs that lock.
+    timespec deadline{};
+    if (clock_gettime(CLOCK_MONOTONIC, &deadline) != 0) return RAD_E_STATE;
+    deadline.tv_sec += kStartupWaitSeconds;
+    return r3::owner_generation::with_bootstrap_rank_lock(
+        g.map, g.bootstrap_ready_ranks, (uint32_t)rank, g.mu, &deadline,
+        [&]() -> int {
     RankState& s = g.rank[rank];
     int device = -1;
     if (!hip_ok(hipGetDevice(&device), "hipGetDevice")) return RAD_E_DEVICE;
@@ -511,27 +1126,39 @@ extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevic
                      helpers, world_size);
         return RAD_E_STATE;
     }
-    const std::vector<uint8_t> owner_bitmap = derive_device_owners();
-    /* Bootstrap digest belongs to the engine; the live protocol has no transaction in slice A. */
-    const uint32_t active_slot = placement_control(g.map)->active_slot;
-    const uint64_t digest = generation_digest(g.map, active_slot);
-    generation_header(g.map, active_slot)->digest = digest;
-    placement_control(g.map)->active_digest = digest;
-    if (!hip_ok(hipMalloc(reinterpret_cast<void**>(&s.owner), owner_bitmap.size()),
-                "hipMalloc ownership bitmap"))
-        return RAD_E_NOMEM;
-    if (!hip_ok(hipMemcpy(s.owner, owner_bitmap.data(), owner_bitmap.size(),
-                          hipMemcpyHostToDevice), "upload ownership bitmap")) {
-        (void)hipFree(s.owner);
-        s.owner = nullptr;
+    /* Helper 0 already sealed the fully filtered map under the controller
+     * seqlock. Do not repair its digest here: the rank upload must consume
+     * exactly that immutable publication, or fail closed. */
+    PlacementControl sealed{};
+    if (!bootstrap_generation_sealed(g.map) ||
+        !placement_snapshot(g.map, &sealed) ||
+        g.ledger.outstanding()) return RAD_E_STATE;
+    const uint32_t active_slot = sealed.active_slot;
+    const uint64_t digest = sealed.active_digest;
+    for (const RankState& other : g.rank)
+        if (other.ready && (other.owner_expected[active_slot].epoch !=
+                                sealed.active_epoch ||
+                            other.owner_expected[active_slot].digest != digest))
+            return RAD_E_STATE;
+    /* Digests are controller publications, never rewritten by rank setup. */
+    std::vector<uint8_t> owner_bitmap;
+    if (!r3::owner_generation::build_bitmap(g.map, active_slot,
+            sealed.active_epoch, digest, &owner_bitmap))
+        return RAD_E_STATE;
+    if (!allocate_owner_generations(s, owner_bitmap.size()) ||
+        !queue_owner_upload(s, active_slot, sealed.active_epoch,
+                            digest, owner_bitmap) ||
+        !hip_ok(hipEventSynchronize(s.owner_event[active_slot]),
+                "finish bootstrap owner upload")) {
+        free_owner_generations(s);
         return RAD_E_DEVICE;
     }
     if (!hip_ok(hipMalloc(reinterpret_cast<void**>(&s.sequence), kLanes * sizeof(uint32_t)),
                 "hipMalloc lane sequence counters") ||
         !hip_ok(hipMemset(s.sequence, 0, kLanes * sizeof(uint32_t)), "zero lane sequence counters") ||
-        !hip_ok(hipMalloc(reinterpret_cast<void**>(&s.published), (kMaxSlots + 1 + kCombineChunks) * sizeof(uint32_t)),
+        !hip_ok(hipMalloc(reinterpret_cast<void**>(&s.published), (kMaxSlots + 1 + kCombineChunks + 4) * sizeof(uint32_t)),
                 "hipMalloc published flags") ||
-        !hip_ok(hipMemset(s.published, 0, (kMaxSlots + 1 + kCombineChunks) * sizeof(uint32_t)), "zero published flags") ||
+        !hip_ok(hipMemset(s.published, 0, (kMaxSlots + 1 + kCombineChunks + 4) * sizeof(uint32_t)), "zero published flags") ||
         !hip_ok(hipMalloc(&s.maps, (size_t)max_rows() * g.hdr->top_k * (sizeof(int32_t) + sizeof(uint32_t))),
                 "hipMalloc merge slot maps") ||
         !hip_ok(hipMalloc(reinterpret_cast<void**>(&s.ticket), sizeof(StepTicket)),
@@ -542,11 +1169,10 @@ extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevic
         if (s.maps) (void)hipFree(s.maps);
         if (s.published) (void)hipFree(s.published);
         if (s.sequence) (void)hipFree(s.sequence);
-        (void)hipFree(s.owner);
+        free_owner_generations(s);
         s.maps = nullptr;
         s.published = nullptr;
         s.sequence = nullptr;
-        s.owner = nullptr;
         return RAD_E_DEVICE;
     }
 
@@ -562,12 +1188,11 @@ extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevic
             (void)hipFree(s.maps);
             (void)hipFree(s.published);
             (void)hipFree(s.sequence);
-            (void)hipFree(s.owner);
+            free_owner_generations(s);
             s.maps = nullptr;
             s.published = nullptr;
             s.sequence = nullptr;
-            s.owner = nullptr;
-            return RAD_E_NOMEM;
+                return RAD_E_NOMEM;
         }
     }
     R3MoeShadowLayerStats* shadow_stats = nullptr;
@@ -593,16 +1218,50 @@ extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevic
         s.ticket = nullptr;
         (void)hipFree(s.published);
         (void)hipFree(s.sequence);
-        (void)hipFree(s.owner);
+        free_owner_generations(s);
         s.published = nullptr;
         s.sequence = nullptr;
-        s.owner = nullptr;
         return RAD_E_DEVICE;
     }
 
+    /* One stable mapped completion buffer per rank, with distinct slots for
+     * all permitted concurrent parents. Must be allocated before publishing
+     * s.ready so tape kernels capture its fixed device pointer. */
+    const size_t consume_bytes = g.ledger.capacity() * sizeof(ConsumptionStamp);
+    if (!hip_ok(hipHostMalloc(reinterpret_cast<void**>(&s.consumed_host), consume_bytes,
+                              hipHostMallocMapped | hipHostMallocCoherent),
+                "rank parent consumption ring") ||
+        !hip_ok(hipHostGetDevicePointer(reinterpret_cast<void**>(&s.dev.consumed),
+                                       s.consumed_host, 0), "map consumption ring") ||
+        !hip_ok(hipMalloc(reinterpret_cast<void**>(&s.stamps), consume_bytes), "device counting ring") ||
+        !hip_ok(hipMemset(s.stamps, 0, consume_bytes), "zero device counting ring") ||
+        !hip_ok(hipMalloc(reinterpret_cast<void**>(&s.consumed_rec), sizeof(ConsumedRecords)),
+                "device consumed records") ||
+        !hip_ok(hipMemset(s.consumed_rec, 0, sizeof(ConsumedRecords)), "zero device consumed records") ||
+        !rank_completion_ok(g.completion[rank].prepare(g.ledger.capacity(), s.consumed_host))) {
+        if (s.consumed_host) (void)hipHostFree(s.consumed_host);
+        if (s.stamps) (void)hipFree(s.stamps);
+        if (s.consumed_rec) (void)hipFree(s.consumed_rec);
+        if (shadow_first) (void)hipFree(shadow_first);
+        if (shadow_stats) (void)hipFree(shadow_stats);
+        if (s.mask_ref) (void)hipFree(s.mask_ref);
+        if (s.ticket) (void)hipFree(s.ticket);
+        if (s.maps) (void)hipFree(s.maps);
+        if (s.published) (void)hipFree(s.published);
+        if (s.sequence) (void)hipFree(s.sequence);
+        free_owner_generations(s);
+        s = RankState{};
+        return RAD_E_DEVICE;
+    }
+    std::memset(s.consumed_host, 0, consume_bytes);
+    s.dev.consumed_capacity = (uint32_t)g.ledger.capacity();
+    s.dev.stamps = s.stamps;
+    s.dev.consumed_rec = s.consumed_rec;
     s.device = device;
     s.dev.mailbox = dev_map;
-    s.dev.owner = s.owner;
+    s.dev.owner[0] = s.owner[0];
+    s.dev.owner[1] = s.owner[1];
+    s.dev.owner_binding = s.owner_binding;
     s.dev.ticket = s.ticket;
     s.dev.sequence = s.sequence;
     s.dev.published = s.published;
@@ -652,6 +1311,63 @@ extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevic
             std::fprintf(stderr, "libr3moe: R3_MOE_WORKER_COMBINE on - helper 0 combines the helpers' rows on the large lane\n");
     }
     s.ready = true;
+    g.bootstrap_ready_ranks.fetch_or(1u << rank, std::memory_order_release);
     *out = &s.dev;
     return RAD_OK;
+        },
+        [&](WaitResult waited) -> int {
+            const auto* control = placement_control(g.map);
+            const auto* generation = generation_header(g.map, 0);
+            std::fprintf(stderr,
+                "libr3moe: bootstrap rank %d seal wait refused (result=%u seq=%u filtered=0x%x ready=0x%x expected=0x%x fault=%u)\n",
+                rank, uint32_t(waited), load(&control->seq),
+                load(&g.hdr->bootstrap_filtered_helpers),
+                generation ? load(&generation->ready_helpers) : 0u,
+                control->expected_helpers, load(&g.hdr->helper_fault));
+            return RAD_E_STATE;
+        });
+}
+
+/* Inactive generation preparation only: no overwrite until the shared
+ * admission/completion ledger has retired EVERY ticket for this slot. */
+extern "C" int r3_moe_owner_generation_upload(int rank, uint32_t slot,
+                                               uint64_t epoch, uint64_t digest) {
+    if (rank < 0 || rank >= (int)r3::moe_shm::kMaxEngineRanks) return RAD_E_INVAL;
+    std::lock_guard<std::mutex> lock(g.mu);
+    if (!g.hdr || !g.pinned || !g.rank[rank].ready || load(&g.hdr->helper_fault) ||
+        !r3::owner_generation::may_upload(g.ledger, slot)) return RAD_E_STATE;
+    std::vector<uint8_t> bits;
+    if (!r3::owner_generation::build_bitmap(g.map, slot, epoch, digest, &bits))
+        return RAD_E_STATE;
+    RankState& s = g.rank[rank];
+    if (!hip_ok(hipSetDevice(s.device), "select owner upload device") ||
+        !queue_owner_upload(s, slot, epoch, digest, bits)) return RAD_E_DEVICE;
+    return RAD_OK;
+}
+
+extern "C" int r3_moe_owner_generation_ready(int rank, uint32_t slot,
+                                              uint64_t epoch, uint64_t digest) {
+    if (rank < 0 || rank >= (int)r3::moe_shm::kMaxEngineRanks || slot > 1 ||
+        !epoch || !digest) return RAD_E_INVAL;
+    std::lock_guard<std::mutex> lock(g.mu);
+    const RankState& s = g.rank[rank];
+    if (!s.ready || !s.owner_queued[slot] ||
+        s.owner_expected[slot].epoch != epoch || s.owner_expected[slot].digest != digest)
+        return RAD_E_STATE;
+    if (!hip_ok(hipSetDevice(s.device), "select owner event device")) return RAD_E_DEVICE;
+    const hipError_t status = hipEventQuery(s.owner_event[slot]);
+    if (status == hipSuccess) {
+        /* The event is not a digest proof by itself. The immutable source
+         * generation must still be exactly the uploaded candidate. */
+        std::vector<uint8_t> check_bits;
+        if (!r3::owner_generation::build_bitmap(g.map, slot, epoch, digest, &check_bits) ||
+            check_bits.size() != s.owner_bytes ||
+            std::memcmp(s.owner_stage[slot] + sizeof(R3MoeOwnerBinding),
+                        check_bits.data(), s.owner_bytes) != 0)
+            return RAD_E_STATE;
+        return RAD_OK;
+    }
+    if (status == hipErrorNotReady) return RAD_E_STATE;
+    (void)hip_ok(status, "query owner upload event");
+    return RAD_E_DEVICE;
 }

@@ -1,8 +1,17 @@
 # Packaged patch template
 
-Every new production patch is a package. Keep the package self-contained and
-deterministic; add validation files when the patch is ready to make a
-correctness or performance claim.
+## Summary
+
+Describe the behavior changed by this patch, in one or two sentences.
+
+## Outcome
+
+`untested`: replace with the recorded result, evidence scope and remaining limitations. Keep the state synchronized with [patch.toml](patch.toml).
+
+## Detail
+
+Keep the package self-contained and deterministic. Add validation files
+before making correctness or performance claims.
 
 ## Do
 

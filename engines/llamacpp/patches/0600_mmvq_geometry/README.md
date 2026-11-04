@@ -1,5 +1,15 @@
 # 0600_mmvq_geometry framework validation
 
+## Summary
+
+Adds two defaulted template parameters (nwarps_explicit, rows_per_block_explicit) to the MMVQ kernel template; zero means derive geometry as upstream does (native instantiations unchanged), non-zero compiles a new geometry instance. Bounds are static_assert-checked in-kernel as a backstop.
+
+## Outcome
+
+Recorded state: `validated` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 Adds two defaulted template parameters (`nwarps_explicit`,
 `rows_per_block_explicit`) to the MMVQ kernel template. MMVQ derives its
 geometry from `calc_nwarps`/`calc_rows_per_block` at compile time, so

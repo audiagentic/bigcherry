@@ -1,5 +1,15 @@
 # 1359_prefill_pipeline
 
+## Summary
+
+With an MTP drafter in its own context, the server submits prompt batch k+1 before the drafter hook collects batch k's hidden states.
+
+## Outcome
+
+Recorded state: `validated` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 Promoted 2026-10-11 (record below). Mechanism is in SUMMARY.md: with an MTP drafter, prompt batch k+1 is submitted before the drafter
 hook collects batch k's hidden states, which it then takes through a backend event that waits for batch k only.
 On by default; `BIGCHERRY_PREFILL_PIPELINE=0` turns it off.

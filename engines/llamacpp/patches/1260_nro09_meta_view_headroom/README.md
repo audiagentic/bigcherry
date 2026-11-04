@@ -1,5 +1,15 @@
 # 1260 (PNRO09): Meta compute-container view headroom
 
+## Summary
+
+Raises the multiplier `compute_headroom` from 16 to 80 in Meta's `alloc_buffer_n` compute-container metadata allocation. Under b11474, the reservation is `H * n_static * ggml_tensor_overhead()` per rotating container and simple backend.
+
+## Outcome
+
+Recorded state: `untested` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 ## Current-pin qualification correction (2026-10-09 UTC)
 
 **Blocked / untested.** Upstream llama.cpp [#23671](https://github.com/ggml-org/llama.cpp/pull/23671) changed the Meta allocator on 2026-10-02. At pinned b11474, `ggml_backend_meta_buffer_type_alloc_buffer_n` reserves `compute_headroom * n_tensors * ggml_tensor_overhead()` **per rotating compute container**, not `compute_headroom * ggml_get_mem_size(user_ctx)`. The 2026-09-23 boundary values (44/222 at S=1024, 89/445 at S=2048) came from b10901 and are historical only; they are **not current-pin qualification**. A one-static-tensor fixture now predicts roughly 16/80 views regardless of S; measure real per-buffer static count and high water. The 4B MTP graph completed on **both** variants, so it did not prove a capacity deficit.

@@ -1,5 +1,15 @@
 # 1002: make `-funsafe-math-optimizations` opt-in for HIP builds
 
+## Summary
+
+Adds GGML_HIP_UNSAFE_MATH (default OFF) gating -funsafe-math-optimizations in ggml/src/ggml-hip/CMakeLists.txt, which this project's tree previously enabled unconditionally for every HIP build.
+
+## Outcome
+
+Recorded state: `validated` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 ## Scope
 
 Adds `GGML_HIP_UNSAFE_MATH` (default OFF) gating `-funsafe-math-optimizations`

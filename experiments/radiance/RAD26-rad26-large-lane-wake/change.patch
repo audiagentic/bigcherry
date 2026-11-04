@@ -1,0 +1,406 @@
+diff --git a/engines/radiance/components/moe-remote/component.toml b/engines/radiance/components/moe-remote/component.toml
+index b3008b461..53c95c5a8 100644
+--- a/engines/radiance/components/moe-remote/component.toml
++++ b/engines/radiance/components/moe-remote/component.toml
+@@ -277,3 +277,9 @@ default = ""
+ status = "diagnostic"
+ summary = "Test only (RAD24 kill test): <point>:<helper index> makes that helper stop itself with SIGSTOP at <point> so a test can SIGKILL it there. Points: park_drain (a small lane has flagged kParkDraining, before re-checking the burst). Never set in a real run"
+ activation = "r3_moe_worker: test stop at"
++
++[setting.R3_MOE_WORKER_REGISTER_TIMEOUT_S]
++default = "120"
++status = "production"
++summary = "RAD24: seconds the engine waits, at plugin registration, for every helper to publish its identity and be watched (pidfd) before it fails the helper path. Helpers attach before the engine starts, so this only bounds a failure (a helper that died before publishing its pid)"
++activation = "libr3: R3_MOE_WORKER helpers not all registered"
+diff --git a/engines/radiance/components/moe-remote/moe_mailbox_ops.hip b/engines/radiance/components/moe-remote/moe_mailbox_ops.hip
+index 53a6c86ae..cf59fcf40 100644
+--- a/engines/radiance/components/moe-remote/moe_mailbox_ops.hip
++++ b/engines/radiance/components/moe-remote/moe_mailbox_ops.hip
+@@ -581,6 +581,14 @@ int mailbox_init(const RadParam*, int, int rank, int world_size, void** out) {
+     return RAD_OK;
+ }
+ 
++/* Host callback (no HIP calls): the publish before it has run, so the request word is set; wake the large lane. */
++std::atomic<unsigned long long> g_wake_queued{0}, g_wake_captured{0}, g_wake_fired{0};   /* RAD26 diagnostics */
++void wake_large_lane(void* header) {
++    if (g_wake_fired.fetch_add(1, std::memory_order_relaxed) == 0)
++        std::fprintf(stderr, "libr3moe: first large-lane wake fired\n");   /* visible even if the run later hangs */
++    notify(static_cast<Header*>(header));
++}
++
+ int publish_launch(const RadArgs* a, RadStream stream) {
+     if (!a || !a->instance || !stream || a->n_t != 6) return RAD_E_INVAL;
+     auto* d = static_cast<R3MoeMailboxDevice*>(a->instance);
+@@ -653,7 +661,31 @@ int publish_launch(const RadArgs* a, RadStream stream) {
+                        fuse_stage ? static_cast<const uint8_t*>(a->t[3].data) : nullptr,
+                        static_cast<const float*>(a->t[4].data),
+                        static_cast<const uint16_t*>(a->t[2].data), d->cpu_ref, d->combine);
+-    return hipGetLastError() == hipSuccess ? RAD_OK : RAD_E_DEVICE;
++    if (hipGetLastError() != hipSuccess) return RAD_E_DEVICE;
++    /* RAD26: a large-lane step wakes the helper's sleeping large lane once the publish has run. The callback goes on
++     * the wake stream behind an event, so the engine stream is not held while it runs. Under stream capture the side
++     * stream would have to rejoin, so the callback is captured on the engine stream itself instead. */
++    if ((uint32_t)rows > d->small_rows_max) {
++        hipStreamCaptureStatus cap = hipStreamCaptureStatusNone;
++        if (hipStreamIsCapturing((hipStream_t)stream, &cap) != hipSuccess) return RAD_E_DEVICE;
++        hipError_t e;
++        if (cap == hipStreamCaptureStatusNone) {
++            auto* ws = static_cast<hipStream_t>(d->wake_stream);
++            auto* we = static_cast<hipEvent_t>(d->wake_event);
++            e = hipEventRecord(we, (hipStream_t)stream);
++            if (e == hipSuccess) e = hipStreamWaitEvent(ws, we, 0);
++            if (e == hipSuccess) e = hipLaunchHostFunc(ws, wake_large_lane, d->host_header);
++            g_wake_queued.fetch_add(1, std::memory_order_relaxed);
++        } else {
++            static std::atomic<bool> said{false};
++            if (!said.exchange(true))
++                std::fprintf(stderr, "libr3moe: large-lane wake captured on the engine stream (stream capture)\n");
++            e = hipLaunchHostFunc((hipStream_t)stream, wake_large_lane, d->host_header);
++            g_wake_captured.fetch_add(1, std::memory_order_relaxed);
++        }
++        if (e != hipSuccess) return RAD_E_DEVICE;
++    }
++    return RAD_OK;
+ }
+ 
+ int mask_ref_launch(const RadArgs* a, RadStream stream) {
+@@ -849,6 +881,12 @@ extern "C" int r3_moe_mailbox_schema_count(void) { return NELEM(kSchemas); }
+ extern "C" const RadOpSchema* r3_moe_mailbox_schema_at(int i) {
+     return (i < 0 || i >= NELEM(kSchemas)) ? nullptr : &kSchemas[i];
+ }
++/* RAD26 diagnostics, printed by close_mailbox: wakes queued on the side stream, captured into graphs, and fired. */
++extern "C" void r3_moe_wake_report(void) {
++    std::fprintf(stderr, "libr3moe: large-lane wakes queued %llu captured %llu fired %llu\n",
++                 (unsigned long long)g_wake_queued.load(), (unsigned long long)g_wake_captured.load(),
++                 (unsigned long long)g_wake_fired.load());
++}
+ extern "C" const RadKernelInfo* r3_moe_mailbox_row(int i) {
+     if (i == 0) return &kPublish;
+     if (i == 1) return &kAdd;
+diff --git a/engines/radiance/components/moe-remote/moe_remote_hook.cpp b/engines/radiance/components/moe-remote/moe_remote_hook.cpp
+index 2a9aa5e76..20aa8cc0c 100644
+--- a/engines/radiance/components/moe-remote/moe_remote_hook.cpp
++++ b/engines/radiance/components/moe-remote/moe_remote_hook.cpp
+@@ -186,6 +186,7 @@ void burst_transition(int active) {
+         if (active) g.watch.notice();
+         (void)__atomic_fetch_add(&h->burst, 1u, __ATOMIC_SEQ_CST);
+         (void)futex_wake(&h->burst);
++        notify(h);   /* a large lane sleeping on Header::notify inside the burst sees it end */
+         if (active)
+             for (uint32_t lane = 0; lane < kLanes; ++lane) {
+                 uint32_t* park = &h->lane[lane].park;
+@@ -262,10 +263,18 @@ void register_mailbox() {
+      * (sticky helper_fault): the engine still registers, its map waits return at once and its first remote step
+      * fails, rather than serving with experts it was told the helpers hold. */
+     {
+-        constexpr int kRegisterTimeoutS = 120;   /* helpers attach before the engine starts; this only bounds a failure */
++        /* R3_MOE_WORKER_REGISTER_TIMEOUT_S (default 120): helpers attach before the engine starts, so this only bounds a
++         * failure; a malformed value is reported and the default kept. */
++        int timeout_s = 120;
++        if (const char* e = std::getenv("R3_MOE_WORKER_REGISTER_TIMEOUT_S"); e && *e) {
++            char* end = nullptr;
++            const long v = std::strtol(e, &end, 10);
++            if (end && !*end && v > 0 && v <= 86400) timeout_s = (int)v;
++            else std::fprintf(stderr, "libr3: R3_MOE_WORKER_REGISTER_TIMEOUT_S=%s is not 1..86400 s; using %d\n", e, timeout_s);
++        }
+         timespec deadline{};
+         clock_gettime(CLOCK_MONOTONIC, &deadline);
+-        deadline.tv_sec += kRegisterTimeoutS;
++        deadline.tv_sec += timeout_s;
+         const WaitResult r = wait_for(g.hdr, &deadline, [] {
+             g.watch.notice();
+             const uint32_t n = load(&g.hdr->helper_count);
+@@ -275,7 +284,7 @@ void register_mailbox() {
+         });
+         if (r != WaitResult::Ready) {
+             std::fprintf(stderr, "libr3: R3_MOE_WORKER helpers not all registered and watched within %d s (%s); "
+-                         "failing the helper path\n", kRegisterTimeoutS,
++                         "failing the helper path\n", timeout_s,
+                          r == WaitResult::Timeout ? "timeout" : r == WaitResult::Fault ? "helper fault" : "wait error");
+             raise_fault(g.hdr);
+         }
+@@ -364,10 +373,15 @@ void write_heat(uint32_t rank, RankState& s) {
+ void close_mailbox() {
+     std::lock_guard<std::mutex> lock(g.mu);
+     g.watch.stop();   /* first: helpers may exit while the engine tears down, and that is not a fault */
++    r3_moe_wake_report();
+     for (uint32_t r = 0; r < kMaxRanks; ++r) {
+         RankState& s = g.rank[r];
+         if (!s.ready) continue;
+         if (s.device >= 0) (void)hipSetDevice(s.device);
++        /* Pending wake callbacks touch the header: let them finish before anything is unmapped. */
++        if (s.dev.wake_stream) (void)hipStreamSynchronize(static_cast<hipStream_t>(s.dev.wake_stream));
++        if (s.dev.wake_event) (void)hipEventDestroy(static_cast<hipEvent_t>(s.dev.wake_event));
++        if (s.dev.wake_stream) (void)hipStreamDestroy(static_cast<hipStream_t>(s.dev.wake_stream));
+         report_shadow(r, s);
+         write_heat(r, s);
+         if (s.dev.heat) (void)hipFree(s.dev.heat);
+@@ -523,6 +537,21 @@ extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevic
+             s.dev.heat = nullptr;
+     }
+     s.dev.helpers = helpers;
++    /* RAD26: the large lane sleeps until a host callback after the publish wakes it (moe_remote_hook.h). */
++    s.dev.host_header = g.hdr;
++    for (uint32_t c = 0; c < g.hdr->small_class_count && c < kSmallClasses; ++c)
++        s.dev.small_rows_max = std::max(s.dev.small_rows_max, g.hdr->small_class_rows[c]);
++    {
++        hipStream_t ws = nullptr;
++        hipEvent_t we = nullptr;
++        if (!hip_ok(hipStreamCreateWithFlags(&ws, hipStreamNonBlocking), "create large-lane wake stream") ||
++            !hip_ok(hipEventCreateWithFlags(&we, hipEventDisableTiming), "create large-lane wake event")) {
++            if (ws) (void)hipStreamDestroy(ws);
++            return RAD_E_DEVICE;
++        }
++        s.dev.wake_stream = ws;
++        s.dev.wake_event = we;
++    }
+     s.dev.shadow = shadow ? 1u : 0u;
+     /* 1: add the engine's captured rows; 2: same late publish/mask/rescatter, but add the helper's rows. */
+     {
+diff --git a/engines/radiance/components/moe-remote/moe_remote_hook.h b/engines/radiance/components/moe-remote/moe_remote_hook.h
+index 9285d279b..8276e7761 100644
+--- a/engines/radiance/components/moe-remote/moe_remote_hook.h
++++ b/engines/radiance/components/moe-remote/moe_remote_hook.h
+@@ -50,8 +50,16 @@ struct R3MoeMailboxDevice {
+     uint32_t mask_only = 0;
+     uint32_t cpu_ref = 0;
+     uint32_t combine = 0;   /* R3_MOE_WORKER_COMBINE=1: ask helper 0 for one combined fp16 row a token on the large lane */
++    /* RAD26: a large-lane request wakes the helper's sleeping large lane from the host. After the publish kernel the
++     * launch records wake_event, wake_stream waits on it and a host callback bumps Header::notify, so the engine's own
++     * stream is not held by the callback (~4.5 us instead of ~107 us, rad26-wake-bench). */
++    void* host_header = nullptr;      /* this process's CPU mapping of the segment header */
++    void* wake_stream = nullptr;      /* hipStream_t */
++    void* wake_event = nullptr;       /* hipEvent_t */
++    uint32_t small_rows_max = 0;      /* steps above this go to the large lane (Header::small_class_rows) */
+ };
+ 
+ extern "C" int r3_moe_mailbox_enabled(void);
+ extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevice** out);
+ extern "C" int r3_moe_mailbox_schema_count(void);
++extern "C" void r3_moe_wake_report(void);   /* RAD26 diagnostics (moe_mailbox_ops.hip) */
+diff --git a/engines/radiance/components/moe-remote/worker_lanes.h b/engines/radiance/components/moe-remote/worker_lanes.h
+index aec987443..947ed078f 100644
+--- a/engines/radiance/components/moe-remote/worker_lanes.h
++++ b/engines/radiance/components/moe-remote/worker_lanes.h
+@@ -104,8 +104,9 @@ public:
+         }
+         uint64_t lr = 0, ln = 0;
+         for (uint32_t k = 0; k < kMaxRanks; ++k) { lr += stats_[lane_of(k, kSmallClasses)].req; ln += stats_[lane_of(k, kSmallClasses)].rows; }
+-        std::fprintf(stderr, "r3_moe_worker: large-lane requests %llu (%llu rows)\n", (unsigned long long)lr,
+-                     (unsigned long long)ln);
++        std::fprintf(stderr, "r3_moe_worker: large-lane requests %llu (%llu rows), notify wakes %llu\n",
++                     (unsigned long long)lr, (unsigned long long)ln,
++                     (unsigned long long)large_wakes_.load(std::memory_order_relaxed));
+         if (samples && *req) *us = (sampled_us / (double)samples) * (double)*req;
+         std::fprintf(stderr, "r3_moe_worker: GPU timing samples=%llu sampled=%.1f ms avg=%.1f us\n",
+                      (unsigned long long)samples, sampled_us / 1000.0, samples ? sampled_us / (double)samples : 0.0);
+@@ -142,13 +143,23 @@ private:
+     }
+ 
+     /* Large lane: wait for the engine's request word, read its rows, launch that size. The engine publishes from GPU
+-     * code, which cannot wake a futex, so inside a burst this thread spins on the word; between bursts it sleeps. */
++     * code, and a host callback queued behind that publish bumps Header::notify (RAD26), so inside a burst this
++     * thread sleeps on the notify generation; between bursts it sleeps on the burst word. */
+     void run_large(uint32_t lane) {
+         using namespace r3::moe_shm;
++        uint32_t* const req = &h_->lane[lane].request_sequence;
+         for (uint32_t next = 1; !stopping();) {
+-            if (seq_after(next, load(&h_->lane[lane].request_sequence))) {
+-                if (!(load(&h_->burst) & 1u) && !wait_burst(h_)) break;
+-                std::this_thread::yield();
++            if (seq_after(next, load(req))) {
++                if (!(load(&h_->burst) & 1u)) {
++                    if (!wait_burst(h_)) break;
++                    continue;
++                }
++                /* Woken by the engine's publish callback, the burst ending, or a stop/fault (raise_fault). */
++                const WaitResult r = wait_for(h_, nullptr, [&] {
++                    return !seq_after(next, load(req)) || !(load(&h_->burst) & 1u) || stopping();
++                });
++                if (r != WaitResult::Ready) { request_stop(); break; }   /* a helper failed, or the wait itself did */
++                large_wakes_.fetch_add(1, std::memory_order_relaxed);
+                 continue;
+             }
+             const Request* q = lane_request(map_, lane, next);
+@@ -278,4 +289,5 @@ private:
+     Combine& combine_;
+     std::array<std::thread, r3::moe_shm::kLanes> threads_;
+     std::array<Stats, r3::moe_shm::kLanes> stats_{};
++    std::atomic<uint64_t> large_wakes_{0};   /* RAD26 diagnostics: large-lane notify wakes inside bursts */
+ };
+diff --git a/tools/lab/radiance/rad26-check.sh b/tools/lab/radiance/rad26-check.sh
+new file mode 100644
+index 000000000..ac95aba81
+--- /dev/null
++++ b/tools/lab/radiance/rad26-check.sh
+@@ -0,0 +1,18 @@
++#!/bin/bash
++# RAD26 validation for this checkout: idle-power gate, Flash-Next speed A/B against origin/main (4 pairs, combine on),
++# the concurrency A/B (1/2/4/6 streams, 2 pairs; the large lane also serves multi-stream decode steps above the small
++# class), and the helper kill test. Devices come from the host's device inventory (environment settings).
++# Usage (from a checkout, e.g. through `bigcherry slice lab`): rad26-check.sh
++set -u
++set --   # the env script reads its own arguments
++source tools/env/bigcherry-env.sh >/dev/null
++read -r R9700_BDF XTX_BDFS <<<"$(PYTHONPATH=tools python3 -c '
++from bigcherry.core import environment as e
++h = e.load_default().host(None)
++print(h.devices_for_arch("gfx1201")[0].locator, " ".join(d.locator for d in h.devices_for_arch("gfx1100")))
++')" || { echo "device inventory: no engine/helper GPUs"; exit 1; }
++RAD20_HELPER_BDFS="$XTX_BDFS" bash tools/lab/radiance/burst-idle.sh 30; echo "IDLE_EXIT $?"
++R9700_BDF=$R9700_BDF XTX_BDFS="$XTX_BDFS" bash tools/lab/radiance/rad20-burst-ab.sh 4 tools/lab/radiance/rad20-burst-ab.json; echo "AB_EXIT $?"
++R9700_BDF=$R9700_BDF XTX_BDFS="$XTX_BDFS" bash tools/lab/radiance/rad20-burst-ab.sh 2 tools/lab/radiance/rad20-burst-streams-ab.json; echo "STREAMS_EXIT $?"
++bash tools/lab/radiance/rad20-helper-kill.sh; echo "KILL_EXIT $?"
++echo RAD26_CHECK_DONE
+diff --git a/tools/lab/radiance/rad26-diag.sh b/tools/lab/radiance/rad26-diag.sh
+new file mode 100644
+index 000000000..17eb9622e
+--- /dev/null
++++ b/tools/lab/radiance/rad26-diag.sh
+@@ -0,0 +1,28 @@
++#!/bin/bash
++# RAD26 diagnosis: where does the large-lane wake get lost? Starts the production Flash-Next layout on this checkout's
++# build, sends one single-stream request, then four concurrent ones (a multi-stream step above the small class goes to
++# the large lane), each with a timeout, then stops and prints the engine's wake counters (queued/captured/fired) and the
++# helpers' large-lane request and wake counts.
++# Usage (from a checkout, e.g. through `bigcherry slice lab`): rad26-diag.sh
++set -u
++set --   # the env script reads its own arguments
++source tools/env/bigcherry-env.sh >/dev/null
++export ROCM_PATH=${ROCM_PATH:-/opt/rocm-7.2.4}
++OUT=$BC_WORK_ROOT/runs/rad26-diag-$(date +%m%d%H%M); mkdir -p $OUT
++source tools/lab/radiance/lab-build.sh
++B=$(rad_build $OUT/build.log) || exit 1
++L=tools/lab/radiance/launch-flashnext-best.sh
++RUN=$BC_WORK_ROOT/flashnext
++URL=http://127.0.0.1:36080/v1/completions   # the launcher's default port
++bash $L start --build $B > $OUT/launch.log 2>&1 || { tail $OUT/launch.log; bash $L stop; exit 1; }
++req() { curl -s -m 60 $URL -d "{\"prompt\":\"$1\",\"max_tokens\":32,\"temperature\":0}" | head -c 120; echo; }
++echo "single: $(req 'One request.')"
++for i in 1 2 3 4; do req "Concurrent request $i." > $OUT/c$i.txt & done; wait
++for i in 1 2 3 4; do echo "concurrent $i: $(cat $OUT/c$i.txt)"; done
++e=$(ls -t $RUN/engine-*.log | head -1)
++grep -h "large-lane wake\|stream capture" $e | head -5
++bash $L stop > $OUT/stop.log 2>&1
++sleep 2
++grep -h "large-lane wakes\|large-lane wake" $e | tail -3
++for h in $(ls -t $RUN/helper*-*.log | head -2); do grep -h "large-lane requests" $h; done
++echo "OUT $OUT"; echo RAD26_DIAG_DONE
+diff --git a/tools/lab/radiance/rad26-wake-bench.cpp b/tools/lab/radiance/rad26-wake-bench.cpp
+index e6e91dbb5..552483763 100644
+--- a/tools/lab/radiance/rad26-wake-bench.cpp
++++ b/tools/lab/radiance/rad26-wake-bench.cpp
+@@ -9,7 +9,8 @@
+ //             so the engine stream itself is never held by the callback.
+ // stall mode measures what a host callback costs the engine stream itself: N x (work kernel) against N x (work kernel +
+ // a no-op host callback), with the callback on the engine stream and on a side stream.
+-// Usage: rad26-wake-bench spin|hostfunc|sidefunc|stall [iterations=2000] [gap_us=500] [work_us=50]
++// graph mode captures a publish + wake callback into a HIP graph and replays it, checking every replay wakes the waiter.
++// Usage: rad26-wake-bench spin|hostfunc|sidefunc|graph|stall [iterations=2000] [gap_us=500] [work_us=50]
+ #include <hip/hip_runtime.h>
+ #include <linux/futex.h>
+ #include <sys/syscall.h>
+@@ -17,6 +18,7 @@
+ 
+ #include <algorithm>
+ #include <atomic>
++#include <cerrno>
+ #include <climits>
+ #include <cstdio>
+ #include <cstdlib>
+@@ -36,6 +38,10 @@ __global__ void publish(uint32_t* req, uint32_t i, uint64_t* t_pub) {
+     *t_pub = wall_clock64();
+     __hip_atomic_store(req, i, __ATOMIC_RELEASE, __HIP_MEMORY_SCOPE_SYSTEM);
+ }
++/* graph mode: a replayable publish (no per-launch argument) */
++__global__ void publish_next(uint32_t* req) {
++    __hip_atomic_fetch_add(req, 1u, __ATOMIC_RELEASE, __HIP_MEMORY_SCOPE_SYSTEM);
++}
+ /* Lab only: a resident wait for the ack, to time the round trip on the GPU clock. */
+ __global__ void wait_ack(const uint32_t* ack, uint32_t i, uint64_t* t_ack) {
+     while (__hip_atomic_load(ack, __ATOMIC_ACQUIRE, __HIP_MEMORY_SCOPE_SYSTEM) != i) __builtin_amdgcn_s_sleep(1);
+@@ -50,9 +56,9 @@ static double self_cpu_ms() { timespec t{}; clock_gettime(CLOCK_THREAD_CPUTIME_I
+ 
+ int main(int argc, char** argv) {
+     const char* mode = argc > 1 ? argv[1] : "";
+-    if (std::strcmp(mode, "spin") && std::strcmp(mode, "hostfunc") && std::strcmp(mode, "sidefunc") &&
++    if (std::strcmp(mode, "spin") && std::strcmp(mode, "hostfunc") && std::strcmp(mode, "sidefunc") && std::strcmp(mode, "graph") &&
+         std::strcmp(mode, "stall")) {
+-        std::fprintf(stderr, "usage: %s spin|hostfunc|sidefunc|stall [iterations] [gap_us] [work_us]\n", argv[0]);
++        std::fprintf(stderr, "usage: %s spin|hostfunc|sidefunc|graph|stall [iterations] [gap_us] [work_us]\n", argv[0]);
+         return 2;
+     }
+     const uint32_t n = argc > 2 ? std::atoi(argv[2]) : 2000;
+@@ -110,6 +116,51 @@ int main(int argc, char** argv) {
+     CHECK(hipHostGetDevicePointer((void**)&d_ack, ack, 0));
+     uint64_t* d_t;
+     CHECK(hipMalloc(&d_t, sizeof(uint64_t) * 2 * (n + 1)));
++    if (!std::strcmp(mode, "graph")) {
++        /* Does a host callback captured into a HIP graph run (and wake a futex waiter) on every replay? The graph holds
++         * an increment of the request word and the wake callback; the helper acks each increment. A replay whose wake
++         * never arrives within 2 s is reported as STUCK (what hung the engine in the RAD26 hardware run). */
++        hipGraph_t g;
++        hipGraphExec_t gx;
++        CHECK(hipStreamBeginCapture(s, hipStreamCaptureModeGlobal));
++        publish_next<<<1, 1, 0, s>>>(d_req);
++        CHECK(hipLaunchHostFunc(s, on_published, req));
++        CHECK(hipStreamEndCapture(s, &g));
++        CHECK(hipGraphInstantiate(&gx, g, nullptr, nullptr, 0));
++        std::atomic<uint32_t> acked{0};
++        std::thread helper([&] {
++            for (uint32_t i = 1; i <= n; ++i) {
++                uint32_t seen;
++                while ((seen = __atomic_load_n(req, __ATOMIC_ACQUIRE)) < i) {
++                    timespec ts{2, 0};
++                    if (::syscall(SYS_futex, req, FUTEX_WAIT, seen, &ts, nullptr, 0) < 0 && errno == ETIMEDOUT) return;
++                }
++                acked.store(i, std::memory_order_release);
++            }
++        });
++        std::vector<double> lat;
++        uint32_t stuck = 0;
++        for (uint32_t i = 1; i <= n && !stuck; ++i) {
++            const double t = now_us();
++            CHECK(hipGraphLaunch(gx, s));
++            while (acked.load(std::memory_order_acquire) < i) {
++                if (now_us() - t > 2e6) { stuck = i; break; }
++                std::this_thread::yield();
++            }
++            if (!stuck) lat.push_back(now_us() - t);
++            CHECK(hipStreamSynchronize(s));
++            std::this_thread::sleep_for(std::chrono::microseconds(gap_us));
++        }
++        if (stuck) __atomic_store_n(req, UINT32_MAX, __ATOMIC_RELEASE);   /* release the helper */
++        (void)::syscall(SYS_futex, req, FUTEX_WAKE, INT_MAX, nullptr, nullptr, 0);
++        helper.join();
++        std::sort(lat.begin(), lat.end());
++        std::printf("RESULT mode=graph iterations=%u gap_us=%u woken=%zu stuck_at=%u launch_to_ack_p50_us=%.1f "
++                    "p99_us=%.1f\n", n, gap_us, lat.size(), stuck, lat.empty() ? 0.0 : lat[lat.size() / 2],
++                    lat.empty() ? 0.0 : lat[std::min(lat.size() - 1, lat.size() * 99 / 100)]);
++        return stuck ? 1 : 0;
++    }
++
+     const bool side = !std::strcmp(mode, "sidefunc");
+     const bool hostfunc = side || !std::strcmp(mode, "hostfunc");
+ 
+diff --git a/tools/lab/radiance/rad26-wake-bench.sh b/tools/lab/radiance/rad26-wake-bench.sh
+index 7c7196b71..155227647 100644
+--- a/tools/lab/radiance/rad26-wake-bench.sh
++++ b/tools/lab/radiance/rad26-wake-bench.sh
+@@ -24,6 +24,7 @@ for r in $(seq $REPEATS); do
+         done
+     done
+     ROCR_VISIBLE_DEVICES=$IDX timeout 300 $OUT/rad26-wake-bench stall 5000 0 50 | tee -a $OUT/results.txt
++    ROCR_VISIBLE_DEVICES=$IDX timeout 300 $OUT/rad26-wake-bench graph 2000 300 50 | tee -a $OUT/results.txt
+ done
+ python3 - $OUT/results.txt <<'PY' | tee -a $OUT/summary.txt
+ import re, statistics, sys
+@@ -34,6 +35,8 @@ for gap in sorted({r["gap_us"] for r in rows if r["mode"] != "stall"}, key=int):
+         g = [r for r in rows if r["mode"] == m and r["gap_us"] == gap]
+         if g: print(f"gap {gap:>5} us {m:8s}: round trip p50 {med(g,'rt_p50_us'):7.1f} p90 {med(g,'rt_p90_us'):7.1f} "
+                     f"p99 {med(g,'rt_p99_us'):7.1f} us  helper CPU {med(g,'helper_cpu_pct'):5.1f} %")
++for r in (r for r in rows if r["mode"] == "graph"):
++    print(f"graph replay: woken {r['woken']}/{r['iterations']}, stuck at {r['stuck_at']}, launch->ack p50 {r['launch_to_ack_p50_us']} us p99 {r['p99_us']} us")
+ g = [r for r in rows if r["mode"] == "stall"]
+ if g: print(f"engine stream: {med(g,'stall_us_per_callback'):.2f} us per host callback, {med(g,'side_stall_us_per_callback'):.2f} us on a side stream "
+             f"(work {med(g,'base_us_per_iter'):.1f} us/iter alone, {med(g,'hostfunc_us_per_iter'):.1f} with a callback)")

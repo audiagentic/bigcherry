@@ -71,6 +71,14 @@ Packaging change only: no patch's mechanism or output changes, so no validation 
 Each engine pillar has the same three lanes: evaluate (run the upstream engine as it is, measured our way: MEN02, MEN05), patch (carry changes through lint, composition, build, A/B and promotion: MEN07) and release (MEN09). An engine can sit in the evaluate lane with no patches at all, which is how a new engine enters the platform.
 Migration order: (1) llama.cpp moves to engines/llamacpp/ in one mechanical change, proved by an unchanged production source-tree hash and the full offline suite; (2) release lines split (MEN09) in the same change or directly after; (3) radiance's lab scripts and engine.toml move into engines/radiance/. Do step 1 when few patch PRs are open: every open patch PR conflicts with it.
 
+
+
+BACKLOG TRIAGE 2026-11-04 (SUPERSEDED; revalidated against main 6eb31a708, verdict CONFIRM): engines/llamacpp and engines/radiance are separate pillar roots with their own recipes, patches and components. Evidence: engines/llamacpp and engines/radiance are separate pillar roots with their own recipes, patches and components. Still referenced by: QFP45, MEN07, MEN09. Original content kept below for history.
+
+
+
+REOPENED 2026-11-04: an independent revalidation (against main 6eb31a708) rejected the closure recorded above, which had been based on a lighter check. It stays open. Why: engines/llamacpp/engine.toml:8-19 and engines/radiance/engine.toml:9-19 deliver isolated roots and release-please-config.json has separate engine packages. But .github/workflows/patch-offline-validation.yml:99-122 runs Radiance package mechanics and :186-225 prepares llama.cpp and runs its offline checks in the same job, contrary to MEN08.md:63-80's no cross-engine CI cost acceptance.
+
 ## Change Log
 
 - 2026-10-08T20:47:01.932040+00:00 (created-by): Created by agent
@@ -80,3 +88,7 @@ Migration order: (1) llama.cpp moves to engines/llamacpp/ in one mechanical chan
 - chg_20261008_212949_added-a-like-for-like-single-c_9270
 - 2026-10-08T21:30:09.553704+00:00 (updated-by): Updated: section:ledger-events
 - 2026-10-09T00:16:16.670776+00:00 (updated-by): Updated: section:title, priority='P0', section:notes
+- 2026-11-04T03:46:23.846553+00:00 (updated-by): Updated: section:notes
+- 2026-11-04T03:46:27.902889+00:00 (state-transition): State: pending → superseded
+- 2026-11-04T04:44:21.538362+00:00 (updated-by): Updated: section:notes
+- 2026-11-04T04:44:29.151142+00:00 (state-transition): State: superseded → pending

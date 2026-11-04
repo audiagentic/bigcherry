@@ -3,6 +3,15 @@
 Organized into topical subfolders. Cross-cutting/auto-generated docs stay
 at the top level.
 
+## Engines
+
+- [Radiance](engines/radiance/README.md) — primary target: heterogeneous
+  AMD kernel components, remote MoE and the [patch and component catalogue](engines/radiance/ENHANCEMENTS.md).
+- [llama.cpp](engines/llamacpp/README.md) — active secondary engine: HIP
+  measured dispatch and the [patch catalogue](engines/llamacpp/PATCHES.md).
+- [Per-change documentation format](DOC_STRUCTURE.md) — owning Summary,
+  Outcome and Detail pages, with generated indexes.
+
 ## Architecture
 
 | Document | What it is | When to read it |
@@ -73,10 +82,11 @@ do not add compatibility redirect files under `docs/reference/`.
 
 | Document | What it is | When to read it |
 | --- | --- | --- |
-| [START_HERE.md](START_HERE.md) | Stable project orientation and safe first-work checklist for new agents | Starting a fresh agent context or handing work to another agent |
+| [START_HERE.md](START_HERE.md) | Technical map of the two engines, extension points and evidence | Finding the relevant architecture or component reference |
 | [CANDIDATES.md](CANDIDATES.md) | Auto-generated candidate inventory | Looking up a specific candidate's config |
 | [FINDINGS.md](FINDINGS.md) | Bugs and results notable outside bigcherry — kernel/llama.cpp/ROCm bugs, exceptional tunes | You just found something a stranger to this project would want to know about |
 | [TUNING-DETAIL.md](TUNING-DETAIL.md) | Pointer to archived generated report | Consult the tuning DB or `artifacts/reports/` for current numbers |
+| [git-history-rewrite.md](git-history-rewrite.md) | Old-to-new commit hash map for the 2026-11-02 message rewrite | A document or comment cites a commit hash that does not resolve |
 
 **Tuning results and model-specific data live in the database**, not in
 these documents. Consult the tuning DB for per-signature winners, rankings,

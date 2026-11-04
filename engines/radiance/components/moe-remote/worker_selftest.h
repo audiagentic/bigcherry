@@ -94,6 +94,7 @@ int route_selftest() {
                 auto run_front = [&](auto n_const) {
                     constexpr uint32_t N = decltype(n_const)::value;
                     hipLaunchKernelGGL((lane_front_small<N>), dim3(1), dim3(N), 0, 0, rt, const_cast<Request*>(rq), lt,
+                                       static_cast<const uint16_t*>(d_slot),
                                        static_cast<const uint4*>(d_srcq), static_cast<const uint4*>(d_srcs),
                                        static_cast<uint4*>(d_dstq), static_cast<uint4*>(d_dsts), static_cast<uint64_t*>(d_stats),
                                        0u, 0u, 1u, kMaxRowsFused, 1u, nr, experts, static_cast<int32_t*>(d_off),
@@ -108,7 +109,7 @@ int route_selftest() {
                 std::string why;
                 if (!good) why = "device setup";
                 if (good) {   // the unfused path
-                    hipLaunchKernelGGL(lane_route_count, dim3(grid), dim3(256), 0, 0, rt, const_cast<Request*>(rq), lt, 0u, 1u,
+                    hipLaunchKernelGGL(lane_route_count, dim3(grid), dim3(256), 0, 0, rt, const_cast<Request*>(rq), static_cast<const uint16_t*>(d_slot), 0u, 1u,
                                        rows, 1u, experts, static_cast<uint32_t*>(d_counts), static_cast<int32_t*>(d_flat),
                                        static_cast<uint16_t*>(d_ew), lane_shape);
                     switch (blockn) {
@@ -117,7 +118,7 @@ int route_selftest() {
                         case 1024: run_prefix(std::integral_constant<uint32_t, 1024>{}); break;
                         default: why = "no block size";
                     }
-                    hipLaunchKernelGGL(lane_route_scatter, dim3(grid), dim3(256), 0, 0, rt, rq, lt, 0u, 1u, rows, 1u, experts,
+                    hipLaunchKernelGGL(lane_route_scatter, dim3(grid), dim3(256), 0, 0, rt, rq, static_cast<const uint16_t*>(d_slot), 0u, 1u, rows, 1u, experts,
                                        static_cast<const int32_t*>(d_flat), static_cast<uint32_t*>(d_cursor),
                                        static_cast<int32_t*>(d_sorted), static_cast<int32_t*>(nullptr), lane_shape);
                     good = hip(hipDeviceSynchronize(), "unfused kernels") &&

@@ -17,13 +17,16 @@
 #include <thread>
 #include <vector>
 
-/* Block until the engine is inside an inference burst (Header::burst odd). False once this helper is stopping. */
-inline bool wait_burst(r3::moe_shm::Header* h) {
+/* Block until the engine is inside an inference burst (Header::burst odd) or asks this lane to drain
+ * (LaneSignal::drain_request). The engine stores the drain request before it moves the burst word (ending a burst,
+ * or adding 2 to an idle word), so a waiter that sleeps on the old word wakes and then sees the request. False once
+ * this helper is stopping. */
+inline bool wait_burst(r3::moe_shm::Header* h, uint32_t lane) {
     using namespace r3::moe_shm;
     for (;;) {
         const uint32_t b = load(&h->burst);
         if ((b & kBurstStop) || stopping()) return false;
-        if (b & 1u) return true;
+        if ((b & 1u) || __atomic_load_n(&h->lane[lane].drain_request, __ATOMIC_ACQUIRE)) return true;
         if (futex_wait(&h->burst, b) < 0 && errno != EINTR && errno != EAGAIN) {
             std::fprintf(stderr, "r3_moe_worker: futex_wait(burst): %s\n", std::strerror(errno));
             request_stop();
@@ -140,13 +143,50 @@ private:
         stats_[lane].routes = s[2];
     }
 
+    uint64_t drain_requested(uint32_t lane) const {
+        return __atomic_load_n(&h_->lane[lane].drain_request, __ATOMIC_ACQUIRE);
+    }
+    /* ACK one closure after this lane's stream drained, then sleep on Header::notify until the engine clears the
+     * request at reopen (it notifies after clearing). Outside every serving spin. */
+    void acknowledge_drain(uint32_t lane, uint64_t closure) {
+        using namespace r3::moe_shm;
+        /* After the lane's stream is drained, publish the identity of its last completed request (epoch/slot) for the
+         * engine's quiescence check, once per drain rather than on every completion. */
+        auto drain = [&] { return gpu_.sync_lane(lane) && publish_done_identity(map_, lane); };
+        if (!acknowledge_lane_drain(h_->lane[lane], closure, drain)) {
+            request_stop();
+            return;
+        }
+        notify(h_);
+        for (;;) {
+            const uint32_t generation = load(&h_->notify);
+            if (stopping() || drain_requested(lane) != closure) return;
+            /* A faulted placement never reopens: stop rather than stay parked (the engine's next pass fails closed). */
+            if (load(&h_->helper_fault)) { request_stop(); return; }
+            if (futex_wait(&h_->notify, generation) < 0 && errno != EINTR && errno != EAGAIN) {
+                std::fprintf(stderr, "r3_moe_worker: futex_wait(notify): %s\n", std::strerror(errno));
+                request_stop();
+                return;
+            }
+        }
+    }
+
     /* Large lane: wait for the engine's request word, read its rows, launch that size. The engine publishes from GPU
      * code, which cannot wake a futex, so inside a burst this thread spins on the word; between bursts it sleeps. */
     void run_large(uint32_t lane) {
         using namespace r3::moe_shm;
         for (uint32_t next = 1; !stopping();) {
             if (seq_after(next, load(&h_->lane[lane].request_sequence))) {
-                if (!(load(&h_->burst) & 1u) && !wait_burst(h_)) break;
+                if (!(load(&h_->burst) & 1u)) {
+                    /* Outside a burst only: the engine holds the word even while it asks for a drain, after
+                     * admission closed and every parent retired, so no request is outstanding. This thread owns
+                     * combine_step too; reaching here proves its CPU jobs have returned as well as its stream. */
+                    if (const uint64_t closure = drain_requested(lane)) {
+                        acknowledge_drain(lane, closure);
+                        continue;
+                    }
+                    if (!wait_burst(h_, lane)) break;
+                }
                 std::this_thread::yield();
                 continue;
             }
@@ -206,7 +246,14 @@ private:
         };
         uint32_t* park = &h_->lane[lane].park;
         bool armed = false;
-        while (wait_burst(h_)) {
+        while (wait_burst(h_, lane)) {
+            /* The burst word is held even during a drain, so wait_burst returned for the request. */
+            if (const uint64_t closure = drain_requested(lane)) {
+                if (armed && park_lane(lane, park, next, &done_seen, true) == Park::Failed) break;
+                armed = false;
+                acknowledge_drain(lane, closure);
+                continue;
+            }
             if (!armed) {
                 next = done_seen + 1u;
                 if (!fill()) { request_stop(); break; }
@@ -226,7 +273,8 @@ private:
                 if (!fill()) { request_stop(); break; }
             }
             if (stopping()) break;
-            if (!cfg_.power_save) continue;   /* stay armed; wait_burst sleeps until the next burst */
+            if (drain_requested(lane)) continue;   /* the burst ended for a drain: park by force at the loop top */
+            if (!cfg_.power_save) continue;   /* stay armed; wait_burst sleeps until the next burst or a drain */
             const Park p = park_lane(lane, park, next, &done_seen);
             if (p == Park::Failed) break;
             armed = p == Park::Reopened;
@@ -245,11 +293,11 @@ private:
      * the unconsumed waits (their ring slots hold older sequences, so the kernels see an invalid request, and the
      * publish limit stops them publishing), drain, restore the engine's last sequence and the limit, clear the flag.
      * Failed when stopping or on a GPU error. */
-    Park park_lane(uint32_t lane, uint32_t* park, uint32_t next, uint32_t* done_seen) {
+    Park park_lane(uint32_t lane, uint32_t* park, uint32_t next, uint32_t* done_seen, bool force = false) {
         using namespace r3::moe_shm;
         __atomic_store_n(park, kParkDraining, __ATOMIC_SEQ_CST);
         test_stop_at("park_drain", cfg_.helper_index);
-        if (__atomic_load_n(&h_->burst, __ATOMIC_SEQ_CST) & 1u) {
+        if (!force && (__atomic_load_n(&h_->burst, __ATOMIC_SEQ_CST) & 1u)) {
             store(park, 0u);
             notify(h_);   /* Header::notify: the engine sleeps on the generation word */
             return Park::Reopened;

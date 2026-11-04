@@ -58,6 +58,27 @@ Do not impose fixed-grid changes on RCCL; preserve provider-specific ownership a
 - Complete only when an affected provider fails pre-fix and passes post-fix, or every custom provider is proven not vulnerable and the regression test is retained.
 - Promotion of RNX07 is blocked until this item is resolved for the relevant protocol.
 
+## Notes
+
+Original source alias is R9X11. Proposed slot 1311. Current Flash-Next evidence identifies 1291 large path as not graph-safe and default-off; this is an open audit input.
+
+Verbatim legacy source retained during R9X→RNX migration:
+
+# R9X11 — Custom AllReduce fixed-grid, sequence-counter, and graph-replay hardening
+
+Status: planned / correctness-first
+Proposed patch: `1311_r9x_collective_fixed_grid_sequence`
+Depends on: R9X01; must be reviewed before promoting R9X07 or any custom provider with per-block epochs/double buffering
+External source: `kernels/r9k_ar.hip`, `r9700_vllm/comm/r9k_ar.py`, `tests/test_ar_race.py`
+Existing BigCherry owners: `1252_nro03_allreduce_p2p_provider`, `1275_ar_small_latency`, `1276_ar_adaptive_nway`, `1277_ar_size_trace`, `1291_ar_cpu_root`; related graph correctness: 1233/1216
+
+
+
+GPT design pass (req_83e7cdc000be4b9e): no 1311 package now. The 1291 large CPU-root path uses a host-side generation counter and is not graph-capture safe as-is; audit provider-by-provider and resolve RNX07 transport ownership before proposing a successor.
+
+
+
+BACKLOG TRIAGE 2026-11-04 (revalidated against main 6eb31a708): the proposed disposition "MERGE into PGC10/PGC11 llama provider tests" was NOT applied; this item stays open. Why: engines/llamacpp/patches/1291_ar_cpu_root/patch.py:339,381,418 shows host-generated large-path epochs versus device-owned small-path progress, with replay correctness still conditional as docs/planning/active/patching-r9700-cross-rdna/RNX11.md:46-76 documents. PGC10 is root3 tuning and PGC11 wire precision, neither owns the large-path graph capture/size-changing replay/teardown regression protocol; RNX09.md:58-65 explicitly needs RNX11's terminal receipt. Active items that reference this one: BCOP221, PEF07, QFN01, QFP01, QFP11, QFP13, RNX09. Retain RNX11's all-provider graph-replay and epoch/lifetime gate; do not mismerge a 1291 correctness risk into wire precision tuning.
 
 ## 2026-10-15 protocol/lifetime audit — 1291 large-path replay (BCOP221)
 
@@ -87,24 +108,6 @@ Current `engines/llamacpp/patches/1291_ar_cpu_root/patch.py::_IMPL` (composed `g
 **Upstream/forks (source inspection, not transferred gains):** current [llama.cpp allreduce.cu](https://github.com/ggml-org/llama.cpp/blob/master/ggml/src/ggml-cuda/allreduce.cu) has its own two-rank host-mapped per-slot event ring, explicit `cudaEventSynchronize` before slot reuse and host-supplied token; it is not a replacement for 1291's CPU-worker generation contract. [vLLM custom_all_reduce.cuh](https://github.com/vllm-project/vllm/blob/main/csrc/custom_all_reduce.cuh) registers graph buffers and owns rank signals; [SGLang custom_all_reduce.py](https://github.com/sgl-project/sglang/blob/main/python/sglang/srt/distributed/device_communicators/custom_all_reduce.py) gates supported topology and registers HIP graph buffers. Neither supplies a tested no-P2P large-host worker fix. The upstream [llama.cpp #26827](https://github.com/ggml-org/llama.cpp/pull/26827) MTP multi-ubatch serialization discussion is a *separate* scheduler/lifetime control, not proof of this failure.
 
 **Validation performed in this audit:** 12/12 live `1291` source-marker checks and 9/9 deterministic **host-only** generation/ordering fixtures passed, including a synthetic stale-result replay and a same-stream-fence negative control. No HIP build, capture, GPU test, repository test suite, new throughput result or measured regression. The fixture establishes a conditional graph-generation hazard, **not** a reproduced production failure.
-
-## Notes
-
-Original source alias is R9X11. Proposed slot 1311. Current Flash-Next evidence identifies 1291 large path as not graph-safe and default-off; this is an open audit input.
-
-Verbatim legacy source retained during R9X→RNX migration:
-
-# R9X11 — Custom AllReduce fixed-grid, sequence-counter, and graph-replay hardening
-
-Status: planned / correctness-first
-Proposed patch: `1311_r9x_collective_fixed_grid_sequence`
-Depends on: R9X01; must be reviewed before promoting R9X07 or any custom provider with per-block epochs/double buffering
-External source: `kernels/r9k_ar.hip`, `r9700_vllm/comm/r9k_ar.py`, `tests/test_ar_race.py`
-Existing BigCherry owners: `1252_nro03_allreduce_p2p_provider`, `1275_ar_small_latency`, `1276_ar_adaptive_nway`, `1277_ar_size_trace`, `1291_ar_cpu_root`; related graph correctness: 1233/1216
-
-
-
-GPT design pass (req_83e7cdc000be4b9e): no 1311 package now. The 1291 large CPU-root path uses a host-side generation counter and is not graph-capture safe as-is; audit provider-by-provider and resolve RNX07 transport ownership before proposing a successor.
 
 ## Goal
 
@@ -154,3 +157,4 @@ Stress thousands of alternating-size calls, wraparound-near counters where pract
 ## Reviews
 
 - RV4210
+- 2026-11-04T04:25:33.248796+00:00 (updated-by): Updated: section:notes

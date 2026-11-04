@@ -1,57 +1,52 @@
-# bigcherry
+# BigCherry
 
-Measured-dispatch autotuner and release platform for two inference engines:
-**llama.cpp** (primary, patch-overlay model) and **radiance** (second engine,
-multi-GPU AMD serving). bigcherry keeps its own work release-tolerant rather
-than forking either engine.
+BigCherry builds, patches and tests LLM inference engines against pinned
+upstream releases. The main focus is **Radiance** on heterogeneous AMD
+systems: RDNA2 and RDNA3 GPUs run alongside RDNA4, with remote MoE experts
+distributed across cards. **llama.cpp** remains an active secondary engine.
 
-New to this repo? Start with `GETTING_STARTED.md` for build/test commands and
-operational gotchas.
+## Engines and changes
 
-## How the pieces fit
+| Engine | Upstream pin | Catalogued changes | Main additions |
+| --- | --- | --- | --- |
+| [Radiance](docs/reference/engines/radiance/README.md) | **v1.16.0** | **10 patches**, 6 components | RDNA2/3/4 kernels, remote experts, placement and serving manifest |
+| [llama.cpp](docs/reference/engines/llamacpp/README.md) | **b11552** | **150 patches** | HIP kernel tuning, measured dispatch, multi-GPU reductions |
 
-- **`tools/bigcherry/`** — the `bigcherry` Python CLI. Every engine (build,
-  patch, test, validate, promote, release) goes through its commands:
-  `python -m bigcherry --engine <llamacpp|radiance> <command>`.
-- **`engines/llamacpp/`** — llama.cpp kept current via a two-bucket overlay
-  instead of a long-lived fork:
-  - `src/` — whole files new to the tree, mirroring the upstream layout
-    exactly, so applying it is a copy and the eventual upstream PR diff falls
-    straight out of it.
-  - `patches/<id>/` — small, anchored edits to files upstream already owns.
-    Each is a self-contained package (`patch.toml`, `patch.py`, `SUMMARY.md`,
-    `README.md`); see
-    [`docs/reference/patches/PATCH_SYSTEM.md`](docs/reference/patches/PATCH_SYSTEM.md)
-    and
-    [`docs/reference/patches/PATCH_AUTHORING.md`](docs/reference/patches/PATCH_AUTHORING.md)
-    for the full package layout and lifecycle.
-- **`engines/radiance/`** — the second serving engine: engine patches plus
-  `components/` (BigCherry source built against the installed engine, not a
-  patch to it). See
-  [`docs/reference/engines/radiance/README.md`](docs/reference/engines/radiance/README.md).
-- **`docs/reference/`** — maintained cross-cutting guidance: patch system,
-  per-engine overviews and per-model pages, the per-change doc shape
-  ([`docs/reference/DOC_STRUCTURE.md`](docs/reference/DOC_STRUCTURE.md)), and
-  architecture detail (e.g.
-  [`docs/reference/architecture/MMQ_CATALOG.md`](docs/reference/architecture/MMQ_CATALOG.md)
-  for the MMQ candidate catalog and architecture targeting).
-- **`docs/planning/`** — active/completed plan items, design decisions, and
-  work history, managed through the `ag-planning` tooling.
-- **`docs/releases/`** — human-facing release notes, the release/change
-  ledger, and audit/check-in guidance for cutting a release.
+**Radiance.** The `libr2`, `libr3` and `bc-gfx12` components add kernels
+for different AMD generations. Remote-MoE workers exchange routed expert
+results with the engine over pinned host memory. The main validated engine
+patches provide the remote hand-off and a HyperConn up-mix kernel selector.
+The strict serving loader and manifest are being integrated; full
+manifest-driven startup is not yet qualified.
+[Components and patches](docs/reference/engines/radiance/ENHANCEMENTS.md).
 
-## Workflow (llama.cpp)
+**llama.cpp.** BigCherry records real HIP matrix operations, measures kernel
+candidates and replays selected implementations, falling back to upstream
+dispatch on a miss. Patch packages add dispatch hooks, kernel geometry
+controls, adaptive AllReduce and selected AMD kernel fixes.
+[Main changes](docs/reference/engines/llamacpp/README.md) ·
+[Patch catalogue](docs/reference/engines/llamacpp/PATCHES.md).
 
-```bash
-python -m bigcherry --engine llamacpp pull   --ref b1234        # fetch/checkout upstream
-python -m bigcherry --engine llamacpp audit                     # strict invariant audit
-python -m bigcherry apply --source bigcherry  # engines/llamacpp/overlay + anchored patches
-python -m bigcherry generate --arch all       # candidate catalog -> artifacts
-python -m bigcherry build   --profile replay-full
-```
+Package counts include experimental, superseded and rejected work, not only
+patches selected for production. Radiance has 2 validated patches;
+llama.cpp has 70.
 
-Every stage is idempotent, and every stage after `audit` refuses to run on a
-tree that has not passed a strict audit for its current revision. Radiance
-follows the same build -> patch -> test -> validate -> promote -> release
-workflow through its own engine-aware commands; see
-[`docs/reference/engines/radiance/README.md`](docs/reference/engines/radiance/README.md#workflow).
+## Best recorded Radiance throughput
+
+These results were measured on **v1.14.0**, not yet revalidated on the
+current v1.16.0 pin. Rates are tokens per second, with different workloads.
+
+| Model | Prefill | Generated output |
+| --- | --- | --- |
+| [Qwen3.8-Flash-Next](docs/reference/engines/radiance/models/qwen3.8-flash-next.md), four AMD cards | **3,837** (fresh ~44K prompt) | **330–342**, 6-stream aggregate *engine decode* |
+| [Qwen3.8-27B](docs/reference/engines/radiance/models/qwen3.8-27b.md), R9700 | — | **245–248**, 6-stream aggregate *client output* |
+| [Qwen3.6-35B-A3B](docs/reference/engines/radiance/models/qwen3.6-35b-a3b.md), R9700 | — | **171–219**, single-stream client output across prompts |
+
+There is no matched stock-engine comparison for these workloads. The
+four-card Flash-Next layout also has a documented quality trade-off; see
+the model page before using its throughput as a configuration choice.
+
+[Build and use](GETTING_STARTED.md) ·
+[Technical reference](docs/reference/README.md) ·
+[Evidence](docs/evidence/) ·
+[Current designs](docs/planning/)

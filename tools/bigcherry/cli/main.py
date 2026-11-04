@@ -48,6 +48,7 @@ from .accept import cmd_accept
 from .profiling import cmd_profile_campaign
 from .runtime import cmd_reference_ladder, cmd_runtime_matrix
 from .smoke import cmd_smoke_cpu
+from .component_tests import cmd_component_tests
 from .source import cmd_audit, cmd_pull
 from .slice import (
     cmd_slice_finish,
@@ -820,6 +821,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     smoke_cpu_cmd.set_defaults(func=cmd_smoke_cpu)
 
+    component_tests_cmd = sub.add_parser(
+        "component-tests",
+        help="card-free component tests: build each component's declared [test] targets in a lane build's component "
+        "trees and run exactly those with ctest, one log per component (the run the pin-bump gate makes)",
+    )
+    component_tests_cmd.add_argument("--build", required=True, help="the lane's build directory (holds components/)")
+    component_tests_cmd.set_defaults(func=cmd_component_tests)
+
     release_notes_cmd = sub.add_parser(
         "release-notes",
         help="per-bump release notes: write docs/releases/notes/<prefix><llama tag>.md "
@@ -844,6 +853,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--evidence", default="",
         help="hardware evidence that makes the bump releasable (build, smoke, A/B result); text, or @file. "
         "Recorded verbatim in the release record; required until the record carries it",
+    )
+    pin_release_cmd.add_argument(
+        "--summary", default="",
+        help="Radiance public release summary in Markdown, or @file. Required for an initial release record; "
+             "internal --evidence is kept out of the GitHub release description",
     )
     pin_release_cmd.add_argument(
         "--through", default="sync", choices=("gate", "record", "notes", "main", "release", "unpin", "sync"),
@@ -2149,9 +2163,16 @@ def cmd_pin_release(args: argparse.Namespace) -> int:
         except OSError as exc:
             print(f"pin-release: cannot read the evidence file: {exc}", file=_sys.stderr)
             return 2
+    public_summary = args.summary
+    if public_summary.startswith("@"):
+        try:
+            public_summary = open(public_summary[1:], encoding="utf-8").read()
+        except OSError as exc:
+            print(f"pin-release: cannot read the summary file: {exc}", file=_sys.stderr)
+            return 2
     try:
         return _pin_release.run(_paths.REPO_ROOT, args.engine, args.llama_tag, evidence, through=args.through, dry_run=args.dry_run,
-                                version=args.version, bump=args.bump, yes=args.yes)
+                                version=args.version, bump=args.bump, yes=args.yes, public_summary=public_summary)
     except _pin_release.PinReleaseError as exc:
         print(f"pin-release: STOPPED at phase {exc.phase!r}: {exc}", file=_sys.stderr)
         print("  fix the cause and run the same command again; finished phases are skipped", file=_sys.stderr)

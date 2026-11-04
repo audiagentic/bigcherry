@@ -1,5 +1,15 @@
 # 1269 PRBE55 Vulkan small-N DMMV
 
+## Summary
+
+Adds an explicit `BIGCHERRY_VK_SMALLN_DMMV=1` experiment that forces otherwise-MMVQ-eligible AMD/RDNA Vulkan vector matmuls with N=2..8 onto the existing DMMV fallback path.
+
+## Outcome
+
+Recorded state: `untested` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 Untested, opt-in AMD Vulkan dispatch experiment. `BIGCHERRY_VK_SMALLN_DMMV=1` can force baseline-MMVQ N=2..8 vector matmuls through the existing DMMV fallback; default routing is unchanged.
 
 ## Validation

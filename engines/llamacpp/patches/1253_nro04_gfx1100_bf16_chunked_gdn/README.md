@@ -1,5 +1,15 @@
 # 1253 — PNRO04 BF16/WMMA chunked GatedDeltaNet prefill
 
+## Summary
+
+Adds the nasone fork's BF16/WMMA chunked GatedDeltaNet prefill kernels (gfx11 and gfx12, new files) and routes K == 1 prefill with S_v == 128 on RDNA3/RDNA4 to them by default, falling back to the sequential kernel if the driver rejects the launch. Opt out with `GGML_CUDA_GDN_CHUNKED_BF16=0`.
+
+## Outcome
+
+Recorded state: `validated` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 **Package state:** `validated` in `patch.toml`, based on historical b11126 gfx1100/gfx1201 evidence; not a current b11552 qualification. **Requires:** none. **Conflicts:** `1221_rd50_gdn_chunked_recurrence` (the FP32 chunked implementation is not ported). `1254_nro05_gdn_mtp_prefix_tail` requires 1253 but remains separately `untested`. The older README/TESTING descriptions of an unwired, opt-in, 1221-dependent kernel were stale.
 
 Ports nasone `4169fbbf50d24beb6d269a2350e7f780b85369e6`. `patch.py::GDN_DISPATCH` modifies `ggml_cuda_op_gated_delta_net_impl`; gfx1100/RDNA3 uses `gated_delta_net_chunked_bf16_gfx11.cu`, gfx1201/RDNA4 uses `gated_delta_net_chunked_bf16.cu`. For scalar-gate non-KDA, K=1, S_v=128, n_tokens>1 the BF16 path is **default-on**, with opt-outs `GGML_CUDA_GDN_CHUNKED=0` or `GGML_CUDA_GDN_CHUNKED_BF16=0`. Unsupported shapes use the original sequential kernel; no FP32 chunked fallback is installed. A synchronous kernel-launch rejection also falls back, but an asynchronous GPU failure is not recovered.

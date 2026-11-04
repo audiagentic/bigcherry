@@ -281,7 +281,7 @@ def phase_gate(plan: Plan) -> str:
     return out
 
 
-def phase_record(plan: Plan, gate_output: str, evidence: str) -> bool:
+def phase_record(plan: Plan, gate_output: str, evidence: str, public_summary: str = "") -> bool:
     """Completion into the release record, transition marker removed. Returns False when already done."""
     root = plan.repo_root
     record_path = root / "releases" / f"{plan.llama_tag}.json"
@@ -290,7 +290,27 @@ def phase_record(plan: Plan, gate_output: str, evidence: str) -> bool:
         raise PinReleaseError("record", f"{record_path} does not exist: was `--engine {plan.engine} pin-bump {plan.llama_tag}` run in this tree?")
     record = json.loads(record_path.read_text(encoding="utf-8"))
     stamp = f"release {plan.version}"
+    had_summary = bool(record.get("public_summary"))
+    if plan.engine == engines.RADIANCE:
+        # On resume, reuse the reviewed summary already in the release record.
+        candidate = public_summary.strip() or record.get("public_summary")
+        try:
+            verified_summary = _notes.radiance_public_summary({"public_summary": candidate})
+        except _notes.ReleaseNotesError as exc:
+            raise PinReleaseError("record", str(exc)) from exc
+        if stamp in (record.get("notes") or "") and not marker.exists() and record.get("public_summary") and public_summary.strip() and (
+            verified_summary != record.get("public_summary")
+        ):
+            raise PinReleaseError("record", "release already recorded with a different public_summary")
+        record["public_summary"] = verified_summary
     if stamp in (record.get("notes") or "") and not marker.exists():
+        if plan.engine == engines.RADIANCE and not had_summary:
+            # An older completed record can be given its reviewed summary without
+            # rerunning the gate or appending the hardware evidence a second time.
+            record_path.write_text(json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8", newline="\n")
+            _git(root, "add", record_path.relative_to(root).as_posix())
+            _git(root, "commit", "-q", "-m", f"release: {plan.release_tag} public summary recorded")
+            return True
         return False
     if not evidence.strip():
         raise PinReleaseError("record", "--evidence is required: state the hardware build, smoke and A/B result that makes this bump "
@@ -554,6 +574,35 @@ def _trigger_pr_checks(plan: Plan, pr: dict, phase: str, log=print) -> None:
     log(f"  {phase:<8} required checks had not started; closed and reopened PR #{pr['number']} once to trigger them")
 
 
+def _check_rows(plan: Plan, pr: dict, phase: str) -> list[dict]:
+    """The PR's checks as {name, state, link} rows, read from `gh pr view --json statusCheckRollup` (supported by every
+    gh release in use; `gh pr checks --json` is not). A check run's state is its conclusion once it has one, else its
+    status (QUEUED/IN_PROGRESS); a commit status context reports its own state."""
+    result = _run(plan.repo_root, "gh", "pr", "view", str(pr["number"]), "--json", "statusCheckRollup", check=False)
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout or "").strip()
+        raise PinReleaseError(phase, f"could not read checks for pull request {pr['number']}: {detail[-400:]}")
+    try:
+        rollup = json.loads(result.stdout or "{}").get("statusCheckRollup") or []
+    except (json.JSONDecodeError, AttributeError) as exc:
+        raise PinReleaseError(phase, f"could not parse checks for pull request {pr['number']}") from exc
+    if not isinstance(rollup, list):
+        raise PinReleaseError(phase, f"checks for pull request {pr['number']} are not a list")
+    rows = []
+    for item in rollup:
+        if not isinstance(item, dict):
+            continue
+        name = item.get("name") or item.get("context")
+        # A job of a called (reusable) workflow is listed as "<caller job> / <job>"; its check run, which is what the
+        # ruleset's required context names, is "<job>".
+        if isinstance(name, str) and " / " in name:
+            name = name.rsplit(" / ", 1)[1]
+        state = item.get("conclusion") or item.get("status") or item.get("state") or ""
+        link = item.get("detailsUrl") or item.get("targetUrl") or ""
+        rows.append({"name": name, "state": str(state).upper(), "link": link})
+    return rows
+
+
 def _wait_required_checks(
     plan: Plan,
     pr: dict,
@@ -570,25 +619,7 @@ def _wait_required_checks(
     triggered = False
 
     while True:
-        result = _run(
-            plan.repo_root, "gh", "pr", "checks", str(pr["number"]),
-            "--json", "name,state,link", check=False,
-        )
-        raw = result.stdout.strip()
-        if raw:
-            try:
-                rows = json.loads(raw)
-            except json.JSONDecodeError as exc:
-                raise PinReleaseError(phase, f"could not parse checks for pull request {pr['number']}") from exc
-            if not isinstance(rows, list):
-                raise PinReleaseError(phase, f"checks for pull request {pr['number']} are not a list")
-        else:
-            detail = (result.stderr or "").strip()
-            if result.returncode != 0 and "no checks reported" not in detail.lower():
-                raise PinReleaseError(
-                    phase, f"could not read checks for pull request {pr['number']}: {detail[-400:]}",
-                )
-            rows = []
+        rows = _check_rows(plan, pr, phase)
 
         by_name = {
             row.get("name"): row for row in rows
@@ -937,7 +968,7 @@ def confirm_release(plan: Plan, yes: bool, log=print, ask=input, interactive: bo
 
 def run(repo_root: Path, engine: str, llama_tag: str, evidence: str, through: str = "sync", dry_run: bool = False,
         log=print, version: str | None = None, bump: str | None = None, yes: bool = False,
-        ask=input, interactive: bool | None = None) -> int:
+        ask=input, interactive: bool | None = None, public_summary: str = "") -> int:
     plan = make_plan(repo_root, engine, llama_tag, version=version, bump=bump, allow_existing=dry_run)
     stop = PHASES.index(through)
     log(f"pin-release: {plan.llama_tag} -> {plan.release_tag} (version {plan.version}), branch {plan.branch} -> {plan.main}")
@@ -954,7 +985,7 @@ def run(repo_root: Path, engine: str, llama_tag: str, evidence: str, through: st
         gate_output = phase_gate(plan)
         log("  gate     PASS")
     steps = (
-        ("record", lambda: phase_record(plan, gate_output, evidence)),
+        ("record", lambda: phase_record(plan, gate_output, evidence, public_summary)),
         ("notes", lambda: phase_notes(plan)),
         ("main", lambda: phase_main(plan, log=log)),
         ("release", lambda: phase_release(plan, log=log)),

@@ -20,10 +20,11 @@
 # --budget gfx1030=4096). A layout that needs a card the host does not have, or a plugin the build lacks, stops here with the reason.
 #
 # Needs a radiance build of production source with the helper hand-off:
-#   bigcherry build --lane radiance:stock:linux-radiance --experiment moe-remote-handoff
+#   bigcherry build --lane radiance-lab:stock:linux-radiance
 #
 # Usage:
-#   bash tools/lab/radiance/launch-flashnext-best.sh [start] [--build DIR] [--port N] [--heat FILE] [--host-pool-mib N] [--host-kv-mib N] [--chunk TOKENS] [--ngram-placement ram|disk|vram] [--kv-dtype fp8|fp8_v4|k6_v4] [--engine-arg ARG ...] [--ngram-device INDEX] [--max-model-len TOKENS] [--record-heat PREFIX|off [--record-period S]] [--gpu-power] [--layout NAME] [--budget ARCH=MIB]
+#   bash tools/lab/radiance/launch-flashnext-best.sh [start] [--build DIR] [--port N] [--heat FILE] [--host-pool-mib N] [--host-kv-mib N] [--chunk TOKENS] [--ngram-placement ram|disk|vram] [--kv-dtype fp8|fp8_v4|k6_v4] [--engine-arg ARG ...] [--ngram-device INDEX] [--max-model-len TOKENS] [--record-heat PREFIX|off [--record-period S]] [--gpu-power] [--layout NAME] [--budget ARCH=MIB] [--canary-prompt TEXT --canary-expect FACT]
+#     (every start ends with a canary completion that must contain the fact, default 'The capital of France is' -> Paris; a failure stops the launch, exit 96)
 #   bash tools/lab/radiance/launch-flashnext-best.sh stop
 # Without --build, the newest build under $BC_WORK_ROOT/builds that has the helper binary is used.
 # --heat FILE: the route-heat file that ranks the experts, hottest first (default $WORK/heat/flashnext-mixed.hot-first, C++/HIP source and
@@ -54,6 +55,14 @@
 # --gpu-power (or GPU_POWER=1): apply the cards' configured power settings ([host.*.devices.power]) for this run and
 # put back what the cards ran before at stop. Without write access it lists the setup steps still missing and runs
 # with the cards as they are.
+# Engine plan check (RSC03 / RSC08 A3, mandatory, no way to skip it): every start asks bc-serve for the engine's
+#   --plan-check FILE --plan-check-floor-ppm N for the exact configuration it launches, so the engine checks its live memory
+#   plan against the measured one before it allocates anything. The first start of a configuration that has no measured plan
+#   (a cache miss, logged once with its reason) first MEASURES it: the helpers come up on their cards and the engine stops
+#   after its memory plan, about 1-2 minutes, then the real start goes ahead. That measuring start uses the GPUs exactly as a
+#   launch does, so the first launch of a new configuration needs the gpu lease like any launch (agent-lease acquire gpu).
+#   Any setting above (layout, sessions, context, pool, KV tier, chunk, n-gram placement, KV dtype, rope, resume) changes the
+#   configuration. Plans live in $RUN/plan-cache; this is interim until the v1 manifest replaces the flags (RSC08).
 # HELPER_WRAP=<command>: run each helper under it (e.g. a profiler wrapper; R3_MOE_WORKER_INDEX tells it which helper).
 # ENGINE_WRAP=<command>: run the engine under it (a debugger, numactl, strace; the stop command signals the engine through the
 #   wrapper, so it must forward SIGINT/SIGTERM). Not rocprofv3: radiance drives the card through its own AQL backend and fails
@@ -74,6 +83,8 @@ RECORD=$RUN/heat.live   # RHP02: on by default; --record-heat off disables
 HOST_POOL_MIB=9216        # interim, measured (RSC03 derives it): the engine uses ~7.1 GiB of it with the helpers owning ~all experts
 HOST_KV_MIB=12288         # interim, measured (RSC03 derives it): host KV tier for finished sessions, funded by the smaller pool
 CHUNK=2048
+CKPT_INTERVAL=4096   # the engine's --checkpoint-interval; the plan check's configuration (plan-check.sh) names it too
+NUM_SPEC=3                # the engine's --num-speculative-tokens (MTP depth); likewise
 NGRAM=ram
 KV_DTYPE=fp8
 ENGINE_ARGS=()
@@ -83,6 +94,12 @@ ROPE=none
 SEQS=8
 PREFIX_RESUME=nearest
 RECORD_PERIOD=60
+# The start canary: after /health, every start (cold, measured or cached) sends this one deterministic completion and the answer
+# must contain the expected fact (case-insensitive, semantic, not a hash), or everything this launch started is stopped and the
+# launch fails (exit 96). It catches an engine that is up but answering garbage before any client does. The prompt is a fact the
+# served model answers; a model that cannot answer it gets its own with --canary-prompt/--canary-expect.
+CANARY_PROMPT="The capital of France is"
+CANARY_EXPECT="Paris"
 CMD=start
 [ $# -gt 0 ] && case "$1" in start|stop) CMD=$1; shift ;; esac
 while [ $# -gt 0 ]; do
@@ -106,11 +123,14 @@ while [ $# -gt 0 ]; do
     --ngram-placement) NGRAM=$2; shift 2 ;;
     --record-heat) RECORD=$2; shift 2 ;;
     --record-period) RECORD_PERIOD=$2; shift 2 ;;
+    --canary-prompt) CANARY_PROMPT=$2; shift 2 ;;
+    --canary-expect) CANARY_EXPECT=$2; shift 2 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
 done
 
-stop_all() {
+stop_procs() {
+  local stuck=0
   # engine first (SIGINT is its clean shutdown), then the helpers; each gets 60 s before SIGKILL
   for name in engine $(cd "$PIDS" 2>/dev/null && ls -r helper* 2>/dev/null); do
     [ -f "$PIDS/$name" ] || continue
@@ -119,16 +139,44 @@ stop_all() {
       kill -INT "$pid"
       for _ in $(seq 60); do kill -0 "$pid" 2>/dev/null || break; sleep 1; done
       kill -0 "$pid" 2>/dev/null && { echo "$name ($pid) did not stop; killing" >&2; kill -KILL "$pid"; }
+      # Fail closed: a process of this launch that is still alive (its mappings, its GPU context) would share the cards and
+      # a recreated /dev/shm segment name with whatever starts next, so nothing proceeds while it lives.
+      for _ in $(seq 60); do kill -0 "$pid" 2>/dev/null || break; sleep 1; done
+      if kill -0 "$pid" 2>/dev/null; then
+        echo "stop: $name ($pid) is still alive after SIGKILL; not continuing while it holds the cards" >&2
+        stuck=1
+        continue   # keep its pid file so a later stop sees it
+      fi
     fi
     rm -f "$PIDS/$name"
   done
-  # power settings this launcher applied go back to what the cards ran before, once the processes are gone
-  if [ -f "$RUN/gpu-power" ]; then
-    PYTHONPATH=tools python3 -m bigcherry gpu-power restore >&2 && rm -f "$RUN/gpu-power"
-  fi
+  return $stuck
 }
 
-if [ "$CMD" = stop ]; then stop_all; echo "stopped"; exit 0; fi
+stop_all() {
+  local rc=0
+  stop_procs || rc=1
+  # power settings this launcher applied go back to what the cards ran before; attempted even when a process survived,
+  # and the failure of either is the result
+  if [ -f "$RUN/gpu-power" ]; then
+    if PYTHONPATH=tools python3 -m bigcherry gpu-power restore >&2; then rm -f "$RUN/gpu-power"; else rc=1; fi
+  fi
+  return $rc
+}
+
+# One launch at a time: the already-running check, the measuring start and the plan store share the run folder (the PID files,
+# the helper segment, the measured-plan file), so two concurrent launches could store one's plan under the other's key.
+# `stop` takes the same lock, so it cannot slip in between a launch's power marker and its apply, or report "stopped" while a
+# launch goes on. The lock is released at the hand-off; the engine and helpers never inherit it.
+mkdir -p "$RUN"
+exec 9> "$RUN/launch.lock"
+flock -n 9 || { echo "FLASHNEXT_EXIT=98 another launch (or stop) is in progress ($RUN/launch.lock); wait for it, or interrupt it with ^C"; exit 98; }
+
+if [ "$CMD" = stop ]; then
+  if stop_all; then echo "stopped"; exit 0; fi
+  echo "stop failed: a process or the power settings could not be put back (above); nothing is reported stopped" >&2
+  exit 1
+fi
 
 for name in engine $(cd "$PIDS" 2>/dev/null && ls helper* 2>/dev/null); do
   if [ -f "$PIDS/$name" ] && kill -0 "$(cat "$PIDS/$name")" 2>/dev/null; then
@@ -150,14 +198,30 @@ HELPER=$RAD_HOME/helpers/r3_moe_worker
 # CPU energy counters unreadable (`bigcherry host-check`, PWR04).
 PYTHONPATH=tools python3 -m bigcherry host-check 2>/dev/null | grep '^WARN' >&2 || true
 
+# From here until the engine is up, anything that ends this launcher (a failure, ^C, SIGTERM, SIGHUP, an early exit) stops
+# what it started and puts the power settings back. Only the hand-off at the end (LAUNCH_HANDED_OFF=1) keeps them.
+LAUNCH_HANDED_OFF=0
+launch_cleanup() {
+  [ "$LAUNCH_HANDED_OFF" = 1 ] && return 0
+  trap - EXIT
+  echo "launch did not complete; stopping what was started" >&2
+  stop_all || echo "launch cleanup: a process or the power settings could not be put back (above)" >&2
+}
+trap launch_cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+trap 'exit 129' HUP
+
 # Optional per-run power settings (PWR04); when they cannot be written, gpu-power lists the missing setup steps and the run goes
 # ahead with the cards as they are.
 if [ "$GPU_POWER" = 1 ]; then
   mkdir -p "$RUN"
-  if PYTHONPATH=tools python3 -m bigcherry gpu-power apply >&2; then
-    touch "$RUN/gpu-power"
-  else
-    echo "gpu-power: running with the cards as they are" >&2
+  # The marker comes first: apply records what ran before and then writes setting by setting, so an apply that fails part way
+  # may have changed a card. Restoring with nothing recorded is a no-op.
+  touch "$RUN/gpu-power"
+  if ! PYTHONPATH=tools python3 -m bigcherry gpu-power apply >&2; then
+    echo "gpu-power: the settings were not (fully) applied; putting back what ran before, then running with the cards as they are" >&2
+    PYTHONPATH=tools python3 -m bigcherry gpu-power restore >&2 && rm -f "$RUN/gpu-power"
   fi
 fi
 
@@ -202,28 +266,30 @@ fi
 
 mkdir -p "$PIDS"
 STAMP=$(date +%m%d-%H%M%S)
-rm -f "/dev/shm${SHM}"
-trap 'echo "start failed; stopping what was started" >&2; stop_all; exit 1' ERR
 
 # helpers in order: helper 0 creates the segment, helper 1 attaches; each must report ready before the next starts
-for i in "${!HELPERS[@]}"; do
-  log=$RUN/helper$i-$STAMP.log
-  declare -n hv="LAYOUT_HELPER_$i"
-  env "${COMMON[@]}" "${hv[@]}" \
-    setsid ${HELPER_WRAP:-} "$HELPER" "$MODEL" > "$log" 2>&1 &
-  echo $! > "$PIDS/helper$i"
-  unset -n hv
-  echo "helper$i (pid $!, log $log): waiting for ready..." >&2
-  ready=0
-  for _ in $(seq 900); do
-    grep -qE '^r3_moe_worker: (ready |waiting for engine runtime expert maps)' "$log" && { ready=1; break; }
-    kill -0 "$(cat "$PIDS/helper$i")" 2>/dev/null || break
-    sleep 1
+start_helpers() {
+  for i in "${!HELPERS[@]}"; do
+    log=$RUN/helper$i-$STAMP.log
+    # A fresh log, made here before the helper exists: the measuring start used this same name moments ago, and its
+    # "ready" line must never be mistaken for the new helper's.
+    : > "$log"
+    declare -n hv="LAYOUT_HELPER_$i"
+    env "${COMMON[@]}" "${hv[@]}" \
+      setsid ${HELPER_WRAP:-} "$HELPER" "$MODEL" > "$log" 2>&1 9>&- &
+    echo $! > "$PIDS/helper$i"
+    unset -n hv
+    echo "helper$i (pid $!, log $log): waiting for ready..." >&2
+    ready=0
+    for _ in $(seq 900); do
+      grep -qE '^r3_moe_worker: (ready |waiting for engine runtime expert maps)' "$log" && { ready=1; break; }
+      kill -0 "$(cat "$PIDS/helper$i")" 2>/dev/null || break
+      sleep 1
+    done
+    [ $ready = 1 ] || { echo "FLASHNEXT_EXIT=1 helper$i not ready; see $log"; tail -n 20 "$log"; return 1; }
   done
-  [ $ready = 1 ] || { echo "FLASHNEXT_EXIT=1 helper$i not ready; see $log"; tail -n 20 "$log"; false; }
-done
+}
 
-LOG=$RUN/engine-$STAMP.log
 RESUME_ARGS=(); [ "$PREFIX_RESUME" = off ] || RESUME_ARGS=(--prefix-resume "$PREFIX_RESUME")
 ENGINE_KERNELS="$LAYOUT_ENGINE_PLUGIN,libr3moe,libref"
 ENGINE_VISIBLE="$R9700"
@@ -236,24 +302,54 @@ if [ -n "$NGRAM_DEV" ]; then
   ENGINE_HIP="0,1"
   NGRAM_ENV=(R3_NGRAM_DEV=1 R3_NGRAM_HELPER_SO="$RAD_HOME/helpers/libr3_ngram_helper.so" R3_NGRAM_AVX="$RAD_HOME/kernels/libavx.so")
 fi
-env "${COMMON[@]}" "${NGRAM_ENV[@]}" R3_MOE_WORKER=1 ROCR_VISIBLE_DEVICES="$ENGINE_VISIBLE" HIP_VISIBLE_DEVICES="$ENGINE_HIP" \
-  setsid ${ENGINE_WRAP:-} "$RAD_BIN" --model "$MODEL" --radiance-home "$RAD_HOME" --port "$PORT" \
-    --kernels "$ENGINE_KERNELS" \
-    --placement expert_tiered \
-    --ngram-placement "$NGRAM" \
-    --host-pool-mib "$HOST_POOL_MIB" \
-    --prefix-cache-mib "$HOST_KV_MIB" \
-    --tp 1 \
-    --max-num-seqs "$SEQS" \
-    --max-num-batched-tokens "$CHUNK" \
-    --checkpoint-interval 4096 \
-    --kv-cache-dtype "$KV_DTYPE" \
-    --num-speculative-tokens 3 \
-    --max-model-len "$MAX_LEN" \
-    --rope-scaling "$ROPE" \
-    "${RESUME_ARGS[@]}" \
-    "${ENGINE_ARGS[@]}" \
-  > "$LOG" 2>&1 &
+# start_engine LOG [ARG ...]: the engine, with the launcher's own configuration (the one plan_check_describe tells bc-serve
+# about) and ARG... after it.
+start_engine() {
+  local log=$1; shift
+  env "${COMMON[@]}" "${NGRAM_ENV[@]}" R3_MOE_WORKER=1 ROCR_VISIBLE_DEVICES="$ENGINE_VISIBLE" HIP_VISIBLE_DEVICES="$ENGINE_HIP" \
+    setsid ${ENGINE_WRAP:-} "$RAD_BIN" --model "$MODEL" --radiance-home "$RAD_HOME" --port "$PORT" \
+      --kernels "$ENGINE_KERNELS" \
+      --placement expert_tiered \
+      --ngram-placement "$NGRAM" \
+      --host-pool-mib "$HOST_POOL_MIB" \
+      --prefix-cache-mib "$HOST_KV_MIB" \
+      --tp 1 \
+      --max-num-seqs "$SEQS" \
+      --max-num-batched-tokens "$CHUNK" \
+      --checkpoint-interval "$CKPT_INTERVAL" \
+      --kv-cache-dtype "$KV_DTYPE" \
+      --num-speculative-tokens "$NUM_SPEC" \
+      --max-model-len "$MAX_LEN" \
+      --rope-scaling "$ROPE" \
+      "${RESUME_ARGS[@]}" \
+      "${ENGINE_ARGS[@]}" \
+      "$@" \
+    > "$log" 2>&1 9>&- &
+}
+
+# The measuring start of the plan check (plan-check.sh): helpers up, the engine runs to the end of its memory plan and
+# exits by itself (--plan-memory), then the helpers stop. It never serves and never runs a request.
+plan_check_start_engine_measure() {
+  rm -f "/dev/shm${SHM}"
+  start_helpers || { stop_procs; return 1; }
+  start_engine "$RUN/engine-measure.log" --plan-memory "$PLAN_MEASURE_FILE"
+  local pid=$! rc=0
+  echo $pid > "$PIDS/engine"
+  wait $pid || rc=$?
+  stop_procs || { echo "plan check: the measuring start's processes did not exit; not starting for real" >&2; return 1; }   # processes only: the power settings the real start still needs stay applied
+  [ $rc = 0 ] && [ -s "$PLAN_MEASURE_FILE" ]
+}
+
+source "$(dirname "${BASH_SOURCE[0]}")/lib/plan-check.sh"
+# The check is armed before anything is started for real; if it cannot be (no bc-serve, a measuring start that failed, a
+# plan that does not decode) the engine does not start. There is no way to skip it.
+plan_check_flags || { echo "FLASHNEXT_EXIT=97 the engine plan check could not be armed (above); nothing was started for serving"; exit 97; }
+
+trap 'exit 1' ERR
+rm -f "/dev/shm${SHM}"
+start_helpers
+LOG=$RUN/engine-$STAMP.log
+start_engine "$LOG" "${PLAN_CHECK_ARGS[@]}"
 echo $! > "$PIDS/engine"
 echo "engine on R9700 (pid $!, log $LOG): waiting for /health..." >&2
 up=0
@@ -263,7 +359,26 @@ for _ in $(seq 180); do
   sleep 5
 done
 [ $up = 1 ] || { echo "FLASHNEXT_EXIT=1 engine did not come up; see $LOG"; tail -n 30 "$LOG"; false; }
+start_canary() {
+  local body answer reply
+  body=$(CANARY_PROMPT="$CANARY_PROMPT" python3 -c 'import json,os;print(json.dumps({"model":"default","prompt":os.environ["CANARY_PROMPT"],"max_tokens":24,"temperature":0}))')
+  # Transport and parsing must each succeed on their own: a failed or non-2xx request, or a reply that is not a completion, is a
+  # canary failure whatever text it happens to contain.
+  if ! reply=$(curl -fsS --max-time 120 "http://127.0.0.1:$PORT/v1/completions" -H 'content-type: application/json' -d "$body" 2>&1); then
+    answer="<request failed: $(printf %s "$reply" | head -c 80)>"
+  elif ! answer=$(printf %s "$reply" | python3 -c 'import json,sys;t=json.load(sys.stdin)["choices"][0]["text"];sys.exit(1) if not isinstance(t,str) else print(t)' 2>/dev/null); then
+    answer="<not a completion: $(printf %s "$reply" | head -c 60)>"
+  else
+    case "${answer,,}" in *"${CANARY_EXPECT,,}"*) echo "start canary: ok (answered '$(printf %s "$answer" | head -c 60)')" >&2; return 0 ;; esac
+  fi
+  echo "FLASHNEXT_EXIT=96 start canary failed: the engine is up but answered '$(printf %s "$answer" | head -c 80)' to '$CANARY_PROMPT' (expected it to contain '$CANARY_EXPECT'); stopping everything this launch started; engine log $LOG" >&2
+  return 1
+}
+start_canary || exit 96
 trap - ERR
+LAUNCH_HANDED_OFF=1
+trap - EXIT INT TERM HUP
+exec 9>&-
 
 cat <<INFO
 FLASHNEXT_EXIT=0

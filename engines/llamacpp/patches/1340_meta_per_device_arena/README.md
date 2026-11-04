@@ -1,5 +1,15 @@
 # 1340_meta_per_device_arena — merged Meta arena mechanism
 
+## Summary
+
+Single package for Meta per-device compute arenas plus the `BIGCHERRY_META_MEM` memory-report diagnostic formerly packaged as 1339. The arena mechanism remains default-on with `BIGCHERRY_META_PER_DEVICE_ARENA=0` as the native/common-size control; `BIGCHERRY_META_MEM=1` remains diagnostic-only.
+
+## Outcome
+
+Recorded state: `validated` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 ## PA44-E merge record
 
 Packaging-only merge. The former 1339 memory-report diagnostic is now owned by 1340. `BIGCHERRY_META_MEM` and `BIGCHERRY_META_PER_DEVICE_ARENA` retain their existing behavior and emitted source rows.
@@ -112,4 +122,3 @@ Third model, Gemma 4 26B A4B (UD-Q5_K_S) on two RX 7900 XTX in tensor split (run
 reserved against the common 428.1 MiB, no re-plans, greedy text identical to the common-arena runs, prefill 3391.5,
 3349.0 t/s against 3417.3, 3427.5 (defaults) and 3342.3, 3368.7 (today's kernel patches off) - inside the spread of
 the other two arms; decode 93.1, 93.3 against 93.1, 93.4.
-

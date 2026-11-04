@@ -1,5 +1,15 @@
 # 1267 RD07 Q6_K MMQ scale fold
 
+## Summary
+
+The b11126 extraction of RD07 from rejected 1203 hoists Q6_K row scales and folds per-k01 sub-scales before the j0 accumulation in `ggml/src/ggml-cuda/mmq-vec-dot.cuh`. The original and folded expressions differ in F32 association.
+
+## Outcome
+
+Recorded state: `untested` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 **Status:** `untested`; b11552 `known_broken` / `FAILED_NEEDS_RECONCILIATION` in `dispositions/1267_rd07_q6k_mmq_scale_fold.json`. **Not production, not a successful current-pin application.** Owner: PRBE110 (code/rebase), PRBE04 (downstream PEF01/HI71 safety).
 
 The b11126 extraction of RD07 from rejected 1203 hoists Q6_K row scales and folds per-k01 sub-scales before the j0 accumulation in `ggml/src/ggml-cuda/mmq-vec-dot.cuh`. The original and folded expressions differ in F32 association. Historical b11126 gfx1201 pp512 +2.4675%, CI95 [2.2776%,2.6508%], tg128 -0.0331%, CI95 [-0.0592%,-0.0071%]; contract verdict PASS but the record remains `validation_disposition=incomplete`, `eligible_for_validated_state=false` and has failed controls/performance checks. No b11552 or production gain is claimed.

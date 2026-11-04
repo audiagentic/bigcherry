@@ -1,5 +1,15 @@
 # 1274: dense Q6_K single-column decode without activation quantization
 
+## Summary
+
+Extends 1241's `f32_act` MMVQ path to Q6_K. Q6_K weights are dequantized and dotted against the original F32 activation, skipping Q8_1 activation quantization.
+
+## Outcome
+
+Recorded state: `validated` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 ## Scope
 
 Extends 1241's `f32_act` MMVQ path to Q6_K. Q6_K weights are dequantized and dotted against the original F32 activation, skipping Q8_1 activation quantization. Eligibility matches 1241: dense/non-MoE Q6_K, `ne1 == 1`, gfx1100/RDNA3_0, no forced autotune candidate. Requires 1241. An earlier Q4_K arm was removed (no gain).

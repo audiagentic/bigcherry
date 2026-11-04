@@ -552,6 +552,7 @@ def make_build_worker(
                 backend=backend,
                 targets_option=layout.targets_option,
                 rocm_paths=layout.rocm_paths,
+                engine_options=layout.repo_path_options(paths.REPO_ROOT),
             )
             # Adversarial-review follow-up: the worker-entry check above and
             # the post-compile check below leave a real window between them

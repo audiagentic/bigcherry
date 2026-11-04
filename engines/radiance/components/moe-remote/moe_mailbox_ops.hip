@@ -2,6 +2,7 @@
 #include <cstdio>
 #include "moe_remote_hook.h"
 #include "step_ticket_kernel.h"
+#include "mailbox_completion.h"
 #include "moe_remote_shm.h"
 #include "rad_abi.h"
 
@@ -89,11 +90,6 @@ __device__ __forceinline__ void store_sys_rel(uint32_t* p, uint32_t v) {
 __device__ __forceinline__ uint32_t load_sys_acq(const uint32_t* p) {
     return __hip_atomic_load(p, __ATOMIC_ACQUIRE, __HIP_MEMORY_SCOPE_SYSTEM);
 }
-__device__ __forceinline__ bool owner_has(const uint8_t* bits, uint32_t layer, uint32_t expert, uint32_t experts) {
-    const uint64_t bit = (uint64_t)layer * experts + expert;
-    return (bits[bit >> 3] & (uint8_t)(1u << (bit & 7u))) != 0;
-}
-
 /* Which rank slots this step publishes to: a two-rank engine uses its own slot (helper 0 serves both); a
  * one-rank engine with two helpers uses slot h for helper h, the routes split by which helper owns the expert. */
 __device__ __forceinline__ uint32_t step_slot(uint32_t k, uint32_t rank, uint32_t helpers) {
@@ -130,8 +126,15 @@ __global__ void mailbox_stage_kernel(
     }
 }
 
+/* Four words beyond the chunk-mirror region. The publish op copies the
+ * ticket here exactly once; later ops read the per-pass copy, not the
+ * overwritable rank cell (AQL tape arguments are immutable across plays). */
+using r3::mailbox_completion::kPublishedTicketOffset;
+
 __global__ void mailbox_publish_kernel(
-    uint8_t* base, const uint8_t* owner, const StepTicket* ticket_cell, uint32_t* sequence, uint32_t* published, uint32_t rank,
+    uint8_t* base, const uint8_t* owner0, const uint8_t* owner1, const R3MoeOwnerBinding* bindings,
+    const StepTicket* ticket_cell, ConsumptionStamp* stamps, uint32_t capacity,
+    uint32_t* sequence, uint32_t* published, uint32_t rank,
     uint32_t helpers, int32_t* ids, const uint16_t* ew, uint32_t* heat,
     const uint8_t* aq, const uint8_t* aq_base,
     uint32_t layer, uint32_t rows, uint32_t hidden, uint32_t top_k,
@@ -139,6 +142,7 @@ __global__ void mailbox_publish_kernel(
     uint32_t shadow, uint32_t world,
     const uint8_t* st_aq, const float* st_as, const uint16_t* st_x, uint32_t st_bf16, uint32_t combine) {
     __shared__ uint32_t nr;
+    __shared__ const uint8_t* selected_owner;
     __shared__ uint32_t step_nr[kMaxSlots], step_seq[kMaxSlots], gen;
     /* R3_MOE_WORKER_HISTOGRAM (RHP02): this step's routes are counted in LDS and added to the histogram (pinned host memory)
      * once an expert. This kernel is one block and a rank's steps run in order, so the adds are plain loads and stores. */
@@ -147,11 +151,27 @@ __global__ void mailbox_publish_kernel(
     Header* h = reinterpret_cast<Header*>(base);
     /* Every published request takes its immutable epoch/slot from this play's
      * ticket. Later mailbox kernels refer to the Request, not this cell. */
-    const StepTicket ticket = *ticket_cell;
-    if (!ticket.ticket_id || !ticket.placement_epoch || ticket.generation_slot > 1)
-        __builtin_trap();
+    StepTicket ticket{};
+    ConsumptionStamp* stamp = nullptr;
+    /* One thread validates the ticket, device stamp and owner binding ONCE
+     * per pass, before the already-existing block barrier. Other threads
+     * neither load the ticket cell nor repeat device-stamp comparisons. */
+    if (threadIdx.x == 0) {
+        ticket = *ticket_cell;
+        if (!stamps || !capacity) __builtin_trap();
+        stamp = stamps + ticket.ticket_id % capacity;
+        if (!r3::consumption::owns(*stamp, ticket.ticket_id, ticket.placement_epoch,
+                                   ticket.generation_slot)) __builtin_trap();
+        selected_owner=r3_moe_select_owner_bitmap(ticket,bindings,owner0,owner1);
+        if (!selected_owner) __builtin_trap();
+        published[kPublishedTicketOffset+0] = (uint32_t)ticket.ticket_id;
+        published[kPublishedTicketOffset+1] = (uint32_t)(ticket.ticket_id >> 32);
+        published[kPublishedTicketOffset+2] = ticket.placement_epoch;
+        published[kPublishedTicketOffset+3] = ticket.generation_slot;
+    }
     if (threadIdx.x <= kMaxSlots) published[threadIdx.x] = 0;   /* [kMaxSlots]: the combine generation */
     __syncthreads();
+    const uint8_t* owner=selected_owner;
     if (rows == 0 || rows > max_rows || rows > kMaxRows ||
         layer >= h->layer_count || !load_sys_acq(&h->layer_map_ready[layer])) return;
 
@@ -189,7 +209,7 @@ __global__ void mailbox_publish_kernel(
     }
     for (uint32_t k = 0; k < helpers; ++k) {
         const uint32_t slot = step_slot(k, rank, helpers);
-        const uint8_t* own = owner + (size_t)k * device_owner_slot_bytes(h->expert_count);
+        const uint8_t* own = owner + (size_t)k * ((h->owner_map_bytes + 7u) / 8u);
         if (threadIdx.x == 0) nr = 0;
         __syncthreads();
         Route* route = reinterpret_cast<Route*>(base + h->route_offset[slot]);
@@ -198,7 +218,7 @@ __global__ void mailbox_publish_kernel(
             const bool in_range = le >= 0 && (uint32_t)le < n_expert && (uint32_t)le < h->expert_count;
             /* R3_MOE_WORKER_HISTOGRAM: every route this step makes, owned or not, counted once (first slot), in LDS. */
             if (heat && k == 0 && in_range && (uint32_t)le < kExperts) atomicAdd(&step_heat[(uint32_t)le], 1u);
-            if (!in_range || slot_map[(uint32_t)le] < 0 || !owner_has(own, layer, (uint32_t)le, h->expert_count))
+            if (!in_range || slot_map[(uint32_t)le] < 0 || !r3_moe_owner_has(own, layer, (uint32_t)le, h->expert_count))
                 continue;
             const uint32_t p = atomicAdd(&nr, 1u);
             route[p].token = (int32_t)(i / top_k);
@@ -230,6 +250,12 @@ __global__ void mailbox_publish_kernel(
             if (s == 0) __builtin_trap();
             step_seq[k] = s;
         }
+        /* One device-scope add for every request this pass publishes, before any is released (L2, no link trip).
+         * Ordered before this parent's seal by the stream; the seal checks consumed <= published. */
+        uint32_t requests = 0;
+        for (uint32_t k = 0; k < helpers; ++k) requests += step_seq[k] != 0u;
+        if (requests)
+            (void)__hip_atomic_fetch_add(&stamp->published_count, requests, __ATOMIC_RELAXED, __HIP_MEMORY_SCOPE_AGENT);
         /* helper 0 combines, so it needs a request of its own, and at least one other helper must have one */
         bool others = false;
         for (uint32_t k = 1; k < helpers; ++k) others |= step_nr[k] != 0u;
@@ -365,7 +391,11 @@ __device__ void mailbox_wait_helpers(uint8_t* base, const uint32_t* sequence, co
          * second helper's wait. Both are written once the last wait is over. */
         seen_at[k] = wall_clock64();
         traced[k] = reinterpret_cast<Request*>(base + h->ring_offset) + lane * kLaneSlots + ((seq - 1u) % kLaneSlots);
-        if (traced[k]->status != 0) __builtin_trap();   /* a failed helper request: fail now (the route check skips it on a chunked step) */
+        /* The existing system acquire proves exactly this helper sequence.
+         * Request epoch/slot/sequence are the engine's own words; route-mark
+         * has already validated them on the ordered stream before any add or
+         * shadow result read. Do not reread them in this hot wait. */
+        if (traced[k]->status != 0) __builtin_trap();
     }
     for (uint32_t k = 0; k < helpers && k < kMaxHelpers; ++k) {
         if (!traced[k]) continue;
@@ -410,9 +440,15 @@ __global__ void mailbox_mask_ref_kernel(
  * inv[flat] is the engine's sorted row for a slot it computed locally (-1 otherwise). Linear in the step,
  * so a 4096-row prefill step costs the same per row as a decode step. */
 __global__ void mailbox_route_mark_kernel(
-    uint8_t* base, const uint32_t* sequence, const uint32_t* published, uint32_t rank, uint32_t helpers,
+    uint8_t* base, const uint32_t* sequence,
+    const uint32_t* published, uint32_t rank, uint32_t helpers,
     const uint16_t* ew, uint32_t* rmask, uint32_t rows, uint32_t hidden, uint32_t top_k) {
     Header* h = reinterpret_cast<Header*>(base);
+    /* The four immutable ticket words are L2-resident from publish, and
+     * independent threads can decode them. No per-block LDS exchange/barrier.
+     * This is the only Request identity gate before all add/shadow reads. */
+    StepTicket ticket{};
+    if (!r3::mailbox_completion::pass_ticket(published, &ticket)) __builtin_trap();
     for (uint32_t k = 0; k < helpers; ++k) {
         const uint32_t slot = step_slot(k, rank, helpers);
         const Request* q = slot_request(base, sequence, published, slot);
@@ -424,8 +460,11 @@ __global__ void mailbox_route_mark_kernel(
         const bool chunked = published[kMaxSlots] != 0u;
         if (!chunked && (load_sys_acq(&h->lane[lane].done_sequence) != sequence[lane] || q->status != 0))
             __builtin_trap();
-        if (q->sequence != sequence[lane] || q->rank != slot || q->rows != rows ||
-            q->hidden != hidden || q->route_count == 0 || q->route_count > rows * top_k)
+        /* publish wrote rank/rows/hidden/layer, with the layer already
+         * range-checked. They are engine-owned, immutable until retirement.
+         * Only the sequence/epoch/slot must be revalidated at the consumer. */
+        if (!r3::mailbox_completion::matches_request(ticket, sequence[lane], *q) ||
+            q->route_count == 0 || q->route_count > rows * top_k)
             __builtin_trap();
         const Route* route = reinterpret_cast<const Route*>(base + q->route_offset);
         for (uint32_t j = blockIdx.x * blockDim.x + threadIdx.x; j < q->route_count;
@@ -433,6 +472,8 @@ __global__ void mailbox_route_mark_kernel(
             const Route r = route[j];
             if (r.token < 0 || (uint32_t)r.token >= rows || r.slot >= top_k) __builtin_trap();
             const uint32_t flat = (uint32_t)r.token * top_k + r.slot;
+            /* Publish generated this Route from the ticket-selected bitmap;
+             * route-mark only checks its identity and router-weight integrity. */
             if (r.weight_bf16 != ew[flat]) __builtin_trap();
             if (atomicCAS(rmask + flat, 0u, k + 1u) != 0u) __builtin_trap();   /* two routes for one slot */
         }
@@ -446,6 +487,12 @@ __global__ void mailbox_inverse_kernel(const int32_t* sorted, int32_t* inv, uint
     if (flat >= 0 && (uint32_t)flat < slots) inv[flat] = (int32_t)i;
 }
 
+/* Stream-ordered identity gate: launch_maps runs mailbox_route_mark_kernel
+ * first and verifies each engine-owned Request's sequence/epoch/slot against
+ * the immutable pass ticket. No second per-token (or per-route) mapped-host
+ * read is added here. On a combined step chunks may be read before the final
+ * helper done_sequence; the ordered tail wait validates completion afterward,
+ * and finish must follow both this kernel and that tail wait. */
 /* Each helper returns ONE row a token: the router-weighted sum of that token's experts it computed, in slot
  * order with an f32 accumulator, narrowed once to bf16. The merge adds each helper's row to the token's
  * locally computed slots (f32, slot order) and the shared expert. Mask-only mode 1 merges the engine's own
@@ -641,8 +688,83 @@ __global__ void mailbox_shadow_rows_kernel(
     }
 }
 
-__global__ void mailbox_add_finish_kernel(uint32_t* published) {
-    if (!blockIdx.x && threadIdx.x <= kMaxSlots) published[threadIdx.x] = 0;
+/* Finish follows route-mark (engine Request identity check), noncombined
+ * wait or combined tail wait (helper done_sequence acquire + Request identity),
+ * and every add/shadow result-plane reader on the SAME ordered rank stream.
+ * Therefore one pass-token check suffices to count consumption: re-reading
+ * mapped Request fields here would duplicate the already-verified comparison
+ * and add extra cross-device loads per helper request. The parent seal is the
+ * only host-visible ACK; no per-request system-scope publication is added. */
+__global__ void mailbox_add_finish_kernel(const uint32_t* sequence, uint32_t* published,
+                                          ConsumptionStamp* stamps, uint32_t capacity,
+                                          ConsumedRecords* rec) {
+    if (blockIdx.x || threadIdx.x >= kMaxSlots + 1u) return;
+    const uint32_t idx = threadIdx.x;
+    StepTicket pass{};
+    if (!r3::mailbox_completion::pass_ticket(published, &pass) ||
+        !sequence || !stamps || !capacity || !rec) __builtin_trap();
+    /* publish validated stamp identity; finish is on that same stream.
+     * seal_ready validates it again after the last result consumer. */
+    ConsumptionStamp* out = stamps + pass.ticket_id % capacity;
+    uint32_t consumed = 0;
+    if (idx < kMaxSlots && published[idx]) {
+        const uint32_t klass = published[idx] - 1u;
+        /* publish selected the legal lane class and wrote this word. */
+        const uint32_t lane = lane_of(idx, klass);
+        ConsumedRecord& r = rec->lane[lane];
+        r.slot = pass.generation_slot;
+        r.epoch = pass.placement_epoch;
+        r.sequence = sequence[lane];
+        consumed = 1;
+    }
+    if (idx == 0)
+        if (const uint32_t cg = published[kMaxSlots]) {
+            rec->combine.slot = pass.generation_slot;
+            rec->combine.epoch = pass.placement_epoch;
+            rec->combine.sequence = cg;
+        }
+    const uint32_t lanes = (uint32_t)__syncthreads_count(consumed);
+    if (idx == 0 && lanes)
+        (void)__hip_atomic_fetch_add(&out->consumed_count, lanes, __ATOMIC_RELAXED,
+                                     __HIP_MEMORY_SCOPE_AGENT);
+    published[idx] = 0;
+}
+
+/* Once per parent and rank, on the scheduler's seal, after the parent's last GPU effect and before its terminal event.
+ * One thread; posted stores to host-mapped memory, records first and the stamp's ticket_id last with a system-scope
+ * release. Only changed lane/combine records are copied. */
+__global__ void mailbox_seal_kernel(uint8_t* base, const ConsumptionStamp* stamps, ConsumptionStamp* host,
+                                    uint32_t capacity, ConsumedRecords* rec, StepTicket pass) {
+    if (blockIdx.x || threadIdx.x) return;
+    if (!base || !stamps || !host || !capacity || !rec) __builtin_trap();
+    Header* h = reinterpret_cast<Header*>(base);
+    const ConsumptionStamp s = stamps[pass.ticket_id % capacity];
+    /* Exact per-parent consumed ACK: it cannot precede the last result-plane
+     * reader, because finish runs after add/tail and seal is behind all passes
+     * on this rank's stream. Reject a mismatched or incomplete stamp instead
+     * of publishing an optimistic lifetime proof. The rank event follows. */
+    if (!r3::consumption::seal_ready(s, pass)) __builtin_trap();
+    for (uint32_t lane = 0; lane < kLanes; ++lane) {
+        ConsumedRecord& r = rec->lane[lane];
+        if (r.sequence == r.flushed) continue;
+        __hip_atomic_store(&h->lane[lane].consumed_slot, r.slot, __ATOMIC_RELAXED, __HIP_MEMORY_SCOPE_SYSTEM);
+        __hip_atomic_store(&h->lane[lane].consumed_epoch, r.epoch, __ATOMIC_RELAXED, __HIP_MEMORY_SCOPE_SYSTEM);
+        __hip_atomic_store(&h->lane[lane].consumed_sequence, r.sequence, __ATOMIC_RELAXED, __HIP_MEMORY_SCOPE_SYSTEM);
+        r.flushed = r.sequence;
+    }
+    if (rec->combine.sequence != rec->combine.flushed) {
+        __hip_atomic_store(&h->combine.result_consumed_slot, rec->combine.slot, __ATOMIC_RELAXED, __HIP_MEMORY_SCOPE_SYSTEM);
+        __hip_atomic_store(&h->combine.result_consumed_epoch, rec->combine.epoch, __ATOMIC_RELAXED, __HIP_MEMORY_SCOPE_SYSTEM);
+        __hip_atomic_store(&h->combine.result_consumed_generation, rec->combine.sequence, __ATOMIC_RELAXED,
+                           __HIP_MEMORY_SCOPE_SYSTEM);
+        rec->combine.flushed = rec->combine.sequence;
+    }
+    ConsumptionStamp* o = host + pass.ticket_id % capacity;
+    __hip_atomic_store(&o->placement_epoch, s.placement_epoch, __ATOMIC_RELAXED, __HIP_MEMORY_SCOPE_SYSTEM);
+    __hip_atomic_store(&o->generation_slot, s.generation_slot, __ATOMIC_RELAXED, __HIP_MEMORY_SCOPE_SYSTEM);
+    __hip_atomic_store(&o->published_count, s.published_count, __ATOMIC_RELAXED, __HIP_MEMORY_SCOPE_SYSTEM);
+    __hip_atomic_store(&o->consumed_count, s.consumed_count, __ATOMIC_RELAXED, __HIP_MEMORY_SCOPE_SYSTEM);
+    __hip_atomic_store(&o->ticket_id, s.ticket_id, __ATOMIC_RELEASE, __HIP_MEMORY_SCOPE_SYSTEM);   /* publication word last */
 }
 
 long long geti(const RadArgs* a, const char* key, long long bad = -1) {
@@ -720,7 +842,9 @@ int publish_launch(const RadArgs* a, RadStream stream) {
                        static_cast<const uint16_t*>(a->t[2].data), (uint32_t)rows, (uint32_t)hidden,
                        d->cpu_ref);
     hipLaunchKernelGGL(mailbox_publish_kernel, dim3(1), dim3(256), 0, (hipStream_t)stream,
-                       static_cast<uint8_t*>(d->mailbox), d->owner, d->ticket, d->sequence, d->published, d->rank,
+                       static_cast<uint8_t*>(d->mailbox), d->owner[0], d->owner[1], d->owner_binding,
+                       d->ticket, d->stamps, d->consumed_capacity,
+                       d->sequence, d->published, d->rank,
                        d->helpers, static_cast<int32_t*>(a->t[0].data),
                        static_cast<const uint16_t*>(a->t[1].data), d->heat,
                        static_cast<const uint8_t*>(a->t[3].data),
@@ -824,8 +948,12 @@ int add_launch(const RadArgs* a, RadStream stream) {
                        (uint32_t)rows, (uint32_t)hidden, (uint32_t)top_k);
     hipLaunchKernelGGL(mailbox_add_tail_wait_kernel, dim3(1), dim3(1), 0, (hipStream_t)stream,
                        static_cast<uint8_t*>(d->mailbox), d->sequence, d->published, d->rank, d->helpers);
+    /* This is after every true output-plane reader and (for combined steps)
+     * the full helper tail wait. The parent seal, not this kernel, posts the
+     * host-visible result-consumed ACK once per parent/rank. */
     hipLaunchKernelGGL(mailbox_add_finish_kernel, dim3(1), dim3(kMaxSlots + 1), 0, (hipStream_t)stream,
-                       d->published);
+                       d->sequence, d->published, d->stamps,
+                       d->consumed_capacity, d->consumed_rec);
     return hipGetLastError() == hipSuccess ? RAD_OK : RAD_E_DEVICE;
 }
 
@@ -860,8 +988,12 @@ int shadow_launch(const RadArgs* a, RadStream stream) {
                        static_cast<const uint16_t*>(a->t[2].data),
                        rows, (uint32_t)hidden, (uint32_t)top_k,
                        d->shadow_stats, d->shadow_first);
+    /* This is after every true output-plane reader and (for combined steps)
+     * the full helper tail wait. The parent seal, not this kernel, posts the
+     * host-visible result-consumed ACK once per parent/rank. */
     hipLaunchKernelGGL(mailbox_add_finish_kernel, dim3(1), dim3(kMaxSlots + 1), 0, (hipStream_t)stream,
-                       d->published);
+                       d->sequence, d->published, d->stamps,
+                       d->consumed_capacity, d->consumed_rec);
     return hipGetLastError() == hipSuccess ? RAD_OK : RAD_E_DEVICE;
 }
 
@@ -927,12 +1059,24 @@ const RadKernelInfo kShadow = [] {
 
 }  // namespace
 
-int r3_moe_ticket_launch(StepTicket* dst, StepTicket value, void* stream) {
-    if (!dst || !stream || !value.ticket_id || !value.placement_epoch || value.generation_slot > 1)
+int r3_moe_ticket_launch(const R3MoeMailboxDevice* d, StepTicket value, void* stream) {
+    if (!d || !d->ticket || !d->stamps || !d->consumed_capacity || !stream || !value.ticket_id ||
+        !value.placement_epoch || value.generation_slot > 1)
         return RAD_E_STATE;
     /* This kernel is deliberately not r4dchain*: AQL emits its barrier bit. */
     hipLaunchKernelGGL(mailbox_set_ticket_kernel, dim3(1), dim3(1), 0, (hipStream_t)stream,
-                       dst, value);
+                       d->ticket, d->stamps, d->consumed_capacity, value);
+    return hipGetLastError() == hipSuccess ? RAD_OK : RAD_E_DEVICE;
+}
+
+int r3_moe_seal_launch(const R3MoeMailboxDevice* d, StepTicket value, void* stream) {
+    if (!d || !d->mailbox || !d->stamps || !d->consumed || !d->consumed_rec || !d->consumed_capacity || !stream ||
+        !value.ticket_id || !value.placement_epoch || value.generation_slot > 1 ||
+        value.reserved[0] || value.reserved[1] || value.reserved[2])
+        return RAD_E_STATE;
+    hipLaunchKernelGGL(mailbox_seal_kernel, dim3(1), dim3(1), 0, (hipStream_t)stream,
+                       static_cast<uint8_t*>(d->mailbox), d->stamps, d->consumed, d->consumed_capacity,
+                       d->consumed_rec, value);
     return hipGetLastError() == hipSuccess ? RAD_OK : RAD_E_DEVICE;
 }
 

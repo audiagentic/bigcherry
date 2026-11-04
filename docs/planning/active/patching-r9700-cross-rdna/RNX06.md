@@ -76,6 +76,10 @@ Related BigCherry memory work: 1235, 1280, 1286, 1292
 
 GPT design pass (req_83e7cdc000be4b9e): keep blocked pending MET ownership resolution. RNX06 and QFN02 both consume the 1279 routing evidence and propose placement changes; resolve ownership and the authoritative placement contract before coding.
 
+
+
+BACKLOG TRIAGE 2026-11-04 (revalidated against main 6eb31a708): the proposed disposition "MERGE into MET07 for llama-only; do not build parallel Radiance cache" was NOT applied; this item stays open. Why: docs/planning/active/patching-r9700-cross-rdna/RNX06.md:16-25,38-50 requires pinned-host backing and per-rank/split expert residency with hit/miss/traffic and lifetime validation. docs/planning/active/patching-moe-expert-tiering/MET07.md:14-27,54-60 is active but explicitly single-card and refuses tensor split; merging all of RNX06 there loses mixed-card and pinned-host feasibility criteria. Active items that reference this one: RNX09. Keep the multi-device/pinned-host feasibility decision distinct; share single-card hot-cache tests with MET07 without discarding split-mode gates.
+
 ## Goal
 
 Evaluate a llama.cpp-native VRAM hot-expert cache backed by pinned system memory, using r9700-stack's LRU residency design as a reference. This is a conceptual transplant, not a direct kernel port: vLLM owns weights/routing differently from ggml and BigCherry must preserve tensor ownership, quant layout, split-mode semantics and allocator lifetime.
@@ -121,3 +125,4 @@ Promotion requires an E2E win at a documented VRAM budget and no allocator/lifet
 ## Reviews
 
 - RV4211
+- 2026-11-04T04:25:17.452821+00:00 (updated-by): Updated: section:notes

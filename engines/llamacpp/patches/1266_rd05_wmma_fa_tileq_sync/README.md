@@ -1,5 +1,15 @@
 # 1266 RD05 WMMA FA tile_Q synchronization
 
+## Summary
+
+Extracts only RD05's two synchronization fixes from rejected package `1203_rd050607_rdna4_wmma_fa_q6k_mmq`: the end-of-`k00` barrier condition and the inter-`process_tile` barrier protecting the reused `tile_Q` buffer.
+
+## Outcome
+
+Recorded state: `untested` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 Status: **untested**. Plan: PRBE110. Contract: `PRBE110-RD05-WMMA-TILEQ-SYNC`.
 
 ## Scope

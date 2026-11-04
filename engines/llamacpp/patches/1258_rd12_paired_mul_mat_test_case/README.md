@@ -1,5 +1,15 @@
 # 1258: RD12 paired MUL_MAT correctness test case
 
+## Summary
+
+Adds a deterministic whole-graph `test-backend-ops` case containing two distinct Q6_K `MUL_MAT` projections over one shared F32 activation so RD12's real paired-MMVQ dual-output fusion can be correctness-tested.
+
+## Outcome
+
+Recorded state: `untested` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 Diagnostic support for the `RD12-PAIRED-MMVQ-DUAL` correctness producer.
 
 RD12 cannot be exercised by the ordinary `test-backend-ops --test-file`

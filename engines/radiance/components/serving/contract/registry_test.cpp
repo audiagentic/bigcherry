@@ -1,0 +1,456 @@
+// bc_contract_test: the registry loader refuses what the v1 contract forbids, naming the fault, and the emitters keep
+// their promises (fingerprint ignores documentation, patch defs are partial, the real registry loads).
+#include "registry.h"
+
+#include <cstdio>
+#include <filesystem>
+#include <fstream>
+#include <sstream>
+#include <string>
+
+#ifndef BC_CONTRACT_SOURCE_DIR
+#error "BC_CONTRACT_SOURCE_DIR must name engines/radiance/components/serving"
+#endif
+
+namespace {
+int failures = 0;
+
+void check(bool ok, const std::string& what) {
+    if (!ok) {
+        std::printf("FAIL: %s\n", what.c_str());
+        ++failures;
+    }
+}
+
+const std::string kBase = R"(
+[contract]
+api_version = "bigcherry/v1"
+kind = "ServingManifest"
+contract_version = 1
+schema_dialect = "https://json-schema.org/draft/2020-12/schema"
+schema_id = "https://example.invalid/test.json"
+title = "test"
+namespace = "bc::serving::test"
+lifecycle = "startup_only"
+
+[[class_default]]
+path = "/spec"
+class = "policy"
+
+[[calibration_key]]
+key = "a.b_mib"
+value_kind = "ref"
+value_ref = "uint"
+doc = "A calibrated size."
+
+[[def]]
+name = "uint"
+kind = "integer"
+minimum = 0
+doc = "Unsigned."
+
+[[def]]
+name = "group"
+kind = "object"
+cpp = "Group"
+doc = "A group."
+
+[[field]]
+path = "$defs/group/on"
+kind = "boolean"
+doc = "On."
+
+[[def]]
+name = "groupPatch"
+kind = "patch"
+of = "group"
+cpp = "GroupPatch"
+doc = "A partial group."
+
+[[class_default]]
+path = "/apiVersion"
+class = "envelope"
+
+[[class_default]]
+path = "/kind"
+class = "envelope"
+
+[[class_default]]
+path = "/metadata"
+class = "envelope"
+
+[[field]]
+path = ""
+kind = "object"
+cpp = "Doc"
+doc = "The document."
+
+[[field]]
+path = "/apiVersion"
+kind = "string"
+const = "bigcherry/v1"
+cpp_member = "api_version"
+doc = "Identity."
+
+[[field]]
+path = "/kind"
+kind = "string"
+const = "ServingManifest"
+doc = "Kind."
+
+[[field]]
+path = "/metadata"
+kind = "object"
+cpp = "Meta"
+doc = "Metadata."
+
+[[field]]
+path = "/metadata/contract_version"
+kind = "integer"
+const = 1
+doc = "Version."
+
+[[field]]
+path = "/spec"
+kind = "object"
+cpp = "Spec"
+doc = "Spec."
+
+[[field]]
+path = "/spec/calibration"
+kind = "array"
+item_kind = "object"
+doc = "Calibration."
+
+[[field]]
+path = "/spec/calibration/[]"
+kind = "object"
+cpp = "Cal"
+doc = "One entry."
+
+[[field]]
+path = "/spec/calibration/[]/key"
+kind = "calibration_key"
+doc = "Key."
+
+[[field]]
+path = "/spec/calibration/[]/value"
+kind = "calibration_value"
+doc = "Value."
+
+[[field]]
+path = "/spec/n"
+kind = "ref"
+ref = "uint"
+doc = "A count."
+
+[[field]]
+path = "/spec/patch"
+kind = "ref"
+ref = "groupPatch"
+optional = true
+doc = "A patch."
+)";
+
+std::string replaced(const std::string& from, const std::string& to) {
+    std::string s = kBase;
+    const size_t at = s.find(from);
+    if (at == std::string::npos) {
+        std::printf("FAIL: test fixture lacks '%s'\n", from.c_str());
+        ++failures;
+        return s;
+    }
+    return s.replace(at, from.size(), to);
+}
+
+void refused(const std::string& text, const std::string& needle, const std::string& what) {
+    bc::contract::Registry r;
+    std::string why;
+    const bool ok = bc::contract::load_registry(text, "test.toml", &r, &why);
+    check(!ok && why.find(needle) != std::string::npos, what + ": " + (ok ? "loaded" : why));
+}
+}  // namespace
+
+int main() {
+    bc::contract::Registry r;
+    std::string why;
+    check(bc::contract::load_registry(kBase, "test.toml", &r, &why), "the base registry loads: " + why);
+    if (failures) return 1;
+    const auto schema = nlohmann::json::parse(bc::contract::emit_schema(r));
+    check(schema["properties"]["spec"]["required"] == nlohmann::json::array({"calibration", "n"}),
+          "optional members are not required: " + schema["properties"]["spec"]["required"].dump());
+    check(schema["additionalProperties"] == false && schema["properties"]["spec"]["additionalProperties"] == false,
+          "objects are closed");
+    const auto& patch = schema["$defs"]["groupPatch"];
+    check(patch["minProperties"] == 1 && !patch.contains("required") && patch["properties"].contains("on"),
+          "a patch def is a nonempty partial copy: " + patch.dump());
+    const auto& cal = schema["properties"]["spec"]["properties"]["calibration"]["items"];
+    check(cal["properties"]["key"]["enum"] == nlohmann::json::array({"a.b_mib"}) &&
+              cal["allOf"][0]["then"]["properties"]["value"]["$ref"] == "#/$defs/uint",
+          "calibration keys and their value types come from [[calibration_key]]: " + cal.dump());
+    const std::string types = bc::contract::emit_types(r);
+    check(types.find("std::optional<GroupPatch> patch;") != std::string::npos &&
+              types.find("std::optional<bool> on;") != std::string::npos &&
+              types.find("enum class CalibrationKey : uint8_t { kABMib };") != std::string::npos,
+          "typed model: optional members, patch members optional, calibration keys");
+
+    // the fingerprint follows what validates, not the documentation
+    bc::contract::Registry docs, bound;
+    check(bc::contract::load_registry(replaced("doc = \"A count.\"", "doc = \"Another count.\""), "t", &docs, &why),
+          "doc edit loads");
+    check(bc::contract::load_registry(replaced("minimum = 0\n", "minimum = 1\n"), "t", &bound, &why), "bound edit loads");
+    check(bc::contract::fingerprint(docs) == bc::contract::fingerprint(r), "a doc edit keeps the fingerprint");
+    check(bc::contract::fingerprint(bound) != bc::contract::fingerprint(r), "a bound edit changes the fingerprint");
+
+    refused(replaced("minimum = 0\n", "minimum = 0.5\n"), "non-integer number", "a float bound");
+    refused(replaced("kind = \"integer\"", "kind = \"number\""), "integers only", "a number type");
+    refused(replaced("doc = \"A count.\"", "doc = \"A count.\"\nunits = \"MiB\""), "unknown key 'units'", "unknown key");
+    refused(replaced("doc = \"A count.\"", ""), "missing 'doc'", "missing doc");
+    refused(replaced("doc = \"A count.\"", "doc = \"\""), "empty doc", "empty doc");
+    refused(kBase + "\n[[field]]\npath = \"/spec/n\"\nkind = \"boolean\"\ndoc = \"x\"\n", "defined twice", "duplicate path");
+    refused(kBase + "\n[[field]]\npath = \"/spec/x/y\"\nkind = \"boolean\"\ndoc = \"x\"\n", "comes before", "orphan");
+    refused(replaced("ref = \"uint\"\ndoc = \"A count.\"", "ref = \"nat\"\ndoc = \"A count.\""), "names no def",
+            "unknown ref");
+    refused(kBase + "\n[[field]]\npath = \"/spec/e\"\nkind = \"enum\"\nvalues = [\"a\"]\ndoc = \"x\"\n", "cpp_type",
+            "an enum without a C++ type");
+    refused(kBase + "\n[[field]]\npath = \"/spec/e\"\nkind = \"enum\"\nvalues = [\"a\", \"a\"]\ncpp_type = \"E\"\ndoc = \"x\"\n",
+            "repeated enum value", "a repeated enum value");
+    refused(kBase + "\n[[field]]\npath = \"/spec/class\"\nkind = \"boolean\"\ndoc = \"x\"\n", "cpp_member",
+            "a keyword member");
+    refused(kBase + "\n[[field]]\npath = \"/spec/o\"\nkind = \"object\"\ncpp = \"Spec\"\ndoc = \"x\"\n", "C++ type Spec",
+            "a repeated struct name");
+    refused(replaced("cpp = \"Spec\"\ndoc = \"Spec.\"",
+                     "cpp = \"Spec\"\nconstraints = '[{\"if\": {\"minimum\": 1.5}}]'\ndoc = \"Spec.\""),
+            "non-integer number", "a float inside constraints");
+    refused(replaced("api_version = \"bigcherry/v1\"", "api_version = \"bigcherry/v2\""), "contract_version",
+            "an api_version that disagrees with contract_version");
+    refused(kBase + "\n[[unit]]\nname = \"MiB\"\n", "unknown key 'unit'", "an unknown table");
+    refused(kBase + "\n[[field]]\npath = \"/spec/o\"\nkind = \"object\"\nnullable = true\ncpp = \"O\"\ndoc = \"x\"\n",
+            "not nullable", "a nullable object");
+    refused(replaced("path = \"/spec\"\nclass = \"policy\"", "path = \"/spec\"\nclass = \"vibes\""), "unknown class",
+            "an unknown class");
+    refused(replaced("value_ref = \"uint\"", "value_ref = \"nat\""), "names no def", "a calibration value of no def");
+
+    // review of #535: the fingerprint follows literal const data inside constraints, not annotations; the semantic
+    // fingerprint also follows classes and bindings
+    {
+        const std::string with_a = replaced("cpp = \"Spec\"\ndoc = \"Spec.\"",
+                                            "cpp = \"Spec\"\nconstraints = '[{\"not\": {\"const\": {\"description\": \"A\"}}}]'\ndoc = \"Spec.\"");
+        const std::string with_b = replaced("cpp = \"Spec\"\ndoc = \"Spec.\"",
+                                            "cpp = \"Spec\"\nconstraints = '[{\"not\": {\"const\": {\"description\": \"B\"}}}]'\ndoc = \"Spec.\"");
+        bc::contract::Registry a, b, titled, classed;
+        check(bc::contract::load_registry(with_a, "t", &a, &why) && bc::contract::load_registry(with_b, "t", &b, &why),
+              "const fixtures load: " + why);
+        check(bc::contract::fingerprint(a) != bc::contract::fingerprint(b),
+              "a change to object-valued const data changes the fingerprint");
+        check(bc::contract::load_registry(replaced("title = \"test\"", "title = \"renamed\""), "t", &titled, &why), "title");
+        check(bc::contract::fingerprint(titled) == bc::contract::fingerprint(r) &&
+                  bc::contract::semantic_fingerprint(titled) == bc::contract::semantic_fingerprint(r),
+              "a title change keeps both fingerprints");
+        check(bc::contract::load_registry(replaced("class = \"policy\"", "class = \"derived\""), "t", &classed, &why), "class");
+        check(bc::contract::fingerprint(classed) == bc::contract::fingerprint(r) &&
+                  bc::contract::semantic_fingerprint(classed) != bc::contract::semantic_fingerprint(r),
+              "a class change keeps the schema fingerprint and changes the semantic one");
+    }
+    refused(replaced("kind = \"ServingManifest\"\ncontract_version", "kind = \"ChangedManifest\"\ncontract_version"),
+            "[contract] identity", "a [contract] kind that is not the document's /kind");
+    {
+        bc::contract::Registry ca, cb;
+        check(bc::contract::load_registry(replaced("cpp = \"Spec\"\ndoc = \"Spec.\"",
+                                                   "cpp = \"Spec\"\nconstraints = '[{\"contentSchema\": {\"description\": \"A\"}}]'\ndoc = \"Spec.\""),
+                                          "t", &ca, &why) &&
+                  bc::contract::load_registry(replaced("cpp = \"Spec\"\ndoc = \"Spec.\"",
+                                                       "cpp = \"Spec\"\nconstraints = '[{\"contentSchema\": {\"description\": \"B\"}}]'\ndoc = \"Spec.\""),
+                                              "t", &cb, &why),
+              "contentSchema fixtures load: " + why);
+        check(bc::contract::fingerprint(ca) == bc::contract::fingerprint(cb), "an annotation inside contentSchema is stripped");
+    }
+    refused(replaced("value_ref = \"uint\"", "value_ref = \"group\""), "integer or string def",
+            "a calibration value referring to an object def");
+    refused(kBase + "\n[[field]]\npath = \"/spec/t\"\nkind = \"array\"\nitem_kind = \"tuple\"\ntuple = [\"group\", \"uint\"]\n"
+                    "doc = \"x\"\n",
+            "tuple elements must be integer defs", "a tuple element that is not an integer def");
+    refused(kBase + "\n[[field]]\npath = \"/spec/s\"\nkind = \"string\"\npattern = \"^a+$\"\ndoc = \"x\"\n",
+            "a pattern needs a max_length", "a pattern without a max_length (spec §11 amendment 7)");
+    refused(kBase + "\n[[field]]\npath = \"/spec/s\"\nkind = \"string\"\npattern = \"^a+$\"\nmax_length = 200000\ndoc = \"x\"\n",
+            "at most 1024", "a pattern max_length past 1024");
+    refused(kBase + "\n[[field]]\npath = \"/spec/s\"\nkind = \"string\"\nmin_length = -1\ndoc = \"x\"\n",
+            "min_length is not negative", "a negative string length");
+    refused(kBase + "\n[[field]]\npath = \"/spec/e\"\nkind = \"enum\"\nvalues = [\"a.b\", \"a_b\"]\ncpp_type = \"E\"\ndoc = \"x\"\n",
+            "same C++ enumerator", "two enum values with one C++ enumerator");
+    {
+        std::string many = "[";
+        for (int i = 0; i < 257; ++i) many += (i ? ", \"v" : "\"v") + std::to_string(i) + "\"";
+        many += "]";
+        refused(kBase + "\n[[field]]\npath = \"/spec/e\"\nkind = \"enum\"\nvalues = " + many + "\ncpp_type = \"E\"\ndoc = \"x\"\n",
+                "at most 256 values", "an enum past 256 values");
+        std::string keys;
+        for (int i = 0; i < 257; ++i)
+            keys += "\n[[calibration_key]]\nkey = \"k" + std::to_string(i) + "\"\nvalue_kind = \"ref\"\nvalue_ref = \"uint\"\ndoc = \"x\"\n";
+        refused(replaced("[[def]]\nname = \"uint\"", keys + "\n[[def]]\nname = \"uint\""), "at most 256 calibration keys",
+                "calibration keys past 256");
+    }
+    refused(kBase + "\n[[field]]\npath = \"/spec/a\"\nkind = \"array\"\nitem_kind = \"boolean\"\nmin_items = 3\nmax_items = 2\n"
+                    "doc = \"x\"\n",
+            "min_items exceeds max_items", "min_items above max_items");
+    refused(kBase + "\n[[field]]\npath = \"/spec/t\"\nkind = \"array\"\nitem_kind = \"tuple\"\ntuple = [\"uint\", \"uint\"]\n"
+                    "item_minimum = 1\ndoc = \"x\"\n",
+            "takes only 'tuple'", "a scalar attribute on a tuple item");
+    refused(kBase + "\n[[field]]\npath = \"/spec/m\"\nkind = \"map\"\nkey_ref = \"uint\"\nrequired_keys = []\ndoc = \"x\"\n"
+                    "\n[[field]]\npath = \"/spec/m/*\"\nkind = \"boolean\"\ndoc = \"x\"\n",
+            "key_ref must name a string def", "a map keyed by an integer def");
+    refused(kBase + "\n[[field]]\npath = \"/spec/a\"\nkind = \"array\"\nitem_kind = \"boolean\"\nmin_items = -1\ndoc = \"x\"\n",
+            "not negative", "a negative count");
+    refused(kBase + "\n[[field]]\npath = \"/spec/x\"\nkind = \"boolean\"\ncpp_member = \"n\"\ndoc = \"x\"\n",
+            "C++ member n is repeated", "two members with one C++ name");
+    refused(replaced("[[def]]\nname = \"uint\"", "[[calibration_key]]\nkey = \"a_b.mib\"\nvalue_kind = \"ref\"\n"
+                                                  "value_ref = \"uint\"\ndoc = \"x\"\n\n[[def]]\nname = \"uint\""),
+            "twice", "calibration keys with one C++ enumerator");
+    refused(kBase + "\n[[field]]\npath = \"/spec/e\"\nkind = \"enum\"\nvalues = [\"a/b\"]\ncpp_type = \"E\"\ndoc = \"x\"\n",
+            "invalid C++ enumerator", "an enum value that is no C++ identifier");
+    refused(replaced("namespace = \"bc::serving::test\"", "namespace = \"bc::1x\""), "namespace", "a bad namespace");
+    refused(replaced("[[class_default]]\npath = \"/spec\"\nclass = \"policy\"",
+                     "[[class_default]]\npath = \"/spec\"\nclass = \"policy\"\n\n[[class_default]]\npath = \"/spec\"\nclass = \"fact\""),
+            "two class defaults", "a repeated class default");
+
+    check(r.max_depth == 4, "the fixture's depth: root, spec, calibration array, entry = 4, is " + std::to_string(r.max_depth));
+    refused(kBase + "\n[[field]]\npath = \"$defs/group/self\"\nkind = \"ref\"\nref = \"group\"\noptional = true\ndoc = \"x\"\n",
+            "reaches itself", "a recursive $ref (amendment 8)");
+    refused(replaced("[[def]]\nname = \"groupPatch\"",
+                     "[[def]]\nname = \"other\"\nkind = \"object\"\ncpp = \"Other\"\ndoc = \"x\"\n\n"
+                     "[[field]]\npath = \"$defs/other/back\"\nkind = \"ref\"\nref = \"group\"\noptional = true\ndoc = \"x\"\n\n"
+                     "[[field]]\npath = \"$defs/group/next\"\nkind = \"ref\"\nref = \"other\"\noptional = true\ndoc = \"x\"\n\n"
+                     "[[def]]\nname = \"groupPatch\""),
+            "reaches itself", "a ref cycle through two defs");
+    refused(kBase + "\n[[field]]\npath = \"$defs/group/patch\"\nkind = \"ref\"\nref = \"groupPatch\"\noptional = true\ndoc = \"x\"\n",
+            "reaches itself", "a def that refers to its own patch");
+
+    // the real registry loads and generates
+    // ---- defaults (spec section 7): a literal of the field's own kind, from a named place, fitting the field's bounds ----
+    {
+        auto with = [&](const std::string& extra) {
+            return replaced("[[field]]\npath = \"/spec/n\"\nkind = \"ref\"\nref = \"uint\"\n",
+                            "[[field]]\npath = \"/spec/n\"\nkind = \"ref\"\nref = \"uint\"\n" + extra);
+        };
+        bc::contract::Registry d;
+        check(bc::contract::load_registry(with("default = 7\ndefault_source = \"setting:R3_SOME_COUNT\"\n"), "t", &d, &why),
+              "a default on a ref to an integer def loads: " + why);
+        check(bc::contract::fingerprint(d) == bc::contract::fingerprint(r),
+              "a default is an annotation: the validation fingerprint does not move");
+        check(bc::contract::semantic_fingerprint(d) != bc::contract::semantic_fingerprint(r),
+              "but it is contract semantics: the semantic fingerprint does");
+        const auto schema2 = nlohmann::json::parse(bc::contract::emit_schema(d));
+        check(schema2["properties"]["spec"]["properties"]["n"]["default"] == 7, "the schema carries the default");
+        check(bc::contract::emit_types(d).find("\"7\", \"setting:R3_SOME_COUNT\"") != std::string::npos,
+              "the field table carries the default and its source");
+        refused(with("default = 7\n"), "go together", "a default without its source");
+        refused(with("default_source = \"setting:R3_SOME_COUNT\"\n"), "go together", "a source without its default");
+        refused(with("default = \"7\"\ndefault_source = \"setting:R3_X\"\n"), "integer default must be an integer", "a wrong-typed default");
+        refused(with("default = -1\ndefault_source = \"setting:R3_X\"\n"), "outside the field's numeric bounds", "a default below the bound");
+        refused(with("default = 7\ndefault_source = \"somewhere\"\n"), "default_source is", "an unknown kind of source");
+        refused(with("default = 7\ndefault_source = \"radiance:Config.max_seqs\"\n"), "must name the field's own radiance_config",
+                "a radiance source that is not the field's binding");
+        refused(replaced("path = \"/spec\"\nkind = \"object\"\ncpp = \"Spec\"\n",
+                         "path = \"/spec\"\nkind = \"object\"\ncpp = \"Spec\"\ndefault = 1\ndefault_source = \"setting:R3_X\"\n"),
+                "cannot have a default", "a default on a container");
+
+        // a default must be what its own schema accepts: a const, a pattern, a date format
+        refused(replaced("path = \"/metadata/contract_version\"\nkind = \"integer\"\nconst = 1\n",
+                         "path = \"/metadata/contract_version\"\nkind = \"integer\"\nconst = 1\ndefault = 2\ndefault_source = \"setting:R3_X\"\n"),
+                "is not the field's const", "a default that is not the const");
+        check(bc::contract::load_registry(replaced("path = \"/metadata/contract_version\"\nkind = \"integer\"\nconst = 1\n",
+                                                  "path = \"/metadata/contract_version\"\nkind = \"integer\"\nconst = 1\ndefault = 1\ndefault_source = \"setting:R3_X\"\n"),
+                                        "t", &d, &why),
+              "a default equal to the const loads: " + why);
+
+        auto string_field = [&](const std::string& attrs) {
+            return std::string(kBase) + "\n[[field]]\npath = \"/spec/s\"\nkind = \"string\"\n" + attrs + "doc = \"A string.\"\n";
+        };
+        const std::string src = "default_source = \"setting:R3_X\"\n";
+        refused(string_field("pattern = \"^gfx[0-9a-f]+$\"\nmax_length = 32\ndefault = \"invalid\"\n" + src), "does not match the field's pattern",
+                "a default that does not match the pattern");
+        check(bc::contract::load_registry(string_field("pattern = \"^gfx[0-9a-f]+$\"\nmax_length = 32\ndefault = \"gfx1100\"\n" + src), "t", &d, &why),
+              "a default that matches the pattern loads: " + why);
+        refused(string_field("format = \"date\"\ndefault = \"2026-13-40\"\n" + src), "is not a date", "a default that is not a date");
+        refused(string_field("format = \"date\"\ndefault = \"2026-02-31\"\n" + src), "is not a date", "a day that does not exist");
+        refused(string_field("format = \"date\"\ndefault = \"2025-02-29\"\n" + src), "is not a date", "29 February in a common year");
+        check(bc::contract::load_registry(string_field("format = \"date\"\ndefault = \"2024-02-29\"\n" + src), "t", &d, &why),
+              "29 February in a leap year loads: " + why);
+        // length is counted in characters, not bytes
+        refused(string_field("min_length = 2\nmax_length = 2\ndefault = \"\xC3\xA9\"\n" + src), "length bounds", "one multibyte character is below min_length 2");
+        check(bc::contract::load_registry(string_field("min_length = 1\nmax_length = 1\ndefault = \"\xC3\xA9\"\n" + src), "t", &d, &why),
+              "one multibyte character fits length 1: " + why);
+        check(bc::contract::load_registry(string_field("format = \"date\"\ndefault = \"2026-11-03\"\n" + src), "t", &d, &why),
+              "a date default loads: " + why);
+
+        // verification against the sources: equal passes; a divergence names both values; a non-literal is no source
+        const std::filesystem::path tmp = std::filesystem::temp_directory_path() / "bc-contract-defaults";
+        std::filesystem::create_directories(tmp / "core");
+        auto write = [&](const std::filesystem::path& file, const std::string& body) { std::ofstream(file, std::ios::trunc) << body; };
+        write(tmp / "core" / "rad_core.h", "struct Config {\n    int64_t max_seqs = 256;   /* comment (with parens) */\n    int64_t derived = compute();\n};\n");
+        write(tmp / "comp.toml", "[setting.R3_SOME_COUNT]\ndefault = \"7\"\nstatus = \"x\"\n");
+        auto verify = [&](const std::string& registry_text, std::string* out) {
+            bc::contract::Registry v;
+            std::string e;
+            if (!bc::contract::load_registry(registry_text, "t", &v, &e)) { *out = "load: " + e; return false; }
+            return bc::contract::verify_defaults(v, tmp.string(), {(tmp / "comp.toml").string()}, out);
+        };
+        std::string msg;
+        check(verify(with("default = 7\ndefault_source = \"setting:R3_SOME_COUNT\"\n"), &msg), "a setting default equal to its source: " + msg);
+        check(!verify(with("default = 8\ndefault_source = \"setting:R3_SOME_COUNT\"\n"), &msg) && msg.find("source says 7") != std::string::npos,
+              "a diverging setting default: " + msg);
+        check(!verify(with("default = 8\ndefault_source = \"setting:R3_MISSING\"\n"), &msg) && msg.find("no [setting.R3_MISSING]") != std::string::npos,
+              "a setting the component files do not have: " + msg);
+        const std::string cfg = "radiance_option = \"--max-num-seqs\"\nradiance_config = \"Config.max_seqs\"\n";
+        check(verify(with(cfg + "default = 256\ndefault_source = \"radiance:Config.max_seqs\"\n"), &msg),
+              "a Config default equal to its initialiser, a comment with parentheses notwithstanding: " + msg);
+        check(!verify(with(cfg + "default = 255\ndefault_source = \"radiance:Config.max_seqs\"\n"), &msg) && msg.find("source says 256") != std::string::npos,
+              "a diverging Config default: " + msg);
+        const std::string cfg2 = "radiance_option = \"--derived\"\nradiance_config = \"Config.derived\"\n";
+        check(!verify(with(cfg2 + "default = 1\ndefault_source = \"radiance:Config.derived\"\n"), &msg) && msg.find("not a simple literal") != std::string::npos,
+              "an initialiser that is an expression is no source: " + msg);
+        // a commented-out initialiser is not the declaration, nor is text inside a string; two real ones are ambiguous
+        write(tmp / "core" / "rad_core.h",
+              "struct Config {\n    int64_t max_seqs = 256;\n    // int64_t host_headroom_mib = 4096;\n    int64_t host_headroom_mib = 1;\n"
+              "    /* int64_t hidden = 5; */ const char* s = \"int64_t quoted = 9;\";\n};\n");
+        const std::string cfg3 = "radiance_option = \"--host-headroom-mib\"\nradiance_config = \"Config.host_headroom_mib\"\n";
+        check(!verify(with(cfg3 + "default = 4096\ndefault_source = \"radiance:Config.host_headroom_mib\"\n"), &msg) && msg.find("source says 1") != std::string::npos,
+              "the real initialiser (1), not the commented one (4096), is the source: " + msg);
+        check(verify(with(cfg3 + "default = 1\ndefault_source = \"radiance:Config.host_headroom_mib\"\n"), &msg), "and the real one verifies: " + msg);
+        // text inside a string literal is never a declaration; a raw string or a digit separator does not confuse the scan
+        write(tmp / "core" / "rad_core.h", "struct Config {\n    const char* decoy = \"; int64_t max_seqs = 256;\";\n};\n");
+        check(!verify(with(cfg + "default = 256\ndefault_source = \"radiance:Config.max_seqs\"\n"), &msg) && msg.find("no `= <literal>;` initialiser") != std::string::npos,
+              "a declaration inside a string literal certifies nothing: " + msg);
+        write(tmp / "core" / "rad_core.h", "struct Config {\n    const char* raw = R\"x(; int64_t max_seqs = 256;)x\";\n    int64_t max_seqs = 1'000;\n};\n");
+        check(!verify(with(cfg + "default = 256\ndefault_source = \"radiance:Config.max_seqs\"\n"), &msg) && msg.find("source says 1000") != std::string::npos,
+              "a raw string is a literal and 1'000 reads as 1000: " + msg);
+        check(verify(with(cfg + "default = 1000\ndefault_source = \"radiance:Config.max_seqs\"\n"), &msg), "the digit-separated initialiser verifies: " + msg);
+        // a string default against a plain string initialiser (the literal's text comes back from the code-only scan)
+        write(tmp / "core" / "rad_core.h", "struct Config {\n    const char* mode = \"exact\";   // \"wht6\"\n};\n");
+        const std::string strcfg = "radiance_option = \"--mode\"\nradiance_config = \"Config.mode\"\n";
+        check(verify(string_field(strcfg + "default = \"exact\"\ndefault_source = \"radiance:Config.mode\"\n"), &msg), "a string default equal to its initialiser: " + msg);
+        check(!verify(string_field(strcfg + "default = \"wht6\"\ndefault_source = \"radiance:Config.mode\"\n"), &msg) && msg.find("source says \"exact\"") != std::string::npos,
+              "a string default diverging from its initialiser (the commented value is not it): " + msg);
+        // a raw string with quotes inside it (plain and every encoding prefix) hides the declaration-like text it holds
+        for (const char* prefix : {"", "u8", "u", "U", "L"}) {
+            write(tmp / "core" / "rad_core.h",
+                  std::string("struct Config {\n    const char* decoy = ") + prefix + "R\"z(x\"; int64_t max_seqs = 256; \"y)z\";\n};\n");
+            check(!verify(with(cfg + "default = 256\ndefault_source = \"radiance:Config.max_seqs\"\n"), &msg) && msg.find("no `= <literal>;` initialiser") != std::string::npos,
+                  std::string("a declaration inside a ") + prefix + "R raw string with quotes certifies nothing: " + msg);
+        }
+        write(tmp / "core" / "rad_core.h", "struct Config {\n    int64_t max_seqs = 256;\n    int64_t max_seqs = 256;\n};\n");
+        check(!verify(with(cfg + "default = 256\ndefault_source = \"radiance:Config.max_seqs\"\n"), &msg) && msg.find("declared more than once") != std::string::npos,
+              "a member declared twice is ambiguous: " + msg);
+        std::filesystem::remove_all(tmp);
+    }
+
+    std::ifstream in(std::string(BC_CONTRACT_SOURCE_DIR) + "/contract/serving-v1.toml", std::ios::binary);
+    std::ostringstream text;
+    text << in.rdbuf();
+    bc::contract::Registry real;
+    check(bc::contract::load_registry(text.str(), "serving-v1.toml", &real, &why), "the v1 registry loads: " + why);
+    if (failures) return 1;
+    check(bc::contract::generate_all(real).size() == 6, "six generated files");
+    std::printf("ok\n");
+    return 0;
+}

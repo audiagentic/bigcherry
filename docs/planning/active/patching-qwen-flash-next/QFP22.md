@@ -138,6 +138,10 @@ b11402 residual placed (2026-10-05, queue-27b-pairs.sh, existing bisect binaries
 
 Flash-Next long-context prefill across the bump (2026-10-05, queue-prefill-ab.sh, old-pin build b-chunk8 vs b11402 + 1333 build b-mixauto, production config 240K f16 ub512, ABBA, greedy text identical in all four runs at each depth): ~99K tokens (DEPTH 81920) old 793.4 / 834.8 vs new 871.1 / 872.1 t/s (+4..10%, old-pin runs 41 t/s apart); ~202K tokens (DEPTH 163840) old 614.4 / 621.3 vs new 663.0 / 663.4 t/s (+7..8%), decode 41.0 / 42.5 vs 42.2 / 42.4 t/s. Complete separation at both depths in favour of the new pin. So b11402 + 1333 is a net gain for Flash-Next long-context prefill; the 0.3% 27B 32K residual attributed to #29612 does not appear as a loss here and is not being pursued. Which upstream commit gives the long-context gain is not identified (#29435 whole-tile FA scheduling is the candidate; it was described as NVIDIA-gated in the GPT review, so that needs checking).
 
+
+
+BACKLOG TRIAGE 2026-11-04 (revalidated against main 6eb31a708): the proposed disposition "MERGE into FMTP02-FMTP07 quality/promotion" was NOT applied; this item stays open. Why: docs/planning/active/patching-qwen-flash-next/QFP22.md:20-37 and :108-119 require both MTP-ahead 1321/1322 ABBA promotion and QSA 1332 graph/identity qualification, which are different workstreams; docs/planning/active/patching-qwen-flash-next/QFP22.md:129-145 explicitly reports unresolved chunk-text identity. docs/planning/completed/patching-flash-next-mtp-pipeline/FMTP02.md:5 and FMTP04.md:5, FMTP05.md:5, FMTP06.md:5, FMTP07.md:5 mark five proposed targets superseded/deprecated; active FMTP03.md:16-35 concerns MTP overlap, not 1332 QSA. Active items that reference this one: QFP28, QFP27, QFP05, BCOP27. Split MTP-ahead follow-up toward active FMTP03 and 1332/QSA correctness toward QFP17 before retiring this combined llama.cpp plan.
+
 ## Change Log
 
 - 2026-10-04T21:08:00.115435+00:00 (created-by): Created by agent
@@ -241,3 +245,4 @@ Promotion/pin decision: keep b11402 correctness only if required by an upstream 
 - 2026-10-05T08:25:48.546505+00:00 (updated-by): Updated: section:notes
 - 2026-10-05T08:53:19.695307+00:00 (updated-by): Updated: section:notes
 - 2026-10-05T10:17:44.499217+00:00 (updated-by): Updated: section:notes
+- 2026-11-04T04:26:40.098381+00:00 (updated-by): Updated: section:notes

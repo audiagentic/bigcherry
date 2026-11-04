@@ -1,5 +1,15 @@
 # HI134 META stage trace
 
+## Summary
+
+Adds a bounded stage trace on top of the existing HI58/0830 telemetry: the generic META fallback reports the two copy sites it owns, and the HIP telemetry sink stores and serializes those stage records within the same per-reduction observation event.
+
+## Outcome
+
+Recorded state: `untested` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 This package contains the optional META-stage attribution trace hook used by
 HI134 profiling. It is diagnostic instrumentation, not a runtime selection
 policy. The trace schema and profiling workflow are described in

@@ -1,5 +1,15 @@
 # 1238_hi119_deterministic_init_mul_mat_id_tensors
 
+## Summary
+
+Fixes init_mul_mat_id_tensors() -- the shared initializer every registered MUL_MAT_ID-family test_case (test_mul_mat_id, test_mul_mat_vec_fusion, and HI119's new class) uses -- to shuffle its full [0, n_mats) index range with a seeded engine when BIGCHERRY_TEST_DETERMINISTIC_SEED is set, reusing patch 1222's helpers.
+
+## Outcome
+
+Recorded state: `untested` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 Plan item HI119 (superseded by THA02, `tuning-hip-autotune`). See
 `SUMMARY.md` for the mechanism.
 

@@ -1,5 +1,15 @@
 # 1341_meta_subset_mirrored
 
+## Summary
+
+Promotion record (QFP18 lightweight evidence-reuse tier, pin b11402 / d89651a7). Mechanism is in SUMMARY.md.
+
+## Outcome
+
+Recorded state: `validated` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 Promotion record (QFP18 lightweight evidence-reuse tier, pin b11402 / d89651a7). Mechanism is in SUMMARY.md. This is
 a memory-layout change of the tensor split, not a speed patch: with `BIGCHERRY_META_SUBSET_MIRROR=1` the Qwen4Exp
 lightning-indexer cache (`cache_idx_*`) is a full copy on the devices that run attention and absent on a device whose

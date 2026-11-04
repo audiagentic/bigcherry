@@ -15,13 +15,13 @@ work: M
 
 ## Description
 
-engines/radiance/README.md is a 1,144-line dated lab log mixing models, kernels and hardware; there is no per-model statement of current state. Create a clean, maintained doc set: docs/reference/engines/radiance/README.md (overview, links to parity assessment, runbook, platform design) and docs/reference/engines/radiance/models/<model>.md for qwen3.8-flash-next and qwen3.8-27b.
+docs/archive/radiance/LAB_HISTORY.md is a 1,144-line dated lab log mixing models, kernels and hardware; there is no per-model statement of current state. Create a clean, maintained doc set: docs/reference/engines/radiance/README.md (overview, links to parity assessment, runbook, platform design) and docs/reference/engines/radiance/models/<model>.md for qwen3.8-flash-next and qwen3.8-27b.
 
 ## Steps
 
 1. Move RADIANCE_PLATFORM_DESIGN/PARITY/RUNBOOK under docs/reference/engines/radiance/ (update every link).
 2. Per-model page sections: container and quantisation; reference quality vs the full model (Flash-Next owner table: mean KL 0.0789 all / 0.0239 text+assistant, median 0.0037/0.0029, P99 1.65/0.32, P99.9 5.33/1.03, top-1 92.85%/94.57%); layouts tried with best prefill/decode and run IDs; patches and settings on, and why; tried and shelved, with reason; open levers linked to plan items.
-3. Keep engines/radiance/README.md as the dated lab log; each entry links to its model page.
+3. Keep docs/archive/radiance/LAB_HISTORY.md as the dated lab log; each entry links to its model page.
 4. Doc rule: every measurement or decision updates the model page in the same change.
 
 ## Detailed Solution & Technical Design
@@ -56,6 +56,10 @@ Links resolve; each model page states current best layout and numbers that match
 
 Recording against model-specific docs is an owner requirement (2026-10-15).
 
+
+
+BACKLOG TRIAGE 2026-11-04 (revalidated against main 6eb31a708): the proposed disposition "SUPERSEDED by #251/#541-#553 docs refresh" was NOT applied; this item stays open. Why: PR #251 shipped model pages, but docs/reference/engines/radiance/README.md:3,11 and models/qwen3.8-flash-next.md:4 still claim v1.14.0 is the current pin. engines/radiance/CHANGELOG.md:8 and docs/releases/notes/bc-radiance-1160.0.0.md:3 confirm the present pin is v1.16.0; the continuing-current-doc acceptance is unmet. Active items that reference this one: RAD08, RHP03. Keep RAD07 open to update the per-model and overview pages for v1.16.0 and verify their current-run claims.
+
 ## Change Log
 
 - 2026-10-14T22:16:25.441629+00:00 (created-by): Created by agent
@@ -64,3 +68,4 @@ Recording against model-specific docs is an owner requirement (2026-10-15).
 
 - chg_20261017_012852_each-radiance-model-now-has-on_1051
 - 2026-10-17T01:28:56.281155+00:00 (updated-by): Updated: section:ledger-events
+- 2026-11-04T04:23:38.248290+00:00 (updated-by): Updated: section:notes

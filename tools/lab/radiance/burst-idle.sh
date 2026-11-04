@@ -1,5 +1,5 @@
 #!/bin/bash
-# RAD20 Option A gate: helper GPUs idle between inference bursts. Builds the moe-remote-handoff experiment, starts the
+# RAD20 Option A gate: helper GPUs idle between inference bursts. Builds the production lab source, starts the
 # production Flash-Next layout, samples board power and GFX activity on each helper GPU while loaded and idle, serves
 # single, concurrent, back-to-back and long-prefill requests (each must answer), samples idle again, then stops.
 # Gate: every request answered, clean stop, and each helper's idle median power <= RAD20_IDLE_WATTS (default 15) in

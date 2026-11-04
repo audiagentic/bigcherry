@@ -1,5 +1,15 @@
 # 1345_moe_ids_multiwarp
 
+## Summary
+
+For batches of 128 tokens and more, the MoE routing helper (`ggml_cuda_launch_mm_ids_helper`, `ggml-cuda/mmid.cu`) runs 8 warps per expert block where the native helper runs one. Each warp walks its own contiguous slice of the tokens with the native per-warp code; the warps exchange their counts once and write their rows at the right offsets.
+
+## Outcome
+
+Recorded state: `validated` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 Promotion record (QFP18 lightweight evidence-reuse tier, pin b11402 / d89651a7, 2026-10-07). Mechanism is in
 SUMMARY.md: for batches of 128 tokens and more the MoE routing helper runs 8 warps per expert where the native helper
 runs one, with byte-identical row lists. On by default; `BIGCHERRY_MOE_IDS_MULTIWARP=0` restores the native helper.

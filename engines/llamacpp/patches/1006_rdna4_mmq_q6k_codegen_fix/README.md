@@ -1,5 +1,15 @@
 # 1006 RDNA4 MMQ Q6_K codegen fix
 
+## Summary
+
+Cherry-picks the Q6_K half of unmerged upstream PR #25940 into the MFMA/WMMA MMQ vec_dot: adds an explicit float cast before a scale multiply to change ROCm's codegen. This is a split of the rejected patch `1000_rdna4_mmq_q2k_q6k_fix`, keeping only the edit whose real-hardware measurement was a genuine gain.
+
+## Outcome
+
+Recorded state: `validated` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 Split from `1000_rdna4_mmq_q2k_q6k_fix` (rejected 2026-09-16, PA35) after
 real hardware evidence separated the two independent edits it contained:
 Q6_K genuinely improved (1.365x, CI95 1.362x-1.367x), Q2_K genuinely

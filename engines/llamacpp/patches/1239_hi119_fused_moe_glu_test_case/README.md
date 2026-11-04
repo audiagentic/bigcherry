@@ -1,5 +1,15 @@
 # 1239_hi119_fused_moe_glu_test_case
 
+## Summary
+
+Adds test_bigcherry_moe_glu_fusion, a registered multi-node test_case that builds the same gate/up MUL_MAT_ID pair sharing one activation and ids tensor object (by pointer) that a production MoE FFN produces, with the GLU/swiglu_oai as the terminal output, so ggml-cuda's real graph-fusion detector fires on it.
+
+## Outcome
+
+Recorded state: `untested` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 Plan item HI119 (superseded by THA02, `tuning-hip-autotune`). See
 `SUMMARY.md` for the mechanism.
 

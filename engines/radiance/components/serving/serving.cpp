@@ -1,4 +1,6 @@
 #include "serving.h"
+#include "calibration.h"
+#include "sha256.h"
 #include "third_party/toml.hpp"
 
 #include <algorithm>
@@ -71,6 +73,10 @@ const std::vector<Field>& schema_fields() {
         add("memory.host_kv_mib", "integer", 12288,
             "launcher HOST_KV_MIB=12288 measured interim; derive RSC03", "derived",
             "startup-only", 0, UINT32_MAX);
+        add("memory.host_reserve_mib", "integer", nullptr,
+            "calibrated: max(calibration.host_reserve.floor_mib, ceil(calibration.host_reserve.total_fraction_ppm x "
+            "MemTotal / 10^6)); a site hard_floors entry may only raise it", "derived", "startup-only",
+            0, UINT32_MAX, {}, true);
         add("memory.tail_budget_mib", "integer", nullptr,
             "layouts.toml tail budget; derive RSC03", "derived", "step-boundary",
             0, UINT32_MAX, {}, true);
@@ -143,6 +149,9 @@ const std::vector<Field>& schema_fields() {
         add("engine.prefix_cache_mib", "integer", nullptr,
             "derived from memory.host_kv_mib (launcher --prefix-cache-mib)", "derived",
             "startup-only", 0, UINT32_MAX, {}, true);
+        add("engine.host_headroom_mib", "integer", nullptr,
+            "derived from memory.host_reserve_mib: the engine keeps the plan's one reserve free when it "
+            "sizes its checkpoint store and pins tables", "derived", "startup-only", 0, UINT32_MAX, {}, true);
         add("engine.tp", "integer", 1, "launcher --tp 1 (one engine card)",
             "derived", "startup-only", 1, 64);
         add("engine.max_num_seqs", "integer", nullptr,
@@ -326,6 +335,7 @@ void layer(Json& values, Json& provenance, Json input,
            const std::string& origin, const std::string& path) {
     if (!input.is_object()) throw std::runtime_error(path + ": expected TOML table");
     input.erase("hard_caps");
+    input.erase("hard_floors");
     std::vector<std::pair<std::string, Json>> entries;
     flatten(input, "", entries);
     for (const auto& [key, v] : entries) {
@@ -445,12 +455,133 @@ Json parse_meminfo(const fs::path& file) {
             if (!(row >> unit) || unit != "kB")
                 throw std::runtime_error(file.string() + ": unexpected unit for " + key);
             data[key] = val / 1024;
+            if (key == "MemTotal") data["MemTotal_kB"] = val;
         }
     }
     for (const char* name : {"MemTotal", "MemAvailable", "SwapTotal"})
         if (!data.contains(name)) throw std::runtime_error(file.string() +
                                                             ": missing " + name);
     return data;
+}
+
+/* A memory cgroup level's limit less the usage reclaim cannot give back (current less file pages
+ * on v2, usage less cache on v1): radiance's rad::cgroup_room (core/engine_hostmem.cpp), read
+ * under `root` so detection is testable. Null when the level has no limit. */
+Json cgroup_room_mib(const fs::path& dir, bool v2) {
+    auto read_ll = [](const fs::path& f, long long* v) {
+        std::ifstream in(f);
+        std::string t;
+        if (!(in >> t)) return false;
+        const auto r = std::from_chars(t.data(), t.data() + t.size(), *v);
+        return r.ec == std::errc() && r.ptr == t.data() + t.size();
+    };
+    auto stat_ll = [](const fs::path& f, const char* key, long long* v) {
+        std::ifstream in(f);
+        std::string k;
+        long long x = 0;
+        while (in >> k >> x) if (k == key) { *v = x; return true; }
+        return false;
+    };
+    long long lim = 0, used = 0, file = 0;
+    if (v2) {
+        if (!read_ll(dir / "memory.max", &lim)) return nullptr;   /* "max": no limit */
+        if (!read_ll(dir / "memory.current", &used))
+            throw std::runtime_error(dir.string() + ": memory.max without memory.current");
+        (void)stat_ll(dir / "memory.stat", "file", &file);
+    } else {
+        if (!read_ll(dir / "memory.limit_in_bytes", &lim) || lim >= (1LL << 62)) return nullptr;
+        if (!read_ll(dir / "memory.usage_in_bytes", &used))
+            throw std::runtime_error(dir.string() + ": limit without memory.usage_in_bytes");
+        if (!stat_ll(dir / "memory.stat", "total_cache", &file))
+            (void)stat_ll(dir / "memory.stat", "cache", &file);
+    }
+    const long long hard = used > file ? used - file : 0;
+    return uint64_t(lim > hard ? lim - hard : 0) / 1048576;
+}
+
+/* Every limited level of every memory cgroup this process is in, leaf first, as radiance's
+ * memory_cgroups/cgroup_levels walk them; each level is a limit of its own. */
+Json memory_cgroups(const fs::path& root) {
+    Json levels = Json::array();
+    std::istringstream input(read_text(root / "proc/self/cgroup"));
+    std::string line;
+    while (std::getline(input, line)) {
+        const size_t a = line.find(':'), b = a == std::string::npos ? a : line.find(':', a + 1);
+        if (b == std::string::npos) continue;
+        const std::string ctrl = line.substr(a + 1, b - a - 1);
+        std::string path = line.substr(b + 1);
+        const bool v2 = ctrl.empty();
+        bool memory = v2;
+        for (size_t i = 0; !memory && i < ctrl.size();) {
+            const size_t j = std::min(ctrl.find(',', i), ctrl.size());
+            memory = ctrl.compare(i, j - i, "memory") == 0;
+            i = j + 1;
+        }
+        if (!memory) continue;
+        const fs::path base = root / (v2 ? "sys/fs/cgroup" : "sys/fs/cgroup/memory");
+        for (;;) {
+            const fs::path dir = path == "/" ? base : base / path.substr(1);
+            if (Json room = cgroup_room_mib(dir, v2); !room.is_null())
+                levels.push_back({{"dir", "/" + fs::relative(dir, root).generic_string()},
+                                  {"version", v2 ? 2 : 1}, {"room_mib", room}});
+            if (path.empty() || path == "/") break;
+            const size_t up = path.find_last_of('/');
+            path = up == 0 || up == std::string::npos ? "/" : path.substr(0, up);
+        }
+    }
+    return levels;
+}
+
+/* RLIMIT_MEMLOCK's soft limit (null: unlimited) and CAP_IPC_LOCK, which lifts it. It bounds only
+ * mlock()ed copies: pinned memory a card reads is a driver userptr mapping it does not count. */
+Json memlock(const fs::path& root) {
+    Json out = {{"limit_mib", nullptr}, {"cap_ipc_lock", false}};
+    bool limit_seen = false, caps_seen = false;
+    {
+        std::istringstream input(read_text(root / "proc/self/limits"));
+        std::string line;
+        while (std::getline(input, line)) {
+            if (line.rfind("Max locked memory", 0) != 0) continue;
+            std::istringstream row(line.substr(std::string("Max locked memory").size()));
+            std::string soft;
+            if (!(row >> soft)) throw std::runtime_error("proc/self/limits: unreadable Max locked memory");
+            if (soft != "unlimited") out["limit_mib"] = parse_uint_text(soft, "Max locked memory") / 1048576;
+            limit_seen = true;
+        }
+    }
+    {
+        std::istringstream input(read_text(root / "proc/self/status"));
+        std::string line;
+        while (std::getline(input, line)) {
+            if (line.rfind("CapEff:", 0) != 0) continue;
+            const std::string hex = line.substr(7 + line.substr(7).find_first_not_of(" \t"));
+            uint64_t caps = 0;
+            const auto r = std::from_chars(hex.data(), hex.data() + hex.size(), caps, 16);
+            if (r.ec != std::errc()) throw std::runtime_error("proc/self/status: unreadable CapEff");
+            out["cap_ipc_lock"] = ((caps >> 14) & 1) != 0;
+            caps_seen = true;
+        }
+    }
+    if (!limit_seen) throw std::runtime_error("proc/self/limits: missing Max locked memory");
+    if (!caps_seen) throw std::runtime_error("proc/self/status: missing CapEff");
+    return out;
+}
+
+/* The amdgpu driver's cap on what every process together pins (radiance's amdgpu_pin_cap): RAM
+ * less 1/64 and 1.5 GiB, half of RAM less 1/64 below 3 GiB, unless amdgpu.no_system_mem_limit
+ * lifts it. Null cap when lifted, or when the amdgpu module is not loaded. */
+Json amdgpu_pin_cap(const fs::path& root, uint64_t mem_total_kb) {
+    const fs::path module = root / "sys/module/amdgpu";
+    if (!fs::is_directory(module)) return {{"loaded", false}, {"lifted", false}, {"cap_mib", nullptr}};
+    std::string v;
+    { std::ifstream f(module / "parameters/no_system_mem_limit"); f >> v; }
+    const bool lifted = v == "Y" || v == "1";
+    Json out = {{"loaded", true}, {"lifted", lifted}, {"cap_mib", nullptr}};
+    if (lifted) return out;
+    const uint64_t total = mem_total_kb * 1024, reserve = uint64_t(3) << 29;
+    const uint64_t cap = total - (total >> 6);
+    out["cap_mib"] = (cap < 2 * reserve ? cap >> 1 : cap - reserve) / 1048576;
+    return out;
 }
 
 void check_caps(Json& values, const Json& baseline, const Json& caps, const Json& facts,
@@ -498,46 +629,6 @@ void check_caps(Json& values, const Json& baseline, const Json& caps, const Json
 
 } // namespace
 
-/* FIPS 180-4 SHA-256, self-contained so the release package carries no crypto library for one content hash. */
-std::string sha256_hex(const std::string& text) {
-    static constexpr uint32_t k[64] = {
-        0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
-        0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
-        0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
-        0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
-        0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
-        0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
-        0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
-        0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2};
-    uint32_t h[8] = {0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19};
-    auto rotr = [](uint32_t x, int n) { return (x >> n) | (x << (32 - n)); };
-    std::string m = text;
-    const uint64_t bits = uint64_t(text.size()) * 8u;
-    m.push_back(char(0x80));
-    while (m.size() % 64 != 56) m.push_back(char(0));
-    for (int i = 7; i >= 0; --i) m.push_back(char((bits >> (i * 8)) & 0xffu));
-    for (size_t off = 0; off < m.size(); off += 64) {
-        uint32_t w[64];
-        for (int i = 0; i < 16; ++i)
-            w[i] = uint32_t(uint8_t(m[off + 4 * i])) << 24 | uint32_t(uint8_t(m[off + 4 * i + 1])) << 16 |
-                   uint32_t(uint8_t(m[off + 4 * i + 2])) << 8 | uint32_t(uint8_t(m[off + 4 * i + 3]));
-        for (int i = 16; i < 64; ++i) {
-            const uint32_t s0 = rotr(w[i - 15], 7) ^ rotr(w[i - 15], 18) ^ (w[i - 15] >> 3);
-            const uint32_t s1 = rotr(w[i - 2], 17) ^ rotr(w[i - 2], 19) ^ (w[i - 2] >> 10);
-            w[i] = w[i - 16] + s0 + w[i - 7] + s1;
-        }
-        uint32_t a = h[0], b = h[1], c = h[2], d = h[3], e = h[4], f = h[5], g = h[6], hh = h[7];
-        for (int i = 0; i < 64; ++i) {
-            const uint32_t t1 = hh + (rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25)) + ((e & f) ^ (~e & g)) + k[i] + w[i];
-            const uint32_t t2 = (rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22)) + ((a & b) ^ (a & c) ^ (b & c));
-            hh = g; g = f; f = e; e = d + t1; d = c; c = b; b = a; a = t1 + t2;
-        }
-        h[0] += a; h[1] += b; h[2] += c; h[3] += d; h[4] += e; h[5] += f; h[6] += g; h[7] += hh;
-    }
-    std::ostringstream hex;
-    for (uint32_t v : h) hex << std::hex << std::setfill('0') << std::setw(8) << v;
-    return hex.str();
-}
 
 Json detect(const fs::path& root) {
     const auto kfd = root / "sys/class/kfd/kfd/topology/nodes";
@@ -604,7 +695,7 @@ Json detect(const fs::path& root) {
     if (::statvfs(shm.c_str(), &st))
         throw std::runtime_error("cannot statvfs " + shm.string());
     return {
-        {"source", "kfd+sysfs+proc+statvfs"},
+        {"source", "kfd+sysfs+proc+statvfs+cgroup"},
         {"gpus", gpus},
         {"host", {
             {"mem_total_mib", mem.at("MemTotal")},
@@ -612,7 +703,10 @@ Json detect(const fs::path& root) {
             {"swap_total_mib", mem.at("SwapTotal")},
             {"shm_total_mib", (uint64_t(st.f_blocks) * st.f_frsize) / 1048576},
             {"shm_available_mib", (uint64_t(st.f_bavail) * st.f_frsize) / 1048576},
-            {"cpu_count", std::max(1u, std::thread::hardware_concurrency())}
+            {"cpu_count", std::max(1u, std::thread::hardware_concurrency())},
+            {"memory_cgroups", memory_cgroups(root)},
+            {"memlock", memlock(root)},
+            {"amdgpu_pin", amdgpu_pin_cap(root, mem.at("MemTotal_kB").get<uint64_t>())}
         }}
     };
 }
@@ -682,6 +776,13 @@ Json json_schema() {
     caps["properties"]["memory"] = mem;
     caps["description"] = "site file only; maxima can only tighten";
     root["properties"]["hard_caps"] = caps;
+    const auto* reserve = field_for("memory.host_reserve_mib");
+    root["properties"]["hard_floors"] = {
+        {"type", "object"}, {"additionalProperties", false},
+        {"description", "site file only; minima can only raise"},
+        {"properties", {{"memory", {{"type", "object"}, {"additionalProperties", false},
+            {"properties", {{"host_reserve_mib", {{"type", "integer"}, {"minimum", reserve->lo},
+                                                  {"maximum", reserve->hi}}}}}}}}}};
     return root;
 }
 
@@ -693,6 +794,8 @@ Resolved resolve(const Options& options, const Json& facts) {
     const Json site = read_toml(options.site), profile = read_toml(options.profile);
     if (profile.contains("hard_caps"))
         throw std::runtime_error(options.profile.string() + ": hard_caps: site-only; profile cannot change hard caps");
+    if (profile.contains("hard_floors"))
+        throw std::runtime_error(options.profile.string() + ": hard_floors: site-only; profile cannot change hard floors");
     std::string name = value_at(values, "layout.name").get<std::string>();
     name = selection_name(site, name);
     name = selection_name(profile, name);
@@ -762,6 +865,48 @@ Resolved resolve(const Options& options, const Json& facts) {
     }
     if (value_at(values, "layout.name") != name)
         throw std::runtime_error("layout.name: resolution inconsistency");
+    {
+        // The host RAM reserve: calibrated rule parameters for this layout and objective, then the site's floor.
+        const Calibration calibration = Calibration::standard(options.calibration_cache);
+        const CalibrationMatch at{"", name, value_at(values, "service.objective").get<std::string>()};
+        const Calibrated floor = calibration.get("calibration.host_reserve.floor_mib", at);
+        const Calibrated fraction = calibration.get("calibration.host_reserve.total_fraction_ppm", at);
+        if (!floor.value.is_number_integer() || floor.value.get<int64_t>() < 0 || !fraction.value.is_number_integer() ||
+            fraction.value.get<int64_t>() < 0 || fraction.value.get<int64_t>() >= 1000000)
+            throw std::runtime_error("calibration.host_reserve: floor_mib must be a whole MiB count and "
+                                     "total_fraction_ppm an integer in [0, 1000000)");
+        const uint64_t total = facts.at("host").at("mem_total_mib").get<uint64_t>();
+        const uint64_t ppm = fraction.value.get<uint64_t>();
+        const uint64_t scaled = total / 1000000 * ppm + (total % 1000000 * ppm + 999999) / 1000000;   // ceil, no overflow
+        const uint64_t reserve = std::max(floor.value.get<uint64_t>(), scaled);
+        const Field& field = *field_for("memory.host_reserve_mib");
+        put(values, provenance, field, reserve, "calibrated",
+            "max(" + std::to_string(floor.value.get<uint64_t>()) + " MiB, " + std::to_string(ppm) + " ppm x " +
+            std::to_string(total) + " MiB MemTotal); " + floor.describe("calibration.host_reserve.floor_mib") +
+            "; " + fraction.describe("calibration.host_reserve.total_fraction_ppm"),
+            Json::array({"facts.host.mem_total_mib", "calibration.host_reserve.floor_mib",
+                         "calibration.host_reserve.total_fraction_ppm"}));
+        if (site.contains("hard_floors")) {
+            const Json& floors = site.at("hard_floors");
+            std::vector<std::pair<std::string, Json>> entries;
+            if (!floors.is_object()) throw std::runtime_error(options.site.string() + ": hard_floors must be a table");
+            flatten(floors, "hard_floors", entries);
+            for (const auto& [key, v] : entries) {
+                if (key != "hard_floors.memory.host_reserve_mib")
+                    throw std::runtime_error(options.site.string() + ": unknown floor " + key +
+                                             " (allowed: hard_floors.memory.host_reserve_mib)");
+                validate_value(field, v, options.site.string() + ":hard floor");
+                if (v.get<uint64_t>() > total)
+                    throw std::runtime_error(options.site.string() + ": " + key + " exceeds detected RAM");
+                if (v.get<uint64_t>() > reserve)
+                    put(values, provenance, field, v, "site",
+                        options.site.string() + ": hard floor raises the calibrated reserve of " +
+                        std::to_string(reserve) + " MiB",
+                        Json::array({options.site.string() + ":" + key, "calibration.host_reserve.floor_mib",
+                                     "calibration.host_reserve.total_fraction_ppm"}));
+            }
+        }
+    }
     if (layout.tail) {
         const Json b = value_at(values, "memory.helper_budgets_mib");
         if (b.empty())
@@ -786,6 +931,8 @@ Resolved resolve(const Options& options, const Json& facts) {
           "RSC01 memory/pool projection", "memory.host_pool_mib");
     alias("engine.prefix_cache_mib", value_at(values, "memory.host_kv_mib"),
           "RSC01 memory/host KV projection", "memory.host_kv_mib");
+    alias("engine.host_headroom_mib", value_at(values, "memory.host_reserve_mib"),
+          "RSC03 memory/reserve projection: one reserve for the plan and the engine", "memory.host_reserve_mib");
     // All current supported layouts use the engine architecture's plugin
     // declared as libr4d.so in archs.toml, followed by the mailbox and ref.
     alias("engine.kernels", "libr4d,libr3moe,libref",
@@ -859,7 +1006,7 @@ Resolved resolve(const Options& options, const Json& facts) {
     c.layout = {l.at("name"), l.at("engine_card"),
                 l.at("helper_cards").get<std::vector<std::string>>()};
     const auto& m = values.at("memory");
-    c.memory = {m.at("host_pool_mib"), m.at("host_kv_mib"),
+    c.memory = {m.at("host_pool_mib"), m.at("host_kv_mib"), m.at("host_reserve_mib"),
                 m.at("tail_budget_mib"),
                 m.at("helper_budgets_mib").get<std::vector<uint64_t>>()};
     const auto& a = values.at("handoff");
@@ -878,7 +1025,8 @@ Resolved resolve(const Options& options, const Json& facts) {
                 e.at("rope_scaling"), e.at("prefix_resume"), e.at("port"),
                 e.at("tp"), e.at("max_num_seqs"), e.at("max_num_batched_tokens"),
                 e.at("checkpoint_interval"), e.at("num_speculative_tokens"),
-                e.at("max_model_len"), e.at("host_pool_mib"), e.at("prefix_cache_mib")};
+                e.at("max_model_len"), e.at("host_pool_mib"), e.at("prefix_cache_mib"),
+                e.at("host_headroom_mib")};
     Json process_helpers = Json::array();
     for (size_t i = 0; i < cards.size(); ++i) {
         Json worker = h;

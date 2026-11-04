@@ -14,6 +14,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import tomllib
 import unittest
 from pathlib import Path
 
@@ -30,6 +31,7 @@ RAD0002 = "rad0002_moe_remote_handoff"
 RAD0003 = "rad0003_mtp_full_head_switch"
 RAD0004 = "rad0004_moe_remote_diagnostics"
 RAD0009 = "rad0009_serving_manifest"
+RAD0011 = "rad0011_plan_memory"
 
 #: package -> (file, a line that must be unique in it as applied, its replacement that breaks the anchor)
 CASES = {
@@ -65,27 +67,29 @@ PREREQUISITES = {RAD0004: (RAD0002,)}
 # prerequisites, after they are applied), `after` the file with the package applied.
 PIN_BLOBS = {
     RAD0002: {
-        "abi/bc_moe_remote.h": (None, "2040fb8"),
+        "abi/bc_moe_remote.h": (None, "d3748b9"),
         "arch/common/bc_moe_remote_block.h": (None, "271a9a6"),
         "arch/common/rad_block_hc.h": ("3a602e5", "d1124d5"),
-        "arch/common/rad_block_moe_fp8.h": ("614db0e", "4606519"),
-        "core/place/bc_moe_remote.cpp": (None, "5242c9e"),
-        "core/place/bc_moe_remote_place.h": (None, "e89a83b"),
-        "core/place/planner.cpp": ("2ea4220", "aecd5af"),
+        "arch/common/rad_block_moe_fp8.h": ("614db0e", "5777cc8"),
+        "core/engine.cpp": ("7544310", "c0c5357"),
+        "core/engine.h": ("b10743c", "11473eb"),
         "core/engine_bringup.cpp": ("3ecdba8", "fe411f0"),
-        "core/engine.cpp": ("7544310", "7f75e0b"),
-        "core/runtime/ctx.cpp": ("ff0f746", "c96e914"),
+        "core/place/bc_moe_remote.cpp": (None, "381430e"),
+        "core/place/bc_moe_remote_engine.h": (None, "cfb316a"),
+        "core/place/bc_moe_remote_place.h": (None, "da896b6"),
+        "core/place/planner.cpp": ("2ea4220", "7944888"),
+        "core/runtime/ctx.cpp": ("ff0f746", "2ff379e"),
     },
     RAD0003: {
         "arch/common/rad_block_mtp_fp8.h": ("c571d45", "235cebb"),
     },
     RAD0004: {
         "arch/common/bc_moe_remote_diag.h": (None, "3998d25"),
-        "arch/common/rad_block_moe_fp8.h": ("4606519", "fb0956d"),
+        "arch/common/rad_block_moe_fp8.h": ("5777cc8", "feb3865"),
     },
     RAD0009: {
         "core/bc_serving_manifest.h": (None, "4ad1a40"),
-        "core/bc_serving_manifest.cpp": (None, "2297489"),
+        "core/bc_serving_manifest.cpp": (None, "124ef4d"),
         "core/main.cpp": ("4cb6d43", "7feb7b6"),
     },
 }
@@ -95,6 +99,7 @@ RAD0002_CORE_FILES = (
     "arch/common/rad_block_hc.h",
     "arch/common/rad_block_moe_fp8.h",
     "core/engine.cpp",
+    "core/engine.h",
     "core/engine_bringup.cpp",
     "core/place/planner.cpp",
     "core/runtime/ctx.cpp",
@@ -218,14 +223,14 @@ class TestRadiancePatchPackages(unittest.TestCase):
 
     def test_rad0002_core_edits_are_thin_calls_into_the_extension_point(self):
         """Policy lives in rad0002's own files and the plugin: every added code line in an upstream file calls the
-        extension point (the one exception is rank_units' preplaced filter, which cannot move out of the core)."""
+        extension point, including the preplaced filter."""
         temp, root = self._tree()
         try:
             patches = _load(RAD0002)
             core_edits = {p.path: len(p.edits) for p in patches if not p.create}
             self.assertEqual(set(core_edits), set(RAD0002_CORE_FILES))
-            self.assertEqual(sum(core_edits.values()), 19)
-            self.assertEqual(sum(1 for p in patches if p.create), 4)
+            self.assertEqual(sum(core_edits.values()), 28)
+            self.assertEqual(sum(1 for p in patches if p.create), 5)
             self.assertTrue(all(result.ok for result in apply_all(list(patches), root)))
             for relative in RAD0002_CORE_FILES:
                 added = self._added_lines(
@@ -234,11 +239,8 @@ class TestRadiancePatchPackages(unittest.TestCase):
                 )
                 code = [line.strip() for line in added if line.strip() and not line.strip().startswith(("/*", "*"))]
                 for line in code:
-                    if "preplaced()" in line or line.startswith("for (int32_t i = 0; i < (int32_t)p->units.size()"):
-                        self.assertEqual(relative, "core/place/planner.cpp")
-                        continue
                     self.assertRegex(
-                        line, r"bc_moe_remote|bc_remote|BcMoeRemote|&&$|^\(op_combine \|\| !gather_taken", f"{relative}: {line}"
+                        line, r"bc_moe_remote|bc_remote|BcMoeRemote", f"{relative}: {line}"
                     )
                 text = (root / relative).read_text(encoding="utf-8")
                 self.assertNotIn("rad_moe_remote", text, relative)
@@ -282,7 +284,7 @@ class TestRadiancePatchPackages(unittest.TestCase):
             planner = (root / "core/place/planner.cpp").read_text(encoding="utf-8")
             self.assertIn("if (bc_moe_remote_pin_unit(mu, in_.config->max_tok)) continue;", planner)
             self.assertIn("bc_moe_remote_mark_footprint(units);", planner)
-            self.assertIn("if (!p->units[(size_t)i].preplaced()) order->push_back(i);", planner)
+            self.assertIn("bc_moe_remote_rank_units(p, order);", planner)
             bringup = (root / "core/engine_bringup.cpp").read_text(encoding="utf-8")
             placeholder = "if (bc_moe_remote_publish_placeholder(cfg_.max_tok, w, e, *file_, r->mover, (rad_weight)i)) continue;"
             self.assertIn(placeholder, bringup)
@@ -312,6 +314,71 @@ class TestRadiancePatchPackages(unittest.TestCase):
             self.assertIn("brows(q, T));", block)
             self.assertIn("m.gfold ? brow_slice(w.sout, r0, rows, g.n_embd) : RAD_NONE", block)
             self.assertIn("m.gfold ? brow_slice(w.sgate, r0, rows, 1) : RAD_NONE", block)
+        finally:
+            temp.cleanup()
+
+    def test_rad0002_actual_declare_policy_to_engine_admission_gate(self):
+        # Compile the ACTUAL managed-patch policy functions, not a duplicated
+        # Python parser of MIN_ROWS/MAX_ROWS. Feed their output to the exact
+        # header called by moe_remote_hook.cpp::admit_ticket. No GPU required.
+        temp, root = self._tree()
+        try:
+            self.assertTrue(all(result.ok for result in apply_all(list(_load(RAD0002)), root)))
+            core = (root / "core/place/bc_moe_remote.cpp").read_text(encoding="utf-8")
+            policy_helpers = core[core.index("#ifdef BC_MOE_REMOTE_DIAG"):
+                                  core.index("std::mutex g_mu;")] + "\n}\n"
+            policy_entry = core[core.index('extern "C" int bc_moe_remote_wanted('):
+                                core.index('extern "C" int bc_moe_remote_shadow(')]
+            gate_header = REPO / "engines/radiance/components/moe-remote"
+            hook = (gate_header / "moe_remote_hook.cpp").read_text(encoding="utf-8")
+            self.assertIn('dlsym(RTLD_DEFAULT,"bc_moe_remote_wanted_upto")', hook)
+            self.assertIn('admission_bootstrap(\n        g.remote_possible,g.bootstrap_ready_ranks,mask)', hook)
+            program = """
+#include <atomic>
+#include <climits>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <map>
+#include <mutex>
+#include <vector>
+#include "engine_admission_gate.h"
+""" + policy_helpers + policy_entry + """
+int main(int argc, char** argv) {
+    if (argc != 4) return 7;
+    setenv("R3_MOE_REMOTE_MIN_ROWS", argv[1], 1);
+    setenv("R3_MOE_REMOTE_MAX_ROWS", argv[2], 1);
+    const bool declared = bc_moe_remote_wanted_upto(128) != 0;
+    const bool any_remote = bc_moe_remote_wanted_upto(LLONG_MAX) != 0;
+    const bool expect = argv[3][0] == '1';
+    if (declared != expect || any_remote != expect) return 8;
+    std::atomic<uint32_t> ready{0};
+    using r3::epoch::AdmissionBootstrap;
+    const auto before = r3::epoch::admission_bootstrap(any_remote, ready, 3);
+    if (before != (expect ? AdmissionBootstrap::Uninitialized :
+                            AdmissionBootstrap::LocalOnly)) return 9;
+    ready.store(1u,std::memory_order_release);
+    if (r3::epoch::admission_bootstrap(any_remote, ready, 3) !=
+        (expect ? AdmissionBootstrap::Uninitialized :
+                  AdmissionBootstrap::LocalOnly)) return 10;
+    ready.store(3u,std::memory_order_release);
+    if (r3::epoch::admission_bootstrap(any_remote, ready, 3) !=
+        (expect ? AdmissionBootstrap::Ready :
+                  AdmissionBootstrap::LocalOnly)) return 11;
+    return 0;
+}
+"""
+            with tempfile.TemporaryDirectory() as build:
+                exe = Path(build) / "policy_gate"
+                compiled = subprocess.run(["c++", "-std=c++17", "-x", "c++",
+                    "-", "-o", str(exe), "-I", str(gate_header)],
+                    input=program, text=True, capture_output=True, check=False)
+                self.assertEqual(compiled.returncode, 0, compiled.stderr)
+                for lo, hi, allowed in (("1", "0", "0"), ("1", "64", "1")):
+                    case = subprocess.run([str(exe), lo, hi, allowed],
+                                          capture_output=True, text=True, check=False)
+                    self.assertEqual(case.returncode, 0,
+                                     f"actual engine policy min={lo} max={hi}: {case.stderr}")
         finally:
             temp.cleanup()
 
@@ -347,6 +414,37 @@ class TestRadiancePatchPackages(unittest.TestCase):
         finally:
             temp.cleanup()
 
+    def test_admission_bridge_preserves_parent_across_issue_ahead(self):
+        """Exercise the generated bridge with fake scheduler/device callbacks."""
+        import subprocess
+
+        compiler = shutil.which("c++")
+        if not compiler:
+            self.skipTest("C++ compiler unavailable")
+        temp, root = self._tree()
+        try:
+            self.assertTrue(all(result.ok for result in apply_all(list(_load(RAD0002)), root)))
+            stub = root / "card-free" / "device"
+            stub.mkdir(parents=True)
+            (stub / "device.h").write_text(
+                "#pragma once\n"
+                "enum { RAD_OK=0, RAD_E_STATE=-1, RAD_E_DEVICE=-2 };\n",   # no rad_dev_set: the bridge never switches device
+                encoding="utf-8",
+            )
+            binary = root / "admission-bridge-test"
+            source = REPO / "engines/radiance/tests/admission_bridge_test.cpp"
+            compiled = subprocess.run(
+                [compiler, "-std=c++17", "-I", str(root / "card-free"),
+                 "-I", str(root / "abi"), "-I", str(root / "core/place"),
+                 str(source), "-o", str(binary)],
+                capture_output=True, text=True,
+            )
+            self.assertEqual(compiled.returncode, 0, compiled.stderr)
+            result = subprocess.run([str(binary)], capture_output=True, text=True, timeout=10)
+            self.assertEqual(result.returncode, 0, result.stderr)
+        finally:
+            temp.cleanup()
+
     def test_plugin_registration_struct_matches_the_engine_abi(self):
         """libr3moe mirrors BcMoeRemotePlugin (it builds against an unpatched tree); the two must not drift."""
         temp, root = self._tree()
@@ -358,6 +456,7 @@ class TestRadiancePatchPackages(unittest.TestCase):
             def fields(text: str, opener: str) -> list[str]:
                 body = text.split(opener, 1)[1].split("}", 1)[0]
                 body = re.sub(r"/\*.*?\*/", "", body, flags=re.S)
+                body = body.replace("struct BcMoeRemoteTicket", "StepTicket")
                 return [re.sub(r"\s+", " ", f.strip()) for f in body.split(";") if f.strip()]
 
             self.assertEqual(
@@ -399,7 +498,9 @@ class TestRadiancePatchPackages(unittest.TestCase):
         self.assertIn('if (mask_only && m && local_index[slot] >= 0) __builtin_trap();', ops)
         self.assertIn('hipMemsetAsync(d->mask_ref, 0', ops)
         self.assertIn('dlsym(RTLD_DEFAULT, "bc_moe_remote_register")', hook)
-        self.assertIn("static const EnginePlugin plugin{sizeof(EnginePlugin), publish_layer_map, owner_query, burst_transition, before_pass};", hook)
+        self.assertIn("static const EnginePlugin plugin{sizeof(EnginePlugin), publish_layer_map, owner_query, burst_transition,", hook)
+        self.assertIn("before_pass, admit_ticket, bind_ticket, cancel_ticket,", hook)
+        self.assertIn("host_done_ticket, rank_done_ticket, poll_tickets,", hook)
         self.assertIn('g.engine_register(&plugin)', hook)
         self.assertNotIn('rad_moe_remote', hook)
         self.assertIn('layer_map_consumed', hook)
@@ -521,8 +622,186 @@ class TestServingManifestPatch(unittest.TestCase):
                 capture_output=True, text=True,
             )
             self.assertEqual(build.returncode, 0, build.stderr)
-            run = subprocess.run([str(exe), str(scratch)], capture_output=True, text=True)
+            # radiance's real option table (g_flags at the pin), so the C++ test uses exactly the engine's option names
+            # and value shapes, not a hand-written list
+            config = (FIXTURE / "core" / "config.cpp").read_text(encoding="utf-8")
+            table = config[config.index("static const Flag g_flags[] = {"):]
+            table = table[: table.index("\n};")]
+            rows = re.findall(r'\{\s*"(--?[a-z0-9-]+)",\s*("[^"]*"|nullptr)', table)
+            self.assertGreater(len(rows), 100)
+            options = Path(scratch) / "options.tsv"
+            # config_option_names() leaves out --help, as the engine does (core/config.cpp)
+            options.write_text("".join(f"{n}\t{'-' if a == 'nullptr' else a.strip(chr(34))}\n"
+                                       for n, a in rows if n != "--help"))
+            run = subprocess.run([str(exe), str(scratch), str(test.parent / "bc_serve_dry_run.json"), str(options)],
+                                 capture_output=True, text=True)
             self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
             self.assertIn("ok", run.stdout)
         finally:
             temp.cleanup()
+
+
+class TestPlanMemoryPatch(unittest.TestCase):
+    """rad0011: the engine's memory plan as a serving manifest v1 EnginePlan: `--plan-memory FILE` measures it,
+    `--plan-check FILE --plan-check-floor-ppm N` checks it at start-up; thin hooks into core/bc_plan_*.* and a fail-closed
+    link of the shared bc_serving_v1 library into rad_core."""
+
+    SERVING = REPO / "engines" / "radiance" / "components" / "serving"
+
+    def _applied(self):
+        temp = tempfile.TemporaryDirectory()
+        root = Path(temp.name)
+        shutil.copytree(FIXTURE, root, dirs_exist_ok=True)
+        self.assertTrue(all(result.ok for result in apply_all(list(_load(RAD0009)) + list(_load(RAD0011)), root)))
+        return temp, root
+
+    def _added_code(self, root, path):
+        added = TestRadiancePatchPackages._added_lines(
+            (FIXTURE / path).read_text(encoding="utf-8"), (root / path).read_text(encoding="utf-8"))
+        return [line.strip() for line in added if line.strip() and not line.strip().startswith(("/*", "*", "#"))]
+
+    def test_upstream_edits_are_thin_calls_into_the_extension_point(self):
+        patches = _load(RAD0011)
+        self.assertEqual({p.path for p in patches if not p.create},
+                         {"core/main.cpp", "core/engine_bringup.cpp", "core/CMakeLists.txt"})
+        self.assertEqual({p.path for p in patches if p.create},
+                         {"core/bc_plan_memory.h", "core/bc_plan_memory.cpp", "core/bc_plan_check.h",
+                          "core/bc_plan_check.cpp"})
+        temp, root = self._applied()
+        try:
+            self.assertEqual(self._added_code(root, "core/main.cpp"), [
+                "if (int rc = bc_plan_memory_take_flag(&argc, &argv)) return rc;",
+                "if (!bc_serving_engine_argv(&argc, &argv)) return 2;",
+                "if (!bc_serving_mark_given(&cfg.given)) return 2;",
+            ])
+            self.assertEqual(self._added_code(root, "core/engine_bringup.cpp"), [
+                "bc_plan_memory_note(cfg_, facts, vb, emb_bytes, wfs, ngram_bytes, ck_slot, host_arenas, kv_floor, ctx, "
+                "ranks_[0]->program);",
+                "RAD_TRY(bc_plan_memory_done());",
+            ])
+        finally:
+            temp.cleanup()
+
+    def test_flag_is_taken_before_the_manifest_reader_and_the_check_precedes_the_pools(self):
+        temp, root = self._applied()
+        try:
+            main = (root / "core/main.cpp").read_text(encoding="utf-8")
+            self.assertLess(main.index("bc_plan_memory_take_flag(&argc, &argv)"),
+                            main.index("bc_serving_engine_argv(&argc, &argv)"))
+            bringup = (root / "core/engine_bringup.cpp").read_text(encoding="utf-8")
+            self.assertIn("    RAD_TRY(plan());\n    RAD_TRY(bc_plan_memory_done());\n    RAD_TRY(load_weights());", bringup)
+            resolve = bringup.index("RAD_TRY(vram_budget_resolve(cfg_, facts, &vb));")
+            note = bringup.index("bc_plan_memory_note(cfg_, facts, vb,")
+            self.assertLess(resolve, note)
+            # RSC08 S4: the live plan is checked right after the VRAM split, before any pool is configured
+            self.assertLess(note, bringup.index("r->pools.configure("))
+            self.assertLess(note, bringup.index("int Engine::start()"))
+        finally:
+            temp.cleanup()
+
+    def test_the_core_link_is_added_and_fails_closed(self):
+        temp, root = self._applied()
+        try:
+            cmake = (root / "core/CMakeLists.txt").read_text(encoding="utf-8")
+            guard = cmake.index("if(NOT DEFINED BC_SERVING_V1_CMAKE)")
+            self.assertLess(cmake.index("target_link_libraries(rad_core PUBLIC rad_abi"), guard)
+            self.assertIn("message(FATAL_ERROR", cmake[guard:guard + 400])
+            self.assertLess(guard, cmake.index('include("${BC_SERVING_V1_CMAKE}")'))
+            self.assertLess(cmake.index('include("${BC_SERVING_V1_CMAKE}")'),
+                            cmake.index("target_link_libraries(rad_core PUBLIC bc_serving_v1)"))
+            self.assertEqual(self._added_code(root, "core/CMakeLists.txt"), [
+                "if(NOT DEFINED BC_SERVING_V1_CMAKE)",
+                'message(FATAL_ERROR "rad0011: -DBC_SERVING_V1_CMAKE=<bigcherry>/engines/radiance/components/serving/bc_serving_v1.cmake "',
+                '"is required (the shared serving manifest v1 library); the BigCherry lane passes it")',
+                "endif()",
+                'set(BC_SERVING_V1_NLOHMANN_INCLUDE "${CMAKE_SOURCE_DIR}/vendor")',
+                'include("${BC_SERVING_V1_CMAKE}")',
+                "target_link_libraries(rad_core PUBLIC bc_serving_v1)",
+            ])
+        finally:
+            temp.cleanup()
+
+    def test_both_builds_compile_one_source_list(self):
+        """The serving component and radiance's core include the same bc_serving_v1.cmake: the library is defined there
+        and nowhere else, and the lane hands the engine that file."""
+        for cmake in (self.SERVING / "CMakeLists.txt", *self.SERVING.glob("*.cmake")):
+            text = cmake.read_text(encoding="utf-8")
+            if cmake.name == "bc_serving_v1.cmake":
+                self.assertEqual(text.count("add_library(bc_serving_v1 "), 1)
+                self.assertEqual(text.count("add_library(bc_jcs "), 1)
+            else:
+                self.assertNotIn("add_library(bc_serving_v1", text, cmake.name)
+                self.assertNotIn("add_library(bc_jcs", text, cmake.name)
+        self.assertIn('include("${CMAKE_CURRENT_SOURCE_DIR}/bc_serving_v1.cmake")',
+                      (self.SERVING / "CMakeLists.txt").read_text(encoding="utf-8"))
+        engine = tomllib.loads((REPO / "engines" / "radiance" / "engine.toml").read_text(encoding="utf-8"))
+        self.assertEqual(engine["build"]["repo-paths"]["BC_SERVING_V1_CMAKE"],
+                         "engines/radiance/components/serving/bc_serving_v1.cmake")
+        listed = re.findall(r'"\$\{_bc_v1_dir\}/([^"]+\.cpp)"', (self.SERVING / "bc_serving_v1.cmake").read_text(encoding="utf-8"))
+        self.assertTrue(listed and all((self.SERVING / f).is_file() for f in listed), listed)
+
+    def test_second_apply_is_a_no_op(self):
+        temp, root = self._applied()
+        try:
+            names = ("core/main.cpp", "core/engine_bringup.cpp", "core/CMakeLists.txt")
+            before = {p: (root / p).read_text(encoding="utf-8") for p in names}
+            self.assertTrue(all(r.ok for r in apply_all(list(_load(RAD0009)) + list(_load(RAD0011)), root)))
+            self.assertEqual(before, {p: (root / p).read_text(encoding="utf-8") for p in before})
+        finally:
+            temp.cleanup()
+
+    def test_without_rad0009_it_fails_closed_and_writes_nothing(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            shutil.copytree(FIXTURE, root, dirs_exist_ok=True)
+            results = apply_all(list(_load(RAD0011)), root)
+            self.assertFalse(all(r.ok for r in results))
+            self.assertEqual((root / "core/main.cpp").read_text(encoding="utf-8"),
+                             (FIXTURE / "core/main.cpp").read_text(encoding="utf-8"))
+            self.assertFalse((root / "core/bc_plan_memory.cpp").exists())
+
+    def test_plan_flags_compiled_and_run(self):
+        """Compile the patch's own bc_plan_check.cpp with the shared v1 sources, under radiance's own warning flags
+        (-Wall -Wextra, C++20) plus -Werror, and run its card-free test: the flags, the expected plan read, the one
+        start-up line and its refusals."""
+        compiler = shutil.which("g++") or shutil.which("c++")
+        candidates = [os.environ.get("BC_NLOHMANN_INCLUDE", ""), str(REPO / "vendor" / "llama.cpp" / "vendor")]
+        include = next((c for c in candidates if c and (Path(c) / "nlohmann" / "json.hpp").is_file()), None)
+        if compiler is None or include is None:
+            message = "needs a C++ compiler and nlohmann/json.hpp (set BC_NLOHMANN_INCLUDE to its parent dir)"
+            if os.environ.get("CI"):
+                self.fail(message)   # in CI the test must run, never skip
+            self.skipTest(message)
+        temp, root = self._applied()
+        try:
+            work = Path(temp.name)
+            flags = ["-std=c++20", "-O0", "-Wall", "-Wextra", "-Wno-unused-parameter", "-Wno-missing-field-initializers",
+                     "-Werror", f"-I{root / 'core'}", f"-I{root / 'abi'}", f"-I{self.SERVING}", f"-I{self.SERVING / 'v1'}",
+                     f"-I{self.SERVING / 'generated'}", f"-I{include}"]
+            sources = [root / "core" / "bc_plan_check.cpp",
+                       REPO / "engines" / "radiance" / "tests" / "plan_memory" / "plan_flags_test.cpp",
+                       *(self.SERVING / "v1" / n for n in ("error.cpp", "strict_json.cpp", "manifest.cpp", "admission.cpp")),
+                       self.SERVING / "generated" / "serving_codec.cpp", self.SERVING / "jcs.cpp", self.SERVING / "sha256.cpp"]
+            objects = []
+            procs = []
+            for index, source in enumerate(sources):
+                obj = work / f"{index}-{source.stem}.o"
+                objects.append(obj)
+                procs.append((source, subprocess.Popen([compiler, *flags, "-c", str(source), "-o", str(obj)],
+                                                       stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)))
+            for source, proc in procs:
+                _, err = proc.communicate()
+                self.assertEqual(proc.returncode, 0, f"{source.name}: {err}")
+            exe = work / "plan_flags_test"
+            link = subprocess.run([compiler, *map(str, objects), "-o", str(exe)], capture_output=True, text=True)
+            self.assertEqual(link.returncode, 0, link.stderr)
+            vectors = REPO / "docs" / "design" / "serving-manifest-v1" / "admission-vectors.json"
+            scratch = work / "scratch"
+            scratch.mkdir()
+            run = subprocess.run([str(exe), str(vectors), str(scratch)], capture_output=True, text=True)
+            self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
+            self.assertIn("ok", run.stdout)
+        finally:
+            temp.cleanup()
+
+

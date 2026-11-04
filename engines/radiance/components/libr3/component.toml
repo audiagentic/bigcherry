@@ -1,18 +1,18 @@
 # libr3: BigCherry's gfx1100 (RX 7900 XTX) kernel plugin for radiance (RAD01 PR 5;
-# docs/reference/engines/radiance/PLATFORM_DESIGN.md decision 2). Built against the pinned radiance's libr4d sources
+# docs/archive/radiance/PLATFORM_DESIGN.md decision 2). Built against the pinned radiance's libr4d sources
 # (rewrites.txt + native/*.rw applied to a build-tree copy, never to vendor/radiance) and loaded through
 # RADIANCE_HOME; it is BigCherry source, not a patch to the engine.
 schema = 1
 name = "libr3"
 engine = "radiance"
 targets = ["gfx1100"]
-# radiance 1.13.0 (plugin ABI 31): the rewrite rules are written against this revision's libr4d and refuse any other.
-built-against = "v1.14.0"
+# radiance v1.14.0: rewrite rules target the pinned libr4d source and reject unmatched revisions.
+built-against = "v1.16.0"
 outputs = ["kernels/libr3.so"]
 
 # How the build lane builds it: CMake against the engine installed from the lane's own build (CMAKE_PREFIX_PATH) and
 # the lane's materialised source ({engine_source}); outputs are copied into the engine's runtime home.
-# R3_NATIVE is ON: native/*.rw (re-ported to radiance 1.7.0, MEN12) replace the kernels' own lines with native gfx11 forms.
+# R3_NATIVE is ON: native/*.rw (against the pinned radiance source) replace the kernels' own lines with native gfx11 forms.
 # A block that no longer matches libr4d fails configure by design; R3_NATIVE=OFF builds every kernel through r3_compat.h only.
 [build]
 configure = { RADIANCE_SRC = "{engine_source}", R3_TARGETS = "{targets}", R3_NATIVE = "ON" }
@@ -23,7 +23,7 @@ configure = { RADIANCE_SRC = "{engine_source}", R3_TARGETS = "{targets}", R3_NAT
 #   status = evaluated     shelved with evidence (kept, default off); never in a profile
 #   status = diagnostic    instrumentation or comparison; never in a production profile
 #   status = tuning        a kernel geometry knob for the lab's sweeps
-# Evidence: engines/radiance/README.md (the measurement log, moved from the feature branch), sections per entry.
+# Evidence: docs/archive/radiance/LAB_HISTORY.md (dated lab record), sections per setting.
 
 [setting.R3_ATTN_NATIVE]
 default = "1"
@@ -38,13 +38,13 @@ summary = "native delta-net chunk scan; wrong in serving (KLD 5.52) after three 
 [setting.R3_AR_WIRE4]
 default = "0"
 status = "experimental"
-summary = "4-bit cross-card wire at M >= 512; +5.6% 27B prefill at KLD 0.0044 -> 0.0126 (owner's call). Off on radiance 1.13.0 until the fused kernel's native form is re-ported (RAD32)"
+summary = "4-bit cross-card wire at M >= 512; +5.6% 27B prefill at KLD 0.0044 -> 0.0126 (owner's call). Off by default pending current-pin qualification of the fused kernel"
 activation = "R3_AR_WIRE4 active"
 
 [setting.R3_AR_PIPE]
 default = "0"
 status = "evaluated"
-summary = "sliced all-reduce in one kernel; byte-identical but 6% slower, shelved (its native form is under native-shelved/ for 1.13.0)"
+summary = "sliced all-reduce in one kernel; byte-identical but 6% slower, shelved (its native form is kept in native-shelved/)"
 
 [setting.R3_AR_TIMING]
 default = "0"

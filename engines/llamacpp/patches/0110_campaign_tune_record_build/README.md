@@ -1,5 +1,15 @@
 # 0110 framework validation
 
+## Summary
+
+Adds GGML_HIP_AUTOTUNE, GGML_HIP_AUTOTUNE_RECORD, GGML_HIP_DISPATCH_DIAGNOSTICS, GGML_HIP_WORKSPACE_METRICS, and GGML_HIP_ROUTING_TRANSFORM to ggml/CMakeLists.txt (with configure-time validation) and turns them into HIP-backend compile definitions plus the tuner/record/diagnostics source list in ggml/src/ggml-hip/CMakeLists.txt.
+
+## Outcome
+
+Recorded state: `validated` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 PA27 split this package out of 0100_cmake_options's coverage/record/tune
 source-selection ownership. HI168 owns the diagnostic-isolation review this
 inherits. This local framework adapter has no Experiment Contract: it checks

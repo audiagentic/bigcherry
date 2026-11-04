@@ -8,7 +8,7 @@ Flash-Next uses native .rad with 4-bit experts, INT8 trunk; its quantisation qua
 
 ### Baseline and source links
 
-- BigCherry measurement: engines/radiance/README.md, sections KL, cross-card timing, Flash-Next on two XTX and exact-vs-WHT6.
+- BigCherry measurement: docs/archive/radiance/LAB_HISTORY.md, sections KL, cross-card timing, Flash-Next on two XTX and exact-vs-WHT6.
 - Pinned source: https://github.com/Quackster/radiance/blob/89cee7ce414486c717aa2085c99e1f522e4c0ea6/libr4d/r4d_ar_oneshot_2rank_wht6.h ; .hip companion; libr4d/r4d_ar_entry.hip.
 - Graph declaration: arch/common/rad_block_hc.h; arch/common/rad_block_moe_fp8.h; arch/common/rad_arch.h; arch/qwen35_fp8/qwen35_fp8.cpp.
 - BigCherry component: engines/radiance/components/libr3/native/r4d_ar_entry.hip.rw, component.toml; engines/radiance/recipes.toml and docs/reference/engines/radiance/RUNBOOK.md.

@@ -1,5 +1,15 @@
 # 1207_rd17_moe_topk_down_fold: fold the MoE topk-weights MUL into the down projection (RD17)
 
+## Summary
+
+Adds an x_scale_channel_dst fusion flag so the mmvq kernel scales each result row by the destination channel's (token's) topk softmax weight directly in the matmul epilogue, instead of a separate broadcast MUL kernel run after the down projection.
+
+## Outcome
+
+Recorded state: `rejected` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 Patch id: `1207_rd17_moe_topk_down_fold`. Original plan item `RD17` is
 superseded by `PRBE14` (docs/planning/active/patching-rdna-boost-experiments/PRBE14.md,
 capability-rebaseline-v3-2026-09) -- PRBE14 is the authoritative tracking

@@ -1,5 +1,15 @@
 # 1320_meta_compute_timing
 
+## Summary
+
+Diagnostic only. With `BIGCHERRY_SUBMIT_TIMING=1` every meta-backend (-sm tensor) graph_compute logs `BIGCHERRY_META_TIMING n_nodes n_subgraphs rebuild rebuild_us launch_us allreduce_us total_us`: subgraph rebuild cost, the summed per-subgraph per-device async launch host time, and the summed AllReduce enqueue host time.
+
+## Outcome
+
+Recorded state: `validated` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 ## Promotion record
 
 Promotion record (QFP18 lightweight evidence-reuse tier, pin b11474 / b9acf138, 2026-10-08). A diagnostic, promoted as a

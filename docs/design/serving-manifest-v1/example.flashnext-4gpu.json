@@ -1,0 +1,581 @@
+{
+  "apiVersion": "bigcherry/v1",
+  "kind": "ServingManifest",
+  "metadata": {
+    "instance_id": "11111111-1111-4111-8111-111111111111",
+    "producer": {
+      "name": "bc-serve",
+      "build_sha256": "4d97aa62b5551ca084b683f8eba2dfb963f77c4a55a3ea2ddde75016b1ebd37d"
+    },
+    "contract_version": 1,
+    "content_digest": "sha256:e2e8066eafd896b92313cdf596bd57886b22515527da786f270efe99d2f78f4f"
+  },
+  "spec": {
+    "intent": {
+      "model": "/models/flash-next.rad",
+      "layout": "flashnext-4gpu",
+      "service": {
+        "profile": "production",
+        "objective": "balanced",
+        "max_sessions": 8,
+        "max_context_tokens": 262144,
+        "retention": "keep",
+        "quality": "baseline"
+      }
+    },
+    "facts": {
+      "source": "kfd+sysfs+proc+statvfs",
+      "host": {
+        "memory": {
+          "total_mib": 96000,
+          "available_mib": 87890,
+          "swap_total_mib": 0,
+          "shm_available_mib": 1582112,
+          "cgroup_limits": [],
+          "pin_cap_mib": 92964,
+          "memlock_limit_mib": null
+        },
+        "cpu": {
+          "count": 20
+        }
+      },
+      "gpus": [
+        {
+          "bdf": "0000:41:00.0",
+          "arch": "gfx1100",
+          "hip_ordinal": 0,
+          "vram": {
+            "total_mib": 24560,
+            "available_mib": 24496
+          }
+        },
+        {
+          "bdf": "0000:42:00.0",
+          "arch": "gfx1100",
+          "hip_ordinal": 1,
+          "vram": {
+            "total_mib": 24560,
+            "available_mib": 24496
+          }
+        },
+        {
+          "bdf": "0000:43:00.0",
+          "arch": "gfx1201",
+          "hip_ordinal": 2,
+          "vram": {
+            "total_mib": 32624,
+            "available_mib": 32560
+          }
+        },
+        {
+          "bdf": "0000:44:00.0",
+          "arch": "gfx1030",
+          "hip_ordinal": 3,
+          "vram": {
+            "total_mib": 16368,
+            "available_mib": 16304
+          }
+        }
+      ]
+    },
+    "calibration": [
+      {
+        "key": "host_reserve.floor_mib",
+        "value": 4096,
+        "source": "seed",
+        "seeded": "2026-11-02",
+        "evidence": "RSC03 run kv-tier/host-pool2: 4 GiB free sustained serving; 0 GiB rejected"
+      },
+      {
+        "key": "host_reserve.total_fraction_ppm",
+        "value": 50000,
+        "source": "seed",
+        "seeded": "2026-11-02",
+        "evidence": "RSC03 host reserve 5% fits a measured 4.4% margin"
+      },
+      {
+        "key": "kv_backing_floor.fraction_ppm",
+        "value": 600000,
+        "source": "seed",
+        "seeded": "2026-11-02",
+        "evidence": "RSC03 balanced layout tail 8 GiB backs about 64% of target KV"
+      },
+      {
+        "key": "checkpoint_share",
+        "value": "tier_first",
+        "source": "seed",
+        "seeded": "2026-11-02",
+        "evidence": "RSC03 hardware RESULT: host KV 12 GiB and checkpoint store 43 of 72 wanted"
+      },
+      {
+        "key": "host_kv_tier.target_mib",
+        "value": 12288,
+        "source": "seed",
+        "seeded": "2026-11-02",
+        "evidence": "RSC03 after 1M-token fill 6-stream decode 52.8 to 46.9 ms/step with 12 GiB tier"
+      }
+    ],
+    "resources": {
+      "host": {
+        "pool_mib": 9216,
+        "kv_mib": 12288,
+        "reserve_mib": 4800,
+        "checkpoint_slots": 43
+      }
+    },
+    "handoff": {
+      "transport": {
+        "shm": "/r3-moe-helper-example-001",
+        "max_rows": 4096,
+        "small_rows": 8,
+        "gemv_large_rows": 32,
+        "skip_owned": true
+      },
+      "placement": {
+        "strategy": "tail",
+        "heat_file": "/models/flash-next.heat"
+      },
+      "telemetry": {
+        "histogram_file": "/models/flash-next.hist",
+        "period_s": 60
+      },
+      "kernels": {
+        "moe_down_tile": 1
+      }
+    },
+    "processes": {
+      "engine": {
+        "device": {
+          "gpus": [
+            "0000:43:00.0"
+          ]
+        },
+        "runtime": {
+          "radiance_home": "/opt/radiance/radiance_home",
+          "kernels": [
+            "libr4d",
+            "libr3moe",
+            "libref"
+          ]
+        },
+        "server": {
+          "port": 36080
+        },
+        "scheduler": {
+          "tp": 1,
+          "max_num_batched_tokens": 2048,
+          "checkpoint_interval": 4096
+        },
+        "execution": {
+          "placement": "expert_tiered",
+          "ngram_placement": "ram",
+          "kv_cache_dtype": "fp8",
+          "num_speculative_tokens": 3,
+          "rope_scaling": "none",
+          "prefix_resume": "nearest"
+        }
+      },
+      "helper_common": {
+        "cpu": {
+          "reference": false,
+          "affinity": "auto"
+        },
+        "runtime": {
+          "power_save": true,
+          "queue_warm": false
+        },
+        "gemv": {
+          "mode": 1,
+          "wide": true,
+          "h2": 2,
+          "w4h2": true,
+          "mr": false
+        },
+        "lanes": {
+          "small_lanes": [],
+          "rows": false,
+          "rows_small": false
+        },
+        "combine": {
+          "enabled": true,
+          "min_rows": 256,
+          "threads": 8
+        },
+        "kernels": {
+          "native": true,
+          "fp16": true,
+          "ahalf": true,
+          "moe_form": 0,
+          "moe_long_rows": 0,
+          "fuseroute": true,
+          "vecio": true,
+          "sparse_act": true,
+          "lane_quant": true
+        },
+        "placement": {
+          "balance": false
+        }
+      },
+      "helpers": [
+        {
+          "role": "helper0",
+          "gpu": "0000:41:00.0",
+          "vram_budget_mib": 22528,
+          "plugin_file": "libr3.so",
+          "formats": [
+            "w4nl64",
+            "fp8_e4m3_block"
+          ],
+          "rows_kernel": false,
+          "tier": "head",
+          "share": 1
+        },
+        {
+          "role": "helper1",
+          "gpu": "0000:42:00.0",
+          "vram_budget_mib": 22528,
+          "plugin_file": "libr3.so",
+          "formats": [
+            "w4nl64",
+            "fp8_e4m3_block"
+          ],
+          "rows_kernel": false,
+          "tier": "head",
+          "share": 1,
+          "settings": {
+            "gemv": {
+              "h2": 4
+            }
+          }
+        },
+        {
+          "role": "helper2",
+          "gpu": "0000:44:00.0",
+          "vram_budget_mib": 14336,
+          "plugin_file": "libr2.so",
+          "formats": [
+            "w4nl64"
+          ],
+          "rows_kernel": true,
+          "tier": "tail",
+          "share": 0,
+          "settings": {
+            "lanes": {
+              "rows": true
+            }
+          }
+        }
+      ]
+    },
+    "plan": {
+      "owner_map": {
+        "owner_map_sha256": "5f2eaeead8ec8c75b1015137b072cf539071a728250cb3a0ed4b7ea25b17de07",
+        "helpers": [
+          {
+            "owned_sha256": "028f565c7b6592a1576cc21b98b53e82d70364ce9a1cc0bcdc3fdaba52c54492",
+            "count": 2,
+            "bytes": 5070848,
+            "experts": [
+              [
+                0,
+                1
+              ],
+              [
+                0,
+                5
+              ]
+            ]
+          },
+          {
+            "owned_sha256": "13435ddceb2dcfeddcee2bc633544bd77a86f0021fd5a5117fe30a31f2c71ad5",
+            "count": 2,
+            "bytes": 5070848,
+            "experts": [
+              [
+                0,
+                3
+              ],
+              [
+                0,
+                7
+              ]
+            ]
+          },
+          {
+            "owned_sha256": "1e2ba5c7c2b12368c550cd5d1bbf8265e4643b78f9d0c07008b1b7e95aeafa42",
+            "count": 0,
+            "bytes": 0,
+            "experts": []
+          }
+        ]
+      },
+      "engine_memory": {
+        "cache_version": 1,
+        "cache_key": "6e3a22cec5c5cce8f2bcf4d64eaae0cc5d51b454e43e0b50aa24b972117d43da",
+        "model_identity": "269831a62f4203c511031a402978bbda8c5dcff84448bfba9ca8bc6342b634df",
+        "engine_identity": "476d444990dd222bb13b9ec54b04a48b068c7c39d872769e86346b9e27805c73",
+        "expected": {
+          "plan_version": 1,
+          "producer": "radiance --plan-memory (rad0011)",
+          "host": [
+            {
+              "name": "ngram_table",
+              "bytes": 51200249856,
+              "residence": "pinned",
+              "from": "engine plan (rad0011: weight_footprint, resolve_table_placement)",
+              "remedy": "set ngram_placement = disk"
+            },
+            {
+              "name": "embedding",
+              "bytes": 1271398400,
+              "residence": "pinned",
+              "from": "engine plan (rad0011: weight_footprint, resolve_table_placement)",
+              "remedy": ""
+            },
+            {
+              "name": "host_arenas",
+              "bytes": 11665408,
+              "residence": "pinned",
+              "from": "engine plan (rad0011: arena_host_bytes)",
+              "remedy": ""
+            }
+          ],
+          "checkpoints": {
+            "slot_bytes": 117938964,
+            "floor_slots": 8,
+            "want_slots": 72,
+            "from": "engine plan (rad0011: checkpoint_bytes, chunk_geometry_resolve, checkpoint_slots_want)"
+          },
+          "kv_one_session": {
+            "bytes": 5557452800,
+            "from": "engine plan (rad0011: VramFacts::kv_one)"
+          },
+          "vram": {
+            "claimable": 31198251000,
+            "statics": 5800083456,
+            "elastic": 25398167544,
+            "experts": 0,
+            "kv": 22812035064,
+            "stage": 2586132480,
+            "kv_resolved": 22810722304,
+            "expert_floor": 0,
+            "kv_ceiling": 31511797760,
+            "expert_ceiling": 6351237120,
+            "from": "engine plan (rad0011: vram_budget_resolve)",
+            "cards": [
+              {
+                "capacity": 34208743424,
+                "free": 33937612800,
+                "engine_expert_plane": 6351237120,
+                "expert_unit_max": 2535424
+              }
+            ]
+          },
+          "host_pool_mib": 9216
+        }
+      }
+    }
+  },
+  "provenance": {
+    "": {
+      "origin": "schema_default",
+      "source": "serving contract v1",
+      "class": "policy",
+      "lifecycle": "startup_only",
+      "confidence": "exact",
+      "inputs": []
+    },
+    "/spec/intent/model": {
+      "origin": "site",
+      "source": "site.toml:intent.model",
+      "class": "policy",
+      "lifecycle": "startup_only",
+      "confidence": "exact",
+      "inputs": []
+    },
+    "/spec/intent/layout": {
+      "origin": "profile",
+      "source": "site layout selection",
+      "class": "policy",
+      "lifecycle": "startup_only",
+      "confidence": "exact",
+      "inputs": []
+    },
+    "/spec/intent/service": {
+      "origin": "profile",
+      "source": "flashnext-balanced.toml",
+      "class": "policy",
+      "lifecycle": "startup_only",
+      "confidence": "exact",
+      "inputs": []
+    },
+    "/spec/facts": {
+      "origin": "detected",
+      "source": "synthetic KFD/sysfs/proc fixture",
+      "class": "fact",
+      "lifecycle": "startup_only",
+      "confidence": "exact",
+      "inputs": []
+    },
+    "/spec/calibration": {
+      "origin": "calibrated",
+      "source": "RSC03 calibrated seeds selected by model/layout/objective",
+      "class": "tuned",
+      "lifecycle": "startup_only",
+      "confidence": "measured",
+      "inputs": [
+        "/spec/intent/layout",
+        "/spec/intent/service/objective"
+      ]
+    },
+    "/spec/resources": {
+      "origin": "derived",
+      "source": "RSC03 host ledger (illustrative fixture)",
+      "class": "derived",
+      "lifecycle": "startup_only",
+      "confidence": "estimate",
+      "inputs": [
+        "/spec/facts/host",
+        "/spec/calibration",
+        "/spec/plan/engine_memory/expected"
+      ]
+    },
+    "/spec/handoff/transport/shm": {
+      "origin": "derived",
+      "source": "instance IPC allocator",
+      "class": "derived",
+      "lifecycle": "startup_only",
+      "confidence": "exact",
+      "inputs": [
+        "/metadata/instance_id"
+      ]
+    },
+    "/spec/handoff/transport": {
+      "origin": "profile",
+      "source": "flashnext-balanced.toml: transport literals (interim launcher values; candidates to derive or calibrate, RSC08)",
+      "class": "derived",
+      "lifecycle": "startup_only",
+      "confidence": "estimate",
+      "inputs": []
+    },
+    "/spec/handoff/placement": {
+      "origin": "derived",
+      "source": "layout and heat policy",
+      "class": "derived",
+      "lifecycle": "startup_only",
+      "confidence": "exact",
+      "inputs": [
+        "/spec/intent/layout"
+      ]
+    },
+    "/spec/handoff/telemetry": {
+      "origin": "site",
+      "source": "site.toml:handoff.telemetry",
+      "class": "policy",
+      "lifecycle": "startup_only",
+      "confidence": "exact",
+      "inputs": []
+    },
+    "/spec/handoff/kernels": {
+      "origin": "profile",
+      "source": "flashnext-balanced.toml: kernel literals (interim launcher values; candidates to derive or calibrate, RSC08)",
+      "class": "derived",
+      "lifecycle": "startup_only",
+      "confidence": "estimate",
+      "inputs": []
+    },
+    "/spec/processes/engine/device": {
+      "origin": "derived",
+      "source": "RSC05 GPU selection",
+      "class": "derived",
+      "lifecycle": "startup_only",
+      "confidence": "exact",
+      "inputs": [
+        "/spec/facts/gpus",
+        "/spec/intent/layout"
+      ]
+    },
+    "/spec/processes/engine/runtime": {
+      "origin": "site",
+      "source": "site.toml: engine runtime; architecture catalogue",
+      "class": "policy",
+      "lifecycle": "startup_only",
+      "confidence": "exact",
+      "inputs": []
+    },
+    "/spec/processes/engine/server": {
+      "origin": "site",
+      "source": "site.toml: engine port",
+      "class": "policy",
+      "lifecycle": "startup_only",
+      "confidence": "exact",
+      "inputs": []
+    },
+    "/spec/processes/engine/scheduler": {
+      "origin": "derived",
+      "source": "model geometry and serving intent",
+      "class": "derived",
+      "lifecycle": "startup_only",
+      "confidence": "estimate",
+      "inputs": [
+        "/spec/intent/service"
+      ]
+    },
+    "/spec/processes/engine/execution": {
+      "origin": "profile",
+      "source": "flashnext-balanced.toml",
+      "class": "policy",
+      "lifecycle": "startup_only",
+      "confidence": "exact",
+      "inputs": []
+    },
+    "/spec/processes/helper_common": {
+      "origin": "profile",
+      "source": "flashnext baseline profile",
+      "class": "policy",
+      "lifecycle": "startup_only",
+      "confidence": "exact",
+      "inputs": []
+    },
+    "/spec/processes/helpers": {
+      "origin": "derived",
+      "source": "archs.toml, layout, budget derivation",
+      "class": "derived",
+      "lifecycle": "startup_only",
+      "confidence": "estimate",
+      "inputs": [
+        "/spec/facts/gpus",
+        "/spec/intent/layout",
+        "/spec/calibration"
+      ]
+    },
+    "/spec/processes/helpers/1/settings": {
+      "origin": "profile",
+      "source": "hardware-specific helper mode",
+      "class": "policy",
+      "lifecycle": "startup_only",
+      "confidence": "exact",
+      "inputs": []
+    },
+    "/spec/processes/helpers/2/settings": {
+      "origin": "profile",
+      "source": "tail helper lane policy",
+      "class": "policy",
+      "lifecycle": "startup_only",
+      "confidence": "exact",
+      "inputs": []
+    },
+    "/spec/plan": {
+      "origin": "derived",
+      "source": "RSC03 owner selection and rad0011 memory evidence (illustrative fixture)",
+      "class": "derived",
+      "lifecycle": "startup_only",
+      "confidence": "estimate",
+      "inputs": [
+        "/spec/intent",
+        "/spec/facts",
+        "/spec/calibration"
+      ]
+    }
+  }
+}

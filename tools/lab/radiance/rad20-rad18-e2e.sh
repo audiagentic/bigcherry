@@ -2,7 +2,7 @@
 # Needs the feat/rad20-blocking-lanes helper build and is kept as the RAD20 record.
 # RAD20 + RAD18 in one build-server session (run through `bigcherry slice lab feat/rad20-blocking-lanes ...`):
 #   1. build this slice (RAD20: blocking helper lanes) and its parent commit (main: the RAD18 combine binary and
-#      RAD20's baseline arm), both --experiment moe-remote-handoff; no build runs during the measurements below;
+#      RAD20's baseline arm), both using the production lab lane; no build runs during the measurements below;
 #   2. RAD20 A/B, helper-rad20-ab.json (polling vs blocking), with pidstat sampling every helper thread's CPU;
 #   3. RAD18 on the main build: helper-combine-ab.json (combine off/on) and helper-combine-nofire-ab.json (off vs
 #      on-but-never-fires), for the tg128 check; every cell now records MTP draft totals (cell.json "draft").
@@ -18,8 +18,7 @@ HEAD=$(git rev-parse HEAD); BASE=$(git merge-base HEAD FETCH_HEAD)
 echo "slice $HEAD baseline $BASE" | tee $OUT/builds.txt
 
 build() {   # $1 label: builds the checked-out tree, prints its runtime prefix
-    PYTHONPATH=tools timeout 5400 python3 -m bigcherry build --lane radiance-lab:stock:linux-radiance \
-        --experiment moe-remote-handoff > $OUT/build-$1.log 2>&1
+    PYTHONPATH=tools timeout 5400 python3 -m bigcherry build --lane radiance-lab:stock:linux-radiance > $OUT/build-$1.log 2>&1
         grep '^build: logs=' $OUT/build-$1.log >&2 || true
     local plan; plan=$(grep -oE 'ok build_plan_id=[0-9a-f]+' $OUT/build-$1.log | tail -1 | cut -d= -f2)
     [ -n "$plan" ] || { grep -E ' error:|FAILED' $OUT/build-$1.log | sort -u | head >&2; return 1; }

@@ -19,6 +19,9 @@ namespace r3::moe_shm {
 constexpr uint64_t kMagic = 0x31454f4d33485253ull; /* "SRH3MOE1": reject unrelated/stale shm. */
 constexpr uint32_t kVersion = 23;  /* placement generations; no v22 compatibility */
 constexpr uint32_t kPage = 4096;
+/* One existing helper segment-attach/startup window, shared by helper
+ * helper publication/filter sealing and the engine's first rank bitmap upload. */
+constexpr int kStartupWaitSeconds = 1800;
 /* R3_MOE_WORKER_COMBINE: first element of a combined fp16 row the combiner could not hold in fp16 range (a NaN payload
  * no arithmetic produces; a real NaN converts to 0x7E00); the engine then reads that row from the two helper planes. */
 constexpr uint16_t kCombineFallback = 0x7E01;
@@ -82,7 +85,7 @@ enum class PlacementState : uint32_t {
     ACTIVE=0, PROPOSED=1, RESERVING=2, COPYING=3,
     PREPARED=4, QUIESCING=5, COMMIT=6, RETIRING=7
 };
-enum class AckPhase : uint32_t { NONE=0, RESERVED=1, READY=2, QUIESCED=3, COMMITTED=4, RETIRED=5 };
+enum class AckPhase : uint32_t { NONE=0, RESERVED=1, READY=2, QUIESCED=3, COMMITTED=4, RETIRED=5, REOPENED=6, CLEANED=7 };
 enum class GenerationState : uint32_t { EMPTY=0, STAGING=1, READY=2, ACTIVE=3, RETIRED=4 };
 
 struct alignas(64) PlacementControl {
@@ -154,7 +157,11 @@ struct alignas(64) JournalRecord {
     uint32_t commit_ranks;
     uint32_t retire_helpers;
     uint32_t retire_ranks;
-    uint32_t reserved[6];
+    // Terminal placement-only cleanup diagnostic, distinct from a precommit
+    // abort's original fault; these occupy previously reserved journal words.
+    uint32_t cleanup_fault;
+    uint32_t cleanup_actor;
+    uint32_t reserved[4];
 };
 struct alignas(64) PlacementJournal {
     JournalRecord entry[2];
@@ -171,7 +178,7 @@ struct alignas(64) Request {
     uint32_t rows;                 /* number of activation/result rows in this pass. */
     uint32_t hidden;               /* must be 2560; explicit so ABI/model mismatch fails closed. */
     uint32_t route_count;          /* number of Route records valid at route_offset. */
-    uint32_t row_base;             /* pass r0 in the step; diagnostic only. */
+    uint32_t generation_slot;     /* immutable ownership generation, +36: same cache line as selector validation. */
     uint64_t route_offset;         /* routed (token,expert,weight) list for this rank. */
     uint64_t activation_offset;    /* staged BF16 input rows; compare/CPU-reference only. */
     uint64_t activation_q_offset;  /* exact E4M3 operand consumed by the local gate/up GEMM. */
@@ -189,7 +196,7 @@ struct alignas(64) Request {
     /* R3_MOE_WORKER_COMBINE: nonzero on helper 0's request of a step whose rows helper 0 combines (the generation it then
      * stores in Header::combine.done); written before the request is released, so helper 0 never polls for it. */
     uint32_t combine_generation;
-    uint32_t generation_slot;     /* immutable ownership generation of this request, +204. */
+    uint32_t row_base;             /* diagnostic-only pass r0, +204; not a helper selector input. */
     /* R3_MOE_WORKER_TRACE, per request (RAD40): 0 helper lane's activations and routes ready, 1 its gate/up, quant and
      * down done (both wall_clock64 on the helper's clock, with trace[3]/[4] around them); 2 helper 0 only, on the step it
      * combines: microseconds waiting for the other helpers' done words (low 32 bits) and combining (high 32 bits). */
@@ -200,8 +207,8 @@ struct alignas(64) Request {
     uint32_t reserved_tail;        /* +252, zero on publication. */
 };
 static_assert(sizeof(Request) % 64 == 0);
-/* The ring ends on the same page boundary for 192- and 256-byte requests, so the header's size checks cannot tell two
- * layouts apart: a layout change must bump kVersion, and this fires so it cannot be forgotten. */
+/* Slice E revised the still-unpublished v23 Request: generation_slot is +36, row_base +204.
+ * Both engine publisher and helper include this one definition; no prior-v23 compatibility path. */
 static_assert(sizeof(Request) == 256, "Request layout changed: bump kVersion");
 
 struct alignas(64) LaneSignal {
@@ -213,9 +220,28 @@ struct alignas(64) LaneSignal {
     uint32_t consumed_slot;
     uint64_t done_epoch;
     uint64_t consumed_epoch;
-    uint32_t reserved[6];
+    /* Engine closes admission and retires parents before requesting a drain.
+     * Helpers ACK only after their queued waits/compute/combine work drained.
+     * Closure IDs prevent an old park from certifying a newer quiescence. */
+    uint64_t drain_request;
+    uint64_t drain_ack;
+    uint32_t reserved[2];
 };
 static_assert(sizeof(LaneSignal) == 64);
+static_assert(offsetof(LaneSignal, drain_request) == 40 && offsetof(LaneSignal, drain_ack) == 48);
+
+/* A helper ACK is a post-drain proof for exactly one closure. The callback
+ * owns its stream/CPU-combine drain; failures and stale requests never ACK.
+ * Kept card-free so cancellation and stale-proof behavior are unit tested. */
+template<class Drain>
+inline bool acknowledge_lane_drain(LaneSignal& lane, uint64_t closure, Drain&& drain) {
+    if (!closure || __atomic_load_n(&lane.drain_request, __ATOMIC_ACQUIRE) != closure)
+        return false;
+    if (!drain() || __atomic_load_n(&lane.drain_request, __ATOMIC_ACQUIRE) != closure)
+        return false;
+    __atomic_store_n(&lane.drain_ack, closure, __ATOMIC_RELEASE);
+    return true;
+}
 
 /* R3_MOE_WORKER_COMBINE (two to kMaxHelpers helpers behind a one-rank engine, large lane only): helper 0 adds every helper's
  * bf16 rows on the CPU into result plane [0][1] as fp16, so the engine reads one row a token over its link instead of one a
@@ -241,6 +267,24 @@ struct alignas(64) CombineSignal {
     uint32_t reserved[14];
 };
 static_assert(sizeof(CombineSignal) == 128);
+
+/* Engine-GPU consumption records, rank-local device memory (never mapped).
+ * mailbox_add_finish_kernel updates them every layer without host traffic;
+ * the per-parent seal kernel copies changed records into LaneSignal::consumed_*
+ * and CombineSignal::result_consumed_* (what the quiescence check reads).
+ * `flushed` is the sequence/generation the seal last copied. */
+struct ConsumedRecord {
+    uint32_t sequence;
+    uint32_t slot;
+    uint64_t epoch;
+    uint32_t flushed;
+    uint32_t reserved;
+};
+static_assert(sizeof(ConsumedRecord) == 24);
+struct ConsumedRecords {
+    ConsumedRecord lane[kLanes];
+    ConsumedRecord combine;
+};
 
 /* R3_MOE_WORKER_COMBINE, chunked (RAD42): a large-lane step's rows in chunks of kCombineChunkRows. Helper k's reduce kernel
  * stores its request sequence in seq[k][c] once every row of chunk c is written (system-scope release from its GPU);
@@ -332,7 +376,9 @@ struct alignas(kPage) Header {
      * for (a layer map consumed, a lane park cleared, helper_fault raised). Waiters snapshot it before checking their
      * condition and sleep on it (wait_for), so a change between the check and the sleep is never missed. */
     uint32_t notify;
-    uint32_t reserved32[24 - 3 * kMaxHelpers - 1];
+    /* Bootstrap-only: each helper publishes its final filtered map before helper 0 seals slot 0. */
+    uint32_t bootstrap_filtered_helpers;
+    uint32_t reserved32[24 - 3 * kMaxHelpers - 2];
     CombineSignal combine;
     CombineChunks chunks;
     uint64_t placement_offset;         /* +3264 */
@@ -347,7 +393,8 @@ struct alignas(kPage) Header {
 static_assert(kVersion == 23 && kRingSlots == kLanes * kLaneSlots);
 static_assert(sizeof(Header) == 4096 && alignof(Header) == 4096);
 static_assert(sizeof(Request) == 256 && alignof(Request) == 64);
-static_assert(offsetof(Request, generation_slot) == 204);
+static_assert(offsetof(Request, generation_slot) == 36);
+static_assert(offsetof(Request, row_base) == 204);
 static_assert(offsetof(Request, placement_epoch) == 232);
 static_assert(offsetof(Request, completion_epoch) == 240);
 static_assert(offsetof(Request, completion_slot) == 248);
@@ -376,10 +423,6 @@ constexpr uint64_t align_page(uint64_t n) { return (n + kPage - 1) & ~(uint64_t(
 constexpr uint32_t route_slot_bytes() { return kMaxRoutes * sizeof(Route); }
 constexpr uint32_t activation_slot_bytes() { return kActivationBf16Bytes + kActivationQBytes + kActivationScaleBytes; }
 constexpr uint32_t result_slot_bytes() { return kMaxRows * kHidden * sizeof(uint16_t); }
-/* Only a derived device bitmap uses this v22-compatible stride; shared ownership is canonical bytes. */
-constexpr uint32_t device_owner_slot_bytes(uint32_t experts) {
-    return kMaxLayers * ((experts + 7u) / 8u);
-}
 constexpr uint32_t layer_map_slot_bytes() { return kMaxLayers * kExperts * sizeof(int32_t); }
 
 struct Layout {
@@ -585,6 +628,8 @@ inline bool valid(const Header* h, size_t mapped, const LayoutShape& expect) {
         h->placement_control_bytes != sizeof(PlacementControl) ||
         h->placement_ack_count != kMaxHelpers + kMaxEngineRanks ||
         h->segment_bytes != l.bytes || mapped < l.bytes) return false;
+    if (h->bootstrap_filtered_helpers & ~((1u << h->helper_count) - 1u))
+        return false;
     for (uint32_t v : h->reserved32) if (v) return false;
     for (uint32_t c = 0; c < h->small_class_count; ++c)
         if (h->small_class_rows[c] == 0 || h->small_class_rows[c] > h->max_rows ||
@@ -745,6 +790,25 @@ inline uint64_t generation_digest(const void* base, uint32_t slot) {
                                   h->helper_count, map) : 0;
 }
 
+/* The bootstrap publication is a distinct controller seqlock transition.
+ * The initial init() digest alone is not a seal, and must never be uploaded. */
+inline bool bootstrap_generation_sealed(const void* base) {
+    if (!base) return false;
+    const auto* h = static_cast<const Header*>(base);
+    PlacementControl c{};
+    if (!placement_snapshot(base, &c) || c.seq < 2 || (c.seq & 1u) ||
+        !h->helper_count || h->helper_count > kMaxHelpers ||
+        c.active_slot != 0 || c.active_epoch != 1 || c.fault_code ||
+        c.expected_helpers != ((1u << h->helper_count) - 1u) ||
+        __atomic_load_n(&h->bootstrap_filtered_helpers, __ATOMIC_ACQUIRE) != c.expected_helpers)
+        return false;
+    const auto* g = generation_header(base, 0);
+    return g && g->state == uint32_t(GenerationState::ACTIVE) && g->epoch == 1 &&
+           __atomic_load_n(&g->ready_helpers, __ATOMIC_ACQUIRE) == c.expected_helpers &&
+           g->digest == c.active_digest && c.active_digest &&
+           generation_digest(base, 0) == c.active_digest;
+}
+
 inline int32_t* layer_slots(void* base, uint32_t layer) {
     auto* h = static_cast<Header*>(base);
     if (!h || layer >= h->layer_count) return nullptr;
@@ -777,6 +841,35 @@ inline int futex_wake(uint32_t* p) {
 inline void notify(Header* h) {
     (void)__atomic_fetch_add(&h->notify, 1u, __ATOMIC_SEQ_CST);
     (void)futex_wake(&h->notify);
+}
+
+/* Helper drain (after the lane's stream is drained): publish the identity of the lane's last completed request
+ * (epoch/slot) for the engine's quiescence check. The ring slot must still hold that request (admission closed and
+ * every parent retired, so nothing newer was published) and carry a valid epoch/slot; otherwise refuse the ACK
+ * rather than copy another request's identity. acknowledge_lane_drain's release of drain_ack publishes the words. */
+inline bool publish_done_identity(void* base, uint32_t lane) {
+    LaneSignal& l = static_cast<Header*>(base)->lane[lane];
+    const uint32_t seq = load(&l.done_sequence);
+    if (!seq) return true;
+    const Request* q = lane_request(base, lane, seq);
+    if (!q || load(&q->sequence) != seq) return false;
+    const uint64_t epoch = __atomic_load_n(&q->placement_epoch, __ATOMIC_ACQUIRE);
+    const uint32_t slot = load(&q->generation_slot);
+    if (!epoch || slot > 1) return false;
+    __atomic_store_n(&l.done_epoch, epoch, __ATOMIC_RELAXED);
+    __atomic_store_n(&l.done_slot, slot, __ATOMIC_RELAXED);
+    return true;
+}
+
+/* Engine quiescence, one lane: a served lane acknowledged exactly this closure, every published request is done and
+ * consumed, and the helper's done identity equals the engine's consumed identity for the last one. */
+inline bool lane_quiesced(const Header* h, uint32_t lane, uint64_t closure, bool served) {
+    const LaneSignal& l = h->lane[lane];
+    if (served && __atomic_load_n(&l.drain_ack, __ATOMIC_ACQUIRE) != closure) return false;
+    const uint32_t seq = load(&l.request_sequence);
+    if (load(&l.done_sequence) != seq || load(&l.consumed_sequence) != seq) return false;
+    return !seq || (__atomic_load_n(&l.done_epoch, __ATOMIC_ACQUIRE) == __atomic_load_n(&l.consumed_epoch, __ATOMIC_ACQUIRE) &&
+                    load(&l.done_slot) == load(&l.consumed_slot));
 }
 /* Raise helper_fault (sticky) and wake every CPU waiter. */
 inline void raise_fault(Header* h) {

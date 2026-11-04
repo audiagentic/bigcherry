@@ -57,6 +57,10 @@ Flash-Next W4 replay stays bitwise identical at every step; FP8 GPU output agree
 
 Unverified by the review: an existing compatible FP16 grouped-GEMM plugin registration and the exact plugin tensor order; inventory the native kernels before step 3. Pitfalls on gfx1100: no FP8 matrix instructions, E4M3 decode and scale multiply can dominate short GEMMs, LDS expansion halves tile capacity, FP16 overflow when scaling before WMMA, scale indexing must follow logical N/K after any relayout. Related: RCS01, RCS05, RCS09, RAD11.
 
+
+
+BACKLOG TRIAGE 2026-11-04 (revalidated against main 6eb31a708): the proposed disposition "MERGE into RCS05/RCS09 model-general backend" was NOT applied; this item stays open. Why: PR #330 implemented FP8 block-scaled worker execution (engines/radiance/components/moe-remote/moe_backend.h:20,105-109), but RAD13.md:64-74 still records two-stream/prefill performance and FP8 KL-floor qualification gaps. RCS05.md:18-39 and RCS09.md:18-41 only cover backend modularity and shape; RAD14.md:18-39 covers kernel geometry but is itself being merged into RCS10, which does not explicitly own the distinct quality and end-to-end FP8 model gate. Active items that reference this one: BCOP327, BCOP328, BCOP329, BCOP330, BCOP331, BCOP332, BCOP337, BCOP338, BCOP339, PRBE18. Keep the remaining FP8 model-level performance and numerical-quality qualification open until a lasting owner is specified.
+
 ## Change Log
 
 - 2026-10-19T12:23:26.909976+00:00 (created-by): Created by agent
@@ -72,3 +76,4 @@ Built on radiance 1.8.0's own `moe_gemm_fp8a8` row and the plain quantisers; the
 - Reading: the worker matches exact math (about 1e-4) while the R9700's local FP8 path sits 2.3e-3 from it, so the difference is the engine's native gfx1201 FP8 arithmetic (matrix-unit accumulation), not a worker defect; the W4 path was bit-identical to the engine and had no such gap. The corpus perplexity of the workers' arms is within 0.5% of the engine's (the 10-19 arm is below it), so this is a different rounding path, not a quality loss. KL against the engine alone is therefore a consistency gauge with a floor for FP8, not a pass/fail for W4-style identity; thresholds for FP8 should be set from this floor (and PPL ratio) and ideally checked against a higher-precision reference.
 - Tooling added: `fastbuild.sh` (incremental worker and plugin rebuild in an existing lane build: seconds instead of 25 minutes), capture version 3 with `capture_upgrade.py`, `R3_MOE_WORKER_LAYERS`, the KL, bisect, shadow and mask-only configs under tools/lab/radiance/qwen35b-*.
 - Open: FP8 decode GEMV (RAD14), the 2-stream and prefill/first-token cost, the engine's MTP acceptance collapse, KL floor calibration against a higher-precision reference, R9700-vs-worker per-route comparison to confirm the accumulation hypothesis.
+- 2026-11-04T04:23:50.587962+00:00 (updated-by): Updated: section:notes

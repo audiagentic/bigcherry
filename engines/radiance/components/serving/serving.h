@@ -17,7 +17,7 @@ struct Layout {
     std::vector<std::string> helper_cards;
 };
 struct Memory {
-    uint64_t host_pool_mib = 0, host_kv_mib = 0, tail_budget_mib = 0;
+    uint64_t host_pool_mib = 0, host_kv_mib = 0, host_reserve_mib = 0, tail_budget_mib = 0;
     std::vector<uint64_t> helper_budgets_mib;
 };
 // Shared launcher COMMON fields live outside the exact WorkerConfig struct.
@@ -39,7 +39,7 @@ struct Engine {
     std::string kv_cache_dtype, rope_scaling, prefix_resume;
     uint32_t port = 0, tp = 0, max_num_seqs = 0, max_num_batched_tokens = 0;
     uint32_t checkpoint_interval = 0, num_speculative_tokens = 0, max_model_len = 0;
-    uint64_t host_pool_mib = 0, prefix_cache_mib = 0;
+    uint64_t host_pool_mib = 0, prefix_cache_mib = 0, host_headroom_mib = 0;
 };
 struct Config {
     uint32_t schema_version = 1;
@@ -53,6 +53,8 @@ struct Config {
 struct Options {
     std::filesystem::path sys_root = "/";
     std::filesystem::path site, profile;
+    // A calibration cache (RHP12 refits) layered over the compiled-in seeds; empty: seeds only.
+    std::filesystem::path calibration_cache;
     std::vector<std::string> sets;
 };
 struct Resolved {
@@ -63,5 +65,4 @@ struct Resolved {
 Json detect(const std::filesystem::path& root = "/");
 Json json_schema();
 Resolved resolve(const Options& options, const Json& facts);
-std::string sha256_hex(const std::string& text);
 } // namespace bc::serving

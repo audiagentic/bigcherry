@@ -1,5 +1,15 @@
 # 1270_pnro14_rdna35_fa_tile_d256
 
+## Summary
+
+The existing patch overrides only the D=256 / ncols=32 tile-FlashAttention row from `(256,256,32,256,3,64,128)` to `(256,256,32,256,4,64,64)`. It does **not** force the TILE backend.
+
+## Outcome
+
+Recorded state: `untested` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 **Status: untested; no BigCherry gfx1151 hardware qualification.** PNRO14 is authoritative; BCOP74 records the 2026-10-09 route/architecture rebaseline.
 
 The existing patch overrides only the D=256 / ncols=32 tile-FlashAttention row from `(256,256,32,256,3,64,128)` to `(256,256,32,256,4,64,64)`. It does **not** force the TILE backend. In b11474 `ggml_cuda_get_best_fattn_kernel` chooses AMD MMA before TILE for normal aligned, masked GQA prefill; `launch_fattn_tile_switch_ncols1` must also select 32 columns for this override to run. The once-only `BIGCHERRY_PATCH_HIT` marker records host configuration selection, not launch count or a measured gain.

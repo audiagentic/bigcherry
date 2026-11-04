@@ -1,5 +1,15 @@
 # 1283_qwen4exp_expert_parallel
 
+## Summary
+
+Promotion record (QFP18 lightweight evidence-reuse tier, pin b11402 / d89651a7). Mechanism is in SUMMARY.md.
+
+## Outcome
+
+Recorded state: `validated` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 Promotion record (QFP18 lightweight evidence-reuse tier, pin b11402 / d89651a7). Mechanism is in SUMMARY.md. The
 patch is a neutral enabler and stays opt-in (`BIGCHERRY_MOE_EP=1`): with the flag off nothing changes, with the flag
 on the tensor split gives each device whole routed experts instead of a row slice of every expert. It is promoted

@@ -1,5 +1,15 @@
 # 1271 PRBE54 Q5 KV F16 dequant
 
+## Summary
+
+Adds HIP half2 F16 dequantization for legacy Q5_0/Q5_1 only when FlashAttention stages contiguous KV to F16. The global conversion selector is unchanged.
+
+## Outcome
+
+Recorded state: `untested` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 Untested HIP FlashAttention experiment for legacy Q5_0/Q5_1 KV cache.
 
 ## Scope

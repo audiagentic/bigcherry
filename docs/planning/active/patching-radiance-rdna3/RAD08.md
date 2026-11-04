@@ -25,9 +25,15 @@ Our KLD runs report a mean only, against the two-XTX run of the same container. 
 
 ## Detailed Solution & Technical Design
 
+
+
 ## Code Samples & Guidance
 
+
+
 ## Files
+
+
 
 ## Validation
 
@@ -35,13 +41,23 @@ Unit test on synthetic logits; re-analysed numbers recorded.
 
 ## Effort & Risk
 
+
+
 ## Standards
 
+
+
 ## Acceptance Criteria
+
+
 
 ## Notes
 
 2026-10-17: radiance --kld-out JSON already holds mean/median/p90/p95/p99/p99.9/p99.99/max, top-1 and PPL overall ('all') and per corpus source ('by_source'); the summary log line carries the same. Parser + gate extended in feat/rad08-kld-metrics (4919eb61). Remaining: (1) read the JSON instead of the log line; (2) a chat-format KLD corpus whose sources tag turn roles, so 'by_source' yields the text+assistant column of the owner's reference table; (3) record the helper layout's full set on the Flash-Next model page (RAD07).
+
+
+
+BACKLOG TRIAGE 2026-11-04 (revalidated against main 6eb31a708): the proposed disposition "SUPERSEDED by #249; keep RAD39 for interpretation" was NOT applied; this item stays open. Why: PR #249 delivered mean, median, p99, p99.9 and top-1 reporting, but RAD08.md:44 still lists JSON input, chat-role-tagged text+assistant split and re-recorded helper metrics as missing. docs/archive/radiance/LAB_HISTORY.md:58-60 independently says the text+assistant column still needs per-token output. Complete role-split KLD and helper-layout reanalysis before retiring RAD08.
 
 ## Change Log
 
@@ -52,3 +68,4 @@ Unit test on synthetic logits; re-analysed numbers recorded.
 
 - chg_20261017_012848_radiance-quality-checks-report_4522
 - 2026-10-17T01:28:52.271660+00:00 (updated-by): Updated: section:ledger-events
+- 2026-11-04T04:23:42.444583+00:00 (updated-by): Updated: section:notes

@@ -36,7 +36,7 @@ New settings must have default, status, summary, activation in component.toml wh
 
 ## Files
 
-engines/radiance/components/libr3/component.toml; engines/radiance/recipes.toml; engines/radiance/patches/...; tools/tests/patch/test_radiance_patch_packages.py; relevant tools/tests/experiment tests; docs/reference/engines/radiance/RUNBOOK.md; engines/radiance/README.md; docs/evidence/RWQ05, RWQ06.
+engines/radiance/components/libr3/component.toml; engines/radiance/recipes.toml; engines/radiance/patches/...; tools/tests/patch/test_radiance_patch_packages.py; relevant tools/tests/experiment tests; docs/reference/engines/radiance/RUNBOOK.md; docs/archive/radiance/LAB_HISTORY.md; docs/evidence/RWQ05, RWQ06.
 
 ## Validation
 
@@ -65,6 +65,11 @@ Medium operational risk from mode/version skew across ranks; high failure conseq
 
 Depends RWQ05. Current baseline production selections remain untouched. No GPU work performed by creation of these plans.
 
+
+
+BACKLOG TRIAGE 2026-11-04 (revalidated against main 6eb31a708): the proposed disposition "MERGE into MEN26 release/promotion gate" was NOT applied; this item stays open. Why: docs/planning/active/patching-radiance-wire-quality/RWQ06.md:16-25,46-59 requires wire-specific defaults, codec/policy registration, two-rank mismatch rejection, 27B/Flash-Next regression fixtures and migration tests. docs/planning/active/run-multi-engine/MEN26.md:16-32,53-59 owns current Radiance serving-core patch promotion and releases, not the distinct wire-protocol and codec-specific regression gates; closing RWQ06 into MEN26 loses those responsibilities. Keep RWQ06 wire-specific promotion and fail-closed protocol fixtures distinct, while using MEN26's shared release machinery after RWQ05 passes.
+
 ## Change Log
 
 - 2026-10-15T00:00:00+00:00 (created-by): Initial plan; unimplemented GPU work remains pending.
+- 2026-11-04T04:25:45.059140+00:00 (updated-by): Updated: section:notes

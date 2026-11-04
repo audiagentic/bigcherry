@@ -4,12 +4,15 @@
 version = 2
 engine = "radiance"
 # radiance 1.14.0 (codeberg StillDeadcode/radiance; exact-SHA mirror Quackster/radiance). v1.14.0 is commit 4a61d72.
-pinned = "v1.14.0"
-pinned-version = "1.14.0"
+pinned = "v1.16.0"
+pinned-version = "1.16.0"
 
-# Validated engine fixes only; the set starts empty rather than claiming a validated state no package has.
+# Validated serving patches, including the production remote-MoE hand-off.
 [patch-set.serving-core]
-patches = ["rad0008_hc_upmix_rt_sweep"]
+patches = [
+  "rad0008_hc_upmix_rt_sweep",
+  "rad0002_moe_remote_handoff",
+]
 
 # Empty: rad0001 (shutdown drain) is superseded by radiance 1.7.0 (1e968f6 drains the mover stream in Engine::~Engine).
 # The set stays declared as the home for evaluated engine fixes the lab source needs.
@@ -27,13 +30,16 @@ required-state = "untested"
 # Start from a resolved serving manifest (rad0009, RSC07): `--manifest PATH` replaces command-line flags. Untested until a
 # manifest launch is shown to parse to the same config as the argv launch on hardware, then moved to serving-core.
 [patch-set.serving-manifest]
-patches = ["rad0009_serving_manifest"]
+patches = ["rad0009_serving_manifest", "rad0011_plan_memory"]
 required-state = "untested"
 
-# The remote-MoE hand-off and its diagnostics (shadow compare, mask-only). Diagnostic builds only: patch-lint fails
+# Remote-MoE diagnostics (shadow compare, mask-only); the hand-off is in serving-core. Patch-lint fails
 # if a patch declaring `diagnostic-build` (rad0004) enters any recipe not named *-diag.
 [patch-set.moe-remote-diag]
-patches = ["rad0002_moe_remote_handoff", "rad0004_moe_remote_diagnostics", "rad0006_heat_freeze_diagnostic"]
+patches = [
+  "rad0004_moe_remote_diagnostics",
+  "rad0006_heat_freeze_diagnostic",
+]
 required-state = "untested"
 
 [source.radiance-native]
@@ -47,12 +53,12 @@ overlay = false
 patch-sets = ["serving-core", "host-compat", "serving-manifest"]
 
 [source.radiance-lab]
-description = "radiance 1.14.0 with the evaluated engine fixes the Flash-Next two-XTX configuration needs (none at present)."
+description = "radiance 1.14.0 as source.radiance (production patch sets) plus the evaluated engine fixes the Flash-Next two-XTX configuration needs (none at present). Never a different base: the lab runs what production runs."
 overlay = false
-patch-sets = ["engine-fixes-evaluated", "host-compat"]
+patch-sets = ["serving-core", "engine-fixes-evaluated", "host-compat", "serving-manifest"]
 
 [source.radiance-diag]
-description = "radiance 1.14.0 with the validated engine patch sets plus the remote-MoE hand-off and its diagnostics (rad0004); build it with build.moe-diag."
+description = "radiance 1.14.0 with the validated engine patch sets plus remote-MoE diagnostics (rad0004); build it with build.moe-diag."
 overlay = false
 patch-sets = ["serving-core", "host-compat", "serving-manifest", "moe-remote-diag"]
 
@@ -68,10 +74,7 @@ description = "radiance built with BC_MOE_REMOTE_DIAG: remote-MoE shadow compare
 options = { CMAKE_CXX_FLAGS = "-DBC_MOE_REMOTE_DIAG" }
 needs = []
 
-# One focal engine patch per experiment; the 0002-0003 stack is never one indivisible experiment.
-[experiment.moe-remote-handoff]
-patches = ["rad0002_moe_remote_handoff"]
-
+# Experiments contain only unpromoted patches; promotion retires their memberships.
 [experiment.mtp-full-head-switch]
 patches = ["rad0003_mtp_full_head_switch"]
 

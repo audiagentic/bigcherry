@@ -58,6 +58,10 @@ No Flash-Next constants (640/384/w4nl64a8h) left in the helper's selection path;
 
 Raised 2026-10-23 while discussing why the helper exists instead of using the engine as an expert host (RAD02 rationale: radiance has no expert-parallel mode; TP splits every layer and needs every rank on one kernel library). Not urgent: the working layout runs full-width experts. Related: RAD02 (inverted expert-parallel layout), RAD18 (helper transport work, R3_MOE_WORKER_COMBINE).
 
+
+
+BACKLOG TRIAGE 2026-11-04 (revalidated against main 6eb31a708): the proposed disposition "MERGE into RCS09 with explicit TP-slice migration" was NOT applied; this item stays open. Why: engines/radiance/components/moe-remote/moe_lane_common.h:34-45 still defines the 640/384 split and W4 dtype, and moe_remote_gpu.h:101-102 still refuses other sliced widths. docs/planning/active/build-radiance-components/RCS09.md:62-78 covers shape and expert-width generalisation but not the TP parity/slice contract or sliced-mode bitwise replay; RAD23.md:122 explicitly depends on RAD19 metadata. Active items that reference this one: RAD23. Keep the slice contract and Flash-Next bit-identity gate explicit until RCS09 incorporates TP-specific extraction, dtype and replay acceptance.
+
 ## Execution gate review (2026-10-23)
 
 - Pull exact per-expert width, quantization/dtype, rank count, and gate/up pairing from authenticated container metadata or radiance's actual exported layout. Reject absent/inconsistent metadata and unsupported alignment; never infer dtype from a model filename.
@@ -67,3 +71,4 @@ Raised 2026-10-23 while discussing why the helper exists instead of using the en
 ## Change Log
 
 - 2026-10-23T00:48:25.505935+00:00 (created-by): Created by agent
+- 2026-11-04T04:23:58.666985+00:00 (updated-by): Updated: section:notes

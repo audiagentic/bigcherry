@@ -12,6 +12,71 @@ priority: P0
 ---
 
 # R9X04 — Router gate; HC POST already owned by QFP35
+
+## Description
+
+
+
+## Steps
+
+
+
+## Detailed Solution & Technical Design
+
+
+
+## Code Samples & Guidance
+
+
+
+## Files
+
+- kernels/r9k_router.hip
+- kernels/r9k_hc.hip
+- r9700_vllm/router.py
+- r9700_vllm/hc.py
+- tests/test_router_r9k.py
+- tests/test_hc_mix_r9k.py
+- src/models/qwen4exp.cpp
+
+## Validation
+
+
+
+## Effort & Risk
+
+
+
+## Standards
+
+RDNA4 source geometry is reference; RDNA3 retunes skinny-GEMM/waves; RDNA2 prioritizes pointwise/epilogue memory savings.
+
+## Acceptance Criteria
+
+
+
+## Notes
+
+Original source alias R9X04. Historical 1303 is advisory only; **1304 retired** because QFP35/1355 already implements the HC POST fusion. Existing MoE owners 1207/1237/1256/1257/1279 are separate.
+
+Verbatim legacy source retained during R9X→RNX migration:
+
+# R9X04 — MoE router and hyper-connection decode fusion
+
+Status: planned
+Proposed patches: `1303_r9x_router_decode_gemm`, `1304_r9x_hyper_connection_fusion`
+Depends on: R9X01
+External source: `kernels/r9k_router.hip`, `kernels/r9k_hc.hip`, `r9700_vllm/router.py`, `r9700_vllm/hc.py`; tests `tests/test_router_r9k.py`, `tests/test_hc_mix_r9k.py`
+Existing BigCherry owners: 1207, 1237, 1256, 1257, 1279
+
+
+
+GPT design pass (req_83e7cdc000be4b9e): HC PRE and POST are already fused; the actionable gap is the inject sigmoid/scales before POST. Recommended first step is a gated raw-inject POST microfusion, not another generic post-fusion package.
+
+
+
+BACKLOG TRIAGE 2026-11-04 (revalidated against main 6eb31a708): the proposed disposition "SUPERSEDED HC part; MERGE router question into QFP13" was NOT applied; this item stays open. Why: engines/llamacpp/patches/1355_hc_post_gate_fuse/patch.toml:4 and patch.py:152-153 confirm the HC_POST gate is already validated and fused, but docs/planning/active/patching-r9700-cross-rdna/RNX04.md:14-42 explicitly retains an unqualified independent router-GEMM 1303 question. docs/planning/active/patching-qwen-flash-next/QFP13.md:60-78 only ranks/measures and cannot own an exact-shape router implementation; SUPERSEDED for the whole item would lose the router gate. Active items that reference this one: BCOP142, BCOP60, QFP13, RNX01, RNX08, RNX09, RNX10. Mark the 1344/1355 HC component delivered but retain the router shape/critical-path discriminator as separately owned unqualified work.
+
 ## Authoritative disposition — 2026-10-12, llama.cpp b11552
 
 **Retire the proposed 1304 HC POST fusion.** It has already been implemented, validated and promoted by QFP35: production patches 1344_dsv4_hc_grid_index (dimensional PRE/POST) and 1355_hc_post_gate_fuse (the raw-injection gate). QFP35 is completed. No RNX04 HC patch, graph matcher, allocator, scheduler, extra cache, or qualification job is warranted. Historical proposal text below is retained only as superseded provenance. RNX04 remains pending solely for the independently gated 1303 router-GEMM question; 1303 is an advisory historical number, not a reserved slot.
@@ -38,8 +103,6 @@ Source path: src/models/qwen4exp.cpp::build_layer_ffn -> build_moe_ffn; ggml/src
 
 Source-static matcher/ownership assertions 14/14; deterministic flat-index versus 3-D-coordinate mapping 61,102/61,102; host scalar semantic-distinction fixture confirmed BF16 combine+norm is not the F32 HC_POST expression. These are source/host checks, NOT compiled HIP, actual GPU results or new speedups.
 
-
-
 ## Historical description (superseded by 2026-10-12 disposition)
 
 Reduce Qwen4Exp routing and hyper-connection decode launch/bandwidth overhead by porting dataflow rather than vLLM module registration.
@@ -55,53 +118,13 @@ Reduce Qwen4Exp routing and hyper-connection decode launch/bandwidth overhead by
 
 Target the remaining HC combine chain rather than duplicating the already-fused HC PRE/POST operators. The current path is inject -> scale(1/hc) -> sigmoid -> scale(2) -> existing DSV4_HC_POST. Map src/models/qwen4exp.cpp::build_hc_combine to ggml_dsv4_hc_post in ggml/include/ggml.h and ggml/src/ggml.c, ggml/src/ggml-cuda/dsv4-hc.cu::{dsv4_hc_post_f32,ggml_cuda_op_dsv4_hc_post}, and the CPU fallback in ggml/src/ggml-cpu/ops.cpp. Add an explicitly flagged/raw-gate POST variant that computes 2*sigmoid(raw_inject/hc) inside the existing pointwise kernel, preserving legacy POST semantics and fallback behavior. Start with gfx1201/gfx1100; keep gfx103x legacy until measured. Do not replace the roughly 17,472 rocBLAS HC GEMMs with a custom low-rank kernel until an actual hc_down/hc_up/hc_inject M/N/K census justifies it.
 
-## Code Samples & Guidance
-
-
-
-## Files
-
-- kernels/r9k_router.hip
-- kernels/r9k_hc.hip
-- r9700_vllm/router.py
-- r9700_vllm/hc.py
-- tests/test_router_r9k.py
-- tests/test_hc_mix_r9k.py
-- src/models/qwen4exp.cpp
-
 ## Historical validation (superseded)
 
 Prove intermediate and final parity against the legacy graph across M=1/2/4/8 and MTP shapes, retain CPU/fallback coverage, and census HC GEMM shapes before considering any GEMM replacement. Later hardware validation must measure launch reduction and E2E decode/prefill with no regression, coordinating with existing 1215 shared-expert stream overlap and 1207 routing/down-fold work.
 
-## Effort & Risk
-
-
-
-## Standards
-
-RDNA4 source geometry is reference; RDNA3 retunes skinny-GEMM/waves; RDNA2 prioritizes pointwise/epilogue memory savings.
-
 ## Historical acceptance criteria (superseded)
 
 The change removes only the proven gate-chain overhead; it does not duplicate generic HC fusion, changes legacy users, or bypass the CPU fallback. The custom-GEMM question remains gated on shape evidence. E2E decode and prefill show no regression before promotion.
-
-## Notes
-
-Original source alias R9X04. Historical 1303 is advisory only; **1304 retired** because QFP35/1355 already implements the HC POST fusion. Existing MoE owners 1207/1237/1256/1257/1279 are separate.
-
-Verbatim legacy source retained during R9X→RNX migration:
-
-# R9X04 — MoE router and hyper-connection decode fusion
-
-Status: planned
-Proposed patches: `1303_r9x_router_decode_gemm`, `1304_r9x_hyper_connection_fusion`
-Depends on: R9X01
-External source: `kernels/r9k_router.hip`, `kernels/r9k_hc.hip`, `r9700_vllm/router.py`, `r9700_vllm/hc.py`; tests `tests/test_router_r9k.py`, `tests/test_hc_mix_r9k.py`
-Existing BigCherry owners: 1207, 1237, 1256, 1257, 1279
-
-
-
-GPT design pass (req_83e7cdc000be4b9e): HC PRE and POST are already fused; the actionable gap is the inject sigmoid/scales before POST. Recommended first step is a gated raw-inject POST microfusion, not another generic post-fusion package.
 
 ## Goal
 
@@ -134,3 +157,4 @@ RDNA4: source geometry is the starting point. RDNA3: expected strong portability
 ## Reviews
 
 - RV4204
+- 2026-11-04T04:25:09.440701+00:00 (updated-by): Updated: section:notes

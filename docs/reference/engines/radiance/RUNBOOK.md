@@ -1,60 +1,51 @@
-# Radiance on BigCherry: runbook
+# Radiance build and serving runbook
 
-How the radiance engine is built, configured and measured through the same platform as llama.cpp (RAD01; design in
-[PLATFORM_DESIGN.md](PLATFORM_DESIGN.md)). The measurement log is
-[engines/radiance/README.md](../../../../engines/radiance/README.md).
+Radiance is the primary serving engine. Its upstream pin, patches, sources, and build platforms are declared in `engines/radiance/recipes.toml`; separate components are installed alongside the engine in `radiance_home`.
 
-## What lives where
+## Source composition and build
 
-| Piece | Location |
-|---|---|
-| Engine declaration (upstream, layout, build, serve, components) | `engines/radiance/engine.toml` |
-| Recipes: pin, patch sets, sources, builds, experiments, runtime profiles, platform | `engines/radiance/recipes.toml` |
-| Engine patches (packages against the pinned radiance) | `engines/radiance/patches/<id>/` |
-| libr3, the gfx1100 kernel plugin (component, not a patch) | `engines/radiance/components/libr3/` |
-| libr3 runtime settings (R3_*: default, status, activation marker) | `engines/radiance/components/libr3/component.toml` |
-| moe-remote (the remote-MoE helper `r3_moe_worker` and the `libr3moe` plugin; R3_MOE_* settings) | `engines/radiance/components/moe-remote/` and its `component.toml` |
-| A/B configurations | `tools/lab/radiance/*.json` |
+| Source | Composition |
+| --- | --- |
+| `radiance-native` | Unmodified pinned upstream source |
+| `radiance` | Production: `serving-core`, `host-compat`, and `serving-manifest` |
+| `radiance-lab` | **Production plus** `engine-fixes-evaluated` (and explicit active experiments only) |
+| `radiance-diag` | Production plus `moe-remote-diag`, built with `moe-diag` |
 
-## One-time host setup (build host)
+The validated remote-MoE hand-off (`rad0002_moe_remote_handoff`) belongs to production `serving-core`, not an experiment. Lab builds inherit it without extra flags. Diagnostic patches remain isolated from production; the lab-source superset is covered by `test_radiance_sources_share_production.py`.
 
-1. Upstream mirror, beside llama.cpp's under the work root:
+From a configured checkout:
 
-       git clone --bare <a radiance clone> <work>/upstream/radiance.git
-       git -C <work>/upstream/radiance.git remote set-url origin https://codeberg.org/StillDeadcode/radiance.git
+```sh
+PYTHONPATH=tools python3 -m bigcherry build --lane radiance-lab:stock:linux-radiance
+```
 
-   The pin (`engines/radiance/recipes.toml` `pinned`) must resolve in it.
-2. Host compilers in `config/environment.local.toml` `[env]` (radiance needs GCC 14 for its host code):
+For builds with helper offload, confirm both `bin/radiance` and `radiance_home/helpers/r3_moe_worker` exist. See the [enhancement catalogue](ENHANCEMENTS.md) for each patch's validation state; recipe inclusion alone is not evidence.
 
-       RADIANCE_HOST_CC = "<gcc-14>"
-       RADIANCE_HOST_CXX = "<g++-14>"
+## Launch Flash-Next
 
-3. ROCm on `PATH` when building (`export ROCM_PATH=/opt/rocm-7.2.4 PATH=$ROCM_PATH/bin:$PATH`); radiance's own CMake
-   finds HIP from it. A worktree build points `BIGCHERRY_ENVIRONMENT` at the host file.
+Use `tools/lab/radiance/launch-flashnext-best.sh` with an explicit `--build DIR` when reproducibility matters:
 
-## Build
+```sh
+bash tools/lab/radiance/launch-flashnext-best.sh start --build DIR --layout flashnext-2xtx
+bash tools/lab/radiance/launch-flashnext-best.sh stop
+```
 
-    python -m bigcherry build --lane radiance-lab:stock:linux-radiance
+Obtain the exclusive `gpu` lease before any launch or measurement (including the first launch). A cold configuration first starts helpers and measures the engine memory plan, usually **1–2 minutes**, before starting the serving engine. Every start, including a cached start, arms the mandatory engine `--plan-check` against that measured plan. After `/health`, every start also sends a completion **canary**; failure stops the processes and restores applied power settings.
 
-The lane materialises the pin with the source's patch sets applied by the patch system, builds `bin/radiance` and
-radiance's default target (its plugins, architectures and quantisers into `radiance_home`), then builds each
-component (libr3) against the engine installed from that build and the materialised source, and copies its outputs
-into `radiance_home`. The build's identity includes the runtime targets and the components' content.
+| Exit | Meaning |
+| --- | --- |
+| `96` | Start canary failed (wrong, malformed, or failed completion) |
+| `97` | Memory plan measurement, cache/store, or plan-check setup failed |
+| `98` | Launch lock is held by another start/stop, or a server is already running |
 
-Sources: `radiance-native` (the pin), `radiance` (validated patch sets), `radiance-lab` (evaluated engine fixes).
-One engine patch per experiment (`[experiment.*]`).
+Plans are cached under `$BC_WORK_ROOT/flashnext/plan-cache`. To force a fresh measurement, **stop the server first**, then remove that directory (`rm -rf "$BC_WORK_ROOT/flashnext/plan-cache"`). Different layouts, contexts, memory budgets, and other launch parameters have distinct cache entries. Logs and the launch lock live in `$BC_WORK_ROOT/flashnext`.
 
-## Measure
+## Layouts and measurement
 
-A/B through `bigcherry ab-benchmark --server-config <json> --pairs N`. The configuration names `"engine": "radiance"`;
-arms run in mode `stock` with `execution_evidence: "observe"` (device attestation is parsed for llama.cpp only).
-Quality gates: a `quality` block in the same configuration (`tools/lab/radiance/helper-kld.json`) runs radiance's KL
-mode per arm, `tools/bigcherry/experiment/engine_quality.py` parses the `--kld-out` JSON and gates a subject against
-its control; a component setting with an `activation` marker yields activation evidence from the
-two arms' server logs.
+Select a topology using `--layout NAME` or `FLASHNEXT_LAYOUT`; enumerate definitions with `bigcherry layout list` and `bigcherry layout show NAME` (from `engines/radiance/layouts.toml`). The default uses all available cards; `flashnext-2xtx` excludes the RX 6900 XT, while `flashnext-2xtx-rdna2-tail` includes the RDNA2 tail. `--budget ARCH=MIB` overrides a card group's memory budget. Missing cards or plugins fail the layout check.
 
-## Profiles
+**RAD46 quality caveat:** putting experts on the RX 6900 XT tail has a known *worst-case quality cost*. Do not treat an improved throughput result as an unconditional quality win; evaluate the workload's output/quality and, when needed, compare with the two-XTX layout.
 
-`[runtime-profile.*]` in the recipes hold only what they switch: `server-args` and an `environment` checked against
-the components (no undeclared R3_*, no restated default). `flashnext-2xtx` and `qwen38-27b-2xtx` are the starting
-profiles.
+Use `bigcherry ab-benchmark --server-config` for paired experiments and `bigcherry stream-bench` for stream-count studies. Report **prefill** and **decode** separately, with model, topology, prompts, sample count, build identity, and text/quality checks. See [Flash-Next](models/qwen3.8-flash-next.md), [27B](models/qwen3.8-27b.md), [35B-A3B](models/qwen3.6-35b-a3b.md), and the [lab guide](../../../../tools/lab/radiance/README.md).
+
+The strict [serving manifest v1 contract](../../../design/serving-manifest-v1/spec.md) describes the target configuration interface; current launcher flags remain the operational reference until cutover.

@@ -1,5 +1,15 @@
 # 1332_qsa_token_chunk
 
+## Summary
+
+With `BIGCHERRY_QSA_CHUNK=<tokens>` (e.g. 256), batches with more than 8 tokens apply the causal predicate while the selection is still compact, return remapped I32 selection indices instead of the dense `[n_kv + n_sel, T]` mask, and build one final dense selection mask per query-token chunk before flash attention.
+
+## Outcome
+
+Recorded state: `validated` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 Promotion record (QFP18 lightweight evidence-reuse tier, pin b11402 / d89651a7). Mechanism is in SUMMARY.md; this
 file records why the patch is promoted into `[patch-set.validated-enhancements]`. The patch is an enabler: it is off
 unless `BIGCHERRY_QSA_CHUNK` is set, and it exists so that `-ub 1024` fits the 240K f16 deployment. It is not set by

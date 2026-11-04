@@ -1,5 +1,15 @@
 # RD26a: decode vs speculative-verify bit-identity, base-standalone hunks
 
+## Summary
+
+Investigates the mismatch between single-token decode and speculative-verify batches using MMVF, sgemm, attention and MMVQ dispatch edits. The observed divergence is not yet explained, so this package remains untested.
+
+## Outcome
+
+Recorded state: `untested` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 ## Current status (2026-10-13; supersedes historical scope below)
 
 Actual patch.py contains plain/fused MMVF, CPU sgemm, FlashAttention tile/WMMA, and RDNA3/RDNA4 MMVQ nwarps edits, not just two hunks. Patch 1210 remains untested: historical gfx1100 ubatch 1 vs 5 diverges at the first logit row, while 2/3/4 differ later. PPL equality is not a cross-batch identity result.

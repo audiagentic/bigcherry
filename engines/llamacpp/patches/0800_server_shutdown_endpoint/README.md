@@ -1,5 +1,15 @@
 # 0800_server_shutdown_endpoint framework validation
 
+## Summary
+
+Adds a POST /shutdown endpoint, disabled by default and enabled via LLAMA_SERVER_ENABLE_SHUTDOWN, that returns 202 and then enters the server's normal termination path.
+
+## Outcome
+
+Recorded state: `validated` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 Adds an opt-in HTTP shutdown endpoint (`POST /shutdown`, disabled by default,
 enabled via `LLAMA_SERVER_ENABLE_SHUTDOWN`) that returns 202 and then enters
 the server's normal termination path. Needed by Windows benchmark harnesses,

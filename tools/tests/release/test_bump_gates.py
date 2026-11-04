@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -11,6 +13,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from bigcherry.campaign import runtime_bundle
 from bigcherry.core import components, engines, paths
 from bigcherry.core import config as campaign_config
 from bigcherry.core.context import ProjectContext
@@ -20,6 +23,7 @@ from bigcherry.release import pin_bump
 from bigcherry.source import audit as source_audit
 
 PLATFORM = "linux-radiance"
+LAYOUT = 0x1234abcd5678ef90
 FAKE_HOST = {"RADIANCE_HOST_CC": "/fake/gcc-14", "RADIANCE_HOST_CXX": "/fake/g++-14"}
 HEADER = "#pragma once\n#define RAD_ABI_VERSION 7u\n"
 
@@ -51,7 +55,14 @@ class AdapterDispatchTests(unittest.TestCase):
 
     def test_moe_remote_declares_its_offline_tests(self):
         moe_remote = components.load_all(paths.REPO_ROOT, engines.RADIANCE)["moe-remote"]
-        self.assertEqual(moe_remote.test_targets, ("r3_moe_shm_test", "r3_moe_backend_test", "r3_moe_fp8_ref_test"))
+        self.assertEqual(moe_remote.test_targets, (
+            "r3_moe_shm_test", "r3_moe_backend_test", "r3_worker_share_test", "r3_worker_heat_test",
+            "r3_moe_epoch_test", "r3_moe_fp8_ref_test", "r3_combine_f16_test", "r3_combine_pool_test",
+            "r3_admission_ledger_test", "r3_mailbox_completion_test", "r3_owner_generation_test",
+            "r3_worker_slot_pool_test", "r3_replay_bootstrap_test"))
+        # registered with CTest but GPU-only: never declared, so the card-free run never selects them
+        for gpu_only in ("r3_route_compact_test", "r3_ticket_replay_test"):
+            self.assertNotIn(gpu_only, moe_remote.test_targets)
 
 
 class AbiHeaderTests(unittest.TestCase):
@@ -82,6 +93,8 @@ class ComponentGateTests(unittest.TestCase):
         self.work = self.tmp / "work"
         self.calls: list[list[str]] = []
         self.failing: str | None = None
+        self.unregistered: set[str] = set()   # declared test targets the fake ctest has no test for
+        self.extra: dict[str, dict[str, list[str]]] = {}   # further registered tests (name -> labels) by component
         self.context = ProjectContext.resolve(engine="radiance")
         self.report = self.tmp / "rebase-recipe.json"
         self.report.write_text(json.dumps({"selector": {"patch_ids": []}}), encoding="utf-8")
@@ -110,10 +123,30 @@ class ComponentGateTests(unittest.TestCase):
                 (tree / "radiance_home" / "kernels").mkdir(parents=True, exist_ok=True)
                 (tree / "radiance_home" / "kernels" / "libr4d.so").write_bytes(b"x")
 
-    def checks(self, abi: int = 7):
+    def lister(self, tree: Path, cwd: Path) -> dict[str, list[str]]:
+        """A fake `ctest --show-only=json-v1`: the component's declared tests (unless withheld), moe-remote's two
+        GPU tests labelled gpu, as its CMakeLists registers them, and any extra a test adds."""
+        self.calls.append(["ctest-list", str(tree)])
+        declared = runtime_bundle.components.load_all(paths.REPO_ROOT, "radiance")[tree.name].test_targets
+        tests = {t: [] for t in declared if t not in self.unregistered}
+        if tree.name == "moe-remote":
+            tests.update({"r3_route_compact_test": ["gpu"], "r3_ticket_replay_test": ["gpu"]})
+        tests.update(self.extra.get(tree.name, {}))
+        return tests
+
+    def with_targets(self, component: str, targets: tuple[str, ...]):
+        """Patch the loaded declaration of `component` to declare `targets`."""
+        real = components.load_all(paths.REPO_ROOT, "radiance")
+        real[component] = dataclasses.replace(real[component], test_targets=targets)
+        return patch.object(runtime_bundle.components, "load_all", return_value=real)
+
+    def checks(self, abi: int = 7, layouts: dict[str, int | None] | None = None):
+        """`layouts` overrides the layout fingerprint a named plugin reports (None: no export); the rest report LAYOUT."""
+        layouts = layouts or {}
         with patch.dict(os.environ, FAKE_HOST):
             return {c.id: c for c in radiance_bump.compile_checks(
-                self.context, self.source, self.work, platform_name=PLATFORM, runner=self.runner, abi_reader=lambda so: abi)}
+                self.context, self.source, self.work, platform_name=PLATFORM, runner=self.runner,
+                abi_reader=lambda so: (abi, layouts.get(so.name, LAYOUT)), lister=self.lister)}
 
     def run_phase(self, checks):
         with (
@@ -202,6 +235,26 @@ class ComponentGateTests(unittest.TestCase):
         self.assertTrue(all("is 6" in f and "RAD_ABI_VERSION 7" in f for f in failures))
         self.assertTrue(any(f.startswith("libr3.so") for f in failures))
 
+    def test_plugin_without_layout_export_fails(self):
+        checks = self.checks(layouts={"libr3.so": None})
+        checks["components-build"].run()
+        failures = checks["component-plugin-abi"].run()
+        self.assertEqual(len(failures), 1)
+        self.assertTrue(failures[0].startswith("libr3.so") and "RAD_PLUGIN_ABI_LAYOUT_EXPORT" in failures[0])
+
+    def test_plugin_layout_differing_from_libr4d_fails(self):
+        checks = self.checks(layouts={"libr3.so": LAYOUT + 1})
+        checks["components-build"].run()
+        failures = checks["component-plugin-abi"].run()
+        self.assertEqual(len(failures), 1)
+        self.assertTrue(failures[0].startswith("libr3.so") and "libr4d.so reports" in failures[0])
+
+    def test_reference_plugin_without_layout_refuses_to_judge(self):
+        checks = self.checks(layouts={"libr4d.so": None})
+        checks["components-build"].run()
+        with self.assertRaises(BumpCheckError):
+            checks["component-plugin-abi"].run()
+
     def test_checks_after_a_failed_build_refuse_to_run(self):
         self.failing = "cmake"
         checks = self.checks()
@@ -210,6 +263,82 @@ class ComponentGateTests(unittest.TestCase):
             checks["component-plugin-abi"].run()
         with self.assertRaises(BumpCheckError):
             checks["component-tests"].run()
+
+    def test_component_tests_run_exactly_the_declared_tests_with_a_log_each(self):
+        checks = self.checks()
+        self.assertEqual(checks["components-build"].run(), [])
+        self.assertEqual(checks["component-tests"].run(), [])
+        ctests = {Path(c[c.index("--test-dir") + 1]).name: c for c in self.calls if c[:2] == ["ctest", "--test-dir"]}
+        for name, component in components.load_all(paths.REPO_ROOT, "radiance").items():
+            if not component.test_targets:
+                self.assertNotIn(name, ctests)
+                continue
+            call = ctests[name]
+            self.assertIn("--no-tests=error", call)
+            self.assertEqual(call[call.index("-R") + 1], "^(" + "|".join(map(re.escape, component.test_targets)) + ")$")
+            self.assertEqual(call[call.index("--output-log") + 1],
+                             str(runtime_bundle.component_test_log(self.work / "radiance-build", name)))
+        # the GPU-only tests are registered with CTest but never declared, so CI's card-free run never selects them
+        moe = ctests["moe-remote"][ctests["moe-remote"].index("-R") + 1]
+        self.assertNotIn("r3_route_compact_test", moe)
+        self.assertNotIn("r3_ticket_replay_test", moe)
+
+    def test_a_declared_target_without_a_ctest_test_fails_naming_it(self):
+        # One declared target builds but registers no CTest test of its name: the others still match the pattern, so
+        # --no-tests=error alone would pass. It must fail, naming the target, and its component's ctest must not run.
+        checks = self.checks()
+        self.assertEqual(checks["components-build"].run(), [])
+        self.unregistered = {"r3_worker_heat_test"}
+        failures = checks["component-tests"].run()
+        self.assertEqual(len(failures), 1)
+        self.assertIn("moe-remote: declared test target(s) r3_worker_heat_test have no CTest test of that name", failures[0])
+        moe_tree = str(runtime_bundle.component_build_dir(self.work / "radiance-build", "moe-remote"))
+        self.assertFalse([c for c in self.calls if c[:2] == ["ctest", "--test-dir"] and c[2] == moe_tree])
+        # the components whose tests are all registered still run theirs
+        self.assertTrue([c for c in self.calls if c[:2] == ["ctest", "--test-dir"] and c[2] != moe_tree])
+
+    def test_a_registered_test_neither_declared_nor_gpu_labelled_fails(self):
+        checks = self.checks()
+        self.assertEqual(checks["components-build"].run(), [])
+        self.extra = {"moe-remote": {"r3_forgotten_cpu_test": []}}
+        failures = checks["component-tests"].run()
+        self.assertEqual(len(failures), 1)
+        self.assertIn("moe-remote: CTest test(s) r3_forgotten_cpu_test are registered but neither declared", failures[0])
+        # the gpu-labelled tests registered beside it are not failures
+        self.assertNotIn("r3_route_compact_test", failures[0])
+        self.extra = {"moe-remote": {"r3_new_gpu_test": ["gpu"]}}
+        self.assertEqual(checks["component-tests"].run(), [])
+
+    def test_a_target_declared_twice_fails(self):
+        checks = self.checks()
+        self.assertEqual(checks["components-build"].run(), [])
+        with self.with_targets("serving", ("bc_serving_test", "bc_serving_test")):
+            failures = checks["component-tests"].run()
+        self.assertEqual(failures, ["serving: test target(s) bc_serving_test declared more than once in component.toml"])
+
+    def test_target_names_are_escaped_in_the_ctest_pattern(self):
+        checks = self.checks()
+        self.assertEqual(checks["components-build"].run(), [])
+        with self.with_targets("serving", ("bc.serving+x_test",)):
+            self.assertEqual(checks["component-tests"].run(), [])
+        call = next(c for c in self.calls if c[:2] == ["ctest", "--test-dir"] and Path(c[2]).name == "serving")
+        self.assertEqual(call[call.index("-R") + 1], r"^(bc\.serving\+x_test)$")
+
+    def test_a_test_target_build_failure_is_told_apart_from_a_test_failure(self):
+        checks = self.checks()
+        self.assertEqual(checks["components-build"].run(), [])
+        self.failing = "cmake"
+        failures = checks["component-tests"].run()
+        self.assertTrue(failures)
+        self.assertTrue(all("building the test targets failed" in f and "log:" not in f for f in failures))
+
+    def test_a_failing_component_test_names_its_log(self):
+        checks = self.checks()
+        self.assertEqual(checks["components-build"].run(), [])
+        self.failing = "ctest"
+        failures = checks["component-tests"].run()
+        self.assertTrue(failures)
+        self.assertTrue(all("the tests failed" in f and f.endswith("ctest-component-tests.log") for f in failures))
 
     def test_component_test_failure_stops_the_bump_with_a_structured_code(self):
         self.failing = "ctest"
@@ -283,6 +412,34 @@ class RadianceAuditTests(unittest.TestCase):
         ids = {c["id"] for c in report["checks"]}
         self.assertIn("overlay.vendor_sync", ids)
         self.assertNotIn("root.is_ggml_cuda_checkout", ids)
+
+
+class ReadPluginAbiTests(unittest.TestCase):
+    """read_plugin_abi on a real shared object (no mock): a plugin that calls functions only the engine executable
+    exports (libr3moe uses rad_event_*) must still report its ABI version outside the engine."""
+
+    def _plugin(self, tmp: Path, body: str) -> Path:
+        cc = shutil.which("cc") or shutil.which("gcc") or shutil.which("clang")
+        if cc is None:
+            self.skipTest("no C compiler")
+        src, so = tmp / "plugin.c", tmp / "libplugin.so"
+        src.write_text(body, encoding="utf-8")
+        subprocess.run([cc, "-shared", "-fPIC", "-o", str(so), str(src)], check=True, capture_output=True)
+        return so
+
+    def test_reads_version_of_plugin_with_engine_only_symbols(self):
+        with tempfile.TemporaryDirectory(dir=os.environ.get("TMPDIR")) as tmp:
+            so = self._plugin(Path(tmp),
+                              "void rad_event_destroy(void* e);\n"
+                              "unsigned rad_plugin_abi_version(void) { return 33u; }\n"
+                              "void uses_engine(void* e) { rad_event_destroy(e); }\n")
+            self.assertEqual(radiance_bump.read_plugin_abi(so), (33, None))
+
+    def test_missing_version_export_is_a_check_error(self):
+        with tempfile.TemporaryDirectory(dir=os.environ.get("TMPDIR")) as tmp:
+            so = self._plugin(Path(tmp), "unsigned other(void) { return 1u; }\n")
+            with self.assertRaises(BumpCheckError):
+                radiance_bump.read_plugin_abi(so)
 
 
 if __name__ == "__main__":
