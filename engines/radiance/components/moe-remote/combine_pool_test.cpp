@@ -26,7 +26,8 @@ int main() {
     for (int round = 0; round < 2000; ++round) {
         CombinePool pool(8);   // combine straight away, before the workers are known to be up
         std::memset(out.data(), 0, out.size() * 2);
-        pool.combine(src, 2, out.data(), mask.data(), rows, hidden);
+        if (!pool.combine(src, 2, out.data(), mask.data(), rows, hidden,
+                          CombineIdentity{1,0,1,3})) return 1;
         for (uint16_t v : out)
             if (v != 0x4200) { std::fprintf(stderr, "FAIL: 1 + 2 is not fp16 3.0 (0x%04x)\n", v); return 1; }
     }

@@ -40,6 +40,24 @@ public:
         void* m = mmap(nullptr, bytes, PROT_READ | PROT_WRITE, MAP_SHARED, fd_, 0);
         if (m == MAP_FAILED) return fail("mmap");
         map_ = m;
+        // An attacher never accepts a legacy or uninitialised segment.
+        // The creator's zero-filled mapping is initialized to v23 by main
+        // before publishing helper_count. Full shape validation follows
+        // that startup barrier (and again before GPU registration).
+        if (!creator) {
+            for (int i=0;i<attach_wait_s && !stopping();++i) {
+                const uint32_t version=__atomic_load_n(&header()->version,__ATOMIC_ACQUIRE);
+                if (version && version!=r3::moe_shm::kVersion) {
+                    std::fprintf(stderr,"r3_moe_worker: refusing non-v23 mailbox\n");
+                    return false;
+                }
+                if (version==r3::moe_shm::kVersion &&
+                    __atomic_load_n(&header()->magic,__ATOMIC_ACQUIRE)==r3::moe_shm::kMagic) return true;
+                ::sleep(1);
+            }
+            std::fprintf(stderr,"r3_moe_worker: no valid v23 mailbox before attach deadline\n");
+            return false;
+        }
         return true;
     }
 
