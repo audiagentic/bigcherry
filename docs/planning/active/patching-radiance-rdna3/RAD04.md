@@ -2,7 +2,7 @@
 id: RAD04
 order: 0
 plan: patching-radiance-rdna3
-state: deprecated
+state: pending
 created-at: '2026-10-14T04:55:19.264169+00:00'
 breadth: ''
 skill: advanced
@@ -65,6 +65,10 @@ KL vs exact reference must be exact (same arithmetic, reordered issue); ab-bench
 
 BACKLOG TRIAGE 2026-11-04 (CLOSE; revalidated against main 6eb31a708, verdict CONFIRM): Archive this 27B two-XTX overlap experiment unless a future trace justifies its distinct topology. Evidence: RAD04.md:18-40 proposes an unbuilt 27B two-XTX TP all-reduce/half-step schedule, while docs/reference/engines/radiance/README.md:15-18 reports 27B running on the R9700 alone. Active-plan references to RAD04 are historical exclusions or analogies, not REQUIRES/blocker relationships for the current Flash-Next topology. Still referenced by: BCOP203, BCOP205, BCOP206, BCOP207, BCOP208, BCOP209, BCOP210, BCOP211, BCOP212, BCOP213, BCOP214, BCOP216, BCOP217, FKE01, MET12, PHA04, PRBE04, PRBE110, PRBE54, QFP47, QFP52, RAD06. Original content kept below for history.
 
+
+
+REOPENED 2026-11-04 (owner decision): Qwen3.8-27B is a live target, so this item is not obsolete. The triage closed it only because it is outside the Flash-Next four-card queue; that is a priority question, not a reason to close. It stays pending at its own priority and is not part of the core-first order (hot placement, RAD46).
+
 ## Change Log
 
 - 2026-10-14T04:55:19.264169+00:00 (created-by): Created by agent
@@ -72,3 +76,5 @@ BACKLOG TRIAGE 2026-11-04 (CLOSE; revalidated against main 6eb31a708, verdict CO
 - 2026-10-14T08:41:26.958185+00:00 (updated-by): Updated: section:notes
 - 2026-11-04T04:08:48.592007+00:00 (updated-by): Updated: section:notes
 - 2026-11-04T04:08:52.630642+00:00 (state-transition): State: pending → deprecated
+- 2026-11-04T05:03:24.093263+00:00 (updated-by): Updated: section:notes
+- 2026-11-04T05:03:30.099114+00:00 (state-transition): State: deprecated → pending
