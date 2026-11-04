@@ -64,7 +64,7 @@ struct HeatFake : HeatSource {
     uint64_t count=0;
     HeatPoll poll(uint64_t,uint64_t,HeatDelta* out,std::string*) override {
         std::vector<int32_t> v=flat.load()?std::vector<int32_t>{10,10,10,10}:
-                          std::vector<int32_t>{500,450,1,1};
+                          std::vector<int32_t>{1,1,500,450};   // hot on the tail helper: the static plan would hold them on the head
         if(reverse.load()) {
             v={1,1,1,1};
             v[size_t(drift_a.load())]=450;
@@ -216,7 +216,7 @@ static Settings settings() {
     s.controls.margin=0.01;s.controls.min_residency_ns=1;
     s.controls.max_heat_age_ns=10000;s.controls.max_moved_bytes=20;
     s.controls.min_samples=1;s.controls.max_moves=2;
-    s.costs={1,1};s.layer_caps={0,0};
+    s.head_shares={1,1};
     return s;
 }
 static bool pump(Fixture& f,Driver& d,bool want_move,int limit=200) {
@@ -321,7 +321,10 @@ int main() {
         check(after.owner[returning]!=before.owner[returning] &&
               after.owner[buddy]!=before.owner[buddy],
               "drift identifies both exchanged experts");
-        h->drift_a=int(buddy);h->drift_b=int(stayed);
+        // Drift: the experts now on the tail helper (the one that left the head and the one that never moved) turn hot.
+        const uint32_t tail_other=buddy==2?3u:2u;
+        (void)stayed;
+        h->drift_a=int(tail_other);h->drift_b=int(returning);   // b is the hotter: the returning expert is the seed
         h->reverse=true;
         f.clock.advance(10001); // permit previously committed experts to satisfy dwell
         check(pump(f,d,true),"heat drift triggers another proposal");
@@ -599,7 +602,7 @@ int main() {
         Driver d(s,std::move(source),{20,20},10,{0,0,0,0},f.clock);
         check(d.start()&&pump(f,d,false,15),"actual histogram baseline");
         check(d.evidence().reasons.count("heat_baseline")>0,"file baseline captured");
-        write_snapshot({500,450,1,1});
+        write_snapshot({1,1,500,450});
         check(pump(f,d,true,200),"true HistogramFileSource admits opted-in delta");
         check(d.evidence().unwatermarked_heat,
               "genuine source allowed and evidence stays unwatermarked");

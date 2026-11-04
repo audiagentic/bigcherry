@@ -1,6 +1,7 @@
 #pragma once
 // Experimental policy controls: each trigger and size must be explicit.
 #include "worker_policy_input.h"
+#include "worker_share.h"
 #include <charconv>
 #include <cerrno>
 #include <chrono>
@@ -17,7 +18,7 @@ struct Settings {
     uint64_t effect_window_samples = 0, effect_min_quiet_windows = 0, effect_revert_ttl_ns = 0;
     double effect_noise_multiplier = 0;
     PolicyControls controls{};
-    std::vector<double> costs, layer_caps;
+    std::vector<uint32_t> head_shares;   // the launch's R3_MOE_WORKER_SHARES, one weight a helper
     std::vector<uint32_t> protected_layers;
     static bool read_flag(const char* key,const char* raw, bool* v, std::string* error) {
         if (!raw || !*raw) return true;
@@ -68,33 +69,6 @@ struct Settings {
             *error=std::string(key)+": expected finite nonnegative decimal";return false;
         }
         return true;
-    }
-    static bool values(const char* key,size_t count,bool can_zero,
-                       std::vector<double>* out,std::string* error) {
-        const char* raw=std::getenv(key);
-        if (!raw || !*raw) {*error=std::string(key)+": required for policy; no default";return false;}
-        std::string s(raw);
-        std::vector<double> result;
-        for(size_t start=0;;) {
-            const size_t end=s.find(',',start);
-            const std::string token=s.substr(start,end==std::string::npos?end:end-start);
-            if(token.empty()) {*error=std::string(key)+": empty entry";return false;}
-            if(!decimal_token(token.c_str(),token.size())) {
-                *error=std::string(key)+": expected strict finite decimal";return false;
-            }
-            char* tail=nullptr;errno=0;const double d=std::strtod(token.c_str(),&tail);
-            if(errno||tail==token.c_str()||*tail||!std::isfinite(d)||
-               d<0||(!can_zero && d==0)) {
-                *error=std::string(key)+": invalid finite decimal";return false;
-            }
-            result.push_back(d);
-            if(end==std::string::npos)break;
-            start=end+1;
-        }
-        if(result.size()!=count) {
-            *error=std::string(key)+": expected exactly "+std::to_string(count)+" helpers";return false;
-        }
-        *out=std::move(result);return true;
     }
     static bool layers(const char* raw,std::vector<uint32_t>* result,std::string* error) {
         const char* key="R3_MOE_POLICY_PROTECTED_LAYERS";
@@ -150,8 +124,6 @@ struct Settings {
             {"R3_MOE_POLICY_MIN_SAMPLES",std::getenv("R3_MOE_POLICY_MIN_SAMPLES")},
             {"R3_MOE_POLICY_ABORT_COOLDOWN_NS",std::getenv("R3_MOE_POLICY_ABORT_COOLDOWN_NS")},
             {"R3_MOE_POLICY_LEARNED_ELIGIBILITY_TTL_NS",std::getenv("R3_MOE_POLICY_LEARNED_ELIGIBILITY_TTL_NS")},
-            {"R3_MOE_POLICY_DEVICE_COSTS",std::getenv("R3_MOE_POLICY_DEVICE_COSTS")},
-            {"R3_MOE_POLICY_LAYER_CAPS",std::getenv("R3_MOE_POLICY_LAYER_CAPS")},
             {"R3_MOE_POLICY_PROTECTED_LAYERS",std::getenv("R3_MOE_POLICY_PROTECTED_LAYERS")},
             {"R3_MOE_POLICY_EFFECT_WINDOW_SAMPLES",std::getenv("R3_MOE_POLICY_EFFECT_WINDOW_SAMPLES")},
             {"R3_MOE_POLICY_EFFECT_MIN_QUIET_WINDOWS",std::getenv("R3_MOE_POLICY_EFFECT_MIN_QUIET_WINDOWS")},
@@ -174,8 +146,6 @@ struct Settings {
            !u64("R3_MOE_POLICY_MIN_SAMPLES",&controls.min_samples,error) ||
            !u64("R3_MOE_POLICY_ABORT_COOLDOWN_NS",&abort_cooldown_ns,error) ||
            !u64("R3_MOE_POLICY_LEARNED_ELIGIBILITY_TTL_NS",&learned_eligibility_ttl_ns,error) ||
-           !values("R3_MOE_POLICY_DEVICE_COSTS",helpers,false,&costs,error) ||
-           !values("R3_MOE_POLICY_LAYER_CAPS",helpers,true,&layer_caps,error) ||
            !layers(std::getenv("R3_MOE_POLICY_PROTECTED_LAYERS"),
                    &protected_layers,error) ||
            !u64("R3_MOE_POLICY_EFFECT_WINDOW_SAMPLES",&effect_window_samples,error) ||
@@ -189,6 +159,12 @@ struct Settings {
             return false;
         }
         controls.max_moves=uint32_t(moves);
+        // The live plan is the static placer's, so it reads the shares the launch placed with (unset means every helper 1).
+        head_shares.assign(helpers,0);
+        if(!worker_share::parse_shares(std::getenv("R3_MOE_WORKER_SHARES"),helpers,head_shares.data())) {
+            *error="R3_MOE_WORKER_SHARES: one weight for each of the "+std::to_string(helpers)+" helpers, not all zero";
+            return false;
+        }
         if(!controls_valid(controls)) {
             *error="R3_MOE_POLICY_*: invalid mandatory controls";return false;
         }

@@ -222,16 +222,6 @@ default = ""
 status = "experimental"
 summary = "Required monotonic duration that aborted (expert,destination) remains ineligible"
 
-[setting.R3_MOE_POLICY_DEVICE_COSTS]
-default = ""
-status = "experimental"
-summary = "Required per-helper comma-separated measured/experiment cost factors; no inferred defaults"
-
-[setting.R3_MOE_POLICY_LAYER_CAPS]
-default = ""
-status = "experimental"
-summary = "Required comma-separated per-helper policy layer caps; explicitly specify 0 for unlimited"
-
 [setting.R3_MOE_WORKER_GEMV]
 default = "1"
 status = "experimental"

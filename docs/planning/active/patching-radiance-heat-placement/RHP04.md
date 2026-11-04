@@ -130,6 +130,14 @@ Run policy-live-6: slice I build, EFFECT_GATE=1 (window 32 samples per lane clas
 - The gate did act: three moves were judged measured-worse and blacklisted (learned entries, reason measured-worse). It judges helper-0 lane service rate in quiet windows, which does not see the prefill throughput lost when the heat that justified the moves is no longer the traffic.
 - Conclusion: slice I stays opt-in experimental and is not evidence that the policy is safe by default. The remaining loss needs the slice J objective (target-map: score the placement against the current traffic, not the per-move lane rate).
 
+## Slice J implemented (2026-11-04): the live plan is the static placer's plan for the live heat
+
+`heat::propose(input, head_shares)` replaces the stage-1 balancing objective. The target owner map is `worker_share::plan_tail` over the helper-owned experts ranked by live decayed heat (hottest first, ties by index), with the launch's `R3_MOE_WORKER_SHARES` and the helpers' budgets. The diff against the current map is applied hottest first in whole groups: a move that overflows its destination at the end of the transaction pulls in the coldest move out of that destination, and so on along the chain, so budgets hold at the one atomic epoch; a group that does not fit `max_moves` / `max_moved_bytes` is skipped whole. The plan's score is the share of helper-owned heat on the tail helper (lower is closer to the static plan); `margin` is the fractional improvement of that share. The static layout of its own heat is a fixed point (no proposals).
+
+Removed with the objective: the per-device cost vector and the per-layer cap (`R3_MOE_POLICY_DEVICE_COSTS`, `R3_MOE_POLICY_LAYER_CAPS`, `Device::cost`, `Device::layer_cap`, `Input::layer`), and the exhaustive oracle that checked it. Unit tests cover the fixed point, convergence to `plan_tail`, atomic groups and chains through three full helpers, move and byte caps, unmovable experts, gates, and an independent oracle in the epoch test. Not yet measured on hardware: the success test is the same workload-shift run as slice H and I (8 filler prompts, then 10 documentation prompts): filler should approach 3,700 and documentation should return to about 3,750, never below the default.
+
+Known limit by design: moves between the two head helpers do not change the tail's heat share, so head-to-head balance is only corrected as part of groups that also improve the tail; the measured-effect gate of slice I judges each transaction.
+
 ## Change Log
 
 - 2026-11-01T22:51:22.513641+00:00 (updated-by): Updated: section:title, order=12, priority='P0', section:description, section:detailed_solution, section:validation, section:acceptance_criteria, section:notes

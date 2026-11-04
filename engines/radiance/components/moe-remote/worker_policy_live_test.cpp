@@ -44,11 +44,9 @@ int main() {
     Fixture f;
     const auto budgets=std::vector<uint64_t>{48,32};
     const auto bytes=std::vector<uint64_t>{16,16,16,16,0};
-    const auto costs=std::vector<double>{1,1.2};
-    const auto caps=std::vector<double>{0,0};
     std::vector<LedgerView> ledgers;
     std::string error;
-    check(derive_active_ledgers(f.owner,bytes,budgets,16,costs,caps,
+    check(derive_active_ledgers(f.owner,bytes,budgets,16,
                                 &ledgers,&error),"derive exact ledger charges");
     check(ledgers.size()==2 && ledgers[0].hard==64 &&
           ledgers[0].headroom==16 && ledgers[0].scratch==0 &&
@@ -60,20 +58,16 @@ int main() {
             check(s.state==r3::residency::State::ACTIVE && s.bytes==16 &&
                   s.completed_planes==15,"accounting witness");
     auto bad_bytes=bytes;bad_bytes[0]=15;
-    check(!derive_active_ledgers(f.owner,bad_bytes,budgets,16,costs,caps,
+    check(!derive_active_ledgers(f.owner,bad_bytes,budgets,16,
                                  &ledgers),"unpadded byte size not a Ledger charge");
     auto bad_owner=f.owner;bad_owner.runtime[0]=0;
-    check(!derive_active_ledgers(bad_owner,bytes,budgets,16,costs,caps,
+    check(!derive_active_ledgers(bad_owner,bytes,budgets,16,
                                  &ledgers),"inaccessible active owner refused");
-    check(!derive_active_ledgers(f.owner,bytes,{32,32},16,costs,caps,
+    check(!derive_active_ledgers(f.owner,bytes,{32,32},16,
                                  &ledgers),"insufficient helper budget refused");
-    check(!derive_active_ledgers(f.owner,bytes,{UINT64_MAX,32},16,costs,caps,
+    check(!derive_active_ledgers(f.owner,bytes,{UINT64_MAX,32},16,
                                  &ledgers),"budget plus incoming reserve overflow");
-    check(!derive_active_ledgers(f.owner,bytes,budgets,16,{1},caps,
-                                 &ledgers),"missing destination cost refused");
-    check(!derive_active_ledgers(f.owner,bytes,budgets,16,{1,NAN},caps,
-                                 &ledgers),"invalid destination cost refused");
-    check(derive_active_ledgers(f.owner,bytes,budgets,16,costs,caps,
+    check(derive_active_ledgers(f.owner,bytes,budgets,16,
                                 &ledgers),"recovery");
 
     // The derivation supplies exact capacity evidence, never eligibility:

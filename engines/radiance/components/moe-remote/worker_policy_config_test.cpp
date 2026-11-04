@@ -21,8 +21,6 @@ static const std::vector<std::pair<const char*,const char*>> required={
     {"R3_MOE_POLICY_MIN_SAMPLES","1"},
     {"R3_MOE_POLICY_ABORT_COOLDOWN_NS","20000"},
     {"R3_MOE_POLICY_LEARNED_ELIGIBILITY_TTL_NS","30000"},
-    {"R3_MOE_POLICY_DEVICE_COSTS","1,1"},
-    {"R3_MOE_POLICY_LAYER_CAPS","0,0"},
     {"R3_MOE_POLICY_PROTECTED_LAYERS","none"},
     {"R3_MOE_POLICY_EFFECT_WINDOW_SAMPLES","2"},
     {"R3_MOE_POLICY_EFFECT_MIN_QUIET_WINDOWS","2"},
@@ -71,9 +69,18 @@ int main() {
     setenv("R3_MOE_POLICY_MARGIN","1",1);
     check(!s.from_environment(2,false,&err),"invalid margin fails");
     setenv("R3_MOE_POLICY_MARGIN","0.05",1);
-    setenv("R3_MOE_POLICY_DEVICE_COSTS","1",1);
-    check(!s.from_environment(2,false,&err),"missing helper costs fails");
-    setenv("R3_MOE_POLICY_DEVICE_COSTS","1,1",1);
+    // The live plan is the static placer's, so it reads the launch's helper shares: unset is every helper 1.
+    unsetenv("R3_MOE_WORKER_SHARES");
+    check(s.from_environment(2,false,&err) && s.head_shares==std::vector<uint32_t>({1,1}),
+          "unset shares weight every helper 1");
+    setenv("R3_MOE_WORKER_SHARES","4,1",1);
+    check(s.from_environment(2,false,&err) && s.head_shares==std::vector<uint32_t>({4,1}),
+          "launch shares are read as set");
+    for(const char* bad:{"1","1,1,1","0,0","1,x","-1,1","1,,1"}) {
+        setenv("R3_MOE_WORKER_SHARES",bad,1);
+        check(!s.from_environment(2,false,&err),"shares must be one weight a helper, not all zero");
+    }
+    unsetenv("R3_MOE_WORKER_SHARES");
     setenv("R3_MOE_POLICY_PROTECTED_LAYERS","1,2",1);
     check(s.from_environment(2,false,&err) &&
           s.protected_layers==std::vector<uint32_t>({1,2}),
@@ -81,12 +88,10 @@ int main() {
     setenv("R3_MOE_POLICY_PROTECTED_LAYERS","2,1",1);
     check(!s.from_environment(2,false,&err),"unordered protected layers refused");
     setenv("R3_MOE_POLICY_PROTECTED_LAYERS","none",1);
-    setenv("R3_MOE_POLICY_LAYER_CAPS","-1,0",1);
-    check(!s.from_environment(2,false,&err),"negative helper cap fails");
 
-    // All 20 controls: policy activation and unwatermarked flag may be
+    // All 18 controls: policy activation and unwatermarked flag may be
     // absent/empty (=off); effect gate flag is MANDATORY and the other
-    // seventeen numeric/list controls have no defaults.
+    // fifteen numeric/list controls have no defaults.
     // Invalid inputs are table-driven to prevent permissive strtod fallback.
     for(const char* key:{"R3_MOE_POLICY_ENABLE",
                         "R3_MOE_POLICY_ACCEPT_UNWATERMARKED_HEAT",
@@ -121,15 +126,13 @@ int main() {
       {"R3_MOE_POLICY_MIN_SAMPLES",{""," 1","1 ","0x1","18446744073709551616","-1","nan","inf","1,2"}},
       {"R3_MOE_POLICY_ABORT_COOLDOWN_NS",{""," 20","20 ","0x20","18446744073709551616","-1","nan","inf","1,2"}},
       {"R3_MOE_POLICY_LEARNED_ELIGIBILITY_TTL_NS",{""," 30","30 ","0x30","18446744073709551616","-1","nan","inf","1,2"}},
-      {"R3_MOE_POLICY_DEVICE_COSTS",{""," 1,1","1,1 ","0x1p0,1","1e999,1","-1,1","nan,1","inf,1","1","1,1,1","1,,1"}},
-      {"R3_MOE_POLICY_LAYER_CAPS",{""," 0,0","0,0 ","0x1p0,0","1e999,0","-1,0","nan,0","inf,0","0","0,0,0","0,,0","-0,0"}},
       {"R3_MOE_POLICY_PROTECTED_LAYERS",{""," none","none ","0x1","4294967296","-1","nan","inf","0,,1"}},
       {"R3_MOE_POLICY_EFFECT_WINDOW_SAMPLES",{""," 2","2 ","0x2","18446744073709551616","-1","nan","inf","1,2","0"}},
       {"R3_MOE_POLICY_EFFECT_MIN_QUIET_WINDOWS",{""," 2","2 ","0x2","18446744073709551616","-1","nan","inf","1,2","0"}},
       {"R3_MOE_POLICY_EFFECT_NOISE_MULTIPLIER",{""," 2","2 ","0x1p1","1e999","-0.1","nan","inf","1,2","0"}},
       {"R3_MOE_POLICY_EFFECT_REVERT_TTL_NS",{""," 2","2 ","0x2","18446744073709551616","-1","nan","inf","1,2","0"}}
     };
-    check(bad_inputs.size()==required.size(),"all 17 required settings in test matrix");
+    check(bad_inputs.size()==required.size(),"all 15 required settings in test matrix");
     for(const auto& [key,invalid]:bad_inputs) {
         for(const auto& bad:invalid) {
             for(const auto& [k,v]:required)setenv(k,v,1);

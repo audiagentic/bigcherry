@@ -76,13 +76,11 @@ struct ExpertView {
 };
 struct LedgerView {
     uint64_t hard = 0, scratch = 0, headroom = 0, charged = 0;
-    double cost = 0;                 // supplied measured or explicitly experimental
-    double layer_cap = 0;            // zero = unlimited
     std::vector<residency::Slot> slots;
 };
-inline LedgerView copy_ledger(const residency::Ledger& ledger, double cost, double cap) {
+inline LedgerView copy_ledger(const residency::Ledger& ledger) {
     return {ledger.hard(), ledger.total() - ledger.charged(), ledger.headroom(),
-            ledger.charged(), cost, cap, ledger.slots()};
+            ledger.charged(), ledger.slots()};
 }
 // Apply one coherent interval atomically. A repeated, missing or regressing
 // observation sequence never decays heat twice. Incomplete diagnostic-file
@@ -181,7 +179,7 @@ inline bool build_input(const OwnerSnapshot& owners,
     in.current = owners.owner;
     in.heat = heat.counts;
     in.samples = heat.samples;
-    in.bytes.reserve(n); in.layer.reserve(n); in.allowed.reserve(n);
+    in.bytes.reserve(n); in.allowed.reserve(n);
     in.last_move_ns.reserve(n);
     std::vector<uint64_t> sums(owners.helpers, 0);
     std::vector<uint8_t> ledger_owners(n, 0);
@@ -195,7 +193,6 @@ inline bool build_input(const OwnerSnapshot& owners,
                            !e.target_eligible[size_t(owner)]))
             return reject("policy: active owner violates runtime eligibility");
         in.bytes.push_back(e.bytes);
-        in.layer.push_back(uint32_t(i / owners.experts));
         in.last_move_ns.push_back(e.last_move_ns);
         std::vector<uint8_t> allowed(owners.helpers, 0);
         // Local experts are fixed in stage 1. Protected experts may never
@@ -216,10 +213,8 @@ inline bool build_input(const OwnerSnapshot& owners,
         const auto& ledger = ledgers[d];
         if (ledger.hard < ledger.scratch ||
             ledger.headroom > ledger.hard - ledger.scratch ||
-            ledger.charged > ledger.hard - ledger.scratch - ledger.headroom ||
-            !std::isfinite(ledger.cost) || ledger.cost <= 0 ||
-            !std::isfinite(ledger.layer_cap) || ledger.layer_cap < 0)
-            return reject("policy: invalid helper ledger or measured cost");
+            ledger.charged > ledger.hard - ledger.scratch - ledger.headroom)
+            return reject("policy: invalid helper ledger");
         uint64_t charged = 0;
         for (const auto& s : ledger.slots) {
             if (s.state == residency::State::FREE) continue;
@@ -234,8 +229,7 @@ inline bool build_input(const OwnerSnapshot& owners,
         }
         if (charged != ledger.charged || charged != sums[d])
             return reject("policy: ledger and active owner map disagree");
-        in.devices.push_back({ledger.hard - ledger.scratch - ledger.headroom,
-                              ledger.cost, ledger.layer_cap});
+        in.devices.push_back({ledger.hard - ledger.scratch - ledger.headroom});
     }
     std::vector<uint64_t> used;
     if (!heat::validate(in, &used))

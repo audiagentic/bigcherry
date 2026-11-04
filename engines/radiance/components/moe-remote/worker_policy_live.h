@@ -26,7 +26,6 @@ namespace r3::policy {
 inline bool derive_active_ledgers(const OwnerSnapshot& owners,
     const std::vector<uint64_t>& physical_bytes,
     const std::vector<uint64_t>& expert_budgets, uint64_t stride,
-    const std::vector<double>& costs, const std::vector<double>& caps,
     std::vector<LedgerView>* out, std::string* why = nullptr) {
     auto reject = [&](const char* s) { if (why) *why=s; return false; };
     if (!out || !owners.layers || !owners.experts ||
@@ -35,22 +34,17 @@ inline bool derive_active_ledgers(const OwnerSnapshot& owners,
         size_t(owners.layers)*owners.experts != owners.owner.size() ||
         physical_bytes.size() != owners.owner.size() ||
         owners.runtime.size() != owners.owner.size() ||
-        expert_budgets.size() != owners.helpers ||
-        costs.size() != owners.helpers || caps.size() != owners.helpers)
+        expert_budgets.size() != owners.helpers)
         return reject("policy: cannot reconstruct incomplete ACTIVE accounting");
     std::vector<LedgerView> result(owners.helpers);
     for (size_t d=0; d<result.size(); ++d) {
         const uint64_t budget=expert_budgets[d];
-        if (budget < stride || budget > UINT64_MAX-stride ||
-            !std::isfinite(costs[d]) || costs[d] <= 0 ||
-            !std::isfinite(caps[d]) || caps[d] < 0)
-            return reject("policy: invalid declared helper budget or cost");
+        if (budget < stride || budget > UINT64_MAX-stride)
+            return reject("policy: invalid declared helper budget");
         auto& v=result[d];
         v.hard=budget+stride;
         v.scratch=0;
         v.headroom=stride;
-        v.cost=costs[d];
-        v.layer_cap=caps[d];
     }
     for (size_t i=0; i<owners.owner.size(); ++i) {
         const int32_t d=owners.owner[i];

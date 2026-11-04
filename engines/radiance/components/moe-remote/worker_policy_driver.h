@@ -154,7 +154,6 @@ private:
         std::vector<uint64_t> physical(n,stride_);
         std::vector<LedgerView> ledgers;
         if(!derive_active_ledgers(copy.owners,physical,budgets_,stride_,
-                                  settings_.costs,settings_.layer_caps,
                                   &ledgers,&why)) {
             r.reason="ledger_invalid";return r;
         }
@@ -184,11 +183,11 @@ private:
             r.reason="input_invalid";return r;
         }
         r.evaluated=true;
-        r.plan=heat::propose(input);
+        r.plan=heat::propose(input,settings_.head_shares);
         if(!r.plan.valid)r.reason="plan_invalid";
         else if(r.plan.no_change) {
             if(poll_now<copy.cooldown_until_ns)r.reason="abort_cooldown";
-            else if(r.plan.baseline==0)r.reason="flat_heat";
+            else if(r.plan.heat_total==0)r.reason="flat_heat";
             else r.reason="no_improvement_or_margin";
         }
         return r;
@@ -254,8 +253,7 @@ public:
            settings_.learned_eligibility_ttl_ns==0 ||
            (settings_.effect_gate &&
                (!service_ || !effect_.valid() || !settings_.effect_revert_ttl_ns)) ||
-           budgets_.size()!=settings_.costs.size() ||
-           budgets_.size()!=settings_.layer_caps.size()) return false;
+           budgets_.size()!=settings_.head_shares.size()) return false;
         started_ns_=clock_.now_ns();
         if(!started_ns_)return false;
         next_heartbeat_ns_=add_saturating(started_ns_,feed_window_ns());
