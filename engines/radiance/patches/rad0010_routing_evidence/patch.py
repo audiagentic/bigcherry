@@ -15,7 +15,7 @@ PATCHES = (
         edits=(Edit(
             id="create-routing-evidence", anchor=r"\A", text=_HEADER,
             guard=r"^struct BcMoeRemoteEvidence \{$", expect_matches=1,
-            rationale="Create the extension once; reject pre-existing upstream files.",
+            rationale="long-anchor: creates the package-owned extension header in one edit (a whole new file, not a span of upstream code); reject pre-existing upstream files.",
         ),),
     ),
     FilePatch(

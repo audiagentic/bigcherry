@@ -1,5 +1,8 @@
 # rad0010 — opt-in routing-histogram lifecycle evidence
 
+**Status:** untested
+**Plan item:** RHP01
+
 RHP01 steps 1–3 only. An isolated `radiance-routing-evidence` source recipe adds read-only instrumentation at the existing per-layer asynchronous histogram producer, DMA event, landed-bank reader, credit and teardown seams. Production recipes are unchanged. All upstream additions are one-line calls into package-owned `core/runtime/bc_moe_remote_evidence.h`. The 32-bank capacity is obtained from Radiance's `kRouteBanks`, never independently configured.
 
 **Off by default.** `RAD_ROUTING_EVIDENCE=1` enables per-rank `RHP01 phase=...` lines on context teardown. Phase groups are prefill, decode, mixed, and draft (the final draft row represents several same-step passes). Metrics: unique `issued` layer/step histogram generations, `produced` calls, `completed` event-ready generations, `credited` once-only consumed rows, `overwritten` uncredited destroyed generations, `pending` uncredited surviving generations, `in_flight` pending transfers, weighted `produced_passes/credited_passes/lost_passes`, oldest-uncredited age (source steps), credit delay p50/p95 (capped at 64 steps), ring occupancy high-water, latest source step and overflow/rejected-event counters. For each phase, `issued = credited + overwritten + pending` with no counter overflow. A completed row may subsequently be overwritten; `completed` is *not* an extra term in this sum.
