@@ -74,7 +74,10 @@ Interim production choice is the owner's: keep the tail layout (more expert capa
 
 ## Ledger-events
 
+
 - chg_20261103_022951_measured-that-offloading-exper_7122
 - 2026-11-03T02:29:58.843319+00:00 (updated-by): Updated: section:ledger-events
 - 2026-11-04T06:15:41.758211+00:00 (updated-by): Updated: section:notes
 - 2026-11-04T06:57:23.943415+00:00 (updated-by): Updated: section:notes
+- chg_20261104_071139_the-rx-6900-xt-expert-helper-n_8892
+- 2026-11-04T07:11:43.593853+00:00 (updated-by): Updated: section:ledger-events

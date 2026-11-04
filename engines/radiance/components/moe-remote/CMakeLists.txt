@@ -68,7 +68,7 @@ add_dependencies(libr3moe r3_moe_worker)
 
 include(CTest)
 if(BUILD_TESTING)
-foreach(t moe_remote_shm_test:r3_moe_shm_test moe_backend_test:r3_moe_backend_test worker_share_test:r3_worker_share_test worker_heat_test:r3_worker_heat_test worker_slot_pool_test:r3_worker_slot_pool_test replay_bootstrap_test:r3_replay_bootstrap_test moe_remote_epoch_test:r3_moe_epoch_test moe_fp8_ref_test:r3_moe_fp8_ref_test combine_f16_test:r3_combine_f16_test combine_pool_test:r3_combine_pool_test combine_epoch_test:r3_combine_epoch_test forced_move_test:r3_forced_move_test segment_version_test:r3_segment_version_test)
+  foreach(t moe_remote_shm_test:r3_moe_shm_test moe_backend_test:r3_moe_backend_test worker_share_test:r3_worker_share_test worker_heat_test:r3_worker_heat_test worker_slot_pool_test:r3_worker_slot_pool_test replay_bootstrap_test:r3_replay_bootstrap_test moe_remote_epoch_test:r3_moe_epoch_test moe_fp8_ref_test:r3_moe_fp8_ref_test combine_f16_test:r3_combine_f16_test combine_pool_test:r3_combine_pool_test combine_epoch_test:r3_combine_epoch_test forced_move_test:r3_forced_move_test segment_version_test:r3_segment_version_test test_rad46_rows_policy:r3_rad46_rows_policy_test)
     string(REPLACE ":" ";" parts ${t})
     list(GET parts 0 src)
     list(GET parts 1 name)
