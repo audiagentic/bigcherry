@@ -123,6 +123,14 @@ Prep 2026-10-04 - code anchors at the pinned c061 vendor tree (vendor/llama.cpp)
 
 Implemented 2026-10-05 as patches/1321_mtp_ahead_primitives (commit after d70c80a1): new common_speculative_draft_params fields forced / n_tail / tail, handled in the existing single-head MTP draft loop (one shared per-step path). Design simplification vs the plan: the live continuation is drafted inline in the same draft() call (tail past n_max, disjoint from result), so there is no separate continuation lease that could outlive a rollback/reseed; a promoted tail is replayed next round via dp.forced from the authoritative seed. Asserts: single-head non-shared MTP only, greedy only for forced, forced <= n_max, tail buffer present. Offline mechanics tests pass (alone, composed with 1315 + 1318); patched speculative.cpp compiles (clang++ -fsyntax-only). Runtime validation (forced replay of the previous greedy draft reproduces it; tail = uninterrupted continuation) moves to FMTP03, where the server first sets these fields.
 
+
+
+BACKLOG TRIAGE 2026-11-04 (MERGE into FMTP03; revalidated against main 6eb31a708, verdict CONFIRM): FMTP03 exists, open; its unchanged-primitive validation is the first gate of FMTP03. Evidence: FMTP03 exists, open; its unchanged-primitive validation is the first gate of FMTP03. Still referenced by: FMTP04, FMTP03, FMTP05, README, QFP05, BCOP36, BCOP215, BCOP38. Original content kept below for history.
+
+
+
+REOPENED 2026-11-04: an independent revalidation (against main 6eb31a708) rejected the closure recorded above, which had been based on a lighter check. It stays open. Why: engines/llamacpp/patches/1321_mtp_ahead_primitives/SUMMARY.md:8-19 implements forced replay/live tail, but FMTP02.md:98-102 demands lease/reset, N=1..max, p-min and decode-failure validation. FMTP03.md:120-145 covers overlap ordering and some forced-path tests, not the full primitive matrix; active FMTP03/FMTP04/FMTP05 still reference FMTP02.
+
 ## Key review finding
 
 A copied `(id, h_row, pos)` is not a self-contained durable seed. Continuation also depends on the live `ctx_dft` KV frontier and draft sampler state. Treat a fresh-front continuation record as an **ephemeral lease**: any rollback, process, reset, state restore, other draft mutation or sampler reset invalidates it.
@@ -136,8 +144,11 @@ Promoted tails cannot use that old lease on the next round because authoritative
 
 ## Ledger-events
 
-
 - chg_20261004_161430_experimental-the-mtp-drafter_7189
 - 2026-10-04T16:14:33.914151+00:00 (updated-by): Updated: section:ledger-events
 - chg_20261004_161448_experimental-the-mtp-drafter_6717
 - 2026-10-04T16:14:51.572473+00:00 (updated-by): Updated: section:ledger-events
+- 2026-11-04T03:44:53.517768+00:00 (updated-by): Updated: section:notes
+- 2026-11-04T03:44:57.598861+00:00 (state-transition): State: pending → superseded
+- 2026-11-04T04:42:15.345264+00:00 (updated-by): Updated: section:notes
+- 2026-11-04T04:42:19.373139+00:00 (state-transition): State: superseded → pending

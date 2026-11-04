@@ -13,7 +13,47 @@ work: S
 
 # 1292 QSA k-pool tail truncation — source-level admission and closure gate
 
-**2026-10-14 BCOP198 audit:** Patch `1292_kpool_tail_truncate` remains validated on historical evidence. QFN01 is the **runtime/patch owner** (already named by 1292's `patch.toml` and SUMMARY); QFP02 owns only the **unresolved cross-operation correctness and current-pin qualification gate**, not another implementation. No new scheduler, allocator, cache or dispatch table.
+## Description
+
+
+
+## Steps
+
+
+
+## Detailed Solution & Technical Design
+
+
+
+## Code Samples & Guidance
+
+
+
+## Files
+
+
+
+## Validation
+
+
+
+## Effort & Risk
+
+
+
+## Standards
+
+
+
+## Acceptance Criteria
+
+
+
+## Notes
+
+
+
+BACKLOG TRIAGE 2026-11-04 (revalidated against main 6eb31a708): the proposed disposition "MERGE into QFP25/QFP17 llama prefill" was NOT applied; this item stays open. Why: docs/planning/active/patching-qwen-flash-next/QFP02.md:16,49-64 limits the residual to current-pin 1292 pool/representative correctness across seq_rm/add/cp/keep, sharing, replay and position-order modes. docs/planning/active/patching-bc-optimizations/BCOP162.md:16-20 explicitly assigns this mechanism and possible position-mode bound to QFP02, whereas docs/planning/active/patching-qwen-flash-next/QFP25.md:12-37 addresses HIP sparse prefill attention and QFP17 owns chunked QSA masks. Active items that reference this one: BCOP162, BCOP205. Keep the 1292 cross-operation/current-pin gate in QFP02; do not bury it under QSA GPU prefill work.
 
 ## Code and data flow
 
@@ -67,3 +107,4 @@ Close QFP02 once current-pin composition and cross-operation pool/representative
 
 - 2026-10-03T15:20:21.946886+00:00 (created-by): Created by agent
 - 2026-10-14T01:17:00Z (BCOP198): Source-level audit, owner split and bounded current-pin gate.
+- 2026-11-04T04:25:52.947456+00:00 (updated-by): Updated: section:notes

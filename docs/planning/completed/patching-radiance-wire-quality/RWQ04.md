@@ -2,7 +2,7 @@
 id: RWQ04
 order: 4
 plan: patching-radiance-wire-quality
-state: pending
+state: deprecated
 created-at: '2026-10-15T00:00:00+00:00'
 breadth: ''
 skill: advanced
@@ -63,6 +63,12 @@ Medium-high: heavy-tailed activation payloads may not be the cause of logits KL;
 
 Runs only after RWQ01 attribution. RWQ02 WHT8 and RWQ03 protected-site policies are cheaper first steps; this item is optional/research until they fail to meet the gate.
 
+
+
+BACKLOG TRIAGE 2026-11-04 (CLOSE; revalidated against main 6eb31a708, verdict CONFIRM): Close speculative WHT6 outlier packet work until real per-site residual histograms and WHT8 failure justify reopening it. Evidence: docs/planning/active/patching-radiance-wire-quality/RWQ04.md:16-25,46-64 describes outlier corrections as an unproven WHT6 hypothesis gated behind real activation histograms and RWQ02/03 outcomes; docs/planning/active/patching-radiance-wire-quality/RWQ05.md:16-28 records the existing poor WHT6 Flash-Next KL/top-1 result and treats residual candidate E as optional. No active plan lists RWQ04 as a required prerequisite or blocker. Original content kept below for history.
+
 ## Change Log
 
 - 2026-10-15T00:00:00+00:00 (created-by): Initial plan; unimplemented GPU work remains pending.
+- 2026-11-04T04:10:52.835731+00:00 (updated-by): Updated: section:notes
+- 2026-11-04T04:10:56.784750+00:00 (state-transition): State: pending → deprecated

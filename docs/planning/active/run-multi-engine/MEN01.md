@@ -67,6 +67,14 @@ Read-only on the container: start, measure, stop. No configuration change. Produ
 - Build from source: C++/HIP, CMake + Ninja, ROCm 7.2 hipcc (ROCM_PATH), ./build.sh or cmake -DRAD_GPU_TARGETS=gfx1201; ctest labels gpu / oot. dev has /opt/rocm-7.2.4, so the source build should be possible there without the lab's own ROCm tree.
 Consequences: (1) the like-for-like Flash-Next comparison needs two RDNA4 cards; with one R9700 only --tp 1 with expert tiering to host memory can be tried. (2) The route to using the XTXs is a gfx1100 kernel library plugin, which is the natural first patch-or-plugin project for MEN07. (3) The ggml quantiser means our GGUF quant choices can be carried over without re-deriving them. Still to do: the build, the per-card run check, and the kernel census.
 
+
+
+BACKLOG TRIAGE 2026-11-04 (SUPERSEDED; revalidated against main 6eb31a708, verdict CONFIRM): `bigcherry inventory` exists and the radiance lab inventory is current (docs/reference/engines/radiance); the census this item asked for is superseded by it. Evidence: `bigcherry inventory` exists and the radiance lab inventory is current (docs/reference/engines/radiance); the census this item asked for is superseded by it. Still referenced by: QFP45, MEN07, MEN08, MEN03, MEN02. Original content kept below for history.
+
+
+
+REOPENED 2026-11-04: an independent revalidation (against main 6eb31a708) rejected the closure recorded above, which had been based on a lighter check. It stays open. Why: MEN01.md:26,43 requires a 24K rocprof kernel census and per-card validated inventory, and MEN01.md:68 explicitly lists the build, per-card checks and census as unfinished. docs/reference/engines/radiance/LAYOUTS.md:24-30 describes current roles, but no paired 27B kernel-census evidence proves which family caused the original prefill lead.
+
 ## Change Log
 
 - 2026-10-08T20:36:00.311928+00:00 (created-by): Created by agent
@@ -77,3 +85,7 @@ Consequences: (1) the like-for-like Flash-Next comparison needs two RDNA4 cards;
 - chg_20261008_212949_added-a-like-for-like-single-c_9270
 - 2026-10-08T21:30:02.720551+00:00 (updated-by): Updated: section:ledger-events
 - 2026-10-08T22:51:23.303074+00:00 (updated-by): Updated: section:notes
+- 2026-11-04T03:45:34.270488+00:00 (updated-by): Updated: section:notes
+- 2026-11-04T03:45:38.299887+00:00 (state-transition): State: pending → superseded
+- 2026-11-04T04:42:47.557384+00:00 (updated-by): Updated: section:notes
+- 2026-11-04T04:42:56.766439+00:00 (state-transition): State: superseded → pending

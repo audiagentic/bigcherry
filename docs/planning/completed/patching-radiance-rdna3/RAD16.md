@@ -2,7 +2,7 @@
 id: RAD16
 order: 16
 plan: patching-radiance-rdna3
-state: pending
+state: superseded
 created-at: '2026-10-21T02:00:00+00:00'
 breadth: ''
 skill: advanced
@@ -87,8 +87,14 @@ Answer to 'determine how to use the RDNA2 card' for MTP drafting: NO. Measured, 
 
 2026-10-21 correction to the step-1 result above: the lm_head figure (2556.9 us) used plain f16 weights in the harness, not the real model's int8 lm_head -- double the bytes a bandwidth-bound GEMV actually reads. This plan item already has an independent bandwidth-based estimate from the same day ('the int8 head alone is ~1.2 ms a pass at 505 GB/s'), which the harness's own bandwidth-bound behaviour confirms: 248320*2560 elements at 2 bytes (f16) / 505 GB/s predicts ~2.52 ms, matching the measured 2556.9 us almost exactly, so the harness IS bandwidth-bound, just on the wrong (2x too large) weight size. Corrected total: 3*(69.8us layer + ~1200us int8-equivalent head) ~= 3.8 ms against the R9700's ~0.8 ms -- about 4.75x worse, not the originally reported ~10x. The go/no-go conclusion is unchanged (clear no-go for serial MTP offload to the 6900), only the stated magnitude was overstated; correcting the record rather than leaving the inflated number standing.
 
+
+
+BACKLOG TRIAGE 2026-11-04 (SUPERSEDED; revalidated against main 6eb31a708, verdict CONFIRM): Retire the completed RDNA2 role investigation and leave the active tail-quality fix to RAD46. Evidence: PRs #464 and #469 shipped gfx1030 helper support and the libr2 plugin (engines/radiance/engine.toml:65; archs.toml:30-35). RAD16.md:65-90 records negative off-card MTP calculations, while current RAD46.md:18-39 owns the now-deployed RDNA2 tail's outstanding quality failure. Original content kept below for history.
+
 ## Change Log
 
 - 2026-10-21T02:00:00+00:00 (created-by): Created by agent
 - 2026-10-21T04:06:29.285042+00:00 (updated-by): Updated: section:notes
 - 2026-10-21T04:07:06.334581+00:00 (updated-by): Updated: section:notes
+- 2026-11-04T04:09:37.599674+00:00 (updated-by): Updated: section:notes
+- 2026-11-04T04:09:41.579727+00:00 (state-transition): State: pending → superseded

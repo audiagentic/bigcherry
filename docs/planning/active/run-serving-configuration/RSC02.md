@@ -58,15 +58,24 @@ Depends on RSC01. Source: GPT configuration assessment 2026-11-02.
 
 Depends on RSC01 (loader), RSC06 (helpers read the manifest) and RSC07 (engine reads the manifest). Owner decision 2026-11-02 (recorded on RSC01): no command-line converter and no fallback path.
 
+
+
+BACKLOG TRIAGE 2026-11-04 absorbed items (superseded into this one; their notes keep the full history): MEN14: Remaining cutover (one workflow, lab launcher retired) is RSC02/RSC04 (bc-serve as the only start-up path); both exist and are open.; MEN18: `bigcherry remote run|status|wait|list` exist (tools/bigcherry cli); leftover launch utilities belong to RSC02.
+
+
+
+CORRECTION 2026-11-04: the earlier note that MEN14, MEN18 were absorbed into this item is withdrawn. An independent revalidation found each either still has open scope of its own (reopened) or was delivered outright. This item's scope is unchanged.
+
 ## Change Log
 
 - 2026-11-02T00:53:02.723581+00:00 (created-by): Created by agent
 
 ## Ledger-events
 
-
 - chg_20261102_005338_planning-one-serve-command_5259
 - 2026-11-02T00:53:48.446911+00:00 (updated-by): Updated: section:ledger-events
 - 2026-11-02T03:51:40.629364+00:00 (updated-by): Updated: section:title, section:steps, section:acceptance_criteria, section:notes
 - chg_20261102_035356_serving-start-up-plan-one-str_4985
 - 2026-11-02T03:54:04.045012+00:00 (updated-by): Updated: section:ledger-events
+- 2026-11-04T03:47:55.795874+00:00 (updated-by): Updated: section:notes
+- 2026-11-04T04:45:47.730785+00:00 (updated-by): Updated: section:notes

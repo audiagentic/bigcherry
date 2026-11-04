@@ -2,7 +2,7 @@
 id: QFP11
 order: 0
 plan: patching-qwen-flash-next
-state: pending
+state: superseded
 created-at: '2026-10-03T16:33:36.231209+00:00'
 breadth: ''
 skill: advanced
@@ -12,25 +12,6 @@ work: S
 ---
 
 # Retire per-AllReduce graph-capture work; consolidate verify latency onto measured rank-skew owners
-
-## 2026-10-14 BCOP208 audit: event identity before boundary optimisation
-
-**Status: implementation parked; historical skew not revalidated.** The measured ~78/82 us median arrival skew and ~0.4 ms/token split/launch bound came from archived traces. `tools/lab/flash-next/ar-boundary.py::main` reads only the first rocprof kernel CSV, windows by the last kernel timestamp, pairs produce/consume within each rank, then matches ranks by **ordinal** using the minimum event count. A clipped or missing AR on one rank can shift every subsequent match and fabricate late-rank skew. It assumes `Agent_Id`, ignores stream identity, and reports before/after gaps as though adjacent kernels were serial.
-
-`tools/lab/flash-next/ar-segment.py::main` (QFP09) uses nearest timestamps within 2 ms instead, but does not enforce one-to-one matching: two reference events can reuse one remote event. At the historical 80K p90 skew (~800 us), a time-only window can encompass neighbouring ARs. Both tools must fail closed on ambiguous identities; **neither source proves the old skew figures false, only that they require requalification**.
-
-**Source path (pinned llama.cpp b11552 `23b0202a189c44a54625aadcb37a946dd1d6278`):** `ggml_backend_meta_graph_compute` (ggml-backend-meta.cpp:2469-2497) submits each rank's child graph before calling `comm_allreduce`. `ggml_backend_sched_alloc_graph` (ggml-backend.cpp:2081-2098) splits on allocation, while reused `ggml_backend_sched_graph_compute_async` (2106-2118) executes already allocated splits and still pays input-copy/event/submit costs. Patch 1291's CPU-root producer/consumer uses per-rank epochs and a CPU worker; graph capture cannot remove a producer rank's late arrival. QFP16 owns per-call Meta submit; QFP09 owns skew; QFP07 owns attention placement; QFP01/1291 owns collective/epoch markers. Do not create a second graph scheduler, trace database, or communicator.
-
-**One shared diagnostic contract (QFP09 owns matcher, QFP11 consumes):**
-1. Load every trace CSV shard for the exact target process, rank, stream and decode window. Pair rank-local produce/consume with stream ordering and existing CPU-root epoch/dispatch identity where available. Check cross-device timestamp domains before computing skew.
-2. Match across ranks by identical epoch; otherwise accept only unique, monotonic, one-to-one time candidates with a defensible uncertainty bound. Reject crossing, duplicated, missing, clipped and multi-candidate pairs. When genuine skew can exceed the safe time-only window, require epoch evidence; do not silently trim slow events.
-3. Emit expected/matched/dropped/ambiguous counts, source/clock proof, late-rank fraction, p50/p90 skew, host round-trip and same-stream before/after gaps. Report per-verify-round **and** per-generated-token denominators (MTP acceptance changes their ratio). Never add host enqueue and device wait as serial costs.
-
-**Cheapest discriminator:** a synthetic-only host oracle passed 5/5 controls: aligned, clipped first, missing middle, duplicate nearest and high-skew ambiguity. One clipped event generated a false 1007 us ordinal skew; nearest reused a remote event twice. No real trace, GPU or benchmark was run.
-
-**Bounded next gate:** add fixture cases for multiple CSV shards, missing first/middle/last event, concurrent streams, clock offsets, nonpositive gaps, 800 us genuine skew and varying MTP acceptance. Require zero wrong/duplicate matches. Replay archived 10K/80K traces, require >=99.5% unambiguous full-window coverage and stable p50/p90 across independent full rounds. If evidence is unavailable, disposition `UNVERIFIED_TRACE`. If correlated short/long context boundary-only exposed gain is <3%, disposition `NO_EXPOSED_BOUNDARY_GAIN`; otherwise hand off to QFP09/QFP07 (arrival), QFP01/1291 (collective) or QFP16 (submit), without reopening graph capture by default. A future implementation requires CI95-low >=3% decode, <=1% unaffected regression, greedy/logits/MTP parity, repeated-request, long-context and graph/event-lifetime checks on gfx1100/gfx1201 with gfx1030 draft.
-
-**Upstream/fork decision:** merged llama.cpp [#30453](https://github.com/ggml-org/llama.cpp/pull/30453) is already represented by BigCherry's validated 1007 Meta graph-slot fix. Merged [#30329](https://github.com/ggml-org/llama.cpp/pull/30329) adds scheduler realloc counters absent from inspected b11552; adopt on a qualified pin, not as a new QFP11 patch. Draft [RPC graph-cache #29287](https://github.com/ggml-org/llama.cpp/pull/29287) is unrelated to local HIP CPU-root AR. vLLM's shape-specific graph capture and workspace invalidation are lifetime references only, not transferable AMD gains.
 
 ## Description
 
@@ -99,9 +80,34 @@ Evidence runs: flashnext-v2-synctrace-timed (sync-tracer.c records blocked time)
 
 2026-10-05 consolidation: original QFP11 implementation path is parked. QFP07/QFP09 own the measured bottleneck. Upstream #29948 is recorded as operator-fusion mechanism evidence only; its dense FFN MMQ+GLU path is not equivalent to Flash-Next routed MoE and should not be transplanted here. Upstream release baseline advanced to b11392.
 
+
+
+BACKLOG TRIAGE 2026-11-04 (MERGE into QFP09; revalidated against main 6eb31a708, verdict ADJUST): Merge retired per-AR graph-capture tracking into QFP09 only after transferring ar-boundary identity tests, separate boundary/arrival metrics and conditional reopen gates. Evidence: docs/planning/active/patching-qwen-flash-next/QFP11.md:16-41,78-95 parks AR-in-graph but retains a trace identity/boundary attribution contract, 99.5% replay coverage and conditional >=1 ms/token reopen gate; plain CLOSE would lose them. docs/planning/active/patching-qwen-flash-next/QFP09.md:18-24 expressly owns the shared monotonic matcher consumed by QFP11 and is pending, so merge the ar-boundary.py consumer, clock/epoch tests and conditional reopen decision into QFP09, while updating QFP13's QFP11 ownership reference. Still referenced by: BCOP208, PEF07, PNRO02, QFP09, QFP13. Original content kept below for history.
+
+## 2026-10-14 BCOP208 audit: event identity before boundary optimisation
+
+**Status: implementation parked; historical skew not revalidated.** The measured ~78/82 us median arrival skew and ~0.4 ms/token split/launch bound came from archived traces. `tools/lab/flash-next/ar-boundary.py::main` reads only the first rocprof kernel CSV, windows by the last kernel timestamp, pairs produce/consume within each rank, then matches ranks by **ordinal** using the minimum event count. A clipped or missing AR on one rank can shift every subsequent match and fabricate late-rank skew. It assumes `Agent_Id`, ignores stream identity, and reports before/after gaps as though adjacent kernels were serial.
+
+`tools/lab/flash-next/ar-segment.py::main` (QFP09) uses nearest timestamps within 2 ms instead, but does not enforce one-to-one matching: two reference events can reuse one remote event. At the historical 80K p90 skew (~800 us), a time-only window can encompass neighbouring ARs. Both tools must fail closed on ambiguous identities; **neither source proves the old skew figures false, only that they require requalification**.
+
+**Source path (pinned llama.cpp b11552 `23b0202a189c44a54625aadcb37a946dd1d6278`):** `ggml_backend_meta_graph_compute` (ggml-backend-meta.cpp:2469-2497) submits each rank's child graph before calling `comm_allreduce`. `ggml_backend_sched_alloc_graph` (ggml-backend.cpp:2081-2098) splits on allocation, while reused `ggml_backend_sched_graph_compute_async` (2106-2118) executes already allocated splits and still pays input-copy/event/submit costs. Patch 1291's CPU-root producer/consumer uses per-rank epochs and a CPU worker; graph capture cannot remove a producer rank's late arrival. QFP16 owns per-call Meta submit; QFP09 owns skew; QFP07 owns attention placement; QFP01/1291 owns collective/epoch markers. Do not create a second graph scheduler, trace database, or communicator.
+
+**One shared diagnostic contract (QFP09 owns matcher, QFP11 consumes):**
+1. Load every trace CSV shard for the exact target process, rank, stream and decode window. Pair rank-local produce/consume with stream ordering and existing CPU-root epoch/dispatch identity where available. Check cross-device timestamp domains before computing skew.
+2. Match across ranks by identical epoch; otherwise accept only unique, monotonic, one-to-one time candidates with a defensible uncertainty bound. Reject crossing, duplicated, missing, clipped and multi-candidate pairs. When genuine skew can exceed the safe time-only window, require epoch evidence; do not silently trim slow events.
+3. Emit expected/matched/dropped/ambiguous counts, source/clock proof, late-rank fraction, p50/p90 skew, host round-trip and same-stream before/after gaps. Report per-verify-round **and** per-generated-token denominators (MTP acceptance changes their ratio). Never add host enqueue and device wait as serial costs.
+
+**Cheapest discriminator:** a synthetic-only host oracle passed 5/5 controls: aligned, clipped first, missing middle, duplicate nearest and high-skew ambiguity. One clipped event generated a false 1007 us ordinal skew; nearest reused a remote event twice. No real trace, GPU or benchmark was run.
+
+**Bounded next gate:** add fixture cases for multiple CSV shards, missing first/middle/last event, concurrent streams, clock offsets, nonpositive gaps, 800 us genuine skew and varying MTP acceptance. Require zero wrong/duplicate matches. Replay archived 10K/80K traces, require >=99.5% unambiguous full-window coverage and stable p50/p90 across independent full rounds. If evidence is unavailable, disposition `UNVERIFIED_TRACE`. If correlated short/long context boundary-only exposed gain is <3%, disposition `NO_EXPOSED_BOUNDARY_GAIN`; otherwise hand off to QFP09/QFP07 (arrival), QFP01/1291 (collective) or QFP16 (submit), without reopening graph capture by default. A future implementation requires CI95-low >=3% decode, <=1% unaffected regression, greedy/logits/MTP parity, repeated-request, long-context and graph/event-lifetime checks on gfx1100/gfx1201 with gfx1030 draft.
+
+**Upstream/fork decision:** merged llama.cpp [#30453](https://github.com/ggml-org/llama.cpp/pull/30453) is already represented by BigCherry's validated 1007 Meta graph-slot fix. Merged [#30329](https://github.com/ggml-org/llama.cpp/pull/30329) adds scheduler realloc counters absent from inspected b11552; adopt on a qualified pin, not as a new QFP11 patch. Draft [RPC graph-cache #29287](https://github.com/ggml-org/llama.cpp/pull/29287) is unrelated to local HIP CPU-root AR. vLLM's shape-specific graph capture and workspace invalidation are lifetime references only, not transferable AMD gains.
+
 ## Change Log
 
 - 2026-10-03T16:33:36.231209+00:00 (created-by): Created by agent
 - 2026-10-03T16:35:18.028294+00:00 (updated-by): Updated: section:notes
 - 2026-10-03T16:35:21.329774+00:00 (updated-by): Updated: priority='P3'
 - 2026-10-05: Consolidated QFP11 onto QFP07/QFP09 after boundary decomposition disproved graph-capture as the primary lever; added explicit reopen gates and upstream #29948 mechanism triage.
+- 2026-11-04T04:11:00.712896+00:00 (updated-by): Updated: section:notes
+- 2026-11-04T04:11:04.734592+00:00 (state-transition): State: pending → superseded

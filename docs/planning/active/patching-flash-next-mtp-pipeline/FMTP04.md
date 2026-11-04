@@ -133,7 +133,19 @@ Prep 2026-10-04 - code anchors (vendor/llama.cpp/tools/server/server-context.cpp
 
 2026-10-05 reconciliation with what landed: promotion is implemented inside patch 1322 (not a separate 1323). 1322 promotes only when the whole front was accepted AND the target sampled the tail's first token (full front + bridge equality), consumes the bridge, promotes only a full-length tail, skips the serial fresh draft for the promoted round and replays the promoted front as a forced front (1321 dp.forced) during the next target verify. Every promoted token is still target-verified (greedy identical in the 24K / 80K screen, 39% / 25% of rounds promoted). Not yet checked against this item's acceptance: explicit parent metadata / epoch fencing of child rounds (single-slot greedy only so far), and the offline mechanics tests listed here. Open performance problem is owned by FMTP03 (promoted fronts are accepted less than fresh ones, so t/s is neutral despite -7% ms/step). The planned patch number 1323 is free; 1324 remains reserved for the FMTP05 controller, which depends on 1268 - and 1268 currently fails to apply over the build selection (common/speculative.cpp anchors, found by the 2026-10-05 pin-bump), so it must be repaired before FMTP05 starts.
 
+
+
+BACKLOG TRIAGE 2026-11-04 (MERGE into FMTP03; revalidated against main 6eb31a708, verdict CONFIRM): FMTP03 exists, open; tail promotion across a verified bridge is its acceptance criterion; README sequences FMTP03 first. Evidence: FMTP03 exists, open; tail promotion across a verified bridge is its acceptance criterion; README sequences FMTP03 first. Still referenced by: FMTP03, README. Original content kept below for history.
+
+
+
+REOPENED 2026-11-04: an independent revalidation (against main 6eb31a708) rejected the closure recorded above, which had been based on a lighter check. It stays open. Why: docs/planning/active/patching-flash-next-mtp-pipeline/FMTP04.md:122-134 explicitly says 1322 lacks verified parent metadata/child epoch fencing and offline state tests. engines/llamacpp/patches/1322_mtp_ahead_overlap/patch.py:60-92 stores bc_promoted token state without the specified epoch/base/front metadata, while FMTP03.md:182 remains paused.
+
 ## Change Log
 
 - 2026-10-04T06:32:31.159768+00:00 (updated-by): Updated: section:notes
 - 2026-10-05T10:04:13.100614+00:00 (updated-by): Updated: section:notes
+- 2026-11-04T03:45:01.752132+00:00 (updated-by): Updated: section:notes
+- 2026-11-04T03:45:05.970741+00:00 (state-transition): State: pending → superseded
+- 2026-11-04T04:42:23.396765+00:00 (updated-by): Updated: section:notes
+- 2026-11-04T04:42:27.440775+00:00 (state-transition): State: superseded → pending

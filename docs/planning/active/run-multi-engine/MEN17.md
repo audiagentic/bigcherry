@@ -51,6 +51,14 @@ radiance accept on the 1.7.0 pin passes against the 1.3.0 baselines (2,050 pp409
 
 ## Notes
 
+BACKLOG TRIAGE 2026-11-04 absorbed items (superseded into this one; their notes keep the full history): MEN11: Merge target MEN17/MEN26 exist and are open; radiance measurement/evidence paths are used by patch-promote (#543/#546).
+
+
+
+CORRECTION 2026-11-04: the earlier note that MEN11 were absorbed into this item is withdrawn. An independent revalidation found each either still has open scope of its own (reopened) or was delivered outright. This item's scope is unchanged.
+
 ## Change Log
 
 - 2026-10-17T09:09:32.756838+00:00 (created-by): Created by agent
+- 2026-11-04T03:47:51.848107+00:00 (updated-by): Updated: section:notes
+- 2026-11-04T04:45:43.413487+00:00 (updated-by): Updated: section:notes

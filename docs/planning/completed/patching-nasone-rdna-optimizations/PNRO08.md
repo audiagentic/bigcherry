@@ -2,7 +2,7 @@
 id: PNRO08
 order: 0
 plan: patching-nasone-rdna-optimizations
-state: pending
+state: superseded
 created-at: '2026-09-09T10:52:46.423935+00:00'
 breadth: ''
 skill: advanced
@@ -66,6 +66,10 @@ Successor key: patching-nasone-rdna-optimizations-nro09
 
 2026-09-24 GPT review req_215c89d0b13a4bb7 applied: corrected the real anchor from ggml-backend.cpp:1693 to ggml_backend_sched_compute_splits() (ggml-backend.cpp:1646), with the actual used_ids/copy_experts logic verified at ~1731-1781. Cache ownership moved from a proposed new per-llama_context object to ggml_backend_sched itself, matching where the real copy-reduction logic lives. Required explicit CPU skip-table/GPU remap/merge/generation-publication/teardown design before authoring patch 1262 (previously left to the implementer).
 
+
+
+BACKLOG TRIAGE 2026-11-04 (MERGE into MET07; revalidated against main 6eb31a708, verdict ADJUST): Merge llama.cpp cache hit/eviction, immutable-generation, forced-miss, fidelity and PCIe traffic tests into MET07; retire the obsolete proposed 1262 duplicate, without claiming a tensor-split cache. Evidence: docs/planning/active/patching-nasone-rdna-optimizations/PNRO08.md:14-39 specifies a llama.cpp scheduler-owned GPU hot-expert cache, not Radiance placement; docs/planning/active/patching-moe-expert-tiering/MET07.md:14-29,54-66 documents the independently live llama.cpp cache qualification and upstream #29887 on b11552. Radiance RHP alone cannot supersede a separate llama.cpp feature, but MET07 is a fitting active owner for its single-card host-resident expert-cache acceptance. Still referenced by: BCOP70, PNRO13. Original content kept below for history.
+
 ## Change Log
 
 - 2026-09-09T10:52:46.423935+00:00 (created-by): Created by capability-rebaseline-v3
@@ -83,3 +87,5 @@ Successor key: patching-nasone-rdna-optimizations-nro09
 - 2026-09-24T02:32:53.119489+00:00 (updated-by): Updated: section:description, section:detailed_solution, section:code_samples, section:files, section:validation, section:effort_risk
 - 2026-09-24T02:33:08.094920+00:00 (updated-by): Updated: section:notes
 - 2026-09-24T04:49:41.845664+00:00 (updated-by): Updated: section:description, section:steps, section:notes
+- 2026-11-04T04:10:21.005091+00:00 (updated-by): Updated: section:notes
+- 2026-11-04T04:10:24.919614+00:00 (state-transition): State: pending → superseded

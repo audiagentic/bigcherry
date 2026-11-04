@@ -55,6 +55,10 @@ Evidence: flashnext-cpuroot-4 ABBA vs auto (-ts 4,4,3 ub1024): no-MTP decode +6.
 
 2026-10-04 GPT focused review (req_6fe4bcfeef9645a7): BUG (teardown only): bc_cpu_root_free() sets stop=true and joins the CPU worker before synchronizing GPU streams, then frees mapped buffers; destroying a backend with an in-flight small AR can leave bc_cpu_root_consume spinning (hang) or touch freed memory. Fix: synchronize every participating stream/device before stop. OK: producer ordering (block barrier -> writes -> __threadfence_system -> system release of arrive), CPU->GPU publication (release done / system acquire), epoch wraparound (signed distance, O(1) backpressure), per-comm-context isolation for target vs MTP contexts, zero contribution from skipped ranks, graph replay re-arm (epoch advanced by the produce kernel at execution). Latency ideas: (1) drop the consumer's all-thread __threadfence_system after thread 0's system acquire + block barrier (A/B with long bit-exact stress); (2) fuse produce+consume into one kernel (-1 launch per AR, ~30 launches/token - aligns with QFP13); (3) keep the per-rank generation counter in VRAM; worker pinning to an idle P-core before any cache-line repacking.
 
+
+
+BACKLOG TRIAGE 2026-11-04 (revalidated against main 6eb31a708): the proposed disposition "SUPERSEDED for current deployment; retain llama branch" was NOT applied; this item stays open. Why: docs/planning/active/patching-qwen-flash-next/QFP01.md:14-38 still requires the review/critical-path contract, graph-safe ABBA and a one-hour no-hang soak; engines/llamacpp/patches/1291_ar_cpu_root/README.md:20-23 reports a real +5-6% llama decode win and greedy identity, not a Radiance replacement. Commit c3b5cb6ce fixes teardown and ba5ada692 promotes the patch, but no current-pin one-hour soak proof was located; superseding this live llama provider is premature. Active items that reference this one: BCOP208, BCOP212, BCOP221, BCOP238, BCOP97, BCOP98, PGC10, PGC11, PGC13, PHA04. Keep 1291 as a separate llama.cpp product feature and finish the explicit teardown/graph/soak qualification before closing its plan.
+
 ## Change Log
 
 - 2026-10-03T15:20:13.613565+00:00 (created-by): Created by agent
@@ -64,3 +68,4 @@ Evidence: flashnext-cpuroot-4 ABBA vs auto (-ts 4,4,3 ub1024): no-MTP decode +6.
 
 - chg_20261003_221753_fixed-a-possible-hang-when-shu_6807
 - 2026-10-03T22:17:56.460475+00:00 (updated-by): Updated: section:ledger-events
+- 2026-11-04T04:25:49.050383+00:00 (updated-by): Updated: section:notes

@@ -96,6 +96,10 @@ GPT addendum on the N-helper protocol (req_bigcherry_3bb6b763ab97) FAILED to run
 
 STATUS 2026-11-02 ~02:40. Merged since the 2026-11-01 status: W4H2 + 32-row GEMV path (#505, promoted to the helper default with single-variable evidence #509): XTX expert step 470 -> 262 us/layer, decode step -6/-7/-16/-14% at 1/2/4/6 streams, 6-stream engine decode ~282 -> 330-342 tok/s, KLD in band. Host pool 9 GiB + 12 GiB host KV tier (#512): long-running-server prefill +66%. 8 sessions cold on the new defaults: 3,043 tok/s (was 2,481-2,513). Prefill curve on a fresh server is flat ~3.6-4.1k tok/s from 1K to ~150K (peak at one 2,048-token chunk). Decode attention split count does not matter (<1% at 74K-315K). R9700 idle: 15 W board floor, +4 W while the engine holds it (MES 0x81; PWR06). Tail finding: on these defaults the 14 GiB RX 6900 XT tail costs speed (6 short prompts 2.13 s vs 1.32 s without it; 6-stream decode 47.2 vs 44.4 ms) but provides context capacity (KV pool 1.48M vs 0.86M tokens, because without it ~5,900 experts take R9700 VRAM); A/B of 8 sessions, ~200K prefill, and a no-tail layout with the n-gram table on the 6900 XT plus a 20 GiB host pool is running (runs tail-budget2/3). Placement trade-offs like this are what RHP stage 3 must make from calibration.
 
+
+
+BACKLOG TRIAGE 2026-11-04 (revalidated against main 6eb31a708): the proposed disposition "SUPERSEDED; optional output method in RAD41" was NOT applied; this item stays open. Why: PRs #485/#488 and engines/radiance/components/moe-remote/moe_remote_shm.h:32-36,246-254 deliver runtime helper slots and up-to-four-helper CPU combine. But r3_moe_worker.cpp:523-542 still provides a boolean CPU AVX2/F16C combine path, not off|cpu|gpu|auto with GPU kernels, measured auto selection and the per-method KLD/A/B required by RAD23.md:18-35,60-70. Active items that reference this one: RAD19, RAD39, RAD22, RCS07, RHP04, RHP03, RHP06, RHP10, RHP07, RHP09. Keep the unfinished GPU-combine, negotiated method, topology-derived auto policy and comparative validation as explicit acceptance criteria.
+
 ## Execution gate review (2026-10-23)
 
 **Split RAD23 into sequential implementation PRs; do not ship a monolithic topology change.** Before editing the ABI, retrieve and reconcile the recorded N-helper design addendum `req_bigcherry_3bb6b763ab97`; this planning note does **not** assert that private review was retrieved here.
@@ -257,7 +261,7 @@ stamps, and the budgeted experiments (step 4).
 
 Earlier notes in this item called the third helper's experts "cold" while the XTX helpers' were left unnamed; the launcher owns the
 HOTTEST experts on the XTXs (`heat.rank0.hot-first`, ranking order = hottest first, each helper takes its share of the top). From that
-file (`/work/bigcherry/runs/perf51/heat.rank0.hot-first`, 48 routed layers x 512 experts, 4,421,376 recorded routes; recorded
+file (`run perf51 (heat file)`, 48 routed layers x 512 experts, 4,421,376 recorded routes; recorded
 2026-10-17, the workload that profile run used):
 
 - Two XTX helpers at 22 GiB each own 18,640 experts (9,320 each, 2.417 MiB an expert) = 99.3% of routes.
@@ -537,7 +541,6 @@ Remaining per large-lane request on the 14 GiB captures: gate/up ~710, down ~777
 
 ## Ledger-events
 
-
 - chg_20261101_090829_flash-next-prefill-with-the-rx_2169
 - 2026-11-01T09:08:33.034449+00:00 (updated-by): Updated: section:ledger-events
 
@@ -545,6 +548,7 @@ Remaining per large-lane request on the 14 GiB captures: gate/up ~710, down ~777
 - chg_20261101_221642_multi-stream-decode-on-flash-n_4385
 
 - chg_20261102_024204_planning-records-updated-with_6210
+
 ## Status at the end of 2026-11-01
 
 flashnext-4gpu is the launcher default: the R9700 engine, both XTX heads at 22,528 MiB, the RX 6900 XT as a 14 GiB tail,
@@ -567,3 +571,4 @@ the R9700's 16-20 W idle (ASPM, root). Stage A of hot placement is in place reco
 - 2026-11-01T22:16:46.525388+00:00 (updated-by): Updated: section:ledger-events
 - 2026-11-02T02:40:51.819910+00:00 (updated-by): Updated: section:notes
 - 2026-11-02T02:42:21.800564+00:00 (updated-by): Updated: section:ledger-events
+- 2026-11-04T04:24:06.680031+00:00 (updated-by): Updated: section:notes

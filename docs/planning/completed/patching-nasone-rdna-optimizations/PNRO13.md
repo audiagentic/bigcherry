@@ -2,7 +2,7 @@
 id: PNRO13
 order: 0
 plan: patching-nasone-rdna-optimizations
-state: pending
+state: deprecated
 created-at: '2026-09-09T10:53:08.931192+00:00'
 breadth: ''
 skill: advanced
@@ -69,6 +69,10 @@ Successor key: patching-nasone-rdna-optimizations-nro14
 
 2026-09-24 GPT review req_215c89d0b13a4bb7 applied: verified lazy PLE is mmap-backed via llama_model_loader::lazy_read (src/llama-model-loader.h:89, .cpp:1080/1088) with no existing loader-callback seam for pread substitution. Added the required runtime-hook design step around the verified real functions build_inp_ple (qwen4exp.cpp:1185/383) and CPU GET_ROWS execution, plus explicit descriptor-ownership/row-offset-metadata/fallback specification requirements before any package is authored.
 
+
+
+BACKLOG TRIAGE 2026-11-04 (CLOSE; revalidated against main 6eb31a708, verdict CONFIRM): Close direct-pread PLE until a reproducible cold/warm page-fault bottleneck and safe loader/runtime file-offset seam exist. Evidence: docs/planning/active/patching-nasone-rdna-optimizations/PNRO13.md:16-29,87-110 establishes mmap-backed lazy PLE/GET_ROWS and the absence of a pread callback seam; its acceptance requires a measured storage/page-fault critical path, which is not shown. Active BCOP70 is a prior assessment, not a REQUIRES/blocker for this design. Still referenced by: BCOP70. Original content kept below for history.
+
 ## Change Log
 
 - 2026-09-09T10:53:08.931192+00:00 (created-by): Created by capability-rebaseline-v3
@@ -97,3 +101,5 @@ Successor key: patching-nasone-rdna-optimizations-nro14
 **Acceptance:** host fixture for quant rows/offsets/duplicates/error paths; multi-request/multi-ubatch 8K/80K/240K graph/logit/memory parity; >=4 sessions x >=10 ABBA pairs, CI95-low >=3% E2E prefill and <=1% control regression. Six deterministic page-range fixtures passed. Synthetic 32,768-row accounting yielded 33,349 4K pages (46.32x requested 90-byte row payload); theoretical, not physical NVMe bytes. No build, GPU or storage benchmark ran. PNRO13 owns PLE; QFP17/QSA and PNRO08/MoE cache are active read-only dependencies. BCOP70 is the disposition ledger.
 
 Sources: https://github.com/ggml-org/llama.cpp/pull/28136 ; https://github.com/ggml-org/llama.cpp/pull/29030 ; https://github.com/ggml-org/llama.cpp/pull/29599 ; https://github.com/ggml-org/llama.cpp/blob/b11474/src/llama-mmap.cpp ; https://man7.org/linux/man-pages/man2/posix_fadvise.2.html .
+- 2026-11-04T04:10:36.798715+00:00 (updated-by): Updated: section:notes
+- 2026-11-04T04:10:40.865833+00:00 (state-transition): State: pending → deprecated

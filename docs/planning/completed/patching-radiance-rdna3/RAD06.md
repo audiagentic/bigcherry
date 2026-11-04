@@ -2,7 +2,7 @@
 id: RAD06
 order: 0
 plan: patching-radiance-rdna3
-state: pending
+state: superseded
 created-at: '2026-10-14T20:15:06.353093+00:00'
 breadth: ''
 skill: advanced
@@ -22,9 +22,15 @@ Prefill profile 2026-10-15 (R9700 engine + two XTX helpers, heat ownership, 22 G
 
 ## Detailed Solution & Technical Design
 
+
+
 ## Code Samples & Guidance
 
+
+
 ## Files
+
+
 
 ## Validation
 
@@ -36,7 +42,11 @@ Pipelining changes the engine MoE block's step structure (patch) and the protoco
 
 ## Standards
 
+
+
 ## Acceptance Criteria
+
+
 
 ## Notes
 
@@ -63,6 +73,10 @@ Follows RAD02/RAD05.
 2026-10-18 helper request shape (run rad06-hist-*, hot-first): ~40 active experts a request, experts by rows 1: 9.0, 2: 4.0, 3-4: 4.5, 5-8: 5.0, 9-16: 4.0, 17-32: 3.6, 33-64: 3.3, 65+: 7.0 (coldest-first similar, 8.0 at 65+). gate_up 2.11 / down 1.18 ms a request = ~2.4 TFLOP/s on a ~120 TFLOP/s card, ~96 MiB weights (~0.1 ms at 960 GB/s): the grouped GEMM is neither compute- nor bandwidth-bound - kernel efficiency, not tile padding. Sent to GPT dev for diagnosis.
 
 2026-10-18 down tile on gfx1100 (R3_MOE_HELPER_MOE_DOWN_TILE=1, helper-downtile-ab.json, run rad06-down-*): --compare (synthetic 790-row routing) down 1,443 -> ~954 us a call, but real serving only 1.18 -> 1.14 ms a request; end to end pp4096 2,137/2,134 -> 2,148/2,149 (+0.6%, complete separation), pp1024 +0.7%, decode flat. Lesson: --compare's synthetic routing is not representative - kernel work needs replayed real helper requests (capture a real request's activations + routes to a file, replay offline). Tile 2 pin refused for this shape. Next: adopt DOWN_TILE=1 in configs (small win), build request capture/replay for kernel tuning, then P2 overlap of the R9700's local experts with the remote wait.
+
+
+
+BACKLOG TRIAGE 2026-11-04 (MERGE into RAD21; revalidated against main 6eb31a708, verdict CONFIRM): Move the prefill pipeline to RAD21 and preserve independent helper-kernel timing and tuning in RAD43. Evidence: RAD06.md:20-38,49-53 retains chunked hand-off overlap and larger grouped-MoE tuning; active RAD21.md:18-41 specifies the missing multichunk protocol, harness and A/B. Active RAD43.md:18-36 separately covers helper reduce/write, grouped-GEMM and engine-add kernel stages. Still referenced by: BCOP288, BCOP293, BCOP294, BCOP295, BCOP296, BCOP298, BCOP299, BCOP300, BCOP313, BCOP315, BCOP340, BCOP348, BCOP349, PRBE116, PRBE117, PRVP04, QFP04, QFP13, QFP17, QFP44, QFP54, RAD09, RAD23, RCS01, RHP01, RHP02, RHP03, RHP04, RHP06, RNX08, WSL02. Original content kept below for history.
 
 ## Change Log
 
@@ -99,3 +113,5 @@ Follows RAD02/RAD05.
 - 2026-10-18T11:20:24.648316+00:00 (updated-by): Updated: section:ledger-events
 - chg_20261018_140648_the-faster-prefill-and-decode_5408
 - 2026-10-18T14:06:52.749723+00:00 (updated-by): Updated: section:ledger-events
+- 2026-11-04T04:09:04.700861+00:00 (updated-by): Updated: section:notes
+- 2026-11-04T04:09:08.674774+00:00 (state-transition): State: pending → superseded

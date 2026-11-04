@@ -2,7 +2,7 @@
 id: FMTP06
 order: 0
 plan: patching-flash-next-mtp-pipeline
-state: pending
+state: deprecated
 created-at: '2026-10-04T00:48:00+00:00'
 breadth: ''
 skill: advanced
@@ -129,6 +129,10 @@ Hardware multi-slot work starts only after FMTP07 greedy single-slot proof.
 
 L / high. Sampler-state correctness and cross-sequence lifecycle are significantly harder than greedy single-slot overlap.
 
+## Standards
+
+
+
 ## Acceptance Criteria
 
 - Proposal distributions stay aligned with their tokens after bridge removal.
@@ -136,3 +140,14 @@ L / high. Sampler-state correctness and cross-sequence lifecycle are significant
 - Sequence-local invalidation cannot affect another sequence.
 - Storage/worker queues remain bounded.
 - Distribution correctness matches ahead-disabled control within the existing speculative-rejection test methodology.
+
+## Notes
+
+
+
+BACKLOG TRIAGE 2026-11-04 (CLOSE; revalidated against main 6eb31a708, verdict CONFIRM): Multi-slot/probabilistic extension is explicitly gated on single-slot FMTP03; deprecated with a note to reopen after FMTP03 succeeds. Evidence: Multi-slot/probabilistic extension is explicitly gated on single-slot FMTP03; deprecated with a note to reopen after FMTP03 succeeds. Still referenced by: FMTP03, README. Original content kept below for history.
+
+## Change Log
+
+- 2026-11-04T03:45:18.141591+00:00 (updated-by): Updated: section:notes
+- 2026-11-04T03:45:22.142805+00:00 (state-transition): State: pending → deprecated

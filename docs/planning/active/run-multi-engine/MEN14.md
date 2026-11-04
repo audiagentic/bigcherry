@@ -64,7 +64,19 @@ The final gate run, recorded in the ledger and on the model page.
 
 Owner, 2026-10-15: consolidate and clean up, be process focused, follow the automated llama.cpp build/patch/test/validate/promote workflow. Performance work (RAD06 pipelining, 27B GEMM/AR) resumes on top of this.
 
+
+
+BACKLOG TRIAGE 2026-11-04 (MERGE into RSC02; revalidated against main 6eb31a708, verdict CONFIRM): Remaining cutover (one workflow, lab launcher retired) is RSC02/RSC04 (bc-serve as the only start-up path); both exist and are open. Evidence: Remaining cutover (one workflow, lab launcher retired) is RSC02/RSC04 (bc-serve as the only start-up path); both exist and are open. Still referenced by: MEN25, MEN20. Original content kept below for history.
+
+
+
+REOPENED 2026-11-04: an independent revalidation (against main 6eb31a708) rejected the closure recorded above, which had been based on a lighter check. It stays open. Why: MEN14.md:18-35 requires a complete build-to-release workflow, a disposition for every lab script and a final patch-to-release exercise; it explicitly identifies MEN20/MEN21 evidence and replay commands as gaps. RSC02.md:18-29 is bc-serve startup and RSC04.md:18-26 retires legacy serving configuration, not component evidence, MoE capture/replay and release workflow.
+
 ## Change Log
 
 - 2026-10-14T22:28:08.305053+00:00 (created-by): Created by agent
 - 2026-10-18T13:04:03.390613+00:00 (updated-by): Updated: section:detailed_solution
+- 2026-11-04T03:47:04.194775+00:00 (updated-by): Updated: section:notes
+- 2026-11-04T03:47:08.148435+00:00 (state-transition): State: pending → superseded
+- 2026-11-04T04:44:59.886778+00:00 (updated-by): Updated: section:notes
+- 2026-11-04T04:45:04.814682+00:00 (state-transition): State: superseded → pending

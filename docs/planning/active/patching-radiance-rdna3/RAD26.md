@@ -60,9 +60,14 @@ HSA IPC blocked waits already measured at 100% CPU (FINDINGS); interrupt relay s
 
 2026-10-27 graph test (rad26-wake-bench graph mode, run rad26-wake-bench-10272150): a publish + hipLaunchHostFunc captured into a HIP graph and replayed 2000 times woke the futex waiter on every replay in all 3 runs (launch->ack p50 33-50 us, p99 129-144 us). So ROCm graph host nodes work; the engine hang points at how radiance captures/replays (e.g. graph update or clone dropping the node, or capture without replay). Next: count callbacks fired in the engine (log at teardown) and log the helper's wakes, in one short run with a multi-stream step.
 
+
+
+BACKLOG TRIAGE 2026-11-04 (revalidated against main 6eb31a708): the proposed disposition "MERGE one wake discriminator into RCS10/RAD43; no standalone campaign" was NOT applied; this item stays open. Why: RAD26.md:49-70 records a real graph-capture hang followed by a successful standalone graph-replay wake test, leaving the engine-capture callback failure unresolved; engines/radiance/components/moe-remote/worker_lanes.h:267,306 still yield-spins. Neither RCS10.md:20-56 (model-derived tuning) nor RAD43.md:14-31 (kernel stage throughput) owns graph-safe wake delivery; PWR03.md:18 refers to RAD26 as a prerequisite to CPU-state comparison. Active items that reference this one: PWR03. Keep a narrowly gated graph-safe large-lane wake investigation rather than losing callback lifetime and stop-path coverage in generic tuning.
+
 ## Change Log
 
 - 2026-10-27T02:15:24.188732+00:00 (created-by): Created by agent
 - 2026-10-27T08:31:10.859985+00:00 (updated-by): Updated: section:notes
 - 2026-10-27T10:21:28.314791+00:00 (updated-by): Updated: section:notes
 - 2026-10-27T11:16:32.240768+00:00 (updated-by): Updated: section:notes
+- 2026-11-04T04:24:14.797180+00:00 (updated-by): Updated: section:notes

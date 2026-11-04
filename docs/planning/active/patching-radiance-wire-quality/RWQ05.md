@@ -65,6 +65,11 @@ High GPU-time and confounding risk: helper remote results, MTP, quantised KV and
 
 Depends RWQ01 baseline and RWQ02 candidate, plus RWQ03 if selective policies are tested; monitor device reserve and host scratch memory. Do not equate model's original BF16-to-4bit publisher KL with wire transport KL.
 
+
+
+BACKLOG TRIAGE 2026-11-04 (revalidated against main 6eb31a708): the proposed disposition "MERGE into RWQ02 qualification" was NOT applied; this item stays open. Why: docs/planning/active/patching-radiance-wire-quality/RWQ05.md:16-32,45-61 requires a standalone multi-arm, multi-model, MTP/KLD/top-1/PCIe/ABBA and worst-tail hardware qualification protocol. docs/planning/active/patching-radiance-wire-quality/RWQ02.md:42-61 defers full-model acceptance to RWQ05, and docs/planning/active/patching-radiance-wire-quality/RWQ06.md:16-25 makes promotion contingent on RWQ05; merging RWQ05 into codec implementation reverses those explicit dependencies. Active items that reference this one: RWQ01, RWQ02, RWQ03, RWQ04, RWQ06. Retain RWQ05 as the independent fail-closed hardware quality and performance gate for all wire candidates.
+
 ## Change Log
 
 - 2026-10-15T00:00:00+00:00 (created-by): Initial plan; unimplemented GPU work remains pending.
+- 2026-11-04T04:25:41.110100+00:00 (updated-by): Updated: section:notes

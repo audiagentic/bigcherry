@@ -2,7 +2,7 @@
 id: PNRO14
 order: 0
 plan: patching-nasone-rdna-optimizations
-state: pending
+state: deprecated
 created-at: '2026-09-09T10:53:13.365873+00:00'
 breadth: ''
 skill: intermediate
@@ -12,8 +12,6 @@ priority: P2
 ---
 
 # RDNA3.5 D=256 tile FlashAttention: route- and architecture-gated disposition
-
-**2026-10-09 audit (authoritative):** Patch 1270 exists and its two PNRO19 anchor bugs were fixed in f4228540b7 (2026-09-27). Keep it untested and out of production. Current fleet gfx1100/gfx1201/gfx1030 cannot qualify a gfx1151 tuning claim. No BigCherry E2E gain is measured. Historical 2026-09 notes below describe earlier states, not present work.
 
 ## Description
 
@@ -75,6 +73,10 @@ Successor key: patching-nasone-rdna-optimizations-nro15
 
 2026-09-24: reopened from superseded -- GPT review req_14f299d271894983 showed the RDNA3.5-specific row is NOT upstream (b11126 fattn-tile.cuh:61 generic RDNA row 256,256,32,256,3,64,128 in ggml_cuda_fattn_tile_get_config_amd_rdna; selectors at :317 host and the #ifdef RDNA device branch; RDNA3_5 macro vendors/hip.h:224, GGML_CUDA_CC_IS_RDNA3_5 common.cuh:91). Anchors verified against the b11126 mirror.
 
+
+
+BACKLOG TRIAGE 2026-11-04 (CLOSE; revalidated against main 6eb31a708, verdict CONFIRM): Close the gfx115x-only unqualified tile-tuning lane; reassess only with supported hardware and observed TILE32 launches. Evidence: docs/planning/active/patching-nasone-rdna-optimizations/PNRO14.md:14-41,55-76 records no qualifying gfx115x hardware in the four-GPU fleet, an unproven TILE32 route, and no measured benefit; engines/llamacpp/patches/1270_pnro14_rdna35_fa_tile_d256/patch.toml:4 remains untested and patch.py:35-37 gates RDNA3.5. PNRO13/BCOP74 mentions are historical or adjacent, not implementation blockers. Still referenced by: BCOP74, PNRO13. Original content kept below for history.
+
 ## Change Log
 
 - 2026-09-09T10:53:13.365873+00:00 (created-by): Created by capability-rebaseline-v3
@@ -93,3 +95,5 @@ Successor key: patching-nasone-rdna-optimizations-nro15
 - 2026-09-24T02:29:26.534024+00:00 (state-transition): State: pending → superseded
 - 2026-09-24T05:20:04.846198+00:00 (state-transition): State: superseded → pending
 - 2026-09-24T05:20:31.049912+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:code_samples, section:files, section:validation, section:effort_risk, section:notes
+- 2026-11-04T04:10:44.899700+00:00 (updated-by): Updated: section:notes
+- 2026-11-04T04:10:48.909854+00:00 (state-transition): State: pending → deprecated

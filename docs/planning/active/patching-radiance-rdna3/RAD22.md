@@ -59,6 +59,10 @@ A measured end-to-end gain (prefill or decode) over the parent build with no reg
 
 Upper bound from the trace: ~10% of helper GPU time, about 2-3% end to end. Lower priority than RAD21 (round-trip overlap). Prior art: DeepSeek EPLB (github.com/deepseek-ai/EPLB), vLLM/SGLang redundant experts, FasterMoE expert shadowing. GPT review req_bigcherry_e3de4a2ecbd9 (2026-10-23).
 
+
+
+BACKLOG TRIAGE 2026-11-04 (revalidated against main 6eb31a708): the proposed disposition "MERGE as costed optional replication only if RHP04 solver/RHP13 can express it" was NOT applied; this item stays open. Why: docs/planning/active/patching-radiance-heat-placement/RHP04.md:25 and :80 require disjoint, exactly-once ownership, directly excluding RAD22's simultaneous hot-expert replicas; RHP13.md:14-30 concerns movement between execution and residency tiers rather than per-step replica routing. RAD22.md:21-32 still requires a measured K-versus-eviction simulation and gated end-to-end comparison; RAD23.md continues to sequence RAD22 after profiling. Active items that reference this one: RAD23. Preserve the simulation-first replica experiment unless the RHP solver contract is explicitly extended to multiple resident copies and per-step replica routing.
+
 ## Execution gate review (2026-10-23)
 
 - **Simulation-only first PR** after RAD21 profiling. Use captured per-step per-expert route and duration distributions, paired with available VRAM and R9700 fallback costs. Evaluate replica counts K and explicit eviction costs (not only helper route imbalance). Report median/p95/p99 critical path and the theoretical upper bound as a bound, not a forecast.
@@ -69,3 +73,4 @@ Upper bound from the trace: ~10% of helper GPU time, about 2-3% end to end. Lowe
 
 - 2026-10-23T05:23:14.763211+00:00 (created-by): Created by agent
 - 2026-10-23T05:23:32.642210+00:00 (updated-by): Updated: section:description, section:steps, section:files, section:validation, section:acceptance_criteria, section:notes
+- 2026-11-04T04:24:02.600474+00:00 (updated-by): Updated: section:notes

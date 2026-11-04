@@ -2,7 +2,7 @@
 id: RAD05
 order: 0
 plan: patching-radiance-rdna3
-state: pending
+state: superseded
 created-at: '2026-10-14T18:52:42.248696+00:00'
 breadth: ''
 skill: advanced
@@ -54,6 +54,10 @@ Follows RAD02 (R9700 engine + two XTX helpers, heat ownership: prefill 2,767 tok
 
 2026-10-15 07:20 DONE as helper small-lane kernel (lane_moe_gemv in moe_remote_gpu.h, e4d95b98 + 883ac30d part-pitch fix, default on). Compare: gate/up matches the grouped GEMM to 1e-9 / 4.6e-6; end-to-end compare 6.4e-4 / 1.9e-4 (unchanged). Balanced A/B, R9700 engine + two XTX helpers (22 GiB, heat ownership, small lane 8): off prefill 2515/2531 decode 69.6/69.7; on prefill 2197(warm-up)/2524 decode 95.7/95.5. Helper decode request: gate_up 241->60-67 us, down 102->24-29 us. KL: KLD 0.0605 / top-1 88.62% / PPL 9.003. Remaining scope: use the same GEMV for the XTX engine's own decode MoE (two-XTX layout) and the R9700 engine's small steps; RDNA2 (gfx1030) build for a 6900 helper.
 
+
+
+BACKLOG TRIAGE 2026-11-04 (MERGE into RAD15; revalidated against main 6eb31a708, verdict ADJUST): Merge unfinished engine-local gfx1100 decode GEMV and qualification into RAD15 rather than marking RAD05 fully superseded. Evidence: PR #236 delivered the helper GEMV and PR #509 made W4H2 the helper default (engines/radiance/components/moe-remote/moe_lane_gemm.h:368). But RAD05.md:19-37 and its result note also require XTX engine-local decode GEMV, still explicitly planned in RAD15.md:21,28-31,48. Still referenced by: BCOP215, BCOP216, MET12, RAD06, RHP04. Original content kept below for history.
+
 ## Change Log
 
 - 2026-10-14T18:52:42.248696+00:00 (created-by): Created by agent
@@ -63,3 +67,5 @@ Follows RAD02 (R9700 engine + two XTX helpers, heat ownership: prefill 2,767 tok
 
 - chg_20261014_204134_flash-next-decode-on-dev-re_3947
 - 2026-10-14T20:41:38.358166+00:00 (updated-by): Updated: section:ledger-events
+- 2026-11-04T04:08:56.712556+00:00 (updated-by): Updated: section:notes
+- 2026-11-04T04:09:00.737155+00:00 (state-transition): State: pending → superseded

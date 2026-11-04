@@ -13,30 +13,6 @@ work: M
 
 # Qualify external Flash-Next mechanisms with corruption-resistant performance gates
 
-## 2026-10-15 exact-pin audit: QSA gathered-decode witness and corruption gate (BCOP237)
-
-**Disposition:** QFP28 owns the reusable multi-request/work-integrity gate, not a second QSA gather, expert cache, profiler or scheduler. This corrects the 2026-10-05 assumption that the existing 1295 patch-hit marker proves execution. QFP04/1295 owns any implementation change; QFP17/1332 and QFP25/1334 retain their separate QSA paths. No GPU correctness failure or new speedup is claimed.
-
-### Pinned b11552 implementation and proof boundary
-
-- `engines/llamacpp/patches/1295_qsa_gather_decode/patch.py::_GATHER`: `build_attn_qsa` checks `bc_qsa_idx`, `n_tokens <= 8`, `bc_qsa_gather_enabled()` and `n_kv >= BIGCHERRY_QSA_GATHER_MIN` **before** testing `plain` (single stream, contiguous K/V, compatible V layout). Only `if (plain)` builds the K/V `ggml_get_rows`, selected `-inf` mask and `ggml_flash_attn_ext`. The existing `cb(cur, "kqv_out_qsa_gather", il)` identifies the selected graph, not GPU execution.
-- `patch.py::_ENABLED` emits `BIGCHERRY_PATCH_HIT patch=1295_qsa_gather_decode` from a static once-per-process getter. An eligible but non-plain graph **logs a hit and executes dense masked attention**; a later plain graph can execute without another hit. This is a **source-confirmed false-positive/false-negative activation witness**, not a reproduced numeric defect. Historical ABBA measurements are not automatically disproved, but marker-only activation qualification is invalid.
-- Pinned `src/models/qwen4exp.cpp::build_qsa_sel` concatenates selected pools and tail, using `n_kv` as the missing-tail sentinel. Patch 1295 pads selected rows to 256 with `n_kv`, clamps K/V reads to `n_kv-1` and gathers the appended `-inf` mask column. This is an explicit masked-padding contract; the external DEVGATHER once-zeroed destination defect is **not established** for 1295. Current <=245760 KV indices are exactly representable through its I32/F32 clamp. Noncontiguous/multistream K/V is a negative route control.
-- Native upstream `src/llama-moe-cache.cpp` (#29887, already pinned) allocates `n_slots+1` expert bank rows and zeroes the device buffer, unlike external r30 DEVGATHER. BigCherry 1337 is superseded. Host-expert caching is absent from the all-GPU production Flash-Next path; MET01/MET07 retain cache policy.
-- Existing `tools/lab/flash-next/determinism.sh` prints repeated character-prefix comparisons but does not exit nonzero on mismatch. `long-ctx-profile.sh` has `REPEAT=1` for a second decode in one process; neither implements QFP28's repeated A/B/C/A, cache-on/off, abort and multi-ubatch comparator. Reuse their transport and outputs instead of a second lab framework.
-
-### Bounded implementation-ready gates
-
-1. **Host/static first (1295 owner):** model `n_tokens={1,5,8,9,512}`, `n_kv={32767,32768,245760}`, `ne[3]={1,2}`, V contiguous/strided, QSA missing, switch off and graph reuse. Prove marker/actual-route disagreement; prove sentinel/pad rows stay in bounds and carry `-inf` weights. The existing marker is `MARKER_ONLY_UNTRUSTED` until a selected/executed route witness is available.
-2. **Reuse existing trace:** `kqv_out_qsa_gather` proves graph selection only. Correlate that graph to actual K/V GET_ROWS and FA HIP kernel execution for the *same request/ubatch* using the existing graph/profiler and validation producer. Count selected, executed and declined cases separately. If a patch-side trace is necessary, relocate/version the current patch-hit marker inside `if (plain)`; do not break consumers silently or create a new telemetry registry.
-3. **Shared fail-closed comparator:** extend the existing `long-ctx-profile.sh` / `determinism.sh` request path, keeping one server and slot. For each `cache_prompt={false,true}`, send `A -> B (>=2 ubatches) -> A -> C (shared prefix/divergent suffix) -> A -> D -> A` plus an abort-before-A recovery. Save ordered token IDs (or complete deterministic text), request/slot identity, prompt/control hash, cache flag, completion/error status, prompt/output counts and physical route. Exit nonzero on missing/truncated/empty output, repeated-A mismatch, matched-control mismatch, crash/hang or impossible transfer/work accounting. A deliberately corrupted second response **must** fail the comparator. Use f32-reference logits/KLD to classify near-tie/MTP acceptance drift rather than treating every different greedy string as proof of memory corruption.
-4. **Only then HIP:** current pin, dual gfx1100 + gfx1201 target and gfx1030 drafter, IQ4_XS/f16 KV, ub512, 8K/80K/160K (220K only if memory fits), no-MTP and MTP, gather on/off, cache-on/off and graph reuse. Record K/V GET_ROWS bytes, FA GPU time, per-ubatch selected/executed counts, allocator/realloc, logits/KLD, MTP proposals/acceptance, ms/target-step, tokens/s, model/driver/patch SHAs. No P2P assumption. Before implementing 1296/direct-index work, apply QFP04's existing >=5% GPU share or >=0.5 ms/token exposed-cost admission; require correct outputs and >=3% exposed end-to-end gain with <=1% control regression in paired current-pin trials. Otherwise terminalize `ROUTE_UNPROVEN`, `NUMERIC_FAIL` or `NO_EXPOSED_GAIN`.
-
-**Measured vs hypothetical:** 1295's historical README reports +14% decode at 98K and +13% at 196K on an earlier pin; QFP04 records neutral 80K f16-KV and 160K MTP acceptance-confounded results. This audit ran 14/14 repository/upstream source predicates and 10/10 host-model cases; Python compilation passed. No repository suite, HIP build, GPU run or new benchmark.
-
-**External mechanisms:** llama.cpp #29887 is already merged; do not revive 1337. llama.cpp #29949 / lich-77 `c81901a57` implements graph-resident `LRU_DECIDE`/`LRU_FILL` for pinned-host experts (diff inspected), not a QSA acceleration on the current all-GPU topology. vLLM #38256/#57794 likewise inform host-expert residency; MET01/MET07 alone own that policy. No new scheduler/cache/dispatch system is warranted.
-
-
 ## Description
 
 Sources: https://github.com/Shali12/r9700-flash-next-notes and stew675/llama-cpp-rdna-boosts r30 (`f1082619d7b80ea26af6242b9fceecade072d5f5`) / r31 (`76a083ed492756803187c85de9ce4537a787b606`), including issue #85 and `wip/moe-mmq-overread/RESOLUTION.md`. Their main Flash-Next rig is one R9700 with host-resident experts; dev is 2x gfx1100 + gfx1201 in the meta tensor split with all target experts device-resident plus a gfx1030 MTP drafter. Host-expert mechanisms are therefore mechanism/correctness evidence, not direct ports.
@@ -55,37 +31,6 @@ Issue #85/r31 found **two independent MMQ legal-tile over-read holes**, both req
 The resolution explicitly states device-resident MoE (`-ncmoe 0`) is unaffected: direct model tensors have backend zero padding, and gather/staging/cache-arena machinery requires host weights. This exact bug therefore does **not** execute on dev's all-GPU target model.
 
 BigCherry has no `GGML_SCHED_DEVGATHER` implementation. `1295_qsa_gather_decode` gathers selected KV rows; `1331_alloc_peak_live` is allocator telemetry; `1332_qsa_token_chunk` builds token-chunked QSA masks. None shares the DEVGATHER code. The transferable failure class is narrower: any partial/padded temporary buffer consumed by a kernel whose legal read footprint exceeds the logical payload must initialize/provide the whole read footprint. That class is worth checking in 1295. If 1332 differs from dense on request 1, stale cross-request state is unlikely to be its primary cause; first inspect chunk-boundary/mask/index semantics.
-
-## Plan Review — 2026-10-05
-
-The current remote QFP28 has 12 steps; the requested core triage is steps 1-9. Verdicts cover all current steps so the review stays valid after the intervening plan edit.
-
-| Step | Verdict | dev assessment |
-|---|---|---|
-| 1 multi-request gate | **ADAPT** | Keep one server and one slot alive; explicitly run cache-on and cache-off lanes. Shali's `text-check.py` sends only 3 deterministic requests with `cache_prompt:false`; persistent `rig-model` sequencing, not that helper alone, exposed later-request corruption. Complement greedy-MD5; do not replace it. |
-| 2 prove gate sensitivity | **ADOPT** | Required. Use a known-corrupt external build when available; on dev also use a deterministic response-#2 corruption fixture so comparator/wiring is proven even though host DEVGATHER cannot execute. |
-| 3 transport plausibility | **ADOPT** | High-value guard for any future host movement. No current all-GPU speed benefit, but it prevents skipped-work results from being accepted. |
-| 4 gate 1295/1332 first | **ADOPT** | Highest priority. 1295's run-to-run instability is compatible with race/uninitialized-padding/extent defects; 1332's dense mismatch needs first-request chunk/mask diagnosis before any stale-state theory. |
-| 5 DEVGATHER lineage | **ADOPT** | Resolved: mechanism-only/no shared code. No dependency on stew DEVGATHER should be created. |
-| 6 host staging-ring experiment | **REJECT** for current topology | All target experts are GPU-resident. Re-open only if MET01/MET06 deliberately moves experts to host RAM. |
-| 7 Q3 for >300K | **ADAPT** | Conditional memory-fit fallback only. First candidate: Unsloth `UD-Q3_K_XL` (~90.0 GB), which the source header-inspected but did **not** download/test. ISTA GSQ-RCO `IQ3_XXS` (~75.8 GB) was measured but is a more aggressive quality trade. Keep f16 preferred/q8_0 minimum KV. |
-| 8 draft depth | **ADAPT** | Useful only as a dev gfx1030 MTP profile experiment; external single-R9700 numbers do not transfer. Run after target correctness, and leave mechanism ownership with QFP05/FMTP. |
-| 9 sampling/reasoning | **ADAPT** | `min_p=0` is profile/model-card conformance, not a kernel optimisation. Keep sampling fixed while benchmarking; assess reasoning-budget policy separately. |
-| 10 tools + JSON schema | **ADAPT** | Failure is still present at pin `050439614`; isolate as a separate upstream-fix item rather than mixing with Flash-Next kernels. |
-| 11 rollback log check | **ADOPT** | Cheap diagnostic. Any hit belongs to lifecycle/cache ownership after minimization. |
-| 12 power-cap arm | **REJECT** by default | Only run if thermal/power variance prevents discrimination. Treat as benchmark-control/perf-per-watt work, not throughput promotion. |
-
-### Prioritized actions
-
-1. **P0:** implement the persistent multi-request gate; retain greedy-MD5 as the fast request-1 identity gate.
-2. **P0:** rerun dense/control, 1007, 1295 and 1332 on the current pin with target-only/MTP-off first, then production MTP. Classify request-1 failures separately from later-request failures.
-3. **P0:** audit 1295 and 1332 temporary-buffer extents, padding/initialization, row/chunk bounds and ownership/lifetime; use issue #85 only as the invariant model, not as code lineage.
-4. **P1:** measure 245760 and 262144 context memory on the real 2:2:3 meta split with f16 and q8_0 KV; only then decide whether >300K needs lower weight quant.
-5. **P1:** reconcile r30/r31 provenance and BigCherry's existing GDN chunking lineage; do not port duplicates.
-6. **P1:** add an external-source snapshot/provenance entry for r30/r31 only if the project wants ongoing diff tracking; current registry snapshot is older (`c8af5361`, 2026-08-30) and does not cover r30/r31.
-7. **P2:** if memory requires Q3, test `UD-Q3_K_XL` first, then IQ3_XXS only if the former does not free enough memory.
-8. **P2:** create a separate upstream-fix plan for Qwen3 tools + `response_format` grammar handling.
-9. **P2/conditional:** revisit expert-cache devmap/staging/lazy-load work only if model placement changes away from all-GPU.
 
 ## Steps
 
@@ -158,6 +103,10 @@ Safest upstream-fix patch: detect `has_tools && has_response_format` before gram
 - Source power-cap results are useful for variance/perf-per-watt only, not as evidence of a dev throughput win.
 - Record build SHA, model hash, placement, KV type, slot/cache settings and MTP state in every gate result so a model/config mismatch cannot masquerade as identity failure.
 
+## Code Samples & Guidance
+
+
+
 ## Files
 
 - `tools/lab/flash-next/` — reusable correctness/plausibility gate and fixtures.
@@ -170,6 +119,14 @@ Safest upstream-fix patch: detect `has_tools && has_response_format` before gram
 Correctness order: greedy-MD5 -> persistent cache-off lane -> persistent cache-on/same-slot lane -> target-only long-context -> MTP-enabled production lane. Minimum 3 correctness repetitions per arm before ABBA/5-rep performance. Any semantic failure voids throughput from that arm.
 
 For 1295/1332, capture whether divergence occurs on request 1 or only after state reuse. For host-movement work, additionally require pinned-H2D calibration and profiler evidence of bytes/overlap on each relevant GPU/link.
+
+## Effort & Risk
+
+
+
+## Standards
+
+
 
 ## Acceptance Criteria
 
@@ -186,9 +143,68 @@ For 1295/1332, capture whether divergence occurs on request 1 or only after stat
 
 The strongest transferable result from r31 is not a speed patch: **partial buffers must satisfy the consumer kernel's full legal read footprint, and correctness must be tested across ubatches/requests before speed is trusted.** On dev the exact host-expert bug is bypassed, but that invariant is directly useful for diagnosing 1295 and for preventing false wins.
 
+
+
+BACKLOG TRIAGE 2026-11-04 (revalidated against main 6eb31a708): the proposed disposition "MERGE into MEN17/validation, no separate patch" was NOT applied; this item stays open. Why: docs/planning/active/patching-qwen-flash-next/QFP28.md:27-43 requires a fail-closed multi-request A/B/C/A corruption comparator, executed 1295 route witness and QSA correctness matrix; :167-182 specifies an injected-corruption failure test. docs/planning/active/run-multi-engine/MEN17.md:14-26 is pending but only defines stored post-bump engine benchmarks/KLD baselines, not these request-level llama.cpp state-integrity and graph-route controls. Active items that reference this one: FMTP03, QFP22, QFP17, QFP25, QFP04, BCOP237, BCOP26, BCOP338. Preserve the targeted llama.cpp multi-request QSA corruption and actual-execution gate, and reuse MEN17 baselines only where they add coverage.
+
+## 2026-10-15 exact-pin audit: QSA gathered-decode witness and corruption gate (BCOP237)
+
+**Disposition:** QFP28 owns the reusable multi-request/work-integrity gate, not a second QSA gather, expert cache, profiler or scheduler. This corrects the 2026-10-05 assumption that the existing 1295 patch-hit marker proves execution. QFP04/1295 owns any implementation change; QFP17/1332 and QFP25/1334 retain their separate QSA paths. No GPU correctness failure or new speedup is claimed.
+
+### Pinned b11552 implementation and proof boundary
+
+- `engines/llamacpp/patches/1295_qsa_gather_decode/patch.py::_GATHER`: `build_attn_qsa` checks `bc_qsa_idx`, `n_tokens <= 8`, `bc_qsa_gather_enabled()` and `n_kv >= BIGCHERRY_QSA_GATHER_MIN` **before** testing `plain` (single stream, contiguous K/V, compatible V layout). Only `if (plain)` builds the K/V `ggml_get_rows`, selected `-inf` mask and `ggml_flash_attn_ext`. The existing `cb(cur, "kqv_out_qsa_gather", il)` identifies the selected graph, not GPU execution.
+- `patch.py::_ENABLED` emits `BIGCHERRY_PATCH_HIT patch=1295_qsa_gather_decode` from a static once-per-process getter. An eligible but non-plain graph **logs a hit and executes dense masked attention**; a later plain graph can execute without another hit. This is a **source-confirmed false-positive/false-negative activation witness**, not a reproduced numeric defect. Historical ABBA measurements are not automatically disproved, but marker-only activation qualification is invalid.
+- Pinned `src/models/qwen4exp.cpp::build_qsa_sel` concatenates selected pools and tail, using `n_kv` as the missing-tail sentinel. Patch 1295 pads selected rows to 256 with `n_kv`, clamps K/V reads to `n_kv-1` and gathers the appended `-inf` mask column. This is an explicit masked-padding contract; the external DEVGATHER once-zeroed destination defect is **not established** for 1295. Current <=245760 KV indices are exactly representable through its I32/F32 clamp. Noncontiguous/multistream K/V is a negative route control.
+- Native upstream `src/llama-moe-cache.cpp` (#29887, already pinned) allocates `n_slots+1` expert bank rows and zeroes the device buffer, unlike external r30 DEVGATHER. BigCherry 1337 is superseded. Host-expert caching is absent from the all-GPU production Flash-Next path; MET01/MET07 retain cache policy.
+- Existing `tools/lab/flash-next/determinism.sh` prints repeated character-prefix comparisons but does not exit nonzero on mismatch. `long-ctx-profile.sh` has `REPEAT=1` for a second decode in one process; neither implements QFP28's repeated A/B/C/A, cache-on/off, abort and multi-ubatch comparator. Reuse their transport and outputs instead of a second lab framework.
+
+### Bounded implementation-ready gates
+
+1. **Host/static first (1295 owner):** model `n_tokens={1,5,8,9,512}`, `n_kv={32767,32768,245760}`, `ne[3]={1,2}`, V contiguous/strided, QSA missing, switch off and graph reuse. Prove marker/actual-route disagreement; prove sentinel/pad rows stay in bounds and carry `-inf` weights. The existing marker is `MARKER_ONLY_UNTRUSTED` until a selected/executed route witness is available.
+2. **Reuse existing trace:** `kqv_out_qsa_gather` proves graph selection only. Correlate that graph to actual K/V GET_ROWS and FA HIP kernel execution for the *same request/ubatch* using the existing graph/profiler and validation producer. Count selected, executed and declined cases separately. If a patch-side trace is necessary, relocate/version the current patch-hit marker inside `if (plain)`; do not break consumers silently or create a new telemetry registry.
+3. **Shared fail-closed comparator:** extend the existing `long-ctx-profile.sh` / `determinism.sh` request path, keeping one server and slot. For each `cache_prompt={false,true}`, send `A -> B (>=2 ubatches) -> A -> C (shared prefix/divergent suffix) -> A -> D -> A` plus an abort-before-A recovery. Save ordered token IDs (or complete deterministic text), request/slot identity, prompt/control hash, cache flag, completion/error status, prompt/output counts and physical route. Exit nonzero on missing/truncated/empty output, repeated-A mismatch, matched-control mismatch, crash/hang or impossible transfer/work accounting. A deliberately corrupted second response **must** fail the comparator. Use f32-reference logits/KLD to classify near-tie/MTP acceptance drift rather than treating every different greedy string as proof of memory corruption.
+4. **Only then HIP:** current pin, dual gfx1100 + gfx1201 target and gfx1030 drafter, IQ4_XS/f16 KV, ub512, 8K/80K/160K (220K only if memory fits), no-MTP and MTP, gather on/off, cache-on/off and graph reuse. Record K/V GET_ROWS bytes, FA GPU time, per-ubatch selected/executed counts, allocator/realloc, logits/KLD, MTP proposals/acceptance, ms/target-step, tokens/s, model/driver/patch SHAs. No P2P assumption. Before implementing 1296/direct-index work, apply QFP04's existing >=5% GPU share or >=0.5 ms/token exposed-cost admission; require correct outputs and >=3% exposed end-to-end gain with <=1% control regression in paired current-pin trials. Otherwise terminalize `ROUTE_UNPROVEN`, `NUMERIC_FAIL` or `NO_EXPOSED_GAIN`.
+
+**Measured vs hypothetical:** 1295's historical README reports +14% decode at 98K and +13% at 196K on an earlier pin; QFP04 records neutral 80K f16-KV and 160K MTP acceptance-confounded results. This audit ran 14/14 repository/upstream source predicates and 10/10 host-model cases; Python compilation passed. No repository suite, HIP build, GPU run or new benchmark.
+
+**External mechanisms:** llama.cpp #29887 is already merged; do not revive 1337. llama.cpp #29949 / lich-77 `c81901a57` implements graph-resident `LRU_DECIDE`/`LRU_FILL` for pinned-host experts (diff inspected), not a QSA acceleration on the current all-GPU topology. vLLM #38256/#57794 likewise inform host-expert residency; MET01/MET07 alone own that policy. No new scheduler/cache/dispatch system is warranted.
+
+## Plan Review — 2026-10-05
+
+The current remote QFP28 has 12 steps; the requested core triage is steps 1-9. Verdicts cover all current steps so the review stays valid after the intervening plan edit.
+
+| Step | Verdict | dev assessment |
+|---|---|---|
+| 1 multi-request gate | **ADAPT** | Keep one server and one slot alive; explicitly run cache-on and cache-off lanes. Shali's `text-check.py` sends only 3 deterministic requests with `cache_prompt:false`; persistent `rig-model` sequencing, not that helper alone, exposed later-request corruption. Complement greedy-MD5; do not replace it. |
+| 2 prove gate sensitivity | **ADOPT** | Required. Use a known-corrupt external build when available; on dev also use a deterministic response-#2 corruption fixture so comparator/wiring is proven even though host DEVGATHER cannot execute. |
+| 3 transport plausibility | **ADOPT** | High-value guard for any future host movement. No current all-GPU speed benefit, but it prevents skipped-work results from being accepted. |
+| 4 gate 1295/1332 first | **ADOPT** | Highest priority. 1295's run-to-run instability is compatible with race/uninitialized-padding/extent defects; 1332's dense mismatch needs first-request chunk/mask diagnosis before any stale-state theory. |
+| 5 DEVGATHER lineage | **ADOPT** | Resolved: mechanism-only/no shared code. No dependency on stew DEVGATHER should be created. |
+| 6 host staging-ring experiment | **REJECT** for current topology | All target experts are GPU-resident. Re-open only if MET01/MET06 deliberately moves experts to host RAM. |
+| 7 Q3 for >300K | **ADAPT** | Conditional memory-fit fallback only. First candidate: Unsloth `UD-Q3_K_XL` (~90.0 GB), which the source header-inspected but did **not** download/test. ISTA GSQ-RCO `IQ3_XXS` (~75.8 GB) was measured but is a more aggressive quality trade. Keep f16 preferred/q8_0 minimum KV. |
+| 8 draft depth | **ADAPT** | Useful only as a dev gfx1030 MTP profile experiment; external single-R9700 numbers do not transfer. Run after target correctness, and leave mechanism ownership with QFP05/FMTP. |
+| 9 sampling/reasoning | **ADAPT** | `min_p=0` is profile/model-card conformance, not a kernel optimisation. Keep sampling fixed while benchmarking; assess reasoning-budget policy separately. |
+| 10 tools + JSON schema | **ADAPT** | Failure is still present at pin `050439614`; isolate as a separate upstream-fix item rather than mixing with Flash-Next kernels. |
+| 11 rollback log check | **ADOPT** | Cheap diagnostic. Any hit belongs to lifecycle/cache ownership after minimization. |
+| 12 power-cap arm | **REJECT** by default | Only run if thermal/power variance prevents discrimination. Treat as benchmark-control/perf-per-watt work, not throughput promotion. |
+
+### Prioritized actions
+
+1. **P0:** implement the persistent multi-request gate; retain greedy-MD5 as the fast request-1 identity gate.
+2. **P0:** rerun dense/control, 1007, 1295 and 1332 on the current pin with target-only/MTP-off first, then production MTP. Classify request-1 failures separately from later-request failures.
+3. **P0:** audit 1295 and 1332 temporary-buffer extents, padding/initialization, row/chunk bounds and ownership/lifetime; use issue #85 only as the invariant model, not as code lineage.
+4. **P1:** measure 245760 and 262144 context memory on the real 2:2:3 meta split with f16 and q8_0 KV; only then decide whether >300K needs lower weight quant.
+5. **P1:** reconcile r30/r31 provenance and BigCherry's existing GDN chunking lineage; do not port duplicates.
+6. **P1:** add an external-source snapshot/provenance entry for r30/r31 only if the project wants ongoing diff tracking; current registry snapshot is older (`c8af5361`, 2026-08-30) and does not cover r30/r31.
+7. **P2:** if memory requires Q3, test `UD-Q3_K_XL` first, then IQ3_XXS only if the former does not free enough memory.
+8. **P2:** create a separate upstream-fix plan for Qwen3 tools + `response_format` grammar handling.
+9. **P2/conditional:** revisit expert-cache devmap/staging/lazy-load work only if model placement changes away from all-GPU.
+
 ## Change Log
 
 - 2026-10-05T04:10:44.361443+00:00 (created-by): Created by claude
 - 2026-10-05T04:11:07.895131+00:00 (updated-by): Updated initial external findings
 - 2026-10-05: Deep-scanned r31 gather corruption/root cause; consolidated QFP28 around multi-request correctness + bandwidth-plausibility gates; added conditional staging-ring qualification and ownership boundaries.
 - 2026-10-05: Plan review against Shali12 notes + stew675 r30/r31: corrected DEVGATHER mechanism/root cause, Q3 evidence, snapshot coverage and grammar status; recorded per-step verdicts and prioritized dev actions.
+- 2026-11-04T04:26:51.814440+00:00 (updated-by): Updated: section:notes

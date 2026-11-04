@@ -11,6 +11,48 @@ work: M
 
 # QFP54 — Recurrent-state checkpoint D2H batching on HIP/Meta
 
+## Description
+
+
+
+## Steps
+
+
+
+## Detailed Solution & Technical Design
+
+
+
+## Code Samples & Guidance
+
+
+
+## Files
+
+
+
+## Validation
+
+
+
+## Effort & Risk
+
+
+
+## Standards
+
+
+
+## Acceptance Criteria
+
+
+
+## Notes
+
+
+
+BACKLOG TRIAGE 2026-11-04 (revalidated against main 6eb31a708): the proposed disposition "CLOSE from current target; re-open llama-only with triggering call-site" was NOT applied; this item stays open. Why: docs/planning/active/patching-qwen-flash-next/QFP54.md:20-33 identifies real llama.cpp server_slot::prompt_save and llama_io_write_host::write_tensor/get_tensor checkpoint-save call sites and a separate cross-tensor async D2H candidate; :34-41 records positive external multistream evidence but no BigCherry gate-zero measurement. docs/planning/active/patching-bc-optimizations/BCOP348.md:12-18 still names QFP54 the sole checkpoint-save D2H owner, so 're-open with triggering call-site' is not a valid closure reason when the source path is already identified. Active items that reference this one: BCOP348. Keep the narrow llama.cpp recurrent checkpoint D2H Gate 0 pending an executed warm multistream cost census; retire it only on a measured no-route or below-ceiling outcome.
+
 ## Decision and independent-work gate (BCOP348; 20 October 2026 UTC)
 
 **HOLD: source-qualified, not admitted to implementation or a GPU queue.** This owns the narrow sequence-state **save** path, not state restore, KV-cache placement, kernel fusion, scheduler input copies or checkpoint-selection policy. Pinned llama.cpp b11552 serially executes deferred synchronous tensor reads. Upstream [#30694](https://github.com/ggml-org/llama.cpp/pull/30694) coalesces reads **within one tensor**; independently measured [RDNA fork #189](https://github.com/stew675/llama-cpp-rdna-boosts/pull/189) batches reads **across distinct recurrent tensors** into a pinned buffer. They are complementary, not interchangeable. Neither has a first-party BigCherry gain; the fork's newer-revision patch cannot be applied verbatim to b11552.
@@ -59,3 +101,7 @@ The staging buffer must outlive all DMA, and state saves must not overlap on the
 QFP54 solely owns state-save D2H batching. QFP48 owns checkpoint ablation and its separate batch-boundary/fusion evidence; QFP16/24/27 own scheduler **H2D inputs**; RD58/1234 owns **H2D restore**; 1005 owns checkpoint selection; MSM02/03 owns Meta allocation/placement. No neighbouring plan, patch or queue was changed.
 
 Disposable host-only checkpoint_read_host_oracle.py: 1,500 randomized split-layout byte-equivalence cases (23,483 ranges), modeled 75-distinct-tensor/two-rank sync counts 150/150/2, byte accounting and cap fallback passed; py_compile passed. It is **not** a C++ Meta backend test or real synchronization measurement. No HIP build, GPU test, benchmark or first-party BigCherry speedup.
+
+## Change Log
+
+- 2026-11-04T04:27:23.341137+00:00 (updated-by): Updated: section:notes
