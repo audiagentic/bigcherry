@@ -2,7 +2,7 @@
 id: RAD09
 order: 0
 plan: patching-radiance-rdna3
-state: pending
+state: superseded
 created-at: '2026-10-14T22:21:18.124989+00:00'
 breadth: ''
 skill: advanced
@@ -53,11 +53,13 @@ patch tests and patch-lint pass; rad0002 dry-run applies at the pin; helper layo
 
 Met 2026-10-15: one rad0002 and one hook (libr3moe) on main via #236 (63cc952f); patch-lint and patch tests pass; radiance-lab build ok on dev; helper vs engine rel_l2 0.0011; prefill 2,760/2,761 tok/s, decode 108.4/108.9, identical completion hash.
 
-
-
 ## Notes
 
 Blocks merging any of RAD02-RAD06's code to main.
+
+
+
+BACKLOG TRIAGE 2026-11-04 (SUPERSEDED; revalidated against main 6eb31a708, verdict CONFIRM): Close the duplicate patch/hook reconciliation milestone as delivered by #236 and promoted by #546. Evidence: RAD09.md:46-48 records its one-rad0002/one-hook acceptance as met by PR #236, and PR #546 (f1d49c78c) subsequently promoted engines/radiance/patches/rad0002_moe_remote_handoff into production. Still referenced by: BCOP227, BCOP234, BCOP235, BCOP236, BCOP237, BCOP252, RHP01, RHP02, RHP03, RHP04, RHP06, RNX11. Original content kept below for history.
 
 ## Change Log
 
@@ -69,3 +71,5 @@ Blocks merging any of RAD02-RAD06's code to main.
 - 2026-10-14T23:35:56.607672+00:00 (updated-by): Updated: section:ledger-events
 - 2026-10-15T00:20:15.841891+00:00 (updated-by): Updated: section:acceptance_criteria
 - 2026-10-15T00:20:22.319899+00:00 (state-transition): State: pending → completed
+- 2026-11-04T04:09:12.722561+00:00 (updated-by): Updated: section:notes
+- 2026-11-04T04:09:16.934283+00:00 (state-transition): State: pending → superseded

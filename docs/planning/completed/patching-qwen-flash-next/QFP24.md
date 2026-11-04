@@ -2,7 +2,7 @@
 id: QFP24
 order: 0
 plan: patching-qwen-flash-next
-state: pending
+state: superseded
 created-at: '2026-10-05T00:00:00+00:00'
 breadth: ''
 skill: advanced
@@ -12,12 +12,6 @@ work: M
 ---
 
 # Safe pinned scheduler input ring for asynchronous large prefill host->GPU copies
-
-## 2026-10-13 binding correction (see QFP27)
-
-**Do not implement the private `bc_async_input_lane` / `bc_async_input_slot::done[]` pseudocode below as an approved parallel scheduler.** Upstream #29963's input-event generations are enabled only for layer-pipeline `n_copies>1`, while production Meta tensor split uses `n_copies=1` and its device has `events=false` / `event_new=nullptr`. Upstream therefore does **not** currently solve QFP24's tensor-split source lifetime. The detailed code below is historical design, not a ready patch.
-
-QFP16/1326 remains implementation owner; QFP27 owns the admission/compatibility and all-child fanout proof. QFP24 remains **conditional pinned-backing qualification only**. First measure >=1 ms AND >=3% prefill cost; if qualified, add <=64 MiB pinned backing inside 1326 with every child completed before reuse or retain pageable/synchronous fallback. No independent event-query API, scheduler registry or second ring implementation.
 
 ## Description
 
@@ -356,6 +350,18 @@ Scheduler-owned lifetime; bounded pinned memory; stable addresses; events record
 - Pinned allocation bounded/leak-free.
 - Final code consolidated into patch 1326.
 
+## Notes
+
+
+
+BACKLOG TRIAGE 2026-11-04 (MERGE into QFP27; revalidated against main 6eb31a708, verdict CONFIRM): Move the QFP24 pinned-memory cost gate, every-child completion, cap, overwrite/wrap tests and fallback obligations into QFP27/1326; leave the historical private ring rejected. Evidence: docs/planning/active/patching-qwen-flash-next/QFP24.md:14-21 and :50-57 reduce the old private ring proposal to conditional pinned backing with all-child Meta completion inside 1326; docs/planning/active/patching-qwen-flash-next/QFP27.md:18-28 and :64-74 explicitly own the upstream/Meta lifetime proof, >=1 ms AND >=3% admission, <=64 MiB cap, 10,000-generation test and final 1326 consolidation. QFP27 is active (state pending at :5); no independent QFP24 scheduler should survive. Still referenced by: QFP46, QFP47, QFP17, QFP25, QFP16, QFP27, BCOP182, BCOP203, BCOP236. Original content kept below for history.
+
+## 2026-10-13 binding correction (see QFP27)
+
+**Do not implement the private `bc_async_input_lane` / `bc_async_input_slot::done[]` pseudocode below as an approved parallel scheduler.** Upstream #29963's input-event generations are enabled only for layer-pipeline `n_copies>1`, while production Meta tensor split uses `n_copies=1` and its device has `events=false` / `event_new=nullptr`. Upstream therefore does **not** currently solve QFP24's tensor-split source lifetime. The detailed code below is historical design, not a ready patch.
+
+QFP16/1326 remains implementation owner; QFP27 owns the admission/compatibility and all-child fanout proof. QFP24 remains **conditional pinned-backing qualification only**. First measure >=1 ms AND >=3% prefill cost; if qualified, add <=64 MiB pinned backing inside 1326 with every child completed before reuse or retain pageable/synchronous fallback. No independent event-query API, scheduler registry or second ring implementation.
+
 ## Change Log
 
 - 2026-10-05T00:00:00+00:00 (created-by): Created from QFP16/1326 follow-up.
@@ -364,3 +370,5 @@ Scheduler-owned lifetime; bounded pinned memory; stable addresses; events record
 ## 2026-10-16 BCOP236 clarification
 
 The 1326 `thread_local` pointer-keyed **pageable** stage has a separate potential retained-capacity issue across graph/scheduler lifetimes. QFP16 owns its bounded scheduler-lifetime correction; QFP27 owns the source and Meta lifetime discriminator. Do not treat this as evidence for the **large pinned** ring here or implement the historical independent `bc_async_input_lane`. Pinned work remains blocked until >=1 ms AND >=3% exposed prefill input cost is measured; any subsequent path requires all-child completion and existing hardware gates. Upstream #29963 still does not supply Meta completion for tensor split.
+- 2026-11-04T04:11:24.706913+00:00 (updated-by): Updated: section:notes
+- 2026-11-04T04:11:28.703274+00:00 (state-transition): State: pending → superseded

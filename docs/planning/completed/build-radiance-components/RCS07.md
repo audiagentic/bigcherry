@@ -2,7 +2,7 @@
 id: RCS07
 order: 7
 plan: build-radiance-components
-state: pending
+state: superseded
 created-at: '2026-10-18T12:57:54.768641+00:00'
 breadth: ''
 skill: advanced
@@ -60,6 +60,10 @@ Updated 2026-10-19: hardware exists, the RX 6900 XT (gfx1030, 16 GB) on dev, so 
 
 Link note (2026-10-19): the 6900 XT is behind a PCIe 3.0 x4 hop (about 3.5 GB/s to host memory) though its own link is x16; it suits permanently resident experts, not staging. The topology descriptor and swap cache are in RHP07.
 
+
+
+BACKLOG TRIAGE 2026-11-04 (SUPERSEDED; revalidated against main 6eb31a708, verdict CONFIRM): Mark the RDNA2 W4 backend and live gfx1030 tier delivered while leaving RAD46 and separate FP8 or new-kernel quality work open. Evidence: Merged PR #464 supplied the gfx1030 remote-MoE backend and PR #469 isolated libr2; engines/radiance/components/libr2/component.toml:1-11 declares gfx1030 and kernels/libr2.so. RCS07.md:67-99,109-115 documents replay/CPU-reference checks, while RAD23.md:519-566 and PR #488 record live 6900 XT tail serving and quality validation; RAD46's tail quality gap is a distinct open concern. Still referenced by: RHP07, RAD23, RAD11, RAD16, RCS09, RCS01, RCS05. Original content kept below for history.
+
 ## Change Log
 
 - 2026-10-18T12:57:54.768641+00:00 (created-by): Created by agent
@@ -86,4 +90,5 @@ ds_bpermute plus f32 FMAs; libr3 has the WMMA one under the same name, selected 
 reference through the normal `RADIANCE_HOME` lookup: 256 rows, grouped GEMM tile, rel_l2 1.1482703e-3 / 1.0208481e-3 (the same digits as before
 the move); few-rows kernel 1.2413583e-3 / 1.1385957e-3. libr3 still builds for gfx1100 (4 units checked); the libr3 selftest was not re-run on
 hardware for this change.
-
+- 2026-11-04T04:10:09.228557+00:00 (updated-by): Updated: section:notes
+- 2026-11-04T04:10:13.171160+00:00 (state-transition): State: pending → superseded

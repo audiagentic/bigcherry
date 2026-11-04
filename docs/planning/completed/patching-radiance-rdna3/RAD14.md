@@ -2,7 +2,7 @@
 id: RAD14
 order: 0
 plan: patching-radiance-rdna3
-state: pending
+state: superseded
 created-at: '2026-10-19T12:49:22.719925+00:00'
 breadth: ''
 skill: advanced
@@ -60,6 +60,10 @@ Expert placement vs tensor slicing: prefer whole experts across GPUs; split an e
 
 MTP-collapse bisection, closed out 2026-10-20 (owner: enough time spent). Engine-alone Qwen3.6-35B-A3B FP8 on the R9700 loses MTP draft acceptance at 4+ streams (0.02-0.07 vs 0.61 at 1-2) only with the prefix cache on; `--no-prefix-cache` restores 0.55-0.62 and 3-4x engine decode. Reproduces on near-native radiance (rad0005 compile fix only); absent on the dense Qwen3.8-27B MXFP4 and on Flash-Next (2xXTX). Ruled out: the expert mover (rad0006 freeze), our workers, checkpoint slots, speculation depth, visible stream mixing. Untested: the 35B at `--tp 2` on the XTX; staggered starts (config written); a fully stock build (libr3 may still load); no upstream issue filed. Workaround: `--no-prefix-cache` in every 35B MTP profile. Run specifics, configs, builds and numbers: docs/reference/engines/radiance/models/qwen3.6-35b-a3b.md.
 
+
+
+BACKLOG TRIAGE 2026-11-04 (MERGE into RCS10; revalidated against main 6eb31a708, verdict CONFIRM): Move outstanding shape-aware geometry and dispatch tuning to RCS10 with RAD14's kernel baselines. Evidence: FP8/W4 helper GEMV paths exist in engines/radiance/components/moe-remote/moe_lane_gemm.h:245,368 and moe_remote_gpu.h:20-47, but RAD14.md:20-41 retains geometry selection by projection and actual rows per expert. RCS10.md:29-45,56-66 is pending and owns derived/calibrated kernel crossovers and model/arch/shape tune-cache decisions. Still referenced by: BCOP332, BCOP337, BCOP338, BCOP339, BCOP340, BCOP344, BCOP348, BCOP349, PRBE116, PRBE15, QFP10, QFP25, QFP54, RAD13, RAD15. Original content kept below for history.
+
 ## Change Log
 
 - 2026-10-19T12:49:22.719925+00:00 (created-by): Created by agent
@@ -67,31 +71,7 @@ MTP-collapse bisection, closed out 2026-10-20 (owner: enough time spent). Engine
 
 ## Ledger-events
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 - chg_20261020_084720_qwen36-35b-a3b-served-with-th_8103
 - 2026-10-21T03:57:21.239912+00:00 (updated-by): Updated: section:ledger-events
+- 2026-11-04T04:09:29.573311+00:00 (updated-by): Updated: section:notes
+- 2026-11-04T04:09:33.649051+00:00 (state-transition): State: pending → superseded

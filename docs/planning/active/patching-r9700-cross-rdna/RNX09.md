@@ -58,10 +58,6 @@ Promotion is architecture-specific; shared paths must show no material regressio
 - No duplicate default implementation remains for one role.
 - Campaign completion is reconstructable from committed evidence rather than chat history.
 
-## 2026-10-15 RNX11 collective protocol ownership (BCOP221)
-
-RNX11 is a correctness-only gate for existing custom-collective generation/replay and staging lifetime. Do not allocate historical patch 1311 or duplicate 1291's small device-owned epoch, 0840/0860 provider routing, PGC10 root3 qualification or RCCL. The 1291 large-host path is default-off and historically slower; any replay risk is conditional pending actual HIP capture. Only a terminal RNX11 receipt can enter RNX09's combined-stack promotion matrix. RNX07 is absent from the active RNX plan folder; historical references are not an active implementation dependency. This note does not authorize a new GPU queue or touch active Radiance helper transport.
-
 ## Notes
 
 Original source alias is R9X09. Depends on candidates RNX02–RNX08, RNX10, and RNX11 for custom collective candidates.
@@ -77,6 +73,14 @@ Depends on: completed candidates from R9X02–R9X08 plus R9X10; R9X11 resolved f
 
 
 GPT design pass (req_83e7cdc000be4b9e): sequence work as RNX01 mapping, RNX02 existing-Q8-vector dispatch experiment, RNX04 router-only attribution after active profiling (HC gate/POST already promoted by QFP35/1355), then RNX08 H2D attribution. Do not start replacement RNX03 code, RNX07 WHT, RNX06 expert-cache, or a custom collective implementation.
+
+
+
+BACKLOG TRIAGE 2026-11-04 (revalidated against main 6eb31a708): the proposed disposition "CLOSE umbrella after folding genuine child tests" was NOT applied; this item stays open. Why: docs/planning/active/patching-r9700-cross-rdna/RNX09.md:16-33,55-65 still makes this the active combined-stack, architecture-specific ablation, conflict and promotion matrix owner, and explicitly depends on RNX02–RNX08/RNX10/RNX11. Active RNX04, RNX08, RNX10 and RNX11 also refer to its integration ownership, while candidate closure/qualification is not complete. Active items that reference this one: BCOP142, BCOP145, BCOP221, BCOP60, RNX04, RNX08, RNX10, RNX11. Do not close the cross-RDNA promotion umbrella until surviving llama.cpp candidate tests are transferred and the production matrix is independently owned.
+
+## 2026-10-15 RNX11 collective protocol ownership (BCOP221)
+
+RNX11 is a correctness-only gate for existing custom-collective generation/replay and staging lifetime. Do not allocate historical patch 1311 or duplicate 1291's small device-owned epoch, 0840/0860 provider routing, PGC10 root3 qualification or RCCL. The 1291 large-host path is default-off and historically slower; any replay risk is conditional pending actual HIP capture. Only a terminal RNX11 receipt can enter RNX09's combined-stack promotion matrix. RNX07 is absent from the active RNX plan folder; historical references are not an active implementation dependency. This note does not authorize a new GPU queue or touch active Radiance helper transport.
 
 ## Goal
 
@@ -132,3 +136,4 @@ Produce a one-page production matrix: GPU generation/topology -> enabled R9X pat
 - RV4202
 - 2026-10-03T01:39:17.288318+00:00 (updated-by): Updated: section:notes
 - 2026-10-03T02:18:40.830999+00:00 (updated-by): Updated: section:notes
+- 2026-11-04T04:25:25.346344+00:00 (updated-by): Updated: section:notes

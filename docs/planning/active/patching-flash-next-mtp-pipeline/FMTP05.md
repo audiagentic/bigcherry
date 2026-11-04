@@ -102,6 +102,10 @@ const int ahead_depth = ctrl.choose(front_depth, hard_cap);
 
 1268 owns how many current tokens are worth asking the target to verify. FMTP05 owns only how much future/replay work to move under that verification window.
 
+## Code Samples & Guidance
+
+
+
 ## Files
 
 - pure BigCherry controller helper or `common/speculative.*`
@@ -127,6 +131,14 @@ Hardware:
 - compare cold/flush rounds and promoted-hit rounds separately;
 - varied predictable/unpredictable prompts.
 
+## Effort & Risk
+
+
+
+## Standards
+
+
+
 ## Acceptance Criteria
 
 - Controller cannot alter target acceptance/emission semantics.
@@ -135,6 +147,13 @@ Hardware:
 - Probe rate/work is bounded.
 - No unbounded queue/state.
 
+## Notes
+
+BACKLOG TRIAGE 2026-11-04 (MERGE into FMTP03; revalidated against main 6eb31a708, verdict CONFIRM): FMTP03 exists, open; ahead-depth control only after FMTP03 qualification. Evidence: FMTP03 exists, open; ahead-depth control only after FMTP03 qualification. Still referenced by: FMTP04, FMTP03, README, BCOP38. Original content kept below for history.
+
+
+
+REOPENED 2026-11-04: an independent revalidation (against main 6eb31a708) rejected the closure recorded above, which had been based on a lighter check. It stays open. Why: FMTP05.md:121-135 requires bounded off-state probes, recovery, and a hit/overhang EV controller; FMTP03.md:100-110 offers only a timing/slack-based adaptive tail-depth policy. FMTP03.md:182 says 1268 still fails to apply and FMTP05 is blocked; that is not a merge of its probe/recovery scope.
 
 ## 2026-10-06 ownership note: WHIRL adaptive speculation
 
@@ -152,3 +171,10 @@ This ownership note is architectural only. FMTP02-FMTP07 remain paused by the re
 Do not implement, benchmark or tune FMTP05 merely because PRBE52/1255 is being reconciled. Resume FMTP05 only after an explicit FMTP resume decision and the prerequisite FMTP03 path is again hardware-qualified.
 
 WHIRL front-depth calibration data is not automatically valid FMTP05 training data. FMTP05 needs its own observations of hidden overlap, overhang, bridge/full-front hit probability and target contention. It may consume the effective front depth selected by PRBE52, but must not reuse PRBE52's E/T controller state or infer ahead-work value from front-depth acceptance statistics alone.
+
+## Change Log
+
+- 2026-11-04T03:45:10.007683+00:00 (updated-by): Updated: section:notes
+- 2026-11-04T03:45:14.142905+00:00 (state-transition): State: pending → superseded
+- 2026-11-04T04:42:31.420798+00:00 (updated-by): Updated: section:notes
+- 2026-11-04T04:42:35.379938+00:00 (state-transition): State: superseded → pending

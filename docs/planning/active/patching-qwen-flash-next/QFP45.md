@@ -75,6 +75,10 @@ The report's llama.cpp comparison is not like-for-like (their words). Weights di
 
 2026-10-09 like-for-like side of the reference lane (tools/lab/reference-vllm/run-llamacpp-r9700.sh, PR #75): BigCherry llama-server (production build, 1356 present but off) on the R9700 alone, Qwen3.8-27B UD-Q4_K_M, f16 KV, 180,000 context, same client, corpus and depths as the container run, two repeats. Prefill t/s at ~9K / ~35K / ~111K prompt tokens: built-in MTP (4) 1,035-1,089 / 1,003-1,013 / 764-773; DFlash2 Q8 (7) 1,023-1,046 / 954-970 / 737-747; no drafter 1,259-1,291 / 1,141-1,164 / 844-857. Decode t/s: MTP 50.8-68.9 / 49.0-51.8 / 32.4-43.9 (acceptance 58.7%); DFlash 42.6-44.0 / 35.1-41.2 / 23.7-26.6 (acceptance 24.8%); none 30.5 / 28.1 / 23.0. f16 KV fitted in all arms (28.0-31.8 GB used). Against the container (MXFP4, fp8 KV, DFlash 7: ~3,000 prefill to 35K, ~2,470 at 111K; decode 57-79 to 35K, ~50 at 111K; acceptance 40.7%, earlier session): prefill is 2.3-2.9x ours even with no drafter, so the gap is in the single-device kernels, not the tensor split (the dual-XTX Q8_0 split does ~1,290) and not the drafter. Our drafter costs 15-20% of prefill on one card. Our DFlash path accepts 24.8% against the container's 40.7% with the same drafter family and is slower than MTP at every depth. Owner decision 2026-10-09: the second engine for the multi-engine work is standalone radiance (group run-multi-engine, MEN01-MEN08); libr4d kernels are gfx1200/gfx1201 only and expect MXFP4 / pre-permuted 4-bit layouts, so they are a source of mechanisms to port, not a library to link into llama.cpp.
 
+
+
+BACKLOG TRIAGE 2026-11-04 (revalidated against main 6eb31a708): the proposed disposition "SUPERSEDED by MEN26/current radiance" was NOT applied; this item stays open. Why: docs/planning/active/patching-qwen-flash-next/QFP45.md:16-29 calls for a vLLM/radiance reference-lane A/B and independent ranking/porting of mechanisms into llama.cpp; :31-49 lists 8-bit KV, draft rerank/verify-head and other candidates still distinct from serving Radiance. docs/planning/active/run-multi-engine/MEN26.md:14-36 concerns promoting rad0002 and a validated Radiance release, not qualifying those llama ports; :62-69 documents only Radiance helper-offload identity. Active items that reference this one: QFP46, QFP47. Retain the separate llama.cpp reference comparison and portable-mechanism decisions, updating obsolete Radiance deployment assumptions rather than calling all results delivered.
+
 ## Change Log
 
 - 2026-10-08T11:01:17.709872+00:00 (created-by): Created by agent
@@ -84,3 +88,4 @@ The report's llama.cpp comparison is not like-for-like (their words). Weights di
 
 - chg_20261008_212949_added-a-like-for-like-single-c_9270
 - 2026-10-08T21:29:55.909605+00:00 (updated-by): Updated: section:ledger-events
+- 2026-11-04T04:27:03.601152+00:00 (updated-by): Updated: section:notes

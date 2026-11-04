@@ -62,6 +62,10 @@ DEFECT 2026-11-02 (open): the chunked combine hangs on the two-helper layout und
 
 Hang fixed 2026-11-02 (PR #520). Cause: in a combined step, only a chunk's first block polled chunks.done[c] and mirrored it to device memory, and it did so only when its own token had a helper route. A chunk whose first token was entirely engine-local left the chunk's routed blocks spinning on a mirror nobody wrote. Fix: combine_chunk_wait() is shared by the kernel and r3_moe_shm_test; the first block always polls in a combined step. The test fails on the old guard. Hardware: flashnext-2xtx-combine (no tail), 8 sessions, 1,032,070 prompt tokens, completed in 422 s (2,452 tok/s prefill-dominated). Helper 0 ran 22,704 combine steps over 23,804 large-lane requests, about 4x past the 5,957 requests where it hung before. Run: /work/bigcherry/runs/rad42-fix.
 
+
+
+BACKLOG TRIAGE 2026-11-04 (revalidated against main 6eb31a708): the proposed disposition "MERGE BAR/write path into RAD41, close duplicate" was NOT applied; this item stays open. Why: PR #497 implemented chunked combine, PR #520 fixed the chunk-poller hang, and moe_remote_shm.h:289-312 defines the 256-row generation scheme. RAD42.md:85-89 explicitly says design b, CPU BAR-push into engine VRAM, is not done and should be revisited after a link change; RAD41.md:14-31 does not include this write path or its publication/quality gate. Keep the still-unmeasured BAR-push design separately, while marking chunked design A delivered and its hang fixed.
+
 ## Change Log
 
 - 2026-11-01T11:26:21.039480+00:00 (created-by): Created by agent
@@ -96,3 +100,4 @@ Design b (pushing the combined plane into engine VRAM through the BAR) is not do
 - chg_20261102_042612_fixed-a-hang-with-many-concurr_2245
 - 2026-11-02T04:26:16.739750+00:00 (updated-by): Updated: section:ledger-events
 - 2026-11-02T04:46:35.372778+00:00 (updated-by): Updated: section:notes
+- 2026-11-04T04:24:27.433273+00:00 (updated-by): Updated: section:notes

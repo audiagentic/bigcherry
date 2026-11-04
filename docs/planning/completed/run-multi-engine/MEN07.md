@@ -2,7 +2,7 @@
 id: MEN07
 order: 8
 plan: run-multi-engine
-state: pending
+state: superseded
 created-at: '2026-10-08T20:36:41.926254+00:00'
 breadth: ''
 skill: advanced
@@ -57,7 +57,13 @@ Deliberately last and conditional: MEN01 must show the relevant code is source, 
 
 Conditional on there being a specific change to carry. Depends on MEN08 and MEN04.
 
+
+
+BACKLOG TRIAGE 2026-11-04 (SUPERSEDED; revalidated against main 6eb31a708, verdict CONFIRM): rad0002 (a managed radiance patch) went through the full lifecycle and was promoted in #546. Evidence: rad0002 (a managed radiance patch) went through the full lifecycle and was promoted in #546. Still referenced by: MEN01, MEN08. Original content kept below for history.
+
 ## Change Log
 
 - 2026-10-08T20:36:41.926254+00:00 (created-by): Created by agent
 - 2026-10-08T20:48:09.886352+00:00 (updated-by): Updated: section:title, order=8, section:description, section:steps, section:validation, section:acceptance_criteria, section:notes
+- 2026-11-04T03:46:15.731017+00:00 (updated-by): Updated: section:notes
+- 2026-11-04T03:46:19.779416+00:00 (state-transition): State: pending → superseded

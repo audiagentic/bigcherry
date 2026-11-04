@@ -13,6 +13,48 @@ work: M
 
 # QFP23: deterministic runtime auto-profile admission
 
+## Description
+
+
+
+## Steps
+
+
+
+## Detailed Solution & Technical Design
+
+
+
+## Code Samples & Guidance
+
+
+
+## Files
+
+
+
+## Validation
+
+
+
+## Effort & Risk
+
+
+
+## Standards
+
+
+
+## Acceptance Criteria
+
+
+
+## Notes
+
+
+
+BACKLOG TRIAGE 2026-11-04 (revalidated against main 6eb31a708): the proposed disposition "SUPERSEDED for Radiance by RSC; llama-only clean-up" was NOT applied; this item stays open. Why: docs/planning/active/patching-qwen-flash-next/QFP23.md:17-40 explicitly enumerates unresolved llama.cpp 0910 auto-profile collision, external-file validation, topology attestation and flag-timing gaps. engines/llamacpp/patches/0910_feature_sets/patch.py:239 and :462 still implement the separate llama profile loader and architecture-based auto selection; a Radiance RSC manifest does not satisfy its C parser/admission criteria. Active items that reference this one: QFP29, QFP25, QFP07, QFP26, RNX08, BCOP143, BCOP252, BCOP207, BCOP167. Retain llama.cpp 0910 deterministic auto-admission as a separate bounded correctness task; Radiance RSC only supersedes the Radiance-specific configuration analogy.
+
 ## b11552 audit (2026-10-11)
 
 **Disposition:** `0910_feature_sets` is already validated. Do not create another loader, parser, placement solver, scheduler or telemetry system. QFP23 owns only deterministic `auto` admission, flag timing and profile identity. No new performance measurement.
@@ -41,3 +83,7 @@ work: M
 QFP23/0910 owns profile admission; QFP18 owns flag docs; QFP/MET/MMQ/MTP owners retain tuning. Upstream llama.cpp [#17859](https://github.com/ggml-org/llama.cpp/pull/17859) and [#26118](https://github.com/ggml-org/llama.cpp/pull/26118) already implement model/system CLI presets; reuse for ordinary llama arguments, not patch-private env. [vLLM](https://github.com/vllm-project/vllm/blob/main/docs/configuration/serve_args.md) and [SGLang](https://github.com/sgl-project/sglang/blob/main/docs/docs/advanced_features/server_arguments.md) are config-precedence references, not AMD gains.
 
 Selected `build/pin-b11552` by independent `9fa502648e4f00ea334d4f783750417edd8f275d` (Oct 11 16:57 UTC). QFP23 last substantive update Oct 5, profile last Oct 10 11:49 UTC; 12h exclusion passed. Protected PA49, MET07, QFP41, QFP48, QFP49, PGC17 untouched. Eight static checks and two-order host fixture passed; no pytest, C/HIP build or GPU run.
+
+## Change Log
+
+- 2026-11-04T04:26:43.996614+00:00 (updated-by): Updated: section:notes

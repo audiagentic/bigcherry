@@ -2,7 +2,7 @@
 id: RAD02
 order: 0
 plan: patching-radiance-rdna3
-state: pending
+state: superseded
 created-at: '2026-10-13T04:42:45.717482+00:00'
 breadth: ''
 skill: advanced
@@ -71,6 +71,10 @@ Target architecture agreed in conversation 2026-10-12: the R9700 runs the whole 
 
 2026-10-15 05:45 helper per-stage timing (203e2f8b/ff53c12d), small-lane decode requests, heat ownership, 22 GiB helpers: routes ~50 us, gate/up GEMM 242-259 us, gated quant 12-41 us, down GEMM 102-108 us, reduce 23 us (total ~455). The gate/up GEMM is ~4x its weight-bandwidth bound at decode size: libr4d/libr3 has a single w4 MoE row (moe_gemm_w4a8, WMMA 16/32-row tiles, NOTUNE) and no decode-sized variant; the R9700's own hot experts use the same kernel (moe_gemm_q 21% of its op time). Next lever: a decode MoE GEMV for w4nl64a8h (rows <= ~8 a expert) on gfx1100 and gfx1201, registered as a moe_gemm_q row banded to small M, used by the helper's small lane and by the engine.
 
+
+
+BACKLOG TRIAGE 2026-11-04 (SUPERSEDED; revalidated against main 6eb31a708, verdict CONFIRM): Archive the delivered inverted-layout milestone and keep CPU-free transport in RAD03. Evidence: PR #236 (63cc952f5) delivered the inverted R9700 engine and two-XTX-helper arrangement, and PR #546 promoted engines/radiance/patches/rad0002_moe_remote_handoff into production (engines/radiance/engine.toml:64-69). CPU-free hand-off remains separate RAD03 work. Still referenced by: BCOP208, BCOP209, BCOP210, BCOP211, BCOP212, BCOP213, BCOP214, BCOP215, BCOP216, BCOP217, BCOP219, FKE01, MET12, PGC14, PHA04, PRBE04, PRBE110, PRBE54, RAD03, RAD05, RAD06, RAD09, RAD19, RAD21, RHP01, RHP02, RHP03, RHP04, RHP06, RNX11. Original content kept below for history.
+
 ## Change Log
 
 - 2026-10-13T04:42:45.717482+00:00 (created-by): Created by agent
@@ -91,3 +95,5 @@ Target architecture agreed in conversation 2026-10-12: the R9700 runs the whole 
 - 2026-10-14T18:03:08.961352+00:00 (updated-by): Updated: section:ledger-events
 - 2026-10-14T18:34:39.996377+00:00 (updated-by): Updated: section:notes
 - 2026-10-14T18:51:25.390902+00:00 (updated-by): Updated: section:notes
+- 2026-11-04T04:08:32.426655+00:00 (updated-by): Updated: section:notes
+- 2026-11-04T04:08:36.466080+00:00 (state-transition): State: pending → superseded

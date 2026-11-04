@@ -55,16 +55,9 @@ Emit an opt-in trace whose fields identify: request, phase, context, graph_uid, 
 - Preserve a same-binary default-off arm and fail closed on absent backend events, unsupported Meta ownership, graph capture, tensor strides, or ambiguous rank ordering.
 - Report measured upper bounds before estimated E2E gains. No performance claim is made by the mock tests.
 
-## Parallel execution map (one slice/branch/PR per production mechanism)
+## Code Samples & Guidance
 
-- **Lane A, now:** QFP46 instrumentation contract + pure-Python oracle. Runs without dev; does not gate design work in the other lanes.
-- **Lane B, immediate:** QFP42 event-owned NextN staging, after PR #8 fixes the deferred-path 1346 counters. Independent of C/D/E source changes but avoid editing the same 1326/Meta lines concurrently.
-- **Lane C, immediate:** PGC15 range-collective and real producer tiling, after its own RCCL/provider screen. No dependency on QFP42 or QFP41.
-- **Lane D, immediate:** QFP41 per-device dispatch thread/ownership design and single-rank event smoke; integrate only after proof that collective order remains stable.
-- **Lane E, immediate:** QFP17 QSA-bounded ub1024/2048 fit, QFP37/QFP44 MMQ shape sweeps. These are independent of MTP/AR; physical dev validation is queue-serialized.
-- **Lane F, conditional:** MET12 over-VRAM expert staging, only if actual H2D critical-path cost is material. Does not alter 1281/1283 expert-range semantics.
-- **Lane G, conditional:** QFP47 prefill-only reclaimable scratch lease, only when the QFP17 allocator census proves reclaimable temporary bytes and safe phase boundaries.
-- **Integration after lanes:** compare individual default-off changes, then pairs and composed stack on the same build, with repeatability, low/high prompt depth and multi-slot stress. Do not merge code changes into this planning PR.
+
 
 ## Files
 
@@ -78,6 +71,14 @@ Offline: python -m unittest discover -s tools/tests/prefill -p 'test_*.py' -v. T
 
 Hardware: A/B at 8K/24K/98K + deep long-context, per-rank device timeline, explicit overlapping GPU intervals and exposed wall reduction; output equivalence and lifecycle stress. Record cases where eligible parallelism is zero.
 
+## Effort & Risk
+
+
+
+## Standards
+
+
+
 ## Acceptance Criteria
 
 1. Every suggested concurrent edge has an owner, producer/consumer lifetime, event/query/fallback and a negative eligibility test.
@@ -85,6 +86,24 @@ Hardware: A/B at 8K/24K/98K + deep long-context, per-rank device timeline, expli
 3. Independent owner branches can proceed in parallel; only real source-level conflicts and shared dev queue impose serialization.
 4. A real implementation cannot claim success from model-only tests or profiler-summed percentages.
 
+## Notes
+
+
+
+BACKLOG TRIAGE 2026-11-04 (revalidated against main 6eb31a708): the proposed disposition "MERGE proof obligations into RAD21/RHP12" was NOT applied; this item stays open. Why: docs/planning/active/patching-qwen-flash-next/QFP46.md:16-34 explicitly owns a llama.cpp Meta/target/draft critical-path DAG, trace join key and deterministic ordering tests, with independent lanes in :73-86. docs/planning/active/patching-radiance-rdna3/RAD21.md:16-34 owns intra-layer remote-helper chunk overlap, while docs/planning/active/patching-radiance-heat-placement/RHP12.md:16-28 owns placement baseline regression; neither covers llama.cpp Meta input/MTP/AllReduce event lifetimes. Active items that reference this one: QFP48, BCOP206, BCOP118, BCOP30. Keep QFP46's engine-specific prefill DAG, trace identity and event-lifetime oracle; Radiance can reuse proof patterns but cannot absorb the llama contracts.
+
+## Parallel execution map (one slice/branch/PR per production mechanism)
+
+- **Lane A, now:** QFP46 instrumentation contract + pure-Python oracle. Runs without dev; does not gate design work in the other lanes.
+- **Lane B, immediate:** QFP42 event-owned NextN staging, after PR #8 fixes the deferred-path 1346 counters. Independent of C/D/E source changes but avoid editing the same 1326/Meta lines concurrently.
+- **Lane C, immediate:** PGC15 range-collective and real producer tiling, after its own RCCL/provider screen. No dependency on QFP42 or QFP41.
+- **Lane D, immediate:** QFP41 per-device dispatch thread/ownership design and single-rank event smoke; integrate only after proof that collective order remains stable.
+- **Lane E, immediate:** QFP17 QSA-bounded ub1024/2048 fit, QFP37/QFP44 MMQ shape sweeps. These are independent of MTP/AR; physical dev validation is queue-serialized.
+- **Lane F, conditional:** MET12 over-VRAM expert staging, only if actual H2D critical-path cost is material. Does not alter 1281/1283 expert-range semantics.
+- **Lane G, conditional:** QFP47 prefill-only reclaimable scratch lease, only when the QFP17 allocator census proves reclaimable temporary bytes and safe phase boundaries.
+- **Integration after lanes:** compare individual default-off changes, then pairs and composed stack on the same build, with repeatability, low/high prompt depth and multi-slot stress. Do not merge code changes into this planning PR.
+
 ## Change Log
 
 - 2026-10-08: Created after plan deduplication for Strata-style prefill concurrency and mock-contract coverage.
+- 2026-11-04T04:27:07.527821+00:00 (updated-by): Updated: section:notes

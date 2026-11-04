@@ -2,7 +2,7 @@
 id: QFP44
 order: 43
 plan: patching-qwen-flash-next
-state: pending
+state: superseded
 created-at: '2026-10-08T00:00:00+11:00'
 breadth: ''
 skill: advanced
@@ -12,6 +12,48 @@ work: M
 ---
 
 # Follow-up MMQ tile geometry and compact MoE block-map qualification
+
+## Description
+
+Consolidates PRBE22 (RDNA MMQ tile width/LDS), PRBE23 (MoE-aware tile selection) and PRBE24 (GPU compact block-map) beside QFP37. This is **residual work only**, not a new implementation of already validated functionality. Source target: composed llama.cpp b11474, gfx1100/gfx1201 HIP, physical post-Meta tensor shapes.
+
+## Steps
+
+
+
+## Detailed Solution & Technical Design
+
+
+
+## Code Samples & Guidance
+
+
+
+## Files
+
+
+
+## Validation
+
+
+
+## Effort & Risk
+
+
+
+## Standards
+
+
+
+## Acceptance Criteria
+
+
+
+## Notes
+
+
+
+BACKLOG TRIAGE 2026-11-04 (MERGE into QFP26; revalidated against main 6eb31a708, verdict CONFIRM): Transfer QFP44's B/R upper-bound, duplicate-ID, padding, physical tile and route-witness tests into QFP26; archive the separate #30493 draft-copy negative screen without creating another patch. Evidence: docs/planning/active/patching-qwen-flash-next/QFP44.md:40-48 scopes remaining live work to compact MoE block-map/J/tile receipts, host oracle and a >=3% critical-path admission, while declaring Stream-K already qualified and the broad #30493 activation-copy candidate draft/regressive. docs/planning/active/patching-qwen-flash-next/QFP26.md:19-35 and :323-358 already own reuse of the 1237 compact map, per-expert task census, tile geometry and gated scheduling/fusion on llama; QFP26 is active (state pending at :5). Still referenced by: QFP46, QFP10, QFP48, TRVP12, PKC05, BCOP300, BCOP339, BCOP228, BCOP332, BCOP340, PRBE116. Original content kept below for history.
 
 ## 2026-10-15 authoritative b11552 audit: upper-bound compaction, completed Stream-K, no second map (BCOP228)
 
@@ -48,9 +90,8 @@ work: M
 
 **Validation this audit:** 12/12 source/manifest assertions and 6/6 host-only tests (10,000 randomized distributions); no repository suite, HIP compile, patch composition, GPU benchmark or new measured gain.
 
-
-## Historical 2026-10-08 description (superseded where conflicting)
 ## 2026-10-18 BCOP300 — HIP MMQ Q8_1 activation tile-copy vectorization: upstream draft regression gate
+
 **Disposition: WAIT_UPSTREAM_AND_PROFILE; no port, patch or GPU queue yet.** This is a new *in-kernel Q8_1 activation staging* candidate, distinct from QFP44's output-tile I/J geometry and validated 1237/1265 compact MoE block map, QFP37/1350 Stream-K fixup, and the separate RAD06 Radiance-helper VECIO. Upstream [llama.cpp #30493](https://github.com/ggml-org/llama.cpp/pull/30493) (updated 2026-10-18 07:27 UTC, **open draft**) changes only `ggml/src/ggml-cuda/mmq.cuh`; its author found **-8.08% Q5_K, -10.42% Q4_K and -11.09% IQ4_XS** microbenchmark regressions on RTX 4090 and returned it to draft. Earlier SM89 model-level pp512/pp4096 gains (+1.1% to +3.1%) and register/instruction improvements are **external NVIDIA evidence**, not BigCherry/RDNA results. Do not copy the current diff as a performance improvement.
 ### Exact source, route and physical work
 - Pinned BigCherry llama.cpp b11552 (`23b0202a189c44a54625aadcb37a946dd1d6278d`) `ggml/src/ggml-cuda/mmq.cu::ggml_cuda_mul_mat_q` selects `J_best` **before** allocating padded `src1_q8_1` in `ctx.pool()`; `quantize_mmq_q8_1_cuda` or the expert-scatter variant fills it on `ctx.stream()`. `ggml_cuda_mul_mat_q_switch_type` dispatches Q8-precision quantized `MUL_MAT` / `MUL_MAT_ID` to `mmq.cuh` where admitted. Preserve 0300's early forced-J sizing, 1237/1265 compact expert map, 1350's separate few-tile Stream-K dispatch and all existing stream/pool/graph ownership. No new buffer, transfer, selector, table, queue or allocator.
@@ -67,9 +108,6 @@ Parsed **243 RDNA3 + 260 RDNA4 pinned CASE rows**. A deterministic 36-int-per-co
 4. **Gate 3 — bounded promotion:** After a positive ISA/resource screen and exposed E2E ceiling, compare exact same model/source/physical rank/topology with four independent sessions **per gfx1100/gfx1201**, >=10 order-balanced ABBA rounds/session, pp512/pp4096 and Flash-Next 8K/24K/98K; tg128/MMVQ, gfx1030 and other quant types as negative controls. Record per-kernel and E2E time, VRAM, physical traffic, thermal/clocks, CI95 and overlap with 1350. Promote only if **CI95-low >=3% E2E prefill**, no >1% control regression, correctness/work unchanged and no source/patch conflict; otherwise `NO_GAIN` and retain stock scalar. No AMD benefit is currently measured.
 **Ownership/consolidation:** QFP44 is the authoritative MMQ Y-copy and tile/compact-map *interaction* owner, not a new patch item. QFP17 owns broader prefill critical-path receipts; QFP37/1350 owns few-tile Stream-K; 0300 owns preallocation J; 1237/1265 own compact MoE grids; PRBE110/1267 owns Q6_K scale arithmetic. BCOP300 is only the action ledger. The old QFP44 triage statement that 1350 was not on `main` is historical: it is now a validated package in `main` with its own recorded +1.2–1.9% gains. Do not re-queue any active RAD06 helper/FP16 WMMA/VECIO/balancing/profiling lane.
 **External implementation comparison:** [vLLM `csrc/rocm/moe_q_gemm_rdna3.cu`](https://github.com/vllm-project/vllm/blob/main/csrc/rocm/moe_q_gemm_rdna3.cu) uses explicit `int4` weight loads and padded LDS for a *different GPTQ W4A16* MoE representation. It supports checking alignment/ISA, **not** porting its tile or claiming a GGUF Q8_1 gain. [AMD-Ecosystem #63](https://github.com/AMD-Ecosystem/llama.cpp/pull/63) is already represented by 1237/1265 compact grid; it does not vectorize Y-copy. #30493's mixed NVIDIA results are the relevant caution.
-## Description
-
-Consolidates PRBE22 (RDNA MMQ tile width/LDS), PRBE23 (MoE-aware tile selection) and PRBE24 (GPU compact block-map) beside QFP37. This is **residual work only**, not a new implementation of already validated functionality. Source target: composed llama.cpp b11474, gfx1100/gfx1201 HIP, physical post-Meta tensor shapes.
 
 ## Already covered (do not duplicate)
 
@@ -106,3 +144,5 @@ QFP37 owns Stream-K (1350) and I=32 (1351) implementation/qualification. QFP44 o
 ## Change Log
 
 - 2026-10-08 (triage): Created by folding PRBE22/PRBE23/PRBE24; referenced validated 1237/1265/1345 and open PR #22/1350 separately.
+- 2026-11-04T04:11:32.664979+00:00 (updated-by): Updated: section:notes
+- 2026-11-04T04:11:36.627621+00:00 (state-transition): State: pending → superseded

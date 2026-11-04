@@ -13,12 +13,6 @@ work: M
 
 # Per-rank critical-path census by op class (R9700 slow rank) -> selective per-class skew
 
-## 2026-10-14 BCOP208: one-to-one AR evidence identity
-
-QFP09's `tools/lab/flash-next/ar-segment.py::main` aligns each reference produce timestamp to an independently nearest remote timestamp within 2 ms. This is **not** guaranteed one-to-one; an absent remote event can be selected twice. QFP11's `ar-boundary.py` uses rank ordinals and can shift all pairs after a clipped event. Both read only the first rocprof trace CSV. Existing 78/82 us arrival-skew evidence is historical, not revalidated by this audit. Synthetic host controls 5/5 passed; no real trace or GPU ran.
-
-QFP09 owns one shared epoch/dispatch-correlated monotonic matcher inside existing trace tooling, consumed by QFP11; do not add a second telemetry framework. Load all relevant trace shards; verify device/stream and clock domain; pair each rank's produce/consume; require unique non-crossing cross-rank identity, report dropped/ambiguous coverage, and **fail closed** where genuine 800 us skew cannot be distinguished from adjacent ARs by time alone. Preserve MTP per-verify and per-generated-token denominators. The first gate is an offline fixture and archived 10K/80K trace replay with >=99.5% unambiguous coverage; if unavailable, label skew `UNVERIFIED_TRACE`, not zero. QFP07's recently audited placement plan remains untouched.
-
 ## Description
 
 QFP09 owns **cross-rank placement and arrival-skew diagnosis only**. The original hypothesis that a single R9700-heavy tensor family could be moved to remove most skew has now been tested and is not supported: 1305 expert-only placement was neutral/worse, and the late rank flips with context because XTX-only attention becomes dominant at long context. QFP09 therefore keeps the per-AllReduce segment attribution needed to decide placement, but must not grow a second launch/fusion programme.
@@ -89,6 +83,20 @@ Split screens 2026-10-03 (QFN01 notes): 2,2,3.4 49.3; 2,2,3.8 49.1; 1.9,2.1,3 48
 
 2026-10-05 consolidation: the 0.66 ms/token short-context local-idle lead is now explicitly transferred to QFP13 rather than spawning a QFP09 scheduler/fusion path. QFP13 already measured ~3.1-3.7 us inter-kernel gaps and has reduced kernels/token materially with 1307-1313/1327-class work. Upstream PR #29948 independently reinforces operator fusion as the correct mechanism class (single MMQ accumulator + GLU at write-back; dense prompt gains +1.9..10.7%), but Flash-Next routed MoE requires its own trace/proof before adapting that design. QFP09 re-enters only after those local launch reductions to see whether rank arrival skew actually moved.
 
+
+
+BACKLOG TRIAGE 2026-11-04 absorbed items (superseded into this one; their notes keep the full history): QFP11: Merge retired per-AR graph-capture tracking into QFP09 only after transferring ar-boundary identity tests, separate boundary/arrival metrics and conditional reopen gates.
+
+
+
+BACKLOG TRIAGE 2026-11-04 (revalidated against main 6eb31a708): the proposed disposition "MERGE historical method into RAD43 tracing, not code" was NOT applied; this item stays open. Why: docs/planning/active/patching-qwen-flash-next/QFP09.md:16-39 and 62-77 owns a shared epoch/dispatch one-to-one AR trace matcher with >=99.5% unambiguous coverage and per-rank skew attribution, explicitly consumed by QFP11. docs/planning/active/patching-radiance-rdna3/RAD43.md:12-30 concerns moe-remote helper/tail kernel replay, not llama Meta tensor-split AR produce/consume identity or ar-segment.py. Active items that reference this one: BCOP144, BCOP207, BCOP208, QFP07, QFP11, QFP13, QFP17. Keep the llama.cpp rank-skew diagnostic and matcher in QFP09; reuse only general tracing ideas across engines.
+
+## 2026-10-14 BCOP208: one-to-one AR evidence identity
+
+QFP09's `tools/lab/flash-next/ar-segment.py::main` aligns each reference produce timestamp to an independently nearest remote timestamp within 2 ms. This is **not** guaranteed one-to-one; an absent remote event can be selected twice. QFP11's `ar-boundary.py` uses rank ordinals and can shift all pairs after a clipped event. Both read only the first rocprof trace CSV. Existing 78/82 us arrival-skew evidence is historical, not revalidated by this audit. Synthetic host controls 5/5 passed; no real trace or GPU ran.
+
+QFP09 owns one shared epoch/dispatch-correlated monotonic matcher inside existing trace tooling, consumed by QFP11; do not add a second telemetry framework. Load all relevant trace shards; verify device/stream and clock domain; pair each rank's produce/consume; require unique non-crossing cross-rank identity, report dropped/ambiguous coverage, and **fail closed** where genuine 800 us skew cannot be distinguished from adjacent ARs by time alone. Preserve MTP per-verify and per-generated-token denominators. The first gate is an offline fixture and archived 10K/80K trace replay with >=99.5% unambiguous coverage; if unavailable, label skew `UNVERIFIED_TRACE`, not zero. QFP07's recently audited placement plan remains untouched.
+
 ## Change Log
 
 - 2026-10-03T15:21:02.481672+00:00 (created-by): Created by agent
@@ -97,3 +105,5 @@ Split screens 2026-10-03 (QFN01 notes): 2,2,3.4 49.3; 2,2,3.8 49.1; 1.9,2.1,3 48
 - 2026-10-03T16:59:58.379545+00:00 (updated-by): Updated: section:notes
 - 2026-10-03T17:25:54.754317+00:00 (updated-by): Updated: section:notes
 - 2026-10-05T06:08:42+11:00 (updated-by): Consolidated local launch-gap work under QFP13; added ownership and promotion gates.
+- 2026-11-04T04:12:08.496359+00:00 (updated-by): Updated: section:notes
+- 2026-11-04T04:26:12.714909+00:00 (updated-by): Updated: section:notes

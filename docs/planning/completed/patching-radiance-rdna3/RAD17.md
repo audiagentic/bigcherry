@@ -2,7 +2,7 @@
 id: RAD17
 order: 0
 plan: patching-radiance-rdna3
-state: pending
+state: superseded
 created-at: '2026-10-21T07:41:01.749670+00:00'
 breadth: ''
 skill: advanced
@@ -147,6 +147,10 @@ CONCLUSION per GPT's own decision tree (combined >= 261us -> profile separately 
 
 Both new harnesses are committed to tools/lab/radiance/ and registered in docs/reference/tooling/TOOL_DISPOSITION.md as TRANSITIONAL. Neither touches production code; RAD17's FP8 down-product patch (rad0007_hc_pf2_fp8_down) remains exactly as it was (default off, not promoted) -- this pivot is a separate, parallel investigation into the BF16 path, not a continuation of the FP8 work itself.
 
+
+
+BACKLOG TRIAGE 2026-11-04 (MERGE into MEN26; revalidated against main 6eb31a708, verdict CONFIRM): Transfer rad0008 current-pin qualification to MEN26 while retaining rad0007 as a documented default-off negative experiment. Evidence: The FP8 hc_read down-product remains untested/default-off in engines/radiance/patches/rad0007_hc_pf2_fp8_down/patch.toml:4, and SUMMARY.md:60-67 records it ~1.73x slower than BF16 without a production quality gate. The separate validated rad0008 HC upmix sweep (patch.toml:4,9) needs v1.16.0 revalidation per docs/releases/notes/bc-radiance-1160.0.0.md:30, within pending MEN26.md:18-40's production-promotion remit. Original content kept below for history.
+
 ## Change Log
 
 - 2026-10-21T07:41:01.749670+00:00 (created-by): Created by agent
@@ -161,3 +165,5 @@ Both new harnesses are committed to tools/lab/radiance/ and registered in docs/r
 - 2026-10-21T21:32:59.492280+00:00 (updated-by): Updated: section:notes
 - 2026-10-21T21:46:55.745667+00:00 (updated-by): Updated: section:notes
 - 2026-10-21T22:44:34.980663+00:00 (updated-by): Updated: section:notes
+- 2026-11-04T04:09:45.541227+00:00 (updated-by): Updated: section:notes
+- 2026-11-04T04:09:49.500221+00:00 (state-transition): State: pending → superseded

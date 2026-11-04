@@ -2,7 +2,7 @@
 id: RAD12
 order: 12
 plan: patching-radiance-rdna3
-state: pending
+state: superseded
 created-at: '2026-10-19T00:00:00+00:00'
 breadth: ''
 skill: advanced
@@ -29,10 +29,34 @@ The lane should follow the rows: pre-queue small lanes at several sizes (for exa
 3. Implement behind a default-off setting (R3_MOE_WORKER_SMALL_LANES="4,8,16,24"); the single-size behaviour stays reachable as one entry.
 4. Evidence: the helper-smallrows-ab.json pair with the new arm against 8 and 24 at 1, 2, 3, 4 and 6 streams, TRACE on, clean cells only; the lightweight tier for promotion.
 
+## Detailed Solution & Technical Design
+
+
+
+## Code Samples & Guidance
+
+
+
+## Files
+
+
+
 ## Validation
 
 Bitwise-identical replay across lane sizes; at 1 stream no slower than the 8-row arm, at 3 and 4 streams within noise of the 24-row arm; per-stream
 quality gates (KL, top-1) unchanged; no hang across repeated start/stop.
+
+## Effort & Risk
+
+
+
+## Standards
+
+
+
+## Acceptance Criteria
+
+
 
 ## Notes
 
@@ -56,6 +80,10 @@ did) lowers the floor for every stream count, independent of lane sizing.
 
 Lane sizing continues in RCS10 (stage 2 of the live-placement roadmap); the 2026-11-01 flashnext-4gpu measurement reproduced it: a 24-row lane is -10% decode step time at 4-6 streams and +7% at 1 stream.
 
+
+
+BACKLOG TRIAGE 2026-11-04 (MERGE into RCS10; revalidated against main 6eb31a708, verdict CONFIRM): Fold automatic lane-size choice into RCS10 while retaining the negative four-class A/B as evidence. Evidence: PR #314 added configurable lane classes (engines/radiance/components/moe-remote/worker_shape.h:31-61), but RAD12.md's six-pair results show four classes lose at every stream count; one 8-row lane wins at 1-2 streams and 24 rows at 3+. Active RCS10.md:25-33,56-66 explicitly owns derived capacity, actual-row work, calibration and cache. Still referenced by: BCOP315, BCOP322, PRBE18, PRVP05, RCS10, RNX02, RNX08. Original content kept below for history.
+
 ## Result (2026-10-19, 6 pairs, engine decode tps)
 
 | Streams | rows8 | rows24 | lanes 8+24 |
@@ -67,3 +95,8 @@ Lane sizing continues in RCS10 (stage 2 of the live-placement roadmap); the 2026
 | 6 | 318.0 | 336.1 | 305.8 |
 
 Four lane classes lose at every stream count and stay as an experimental, default-off setting (`R3_MOE_WORKER_SMALL_LANES`). One 24-row lane gains 7-22% at 3+ streams and loses ~9% at 1; one 8-row lane is best at 1-2. Next: derive the lane size from `--max-num-seqs x (1 + draft depth)` with `R3_MOE_WORKER_SMALL_ROWS` as the override (RCS10).
+
+## Change Log
+
+- 2026-11-04T04:09:21.086985+00:00 (updated-by): Updated: section:notes
+- 2026-11-04T04:09:25.421900+00:00 (state-transition): State: pending → superseded

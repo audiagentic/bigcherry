@@ -68,6 +68,10 @@ Correction (owner challenge 2026-10-05): the DFlash 'keep MTP5' decision was pre
 
 2026-10-05 DFlash at depth (qfp21-dflash-depth, 27B Q8_0 dual-XTX tensor split, ub2048, 256 tokens; MTP5 first and last): 16K depth (13.0K tok): MTP5 71.9/72.3 t/s prefill 1375/1366; DFlash Q4_K_M n6 on R9700 72.4 (prefill 1251, -9%); Q8 n6 71.7 (1247) = tie. 64K depth (51.9K tok): MTP5 58.5/59.6 t/s prefill 1204/1204; DFlash Q4_K_M n6 64.0 (+8%), prefill 1142 (-5%), acceptance 187/402; Q8 n6 60.5 (+2%), 182/432. So DFlash wins decode at depth (MTP5 on the tensor-split pair degrades faster) and Q4_K_M beats Q8; prefill cost shrinks with depth. Single run per DFlash arm - repeat for magnitude. Next: overlap the draft prefill with the target prefill (drafter has its own GPU), n5/n6/n7 at 64K+, greedy identity check per depth, then a depth-aware choice in the [qwen27b] profile / launch config. 1295: default flipped to off + ENV_DOCS + guard bug fixed (re-apply duplicated the gather block) + tests; composes before 1332 (9cc84d31).
 
+
+
+BACKLOG TRIAGE 2026-11-04 (revalidated against main 6eb31a708): the proposed disposition "CLOSE until new current-pin profile nominates one" was NOT applied; this item stays open. Why: docs/planning/active/patching-qwen-flash-next/QFP21.md:17-32 still specifies six separate llama.cpp retests/reworks, including 1305 routed-only split, 1306 headroom and 1314 fused AR; docs/planning/active/patching-qwen-flash-next/QFP21.md:49-81 records an apparent long-context 1295 gain and DFlash depth benefit, not terminal negatives for every candidate. The patch packages remain under engines/llamacpp/patches/1305_ffn_tensor_split/, 1306_qwen4exp_shexp_split/ and 1314_ar_cpu_root_fused/; lack of fresh activation alone does not prove there is no llama lane. Active items that reference this one: PRBE115. Keep a bounded current-pin llama.cpp candidate-by-candidate closure/transfer gate; do not discard the remaining unmeasured reworks merely because Radiance is primary.
+
 ## Change Log
 
 - 2026-10-04T21:02:03.440345+00:00 (created-by): Created by agent
@@ -85,3 +89,4 @@ Correction (owner challenge 2026-10-05): the DFlash 'keep MTP5' decision was pre
 
 - chg_20261004_235349_long-context-flash-next-candid_9064
 - 2026-10-04T23:53:56.169165+00:00 (updated-by): Updated: section:ledger-events
+- 2026-11-04T04:26:36.219626+00:00 (updated-by): Updated: section:notes

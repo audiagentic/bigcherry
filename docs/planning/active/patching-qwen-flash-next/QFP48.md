@@ -21,12 +21,6 @@ What the trace says (run dp1, Flash-Next production profile on main at 1042e84d,
 
 Fusion pays where two memory-bound kernels read or write the same data back to back. Candidates to check, each against the trace order of kernels (not assumed): quantize_mmq_q8_1 into its producer (rms_norm or the HC pre-grid), the two get_rows passes, k_bin_bcast into its neighbour, and the (now retired) router partial/reduce candidate; 1.93 s was the **partial GEMM compute**, not removable reduction time.
 
-## 2026-10-17 single-branch reconciliation (BCOP239/BCOP275)
-
-**Disposition: reject router partial/reduce adjacency as a fusion task without new evidence.** Validated 1357 uses independently scheduled split-K partial workgroups, backend-pool scratch and a fixed-order second reduction launch; a workgroup barrier cannot publish across partial CTAs. The October 10 measured +3.2% pooled Flash-Next prefill compares **1357 router replacement versus native SGEMM**, not partial/reduce fusion; changed greedy text and pooled decode 69.8 -> 67.2 tok/s forbid calling it bit-identical or a decode gain. Its README's obsolete “Not promoted” line has been corrected on this branch.
-
-Leave QFP48 pending only for its other already-owned trace/batch-boundary work. Reopen reduction fusion **only** if an exact-pin warm per-rank profile demonstrates the *reduce kernel plus its launch gap* has >=3% exposed end-to-end removable cost, followed by a globally fenced completion/epoch plan that survives graph replay, cancellation, pool lifetime and fixed-order F32/top-k numerical controls. Otherwise terminal `ROUTER_REDUCTION_FUSION_NOT_ADMITTED`. QFP36/1357 owns the router implementation; no new patch, cache, dispatcher, scheduler or hardware queue is authorized here. The full older audit remains on the historical `docs/bcop239-router-reduction-published` branch; this is the trimmed decision.
-
 ## Steps
 
 1. Add a decode trace mode to long-ctx-profile.sh (prefillprof exists; decode has none) and take it on the current build.
@@ -94,6 +88,15 @@ Ranking for prefill time on this configuration: (1) the batch boundary, ~8.7%; (
 Next: attribute the 32 ms per batch boundary - which streams the synchronizes wait on (drafter / catch-up on the 6900 XT, the slower R9700, KV or input uploads), with 1359 (pipeline) and 1348 (deferred catch-up) on and off, on a warm server so start-up waits are out of the picture. Also seen: under rocprofv3 the server's shutdown hangs and is killed after the run (trace complete); not yet checked without the profiler.
 
 
+
+BACKLOG TRIAGE 2026-11-04 (revalidated against main 6eb31a708): the proposed disposition "MERGE into RAD43 after new trace only" was NOT applied; this item stays open. Why: docs/planning/active/patching-qwen-flash-next/QFP48.md:15-43 and :143-160 keep a current-pin llama.cpp warm per-batch HIP API/device trace-join and a gated quantize-to-MMQ producer check, despite retiring router reduce fusion alone. docs/planning/active/patching-radiance-rdna3/RAD43.md:14-33 profiles Radiance helper gate/up/down/reduce, gfx1030 tail and engine mailbox kernels; it neither owns llama Meta batch gaps nor graph/Q8_1 MMQ producer selection. Active items that reference this one: QFP23, QFP54, TRVP16, PKC03, RNX04, RNX08, BCOP132, BCOP142, BCOP143, BCOP147. Keep the residual llama.cpp batch-boundary and producer-fusion trace gates; do not merge old trace-based candidate speculation into Radiance helper kernel work.
+
+## 2026-10-17 single-branch reconciliation (BCOP239/BCOP275)
+
+**Disposition: reject router partial/reduce adjacency as a fusion task without new evidence.** Validated 1357 uses independently scheduled split-K partial workgroups, backend-pool scratch and a fixed-order second reduction launch; a workgroup barrier cannot publish across partial CTAs. The October 10 measured +3.2% pooled Flash-Next prefill compares **1357 router replacement versus native SGEMM**, not partial/reduce fusion; changed greedy text and pooled decode 69.8 -> 67.2 tok/s forbid calling it bit-identical or a decode gain. Its README's obsolete “Not promoted” line has been corrected on this branch.
+
+Leave QFP48 pending only for its other already-owned trace/batch-boundary work. Reopen reduction fusion **only** if an exact-pin warm per-rank profile demonstrates the *reduce kernel plus its launch gap* has >=3% exposed end-to-end removable cost, followed by a globally fenced completion/epoch plan that survives graph replay, cancellation, pool lifetime and fixed-order F32/top-k numerical controls. Otherwise terminal `ROUTER_REDUCTION_FUSION_NOT_ADMITTED`. QFP36/1357 owns the router implementation; no new patch, cache, dispatcher, scheduler or hardware queue is authorized here. The full older audit remains on the historical `docs/bcop239-router-reduction-published` branch; this is the trimmed decision.
+
 ## 2026-10-14 BCOP191: Q8_1 quantize -> MMQ producer-fusion admission (b11552)
 
 **Disposition for this one candidate:** no generic producer/MMQ fusion patch or hardware queue. Keep QFP48 pending for its *other* trace-led candidates and batch-boundary attribution. This section supersedes the broad suggestion above to fuse every adjacent `quantize_mmq_q8_1 -> mul_mat_q` pair; adjacency does not prove a compatible producer, saved quantization work, or an end-to-end critical path. No BigCherry GPU experiment was performed in this audit.
@@ -142,7 +145,7 @@ QFP53/1362 is terminal: coarser KV+k-pool padding produced 24/40 graph reuses an
 
 QFP48 owns **only** a bounded warm per-batch HIP API/device trace join for the remaining ~6-7 gaps near copies. Record previous last kernel/event, upload/copy/sync, first next-batch kernel, graph UID, Meta rebuild, 1359 NextN fence and physical rank on correlated clocks. Separate overlapped host graph work from exposed wall time. At 1465 t/s a 512-token batch is ~349.5 ms, so +3% throughput requires >=10.18 ms *removable exposed* wall time. Reject without a new implementation if the joined trace falls below this gate; otherwise delegate one local default-off fix to the existing copy/wait owner (QFP50/1359 or QFP16/27), not a new scheduler/allocator. Preserve output/graph/event lifetime, multi-slot, MTP acceptance and numeric controls. Upstream llama.cpp #30453 (merged 2026-10-13) fixes Meta graph-slot reallocation after b11552 and is a prerequisite for any future persistent-graph candidate.
 
-## 2026-10-16 BCOP239: retire the router split-K partial/reduce *fusion* candidate
+## 2026-10-16 BCOP239: retire the router split-K partial/reduce fusion candidate
 
 **Disposition: ROUTER_REDUCTION_FUSION_NOT_ADMITTED.** This closes only the old "bc_moe_router_splitk_partial against its reduce" suggestion in the original candidate list. QFP48 remains pending solely for the separately owned warm batch-boundary trace join described in BCOP206; the Q8_1/MMQ producer candidate was gated in BCOP191. Do not create another router patch or hardware queue. QFP36/1357 owns the already validated split-K router, and its Flash-Next runtime profile currently enables it.
 
@@ -162,3 +165,4 @@ For the measured Flash-Next physical router K=2560, experts M=512, tokens N=512,
 **Cheapest discriminator:** disposable host-only source-shaped fixture passed 9/9 cases: Flash-Next and other-MoE CTA/scratch accounting, MTP width fallback, shape/type/architecture/marker guards, order-sensitive F32 reduction, unfenced cross-CTA read and replay counter reset. These are logical counterexamples, not GPU/graph-capture tests. No repository pytest, HIP build, hardware execution or new benchmark.
 
 **Reopen only if** a warm exact-pin, per-physical-rank rocprof/HIP API join shows the **reduce kernel plus its launch gap** (not the partial GEMM) accounts for >=3% *removable end-to-end* prefill wall time. Reuse QFP48's existing trace join and QFP36/1357 implementation ownership; require a default-off single-variant design with per-tile epoch/counter reset, global publication fence, graph replay and pool-lifetime proof, multi-request/multi-ubatch/cancellation tests, near-tie top-k and full-vocab/KLD/greedy controls, and expected-vs-observed GEMM/reduction work. On dual gfx1100 and gfx1201, promote only with same-binary ABBA CI95-low >=3% E2E and <=1% decode/control regression, no unexplained token or MTP acceptance changes; otherwise terminal REJECT_BELOW_EXPOSED_GATE / REJECT_NUMERIC / REJECT_LIFETIME. No P2P, RCCL or new scheduler/cache/dispatcher is authorized.
+- 2026-11-04T04:27:15.527356+00:00 (updated-by): Updated: section:notes

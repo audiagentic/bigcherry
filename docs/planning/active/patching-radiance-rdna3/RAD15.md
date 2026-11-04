@@ -135,6 +135,14 @@ Finding: radiance's architecture plugin set here is narrowly tuned to the specif
 
 2026-10-21 OWNER DECISION: single-model (35B) evidence accepted for BC_GFX12_MOE_GEMV, after two genuine, well-tried second-model attempts (Gemma 4 E4B, Qwen3-30B-A3B-FP8) both hit real architecture mismatches in radiance's plugin set, not quick-fixable. Both downloads (47GB) fetched, tested, confirmed as genuine dead ends, and deleted; owner: 'im ok with 35b only'. Flag flipped to default on (component.toml status validated, kernel source default inverted), citing the existing decode-time check (99.06% top-1, KL mean 3.0e-3/p99 5.7e-2 against libr4d) as the accepted, now single-model-sufficient evidence. Off switch (BC_GFX12_MOE_GEMV=0) retained.
 
+
+
+BACKLOG TRIAGE 2026-11-04 absorbed items (superseded into this one; their notes keep the full history): RAD05: Merge unfinished engine-local gfx1100 decode GEMV and qualification into RAD15 rather than marking RAD05 fully superseded.
+
+
+
+BACKLOG TRIAGE 2026-11-04 (revalidated against main 6eb31a708): the proposed disposition "CLOSE unless current 4-GPU trace proves local MoE dominates" was NOT applied; this item stays open. Why: engines/radiance/components/bc-gfx12/component.toml:16 ships a qualified gfx1201 FP8 decode row, but RAD15.md:21,28-31,48 also demands gfx1100 FP8/W4 engine-local moe_gemm_q rows and XTX topology/quality A/B. engines/radiance/components/libr3/native/r4d_moe.hip.rw:367-398 still shows grouped GEMM rather than the requested decode-GEMV dispatch; closure has no current negative A/B. Active items that reference this one: BCOP348, BCOP349, BCOP354, MEN24, PRBE115, QFP43, QFP54, RAD16, RAD17, RAD44. Keep the distinct gfx1100 engine-GEMV acceptance open unless a current-pin topology trial proves it not worth pursuing.
+
 ## Change Log
 
 - 2026-10-20T12:00:00+00:00 (created-by): Created by agent
@@ -145,3 +153,5 @@ Finding: radiance's architecture plugin set here is narrowly tuned to the specif
 - 2026-10-21T04:16:43.437145+00:00 (updated-by): Updated: section:notes
 - 2026-10-21T04:56:46.675319+00:00 (updated-by): Updated: section:notes
 - 2026-10-21T05:00:27.165068+00:00 (updated-by): Updated: section:notes
+- 2026-11-04T04:11:44.583614+00:00 (updated-by): Updated: section:notes
+- 2026-11-04T04:23:54.636300+00:00 (updated-by): Updated: section:notes

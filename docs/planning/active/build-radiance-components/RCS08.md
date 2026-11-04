@@ -55,6 +55,16 @@ Lint fails on a fixture with an unowned file, an undeclared setting, a validated
 
 Can start before the moves. Also covers the earlier idea of tying production/validated status to evidence.
 
+
+
+BACKLOG TRIAGE 2026-11-04 absorbed items (superseded into this one; their notes keep the full history): MEN20: RCS08 (component status/evidence CLI) exists and is open; no duplicate command.
+
+
+
+CORRECTION 2026-11-04: the earlier note that MEN20 were absorbed into this item is withdrawn. An independent revalidation found each either still has open scope of its own (reopened) or was delivered outright. This item's scope is unchanged.
+
 ## Change Log
 
 - 2026-10-18T12:57:58.871719+00:00 (created-by): Created by agent
+- 2026-11-04T03:48:03.724548+00:00 (updated-by): Updated: section:notes
+- 2026-11-04T04:45:56.048626+00:00 (updated-by): Updated: section:notes
