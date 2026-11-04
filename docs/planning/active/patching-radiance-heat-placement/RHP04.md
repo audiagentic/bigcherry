@@ -150,7 +150,8 @@ Run policy-live-7, same workload and settings as policy-live-5 (slice H) and pol
 - Filler improves 30% (19.2 to 13.4 s) against 19% for the stage-1 objective, and documentation stays flat across the ten prompts (3,702 to 3,687, within 0.5%) where stage 1 lost 19-20%. Documentation ends 2% under the 3,749 tok/s default placement, not 20-25% under; filler did not reach the static placement's 3,725 tok/s equivalent (its TTFT is the better figure to compare, 13.4 s).
 - The measured-effect gate still blacklisted three moves as measured-worse.
 - Decode after the run: 109.6 tok/s at one stream, 248.9 at six (the same prompts were not decoded in the earlier runs, so no decode comparison is made).
-- Not yet shown: the KLD/top-1 gate against BF16 with this build's policy active, and heavy churn; one run each.
+- KLD/top-1 against BF16, 8,240 positions, same build and reference. Tail placement with the policy on committed no transaction during the short scoring and is identical to its static twin (mean 0.0646, p99.9 2.245, top-1 88.50%; engine-only control 0.0678 / 2.376 / 88.57%), so it shows only that the static layout is sound. The churn gate starts from round-robin placement and runs the policy at a 1 s cadence with the effect gate off: 15 transactions committed, 4.87 GB moved, 0 aborted; static round-robin mean 0.0602 / p99.9 2.221 / top-1 88.69%, with the policy 0.0613 / 1.695 / 88.51%: +0.001 mean and -0.18 points top-1 against the twin, inside the gate (+0.02, 1.0 points). One run each.
+- Not yet shown: churn together with the effect gate on, and repeat runs.
 
 ## Change Log
 
