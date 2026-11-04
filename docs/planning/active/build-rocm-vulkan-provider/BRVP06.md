@@ -65,5 +65,8 @@ Evidence for the gaps: lab build ab39ffd2 CMake cache CMAKE_HIP_COMPILER=/opt/ro
 
 ## Ledger-events
 
+
 - chg_20261104_224956_planned-making-the-rocm-sdk-ve_3537
 - 2026-11-04T22:50:00.649519+00:00 (updated-by): Updated: section:ledger-events
+- chg_20261104_230800_builds-now-always-name-the-roc_2582
+- 2026-11-04T23:08:04.294463+00:00 (updated-by): Updated: section:ledger-events
