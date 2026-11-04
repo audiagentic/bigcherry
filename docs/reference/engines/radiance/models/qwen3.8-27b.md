@@ -81,6 +81,49 @@ large prefill GEMMs already run at 85 to 107 TFLOP/s per card. One prompt per
 row, one run each: the single-stream figures are repeatable (identical across
 four prompts earlier), the multi-stream ones are not yet repeated.
 
+## Two RX 7900 XTX, INT8 (W8A8) container, measured 2026-11-04
+
+`qwen3.8-27b-w8a8-df2.rad`: the trunk as int8 rotated by a 128-wide Hadamard (`fwht128`, bf16 scale per row per 128 K, run at
+`i8a8h`), an int8 head, and the DFlash2 drafter (MXFP4 linears, 2-bit head copy), converted from the bf16 release with
+`data/recipes/q38-27b-w8a8-df2.recipe`. 31.2 GB, of which the drafter is 1.54 GiB (0.77 GiB a rank). Same layout shape as
+`qwen27b-2xtx` (two cards, `wht6`, FP8 KV, 8192 x 6, depth 3), with RAD47 and RAD48 in the build.
+
+Before RAD48 the int8 prefill tile ran through the compatibility layer at about 28 TFLOP/s; the native gfx11 form
+(`native/r4d_gemm_8a8_prefill.h.rw`) keeps the accumulator in the gfx11 layout through a 128-K block and reads the
+activation as a gfx11 row. rad-kbench, N=34816 K=5120: M=2048 25.8 ms to 8.33 ms (3.1x), M=128 1.6 ms to 0.56 ms.
+Greedy output is byte-identical to the previous build on four prompts.
+
+| Streams | INT8, no speculation | INT8 + DFlash2 | MXFP4 + DFlash2 (RAD47) |
+|---|---|---|---|
+| 1 | 35.6 | 83.3 | 97.5 |
+| 2 | 65.7 | 132.0 | 125.5 |
+| 4 | 112.8 | 205.6 | 213.2 |
+| 6 | 149.3 | 201.4 | 215.1 |
+
+Prefill of about 4.5k tokens of text: 1,940 tok/s INT8 against about 2,790 for MXFP4 (it was 950 before RAD48).
+INT8 is level with MXFP4 on decode at two or more streams and 15% behind at one stream (twice the weight bytes at the
+same bandwidth), and 30% behind on prefill. Its case is quality (the container's mean KL against bf16 is 0.0005 in
+the recipe's measurement), not speed. One prompt per row, one run each.
+
+Context, INT8 + DFlash2, fp8 KV, depth 3 (real engine tokens; the bench's token count is words and runs 1.66x under):
+
+| Layout | KV per card | Prompt | Prefill | Decode step | Draft accepted |
+|---|---|---|---|---|---|
+| 8192 x 6 | 1.68 GiB | 512 | 1,930 tok/s | 31 ms | 3.09 tokens a step |
+| 131072 x 2 | 4.32 GiB | 116k | 113 s (1,020 tok/s) | 72 ms | 43 of 63 |
+| 262144 x 1 | 4.16 GiB | 248k | 395 s (630 tok/s) | 120 ms | 44 of 60 |
+| 262144 x 5 | 8.75 GiB | 248k | 395 s | 121 ms | 44 of 60 |
+
+The engine sizes the pool to the layout's worst case and leaves the rest unclaimed (7.2 GiB a card at 8192 x 6, 96 MiB at
+262144 x 5); it reports that the pool could grow to about 21 GiB a card, 1.48M tokens. Speculation holds at depth: the
+step grows with attention over the cache, not with drafting.
+
+Drafter on another card (not built): the drafter reads the target's hidden states of the accepted tokens, so a draft
+cannot start before its verify ends and there is nothing to overlap with. Drafting plus the four-token verify costs 4.8 ms
+over a one-token step (31.0 against 26.2 ms), so moving the drafter off the XTX pair frees at most that and 0.77 GiB a rank,
+and adds a host-memory hop of the hidden states each step (no peer-to-peer). A drafter that overlaps with the target
+(llama.cpp's separate small model) is a different design from DFlash2.
+
 ## Evidence
 
 [RAD37, current-pin model checks](../../../../planning/completed/patching-radiance-rdna3/RAD37.md)
