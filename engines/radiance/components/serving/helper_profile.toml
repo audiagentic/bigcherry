@@ -7,11 +7,16 @@
 # against the component settings, the launcher's exports and `bigcherry layout env`, and fails on any key missing on
 # either side or any value that differs.
 #
+# from: an optional resolver key (`group.name`); the writer takes the resolved value for the leaf from it, so a layout, site
+# file or --set is never overridden by this table. `value` is then the schema default, checked against the setting.
+#
 # basis:
 #   component_default  the value is the setting's `default` in its component.toml (checked equal)
 #   unset_means        the setting's component default is empty: unset is the helper's built-in off/empty/zero, which is
 #                      the value written here (documented per row; the helper code is the authority)
 #   layout             the value comes from the layout: `bigcherry layout env` exports the setting (checked equal)
+#   resolved           the value is the resolver's (a layout, a site file or --set decides it): `value` is only the schema
+#                      default, the writer takes the resolved value named by `from`; checked for every layout
 #   launcher_literal   a hand-picked value the launcher sets itself; a tunable to derive or calibrate, not a final default
 #                      (none in helper_common today; the five handoff literals are in the handoff section)
 
@@ -90,20 +95,23 @@ basis = "unset_means"
 [[row]]
 leaf = "combine/enabled"
 setting = "R3_MOE_WORKER_COMBINE"
-value = true
-basis = "layout"
+value = false
+basis = "resolved"
+from = "helper.combine"
 
 [[row]]
 leaf = "combine/min_rows"
 setting = "R3_MOE_WORKER_COMBINE_MIN_ROWS"
 value = 256
 basis = "component_default"
+from = "helper.combine_min_rows"
 
 [[row]]
 leaf = "combine/threads"
 setting = "R3_MOE_WORKER_COMBINE_THREADS"
 value = 8
 basis = "component_default"
+from = "helper.combine_threads"
 
 [[row]]
 leaf = "kernels/native"

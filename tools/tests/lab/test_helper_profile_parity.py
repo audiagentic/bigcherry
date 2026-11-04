@@ -104,6 +104,29 @@ class HelperProfileParityTests(unittest.TestCase):
         self.assertEqual(sorted(got), sorted(set(got)), "a leaf appears once")
         self.assertEqual(set(got), leaves, "every helper_common leaf (balance_speeds_milli is absent while balance is off) is a row")
 
+    def test_leaves_and_settings_are_one_to_one(self) -> None:
+        settings = [r["setting"] for r in self.rows]
+        self.assertEqual(sorted(settings), sorted(set(settings)), "a setting feeds one leaf: no two leaves share an R3_* setting")
+        for r in self.rows:
+            if "from" in r:
+                self.assertRegex(r["from"], r"^[a-z_]+\.[a-z_]+$", "a resolver key is group.name")
+        froms = [r["from"] for r in self.rows if "from" in r]
+        self.assertEqual(sorted(froms), sorted(set(froms)), "a resolver key feeds one leaf")
+
+    def test_every_layout_has_the_combine_flag_the_resolver_recipe_has(self) -> None:
+        # The writer takes helper.combine from the resolver, whose recipe_for() snapshots layouts.toml: for every layout the
+        # recipe's combine flag is what the layout exports as R3_MOE_WORKER_COMBINE (unset: the setting's default, off).
+        layouts = tomllib.loads((REPO / "engines" / "radiance" / "layouts.toml").read_text(encoding="utf-8"))["layout"]
+        text = (SERVING / "serving.cpp").read_text(encoding="utf-8")
+        recipes = {}
+        for m in re.finditer(r'if \(name == "([a-z0-9-]+)"\)\s*return \{(true|false), (true|false), (true|false),', text):
+            recipes[m.group(1)] = m.group(4) == "true"
+        self.assertEqual(set(recipes), set(layouts), "the resolver knows exactly the layouts in layouts.toml")
+        for name, body in layouts.items():
+            with self.subTest(layout=name):
+                exported = (body.get("env") or {}).get("R3_MOE_WORKER_COMBINE")
+                self.assertEqual(recipes[name], bool(_as_value(exported)) if exported is not None else False)
+
     def test_every_row_names_a_setting_and_its_basis_holds(self) -> None:
         for r in self.rows:
             with self.subTest(leaf=r["leaf"]):
@@ -118,6 +141,10 @@ class HelperProfileParityTests(unittest.TestCase):
                     self.assertIn(value, (False, 0, []), "unset is the helper's off, zero or empty")
                 elif r["basis"] == "layout":
                     self.assertEqual(_as_value(self.layout_common[r["setting"]]), value, "the layout exports it")
+                elif r["basis"] == "resolved":
+                    self.assertIn("from", r, "a resolved row names the resolver key the writer reads")
+                    self.assertEqual(value, _as_value(default) if default != "" else False,
+                                     "its value is only the setting's default (unset is off)")
                 elif r["basis"] == "launcher_literal":
                     self.assertEqual(_as_value(self.launcher[r["setting"]]), value, "the launcher sets it")
                 else:
@@ -130,6 +157,8 @@ class HelperProfileParityTests(unittest.TestCase):
             if name in by_setting:
                 with self.subTest(setting=name):
                     row = by_setting[name]
+                    if row["basis"] == "resolved":
+                        continue   # the layout decides; the writer takes the resolver's value (checked per layout above)
                     self.assertEqual(_as_value(text), row["value"], "the launcher/layout runs the helper with the row's value")
                     self.assertIn(row["basis"], ("layout", "launcher_literal"),
                                   "a value the launcher or layout sets is not recorded as a default")

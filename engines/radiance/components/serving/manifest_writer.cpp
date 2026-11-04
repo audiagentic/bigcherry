@@ -10,8 +10,14 @@
 #include "third_party/toml.hpp"
 #include "v1/manifest.h"
 
+#include <fcntl.h>
+#include <linux/fs.h>
 #include <sys/stat.h>
+#include <sys/syscall.h>
 #include <unistd.h>
+
+#include <cerrno>
+#include <cstring>
 
 #include <fstream>
 #include <map>
@@ -56,7 +62,7 @@ std::vector<std::string> split(const std::string& text, char sep) {
 }
 
 /* spec.processes.helper_common from helper_profile.toml: one row a leaf, "group/field". */
-Json helper_common() {
+Json helper_common(const Json& values) {
     Json out = Json::object();
     toml::table doc;
     try { doc = toml::parse(std::string_view(kHelperProfile), std::string_view("helper_profile.toml")); }
@@ -76,6 +82,13 @@ Json helper_common() {
         else if (auto s = value->as_string()) v = s->get();
         else if (auto a = value->as_array(); a && a->empty()) v = Json::array();
         else fail("helper_profile.toml: leaf " + leaf->get() + " has a value of no supported kind");
+        // A row naming a resolver key takes the resolved value (layout, site file or --set), not the table's default.
+        if (const auto* from = (*row)["from"].as_string()) {
+            const std::vector<std::string> key = split(from->get(), '.');
+            if (key.size() != 2 || !values.contains(key[0]) || !values.at(key[0]).contains(key[1]))
+                fail("helper_profile.toml: leaf " + leaf->get() + " names resolver key " + from->get() + " which is not resolved");
+            v = values.at(key[0]).at(key[1]);
+        }
         out[path[0]][path[1]] = std::move(v);
     }
     return out;
@@ -147,7 +160,15 @@ Json resources_of(const ManifestInputs& in, const Json& calibration) {
     }
     li.retention_keep = in.resolved.values.at("service").at("retention") == "keep";
     li.min_tier_bytes = static_cast<uint64_t>(in.plan.plan.kv_one_session.bytes);
-    if (const Json* target = cal("host_kv_tier.target_mib")) li.tier_target_bytes = target->get<uint64_t>() << 20;
+    // One value for the host KV tier: the manifest's resources.host.kv_mib is what the launcher runs with, so the ledger
+    // plans for exactly that. A calibration target that disagrees would make the ledger plan for a tier the run does not
+    // get; refuse it rather than pick one.
+    const uint64_t kv_mib = mem.at("host_kv_mib").get<uint64_t>();
+    if (const Json* target = cal("host_kv_tier.target_mib"))
+        if (target->get<uint64_t>() != kv_mib)
+            fail("resources.host.kv_mib (" + std::to_string(kv_mib) + ") differs from calibration host_kv_tier.target_mib (" +
+                 std::to_string(target->get<uint64_t>()) + "): the memory plan would not match the run");
+    li.tier_target_bytes = kv_mib << 20;
     const Ledger ledger = host_ledger(li);
     return {{"pool_mib", mem.at("host_pool_mib")}, {"kv_mib", mem.at("host_kv_mib")}, {"reserve_mib", mem.at("host_reserve_mib")},
             {"checkpoint_slots", ledger.checkpoint_slots}};
@@ -190,8 +211,7 @@ Json helpers_of(const Resolved& r) {
     return out;
 }
 
-Json provenance_of(const std::string& profile_name) {
-    (void)profile_name;
+Json static_provenance() {
     Json p = Json::object();
     p[""] = record("schema_default", "serving contract v1", "policy", "exact");
     p["/spec/intent/model"] = record("site", "site.toml:engine.model", "policy", "exact");
@@ -217,6 +237,62 @@ Json provenance_of(const std::string& profile_name) {
                                           Json::array({"/spec/facts/gpus", "/spec/intent/layout", "/spec/calibration"}));
     p["/spec/plan"] = record("derived", "bc::experts owner selection and the rad0011 measured plan", "derived", "estimate",
                              Json::array({"/spec/intent", "/spec/facts", "/spec/calibration"}));
+    return p;
+}
+
+/* resolver key -> the manifest leaf it becomes. Only these leaves can carry a resolved origin of their own. */
+const std::map<std::string, std::string>& leaf_of_key() {
+    static const std::map<std::string, std::string> m = {
+        {"engine.model", "/spec/intent/model"}, {"layout.name", "/spec/intent/layout"},
+        {"service.objective", "/spec/intent/service/objective"}, {"service.max_sessions", "/spec/intent/service/max_sessions"},
+        {"service.max_context", "/spec/intent/service/max_context_tokens"}, {"service.retention", "/spec/intent/service/retention"},
+        {"service.quality", "/spec/intent/service/quality"},
+        {"engine.radiance_home", "/spec/processes/engine/runtime/radiance_home"}, {"engine.kernels", "/spec/processes/engine/runtime/kernels"},
+        {"engine.port", "/spec/processes/engine/server/port"}, {"engine.tp", "/spec/processes/engine/scheduler/tp"},
+        {"engine.max_num_batched_tokens", "/spec/processes/engine/scheduler/max_num_batched_tokens"},
+        {"engine.checkpoint_interval", "/spec/processes/engine/scheduler/checkpoint_interval"},
+        {"engine.placement", "/spec/processes/engine/execution/placement"}, {"engine.ngram_placement", "/spec/processes/engine/execution/ngram_placement"},
+        {"engine.kv_cache_dtype", "/spec/processes/engine/execution/kv_cache_dtype"},
+        {"engine.num_speculative_tokens", "/spec/processes/engine/execution/num_speculative_tokens"},
+        {"engine.rope_scaling", "/spec/processes/engine/execution/rope_scaling"}, {"engine.prefix_resume", "/spec/processes/engine/execution/prefix_resume"},
+        {"memory.host_pool_mib", "/spec/resources/host/pool_mib"}, {"memory.host_kv_mib", "/spec/resources/host/kv_mib"},
+        {"memory.host_reserve_mib", "/spec/resources/host/reserve_mib"},
+        {"handoff.shm", "/spec/handoff/transport/shm"}, {"handoff.max_rows", "/spec/handoff/transport/max_rows"},
+        {"handoff.small_rows", "/spec/handoff/transport/small_rows"}, {"handoff.gemv_large_rows", "/spec/handoff/transport/gemv_large_rows"},
+        {"handoff.skip_owned", "/spec/handoff/transport/skip_owned"}, {"handoff.moe_down_tile", "/spec/handoff/kernels/moe_down_tile"},
+        {"handoff.histogram", "/spec/handoff/telemetry/histogram_file"}, {"handoff.histogram_period_s", "/spec/handoff/telemetry/period_s"},
+        {"handoff.placement", "/spec/handoff/placement/strategy"}, {"handoff.heat", "/spec/handoff/placement/heat_file"},
+        {"helper.combine", "/spec/processes/helper_common/combine/enabled"},
+        {"helper.combine_min_rows", "/spec/processes/helper_common/combine/min_rows"},
+        {"helper.combine_threads", "/spec/processes/helper_common/combine/threads"},
+    };
+    return m;
+}
+
+/* The record at the nearest ancestor of `pointer` in `p` (the class and confidence its leaves already have). */
+const Json* covering(const Json& p, std::string pointer) {
+    while (true) {
+        if (p.contains(pointer)) return &p.at(pointer);
+        if (pointer.empty()) return nullptr;
+        pointer.erase(pointer.find_last_of('/'));
+    }
+}
+
+/* Records for the manifest: the static records say how each section is produced; a leaf the operator set (--set, the site
+ * file, the serving profile) gets its own record from Resolved::provenance, so an override is never filed under the
+ * section's default origin. Class stays the class the leaf has at its position (the covering record's). */
+Json provenance_of(const Resolved& r) {
+    Json p = static_provenance();
+    for (const auto& [key, pointer] : leaf_of_key()) {
+        if (!r.provenance.contains(key)) continue;
+        const Json& rp = r.provenance.at(key);
+        const std::string origin = rp.at("origin").get<std::string>();
+        if (origin != "cli" && origin != "site" && origin != "profile") continue;
+        const Json* base = covering(p, pointer);
+        if (!base) continue;
+        p[pointer] = record(origin.c_str(), rp.at("source").get<std::string>().c_str(), base->at("class").get<std::string>().c_str(),
+                            "exact");
+    }
     return p;
 }
 
@@ -265,7 +341,7 @@ BuiltManifest build_manifest(const ManifestInputs& in) {
                  {"resources", {{"host", resources_of(in, calibration)}}},
                  {"handoff", handoff_of(values)},
                  {"processes",
-                  {{"engine", engine_of(values)}, {"helper_common", helper_common()}, {"helpers", helpers_of(in.resolved)}}},
+                  {{"engine", engine_of(values)}, {"helper_common", helper_common(values)}, {"helpers", helpers_of(in.resolved)}}},
                  {"plan",
                   {{"owner_map", {{"owner_map_sha256", sha_hex_of_zero()}, {"helpers", Json::array()}}},
                    {"engine_memory",
@@ -276,7 +352,7 @@ BuiltManifest build_manifest(const ManifestInputs& in) {
                 {"metadata",
                  {{"instance_id", in.instance_id}, {"producer", {{"name", "bc-serve"}, {"build_sha256", in.producer_sha256}}},
                   {"contract_version", v1::kContractVersion}, {"content_digest", "sha256:" + sha_hex_of_zero()}}},
-                {"spec", std::move(spec)}, {"provenance", provenance_of(in.profile)}};
+                {"spec", std::move(spec)}, {"provenance", provenance_of(in.resolved)}};
 
     // The owner map is the planner's answer for the placement this very document declares: decode a draft with an empty
     // map, ask the shared planner (the policies come from the draft), write its sets and digests into the document.
@@ -325,15 +401,37 @@ BuiltManifest build_manifest(const ManifestInputs& in) {
 }
 
 void write_manifest_file(const fs::path& path, const std::string& text) {
-    if (fs::exists(path)) fail("refusing to replace " + path.string() + ": a manifest is immutable");
-    const fs::path tmp = path.string() + ".tmp";
-    {
-        std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
-        out << text;
-        if (!out) fail("cannot write " + tmp.string());
+    // A manifest is immutable and its digest names it: never replace an existing one, even when two writers race.
+    // Write a unique temporary file in the same directory, make it durable, then link it into place without replacing
+    // (renameat2 RENAME_NOREPLACE fails with EEXIST if the target appeared since we started).
+    const fs::path dir = path.has_parent_path() ? path.parent_path() : fs::path(".");
+    std::string tmpl = (dir / (path.filename().string() + ".tmp.XXXXXX")).string();
+    const int fd = ::mkstemp(tmpl.data());
+    if (fd < 0) fail("cannot create a temporary file beside " + path.string() + ": " + std::strerror(errno));
+    auto cleanup = [&] { ::unlink(tmpl.c_str()); };
+    const char* p = text.data();
+    size_t left = text.size();
+    while (left > 0) {
+        const ssize_t n = ::write(fd, p, left);
+        if (n < 0) {
+            if (errno == EINTR) continue;
+            const int e = errno; ::close(fd); cleanup();
+            fail("cannot write " + tmpl + ": " + std::strerror(e));
+        }
+        p += n; left -= static_cast<size_t>(n);
     }
-    ::chmod(tmp.c_str(), 0444);
-    fs::rename(tmp, path);
+    if (::fchmod(fd, 0444) != 0 || ::fsync(fd) != 0) {
+        const int e = errno; ::close(fd); cleanup();
+        fail("cannot make " + tmpl + " durable: " + std::strerror(e));
+    }
+    ::close(fd);
+    if (::syscall(SYS_renameat2, AT_FDCWD, tmpl.c_str(), AT_FDCWD, path.c_str(), RENAME_NOREPLACE) != 0) {
+        const int e = errno; cleanup();
+        if (e == EEXIST) fail("refusing to replace " + path.string() + ": a manifest is immutable");
+        fail("cannot place " + path.string() + ": " + std::strerror(e));
+    }
+    const int dfd = ::open(dir.c_str(), O_RDONLY | O_DIRECTORY);
+    if (dfd >= 0) { ::fsync(dfd); ::close(dfd); }
 }
 
 }  // namespace bc::serving

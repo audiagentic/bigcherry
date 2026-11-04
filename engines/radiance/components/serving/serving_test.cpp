@@ -13,7 +13,10 @@
 #undef NDEBUG   /* the checks below are assert()s: keep them live in Release component builds */
 #include <sys/stat.h>
 
+#include <atomic>
 #include <cassert>
+#include <thread>
+#include <vector>
 #include <cstdlib>
 #include <filesystem>
 #include <functional>
@@ -670,7 +673,7 @@ void measured_plan_cache(Fixture& t) {
             {"service.objective", "latency"}, {"service.max_sessions", "4"}, {"service.max_context", "131072"},
             {"engine.max_num_batched_tokens", "1024"}, {"engine.checkpoint_interval", "2048"},
             {"engine.kv_cache_dtype", "fp8_v4"}, {"engine.num_speculative_tokens", "2"}, {"engine.rope_scaling", "yarn:4"},
-            {"engine.ngram_placement", "disk"}, {"engine.prefix_resume", "off"}, {"engine.tp", "2"}};
+            {"engine.ngram_placement", "disk"}, {"engine.prefix_resume", "exact"}, {"engine.tp", "2"}};
         for (const auto& [key, value] : changes) {
             auto opts = t.standard();
             opts.sets = {std::string(key) + "=" + value};
@@ -918,6 +921,41 @@ void manifest_writer_step(Fixture& t) {
     for (const Json& h : spec.at("plan").at("owner_map").at("helpers")) owned += h.at("count").get<size_t>();
     assert(owned == 64);   // 4 layers x 16 experts: with budgets this large the helpers own them all
     assert(spec.at("plan").at("engine_memory").at("expected") == plan);
+    // The helper section follows the resolver (a layout, the site file or --set), not the table's defaults.
+    {
+        sv::ManifestInputs c = in;
+        c.resolved.values["helper"]["combine"] = true;
+        c.resolved.values["helper"]["combine_min_rows"] = 512;
+        c.resolved.values["helper"]["combine_threads"] = 4;
+        const Json hc = sv::build_manifest(c).document.at("spec").at("processes").at("helper_common").at("combine");
+        assert(hc.at("enabled") == true && hc.at("min_rows") == 512 && hc.at("threads") == 4);
+        c.resolved.values["helper"]["combine"] = false;
+        assert(sv::build_manifest(c).document.at("spec").at("processes").at("helper_common").at("combine").at("enabled") == false);
+    }
+    // One value for the host KV tier: the ledger plans for the manifest's kv_mib, and a calibration target that disagrees
+    // is refused.
+    {
+        sv::ManifestInputs c = in;
+        c.resolved.values["memory"]["host_kv_mib"] = 8192;
+        try { (void)sv::build_manifest(c); assert(false); } catch (const std::runtime_error& e) {
+            assert(std::string(e.what()).find("differs from calibration host_kv_tier.target_mib") != std::string::npos);
+        }
+    }
+    // An operator override keeps its own origin: --set and the site file are never filed under the section's default.
+    {
+        sv::ManifestInputs c = in;
+        c.resolved.provenance["service.max_sessions"] = {{"origin", "cli"}, {"source", "--set"}, {"inputs", Json::array({"service.max_sessions=4"})}};
+        c.resolved.provenance["engine.port"] = {{"origin", "site"}, {"source", "site.toml"}, {"inputs", Json::array()}};
+        c.resolved.provenance["engine.prefix_resume"] = {{"origin", "derived"}, {"source", "rule"}, {"inputs", Json::array()}};
+        const auto overridden = sv::build_manifest(c);
+        const Json& pv = overridden.document.at("provenance");
+        assert(pv.at("/spec/intent/service/max_sessions").at("origin") == "cli" && pv.at("/spec/intent/service/max_sessions").at("source") == "--set");
+        assert(pv.at("/spec/intent/service/max_sessions").at("class") == pv.at("/spec/intent/service").at("class"));
+        assert(pv.at("/spec/processes/engine/server/port").at("origin") == "site");
+        assert(pv.at("/spec/processes/engine/server/port").at("source") == "site.toml");
+        assert(!pv.contains("/spec/processes/engine/execution/prefix_resume"));   // derived keeps its section's record
+        assert(!built.document.at("provenance").contains("/spec/intent/service/max_sessions"));
+    }
     // Same inputs, same bytes; another instance, another digest; nothing else moves it.
     assert(sv::build_manifest(in).text == built.text);
     sv::ManifestInputs other = in;
@@ -938,6 +976,25 @@ void manifest_writer_step(Fixture& t) {
     try { sv::write_manifest_file(path, built.text); assert(false); } catch (const std::runtime_error& e) {
         assert(std::string(e.what()).find("immutable") != std::string::npos);
     }
+    // Racing writers to one path: exactly one wins, the others are refused, the winner's bytes are intact, and no
+    // temporary file is left behind.
+    const auto race = t.root / "raced-manifest.json";
+    std::atomic<int> won{0}, refused{0};
+    std::vector<std::thread> writers;
+    for (int i = 0; i < 8; ++i)
+        writers.emplace_back([&, i] {
+            try { sv::write_manifest_file(race, "writer-" + std::to_string(i) + "\n"); ++won; }
+            catch (const std::runtime_error& e) {
+                if (std::string(e.what()).find("immutable") != std::string::npos) ++refused;
+            }
+        });
+    for (auto& w : writers) w.join();
+    assert(won == 1 && refused == 7);
+    for (const auto& e : fs::directory_iterator(t.root))
+        assert(e.path().filename().string().find("raced-manifest.json.tmp") == std::string::npos);
+    std::ifstream in_race(race);
+    std::string got((std::istreambuf_iterator<char>(in_race)), {});
+    assert(got.rfind("writer-", 0) == 0 && got.back() == '\n');
 }
 
 int main() {
