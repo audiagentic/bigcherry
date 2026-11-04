@@ -214,7 +214,10 @@ int main(int argc, char** argv) {
     if (!cpu) {
         gpu = std::make_unique<r3_moe_gpu::Runner>(model);
         if (cfg.engine_ranks) gpu->engine_ranks_ = cfg.engine_ranks;
-        if (!gpu->open()) return 1;
+        if (!gpu->open()) {
+            std::fprintf(stderr, "r3_moe_worker: GPU backend open failed\n");
+            return 1;
+        }
         {   // the container's own weight format picks the kernels (RAD13); an unsupported one was refused by name above
             MoeExpertDesc first{};
             for (uint32_t l = 0; l < model.layers && !first.weight.format; ++l)
@@ -234,7 +237,10 @@ int main(int argc, char** argv) {
                         return 1;
                     }
                 }
-            if (!gpu->set_weight_format(first.weight.format)) return 1;
+            if (!gpu->set_weight_format(first.weight.format)) {
+                std::fprintf(stderr, "r3_moe_worker: GPU weight-format setup failed\n");
+                return 1;
+            }
         }
     }
 
@@ -254,15 +260,20 @@ int main(int argc, char** argv) {
         return 2;
     }
     const SmallClasses lane_classes = helper_small_classes();
-    if (!lane_classes.count) return 1;
+    if (!lane_classes.count) {
+        std::fprintf(stderr, "r3_moe_worker: no small lane classes available\n");
+        return 1;
+    }
     const uint32_t lane_large_rows = helper_max_rows();
     // Allocate actual lane buffers and plugin scratch before checking device
     // free VRAM. The expert-weight budget remains untouched for ownership.
     if (gpu &&
         (!gpu->prime_weight_layout() ||
          !gpu->prepare_lanes(lane_classes.rows, lane_classes.count, lane_large_rows,
-                             lanes_open(cfg.power_save, helper_count, helper_index, lane_classes.count))))
+                             lanes_open(cfg.power_save, helper_count, helper_index, lane_classes.count)))) {
+        std::fprintf(stderr, "r3_moe_worker: GPU lane preparation failed\n");
         return 1;
+    }
     Owned owned;
     if (g_replay) {
         /* A replay owns exactly the experts the captured request routes to: the capturing helper's ownership
@@ -276,10 +287,24 @@ int main(int argc, char** argv) {
         };
         if (sweep_replays.empty()) own_routes(*g_replay);
         else for (const ReplayInput& ri : sweep_replays) own_routes(ri);
+        for (auto [l, e] : owned.expert) {
+            const int64_t bytes = laid_out_bytes(model, gpu.get(), l, e);
+            if (bytes <= 0 || uint64_t(bytes) > UINT64_MAX - owned.bytes) {
+                std::fprintf(stderr, "r3_moe_worker: replay expert (%u,%u) cannot be laid out\n", l, e);
+                return 1;
+            }
+            owned.bytes += uint64_t(bytes);
+        }
+        std::fprintf(stderr,
+            "r3_moe_worker: replay selects only capture-routed experts, not the full serving budget set\n");
     } else if (!select_owned(model, gpu.get(), budgets, helper_index, helper_count, &owned)) {
         return 1;
     }
-    if (gpu && !gpu->allocate(owned.expert, budgets[helper_index])) return 1;
+    if (gpu && !gpu->allocate(owned.expert, budgets[helper_index])) {
+        std::fprintf(stderr, "r3_moe_worker: failed to prepare expert arena/pool for %zu selected experts\n",
+                     owned.expert.size());
+        return 1;
+    }
     std::string lane_list;                       /* "4,8,16,24", for the log */
     for (uint32_t c = 0; c < lane_classes.count; ++c)
         lane_list += (c ? "," : "") + std::to_string(lane_classes.rows[c]);
@@ -410,25 +435,21 @@ int main(int argc, char** argv) {
             struct timespec ts{1, 0};
             (void)::syscall(SYS_futex, &h->layer_map_ready[layer], FUTEX_WAIT, 0, &ts, nullptr, 0);
         }
-        if (!load(&h->layer_map_ready[layer])) {
+        if (!load(&h->layer_map_ready[layer]))
             std::fprintf(stderr, "r3_moe_worker: layer %u has no runtime map (not declared by the engine); not owned\n",
                          layer);
-            for (auto [l, e] : owned.expert)
-                if (l == layer) (void)drop_bootstrap_owner(map, l, e, helper_index);
-            continue;
-        }
-        any_map = true;
-        const int32_t* slots = layer_slots(map, layer);
-        if (!slots) return 1;
-        for (auto [l, e] : owned.expert)
-            if (l == layer && slots[e] < 0) (void)drop_bootstrap_owner(map, l, e, helper_index);
-        if (gpu && !gpu->load_layer(layer, owned.expert, slots)) {
-            std::fprintf(stderr, "r3_moe_worker: layer %u runtime table build failed\n", layer);
-            raise_fault(h);   /* not consumed: the engine's map wait fails instead of using a map this helper lacks */
+        else any_map = true;
+        const char* layer_error = nullptr;
+        if (!r3::epoch::bootstrap_runtime_layer(
+                map, owned, helper_index, layer,
+                [&](uint32_t l, const int32_t* slots) {
+                    return !gpu || gpu->load_layer(l, owned.expert, slots);
+                }, &layer_error)) {
+            std::fprintf(stderr, "r3_moe_worker: layer %u bootstrap: %s\n",
+                         layer, layer_error ? layer_error : "unknown error");
+            raise_fault(h);
             return 1;
         }
-        store(&h->layer_map_consumed[layer], 1);
-        notify(h);
     }
     Owned runtime_owned;
     for (auto [l, e] : owned.expert) {

@@ -229,28 +229,56 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
 
     r3::moe_shm::LayoutShape shape{};
     Layout lay{};
-    if (!segment_shape(model, 1, &shape, &lay)) return 1;
+    if (!segment_shape(model, 1, &shape, &lay)) {
+        std::fprintf(stderr, "r3_moe_worker: --compare segment shape invalid\n");
+        return 1;
+    }
     void* map = mmap(nullptr, lay.bytes, PROT_READ | PROT_WRITE,
                      MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
     if (map == MAP_FAILED) {
         std::fprintf(stderr, "r3_moe_worker: --compare mmap: %s\n", std::strerror(errno));
         return 1;
     }
-    if (!init(map, model.layers, shape, 1)) return 1;
-    if (!publish_owned(map, owned, 0)) return 1;
-    Header* h = static_cast<Header*>(map);
-    h->helper_count = 1;
-    std::memcpy(layer_slots(map, layer), runtime_slot.data(), runtime_slot.size() * sizeof(int32_t));
-    store(&h->layer_map_ready[layer], 1);
-    if (!gpu.load_layer(layer, owned.expert, runtime_slot.data())) {
-        std::fprintf(stderr, "r3_moe_worker: --compare layer %u runtime table build failed\n", layer);
+    PlacementControl active{};
+    const char* bootstrap_error = nullptr;
+    if (!r3::epoch::prepare_compare_bootstrap(
+            map, model.layers, shape, owned, layer, runtime_slot.data(),
+            classes.count, classes.rows.data(),
+            [&](uint32_t l, const int32_t* slots) {
+                return gpu.load_layer(l, owned.expert, slots);
+            }, &active, &bootstrap_error)) {
+        std::fprintf(stderr, "r3_moe_worker: --compare layer %u bootstrap: %s\n",
+                     layer, bootstrap_error ? bootstrap_error : "unknown error");
         munmap(map, lay.bytes);
         return 1;
     }
-    store(&h->layer_map_consumed[layer], 1);
-    h->small_class_count = classes.count;
-    for (uint32_t c = 0; c < classes.count; ++c) h->small_class_rows[c] = classes.rows[c];
-    if (!gpu.prepare_lanes(classes.rows, classes.count, lane_large_rows, served_lanes(1, 0, classes.count))) {
+    Header* h = static_cast<Header*>(map);
+    const uint32_t replay_ranks =
+        r3::epoch::compare_request_ranks(gpu.engine_ranks_, h->slot_count);
+    if (!replay_ranks) {
+        std::fprintf(stderr, "r3_moe_worker: --compare invalid configured engine rank count %u\n",
+                     gpu.engine_ranks_);
+        munmap(map, lay.bytes);
+        return 1;
+    }
+    const char* route_error = nullptr;
+    if (!r3::epoch::validate_compare_routes(
+            map, layer, rows, published, replay_ranks,
+            [&](uint32_t l, uint32_t e, uint32_t rank, uint32_t local) {
+                return gpu.compare_resident(l, e, rank, local);
+            }, &route_error)) {
+        std::fprintf(stderr, "r3_moe_worker: --compare captured route residency: %s\n",
+                     route_error ? route_error : "unknown error");
+        munmap(map, lay.bytes);
+        return 1;
+    }
+    std::fprintf(stderr,
+                 "r3_moe_worker: --compare engine_ranks=%u, %s TP outputs (physical slots=%u)\n",
+                 replay_ranks, replay_ranks == 1 ? "full-width" : "partial-width",
+                 h->slot_count);
+    if (!gpu.prepare_lanes(classes.rows, classes.count, lane_large_rows,
+                           served_lanes(1, 0, classes.count))) {
+        std::fprintf(stderr, "r3_moe_worker: --compare prepare lanes failed\n");
         munmap(map, lay.bytes);
         return 1;
     }
@@ -274,14 +302,14 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
 
     bool bad = false;
     constexpr uint32_t sequence = 1;
-    for (uint32_t rank = 0; rank < h->slot_count; ++rank) {
+    for (uint32_t rank = 0; rank < replay_ranks; ++rank) {
         const uint32_t lane = lane_of(rank, step_class(h, rows));
         Request* q = lane_request(map, lane, sequence);
         q->completion_sequence = 0;
         q->status = 0;
         q->layer = layer;
         q->rank = rank;
-        q->rank_count = kMaxEngineRanks;
+        q->rank_count = replay_ranks;
         q->rows = rows;
         q->hidden = hid;
         q->route_count = nr;
@@ -297,6 +325,11 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
         for (uint32_t r = 0; r < kMaxEngineRanks; ++r) {
             q->result_offset[r] = h->result_offset[result_index(rank, r)];
             q->result_stride[r] = hid * sizeof(uint16_t);
+        }
+        if (!r3::epoch::bind_compare_request(map, q, active)) {
+            std::fprintf(stderr, "r3_moe_worker: --compare rank %u refused unsealed generation\n", rank);
+            bad = true;
+            break;
         }
         q->sequence = sequence;
         std::memcpy(ptr<Route>(map, q->route_offset), published.data(),
@@ -412,7 +445,11 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
             std::sqrt((double)(num / std::max<long double>(den, 1.0e-30L)));
         std::printf("engine_join layer %u rank %u lane %u routes=%u tokens=%u rel_l2=%.8g max_abs=%.8g\n",
                     layer, rank, lane, nr, tokens, rel, max_abs);
-        bad = bad || tokens == 0 || !std::isfinite(rel) || rel >= 5.0e-3;
+        if (tokens == 0 || !std::isfinite(rel) || rel >= 5.0e-3) {
+            std::fprintf(stderr, "r3_moe_worker: --compare rank %u host comparison failed (tokens=%u rel_l2=%.8g)\n",
+                         rank, tokens, rel);
+            bad = true;
+        }
     }
 
     if (pinned) (void)hipHostUnregister(map);
