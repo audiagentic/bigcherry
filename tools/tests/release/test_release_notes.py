@@ -139,8 +139,9 @@ class ReleasePleaseWiringTests(unittest.TestCase):
         self.assertEqual(sorted(packages), [".", "engines/llamacpp", "engines/radiance"])
         self.assertEqual(packages["engines/llamacpp"]["component"], "bc-llamacpp")
         self.assertEqual(packages["."]["component"], "bc-platform")
-        # an engine-only commit must not also move the platform line
-        self.assertEqual(packages["."]["exclude-paths"], ["engines"])
+        # an engine-only commit must not also move the platform line, and neither may an engine's generated release notes
+        # (committed outside engines with a Release-As footer: they once forced the platform PR to 11552.0.0)
+        self.assertEqual(packages["."]["exclude-paths"], ["engines", "docs/releases/notes"])
         self.assertTrue(self.config["separate-pull-requests"])
         self.assertTrue(self.config["include-component-in-tag"])
         self.assertFalse(self.config["include-v-in-tag"])
