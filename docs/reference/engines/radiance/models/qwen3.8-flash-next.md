@@ -47,6 +47,20 @@ and temperature-0 runs on 2026-11-04 measured 91 to 110 at one stream and 211 to
 six streams on three builds of the four-card layout (with the live placement policy on). Compare builds only with temperature 0
 (or a seed) pinned.
 
+Rerun of the launcher defaults on 2026-11-04 (`flashnext-4gpu`: 14 GiB tail, default heat file,
+combine on, 12 GiB host KV tier, no policy), `temperature: 0`, seed 7, 512-token prompts, 512
+generated tokens, three repetitions; aggregate engine decode and cold prefill:
+
+| Streams | Decode, tokens/s | Step | Draft tokens a step |
+|---:|---:|---:|---:|
+| 1 | 121.4 | 24.9 ms | 3.38 |
+| 2 | 154.8 | 29.3 ms | 5.38 |
+| 4 | 224.0 | 39.6 ms | 10.58 |
+| 6 | 269.8 | 47.6 ms | 16.03 |
+
+Cold prefill of fresh 48K and 50K-token documentation text: 3,624 and 3,628 tokens/s (the best
+recorded fresh ~44K figure above is 3,837). One run of each.
+
 ## What changed the result
 
 | Same-model comparison | Baseline | Updated configuration |
