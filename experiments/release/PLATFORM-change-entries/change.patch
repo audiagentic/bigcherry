@@ -1,0 +1,616 @@
+From 8a9110f8aafd71b863243c82058738e91de58ddf Mon Sep 17 00:00:00 2001
+From: bigcherry
+Date: Wed, 4 Nov 2026 05:50:53 +0000
+Subject: [PATCH] chore(release): scope platform releases to explicit change
+ entries
+
+---
+ .github/workflows/pr-title.yml                |  8 ++
+ .github/workflows/release-please.yml          |  6 +-
+ .release-please-manifest.json                 |  4 +-
+ docs/reference/build/RELEASES.md              | 21 +++-
+ docs/releases/README.md                       |  4 +
+ platform/ENTRY_GUIDE.md                       | 14 +++
+ platform/README.md                            | 31 ++++++
+ platform/changes/release-state/CHANGELOG.md   | 12 +++
+ platform/changes/release-state/version.txt    |  1 +
+ release-please-config.json                    | 12 +--
+ tools/bigcherry/release/platform_intent.py    | 53 +++++++++++
+ tools/tests/release/test_pin_release.py       | 10 +-
+ .../test_pin_release_required_checks.py       |  4 +-
+ tools/tests/release/test_platform_intent.py   | 66 +++++++++++++
+ .../test_platform_release_ownership.py        | 95 +++++++++++++++++++
+ tools/tests/release/test_release_notes.py     | 23 +++--
+ 16 files changed, 336 insertions(+), 28 deletions(-)
+ create mode 100644 platform/ENTRY_GUIDE.md
+ create mode 100644 platform/README.md
+ create mode 100644 platform/changes/release-state/CHANGELOG.md
+ create mode 100644 platform/changes/release-state/version.txt
+ create mode 100644 tools/bigcherry/release/platform_intent.py
+ create mode 100644 tools/tests/release/test_platform_intent.py
+ create mode 100644 tools/tests/release/test_platform_release_ownership.py
+
+diff --git a/.github/workflows/pr-title.yml b/.github/workflows/pr-title.yml
+index 1e6199d09..ce665d63e 100644
+--- a/.github/workflows/pr-title.yml
++++ b/.github/workflows/pr-title.yml
+@@ -13,6 +13,9 @@ jobs:
+     runs-on: ubuntu-24.04
+     steps:
+       - uses: actions/checkout@v4
++        with:
++          # The GitHub PR merge ref needs its base parent for changed-file checks.
++          fetch-depth: 2
+ 
+       # A squash merge puts the title and description on main as the commit message; runs on every edit.
+       - name: No machine names or host-specific values in the title and description
+@@ -61,3 +64,8 @@ jobs:
+               )
+               raise SystemExit(1)
+           PY
++
++      - name: Require explicit platform release intent
++        env:
++          PR_TITLE: ${{ github.event.pull_request.title }}
++        run: PYTHONPATH=tools python3 -m bigcherry.release.platform_intent
+diff --git a/.github/workflows/release-please.yml b/.github/workflows/release-please.yml
+index 4601dfb6e..c2bda543f 100644
+--- a/.github/workflows/release-please.yml
++++ b/.github/workflows/release-please.yml
+@@ -14,7 +14,9 @@
+ #                 upstream radiance version's digits (1.3.0 -> 130; an upstream 1.4.0 starts at 140.0.0). The workflow
+ #                 adds the readable tag bc-radiance-<upstream version>-r<N> (bc-radiance-1.3.0-r0), N counting the
+ #                 releases at that major from 0.
+-#   bc-platform   everything outside engines/. Plain semantic version, tag bc-platform-<version>.
++#   bc-platform   path platform/changes/ only (release-state/ is excluded).
++#                 Shared tooling is not a release trigger without that explicit entry; model and engine changes
++#                 cannot enter the platform line just by touching docs or tests. Same semantic version and tag.
+ #
+ # Releases made before the split are tagged bc-<version> on the single line of that time; bc-llamacpp-<version> tags
+ # were added to the same commits for the builds still in use so the line continues from them.
+@@ -116,7 +118,7 @@ jobs:
+           fi
+ 
+       - name: platform line - title
+-        if: ${{ steps.release.outputs['.--release_created'] == 'true' }}
++        if: ${{ steps.release.outputs['platform/changes--release_created'] == 'true' }}
+         env:
+           GH_TOKEN: ${{ github.token }}
+           RP_TAG: ${{ steps.release.outputs['.--tag_name'] }}
+diff --git a/.release-please-manifest.json b/.release-please-manifest.json
+index 0ec69fbbd..f6b8f521b 100644
+--- a/.release-please-manifest.json
++++ b/.release-please-manifest.json
+@@ -1,5 +1,5 @@
+ {
+   "engines/llamacpp": "11552.3.0",
+-  ".": "1.3.0",
+-  "engines/radiance": "1160.0.0"
++  "engines/radiance": "1160.0.0",
++  "platform/changes": "1.3.0"
+ }
+diff --git a/docs/reference/build/RELEASES.md b/docs/reference/build/RELEASES.md
+index 747428e40..ccc8801eb 100644
+--- a/docs/reference/build/RELEASES.md
++++ b/docs/reference/build/RELEASES.md
+@@ -8,7 +8,21 @@ platform has one too.
+ |---|---|---|---|
+ | llama.cpp | `engines/llamacpp` | `bc-llamacpp` / `bc-llamacpp-` | `engines/llamacpp/CHANGELOG.md` |
+ | radiance | `engines/radiance` | `bc-radiance` / `bc-radiance-` | `engines/radiance/CHANGELOG.md` |
+-| platform | `.` (excludes `engines/`) | `bc-platform` / `bc-platform-` | `docs/releases/PLATFORM_CHANGELOG.md` |
++| platform | `platform/changes/` (explicit change entries) | `bc-platform` / `bc-platform-` | `platform/changes/release-state/CHANGELOG.md` |
++
++**Platform release boundary.** The platform version changes only after a
++`feat(platform):`, `fix(platform):` or `perf(platform):` commit intentionally
++touches `platform/changes/`. Put a concise entry there with the shared-platform
++feature or fix. Engine-only work, even when it changes common documentation,
++test harnesses or lab scripts, does not trigger `bc-platform`. Merging that
++commit into `main` causes release-please to propose a platform release PR;
++**merging the release PR** is what publishes a new version/tag. Current
++platform version is in `platform/changes/release-state/version.txt`; historic releases retain their
++original tags and full legacy changelog in
++[docs/releases/PLATFORM_CHANGELOG.md](../../releases/PLATFORM_CHANGELOG.md).
++Older v1.3.0 and earlier notes may contain engine work because the
++previous release line was rooted at `.`. The
++[platform boundary](../../../platform/README.md) explains the opt-in.
+ 
+ An engine's line is declared in two places, and an engine missing from either is refused by `release-notes` and
+ `pin-release`: a package in `release-please-config.json` (and its version in `.release-please-manifest.json`), and an
+@@ -21,8 +35,9 @@ older tag family, and extra repository paths owned by the engine). The package p
+ 1. **Ledger event.** Substantive work records a change event (`record_change_event`) listing the files it touched.
+    Events carry no engine field: an event belongs to an engine's release when any listed file is under
+    `engines/<engine>/`, the engine's `engine.toml` layout (patches, overlay, vendor checkout, recipes, components,
+-   external sources) or its `paths` in `config/release.toml`. An event touching no engine's files belongs to the
+-   platform line. An event touching two engines appears in both releases.
++   external sources) or its `paths` in `config/release.toml`. An event touching two engines appears in both
++   engine release records. Events outside the engine paths may document shared-platform work, but do not
++   themselves bump `bc-platform`: only a deliberate `platform/changes/` entry does.
+ 2. **Release notes.**
+ 
+        python -m bigcherry --engine <name> release-notes <pin> [--version V] [--stdout]
+diff --git a/docs/releases/README.md b/docs/releases/README.md
+index 096fb303b..5b6174139 100644
+--- a/docs/releases/README.md
++++ b/docs/releases/README.md
+@@ -11,3 +11,7 @@ Human-facing release documentation lives here:
+ Machine-readable per-pin compatibility records, patch-rebase reports, and
+ pin-transition state live separately under root `releases/` because they are
+ consumed and mutated by BigCherry tooling. Do not duplicate those records here.
++
++Platform release notes from the original root-scoped release line remain in
++`PLATFORM_CHANGELOG.md` as a historical record. New platform versions and
++changelog entries are managed in [`platform/`](../../platform/README.md).
+diff --git a/platform/ENTRY_GUIDE.md b/platform/ENTRY_GUIDE.md
+new file mode 100644
+index 000000000..4c071b2ae
+--- /dev/null
++++ b/platform/ENTRY_GUIDE.md
+@@ -0,0 +1,14 @@
++# Platform change entries
++
++For a feature or fix to shared BigCherry tooling, include a concise Markdown
++note under `platform/changes/` in the same PR and commit as the implementation.
++Use an issue- or feature-specific filename, for example
++`shared-build-graph.md`. State the user-visible platform effect and its
++validation. Engine-specific patches, GPU kernels, model measurements and
++documentation do **not** need entries here.
++
++This entry is the deliberate release trigger. The release-state files are
++excluded so that editing notes and versions cannot cause a fresh release.
++The commit subject, not the
++entry's prose, supplies the version bump and changelog text to release-please.
++Do not put secret values, machine paths or raw logs in the entry.
+diff --git a/platform/README.md b/platform/README.md
+new file mode 100644
+index 000000000..ae409c30a
+--- /dev/null
++++ b/platform/README.md
+@@ -0,0 +1,31 @@
++# Platform release boundary
++
++The `bc-platform` release line covers shared BigCherry capabilities:
++build and patch orchestration, engine-independent configuration, release
++tooling, hardware discovery, and common benchmark and validation interfaces.
++It does not represent a newly qualified Radiance or llama.cpp engine build.
++
++A meaningful change to the shared platform is deliberately included in this
++release line by adding a short file under `platform/changes/` in the **same
++commit** as the change. Use a `feat(platform):`, `fix(platform):` or
++`perf(platform):` commit subject. See the
++[change-entry instructions](ENTRY_GUIDE.md). A single mixed commit may
++describe both engine and shared-platform changes, but engine-specific work alone must not
++create a platform marker.
++
++Release-please watches only `platform/changes/` and excludes
++`platform/changes/release-state/`. Only a change-entry file triggers a new
++platform release. This
++explicit boundary is necessary: its `exclude-paths` option cannot ignore
++an engine commit that also edits files outside the engine directory.
++
++Once a platform change is merged into `main`, release-please proposes a
++`bc-platform` release PR, collecting platform changes since the previous
++release. The version and GitHub release are published only when that PR is
++merged. Updating the engine pins, adding model evidence, or merging an
++engine-specific PR does not by itself publish a platform release.
++
++[The release process](../docs/reference/build/RELEASES.md) describes the
++tags and changelog. The old root-scoped platform release history is retained
++under [the archived changelog](../docs/releases/PLATFORM_CHANGELOG.md);
++historical entries may contain engine-specific changes.
+diff --git a/platform/changes/release-state/CHANGELOG.md b/platform/changes/release-state/CHANGELOG.md
+new file mode 100644
+index 000000000..7b6ce1d49
+--- /dev/null
++++ b/platform/changes/release-state/CHANGELOG.md
+@@ -0,0 +1,12 @@
++# Platform changelog
++
++From the first platform release after v1.3.0, this file records only changes
++explicitly included via `platform/changes/`.
++
++## Previous releases
++
++Platform releases through [v1.3.0](https://github.com/audiagentic/bigcherry/releases/tag/bc-platform-1.3.0)
++used the repository root as their release scope. Their generated notes
++could include engine-specific commits when those commits also modified
++documentation or shared test files. This history has been retained unchanged
++in the [legacy platform changelog](../../../docs/releases/PLATFORM_CHANGELOG.md).
+diff --git a/platform/changes/release-state/version.txt b/platform/changes/release-state/version.txt
+new file mode 100644
+index 000000000..f0bb29e76
+--- /dev/null
++++ b/platform/changes/release-state/version.txt
+@@ -0,0 +1 @@
++1.3.0
+diff --git a/release-please-config.json b/release-please-config.json
+index b216e1f66..8b2d6e01a 100644
+--- a/release-please-config.json
++++ b/release-please-config.json
+@@ -94,13 +94,10 @@
+         }
+       ]
+     },
+-    ".": {
++    "platform/changes": {
+       "release-type": "simple",
+       "component": "bc-platform",
+-      "exclude-paths": [
+-        "engines"
+-      ],
+-      "changelog-path": "docs/releases/PLATFORM_CHANGELOG.md",
++      "changelog-path": "release-state/CHANGELOG.md",
+       "bump-minor-pre-major": true,
+       "changelog-sections": [
+         {
+@@ -140,7 +137,10 @@
+           "hidden": true
+         }
+       ],
+-      "version-file": "docs/releases/platform-version.txt"
++      "version-file": "release-state/version.txt",
++      "exclude-paths": [
++        "platform/changes/release-state"
++      ]
+     }
+   },
+   "separate-pull-requests": true,
+diff --git a/tools/bigcherry/release/platform_intent.py b/tools/bigcherry/release/platform_intent.py
+new file mode 100644
+index 000000000..a3f8f8b3b
+--- /dev/null
++++ b/tools/bigcherry/release/platform_intent.py
+@@ -0,0 +1,53 @@
++"""Require an explicit platform change entry for platform-scoped release PRs.
++
++release-please uses the `platform/` package path; this guard prevents
++accidental scope switches and omissions in squash-merged PRs.
++"""
++from __future__ import annotations
++
++import os
++import re
++import subprocess
++import sys
++from collections.abc import Iterable
++
++_PLAT_TITLE = re.compile(r"^(?:feat|fix|perf)\(platform\)!?: .+")
++_MARKER = re.compile(r"^platform/changes/(?!README\.md$)[^/]+\.md$")
++
++
++def check_intent(title: str, updated_paths: Iterable[str]) -> None:
++    """Validate the intent recorded in a PR title against changed marker files."""
++    has_marker = any(_MARKER.fullmatch(path) for path in updated_paths)
++    requests_platform_release = bool(_PLAT_TITLE.fullmatch(title))
++    if requests_platform_release and not has_marker:
++        raise ValueError(
++            "A feat/fix/perf(platform) PR needs a platform/changes/<topic>.md entry "
++            "in the same PR"
++        )
++    if has_marker and not requests_platform_release:
++        raise ValueError(
++            "A platform/changes entry requires a feat(platform), fix(platform) "
++            "or perf(platform) PR title"
++        )
++
++
++def main() -> int:
++    title = os.environ.get("PR_TITLE", "")
++    # On pull_request workflows HEAD is the test merge commit; its first
++    # parent is the base branch. Checkout with fetch-depth: 2.
++    changed = subprocess.run(
++        ["git", "diff", "--diff-filter=AM", "--name-only", "HEAD^1", "HEAD"],
++        check=True,
++        capture_output=True,
++        text=True,
++    ).stdout.splitlines()
++    try:
++        check_intent(title, changed)
++    except ValueError as exc:
++        print(f"platform release intent: {exc}", file=sys.stderr)
++        return 1
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/tools/tests/release/test_pin_release.py b/tools/tests/release/test_pin_release.py
+index 4516b4d3d..bb8f2f3a5 100644
+--- a/tools/tests/release/test_pin_release.py
++++ b/tools/tests/release/test_pin_release.py
+@@ -32,10 +32,12 @@ _RELEASE_CONFIG = """\
+       "component": "bc-llamacpp",
+       "changelog-path": "CHANGELOG.md"
+     },
+-    ".": {
++    "platform/changes": {
+       "release-type": "simple",
+       "component": "bc-platform",
+-      "changelog-path": "docs/releases/PLATFORM_CHANGELOG.md"
++      "changelog-path": "release-state/CHANGELOG.md",
++      "version-file": "release-state/version.txt",
++      "exclude-paths": ["platform/changes/release-state"]
+     }
+   }
+ }
+@@ -69,7 +71,7 @@ class PinReleaseTests(unittest.TestCase):
+                                    encoding="utf-8")
+         (root / "release-please-config.json").write_text(_RELEASE_CONFIG, encoding="utf-8")
+         (root / ".release-please-manifest.json").write_text(
+-            json.dumps({"engines/llamacpp": "11402.0.0", ".": "1.1.0"}, indent=2) + "\n", encoding="utf-8")
++            json.dumps({"engines/llamacpp": "11402.0.0", "platform/changes": "1.1.0"}, indent=2) + "\n", encoding="utf-8")
+         _git(root, "add", "-A")
+         _git(root, "commit", "-q", "-m", "seed")
+         return root
+@@ -227,7 +229,7 @@ class PinReleaseTests(unittest.TestCase):
+             text = (root / "release-please-config.json").read_text(encoding="utf-8")
+             config = json.loads(text)
+             self.assertEqual(config["packages"]["engines/llamacpp"]["release-as"], "11474.0.0")
+-            self.assertNotIn("release-as", config["packages"]["."])
++            self.assertNotIn("release-as", config["packages"]["platform/changes"])
+             self.assertEqual(text.replace('      "release-as": "11474.0.0",\n', ""), original_config)
+             self.assertNotIn("Release-As", _git(root, "log", "-1", "--format=%B"))
+             head = _git(root, "rev-parse", "HEAD")
+diff --git a/tools/tests/release/test_pin_release_required_checks.py b/tools/tests/release/test_pin_release_required_checks.py
+index b3f3db08d..97a64fea3 100644
+--- a/tools/tests/release/test_pin_release_required_checks.py
++++ b/tools/tests/release/test_pin_release_required_checks.py
+@@ -168,11 +168,11 @@ class RequiredChecksTests(unittest.TestCase):
+             root = Path(td)
+             (root / "releases").mkdir()
+             (root / "release-please-config.json").write_text(
+-                json.dumps({"packages": {"engines/llamacpp": {}, ".": {}}}, indent=2) + "\n",
++                json.dumps({"packages": {"engines/llamacpp": {}, "platform/changes": {}}}, indent=2) + "\n",
+                 encoding="utf-8",
+             )
+             (root / ".release-please-manifest.json").write_text(
+-                json.dumps({"engines/llamacpp": "11552.1.1", ".": "1.1.0"}, indent=2) + "\n",
++                json.dumps({"engines/llamacpp": "11552.1.1", "platform/changes": "1.1.0"}, indent=2) + "\n",
+                 encoding="utf-8",
+             )
+             plan = SimpleNamespace(
+diff --git a/tools/tests/release/test_platform_intent.py b/tools/tests/release/test_platform_intent.py
+new file mode 100644
+index 000000000..fbfa94b11
+--- /dev/null
++++ b/tools/tests/release/test_platform_intent.py
+@@ -0,0 +1,66 @@
++"""The PR gate must reject unintentional or missing platform release entries."""
++from __future__ import annotations
++
++import os
++import subprocess
++import unittest
++from unittest import mock
++
++from bigcherry.release import platform_intent
++
++
++class PlatformIntentTests(unittest.TestCase):
++    def test_explicit_platform_changes_are_allowed(self) -> None:
++        for title in ("feat(platform): new shared build graph",
++                      "fix(platform): correct multi-engine admission",
++                      "perf(platform): shared benchmark throughput",
++                      "feat(platform)!: revise shared manifest"):
++            with self.subTest(title=title):
++                platform_intent.check_intent(title, [
++                    "tools/bigcherry/build/runner.py",
++                    "platform/changes/shared-build.md",
++                ])
++
++    def test_platform_scoped_title_requires_a_note(self) -> None:
++        with self.assertRaisesRegex(ValueError, "needs a"):
++            platform_intent.check_intent(
++                "feat(platform): new shared build graph",
++                ["tools/bigcherry/build/runner.py", "platform/README.md"],
++            )
++
++    def test_engine_scoped_commit_cannot_smuggle_platform_note(self) -> None:
++        for title in ("feat(radiance): optimize helper",
++                      "fix(llamacpp): correct HIP dispatch",
++                      "chore(release): migrate platform package"):
++            with self.subTest(title=title), self.assertRaisesRegex(ValueError, "requires a"):
++                platform_intent.check_intent(title, ["platform/changes/accidental.md"])
++
++    def test_readme_and_generated_platform_release_pr_do_not_trigger(self) -> None:
++        platform_intent.check_intent("chore(release): package migration", [
++            "platform/README.md", "platform/changes/README.md",
++            "platform/CHANGELOG.md", "platform/version.txt",
++        ])
++        platform_intent.check_intent("release: bc-platform 1.4.0", [
++            "platform/CHANGELOG.md", "platform/version.txt",
++            ".release-please-manifest.json",
++        ])
++
++    def test_ci_entrypoint_uses_actual_changed_paths(self) -> None:
++        with mock.patch.dict(os.environ, {"PR_TITLE": "fix(platform): shared patcher"}), \
++             mock.patch.object(subprocess, "run", return_value=mock.Mock(
++                 stdout="platform/changes/patcher.md\ntools/bigcherry/patch/api.py\n"
++             )) as run:
++            self.assertEqual(platform_intent.main(), 0)
++        self.assertEqual(run.call_args.args[0], [
++            "git", "diff", "--diff-filter=AM", "--name-only", "HEAD^1", "HEAD"
++        ])
++        with mock.patch.dict(os.environ, {"PR_TITLE": "feat(radiance): helper"}), \
++             mock.patch.object(subprocess, "run", return_value=mock.Mock(
++                 stdout="platform/changes/patcher.md\n"
++             )):
++            with mock.patch("sys.stderr"):
++                self.assertEqual(platform_intent.main(), 1)
++
++
++if __name__ == "__main__":
++    unittest.main()
+diff --git a/tools/tests/release/test_platform_release_ownership.py b/tools/tests/release/test_platform_release_ownership.py
+new file mode 100644
+index 000000000..64bc88455
+--- /dev/null
++++ b/tools/tests/release/test_platform_release_ownership.py
+@@ -0,0 +1,95 @@
++"""The platform release is deliberately scoped, not the repository catch-all."""
++from __future__ import annotations
++
++import json
++import unittest
++from pathlib import Path
++
++ROOT = Path(__file__).resolve().parents[3]
++
++
++def eligible_packages(files: tuple[str, ...], packages: dict) -> set[str]:
++    """Model release-please's package-path inclusion for path-scoping tests."""
++    out = set()
++    for package_path, config in packages.items():
++        relevant = [name for name in files if name.startswith(package_path + "/")]
++        if not relevant:
++            continue
++        excludes = config.get("exclude-paths", [])
++        if excludes and all(
++            any(name.startswith(exclude.rstrip("/") + "/") for exclude in excludes)
++            for name in relevant
++        ):
++            continue
++        out.add(config["component"])
++    return out
++
++
++class PlatformReleaseBoundaryTests(unittest.TestCase):
++    @classmethod
++    def setUpClass(cls) -> None:
++        cls.configuration = json.loads((ROOT / "release-please-config.json").read_text(encoding="utf-8"))
++        cls.packages = cls.configuration["packages"]
++        cls.manifest = json.loads((ROOT / ".release-please-manifest.json").read_text(encoding="utf-8"))
++
++    def test_platform_package_has_explicit_directory_and_stable_version(self) -> None:
++        self.assertNotIn(".", self.packages)
++        self.assertNotIn(".", self.manifest)
++        self.assertEqual(set(self.packages), set(self.manifest))
++        self.assertEqual(self.packages["platform/changes"]["component"], "bc-platform")
++        self.assertEqual(self.manifest["platform/changes"], "1.3.0")
++        self.assertEqual(self.packages["platform/changes"]["version-file"], "release-state/version.txt")
++        self.assertEqual(self.packages["platform/changes"]["changelog-path"], "release-state/CHANGELOG.md")
++        self.assertEqual((ROOT / "platform/changes/release-state/version.txt").read_text(encoding="utf-8"), "1.3.0\n")
++        self.assertEqual(self.packages["platform/changes"]["exclude-paths"], ["platform/changes/release-state"])
++        self.assertTrue((ROOT / "platform/changes/release-state/CHANGELOG.md").is_file())
++        self.assertIn("bc-platform-1.3.0", (ROOT / "platform/changes/release-state/CHANGELOG.md").read_text(encoding="utf-8"))
++
++    def test_engine_changes_with_shared_docs_and_tests_do_not_count_as_platform(self) -> None:
++        # Simulate previously mis-attributed release-please changes that span directories.
++        for files in (
++            ("engines/radiance/components/libr3/helper/moe_remote_shm.h",
++             "docs/planning/active/build-radiance-components/RCS09.md"),
++            ("engines/radiance/components/bc-gfx12/bc_moe_gemv.hip",
++             "tools/tests/core/test_components.py",
++             "docs/reference/tooling/TOOL_DISPOSITION.md"),
++            ("engines/llamacpp/patches/1237_rd30_moe_mmq_compact_grid/patch.py",
++             "docs/releases/notes/bc-llamacpp-11552.3.0.md"),
++            ("tools/lab/radiance/bench.sh", "docs/evidence/RAD46/result.md"),
++            ("tools/bigcherry/engine_adapters/radiance.py",
++             "docs/design/moe-remote.md"),
++            ("docs/releases/notes/bc-radiance-1160.0.0.md",),
++            ("platform/changes/release-state/CHANGELOG.md", "platform/changes/release-state/version.txt"),
++            ("platform/README.md", "docs/reference/build/RELEASES.md"),
++            ("platform/other.md",),
++            ("release-please-config.json", ".release-please-manifest.json",
++             ".github/workflows/release-please.yml"),
++        ):
++            with self.subTest(files=files):
++                self.assertNotIn("bc-platform", eligible_packages(files, self.packages))
++
++    def test_explicit_platform_change_is_counted_even_when_shared_code_also_changes(self) -> None:
++        files = ("tools/bigcherry/build/runner.py", "platform/changes/build-graph.md")
++        self.assertEqual(eligible_packages(files, self.packages), {"bc-platform"})
++        self.assertEqual(
++            eligible_packages(("engines/radiance/components/libr3/README.md",
++                               "platform/changes/shared-admission.md"), self.packages),
++            {"bc-radiance", "bc-platform"},
++        )
++
++    def test_release_please_workflow_reads_new_package_output(self) -> None:
++        workflow = (ROOT / ".github/workflows/release-please.yml").read_text(encoding="utf-8")
++        self.assertIn("steps.release.outputs['platform/changes--release_created']", workflow)
++        self.assertNotIn("steps.release.outputs['.--release_created']", workflow)
++        self.assertIn("bc-platform", workflow)
++
++    def test_release_line_continuity(self) -> None:
++        # No tag rename, version reset, or migration of engine package identities.
++        self.assertEqual(self.manifest["engines/radiance"], "1160.0.0")
++        self.assertEqual(self.manifest["engines/llamacpp"], "11552.3.0")
++        self.assertEqual(self.packages["engines/radiance"]["component"], "bc-radiance")
++        self.assertEqual(self.packages["engines/llamacpp"]["component"], "bc-llamacpp")
++
++
++if __name__ == "__main__":
++    unittest.main()
+diff --git a/tools/tests/release/test_release_notes.py b/tools/tests/release/test_release_notes.py
+index d154ca787..6ab2e2e14 100644
+--- a/tools/tests/release/test_release_notes.py
++++ b/tools/tests/release/test_release_notes.py
+@@ -101,7 +101,7 @@ class ReleaseNotesTests(unittest.TestCase):
+             "llamacpp": {"files": ["engines\\llamacpp\\patches\\1340_x\\patch.py"]},
+             "llamacpp-recipes": {"files": ["config/recipes.toml"]},
+             "both": {"files": ["engines/llamacpp/overlay/a.h", "engines/radiance/recipes.toml"]},
+-            "platform": {"files": ["tools/bigcherry/release/notes.py", ".github/workflows/x.yml"]},
++            "shared-tooling": {"files": ["tools/bigcherry/release/notes.py", ".github/workflows/x.yml"]},
+             "no-files": {"files": []},
+             "sibling-prefix": {"files": ["engines/radiance-extra/a.py"]},
+         }
+@@ -109,7 +109,7 @@ class ReleaseNotesTests(unittest.TestCase):
+         self.assertEqual(got, {
+             "radiance": (False, True), "radiance-lab": (False, True), "radiance-docs": (False, True),
+             "llamacpp": (True, False), "llamacpp-recipes": (True, False), "both": (True, True),
+-            "platform": (False, False), "no-files": (False, False), "sibling-prefix": (False, False),
++            "shared-tooling": (False, False), "no-files": (False, False), "sibling-prefix": (False, False),
+         })
+ 
+     def test_ledger_events_for_an_engine_keep_only_its_events_after_the_previous_release(self):
+@@ -182,11 +182,16 @@ class ReleasePleaseWiringTests(unittest.TestCase):
+ 
+     def test_each_release_line_has_its_own_component_and_tag(self):
+         packages = self.config["packages"]
+-        self.assertEqual(sorted(packages), [".", "engines/llamacpp", "engines/radiance"])
++        self.assertEqual(sorted(packages), ["engines/llamacpp", "engines/radiance", "platform/changes"])
+         self.assertEqual(packages["engines/llamacpp"]["component"], "bc-llamacpp")
+-        self.assertEqual(packages["."]["component"], "bc-platform")
+-        # an engine-only commit must not also move the platform line
+-        self.assertEqual(packages["."]["exclude-paths"], ["engines"])
++        self.assertEqual(packages["platform/changes"]["component"], "bc-platform")
++        # The platform is opt-in: no root package to catch mixed engine/docs commits.
++        self.assertEqual(packages["platform/changes"]["exclude-paths"], ["platform/changes/release-state"])
++        self.assertEqual(packages["platform/changes"]["changelog-path"], "release-state/CHANGELOG.md")
++        self.assertEqual(packages["platform/changes"]["version-file"], "release-state/version.txt")
++        self.assertTrue((_REPO / "platform/changes/release-state/CHANGELOG.md").is_file())
++        self.assertEqual((_REPO / "platform/changes/release-state/version.txt").read_text(encoding="utf-8").strip(),
++                         self.manifest["platform/changes"])
+         self.assertTrue(self.config["separate-pull-requests"])
+         self.assertTrue(self.config["include-component-in-tag"])
+         self.assertFalse(self.config["include-v-in-tag"])
+@@ -207,7 +212,7 @@ class ReleasePleaseWiringTests(unittest.TestCase):
+         self.assertTrue((_REPO / "engines" / "radiance" / radiance["changelog-path"]).is_file())
+ 
+     def test_manifest_versions(self):
+-        self.assertEqual(sorted(self.manifest), [".", "engines/llamacpp", "engines/radiance"])
++        self.assertEqual(sorted(self.manifest), ["engines/llamacpp", "engines/radiance", "platform/changes"])
+         # radiance's major is its pinned upstream version's digits (1.8.0 -> 180). The manifest holds the last RELEASED
+         # version, so after a pin bump it stays on the previous line (170.x) until pin-release states the first release
+         # of the new pin with release-as (RELEASES.md); it can never be ahead of the pin.
+@@ -217,7 +222,7 @@ class ReleasePleaseWiringTests(unittest.TestCase):
+         self.assertLessEqual(int(self.manifest["engines/radiance"].split(".")[0]), int(pinned.replace(".", "")))
+         # the llama.cpp line's major is a llama build number; the platform line is a plain semantic version
+         self.assertRegex(self.manifest["engines/llamacpp"], r"^\d{4,6}\.\d+\.\d+$")
+-        self.assertRegex(self.manifest["."], r"^\d{1,3}\.\d+\.\d+$")
++        self.assertRegex(self.manifest["platform/changes"], r"^\d{1,3}\.\d+\.\d+$")
+ 
+     def test_workflow_adds_the_readable_tag_and_publishes_the_generated_notes(self):
+         prefix = notes.load_config(_REPO, "llamacpp").tag_prefix
+@@ -228,7 +233,7 @@ class ReleasePleaseWiringTests(unittest.TestCase):
+         self.assertIn(f'readable="{prefix}b${{LLAMA_BUILD}}-r$((count - 1))"', self.workflow)
+         self.assertIn('notes="docs/releases/notes/${RP_TAG}.md"', self.workflow)
+         self.assertIn('--title "${readable}" --notes-file "${notes}"', self.workflow)
+-        self.assertIn("steps.release.outputs['.--release_created'] == 'true'", self.workflow)
++        self.assertIn("steps.release.outputs['platform/changes--release_created'] == 'true'", self.workflow)
+         self.assertTrue(re.search(r"branches:\s*\[main\]", self.workflow))
+         self.assertEqual(notes.load_config(_REPO, "llamacpp").notes_dir, "docs/releases/notes")
+ 
+-- 
+2.47.3
+

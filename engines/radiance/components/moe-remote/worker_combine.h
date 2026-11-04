@@ -26,6 +26,34 @@ inline void combine_futex_wake(uint32_t* p, bool shared) {
     (void)::syscall(SYS_futex, p, shared ? FUTEX_WAKE : FUTEX_WAKE_PRIVATE, INT_MAX, nullptr, nullptr, 0);
 }
 
+// CPU-side combine ticket, read from the existing Request/control metadata.
+struct CombineIdentity {
+    uint64_t epoch;
+    uint32_t slot, generation, participants;
+};
+inline bool combine_ticket_valid(const CombineIdentity& t,uint32_t helpers) {
+    return t.epoch && t.slot<2 && t.generation &&
+        helpers>=2 && helpers<=r3::moe_shm::kCombineHelpers &&
+        (t.participants&1u) &&
+        !(t.participants & ~((1u<<helpers)-1u));
+}
+inline bool combine_request_valid(const r3::moe_shm::Request& first,
+                                  const r3::moe_shm::Request& other,
+                                  const r3::moe_shm::PlacementControl& active,
+                                  uint32_t rows,uint32_t sequence,uint32_t helper_slot) {
+    // The publisher uses step_slot(k, rank, helpers) == k for a one-rank engine
+    // with multiple helpers, and stamps world == 1 on every request.
+    // row_base comes from the same activation pointer for every helper in a pass.
+    return sequence && other.sequence==sequence &&
+        other.rank==helper_slot && other.rank_count==1 &&
+        other.rows==rows && other.layer==first.layer &&
+        other.row_base==first.row_base &&
+        other.hidden==first.hidden && other.placement_epoch==first.placement_epoch &&
+        other.generation_slot==first.generation_slot &&
+        first.placement_epoch==active.active_epoch &&
+        first.generation_slot==active.active_slot;
+}
+
 /* The calling thread plus persistent workers; a job is split into token chunks taken from a counter. Workers sleep on
  * gen_ between jobs; the caller sleeps on busy_ until the last worker finishes. */
 class CombinePool {
@@ -40,7 +68,10 @@ public:
         for (auto& t : workers_) t.join();
     }
     /* mask[t]: bit k set when helper k wrote row t. Rows with no bit are not read by the engine. */
-    void combine(const uint16_t* const* src, uint32_t nsrc, uint16_t* out, const uint8_t* mask, uint32_t rows, uint32_t hidden) {
+    bool combine(const uint16_t* const* src, uint32_t nsrc, uint16_t* out, const uint8_t* mask, uint32_t rows, uint32_t hidden,
+                 const CombineIdentity& ticket) {
+        if (!combine_ticket_valid(ticket,nsrc) || !src || !out || !mask || !hidden || !rows)
+            return false;
         nsrc_ = nsrc; for (uint32_t k = 0; k < nsrc; ++k) src_[k] = src[k];
         out_ = out; mask_ = mask; rows_ = rows; hidden_ = hidden;
         __atomic_store_n(&next_, 0u, __ATOMIC_RELAXED);
@@ -50,6 +81,7 @@ public:
         work();
         for (uint32_t b; (b = __atomic_load_n(&busy_, __ATOMIC_ACQUIRE)) != 0;)
             combine_futex_wait(&busy_, b, 0, false);
+        return true;
     }
 
 private:
@@ -111,6 +143,16 @@ inline bool combine_step(void* map, const r3::moe_shm::Request* q0, uint32_t hel
     const uint32_t g = q0->combine_generation;
     if (!g) return true;
     const uint32_t rows = h->combine.rows;
+    PlacementControl active{};
+    if (!placement_snapshot(map,&active)) return false;
+    uint32_t participants=0;
+    for (uint32_t i=0;i<helpers && i<kCombineHelpers;++i)
+        if (h->combine.seq[i]) participants|=1u<<i;
+    const CombineIdentity ticket{q0->placement_epoch,q0->generation_slot,g,participants};
+    if (!combine_ticket_valid(ticket,helpers) ||
+        !combine_request_valid(*q0,*q0,active,rows,q0->sequence,0) ||
+        load(&h->combine.request)!=g ||
+        h->combine.lane[0]!=lane_of(0,kSmallClasses)) return false;
     if (helpers < 2 || helpers > kCombineHelpers || rows == 0 || rows > h->max_rows || q0->rows != rows ||
         h->combine.seq[0] != q0->sequence) {
         std::fprintf(stderr, "r3_moe_worker: combine stopped: the combine request does not match helper 0's request\n");
@@ -122,7 +164,8 @@ inline bool combine_step(void* map, const r3::moe_shm::Request* q0, uint32_t hel
         const uint32_t lanek = h->combine.lane[k], seqk = h->combine.seq[k];
         if (!seqk) continue;   /* no request from helper k this step: it contributes no rows */
         const Request* qk = lane_request(map, lanek, seqk);
-        if (lanek >= kLanes || lanek % kMaxSlots != k || !qk) {
+        if (lanek >= kLanes || lane_class(lanek)!=kSmallClasses ||
+            lanek % kMaxSlots != k || !qk) {
             std::fprintf(stderr, "r3_moe_worker: combine stopped: helper %u's lane does not match\n", k);
             return false;
         }
@@ -132,7 +175,8 @@ inline bool combine_step(void* map, const r3::moe_shm::Request* q0, uint32_t hel
             if (stopping() || load(&h->helper_fault)) return false;
             std::this_thread::yield();
         }
-        if (qk->rows != rows) {
+        if (lane_class(lanek)!=kSmallClasses ||
+            !combine_request_valid(*q0,*qk,active,rows,seqk,k)) {
             std::fprintf(stderr, "r3_moe_worker: combine stopped: helper %u's request does not match\n", k);
             return false;
         }
@@ -171,7 +215,8 @@ inline bool combine_step(void* map, const r3::moe_shm::Request* q0, uint32_t hel
         const auto t0 = std::chrono::steady_clock::now();
         const uint16_t* src[kCombineHelpers] = {};
         for (uint32_t k = 0; k < helpers; ++k) src[k] = planes[k] + (uint64_t)r0 * hid;
-        pool->combine(src, helpers, out + (uint64_t)r0 * hid, mask->data() + r0, n, hid);
+        if (!pool->combine(src, helpers, out + (uint64_t)r0 * hid,
+                           mask->data() + r0, n, hid, ticket)) return false;
         std::atomic_thread_fence(std::memory_order_release);
         store(&h->chunks.done[c], g);
         const auto t1 = std::chrono::steady_clock::now();
@@ -191,6 +236,13 @@ inline bool combine_step(void* map, const r3::moe_shm::Request* q0, uint32_t hel
             return false;
         }
     }
+    // Admission cannot flip until this lane and its combined result are
+    // consumed. Detect a violated barrier before publishing terminal done.
+    PlacementControl finish{};
+    if (!placement_snapshot(map,&finish) ||
+        finish.active_epoch!=ticket.epoch || finish.active_slot!=ticket.slot ||
+        load(&h->combine.request)!=ticket.generation)
+        return false;
     store(&h->combine.done, g);
     st->combine_us += std::chrono::duration<double, std::micro>(combined).count();
     {   /* R3_MOE_WORKER_TRACE (RAD40): this step's waits for chunks and its combine time, on helper 0's request */

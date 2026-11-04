@@ -73,6 +73,7 @@ PROGRESS 2026-11-04 slice E (PR #558, branch feat/rhp11-slice-e-helper-slots): h
 
 ## Ledger-events
 
+
 - chg_20261101_225732_planning-a-staged-roadmap-for_4092
 - 2026-11-01T22:57:50.943098+00:00 (updated-by): Updated: section:ledger-events
 - chg_20261101_233905_design-spec-for-moving-experts_5737
@@ -95,3 +96,5 @@ PROGRESS 2026-11-04 slice E (PR #558, branch feat/rhp11-slice-e-helper-slots): h
 - chg_20261104_005244_helpers-can-now-take-over-and_6656
 - 2026-11-04T00:52:48.511888+00:00 (updated-by): Updated: section:ledger-events
 - 2026-11-04T00:52:52.689176+00:00 (updated-by): Updated: section:notes
+- chg_20261104_065043_experts-can-now-be-moved-betwe_3090
+- 2026-11-04T06:50:47.247787+00:00 (updated-by): Updated: section:ledger-events
