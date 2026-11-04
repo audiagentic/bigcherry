@@ -95,6 +95,13 @@ class CILayersTests(unittest.TestCase):
                 with self.assertRaisesRegex(layers.LayerError, "unsafe archive"):
                     layers._validate_archive(tar, "a" * 32 + "/" + "b" * 32, "engine")
 
+    def test_component_declaration_drift_fails_closed(self):
+        engine = self.root / "engines/radiance"
+        engine.mkdir(parents=True)
+        (engine / "engine.toml").write_text('[components]\nlibr3="one"\n')
+        with self.assertRaisesRegex(layers.LayerError, "component declarations changed"):
+            layers.input_keys(self.root)
+
     def test_fingerprint_includes_file_content_and_path(self):
         a = self.root / "a"
         b = self.root / "b"

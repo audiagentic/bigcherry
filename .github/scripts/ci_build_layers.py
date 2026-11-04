@@ -18,6 +18,7 @@ import posixpath
 import subprocess
 import sys
 import tarfile
+import tomllib
 
 SCHEMA = "bigcherry-ci-layers-v1"
 COMPONENTS = ("libr3", "libr2", "moe-remote", "ngram-helper", "bc-gfx12", "serving")
@@ -57,6 +58,9 @@ def fingerprint_files(root: Path, paths: list[str]) -> str:
 
 
 def input_keys(root: Path) -> dict[str, str]:
+    declared = tomllib.loads((root / "engines/radiance/engine.toml").read_text()).get("components", {})
+    if not isinstance(declared, dict) or set(declared) != set(COMPONENTS):
+        raise LayerError("Radiance component declarations changed; update the layer cache mapping")
     files = tracked_paths(root)
     # Include all code that can affect source materialisation, CMake options,
     # build execution and toolchain, but not independently built components.
