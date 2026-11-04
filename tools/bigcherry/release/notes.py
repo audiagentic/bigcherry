@@ -288,7 +288,7 @@ def render(repo_root: Path, config: ReleaseConfig, llama_tag: str, ref: str = "H
     if record_text is None:
         raise ReleaseNotesError(f"no release record {config.release_records}/{llama_tag}.json at {ref}")
     record = json.loads(record_text)
-    if config.engine == "radiance":
+    if config.engine == engines.RADIANCE:
         return render_radiance_release(release_tag, llama_tag, record)
     previous = previous_release_tag(repo_root, config, release_tag, ref)
     after = datetime.fromisoformat(_git(repo_root, "log", "-1", "--format=%cI", previous).strip()) if previous else None

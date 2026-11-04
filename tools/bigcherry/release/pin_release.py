@@ -291,7 +291,7 @@ def phase_record(plan: Plan, gate_output: str, evidence: str, public_summary: st
     record = json.loads(record_path.read_text(encoding="utf-8"))
     stamp = f"release {plan.version}"
     had_summary = bool(record.get("public_summary"))
-    if plan.engine == "radiance":
+    if plan.engine == engines.RADIANCE:
         # On resume, reuse the reviewed summary already in the release record.
         candidate = public_summary.strip() or record.get("public_summary")
         try:
@@ -304,7 +304,7 @@ def phase_record(plan: Plan, gate_output: str, evidence: str, public_summary: st
             raise PinReleaseError("record", "release already recorded with a different public_summary")
         record["public_summary"] = verified_summary
     if stamp in (record.get("notes") or "") and not marker.exists():
-        if plan.engine == "radiance" and not had_summary:
+        if plan.engine == engines.RADIANCE and not had_summary:
             # An older completed record can be given its reviewed summary without
             # rerunning the gate or appending the hardware evidence a second time.
             record_path.write_text(json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8", newline="\n")
