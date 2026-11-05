@@ -32,8 +32,17 @@ exec "$REAL_PYTHON" "$@"
 """
 
 FAKE_HELPER = r"""#!/bin/bash
+# r3_moe_worker --manifest FILE --role helperN [--measuring]: the helper's whole configuration is the manifest, and its role is
+# the only thing that tells it apart from its siblings (no per-helper environment but the card it sees)
+manifest=""; role=""; measuring=""
+while [ $# -gt 0 ]; do
+  case "$1" in --manifest) manifest=$2; shift 2 ;; --role) role=$2; shift 2 ;; --measuring) measuring=1; shift ;; *) shift ;; esac
+done
+FAKE_ID=${role#helper}
 echo $$ >> "$FAKE_PIDS"
+echo "helper $FAKE_ID manifest $manifest ${measuring:+measuring}" >> "$FAKE_HELPER_ARGS"
 [ "${FAKE_FAIL_HELPER:-}" = "$FAKE_ID" ] && { echo "r3_moe_worker: cannot start" ; exit 1; }
+[ -f "$manifest" ] || { echo "r3_moe_worker: no manifest $manifest"; exit 2; }
 sleep "${FAKE_READY_DELAY:-0}"
 echo "r3_moe_worker: ready (helper $FAKE_ID)"
 echo "helper-ready $FAKE_ID $(date +%s.%N)" >> "$FAKE_TIMES"
@@ -129,7 +138,7 @@ class LaunchCleanupTests(unittest.TestCase):
         self.env = {**os.environ, "BC_WORK_ROOT": str(self.work), "ROCM_PATH": str(self.root / "rocm-7.2.4"), "HIP_PATH": str(self.root / "rocm-7.2.4"), "LD_LIBRARY_PATH": "", "MODEL": str(self.root / "model.rad"),
                     "PATH": f"{self.root / 'fakebin'}:{os.environ['PATH']}", "REAL_PYTHON": sys.executable,
                     "FAKE_LOG": str(self.log), "FAKE_LAYOUT_ENV": str(self.root / "layout.env"), "FAKE_PIDS": str(self.pids),
-                    "FAKE_MEASURING": str(self.measuring), "FAKE_TIMES": str(self.root / "times.log"),
+                    "FAKE_MEASURING": str(self.measuring), "FAKE_TIMES": str(self.root / "times.log"), "FAKE_HELPER_ARGS": str(self.root / "helper-args.log"),
                     "FAKE_ENGINE_ARGS": str(self.root / "engine-args"), "FAKE_ENGINE_ENV": str(self.root / "engine-env")}
         self.addCleanup(self._kill_leftovers)
 
@@ -273,6 +282,23 @@ LAYOUT_SUMMARY=dense
         self.assertEqual(self._events()[0], "apply")
         self.assertIn("restore", self._events()[1:])
         self.assertEqual(self._alive_pids(), [])
+
+    def test_helpers_start_from_manifests_the_measuring_start_from_the_unmeasured_one(self) -> None:
+        done = subprocess.run(self._args(), env=self.env, cwd=REPO, capture_output=True, text=True, timeout=180)
+        try:
+            self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        finally:
+            subprocess.run(["bash", str(LAUNCHER), "stop", "--build", str(self.build), "--port", str(self.port), "--gpu-power"],
+                           env=self.env, cwd=REPO, capture_output=True, text=True, timeout=120)
+        rows = [line.split() for line in (self.root / "helper-args.log").read_text().splitlines()]
+        measuring = [r for r in rows if r[-1] == "measuring"]
+        serving = [r for r in rows if r[-1] != "measuring"]
+        self.assertEqual(sorted(r[1] for r in measuring), ["0", "1", "2"])
+        self.assertEqual(sorted(r[1] for r in serving), ["0", "1", "2"])
+        self.assertTrue(all("manifest-measuring-" in r[3] for r in measuring), measuring)
+        self.assertTrue(all("manifest-measuring-" not in r[3] and "/manifest-" in r[3] for r in serving), serving)
+        # one manifest for the three real helpers: they read the same bytes
+        self.assertEqual(len({r[3] for r in serving}), 1)
 
     def test_the_parent_truncates_each_helper_log_before_it_spawns_the_helper(self) -> None:
         # the race (a stale 'ready' line read before the new helper's own redirection truncates the log) cannot be forced

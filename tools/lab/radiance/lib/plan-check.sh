@@ -92,7 +92,7 @@ plan_check_flags() {
   [ ${#PLAN_CHECK_ARGS[@]} = 4 ] && [ "${PLAN_CHECK_ARGS[0]}" = --plan-check ] && [ "${PLAN_CHECK_ARGS[2]}" = --plan-check-floor-ppm ] \
     || { echo "plan check: unexpected bc-serve output: $out" >&2; return 1; }
   grep -h '^plan:' "$RUN/plan-check.err" >&2
-  PLAN_MANIFEST="$RUN/manifest-$STAMP.json"
+  PLAN_MANIFEST="$RUN/manifest-$STAMP-$$.json"
   plan_manifest_write "$PLAN_MANIFEST" || { echo "plan check: the serving manifest was not written (above)" >&2; return 1; }
 }
 
@@ -103,7 +103,7 @@ plan_check_measure() {
   key=$("$serve" --plan-key --plan-cache "$cache" --engine-binary "$RAD_BIN" "${PLAN_SITE[@]}" "${PLAN_EXTRA[@]}" "${PLAN_SET[@]}") || return 1
   echo "plan check: no measured plan for this configuration (cache miss, key ${key:0:16}); measuring it first (the helpers come up and the engine stops after its memory plan; about 1-2 minutes, once per configuration)" >&2
   rm -f "$plan"
-  PLAN_MEASURING_MANIFEST="$RUN/manifest-measuring-$STAMP.json"
+  PLAN_MEASURING_MANIFEST="$RUN/manifest-measuring-$STAMP-$$.json"
   plan_manifest_write "$PLAN_MEASURING_MANIFEST" unmeasured || { echo "plan check: the unmeasured manifest was not written (above)" >&2; return 1; }
   PLAN_MEASURE_FILE="$plan" plan_check_start_engine_measure || { echo "plan check: the measuring start failed; see $RUN/engine-measure.log" >&2; return 1; }
   "$serve" --plan-store --expect-key "$key" --plan-file "$plan" --plan-cache "$cache" --engine-binary "$RAD_BIN" "${PLAN_SITE[@]}" "${PLAN_EXTRA[@]}" "${PLAN_SET[@]}" >&2 \

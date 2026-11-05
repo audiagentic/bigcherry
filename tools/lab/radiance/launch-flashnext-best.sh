@@ -399,7 +399,7 @@ fi
 
 trap 'exit 1' ERR
 rm -f "/dev/shm${SHM}"
-start_helpers "$PLAN_MANIFEST"
+if [ "$LAYOUT_HELPER_COUNT" -gt 0 ]; then start_helpers "$PLAN_MANIFEST"; fi
 LOG=$RUN/engine-$STAMP.log
 start_engine "$LOG" "${PLAN_CHECK_ARGS[@]}"
 echo $! > "$PIDS/engine"
