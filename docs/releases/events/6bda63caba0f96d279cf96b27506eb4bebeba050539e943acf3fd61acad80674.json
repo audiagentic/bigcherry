@@ -1,0 +1,19 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261105_151618_the-radiance-engine-now-checks_7191",
+  "files": [
+    "engines/radiance/patches/rad0009_serving_manifest/patch.py",
+    "engines/radiance/patches/rad0011_plan_memory/patch.py",
+    "engines/radiance/components/serving/main.cpp",
+    "engines/radiance/components/serving/plan_cache.cpp",
+    "tools/lab/radiance/launch-flashnext-best.sh",
+    "tools/lab/radiance/lib/plan-check.sh"
+  ],
+  "plan-item-ids": [
+    "RSC08"
+  ],
+  "status": "unreleased",
+  "technical-summary": "RSC08 S3: an engine started from a measured serving manifest admits the plan that manifest carries (expected plan and kv_backing_floor from engine_view, handed over by rad0009 to rad0011). The interim radiance --plan-check/--plan-check-floor-ppm flags and bc-serve --plan-check-args/--plan-store/--plan-key are deleted; bc-serve --write-manifest takes --measured-plan FILE to check, store and write the measured manifest from a measuring start's plan. rad0011's main() hook now runs after rad0009's manifest reader (before, a manifest-started measuring engine would have stripped --plan-memory first and refused its own unmeasured manifest). The launcher starts a helper layout's engine from the manifest alone and refuses --engine-arg and --ngram-device there until they are manifest fields.",
+  "timestamp-utc": "2026-11-05T15:16:18.781771Z",
+  "user-summary-candidate": "The radiance engine now checks its start-up memory plan from the serving manifest it starts from; the separate plan-check flags are gone."
+}
