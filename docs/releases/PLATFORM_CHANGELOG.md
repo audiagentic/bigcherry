@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.8.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.7.0...bc-platform-1.8.0) (2026-11-05)
+
+
+### New and changed
+
+* **bench:** accept-bench, draft acceptance by prompt kind with RAD23's five prompts at temperature 0, prompt and text digests recorded ([#638](https://github.com/audiagentic/bigcherry/issues/638)) ([5daded0](https://github.com/audiagentic/bigcherry/commit/5daded02860b3b80c06b37157dc4565b9411ce15))
+* **patch:** a profile-evidence record carries forward across pin bumps when only the pin differs; rad0008 gets its promotion record from the evidence on hand ([#642](https://github.com/audiagentic/bigcherry/issues/642)) ([f2c2e2c](https://github.com/audiagentic/bigcherry/commit/f2c2e2c53c5339298667c92ebc775ba099a35338))
+
 ## [1.7.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.6.0...bc-platform-1.7.0) (2026-11-05)
 
 
