@@ -59,11 +59,17 @@ No PR needs a hand-resolved ledger conflict; release notes read the new layout t
 
 Cross-session facts from AUDiaGentic 2026-11-04 (messages from the audiagentic session). Hold until the conversion fix release is published and the owner has decided the shared-venv upgrade and the CI dependency.
 
+Update 2026-11-05 from AUDiaGentic: the union-merge conversion fix is merged there (PR #449); 0.97.0 is published WITHOUT it; the fix ships in 0.97.1 (release PR #450, auto-merging); AUDiaGentic will say when 0.97.1 is on PyPI. Install line for CI: pip install "audiagentic>=0.97.1". The fixed convert_legacy_ledger requires every row of the merge base's baseline to be present, unchanged, in its original relative order (the branch's rows may be interleaved among main's), converts the other rows to event files and restores the baseline to the merge-base content; it still refuses, changing nothing, on an edited, deleted or reordered base row, conflict markers, an invalid row, or an id that conflicts with a baseline, released or event-file identity. Its result now lists 'already-present' (byte-identical copies of base rows the restore drops). Stop recording on the branch while converting; if it fails part-way only verified event files remain and a rerun finishes. The read API (iter_events, pending_events, released_events, anomalies, event_file_name) is re-exported from audiagentic.components.ledger.ledger_api and documented as stable from 0.97; ref reads take paths from the working tree's config (the default layout has never changed). STILL HOLD: do not install 0.97.1 into the shared venv, restart sessions, or convert any branch until it is on PyPI AND the owner has decided the venv upgrade and the CI dependency (steps 2 and 3).
+
 ## Change Log
 
 - 2026-11-04T23:32:02.160482+00:00 (created-by): Created by agent
 
 ## Ledger-events
 
+
 - chg_20261104_233207_planned-the-move-to-the-confli_2775
 - 2026-11-04T23:32:11.627988+00:00 (updated-by): Updated: section:ledger-events
+- 2026-11-05T00:16:40.840808+00:00 (updated-by): Updated: section:notes
+- chg_20261105_001646_updated-the-ledger-migration-p_1897
+- 2026-11-05T00:16:50.596010+00:00 (updated-by): Updated: section:ledger-events
