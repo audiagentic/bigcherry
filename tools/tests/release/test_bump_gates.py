@@ -104,9 +104,16 @@ class ComponentGateTests(unittest.TestCase):
         for _, relative in engines.load(paths.REPO_ROOT, "radiance").rocm_paths:
             (self.rocm / relative).parent.mkdir(parents=True, exist_ok=True)
             (self.rocm / relative).write_bytes(b"")
-        rocm_env = patch.dict(os.environ, {"BC_ROCM_ROOT": str(self.rocm)})
-        rocm_env.start()
-        self.addCleanup(rocm_env.stop)
+        (self.rocm / ".info").mkdir()
+        (self.rocm / ".info" / "version").write_text("7.2.4\n", encoding="utf-8")
+        real_platform = radiance_bump._build_platform
+
+        def platform_with_the_fake_sdk(engine, platform_name):
+            return dataclasses.replace(real_platform(engine, platform_name), sdk="7.2", sdk_root=str(self.rocm))
+
+        sdk_patch = patch.object(radiance_bump, "_build_platform", side_effect=platform_with_the_fake_sdk)
+        sdk_patch.start()
+        self.addCleanup(sdk_patch.stop)
 
     def runner(self, argv: list[str], cwd: Path) -> None:
         """A fake cmake/ctest: records the call and lays down what a build would produce."""

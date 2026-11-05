@@ -6,7 +6,7 @@
 # The first argument (a llama-server path from the queue) is ignored.
 # Usage: build.sh <ignored> <out-dir>
 # env: GCC14_BIN (unpacked g++-14, used when g++-14 is not installed); RADIANCE_SRC (${BC_WORK_ROOT}/engines/radiance), RADIANCE_REF (checkout this commit if set),
-#      ROCM_PATH (default: the host rocm-root), RAD_GPU_TARGETS (gfx1201), TESTS (1 = run the card-free ctest set)
+#      ROCM_PATH (the radiance lane stack SDK; a different value is refused), RAD_GPU_TARGETS (gfx1201), TESTS (1 = run the card-free ctest set)
 set -u
 out=$2
 mkdir -p "$out"

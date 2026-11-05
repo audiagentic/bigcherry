@@ -9,7 +9,7 @@ if [ -z "${BC_WORK_ROOT:-}" ]; then
 fi
 export BC_WORK_ROOT
 source "$repo_root/tools/lab/radiance/lab-env.sh"
-export BC_ROCM_ROOT="${BC_ROCM_ROOT:-$ROCM_PATH}"
+
 if python3 "$repo_root/tools/lab/radiance/fetch_release_bundle.py" "$@"; then
     exit 0
 fi

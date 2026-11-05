@@ -7,7 +7,7 @@
 rad_tree() {
     local sdk
     git rev-parse HEAD:engines/radiance HEAD:config 2>/dev/null
-    sdk=$(readlink -f "${BC_ROCM_ROOT:?no ROCm SDK selected (rocm-root in the environment file)}") \
+    sdk=$(readlink -f "${ROCM_PATH:?no ROCm SDK selected (source lab-env.sh)}") \
         && echo "$sdk $(cat "$sdk/.info/version")"
 }
 rad_build() {   # $1 build log path

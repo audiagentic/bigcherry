@@ -46,9 +46,8 @@ dev-root = "/srv/example/dev"
 # speculative decode at all.
 bench-harness = "/srv/example-share/llamacpp/bench"
 
-# Toolchain. rocm-root is the default ROCm install. Named SDKs for recipe stacks
-# are declared in the rocm-sdks table below; a relative root is repo-relative.
-rocm-root = "/opt/rocm"
+# Toolchain. There is no default ROCm install: every build names a stack (platform.<name>.stack) and the stack names an
+# SDK version declared in the rocm-sdks table below; a relative root is repo-relative.
 
 # Ports. The production port belongs to the production inference service; a
 # benchmark that binds it takes production down. Tests, benchmarks and ad-hoc
@@ -96,7 +95,7 @@ locator = "0000:02:00.0"
 # Named ROCm SDKs for recipe stacks (stack.sdk = "<version>"). A relative root is
 # repo-relative.
 [host.dev.rocm-sdks]
-"7.2" = "/opt/rocm-7.2"
+"7.2" = "/opt/rocm-7.2.4"
 "7.14" = "/opt/rocm-7.14"
 "10.1" = "vendor/rocm/10.1.0rc2"
 

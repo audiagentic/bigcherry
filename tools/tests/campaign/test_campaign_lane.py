@@ -97,7 +97,7 @@ class _Harness:
                 )
             },
             platforms={
-                "linux-multi": campaign_config.Platform(
+                "linux-multi": campaign_config.Platform(stack="rocm-test", sdk=None, sdk_root=None,
                     name="linux-multi", targets=("gfx1100",), options=()
                 )
             },
@@ -817,7 +817,7 @@ GGML_HIP:BOOL=ON
             targets=("gfx1100",),
             variant_set=None,
         )
-        platform = campaign_config.Platform(
+        platform = campaign_config.Platform(stack="rocm-test", sdk=None, sdk_root=None,
             name="linux-multi", targets=("gfx1100",), options=()
         )
         build_cfg = campaign_config.Build(
@@ -977,7 +977,8 @@ class SelectedRocmSdkTests(unittest.TestCase):
         (root / ".info" / "version").write_text(version + "\n", encoding="utf-8")
         return root
 
-    def _run(self, sdk: Path):
+    def _run(self, sdk: Path, name: str = "7.2"):
+        """The lane builds under a platform whose stack names SDK ``name``, installed at ``sdk``."""
         real_load = engines.load
 
         def pinned_layout(repo_root, engine):
@@ -989,13 +990,14 @@ class SelectedRocmSdkTests(unittest.TestCase):
             harness = _Harness(root, upstream, revision)
             _, fake_build, fake_smoke = harness.fake_workers()
             captured: dict[str, object] = {}
+            harness.cfg.platforms["linux-multi"] = replace(
+                harness.cfg.platforms["linux-multi"], stack=f"rocm-{name}", sdk=name, sdk_root=str(sdk))
 
             def capturing_build_worker(**kwargs):
                 captured.update({"platform": kwargs["platform"], "build": kwargs["build"]})
                 return fake_build(**kwargs)
 
             with (
-                patch.dict("os.environ", {"BC_ROCM_ROOT": str(sdk)}),
                 patch("bigcherry.campaign.lane.engines.load", side_effect=pinned_layout),
                 patch("bigcherry.campaign.lane.campaign_workers.make_generate_worker",
                       side_effect=Re25ProvenanceLineageTests._fake_generate_worker()),
@@ -1011,18 +1013,20 @@ class SelectedRocmSdkTests(unittest.TestCase):
                     targets_option="AMDGPU_TARGETS", rocm_paths=self.PINNED, engine_options={})
             return plan, argv
 
-    def test_the_selected_sdk_reaches_the_build_plan_and_the_configure_argv(self):
+    def test_the_named_sdk_reaches_the_build_plan_and_the_configure_argv(self):
         with tempfile.TemporaryDirectory() as directory:
             sdk = self._sdk(Path(directory) / "rocm-7.14", "7.14.0").resolve()
-            plan, argv = self._run(sdk)
+            plan, argv = self._run(sdk, "7.14")
         options = dict(plan.cmake_options)
         self.assertEqual(options["RAD_HIP_RUNTIME"], f"{sdk.as_posix()}/lib/libamdhip64.so")
         self.assertEqual(options["RAD_HSA_RUNTIME"], f"{sdk.as_posix()}/lib/libhsa-runtime64.so")
         self.assertIn(f"-DRAD_HIP_RUNTIME={sdk.as_posix()}/lib/libamdhip64.so", argv)
         self.assertIn(f"-DRAD_HSA_RUNTIME={sdk.as_posix()}/lib/libhsa-runtime64.so", argv)
         toolchain = dict(plan.toolchain_request)
+        self.assertEqual(toolchain["rocm_stack"], "rocm-7.14")
         self.assertEqual(toolchain["rocm_root"], sdk.as_posix())
         self.assertEqual(toolchain["rocm_version"], "7.14.0")
+        self.assertRegex(toolchain["rocm_digest"], "^[0-9a-f]{64}$")
 
     def test_a_symlinked_root_is_resolved_to_the_install_it_names(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -1035,7 +1039,7 @@ class SelectedRocmSdkTests(unittest.TestCase):
     def test_two_sdks_never_share_a_build_plan_id(self):
         with tempfile.TemporaryDirectory() as directory:
             a, _ = self._run(self._sdk(Path(directory) / "rocm-7.2.4", "7.2.4"))
-            b, _ = self._run(self._sdk(Path(directory) / "rocm-7.14", "7.14.0"))
+            b, _ = self._run(self._sdk(Path(directory) / "rocm-7.14", "7.14.0"), "7.14")
         self.assertNotEqual(a.build_plan_id, b.build_plan_id)
 
     def test_an_in_place_upgrade_at_the_same_root_changes_the_build_plan_id(self):
@@ -1046,15 +1050,35 @@ class SelectedRocmSdkTests(unittest.TestCase):
         self.assertEqual(dict(before.cmake_options), dict(after.cmake_options))
         self.assertNotEqual(before.build_plan_id, after.build_plan_id)
 
+    def test_replacing_a_library_without_a_version_change_changes_the_build_plan_id(self):
+        with tempfile.TemporaryDirectory() as directory:
+            sdk = self._sdk(Path(directory) / "rocm", "7.2.4")
+            before, _ = self._run(sdk)
+            (sdk / "lib" / "libamdhip64.so").write_bytes(b"patched")
+            after, _ = self._run(sdk)
+        self.assertNotEqual(before.build_plan_id, after.build_plan_id)
+
+    def test_an_sdk_whose_version_is_not_the_one_the_stack_names_fails(self):
+        with tempfile.TemporaryDirectory() as directory:
+            sdk = self._sdk(Path(directory) / "rocm", "7.14.0")
+            with self.assertRaisesRegex(CampaignBuildError, "names ROCm SDK 7.2 but"):
+                self._run(sdk, "7.2")
+
     def test_an_sdk_missing_a_pinned_library_fails_before_any_build(self):
         with tempfile.TemporaryDirectory() as directory:
             sdk = self._sdk(Path(directory) / "rocm-7.14", "7.14.0", without="lib/libhsa-runtime64.so")
             with self.assertRaisesRegex(CampaignBuildError, "lib/libhsa-runtime64.so"):
-                self._run(sdk)
+                self._run(sdk, "7.14")
 
-    def test_an_unselected_sdk_fails_closed_rather_than_using_opt_rocm(self):
+    def test_a_platform_whose_stack_names_no_sdk_fails_closed_rather_than_using_opt_rocm(self):
+        platform = campaign_config.Platform(
+            name="p", targets=("gfx1100",), options=(), stack="hip-sdk-windows", sdk=None, sdk_root=None)
+        with self.assertRaisesRegex(CampaignBuildError, "selects no ROCm SDK"):
+            campaign_build.selected_rocm_root(platform)
+
+    def test_an_sdk_that_is_not_installed_fails_closed(self):
         with tempfile.TemporaryDirectory() as directory:
-            with self.assertRaisesRegex(CampaignBuildError, "not a directory"):
+            with self.assertRaisesRegex(CampaignBuildError, "is not installed"):
                 self._run(Path(directory) / "no-such-sdk")
 
 

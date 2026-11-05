@@ -127,7 +127,7 @@ class _Harness:
         self.revision = revision
         project = directory / "project"
         _init_project(project)
-        self.context = ProjectContext(engine="llamacpp", 
+        self.context = ProjectContext(engine="llamacpp",
             project_root=project, config_path=directory / "recipes.toml",
             artifacts_root=directory / "artifacts", work_root=directory / "work",
             upstream_repo=upstream, overlay_root=directory / "src",
@@ -145,7 +145,7 @@ class _Harness:
                 patch_sets=("core",) if with_patch else ())},
             builds={"stock": campaign_config.Build(
                 name="stock", options=(), variant_set=None, needs=frozenset())},
-            platforms={"linux-multi": campaign_config.Platform(
+            platforms={"linux-multi": campaign_config.Platform(stack="rocm-test", sdk=None, sdk_root=None,
                 name="linux-multi", targets=("gfx1100",), options=())},
             experiments={}, campaigns={}, path=directory / "recipes.toml",
         engine="llamacpp")

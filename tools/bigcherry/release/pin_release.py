@@ -29,6 +29,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ..core import engines
+from ..campaign.build import lane_sdk_root
 from .. import pin_transition
 from . import notes as _notes
 from . import runtime_assets as _runtime_assets
@@ -53,6 +54,10 @@ class PinReleaseError(RuntimeError):
     def __init__(self, phase: str, message: str):
         super().__init__(message)
         self.phase = phase
+
+
+#: the platform of the Radiance lane a release packages (recipes [platform.*]; it names the ROCm stack)
+RADIANCE_LANE_PLATFORM = "linux-radiance"
 
 
 @dataclass(frozen=True)
@@ -285,13 +290,9 @@ def phase_gate(plan: Plan) -> str:
 
 
 def _asset_environment(plan: Plan) -> tuple[Path, Path]:
-    from ..core import environment
     from ..core.context import ProjectContext
     work = ProjectContext.resolve(engine=plan.engine, project_root=plan.repo_root).work_root
-    sdk = os.environ.get("ROCM_PATH") or os.environ.get("BC_ROCM_ROOT")
-    if not sdk:
-        sdk = environment.load_default().host(None).rocm_root
-    return work, Path(sdk)
+    return work, lane_sdk_root(engines.load(plan.repo_root, plan.engine).recipes_path(plan.repo_root), RADIANCE_LANE_PLATFORM)
 
 
 def _prepare_runtime_asset(plan: Plan, record: dict) -> None:
@@ -301,7 +302,7 @@ def _prepare_runtime_asset(plan: Plan, record: dict) -> None:
         # Re-resolve and build the CURRENT stock lane, rather than trusting
         # a historical pin-bump note that predates later patch promotions.
         from .pin_bump import execute_lane_build, LaneBuildError
-        lane = "radiance:stock:linux-radiance"
+        lane = f"radiance:stock:{RADIANCE_LANE_PLATFORM}"
         outcome = execute_lane_build(
             engine=plan.engine, lane=lane,
             run_id=f"bu01-release-{plan.version.replace(chr(46), chr(45))}-{uuid.uuid4().hex[:8]}")

@@ -134,8 +134,6 @@ class Host:
     work_root: str
     model_root: str
     bench_harness: str
-    #: the default ROCm install (used when a recipe names no SDK version)
-    rocm_root: str
     #: named ROCm SDKs for this host, as (version, root) pairs; relative roots are repo-relative
     rocm_sdks: tuple[tuple[str, str], ...]
     production_port: int
@@ -208,7 +206,7 @@ def _require(table: dict, key: str, where: str) -> object:
 
 _HOST_SCALAR_KEYS = (
     "hostname", "repo-root", "work-root", "model-root",
-    "bench-harness", "rocm-root", "production-port", "test-port",
+    "bench-harness", "production-port", "test-port",
 )
 
 
@@ -298,7 +296,6 @@ def load(path: str | Path) -> Environment:
             work_root=str(body.get("work-root", "")),
             model_root=str(body.get("model-root", "")),
             bench_harness=str(body.get("bench-harness", "")),
-            rocm_root=str(body.get("rocm-root", "")),
             rocm_sdks=_rocm_sdks(body.get("rocm-sdks"), where, str(body.get("repo-root", ""))),
             production_port=int(body.get("production-port", 0)),
             test_port=int(body.get("test-port", 0)),

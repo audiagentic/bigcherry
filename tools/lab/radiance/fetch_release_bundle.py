@@ -13,6 +13,7 @@ import tomllib
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "tools"))
 
+from bigcherry.campaign.build import lane_sdk_root
 from bigcherry.core.context import ProjectContext
 from bigcherry.release import runtime_assets
 
@@ -27,9 +28,7 @@ def fetch(*, tag: str | None) -> Path:
     recipes = tomllib.loads((ROOT / "engines/radiance/recipes.toml").read_text())
     pin = recipes["pinned"]
     record = json.loads((ROOT / "releases" / f"{pin}.json").read_text())
-    sdk = os.environ.get("ROCM_PATH") or os.environ.get("BC_ROCM_ROOT")
-    if not sdk:
-        raise runtime_assets.BundleError("ROCM_PATH must identify the configured host ROCm SDK")
+    sdk = lane_sdk_root(ROOT / "engines/radiance/recipes.toml", "linux-radiance")
     work = ProjectContext.resolve(engine="radiance", project_root=ROOT).work_root
     return runtime_assets.fetch(record, ROOT, work, Path(sdk), tag=tag)
 

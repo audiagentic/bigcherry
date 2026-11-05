@@ -10,7 +10,7 @@
 #
 # Sets: BC_HOST BC_REPO_ROOT BC_MODEL_ROOT BC_WORK_ROOT BC_TMP_ROOT
 #       BC_DEV_ROOT BC_DATA_ROOT BC_VAULT_ROOT BC_LLAMACPP_ROOT
-#       BC_BENCH_HARNESS BC_ROCM_ROOT BC_TEST_PORT BC_PRODUCTION_PORT
+#       BC_BENCH_HARNESS BC_TEST_PORT BC_PRODUCTION_PORT
 # and, for convenience on the host itself, ROCM_PATH/HIP_PATH/PATH via the
 # shim -- which campaigns require, because /opt/rocm exposes amdclang rather
 # than clang and campaigns build compiler paths as <hip-path>/bin/clang.
@@ -52,7 +52,6 @@ pairs = {
     "BC_VAULT_ROOT": h.get("vault-root", ""),
     "BC_LLAMACPP_ROOT": h.get("llamacpp-root", ""),
     "BC_BENCH_HARNESS": h.get("bench-harness", ""),
-    "BC_ROCM_ROOT": h.get("rocm-root", ""),
     "BC_TEST_PORT": str(h.get("test-port", "")),
     "BC_PRODUCTION_PORT": str(h.get("production-port", "")),
 }

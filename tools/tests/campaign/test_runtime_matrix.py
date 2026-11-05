@@ -17,7 +17,7 @@ def host() -> Host:
     return Host(
         name="test", description="", hostname="test",
         repo_root="", work_root="", model_root="", bench_harness="",
-        rocm_root="", rocm_sdks=(), production_port=0, test_port=0,
+        rocm_sdks=(), production_port=0, test_port=0,
         busy_processes=(), environment_file="",
         devices=(Device(0, "gfx1100", "x", 1), Device(1, "gfx1100", "x", 1)),
     )

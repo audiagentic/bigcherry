@@ -84,7 +84,7 @@ def _run_real_lane(root: Path):
     upstream, revision = _init_upstream(root)
     project = root / "project"
     _init_project(project)
-    context = ProjectContext.resolve(engine="llamacpp", 
+    context = ProjectContext.resolve(engine="llamacpp",
         project_root=project, config_path=root / "recipes.toml",
         artifacts_root=root / "artifacts", work_root=root / "work",
         upstream_repo=upstream)
@@ -95,7 +95,7 @@ def _run_real_lane(root: Path):
             name="test-source", ref=revision, overlay=False, patch_sets=())},
         builds={"stock": campaign_config.Build(
             name="stock", options=(), variant_set=None, needs=frozenset())},
-        platforms={"linux-multi": campaign_config.Platform(
+        platforms={"linux-multi": campaign_config.Platform(stack="rocm-test", sdk=None, sdk_root=None,
             name="linux-multi", targets=("gfx1100",), options=())},
         experiments={}, campaigns={}, path=root / "recipes.toml",
     engine="llamacpp")
@@ -123,7 +123,7 @@ def _run_real_lane_with_generate(root: Path, *, architectures: tuple[str, ...]):
     upstream, revision = _init_upstream(root)
     project = root / "project"
     _init_project(project)
-    context = ProjectContext.resolve(engine="llamacpp", 
+    context = ProjectContext.resolve(engine="llamacpp",
         project_root=project, config_path=root / "recipes.toml",
         artifacts_root=root / "artifacts", work_root=root / "work",
         upstream_repo=upstream)
@@ -134,7 +134,7 @@ def _run_real_lane_with_generate(root: Path, *, architectures: tuple[str, ...]):
             name="test-source", ref=revision, overlay=False, patch_sets=())},
         builds={"gen-build": campaign_config.Build(
             name="gen-build", options=(), variant_set="inventory", needs=frozenset())},
-        platforms={"linux-multi": campaign_config.Platform(
+        platforms={"linux-multi": campaign_config.Platform(stack="rocm-test", sdk=None, sdk_root=None,
             name="linux-multi", targets=architectures, options=())},
         experiments={}, campaigns={}, path=root / "recipes.toml",
     engine="llamacpp")
