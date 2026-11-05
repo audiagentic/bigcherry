@@ -27,7 +27,7 @@
         "strict_required_status_checks_policy": false,
         "required_status_checks": [
           { "context": "conventional-title" },
-          { "context": "index-line-endings" }
+          { "context": "ci-pass" }
         ]
       }
     }
