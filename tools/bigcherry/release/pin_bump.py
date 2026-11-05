@@ -217,6 +217,12 @@ class PinBumpState:
         )
         return path
 
+    def advance(self, state_dir: Path, phase: str, next_phase: str) -> None:
+        """Persist the phase completion and resume cursor in one operation."""
+        self.completed_phases.append(phase)
+        self.next_phase = next_phase
+        self.save(state_dir)
+
     @classmethod
     def load(cls, state_dir: Path) -> PinBumpState:
         data = json.loads((state_dir / "state.json").read_text(encoding="utf-8"))
@@ -336,12 +342,15 @@ def failure_envelope(
     }
 
 
-def _git(root: Path, *args: str) -> str:
-    result = subprocess.run(
-        ["git", "-C", str(root), *args],
-        capture_output=True,
-        text=True,
+def _git_result(root: Path, *args: str, **kwargs) -> subprocess.CompletedProcess[str]:
+    """One git invocation; callers retain their own failure-code policy."""
+    return subprocess.run(
+        ["git", "-C", str(root), *args], capture_output=True, text=True, **kwargs
     )
+
+
+def _git(root: Path, *args: str) -> str:
+    result = _git_result(root, *args)
     if result.returncode != 0:
         raise PinBumpStop(
             "preflight",
@@ -824,7 +833,7 @@ def run(
 
 
 def _vendor_head(vendor_root: Path) -> str:
-    done = subprocess.run(["git", "-C", str(vendor_root), "rev-parse", "HEAD"], capture_output=True, text=True)
+    done = _git_result(vendor_root, "rev-parse", "HEAD")
     return done.stdout.strip() if done.returncode == 0 else ""
 
 
@@ -841,8 +850,7 @@ def ensure_vendor_at_target(vendor_root: Path, *, to_ref: str, to_sha: str) -> b
     known = subprocess.run(["git", "-C", str(vendor_root), "cat-file", "-e", f"{to_sha}^{{commit}}"], capture_output=True)
     if not to_sha or known.returncode != 0:
         return False   # the tree never fetched this target (the pull phase has not run): nothing to put it on
-    dirty = subprocess.run(["git", "-C", str(vendor_root), "status", "--porcelain", "--untracked-files=no"],
-                           capture_output=True, text=True)
+    dirty = _git_result(vendor_root, "status", "--porcelain", "--untracked-files=no")
     if dirty.returncode != 0 or dirty.stdout.strip():
         raise PinBumpStop(
             "resume",
@@ -852,8 +860,7 @@ def ensure_vendor_at_target(vendor_root: Path, *, to_ref: str, to_sha: str) -> b
             evidence={"vendor_head": head, "target": to_ref, "target_sha": to_sha, "status": dirty.stdout.strip()[:400]},
             recommended_actions=[f"inspect `git -C {vendor_root} status`, then `git -C {vendor_root} checkout {to_ref}`, then --resume"],
         )
-    moved = subprocess.run(["git", "-C", str(vendor_root), "checkout", "--quiet", to_sha],
-                           capture_output=True, text=True)
+    moved = _git_result(vendor_root, "checkout", "--quiet", to_sha)
     if moved.returncode != 0:
         raise PinBumpStop(
             "resume",
@@ -967,8 +974,7 @@ def _component_tree_ids(engine: str) -> list[str]:
     checkout, so the committed tree is what gets built."""
     ids = []
     for name, directory in engines.load(paths.REPO_ROOT, engine).components:
-        result = subprocess.run(["git", "-C", str(paths.REPO_ROOT), "rev-parse", f"HEAD:{directory}"],
-                                capture_output=True, text=True)
+        result = _git_result(paths.REPO_ROOT, "rev-parse", f"HEAD:{directory}")
         if result.returncode != 0:
             raise PinBumpStop(
                 "compile",
@@ -1011,13 +1017,7 @@ def _compile_tree_oid(engine: str, vendor_root: Path, patch_ids: Sequence[str]) 
 
 
 def _git_head_text(root: Path, relative: str) -> str | None:
-    result = subprocess.run(
-        ["git", "-C", str(root), "show", f"HEAD:{relative}"],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-    )
+    result = _git_result(root, "show", f"HEAD:{relative}", encoding="utf-8", errors="replace")
     return result.stdout if result.returncode == 0 else None
 
 
@@ -1498,14 +1498,18 @@ def run_phase_accept(*, engine: str, out_dir: Path, target_ref: str, vendor_root
         vendor_root, f"pin-bump hardware acceptance: PASSED against stored baselines (evidence {evidence})", phase="cpu-smoke")
 
 
+def _append_release_note(vendor_root: Path, note: str) -> None:
+    record = releases.record_for_checkout(vendor_root)
+    existing = record.notes or ""
+    if note not in existing:
+        record.notes = (existing.rstrip() + "\n" + note).lstrip()
+        record.save()
+
+
 def _record_release_note(vendor_root: Path, note: str, *, phase: str) -> None:
     """Append ``note`` to the bump's release record (once)."""
     try:
-        record = releases.record_for_checkout(vendor_root)
-        existing = record.notes or ""
-        if note not in existing:
-            record.notes = (existing.rstrip() + "\n" + note).lstrip()
-            record.save()
+        _append_release_note(vendor_root, note)
     except (OSError, ValueError) as exc:
         raise PinBumpStop(
             phase,
@@ -1519,11 +1523,7 @@ def _record_release_note(vendor_root: Path, note: str, *, phase: str) -> None:
 def _record_compile_skip(vendor_root: Path) -> None:
     note = "pin-bump source compile check: SKIPPED explicitly with --skip-compile"
     try:
-        record = releases.record_for_checkout(vendor_root)
-        existing = record.notes or ""
-        if note not in existing:
-            record.notes = (existing.rstrip() + "\n" + note).lstrip()
-            record.save()
+        _append_release_note(vendor_root, note)
     except (OSError, ValueError) as exc:
         raise PinBumpStop(
             "compile",
@@ -1948,9 +1948,7 @@ def _run_phases(
                 repo_root=repo_root, engine=engine, vendor_root=vendor_root, target_ref=target_ref
             )
             state.transition_commit = declaring
-            state.completed_phases.append("declare")
-            state.next_phase = "pull"
-            state.save(report_dir)
+            state.advance(report_dir, "declare", "pull")
 
         if state.next_phase == "pull":
             from argparse import Namespace
@@ -2000,18 +1998,14 @@ def _run_phases(
             _sync_campaign_mirror_best_effort(
                 engine=engine, target_ref=target_ref, revision=state.to_sha
             )
-            state.completed_phases.append("pull")
-            state.next_phase = "drift"
-            state.save(report_dir)
+            state.advance(report_dir, "pull", "drift")
 
         if state.next_phase == "drift":
             # Right after the pull: the tree is the pristine bumped upstream, so what these checks report is the engine's
             # own change and cannot be a patch, and it is found before the audit, patch rebase and builds spend time on a
             # tree BigCherry's own derived source (libr3's native rewrites) already no longer fits.
             run_phase_drift(engine=engine, vendor_root=vendor_root, target_ref=target_ref)
-            state.completed_phases.append("drift")
-            state.next_phase = "audit"
-            state.save(report_dir)
+            state.advance(report_dir, "drift", "audit")
 
         if state.next_phase == "audit":
             report = source_audit.audit(vendor_root, engine=engine)
@@ -2057,9 +2051,7 @@ def _run_phases(
             if record.stage == "pulled":
                 record.advance_to("audited")
             record.save()
-            state.completed_phases.append("audit")
-            state.next_phase = "patch-lint"
-            state.save(report_dir)
+            state.advance(report_dir, "audit", "patch-lint")
 
         if state.next_phase == "patch-lint":
             problems = patch_catalog.cross_check(engine, allow_legacy_grandfather=True)
@@ -2074,9 +2066,7 @@ def _run_phases(
                         "rerun with --resume",
                     ],
                 )
-            state.completed_phases.append("patch-lint")
-            state.next_phase = "coverage"
-            state.save(report_dir)
+            state.advance(report_dir, "patch-lint", "coverage")
 
         if state.next_phase == "coverage":
             _require_selector_membership_unchanged(
@@ -2136,9 +2126,7 @@ def _run_phases(
                 json.dumps(coverage, indent=2, sort_keys=True) + "\n", encoding="utf-8"
             )
             state.coverage_report_sha256 = _sha256_file(recipe_report_path)
-            state.completed_phases.append("coverage")
-            state.next_phase = "apply"
-            state.save(report_dir)
+            state.advance(report_dir, "coverage", "apply")
         else:
             recipe_report_path = report_dir / "rebase-recipe.json"
             coverage = (
@@ -2185,9 +2173,7 @@ def _run_phases(
                         "rerun with --resume",
                     ],
                 )
-            state.completed_phases.append("apply")
-            state.next_phase = "compile"
-            state.save(report_dir)
+            state.advance(report_dir, "apply", "compile")
 
         if state.next_phase == "compile":
             if skip_compile:
@@ -2208,9 +2194,7 @@ def _run_phases(
                 state.compile_status = "passed"
             state.compile_platform = platform_name or ""
             state.compile_tree_oid = compile_tree_oid
-            state.completed_phases.append("compile")
-            state.next_phase = "lane-build"
-            state.save(report_dir)
+            state.advance(report_dir, "compile", "lane-build")
 
         if state.next_phase == "lane-build":
             # MEN16: build the bumped engine through its canonical lane so the cpu-smoke phase (and the release record)
@@ -2242,9 +2226,7 @@ def _run_phases(
                     f"binary_sha256={outcome.binary_sha256}",  # the plan id names the build; the release record never carries a local path
                     phase="lane-build",
                 )
-            state.completed_phases.append("lane-build")
-            state.next_phase = "cpu-smoke"
-            state.save(report_dir)
+            state.advance(report_dir, "lane-build", "cpu-smoke")
 
         if state.next_phase == "cpu-smoke":
             # MEN15: the first smoke of the bumped engine, before any GPU smoke. It needs no GPU, so a busy host
@@ -2257,9 +2239,7 @@ def _run_phases(
             if accept and state.accept_status != "passed":
                 run_phase_accept(engine=engine, out_dir=report_dir / "accept", target_ref=target_ref, vendor_root=vendor_root)
                 state.accept_status = "passed"
-            state.completed_phases.append("cpu-smoke")
-            state.next_phase = "reaudit"
-            state.save(report_dir)
+            state.advance(report_dir, "cpu-smoke", "reaudit")
 
         if state.next_phase == "reaudit":
             report = source_audit.audit(vendor_root, engine=engine)
@@ -2278,9 +2258,7 @@ def _run_phases(
                         "rerun with --resume",
                     ],
                 )
-            state.completed_phases.append("reaudit")
-            state.next_phase = "complete"
-            state.save(report_dir)
+            state.advance(report_dir, "reaudit", "complete")
 
         if state.next_phase == "complete" and "complete" not in state.completed_phases:
             _write_release_doc_best_effort(
@@ -2297,6 +2275,21 @@ def _run_phases(
             state.save(report_dir)
 
     return PinBumpResult(ok=True, state=state, coverage=coverage)
+
+
+def _commit_record_git(repo_root: Path, owned: list[str], label: str, *args: str) -> None:
+    result = _git_result(repo_root, *args)
+    if result.returncode != 0:
+        raise PinBumpStop(
+            "complete",
+            "RELEASE_RECORD_COMMIT_FAILED",
+            f"{label} failed for release records: {result.stderr.strip()}",
+            evidence={"paths": owned, "stderr": result.stderr.strip()},
+            recommended_actions=[
+                "inspect the repo state directly",
+                "rerun with --resume",
+            ],
+        )
 
 
 def _commit_release_records(*, repo_root: Path, target_ref: str) -> None:
@@ -2335,56 +2328,15 @@ def _commit_release_records(*, repo_root: Path, target_ref: str) -> None:
     if not existing:
         return  # nothing this orchestrator owns exists yet -- idempotent no-op
 
-    status = subprocess.run(
-        ["git", "-C", str(repo_root), "status", "--porcelain", "--", *existing],
-        capture_output=True,
-        text=True,
-    )
+    status = _git_result(repo_root, "status", "--porcelain", "--", *existing)
     if status.returncode == 0 and not status.stdout.strip():
         return  # already committed -- idempotent, matches a --resume re-run
 
-    add_result = subprocess.run(
-        ["git", "-C", str(repo_root), "add", "--", *existing],
-        capture_output=True,
-        text=True,
+    _commit_record_git(repo_root, existing, "git add", "add", "--", *existing)
+    _commit_record_git(
+        repo_root, existing, "git commit --only", "commit", "--only",
+        "-m", f"pin-bump: record release {target_ref}", "--", *existing,
     )
-    if add_result.returncode != 0:
-        raise PinBumpStop(
-            "complete",
-            "RELEASE_RECORD_COMMIT_FAILED",
-            f"git add failed for release records: {add_result.stderr.strip()}",
-            evidence={"paths": existing, "stderr": add_result.stderr.strip()},
-            recommended_actions=[
-                "inspect the repo state directly",
-                "rerun with --resume",
-            ],
-        )
-    commit_result = subprocess.run(
-        [
-            "git",
-            "-C",
-            str(repo_root),
-            "commit",
-            "--only",
-            "-m",
-            f"pin-bump: record release {target_ref}",
-            "--",
-            *existing,
-        ],
-        capture_output=True,
-        text=True,
-    )
-    if commit_result.returncode != 0:
-        raise PinBumpStop(
-            "complete",
-            "RELEASE_RECORD_COMMIT_FAILED",
-            f"git commit --only failed for release records: {commit_result.stderr.strip()}",
-            evidence={"paths": existing, "stderr": commit_result.stderr.strip()},
-            recommended_actions=[
-                "inspect the repo state directly",
-                "rerun with --resume",
-            ],
-        )
 
 
 def _write_release_doc_best_effort(
