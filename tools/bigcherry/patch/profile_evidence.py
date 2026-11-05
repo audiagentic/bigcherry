@@ -19,6 +19,8 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
+from . import lineage
+
 SCHEMA = 1
 TIER = "profile-evidence"
 RECORD = Path("evidence") / "promotion.json"
@@ -106,7 +108,8 @@ def load(package_dir: Path) -> ProfileEvidence | None:
     )
 
 
-def verify(package_dir: Path, *, patch_id: str, pinned_ref: str, subject_digest: str) -> tuple[str, ...] | None:
+def verify(package_dir: Path, *, patch_id: str, pinned_ref: str, subject_digest: str,
+           allow_lineage: bool = False) -> tuple[str, ...] | None:
     """None when the package has no record; otherwise the reasons it does not qualify (empty = it qualifies)."""
     try:
         evidence = load(package_dir)
@@ -119,6 +122,10 @@ def verify(package_dir: Path, *, patch_id: str, pinned_ref: str, subject_digest:
         found.append(f"record is for {evidence.patch_id!r}")
     if evidence.pinned != pinned_ref:
         found.append(f"record is for pin {evidence.pinned!r}, current pin is {pinned_ref!r}")
-    if evidence.subject_digest != subject_digest:
+    if evidence.subject_digest != subject_digest and not (
+        allow_lineage and lineage.is_ancestor(
+            package_dir, previous=evidence.subject_digest, current=subject_digest
+        )
+    ):
         found.append("the patch implementation changed since the evidence was taken; confirm it again")
     return tuple(found)

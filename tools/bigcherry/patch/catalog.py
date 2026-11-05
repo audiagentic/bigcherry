@@ -398,6 +398,9 @@ def validation_evidence_statuses(
                 required_architectures=required_archs,
                 root=evidence_root, allow_legacy_grandfather=allow_legacy_grandfather,
                 resolved_base_revision=resolved,
+                allow_lineage=carry_forward and (
+                    ref != pinned_ref or resolved != resolved_base_revision
+                ),
             )
 
         tracked_statuses = validation_policy.tracked_statuses_for_patch(patch_id)
