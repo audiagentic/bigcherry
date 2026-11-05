@@ -1,6 +1,14 @@
 # rad0011_plan_memory
 
-## Promotion record
+## Summary
+
+The engine's own memory plan (`Engine::plan()`) as a serving manifest v1 `EnginePlan`, measured or checked, through the
+
+## Outcome
+
+Validated (profile evidence, Qwen3.8-Flash-Next on the four-card layout, Radiance v1.17.0): the engine started from the measured serving manifest serves identical text and the same speed as the argv start. See SUMMARY.md for the design.
+
+## Detail
 
 Model: Qwen3.8-Flash-Next fp8-iq4r-moe (.rad), R9700 engine with two RX 7900 XTX expert helpers and an RX 6900 XT tail (flashnext-4gpu)
 Mechanics: patch tests (tools/tests/patch) and the serving component's card-free tests (bc_v1_test, bc_serving_test, manifest_argv_test through the real main.cpp order of rad0011 then rad0009) pass on the final PR #651 tree; patch-lint clean; the lane build radiance:stock:linux-radiance builds both patches (build c6938079 / plan 8b4285bc) and the engine starts with --manifest.
