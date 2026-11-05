@@ -2,8 +2,10 @@
 // manifest v1 read by the shared strict reader, its registry-bound fields as flags.
 // Built by tools/tests/patch/test_radiance_patch_packages.py against radiance's real option table and a mirror of config_parse's shape rules.
 // usage: manifest_argv_test SCRATCH_DIR V1_EXAMPLE_MANIFEST OPTIONS_FILE
+#include "bc_plan_check.h"
 #include "bc_serving_manifest.h"
 #include "jcs.h"
+#include "serving_codec.h"
 
 #include <nlohmann/json.hpp>
 
@@ -96,6 +98,24 @@ static std::string run(std::vector<std::string> args) {
     return out;
 }
 
+// main()'s real call order (core/main.cpp, checked by the Python harness): rad0009's manifest reader first, then rad0011's
+// plan flags. Returns the argv left for config_parse joined by space, or "ERROR" when the manifest reader refused it, or
+// "EXIT <rc>" when the plan flags did.
+static std::string run_main_order(std::vector<std::string> args) {
+    std::vector<std::string> store{"engine"};
+    for (auto& a : args) store.push_back(a);
+    std::vector<char*> ptrs;
+    for (auto& s : store) ptrs.push_back(&s[0]);
+    ptrs.push_back(nullptr);
+    int argc = (int)store.size();
+    char** argv = ptrs.data();
+    if (!bc_serving_engine_argv(&argc, &argv)) return "ERROR";
+    if (int rc = bc_plan::take_flags(&argc, &argv)) return "EXIT " + std::to_string(rc);
+    std::string out;
+    for (int i = 0; i < argc; ++i) out += (i ? " " : "") + std::string(argv[i]);
+    return out;
+}
+
 int main(int, char** argv) {
     g_dir = argv[1];
     load_options(argv[3]);
@@ -148,6 +168,54 @@ int main(int, char** argv) {
 
     // without --manifest argv is untouched
     CHECK(run({"--model", "x", "--tp-wire", "exact"}) == "engine --model x --tp-wire exact");
+
+    // RSC08 S3: the plan check comes from the manifest, through main()'s real order (the manifest reader, then the plan flags).
+    // A measuring start (unmeasured manifest + --plan-memory) is measuring and the flag is off argv for config_parse; a start
+    // from the measured manifest arms the check with the manifest's own plan and floor; no start without a manifest arms one.
+    {
+        nlohmann::json doc = nlohmann::json::parse(slurp(example));
+        doc["spec"]["plan"]["state"] = "unmeasured";
+        doc["spec"]["plan"].erase("engine_memory");
+        doc["spec"]["resources"]["host"].erase("checkpoint_slots");
+        doc["provenance"]["/spec/resources"]["inputs"] = nlohmann::json::array({"/spec/facts/host", "/spec/calibration"});
+        std::string digest, why;
+        doc["metadata"].erase("content_digest");
+        CHECK(bc::serving::manifest_content_digest(doc, &digest, &why));
+        doc["metadata"]["content_digest"] = digest;
+        const std::string unmeasured = write("unmeasured-main.json", doc.dump(2));
+        const std::string plan_out = g_dir + "/measured-plan.json";
+
+        const std::string measuring = run_main_order({"--manifest", unmeasured, "--plan-memory", plan_out});
+        CHECK(measuring != "ERROR" && measuring.rfind("EXIT", 0) != 0);
+        CHECK(measuring.find("--plan-memory") == std::string::npos && measuring.find("--model ") != std::string::npos);
+        CHECK(bc_plan::mode() == bc_plan::Mode::measure && bc_plan::measure_out() == plan_out);
+
+        const std::string serving = run_main_order({"--manifest", example});
+        CHECK(serving == got);   // nothing of the plan machinery reaches radiance's own parser
+        CHECK(bc_plan::mode() == bc_plan::Mode::check);
+
+        // the armed check is the manifest's: its own expected plan is admitted by itself, and a drifted live plan is a plan mismatch
+        const nlohmann::json measured = nlohmann::json::parse(slurp(example));
+        bc::serving::v1::EnginePlan expected;
+        CHECK(!bc::serving::v1::decode(measured.at("spec").at("plan").at("engine_memory").at("expected"), "", &expected));
+        std::fflush(stderr);
+        CHECK(bc_plan::check(expected) == 0);
+        bc::serving::v1::EnginePlan drifted = expected;
+        drifted.vram.statics += 1;
+        CHECK(bc_plan::check(drifted) == 2);
+
+        // refused states: neither manifest state is read as the other, whatever the plan flags say
+        CHECK(run_main_order({"--manifest", unmeasured}) == "ERROR");                           // a serving start with no plan
+        CHECK(run_main_order({"--manifest", example, "--plan-memory", plan_out}) == "ERROR");   // a measuring start with a plan
+
+        // without a manifest there is nothing to check; --plan-memory still measures (a layout with no manifest writer yet)
+        const std::string dense = run_main_order({"--model", "m.rad", "--plan-memory", plan_out});
+        CHECK(dense == "engine --model m.rad" && bc_plan::mode() == bc_plan::Mode::measure);
+        CHECK(run_main_order({"--model", "m.rad"}) == "engine --model m.rad" && bc_plan::mode() == bc_plan::Mode::none);
+        // the retired flags are not the plan machinery's: radiance's own parser refuses them as unknown options
+        CHECK(run_main_order({"--model", "m.rad", "--plan-check", "x", "--plan-check-floor-ppm", "0"}) ==
+              "engine --model m.rad --plan-check x --plan-check-floor-ppm 0");
+    }
 
     // other flags, a wrong role, duplicates, a missing path
     CHECK(run({"--manifest", example, "--tp", "2"}) == "ERROR");

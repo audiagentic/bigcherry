@@ -88,8 +88,8 @@ PIN_BLOBS = {
         "arch/common/rad_block_moe_fp8.h": ("5777cc8", "feb3865"),
     },
     RAD0009: {
-        "core/bc_serving_manifest.h": (None, "692ab43"),
-        "core/bc_serving_manifest.cpp": (None, "6f0a1fb"),
+        "core/bc_serving_manifest.h": (None, "ea567e5"),
+        "core/bc_serving_manifest.cpp": (None, "666d775"),
         "core/CMakeLists.txt": ("921debd", "8750342"),
         "core/main.cpp": ("4cb6d43", "7feb7b6"),
     },
@@ -638,7 +638,7 @@ class TestServingManifestPatch(unittest.TestCase):
                 self.fail(message)   # in CI the test must run, never skip
             self.skipTest(message)
         serving = REPO / "engines" / "radiance" / "components" / "serving"
-        temp, root = self._applied()
+        temp, root = TestPlanMemoryPatch._applied(self)   # both patches: the test runs main()'s real order (manifest reader, then plan flags)
         try:
             work = Path(temp.name)
             scratch = work / "scratch"
@@ -647,7 +647,7 @@ class TestServingManifestPatch(unittest.TestCase):
             flags = ["-std=c++20", "-O0", "-Wall", "-Wextra", "-Wno-unused-parameter", "-Wno-missing-field-initializers",
                      "-Werror", f"-I{root / 'core'}", f"-I{root / 'abi'}", f"-I{serving}", f"-I{serving / 'v1'}",
                      f"-I{serving / 'generated'}", f"-I{include}"]
-            sources = [root / "core" / "bc_serving_manifest.cpp", test,
+            sources = [root / "core" / "bc_serving_manifest.cpp", root / "core" / "bc_plan_check.cpp", test,
                        *(serving / "v1" / n for n in ("error.cpp", "strict_json.cpp", "manifest.cpp", "admission.cpp")),
                        serving / "generated" / "serving_codec.cpp", serving / "jcs.cpp", serving / "sha256.cpp"]
             objects, procs = [], []
@@ -683,7 +683,7 @@ class TestServingManifestPatch(unittest.TestCase):
 
 class TestPlanMemoryPatch(unittest.TestCase):
     """rad0011: the engine's memory plan as a serving manifest v1 EnginePlan: `--plan-memory FILE` measures it,
-    `--plan-check FILE --plan-check-floor-ppm N` checks it at start-up; thin hooks into core/bc_plan_*.* and a fail-closed
+    a start from a measured manifest checks it at start-up against the manifest's own plan; thin hooks into core/bc_plan_*.* and a fail-closed
     link of the shared bc_serving_v1 library into rad_core."""
 
     SERVING = REPO / "engines" / "radiance" / "components" / "serving"
@@ -710,8 +710,8 @@ class TestPlanMemoryPatch(unittest.TestCase):
         temp, root = self._applied()
         try:
             self.assertEqual(self._added_code(root, "core/main.cpp"), [
-                "if (int rc = bc_plan_memory_take_flag(&argc, &argv)) return rc;",
                 "if (!bc_serving_engine_argv(&argc, &argv)) return 2;",
+                "if (int rc = bc_plan_memory_take_flag(&argc, &argv)) return rc;",
                 "if (!bc_serving_mark_given(&cfg.given)) return 2;",
             ])
             self.assertEqual(self._added_code(root, "core/engine_bringup.cpp"), [
@@ -722,12 +722,9 @@ class TestPlanMemoryPatch(unittest.TestCase):
         finally:
             temp.cleanup()
 
-    def test_flag_is_taken_before_the_manifest_reader_and_the_check_precedes_the_pools(self):
+    def test_the_check_precedes_the_pools(self):
         temp, root = self._applied()
         try:
-            main = (root / "core/main.cpp").read_text(encoding="utf-8")
-            self.assertLess(main.index("bc_plan_memory_take_flag(&argc, &argv)"),
-                            main.index("bc_serving_engine_argv(&argc, &argv)"))
             bringup = (root / "core/engine_bringup.cpp").read_text(encoding="utf-8")
             self.assertIn("    RAD_TRY(plan());\n    RAD_TRY(bc_plan_memory_done());\n    RAD_TRY(load_weights());", bringup)
             resolve = bringup.index("RAD_TRY(vram_budget_resolve(cfg_, facts, &vb));")
@@ -778,6 +775,24 @@ class TestPlanMemoryPatch(unittest.TestCase):
                              (FIXTURE / "core/main.cpp").read_text(encoding="utf-8"))
             self.assertFalse((root / "core/bc_plan_memory.cpp").exists())
 
+    def test_plan_flags_are_taken_after_the_manifest_reader(self):
+        """rad0011's call sits after rad0009's in main(): the manifest reader decides measuring or serving from --plan-memory
+        and hands the flag on. Before it, the flag would be stripped first and a measuring start would read its own
+        unmeasured manifest as a serving start (found 2026-11-05: no gate had started the engine from a manifest)."""
+        temp, root = self._applied()
+        try:
+            main = (root / "core" / "main.cpp").read_text(encoding="utf-8")
+            reader = main.index("bc_serving_engine_argv(&argc, &argv)")
+            flags = main.index("bc_plan_memory_take_flag(&argc, &argv)")
+            parse = main.index("rad::config_parse(argc, argv, &cfg)")
+            self.assertLess(reader, flags)
+            self.assertLess(flags, parse)
+            for text in (main, (root / "core" / "bc_plan_check.cpp").read_text(encoding="utf-8")):
+                self.assertNotIn('"--plan-check"', text)
+                self.assertNotIn("plan-check-floor-ppm", text)
+        finally:
+            temp.cleanup()
+
     def test_plan_flags_compiled_and_run(self):
         """Compile the patch's own bc_plan_check.cpp with the shared v1 sources, under radiance's own warning flags
         (-Wall -Wextra, C++20) plus -Werror, and run its card-free test: the flags, the expected plan read, the one
@@ -796,7 +811,7 @@ class TestPlanMemoryPatch(unittest.TestCase):
             flags = ["-std=c++20", "-O0", "-Wall", "-Wextra", "-Wno-unused-parameter", "-Wno-missing-field-initializers",
                      "-Werror", f"-I{root / 'core'}", f"-I{root / 'abi'}", f"-I{self.SERVING}", f"-I{self.SERVING / 'v1'}",
                      f"-I{self.SERVING / 'generated'}", f"-I{include}"]
-            sources = [root / "core" / "bc_plan_check.cpp",
+            sources = [root / "core" / "bc_plan_check.cpp", root / "core" / "bc_serving_manifest.cpp",
                        REPO / "engines" / "radiance" / "tests" / "plan_memory" / "plan_flags_test.cpp",
                        *(self.SERVING / "v1" / n for n in ("error.cpp", "strict_json.cpp", "manifest.cpp", "admission.cpp")),
                        self.SERVING / "generated" / "serving_codec.cpp", self.SERVING / "jcs.cpp", self.SERVING / "sha256.cpp"]

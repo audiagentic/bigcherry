@@ -1,11 +1,12 @@
-// Card-free test of rad0011's plan flags and start-up check (core/bc_plan_check.cpp): --plan-memory FILE, and
-// --plan-check FILE with --plan-check-floor-ppm N (both or neither), the expected plan read through the shared v1 codec,
-// and the one start-up line. Built and run by tools/tests/patch/test_radiance_patch_packages.py with the admission
+// Card-free test of rad0011's plan mode and start-up check (core/bc_plan_check.cpp): --plan-memory FILE, the check armed
+// with an expected plan and floor (from a measured manifest in the engine; from the admission vectors here), and the one
+// start-up line. The manifest-to-check path through main()'s real call order is manifest_main_order_test.cpp. Built and run by tools/tests/patch/test_radiance_patch_packages.py with the admission
 // vectors and a scratch directory as arguments. Prints "ok" on success.
 #include "bc_plan_check.h"
 
 #include "admission.h"
 #include "serving_codec.h"
+#include "strict_json.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -14,6 +15,12 @@
 #include <sstream>
 #include <string>
 #include <vector>
+
+// rad0011 reads the manifest reader's expected plan (rad0009 core/bc_serving_manifest.cpp, linked here); it asks the engine's
+// option table for its names, which this test never uses.
+namespace rad::diag {
+std::vector<std::string> config_option_names() { return {}; }
+}  // namespace rad::diag
 
 namespace {
 namespace v1 = bc::serving::v1;
@@ -75,11 +82,12 @@ int main(int argc, char** argv) {
         std::printf("FAIL: no prod-a3-reading-1 vector\n");
         return 1;
     }
-    const std::string expected_file = scratch + "/expected.plan.json";
+    const std::string expected_file = scratch + "/expected.plan.json";   // only to show the retired flag is not taken
     write(expected_file, prod->at("expected").dump());
     const std::string ppm = "600000";
     std::string err;
     std::vector<std::string> left;
+    int rc0 = -1;
 
     // no flags: nothing is taken, nothing changes
     check(take(scratch, {"--model", "m.rad", "--port", "8080"}, &err, &left) == 0 && bc_plan::mode() == bc_plan::Mode::none &&
@@ -94,44 +102,28 @@ int main(int argc, char** argv) {
     check(take(scratch, {"--plan-memory"}, &err) == 2 && err.find("BC_CFG_INVALID_VALUE") != std::string::npos &&
               err.find("needs a value") != std::string::npos, "--plan-memory without a file is a usage error: " + err);
 
-    // --plan-check and --plan-check-floor-ppm go together
-    check(take(scratch, {"--plan-check", expected_file}, &err) == 2 && err.find("go together") != std::string::npos,
-          "--plan-check without the floor is a usage error: " + err);
-    check(take(scratch, {"--plan-check-floor-ppm", ppm}, &err) == 2 && err.find("go together") != std::string::npos,
-          "the floor without --plan-check is a usage error: " + err);
-    check(take(scratch, {"--plan-memory", "/tmp/o.json", "--plan-check", expected_file, "--plan-check-floor-ppm", ppm}, &err) == 2 &&
-              err.find("does not go with") != std::string::npos,
-          "--plan-memory does not go with --plan-check: " + err);
-    check(take(scratch, {"--plan-check", expected_file, "--plan-check", expected_file, "--plan-check-floor-ppm", ppm}, &err) == 2 &&
-              err.find("given twice") != std::string::npos, "a repeated flag is a usage error: " + err);
+    // --plan-memory twice is a usage error; there is no flag that supplies an expected plan
+    check(take(scratch, {"--plan-memory", "/tmp/a.json", "--plan-memory", "/tmp/b.json"}, &err) == 2 &&
+              err.find("given twice") != std::string::npos, "a repeated --plan-memory is a usage error: " + err);
+    check(take(scratch, {"--plan-check", expected_file, "--plan-check-floor-ppm", ppm}, &err, &left) == 0 &&
+              bc_plan::mode() == bc_plan::Mode::none &&
+              left == std::vector<std::string>({"--plan-check", expected_file, "--plan-check-floor-ppm", ppm}),
+          "the retired --plan-check flags are not taken: they stay on argv for radiance to refuse as unknown options");
 
-    // the floor is range-checked by the shared validator
-    for (const char* bad : {"-1", "1000000", "abc", "", "5x"}) {
-        const int rc = take(scratch, {"--plan-check", expected_file, "--plan-check-floor-ppm", bad}, &err);
-        check(rc == 2 && (err.find("kv_backing_floor_ppm must be in [0, 1000000)") != std::string::npos ||
-                          err.find("must be an integer") != std::string::npos || err.find("needs a value") != std::string::npos),
-              std::string("floor '") + bad + "' is refused: rc " + std::to_string(rc) + " " + err);
+    // the floor is range-checked by the shared validator when the check is armed
+    v1::EnginePlan expected_plan;
+    check(!v1::decode(prod->at("expected"), "", &expected_plan), "the vector's expected plan decodes");
+    for (int64_t bad : {int64_t(-1), int64_t(1000000), int64_t(5000000)}) {
+        err = captured(scratch, [&] { rc0 = bc_plan::arm(expected_plan, bad); });
+        check(rc0 == 2 && err.find("kv_backing_floor_ppm must be in [0, 1000000)") != std::string::npos &&
+                  bc_plan::mode() != bc_plan::Mode::check,
+              "floor " + std::to_string(bad) + " is refused and arms nothing: rc " + std::to_string(rc0) + " " + err);
     }
-    check(take(scratch, {"--plan-check", expected_file, "--plan-check-floor-ppm", "999999"}, &err) == 0, "floor 999999 is in range");
-    check(take(scratch, {"--plan-check", expected_file, "--plan-check-floor-ppm", "0"}, &err) == 0, "floor 0 is in range");
-
-    // the expected plan: unreadable is a file error (exit 3), malformed or not a v1 plan is invalid (exit 2)
-    check(take(scratch, {"--plan-check", scratch + "/missing.json", "--plan-check-floor-ppm", ppm}, &err) == 3 &&
-              err.find("BC_CFG_IO_FAILURE") != std::string::npos && err.find("bc-serve --plan-store") != std::string::npos,
-          "a missing expected plan is an io failure with the remedy: " + err);
-    write(scratch + "/garbage.json", "{not json");
-    check(take(scratch, {"--plan-check", scratch + "/garbage.json", "--plan-check-floor-ppm", ppm}, &err) == 2 &&
-              err.find("BC_CFG_INVALID_FORMAT") != std::string::npos, "a malformed expected plan is refused: " + err);
-    Json odd = prod->at("expected");
-    odd["extra"] = 1;
-    write(scratch + "/odd.json", odd.dump());
-    check(take(scratch, {"--plan-check", scratch + "/odd.json", "--plan-check-floor-ppm", ppm}, &err) == 2 &&
-              err.find("BC_CFG_UNKNOWN_FIELD") != std::string::npos && err.find("odd.json") != std::string::npos,
-          "an expected plan with an unknown member is refused naming the file: " + err);
+    check(bc_plan::arm(expected_plan, 999999) == 0 && bc_plan::mode() == bc_plan::Mode::check, "floor 999999 is in range");
+    check(bc_plan::arm(expected_plan, 0) == 0, "floor 0 is in range");
 
     // the check: admitted prints one line with its margins; a refusal is the shared error with its exit code
-    check(take(scratch, {"--plan-check", expected_file, "--plan-check-floor-ppm", ppm}, &err) == 0 &&
-              bc_plan::mode() == bc_plan::Mode::check, "a valid check is armed");
+    check(bc_plan::arm(expected_plan, 600000) == 0 && bc_plan::mode() == bc_plan::Mode::check, "a valid check is armed");
     v1::EnginePlan live;
     check(!v1::decode(prod->at("live"), "", &live), "the vector's live plan decodes");
     int rc = -1;
@@ -159,40 +151,51 @@ int main(int argc, char** argv) {
     err = captured(scratch, [&] { rc = bc_plan::check(host_drift); });
     check(rc == 2 && err.find("BC_CFG_PLAN_MISMATCH") != std::string::npos, "one byte of host drift is refused: " + err);
 
-    // Every normative admission vector through the engine's own entry points: --plan-check/--plan-check-floor-ppm parsing,
-    // then bc_plan::check. The exit code and the message must be what the vector says (admit 0, admission 4, plan or input 2).
+    // Every normative admission vector through the engine's own entry points: the expected plan decoded as the manifest
+    // reader decodes it, bc_plan::arm (the floor), then bc_plan::check. The exit code and the message must be what the vector
+    // says (admit 0, admission 4, plan or input 2).
     {
-        // Where each vector meets production code: 54 reach bc_plan::check; the rest are refused earlier, at the engine's flag and
-        // expected-plan validation (3), or are a live plan the contract cannot even decode (1: the engine builds its live plan in
-        // process, as a typed struct, so a missing field there is a decode failure of the vector, not a runtime input).
+        // Where each vector meets production code: 54 reach bc_plan::check; the rest are refused earlier, at the strict decode
+        // of the expected plan or the floor range (3), or are a live plan the contract cannot even decode (1: the engine builds
+        // its live plan in process, as a typed struct, so a missing field there is a decode failure of the vector).
         int ran = 0, through_check = 0, refused_at_flags = 0, live_undecodable = 0;
         for (const Json& v : vectors.at("vectors")) {
             const std::string name = v.at("name").get<std::string>(), cls = v.at("verdict").value("class", std::string("admit"));
             const bool admit = v.at("verdict").at("admit").get<bool>();
             const int want_exit = admit ? 0 : cls == "admission" ? 4 : 2;
             const std::string needle = admit ? std::string() : v.at("verdict").at("needle").get<std::string>();
-            write(scratch + "/vec-expected.json", v.at("expected").dump());
             ++ran;
-            int rc = take(scratch, {"--plan-check", scratch + "/vec-expected.json", "--plan-check-floor-ppm",
-                                    std::to_string(v.at("ppm").get<int64_t>())}, &err);
-            v1::EnginePlan expected, live_plan;
-            const bool expected_ok = !v1::decode(v.at("expected"), "", &expected);
-            const bool live_ok = !v1::decode(v.at("live"), "", &live_plan);
             const int64_t vppm = v.at("ppm").get<int64_t>();
-            if (!expected_ok || vppm < 0 || vppm >= 1000000) {
+            v1::EnginePlan expected, live_plan;
+            // the strict reader first (it is what refuses a byte count past I-JSON's 2^53 - 1), then the generated decode
+            v1::Result<Json> strict = v1::parse_strict_json(v.at("expected").dump(), "vec-expected.json");
+            v1::Status decoded = strict ? v1::decode(strict.value(), "", &expected) : v1::Status{};
+            int rc = 0;
+            err = captured(scratch, [&] {
+                if (!strict) {
+                    std::fputs(v1::render_human("radiance", strict.error()).c_str(), stderr);
+                    rc = v1::exit_code_of(strict.error());
+                } else if (decoded) {
+                    std::fputs(v1::render_human("radiance", *decoded).c_str(), stderr);
+                    rc = v1::exit_code_of(*decoded);
+                } else {
+                    rc = bc_plan::arm(expected, vppm);
+                }
+            });
+            const bool live_ok = !v1::decode(v.at("live"), "", &live_plan);
+            if (rc != 0) {
                 ++refused_at_flags;
-                check(!admit && cls == "input" && rc == 2, "vector " + name + ": refused at the flags with exit 2, got " + std::to_string(rc) + " " + err);
+                check(!admit && cls == "input" && rc == 2, "vector " + name + ": refused before the check with exit 2, got " + std::to_string(rc) + " " + err);
                 if (vppm < 0 || vppm >= 1000000)
                     check(err.find("kv_backing_floor_ppm must be in [0, 1000000)") != std::string::npos && err.find("BC_CFG_INVALID_VALUE") != std::string::npos,
                           "vector " + name + ": the floor refusal names the range: " + err);
                 else
-                    // the strict reader refuses a byte count past I-JSON's 2^53 - 1 before decoding, naming the member and the file
                     check(err.find("BC_CFG_INVALID_FORMAT") != std::string::npos && err.find("vram.kv_ceiling") != std::string::npos &&
                               err.find("outside I-JSON's +/-(2^53 - 1)") != std::string::npos && err.find("vec-expected.json") != std::string::npos,
                           "vector " + name + ": the expected-plan refusal is invalid_format at vram.kv_ceiling naming the file: " + err);
                 continue;
             }
-            check(rc == 0, "vector " + name + ": the flags are accepted: " + err);
+            check(bc_plan::mode() == bc_plan::Mode::check, "vector " + name + ": the check is armed");
             if (!live_ok) {
                 ++live_undecodable;
                 const auto e = v1::decode(v.at("live"), "live", &live_plan);
@@ -211,7 +214,7 @@ int main(int argc, char** argv) {
         }
         check(ran >= 46 && through_check + refused_at_flags + live_undecodable == ran, "every vector met production code");
         check(through_check == 54 && refused_at_flags == 3 && live_undecodable == 1,
-              "54 through bc_plan::check, 3 refused at the flags, 1 undecodable live plan (got " + std::to_string(through_check) + "/" +
+              "54 through bc_plan::check, 3 refused before it, 1 undecodable live plan (got " + std::to_string(through_check) + "/" +
                   std::to_string(refused_at_flags) + "/" + std::to_string(live_undecodable) + ")");
     }
 
