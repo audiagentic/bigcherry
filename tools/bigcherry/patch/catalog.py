@@ -48,6 +48,7 @@ from typing import Mapping
 
 from ..core import config as campaign_config
 from . import evidence as patch_validation_evidence
+from . import profile_evidence
 from ..core import engines, paths
 from . import patchset
 from . import validation_policy
@@ -440,6 +441,15 @@ def _carried_forward(patch_id, check, pinned_ref, resolved_base_revision, eviden
         )
         if pin[0] and not live and pin not in earlier_pins:
             earlier_pins.append(pin)
+    # The profile-evidence tier carries its pin in the package record (no HI83 records). That pin is an earlier pin
+    # to try as well: the record carries forward exactly when the patch implementation is unchanged (the verifier
+    # reports any other defect, so a changed patch, a malformed or incomplete record still fail).
+    try:
+        profile = profile_evidence.load(patches_root / patch_id) if patches_root is not None else None
+    except ValueError:
+        profile = None
+    if profile is not None and profile.pinned and profile.pinned != pinned_ref and (profile.pinned, "") not in earlier_pins:
+        earlier_pins.append((profile.pinned, ""))
     for ref, revision in earlier_pins:
         if evaluate(patch_id, ref, revision or None).ok:
             return patch_validation_evidence.EvidenceCheck(

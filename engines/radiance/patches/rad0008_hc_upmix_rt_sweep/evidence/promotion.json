@@ -1,0 +1,17 @@
+{
+  "schema": 1,
+  "tier": "profile-evidence",
+  "patch-id": "rad0008_hc_upmix_rt_sweep",
+  "pinned": "v1.9.0",
+  "subject-digest": "8211e4ec64339381c356282bf6584c4fb3dfff6087efe6d2c9a6a721387898fe",
+  "default-on": false,
+  "models": [
+    "Qwen3.8-Flash-Next (hyper-connection blocks: n=2560, hc=4, lr=320, the only shape r4d_selftest's PF2 bench runs)"
+  ],
+  "checks": {
+    "ab": "rotated rounds, stock against RT=128: gfx1201 M=2048 515.3 vs 504.7 us (-2.1%, ahead in all six paired rounds), M=4096 1293.1 vs 1252.3 us (-3.2%); gfx1100 through libr3 M=2048 1322.5 vs 1246.4 us (-5.8%), M=4096 2619.2 vs 2546.5 us (-2.8%); rows sweep never slower. Kernel-level (GPU-event) only: no end-to-end tokens/s A/B was taken for this patch; the end-to-end Flash-Next builds since 2026-10-23 all include it. Scope: the patch changes a launch parameter of the hyper-connection up-mix kernel, so only models with such blocks are affected; Flash-Next is the only one measured, and the record claims nothing for other models.",
+    "activation": "the build through the real pipeline (bigcherry build --experiment hc-upmix-rt-sweep, build plan da22861d7c120bb8e078f39e86ca4037) contains the three compiled instantiations and r4d_selftest --perfhc / r3_selftest --perfhc launch the RT=128 form by default; RAD_HC_UPMIX_RT=256 restores the original launch (SUMMARY.md, hardware result).",
+    "identity": "every run of r4d_selftest and r3_selftest --perfhc passed the selftest's byte-identical check of the PF2 output against the decode-tile kernels at RT=128/256/384 (gfx1201 and gfx1100), at all ten row counts 512 to 8192; the patch only changes which already-existing template instantiation is launched, never the kernel body or math.",
+    "mechanics": "apply_patch on the pinned v1.9.0 file applies and a second apply reports already-applied; standalone hipcc gfx1201 compile of the patched file is clean and nm shows the three new hc_up_mix_wide_kernel<4,false,128/256/384> instantiations; the patch applies cleanly at every later pin (the v1.14.0, v1.16.0 and v1.17.0 bumps rebased it without edit). Source: engines/radiance/patches/rad0008_hc_upmix_rt_sweep/SUMMARY.md."
+  }
+}
