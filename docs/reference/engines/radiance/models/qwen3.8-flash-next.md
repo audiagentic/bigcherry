@@ -79,6 +79,47 @@ a pinned-host mailbox. Heat-ranked placement keeps frequently used experts
 on the faster cards. Chunked combine overlaps the reduction of helper
 outputs with their arrival instead of serialising the whole exchange.
 
+## Same layout, before and after the policy and kernel changes, measured 2026-11-05
+
+Launcher defaults (`flashnext-4gpu`: 14 GiB tail, combine on, live policy off), `temperature: 0`, seed 7, 512-token
+prompts, 512 generated tokens, three repetitions, two passes of each build alternating A, B, A, B. A is the main build
+before the live placement policy and the RAD47/RAD48 kernel changes; B is the build with them. Cold prefill is a fresh
+~48K-token documentation prompt, before and after the decode runs.
+
+| | A, before | B, after |
+|---|---:|---:|
+| Cold prefill, tokens/s (four runs) | 3,650 / 3,697 / 3,721 / 3,745 | 3,676 / 3,741 / 3,742 / 3,753 |
+| Step, 1 stream | 25.1 ms | 24.9-25.0 ms |
+| Step, 2 streams | 29.7-29.9 ms | 29.2-29.7 ms |
+| Step, 4 streams | 40.1 ms | 39.2-39.3 ms |
+| Step, 6 streams | 45.1-45.3 ms | 45.5-46.8 ms |
+| Draft tokens a step, 1 / 2 streams | 2.69 / 6.33 | 3.38 / 5.38-5.45 |
+
+Prefill and step time agree to within about 3%, and a repeat of each build reproduces its first pass, so the changes
+cost no speed. Aggregate tokens/s differs between the builds only through draft tokens accepted a step, which is
+stable for a build (identical on repeat) but differs between builds even with the text pinned, because a different
+placement changes the greedy text early (RHP04). Compare builds by step time, not by tokens/s. Fresh 44K prefill in
+this layout is 3,650-3,753 tokens/s; the best recorded figure above is 3,837.
+
+## Long context by tail size, measured 2026-11-04
+
+The 1M-token setting (YaRN, two sequences), two XTX helpers with and without the RX 6900 XT tail, default mixed heat
+file, live policy off, C++/HIP source text, a fresh server per arm, temperature 0. Fills of 362K and 710K real tokens.
+
+| Tail | Prefill 362K / 710K, tokens/s | Decode 362K / 710K, tokens/s | Host-to-GPU expert traffic |
+|---|---:|---:|---:|
+| none (12,288 MiB host pool) | 2,375 / 1,244 | 111-131 / 70 | 1,392 GiB |
+| 3 GiB | 2,515 / 2,143 | 112 / 58 | 1,199 GiB |
+| 6 GiB | 2,572 / 2,169 | 111 / 71 | 1,056 GiB |
+| 14 GiB | 2,634 / 2,307 | 115 / 80 | 613 GiB |
+
+A larger tail halves the expert traffic and lifts the 710K prefill by 85% (1,244 to 2,307); it does not change the
+share of promotions that re-admit a just-demoted expert (61-66% in every arm), and long-context decode stays inside
+the run-to-run spread (58 to 80 at 710K), so that slowdown is mostly attention over the cache. Without a tail the
+default 9,216 MiB host pool cannot serve 1M: one sequence's cache (14.24 GiB) leaves the experts 8.63 GiB, short of
+the 9.41 GiB the pool cannot hold, and startup stops out of memory; the no-tail row used 12,288 MiB. One run per arm;
+details and caveats in [RHP10](../../../../planning/active/patching-radiance-heat-placement/RHP10.md).
+
 ## RX 6900 XT tail size, measured 2026-11-04
 
 Two RX 7900 XTX helpers behind the R9700 engine, with and without the RX 6900 XT as a
