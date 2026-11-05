@@ -987,7 +987,8 @@ def run_server_comparison_capture(
         source_attestation = None
         if source_root is None:
             raise ValueError(f"{arm['name']}: CMAKE_HOME_DIRECTORY is required for source attestation")
-        from bigcherry.campaign.workers import _source_attestation, _source_metadata_path, _verify_source
+        from bigcherry.campaign.build import _source_metadata_path
+        from bigcherry.campaign.workers import _source_attestation, _verify_source
         metadata_sidecar = _source_metadata_path(source_root)
         if not metadata_sidecar.is_file() or not metadata.get("source_slice_id"):
             raise ValueError(f"{arm['name']}: source attestation metadata is incomplete")

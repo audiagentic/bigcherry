@@ -34,6 +34,24 @@ options = {}
 """
 
 
+class SequenceValidationTests(unittest.TestCase):
+    def test_argv_retains_duplicates_and_rejects_bad_items(self):
+        self.assertEqual(campaign_config._argv(["a", "a"], "args"), ("a", "a"))
+        self.assertEqual(campaign_config._argv(None, "args"), ())
+        for bad in ("a", ["a", ""], ["a", 1]):
+            with self.subTest(bad=bad):
+                with self.assertRaisesRegex(campaign_config.ConfigError, "^args must be a list of non-empty strings$"):
+                    campaign_config._argv(bad, "args")
+
+    def test_strings_maintains_uniqueness_after_validation(self):
+        self.assertEqual(campaign_config._strings(["a", "b"], "names"), ("a", "b"))
+        self.assertEqual(campaign_config._strings(None, "names"), ())
+        with self.assertRaisesRegex(campaign_config.ConfigError, "^names contains duplicates$"):
+            campaign_config._strings(["a", "a"], "names")
+        with self.assertRaisesRegex(campaign_config.ConfigError, "^names must be a list of non-empty strings$"):
+            campaign_config._strings(["a", ""], "names")
+
+
 class PlatformToolchainTests(unittest.TestCase):
     """A prior version of config.Platform silently dropped c-compiler/
     cxx-compiler from [stack.fixture-stack]

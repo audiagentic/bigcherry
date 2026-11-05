@@ -99,10 +99,6 @@ from ..source import identity as source_identity
 SUPPORTED_BUILD_NEEDS = frozenset({"inventory", "promoted-winners"})
 
 
-def _source_metadata_path(source_root: Path) -> Path:
-    return source_root.parent / f"{source_root.name}.metadata.json"
-
-
 def _source_attestation(
     source_root: Path,
     *,
@@ -121,7 +117,7 @@ def _source_attestation(
     if expected is not None:
         return expected
 
-    metadata_path = _source_metadata_path(source_root)
+    metadata_path = campaign_build._source_metadata_path(source_root)
     if metadata_path.is_file():
         try:
             metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
