@@ -173,6 +173,13 @@ class LauncherTokenTests(unittest.TestCase):
         self.assertTrue(os.access(resolved, os.X_OK))
         self.assertEqual(campaign_build.resolve_launcher("ccache"), "ccache")
 
+    def test_the_launcher_is_executable_in_git(self) -> None:
+        # A checkout (CI) takes the mode from git, not from this working tree.
+        out = subprocess.run(["git", "ls-files", "-s", str(LAUNCHER)], cwd=REPO, capture_output=True, text=True)
+        if out.returncode != 0 or not out.stdout:
+            self.skipTest("not a git checkout")
+        self.assertTrue(out.stdout.startswith("100755"), out.stdout)
+
     def test_the_radiance_recipe_names_the_token_for_every_compiler_launcher(self) -> None:
         text = (REPO / "engines/radiance/recipes.toml").read_text(encoding="utf-8")
         for language in ("C", "CXX", "HIP"):
