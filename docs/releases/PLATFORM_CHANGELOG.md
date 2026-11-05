@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.9.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.8.0...bc-platform-1.9.0) (2026-11-05)
+
+
+### New and changed
+
+* **tools:** pin-triage and a simpler pin-bump orchestrator ([#629](https://github.com/audiagentic/bigcherry/issues/629)) ([d0521e3](https://github.com/audiagentic/bigcherry/commit/d0521e33c5514c583cc9a8eca786c46ed7e3c2f5))
+
 ## [1.8.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.7.0...bc-platform-1.8.0) (2026-11-05)
 
 
