@@ -481,7 +481,7 @@ Status validate_semantics(const Manifest& m) {
         return err(C::plan_mismatch, "spec.plan.engine_memory.cache_key",
                    "the measured plan's cache_key " + s.plan.engine_memory.cache_key +
                        " is not this configuration's " + key + " (spec §5.1)",
-                   "measure the plan again (bc-serve --plan-memory) and resolve a new manifest");
+                   "measure the plan again (the launcher's measuring start: the engine's --plan-memory with its helpers up, then bc-serve --plan-store) and write a new manifest (bc-serve --write-manifest)");
     return std::nullopt;
 }
 

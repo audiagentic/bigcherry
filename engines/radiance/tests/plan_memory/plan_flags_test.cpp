@@ -117,7 +117,7 @@ int main(int argc, char** argv) {
 
     // the expected plan: unreadable is a file error (exit 3), malformed or not a v1 plan is invalid (exit 2)
     check(take(scratch, {"--plan-check", scratch + "/missing.json", "--plan-check-floor-ppm", ppm}, &err) == 3 &&
-              err.find("BC_CFG_IO_FAILURE") != std::string::npos && err.find("bc-serve --plan-memory") != std::string::npos,
+              err.find("BC_CFG_IO_FAILURE") != std::string::npos && err.find("bc-serve --plan-store") != std::string::npos,
           "a missing expected plan is an io failure with the remedy: " + err);
     write(scratch + "/garbage.json", "{not json");
     check(take(scratch, {"--plan-check", scratch + "/garbage.json", "--plan-check-floor-ppm", ppm}, &err) == 2 &&

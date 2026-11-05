@@ -19,7 +19,7 @@ Replace tools/lab/radiance/launch-flashnext-best.sh with `bigcherry serve MODEL 
 
 ## Steps
 
-1. `bc-serve [--profile p] [--layout l] [--set k=v] [--dry-run]`: detect (RSC05), then load and validate (RSC01), then write the immutable manifest to the run directory, then start the helpers and the engine with only `--manifest <path> --role <role>`, then health-check, then record (manifest hash and process PIDs).
+1. `bc-serve [--profile p] [--layout l] [--set k=v]`: detect (RSC05), then load and validate (RSC01), then write the immutable v1 manifest (`--write-manifest`; the interim `--dry-run --out` format was deleted at RSC08 S2b) to the run directory, then start the helpers and the engine with only `--manifest <path> --role <role>`, then health-check, then record (manifest hash and process PIDs).
 2. Supervision: ordered start (helpers ready before the engine), graceful stop, PID files, and failure propagation (one process failing stops the set).
 3. Delete tools/lab/radiance/launch-flashnext-best.sh and every caller of it. Replace the RSC01 launcher-equivalence test with a manifest golden test.
 4. Lab runs use `serve` with experiment-namespace overrides, not separate scripts.

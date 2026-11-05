@@ -131,6 +131,7 @@ Slice 2 (shared strict reader) requirement, from the lead's #530 review (2026-11
 
 
 
+
 - chg_20261102_121239_the-serving-manifest-v1-format_6543
 - chg_20261102_121824_the-serving-component-can-prod_8129
 - 2026-11-02T12:18:29.161474+00:00 (updated-by): Updated: section:ledger-events
@@ -155,3 +156,5 @@ Slice 2 (shared strict reader) requirement, from the lead's #530 review (2026-11
 - 2026-11-03T04:26:49.257727+00:00 (updated-by): Updated: section:ledger-events
 - chg_20261104_075438_the-serving-configuration-tool_6545
 - 2026-11-04T07:54:42.951709+00:00 (updated-by): Updated: section:ledger-events
+- chg_20261104_101409_the-engine-can-start-from-the_9485
+- 2026-11-04T10:14:13.356828+00:00 (updated-by): Updated: section:ledger-events
