@@ -202,6 +202,7 @@ namespace v1 = bc::serving::v1;
 std::string g_error;
 v1::EnginePlan g_plan;
 bool g_noted = false;
+long long g_taken_kb = 0;   /* MemAvailable fallen since this process's first line, at the end of the VRAM split (before any pool) */
 
 v1::PlanHostConsumer consumer(const char* name, int64_t bytes, const char* from, const char* remedy) {
     return {name, bytes, v1::Residence::kPinned, from, remedy};
@@ -275,6 +276,12 @@ void bc_plan_memory_note(const rad::Config& cfg, const std::vector<rad::VramFact
         }
         return;
     }
+    /* What start-up took from the host up to here, before the pools, the n-gram table and the checkpoint store are allocated (the
+     * same point the engine's own host-room checks run at): the fall of MemAvailable since this process's first line. It counts
+     * only what the host could not give back (anonymous, pinned and shared memory; page cache and mapped files are reclaimable
+     * and do not move it). The host ledger counts it against MemAvailable beside the helpers' and the pools' (bc-serve
+     * --measured-plan --engine-resident-mib). */
+    g_taken_kb = bc_plan::mem_available_kb_at_start() - bc_plan::mem_available_kb_now();
     g_plan = std::move(p);
     g_noted = true;
 }
@@ -303,12 +310,7 @@ int bc_plan_memory_done() {
         std::fflush(nullptr);
         std::_Exit(2);
     }
-    /* What start-up took from the host before the plan: the fall of MemAvailable between this process's first line and now. It is
-     * the one figure that counts only what the host could not give back (anonymous, pinned and shared memory; page cache and
-     * mapped files are reclaimable and do not move it), which the engine's resident size does not tell (it holds many GiB that
-     * the plan's own consumers already count). The host ledger counts it against MemAvailable beside the helpers' (bc-serve
-     * --measured-plan --engine-resident-mib). At least 1 MiB. */
-    const long long taken_kb = bc_plan::mem_available_kb_at_start() - bc_plan::mem_available_kb_now();
+    const long long taken_kb = g_taken_kb;   /* at least 1 MiB below */
     std::fprintf(stderr, "radiance: --plan-memory: wrote %s; engine start-up took %lld MiB of MemAvailable; nothing loaded or allocated past the plan\n",
                  out_path.c_str(), std::max<long long>(1, (taken_kb + 1023) / 1024));
     std::fflush(nullptr);

@@ -12,7 +12,7 @@ shared v1 library `bc_serving_v1`.
   the checkpoint store's slot, floor and want, one full-length session's KV, the per-card VRAM split including the
   resolved KV budget `kv_resolved`, and the expert plane, each with the engine function it came from) as v1 JSON through
   the generated encoder, prints what its start-up took from the host before the plan (`engine start-up took N MiB of MemAvailable`: the fall of
-  MemAvailable since its first line, so page cache and mapped files do not count; for bc-serve's host ledger), and exits before any weight is loaded or the KV cache and arenas are allocated. bc-serve uses it
+  MemAvailable since its first line, read at the end of the VRAM split before any pool is allocated, so page cache and mapped files do not count; for bc-serve's host ledger), and exits before any weight is loaded or the KV cache and arenas are allocated. bc-serve uses it
   as a measured fact, cached by container, engine build, card and planning inputs.
 - An engine started from a measured manifest (`radiance --manifest M --role engine`, rad0009) checks the plan that manifest
   carries: rad0009 hands over `engine_view`'s expected plan and `kv_backing_floor_ppm` (the selected calibration, 0 when none
