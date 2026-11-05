@@ -13,6 +13,7 @@ rad=${RAD_BIN:-$src/build/bin/radiance}
 home=${RADIANCE_HOME:-$src/build/radiance_home}
 runtime=${RADIANCE_RUNTIME_HOME:-${home%%:*}}
 helper=${R3_MOE_WORKER_BIN:-$runtime/helpers/r3_moe_worker}
+manifest=${BC_SERVING_MANIFEST:?set BC_SERVING_MANIFEST to the canonical bc-serve output}
 recipes=$repo/engines/radiance/recipes.toml
 port=${PORT:-18437}
 
@@ -54,8 +55,7 @@ pgrep -x r3_moe_worker >/dev/null && { pkill -TERM -x r3_moe_worker; sleep 3; pk
 rm -f /dev/shm/r3-moe-helper
 if [ "${HELPER:-1}" != 0 ]; then
 echo "== helper: HIP device 2"
-HIP_VISIBLE_DEVICES=2 $(PYTHONPATH=tools python3 -m bigcherry layout card-env 2) RADIANCE_HOME="$home" \
-    "$helper" "$model" >"$out/helper.log" 2>&1 &
+HIP_VISIBLE_DEVICES=2 "$helper" --manifest "$manifest" --role helper0 >"$out/helper.log" 2>&1 &
 helper_pid=$!
 deadline=$((SECONDS + ${HELPER_TIMEOUT:-900}))
 until grep -qE '^r3_moe_worker: (ready |waiting for engine runtime expert maps)' "$out/helper.log"; do

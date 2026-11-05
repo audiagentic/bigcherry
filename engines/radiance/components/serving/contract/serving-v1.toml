@@ -63,6 +63,10 @@ path = "/spec/handoff/telemetry"
 class = "policy"
 
 [[class_default]]
+path = "/spec/handoff/placement/live_policy"
+class = "policy"
+
+[[class_default]]
 path = "/spec/processes/engine"
 class = "derived"
 
@@ -1001,11 +1005,12 @@ doc = "Host memory held back for the system, MiB (`--host-headroom-mib`)."
 
 [[field]]
 path = "/spec/resources/host/checkpoint_slots"
+optional = true
 radiance_option = "--checkpoint-slots"
 radiance_config = "native checkpoint limit"
 kind = "ref"
 ref = "uint"
-doc = "Prefix checkpoint slots (`--checkpoint-slots`)."
+doc = "Prefix checkpoint slots (`--checkpoint-slots`), derived from the measured plan: present when `plan.state` is `measured`, absent when it is `unmeasured`."
 
 [[field]]
 path = "/spec/handoff"
@@ -1067,6 +1072,118 @@ path = "/spec/handoff/placement/heat_file"
 kind = "string"
 min_length = 1
 doc = "Expert heat file the owner map is planned from."
+
+[[field]]
+path = "/spec/handoff/placement/live_policy"
+optional = true
+kind = "object"
+cpp = "LivePolicy"
+doc = "Live expert placement from the runtime heat map (RHP). Present: the helper runs the policy; absent: no policy thread. Every member is explicit (no defaults); needs one engine rank and a live histogram file, and excludes `experiment.placement.forced`."
+
+[[field]]
+path = "/spec/handoff/placement/live_policy/effect_gate"
+kind = "boolean"
+doc = "A move must pass the measured effect gate before it stays."
+
+[[field]]
+path = "/spec/handoff/placement/live_policy/accept_unwatermarked_heat"
+kind = "boolean"
+doc = "Accept a histogram file heat source that carries no coherent observation watermark."
+
+[[field]]
+path = "/spec/handoff/placement/live_policy/cadence_ns"
+kind = "ref"
+ref = "positive"
+doc = "Time between policy evaluations, ns."
+
+[[field]]
+path = "/spec/handoff/placement/live_policy/max_moves"
+kind = "ref"
+ref = "positive"
+doc = "Most experts one policy epoch may move."
+
+[[field]]
+path = "/spec/handoff/placement/live_policy/max_moved_bytes"
+kind = "ref"
+ref = "positive"
+doc = "Most device bytes one policy epoch may move."
+
+[[field]]
+path = "/spec/handoff/placement/live_policy/min_residency_ns"
+kind = "ref"
+ref = "positive"
+doc = "Shortest time an expert stays where a move put it, ns."
+
+[[field]]
+path = "/spec/handoff/placement/live_policy/max_heat_age_ns"
+kind = "ref"
+ref = "positive"
+doc = "Oldest heat observation the policy accepts, ns."
+
+[[field]]
+path = "/spec/handoff/placement/live_policy/min_samples"
+kind = "ref"
+ref = "positive"
+doc = "Fewest observations an expert needs before it can move."
+
+[[field]]
+path = "/spec/handoff/placement/live_policy/abort_cooldown_ns"
+kind = "ref"
+ref = "positive"
+doc = "Quiet time after an aborted move, ns."
+
+[[field]]
+path = "/spec/handoff/placement/live_policy/learned_eligibility_ttl_ns"
+kind = "ref"
+ref = "positive"
+doc = "How long a learned eligibility answer is trusted, ns."
+
+[[field]]
+path = "/spec/handoff/placement/live_policy/effect_window_samples"
+kind = "ref"
+ref = "positive"
+doc = "Observations in one effect-gate window."
+
+[[field]]
+path = "/spec/handoff/placement/live_policy/effect_min_quiet_windows"
+kind = "ref"
+ref = "positive"
+doc = "Quiet windows the effect gate needs before it accepts a move."
+
+[[field]]
+path = "/spec/handoff/placement/live_policy/effect_revert_ttl_ns"
+kind = "ref"
+ref = "positive"
+doc = "How long a move can be reverted by the effect gate, ns."
+
+[[field]]
+path = "/spec/handoff/placement/live_policy/margin_ppm"
+kind = "integer"
+minimum = 1
+exclusive_maximum = 1000000
+doc = "Relative heat gain a move must show, ppm (0 < margin < 1)."
+
+[[field]]
+path = "/spec/handoff/placement/live_policy/half_life_observations_milli"
+kind = "ref"
+ref = "positive"
+doc = "Heat decay half-life in observations, thousandths."
+
+[[field]]
+path = "/spec/handoff/placement/live_policy/effect_noise_multiplier_milli"
+kind = "ref"
+ref = "positive"
+doc = "Effect-gate noise multiplier, thousandths."
+
+[[field]]
+path = "/spec/handoff/placement/live_policy/protected_layers"
+kind = "array"
+item_kind = "ref"
+item_ref = "uint"
+min_items = 0
+max_items = 512
+unique_items = true
+doc = "Model-global layer ids the policy never moves, strictly ascending; empty means none."
 
 [[field]]
 path = "/spec/handoff/telemetry"
@@ -1396,7 +1513,15 @@ min_items = 0
 doc = "Owned `[layer, expert]` pairs in selection order."
 
 [[field]]
+path = "/spec/plan/state"
+kind = "enum"
+values = ["measured", "unmeasured"]
+cpp_type = "PlanState"
+doc = "`measured`: `engine_memory` is present and every start path accepts the manifest. `unmeasured`: the owner map and settings only, for the one measuring start that produces the plan (`engine_memory` absent); every serving start refuses it."
+
+[[field]]
 path = "/spec/plan/engine_memory"
+optional = true
 kind = "object"
 cpp = "EngineMemory"
 doc = "The engine's measured memory plan and its cache identity (spec §5)."
@@ -1447,8 +1572,8 @@ kind = "object"
 cpp = "ExperimentPlacement"
 constraints = '''
 [
-  {"if": {"properties": {"mode": {"const": "forced_churn"}}, "required": ["mode"]}, "then": {"required": ["at_step"]}},
-  {"if": {"properties": {"mode": {"const": "observe"}}, "required": ["mode"]}, "then": {"not": {"required": ["at_step"]}}}
+  {"if": {"properties": {"mode": {"const": "forced_churn"}}, "required": ["mode"]}, "then": {"required": ["forced"]}},
+  {"if": {"properties": {"mode": {"const": "observe"}}, "required": ["mode"]}, "then": {"not": {"required": ["forced"]}}}
 ]'''
 doc = "Live placement experiment."
 
@@ -1457,14 +1582,82 @@ path = "/spec/experiment/placement/mode"
 kind = "enum"
 values = ["observe", "forced_churn"]
 cpp_type = "PlacementMode"
-doc = "`observe` (no change) or `forced_churn` (requires `at_step`)."
+doc = "`observe` (no change) or `forced_churn` (requires `forced`)."
 
 [[field]]
-path = "/spec/experiment/placement/at_step"
+path = "/spec/experiment/placement/forced"
+optional = true
+kind = "object"
+cpp = "ForcedChurn"
+doc = "The forced placement schedule (RHP11 validation): one proposal per step, in order, the whole list `repeat` times. Required by mode `forced_churn`, forbidden by `observe`."
+
+[[field]]
+path = "/spec/experiment/placement/forced/repeat"
+kind = "integer"
+minimum = 1
+maximum = 1000000
+doc = "How many times the step list is issued."
+
+[[field]]
+path = "/spec/experiment/placement/forced/steps"
+kind = "array"
+item_kind = "object"
+min_items = 1
+max_items = 1024
+doc = "Ordered placement steps."
+
+[[field]]
+path = "/spec/experiment/placement/forced/steps/[]"
+kind = "object"
+cpp = "ForcedStep"
+doc = "One placement proposal."
+
+[[field]]
+path = "/spec/experiment/placement/forced/steps/[]/kind"
+kind = "enum"
+values = ["move", "swap", "auto_swap"]
+cpp_type = "ForcedKind"
+doc = "`move` one expert to `destination`; `swap` two named experts; `auto_swap` the first eligible distinct pair, excluding the previous transaction (`a_layer`, `a_expert` carry its x, y)."
+
+[[field]]
+path = "/spec/experiment/placement/forced/steps/[]/a_layer"
+kind = "ref"
+ref = "uint"
+doc = "Layer of the first expert (for `auto_swap`, x)."
+
+[[field]]
+path = "/spec/experiment/placement/forced/steps/[]/a_expert"
+kind = "ref"
+ref = "uint"
+doc = "First expert (for `auto_swap`, y)."
+
+[[field]]
+path = "/spec/experiment/placement/forced/steps/[]/destination"
+optional = true
+kind = "ref"
+ref = "uint"
+doc = "Destination helper index of a `move`."
+
+[[field]]
+path = "/spec/experiment/placement/forced/steps/[]/b_layer"
+optional = true
+kind = "ref"
+ref = "uint"
+doc = "Layer of the second expert of a `swap`."
+
+[[field]]
+path = "/spec/experiment/placement/forced/steps/[]/b_expert"
+optional = true
+kind = "ref"
+ref = "uint"
+doc = "Second expert of a `swap`."
+
+[[field]]
+path = "/spec/experiment/placement/epoch_cycle_s"
 optional = true
 kind = "ref"
 ref = "positive"
-doc = "Step at which a forced churn happens."
+doc = "Helper 0 runs a no-op placement epoch cycle (close, drain, recommit the same placement, reopen) every this many seconds of burst (RHP11 validation); absent: off."
 
 [[field]]
 path = "/spec/experiment/shape"

@@ -20,6 +20,9 @@ HELPER_DEVICES = "R3_MOE_WORKER_DEVICES"
 #: harness-only: a named layout (engines/radiance/layouts.toml) in place of an explicit device list; it fixes the helper cards, their budgets and placement
 HELPER_LAYOUT = "R3_MOE_WORKER_LAYOUT"
 HELPER_SHM = "R3_MOE_WORKER_SHM"
+# Strict RSC06 helper argument: the launcher/campaign creates a canonical
+# serving manifest, and each helper loads and verifies its own role.
+HELPER_MANIFEST = "BC_SERVING_MANIFEST"
 DEFAULT_SHM = "/r3-moe-helper"
 #: what the retired fn-r9700-engine.sh waited for: the helper is up (helper 0 has created the segment) or waits for the engine
 #: runtime expert maps. ("runtime map owns" is logged only after the engine has connected, so it cannot gate the
@@ -144,31 +147,31 @@ class RadianceAdapter(EngineAdapter):
             raise ValueError(f"{arm['name']}: {exc}") from exc
         home = binary.parent.parent / "radiance_home"
         helper = home / "helpers" / "r3_moe_worker"
+        manifest = env.get(HELPER_MANIFEST)
+        if not manifest:
+            raise ValueError(f"{arm['name']}: {HELPER_MANIFEST} is required when enabling helpers; "
+                             "generate it with the build's bc-serve")
         shm = env.get(HELPER_SHM, DEFAULT_SHM)
         # The POSIX segment /name lives at /dev/shm/name. Helper 0 creates it; SidecarSet starts in list order and
         # waits for each helper to be ready, so helper 1 attaches to an existing segment.
         cleanup = (Path("/dev/shm") / shm.lstrip("/"),)
-        # The helper environment is the arm environment without the engine-side switch (the helpers never set
-        # R3_MOE_WORKER) and without the harness-only device list.
-        base = {k: v for k, v in env.items() if k not in (HELPER_SWITCH, HELPER_DEVICES, HELPER_LAYOUT)}
+        # Only process visibility is passed to helpers. The old R3_* tuning
+        # and RADIANCE_HOME variables remain for the not-yet-migrated engine
+        # side but are never forwarded to a helper.
+        base = {k: v for k, v in env.items()
+                if not k.startswith("R3_") and k not in (
+                    "RADIANCE_HOME", HELPER_MANIFEST)}
         specs = []
         for index, device in enumerate(devices):
             helper_env = dict(base)
-            for key, value in derived[index].items():
-                if layout and key in helper_env and helper_env[key] != value:
-                    # a named layout was validated as a whole; an arm setting that differs would run something else
-                    raise ValueError(f"{arm['name']}: {key}={helper_env[key]} contradicts layout {layout} ({value}); drop it or change the layout")
-                # card types alone (explicit devices) only imply defaults: a setting the arm names itself wins
-                helper_env.setdefault(key, value)
-            helper_env.setdefault("RADIANCE_HOME", str(home))
             helper_env.update({
-                # ROCR selects the physical card; HIP then numbers the one visible card 0.
                 "ROCR_VISIBLE_DEVICES": device, "HIP_VISIBLE_DEVICES": "0",
-                "R3_MOE_WORKER_INDEX": str(index), "R3_MOE_WORKER_COUNT": str(len(devices)),
             })
             specs.append(SidecarSpec(
-                name=f"helper{index}", argv=(str(helper), str(arm["model"])), env=helper_env,
-                ready_pattern=READY_PATTERN, ready_timeout_s=READY_TIMEOUT_S,
+                name=f"helper{index}",
+                argv=(str(helper), "--manifest", manifest, "--role", f"helper{index}"),
+                env=helper_env, ready_pattern=READY_PATTERN,
+                ready_timeout_s=READY_TIMEOUT_S,
                 log_path=run_dir / f"helper{index}.log", stop_timeout_s=STOP_TIMEOUT_S,
                 pre_start_cleanup=cleanup,
             ))

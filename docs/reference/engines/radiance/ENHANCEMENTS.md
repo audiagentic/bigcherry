@@ -9,7 +9,7 @@ different statuses. See [the engine overview](README.md) first.
 
 _Generated from package documentation and metadata by `tools/docs/generate_engine_enhancement_summaries.py`. Do not edit this section by hand._
 
-## Engine patches (11)
+## Engine patches (12)
 
 | Package | State | Summary |
 | --- | --- | --- |
@@ -24,6 +24,7 @@ _Generated from package documentation and metadata by `tools/docs/generate_engin
 | [rad0009_serving_manifest](../../../../engines/radiance/patches/rad0009_serving_manifest/SUMMARY.md) | `untested` | Lets the engine start from a serving manifest v1: `engine --manifest PATH [--role engine] [-v\|-vv]`, with no command-line converter in our tooling. |
 | [rad0010_routing_evidence](../../../../engines/radiance/patches/rad0010_routing_evidence/SUMMARY.md) | `untested` | Opt-in counters at the engine's existing per-layer routing-histogram producer and reader that say how many histograms were issued, completed, credited, overwritten or left pending, per rank and phase (prefill, decode, mixed, draft). Built only into the separate `radiance-routing-evidence` source; off unless `RAD_ROUTING_EVIDENCE=1`. |
 | [rad0011_plan_memory](../../../../engines/radiance/patches/rad0011_plan_memory/SUMMARY.md) | `untested` | The engine's own memory plan (`Engine::plan()`) as a serving manifest v1 `EnginePlan`, measured or checked, through the shared v1 library `bc_serving_v1`. |
+| [rad0012_helper_kernel_config](../../../../engines/radiance/patches/rad0012_helper_kernel_config/SUMMARY.md) | `untested` | Gives the kernel library a mandatory, size-checked, install-once configuration interface, so the helper process hands it the settings it read from the serving manifest instead of the library reading the environment. The engine keeps its own environment read until RSC07. |
 
 ## Components (6)
 

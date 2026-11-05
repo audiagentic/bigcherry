@@ -509,8 +509,7 @@
               "required": [
                 "pool_mib",
                 "kv_mib",
-                "reserve_mib",
-                "checkpoint_slots"
+                "reserve_mib"
               ],
               "properties": {
                 "pool_mib": {
@@ -527,7 +526,7 @@
                   "default": 4096
                 },
                 "checkpoint_slots": {
-                  "description": "Prefix checkpoint slots (`--checkpoint-slots`).",
+                  "description": "Prefix checkpoint slots (`--checkpoint-slots`), derived from the measured plan: present when `plan.state` is `measured`, absent when it is `unmeasured`.",
                   "$ref": "#/$defs/uint"
                 }
               }
@@ -601,6 +600,108 @@
                   "description": "Expert heat file the owner map is planned from.",
                   "type": "string",
                   "minLength": 1
+                },
+                "live_policy": {
+                  "description": "Live expert placement from the runtime heat map (RHP). Present: the helper runs the policy; absent: no policy thread. Every member is explicit (no defaults); needs one engine rank and a live histogram file, and excludes `experiment.placement.forced`.",
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "effect_gate",
+                    "accept_unwatermarked_heat",
+                    "cadence_ns",
+                    "max_moves",
+                    "max_moved_bytes",
+                    "min_residency_ns",
+                    "max_heat_age_ns",
+                    "min_samples",
+                    "abort_cooldown_ns",
+                    "learned_eligibility_ttl_ns",
+                    "effect_window_samples",
+                    "effect_min_quiet_windows",
+                    "effect_revert_ttl_ns",
+                    "margin_ppm",
+                    "half_life_observations_milli",
+                    "effect_noise_multiplier_milli",
+                    "protected_layers"
+                  ],
+                  "properties": {
+                    "effect_gate": {
+                      "description": "A move must pass the measured effect gate before it stays.",
+                      "type": "boolean"
+                    },
+                    "accept_unwatermarked_heat": {
+                      "description": "Accept a histogram file heat source that carries no coherent observation watermark.",
+                      "type": "boolean"
+                    },
+                    "cadence_ns": {
+                      "description": "Time between policy evaluations, ns.",
+                      "$ref": "#/$defs/positive"
+                    },
+                    "max_moves": {
+                      "description": "Most experts one policy epoch may move.",
+                      "$ref": "#/$defs/positive"
+                    },
+                    "max_moved_bytes": {
+                      "description": "Most device bytes one policy epoch may move.",
+                      "$ref": "#/$defs/positive"
+                    },
+                    "min_residency_ns": {
+                      "description": "Shortest time an expert stays where a move put it, ns.",
+                      "$ref": "#/$defs/positive"
+                    },
+                    "max_heat_age_ns": {
+                      "description": "Oldest heat observation the policy accepts, ns.",
+                      "$ref": "#/$defs/positive"
+                    },
+                    "min_samples": {
+                      "description": "Fewest observations an expert needs before it can move.",
+                      "$ref": "#/$defs/positive"
+                    },
+                    "abort_cooldown_ns": {
+                      "description": "Quiet time after an aborted move, ns.",
+                      "$ref": "#/$defs/positive"
+                    },
+                    "learned_eligibility_ttl_ns": {
+                      "description": "How long a learned eligibility answer is trusted, ns.",
+                      "$ref": "#/$defs/positive"
+                    },
+                    "effect_window_samples": {
+                      "description": "Observations in one effect-gate window.",
+                      "$ref": "#/$defs/positive"
+                    },
+                    "effect_min_quiet_windows": {
+                      "description": "Quiet windows the effect gate needs before it accepts a move.",
+                      "$ref": "#/$defs/positive"
+                    },
+                    "effect_revert_ttl_ns": {
+                      "description": "How long a move can be reverted by the effect gate, ns.",
+                      "$ref": "#/$defs/positive"
+                    },
+                    "margin_ppm": {
+                      "description": "Relative heat gain a move must show, ppm (0 < margin < 1).",
+                      "type": "integer",
+                      "minimum": 1,
+                      "exclusiveMaximum": 1000000
+                    },
+                    "half_life_observations_milli": {
+                      "description": "Heat decay half-life in observations, thousandths.",
+                      "$ref": "#/$defs/positive"
+                    },
+                    "effect_noise_multiplier_milli": {
+                      "description": "Effect-gate noise multiplier, thousandths.",
+                      "$ref": "#/$defs/positive"
+                    },
+                    "protected_layers": {
+                      "description": "Model-global layer ids the policy never moves, strictly ascending; empty means none.",
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/$defs/uint"
+                      },
+                      "minItems": 0,
+                      "maxItems": 512,
+                      "uniqueItems": true
+                    }
+                  }
                 }
               }
             },
@@ -902,7 +1003,7 @@
           "additionalProperties": false,
           "required": [
             "owner_map",
-            "engine_memory"
+            "state"
           ],
           "properties": {
             "owner_map": {
@@ -969,6 +1070,13 @@
                 }
               }
             },
+            "state": {
+              "description": "`measured`: `engine_memory` is present and every start path accepts the manifest. `unmeasured`: the owner map and settings only, for the one measuring start that produces the plan (`engine_memory` absent); every serving start refuses it.",
+              "enum": [
+                "measured",
+                "unmeasured"
+              ]
+            },
             "engine_memory": {
               "description": "The engine's measured memory plan and its cache identity (spec §5).",
               "type": "object",
@@ -1020,14 +1128,76 @@
               ],
               "properties": {
                 "mode": {
-                  "description": "`observe` (no change) or `forced_churn` (requires `at_step`).",
+                  "description": "`observe` (no change) or `forced_churn` (requires `forced`).",
                   "enum": [
                     "observe",
                     "forced_churn"
                   ]
                 },
-                "at_step": {
-                  "description": "Step at which a forced churn happens.",
+                "forced": {
+                  "description": "The forced placement schedule (RHP11 validation): one proposal per step, in order, the whole list `repeat` times. Required by mode `forced_churn`, forbidden by `observe`.",
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "repeat",
+                    "steps"
+                  ],
+                  "properties": {
+                    "repeat": {
+                      "description": "How many times the step list is issued.",
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 1000000
+                    },
+                    "steps": {
+                      "description": "Ordered placement steps.",
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "kind",
+                          "a_layer",
+                          "a_expert"
+                        ],
+                        "properties": {
+                          "kind": {
+                            "description": "`move` one expert to `destination`; `swap` two named experts; `auto_swap` the first eligible distinct pair, excluding the previous transaction (`a_layer`, `a_expert` carry its x, y).",
+                            "enum": [
+                              "move",
+                              "swap",
+                              "auto_swap"
+                            ]
+                          },
+                          "a_layer": {
+                            "description": "Layer of the first expert (for `auto_swap`, x).",
+                            "$ref": "#/$defs/uint"
+                          },
+                          "a_expert": {
+                            "description": "First expert (for `auto_swap`, y).",
+                            "$ref": "#/$defs/uint"
+                          },
+                          "destination": {
+                            "description": "Destination helper index of a `move`.",
+                            "$ref": "#/$defs/uint"
+                          },
+                          "b_layer": {
+                            "description": "Layer of the second expert of a `swap`.",
+                            "$ref": "#/$defs/uint"
+                          },
+                          "b_expert": {
+                            "description": "Second expert of a `swap`.",
+                            "$ref": "#/$defs/uint"
+                          }
+                        }
+                      },
+                      "minItems": 1,
+                      "maxItems": 1024
+                    }
+                  }
+                },
+                "epoch_cycle_s": {
+                  "description": "Helper 0 runs a no-op placement epoch cycle (close, drain, recommit the same placement, reopen) every this many seconds of burst (RHP11 validation); absent: off.",
                   "$ref": "#/$defs/positive"
                 }
               },
@@ -1045,7 +1215,7 @@
                   },
                   "then": {
                     "required": [
-                      "at_step"
+                      "forced"
                     ]
                   }
                 },
@@ -1063,7 +1233,7 @@
                   "then": {
                     "not": {
                       "required": [
-                        "at_step"
+                        "forced"
                       ]
                     }
                   }

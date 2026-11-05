@@ -303,6 +303,8 @@ std::string owner_segment(size_t helper, const std::vector<std::array<int64_t, 2
 
 std::string plan_cache_key(const Manifest& m) {
     const Spec& s = m.spec;
+    if (!s.plan.engine_memory) return "";   // an unmeasured manifest has no model or engine identity to key
+    const EngineMemory& memory = *s.plan.engine_memory;
     std::map<std::string, const GpuFact*> gpus;
     for (const GpuFact& g : s.facts.gpus) gpus[g.bdf] = &g;
     const EngineProcess& e = s.processes.engine;
@@ -320,8 +322,8 @@ std::string plan_cache_key(const Manifest& m) {
     const EngineExecution& x = e.execution;
     const Json inputs = {
         {"cache_version", 1},
-        {"model", s.plan.engine_memory.model_identity},
-        {"engine_build", s.plan.engine_memory.engine_identity},
+        {"model", memory.model_identity},
+        {"engine_build", memory.engine_identity},
         {"card", {{"arch", card ? card->arch : std::string()}, {"vram_total_mib", card ? card->vram.total_mib : 0}}},
         {"layout", s.intent.layout},
         {"owner_map_sha256", s.plan.owner_map.owner_map_sha256},
@@ -347,6 +349,57 @@ std::string plan_cache_key(const Manifest& m) {
     return bc::serving::sha256_hex(bytes);
 }
 
+/* Lab placement experiments (spec §6): the forced schedule follows its mode and each step carries exactly its kind's members. */
+static Status placement_experiment_semantics(const Manifest& m) {
+    const Spec& s = m.spec;
+    if (!s.experiment || !s.experiment->placement) return std::nullopt;
+    const ExperimentPlacement& p = *s.experiment->placement;
+    const std::string at = "spec.experiment.placement";
+    if (p.mode == PlacementMode::kForcedChurn && !p.forced)
+        return err(C::missing_field, at + ".forced", "mode forced_churn requires forced");
+    if (p.mode == PlacementMode::kObserve && p.forced)
+        return err(C::invalid_value, at + ".forced", "mode observe takes no forced schedule");
+    if (!p.forced) return std::nullopt;
+    const std::vector<ForcedStep>& steps = p.forced->steps;
+    for (size_t i = 0; i < steps.size(); ++i) {
+        const ForcedStep& st = steps[i];
+        const std::string sat = at + ".forced.steps[" + std::to_string(i) + "]";
+        const bool move = st.kind == ForcedKind::kMove, swap = st.kind == ForcedKind::kSwap;
+        if (move && !st.destination) return err(C::missing_field, sat + ".destination", "a move needs a destination helper");
+        if (!move && st.destination) return err(C::invalid_value, sat + ".destination", "only a move takes a destination");
+        if (swap && (!st.b_layer || !st.b_expert))
+            return err(C::missing_field, sat + (st.b_layer ? ".b_expert" : ".b_layer"), "a swap names both experts");
+        if (!swap && (st.b_layer || st.b_expert))
+            return err(C::invalid_value, sat + (st.b_layer ? ".b_layer" : ".b_expert"), "only a swap takes a second expert");
+        if (move && *st.destination >= static_cast<int64_t>(s.processes.helpers.size()))
+            return err(C::unresolved_reference, sat + ".destination",
+                       "destination " + std::to_string(*st.destination) + " is not one of the " +
+                           std::to_string(s.processes.helpers.size()) + " helper(s)");
+    }
+    return std::nullopt;
+}
+
+/* The live placement policy (spec §2.7): what the helper used to check at start-up, so every consumer refuses the same
+ * bad manifest before any GPU work. */
+static Status live_policy_semantics(const Manifest& m) {
+    const Spec& s = m.spec;
+    if (!s.handoff.placement.live_policy) return std::nullopt;
+    const LivePolicy& p = *s.handoff.placement.live_policy;
+    const std::string at = "spec.handoff.placement.live_policy";
+    if (s.experiment && s.experiment->placement && s.experiment->placement->forced)
+        return err(C::invalid_value, at, "a live policy excludes experiment.placement.forced: one placement driver at a time");
+    if (s.processes.engine.scheduler.tp != 1)
+        return err(C::invalid_value, at, "a live policy needs a one-rank engine (processes.engine.scheduler.tp 1)");
+    if (!s.handoff.telemetry.histogram_file)
+        return err(C::missing_field, "spec.handoff.telemetry.histogram_file", "a live policy reads the live histogram: histogram_file is required");
+    if (p.max_moves > static_cast<int64_t>(UINT32_MAX))
+        return err(C::invalid_value, at + ".max_moves", "max_moves " + std::to_string(p.max_moves) + " is over 4294967295");
+    for (size_t i = 1; i < p.protected_layers.size(); ++i)
+        if (p.protected_layers[i] <= p.protected_layers[i - 1])
+            return err(C::invalid_value, at + ".protected_layers[" + std::to_string(i) + "]", "protected_layers must be strictly ascending");
+    return std::nullopt;
+}
+
 Status validate_semantics(const Manifest& m) {
     const Spec& s = m.spec;
     // §6: experiments are lab-only; a lab placement experiment's step follows its mode
@@ -354,23 +407,32 @@ Status validate_semantics(const Manifest& m) {
         return err(C::experiment_forbidden, "spec.experiment",
                    "spec.experiment is forbidden when spec.intent.service.profile=production",
                    "select profile=lab explicitly and regenerate the manifest");
-    if (s.experiment && s.experiment->placement) {
-        const ExperimentPlacement& p = *s.experiment->placement;
-        if (p.mode == PlacementMode::kForcedChurn && !p.at_step)
-            return err(C::missing_field, "spec.experiment.placement.at_step", "mode forced_churn requires at_step");
-        if (p.mode == PlacementMode::kObserve && p.at_step)
-            return err(C::invalid_value, "spec.experiment.placement.at_step", "mode observe takes no at_step");
+    if (auto e = placement_experiment_semantics(m)) return e;
+    if (auto e = live_policy_semantics(m)) return e;
+    // §5: the plan state says whether a measured plan is there, and nothing else decides it; the checkpoint slots derive from it
+    if ((s.plan.state == PlanState::kMeasured) != s.plan.engine_memory.has_value())
+        return err(s.plan.state == PlanState::kMeasured ? C::missing_field : C::invalid_value,
+                   s.plan.state == PlanState::kMeasured ? "spec.plan.engine_memory" : "spec.plan.state",
+                   s.plan.state == PlanState::kMeasured ? "plan.state measured requires engine_memory"
+                                                        : "plan.state unmeasured takes no engine_memory");
+    if ((s.plan.state == PlanState::kMeasured) != s.resources.host.checkpoint_slots.has_value())
+        return err(s.plan.state == PlanState::kMeasured ? C::missing_field : C::invalid_value,
+                   "spec.resources.host.checkpoint_slots",
+                   s.plan.state == PlanState::kMeasured ? "plan.state measured requires the checkpoint slots derived from the plan"
+                                                        : "plan.state unmeasured takes no checkpoint slots (there is no plan to derive them from)");
+    if (s.plan.engine_memory) {
+        // §2: the one receipt echo
+        const EnginePlan& expected = s.plan.engine_memory->expected;
+        if (expected.host_pool_mib != s.resources.host.pool_mib)
+            return err(C::invalid_value, "spec.plan.engine_memory.expected.host_pool_mib",
+                       "the measured plan's host_pool_mib " + std::to_string(expected.host_pool_mib) +
+                           " must equal spec.resources.host.pool_mib " + std::to_string(s.resources.host.pool_mib));
+        // §5: the measured checkpoint floor is within the want
+        const PlanCheckpoints& ck = expected.checkpoints;
+        if (ck.floor_slots > ck.want_slots)
+            return err(C::invalid_value, "spec.plan.engine_memory.expected.checkpoints.floor_slots",
+                       "floor_slots " + std::to_string(ck.floor_slots) + " exceed want_slots " + std::to_string(ck.want_slots));
     }
-    // §2: the one receipt echo
-    if (s.plan.engine_memory.expected.host_pool_mib != s.resources.host.pool_mib)
-        return err(C::invalid_value, "spec.plan.engine_memory.expected.host_pool_mib",
-                   "the measured plan's host_pool_mib " + std::to_string(s.plan.engine_memory.expected.host_pool_mib) +
-                       " must equal spec.resources.host.pool_mib " + std::to_string(s.resources.host.pool_mib));
-    // §5: the measured checkpoint floor is within the want
-    const PlanCheckpoints& ck = s.plan.engine_memory.expected.checkpoints;
-    if (ck.floor_slots > ck.want_slots)
-        return err(C::invalid_value, "spec.plan.engine_memory.expected.checkpoints.floor_slots",
-                   "floor_slots " + std::to_string(ck.floor_slots) + " exceed want_slots " + std::to_string(ck.want_slots));
     // calibration: one entry per key
     std::set<CalibrationKey> keys;
     for (size_t i = 0; i < s.calibration.size(); ++i)
@@ -476,16 +538,17 @@ Status validate_semantics(const Manifest& m) {
         return err(C::ownership_mismatch, "spec.plan.owner_map.owner_map_sha256",
                    "owner_map_sha256 does not match the owned sets");
     // §5.1: the measured plan belongs to exactly this configuration
+    if (!s.plan.engine_memory) return std::nullopt;
     const std::string key = plan_cache_key(m);
-    if (key != s.plan.engine_memory.cache_key)
+    if (key != s.plan.engine_memory->cache_key)
         return err(C::plan_mismatch, "spec.plan.engine_memory.cache_key",
-                   "the measured plan's cache_key " + s.plan.engine_memory.cache_key +
+                   "the measured plan's cache_key " + s.plan.engine_memory->cache_key +
                        " is not this configuration's " + key + " (spec §5.1)",
                    "measure the plan again (the launcher's measuring start: the engine's --plan-memory with its helpers up, then bc-serve --plan-store) and write a new manifest (bc-serve --write-manifest)");
     return std::nullopt;
 }
 
-Result<Manifest> read_manifest(std::string_view bytes, const std::string& source) {
+Result<Manifest> read_manifest(std::string_view bytes, const std::string& source, PlanUse use) {
     auto sourced = [&](ConfigError e) {
         if (!e.source_file) e.source_file = source;
         return e;
@@ -509,10 +572,20 @@ Result<Manifest> read_manifest(std::string_view bytes, const std::string& source
     if (auto e = check_identity_coverage(doc)) return sourced(*e);
     if (auto e = check_provenance_coverage(doc)) return sourced(*e);
     if (auto e = validate_semantics(m)) return sourced(*e);
+    /* The plan state is checked last, so a malformed manifest reports its own fault first. A serving start never takes
+     * an unmeasured manifest and a measuring start never takes a measured one: neither state is read as the other. */
+    if (use == PlanUse::serving && m.spec.plan.state == PlanState::kUnmeasured)
+        return sourced(err(C::plan_mismatch, "spec.plan.state",
+                           "this manifest has no measured plan (plan.state unmeasured): it is for the measuring start only",
+                           "measure the plan (the launcher's measuring start, then bc-serve --plan-store) and write the measured manifest (bc-serve --write-manifest)"));
+    if (use == PlanUse::measuring && m.spec.plan.state == PlanState::kMeasured)
+        return sourced(err(C::plan_mismatch, "spec.plan.state",
+                           "a measuring start takes an unmeasured manifest (plan.state unmeasured), this one is measured",
+                           "write the unmeasured manifest with bc-serve --write-manifest --unmeasured"));
     return m;
 }
 
-Result<Manifest> load_manifest(const std::filesystem::path& path) {
+Result<Manifest> load_manifest(const std::filesystem::path& path, PlanUse use) {
     std::error_code ec;
     const auto size = std::filesystem::file_size(path, ec);
     if (ec) {
@@ -542,15 +615,17 @@ Result<Manifest> load_manifest(const std::filesystem::path& path) {
         return e;
     }
     text.resize(static_cast<size_t>(in.gcount()));
-    return read_manifest(text, path.string());
+    return read_manifest(text, path.string(), use);
 }
 
-EngineView engine_view(const Manifest& m) {
+Result<EngineView> engine_view(const Manifest& m) {
+    if (!m.spec.plan.engine_memory)
+        return err(C::invalid_state, "spec.plan.engine_memory", "the engine view needs a measured manifest (plan.state measured)");
     int64_t ppm = 0;
     for (const CalibrationEntry& c : m.spec.calibration)
         if (c.key == CalibrationKey::kKvBackingFloorFractionPpm) ppm = std::get<int64_t>(c.value);
-    return EngineView{m.spec.intent, m.spec.resources, m.spec.handoff, m.spec.processes.engine, m.spec.plan.engine_memory,
-                      ppm};
+    return EngineView{m.spec.intent, m.spec.resources, m.spec.handoff, m.spec.processes.engine,
+                      *m.spec.plan.engine_memory, ppm};
 }
 
 Result<HelperView> helper_view(const Manifest& m, std::string_view role) {

@@ -24,20 +24,15 @@ bool select_owned(const Container& f, r3_moe_gpu::Runner* gpu, const uint64_t* b
         }
         return true;
     };
-    /* This helper's ownership settings, from its environment as before (R3_MOE_WORKER_HEAT, _PLACEMENT, _FORMATS,
-     * _SHARES, _BALANCE, _BALANCE_SPEED); the selection itself is the shared one. */
+    /* This helper's ownership settings, from its manifest section; the selection itself is the shared one. */
+    const auto& s = r3_serving::settings();
     bc::experts::OwnerPolicy policy;
-    if (const char* v = std::getenv("R3_MOE_WORKER_HEAT")) policy.heat = v;
-    if (const char* v = std::getenv("R3_MOE_WORKER_PLACEMENT")) policy.placement = v;
-    if (const char* v = std::getenv("R3_MOE_WORKER_FORMATS")) policy.formats = v;
-    if (const char* v = std::getenv("R3_MOE_WORKER_SHARES")) policy.shares = v;   // parsed by the selection, where the worker parsed it
-    const char* bv = std::getenv("R3_MOE_WORKER_BALANCE");
-    policy.balance = bv && *bv && std::strcmp(bv, "0") != 0;
-    policy.balance_speeds = {1.0, 1.0};
-    if (const char* sv = std::getenv("R3_MOE_WORKER_BALANCE_SPEED"); sv && *sv) {
-        double a = 0.0, b = 0.0;
-        if (std::sscanf(sv, "%lf,%lf", &a, &b) == 2 && a > 0.0 && b > 0.0) policy.balance_speeds = {a, b};
-    }
+    policy.heat = s.handoff.heat;
+    policy.placement = s.handoff.placement;
+    policy.formats = s.formats;
+    for (size_t i = 0; i < s.shares.size(); ++i) policy.shares += (i ? "," : "") + std::to_string(s.shares[i]);
+    policy.balance = s.balance;
+    policy.balance_speeds = s.balance_speeds;
     return bc::experts::select_owned(f, policy, gpu ? gpu->arch() : std::string("host"), gpu != nullptr,
                                      layout_check, budgets, helper, helpers, out);
 }

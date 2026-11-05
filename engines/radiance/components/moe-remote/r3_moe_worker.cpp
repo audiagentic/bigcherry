@@ -27,6 +27,7 @@
 #include <unistd.h>
 #include <vector>
 
+#include "worker_settings.h"
 #include "worker_container.h"
 #include "worker_hostref.h"
 
@@ -50,6 +51,38 @@
 static volatile sig_atomic_t g_force_report_requested=0;
 
 int main(int argc, char** argv) {
+    if (argc < 5 || std::strcmp(argv[1], "--manifest") != 0 ||
+        std::strcmp(argv[3], "--role") != 0) {
+        std::fprintf(stderr, "usage: r3_moe_worker --manifest FILE --role helperN\n");
+        return 2;
+    }
+    /* --measuring: the one start that takes an unmeasured manifest (it produces the plan); every other start takes only a
+     * measured one. The flag is read here and nowhere else in the helper. */
+    bc::serving::v1::PlanUse use = bc::serving::v1::PlanUse::serving;
+    int first_arg = 5;
+    if (argc > 5 && std::strcmp(argv[5], "--measuring") == 0) {
+        use = bc::serving::v1::PlanUse::measuring;
+        first_arg = 6;
+    }
+    {
+        auto loaded = bc::serving::load_helper_settings(argv[2], argv[4], use);
+        if (!loaded) {
+            std::fputs(bc::serving::v1::render_human("r3_moe_worker", loaded.error()).c_str(), stderr);
+            return bc::serving::v1::exit_code_of(loaded.error());   // No HIP call, plugin loading or model access has happened.
+        }
+        r3_serving::install(std::move(loaded.value()));
+    }
+    const auto& settings = r3_serving::settings();
+    g_sweep_fast = settings.sweep_fast; // experiment-only reference comparison
+    std::fprintf(stderr, "r3_moe_worker: manifest sha256 %s, role %s\n",
+                 settings.content_sha256.c_str(), settings.role.c_str());
+    // Diagnostic subcommands follow the strict manifest/role prefix. The
+    // ordinary serving invocation obtains its model exclusively from values.
+    std::vector<char*> args{argv[0]};
+    if (argc == first_arg) args.push_back(const_cast<char*>(settings.model.c_str()));
+    else for (int i = first_arg; i < argc; ++i) args.push_back(argv[i]);
+    argc = (int)args.size();
+    argv = args.data();
     /* EVERY LANE STREAM ON ITS OWN HARDWARE QUEUE. A small lane pre-queues "wait for the next request" packets;
      * a stream sharing a hardware queue with one sits behind that wait until a small request arrives. With
      * every step large (KL mode's 64-token steps over an 8-row small lane) none ever does, and the large lane's
@@ -67,53 +100,26 @@ int main(int argc, char** argv) {
     };
     {
         uint32_t lanes = 0;
-        for (bool s : lanes_open(WorkerConfig::peek_flag("R3_MOE_WORKER_POWER_SAVE", true),
-                                 WorkerConfig::peek_u32("R3_MOE_WORKER_COUNT", 1),
-                                 WorkerConfig::peek_u32("R3_MOE_WORKER_INDEX", 0), helper_small_classes().count))
+        for (bool s : lanes_open(settings.helper.power_save,
+                                 settings.helper.count,
+                                 settings.helper.index, helper_small_classes().count))
             lanes += s;
         (void)::setenv("GPU_MAX_HW_QUEUES", std::to_string(lanes + 3).c_str(), 0);
     }
-    /* The helper's grouped MoE GEMM (prefill) on gfx11's native bf16 WMMA path: R9700 engine + two XTX helpers,
-     * Flash-Next, prefill 2,518 -> 2,665 tok/s and helper gate/up -25%, KLD 0.064 (noise floor). Read by libr3
-     * when the plugin is loaded, so set before it; an explicit setting wins. */
-    (void)::setenv("R3_MOE_NATIVE", "1", 0);
-    /* The same MoE GEMM with E4M3 widened to f16 for the f16 WMMA: bit-identical output (replay rel_l2 0 on four
-     * captured requests, KLD unchanged), grouped GEMM 1.7-3.2x faster, prefill 2,130 -> 3,150 tok/s with decode
-     * unchanged (RAD06 2026-10-18). Read by libr3 at launch; 0 turns it off. */
-    (void)::setenv("R3_MOE_FP16", "1", 0);
-    /* And the activation tile widened to half once at staging instead of by every wave that reads it: bit-identical,
-     * a further 7-8% off the grouped GEMM on four real captured requests (RAD06 2026-10-18). 0 turns it off. */
-    (void)::setenv("R3_MOE_AHALF", "1", 0);
-    /* The activation markers component.toml names: one line a flag that is on, printed here and only when on, so a
-     * capture's evidence check finds it in the arm that sets the flag and not in the control. FP16 and AHALF are read by
-     * libr3's launcher at each launch; VECIO and FUSEROUTE by the lane at each request (default on unless "0"). */
-    {
-        auto is_on = [](const char* name, bool dflt) {
-            const char* v = std::getenv(name);
-            return v && *v ? std::strcmp(v, "0") != 0 : dflt;
-        };
-        const bool native = is_on("R3_MOE_NATIVE", false);
-        if (native && is_on("R3_MOE_FP16", false))
-            std::fprintf(stderr, "r3_moe_worker: R3_MOE_FP16 on - f16 WMMA MoE GEMM\n");
-        if (native && is_on("R3_MOE_FP16", false) && is_on("R3_MOE_AHALF", false))
-            std::fprintf(stderr, "r3_moe_worker: R3_MOE_AHALF on - activation tile widened to half at staging\n");
-        if (is_on("R3_MOE_WORKER_VECIO", true))
-            std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_VECIO on - 16-byte lane I/O\n");
-        if (is_on("R3_MOE_WORKER_LANE_QUANT", true))
-            std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_LANE_QUANT on - gated quantise bounded by the route count\n");
-        if (is_on("R3_MOE_WORKER_SPARSE_ACT", true))
-            std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_SPARSE_ACT on - sparse large-lane activation copy\n");
-        if (is_on("R3_MOE_WORKER_FUSEROUTE", true))
-            std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_FUSEROUTE on - fused small-lane front end\n");
-    }
-    /* --replay-sweep MODEL VARIANTS FILE...: one process, one model load and one expert allocation for every capture,
-     * then each capture is replayed once per variant. VARIANTS is ';'-separated, each "NAME=value,NAME=value" (empty
-     * = the environment as launched); the variant's variables are set (and the previous variant's unset) before the
-     * replay, so anything libr3 reads at launch (R3_MOE_FP16, R3_MOE_PROBE, R3_MOE_PITCH16) can be compared with
-     * no further model load. Each run prints "SWEEP run i capture c layer L variant [..]" and its engine_join line. */
+    // Activation markers remain unchanged for log-based performance checks.
+    if (settings.native && settings.fp16)
+        std::fprintf(stderr, "r3_moe_worker: R3_MOE_FP16 on - f16 WMMA MoE GEMM\n");
+    if (settings.native && settings.fp16 && settings.ahalf)
+        std::fprintf(stderr, "r3_moe_worker: R3_MOE_AHALF on - activation tile widened to half at staging\n");
+    if (settings.vecio)
+        std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_VECIO on - 16-byte lane I/O\n");
+    if (settings.lane_quant)
+        std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_LANE_QUANT on - gated quantise bounded by the route count\n");
+    if (settings.sparse_act)
+        std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_SPARSE_ACT on - sparse large-lane activation copy\n");
+    if (settings.fuseroute)
+        std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_FUSEROUTE on - fused small-lane front end\n");
     if (argc >= 2 && std::strcmp(argv[1], "--route-selftest") == 0) return route_selftest();
-    /* --describe MODEL ARCH: print what the container's experts are and whether the backend for ARCH (gfx1100, gfx1030) can run
-     * them, then exit (0 supported, 3 refused). No GPU, no allocation, no shared memory. */
     if (argc >= 4 && std::strcmp(argv[1], "--describe") == 0) {
         Container model;
         if (!model.open(argv[2])) {
@@ -122,8 +128,13 @@ int main(int argc, char** argv) {
         }
         return backend_accepts(model, argv[3], true) ? 0 : 3;
     }
+    /* --replay-sweep MODEL VARIANTS FILE...: one process, one model load and one expert allocation for every capture.
+     * VARIANTS is a ';'-separated list of rows-kernel variant names (stock, output_lane, quad, quad_v2, production,
+     * rowlane16, rowlane8), each replayed in turn. Every other tuning setting is the one immutable manifest's. */
     static std::vector<ReplayInput> sweep_replays;
     static std::vector<std::string> sweep_variants;
+    static std::string sweep_layer, sweep_rows;
+    static const char* sweep_argv[8];
     if (argc >= 5 && std::strcmp(argv[1], "--replay-sweep") == 0) {
         for (const char* q = argv[3];;) {
             const char* e = std::strchr(q, ';');
@@ -134,22 +145,18 @@ int main(int argc, char** argv) {
         sweep_replays.resize((size_t)(argc - 4));
         for (int i = 4; i < argc; ++i)
             if (!load_replay(argv[i], &sweep_replays[(size_t)(i - 4)])) {
-                std::fprintf(stderr, "r3_moe_worker: --replay-sweep %s: not a capture file\n", argv[i]);
+                std::fprintf(stderr, "r3_moe_worker: --replay-sweep %s: invalid capture\n", argv[i]);
                 return 2;
             }
-        { const char* f = std::getenv("R3_MOE_SWEEP_FAST"); g_sweep_fast = f && *f && std::strcmp(f, "0") != 0; }
-        static std::string sweep_layer, sweep_rows;
         g_replay = &sweep_replays[0];
-        sweep_layer = std::to_string(sweep_replays[0].hd.layer);
-        sweep_rows = std::to_string(sweep_replays[0].hd.rows);
-        static const char* sweep_argv[8];
-        const char* rebuilt[] = {argv[0], "--compare", argv[2], "--layer", sweep_layer.c_str(), "--rows",
-                                 sweep_rows.c_str(), nullptr};
+        sweep_layer = std::to_string(g_replay->hd.layer);
+        sweep_rows = std::to_string(g_replay->hd.rows);
+        const char* rebuilt[] = {argv[0], "--compare", argv[2], "--layer",
+                                 sweep_layer.c_str(), "--rows", sweep_rows.c_str(), nullptr};
         std::copy(std::begin(rebuilt), std::end(rebuilt), sweep_argv);
         argv = const_cast<char**>(sweep_argv);
         argc = 7;
     }
-    /* --replay MODEL FILE: --compare on a captured real request (layer and rows come from the file). */
     static ReplayInput replay;
     static std::string replay_layer, replay_rows;
     static const char* replay_argv[8];
@@ -201,9 +208,9 @@ int main(int argc, char** argv) {
         model_path = argv[1];
     }
 
-    WorkerConfig cfg;
-    if (std::string err; !cfg.from_environment(kMaxHelpers, &err)) {
-        std::fprintf(stderr, "r3_moe_worker: %s\n", err.c_str());
+    WorkerConfig cfg(settings);
+    if (std::string why; !cfg.configure_placement(settings, &why)) {
+        std::fprintf(stderr, "r3_moe_worker: manifest: %s\n", why.c_str());
         return 2;
     }
 
@@ -252,17 +259,15 @@ int main(int argc, char** argv) {
      * (the R9700) share one segment; helper 0 creates it, helper 1 attaches, each owns half the candidates and
      * serves its own rank slot. */
     const uint32_t helper_index = cfg.helper_index, helper_count = cfg.helper_count;
-    if (helper_count > 1 && (!gpu || gpu->engine_ranks_ != 1 || compare)) {
+    if (helper_count > 1 && (!gpu || gpu->engine_ranks_ != 1)) {
         std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_INDEX %u of R3_MOE_WORKER_COUNT %u: want index < count <= %u, "
-                     "and two helpers only on GPU behind a one-rank engine (R3_MOE_WORKER_ENGINE_RANKS=1), not --compare\n",
+                     "and multiple helpers only on GPU behind a one-rank engine (R3_MOE_WORKER_ENGINE_RANKS=1)\n",
                      helper_index, helper_count, kMaxHelpers);
         return 2;
     }
     uint64_t budgets[r3::worker_share::kMaxHelperShares] = {};
-    if (!r3::worker_share::parse_budgets(std::getenv("R3_MOE_WORKER_MIBS"), cfg.helper_count, helper_budget_bytes(), budgets)) {
-        std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_MIBS must list one budget in MiB for each of the %u helpers\n", cfg.helper_count);
-        return 2;
-    }
+    for (uint32_t i = 0; i < cfg.helper_count; ++i)
+        budgets[i] = settings.budgets_mib.at(i) * 1024ull * 1024ull;
     const SmallClasses lane_classes = helper_small_classes();
     if (!lane_classes.count) {
         std::fprintf(stderr, "r3_moe_worker: no small lane classes available\n");
@@ -312,7 +317,7 @@ int main(int argc, char** argv) {
     std::string lane_list;                       /* "4,8,16,24", for the log */
     for (uint32_t c = 0; c < lane_classes.count; ++c)
         lane_list += (c ? "," : "") + std::to_string(lane_classes.rows[c]);
-    if (const char* sl = std::getenv("R3_MOE_WORKER_SMALL_LANES"); sl && *sl)
+    if (!settings.small_lanes.empty())
         std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_SMALL_LANES on - small lanes %s\n", lane_list.c_str());
     long rss_pages = 0;
     if (FILE* sf = std::fopen("/proc/self/statm", "r")) {
@@ -325,29 +330,16 @@ int main(int argc, char** argv) {
                  owned.expert.size(), (double)owned.bytes / (1024.0 * 1024.0 * 1024.0), rss_mib);
 
     if (compare && !sweep_replays.empty()) {
-        std::set<std::string> touched;
         int rc = 0, run = 0;
         for (size_t c = 0; c < sweep_replays.size(); ++c) {
             g_replay = &sweep_replays[c];
             for (const std::string& v : sweep_variants) {
-                for (const std::string& k : touched) (void)::unsetenv(k.c_str());
-                touched.clear();
-                for (size_t pos = 0; pos < v.size();) {
-                    const size_t comma = v.find(',', pos);
-                    const std::string kv = v.substr(pos, comma == std::string::npos ? std::string::npos : comma - pos);
-                    const size_t eq = kv.find('=');
-                    if (eq != std::string::npos && eq > 0) {
-                        (void)::setenv(kv.substr(0, eq).c_str(), kv.c_str() + eq + 1, 1);
-                        touched.insert(kv.substr(0, eq));
-                    }
-                    if (comma == std::string::npos) break;
-                    pos = comma + 1;
-                }
-                if (!gpu->set_rad46_sweep_variant(std::getenv("RAD46_SWEEP_VARIANT"))) {
-                    std::fprintf(stderr, "r3_moe_worker: replay sweep needs a known RAD46_SWEEP_VARIANT\n");
+                if (!gpu->set_rad46_sweep_variant(v.c_str())) {
+                    std::fprintf(stderr, "r3_moe_worker: replay sweep needs a known rows-kernel variant, got '%s'\n", v.c_str());
                     return 2;
                 }
-                std::printf("SWEEP run %d capture %zu layer %u variant [%s]\n", run++, c, g_replay->hd.layer, v.c_str());
+                std::printf("SWEEP run %d capture %zu layer %u variant [%s] manifest [%s]\n", run++, c, g_replay->hd.layer,
+                            v.c_str(), settings.content_sha256.c_str());
                 std::fflush(stdout);
                 rc |= compare_mode(model, *gpu, owned, g_replay->hd.layer, g_replay->hd.rows, lane_classes,
                                    lane_large_rows, false);
@@ -608,7 +600,7 @@ int main(int argc, char** argv) {
         }
         std::unique_ptr<r3::policy::Driver> policy_driver;
         if (helper_index==0 && cfg.policy.enabled) {
-            const char* histogram_prefix=std::getenv("R3_MOE_WORKER_HISTOGRAM");
+            const char* histogram_prefix=settings.handoff.histogram.c_str();
             if (!histogram_prefix || !*histogram_prefix || !gpu ||
                 gpu->engine_ranks_!=1 || !gpu->expert_stride()) {
                 std::fprintf(stderr,

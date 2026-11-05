@@ -395,5 +395,5 @@ int compute_host(const Container& f, void* map, Request* q) {
     return 0;
 }
 
-const char* shm_name() { const char* e=std::getenv("R3_MOE_WORKER_SHM"); return e&&*e?e:"/r3-moe-helper"; }
+const char* shm_name() { return r3_serving::settings().handoff.shm.c_str(); }
 } // namespace

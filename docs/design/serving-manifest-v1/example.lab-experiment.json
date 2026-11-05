@@ -8,7 +8,7 @@
       "build_sha256": "4d97aa62b5551ca084b683f8eba2dfb963f77c4a55a3ea2ddde75016b1ebd37d"
     },
     "contract_version": 1,
-    "content_digest": "sha256:1f5685d43ba8c778088f72c17d944967af2abb33309a3255c4e3d51d6a2e8817"
+    "content_digest": "sha256:68968dbc3af872efd6714a2200e3e31229801319d49a016981c9c654d9324aae"
   },
   "spec": {
     "intent": {
@@ -309,6 +309,7 @@
           }
         ]
       },
+      "state": "measured",
       "engine_memory": {
         "cache_version": 1,
         "cache_key": "ec07c69163fbfe782d3db4658a308c9269db23dcc36b11bd529db4f24303f6ce",
@@ -377,7 +378,8 @@
     },
     "experiment": {
       "placement": {
-        "mode": "observe"
+        "mode": "observe",
+        "epoch_cycle_s": 30
       },
       "shape": {
         "helper_common": {

@@ -9,21 +9,36 @@
 #include "serving.h"
 
 #include <filesystem>
+#include <optional>
 #include <string>
 
 #include <nlohmann/json.hpp>
 
 namespace bc::serving {
 
+/* The engine plan a measured manifest carries and what it was measured for (the interim plan cache's entry and its key
+ * inputs). */
+struct MeasuredPlan {
+    CachedPlan plan;
+    nlohmann::json key_inputs;
+};
+
 struct ManifestInputs {
     Resolved resolved;
-    std::string profile = "production";      // spec.intent.service.profile
+    std::string profile;                     // spec.intent.service.profile: "production" or "lab", named by the caller
     std::string instance_id;                 // UUID v4
     std::string producer_sha256;             // SHA-256 of the running bc-serve executable
     std::filesystem::path calibration_cache; // the refit layer the resolver used ("" = seeds only)
-    // The measured engine plan and what it was measured for (the interim plan cache's entry and its key inputs).
-    CachedPlan plan;
-    nlohmann::json plan_key_inputs;
+    // The measured plan: present writes plan.state measured; absent writes the unmeasured manifest of the measuring start
+    // (owner map and settings only: no engine_memory, no checkpoint slots).
+    std::optional<MeasuredPlan> measured;
+    // spec.handoff.placement.live_policy: an object with every member (the reader refuses anything less); null = no
+    // policy. `live_policy_from` names where it came from, for its provenance record.
+    nlohmann::json live_policy;
+    std::string live_policy_from;
+    // spec.experiment, lab profile only; null = none. `experiment_from` as above.
+    nlohmann::json experiment;
+    std::string experiment_from;
 };
 
 struct BuiltManifest {

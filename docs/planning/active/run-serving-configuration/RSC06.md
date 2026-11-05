@@ -2,7 +2,7 @@
 id: RSC06
 order: 12
 plan: run-serving-configuration
-state: pending
+state: in_progress
 created-at: '2026-11-02T03:52:00.963006+00:00'
 breadth: ''
 skill: intermediate
@@ -57,11 +57,18 @@ No R3_* environment variable is read anywhere. Helpers start only from a manifes
 
 Depends on the RSC01 schema. The engine side is RSC07; the supervisor is RSC02.
 
+2026-11-05: redone on the v1 contract (supersedes PR #527). Helpers read their whole configuration through the shared strict reader: r3_moe_worker --manifest FILE --role helperN (v1::helper_view projected by serving/v1/helper_settings.h); no helper R3_* getenv and no allowlist (tools/tests/lab/test_helper_reads_no_environment.py); the one environment write is GPU_MAX_HW_QUEUES. The 22 settings v1 did not model became manifest fields in spec section 11 amendment 10 (live_policy production-allowed under handoff.placement; forced schedule and epoch_cycle_s under experiment.placement; plan.state with the unmeasured measuring manifest, one measuring flag per binary). rad0010 helper kernel config renumbered rad0012 (weak symbol, install-once). The launcher writes the manifests (unmeasured for the measuring start, measured for the real start). Open: hardware identity and step-time validation against main (needs the gpu lease); campaign arms that start helpers need a manifest per arm (BC_SERVING_MANIFEST in engine_adapters/radiance.py) until the S4c campaign slice.
+
 ## Change Log
 
 - 2026-11-02T03:52:00.963006+00:00 (created-by): Created by agent
 
 ## Ledger-events
 
+
 - chg_20261102_035356_serving-start-up-plan-one-str_4985
 - 2026-11-02T03:54:11.557458+00:00 (updated-by): Updated: section:ledger-events
+- 2026-11-05T06:03:06.682889+00:00 (updated-by): Updated: section:notes
+- 2026-11-05T06:03:10.546906+00:00 (state-transition): State: pending → in_progress
+- chg_20261105_060310_the-expert-helper-processes-no_8907
+- 2026-11-05T06:03:14.921955+00:00 (updated-by): Updated: section:ledger-events
