@@ -5,12 +5,14 @@
 // examples are real, digest-verified manifests, so every value below comes through the production read path.
 #include "../serving/v1/helper_settings.h"
 #include <cassert>
+#include <cstdio>
 #include <iostream>
 
 namespace {
 using bc::serving::HelperSettings;
 HelperSettings load(const char* example, const char* role) {
-    const auto r = bc::serving::load_helper_settings(std::string(BC_CONTRACT_DIR) + "/" + example, role);
+    const auto r = bc::serving::load_helper_settings(std::string(BC_CONTRACT_DIR) + "/" + example, role,
+                                                  bc::serving::v1::PlanUse::serving);
     if (!r) std::cerr << bc::serving::v1::render_human("helper_settings_test", r.error());
     assert(r);
     return r.value();
@@ -55,9 +57,10 @@ int main() {
     }
     {   // a role the manifest does not define is refused by name, before any GPU work
         const auto r = bc::serving::load_helper_settings(
-            std::string(BC_CONTRACT_DIR) + "/example.flashnext-4gpu.json", "helper7");
+            std::string(BC_CONTRACT_DIR) + "/example.flashnext-4gpu.json", "helper7", bc::serving::v1::PlanUse::serving);
         assert(!r && r.error().code == bc::serving::v1::ConfigErrorCode::unresolved_reference);
-        const auto missing = bc::serving::load_helper_settings("/nonexistent/manifest.json", "helper0");
+        const auto missing = bc::serving::load_helper_settings("/nonexistent/manifest.json", "helper0",
+                                                                 bc::serving::v1::PlanUse::serving);
         assert(!missing && missing.error().code == bc::serving::v1::ConfigErrorCode::io_failure);
     }
     std::puts("helper_settings_test: ok");
