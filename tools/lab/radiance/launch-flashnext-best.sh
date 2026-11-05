@@ -22,14 +22,16 @@
 # default flashnext-4gpu (all four cards; flashnext-2xtx leaves the RX 6900 XT out); --budget ARCH=MIB overrides the VRAM budget of the group using that architecture (e.g. --layout flashnext-2xtx-rdna2-tail
 # --budget gfx1030=4096). A layout that needs a card the host does not have, or a plugin the build lacks, stops here with the reason.
 #
-# Needs a radiance build of production source with the helper hand-off:
-#   bigcherry build --lane radiance:stock:linux-radiance
+# Production (verified bundle and the tag's scripts/manifest):
+#   bash tools/lab/radiance/launch-flashnext-best.sh start --release latest
+# Lab: bigcherry build --lane radiance:stock:linux-radiance
 #
 # Usage:
-#   bash tools/lab/radiance/launch-flashnext-best.sh [start] [--build DIR] [--port N] [--heat FILE] [--host-pool-mib N] [--host-kv-mib N] [--chunk TOKENS] [--ngram-placement ram|disk|vram] [--kv-dtype fp8|fp8_v4|k6_v4] [--ngram-device INDEX] [--max-model-len TOKENS] [--record-heat PREFIX|off [--record-period S]] [--live-policy FILE] [--experiment FILE] [--gpu-power] [--layout NAME] [--budget ARCH=MIB] [--canary-prompt TEXT --canary-expect FACT]
+#   bash tools/lab/radiance/launch-flashnext-best.sh [start] [--release TAG|latest | --build DIR] [--port N] [--heat FILE] [--host-pool-mib N] [--host-kv-mib N] [--chunk TOKENS] [--ngram-placement ram|disk|vram] [--kv-dtype fp8|fp8_v4|k6_v4] [--ngram-device INDEX] [--max-model-len TOKENS] [--record-heat PREFIX|off [--record-period S]] [--live-policy FILE] [--experiment FILE] [--gpu-power] [--layout NAME] [--budget ARCH=MIB] [--canary-prompt TEXT --canary-expect FACT]
 #     (every start ends with a canary completion that must contain the fact, default 'The capital of France is' -> Paris; a failure stops the launch, exit 96)
 #   bash tools/lab/radiance/launch-flashnext-best.sh stop
-# Without --build, the newest build under $BC_WORK_ROOT/builds that has the helper binary is used.
+# --release re-execs from the verified release-tag worktree with --build. --release and --build
+# cannot be combined. Without either, the lab default still uses the newest local build.
 # --heat FILE: the route-heat file that ranks the experts, hottest first (default $WORK/heat/flashnext-mixed.hot-first, C++/HIP source and
 # documentation recorded in RAD23 at equal weight; the RX 6900 XT tail only pays when it matches the workload, so record your own with --record-heat) (uint32[128][512] = max - count of a recorded histogram; heat-placement/heat-invert.py
 # makes one). --record-heat PREFIX (default $WORK/flashnext/heat.live; off to disable): the engine counts every routed expert and rewrites
@@ -107,11 +109,14 @@ EXPERIMENT_FILE=""    # a JSON object for spec.experiment (lab profile)
 # served model answers; a model that cannot answer it gets its own with --canary-prompt/--canary-expect.
 CANARY_PROMPT="The capital of France is"
 CANARY_EXPECT="Paris"
+ORIGINAL_ARGS=("$@")
+RELEASE_TAG=""
 CMD=start
 [ $# -gt 0 ] && case "$1" in start|stop) CMD=$1; shift ;; esac
 while [ $# -gt 0 ]; do
   case "$1" in
     --build) BUILD=$2; shift 2 ;;
+    --release) [ $# -ge 2 ] || { echo "--release needs a tag or latest" >&2; exit 2; }; RELEASE_TAG=$2; shift 2 ;;
     --port) PORT=$2; shift 2 ;;
     --heat) CUSTOM_SERVE_OPTIONS+=(--heat); HEAT=$2; shift 2 ;;
     --gpu-power) GPU_POWER=1; shift ;;
@@ -136,6 +141,40 @@ while [ $# -gt 0 ]; do
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
 done
+
+if [ -n "$RELEASE_TAG" ]; then
+  if [ -n "$BUILD" ]; then
+    echo "RADIANCE_EXIT=2 --release and --build cannot be combined" >&2
+    exit 2
+  fi
+  # Verify the receipt and binary digest on every use. An existing build is
+  # reused only when it still matches the release record.
+  RELEASE_INFO=$(PYTHONPATH=tools python3 -m bigcherry --engine radiance release-install "$RELEASE_TAG" --json) || {
+    echo "RADIANCE_EXIT=99 cannot install/verify Radiance release $RELEASE_TAG" >&2
+    exit 99
+  }
+  RELEASE_PATHS=$(printf '%s' "$RELEASE_INFO" | python3 -c 'import json,sys
+r=json.load(sys.stdin)
+for key in ("worktree", "build_dir"):
+    value=r[key]
+    if not isinstance(value,str) or not value.startswith("/") or "\n" in value:
+        sys.exit("invalid release path in receipt")
+    print(value)') || { echo "RADIANCE_EXIT=99 invalid release installation receipt" >&2; exit 99; }
+  mapfile -t RELEASE_FIELDS <<< "$RELEASE_PATHS"
+  [ "${#RELEASE_FIELDS[@]}" -eq 2 ] || { echo "RADIANCE_EXIT=99 incomplete release installation receipt" >&2; exit 99; }
+  RELEASE_TREE=${RELEASE_FIELDS[0]}
+  RELEASE_BUILD=${RELEASE_FIELDS[1]}
+  RELEASE_ARGS=()
+  for ((i = 0; i < ${#ORIGINAL_ARGS[@]}; i++)); do
+    if [ "${ORIGINAL_ARGS[i]}" = --release ]; then
+      ((i+=1))
+    else
+      RELEASE_ARGS+=("${ORIGINAL_ARGS[i]}")
+    fi
+  done
+  cd "$RELEASE_TREE" || { echo "RADIANCE_EXIT=99 release worktree missing: $RELEASE_TREE" >&2; exit 99; }
+  exec bash "$RELEASE_TREE/tools/lab/radiance/launch-flashnext-best.sh" "${RELEASE_ARGS[@]}" --build "$RELEASE_BUILD"
+fi
 
 stop_procs() {
   local stuck=0
