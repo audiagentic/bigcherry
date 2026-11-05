@@ -305,17 +305,6 @@ def _optional_one_artifact(
     return _require_one_artifact(refs, kind=kind, stage_id=stage_id)
 
 
-def _materialize_worker(
-    context: ProjectContext,
-    source_plan,
-    *,
-    allow_dirty_bigcherry: bool,
-) -> dict:
-    return campaign_build.materialize_source(
-        context, source_plan, allow_dirty_bigcherry=allow_dirty_bigcherry
-    )
-
-
 def _execute_materialize_phase(
     spec: CampaignLaneExecutionSpec,
     *,
@@ -371,7 +360,7 @@ def _execute_materialize_phase(
         graph=graph,
         store=store,
         run_id=run_id,
-        materialize=lambda: _materialize_worker(
+        materialize=lambda: campaign_build.materialize_source(
             context, source_plan, allow_dirty_bigcherry=allow_dirty_bigcherry
         ),
         generate=lambda inputs: {},
@@ -424,32 +413,6 @@ def _spec_inputs(spec: CampaignLaneExecutionSpec) -> dict[str, LaneInputValue]:
             raise CampaignLaneError(f"duplicate lane input {name!r}")
         result[name] = value
     return result
-
-
-def _sniff_embedded_provenance(data: bytes) -> dict[str, object] | None:
-    """Deliberately always returns ``None`` -- kept as a named seam (not
-    deleted outright) documenting why a raw-Path input's bytes are NEVER
-    trusted to self-report their own provenance.
-
-    An earlier version of this function accepted any payload that merely
-    happened to parse as JSON with ``schema_version == 2`` and five dict
-    namespaces (``provenance.validate()``'s own shape check) as "real
-    embedded provenance". GPT-auto-agent review (RV48 follow-up,
-    2026-08-17) correctly identified this as still a provenance-laundering
-    route, just a smaller one: ``provenance.validate()`` is structural
-    only -- it has no way to prove a document was genuinely produced by
-    THIS project rather than hand-crafted by whoever supplied the raw
-    file. A crafted JSON blob asserting any ``source_slice_id`` it likes
-    would have been accepted as "real" here. The chain-of-custody
-    primitive that closes the gap for good has since landed (RE25.1
-    ArtifactDescriptor persistence + rehydration): a caller who KNOWS an
-    artifact's descriptor identity passes an ArtifactLocator and
-    _resolve_lane_inputs() rehydrates it against the store -- checking
-    the claimed content against what THIS project actually recorded. A
-    raw Path, however, still carries no claimed identity to verify, so
-    every raw-Path input remains unconditionally imported-legacy.
-    """
-    return None
 
 
 def _imported_legacy_document(
@@ -629,19 +592,8 @@ def _resolve_lane_inputs(
         data = value.read_bytes()
         digest = ArtifactStore.digest(data)
         relative = f"inputs/{name}/{digest}"
-        embedded = _sniff_embedded_provenance(data)
-        if embedded is not None:
-            # Seam is always-None today (see its docstring); kept so a
-            # future verified path flows through the same contract.
-            try:
-                parsed = ProvenanceV2.from_document(embedded)
-            except ProvenanceError as exc:
-                raise CampaignLaneError(
-                    f"lane input {name!r}: embedded provenance is not a "
-                    f"valid schema-v2 document: {exc}"
-                ) from exc
-        else:
-            parsed = _imported_legacy_document(run_id)
+        # Raw path bytes cannot establish their own provenance.
+        parsed = _imported_legacy_document(run_id)
         try:
             resolved[name] = store.publish_bytes_ref(
                 relative, data, kind=name, provenance=parsed
