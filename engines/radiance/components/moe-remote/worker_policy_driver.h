@@ -4,6 +4,7 @@
 #include "worker_policy_config.h"
 #include "worker_policy_live.h"
 #include "worker_policy_effect.h"
+#include "worker_policy_measure.h"
 #include "worker_epoch.h"
 #include <algorithm>
 #include <atomic>
@@ -59,6 +60,12 @@ private:
     std::vector<uint64_t> budgets_;
     uint64_t stride_=0;
     std::vector<uint8_t> protected_;
+    // RHP16: what the setting derivations are made from. Written by the worker thread (heat) and the epoch thread
+    // (transactions), read by evidence and tests, so behind their own lock.
+    mutable std::mutex measure_lock_;
+    Measured measured_;
+    DriftTracker drift_{1};
+    uint64_t last_delta_poll_ns_=0;
     heat::Heat heat_;
     uint64_t consumed_=0;
     MoveHistory history_;
@@ -126,6 +133,7 @@ private:
             heat_=heat::Heat(copy.owners.layers,copy.owners.experts,
                              settings_.controls.half_life_observations);
             consumed_=delta.observation_count;
+            reset_drift();
             r.reason="heat_baseline";return r;
         }
         if(status==HeatPoll::UNCHANGED) {r.reason="heat_unchanged";return r;}
@@ -140,6 +148,7 @@ private:
             heat_=heat::Heat(copy.owners.layers,copy.owners.experts,
                              settings_.controls.half_life_observations);
             consumed_=delta.observation_count;
+            reset_drift();
             r.reason="heat_stale";return r;
         }
         // Absolute expiry uses original file observation age at the poll.
@@ -148,6 +157,15 @@ private:
         if(!consume_heat(delta,&heat_,&consumed_,
                          settings_.accept_unwatermarked_heat)) {
             r.reason="heat_invalid_coverage";return r;
+        }
+        {
+            std::lock_guard<std::mutex> guard(measure_lock_);
+            if(last_delta_poll_ns_ && poll_now>last_delta_poll_ns_)
+                measured_.delta_gap_ns.add(double(poll_now-last_delta_poll_ns_));
+            last_delta_poll_ns_=poll_now;
+            drift_.add(heat_.counts,delta.observation_count);
+            measured_.drift_half_life_observations=drift_.half_life_observations();
+            measured_.marginal_error=marginal_relative_error(heat_.counts,drift_.k());
         }
         r.unwatermarked=unwatermarked;
         const size_t n=copy.owners.owner.size();
@@ -242,8 +260,18 @@ public:
          heat_(uint32_t(protected_.size()),1,settings_.controls.half_life_observations) {
         // Heat shape is replaced with the coherent ACTIVE layout at first
         // capture; no constructor accesses shared memory.
+        reset_drift();
     }
     ~Driver() { stop(); }
+    // The hot set the drift is measured on: as many experts as the tail helper holds.
+    size_t hot_set_k() const {return (budgets_.empty()||!stride_)?0:size_t(budgets_.back()/stride_);}
+    void reset_drift() {
+        std::lock_guard<std::mutex> guard(measure_lock_);
+        drift_=DriftTracker(std::max<size_t>(hot_set_k(),1));
+        measured_.drift_half_life_observations=0;measured_.marginal_error=0;
+        measured_.hot_set_k=hot_set_k();last_delta_poll_ns_=0;
+    }
+    Measured measured() const {std::lock_guard<std::mutex> guard(measure_lock_);return measured_;}
     Driver(const Driver&)=delete;
     Driver& operator=(const Driver&)=delete;
     bool start() {
@@ -518,6 +546,14 @@ public:
         } else return; // evidence remains inflight on unverified journal
         if(j.finish_ns>=j.start_ns) {
             const uint64_t elapsed=j.finish_ns-j.start_ns;
+            {
+                std::lock_guard<std::mutex> guard(measure_lock_);
+                if(obs==HistoryObservation::ABORTED)measured_.abort_ns.add(double(elapsed));
+                else {
+                    measured_.transaction_ns.add(double(elapsed));
+                    measured_.copy.add(uint64_t(pending_plan_.delta.size())*stride_,elapsed);
+                }
+            }
             ++evidence_.transition_samples;
             evidence_.transition_ns_total=add_saturating(evidence_.transition_ns_total,elapsed);
             evidence_.transition_ns_max=std::max(evidence_.transition_ns_max,elapsed);
@@ -562,6 +598,19 @@ public:
             unsigned(evidence_.unwatermarked_heat),unsigned(no_live_feed(now_ns)),
             (unsigned long long)c.active_epoch,
             (unsigned long long)c.active_digest);
+        {
+            const Measured m=measured();
+            std::fprintf(stderr,
+                "policy measure transactions=%llu txn_p50_ns=%.0f txn_p95_ns=%.0f txn_max_ns=%.0f copy_bytes_per_ns=%.6f "
+                "aborts=%llu abort_p95_ns=%.0f delta_gaps=%llu delta_gap_p99_ns=%.0f delta_gap_max_ns=%.0f "
+                "hot_set_k=%zu drift_half_life_observations=%llu marginal_relative_error=%.6f\n",
+                (unsigned long long)m.transaction_ns.total(),m.transaction_ns.quantile(0.5),
+                m.transaction_ns.quantile(0.95),m.transaction_ns.max(),m.copy.bytes_per_ns(),
+                (unsigned long long)m.abort_ns.total(),m.abort_ns.quantile(0.95),
+                (unsigned long long)m.delta_gap_ns.total(),m.delta_gap_ns.quantile(0.99),
+                m.delta_gap_ns.max(),m.hot_set_k,
+                (unsigned long long)m.drift_half_life_observations,m.marginal_error);
+        }
         for(const auto& [reason,count]:evidence_.reasons)
             std::fprintf(stderr,"policy no_change_reason=%s count=%llu\n",
                          reason.c_str(),(unsigned long long)count);
