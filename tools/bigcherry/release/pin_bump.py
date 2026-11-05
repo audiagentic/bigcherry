@@ -754,6 +754,7 @@ def run(
                 )
             state = _load_state_or_stop(report_dir)
             _validate_resume(state, target_ref=target_ref, vendor_root=vendor_root)
+            ensure_vendor_at_target(vendor_root, to_ref=state.to_ref, to_sha=state.to_sha)
             resolved_kind, resolved_name = _resume_selector(
                 state,
                 source_name=source_name,
@@ -820,6 +821,87 @@ def run(
                 exc.target = {"from_ref": "?", "to_ref": target_ref}
                 exc.tree = {"name": "local", "path": str(vendor_root)}
         raise
+
+
+def _vendor_head(vendor_root: Path) -> str:
+    done = subprocess.run(["git", "-C", str(vendor_root), "rev-parse", "HEAD"], capture_output=True, text=True)
+    return done.stdout.strip() if done.returncode == 0 else ""
+
+
+def ensure_vendor_at_target(vendor_root: Path, *, to_ref: str, to_sha: str) -> bool:
+    """A resumed run reads the vendored tree, so it must be on the target the run pulled. Whoever put it elsewhere (an
+    operator restoring the old pin, another tool) would otherwise get drift failures that name the wrong thing, so the
+    tree is put back: checked out to the recorded target when it has no tracked change to lose, refused when it has.
+    Returns True when it had to move the tree."""
+    head = _vendor_head(vendor_root)
+    if not head:
+        return False   # not a git checkout: there is no revision to put it on
+    if head and (head == to_sha or (to_sha and head.startswith(to_sha)) or (to_sha and to_sha.startswith(head))):
+        return False
+    known = subprocess.run(["git", "-C", str(vendor_root), "cat-file", "-e", f"{to_sha}^{{commit}}"], capture_output=True)
+    if not to_sha or known.returncode != 0:
+        return False   # the tree never fetched this target (the pull phase has not run): nothing to put it on
+    dirty = subprocess.run(["git", "-C", str(vendor_root), "status", "--porcelain", "--untracked-files=no"],
+                           capture_output=True, text=True)
+    if dirty.returncode != 0 or dirty.stdout.strip():
+        raise PinBumpStop(
+            "resume",
+            "VENDOR_TREE_NOT_AT_TARGET",
+            f"the vendored tree {vendor_root} is at {head[:12]}, not at this run's target {to_ref} "
+            f"({to_sha[:12]}), and it has tracked changes that a checkout would lose",
+            evidence={"vendor_head": head, "target": to_ref, "target_sha": to_sha, "status": dirty.stdout.strip()[:400]},
+            recommended_actions=[f"inspect `git -C {vendor_root} status`, then `git -C {vendor_root} checkout {to_ref}`, then --resume"],
+        )
+    moved = subprocess.run(["git", "-C", str(vendor_root), "checkout", "--quiet", to_sha],
+                           capture_output=True, text=True)
+    if moved.returncode != 0:
+        raise PinBumpStop(
+            "resume",
+            "VENDOR_TREE_NOT_AT_TARGET",
+            f"the vendored tree {vendor_root} could not be put on this run's target {to_ref}: {moved.stderr.strip()[-300:]}",
+            evidence={"vendor_head": head, "target": to_ref, "target_sha": to_sha},
+            recommended_actions=[f"`git -C {vendor_root} fetch` the target, then --resume"],
+        )
+    print(f"pin-bump: the vendored tree was at {head[:12]}; checked out this run's target {to_ref} ({to_sha[:12]})",
+          file=sys.stderr)
+    return True
+
+
+def fresh_state(
+    *,
+    from_ref: str,
+    to_ref: str,
+    to_sha: str,
+    vendor_root: Path,
+    selector_kind: str,
+    selector_name: str,
+    selector_patch_ids: Sequence[str],
+    build_name: str | None,
+    platform_name: str | None,
+    cpu_smoke_build: Path | None,
+) -> PinBumpState:
+    """The state of a run that has just passed preflight. Every input the later phases need to be re-run without
+    arguments is recorded here, the compile platform with the lane-build ones: a run that stops before its compile
+    phase (a drift stop is the common one) must resume with a bare ``--resume``, not by repeating them."""
+    return PinBumpState(
+        schema_version=3,
+        run_id=uuid.uuid4().hex,
+        from_ref=from_ref,
+        from_sha="",
+        to_ref=to_ref,
+        to_sha=to_sha,
+        transition_commit="",
+        tree_name="local",
+        tree_path=str(vendor_root),
+        completed_phases=["preflight"],
+        next_phase="declare",
+        selector_kind=selector_kind,
+        selector_name=selector_name,
+        selector_patch_ids=tuple(selector_patch_ids),
+        lane_build_name=build_name or "",
+        compile_platform=platform_name or "",
+        cpu_smoke_build_override=str(cpu_smoke_build) if cpu_smoke_build is not None else "",
+    )
 
 
 def _load_state_or_stop(report_dir: Path) -> PinBumpState:
@@ -1844,23 +1926,10 @@ def _run_phases(
                     )
                 )
             )
-            state = PinBumpState(
-                schema_version=3,
-                run_id=uuid.uuid4().hex,
-                from_ref=from_ref,
-                from_sha="",
-                to_ref=target_ref,
-                to_sha=to_sha,
-                transition_commit="",
-                tree_name="local",
-                tree_path=str(vendor_root),
-                completed_phases=["preflight"],
-                next_phase="declare",
-                selector_kind=selector_kind,
-                selector_name=selector_name,
-                selector_patch_ids=selector_patch_ids,
-                lane_build_name=build_name or "",
-                cpu_smoke_build_override=str(cpu_smoke_build) if cpu_smoke_build is not None else "",
+            state = fresh_state(
+                from_ref=from_ref, to_ref=target_ref, to_sha=to_sha, vendor_root=vendor_root,
+                selector_kind=selector_kind, selector_name=selector_name, selector_patch_ids=selector_patch_ids,
+                build_name=build_name, platform_name=platform_name, cpu_smoke_build=cpu_smoke_build,
             )
             state.save(report_dir)
 
@@ -2157,6 +2226,9 @@ def _run_phases(
             else:
                 state.lane_build_name = build_name or ""
                 lane = f"{selector_name}:{build_name}:{platform_name}"
+                # The lane build refuses a dirty controller tree and the records written so far are this run's own:
+                # commit exactly those (idempotent) before it, not only at the end.
+                _commit_release_records(repo_root=repo_root, target_ref=target_ref)
                 outcome = run_phase_lane_build(
                     engine=engine, lane=lane, run_id=f"pin-bump-{state.run_id[:12]}", target_ref=target_ref)
                 state.lane_build_status = "passed"
