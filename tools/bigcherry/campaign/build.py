@@ -30,6 +30,7 @@ import uuid
 from pathlib import Path
 from typing import Any, Callable
 
+from ..core.process import run_logged
 from . import source as campaign_source
 from ..core import config as campaign_config
 from ..core import engines, paths
@@ -38,6 +39,7 @@ from ..source import identity as source_identity
 from ..core.artifacts import ArtifactStore
 from ..build.builds import BuildPlan
 from ..core.context import ProjectContext
+from ..core.process import run_checked
 from ..source.identity import (
     SourceAttestation, SourceIdentityError, git_tree_oid, verify_source_attestation,
 )
@@ -183,7 +185,7 @@ def _resolve_compiler_path(
 
 def _version_probe(argv: list[str]) -> str | None:
     try:
-        completed = subprocess.run(
+        completed = run_logged(
             argv, capture_output=True, text=True, check=True, timeout=10
         )
     except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
@@ -314,10 +316,6 @@ def rocm_identity(platform: campaign_config.Platform, rocm_paths: tuple[tuple[st
         "rocm_version": _sdk_version(root),
         "rocm_digest": sdk_content_digest(root, rocm_paths),
     }
-
-
-def _default_runner(args: list[str], cwd: Path) -> None:
-    subprocess.run(args, cwd=cwd, check=True)
 
 
 def _backend_configure_options(
@@ -546,7 +544,7 @@ def _verify_by_rematerialization(
         # never raises on a directory that's already gone, so this cleanup
         # can never itself fail regardless of how far materialize() got.
         shutil.rmtree(scratch_dir, ignore_errors=True)
-        subprocess.run(
+        run_logged(
             ["git", "worktree", "prune"], cwd=context.upstream_repo, check=False,
             capture_output=True,
         )
@@ -794,7 +792,7 @@ def execute_build_stage(
     c_compiler: str | None = None,
     cxx_compiler: str | None = None,
     allow_dirty_bigcherry: bool = False,
-    runner: Runner = _default_runner,
+    runner: Runner = run_checked,
 ) -> dict[str, str]:
     """One real campaign build stage: materialise, configure, build, publish.
 
@@ -886,7 +884,7 @@ def _render_build_patch_doc_best_effort(
         from ..patch import docs as patch_docs
 
         bigcherry_revision = "unknown"
-        rev_result = subprocess.run(
+        rev_result = run_logged(
             ["git", "-C", str(context.project_root), "rev-parse", "HEAD"],
             capture_output=True, text=True,
         )

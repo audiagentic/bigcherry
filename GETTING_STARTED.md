@@ -13,7 +13,7 @@ The examples use the `bigcherry` CLI from the repository root
 
 ```bash
 PYTHONPATH=tools python -m bigcherry build \
-  --lane radiance-lab:stock:linux-radiance
+  --lane radiance:stock:linux-radiance
 ```
 
 Radiance builds its engine and kernel libraries; BigCherry installs its

@@ -5,7 +5,7 @@ set -u
 source "$(dirname "${BASH_SOURCE[0]}")/lab-env.sh"; export PATH=$ROCM_PATH/bin:$PATH
 export BIGCHERRY_ENVIRONMENT=${BIGCHERRY_ENVIRONMENT:-${BC_REPO_ROOT}/config/environment.local.toml}
 WORK=${BC_REPO_ROOT}/work
-PYTHONPATH=tools timeout 5400 python3 -m bigcherry build --lane radiance-lab:stock:linux-radiance 2>&1 | grep -v warning | tail -n 4
+PYTHONPATH=tools timeout 5400 python3 -m bigcherry build --lane radiance:stock:linux-radiance 2>&1 | grep -v warning | tail -n 4
 B=$(ls -td $WORK/builds/*/*/ 2>/dev/null | head -1)
 [ -f "${B}bin/radiance" ] || { echo "Q35_EXIT=99 no build"; exit 99; }
 export RAD_BIN=${B}bin/radiance RAD_HOME=${B}radiance_home R9700_BDF=0000:09:00.0

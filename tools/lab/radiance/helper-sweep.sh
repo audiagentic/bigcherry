@@ -13,7 +13,8 @@ W=${BC_WORK_ROOT}
 if [ "$BR" != "-" ]; then
   cd $W/wt-pr8 && git fetch -q origin && git checkout -q --detach $BR && git log --oneline -1
   export BIGCHERRY_ENVIRONMENT=${BC_DEV_ROOT}/projects/bigcherry/workspaces/main/config/environment.local.toml; source "$(dirname "${BASH_SOURCE[0]}")/lab-env.sh"; export PATH=$ROCM_PATH/bin:$PATH
-  PYTHONPATH=tools timeout 5400 python3 -m bigcherry build --lane radiance-lab:stock:linux-radiance > $W/sweep-build.log 2>&1
+  PYTHONPATH=tools timeout 5400 python3 -m bigcherry build --lane radiance:stock:linux-radiance > $W/sweep-build.log 2>&1
+  grep '^build: logs=' $W/sweep-build.log >&2 || true
   grep -E 'ok build|FAILED' $W/sweep-build.log | tail -1; grep -E ' error:|r3_rewrite.py failed' $W/sweep-build.log | sort -u | head
 fi
 source "$(dirname "${BASH_SOURCE[0]}")/lab-env.sh"; export PATH=$ROCM_PATH/bin:$PATH

@@ -11,7 +11,7 @@ if [ -n "${FASTBUILD_DIR:-}" ]; then
 elif [ -n "${BUILD_DIR:-}" ]; then
   LOG="x: ok build_plan_id=$(basename $BUILD_DIR)"   # an existing build, used as it is (stock radiance has no libr3 to fastbuild)
 else
-LOG=$(PYTHONPATH=tools timeout 5400 python3 -m bigcherry build --lane radiance-lab:stock:linux-radiance 2>&1 | grep -v warning | tail -n 4)
+LOG=$(PYTHONPATH=tools timeout 5400 python3 -m bigcherry build --lane radiance:stock:linux-radiance 2>&1 | grep -v warning | tail -n 4)
 fi
 echo "$LOG"
 PLAN=$(echo "$LOG" | grep -o 'build_plan_id=[0-9a-f]*' | tail -1 | cut -d= -f2)

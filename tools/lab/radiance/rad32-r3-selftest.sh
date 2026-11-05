@@ -11,7 +11,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/lab-build.sh"
 source "$(dirname "${BASH_SOURCE[0]}")/lab-env.sh"
 OUT=$BC_WORK_ROOT/runs/rad32-r3-selftest-$(date +%m%d%H%M); mkdir -p "$OUT"
 git log -1 --format='commit %H %s' | tee "$OUT/summary.txt"
-B=$(rad_build "$OUT/build.log") || { echo "BUILD_FAILED"; exit 1; }
+B=$(rad_build) || { echo "BUILD_FAILED"; exit 1; }
 # The build's own libr3 tree names the (since removed) worktree it was configured from, so configure a fresh tree from
 # this checkout with that build's settings (compilers, engine prefix, materialised engine source, targets, and the
 # ROCm SDK paths the build pinned).

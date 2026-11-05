@@ -29,7 +29,7 @@ for g in $GPUS; do
 done
 echo "gpus$LABEL" >> $OUT/summary.txt
 source tools/lab/radiance/lab-build.sh
-B=$(rad_build $OUT/build.log) || exit 1
+B=$(rad_build) || exit 1
 echo "build $B" >> $OUT/summary.txt
 L=tools/lab/radiance/launch-flashnext-best.sh
 URL=http://127.0.0.1:36080/v1/completions   # the launcher's default port

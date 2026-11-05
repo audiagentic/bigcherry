@@ -15,7 +15,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/lab-env.sh"
 OUT=$BC_WORK_ROOT/runs/rad32-perf-$(date +%m%d%H%M); mkdir -p "$OUT"
 git log -1 --format='commit %H %s' | tee "$OUT/summary.txt"
 # a fourth argument names a finished build to measure instead of this checkout's (the v1.9.0 arm of an A/B)
-if [ -n "$BUILD_ARG" ]; then B=$BUILD_ARG; else B=$(rad_build "$OUT/build.log") || { echo "BUILD_FAILED"; exit 1; }; fi
+if [ -n "$BUILD_ARG" ]; then B=$BUILD_ARG; else B=$(rad_build) || { echo "BUILD_FAILED"; exit 1; }; fi
 echo "build $B" | tee -a "$OUT/summary.txt"
 
 if [ "$WHAT" = 27b ] || [ "$WHAT" = all ]; then

@@ -67,12 +67,4 @@ int64_t kv_backing_floor_ppm(const nlohmann::json& values, const std::filesystem
  * Both flags go to the engine, never one (radiance refuses that). */
 std::vector<std::string> plan_check_args(const std::filesystem::path& dir, const CachedPlan& entry, int64_t floor_ppm);
 
-/* Measures the plan: runs `binary --manifest MANIFEST --role engine --plan-memory OUT` with only the engine card
- * visible (ROCR_VISIBLE_DEVICES = its HIP ordinal, HIP_VISIBLE_DEVICES = 0, as a launch does), waits for it and returns
- * the JSON it wrote, decoded by the shared v1 codec. The engine runs its real bring-up up to its memory plan on that card,
- * so the caller holds the gpu lease; this never takes one. `wall_seconds` is set to the engine's run time. */
-nlohmann::json measure_engine_plan(const std::filesystem::path& binary, const std::filesystem::path& manifest,
-                                   uint32_t engine_card_ordinal, const std::filesystem::path& out,
-                                   double* wall_seconds);
-
 }  // namespace bc::serving

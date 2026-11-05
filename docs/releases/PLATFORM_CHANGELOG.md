@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.7.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.6.0...bc-platform-1.7.0) (2026-11-05)
+
+
+### New and changed
+
+* **radiance:** rad0009 reads the v1 manifest through the shared reader; the interim manifest format and bc-serve's own plan measurement are deleted (RSC08 S2b) ([#588](https://github.com/audiagentic/bigcherry/issues/588)) ([ef0579f](https://github.com/audiagentic/bigcherry/commit/ef0579fd48429c6ae37200056d5cec7c3c9ab9cf))
+* **tools:** build system writes persistent per-run and per-stage logs with a summary; failures name the exact log (BRBC04) ([#574](https://github.com/audiagentic/bigcherry/issues/574)) ([dfb5e51](https://github.com/audiagentic/bigcherry/commit/dfb5e51397eabb72b33f245a9a9f3a5aa989d2e1))
+
+## [1.6.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.5.0...bc-platform-1.6.0) (2026-11-05)
+
+
+### New and changed
+
+* **radiance:** RHP16 - offline replay of the live placement policy over a recorded heat series ([#620](https://github.com/audiagentic/bigcherry/issues/620)) ([6f45c66](https://github.com/audiagentic/bigcherry/commit/6f45c668ccf738bcc68049da703b9cfa29ce207a))
+* **tools:** pin-bump resumes without arguments, commits its own records before the lane build, keeps the vendored tree on target ([#625](https://github.com/audiagentic/bigcherry/issues/625)) ([75a4f0f](https://github.com/audiagentic/bigcherry/commit/75a4f0f61510ec5944d4f6891a715baef8a1e019))
+
+
+### Fixes
+
+* **ci:** key the engine layer on every component source so a layer set is restored whole or not at all ([#622](https://github.com/audiagentic/bigcherry/issues/622)) ([7827c1a](https://github.com/audiagentic/bigcherry/commit/7827c1a691326c9320d2f3db71e7b992ac4d819b))
+
 ## [1.5.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.4.0...bc-platform-1.5.0) (2026-11-05)
 
 

@@ -1,11 +1,13 @@
-// Card-free test of the patched engine's manifest-to-argv logic (core/bc_serving_manifest.cpp from rad0009).
+// Card-free test of the patched engine's manifest-to-argv logic (core/bc_serving_manifest.cpp from rad0009): a serving
+// manifest v1 read by the shared strict reader, its registry-bound fields as flags.
 // Built by tools/tests/patch/test_radiance_patch_packages.py against radiance's real option table and a mirror of config_parse's shape rules.
-// usage: manifest_argv_test SCRATCH_DIR BC_SERVE_FIXTURE OPTIONS_FILE
+// usage: manifest_argv_test SCRATCH_DIR V1_EXAMPLE_MANIFEST OPTIONS_FILE
 #include "bc_serving_manifest.h"
 
 #include <cstdio>
 #include <cstring>
 #include <fstream>
+#include <iterator>
 #include <map>
 #include <string>
 #include <vector>
@@ -59,7 +61,6 @@ static int g_failed = 0;
 static std::string g_dir;
 static std::map<std::string, std::string> g_given;   // what the stub parse recorded as given
 static bool g_parsed = false;   // whether the stub of radiance's parser accepts the last run() argv
-static const char* kSha = "0123456789abcdef0123456789abcdef";
 
 static std::string write(const std::string& name, const std::string& body) {
     const std::string p = g_dir + "/" + name;
@@ -67,13 +68,10 @@ static std::string write(const std::string& name, const std::string& body) {
     return p;
 }
 
-static std::string manifest(const std::string& engine_values, const std::string& schema = "1") {
-    // the shape bc-serve writes: each section nested under values (see the shared bc-serve fixture test below)
-    return "{\"schema_version\":" + schema + ",\"values\":{\"service\":{\"max_sessions\":4},\"engine\":{" +
-           engine_values + "}},\"process_helpers\":[],\"hash_algorithm\":\"sha256\",\"content_sha256\":\"" + kSha + "\"}";
+static std::string slurp(const std::string& path) {
+    std::ifstream in(path, std::ios::binary);
+    return std::string((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
 }
-
-static const std::string kBase = "\"radiance_home\":\"/h\",\"kernels\":\"libr4d,libref\"";
 
 // Runs bc_serving_engine_argv on `args` (argv[0] is added) and returns the result argv joined by space,
 // or "ERROR" when it refused.
@@ -99,108 +97,62 @@ int main(int, char** argv) {
     g_dir = argv[1];
     load_options(argv[3]);
     CHECK(g_options.size() > 100);
-    // The shape bc-serve really writes (bc_serve_dry_run.json: `bc-serve --dry-run` against a synthetic sysfs tree, so it
-    // names no real host): values nested by section. The reader must accept it and emit the engine section as flags.
-    // A hand-written manifest cannot stand in for this: the flat-key fixtures once hid that rad0009 read the wrong shape.
-    {
-        const std::string real = argv[2];
-        const std::string got = run({"--manifest", real});
-        CHECK(got != "ERROR" && g_parsed);
-        for (const char* want : {"--kernels libr4d,libr3moe,libref", "--max-num-seqs 8", "--model /models/flash-next.rad",
-                                 "--radiance-home /opt/radiance/radiance_home", "--prefix-cache-mib 12288", "--tp 1"})
-            CHECK(got.find(want) != std::string::npos);
-        CHECK(bc_serving_mark_given(&g_given));
-    }
-    // The flat-key shape is not the contract and is refused, not silently read as "no engine settings".
-    CHECK(run({"--manifest", write("flat.json", "{\"schema_version\":1,\"values\":{\"engine.radiance_home\":\"/h\","
-                                                "\"engine.kernels\":\"libr4d\"},\"process_helpers\":[],"
-                                                "\"hash_algorithm\":\"sha256\",\"content_sha256\":\"" + std::string(kSha) +
-                                                "\"}")}) == "ERROR");
+    // A real v1 manifest (the design example for the production layout): the strict reader accepts it, and every field
+    // the registry binds to a radiance option becomes that flag, in registry order.
+    const std::string example = argv[2];
+    const std::string got = run({"--manifest", example});
+    CHECK(got != "ERROR" && g_parsed);
+    CHECK(got == "engine --model /models/flash-next.rad --max-num-seqs 8 --max-model-len 262144 --host-pool-mib 9216 "
+                 "--prefix-cache-mib 12288 --host-headroom-mib 4800 --checkpoint-slots 43 "
+                 "--radiance-home /opt/radiance/radiance_home --kernels libr4d,libr3moe,libref --port 36080 --tp 1 "
+                 "--max-num-batched-tokens 2048 --checkpoint-interval 4096 --placement expert_tiered "
+                 "--ngram-placement ram --kv-cache-dtype fp8 --num-speculative-tokens 3 --rope-scaling none "
+                 "--prefix-resume nearest");
+    CHECK(bc_serving_mark_given(&g_given));
+    for (const auto& kv : g_given) CHECK(kv.second == "manifest e2e8066eafd8");   // "manifest <first 12 hex of the digest>"
+    CHECK(run({"--manifest", example, "--role", "engine", "-v"}).rfind("engine -v --model ", 0) == 0);
+    CHECK(run({"--manifest", example}) == got);   // deterministic
 
     // without --manifest argv is untouched
     CHECK(run({"--model", "x", "--tp-wire", "exact"}) == "engine --model x --tp-wire exact");
 
-    // sorted keys, integers and strings, booleans
-    const std::string ok = write("ok.json", manifest(kBase + ",\"max_num_seqs\":6,\"tp_wire\":\"wht6\","
-                                                              "\"live\":true,\"deterministic\":false,"
-                                                              "\"model\":\"/m.rad\""));
-    CHECK(run({"--manifest", ok}) == "engine --kernels libr4d,libref --max-num-seqs 6 --model /m.rad "
-                                     "--radiance-home /h --tp-wire wht6 --live");
-    CHECK(run({"--manifest", ok, "--role", "engine", "-v"}) == "engine -v --kernels libr4d,libref --max-num-seqs 6 "
-                                                               "--model /m.rad --radiance-home /h --tp-wire wht6 --live");
-    // deterministic
-    CHECK(run({"--manifest", ok}) == run({"--manifest", ok}));
-
     // other flags, a wrong role, duplicates, a missing path
-    CHECK(run({"--manifest", ok, "--tp", "2"}) == "ERROR");
-    CHECK(run({"--manifest", ok, "--role", "helper"}) == "ERROR");
-    CHECK(run({"--manifest", ok, "--manifest", ok}) == "ERROR");
+    CHECK(run({"--manifest", example, "--tp", "2"}) == "ERROR");
+    CHECK(run({"--manifest", example, "--role", "helper"}) == "ERROR");
+    CHECK(run({"--manifest", example, "--manifest", example}) == "ERROR");
     CHECK(run({"--manifest"}) == "ERROR");
-    CHECK(run({"--help", "--manifest", ok}) == "ERROR");
+    CHECK(run({"--help", "--manifest", example}) == "ERROR");
     CHECK(run({"--manifest", g_dir + "/missing.json"}) == "ERROR");
 
-    // schema, values, hash fields
-    CHECK(run({"--manifest", write("v2.json", manifest(kBase, "2"))}) == "ERROR");
-    CHECK(run({"--manifest", write("nov.json", "{\"schema_version\":1,\"hash_algorithm\":\"sha256\","
-                                                "\"content_sha256\":\"0123456789abcdef\"}")}) == "ERROR");
+    // the shared strict reader refuses what is not a v1 manifest, with its own errors
     CHECK(run({"--manifest", write("junk.json", "{not json")}) == "ERROR");
-    CHECK(run({"--manifest", write("nosha.json", "{\"schema_version\":1,\"values\":{\"engine\":{" + kBase + "}},"
-                                                  "\"hash_algorithm\":\"sha256\"}")}) == "ERROR");
+    CHECK(run({"--manifest", write("empty.json", "{}")}) == "ERROR");
+    // the interim bc-serve format (flat schema_version / values / content_sha256) is gone: refused, not silently read
+    CHECK(run({"--manifest", write("interim.json", "{\"schema_version\":1,\"values\":{\"engine\":{\"radiance_home\":\"/h\","
+                                                   "\"kernels\":\"libr4d\"}},\"process_helpers\":[],"
+                                                   "\"hash_algorithm\":\"sha256\",\"content_sha256\":\"" + std::string(64, '0') +
+                                                   "\"}")}) == "ERROR");
+    // a change to any value without a new digest is refused (the digest is checked, not trusted)
+    std::string tampered = slurp(example);
+    const size_t at = tampered.find("\"tp\": 1");
+    CHECK(at != std::string::npos);
+    if (at != std::string::npos) tampered.replace(at, 7, "\"tp\": 2");
+    CHECK(run({"--manifest", write("tampered.json", tampered)}) == "ERROR");
+    // a duplicate key is refused by the strict JSON layer
+    std::string dup = slurp(example);
+    const size_t kind = dup.find("\"kind\"");
+    CHECK(kind != std::string::npos);
+    if (kind != std::string::npos) dup.insert(kind, "\"kind\": \"x\", ");
+    CHECK(run({"--manifest", write("dup.json", dup)}) == "ERROR");
 
-    // an unknown engine key, and one that is not an engine option at all
-    CHECK(run({"--manifest", write("unk.json", manifest(kBase + ",\"no_such_thing\":1"))}) == "ERROR");
-    CHECK(run({"--manifest", write("man.json", manifest(kBase + ",\"manifest\":\"x\""))}) == "ERROR");
-    CHECK(run({"--manifest", write("help.json", manifest(kBase + ",\"help\":true"))}) == "ERROR");
+    // an emitted option that the parser did not take as given fails the mark (a swallowed flag)
+    std::map<std::string, std::string> swallowed;
+    CHECK(run({"--manifest", example}) == got);
+    swallowed = g_given;
+    swallowed.erase("--tp");
+    CHECK(!bc_serving_mark_given(&swallowed));
 
-    // the argv shape follows the JSON type alone; shape mismatches are radiance's config_parse to reject
-    CHECK(run({"--manifest", ok}) != "ERROR" && g_parsed);
-    CHECK(run({"--manifest", write("fl.json", manifest(kBase + ",\"max_num_seqs\":2.5"))}) ==
-          "engine --kernels libr4d,libref --max-num-seqs 2.5 --radiance-home /h");
-    CHECK(run({"--manifest", write("big.json", manifest(kBase + ",\"max_num_seqs\":4294967296"))}) ==
-          "engine --kernels libr4d,libref --max-num-seqs 4294967296 --radiance-home /h");
-    // a value for a boolean option: emitted as "--live yes", which radiance rejects as an unknown option
-    CHECK(run({"--manifest", write("b2.json", manifest(kBase + ",\"live\":\"yes\""))}) ==
-          "engine --kernels libr4d,libref --live yes --radiance-home /h");
-    CHECK(!g_parsed);
-    CHECK(run({"--manifest", write("b3.json", manifest(kBase + ",\"live\":1"))}) != "ERROR" && !g_parsed);
-    // true for an option that needs an argument: a bare "--max-num-seqs", which radiance rejects
-    CHECK(run({"--manifest", write("b1.json", manifest(kBase + ",\"max_num_seqs\":true"))}) ==
-          "engine --kernels libr4d,libref --radiance-home /h --max-num-seqs");
-    CHECK(!g_parsed);
-    // false adds no flag
-    CHECK(run({"--manifest", write("f.json", manifest(kBase + ",\"live\":false"))}) ==
-          "engine --kernels libr4d,libref --radiance-home /h");
-    // null, arrays, objects are errors here
-    CHECK(run({"--manifest", write("n.json", manifest(kBase + ",\"max_num_seqs\":null"))}) == "ERROR");
-    CHECK(run({"--manifest", write("a.json", manifest(kBase + ",\"model\":[1]"))}) == "ERROR");
-    CHECK(run({"--manifest", write("o.json", manifest(kBase + ",\"model\":{}"))}) == "ERROR");
-
-    // RADIANCE_HOME / RADIANCE_KERNELS must not be able to fill in for the manifest
-    CHECK(run({"--manifest", write("nohome.json", manifest("\"kernels\":\"libref\""))}) == "ERROR");
-    CHECK(run({"--manifest", write("nokern.json", manifest("\"radiance_home\":\"/h\""))}) == "ERROR");
-    CHECK(run({"--manifest", write("emptyk.json", manifest("\"radiance_home\":\"/h\",\"kernels\":\"\""))}) == "ERROR");
-    CHECK(run({"--manifest", write("emptyh.json", manifest("\"radiance_home\":\"\",\"kernels\":\"libref\""))}) == "ERROR");
-
-    // the report source: the manifest's options are relabelled, -v and the environment's are not
-    run({"--manifest", ok, "-v"});
-    CHECK(g_parsed);
-    g_given["--kernels"] = "environment (RADIANCE_KERNELS)";
-    CHECK(!bc_serving_mark_given(&g_given));   // --kernels is a manifest option: its source must be the command line
-    run({"--manifest", ok, "-v"});
-    CHECK(bc_serving_mark_given(&g_given));
-    CHECK(g_given["--model"] == "manifest 0123456789ab");
-    CHECK(g_given["--live"] == "manifest 0123456789ab");
-    CHECK(g_given["-v"] == "command line");
-
-    // a bare flag for an option that needs an argument swallows the next flag: "--max-num-seqs --no-cors"
-    // parses, but --no-cors was not parsed as given, so start-up fails
-    CHECK(run({"--manifest", write("sw.json", manifest(kBase + ",\"max_num_seqs\":true,"
-                                                                "\"no_cors\":true"))}) ==
-          "engine --kernels libr4d,libref --radiance-home /h --max-num-seqs --no-cors");
-    CHECK(g_parsed);
-    CHECK(!bc_serving_mark_given(&g_given));
-    CHECK(g_given["--max-num-seqs"] == "command line");   // not relabelled on failure
-
-    std::printf(g_failed ? "FAILED\n" : "ok\n");
-    return g_failed ? 1 : 0;
+    if (g_failed) { std::fprintf(stderr, "%d failed\n", g_failed); return 1; }
+    std::puts("ok");
+    return 0;
 }

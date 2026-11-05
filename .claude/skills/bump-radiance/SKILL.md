@@ -66,6 +66,9 @@ gate (`components-build`, `component-plugin-abi`, `component-tests`), lane build
 
 ### Things to know
 
+- **The declare phase moves everything that names the pin**: `pinned`, `pinned-version` and every component's
+  `built-against` (one commit with the transition marker). Before this, the last two were edited by hand and the
+  core suite (`test_components`, `test_engine_recipes`) was the first thing to notice.
 - **`pin-bump` moves `vendor/radiance` in the PRIMARY checkout to the target tag.** That is by design (the vendor
   clone belongs to the primary, `BC_PRIMARY_ROOT` must name a primary checkout) and `vendor/` is gitignored, so no
   tracked file changes, but every tool reading that clone now sees the new source. A `--resume` puts the tree back

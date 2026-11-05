@@ -3,7 +3,7 @@
 Start with the [Radiance runbook](../../../docs/reference/engines/radiance/RUNBOOK.md) for production/lab source composition, launcher arguments, plan-check cache, layouts, and exit codes. The lab source is **production plus evaluated fixes and explicit experiments**; the validated remote-MoE hand-off is already in production. Build without a hand-off experiment:
 
 ```sh
-PYTHONPATH=tools python3 -m bigcherry build --lane radiance-lab:stock:linux-radiance
+PYTHONPATH=tools python3 -m bigcherry build --lane radiance:stock:linux-radiance
 ```
 
 `lab-build.sh` provides `rad_build LOG` to sourced lab scripts. It reuses builds only for matching recorded engine/config trees and ROCm SDK, requiring both the engine and helper binaries. For an explicit build, give `--build DIR` to `launch-flashnext-best.sh`.

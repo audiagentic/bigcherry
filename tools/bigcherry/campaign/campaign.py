@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Callable
 
 from .graph import CampaignGraph
+from ..build import logs as build_logs
 from ..core.resources import ResourceLock
 
 
@@ -89,7 +90,8 @@ class CampaignRun:
                 for lock in locks:
                     lock.acquire()
                 self.records[stage_id] = StageRecord(stage_id, "running", digest)
-                outputs = executor(stage_id)
+                with build_logs.stage(node.kind):
+                    outputs = executor(stage_id)
                 self.records[stage_id] = StageRecord(
                     stage_id, "succeeded", digest, tuple(outputs)
                 )

@@ -141,6 +141,16 @@ class StreamBench(unittest.TestCase):
         self.assertLess(four["start_skew_ms"], 50.0)                     # the controller released them together
         self.assertLess(four["wall_start_ns"], four["wall_end_ns"])       # the epoch window helper TRACE lines are bucketed by
 
+    def test_the_record_carries_the_digest_of_every_prompt_it_used(self):
+        record = sb.run(self.url, "m", [1, 2], 8, 4, 1, seed=3)
+        digests = record["config"]["prompt_sha256"]
+        self.assertEqual(len(digests), 2)                                # one per stream of the widest round
+        self.assertEqual(len(set(digests)), 2)                           # streams differ
+        self.assertEqual(digests, sb.prompt_digests(2, 8, 3, False))
+        self.assertNotEqual(digests, sb.prompt_digests(2, 8, 4, False))  # another seed is another input
+        shared = sb.prompt_digests(2, 8, 3, True)
+        self.assertEqual(shared[0], shared[1])                           # --shared-prefix: one prompt
+
     def test_several_tokens_in_one_event_are_counted_from_usage_not_events(self):
         _Handler.tokens_per_event = 4
         rec = self.round(1, max_tokens=12)
