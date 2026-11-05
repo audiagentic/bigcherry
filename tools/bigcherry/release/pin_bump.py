@@ -15,6 +15,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import uuid
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
@@ -631,18 +632,48 @@ def select_patch_test_modules(repo_root: Path, engine: str) -> list[str]:
     return selected
 
 
+def exec_capable_tempdir(fallback_parent: Path) -> Path | None:
+    """The directory test subprocesses should use as TMPDIR, or None when the system one already allows execution.
+    Some tests compile a small program into a temporary directory and run it; where that directory is mounted
+    ``noexec`` (a hardened container's /tmp) they fail with "permission denied", which a bump would report as a
+    failure of the new revision. The fallback lives under the work root, which is exec-capable by construction."""
+    probe_dir = Path(tempfile.gettempdir())
+    try:
+        with tempfile.NamedTemporaryFile("w", dir=probe_dir, suffix=".sh", delete=False) as handle:
+            handle.write("#!/bin/sh\nexit 0\n")
+            probe = Path(handle.name)
+        try:
+            probe.chmod(0o755)
+            if subprocess.run([str(probe)], capture_output=True).returncode == 0:
+                return None
+        finally:
+            probe.unlink(missing_ok=True)
+    except OSError:
+        pass
+    fallback_parent.mkdir(parents=True, exist_ok=True)
+    return Path(tempfile.mkdtemp(prefix="pin-bump-tests-", dir=fallback_parent))
+
+
 def run_patch_tests(repo_root: Path, engine: str) -> list[str]:
     """Run the bumped engine's offline patch mechanics tests and return the failing test ids.
     Called before apply, while the vendor tree is the pristine new revision:
     the fixtures copy vendor files, so an already-patched tree would turn every
     fail-closed test red for reasons unrelated to upstream."""
-    completed = subprocess.run(
-        [sys.executable, "-m", "unittest", *select_patch_test_modules(repo_root, engine)],
-        cwd=repo_root / PATCH_TESTS_DIR,
-        env={**os.environ, "PYTHONPATH": str(repo_root / "tools")},
-        capture_output=True,
-        text=True,
-    )
+    env = {**os.environ, "PYTHONPATH": str(repo_root / "tools")}
+    scratch = exec_capable_tempdir(ProjectContext.resolve(engine=engine).work_root / "tmp")
+    if scratch is not None:
+        env["TMPDIR"] = str(scratch)
+    try:
+        completed = subprocess.run(
+            [sys.executable, "-m", "unittest", *select_patch_test_modules(repo_root, engine)],
+            cwd=repo_root / PATCH_TESTS_DIR,
+            env=env,
+            capture_output=True,
+            text=True,
+        )
+    finally:
+        if scratch is not None:
+            shutil.rmtree(scratch, ignore_errors=True)
     failing = [
         line.split(": ", 1)[1].strip()
         for line in (completed.stdout + completed.stderr).splitlines()
