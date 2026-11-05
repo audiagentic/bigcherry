@@ -129,6 +129,7 @@ build_line() {
         python3 -m bigcherry build --lane "$lane" "${experiment_args[@]}" "${arch_args[@]}" \
         --binary-relative-path bin/llama-server > "$log" 2>&1 < /dev/null
     rc=$?
+    grep '^build: logs=' "$log" >&2 || true
     plan=$(sed -n 's/.*: ok build_plan_id=\([0-9a-f]*\).*/\1/p' "$log" | tail -1)
     bin=""
     # bigcherry build publishes under its own work root (BC_WORK_ROOT from the process environment, else the

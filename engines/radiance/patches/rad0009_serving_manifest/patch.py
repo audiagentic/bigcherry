@@ -1,22 +1,24 @@
-"""Radiance 1.14.0: start the engine from a resolved serving manifest (RSC07), as thin hooks into one BigCherry-owned
-extension point.
+"""Radiance 1.14.0: start the engine from a serving manifest v1 (RSC07, RSC08 S2b), as thin hooks into one
+BigCherry-owned extension point.
 
 All logic lives in the two files this patch creates (core/bc_serving_manifest.h, core/bc_serving_manifest.cpp):
-``--manifest PATH`` is turned into the equivalent radiance flags before config_parse, so radiance's own parser and
-validation still run, and the startup report's option sources are relabelled afterwards. core/main.cpp gains one
-include and two calls. config.cpp is not touched: --manifest is handled before config_parse and is deliberately not a
-row of the option table (a row is not a call into the extension point, so it cannot be a thin edit).
+``--manifest PATH`` is read by the shared strict v1 reader (bc_serving_v1: the digest, the contract and every semantic
+rule are checked exactly as bc-serve checks them), the fields the registry binds to a radiance option become the
+equivalent flags before config_parse, so radiance's own parser and validation still run, and the startup report's
+option sources are relabelled afterwards. core/main.cpp gains one include and two calls; core/CMakeLists.txt links the
+shared library. config.cpp is not touched: --manifest is handled before config_parse and is deliberately not a row of
+the option table (a row is not a call into the extension point, so it cannot be a thin edit).
 """
 
 from bigcherry.patcher import Edit, FilePatch
 
-_BC_SERVING_MANIFEST_H = r"""/* bc_serving_manifest.h -- BigCherry's start-up extension point: the engine starts from a resolved serving
- * manifest (the JSON bc-serve resolves) instead of command-line flags.
+_BC_SERVING_MANIFEST_H = r"""/* bc_serving_manifest.h -- BigCherry's start-up extension point: the engine starts from a serving manifest v1 (the
+ * document bc-serve --write-manifest writes) instead of command-line flags.
  *
  *   engine --manifest PATH [--role engine] [-v|-vv]
  *
  * main() calls bc_serving_engine_argv before config_parse, so radiance's own parser and its own validation and
- * errors see the manifest's "engine.*" values as the equivalent flags; no other flag may accompany --manifest.
+ * errors see the manifest's engine-bound values as the equivalent flags; no other flag may accompany --manifest.
  * After a successful parse, bc_serving_mark_given relabels the startup report's option sources. All policy
  * lives in core/bc_serving_manifest.cpp; --manifest is deliberately not a row of radiance's option table. */
 #ifndef BC_SERVING_MANIFEST_H
@@ -32,16 +34,19 @@ bool bc_serving_engine_argv(int* argc, char*** argv);
 
 /* After a successful parse: every option the manifest produced must be recorded in `given` as "command line" (an
  * option another option swallowed as its argument is not), else a message is printed and false is returned: the
- * caller exits 2. Then those sources are relabelled "manifest <first 12 chars of content_sha256>". Returns true
+ * caller exits 2. Then those sources are relabelled "manifest <first 12 hex of metadata.content_digest>". Returns true
  * and does nothing when the engine was not started from a manifest. */
 bool bc_serving_mark_given(std::map<std::string, std::string>* given);
 
 #endif /* BC_SERVING_MANIFEST_H */
 """
 
-_BC_SERVING_MANIFEST_CPP = r"""/* bc_serving_manifest.cpp -- policy behind bc_serving_manifest.h: manifest values.engine settings to radiance's own
- * flags, the checks that make the manifest the only source of configuration, and the report source label. */
+_BC_SERVING_MANIFEST_CPP = r"""/* bc_serving_manifest.cpp -- policy behind bc_serving_manifest.h: a serving manifest v1, read by the shared strict reader,
+ * to radiance's own flags through the generated registry, and the report source label. */
 #include "bc_serving_manifest.h"
+
+#include "manifest.h"
+#include "serving_types.h"
 
 #include <nlohmann/json.hpp>
 
@@ -63,6 +68,7 @@ std::vector<std::string> config_option_names();
 }  // namespace rad
 
 namespace {
+namespace v1 = bc::serving::v1;
 
 std::vector<std::string> g_store;   /* the synthetic argv, kept for the life of the process */
 std::vector<char*> g_ptrs;
@@ -74,14 +80,21 @@ bool fail(const std::string& why) {
     return false;
 }
 
-bool string_nonempty(const nlohmann::json& engine, const char* key, const char* env, std::string* why) {
-    const auto it = engine.find(key);
-    if (it == engine.end() || !it->is_string() || it->get_ref<const std::string&>().empty()) {
-        *why = std::string("\"engine.") + key + "\" must be a non-empty string: it is required so that " + env +
-               " cannot silently supply it";
-        return false;
+/* One field's value as flag text: a string or integer as is, an array of strings joined with commas (--kernels). */
+bool flag_text(const nlohmann::json& v, std::string* out) {
+    if (v.is_string()) { *out = v.get<std::string>(); return true; }
+    if (v.is_number_integer()) { *out = v.dump(); return true; }
+    if (v.is_array()) {
+        std::string joined;
+        for (const auto& e : v) {
+            if (!e.is_string()) return false;
+            if (!joined.empty()) joined += ',';
+            joined += e.get<std::string>();
+        }
+        *out = joined;
+        return true;
     }
-    return true;
+    return false;
 }
 
 }  // namespace
@@ -114,82 +127,67 @@ bool bc_serving_engine_argv(int* argc, char*** argv) {
     std::ifstream in(path, std::ios::binary);
     if (!in) return fail("cannot read '" + path + "'");
     const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    /* The shared strict reader: size, UTF-8, duplicate keys, integers, the contract identity, the content digest, the
+     * generated structural decode, provenance and every semantic rule, with the same errors bc-serve gives. */
+    const v1::Result<v1::Manifest> manifest = v1::read_manifest(text, path);
+    if (!manifest.ok()) {
+        std::fputs(v1::render_human("radiance", manifest.error()).c_str(), stderr);
+        return false;
+    }
     const nlohmann::json doc = nlohmann::json::parse(text, nullptr, false);
-    if (doc.is_discarded() || !doc.is_object()) return fail("'" + path + "' is not a JSON object");
-    const auto ver = doc.find("schema_version");
-    if (ver == doc.end() || !ver->is_number_integer() || ver->get<long long>() != 1)
-        return fail("schema_version must be 1");
-    const auto vals = doc.find("values");
-    if (vals == doc.end() || !vals->is_object()) return fail("no \"values\" object");
-    const auto alg = doc.find("hash_algorithm");
-    if (alg == doc.end() || !alg->is_string() || alg->get<std::string>() != "sha256")
-        return fail("hash_algorithm must be \"sha256\"");
-    const auto sha = doc.find("content_sha256");
-    if (sha == doc.end() || !sha->is_string() || sha->get_ref<const std::string&>().size() < 12)
-        return fail("content_sha256 is missing");
-    /* bc-serve nests each section: values["engine"] holds the engine's settings, keyed by option name. */
-    const auto eng = vals->find("engine");
-    if (eng == vals->end() || !eng->is_object()) return fail("no \"values.engine\" object");
-    const nlohmann::json& engine = *eng;
-
-    std::string why;
-    if (!string_nonempty(engine, "radiance_home", "RADIANCE_HOME", &why) ||
-        !string_nonempty(engine, "kernels", "RADIANCE_KERNELS", &why))
-        return fail(why);
+    if (doc.is_discarded()) return fail("'" + path + "' is not JSON");   /* unreachable after the strict reader */
 
     std::set<std::string> known;
     for (const std::string& n : rad::diag::config_option_names()) known.insert(n);
 
-    /* The argv shape follows the JSON type alone: true is a bare flag, false is no flag, a string or number is a
-     * flag with a value. A shape the option does not accept (a value for a boolean flag, a bare flag that needs an
-     * argument) is left for radiance's own config_parse to reject, which makes main exit 2. */
-    std::map<std::string, std::string> keys;   /* sorted: option -> argument */
-    std::set<std::string> flags;               /* sorted bare flags */
-    for (auto it = engine.begin(); it != engine.end(); ++it) {
-        const std::string key = "engine." + it.key();
-        std::string opt = "--" + it.key();
-        for (char& c : opt)
-            if (c == '_') c = '-';
-        if (opt == "--" || !known.count(opt))
-            return fail("\"" + key + "\" is not a radiance option (no " + opt + ")");
-        const nlohmann::json& v = it.value();
-        if (v.is_boolean()) {
-            if (v.get<bool>()) flags.insert(opt);   /* false: the flag is not given, so the default stands */
-        } else if (v.is_string()) {
-            keys[opt] = v.get<std::string>();
-        } else if (v.is_number_integer()) {
-            keys[opt] = v.dump();
-        } else if (v.is_number_float() && std::isfinite(v.get<double>())) {
-            keys[opt] = v.dump();
-        } else {
-            return fail("\"" + key + "\" must be a string, a finite number or a boolean");
-        }
+    /* Every registry field bound to a radiance option, in registry order. A field the manifest leaves out is left to
+     * radiance's own default. The argv shape follows the JSON type alone; a shape the option does not accept is left
+     * for radiance's own config_parse to reject, which makes main exit 2. */
+    std::vector<std::pair<std::string, std::string>> flags;
+    for (const v1::FieldInfo& f : v1::kFields) {
+        if (f.radiance_option.empty() || f.path.rfind("/spec/", 0) != 0) continue;
+        const nlohmann::json::json_pointer ptr{std::string(f.path)};
+        if (!doc.contains(ptr)) continue;
+        const std::string opt(f.radiance_option);
+        if (!known.count(opt)) return fail("\"" + std::string(f.path) + "\" is bound to " + opt + ", which is not a radiance option");
+        const nlohmann::json& v = doc.at(ptr);
+        std::string value;
+        if (!flag_text(v, &value)) return fail("\"" + std::string(f.path) + "\" has a value that is not a string, an integer or an array of strings");
+        flags.emplace_back(opt, value);
+    }
+    for (const char* required : {"--radiance-home", "--kernels"}) {
+        bool found = false;
+        for (const auto& kv : flags)
+            if (kv.first == required && !kv.second.empty()) found = true;
+        if (!found)
+            return fail(std::string(required) + " must be present and non-empty: it is required so that " +
+                        (std::strcmp(required, "--kernels") == 0 ? "RADIANCE_KERNELS" : "RADIANCE_HOME") +
+                        " cannot silently supply it");
     }
 
     g_store.clear();
     g_store.push_back((*argv)[0]);
     for (const std::string& v : verbosity) g_store.push_back(v);
-    for (const auto& kv : keys) {
+    g_emitted.clear();
+    for (const auto& kv : flags) {
         g_store.push_back(kv.first);
         g_store.push_back(kv.second);
+        g_emitted.push_back(kv.first);
     }
-    for (const std::string& f : flags) g_store.push_back(f);
-    g_emitted.clear();
-    for (const auto& kv : keys) g_emitted.push_back(kv.first);
-    for (const std::string& f : flags) g_emitted.push_back(f);
     g_ptrs.clear();
     for (std::string& s : g_store) g_ptrs.push_back(&s[0]);
     g_ptrs.push_back(nullptr);
     *argc = (int)g_store.size();
     *argv = g_ptrs.data();
-    g_label = "manifest " + sha->get<std::string>().substr(0, 12);
+    const std::string digest = doc.at("metadata").at("content_digest").get<std::string>();   /* "sha256:<hex>" */
+    g_label = "manifest " + digest.substr(digest.find(':') + 1, 12);
     return true;
 }
 
 bool bc_serving_mark_given(std::map<std::string, std::string>* given) {
     if (g_label.empty()) return true;
-    /* The argv shape came from the JSON types alone, so an option the parser took as another option's argument
-     * (a bare flag for an option that needs one) never reaches `given`: the parse was not the manifest's. */
+    /* The argv shape came from the JSON types alone, so an option the parser took as another option's argument never
+     * reaches `given`: the parse was not the manifest's. */
     for (const std::string& opt : g_emitted) {
         const auto it = given->find(opt);
         if (it == given->end() || it->second != "command line") {
@@ -202,6 +200,20 @@ bool bc_serving_mark_given(std::map<std::string, std::string>* given) {
     return true;
 }
 """
+
+# The shared library comes from the BigCherry tree, never a copy: the lane passes its .cmake (components/serving).
+_CORE_LINK = r"""
+# BigCherry rad0009 (RSC08 S2b): the engine reads its manifest and (rad0011) checks its plan through the shared serving manifest v1 library, built here from
+# its one source list (BigCherry's components/serving/bc_serving_v1.cmake) with this tree's abi and vendored JSON.
+if(NOT DEFINED BC_SERVING_V1_CMAKE)
+  message(FATAL_ERROR "rad0009: -DBC_SERVING_V1_CMAKE=<bigcherry>/engines/radiance/components/serving/bc_serving_v1.cmake "
+                      "is required (the shared serving manifest v1 library); the BigCherry lane passes it")
+endif()
+set(BC_SERVING_V1_NLOHMANN_INCLUDE "${CMAKE_SOURCE_DIR}/vendor")
+include("${BC_SERVING_V1_CMAKE}")
+target_link_libraries(rad_core PUBLIC bc_serving_v1)"""
+
+
 
 PATCHES = (
     FilePatch(
@@ -228,6 +240,20 @@ PATCHES = (
             guard=r"^bool bc_serving_engine_argv\(int\* argc, char\*\*\* argv\) \{$",
             expect_matches=1,
             rationale="Created files are anchored at the empty upstream file; create=True rejects any upstream collision.",
+        ),),
+    ),
+    FilePatch(
+        path="core/CMakeLists.txt",
+        description="Link the shared serving manifest v1 library, built from BigCherry's source list, into rad_core.",
+        edits=(Edit(
+            id="link-bc-serving-v1",
+            anchor=r"^target_link_libraries\(rad_core PUBLIC rad_abi \$\{CMAKE_DL_LIBS\} Threads::Threads\)$",
+            text=_CORE_LINK,
+            guard=r"include\(\"\$\{BC_SERVING_V1_CMAKE\}\"\)",
+            max_span_lines=1,
+            expect_matches=1,
+            rationale="rad_core's unique link line; the shared library is included and linked right after it, failing "
+                      "closed when the lane did not pass its .cmake.",
         ),),
     ),
     FilePatch(

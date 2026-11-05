@@ -1596,6 +1596,24 @@ def build_parser() -> argparse.ArgumentParser:
 
     stream_bench.set_defaults(func=_stream_bench_main)
 
+    from ..bench.accept_bench import build_parser as _accept_bench_parser
+
+    accept_bench = sub.add_parser(
+        "accept-bench",
+        parents=[_accept_bench_parser(add_help=False)],
+        help=(
+            "draft acceptance by prompt kind (RAD23's five prompts, temperature 0) against an already-running "
+            "radiance server, with prompt and text digests (see bigcherry/bench/accept_bench.py)"
+        ),
+    )
+
+    def _accept_bench_main(args: argparse.Namespace) -> int:
+        from ..bench import accept_bench as accept_bench_module
+
+        return accept_bench_module.run_from_namespace(args)
+
+    accept_bench.set_defaults(func=_accept_bench_main)
+
     from .workspace_cmds import register as _register_workspace
 
     _register_workspace(sub)

@@ -23,7 +23,7 @@
 # --budget gfx1030=4096). A layout that needs a card the host does not have, or a plugin the build lacks, stops here with the reason.
 #
 # Needs a radiance build of production source with the helper hand-off:
-#   bigcherry build --lane radiance-lab:stock:linux-radiance
+#   bigcherry build --lane radiance:stock:linux-radiance
 #
 # Usage:
 #   bash tools/lab/radiance/launch-flashnext-best.sh [start] [--build DIR] [--port N] [--heat FILE] [--host-pool-mib N] [--host-kv-mib N] [--chunk TOKENS] [--ngram-placement ram|disk|vram] [--kv-dtype fp8|fp8_v4|k6_v4] [--engine-arg ARG ...] [--ngram-device INDEX] [--max-model-len TOKENS] [--record-heat PREFIX|off [--record-period S]] [--gpu-power] [--layout NAME] [--budget ARCH=MIB] [--canary-prompt TEXT --canary-expect FACT]
@@ -258,7 +258,7 @@ HELPERS=(); for ((i = 0; i < LAYOUT_HELPER_COUNT; i++)); do HELPERS+=("$i"); don
 for ((i = 0; i < LAYOUT_HELPER_COUNT; i++)); do
   declare -n h="LAYOUT_HELPER_$i"
   plugin=$(printf '%s\n' "${h[@]}" | sed -n 's/^R3_MOE_WORKER_PLUGIN_FILE=//p')
-  [ -f "$RAD_HOME/kernels/$plugin" ] || { echo "RADIANCE_EXIT=99 layout '$LAYOUT' needs kernels/$plugin in the build ($RAD_HOME); rebuild with the radiance-lab lane"; exit 99; }
+  [ -f "$RAD_HOME/kernels/$plugin" ] || { echo "RADIANCE_EXIT=99 layout '$LAYOUT' needs kernels/$plugin in the build ($RAD_HOME); rebuild with the radiance lane"; exit 99; }
   unset -n h
 done
 echo "layout $LAYOUT: engine cards $LAYOUT_ENGINE_DEVICES; $LAYOUT_SUMMARY" >&2

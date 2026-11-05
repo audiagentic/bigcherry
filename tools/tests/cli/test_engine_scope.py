@@ -122,14 +122,13 @@ class EngineScopeTests(unittest.TestCase):
         self.assertIn("source: ", out)
 
     def test_rebase_check_selects_from_the_chosen_engines_recipes(self):
-        ids = rebase._selection_patch_ids("radiance", source_name="radiance-lab", all_patches=False)
-        # the lab source is production's patch sets plus its own evaluated fixes (none at present)
+        ids = rebase._selection_patch_ids("radiance", source_name="radiance", all_patches=False)
         recipes = tomllib.loads(
             engines.load(paths.REPO_ROOT, "radiance").recipes_path(paths.REPO_ROOT).read_text(encoding="utf-8")
         )
         expected = tuple(
             patch
-            for set_name in recipes["source"]["radiance-lab"]["patch-sets"]
+            for set_name in recipes["source"]["radiance"]["patch-sets"]
             for patch in recipes["patch-set"][set_name]["patches"]
         )
         self.assertEqual(sorted(ids), sorted(expected))

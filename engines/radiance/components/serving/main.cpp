@@ -22,11 +22,7 @@ void usage() {
                  "  --schema\n"
                  "  --validate <site.toml> [profile.toml] [--set key=value]\n"
                  "  --explain [--json] [--site FILE] [--profile FILE] [--set key=value]\n"
-                 "  --dry-run --out manifest.json [--site FILE] [--profile FILE] [--set key=value]\n"
-                 "  --calibration FILE  (with --validate, --explain, --dry-run) a calibration cache over the seeds\n"
-                 "  --plan-memory --plan-cache DIR --engine-binary PATH [--site FILE] [--profile FILE] [--set key=value]\n"
-                 "      measures the engine's memory plan on the engine card (radiance --plan-memory) unless DIR already\n"
-                 "      holds it for this configuration; run it under the gpu lease (agent-lease acquire gpu -- ...)\n"
+                 "  --calibration FILE  (with --validate, --explain) a calibration cache over the seeds\n"
                  "  --plan-extra TEXT   (with the --plan-* modes) engine arguments the launcher passes through verbatim; part of the key\n"
                  "  --write-manifest OUT --plan-cache DIR --engine-binary PATH [--plan-extra TEXT] [site/profile/set]\n"
                  "      writes the v1 serving manifest for this configuration to OUT (read-only; an existing OUT is refused)\n"
@@ -72,11 +68,11 @@ int main(int argc, char** argv) {
     try {
         Options opts;
         bool detection = false, schema = false, validation = false;
-        bool explanation = false, dry = false, json = false, plan_memory = false, plan_check_args = false, plan_store = false, plan_key_only = false;
+        bool explanation = false, json = false, plan_check_args = false, plan_store = false, plan_key_only = false;
         fs::path plan_file;
         std::string expect_key, plan_extra;
         fs::path plan_cache, engine_binary;
-        fs::path out, write_manifest;
+        fs::path write_manifest;
         std::vector<fs::path> positional;
         for (int i = 1; i < argc; ++i) {
             const std::string arg = argv[i];
@@ -90,13 +86,11 @@ int main(int argc, char** argv) {
             else if (arg == "--schema") schema = true;
             else if (arg == "--validate") validation = true;
             else if (arg == "--explain") explanation = true;
-            else if (arg == "--dry-run") dry = true;
             else if (arg == "--json") json = true;
             else if (arg == "--sys-root") opts.sys_root = need_arg("--sys-root");
             else if (arg == "--site") opts.site = need_arg("--site");
             else if (arg == "--profile") opts.profile = need_arg("--profile");
             else if (arg == "--calibration") opts.calibration_cache = need_arg("--calibration");
-            else if (arg == "--plan-memory") plan_memory = true;
             else if (arg == "--plan-check-args") plan_check_args = true;
             else if (arg == "--plan-store") plan_store = true;
             else if (arg == "--plan-key") plan_key_only = true;
@@ -107,18 +101,17 @@ int main(int argc, char** argv) {
             else if (arg == "--plan-cache") plan_cache = need_arg("--plan-cache");
             else if (arg == "--engine-binary") engine_binary = need_arg("--engine-binary");
             else if (arg == "--set") opts.sets.push_back(need_arg("--set"));
-            else if (arg == "--out") out = need_arg("--out");
             else if (!arg.empty() && arg.front() == '-')
                 throw std::runtime_error("unknown option " + arg);
             else positional.push_back(arg);
         }
         const int modes = int(detection) + int(schema) + int(validation) +
-                          int(explanation) + int(dry) + int(plan_memory) + int(plan_check_args) + int(plan_store) + int(plan_key_only) + int(!write_manifest.empty());
-        const bool plan_mode = plan_memory || plan_check_args || plan_store || plan_key_only || !write_manifest.empty();
+                          int(explanation) + int(plan_check_args) + int(plan_store) + int(plan_key_only) + int(!write_manifest.empty());
+        const bool plan_mode = plan_check_args || plan_store || plan_key_only || !write_manifest.empty();
         if (!plan_mode && (!plan_cache.empty() || !engine_binary.empty()))
-            throw std::runtime_error("--plan-cache and --engine-binary go with --plan-memory, --plan-check-args, --plan-store or --write-manifest");
+            throw std::runtime_error("--plan-cache and --engine-binary go with --plan-check-args, --plan-store or --write-manifest");
         if (!plan_mode && !plan_extra.empty())
-            throw std::runtime_error("--plan-extra goes with --plan-memory, --plan-check-args, --plan-store, --plan-key or --write-manifest");
+            throw std::runtime_error("--plan-extra goes with --plan-check-args, --plan-store, --plan-key or --write-manifest");
         if (!plan_store && (!plan_file.empty() || !expect_key.empty()))
             throw std::runtime_error("--plan-file and --expect-key go with --plan-store");
         if (modes != 1) throw std::runtime_error("choose one mode (see --help)");
@@ -129,7 +122,7 @@ int main(int argc, char** argv) {
         }
         if (detection) {
             if (!positional.empty() || !opts.site.empty() || !opts.profile.empty() ||
-                !opts.sets.empty() || !out.empty() || !opts.calibration_cache.empty())
+                !opts.sets.empty() || !opts.calibration_cache.empty())
                 throw std::runtime_error("--detect takes only --sys-root and --json");
             auto facts = bc::serving::detect(opts.sys_root);
             if (json) std::cout << facts.dump(2) << '\n';
@@ -160,11 +153,11 @@ int main(int argc, char** argv) {
             throw std::runtime_error("unexpected file; use --site or --profile");
         }
         if (plan_mode) {
-            const char* mode = plan_memory ? "--plan-memory" : plan_check_args ? "--plan-check-args"
+            const char* mode = plan_check_args ? "--plan-check-args"
                                : plan_store ? "--plan-store" : plan_key_only ? "--plan-key" : "--write-manifest";
             if (plan_store && (plan_file.empty() || expect_key.empty()))
                 throw std::runtime_error("--plan-store needs --plan-file FILE and --expect-key KEY");
-            if (!positional.empty() || !out.empty())
+            if (!positional.empty())
                 throw std::runtime_error(std::string(mode) + " takes --site, --profile, --set and --calibration only");
             if (plan_cache.empty() || engine_binary.empty())
                 throw std::runtime_error(std::string(mode) + " needs --plan-cache DIR and --engine-binary PATH");
@@ -234,52 +227,14 @@ int main(int argc, char** argv) {
                     std::cout << a << '\n';
                 return 0;
             }
-            std::ostream& report = std::cout;
-            if (const auto hit = bc::serving::plan_cache_lookup(plan_cache, key_inputs)) {
-                report << "plan: cached " << hit->key << " (measured " << hit->measured_at << ")\n";
-                return 0;
-            }
-            const std::string card = v.at("layout").at("engine_card").get<std::string>();
-            uint32_t ordinal = UINT32_MAX;
-            for (const auto& g : facts.at("gpus"))
-                if (g.at("bdf") == card) ordinal = g.at("hip_ordinal").get<uint32_t>();
-            if (ordinal == UINT32_MAX) throw std::runtime_error("the engine card " + card + " is not detected");
-            fs::create_directories(plan_cache);
-            const std::string key = bc::serving::plan_key(key_inputs);
-            const fs::path manifest = plan_cache / (key + ".manifest.json"), measured = plan_cache / (key + ".plan.json");
-            {
-                std::ofstream m(manifest, std::ios::binary | std::ios::trunc);
-                m << r.manifest.dump(2) << '\n';
-                if (!m) throw std::runtime_error("cannot write " + manifest.string());
-            }
-            double wall = 0;
-            const auto plan = bc::serving::measure_engine_plan(engine_binary, manifest, ordinal, measured, &wall);
-            const auto stored = bc::serving::plan_cache_store(plan_cache, key_inputs, plan);
-            fs::remove(manifest);
-            fs::remove(measured);
-            report << "plan: measured " << stored.key << " on " << card << " in " << std::fixed << std::setprecision(1)
-                   << wall << " s\n";
-            return 0;
+            throw std::logic_error("unreachable plan mode");
         }
-        if (dry && out.empty()) throw std::runtime_error("--dry-run requires --out");
-        if (!dry && !out.empty()) throw std::runtime_error("--out requires --dry-run");
         auto result = bc::serving::resolve(opts, bc::serving::detect(opts.sys_root));
         if (validation) {
             std::cout << "valid: " << result.hash << '\n';
-        } else if (explanation) {
+        } else {
             if (json) std::cout << result.manifest.dump(2) << '\n';
             else explain(result);
-        } else {
-            // Read-only dry-run writes a manifest, but starts no processes.
-            if (fs::exists(out)) throw std::runtime_error("refuse to overwrite " + out.string());
-            std::ofstream file(out, std::ios::binary | std::ios::out);
-            if (!file) throw std::runtime_error("cannot create " + out.string());
-            file << result.manifest.dump(2) << '\n';
-            file.close();
-            if (!file) throw std::runtime_error("cannot write " + out.string());
-            std::cout << "manifest: " << out << '\n'
-                      << "sha256: " << result.hash << '\n'
-                      << "no processes started\n";
         }
         return 0;
     } catch (const std::exception& error) {

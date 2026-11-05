@@ -1049,11 +1049,10 @@ Resolved resolve(const Options& options, const Json& facts) {
                             {"lifecycle", "startup-only"}}}
         });
     }
-    r.manifest = {{"schema_version", 1}, {"values", values},
-                  {"provenance", provenance}, {"facts", facts},
-                  {"process_helpers", process_helpers}, {"hash_algorithm", "sha256"}};
+    // The resolver's own record (--explain --json, --validate's hash, the manifest writer's helper list): not a file any
+    // process reads. The serving manifest v1 (manifest_writer.cpp) is the one document processes load.
+    r.manifest = {{"values", values}, {"provenance", provenance}, {"facts", facts}, {"process_helpers", process_helpers}};
     r.hash = sha256_hex(r.manifest.dump());
-    r.manifest["content_sha256"] = r.hash;
     return r;
 }
 } // namespace bc::serving

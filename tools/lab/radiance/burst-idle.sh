@@ -14,7 +14,7 @@ source tools/env/bigcherry-env.sh >/dev/null
 source "$(dirname "${BASH_SOURCE[0]}")/lab-env.sh"
 OUT=$BC_WORK_ROOT/runs/rad20-burst-idle-$(date +%m%d%H%M); mkdir -p $OUT
 source tools/lab/radiance/lab-build.sh
-B=$(rad_build $OUT/build.log) || exit 1
+B=$(rad_build) || exit 1
 SMI=""
 for bdf in $BDFS; do
     id=$(amd-smi list 2>/dev/null | awk -v b="${bdf,,}" '/^GPU:/{g=$2} tolower($0) ~ b {print g; exit}')

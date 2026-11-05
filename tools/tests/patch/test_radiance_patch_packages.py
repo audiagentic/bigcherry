@@ -88,8 +88,9 @@ PIN_BLOBS = {
         "arch/common/rad_block_moe_fp8.h": ("5777cc8", "feb3865"),
     },
     RAD0009: {
-        "core/bc_serving_manifest.h": (None, "4ad1a40"),
-        "core/bc_serving_manifest.cpp": (None, "124ef4d"),
+        "core/bc_serving_manifest.h": (None, "692ab43"),
+        "core/bc_serving_manifest.cpp": (None, "c0c006e"),
+        "core/CMakeLists.txt": ("921debd", "8750342"),
         "core/main.cpp": ("4cb6d43", "7feb7b6"),
     },
 }
@@ -565,7 +566,7 @@ class TestServingManifestPatch(unittest.TestCase):
     def test_main_edits_are_thin_calls_into_the_extension_point(self):
         patches = _load(RAD0009)
         # config.cpp (the option table) is deliberately not touched: --manifest is handled before config_parse
-        self.assertEqual({p.path for p in patches if not p.create}, {"core/main.cpp"})
+        self.assertEqual({p.path for p in patches if not p.create}, {"core/main.cpp", "core/CMakeLists.txt"})
         self.assertEqual(sum(1 for p in patches if p.create), 2)
         temp, root = self._applied()
         try:
@@ -599,9 +600,35 @@ class TestServingManifestPatch(unittest.TestCase):
         finally:
             temp.cleanup()
 
+    def test_the_core_link_is_added_and_fails_closed(self):
+        temp, root = self._applied()
+        try:
+            cmake = (root / "core/CMakeLists.txt").read_text(encoding="utf-8")
+            guard = cmake.index("if(NOT DEFINED BC_SERVING_V1_CMAKE)")
+            self.assertLess(cmake.index("target_link_libraries(rad_core PUBLIC rad_abi"), guard)
+            self.assertIn("message(FATAL_ERROR", cmake[guard:guard + 400])
+            self.assertLess(guard, cmake.index('include("${BC_SERVING_V1_CMAKE}")'))
+            self.assertLess(cmake.index('include("${BC_SERVING_V1_CMAKE}")'),
+                            cmake.index("target_link_libraries(rad_core PUBLIC bc_serving_v1)"))
+            added = TestRadiancePatchPackages._added_lines(
+                (FIXTURE / "core/CMakeLists.txt").read_text(encoding="utf-8"), cmake)
+            code = [line.strip() for line in added if line.strip() and not line.strip().startswith("#")]
+            self.assertEqual(code, [
+                "if(NOT DEFINED BC_SERVING_V1_CMAKE)",
+                'message(FATAL_ERROR "rad0009: -DBC_SERVING_V1_CMAKE=<bigcherry>/engines/radiance/components/serving/bc_serving_v1.cmake "',
+                '"is required (the shared serving manifest v1 library); the BigCherry lane passes it")',
+                "endif()",
+                'set(BC_SERVING_V1_NLOHMANN_INCLUDE "${CMAKE_SOURCE_DIR}/vendor")',
+                'include("${BC_SERVING_V1_CMAKE}")',
+                "target_link_libraries(rad_core PUBLIC bc_serving_v1)",
+            ])
+        finally:
+            temp.cleanup()
+
     def test_manifest_to_argv_logic_compiled_and_run(self):
-        """Compile the patch's own bc_serving_manifest.cpp against a stub of config_option_names
-         and run the card-free test."""
+        """Compile the patch's own bc_serving_manifest.cpp with the shared v1 sources (the strict reader and the generated
+        registry) under radiance's own warning flags plus -Werror, against a stub of config_option_names, and run the
+        card-free test on a real v1 manifest."""
         compiler = shutil.which("g++") or shutil.which("c++")
         candidates = [os.environ.get("BC_NLOHMANN_INCLUDE", ""), str(REPO / "vendor" / "llama.cpp" / "vendor")]
         include = next((c for c in candidates if c and (Path(c) / "nlohmann" / "json.hpp").is_file()), None)
@@ -610,18 +637,31 @@ class TestServingManifestPatch(unittest.TestCase):
             if os.environ.get("CI"):
                 self.fail(message)   # in CI the test must run, never skip
             self.skipTest(message)
+        serving = REPO / "engines" / "radiance" / "components" / "serving"
         temp, root = self._applied()
         try:
-            exe = Path(temp.name) / "manifest_argv_test"
-            scratch = Path(temp.name) / "scratch"
+            work = Path(temp.name)
+            scratch = work / "scratch"
             scratch.mkdir()
             test = REPO / "engines" / "radiance" / "tests" / "serving_manifest" / "manifest_argv_test.cpp"
-            build = subprocess.run(
-                [compiler, "-std=c++20", "-Wall", "-Werror", f"-I{root / 'core'}", f"-I{include}",
-                 str(root / "core" / "bc_serving_manifest.cpp"), str(test), "-o", str(exe)],
-                capture_output=True, text=True,
-            )
-            self.assertEqual(build.returncode, 0, build.stderr)
+            flags = ["-std=c++20", "-O0", "-Wall", "-Wextra", "-Wno-unused-parameter", "-Wno-missing-field-initializers",
+                     "-Werror", f"-I{root / 'core'}", f"-I{root / 'abi'}", f"-I{serving}", f"-I{serving / 'v1'}",
+                     f"-I{serving / 'generated'}", f"-I{include}"]
+            sources = [root / "core" / "bc_serving_manifest.cpp", test,
+                       *(serving / "v1" / n for n in ("error.cpp", "strict_json.cpp", "manifest.cpp", "admission.cpp")),
+                       serving / "generated" / "serving_codec.cpp", serving / "jcs.cpp", serving / "sha256.cpp"]
+            objects, procs = [], []
+            for index, source in enumerate(sources):
+                obj = work / f"{index}-{source.stem}.o"
+                objects.append(obj)
+                procs.append((source, subprocess.Popen([compiler, *flags, "-c", str(source), "-o", str(obj)],
+                                                       stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)))
+            for source, proc in procs:
+                _, err = proc.communicate()
+                self.assertEqual(proc.returncode, 0, f"{source.name}: {err}")
+            exe = work / "manifest_argv_test"
+            link = subprocess.run([compiler, *map(str, objects), "-o", str(exe)], capture_output=True, text=True)
+            self.assertEqual(link.returncode, 0, link.stderr)
             # radiance's real option table (g_flags at the pin), so the C++ test uses exactly the engine's option names
             # and value shapes, not a hand-written list
             config = (FIXTURE / "core" / "config.cpp").read_text(encoding="utf-8")
@@ -629,12 +669,12 @@ class TestServingManifestPatch(unittest.TestCase):
             table = table[: table.index("\n};")]
             rows = re.findall(r'\{\s*"(--?[a-z0-9-]+)",\s*("[^"]*"|nullptr)', table)
             self.assertGreater(len(rows), 100)
-            options = Path(scratch) / "options.tsv"
+            options = scratch / "options.tsv"
             # config_option_names() leaves out --help, as the engine does (core/config.cpp)
             options.write_text("".join(f"{n}\t{'-' if a == 'nullptr' else a.strip(chr(34))}\n"
                                        for n, a in rows if n != "--help"))
-            run = subprocess.run([str(exe), str(scratch), str(test.parent / "bc_serve_dry_run.json"), str(options)],
-                                 capture_output=True, text=True)
+            example = REPO / "docs" / "design" / "serving-manifest-v1" / "example.flashnext-4gpu.json"
+            run = subprocess.run([str(exe), str(scratch), str(example), str(options)], capture_output=True, text=True)
             self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
             self.assertIn("ok", run.stdout)
         finally:
@@ -663,7 +703,7 @@ class TestPlanMemoryPatch(unittest.TestCase):
     def test_upstream_edits_are_thin_calls_into_the_extension_point(self):
         patches = _load(RAD0011)
         self.assertEqual({p.path for p in patches if not p.create},
-                         {"core/main.cpp", "core/engine_bringup.cpp", "core/CMakeLists.txt"})
+                         {"core/main.cpp", "core/engine_bringup.cpp"})
         self.assertEqual({p.path for p in patches if p.create},
                          {"core/bc_plan_memory.h", "core/bc_plan_memory.cpp", "core/bc_plan_check.h",
                           "core/bc_plan_check.cpp"})
@@ -699,28 +739,6 @@ class TestPlanMemoryPatch(unittest.TestCase):
         finally:
             temp.cleanup()
 
-    def test_the_core_link_is_added_and_fails_closed(self):
-        temp, root = self._applied()
-        try:
-            cmake = (root / "core/CMakeLists.txt").read_text(encoding="utf-8")
-            guard = cmake.index("if(NOT DEFINED BC_SERVING_V1_CMAKE)")
-            self.assertLess(cmake.index("target_link_libraries(rad_core PUBLIC rad_abi"), guard)
-            self.assertIn("message(FATAL_ERROR", cmake[guard:guard + 400])
-            self.assertLess(guard, cmake.index('include("${BC_SERVING_V1_CMAKE}")'))
-            self.assertLess(cmake.index('include("${BC_SERVING_V1_CMAKE}")'),
-                            cmake.index("target_link_libraries(rad_core PUBLIC bc_serving_v1)"))
-            self.assertEqual(self._added_code(root, "core/CMakeLists.txt"), [
-                "if(NOT DEFINED BC_SERVING_V1_CMAKE)",
-                'message(FATAL_ERROR "rad0011: -DBC_SERVING_V1_CMAKE=<bigcherry>/engines/radiance/components/serving/bc_serving_v1.cmake "',
-                '"is required (the shared serving manifest v1 library); the BigCherry lane passes it")',
-                "endif()",
-                'set(BC_SERVING_V1_NLOHMANN_INCLUDE "${CMAKE_SOURCE_DIR}/vendor")',
-                'include("${BC_SERVING_V1_CMAKE}")',
-                "target_link_libraries(rad_core PUBLIC bc_serving_v1)",
-            ])
-        finally:
-            temp.cleanup()
-
     def test_both_builds_compile_one_source_list(self):
         """The serving component and radiance's core include the same bc_serving_v1.cmake: the library is defined there
         and nowhere else, and the lane hands the engine that file."""
@@ -743,7 +761,7 @@ class TestPlanMemoryPatch(unittest.TestCase):
     def test_second_apply_is_a_no_op(self):
         temp, root = self._applied()
         try:
-            names = ("core/main.cpp", "core/engine_bringup.cpp", "core/CMakeLists.txt")
+            names = ("core/main.cpp", "core/engine_bringup.cpp", "core/CMakeLists.txt")   # CMakeLists: rad0009's link
             before = {p: (root / p).read_text(encoding="utf-8") for p in names}
             self.assertTrue(all(r.ok for r in apply_all(list(_load(RAD0009)) + list(_load(RAD0011)), root)))
             self.assertEqual(before, {p: (root / p).read_text(encoding="utf-8") for p in before})

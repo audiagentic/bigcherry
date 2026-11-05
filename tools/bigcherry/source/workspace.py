@@ -9,6 +9,7 @@ import hashlib
 from dataclasses import dataclass
 from pathlib import Path
 
+from ..core.process import run_logged
 from ..patch import apply as patcher
 from ..patch.apply import PatchError, resolve_contained_target
 from ..patch import patchset
@@ -23,7 +24,7 @@ class WorkspaceError(RuntimeError):
 
 def _git(root: Path, *args: str) -> str:
     try:
-        result = subprocess.run(
+        result = run_logged(
             ["git", "-C", str(root), *args],
             check=True,
             capture_output=True,
@@ -155,7 +156,7 @@ def require_clean_bigcherry(
     """
     if allow_dirty_bigcherry:
         return
-    status = subprocess.run(
+    status = run_logged(
         ["git", "-C", str(context.project_root), "status", "--porcelain"],
         check=True,
         capture_output=True,

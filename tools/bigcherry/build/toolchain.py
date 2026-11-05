@@ -8,6 +8,8 @@ import shutil
 import subprocess
 from pathlib import Path
 
+from ..core.process import run_logged
+
 
 BUILD_ENVIRONMENT_KEYS = (
     "CC", "CXX", "CFLAGS", "CXXFLAGS", "CPPFLAGS", "LDFLAGS",
@@ -25,7 +27,7 @@ def _version(executable: str | os.PathLike[str] | None) -> dict[str, str | None]
         return {"path": None, "version": None}
     resolved = shutil.which(str(executable)) or str(Path(executable).expanduser())
     try:
-        result = subprocess.run(
+        result = run_logged(
             [resolved, "--version"], check=True, capture_output=True, text=True,
             timeout=15,
         )
