@@ -10,7 +10,7 @@ namespace {
 
 constexpr int64_t kMaxBytes = (int64_t(1) << 53) - 1;
 const std::string kAt = "spec.plan.engine_memory.expected";
-const char* const kMeasure = "measure the plan again (the launcher's measuring start: the engine's --plan-memory with its helpers up, then bc-serve --plan-store) and write a new manifest (bc-serve --write-manifest)";
+const char* const kMeasure = "measure the plan again (the launcher's measuring start: the engine's --plan-memory with its helpers up) and write a new manifest from it (bc-serve --write-manifest --measured-plan)";
 const char* const kFree = "free the engine card, or choose a smaller service intent, and resolve a new manifest";
 
 ConfigError differ(const std::string& at, const std::string& what, int64_t live, int64_t planned) {

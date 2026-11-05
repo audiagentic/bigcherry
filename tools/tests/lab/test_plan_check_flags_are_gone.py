@@ -20,6 +20,8 @@ CODE = (
     *(REPO / "engines" / "radiance" / "patches").glob("rad001*/patch.py"),
     *(REPO / "engines" / "radiance" / "components" / "serving").glob("*.cpp"),
     *(REPO / "engines" / "radiance" / "components" / "serving").glob("*.h"),
+    *(REPO / "engines" / "radiance" / "components" / "serving" / "v1").glob("*.cpp"),   # the refusals' hints name the remedy
+    *(REPO / "engines" / "radiance" / "components" / "serving" / "v1").glob("*.h"),
     *(REPO / "tools" / "lab" / "radiance").rglob("*.sh"),
     *(REPO / "tools" / "bigcherry").rglob("*.py"),
 )
