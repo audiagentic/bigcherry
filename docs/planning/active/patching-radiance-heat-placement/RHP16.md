@@ -58,6 +58,9 @@ The policy starts with no hand-picked policy number: every trigger, size and age
 
 Depends on RHP11 slice D (live moves) and RHP06. Follows the owner's direction: live placement, no restarts, auto-calibrate by default, no regressions.
 
+## Offline replay of the policy, 2026-11-05 (slim harness for steps 3-4)
+
+r3_policy_replay (engines/radiance/components/moe-remote/worker_policy_replay.h, worker_policy_replay_main.cpp, test worker_policy_replay_test.cpp) feeds a recorded SERIES of the engine's cumulative route-count snapshots through the driver's own heat accounting and planner (heat::Heat, heat::propose, DriftTracker, marginal_relative_error), applying each proposed transaction at once. It runs in seconds with no GPU and no server, and prints per snapshot the tail's heat share before and after, the experts moved, and at the end transactions, bytes moved, the hot-set drift half-life and the marginal sampling error. Every setting is an explicit argument (no defaults). It does NOT model transaction time and its disturbance of service, aborts, the effect gate or eligibility learned from refused destinations, so it answers what the plan does to the placement, not what it costs; the cost side still needs a serve run. tools/lab/radiance/heat-placement/record_heat_series.py copies the live route-count file (PREFIX.rank0, rewritten atomically by --record-heat) to numbered snapshots whenever it changes, so a run leaves the whole trajectory; it is the input of the replay. placement_sim.py in the same folder is an older simulator with its own cost-aware policy; the replay is the one that runs the real planner. Card-free tests: convergence off the tail, fixed point, determinism, a hot set that shifts twice (followed, drift measured), residency holding just-moved experts, refusal of bad input, a counter that goes back. Next: record the series in the next hardware runs and use the replay to try the step 3 derivations (cadence, move budget, residency, half-life, margin) against real drift, then confirm on hardware.
 ## First measured values and a measurement flaw they exposed, 2026-11-05 (policy-live-9)
 
 Run policy-live-9: the merged policy with the measurement hooks, effect gate on, Flash-Next four GPUs, eight 27K filler prefills then ten ~50K documentation prefills. The shift result reproduced again (filler TTFT 19.1 to 13.3 s, documentation prefill 3,705 to 3,668 tok/s, no aborts, decode 120 tok/s at one stream and 242 at six). The evidence line `policy measure` at the end of the run:
@@ -115,6 +118,26 @@ PROTECTED_LAYERS and ACCEPT_UNWATERMARKED_HEAT are not tunables: protected layer
 - 2026-11-05T01:58:26.403837+00:00 (updated-by): Updated: section:notes
 - chg_20261105_015826_the-live-expert-placement-poli_7498
 - 2026-11-05T01:58:30.239165+00:00 (updated-by): Updated: section:ledger-events
+- 2026-11-05T02:46:46.794753+00:00 (updated-by): Updated: section:notes
+- chg_20261105_024646_added-a-fast-offline-way-to-te_8266
+- 2026-11-05T02:46:50.926414+00:00 (updated-by): Updated: section:ledger-events
 - 2026-11-05T02:50:13.944855+00:00 (updated-by): Updated: section:notes
 - chg_20261105_025013_fixed-how-the-placement-policy_9631
 - 2026-11-05T02:50:17.774448+00:00 (updated-by): Updated: section:ledger-events
+
+## Offline sweep of the policy settings over a recorded series, 2026-11-05 (replay of policy-live-10)
+
+162 combinations in 48 s on one workload (the filler-then-docs shift, 275 snapshots): max moves per transaction {32, 128, 512} x residency {0, 30, 120 s} x half-life {2M, 20M, 200M observations} x margin {0.005, 0.02, 0.05} x cadence {5, 10} snapshots, with 2 GiB per transaction, minimum samples 3. Score = mean and final share of the heat on the tail helper (lower is closer to the static plan) and experts moved. The replay applies each transaction at once and models neither its cost nor the effect gate, so it ranks settings by what the plan does, not by what it costs.
+
+| Setting | Values | Mean tail share | Experts moved |
+|---|---|---:|---:|
+| max moves | 32 / 128 / 512 | 0.115 / 0.104 / 0.094 | 148 / 1,348 / 11,425 |
+| margin | 0.005 / 0.02 / 0.05 | 0.1035 / 0.1033 / 0.1065 | 6,728 / 4,269 / 1,925 |
+| cadence (snapshots) | 5 / 10 | 0.1035 / 0.1054 | 5,589 / 3,026 |
+| half-life (observations) | 2M / 20M / 200M | 0.0990 / 0.0975 / 0.1168 (final 0.116 / 0.058 / 0.064) | 4,923 / 4,481 / 3,519 |
+| residency (s) | 0 / 30 / 120 | 0.1087 / 0.1006 / 0.1040 | 3,394 / 3,848 / 5,680 |
+
+Reading. (1) The move budget per transaction is the lever that costs: 4x the moves buys about 10% less tail share, 8x moves for 18%. (2) Margin is nearly free to raise: 0.005 to 0.05 moves 71% fewer experts for 3% more tail share; the measured marginal sampling error of the run was 2.3%, and a margin near it (0.02) sits at the knee, which supports deriving margin from the sampling error (RHP16 table) and says the experiment value 0.005 was needlessly low. (3) Cadence 5 to 10 s halves the moves for 2% more tail share. (4) A half-life of 20M observations gives the lowest final tail share (0.058, against 0.116 at 2M, which chases noise, and 0.064 at 200M); the measured drift scale in the same run was 59M to 65M observations during the shift, so the experiment value was within about 3x of it. (5) Residency is not monotone: 120 s moved more experts than 30 s (5,680 against 3,848) because experts held back were moved in larger groups later; 0 s was worst on tail share.
+Caveats: one workload, one recorded run, the gate and transaction cost not modelled. It is a screening tool: it tells which settings are worth deriving first (margin, the move budget, cadence) and which are second order here (residency), and the derived values must be confirmed on hardware.
+
+Replay result on the recorded series of policy-live-10 (the run with the fixed drift tracker; 275 snapshots, the run's own settings: 128 moves, 2 GiB, 30 s residency, margin 0.005, half-life 20M, cadence 5): 33 transactions, 4,219 experts (10.7 GB) moved, the tail's heat share 19.2% to 5.8%, in 0.35 s. The hardware run committed 8 transactions and moved about 2.6 GB with the effect gate on, so the gate is what holds the real policy back; the replay does not model it. The replay now feeds the drift tracker per-interval counts, as the driver does.
