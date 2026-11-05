@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.11.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.10.0...bc-platform-1.11.0) (2026-11-05)
+
+
+### New and changed
+
+* **build:** per-engine patch evidence gate before materialisation, pin-bump re-audit ([#649](https://github.com/audiagentic/bigcherry/issues/649)) ([3cb5adb](https://github.com/audiagentic/bigcherry/commit/3cb5adb5b3c5a07a7b18726689f1256a72610786))
+
 ## [1.10.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.9.0...bc-platform-1.10.0) (2026-11-05)
 
 
