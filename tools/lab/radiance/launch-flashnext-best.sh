@@ -26,7 +26,7 @@
 #   bigcherry build --lane radiance-lab:stock:linux-radiance
 #
 # Usage:
-#   bash tools/lab/radiance/launch-flashnext-best.sh [start] [--build DIR] [--port N] [--heat FILE] [--host-pool-mib N] [--host-kv-mib N] [--chunk TOKENS] [--ngram-placement ram|disk|vram] [--kv-dtype fp8|fp8_v4|k6_v4] [--engine-arg ARG ...] [--ngram-device INDEX] [--max-model-len TOKENS] [--record-heat PREFIX|off [--record-period S]] [--gpu-power] [--layout NAME] [--budget ARCH=MIB] [--canary-prompt TEXT --canary-expect FACT]
+#   bash tools/lab/radiance/launch-flashnext-best.sh [start] [--build DIR] [--port N] [--heat FILE] [--host-pool-mib N] [--host-kv-mib N] [--chunk TOKENS] [--ngram-placement ram|disk|vram] [--kv-dtype fp8|fp8_v4|k6_v4] [--engine-arg ARG ...] [--ngram-device INDEX] [--max-model-len TOKENS] [--record-heat PREFIX|off [--record-period S]] [--live-policy FILE] [--experiment FILE] [--gpu-power] [--layout NAME] [--budget ARCH=MIB] [--canary-prompt TEXT --canary-expect FACT]
 #     (every start ends with a canary completion that must contain the fact, default 'The capital of France is' -> Paris; a failure stops the launch, exit 96)
 #   bash tools/lab/radiance/launch-flashnext-best.sh stop
 # Without --build, the newest build under $BC_WORK_ROOT/builds that has the helper binary is used.
@@ -66,7 +66,7 @@
 #   launch does, so the first launch of a new configuration needs the gpu lease like any launch (agent-lease acquire gpu).
 #   Any setting above (layout, sessions, context, pool, KV tier, chunk, n-gram placement, KV dtype, rope, resume) changes the
 #   configuration. Plans live in $RUN/plan-cache; this is interim until the v1 manifest replaces the flags (RSC08).
-# HELPER_WRAP=<command>: run each helper under it (e.g. a profiler wrapper; R3_MOE_WORKER_INDEX tells it which helper).
+# HELPER_WRAP=<command>: run each helper under it (e.g. a profiler wrapper; its arguments --role helperN tell it which helper).
 # ENGINE_WRAP=<command>: run the engine under it (a debugger, numactl, strace; the stop command signals the engine through the
 #   wrapper, so it must forward SIGINT/SIGTERM). Not rocprofv3: radiance drives the card through its own AQL backend and fails
 #   at start under rocprof's interception (2026-11-01); for the engine's per-op device times use --engine-arg --profile-ops.
@@ -98,6 +98,8 @@ ROPE=none
 SEQS=8
 PREFIX_RESUME=nearest
 RECORD_PERIOD=60
+LIVE_POLICY_FILE=""   # a JSON object with every spec.handoff.placement.live_policy member (docs/design/serving-manifest-v1)
+EXPERIMENT_FILE=""    # a JSON object for spec.experiment (lab profile)
 # The start canary: after /health, every start (cold, measured or cached) sends this one deterministic completion and the answer
 # must contain the expected fact (case-insensitive, semantic, not a hash), or everything this launch started is stopped and the
 # launch fails (exit 96). It catches an engine that is up but answering garbage before any client does. The prompt is a fact the
@@ -127,6 +129,8 @@ while [ $# -gt 0 ]; do
     --ngram-placement) CUSTOM_SERVE_OPTIONS+=(--ngram-placement); NGRAM=$2; shift 2 ;;
     --record-heat) CUSTOM_SERVE_OPTIONS+=(--record-heat); RECORD=$2; shift 2 ;;
     --record-period) CUSTOM_SERVE_OPTIONS+=(--record-period); RECORD_PERIOD=$2; shift 2 ;;
+    --live-policy) CUSTOM_SERVE_OPTIONS+=(--live-policy); LIVE_POLICY_FILE=$2; shift 2 ;;
+    --experiment) CUSTOM_SERVE_OPTIONS+=(--experiment); EXPERIMENT_FILE=$2; shift 2 ;;
     --canary-prompt) CANARY_PROMPT=$2; shift 2 ;;
     --canary-expect) CANARY_EXPECT=$2; shift 2 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
@@ -283,50 +287,26 @@ if [ "$LAYOUT_HELPER_COUNT" -gt 0 ]; then
   fi
 fi
 
-# RSC06 bridge: resolve one manifest from this build. The helper processes
-# read their own role; this is not an environment-to-argv conversion.
-BUDGET_CSV=
-for kv in "${LAYOUT_COMMON[@]}"; do
-  case "$kv" in R3_MOE_WORKER_MIBS=*) BUDGET_CSV=${kv#*=} ;; esac
-done
-[ -n "$BUDGET_CSV" ] || { echo "FLASHNEXT_EXIT=99 layout has no helper budgets"; exit 99; }
-MANIFEST_SETS=(
-  --set "layout.name=$LAYOUT"
-  --set "engine.model=$MODEL"
-  --set "engine.radiance_home=$RAD_HOME"
-  --set "engine.port=$PORT"
-  --set "handoff.shm=$SHM"
-  --set "handoff.heat=$HEAT"
-  --set "handoff.histogram=${RECORD:-off}"
-  --set "handoff.histogram_period_s=$RECORD_PERIOD"
-  --set "memory.helper_budgets_mib=[$BUDGET_CSV]"
-  --set "memory.host_pool_mib=$HOST_POOL_MIB"
-  --set "memory.host_kv_mib=$HOST_KV_MIB"
-  --set "service.max_sessions=$SEQS"
-  --set "service.max_context=$MAX_LEN"
-  --set "engine.max_num_batched_tokens=$CHUNK"
-  --set "engine.kv_cache_dtype=$KV_DTYPE"
-  --set "engine.ngram_placement=$NGRAM"
-  --set "engine.rope_scaling=$ROPE"
-  --set "engine.prefix_resume=$PREFIX_RESUME"
-)
 mkdir -p "$PIDS"
-# bc-serve refuses overwrites; the existing-running guard above is checked first.
-rm -f "$RUN/manifest.json"
-"$SERVE" --dry-run --out "$RUN/manifest.json" "${MANIFEST_SETS[@]}" ||
-  { echo "FLASHNEXT_EXIT=99 serving manifest resolution failed"; exit 99; }
 STAMP=$(date +%m%d-%H%M%S)
 
-# helpers in order: helper 0 creates the segment, helper 1 attaches; each must report ready before the next starts
+# helpers in order: helper 0 creates the segment, helper 1 attaches; each must report ready before the next starts. A helper
+# reads its whole configuration from the manifest bc-serve wrote (start_helpers MANIFEST [--measuring]): its environment is
+# only which card it sees (and an optional profiler wrapper). --measuring is the measuring start's unmeasured manifest.
 start_helpers() {
+  local manifest=$1; shift
   for i in "${!HELPERS[@]}"; do
     log=$RUN/helper$i-$STAMP.log
     # A fresh log, made here before the helper exists: the measuring start used this same name moments ago, and its
     # "ready" line must never be mistaken for the new helper's.
     : > "$log"
     declare -n hv="LAYOUT_HELPER_$i"
-    env "${COMMON[@]}" "${hv[@]}" \
-      setsid ${HELPER_WRAP:-} "$HELPER" "$MODEL" > "$log" 2>&1 9>&- &
+    helper_visibility=()
+    for kv in "${hv[@]}"; do
+      case "$kv" in ROCR_VISIBLE_DEVICES=*|HIP_VISIBLE_DEVICES=*) helper_visibility+=("$kv") ;; esac
+    done
+    env "${helper_visibility[@]}" \
+      setsid ${HELPER_WRAP:-} "$HELPER" --manifest "$manifest" --role "helper$i" "$@" > "$log" 2>&1 9>&- &
     echo $! > "$PIDS/helper$i"
     unset -n hv
     echo "helper$i (pid $!, log $log): waiting for ready..." >&2
@@ -385,7 +365,7 @@ start_engine() {
 # exits by itself (--plan-memory), then the helpers stop. It never serves and never runs a request.
 plan_check_start_engine_measure() {
   rm -f "/dev/shm${SHM}"
-  start_helpers || { stop_procs; return 1; }
+  start_helpers "$PLAN_MEASURING_MANIFEST" --measuring || { stop_procs; return 1; }
   start_engine "$RUN/engine-measure.log" --plan-memory "$PLAN_MEASURE_FILE"
   local pid=$! rc=0
   echo $pid > "$PIDS/engine"
@@ -419,7 +399,7 @@ fi
 
 trap 'exit 1' ERR
 rm -f "/dev/shm${SHM}"
-start_helpers
+start_helpers "$PLAN_MANIFEST"
 LOG=$RUN/engine-$STAMP.log
 start_engine "$LOG" "${PLAN_CHECK_ARGS[@]}"
 echo $! > "$PIDS/engine"

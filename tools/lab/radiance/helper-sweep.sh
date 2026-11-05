@@ -1,10 +1,10 @@
 #!/bin/bash
-# RSC06: replay captures under one immutable helper manifest. To compare
-# tuning variants, run this script separately with one bc-serve manifest per
-# variant; changing environment variables within a worker is forbidden.
-# Usage: helper-sweep.sh <branch|-> <manifest.json> [captures=4]
+# RSC06: replay captures under ONE immutable helper manifest; the only thing that varies inside the process is the rows-kernel
+# variant (stock, output_lane, quad, quad_v2, production, rowlane16, rowlane8). To compare any other tuning setting, run this
+# script once per bc-serve manifest (a lab experiment file); nothing is changed through the environment.
+# Usage: helper-sweep.sh <branch|-> <manifest.json> "<variant>;<variant>..." [captures=4]
 set -u
-BR=$1; MANIFEST=$2; N=${3:-4}
+BR=$1; MANIFEST=$2; VARIANTS=$3; N=${4:-4}
 W=${BC_WORK_ROOT}
 if [ "$BR" != "-" ]; then
   cd $W/wt-pr8 && git fetch -q origin && git checkout -q --detach $BR && git log --oneline -1
@@ -20,14 +20,14 @@ out=$W/sweep-out; rm -rf $out
 env HIP_VISIBLE_DEVICES=0 ROCR_VISIBLE_DEVICES=0 \
   timeout 3600 rocprofv3 --kernel-trace --output-format csv -d $out -o run -- \
   "$B/radiance_home/helpers/r3_moe_worker" --manifest "$MANIFEST" --role helper0 \
-    --replay-sweep "$M" $FILES > $out.log 2>&1
+    --replay-sweep "$M" "$VARIANTS" $FILES > $out.log 2>&1
 echo "rc=$?"
 python3 - $out.log $(find $out -name '*kernel_trace.csv' | head -1) <<'PY'
 import csv, re, sys, collections
 log, trace = sys.argv[1], sys.argv[2]
 runs = []   # (idx, capture, layer, variant, rel_l2)
 for line in open(log):
-    m = re.match(r'SWEEP run (\d+) capture (\d+) layer (\d+) manifest \[(.*)\]', line)
+    m = re.match(r'SWEEP run (\d+) capture (\d+) layer (\d+) variant \[(.*)\] manifest \[.*\]', line)
     if m: runs.append([int(m[1]), int(m[2]), int(m[3]), m[4], None]); continue
     m = re.search(r'engine_join .*rel_l2=(\S+) max_abs=(\S+)', line)
     if m and runs and runs[-1][4] is None: runs[-1][4] = 'rel_l2=' + m[1]

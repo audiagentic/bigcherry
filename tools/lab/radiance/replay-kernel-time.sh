@@ -17,7 +17,7 @@ rm -rf "$OUT"
 env HIP_VISIBLE_DEVICES=$DEV timeout 3600 \
   rocprofv3 --kernel-trace --output-format csv -d "$OUT" -o run -- \
   "$B/radiance_home/helpers/r3_moe_worker" --manifest "$MANIFEST" --role helper0 \
-    --replay-sweep "$M" $FILES > "$OUT.log" 2>&1
+    --replay-sweep "$M" production $FILES > "$OUT.log" 2>&1
 echo "rc=$? ($(grep -c '^replay_hash' "$OUT.log") replays)"
 python3 - "$(find "$OUT" -name '*kernel_trace.csv' | head -1)" <<'PY'
 import csv, sys, collections

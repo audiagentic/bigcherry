@@ -12,5 +12,5 @@ FILES=$(ls -S ${CAPDIR:-$W/captures}/*.bin | head -${N:-4} | tr '\n' ' ')
 source "$(dirname "${BASH_SOURCE[0]}")/lab-env.sh"
 env HIP_VISIBLE_DEVICES=0 ROCR_VISIBLE_DEVICES=0 \
   timeout 3600 "$B/radiance_home/helpers/r3_moe_worker" \
-  --manifest "$MANIFEST" --role helper0 --replay-sweep "$M" $FILES 2>&1 | \
+  --manifest "$MANIFEST" --role helper0 --replay-sweep "$M" production $FILES 2>&1 | \
   grep -E "^SWEEP|^replay_hash"
