@@ -200,7 +200,7 @@ jobs:
             else
               git clone --bare https://codeberg.org/StillDeadcode/radiance.git work/upstream/radiance.git
             fi
-            python3 -m bigcherry build --lane radiance-lab:stock:linux-radiance | tee work/lane-build.log
+            python3 -m bigcherry build --lane radiance:stock:linux-radiance | tee work/lane-build.log
             plan=$(grep -oE "ok build_plan_id=[0-9a-f]+" work/lane-build.log | tail -1 | cut -d= -f2)
             test -n "$plan"
             # The card-free component tests, exactly as the pin-bump gate runs them (runtime_bundle.run_component_tests):

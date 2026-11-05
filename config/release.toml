@@ -29,7 +29,7 @@ paths = []
 # repository paths, besides engines/radiance/ and the engine's declared layout, whose ledger changes belong to it.
 [engine.radiance]
 tag-prefix = "bc-radiance-"
-build-patch-sets = ["serving-core"]
+build-patch-sets = ["serving-core", "host-compat", "serving-manifest"]   # exactly the patch sets of source.radiance, the one build
 previous-tag-fallback-prefixes = []
 paths = ["docs/reference/engines/radiance", "tools/lab/radiance"]
 

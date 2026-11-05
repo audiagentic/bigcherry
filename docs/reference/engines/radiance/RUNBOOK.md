@@ -8,10 +8,9 @@ Radiance is the primary serving engine. Its upstream pin, patches, sources, and 
 | --- | --- |
 | `radiance-native` | Unmodified pinned upstream source |
 | `radiance` | Production: `serving-core`, `host-compat`, and `serving-manifest` |
-| `radiance-lab` | **Production plus** `engine-fixes-evaluated` (and explicit active experiments only) |
 | `radiance-diag` | Production plus `moe-remote-diag`, built with `moe-diag` |
 
-The validated remote-MoE hand-off (`rad0002_moe_remote_handoff`) belongs to production `serving-core`, not an experiment. Lab builds inherit it without extra flags. Diagnostic patches remain isolated from production; the lab-source superset is covered by `test_radiance_sources_share_production.py`.
+The validated remote-MoE hand-off (`rad0002_moe_remote_handoff`) belongs to production `serving-core`, not an experiment. There is one build: lab scripts, the Flash-Next launcher and CI all build `radiance:stock:linux-radiance`, and experiments are switched on a run, never a separate source. Diagnostic patches remain isolated from production (`test_radiance_sources_share_production.py`).
 
 From a configured checkout:
 

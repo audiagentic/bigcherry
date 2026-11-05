@@ -1,5 +1,12 @@
 # Changelog
 
+## [1160.4.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1160.3.0...bc-radiance-1160.4.0) (2026-11-05)
+
+
+### New and changed
+
+* **radiance:** rad0009 reads the v1 manifest through the shared reader; the interim manifest format and bc-serve's own plan measurement are deleted (RSC08 S2b) ([#588](https://github.com/audiagentic/bigcherry/issues/588)) ([ef0579f](https://github.com/audiagentic/bigcherry/commit/ef0579fd48429c6ae37200056d5cec7c3c9ab9cf))
+
 ## [1160.3.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1160.2.0...bc-radiance-1160.3.0) (2026-11-05)
 
 

@@ -9,6 +9,7 @@ default and a status, so profiles and experiments can be checked against them in
 from __future__ import annotations
 
 import hashlib
+import re
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
@@ -132,6 +133,23 @@ def load_all(repo_root: Path, engine: str) -> dict[str, Component]:
     """Every component ``engine`` declares, by name."""
     layout = engines.load(repo_root, engine)
     return {name: load(repo_root / relative, engine) for name, relative in layout.components}
+
+
+def repin_components(repo_root: Path, engine: str, ref: str) -> list[Path]:
+    """Declare every component of ``engine`` as written against ``ref``: rewrites only its ``built-against`` line, so
+    comments and formatting survive, and returns the declarations it changed. A bump moves the pin and these together;
+    the component tests fail when they disagree."""
+    changed = []
+    for _, relative in engines.load(repo_root, engine).components:
+        path = repo_root / relative / DECLARATION
+        text = path.read_text(encoding="utf-8")
+        new, count = re.subn(r'^(built-against\s*=\s*)"[^"]*"', rf'\g<1>"{ref}"', text, count=1, flags=re.MULTILINE)
+        if count != 1:
+            raise ComponentError(f"{path}: no built-against line to move to {ref}")
+        if new != text:
+            path.write_text(new, encoding="utf-8")
+            changed.append(path)
+    return changed
 
 
 def check_environment(declared: dict[str, Component], environment: dict[str, str], *, production: bool) -> list[str]:
