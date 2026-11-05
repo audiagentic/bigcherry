@@ -12,6 +12,8 @@ pinned-version = "1.17.0"
 patches = [
   "rad0008_hc_upmix_rt_sweep",
   "rad0002_moe_remote_handoff",
+  "rad0009_serving_manifest",
+  "rad0011_plan_memory",
 ]
 
 # Host build compatibility for the pinned engine (rad0005: MP4 writer against FFmpeg 6). Enablers with no runtime path of
@@ -24,7 +26,7 @@ required-state = "untested"
 # Start from a resolved serving manifest (rad0009, RSC07): `--manifest PATH` replaces command-line flags. Untested until a
 # manifest launch is shown to parse to the same config as the argv launch on hardware, then moved to serving-core.
 [patch-set.serving-manifest]
-patches = ["rad0009_serving_manifest", "rad0011_plan_memory"]
+patches = []
 required-state = "untested"
 
 # Remote-MoE diagnostics (shadow compare, mask-only); the hand-off is in serving-core. Patch-lint fails
