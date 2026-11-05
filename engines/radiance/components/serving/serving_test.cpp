@@ -7,6 +7,7 @@
 #include "manifest_writer.h"
 #include "v1/manifest.h"
 #include "plan_cache.h"
+#include "sdk_check.h"
 #include "test_rad_fixture.h"
 #include "sha256.h"
 
@@ -819,6 +820,46 @@ void measured_plan_cache(Fixture& t) {
     assert(refused);
 }
 
+/* BRVP06 item 5: bc-serve refuses to run against a ROCm SDK other than the one its build recorded. */
+void sdk_environment_step(Fixture& t) {
+    namespace sv = bc::serving;
+    namespace fs = std::filesystem;
+    const fs::path build = t.root / "sdk-build";
+    const fs::path exe = build / "radiance_home" / "bin" / "bc-serve";
+    fs::create_directories(exe.parent_path());
+    std::ofstream(exe) << "";
+    const fs::path sdk = t.root / "rocm-7.2.4", other = t.root / "rocm-7.14";
+    for (const fs::path& d : {sdk / "lib", other / "lib"}) {
+        fs::create_directories(d);
+        std::ofstream(d / "libamdhip64.so") << "";
+    }
+    auto metadata = [&](const std::string& toolchain) {
+        std::ofstream(build / "bigcherry-build-metadata-radiance.json", std::ios::trunc) << "{\"toolchain\": " << toolchain << "}";
+    };
+    metadata("[[\"rocm_root\", \"" + sdk.string() + "\"], [\"rocm_version\", \"7.2.4\"]]");
+    assert(!sv::sdk_refusal(exe, {}));                                                                   // the recorded SDK, nothing set
+    assert(!sv::sdk_refusal(exe, {sdk.string(), sdk.string(), (sdk / "lib").string()}));                 // the environment agrees
+    assert(!sv::sdk_refusal(exe, {sdk.string() + "/", "", "/usr/lib/x86_64-linux-gnu:" + (sdk / "lib").string()}));
+    auto refused = [&](const sv::SdkEnvironment& env, const std::string& needle) {
+        const auto r = sv::sdk_refusal(exe, env);
+        return r && r->find(needle) != std::string::npos;
+    };
+    assert(refused({other.string(), "", ""}, "ROCM_PATH="));                                             // another SDK by ROCM_PATH
+    assert(refused({"", other.string(), ""}, "HIP_PATH="));                                              // ... or HIP_PATH
+    assert(refused({"", "", (other / "lib").string()}, "outside the recorded SDK"));                     // ... or its libraries on the path
+    assert(refused({"", "", "/usr/lib:" + (other / "lib").string()}, "outside the recorded SDK"));
+    assert(!sv::sdk_refusal(exe, {"", "", (t.root / "no-rocm-libs").string()}));                         // a directory with no ROCm runtime
+    metadata("[[\"rocm_version\", \"7.2.4\"]]");
+    assert(refused({}, "records no rocm_root"));
+    metadata("[[\"rocm_root\", \"" + (t.root / "gone").string() + "\"]]");
+    assert(refused({}, "is not installed"));
+    std::ofstream(build / "bigcherry-build-metadata-radiance.json", std::ios::trunc) << "{not json";
+    assert(refused({}, "cannot be read"));
+    // an executable that is not inside a build has no recorded SDK and is not checked
+    assert(!sv::sdk_refusal(t.root / "elsewhere" / "bc-serve", {other.string(), other.string(), (other / "lib").string()}));
+    assert(!sv::sdk_refusal(build / "bin" / "bc-serve", {other.string(), "", ""}));
+}
+
 void manifest_writer_step(Fixture& t) {
     namespace sv = bc::serving;
     // The container, its heat ranking and the measured plan this configuration's manifest is built from.
@@ -1022,6 +1063,7 @@ int main() {
         host_ledger_plan();
         measured_plan_cache(t);
         manifest_writer_step(t);
+        sdk_environment_step(t);
         std::cout << "PASS: fake KFD/PCI/proc detection; strict keys; types/ranges; required; "
                      "precedence/caps; provenance/hash; launcher engine/WorkerConfig parity; "
                      "calibration store; calibrated host reserve; host ledger; measured plan cache; measuring step; v1 manifest writer\n";

@@ -59,15 +59,17 @@ No build path resolves ROCm without naming a stack; every build records and hash
 
 Evidence for the gaps: lab build ab39ffd2 CMake cache CMAKE_HIP_COMPILER=/opt/rocm-7.2.4/lib/llvm/bin/clang++, binary RUNPATH /opt/rocm-7.2.4/lib, metadata toolchain rocm_root=/opt/rocm-7.2.4 rocm_version=7.2.4; engines/radiance/recipes.toml platform.linux-radiance has no stack; .github/docker/radiance-build/Dockerfile ARG ROCM_VERSION=7.2.4; config/environment.local.toml rocm-sdks 7.14 = a path under the user home that does not exist here (absent), /opt/rocm-7.14 empty. Owner: bigcherry-2 (delegated 2026-11-04).
 
+2026-11-06 (bigcherry-2): the bc-serve part of item 5 is done (bc-serve inside a build refuses to run against another ROCm SDK than its metadata records: serving/sdk_check.{h,cpp}, same rule as lib/sdk-check.sh; card-free test in serving_test.cpp). Item 7 (7.14 acquisition and A/B) stays on hold until the owner confirms the download.
+
 ## Change Log
 
 - 2026-11-04T22:49:46.482473+00:00 (created-by): Created by agent
 
 ## Ledger-events
 
-
 - chg_20261104_224956_planned-making-the-rocm-sdk-ve_3537
 - 2026-11-04T22:50:00.649519+00:00 (updated-by): Updated: section:ledger-events
 - chg_20261104_230800_builds-now-always-name-the-roc_2582
 - 2026-11-04T23:08:04.294463+00:00 (updated-by): Updated: section:ledger-events
 - 2026-11-04 (bigcherry-2): items 1-6 implemented in PR #611 except the bc-serve part of item 5. Open follow-up kept here: bc-serve refuses to start when the build's recorded rocm_root differs from the environment (the launcher check, lib/sdk-check.sh, is in #611). Item 7 (7.14 acquisition and A/B) is on hold until the owner confirms the download.
+- 2026-11-05T19:54:30.499545+00:00 (updated-by): Updated: section:notes
