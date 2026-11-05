@@ -18,7 +18,7 @@ HEAD=$(git rev-parse HEAD); BASE=$(git merge-base HEAD FETCH_HEAD)
 echo "slice $HEAD baseline $BASE" | tee $OUT/builds.txt
 
 build() {   # $1 label: builds the checked-out tree, prints its runtime prefix
-    PYTHONPATH=tools timeout 5400 python3 -m bigcherry build --lane radiance-lab:stock:linux-radiance > $OUT/build-$1.log 2>&1
+    PYTHONPATH=tools timeout 5400 python3 -m bigcherry build --lane radiance:stock:linux-radiance > $OUT/build-$1.log 2>&1
         grep '^build: logs=' $OUT/build-$1.log >&2 || true
     local plan; plan=$(grep -oE 'ok build_plan_id=[0-9a-f]+' $OUT/build-$1.log | tail -1 | cut -d= -f2)
     [ -n "$plan" ] || { grep -E ' error:|FAILED' $OUT/build-$1.log | sort -u | head >&2; return 1; }

@@ -1,7 +1,8 @@
 """Every radiance source that carries patches is production plus its own additions, never a different base.
 
-The lab runs what production runs (plus experiments), so source.radiance's patch sets must be a subset of every other
-patched radiance source's. Native (unpatched) sources are exempt."""
+There is no separate lab source: the lab runs the production build (plus experiments, which are not sources), so
+source.radiance's patch sets must be a subset of every other patched radiance source's. Native (unpatched) sources are
+exempt."""
 
 from __future__ import annotations
 
@@ -23,10 +24,9 @@ class RadianceSourcesShareProduction(unittest.TestCase):
                 continue
             self.assertLessEqual(production, sets, f"source.{name} lacks production patch sets {sorted(production - sets)}")
 
-    def test_the_lab_source_is_a_patched_source(self) -> None:
+    def test_there_is_no_separate_lab_source(self) -> None:
         sources = tomllib.loads(RECIPES.read_text(encoding="utf-8"))["source"]
-        self.assertIn("radiance-lab", sources)
-        self.assertIn("serving-manifest", sources["radiance-lab"]["patch-sets"])
+        self.assertNotIn("radiance-lab", sources)
 
 
 if __name__ == "__main__":

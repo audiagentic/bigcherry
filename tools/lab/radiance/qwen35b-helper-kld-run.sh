@@ -9,7 +9,7 @@ if [ -n "${FASTBUILD_DIR:-}" ]; then
   bash tools/lab/radiance/fastbuild.sh "$(git rev-parse HEAD)" "$FASTBUILD_DIR" | tail -2
   LOG="x: ok build_plan_id=$(basename $FASTBUILD_DIR)"
 else
-LOG=$(PYTHONPATH=tools timeout 5400 python3 -m bigcherry build --lane radiance-lab:stock:linux-radiance 2>&1 | grep -v warning | tail -n 4)
+LOG=$(PYTHONPATH=tools timeout 5400 python3 -m bigcherry build --lane radiance:stock:linux-radiance 2>&1 | grep -v warning | tail -n 4)
 fi
 echo "$LOG"
 PLAN=$(echo "$LOG" | grep -o 'build_plan_id=[0-9a-f]*' | tail -1 | cut -d= -f2)
