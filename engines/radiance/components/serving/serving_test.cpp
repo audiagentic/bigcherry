@@ -848,13 +848,18 @@ void manifest_writer_step(Fixture& t) {
     in.resolved = r;
     in.instance_id = "11111111-1111-4111-8111-111111111111";
     in.producer_sha256 = std::string(64, 'a');
-    in.plan.plan = sv::decode_engine_plan(plan, "writer plan");
-    in.plan.plan_json = plan;
-    in.plan_key_inputs = sv::plan_key_inputs(r.values, t.facts, sv::container_identity(model), std::string(64, 'b'), "");
+    in.profile = "production";
+    {
+        sv::MeasuredPlan measured;
+        measured.plan.plan = sv::decode_engine_plan(plan, "writer plan");
+        measured.plan.plan_json = plan;
+        measured.key_inputs = sv::plan_key_inputs(r.values, t.facts, sv::container_identity(model), std::string(64, 'b'), "");
+        in.measured = std::move(measured);
+    }
 
     const auto built = sv::build_manifest(in);
     // It is a v1 manifest a consumer accepts, and says what the resolver resolved.
-    const auto back = bc::serving::v1::read_manifest(built.text, "writer test");
+    const auto back = bc::serving::v1::read_manifest(built.text, "writer test", bc::serving::v1::PlanUse::serving);
     assert(back.ok());
     const Json& d = built.document;
     assert(d.at("metadata").at("content_digest") == built.digest && built.digest.rfind("sha256:", 0) == 0);
@@ -873,6 +878,59 @@ void manifest_writer_step(Fixture& t) {
     for (const Json& h : spec.at("plan").at("owner_map").at("helpers")) owned += h.at("count").get<size_t>();
     assert(owned == 64);   // 4 layers x 16 experts: with budgets this large the helpers own them all
     assert(spec.at("plan").at("engine_memory").at("expected") == plan);
+    assert(spec.at("plan").at("state") == "measured" && spec.at("resources").at("host").contains("checkpoint_slots"));
+    assert(!spec.at("handoff").at("placement").contains("live_policy") && !spec.contains("experiment"));
+    // The unmeasured manifest of the measuring start: owner map and settings, no plan and nothing derived from one. A serving
+    // start refuses it, a measuring start reads it, and the measured manifest is the reverse.
+    {
+        sv::ManifestInputs u = in;
+        u.measured.reset();
+        const auto um = sv::build_manifest(u);
+        const Json& us = um.document.at("spec");
+        assert(us.at("plan").at("state") == "unmeasured" && !us.at("plan").contains("engine_memory"));
+        assert(!us.at("resources").at("host").contains("checkpoint_slots") && us.at("plan").at("owner_map").at("helpers").size() == 3);
+        assert(us.at("resources").at("host").at("pool_mib") == spec.at("resources").at("host").at("pool_mib"));
+        assert(um.document.at("provenance").at("/spec/resources").at("inputs").size() == 2);
+        assert(!bc::serving::v1::read_manifest(um.text, "unmeasured", bc::serving::v1::PlanUse::serving).ok());
+        assert(bc::serving::v1::read_manifest(um.text, "unmeasured", bc::serving::v1::PlanUse::measuring).ok());
+        assert(!bc::serving::v1::read_manifest(built.text, "measured", bc::serving::v1::PlanUse::measuring).ok());
+        assert(sv::build_manifest(u).text == um.text);   // deterministic, like the measured one
+    }
+    // A live policy and a lab experiment come from operator-supplied objects, are written verbatim with their own provenance
+    // record, and are read back by the shared reader; a partial policy or a production experiment is an error, never a file.
+    {
+        sv::ManifestInputs c = in;
+        c.live_policy = Json::parse(R"json({"effect_gate": true, "accept_unwatermarked_heat": false, "cadence_ns": 60000000000,
+            "max_moves": 8, "max_moved_bytes": 4294967296, "min_residency_ns": 300000000000, "max_heat_age_ns": 120000000000,
+            "min_samples": 1000, "abort_cooldown_ns": 30000000000, "learned_eligibility_ttl_ns": 600000000000,
+            "effect_window_samples": 5000, "effect_min_quiet_windows": 3, "effect_revert_ttl_ns": 120000000000,
+            "margin_ppm": 100000, "half_life_observations_milli": 4000, "effect_noise_multiplier_milli": 2000,
+            "protected_layers": [0, 1]})json");
+        c.live_policy_from = "--live-policy policy.json";
+        const auto with_policy = sv::build_manifest(c);
+        assert(with_policy.document.at("spec").at("handoff").at("placement").at("live_policy").at("max_moves") == 8);
+        const Json& rec = with_policy.document.at("provenance").at("/spec/handoff/placement/live_policy");
+        assert(rec.at("origin") == "cli" && rec.at("source") == "--live-policy policy.json" && rec.at("class") == "policy");
+        assert(with_policy.digest != built.digest);
+        sv::ManifestInputs partial = c;
+        partial.live_policy.erase("margin_ppm");
+        try { (void)sv::build_manifest(partial); assert(false); } catch (const std::runtime_error& e) {
+            assert(std::string(e.what()).find("margin_ppm") != std::string::npos);
+        }
+        sv::ManifestInputs lab = in;
+        lab.profile = "lab";
+        lab.experiment = Json::parse(R"json({"placement": {"mode": "observe", "epoch_cycle_s": 30}})json");
+        lab.experiment_from = "--experiment lab.json";
+        const auto with_experiment = sv::build_manifest(lab);
+        assert(with_experiment.document.at("spec").at("intent").at("service").at("profile") == "lab");
+        assert(with_experiment.document.at("spec").at("experiment").at("placement").at("epoch_cycle_s") == 30);
+        assert(with_experiment.document.at("provenance").at("/spec/experiment").at("origin") == "experiment");
+        sv::ManifestInputs forbidden = lab;
+        forbidden.profile = "production";
+        try { (void)sv::build_manifest(forbidden); assert(false); } catch (const std::runtime_error& e) {
+            assert(std::string(e.what()).find("needs the lab profile") != std::string::npos);
+        }
+    }
     // The helper section follows the resolver (a layout, the site file or --set), not the table's defaults.
     {
         sv::ManifestInputs c = in;
@@ -924,7 +982,7 @@ void manifest_writer_step(Fixture& t) {
     sv::write_manifest_file(path, built.text);
     struct stat st{};
     assert(::stat(path.c_str(), &st) == 0 && (st.st_mode & 0777) == 0444 && !fs::exists(path.string() + ".tmp"));
-    assert(bc::serving::v1::load_manifest(path).ok());
+    assert(bc::serving::v1::load_manifest(path, bc::serving::v1::PlanUse::serving).ok());
     try { sv::write_manifest_file(path, built.text); assert(false); } catch (const std::runtime_error& e) {
         assert(std::string(e.what()).find("immutable") != std::string::npos);
     }

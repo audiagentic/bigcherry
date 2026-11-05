@@ -509,8 +509,7 @@
               "required": [
                 "pool_mib",
                 "kv_mib",
-                "reserve_mib",
-                "checkpoint_slots"
+                "reserve_mib"
               ],
               "properties": {
                 "pool_mib": {
@@ -527,7 +526,7 @@
                   "default": 4096
                 },
                 "checkpoint_slots": {
-                  "description": "Prefix checkpoint slots (`--checkpoint-slots`).",
+                  "description": "Prefix checkpoint slots (`--checkpoint-slots`), derived from the measured plan: present when `plan.state` is `measured`, absent when it is `unmeasured`.",
                   "$ref": "#/$defs/uint"
                 }
               }

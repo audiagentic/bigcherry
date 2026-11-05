@@ -18,10 +18,10 @@ inline constexpr std::string_view kApiVersion = "bigcherry/v1";
 inline constexpr std::string_view kKind = "ServingManifest";
 inline constexpr int64_t kContractVersion = 1;
 // sha256 of the JCS validation schema without annotations (contract/README.md); the build pins it.
-inline constexpr std::string_view kFingerprint = "sha256:52ff726ea8657ccacff7c73c2f7f727ad2c6c04972f1fde9068943e0ece272ea";
+inline constexpr std::string_view kFingerprint = "sha256:471535ef547f6bbdb9c93d22efe416e3bfdc04790826b7be5ccfe3daf708db06";
 // sha256 of the schema plus the frozen semantics it does not express (classes, lifecycle, Radiance bindings,
 // reader error codes); README.md.
-inline constexpr std::string_view kSemanticFingerprint = "sha256:88a18fbc22a2efb3f13a303a568a2be3d84b9eabf1bb600632099b795e44ffc0";
+inline constexpr std::string_view kSemanticFingerprint = "sha256:8319ac928d6c011b882f9afcea07e66478fb0d4442b3dfcee228a8030193d98a";
 // spec §11 amendment 8: the deepest container nesting a valid document can have (the root object is 1),
 // derived from the closed schema by the generator. The strict reader refuses anything deeper.
 inline constexpr size_t kMaxDepth = 9;
@@ -583,8 +583,9 @@ struct HostResources {
     int64_t kv_mib;
     // Host memory held back for the system, MiB (`--host-headroom-mib`).
     int64_t reserve_mib;
-    // Prefix checkpoint slots (`--checkpoint-slots`).
-    int64_t checkpoint_slots;
+    // Prefix checkpoint slots (`--checkpoint-slots`), derived from the measured plan: present when `plan.state` is
+    // `measured`, absent when it is `unmeasured`.
+    std::optional<int64_t> checkpoint_slots;
 };
 
 // /spec/resources: Derived resource allocation.
@@ -1397,9 +1398,9 @@ inline constexpr std::array<FieldInfo, 258> kFields = {{
     {"/spec/resources/host/reserve_mib", "ref", "derived", true, false,
      "--host-headroom-mib", "Config.host_headroom_mib",
      "Host memory held back for the system, MiB (`--host-headroom-mib`).", "4096", "radiance:Config.host_headroom_mib", "positive"},
-    {"/spec/resources/host/checkpoint_slots", "ref", "derived", true, false,
+    {"/spec/resources/host/checkpoint_slots", "ref", "derived", false, false,
      "--checkpoint-slots", "native checkpoint limit",
-     "Prefix checkpoint slots (`--checkpoint-slots`).", "", "", "uint"},
+     "Prefix checkpoint slots (`--checkpoint-slots`), derived from the measured plan: present when `plan.state` is `measured`, absent when it is `unmeasured`.", "", "", "uint"},
     {"/spec/handoff", "object", "derived", true, false,
      "", "",
      "The one shared remote-MoE handoff configuration.", "", "", ""},

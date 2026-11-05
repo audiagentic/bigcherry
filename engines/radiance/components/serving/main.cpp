@@ -28,6 +28,14 @@ void usage() {
                  "      writes the v1 serving manifest for this configuration to OUT (read-only; an existing OUT is refused)\n"
                  "      from its measured plan and the planner's owner map, and reads it back through the shared strict reader\n"
                  "      before it stays; a miss in the plan cache exits 10. Starts no process.\n"
+                 "      --unmeasured   (with --write-manifest; no --plan-cache or --engine-binary) writes the unmeasured manifest\n"
+                 "                     of the measuring start instead: owner map and settings, plan.state unmeasured, no plan. Only\n"
+                 "                     a measuring start (radiance --plan-memory, r3_moe_worker --measuring) accepts it; every\n"
+                 "                     serving start refuses it.\n"
+                 "      --live-policy FILE   a JSON object with every spec.handoff.placement.live_policy member; present means\n"
+                 "                     the helper runs the live placement policy. Nothing is defaulted.\n"
+                 "      --experiment FILE    a JSON object for spec.experiment (lab profile: the manifest is then written with\n"
+                 "                     profile lab; a production manifest never carries one).\n"
                  "  --plan-key --plan-cache DIR --engine-binary PATH [--site FILE] [--profile FILE] [--set key=value]\n"
                  "      prints this configuration's plan key (what --plan-store must be told to expect)\n"
                  "  --plan-check-args --plan-cache DIR --engine-binary PATH [--site FILE] [--profile FILE] [--set key=value]\n"
@@ -64,6 +72,19 @@ void explain(const bc::serving::Resolved& result) {
 }
 } // namespace
 
+/* A JSON object an operator supplies (a live policy, a lab experiment): read once, never defaulted; empty path = none.
+ * `from` names the file for the member's provenance record. */
+static void load_json_input(const fs::path& path, const char* flag, Json* out, std::string* from) {
+    if (path.empty()) return;
+    std::ifstream in(path, std::ios::binary);
+    if (!in) throw std::runtime_error(std::string(flag) + ": cannot read " + path.string());
+    std::ostringstream text;
+    text << in.rdbuf();
+    *out = Json::parse(text.str(), nullptr, false);
+    if (!out->is_object()) throw std::runtime_error(std::string(flag) + ": " + path.string() + " is not a JSON object");
+    *from = std::string(flag) + " " + path.filename().string();
+}
+
 int main(int argc, char** argv) {
     try {
         Options opts;
@@ -72,7 +93,8 @@ int main(int argc, char** argv) {
         fs::path plan_file;
         std::string expect_key, plan_extra;
         fs::path plan_cache, engine_binary;
-        fs::path write_manifest;
+        fs::path write_manifest, live_policy_file, experiment_file;
+        bool unmeasured = false;
         std::vector<fs::path> positional;
         for (int i = 1; i < argc; ++i) {
             const std::string arg = argv[i];
@@ -95,6 +117,9 @@ int main(int argc, char** argv) {
             else if (arg == "--plan-store") plan_store = true;
             else if (arg == "--plan-key") plan_key_only = true;
             else if (arg == "--write-manifest") write_manifest = need_arg("--write-manifest");
+            else if (arg == "--unmeasured") unmeasured = true;
+            else if (arg == "--live-policy") live_policy_file = need_arg("--live-policy");
+            else if (arg == "--experiment") experiment_file = need_arg("--experiment");
             else if (arg == "--expect-key") expect_key = need_arg("--expect-key");
             else if (arg == "--plan-extra") plan_extra = need_arg("--plan-extra");
             else if (arg == "--plan-file") plan_file = need_arg("--plan-file");
@@ -112,6 +137,8 @@ int main(int argc, char** argv) {
             throw std::runtime_error("--plan-cache and --engine-binary go with --plan-check-args, --plan-store or --write-manifest");
         if (!plan_mode && !plan_extra.empty())
             throw std::runtime_error("--plan-extra goes with --plan-check-args, --plan-store, --plan-key or --write-manifest");
+        if (write_manifest.empty() && (unmeasured || !live_policy_file.empty() || !experiment_file.empty()))
+            throw std::runtime_error("--unmeasured, --live-policy and --experiment go with --write-manifest");
         if (!plan_store && (!plan_file.empty() || !expect_key.empty()))
             throw std::runtime_error("--plan-file and --expect-key go with --plan-store");
         if (modes != 1) throw std::runtime_error("choose one mode (see --help)");
@@ -159,12 +186,29 @@ int main(int argc, char** argv) {
                 throw std::runtime_error("--plan-store needs --plan-file FILE and --expect-key KEY");
             if (!positional.empty())
                 throw std::runtime_error(std::string(mode) + " takes --site, --profile, --set and --calibration only");
-            if (plan_cache.empty() || engine_binary.empty())
+            if (unmeasured && (!plan_cache.empty() || !engine_binary.empty() || !plan_extra.empty()))
+                throw std::runtime_error("--unmeasured has no plan: it takes no --plan-cache, --engine-binary or --plan-extra");
+            if (!unmeasured && (plan_cache.empty() || engine_binary.empty()))
                 throw std::runtime_error(std::string(mode) + " needs --plan-cache DIR and --engine-binary PATH");
             const auto facts = bc::serving::detect(opts.sys_root);
             const auto r = bc::serving::resolve(opts, facts);
             const auto& v = r.values;
             const fs::path home = v.at("engine").at("radiance_home").get<std::string>();
+            if (unmeasured) {
+                bc::serving::ManifestInputs in;
+                in.resolved = r;
+                in.profile = experiment_file.empty() ? "production" : "lab";
+                in.instance_id = bc::serving::new_instance_id();
+                in.producer_sha256 = bc::serving::file_sha256("/proc/self/exe");
+                in.calibration_cache = opts.calibration_cache;
+                load_json_input(live_policy_file, "--live-policy", &in.live_policy, &in.live_policy_from);
+                load_json_input(experiment_file, "--experiment", &in.experiment, &in.experiment_from);
+                const auto built = bc::serving::build_manifest(in);
+                bc::serving::write_manifest_file(write_manifest, built.text);
+                std::cout << "manifest: " << write_manifest << " (unmeasured: for the measuring start only)\n"
+                          << "digest: " << built.digest << '\n' << "no processes started\n";
+                return 0;
+            }
             const auto key_inputs = bc::serving::plan_key_inputs(
                 v, facts, bc::serving::container_identity(v.at("engine").at("model").get<std::string>()),
                 bc::serving::engine_identity(engine_binary, home), plan_extra);
@@ -187,8 +231,10 @@ int main(int argc, char** argv) {
                 in.instance_id = bc::serving::new_instance_id();
                 in.producer_sha256 = bc::serving::file_sha256("/proc/self/exe");
                 in.calibration_cache = opts.calibration_cache;
-                in.plan = *hit;
-                in.plan_key_inputs = key_inputs;
+                in.profile = experiment_file.empty() ? "production" : "lab";
+                in.measured = bc::serving::MeasuredPlan{*hit, key_inputs};
+                load_json_input(live_policy_file, "--live-policy", &in.live_policy, &in.live_policy_from);
+                load_json_input(experiment_file, "--experiment", &in.experiment, &in.experiment_from);
                 const auto built = bc::serving::build_manifest(in);
                 bc::serving::write_manifest_file(write_manifest, built.text);
                 std::cout << "manifest: " << write_manifest << '\n' << "digest: " << built.digest << '\n' << "no processes started\n";

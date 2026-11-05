@@ -8,6 +8,7 @@
 
 #include <cstdio>
 #include <fstream>
+#include <optional>
 #include <functional>
 #include <sstream>
 #include <string>
@@ -58,8 +59,21 @@ void expect(const Result<T>& r, C code, const std::string& needle, const std::st
           what + ": " + std::string(machine_name(e.code)) + " at '" + e.path + "': " + e.message);
 }
 
-Result<Manifest> from(const Json& j) { return read_manifest(j.dump(), "test.json"); }
-Result<Manifest> from_text(const std::string& t) { return read_manifest(t, "test.json"); }
+Result<Manifest> from(const Json& j) { return read_manifest(j.dump(), "test.json", PlanUse::serving); }
+Result<Manifest> from_text(const std::string& t) { return read_manifest(t, "test.json", PlanUse::serving); }
+Result<Manifest> measuring(const Json& j) { return read_manifest(j.dump(), "test.json", PlanUse::measuring); }
+
+/* The production example as a measuring start's manifest: unmeasured, no engine_memory. */
+Json without_plan(Json m) {
+    m["spec"]["plan"].erase("engine_memory");
+    m["provenance"]["/spec/resources"]["inputs"] = Json::array({"/spec/facts/host", "/spec/calibration"});
+    return m;
+}
+Json unmeasured(Json m) {
+    m = without_plan(std::move(m));
+    m["spec"]["plan"]["state"] = "unmeasured";
+    return rehashed(std::move(m));
+}
 
 std::string replace_once(std::string s, const std::string& from, const std::string& to, bool* ok) {
     const size_t at = s.find(from);
@@ -80,7 +94,10 @@ int main() {
     check(p.ok(), "production example loads: " + (p ? std::string() : render_human("bc_v1_test", p.error())));
     check(l.ok(), "lab example loads: " + (l ? std::string() : render_human("bc_v1_test", l.error())));
     if (failures) return 1;
-    const EngineView ev = engine_view(p.value());
+    Result<EngineView> evr = engine_view(p.value());
+    check(evr.ok(), "engine view of a measured manifest");
+    if (!evr) return 1;
+    const EngineView& ev = evr.value();
     check(ev.kv_backing_floor_ppm == 600000, "engine view: the selected backing floor");
     check(ev.engine.scheduler.tp == prod["spec"]["processes"]["engine"]["scheduler"]["tp"].get<int64_t>(), "engine view: tp");
     const auto& phelpers = prod["spec"]["processes"]["helpers"];
@@ -112,7 +129,7 @@ int main() {
         }
     }
     expect(helper_view(p.value(), "helper9"), C::unresolved_reference, "helper9", "unknown helper role view");
-    check(!check_engine_plan(p.value().spec.plan.engine_memory.expected, p.value().spec.plan.engine_memory.expected, 600000),
+    check(!check_engine_plan(p.value().spec.plan.engine_memory->expected, p.value().spec.plan.engine_memory->expected, 600000),
           "the production plan admits itself");
 
     // ---- errors.md §6 ----
@@ -159,7 +176,7 @@ int main() {
         expect(from(rehashed(k)), C::unresolved_reference, "0000:ff:00.0", "a nonexistent GPU BDF");
     }
     {
-        Result<Manifest> r = load_manifest("/nonexistent/manifest.json");
+        Result<Manifest> r = load_manifest("/nonexistent/manifest.json", PlanUse::serving);
         expect(r, C::io_failure, "cannot read", "missing manifest file");
         check(!r && exit_code_of(r.error()) == 3 && r.error().status == -13 && r.error().source_file, "missing file: -13, exit 3");
     }
@@ -235,7 +252,7 @@ int main() {
 
     // ---- #536 review: the host inventory, cache identity, plan and owner invariants, duplicates, views ----
     {
-        const EnginePlan& plan = p.value().spec.plan.engine_memory.expected;
+        const EnginePlan& plan = p.value().spec.plan.engine_memory->expected;
         auto refused_plan = [&](EnginePlan live, C code, const std::string& needle, const std::string& what) {
             const Status st = check_engine_plan(plan, live, 600000);
             check(st && st->code == code && st->message.find(needle) != std::string::npos,
@@ -389,7 +406,7 @@ int main() {
         Json r1 = prod["provenance"][""];
         r1["inputs"] = Json::array({ptr});
         check(!decode(r1, "provenance[\"\"]", &rec), "maxLength counts characters, not bytes");
-        const EnginePlan& plan = p.value().spec.plan.engine_memory.expected;
+        const EnginePlan& plan = p.value().spec.plan.engine_memory->expected;
         EnginePlan e2 = plan;
         e2.host.push_back(e2.host[0]);
         const Status st = check_engine_plan(e2, plan, 600000);
@@ -561,6 +578,137 @@ int main() {
             d["provenance"].erase("/spec/handoff/kernels");
             refused(d, "/spec/handoff/kernels/moe_down_tile", "the kernel literal without its record");
         }
+    }
+
+    // ---- amendment 10: plan state, the live placement policy, the forced schedule and the epoch cycle ----
+    {   // an unmeasured manifest is for the measuring start only; each start names its use, and neither state reads as the other
+        const Json um = unmeasured(prod);
+        expect(from(um), C::plan_mismatch, "no measured plan", "a serving start refuses an unmeasured manifest", "spec.plan.state");
+        Result<Manifest> m = measuring(um);
+        check(m.ok(), "a measuring start takes an unmeasured manifest: " + (m ? std::string() : render_human("bc_v1_test", m.error())));
+        if (m) {
+            check(m.value().spec.plan.state == PlanState::kUnmeasured && !m.value().spec.plan.engine_memory, "the unmeasured state");
+            check(plan_cache_key(m.value()).empty(), "an unmeasured manifest has no plan cache key");
+            Result<EngineView> ev = engine_view(m.value());
+            check(!ev && ev.error().code == C::invalid_state, "the engine view needs a measured manifest");
+            check(helper_view(m.value(), "helper0").ok(), "the helpers' view needs no measured plan");
+        }
+        expect(measuring(prod), C::plan_mismatch, "takes an unmeasured manifest", "a measuring start refuses a measured manifest",
+               "spec.plan.state");
+        Json no_memory = without_plan(prod);
+        expect(from(rehashed(no_memory)), C::missing_field, "requires engine_memory", "measured without a plan", "spec.plan.engine_memory");
+        Json both = prod;
+        both["spec"]["plan"]["state"] = "unmeasured";
+        expect(from(rehashed(both)), C::invalid_value, "takes no engine_memory", "unmeasured with a plan", "spec.plan.state");
+        Json bad_state = prod;
+        bad_state["spec"]["plan"]["state"] = "maybe";
+        expect(from(rehashed(bad_state)), C::invalid_value, "is not one of", "an unknown plan state", "spec.plan.state");
+        Json no_state = prod;
+        no_state["spec"]["plan"].erase("state");
+        expect(from(rehashed(no_state)), C::missing_field, "missing required member", "no default plan state", "spec.plan.state");
+    }
+    {   // the live policy: production-allowed, every member explicit, one placement driver, its preconditions in the reader
+        Result<Manifest> pm = from_text(prod_text);
+        check(pm.ok() && pm.value().spec.handoff.placement.live_policy.has_value(), "the production example carries a live policy");
+        if (pm && pm.value().spec.handoff.placement.live_policy) {
+            const LivePolicy& lp = *pm.value().spec.handoff.placement.live_policy;
+            check(lp.effect_gate && !lp.accept_unwatermarked_heat && lp.margin_ppm == 100000 && lp.protected_layers.size() == 2 &&
+                      lp.half_life_observations_milli == 4000,
+                  "live policy values");
+            Result<HelperView> hv = helper_view(pm.value(), "helper0");
+            check(hv.ok(), "helper view with a live policy");
+        }
+        const std::string lp_at = "spec.handoff.placement.live_policy";
+        for (const char* member : {"effect_gate", "accept_unwatermarked_heat", "cadence_ns", "max_moves", "max_moved_bytes", "min_residency_ns",
+                                   "max_heat_age_ns", "min_samples", "abort_cooldown_ns", "learned_eligibility_ttl_ns",
+                                   "effect_window_samples", "effect_min_quiet_windows", "effect_revert_ttl_ns", "margin_ppm",
+                                   "half_life_observations_milli", "effect_noise_multiplier_milli", "protected_layers"}) {
+            Json j = prod;
+            j["spec"]["handoff"]["placement"]["live_policy"].erase(member);
+            expect(from(rehashed(j)), C::missing_field, "missing required member", std::string("live policy without ") + member,
+                   lp_at + "." + member);
+        }
+        Json extra = prod;
+        extra["spec"]["handoff"]["placement"]["live_policy"]["enabled"] = true;
+        expect(from(rehashed(extra)), C::unknown_field, "unknown member", "no enable flag: presence is the policy", lp_at);
+        for (const char* member : {"cadence_ns", "max_moves", "min_samples", "half_life_observations_milli"}) {
+            Json j = prod;
+            j["spec"]["handoff"]["placement"]["live_policy"][member] = 0;
+            expect(from(rehashed(j)), C::invalid_value, "below the minimum", std::string("a zero ") + member, lp_at + "." + member);
+        }
+        for (int64_t margin : {int64_t(0), int64_t(1000000)}) {
+            Json j = prod;
+            j["spec"]["handoff"]["placement"]["live_policy"]["margin_ppm"] = margin;
+            expect(from(rehashed(j)), C::invalid_value, margin == 0 ? "below the minimum" : "must be below", "margin outside (0, 1)",
+                   lp_at + ".margin_ppm");
+        }
+        Json big = prod;
+        big["spec"]["handoff"]["placement"]["live_policy"]["max_moves"] = int64_t(UINT32_MAX) + 1;
+        expect(from(rehashed(big)), C::invalid_value, "over 4294967295", "more moves than 32 bits", lp_at + ".max_moves");
+        Json unsorted = prod;
+        unsorted["spec"]["handoff"]["placement"]["live_policy"]["protected_layers"] = Json::array({3, 1});
+        expect(from(rehashed(unsorted)), C::invalid_value, "strictly ascending", "unordered protected layers", lp_at);
+        Json no_hist = prod;
+        no_hist["spec"]["handoff"]["telemetry"]["histogram_file"] = nullptr;
+        expect(from(rehashed(no_hist)), C::missing_field, "histogram_file", "a live policy needs the live histogram",
+               "spec.handoff.telemetry.histogram_file");
+        Json float_member = prod;
+        const std::string fm = replace_once(float_member.dump(), "\"margin_ppm\":100000", "\"margin_ppm\":0.1", &ok);
+        expect(from_text(fm), C::invalid_format, "non-integer", "a fractional margin is not an integer");
+        Json production_forced = prod;
+        production_forced["spec"]["experiment"] = lab["spec"]["experiment"];
+        expect(from(rehashed(production_forced)), C::experiment_forbidden, "spec.experiment is forbidden", "production takes no experiment");
+    }
+    {   // lab: the forced schedule follows its mode, each step carries exactly its kind's members, and excludes a live policy
+        auto with_forced = [&](Json steps, const char* mode = "forced_churn") {
+            Json j = lab;
+            j["spec"]["experiment"]["placement"]["mode"] = mode;
+            j["spec"]["experiment"]["placement"]["forced"] = {{"repeat", 3}, {"steps", std::move(steps)}};
+            return j;
+        };
+        const Json move = {{"kind", "move"}, {"a_layer", 0}, {"a_expert", 1}, {"destination", 1}};
+        const Json swap = {{"kind", "swap"}, {"a_layer", 0}, {"a_expert", 1}, {"b_layer", 0}, {"b_expert", 2}};
+        const Json automatic = {{"kind", "auto_swap"}, {"a_layer", 0}, {"a_expert", 2}};
+        Result<Manifest> ok_forced = from(rehashed(with_forced(Json::array({move, swap, automatic}))));
+        check(ok_forced.ok(), "a forced schedule of every kind loads: " + (ok_forced ? std::string() : render_human("bc_v1_test", ok_forced.error())));
+        if (ok_forced && ok_forced.value().spec.experiment && ok_forced.value().spec.experiment->placement) {
+            const auto& f2 = ok_forced.value().spec.experiment->placement->forced;
+            check(f2 && f2->repeat == 3 && f2->steps.size() == 3 && f2->steps[2].kind == ForcedKind::kAutoSwap, "forced schedule values");
+            check(ok_forced.value().spec.experiment->placement->epoch_cycle_s == std::optional<int64_t>(30), "epoch cycle seconds");
+        }
+        const std::string at = "spec.experiment.placement";
+        expect(from(rehashed(with_forced(Json::array({move}), "observe"))), C::invalid_value, "observe", "observe takes no forced schedule", at);
+        Json churn_no_forced = lab;
+        churn_no_forced["spec"]["experiment"]["placement"]["mode"] = "forced_churn";
+        expect(from(rehashed(churn_no_forced)), C::missing_field, "forced_churn requires forced", "forced_churn without a schedule", at);
+        Json no_dest = move;
+        no_dest.erase("destination");
+        expect(from(rehashed(with_forced(Json::array({no_dest})))), C::missing_field, "destination", "a move needs its destination", at);
+        Json far = move;
+        far["destination"] = 9;
+        expect(from(rehashed(with_forced(Json::array({far})))), C::unresolved_reference, "not one of the", "a destination beyond the helpers", at);
+        Json swap_dest = swap;
+        swap_dest["destination"] = 1;
+        expect(from(rehashed(with_forced(Json::array({swap_dest})))), C::invalid_value, "only a move", "a swap takes no destination", at);
+        Json half_swap = swap;
+        half_swap.erase("b_expert");
+        expect(from(rehashed(with_forced(Json::array({half_swap})))), C::missing_field, "both experts", "a swap names both experts", at);
+        Json auto_b = automatic;
+        auto_b["b_layer"] = 0;
+        expect(from(rehashed(with_forced(Json::array({auto_b})))), C::invalid_value, "only a swap", "an automatic swap takes no second expert", at);
+        expect(from(rehashed(with_forced(Json::array({{{"kind", "teleport"}, {"a_layer", 0}, {"a_expert", 0}}})))), C::invalid_value, "is not one of",
+               "an unknown step kind", at + ".forced.steps[0].kind");
+        expect(from(rehashed(with_forced(Json::array()))), C::invalid_value, "needs at least", "an empty schedule", at + ".forced.steps");
+        Json zero_repeat = with_forced(Json::array({move}));
+        zero_repeat["spec"]["experiment"]["placement"]["forced"]["repeat"] = 0;
+        expect(from(rehashed(zero_repeat)), C::invalid_value, "below the minimum", "repeat 0", at + ".forced.repeat");
+        Json both_drivers = with_forced(Json::array({move}));
+        both_drivers["spec"]["handoff"]["placement"]["live_policy"] = prod["spec"]["handoff"]["placement"]["live_policy"];
+        both_drivers["provenance"]["/spec/handoff/placement/live_policy"] = prod["provenance"]["/spec/handoff/placement/live_policy"];
+        expect(from(rehashed(both_drivers)), C::invalid_value, "excludes", "a live policy and a forced schedule together", "spec.handoff.placement.live_policy");
+        Json at_step = lab;
+        at_step["spec"]["experiment"]["placement"]["at_step"] = 5;
+        expect(from(rehashed(at_step)), C::unknown_field, "unknown member", "at_step is gone: forced replaced it", at + ".at_step");
     }
 
     if (failures) return 1;

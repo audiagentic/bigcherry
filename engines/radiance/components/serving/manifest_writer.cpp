@@ -142,6 +142,8 @@ Json calibration_entries(const Resolved& r, const fs::path& cache) {
  * them (measured consumers and checkpoint store from the plan, the calibrated share and host KV tier target). */
 Json resources_of(const ManifestInputs& in, const Json& calibration) {
     const Json& mem = in.resolved.values.at("memory");
+    Json host = {{"pool_mib", mem.at("host_pool_mib")}, {"kv_mib", mem.at("host_kv_mib")}, {"reserve_mib", mem.at("host_reserve_mib")}};
+    if (!in.measured) return host;   // no plan, no consumers to ledger: the checkpoint slots follow from the measured plan
     auto cal = [&](const char* key) -> const Json* {
         for (const Json& e : calibration)
             if (e.at("key") == key) return &e.at("value");
@@ -150,16 +152,16 @@ Json resources_of(const ManifestInputs& in, const Json& calibration) {
     LedgerInputs li;
     li.host_facts = in.resolved.facts.at("host");
     li.reserve_mib = mem.at("host_reserve_mib");
-    for (const v1::PlanHostConsumer& c : in.plan.plan.host)
+    for (const v1::PlanHostConsumer& c : in.measured->plan.plan.host)
         li.consumers.push_back({c.name, static_cast<uint64_t>(c.bytes), residence_of(c.residence), c.from, c.remedy});
-    li.checkpoints = {static_cast<uint64_t>(in.plan.plan.checkpoints.slot_bytes), static_cast<uint64_t>(in.plan.plan.checkpoints.floor_slots),
-                      static_cast<uint64_t>(in.plan.plan.checkpoints.want_slots), in.plan.plan.checkpoints.from, "want", "plan"};
+    li.checkpoints = {static_cast<uint64_t>(in.measured->plan.plan.checkpoints.slot_bytes), static_cast<uint64_t>(in.measured->plan.plan.checkpoints.floor_slots),
+                      static_cast<uint64_t>(in.measured->plan.plan.checkpoints.want_slots), in.measured->plan.plan.checkpoints.from, "want", "plan"};
     if (const Json* share = cal("checkpoint_share")) {
         li.checkpoints.share = share->get<std::string>();
         li.checkpoints.share_from = "calibration.checkpoint_share";
     }
     li.retention_keep = in.resolved.values.at("service").at("retention") == "keep";
-    li.min_tier_bytes = static_cast<uint64_t>(in.plan.plan.kv_one_session.bytes);
+    li.min_tier_bytes = static_cast<uint64_t>(in.measured->plan.plan.kv_one_session.bytes);
     // One value for the host KV tier: the manifest's resources.host.kv_mib is what the launcher runs with, so the ledger
     // plans for exactly that. A calibration target that disagrees would make the ledger plan for a tier the run does not
     // get; refuse it rather than pick one.
@@ -170,13 +172,13 @@ Json resources_of(const ManifestInputs& in, const Json& calibration) {
                  std::to_string(target->get<uint64_t>()) + "): the memory plan would not match the run");
     li.tier_target_bytes = kv_mib << 20;
     const Ledger ledger = host_ledger(li);
-    return {{"pool_mib", mem.at("host_pool_mib")}, {"kv_mib", mem.at("host_kv_mib")}, {"reserve_mib", mem.at("host_reserve_mib")},
-            {"checkpoint_slots", ledger.checkpoint_slots}};
+    host["checkpoint_slots"] = ledger.checkpoint_slots;
+    return host;
 }
 
-Json handoff_of(const Json& v) {
+Json handoff_of(const Json& v, const Json& live_policy) {
     const Json& h = v.at("handoff");
-    return {{"transport",
+    Json out = {{"transport",
              {{"shm", h.at("shm")}, {"max_rows", h.at("max_rows")}, {"small_rows", h.at("small_rows")},
               {"gemv_large_rows", h.at("gemv_large_rows")}, {"skip_owned", h.at("skip_owned")}}},
             {"placement", {{"strategy", h.at("placement")}, {"heat_file", h.at("heat")}}},
@@ -184,6 +186,8 @@ Json handoff_of(const Json& v) {
              {{"histogram_file", h.at("histogram").get<std::string>().empty() ? Json(nullptr) : h.at("histogram")},
               {"period_s", h.at("histogram_period_s")}}},
             {"kernels", {{"moe_down_tile", h.at("moe_down_tile").get<bool>() ? 1 : 0}}}};
+    if (!live_policy.is_null()) out["placement"]["live_policy"] = live_policy;
+    return out;
 }
 
 Json engine_of(const Json& v) {
@@ -211,7 +215,7 @@ Json helpers_of(const Resolved& r) {
     return out;
 }
 
-Json static_provenance() {
+Json static_provenance(bool measured) {
     Json p = Json::object();
     p[""] = record("schema_default", "serving contract v1", "policy", "exact");
     p["/spec/intent/model"] = record("site", "site.toml:engine.model", "policy", "exact");
@@ -220,8 +224,10 @@ Json static_provenance() {
     p["/spec/facts"] = record("detected", "bc-serve detect: kfd+sysfs+proc+statvfs+cgroup", "fact", "exact");
     p["/spec/calibration"] = record("calibrated", "calibration seeds and cache selected by layout and objective", "tuned", "measured",
                                     Json::array({"/spec/intent/layout", "/spec/intent/service/objective"}));
-    p["/spec/resources"] = record("derived", "RSC03 host ledger over the measured plan", "derived", "estimate",
-                                  Json::array({"/spec/facts/host", "/spec/calibration", "/spec/plan/engine_memory/expected"}));
+    Json resource_inputs = Json::array({"/spec/facts/host", "/spec/calibration"});
+    if (measured) resource_inputs.push_back("/spec/plan/engine_memory/expected");
+    p["/spec/resources"] = record("derived", measured ? "RSC03 host ledger over the measured plan" : "resolver memory settings (no measured plan yet)",
+                                  "derived", "estimate", resource_inputs);
     p["/spec/handoff/transport/shm"] = record("derived", "launcher shared-memory name", "derived", "exact");
     p["/spec/handoff/transport"] = record("profile", "flashnext launcher transport literals (interim hand-picked tunables; RSC08: derive or calibrate)", "derived", "estimate");
     p["/spec/handoff/placement"] = record("derived", "layout and heat policy", "derived", "exact", Json::array({"/spec/intent/layout"}));
@@ -281,8 +287,15 @@ const Json* covering(const Json& p, std::string pointer) {
 /* Records for the manifest: the static records say how each section is produced; a leaf the operator set (--set, the site
  * file, the serving profile) gets its own record from Resolved::provenance, so an override is never filed under the
  * section's default origin. Class stays the class the leaf has at its position (the covering record's). */
-Json provenance_of(const Resolved& r) {
-    Json p = static_provenance();
+Json provenance_of(const ManifestInputs& in) {
+    const Resolved& r = in.resolved;
+    Json p = static_provenance(in.measured.has_value());
+    if (!in.live_policy.is_null())
+        p["/spec/handoff/placement/live_policy"] =
+            record("cli", in.live_policy_from.c_str(), "policy", "exact", Json::array({"/spec/intent/layout"}));
+    if (!in.experiment.is_null())
+        p["/spec/experiment"] = record("experiment", in.experiment_from.c_str(), "diagnostic", "exact",
+                                       Json::array({"/spec/processes/helper_common"}));
     for (const auto& [key, pointer] : leaf_of_key()) {
         if (!r.provenance.contains(key)) continue;
         const Json& rp = r.provenance.at(key);
@@ -339,20 +352,25 @@ BuiltManifest build_manifest(const ManifestInputs& in) {
                  {"facts", facts_of(in.resolved.facts)},
                  {"calibration", calibration},
                  {"resources", {{"host", resources_of(in, calibration)}}},
-                 {"handoff", handoff_of(values)},
+                 {"handoff", handoff_of(values, in.live_policy)},
                  {"processes",
                   {{"engine", engine_of(values)}, {"helper_common", helper_common(values)}, {"helpers", helpers_of(in.resolved)}}},
-                 {"plan",
-                  {{"owner_map", {{"owner_map_sha256", sha_hex_of_zero()}, {"helpers", Json::array()}}},
-                   {"engine_memory",
-                    {{"cache_version", 1}, {"cache_key", sha_hex_of_zero()},
-                     {"model_identity", in.plan_key_inputs.at("model")}, {"engine_identity", in.plan_key_inputs.at("engine_build")},
-                     {"expected", in.plan.plan_json}, }}}}};
+                 {"plan", {{"state", in.measured ? "measured" : "unmeasured"},
+                           {"owner_map", {{"owner_map_sha256", sha_hex_of_zero()}, {"helpers", Json::array()}}}}}};
+    if (in.measured)
+        spec["plan"]["engine_memory"] = {{"cache_version", 1}, {"cache_key", sha_hex_of_zero()},
+                                         {"model_identity", in.measured->key_inputs.at("model")},
+                                         {"engine_identity", in.measured->key_inputs.at("engine_build")},
+                                         {"expected", in.measured->plan.plan_json}};
+    if (!in.experiment.is_null()) {
+        if (in.profile != "lab") fail("an experiment needs the lab profile");
+        spec["experiment"] = in.experiment;
+    }
     Json doc = {{"apiVersion", v1::kApiVersion}, {"kind", v1::kKind},
                 {"metadata",
                  {{"instance_id", in.instance_id}, {"producer", {{"name", "bc-serve"}, {"build_sha256", in.producer_sha256}}},
                   {"contract_version", v1::kContractVersion}, {"content_digest", "sha256:" + sha_hex_of_zero()}}},
-                {"spec", std::move(spec)}, {"provenance", provenance_of(in.resolved)}};
+                {"spec", std::move(spec)}, {"provenance", provenance_of(in)}};
 
     // The owner map is the planner's answer for the placement this very document declares: decode a draft with an empty
     // map, ask the shared planner (the policies come from the draft), write its sets and digests into the document.
@@ -385,7 +403,8 @@ BuiltManifest build_manifest(const ManifestInputs& in) {
         doc["spec"]["plan"]["owner_map"] = {{"owner_map_sha256", sha256_hex(all)}, {"helpers", helpers}};
     }
     // The plan cache key follows from the document (spec section 5.1), so it is computed last but one; the digest last.
-    doc["spec"]["plan"]["engine_memory"]["cache_key"] = v1::plan_cache_key(checked_decode(doc, "manifest with its owner map"));
+    if (in.measured)
+        doc["spec"]["plan"]["engine_memory"]["cache_key"] = v1::plan_cache_key(checked_decode(doc, "manifest with its owner map"));
     const std::string digest = digest_of(doc);
     doc["metadata"]["content_digest"] = digest;
 
@@ -394,7 +413,8 @@ BuiltManifest build_manifest(const ManifestInputs& in) {
     out.digest = digest;
     out.document = std::move(doc);
     // The gate: what a consumer will do with these bytes.
-    v1::Result<v1::Manifest> back = v1::read_manifest(out.text, "the manifest bc-serve built");
+    v1::Result<v1::Manifest> back = v1::read_manifest(out.text, "the manifest bc-serve built",
+                                                      in.measured ? v1::PlanUse::serving : v1::PlanUse::measuring);
     if (!back.ok()) fail(v1::render_human("bc-serve", back.error()));
     if (const v1::Status e = verify_owner_map(back.value(), container)) fail(v1::render_human("bc-serve", *e));
     return out;

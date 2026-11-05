@@ -2844,7 +2844,6 @@ Status decode(const Json& j, const std::string& at, HostResources* out) {  // /s
         out->reserve_mib = std::move(v);
     }
     if (const auto it = j.find("checkpoint_slots"); it == j.end()) {
-        return fault(C::missing_field, member(at, "checkpoint_slots"), "missing required member");
     } else {
         int64_t v{};
         if (auto e = d142(*it, member(at, "checkpoint_slots"), &v)) return e;
@@ -4237,7 +4236,7 @@ nlohmann::json encode(const HostResources& value) {
     j["pool_mib"] = Json(value.pool_mib);
     j["kv_mib"] = Json(value.kv_mib);
     j["reserve_mib"] = Json(value.reserve_mib);
-    j["checkpoint_slots"] = Json(value.checkpoint_slots);
+    if (value.checkpoint_slots) j["checkpoint_slots"] = Json(*value.checkpoint_slots);
     return j;
 }
 

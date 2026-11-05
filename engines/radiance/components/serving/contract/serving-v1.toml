@@ -1005,11 +1005,12 @@ doc = "Host memory held back for the system, MiB (`--host-headroom-mib`)."
 
 [[field]]
 path = "/spec/resources/host/checkpoint_slots"
+optional = true
 radiance_option = "--checkpoint-slots"
 radiance_config = "native checkpoint limit"
 kind = "ref"
 ref = "uint"
-doc = "Prefix checkpoint slots (`--checkpoint-slots`)."
+doc = "Prefix checkpoint slots (`--checkpoint-slots`), derived from the measured plan: present when `plan.state` is `measured`, absent when it is `unmeasured`."
 
 [[field]]
 path = "/spec/handoff"
