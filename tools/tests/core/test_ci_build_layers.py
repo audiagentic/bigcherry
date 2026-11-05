@@ -102,6 +102,57 @@ class CILayersTests(unittest.TestCase):
         with self.assertRaisesRegex(layers.LayerError, "component declarations changed"):
             layers.input_keys(self.root)
 
+    def _tracked_tree(self, files):
+        """A root with the files written and `tracked_paths` answering them, the declarations input_keys needs, and
+        a fixed SDK identity (that part has its own tests)."""
+        radiance = self.root / "engines/radiance"
+        radiance.mkdir(parents=True, exist_ok=True)
+        (radiance / "engine.toml").write_text("[components]\n" + "".join(f'{n}="x"\n' for n in layers.COMPONENTS))
+        for rel, text in files.items():
+            path = self.root / rel
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(text)
+        return patch.multiple(layers, tracked_paths=lambda root: sorted(files), ci_sdk_identity=lambda root: "sdk")
+
+    def _files(self, **changes):
+        files = {"engines/radiance/engine.toml": "[components]\n" + "".join(f'{n}="x"\n' for n in layers.COMPONENTS),
+                 "engines/radiance/recipes.toml": "engine", "tools/bigcherry/x.py": "tool"}
+        for name in layers.COMPONENTS:
+            files[f"engines/radiance/components/{name}/{name}.cpp"] = name
+            files[f"engines/radiance/components/{name}/README.md"] = "docs"
+        files["engines/radiance/components/libr3/shared.h"] = "header"
+        files.update(changes)
+        return files
+
+    def test_a_component_source_change_changes_every_layer_key(self):
+        # The build directory is content-addressed over the component sources, so an engine layer that survived a
+        # component edit would restore into the OLD directory beside the new build: the layer set is all or nothing.
+        with self._tracked_tree(self._files()):
+            before = layers.input_keys(self.root)
+        with self._tracked_tree(self._files(**{"engines/radiance/components/moe-remote/moe-remote.cpp": "edited"})):
+            after = layers.input_keys(self.root)
+        self.assertEqual(set(before), set(after))
+        for name in before:
+            self.assertNotEqual(before[name], after[name], f"{name} must not survive a component source change")
+
+    def test_a_shared_header_change_changes_every_layer_key(self):
+        with self._tracked_tree(self._files()):
+            before = layers.input_keys(self.root)
+        with self._tracked_tree(self._files(**{"engines/radiance/components/libr3/shared.h": "edited"})):
+            after = layers.input_keys(self.root)
+        self.assertTrue(all(before[name] != after[name] for name in before))
+
+    def test_component_documentation_does_not_change_any_layer_key(self):
+        with self._tracked_tree(self._files()):
+            before = layers.input_keys(self.root)
+        with self._tracked_tree(self._files(**{"engines/radiance/components/serving/README.md": "new words"})):
+            after = layers.input_keys(self.root)
+        self.assertEqual(before, after)
+
+    def test_identical_trees_give_identical_keys(self):
+        with self._tracked_tree(self._files()):
+            self.assertEqual(layers.input_keys(self.root), layers.input_keys(self.root))
+
     def test_fingerprint_includes_file_content_and_path(self):
         a = self.root / "a"
         b = self.root / "b"
