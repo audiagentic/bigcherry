@@ -1,6 +1,7 @@
 #include "serving.h"
 #include "manifest_writer.h"
 #include "plan_cache.h"
+#include "sdk_check.h"
 
 #include <filesystem>
 #include <fstream>
@@ -130,6 +131,10 @@ int main(int argc, char** argv) {
                 throw std::runtime_error("unknown option " + arg);
             else positional.push_back(arg);
         }
+        // BRVP06: a build runs against the ROCm SDK it recorded; an environment that points at another one is refused here, before
+        // any mode runs (--help above is the only thing that answers in such an environment)
+        if (const auto refusal = bc::serving::sdk_refusal("/proc/self/exe", bc::serving::current_sdk_environment()))
+            throw std::runtime_error(*refusal);
         const int modes = int(detection) + int(schema) + int(validation) +
                           int(explanation) + int(plan_check_args) + int(plan_store) + int(plan_key_only) + int(!write_manifest.empty());
         const bool plan_mode = plan_check_args || plan_store || plan_key_only || !write_manifest.empty();
