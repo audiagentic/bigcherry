@@ -43,6 +43,7 @@ _ENGINE_COMMANDS: frozenset[str] = frozenset(
         "pin-bump",
         "pin-triage",
         "pin-release",
+        "release-install",
         "release-notes",
         "sources",
         "smoke-cpu",
