@@ -50,7 +50,10 @@ class EveryPlatformNamesAStack(unittest.TestCase):
                 campaign_config.load(path)
 
     def test_the_radiance_lane_resolves_its_sdk_from_the_stack(self):
-        platform = campaign_config.load(ROOT / "engines/radiance/recipes.toml").platforms["linux-radiance"]
+        with mock.patch.dict("os.environ", {
+            "BIGCHERRY_ENVIRONMENT": str(ROOT / "config/environment.example.toml"),
+        }):
+            platform = campaign_config.load(ROOT / "engines/radiance/recipes.toml").platforms["linux-radiance"]
         self.assertEqual((platform.stack, platform.sdk), ("rocm-7-2", "7.2"))
         self.assertIsNotNone(platform.sdk_root)
 
