@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.12.1](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.12.0...bc-platform-1.12.1) (2026-11-05)
+
+
+### Fixes
+
+* **release:** the checked-in main ruleset names ci-pass, so pin-release waits for it before merging ([#659](https://github.com/audiagentic/bigcherry/issues/659)) ([dc9a81f](https://github.com/audiagentic/bigcherry/commit/dc9a81faeb3fbbcb3a0f87dedd2de01ae1c95507))
+
 ## [1.12.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.11.0...bc-platform-1.12.0) (2026-11-05)
 
 
