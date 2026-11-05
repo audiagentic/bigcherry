@@ -56,6 +56,7 @@ The orchestrator is `pin-bump`; its reference is `docs/reference/build/PIN_BUMP.
     # in a detached script (setsid nohup), after sourcing tools/env/bigcherry-env.sh with BIGCHERRY_ENVIRONMENT set:
     nice -n 15 python3 -m bigcherry --engine radiance pin-bump <tag> \
         --source radiance --build stock --platform linux-radiance > <run dir>/pin-bump.log 2>&1
+    # after a stop and a fix:  ... pin-bump <tag> --resume
 
 Phases, in order: fetch and rebase patches (the `drift` phase also runs the libr3 native-rewrite check), compile
 gate (`components-build`, `component-plugin-abi`, `component-tests`), lane build and CPU smoke, optional
@@ -63,22 +64,28 @@ gate (`components-build`, `component-plugin-abi`, `component-tests`), lane build
 `artifacts/pin-bump/radiance/resume-<tag>/failure.json` in the worktree: read `failure.code` and
 `evidence`, fix, then `--resume`.
 
-### Things that bit (2026-11-05, v1.16.0 -> v1.17.0)
+### Things to know
 
 - **`pin-bump` moves `vendor/radiance` in the PRIMARY checkout to the target tag.** That is by design (the vendor
   clone belongs to the primary, `BC_PRIMARY_ROOT` must name a primary checkout) and `vendor/` is gitignored, so no
-  tracked file changes, but every tool reading that clone now sees the new source. KEEP IT ON THE TARGET while the
-  bump is in flight: a `--resume` checks the tree it finds, and with the clone back on the old tag the drift check
-  fails with your own new patterns "not found". If you abandon the bump, `git -C vendor/radiance checkout <old tag>`.
-  Builds are not affected (they read content-addressed copies under `/work/bigcherry/sources/`).
-- **`--resume` needs `--source`, `--build` and `--platform` again** when the run stopped before the compile phase
-  saved them (`LANE_BUILD_INPUT_MISSING`).
+  tracked file changes, but every tool reading that clone now sees the new source. A `--resume` puts the tree back
+  on the run's recorded target by itself (it refuses only when the tree has tracked changes a checkout would lose:
+  `VENDOR_TREE_NOT_AT_TARGET`). If you ABANDON the bump, restore the old pin yourself:
+  `git -C vendor/radiance checkout <old tag>`. Builds are not affected (they read content-addressed copies under
+  `/work/bigcherry/sources/`).
+- **A bare `--resume` is enough**: the run records its compile platform and lane-build profile when it starts, and the
+  tool commits its own release records (`releases/index.json`, `releases/<tag>.json`) before the lane build, which
+  refuses a dirty tree. (Both needed workarounds until 2026-11-05: repeating `--source/--build/--platform`, and
+  committing the records by hand.)
 - **Native `.rw` blocks chain**: a later block's `find` text is the OUTPUT of the earlier block. When upstream edits
   a line (it added `perf_vocab = 0, perf_iqr = 0` to a declaration), update the first block's find AND replace
   with upstream's new text, and the following block's find to the first block's new replace. Re-run the
   extract-and-check from step 2 until `failures` is empty, then commit the `.rw` change in the bump branch.
 - A bump that stops on `NATIVE_REWRITE_DRIFT` is the cheap case; a patch-anchor failure means re-anchoring the
   patch (see `bigcherry-patch-author` and `bigcherry-patch-verify`), which can be real work.
+- **A passing bump can still carry failing patch tests**: the final report lists "patch test(s) fail against the
+  pristine new revision" (v1.17.0: two rad0002 admission-bridge tests). Compile, lane build and CPU smoke pass
+  without them; read them before adopting, they mean the patch's behaviour no longer holds on the new source.
 
 ## 4. After the gates pass: measure, do not assume
 
