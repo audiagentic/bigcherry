@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.7.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.6.0...bc-platform-1.7.0) (2026-11-05)
+
+
+### New and changed
+
+* **radiance:** rad0009 reads the v1 manifest through the shared reader; the interim manifest format and bc-serve's own plan measurement are deleted (RSC08 S2b) ([#588](https://github.com/audiagentic/bigcherry/issues/588)) ([ef0579f](https://github.com/audiagentic/bigcherry/commit/ef0579fd48429c6ae37200056d5cec7c3c9ab9cf))
+* **tools:** build system writes persistent per-run and per-stage logs with a summary; failures name the exact log (BRBC04) ([#574](https://github.com/audiagentic/bigcherry/issues/574)) ([dfb5e51](https://github.com/audiagentic/bigcherry/commit/dfb5e51397eabb72b33f245a9a9f3a5aa989d2e1))
+
 ## [1.6.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.5.0...bc-platform-1.6.0) (2026-11-05)
 
 
