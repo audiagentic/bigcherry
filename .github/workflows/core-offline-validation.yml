@@ -13,6 +13,8 @@ on:
       - 'tools/tests/core/**'
       - 'tools/tests/radiance/**'
       - 'tools/tests/bench/**'
+      - 'tools/tests/lab/**'
+      - 'tools/tests/build/**'
       - 'tools/lab/radiance/**'
       - 'engines/**'
       - 'config/**'
@@ -36,7 +38,7 @@ concurrency:
 jobs:
   core-offline:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -53,3 +55,11 @@ jobs:
           python -m unittest discover -s tools/tests/core -p 'test_*.py'
           python -m unittest discover -s tools/tests/radiance -p 'test_*.py'
           python -m unittest discover -s tools/tests/bench -p 'test_*.py'
+      - name: Launcher and ROCm SDK suites
+        # The launcher's cleanup and plan-check tests drive the real launch script against fake builds (no GPU); they
+        # were not run by any workflow and rotted unseen. The SDK tests keep every build bound to a named ROCm stack.
+        env:
+          PYTHONPATH: tools
+        run: |
+          python -m pytest -q -p no:cacheprovider tools/tests/lab/test_launch_flashnext_cleanup.py tools/tests/lab/test_plan_check_launcher.py
+          python -m pytest -q -p no:cacheprovider tools/tests/build/test_rocm_sdk_explicit.py tools/tests/build/test_runtime_sdk_check.py
