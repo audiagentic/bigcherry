@@ -286,7 +286,18 @@ int bc_plan_memory_done() {
         std::fflush(nullptr);
         std::_Exit(2);
     }
-    std::fprintf(stderr, "radiance: --plan-memory: wrote %s; nothing loaded or allocated past the plan\n", out_path.c_str());
+    /* The engine's own resident host memory now (anonymous plus shared; mapped files are reclaimable and not counted): what the
+     * host ledger counts against MemAvailable beside the helpers' (bc-serve --measured-plan --engine-resident-mib). */
+    long long anon_kb = 0, shm_kb = 0;
+    {
+        std::ifstream status("/proc/self/status");
+        for (std::string line; std::getline(status, line);) {
+            if (line.rfind("RssAnon:", 0) == 0) anon_kb = std::atoll(line.c_str() + 8);
+            else if (line.rfind("RssShmem:", 0) == 0) shm_kb = std::atoll(line.c_str() + 9);
+        }
+    }
+    std::fprintf(stderr, "radiance: --plan-memory: wrote %s; engine resident %lld MiB; nothing loaded or allocated past the plan\n",
+                 out_path.c_str(), (anon_kb + shm_kb + 1023) / 1024);
     std::fflush(nullptr);
     /* Before weights load and the cache is allocated: nothing past plan() needs tearing down, and the device runtime's
      * exit handlers are not run against a half-built engine. */

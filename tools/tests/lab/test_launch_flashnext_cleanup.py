@@ -64,7 +64,7 @@ if [ -n "$plan" ]; then
   touch "$FAKE_MEASURING"
   [ -n "${FAKE_MEASURE_HANG:-}" ] && exec "$REAL_PYTHON" -c 'import signal, sys, time; signal.signal(signal.SIGINT, lambda *a: sys.exit(0)); signal.signal(signal.SIGTERM, lambda *a: sys.exit(0)); time.sleep(600)'
   [ -n "${FAKE_MEASURE_FAIL:-}" ] && exit 1
-  echo '{"plan_version": 1}' > "$plan"; exit 0
+  echo '{"plan_version": 1}' > "$plan"; echo "radiance: --plan-memory: wrote $plan; engine resident 1536 MiB; nothing loaded" >&2; exit 0
 fi
 exec "$REAL_PYTHON" -c '
 import http.server, json, os, signal, sys

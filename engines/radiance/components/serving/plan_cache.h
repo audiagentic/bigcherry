@@ -37,10 +37,20 @@ v1::EnginePlan decode_engine_plan(const nlohmann::json& plan, const std::string&
  * any decoding, as the engine reads it. Throws naming `source`. */
 nlohmann::json parse_plan_json(const std::string& text, const std::string& source);
 
+/* The host memory the engine's neighbours hold while it starts, measured in the same measuring start as the plan (never a
+ * constant): the helpers' resident anonymous and shared memory with the shared segment counted once, and the engine's own
+ * resident memory when plan() ran (before the pools, the n-gram table and the checkpoint store are allocated). The host
+ * ledger counts both as pageable consumers, so the checkpoint slots follow what is really free at start. MemAvailable is
+ * read fresh every time a manifest is written; only these two figures are cached. Both are positive. */
+struct HostResident {
+    uint64_t helpers_mib = 0, engine_mib = 0;
+};
+
 struct CachedPlan {
     v1::EnginePlan plan;           // decoded by the shared v1 codec
     nlohmann::json plan_json;   // as rad0011 wrote it
     std::string key, measured_at;
+    HostResident resident;
 };
 
 /* What a plan must agree with in the configuration it is stored for (values, as resolve() returns them): the host pool it
@@ -55,6 +65,6 @@ std::optional<CachedPlan> plan_cache_lookup(const std::filesystem::path& dir, co
 /* Records a measured plan (rad0011's JSON, decoded by the shared v1 codec first) under its key. Written to a temporary
  * file and renamed into place. */
 CachedPlan plan_cache_store(const std::filesystem::path& dir, const nlohmann::json& key_inputs,
-                            const nlohmann::json& plan_json);
+                            const nlohmann::json& plan_json, const HostResident& resident);
 
 }  // namespace bc::serving

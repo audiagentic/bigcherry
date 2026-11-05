@@ -351,6 +351,18 @@ start_engine() {
   env "${ENGINE_ENV[@]}" ROCR_VISIBLE_DEVICES="$ENGINE_VISIBLE" HIP_VISIBLE_DEVICES="$ENGINE_HIP"     setsid ${ENGINE_WRAP:-} "$RAD_BIN" --model "$MODEL" --radiance-home "$RAD_HOME" --port "$PORT"       --kernels "$ENGINE_KERNELS" "${ENGINE_TOPO_ARGS[@]}" "${ENGINE_CONFIG_ARGS[@]}"       "${ENGINE_ARGS[@]}" "$@" > "$log" 2>&1 9>&- &
 }
 
+# helpers_resident_mib: the sum of the helpers' RssAnon plus the largest RssShmem (the shared segment, once), in MiB, rounded up.
+helpers_resident_mib() {
+  local f pid anon=0 shm=0 a s
+  for f in "$PIDS"/helper*; do
+    pid=$(cat "$f") && [ -r "/proc/$pid/status" ] || { echo "helpers resident memory: no helper process at $f" >&2; return 1; }
+    a=$(awk '/^RssAnon:/ {print $2}' "/proc/$pid/status"); s=$(awk '/^RssShmem:/ {print $2}' "/proc/$pid/status")
+    [ -n "$a" ] && [ -n "$s" ] || { echo "helpers resident memory: cannot read /proc/$pid/status" >&2; return 1; }
+    anon=$((anon + a)); [ "$s" -gt "$shm" ] && shm=$s
+  done
+  echo $(( (anon + shm + 1023) / 1024 ))
+}
+
 # The engine of a helper layout starts from its serving manifest alone: the manifest is its whole configuration, and a measured
 # one also carries the plan it must admit before any weight loads (radiance --manifest M --role engine [--plan-memory FILE]).
 # Only the card it sees and the engine-side environment the manifest does not yet carry (RSC08 S5) come from here.
@@ -365,6 +377,9 @@ start_engine_manifest() {
 plan_check_start_engine_measure() {
   rm -f "/dev/shm${SHM}"
   start_helpers "$PLAN_MEASURING_MANIFEST" --measuring || { stop_procs; return 1; }
+  # what the helpers hold of the host while they are up: anonymous memory of each plus the shared segment once (file pages are
+  # reclaimable and not counted); bc-serve plans the checkpoint slots around it (plan-check.sh passes it with the plan)
+  PLAN_HELPERS_RESIDENT_MIB=$(helpers_resident_mib) || { stop_procs; return 1; }
   start_engine_manifest "$RUN/engine-measure.log" "$PLAN_MEASURING_MANIFEST" --plan-memory "$PLAN_MEASURE_FILE"
   local pid=$! rc=0
   echo $pid > "$PIDS/engine"

@@ -29,12 +29,14 @@ LAUNCHER = REPO / "tools" / "lab" / "radiance" / "launch-flashnext-best.sh"
 # A stand-in bc-serve: its "cache" is a directory of key files. The key is a hash of every --set argument, so any one
 # changed setting is a different key (as with the real plan key). Exit 10 on a miss, like the real one.
 FAKE_SERVE = r"""#!/bin/bash
-cache=""; sets=(); out=""; unmeasured=""; measured_plan=""; objects=()
+cache=""; sets=(); out=""; unmeasured=""; measured_plan=""; objects=(); helpers_mib=""; engine_mib=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --write-manifest) out=$2; shift 2 ;;
     --unmeasured) unmeasured=1; shift ;;
     --measured-plan) measured_plan=$2; shift 2 ;;
+    --helpers-resident-mib) helpers_mib=$2; shift 2 ;;
+    --engine-resident-mib) engine_mib=$2; shift 2 ;;
     --live-policy|--experiment) objects+=("$1=$2"); shift 2 ;;
     --plan-cache) cache=$2; shift 2 ;;
     --engine-binary|--site) shift 2 ;;
@@ -52,6 +54,8 @@ else
   # the real key leaves out where the engine listens and the host KV tier (plan_cache.cpp kNonPlanEngineKeys): hits, not misses
   skey=$(printf '%s\n' "${sets[@]}" | grep -v -e '^engine.port=' -e '^memory.host_kv_mib=' | sha256sum | cut -c1-64)
   if [ -n "$measured_plan" ]; then
+    [ -n "$helpers_mib" ] && [ -n "$engine_mib" ] || { echo "bc-serve: --measured-plan needs the resident host memory" >&2; exit 2; }
+    echo "resident $helpers_mib $engine_mib" >> "$(dirname "$out")/resident.log"
     [ -f "${FAKE_REFUSE_STORE:-/nonexistent}" ] && { echo "bc-serve: plan disagrees with the configuration" >&2; exit 2; }
     cp "$measured_plan" "$cache/$skey.plan"; echo "plan: stored $skey" >&2
   fi
@@ -103,6 +107,8 @@ BUDGETS=({budgets})
 source {shlex.quote(str(LIB))}
 # the measuring start: the engine is asked for a plan and writes one; recorded so the tests see what ran
 plan_check_start_engine_measure() {{
+  PLAN_HELPERS_RESIDENT_MIB=${{FAKE_HELPERS_MIB-2304}}
+  echo "radiance: --plan-memory: wrote $PLAN_MEASURE_FILE; engine resident ${{FAKE_ENGINE_MIB-1536}} MiB; nothing loaded" >> "$RUN/engine-measure.log"
   echo "measure: engine --manifest $PLAN_MEASURING_MANIFEST --plan-memory $PLAN_MEASURE_FILE $(cat "$PLAN_MEASURING_MANIFEST")" >> {shlex.quote(str(self.engine_calls))}
   [ -n "${{FAKE_MEASURE_FAIL:-}}" ] && return 1
   echo '{{"plan_version": 1}}' > "$PLAN_MEASURE_FILE"
@@ -192,6 +198,31 @@ plan_manifest_prepare && printf 'MANIFEST:%s\\n' "$PLAN_MANIFEST"
         # the floor reaches the engine inside the measured manifest, from bc-serve's selected calibration (engine_view); the
         # launcher neither knows it nor passes it
         self.assertNotRegex(LIB.read_text() + LAUNCHER.read_text(), r"floor-ppm|floor_ppm")
+
+    def test_the_resident_host_memory_of_the_measuring_start_goes_to_bc_serve_with_the_plan(self) -> None:
+        done = self._launch()
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual((self.run_dir / "resident.log").read_text().split(), ["resident", "2304", "1536"])
+        # a hit measures nothing and passes nothing: the figures live in the cache entry
+        again = self._launch()
+        self.assertEqual(again.returncode, 0, again.stderr)
+        self.assertEqual((self.run_dir / "resident.log").read_text().count("resident"), 1)
+
+    def test_a_measuring_start_that_does_not_report_the_resident_memory_stops_the_start(self) -> None:
+        for name in ("FAKE_ENGINE_MIB", "FAKE_HELPERS_MIB"):
+            with self.subTest(missing=name):
+                os.environ[name] = ""
+                try:
+                    done = self._launch()
+                finally:
+                    os.environ.pop(name, None)
+                self.assertNotEqual(done.returncode, 0)
+                self.assertNotIn("MANIFEST:", done.stdout)
+                self.assertIn("did not report the resident host memory", done.stderr)
+                for f in self.run_dir.glob("manifest-*"):
+                    f.unlink()
+                for f in (self.run_dir / "plan-cache").glob("*"):
+                    f.unlink()
 
     def test_a_failed_measurement_stops_the_start(self) -> None:
         os.environ["FAKE_MEASURE_FAIL"] = "1"

@@ -11,7 +11,8 @@ shared v1 library `bc_serving_v1`.
 - `radiance … --plan-memory FILE` runs start-up as far as `plan()`, writes what it sized (host consumers the engine pins,
   the checkpoint store's slot, floor and want, one full-length session's KV, the per-card VRAM split including the
   resolved KV budget `kv_resolved`, and the expert plane, each with the engine function it came from) as v1 JSON through
-  the generated encoder, and exits before any weight is loaded or the KV cache and arenas are allocated. bc-serve uses it
+  the generated encoder, prints its own resident host memory (`engine resident N MiB`, anonymous plus shared, for bc-serve's
+  host ledger), and exits before any weight is loaded or the KV cache and arenas are allocated. bc-serve uses it
   as a measured fact, cached by container, engine build, card and planning inputs.
 - An engine started from a measured manifest (`radiance --manifest M --role engine`, rad0009) checks the plan that manifest
   carries: rad0009 hands over `engine_view`'s expected plan and `kv_backing_floor_ppm` (the selected calibration, 0 when none

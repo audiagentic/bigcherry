@@ -43,18 +43,18 @@ plan_check_describe() {
   [ -z "$EXPERIMENT_FILE" ] || PLAN_OBJECTS+=(--experiment "$EXPERIMENT_FILE")
 }
 
-# plan_manifest_write OUT [unmeasured | measured-plan FILE]: the v1 serving manifest the engine and the helpers start from,
+# plan_manifest_write OUT [unmeasured | measured-plan FILE HELPERS_MIB ENGINE_MIB]: the v1 serving manifest the engine and the helpers start from,
 # written once (bc-serve refuses an existing OUT). With `unmeasured`: the measuring start's manifest (owner map and settings,
 # no plan). Otherwise the measured one, from the plan the cache holds for this exact configuration (exit 10 when it holds none),
-# or, with `measured-plan FILE`, from the plan a measuring start just produced (checked against the configuration, then stored
-# in the cache under this configuration's key).
+# or, with `measured-plan FILE ...`, from the plan a measuring start just produced and the host memory the helpers and the engine
+# held in it (checked against the configuration, then stored in the cache under this configuration's key).
 plan_manifest_write() {
   local out=$1 serve="$RAD_HOME/bin/bc-serve" extra=()
   case "${2:-}" in
     unmeasured)
       "$serve" --write-manifest "$out" --unmeasured "${PLAN_SITE[@]}" "${PLAN_SET[@]}" "${PLAN_OBJECTS[@]}" >&2
       return ;;
-    measured-plan) extra=(--measured-plan "$3") ;;
+    measured-plan) extra=(--measured-plan "$3" --helpers-resident-mib "$4" --engine-resident-mib "$5") ;;
   esac
   "$serve" --write-manifest "$out" --plan-cache "$RUN/plan-cache" --engine-binary "$RAD_BIN" "${PLAN_SITE[@]}" "${PLAN_EXTRA[@]}" \
     "${PLAN_SET[@]}" "${PLAN_OBJECTS[@]}" "${extra[@]}" >&2
@@ -101,7 +101,11 @@ plan_check_measure() {
   PLAN_MEASURING_MANIFEST="$RUN/manifest-measuring-$STAMP-$$.json"
   plan_manifest_write "$PLAN_MEASURING_MANIFEST" unmeasured || { echo "plan check: the unmeasured manifest was not written (above)" >&2; return 1; }
   PLAN_MEASURE_FILE="$plan" plan_check_start_engine_measure || { echo "plan check: the measuring start failed; see $RUN/engine-measure.log" >&2; return 1; }
-  plan_manifest_write "$PLAN_MANIFEST" measured-plan "$plan" \
+  local engine_mib
+  engine_mib=$(sed -n 's/.*--plan-memory: wrote .*; engine resident \([0-9][0-9]*\) MiB;.*/\1/p' "$RUN/engine-measure.log" | tail -1)
+  [ -n "$engine_mib" ] && [ -n "${PLAN_HELPERS_RESIDENT_MIB:-}" ] \
+    || { echo "plan check: the measuring start did not report the resident host memory (helpers '${PLAN_HELPERS_RESIDENT_MIB:-}' MiB, engine '$engine_mib' MiB); see $RUN/engine-measure.log" >&2; return 1; }
+  plan_manifest_write "$PLAN_MANIFEST" measured-plan "$plan" "$PLAN_HELPERS_RESIDENT_MIB" "$engine_mib" \
     || { echo "plan check: the measured manifest was not written (above)" >&2; return 1; }
   echo "plan check: measured in $((SECONDS - t0)) s; plan stored in $RUN/plan-cache and the manifest written" >&2
 }

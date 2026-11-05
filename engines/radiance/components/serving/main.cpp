@@ -29,9 +29,12 @@ void usage() {
                  "      measured plan and the planner's owner map, and reads it back through the shared strict reader before it\n"
                  "      stays; a miss in the plan cache exits 10. Starts no process. The engine admits the plan the manifest\n"
                  "      carries (expected plan and kv_backing_floor): there is no other way to hand it one.\n"
-                 "      --measured-plan FILE   the plan a measuring start produced (radiance --plan-memory FILE, helpers up): it\n"
-                 "                     is checked against this configuration (host pool, host consumers), stored in the plan cache\n"
-                 "                     under this configuration's key, and the manifest is written from it.\n"
+                 "      --measured-plan FILE --helpers-resident-mib N --engine-resident-mib M   the plan a measuring start produced\n"
+                 "                     (radiance --plan-memory FILE, helpers up) and the host memory the helpers and the engine held\n"
+                 "                     there (resident, MiB): the plan is checked against this configuration (host pool, host\n"
+                 "                     consumers) and stored in the plan cache with the two figures under this configuration's key,\n"
+                 "                     and the manifest is written from it. The host ledger counts both figures against MemAvailable\n"
+                 "                     as read now.\n"
                  "      --unmeasured   (with --write-manifest; no --plan-cache or --engine-binary) writes the unmeasured manifest\n"
                  "                     of the measuring start instead: owner map and settings, plan.state unmeasured, no plan. Only\n"
                  "                     a measuring start (radiance --plan-memory, r3_moe_worker --measuring) accepts it; every\n"
@@ -65,6 +68,15 @@ void explain(const bc::serving::Resolved& result) {
 }
 } // namespace
 
+static uint64_t parse_mib(const std::string& text, const char* flag) {
+    size_t used = 0;
+    unsigned long long n = 0;
+    try { n = std::stoull(text, &used); } catch (const std::exception&) { used = 0; }
+    if (used != text.size() || text.empty() || text[0] == '-' || n == 0)
+        throw std::runtime_error(std::string(flag) + " must be a positive integer (MiB), is \"" + text + "\"");
+    return n;
+}
+
 /* A JSON object an operator supplies (a live policy, a lab experiment): read once, never defaulted; empty path = none.
  * `from` names the file for the member's provenance record. */
 static void load_json_input(const fs::path& path, const char* flag, Json* out, std::string* from) {
@@ -84,6 +96,7 @@ int main(int argc, char** argv) {
         bool detection = false, schema = false, validation = false;
         bool explanation = false, json = false;
         fs::path measured_plan_file;
+        std::optional<uint64_t> helpers_resident_mib, engine_resident_mib;
         std::string plan_extra;
         fs::path plan_cache, engine_binary;
         fs::path write_manifest, live_policy_file, experiment_file;
@@ -112,6 +125,8 @@ int main(int argc, char** argv) {
             else if (arg == "--experiment") experiment_file = need_arg("--experiment");
             else if (arg == "--plan-extra") plan_extra = need_arg("--plan-extra");
             else if (arg == "--measured-plan") measured_plan_file = need_arg("--measured-plan");
+            else if (arg == "--helpers-resident-mib") helpers_resident_mib = parse_mib(need_arg("--helpers-resident-mib"), "--helpers-resident-mib");
+            else if (arg == "--engine-resident-mib") engine_resident_mib = parse_mib(need_arg("--engine-resident-mib"), "--engine-resident-mib");
             else if (arg == "--plan-cache") plan_cache = need_arg("--plan-cache");
             else if (arg == "--engine-binary") engine_binary = need_arg("--engine-binary");
             else if (arg == "--set") opts.sets.push_back(need_arg("--set"));
@@ -132,6 +147,11 @@ int main(int argc, char** argv) {
             throw std::runtime_error("--measured-plan goes with --write-manifest");
         if (unmeasured && !measured_plan_file.empty())
             throw std::runtime_error("--unmeasured has no plan: it takes no --measured-plan");
+        if (measured_plan_file.empty() != (!helpers_resident_mib && !engine_resident_mib))
+            throw std::runtime_error("--helpers-resident-mib and --engine-resident-mib go with --measured-plan (the host memory the "
+                                     "helpers and the engine held in the measuring start that produced the plan), both or neither");
+        if (!measured_plan_file.empty() && (!helpers_resident_mib || !engine_resident_mib))
+            throw std::runtime_error("--measured-plan needs both --helpers-resident-mib and --engine-resident-mib");
         if (modes != 1) throw std::runtime_error("choose one mode (see --help)");
         if (schema) {
             if (!positional.empty()) throw std::runtime_error("--schema takes no files");
@@ -211,7 +231,8 @@ int main(int argc, char** argv) {
                 const Json measured = bc::serving::parse_plan_json(plan_text.str(), measured_plan_file.string());
                 bc::serving::check_plan_for_configuration(
                     v, bc::serving::decode_engine_plan(measured, measured_plan_file.string()));
-                bc::serving::plan_cache_store(plan_cache, key_inputs, measured);
+                bc::serving::plan_cache_store(plan_cache, key_inputs, measured,
+                                              bc::serving::HostResident{*helpers_resident_mib, *engine_resident_mib});
                 std::cerr << "plan: stored " << bc::serving::plan_key(key_inputs) << '\n';
             }
             plan = bc::serving::plan_cache_lookup(plan_cache, key_inputs);

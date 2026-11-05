@@ -703,7 +703,7 @@ void measured_plan_cache(Fixture& t) {
                "kv_ceiling": 9, "expert_ceiling": 0, "from": "engine plan (test)",
                "cards": [{"capacity": 10, "free": 10, "engine_expert_plane": 0, "expert_unit_max": 1}]},
       "host_pool_mib": 9216})json");
-    const auto stored = sv::plan_cache_store(dir, k, plan);
+    const auto stored = sv::plan_cache_store(dir, k, plan, sv::HostResident{2304, 1536});
     const auto found = sv::plan_cache_lookup(dir, k);
     assert(found && found->key == stored.key && found->plan.checkpoints.want_slots == 72 && !found->measured_at.empty());
     // A plan is stored only for the configuration it belongs to: the host pool it echoes and the expected host consumer
@@ -753,6 +753,21 @@ void measured_plan_cache(Fixture& t) {
         assert(drifted && drifted->plan.host.at(0).bytes == 101);
         std::ofstream(file, std::ios::trunc) << original;                      // restore for the tests below
     }
+    {   // an entry from before the resident host memory was measured is a miss: the configuration is measured again
+        const auto file = dir / (stored.key + ".json");
+        const std::string original = [&] { std::ifstream in(file); std::ostringstream t; t << in.rdbuf(); return t.str(); }();
+        Json e = Json::parse(original);
+        assert(e.at("resident").at("helpers_mib") == 2304 && e.at("resident").at("engine_mib") == 1536);
+        e.erase("resident");
+        std::ofstream(file, std::ios::trunc) << e.dump();
+        assert(!sv::plan_cache_lookup(dir, k));
+        e["resident"] = {{"helpers_mib", 0}, {"engine_mib", 5}};
+        std::ofstream(file, std::ios::trunc) << e.dump();
+        bool zero_refused = false;
+        try { (void)sv::plan_cache_lookup(dir, k); } catch (const std::exception&) { zero_refused = true; }
+        assert(zero_refused);
+        std::ofstream(file, std::ios::trunc) << original;
+    }
     {
         const auto file = dir / (stored.key + ".json");
         Json e = Json::parse(std::ifstream(file));
@@ -787,7 +802,7 @@ void measured_plan_cache(Fixture& t) {
     }
     Json bad = plan; bad.erase("vram");
     refused = false;
-    try { (void)sv::plan_cache_store(dir, k, bad); } catch (const std::exception& e) {
+    try { (void)sv::plan_cache_store(dir, k, bad, sv::HostResident{2304, 1536}); } catch (const std::exception& e) {
         refused = std::string(e.what()).find("vram: missing required member") != std::string::npos;
     }
     assert(refused);
@@ -827,6 +842,7 @@ void manifest_writer_step(Fixture& t) {
         sv::MeasuredPlan measured;
         measured.plan.plan = sv::decode_engine_plan(plan, "writer plan");
         measured.plan.plan_json = plan;
+        measured.plan.resident = {1536, 1024};
         measured.key_inputs = sv::plan_key_inputs(r.values, t.facts, sv::container_identity(model), std::string(64, 'b'), "");
         in.measured = std::move(measured);
     }
@@ -852,6 +868,43 @@ void manifest_writer_step(Fixture& t) {
     for (const Json& h : spec.at("plan").at("owner_map").at("helpers")) owned += h.at("count").get<size_t>();
     assert(owned == 64);   // 4 layers x 16 experts: with budgets this large the helpers own them all
     assert(spec.at("plan").at("engine_memory").at("expected") == plan);
+    // The checkpoint slots follow what is really free (RSC08 S3): the host pool and the memory the helpers and the engine hold
+    // are counted against MemAvailable as read when the manifest is written. With the tier at its target (12288 MiB), a store
+    // floor of 8 and the plan's 1 MiB consumer, the room above the tier is `left` MiB and the store takes 8 + left of its want 72.
+    {
+        const uint64_t reserve = r.values.at("memory").at("host_reserve_mib").get<uint64_t>();
+        auto slots_for = [&](uint64_t helpers_mib, int64_t extra_left_mib, int64_t available_shift_mib) -> uint64_t {
+            sv::ManifestInputs in3 = in;
+            in3.measured->plan.resident = {helpers_mib, 1024};
+            const int64_t available = int64_t(reserve + 9216 + 1 + 8 + 12288 + helpers_mib + 1024) + extra_left_mib + available_shift_mib;
+            in3.resolved.facts["host"]["mem_available_mib"] = available;
+            const auto built3 = sv::build_manifest(in3);
+            return built3.document.at("spec").at("resources").at("host").at("checkpoint_slots").get<uint64_t>();
+        };
+        assert(slots_for(1536, 22, 0) == 8 + 22);                 // 22 MiB above the tier: 22 more slots than the floor
+        assert(slots_for(1536, 22, -10) == 8 + 12);               // a manifest written when MemAvailable is lower: fewer slots
+        assert(slots_for(1536, 22, +10) == 8 + 32);               // and when it is higher: more
+        // helpers holding more resident memory take the same room: fewer slots at the same MemAvailable
+        {
+            sv::ManifestInputs in3 = in;
+            in3.measured->plan.resident = {1536, 1024};
+            const uint64_t available = in3.resolved.facts.at("host").at("mem_available_mib").get<uint64_t>();
+            in3.resolved.facts["host"]["mem_available_mib"] = reserve + 9216 + 1 + 8 + 12288 + 1536 + 1024 + 22;
+            const auto base = sv::build_manifest(in3);
+            in3.measured->plan.resident = {1536 + 10, 1024};
+            const auto more = sv::build_manifest(in3);
+            assert(more.document.at("spec").at("resources").at("host").at("checkpoint_slots").get<uint64_t>() + 10 ==
+                   base.document.at("spec").at("resources").at("host").at("checkpoint_slots").get<uint64_t>());
+            (void)available;
+        }
+        // the figures are measured, never defaulted: a plan stored without them is refused, and a cache entry written before
+        // they were measured is a miss (the configuration is measured again)
+        sv::ManifestInputs in4 = in;
+        in4.measured->plan.resident = {0, 0};
+        bool refused = false;
+        try { (void)sv::build_manifest(in4); } catch (const std::exception&) { refused = true; }
+        assert(refused);
+    }
     // The kv_backing_floor the engine admits with is the selected calibration, carried in the manifest (never a launcher literal):
     // balanced 600000, latency 500000, throughput none (0). engine_view hands the engine exactly this.
     {

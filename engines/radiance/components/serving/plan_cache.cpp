@@ -158,25 +158,36 @@ std::optional<CachedPlan> plan_cache_lookup(const fs::path& dir, const Json& key
     const std::string where = "plan cache entry " + file.string();
     const Json e = parse_plan_json(read_file(file), where);
     if (!e.is_object()) throw std::runtime_error(where + ": not a JSON object");
-    for (const char* k : {"cache_version", "key", "key_inputs", "measured_at", "plan"})
+    // An entry from before the resident host memory was measured (RSC08 S3) has no "resident": it is a miss, so the
+    // configuration is measured again and the entry rewritten, never planned with a guessed figure.
+    if (!e.contains("resident")) return std::nullopt;
+    for (const char* k : {"cache_version", "key", "key_inputs", "measured_at", "plan", "resident"})
         if (!e.contains(k)) throw std::runtime_error(where + ": missing " + std::string(k));
-    if (e.size() != 5) throw std::runtime_error(where + ": unknown keys");
+    if (e.size() != 6) throw std::runtime_error(where + ": unknown keys");
+    const Json& res = e.at("resident");
+    if (!res.is_object() || res.size() != 2 || !res.contains("helpers_mib") || !res.contains("engine_mib") ||
+        !res.at("helpers_mib").is_number_unsigned() || !res.at("engine_mib").is_number_unsigned() ||
+        res.at("helpers_mib").get<uint64_t>() == 0 || res.at("engine_mib").get<uint64_t>() == 0)
+        throw std::runtime_error(where + ": resident must be {helpers_mib, engine_mib}, both positive integers");
     if (e.at("cache_version") != 1) throw std::runtime_error(where + ": cache_version must be 1");
     if (e.at("key") != key || e.at("key_inputs") != key_inputs)
         throw std::runtime_error(where + ": recorded key or key inputs differ from what it is filed under");
-    CachedPlan c{decode_engine_plan(e.at("plan"), where), e.at("plan"), key, e.at("measured_at").get<std::string>()};
+    CachedPlan c{decode_engine_plan(e.at("plan"), where), e.at("plan"), key, e.at("measured_at").get<std::string>(),
+                 {res.at("helpers_mib").get<uint64_t>(), res.at("engine_mib").get<uint64_t>()}};
     return c;
 }
 
-CachedPlan plan_cache_store(const fs::path& dir, const Json& key_inputs, const Json& plan_json) {
-    CachedPlan c{decode_engine_plan(plan_json, "measured plan"), plan_json, plan_key(key_inputs), {}};
+CachedPlan plan_cache_store(const fs::path& dir, const Json& key_inputs, const Json& plan_json, const HostResident& resident) {
+    if (resident.helpers_mib == 0 || resident.engine_mib == 0)
+        throw std::runtime_error("the resident host memory of the helpers and of the engine must both be measured (positive MiB)");
+    CachedPlan c{decode_engine_plan(plan_json, "measured plan"), plan_json, plan_key(key_inputs), {}, resident};
     const std::time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
     char at[32];
     std::strftime(at, sizeof at, "%Y-%m-%dT%H:%M:%SZ", std::gmtime(&now));
     c.measured_at = at;
     fs::create_directories(dir);
     const Json e = {{"cache_version", 1}, {"key", c.key}, {"key_inputs", key_inputs}, {"measured_at", c.measured_at},
-                    {"plan", plan_json}};
+                    {"plan", plan_json}, {"resident", {{"helpers_mib", resident.helpers_mib}, {"engine_mib", resident.engine_mib}}}};
     const fs::path file = dir / (c.key + ".json"), tmp = dir / (c.key + ".json.tmp");
     {
         std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
