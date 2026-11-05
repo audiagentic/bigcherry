@@ -173,12 +173,14 @@ plan_manifest_prepare && printf 'MANIFEST:%s\\n' "$PLAN_MANIFEST"
                 self.assertEqual(again.returncode, 0, again.stderr)
                 self.assertFalse(self.engine_calls.exists(), f"{name} is not part of the key; the measurement still applies")
 
-    def test_a_helper_layout_refuses_what_is_not_a_manifest_field(self) -> None:
-        # the engine of a helper layout starts from its manifest alone: no raw engine argument, no n-gram card (RSC08 PR 2 adds
-        # the manifest fields); the description of the plan therefore never carries them
+    def test_there_is_no_raw_engine_argument_and_the_n_gram_card_is_refused_with_helpers(self) -> None:
+        # RSC08 amendment 11: the engine's flags are manifest fields (spec.experiment.engine, spec.processes.engine), so the launcher
+        # has no way to pass one raw; the n-gram card is not a manifest field yet and a helper layout refuses it
         text = LAUNCHER.read_text()
-        self.assertIn("cannot be combined with a helper layout", text)
-        self.assertIn("exit 99", text[text.index("cannot be combined with a helper layout"):][:400])
+        self.assertNotIn("--engine-arg)", text)
+        self.assertNotIn("ENGINE_ARGS", text)
+        self.assertIn("--ngram-device cannot be combined with a helper layout", text)
+        self.assertIn("exit 99", text[text.index("--ngram-device cannot be combined with a helper layout"):][:400])
         self.assertNotIn("engine-args:", LIB.read_text())
         self.assertNotIn("ngram-device:", LIB.read_text())
 

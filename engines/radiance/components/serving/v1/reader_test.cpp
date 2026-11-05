@@ -149,6 +149,32 @@ int main() {
         Json k = lab;
         k["spec"]["intent"]["service"]["profile"] = "production";
         expect(from(rehashed(k)), C::experiment_forbidden, "forbidden", "production plus a full experiment");
+        // amendment 11: the engine's lab-only flags are an experiment; the three production-capable ones are not
+        Json only_engine = prod;
+        only_engine["spec"]["experiment"] = {{"engine", {{"profile_ops", "on"}}}};
+        expect(from(rehashed(only_engine)), C::experiment_forbidden, "forbidden", "production plus experiment.engine");
+        Json prod_flags = prod;
+        prod_flags["spec"]["processes"]["engine"]["execution"]["tp_wire"] = "wht6";
+        prod_flags["spec"]["processes"]["engine"]["execution"]["no_prefix_cache"] = "on";
+        prod_flags["spec"]["processes"]["engine"]["device"]["headroom_mib"] = 128;
+        check(from(rehashed(prod_flags)).ok(), "tp_wire, no_prefix_cache and headroom_mib are production fields");
+        for (const char* bad : {"off", "ON", ""}) {
+            Json b = prod_flags;
+            b["spec"]["processes"]["engine"]["execution"]["no_prefix_cache"] = bad;
+            expect(from(rehashed(b)), C::invalid_value, "is not one of on", std::string("no_prefix_cache \"") + bad + "\" is not the one value on");
+        }
+        Json bad_tp = prod_flags;
+        bad_tp["spec"]["processes"]["engine"]["execution"]["tp_wire"] = "exactly";
+        expect(from(rehashed(bad_tp)), C::invalid_value, "is not one of exact, wht6", "an unknown tp_wire");
+        Json lab_engine = lab;
+        lab_engine["spec"]["experiment"]["engine"] = {{"profile_ops", "on"}, {"kv_resident", 65536}};
+        check(from(rehashed(lab_engine)).ok(), "a lab manifest carries experiment.engine");
+        lab_engine["spec"]["experiment"]["engine"]["kv_resident"] = 0;
+        expect(from(rehashed(lab_engine)), C::invalid_value, "below the minimum", "kv_resident 0 (a positive token count)");
+        lab_engine["spec"]["experiment"]["engine"] = {{"profile_ops", "on"}, {"bogus", 1}};
+        expect(from(rehashed(lab_engine)), C::unknown_field, "unknown member", "an unknown experiment.engine member");
+        lab_engine["spec"]["experiment"]["engine"] = Json::object();
+        expect(from(rehashed(lab_engine)), C::invalid_value, "must not be empty", "an empty experiment.engine");
     }
     {
         Json j = prod;

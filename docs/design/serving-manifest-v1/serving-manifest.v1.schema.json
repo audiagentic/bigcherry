@@ -789,6 +789,11 @@
                         "$ref": "#/$defs/bdf"
                       },
                       "minItems": 1
+                    },
+                    "headroom_mib": {
+                      "description": "VRAM left unclaimed on every engine card, MiB (`--gpu-headroom-mib`; amendment 11).",
+                      "$ref": "#/$defs/uint",
+                      "default": 96
                     }
                   }
                 },
@@ -913,6 +918,19 @@
                       "enum": [
                         "nearest",
                         "exact"
+                      ]
+                    },
+                    "tp_wire": {
+                      "description": "Cross-rank all-reduce payload (`--tp-wire`; amendment 11): `exact`, or `wht6`, a lossy 6-bit transform.",
+                      "enum": [
+                        "exact",
+                        "wht6"
+                      ]
+                    },
+                    "no_prefix_cache": {
+                      "description": "Present means prefix caching is disabled (`--no-prefix-cache`; amendment 11). Not the host KV tier size (`resources.host.kv_mib`, `--prefix-cache-mib`): that tier stays configurable with caching on.",
+                      "enum": [
+                        "on"
                       ]
                     }
                   }
@@ -1383,6 +1401,37 @@
                     }
                   },
                   "minProperties": 1
+                }
+              },
+              "minProperties": 1
+            },
+            "engine": {
+              "description": "Lab-only engine diagnostics (amendment 11): flags the engine takes that are not serving configuration. Forbidden by the `production` profile with the rest of `spec.experiment`.",
+              "type": "object",
+              "additionalProperties": false,
+              "required": [],
+              "properties": {
+                "profile_ops": {
+                  "description": "Present means per-op device timing (`--profile-ops`).",
+                  "enum": [
+                    "on"
+                  ]
+                },
+                "debug_selection": {
+                  "description": "Present means the engine prints its selection table (`--debug-selection`).",
+                  "enum": [
+                    "on"
+                  ]
+                },
+                "deterministic": {
+                  "description": "Present pins placement to the plan the loader made (`--deterministic`).",
+                  "enum": [
+                    "on"
+                  ]
+                },
+                "kv_resident": {
+                  "description": "Stream the sparse attention group's KV from host memory, resident tokens (`--kv-resident`).",
+                  "$ref": "#/$defs/positive"
                 }
               },
               "minProperties": 1

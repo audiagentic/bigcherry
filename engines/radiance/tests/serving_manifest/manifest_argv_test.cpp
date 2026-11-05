@@ -1,7 +1,7 @@
 // Card-free test of the patched engine's manifest-to-argv logic (core/bc_serving_manifest.cpp from rad0009): a serving
 // manifest v1 read by the shared strict reader, its registry-bound fields as flags.
 // Built by tools/tests/patch/test_radiance_patch_packages.py against radiance's real option table and a mirror of config_parse's shape rules.
-// usage: manifest_argv_test SCRATCH_DIR V1_EXAMPLE_MANIFEST OPTIONS_FILE
+// usage: manifest_argv_test SCRATCH_DIR V1_EXAMPLE_MANIFEST OPTIONS_FILE LAB_EXAMPLE_MANIFEST
 #include "bc_plan_check.h"
 #include "bc_serving_manifest.h"
 #include "jcs.h"
@@ -118,6 +118,7 @@ static std::string run_main_order(std::vector<std::string> args) {
 
 int main(int, char** argv) {
     g_dir = argv[1];
+    const char* argc4 = argv[4];
     load_options(argv[3]);
     // rad0011 adds --plan-memory FILE to radiance's option table (the table the harness extracted is the unpatched pin's)
     g_options.push_back("--plan-memory");
@@ -164,6 +165,28 @@ int main(int, char** argv) {
         CHECK(run({"--manifest", example, "--plan-memory", g_dir + "/plan.json"}) == "ERROR");
         CHECK(run({"--manifest", unmeasured, "--plan-memory"}) == "ERROR");
         CHECK(run({"--manifest", unmeasured, "--plan-memory", "a", "--plan-memory", "b"}) == "ERROR");
+    }
+
+    // Amendment 11: the engine's other flags are manifest fields. Value-less flags (profile_ops, debug_selection, deterministic,
+    // no_prefix_cache) are emitted without a value, the others with theirs, and radiance's own parser takes all of it.
+    {
+        const std::string lab = argc4;
+        const std::string lab_argv = run({"--manifest", lab});
+        CHECK(lab_argv != "ERROR" && g_parsed);
+        for (const char* flag : {" --profile-ops", " --debug-selection", " --deterministic", " --no-prefix-cache"}) {
+            const size_t at = lab_argv.find(flag);
+            CHECK(at != std::string::npos);
+            // no value follows: the next token is another flag or the end
+            if (at != std::string::npos) {
+                const size_t next = at + std::strlen(flag);
+                CHECK(next == lab_argv.size() || lab_argv.compare(next, 3, " --") == 0);
+            }
+        }
+        CHECK(lab_argv.find(" --kv-resident 65536") != std::string::npos);
+        CHECK(lab_argv.find(" --tp-wire exact") != std::string::npos);
+        CHECK(lab_argv.find(" --gpu-headroom-mib 96") != std::string::npos);
+        CHECK(bc_serving_mark_given(&g_given));
+        CHECK(g_given.at("--profile-ops").rfind("manifest ", 0) == 0 && g_given.at("--no-prefix-cache").rfind("manifest ", 0) == 0);
     }
 
     // without --manifest argv is untouched

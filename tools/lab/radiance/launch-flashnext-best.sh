@@ -26,7 +26,7 @@
 #   bigcherry build --lane radiance:stock:linux-radiance
 #
 # Usage:
-#   bash tools/lab/radiance/launch-flashnext-best.sh [start] [--build DIR] [--port N] [--heat FILE] [--host-pool-mib N] [--host-kv-mib N] [--chunk TOKENS] [--ngram-placement ram|disk|vram] [--kv-dtype fp8|fp8_v4|k6_v4] [--engine-arg ARG ...] [--ngram-device INDEX] [--max-model-len TOKENS] [--record-heat PREFIX|off [--record-period S]] [--live-policy FILE] [--experiment FILE] [--gpu-power] [--layout NAME] [--budget ARCH=MIB] [--canary-prompt TEXT --canary-expect FACT]
+#   bash tools/lab/radiance/launch-flashnext-best.sh [start] [--build DIR] [--port N] [--heat FILE] [--host-pool-mib N] [--host-kv-mib N] [--chunk TOKENS] [--ngram-placement ram|disk|vram] [--kv-dtype fp8|fp8_v4|k6_v4] [--ngram-device INDEX] [--max-model-len TOKENS] [--record-heat PREFIX|off [--record-period S]] [--live-policy FILE] [--experiment FILE] [--gpu-power] [--layout NAME] [--budget ARCH=MIB] [--canary-prompt TEXT --canary-expect FACT]
 #     (every start ends with a canary completion that must contain the fact, default 'The capital of France is' -> Paris; a failure stops the launch, exit 96)
 #   bash tools/lab/radiance/launch-flashnext-best.sh stop
 # Without --build, the newest build under $BC_WORK_ROOT/builds that has the helper binary is used.
@@ -47,8 +47,9 @@
 # --chunk TOKENS: the largest step (default 2048): the activation arena and the prefill staging are sized from it, so a smaller chunk leaves the KV cache more VRAM.
 # --ngram-placement ram|disk|vram: where the 47.7 GiB n-gram table lives (default ram: pinned host memory the cards read). disk reads its rows from the
 # container and frees that RAM for --host-pool-mib.
-# --kv-dtype T: the KV cache type (default fp8; fp8_v4 costs 0.78 of it per token and k6_v4 0.69, both lossy). --engine-arg ARG: one more engine argument,
-# repeatable (an option and its value are two --engine-arg, e.g. --engine-arg --kv-resident --engine-arg 65536).
+# --kv-dtype T: the KV cache type (default fp8; fp8_v4 costs 0.78 of it per token and k6_v4 0.69, both lossy). There is no raw engine argument: the engine's
+# other flags are manifest fields (spec.experiment.engine: profile_ops, kv_resident, debug_selection, deterministic; give them in the
+# --experiment FILE object, e.g. {"engine": {"profile_ops": "on", "kv_resident": 65536}}).
 # --ngram-device INDEX: an inventory card (not the engine, not a helper) that holds as much of the n-gram table as fits and gathers its rows (libr3ngram, R3_NGRAM_DEV);
 # the rows past its VRAM stay in a host copy. The card then sits in the engine process beside the engine card.
 # --max-model-len TOKENS: the longest context a sequence may have (default 262144, the trained context).
@@ -66,11 +67,11 @@
 #   the real start goes ahead. That measuring start uses the GPUs exactly as a launch does, so the first launch of a new
 #   configuration needs the gpu lease like any launch (agent-lease acquire gpu). Any setting above (layout, sessions, context,
 #   pool, KV tier, chunk, n-gram placement, KV dtype, rope, resume) changes the configuration. Plans live in $RUN/plan-cache.
-#   With helpers, --engine-arg and --ngram-device are refused (they are not manifest fields yet).
+#   With helpers, --ngram-device is refused (it is not a manifest field yet).
 # HELPER_WRAP=<command>: run each helper under it (e.g. a profiler wrapper; its arguments --role helperN tell it which helper).
 # ENGINE_WRAP=<command>: run the engine under it (a debugger, numactl, strace; the stop command signals the engine through the
 #   wrapper, so it must forward SIGINT/SIGTERM). Not rocprofv3: radiance drives the card through its own AQL backend and fails
-#   at start under rocprof's interception (2026-11-01); for the engine's per-op device times use --engine-arg --profile-ops.
+#   at start under rocprof's interception (2026-11-01); for the engine's per-op device times put {"engine": {"profile_ops": "on"}} in the --experiment FILE.
 set -u
 
 WORK=${BC_WORK_ROOT:?set BC_WORK_ROOT (source tools/env/bigcherry-env.sh)}
@@ -91,7 +92,6 @@ CKPT_INTERVAL=4096   # the engine's --checkpoint-interval; the plan check's conf
 NUM_SPEC=3                # the engine's --num-speculative-tokens (MTP depth); likewise
 NGRAM=ram
 KV_DTYPE=fp8
-ENGINE_ARGS=()
 CUSTOM_SERVE_OPTIONS=()
 NGRAM_DEV=""
 MAX_LEN=262144
@@ -121,7 +121,6 @@ while [ $# -gt 0 ]; do
     --host-kv-mib) CUSTOM_SERVE_OPTIONS+=(--host-kv-mib); HOST_KV_MIB=$2; shift 2 ;;
     --chunk) CUSTOM_SERVE_OPTIONS+=(--chunk); CHUNK=$2; shift 2 ;;
     --kv-dtype) CUSTOM_SERVE_OPTIONS+=(--kv-dtype); KV_DTYPE=$2; shift 2 ;;
-    --engine-arg) CUSTOM_SERVE_OPTIONS+=(--engine-arg); ENGINE_ARGS+=("$2"); shift 2 ;;
     --ngram-device) CUSTOM_SERVE_OPTIONS+=(--ngram-device); NGRAM_DEV=$2; shift 2 ;;
     --max-model-len) CUSTOM_SERVE_OPTIONS+=(--max-model-len); MAX_LEN=$2; shift 2 ;;
     --rope-scaling) CUSTOM_SERVE_OPTIONS+=(--rope-scaling); ROPE=$2; shift 2 ;;
@@ -337,10 +336,10 @@ if [ "$LAYOUT_ENGINE_RANKS" -gt 1 ]; then
 fi
 if [ "$LAYOUT_HELPER_COUNT" -gt 0 ]; then
   ENGINE_ENV+=(R3_MOE_WORKER=1)
-  # RSC08 S3: with helpers the engine starts from the measured manifest alone (--manifest M --role engine). A raw engine flag or
-  # the n-gram card is therefore not passable here until it is a manifest field (RSC08 PR 2: spec.experiment.engine.*).
-  if [ ${#ENGINE_ARGS[@]} -gt 0 ] || [ -n "$NGRAM_DEV" ]; then
-    echo "RADIANCE_EXIT=99 --engine-arg and --ngram-device cannot be combined with a helper layout: the engine starts from its serving manifest and these are not manifest fields yet" >&2
+  # RSC08 S3: with helpers the engine starts from the measured manifest alone (--manifest M --role engine). The n-gram card is
+  # therefore not passable here until it is a manifest field.
+  if [ -n "$NGRAM_DEV" ]; then
+    echo "RADIANCE_EXIT=99 --ngram-device cannot be combined with a helper layout: the engine starts from its serving manifest and the n-gram card is not a manifest field yet" >&2
     exit 99
   fi
 else
@@ -348,7 +347,7 @@ else
 fi
 start_engine() {
   local log=$1; shift
-  env "${ENGINE_ENV[@]}" ROCR_VISIBLE_DEVICES="$ENGINE_VISIBLE" HIP_VISIBLE_DEVICES="$ENGINE_HIP"     setsid ${ENGINE_WRAP:-} "$RAD_BIN" --model "$MODEL" --radiance-home "$RAD_HOME" --port "$PORT"       --kernels "$ENGINE_KERNELS" "${ENGINE_TOPO_ARGS[@]}" "${ENGINE_CONFIG_ARGS[@]}"       "${ENGINE_ARGS[@]}" "$@" > "$log" 2>&1 9>&- &
+  env "${ENGINE_ENV[@]}" ROCR_VISIBLE_DEVICES="$ENGINE_VISIBLE" HIP_VISIBLE_DEVICES="$ENGINE_HIP"     setsid ${ENGINE_WRAP:-} "$RAD_BIN" --model "$MODEL" --radiance-home "$RAD_HOME" --port "$PORT"       --kernels "$ENGINE_KERNELS" "${ENGINE_TOPO_ARGS[@]}" "${ENGINE_CONFIG_ARGS[@]}" "$@" > "$log" 2>&1 9>&- &
 }
 
 # helpers_resident_mib: the sum of the helpers' RssAnon plus the largest RssShmem (the shared segment, once), in MiB, rounded up.

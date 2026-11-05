@@ -325,6 +325,28 @@ int main() {
     refused(kBase + "\n[[field]]\npath = \"$defs/group/patch\"\nkind = \"ref\"\nref = \"groupPatch\"\noptional = true\ndoc = \"x\"\n",
             "reaches itself", "a def that refers to its own patch");
 
+    // ---- radiance_switch (spec section 11 amendment 11): a bound flag that takes no value; presence is the flag ----
+    {
+        bc::contract::Registry d;
+        std::string why;
+        auto sw = [&](const std::string& attrs) {
+            return std::string(kBase) + "\n[[field]]\npath = \"/spec/f\"\n" + attrs + "doc = \"A flag.\"\n";
+        };
+        const std::string bind = "radiance_option = \"--flag\"\nradiance_config = \"Config.flag\"\n";
+        const std::string one = "kind = \"enum\"\nvalues = [\"on\"]\ncpp_type = \"FlagOn\"\n";
+        check(bc::contract::load_registry(sw(bind + "radiance_switch = true\n" + one), "t", &d, &why), "a switch is an enum of the one value on: " + why);
+        refused(sw(bind + "radiance_switch = true\nkind = \"enum\"\nvalues = [\"on\", \"off\"]\ncpp_type = \"FlagOn\"\n"), "one value",
+                "a switch with a second spelling");
+        refused(sw(bind + "radiance_switch = true\nkind = \"string\"\n"), "one value", "a switch that is not an enum");
+        refused(sw("radiance_switch = true\n" + one), "needs a radiance_option", "a switch with no binding");
+        bc::contract::Registry plain;
+        check(bc::contract::load_registry(sw(bind + one), "t", &plain, &why), "the same field without the switch loads: " + why);
+        check(bc::contract::semantic_fingerprint(d) != bc::contract::semantic_fingerprint(plain),
+              "the switch is contract semantics: the semantic fingerprint moves");
+        check(bc::contract::fingerprint(d) == bc::contract::fingerprint(plain), "and the validation schema does not");
+        check(bc::contract::emit_types(d).find("\"--flag\", \"Config.flag\", true,") != std::string::npos, "the field table carries the switch");
+    }
+
     // the real registry loads and generates
     // ---- defaults (spec section 7): a literal of the field's own kind, from a named place, fitting the field's bounds ----
     {

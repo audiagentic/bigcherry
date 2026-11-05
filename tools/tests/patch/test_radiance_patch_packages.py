@@ -89,7 +89,7 @@ PIN_BLOBS = {
     },
     RAD0009: {
         "core/bc_serving_manifest.h": (None, "ea567e5"),
-        "core/bc_serving_manifest.cpp": (None, "666d775"),
+        "core/bc_serving_manifest.cpp": (None, "a83d1a8"),
         "core/CMakeLists.txt": ("921debd", "8750342"),
         "core/main.cpp": ("4cb6d43", "7feb7b6"),
     },
@@ -674,7 +674,8 @@ class TestServingManifestPatch(unittest.TestCase):
             options.write_text("".join(f"{n}\t{'-' if a == 'nullptr' else a.strip(chr(34))}\n"
                                        for n, a in rows if n != "--help"))
             example = REPO / "docs" / "design" / "serving-manifest-v1" / "example.flashnext-4gpu.json"
-            run = subprocess.run([str(exe), str(scratch), str(example), str(options)], capture_output=True, text=True)
+            lab_example = REPO / "docs" / "design" / "serving-manifest-v1" / "example.lab-experiment.json"
+            run = subprocess.run([str(exe), str(scratch), str(example), str(options), str(lab_example)], capture_output=True, text=True)
             self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
             self.assertIn("ok", run.stdout)
         finally:

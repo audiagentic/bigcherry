@@ -1392,8 +1392,6 @@ radiance_config = "Config.tp_wire_exact"
 kind = "enum"
 values = ["exact", "wht6"]
 cpp_type = "TpWire"
-default = "exact"
-default_source = "radiance:Config.tp_wire_exact"
 doc = "Cross-rank all-reduce payload (`--tp-wire`; amendment 11): `exact`, or `wht6`, a lossy 6-bit transform."
 
 [[field]]

@@ -21,7 +21,7 @@ inline constexpr int64_t kContractVersion = 1;
 inline constexpr std::string_view kFingerprint = "sha256:4ac0f808c0102adc2916640f534ce9f18dc6a422cb97fa439dc6bd646a97de64";
 // sha256 of the schema plus the frozen semantics it does not express (classes, lifecycle, Radiance bindings,
 // reader error codes); README.md.
-inline constexpr std::string_view kSemanticFingerprint = "sha256:d90c40923471c2217c88690315af7ca89728f973360bbe3a7783c8bd400d6ac0";
+inline constexpr std::string_view kSemanticFingerprint = "sha256:ed064de2de0916842ae8aceaa8648db1a7d9cf18e2f4de7714f0834ed91b26c8";
 // spec §11 amendment 8: the deepest container nesting a valid document can have (the root object is 1),
 // derived from the closed schema by the generator. The strict reader refuses anything deeper.
 inline constexpr size_t kMaxDepth = 9;
@@ -1610,7 +1610,7 @@ inline constexpr std::array<FieldInfo, 266> kFields = {{
      "Prefix resume policy (`--prefix-resume`).", "", "", ""},
     {"/spec/processes/engine/execution/tp_wire", "enum", "policy", false, false,
      "--tp-wire", "Config.tp_wire_exact", false,
-     "Cross-rank all-reduce payload (`--tp-wire`; amendment 11): `exact`, or `wht6`, a lossy 6-bit transform.", "\"exact\"", "radiance:Config.tp_wire_exact", ""},
+     "Cross-rank all-reduce payload (`--tp-wire`; amendment 11): `exact`, or `wht6`, a lossy 6-bit transform.", "", "", ""},
     {"/spec/processes/engine/execution/no_prefix_cache", "enum", "policy", false, false,
      "--no-prefix-cache", "Config.prefix_cache", true,
      "Present means prefix caching is disabled (`--no-prefix-cache`; amendment 11). Not the host KV tier size (`resources.host.kv_mib`, `--prefix-cache-mib`): that tier stays configurable with caching on.", "", "", ""},

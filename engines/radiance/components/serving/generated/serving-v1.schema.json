@@ -925,8 +925,7 @@
                       "enum": [
                         "exact",
                         "wht6"
-                      ],
-                      "default": "exact"
+                      ]
                     },
                     "no_prefix_cache": {
                       "description": "Present means prefix caching is disabled (`--no-prefix-cache`; amendment 11). Not the host KV tier size (`resources.host.kv_mib`, `--prefix-cache-mib`): that tier stays configurable with caching on.",
