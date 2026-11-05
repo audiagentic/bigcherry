@@ -1,5 +1,12 @@
 # Changelog
 
+## [1170.2.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.1.0...bc-radiance-1170.2.0) (2026-11-05)
+
+
+### New and changed
+
+* **build:** stable compile paths so ccache hits across build ids ([#661](https://github.com/audiagentic/bigcherry/issues/661)) ([54ecaa6](https://github.com/audiagentic/bigcherry/commit/54ecaa6b4c12e9a2647950c874d9c58f4b81bff5))
+
 ## [1170.1.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.0.0...bc-radiance-1170.1.0) (2026-11-05)
 
 
