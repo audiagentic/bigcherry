@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import uuid
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -42,7 +43,10 @@ from . import source as campaign_source
 from . import workers as campaign_workers
 from ..core import config as campaign_config
 from ..core import components, engines, paths
+from ..release import notes as release_notes
+from ..build import logs as build_logs
 from ..patch import catalog as patch_catalog
+from ..patch import build_evidence
 from ..patch import patchset
 from . import smoke as smoke_module
 from ..core.artifacts import ArtifactDescriptor, ArtifactLocator, ArtifactStore
@@ -341,6 +345,30 @@ def _execute_materialize_phase(
         source_plan.upstream_revision
     )
     source_plan = replace(source_plan, upstream_revision=resolved_revision)
+    # MEN28: fail before calling the materialiser, including cached sources.
+    # The explicit per-engine mode is mandatory in config/release.toml.
+    # Synthetic development fixture projects have no release line at all.
+    # Release-enabled checkouts (in particular the real production root)
+    # always load and enforce their mandatory configured policy.
+    release_file = context.project_root / "config" / "release.toml"
+    if release_file.is_file() or context.project_root.resolve() == paths.REPO_ROOT.resolve():
+        release_config = release_notes.load_config(context.project_root, context.engine)
+        evidence = build_evidence.evaluate_source(
+            engine=context.engine, cfg=cfg, source_name=spec.source_name,
+            patches_dir=context.patches_root, pinned_ref=cfg.pinned,
+            resolved_base_revision=resolved_revision,
+            mode=release_config.evidence_gate,
+        )
+        for line in build_evidence.report_lines(evidence):
+            print(line, file=sys.stderr)
+        if logs := build_logs.current.get():
+            if logs.lane is not None:
+                logs.summary["lanes"][logs.lane]["evidence_gate"] = evidence.record()
+            else:
+                logs.summary["evidence_gate"] = evidence.record()
+            logs.save()
+        if evidence.failed and evidence.mode == "enforced":
+            raise campaign_build.CampaignBuildError(build_evidence.failure_text(evidence))
     source_root = (
         context.work_root
         / "sources"
