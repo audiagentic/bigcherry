@@ -5,7 +5,7 @@ version = 2
 engine = "radiance"
 # radiance 1.14.0 (codeberg StillDeadcode/radiance; exact-SHA mirror Quackster/radiance). v1.14.0 is commit 4a61d72.
 pinned = "v1.17.0"
-pinned-version = "1.16.0"
+pinned-version = "1.17.0"
 
 # Validated serving patches, including the production remote-MoE hand-off.
 [patch-set.serving-core]
