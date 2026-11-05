@@ -45,6 +45,18 @@ incident happened (evidence captured on b10257 while the pin said b10502):
 a release record for the stale revision existed, and "record exists" was
 once the only rule — which is why the marker supersedes it.
 
+## Read-only pre-bump triage
+
+Before moving a pin, run `python3 -m bigcherry --engine <engine> pin-triage <target-ref>`.
+Add `--json` for a machine-readable report. This only reads the
+controller and vendor tree; it may fetch missing refs into the shared bare
+upstream mirror. It reports current pin, diff stat, changed rewrite
+anchors, changed registered patch targets, core commit subjects, and exact
+source rewrite drift with closest target-source lines. Its verdict is
+`clean`, `drift-only` or `patches-affected` with counts. Non-clean
+results exit zero: triage is advice, not a bump gate. Usage and environment
+errors exit 2.
+
 ## The procedure
 
 Work on ONE tree at a time. Do not bump H: and J: (the build server) in the same
