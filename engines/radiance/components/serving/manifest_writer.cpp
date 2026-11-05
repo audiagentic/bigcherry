@@ -4,6 +4,7 @@
 #include "experts.h"
 #include "jcs.h"
 #include "ledger.h"
+#include "live_policy.h"
 #include "owner_map.h"
 #include "serving_codec.h"
 #include "sha256.h"
@@ -305,12 +306,14 @@ const Json* covering(const Json& p, std::string pointer) {
 /* Records for the manifest: the static records say how each section is produced; a leaf the operator set (--set, the site
  * file, the serving profile) gets its own record from Resolved::provenance, so an override is never filed under the
  * section's default origin. Class stays the class the leaf has at its position (the covering record's). */
-Json provenance_of(const ManifestInputs& in) {
+Json provenance_of(const ManifestInputs& in, const Json& derived_policy_provenance) {
     const Resolved& r = in.resolved;
     Json p = static_provenance(in.measured.has_value());
     if (!in.live_policy.is_null())
         p["/spec/handoff/placement/live_policy"] =
             record("cli", in.live_policy_from.c_str(), "policy", "exact", Json::array({"/spec/intent/layout"}));
+    for (auto it = derived_policy_provenance.begin(); it != derived_policy_provenance.end(); ++it)
+        p[it.key()] = it.value();
     if (!in.experiment.is_null())
         p["/spec/experiment"] = record("experiment", in.experiment_from.c_str(), "diagnostic", "exact",
                                        Json::array({"/spec/processes/helper_common"}));
@@ -359,6 +362,17 @@ BuiltManifest build_manifest(const ManifestInputs& in) {
     const std::string model = values.at("engine").at("model");
     bc::experts::Container container;
     if (!container.open(model.c_str())) fail("cannot open the model container " + model);
+    if (!in.live_policy.is_null() && in.profile != "lab")
+        fail("--live-policy is an explicit lab-only override; production derives from calibration");
+    Json live_policy = in.live_policy;
+    Json derived_provenance = Json::object();
+    if (live_policy.is_null() && in.profile == "production") {
+        if (const auto derived = derive_manifest_live_policy(in, container)) {
+            live_policy = derived->policy;
+            derived_provenance = derived->provenance;
+        }
+    }
+
 
     Json spec = {{"intent",
                   {{"model", model}, {"layout", values.at("layout").at("name")},
@@ -370,7 +384,7 @@ BuiltManifest build_manifest(const ManifestInputs& in) {
                  {"facts", facts_of(in.resolved.facts)},
                  {"calibration", calibration},
                  {"resources", {{"host", resources_of(in, calibration)}}},
-                 {"handoff", handoff_of(values, in.live_policy)},
+                 {"handoff", handoff_of(values, live_policy)},
                  {"processes",
                   {{"engine", engine_of(values)}, {"helper_common", helper_common(values)}, {"helpers", helpers_of(in.resolved)}}},
                  {"plan", {{"state", in.measured ? "measured" : "unmeasured"},
@@ -388,7 +402,7 @@ BuiltManifest build_manifest(const ManifestInputs& in) {
                 {"metadata",
                  {{"instance_id", in.instance_id}, {"producer", {{"name", "bc-serve"}, {"build_sha256", in.producer_sha256}}},
                   {"contract_version", v1::kContractVersion}, {"content_digest", "sha256:" + sha_hex_of_zero()}}},
-                {"spec", std::move(spec)}, {"provenance", provenance_of(in)}};
+                {"spec", std::move(spec)}, {"provenance", provenance_of(in, derived_provenance)}};
 
     // The owner map is the planner's answer for the placement this very document declares: decode a draft with an empty
     // map, ask the shared planner (the policies come from the draft), write its sets and digests into the document.

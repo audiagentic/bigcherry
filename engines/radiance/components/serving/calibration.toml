@@ -71,3 +71,23 @@ key = "calibration.host_ledger_margin.mib"
 value = 1024
 seeded = "2026-11-06"
 evidence = "RSC08 S3 hardware gate on the Flash-Next layout (runs/rsc08-s3-gate): with the helpers' and the engine's start-up memory counted, the host still lost 273 and about 280 MiB between the manifest write and the engine's own host-room check in three of four starts; one start planned to 75 MiB spare fell 205 MiB short at that check and stopped. 1024 MiB is about 3.6 x the largest observed unexplained loss, chosen as a safety ratio (a judgement, not a derivation); the refit replaces it (RSC03: a start that fails the engine's host-room check stores its observed shortfall with the cache entry and retries once with the margin raised to it)"
+
+# RHP16: service objectives in measured units, never a guessed time/byte threshold.
+# A transaction may consume two measured effect windows: copying and settling.
+[[entry]]
+key = "calibration.live_policy.transaction_effect_windows"
+value = 2
+seeded = "2026-11-05"
+evidence = "RHP16 service objective: one measured effect window for copying, one for settling"
+
+# Tolerate one false reversion per one hundred empirical quiet comparisons.
+[[entry]]
+key = "calibration.live_policy.false_revert_rate_ppm"
+value = 10000
+seeded = "2026-11-05"
+evidence = "RHP16 service objective: false revert in 1 percent of quiet comparisons; match a measured empirical noise quantile"
+
+# A --calibration TOML cache may contain [[live_policy_record]] entries with
+# plan_cache_key, layout, objective, seeded, evidence, the measured fields
+# in live_policy.cpp, and optional abort_quiescent_ns. The records are read-only
+# in this step. No unmeasured production live policy is seeded here.
