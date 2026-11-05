@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Compiler launcher for CMAKE_*_COMPILER_LAUNCHER: ccache, with this build's content-addressed source and build directories
+# replaced in the compile command by the stable symlinks of the slot the build holds (tools/bigcherry/campaign/ccache_paths.py),
+# so an unchanged translation unit has the same command text in every build and ccache can hit. Without a slot (the variables
+# are unset) it is plain ccache: correct, only slower. Only compile commands pass through here; links, RUNPATH and outputs
+# keep the real paths.
+if [ -n "${BC_CCACHE_REAL_SRC:-}" ] && [ -n "${BC_CCACHE_REAL_BLD:-}" ]; then
+  args=()
+  for a in "$@"; do
+    a=${a//"$BC_CCACHE_REAL_BLD"/"$BC_CCACHE_LINK_BLD"}
+    a=${a//"$BC_CCACHE_REAL_SRC"/"$BC_CCACHE_LINK_SRC"}
+    args+=("$a")
+  done
+  set -- "${args[@]}"
+fi
+exec ccache "$@"

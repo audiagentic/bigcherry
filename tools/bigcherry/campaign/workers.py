@@ -71,6 +71,7 @@ from ..build import logs as build_logs
 from ..core.process import run_logged
 from ..tuning import catalog as autotune_catalog
 from . import build as campaign_build
+from . import ccache_paths
 from ..build import generated_tree
 from ..core import provenance
 from ..core.process import describe_returncode
@@ -567,22 +568,25 @@ def make_build_worker(
                 if actual_inputs != compile_inputs_hash:
                     raise generated_tree.GeneratedTreeError("compiled-copy input hash disagrees with generation evidence")
                 compile_inputs_hash = actual_inputs
-            with build_logs.stage("configure"):
-                run_logged(configure_args, cwd=source_root, check=True)
-            if has_generate_stage:
-                generated_tree.verify_tree(cmake_generated_root, tree_document)
-            run_logged(
-                campaign_build.cmake_build_args(build_dir, targets=cmake_targets),
-                cwd=source_root,
-                check=True,
-            )
+            # CI time: hold a stable-path slot for the whole configure and compile so ccache sees the same command for an
+            # unchanged unit in every build (ccache_paths); without a free slot the build runs plain ccache.
+            with ccache_paths.stable_paths(context.work_root, source_root, build_dir):
+                with build_logs.stage("configure"):
+                    run_logged(configure_args, cwd=source_root, check=True)
+                if has_generate_stage:
+                    generated_tree.verify_tree(cmake_generated_root, tree_document)
+                run_logged(
+                    campaign_build.cmake_build_args(build_dir, targets=cmake_targets),
+                    cwd=source_root,
+                    check=True,
+                )
 
-            # The engine's runtime beside the binary (plugins, components); nothing for an engine without one.
-            # RAD18: forward the platform's compiler-launcher options (e.g. ccache) -- each component is
-            # configured through its own separate cmake invocation, which otherwise never gets ccache at all.
-            runtime_bundle.build_runtime(
-                context.engine, source_root=source_root, build_dir=build_dir, platform=platform,
-            )
+                # The engine's runtime beside the binary (plugins, components); nothing for an engine without one.
+                # RAD18: forward the platform's compiler-launcher options (e.g. ccache) -- each component is
+                # configured through its own separate cmake invocation, which otherwise never gets ccache at all.
+                runtime_bundle.build_runtime(
+                    context.engine, source_root=source_root, build_dir=build_dir, platform=platform,
+                )
 
             # A source mutation during configure/compile invalidates the
             # provenance claim even if the compiler produced an executable.
