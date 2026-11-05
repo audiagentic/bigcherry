@@ -1,0 +1,17 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261105_195405_bc-serve-refuses-to-run-agains_2634",
+  "files": [
+    "engines/radiance/components/serving/sdk_check.cpp",
+    "engines/radiance/components/serving/sdk_check.h",
+    "engines/radiance/components/serving/main.cpp",
+    "engines/radiance/components/serving/serving_test.cpp"
+  ],
+  "plan-item-ids": [
+    "BRVP06"
+  ],
+  "status": "unreleased",
+  "technical-summary": "BRVP06 item 5, bc-serve part: bc-serve inside a build (<build>/radiance_home/bin) reads the build's recorded toolchain.rocm_root and refuses to run when the metadata records none, the recorded SDK is not installed, ROCM_PATH or HIP_PATH resolve elsewhere, or an LD_LIBRARY_PATH directory carries ROCm runtime libraries from another install. Same rule as the launcher's lib/sdk-check.sh; nothing is overridden silently. An executable outside a build (component test builds) has no recorded SDK and is not checked.",
+  "timestamp-utc": "2026-11-05T19:54:05.547383Z",
+  "user-summary-candidate": "bc-serve refuses to run against a different ROCm SDK than the one its build recorded."
+}
