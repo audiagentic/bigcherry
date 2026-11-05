@@ -33,7 +33,7 @@ rad_build() {
     log_dir="$BC_WORK_ROOT/build-logs/$run_id"
     ccache -z
     # The build command owns persistent output; stdout stays the build dir for B=$(rad_build).
-    if ! PYTHONPATH=tools timeout 5400 python3 -m bigcherry build --lane radiance-lab:stock:linux-radiance \
+    if ! PYTHONPATH=tools timeout 5400 python3 -m bigcherry build --lane radiance:stock:linux-radiance \
         --run-id "$run_id" >/dev/null 2>&1; then
         ccache -s > "$log_dir/ccache.txt" 2>&1
         echo "build failed; logs: $log_dir" >&2

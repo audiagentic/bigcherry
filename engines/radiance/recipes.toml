@@ -14,12 +14,6 @@ patches = [
   "rad0002_moe_remote_handoff",
 ]
 
-# Empty: rad0001 (shutdown drain) is superseded by radiance 1.7.0 (1e968f6 drains the mover stream in Engine::~Engine).
-# The set stays declared as the home for evaluated engine fixes the lab source needs.
-[patch-set.engine-fixes-evaluated]
-patches = []
-required-state = "evaluated"
-
 # Host build compatibility for the pinned engine (rad0005: MP4 writer against FFmpeg 6). Enablers with no runtime path of
 # their own; promoted to validated by a passing bump (compile, plugin ABI, component tests, cpu-smoke) and then moved to
 # serving-core.
@@ -57,11 +51,6 @@ patch-sets = []
 description = "radiance 1.14.0 with BigCherry's validated engine patch sets."
 overlay = false
 patch-sets = ["serving-core", "host-compat", "serving-manifest"]
-
-[source.radiance-lab]
-description = "radiance 1.14.0 as source.radiance (production patch sets) plus the evaluated engine fixes the Flash-Next two-XTX configuration needs (none at present). Never a different base: the lab runs what production runs."
-overlay = false
-patch-sets = ["serving-core", "engine-fixes-evaluated", "host-compat", "serving-manifest"]
 
 [source.radiance-diag]
 description = "radiance 1.14.0 with the validated engine patch sets plus remote-MoE diagnostics (rad0004); build it with build.moe-diag."
