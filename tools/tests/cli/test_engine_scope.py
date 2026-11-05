@@ -55,6 +55,7 @@ class EngineScopeTests(unittest.TestCase):
                     "patch-doc": ["patch-doc", "--all"],
                     "patch-rebase-check": ["patch-rebase-check", "--all"],
                     "pin-bump": ["pin-bump", "b1"],
+                    "pin-triage": ["pin-triage", "v1.17.0"],
                     "pin-release": ["pin-release", "b1"],
                     "release-notes": ["release-notes", "b1"],
                     "sources": ["sources", "status"],
