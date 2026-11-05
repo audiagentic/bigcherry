@@ -11,7 +11,7 @@ not a patch to the engine itself.
 ## Outcome
 
 `production`: `R3_ATTN_NATIVE` defaults on with quality and speed evidence; see
-the [current model pages](../../../../docs/reference/engines/radiance/README.md#best-recorded-model-results)
+the [current model pages](../../../../docs/reference/engines/radiance/README.md#current-pin-throughput)
 for measured throughput.
 
 ## Detail
