@@ -23,7 +23,7 @@ if(NOT TARGET bc_serving_v1)
   # errors, strict JSON, the generated codec, semantics, typed views and the admission check
   add_library(bc_serving_v1 STATIC
     "${_bc_v1_dir}/v1/error.cpp" "${_bc_v1_dir}/v1/strict_json.cpp" "${_bc_v1_dir}/v1/manifest.cpp"
-    "${_bc_v1_dir}/v1/admission.cpp" "${_bc_v1_dir}/generated/serving_codec.cpp")
+    "${_bc_v1_dir}/v1/admission.cpp" "${_bc_v1_dir}/v1/helper_settings.cpp" "${_bc_v1_dir}/generated/serving_codec.cpp")
   target_link_libraries(bc_serving_v1 PUBLIC bc_jcs ${_bc_v1_abi})
   target_include_directories(bc_serving_v1 PUBLIC "${_bc_v1_dir}/v1" "${_bc_v1_dir}/generated" "${_bc_v1_dir}")
 endif()

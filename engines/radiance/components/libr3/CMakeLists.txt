@@ -22,6 +22,11 @@ set(R3_ONLY "" CACHE STRING "build only these units (for a compile check of one 
 if(NOT EXISTS "${RADIANCE_SRC}/libr4d/CMakeLists.txt")
   message(FATAL_ERROR "libr3: -DRADIANCE_SRC must name a radiance source tree (no ${RADIANCE_SRC}/libr4d)")
 endif()
+# RSC06's helper ABI is mandatory; never build an environment-dependent helper path.
+if(NOT EXISTS "${RADIANCE_SRC}/libr4d/bc_helper_config.h")
+  message(FATAL_ERROR "Apply managed patch rad0009_helper_kernel_config to RADIANCE_SRC before building this component")
+endif()
+
 # libr4d's sources, copied into the build tree with rewrites.txt applied (text r3_compat.h cannot supply as a
 # function, such as an inline-assembly mnemonic). Units and headers are built from the copy.
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
@@ -117,3 +122,14 @@ target_compile_definitions(r3_selftest PRIVATE __HIP_PLATFORM_AMD__)
 set_property(TARGET r3_selftest PROPERTY HIP_ARCHITECTURES ${R3_TARGETS})
 
 target_include_directories(libr3 PRIVATE ${RADIANCE_SRC}/abi)
+
+include(CTest)
+if(BUILD_TESTING)
+  add_test(NAME r3_rewrite_check
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/r3_rewrite.py
+      --source ${RADIANCE_SRC}/libr4d --rules ${CMAKE_CURRENT_SOURCE_DIR}/rewrites.txt
+      ${native_arg} --check)
+  add_test(NAME r3_helper_config_exports
+    COMMAND ${CMAKE_COMMAND} -DNM=${R3_NM} -DLIBRARY=$<TARGET_FILE:libr3>
+      -P ${CMAKE_CURRENT_SOURCE_DIR}/helper_config_exports_test.cmake)
+endif()

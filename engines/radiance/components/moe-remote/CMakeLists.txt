@@ -28,6 +28,10 @@ set(RADIANCE_SRC "" CACHE PATH "radiance source tree (the plugin ABI headers are
 if(NOT EXISTS "${RADIANCE_SRC}/abi")
   message(FATAL_ERROR "moe-remote: -DRADIANCE_SRC must name a radiance source tree (no ${RADIANCE_SRC}/abi)")
 endif()
+# RSC06's helper kernel-configuration ABI is mandatory; never build an environment-dependent helper path.
+if(NOT EXISTS "${RADIANCE_SRC}/libr4d/bc_helper_config.h")
+  message(FATAL_ERROR "Apply managed patch rad0012_helper_kernel_config to RADIANCE_SRC before building this component")
+endif()
 if(NOT RAD_HIP_RUNTIME)
   find_library(RAD_HIP_RUNTIME amdhip64 HINTS /opt/rocm/lib ENV ROCM_PATH PATH_SUFFIXES lib REQUIRED)
 endif()
@@ -46,7 +50,11 @@ endif()
 # Expert ownership and the container reader are bc_experts, the one implementation (the serving component builds and tests
 # it; bc-serve's planning will use it in a later slice).
 include("${CMAKE_CURRENT_SOURCE_DIR}/../serving/bc_experts.cmake")
-target_link_libraries(r3_moe_worker PRIVATE radiance::abi bc_experts ${CMAKE_DL_LIBS} ${RAD_HIP_RUNTIME} ${RAD_HSA_RUNTIME} Threads::Threads)
+# The helper reads its manifest section through the shared strict v1 reader (bc_serving_v1, the one the engine and bc-serve
+# link): no second parser, no environment settings.
+set(BC_SERVING_V1_NLOHMANN_INCLUDE "${RADIANCE_SRC}/vendor")
+include("${CMAKE_CURRENT_SOURCE_DIR}/../serving/bc_serving_v1.cmake")
+target_link_libraries(r3_moe_worker PRIVATE radiance::abi bc_experts bc_serving_v1 ${CMAKE_DL_LIBS} ${RAD_HIP_RUNTIME} ${RAD_HSA_RUNTIME} Threads::Threads)
 set_target_properties(r3_moe_worker PROPERTIES HIP_STANDARD 17 HIP_STANDARD_REQUIRED ON
   RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/helpers)
 
@@ -83,6 +91,22 @@ if(BUILD_TESTING)
   target_link_libraries(r3_policy_config_test PRIVATE Threads::Threads)
   target_link_libraries(r3_policy_driver_test PRIVATE Threads::Threads)
   target_link_libraries(r3_worker_slot_pool_test PRIVATE bc_experts)
+  add_executable(r3_helper_settings_test EXCLUDE_FROM_ALL helper_settings_test.cpp)
+  target_link_libraries(r3_helper_settings_test PRIVATE bc_serving_v1)
+  target_include_directories(r3_helper_settings_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+  target_compile_definitions(r3_helper_settings_test PRIVATE
+    BC_CONTRACT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../../../docs/design/serving-manifest-v1")
+  add_test(NAME r3_helper_settings_test COMMAND r3_helper_settings_test)
+  # Exercise the real config ABI and both helper/engine access paths without HIP.
+  add_library(r3_helper_plugin_fixture SHARED EXCLUDE_FROM_ALL helper_plugin_fixture.cpp)
+  target_include_directories(r3_helper_plugin_fixture PRIVATE ${RADIANCE_SRC}/libr4d ${RADIANCE_SRC}/abi)
+  target_link_options(r3_helper_plugin_fixture PRIVATE -Wl,-Bsymbolic-functions)
+  target_compile_features(r3_helper_plugin_fixture PRIVATE cxx_std_17)
+  add_executable(r3_helper_plugin_config_test EXCLUDE_FROM_ALL helper_plugin_config_test.cpp)
+  target_include_directories(r3_helper_plugin_config_test PRIVATE ${RADIANCE_SRC}/libr4d)
+  target_link_libraries(r3_helper_plugin_config_test PRIVATE bc_serving_v1 ${CMAKE_DL_LIBS})
+  add_dependencies(r3_helper_plugin_config_test r3_helper_plugin_fixture)
+  add_test(NAME r3_helper_plugin_config_test COMMAND r3_helper_plugin_config_test $<TARGET_FILE:r3_helper_plugin_fixture>)
   target_link_libraries(r3_replay_bootstrap_test PRIVATE Threads::Threads)
   target_compile_definitions(r3_worker_slot_pool_test PRIVATE R3_LAYOUTS_TOML="${CMAKE_CURRENT_SOURCE_DIR}/../../layouts.toml")
   # offline replay of the live placement policy over a recorded heat series (a tool, not a test)

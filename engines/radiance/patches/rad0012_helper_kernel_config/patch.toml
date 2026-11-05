@@ -1,0 +1,12 @@
+schema = 1
+id = "rad0012_helper_kernel_config"
+order = 12
+state = "untested"
+kind = "enhancement"
+origin = "local"
+backend = "agnostic"
+plan-item = "RSC06"
+plan-ids = ["RSC06"]
+requires = []
+conflicts = []
+tags = ["moe-routing"]

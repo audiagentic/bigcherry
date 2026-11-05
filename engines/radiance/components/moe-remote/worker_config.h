@@ -1,135 +1,39 @@
 #pragma once
-// Included only by r3_moe_worker.cpp. The helper's process-wide settings, read from the environment once and
-// validated: a malformed or out-of-range value is an error at start-up, never a silent default.
-#include <algorithm>
-#include <charconv>
+// Included only by r3_moe_worker.cpp. The helper's process-wide settings: a local snapshot of this helper's typed manifest
+// section (worker_settings.h), validated by the shared v1 reader before any GPU work. There is no environment parsing here;
+// the RHP policy, forced-move and epoch-cycle controls v1 does not model are read in worker_policy_config.h.
 #include <chrono>
 #include <cstdint>
-#include <cstdlib>
-#include <cstring>
 #include <string>
+#include <vector>
 #include "worker_forced_move.h"
 #include "worker_policy_config.h"
+#include "worker_settings.h"
 
 struct WorkerConfig {
-    uint32_t helper_count = 1;      /* R3_MOE_WORKER_COUNT: helpers sharing the segment, 1..kMaxHelpers */
-    uint32_t helper_index = 0;      /* R3_MOE_WORKER_INDEX: this helper, < helper_count; 0 creates the segment */
-    uint32_t engine_ranks = 0;      /* R3_MOE_WORKER_ENGINE_RANKS: 0 = the runner's default */
-    bool cpu = false;               /* R3_MOE_WORKER_CPU: host fp32 reference instead of the GPU */
-    bool power_save = true;         /* R3_MOE_WORKER_POWER_SAVE (RAD20): waits armed only inside bursts */
-    bool queue_warm = false;        /* R3_MOE_WORKER_QUEUE_WARM (RAD20, shelved: GPU fault, worker_queue_warm.h) */
-    bool combine = false;           /* R3_MOE_WORKER_COMBINE (RAD18): helper 0 adds both helpers' rows on the CPU */
-    uint32_t combine_min_rows = 256;   /* R3_MOE_WORKER_COMBINE_MIN_ROWS */
-    uint32_t combine_threads = 8;      /* R3_MOE_WORKER_COMBINE_THREADS, capped at the CPU count */
-    /* The period becomes std::chrono::nanoseconds in r3::epoch::EpochCycle (whose deadline addition is itself
-     * overflow-checked): the bound is the largest whole-second period that type represents, clipped to the parsed
-     * type. Not a policy limit. */
-    static constexpr uint32_t kMaxEpochCycleS = (uint32_t)std::min<uint64_t>(
-        UINT32_MAX, (uint64_t)std::chrono::duration_cast<std::chrono::seconds>(std::chrono::nanoseconds::max()).count());
-    uint32_t epoch_cycle_s = 0;        /* R3_MOE_WORKER_EPOCH_CYCLE_S (RHP11 slice C validation): helper 0 runs a no-op
-                                          placement epoch cycle (close, drain, recommit the same placement, reopen) every
-                                          N seconds of burst; 0 = off. Moves to experiment.helper.epoch_cycle_s in v1. */
+    uint32_t helper_count, helper_index, engine_ranks;
+    bool cpu, power_save, queue_warm, combine;
+    uint32_t combine_min_rows, combine_threads;
+    bool cpu_set_auto;
+    uint32_t epoch_cycle_s = 0;
     bool force_enabled = false;
     r3::policy::Settings policy;
     r3::forced::Schedule force_schedule;
-    bool cpu_set_auto = true;          /* R3_MOE_WORKER_CPU_SET (PWR03): auto = on the efficiency cores when the CPU has
-                                          them (worker_cpu.h), all = no pinning */
 
-    /* False with *err naming the variable on a malformed or out-of-range value. */
-    bool from_environment(uint32_t max_helpers, std::string* err) {
-        return u32("R3_MOE_WORKER_COUNT", 1, max_helpers, &helper_count, err) &&
-               u32("R3_MOE_WORKER_INDEX", 0, max_helpers - 1, &helper_index, err) &&
-               u32("R3_MOE_WORKER_ENGINE_RANKS", 1, max_helpers, &engine_ranks, err) &&
-               flag("R3_MOE_WORKER_CPU", &cpu, err) &&
-               flag("R3_MOE_WORKER_POWER_SAVE", &power_save, err) &&
-               flag("R3_MOE_WORKER_QUEUE_WARM", &queue_warm, err) &&
-               flag("R3_MOE_WORKER_COMBINE", &combine, err) &&
-               u32("R3_MOE_WORKER_COMBINE_MIN_ROWS", 1, UINT32_MAX, &combine_min_rows, err) &&
-               u32("R3_MOE_WORKER_COMBINE_THREADS", 1, 1024, &combine_threads, err) &&
-               u32("R3_MOE_WORKER_EPOCH_CYCLE_S", 0, kMaxEpochCycleS, &epoch_cycle_s, err) &&
-               choice("R3_MOE_WORKER_CPU_SET", "auto", "all", &cpu_set_auto, err) &&
-               check(helper_index < helper_count, "R3_MOE_WORKER_INDEX must be below R3_MOE_WORKER_COUNT", err) &&
-               read_force(err) &&
-               policy.from_environment(helper_count,force_enabled,err);
-    }
+    explicit WorkerConfig(const bc::serving::HelperSettings& s)
+        : helper_count(s.helper.count), helper_index(s.helper.index), engine_ranks(s.helper.engine_ranks),
+          cpu(s.helper.cpu), power_save(s.helper.power_save), queue_warm(s.helper.queue_warm),
+          combine(s.helper.combine), combine_min_rows(s.helper.combine_min_rows),
+          combine_threads(s.helper.combine_threads), cpu_set_auto(s.helper.cpu_set_auto) {}
 
-    /* Before any configuration is read (GPU_MAX_HW_QUEUES must be set before HIP initialises): the same parse, but a
-     * bad value just falls back here and is reported by from_environment() later. */
-    static uint32_t peek_u32(const char* name, uint32_t fallback) {
-        uint32_t v = fallback;
-        std::string ignored;
-        return u32(name, 0, UINT32_MAX, &v, &ignored) ? v : fallback;
-    }
-    static bool peek_flag(const char* name, bool fallback) {
-        bool v = fallback;
-        std::string ignored;
-        return flag(name, &v, &ignored) ? v : fallback;
-    }
-
-private:
-    bool read_force(std::string* err) {
-        // Only the coordinator reads test controls; other helpers merely
-        // service canonical proposals and never open a harness file.
-        if (helper_index != 0) return true;
-        const char* one=std::getenv("R3_MOE_PLACEMENT_FORCE_MOVE");
-        const char* file=std::getenv("R3_MOE_PLACEMENT_FORCE_SCHEDULE");
-        const bool has_one=one && *one, has_file=file && *file;
-        if (has_one && has_file) {
-            *err="R3_MOE_PLACEMENT_FORCE_MOVE conflicts with FORCE_SCHEDULE";
-            return false;
-        }
-        if (has_one) {
-            r3::forced::Step step;
-            if (!r3::forced::parse_step(one,&step) ||
-                step.kind==r3::forced::Step::Kind::AUTO_SWAP) {
-                *err="R3_MOE_PLACEMENT_FORCE_MOVE: want layer:expert:helper or swap:layerA:expertA:layerB:expertB";
-                return false;
-            }
-            force_schedule.steps.push_back(step);
-        } else if (has_file && !r3::forced::read_schedule(file,&force_schedule,err)) {
-            return false;
-        }
-        force_enabled=has_one || has_file;
+    /* The controls v1 does not model (worker_policy_config.h); false with *err naming the variable. */
+    bool read_unmodelled(const std::vector<uint32_t>& shares, std::string* err) {
+        r3::policy::UnmodelledEnvironment u;
+        if (!u.read(helper_index, shares, err)) return false;
+        epoch_cycle_s = u.epoch_cycle_s;
+        force_enabled = u.force_enabled;
+        policy = std::move(u.policy);
+        force_schedule = std::move(u.force_schedule);
         return true;
-    }
-    /* Unset or empty keeps *out. */
-    static bool u32(const char* name, uint32_t lo, uint32_t hi, uint32_t* out, std::string* err) {
-        const char* s = std::getenv(name);
-        if (!s || !*s) return true;
-        uint32_t v = 0;
-        const char* end = s + std::strlen(s);
-        const auto [p, ec] = std::from_chars(s, end, v);
-        if (ec != std::errc{} || p != end || v < lo || v > hi) {
-            *err = std::string(name) + "=" + s + ": want an integer in " + std::to_string(lo) + ".." + std::to_string(hi);
-            return false;
-        }
-        *out = v;
-        return true;
-    }
-    /* "0" off, "1" on; unset or empty keeps *out. */
-    static bool flag(const char* name, bool* out, std::string* err) {
-        const char* s = std::getenv(name);
-        if (!s || !*s) return true;
-        if (!std::strcmp(s, "0") || !std::strcmp(s, "1")) {
-            *out = s[0] == '1';
-            return true;
-        }
-        *err = std::string(name) + "=" + s + ": want 0 or 1";
-        return false;
-    }
-    /* One of two words; *out = (value == yes). Unset or empty keeps *out. */
-    static bool choice(const char* name, const char* yes, const char* no, bool* out, std::string* err) {
-        const char* s = std::getenv(name);
-        if (!s || !*s) return true;
-        if (!std::strcmp(s, yes) || !std::strcmp(s, no)) {
-            *out = !std::strcmp(s, yes);
-            return true;
-        }
-        *err = std::string(name) + "=" + s + ": want " + yes + " or " + no;
-        return false;
-    }
-    static bool check(bool ok, const char* what, std::string* err) {
-        if (!ok) *err = what;
-        return ok;
     }
 };

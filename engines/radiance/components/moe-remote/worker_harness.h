@@ -15,16 +15,10 @@ constexpr uint32_t kCaptureVersion = 3;
 constexpr uint32_t kCaptureMagic = 0x52335243u;  // "CR3R"
 
 void capture_request(void* map, const Request* q, uint32_t lane, uint32_t seq) {
-    static const char* dir = std::getenv("R3_MOE_WORKER_CAPTURE");
+    const char* dir = r3_serving::settings().capture.c_str();
     if (!dir || !*dir) return;
-    static const uint32_t every = [] {
-        const char* v = std::getenv("R3_MOE_WORKER_CAPTURE_EVERY");
-        return v && *v ? std::max(1, std::atoi(v)) : 37;
-    }();
-    static const uint32_t max_n = [] {
-        const char* v = std::getenv("R3_MOE_WORKER_CAPTURE_MAX");
-        return v && *v ? std::max(1, std::atoi(v)) : 16;
-    }();
+    const uint32_t every = r3_serving::settings().capture_every;
+    const uint32_t max_n = r3_serving::settings().capture_max;
     static std::atomic<uint32_t> written{0};
     if (seq % every != 0 || written.load() >= max_n) return;
     const Header* sh = static_cast<const Header*>(map);
@@ -50,10 +44,7 @@ void capture_request(void* map, const Request* q, uint32_t lane, uint32_t seq) {
  * one. Engine stamps (0-2) and helper stamps (3-4) come from different devices' clocks and are only ever subtracted
  * within their own group; wall_clock64 runs at hipDeviceAttributeWallClockRate (100 MHz on these cards). */
 void trace_dump(void* map, uint32_t lane, uint32_t seq) {
-    static const uint32_t every = [] {
-        const char* v = std::getenv("R3_MOE_WORKER_TRACE");
-        return v && *v ? (uint32_t)std::max(0, std::atoi(v)) : 0u;
-    }();
+    const uint32_t every = r3_serving::settings().trace;
     if (!every || seq == 0 || seq % every != 0) return;
     const Request* q = lane_request(map, lane, seq);
     if (!q || load(&q->sequence) != seq) return;

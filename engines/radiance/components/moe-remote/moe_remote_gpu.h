@@ -1,4 +1,5 @@
 #pragma once
+#include "worker_plugin_config.h"
 
 #include "moe_lane_common.h"
 #include "moe_lane_front.h"
@@ -25,8 +26,7 @@ public:
                      uint32_t top_k, void* const* code0, void* const* scale0, void* const* code1, void* const* scale1, uint32_t n0,
                      uint32_t n1, uint32_t k0, uint32_t k1, uint32_t a_stride, uint32_t out_stride, uint16_t* out, uint32_t part_pitch) {
         /* R3_MOE_WORKER_GEMV_W4H2 is read each call (as FUSEROUTE is) so a replay sweep can compare the two W4 kernels in one process. */
-        const char* w4h2_env = weight_format_ == MOE_FMT_W4NL64 ? std::getenv("R3_MOE_WORKER_GEMV_W4H2") : nullptr;
-        const bool w4h2 = w4h2_env ? (*w4h2_env && std::strcmp(w4h2_env, "0") != 0) : gemv_w4h2_;
+        const bool w4h2 = r3_serving::settings().gemv_w4h2;
         if (weight_format_ == MOE_FMT_W4NL64 && w4h2 && !(k0 & 63u) && !(k1 & 63u))
             hipLaunchKernelGGL((lane_moe_gemv_w4h2<TOKEN>), grid, dim3(256), 0, stream, aq, as, sorted, off, top_k, code0, scale0, code1,
                                scale1, n0, n1, k0, k1, a_stride, out_stride, out, part_pitch, lane_shape_);
@@ -88,7 +88,6 @@ public:
         gemv_debug_ = false;   // the grouped-GEMM-vs-GEMV debug comparison is W4-only
         /* Large-lane steps of up to 32 rows take the FP8 GEMV too: with the wide kernel (below) 32 rows is +60-70% engine decode at 6 streams
          * over 16 (35B stream A/B); with the old kernel 32 rows was worse. R3_MOE_WORKER_GEMV_LARGE_ROWS still overrides. */
-        if (!std::getenv("R3_MOE_WORKER_GEMV_LARGE_ROWS")) gemv_large_rows_ = 32;
         gemv_wide_ = gemv_wide_env_ < 0 ? true : gemv_wide_env_ > 0;
         gemv_h2_ = gemv_h2_env_ < 0 ? 2 : gemv_h2_env_;   /* FP8 default: packed f16 dot products, two rows a block */
         if (gemv_h2_) std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_GEMV_H2 on - packed f16 dot products in the FP8 decode GEMV, %d row(s) a block\n", gemv_h2_);
@@ -148,48 +147,22 @@ public:
     }
 
     bool open() {
-        const char* poison = std::getenv("R3_MOE_WORKER_POISON");
-        /* "zero" returns zeros (the same output as dropping the remote routes); anything else non-"0" is 1e3. */
-        /* R3_MOE_WORKER_GEMV_H2 (RAD14): the FP8 decode GEMV on packed f16 dot products (v_dot2_f32_f16), f32 accumulate. */
-        if (const char* hv = std::getenv("R3_MOE_WORKER_GEMV_H2"); hv && *hv) {
-            const int v = std::atoi(hv);
-            gemv_h2_env_ = v == 4 ? 4 : v == 2 ? 2 : v == 1 ? 1 : 0;
-        }
-        /* R3_MOE_WORKER_GEMV_W4H2 (RAD14, default on): the W4 decode GEMV on packed f16 dot products with sixteen-byte loads; "0"
-         * selects the original W4 GEMV. Reported once the weight format is known (set_weight_format). */
-        if (const char* wv = std::getenv("R3_MOE_WORKER_GEMV_W4H2"); wv && *wv)
-            gemv_w4h2_ = std::strcmp(wv, "0") != 0;
-        /* R3_MOE_WORKER_GEMV_MR (RAD14): the wide FP8 GEMV with the expert's rows batched four at a time (weights decoded once a pass). */
-        if (const char* mv = std::getenv("R3_MOE_WORKER_GEMV_MR"); mv && *mv && std::strcmp(mv, "0") != 0) {
-            gemv_mr_ = true;
+        const auto& conf = r3_serving::settings();
+        gemv_h2_env_ = (int)conf.gemv_h2;
+        gemv_w4h2_ = conf.gemv_w4h2;
+        gemv_mr_ = conf.gemv_mr;
+        if (gemv_mr_)
             std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_GEMV_MR on - the FP8 decode GEMV batches an expert's rows\n");
-        }
-        /* R3_MOE_WORKER_GEMV_WIDE (RAD14): the FP8 decode GEMV with sixteen-byte weight loads, four in flight a lane, and a branch-free E4M3
-         * decode. On by default for FP8 experts (set_weight_format); 0 turns it off. */
-        if (const char* wv = std::getenv("R3_MOE_WORKER_GEMV_WIDE"); wv && *wv)
-            gemv_wide_env_ = std::strcmp(wv, "0") != 0 ? 1 : 0;
-        if (const char* rv = std::getenv("R3_MOE_WORKER_ROWS"); rv && *rv && std::strcmp(rv, "0") != 0) {
-            rows_ = true;
-            std::fprintf(stderr, "r3_moe_worker: few-rows prefill kernel on the large lane\n");
-        }
-        /* The decode GEMV is the default (RAD05: decode +37%, KLD inside the noise floor); 0 turns it off,
-         * 2 runs the grouped GEMM and compares the two (--compare). */
-        {
-            const char* gv = std::getenv("R3_MOE_WORKER_GEMV");
-            const bool off = gv && std::strcmp(gv, "0") == 0;
-            gemv_debug_ = gv && std::strcmp(gv, "2") == 0;
-            gemv_ = !off && !gemv_debug_;
-        }
-        /* R3_MOE_WORKER_GEMV_LARGE_ROWS (RAD06): large-lane requests of at most this many rows take the GEMV too.
-         * Replayed real requests show 9-row steps (decode / MTP verify just over the small lane) at ~0.5 ms a
-         * grouped-GEMM call for 25-51 routes; the large lane is sized per request, so this costs the small lane
-         * nothing (raising R3_MOE_WORKER_SMALL_ROWS pads every pre-queued decode step instead). 0 = off. */
-        if (const char* gl = std::getenv("R3_MOE_WORKER_GEMV_LARGE_ROWS"); gl && *gl)
-            gemv_large_rows_ = (uint32_t)std::max(0, std::atoi(gl));
+        gemv_wide_env_ = conf.gemv_wide ? 1 : 0;
+        rows_ = conf.rows;
+        if (rows_) std::fprintf(stderr, "r3_moe_worker: few-rows prefill kernel on the large lane\n");
+        gemv_debug_ = conf.gemv == 2;
+        gemv_ = conf.gemv == 1;
+        gemv_large_rows_ = conf.handoff.gemv_large_rows;
         if (gemv_large_rows_)
             std::fprintf(stderr, "r3_moe_worker: large-lane requests up to %u rows take the GEMV\n", gemv_large_rows_);
-        poison_ = !poison || !*poison || std::strcmp(poison, "0") == 0 ? 0u
-                : std::strcmp(poison, "zero") == 0 ? 2u : 1u;
+        // Former R3_MOE_WORKER_POISON: only experiment.helper.poison in the manifest.
+        poison_ = conf.poison == "zero" ? 2u : conf.poison == "0" ? 0u : 1u;
         if (!hip_ok(hipSetDevice(0), "hipSetDevice(0)")) return false;
         hipDeviceProp_t prop{};
         if (!hip_ok(hipGetDeviceProperties(&prop, 0), "hipGetDeviceProperties")) return false;
@@ -720,9 +693,8 @@ public:
         const uint32_t slots = routes;
         /* R3_MOE_WORKER_FUSEROUTE (default on): the small lane's routing prologue in one block (lane_route_small); 0 keeps
          * the memsets and the four routing kernels. Read each call so a replay sweep can compare. */
-        const char* fuse_env = std::getenv("R3_MOE_WORKER_FUSEROUTE");
         const bool fuse = lane_is_small(lane) && rows <= 8u && routes <= kFuseMaxRoutes &&
-                          (!fuse_env || std::strcmp(fuse_env, "0") != 0);
+                          r3_serving::settings().fuseroute;
         /* No clear of the result slot: it is mapped host memory, and the merge reads only the tokens this
          * request's routes name, each of which the reduction writes. */
         if (!fuse &&
@@ -742,12 +714,10 @@ public:
         const dim3 route_grid((routes + block.x - 1) / block.x);
         /* R3_MOE_WORKER_VECIO (default on): 16-byte accesses to the engine's mapped host memory for the activation
          * copy and the result write; 0 keeps the scalar kernels. Read each call so a replay sweep can compare. */
-        const char* vio_env = std::getenv("R3_MOE_WORKER_VECIO");
-        const bool vecio = !vio_env || std::strcmp(vio_env, "0") != 0;
+        const bool vecio = r3_serving::settings().vecio;
         /* R3_MOE_WORKER_SPARSE_ACT (default on): the large lane copies only the rows the request's routes name. The kernels are queued before the request
          * arrives, so the route count is a device-side fact: the mask is built on the device and the copy skips unflagged rows. */
-        const char* sp_env = std::getenv("R3_MOE_WORKER_SPARSE_ACT");
-        const bool sparse_act = !sp_env || std::strcmp(sp_env, "0") != 0;
+        const bool sparse_act = r3_serving::settings().sparse_act;
         if ((vecio || fuse) && ((reinterpret_cast<uintptr_t>(act_q) | reinterpret_cast<uintptr_t>(act_s) |
                        reinterpret_cast<uintptr_t>(dst)) & 15u) != 0) {
             std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_VECIO needs 16-byte aligned activation and result planes\n");
@@ -862,8 +832,7 @@ public:
              * send ~2.4 routes to each distinct expert (the hot experts are owned by the helpers), and the per-route GEMV
              * reads that expert's weights once a route; here they are read once for all the expert's rows. Read each
              * call so a replay sweep can compare; the rows accumulate in a different order, so it is not bit-exact. */
-            const char* rs_env = std::getenv("R3_MOE_WORKER_ROWS_SMALL");
-            const bool rows_small = rs_env && std::strcmp(rs_env, "0") != 0 &&
+            const bool rows_small = r3_serving::settings().rows_small &&
                                     lane_is_small(lane) && rows <= 16u;
             const bool rowk = (rows_ && !lane_is_small(lane)) || rows_small;
             // Accurate W4 rows only. The historical inaccurate fp16-scaled
@@ -1010,8 +979,7 @@ public:
             };
             /* the plugin's gated quantiser in a lane kernel that stops at the request's route count (moe_lane_quant.h): the
              * plugin's form quantises every row of the lane's capacity. Read each call so a replay can compare. */
-            const char* lq_env = std::getenv("R3_MOE_WORKER_LANE_QUANT");
-            const bool lane_quant = (!lq_env || std::strcmp(lq_env, "0") != 0) &&
+            const bool lane_quant = r3_serving::settings().lane_quant &&
                                     (gated_quant_ == gated_had_ || gated_quant_ == gated_plain_) && mid_w() % 4u == 0 &&
                                     (gated_quant_ != gated_had_ || mid_w() % kGroup == 0);   /* the plugin refuses a rotated ragged width too */
             if (lane_quant) {
@@ -1359,7 +1327,7 @@ private:
     Rad46Sweep rad46_sweep_ = Rad46Sweep::Production; // replay-sweep overrides only between runs
     bool rows_ = false;         /* R3_MOE_WORKER_ROWS: few-rows-a-expert kernel on the large lane (RAD06) */
     uint32_t chunk_helper_ = UINT32_MAX;   /* R3_MOE_WORKER_COMBINE: this helper's index for the chunk words (RAD42) */
-    bool trace_ = [] { const char* v = std::getenv("R3_MOE_WORKER_TRACE"); return v && *v && std::atoi(v) > 0; }();   /* RAD40 stage stamps */
+    bool trace_ = r3_serving::settings().trace > 0;   /* RAD40 stage stamps */
     bool gemv_debug_ = false;   /* R3_MOE_WORKER_GEMV=2: grouped GEMM AND GEMV gate/up, compared (--compare) */
 
     template <class T> bool symbol(const char* name, T* out, bool required = true) {
@@ -1375,27 +1343,11 @@ private:
         return true;
     }
 
-    /* The kernel plugin for this card: R3_MOE_WORKER_PLUGIN (a full path), or R3_MOE_WORKER_PLUGIN_FILE under RADIANCE_HOME/kernels. Which file
-     * belongs to which card type is engines/radiance/archs.toml; the launcher and the harness set it. Empty (with a message) when neither is set. */
+    // Both the plugin file and installation root are manifest-validated.
     std::string plugin_path() const {
-        if (const char* e = std::getenv("R3_MOE_WORKER_PLUGIN"); e && *e) return e;
-        const char* file = std::getenv("R3_MOE_WORKER_PLUGIN_FILE");
-        if (!file || !*file) {
-            std::fprintf(stderr, "r3_moe_worker: set R3_MOE_WORKER_PLUGIN_FILE (the kernel plugin for %s, e.g. libr3.so; engines/radiance/archs.toml) "
-                                 "or R3_MOE_WORKER_PLUGIN\n", arch_.c_str());
-            return std::string();
-        }
-        if (const char* e = std::getenv("RADIANCE_HOME"); e && *e) {
-            std::string h(e);
-            const size_t colon = h.find(':');
-            if (colon != std::string::npos) h.resize(colon);
-            return h + "/kernels/" + file;
-        }
-#ifdef RAD_DEFAULT_HOME
-        return std::string(RAD_DEFAULT_HOME) + "/kernels/" + file;
-#else
-        return file;
-#endif
+        const auto& conf = r3_serving::settings();
+        if (!conf.plugin.empty()) return conf.plugin;
+        return conf.radiance_home + "/kernels/" + conf.plugin_file;
     }
 
     bool load_plugin() {
@@ -1406,6 +1358,7 @@ private:
             std::fprintf(stderr, "r3_moe_worker: dlopen %s: %s\n", path.c_str(), dlerror());
             return false;
         }
+        if (!r3_serving::configure_plugin(so_, r3_serving::settings())) return false;
         uint32_t (*abi)() = nullptr;
         const RadPluginInfo* (*info)() = nullptr;
         int (*count)() = nullptr;
@@ -1463,41 +1416,36 @@ private:
             std::fprintf(stderr, "r3_moe_worker: installed libr4d lacks required MoE/quant rows\n");
             return false;
         }
-        /* R3_MOE_WORKER_MOE_FORM (RAD06): pin the grouped GEMM's tile form - 1 the 32-row prefill form, 2 the
-         * 16-row (tile, run) decode form. libr4d picks by T against all 512 experts, but a helper's rows spread over
-         * only the experts it owns (~4.5 rows an expert at prefill), the decode form's regime. */
-        if (const char* f = std::getenv("R3_MOE_WORKER_MOE_FORM"); f && *f && std::strcmp(f, "0") != 0) {
+        const auto& conf = r3_serving::settings();
+        if (conf.moe_form) {
             auto pin = reinterpret_cast<void (*)(int)>(dlsym(so_, "r4d_moe_gemm_pin_prefill"));
-            const int form = std::atoi(f);
-            if (!pin || (form != 1 && form != 2)) {
-                std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_MOE_FORM=%s not applied (%s)\n", f,
-                             pin ? "want 1 or 2" : "plugin does not export r4d_moe_gemm_pin_prefill");
+            if (!pin) {
+                std::fprintf(stderr, "r3_moe_worker: plugin lacks r4d_moe_gemm_pin_prefill\n");
                 return false;
             }
-            pin(form);
+            pin((int)conf.moe_form);
             std::fprintf(stderr, "r3_moe_worker: grouped MoE GEMM pinned to the %s form\n",
-                         form == 2 ? "16-row decode" : "32-row prefill");
+                         conf.moe_form == 2 ? "16-row decode" : "32-row prefill");
         }
-        /* RAD06 tile sweep on gfx1100 (libr4d's tiles were tuned on gfx1201): R3_MOE_WORKER_MOE_DOWN_TILE 1 the
-         * 64/128-column down tile, 2 the 256-column 16-wave one. */
-        if (const char* v = std::getenv("R3_MOE_WORKER_MOE_DOWN_TILE"); v && *v) {
+        {
             auto fn = reinterpret_cast<void (*)(int)>(dlsym(so_, "r4d_moe_gemm_pin_down_tile"));
             if (!fn) {
-                std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_MOE_DOWN_TILE set but the plugin lacks r4d_moe_gemm_pin_down_tile\n");
+                std::fprintf(stderr, "r3_moe_worker: plugin lacks r4d_moe_gemm_pin_down_tile\n");
                 return false;
             }
-            fn(std::atoi(v));
-            std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_MOE_DOWN_TILE=%s applied\n", v);
+            fn((int)conf.handoff.moe_down_tile);
+            std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_MOE_DOWN_TILE=%u applied\n",
+                         conf.handoff.moe_down_tile);
         }
-        /* RAD06: runs of this many rows or more take 64-row slices and the MT=4 tile (libr3 native/r4d_moe.hip.rw). */
-        if (const char* v = std::getenv("R3_MOE_WORKER_MOE_LONG_ROWS"); v && *v && std::strcmp(v, "0") != 0) {
+        if (conf.moe_long_rows) {
             auto fn = reinterpret_cast<void (*)(int)>(dlsym(so_, "r4d_moe_gemm_pin_long_rows"));
             if (!fn) {
-                std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_MOE_LONG_ROWS set but the plugin lacks r4d_moe_gemm_pin_long_rows\n");
+                std::fprintf(stderr, "r3_moe_worker: plugin lacks r4d_moe_gemm_pin_long_rows\n");
                 return false;
             }
-            fn(std::atoi(v));
-            std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_MOE_LONG_ROWS=%s applied\n", v);
+            fn((int)conf.moe_long_rows);
+            std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_MOE_LONG_ROWS=%u applied\n",
+                         conf.moe_long_rows);
         }
         return true;
     }

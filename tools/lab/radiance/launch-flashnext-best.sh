@@ -14,8 +14,8 @@
 # than on the cold run's chunk grid: re-sent prefixes cost 0.2-0.3 s a turn instead of 0.6-0.8 s, at the price of greedy text
 # that can differ from a cold run's near ties. The cache takes the VRAM the experts leave, which costs no decode or
 # 4K-prefill speed (RAD37 measurements, qwen3.8-flash-next.md); one sequence is 30% slower at decode, so keep two.
-# Helper kernels on by default (R3_MOE_FP16, R3_MOE_AHALF, R3_MOE_NATIVE, R3_MOE_WORKER_VECIO, FUSESTAGE, FUSEROUTE) are
-# not repeated here.
+# Helper kernel settings are in the manifest. The libr3 native/FP16/activation-half
+# switches still need a typed plugin interface before their settings can take effect.
 #
 # Which cards play which part is a layout (engines/radiance/layouts.toml, `bigcherry layout list|show NAME`), resolved against this host's device
 # inventory; card types (plugin, weight formats, few-rows kernel) are engines/radiance/archs.toml. --layout NAME (or FLASHNEXT_LAYOUT) picks one,
@@ -283,7 +283,38 @@ if [ "$LAYOUT_HELPER_COUNT" -gt 0 ]; then
   fi
 fi
 
+# RSC06 bridge: resolve one manifest from this build. The helper processes
+# read their own role; this is not an environment-to-argv conversion.
+BUDGET_CSV=
+for kv in "${LAYOUT_COMMON[@]}"; do
+  case "$kv" in R3_MOE_WORKER_MIBS=*) BUDGET_CSV=${kv#*=} ;; esac
+done
+[ -n "$BUDGET_CSV" ] || { echo "FLASHNEXT_EXIT=99 layout has no helper budgets"; exit 99; }
+MANIFEST_SETS=(
+  --set "layout.name=$LAYOUT"
+  --set "engine.model=$MODEL"
+  --set "engine.radiance_home=$RAD_HOME"
+  --set "engine.port=$PORT"
+  --set "handoff.shm=$SHM"
+  --set "handoff.heat=$HEAT"
+  --set "handoff.histogram=${RECORD:-off}"
+  --set "handoff.histogram_period_s=$RECORD_PERIOD"
+  --set "memory.helper_budgets_mib=[$BUDGET_CSV]"
+  --set "memory.host_pool_mib=$HOST_POOL_MIB"
+  --set "memory.host_kv_mib=$HOST_KV_MIB"
+  --set "service.max_sessions=$SEQS"
+  --set "service.max_context=$MAX_LEN"
+  --set "engine.max_num_batched_tokens=$CHUNK"
+  --set "engine.kv_cache_dtype=$KV_DTYPE"
+  --set "engine.ngram_placement=$NGRAM"
+  --set "engine.rope_scaling=$ROPE"
+  --set "engine.prefix_resume=$PREFIX_RESUME"
+)
 mkdir -p "$PIDS"
+# bc-serve refuses overwrites; the existing-running guard above is checked first.
+rm -f "$RUN/manifest.json"
+"$SERVE" --dry-run --out "$RUN/manifest.json" "${MANIFEST_SETS[@]}" ||
+  { echo "FLASHNEXT_EXIT=99 serving manifest resolution failed"; exit 99; }
 STAMP=$(date +%m%d-%H%M%S)
 
 # helpers in order: helper 0 creates the segment, helper 1 attaches; each must report ready before the next starts

@@ -1,7 +1,9 @@
 #pragma once
 // Experimental policy controls: each trigger and size must be explicit.
+#include "worker_forced_move.h"
 #include "worker_policy_input.h"
 #include "worker_share.h"
+#include <algorithm>
 #include <charconv>
 #include <cerrno>
 #include <chrono>
@@ -18,7 +20,7 @@ struct Settings {
     uint64_t effect_window_samples = 0, effect_min_quiet_windows = 0, effect_revert_ttl_ns = 0;
     double effect_noise_multiplier = 0;
     PolicyControls controls{};
-    std::vector<uint32_t> head_shares;   // the launch's R3_MOE_WORKER_SHARES, one weight a helper
+    std::vector<uint32_t> head_shares;   // the launch's helper shares from the manifest, one weight a helper
     std::vector<uint32_t> protected_layers;
     static bool read_flag(const char* key,const char* raw, bool* v, std::string* error) {
         if (!raw || !*raw) return true;
@@ -95,8 +97,12 @@ struct Settings {
         *result=std::move(ids);
         return true;
     }
-    bool from_environment(uint32_t helpers, bool forced_enabled,
+    /* The RHP policy settings are the one remaining environment read in the helper: bigcherry/v1 does not model them
+     * (v1 is closed), so they move into the manifest in v2 (plan item RSC10). The launch's helper shares come from the
+     * manifest, not the environment. */
+    bool from_environment(const std::vector<uint32_t>& shares, bool forced_enabled,
                           std::string* error) {
+        const uint32_t helpers=uint32_t(shares.size());
         if(!error || !read_flag("R3_MOE_POLICY_ENABLE",std::getenv("R3_MOE_POLICY_ENABLE"),&enabled,error) ||
            !read_flag("R3_MOE_POLICY_ACCEPT_UNWATERMARKED_HEAT",
                       std::getenv("R3_MOE_POLICY_ACCEPT_UNWATERMARKED_HEAT"),
@@ -160,14 +166,74 @@ struct Settings {
         }
         controls.max_moves=uint32_t(moves);
         // The live plan is the static placer's, so it reads the shares the launch placed with (unset means every helper 1).
-        head_shares.assign(helpers,0);
-        if(!worker_share::parse_shares(std::getenv("R3_MOE_WORKER_SHARES"),helpers,head_shares.data())) {
-            *error="R3_MOE_WORKER_SHARES: one weight for each of the "+std::to_string(helpers)+" helpers, not all zero";
+        uint64_t share_total=0;
+        for(uint32_t w:shares) {
+            if(w>1000000u) {*error="helper share above 1000000";return false;}
+            share_total+=w;
+        }
+        if(!helpers||helpers>worker_share::kMaxHelperShares||!share_total) {
+            *error="helper shares: one weight for each of the "+std::to_string(helpers)+" helpers, not all zero";
             return false;
         }
+        head_shares=shares;
         if(!controls_valid(controls)) {
             *error="R3_MOE_POLICY_*: invalid mandatory controls";return false;
         }
+        return true;
+    }
+};
+
+/* Everything the helper still reads from its environment: the RHP policy, forced-move and epoch-cycle controls that
+ * bigcherry/v1 does not model. v1 is closed; these become manifest registry entries in v2 (plan item RSC10) and this
+ * file is then free of getenv. It is the only file under the components allowed a helper R3_* getenv. */
+struct UnmodelledEnvironment {
+    static constexpr uint32_t kMaxEpochCycleS = (uint32_t)std::min<uint64_t>(
+        UINT32_MAX, (uint64_t)std::chrono::duration_cast<std::chrono::seconds>(std::chrono::nanoseconds::max()).count());
+    uint32_t epoch_cycle_s = 0;   /* R3_MOE_WORKER_EPOCH_CYCLE_S (RHP11 slice C validation); 0 = off */
+    bool force_enabled = false;
+    Settings policy;
+    forced::Schedule force_schedule;
+
+    bool read(uint32_t helper_index, const std::vector<uint32_t>& shares, std::string* err) {
+        if (!read_epoch_cycle(err) || !read_force(helper_index, err)) return false;
+        return policy.from_environment(shares, force_enabled, err);
+    }
+
+private:
+    bool read_epoch_cycle(std::string* err) {
+        const char* s = std::getenv("R3_MOE_WORKER_EPOCH_CYCLE_S");
+        if (!s || !*s) return true;
+        uint32_t v = 0;
+        const char* end = s + std::strlen(s);
+        const auto [p, ec] = std::from_chars(s, end, v);
+        if (ec != std::errc{} || p != end || v > kMaxEpochCycleS) {
+            *err = std::string("R3_MOE_WORKER_EPOCH_CYCLE_S=") + s + ": want an integer in 0.." + std::to_string(kMaxEpochCycleS);
+            return false;
+        }
+        epoch_cycle_s = v;
+        return true;
+    }
+    bool read_force(uint32_t helper_index, std::string* err) {
+        // Only the coordinator reads test controls; other helpers merely service canonical proposals.
+        if (helper_index != 0) return true;
+        const char* one = std::getenv("R3_MOE_PLACEMENT_FORCE_MOVE");
+        const char* file = std::getenv("R3_MOE_PLACEMENT_FORCE_SCHEDULE");
+        const bool has_one = one && *one, has_file = file && *file;
+        if (has_one && has_file) {
+            *err = "R3_MOE_PLACEMENT_FORCE_MOVE conflicts with FORCE_SCHEDULE";
+            return false;
+        }
+        if (has_one) {
+            forced::Step step;
+            if (!forced::parse_step(one, &step) || step.kind == forced::Step::Kind::AUTO_SWAP) {
+                *err = "R3_MOE_PLACEMENT_FORCE_MOVE: want layer:expert:helper or swap:layerA:expertA:layerB:expertB";
+                return false;
+            }
+            force_schedule.steps.push_back(step);
+        } else if (has_file && !forced::read_schedule(file, &force_schedule, err)) {
+            return false;
+        }
+        force_enabled = has_one || has_file;
         return true;
     }
 };
