@@ -18,20 +18,22 @@ and up-mix patches are recorded as validated; other patches include
 diagnostic and unfinished work. See the [full catalogue](ENHANCEMENTS.md)
 for states and evidence. Recipe inclusion is not proof of qualification.
 
-## Best recorded model results
+## Current-pin throughput
 
-These figures are from **Radiance v1.14.0**. Re-measured 2026-11-05 on v1.16.0 and v1.17.0 (prefill and decode step time within about 2%, see the Flash-Next model page).
+The pinned upstream is Radiance **v1.17.0**. These figures are from **Radiance v1.14.0** and are not matched
+unmodified-stock throughput A/Bs: do not treat the earlier layout results as current-pin speedups. Re-measured
+2026-11-05 on v1.16.0 and v1.17.0 (prefill and decode step time within about 2%, see the Flash-Next model page).
 They are different workloads, not a like-for-like model ranking.
 
-| Model | Prefill | Generated output |
-| --- | --- | --- |
-| [Qwen3.8-Flash-Next](models/qwen3.8-flash-next.md), R9700 + 2 × RX 7900 XTX + RX 6900 XT | **3,837 tok/s** (fresh ~44K) | **330–342 tok/s** aggregate engine decode, 6 streams |
-| [Qwen3.8-27B MXFP4](models/qwen3.8-27b.md), R9700 | Not measured | **245–248 tok/s** aggregate client output, 6 streams |
-| [Qwen3.6-35B-A3B FP8](models/qwen3.6-35b-a3b.md), R9700 | Not measured | **171–219 tok/s** client output across prompts, 1 stream |
+| Model and layout | Prefill tokens/s | Aggregate output tokens/s |
+| --- | ---: | ---: |
+| [Flash-Next](models/qwen3.8-flash-next.md), R9700 + two RX 7900 XTX + RX 6900 XT | Not qualified | Not qualified |
+| [Qwen3.8-27B MXFP4](models/qwen3.8-27b.md), R9700; two-XTX alternative unqualified | Not qualified | Not qualified |
+| [Qwen3.6-35B-A3B FP8](models/qwen3.6-35b-a3b.md), R9700 | Not qualified | Not qualified |
 
-No matched stock Radiance benchmark is available for these runs. The
-four-card Flash-Next tail-helper layout carries a documented quality
-trade-off. The model pages give conditions, checks and limitations.
+Earlier v1.14.0 results, including long-context and concurrent serving
+measurements, are retained in the [archive](../../../archive/radiance/v1.14-model-results/).
+The Flash-Next four-card layout has a documented quality trade-off.
 
 ## Further detail
 

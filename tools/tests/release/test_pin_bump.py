@@ -1778,7 +1778,8 @@ class LaneBuildPhaseTests(unittest.TestCase):
 
     def test_phase_order_puts_lane_build_between_compile_and_cpu_smoke(self):
         phases = pin_bump.PHASES
-        self.assertEqual(phases.index("lane-build"), phases.index("compile") + 1)
+        self.assertEqual(phases.index("evidence"), phases.index("compile") + 1)
+        self.assertEqual(phases.index("lane-build"), phases.index("evidence") + 1)
         self.assertEqual(phases.index("cpu-smoke"), phases.index("lane-build") + 1)
 
     def test_builds_the_lane_then_smokes_that_build_and_records_it(self):

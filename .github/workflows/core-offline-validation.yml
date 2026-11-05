@@ -20,6 +20,9 @@ on:
       - 'config/**'
       - 'docs/reference/**'
       - 'docs/design/serving-manifest-v1/**'
+      - 'README.md'
+      - 'tools/docs/**'
+      - 'tools/tests/test_docs_catalog.py'
       - '.github/workflows/core-offline-validation.yml'
   workflow_dispatch:
 
@@ -63,3 +66,10 @@ jobs:
         run: |
           python -m pytest -q -p no:cacheprovider tools/tests/lab/test_launch_flashnext_cleanup.py tools/tests/lab/test_plan_check_launcher.py
           python -m pytest -q -p no:cacheprovider tools/tests/build/test_rocm_sdk_explicit.py tools/tests/build/test_runtime_sdk_check.py
+      - name: Docs catalog and pin consistency
+        # A bump left the generated enhancement catalog and the README pins stale on main for hours because no workflow
+        # ran these tests. They compare the docs with the recipes, the patch registry and the patch evidence records.
+        env:
+          PYTHONPATH: tools
+        run: |
+          python -m pytest -q -p no:cacheprovider tools/tests/test_docs_catalog.py
