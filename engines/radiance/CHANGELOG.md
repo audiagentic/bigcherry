@@ -1,5 +1,12 @@
 # Changelog
 
+## [1170.1.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.0.0...bc-radiance-1170.1.0) (2026-11-05)
+
+
+### New and changed
+
+* **patch:** promote rad0009_serving_manifest, rad0011_plan_memory ([#663](https://github.com/audiagentic/bigcherry/issues/663)) ([d610837](https://github.com/audiagentic/bigcherry/commit/d610837b304f1193d2f36c05051def91b5e2478d))
+
 ## [1170.0.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1160.5.0...bc-radiance-1170.0.0) (2026-11-05)
 
 
