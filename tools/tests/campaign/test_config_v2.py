@@ -63,7 +63,11 @@ patch-sets = ["framework"]
 options = { GGML_HIP_AUTOTUNE = "ON" }
 variant-set = "workload-max"
 needs = ["inventory", "promoted-winners"]
+[stack.fixture-stack]
+backend = "hip"
+
 [platform.dev]
+stack = "fixture-stack"
 targets = ["gfx1100", "gfx1201"]
 options = { GGML_HIP = "ON" }
 """
@@ -122,7 +126,11 @@ c-compiler = "/opt/clang/bin/clang"
 runtime-library-dirs = ["/opt/rocm-10/lib"]
 environment = { HIP_VISIBLE_DEVICES = "0,1" }
 required-providers = ["hip", "rocblas"]
+[stack.fixture-stack]
+backend = "hip"
+
 [platform.linux]
+stack = "fixture-stack"
 targets = ["gfx1100"]
 options = { GGML_HIP = "ON" }
 """

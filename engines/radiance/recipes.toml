@@ -42,6 +42,12 @@ patches = [
 ]
 required-state = "untested"
 
+
+# RHP01: isolated opt-in read-only histogram evidence, never part of production sources.
+[patch-set.routing-evidence]
+patches = ["rad0010_routing_evidence"]
+required-state = "untested"
+
 [source.radiance-native]
 description = "radiance 1.14.0 as released: no overlay, no patches."
 overlay = false
@@ -61,6 +67,11 @@ patch-sets = ["serving-core", "engine-fixes-evaluated", "host-compat", "serving-
 description = "radiance 1.14.0 with the validated engine patch sets plus remote-MoE diagnostics (rad0004); build it with build.moe-diag."
 overlay = false
 patch-sets = ["serving-core", "host-compat", "serving-manifest", "moe-remote-diag"]
+
+[source.radiance-routing-evidence]
+description = "Production Radiance plus RHP01 opt-in host histogram coverage diagnostics; not a production source."
+overlay = false
+patch-sets = ["serving-core", "host-compat", "serving-manifest", "routing-evidence"]
 
 [build.stock]
 description = "radiance's own release build of the engine binary."
@@ -107,9 +118,19 @@ min-free-vram-bytes-per-device = 268435456
 # SDK (engine.toml build.rocm-paths; docs/reference/ENVIRONMENT.md, ROCm).
 # RAD_GPU_TARGETS names libr4d's kernel targets (gfx12 only); the gfx1100 kernels come from the libr3 component.
 # ${VAR} values come from the environment or config/environment.local.toml [env].
+# Each recipes file is loaded alone, so the stack the lane names is declared here. sdk is a version in the host's
+# rocm-sdks table (config/environment.example.toml for CI); the CI image's ARG ROCM_VERSION must be that version.
+[stack.rocm-7-2]
+backend = "hip"
+sdk = "7.2"
+required-providers = ["hip", "rocblas"]
+
 [platform.linux-radiance]
 description = "dev: radiance engine build (GCC 14 host compiler; HIP from the selected ROCm SDK)"
 targets = ["gfx1201"]
+# The ROCm SDK is named, never the host default: [stack.rocm-7-2] -> sdk "7.2" in the host's rocm-sdks table. Its
+# root, version and hashed identity are recorded in the build.
+stack = "rocm-7-2"
 # ccache wraps every compiler CMake invokes (host C/C++ AND the HIP device-code compiler) so a
 # from-scratch build after a small source change only recompiles the touched translation units --
 # unconditional here since ccache is present on every host this platform builds on (dev and the

@@ -45,7 +45,7 @@ class CatalogArchitecturesParticipateInIdentityTests(unittest.TestCase):
         self.assertNotEqual(a.build_plan_id, b.build_plan_id)
 
     def test_changing_catalog_architectures_changes_build_directory(self):
-        context = ProjectContext(engine="llamacpp", 
+        context = ProjectContext(engine="llamacpp",
             project_root=Path("."),
             config_path=Path("recipes.toml"),
             artifacts_root=Path("artifacts"),
@@ -64,7 +64,7 @@ class CatalogArchitecturesParticipateInIdentityTests(unittest.TestCase):
         )
 
     def test_two_lanes_same_plan_different_architectures_never_share_a_build_dir(self):
-        context = ProjectContext(engine="llamacpp", 
+        context = ProjectContext(engine="llamacpp",
             project_root=Path("."),
             config_path=Path("recipes.toml"),
             artifacts_root=Path("artifacts"),
@@ -123,7 +123,7 @@ class RuntimeBundlePublicationTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            context = ProjectContext(engine="llamacpp", 
+            context = ProjectContext(engine="llamacpp",
                 project_root=root,
                 config_path=root / "recipes.toml",
                 artifacts_root=root / "artifacts",
@@ -140,7 +140,7 @@ class RuntimeBundlePublicationTests(unittest.TestCase):
                 targets=("gfx1100",),
                 variant_set=None,
             )
-            platform = campaign_config.Platform(
+            platform = campaign_config.Platform(stack="rocm-test", sdk=None, sdk_root=None,
                 name="linux-multi", targets=("gfx1100",), options=()
             )
             build_cfg = campaign_config.Build(

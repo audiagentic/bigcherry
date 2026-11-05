@@ -29,6 +29,10 @@ Radiance already asynchronously records each MoE router's `expert_count`, but `c
 
 The GPU already produces per-layer integer `expert_count` and `route_flush()` transfers banked contiguous rows to pinned host storage. Host later calls `Ctx::next_histogram(...)` and `HeatEngine::observe(..., reports)`. A 30-minute ownership policy tolerates stale heat; exact one-time accounting and bounded memory are more important than freshness. Run the old diagnostic `R3_MOE_WORKER_HISTOGRAM` only as a **temporary parity oracle**. Test that a bank cannot be overwritten while logically uncredited without an explicit loss counter; the correct fix may be retirement accounting, a larger ring or a deferred queue, determined from measurement.
 
+## Code Samples & Guidance
+
+
+
 ## Files
 
 Pinned upstream `core/runtime/ctx.{h,cpp}`, `core/engine{,_priv}.h/.cpp`, `core/place/heat.{h,cpp}`; radiance patch package to be allocated under `engines/radiance/patches/`; `tools/tests/patch/test_radiance_patch_packages.py`; `tools/lab/radiance/` diagnostics.
@@ -56,6 +60,10 @@ Risk: a lossless drain may require bounded backpressure under unlimited CPU run-
 ## Notes
 
 P0 prerequisite for reusing Radiance heat as the remote ownership oracle. RHP02 must not remove the BigCherry collection diagnostic until this gate passes.
+
+
+
+MEASURED 2026-11-04 (production layout flashnext-4gpu: R9700 engine, two 7900 XTX head helpers, 6900 XT tail; radiance v1.16.0 with the rad0010 routing-evidence diagnostic, RAD_ROUTING_EVIDENCE=1; chunk 2048, prefix cache 2 GiB). Workloads: 4 single-stream decodes, one 6-stream soak (2048-token prompts), three 8K prefills (about 13.6K tokens each), one 32K prefill (about 54K tokens, 27 prefill steps) and four concurrent 8K prefills. Result, rank 0 counters at teardown: prefill issued 3696, credited 3696, overwritten 0; decode issued 26736, credited 26640, pending 96 (the in-flight tail at shutdown); mixed 960 of 960; draft 590 of 591 (pending 1); upstream_dropped 0, stale/duplicate/order rejects 0, counter overflow 0; histogram credit delay p50 1 step, p95 2 steps. So in this regime the existing asynchronous histogram path is complete: nothing was overwritten, and the bank ring (32 banks) is never close to being outrun. Cost of the diagnostics when on: 1-stream decode 24.58 ms/step against the usual 24.6 (no measurable cost); prefill about 2,300-2,400 tokens/s over the 8K and 32K prompts. Limits of this result: one chunk size (2048); rank 0 only; the 4096 and 8192 chunk sizes and a real 64-row verification batch from the plan are not yet exercised; the earlier note of about 2% of layer histograms credited in a long-prefill experiment came from a different regime (more host run-ahead), so it is not refuted, only not reproduced here. The code reading (pinned ctx.cpp route_report_impl) shows an uncredited bank CAN be recycled under enough run-ahead, so the remaining question is how much run-ahead the production layouts allow. Consequence for the plan: the placement policy (RHP02/04) may rely on the existing histogram feed in this regime, with the rad0010 counters kept as an on-demand coverage check; step 4 (lossless staging) stays deferred unless a heavier regime shows loss.
 
 ## Implementation-grade notes (2026-10-15)
 
@@ -105,3 +113,17 @@ Steps:
 4. Classify missing observations explicitly; never substitute zero demand (layer 48, the MTP layer, is all zero in the 2026-10-17 profile and every draft pass uses it).
 
 Validation: Exact-count synthetic oracle, bank-generation reuse, delayed events, duplicate rejection, overflow accounting, finite shutdown drain; at least 99% completed-report coverage or the loss documented; no mandatory GPU synchronisation or material throughput change.
+
+## Ledger-events
+
+
+- chg_20261104_085322_a-diagnostic-build-option-now_9638
+- chg_20261104_100802_measured-that-the-expert-usage_9903
+
+- chg_20261104_141856_fixed-the-documentation-index_8382
+## Change Log
+
+- 2026-11-04T08:53:26.797834+00:00 (updated-by): Updated: section:ledger-events
+- 2026-11-04T10:07:56.063649+00:00 (updated-by): Updated: section:notes
+- 2026-11-04T10:08:06.091603+00:00 (updated-by): Updated: section:ledger-events
+- 2026-11-04T14:19:00.419056+00:00 (updated-by): Updated: section:ledger-events

@@ -580,9 +580,7 @@ def make_build_worker(
             # RAD18: forward the platform's compiler-launcher options (e.g. ccache) -- each component is
             # configured through its own separate cmake invocation, which otherwise never gets ccache at all.
             runtime_bundle.build_runtime(
-                context.engine, source_root=source_root, build_dir=build_dir,
-                c_compiler=platform.c_compiler, cxx_compiler=platform.cxx_compiler,
-                launcher_options=tuple((k, v) for k, v in platform.options if k.endswith("_COMPILER_LAUNCHER")),
+                context.engine, source_root=source_root, build_dir=build_dir, platform=platform,
             )
 
             # A source mutation during configure/compile invalidates the

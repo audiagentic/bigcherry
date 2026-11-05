@@ -19,6 +19,8 @@ content_hash is allowed to exist at all.
 
 from __future__ import annotations
 
+import functools
+import hashlib
 import json
 import os
 import shutil
@@ -115,7 +117,7 @@ def toolchain_request_for_platform(
     values.update(
         resolve_toolchain_versions(platform.c_compiler, platform.cxx_compiler)
     )
-    values.update(rocm_identity(rocm_paths))
+    values.update(rocm_identity(platform, rocm_paths))
     return tuple(sorted(values.items()))
 
 
@@ -224,42 +226,94 @@ def _find_rocm_prefix(compiler_realpath: Path) -> Path | None:
     return None
 
 
-def selected_rocm_root() -> Path:
-    """The ROCm SDK a build compiles and links against: the host's rocm-root (``BC_ROCM_ROOT`` overrides it), with
-    symlinks resolved so the identity names the real install. Fails closed: there is no fallback to /opt/rocm."""
-    raw = campaign_config.require_resolved(campaign_config.expand_host_value("${BC_ROCM_ROOT}"), "BC_ROCM_ROOT")
-    if not raw:
-        raise CampaignBuildError("no ROCm SDK selected: set rocm-root for this host in the environment file")
-    root = Path(raw).resolve()
+def selected_rocm_root(platform: campaign_config.Platform) -> Path:
+    """The ROCm SDK a build compiles and links against: the root of the SDK the platform's stack names (stack.<name>.sdk
+    through the host's rocm-sdks table), with symlinks resolved so the identity names the real install. Fails closed:
+    a platform without a stack SDK is an error; nothing falls back to the host's default root or /opt/rocm."""
+    if platform.sdk_root is None:
+        raise CampaignBuildError(
+            f"platform.{platform.name} names stack {platform.stack!r}, which selects no ROCm SDK: "
+            "set stack.<name>.sdk to a version in the host's rocm-sdks"
+        )
+    root = Path(platform.sdk_root).resolve()
     if not root.is_dir():
-        raise CampaignBuildError(f"the selected ROCm SDK root {raw} is not a directory")
+        raise CampaignBuildError(
+            f"ROCm SDK {platform.sdk} (stack {platform.stack}) is not installed at {platform.sdk_root}"
+        )
+    version = _sdk_version(root)
+    if not (version == platform.sdk or version.startswith(f"{platform.sdk}.")):
+        raise CampaignBuildError(
+            f"stack {platform.stack} names ROCm SDK {platform.sdk} but {platform.sdk_root} is version {version}"
+        )
     return root
 
 
-def rocm_configure_options(rocm_paths: tuple[tuple[str, str], ...]) -> dict[str, str]:
-    """CMake cache values pinning each of an engine's ROCm lookups (engine.toml ``build.rocm-paths``) to the selected
-    SDK, so the engine's own CMake never searches /opt/rocm or $ROCM_PATH. Empty for an engine that declares none."""
+def lane_sdk_root(recipes: Path, platform_name: str) -> Path:
+    """The installed SDK root of recipes platform ``platform_name``'s stack (what a lane build for it compiles against)."""
+    platforms = campaign_config.load(recipes).platforms
+    if platform_name not in platforms:
+        raise CampaignBuildError(f"{recipes.name} declares no platform {platform_name!r}")
+    return selected_rocm_root(platforms[platform_name])
+
+
+def _sdk_version(root: Path) -> str:
+    version_file = root / ".info" / "version"
+    try:
+        return version_file.read_text(encoding="utf-8").strip()
+    except OSError as exc:
+        raise CampaignBuildError(f"the selected ROCm SDK {root} has no readable {version_file.name}: {exc}") from exc
+
+
+@functools.lru_cache(maxsize=None)
+def _file_digest(path: str, size: int, mtime_ns: int) -> str:
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(1 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def sdk_content_digest(root: Path, rocm_paths: tuple[tuple[str, str], ...]) -> str:
+    """One digest over the files the build takes from the SDK (engine.toml ``build.rocm-paths``: compiler, hipcc, HIP and
+    HSA runtime): an in-place replacement of any of them changes it even when .info/version does not."""
+    digest = hashlib.sha256()
+    for _, relative in sorted(rocm_paths, key=lambda item: item[1]):
+        real = (root / relative).resolve()
+        info = real.stat()
+        digest.update(f"{relative}\0{_file_digest(str(real), info.st_size, info.st_mtime_ns)}\n".encode())
+    return digest.hexdigest()
+
+
+def rocm_configure_options(
+    platform: campaign_config.Platform, rocm_paths: tuple[tuple[str, str], ...]
+) -> dict[str, str]:
+    """CMake cache values pinning each of an engine's ROCm lookups (engine.toml ``build.rocm-paths``) to the platform's
+    named SDK, so the engine's own CMake never searches /opt/rocm or $ROCM_PATH. Empty for an engine that declares none."""
     if not rocm_paths:
         return {}
-    root = selected_rocm_root()
+    root = selected_rocm_root(platform)
     missing = [relative for _, relative in rocm_paths if not (root / relative).exists()]
     if missing:
         raise CampaignBuildError(f"the selected ROCm SDK {root} lacks {', '.join(missing)}")
     return {variable: (root / relative).as_posix() for variable, relative in rocm_paths}
 
 
-def rocm_identity(rocm_paths: tuple[tuple[str, str], ...]) -> dict[str, str]:
-    """The selected SDK's root and its own .info/version, for a build whose engine pins ROCm paths: the root alone
-    would let an in-place upgrade at the same path keep the old build_plan_id."""
+def rocm_identity(platform: campaign_config.Platform, rocm_paths: tuple[tuple[str, str], ...]) -> dict[str, str]:
+    """The named SDK's stack, root, own .info/version and a content digest of the files the build takes from it, for a
+    build whose engine pins ROCm paths: the root alone would let an in-place upgrade at the same path keep the old
+    build_plan_id. All of it is part of the build plan, so two SDKs never share a build id."""
     if not rocm_paths:
         return {}
-    root = selected_rocm_root()
-    version_file = root / ".info" / "version"
-    try:
-        version = version_file.read_text(encoding="utf-8").strip()
-    except OSError as exc:
-        raise CampaignBuildError(f"the selected ROCm SDK {root} has no readable {version_file.name}: {exc}") from exc
-    return {"rocm_root": root.as_posix(), "rocm_version": version}
+    root = selected_rocm_root(platform)
+    missing = [relative for _, relative in rocm_paths if not (root / relative).exists()]
+    if missing:
+        raise CampaignBuildError(f"the selected ROCm SDK {root} lacks {', '.join(missing)}")
+    return {
+        "rocm_stack": str(platform.stack),
+        "rocm_root": root.as_posix(),
+        "rocm_version": _sdk_version(root),
+        "rocm_digest": sdk_content_digest(root, rocm_paths),
+    }
 
 
 def _default_runner(args: list[str], cwd: Path) -> None:
@@ -282,7 +336,7 @@ def _backend_configure_options(
     *stock* build configure) are known. Any other value is a caller bug.
     """
     if backend == "hip":
-        return {targets_option: ";".join(platform.targets), **rocm_configure_options(rocm_paths)}
+        return {targets_option: ";".join(platform.targets), **rocm_configure_options(platform, rocm_paths)}
     if backend == "vulkan":
         # Stock lane only (RE30 phase 1): GGML_VULKAN=ON if the caller
         # hasn't already set it via build/platform options. No SDK/glslc
@@ -370,7 +424,11 @@ def cmake_configure_args(
 
 
 def cmake_build_args(build_dir: Path, *, targets: tuple[str, ...] = ()) -> list[str]:
-    args = ["cmake", "--build", str(build_dir), "-j"]
+    # A bare -j overrides CMAKE_BUILD_PARALLEL_LEVEL with Ninjas native default.
+    # Keep the historical default, but honour an explicit concurrency cap.
+    args = ["cmake", "--build", str(build_dir)]
+    if not os.environ.get("CMAKE_BUILD_PARALLEL_LEVEL"):
+        args.append("-j")
     if targets:
         args += ["--target", *targets]
     return args

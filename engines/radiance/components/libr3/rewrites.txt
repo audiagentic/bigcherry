@@ -11,3 +11,13 @@ asm volatile("s_wait_storecnt 0x0" ::: "memory") ==> asm volatile("s_waitcnt_vsc
 # check libr3's kernels: the first line selects gfx11, the second line's gfx1200 test is dropped.
 if (std::strncmp(p.gcnArchName, "gfx1201", 7) == 0 || ==> if (std::strncmp(p.gcnArchName, "gfx11", 5) == 0 ||  /* libr3: gfx11 cards */
 std::strncmp(p.gcnArchName, "gfx1200", 7) == 0) devs.push_back(d); ==> false) devs.push_back(d);  /* libr3: no gfx12 cards */
+
+# RAD47: gfx1100 MXFP4 dense GEMM row selection. libr4d's row priorities were tuned on gfx1201; on a 7900 XTX the skinny rows are
+# far slower than the tiled row (valid for every M) once a call has more than 16 rows (27B shapes, one XTX, kbench --all-rows:
+# M=18 gemv_wide 484 us / decode 1778 us / nt_m64 842 us vs tiled 319 us; M=64 nt_m64 3267 us vs tiled 530 us; M=128 decode 3662 us
+# vs tiled 571 us), while the decode row is the fastest up to 16 rows. So: decode keeps M <= 16, gemv_wide and decode_shortk become
+# unreachable, and the nt_m64 row drops just below tiled (native/r4d_rows.cpp.rw) so it only serves what tiled cannot.
+# Effect on qwen27b-2xtx (speculation 3): 4 streams 168 -> 213 tok/s, 6 streams 157 -> 215 tok/s; 1 and 2 streams unchanged.
+C_LE("M", 128), C_LE("N", 36864), C_DIV("K", 64), C_DIV("N", 16), C_IN("dtype", "mxfp4a8"), ==> C_LE("M", 16), C_LE("N", 36864), C_DIV("K", 64), C_DIV("N", 16), C_IN("dtype", "mxfp4a8"),
+C_GE("M", 9), C_LE("M", 64), C_DIV("K", 128), C_DIV("N", 16), C_IN("dtype", "mxfp4a8"), ==> C_GE("M", 9), C_LE("M", 8), C_DIV("K", 128), C_DIV("N", 16), C_IN("dtype", "mxfp4a8"),
+C_GE("M", 33), C_LE("M", 64), C_GE("N", 8192), C_LE("N", 36864), C_LE("K", 2560), C_DIV("K", 64), ==> C_GE("M", 33), C_LE("M", 32), C_GE("N", 8192), C_LE("N", 36864), C_LE("K", 2560), C_DIV("K", 64),

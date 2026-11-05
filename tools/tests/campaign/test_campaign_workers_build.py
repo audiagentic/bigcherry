@@ -47,7 +47,7 @@ class _Harness:
 
     def __init__(self, directory: Path):
         self.directory = directory
-        self.context = ProjectContext(engine="llamacpp", 
+        self.context = ProjectContext(engine="llamacpp",
             project_root=directory,
             config_path=directory / "recipes.toml",
             artifacts_root=directory / "artifacts",
@@ -67,7 +67,7 @@ class _Harness:
             targets=("gfx1100",),
             variant_set="workload-max",
         )
-        self.platform = campaign_config.Platform(
+        self.platform = campaign_config.Platform(stack="rocm-test", sdk=None, sdk_root=None,
             name="linux-multi",
             targets=("gfx1100",),
             options=(),

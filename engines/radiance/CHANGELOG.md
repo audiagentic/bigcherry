@@ -1,5 +1,57 @@
 # Changelog
 
+## [1160.3.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1160.2.0...bc-radiance-1160.3.0) (2026-11-05)
+
+
+### New and changed
+
+* **radiance:** RHP16 - offline replay of the live placement policy over a recorded heat series ([#620](https://github.com/audiagentic/bigcherry/issues/620)) ([6f45c66](https://github.com/audiagentic/bigcherry/commit/6f45c668ccf738bcc68049da703b9cfa29ce207a))
+
+## [1160.2.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1160.1.0...bc-radiance-1160.2.0) (2026-11-05)
+
+
+### New and changed
+
+* **build:** every build names a ROCm stack; SDK recorded, hashed, bound to CI image and launcher (BRVP06) ([#611](https://github.com/audiagentic/bigcherry/issues/611)) ([131c2b1](https://github.com/audiagentic/bigcherry/commit/131c2b1fe77e3cc15560e883cb6faa2ef9f8f875))
+* **radiance:** live expert placement policy (RHP slices H, I, J): target map = the static placer's plan for the live heat ([#597](https://github.com/audiagentic/bigcherry/issues/597)) ([4d3c217](https://github.com/audiagentic/bigcherry/commit/4d3c2178ea78faf6070ed60b9abc20959d23d072))
+* **radiance:** RHP16 step 2 - the live policy measures transaction time and bandwidth, update gaps, hot-set drift and sampling error (no setting derived yet) ([#619](https://github.com/audiagentic/bigcherry/issues/619)) ([8acb6d8](https://github.com/audiagentic/bigcherry/commit/8acb6d884848b4c09e7fb6774b2f58a34d0fcf40))
+
+
+### Fixes
+
+* **radiance:** RHP16 - measure hot-set drift on per-interval counts, not on the heat the half-life decays; record the first measured values ([#621](https://github.com/audiagentic/bigcherry/issues/621)) ([18579f7](https://github.com/audiagentic/bigcherry/commit/18579f7396fc1cf3bbbe1b873c14f0499c750971))
+
+
+### Performance
+
+* **radiance:** RAD48 - native gfx11 int8 prefill tile (27B INT8 prefill GEMM 3.1x) ([#601](https://github.com/audiagentic/bigcherry/issues/601)) ([424a6e4](https://github.com/audiagentic/bigcherry/commit/424a6e47eb8462f1b6742d4f2964b817f84842e7))
+
+## [1160.1.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1160.0.0...bc-radiance-1160.1.0) (2026-11-04)
+
+
+### New and changed
+
+* **build:** BU01 Radiance CI cache, release bundle and kernel recompiles ([#584](https://github.com/audiagentic/bigcherry/issues/584)) ([e92fd1a](https://github.com/audiagentic/bigcherry/commit/e92fd1a20b20af491e2252455a516190d1db3891))
+* **radiance:** qwen27b-2xtx layout - Qwen3.8-27B MXFP4 tensor-parallel over two RDNA3 cards ([#573](https://github.com/audiagentic/bigcherry/issues/573)) ([509d991](https://github.com/audiagentic/bigcherry/commit/509d991b83c0f42ad0d6295beb22a9feefe5da99))
+* **radiance:** RHP slice H part 1 - heat source interface and policy-input builder (card-free, not wired) ([#591](https://github.com/audiagentic/bigcherry/issues/591)) ([40829e0](https://github.com/audiagentic/bigcherry/commit/40829e0dfff5ee5bbf8e03c52e528956f5fb9aee))
+* **radiance:** RHP01 part 1 - rad0010 routing-evidence diagnostic patch ([#582](https://github.com/audiagentic/bigcherry/issues/582)) ([f48cc55](https://github.com/audiagentic/bigcherry/commit/f48cc5560e612faa81163627019223a557e19169))
+* **radiance:** RHP11 slice D - live owner-map generations on the engine GPU, full epoch cycle ([#557](https://github.com/audiagentic/bigcherry/issues/557)) ([78704e2](https://github.com/audiagentic/bigcherry/commit/78704e2fa32676b2ac38821cc7e031b804ea396c))
+* **radiance:** RHP11 slice E - live helper slot migration ([#558](https://github.com/audiagentic/bigcherry/issues/558)) ([c78a819](https://github.com/audiagentic/bigcherry/commit/c78a8191d57004b6cd67d5645a74f0f2f5b158c4))
+* **radiance:** RHP11 slices F and G - combine epoch checks, v23 segment requirement, forced-move harness ([#572](https://github.com/audiagentic/bigcherry/issues/572)) ([aa38683](https://github.com/audiagentic/bigcherry/commit/aa38683d3dc457310dd88e4d15d91bfa8eddc94f))
+* **serving:** bc-serve --write-manifest writes a v1 serving manifest from the resolver (RSC08 S2a) ([#578](https://github.com/audiagentic/bigcherry/issues/578)) ([a8e9554](https://github.com/audiagentic/bigcherry/commit/a8e9554d8f46948ba3a1574925cb060e66e25fcc))
+
+
+### Fixes
+
+* **radiance:** qwen27b-2xtx runs with 3 speculative draft tokens (single-stream decode 48 -&gt; 96.7 tok/s) ([#590](https://github.com/audiagentic/bigcherry/issues/590)) ([5c88f5c](https://github.com/audiagentic/bigcherry/commit/5c88f5c38ca8cdf27836c81c25ba17924b7264b6))
+* **radiance:** r3_moe_worker replay runs the production bootstrap again ([#565](https://github.com/audiagentic/bigcherry/issues/565)) ([6eb31a7](https://github.com/audiagentic/bigcherry/commit/6eb31a708b92cefae2f90afed727e0638a449a50))
+* **radiance:** RAD46 accurate gfx1030 rows kernels, selected per stage by request rows ([#577](https://github.com/audiagentic/bigcherry/issues/577)) ([5bcb0b0](https://github.com/audiagentic/bigcherry/commit/5bcb0b006cd0866500f733ba7691a3a810d52133))
+
+
+### Performance
+
+* **radiance:** RAD47 - gfx1100 MXFP4 GEMM rows: tiled from 17 rows up (27B 4 streams +27%, 6 streams +37%) ([#596](https://github.com/audiagentic/bigcherry/issues/596)) ([6195907](https://github.com/audiagentic/bigcherry/commit/6195907289734ba42f78a18e3962827b174e67ad))
+
 ## [1160.0.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1140.0.0...bc-radiance-1160.0.0) (2026-11-03)
 
 

@@ -9,6 +9,7 @@
 // Lifetime: the Lanes object references the segment, the GPU runner and the combine state, all of which outlive it.
 // stop_and_join() publishes the stop (fault word, burst stop bit, park flags, wakes) before joining, so no thread can
 // stay blocked on a futex or a drain.
+#include "worker_policy_effect.h"
 #include <array>
 #include <cerrno>
 #include <cstdio>
@@ -58,6 +59,8 @@ public:
         for (const auto& t : threads_)
             if (t.joinable()) { stop_and_join(); break; }
     }
+
+    void set_service_signal(r3::policy::LaneServiceSource* signal) { service_signal_=signal; }
 
     /* One thread per served lane. A thread that cannot start stops and joins the ones that did. */
     bool start() {
@@ -132,7 +135,19 @@ private:
         }
     }
     bool collect(uint32_t lane, uint32_t done) {
-        return gpu_.collect_lane_timing(lane, done, &stats_[lane].sample_us, &stats_[lane].samples);
+        double stage_us=0;
+        uint64_t routed_rows=0;
+        const bool ok=gpu_.collect_lane_timing(lane, done, &stats_[lane].sample_us,
+                                               &stats_[lane].samples,&stage_us,&routed_rows);
+        // Large lanes are synced before collect(), with no later request
+        // queued: d_counts and sampled HIP events describe the SAME request.
+        // Small lanes prequeue four requests; their reused d_counts may already
+        // hold a later request, so they are excluded from live verdicts until
+        // a per-sample tagged row-count snapshot exists.
+        if(ok && service_signal_ && routed_rows &&
+           !r3::moe_shm::lane_is_small(lane))
+            service_signal_->record(lane,routed_rows,stage_us);
+        return ok;
     }
     /* Every lane ends here: drain the stream and read the device-side counters. */
     void finish(uint32_t lane) {
@@ -324,6 +339,7 @@ private:
     const WorkerConfig& cfg_;
     const std::array<bool, r3::moe_shm::kLanes>& served_;
     Combine& combine_;
+    r3::policy::LaneServiceSource* service_signal_=nullptr;
     std::array<std::thread, r3::moe_shm::kLanes> threads_;
     std::array<Stats, r3::moe_shm::kLanes> stats_{};
 };

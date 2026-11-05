@@ -48,7 +48,6 @@ def _local_env_table() -> dict[str, str]:
 # environment variable or [env] entry sets them. Explicit values still win.
 _HOST_DEFAULT_VARS = {
     "BC_REPO_ROOT": "repo_root",
-    "BC_ROCM_ROOT": "rocm_root",
     "BC_WORK_ROOT": "work_root",
     "BC_MODEL_ROOT": "model_root",
 }
@@ -133,6 +132,15 @@ def _sdk_root(stack: str, version: str | None) -> str | None:
     return expand_host_value(roots[version])
 
 
+def _in_sdk(platform: str, value: str | None, stack: "BackendStack") -> str | None:
+    """Expand ``${SDK_ROOT}`` in a platform compiler to the root of the SDK its stack names."""
+    if value is None or "${SDK_ROOT}" not in value:
+        return value
+    if stack.sdk_root is None:
+        raise ConfigError(f"platform.{platform} uses ${{SDK_ROOT}} but stack.{stack.name} names no ROCm SDK")
+    return value.replace("${SDK_ROOT}", stack.sdk_root)
+
+
 def _strings(raw: object, where: str) -> tuple[str, ...]:
     if raw is None:
         return ()
@@ -203,6 +211,11 @@ class Platform:
     name: str
     targets: tuple[str, ...]
     options: tuple[tuple[str, str], ...]
+    #: the [stack.<name>] this platform builds against (required in recipes; a build never takes a host default)
+    stack: str
+    #: the ROCm SDK version that stack names, and its root on this host (None for a stack without a ROCm SDK)
+    sdk: str | None
+    sdk_root: str | None
     c_compiler: str | None = None
     cxx_compiler: str | None = None
 
@@ -486,23 +499,6 @@ def load(path: str | Path) -> Config:
             needs=frozenset(needs),
         )
 
-    platforms: dict[str, Platform] = {}
-    for name, body in _table(raw.get("platform"), "platform").items():
-        data = _table(body, f"platform.{name}")
-        c_compiler = data.get("c-compiler")
-        if c_compiler is not None and not isinstance(c_compiler, str):
-            raise ConfigError(f"platform.{name}.c-compiler must be a string")
-        cxx_compiler = data.get("cxx-compiler")
-        if cxx_compiler is not None and not isinstance(cxx_compiler, str):
-            raise ConfigError(f"platform.{name}.cxx-compiler must be a string")
-        platforms[name] = Platform(
-            name=name,
-            targets=_strings(data.get("targets"), f"platform.{name}.targets"),
-            options=_options(data.get("options"), f"platform.{name}.options"),
-            c_compiler=expand_host_value(c_compiler),
-            cxx_compiler=expand_host_value(cxx_compiler),
-        )
-
     stacks: dict[str, BackendStack] = {}
     for name, body in _table(raw.get("stack"), "stack").items():
         data = _table(body, f"stack.{name}")
@@ -540,6 +536,34 @@ def load(path: str | Path) -> Config:
             required_providers=_strings(
                 data.get("required-providers"), f"stack.{name}.required-providers"
             ),
+        )
+
+    platforms: dict[str, Platform] = {}
+    for name, body in _table(raw.get("platform"), "platform").items():
+        data = _table(body, f"platform.{name}")
+        c_compiler = data.get("c-compiler")
+        if c_compiler is not None and not isinstance(c_compiler, str):
+            raise ConfigError(f"platform.{name}.c-compiler must be a string")
+        cxx_compiler = data.get("cxx-compiler")
+        if cxx_compiler is not None and not isinstance(cxx_compiler, str):
+            raise ConfigError(f"platform.{name}.cxx-compiler must be a string")
+        stack_name = data.get("stack")
+        if not isinstance(stack_name, str) or not stack_name:
+            raise ConfigError(
+                f"platform.{name}.stack is required: name the [stack.<name>] it builds against "
+                "(a build never takes the host's default ROCm SDK)"
+            )
+        if stack_name not in stacks:
+            raise ConfigError(f"platform.{name}.stack={stack_name!r} is not a [stack.*] ({', '.join(sorted(stacks))})")
+        platforms[name] = Platform(
+            name=name,
+            stack=stack_name,
+            sdk=stacks[stack_name].sdk,
+            sdk_root=stacks[stack_name].sdk_root,
+            targets=_strings(data.get("targets"), f"platform.{name}.targets"),
+            options=_options(data.get("options"), f"platform.{name}.options"),
+            c_compiler=expand_host_value(_in_sdk(name, c_compiler, stacks[stack_name])),
+            cxx_compiler=expand_host_value(_in_sdk(name, cxx_compiler, stacks[stack_name])),
         )
 
     experiments: dict[str, Experiment] = {}

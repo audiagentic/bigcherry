@@ -56,7 +56,7 @@ class AdapterDispatchTests(unittest.TestCase):
     def test_moe_remote_declares_its_offline_tests(self):
         moe_remote = components.load_all(paths.REPO_ROOT, engines.RADIANCE)["moe-remote"]
         self.assertEqual(moe_remote.test_targets, (
-            "r3_moe_shm_test", "r3_moe_backend_test", "r3_worker_share_test", "r3_worker_heat_test",
+            "r3_moe_shm_test", "r3_moe_backend_test", "r3_worker_share_test", "r3_worker_heat_test", "r3_heat_source_test", "r3_policy_input_test", "r3_policy_live_test", "r3_policy_config_test", "r3_policy_driver_test", "r3_policy_effect_test", "r3_policy_measure_test", "r3_policy_replay_test",
             "r3_moe_epoch_test", "r3_moe_fp8_ref_test", "r3_combine_f16_test", "r3_combine_pool_test",
             "r3_admission_ledger_test", "r3_mailbox_completion_test", "r3_owner_generation_test",
             "r3_worker_slot_pool_test", "r3_replay_bootstrap_test", "r3_rad46_rows_policy_test", "r3_combine_epoch_test",
@@ -104,9 +104,16 @@ class ComponentGateTests(unittest.TestCase):
         for _, relative in engines.load(paths.REPO_ROOT, "radiance").rocm_paths:
             (self.rocm / relative).parent.mkdir(parents=True, exist_ok=True)
             (self.rocm / relative).write_bytes(b"")
-        rocm_env = patch.dict(os.environ, {"BC_ROCM_ROOT": str(self.rocm)})
-        rocm_env.start()
-        self.addCleanup(rocm_env.stop)
+        (self.rocm / ".info").mkdir()
+        (self.rocm / ".info" / "version").write_text("7.2.4\n", encoding="utf-8")
+        real_platform = radiance_bump._build_platform
+
+        def platform_with_the_fake_sdk(engine, platform_name):
+            return dataclasses.replace(real_platform(engine, platform_name), sdk="7.2", sdk_root=str(self.rocm))
+
+        sdk_patch = patch.object(radiance_bump, "_build_platform", side_effect=platform_with_the_fake_sdk)
+        sdk_patch.start()
+        self.addCleanup(sdk_patch.stop)
 
     def runner(self, argv: list[str], cwd: Path) -> None:
         """A fake cmake/ctest: records the call and lays down what a build would produce."""

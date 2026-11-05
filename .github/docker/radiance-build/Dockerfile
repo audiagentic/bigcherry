@@ -22,7 +22,9 @@ RUN set -eux; \
         git cmake ninja-build python3 python3-pip g++-14 gcc-14 ccache; \
     apt-get purge -y --auto-remove curl gnupg; \
     rm -rf /var/lib/apt/lists/*; \
-    test -x /opt/rocm/lib/llvm/bin/clang++; \
-    test -e /opt/rocm/lib/libamdhip64.so
+    test -x /opt/rocm-${ROCM_VERSION}/lib/llvm/bin/clang++; \
+    test -e /opt/rocm-${ROCM_VERSION}/lib/libamdhip64.so
 
-ENV ROCM_PATH=/opt/rocm
+# The SDK is the versioned install, never the /opt/rocm symlink: the build names it through the recipe stack
+# (tools/tests/build/test_rocm_sdk_explicit.py checks this ARG against that stack and the example host).
+ENV ROCM_PATH=/opt/rocm-${ROCM_VERSION}

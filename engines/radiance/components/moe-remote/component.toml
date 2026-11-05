@@ -20,7 +20,7 @@ configure = { RADIANCE_SRC = "{engine_source}" }   # the helper builds for every
 # need a GPU, which the CI runner does not have, and run only under an explicit gpu lease. Any other registered test must
 # be declared here, or component-tests fails.
 [test]
-targets = ["r3_moe_shm_test", "r3_moe_backend_test", "r3_worker_share_test", "r3_worker_heat_test",
+targets = ["r3_moe_shm_test", "r3_moe_backend_test", "r3_worker_share_test", "r3_worker_heat_test", "r3_heat_source_test", "r3_policy_input_test", "r3_policy_live_test", "r3_policy_config_test", "r3_policy_driver_test", "r3_policy_effect_test", "r3_policy_measure_test", "r3_policy_replay_test",
            "r3_moe_epoch_test", "r3_moe_fp8_ref_test", "r3_combine_f16_test", "r3_combine_pool_test",
            "r3_admission_ledger_test", "r3_mailbox_completion_test", "r3_owner_generation_test",
            "r3_worker_slot_pool_test", "r3_replay_bootstrap_test", "r3_rad46_rows_policy_test", "r3_combine_epoch_test",
@@ -108,7 +108,7 @@ summary = "path prefix: the engine counts every routed (layer, expert) in VRAM a
 [setting.R3_MOE_WORKER_HISTOGRAM_PERIOD_S]
 default = "0"
 status = "diagnostic"
-summary = "RHP02: with R3_MOE_WORKER_HISTOGRAM, also rewrite the cumulative route histogram <path>.rank<r> every this many seconds (at least 1) while the engine runs, by rename, so a reader sees complete files and differences two snapshots for the routes between them; 0 writes only at shutdown"
+summary = "Engine-side required for live policy input: set this to a positive period in the ENGINE process (not only in the helper); with R3_MOE_WORKER_HISTOGRAM, also rewrite the cumulative route histogram <path>.rank<r> every this many seconds (at least 1) while the engine runs, by rename, so a reader sees complete files and differences two snapshots for the routes between them; 0 writes only at shutdown"
 
 [setting.R3_MOE_WORKER_HEAT]
 default = ""
@@ -124,6 +124,103 @@ summary = "RHP11 slice G test mode: one forced expert exchange through the full 
 default = ""
 status = "diagnostic"
 summary = "RHP11 slice G test mode: a schedule file of forced exchanges (one per line, repeat=N repeats a line) driven through the full placement transaction while serving. Conflicts with R3_MOE_PLACEMENT_FORCE_MOVE. For quality and stability gates only, never for serving"
+
+
+# RHP slice H: live stage-1 policy (no experimental trigger or size defaults).
+
+# RHP slice I: required measured-effect settings, even when EFFECT_GATE=0.
+# The policy must explicitly opt in or out; all sizes remain unset by default.
+[setting.R3_MOE_POLICY_EFFECT_GATE]
+default = ""
+status = "experimental"
+summary = "Required 0 or 1 when live policy enabled: 1 gates each move on quiet work-normalised helper-0 lane service timing, with measured rollback; 0 explicitly disables the measured-effect experiment and is printed in evidence"
+
+[setting.R3_MOE_POLICY_EFFECT_WINDOW_SAMPLES]
+default = ""
+status = "experimental"
+summary = "Required timed requests PER LANE CLASS in each disjoint quiet or postcommit measurement window; only sampled completed requests, no class mixing"
+
+[setting.R3_MOE_POLICY_EFFECT_MIN_QUIET_WINDOWS]
+default = ""
+status = "experimental"
+summary = "Required consecutive quiet-window PAIRS before any judged proposal (N+1 complete non-overlapping windows); each pair contributes an observed relative noise deviation"
+
+[setting.R3_MOE_POLICY_EFFECT_NOISE_MULTIPLIER]
+default = ""
+status = "experimental"
+summary = "Required positive finite decimal multiple of the measured worst absolute fractional quiet-window rate change; no hard-coded service regression threshold"
+
+[setting.R3_MOE_POLICY_EFFECT_REVERT_TTL_NS]
+default = ""
+status = "experimental"
+summary = "Required positive monotonic duration that a forward destination judged measured-worse is blacklisted after a verified worse window"
+
+
+
+[setting.R3_MOE_POLICY_PROTECTED_LAYERS]
+default = ""
+status = "experimental"
+summary = "Required explicitly when policy enabled: sorted model-global MTP or other nonmovable layer IDs (e.g. 2,3), or literal none after verifying no protected active layers; no automatic MTP inference"
+
+[setting.R3_MOE_POLICY_ENABLE]
+default = "0"
+status = "experimental"
+summary = "Enable the experimental background stage-1 heat placement driver; disabled by default and exclusive with forced placement mode"
+
+[setting.R3_MOE_POLICY_ACCEPT_UNWATERMARKED_HEAT]
+default = "0"
+status = "experimental"
+summary = "Explicit experiment-only opt-in for actual HistogramFileSource (verified by a private constructor-minted source capability, not a mutable observation label); policy requires engine-side R3_MOE_WORKER_HISTOGRAM_PERIOD_S > 0 for live updates and reports no_live_feed if no progress inside CADENCE_NS + MAX_HEAT_AGE_NS"
+
+[setting.R3_MOE_POLICY_CADENCE_NS]
+default = ""
+status = "experimental"
+summary = "Monotonic nanosecond evaluation cadence, required when enabled"
+
+[setting.R3_MOE_POLICY_MARGIN]
+default = ""
+status = "experimental"
+summary = "Required fractional predicted peak-load improvement threshold in (0,1)"
+
+[setting.R3_MOE_POLICY_MAX_MOVES]
+default = ""
+status = "experimental"
+summary = "Required maximum expert owner changes in one transaction"
+
+[setting.R3_MOE_POLICY_MAX_MOVED_BYTES]
+default = ""
+status = "experimental"
+summary = "Required maximum sum of physical expert slot strides moved per transaction"
+
+[setting.R3_MOE_POLICY_MIN_RESIDENCY_NS]
+default = ""
+status = "experimental"
+summary = "Required monotonic nanosecond minimum dwell since a committed move"
+
+[setting.R3_MOE_POLICY_HEAT_HALF_LIFE_OBSERVATIONS]
+default = ""
+status = "experimental"
+summary = "Required heat half-life in routed expert observations, not seconds"
+
+[setting.R3_MOE_POLICY_MAX_HEAT_AGE_NS]
+default = ""
+status = "experimental"
+summary = "Required maximum histogram file/source age in nanoseconds"
+
+[setting.R3_MOE_POLICY_MIN_SAMPLES]
+default = ""
+status = "experimental"
+summary = "Required minimum credited heat windows per expert"
+
+[setting.R3_MOE_POLICY_ABORT_COOLDOWN_NS]
+default = ""
+status = "experimental"
+summary = "Required cooldown between an aborted transaction and any retry"
+
+[setting.R3_MOE_POLICY_LEARNED_ELIGIBILITY_TTL_NS]
+default = ""
+status = "experimental"
+summary = "Required monotonic duration that aborted (expert,destination) remains ineligible"
 
 [setting.R3_MOE_WORKER_GEMV]
 default = "1"

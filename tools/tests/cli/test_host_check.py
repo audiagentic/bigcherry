@@ -12,7 +12,7 @@ from bigcherry.core import environment as env
 def _host(power):
     dev = env.Device(index=0, arch="gfx1100", model="", vram_mib=0, locator="0000:03:00.0", power=power)
     return env.Host(name="h", description="", hostname="h", repo_root="", work_root="", model_root="", bench_harness="",
-                    rocm_root="", rocm_sdks=(), production_port=8080, test_port=18400, busy_processes=(),
+                    rocm_sdks=(), production_port=8080, test_port=18400, busy_processes=(),
                     environment_file="", devices=(dev,))
 
 
