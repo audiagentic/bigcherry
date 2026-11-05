@@ -70,6 +70,17 @@ class LineageEvidenceTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "cyclic"):
             lineage.load(self.package)
 
+    def test_corrupt_lineage_is_rejected_as_evidence_problem_not_an_evaluator_crash(self):
+        path = self.package / lineage.RECORD
+        path.parent.mkdir(exist_ok=True)
+        path.write_text('{"schema":1,"transitions":"corrupt"}')
+        issues = profile_evidence.verify(
+            self.package, patch_id="p", pinned_ref="old",
+            subject_digest=self.current, allow_lineage=True,
+        )
+        self.assertTrue(any("invalid patch lineage" in issue for issue in issues))
+        self.assertTrue(any("implementation changed" in issue for issue in issues))
+
     def test_recorded_lineage_never_waives_pin_freshness(self):
         lineage.write_reanchor(self.package, from_digest=self.old,
                                to_digest=self.current, pin="pin-2", rebase_report=self.report)

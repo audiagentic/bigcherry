@@ -122,10 +122,15 @@ def verify(package_dir: Path, *, patch_id: str, pinned_ref: str, subject_digest:
         found.append(f"record is for {evidence.patch_id!r}")
     if evidence.pinned != pinned_ref:
         found.append(f"record is for pin {evidence.pinned!r}, current pin is {pinned_ref!r}")
-    if evidence.subject_digest != subject_digest and not (
-        allow_lineage and lineage.is_ancestor(
-            package_dir, previous=evidence.subject_digest, current=subject_digest
-        )
-    ):
-        found.append("the patch implementation changed since the evidence was taken; confirm it again")
+    if evidence.subject_digest != subject_digest:
+        inherited = False
+        if allow_lineage:
+            try:
+                inherited = lineage.is_ancestor(
+                    package_dir, previous=evidence.subject_digest, current=subject_digest
+                )
+            except (ValueError, TypeError) as exc:
+                found.append(f"invalid patch lineage: {exc}")
+        if not inherited:
+            found.append("the patch implementation changed since the evidence was taken; confirm it again")
     return tuple(found)

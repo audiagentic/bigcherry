@@ -1628,10 +1628,17 @@ def verify_validated_patch(
 
     for record in poolable_records(module.patch_id, engine=module.engine, patches_root=_module_patches_root(module), root=root):
         older = record.get("patch_validation_subject_digest")
-        accepted = frozenset((older,)) if (
-            allow_lineage and isinstance(older, str)
-            and lineage.is_ancestor(module.path.parent, previous=older, current=subject_digest)
-        ) else frozenset()
+        try:
+            inherited = (
+                allow_lineage and isinstance(older, str)
+                and lineage.is_ancestor(
+                    module.path.parent, previous=older, current=subject_digest
+                )
+            )
+        except (ValueError, TypeError) as exc:
+            stale.append(f"invalid patch lineage: {exc}")
+            inherited = False
+        accepted = frozenset((older,)) if inherited else frozenset()
         ok, why = _record_qualifies(
             record, module=module, pinned_ref=pinned_ref, subject_digest=subject_digest,
             resolved_base_revision=resolved_base_revision,

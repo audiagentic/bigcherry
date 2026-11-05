@@ -1,0 +1,12 @@
+{
+  "schema": 1,
+  "transitions": [
+    {
+      "from_digest": "c3b6e1724f1aad15ab259c2867aa417deea5fe7d253f0b3be4c34c241f24da20",
+      "pin": "b11552",
+      "reason": "rebase re-anchor",
+      "rebase_report_sha256": "23c268b789eebab5d51092d350a1ca4a54ccd661a77228d9e5d3aece99ec318d",
+      "to_digest": "027eef60db7bb1c2d4caf01cca234420792890e62018e8a495a4fe41d4a2ef97"
+    }
+  ]
+}
