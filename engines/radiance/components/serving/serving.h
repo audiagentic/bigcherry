@@ -1,6 +1,7 @@
 #pragma once
 #include <cstdint>
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <vector>
 #include <nlohmann/json.hpp>
@@ -40,6 +41,10 @@ struct Engine {
     uint32_t port = 0, tp = 0, max_num_seqs = 0, max_num_batched_tokens = 0;
     uint32_t checkpoint_interval = 0, num_speculative_tokens = 0, max_model_len = 0;
     uint64_t host_pool_mib = 0, prefix_cache_mib = 0, host_headroom_mib = 0;
+    // Set only when an operator gave them (RSC11 A1); absent leaves radiance's own default.
+    std::optional<std::string> tp_wire;
+    bool no_prefix_cache = false;
+    std::optional<uint32_t> gpu_headroom_mib;
 };
 struct Config {
     uint32_t schema_version = 1;
