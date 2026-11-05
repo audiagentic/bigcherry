@@ -74,7 +74,7 @@ before and after an in-place upgrade, or one SDK with a replaced library never s
 
 CI: `.github/docker/radiance-build/Dockerfile` installs `ARG ROCM_VERSION` at `/opt/rocm-<version>`; that version must
 match the SDK of the stack the CI lane (`platform.linux-radiance`) names and the example host's `rocm-sdks` entry, or
-the layer key (`.github/scripts/ci_build_layers.py`) cannot be made. The SDK identity is part of every layer key.
+the CI SDK check (`.github/scripts/ci_sdk_identity.py`, run by `tools/tests/build/test_rocm_sdk_explicit.py`) fails.
 
 The real clang driver lives under `<root>/llvm/bin`. `/opt/rocm` ships
 `amdclang` and `amdclang++` there, and the compile check looks for `llvm/bin`

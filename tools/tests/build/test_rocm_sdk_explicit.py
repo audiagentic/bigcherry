@@ -15,7 +15,7 @@ sys.path.insert(0, str(ROOT / "tools"))
 
 from bigcherry.core import config as campaign_config  # noqa: E402
 
-_SPEC = importlib.util.spec_from_file_location("ci_build_layers", ROOT / ".github/scripts/ci_build_layers.py")
+_SPEC = importlib.util.spec_from_file_location("ci_sdk_identity", ROOT / ".github/scripts/ci_sdk_identity.py")
 layers = importlib.util.module_from_spec(_SPEC)
 _SPEC.loader.exec_module(layers)
 
@@ -79,22 +79,14 @@ class CiImageIsBoundToTheStack(unittest.TestCase):
 
     def test_a_dockerfile_on_another_sdk_than_the_stack_names_fails(self):
         with tempfile.TemporaryDirectory() as directory:
-            with self.assertRaisesRegex(layers.LayerError, "stack rocm-7-2 names SDK 7.2"):
+            with self.assertRaisesRegex(layers.SdkIdentityError, "stack rocm-7-2 names SDK 7.2"):
                 layers.ci_sdk_identity(self._tree(directory, arg="7.14.0"))
 
     def test_an_example_host_path_that_is_not_the_installed_version_fails(self):
         with tempfile.TemporaryDirectory() as directory:
-            with self.assertRaisesRegex(layers.LayerError, "maps SDK 7.2"):
+            with self.assertRaisesRegex(layers.SdkIdentityError, "maps SDK 7.2"):
                 layers.ci_sdk_identity(self._tree(directory, example="/opt/rocm"))
 
-    def test_the_sdk_identity_is_part_of_the_layer_key(self):
-        with mock.patch.object(layers, "ci_sdk_identity", return_value="a"):
-            a = layers.input_keys(ROOT)
-        with mock.patch.object(layers, "ci_sdk_identity", return_value="b"):
-            b = layers.input_keys(ROOT)
-        self.assertEqual(set(a), set(b))
-        for name in a:
-            self.assertNotEqual(a[name], b[name], name)
 
 
 class NoImplicitSystemRocmInBuildPaths(unittest.TestCase):
