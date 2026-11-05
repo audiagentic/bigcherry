@@ -14,6 +14,12 @@ you whether the bump is worth doing at all.
 
 ## 1. Is there something to bump to? (read-only, a minute)
 
+Run `python3 -m bigcherry --engine radiance pin-triage <target-tag>` (or
+`--json` for a machine-readable report) before committing to a bump.
+It covers the pin range, anchors, patch targets, core commit subjects
+and exact drift with upstream line suggestions without touching vendor.
+The commands below explain its inputs.
+
     git -C /work/bigcherry/upstream/radiance.git fetch -q origin "+refs/*:refs/*"
     git -C /work/bigcherry/upstream/radiance.git tag -l 'v*' | sort -V | tail -5      # newest tags
     grep -n '^pinned' engines/radiance/recipes.toml                                    # what we are on
@@ -22,6 +28,10 @@ you whether the bump is worth doing at all.
 anything else and do not touch `vendor/radiance` for triage.
 
 ## 2. Triage the diff against OUR anchors (no checkout, no build)
+
+Read the `pin-triage` verdict and each failing block; a non-clean verdict is
+advice, not a gate. The manual commands below explain its checks and
+can inspect a particular change:
 
     A=v1.16.0 B=v1.17.0; G=/work/bigcherry/upstream/radiance.git
     git -C $G log --oneline $A..$B | wc -l ; git -C $G diff --stat $A $B | tail -1

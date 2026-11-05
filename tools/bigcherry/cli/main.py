@@ -731,6 +731,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     pin_status_cmd.set_defaults(func=cmd_pin_status)
 
+    pin_triage_cmd = sub.add_parser(
+        "pin-triage",
+        help="read-only pin diff, managed-patch exposure and rewrite drift report",
+    )
+    pin_triage_cmd.add_argument("target", help="upstream tag or commit to assess")
+    pin_triage_cmd.add_argument("--json", action="store_true", help="machine-readable report")
+    pin_triage_cmd.set_defaults(func=cmd_pin_triage)
+
     pin_bump_cmd = sub.add_parser(
         "pin-bump",
         help="single-tree pin-bump orchestrator (HI153): repin -> pull -> "
@@ -2177,6 +2185,21 @@ def cmd_pin_release(args: argparse.Namespace) -> int:
         print(f"pin-release: STOPPED at phase {exc.phase!r}: {exc}", file=_sys.stderr)
         print("  fix the cause and run the same command again; finished phases are skipped", file=_sys.stderr)
         return 1
+
+
+def cmd_pin_triage(args: argparse.Namespace) -> int:
+    from ..release import pin_triage
+
+    try:
+        report = pin_triage.run(engine=args.engine, target_ref=args.target)
+    except (pin_triage.PinTriageError, OSError, ValueError) as exc:
+        print(f"pin-triage: {exc}", file=sys.stderr)
+        return 2
+    if args.json:
+        print(json.dumps(report, indent=2, sort_keys=True))
+    else:
+        print(pin_triage.format_report(report))
+    return 0
 
 
 def cmd_pin_bump(args: argparse.Namespace) -> int:
