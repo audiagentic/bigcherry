@@ -14,7 +14,7 @@ namespace bc::serving::v1 {
 int64_t kv_required(int64_t kv_ceiling, int64_t kv_one_session, int64_t kv_backing_floor_ppm);
 
 /* The kv_backing_floor.fraction_ppm range, [0, 1000000): the one validator for the manifest's calibration value, the
- * engine's interim --plan-check-floor-ppm and check_engine_plan. */
+ * engine's start-up check (check_engine_plan). */
 Status check_kv_backing_floor_ppm(int64_t kv_backing_floor_ppm);
 
 /* What an admitted start-up had to spare: the required total against live claimable, and kv_required against the

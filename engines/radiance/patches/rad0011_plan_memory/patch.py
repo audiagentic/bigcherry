@@ -1,6 +1,7 @@
 """RSC03 / RSC08 A3: the engine's memory plan as the serving manifest v1 EnginePlan, measured (`--plan-memory FILE`) or
-checked at start-up against the expected one (`--plan-check FILE --plan-check-floor-ppm N`), through the shared v1
-library bc_serving_v1 (components/serving), which radiance's core links."""
+checked at start-up against the expected one in the manifest the engine was started from (rad0009's
+bc_serving_expected_plan, from engine_view), through the shared v1 library bc_serving_v1 (components/serving), which
+radiance's core links."""
 from bigcherry.patcher import Edit, FilePatch
 
 _BC_PLAN_MEMORY_H = r"""/* bc_plan_memory.h -- BigCherry managed patch rad0011 (RSC03, RSC08 A3): the engine's memory plan.
@@ -8,12 +9,12 @@ _BC_PLAN_MEMORY_H = r"""/* bc_plan_memory.h -- BigCherry managed patch rad0011 (
  * Engine::plan() records its sizes here as a serving manifest v1 EnginePlan (components/serving, bc_serving_v1).
  *   --plan-memory FILE                          start-up stops after plan(): FILE gets the plan (v1 JSON, written by
  *                                               the generated encoder) and the process exits before any weight loads.
- *   --plan-check FILE --plan-check-floor-ppm N  FILE is the expected plan (the one the engine's own --plan-memory measured, stored by bc-serve --plan-store);
- *                                               right after the VRAM split, before any pool is configured, the live
- *                                               plan is checked against it (spec section 5.2) and the result printed
- *                                               once; a refusal exits with its exit code.
- * The two --plan-check flags are interim: serving manifest v1's engine_view replaces them at the slice 6 cutover
- * (RSC08). Without these flags every call here does nothing. */
+ *   (a start from a measured manifest)         the manifest's own expected plan and kv_backing_floor_ppm (engine_view,
+ *                                               rad0009) are the check: right after the VRAM split, before any pool
+ *                                               is configured, the live plan is checked against them (spec section
+ *                                               5.2) and the result printed once; a refusal exits with its exit code.
+ * There is no flag that supplies an expected plan: only the manifest does. A start without --manifest or --plan-memory
+ * does nothing here. */
 #pragma once
 #include <cstdint>
 #include <vector>
@@ -26,11 +27,11 @@ struct WeightFootprint;
 class Program;
 }
 
-/* Takes the flags above off the command line (before rad0009's manifest reader sees them) and reads the expected plan.
- * 0, or the exit code of a usage, input or decode fault, which has been printed once. */
+/* Takes --plan-memory off the command line (after rad0009's manifest reader has run: it hands --plan-memory on) and arms the
+ * check when rad0009 holds an expected plan. 0, or the exit code of a usage fault, which has been printed once. */
 int bc_plan_memory_take_flag(int* argc, char*** argv);
 
-/* Records what plan() sized, and with --plan-check checks it. Called once, right after its VRAM split resolves, with
+/* Records what plan() sized, and started from a measured manifest checks it. Called once, right after its VRAM split resolves, with
  * plan()'s own values. A refused check exits here. */
 void bc_plan_memory_note(const rad::Config& cfg, const std::vector<rad::VramFacts>& facts, const rad::VramBudget& vb,
                          const std::vector<int64_t>& emb_bytes, const std::vector<rad::WeightFootprint>& wfs,
@@ -53,15 +54,21 @@ namespace bc_plan {
 
 enum class Mode { none, measure, check };
 
-/* Takes --plan-memory FILE, or --plan-check FILE with --plan-check-floor-ppm N (both or neither; not with
- * --plan-memory), off argv. The floor is checked by the shared validator and FILE is read and decoded as an EnginePlan
- * here, before any device work. 0, or the exit code of the fault (errors.md section 5), printed once as
+/* Takes --plan-memory FILE off argv, and arms the check with rad0009's expected plan and floor when the engine was started
+ * from a measured manifest (the floor is checked by the shared validator). A measuring start and a start from a measured
+ * manifest are different modes; rad0009 has already refused a measuring start with a measured manifest and a serving
+ * start with an unmeasured one. 0, or the exit code of the fault (errors.md section 5), printed once as
  * "radiance: config: ...". */
 int take_flags(int* argc, char*** argv);
+/* Arms the check with an expected plan and floor (take_flags does it from rad0009's; the card-free test from the admission vectors). */
+int arm(const bc::serving::v1::EnginePlan& expected, int64_t floor_ppm);
+/* MemAvailable in kB (/proc/meminfo; 0 when unreadable): at take_flags() (the process's first line) and now. */
+long long mem_available_kb_at_start();
+long long mem_available_kb_now();
 Mode mode();
 const std::string& measure_out();
 
-/* With --plan-check: checks `live` against the expected plan (bc::serving::v1::check_engine_plan) and prints the one
+/* With a manifest's expected plan: checks `live` against the expected plan (bc::serving::v1::check_engine_plan) and prints the one
  * start-up line, admitted with its margins or the refusal. 0 when admitted, else the refusal's exit code. */
 int check(const bc::serving::v1::EnginePlan& live);
 
@@ -72,6 +79,7 @@ _BC_PLAN_CHECK_CPP = r"""/* bc_plan_check.cpp -- see bc_plan_check.h (BigCherry 
 #include "bc_plan_check.h"
 
 #include "admission.h"
+#include "bc_serving_manifest.h"
 #include "serving_codec.h"
 #include "strict_json.h"
 
@@ -97,72 +105,58 @@ int report(const v1::ConfigError& e) {
 }
 
 int usage(const std::string& flag, const std::string& message) {
-    return report(v1::make_error(v1::ConfigErrorCode::invalid_value, flag, message,
-                                 "--plan-check FILE --plan-check-floor-ppm N go together; --plan-memory FILE alone"));
-}
-
-int read_expected(const std::string& file) {
-    std::ifstream in(file, std::ios::binary);
-    if (!in) {
-        v1::ConfigError e = v1::make_error(v1::ConfigErrorCode::io_failure, "--plan-check",
-                                           "cannot read the expected plan " + file,
-                                           "measure it first: the engine's --plan-memory with its helpers up, then bc-serve --plan-store");
-        e.source_file = file;
-        return report(e);
-    }
-    std::ostringstream text;
-    text << in.rdbuf();
-    v1::Result<nlohmann::json> doc = v1::parse_strict_json(text.str(), file);
-    if (!doc) return report(doc.error());
-    if (v1::Status e = v1::decode(doc.value(), "", &g_expected)) {
-        e->source_file = file;
-        return report(*e);
-    }
-    return 0;
+    return report(v1::make_error(v1::ConfigErrorCode::invalid_value, flag, message, "--plan-memory FILE alone"));
 }
 }  // namespace
 
+namespace {
+long long g_available_at_start_kb = 0;
+}  // namespace
+
+long long mem_available_kb_now() {
+    std::ifstream meminfo("/proc/meminfo");
+    for (std::string line; std::getline(meminfo, line);)
+        if (line.rfind("MemAvailable:", 0) == 0) return std::atoll(line.c_str() + 13);
+    return 0;
+}
+
+long long mem_available_kb_at_start() { return g_available_at_start_kb; }
+
+int arm(const v1::EnginePlan& expected, int64_t floor_ppm) {
+    if (v1::Status e = v1::check_kv_backing_floor_ppm(floor_ppm)) return report(*e);
+    g_expected = expected;
+    g_ppm = floor_ppm;
+    g_mode = Mode::check;
+    return 0;
+}
+
 int take_flags(int* argc, char*** argv) {
     g_mode = Mode::none;   // each call starts from nothing, so the card-free test can run many scenarios in one process
+    g_available_at_start_kb = mem_available_kb_now();
     g_out.clear();
     g_expected = v1::EnginePlan{};
     g_ppm = 0;
-    std::string check_file, ppm_text;
-    bool have_ppm = false;
     int w = 1;
     for (int i = 1; i < *argc; ++i) {
         const char* a = (*argv)[i];
-        std::string* into = std::strcmp(a, "--plan-memory") == 0 ? &g_out
-                            : std::strcmp(a, "--plan-check") == 0 ? &check_file
-                            : std::strcmp(a, "--plan-check-floor-ppm") == 0 ? &ppm_text
-                            : nullptr;
-        if (!into) {
+        if (std::strcmp(a, "--plan-memory") != 0) {
             (*argv)[w++] = (*argv)[i];
             continue;
         }
-        if (!into->empty() || (into == &ppm_text && have_ppm)) return usage(a, std::string(a) + " given twice");
+        if (!g_out.empty()) return usage(a, std::string(a) + " given twice");
         if (i + 1 >= *argc || !*(*argv)[i + 1]) return usage(a, std::string(a) + " needs a value");
-        *into = (*argv)[++i];
-        if (into == &ppm_text) have_ppm = true;
+        g_out = (*argv)[++i];
     }
     (*argv)[w] = nullptr;
     *argc = w;
-    if (!g_out.empty() && (!check_file.empty() || have_ppm))
-        return usage("--plan-memory", "--plan-memory measures a plan; it does not go with --plan-check");
-    if (!check_file.empty() != have_ppm)
-        return usage(have_ppm ? "--plan-check-floor-ppm" : "--plan-check",
-                     "--plan-check and --plan-check-floor-ppm go together");
-    if (!g_out.empty()) g_mode = Mode::measure;
-    if (check_file.empty()) return 0;
-    char* end = nullptr;
-    errno = 0;
-    const long long ppm = std::strtoll(ppm_text.c_str(), &end, 10);
-    if (errno || end == ppm_text.c_str() || *end)
-        return usage("--plan-check-floor-ppm", "--plan-check-floor-ppm must be an integer, is \"" + ppm_text + "\"");
-    if (v1::Status e = v1::check_kv_backing_floor_ppm(ppm)) return report(*e);
-    g_ppm = ppm;
-    if (int rc = read_expected(check_file)) return rc;
-    g_mode = Mode::check;
+    if (!g_out.empty()) {
+        g_mode = Mode::measure;
+        return 0;
+    }
+    // a start from a measured manifest: its plan is the one to admit (rad0009 holds it; nothing else supplies one)
+    v1::EnginePlan expected;
+    int64_t floor_ppm = 0;
+    if (bc_serving_expected_plan(&expected, &floor_ppm)) return arm(expected, floor_ppm);
     return 0;
 }
 
@@ -208,6 +202,7 @@ namespace v1 = bc::serving::v1;
 std::string g_error;
 v1::EnginePlan g_plan;
 bool g_noted = false;
+long long g_taken_kb = 0;   /* MemAvailable fallen since this process's first line, at the end of the VRAM split (before any pool) */
 
 v1::PlanHostConsumer consumer(const char* name, int64_t bytes, const char* from, const char* remedy) {
     return {name, bytes, v1::Residence::kPinned, from, remedy};
@@ -281,6 +276,12 @@ void bc_plan_memory_note(const rad::Config& cfg, const std::vector<rad::VramFact
         }
         return;
     }
+    /* What start-up took from the host up to here, before the pools, the n-gram table and the checkpoint store are allocated (the
+     * same point the engine's own host-room checks run at): the fall of MemAvailable since this process's first line. It counts
+     * only what the host could not give back (anonymous, pinned and shared memory; page cache and mapped files are reclaimable
+     * and do not move it). The host ledger counts it against MemAvailable beside the helpers' and the pools' (bc-serve
+     * --measured-plan --engine-resident-mib). */
+    g_taken_kb = bc_plan::mem_available_kb_at_start() - bc_plan::mem_available_kb_now();
     g_plan = std::move(p);
     g_noted = true;
 }
@@ -309,7 +310,9 @@ int bc_plan_memory_done() {
         std::fflush(nullptr);
         std::_Exit(2);
     }
-    std::fprintf(stderr, "radiance: --plan-memory: wrote %s; nothing loaded or allocated past the plan\n", out_path.c_str());
+    const long long taken_kb = g_taken_kb;   /* at least 1 MiB below */
+    std::fprintf(stderr, "radiance: --plan-memory: wrote %s; engine start-up took %lld MiB of MemAvailable; nothing loaded or allocated past the plan\n",
+                 out_path.c_str(), std::max<long long>(1, (taken_kb + 1023) / 1024));
     std::fflush(nullptr);
     /* Before weights load and the cache is allocated: nothing past plan() needs tearing down, and the device runtime's
      * exit handlers are not run against a half-built engine. */
@@ -345,7 +348,7 @@ PATCHES = (
              "Create the plan flags, the expected-plan read and the check through bc_serving_v1."),
     FilePatch(
         path="core/main.cpp",
-        description="Take the plan flags off the command line before rad0009's manifest reader sees them.",
+        description="Take --plan-memory off the command line after rad0009's manifest reader has run and arm the check.",
         edits=(
             Edit(
                 id="include-bc-plan-memory",
@@ -358,19 +361,21 @@ PATCHES = (
             ),
             Edit(
                 id="bc-plan-memory-take-flag",
-                anchor=r"^int main\(int argc, char\*\* argv\) \{$",
+                anchor=r"^    if \(!bc_serving_engine_argv\(&argc, &argv\)\) return 2;$",
                 text="\n    if (int rc = bc_plan_memory_take_flag(&argc, &argv)) return rc;",
                 guard=r"bc_plan_memory_take_flag\(&argc, &argv\)",
                 max_span_lines=1,
                 expect_matches=1,
-                rationale="Inserted right after main's unique signature, so it runs before rad0009's bc_serving_engine_argv, "
-                          "which refuses any argument it does not know.",
+                rationale="Inserted right after rad0009's manifest call (rad0011 requires rad0009): the manifest reader decides "
+                          "measuring or serving from --plan-memory and hands the flag on, and this call then takes it off and "
+                          "arms the check with the manifest's plan. Run before it, it would strip --plan-memory first and a "
+                          "measuring start would read its own unmeasured manifest as a serving start.",
             ),
         ),
     ),
     FilePatch(
         path="core/engine_bringup.cpp",
-        description="Record (and with --plan-check, check) plan()'s sizes at the end of its VRAM split; with "
+        description="Record (and, started from a measured manifest, check) plan()'s sizes at the end of its VRAM split; with "
                     "--plan-memory, write them and exit after plan().",
         edits=(
             Edit(

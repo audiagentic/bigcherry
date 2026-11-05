@@ -241,6 +241,8 @@ void check_scalar(const Node& n, const std::string& at) {
         if (n.kind == "string" && !n.constant->is_string()) fault(at, "a string const must be a string");
     }
     if (n.kind == "ref" && n.ref.empty()) fault(at, "kind 'ref' needs a ref");
+    if (n.radiance_switch && (n.kind != "enum" || n.values.size() != 1 || n.values[0] != "on"))
+        fault(at, "a radiance_switch is an enum with the one value \"on\" (presence is the flag)");
     if (n.kind == "enum" || n.kind == "int_enum") {
         if (n.values.empty()) fault(at, "an enum needs values");
         std::set<std::string> seen;
@@ -306,7 +308,7 @@ struct Loader {
                       "item_kind", "item_ref", "item_min_length", "item_max_length", "item_minimum", "item_values",
                       "item_pattern",
                       "min_items", "max_items", "unique_items", "tuple", "key_ref", "required_keys", "min_properties",
-                      "constraints", "radiance_option", "radiance_config", "error_class", "mismatch", "default",
+                      "constraints", "radiance_option", "radiance_config", "radiance_switch", "error_class", "mismatch", "default",
                       "default_source"},
                   at);
         Node n;
@@ -324,6 +326,8 @@ struct Loader {
         n.radiance_config = str(t, "radiance_config", where, false);
         if (n.radiance_option.empty() != n.radiance_config.empty())
             fault(where, "radiance_option and radiance_config go together");
+        n.radiance_switch = boolean(t, "radiance_switch", where);
+        if (n.radiance_switch && n.radiance_option.empty()) fault(where, "radiance_switch needs a radiance_option");
         if (!n.cpp_member.empty() && !identifier(n.cpp_member)) fault(where, "cpp_member is not a C++ identifier");
         n.error_class = str(t, "error_class", where, false);
         n.mismatch = str(t, "mismatch", where, false);
@@ -925,7 +929,8 @@ struct TypesWriter {
             if (n.path.rfind("calibration:", 0) == 0 || n.doc.empty() || n.patch) continue;
             rows << "    {" << literal(n.path) << ", " << literal(n.kind) << ", " << literal(n.cls) << ", "
                  << (n.optional ? "false" : "true") << ", " << (n.nullable ? "true" : "false") << ",\n     "
-                 << literal(n.radiance_option) << ", " << literal(n.radiance_config) << ",\n     " << literal(n.doc)
+                 << literal(n.radiance_option) << ", " << literal(n.radiance_config) << ", " << (n.radiance_switch ? "true" : "false")
+                 << ",\n     " << literal(n.doc)
                  << ", " << literal(n.default_value ? n.default_value->dump() : std::string()) << ", "
                  << literal(n.default_source) << ", " << literal(n.ref) << "},\n";
             ++count;
@@ -939,6 +944,7 @@ struct TypesWriter {
              "    bool nullable;\n"
              "    std::string_view radiance_option;  // the engine flag the field binds to, or empty\n"
              "    std::string_view radiance_config;  // its native Config destination, or empty\n"
+             "    bool radiance_switch;              // the flag takes no value: the field's presence is the flag (an enum with the one value \"on\")\n"
              "    std::string_view doc;\n"
              "    std::string_view default_json;     // the schema default as JSON, or empty (spec section 7)\n"
              "    std::string_view default_source;   // where the default comes from, or empty\n"
@@ -1835,6 +1841,7 @@ std::string semantic_fingerprint(const Registry& r) {
         Json f = Json{{"path", n.path}, {"class", n.cls}, {"radiance_option", n.radiance_option},
                       {"radiance_config", n.radiance_config}, {"error_class", n.error_class},
                       {"mismatch", n.mismatch}};
+        if (n.radiance_switch) f["radiance_switch"] = true;   // present only where a field is a value-less flag
         // spec section 7 / section 11 amendment 9: a default decides which leaves need a provenance record, so it is
         // contract semantics (present only where a field has one)
         if (n.default_value) {

@@ -24,8 +24,11 @@ _BC_SERVING_MANIFEST_H = r"""/* bc_serving_manifest.h -- BigCherry's start-up ex
 #ifndef BC_SERVING_MANIFEST_H
 #define BC_SERVING_MANIFEST_H
 
+#include <cstdint>
 #include <map>
 #include <string>
+
+namespace bc::serving::v1 { struct EnginePlan; }
 
 /* The argv radiance should parse. Without --manifest, argv is left unchanged and true is returned. With it, *argc
  * and *argv are replaced by a synthetic argv (storage lives for the process). On a malformed manifest or a stray
@@ -37,6 +40,12 @@ bool bc_serving_engine_argv(int* argc, char*** argv);
  * caller exits 2. Then those sources are relabelled "manifest <first 12 hex of metadata.content_digest>". Returns true
  * and does nothing when the engine was not started from a manifest. */
 bool bc_serving_mark_given(std::map<std::string, std::string>* given);
+
+/* The expected memory plan the engine must admit at start-up, and the kv_backing_floor_ppm that goes with it, taken from the
+ * manifest's measured plan (engine_view; spec §5.2). True only when the engine was started from a measured manifest (a
+ * serving start); false for a start without --manifest and for the measuring start (--plan-memory), which has no plan to
+ * check. A serving start with no plan cannot get here: the strict reader refuses an unmeasured manifest for it. */
+bool bc_serving_expected_plan(bc::serving::v1::EnginePlan* expected, int64_t* floor_ppm);
 
 #endif /* BC_SERVING_MANIFEST_H */
 """
@@ -74,6 +83,9 @@ std::vector<std::string> g_store;   /* the synthetic argv, kept for the life of 
 std::vector<char*> g_ptrs;
 std::vector<std::string> g_emitted;  /* the options the manifest produced, for bc_serving_mark_given */
 std::string g_label;                /* "manifest <12 hex>" once a manifest was loaded, else empty */
+v1::EnginePlan g_expected;          /* a serving start's expected plan, from the manifest's measured plan */
+int64_t g_floor_ppm = 0;
+bool g_have_expected = false;
 
 bool fail(const std::string& why) {
     std::fprintf(stderr, "radiance: --manifest: %s\n", why.c_str());
@@ -100,6 +112,7 @@ bool flag_text(const nlohmann::json& v, std::string* out) {
 }  // namespace
 
 bool bc_serving_engine_argv(int* argc, char*** argv) {
+    g_have_expected = false;   /* each call starts from nothing: a start without --manifest holds no plan */
     bool manifest_mode = false;
     for (int i = 1; i < *argc; ++i)
         if (!std::strcmp((*argv)[i], "--manifest")) manifest_mode = true;
@@ -143,6 +156,18 @@ bool bc_serving_engine_argv(int* argc, char*** argv) {
     }
     const nlohmann::json doc = nlohmann::json::parse(text, nullptr, false);
     if (doc.is_discarded()) return fail("'" + path + "' is not JSON");   /* unreachable after the strict reader */
+    g_have_expected = false;
+    if (plan_memory.empty()) {
+        /* a serving start: the plan the manifest carries is the plan this engine must admit (rad0011 checks it) */
+        const v1::Result<v1::EngineView> view = v1::engine_view(manifest.value());
+        if (!view.ok()) {
+            std::fputs(v1::render_human("radiance", view.error()).c_str(), stderr);
+            return false;
+        }
+        g_expected = view.value().memory.expected;
+        g_floor_ppm = view.value().kv_backing_floor_ppm;
+        g_have_expected = true;
+    }
 
     std::set<std::string> known;
     for (const std::string& n : rad::diag::config_option_names()) known.insert(n);
@@ -151,6 +176,7 @@ bool bc_serving_engine_argv(int* argc, char*** argv) {
      * radiance's own default. The argv shape follows the JSON type alone; a shape the option does not accept is left
      * for radiance's own config_parse to reject, which makes main exit 2. */
     std::vector<std::pair<std::string, std::string>> flags;
+    std::set<std::string> switches;   /* the flags above that take no value */
     for (const v1::FieldInfo& f : v1::kFields) {
         if (f.radiance_option.empty() || f.path.rfind("/spec/", 0) != 0) continue;
         const nlohmann::json::json_pointer ptr{std::string(f.path)};
@@ -158,6 +184,11 @@ bool bc_serving_engine_argv(int* argc, char*** argv) {
         const std::string opt(f.radiance_option);
         if (!known.count(opt)) return fail("\"" + std::string(f.path) + "\" is bound to " + opt + ", which is not a radiance option");
         const nlohmann::json& v = doc.at(ptr);
+        if (f.radiance_switch) {   /* a flag that takes no value: its presence in the manifest is the flag (the registry makes it the one value "on") */
+            flags.emplace_back(opt, std::string());
+            switches.insert(opt);
+            continue;
+        }
         std::string value;
         if (!flag_text(v, &value)) return fail("\"" + std::string(f.path) + "\" has a value that is not a string, an integer or an array of strings");
         flags.emplace_back(opt, value);
@@ -182,7 +213,7 @@ bool bc_serving_engine_argv(int* argc, char*** argv) {
     g_emitted.clear();
     for (const auto& kv : flags) {
         g_store.push_back(kv.first);
-        g_store.push_back(kv.second);
+        if (!switches.count(kv.first)) g_store.push_back(kv.second);
         g_emitted.push_back(kv.first);
     }
     g_ptrs.clear();
@@ -192,6 +223,13 @@ bool bc_serving_engine_argv(int* argc, char*** argv) {
     *argv = g_ptrs.data();
     const std::string digest = doc.at("metadata").at("content_digest").get<std::string>();   /* "sha256:<hex>" */
     g_label = "manifest " + digest.substr(digest.find(':') + 1, 12);
+    return true;
+}
+
+bool bc_serving_expected_plan(v1::EnginePlan* expected, int64_t* floor_ppm) {
+    if (!g_have_expected) return false;
+    *expected = g_expected;
+    *floor_ppm = g_floor_ppm;
     return true;
 }
 

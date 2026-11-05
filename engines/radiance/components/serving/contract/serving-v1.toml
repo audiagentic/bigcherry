@@ -144,6 +144,12 @@ value_kind = "ref"
 value_ref = "uint"
 doc = "Host KV tier target, MiB."
 
+[[calibration_key]]
+key = "host_ledger_margin.mib"
+value_kind = "ref"
+value_ref = "uint"
+doc = "Host memory the host ledger leaves unplanned beyond the reserve, for what the host loses between the manifest being written and the engine's own host-room check, MiB (amendment 11)."
+
 # ---- shared types ($defs), in schema order ----
 
 [[def]]
@@ -1243,6 +1249,17 @@ min_items = 1
 doc = "Engine GPU addresses, in rank order."
 
 [[field]]
+path = "/spec/processes/engine/device/headroom_mib"
+optional = true
+radiance_option = "--gpu-headroom-mib"
+radiance_config = "Config.gpu_headroom_mib"
+kind = "ref"
+ref = "uint"
+default = 96
+default_source = "radiance:Config.gpu_headroom_mib"
+doc = "VRAM left unclaimed on every engine card, MiB (`--gpu-headroom-mib`; amendment 11)."
+
+[[field]]
 path = "/spec/processes/engine/runtime"
 kind = "object"
 cpp = "EngineRuntime"
@@ -1372,6 +1389,27 @@ kind = "enum"
 values = ["nearest", "exact"]
 cpp_type = "PrefixResume"
 doc = "Prefix resume policy (`--prefix-resume`)."
+
+[[field]]
+path = "/spec/processes/engine/execution/tp_wire"
+optional = true
+radiance_option = "--tp-wire"
+radiance_config = "Config.tp_wire_exact"
+kind = "enum"
+values = ["exact", "wht6"]
+cpp_type = "TpWire"
+doc = "Cross-rank all-reduce payload (`--tp-wire`; amendment 11): `exact`, or `wht6`, a lossy 6-bit transform."
+
+[[field]]
+path = "/spec/processes/engine/execution/no_prefix_cache"
+optional = true
+radiance_option = "--no-prefix-cache"
+radiance_config = "Config.prefix_cache"
+radiance_switch = true
+kind = "enum"
+values = ["on"]
+cpp_type = "NoPrefixCache"
+doc = "Present means prefix caching is disabled (`--no-prefix-cache`; amendment 11). Not the host KV tier size (`resources.host.kv_mib`, `--prefix-cache-mib`): that tier stays configurable with caching on."
 
 [[field]]
 path = "/spec/processes/helper_common"
@@ -1806,6 +1844,56 @@ optional = true
 kind = "boolean"
 doc = "Shorten kernel sweeps."
 
+
+[[field]]
+path = "/spec/experiment/engine"
+optional = true
+kind = "object"
+cpp = "ExperimentEngine"
+min_properties = 1
+doc = "Lab-only engine diagnostics (amendment 11): flags the engine takes that are not serving configuration. Forbidden by the `production` profile with the rest of `spec.experiment`."
+
+[[field]]
+path = "/spec/experiment/engine/profile_ops"
+optional = true
+radiance_option = "--profile-ops"
+radiance_config = "Config.profile_ops"
+radiance_switch = true
+kind = "enum"
+values = ["on"]
+cpp_type = "ProfileOps"
+doc = "Present means per-op device timing (`--profile-ops`)."
+
+[[field]]
+path = "/spec/experiment/engine/debug_selection"
+optional = true
+radiance_option = "--debug-selection"
+radiance_config = "Config.debug_selection"
+radiance_switch = true
+kind = "enum"
+values = ["on"]
+cpp_type = "DebugSelection"
+doc = "Present means the engine prints its selection table (`--debug-selection`)."
+
+[[field]]
+path = "/spec/experiment/engine/deterministic"
+optional = true
+radiance_option = "--deterministic"
+radiance_config = "Config.deterministic"
+radiance_switch = true
+kind = "enum"
+values = ["on"]
+cpp_type = "Deterministic"
+doc = "Present pins placement to the plan the loader made (`--deterministic`)."
+
+[[field]]
+path = "/spec/experiment/engine/kv_resident"
+optional = true
+radiance_option = "--kv-resident"
+radiance_config = "Config.kv_resident"
+kind = "ref"
+ref = "positive"
+doc = "Stream the sparse attention group's KV from host memory, resident tokens (`--kv-resident`)."
 [[field]]
 path = "/provenance"
 error_class = "provenance_invalid"

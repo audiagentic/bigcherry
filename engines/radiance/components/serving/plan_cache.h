@@ -37,10 +37,21 @@ v1::EnginePlan decode_engine_plan(const nlohmann::json& plan, const std::string&
  * any decoding, as the engine reads it. Throws naming `source`. */
 nlohmann::json parse_plan_json(const std::string& text, const std::string& source);
 
+/* The host memory the engine's neighbours hold while it starts, measured in the same measuring start as the plan (never a
+ * constant): the helpers' resident anonymous and shared memory with the shared segment counted once, and what the engine's
+ * start-up took from the host before plan() ran (the fall of MemAvailable, before the pools, the n-gram table and the
+ * checkpoint store are allocated). The host
+ * ledger counts both as pageable consumers, so the checkpoint slots follow what is really free at start. MemAvailable is
+ * read fresh every time a manifest is written; only these two figures are cached. Both are positive. */
+struct HostResident {
+    uint64_t helpers_mib = 0, engine_mib = 0;
+};
+
 struct CachedPlan {
     v1::EnginePlan plan;           // decoded by the shared v1 codec
     nlohmann::json plan_json;   // as rad0011 wrote it
     std::string key, measured_at;
+    HostResident resident;
 };
 
 /* What a plan must agree with in the configuration it is stored for (values, as resolve() returns them): the host pool it
@@ -55,16 +66,6 @@ std::optional<CachedPlan> plan_cache_lookup(const std::filesystem::path& dir, co
 /* Records a measured plan (rad0011's JSON, decoded by the shared v1 codec first) under its key. Written to a temporary
  * file and renamed into place. */
 CachedPlan plan_cache_store(const std::filesystem::path& dir, const nlohmann::json& key_inputs,
-                            const nlohmann::json& plan_json);
-
-/* The calibrated KV backing floor (calibration.kv_backing_floor.fraction_ppm) for a resolved configuration (`values`, as
- * resolve() returns them), from the compiled-in seeds and the optional refit cache; 0 when the objective selects none
- * (spec section 5.2). The one source of the engine's --plan-check-floor-ppm: never a launcher literal. */
-int64_t kv_backing_floor_ppm(const nlohmann::json& values, const std::filesystem::path& calibration_cache);
-
-/* The engine's start-up check flags for a cached plan, as separate arguments: writes the plan (v1 JSON, from the cache
- * entry) next to the cache as <key>.expected-plan.json and returns {"--plan-check", FILE, "--plan-check-floor-ppm", N}.
- * Both flags go to the engine, never one (radiance refuses that). */
-std::vector<std::string> plan_check_args(const std::filesystem::path& dir, const CachedPlan& entry, int64_t floor_ppm);
+                            const nlohmann::json& plan_json, const HostResident& resident);
 
 }  // namespace bc::serving

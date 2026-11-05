@@ -34,8 +34,13 @@ Commands: `--detect [--json]`, `--schema`, `--validate <site> [profile]`,
 `--explain [--json]`, `--write-manifest OUT` (the serving manifest v1; with `--plan-cache` and `--engine-binary`,
 or with `--unmeasured` and neither: the measuring start's manifest, `plan.state` unmeasured, which only a measuring start
 (`radiance --plan-memory`, `r3_moe_worker --measuring`) accepts; `--live-policy FILE` adds the live placement policy and
-`--experiment FILE` a lab experiment, each a JSON object the reader checks member by member),
-`--plan-key`, `--plan-check-args`, `--plan-store`.
+`--experiment FILE` a lab experiment, each a JSON object the reader checks member by member; `--measured-plan FILE
+--helpers-resident-mib N --engine-resident-mib M` takes the plan a measuring start produced and the host memory the helpers and
+the engine held in it, checks the plan against the configuration, stores both in the plan cache under this configuration's key
+and writes the measured manifest from it; the host ledger counts the host pool and those two figures against MemAvailable as
+read when the manifest is written, so the checkpoint slots follow what is really free at start, not at measurement; a cache
+entry without the figures is a miss). The engine admits the plan the manifest carries; no other
+command or flag hands it one (RSC08 S3 removed `--plan-key`, `--plan-check-args` and `--plan-store`).
 Use `--site FILE`, `--profile FILE`, and repeated
 `--set section.key=value` with the latter three.
 `--sys-root DIR` overrides the filesystem root for fake-tree tests.

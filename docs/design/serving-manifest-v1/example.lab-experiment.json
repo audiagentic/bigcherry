@@ -8,7 +8,7 @@
       "build_sha256": "4d97aa62b5551ca084b683f8eba2dfb963f77c4a55a3ea2ddde75016b1ebd37d"
     },
     "contract_version": 1,
-    "content_digest": "sha256:68968dbc3af872efd6714a2200e3e31229801319d49a016981c9c654d9324aae"
+    "content_digest": "sha256:5fb25be7dd6d9b292be5fb693077f8ce028c760faf68a97e91fc0123ecafc91d"
   },
   "spec": {
     "intent": {
@@ -148,7 +148,8 @@
         "device": {
           "gpus": [
             "0000:43:00.0"
-          ]
+          ],
+          "headroom_mib": 96
         },
         "runtime": {
           "radiance_home": "/opt/radiance/radiance_home",
@@ -172,7 +173,9 @@
           "kv_cache_dtype": "fp8",
           "num_speculative_tokens": 3,
           "rope_scaling": "none",
-          "prefix_resume": "nearest"
+          "prefix_resume": "nearest",
+          "tp_wire": "exact",
+          "no_prefix_cache": "on"
         }
       },
       "helper_common": {
@@ -422,6 +425,12 @@
           "poison": "off",
           "sweep_fast": true
         }
+      },
+      "engine": {
+        "profile_ops": "on",
+        "debug_selection": "on",
+        "deterministic": "on",
+        "kv_resident": 65536
       }
     }
   },

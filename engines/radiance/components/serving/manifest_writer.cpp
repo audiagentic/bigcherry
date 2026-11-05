@@ -154,6 +154,24 @@ Json resources_of(const ManifestInputs& in, const Json& calibration) {
     li.reserve_mib = mem.at("host_reserve_mib");
     for (const v1::PlanHostConsumer& c : in.measured->plan.plan.host)
         li.consumers.push_back({c.name, static_cast<uint64_t>(c.bytes), residence_of(c.residence), c.from, c.remedy});
+    // What the engine allocates and its neighbours hold besides the plan's own consumers (RSC08 S3: before this the ledger
+    // planned slots the host could not hold, and the engine stopped at start): the host pool the launcher runs with (pinned;
+    // the plan echoes it and the check demands it equal), and the host memory the helpers and the engine itself held in the
+    // measuring start that produced the plan (pageable, measured: stored with the cache entry; MemAvailable above is read now).
+    constexpr uint64_t kMiB = 1048576;
+    if (in.measured->plan.resident.helpers_mib == 0 || in.measured->plan.resident.engine_mib == 0)
+        fail("the measured plan has no resident host memory of the helpers and the engine: measure it again");
+    li.consumers.push_back({"host_pool", mem.at("host_pool_mib").get<uint64_t>() * kMiB, Residence::pinned,
+                            "resources.host.pool_mib (the launcher's pool; the engine pins it at start)", "lower memory.host_pool_mib"});
+    li.consumers.push_back({"helpers", in.measured->plan.resident.helpers_mib * kMiB, Residence::pageable,
+                            "measured in the measuring start: the helpers' resident anonymous and shared memory", ""});
+    li.consumers.push_back({"engine_start", in.measured->plan.resident.engine_mib * kMiB, Residence::pageable,
+                            "measured in the measuring start: what the engine's start-up took from MemAvailable before plan() ran", ""});
+    // Memory left unplanned for what the host loses between this write and the engine's own check (calibrated; counted as a
+    // pageable consumer so it comes out of every limit the ledger checks).
+    if (const Json* margin = cal("host_ledger_margin.mib"))
+        li.consumers.push_back({"drift_margin", margin->get<uint64_t>() * kMiB, Residence::pageable,
+                                "calibration.host_ledger_margin.mib: what the host loses between the manifest write and the engine's check", ""});
     li.checkpoints = {static_cast<uint64_t>(in.measured->plan.plan.checkpoints.slot_bytes), static_cast<uint64_t>(in.measured->plan.plan.checkpoints.floor_slots),
                       static_cast<uint64_t>(in.measured->plan.plan.checkpoints.want_slots), in.measured->plan.plan.checkpoints.from, "want", "plan"};
     if (const Json* share = cal("checkpoint_share")) {

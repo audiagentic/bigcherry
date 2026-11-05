@@ -544,7 +544,7 @@ Status validate_semantics(const Manifest& m) {
         return err(C::plan_mismatch, "spec.plan.engine_memory.cache_key",
                    "the measured plan's cache_key " + s.plan.engine_memory->cache_key +
                        " is not this configuration's " + key + " (spec §5.1)",
-                   "measure the plan again (the launcher's measuring start: the engine's --plan-memory with its helpers up, then bc-serve --plan-store) and write a new manifest (bc-serve --write-manifest)");
+                   "measure the plan again (the launcher's measuring start: the engine's --plan-memory with its helpers up) and write a new manifest from it (bc-serve --write-manifest --measured-plan)");
     return std::nullopt;
 }
 
@@ -577,7 +577,7 @@ Result<Manifest> read_manifest(std::string_view bytes, const std::string& source
     if (use == PlanUse::serving && m.spec.plan.state == PlanState::kUnmeasured)
         return sourced(err(C::plan_mismatch, "spec.plan.state",
                            "this manifest has no measured plan (plan.state unmeasured): it is for the measuring start only",
-                           "measure the plan (the launcher's measuring start, then bc-serve --plan-store) and write the measured manifest (bc-serve --write-manifest)"));
+                           "measure the plan (the launcher's measuring start) and write the measured manifest from it (bc-serve --write-manifest --measured-plan)"));
     if (use == PlanUse::measuring && m.spec.plan.state == PlanState::kMeasured)
         return sourced(err(C::plan_mismatch, "spec.plan.state",
                            "a measuring start takes an unmeasured manifest (plan.state unmeasured), this one is measured",

@@ -76,6 +76,7 @@ Status decode(const nlohmann::json& j, const std::string& path, GemvDiagnostics*
 Status decode(const nlohmann::json& j, const std::string& path, LaneDiagnostics* out);
 Status decode(const nlohmann::json& j, const std::string& path, KernelDiagnostics* out);
 Status decode(const nlohmann::json& j, const std::string& path, Diagnostics* out);
+Status decode(const nlohmann::json& j, const std::string& path, ExperimentEngine* out);
 Status decode(const nlohmann::json& j, const std::string& path, Experiment* out);
 Status decode(const nlohmann::json& j, const std::string& path, Spec* out);
 Status decode(const nlohmann::json& j, const std::string& path, ProvenanceRecord* out);
@@ -145,6 +146,7 @@ nlohmann::json encode(const GemvDiagnostics& value);
 nlohmann::json encode(const LaneDiagnostics& value);
 nlohmann::json encode(const KernelDiagnostics& value);
 nlohmann::json encode(const Diagnostics& value);
+nlohmann::json encode(const ExperimentEngine& value);
 nlohmann::json encode(const Experiment& value);
 nlohmann::json encode(const Spec& value);
 nlohmann::json encode(const ProvenanceRecord& value);

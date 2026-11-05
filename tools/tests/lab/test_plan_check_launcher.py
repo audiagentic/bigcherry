@@ -1,17 +1,19 @@
-"""The launcher's engine plan check (tools/lab/radiance/lib/plan-check.sh, RSC03 / RSC08 A3), card-free.
+"""The launcher's serving manifest for a helper layout (tools/lab/radiance/lib/plan-check.sh, RSC03 / RSC08 S3), card-free.
 
-The launcher always asks bc-serve for the engine's check flags before it starts the engine. These tests run the sourced
-library against a fake bc-serve and a fake engine, and prove the conditions the lead set:
-  * a cache hit gives the engine both flags, the floor coming from bc-serve and never from the launcher;
-  * a miss measures first (the measuring start never serves), stores the plan under the key it asked for, and logs once
-    why the start was slow and where the plan went;
+The engine and the helpers start from one measured manifest bc-serve writes for the exact configuration about to launch, and
+the engine admits the plan that manifest carries. These tests run the sourced library against a fake bc-serve and a fake
+engine, and prove the conditions the lead set:
+  * a miss measures first (the measuring start never serves) and bc-serve writes the measured manifest from that plan, storing
+    it; the start is logged once with its reason and where the plan went;
   * the measuring start and the real start describe exactly the same configuration to bc-serve;
-  * a changed launcher setting is a miss; nothing starts the engine without the check, and there is no way to skip it;
-  * a failed measurement, a refused store and a missing bc-serve each stop the start.
+  * a changed launcher setting is a miss; nothing starts the engine without the manifest, and there is no way to skip the check;
+  * a failed measurement, a refused plan and a missing bc-serve each stop the start;
+  * no --plan-check flag, no bc-serve plan-store/plan-key/plan-check-args mode and no raw engine argument survive.
 """
 from __future__ import annotations
 
 import itertools
+import json
 import os
 import shlex
 import stat
@@ -27,51 +29,43 @@ LAUNCHER = REPO / "tools" / "lab" / "radiance" / "launch-flashnext-best.sh"
 # A stand-in bc-serve: its "cache" is a directory of key files. The key is a hash of every --set argument, so any one
 # changed setting is a different key (as with the real plan key). Exit 10 on a miss, like the real one.
 FAKE_SERVE = r"""#!/bin/bash
-mode=""; cache=""; planfile=""; expect=""; sets=(); out=""; unmeasured=""; objects=()
+cache=""; sets=(); out=""; unmeasured=""; measured_plan=""; objects=(); helpers_mib=""; engine_mib=""
 while [ $# -gt 0 ]; do
   case "$1" in
-    --plan-check-args|--plan-key|--plan-store) mode=$1; shift ;;
-    --write-manifest) mode=$1; out=$2; shift 2 ;;
+    --write-manifest) out=$2; shift 2 ;;
     --unmeasured) unmeasured=1; shift ;;
+    --measured-plan) measured_plan=$2; shift 2 ;;
+    --helpers-resident-mib) helpers_mib=$2; shift 2 ;;
+    --engine-resident-mib) engine_mib=$2; shift 2 ;;
     --live-policy|--experiment) objects+=("$1=$2"); shift 2 ;;
     --plan-cache) cache=$2; shift 2 ;;
-    --plan-file) planfile=$2; shift 2 ;;
-    --expect-key) expect=$2; shift 2 ;;
     --engine-binary|--site) shift 2 ;;
     --plan-extra) sets+=("plan-extra=$2"); shift 2 ;;
     --set) sets+=("$2"); shift 2 ;;
     *) echo "fake bc-serve: unknown $1" >&2; exit 2 ;;
   esac
 done
-if [ "$mode" = --write-manifest ]; then
-  # the helpers' manifest: written once (bc-serve refuses an existing OUT); a measured one needs the stored plan
-  [ -e "$out" ] && { echo "bc-serve: refusing to replace $out" >&2; exit 2; }
-  key=$(printf '%s\n' "${sets[@]}" | grep -v -e '^engine.port=' -e '^memory.host_kv_mib=' -e '^plan-extra=' -e '^handoff\.' | sha256sum | cut -c1-8)
-  if [ -n "$unmeasured" ]; then state=unmeasured
-  else
-    state=measured
-    skey=$(printf '%s\n' "${sets[@]}" | grep -v -e '^engine.port=' -e '^memory.host_kv_mib=' | sha256sum | cut -c1-64)
-    [ -f "$cache/$skey.plan" ] || { echo "bc-serve: no measured plan for this configuration" >&2; exit 10; }
-  fi
-  printf '{"plan_state": "%s"}\n' "$state" > "$out"
-  { echo "$state $out ${objects[*]:-}"; printf '%s\n' "${sets[@]}"; } >> "$(dirname "$out")/manifests.log"
-  echo "manifest: $out"
-  exit 0
-fi
-printf '%s\n' "${sets[@]}" >> "$cache/describe.log"
-# the real key leaves out where the engine listens and the host KV tier (plan_cache.cpp kNonPlanEngineKeys): hits, not misses
-key=$(printf '%s\n' "${sets[@]}" | grep -v -e '^engine.port=' -e '^memory.host_kv_mib=' | sha256sum | cut -c1-64)
-case "$mode" in
-  --plan-key) echo "$key" ;;
-  --plan-store)
-    [ "$key" = "$expect" ] || { echo "bc-serve: the plan was measured for key $expect but this is now key $key" >&2; exit 2; }
+[ -n "$out" ] || { echo "fake bc-serve: only --write-manifest is a mode" >&2; exit 2; }
+# the manifest: written once (bc-serve refuses an existing OUT); a measured one needs a plan, from the cache or --measured-plan
+[ -e "$out" ] && { echo "bc-serve: refusing to replace $out" >&2; exit 2; }
+if [ -n "$unmeasured" ]; then state=unmeasured
+else
+  state=measured
+  # the real key leaves out where the engine listens and the host KV tier (plan_cache.cpp kNonPlanEngineKeys): hits, not misses
+  skey=$(printf '%s\n' "${sets[@]}" | grep -v -e '^engine.port=' -e '^memory.host_kv_mib=' | sha256sum | cut -c1-64)
+  if [ -n "$measured_plan" ]; then
+    [ -n "$helpers_mib" ] && [ -n "$engine_mib" ] || { echo "bc-serve: --measured-plan needs the resident host memory" >&2; exit 2; }
+    echo "resident $helpers_mib $engine_mib" >> "$(dirname "$out")/resident.log"
     [ -f "${FAKE_REFUSE_STORE:-/nonexistent}" ] && { echo "bc-serve: plan disagrees with the configuration" >&2; exit 2; }
-    cp "$planfile" "$cache/$key.plan"; echo "plan: stored $key" ;;
-  --plan-check-args)
-    [ -f "$cache/$key.plan" ] || { echo "bc-serve: no measured plan for this configuration" >&2; exit 10; }
-    echo "plan: cached $key (measured then)" >&2
-    printf '%s\n' --plan-check "$cache/$key.plan" --plan-check-floor-ppm "${FAKE_FLOOR_PPM:-600000}" ;;
-esac
+    cp "$measured_plan" "$cache/$skey.plan"; echo "plan: stored $skey" >&2
+  fi
+  [ -f "$cache/$skey.plan" ] || { echo "bc-serve: no measured plan for this configuration" >&2; exit 10; }
+  echo "plan: cached $skey (measured then)" >&2
+fi
+printf '%s\n' "${sets[@]}" >> "$(dirname "$out")/plan-cache/describe.log"
+port=$(printf '%s\n' "${sets[@]}" | sed -n 's/^engine\.port=//p'); printf '{"plan_state": "%s", "port": %s}\n' "$state" "${port:-0}" > "$out"
+{ echo "$state $out ${objects[*]:-}"; printf '%s\n' "${sets[@]}"; } >> "$(dirname "$out")/manifests.log"
+echo "manifest: $out"
 """
 
 
@@ -97,41 +91,42 @@ class PlanCheckLauncherTests(unittest.TestCase):
         self.heat.write_bytes(b"heat-v1")
 
     def _launch(self, **overrides: str) -> subprocess.CompletedProcess[str]:
-        """Source the library with the launcher's variables and a fake measuring start, then arm the check."""
+        """Source the library with the launcher's variables and a fake measuring start, then make the manifest."""
         values = dict(LAYOUT="flashnext-4gpu", SEQS="8", MAX_LEN="262144", HOST_POOL_MIB="9216", HOST_KV_MIB="12288",
                       CHUNK="2048", NGRAM="ram", KV_DTYPE="fp8", ROPE="none", PORT="36080", PREFIX_RESUME="nearest",
                       MODEL="/model.rad", HEAT=str(self.heat), RECORD="/heat.live", CKPT_INTERVAL="4096", NUM_SPEC="3",
                       SHM="/r3-moe-helper", RECORD_PERIOD="60", STAMP=f"1105-{next(self._stamps):06d}", LIVE_POLICY_FILE="", EXPERIMENT_FILE="")
-        engine_args = overrides.pop("ENGINE_ARGS", "")
         budgets = overrides.pop("BUDGETS", "")
         values.update(overrides)
         assigns = "\n".join(f"{k}={shlex.quote(v)}" for k, v in values.items())
         script = f"""
 set -u
 RUN={shlex.quote(str(self.run_dir))}; RAD_HOME={shlex.quote(str(self.home))}; RAD_BIN=/engine
-ENGINE_ARGS=({engine_args})
 BUDGETS=({budgets})
 {assigns}
 source {shlex.quote(str(LIB))}
 # the measuring start: the engine is asked for a plan and writes one; recorded so the tests see what ran
 plan_check_start_engine_measure() {{
-  echo "measure: engine --plan-memory $PLAN_MEASURE_FILE helpers-manifest $PLAN_MEASURING_MANIFEST $(cat "$PLAN_MEASURING_MANIFEST")" >> {shlex.quote(str(self.engine_calls))}
+  PLAN_HELPERS_RESIDENT_MIB=${{FAKE_HELPERS_MIB-2304}}
+  echo "radiance: --plan-memory: wrote $PLAN_MEASURE_FILE; engine start-up took ${{FAKE_ENGINE_MIB-1536}} MiB of MemAvailable; nothing loaded" >> "$RUN/engine-measure.log"
+  echo "measure: engine --manifest $PLAN_MEASURING_MANIFEST --plan-memory $PLAN_MEASURE_FILE $(cat "$PLAN_MEASURING_MANIFEST")" >> {shlex.quote(str(self.engine_calls))}
   [ -n "${{FAKE_MEASURE_FAIL:-}}" ] && return 1
   echo '{{"plan_version": 1}}' > "$PLAN_MEASURE_FILE"
 }}
-plan_check_flags && printf 'ARGS:%s\\n' "${{PLAN_CHECK_ARGS[*]}}"
+plan_manifest_prepare && printf 'MANIFEST:%s\\n' "$PLAN_MANIFEST"
 """
-        env = {**os.environ, "FAKE_FLOOR_PPM": "600000"}
-        return _run(script, env, REPO)
+        return _run(script, dict(os.environ), REPO)
 
-    def test_a_miss_measures_first_then_hands_the_engine_both_flags(self) -> None:
+    def _manifest(self, done: subprocess.CompletedProcess[str]) -> Path:
+        line = [l for l in done.stdout.splitlines() if l.startswith("MANIFEST:")][0]
+        return Path(line[len("MANIFEST:"):])
+
+    def test_a_miss_measures_first_then_the_measured_manifest_is_the_one_to_start_from(self) -> None:
         done = self._launch()
         self.assertEqual(done.returncode, 0, done.stderr)
-        self.assertIn("measure: engine --plan-memory", self.engine_calls.read_text())
-        args = [l for l in done.stdout.splitlines() if l.startswith("ARGS:")][0][5:].split()
-        self.assertEqual(args[0], "--plan-check")
-        self.assertEqual(args[2:], ["--plan-check-floor-ppm", "600000"])
-        self.assertTrue(Path(args[1]).is_file())
+        self.assertIn("measure: engine --manifest", self.engine_calls.read_text())
+        self.assertIn("--plan-memory", self.engine_calls.read_text())
+        self.assertEqual(json.loads(self._manifest(done).read_text())["plan_state"], "measured")
 
     def test_the_slow_first_start_is_logged_once_with_its_reason_and_where_the_plan_went(self) -> None:
         done = self._launch()
@@ -147,14 +142,12 @@ plan_check_flags && printf 'ARGS:%s\\n' "${{PLAN_CHECK_ARGS[*]}}"
         self.assertEqual(again.returncode, 0, again.stderr)
         self.assertFalse(self.engine_calls.exists(), "a hit must not measure")
         self.assertNotIn("cache miss", again.stderr)
-        self.assertIn("plan: cached", again.stderr)
 
     def test_any_one_changed_launcher_setting_is_a_miss(self) -> None:
         self._launch()
         changes = {"LAYOUT": "flashnext-2xtx", "SEQS": "4", "MAX_LEN": "131072", "HOST_POOL_MIB": "8192",
                    "CHUNK": "1024", "NGRAM": "disk", "KV_DTYPE": "fp8_v4", "ROPE": "yarn:4",
-                   "PREFIX_RESUME": "off", "CKPT_INTERVAL": "2048", "NUM_SPEC": "2",
-                   "NGRAM_DEV": "0000:03:00.0", "BUDGETS": "--budget 20000"}
+                   "PREFIX_RESUME": "off", "CKPT_INTERVAL": "2048", "NUM_SPEC": "2", "BUDGETS": "--budget 20000"}
         for name, value in changes.items():
             with self.subTest(setting=name):
                 self.engine_calls.unlink(missing_ok=True)
@@ -180,52 +173,76 @@ plan_check_flags && printf 'ARGS:%s\\n' "${{PLAN_CHECK_ARGS[*]}}"
                 self.assertEqual(again.returncode, 0, again.stderr)
                 self.assertFalse(self.engine_calls.exists(), f"{name} is not part of the key; the measurement still applies")
 
-    def test_engine_arguments_passed_through_are_part_of_the_configuration(self) -> None:
-        self._launch()
-        self.engine_calls.unlink()
-        again = self._launch()
-        self.assertFalse(self.engine_calls.exists(), "the same arguments are a hit")
-        with_arg = self._launch(ENGINE_ARGS="--kv-resident 65536")
-        self.assertEqual(with_arg.returncode, 0, with_arg.stderr)
-        self.assertTrue(self.engine_calls.exists(), "an extra engine argument is a different configuration")
-        self.assertIn("engine-args: --kv-resident 65536", (self.run_dir / "plan-cache" / "describe.log").read_text())
+    def test_there_is_no_raw_engine_argument_and_the_n_gram_card_is_refused_with_helpers(self) -> None:
+        # RSC08 amendment 11: the engine's flags are manifest fields (spec.experiment.engine, spec.processes.engine), so the launcher
+        # has no way to pass one raw; the n-gram card is not a manifest field yet and a helper layout refuses it
+        text = LAUNCHER.read_text()
+        self.assertNotIn("--engine-arg)", text)
+        self.assertNotIn("ENGINE_ARGS", text)
+        self.assertIn("--ngram-device cannot be combined with a helper layout", text)
+        self.assertIn("exit 99", text[text.index("--ngram-device cannot be combined with a helper layout"):][:400])
+        self.assertNotIn("engine-args:", LIB.read_text())
+        self.assertNotIn("ngram-device:", LIB.read_text())
 
     def test_the_measuring_start_and_the_real_start_describe_one_configuration(self) -> None:
         self._launch()
-        lines = (self.run_dir / "plan-cache" / "describe.log").read_text().splitlines()
-        per_call = len(lines) // 4          # the miss runs: check-args, key, store, check-args again; each sends the full set
-        self.assertGreaterEqual(per_call, 10)
-        calls = [lines[i * per_call:(i + 1) * per_call] for i in range(4)]
-        self.assertTrue(all(call == calls[0] for call in calls), "every bc-serve call must receive the same --set arguments")
-        self.assertIn('layout.name="flashnext-4gpu"', calls[0])
-        self.assertIn("memory.host_pool_mib=9216", calls[0])
+        blocks = self._blocks()
+        self.assertEqual([b[0].split()[0] for b in blocks], ["unmeasured", "measured"])
+        sets = [[l for l in b[1:] if not l.startswith("plan-extra=")] for b in blocks]
+        self.assertEqual(sets[0], sets[1], "both bc-serve calls must receive the same --set arguments")
+        self.assertGreaterEqual(len(sets[0]), 10)
+        self.assertIn('layout.name="flashnext-4gpu"', sets[0])
+        self.assertIn("memory.host_pool_mib=9216", sets[0])
+        self.assertIn("handoff.histogram_period_s=60", sets[0])
+        self.assertIn('handoff.shm="/r3-moe-helper"', sets[0])
 
-    def test_the_floor_is_whatever_bc_serve_selects_never_a_launcher_literal(self) -> None:
-        self.assertNotRegex(LIB.read_text() + LAUNCHER.read_text(), r"floor-ppm[ =]\d")
-        for ppm in ("0", "500000", "600000"):
-            with self.subTest(ppm=ppm):
-                script_env = dict(os.environ, FAKE_FLOOR_PPM=ppm)
-                self.assertEqual(script_env["FAKE_FLOOR_PPM"], ppm)
+    def test_the_floor_is_never_a_launcher_literal(self) -> None:
+        # the floor reaches the engine inside the measured manifest, from bc-serve's selected calibration (engine_view); the
+        # launcher neither knows it nor passes it
+        self.assertNotRegex(LIB.read_text() + LAUNCHER.read_text(), r"floor-ppm|floor_ppm")
+
+    def test_the_resident_host_memory_of_the_measuring_start_goes_to_bc_serve_with_the_plan(self) -> None:
         done = self._launch()
-        self.assertIn("--plan-check-floor-ppm 600000", done.stdout)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual((self.run_dir / "resident.log").read_text().split(), ["resident", "2304", "1536"])
+        # a hit measures nothing and passes nothing: the figures live in the cache entry
+        again = self._launch()
+        self.assertEqual(again.returncode, 0, again.stderr)
+        self.assertEqual((self.run_dir / "resident.log").read_text().count("resident"), 1)
+
+    def test_a_measuring_start_that_does_not_report_the_resident_memory_stops_the_start(self) -> None:
+        for name in ("FAKE_ENGINE_MIB", "FAKE_HELPERS_MIB"):
+            with self.subTest(missing=name):
+                os.environ[name] = ""
+                try:
+                    done = self._launch()
+                finally:
+                    os.environ.pop(name, None)
+                self.assertNotEqual(done.returncode, 0)
+                self.assertNotIn("MANIFEST:", done.stdout)
+                self.assertIn("did not report the resident host memory", done.stderr)
+                for f in self.run_dir.glob("manifest-*"):
+                    f.unlink()
+                for f in (self.run_dir / "plan-cache").glob("*"):
+                    f.unlink()
 
     def test_a_failed_measurement_stops_the_start(self) -> None:
         os.environ["FAKE_MEASURE_FAIL"] = "1"
         self.addCleanup(os.environ.pop, "FAKE_MEASURE_FAIL", None)
         done = self._launch()
         self.assertNotEqual(done.returncode, 0)
-        self.assertNotIn("ARGS:", done.stdout)
+        self.assertNotIn("MANIFEST:", done.stdout)
         self.assertIn("the measuring start failed", done.stderr)
 
-    def test_a_plan_the_store_refuses_stops_the_start(self) -> None:
+    def test_a_plan_bc_serve_refuses_stops_the_start(self) -> None:
         refuse = self.root / "refuse"
         refuse.write_text("")
         os.environ["FAKE_REFUSE_STORE"] = str(refuse)
         self.addCleanup(os.environ.pop, "FAKE_REFUSE_STORE", None)
         done = self._launch()
         self.assertNotEqual(done.returncode, 0)
-        self.assertNotIn("ARGS:", done.stdout)
-        self.assertIn("the measured plan was not stored", done.stderr)
+        self.assertNotIn("MANIFEST:", done.stdout)
+        self.assertIn("the measured manifest was not written", done.stderr)
 
     def test_a_build_without_bc_serve_stops_the_start(self) -> None:
         self.serve.unlink()
@@ -234,24 +251,36 @@ plan_check_flags && printf 'ARGS:%s\\n' "${{PLAN_CHECK_ARGS[*]}}"
         self.assertIn("no bc-serve in the build", done.stderr)
         self.assertFalse(self.engine_calls.exists())
 
-    def test_the_launcher_has_no_way_to_start_the_engine_without_the_check(self) -> None:
+    def test_the_launcher_has_no_way_to_start_the_engine_without_the_manifest_and_its_check(self) -> None:
         text = LAUNCHER.read_text()
-        self.assertEqual(text.count('start_engine "$LOG" "${PLAN_CHECK_ARGS[@]}"'), 1)
-        # the one real engine start passes the armed flags; the two other calls are the helper and dense memory-plan measurements
-        calls = [l.strip() for l in text.splitlines() if l.strip().startswith("start_engine ") and "()" not in l]
-        self.assertEqual(len(calls), 3, calls)
-        self.assertEqual(sum("--plan-memory" in c for c in calls), 2)
-        self.assertTrue(any("--plan-memory" in c for c in calls))
-        self.assertTrue(any("PLAN_CHECK_ARGS" in c for c in calls))
-        # the check is armed, and fails the launch, before anything starts for real
-        self.assertLess(text.index("plan_check_flags ||"), text.index('start_helpers "$PLAN_MANIFEST"; fi\nLOG='))
+        lib = LIB.read_text()
+        # a helper layout's one real engine start is from the measured manifest; the measuring start is from the unmeasured one
+        self.assertEqual(text.count('start_engine_manifest "$LOG" "$PLAN_MANIFEST"'), 1)
+        self.assertEqual(text.count('start_engine_manifest "$RUN/engine-measure.log" "$PLAN_MEASURING_MANIFEST" --plan-memory'), 1)
+        # the argv start remains only for the dense layout (no manifest writer yet): its memory-plan measurement and its real start
+        argv_calls = [l.strip() for l in text.splitlines() if l.strip().startswith("start_engine ") and "()" not in l]
+        self.assertEqual(len(argv_calls), 1, argv_calls)
+        self.assertIn("--plan-memory", argv_calls[0])
+        self.assertEqual(text.count('else start_engine "$LOG"; fi'), 1)
+        # the manifest is made, and fails the launch, before anything starts for real
+        self.assertLess(text.index("plan_manifest_prepare ||"), text.index('start_helpers "$PLAN_MANIFEST"; fi\nLOG='))
         self.assertIn("exit 97", text)
-        for banned in ("--no-check", "SKIP_PLAN_CHECK", "NO_PLAN_CHECK"):
-            self.assertNotIn(banned, text + LIB.read_text())
+        for banned in ("--no-check", "SKIP_PLAN_CHECK", "NO_PLAN_CHECK", "--plan-check", "plan-check-floor-ppm", "PLAN_CHECK_ARGS",
+                       "--plan-store", "--plan-key", "--plan-check-args", "plan_check_flags"):
+            self.assertNotIn(banned, text + lib)
+
+    def _blocks(self) -> list[list[str]]:
+        log = self.run_dir / "manifests.log"
+        blocks: list[list[str]] = []
+        for line in log.read_text().splitlines() if log.exists() else []:
+            if line.startswith(("unmeasured ", "measured ")):
+                blocks.append([line])
+            else:
+                blocks[-1].append(line)
+        return blocks
 
     def _manifests(self) -> list[str]:
-        log = self.run_dir / "manifests.log"
-        return [line for line in log.read_text().splitlines() if line.startswith(("unmeasured ", "measured "))] if log.exists() else []
+        return [block[0] for block in self._blocks()]
 
     def test_a_miss_writes_the_unmeasured_manifest_for_the_measuring_start_then_the_measured_one(self) -> None:
         done = self._launch()
@@ -262,11 +291,11 @@ plan_check_flags && printf 'ARGS:%s\\n' "${{PLAN_CHECK_ARGS[*]}}"
         measure = self.engine_calls.read_text()
         measuring_manifests = sorted(self.run_dir.glob("manifest-measuring-1105-000000-*.json"))
         self.assertEqual(len(measuring_manifests), 1)
-        self.assertIn("helpers-manifest " + str(measuring_manifests[0]), measure)
-        self.assertIn('{"plan_state": "unmeasured"}', measure)
-        # the real start's manifest is the measured one, written after the plan was stored, never before
+        self.assertIn("--manifest " + str(measuring_manifests[0]), measure)
+        self.assertIn('"plan_state": "unmeasured"', measure)
+        # the real start's manifest is the measured one, written after the plan was measured, never before
         (serving,) = sorted(self.run_dir.glob("manifest-1105-000000-*.json"))
-        self.assertEqual(serving.read_text(), '{"plan_state": "measured"}\n')
+        self.assertEqual(json.loads(serving.read_text())["plan_state"], "measured")
 
     def test_a_hit_writes_only_the_measured_manifest(self) -> None:
         self._launch()
@@ -277,22 +306,6 @@ plan_check_flags && printf 'ARGS:%s\\n' "${{PLAN_CHECK_ARGS[*]}}"
         self.assertEqual(len(list(self.run_dir.glob("manifest-1105-000001-*.json"))), 1)
         self.assertEqual(list(self.run_dir.glob("manifest-measuring-1105-000001-*.json")), [])
 
-    def test_the_manifests_describe_the_same_configuration_as_the_plan(self) -> None:
-        self._launch()
-        log = (self.run_dir / "manifests.log").read_text().splitlines()
-        blocks, current = [], []
-        for line in log:
-            if line.startswith(("unmeasured ", "measured ")):
-                current = [line]
-                blocks.append(current)
-            else:
-                current.append(line)
-        sets = [[l for l in block[1:] if not l.startswith("plan-extra=")] for block in blocks]
-        self.assertEqual(len(sets), 2)
-        self.assertEqual(sets[0], sets[1])
-        self.assertIn("handoff.histogram_period_s=60", sets[0])
-        self.assertIn('handoff.shm="/r3-moe-helper"', sets[0])
-
     def test_a_live_policy_and_a_lab_experiment_reach_both_manifests(self) -> None:
         self._launch(LIVE_POLICY_FILE="/p/policy.json", EXPERIMENT_FILE="/p/exp.json")
         for line in self._manifests():
@@ -300,10 +313,10 @@ plan_check_flags && printf 'ARGS:%s\\n' "${{PLAN_CHECK_ARGS[*]}}"
             self.assertIn("--experiment=/p/exp.json", line)
 
     def test_a_manifest_that_cannot_be_written_stops_the_start(self) -> None:
-        self.serve.write_text(FAKE_SERVE.replace('printf \'{"plan_state": "%s"}\\n\' "$state" > "$out"', 'echo "bc-serve: cannot write" >&2; exit 2'))
+        self.serve.write_text(FAKE_SERVE.replace('printf \'{"plan_state": "%s", "port": %s}\\n\' "$state" "${port:-0}" > "$out"', 'echo "bc-serve: cannot write" >&2; exit 2'))
         done = self._launch()
         self.assertNotEqual(done.returncode, 0)
-        self.assertNotIn("ARGS:", done.stdout)
+        self.assertNotIn("MANIFEST:", done.stdout)
         self.assertIn("manifest was not written", done.stderr)
 
     def test_the_launcher_script_parses(self) -> None:
