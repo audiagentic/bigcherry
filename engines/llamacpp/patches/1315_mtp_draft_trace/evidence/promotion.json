@@ -1,0 +1,17 @@
+{
+  "schema": 1,
+  "tier": "profile-evidence",
+  "patch-id": "1315_mtp_draft_trace",
+  "pinned": "b11474",
+  "subject-digest": "aa0d84f471034dae742a4793d4c1f9f24b43e7b17fa59b3dfa785cd69d8779ca",
+  "default-on": false,
+  "models": [
+    "Qwen3.8 Flash-Next UD-IQ4_XS"
+  ],
+  "checks": {
+    "ab": "engines/llamacpp/patches/1315_mtp_draft_trace/README.md ## Promotion record: b11474 diagnostic enabled in deploy-v4-diag vs production control, 92 trace lines and 0 errors; no throughput claim",
+    "activation": "engines/llamacpp/patches/1315_mtp_draft_trace/README.md ## Promotion record: BIGCHERRY_DRAFT_TRACE=1, 92 DRAFT_TRACE entries in deploy-v4-diag",
+    "identity": "engines/llamacpp/patches/1315_mtp_draft_trace/README.md ## Promotion record: enabled trace vs production: greedy md5 a34a34c1f48d identical",
+    "mechanics": "engines/llamacpp/patches/1315_mtp_draft_trace/README.md ## Promotion record: deploy-v4-diag compiled clean, 0 error lines (2026-10-08)"
+  }
+}
