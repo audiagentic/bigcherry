@@ -109,7 +109,18 @@ def input_keys(root: Path) -> dict[str, str]:
             )
         )
     ]
-    engine = hashlib.sha256((fingerprint_files(root, engine_files) + ":" + ci_sdk_identity(root)).encode()).hexdigest()
+    # The build directory is content-addressed over the sources the build reads, components included, so a build whose
+    # component sources changed lands in a DIFFERENT directory than any layer set exported before the change. An engine
+    # layer keyed without them would still hit, restore into the old directory, and sit beside the new build (two
+    # completed builds: the export refuses it, and a cache holding an old engine layer beside new component layers would
+    # fail every later restore). So every component source (documentation excepted) is part of the engine key, and with
+    # it of every component key: a layer set is restored whole or not at all.
+    component_sources = [
+        p for p in files
+        if p.startswith("engines/radiance/components/") and not p.endswith((".md", ".mdx"))
+    ]
+    engine = hashlib.sha256((fingerprint_files(root, engine_files) + ":" + fingerprint_files(root, component_sources)
+                             + ":" + ci_sdk_identity(root)).encode()).hexdigest()
     # The Dockerfile tag is a recipe, not a cryptographic image identity.
     # Bind restored binaries to the exact local compiler image when CI runs.
     image_id = os.environ.get("CI_LAYER_IMAGE_ID", "")
@@ -118,16 +129,16 @@ def input_keys(root: Path) -> dict[str, str]:
             raise LayerError("invalid CI compiler image digest")
         engine = hashlib.sha256((engine + ":" + image_id).encode()).hexdigest()
     keys = {"engine": engine}
-    # Headers and CMake include files may be consumed across components.
-    # A shared interface edit invalidates dependent component layers, while
-    # a change confined to one component implementation remains local.
+    # Each component layer is keyed on the engine key above (which now holds every component source) and on its own
+    # files plus the shared headers and CMake include files other components may consume.
     shared_files = [
         p for p in files if p.startswith("engines/radiance/components/")
         and p.endswith((".h", ".hpp", ".hh", ".hiph", ".cuh", ".inc", ".cmake"))
     ]
     for name in COMPONENTS:
         component_files = sorted(set(shared_files) | {
-            p for p in files if p.startswith(f"engines/radiance/components/{name}/")
+            p for p in files
+            if p.startswith(f"engines/radiance/components/{name}/") and not p.endswith((".md", ".mdx"))
         })
         if not component_files:
             raise LayerError(f"component {name} has no tracked input files")
