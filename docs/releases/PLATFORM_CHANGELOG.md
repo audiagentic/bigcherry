@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.13.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.12.1...bc-platform-1.13.0) (2026-11-05)
+
+
+### New and changed
+
+* **release:** release-install and launcher --release, serve from a verified release bundle ([#664](https://github.com/audiagentic/bigcherry/issues/664)) ([177f4fd](https://github.com/audiagentic/bigcherry/commit/177f4fd26750c3cfe958ce9f8eb9856f35f151db))
+
 ## [1.12.1](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.12.0...bc-platform-1.12.1) (2026-11-05)
 
 
