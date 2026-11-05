@@ -27,7 +27,21 @@ class Libr3ComponentTests(unittest.TestCase):
             for path in component.root.rglob("*"):
                 if path.is_file() and path.suffix in {".cpp", ".hip", ".h", ".rw"}:
                     read |= set(_GETENV.findall(path.read_text(encoding="utf-8", errors="replace")))
-            self.assertEqual(read, set(component.settings) - HARNESS_ONLY, name)
+            moved = {s.name for s in component.settings.values() if s.manifest}
+            self.assertEqual(read, set(component.settings) - HARNESS_ONLY - moved, name)
+            self.assertEqual(read & moved, set(), f"{name}: a setting that became a manifest field is still read from the environment")
+
+    def test_every_setting_that_became_a_manifest_field_names_a_registry_field(self):
+        registry = (paths.REPO_ROOT / "engines/radiance/components/serving/contract/serving-v1.toml").read_text(encoding="utf-8")
+        fields = set(re.findall(r'(?m)^path = "([^"]+)"', registry))
+        moved = {s.name: s.manifest for c in components.load_all(paths.REPO_ROOT, engines.RADIANCE).values()
+                 for s in c.settings.values() if s.manifest}
+        self.assertGreater(len(moved), 40)
+        for name, pointer in moved.items():
+            # the shared helper_common type is registered once, as $defs/helperCommon
+            registered = pointer.replace("/spec/processes/helper_common/", "$defs/helperCommon/")
+            with self.subTest(name):
+                self.assertIn(registered, fields, f"{name} -> {pointer}")
 
     def test_only_native_attention_is_production(self):
         production = {s.name for s in self.libr3.settings.values() if s.status == "production"}

@@ -3,6 +3,9 @@
 // Built by tools/tests/patch/test_radiance_patch_packages.py against radiance's real option table and a mirror of config_parse's shape rules.
 // usage: manifest_argv_test SCRATCH_DIR V1_EXAMPLE_MANIFEST OPTIONS_FILE
 #include "bc_serving_manifest.h"
+#include "jcs.h"
+
+#include <nlohmann/json.hpp>
 
 #include <cstdio>
 #include <cstring>
@@ -96,6 +99,9 @@ static std::string run(std::vector<std::string> args) {
 int main(int, char** argv) {
     g_dir = argv[1];
     load_options(argv[3]);
+    // rad0011 adds --plan-memory FILE to radiance's option table (the table the harness extracted is the unpatched pin's)
+    g_options.push_back("--plan-memory");
+    g_takes_arg["--plan-memory"] = true;
     CHECK(g_options.size() > 100);
     // A real v1 manifest (the design example for the production layout): the strict reader accepts it, and every field
     // the registry binds to a radiance option becomes that flag, in registry order.
@@ -109,9 +115,36 @@ int main(int, char** argv) {
                  "--ngram-placement ram --kv-cache-dtype fp8 --num-speculative-tokens 3 --rope-scaling none "
                  "--prefix-resume nearest");
     CHECK(bc_serving_mark_given(&g_given));
-    for (const auto& kv : g_given) CHECK(kv.second == "manifest e2e8066eafd8");   // "manifest <first 12 hex of the digest>"
+    for (const auto& kv : g_given) CHECK(kv.second == "manifest 44bdbe1a071a");   // "manifest <first 12 hex of the digest>"
     CHECK(run({"--manifest", example, "--role", "engine", "-v"}).rfind("engine -v --model ", 0) == 0);
     CHECK(run({"--manifest", example}) == got);   // deterministic
+
+    // The measuring start. An unmeasured manifest (plan.state unmeasured, no engine_memory, no checkpoint slots) is taken only
+    // with --plan-memory FILE, which is forwarded to radiance; a serving start refuses it, and --plan-memory with a measured
+    // manifest is refused too: neither state is read as the other.
+    {
+        nlohmann::json doc = nlohmann::json::parse(slurp(example));
+        doc["spec"]["plan"]["state"] = "unmeasured";
+        doc["spec"]["plan"].erase("engine_memory");
+        doc["spec"]["resources"]["host"].erase("checkpoint_slots");
+        doc["provenance"]["/spec/resources"]["inputs"] = nlohmann::json::array({"/spec/facts/host", "/spec/calibration"});
+        std::string digest, why;
+        doc["metadata"].erase("content_digest");
+        CHECK(bc::serving::manifest_content_digest(doc, &digest, &why));
+        doc["metadata"]["content_digest"] = digest;
+        const std::string unmeasured = write("unmeasured.json", doc.dump(2));
+        const std::string measuring = run({"--manifest", unmeasured, "--plan-memory", g_dir + "/plan.json"});
+        CHECK(measuring != "ERROR" && g_parsed);
+        CHECK(measuring.find("--plan-memory " + g_dir + "/plan.json") != std::string::npos);
+        CHECK(measuring.find("--checkpoint-slots") == std::string::npos);   // derived from a plan there is not yet
+        CHECK(bc_serving_mark_given(&g_given));
+        CHECK(g_given.at("--plan-memory") == "command line");               // the flag stays the operator's, not the manifest's
+        CHECK(g_given.at("--model").rfind("manifest ", 0) == 0);
+        CHECK(run({"--manifest", unmeasured}) == "ERROR");
+        CHECK(run({"--manifest", example, "--plan-memory", g_dir + "/plan.json"}) == "ERROR");
+        CHECK(run({"--manifest", unmeasured, "--plan-memory"}) == "ERROR");
+        CHECK(run({"--manifest", unmeasured, "--plan-memory", "a", "--plan-memory", "b"}) == "ERROR");
+    }
 
     // without --manifest argv is untouched
     CHECK(run({"--model", "x", "--tp-wire", "exact"}) == "engine --model x --tp-wire exact");

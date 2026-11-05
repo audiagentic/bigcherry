@@ -210,10 +210,9 @@ lane drains or a burst ends mid-cycle. Faults, shutdown, stale ACKs and
 missing participants cannot reopen admission. There is no hook-side
 periodic test driver.
 
-**Interim interface: R3_MOE_WORKER_EPOCH_CYCLE_S (diagnostic).** The cycle
-period reaches the helpers through this environment variable, set on every
-helper (component.toml; 0 = off, the default). worker_config.h parses it as
-whole seconds bounded only by what EpochCycle's std::chrono::nanoseconds
+**Interface: `spec.experiment.placement.epoch_cycle_s` (diagnostic, lab profile).** The cycle
+period reaches the helpers through the serving manifest, the same value for every
+helper (absent = off). The manifest's schema bounds it as whole seconds bounded only by what EpochCycle's std::chrono::nanoseconds
 period represents, and r3_moe_worker.cpp hands it to EpochCycle as a chrono
 duration. It is a validation diagnostic, not a serving setting.
 
@@ -248,7 +247,7 @@ syntax-check the managed engine files without running the GPU.
 
 runs/rhp11-c2-ab7 measured this slice (commit 71c6af599) against main on the
 four-card Flash-Next layout: nine interleaved arms (three main, three slice C
-with cycles off, three with R3_MOE_WORKER_EPOCH_CYCLE_S=2), each a 1-stream
+with cycles off, three with an epoch cycle of 2 s), each a 1-stream
 512-token and a 6-stream 2048-token soak with MTP. Median engine decode step
 against main: +0.14% at 1 stream with cycles off, +0.34% with cycles on (6
 streams: -0.46% off, +0.30% on). 1-stream text was byte-identical in every
@@ -426,7 +425,7 @@ each distinct failed predicate once, not once per tick.
 
 ## Slice D part 3: true two-generation diagnostic cycles and coordinator
 
-`R3_MOE_WORKER_EPOCH_CYCLE_S` now drives a **real** same-owner-map epoch
+The manifest's `epoch_cycle_s` now drives a **real** same-owner-map epoch
 transition, rather than recommitting the same epoch/slot. Helper zero
 copies the canonical owner map into the inactive generation's separate
 shared-memory slot as `STAGING`, with `pending_epoch=active_epoch+1`,
@@ -818,19 +817,15 @@ the active identity again before terminal done. The epoch and participant
 checks are CPU combine-step validation; they introduce no extra GPU kernel,
 GPU-mapped Request traffic, or per-lane kernel work.
 
-The two **test-only, default-off** controls are
-\`R3_MOE_PLACEMENT_FORCE_MOVE=layer:expert:destination_helper\` (single
-move, only when the destination has committed expert-weight headroom) or
-\`R3_MOE_PLACEMENT_FORCE_MOVE=swap:layerA:expertA:layerB:expertB\`
-(two helper-owned experts exchange owners in **one** transaction), and
-\`R3_MOE_PLACEMENT_FORCE_SCHEDULE=/absolute/path/to/file\`.
-They are mutually exclusive and read by helper 0 once at startup.
-A schedule accepts either form and \`swap:auto:helperX:helperY\`, which
-resolves from the sealed ACTIVE canonical map **when proposed**: the
+The **test-only, default-off** control is
+`spec.experiment.placement.forced` of the serving manifest (lab profile) is the typed schedule: `repeat` passes over `steps`, each a
+`move` (layer, expert, destination helper; only when the destination has committed expert-weight headroom), a `swap`
+(two helper-owned experts exchange owners in **one** transaction) or an `auto_swap`. A live policy
+(`spec.handoff.placement.live_policy`) excludes it: one placement driver at a time. Helper 0 reads it once at startup.
+An `auto_swap` step resolves from the sealed ACTIVE canonical map **when proposed**: the
 lowest layer with a pair of eligible experts, then lowest expert IDs,
 excluding both experts from the last committed transaction. Every
-resolved pair is logged with its transaction and epoch. Comments begin
-with \`#\`; an optional first noncomment \`repeat=N\` repeats the ordered
+resolved pair is logged with its transaction and epoch. `repeat` repeats the ordered
 steps, each after exact REOPENED and CLEANED ACKs.
 
 Invalid inputs fail at startup; illegal live targets journal a precommit

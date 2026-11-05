@@ -38,6 +38,9 @@ class Setting:
     activation: str = ""
     #: repo-relative run.json captures (ab-benchmark --server-config) that prove the setting; see promotion_problems
     evidence: tuple[str, ...] = ()
+    #: the serving manifest v1 field (JSON pointer, as the registry writes it) this setting became. Such a setting is no
+    #: longer an environment variable any process reads: it names the default and the description of that manifest field.
+    manifest: str = ""
 
 
 @dataclass(frozen=True)
@@ -98,8 +101,8 @@ def load(root: Path, engine: str) -> Component:
     for key, body in raw.items():
         where = f"{path}: setting.{key}"
         if not isinstance(body, dict) or not {"default", "status", "summary"} <= set(body) or set(body) - {
-            "default", "status", "summary", "activation", "evidence"}:
-            raise ComponentError(f"{where} must have default, status and summary, and may have activation and evidence")
+            "default", "status", "summary", "activation", "evidence", "manifest"}:
+            raise ComponentError(f"{where} must have default, status and summary, and may have activation, evidence and manifest")
         evidence = body.get("evidence", [])
         if not isinstance(evidence, list) or not all(isinstance(e, str) and e for e in evidence):
             raise ComponentError(f"{where}: evidence must be a list of run.json paths")
@@ -107,7 +110,7 @@ def load(root: Path, engine: str) -> Component:
             raise ComponentError(f"{where}: every field but evidence must be a string")
         if body["status"] not in STATUSES:
             raise ComponentError(f"{where}: status {body['status']!r} is not one of {', '.join(STATUSES)}")
-        settings[key] = Setting(key, body["default"], body["status"], body["summary"], body.get("activation", ""), tuple(evidence))
+        settings[key] = Setting(key, body["default"], body["status"], body["summary"], body.get("activation", ""), tuple(evidence), body.get("manifest", ""))
     test = data.get("test", {})
     if not isinstance(test, dict) or set(test) - {"targets"}:
         raise ComponentError(f"{path}: [test] may only declare targets")
