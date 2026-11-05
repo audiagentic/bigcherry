@@ -46,8 +46,8 @@ static void test_topk_overlap() {
           "bad shapes answer zero");
 }
 
-// A hot window of width 4 slides one expert per 100 observations over 40 experts: after a lag of L observations
-// the overlap of the 4 hottest is (4 - L/100) / 4, which is one half at 200.
+// A hot window of width 4 slides one expert per interval over 40 experts (100 observations an interval). The overlap of
+// the 4 hottest of the newest interval with the one j intervals back is (4 - j) / 4: 0.75, 0.5, 0.25, 0.
 static std::vector<double> window_at(size_t start) {
     std::vector<double> v(40, 1.0);
     for (size_t i = 0; i < 4; ++i) v[start + i] = 100.0 + double(i);
@@ -56,38 +56,57 @@ static std::vector<double> window_at(size_t start) {
 
 static void test_drift_half_life() {
     DriftTracker d(4, 16);
-    check(d.half_life_observations() == 0 && d.curve().empty(), "no snapshot, no drift measured");
-    d.add(window_at(0), 1000);
-    check(d.half_life_observations() == 0, "one snapshot is not a drift");
-    d.add(window_at(1), 1100);
-    check(d.half_life_observations() == 0, "at a lag of 100 the overlap is still 3 of 4: no half-life yet");
-    d.add(window_at(2), 1200);
-    check(d.half_life_observations() == 200, "at a lag of 200 the overlap is exactly one half");
-    d.add(window_at(3), 1300);
-    check(d.half_life_observations() == 200, "wider lags do not move the first crossing");
-    d.add(window_at(4), 1400);
-    d.add(window_at(5), 1500);
+    check(d.half_life_observations() == 0 && d.curve().empty() && d.horizon_observations() == 0, "no interval, no drift measured");
+    d.add(window_at(0), 100);
+    check(d.half_life_observations() == 0, "one interval is not a drift");
+    d.add(window_at(1), 200);
+    check(d.half_life_observations() == 0 && d.horizon_observations() == 100,
+          "adjacent intervals share 3 of 4: nothing to compare against yet, the horizon is one interval");
+    d.add(window_at(2), 300);
+    check(d.half_life_observations() == 0 && d.horizon_observations() == 200,
+          "the overlap at lag 200 (0.5) is still above half of the nearest lag's 0.75 (0.375)");
+    d.add(window_at(3), 400);
+    // lags 100, 200, 300: overlaps 0.75, 0.5, 0.25; the target 0.375 lies halfway between lag 200 and lag 300
+    check(d.half_life_observations() == 250, "half of the nearest lag's overlap falls at 250 observations");
+    check(d.horizon_observations() == 300, "the horizon is the oldest retained interval");
+    d.add(window_at(4), 500);
+    d.add(window_at(5), 600);
     const auto curve = d.curve();
     check(curve.size() == 5 && curve.front().lag_observations == 500 && curve.front().overlap == 0.0,
-          "the oldest snapshot is the widest lag");
+          "the oldest interval is the widest lag");
     check(std::abs(curve.back().overlap - 0.75) < 1e-12, "the nearest lag is 100 observations, overlap 3 of 4");
-    check(d.half_life_observations() == 200, "one half falls at exactly 200 observations of lag");
+    check(d.half_life_observations() == 250, "later intervals do not move the first crossing");
+}
+
+static void test_drift_is_relative_to_sampling_noise() {
+    // A steady workload whose two adjacent intervals only half-overlap by sampling noise: a hot set of 4 where each
+    // interval shows two of them plus two noise experts. The overlap never falls further, so there is no drift.
+    DriftTracker d(4, 8);
+    for (size_t i = 0; i < 6; ++i) {
+        std::vector<double> v(40, 1.0);
+        v[0] = 100; v[1] = 99;                       // the stable core
+        v[2 + (i % 2) * 2] = 98; v[3 + (i % 2) * 2] = 97;   // the noisy half alternates
+        d.add(v, 100 * (i + 1));
+    }
+    const auto c = d.curve();
+    check(!c.empty() && std::abs(c.back().overlap - 0.5) < 1e-12, "adjacent intervals of a steady workload overlap by one half");
+    check(d.half_life_observations() == 0, "a steady workload shows no drift however noisy: the half-life is relative to the noise");
 }
 
 static void test_drift_discontinuities() {
     DriftTracker d(4, 4);
     d.add(window_at(0), 100);
     d.add(window_at(1), 100);
-    check(d.snapshots() == 1, "a counter that did not advance is not a new snapshot");
+    check(d.intervals() == 1, "a counter that did not advance is not a new interval");
     d.add(window_at(1), 200);
     d.add(window_at(2), 300);
     d.add(window_at(3), 400);
     d.add(window_at(4), 500);
-    check(d.snapshots() == 4, "the snapshot ring is bounded");
+    check(d.intervals() == 4, "the interval ring is bounded");
     d.add(window_at(5), 50);
-    check(d.snapshots() == 1, "a counter that goes back (a source restart) resets the tracker");
+    check(d.intervals() == 1, "a counter that goes back (a source restart) resets the tracker");
     d.add(std::vector<double>(10, 1.0), 60);
-    check(d.snapshots() == 1, "a different shape resets the tracker");
+    check(d.intervals() == 1, "a different shape resets the tracker");
 }
 
 static void test_sampling_error() {
@@ -106,6 +125,7 @@ int main() {
     test_throughput();
     test_topk_overlap();
     test_drift_half_life();
+    test_drift_is_relative_to_sampling_noise();
     test_drift_discontinuities();
     test_sampling_error();
     std::puts("r3_policy_measure_test: ok");

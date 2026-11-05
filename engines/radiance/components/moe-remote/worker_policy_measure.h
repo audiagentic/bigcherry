@@ -68,55 +68,67 @@ inline double topk_overlap(const std::vector<double>& a, const std::vector<doubl
     return double(common.size()) / double(k);
 }
 
-// How fast the hot set drifts, in the unit the heat decays in (observations). Keeps up to `capacity` snapshots of the
-// heat counts at the observation counts they were taken, and measures the overlap of the k hottest experts between the
-// newest snapshot and each older one.
+// How fast the hot set drifts, in the unit the heat decays in (observations). The input is the route counts of ONE source
+// update interval, never the accumulated heat: the accumulated heat is decayed by the half-life this measurement exists
+// to inform, so measuring drift on it would measure the setting, not the workload. Keeps up to `capacity` intervals and
+// compares the k hottest experts of the newest against each older one. Two intervals of the same traffic do not match
+// perfectly (sampling noise), so the half-life is taken relative to the overlap at the nearest lag: the lag at which the
+// overlap has fallen to half of what two adjacent intervals share.
 class DriftTracker {
 public:
     struct Point { uint64_t lag_observations = 0; double overlap = 0; };
     DriftTracker(size_t k, size_t capacity = 16) : k_(k), capacity_(capacity ? capacity : 1) {}
-    // `counts` is the heat now, `observation_count` the monotone observation counter of the source at that moment.
-    // A counter that does not advance is not a new snapshot; one that goes back resets the tracker.
-    void add(const std::vector<double>& counts, uint64_t observation_count) {
-        if (!snapshots_.empty()) {
-            if (observation_count < snapshots_.back().observations || counts.size() != snapshots_.back().counts.size()) {
-                snapshots_.clear();
-            } else if (observation_count == snapshots_.back().observations) {
+    // `interval_counts` is the route count of the interval that just ended, `observation_count` the monotone
+    // observation counter of the source at its end. A counter that does not advance is not a new interval; one that goes
+    // back (a source restart) or a different shape resets the tracker.
+    void add(const std::vector<double>& interval_counts, uint64_t observation_count) {
+        if (!intervals_.empty()) {
+            if (observation_count < intervals_.back().observations ||
+                interval_counts.size() != intervals_.back().counts.size()) {
+                intervals_.clear();
+            } else if (observation_count == intervals_.back().observations) {
                 return;
             }
         }
-        if (snapshots_.size() == capacity_) snapshots_.pop_front();
-        snapshots_.push_back({counts, observation_count});
+        if (intervals_.size() == capacity_) intervals_.pop_front();
+        intervals_.push_back({interval_counts, observation_count});
     }
-    size_t snapshots() const { return snapshots_.size(); }
-    // Overlap of the newest snapshot with each older one, oldest first.
+    size_t intervals() const { return intervals_.size(); }
+    // Overlap of the newest interval's hot set with each older one's, oldest first.
     std::vector<Point> curve() const {
         std::vector<Point> out;
-        if (snapshots_.size() < 2) return out;
-        const Snapshot& now = snapshots_.back();
-        for (size_t i = 0; i + 1 < snapshots_.size(); ++i)
-            out.push_back({now.observations - snapshots_[i].observations,
-                           topk_overlap(snapshots_[i].counts, now.counts, k_)});
+        if (intervals_.size() < 2) return out;
+        const Interval& now = intervals_.back();
+        for (size_t i = 0; i + 1 < intervals_.size(); ++i)
+            out.push_back({now.observations - intervals_[i].observations,
+                           topk_overlap(intervals_[i].counts, now.counts, k_)});
         return out;
     }
-    // The lag at which the overlap first falls to one half (linear between the two lags around it), in observations;
-    // 0 when no retained snapshot is that far from the newest, i.e. a drift half-life has not been measured yet.
+    // How far back the retained intervals reach, in observations: a half-life of 0 means "not seen within this".
+    uint64_t horizon_observations() const {
+        const std::vector<Point> c = curve();
+        return c.empty() ? 0 : c.front().lag_observations;
+    }
+    // The lag at which the overlap has first fallen to half of the nearest lag's overlap (linear between the two lags
+    // around the crossing), in observations; 0 when it never fell that far within the horizon.
     uint64_t half_life_observations() const {
         const std::vector<Point> c = curve();
-        for (size_t i = c.size(); i-- > 0;) {        // newest lag first, widening
-            if (c[i].overlap > 0.5) continue;
-            if (i + 1 >= c.size()) return c[i].lag_observations;   // already at or below one half at the nearest lag
-            const Point hi = c[i + 1], lo = c[i];    // lo.lag > hi.lag, lo.overlap <= 0.5 < hi.overlap
-            const double t = (hi.overlap - 0.5) / (hi.overlap - lo.overlap);
-            return hi.lag_observations + uint64_t(t * double(lo.lag_observations - hi.lag_observations));
+        if (c.empty()) return 0;
+        const double target = 0.5 * c.back().overlap;
+        for (size_t i = c.size(); i-- > 0;) {        // nearest lag first, widening
+            if (c[i].overlap > target) continue;
+            if (i + 1 >= c.size()) return c[i].lag_observations;   // the nearest lag itself is at the target (it shares nothing)
+            const Point near = c[i + 1], far = c[i];   // far.overlap <= target < near.overlap
+            const double t = (near.overlap - target) / (near.overlap - far.overlap);
+            return near.lag_observations + uint64_t(t * double(far.lag_observations - near.lag_observations));
         }
         return 0;
     }
     size_t k() const { return k_; }
 private:
-    struct Snapshot { std::vector<double> counts; uint64_t observations = 0; };
+    struct Interval { std::vector<double> counts; uint64_t observations = 0; };
     size_t k_, capacity_;
-    std::deque<Snapshot> snapshots_;
+    std::deque<Interval> intervals_;
 };
 
 // Relative standard error of an expert's share of the heat, from its own count: the multinomial estimate
@@ -142,7 +154,7 @@ struct Measured {
     Series abort_ns{64};         // wall time from start to quiescent of aborted ones
     Series delta_gap_ns{256};    // gap between consecutive heat deltas the driver consumed
     Throughput copy;             // bytes of experts moved by committed transactions over their wall time
-    uint64_t drift_half_life_observations = 0;
+    uint64_t drift_half_life_observations = 0, drift_horizon_observations = 0;
     double marginal_error = 0;
     size_t hot_set_k = 0;
 };

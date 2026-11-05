@@ -58,6 +58,22 @@ The policy starts with no hand-picked policy number: every trigger, size and age
 
 Depends on RHP11 slice D (live moves) and RHP06. Follows the owner's direction: live placement, no restarts, auto-calibrate by default, no regressions.
 
+## First measured values and a measurement flaw they exposed, 2026-11-05 (policy-live-9)
+
+Run policy-live-9: the merged policy with the measurement hooks, effect gate on, Flash-Next four GPUs, eight 27K filler prefills then ten ~50K documentation prefills. The shift result reproduced again (filler TTFT 19.1 to 13.3 s, documentation prefill 3,705 to 3,668 tok/s, no aborts, decode 120 tok/s at one stream and 242 at six). The evidence line `policy measure` at the end of the run:
+
+| Measured | Value | Feeds |
+|---|---|---|
+| transactions | 10 committed, 0 aborted | |
+| transaction wall time | p50 1.77 s, p95 2.72 s, max 2.72 s | cadence, max moved bytes |
+| copy bandwidth (bytes moved over transaction wall time) | 0.16 to 0.20 GB/s over the run | max moved bytes, residency |
+| gap between heat deltas | 5.04 s (p99 = max), the policy's own cadence | max heat age |
+| hot set | k = 5,931 experts (the tail's budget over the stride) | |
+| marginal expert's relative sampling error | 5.2% after the first window, 2.3% at the end | min samples, margin |
+| abort-to-quiescent | none seen | abort cooldown |
+
+Two things follow. (1) A transaction moves about 330 MB on average (2.6 GB in 8) and takes 1.8 s, so the achieved bandwidth is 0.17 GB/s: far below the link, because it includes the epoch protocol (reserve, copy, quiesce, commit), not the copy alone. The bytes budget must be derived from this achieved rate, not from link speed. (2) The drift half-life read 0 (not measured) at every sample but one, where it read 57,085,762 observations during the filler-to-docs shift. That is a MEASUREMENT FLAW, found by this run: the tracker was fed the accumulated heat, which is decayed by the very half-life setting the measurement is meant to inform (the experiment value was 20,000,000 observations), so it measured the setting and could barely see the workload. Fixed in the same change that records this note: the tracker now takes the counts of ONE source update interval (never accumulated or decayed), compares the hot sets of the newest interval with each older one, and takes the half-life relative to the overlap at the nearest lag (two adjacent intervals of the same traffic never match perfectly), and the evidence line gains drift_horizon_observations so a 0 means 'not seen within this horizon' and not 'zero'. The 57M reading and the zeros of policy-live-9 are therefore NOT valid drift values and must not be used to derive the half-life; the next run measures it properly. The offline replay (PR 620) needs the same change (it also fed decayed heat) and gets it once both are in.
+
 ## Step 2 implemented, 2026-11-05 (measurement hooks, no derivation yet)
 
 worker_policy_measure.h (pure, no clock or thread): Series (bounded, exact nearest-rank quantiles), Throughput (bytes over wall time), topk_overlap, DriftTracker (ring of heat snapshots; overlap of the k hottest experts of the newest snapshot against each older one; the drift half-life is the lag at which the overlap first falls to one half, interpolated; resets when the source counter goes back or the shape changes), relative_share_error and marginal_relative_error (multinomial sampling error of the k-th hottest expert). The driver feeds them where it already observes: a closed transaction (committed: wall time and bytes moved over that time; aborted: abort-to-quiescent time), a consumed heat delta (gap between deltas, the drift tracker, the marginal error), and restarts the drift measurement on a heat baseline or a stale source. k is the number of experts the tail helper holds (its budget over the expert stride). Evidence adds one line: `policy measure transactions= txn_p50_ns= txn_p95_ns= txn_max_ns= copy_bytes_per_ns= aborts= abort_p95_ns= delta_gaps= delta_gap_p99_ns= delta_gap_max_ns= hot_set_k= drift_half_life_observations= marginal_relative_error=`; Driver::measured() returns a copy for tests. The effect gate's noise floor was already in the evidence (effect_noise_floor), so step 2e needed no new code. Card-free tests: worker_policy_measure_test (quantiles, bounds, non-finite samples, overlap with ties, a synthetic sliding hot window whose half-life is exactly 200 observations, discontinuities, sampling error) and assertions in worker_policy_driver_test (two committed transactions timed, an abort timed as an abort with no measured bytes, update gaps recorded, hot-set size 2 for a budget of 20 over a stride of 10). NOT done: the derivations themselves (step 3), the calibration store (step 4), observe-only until calibrated, and a hardware run that reads the new evidence line under the workload shifts to see real values (next).
@@ -99,3 +115,6 @@ PROTECTED_LAYERS and ACCEPT_UNWATERMARKED_HEAT are not tunables: protected layer
 - 2026-11-05T01:58:26.403837+00:00 (updated-by): Updated: section:notes
 - chg_20261105_015826_the-live-expert-placement-poli_7498
 - 2026-11-05T01:58:30.239165+00:00 (updated-by): Updated: section:ledger-events
+- 2026-11-05T02:50:13.944855+00:00 (updated-by): Updated: section:notes
+- chg_20261105_025013_fixed-how-the-placement-policy_9631
+- 2026-11-05T02:50:17.774448+00:00 (updated-by): Updated: section:ledger-events
