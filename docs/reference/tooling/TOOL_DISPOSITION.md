@@ -60,6 +60,7 @@ Radiance patches also use `bigcherry --engine radiance patch-promote <id> --evid
 
 | Path | Disposition | Intended owner / rationale |
 | --- | --- | --- |
+| `tools/bigcherry/build/logs.py` | **KEEP** | Build-owned invocation/stage diagnostics and summary persistence (BRBC04); no artifact identity or campaign scheduling ownership. |
 | `engines/llamacpp/patches/_template/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
 | `engines/llamacpp/patches/0100_cmake_options/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
 | `engines/llamacpp/patches/0200_dispatch_hook/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |

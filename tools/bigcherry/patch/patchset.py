@@ -30,6 +30,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType
 
+from ..core.process import run_logged
 from . import registry as patch_registry
 from ..core import engines, paths
 from .apply import FilePatch
@@ -493,7 +494,7 @@ def upstream_landed(commit: str, root: Path) -> bool | None:
     """
     try:
         cmd = ["git", "-C", str(root), "merge-base", "--is-ancestor", commit, "HEAD"]
-        result = subprocess.run(cmd, capture_output=True, timeout=30)
+        result = run_logged(cmd, capture_output=True, timeout=30)
         if result.returncode == 0:
             return True
         elif result.returncode == 1:

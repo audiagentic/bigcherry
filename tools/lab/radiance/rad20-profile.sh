@@ -16,6 +16,7 @@ PROMPT='Write a long, detailed story about a lighthouse keeper who discovers a h
 [ -n "$ARMS" ] || ARMS="polling=$POLL blocking=$BLOCK"
 if [[ " $ARMS" == *"=head"* ]]; then
     PYTHONPATH=tools timeout 5400 python3 -m bigcherry build --lane radiance-lab:stock:linux-radiance > $OUT/build.log 2>&1
+    grep '^build: logs=' $OUT/build.log >&2 || true
     HEADID=$(grep -oE 'ok build_plan_id=[0-9a-f]+' $OUT/build.log | tail -1 | cut -d= -f2)
     [ -n "$HEADID" ] || { grep -E ' error:|FAILED' $OUT/build.log | sort -u | head; exit 1; }
 fi

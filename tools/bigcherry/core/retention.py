@@ -41,6 +41,7 @@ class Inventory:
     root: Path
     runs: list = field(default_factory=list)
     unknown: list = field(default_factory=list)      # top-level paths that are not part of the layout
+    build_logs: list = field(default_factory=list)
     builds: int = 0
     sources: int = 0
 
@@ -130,7 +131,12 @@ def inspect_workspace(root: Path, *, measure: bool = True) -> Inventory:
         p = root / name
         if p.is_dir():
             setattr(inv, attr, sum(1 for _ in p.iterdir()))
-    known = set(("runs", "builds", "sources", "cache", "objects", "evidence-hold", "trash", ".locks"))
+    logs = root / "build-logs"
+    if logs.is_dir() and not logs.is_symlink():
+        for path in sorted(logs.iterdir()):
+            inv.build_logs.append(Entry(path, "build-log", path.name,
+                                        size_bytes=dir_size(path) if measure else 0))
+    known = set(("build-logs", "runs", "builds", "sources", "cache", "objects", "evidence-hold", "trash", ".locks"))
     if root.is_dir():
         inv.unknown += [p for p in sorted(root.iterdir()) if p.name not in known and not p.name.startswith(".")]
     return inv
@@ -280,6 +286,11 @@ def plan_cleanup(inv: Inventory, *, now: float | None = None, policy: Policy | N
             reasons.append(f"cleanup blocked: {blocked}")
         decisions.append(Decision(e.path, e.kind, e.run_id, "protected" if reasons else "candidate", e.size_bytes,
                                   reasons or ["harvest verified, retention expired, unreferenced"]))
+    for entry in inv.build_logs:
+        decisions.append(Decision(
+            entry.path, entry.kind, entry.run_id, "protected", entry.size_bytes,
+            ["build diagnostics retained indefinitely; explicit removal required"],
+        ))
     return CleanupPlan(decisions, list(inv.unknown), blocked)
 
 
