@@ -1001,6 +1001,48 @@ void manifest_writer_step(Fixture& t) {
     }
     assert(spec.at("plan").at("state") == "measured" && spec.at("resources").at("host").contains("checkpoint_slots"));
     assert(!spec.at("handoff").at("placement").contains("live_policy") && !spec.contains("experiment"));
+
+    // RHP16: a matching measured cache record derives production policy leaves; v1
+    // read-back validates the digest, each leaf's provenance and the pinned contract.
+    // The transaction, copy, heat-gap, margin and k figures are from policy-live-9.
+    // This synthetic tiny model has synthetic additional effect/lanes/drift readings.
+    {
+        sv::ManifestInputs calibrated = in;
+        const std::string key = sv::plan_key(calibrated.measured->key_inputs);
+        calibrated.calibration_cache = t.file("live-policy-record.toml",
+            "schema_version = 1\n[[live_policy_record]]\n"
+            "plan_cache_key = \"" + key + "\"\n"
+            "layout = \"flashnext-4gpu\"\nobjective = \"balanced\"\n"
+            "seeded = \"2026-11-05\"\nevidence = \"policy-live-9 timing and sampling; synthetic noise/drift/lane readings\"\n"
+            "txn_p50_ns = 1770000000\ntxn_p95_ns = 2720000000\n"
+            "copy_bytes_per_s = 160000000\nheat_gap_max_ns = 5040000000\n"
+            "hot_set_k = 5931\nmarginal_error_ppm = 23000\n"
+            "marginal_observations = 3\ndrift_half_life_observations = 59000000\n"
+            "observation_rate_per_s = 10000000\ntail_share_noise_ppm = 20000\n"
+            "tail_share_gain_ppm = 45000\ntail_lane_service_ns_per_s = 750000000\n"
+            "lane_lost_ns = 100000000\neffect_window_samples = 32\n"
+            "effect_requests_per_s = 64\neffect_quiet_windows = 3\n"
+            "effect_noise_floor_ns = 1000000\neffect_noise_quantile_ns = 2500000\n"
+            "noise_false_revert_rate_ppm = 10000\nabort_quiescent_ns = 1500000000\n");
+        const auto with_calibration = sv::build_manifest(calibrated);
+        const auto& lp = with_calibration.document.at("spec").at("handoff").at("placement").at("live_policy");
+        assert(lp.at("cadence_ns") == 3220000000ull);
+        assert(lp.at("max_moved_bytes") == 160000000ull && lp.at("margin_ppm") == 23000);
+        assert(lp.at("half_life_observations_milli") == 59000000000ull);
+        const auto& pv = with_calibration.document.at("provenance");
+        assert(pv.at("/spec/handoff/placement/live_policy/cadence_ns").at("origin") == "derived");
+        assert(pv.at("/spec/handoff/placement/live_policy/margin_ppm").at("class") == "policy");
+        assert(bc::serving::v1::read_manifest(with_calibration.text, "calibrated policy",
+                                              bc::serving::v1::PlanUse::serving).ok());
+        assert(with_calibration.digest != built.digest);
+        sv::ManifestInputs forbidden = calibrated;
+        forbidden.live_policy = lp;
+        forbidden.live_policy_from = "--live-policy lab-policy.json";
+        try { (void)sv::build_manifest(forbidden); assert(false); }
+        catch (const std::runtime_error& e) {
+            assert(std::string(e.what()).find("lab-only") != std::string::npos);
+        }
+    }
     // The unmeasured manifest of the measuring start: owner map and settings, no plan and nothing derived from one. A serving
     // start refuses it, a measuring start reads it, and the measured manifest is the reverse.
     {
