@@ -17,6 +17,8 @@ from pathlib import Path
 from typing import Callable
 
 from ..core import components, engines, paths
+from ..core import config as campaign_config
+from ..core.process import run_checked
 from .build import rocm_configure_options
 
 Runner = Callable[[list[str], Path], None]
@@ -24,10 +26,6 @@ Runner = Callable[[list[str], Path], None]
 TestLister = Callable[[Path, Path], dict[str, list[str]]]
 #: the CTest label a test that needs a GPU carries; such a test is registered but never declared card-free
 GPU_LABEL = "gpu"
-
-
-def _run(argv: list[str], cwd: Path) -> None:
-    subprocess.run(argv, cwd=cwd, check=True)
 
 
 def component_build_dir(build_dir: Path, name: str) -> Path:
@@ -44,10 +42,8 @@ def build_runtime(
     *,
     source_root: Path,
     build_dir: Path,
-    c_compiler: str | None,
-    cxx_compiler: str | None,
-    launcher_options: tuple[tuple[str, str], ...] = (),
-    runner: Runner = _run,
+    platform: campaign_config.Platform,
+    runner: Runner = run_checked,
 ) -> dict[str, str]:
     """Build ``engine``'s runtime targets and components into ``build_dir``. Returns {component: content digest}.
 
@@ -59,6 +55,8 @@ def build_runtime(
     source, while the main engine build (which DOES get the launcher via the top-level configure) showed real cache
     hits. A component's own declared ``configure`` entries still win if they already set the same key."""
     layout = engines.load(paths.REPO_ROOT, engine)
+    c_compiler, cxx_compiler = platform.c_compiler, platform.cxx_compiler
+    launcher_options = tuple((k, v) for k, v in platform.options if k.endswith("_COMPILER_LAUNCHER"))
     built: dict[str, str] = {}
     if layout.runtime_targets:
         runner(["cmake", "--build", str(build_dir), "-j", "--target", *layout.runtime_targets], source_root)
@@ -69,7 +67,7 @@ def build_runtime(
         raise RuntimeBundleError(f"engine {engine!r} declares components but no build.runtime-home")
     home = build_dir / layout.runtime_home
     # Components run the same ROCm lookups as the engine, in their own configure: pin them to the same SDK.
-    rocm_options = rocm_configure_options(layout.rocm_paths)
+    rocm_options = rocm_configure_options(platform, layout.rocm_paths)
     prefix = build_dir / "runtime-prefix"
     if prefix.exists():
         shutil.rmtree(prefix)
@@ -116,7 +114,7 @@ def ctest_tests(tree: Path, cwd: Path) -> dict[str, list[str]]:
     return tests
 
 
-def run_component_tests(engine: str, *, source_root: Path, build_dir: Path, runner: Runner = _run,
+def run_component_tests(engine: str, *, source_root: Path, build_dir: Path, runner: Runner = run_checked,
                         lister: TestLister = ctest_tests) -> list[str]:
     """Build every component's declared test targets (component.toml ``[test] targets``) in its build tree and run
     exactly those tests with ctest, one log per component. Returns one failure line per component that did not pass.

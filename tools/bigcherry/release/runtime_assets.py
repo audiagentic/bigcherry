@@ -1,0 +1,315 @@
+"""BU01: deterministic, verified Radiance runtime release bundles.
+
+Release records bind the asset to the pin-bump lane build, source trees and
+ROCm version. Never install a release asset before verifying the record's
+digest, every archived file's digest and current stock source identity.
+"""
+from __future__ import annotations
+
+import gzip
+import hashlib
+import io
+import json
+import os
+from pathlib import Path, PurePosixPath
+import re
+import shutil
+import subprocess
+import tarfile
+import tempfile
+
+SCHEMA = "bigcherry-radiance-runtime-v1"
+PLAN = re.compile(r"(?m)^(?:pin-bump lane build|release asset lane build): radiance:stock:linux-radiance build_plan_id=([0-9a-f]{32}) binary_sha256=([0-9a-f]{64})$")
+FILE_LIMIT = 10000
+BYTE_LIMIT = 16 * 1024**3
+RUN_DIRS = ("bin", "radiance_home", "runtime-prefix/bin", "runtime-prefix/lib", "runtime-prefix/lib64")
+
+
+class BundleError(RuntimeError):
+    pass
+
+
+def digest(path: Path) -> str:
+    h = hashlib.sha256()
+    with path.open("rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def git_tree(root: Path, tree: str) -> str:
+    result = subprocess.run(["git", "-C", str(root), "rev-parse", f"HEAD:{tree}"],
+                            check=True, capture_output=True, text=True)
+    return result.stdout.strip()
+
+
+def sdk_version(sdk: Path) -> str:
+    version = sdk / ".info/version"
+    if not version.is_file():
+        raise BundleError(f"selected ROCm SDK has no version file: {version}")
+    return version.read_text().strip()
+
+
+def stock_identity(root: Path) -> dict[str, str]:
+    return {"engine_tree": git_tree(root, "engines/radiance"),
+            "config_tree": git_tree(root, "config")}
+
+
+def select_build(record: dict, work_root: Path) -> tuple[Path, str, str]:
+    found = PLAN.findall(record.get("notes", ""))
+    if not found:
+        raise BundleError("release record has no pin-bump lane build plan ID and binary SHA-256")
+    plan_id, binary_sha = found[-1]
+    matches = list((work_root / "builds").glob(f"*/{plan_id}"))
+    if len(matches) != 1 or not matches[0].is_dir():
+        raise BundleError(f"expected one lane build for {plan_id}, found {len(matches)}")
+    binary = matches[0] / "bin/radiance"
+    if not binary.is_file() or digest(binary) != binary_sha:
+        raise BundleError("lane build binary missing or SHA-256 differs from release record")
+    return matches[0], plan_id, binary_sha
+
+
+def runtime_files(build: Path) -> dict[str, Path]:
+    files: dict[str, Path] = {}
+    for dirname in RUN_DIRS:
+        base = build / dirname
+        if not base.is_dir():
+            continue
+        for item in sorted(base.rglob("*")):
+            if not item.is_file():
+                continue
+            # Dereference only symlinks pointing to another file INSIDE this build.
+            if item.is_symlink() and not item.resolve().is_relative_to(build.resolve()):
+                raise BundleError(f"runtime symlink escapes build directory: {item}")
+            rel = item.relative_to(build).as_posix()
+            files[rel] = item
+    for required in ("bin/radiance", "radiance_home/helpers/r3_moe_worker"):
+        if required not in files:
+            raise BundleError(f"lane build does not contain runtime requirement {required}")
+    if not any(k.startswith("radiance_home/kernels/") and k.endswith(".so") for k in files):
+        raise BundleError("lane build has no Radiance kernel plugins")
+    if len(files) > FILE_LIMIT:
+        raise BundleError("too many files in runtime bundle")
+    if sum(p.stat().st_size for p in files.values()) > BYTE_LIMIT:
+        raise BundleError("runtime bundle exceeds size limit")
+    return files
+
+
+def pack(record: dict, root: Path, work_root: Path, sdk: Path, tag: str) -> dict:
+    if not re.fullmatch(r"bc-radiance-[0-9]+\.[0-9]+\.[0-9]+", tag):
+        raise BundleError("unsafe Radiance release tag")
+    build, plan_id, binary_sha = select_build(record, work_root)
+    files = runtime_files(build)
+    identity = stock_identity(root)
+    version = sdk_version(sdk)
+    manifest = {
+        "schema": SCHEMA, "release_tag": tag,
+        "plan_id": plan_id, "source_slice_id": build.parent.name,
+        "binary_sha256": binary_sha,
+        "rocm_version": version, **identity,
+        "files": {
+            name: {"sha256": digest(path), "size": path.stat().st_size,
+                   "mode": 0o755 if os.access(path, os.X_OK) else 0o644}
+            for name, path in sorted(files.items())
+        },
+    }
+    encoded = (json.dumps(manifest, sort_keys=True, separators=(",", ":")) + "\n").encode()
+    out = work_root / "release-assets" / tag
+    out.mkdir(parents=True, exist_ok=True)
+    name = f"radiance-{plan_id}.tar.gz"
+    dest = out / name
+    staged = out / (name + ".pending")
+    with staged.open("wb") as raw:
+        with gzip.GzipFile(filename="", fileobj=raw, mode="wb", compresslevel=1, mtime=0) as gz:
+            with tarfile.open(fileobj=gz, mode="w", format=tarfile.PAX_FORMAT) as tar:
+                for item_name, content in [("bundle.json", encoded)]:
+                    info = tarfile.TarInfo(item_name)
+                    info.size, info.mode, info.mtime = len(content), 0o644, 0
+                    info.uid = info.gid = 0
+                    tar.addfile(info, io.BytesIO(content))
+                for item_name, path in sorted(files.items()):
+                    info = tarfile.TarInfo(item_name)
+                    info.size, info.mode, info.mtime = path.stat().st_size, manifest["files"][item_name]["mode"], 0
+                    info.uid = info.gid = 0
+                    with path.open("rb") as f:
+                        tar.addfile(info, f)
+    sha = digest(staged)
+    checksums = name + ".sha256"
+    asset = {"schema": SCHEMA, "name": name, "sha256": sha,
+             "checksum_name": checksums, "manifest_sha256": hashlib.sha256(encoded).hexdigest(),
+             "plan_id": plan_id, "source_slice_id": build.parent.name,
+             "rocm_version": version, "binary_sha256": binary_sha, **identity}
+    old = record.get("runtime_assets", {}).get(tag)
+    if old is not None and old != asset:
+        staged.unlink()
+        raise BundleError("release record asset changed; refusing to replace existing verified digest")
+    staged.replace(dest)
+    (out / checksums).write_text(f"{sha}  {name}\n")
+    return asset
+
+
+def checked_extract(archive: Path, asset: dict, target: Path) -> dict:
+    if digest(archive) != asset["sha256"]:
+        raise BundleError("runtime release archive SHA-256 does not match release record")
+    target.mkdir(parents=True, exist_ok=True)
+    seen: set[str] = set()
+    total = 0
+    manifest = None
+    with tarfile.open(archive, "r:gz") as tar:
+        for member in tar:
+            rel = PurePosixPath(member.name)
+            if (rel.is_absolute() or ".." in rel.parts or str(rel) != member.name
+                or not member.isfile() or member.name in seen):
+                raise BundleError(f"unsafe runtime archive member: {member.name}")
+            seen.add(member.name)
+            if len(seen) > FILE_LIMIT + 1:
+                raise BundleError("too many runtime archive entries")
+            total += member.size
+            if total > BYTE_LIMIT:
+                raise BundleError("runtime release exceeds size limit")
+            if member.name == "bundle.json":
+                if member.size > 2 * 1024 * 1024:
+                    raise BundleError("runtime manifest is too large")
+                with tar.extractfile(member) as stream:
+                    content = stream.read()
+                if hashlib.sha256(content).hexdigest() != asset["manifest_sha256"]:
+                    raise BundleError("runtime manifest SHA-256 mismatch")
+                try:
+                    manifest = json.loads(content)
+                except ValueError as exc:
+                    raise BundleError("invalid runtime manifest") from exc
+                continue
+            dest = target.joinpath(*rel.parts)
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            with tar.extractfile(member) as stream, dest.open("wb") as output:
+                shutil.copyfileobj(stream, output, 1024 * 1024)
+            dest.chmod(0o755 if member.mode & 0o111 else 0o644)
+    if not isinstance(manifest, dict):
+        raise BundleError("runtime archive has no manifest")
+    checks = manifest.get("files")
+    if not isinstance(checks, dict) or set(checks) != seen - {"bundle.json"}:
+        raise BundleError("runtime archive files differ from manifest")
+    for name, receipt in checks.items():
+        path = target.joinpath(*PurePosixPath(name).parts)
+        if (not path.is_file() or path.stat().st_size != receipt["size"]
+            or digest(path) != receipt["sha256"]):
+            raise BundleError(f"runtime file SHA-256 mismatch: {name}")
+    for key in ("schema", "plan_id", "source_slice_id", "binary_sha256",
+                "rocm_version", "engine_tree", "config_tree"):
+        if manifest.get(key) != asset.get(key):
+            raise BundleError(f"runtime manifest/record mismatch: {key}")
+    return manifest
+
+
+def restore(archive: Path, checksum: Path, asset: dict, root: Path, work_root: Path,
+            sdk: Path) -> Path:
+    if asset.get("schema") != SCHEMA:
+        raise BundleError("unsupported runtime asset schema")
+    if not re.fullmatch(r"radiance-[0-9a-f]{32}\.tar\.gz", asset.get("name", "")):
+        raise BundleError("unsafe runtime asset name")
+    if asset.get("checksum_name") != asset["name"] + ".sha256":
+        raise BundleError("unsafe checksum asset name")
+    if asset.get("rocm_version") != sdk_version(sdk) or any(
+        asset.get(k) != v for k, v in stock_identity(root).items()
+    ):
+        raise BundleError("current source trees or ROCm SDK differ from stock release bundle")
+    if checksum.read_text().strip() != f"{asset['sha256']}  {asset['name']}":
+        raise BundleError("release checksum file differs from release record")
+    source = asset["source_slice_id"]
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,100}", source):
+        raise BundleError("unsafe source slice ID")
+    if not re.fullmatch(r"[0-9a-f]{32}", asset["plan_id"]):
+        raise BundleError("unsafe plan ID")
+    builds = work_root / "builds" / source
+    dest = builds / asset["plan_id"]
+    if dest.exists():
+        raise BundleError(f"build store target already exists; will not replace it: {dest}")
+    builds.mkdir(parents=True, exist_ok=True)
+    stage = Path(tempfile.mkdtemp(prefix="bu01-runtime-", dir=builds))
+    try:
+        checked_extract(archive, asset, stage)
+        if digest(stage / "bin/radiance") != asset["binary_sha256"]:
+            raise BundleError("release binary digest differs from recorded lane binary")
+        if not (stage / "radiance_home/helpers/r3_moe_worker").is_file():
+            raise BundleError("release missing remote MoE helper binary")
+        tree = stock_identity(root)
+        (stage / ".lab-source-tree").write_text(
+            f"{tree['engine_tree']} {tree['config_tree']} {sdk.resolve()} {sdk_version(sdk)} ")
+        stage.rename(dest)
+    finally:
+        if stage.exists():
+            shutil.rmtree(stage)
+    return dest
+
+
+def fetch(record: dict, root: Path, work_root: Path, sdk: Path,
+          tag: str | None = None) -> Path:
+    assets = record.get("runtime_assets", {})
+    if tag is None:
+        released = re.findall(r"release (\d+\.\d+\.\d+)", record.get("notes", ""))
+        if not released:
+            raise BundleError("release record has no completed release to fetch")
+        tag = "bc-radiance-" + released[-1]
+    asset = assets.get(tag)
+    if not isinstance(asset, dict):
+        raise BundleError("release record has no prebuilt runtime asset for selected release")
+    if not isinstance(tag, str) or not tag.startswith("bc-radiance-"):
+        raise BundleError("release tag missing from record")
+    # Validate names before passing record-derived patterns to gh download.
+    if (asset.get("schema") != SCHEMA
+        or not re.fullmatch(r"radiance-[0-9a-f]{32}\.tar\.gz", asset.get("name", ""))
+        or asset.get("checksum_name") != asset["name"] + ".sha256"
+        or not re.fullmatch(r"[0-9a-f]{64}", asset.get("sha256", ""))):
+        raise BundleError("unsafe release asset receipt")
+    stage_dir = work_root / "release-assets" / "downloads"
+    stage_dir.mkdir(parents=True, exist_ok=True)
+    stage = Path(tempfile.mkdtemp(prefix="bu01-release-", dir=stage_dir))
+    try:
+        result = subprocess.run(["gh", "release", "download", tag, "-p", asset["name"],
+                                 "-p", asset["checksum_name"], "-D", str(stage)],
+                                cwd=root, text=True, capture_output=True)
+        if result.returncode:
+            raise BundleError(f"release asset download failed: {result.stderr.strip()[-250:]}")
+        return restore(stage / asset["name"], stage / asset["checksum_name"],
+                       asset, root, work_root, sdk)
+    finally:
+        shutil.rmtree(stage)
+
+
+def publish(record: dict, root: Path, work_root: Path, tag: str) -> None:
+    asset = record.get("runtime_assets", {}).get(tag)
+    if not isinstance(asset, dict):
+        raise BundleError("release record lacks verified runtime asset for this release")
+    files = work_root / "release-assets" / tag
+    archive = files / asset["name"]
+    checksums = files / asset["checksum_name"]
+    if not archive.is_file() or digest(archive) != asset["sha256"]:
+        raise BundleError("locally packaged runtime asset missing or changed after record commit")
+    if not checksums.is_file() or checksums.read_text().strip() != f"{asset['sha256']}  {asset['name']}":
+        raise BundleError("runtime checksum file missing or changed")
+    result = subprocess.run(["gh", "release", "view", tag, "--json", "assets"],
+                            cwd=root, capture_output=True, text=True)
+    if result.returncode:
+        raise BundleError(f"could not inspect release assets: {result.stderr.strip()[-400:]}")
+    existing = {entry["name"] for entry in json.loads(result.stdout).get("assets", [])}
+    names = {asset["name"], asset["checksum_name"]}
+    if existing & names:
+        if not names.issubset(existing):
+            raise BundleError("release already has only part of the runtime bundle; resolve manually")
+        stage = Path(tempfile.mkdtemp(prefix="bu01-verify-upload-", dir=files))
+        try:
+            result = subprocess.run(["gh", "release", "download", tag,
+                                     "-p", asset["name"], "-p", asset["checksum_name"],
+                                     "-D", str(stage)],
+                                    cwd=root, capture_output=True, text=True)
+            if result.returncode or digest(stage / asset["name"]) != asset["sha256"]:
+                raise BundleError("existing release asset digest differs from record")
+            if (stage / asset["checksum_name"]).read_text() != checksums.read_text():
+                raise BundleError("existing release checksum differs from record")
+            return
+        finally:
+            shutil.rmtree(stage)
+    result = subprocess.run(["gh", "release", "upload", tag, str(archive), str(checksums)],
+                            cwd=root, capture_output=True, text=True)
+    if result.returncode:
+        raise BundleError(f"gh release upload failed: {result.stderr.strip()[-400:]}")

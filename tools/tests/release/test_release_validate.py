@@ -198,7 +198,11 @@ patch-sets = []
 options = {}
 needs = []
 
+[stack.fixture-stack]
+backend = "hip"
+
 [platform.linux-multi]
+stack = "fixture-stack"
 targets = ["gfx1100"]
 options = {}
 

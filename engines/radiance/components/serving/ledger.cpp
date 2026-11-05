@@ -150,7 +150,7 @@ Ledger host_ledger(const LedgerInputs& in) {
     out.checkpoint_slots = slots;
     std::string tier_why;
     if (!keep) {
-        tier_why = "service.retention = evict: finished sessions are not kept";
+        tier_why = "service.retention = discard: finished sessions are not kept";
     } else if (tier_first ? tier_bytes == 0 : room.bytes < in.min_tier_bytes) {
         tier_why = "the room left (" + std::to_string(room.bytes / kMiB) + " MiB under " + room.limit +
                    ", with the checkpoint store at its floor of " + std::to_string(slots) +

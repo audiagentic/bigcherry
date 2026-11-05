@@ -1143,7 +1143,10 @@ public:
     }
 
     bool collect_lane_timing(uint32_t lane, uint32_t done_sequence,
-                             double* sampled_us, uint64_t* samples) {
+                             double* sampled_us, uint64_t* samples,
+                             double* service_us = nullptr, uint64_t* service_rows = nullptr) {
+        if (service_us) *service_us = 0;
+        if (service_rows) *service_rows = 0;
         if (lane >= r3::moe_shm::kLanes || !sampled_us || !samples) return false;
         LaneWork& w = lane_[lane];
         if (!w.sample_pending || r3::moe_shm::seq_after(w.sample_sequence, done_sequence))
@@ -1156,20 +1159,34 @@ public:
         ++*samples;
         hipEvent_t mark[LaneWork::kStages + 2] = {w.sample_start, w.stage[0], w.stage[1], w.stage[2], w.stage[3],
                                                   w.sample_stop};
+        double stage_total = 0;
+        bool complete_stages = true;
         for (int i = 0; i <= LaneWork::kStages; ++i) {
             float part = 0.0f;
-            if (hipEventElapsedTime(&part, mark[i], mark[i + 1]) == hipSuccess) w.stage_us[i] += (double)part * 1000.0;
+            if (hipEventElapsedTime(&part, mark[i], mark[i + 1]) == hipSuccess) {
+                w.stage_us[i] += (double)part * 1000.0;
+                stage_total += (double)part * 1000.0;
+            } else complete_stages = false;
         }
         w.sample_pending = false;
         /* The sampled request's per-expert row counts (d_counts; this lane has synced): the run-length histogram the
          * grouped GEMM's tile choice depends on. Sampled requests only, so the copy is off the hot path. */
         std::vector<uint32_t> counts(experts());
         if (hipMemcpy(counts.data(), w.d_counts.p, counts.size() * sizeof(uint32_t), hipMemcpyDeviceToHost) == hipSuccess) {
+            uint64_t routed_rows = 0;
             for (uint32_t e = 0; e < experts(); ++e) {
                 const uint32_t c = counts[e];
+                routed_rows += c;
                 if (!c) continue;
                 const int b = c == 1 ? 0 : c == 2 ? 1 : c <= 4 ? 2 : c <= 8 ? 3 : c <= 16 ? 4 : c <= 32 ? 5 : c <= 64 ? 6 : 7;
                 ++w.run_hist[b];
+            }
+            // This exact sum, unlike the coarse run_hist bins, normalises
+            // the existing five stage times by routed expert-rows. Publish
+            // only when the sampled HIP events and counts are BOTH complete.
+            if (complete_stages && routed_rows && service_us && service_rows) {
+                *service_us = stage_total;
+                *service_rows = routed_rows;
             }
         }
         return true;

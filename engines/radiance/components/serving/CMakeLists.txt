@@ -22,7 +22,7 @@ target_include_directories(bc_contract PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/contr
 add_executable(bc_contract_gen contract/generate.cpp)
 target_link_libraries(bc_contract_gen PRIVATE bc_contract)
 
-# The helpers' expert ownership, shared with moe-remote's r3_moe_worker (bc_experts.cmake). bc-serve does not call it yet: it is built and tested here (bc_experts_test) and bc-serve starts planning with it in a later slice.
+# The helpers' expert ownership, shared with moe-remote's r3_moe_worker (bc_experts.cmake). bc-serve's manifest writer plans owner maps with it (manifest_writer.cpp).
 include("${CMAKE_CURRENT_SOURCE_DIR}/bc_experts.cmake")
 include("${CMAKE_CURRENT_SOURCE_DIR}/owner_map.cmake")
 
@@ -32,8 +32,14 @@ file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/generated/calibration_seed.inc"
      "R\"bccal(${bc_calibration_seed})bccal\"\n")
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/calibration.toml")
 
-add_library(bc_serving STATIC serving.cpp calibration.cpp ledger.cpp plan_cache.cpp)
-target_link_libraries(bc_serving PUBLIC bc_jcs bc_serving_v1)
+# helper_profile.toml is compiled in: the helper_common values bc-serve writes into a v1 manifest.
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/helper_profile.toml" bc_helper_profile_seed)
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/generated/helper_profile_seed.inc"
+     "R\"bchp(${bc_helper_profile_seed})bchp\"\n")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/helper_profile.toml")
+
+add_library(bc_serving STATIC serving.cpp calibration.cpp ledger.cpp plan_cache.cpp manifest_writer.cpp)
+target_link_libraries(bc_serving PUBLIC bc_jcs bc_serving_v1 bc_owner_map)
 target_compile_features(bc_serving PUBLIC cxx_std_20)
 target_include_directories(bc_serving PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}" "${RADIANCE_SRC}/vendor")
 target_link_libraries(bc_serving PUBLIC radiance::abi)

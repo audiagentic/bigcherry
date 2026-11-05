@@ -54,6 +54,21 @@ Depends on: none (needs the gpu lease and all four cards). Added by the 2026-10-
 
 ROOT CAUSE FOUND 2026-11-01/02 (retained-session thrash). On flashnext-4gpu with the old defaults, after an 8-session ~1M-token fill (finished sessions retained in VRAM because no host KV tier existed), a 49-50K prefill on new text fell 3,837 -> ~1,900 tok/s and 6-stream decode 46.9 -> 53.0 ms/step; the engine's mover then copied ~1.2 TB host-to-card in one run (healthy ~9 GiB) with 86% of promotions readmitting just-demoted experts. Mechanism (radiance core/engine.cpp loan_tick, core/mem/kv.cpp spare_tokens/grow_for): finished sessions hold KV blocks high in the cache, spare_tokens collapses, the KV cache's loan of spare VRAM to the expert slab is recalled, ~2,500 expert units fall back to the pinned host pool and are streamed on every prefill step, and the loan regrows as sessions come and go. Partial fix merged (#512): host pool 22,528 -> 9,216 MiB and a 12 GiB host KV tier for finished sessions: post-fill 50K prefill 1,901 -> 3,165 tok/s, 6-stream slowest first token 3.6 -> 2.2 s, mover 1,160 -> 600 GiB, fresh-server speed unchanged. Remaining gap to fresh (~17% prefill) is the loan policy: RSC03 (one derived memory budget) and RHP13 (allocator weighing retained KV against expert residency). The retained-session state is now a mandatory RHP12 cohort.
 
+## Tail-size matrix at the 1M setting, 2026-11-04/05
+
+Flash-Next on two XTX helpers plus the 6900 XT tail (`flashnext-2xtx` and `flashnext-2xtx-rdna2-tail --budget gfx1030=N`), slice J build with the live policy off, default mixed heat file, `--max-model-len 1048576 --rope-scaling yarn:4 --max-num-seqs 2`, a fresh server per arm, C++/HIP source text, temperature 0. Real prompt lengths 361,979 and 709,649 tokens (the sweep's 253,000 and 506,000 targets tokenise 1.43x longer on this text, not the 290K and 580K of the plan). Mover totals are the engine's end-of-run line.
+
+| Tail | Prefill 362K | Decode 362K | Prefill 710K | Decode 710K | Promotions | Host-to-GPU GiB | Re-admitted |
+|---|---|---|---|---|---|---|---|
+| none (12,288 MiB host pool) | 2,375 | 130.8 (144.1, 117.5) | 1,244 | 70.2 (one valid repeat) | 14,369 | 1,392 | 65% |
+| 3 GiB | 2,515 | 112.0 (104.7, 119.3) | 2,143 | 57.7 (57.4, 58.0) | 11,316 | 1,199 | 66% |
+| 6 GiB | 2,572 | 110.5 (104.0, 116.9) | 2,169 | 70.7 (66.7, 74.8) | 10,443 | 1,056 | 64% |
+| 14 GiB | 2,634 | 114.8 (115.3, 114.4) | 2,307 | 80.2 (74.8, 85.5) | 6,371 | 613 | 61% |
+
+Reading. (1) Expert traffic falls steadily with the tail, 1,392 to 613 GiB (-56%), and the 710K prefill follows it, 1,244 to 2,307 tok/s (+85%); at 362K the prefill gain is smaller (+11%). (2) The share of promotions that re-admit something just demoted is 61-66% in every arm: a bigger tail cuts the volume of churn, not its pattern. (3) Decode at 362K sits at 110-131 in every arm and at 710K at 58-80 whatever the traffic, so the long-context decode slowdown is mostly attention over the KV cache, as RAD23 recorded (127 at 34K to 70 at 663K whatever the placement); the tail moves long-context PREFILL by about 2x, and decode only within the run-to-run spread. (4) For RHP05-07 this says residency work pays on prefill at long context (the traffic is real and the tail helps), and cannot be expected to recover long-context decode.
+
+Caveats. One run per arm. The no-tail arm needed a 12,288 MiB host pool: at 1M one sequence's cache (14.24 GiB) leaves the experts 8.63 GiB, short of the 9.41 GiB the default 9,216 MiB pool cannot hold, so startup stops out of memory with the default; that is a configuration limit of a no-tail layout at the 1M setting, not a result. Decode repeats spread widely inside an arm (70 to 144), and the no-tail 710K decode has one invalid repeat (the second call timed faster than the first, giving a negative rate) so only the valid repeat is shown. The tail arms use the default mixed heat file, not heat recorded on this corpus; RHP10's earlier held-out runs showed the heat file moves 710K prefill by about 34%, so these tail-size effects and that one are not separated. The 6 GiB arm first failed to start because the previous arm's processes still held VRAM; the rerun waited for idle cards.
+
 ## First long-context runs, 2026-10-31 (, )
 
 Flash-Next, `flashnext-2xtx-rdna2-tail` (4 GiB tail), `ctxsweep.py` over the documentation text; used context 330K and 688K (the 295K and 590K targets tokenise longer). Static heat is `perf51/heat.rank0.hot-first`; live heat is the snapshot of RHP08 inverted the same way. The 688K row of `rad23-longctx` follows a 330K request that stays cached; `rad23-longctx2` is the 688K request alone on a fresh server, three arms back to back.
@@ -168,5 +183,9 @@ Next: quality (KLD) of the 14 GiB tail on this build, and the per-step decode ti
 
 ## Ledger-events
 
+
 - chg_20261102_024204_planning-records-updated-with_6210
 - 2026-11-02T02:42:12.731682+00:00 (updated-by): Updated: section:ledger-events
+- 2026-11-05T00:14:47.901947+00:00 (updated-by): Updated: section:notes
+- chg_20261105_001453_measured-how-the-6900-xt-tail_7908
+- 2026-11-05T00:14:57.905702+00:00 (updated-by): Updated: section:ledger-events

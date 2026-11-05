@@ -35,7 +35,7 @@ def _cfg(**overrides) -> campaign_config.Config:
                                           needs=frozenset({"inventory"})),
         },
         platforms={
-            "linux-multi": campaign_config.Platform(
+            "linux-multi": campaign_config.Platform(stack="rocm-test", sdk=None, sdk_root=None,
                 name="linux-multi", targets=("gfx1100", "gfx1201", "gfx1030"), options=()),
         },
         experiments={},

@@ -26,6 +26,7 @@ from ..campaign import build as campaign_build
 from ..campaign import runtime_bundle
 from ..core import components, engines, paths
 from ..core import config as campaign_config
+from ..core.process import run_checked
 from .base import BumpCheck, BumpCheckError, DriftCheck
 
 if TYPE_CHECKING:
@@ -44,10 +45,6 @@ PLUGIN_DIR = "kernels"
 #: the engine's own kernel plugin, built from the engine's abi/ headers: its layout fingerprint is the reference
 REFERENCE_PLUGIN = "libr4d.so"
 _ABI_DECLARATION = re.compile(rf"^[ \t]*(?:#[ \t]*define[ \t]+{ABI_MACRO}[ \t]+|.*\b{ABI_MACRO}\b[ \t]*=[ \t]*)\(?[ \t]*(\d+)", re.MULTILINE)
-
-
-def _run(argv: list[str], cwd: Path) -> None:
-    subprocess.run(argv, cwd=cwd, check=True)
 
 
 def expected_abi_version(source_dir: Path) -> int:
@@ -162,10 +159,8 @@ class ComponentGate:
             # RAD18: forward the platform's compiler-launcher options (e.g. ccache) into each component's own
             # separate cmake configure -- without this, a declared component (libr3's 92-99 HIP "units" among
             # them) never got ccache at all and recompiled from scratch on every single build.
-            launcher_options = tuple((k, v) for k, v in platform.options if k.endswith("_COMPILER_LAUNCHER"))
             runtime_bundle.build_runtime(self.engine, source_root=self.source_dir, build_dir=self.build_dir,
-                                         c_compiler=platform.c_compiler, cxx_compiler=platform.cxx_compiler,
-                                         launcher_options=launcher_options, runner=self.runner)
+                                         platform=platform, runner=self.runner)
         except subprocess.CalledProcessError as exc:
             return [f"`{' '.join(map(str, exc.cmd))}` exited {exc.returncode} (build tree {self.build_dir})"]
         except (campaign_build.CampaignBuildError, runtime_bundle.RuntimeBundleError, OSError) as exc:
@@ -217,7 +212,7 @@ class ComponentGate:
 
 
 def compile_checks(
-    context: ProjectContext, source_dir: Path, workdir: Path, *, platform_name: str | None, runner: Runner = _run,
+    context: ProjectContext, source_dir: Path, workdir: Path, *, platform_name: str | None, runner: Runner = run_checked,
     abi_reader: AbiReader = read_plugin_abi, lister: runtime_bundle.TestLister = runtime_bundle.ctest_tests,
 ) -> tuple[BumpCheck, ...]:
     gate = ComponentGate(context, source_dir, workdir, runner, abi_reader, platform_name, lister)

@@ -17,21 +17,47 @@ version = 2
 engine = "llamacpp"
 pinned = "abc123"
 
+[stack.fixture-stack]
+backend = "hip"
+
 [platform.with-toolchain]
+stack = "fixture-stack"
 targets = ["gfx1100"]
 options = {}
 c-compiler = "/opt/rocm/llvm/bin/clang"
 cxx-compiler = "/opt/rocm/llvm/bin/clang++"
 
 [platform.without-toolchain]
+stack = "fixture-stack"
 targets = ["gfx1100"]
 options = {}
 """
 
 
+class SequenceValidationTests(unittest.TestCase):
+    def test_argv_retains_duplicates_and_rejects_bad_items(self):
+        self.assertEqual(campaign_config._argv(["a", "a"], "args"), ("a", "a"))
+        self.assertEqual(campaign_config._argv(None, "args"), ())
+        for bad in ("a", ["a", ""], ["a", 1]):
+            with self.subTest(bad=bad):
+                with self.assertRaisesRegex(campaign_config.ConfigError, "^args must be a list of non-empty strings$"):
+                    campaign_config._argv(bad, "args")
+
+    def test_strings_maintains_uniqueness_after_validation(self):
+        self.assertEqual(campaign_config._strings(["a", "b"], "names"), ("a", "b"))
+        self.assertEqual(campaign_config._strings(None, "names"), ())
+        with self.assertRaisesRegex(campaign_config.ConfigError, "^names contains duplicates$"):
+            campaign_config._strings(["a", "a"], "names")
+        with self.assertRaisesRegex(campaign_config.ConfigError, "^names must be a list of non-empty strings$"):
+            campaign_config._strings(["a", ""], "names")
+
+
 class PlatformToolchainTests(unittest.TestCase):
     """A prior version of config.Platform silently dropped c-compiler/
-    cxx-compiler from [platform.*] bodies: the dataclass had no fields for
+    cxx-compiler from [stack.fixture-stack]
+backend = "hip"
+
+[platform.*] bodies: the dataclass had no fields for
     them and no unknown-key check caught the loss, so a campaign path
     reading only config.Platform could never reproduce the legacy build's
     toolchain -- it would silently fall back to $PATH.
@@ -54,7 +80,7 @@ class PlatformToolchainTests(unittest.TestCase):
         self.assertIsNone(platform.cxx_compiler)
 
     def test_non_string_compiler_field_rejected(self):
-        doc = _DOC + "\n[platform.bad]\ntargets = [\"gfx1100\"]\nc-compiler = 5\n"
+        doc = _DOC + "\n[platform.bad]\nstack = \"fixture-stack\"\ntargets = [\"gfx1100\"]\nc-compiler = 5\n"
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "recipes.toml"
             path.write_text(doc, encoding="utf-8")
@@ -77,7 +103,11 @@ needs = []
 [build.tune]
 needs = ["inventory"]
 
+[stack.fixture-stack]
+backend = "hip"
+
 [platform.linux-multi]
+stack = "fixture-stack"
 targets = ["gfx1100"]
 options = {}
 

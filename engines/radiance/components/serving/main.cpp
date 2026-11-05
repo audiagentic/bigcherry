@@ -1,4 +1,5 @@
 #include "serving.h"
+#include "manifest_writer.h"
 #include "plan_cache.h"
 
 #include <filesystem>
@@ -27,6 +28,10 @@ void usage() {
                  "      measures the engine's memory plan on the engine card (radiance --plan-memory) unless DIR already\n"
                  "      holds it for this configuration; run it under the gpu lease (agent-lease acquire gpu -- ...)\n"
                  "  --plan-extra TEXT   (with the --plan-* modes) engine arguments the launcher passes through verbatim; part of the key\n"
+                 "  --write-manifest OUT --plan-cache DIR --engine-binary PATH [--plan-extra TEXT] [site/profile/set]\n"
+                 "      writes the v1 serving manifest for this configuration to OUT (read-only; an existing OUT is refused)\n"
+                 "      from its measured plan and the planner's owner map, and reads it back through the shared strict reader\n"
+                 "      before it stays; a miss in the plan cache exits 10. Starts no process.\n"
                  "  --plan-key --plan-cache DIR --engine-binary PATH [--site FILE] [--profile FILE] [--set key=value]\n"
                  "      prints this configuration's plan key (what --plan-store must be told to expect)\n"
                  "  --plan-check-args --plan-cache DIR --engine-binary PATH [--site FILE] [--profile FILE] [--set key=value]\n"
@@ -71,7 +76,7 @@ int main(int argc, char** argv) {
         fs::path plan_file;
         std::string expect_key, plan_extra;
         fs::path plan_cache, engine_binary;
-        fs::path out;
+        fs::path out, write_manifest;
         std::vector<fs::path> positional;
         for (int i = 1; i < argc; ++i) {
             const std::string arg = argv[i];
@@ -95,6 +100,7 @@ int main(int argc, char** argv) {
             else if (arg == "--plan-check-args") plan_check_args = true;
             else if (arg == "--plan-store") plan_store = true;
             else if (arg == "--plan-key") plan_key_only = true;
+            else if (arg == "--write-manifest") write_manifest = need_arg("--write-manifest");
             else if (arg == "--expect-key") expect_key = need_arg("--expect-key");
             else if (arg == "--plan-extra") plan_extra = need_arg("--plan-extra");
             else if (arg == "--plan-file") plan_file = need_arg("--plan-file");
@@ -107,11 +113,12 @@ int main(int argc, char** argv) {
             else positional.push_back(arg);
         }
         const int modes = int(detection) + int(schema) + int(validation) +
-                          int(explanation) + int(dry) + int(plan_memory) + int(plan_check_args) + int(plan_store) + int(plan_key_only);
-        if (!plan_memory && !plan_check_args && !plan_store && !plan_key_only && (!plan_cache.empty() || !engine_binary.empty()))
-            throw std::runtime_error("--plan-cache and --engine-binary go with --plan-memory, --plan-check-args or --plan-store");
-        if (!plan_memory && !plan_check_args && !plan_store && !plan_key_only && !plan_extra.empty())
-            throw std::runtime_error("--plan-extra goes with --plan-memory, --plan-check-args, --plan-store or --plan-key");
+                          int(explanation) + int(dry) + int(plan_memory) + int(plan_check_args) + int(plan_store) + int(plan_key_only) + int(!write_manifest.empty());
+        const bool plan_mode = plan_memory || plan_check_args || plan_store || plan_key_only || !write_manifest.empty();
+        if (!plan_mode && (!plan_cache.empty() || !engine_binary.empty()))
+            throw std::runtime_error("--plan-cache and --engine-binary go with --plan-memory, --plan-check-args, --plan-store or --write-manifest");
+        if (!plan_mode && !plan_extra.empty())
+            throw std::runtime_error("--plan-extra goes with --plan-memory, --plan-check-args, --plan-store, --plan-key or --write-manifest");
         if (!plan_store && (!plan_file.empty() || !expect_key.empty()))
             throw std::runtime_error("--plan-file and --expect-key go with --plan-store");
         if (modes != 1) throw std::runtime_error("choose one mode (see --help)");
@@ -152,9 +159,9 @@ int main(int argc, char** argv) {
         } else if (!positional.empty()) {
             throw std::runtime_error("unexpected file; use --site or --profile");
         }
-        if (plan_memory || plan_check_args || plan_store || plan_key_only) {
+        if (plan_mode) {
             const char* mode = plan_memory ? "--plan-memory" : plan_check_args ? "--plan-check-args"
-                               : plan_store ? "--plan-store" : "--plan-key";
+                               : plan_store ? "--plan-store" : plan_key_only ? "--plan-key" : "--write-manifest";
             if (plan_store && (plan_file.empty() || expect_key.empty()))
                 throw std::runtime_error("--plan-store needs --plan-file FILE and --expect-key KEY");
             if (!positional.empty() || !out.empty())
@@ -170,6 +177,28 @@ int main(int argc, char** argv) {
                 bc::serving::engine_identity(engine_binary, home), plan_extra);
             if (plan_key_only) {
                 std::cout << bc::serving::plan_key(key_inputs) << '\n';
+                return 0;
+            }
+            if (!write_manifest.empty()) {
+                // The v1 manifest for this configuration from its measured plan. A miss is exit 10, as for --plan-check-args:
+                // a manifest without a measured plan is not written.
+                const auto hit = bc::serving::plan_cache_lookup(plan_cache, key_inputs);
+                if (!hit) {
+                    std::cerr << "bc-serve: no measured plan for this configuration (key "
+                              << bc::serving::plan_key(key_inputs).substr(0, 16)
+                              << "); the launcher measures it on a start with the helpers up\n";
+                    return 10;
+                }
+                bc::serving::ManifestInputs in;
+                in.resolved = r;
+                in.instance_id = bc::serving::new_instance_id();
+                in.producer_sha256 = bc::serving::file_sha256("/proc/self/exe");
+                in.calibration_cache = opts.calibration_cache;
+                in.plan = *hit;
+                in.plan_key_inputs = key_inputs;
+                const auto built = bc::serving::build_manifest(in);
+                bc::serving::write_manifest_file(write_manifest, built.text);
+                std::cout << "manifest: " << write_manifest << '\n' << "digest: " << built.digest << '\n' << "no processes started\n";
                 return 0;
             }
             if (plan_store) {

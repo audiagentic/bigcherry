@@ -207,6 +207,10 @@ RAD_HOME=$BUILD/radiance_home
 HELPER=$RAD_HOME/helpers/r3_moe_worker
 [ -x "$RAD_BIN" ] && { [ "$LAYOUT_HELPER_COUNT" = 0 ] || [ -x "$HELPER" ]; } || { echo "RADIANCE_EXIT=99 no build for layout $LAYOUT (--build '$BUILD')"; exit 99; }
 
+# The engine runs against the ROCm SDK its build recorded; an environment pointing at another SDK refuses the start.
+source "$(dirname "${BASH_SOURCE[0]}")/lib/sdk-check.sh"
+check_build_sdk "$BUILD" || { echo "RADIANCE_EXIT=98 build $BUILD does not match the environment's ROCm SDK"; exit 98; }
+
 # Warn (never block) when the host lacks settings the tooling expects: configured per-card power settings not applied,
 # CPU energy counters unreadable (`bigcherry host-check`, PWR04).
 PYTHONPATH=tools python3 -m bigcherry host-check 2>/dev/null | grep '^WARN' >&2 || true

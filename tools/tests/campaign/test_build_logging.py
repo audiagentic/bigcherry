@@ -75,7 +75,7 @@ def campaign(tmp_path):
                 name="fixture", ref=revision, overlay=False,
                 patch_sets=("framework",) if mode == "materialize" else ())},
             builds={"stock": config.Build(name="stock", options=(), variant_set=None, needs=frozenset())},
-            platforms={"local": config.Platform(name="local", targets=(), options=())},
+            platforms={"local": config.Platform(stack="rocm-test", sdk=None, sdk_root=None, name="local", targets=(), options=())},
             experiments={}, campaigns={}, path=context.config_path,
         )
         argv = ["build", "--lane", "fixture:stock:local"]

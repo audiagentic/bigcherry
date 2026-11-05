@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import subprocess
 from contextvars import ContextVar
+from pathlib import Path
 
 # The build boundary registers sinks; captured child output stays off console.
 output_logs: ContextVar[tuple] = ContextVar("process_output_logs", default=())
@@ -103,3 +104,8 @@ def describe_returncode(code: int) -> str:
     if hint:
         rendered += f" -- {hint}"
     return rendered
+
+
+def run_checked(argv: list[str], cwd: Path) -> None:
+    """Run a checked build subprocess without changing its arguments or cwd; its output reaches the build logs."""
+    run_logged(argv, cwd=cwd, check=True)

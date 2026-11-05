@@ -17,7 +17,7 @@ The llama.cpp pin and ROCm version are independent identity axes. A pin does not
 | Host / role | Identity | Evidence status | Use / caveat |
 | --- | --- | --- | --- |
 | Windows workstation | ROCm 7.1 | Observed in the 2026-08-23 TO01/RD87 investigation; `platform.windows-gfx1100` also names ROCm 7.1 compiler paths | Recheck the local install/vendor path before use; this update did not access the workstation |
-| build-server (`dev`) | `/opt/rocm` | Configured in `config/environment.local.toml` | System/default path; resolve its real target before treating it as a version identity |
+| build-server (`dev`) | `/opt/rocm-7.2.4` | The `"7.2"` entry of `[host.dev.rocm-sdks]`; the Radiance lane's stack (`rocm-7-2`) selects it | Versioned install; `/opt/rocm` is a symlink to the system default and is not a build input |
 | build-server | `vendor/rocm/7.2.4` | Directly observed in TO01 on 2026-09-02 | Complete library tree used as the 7.2.4 reference |
 | build-server | `vendor/rocm/7.14` | Directly observed in TO01 on 2026-09-02 | Keep version-qualified; do not replace with an unversioned ad-hoc path |
 | build-server | `vendor/rocm/7.2.4-merged` | Created and verified in TO01 on 2026-09-02 | Combines the compiler-layout convenience of `artifacts/va15-rocm-merged` with the complete 7.2.4 libraries, including RCCL |
@@ -38,7 +38,7 @@ readlink -f /opt/rocm
 ls -1 vendor/rocm/
 ```
 
-Do not silently substitute an unversioned `/opt/rocm` for a requested version.
+Do not silently substitute an unversioned `/opt/rocm` for a requested version. This is enforced: a platform names a stack, the stack names an SDK version, and the build fails when that version is not what the install at the mapped root reports (`tools/tests/build/test_rocm_sdk_explicit.py`). See `docs/reference/ENVIRONMENT.md`, ROCm.
 
 ## Acquisition rules
 

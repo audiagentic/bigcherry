@@ -101,10 +101,6 @@ from ..source import identity as source_identity
 SUPPORTED_BUILD_NEEDS = frozenset({"inventory", "promoted-winners"})
 
 
-def _source_metadata_path(source_root: Path) -> Path:
-    return source_root.parent / f"{source_root.name}.metadata.json"
-
-
 def _source_attestation(
     source_root: Path,
     *,
@@ -123,7 +119,7 @@ def _source_attestation(
     if expected is not None:
         return expected
 
-    metadata_path = _source_metadata_path(source_root)
+    metadata_path = campaign_build._source_metadata_path(source_root)
     if metadata_path.is_file():
         try:
             metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
@@ -585,9 +581,7 @@ def make_build_worker(
             # RAD18: forward the platform's compiler-launcher options (e.g. ccache) -- each component is
             # configured through its own separate cmake invocation, which otherwise never gets ccache at all.
             runtime_bundle.build_runtime(
-                context.engine, source_root=source_root, build_dir=build_dir,
-                c_compiler=platform.c_compiler, cxx_compiler=platform.cxx_compiler,
-                launcher_options=tuple((k, v) for k, v in platform.options if k.endswith("_COMPILER_LAUNCHER")),
+                context.engine, source_root=source_root, build_dir=build_dir, platform=platform,
             )
 
             # A source mutation during configure/compile invalidates the

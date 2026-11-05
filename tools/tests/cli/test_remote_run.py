@@ -28,7 +28,7 @@ BASH = shutil.which("bash")
 _STUB_MAIN = '''import os, sys, time
 a = sys.argv[1:]
 print("ARGS", a, flush=True)
-print("ENV", os.environ.get("ROCM_PATH"), os.environ.get("BIGCHERRY_ENVIRONMENT"), os.environ.get("PYTHONPATH"), flush=True)
+print("ENV", os.environ.get("BIGCHERRY_ENVIRONMENT"), os.environ.get("PYTHONPATH"), flush=True)
 if "--sleep" in a:
     time.sleep(float(a[a.index("--sleep") + 1]))
 print("RUN-BODY-DONE", flush=True)
@@ -103,7 +103,7 @@ class RemoteRunTests(unittest.TestCase):
         self.transport = LocalBashTransport(shim)
         self.host = replace(
             environment.load(ROOT / "config" / "environment.example.toml").host(),
-            name="lab", hostname="lab", repo_root=posix(self.tree), work_root=posix(self.work), rocm_root="/opt/fakerocm",
+            name="lab", hostname="lab", repo_root=posix(self.tree), work_root=posix(self.work),
             environment_file=posix(tmp / "env.toml"), busy_processes=("llama-server", "ninja"),
         )
         self.launched: list[str] = []
@@ -189,13 +189,13 @@ class RemoteRunTests(unittest.TestCase):
         self.assertGreater(on_host["started-at"], 0)
         self.assertTrue((self.run_dir(meta) / "run.sh").is_file())
 
-    def test_run_gets_rocm_environment_and_tools_on_pythonpath(self) -> None:
+    def test_run_gets_the_environment_file_and_tools_on_pythonpath(self) -> None:
         meta = self.start("--engine", "demo", "arg with space")
         self.assertEqual(self.wait_done(meta).state, "done")
         log = (self.run_dir(meta) / "run.log").read_text()
         self.assertIn("ARGS ['--engine', 'demo', 'arg with space']", log)
         # msys rewrites POSIX-looking paths for the native stub interpreter; the values are otherwise as configured
-        self.assertRegex(log, r"ENV \S*/opt/fakerocm \S*/env\.toml tools\n")
+        self.assertRegex(log, r"ENV \S*/env\.toml tools\n")
 
     # -- status transitions, stall, wait
 

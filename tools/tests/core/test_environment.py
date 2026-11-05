@@ -32,7 +32,7 @@ class EnvironmentContractTests(unittest.TestCase):
         # A blank one would silently produce commands like `cd /run_bench.py`,
         # which is worse than the hardcoded path it replaced.
         for field in ("hostname", "repo_root", "work_root",
-                      "model_root", "bench_harness", "rocm_root"):
+                      "model_root", "bench_harness"):
             with self.subTest(field=field):
                 self.assertTrue(getattr(self.host, field),
                                 f"{field} is empty; docs reference it as $BC_*")

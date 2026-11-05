@@ -329,62 +329,47 @@ static void V23Slots_ReserveCopyRetireFaults() {
         check(churn.valid() && churn.slots().size()<=2,"no growth of charged/metadata slots");
     }
 }
-static double oracle(const r3::heat::Input& in) {
-    const size_t n=in.current.size(), h=in.devices.size();
-    std::vector<int32_t> a=in.current;
-    double best=std::numeric_limits<double>::infinity();
-    auto dfs=[&](auto&& self,size_t i,uint32_t moves,uint64_t bytes)->void {
-        if (i==n) {
-            std::vector<uint64_t> used(h,0);
-            std::vector<std::vector<double>> load(h,std::vector<double>(2,0));
-            for(size_t j=0;j<n;++j) if(a[j]>=0) {
-                size_t d=size_t(a[j]);
-                used[d]+=in.bytes[j];
-                if(used[d]>in.devices[d].budget)return;
-                load[d][in.layer[j]]+=in.heat[j];
-            }
-            double sum=0;
-            for(size_t ly=0;ly<2;++ly) {
-                double mx=0;
-                for(size_t d=0;d<h;++d) {
-                    if(in.devices[d].layer_cap && load[d][ly]>in.devices[d].layer_cap)return;
-                    mx=std::max(mx,load[d][ly]*in.devices[d].cost);
-                }
-                sum+=mx;
-            }
-            best=std::min(best,sum);
-            return;
-        }
-        for (int32_t d=0;d<int32_t(h);++d) {
-            if (!in.allowed[i][size_t(d)])continue;
-            const bool change=d!=in.current[i];
-            if(change && (moves==in.max_moves || bytes+in.bytes[i]>in.max_moved_bytes))continue;
-            a[i]=d;
-            self(self,i+1,moves+change,bytes+(change?in.bytes[i]:0));
-        }
-        a[i]=in.current[i];
-    };
-    dfs(dfs,0,0,0);
-    return best;
+// Independent of heat::propose: the static placer's plan for the live heat, ranked hottest first with ties by index.
+static std::vector<int32_t> static_plan_of(const r3::heat::Input& in, const std::vector<uint32_t>& shares) {
+    std::vector<size_t> r;
+    for (size_t i=0;i<in.current.size();++i) if (in.current[i]>=0) r.push_back(i);
+    std::stable_sort(r.begin(),r.end(),[&](size_t a,size_t b){return in.heat[a]>in.heat[b];});
+    std::vector<int64_t> bytes;
+    for (size_t i:r) bytes.push_back(int64_t(in.bytes[i]));
+    uint64_t budgets[8]={};
+    for (size_t d=0;d<in.devices.size();++d) budgets[d]=in.devices[d].budget;
+    const auto placed=r3::worker_share::plan_tail(bytes,uint32_t(in.devices.size()),shares.data(),budgets);
+    std::vector<int32_t> out=in.current;
+    for (size_t k=0;k<r.size();++k) if (placed[k]>=0) out[r[k]]=placed[k];
+    return out;
 }
-static void V23Policy_HeatEqualCostAndSwap() {
+static void V23Policy_HeatTargetMap() {
     using namespace r3::heat;
-    // Independent exhaustive oracle over whole assignments and exact hard constraints.
-    for (int seed=0;seed<30;++seed) {
+    // With room to move everything the live plan IS the static plan of the live heat; under a move cap it stays inside
+    // every budget and never raises the share of heat on the tail.
+    for (int seed=0;seed<60;++seed) {
         Input in;
-        in.bytes={10,10,10,10,10,10};
-        in.current={0,0,0,1,1,1};
-        in.layer={0,1,0,1,0,1};
-        in.heat.resize(6);
-        for(int i=0;i<6;++i)in.heat[i]=double(1+(seed*7+i*11)%97);
-        in.devices={{40,1.0,0},{50,(seed%3==0?1.0:1.4),0}};
-        in.allowed.assign(6,{1,1});
-        in.max_moves=2;in.max_moved_bytes=20;in.margin=0;in.now_ns=2'000'000'000'000ULL;
+        in.bytes.assign(8,10);
+        in.current={0,0,0,0,1,1,1,1};
+        in.heat.resize(8);
+        for(int i=0;i<8;++i)in.heat[i]=double(1+(seed*7+i*11)%97);
+        in.devices={{40},{40}};
+        in.allowed.assign(8,{1,1});
+        in.max_moves=64;in.max_moved_bytes=1ULL<<20;in.margin=0;in.now_ns=2'000'000'000'000ULL;
         if(seed%2)in.allowed[0][1]=0;
-        const Plan p=propose(in);
-        check(p.valid && delta_matches(p,in.current),"valid whole-map oracle proposal");
-        check(std::abs(p.predicted-oracle(in))<1e-7,"small-instance exact global optimum");
-        check(p.delta.size()<=2 && p.used[0]<=40 && p.used[1]<=50,"oracle budgets");
+        const std::vector<uint32_t> shares={1,1};
+        const Plan all=propose(in,shares);
+        check(all.valid && delta_matches(all,in.current),"valid whole-map target proposal");
+        if(!(seed%2)) {
+            const auto want=static_plan_of(in,shares);
+            check(all.no_change ? want==in.current : all.owner==want,"live plan equals the static plan of the live heat");
+        }
+        check(all.used[0]<=40 && all.used[1]<=40,"target budgets");
+        in.max_moves=2;
+        const Plan capped=propose(in,shares);
+        check(capped.valid && delta_matches(capped,in.current) && capped.delta.size()<=2 &&
+              capped.used[0]<=40 && capped.used[1]<=40 && capped.predicted<=capped.baseline+1e-12,
+              "capped plan: whole groups inside the budgets, tail share never raised");
     }
 }
 /* Card-free fake HIP upload streams/events, using the exact same
@@ -1755,6 +1740,6 @@ int main() {
     V23Ack_CorruptCurrentAndFault();
     V23Fault_BeforeAndAfterCommit();
     V23Slots_ReserveCopyRetireFaults();
-    V23Policy_HeatEqualCostAndSwap();
+    V23Policy_HeatTargetMap();
     std::puts("r3_moe_epoch_test: ok");
 }

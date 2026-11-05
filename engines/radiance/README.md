@@ -15,3 +15,9 @@ Current documentation:
 The [dated lab history](../../docs/archive/radiance/LAB_HISTORY.md) preserves
 previous measurements and investigations. It is not the current performance
 or build reference.
+
+## CI documentation changes
+
+Changes confined to Radiance Markdown documentation do not need a native engine
+build. The required PR `ci-pass` check still runs; kernel, patch and CMake
+changes continue through the normal build and component-test gate.
