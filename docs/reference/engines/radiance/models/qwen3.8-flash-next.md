@@ -101,6 +101,40 @@ stable for a build (identical on repeat) but differs between builds even with th
 placement changes the greedy text early (RHP04). Compare builds by step time, not by tokens/s. Fresh 44K prefill in
 this layout is 3,650-3,753 tokens/s; the best recorded figure above is 3,837.
 
+## Comparing runs: what to pin, and the Radiance v1.17.0 check, 2026-11-05
+
+The best recorded decode figures above cannot be reproduced: the client that produced them is not kept, sent no
+temperature, and its prompts were not stored. They are not a target. A run is comparable with another only when
+it pins everything that moves acceptance:
+
+- `temperature: 0`, a stated seed, 512-token prompts, 512 generated tokens, three repetitions (`stream-bench`, whose
+  result file now carries the SHA-256 of every prompt it used);
+- the build id and the launcher defaults, and the GPU lease time (no build running during the run: a lane build on
+  the same host starved the engine of memory and spoiled one run);
+- step time and cold prefill as the cross-build metrics, with tokens per step beside tokens per second.
+
+Draft acceptance is not only text. At three drafts a step, tokens per step converts to acceptance: 3.38 is about 79%,
+2.33 (temperature 0.7, sampled) about 44%, the recorded 144-146 tokens/s at 1 stream about 93%. The 5 November rerun
+above also shows 2.69 against 3.38 tokens a step at 1 stream between two builds on the same pinned text. Prompt kind
+matters as much (RAD23, temperature 0: code 91%, lists 96%, digits 89%, a story 49%, "hello" 65%).
+
+Radiance v1.16.0 against v1.17.0, same layout and defaults, seed 7, two alternating passes (current main, v1.17.0
+bump build):
+
+| | v1.16.0 | v1.17.0 |
+|---|---:|---:|
+| Cold prefill, tokens/s | 3,720-3,739 / 3,493-3,729 | 3,626-3,705 / 3,473-3,733 |
+| Step, 1 stream | 24.90 / 24.92 ms | 25.38 / 25.36 ms |
+| Step, 2 streams | 29.32 / 29.36 ms | 29.77 / 30.04 ms |
+| Step, 4 streams | 39.73 / 39.29 ms | 39.72 / 40.09 ms |
+| Step, 6 streams | 47.18 / 46.77 ms | 47.36 / 46.41 ms |
+| Draft tokens a step, 1 stream | 3.38 | 3.38 |
+
+Step time is level at 4 and 6 streams and 1.8-1.9% longer at 1 and 2 streams in both passes. `--profile-ops` over four
+passes shows every kernel's per-call time equal between the builds (one outlier pass aside) and profiled step time
+within 0.3%, so the gap is not a kernel; a sampled-text run (temperature 0.7) on an idle host showed no 1-stream gap
+(25.78 against 25.74 ms). It is recorded as small and unexplained, not as zero.
+
 ## Long context by tail size, measured 2026-11-04
 
 The 1M-token setting (YaRN, two sequences), two XTX helpers with and without the RX 6900 XT tail, default mixed heat
