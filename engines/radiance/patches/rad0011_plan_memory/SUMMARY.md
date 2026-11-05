@@ -1,6 +1,6 @@
 # rad0011_plan_memory
 
-**Status:** untested
+**Status:** validated
 **Plan item:** RSC03
 
 ## Summary

@@ -1,0 +1,9 @@
+# rad0011_plan_memory
+
+## Promotion record
+
+Model: Qwen3.8-Flash-Next fp8-iq4r-moe (.rad), R9700 engine with two RX 7900 XTX expert helpers and an RX 6900 XT tail (flashnext-4gpu)
+Mechanics: patch tests (tools/tests/patch) and the serving component's card-free tests (bc_v1_test, bc_serving_test, manifest_argv_test through the real main.cpp order of rad0011 then rad0009) pass on the final PR #651 tree; patch-lint clean; the lane build radiance:stock:linux-radiance builds both patches (build c6938079 / plan 8b4285bc) and the engine starts with --manifest.
+Activation: every gate arm's startup report labels every option [manifest 8f0efb5b89c7] (the engine read its configuration from the manifest, rad0009), the cold measuring start from an unmeasured manifest wrote the plan in 64 s through --plan-memory (rad0011) and bc-serve --measured-plan stored it; plan check "admitted" from the manifest on every arm; a one-byte plan drift was refused before weights with BC_CFG_PLAN_MISMATCH (runs/rsc08-s3-gate, drift.result).
+Identity: 1-stream text sha 5691231c on all 8 arms (manifest-started engine and main's argv engine, ABBA x2, 3 reps each); accept-bench on the manifest-started cold start against main's argv engine: identical text sha, accepted count and acceptance on all five RAD23 prompts (code 370/417, hello 323, list 382, random 381, story 292).
+A/B: runs/rsc08-s3-gate, ABBA x2, temperature 0: 1-stream step 25.10 ms (manifest) vs 25.16 ms (argv) (-0.25%), 6-stream 49.36 vs 49.38 ms (-0.05%), TTFT 426 vs 427 ms (1-stream) and 5,719 vs 5,777 ms (6-stream); 24 of 24 six-stream soaks passed; /metrics answered on every arm.
