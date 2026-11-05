@@ -111,7 +111,7 @@
     }
   },
   "promotion": null,
-  "public_summary": "## Radiance v1.17.0\n\nBigCherry's pinned Radiance moves from v1.16.0 to v1.17.0. All managed patches apply without change, and the libr3 self-test rewrite blocks follow upstream's new performance counters.\n\n**Measured on the Flash-Next four-card layout (two alternating passes, temperature 0, fixed seeds):**\n- Cold prefill of a ~48K-token prompt: 3,626-3,733 tokens/s, the same as v1.16.0 (3,720-3,739). At 1M context with YaRN, a ~396K prompt prefills at 3,212 tokens/s and ~783K at 2,458.\n- Decode step time is level at four and six streams. At one and two streams it is about 1.7% longer (24.9 to 25.4 ms); per-kernel times are identical, so the gap is host-side and not yet explained.\n- Draft acceptance is identical on RAD23's five prompts (list 96%/97%, code 87%/89%).\n\n**Checks:** compile, plugin ABI, component tests, lane build and CPU smoke pass.\n\n**Known limitations:**\n- The two validated patches (remote-MoE hand-off, hyper-connection up-mix tile) are accepted by carry-forward from earlier pins (v1.14.0, v1.9.0), not re-measured at v1.17.0.\n- The 6900 XT tail still shows one persistent outlier position in the KLD check, so its p99.9 limit is not met on this pin (mean, p99, top-1 and perplexity are within limits).\n- The release is a tag and notes; no binaries are attached yet.",
+  "public_summary": "## Radiance v1.17.0\n\nBigCherry's pinned Radiance moves from v1.16.0 to v1.17.0. All managed patches apply without change, and the libr3 self-test rewrite blocks follow upstream's new performance counters.\n\n**Measured on the Flash-Next four-card layout (two alternating passes, temperature 0, fixed seeds):**\n- Cold prefill of a ~48K-token prompt: 3,626-3,733 tokens/s, the same as v1.16.0 (3,720-3,739). At 1M context with YaRN, a ~396K prompt prefills at 3,212 tokens/s and ~783K at 2,458.\n- Decode step time is level at four and six streams. At one and two streams it is about 1.7% longer (24.9 to 25.4 ms); per-kernel times are identical, so the gap is host-side and not yet explained.\n- Draft acceptance is identical on RAD23's five prompts (list 96%/97%, code 87%/89%).\n\n**Checks:** compile, plugin ABI, component tests, lane build and CPU smoke pass.\n\n**Known limitations:**\n- The two validated patches (remote-MoE hand-off, hyper-connection up-mix tile) are accepted by carry-forward from earlier pins (v1.14.0, v1.9.0), not re-measured at v1.17.0.\n- The 6900 XT tail still shows one persistent outlier position in the KLD check, so its p99.9 limit is not met on this pin (mean, p99, top-1 and perplexity are within limits).",
   "release_tag": "v1.17.0",
   "revision": "19d4e8fe0e18071b9b6300f15fc4ccf38dc4fa3d",
   "runtime_assets": {
@@ -131,5 +131,39 @@
   },
   "stage": "patched",
   "tree_state": "",
-  "updated_at": "2026-11-05T04:45:34.217710+00:00"
+  "updated_at": "2026-11-05T04:45:34.217710+00:00",
+  "evidence_gate": {
+    "mode": "enforced",
+    "pin": "v1.17.0",
+    "result": "passed",
+    "validated": [
+      "rad0008_hc_upmix_rt_sweep",
+      "rad0002_moe_remote_handoff"
+    ],
+    "failed": [],
+    "carried_forward": [
+      {
+        "patch": "rad0008_hc_upmix_rt_sweep",
+        "qualified_at": "v1.9.0"
+      },
+      {
+        "patch": "rad0002_moe_remote_handoff",
+        "qualified_at": "v1.14.0"
+      }
+    ],
+    "skipped_sets": [
+      {
+        "set": "host-compat",
+        "required_state": "untested"
+      },
+      {
+        "set": "serving-manifest",
+        "required_state": "untested"
+      },
+      {
+        "set": "helper-config",
+        "required_state": "untested"
+      }
+    ]
+  }
 }
