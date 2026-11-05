@@ -77,6 +77,12 @@ def make_prompt(stream: int, prompt_tokens: int, seed: int, shared_prefix: bool)
     return "Continue this list of words with a short story.\n" + " ".join(words)
 
 
+def prompt_digests(streams: int, prompt_tokens: int, seed: int, shared_prefix: bool) -> list[str]:
+    """SHA-256 of each stream's prompt, in stream order (a run of n streams uses the first n)."""
+    return [hashlib.sha256(make_prompt(i, prompt_tokens, seed, shared_prefix).encode("utf-8")).hexdigest()
+            for i in range(streams)]
+
+
 def one_stream(url: str, model: str, stream: int, prompt: str, max_tokens: int, temperature: float, timeout: float,
                seed: int, allow_estimate: bool = False) -> StreamResult:
     res = StreamResult(stream)
@@ -301,6 +307,8 @@ def run(url: str, model: str, stream_counts: list, prompt_tokens: int, max_token
                     summary[str(n)][key + "_median"] = statistics.median(vals)
     return {"schema": SCHEMA,
             "config": {"url": url, "model": model, "streams": stream_counts, "prompt_tokens": prompt_tokens,
+                       # the exact inputs, so a later run can prove it used the same ones
+                       "prompt_sha256": prompt_digests(max(stream_counts), prompt_tokens, seed, shared_prefix),
                        "max_tokens": max_tokens, "reps": reps, "temperature": temperature, "seed": seed,
                        "shared_prefix": shared_prefix, "allow_estimate": allow_estimate,
                        "throughput_definition": "finite-batch makespan: tokens / (first request start to last response end)"},
