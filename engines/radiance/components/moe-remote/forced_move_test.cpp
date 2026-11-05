@@ -212,21 +212,6 @@ static void full_budget_swaps(bool production_budgets) {
     check(eligible(map,Step::swap(0,0,0,1),budgets,stride,source)==
           FaultCode::INVALID_MAP,"swap active digest guard");
     owners[0]=old_owner;
-    const char* malformed[]={
-        "swap:0:1:0", "swap:0:1:0:2:junk",
-        "swap:0:1:-1:2", "swap:auto:0", "swap:auto:0:2:3",
-        "swap:auto:-1:2", "swap:0:1:0:2garbage"
-    };
-    for(const auto* x:malformed) {
-        Step unused;
-        check(!parse_step(x,&unused),"strict swap parser refuses malformed row");
-    }
-    Step parsed;
-    check(parse_step("swap:0:0:0:1",&parsed)&&
-          parsed.kind==Step::Kind::SWAP &&
-          parse_step("swap:auto:0:2",&parsed)&&
-          parsed.kind==Step::Kind::AUTO_SWAP,
-          "strict explicit and automatic swap parser");
     Resolved first{},alternative{};
     check(resolve(map,Step::automatic(0,1),budgets,stride,source,kNoPrevious,&first)==
           FaultCode::NONE && first.ids==std::array<uint32_t,2>{{0,1}},
@@ -471,7 +456,6 @@ int main() {
     layer_slots(map,1)[0]=-1;
     illegal(Move{0,0,2},budgets,Source{},FaultCode::SOURCE);
     illegal(Move{0,0,1},{stride*2,stride,stride},source,FaultCode::CAPACITY);
-    Move invalid{};
     // A corrupted active map is never a trustworthy forced-move source.
     auto* active_map=generation_map(map,controller.control().active_slot);
     const uint8_t saved_owner=active_map[5];
@@ -479,67 +463,52 @@ int main() {
     check(eligible(map,Move{0,0,1},budgets,stride,source)==FaultCode::INVALID_MAP,
           "active digest corruption refuses candidate");
     active_map[5]=saved_owner;
-    check(!parse_move("0:1:2garbage",&invalid) &&
-          !parse_move("0:-1:2",&invalid),"strict triple parser");
 
-    // Exercise the production startup schedule reader, not a test-only parser.
-    const char* tmp=std::getenv("TMPDIR");
-    const std::string path=std::string(tmp&&*tmp?tmp:".")+
-        "/rhp11-g-schedule-"+std::to_string(getpid())+".txt";
+    // The 1000-transaction move/return schedule as the manifest types it (spec.experiment.placement.forced).
+    bc::serving::HelperSettings typed_settings;
+    typed_settings.helper.count=kMaxHelpers;
     {
-        std::ofstream file(path);
-        file << "# test move/return sequence\nrepeat=250\n0:0:1\n0:0:0\n0:0:2\n0:0:0\n";
-        check(bool(file),"schedule fixture written");
+        using bc::serving::v1::ForcedKind;
+        using bc::serving::v1::ForcedStep;
+        auto move=[](int64_t destination) {
+            ForcedStep s{};s.kind=ForcedKind::kMove;s.a_layer=0;s.a_expert=0;s.destination=destination;return s;
+        };
+        bc::serving::v1::ForcedChurn churn{};
+        churn.repeat=250;
+        churn.steps={move(1),move(0),move(2),move(0)};
+        typed_settings.forced=churn;
     }
-    Schedule schedule;std::string parse_error;
-    check(read_schedule(path,&schedule,&parse_error) &&
-          schedule.count()==1000 && schedule.steps.size()==4,
-          "production file parser expands 1000 ordered transactions");
-    {
-        std::ofstream file(path);
-        file << "# mixed schedule\nrepeat=2\nswap:0:0:0:1\n"
-                "swap:auto:0:2\n0:0:1\n";
-        check(bool(file),"swap schedule fixture written");
-    }
-    Schedule mixed;
-    check(read_schedule(path,&mixed,&parse_error) && mixed.count()==6 &&
-          mixed.steps[0].kind==Step::Kind::SWAP &&
-          mixed.steps[1].kind==Step::Kind::AUTO_SWAP &&
-          mixed.steps[2].kind==Step::Kind::MOVE,
-          "production schedule reader accepts explicit and automatic swaps");
-    {
-        std::ofstream file(path);
-        file << "repeat=0\n0:0:1\n";
-        check(bool(file),"invalid fixture written");
-    }
-    Schedule bad;
-    check(!read_schedule(path,&bad,&parse_error),"zero repeat rejected");
-    check(std::remove(path.c_str())==0,"schedule fixture cleanup");
-    // The worker's typed environment parses once at helper-zero startup.
-    setenv("R3_MOE_PLACEMENT_FORCE_MOVE","0:0:1",1);
-    WorkerConfig typed;
+    WorkerConfig typed(typed_settings);
     std::string config_error;
-    check(typed.from_environment(kMaxHelpers,&config_error) &&
-          typed.force_enabled && typed.force_schedule.steps.size()==1 &&
+    check(typed.configure_placement(typed_settings,&config_error) && typed.force_enabled &&
+          typed.force_schedule.count()==1000 && typed.force_schedule.steps.size()==4 &&
           typed.force_schedule.steps[0].move.destination==1,
-          "production worker settings accept a strict move");
-    unsetenv("R3_MOE_PLACEMENT_FORCE_MOVE");
-    setenv("R3_MOE_PLACEMENT_FORCE_MOVE","0:0:-1",1);
-    WorkerConfig invalid_settings;
-    check(!invalid_settings.from_environment(kMaxHelpers,&config_error),
-          "production worker settings reject negative destination");
-    unsetenv("R3_MOE_PLACEMENT_FORCE_MOVE");
-    setenv("R3_MOE_PLACEMENT_FORCE_MOVE","swap:0:0:0:1",1);
-    WorkerConfig swap_settings;
-    check(swap_settings.from_environment(kMaxHelpers,&config_error) &&
-          swap_settings.force_enabled &&
-          swap_settings.force_schedule.steps[0].kind==Step::Kind::SWAP,
-          "worker accepts explicit single-transaction swap");
-    setenv("R3_MOE_PLACEMENT_FORCE_MOVE","swap:auto:0:1",1);
-    WorkerConfig bad_auto_settings;
-    check(!bad_auto_settings.from_environment(kMaxHelpers,&config_error),
-          "AUTO is a schedule-only row, not a FORCE_MOVE operand");
-    unsetenv("R3_MOE_PLACEMENT_FORCE_MOVE");
+          "worker settings type a 1000-transaction move schedule from the manifest");
+    Schedule schedule=typed.force_schedule;
+    {
+        using bc::serving::v1::ForcedKind;
+        using bc::serving::v1::ForcedStep;
+        ForcedStep swap{};swap.kind=ForcedKind::kSwap;swap.a_layer=0;swap.a_expert=0;swap.b_layer=0;swap.b_expert=1;
+        ForcedStep automatic{};automatic.kind=ForcedKind::kAutoSwap;automatic.a_layer=0;automatic.a_expert=2;
+        bc::serving::HelperSettings mixed_settings;
+        bc::serving::v1::ForcedChurn churn{};
+        churn.repeat=2;
+        churn.steps={swap,automatic};
+        mixed_settings.forced=churn;
+        WorkerConfig mixed(mixed_settings);
+        check(mixed.configure_placement(mixed_settings,&config_error) && mixed.force_schedule.count()==4 &&
+              mixed.force_schedule.steps[0].kind==Step::Kind::SWAP &&
+              mixed.force_schedule.steps[0].layer_b==0 && mixed.force_schedule.steps[0].expert_b==1 &&
+              mixed.force_schedule.steps[1].kind==Step::Kind::AUTO_SWAP &&
+              mixed.force_schedule.steps[1].move.layer==0 && mixed.force_schedule.steps[1].move.expert==2,
+              "worker settings carry explicit and automatic swaps");
+    }
+    {
+        bc::serving::HelperSettings none;
+        WorkerConfig off(none);
+        check(off.configure_placement(none,&config_error) && !off.force_enabled && !off.policy.enabled &&
+              off.epoch_cycle_s==0,"a manifest without placement experiments forces nothing");
+    }
 
     Driver driver(schedule,budgets,stride,source);
     uint32_t active_slot=0;

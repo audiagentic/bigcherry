@@ -18,9 +18,13 @@
 
 namespace bc::serving::v1 {
 
-Result<Manifest> read_manifest(std::string_view bytes, const std::string& source);
+/* What the caller starts: `serving` takes only a measured manifest, `measuring` (the one start that produces the plan)
+ * only an unmeasured one. There is no default: every caller names its use, and the other state is BC_CFG_PLAN_MISMATCH. */
+enum class PlanUse { serving, measuring };
+
+Result<Manifest> read_manifest(std::string_view bytes, const std::string& source, PlanUse use);
 /* BC_CFG_IO_FAILURE when the file cannot be read; then read_manifest. */
-Result<Manifest> load_manifest(const std::filesystem::path& path);
+Result<Manifest> load_manifest(const std::filesystem::path& path, PlanUse use);
 
 /* The cross-field rules a decoded manifest must satisfy (spec §2-§6). read_manifest runs it; exposed for producers. */
 Status validate_semantics(const Manifest& m);
@@ -34,7 +38,8 @@ struct EngineView {
     const EngineMemory& memory;
     int64_t kv_backing_floor_ppm;   // the selected kv_backing_floor.fraction_ppm, or 0
 };
-EngineView engine_view(const Manifest& m);
+/* BC_CFG_INVALID_STATE for an unmeasured manifest: only a measured one has an engine plan to check. */
+Result<EngineView> engine_view(const Manifest& m);
 
 /* One helper's typed view: its process entry, owned set, the shared handoff, and its effective settings
  * (helper_common, then its role patch, then lab experiment.shape common and role patches; spec §2.2). */
@@ -48,7 +53,8 @@ struct HelperView {
 };
 
 /* spec §5.1: the plan cache key, lowercase hex SHA-256 of the JCS key_inputs built from the manifest and the effective
- * helper settings. read_manifest refuses a manifest whose spec.plan.engine_memory.cache_key differs. */
+ * helper settings. read_manifest refuses a manifest whose spec.plan.engine_memory.cache_key differs. Empty for an unmeasured
+ * manifest (no model or engine identity to key). */
 std::string plan_cache_key(const Manifest& m);
 /* BC_CFG_UNRESOLVED_REFERENCE when no helper has `role`. */
 Result<HelperView> helper_view(const Manifest& m, std::string_view role);

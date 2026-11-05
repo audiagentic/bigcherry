@@ -56,11 +56,21 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "usage: r3_moe_worker --manifest FILE --role helperN\n");
         return 2;
     }
-    try {
-        r3_serving::install(bc::serving::load_helper_settings(argv[2], argv[4]));
-    } catch (const std::exception& e) {
-        std::fprintf(stderr, "r3_moe_worker: manifest: %s\n", e.what());
-        return 2; // No HIP call, dynamic plugin loading, or model access has happened.
+    /* --measuring: the one start that takes an unmeasured manifest (it produces the plan); every other start takes only a
+     * measured one. The flag is read here and nowhere else in the helper. */
+    bc::serving::v1::PlanUse use = bc::serving::v1::PlanUse::serving;
+    int first_arg = 5;
+    if (argc > 5 && std::strcmp(argv[5], "--measuring") == 0) {
+        use = bc::serving::v1::PlanUse::measuring;
+        first_arg = 6;
+    }
+    {
+        auto loaded = bc::serving::load_helper_settings(argv[2], argv[4], use);
+        if (!loaded) {
+            std::fputs(bc::serving::v1::render_human("r3_moe_worker", loaded.error()).c_str(), stderr);
+            return bc::serving::v1::exit_code_of(loaded.error());   // No HIP call, plugin loading or model access has happened.
+        }
+        r3_serving::install(std::move(loaded.value()));
     }
     const auto& settings = r3_serving::settings();
     g_sweep_fast = settings.sweep_fast; // experiment-only reference comparison
@@ -69,8 +79,8 @@ int main(int argc, char** argv) {
     // Diagnostic subcommands follow the strict manifest/role prefix. The
     // ordinary serving invocation obtains its model exclusively from values.
     std::vector<char*> args{argv[0]};
-    if (argc == 5) args.push_back(const_cast<char*>(settings.model.c_str()));
-    else for (int i = 5; i < argc; ++i) args.push_back(argv[i]);
+    if (argc == first_arg) args.push_back(const_cast<char*>(settings.model.c_str()));
+    else for (int i = first_arg; i < argc; ++i) args.push_back(argv[i]);
     argc = (int)args.size();
     argv = args.data();
     /* EVERY LANE STREAM ON ITS OWN HARDWARE QUEUE. A small lane pre-queues "wait for the next request" packets;
@@ -198,7 +208,11 @@ int main(int argc, char** argv) {
         model_path = argv[1];
     }
 
-    WorkerConfig cfg(settings.helper);
+    WorkerConfig cfg(settings);
+    if (std::string why; !cfg.configure_placement(settings, &why)) {
+        std::fprintf(stderr, "r3_moe_worker: manifest: %s\n", why.c_str());
+        return 2;
+    }
 
     Container model;
     if (!model.open(model_path) || model.layers > kMaxLayers) {

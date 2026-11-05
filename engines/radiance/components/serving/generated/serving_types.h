@@ -18,10 +18,10 @@ inline constexpr std::string_view kApiVersion = "bigcherry/v1";
 inline constexpr std::string_view kKind = "ServingManifest";
 inline constexpr int64_t kContractVersion = 1;
 // sha256 of the JCS validation schema without annotations (contract/README.md); the build pins it.
-inline constexpr std::string_view kFingerprint = "sha256:e0ec5b5d6d05808b3eb3fd1f69e160a408a534cfb8f749676f610a266e696fe3";
+inline constexpr std::string_view kFingerprint = "sha256:52ff726ea8657ccacff7c73c2f7f727ad2c6c04972f1fde9068943e0ece272ea";
 // sha256 of the schema plus the frozen semantics it does not express (classes, lifecycle, Radiance bindings,
 // reader error codes); README.md.
-inline constexpr std::string_view kSemanticFingerprint = "sha256:ab22236abc50a05ac7ff2bf3484ea0602bcfe90276d55fe44378c5d99be60b49";
+inline constexpr std::string_view kSemanticFingerprint = "sha256:88a18fbc22a2efb3f13a303a568a2be3d84b9eabf1bb600632099b795e44ffc0";
 // spec §11 amendment 8: the deepest container nesting a valid document can have (the root object is 1),
 // derived from the closed schema by the generator. The strict reader refuses anything deeper.
 inline constexpr size_t kMaxDepth = 9;
@@ -103,9 +103,20 @@ inline constexpr std::array<std::string_view, 2> kExpertFormatNames = {"w4nl64",
 enum class HelperTier : uint8_t { kHead, kTail };
 inline constexpr std::array<std::string_view, 2> kHelperTierNames = {"head", "tail"};
 
-// PlacementMode: `observe` (no change) or `forced_churn` (requires `at_step`).
+// PlanState: `measured`: `engine_memory` is present and every start path accepts the manifest. `unmeasured`: the owner
+// map and settings only, for the one measuring start that produces the plan (`engine_memory` absent); every serving
+// start refuses it.
+enum class PlanState : uint8_t { kMeasured, kUnmeasured };
+inline constexpr std::array<std::string_view, 2> kPlanStateNames = {"measured", "unmeasured"};
+
+// PlacementMode: `observe` (no change) or `forced_churn` (requires `forced`).
 enum class PlacementMode : uint8_t { kObserve, kForcedChurn };
 inline constexpr std::array<std::string_view, 2> kPlacementModeNames = {"observe", "forced_churn"};
+
+// ForcedKind: `move` one expert to `destination`; `swap` two named experts; `auto_swap` the first eligible distinct
+// pair, excluding the previous transaction (`a_layer`, `a_expert` carry its x, y).
+enum class ForcedKind : uint8_t { kMove, kSwap, kAutoSwap };
+inline constexpr std::array<std::string_view, 3> kForcedKindNames = {"move", "swap", "auto_swap"};
 
 // Poison: Fill pattern for uninitialized outputs.
 enum class Poison : uint8_t { kOff, kZero, kOne };
@@ -596,12 +607,56 @@ struct HandoffTransport {
     bool skip_owned;
 };
 
+// /spec/handoff/placement/live_policy: Live expert placement from the runtime heat map (RHP). Present: the helper runs
+// the policy; absent: no policy thread. Every member is explicit (no defaults); needs one engine rank and a live
+// histogram file, and excludes `experiment.placement.forced`.
+struct LivePolicy {
+    // A move must pass the measured effect gate before it stays.
+    bool effect_gate;
+    // Accept a histogram file heat source that carries no coherent observation watermark.
+    bool accept_unwatermarked_heat;
+    // Time between policy evaluations, ns.
+    int64_t cadence_ns;
+    // Most experts one policy epoch may move.
+    int64_t max_moves;
+    // Most device bytes one policy epoch may move.
+    int64_t max_moved_bytes;
+    // Shortest time an expert stays where a move put it, ns.
+    int64_t min_residency_ns;
+    // Oldest heat observation the policy accepts, ns.
+    int64_t max_heat_age_ns;
+    // Fewest observations an expert needs before it can move.
+    int64_t min_samples;
+    // Quiet time after an aborted move, ns.
+    int64_t abort_cooldown_ns;
+    // How long a learned eligibility answer is trusted, ns.
+    int64_t learned_eligibility_ttl_ns;
+    // Observations in one effect-gate window.
+    int64_t effect_window_samples;
+    // Quiet windows the effect gate needs before it accepts a move.
+    int64_t effect_min_quiet_windows;
+    // How long a move can be reverted by the effect gate, ns.
+    int64_t effect_revert_ttl_ns;
+    // Relative heat gain a move must show, ppm (0 < margin < 1).
+    int64_t margin_ppm;
+    // Heat decay half-life in observations, thousandths.
+    int64_t half_life_observations_milli;
+    // Effect-gate noise multiplier, thousandths.
+    int64_t effect_noise_multiplier_milli;
+    // Model-global layer ids the policy never moves, strictly ascending; empty means none.
+    std::vector<int64_t> protected_layers;
+};
+
 // /spec/handoff/placement: Expert placement policy.
 struct HandoffPlacement {
     // Owner assignment: `tail` (the tail helper takes the cold end) or `roundrobin`.
     PlacementStrategy strategy;
     // Expert heat file the owner map is planned from.
     std::string heat_file;
+    // Live expert placement from the runtime heat map (RHP). Present: the helper runs the policy; absent: no policy
+    // thread. Every member is explicit (no defaults); needs one engine rank and a live histogram file, and excludes
+    // `experiment.placement.forced`.
+    std::optional<LivePolicy> live_policy;
 };
 
 // /spec/handoff/telemetry: Expert-use telemetry.
@@ -760,16 +815,50 @@ struct EngineMemory {
 struct Plan {
     // Initial expert ownership; the live mailbox epochs own later placement (spec §4).
     OwnerMap owner_map;
+    // `measured`: `engine_memory` is present and every start path accepts the manifest. `unmeasured`: the owner map and
+    // settings only, for the one measuring start that produces the plan (`engine_memory` absent); every serving start
+    // refuses it.
+    PlanState state;
     // The engine's measured memory plan and its cache identity (spec §5).
-    EngineMemory engine_memory;
+    std::optional<EngineMemory> engine_memory;
+};
+
+// /spec/experiment/placement/forced/steps/[]: One placement proposal.
+struct ForcedStep {
+    // `move` one expert to `destination`; `swap` two named experts; `auto_swap` the first eligible distinct pair,
+    // excluding the previous transaction (`a_layer`, `a_expert` carry its x, y).
+    ForcedKind kind;
+    // Layer of the first expert (for `auto_swap`, x).
+    int64_t a_layer;
+    // First expert (for `auto_swap`, y).
+    int64_t a_expert;
+    // Destination helper index of a `move`.
+    std::optional<int64_t> destination;
+    // Layer of the second expert of a `swap`.
+    std::optional<int64_t> b_layer;
+    // Second expert of a `swap`.
+    std::optional<int64_t> b_expert;
+};
+
+// /spec/experiment/placement/forced: The forced placement schedule (RHP11 validation): one proposal per step, in order,
+// the whole list `repeat` times. Required by mode `forced_churn`, forbidden by `observe`.
+struct ForcedChurn {
+    // How many times the step list is issued.
+    int64_t repeat;
+    // Ordered placement steps.
+    std::vector<ForcedStep> steps;
 };
 
 // /spec/experiment/placement: Live placement experiment.
 struct ExperimentPlacement {
-    // `observe` (no change) or `forced_churn` (requires `at_step`).
+    // `observe` (no change) or `forced_churn` (requires `forced`).
     PlacementMode mode;
-    // Step at which a forced churn happens.
-    std::optional<int64_t> at_step;
+    // The forced placement schedule (RHP11 validation): one proposal per step, in order, the whole list `repeat` times.
+    // Required by mode `forced_churn`, forbidden by `observe`.
+    std::optional<ForcedChurn> forced;
+    // Helper 0 runs a no-op placement epoch cycle (close, drain, recommit the same placement, reopen) every this many
+    // seconds of burst (RHP11 validation); absent: off.
+    std::optional<int64_t> epoch_cycle_s;
 };
 
 // /spec/experiment/shape/helpers/[]: One role's lab override.
@@ -905,7 +994,7 @@ struct FieldInfo {
     std::string_view default_source;   // where the default comes from, or empty
     std::string_view ref_def;          // kind "ref": the shared type it uses, else empty
 };
-inline constexpr std::array<FieldInfo, 229> kFields = {{
+inline constexpr std::array<FieldInfo, 258> kFields = {{
     {"$defs/uint", "integer", "", true, false,
      "", "",
      "Unsigned integer within I-JSON's safe range.", "", "", ""},
@@ -1341,6 +1430,60 @@ inline constexpr std::array<FieldInfo, 229> kFields = {{
     {"/spec/handoff/placement/heat_file", "string", "derived", true, false,
      "", "",
      "Expert heat file the owner map is planned from.", "", "", ""},
+    {"/spec/handoff/placement/live_policy", "object", "policy", false, false,
+     "", "",
+     "Live expert placement from the runtime heat map (RHP). Present: the helper runs the policy; absent: no policy thread. Every member is explicit (no defaults); needs one engine rank and a live histogram file, and excludes `experiment.placement.forced`.", "", "", ""},
+    {"/spec/handoff/placement/live_policy/effect_gate", "boolean", "policy", true, false,
+     "", "",
+     "A move must pass the measured effect gate before it stays.", "", "", ""},
+    {"/spec/handoff/placement/live_policy/accept_unwatermarked_heat", "boolean", "policy", true, false,
+     "", "",
+     "Accept a histogram file heat source that carries no coherent observation watermark.", "", "", ""},
+    {"/spec/handoff/placement/live_policy/cadence_ns", "ref", "policy", true, false,
+     "", "",
+     "Time between policy evaluations, ns.", "", "", "positive"},
+    {"/spec/handoff/placement/live_policy/max_moves", "ref", "policy", true, false,
+     "", "",
+     "Most experts one policy epoch may move.", "", "", "positive"},
+    {"/spec/handoff/placement/live_policy/max_moved_bytes", "ref", "policy", true, false,
+     "", "",
+     "Most device bytes one policy epoch may move.", "", "", "positive"},
+    {"/spec/handoff/placement/live_policy/min_residency_ns", "ref", "policy", true, false,
+     "", "",
+     "Shortest time an expert stays where a move put it, ns.", "", "", "positive"},
+    {"/spec/handoff/placement/live_policy/max_heat_age_ns", "ref", "policy", true, false,
+     "", "",
+     "Oldest heat observation the policy accepts, ns.", "", "", "positive"},
+    {"/spec/handoff/placement/live_policy/min_samples", "ref", "policy", true, false,
+     "", "",
+     "Fewest observations an expert needs before it can move.", "", "", "positive"},
+    {"/spec/handoff/placement/live_policy/abort_cooldown_ns", "ref", "policy", true, false,
+     "", "",
+     "Quiet time after an aborted move, ns.", "", "", "positive"},
+    {"/spec/handoff/placement/live_policy/learned_eligibility_ttl_ns", "ref", "policy", true, false,
+     "", "",
+     "How long a learned eligibility answer is trusted, ns.", "", "", "positive"},
+    {"/spec/handoff/placement/live_policy/effect_window_samples", "ref", "policy", true, false,
+     "", "",
+     "Observations in one effect-gate window.", "", "", "positive"},
+    {"/spec/handoff/placement/live_policy/effect_min_quiet_windows", "ref", "policy", true, false,
+     "", "",
+     "Quiet windows the effect gate needs before it accepts a move.", "", "", "positive"},
+    {"/spec/handoff/placement/live_policy/effect_revert_ttl_ns", "ref", "policy", true, false,
+     "", "",
+     "How long a move can be reverted by the effect gate, ns.", "", "", "positive"},
+    {"/spec/handoff/placement/live_policy/margin_ppm", "integer", "policy", true, false,
+     "", "",
+     "Relative heat gain a move must show, ppm (0 < margin < 1).", "", "", ""},
+    {"/spec/handoff/placement/live_policy/half_life_observations_milli", "ref", "policy", true, false,
+     "", "",
+     "Heat decay half-life in observations, thousandths.", "", "", "positive"},
+    {"/spec/handoff/placement/live_policy/effect_noise_multiplier_milli", "ref", "policy", true, false,
+     "", "",
+     "Effect-gate noise multiplier, thousandths.", "", "", "positive"},
+    {"/spec/handoff/placement/live_policy/protected_layers", "array", "policy", true, false,
+     "", "",
+     "Model-global layer ids the policy never moves, strictly ascending; empty means none.", "", "", ""},
     {"/spec/handoff/telemetry", "object", "policy", true, false,
      "", "",
      "Expert-use telemetry.", "", "", ""},
@@ -1479,7 +1622,10 @@ inline constexpr std::array<FieldInfo, 229> kFields = {{
     {"/spec/plan/owner_map/helpers/[]/experts", "array", "derived", true, false,
      "", "",
      "Owned `[layer, expert]` pairs in selection order.", "", "", ""},
-    {"/spec/plan/engine_memory", "object", "derived", true, false,
+    {"/spec/plan/state", "enum", "derived", true, false,
+     "", "",
+     "`measured`: `engine_memory` is present and every start path accepts the manifest. `unmeasured`: the owner map and settings only, for the one measuring start that produces the plan (`engine_memory` absent); every serving start refuses it.", "", "", ""},
+    {"/spec/plan/engine_memory", "object", "derived", false, false,
      "", "",
      "The engine's measured memory plan and its cache identity (spec §5).", "", "", ""},
     {"/spec/plan/engine_memory/cache_version", "integer", "derived", true, false,
@@ -1505,10 +1651,40 @@ inline constexpr std::array<FieldInfo, 229> kFields = {{
      "Live placement experiment.", "", "", ""},
     {"/spec/experiment/placement/mode", "enum", "diagnostic", true, false,
      "", "",
-     "`observe` (no change) or `forced_churn` (requires `at_step`).", "", "", ""},
-    {"/spec/experiment/placement/at_step", "ref", "diagnostic", false, false,
+     "`observe` (no change) or `forced_churn` (requires `forced`).", "", "", ""},
+    {"/spec/experiment/placement/forced", "object", "diagnostic", false, false,
      "", "",
-     "Step at which a forced churn happens.", "", "", "positive"},
+     "The forced placement schedule (RHP11 validation): one proposal per step, in order, the whole list `repeat` times. Required by mode `forced_churn`, forbidden by `observe`.", "", "", ""},
+    {"/spec/experiment/placement/forced/repeat", "integer", "diagnostic", true, false,
+     "", "",
+     "How many times the step list is issued.", "", "", ""},
+    {"/spec/experiment/placement/forced/steps", "array", "diagnostic", true, false,
+     "", "",
+     "Ordered placement steps.", "", "", ""},
+    {"/spec/experiment/placement/forced/steps/[]", "object", "diagnostic", true, false,
+     "", "",
+     "One placement proposal.", "", "", ""},
+    {"/spec/experiment/placement/forced/steps/[]/kind", "enum", "diagnostic", true, false,
+     "", "",
+     "`move` one expert to `destination`; `swap` two named experts; `auto_swap` the first eligible distinct pair, excluding the previous transaction (`a_layer`, `a_expert` carry its x, y).", "", "", ""},
+    {"/spec/experiment/placement/forced/steps/[]/a_layer", "ref", "diagnostic", true, false,
+     "", "",
+     "Layer of the first expert (for `auto_swap`, x).", "", "", "uint"},
+    {"/spec/experiment/placement/forced/steps/[]/a_expert", "ref", "diagnostic", true, false,
+     "", "",
+     "First expert (for `auto_swap`, y).", "", "", "uint"},
+    {"/spec/experiment/placement/forced/steps/[]/destination", "ref", "diagnostic", false, false,
+     "", "",
+     "Destination helper index of a `move`.", "", "", "uint"},
+    {"/spec/experiment/placement/forced/steps/[]/b_layer", "ref", "diagnostic", false, false,
+     "", "",
+     "Layer of the second expert of a `swap`.", "", "", "uint"},
+    {"/spec/experiment/placement/forced/steps/[]/b_expert", "ref", "diagnostic", false, false,
+     "", "",
+     "Second expert of a `swap`.", "", "", "uint"},
+    {"/spec/experiment/placement/epoch_cycle_s", "ref", "diagnostic", false, false,
+     "", "",
+     "Helper 0 runs a no-op placement epoch cycle (close, drain, recommit the same placement, reopen) every this many seconds of burst (RHP11 validation); absent: off.", "", "", "positive"},
     {"/spec/experiment/shape", "object", "diagnostic", false, false,
      "", "",
      "Lab overlay of helper settings, applied after the per-role patches.", "", "", ""},
@@ -1596,7 +1772,7 @@ inline constexpr std::array<FieldInfo, 229> kFields = {{
 }};
 
 // [[class_default]] rules: the provenance class of everything at or under a document position.
-inline constexpr std::array<std::array<std::string_view, 2>, 21> kClassDefaults = {{
+inline constexpr std::array<std::array<std::string_view, 2>, 22> kClassDefaults = {{
     {"/apiVersion", "envelope"},
     {"/kind", "envelope"},
     {"/metadata", "envelope"},
@@ -1607,6 +1783,7 @@ inline constexpr std::array<std::array<std::string_view, 2>, 21> kClassDefaults 
     {"/spec/resources", "derived"},
     {"/spec/handoff", "derived"},
     {"/spec/handoff/telemetry", "policy"},
+    {"/spec/handoff/placement/live_policy", "policy"},
     {"/spec/processes/engine", "derived"},
     {"/spec/processes/engine/runtime", "policy"},
     {"/spec/processes/engine/server", "policy"},

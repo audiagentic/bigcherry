@@ -73,6 +73,12 @@ v1::Result<HelperSettings> helper_settings(const v1::Manifest& m, std::string_vi
     s.fp16 = c.kernels.fp16;
     s.ahalf = c.kernels.ahalf;
 
+    s.live_policy = h.placement.live_policy;
+    if (m.spec.experiment && m.spec.experiment->placement) {
+        const v1::ExperimentPlacement& e = *m.spec.experiment->placement;
+        s.forced = e.forced;
+        if (e.epoch_cycle_s) s.epoch_cycle_s = u32(*e.epoch_cycle_s);
+    }
     if (m.spec.experiment && m.spec.experiment->diagnostics) {
         const v1::Diagnostics& d = *m.spec.experiment->diagnostics;
         if (d.gemv) {
@@ -101,8 +107,8 @@ v1::Result<HelperSettings> helper_settings(const v1::Manifest& m, std::string_vi
     return s;
 }
 
-v1::Result<HelperSettings> load_helper_settings(const std::filesystem::path& path, std::string_view role) {
-    auto m = v1::load_manifest(path);
+v1::Result<HelperSettings> load_helper_settings(const std::filesystem::path& path, std::string_view role, v1::PlanUse use) {
+    auto m = v1::load_manifest(path, use);
     if (!m) return m.error();
     return helper_settings(m.value(), role);
 }

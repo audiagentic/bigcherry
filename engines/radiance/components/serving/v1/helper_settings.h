@@ -8,6 +8,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -47,12 +48,17 @@ struct HelperSettings {
     uint32_t moe_probe = 0;
     bool refusal_trace = false;
     bool sweep_fast = false;
+    /* Live placement (spec.handoff.placement.live_policy): present when the manifest runs the policy. */
+    std::optional<v1::LivePolicy> live_policy;
+    /* The lab's forced schedule and no-op epoch cycle (spec.experiment.placement); 0 epoch_cycle_s = off. */
+    std::optional<v1::ForcedChurn> forced;
+    uint32_t epoch_cycle_s = 0;
 };
 
 /* The settings of the helper with `role`, from a manifest that read_manifest accepted. BC_CFG_UNRESOLVED_REFERENCE when
  * no helper has the role. */
 v1::Result<HelperSettings> helper_settings(const v1::Manifest& m, std::string_view role);
-/* load_manifest, then helper_settings. */
-v1::Result<HelperSettings> load_helper_settings(const std::filesystem::path& path, std::string_view role);
+/* load_manifest (for the start `use` names: serving, or the measuring start), then helper_settings. */
+v1::Result<HelperSettings> load_helper_settings(const std::filesystem::path& path, std::string_view role, v1::PlanUse use);
 
 }  // namespace bc::serving
