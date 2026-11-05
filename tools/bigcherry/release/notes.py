@@ -44,6 +44,7 @@ class ReleaseConfig:
     #: layout and the engine's declared extra paths; a ledger event listing a file under any of them is the engine's
     owned_paths: tuple[str, ...]
     ledger_sections: tuple[tuple[str, str], ...]  # (change-class, heading)
+    evidence_gate: str = ""
 
 
 def load_config(repo_root: Path, engine: str) -> ReleaseConfig:
@@ -57,6 +58,13 @@ def load_config(repo_root: Path, engine: str) -> ReleaseConfig:
         raise ReleaseNotesError(
             f"config/release.toml has no [engine.{engine}] release line: {engine} has no releases configured yet"
         )
+    for name, entry in raw.get("engine", {}).items():
+        mode = entry.get("evidence-gate")
+        if mode not in ("enforced", "pending-requalification"):
+            raise ReleaseNotesError(
+                f"config/release.toml: [engine.{name}].evidence-gate is required "
+                'and must be "enforced" or "pending-requalification"'
+            )
     try:
         layout = engines.load(repo_root, engine)
     except engines.EngineError as exc:
@@ -71,6 +79,7 @@ def load_config(repo_root: Path, engine: str) -> ReleaseConfig:
         recipes=layout.recipes,
         patches=layout.patches,
         build_patch_sets=tuple(line["build-patch-sets"]),
+        evidence_gate=line["evidence-gate"],
         fallback_prefixes=tuple(line["previous-tag-fallback-prefixes"]),
         version_source=layout.version_source,
         owned_paths=engine_paths(layout, tuple(line["paths"])),

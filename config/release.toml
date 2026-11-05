@@ -19,6 +19,7 @@ release-records = "releases"
 # engine.toml layout) whose ledger changes belong to that engine's notes. The engine's recipes file and patch tree come from its
 # engine.toml; an engine with no table here has no releases configured and release-notes / pin-release refuse it.
 [engine.llamacpp]
+evidence-gate = "pending-requalification"
 tag-prefix = "bc-llamacpp-"
 build-patch-sets = ["upstream-fixes", "validated-enhancements"]
 previous-tag-fallback-prefixes = ["supports/"]
@@ -28,6 +29,7 @@ paths = []
 # evaluated engine-fixes set is lab-only and never part of a release's "production build". paths lists the
 # repository paths, besides engines/radiance/ and the engine's declared layout, whose ledger changes belong to it.
 [engine.radiance]
+evidence-gate = "enforced"
 tag-prefix = "bc-radiance-"
 build-patch-sets = ["serving-core", "host-compat", "serving-manifest"]   # exactly the patch sets of source.radiance, the one build
 previous-tag-fallback-prefixes = []
