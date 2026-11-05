@@ -1,5 +1,24 @@
 # Changelog
 
+## [1160.2.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1160.1.0...bc-radiance-1160.2.0) (2026-11-05)
+
+
+### New and changed
+
+* **build:** every build names a ROCm stack; SDK recorded, hashed, bound to CI image and launcher (BRVP06) ([#611](https://github.com/audiagentic/bigcherry/issues/611)) ([131c2b1](https://github.com/audiagentic/bigcherry/commit/131c2b1fe77e3cc15560e883cb6faa2ef9f8f875))
+* **radiance:** live expert placement policy (RHP slices H, I, J): target map = the static placer's plan for the live heat ([#597](https://github.com/audiagentic/bigcherry/issues/597)) ([4d3c217](https://github.com/audiagentic/bigcherry/commit/4d3c2178ea78faf6070ed60b9abc20959d23d072))
+* **radiance:** RHP16 step 2 - the live policy measures transaction time and bandwidth, update gaps, hot-set drift and sampling error (no setting derived yet) ([#619](https://github.com/audiagentic/bigcherry/issues/619)) ([8acb6d8](https://github.com/audiagentic/bigcherry/commit/8acb6d884848b4c09e7fb6774b2f58a34d0fcf40))
+
+
+### Fixes
+
+* **radiance:** RHP16 - measure hot-set drift on per-interval counts, not on the heat the half-life decays; record the first measured values ([#621](https://github.com/audiagentic/bigcherry/issues/621)) ([18579f7](https://github.com/audiagentic/bigcherry/commit/18579f7396fc1cf3bbbe1b873c14f0499c750971))
+
+
+### Performance
+
+* **radiance:** RAD48 - native gfx11 int8 prefill tile (27B INT8 prefill GEMM 3.1x) ([#601](https://github.com/audiagentic/bigcherry/issues/601)) ([424a6e4](https://github.com/audiagentic/bigcherry/commit/424a6e47eb8462f1b6742d4f2964b817f84842e7))
+
 ## [1160.1.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1160.0.0...bc-radiance-1160.1.0) (2026-11-04)
 
 
