@@ -9,7 +9,7 @@ distributed across cards. **llama.cpp** remains an active secondary engine.
 
 | Engine | Upstream pin | Catalogued changes | Main additions |
 | --- | --- | --- | --- |
-| [Radiance](docs/reference/engines/radiance/README.md) | **v1.16.0** | **11 patches**, 6 components | RDNA2/3/4 kernels, remote experts, placement and serving manifest |
+| [Radiance](docs/reference/engines/radiance/README.md) | **v1.17.0** | **11 patches**, 6 components | RDNA2/3/4 kernels, remote experts, placement and serving manifest |
 | [llama.cpp](docs/reference/engines/llamacpp/README.md) | **b11552** | **150 patches** | HIP kernel tuning, measured dispatch, multi-GPU reductions |
 
 **Radiance.** The `libr2`, `libr3` and `bc-gfx12` components add kernels
@@ -33,8 +33,8 @@ llama.cpp has 70.
 
 ## Best recorded Radiance throughput
 
-These results were measured on **v1.14.0**, not yet revalidated on the
-current v1.16.0 pin. Rates are tokens per second, with different workloads.
+These results were measured on **v1.14.0**. They have not been repeated on the
+current v1.17.0 pin (re-measured 2026-11-05 on v1.16.0 and v1.17.0: cold prefill and decode step time agree within about 2%, see the Flash-Next model page). Rates are tokens per second, with different workloads.
 
 | Model | Prefill | Generated output |
 | --- | --- | --- |
