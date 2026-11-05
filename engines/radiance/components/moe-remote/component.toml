@@ -8,7 +8,7 @@ engine = "radiance"
 # the cards the ENGINE itself serves (the build configures the engine for the union of the components targets); the helper and the mailbox plugin are built for
 # every card type in engines/radiance/archs.toml (CMakeLists.txt)
 targets = ["gfx1100", "gfx1201"]
-built-against = "v1.16.0"
+built-against = "v1.17.0"
 outputs = ["kernels/libr3moe.so", "helpers/r3_moe_worker"]
 
 [build]

@@ -1,0 +1,120 @@
+{
+  "artifact_version": 1,
+  "audit": {
+    "failed_checks": [],
+    "passed": true,
+    "strict": true,
+    "summary": {
+      "errors": 0,
+      "passed": 4,
+      "total": 4,
+      "warnings": 0
+    }
+  },
+  "bigcherry_revision": "cf0558e6c669a00b70302570c19583a6fb600a84",
+  "first_seen": "2026-11-05T03:50:59.192632+00:00",
+  "manifest_hash": "",
+  "notes": "pin-bump lane build: radiance:stock:linux-radiance build_plan_id=8cbb144e438d12a2fce45da24f504579 binary_sha256=36793be1572994c0f96264d9bd07816a5188ad9d5691ccf067d936f4c7c4d951",
+  "patches": {
+    "applied_cleanly": true,
+    "failed_edits": [],
+    "files": {
+      "abi/bc_moe_remote.h": {
+        "create-bc-moe-remote-abi": "already-applied"
+      },
+      "arch/common/bc_moe_remote_block.h": {
+        "create-bc-moe-remote-block": "already-applied"
+      },
+      "arch/common/rad_block_hc.h": {
+        "bc-remote-takes-ar": "applied",
+        "include-bc-moe-remote-block-hc": "applied"
+      },
+      "arch/common/rad_block_moe_fp8.h": {
+        "bc-remote-after-route": "applied",
+        "bc-remote-declare": "applied",
+        "bc-remote-issues-ar": "applied",
+        "bc-remote-member": "applied",
+        "bc-remote-merge": "applied",
+        "include-bc-moe-remote-block": "applied"
+      },
+      "core/CMakeLists.txt": {
+        "link-bc-serving-v1": "applied"
+      },
+      "core/bc_plan_check.cpp": {
+        "create-bc-plan-check-cpp": "already-applied"
+      },
+      "core/bc_plan_check.h": {
+        "create-bc-plan-check-h": "already-applied"
+      },
+      "core/bc_plan_memory.cpp": {
+        "create-bc-plan-memory-cpp": "already-applied"
+      },
+      "core/bc_plan_memory.h": {
+        "create-bc-plan-memory-h": "already-applied"
+      },
+      "core/bc_serving_manifest.cpp": {
+        "create-bc-serving-manifest-cpp": "already-applied"
+      },
+      "core/bc_serving_manifest.h": {
+        "create-bc-serving-manifest-h": "already-applied"
+      },
+      "core/engine.cpp": {
+        "bc-remote-ahead-bind": "applied",
+        "bc-remote-ahead-try-admit": "applied",
+        "bc-remote-engine-idle": "applied",
+        "bc-remote-engine-step": "applied",
+        "bc-remote-host-logical-completion": "applied",
+        "bc-remote-rank-ticket": "applied",
+        "bc-remote-scheduler-admit": "applied",
+        "bc-remote-shutdown-interrupt": "applied",
+        "bc-remote-terminal-events": "applied",
+        "include-bc-moe-remote-engine": "applied"
+      },
+      "core/engine.h": {
+        "bc-remote-engine-ticket-include": "applied",
+        "bc-remote-engine-ticket-state": "applied"
+      },
+      "core/engine_bringup.cpp": {
+        "bc-plan-memory-done": "applied",
+        "bc-plan-memory-note": "applied",
+        "include-bc-plan-memory": "applied"
+      },
+      "core/main.cpp": {
+        "bc-plan-memory-take-flag": "applied",
+        "include-bc-plan-memory": "applied"
+      },
+      "core/mm/mp4.cpp": {
+        "mem-write-signature": "applied"
+      },
+      "core/place/bc_moe_remote.cpp": {
+        "create-bc-moe-remote-core": "already-applied"
+      },
+      "core/place/bc_moe_remote_engine.h": {
+        "create-bc-moe-remote-engine": "already-applied"
+      },
+      "core/place/bc_moe_remote_place.h": {
+        "create-bc-moe-remote-place": "already-applied"
+      },
+      "core/place/planner.cpp": {
+        "bc-remote-mark-footprint": "applied",
+        "bc-remote-pin-unit": "applied",
+        "include-bc-moe-remote-place-planner": "applied",
+        "rank-units-skip-preplaced": "applied"
+      },
+      "core/runtime/ctx.cpp": {
+        "bc-remote-ticket-before-pass": "applied",
+        "include-bc-moe-remote-ctx": "applied"
+      },
+      "libr4d/r4d_hc_bf16.hip": {
+        "hc-pf2-upmix-rt-sweep": "applied"
+      }
+    }
+  },
+  "promotion": null,
+  "release_tag": "v1.17.0",
+  "revision": "19d4e8fe0e18071b9b6300f15fc4ccf38dc4fa3d",
+  "runtime_assets": {},
+  "stage": "patched",
+  "tree_state": "",
+  "updated_at": "2026-11-05T04:45:34.217710+00:00"
+}
