@@ -68,6 +68,16 @@ Interim production choice is the owner's: keep the tail layout (more expert capa
 
 2026-11-04 CORRECTION to the archive note above: the resume point is not just quad-DPP. Production (feat/rad46-accurate-rows, 90ecda12f) selects per stage by request rows: output-lane RB8 at or below derived crossovers (gate/up 309 rows, down 922), quad-DPP RB16 above. KLD on the 6900 XT tail passes, decode at parity, 4k prefill about 5-10% slower, large gate/up about 1.4x slower than the old kernel in isolation. Unmeasured: row-owned rowlane16/rowlane8 gate/up candidate (Codex report 3) - only if large-prefill speed matters. PR still needs r3_rad46_rows_policy_test declared in component.toml and tools/tests/release/test_bump_gates.py. Evidence runs rad46-speed2 under runs/ belong to the PR; do not touch.
 
+2026-11-05 KLD of the 6900 XT tail on the v1.16.0 and v1.17.0 builds, same corpus and reference (8,240 positions; runs tail14g-kld-116, tail14g-kld-117, tail4g-kld-117 under the work root runs/):
+
+| Build | Tail | Control p99.9 | Tail p99.9 | Tail minus control (limit +0.5) | Mean, p99, top-1, perplexity |
+|---|---|---:|---:|---:|---|
+| v1.16.0 | 14 GiB | 2.376 | 2.245 | -0.13, pass | inside limits |
+| v1.17.0 | 14 GiB | 2.067 | 3.003 | +0.94, fail | inside limits |
+| v1.17.0 | 4 GiB | 2.067 | 3.478 | +1.41, fail (two repeats bit-identical) | inside limits |
+
+Per position (the .rows files of each arm): (1) position 117 is a persistent defect: tail minus control is +5.34 on v1.16.0 and +5.55 on v1.17.0, so it is not from the bump and it is the residual tail error this item exists for; the runs are deterministic, so it can be traced to a token and the experts the 6900 XT served. (2) The gate flip between builds is a cluster of numerically unstable positions (about 6180 to 6230 and 6504) whose KLD moves by 2 to 5 between builds in BOTH arms (position 6504: control 0.33 to 2.61; 6182: control 4.26 to 2.52), so the p99.9 of 8,240 positions rests on about eight chaotic positions and flips with any small engine change; the bulk (mean, median, p99, top-1, perplexity) is equal across builds. Not a bump regression on this evidence. Open: trace position 117; propose a gate that does not rest on a handful of positions (more corpora, or positions stable in the control), which is the owner's call because it changes a threshold.
+
 ## Change Log
 
 - 2026-11-03T02:29:34.417938+00:00 (created-by): Created by agent

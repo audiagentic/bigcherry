@@ -9,7 +9,7 @@ distributed across cards. **llama.cpp** remains an active secondary engine.
 
 | Engine | Upstream pin | Catalogued changes | Main additions |
 | --- | --- | --- | --- |
-| [Radiance](docs/reference/engines/radiance/README.md) | **v1.16.0** | **11 patches**, 6 components | RDNA2/3/4 kernels, remote experts, placement and serving manifest |
+| [Radiance](docs/reference/engines/radiance/README.md) | **v1.17.0** | **11 patches**, 6 components | RDNA2/3/4 kernels, remote experts, placement and serving manifest |
 | [llama.cpp](docs/reference/engines/llamacpp/README.md) | **b11552** | **150 patches** | HIP kernel tuning, measured dispatch, multi-GPU reductions |
 
 **Radiance.** The `libr2`, `libr3` and `bc-gfx12` components add kernels
@@ -33,12 +33,11 @@ llama.cpp has 70.
 
 ## Current-pin throughput
 
-The pinned upstream is Radiance **v1.16.0**. No qualified fresh prefill
-tokens/s or aggregate multi-stream client output or engine decode tokens/s
-have yet been recorded for this pin. The v1.16.0 release contains a
-one- and six-stream latency comparison with v1.14.0, not a matched
-unmodified-stock throughput A/B. Do not treat the earlier layout results
-as current-pin speedups.
+The recorded figures below were measured on **v1.14.0**, not on the current pin, and are not matched
+unmodified-stock throughput A/Bs: do not treat the earlier layout results as current-pin speedups. A
+re-measurement on 2026-11-05 on v1.16.0 and v1.17.0 (same layout, temperature 0, fixed seeds: cold prefill and
+decode step time agree within about 2%) is on the Flash-Next model page. Rates are tokens per second, with
+different workloads.
 
 | Model and layout | Prefill tokens/s | Aggregate output tokens/s |
 | --- | ---: | ---: |

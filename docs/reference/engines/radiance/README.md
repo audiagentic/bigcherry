@@ -1,6 +1,6 @@
 # Radiance
 
-Radiance **v1.16.0** is BigCherry's primary upstream target. The custom
+Radiance **v1.17.0** is BigCherry's primary upstream target. The custom
 build uses RDNA2 and RDNA3 helpers alongside an RDNA4 engine GPU, with
 expert placement adapted to differing GPU memory and bandwidth.
 
@@ -20,12 +20,10 @@ for states and evidence. Recipe inclusion is not proof of qualification.
 
 ## Current-pin throughput
 
-The pinned upstream is Radiance **v1.16.0**. No qualified fresh prefill
-tokens/s or aggregate multi-stream client output or engine decode tokens/s
-have yet been recorded for this pin. The v1.16.0 release contains a
-one- and six-stream latency comparison with v1.14.0, not a matched
-unmodified-stock throughput A/B. Do not treat the earlier layout results
-as current-pin speedups.
+The pinned upstream is Radiance **v1.17.0**. These figures are from **Radiance v1.14.0** and are not matched
+unmodified-stock throughput A/Bs: do not treat the earlier layout results as current-pin speedups. Re-measured
+2026-11-05 on v1.16.0 and v1.17.0 (prefill and decode step time within about 2%, see the Flash-Next model page).
+They are different workloads, not a like-for-like model ranking.
 
 | Model and layout | Prefill tokens/s | Aggregate output tokens/s |
 | --- | ---: | ---: |
