@@ -60,3 +60,7 @@ Owner direction 2026-11-05: 'ensure we are using the build system - campaigns - 
 ## Change Log
 
 - 2026-11-05T07:37:48.187895+00:00 (created-by): Created by agent
+
+SCOPE CORRECTION 2026-11-05 (GPT inventory, req_build-evidence-gate_542c49be5f89, report /work/development/tmp/bigcherry/gpt-bump/REPORT-evidence-gate.md; one patch re-checked by hand with `patch-gates --intent build --source bigcherry`): the gap is not radiance-only. At the current llama.cpp pin b11552, 56 of the 61 validated patches in the production source fail G4 as well (stale base_ref and base_revision, source materialization identity mismatch, stale validation and subject digests, missing HI83 or architecture evidence). llama.cpp's rigorous method exists and was applied at promotion time, but its evidence is not re-qualified when the pin moves, and the build path enforces it for neither engine. Enforcing the gate now would fail every production build of both engines, so it lands only after re-qualification or as a per-engine rollout.
+
+Decision needed from the owner: (a) re-qualify both engines' sets at their current pins before enforcing; (b) enforce for radiance first (2 patches, one pin) and bring llama.cpp up as its own item; or (c) make carry-forward across pin bumps the policy (the bump re-binds evidence by recorded identity checks) and fix why carry-forward does not accept these records. The offline wiring (build gate, pin-bump re-audit) is built after that choice on branch feat/build-evidence-gate, which is empty today.
