@@ -14,7 +14,7 @@
   "bigcherry_revision": "cf0558e6c669a00b70302570c19583a6fb600a84",
   "first_seen": "2026-11-05T03:50:59.192632+00:00",
   "manifest_hash": "",
-  "notes": "pin-bump lane build: radiance:stock:linux-radiance build_plan_id=8cbb144e438d12a2fce45da24f504579 binary_sha256=36793be1572994c0f96264d9bd07816a5188ad9d5691ccf067d936f4c7c4d951",
+  "notes": "pin-bump lane build: radiance:stock:linux-radiance build_plan_id=8cbb144e438d12a2fce45da24f504579 binary_sha256=36793be1572994c0f96264d9bd07816a5188ad9d5691ccf067d936f4c7c4d951\n\nrelease 1170.0.0 2026-11-06\nupstream: radiance v1.17.0 (revision 19d4e8fe0e18071b9b6300f15fc4ccf38dc4fa3d)\n\ncompletion gate (pin-status --complete --all-remotes):\npin-status: local\n  pin           v1.17.0 -> 19d4e8fe0e18\n  vendor HEAD   19d4e8fe0e18 (tag v1.17.0)  [10 modified, 11 untracked]\n  releases      0504396140d1 audited, 0adcc3bb5710 broken, 19d4e8fe0e18 patched, 1e968f6e1d86 patched, 22dc605c4ead patched, 23b0202a189c patched, 2578138397d7 generated, 28ff0958291c patched, 370cb12e8bb7 patched, 434ddbbc0e30 patched, 4a61d7296bc5 patched, 50182a53fa2c generated, 6645337f695a audited, 685ec5bd858a patched, 6ea215d171fd patched, 769b4c64a671 patched, 7a7707a95559 patched, 91f6a6cf3613 patched, abc123 validated, b1ff4ca23630 patched, b9acf138a1e2 patched, c061df19838f broken, c841aeeb8bb2 patched, d77dd0806dc2 patched, d7bd3bfcad3e patched, d89651a7b205 patched\n  bigcherry     22d1d35a16d6\n  marker        769b4c64a671 -> 19d4e8fe0e18 (v1.17.0) [committed-clean]\n  VERDICT       consistent  (content-unverified: 10 tracked file(s) modified (expected after patch application; verified by audit, not here))\n\nCOMPLETION  PASS\n\nhardware evidence:\nRadiance v1.16.0 -> v1.17.0 bump (PR #627). Gates: pin-bump compile, plugin ABI, component tests, lane build (plan 8cbb144e438d12a2fce45da24f504579), cpu-smoke pass; patch tests pass (exec-capable TMPDIR).\nHardware, Flash-Next flashnext-4gpu defaults, temperature 0, seed 7, 512-token prompts, three reps, two alternating passes A,B,A,B (runs parity-117): step 1/2/4/6 streams v1.16.0 24.90,24.92 / 29.32,29.36 / 39.73,39.29 / 47.18,46.77 ms; v1.17.0 25.38,25.36 / 29.77,30.04 / 39.72,40.09 / 47.36,46.41 ms. Cold prefill 44K: 3,720/3,739 vs 3,705/3,626 tok/s.\nPer-op device timing (--profile-ops, four passes, runs regress-117): every kernel equal between builds; profiled step within 0.3%.\nAcceptance by prompt (accept-bench, RAD23 prompts, temperature 0, runs accept-117): hello 57/57%, story 45/45%, code 87/89%, list 96/97%, digits 97/96%; step 25.3-26.2 vs 25.5-26.2 ms.\nLong context (runs longctx-117, 1M YaRN): v1.16.0 3,596/3,660 (47-52K), 3,290 (370K), 2,553 (729K); v1.17.0 3,476/3,693 (47K), 3,212 (396K), 2,458 (783K) tok/s.\nTail KLD (runs tail14g-kld-116/117, tail4g-kld-117): 14 GiB tail minus control p99.9 -0.13 (v1.16.0) and +0.94 (v1.17.0, limit +0.5); per-position data show a persistent defect at position 117 on both builds and a cluster of unstable positions that flips the gate; bulk metrics equal. See RAD46.\nPatch evidence: rad0002 carried forward from v1.14.0, rad0008 from v1.9.0 (MEN28, option c).\n\nrelease asset lane build: radiance:stock:linux-radiance build_plan_id=e5c7cb3dcc920259656edb17ec57ffc0 binary_sha256=d0e8474941a125247ddb87f11bc39654d0dd06268abdf709ba7f846909932885\n",
   "patches": {
     "applied_cleanly": true,
     "failed_edits": [],
@@ -111,9 +111,24 @@
     }
   },
   "promotion": null,
+  "public_summary": "## Radiance v1.17.0\n\nBigCherry's pinned Radiance moves from v1.16.0 to v1.17.0. All managed patches apply without change, and the libr3 self-test rewrite blocks follow upstream's new performance counters.\n\n**Measured on the Flash-Next four-card layout (two alternating passes, temperature 0, fixed seeds):**\n- Cold prefill of a ~48K-token prompt: 3,626-3,733 tokens/s, the same as v1.16.0 (3,720-3,739). At 1M context with YaRN, a ~396K prompt prefills at 3,212 tokens/s and ~783K at 2,458.\n- Decode step time is level at four and six streams. At one and two streams it is about 1.7% longer (24.9 to 25.4 ms); per-kernel times are identical, so the gap is host-side and not yet explained.\n- Draft acceptance is identical on RAD23's five prompts (list 96%/97%, code 87%/89%).\n\n**Checks:** compile, plugin ABI, component tests, lane build and CPU smoke pass.\n\n**Known limitations:**\n- The two validated patches (remote-MoE hand-off, hyper-connection up-mix tile) are accepted by carry-forward from earlier pins (v1.14.0, v1.9.0), not re-measured at v1.17.0.\n- The 6900 XT tail still shows one persistent outlier position in the KLD check, so its p99.9 limit is not met on this pin (mean, p99, top-1 and perplexity are within limits).\n- The release is a tag and notes; no binaries are attached yet.",
   "release_tag": "v1.17.0",
   "revision": "19d4e8fe0e18071b9b6300f15fc4ccf38dc4fa3d",
-  "runtime_assets": {},
+  "runtime_assets": {
+    "bc-radiance-1170.0.0": {
+      "binary_sha256": "d0e8474941a125247ddb87f11bc39654d0dd06268abdf709ba7f846909932885",
+      "checksum_name": "radiance-e5c7cb3dcc920259656edb17ec57ffc0.tar.gz.sha256",
+      "config_tree": "e82e61fbb97f21bb5b79010fc850535ecfe0db29",
+      "engine_tree": "73dd6f5c84e2d4aa1de860a89fbe99820c1ef912",
+      "manifest_sha256": "02e6dc896389719136662bfb6ff36767bcbc1d1a3a4a8bbba1d1f37e77d5cb92",
+      "name": "radiance-e5c7cb3dcc920259656edb17ec57ffc0.tar.gz",
+      "plan_id": "e5c7cb3dcc920259656edb17ec57ffc0",
+      "rocm_version": "7.2.4",
+      "schema": "bigcherry-radiance-runtime-v1",
+      "sha256": "6e74fb9daa33ffe47b8ac181ba2a3563031b90174feea22a8c7fca5a2038686a",
+      "source_slice_id": "e01f7f1f30550c58f33bd0e398360f74"
+    }
+  },
   "stage": "patched",
   "tree_state": "",
   "updated_at": "2026-11-05T04:45:34.217710+00:00"

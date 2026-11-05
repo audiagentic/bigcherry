@@ -1,8 +1,0 @@
-{
-  "declaring_commit": "cbaccece6cadcbdade54a0102e7f71a7c672db5a",
-  "from_sha": "769b4c64a671e4b52c43507e50fba1cf591bd139",
-  "schema_version": 1,
-  "set_at": "2026-11-05T03:50:57.380331+00:00",
-  "tag": "v1.17.0",
-  "to_sha": "19d4e8fe0e18071b9b6300f15fc4ccf38dc4fa3d"
-}
