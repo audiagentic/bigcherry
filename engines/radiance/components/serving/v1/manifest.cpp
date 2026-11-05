@@ -410,16 +410,16 @@ Status validate_semantics(const Manifest& m) {
     if (auto e = placement_experiment_semantics(m)) return e;
     if (auto e = live_policy_semantics(m)) return e;
     // §5: the plan state says whether a measured plan is there, and nothing else decides it; the checkpoint slots derive from it
-    if ((s.plan.state == PlanState::kMeasured) != s.resources.host.checkpoint_slots.has_value())
-        return err(s.plan.state == PlanState::kMeasured ? C::missing_field : C::invalid_value,
-                   "spec.resources.host.checkpoint_slots",
-                   s.plan.state == PlanState::kMeasured ? "plan.state measured requires the checkpoint slots derived from the plan"
-                                                        : "plan.state unmeasured takes no checkpoint slots (there is no plan to derive them from)");
     if ((s.plan.state == PlanState::kMeasured) != s.plan.engine_memory.has_value())
         return err(s.plan.state == PlanState::kMeasured ? C::missing_field : C::invalid_value,
                    s.plan.state == PlanState::kMeasured ? "spec.plan.engine_memory" : "spec.plan.state",
                    s.plan.state == PlanState::kMeasured ? "plan.state measured requires engine_memory"
                                                         : "plan.state unmeasured takes no engine_memory");
+    if ((s.plan.state == PlanState::kMeasured) != s.resources.host.checkpoint_slots.has_value())
+        return err(s.plan.state == PlanState::kMeasured ? C::missing_field : C::invalid_value,
+                   "spec.resources.host.checkpoint_slots",
+                   s.plan.state == PlanState::kMeasured ? "plan.state measured requires the checkpoint slots derived from the plan"
+                                                        : "plan.state unmeasured takes no checkpoint slots (there is no plan to derive them from)");
     if (s.plan.engine_memory) {
         // §2: the one receipt echo
         const EnginePlan& expected = s.plan.engine_memory->expected;

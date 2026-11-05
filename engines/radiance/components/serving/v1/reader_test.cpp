@@ -71,6 +71,7 @@ Json without_plan(Json m) {
 }
 Json unmeasured(Json m) {
     m = without_plan(std::move(m));
+    m["spec"]["resources"]["host"].erase("checkpoint_slots");
     m["spec"]["plan"]["state"] = "unmeasured";
     return rehashed(std::move(m));
 }
