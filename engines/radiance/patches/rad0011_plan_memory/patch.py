@@ -62,6 +62,9 @@ enum class Mode { none, measure, check };
 int take_flags(int* argc, char*** argv);
 /* Arms the check with an expected plan and floor (take_flags does it from rad0009's; the card-free test from the admission vectors). */
 int arm(const bc::serving::v1::EnginePlan& expected, int64_t floor_ppm);
+/* MemAvailable in kB (/proc/meminfo; 0 when unreadable): at take_flags() (the process's first line) and now. */
+long long mem_available_kb_at_start();
+long long mem_available_kb_now();
 Mode mode();
 const std::string& measure_out();
 
@@ -106,6 +109,19 @@ int usage(const std::string& flag, const std::string& message) {
 }
 }  // namespace
 
+namespace {
+long long g_available_at_start_kb = 0;
+}  // namespace
+
+long long mem_available_kb_now() {
+    std::ifstream meminfo("/proc/meminfo");
+    for (std::string line; std::getline(meminfo, line);)
+        if (line.rfind("MemAvailable:", 0) == 0) return std::atoll(line.c_str() + 13);
+    return 0;
+}
+
+long long mem_available_kb_at_start() { return g_available_at_start_kb; }
+
 int arm(const v1::EnginePlan& expected, int64_t floor_ppm) {
     if (v1::Status e = v1::check_kv_backing_floor_ppm(floor_ppm)) return report(*e);
     g_expected = expected;
@@ -116,6 +132,7 @@ int arm(const v1::EnginePlan& expected, int64_t floor_ppm) {
 
 int take_flags(int* argc, char*** argv) {
     g_mode = Mode::none;   // each call starts from nothing, so the card-free test can run many scenarios in one process
+    g_available_at_start_kb = mem_available_kb_now();
     g_out.clear();
     g_expected = v1::EnginePlan{};
     g_ppm = 0;
@@ -286,18 +303,14 @@ int bc_plan_memory_done() {
         std::fflush(nullptr);
         std::_Exit(2);
     }
-    /* The engine's own resident host memory now (anonymous plus shared; mapped files are reclaimable and not counted): what the
-     * host ledger counts against MemAvailable beside the helpers' (bc-serve --measured-plan --engine-resident-mib). */
-    long long anon_kb = 0, shm_kb = 0;
-    {
-        std::ifstream status("/proc/self/status");
-        for (std::string line; std::getline(status, line);) {
-            if (line.rfind("RssAnon:", 0) == 0) anon_kb = std::atoll(line.c_str() + 8);
-            else if (line.rfind("RssShmem:", 0) == 0) shm_kb = std::atoll(line.c_str() + 9);
-        }
-    }
-    std::fprintf(stderr, "radiance: --plan-memory: wrote %s; engine resident %lld MiB; nothing loaded or allocated past the plan\n",
-                 out_path.c_str(), (anon_kb + shm_kb + 1023) / 1024);
+    /* What start-up took from the host before the plan: the fall of MemAvailable between this process's first line and now. It is
+     * the one figure that counts only what the host could not give back (anonymous, pinned and shared memory; page cache and
+     * mapped files are reclaimable and do not move it), which the engine's resident size does not tell (it holds many GiB that
+     * the plan's own consumers already count). The host ledger counts it against MemAvailable beside the helpers' (bc-serve
+     * --measured-plan --engine-resident-mib). At least 1 MiB. */
+    const long long taken_kb = bc_plan::mem_available_kb_at_start() - bc_plan::mem_available_kb_now();
+    std::fprintf(stderr, "radiance: --plan-memory: wrote %s; engine start-up took %lld MiB of MemAvailable; nothing loaded or allocated past the plan\n",
+                 out_path.c_str(), std::max<long long>(1, (taken_kb + 1023) / 1024));
     std::fflush(nullptr);
     /* Before weights load and the cache is allocated: nothing past plan() needs tearing down, and the device runtime's
      * exit handlers are not run against a half-built engine. */

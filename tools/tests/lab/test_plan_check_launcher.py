@@ -108,7 +108,7 @@ source {shlex.quote(str(LIB))}
 # the measuring start: the engine is asked for a plan and writes one; recorded so the tests see what ran
 plan_check_start_engine_measure() {{
   PLAN_HELPERS_RESIDENT_MIB=${{FAKE_HELPERS_MIB-2304}}
-  echo "radiance: --plan-memory: wrote $PLAN_MEASURE_FILE; engine resident ${{FAKE_ENGINE_MIB-1536}} MiB; nothing loaded" >> "$RUN/engine-measure.log"
+  echo "radiance: --plan-memory: wrote $PLAN_MEASURE_FILE; engine start-up took ${{FAKE_ENGINE_MIB-1536}} MiB of MemAvailable; nothing loaded" >> "$RUN/engine-measure.log"
   echo "measure: engine --manifest $PLAN_MEASURING_MANIFEST --plan-memory $PLAN_MEASURE_FILE $(cat "$PLAN_MEASURING_MANIFEST")" >> {shlex.quote(str(self.engine_calls))}
   [ -n "${{FAKE_MEASURE_FAIL:-}}" ] && return 1
   echo '{{"plan_version": 1}}' > "$PLAN_MEASURE_FILE"

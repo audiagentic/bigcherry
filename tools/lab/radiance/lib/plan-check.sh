@@ -102,7 +102,7 @@ plan_check_measure() {
   plan_manifest_write "$PLAN_MEASURING_MANIFEST" unmeasured || { echo "plan check: the unmeasured manifest was not written (above)" >&2; return 1; }
   PLAN_MEASURE_FILE="$plan" plan_check_start_engine_measure || { echo "plan check: the measuring start failed; see $RUN/engine-measure.log" >&2; return 1; }
   local engine_mib
-  engine_mib=$(sed -n 's/.*--plan-memory: wrote .*; engine resident \([0-9][0-9]*\) MiB;.*/\1/p' "$RUN/engine-measure.log" | tail -1)
+  engine_mib=$(sed -n 's/.*--plan-memory: wrote .*; engine start-up took \([0-9][0-9]*\) MiB of MemAvailable;.*/\1/p' "$RUN/engine-measure.log" | tail -1)
   [ -n "$engine_mib" ] && [ -n "${PLAN_HELPERS_RESIDENT_MIB:-}" ] \
     || { echo "plan check: the measuring start did not report the resident host memory (helpers '${PLAN_HELPERS_RESIDENT_MIB:-}' MiB, engine '$engine_mib' MiB); see $RUN/engine-measure.log" >&2; return 1; }
   plan_manifest_write "$PLAN_MANIFEST" measured-plan "$plan" "$PLAN_HELPERS_RESIDENT_MIB" "$engine_mib" \

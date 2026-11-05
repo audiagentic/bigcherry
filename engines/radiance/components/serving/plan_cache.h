@@ -38,8 +38,9 @@ v1::EnginePlan decode_engine_plan(const nlohmann::json& plan, const std::string&
 nlohmann::json parse_plan_json(const std::string& text, const std::string& source);
 
 /* The host memory the engine's neighbours hold while it starts, measured in the same measuring start as the plan (never a
- * constant): the helpers' resident anonymous and shared memory with the shared segment counted once, and the engine's own
- * resident memory when plan() ran (before the pools, the n-gram table and the checkpoint store are allocated). The host
+ * constant): the helpers' resident anonymous and shared memory with the shared segment counted once, and what the engine's
+ * start-up took from the host before plan() ran (the fall of MemAvailable, before the pools, the n-gram table and the
+ * checkpoint store are allocated). The host
  * ledger counts both as pageable consumers, so the checkpoint slots follow what is really free at start. MemAvailable is
  * read fresh every time a manifest is written; only these two figures are cached. Both are positive. */
 struct HostResident {

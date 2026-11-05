@@ -166,7 +166,7 @@ Json resources_of(const ManifestInputs& in, const Json& calibration) {
     li.consumers.push_back({"helpers", in.measured->plan.resident.helpers_mib * kMiB, Residence::pageable,
                             "measured in the measuring start: the helpers' resident anonymous and shared memory", ""});
     li.consumers.push_back({"engine_start", in.measured->plan.resident.engine_mib * kMiB, Residence::pageable,
-                            "measured in the measuring start: the engine's resident memory when plan() ran", ""});
+                            "measured in the measuring start: what the engine's start-up took from MemAvailable before plan() ran", ""});
     li.checkpoints = {static_cast<uint64_t>(in.measured->plan.plan.checkpoints.slot_bytes), static_cast<uint64_t>(in.measured->plan.plan.checkpoints.floor_slots),
                       static_cast<uint64_t>(in.measured->plan.plan.checkpoints.want_slots), in.measured->plan.plan.checkpoints.from, "want", "plan"};
     if (const Json* share = cal("checkpoint_share")) {
