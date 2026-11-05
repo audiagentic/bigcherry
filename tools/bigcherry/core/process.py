@@ -21,6 +21,9 @@ not just runtime-smoke) can hit the same class of Windows loader error.
 
 from __future__ import annotations
 
+import subprocess
+from pathlib import Path
+
 # NTSTATUS values worth naming in a native-binary build/smoke context.
 # Not an exhaustive NTSTATUS table -- just the ones plausible here: loader
 # failures (DLL_NOT_FOUND, ENTRYPOINT_NOT_FOUND, DLL_INIT_FAILED, INVALID_
@@ -81,3 +84,8 @@ def describe_returncode(code: int) -> str:
     if hint:
         rendered += f" -- {hint}"
     return rendered
+
+
+def run_checked(argv: list[str], cwd: Path) -> None:
+    """Run a checked build subprocess without changing its arguments or cwd."""
+    subprocess.run(argv, cwd=cwd, check=True)

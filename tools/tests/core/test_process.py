@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import sys
 import unittest
+from unittest import mock
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from bigcherry.core.process import describe_returncode  # noqa: E402
+from bigcherry.core.process import describe_returncode, run_checked  # noqa: E402
 
 
 class DescribeReturncodeTests(unittest.TestCase):
@@ -38,6 +39,15 @@ class DescribeReturncodeTests(unittest.TestCase):
         rendered = describe_returncode(0xC0001234)
         self.assertIn("0xC0001234", rendered)
         self.assertNotIn("STATUS_", rendered)
+
+
+class CheckedRunnerTests(unittest.TestCase):
+    def test_preserves_checked_subprocess_contract(self):
+        cwd = Path("/build")
+        argv = ["cmake", "--build", "out"]
+        with mock.patch("bigcherry.core.process.subprocess.run") as run:
+            self.assertIsNone(run_checked(argv, cwd))
+        run.assert_called_once_with(argv, cwd=cwd, check=True)
 
 
 if __name__ == "__main__":

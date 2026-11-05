@@ -38,6 +38,7 @@ from ..source import identity as source_identity
 from ..core.artifacts import ArtifactStore
 from ..build.builds import BuildPlan
 from ..core.context import ProjectContext
+from ..core.process import run_checked
 from ..source.identity import (
     SourceAttestation, SourceIdentityError, git_tree_oid, verify_source_attestation,
 )
@@ -314,10 +315,6 @@ def rocm_identity(platform: campaign_config.Platform, rocm_paths: tuple[tuple[st
         "rocm_version": _sdk_version(root),
         "rocm_digest": sdk_content_digest(root, rocm_paths),
     }
-
-
-def _default_runner(args: list[str], cwd: Path) -> None:
-    subprocess.run(args, cwd=cwd, check=True)
 
 
 def _backend_configure_options(
@@ -794,7 +791,7 @@ def execute_build_stage(
     c_compiler: str | None = None,
     cxx_compiler: str | None = None,
     allow_dirty_bigcherry: bool = False,
-    runner: Runner = _default_runner,
+    runner: Runner = run_checked,
 ) -> dict[str, str]:
     """One real campaign build stage: materialise, configure, build, publish.
 
