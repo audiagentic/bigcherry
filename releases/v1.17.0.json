@@ -11,10 +11,10 @@
       "warnings": 0
     }
   },
-  "bigcherry_revision": "2232f6bf8e9739789ee96843bfc9eb4f14bd3ca5",
+  "bigcherry_revision": "cf0558e6c669a00b70302570c19583a6fb600a84",
   "first_seen": "2026-11-05T03:50:59.192632+00:00",
   "manifest_hash": "",
-  "notes": "",
+  "notes": "pin-bump lane build: radiance:stock:linux-radiance build_plan_id=8cbb144e438d12a2fce45da24f504579 binary_sha256=36793be1572994c0f96264d9bd07816a5188ad9d5691ccf067d936f4c7c4d951",
   "patches": {
     "applied_cleanly": true,
     "failed_edits": [],
@@ -116,5 +116,5 @@
   "runtime_assets": {},
   "stage": "patched",
   "tree_state": "",
-  "updated_at": "2026-11-05T03:55:27.726813+00:00"
+  "updated_at": "2026-11-05T04:45:34.217710+00:00"
 }

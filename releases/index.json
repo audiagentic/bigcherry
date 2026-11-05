@@ -1,6 +1,6 @@
 {
   "artifact_version": 1,
-  "generated_at": "2026-11-05T03:55:27.741038+00:00",
+  "generated_at": "2026-11-05T04:45:34.223435+00:00",
   "releases": [
     {
       "audit_passed": true,
@@ -9,7 +9,7 @@
       "revision": "19d4e8fe0e18071b9b6300f15fc4ccf38dc4fa3d",
       "slug": "v1.17.0",
       "stage": "patched",
-      "updated_at": "2026-11-05T03:55:27.726813+00:00"
+      "updated_at": "2026-11-05T04:45:34.217710+00:00"
     },
     {
       "audit_passed": true,
