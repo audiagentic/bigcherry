@@ -100,8 +100,8 @@ int main(int argc, char** argv) {
     std::printf("snapshot\tobservations\ttail_share_before\ttail_share_after\tmoved\n");
     for (const ReplayStep& s : r.steps)
         std::printf("%zu\t%llu\t%.6f\t%.6f\t%zu\n", s.snapshot, (unsigned long long)s.observations, s.tail_share_before, s.tail_share_after, s.moved);
-    std::printf("# snapshots=%zu transactions=%zu experts_moved=%zu moved_bytes=%llu hot_set_k=%zu drift_half_life_observations=%llu marginal_relative_error=%.6f\n",
+    std::printf("# snapshots=%zu transactions=%zu experts_moved=%zu moved_bytes=%llu hot_set_k=%zu drift_half_life_observations=%llu drift_horizon_observations=%llu marginal_relative_error=%.6f\n",
                 snapshots.size(), r.transactions, r.experts_moved, (unsigned long long)(r.experts_moved * cfg.stride), r.hot_set_k,
-                (unsigned long long)r.drift_half_life_observations, r.marginal_error);
+                (unsigned long long)r.drift_half_life_observations, (unsigned long long)r.drift_horizon_observations, r.marginal_error);
     return 0;
 }
