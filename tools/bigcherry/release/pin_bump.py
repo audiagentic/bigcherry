@@ -1,22 +1,8 @@
-"""HI153: ``bigcherry pin-bump`` -- single-tree pin-bump orchestrator.
+"""Single-tree pin-bump orchestrator.
 
-Automates the common case of docs/reference/build/PIN_BUMP.md's manual
-procedure (repin -> commit -> pull -> audit -> patch-rebase-check ->
-apply -> pin-status) while stopping cleanly and precisely -- via a
-structured JSON failure envelope -- on anything not provably safe to
-auto-proceed past. Converged design: see HI150 (round 1 + round 2 notes)
-and its implementation sub-items HI151 (tree-activity liveness) and
-HI152 (coverage/disposition schema), both landed before this.
-
-Deliberately single-tree only (Phase 1). Multi-tree SSH sequencing is
-explicitly deferred to a later Phase 2, per the HI150 design debate: this
-bump-process test itself surfaced multiple never-before-seen edge cases
-in the single-tree case alone, and gpt's cadence argument (once corrected
-against the real release-record timestamps) still supports not building
-distributed orchestration before the single-tree semantics have survived
-several real bumps. ``bigcherry pin-status --complete --all-remotes``
-remains the real cross-tree completion authority; this module does not
-touch it beyond reporting its result.
+Each phase either records its proof and resume cursor or stops with a
+structured failure envelope. Multi-tree completion remains the authority of
+`pin-status --complete --all-remotes`; this runner never coordinates trees.
 """
 
 from __future__ import annotations
@@ -33,7 +19,7 @@ import uuid
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, Sequence, TypeVar
 
 from ..build import source_compile_check
 from ..core import engines, paths
@@ -226,11 +212,8 @@ class PinBumpState:
     @classmethod
     def load(cls, state_dir: Path) -> PinBumpState:
         data = json.loads((state_dir / "state.json").read_text(encoding="utf-8"))
-        # PA34 Q3 migration: schema 3 renames "selector" -> "selection_freeze".
-        # A loaded schema-2 state migrates to schema 3 IN MEMORY (it persists
-        # under the new key at the next successful save; never both keys).
-        # Schema 1 states carry no selector binding at all and keep their
-        # version so the resume guard still rejects them.
+            # Schema 2's selector is promoted in memory to schema 3's
+        # selection_freeze; schema 1 stays unbound and cannot be resumed.
         raw_version = int(data["schema_version"])
         # Fail on a structurally incomplete state (missing run_id/target/
         # tree/resume) the same way any other schema does, BEFORE the
@@ -242,24 +225,13 @@ class PinBumpState:
         if raw_version >= 3:
             freeze = data.get("selection_freeze") or {}
         elif raw_version == 2:
-            # PA34 Q3 (dev-gpt-agent req_1d02cb052310446c Q3): a schema-2
-            # state's "selector" key is the ONLY thing that makes it
-            # resumable (see _validate_resume's schema<2 rejection above).
-            # Promoting raw_version to 3 before checking the legacy shape
-            # would let a missing/malformed "selector" key slip past that
-            # guard as an unbound-but-schema-3 state instead of being
-            # rejected as legacy/unbound. Validate first, fail closed.
+            # Validate the schema-2 selector before promotion, or a
+            # missing/malformed binding could be accepted as schema 3.
             freeze = data.get("selector")
             if (
                 not isinstance(freeze, dict)
-                # Schema-2 pin-bump state only ever represented SOURCE
-                # selectors (dev-gpt-agent round-3 req_ab94edd31aa04419 Q3):
-                # accepting any other non-empty string here would let a
-                # malformed/foreign kind (e.g. "experiment") be promoted
-                # and later resumed, since _selector_patch_ids() ignores
-                # selector_kind entirely and always resolves selector_name
-                # as a source -- a malformed kind + valid source name would
-                # silently resume.
+                # A foreign kind would be incorrectly resolved as a source
+                # by _selector_patch_ids on resume.
                 or freeze.get("kind") != "source"
                 or not isinstance(freeze.get("name"), str)
                 or not freeze.get("name")
@@ -709,46 +681,22 @@ def run(
     platform_name: str | None,
     build_name: str | None,
 ) -> PinBumpResult:
-    """The Phase 1 single-tree orchestrator. Raises PinBumpStop (never a
-    bare exception) on anything not provably safe to auto-proceed past;
-    the caller is expected to catch it, write ``failure_envelope(...)``
-    under ``report_dir``, and exit non-zero.
+    """Run a fresh single-tree bump or resume the recorded run.
 
-    ``source_name`` unsupplied on a fresh run defaults to ``bigcherry`` (the
-    real v2 release-source composition -- serving-core + upstream-fixes +
-    validated-enhancements; see ``_resolve_fresh_selector``). A ``--resume``
-    with no selector reuses
-    whatever the original invocation was started with (``_resume_selector``),
-    rather than re-defaulting.
-
-    ``platform_name`` is the recipe ``[platform.*]`` the compile gate configures with (``--platform``), for the engines whose
-    gate builds. It is saved in the resume state; a ``--resume`` with none reuses the saved one and a different one is
-    refused.
-
-    ``build_name`` is the recipe ``[build.*]`` profile of the lane-build phase (``--build``): the bumped engine is built
-    through the lane ``<source>:<build_name>:<platform_name>`` and the cpu-smoke phase runs on that build. There is no
-    default; it is required unless ``cpu_smoke_build`` (an explicit override that skips the lane build) or
-    ``skip_cpu_smoke`` is given. A ``--resume`` with none reuses the saved one and a different one is refused.
+    Fresh runs default to source `bigcherry` where declared. Resumes reuse
+    the persisted selector, compile platform and lane build unless explicitly
+    given matching inputs. Stop conditions carry their original failure codes.
     """
     repo_root = paths.REPO_ROOT
     vendor_root = root if root is not None else ProjectContext.resolve(engine=engine).vendor_root
     dispositions_dir = dispositions_dir or paths.DISPOSITIONS
     report_dir = report_dir or default_report_dir(engine, target_ref)
 
-    # Bound before the try, unconditionally: RESUME_STATE_MISSING and
-    # _load_state_or_stop() can both raise before any assignment below
-    # would otherwise run, and the except block needs `state` defined
-    # either way (None means "fall back to a best-effort disk re-read").
+    # Resume state loading can itself fail; the envelope still needs context.
     state: PinBumpState | None = None
     try:
-        # gpt-dev-agent review of c236acc (P1, session ses_5307d9c58ec645cb):
-        # --resume must never silently reinterpret a missing/wrong state as
-        # "start fresh" -- that would let preflight/declare re-execute as a
-        # NEW operation under a resume invocation. State load, resume
-        # validation, and selector reconciliation all now happen INSIDE this
-        # try (P2 of the same review): so a PinBumpStop raised by any of
-        # them still gets real run_id/target/tree context attached below,
-        # instead of falling through to the "unresolved" placeholder.
+        # Never treat a missing resume state as a fresh run. Keep validation
+        # inside this try so every stop gets a structured envelope.
         if resume:
             if not (report_dir / "state.json").is_file():
                 raise PinBumpStop(
@@ -799,15 +747,8 @@ def run(
             build_name=build_name,
         )
     except PinBumpStop as exc:
-        # gpt-dev-agent review (session ses_5307d9c58ec645cb, second pass):
-        # prefer the ALREADY-LOADED `state` local for context when we have
-        # one -- re-reading disk here could itself hit a corrupt/missing
-        # state.json and mask the ORIGINAL structured failure with a
-        # different, unrelated one. Only best-effort re-read from disk when
-        # we don't already have a state (e.g. the exception came from
-        # inside _run_phases, which may have advanced state past what this
-        # local variable holds) -- and that best-effort attempt must never
-        # itself raise and replace `exc`.
+        # Prefer the loaded state: re-reading a corrupt state file here could
+        # mask the original error. Disk recovery below is best effort only.
         if state is not None:
             exc.run_id = state.run_id
             exc.target = {"from_ref": state.from_ref, "to_ref": state.to_ref}
@@ -1360,14 +1301,27 @@ def run_phase_lane_build(*, engine: str, lane: str, run_id: str, target_ref: str
         ) from exc
 
 
+ResumeInput = TypeVar("ResumeInput")
+
+
+def _reconcile_resume_input(
+    requested: ResumeInput | None, saved: ResumeInput | None, *,
+    incompatible: bool, failure: PinBumpStop,
+) -> ResumeInput | None:
+    """Use the saved input unless an explicit resume option changes its identity."""
+    if requested is not None and (incompatible or (saved is not None and requested != saved)):
+        raise failure
+    return requested or saved
+
+
 def _resume_lane_build_inputs(
     state: PinBumpState, *, build_name: str | None, cpu_smoke_build: Path | None,
 ) -> tuple[str | None, Path | None]:
-    """The lane-build inputs of a resumed run, like --platform: the saved ones unless the resuming invocation names them,
-    a different one refused. A --cpu-smoke-build override is also refused once the lane build already passed."""
+    """Reconcile the saved lane profile and smoke override; a passed build cannot be replaced."""
     saved_build = state.lane_build_name or None
-    if build_name is not None and saved_build is not None and build_name != saved_build:
-        raise PinBumpStop(
+    effective_build = _reconcile_resume_input(
+        build_name, saved_build, incompatible=False,
+        failure=PinBumpStop(
             "resume",
             "RESUME_BUILD_MISMATCH",
             f"--resume was given --build {build_name!r}, but this run's recorded lane build profile is {saved_build!r}",
@@ -1375,12 +1329,12 @@ def _resume_lane_build_inputs(
             recommended_actions=[
                 "omit --build on --resume to use the run's original profile, or start a fresh run with the new one",
             ],
-        )
+        ),
+    )
     saved_override = Path(state.cpu_smoke_build_override) if state.cpu_smoke_build_override else None
-    if cpu_smoke_build is not None and (
-        (saved_override is not None and cpu_smoke_build != saved_override) or state.lane_build_status == "passed"
-    ):
-        raise PinBumpStop(
+    effective_override = _reconcile_resume_input(
+        cpu_smoke_build, saved_override, incompatible=state.lane_build_status == "passed",
+        failure=PinBumpStop(
             "resume",
             "RESUME_CPU_SMOKE_BUILD_MISMATCH",
             f"--resume was given --cpu-smoke-build {str(cpu_smoke_build)!r}, but this run's recorded build is "
@@ -1389,8 +1343,9 @@ def _resume_lane_build_inputs(
             recommended_actions=[
                 "omit --cpu-smoke-build on --resume to use the run's original build, or start a fresh run",
             ],
-        )
-    return build_name or saved_build, cpu_smoke_build or saved_override
+        ),
+    )
+    return effective_build, effective_override
 
 
 def _require_lane_build_inputs(
@@ -1810,15 +1765,10 @@ def _resume_selector(
     *,
     source_name: str | None = None,
 ) -> tuple[str, str]:
-    """Reconciles the RESUMING invocation's selector against the state's
-    recorded one. Caller supplies none -> use the persisted selector;
-    caller supplies one -> it must exactly equal the persisted name.
-    Never silently reinterprets -- a real, deliberate change requires a
-    fresh run, not a --resume."""
-    if source_name is None:
-        return state.selector_kind, state.selector_name
-    if (state.selector_kind, state.selector_name) != ("source", source_name):
-        raise PinBumpStop(
+    """Recover the persisted selector, rejecting an explicitly changed source."""
+    selected = _reconcile_resume_input(
+        source_name, state.selector_name, incompatible=state.selector_kind != "source",
+        failure=PinBumpStop(
             "resume",
             "RESUME_SELECTOR_MISMATCH",
             f"--resume was given source:{source_name!r}, but "
@@ -1832,18 +1782,17 @@ def _resume_selector(
                 "omit --source on --resume to use the run's "
                 "original selector, or start a fresh run with the new one",
             ],
-        )
-    return state.selector_kind, state.selector_name
+        ),
+    )
+    return state.selector_kind, selected
 
 
 def _resume_platform(state: PinBumpState, *, platform_name: str | None) -> str | None:
-    """The compile platform of a resumed run: the saved one unless the resuming invocation names it; a different name
-    is refused (the saved compile result was produced with the saved platform)."""
+    """A resumed compile must use the persisted platform unless none was saved."""
     saved = state.compile_platform or None
-    if platform_name is None or saved is None:
-        return platform_name or saved
-    if platform_name != saved:
-        raise PinBumpStop(
+    return _reconcile_resume_input(
+        platform_name, saved, incompatible=False,
+        failure=PinBumpStop(
             "resume",
             "RESUME_PLATFORM_MISMATCH",
             f"--resume was given --platform {platform_name!r}, but this run's recorded compile platform is {saved!r}",
@@ -1851,8 +1800,8 @@ def _resume_platform(state: PinBumpState, *, platform_name: str | None) -> str |
             recommended_actions=[
                 "omit --platform on --resume to use the run's original platform, or start a fresh run with the new one",
             ],
-        )
-    return saved
+        ),
+    )
 
 
 def _require_selector_membership_unchanged(
@@ -2039,13 +1988,8 @@ def _run_phases(
                             "rerun with --resume",
                         ],
                     )
-            # Persist the result into the ReleaseRecord exactly like
-            # `bigcherry audit` (cli/source.py's cmd_audit) does -- otherwise
-            # apply_known_good's own `record.audit.get("passed")` gate (a
-            # DIFFERENT, persisted-record check, not this in-memory report)
-            # never sees a pass and refuses every real run. Found live: this
-            # bump's first successful run through the coverage phase still
-            # failed at apply for exactly this reason.
+            # Apply checks the persisted record.audit, not this in-memory
+            # report, so save the audit proof before running coverage/apply.
             record = releases.record_for_checkout(vendor_root)
             record.audit = releases.summarise_audit(report, strict=True)
             if record.stage == "pulled":
@@ -2135,11 +2079,7 @@ def _run_phases(
                 else {}
             )
 
-        # gpt-dev-agent review of c236acc (P1, session ses_5307d9c58ec645cb):
-        # the digest check used to run ONLY in the resumed (`else`) branch,
-        # so a fresh same-process coverage->apply never re-checked, and a
-        # deleted report skipped the check entirely instead of failing
-        # closed. Unconditional, immediately before apply, covers both.
+        # Check report integrity on both a fresh coverage->apply and resume.
         if state.next_phase == "apply":
             _require_coverage_report(state, recipe_report_path)
             try:
@@ -2293,32 +2233,11 @@ def _commit_record_git(repo_root: Path, owned: list[str], label: str, *args: str
 
 
 def _commit_release_records(*, repo_root: Path, target_ref: str) -> None:
-    """Commit exactly pin-bump's own release-record output (releases/<tag>.json,
-    releases/index.json, releases/<tag>-patches.md if generated) -- the
-    symmetric close to run_phase_declare()'s controlled commit at the start
-    of the bump.
+    """Commit only this run's release records, before the lane build and at completion.
 
-    gpt-dev-agent review, 2026-08-31 (converged design, see the b10705 bump's
-    real incident): without this, a successful bump leaves
-    require_clean_bigcherry() refusing the very next MANDATORY step (the real
-    build+smoke test, bump skill section 4b) until a human notices the dirty
-    tree and commits these files by hand. require_clean_bigcherry() itself
-    stays strict -- gpt's recommendation was explicitly against adding a
-    dirty-tree allowlist there, since that would weaken the production
-    provenance boundary and can't distinguish this orchestrator's own output
-    from an unrelated concurrent edit to the same paths.
-
-    Deliberately narrow: exact pathspecs only (never `git add -A`), and
-    `git commit --only --` so even a concurrently staged unrelated change on
-    this shared, multi-agent working tree (CLAUDE.md: never assume exclusive
-    access) cannot be swept into this commit. NEVER touches
-    releases/pin-transition.json -- that marker stays uncommitted-until-
-    cleared until build+smoke has actually passed (bump skill step 5); this
-    function has no visibility into whether that happened and must not
-    guess.
-
-    Idempotent: a --resume re-run (or a race where another process already
-    committed these exact bytes) is a silent no-op, not an error.
+    Exact pathspecs and `commit --only` exclude unrelated staged work on a
+    shared checkout. The transition marker is NOT owned here; it requires
+    a separately proven completion. Repeated resume commits are no-ops.
     """
     owned = [f"releases/{target_ref}.json", "releases/index.json"]
     if (repo_root / "releases" / f"{target_ref}-patches.md").is_file():
