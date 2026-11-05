@@ -1,5 +1,13 @@
 # Changelog
 
+## [1170.0.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1160.5.0...bc-radiance-1170.0.0) (2026-11-05)
+
+
+### New and changed
+
+* **serving:** bc-serve refuses to run against a ROCm SDK other than the one its build recorded (BRVP06 item 5) ([#652](https://github.com/audiagentic/bigcherry/issues/652)) ([8b8e2fe](https://github.com/audiagentic/bigcherry/commit/8b8e2fee789ae240e9de44abf6e6a7fb19995486))
+* **serving:** the engine starts from its measured manifest and admits its plan; contract amendment 11 (RSC08 S3) ([#651](https://github.com/audiagentic/bigcherry/issues/651)) ([d64b655](https://github.com/audiagentic/bigcherry/commit/d64b655dc9913fcfa5b6e64b259bc3812d1ef12e))
+
 ## [1160.5.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1160.4.0...bc-radiance-1160.5.0) (2026-11-05)
 
 
