@@ -160,6 +160,56 @@ class CarryForwardAuthorityTests(unittest.TestCase):
             )
         self.assertEqual(check.status, "carried-forward")
 
+    def _package(self, pinned, digest="d" * 64):
+        import tempfile
+        from pathlib import Path
+        from bigcherry.patch import profile_evidence
+        root = Path(tempfile.mkdtemp())
+        self.addCleanup(lambda: __import__("shutil").rmtree(root, ignore_errors=True))
+        (root / "p").mkdir()
+        profile_evidence.write(root / "p", profile_evidence.ProfileEvidence(
+            patch_id="p", pinned=pinned, subject_digest=digest, default_on=False, models=("Model X",),
+            checks={"mechanics": "m", "activation": "a", "identity": "i", "ab": "b"}))
+        return root
+
+    def test_a_profile_record_from_an_earlier_pin_carries_forward_when_only_the_pin_differs(self):
+        from bigcherry.patch import catalog, evidence as patch_evidence
+        root = self._package("v1.9.0")
+        seen = []
+
+        def evaluate(pid, ref, rev):
+            seen.append((ref, rev))
+            return patch_evidence.EvidenceCheck("profile-evidence" if ref == "v1.9.0" else "missing-or-stale")
+
+        with mock.patch.object(patch_evidence, "load_records", return_value=()):
+            check = catalog._carried_forward("p", patch_evidence.EvidenceCheck("missing-or-stale", ("pin",)),
+                                             "v1.17.0", None, None, evaluate, engine="radiance", patches_root=root)
+        self.assertEqual(check.status, "carried-forward")
+        self.assertIn("v1.9.0", check.problems[0])
+        self.assertEqual(seen, [("v1.9.0", None)])
+
+    def test_a_profile_record_does_not_carry_forward_when_the_patch_changed(self):
+        from bigcherry.patch import catalog, evidence as patch_evidence
+        root = self._package("v1.9.0")
+        failing = patch_evidence.EvidenceCheck("missing-or-stale", ("changed",))
+        with mock.patch.object(patch_evidence, "load_records", return_value=()):
+            check = catalog._carried_forward("p", failing, "v1.17.0", None, None,
+                                             lambda *a: patch_evidence.EvidenceCheck("missing-or-stale"),
+                                             engine="radiance", patches_root=root)
+        self.assertIs(check, failing)
+
+    def test_a_record_at_the_current_pin_is_not_an_earlier_pin(self):
+        from bigcherry.patch import catalog, evidence as patch_evidence
+        root = self._package("v1.17.0")
+        failing = patch_evidence.EvidenceCheck("missing-or-stale", ("changed",))
+        seen = []
+        with mock.patch.object(patch_evidence, "load_records", return_value=()):
+            check = catalog._carried_forward("p", failing, "v1.17.0", None, None,
+                                             lambda *a: seen.append(a) or patch_evidence.EvidenceCheck("profile-evidence"),
+                                             engine="radiance", patches_root=root)
+        self.assertEqual(seen, [])
+        self.assertIs(check, failing)
+
     def test_build_g4_passes_carried_forward(self):
         from bigcherry.patch import evidence as patch_evidence, gates
         carried = patch_evidence.EvidenceCheck("carried-forward", ("qualified at old; revalidate on request",))
