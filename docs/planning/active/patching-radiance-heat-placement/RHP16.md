@@ -61,6 +61,21 @@ Depends on RHP11 slice D (live moves) and RHP06. Follows the owner's direction: 
 ## Offline replay of the policy, 2026-11-05 (slim harness for steps 3-4)
 
 r3_policy_replay (engines/radiance/components/moe-remote/worker_policy_replay.h, worker_policy_replay_main.cpp, test worker_policy_replay_test.cpp) feeds a recorded SERIES of the engine's cumulative route-count snapshots through the driver's own heat accounting and planner (heat::Heat, heat::propose, DriftTracker, marginal_relative_error), applying each proposed transaction at once. It runs in seconds with no GPU and no server, and prints per snapshot the tail's heat share before and after, the experts moved, and at the end transactions, bytes moved, the hot-set drift half-life and the marginal sampling error. Every setting is an explicit argument (no defaults). It does NOT model transaction time and its disturbance of service, aborts, the effect gate or eligibility learned from refused destinations, so it answers what the plan does to the placement, not what it costs; the cost side still needs a serve run. tools/lab/radiance/heat-placement/record_heat_series.py copies the live route-count file (PREFIX.rank0, rewritten atomically by --record-heat) to numbered snapshots whenever it changes, so a run leaves the whole trajectory; it is the input of the replay. placement_sim.py in the same folder is an older simulator with its own cost-aware policy; the replay is the one that runs the real planner. Card-free tests: convergence off the tail, fixed point, determinism, a hot set that shifts twice (followed, drift measured), residency holding just-moved experts, refusal of bad input, a counter that goes back. Next: record the series in the next hardware runs and use the replay to try the step 3 derivations (cadence, move budget, residency, half-life, margin) against real drift, then confirm on hardware.
+## First measured values and a measurement flaw they exposed, 2026-11-05 (policy-live-9)
+
+Run policy-live-9: the merged policy with the measurement hooks, effect gate on, Flash-Next four GPUs, eight 27K filler prefills then ten ~50K documentation prefills. The shift result reproduced again (filler TTFT 19.1 to 13.3 s, documentation prefill 3,705 to 3,668 tok/s, no aborts, decode 120 tok/s at one stream and 242 at six). The evidence line `policy measure` at the end of the run:
+
+| Measured | Value | Feeds |
+|---|---|---|
+| transactions | 10 committed, 0 aborted | |
+| transaction wall time | p50 1.77 s, p95 2.72 s, max 2.72 s | cadence, max moved bytes |
+| copy bandwidth (bytes moved over transaction wall time) | 0.16 to 0.20 GB/s over the run | max moved bytes, residency |
+| gap between heat deltas | 5.04 s (p99 = max), the policy's own cadence | max heat age |
+| hot set | k = 5,931 experts (the tail's budget over the stride) | |
+| marginal expert's relative sampling error | 5.2% after the first window, 2.3% at the end | min samples, margin |
+| abort-to-quiescent | none seen | abort cooldown |
+
+Two things follow. (1) A transaction moves about 330 MB on average (2.6 GB in 8) and takes 1.8 s, so the achieved bandwidth is 0.17 GB/s: far below the link, because it includes the epoch protocol (reserve, copy, quiesce, commit), not the copy alone. The bytes budget must be derived from this achieved rate, not from link speed. (2) The drift half-life read 0 (not measured) at every sample but one, where it read 57,085,762 observations during the filler-to-docs shift. That is a MEASUREMENT FLAW, found by this run: the tracker was fed the accumulated heat, which is decayed by the very half-life setting the measurement is meant to inform (the experiment value was 20,000,000 observations), so it measured the setting and could barely see the workload. Fixed in the same change that records this note: the tracker now takes the counts of ONE source update interval (never accumulated or decayed), compares the hot sets of the newest interval with each older one, and takes the half-life relative to the overlap at the nearest lag (two adjacent intervals of the same traffic never match perfectly), and the evidence line gains drift_horizon_observations so a 0 means 'not seen within this horizon' and not 'zero'. The 57M reading and the zeros of policy-live-9 are therefore NOT valid drift values and must not be used to derive the half-life; the next run measures it properly. The offline replay (PR 620) needs the same change (it also fed decayed heat) and gets it once both are in.
 
 ## Step 2 implemented, 2026-11-05 (measurement hooks, no derivation yet)
 
@@ -106,3 +121,6 @@ PROTECTED_LAYERS and ACCEPT_UNWATERMARKED_HEAT are not tunables: protected layer
 - 2026-11-05T02:46:46.794753+00:00 (updated-by): Updated: section:notes
 - chg_20261105_024646_added-a-fast-offline-way-to-te_8266
 - 2026-11-05T02:46:50.926414+00:00 (updated-by): Updated: section:ledger-events
+- 2026-11-05T02:50:13.944855+00:00 (updated-by): Updated: section:notes
+- chg_20261105_025013_fixed-how-the-placement-policy_9631
+- 2026-11-05T02:50:17.774448+00:00 (updated-by): Updated: section:ledger-events

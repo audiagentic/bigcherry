@@ -163,8 +163,10 @@ private:
             if(last_delta_poll_ns_ && poll_now>last_delta_poll_ns_)
                 measured_.delta_gap_ns.add(double(poll_now-last_delta_poll_ns_));
             last_delta_poll_ns_=poll_now;
-            drift_.add(heat_.counts,delta.observation_count);
+            // the interval's own counts: the accumulated heat is decayed by the very half-life this informs
+            drift_.add(std::vector<double>(delta.counts.begin(),delta.counts.end()),delta.observation_count);
             measured_.drift_half_life_observations=drift_.half_life_observations();
+            measured_.drift_horizon_observations=drift_.horizon_observations();
             measured_.marginal_error=marginal_relative_error(heat_.counts,drift_.k());
         }
         r.unwatermarked=unwatermarked;
@@ -268,7 +270,7 @@ public:
     void reset_drift() {
         std::lock_guard<std::mutex> guard(measure_lock_);
         drift_=DriftTracker(std::max<size_t>(hot_set_k(),1));
-        measured_.drift_half_life_observations=0;measured_.marginal_error=0;
+        measured_.drift_half_life_observations=0;measured_.drift_horizon_observations=0;measured_.marginal_error=0;
         measured_.hot_set_k=hot_set_k();last_delta_poll_ns_=0;
     }
     Measured measured() const {std::lock_guard<std::mutex> guard(measure_lock_);return measured_;}
@@ -603,13 +605,14 @@ public:
             std::fprintf(stderr,
                 "policy measure transactions=%llu txn_p50_ns=%.0f txn_p95_ns=%.0f txn_max_ns=%.0f copy_bytes_per_ns=%.6f "
                 "aborts=%llu abort_p95_ns=%.0f delta_gaps=%llu delta_gap_p99_ns=%.0f delta_gap_max_ns=%.0f "
-                "hot_set_k=%zu drift_half_life_observations=%llu marginal_relative_error=%.6f\n",
+                "hot_set_k=%zu drift_half_life_observations=%llu drift_horizon_observations=%llu marginal_relative_error=%.6f\n",
                 (unsigned long long)m.transaction_ns.total(),m.transaction_ns.quantile(0.5),
                 m.transaction_ns.quantile(0.95),m.transaction_ns.max(),m.copy.bytes_per_ns(),
                 (unsigned long long)m.abort_ns.total(),m.abort_ns.quantile(0.95),
                 (unsigned long long)m.delta_gap_ns.total(),m.delta_gap_ns.quantile(0.99),
                 m.delta_gap_ns.max(),m.hot_set_k,
-                (unsigned long long)m.drift_half_life_observations,m.marginal_error);
+                (unsigned long long)m.drift_half_life_observations,
+                (unsigned long long)m.drift_horizon_observations,m.marginal_error);
         }
         for(const auto& [reason,count]:evidence_.reasons)
             std::fprintf(stderr,"policy no_change_reason=%s count=%llu\n",
