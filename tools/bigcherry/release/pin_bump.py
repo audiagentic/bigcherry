@@ -22,23 +22,23 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Sequence, TypeVar
 
+from .. import pin_transition
+from .. import recipes as recipes_module
 from ..build import source_compile_check
-from ..core import components as components_module, engines, paths
-from ..core import tree_activity
+from ..core import components as components_module
+from ..core import engines, paths, tree_activity
 from ..core.context import ProjectContext
 from ..engine_adapters import BumpCheckError, adapter
 from ..patch import apply as patch_apply
+from ..patch import build_evidence
 from ..patch import disposition as patch_disposition
 from ..patch import overlay as patch_overlay
 from ..patch import patchset as patch_patchset
-from ..patch import build_evidence
 from ..patch import rebase as patch_rebase
 from ..patch import registry as patch_registry
 from ..source import identity as source_identity
-from .. import pin_transition
-from .. import recipes as recipes_module
-from . import records as releases
 from . import notes as release_notes
+from . import records as releases
 from .pin import recipes_path, resolve_pin_sha
 
 PHASES = (

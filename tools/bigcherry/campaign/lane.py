@@ -37,20 +37,33 @@ import uuid
 from dataclasses import dataclass, replace
 from pathlib import Path
 
+from ..build import logs as build_logs
+from ..build.builds import BuildPlan
+from ..core import components, engines, paths
+from ..core import config as campaign_config
+from ..core.artifacts import ArtifactDescriptor, ArtifactLocator, ArtifactStore
+from ..core.context import ProjectContext
+from ..core.pipeline import ArtifactRef
+from ..core.provenance import (
+    SCHEMA_VERSION,
+    BuildProvenance,
+    CampaignProvenance,
+    ProjectProvenance,
+    ProvenanceClass,
+    ProvenanceError,
+    ProvenanceV2,
+    SourceProvenance,
+    WorkloadProvenance,
+)
+from ..patch import build_evidence, patchset
+from ..patch import catalog as patch_catalog
+from ..release import notes as release_notes
+from ..source.workspace import UpstreamRepository, WorkspaceError, bigcherry_revision
 from . import build as campaign_build
 from . import plan as campaign_plan
+from . import smoke as smoke_module
 from . import source as campaign_source
 from . import workers as campaign_workers
-from ..core import config as campaign_config
-from ..core import components, engines, paths
-from ..release import notes as release_notes
-from ..build import logs as build_logs
-from ..patch import catalog as patch_catalog
-from ..patch import build_evidence
-from ..patch import patchset
-from . import smoke as smoke_module
-from ..core.artifacts import ArtifactDescriptor, ArtifactLocator, ArtifactStore
-from ..build.builds import BuildPlan
 from .campaign import CampaignRun
 from .execution import (
     CampaignExecutionError,
@@ -59,20 +72,6 @@ from .execution import (
     require_campaign_success,
     source_provenance_from_metadata,
 )
-from ..core.context import ProjectContext
-from ..core.pipeline import ArtifactRef
-from ..core.provenance import (
-    BuildProvenance,
-    CampaignProvenance,
-    ProvenanceClass,
-    ProvenanceError,
-    ProvenanceV2,
-    ProjectProvenance,
-    SCHEMA_VERSION,
-    SourceProvenance,
-    WorkloadProvenance,
-)
-from ..source.workspace import UpstreamRepository, WorkspaceError, bigcherry_revision
 
 
 class CampaignLaneError(RuntimeError):

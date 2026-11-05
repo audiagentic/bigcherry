@@ -9,9 +9,9 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-from bigcherry.core import config
-from bigcherry.campaign import lane
 from bigcherry.build import logs
+from bigcherry.campaign import lane
+from bigcherry.core import config
 from bigcherry.patch import build_evidence, gates
 from bigcherry.release import notes, pin_bump
 from bigcherry.source.workspace import SourcePlan
@@ -190,9 +190,11 @@ class PinBumpEvidencePhaseTests(unittest.TestCase):
                 patch.object(pin_bump.releases, "record_for_checkout", return_value=record),
                 patch.object(pin_bump.build_evidence, "evaluate_source", side_effect=evaluate) as shared,
             ):
-                kw = dict(engine="radiance", source_name="radiance",
-                          target_ref="v1.17.0", to_sha="a" * 40,
-                          repo_root=root, vendor_root=root, report_dir=root / "report")
+                kw = {
+                    "engine": "radiance", "source_name": "radiance",
+                    "target_ref": "v1.17.0", "to_sha": "a" * 40,
+                    "repo_root": root, "vendor_root": root, "report_dir": root / "report",
+                }
                 with self.assertRaises(pin_bump.PinBumpStop) as stop:
                     pin_bump.run_phase_evidence(**kw)
                 self.assertEqual(stop.exception.phase, "evidence")
