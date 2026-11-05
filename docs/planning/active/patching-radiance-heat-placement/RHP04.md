@@ -153,6 +153,22 @@ Run policy-live-7, same workload and settings as policy-live-5 (slice H) and pol
 - KLD/top-1 against BF16, 8,240 positions, same build and reference. Tail placement with the policy on committed no transaction during the short scoring and is identical to its static twin (mean 0.0646, p99.9 2.245, top-1 88.50%; engine-only control 0.0678 / 2.376 / 88.57%), so it shows only that the static layout is sound. The churn gate starts from round-robin placement and runs the policy at a 1 s cadence with the effect gate off: 15 transactions committed, 4.87 GB moved, 0 aborted; static round-robin mean 0.0602 / p99.9 2.221 / top-1 88.69%, with the policy 0.0613 / 1.695 / 88.51%: +0.001 mean and -0.18 points top-1 against the twin, inside the gate (+0.02, 1.0 points). One run each.
 - Not yet shown: churn together with the effect gate on, and repeat runs.
 
+## Slice J repeat and reverse shift (2026-11-05)
+
+Merged build with the live policy on and the effect gate on (the same experiment values as the first slice J run, not calibrated), Flash-Next on four GPUs (`flashnext-4gpu`), eight 27K-token filler prefills and ten ~50K-token documentation prefills in each order, then decode at 1 and 6 streams; policy-live-8, one run of each order.
+
+| Run | Filler TTFT, prefill 1 to 8 | Documentation prefill, 1 to 10 | Transactions | Moved | Aborts |
+|---|---|---|---:|---:|---:|
+| first run (2026-11-04), filler then docs | 19.2 to 13.4 s | 3,702 to 3,687 tok/s | n/a | n/a | n/a |
+| repeat, filler then docs | 19.1 to 13.3 s | 3,701 to 3,663 tok/s | 8 | 2.6 GB | 0 |
+| reverse, docs then filler | 18.6 to 13.3 s | 3,519 to 3,645 tok/s | 9 | 2.9 GB | 0 |
+
+- The repeat reproduces the first run: filler converges to 13.3 s, documentation stays within 1.2% of its start (the stage-1 objective lost 19-20% in the same order).
+- The reverse order adapts the other way: documentation holds 3,630 to 3,690 tok/s from its second prompt (the first, cold, is 3,519), then the filler converges to the same 13.3 s the forward order ends at, so the final filler speed does not depend on which workload came first.
+- Decode after either order: 114.6 tok/s at one stream and 248 to 251 at six (step 24.8 ms and 46.5 to 47.2 ms; 3.3 draft tokens a step at one stream), the same step times as the policy-off parity run of the same layout, so the policy costs no decode step time.
+- The effect gate was on throughout; the transaction counters show 8 and 9 committed and none aborted.
+- Not shown: churn together with the gate beyond these two orders, a workload that never settles (alternating prompts), and settings calibrated from measurement rather than the experiment values.
+
 ## Change Log
 
 - 2026-11-01T22:51:22.513641+00:00 (updated-by): Updated: section:title, order=12, priority='P0', section:description, section:detailed_solution, section:validation, section:acceptance_criteria, section:notes
