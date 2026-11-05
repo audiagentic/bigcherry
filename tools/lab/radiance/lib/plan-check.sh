@@ -39,6 +39,8 @@ plan_check_describe() {
   PLAN_EXTRA=(--plan-extra "heat-sha256: $heat_id; budgets: ${BUDGETS[*]:-default}; experiment-sha256: $experiment_id")
   # What the helpers read besides the layout and the settings above: the live policy and the lab experiment objects.
   PLAN_OBJECTS=()
+  # The cache is durable across runs, and optional before the first calibration.
+  [ ! -f "$WORK/live-policy-calibration.toml" ] || PLAN_OBJECTS+=(--calibration "$WORK/live-policy-calibration.toml")
   [ -z "$LIVE_POLICY_FILE" ] || PLAN_OBJECTS+=(--live-policy "$LIVE_POLICY_FILE")
   [ -z "$EXPERIMENT_FILE" ] || PLAN_OBJECTS+=(--experiment "$EXPERIMENT_FILE")
 }

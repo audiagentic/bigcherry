@@ -1021,6 +1021,7 @@ void manifest_writer_step(Fixture& t) {
     // record, and are read back by the shared reader; a partial policy or a production experiment is an error, never a file.
     {
         sv::ManifestInputs c = in;
+        c.profile = "lab";
         c.live_policy = Json::parse(R"json({"effect_gate": true, "accept_unwatermarked_heat": false, "cadence_ns": 60000000000,
             "max_moves": 8, "max_moved_bytes": 4294967296, "min_residency_ns": 300000000000, "max_heat_age_ns": 120000000000,
             "min_samples": 1000, "abort_cooldown_ns": 30000000000, "learned_eligibility_ttl_ns": 600000000000,

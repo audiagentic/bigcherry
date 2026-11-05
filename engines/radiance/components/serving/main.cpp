@@ -24,7 +24,7 @@ void usage() {
                  "  --schema\n"
                  "  --validate <site.toml> [profile.toml] [--set key=value]\n"
                  "  --explain [--json] [--site FILE] [--profile FILE] [--set key=value]\n"
-                 "  --calibration FILE  (with --validate, --explain) a calibration cache over the seeds\n"
+                 "  --calibration FILE  calibration cache over seeds, including RHP16 per-plan measurement records\n"
                  "  --write-manifest OUT --plan-cache DIR --engine-binary PATH [--plan-extra TEXT] [site/profile/set]\n"
                  "      writes the v1 serving manifest for this configuration to OUT (an existing OUT is refused) from its\n"
                  "      measured plan and the planner's owner map, and reads it back through the shared strict reader before it\n"
@@ -40,7 +40,7 @@ void usage() {
                  "                     of the measuring start instead: owner map and settings, plan.state unmeasured, no plan. Only\n"
                  "                     a measuring start (radiance --plan-memory, r3_moe_worker --measuring) accepts it; every\n"
                  "                     serving start refuses it.\n"
-                 "      --live-policy FILE   a JSON object with every spec.handoff.placement.live_policy member; present means\n"
+                 "      --live-policy FILE   lab-only JSON override of every spec.handoff.placement.live_policy member; present means\n"
                  "                     the helper runs the live placement policy. Nothing is defaulted.\n"
                  "      --experiment FILE    a JSON object for spec.experiment (lab profile: the manifest is then written with\n"
                  "                     profile lab; a production manifest never carries one).\n"
@@ -146,6 +146,8 @@ int main(int argc, char** argv) {
             throw std::runtime_error("--plan-cache and --engine-binary go with --write-manifest");
         if (!plan_mode && !plan_extra.empty())
             throw std::runtime_error("--plan-extra goes with --write-manifest");
+        if (!live_policy_file.empty() && experiment_file.empty())
+            throw std::runtime_error("--live-policy is a lab override; supply --experiment for an explicit lab profile");
         if (write_manifest.empty() && (unmeasured || !live_policy_file.empty() || !experiment_file.empty()))
             throw std::runtime_error("--unmeasured, --live-policy and --experiment go with --write-manifest");
         if (write_manifest.empty() && !measured_plan_file.empty())
@@ -216,6 +218,7 @@ int main(int argc, char** argv) {
                 load_json_input(live_policy_file, "--live-policy", &in.live_policy, &in.live_policy_from);
                 load_json_input(experiment_file, "--experiment", &in.experiment, &in.experiment_from);
                 const auto built = bc::serving::build_manifest(in);
+                std::cerr << "live policy: unmeasured; calibration not available \n";
                 bc::serving::write_manifest_file(write_manifest, built.text);
                 std::cout << "manifest: " << write_manifest << " (unmeasured: for the measuring start only)\n"
                           << "digest: " << built.digest << '\n' << "no processes started\n";
@@ -257,6 +260,19 @@ int main(int argc, char** argv) {
             load_json_input(live_policy_file, "--live-policy", &in.live_policy, &in.live_policy_from);
             load_json_input(experiment_file, "--experiment", &in.experiment, &in.experiment_from);
             const auto built = bc::serving::build_manifest(in);
+            const auto& prov = built.document.at("provenance");
+            const auto& placement = built.document.at("spec").at("handoff").at("placement");
+            if (!placement.contains("live_policy"))
+                std::cerr << "live policy: no calibration for plan " << bc::serving::plan_key(key_inputs)
+                          << "; policy omitted (v1 cannot represent observe-only)\n";
+            else for (auto it = prov.begin(); it != prov.end(); ++it) {
+                const std::string pointer = "/spec/handoff/placement/live_policy/";
+                if (it.key().rfind(pointer, 0) != 0) continue;
+                const std::string field = it.key().substr(pointer.size());
+                std::cerr << "live policy: " << field << "=" << placement.at("live_policy").at(field).dump()
+                          << " [" << it.value().at("origin") << "] "
+                          << it.value().at("source").get<std::string>() << '\n';
+            }
             bc::serving::write_manifest_file(write_manifest, built.text);
             std::cout << "manifest: " << write_manifest << '\n' << "digest: " << built.digest << '\n' << "no processes started\n";
             return 0;
