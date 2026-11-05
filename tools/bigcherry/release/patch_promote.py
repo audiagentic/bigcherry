@@ -247,14 +247,54 @@ def _write_release_evidence(root: Path, info: PatchInfo, evidence: str) -> Path:
     return path
 
 
+def _summary_paragraph(info: PatchInfo) -> str:
+    """The first paragraph under ``## Summary`` of the package's SUMMARY.md, or its status line when it has none."""
+    summary = info.root / "SUMMARY.md"
+    text = summary.read_text(encoding="utf-8") if summary.is_file() else ""
+    match = re.search(r"(?ms)^## Summary\s*\n+(.+?)(?:\n\s*\n|\Z)", text)
+    return match.group(1).strip() if match else f"{info.patch_id}: see SUMMARY.md."
+
+
 def _write_promotion_record(info: PatchInfo, evidence: str) -> Path:
+    """Record the promotion evidence in the package README, keeping the README layout every package doc has
+    (## Summary, ## Outcome, ## Detail; tools/tests/test_docs_catalog.py): a new README is created in that layout,
+    an existing one gets the record appended under its Detail section."""
     readme = info.root / "README.md"
-    existing = readme.read_text(encoding="utf-8") if readme.is_file() else f"# {info.patch_id}\n"
-    block = f"\n\n## Promotion record\n\n{evidence.strip()}\n"
-    if "## Promotion record" in existing:
-        block = f"\n\n### Promotion evidence\n\n{evidence.strip()}\n"
-    readme.write_text(existing.rstrip() + block, encoding="utf-8", newline="\n")
+    record = f"### Promotion record\n\n{evidence.strip()}\n"
+    if not readme.is_file():
+        readme.write_text(
+            f"# {info.patch_id}\n\n## Summary\n\n{_summary_paragraph(info)}\n\n## Outcome\n\n"
+            f"Validated on the promotion evidence below.\n\n## Detail\n\n{record}",
+            encoding="utf-8", newline="\n",
+        )
+        return readme
+    existing = readme.read_text(encoding="utf-8")
+    if "### Promotion record" in existing:
+        record = f"### Promotion evidence\n\n{evidence.strip()}\n"
+    if not all(re.search(rf"(?m)^## {h}\s*$", existing) for h in ("Summary", "Outcome", "Detail")):
+        # bring an older README into the layout: its body becomes the start of Detail
+        title, _, body = existing.partition("\n")
+        title = title if title.startswith("# ") else f"# {info.patch_id}"
+        existing = (f"{title}\n\n## Summary\n\n{_summary_paragraph(info)}\n\n## Outcome\n\n"
+                    f"Validated on the promotion evidence below.\n\n## Detail\n\n{body.strip()}\n")
+    readme.write_text(existing.rstrip() + "\n\n" + record, encoding="utf-8", newline="\n")
     return readme
+
+
+def _refresh_generated_docs(root: Path, engine: str) -> list[Path]:
+    """Regenerate what a promotion changes in the docs: the enhancement catalogs, and the validated-patch count in
+    the root README (both checked by tools/tests/test_docs_catalog.py in CI)."""
+    _check_command(root, [sys.executable, "tools/docs/generate_engine_enhancement_summaries.py"], "enhancement catalogs")
+    patches = [p for p in (root / "engines" / engine / "patches").glob("*/patch.toml") if not p.parent.name.startswith("_")]
+    validated = sum(tomllib.loads(p.read_text(encoding="utf-8"))["state"] == "validated" for p in patches)
+    readme = root / "README.md"
+    text = readme.read_text(encoding="utf-8")
+    label = "Radiance" if engine == "radiance" else "llama.cpp"
+    updated = re.sub(rf"{re.escape(label)} has \d+ validated patch(es)?", f"{label} has {validated} validated patch"
+                     + ("es" if validated != 1 else ""), text, count=1)
+    readme.write_text(updated, encoding="utf-8", newline="\n")
+    catalogs = (root / "docs/reference/engines/radiance/ENHANCEMENTS.md", root / "docs/reference/engines/llamacpp/PATCHES.md")
+    return [readme, *(c for c in catalogs if c.is_file())]
 
 
 def _replace_section_patches(text: str, section: str, patches: Iterable[str], recipes: str) -> str:
@@ -721,6 +761,7 @@ def promote(
             changed.append(_write_promotion_record(info, evidence))
             changed.append(_write_release_evidence(worktree, info, evidence))
         changed.append(_update_recipes(worktree, layout, patch_ids))
+        changed.extend(_refresh_generated_docs(worktree, layout.name))
         _run_checks(worktree, layout, work_infos)
     except Exception:
         _discard_promotion_slice(root, worktree, branch)
