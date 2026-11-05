@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.14.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.13.0...bc-platform-1.14.0) (2026-11-05)
+
+
+### New and changed
+
+* **patch:** promote rad0009_serving_manifest, rad0011_plan_memory ([#663](https://github.com/audiagentic/bigcherry/issues/663)) ([d610837](https://github.com/audiagentic/bigcherry/commit/d610837b304f1193d2f36c05051def91b5e2478d))
+
 ## [1.13.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.12.1...bc-platform-1.13.0) (2026-11-05)
 
 
