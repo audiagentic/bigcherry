@@ -1,0 +1,17 @@
+{
+  "schema": 1,
+  "tier": "profile-evidence",
+  "patch-id": "1329_alloc_top_trace",
+  "pinned": "b11474",
+  "subject-digest": "4ec19287bac27daedf7abb85450cbf77e23a00fcb74a6a655e4cb84668fc1b85",
+  "default-on": false,
+  "models": [
+    "Qwen3.8 Flash-Next UD-IQ4_XS"
+  ],
+  "checks": {
+    "ab": "engines/llamacpp/patches/1329_alloc_top_trace/README.md ## Promotion record: b11474 deploy-v6-alloc-peak, both ALLOC_TOP and ALLOC_PEAK flags on vs off, 1106/1298 observations, 0 errors; no speed claim",
+    "activation": "engines/llamacpp/patches/1329_alloc_top_trace/README.md ## Promotion record: BIGCHERRY_ALLOC_TOP=1 produced 1106 ALLOC_TOP lines",
+    "identity": "engines/llamacpp/patches/1329_alloc_top_trace/README.md ## Promotion record: trace on vs off greedy md5 a34a34c1f48d identical",
+    "mechanics": "engines/llamacpp/patches/1329_alloc_top_trace/README.md ## Promotion record: deploy-v6-alloc-peak compiled clean, 0 error lines (2026-10-08)"
+  }
+}

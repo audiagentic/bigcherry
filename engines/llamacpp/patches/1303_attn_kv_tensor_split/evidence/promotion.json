@@ -1,0 +1,17 @@
+{
+  "schema": 1,
+  "tier": "profile-evidence",
+  "patch-id": "1303_attn_kv_tensor_split",
+  "pinned": "0504396",
+  "subject-digest": "fb6f4618986b0997858692b97d081e78b7646d9adcb05eb3431ebd244e6def27",
+  "default-on": false,
+  "models": [
+    "Qwen3.8 Flash-Next UD-IQ4_XS"
+  ],
+  "checks": {
+    "ab": "engines/llamacpp/patches/1303_attn_kv_tensor_split/README.md ## Evidence: v1 -> v2 incremental profile ABBA +3% at ~10K and +7% at ~80K; 240K f16 KV enabled",
+    "activation": "engines/llamacpp/patches/1303_attn_kv_tensor_split/README.md ## Evidence: BIGCHERRY_PATCH_HIT attn_ts=... attn_rotate=... during load",
+    "identity": "engines/llamacpp/patches/1303_attn_kv_tensor_split/README.md ## Evidence: greedy identical in every profile adoption run",
+    "mechanics": "engines/llamacpp/patches/1303_attn_kv_tensor_split/README.md ## Evidence: offline patch tests and patch-lint on pin 0504396 (2026-10-05)"
+  }
+}

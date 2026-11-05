@@ -1,0 +1,17 @@
+{
+  "schema": 1,
+  "tier": "profile-evidence",
+  "patch-id": "1297_draft_vocab_trim",
+  "pinned": "0504396",
+  "subject-digest": "6e4aa2dd180b566932e6c47af66f43890e3f4d6775f9f409d4837743d825e4bc",
+  "default-on": false,
+  "models": [
+    "Qwen3.8 Flash-Next UD-IQ4_XS"
+  ],
+  "checks": {
+    "ab": "engines/llamacpp/patches/1297_draft_vocab_trim/README.md ## Evidence: v1 opt-in incremental ABBA, -8% ms/step at 10K, draft acceptance within base range; queue-promote.sh",
+    "activation": "engines/llamacpp/patches/1297_draft_vocab_trim/README.md ## Evidence: BIGCHERRY_DRAFT_VOCAB_N set; trimmed draft-output rows in draft timing",
+    "identity": "engines/llamacpp/patches/1297_draft_vocab_trim/README.md ## Evidence: greedy identical in incremental adoption ABBA",
+    "mechanics": "engines/llamacpp/patches/1297_draft_vocab_trim/README.md ## Evidence: offline patch tests and patch-lint on pin 0504396 (2026-10-05)"
+  }
+}
