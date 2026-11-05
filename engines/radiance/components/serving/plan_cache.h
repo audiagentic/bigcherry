@@ -57,14 +57,4 @@ std::optional<CachedPlan> plan_cache_lookup(const std::filesystem::path& dir, co
 CachedPlan plan_cache_store(const std::filesystem::path& dir, const nlohmann::json& key_inputs,
                             const nlohmann::json& plan_json);
 
-/* The calibrated KV backing floor (calibration.kv_backing_floor.fraction_ppm) for a resolved configuration (`values`, as
- * resolve() returns them), from the compiled-in seeds and the optional refit cache; 0 when the objective selects none
- * (spec section 5.2). The one source of the engine's --plan-check-floor-ppm: never a launcher literal. */
-int64_t kv_backing_floor_ppm(const nlohmann::json& values, const std::filesystem::path& calibration_cache);
-
-/* The engine's start-up check flags for a cached plan, as separate arguments: writes the plan (v1 JSON, from the cache
- * entry) next to the cache as <key>.expected-plan.json and returns {"--plan-check", FILE, "--plan-check-floor-ppm", N}.
- * Both flags go to the engine, never one (radiance refuses that). */
-std::vector<std::string> plan_check_args(const std::filesystem::path& dir, const CachedPlan& entry, int64_t floor_ppm);
-
 }  // namespace bc::serving

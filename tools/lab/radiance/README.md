@@ -40,7 +40,7 @@ The command first attempts to download and verify both release assets, the entir
 
 ## Launch and quality
 
-Hold the exclusive **gpu lease** for launches and measurements, not just the benchmark request: the first launch of a new configuration measures the engine's memory plan with helpers running (**about 1–2 minutes**). Every start arms `--plan-check` even when a cached plan exists, waits for `/health`, then runs the mandatory start canary. The launcher returns **96** for a failed canary, **97** for plan measurement/storage/setup failure, or **98** for a held launch lock/already-running server. Stop before clearing `$BC_WORK_ROOT/flashnext/plan-cache` to force remeasurement.
+Hold the exclusive **gpu lease** for launches and measurements, not just the benchmark request: the first launch of a new configuration measures the engine's memory plan with helpers running (**about 1–2 minutes**). Every start of a helper layout starts the engine and the helpers from the measured serving manifest and the engine checks the plan it carries, even when a cached plan exists, waits for `/health`, then runs the mandatory start canary. The launcher returns **96** for a failed canary, **97** for plan measurement/storage/setup failure, or **98** for a held launch lock/already-running server. Stop before clearing `$BC_WORK_ROOT/flashnext/plan-cache` to force remeasurement.
 
 Use `--layout NAME` (`bigcherry layout list|show`) for device composition.
 
@@ -55,7 +55,7 @@ bash tools/lab/radiance/launch-flashnext-best.sh start --layout qwen27b-2xtx
 ```
 
 The dense path requires a successful fresh engine `--plan-memory` preflight and
-the normal response canary. The interim `bc-serve` calibrated plan-check only
+the normal response canary. The manifest-based plan check only
 understands Flash-Next helper layouts, so it is **not** yet enforced for TP dense.
 Do not treat this as a hardware-validated launch or a calibrated safety result.
 

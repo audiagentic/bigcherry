@@ -29,7 +29,7 @@ bash tools/lab/radiance/launch-flashnext-best.sh start --build DIR --layout flas
 bash tools/lab/radiance/launch-flashnext-best.sh stop
 ```
 
-Obtain the exclusive `gpu` lease before any launch or measurement (including the first launch). A cold configuration first starts helpers and measures the engine memory plan, usually **1–2 minutes**, before starting the serving engine. Every start, including a cached start, arms the mandatory engine `--plan-check` against that measured plan. After `/health`, every start also sends a completion **canary**; failure stops the processes and restores applied power settings.
+Obtain the exclusive `gpu` lease before any launch or measurement (including the first launch). A cold configuration first starts helpers and measures the engine memory plan, usually **1–2 minutes**, before starting the serving engine. Every start, including a cached start, starts the engine from the measured serving manifest, and the engine checks the plan that manifest carries (mandatory; no flag skips or replaces it). After `/health`, every start also sends a completion **canary**; failure stops the processes and restores applied power settings.
 
 | Exit | Meaning |
 | --- | --- |

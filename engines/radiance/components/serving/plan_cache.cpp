@@ -129,32 +129,6 @@ Json plan_key_inputs(const Json& values, const Json& facts, const std::string& m
             {"engine", engine}};
 }
 
-int64_t kv_backing_floor_ppm(const Json& values, const fs::path& calibration_cache) {
-    const auto floor = Calibration::standard(calibration_cache)
-                           .find("calibration.kv_backing_floor.fraction_ppm",
-                                 {"", values.at("layout").at("name").get<std::string>(),
-                                  values.at("service").at("objective").get<std::string>()});
-    if (!floor) return 0;
-    if (!floor->value.is_number_integer())
-        throw std::runtime_error("calibration.kv_backing_floor.fraction_ppm must be an integer");
-    const int64_t ppm = floor->value.get<int64_t>();
-    if (const auto bad = v1::check_kv_backing_floor_ppm(ppm)) throw std::runtime_error(bad->message);
-    return ppm;
-}
-
-std::vector<std::string> plan_check_args(const fs::path& dir, const CachedPlan& entry, int64_t floor_ppm) {
-    if (const auto bad = v1::check_kv_backing_floor_ppm(floor_ppm)) throw std::runtime_error(bad->message);
-    const fs::path file = dir / (entry.key + ".expected-plan.json");
-    const fs::path tmp = dir / (entry.key + ".expected-plan.json.tmp");
-    {
-        std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
-        out << entry.plan_json.dump(2) << '\n';
-        if (!out) throw std::runtime_error("cannot write " + tmp.string());
-    }
-    fs::rename(tmp, file);
-    return {"--plan-check", file.string(), "--plan-check-floor-ppm", std::to_string(floor_ppm)};
-}
-
 void check_plan_for_configuration(const Json& values, const v1::EnginePlan& plan) {
     const Json& engine = values.at("engine");
     if (plan.host_pool_mib != engine.at("host_pool_mib").get<int64_t>())

@@ -53,10 +53,12 @@ FAKE_ENGINE = r"""#!/bin/bash
 echo $$ >> "$FAKE_PIDS"
 printf '%s\n' "$@" > "$FAKE_ENGINE_ARGS"
 printf '%s|%s|%s\n' "$ROCR_VISIBLE_DEVICES" "$HIP_VISIBLE_DEVICES" "${R3_MOE_WORKER-unset}" > "$FAKE_ENGINE_ENV"
-plan=""; port=""
+plan=""; port=""; manifest=""
 while [ $# -gt 0 ]; do
-  case "$1" in --plan-memory) plan=$2; shift 2 ;; --port) port=$2; shift 2 ;; *) shift ;; esac
+  case "$1" in --plan-memory) plan=$2; shift 2 ;; --port) port=$2; shift 2 ;; --manifest) manifest=$2; shift 2 ;; *) shift ;; esac
 done
+# a manifest start: the port is the manifest's (the fake bc-serve records the --set engine.port it was given)
+[ -n "$manifest" ] && port=$(sed -n 's/.*"port": *\([0-9]*\).*/\1/p' "$manifest")
 echo "engine-start ${plan:+measure} $(date +%s.%N)" >> "$FAKE_TIMES"
 if [ -n "$plan" ]; then
   touch "$FAKE_MEASURING"

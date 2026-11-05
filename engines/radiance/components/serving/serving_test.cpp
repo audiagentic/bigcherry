@@ -736,8 +736,8 @@ void measured_plan_cache(Fixture& t) {
         unknown["host"][1]["name"] = "mystery";
         refused_for(in_ram, unknown, "unknown host consumer mystery");
     }
-    // The hardware gate's one-byte drift edits the cache entry's own plan: the next lookup hands that plan to the engine as the
-    // expected one (bc-serve rewrites <key>.expected-plan.json from the entry at every launch, so editing that file is moot).
+    // The cache entry's own plan is what a manifest carries as the expected plan (the engine reads it from the manifest, never
+    // from a file next to the cache): an entry edited by one byte validates, and the engine's CHECK is what refuses it.
     {
         const auto file = dir / (stored.key + ".json");
         const std::string original = [&] { std::ifstream in(file); std::ostringstream t; t << in.rdbuf(); return t.str(); }();
@@ -750,34 +750,8 @@ void measured_plan_cache(Fixture& t) {
         e["plan"]["host"][0]["bytes"] = 101;
         std::ofstream(file, std::ios::trunc) << e.dump();
         const auto drifted = sv::plan_cache_lookup(dir, k);
-        assert(drifted && drifted->plan.host.at(0).bytes == 101);              // the entry validates; the CHECK is what refuses it
-        const auto args2 = sv::plan_check_args(dir, *drifted, 600000);
-        std::ifstream handed(args2[1]);
-        assert(sv::decode_engine_plan(Json::parse(handed), "test").host.at(0).bytes == 101);   // the engine is handed the drifted plan
+        assert(drifted && drifted->plan.host.at(0).bytes == 101);
         std::ofstream(file, std::ios::trunc) << original;                      // restore for the tests below
-    }
-    // The engine's check flags: the cached plan as a v1 file, and the floor the calibration selects (never a literal).
-    {
-        const auto args = sv::plan_check_args(dir, *found, 600000);
-        assert(args.size() == 4 && args[0] == "--plan-check" && args[2] == "--plan-check-floor-ppm" && args[3] == "600000");
-        assert(args[1] == (dir / (stored.key + ".expected-plan.json")).string());
-        std::ifstream written(args[1]);
-        const auto round = sv::decode_engine_plan(Json::parse(written), args[1]);
-        assert(round.vram.kv_resolved == 9 && round.host_pool_mib == 9216);
-        auto bad_ppm = [&](int64_t n) {
-            try { (void)sv::plan_check_args(dir, *found, n); } catch (const std::exception& e) {
-                return std::string(e.what()).find("must be in [0, 1000000)") != std::string::npos;
-            }
-            return false;
-        };
-        assert(bad_ppm(-1) && bad_ppm(1000000));
-        // the floor is the selected calibration: balanced 600000, latency 500000, throughput none (0)
-        auto floor_for = [&](const char* objective) {
-            auto opts = t.standard();
-            opts.sets = {std::string("service.objective=") + objective};
-            return sv::kv_backing_floor_ppm(sv::resolve(opts, t.facts).values, {});
-        };
-        assert(floor_for("balanced") == 600000 && floor_for("latency") == 500000 && floor_for("throughput") == 0);
     }
     {
         const auto file = dir / (stored.key + ".json");
@@ -878,6 +852,25 @@ void manifest_writer_step(Fixture& t) {
     for (const Json& h : spec.at("plan").at("owner_map").at("helpers")) owned += h.at("count").get<size_t>();
     assert(owned == 64);   // 4 layers x 16 experts: with budgets this large the helpers own them all
     assert(spec.at("plan").at("engine_memory").at("expected") == plan);
+    // The kv_backing_floor the engine admits with is the selected calibration, carried in the manifest (never a launcher literal):
+    // balanced 600000, latency 500000, throughput none (0). engine_view hands the engine exactly this.
+    {
+        auto floor_for = [&](const char* objective) {
+            Options o = opts;
+            o.sets = {std::string("service.objective=") + objective};
+            const auto r2 = sv::resolve(o, t.facts);
+            sv::ManifestInputs in2 = in;
+            in2.resolved = r2;
+            in2.measured->key_inputs = sv::plan_key_inputs(r2.values, t.facts, sv::container_identity(model), std::string(64, 'b'), "");
+            const auto built2 = sv::build_manifest(in2);
+            const auto m2 = bc::serving::v1::read_manifest(built2.text, "floor test", bc::serving::v1::PlanUse::serving);
+            assert(m2.ok());
+            const auto view = bc::serving::v1::engine_view(m2.value());
+            assert(view.ok());
+            return view.value().kv_backing_floor_ppm;
+        };
+        assert(floor_for("balanced") == 600000 && floor_for("latency") == 500000 && floor_for("throughput") == 0);
+    }
     assert(spec.at("plan").at("state") == "measured" && spec.at("resources").at("host").contains("checkpoint_slots"));
     assert(!spec.at("handoff").at("placement").contains("live_policy") && !spec.contains("experiment"));
     // The unmeasured manifest of the measuring start: owner map and settings, no plan and nothing derived from one. A serving
