@@ -348,7 +348,8 @@
                   "host_reserve.total_fraction_ppm",
                   "kv_backing_floor.fraction_ppm",
                   "checkpoint_share",
-                  "host_kv_tier.target_mib"
+                  "host_kv_tier.target_mib",
+                  "host_ledger_margin.mib"
                 ]
               },
               "value": {
@@ -475,6 +476,25 @@
                   "properties": {
                     "key": {
                       "const": "host_kv_tier.target_mib"
+                    }
+                  },
+                  "required": [
+                    "key"
+                  ]
+                },
+                "then": {
+                  "properties": {
+                    "value": {
+                      "$ref": "#/$defs/uint"
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "key": {
+                      "const": "host_ledger_margin.mib"
                     }
                   },
                   "required": [

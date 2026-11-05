@@ -18,10 +18,10 @@ inline constexpr std::string_view kApiVersion = "bigcherry/v1";
 inline constexpr std::string_view kKind = "ServingManifest";
 inline constexpr int64_t kContractVersion = 1;
 // sha256 of the JCS validation schema without annotations (contract/README.md); the build pins it.
-inline constexpr std::string_view kFingerprint = "sha256:4ac0f808c0102adc2916640f534ce9f18dc6a422cb97fa439dc6bd646a97de64";
+inline constexpr std::string_view kFingerprint = "sha256:a6539bdfbb8ea182b7023a73e64167e7e181a8387e8a13b578556f9e58824996";
 // sha256 of the schema plus the frozen semantics it does not express (classes, lifecycle, Radiance bindings,
 // reader error codes); README.md.
-inline constexpr std::string_view kSemanticFingerprint = "sha256:ed064de2de0916842ae8aceaa8648db1a7d9cf18e2f4de7714f0834ed91b26c8";
+inline constexpr std::string_view kSemanticFingerprint = "sha256:227546581a84a5a8534ac0d664bdb06d0a9ed183e2411657a97ff580594ad2d6";
 // spec §11 amendment 8: the deepest container nesting a valid document can have (the root object is 1),
 // derived from the closed schema by the generator. The strict reader refuses anything deeper.
 inline constexpr size_t kMaxDepth = 9;
@@ -33,13 +33,15 @@ enum class CalibrationKey : uint8_t {
     kKvBackingFloorFractionPpm,
     kCheckpointShare,
     kHostKvTierTargetMib,
+    kHostLedgerMarginMib,
 };
-inline constexpr std::array<std::string_view, 5> kCalibrationKeyNames = {
+inline constexpr std::array<std::string_view, 6> kCalibrationKeyNames = {
     "host_reserve.floor_mib",
     "host_reserve.total_fraction_ppm",
     "kv_backing_floor.fraction_ppm",
     "checkpoint_share",
     "host_kv_tier.target_mib",
+    "host_ledger_margin.mib",
 };
 
 // Affinity: Worker CPU affinity: `auto` or `all`.

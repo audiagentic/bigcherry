@@ -873,10 +873,15 @@ void manifest_writer_step(Fixture& t) {
     // floor of 8 and the plan's 1 MiB consumer, the room above the tier is `left` MiB and the store takes 8 + left of its want 72.
     {
         const uint64_t reserve = r.values.at("memory").at("host_reserve_mib").get<uint64_t>();
+        // the calibrated margin the ledger leaves unplanned (amendment 11) is part of the manifest's calibration and of the room
+        uint64_t margin = 0;
+        for (const Json& e : spec.at("calibration"))
+            if (e.at("key") == "host_ledger_margin.mib") margin = e.at("value").get<uint64_t>();
+        assert(margin == 1024);
         auto slots_for = [&](uint64_t helpers_mib, int64_t extra_left_mib, int64_t available_shift_mib) -> uint64_t {
             sv::ManifestInputs in3 = in;
             in3.measured->plan.resident = {helpers_mib, 1024};
-            const int64_t available = int64_t(reserve + 9216 + 1 + 8 + 12288 + helpers_mib + 1024) + extra_left_mib + available_shift_mib;
+            const int64_t available = int64_t(reserve + margin + 9216 + 1 + 8 + 12288 + helpers_mib + 1024) + extra_left_mib + available_shift_mib;
             in3.resolved.facts["host"]["mem_available_mib"] = available;
             const auto built3 = sv::build_manifest(in3);
             return built3.document.at("spec").at("resources").at("host").at("checkpoint_slots").get<uint64_t>();
@@ -884,12 +889,41 @@ void manifest_writer_step(Fixture& t) {
         assert(slots_for(1536, 22, 0) == 8 + 22);                 // 22 MiB above the tier: 22 more slots than the floor
         assert(slots_for(1536, 22, -10) == 8 + 12);               // a manifest written when MemAvailable is lower: fewer slots
         assert(slots_for(1536, 22, +10) == 8 + 32);               // and when it is higher: more
+        // the margin is a seed with its evidence in spec.calibration, and a refit (a cache entry) replaces it: the manifest says
+        // so (source cache), its digest moves, and the slots follow; the engine plan and its key do not (the margin is not part
+        // of what the engine measured)
+        {
+            const Json* seed_entry = nullptr;
+            for (const Json& e : spec.at("calibration"))
+                if (e.at("key") == "host_ledger_margin.mib") seed_entry = &e;
+            assert(seed_entry && seed_entry->at("source") == "seed" && !seed_entry->at("evidence").get<std::string>().empty());
+            sv::ManifestInputs seeded = in;
+            seeded.measured->plan.resident = {1536, 1024};
+            seeded.resolved.facts["host"]["mem_available_mib"] = reserve + margin + 9216 + 1 + 8 + 12288 + 1536 + 1024 + 30;
+            const auto before = sv::build_manifest(seeded);
+            sv::ManifestInputs refit = seeded;
+            refit.calibration_cache = t.file("margin-refit.toml",
+                "schema_version = 1\n[[entry]]\nkey = \"calibration.host_ledger_margin.mib\"\nvalue = 1052\n"
+                "seeded = \"2026-11-06\"\nevidence = \"a start stopped 28 MiB short at the engine's host-room check\"\n");
+            const auto after = sv::build_manifest(refit);
+            const Json* refit_entry = nullptr;
+            for (const Json& e : after.document.at("spec").at("calibration"))
+                if (e.at("key") == "host_ledger_margin.mib") refit_entry = &e;
+            assert(refit_entry && refit_entry->at("source") == "cache" && refit_entry->at("value") == margin + 28);
+            assert(after.digest != before.digest);
+            auto slots_of = [](const sv::BuiltManifest& b) {
+                return b.document.at("spec").at("resources").at("host").at("checkpoint_slots").get<uint64_t>();
+            };
+            assert(slots_of(before) == 8 + 30 && slots_of(after) == 8 + 2);   // 28 MiB more margin, 28 fewer slots of 1 MiB
+            assert(before.document.at("spec").at("plan").at("engine_memory").at("cache_key") ==
+                   after.document.at("spec").at("plan").at("engine_memory").at("cache_key"));
+        }
         // helpers holding more resident memory take the same room: fewer slots at the same MemAvailable
         {
             sv::ManifestInputs in3 = in;
             in3.measured->plan.resident = {1536, 1024};
             const uint64_t available = in3.resolved.facts.at("host").at("mem_available_mib").get<uint64_t>();
-            in3.resolved.facts["host"]["mem_available_mib"] = reserve + 9216 + 1 + 8 + 12288 + 1536 + 1024 + 22;
+            in3.resolved.facts["host"]["mem_available_mib"] = reserve + margin + 9216 + 1 + 8 + 12288 + 1536 + 1024 + 22;
             const auto base = sv::build_manifest(in3);
             in3.measured->plan.resident = {1536 + 10, 1024};
             const auto more = sv::build_manifest(in3);

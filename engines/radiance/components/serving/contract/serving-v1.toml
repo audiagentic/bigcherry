@@ -144,6 +144,12 @@ value_kind = "ref"
 value_ref = "uint"
 doc = "Host KV tier target, MiB."
 
+[[calibration_key]]
+key = "host_ledger_margin.mib"
+value_kind = "ref"
+value_ref = "uint"
+doc = "Host memory the host ledger leaves unplanned beyond the reserve, for what the host loses between the manifest being written and the engine's own host-room check, MiB (amendment 11)."
+
 # ---- shared types ($defs), in schema order ----
 
 [[def]]
