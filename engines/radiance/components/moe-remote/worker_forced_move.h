@@ -4,9 +4,7 @@
 #include "worker_epoch.h"
 #include <algorithm>
 #include <array>
-#include <charconv>
 #include <cstdio>
-#include <fstream>
 #include <functional>
 #include <string>
 #include <vector>
@@ -33,47 +31,8 @@ struct Step {
         Step s; s.kind=Kind::AUTO_SWAP; s.move={x,y,0};return s;
     }
 };
-inline bool number(const std::string& s,uint32_t* p) {
-    if (!p || s.empty()) return false;
-    for(char c:s) if(c<'0'||c>'9') return false;
-    auto [end,err]=std::from_chars(s.data(),s.data()+s.size(),*p);
-    return err==std::errc{} && end==s.data()+s.size();
-}
-inline bool parse_move(const std::string& s,Move* m) {
-    if(!m) return false;
-    const auto a=s.find(':'),b=s.find(':',a==std::string::npos ? 0 : a+1);
-    return a!=std::string::npos && b!=std::string::npos &&
-        s.find(':',b+1)==std::string::npos &&
-        number(s.substr(0,a),&m->layer) &&
-        number(s.substr(a+1,b-a-1),&m->expert) &&
-        number(s.substr(b+1),&m->destination);
-}
-inline bool parse_step(const std::string& s,Step* out) {
-    if(!out) return false;
-    if(s.compare(0,5,"swap:")!=0) {
-        Move m;
-        if(!parse_move(s,&m)) return false;
-        *out=Step{m};return true;
-    }
-    if(s.compare(0,10,"swap:auto:")==0) {
-        const auto a=s.find(':',10);
-        uint32_t x=0,y=0;
-        if(a==std::string::npos || s.find(':',a+1)!=std::string::npos ||
-           !number(s.substr(10,a-10),&x) || !number(s.substr(a+1),&y)) return false;
-        *out=Step::automatic(x,y);return true;
-    }
-    std::array<uint32_t,4> n{};
-    size_t start=5;
-    for(size_t i=0;i<4;++i) {
-        const auto end=s.find(':',start);
-        if((i==3)!=(end==std::string::npos) ||
-           !number(s.substr(start,end==std::string::npos?end:end-start),&n[i])) return false;
-        start=end+1;
-    }
-    *out=Step::swap(n[0],n[1],n[2],n[3]);return true;
-}
-// A schedule has optional FIRST repeat=N and ordered move, explicit swap or
-// swap:auto:x:y rows. Exactly one proposal is issued per row.
+// A schedule is `repeat` passes over its ordered move, explicit swap or automatic swap steps, typed from the manifest
+// (spec.experiment.placement.forced). Exactly one proposal is issued per step.
 struct Schedule {
     std::vector<Step> steps;
     uint32_t repeat=1;
@@ -83,35 +42,6 @@ struct Schedule {
     Step next() const {return steps[size_t(issued%steps.size())];}
     void advance() {++issued;}
 };
-inline bool read_schedule(const std::string& file,Schedule* out,std::string* err) {
-    if(!out||file.empty()) return false;
-    std::ifstream in(file);
-    if(!in) {if(err)*err="cannot open schedule "+file;return false;}
-    Schedule s; std::string line; uint32_t no=0; bool first=true;
-    while(std::getline(in,line)) {
-        ++no;
-        auto start=line.find_first_not_of(" \t\r");
-        if(start==std::string::npos||line[start]=='#') continue;
-        auto end=line.find_last_not_of(" \t\r");
-        line=line.substr(start,end-start+1);
-        if(first && line.compare(0,7,"repeat=")==0) {
-            if(!number(line.substr(7),&s.repeat)||!s.repeat) {
-                if(err)*err="invalid repeat on line "+std::to_string(no);return false;
-            }
-        } else {
-            Step step;
-            if(!parse_step(line,&step)) {
-                if(err)*err="invalid placement step on line "+std::to_string(no);return false;
-            }
-            s.steps.push_back(step);
-        }
-        first=false;
-    }
-    if(!in.eof()||s.steps.empty()||s.steps.size()>UINT32_MAX/s.repeat) {
-        if(err)*err="unreadable, empty or epoch-exhausting schedule";return false;
-    }
-    *out=std::move(s);return true;
-}
 using Source=std::function<bool(uint32_t,uint32_t)>;
 inline constexpr std::array<uint32_t,2> kNoPrevious{{UINT32_MAX,UINT32_MAX}};
 struct Resolved {

@@ -25,13 +25,35 @@ plan_check_describe() {
     --set "engine.port=$PORT"
     --set "engine.checkpoint_interval=$CKPT_INTERVAL"
     --set "engine.num_speculative_tokens=$NUM_SPEC"
+    --set "handoff.shm=\"$SHM\""
+    --set "handoff.histogram_period_s=$RECORD_PERIOD"
   )
   [ "$PREFIX_RESUME" = off ] || PLAN_SET+=(--set "engine.prefix_resume=\"$PREFIX_RESUME\"")
   # What else decides the plan but is not a bc-serve setting: the pass-through engine arguments (--kv-resident,
   # --prefix-cache-mib, ...), the route-heat file's contents (they decide which experts the helpers own), the n-gram card
   # and the per-card budget overrides. Passed to every bc-serve call as --plan-extra and hashed into the key.
-  local heat_id; heat_id=$(sha256sum < "$HEAT" | cut -d' ' -f1)
-  PLAN_SITE=(--site "$1" --plan-extra "engine-args: ${ENGINE_ARGS[*]:-}; heat-sha256: $heat_id; ngram-device: ${NGRAM_DEV:-none}; budgets: ${BUDGETS[*]:-default}")
+  local heat_id experiment_id=none
+  heat_id=$(sha256sum < "$HEAT" | cut -d' ' -f1)
+  [ -z "$EXPERIMENT_FILE" ] || experiment_id=$(sha256sum < "$EXPERIMENT_FILE" | cut -d' ' -f1)
+  PLAN_SITE=(--site "$1")
+  PLAN_EXTRA=(--plan-extra "engine-args: ${ENGINE_ARGS[*]:-}; heat-sha256: $heat_id; ngram-device: ${NGRAM_DEV:-none}; budgets: ${BUDGETS[*]:-default}; experiment-sha256: $experiment_id")
+  # What the helpers read besides the layout and the settings above: the live policy and the lab experiment objects.
+  PLAN_OBJECTS=()
+  [ -z "$LIVE_POLICY_FILE" ] || PLAN_OBJECTS+=(--live-policy "$LIVE_POLICY_FILE")
+  [ -z "$EXPERIMENT_FILE" ] || PLAN_OBJECTS+=(--experiment "$EXPERIMENT_FILE")
+}
+
+# plan_manifest_write OUT [unmeasured]: the v1 serving manifest the helpers start from, written once (bc-serve refuses an
+# existing OUT). With `unmeasured`: the measuring start's manifest (owner map and settings, no plan); otherwise the measured
+# one, from the plan the cache holds for this exact configuration.
+plan_manifest_write() {
+  local out=$1 serve="$RAD_HOME/bin/bc-serve"
+  if [ "${2:-}" = unmeasured ]; then
+    "$serve" --write-manifest "$out" --unmeasured "${PLAN_SITE[@]}" "${PLAN_SET[@]}" "${PLAN_OBJECTS[@]}" >&2
+  else
+    "$serve" --write-manifest "$out" --plan-cache "$RUN/plan-cache" --engine-binary "$RAD_BIN" "${PLAN_SITE[@]}" "${PLAN_EXTRA[@]}" \
+      "${PLAN_SET[@]}" "${PLAN_OBJECTS[@]}" >&2
+  fi
 }
 
 # plan_check_site FILE: the site file bc-serve resolves against (the model, runtime home and heat paths this launcher uses).
@@ -54,11 +76,11 @@ plan_check_flags() {
   mkdir -p "$cache"
   plan_check_site "$site"
   plan_check_describe "$site"
-  out=$("$serve" --plan-check-args --plan-cache "$cache" --engine-binary "$RAD_BIN" "${PLAN_SITE[@]}" "${PLAN_SET[@]}" 2> "$RUN/plan-check.err")
+  out=$("$serve" --plan-check-args --plan-cache "$cache" --engine-binary "$RAD_BIN" "${PLAN_SITE[@]}" "${PLAN_EXTRA[@]}" "${PLAN_SET[@]}" 2> "$RUN/plan-check.err")
   rc=$?
   if [ $rc = 10 ]; then
     plan_check_measure "$serve" "$cache" || return 1
-    out=$("$serve" --plan-check-args --plan-cache "$cache" --engine-binary "$RAD_BIN" "${PLAN_SITE[@]}" "${PLAN_SET[@]}" 2> "$RUN/plan-check.err")
+    out=$("$serve" --plan-check-args --plan-cache "$cache" --engine-binary "$RAD_BIN" "${PLAN_SITE[@]}" "${PLAN_EXTRA[@]}" "${PLAN_SET[@]}" 2> "$RUN/plan-check.err")
     rc=$?
   fi
   if [ $rc != 0 ]; then
@@ -70,17 +92,21 @@ plan_check_flags() {
   [ ${#PLAN_CHECK_ARGS[@]} = 4 ] && [ "${PLAN_CHECK_ARGS[0]}" = --plan-check ] && [ "${PLAN_CHECK_ARGS[2]}" = --plan-check-floor-ppm ] \
     || { echo "plan check: unexpected bc-serve output: $out" >&2; return 1; }
   grep -h '^plan:' "$RUN/plan-check.err" >&2
+  PLAN_MANIFEST="$RUN/manifest-$STAMP-$$.json"
+  plan_manifest_write "$PLAN_MANIFEST" || { echo "plan check: the serving manifest was not written (above)" >&2; return 1; }
 }
 
 # plan_check_measure SERVE CACHE: no measured plan exists for this configuration. Say so once, measure it with a start that
 # brings the helpers up and stops the engine after plan(), and store it under the key asked for.
 plan_check_measure() {
   local serve=$1 cache=$2 key plan="$RUN/plan-measured.json" t0=$SECONDS
-  key=$("$serve" --plan-key --plan-cache "$cache" --engine-binary "$RAD_BIN" "${PLAN_SITE[@]}" "${PLAN_SET[@]}") || return 1
+  key=$("$serve" --plan-key --plan-cache "$cache" --engine-binary "$RAD_BIN" "${PLAN_SITE[@]}" "${PLAN_EXTRA[@]}" "${PLAN_SET[@]}") || return 1
   echo "plan check: no measured plan for this configuration (cache miss, key ${key:0:16}); measuring it first (the helpers come up and the engine stops after its memory plan; about 1-2 minutes, once per configuration)" >&2
   rm -f "$plan"
+  PLAN_MEASURING_MANIFEST="$RUN/manifest-measuring-$STAMP-$$.json"
+  plan_manifest_write "$PLAN_MEASURING_MANIFEST" unmeasured || { echo "plan check: the unmeasured manifest was not written (above)" >&2; return 1; }
   PLAN_MEASURE_FILE="$plan" plan_check_start_engine_measure || { echo "plan check: the measuring start failed; see $RUN/engine-measure.log" >&2; return 1; }
-  "$serve" --plan-store --expect-key "$key" --plan-file "$plan" --plan-cache "$cache" --engine-binary "$RAD_BIN" "${PLAN_SITE[@]}" "${PLAN_SET[@]}" >&2 \
+  "$serve" --plan-store --expect-key "$key" --plan-file "$plan" --plan-cache "$cache" --engine-binary "$RAD_BIN" "${PLAN_SITE[@]}" "${PLAN_EXTRA[@]}" "${PLAN_SET[@]}" >&2 \
     || { echo "plan check: the measured plan was not stored (above)" >&2; return 1; }
   echo "plan check: measured in $((SECONDS - t0)) s; plan stored in $cache (key ${key:0:16})" >&2
 }

@@ -1,5 +1,13 @@
 # Changelog
 
+## [1160.5.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1160.4.0...bc-radiance-1160.5.0) (2026-11-05)
+
+
+### New and changed
+
+* **patch:** a profile-evidence record carries forward across pin bumps when only the pin differs; rad0008 gets its promotion record from the evidence on hand ([#642](https://github.com/audiagentic/bigcherry/issues/642)) ([f2c2e2c](https://github.com/audiagentic/bigcherry/commit/f2c2e2c53c5339298667c92ebc775ba099a35338))
+* **radiance:** helpers read their whole configuration from the serving manifest (RSC06, contract amendment 10) ([#633](https://github.com/audiagentic/bigcherry/issues/633)) ([9d5d0b8](https://github.com/audiagentic/bigcherry/commit/9d5d0b8081a1a60c2c2337d65c5b7d0d871d6788))
+
 ## [1160.4.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1160.3.0...bc-radiance-1160.4.0) (2026-11-05)
 
 

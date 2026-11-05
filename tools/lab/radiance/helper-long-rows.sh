@@ -4,6 +4,10 @@
 # Usage: helper-long-rows.sh <branch> [long_rows=65]
 set -u
 BR=${1:-origin/feat/rad06-gemm-counters}; LR=${2:-65}
+# Each tile variant must be resolved by bc-serve into an independent
+# validated experiment manifest; the helper never mutates settings in-process.
+manifest_off=${BC_SERVING_MANIFEST_OFF:?set BC_SERVING_MANIFEST_OFF for long_rows=0}
+manifest_on=${BC_SERVING_MANIFEST_ON:?set BC_SERVING_MANIFEST_ON for the tuned variant}
 W=${BC_WORK_ROOT}
 cd $W/wt-pr8 && git fetch -q origin && git checkout -q --detach $BR && git log --oneline -1
 export BIGCHERRY_ENVIRONMENT=${BC_DEV_ROOT}/projects/bigcherry/workspaces/main/config/environment.local.toml; source "$(dirname "${BASH_SOURCE[0]}")/lab-env.sh"; export PATH=$ROCM_PATH/bin:$PATH
@@ -16,11 +20,12 @@ for f in $(ls -S $W/captures/*.bin | head -4); do
   echo "== $(basename $f) $(stat -c %s $f) bytes"
   for lr in 0 $LR; do
     out=$W/longrows-$(basename $f .bin)-$lr; rm -rf $out
-    HIP_VISIBLE_DEVICES=0 ROCR_VISIBLE_DEVICES=0 $(PYTHONPATH=tools python3 -m bigcherry layout card-env 0) R3_MOE_WORKER_MIB=22528 R3_MOE_WORKER_SMALL_ROWS=8 R3_MOE_WORKER_MAX_ROWS=4096 \
-      R3_MOE_NATIVE=1 R3_MOE_WORKER_MOE_DOWN_TILE=1 R3_MOE_WORKER_MOE_LONG_ROWS=$lr \
-      R3_MOE_WORKER_HEAT=$W/runs/perf51/heat.rank0.hot-first RADIANCE_HOME=$B/radiance_home timeout 900 \
+    manifest=$manifest_off
+    [ "$lr" = 0 ] || manifest=$manifest_on
+    HIP_VISIBLE_DEVICES=0 ROCR_VISIBLE_DEVICES=0 timeout 900 \
       rocprofv3 --kernel-trace --stats --output-format csv -d $out -o run -- \
-      $B/radiance_home/helpers/r3_moe_worker --replay $M $f > $out.log 2>&1
+      "$B/radiance_home/helpers/r3_moe_worker" --manifest "$manifest" --role helper0 \
+        --replay "$M" "$f" > $out.log 2>&1
     echo " long_rows=$lr: $(grep -h 'replay layer\|engine_join' $out.log | head -2 | tr '\n' ' ')"
     python3 - $out/run_kernel_stats.csv <<'PY'
 import csv, sys

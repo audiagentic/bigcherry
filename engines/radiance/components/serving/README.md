@@ -12,9 +12,11 @@ The strict TOML loader, `bc-serve` inspection and manifest generation,
 the shared v1 reader, and the engine-side memory-plan measurement and
 admission check are implemented. The serving component now includes an
 owner-map verifier that checks the planner's owned expert sets and exact
-device byte totals. Card-free tests cover the verifier. End-to-end
-role-specific startup and helper manifest consumption remain unfinished;
-these additions do not constitute a fully qualified v1 launch.
+device byte totals. Card-free tests cover the verifier. The helpers read their
+whole configuration from the manifest (`r3_moe_worker --manifest FILE --role
+helperN`, through `v1/helper_settings.h`; RSC06) and the launcher writes the
+manifests they start from. The engine still starts from flags until the S4
+cutover, so this is not yet a fully qualified v1 launch.
 
 
 ## Detail
@@ -29,7 +31,10 @@ then run `ctest --output-on-failure`. Tests are CPU-only, including a
 synthetic KFD/PCI/proc/sysfs tree and launcher-value parity.
 
 Commands: `--detect [--json]`, `--schema`, `--validate <site> [profile]`,
-`--explain [--json]`, `--write-manifest OUT` (the serving manifest v1; with `--plan-cache` and `--engine-binary`),
+`--explain [--json]`, `--write-manifest OUT` (the serving manifest v1; with `--plan-cache` and `--engine-binary`,
+or with `--unmeasured` and neither: the measuring start's manifest, `plan.state` unmeasured, which only a measuring start
+(`radiance --plan-memory`, `r3_moe_worker --measuring`) accepts; `--live-policy FILE` adds the live placement policy and
+`--experiment FILE` a lab experiment, each a JSON object the reader checks member by member),
 `--plan-key`, `--plan-check-args`, `--plan-store`.
 Use `--site FILE`, `--profile FILE`, and repeated
 `--set section.key=value` with the latter three.

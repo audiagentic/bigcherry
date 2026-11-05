@@ -8,7 +8,7 @@
       "build_sha256": "4d97aa62b5551ca084b683f8eba2dfb963f77c4a55a3ea2ddde75016b1ebd37d"
     },
     "contract_version": 1,
-    "content_digest": "sha256:e2e8066eafd896b92313cdf596bd57886b22515527da786f270efe99d2f78f4f"
+    "content_digest": "sha256:44bdbe1a071a19a2119012ceeb265ee99077979d7f44c49a2cd39dfa3227fa8b"
   },
   "spec": {
     "intent": {
@@ -133,7 +133,29 @@
       },
       "placement": {
         "strategy": "tail",
-        "heat_file": "/models/flash-next.heat"
+        "heat_file": "/models/flash-next.heat",
+        "live_policy": {
+          "effect_gate": true,
+          "accept_unwatermarked_heat": false,
+          "cadence_ns": 60000000000,
+          "max_moves": 8,
+          "max_moved_bytes": 4294967296,
+          "min_residency_ns": 300000000000,
+          "max_heat_age_ns": 120000000000,
+          "min_samples": 1000,
+          "abort_cooldown_ns": 30000000000,
+          "learned_eligibility_ttl_ns": 600000000000,
+          "effect_window_samples": 5000,
+          "effect_min_quiet_windows": 3,
+          "effect_revert_ttl_ns": 120000000000,
+          "margin_ppm": 100000,
+          "half_life_observations_milli": 4000,
+          "effect_noise_multiplier_milli": 2000,
+          "protected_layers": [
+            0,
+            1
+          ]
+        }
       },
       "telemetry": {
         "histogram_file": "/models/flash-next.hist",
@@ -309,6 +331,7 @@
           }
         ]
       },
+      "state": "measured",
       "engine_memory": {
         "cache_version": 1,
         "cache_key": "6e3a22cec5c5cce8f2bcf4d64eaae0cc5d51b454e43e0b50aa24b972117d43da",
@@ -575,6 +598,16 @@
         "/spec/intent",
         "/spec/facts",
         "/spec/calibration"
+      ]
+    },
+    "/spec/handoff/placement/live_policy": {
+      "origin": "site",
+      "source": "site.toml:policy",
+      "class": "policy",
+      "lifecycle": "startup_only",
+      "confidence": "exact",
+      "inputs": [
+        "/spec/intent/layout"
       ]
     }
   }

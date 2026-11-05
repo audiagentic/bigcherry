@@ -63,7 +63,7 @@ The machine `code` field uses the following stable spelling. Every code maps to 
 | `BC_CFG_PROVENANCE_INVALID` | `RAD_E_SCHEMA` | -9 | Bad or missing effective-source coverage, pointer, dependency or cycle |
 | `BC_CFG_CALIBRATION_INVALID` | `RAD_E_SCHEMA` | -9 | Ambiguous, missing, unsupported or unevidenced calibration selection |
 | `BC_CFG_OWNERSHIP_MISMATCH` | `RAD_E_SCHEMA` | -9 | Initial owner map, per-helper set, count, device bytes or digest inconsistent |
-| `BC_CFG_PLAN_MISMATCH` | `RAD_E_SCHEMA` | -9 | Stable expected and live engine-plan consumers do not agree |
+| `BC_CFG_PLAN_MISMATCH` | `RAD_E_SCHEMA` | -9 | Stable expected and live engine-plan consumers do not agree; or a serving start was given an unmeasured manifest, or a measuring start a measured one (`spec.plan.state`, §11 amendment 10) |
 | `BC_CFG_ADMISSION_REFUSED` | `RAD_E_NOMEM` | -6 | Resources cannot admit the required plan, including insufficient live claimable VRAM |
 | `BC_CFG_IO_FAILURE` | `RAD_E_IO` | -13 | Manifest/cache/measurement read or write failure |
 | `BC_CFG_ABI_MISMATCH` | `RAD_E_ABI` | -10 | Plugin config struct size/version or engine binding ABI mismatch |

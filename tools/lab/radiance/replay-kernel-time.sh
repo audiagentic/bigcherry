@@ -3,9 +3,10 @@
 # rocprofv3's kernel trace and the script prints, per kernel name, the call count and mean duration. Run it per configuration
 # (SMALL_ROWS, GEMV settings, device) and compare. No server, no engine: kernel time only, so it separates kernel cost from
 # orchestration cost when the same captures are replayed on another card (DEV).
-# Usage: BUILD=<lane build dir> CAPDIR=<captures> MODEL=<.rad> [DEV=0] [N=12] [ENVV="R3_MOE_WORKER_SMALL_ROWS=16 ..."] tools/lab/radiance/replay-kernel-time.sh
+# Usage: BUILD=... CAPDIR=... MODEL=... BC_SERVING_MANIFEST=... [DEV=0] [N=12] tools/lab/radiance/replay-kernel-time.sh
 set -u
 B=${BUILD:?set BUILD to the lane build directory}
+MANIFEST=${BC_SERVING_MANIFEST:?set BC_SERVING_MANIFEST to the per-run bc-serve output}
 CAP=${CAPDIR:?set CAPDIR to a directory of captures}
 M=${MODEL:?set MODEL to the .rad container the captures came from}
 DEV=${DEV:-0}
@@ -13,9 +14,10 @@ OUT=${OUT:-${WORK:-${BC_WORK_ROOT}}/replay-kt}
 FILES=$(ls ${CAP}/*.bin | head -${N:-12} | tr '\n' ' ')
 source "$(dirname "${BASH_SOURCE[0]}")/lab-env.sh"; export PATH=$ROCM_PATH/bin:$PATH
 rm -rf "$OUT"
-env HIP_VISIBLE_DEVICES=$DEV $(PYTHONPATH=tools python3 -m bigcherry layout card-env $DEV) R3_MOE_WORKER_MIB=${MIB:-22528} R3_MOE_WORKER_MAX_ROWS=4096 R3_MOE_WORKER_SMALL_ROWS=${SMALL_ROWS:-8} R3_MOE_WORKER_ENGINE_RANKS=${ENGINE_RANKS:-1} R3_MOE_WORKER_MOE_DOWN_TILE=1 R3_MOE_SWEEP_FAST=1 RADIANCE_HOME=$B/radiance_home ${ENVV:-} \
-  timeout 3600 rocprofv3 --kernel-trace --output-format csv -d "$OUT" -o run -- \
-  "$B/radiance_home/helpers/r3_moe_worker" --replay-sweep "$M" "" $FILES > "$OUT.log" 2>&1
+env HIP_VISIBLE_DEVICES=$DEV timeout 3600 \
+  rocprofv3 --kernel-trace --output-format csv -d "$OUT" -o run -- \
+  "$B/radiance_home/helpers/r3_moe_worker" --manifest "$MANIFEST" --role helper0 \
+    --replay-sweep "$M" production $FILES > "$OUT.log" 2>&1
 echo "rc=$? ($(grep -c '^replay_hash' "$OUT.log") replays)"
 python3 - "$(find "$OUT" -name '*kernel_trace.csv' | head -1)" <<'PY'
 import csv, sys, collections

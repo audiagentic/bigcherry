@@ -3,158 +3,101 @@
 #include <cstdio>
 #include "worker_epoch.h"
 #include <cstdlib>
+#include <functional>
 #include <string>
 #include <vector>
-#include <utility>
 
+// The live policy is typed from the manifest (spec.handoff.placement.live_policy). The schema and the reader already
+// refuse a missing or out-of-range member (v1 reader tests); this checks the conversion and the invariants the policy
+// relies on, and that a manifest without a policy never starts one.
 static void check(bool b,const char* reason) {
     if(!b) {std::fprintf(stderr,"policy config FAIL: %s\n",reason);std::exit(1);}
 }
-static const std::vector<std::pair<const char*,const char*>> required={
-    {"R3_MOE_POLICY_CADENCE_NS","10000"},
-    {"R3_MOE_POLICY_MARGIN","0.05"},
-    {"R3_MOE_POLICY_MAX_MOVES","2"},
-    {"R3_MOE_POLICY_MAX_MOVED_BYTES","20"},
-    {"R3_MOE_POLICY_MIN_RESIDENCY_NS","1"},
-    {"R3_MOE_POLICY_HEAT_HALF_LIFE_OBSERVATIONS","1000"},
-    {"R3_MOE_POLICY_MAX_HEAT_AGE_NS","100000000"},
-    {"R3_MOE_POLICY_MIN_SAMPLES","1"},
-    {"R3_MOE_POLICY_ABORT_COOLDOWN_NS","20000"},
-    {"R3_MOE_POLICY_LEARNED_ELIGIBILITY_TTL_NS","30000"},
-    {"R3_MOE_POLICY_PROTECTED_LAYERS","none"},
-    {"R3_MOE_POLICY_EFFECT_WINDOW_SAMPLES","2"},
-    {"R3_MOE_POLICY_EFFECT_MIN_QUIET_WINDOWS","2"},
-    {"R3_MOE_POLICY_EFFECT_NOISE_MULTIPLIER","2.0"},
-    {"R3_MOE_POLICY_EFFECT_REVERT_TTL_NS","30000"}
-};
+using bc::serving::v1::LivePolicy;
+static LivePolicy valid() {
+    LivePolicy p{};
+    p.effect_gate=true;p.accept_unwatermarked_heat=false;
+    p.cadence_ns=10000;p.max_moves=2;p.max_moved_bytes=20;p.min_residency_ns=1;p.max_heat_age_ns=100000000;
+    p.min_samples=1;p.abort_cooldown_ns=20000;p.learned_eligibility_ttl_ns=30000;p.effect_window_samples=2;
+    p.effect_min_quiet_windows=2;p.effect_revert_ttl_ns=30000;
+    p.margin_ppm=50000;p.half_life_observations_milli=1000000;p.effect_noise_multiplier_milli=2000;
+    return p;
+}
 int main() {
     std::string err;
+    const std::vector<uint32_t> shares{1,1};
     r3::policy::Settings s;
-    unsetenv("R3_MOE_POLICY_ENABLE");
-    check(s.from_environment(2,false,&err)&&!s.enabled,
-          "off by default and no required parameters");
-    check(!s.enabled && !s.accept_unwatermarked_heat,
-          "unwatermarked heat off by default");
+    check(!s.enabled && !s.accept_unwatermarked_heat && !s.effect_gate,"a policy is off until the manifest has one");
     struct TestClock : r3::epoch::Clock {
         uint64_t now_ns() const override {return 1000000000ULL;}
     } clock;
     r3::policy::Driver off(s,nullptr,{},0,{},clock);
     check(off.start()&&!off.running(),"off never starts thread");
-    setenv("R3_MOE_POLICY_ENABLE","1",1);
-    unsetenv("R3_MOE_POLICY_EFFECT_GATE");
-    check(!s.from_environment(2,false,&err)&&
-          err.find("R3_MOE_POLICY_EFFECT_GATE")!=std::string::npos,
-          "gate choice mandatory when policy enabled");
-    setenv("R3_MOE_POLICY_EFFECT_GATE","1",1);
-    for(const auto& [k,v]:required)unsetenv(k);
-    for(const auto& [k,v]:required)setenv(k,v,1);
-    check(s.from_environment(2,false,&err)&&s.enabled,"valid explicit controls");
-    for(const auto& [key,value]:required) {
-        unsetenv(key);
-        err.clear();
-        r3::policy::Settings probe;
-        check(!probe.from_environment(2,false,&err)&&
-              err.find(key)!=std::string::npos,
-              "every missing setting must fail closed by name");
-        setenv(key,value,1);
-    }
-    check(!s.from_environment(2,true,&err)&&err.find("conflicts")!=std::string::npos,
-          "forced-move exclusion");
-    setenv("R3_MOE_POLICY_ACCEPT_UNWATERMARKED_HEAT","1",1);
-    check(s.from_environment(2,false,&err)&&s.accept_unwatermarked_heat,
-          "explicit file-source opt-in");
-    setenv("R3_MOE_POLICY_ACCEPT_UNWATERMARKED_HEAT","yes",1);
-    check(!s.from_environment(2,false,&err),"invalid opt-in fails");
-    setenv("R3_MOE_POLICY_ACCEPT_UNWATERMARKED_HEAT","0",1);
-    setenv("R3_MOE_POLICY_MARGIN","1",1);
-    check(!s.from_environment(2,false,&err),"invalid margin fails");
-    setenv("R3_MOE_POLICY_MARGIN","0.05",1);
-    // The live plan is the static placer's, so it reads the launch's helper shares: unset is every helper 1.
-    unsetenv("R3_MOE_WORKER_SHARES");
-    check(s.from_environment(2,false,&err) && s.head_shares==std::vector<uint32_t>({1,1}),
-          "unset shares weight every helper 1");
-    setenv("R3_MOE_WORKER_SHARES","4,1",1);
-    check(s.from_environment(2,false,&err) && s.head_shares==std::vector<uint32_t>({4,1}),
-          "launch shares are read as set");
-    for(const char* bad:{"1","1,1,1","0,0","1,x","-1,1","1,,1"}) {
-        setenv("R3_MOE_WORKER_SHARES",bad,1);
-        check(!s.from_environment(2,false,&err),"shares must be one weight a helper, not all zero");
-    }
-    unsetenv("R3_MOE_WORKER_SHARES");
-    setenv("R3_MOE_POLICY_PROTECTED_LAYERS","1,2",1);
-    check(s.from_environment(2,false,&err) &&
-          s.protected_layers==std::vector<uint32_t>({1,2}),
-          "explicit protected layers accepted");
-    setenv("R3_MOE_POLICY_PROTECTED_LAYERS","2,1",1);
-    check(!s.from_environment(2,false,&err),"unordered protected layers refused");
-    setenv("R3_MOE_POLICY_PROTECTED_LAYERS","none",1);
 
-    // All 18 controls: policy activation and unwatermarked flag may be
-    // absent/empty (=off); effect gate flag is MANDATORY and the other
-    // fifteen numeric/list controls have no defaults.
-    // Invalid inputs are table-driven to prevent permissive strtod fallback.
-    for(const char* key:{"R3_MOE_POLICY_ENABLE",
-                        "R3_MOE_POLICY_ACCEPT_UNWATERMARKED_HEAT",
-                        "R3_MOE_POLICY_EFFECT_GATE"}) {
-        for(const char* bad:{" 1","1 ","0x1","1e999","-1","nan","inf","1,0"}) {
-            for(const auto& [k,v]:required)setenv(k,v,1);
-            setenv("R3_MOE_POLICY_ENABLE","1",1);
-            setenv("R3_MOE_POLICY_ACCEPT_UNWATERMARKED_HEAT","0",1);
-            setenv("R3_MOE_POLICY_EFFECT_GATE","1",1);
-            setenv(key,bad,1);
-            r3::policy::Settings q;err.clear();
-            check(!q.from_environment(2,false,&err) &&
-                  err.find(key)!=std::string::npos,
-                  "flag rejects whitespace/hex/overflow/negative/nan/inf/count");
-        }
-    }
-    setenv("R3_MOE_POLICY_ENABLE","1",1);
-    unsetenv("R3_MOE_POLICY_ACCEPT_UNWATERMARKED_HEAT");
-    setenv("R3_MOE_POLICY_EFFECT_GATE","1",1);
-    r3::policy::Settings flags;err.clear();
-    for(const auto& [k,v]:required)setenv(k,v,1);
-    check(flags.from_environment(2,false,&err) &&
-          !flags.accept_unwatermarked_heat,"empty optional opt-in is disabled");
-    const std::vector<std::pair<const char*,std::vector<std::string>>> bad_inputs={
-      {"R3_MOE_POLICY_CADENCE_NS",{""," 10","10 ","0x10","18446744073709551616","-1","nan","inf","1,2"}},
-      {"R3_MOE_POLICY_MARGIN",{""," 0.5","0.5 ","0x1p-2","1e999","-0.1","nan","inf","0.1,0.2"}},
-      {"R3_MOE_POLICY_MAX_MOVES",{""," 2","2 ","0x2","4294967296","-1","nan","inf","1,2"}},
-      {"R3_MOE_POLICY_MAX_MOVED_BYTES",{""," 20","20 ","0x20","18446744073709551616","-1","nan","inf","1,2"}},
-      {"R3_MOE_POLICY_MIN_RESIDENCY_NS",{""," 1","1 ","0x1","18446744073709551616","-1","nan","inf","1,2"}},
-      {"R3_MOE_POLICY_HEAT_HALF_LIFE_OBSERVATIONS",{""," 5","5 ","0x1p2","1e999","-1","nan","inf","1,2"}},
-      {"R3_MOE_POLICY_MAX_HEAT_AGE_NS",{""," 10","10 ","0x10","18446744073709551616","-1","nan","inf","1,2"}},
-      {"R3_MOE_POLICY_MIN_SAMPLES",{""," 1","1 ","0x1","18446744073709551616","-1","nan","inf","1,2"}},
-      {"R3_MOE_POLICY_ABORT_COOLDOWN_NS",{""," 20","20 ","0x20","18446744073709551616","-1","nan","inf","1,2"}},
-      {"R3_MOE_POLICY_LEARNED_ELIGIBILITY_TTL_NS",{""," 30","30 ","0x30","18446744073709551616","-1","nan","inf","1,2"}},
-      {"R3_MOE_POLICY_PROTECTED_LAYERS",{""," none","none ","0x1","4294967296","-1","nan","inf","0,,1"}},
-      {"R3_MOE_POLICY_EFFECT_WINDOW_SAMPLES",{""," 2","2 ","0x2","18446744073709551616","-1","nan","inf","1,2","0"}},
-      {"R3_MOE_POLICY_EFFECT_MIN_QUIET_WINDOWS",{""," 2","2 ","0x2","18446744073709551616","-1","nan","inf","1,2","0"}},
-      {"R3_MOE_POLICY_EFFECT_NOISE_MULTIPLIER",{""," 2","2 ","0x1p1","1e999","-0.1","nan","inf","1,2","0"}},
-      {"R3_MOE_POLICY_EFFECT_REVERT_TTL_NS",{""," 2","2 ","0x2","18446744073709551616","-1","nan","inf","1,2","0"}}
-    };
-    check(bad_inputs.size()==required.size(),"all 15 required settings in test matrix");
-    for(const auto& [key,invalid]:bad_inputs) {
-        for(const auto& bad:invalid) {
-            for(const auto& [k,v]:required)setenv(k,v,1);
-            setenv("R3_MOE_POLICY_ENABLE","1",1);
-            setenv("R3_MOE_POLICY_ACCEPT_UNWATERMARKED_HEAT","0",1);
-            setenv("R3_MOE_POLICY_EFFECT_GATE","1",1);
-            setenv(key,bad.c_str(),1);
+    check(s.from_manifest(valid(),shares,&err)&&s.enabled,"valid explicit controls");
+    check(s.effect_gate && !s.accept_unwatermarked_heat && s.cadence_ns==10000 && s.controls.max_moves==2 &&
+          s.controls.max_moved_bytes==20 && s.abort_cooldown_ns==20000 && s.learned_eligibility_ttl_ns==30000,
+          "integers carried as written");
+    check(s.controls.margin==0.05 && s.controls.half_life_observations==1000.0 && s.effect_noise_multiplier==2.0,
+          "ppm and milli values become the controls' reals");
+    check(s.head_shares==shares && s.protected_layers.empty(),"shares from the manifest, no protected layers");
+
+    {   // every positive member refuses zero, by name
+        const struct {const char* name;std::function<void(LivePolicy&)> zero;} cases[]={
+            {"cadence_ns",[](LivePolicy& p){p.cadence_ns=0;}},
+            {"max_moves",[](LivePolicy& p){p.max_moves=0;}},
+            {"max_moved_bytes",[](LivePolicy& p){p.max_moved_bytes=0;}},
+            {"min_residency_ns",[](LivePolicy& p){p.min_residency_ns=0;}},
+            {"max_heat_age_ns",[](LivePolicy& p){p.max_heat_age_ns=0;}},
+            {"min_samples",[](LivePolicy& p){p.min_samples=0;}},
+            {"abort_cooldown_ns",[](LivePolicy& p){p.abort_cooldown_ns=0;}},
+            {"learned_eligibility_ttl_ns",[](LivePolicy& p){p.learned_eligibility_ttl_ns=0;}},
+            {"effect_window_samples",[](LivePolicy& p){p.effect_window_samples=0;}},
+            {"effect_min_quiet_windows",[](LivePolicy& p){p.effect_min_quiet_windows=0;}},
+            {"effect_revert_ttl_ns",[](LivePolicy& p){p.effect_revert_ttl_ns=0;}},
+            {"half_life_observations_milli",[](LivePolicy& p){p.half_life_observations_milli=0;}},
+            {"effect_noise_multiplier_milli",[](LivePolicy& p){p.effect_noise_multiplier_milli=0;}},
+        };
+        for(const auto& c:cases) {
+            LivePolicy p=valid();c.zero(p);
             r3::policy::Settings probe;err.clear();
-            if(probe.from_environment(2,false,&err) ||
-               err.find(key)==std::string::npos) {
-                std::fprintf(stderr,"failed reject key=%s input='%s' error='%s'\n",
-                             key,bad.c_str(),err.c_str());
-                check(false,"strict syntax or overflow must reject by setting name");
-            }
+            check(!probe.from_manifest(p,shares,&err)&&err.find(c.name)!=std::string::npos&&!probe.enabled,
+                  "a zero control fails closed by name");
         }
     }
-    for(const auto& [k,v]:required)setenv(k,v,1);
-    r3::policy::Settings verified;err.clear();
-    setenv("R3_MOE_POLICY_EFFECT_GATE","0",1);
-    check(verified.from_environment(2,false,&err)&&!verified.effect_gate,
-          "explicitly disabled gate retains declared settings");
-    setenv("R3_MOE_POLICY_EFFECT_GATE","1",1);
-    check(verified.from_environment(2,false,&err),"all table entries restored valid");
-    puts("policy config: settings matrix and mutual exclusion passed");
+    for(int64_t bad:{int64_t(0),int64_t(1000000),int64_t(-5)}) {
+        LivePolicy p=valid();p.margin_ppm=bad;
+        r3::policy::Settings probe;err.clear();
+        check(!probe.from_manifest(p,shares,&err)&&err.find("margin_ppm")!=std::string::npos,"margin outside (0,1) refused");
+    }
+    {
+        LivePolicy p=valid();p.max_moves=int64_t(UINT32_MAX)+1;
+        r3::policy::Settings probe;
+        check(!probe.from_manifest(p,shares,&err),"max_moves beyond 32 bits refused");
+    }
+    {
+        LivePolicy p=valid();p.accept_unwatermarked_heat=true;p.effect_gate=false;
+        r3::policy::Settings probe;
+        check(probe.from_manifest(p,shares,&err)&&probe.accept_unwatermarked_heat&&!probe.effect_gate,
+              "explicit file-source opt-in and a disabled gate are kept as declared");
+    }
+    // The live plan is the static placer's, so it reads the helper shares of the launch.
+    check(s.from_manifest(valid(),{4,1},&err)&&s.head_shares==std::vector<uint32_t>({4,1}),"launch shares are read as set");
+    for(const std::vector<uint32_t>& bad:{std::vector<uint32_t>{},std::vector<uint32_t>{0,0},std::vector<uint32_t>{1000001,1}}) {
+        r3::policy::Settings probe;
+        check(!probe.from_manifest(valid(),bad,&err),"shares must be one weight a helper, not all zero, not above 1e6");
+    }
+    {
+        LivePolicy p=valid();p.protected_layers={1,2};
+        r3::policy::Settings probe;
+        check(probe.from_manifest(p,shares,&err)&&probe.protected_layers==std::vector<uint32_t>({1,2}),
+              "explicit protected layers accepted");
+        p.protected_layers={2,1};
+        check(!probe.from_manifest(p,shares,&err),"unordered protected layers refused");
+        p.protected_layers={1,1};
+        check(!probe.from_manifest(p,shares,&err),"repeated protected layers refused");
+        p.protected_layers={-1};
+        check(!probe.from_manifest(p,shares,&err),"negative protected layer refused");
+    }
+    puts("policy config: typed controls and invariants passed");
 }

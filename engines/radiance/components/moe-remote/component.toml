@@ -24,7 +24,7 @@ targets = ["r3_moe_shm_test", "r3_moe_backend_test", "r3_worker_share_test", "r3
            "r3_moe_epoch_test", "r3_moe_fp8_ref_test", "r3_combine_f16_test", "r3_combine_pool_test",
            "r3_admission_ledger_test", "r3_mailbox_completion_test", "r3_owner_generation_test",
            "r3_worker_slot_pool_test", "r3_replay_bootstrap_test", "r3_rad46_rows_policy_test", "r3_combine_epoch_test",
-           "r3_forced_move_test", "r3_segment_version_test"]
+           "r3_forced_move_test", "r3_segment_version_test", "r3_helper_settings_test", "r3_helper_plugin_config_test"]
 
 # Runtime settings: see libr3/component.toml for the status vocabulary.
 
@@ -58,32 +58,38 @@ summary = "force the slice-2a fp32 host reference path instead of gfx1201 comput
 default = "28672"
 status = "experimental"
 summary = "VRAM budget in MiB for cold full-expert units owned by the gfx1201 helper"
+manifest = "/spec/processes/helpers/[]/vram_budget_mib"
 
 [setting.R3_MOE_WORKER_PLUGIN_FILE]
 default = ""
 status = "experimental"
 summary = "the kernel plugin file (under RADIANCE_HOME/kernels) this helper's card loads, e.g. libr3.so; required unless R3_MOE_WORKER_PLUGIN names a full path. Which file belongs to which card type is engines/radiance/archs.toml, set by the launcher and the harness (RAD23)"
+manifest = "/spec/processes/helpers/[]/plugin_file"
 
 [setting.R3_MOE_WORKER_FORMATS]
 default = ""
 status = "experimental"
 summary = "the expert weight formats this helper's card runs, comma separated (w4nl64, fp8_e4m3_block); required. Set from engines/radiance/archs.toml by the launcher and the harness; a container whose format is not listed is refused before any expert is touched (RAD23)"
+manifest = "/spec/processes/helpers/[]/formats"
 
 [setting.R3_MOE_WORKER_MIBS]
 default = ""
 status = "experimental"
 summary = "VRAM budget in MiB of each helper, comma separated, one a helper (R3_MOE_WORKER_COUNT of them); empty gives every helper R3_MOE_WORKER_MIB. For helpers on cards of different sizes (RAD23)"
+manifest = "/spec/processes/helpers/[]/vram_budget_mib"
 
 [setting.R3_MOE_WORKER_PLACEMENT]
 default = "roundrobin"
 status = "experimental"
 summary = "how the heat ranking is dealt to the helpers: roundrobin (each takes its share, the default) or tail (helpers 0..N-2 take the ranking by R3_MOE_WORKER_SHARES up to their budgets and the last helper takes the coldest leftovers that fit its own budget) (RAD23)"
 activation = "r3_moe_worker: tail placement:"
+manifest = "/spec/handoff/placement/strategy"
 
 [setting.R3_MOE_WORKER_SHARES]
 default = ""
 status = "experimental"
 summary = "each helper's part of the expert ranking, comma separated non-negative weights one a helper (empty = equal); a weight of 0 gives a helper no experts (RAD23)"
+manifest = "/spec/processes/helpers/[]/share"
 
 [setting.R3_MOE_WORKER_MAX_ROWS]
 default = "64"
@@ -94,11 +100,13 @@ summary = "largest step (rows) handed to the helper (engine and helper both read
 default = "2"
 status = "experimental"
 summary = "engine TP ranks the helper serves: 2 = two XTX ranks, each asking for its TP slice; 1 = one engine (the R9700, RAD02) asking for full expert width (the helper runs both slices and sums them)"
+manifest = "/spec/processes/engine/scheduler/tp"
 
 [setting.R3_MOE_WORKER_COUNT]
 default = "1"
 status = "experimental"
 summary = "helpers sharing the segment: 2 = two XTX helpers behind a one-rank (R9700) engine, each owning half the candidates and serving its own rank slot"
+manifest = "/spec/processes/helpers"
 
 [setting.R3_MOE_WORKER_HISTOGRAM]
 default = ""
@@ -114,130 +122,27 @@ summary = "Engine-side required for live policy input: set this to a positive pe
 default = ""
 status = "experimental"
 summary = "a R3_MOE_WORKER_HISTOGRAM file: the helper owns the coldest experts first, so the engine keeps the hot ones and decode hands off less"
-
-[setting.R3_MOE_PLACEMENT_FORCE_MOVE]
-default = ""
-status = "diagnostic"
-summary = "RHP11 slice G test mode: one forced expert exchange through the full placement transaction while serving (layer:expert:helper, or swap:layerA:expertA:layerB:expertB; swap:auto:X:Y resolves the pair from the canonical owner map). Conflicts with R3_MOE_PLACEMENT_FORCE_SCHEDULE. For quality and stability gates only, never for serving: the helper prints attempted/committed/aborted counts on exit or SIGUSR1"
-
-[setting.R3_MOE_PLACEMENT_FORCE_SCHEDULE]
-default = ""
-status = "diagnostic"
-summary = "RHP11 slice G test mode: a schedule file of forced exchanges (one per line, repeat=N repeats a line) driven through the full placement transaction while serving. Conflicts with R3_MOE_PLACEMENT_FORCE_MOVE. For quality and stability gates only, never for serving"
-
-
-# RHP slice H: live stage-1 policy (no experimental trigger or size defaults).
-
-# RHP slice I: required measured-effect settings, even when EFFECT_GATE=0.
-# The policy must explicitly opt in or out; all sizes remain unset by default.
-[setting.R3_MOE_POLICY_EFFECT_GATE]
-default = ""
-status = "experimental"
-summary = "Required 0 or 1 when live policy enabled: 1 gates each move on quiet work-normalised helper-0 lane service timing, with measured rollback; 0 explicitly disables the measured-effect experiment and is printed in evidence"
-
-[setting.R3_MOE_POLICY_EFFECT_WINDOW_SAMPLES]
-default = ""
-status = "experimental"
-summary = "Required timed requests PER LANE CLASS in each disjoint quiet or postcommit measurement window; only sampled completed requests, no class mixing"
-
-[setting.R3_MOE_POLICY_EFFECT_MIN_QUIET_WINDOWS]
-default = ""
-status = "experimental"
-summary = "Required consecutive quiet-window PAIRS before any judged proposal (N+1 complete non-overlapping windows); each pair contributes an observed relative noise deviation"
-
-[setting.R3_MOE_POLICY_EFFECT_NOISE_MULTIPLIER]
-default = ""
-status = "experimental"
-summary = "Required positive finite decimal multiple of the measured worst absolute fractional quiet-window rate change; no hard-coded service regression threshold"
-
-[setting.R3_MOE_POLICY_EFFECT_REVERT_TTL_NS]
-default = ""
-status = "experimental"
-summary = "Required positive monotonic duration that a forward destination judged measured-worse is blacklisted after a verified worse window"
-
-
-
-[setting.R3_MOE_POLICY_PROTECTED_LAYERS]
-default = ""
-status = "experimental"
-summary = "Required explicitly when policy enabled: sorted model-global MTP or other nonmovable layer IDs (e.g. 2,3), or literal none after verifying no protected active layers; no automatic MTP inference"
-
-[setting.R3_MOE_POLICY_ENABLE]
-default = "0"
-status = "experimental"
-summary = "Enable the experimental background stage-1 heat placement driver; disabled by default and exclusive with forced placement mode"
-
-[setting.R3_MOE_POLICY_ACCEPT_UNWATERMARKED_HEAT]
-default = "0"
-status = "experimental"
-summary = "Explicit experiment-only opt-in for actual HistogramFileSource (verified by a private constructor-minted source capability, not a mutable observation label); policy requires engine-side R3_MOE_WORKER_HISTOGRAM_PERIOD_S > 0 for live updates and reports no_live_feed if no progress inside CADENCE_NS + MAX_HEAT_AGE_NS"
-
-[setting.R3_MOE_POLICY_CADENCE_NS]
-default = ""
-status = "experimental"
-summary = "Monotonic nanosecond evaluation cadence, required when enabled"
-
-[setting.R3_MOE_POLICY_MARGIN]
-default = ""
-status = "experimental"
-summary = "Required fractional predicted peak-load improvement threshold in (0,1)"
-
-[setting.R3_MOE_POLICY_MAX_MOVES]
-default = ""
-status = "experimental"
-summary = "Required maximum expert owner changes in one transaction"
-
-[setting.R3_MOE_POLICY_MAX_MOVED_BYTES]
-default = ""
-status = "experimental"
-summary = "Required maximum sum of physical expert slot strides moved per transaction"
-
-[setting.R3_MOE_POLICY_MIN_RESIDENCY_NS]
-default = ""
-status = "experimental"
-summary = "Required monotonic nanosecond minimum dwell since a committed move"
-
-[setting.R3_MOE_POLICY_HEAT_HALF_LIFE_OBSERVATIONS]
-default = ""
-status = "experimental"
-summary = "Required heat half-life in routed expert observations, not seconds"
-
-[setting.R3_MOE_POLICY_MAX_HEAT_AGE_NS]
-default = ""
-status = "experimental"
-summary = "Required maximum histogram file/source age in nanoseconds"
-
-[setting.R3_MOE_POLICY_MIN_SAMPLES]
-default = ""
-status = "experimental"
-summary = "Required minimum credited heat windows per expert"
-
-[setting.R3_MOE_POLICY_ABORT_COOLDOWN_NS]
-default = ""
-status = "experimental"
-summary = "Required cooldown between an aborted transaction and any retry"
-
-[setting.R3_MOE_POLICY_LEARNED_ELIGIBILITY_TTL_NS]
-default = ""
-status = "experimental"
-summary = "Required monotonic duration that aborted (expert,destination) remains ineligible"
+manifest = "/spec/handoff/placement/heat_file"
 
 [setting.R3_MOE_WORKER_GEMV]
 default = "1"
 status = "experimental"
 summary = "decode MoE GEMV for the helper's small lane (RAD05): no WMMA, dot products straight off the packed w4nl64 nibbles. R9700 engine + two XTX helpers, Flash-Next: decode 69.6/69.7 -> 95.7/95.5 tok/s, prefill unchanged, KLD 0.0605 (noise floor 0.058-0.062). 0 turns it off; 2 compares it with the grouped GEMM (--compare)"
+manifest = "/spec/processes/helper_common/gemv/mode"
 
 [setting.R3_MOE_WORKER_GEMV_WIDE]
 default = "1"
 status = "experimental"
 summary = "RAD14: on by default for FP8 experts (0 is the off switch). The FP8 decode GEMV with sixteen-byte weight loads (four in flight a lane) and a branch-free E4M3 decode. On real 35B decode captures, per 16-row request on one XTX: gate/up 301 -> 109 us, down 150 -> 82 us (about 2.4x less kernel time); output within f32 rounding of the default kernel (a different K-sum order)."
 activation = "r3_moe_worker: R3_MOE_WORKER_GEMV_WIDE on"
+manifest = "/spec/processes/helper_common/gemv/wide"
 
 [setting.R3_MOE_WORKER_GEMV_H2]
 default = "2"
 status = "experimental"
 summary = "RAD14: the FP8 decode GEMV on packed f16 dot products (v_dot2_f32_f16, f32 accumulate); the value is the rows a block handles (1, 2 or 4), 0 falls back to the wide kernel (R3_MOE_WORKER_GEMV_WIDE). On by default for FP8 experts with two rows a block. E4M3 codes and their products are exact in f16 and the activation and weight scales are applied to each sixteen-element partial sum, so only the f32 accumulation order differs from the default. Per 16-row 35B decode request on one XTX: gate/up 106 -> 85 us, down 72 -> 56 us against the wide kernel; engine decode +17-20% at 1 stream, within noise at 4 and 6."
 activation = "r3_moe_worker: R3_MOE_WORKER_GEMV_H2 on"
+manifest = "/spec/processes/helper_common/gemv/h2"
 
 [setting.R3_MOE_WORKER_GEMV_W4H2]
 default = "1"
@@ -245,42 +150,49 @@ status = "validated"
 evidence = ["docs/evidence/RAD23/R3_MOE_WORKER_GEMV_W4H2.run.json"]
 summary = "RAD14: the W4 (w4nl64) decode GEMV rebuilt like the FP8 one (sixteen-byte loads, byte-permute level lookup, v_dot2_f32_f16). In October it was measured only on the <=8-row small lane, where it is off the Flash-Next critical path (4-row kernel 101 -> 77 us, no end-to-end change). Paired with R3_MOE_WORKER_GEMV_LARGE_ROWS=32, so 9-32-row multi-stream decode steps (6 streams x MTP 3 = 24 rows) leave the grouped GEMM for it: XTX expert step 470 -> 262 us a layer, flashnext-4gpu decode step 1 stream 26.8 -> 24.5 ms, 4 streams 47.8 -> 41.3, 6 streams 55.9 -> 46.6 ms (engine decode ~282 -> 330-342 tok/s; 2026-11-01). The Flash-Next launcher sets both; KLD passed (mean 0.0598 vs 0.0660 control). Validated by a single-variable capture (GEMV_LARGE_ROWS=32 in both arms, 2 pairs): decode step 1/2/4/6 streams -6/-7/-16/-14%."
 activation = "r3_moe_worker: R3_MOE_WORKER_GEMV_W4H2 on"
+manifest = "/spec/processes/helper_common/gemv/w4h2"
 
 [setting.R3_MOE_WORKER_GEMV_MR]
 default = "0"
 status = "evaluated"
 summary = "RAD14: the wide FP8 GEMV with an expert's rows batched four at a time (weights decoded once a pass). Slower than the single-row wide kernel on real 35B decode requests (gate/up 148 vs 109 us, down 95 vs 82 us): about twelve experts a request is too little parallelism and each block restages its activation rows. Kept for other shapes."
 activation = "r3_moe_worker: R3_MOE_WORKER_GEMV_MR on"
+manifest = "/spec/processes/helper_common/gemv/mr"
 
 [setting.R3_MOE_WORKER_MOE_FORM]
 default = "0"
 status = "experimental"
 summary = "pin the helper's grouped MoE GEMM form (RAD06): 0 libr4d's choice by row count, 1 the 32-row prefill form, 2 the 16-row decode form (a helper's prefill rows are ~4.5 an owned expert)"
 activation = "r3_moe_worker: grouped MoE GEMM pinned to the"
+manifest = "/spec/processes/helper_common/kernels/moe_form"
 
 [setting.R3_MOE_WORKER_MOE_DOWN_TILE]
 default = ""
 status = "experimental"
 summary = "pin libr4d's down-projection tile in the helper (RAD06 gfx1100 sweep): 1 the 64/128-column tile, 2 the 256-column 16-wave tile; unset leaves libr4d's choice"
 activation = "r3_moe_worker: R3_MOE_WORKER_MOE_DOWN_TILE="
+manifest = "/spec/handoff/kernels/moe_down_tile"
 
 [setting.R3_MOE_WORKER_MOE_LONG_ROWS]
 default = ""
 status = "evaluated"
 summary = "RAD06: runs of this many rows or more take 64-row slices and an MT=4 tile in the helper's grouped MoE GEMM (fewer weight-tile restages for long runs; bit-identical); unset or 0 keeps the single 32-row map"
 activation = "r3_moe_worker: R3_MOE_WORKER_MOE_LONG_ROWS="
+manifest = "/spec/processes/helper_common/kernels/moe_long_rows"
 
 [setting.R3_MOE_WORKER_SPARSE_ACT]
 default = "1"
 status = "experimental"
 summary = "RAD23: on the large lane, a request copies only the activation rows the routes name (a row mask from the route list, then a masked copy) instead of every row; the activation read over the engine's mapped memory is ~1.5 ms of a 2048-row chunk on a card behind a PCIe 3.0 x4 link (3.57 GB/s measured), nearly all of the RX 6900 XT's fixed per-request floor. Exact: a row no route names is never read. 0 copies all rows"
 activation = "r3_moe_worker: R3_MOE_WORKER_SPARSE_ACT"
+manifest = "/spec/processes/helper_common/kernels/sparse_act"
 
 [setting.R3_MOE_WORKER_LANE_QUANT]
 default = "1"
 status = "experimental"
 summary = "RAD23: the gated activation and E4M3 requantise between gate/up and down run in a lane kernel (moe_lane_quant.h) that is libr4d's gated_quant_fp8 / gated_had_quant_fp8 with the same arithmetic (libr4d's r4d_q8.h and r4d_fwht.h; libr3's software E4M3 pack where the instruction does not exist) but stops at the request's route count: the plugin's launch quantises every row of the lane's capacity (rows x top_k), since the kernels are queued before the request arrives. 0 launches the plugin's"
 activation = "r3_moe_worker: R3_MOE_WORKER_LANE_QUANT"
+manifest = "/spec/processes/helper_common/kernels/lane_quant"
 
 [setting.R3_MOE_WORKER_VECIO]
 default = "1"
@@ -288,6 +200,7 @@ status = "validated"
 summary = "RAD06: the helper's activation copy (engine's mapped host memory into the lane) and result write (lane to mapped host memory) use 16-byte accesses instead of one byte and two bytes a thread; bit-identical, read per request; 0 keeps the scalar kernels"
 activation = "r3_moe_worker: R3_MOE_WORKER_VECIO on"
 evidence = ["docs/evidence/RAD06/R3_MOE_WORKER_VECIO.run.json"]
+manifest = "/spec/processes/helper_common/kernels/vecio"
 
 [setting.R3_MOE_WORKER_COMBINE]
 default = ""
@@ -299,27 +212,26 @@ activation = "libr3moe: R3_MOE_WORKER_COMBINE on"
 default = "256"
 status = "experimental"
 summary = "RAD18: with R3_MOE_WORKER_COMBINE, the smallest large-lane step (rows) the helpers' rows are combined for; smaller steps keep the two-row merge"
+manifest = "/spec/processes/helper_common/combine/min_rows"
 
 [setting.R3_MOE_WORKER_COMBINE_THREADS]
 default = "8"
 status = "experimental"
 summary = "RAD18: with R3_MOE_WORKER_COMBINE, CPU threads in helper 0's combine pool (persistent, sleeping on futex words between steps; the calling thread is one of them)"
-
-[setting.R3_MOE_WORKER_EPOCH_CYCLE_S]
-default = "0"
-status = "diagnostic"
-summary = "RHP11 slice C validation: every N seconds of burst, helper 0 runs a no-op placement epoch cycle through the v23 PlacementControl protocol (close admission, drain old-epoch work, recommit the same placement, reopen); 0 = off. Set on every helper. Moves to experiment.helper.epoch_cycle_s with the v1 manifest (RSC08)."
+manifest = "/spec/processes/helper_common/combine/threads"
 
 [setting.R3_MOE_WORKER_BALANCE]
 default = ""
 status = "evaluated"
 summary = "RAD06/RHP: with R3_MOE_WORKER_HEAT and two helpers, split the jointly owned experts between the helpers per layer by predicted cost (a layer waits for the slower helper) instead of alternating down the global heat ranking; the owned set is unchanged, only who owns which; deterministic so both helper processes compute the same map; offline prediction 3.5-5.6% of helper time (tools/lab/radiance/heat-placement/balance_score.py)"
 activation = "R3_MOE_WORKER_BALANCE: per-layer cost split"
+manifest = "/spec/processes/helper_common/placement/balance"
 
 [setting.R3_MOE_WORKER_BALANCE_SPEED]
 default = ""
 status = "evaluated"
 summary = "RAD06/RHP: with R3_MOE_WORKER_BALANCE, relative speeds of the two helpers as 's0,s1' (default 1,1); a helper's expert cost is divided by its speed, so a slower card takes less (helper 1 measured ~8-10% slower)"
+manifest = "/spec/processes/helper_common/placement/balance_speeds_milli"
 
 [setting.R3_MOE_WORKER_FUSEROUTE]
 default = "1"
@@ -327,12 +239,14 @@ status = "validated"
 summary = "RAD06: the small (decode) lane's routing prologue (four memsets and the route count / prefix / scatter / inverse kernels) runs as one block, lane_route_small; same result, fewer launches and gaps in the request the engine waits for; read per request; 0 keeps the separate kernels"
 activation = "r3_moe_worker: R3_MOE_WORKER_FUSEROUTE on"
 evidence = ["docs/evidence/RAD06/R3_MOE_WORKER_FUSEROUTE.run.json"]
+manifest = "/spec/processes/helper_common/kernels/fuseroute"
 
 [setting.R3_MOE_WORKER_ROWS_SMALL]
 default = ""
 status = "evaluated"
 summary = "RAD06: the few-rows-a-expert kernel (R3_MOE_WORKER_ROWS's) on the small (decode) lane: weights read once an expert for all its rows instead of once a route, since a decode request sends ~2.4 routes to each distinct expert; read per request, not bit-exact (different accumulation order)"
 activation = "R3_MOE_WORKER_ROWS_SMALL"
+manifest = "/spec/processes/helper_common/lanes/rows_small"
 
 [setting.R3_MOE_WORKER_FUSESTAGE]
 default = "1"
@@ -346,6 +260,7 @@ default = ""
 status = "diagnostic"
 summary = "RAD06: every Nth finished request a helper lane prints its critical-path stamps as a TRACE line on stderr: the engine's local work between publish and wait (local_us), the engine's wait for this helper (wait_us) and the helper GPU's own request time (helper_gpu_us), each within one device's wall clock; the stamps are nine stores to the mapped request slot (five at publish, two in the engine's wait, two on the helper) and are always written, so this only enables the printing (compare an arm with R3_MOE_WORKER_TRACE=0 against the build without stamps for their cost); read with tools/lab/radiance/heat-placement/trace_report.py"
 activation = "TRACE,lane"
+manifest = "/spec/experiment/diagnostics/lanes/trace_level"
 
 [setting.R3_MOE_WORKER_BURST_TRACE]
 default = ""
@@ -358,18 +273,21 @@ default = "1"
 status = "experimental"
 summary = "RAD20: helper GPU power save between inference bursts (default on). On: each small lane releases and drains its pre-queued GPU waits when a burst ends and the helper opens hardware queues only for the lanes it serves, so the helper GPU idles (~10 W on an XTX instead of ~95 W). 0: waits stay armed between bursts and a queue is opened for every protocol lane, keeping MES and the command processor awake for ~0.3% faster decode dispatch at ~85 W more per helper GPU at idle. Lane threads sleep on the burst futex either way"
 activation = "r3_moe_worker: R3_MOE_WORKER_POWER_SAVE"
+manifest = "/spec/processes/helper_common/runtime/power_save"
 
 [setting.R3_MOE_WORKER_QUEUE_WARM]
 default = ""
 status = "evaluated"
 summary = "RAD20, with power save on: during an inference burst the helper activates just enough idle placeholder queues to oversubscribe its GPU's compute slots (KFD num_cp_queues minus the queues it owns, plus one), meant to keep gfx11 MES busy and recover main's dispatch latency; between bursts it parks them (AMDKFD_IOC_UPDATE_QUEUE 0%). SHELVED, default off: in the Flash-Next layout (run rad20-burst-profile-10262303) switching the placeholders during a live burst gave a CPF page fault (permission, read) on both XTX within the first request, MES then failed REMOVE_QUEUE and both GPUs mode-1 reset; the standalone harness (rad20-queue-warm.cpp), which never switches while other queues run kernels, did not show it. 1 turns it on for investigation only"
 activation = "r3_moe_worker: queue warm-up"
+manifest = "/spec/processes/helper_common/runtime/queue_warm"
 
 [setting.R3_MOE_SWEEP_FAST]
 default = ""
 status = "diagnostic"
 summary = "RAD06 replay-sweep harness only: compare each variant bitwise against the first and print a sum_abs checksum instead of running the CPU reference (r3_moe_worker --replay-sweep); never set while serving"
 activation = "R3_MOE_SWEEP_FAST"
+manifest = "/spec/experiment/diagnostics/kernels/sweep_fast"
 
 [setting.R3_MOE_WORKER_LAYERS]
 default = ""
@@ -381,44 +299,52 @@ activation = "libr3: R3_MOE_WORKER_LAYERS on"
 default = ""
 status = "diagnostic"
 summary = "directory: the helper writes real large-lane requests (layer slot map, routes, bf16 activations) there for `r3_moe_worker --replay MODEL FILE` (RAD06 kernel tuning on real request shapes)"
+manifest = "/spec/experiment/diagnostics/lanes/capture_file"
 
 [setting.R3_MOE_WORKER_CAPTURE_EVERY]
 default = "37"
 status = "diagnostic"
 summary = "with R3_MOE_WORKER_CAPTURE: capture every Nth large-lane request"
+manifest = "/spec/experiment/diagnostics/lanes/capture_every"
 
 [setting.R3_MOE_WORKER_CAPTURE_MAX]
 default = "16"
 status = "diagnostic"
 summary = "with R3_MOE_WORKER_CAPTURE: at most this many request files"
+manifest = "/spec/experiment/diagnostics/lanes/capture_max"
 
 [setting.R3_MOE_WORKER_GEMV_LARGE_ROWS]
 default = "0"
 status = "evaluated"
 summary = "large-lane requests of at most this many rows take the decode GEMV (RAD06): replayed real requests show 9-row steps at ~0.5 ms a grouped-GEMM call for 25-51 routes; the large lane is sized per request, so the small lane is untouched"
 activation = "r3_moe_worker: large-lane requests up to"
+manifest = "/spec/handoff/transport/gemv_large_rows"
 
 [setting.R3_MOE_WORKER_ROWS]
 default = "0"
 status = "experimental"
 summary = "few-rows-a-expert MoE kernel for the helper's large (prefill) lane (RAD06): one block an (expert, 32 outputs), each decoded weight applied to up to 16 of the expert's rows. Set for a card whose archs.toml entry has rows-kernel = true (no matrix instructions; RAD23). Shelved on gfx1100: correct but slower - 38% prefill (lab, 2026-10-15); harness A/B 2026-10-17: -76% pp4096, -40% tg512"
 activation = "r3_moe_worker: few-rows prefill kernel on the large lane"
+manifest = "/spec/processes/helper_common/lanes/rows"
 
 [setting.R3_MOE_WORKER_INDEX]
 default = "0"
 status = "experimental"
 summary = "this helper's index under R3_MOE_WORKER_COUNT: 0 creates the segment, 1 attaches to it"
+manifest = "/spec/processes/helpers/[]/role"
 
 [setting.R3_MOE_WORKER_SMALL_ROWS]
 default = "64"
 status = "experimental"
 summary = "helper small-lane size: steps up to this many rows run on GPU work the helper pre-queues at this fixed size (no host in the loop)"
+manifest = "/spec/handoff/transport/small_rows"
 
 [setting.R3_MOE_WORKER_SMALL_LANES]
 default = ""
 status = "experimental"
 summary = "RAD12: up to four ascending pre-queued small-lane sizes, e.g. 4,8,16,24; a step takes the first lane that fits its rows, else the large lane. Replaces the single R3_MOE_WORKER_SMALL_ROWS size when set. At three and four concurrent streams (12 and 16 rows with MTP) the 8-row lane sends the step to the large lane; a lane padded to 24 costs a 4-row step about 25%; the classes avoid both"
 activation = "r3_moe_worker: R3_MOE_WORKER_SMALL_LANES on"
+manifest = "/spec/processes/helper_common/lanes/small_lanes"
 
 [setting.R3_MOE_WORKER_POISON]
 default = "0"
@@ -442,15 +368,18 @@ activation = "R3_MOE_WORKER_MASK_ONLY enabled"
 default = ""
 status = "diagnostic"
 summary = "override the kernel plugin the helper loads through the rad_plugin ABI (default: libr4d.so on gfx1201, libr3.so on gfx1100)"
+manifest = "/spec/experiment/diagnostics/kernels/plugin_override"
 
 [setting.R3_MOE_WORKER_TEST_STOP_AT]
 default = ""
 status = "diagnostic"
 summary = "Test only (RAD24 kill test): <point>:<helper index> makes that helper stop itself with SIGSTOP at <point> so a test can SIGKILL it there. Points: park_drain (a small lane has flagged kParkDraining, before re-checking the burst). Never set in a real run"
 activation = "r3_moe_worker: test stop at"
+manifest = "/spec/experiment/diagnostics/lanes/test_stop_at"
 
 [setting.R3_MOE_WORKER_CPU_SET]
 default = "auto"
 status = "production"
 summary = "PWR03: auto pins the helper's small-lane threads (they wait on the GPU through every decode step) to the CPU's efficiency cores when the kernel reports them (cpu_capacity asymmetry, else the hybrid PMU's list) and changes nothing on a CPU without them; the large lane and the CPU combine pool stay on every core (pinning the whole process slowed prefill ~9% with combine on). all leaves every thread on every CPU. On the bench host (4 E-cores) CPU package power fell 77 -> 42 W in decode and 83 -> 52 W in prefill with unchanged speed (pwr03-ecore-ab.sh)"
 activation = "r3_moe_worker: R3_MOE_WORKER_CPU_SET auto - small lanes"
+manifest = "/spec/processes/helper_common/cpu/affinity"

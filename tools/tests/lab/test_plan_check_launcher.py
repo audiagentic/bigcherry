@@ -11,6 +11,7 @@ library against a fake bc-serve and a fake engine, and prove the conditions the 
 """
 from __future__ import annotations
 
+import itertools
 import os
 import shlex
 import stat
@@ -26,10 +27,13 @@ LAUNCHER = REPO / "tools" / "lab" / "radiance" / "launch-flashnext-best.sh"
 # A stand-in bc-serve: its "cache" is a directory of key files. The key is a hash of every --set argument, so any one
 # changed setting is a different key (as with the real plan key). Exit 10 on a miss, like the real one.
 FAKE_SERVE = r"""#!/bin/bash
-mode=""; cache=""; planfile=""; expect=""; sets=()
+mode=""; cache=""; planfile=""; expect=""; sets=(); out=""; unmeasured=""; objects=()
 while [ $# -gt 0 ]; do
   case "$1" in
     --plan-check-args|--plan-key|--plan-store) mode=$1; shift ;;
+    --write-manifest) mode=$1; out=$2; shift 2 ;;
+    --unmeasured) unmeasured=1; shift ;;
+    --live-policy|--experiment) objects+=("$1=$2"); shift 2 ;;
     --plan-cache) cache=$2; shift 2 ;;
     --plan-file) planfile=$2; shift 2 ;;
     --expect-key) expect=$2; shift 2 ;;
@@ -39,6 +43,21 @@ while [ $# -gt 0 ]; do
     *) echo "fake bc-serve: unknown $1" >&2; exit 2 ;;
   esac
 done
+if [ "$mode" = --write-manifest ]; then
+  # the helpers' manifest: written once (bc-serve refuses an existing OUT); a measured one needs the stored plan
+  [ -e "$out" ] && { echo "bc-serve: refusing to replace $out" >&2; exit 2; }
+  key=$(printf '%s\n' "${sets[@]}" | grep -v -e '^engine.port=' -e '^memory.host_kv_mib=' -e '^plan-extra=' -e '^handoff\.' | sha256sum | cut -c1-8)
+  if [ -n "$unmeasured" ]; then state=unmeasured
+  else
+    state=measured
+    skey=$(printf '%s\n' "${sets[@]}" | grep -v -e '^engine.port=' -e '^memory.host_kv_mib=' | sha256sum | cut -c1-64)
+    [ -f "$cache/$skey.plan" ] || { echo "bc-serve: no measured plan for this configuration" >&2; exit 10; }
+  fi
+  printf '{"plan_state": "%s"}\n' "$state" > "$out"
+  { echo "$state $out ${objects[*]:-}"; printf '%s\n' "${sets[@]}"; } >> "$(dirname "$out")/manifests.log"
+  echo "manifest: $out"
+  exit 0
+fi
 printf '%s\n' "${sets[@]}" >> "$cache/describe.log"
 # the real key leaves out where the engine listens and the host KV tier (plan_cache.cpp kNonPlanEngineKeys): hits, not misses
 key=$(printf '%s\n' "${sets[@]}" | grep -v -e '^engine.port=' -e '^memory.host_kv_mib=' | sha256sum | cut -c1-64)
@@ -73,6 +92,7 @@ class PlanCheckLauncherTests(unittest.TestCase):
         self.serve.write_text(FAKE_SERVE)
         self.serve.chmod(self.serve.stat().st_mode | stat.S_IXUSR)
         self.engine_calls = self.root / "engine-calls.log"
+        self._stamps = itertools.count()
         self.heat = self.root / "heat.hot-first"
         self.heat.write_bytes(b"heat-v1")
 
@@ -80,7 +100,8 @@ class PlanCheckLauncherTests(unittest.TestCase):
         """Source the library with the launcher's variables and a fake measuring start, then arm the check."""
         values = dict(LAYOUT="flashnext-4gpu", SEQS="8", MAX_LEN="262144", HOST_POOL_MIB="9216", HOST_KV_MIB="12288",
                       CHUNK="2048", NGRAM="ram", KV_DTYPE="fp8", ROPE="none", PORT="36080", PREFIX_RESUME="nearest",
-                      MODEL="/model.rad", HEAT=str(self.heat), RECORD="/heat.live", CKPT_INTERVAL="4096", NUM_SPEC="3")
+                      MODEL="/model.rad", HEAT=str(self.heat), RECORD="/heat.live", CKPT_INTERVAL="4096", NUM_SPEC="3",
+                      SHM="/r3-moe-helper", RECORD_PERIOD="60", STAMP=f"1105-{next(self._stamps):06d}", LIVE_POLICY_FILE="", EXPERIMENT_FILE="")
         engine_args = overrides.pop("ENGINE_ARGS", "")
         budgets = overrides.pop("BUDGETS", "")
         values.update(overrides)
@@ -94,7 +115,7 @@ BUDGETS=({budgets})
 source {shlex.quote(str(LIB))}
 # the measuring start: the engine is asked for a plan and writes one; recorded so the tests see what ran
 plan_check_start_engine_measure() {{
-  echo "measure: engine --plan-memory $PLAN_MEASURE_FILE" >> {shlex.quote(str(self.engine_calls))}
+  echo "measure: engine --plan-memory $PLAN_MEASURE_FILE helpers-manifest $PLAN_MEASURING_MANIFEST $(cat "$PLAN_MEASURING_MANIFEST")" >> {shlex.quote(str(self.engine_calls))}
   [ -n "${{FAKE_MEASURE_FAIL:-}}" ] && return 1
   echo '{{"plan_version": 1}}' > "$PLAN_MEASURE_FILE"
 }}
@@ -223,10 +244,67 @@ plan_check_flags && printf 'ARGS:%s\\n' "${{PLAN_CHECK_ARGS[*]}}"
         self.assertTrue(any("--plan-memory" in c for c in calls))
         self.assertTrue(any("PLAN_CHECK_ARGS" in c for c in calls))
         # the check is armed, and fails the launch, before anything starts for real
-        self.assertLess(text.index("plan_check_flags ||"), text.index("start_helpers\nLOG="))
+        self.assertLess(text.index("plan_check_flags ||"), text.index('start_helpers "$PLAN_MANIFEST"; fi\nLOG='))
         self.assertIn("exit 97", text)
         for banned in ("--no-check", "SKIP_PLAN_CHECK", "NO_PLAN_CHECK"):
             self.assertNotIn(banned, text + LIB.read_text())
+
+    def _manifests(self) -> list[str]:
+        log = self.run_dir / "manifests.log"
+        return [line for line in log.read_text().splitlines() if line.startswith(("unmeasured ", "measured "))] if log.exists() else []
+
+    def test_a_miss_writes_the_unmeasured_manifest_for_the_measuring_start_then_the_measured_one(self) -> None:
+        done = self._launch()
+        self.assertEqual(done.returncode, 0, done.stderr)
+        written = self._manifests()
+        self.assertEqual([w.split()[0] for w in written], ["unmeasured", "measured"], written)
+        # the measuring start saw the unmeasured manifest, already on disk, under the launch's own stamp
+        measure = self.engine_calls.read_text()
+        measuring_manifests = sorted(self.run_dir.glob("manifest-measuring-1105-000000-*.json"))
+        self.assertEqual(len(measuring_manifests), 1)
+        self.assertIn("helpers-manifest " + str(measuring_manifests[0]), measure)
+        self.assertIn('{"plan_state": "unmeasured"}', measure)
+        # the real start's manifest is the measured one, written after the plan was stored, never before
+        (serving,) = sorted(self.run_dir.glob("manifest-1105-000000-*.json"))
+        self.assertEqual(serving.read_text(), '{"plan_state": "measured"}\n')
+
+    def test_a_hit_writes_only_the_measured_manifest(self) -> None:
+        self._launch()
+        before = len(self._manifests())
+        again = self._launch()
+        self.assertEqual(again.returncode, 0, again.stderr)
+        self.assertEqual([w.split()[0] for w in self._manifests()[before:]], ["measured"])
+        self.assertEqual(len(list(self.run_dir.glob("manifest-1105-000001-*.json"))), 1)
+        self.assertEqual(list(self.run_dir.glob("manifest-measuring-1105-000001-*.json")), [])
+
+    def test_the_manifests_describe_the_same_configuration_as_the_plan(self) -> None:
+        self._launch()
+        log = (self.run_dir / "manifests.log").read_text().splitlines()
+        blocks, current = [], []
+        for line in log:
+            if line.startswith(("unmeasured ", "measured ")):
+                current = [line]
+                blocks.append(current)
+            else:
+                current.append(line)
+        sets = [[l for l in block[1:] if not l.startswith("plan-extra=")] for block in blocks]
+        self.assertEqual(len(sets), 2)
+        self.assertEqual(sets[0], sets[1])
+        self.assertIn("handoff.histogram_period_s=60", sets[0])
+        self.assertIn('handoff.shm="/r3-moe-helper"', sets[0])
+
+    def test_a_live_policy_and_a_lab_experiment_reach_both_manifests(self) -> None:
+        self._launch(LIVE_POLICY_FILE="/p/policy.json", EXPERIMENT_FILE="/p/exp.json")
+        for line in self._manifests():
+            self.assertIn("--live-policy=/p/policy.json", line)
+            self.assertIn("--experiment=/p/exp.json", line)
+
+    def test_a_manifest_that_cannot_be_written_stops_the_start(self) -> None:
+        self.serve.write_text(FAKE_SERVE.replace('printf \'{"plan_state": "%s"}\\n\' "$state" > "$out"', 'echo "bc-serve: cannot write" >&2; exit 2'))
+        done = self._launch()
+        self.assertNotEqual(done.returncode, 0)
+        self.assertNotIn("ARGS:", done.stdout)
+        self.assertIn("manifest was not written", done.stderr)
 
     def test_the_launcher_script_parses(self) -> None:
         for path in (LAUNCHER, LIB):

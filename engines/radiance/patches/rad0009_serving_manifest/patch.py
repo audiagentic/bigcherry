@@ -105,7 +105,7 @@ bool bc_serving_engine_argv(int* argc, char*** argv) {
         if (!std::strcmp((*argv)[i], "--manifest")) manifest_mode = true;
     if (!manifest_mode) return true;
 
-    std::string path, role;
+    std::string path, role, plan_memory;
     std::vector<std::string> verbosity;
     for (int i = 1; i < *argc; ++i) {
         const std::string a = (*argv)[i];
@@ -117,10 +117,16 @@ bool bc_serving_engine_argv(int* argc, char*** argv) {
             if (i + 1 >= *argc) return fail("--role needs an argument");
             role = (*argv)[++i];
             if (role != "engine") return fail("--role must be engine, not '" + role + "'");
+        } else if (a == "--plan-memory") {
+            /* The measuring start: radiance writes its memory plan to FILE and stops (rad0011). It is the one flag that
+             * lets the engine take an unmeasured manifest; every other start takes only a measured one. */
+            if (!plan_memory.empty()) return fail("--plan-memory given twice");
+            if (i + 1 >= *argc || !*(*argv)[i + 1]) return fail("--plan-memory needs a path");
+            plan_memory = (*argv)[++i];
         } else if (a == "-v" || a == "-vv") {
             verbosity.push_back(a);
         } else {
-            return fail("'" + a + "' cannot be combined with --manifest (only --role engine, -v and -vv may)");
+            return fail("'" + a + "' cannot be combined with --manifest (only --role engine, --plan-memory FILE, -v and -vv may)");
         }
     }
 
@@ -129,7 +135,8 @@ bool bc_serving_engine_argv(int* argc, char*** argv) {
     const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
     /* The shared strict reader: size, UTF-8, duplicate keys, integers, the contract identity, the content digest, the
      * generated structural decode, provenance and every semantic rule, with the same errors bc-serve gives. */
-    const v1::Result<v1::Manifest> manifest = v1::read_manifest(text, path);
+    const v1::Result<v1::Manifest> manifest =
+        v1::read_manifest(text, path, plan_memory.empty() ? v1::PlanUse::serving : v1::PlanUse::measuring);
     if (!manifest.ok()) {
         std::fputs(v1::render_human("radiance", manifest.error()).c_str(), stderr);
         return false;
@@ -168,6 +175,10 @@ bool bc_serving_engine_argv(int* argc, char*** argv) {
     g_store.clear();
     g_store.push_back((*argv)[0]);
     for (const std::string& v : verbosity) g_store.push_back(v);
+    if (!plan_memory.empty()) {
+        g_store.push_back("--plan-memory");
+        g_store.push_back(plan_memory);
+    }
     g_emitted.clear();
     for (const auto& kv : flags) {
         g_store.push_back(kv.first);
@@ -196,7 +207,7 @@ bool bc_serving_mark_given(std::map<std::string, std::string>* given) {
         }
     }
     for (auto& kv : *given)
-        if (kv.second == "command line" && kv.first != "-v" && kv.first != "-vv") kv.second = g_label;
+        if (kv.second == "command line" && kv.first != "-v" && kv.first != "-vv" && kv.first != "--plan-memory") kv.second = g_label;
     return true;
 }
 """
