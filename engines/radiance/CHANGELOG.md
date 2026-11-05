@@ -1,5 +1,12 @@
 # Changelog
 
+## [1160.3.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1160.2.0...bc-radiance-1160.3.0) (2026-11-05)
+
+
+### New and changed
+
+* **radiance:** RHP16 - offline replay of the live placement policy over a recorded heat series ([#620](https://github.com/audiagentic/bigcherry/issues/620)) ([6f45c66](https://github.com/audiagentic/bigcherry/commit/6f45c668ccf738bcc68049da703b9cfa29ce207a))
+
 ## [1160.2.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1160.1.0...bc-radiance-1160.2.0) (2026-11-05)
 
 
