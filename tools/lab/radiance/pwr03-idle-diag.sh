@@ -22,7 +22,7 @@ PY
 )
 [ -n "$ECORES" ] || { echo "no efficiency cores found: skipped"; exit 0; }
 source tools/lab/radiance/lab-build.sh
-B=$(rad_build $OUT/build.log) || exit 1
+B=$(rad_build) || exit 1
 L=tools/lab/radiance/launch-flashnext-best.sh
 URL=http://127.0.0.1:36080/v1/completions   # the launcher's default port
 HELPER_WRAP="taskset -c $ECORES" bash $L start --build $B > $OUT/launch.log 2>&1 || { tail $OUT/launch.log; bash $L stop; exit 1; }

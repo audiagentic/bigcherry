@@ -142,13 +142,10 @@ def _in_sdk(platform: str, value: str | None, stack: "BackendStack") -> str | No
 
 
 def _strings(raw: object, where: str) -> tuple[str, ...]:
-    if raw is None:
-        return ()
-    if not isinstance(raw, list) or not all(isinstance(v, str) and v for v in raw):
-        raise ConfigError(f"{where} must be a list of non-empty strings")
-    if len(set(raw)) != len(raw):
+    values = _argv(raw, where)
+    if len(set(values)) != len(values):
         raise ConfigError(f"{where} contains duplicates")
-    return tuple(raw)
+    return values
 
 
 def _argv(raw: object, where: str) -> tuple[str, ...]:

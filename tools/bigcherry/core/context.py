@@ -18,6 +18,18 @@ def _absolute(value: str | os.PathLike[str]) -> Path:
     return Path(value).expanduser().resolve()
 
 
+def resolve_work_root(override: str | os.PathLike[str] | None = None) -> Path:
+    """Resolve the shared work root without requiring an engine declaration."""
+    from .config import _host_default
+
+    return _absolute(
+        override
+        or os.environ.get("BC_WORK_ROOT")
+        or _host_default("BC_WORK_ROOT")
+        or paths.primary_root() / "work"
+    )
+
+
 def _paths_overlap(first: Path, second: Path) -> bool:
     """Return whether two resolved roots alias or contain one another.
 
@@ -97,14 +109,7 @@ class ProjectContext:
         # a worktree-local cache and silently create a second source/build tree.
         # The host's work-root is the one place a machine's working storage is configured; the process
         # environment (BC_WORK_ROOT, as tools/env/bigcherry-env.sh exports it) still wins.
-        from .config import _host_default
-
-        work = _absolute(
-            work_root
-            or os.environ.get("BC_WORK_ROOT")
-            or _host_default("BC_WORK_ROOT")
-            or paths.primary_root() / "work"
-        )
+        work = resolve_work_root(work_root)
         upstream_was_explicit = upstream_repo is not None
         upstream = _absolute(
             upstream_repo or work / "upstream" / f"{Path(layout.vendor).name}.git"

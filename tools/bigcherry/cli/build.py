@@ -10,6 +10,26 @@ from ..release import pin_status
 
 
 def cmd_build_new(args: Namespace) -> int:
+    from ..build.logs import BuildLogs
+    from ..core.context import resolve_work_root
+
+    # Work-root resolution is engine-independent, including syntax failures.
+    try:
+        logs = BuildLogs(resolve_work_root(), args.run_id)
+    except (OSError, ValueError) as exc:
+        print(f"build: cannot create invocation logs: {exc}", file=sys.stderr)
+        return 2
+    args = Namespace(**{**vars(args), "run_id": logs.run_id})
+    with logs.invocation():
+        try:
+            code = _cmd_build_new(args, logs)
+            logs.summary["status"] = "succeeded" if code == 0 else "failed"
+        finally:
+            print(f"build: logs={logs.root}", file=sys.stderr)
+    return code
+
+
+def _cmd_build_new(args: Namespace, logs) -> int:
     """RE21: `build`'s new-engine implementation -- parse -> plan -> run_campaign
     -> render. No legacy tree-state/checkout mutation of any kind; this only
     ever touches ``context.work_root`` and a dedicated ArtifactStore, exactly
@@ -159,7 +179,7 @@ def cmd_build_new(args: Namespace) -> int:
 
     with tree_activity.Lease(
         context.work_root, context.project_root, command="build",
-        run_id=args.run_id or "unspecified",
+        run_id=args.run_id,
     ):
         results = run_campaign(
             lanes, cfg=cfg, context=context, store=store, run_id=args.run_id
@@ -168,9 +188,10 @@ def cmd_build_new(args: Namespace) -> int:
     from ..campaign.run_advisories import evaluate_build_result, render as render_advisories, write_evaluation
     build_evaluation = evaluate_build_result(results)
     write_evaluation(
-        context.work_root / "build-advisories" / (args.run_id or "unspecified") / "advisories.json",
+        context.work_root / "build-advisories" / args.run_id / "advisories.json",
         build_evaluation,
     )
+    logs.summary["advisories"] = str(context.work_root / "build-advisories" / args.run_id / "advisories.json")
     advisory_text = render_advisories(build_evaluation)
     if advisory_text:
         print(advisory_text, file=sys.stderr, end="")
@@ -179,7 +200,8 @@ def cmd_build_new(args: Namespace) -> int:
     for lid in sorted(results):
         result = results[lid]
         if isinstance(result, Exception):
-            print(f"{lid}: FAILED -- {result}", file=sys.stderr)
+            log_paths = ", ".join([str(logs.root / "build.log"), *logs.failure_paths(lid)])
+            print(f"{lid}: FAILED -- {result}; logs: {log_paths}", file=sys.stderr)
             failed += 1
         else:
             print(

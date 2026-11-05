@@ -12,6 +12,8 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+from ..core.process import run_logged
+
 try:
     import fcntl  # POSIX only
 except ImportError:
@@ -29,7 +31,7 @@ class SourceIdentityError(ValueError):
 
 def _run(root: Path, *args: str, env: dict[str, str] | None = None) -> str:
     try:
-        result = subprocess.run(
+        result = run_logged(
             ["git", "-C", str(root), *args],
             check=True,
             capture_output=True,

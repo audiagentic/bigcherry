@@ -18,6 +18,7 @@ from typing import Callable
 
 from ..core import components, engines, paths
 from ..core import config as campaign_config
+from ..core.process import run_checked
 from .build import rocm_configure_options
 
 Runner = Callable[[list[str], Path], None]
@@ -25,10 +26,6 @@ Runner = Callable[[list[str], Path], None]
 TestLister = Callable[[Path, Path], dict[str, list[str]]]
 #: the CTest label a test that needs a GPU carries; such a test is registered but never declared card-free
 GPU_LABEL = "gpu"
-
-
-def _run(argv: list[str], cwd: Path) -> None:
-    subprocess.run(argv, cwd=cwd, check=True)
 
 
 def component_build_dir(build_dir: Path, name: str) -> Path:
@@ -46,7 +43,7 @@ def build_runtime(
     source_root: Path,
     build_dir: Path,
     platform: campaign_config.Platform,
-    runner: Runner = _run,
+    runner: Runner = run_checked,
 ) -> dict[str, str]:
     """Build ``engine``'s runtime targets and components into ``build_dir``. Returns {component: content digest}.
 
@@ -117,7 +114,7 @@ def ctest_tests(tree: Path, cwd: Path) -> dict[str, list[str]]:
     return tests
 
 
-def run_component_tests(engine: str, *, source_root: Path, build_dir: Path, runner: Runner = _run,
+def run_component_tests(engine: str, *, source_root: Path, build_dir: Path, runner: Runner = run_checked,
                         lister: TestLister = ctest_tests) -> list[str]:
     """Build every component's declared test targets (component.toml ``[test] targets``) in its build tree and run
     exactly those tests with ctest, one log per component. Returns one failure line per component that did not pass.

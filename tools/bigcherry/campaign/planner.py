@@ -31,9 +31,11 @@ from __future__ import annotations
 
 import hashlib
 import uuid
+from contextlib import nullcontext
 from dataclasses import dataclass, field
 from typing import Mapping
 
+from ..build import logs as build_logs
 from ..core import config as campaign_config
 from ..experiment import contract as experiment_contract
 from ..core.artifacts import ArtifactStore
@@ -377,11 +379,13 @@ def run_campaign(
     results: dict[str, CampaignLaneResult | Exception] = {}
     for lane in lanes:
         try:
-            results[lane_id(lane)] = execute_campaign_lane(
-                _to_spec(lane), cfg=cfg, context=context, store=store,
-                run_id=_lane_run_id(campaign_run_id, lane),
-                allow_dirty_bigcherry=allow_dirty_bigcherry,
-            )
+            logs = build_logs.current.get()
+            with logs.lane_scope(lane_id(lane)) if logs else nullcontext():
+                results[lane_id(lane)] = execute_campaign_lane(
+                    _to_spec(lane), cfg=cfg, context=context, store=store,
+                    run_id=_lane_run_id(campaign_run_id, lane),
+                    allow_dirty_bigcherry=allow_dirty_bigcherry,
+                )
         except Exception as exc:  # noqa: BLE001 -- deliberately broad: one
             # lane's failure (of any kind) must not abort sibling lanes.
             results[lane_id(lane)] = exc
