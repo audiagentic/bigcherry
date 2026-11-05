@@ -1,5 +1,39 @@
 # Changelog
 
+## [1.6.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.5.0...bc-platform-1.6.0) (2026-11-05)
+
+
+### New and changed
+
+* **radiance:** RHP16 - offline replay of the live placement policy over a recorded heat series ([#620](https://github.com/audiagentic/bigcherry/issues/620)) ([6f45c66](https://github.com/audiagentic/bigcherry/commit/6f45c668ccf738bcc68049da703b9cfa29ce207a))
+* **tools:** pin-bump resumes without arguments, commits its own records before the lane build, keeps the vendored tree on target ([#625](https://github.com/audiagentic/bigcherry/issues/625)) ([75a4f0f](https://github.com/audiagentic/bigcherry/commit/75a4f0f61510ec5944d4f6891a715baef8a1e019))
+
+
+### Fixes
+
+* **ci:** key the engine layer on every component source so a layer set is restored whole or not at all ([#622](https://github.com/audiagentic/bigcherry/issues/622)) ([7827c1a](https://github.com/audiagentic/bigcherry/commit/7827c1a691326c9320d2f3db71e7b992ac4d819b))
+
+## [1.5.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.4.0...bc-platform-1.5.0) (2026-11-05)
+
+
+### New and changed
+
+* **build:** every build names a ROCm stack; SDK recorded, hashed, bound to CI image and launcher (BRVP06) ([#611](https://github.com/audiagentic/bigcherry/issues/611)) ([131c2b1](https://github.com/audiagentic/bigcherry/commit/131c2b1fe77e3cc15560e883cb6faa2ef9f8f875))
+* **radiance:** live expert placement policy (RHP slices H, I, J): target map = the static placer's plan for the live heat ([#597](https://github.com/audiagentic/bigcherry/issues/597)) ([4d3c217](https://github.com/audiagentic/bigcherry/commit/4d3c2178ea78faf6070ed60b9abc20959d23d072))
+* **radiance:** RHP16 step 2 - the live policy measures transaction time and bandwidth, update gaps, hot-set drift and sampling error (no setting derived yet) ([#619](https://github.com/audiagentic/bigcherry/issues/619)) ([8acb6d8](https://github.com/audiagentic/bigcherry/commit/8acb6d884848b4c09e7fb6774b2f58a34d0fcf40))
+
+
+### Fixes
+
+* **ci:** pass the compiler image digest into the prebuilt layer export ([#602](https://github.com/audiagentic/bigcherry/issues/602)) ([576d854](https://github.com/audiagentic/bigcherry/commit/576d8542ab8a4c0d4f8f0f8fa4a95ed9f9b19abd))
+* **ci:** store the engine layer's source-tree link relative so prebuilt restore works ([#604](https://github.com/audiagentic/bigcherry/issues/604)) ([53a8969](https://github.com/audiagentic/bigcherry/commit/53a8969c53131853e131cb0b083f7fd496febf23))
+* **radiance:** RHP16 - measure hot-set drift on per-interval counts, not on the heat the half-life decays; record the first measured values ([#621](https://github.com/audiagentic/bigcherry/issues/621)) ([18579f7](https://github.com/audiagentic/bigcherry/commit/18579f7396fc1cf3bbbe1b873c14f0499c750971))
+
+
+### Performance
+
+* **radiance:** RAD48 - native gfx11 int8 prefill tile (27B INT8 prefill GEMM 3.1x) ([#601](https://github.com/audiagentic/bigcherry/issues/601)) ([424a6e4](https://github.com/audiagentic/bigcherry/commit/424a6e47eb8462f1b6742d4f2964b817f84842e7))
+
 ## [1.4.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.3.0...bc-platform-1.4.0) (2026-11-04)
 
 

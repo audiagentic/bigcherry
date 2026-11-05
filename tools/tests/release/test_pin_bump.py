@@ -1709,6 +1709,7 @@ class LaneBuildPhaseTests(unittest.TestCase):
         self.record = _Record()
         self.record.notes = ""
         self.lane_calls: list[dict] = []
+        self.commit_marks: list[int] = []
         self.fail_lane: Exception | None = None
         self.order: list[str] = []
 
@@ -1752,7 +1753,7 @@ class LaneBuildPhaseTests(unittest.TestCase):
                     return_value={"complete": True, "outstanding": [], "composition_only_patch_ids": []}),
                 patch.object(pin_bump, "run_patch_tests", return_value=[]),
                 patch.object(pin_bump, "_write_release_doc_best_effort"),
-                patch.object(pin_bump, "_commit_release_records"),
+                patch.object(pin_bump, "_commit_release_records", side_effect=self._commit_mark),
                 patch.object(pin_bump, "run_phase_compile", return_value="compiled-tree-oid"),
                 patch.object(pin_bump, "_compile_tree_oid", return_value="compiled-tree-oid"),
                 patch.object(pin_bump, "execute_lane_build", side_effect=self._fake_lane),
@@ -1763,6 +1764,17 @@ class LaneBuildPhaseTests(unittest.TestCase):
 
     def _failing_cpu_phase(self, **kwargs):
         raise pin_bump.PinBumpStop("cpu-smoke", "CPU_SMOKE_FAILED", "synthetic")
+
+    def _commit_mark(self, **kwargs):
+        # how many lane builds had run when the release records were committed
+        self.commit_marks.append(len(self.lane_calls))
+
+    def test_the_runs_own_release_records_are_committed_before_the_lane_build(self):
+        # The lane build refuses a dirty controller tree, and by then the run has written its own release records:
+        # committing them only at the end made a bump stop at its own lane build on every first run.
+        self._run()
+        self.assertEqual(self.commit_marks[0], 0, "the records are committed before the lane build, not only after it")
+        self.assertEqual(self.commit_marks[-1], 1, "and again at completion")
 
     def test_phase_order_puts_lane_build_between_compile_and_cpu_smoke(self):
         phases = pin_bump.PHASES
