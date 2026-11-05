@@ -31,12 +31,14 @@ from ..patch import apply as patch_apply
 from ..patch import disposition as patch_disposition
 from ..patch import overlay as patch_overlay
 from ..patch import patchset as patch_patchset
+from ..patch import build_evidence
 from ..patch import rebase as patch_rebase
 from ..patch import registry as patch_registry
 from ..source import identity as source_identity
 from .. import pin_transition
 from .. import recipes as recipes_module
 from . import records as releases
+from . import notes as release_notes
 from .pin import recipes_path, resolve_pin_sha
 
 PHASES = (
@@ -49,6 +51,7 @@ PHASES = (
     "coverage",
     "apply",
     "compile",
+    "evidence",
     "lane-build",
     "cpu-smoke",
     "reaudit",
@@ -147,6 +150,7 @@ class PinBumpState:
     lane_build_binary_sha256: str = ""
     #: MEN16: the explicit --cpu-smoke-build override, saved so a resume reuses it and a different one is refused.
     cpu_smoke_build_override: str = ""
+    evidence_gate: dict[str, Any] = field(default_factory=dict)
 
     def as_dict(self) -> dict:
         d = {
@@ -193,6 +197,7 @@ class PinBumpState:
             }
             d["cpu_smoke"] = {"status": self.cpu_smoke_status, "build_override": self.cpu_smoke_build_override}
             d["accept"] = {"status": self.accept_status}
+            d["evidence_gate"] = self.evidence_gate
         return d
 
     def save(self, state_dir: Path) -> Path:
@@ -289,6 +294,7 @@ class PinBumpState:
             lane_build_plan_id=str(lane_build_state.get("build_plan_id", "")),
             lane_build_dir=str(lane_build_state.get("build_dir", "")),
             lane_build_binary_sha256=str(lane_build_state.get("binary_sha256", "")),
+            evidence_gate=data.get("evidence_gate", {}),
         )
 
 
@@ -1512,6 +1518,84 @@ def _record_release_note(vendor_root: Path, note: str, *, phase: str) -> None:
         ) from exc
 
 
+def run_phase_evidence(
+    *, engine: str, source_name: str, target_ref: str, to_sha: str,
+    repo_root: Path, vendor_root: Path, report_dir: Path,
+) -> dict[str, Any]:
+    """MEN28: re-audit production validated sets at the NEW pin.
+
+    Pending engines retain their failure count and proceed. Enforced engines
+    retain the report and stop, so --resume repeats this phase after repairs.
+    """
+    from ..core import config as campaign_config
+    from ..core import engines as engine_layouts
+
+    phase = "evidence"
+    try:
+        release_config = release_notes.load_config(repo_root, engine)
+        layout = engine_layouts.load(repo_root, engine)
+        cfg = campaign_config.load(layout.recipes_path(repo_root))
+        # Audit the engine's declared production source, not an optional
+        # selector used to run this bump (which might omit shipped patches).
+        production_source = layout.promotion_source
+        if not production_source or production_source not in cfg.sources:
+            raise ValueError("engine does not declare a valid production promotion source")
+        audit = build_evidence.evaluate_source(
+            engine=engine, cfg=cfg, source_name=production_source,
+            patches_dir=layout.patches_root(repo_root),
+            pinned_ref=target_ref, resolved_base_revision=to_sha,
+            mode=release_config.evidence_gate,
+        )
+    except (OSError, KeyError, TypeError, ValueError, release_notes.ReleaseNotesError) as exc:
+        raise PinBumpStop(
+            phase, "EVIDENCE_GATE_UNRUNNABLE",
+            f"cannot evaluate production patch evidence at {target_ref}: {exc}",
+            evidence={"error": str(exc)},
+            recommended_actions=["repair evidence inputs, then rerun with --resume"],
+        ) from exc
+
+    result = audit.record()
+    report_dir.mkdir(parents=True, exist_ok=True)
+    (report_dir / "evidence-gate.json").write_text(
+        json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    try:
+        record = releases.record_for_checkout(vendor_root)
+        record.evidence_gate = result
+        record.save()
+    except (OSError, TypeError, ValueError) as exc:
+        raise PinBumpStop(
+            phase, "EVIDENCE_RECORD_FAILED",
+            f"cannot persist evidence gate result at {target_ref}: {exc}",
+            evidence={"error": str(exc)},
+            recommended_actions=["repair the release record, then rerun with --resume"],
+        ) from exc
+
+    if audit.mode == "pending-requalification":
+        print(audit.pending_line)
+        print("first five patches: " +
+              (", ".join(p for p, _ in audit.failed[:5]) or "(none)"))
+        return result
+    if audit.failed:
+        raise PinBumpStop(
+            phase, "EVIDENCE_GATE_STALE", build_evidence.failure_text(audit),
+            evidence=result,
+            recommended_actions=[
+                *(
+                    f"python -m bigcherry --engine {engine} patch-gates "
+                    f"--intent build --source {production_source} {patch}"
+                    for patch, _ in audit.failed
+                ),
+                "re-record evidence using skill bigcherry-patch-qualification "
+                "(patch-qualification flow) at the new pin",
+                f"python -m bigcherry --engine {engine} pin-bump {target_ref} --resume",
+            ],
+        )
+    for line in build_evidence.report_lines(audit):
+        print(line)
+    return result
+
+
 def _record_compile_skip(vendor_root: Path) -> None:
     note = "pin-bump source compile check: SKIPPED explicitly with --skip-compile"
     try:
@@ -1542,11 +1626,12 @@ def _rewind_compile_if_tree_changed(
     state.completed_phases = [
         phase
         for phase in state.completed_phases
-        if phase not in {"compile", "lane-build", "cpu-smoke", "reaudit", "complete"}
+        if phase not in {"compile", "evidence", "lane-build", "cpu-smoke", "reaudit", "complete"}
     ]
     state.next_phase = "compile"
     state.compile_tree_oid = ""
     state.compile_status = ""
+    state.evidence_gate = {}
     state.lane_build_status = ""
     state.lane_build_lane = ""
     state.lane_build_plan_id = ""
@@ -1636,6 +1721,7 @@ def _rewind_compile_resume_if_inputs_changed(
         state.coverage_report_sha256 = ""
         state.compile_tree_oid = ""
         state.compile_status = ""
+        state.evidence_gate = {}
         state.cpu_smoke_status = ""
         state.accept_status = ""
         return True
@@ -2171,7 +2257,15 @@ def _run_phases(
                 state.compile_status = "passed"
             state.compile_platform = platform_name or ""
             state.compile_tree_oid = compile_tree_oid
-            state.advance(report_dir, "compile", "lane-build")
+            state.advance(report_dir, "compile", "evidence")
+
+        if state.next_phase == "evidence":
+            state.evidence_gate = run_phase_evidence(
+                engine=engine, source_name=selector_name, target_ref=target_ref,
+                to_sha=state.to_sha, repo_root=repo_root,
+                vendor_root=vendor_root, report_dir=report_dir,
+            )
+            state.advance(report_dir, "evidence", "lane-build")
 
         if state.next_phase == "lane-build":
             # MEN16: build the bumped engine through its canonical lane so the cpu-smoke phase (and the release record)
