@@ -176,6 +176,7 @@ bool bc_serving_engine_argv(int* argc, char*** argv) {
      * radiance's own default. The argv shape follows the JSON type alone; a shape the option does not accept is left
      * for radiance's own config_parse to reject, which makes main exit 2. */
     std::vector<std::pair<std::string, std::string>> flags;
+    std::set<std::string> switches;   /* the flags above that take no value */
     for (const v1::FieldInfo& f : v1::kFields) {
         if (f.radiance_option.empty() || f.path.rfind("/spec/", 0) != 0) continue;
         const nlohmann::json::json_pointer ptr{std::string(f.path)};
@@ -183,6 +184,11 @@ bool bc_serving_engine_argv(int* argc, char*** argv) {
         const std::string opt(f.radiance_option);
         if (!known.count(opt)) return fail("\"" + std::string(f.path) + "\" is bound to " + opt + ", which is not a radiance option");
         const nlohmann::json& v = doc.at(ptr);
+        if (f.radiance_switch) {   /* a flag that takes no value: its presence in the manifest is the flag (the registry makes it the one value "on") */
+            flags.emplace_back(opt, std::string());
+            switches.insert(opt);
+            continue;
+        }
         std::string value;
         if (!flag_text(v, &value)) return fail("\"" + std::string(f.path) + "\" has a value that is not a string, an integer or an array of strings");
         flags.emplace_back(opt, value);
@@ -207,7 +213,7 @@ bool bc_serving_engine_argv(int* argc, char*** argv) {
     g_emitted.clear();
     for (const auto& kv : flags) {
         g_store.push_back(kv.first);
-        g_store.push_back(kv.second);
+        if (!switches.count(kv.first)) g_store.push_back(kv.second);
         g_emitted.push_back(kv.first);
     }
     g_ptrs.clear();

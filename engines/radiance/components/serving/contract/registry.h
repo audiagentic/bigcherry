@@ -41,6 +41,7 @@ struct Node {
     std::vector<std::string> required_keys;      // map nodes
     std::optional<nlohmann::json> constraints;   // object nodes: extra allOf rules, verbatim
     std::string radiance_option, radiance_config;
+    bool radiance_switch = false;                // a bound flag that takes no value: present means on (enum with the one value "on")
     std::string cls;                             // provenance class (resolved from [[class_default]])
     std::vector<size_t> children;                // object members in order; arrays: their one item; maps: the value
     bool patch = false;                          // inside a patch def: every member optional, objects nonempty
