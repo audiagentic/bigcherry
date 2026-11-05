@@ -1,5 +1,5 @@
 """RSC06: explicit per-process helper settings for libr4d and its gfx11/gfx10 ports."""
-from bigcherry.patch.apply import Edit, FilePatch
+from bigcherry.patcher import Edit, FilePatch
 
 HELPER_CONFIG_H = r"""/* BigCherry helper configuration. Install once, before any plugin callback or worker thread.
  * An unconfigured library belongs to the engine; its environment reads remain for RSC07.
@@ -18,7 +18,10 @@ typedef struct BcR4dHelperConfig {
 } BcR4dHelperConfig;
 /* Returns 0 on success, -1 on invalid size/value or repeated installation. */
 int bc_r4d_configure_helper(const BcR4dHelperConfig* config);
-const BcR4dHelperConfig* bc_r4d_helper_config(void);
+/* Weak: only libraries that compile the row table (libr4d, libr3, libr2) define it. Every other library that includes
+ * r4d_args.h (spechub, libquant, ...) resolves it to null and keeps the engine's behaviour, instead of failing to load
+ * with an undefined symbol. */
+const BcR4dHelperConfig* bc_r4d_helper_config(void) __attribute__((weak));
 #ifdef __cplusplus
 }
 #endif
@@ -65,8 +68,8 @@ PATCHES = (
                  guard=r'^#include "bc_helper_config\.h"$', expect_matches=1,
                  rationale="The shared argument helpers are host-only and used by every MoE callback."),
             Edit(id="typed-helper-trace", anchor=r"^static inline int r4d_trace_on\(void\) \{$",
-                 text="\n    if (const BcR4dHelperConfig* c = bc_r4d_helper_config()) return (int)c->refusal_trace;",
-                 guard=r"bc_r4d_helper_config\(\)\) return \(int\)c->refusal_trace;", expect_matches=1,
+                 text="\n    if (const BcR4dHelperConfig* c = bc_r4d_helper_config ? bc_r4d_helper_config() : 0) return (int)c->refusal_trace;",
+                 guard=r"bc_r4d_helper_config \? bc_r4d_helper_config\(\) : 0\) return \(int\)c->refusal_trace;", expect_matches=1,
                  rationale="Branch before the engine's cached environment read, even on refused shapes."),
         ),
     ),

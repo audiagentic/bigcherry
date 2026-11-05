@@ -1,5 +1,10 @@
 # rad0012_helper_kernel_config
 
+**Status:** untested
+**Plan item:** RSC06
+
+## Summary
+
 RSC06 adds a mandatory size-checked, install-once configuration interface to
 the kernel library. The helper configures the plugin before invoking any
 callback. Shared refusal diagnostics use typed helper settings; the engine

@@ -52,3 +52,49 @@ def test_helper_config_patch_refuses_drift_atomically(tmp_path):
     results = apply_all(load(), tmp_path)
     assert any(not r.ok for r in results)
     assert snapshot(tmp_path) == before
+
+
+def _shared_library(tmp_path, name, source):
+    """Build a shared library from `source` against the patched tree, refusing undefined strong symbols (-z defs)."""
+    import shutil
+    import subprocess
+
+    import pytest
+
+    cxx = shutil.which("g++-14") or shutil.which("g++")
+    if cxx is None:
+        pytest.skip("no C++ compiler")
+    src = tmp_path / f"{name}.cpp"
+    src.write_text(source)
+    out = tmp_path / f"lib{name}.so"
+    subprocess.run([cxx, "-shared", "-fPIC", "-Wl,-z,defs", f"-I{tmp_path / 'libr4d'}", str(src), "-o", str(out)],
+                   check=True, capture_output=True, text=True)
+    return out
+
+
+def test_library_without_the_row_table_loads_and_keeps_engine_behaviour(tmp_path):
+    """The defect a real build hit: spechub includes r4d_args.h but not r4d_rows.cpp, so a strong reference to
+    bc_r4d_helper_config left it with an undefined symbol and the engine refused to load the plugin."""
+    import ctypes
+
+    seed(tmp_path)
+    (tmp_path / "libr4d" / "rad_plugin.h").write_text("")
+    assert all(r.ok for r in apply_all(load(), tmp_path))
+    lib = _shared_library(tmp_path, "nodef", '#include "r4d_args.h"\nextern "C" int trace(void) { return r4d_trace_on(); }\n')
+    assert ctypes.CDLL(str(lib)).trace() == -1   # unconfigured: the engine's own value
+
+
+def test_library_with_the_row_table_uses_the_installed_config(tmp_path):
+    import ctypes
+
+    seed(tmp_path)
+    (tmp_path / "libr4d" / "rad_plugin.h").write_text("")
+    assert all(r.ok for r in apply_all(load(), tmp_path))
+    lib = ctypes.CDLL(str(_shared_library(tmp_path, "withdef", (
+        '#define BC_R4D_HELPER_CONFIG_IMPLEMENTATION\n#include "bc_helper_config.h"\n'
+        '#undef BC_R4D_HELPER_CONFIG_IMPLEMENTATION\n#include "r4d_args.h"\n'
+        'extern "C" int trace(void) { return r4d_trace_on(); }\n'
+        'extern "C" int install(unsigned t) { BcR4dHelperConfig c{sizeof c, 1, 1, 1, 0, t}; return bc_r4d_configure_helper(&c); }\n'))))
+    assert lib.trace() == -1
+    assert lib.install(1) == 0
+    assert lib.trace() == 1
