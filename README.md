@@ -33,8 +33,9 @@ llama.cpp has 70.
 
 ## Best recorded Radiance throughput
 
-These results were measured on **v1.14.0**. They have not been repeated on the
-current v1.17.0 pin (re-measured 2026-11-05 on v1.16.0 and v1.17.0: cold prefill and decode step time agree within about 2%, see the Flash-Next model page). Rates are tokens per second, with different workloads.
+These results were measured on **v1.14.0**. A re-measurement on 2026-11-05 on v1.16.0 and
+v1.17.0 (cold prefill and decode step time agree within about 2%) is on the Flash-Next model page.
+Rates are tokens per second, with different workloads.
 
 | Model | Prefill | Generated output |
 | --- | --- | --- |
