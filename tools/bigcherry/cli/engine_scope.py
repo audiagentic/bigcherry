@@ -41,6 +41,7 @@ _ENGINE_COMMANDS: frozenset[str] = frozenset(
         "repin",
         "pin-status",
         "pin-bump",
+        "pin-triage",
         "pin-release",
         "release-notes",
         "sources",
