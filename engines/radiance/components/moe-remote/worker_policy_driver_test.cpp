@@ -332,6 +332,12 @@ int main() {
         d.observe(*f.controller,f.map,f.clock.now_ns());
         check(d.evidence().committed==2 && d.evidence().transition_samples==2,
               "second journal closed and transaction durations recorded");
+        {
+            const Measured m=d.measured();
+            check(m.transaction_ns.total()==2 && m.abort_ns.total()==0 && m.hot_set_k==2 &&
+                  m.delta_gap_ns.total()>0,
+                  "the driver measures committed transactions, update gaps and the tail's hot-set size");
+        }
         const auto back=f.owners();
         check(back.owner!=after.owner &&
               (back.owner[returning]==before.owner[returning] ||
@@ -351,6 +357,11 @@ int main() {
               d.evidence().learned_ineligible==2&&
               d.negative_count(f.clock.now_ns())==2,
               "closed abort learns negative cache");
+        {
+            const Measured m=d.measured();
+            check(m.abort_ns.total()==1 && m.transaction_ns.total()==0 && m.copy.bytes==0,
+                  "an aborted transaction is timed as an abort and moves no measured bytes");
+        }
         check(f.owners().epoch==epoch,"abort retains ACTIVE");
         const uint64_t proposals=d.evidence().proposed;
         check(pump(f,d,false,10)&&d.evidence().proposed==proposals,

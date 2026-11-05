@@ -58,6 +58,10 @@ The policy starts with no hand-picked policy number: every trigger, size and age
 
 Depends on RHP11 slice D (live moves) and RHP06. Follows the owner's direction: live placement, no restarts, auto-calibrate by default, no regressions.
 
+## Step 2 implemented, 2026-11-05 (measurement hooks, no derivation yet)
+
+worker_policy_measure.h (pure, no clock or thread): Series (bounded, exact nearest-rank quantiles), Throughput (bytes over wall time), topk_overlap, DriftTracker (ring of heat snapshots; overlap of the k hottest experts of the newest snapshot against each older one; the drift half-life is the lag at which the overlap first falls to one half, interpolated; resets when the source counter goes back or the shape changes), relative_share_error and marginal_relative_error (multinomial sampling error of the k-th hottest expert). The driver feeds them where it already observes: a closed transaction (committed: wall time and bytes moved over that time; aborted: abort-to-quiescent time), a consumed heat delta (gap between deltas, the drift tracker, the marginal error), and restarts the drift measurement on a heat baseline or a stale source. k is the number of experts the tail helper holds (its budget over the expert stride). Evidence adds one line: `policy measure transactions= txn_p50_ns= txn_p95_ns= txn_max_ns= copy_bytes_per_ns= aborts= abort_p95_ns= delta_gaps= delta_gap_p99_ns= delta_gap_max_ns= hot_set_k= drift_half_life_observations= marginal_relative_error=`; Driver::measured() returns a copy for tests. The effect gate's noise floor was already in the evidence (effect_noise_floor), so step 2e needed no new code. Card-free tests: worker_policy_measure_test (quantiles, bounds, non-finite samples, overlap with ties, a synthetic sliding hot window whose half-life is exactly 200 observations, discontinuities, sampling error) and assertions in worker_policy_driver_test (two committed transactions timed, an abort timed as an abort with no measured bytes, update gaps recorded, hot-set size 2 for a budget of 20 over a stride of 10). NOT done: the derivations themselves (step 3), the calibration store (step 4), observe-only until calibrated, and a hardware run that reads the new evidence line under the workload shifts to see real values (next).
+
 ## Derivation table for the 14 declared policy settings (2026-11-05, after slices H, I, J)
 
 | Setting | Derived from | Measured by |
@@ -89,5 +93,9 @@ PROTECTED_LAYERS and ACCEPT_UNWATERMARKED_HEAT are not tunables: protected layer
 
 ## Ledger-events
 
+
 - chg_20261105_013526_planned-how-the-live-expert-pl_9955
 - 2026-11-05T01:35:30.040386+00:00 (updated-by): Updated: section:ledger-events
+- 2026-11-05T01:58:26.403837+00:00 (updated-by): Updated: section:notes
+- chg_20261105_015826_the-live-expert-placement-poli_7498
+- 2026-11-05T01:58:30.239165+00:00 (updated-by): Updated: section:ledger-events
