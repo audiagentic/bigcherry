@@ -40,7 +40,7 @@ struct ReplayResult {
     std::vector<ReplayStep> steps;
     size_t transactions = 0, experts_moved = 0;
     std::vector<int32_t> owner;             // after the last snapshot
-    uint64_t drift_half_life_observations = 0, drift_horizon_observations = 0;
+    uint64_t drift_half_life_observations = 0;
     double marginal_error = 0;
     size_t hot_set_k = 0;
 };
@@ -67,21 +67,19 @@ inline ReplayResult replay(const ReplayConfig& cfg, const std::vector<std::vecto
     for (size_t s = 1; s < snapshots.size(); ++s) {
         uint64_t interval = 0;
         std::vector<int32_t> delta(cfg.experts);
-        std::vector<double> interval_counts(n, 0.0);   // this interval's own counts, for the drift measurement
         for (uint32_t l = 0; l < cfg.layers; ++l) {
             for (uint32_t e = 0; e < cfg.experts; ++e) {
                 const size_t i = size_t(l) * cfg.experts + e;
                 const uint32_t a = snapshots[s - 1][i], b = snapshots[s][i];
                 delta[e] = b >= a ? int32_t(std::min<uint32_t>(b - a, uint32_t(INT32_MAX))) : 0;   // a counter that went back credits nothing
                 interval += uint64_t(delta[e]);
-                interval_counts[i] = double(delta[e]);
             }
             if (!heat.observe(l, delta.data(), delta.size())) return out;
         }
         if (!interval) continue;
         heat.tick(interval);
         cumulative += interval;
-        drift.add(interval_counts, cumulative);   // never the decayed heat: that depends on the half-life being informed
+        drift.add(heat.counts, cumulative);
         ReplayStep step;
         step.snapshot = s; step.observations = cumulative;
         step.tail_share_before = step.tail_share_after = tail_share(owner);
@@ -118,7 +116,6 @@ inline ReplayResult replay(const ReplayConfig& cfg, const std::vector<std::vecto
     out.valid = true;
     out.owner = owner;
     out.drift_half_life_observations = drift.half_life_observations();
-    out.drift_horizon_observations = drift.horizon_observations();
     out.marginal_error = marginal_relative_error(heat.counts, std::max<size_t>(k, 1));
     out.hot_set_k = k;
     return out;
