@@ -414,3 +414,12 @@ tail improvement and UNDECIDED unchanged tail, insufficient and
 invalid ladders, unresolvable effects, cadence expansion, and
 the existing calib5-numbers heat-shift planner acceptance test.
 No hardware remeasurement is claimed.
+
+## calib8 (2026-11-06): effect gate on the published tail lane, churn halved
+
+The effect gate now judges the tail helper's published lane service (follow-up 6). Two on/off pairs, same workload and build:
+filler TTFT fills 6-8 on 12.83 s vs off 19.85 s (-35.3%; -34% against off1 alone, off2 ran slow overall), documentation prefill
+on 3,660 vs off 3,564 tok/s (+0.7% against off1), decode step 25.3 / 49.8 ms vs 25.5 / 50.1 ms, 23 transactions, 0 aborts,
+16.6 GB moved (calib7: 30, 1, 37 GB). The gate still kept no move: on the tail lane consecutive 0.29 s windows differed by 236%
+(bursty, correlated service), so the i.i.d. window was far too short; follow-up 7 sizes the window from measured window-to-window
+noise over a ladder of lengths and lengthens the cadence instead of shortening the window.
