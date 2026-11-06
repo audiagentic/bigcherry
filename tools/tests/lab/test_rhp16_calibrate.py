@@ -59,20 +59,33 @@ class CalibrationLauncherTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root:
             exp, policy, prompts = [Path(root) / n for n in ("experiment.json", "policy.json", "prompts.txt")]
             exp.write_text("{}")
-            policy.write_text('{"enabled": false}')
+            policy.write_text('{}')
             prompts.write_text("A real calibration prompt\n")
             r = self.run_start(
                 "--calibrate", "--experiment", str(exp),
                 "--live-policy", str(policy), "--calibration-prompts", str(prompts),
             )
             self.assertEqual(r.returncode, 2, r.stderr)
-            self.assertIn("enabled=true", r.stderr)
+            self.assertIn("present = active", r.stderr)
+
+    def test_calibrate_refuses_an_enabled_member(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            exp, policy, prompts = [Path(root) / n for n in ("experiment.json", "policy.json", "prompts.txt")]
+            exp.write_text("{}")
+            policy.write_text('{"enabled": true, "cadence_ns": 5000000000}')
+            prompts.write_text("A real calibration prompt\n")
+            r = self.run_start(
+                "--calibrate", "--experiment", str(exp),
+                "--live-policy", str(policy), "--calibration-prompts", str(prompts),
+            )
+            self.assertEqual(r.returncode, 2, r.stderr)
+            self.assertIn("no 'enabled' member", r.stderr)
 
     def test_calibrate_requires_production_equivalent_plan(self) -> None:
         with tempfile.TemporaryDirectory() as root:
             exp, policy, prompts = [Path(root) / n for n in ("experiment.json", "policy.json", "prompts.txt")]
             exp.write_text('{"engine": {"profile_ops": "on"}}')
-            policy.write_text('{"enabled": true}')
+            policy.write_text('{"cadence_ns": 5000000000}')
             prompts.write_text("A real calibration prompt\n")
             r = self.run_start(
                 "--calibrate", "--experiment", str(exp),

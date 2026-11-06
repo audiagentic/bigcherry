@@ -185,8 +185,13 @@ try:
         policy = json.load(f)
     if experiment != {}:
         raise ValueError("the calibration experiment must be an empty JSON object (same plan as production)")
-    if not isinstance(policy, dict) or policy.get("enabled") is not True:
-        raise ValueError("the explicit lab live policy must have enabled=true for the measurement hooks to run")
+    # v1 has no live_policy.enabled: a PRESENT policy is an active one (its thread and measurement hooks run), an absent
+    # one is no policy. So the lab policy must be a non-empty object of v1 live_policy members; bc-serve then checks that
+    # every member is there and valid.
+    if not isinstance(policy, dict) or not policy:
+        raise ValueError("the explicit lab live policy must be a non-empty object of spec.handoff.placement.live_policy members (present = active)")
+    if "enabled" in policy:
+        raise ValueError("live_policy has no 'enabled' member in v1: a present policy is active; remove the key")
 except (OSError, ValueError) as e:
     print("calibration: " + str(e), file=sys.stderr)
     sys.exit(2)
