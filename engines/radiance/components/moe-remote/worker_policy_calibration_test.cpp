@@ -28,7 +28,10 @@ int main() {
     // timing series must also be observed.
     assert(!calibration_settled(m));
     m.transaction_ns.add(10.0);
+    // Two ordinary no-move changes and one workload shift: the margin input is the median (100), never the shift.
     m.tail.noise_ppm.add(100.0);
+    m.tail.noise_ppm.add(100.0);
+    m.tail.noise_ppm.add(900000.0);
     m.tail.gain_ppm.add(1000.0);
     m.slowest_helper_copy_bps.add(1000000.0);
     m.tail_lane_service_ns_per_s.add(200000000.0);
@@ -66,6 +69,7 @@ int main() {
     assert(row.at("measurements").at("txn_p50_ns") == 10);
     assert(row.at("measurements").at("txn_p95_ns") == 30);
     assert(row.at("measurements").at("hot_set_k") == 2);
+    assert(row.at("measurements").at("tail_share_noise_ppm") == 100); // median, not the 900000 shift
     assert(row.at("measurements").at("heat_watermarked") == 1);
     Measured mixed = m;
     mixed.accepted_heat_delta(false);
