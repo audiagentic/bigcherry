@@ -4,6 +4,8 @@
 #include "serving.h"
 #include "calibration.h"
 #include "ledger.h"
+#include "live_policy_ingest.h"
+#include "live_policy.h"
 #include "manifest_writer.h"
 #include "v1/manifest.h"
 #include "plan_cache.h"
@@ -1042,6 +1044,45 @@ void manifest_writer_step(Fixture& t) {
         catch (const std::runtime_error& e) {
             assert(std::string(e.what()).find("lab-only") != std::string::npos);
         }
+        // The calibration run (bc-serve --calibration-run, the launcher's --calibrate): lab profile, the explicit policy and
+        // no experiment. calibration-ingest accepts exactly that manifest, and refuses the production one.
+        sv::ManifestInputs calibration_run = in;
+        calibration_run.profile = "lab";
+        calibration_run.live_policy = lp;
+        calibration_run.live_policy_from = "--live-policy policy.json";
+        const auto cr = sv::build_manifest(calibration_run);
+        assert(!cr.document.at("spec").contains("experiment"));
+        const auto cr_path = t.root / "calibration-run-manifest.json";
+        const auto prod_path = t.root / "production-manifest.json";
+        sv::write_manifest_file(cr_path, cr.text);
+        sv::write_manifest_file(prod_path, built.text);
+        const auto cr_loaded = bc::serving::v1::load_manifest(cr_path, bc::serving::v1::PlanUse::serving);
+        assert(cr_loaded.ok());
+        const auto& crm = cr_loaded.value();
+        Json measured = {
+            {"txn_p50_ns",1770000000ull}, {"txn_p95_ns",2720000000ull}, {"copy_bytes_per_s",160000000ull},
+            {"heat_gap_max_ns",5040000000ull}, {"hot_set_k",5931}, {"marginal_error_ppm",23000},
+            {"marginal_observations",3}, {"drift_half_life_observations",59000000}, {"observation_rate_per_s",10000000},
+            {"tail_share_noise_ppm",20000}, {"tail_share_gain_ppm",45000}, {"tail_lane_service_ns_per_s",750000000},
+            {"lane_lost_ns",100000000}, {"effect_window_samples",32}, {"effect_requests_per_s",64},
+            {"effect_quiet_windows",3}, {"effect_noise_floor_ns",1000000}, {"effect_noise_quantile_ns",2500000},
+            {"noise_false_revert_rate_ppm",10000}, {"abort_quiescent_ns",1500000000ull}};
+        const Json row = {{"plan_cache_key", bc::serving::v1::plan_cache_key(crm)}, {"layout", crm.spec.intent.layout},
+            {"objective", std::string(bc::serving::v1::kObjectiveNames[static_cast<size_t>(crm.spec.intent.service.objective)])},
+            {"seeded","2026-11-06"}, {"evidence","calibration-run ingest test"},
+            {"measurements", measured}, {"absent", Json::object()}};
+        const auto helper_log = t.root / "calibration-helper0.log";
+        { std::ofstream out(helper_log); out << "RHP16_CALIBRATION_JSON " << row.dump() << "\n"; }
+        const auto store = t.root / "calibration-run-store.toml";
+        const std::string store_key(64, 'e');
+        try { sv::ingest_live_policy_log(helper_log, store, prod_path, store_key); assert(false); }
+        catch (const std::runtime_error& e) {
+            assert(std::string(e.what()).find("calibration-run manifest") != std::string::npos);
+        }
+        assert(!fs::exists(store));
+        sv::ingest_live_policy_log(helper_log, store, cr_path, store_key);
+        const auto ingested = sv::read_live_policy_record(store, store_key);
+        assert(ingested && sv::live_policy_record_complete(*ingested) && ingested->layout == crm.spec.intent.layout);
     }
     // The unmeasured manifest of the measuring start: owner map and settings, no plan and nothing derived from one. A serving
     // start refuses it, a measuring start reads it, and the measured manifest is the reverse.

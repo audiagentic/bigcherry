@@ -100,20 +100,17 @@ void ingest_live_policy_log(const fs::path& log, const fs::path& cache,
     if (!loaded)
         invalid("strict v1 serving manifest rejected: " + v1::render_human("calibration-ingest", loaded.error()));
     const auto& m = loaded.value();
-    if (m.spec.intent.service.profile != v1::Profile::kLab || !m.spec.experiment ||
+    // A calibration run (bc-serve --calibration-run) measures the production plan: lab profile, an explicit live
+    // policy, and no lab experiment, so nothing but the policy separates it from the production start.
+    if (m.spec.intent.service.profile != v1::Profile::kLab || m.spec.experiment ||
         !m.spec.handoff.placement.live_policy)
-        invalid("a lab experiment manifest with explicit live policy is required");
+        invalid("a calibration-run manifest (lab profile, explicit live policy, no experiment) is required");
     const std::string key = v1::plan_cache_key(m);
     const std::string layout = m.spec.intent.layout;
     const std::string objective(v1::kObjectiveNames[static_cast<size_t>(m.spec.intent.service.objective)]);
     if (key.size() != 64) invalid("manifest has no measured plan-cache key");
     if (target_store_key.size() != 64 || target_store_key.find_first_not_of("0123456789abcdef") != std::string::npos)
         invalid("missing or invalid validated plan-store key");
-    // The lab experiment must not affect the production plan. The strict
-    // manifest parser has already validated this JSON; check its raw payload.
-    const Json raw = Json::parse(read_text(manifest));
-    if (raw.at("spec").at("experiment") != Json::object())
-        invalid("nonempty lab experiment would change the production plan");
     ingest_live_policy_record(log, cache, key, layout, objective, target_store_key);
 }
 
