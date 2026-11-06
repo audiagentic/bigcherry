@@ -35,10 +35,6 @@ plan_check_describe() {
   local heat_id experiment_id=none
   heat_id=$(sha256sum < "$HEAT" | cut -d' ' -f1)
   [ -z "$EXPERIMENT_FILE" ] || experiment_id=$(sha256sum < "$EXPERIMENT_FILE" | cut -d' ' -f1)
-  # Calibration uses a lab profile with an EMPTY experiment (no engine/plan
-  # modifications). The lab/production plan keys must match for this store
-  # record to be usable on the next production start.
-  [ "${CALIBRATE:-0}" = 1 ] && experiment_id=none
   PLAN_SITE=(--site "$1")
   PLAN_EXTRA=(--plan-extra "heat-sha256: $heat_id; budgets: ${BUDGETS[*]:-default}; experiment-sha256: $experiment_id")
   # What the helpers read besides the layout and the settings above: the live policy and the lab experiment objects.
@@ -46,6 +42,7 @@ plan_check_describe() {
   # The cache is durable across runs, and optional before the first calibration.
   [ -z "${WORK:-}" ] || [ ! -f "$WORK/live-policy-calibration.toml" ] || PLAN_OBJECTS+=(--calibration "$WORK/live-policy-calibration.toml")
   [ -z "$LIVE_POLICY_FILE" ] || PLAN_OBJECTS+=(--live-policy "$LIVE_POLICY_FILE")
+  [ "${CALIBRATE:-0}" != 1 ] || PLAN_OBJECTS+=(--calibration-run)
   [ -z "$EXPERIMENT_FILE" ] || PLAN_OBJECTS+=(--experiment "$EXPERIMENT_FILE")
 }
 

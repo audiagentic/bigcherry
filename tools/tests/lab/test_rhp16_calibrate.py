@@ -24,21 +24,20 @@ class CalibrationLauncherTests(unittest.TestCase):
                 timeout=10,
             )
 
-    def test_calibrate_requires_explicit_lab_experiment(self) -> None:
-        r = self.run_start("--calibrate", "--live-policy", "/policy.json")
+    def test_calibrate_refuses_an_experiment(self) -> None:
+        r = self.run_start("--calibrate", "--live-policy", "/policy.json", "--experiment", "/experiment.json")
         self.assertEqual(r.returncode, 2, r.stderr)
-        self.assertIn("lab-only", r.stderr)
+        self.assertIn("takes no --experiment", r.stderr)
         self.assertNotIn("gpu", r.stderr.lower())
 
     def test_calibrate_requires_policy_override(self) -> None:
-        r = self.run_start("--calibrate", "--experiment", "/experiment.json")
+        r = self.run_start("--calibrate")
         self.assertEqual(r.returncode, 2, r.stderr)
         self.assertIn("--live-policy", r.stderr)
 
     def test_calibrate_requires_workload_prompts(self) -> None:
         r = self.run_start(
-            "--calibrate", "--experiment", "/experiment.json",
-            "--live-policy", "/policy.json",
+            "--calibrate", "--live-policy", "/policy.json",
         )
         self.assertEqual(r.returncode, 2, r.stderr)
         self.assertIn("--calibration-prompts", r.stderr)
@@ -48,8 +47,7 @@ class CalibrationLauncherTests(unittest.TestCase):
             prompt.write("Example calibration workload\n")
             prompt.flush()
             r = self.run_start(
-                "--calibrate", "--experiment", "/experiment.json",
-                "--live-policy", "/policy.json",
+                "--calibrate", "--live-policy", "/policy.json",
                 "--calibration-prompts", prompt.name, "--record-heat", "off",
             )
             self.assertEqual(r.returncode, 2, r.stderr)
@@ -58,12 +56,11 @@ class CalibrationLauncherTests(unittest.TestCase):
     def test_calibrate_requires_active_policy_hooks(self) -> None:
         with tempfile.TemporaryDirectory() as root:
             exp, policy, prompts = [Path(root) / n for n in ("experiment.json", "policy.json", "prompts.txt")]
-            exp.write_text("{}")
+            exp.write_text('{"engine": {"profile_ops": "off"}}')
             policy.write_text('{}')
             prompts.write_text("A real calibration prompt\n")
             r = self.run_start(
-                "--calibrate", "--experiment", str(exp),
-                "--live-policy", str(policy), "--calibration-prompts", str(prompts),
+                "--calibrate", "--live-policy", str(policy), "--calibration-prompts", str(prompts),
             )
             self.assertEqual(r.returncode, 2, r.stderr)
             self.assertIn("present = active", r.stderr)
@@ -71,12 +68,11 @@ class CalibrationLauncherTests(unittest.TestCase):
     def test_calibrate_refuses_an_enabled_member(self) -> None:
         with tempfile.TemporaryDirectory() as root:
             exp, policy, prompts = [Path(root) / n for n in ("experiment.json", "policy.json", "prompts.txt")]
-            exp.write_text("{}")
+            exp.write_text('{"engine": {"profile_ops": "off"}}')
             policy.write_text('{"enabled": true, "cadence_ns": 5000000000}')
             prompts.write_text("A real calibration prompt\n")
             r = self.run_start(
-                "--calibrate", "--experiment", str(exp),
-                "--live-policy", str(policy), "--calibration-prompts", str(prompts),
+                "--calibrate", "--live-policy", str(policy), "--calibration-prompts", str(prompts),
             )
             self.assertEqual(r.returncode, 2, r.stderr)
             self.assertIn("no 'enabled' member", r.stderr)
@@ -88,19 +84,17 @@ class CalibrationLauncherTests(unittest.TestCase):
             policy.write_text('{"cadence_ns": 5000000000}')
             prompts.write_text("A real calibration prompt\n")
             r = self.run_start(
-                "--calibrate", "--experiment", str(exp),
-                "--live-policy", str(policy), "--calibration-prompts", str(prompts),
+                "--calibrate", "--experiment", str(exp), "--live-policy", str(policy), "--calibration-prompts", str(prompts),
             )
             self.assertEqual(r.returncode, 2, r.stderr)
-            self.assertIn("empty JSON object", r.stderr)
+            self.assertIn("takes no --experiment", r.stderr)
 
     def test_calibrate_rejects_blank_prompt_file(self) -> None:
         with tempfile.NamedTemporaryFile(mode="w") as prompt:
             prompt.write("\n  \n")
             prompt.flush()
             r = self.run_start(
-                "--calibrate", "--experiment", "/experiment.json",
-                "--live-policy", "/policy.json",
+                "--calibrate", "--live-policy", "/policy.json",
                 "--calibration-prompts", prompt.name,
             )
             self.assertEqual(r.returncode, 2, r.stderr)

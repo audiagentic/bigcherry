@@ -47,6 +47,8 @@ void usage() {
                  "                     serving start refuses it.\n"
                  "      --live-policy FILE   lab-only JSON override of every spec.handoff.placement.live_policy member; present means\n"
                  "                     the helper runs the live placement policy. Nothing is defaulted.\n"
+                 "      --calibration-run    the lab calibration start: lab profile with the explicit --live-policy and no\n"
+                 "                     experiment, so the measured plan is the production plan (launcher --calibrate).\n"
                  "      --experiment FILE    a JSON object for spec.experiment (lab profile: the manifest is then written with\n"
                  "                     profile lab; a production manifest never carries one).\n"
                  "  --plan-extra TEXT   (with --write-manifest) engine arguments the launcher passes through verbatim; part of the key\n"
@@ -171,6 +173,9 @@ int main(int argc, char** argv) {
         std::string plan_extra;
         fs::path plan_cache, engine_binary;
         fs::path write_manifest, live_policy_file, experiment_file;
+        // --calibration-run: the launcher's lab calibration start (--calibrate). A lab-profile manifest with an explicit live
+        // policy and NO experiment, so the plan it measures is the production plan.
+        bool calibration_run = false;
         bool unmeasured = false;
         std::vector<fs::path> positional;
         for (int i = 1; i < argc; ++i) {
@@ -193,6 +198,7 @@ int main(int argc, char** argv) {
             else if (arg == "--write-manifest") write_manifest = need_arg("--write-manifest");
             else if (arg == "--unmeasured") unmeasured = true;
             else if (arg == "--live-policy") live_policy_file = need_arg("--live-policy");
+            else if (arg == "--calibration-run") calibration_run = true;
             else if (arg == "--experiment") experiment_file = need_arg("--experiment");
             else if (arg == "--plan-extra") plan_extra = need_arg("--plan-extra");
             else if (arg == "--measured-plan") measured_plan_file = need_arg("--measured-plan");
@@ -216,8 +222,10 @@ int main(int argc, char** argv) {
             throw std::runtime_error("--plan-cache and --engine-binary go with --write-manifest");
         if (!plan_mode && !plan_extra.empty())
             throw std::runtime_error("--plan-extra goes with --write-manifest");
-        if (!live_policy_file.empty() && experiment_file.empty())
-            throw std::runtime_error("--live-policy is a lab override; supply --experiment for an explicit lab profile");
+        if (!live_policy_file.empty() && experiment_file.empty() && !calibration_run)
+            throw std::runtime_error("--live-policy is a lab override; supply --experiment for an explicit lab profile, or --calibration-run");
+        if (calibration_run && (live_policy_file.empty() || !experiment_file.empty()))
+            throw std::runtime_error("--calibration-run takes an explicit --live-policy and no --experiment (the production plan is measured)");
         if (write_manifest.empty() && (unmeasured || !live_policy_file.empty() || !experiment_file.empty()))
             throw std::runtime_error("--unmeasured, --live-policy and --experiment go with --write-manifest");
         if (write_manifest.empty() && !measured_plan_file.empty())
@@ -281,7 +289,7 @@ int main(int argc, char** argv) {
             if (unmeasured) {
                 bc::serving::ManifestInputs in;
                 in.resolved = r;
-                in.profile = experiment_file.empty() ? "production" : "lab";
+                in.profile = (experiment_file.empty() && !calibration_run) ? "production" : "lab";
                 in.instance_id = bc::serving::new_instance_id();
                 in.producer_sha256 = bc::serving::file_sha256("/proc/self/exe");
                 in.calibration_cache = opts.calibration_cache;
@@ -325,7 +333,7 @@ int main(int argc, char** argv) {
             in.instance_id = bc::serving::new_instance_id();
             in.producer_sha256 = bc::serving::file_sha256("/proc/self/exe");
             in.calibration_cache = opts.calibration_cache;
-            in.profile = experiment_file.empty() ? "production" : "lab";
+            in.profile = (experiment_file.empty() && !calibration_run) ? "production" : "lab";
             in.measured = bc::serving::MeasuredPlan{*plan, key_inputs};
             load_json_input(live_policy_file, "--live-policy", &in.live_policy, &in.live_policy_from);
             load_json_input(experiment_file, "--experiment", &in.experiment, &in.experiment_from);

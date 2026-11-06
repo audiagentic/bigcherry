@@ -52,7 +52,7 @@
 # container and frees that RAM for --host-pool-mib.
 # --kv-dtype T: the KV cache type (default fp8; fp8_v4 costs 0.78 of it per token and k6_v4 0.69, both lossy). There is no raw engine argument: the engine's
 # other flags are manifest fields (spec.experiment.engine: profile_ops, kv_resident, debug_selection, deterministic; give them in the
-# --calibrate: LAB ONLY. Requires --experiment FILE and --live-policy FILE (explicit
+# --calibrate: LAB ONLY. Requires --live-policy FILE (explicit
 # observe-or-move policy), --record-heat enabled and --calibration-prompts FILE
 # (one prompt per line, repeated until the helper's measurement horizon settles).
 # The helper prints one RHP16_CALIBRATION_JSON line; the launcher stops serving,
@@ -155,8 +155,12 @@ while [ $# -gt 0 ]; do
   esac
 done
 if [ "$CALIBRATE" = 1 ]; then
-  if [ "$CMD" != start ] || [ -z "$EXPERIMENT_FILE" ] || [ -z "$LIVE_POLICY_FILE" ]; then
-    echo "RADIANCE_EXIT=2 --calibrate is lab-only: --experiment and explicit --live-policy are required" >&2
+  if [ "$CMD" != start ] || [ -z "$LIVE_POLICY_FILE" ]; then
+    echo "RADIANCE_EXIT=2 --calibrate is lab-only: an explicit --live-policy is required" >&2
+    exit 2
+  fi
+  if [ -n "$EXPERIMENT_FILE" ]; then
+    echo "RADIANCE_EXIT=2 --calibrate measures the production plan: it takes no --experiment" >&2
     exit 2
   fi
   if [ -z "$CALIBRATION_PROMPTS" ] || [ ! -s "$CALIBRATION_PROMPTS" ]; then
@@ -171,20 +175,14 @@ if [ "$CALIBRATE" = 1 ]; then
     echo "RADIANCE_EXIT=2 --calibrate needs the live route histogram (--record-heat cannot be off)" >&2
     exit 2
   fi
-  # The lab plan key must be the same as the later production plan key.
-  # An experiment that changes engine diagnostics/memory could invalidate it.
-  # An explicit empty lab experiment selects the lab profile without any such
-  # changes; plan-check.sh deliberately excludes its otherwise hashed identity.
-  if ! python3 - "$EXPERIMENT_FILE" "$LIVE_POLICY_FILE" <<'RHP16_VALIDATE'
+  # The manifest is a lab-profile one (bc-serve --calibration-run) with the explicit policy and no experiment, so the plan it
+  # measures is the production plan and the record applies to the next production start.
+  if ! python3 - "$LIVE_POLICY_FILE" <<'RHP16_VALIDATE'
 import json
 import sys
 try:
     with open(sys.argv[1], encoding="utf-8") as f:
-        experiment = json.load(f)
-    with open(sys.argv[2], encoding="utf-8") as f:
         policy = json.load(f)
-    if experiment != {}:
-        raise ValueError("the calibration experiment must be an empty JSON object (same plan as production)")
     # v1 has no live_policy.enabled: a PRESENT policy is an active one (its thread and measurement hooks run), an absent
     # one is no policy. So the lab policy must be a non-empty object of v1 live_policy members; bc-serve then checks that
     # every member is there and valid.
