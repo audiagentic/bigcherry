@@ -112,7 +112,9 @@ std::string engine_identity(const fs::path& binary, const fs::path& radiance_hom
 
 Json plan_key_inputs(const Json& values, const Json& facts, const std::string& model_id, const std::string& engine_id,
                      const std::string& engine_args) {
-    const std::string card = values.at("layout").at("engine_card").get<std::string>();
+    // The ranks of one engine are one architecture (layouts.toml names an arch and a count); the first stands for them, and the
+    // rank count is part of the key through engine.tp.
+    const std::string card = values.at("layout").at("engine_cards").at(0).get<std::string>();
     const Json* gpu = nullptr;
     for (const Json& g : facts.at("gpus"))
         if (g.at("bdf") == card) gpu = &g;
@@ -167,8 +169,8 @@ std::optional<CachedPlan> plan_cache_lookup(const fs::path& dir, const Json& key
     const Json& res = e.at("resident");
     if (!res.is_object() || res.size() != 2 || !res.contains("helpers_mib") || !res.contains("engine_mib") ||
         !res.at("helpers_mib").is_number_unsigned() || !res.at("engine_mib").is_number_unsigned() ||
-        res.at("helpers_mib").get<uint64_t>() == 0 || res.at("engine_mib").get<uint64_t>() == 0)
-        throw std::runtime_error(where + ": resident must be {helpers_mib, engine_mib}, both positive integers");
+        res.at("engine_mib").get<uint64_t>() == 0)
+        throw std::runtime_error(where + ": resident must be {helpers_mib, engine_mib}: the engine's positive, the helpers' zero only for an engine-only layout");
     if (e.at("cache_version") != 1) throw std::runtime_error(where + ": cache_version must be 1");
     if (e.at("key") != key || e.at("key_inputs") != key_inputs)
         throw std::runtime_error(where + ": recorded key or key inputs differ from what it is filed under");
@@ -178,7 +180,7 @@ std::optional<CachedPlan> plan_cache_lookup(const fs::path& dir, const Json& key
 }
 
 CachedPlan plan_cache_store(const fs::path& dir, const Json& key_inputs, const Json& plan_json, const HostResident& resident) {
-    if (resident.helpers_mib == 0 || resident.engine_mib == 0)
+    if (resident.engine_mib == 0)
         throw std::runtime_error("the resident host memory of the helpers and of the engine must both be measured (positive MiB)");
     CachedPlan c{decode_engine_plan(plan_json, "measured plan"), plan_json, plan_key(key_inputs), {}, resident};
     const std::time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());

@@ -351,7 +351,7 @@ void provenance_hash_and_parity(Fixture& t) {
 
     for (size_t i = 0; i < 3; ++i)
         assert(r.manifest.at("process_helpers")[i]["config"]["index"] == i);
-    assert(r.typed.layout.engine_card == "0000:09:00.0");
+    assert(r.typed.layout.engine_cards == std::vector<std::string>{"0000:09:00.0"});
     assert(r.typed.layout.helper_cards[2] == "0000:17:00.0");
 
     const auto schema = bc::serving::json_schema();
@@ -360,7 +360,7 @@ void provenance_hash_and_parity(Fixture& t) {
     assert(schema["properties"]["service"]["properties"]["objective"]["enum"].size() == 3);
     assert(schema["properties"]["memory"]["properties"]["host_pool_mib"].contains("x-origin"));
     assert(schema["properties"]["engine"]["required"].size() == 2);
-    assert(schema["properties"]["handoff"]["required"].size() == 2);
+    assert(!schema["properties"]["handoff"].contains("required"));   // heat and histogram are required by a layout with helpers, not by the schema
     assert(schema["properties"]["helper"]["properties"]["index"]["maximum"] == 3);
 }
 } // namespace
@@ -763,7 +763,7 @@ void measured_plan_cache(Fixture& t) {
         e.erase("resident");
         std::ofstream(file, std::ios::trunc) << e.dump();
         assert(!sv::plan_cache_lookup(dir, k));
-        e["resident"] = {{"helpers_mib", 0}, {"engine_mib", 5}};
+        e["resident"] = {{"helpers_mib", 5}, {"engine_mib", 0}};
         std::ofstream(file, std::ios::trunc) << e.dump();
         bool zero_refused = false;
         try { (void)sv::plan_cache_lookup(dir, k); } catch (const std::exception&) { zero_refused = true; }
@@ -1199,8 +1199,8 @@ void manifest_writer_step(Fixture& t) {
 }
 
 // The named layouts' unmeasured manifests, digested: the layout data in layouts.toml must produce exactly these documents
-// (RSC11 A2). BC_WRITE_GOLDEN=1 rewrites golden/layout_manifests.txt (a deliberate change, reviewed against the old file).
-void layout_manifests_golden(Fixture& t) {
+// (RSC11 A2). `bc_serving_test --write-golden` rewrites golden/layout_manifests.txt (a deliberate change, reviewed against the old file); `--dump-manifests DIR` writes the documents.
+void layout_manifests_golden(Fixture& t, bool write_golden, const char* dump_dir) {
     namespace sv = bc::serving;
     const auto model = t.root / "golden-model.rad";
     bc::test::write_rad(model, 4, 16, 128, 128, {});
@@ -1224,7 +1224,7 @@ void layout_manifests_golden(Fixture& t) {
         in.producer_sha256 = std::string(64, 'a');
         in.profile = "production";
         const auto built = sv::build_manifest(in);
-        if (const char* dump = std::getenv("BC_DUMP_MANIFESTS")) write(fs::path(dump) / (std::string(name) + ".json"), built.text);
+        if (dump_dir) write(fs::path(dump_dir) / (std::string(name) + ".json"), built.text);
         // Normalised to what the layout decides: not this run's directory, the host's free /dev/shm, or the digest they feed.
         std::string text = built.text;
         for (size_t at; (at = text.find(t.root.string())) != std::string::npos;) text.replace(at, t.root.string().size(), "<root>");
@@ -1233,13 +1233,61 @@ void layout_manifests_golden(Fixture& t) {
         got += std::string(name) + " sha256:" + sv::sha256_hex(text) + "\n";
     }
     const fs::path golden = fs::path(__FILE__).parent_path() / "golden/layout_manifests.txt";
-    if (std::getenv("BC_WRITE_GOLDEN")) { write(golden, got); return; }
+    if (write_golden) { write(golden, got); return; }
     std::ifstream in(golden);
     std::string want((std::istreambuf_iterator<char>(in)), {});
     if (want != got) throw std::runtime_error("layout manifests differ from golden/layout_manifests.txt:\n" + got);
 }
 
-int main() {
+// An engine-only layout (contract amendment 12): two RDNA3 ranks, no helpers, no handoff, read back by the strict reader.
+void engine_only_layout(Fixture& t) {
+    namespace sv = bc::serving;
+    const auto model = t.root / "dense-model.rad";
+    bc::test::write_rad(model, 4, 16, 128, 128, {});
+    Options opts;
+    opts.site = t.file("dense-site.toml", "[engine]\nmodel = \"" + model.string() + "\"\nradiance_home = \"/runtime\"\n");
+    opts.sets = {"layout.name=\"qwen27b-2xtx\"", "service.max_sessions=6", "service.max_context=8192"};
+    const auto r = sv::resolve(opts, t.facts);   // no [handoff] heat/histogram: nothing here uses them
+    assert(r.typed.layout.engine_cards.size() == 2 && r.typed.layout.helper_cards.empty());
+    assert(r.typed.engine.tp == 2 && r.typed.engine.tp_wire == "wht6" && r.typed.engine.kernels == "libr3,libref");
+    assert(r.typed.helper.count == 0 && r.manifest.at("process_helpers").empty());
+    assert(r.provenance.at("engine.tp").at("origin") == "derived");
+    sv::ManifestInputs in;
+    in.resolved = r;
+    in.instance_id = "11111111-1111-4111-8111-111111111111";
+    in.producer_sha256 = std::string(64, 'a');
+    in.profile = "production";
+    const auto built = sv::build_manifest(in);
+    const Json& spec = built.document.at("spec");
+    assert(!spec.contains("handoff") && !spec.at("processes").contains("helper_common"));
+    assert(spec.at("processes").at("helpers").empty() && spec.at("plan").at("owner_map").at("helpers").empty());
+    assert(spec.at("processes").at("engine").at("device").at("gpus").size() == 2);
+    assert(spec.at("processes").at("engine").at("execution").at("tp_wire") == "wht6");
+    assert(spec.at("processes").at("engine").at("runtime").at("kernels") == Json::array({"libr3", "libref"}));
+    assert(!built.document.at("provenance").contains("/spec/handoff/transport") && !built.document.at("provenance").contains("/spec/processes/helper_common"));
+    assert(bc::serving::v1::read_manifest(built.text, "engine-only", bc::serving::v1::PlanUse::measuring).ok());
+    // the sections tie to the helpers both ways, and an engine-only manifest refuses a helper-side experiment
+    Json with_handoff = built.document;
+    with_handoff["spec"]["handoff"] = Json::object();
+    assert(!bc::serving::v1::read_manifest(with_handoff.dump(), "x", bc::serving::v1::PlanUse::measuring).ok());
+    // a layout with helpers still needs its heat and histogram files
+    Options helpers = opts;
+    helpers.sets = {"layout.name=\"flashnext-2xtx\""};
+    fail(helpers, t.facts, "missing required key: handoff.heat");
+    // a two-rank engine without its transport is refused
+    Options no_wire = opts;
+    no_wire.sets = {"layout.name=\"qwen27b-2xtx\"", "engine.tp_wire=\"exact\""};
+    (void)sv::resolve(no_wire, t.facts);
+}
+
+int main(int argc, char** argv) {
+    bool write_golden = false;
+    const char* dump_dir = nullptr;
+    for (int i = 1; i < argc; ++i) {
+        if (std::string(argv[i]) == "--write-golden") write_golden = true;
+        else if (std::string(argv[i]) == "--dump-manifests" && i + 1 < argc) dump_dir = argv[++i];
+        else { std::cerr << "usage: bc_serving_test [--write-golden] [--dump-manifests DIR]\n"; return 2; }
+    }
     try {
         sha256_vectors();
         Fixture t;
@@ -1254,7 +1302,8 @@ int main() {
         host_ledger_plan();
         measured_plan_cache(t);
         manifest_writer_step(t);
-        layout_manifests_golden(t);
+        layout_manifests_golden(t, write_golden, dump_dir);
+        engine_only_layout(t);
         sdk_environment_step(t);
         std::cout << "PASS: fake KFD/PCI/proc detection; strict keys; types/ranges; required; "
                      "precedence/caps; provenance/hash; launcher engine/WorkerConfig parity; "

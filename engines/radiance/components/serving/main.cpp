@@ -50,7 +50,7 @@ void usage() {
 
 void explain(const bc::serving::Resolved& result) {
     std::cout << "layout: " << result.typed.layout.name << '\n';
-    std::cout << "engine card: " << result.typed.layout.engine_card << '\n';
+    std::cout << "engine cards: " << result.typed.layout.engine_cards.size() << '\n';
     std::cout << "helpers: " << result.typed.layout.helper_cards.size() << '\n';
     std::cout << "manifest sha256: " << result.hash << '\n';
     for (auto it = result.provenance.begin(); it != result.provenance.end(); ++it) {

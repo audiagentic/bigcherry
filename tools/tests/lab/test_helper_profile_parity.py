@@ -113,22 +113,15 @@ class HelperProfileParityTests(unittest.TestCase):
         froms = [r["from"] for r in self.rows if "from" in r]
         self.assertEqual(sorted(froms), sorted(set(froms)), "a resolver key feeds one leaf")
 
-    def test_every_layout_has_the_combine_flag_the_resolver_recipe_has(self) -> None:
-        # The writer takes helper.combine from the resolver, whose recipe_for() snapshots layouts.toml: for every layout the
-        # recipe's combine flag is what the layout exports as R3_MOE_WORKER_COMBINE (unset: the setting's default, off).
-        layouts = tomllib.loads((REPO / "engines" / "radiance" / "layouts.toml").read_text(encoding="utf-8"))["layout"]
-        # a layout with no helpers (qwen27b-2xtx: two engine ranks, no expert offload) is not a remote-MoE serving layout; the
-        # resolver refuses it by name ("unknown named layout, no fallback") until bc-serve serves tensor-parallel dense models
-        layouts = {n: b for n, b in layouts.items() if b.get("helper")}
+    def test_the_resolver_reads_layouts_toml_and_keeps_no_copy_of_it(self) -> None:
+        # RSC11 A2: serving.cpp embeds engines/radiance/layouts.toml and archs.toml (CMakeLists.txt) and derives helper.combine,
+        # the cards, budgets and placement from them; a layout named in its source would be a second copy.
         text = (SERVING / "serving.cpp").read_text(encoding="utf-8")
-        recipes = {}
-        for m in re.finditer(r'if \(name == "([a-z0-9-]+)"\)\s*return \{(true|false), (true|false), (true|false),', text):
-            recipes[m.group(1)] = m.group(4) == "true"
-        self.assertEqual(set(recipes), set(layouts), "the resolver knows exactly the layouts in layouts.toml")
-        for name, body in layouts.items():
-            with self.subTest(layout=name):
-                exported = (body.get("env") or {}).get("R3_MOE_WORKER_COMBINE")
-                self.assertEqual(recipes[name], bool(_as_value(exported)) if exported is not None else False)
+        layouts = tomllib.loads((REPO / "engines" / "radiance" / "layouts.toml").read_text(encoding="utf-8"))["layout"]
+        for name in layouts:
+            self.assertNotIn(f'name == "{name}"', text, f"serving.cpp branches on the layout {name}")
+        self.assertIn("layouts_seed.inc", text)
+        self.assertIn("archs_seed.inc", text)
 
     def test_every_row_names_a_setting_and_its_basis_holds(self) -> None:
         for r in self.rows:

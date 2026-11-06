@@ -14,7 +14,8 @@ struct Service {
     uint32_t max_sessions = 0, max_context = 0;
 };
 struct Layout {
-    std::string name, engine_card;
+    std::string name;
+    std::vector<std::string> engine_cards;
     std::vector<std::string> helper_cards;
 };
 struct Memory {
