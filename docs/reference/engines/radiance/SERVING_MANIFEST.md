@@ -47,6 +47,22 @@ bc-serve --write-manifest OUT --plan-cache DIR --engine-binary PATH \
 Inspect without writing: `bc-serve --explain [--json] --set ...` shows every resolved value with its origin
 (`schema-default`, `site`, `profile`, `cli`, `derived`, `discovered`, `calibrated`).
 
+## Layouts and engine-only manifests
+
+A layout (`engines/radiance/layouts.toml`, card types in `engines/radiance/archs.toml`; both compiled into `bc-serve`, so there is
+one copy) names which cards run the engine and which hold experts. `bc-serve` selects the cards by architecture from the host's
+detected GPUs; it never takes device indices.
+
+| Layout shape | Manifest |
+|---|---|
+| engine card + helper groups (the flashnext layouts) | `processes.helpers` per helper, `handoff`, `helper_common`, a planned owner map |
+| engine cards only (`qwen27b-2xtx`: two RDNA3 ranks, `tp-wire = "wht6"`) | `processes.helpers` and the owner map empty; **no** `handoff` and **no** `helper_common` (contract amendment 12) |
+
+For an engine-only layout `engine.tp` is the card count, `engine.kernels` is the engine architecture's plugin plus `libref` (the
+mailbox plugin `libr3moe` only when helpers exist), `handoff.heat` and `handoff.histogram` are not needed, and the host-memory
+measurement is the engine's alone (`--helpers-resident-mib 0`). A manifest with a `handoff` or `helper_common` and no helpers, or
+helpers and no `handoff`, is refused by the reader.
+
 ## Starting with a manifest
 
 ```bash
@@ -75,7 +91,7 @@ the layout or another key.
 | `engine.radiance_home` | `/spec/processes/engine/runtime/radiance_home` | `--radiance-home` |
 | `engine.kernels` (*derived*) | `/spec/processes/engine/runtime/kernels` | `--kernels` |
 | `engine.port` | `/spec/processes/engine/server/port` | `--port` |
-| `engine.tp` | `/spec/processes/engine/scheduler/tp` | `--tp` |
+| `engine.tp` (*derived*) | `/spec/processes/engine/scheduler/tp` | `--tp` (the layout's engine card count) |
 | `engine.max_num_batched_tokens` | `/spec/processes/engine/scheduler/max_num_batched_tokens` | `--max-num-batched-tokens` |
 | `engine.checkpoint_interval` | `/spec/processes/engine/scheduler/checkpoint_interval` | `--checkpoint-interval` |
 | `engine.placement` | `/spec/processes/engine/execution/placement` | `--placement` |
@@ -93,7 +109,7 @@ the layout or another key.
 | `handoff.*` (`shm`, `max_rows`, `small_rows`, `gemv_large_rows`, `skip_owned`, `moe_down_tile`, `histogram`, `histogram_period_s`, `placement`, `heat`) | `/spec/handoff/...` | helper-side, no engine flag |
 | `helper.combine`, `helper.combine_min_rows`, `helper.combine_threads` | `/spec/processes/helper_common/combine/...` | helper-side, no engine flag |
 
-`engine.tp_wire`, `engine.no_prefix_cache` and `engine.gpu_headroom_mib` have no default: an unset one is absent from the
+`engine.tp_wire` follows the layout when it names one (`tp-wire` in `layouts.toml`; required for two or more engine cards) and can be overridden; `engine.no_prefix_cache` and `engine.gpu_headroom_mib` have no default: an unset one is absent from the
 manifest and radiance keeps its own default. The four experiment flags have no `--set` key; they are fields of
 `spec.experiment` and come in through `--experiment`:
 
@@ -117,7 +133,7 @@ server.
 |---|---|
 | Engine and helpers read a manifest; the engine admits the plan it carries | done (RSC06, RSC08) |
 | `--set` for `tp_wire`, `no_prefix_cache`, `gpu_headroom_mib` | done (RSC11 A1) |
-| Resolver handles engine-only and multi-card-engine layouts; kernels derived per architecture | pending (A2) |
+| Resolver reads `layouts.toml` and `archs.toml`; engine-only and multi-card-engine layouts; kernels derived per architecture; contract amendment 12 | done (RSC11 A2) |
 | Campaign arms get a manifest each; `BC_SERVING_MANIFEST` removed | pending (A3) |
 | Lab job files and `layouts.toml` side channels moved or retired | pending (B) |
 | The engine refuses direct config flags | pending (C) |
