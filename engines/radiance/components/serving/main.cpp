@@ -1,5 +1,7 @@
 #include "serving.h"
 #include "manifest_writer.h"
+#include "live_policy_ingest.h"
+#include "v1/manifest.h"
 #include "plan_cache.h"
 #include "sdk_check.h"
 
@@ -25,6 +27,9 @@ void usage() {
                  "  --validate <site.toml> [profile.toml] [--set key=value]\n"
                  "  --explain [--json] [--site FILE] [--profile FILE] [--set key=value]\n"
                  "  --calibration FILE  calibration cache over seeds, including RHP16 per-plan measurement records\n"
+                 "  calibration-ingest --from-log FILE --calibration FILE --manifest LAB_MANIFEST\n"
+                 "      validates one settled helper record against the strict lab manifest and atomically appends it\n"
+
                  "  --write-manifest OUT --plan-cache DIR --engine-binary PATH [--plan-extra TEXT] [site/profile/set]\n"
                  "      writes the v1 serving manifest for this configuration to OUT (an existing OUT is refused) from its\n"
                  "      measured plan and the planner's owner map, and reads it back through the shared strict reader before it\n"
@@ -93,6 +98,71 @@ static void load_json_input(const fs::path& path, const char* flag, Json* out, s
 
 int main(int argc, char** argv) {
     try {
+        if (argc > 1 && std::string(argv[1]) == "calibration-ingest") {
+            // The helper has only the *typed v1 manifest* cache key. It is
+            // different from the RSC03 plan-store key used by the derivation
+            // reader. Re-resolve the exact launch and validate its cached
+            // measured plan before mapping that trusted log identity.
+            Options ingest_opts;
+            fs::path log, cache, manifest, plan_dir, binary;
+            std::string extra;
+            for (int i = 2; i < argc; ++i) {
+                const std::string arg(argv[i]);
+                if (i + 1 >= argc) throw std::runtime_error(arg + " requires a value");
+                if (arg == "--from-log") log = argv[++i];
+                else if (arg == "--calibration") cache = argv[++i];
+                else if (arg == "--manifest") manifest = argv[++i];
+                else if (arg == "--plan-cache") plan_dir = argv[++i];
+                else if (arg == "--engine-binary") binary = argv[++i];
+                else if (arg == "--plan-extra") extra = argv[++i];
+                else if (arg == "--site") ingest_opts.site = argv[++i];
+                else if (arg == "--profile") ingest_opts.profile = argv[++i];
+                else if (arg == "--sys-root") ingest_opts.sys_root = argv[++i];
+                else if (arg == "--set") ingest_opts.sets.push_back(argv[++i]);
+                else throw std::runtime_error("calibration-ingest: unknown option " + arg);
+            }
+            if (log.empty() || cache.empty() || manifest.empty() || plan_dir.empty() ||
+                binary.empty() || ingest_opts.site.empty() || extra.empty())
+                throw std::runtime_error(
+                    "calibration-ingest: --from-log --calibration --manifest --plan-cache "
+                    "--engine-binary --site --plan-extra are required");
+            // Do not invent a plan key from a filename or trust a supplied
+            // raw key. Verify the exact resolved model, engine, and measured
+            // plan against the strict lab manifest.
+            if (fs::exists(cache)) ingest_opts.calibration_cache = cache;
+            const auto facts = bc::serving::detect(ingest_opts.sys_root);
+            const auto resolved = bc::serving::resolve(ingest_opts, facts);
+            const Json& values = resolved.values;
+            const fs::path home = values.at("engine").at("radiance_home").get<std::string>();
+            const Json inputs = bc::serving::plan_key_inputs(
+                values, facts, bc::serving::container_identity(
+                    values.at("engine").at("model").get<std::string>()),
+                bc::serving::engine_identity(binary, home), extra);
+            const auto plan = bc::serving::plan_cache_lookup(plan_dir, inputs);
+            if (!plan)
+                throw std::runtime_error("calibration-ingest: exact measured plan is absent from cache");
+            const auto verified = bc::serving::v1::load_manifest(
+                manifest, bc::serving::v1::PlanUse::serving);
+            if (!verified)
+                throw std::runtime_error("calibration-ingest: strict lab manifest rejected: " +
+                    bc::serving::v1::render_human("bc-serve", verified.error()));
+            const auto& m = verified.value();
+            if (!m.spec.plan.engine_memory ||
+                m.spec.intent.layout != values.at("layout").at("name").get<std::string>() ||
+                m.spec.intent.model != values.at("engine").at("model").get<std::string>() ||
+                m.spec.plan.engine_memory->model_identity != inputs.at("model").get<std::string>() ||
+                m.spec.plan.engine_memory->engine_identity != inputs.at("engine_build").get<std::string>())
+                throw std::runtime_error("calibration-ingest: launch/model/engine identity does not match lab manifest");
+            std::ifstream in(manifest, std::ios::binary);
+            if (!in) throw std::runtime_error("calibration-ingest: cannot reread manifest");
+            const Json raw = Json::parse(in);
+            if (raw.at("spec").at("plan").at("engine_memory").at("expected") != plan->plan_json)
+                throw std::runtime_error("calibration-ingest: cached measured plan differs from lab manifest");
+            bc::serving::ingest_live_policy_log(
+                log, cache, manifest, bc::serving::plan_key(inputs));
+            std::cout << "calibration: " << cache << '\n';
+            return 0;
+        }
         Options opts;
         bool detection = false, schema = false, validation = false;
         bool explanation = false, json = false;

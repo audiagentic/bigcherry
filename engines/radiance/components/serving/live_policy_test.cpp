@@ -65,6 +65,8 @@ int main() {
     write_fixture(fixture(key));
     auto rec = sv::read_live_policy_record(file, key);
     assert(rec && rec->measurements.at("hot_set_k") == 5931);
+    assert(sv::live_policy_record_complete(*rec));
+
     const auto cal = sv::Calibration::standard(file);
     const sv::CalibrationMatch at{"", "flashnext-4gpu", "balanced"};
     const auto d = sv::derive_live_policy(*rec, cal, at, 2500000, {1000000000, 1000000000});
@@ -94,6 +96,22 @@ int main() {
     const auto stride = sv::derive_live_policy(*rec, cal, at, 4000000, {1000000000, 1000000000});
     assert(stride.policy.at("max_moved_bytes") == 160000000 && stride.policy.at("max_moves") == 40);
     assert(stride.policy.at("min_residency_ns") == p.at("min_residency_ns"));
+    // Partial evidence is accepted only with a named absence and cannot
+    // silently become a policy with guessed numbers.
+    std::string partial = fixture(key);
+    const std::string copy = "copy_bytes_per_s = 160000000\n";
+    assert(partial.find(copy) != std::string::npos);
+    partial.erase(partial.find(copy), copy.size());
+    partial += "absent = { copy_bytes_per_s = \"per-helper copy hook absent\" }\n";
+    write_fixture(partial);
+    const auto incomplete = sv::read_live_policy_record(file, key);
+    assert(incomplete && !sv::live_policy_record_complete(*incomplete));
+    assert(incomplete->absent.at("copy_bytes_per_s") == "per-helper copy hook absent");
+    partial = fixture(key);
+    partial.erase(partial.find(copy), copy.size());
+    write_fixture(partial);
+    assert(throws_with(file, key, "copy_bytes_per_s"));
+
     write_fixture(fixture(key, true));
     assert(throws_with(file, key, "unknown key"));
     write_fixture(fixture(key).substr(0, fixture(key).find("copy_bytes_per_s = ")));
