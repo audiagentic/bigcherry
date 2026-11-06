@@ -29,6 +29,8 @@ struct ServiceSnapshot {
 struct ServiceSource {
     virtual ~ServiceSource()=default;
     virtual bool snapshot(ServiceSnapshot* out) const=0;
+    // The outage clock starts only after active service publication.
+    virtual bool active_publishers() const {return true;}
 };
 
 // Each lane has exactly one collector thread. Its sequence and three relaxed
@@ -136,8 +138,9 @@ public:
     }
     enum class ReadProblem { NONE, NO_SLOT, UNPUBLISHED, TORN, STALE, FUTURE, CLOCK };
     static bool read(const moe_shm::PublishedServiceSlot* slot,
-                     uint64_t now_ns,uint64_t max_age_ns,ServiceSnapshot* out,
-                     ReadProblem* problem=nullptr,uint64_t* age_ns=nullptr) {
+                     const std::function<uint64_t()>& clock,uint64_t max_age_ns,
+                     ServiceSnapshot* out,ReadProblem* problem=nullptr,
+                     uint64_t* age_ns=nullptr) {
         if(problem)*problem=ReadProblem::NONE;
         if(age_ns)*age_ns=0;
         const auto fail=[&](ReadProblem why,uint64_t age=0) {
@@ -146,7 +149,7 @@ public:
             return false;
         };
         if(!slot)return fail(ReadProblem::NO_SLOT);
-        if(!out || !now_ns || !max_age_ns)return fail(ReadProblem::CLOCK);
+        if(!out || !clock || !max_age_ns)return fail(ReadProblem::CLOCK);
         for(unsigned attempt=0;attempt<8;++attempt) {
             const uint64_t first=__atomic_load_n(&slot->sequence,__ATOMIC_ACQUIRE);
             if(!first)return fail(ReadProblem::UNPUBLISHED);
@@ -162,6 +165,9 @@ public:
             const uint64_t last=__atomic_load_n(&slot->sequence,__ATOMIC_ACQUIRE);
             if(first!=last || (last&1))continue;
             if(!published)return fail(ReadProblem::UNPUBLISHED);
+            // Read clock AFTER slot; peer publication may race prior clock.
+            const uint64_t now_ns=clock();
+            if(!now_ns)return fail(ReadProblem::CLOCK);
             if(published>now_ns)return fail(ReadProblem::FUTURE,published-now_ns);
             if(now_ns-published>max_age_ns)return fail(ReadProblem::STALE,now_ns-published);
             *out=data;
@@ -169,14 +175,32 @@ public:
         }
         return fail(ReadProblem::TORN);
     }
+    // Numeric overload permits fixed post-read time in deterministic tests.
+    static bool read(const moe_shm::PublishedServiceSlot* slot,
+                     uint64_t now_ns,uint64_t max_age_ns,ServiceSnapshot* out,
+                     ReadProblem* problem=nullptr,uint64_t* age_ns=nullptr) {
+        return read(slot,[now_ns] {return now_ns;},max_age_ns,out,problem,age_ns);
+    }
+    bool active_publishers() const override {
+        if(!clock_)return false;
+        ServiceSnapshot tail{};
+        if(!read(slot_,clock_,max_age_ns_,&tail))return false;
+        bool rows=tail.lane[0].rows || tail.lane[1].rows;
+        for(const auto& [helper,slot]:references_) {
+            ServiceSnapshot peer{};
+            if(!read(slot,clock_,max_age_ns_,&peer))return false;
+            rows=rows || peer.lane[0].rows || peer.lane[1].rows;
+        }
+        // Fresh/coherent slots plus actual routed work, not empty startup.
+        return rows;
+    }
     bool snapshot(ServiceSnapshot* out) const override {
         if(!clock_ || !out || (require_reference_ && references_.empty()))return false;
-        const uint64_t now=clock_();
         const auto check=[&](const moe_shm::PublishedServiceSlot* slot,uint32_t helper,
                             ServiceSnapshot* value) {
             ReadProblem why=ReadProblem::NONE;
             uint64_t age=0;
-            if(read(slot,now,max_age_ns_,value,&why,&age))return true;
+            if(read(slot,clock_,max_age_ns_,value,&why,&age))return true;
             const char* condition="invalid clock";
             switch(why) {
             case ReadProblem::NO_SLOT: condition="no slot";break;

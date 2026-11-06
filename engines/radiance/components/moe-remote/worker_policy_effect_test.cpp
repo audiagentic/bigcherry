@@ -37,6 +37,38 @@ static void calibrate(EffectGate& gate,Synthetic& s) {
 // The hardware calib7 regression: helper0's own unchanged service is NOT
 // evidence that shifting heat off the tail had no effect. Use the exact v24
 // publication, reader and gate math for both before/after comparisons.
+// A peer can publish between an earlier clock read and its slot read.
+static void test_postread_peer_clock() {
+    using namespace r3::moe_shm;
+    const LayoutShape shape{128,2,3,8,128,64};
+    Layout layout{};
+    check(layout_for(shape,2,2,&layout),"clock layout");
+    void* map=mmap(nullptr,layout.bytes,PROT_READ|PROT_WRITE,
+                   MAP_PRIVATE|MAP_ANONYMOUS,-1,0);
+    check(map!=MAP_FAILED && init(map,2,shape,2),"clock map");
+    static_cast<Header*>(map)->helper_count=2;
+    uint64_t now=1000;
+    SharedTailServiceSource source(map,1,1000,[&]{return now+=2;},2);
+    ServiceSnapshot tail{},peer{},result{};
+    auto* t=published_service(map,1);
+    auto* p=published_service(map,0);
+    check(SharedTailServiceSource::publish(t,tail,1000) &&
+          SharedTailServiceSource::publish(p,peer,1003),"empty slots");
+    check(!source.active_publishers(),"idle publications");
+    tail.lane[1].rows=2;tail.lane[1].time_ns=200;
+    peer.lane[1].rows=2;peer.lane[1].time_ns=200;
+    check(SharedTailServiceSource::publish(t,tail,1000) &&
+          SharedTailServiceSource::publish(p,peer,1003),"routed slots");
+    now=1000;
+    check(source.snapshot(&result),"peer newer than earlier clock accepted");
+    check(result.lane[1].reference_rows==2,"peer rows");
+    now=1000;
+    check(source.active_publishers(),"routed publications");
+    check(SharedTailServiceSource::publish(p,peer,1010),"future slot");
+    now=1000;
+    check(!source.snapshot(&result),"future after slot read rejected");
+    munmap(map,layout.bytes);
+}
 static void test_published_tail_signal() {
     using namespace r3::moe_shm;
     const LayoutShape shape{128,2,3,8,128,64};
@@ -364,6 +396,7 @@ int main() {
     test_cross_process_monotonic_slot();
     test_sparse_peer_and_unavailable_diagnostics();
     test_relative_shift_from_all_published_helpers();
+    test_postread_peer_clock();
     test_published_tail_signal();
     LaneServiceSource source;
     ServiceSnapshot observed{};

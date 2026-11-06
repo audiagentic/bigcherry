@@ -18,8 +18,11 @@ struct CalibrationIdentity {
 // both the tail and a peer must have added routed rows in a lane.
 class EffectSignalTimeout {
     uint64_t missing_since_=0;
+    bool publishers_seen_=false;
 public:
-    void observe(bool overlapping_rows,uint64_t now_ns) {
+    void observe(bool active_publishers,bool overlapping_rows,uint64_t now_ns) {
+        if(active_publishers)publishers_seen_=true;
+        if(!publishers_seen_)return; // do not time out during helper/workload warm-up
         if(overlapping_rows)missing_since_=0;
         else if(!missing_since_ && now_ns)missing_since_=now_ns;
     }

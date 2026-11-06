@@ -354,7 +354,8 @@ public:
                     last_relative_service_=tail;
                 last_relative_service_valid_=true;
             } else last_relative_service_valid_=false;
-            effect_signal_timeout_.observe(overlapping_rows,now_ns);
+            effect_signal_timeout_.observe(service_ && service_->active_publishers(),
+                                           overlapping_rows,now_ns);
             if(service_ok) {
                 std::array<WindowNoiseTracker::Counts,2> counters{};
                 for(unsigned i=0;i<2;++i)
