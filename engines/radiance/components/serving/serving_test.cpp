@@ -22,6 +22,7 @@
 #include <filesystem>
 #include <functional>
 #include <fstream>
+#include <regex>
 #include <sstream>
 #include <iostream>
 #include <stdexcept>
@@ -1197,6 +1198,47 @@ void manifest_writer_step(Fixture& t) {
     assert(got.rfind("writer-", 0) == 0 && got.back() == '\n');
 }
 
+// The named layouts' unmeasured manifests, digested: the layout data in layouts.toml must produce exactly these documents
+// (RSC11 A2). BC_WRITE_GOLDEN=1 rewrites golden/layout_manifests.txt (a deliberate change, reviewed against the old file).
+void layout_manifests_golden(Fixture& t) {
+    namespace sv = bc::serving;
+    const auto model = t.root / "golden-model.rad";
+    bc::test::write_rad(model, 4, 16, 128, 128, {});
+    const auto heat = t.root / "golden.hot-first";
+    {
+        std::vector<uint32_t> counts(128 * 16, 0);
+        for (uint32_t l = 0; l < 4; ++l)
+            for (uint32_t e = 0; e < 16; ++e) counts[l * 16 + e] = (e * 7 + l * 3) % 16 + 1;
+        std::ofstream(heat, std::ios::binary).write(reinterpret_cast<const char*>(counts.data()), counts.size() * 4);
+    }
+    std::string got;
+    for (const char* name : {"flashnext-4gpu", "flashnext-2xtx", "flashnext-2xtx-combine", "flashnext-2xtx-rdna2-head",
+                             "flashnext-2xtx-rdna2-tail", "flashnext-2xtx-rdna2-tail-combine"}) {
+        Options opts;
+        opts.site = t.file("golden-site.toml", "[engine]\nmodel = \"" + model.string() + "\"\nradiance_home = \"/runtime\"\n"
+                                              "[handoff]\nheat = \"" + heat.string() + "\"\nhistogram = \"/heat.live\"\n");
+        opts.sets = {std::string("layout.name=\"") + name + "\""};
+        sv::ManifestInputs in;
+        in.resolved = sv::resolve(opts, t.facts);
+        in.instance_id = "11111111-1111-4111-8111-111111111111";
+        in.producer_sha256 = std::string(64, 'a');
+        in.profile = "production";
+        const auto built = sv::build_manifest(in);
+        if (const char* dump = std::getenv("BC_DUMP_MANIFESTS")) write(fs::path(dump) / (std::string(name) + ".json"), built.text);
+        // Normalised to what the layout decides: not this run's directory, the host's free /dev/shm, or the digest they feed.
+        std::string text = built.text;
+        for (size_t at; (at = text.find(t.root.string())) != std::string::npos;) text.replace(at, t.root.string().size(), "<root>");
+        text = std::regex_replace(text, std::regex("\"shm_available_mib\": [0-9]+"), "\"shm_available_mib\": 0");
+        text = std::regex_replace(text, std::regex("\"content_digest\": \"sha256:[0-9a-f]+\""), "\"content_digest\": \"-\"");
+        got += std::string(name) + " sha256:" + sv::sha256_hex(text) + "\n";
+    }
+    const fs::path golden = fs::path(__FILE__).parent_path() / "golden/layout_manifests.txt";
+    if (std::getenv("BC_WRITE_GOLDEN")) { write(golden, got); return; }
+    std::ifstream in(golden);
+    std::string want((std::istreambuf_iterator<char>(in)), {});
+    if (want != got) throw std::runtime_error("layout manifests differ from golden/layout_manifests.txt:\n" + got);
+}
+
 int main() {
     try {
         sha256_vectors();
@@ -1212,6 +1254,7 @@ int main() {
         host_ledger_plan();
         measured_plan_cache(t);
         manifest_writer_step(t);
+        layout_manifests_golden(t);
         sdk_environment_step(t);
         std::cout << "PASS: fake KFD/PCI/proc detection; strict keys; types/ranges; required; "
                      "precedence/caps; provenance/hash; launcher engine/WorkerConfig parity; "

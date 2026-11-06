@@ -29,8 +29,8 @@ std::vector<bc::experts::OwnerPolicy> owner_policies(const v1::Manifest& m) {
     for (size_t i = 0; i < helpers.size(); ++i) {
         const v1::HelperProcess& h = helpers[i];
         bc::experts::OwnerPolicy p;
-        p.heat = m.spec.handoff.placement.heat_file;
-        p.placement = std::string(v1::kPlacementStrategyNames[static_cast<size_t>(m.spec.handoff.placement.strategy)]);
+        p.heat = m.spec.handoff->placement.heat_file;
+        p.placement = std::string(v1::kPlacementStrategyNames[static_cast<size_t>(m.spec.handoff->placement.strategy)]);
         std::vector<std::string> formats;
         for (v1::ExpertFormat f : h.formats) formats.push_back(std::string(v1::kExpertFormatNames[static_cast<size_t>(f)]));
         p.formats = join(formats);
@@ -72,13 +72,12 @@ v1::Status invalid(const std::string& path, const std::string& message) { return
 v1::Status preconditions(const v1::Manifest& m) {
     const auto& helpers = m.spec.processes.helpers;
     const auto& got = m.spec.plan.owner_map.helpers;
-    if (helpers.empty()) return mismatch("spec.processes.helpers", "no helpers to own experts");
     if (got.size() != helpers.size())
         return mismatch("spec.plan.owner_map.helpers", std::to_string(got.size()) + " owned set(s) in the manifest, " +
                                                           std::to_string(helpers.size()) + " helper(s)");
     std::map<std::string, std::string> arch;
     for (const v1::GpuFact& g : m.spec.facts.gpus) arch[g.bdf] = g.arch;
-    const bool tail = m.spec.handoff.placement.strategy == v1::PlacementStrategy::kTail;
+    const bool tail = m.spec.handoff->placement.strategy == v1::PlacementStrategy::kTail;
     if (tail && helpers.size() < 2)
         return invalid("spec.handoff.placement.strategy", "the tail strategy needs at least two helpers, not " + std::to_string(helpers.size()));
     std::set<std::string> used(m.spec.processes.engine.device.gpus.begin(), m.spec.processes.engine.device.gpus.end());
@@ -104,7 +103,7 @@ v1::Status preconditions(const v1::Manifest& m) {
         const v1::HelperTier want = tail && i + 1 == helpers.size() && helpers.size() > 1 ? v1::HelperTier::kTail : v1::HelperTier::kHead;
         if (h.tier != want)
             return mismatch(at + ".tier", std::string("the placement strategy ") +
-                                              std::string(v1::kPlacementStrategyNames[static_cast<size_t>(m.spec.handoff.placement.strategy)]) +
+                                              std::string(v1::kPlacementStrategyNames[static_cast<size_t>(m.spec.handoff->placement.strategy)]) +
                                               " makes this helper a " + (want == v1::HelperTier::kTail ? "tail" : "head") + " helper");
         const v1::HelperCommon effective = v1::effective_helper_settings(m, i);
         // the reader's effective-setting invariants (spec 2.2): speeds absent when balance is off, one positive speed per helper when on
@@ -142,6 +141,8 @@ v1::Status preconditions(const v1::Manifest& m) {
 }  // namespace
 
 v1::Status verify_owner_map(const v1::Manifest& m, const bc::experts::Container& model) {
+    if (m.spec.processes.helpers.empty())   // engine-only: nothing to own, and the map must say so
+        return m.spec.plan.owner_map.helpers.empty() ? v1::Status{} : mismatch("spec.plan.owner_map.helpers", "owned sets for an engine-only configuration");
     if (auto e = preconditions(m)) return e;
     bc::experts::OwnerMap planned;
     std::string why;

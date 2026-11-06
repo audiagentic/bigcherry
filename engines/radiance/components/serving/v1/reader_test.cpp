@@ -352,7 +352,7 @@ int main() {
         check(!decode(Json::parse("{\"capture_file\":\"f\"}"), "lanes", &ld) && ld.capture_file && **ld.capture_file == "f",
               "capture_file value");
         check(decode(Json::parse("{}"), "lanes", &ld).has_value(), "an empty diagnostics group is refused");
-        HelperCommon base = p.value().spec.processes.helper_common;
+        HelperCommon base = p.value().spec.processes.helper_common.value();
         base.combine.enabled = true;
         base.kernels.moe_long_rows = 9;
         HelperPatch patch;
@@ -636,9 +636,9 @@ int main() {
     }
     {   // the live policy: production-allowed, every member explicit, one placement driver, its preconditions in the reader
         Result<Manifest> pm = from_text(prod_text);
-        check(pm.ok() && pm.value().spec.handoff.placement.live_policy.has_value(), "the production example carries a live policy");
-        if (pm && pm.value().spec.handoff.placement.live_policy) {
-            const LivePolicy& lp = *pm.value().spec.handoff.placement.live_policy;
+        check(pm.ok() && pm.value().spec.handoff->placement.live_policy.has_value(), "the production example carries a live policy");
+        if (pm && pm.value().spec.handoff->placement.live_policy) {
+            const LivePolicy& lp = *pm.value().spec.handoff->placement.live_policy;
             check(lp.effect_gate && !lp.accept_unwatermarked_heat && lp.margin_ppm == 100000 && lp.protected_layers.size() == 2 &&
                       lp.half_life_observations_milli == 4000,
                   "live policy values");

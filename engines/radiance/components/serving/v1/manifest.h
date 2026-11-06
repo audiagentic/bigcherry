@@ -33,7 +33,7 @@ Status validate_semantics(const Manifest& m);
 struct EngineView {
     const Intent& intent;
     const Resources& resources;
-    const Handoff& handoff;
+    const std::optional<Handoff>& handoff;   // absent for an engine-only configuration
     const EngineProcess& engine;
     const EngineMemory& memory;
     int64_t kv_backing_floor_ppm;   // the selected kv_backing_floor.fraction_ppm, or 0
