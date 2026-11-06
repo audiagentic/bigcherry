@@ -1095,6 +1095,32 @@ void manifest_writer_step(Fixture& t) {
             assert(std::string(e.what()).find("needs the lab profile") != std::string::npos);
         }
     }
+    // RSC11 A1: the three production engine options with no default are written only when set (--set), each at its
+    // registry path, and an unset one leaves no trace in the document or the resolved typed view.
+    {
+        const Json& base_engine = built.document.at("spec").at("processes").at("engine");
+        assert(!base_engine.at("execution").contains("tp_wire") && !base_engine.at("execution").contains("no_prefix_cache"));
+        assert(!base_engine.at("device").contains("headroom_mib"));
+        assert(!r.typed.engine.tp_wire && !r.typed.engine.no_prefix_cache && !r.typed.engine.gpu_headroom_mib);
+        Options with = opts;
+        with.sets = {"engine.tp_wire=\"wht6\"", "engine.no_prefix_cache=\"on\"", "engine.gpu_headroom_mib=320"};
+        const auto r2 = sv::resolve(with, t.facts);
+        assert(r2.typed.engine.tp_wire == "wht6" && r2.typed.engine.no_prefix_cache && r2.typed.engine.gpu_headroom_mib == 320u);
+        assert(r2.provenance.at("engine.tp_wire").at("origin") == "cli");
+        sv::ManifestInputs c = in;
+        c.resolved = r2;
+        c.measured.reset();
+        const auto set_built = sv::build_manifest(c);
+        const Json& eng = set_built.document.at("spec").at("processes").at("engine");
+        assert(eng.at("execution").at("tp_wire") == "wht6" && eng.at("execution").at("no_prefix_cache") == "on");
+        assert(eng.at("device").at("headroom_mib") == 320);
+        assert(bc::serving::v1::read_manifest(set_built.text, "options test", bc::serving::v1::PlanUse::measuring).ok());
+        Options bad = opts;
+        bad.sets = {"engine.tp_wire=\"lossy\""};
+        try { (void)sv::resolve(bad, t.facts); assert(false); } catch (const std::runtime_error& e) {
+            assert(std::string(e.what()).find("tp_wire") != std::string::npos);
+        }
+    }
     // The helper section follows the resolver (a layout, the site file or --set), not the table's defaults.
     {
         sv::ManifestInputs c = in;
