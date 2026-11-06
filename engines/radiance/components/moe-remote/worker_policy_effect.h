@@ -397,6 +397,7 @@ public:
     }
     void abort() {trial_=false;post_=false;clear_quiet();}
     bool waiting() const {return trial_;}
+    bool post_committed() const {return trial_ && post_;}
     double noise_floor() const {
         double n=0;
         bool measured=false;

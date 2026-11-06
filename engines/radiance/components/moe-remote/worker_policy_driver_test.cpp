@@ -128,6 +128,9 @@ struct DriverTestAccess {
         return any;
     }
     static bool revert_blocked(Driver& d) {return d.revert_failed_;}
+    static uint64_t post_wait(Driver& d) {return d.effect_post_wait_ns();}
+    static uint64_t post_deadline(Driver& d) {return d.effect_post_deadline_ns_;}
+    static bool post_pending(Driver& d) {return d.effect_.waiting();}
 };
 }
 struct PausedHeat : HeatFake {
@@ -701,8 +704,9 @@ int main() {
         d.observe(*f.controller,f.map,f.clock.now_ns());
         const auto after=f.owners();
         check(after.owner!=before.owner,"forward moved exactly through Controller");
-        check(pump(f,d,false,5) && d.evidence().effect_windows_judged==0,
-              "no verdict without enough postcommit routed rows");
+        check(d.submit(f.map,*f.controller,f.clock.now_ns()) &&
+              d.evidence().effect_windows_judged==0,
+              "no verdict without enough postcommit routed rows before derived deadline");
         service.add(125,2);
         check(d.submit(f.map,*f.controller,f.clock.now_ns()),
               "postcommit regression drives proposal");
@@ -781,6 +785,103 @@ int main() {
         service.add(130,2);
         check(pump(f,d,false,12)&&d.evidence().proposed==proposals,
               "revert abort blocks further attempts; no retry loop");
+        d.stop();
+    }
+    // Even with effect_gate=true, losing the post-move source must never
+    // deadlock the planner. Heat deltas and drift continue DURING the wait
+    // and AFTER an UNDECIDED timeout; no regression is invented.
+    {
+        Fixture f;FakeService service;
+        auto source=std::make_unique<HeatFake>();
+        auto* heat=source.get();
+        auto gate_settings=measured_settings();
+        gate_settings.effect_window_samples=40; // enough post time for several heat deltas
+        Driver d(gate_settings,std::move(source),{20,20},10,
+                 {0,0,0,0},f.clock,&service);
+        check(DriverTestAccess::post_wait(d)==gate_settings.controls.max_heat_age_ns,
+              "unmeasured post window falls back to heat-age limit");
+        check(d.start()&&pump_effect(f,d,service),"missing post source forward proposal");
+        service.available=false; // unavailable even at transaction close
+        f.commit();f.clock.advance(1001);d.observe(*f.controller,f.map,f.clock.now_ns());
+        const auto after=f.owners();
+        const uint64_t start=f.clock.now_ns();
+        const uint64_t wait=DriverTestAccess::post_wait(d);
+        check(wait>0 && wait<UINT64_MAX/2 && DriverTestAccess::post_pending(d) &&
+              DriverTestAccess::post_deadline(d)==start+wait,
+              "closed forward transaction freezes finite derived post deadline");
+        const auto m_before=d.measured();
+        const uint64_t evaluated_before=d.evidence().evaluated;
+        heat->reverse=true; // heat shifts again while verdict is unavailable
+        // A few evaluations before expiry must still poll the source.
+        for(int i=0;i<4 && f.clock.now_ns()+1001<start+wait;++i) {
+            check(d.submit(f.map,*f.controller,f.clock.now_ns()),"waiting driver submit");
+            f.clock.advance(1001);
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        const auto m_during=d.measured();
+        check(d.evidence().effect_undecided==0 &&
+              m_during.accepted_heat_deltas>m_before.accepted_heat_deltas &&
+              m_during.drift_intervals>m_before.drift_intervals,
+              "effect WAITING still consumes heat deltas and tracks drift");
+        if(f.clock.now_ns()<start+wait)f.clock.advance(start+wait-f.clock.now_ns());
+        check(d.submit(f.map,*f.controller,f.clock.now_ns()),"deadline submit");
+        check(d.evidence().effect_undecided==1 &&
+              d.evidence().reasons.count("effect_post_signal_timeout")==1 &&
+              !DriverTestAccess::post_pending(d) &&
+              !DriverTestAccess::revert_blocked(d) &&
+              f.owners().owner==after.owner &&
+              d.evidence().effect_reverted==0 &&
+              d.negative_count(f.clock.now_ns())==0,
+              "missing post source settles UNDECIDED, no revert, no block");
+        for(int i=0;i<24;++i) {
+            f.clock.advance(1001);
+            check(d.submit(f.map,*f.controller,f.clock.now_ns()),"next cadence submit");
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        const auto m_after=d.measured();
+        check(m_after.accepted_heat_deltas>m_before.accepted_heat_deltas+1 &&
+              m_after.drift_intervals>m_before.drift_intervals &&
+              d.evidence().evaluated>evaluated_before,
+              "gate state never blocks subsequent heat consumption and drift tracking");
+        d.stop();
+    }
+    // A tail lane without any peer reference is structurally unjudgeable:
+    // resolve immediately, irrespective of apparent degradation on that lane.
+    {
+        Fixture f;FakeService service;
+        auto source=std::make_unique<HeatFake>();
+        Driver d(measured_settings(),std::move(source),{20,20},10,
+                 {0,0,0,0},f.clock,&service);
+        check(d.start()&&pump_effect(f,d,service),"no-peer forward proposal");
+        f.commit();f.clock.advance(1001);d.observe(*f.controller,f.map,f.clock.now_ns());
+        const auto after=f.owners();
+        service.now.unjudgeable_tail_lane[1]=true;
+        service.add(150,2);
+        check(d.submit(f.map,*f.controller,f.clock.now_ns()),"no-peer submit");
+        check(d.evidence().effect_undecided==1 &&
+              d.evidence().reasons.count("effect_post_no_peer_reference")==1 &&
+              d.evidence().effect_revert_attempts==0 &&
+              !DriverTestAccess::post_pending(d) &&
+              f.owners().owner==after.owner,
+              "tail lane without peer is UNDECIDED not WORSE");
+        d.stop();
+    }
+    // A regressed/reset post counter is INVALID evidence, not a reason to
+    // permanently disable the driver or mark the move as WORSE.
+    {
+        Fixture f;FakeService service;
+        auto source=std::make_unique<HeatFake>();
+        Driver d(measured_settings(),std::move(source),{20,20},10,
+                 {0,0,0,0},f.clock,&service);
+        check(d.start()&&pump_effect(f,d,service),"invalid post forward proposal");
+        f.commit();f.clock.advance(1001);d.observe(*f.controller,f.map,f.clock.now_ns());
+        service.now.lane[1].rows=0; // below the saved post anchor
+        check(d.submit(f.map,*f.controller,f.clock.now_ns()),"invalid post submit");
+        check(d.evidence().effect_undecided==1 &&
+              d.evidence().reasons.count("effect_post_signal_invalid")==1 &&
+              !DriverTestAccess::revert_blocked(d) &&
+              d.evidence().effect_revert_attempts==0,
+              "invalid post signal resolves UNDECIDED, no permanent deadlock");
         d.stop();
     }
     {

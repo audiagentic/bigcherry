@@ -60,6 +60,8 @@ private:
     WindowNoiseTracker window_noise_{true}; // tail service RELATIVE to row-weighted peer service
     uint64_t next_window_noise_check_ns_=0;
     EffectSignalTimeout effect_signal_timeout_;
+    uint64_t effect_post_started_ns_=0; // closed transaction time, even without a signal
+    uint64_t effect_post_deadline_ns_=0; // frozen at close, never extended by new gaps
     ServiceSnapshot last_relative_service_{};
     bool last_relative_service_valid_=false;
     OwnerSnapshot revert_before_{},revert_after_{};
@@ -98,6 +100,36 @@ private:
     uint64_t feed_window_ns() const {
         // Derived solely from mandatory explicit age and poll cadence controls.
         return add_saturating(settings_.cadence_ns,settings_.controls.max_heat_age_ns);
+    }
+    // Bound post-move judgment by the gate's own k routed-row windows at the
+    // measured row rate, plus one observed heat gap. Missing rate/window data
+    // falls back to the mandatory heat-age limit; never wait indefinitely.
+    uint64_t effect_post_wait_ns() const {
+        const Measured m=measured();
+        const double rows_per_s=m.effect.sampled_rows_per_s;
+        if(!settings_.effect_window_samples || !settings_.effect_min_quiet_windows ||
+           !std::isfinite(rows_per_s) || rows_per_s<=0)
+            return settings_.controls.max_heat_age_ns;
+        const long double duration=std::ceil(
+            (static_cast<long double>(settings_.effect_window_samples)*
+             static_cast<long double>(settings_.effect_min_quiet_windows)*1000000000.0L)/
+            static_cast<long double>(rows_per_s));
+        const uint64_t windows=duration>=static_cast<long double>(UINT64_MAX)?
+            UINT64_MAX:uint64_t(duration);
+        const double measured_gap=m.delta_gap_ns.quantile(0.5);
+        const uint64_t gap=std::isfinite(measured_gap) && measured_gap>0 ?
+            (measured_gap>=static_cast<double>(UINT64_MAX)?UINT64_MAX:
+             uint64_t(std::ceil(measured_gap))) :
+            settings_.controls.max_heat_age_ns;
+        return add_saturating(windows,gap);
+    }
+    void effect_unjudgeable(const char* reason) {
+        effect_.abort();
+        effect_post_started_ns_=0;
+        effect_post_deadline_ns_=0;
+        pending_plan_={};
+        ++evidence_.effect_undecided;
+        record_no_change(reason);
     }
     bool no_live_feed(uint64_t now_ns) const {
         const uint64_t advanced=last_feed_advance_ns_.load(std::memory_order_acquire);
@@ -419,45 +451,56 @@ public:
     }
     bool submit(void* map,r3::epoch::Controller& controller,uint64_t now_ns) {
         if(!settings_.enabled || !controller.can_propose() || inflight_)return true;
-        if(settings_.effect_gate) {
-            if(revert_failed_)return true; // a failed rollback is terminal until restart
+        if(settings_.effect_gate && !revert_failed_) {
             ServiceSnapshot service{};
-            if(!service_ || !service_->snapshot(&service)) {
-                record_no_change("effect_signal_unavailable");return true;
-            }
+            const bool service_ok=service_ && service_->snapshot(&service);
             if(effect_.waiting()) {
-                const auto verdict=effect_.judge(service);
-                if(verdict==EffectVerdict::WAITING)return true; // no other proposal while assessing
-                if(verdict==EffectVerdict::INVALID) {
-                    revert_failed_=true;
-                    record_no_change("effect_post_signal_invalid");
-                    return true; // fail closed, never guess a verdict
-                }
-                ++evidence_.effect_windows_judged;
-                evidence_.effect_noise_floor=effect_.noise_floor();
-                evidence_.effect_last_ratio=effect_.last_ratio();
-                if(verdict==EffectVerdict::WORSE) {
-                    // Exclude the destinations that produced the REGRESSION,
-                    // not the destinations in the map we are restoring.
-                    for(const auto& m:pending_plan_.delta) {
-                        auto& entry=negatives_[{m.expert,uint32_t(m.to)}];
-                        entry={now_ns,add_saturating(now_ns,
-                               settings_.effect_revert_ttl_ns),kMeasuredWorseReason};
-                        ++evidence_.learned_ineligible;
+                // Every tail lane carrying work requires a peer reference.
+                // A missing reference is not evidence of regression.
+                const bool no_peer=service_ok &&
+                    (service.unjudgeable_tail_lane[0] ||
+                     service.unjudgeable_tail_lane[1]);
+                const bool timed_out=effect_post_started_ns_ &&
+                    now_ns>=effect_post_deadline_ns_;
+                if(no_peer)effect_unjudgeable("effect_post_no_peer_reference");
+                else if(timed_out)effect_unjudgeable("effect_post_signal_timeout");
+                else if(service_ok) {
+                    // Post-commit publication may be temporarily missing.
+                    // Anchor at its first valid sample, but retain the
+                    // original closed-transaction deadline.
+                    if(!effect_.post_committed())effect_.committed(service);
+                    const auto verdict=effect_.judge(service);
+                    if(verdict==EffectVerdict::INVALID)
+                        effect_unjudgeable("effect_post_signal_invalid");
+                    else if(verdict!=EffectVerdict::WAITING) {
+                        effect_post_started_ns_=0;
+                        effect_post_deadline_ns_=0;
+                        ++evidence_.effect_windows_judged;
+                        evidence_.effect_noise_floor=effect_.noise_floor();
+                        evidence_.effect_last_ratio=effect_.last_ratio();
+                        if(verdict==EffectVerdict::WORSE) {
+                            for(const auto& m:pending_plan_.delta) {
+                                auto& entry=negatives_[{m.expert,uint32_t(m.to)}];
+                                entry={now_ns,add_saturating(now_ns,
+                                       settings_.effect_revert_ttl_ns),kMeasuredWorseReason};
+                                ++evidence_.learned_ineligible;
+                            }
+                            ++terminal_generation_;
+                            revert_requested_=true;
+                        } else if(verdict==EffectVerdict::KEPT) {
+                            ++evidence_.effect_kept;
+                            pending_plan_={};
+                        } else {
+                            ++evidence_.effect_undecided;
+                            pending_plan_={};
+                        }
                     }
-                    ++terminal_generation_;
-                    revert_requested_=true;
-                } else if(verdict==EffectVerdict::KEPT) {
-                    ++evidence_.effect_kept;
-                    pending_plan_={};
-                } else {
-                    ++evidence_.effect_undecided;
-                    pending_plan_={};
-                }
-            } else if(!revert_requested_) {
+                } else record_no_change("effect_signal_unavailable");
+                // WAITING gates only proposals, never heat or drift polling.
+            } else if(!revert_requested_ && service_ok) {
                 effect_.quiet(service,now_ns);
                 evidence_.effect_noise_floor=effect_.noise_floor();
-            }
+            } else if(!service_ok) record_no_change("effect_signal_unavailable");
             {
                 std::lock_guard<std::mutex> guard(measure_lock_);
                 measured_.effect=effect_.observed();
@@ -542,6 +585,8 @@ public:
                         result.valid_until_ns,clock_.now_ns(),cooldown_until_ns_,
                         result.plan,negatives_))
                 record_no_change(reject);
+            else if(settings_.effect_gate && revert_failed_)
+                record_no_change("effect_revert_blocked");
             else if(settings_.effect_gate &&
                     !effect_.ready(clock_.now_ns(),settings_.controls.max_heat_age_ns))
                 record_no_change("effect_not_calibrated");
@@ -623,12 +668,12 @@ public:
                 reverting_=false;
             } else if(settings_.effect_gate) {
                 revert_after_=active;
+                effect_post_started_ns_=now_ns;
+                effect_post_deadline_ns_=add_saturating(now_ns,effect_post_wait_ns());
                 ServiceSnapshot service{};
-                if(!service_ || !service_->snapshot(&service)) {
-                    revert_failed_=true;
+                if(!service_ || !service_->snapshot(&service))
                     record_no_change("effect_commit_signal_unavailable");
-                    effect_.abort();
-                } else effect_.committed(service);
+                else effect_.committed(service);
             }
             ++evidence_.committed;
             for(const auto& m:pending_plan_.delta)
