@@ -17,3 +17,6 @@ Nine branch tips were compared with main by **content** (including main's post-r
 The two RAD23 patches are against **their recorded historical bases**, not clean patch sets against today's main. Apply the v20 `result-f32` patch first at `a20d1cb28`, and the v21 `result-f16` patch at `3732ffc59`. They are inert and need a protocol redesign, tests, KLD and throughput qualification to revive. The older router, default-layout, SDK and redaction branches predate a Git history rewrite; comparisons above rely on the branch-specific commit diffs, current files and the PR/ledger/plan record instead.
 
 For counts, per-branch evidence and unresolved questions see each folder's README and `docs/research/radiance-history/EXPERIMENT-REGISTER.md`. No builds, GPU measurements, branch deletion, push or PR were performed.
+
+
+Also archived (2026-11-06): the uncommitted 27B prefill-breakdown worktree (experiments/radiance/RAD27B-prefill-breakdown/, result on the 27B model page) and the remote branch perf/rad23-lane-quant (PR #482; all of it on main, experiments/radiance/RAD23-lane-quant/).
