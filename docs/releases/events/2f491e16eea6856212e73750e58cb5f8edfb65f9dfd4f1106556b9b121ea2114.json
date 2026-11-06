@@ -1,0 +1,16 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261106_034127_radiance-live-placement-calibr_9740",
+  "files": [
+    "engines/radiance/components/serving/live_policy_ingest.cpp",
+    "engines/radiance/components/serving/serving_test.cpp",
+    "docs/planning/active/patching-radiance-heat-placement/RHP16.md"
+  ],
+  "plan-item-ids": [
+    "RHP16"
+  ],
+  "status": "unreleased",
+  "technical-summary": "calibration-ingest accepts the bc-serve --calibration-run manifest (lab profile, explicit live policy, no spec.experiment) instead of the retired empty-experiment manifest; card-free test ingests against a real calibration-run manifest and refuses the production one. RHP16 records the first hardware calibration (ingest works, 15/20 quantities absent) and the step-5 gaps.",
+  "timestamp-utc": "2026-11-06T03:41:27.659101Z",
+  "user-summary-candidate": "Radiance live-placement calibration runs now record their measurements; the record stays incomplete until the remaining helper measurements land."
+}
