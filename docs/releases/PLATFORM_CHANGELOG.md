@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.15.1](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.15.0...bc-platform-1.15.1) (2026-11-06)
+
+
+### Fixes
+
+* **release:** patch-promote keeps the README layout and refreshes the generated docs ([#669](https://github.com/audiagentic/bigcherry/issues/669)) ([3ad2b8a](https://github.com/audiagentic/bigcherry/commit/3ad2b8a609592fc895abd566ff579954061429b0))
+
 ## [1.15.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.14.0...bc-platform-1.15.0) (2026-11-06)
 
 
