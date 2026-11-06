@@ -156,9 +156,10 @@ to drive comes from the manifest, and one `r3_moe_worker --manifest M --role hel
 seeing the host card whose `locator` equals the helper's `gpu`. The engine still reads `R3_MOE_WORKER=1` from its environment to
 enable the helper hook (RSC08 S5: not yet a manifest field), so a job with helpers sets it in `environment`.
 
-A quality (KL) arm uses the same block. The engine KL run starts as `radiance --manifest M --role engine --kld-ref DIR --kld-out FILE` (or
-`--kld-record DIR --kld-corpus FILE` for the reference): the four KL flags are the only flags the engine takes beside a manifest (rad0009;
-they are a kind of run, not configuration), and `quality.args` must be empty for such an arm. A reference recorded in the same job
+A quality (KL) arm uses the same block. The harness starts the engine KL run as `radiance --manifest M --role engine --kld-ref DIR --kld-out FILE`
+(or `--kld-record DIR --kld-corpus FILE` for the reference), and `quality.args` must be empty for such an arm. **The engine accepts those four
+flags beside a manifest only once rad0009 is changed to allow them (a separate change that needs the patch requalified on hardware); until then
+it refuses them, so a quality arm with a serving block cannot run.** A reference recorded in the same job
 (`quality.record`) still starts from raw flags; a stored reference is reused as before.
 
 `R3_MOE_WORKER_*` arm settings, `R3_MOE_WORKER_LAYOUT` and `BC_SERVING_MANIFEST` are gone. Jobs that used them and could not be migrated
