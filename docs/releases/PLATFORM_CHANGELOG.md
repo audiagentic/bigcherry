@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.16.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.15.1...bc-platform-1.16.0) (2026-11-06)
+
+
+### New and changed
+
+* **radiance:** RHP16 step 4, helper calibration records and the lab --calibrate run ([#682](https://github.com/audiagentic/bigcherry/issues/682)) ([a43c2cd](https://github.com/audiagentic/bigcherry/commit/a43c2cda93312bc3a079342b5938ddae442af642))
+* **serving:** --set keys for tp_wire, no_prefix_cache and gpu headroom; manifest operator guide (RSC11 A1) ([#677](https://github.com/audiagentic/bigcherry/issues/677)) ([666a9fc](https://github.com/audiagentic/bigcherry/commit/666a9fc2d11861f470c71ed8babef4ad56eb143b))
+
 ## [1.15.1](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.15.0...bc-platform-1.15.1) (2026-11-06)
 
 
