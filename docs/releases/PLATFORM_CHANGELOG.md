@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.17.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.16.0...bc-platform-1.17.0) (2026-11-06)
+
+
+### New and changed
+
+* **serving:** engine-only layouts; resolver reads layouts.toml; contract amendment 12 (RSC11 A2) ([#683](https://github.com/audiagentic/bigcherry/issues/683)) ([f115420](https://github.com/audiagentic/bigcherry/commit/f115420b7669bbe4e861dbd629e3e43f0ea0d837))
+
+
+### Fixes
+
+* **radiance:** component tests run their assertions ([#688](https://github.com/audiagentic/bigcherry/issues/688)) ([8faeb6a](https://github.com/audiagentic/bigcherry/commit/8faeb6ab95151d30cac1ff2bb42428800a2e10f5))
+
 ## [1.16.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.15.1...bc-platform-1.16.0) (2026-11-06)
 
 
