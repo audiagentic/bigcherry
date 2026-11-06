@@ -123,7 +123,104 @@ static void test_published_tail_signal() {
     munmap(map,layout.bytes);
 }
 
+// The actual on-arm service comparison is a dimensionless ratio r, not the
+// tail's absolute per-row duration. A common 30% workload shift cancels.
+static void test_relative_shift_from_all_published_helpers() {
+    using namespace r3::moe_shm;
+    const LayoutShape shape{128,2,3,8,128,64};
+    Layout layout{};
+    check(layout_for(shape,3,2,&layout),"relative shared layout");
+    void* map=mmap(nullptr,layout.bytes,PROT_READ|PROT_WRITE,
+                   MAP_PRIVATE|MAP_ANONYMOUS,-1,0);
+    check(map!=MAP_FAILED && init(map,3,shape,2),"relative shared init");
+    static_cast<Header*>(map)->helper_count=3;
+    uint64_t now=1000;
+    SharedTailServiceSource source(map,2,1000,[&]{return now;},3);
+    SharedTailServiceSource absolute_source(map,2,1000,[&]{return now;});
+    auto run=[&](double tail_fraction) {
+        ServiceSnapshot helpers[3]{};
+        for(auto& h:helpers)h.lane[1]={};
+        EffectGate gate({100,2,2.576});
+        EffectGate absolute_gate({100,2,2.576});
+        auto publish=[&] {
+            for(uint32_t i=0;i<3;++i)
+                check(SharedTailServiceSource::publish(
+                    published_service(map,i),helpers[i],now),"published peer");
+        };
+        auto tick=[&](double factor,double tail_factor) {
+            const double ns[]={100.0,200.0,100.0};
+            const uint64_t rows[]={100,200,100}; // row-weighted peer mean != unweighted mean
+            for(unsigned h=0;h<3;++h) {
+                auto& lane=helpers[h].lane[1];
+                lane.rows+=rows[h];
+                lane.samples++;
+                lane.time_ns+=uint64_t(std::llround(double(rows[h])*ns[h]*factor*
+                                                    (h==2?tail_factor:1.0)));
+            }
+            now+=100;
+            publish();
+            ServiceSnapshot snapshot{};
+            check(source.snapshot(&snapshot),"fresh reference and tail");
+            return snapshot;
+        };
+        publish();
+        ServiceSnapshot before{};
+        check(source.snapshot(&before),"initial relative snapshot");
+        gate.quiet(before,now);
+        ServiceSnapshot before_absolute{};
+        check(absolute_source.snapshot(&before_absolute),"absolute gate baseline");
+        absolute_gate.quiet(before_absolute,now);
+        for(unsigned i=0;i<3;++i) {
+            const auto quiet=tick(1.0,i==1?1.01:1.0);
+            gate.quiet(quiet,now);
+            ServiceSnapshot quiet_absolute{};
+            check(absolute_source.snapshot(&quiet_absolute),"absolute quiet comparison");
+            absolute_gate.quiet(quiet_absolute,now);
+        }
+        check(gate.ready(now,1000),"relative quiet windows");
+        check(gate.begin(now,1000),"relative trial begins");
+        check(absolute_gate.ready(now,1000) && absolute_gate.begin(now,1000),
+              "absolute baseline also ready");
+        ServiceSnapshot committed{};
+        check(source.snapshot(&committed),"relative committed snapshot");
+        gate.committed(committed);
+        ServiceSnapshot absolute_committed{};
+        check(absolute_source.snapshot(&absolute_committed),"absolute committed snapshot");
+        absolute_gate.committed(absolute_committed);
+        const auto after=tick(1.30,tail_fraction);
+        ServiceSnapshot absolute_after{};
+        check(absolute_source.snapshot(&absolute_after),"absolute judged snapshot");
+        // Absolute tail ns/row rises for the improved scenario, while
+        // tail / row-weighted peer ns/row falls by ~7%.
+        const double tail_absolute=double(after.lane[1].time_ns-committed.lane[1].time_ns)/
+                                   double(after.lane[1].rows-committed.lane[1].rows);
+        check(tail_absolute>100.0,"absolute tail service is slower despite ratio gain");
+        // r uses sum(time)/sum(rows), not the unweighted mean of 100 and 200.
+        const double peer_weighted=double(100*100+200*200)/300.0;
+        const double expected_r=100.0*tail_fraction/peer_weighted;
+        const double actual_r=(double(after.lane[1].time_ns-committed.lane[1].time_ns)/
+                               double(after.lane[1].rows-committed.lane[1].rows)) /
+                              (double(after.lane[1].reference_time_ns-committed.lane[1].reference_time_ns)/
+                               double(after.lane[1].reference_rows-committed.lane[1].reference_rows));
+        check(std::abs(actual_r-expected_r)<0.00001,"row-weighted peer denominator");
+        check(absolute_gate.judge(absolute_after)==EffectVerdict::WORSE,
+              "absolute gate falsely judges common-shift workload as worse");
+        const auto verdict=gate.judge(after);
+        return verdict;
+    };
+    check(run(0.93)==EffectVerdict::KEPT,"30% common rise, 7% relative improvement kept");
+    check(run(1.00)==EffectVerdict::UNDECIDED,"30% common rise, unchanged relative is undecided");
+    check(run(1.07)==EffectVerdict::WORSE,"30% common rise, 7% relative regression reverted");
+    ServiceSnapshot probe{};
+    check(source.snapshot(&probe),"peer publications initially fresh");
+    auto* peer=published_service(map,0);
+    __atomic_store_n(&peer->published_ns,now-1001,__ATOMIC_RELAXED);
+    check(!source.snapshot(&probe),"stale peer rejects entire ratio");
+    munmap(map,layout.bytes);
+}
+
 int main() {
+    test_relative_shift_from_all_published_helpers();
     test_published_tail_signal();
     LaneServiceSource source;
     ServiceSnapshot observed{};

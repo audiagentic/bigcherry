@@ -34,5 +34,5 @@ DerivedLivePolicy derive_live_policy(const LivePolicyRecord& record, const Calib
                                      const CalibrationMatch& match, uint64_t expert_stride_bytes,
                                      const std::vector<uint64_t>& helper_budget_bytes);
 std::optional<DerivedLivePolicy> derive_manifest_live_policy(const ManifestInputs& in,
-    const bc::experts::Container& container);
+    const bc::experts::Container& container, std::string* skipped_reason = nullptr);
 } // namespace bc::serving

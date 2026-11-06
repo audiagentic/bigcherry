@@ -57,7 +57,7 @@ private:
     const r3::epoch::Clock& clock_;
     ServiceSource* service_=nullptr;
     EffectGate effect_;
-    WindowNoiseTracker window_noise_; // only epoch heartbeat reads the published tail stream
+    WindowNoiseTracker window_noise_{true}; // tail service RELATIVE to row-weighted peer service
     uint64_t next_window_noise_check_ns_=0;
     OwnerSnapshot revert_before_{},revert_after_{};
     bool revert_requested_=false,reverting_=false,revert_failed_=false;
@@ -337,7 +337,8 @@ public:
             if(service_ && service_->snapshot(&tail)) {
                 std::array<WindowNoiseTracker::Counts,2> counters{};
                 for(unsigned i=0;i<2;++i)
-                    counters[i]={tail.lane[i].samples,tail.lane[i].rows,tail.lane[i].time_ns};
+                    counters[i]={tail.lane[i].samples,tail.lane[i].rows,tail.lane[i].time_ns,
+                                 tail.lane[i].reference_rows,tail.lane[i].reference_time_ns};
                 window_noise_.add(counters);
             } else window_noise_.reset(); // never bridge a missing/stale slot
             if(!next_window_noise_check_ns_ || now_ns>=next_window_noise_check_ns_) {

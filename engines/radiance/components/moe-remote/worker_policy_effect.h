@@ -12,10 +12,13 @@
 #include <limits>
 #include <functional>
 #include <utility>
+#include <vector>
 
 namespace r3::policy {
 struct ServiceTotals {
     uint64_t samples=0, rows=0, time_ns=0;
+    uint64_t reference_rows=0, reference_time_ns=0; // all other helpers, row weighted
+    bool relative=false; // production must not fall back to absolute on a paused peer
 };
 struct ServiceSnapshot {
     std::array<ServiceTotals,2> lane{}; // 0 small, 1 large -- NEVER pooled
@@ -82,13 +85,22 @@ public:
 // none of this is on a GPU/route hot path.
 class SharedTailServiceSource final : public ServiceSource {
     const moe_shm::PublishedServiceSlot* slot_=nullptr;
+    std::vector<const moe_shm::PublishedServiceSlot*> references_;
+    bool require_reference_=false;
     uint64_t max_age_ns_=0;
     std::function<uint64_t()> clock_;
 public:
     SharedTailServiceSource(const void* map,uint32_t tail_helper,
-                            uint64_t max_age_ns,std::function<uint64_t()> clock)
+                            uint64_t max_age_ns,std::function<uint64_t()> clock,
+                            uint32_t helper_count=0)
         :slot_(moe_shm::published_service(map,tail_helper)),
-         max_age_ns_(max_age_ns),clock_(std::move(clock)) {}
+         max_age_ns_(max_age_ns),clock_(std::move(clock)),
+         require_reference_(helper_count>0) {
+        // Every enabled helper publishes the same v24 slot on its CPU tick.
+        // Read all peers; the sum(time)/sum(rows) is the row-weighted mean.
+        for(uint32_t h=0;h<helper_count;++h)
+            if(h!=tail_helper)references_.push_back(moe_shm::published_service(map,h));
+    }
 
     static bool publish(moe_shm::PublishedServiceSlot* slot,
                         const ServiceSnapshot& local,uint64_t now_ns) {
@@ -128,7 +140,30 @@ public:
         return false; // torn or interrupted writer; no guessed measurement
     }
     bool snapshot(ServiceSnapshot* out) const override {
-        return clock_ && read(slot_,clock_(),max_age_ns_,out);
+        if(!clock_ || !out || (require_reference_ && references_.empty()))return false;
+        const uint64_t now=clock_();
+        ServiceSnapshot tail{};
+        if(!read(slot_,now,max_age_ns_,&tail))return false;
+        for(const auto* slot:references_) {
+            ServiceSnapshot peer{};
+            if(!read(slot,now,max_age_ns_,&peer))return false;
+            for(unsigned i=0;i<2;++i) {
+                auto& x=tail.lane[i];
+                const auto& y=peer.lane[i];
+                if(UINT64_MAX-x.reference_rows<y.rows ||
+                   UINT64_MAX-x.reference_time_ns<y.time_ns)return false;
+                x.reference_rows+=y.rows;
+                x.reference_time_ns+=y.time_ns;
+            }
+        }
+        // Never silently use an absolute signal on a live multi-helper setup.
+        for(auto& x:tail.lane) {
+            x.relative=require_reference_;
+            if(require_reference_ && x.rows && (!x.reference_rows || !x.reference_time_ns))
+                return false;
+        }
+        *out=tail;
+        return true;
     }
 };
 
@@ -152,14 +187,21 @@ class EffectGate {
     std::array<uint64_t,2> last_window_rows_{};
     std::array<uint64_t,2> first_sample_ns_{},first_row_count_{};
     static bool subtract(const ServiceTotals& a,const ServiceTotals& b,ServiceTotals* delta) {
-        if(a.samples<b.samples || a.rows<b.rows || a.time_ns<b.time_ns)return false;
-        *delta={a.samples-b.samples,a.rows-b.rows,a.time_ns-b.time_ns};
+        if(a.relative!=b.relative || a.samples<b.samples || a.rows<b.rows || a.time_ns<b.time_ns ||
+           a.reference_rows<b.reference_rows || a.reference_time_ns<b.reference_time_ns)return false;
+        *delta={a.samples-b.samples,a.rows-b.rows,a.time_ns-b.time_ns,
+                a.reference_rows-b.reference_rows,a.reference_time_ns-b.reference_time_ns,a.relative};
         return true;
     }
     static double rate(const ServiceTotals& t) {
-        // The measurement, noise envelope and effect threshold are all per
-        // routed row. Requests may contain radically different row counts.
-        return t.rows && t.time_ns ? double(t.time_ns)/double(t.rows) : 0;
+        // Compare tail ns/row with the row-weighted ns/row of all other
+        // helpers, in exactly the same accumulated sample interval.
+        if(!t.rows || !t.time_ns)return 0;
+        const double tail=double(t.time_ns)/double(t.rows);
+        if(t.relative)
+            return t.reference_rows && t.reference_time_ns ?
+                tail/(double(t.reference_time_ns)/double(t.reference_rows)) : 0;
+        return tail; // legacy local-only synthetic sources; production supplies peers
     }
 public:
     explicit EffectGate(EffectConfig c):cfg_(c){}

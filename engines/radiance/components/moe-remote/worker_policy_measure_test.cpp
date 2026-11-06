@@ -256,7 +256,39 @@ static void test_measured_window_noise_ladder() {
     assert(empty.ladder().empty());
 }
 
+static void test_relative_ladder_and_calib9_observation() {
+    // Real calib9 absolute-tail ladder: even its best measured point cannot
+    // resolve the reported 6.6249% gain at the declared 1% Gaussian z.
+    const std::array<uint64_t,9> absolute_ppm={
+        256051,199777,110659,79012,64111,63886,42779,32781,53553};
+    constexpr double z=2.576, predicted=66249;
+    for(const auto noise:absolute_ppm)
+        assert(noise*z>predicted);
+    // Synthetic common workload shifts, deliberately nonstationary in
+    // absolute ns/row, cancel when all helpers move together.
+    WindowNoiseTracker relative(true);
+    std::array<WindowNoiseTracker::Counts,2> counters{};
+    relative.add(counters);
+    for(unsigned i=0;i<4096;++i) {
+        const uint64_t shift=(i/71)%3==0?130:100;
+        auto& x=counters[1];
+        x.samples++;x.rows+=256;x.time_ns+=256*shift;
+        x.reference_rows+=512;
+        x.reference_time_ns+=512*shift*2;
+        relative.add(counters);
+    }
+    const auto ladder=relative.ladder();
+    assert(ladder.size()>=3);
+    bool resolves=false;
+    for(const auto& point:ladder) {
+        assert(point.comparisons>=3);
+        resolves|=double(point.noise_ppm)*z<=predicted;
+    }
+    assert(resolves); // ratio is constant; no invented i.i.d. extrapolation
+}
+
 int main() {
+    test_relative_ladder_and_calib9_observation();
     test_series();
     test_throughput();
     test_topk_overlap();

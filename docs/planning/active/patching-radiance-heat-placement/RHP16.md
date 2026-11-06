@@ -423,3 +423,45 @@ on 3,660 vs off 3,564 tok/s (+0.7% against off1), decode step 25.3 / 49.8 ms vs 
 16.6 GB moved (calib7: 30, 1, 37 GB). The gate still kept no move: on the tail lane consecutive 0.29 s windows differed by 236%
 (bursty, correlated service), so the i.i.d. window was far too short; follow-up 7 sizes the window from measured window-to-window
 noise over a ladder of lengths and lengthens the cadence instead of shortening the window.
+
+## Step 5 follow-up 8: calibration cannot stop serving; judge relative tail service (2026-11-06)
+
+The calib9 record's absolute tail-service ladder did not resolve its
+6.6249% predicted reduction: the smallest empirical RMS noise was
+32,781 ppm at 1,281,536 rows, versus a required maximum of
+66,249 / 2.576 = 25,718 ppm. This is a failure of the *absolute*
+signal under a workload phase change, not a reason to stop serving.
+
+A production start with a **schema-valid** record that is incomplete
+or cannot derive a live policy now writes the measured serving manifest
+without `live_policy`. Stderr and the existing placement provenance
+include the record key and reason. Unparseable TOML, schema errors,
+unknown keys and malformed ladders still refuse the file; they are
+not treated as a non-derivable valid record.
+
+The gate's measured quantity is now
+`r = (tail service ns / tail routed rows) /
+(sum(other helper service ns) / sum(other helper routed rows))`,
+computed for each lane class from *the same windows* of the continuously
+published, validated v24 service slots. The denominator is the
+row-weighted peer mean. All peer slots must be fresh and coherent;
+missing or stalled peer measurements cannot silently fall back to
+absolute service. The CPU tick ladder uses r, still requiring four
+observed windows per length and at least three comparisons. Its row-rate
+basis remains the sampled tail lane's routed rows per wall second.
+
+For a committed plan with predicted fractional tail-share gain
+`g = tail_share_gain_ppm / 1e6`, the predicted relative improvement
+is `r_after = r_before * (1-g)`. This assumes per-row tail service
+scales with the tail's predicted share and the other helpers'
+row-weighted per-row service is unchanged. The quiet envelope and the
+pre/post effect gate verdict compare r, not raw tail ns/row. A common
+30% workload-wide service increase therefore cancels; a simultaneous
+7% improvement in r is KEPT, no relative change is UNDECIDED, and a
+7% increase in r is WORSE in card-free synthetic tests.
+
+The old calib9 absolute numbers remain explicitly unresolvable, not
+relabelled as a measured relative ladder. A fresh hardware calibration
+is required before a production relative policy can be claimed to
+resolve this signal; the card-free results establish only the
+implementation and invariance of the new statistic.

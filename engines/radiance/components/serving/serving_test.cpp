@@ -15,6 +15,8 @@
 
 #undef NDEBUG   /* the checks below are assert()s: keep them live in Release component builds */
 #include <sys/stat.h>
+#include <unistd.h>
+#include <cstdio>
 
 #include <atomic>
 #include <cassert>
@@ -1053,6 +1055,88 @@ void manifest_writer_step(Fixture& t) {
         assert(bc::serving::v1::read_manifest(with_calibration.text, "calibrated policy",
                                               bc::serving::v1::PlanUse::serving).ok());
         assert(with_calibration.digest != built.digest);
+        std::ifstream cal_input(calibrated.calibration_cache);
+        const std::string cal_text((std::istreambuf_iterator<char>(cal_input)),
+                                   std::istreambuf_iterator<char>());
+        // Capture the production diagnostic, not only the helper's return value.
+        auto no_policy=[&](const std::string& file_text,const std::string& reason) {
+            sv::ManifestInputs failed=calibrated;
+            failed.calibration_cache=t.file("failed-live-policy.toml",file_text);
+            FILE* log=std::tmpfile();
+            assert(log);
+            std::fflush(stderr);
+            const int saved=::dup(STDERR_FILENO);
+            assert(saved>=0 && ::dup2(::fileno(log),STDERR_FILENO)>=0);
+            sv::BuiltManifest no_live;
+            try { no_live=sv::build_manifest(failed); }
+            catch(...) {
+                std::fflush(stderr);
+                assert(::dup2(saved,STDERR_FILENO)>=0);
+                ::close(saved);
+                std::fclose(log);
+                throw;
+            }
+            std::fflush(stderr);
+            assert(::dup2(saved,STDERR_FILENO)>=0);
+            ::close(saved);
+            std::rewind(log);
+            std::string diagnostic;
+            char chunk[512];
+            while(const size_t count=std::fread(chunk,1,sizeof(chunk),log))
+                diagnostic.append(chunk,count);
+            std::fclose(log);
+            const auto& placement=no_live.document.at("spec").at("handoff").at("placement");
+            assert(!placement.contains("live_policy"));
+            const auto& origin=no_live.document.at("provenance")
+                .at("/spec/handoff/placement").at("source").get_ref<const std::string&>();
+            assert(origin.find(key)!=std::string::npos && origin.find(reason)!=std::string::npos);
+            assert(diagnostic.find("serving without live_policy")!=std::string::npos &&
+                   diagnostic.find(key)!=std::string::npos &&
+                   diagnostic.find(reason)!=std::string::npos);
+            assert(bc::serving::v1::read_manifest(no_live.text,"fallback",
+                bc::serving::v1::PlanUse::serving).ok());
+            sv::write_manifest_file(t.root / ("fallback-" + reason + ".json"),no_live.text);
+        };
+        auto replace_line=[&](std::string src,const std::string& name,
+                              const std::string& value) {
+            const auto from=src.find(name + " = ");
+            assert(from!=std::string::npos);
+            const auto end=src.find('\n',from);
+            assert(end!=std::string::npos);
+            src.replace(from,end-from,name+" = "+value);
+            return src;
+        };
+        const std::string calib9_ladder=
+            "[[10012, 256051], [20024, 199777], [40048, 110659], "
+            "[80096, 79012], [160192, 64111], [320384, 63886], "
+            "[640768, 42779], [1281536, 32781], [2563072, 53553]]";
+        auto noisy=replace_line(cal_text,"effect_window_noise_ladder",calib9_ladder);
+        noisy=replace_line(noisy,"tail_share_gain_ppm","66249");
+        noisy=replace_line(noisy,"tail_lane_row_ns","4287");
+        noisy=replace_line(noisy,"effect_rows_per_s","175034");
+        no_policy(noisy,"effect_window_noise_ladder");
+        auto incomplete=replace_line(cal_text,"copy_bytes_per_s","1");
+        // A schema-valid but unusable positive reading is not a malformed file.
+        no_policy(incomplete,"measured budget buys fewer");
+        auto missing=cal_text;
+        const std::string copy_line="copy_bytes_per_s = 160000000\n";
+        assert(missing.find(copy_line)!=std::string::npos);
+        missing.erase(missing.find(copy_line),copy_line.size());
+        missing+="absent = { copy_bytes_per_s = \"no DMA observation\" }\n";
+        no_policy(missing,"copy_bytes_per_s");
+        auto malformed=calibrated;
+        malformed.calibration_cache=t.file("malformed-live-policy.toml",
+                                            cal_text+"unexpected_guess = 12\n");
+        try { (void)sv::build_manifest(malformed); assert(false); }
+        catch(const std::runtime_error& e) {
+            assert(std::string(e.what()).find("unknown key")!=std::string::npos);
+        }
+        malformed.calibration_cache=t.file("unparseable-live-policy.toml", cal_text+"unexpected_guess = \"unterminated\n");
+        try { (void)sv::build_manifest(malformed); assert(false); }
+        catch(const std::runtime_error& e) {
+            assert(std::string(e.what()).find("TOML parse error")!=std::string::npos);
+        }
+
         sv::ManifestInputs forbidden = calibrated;
         forbidden.live_policy = lp;
         forbidden.live_policy_from = "--live-policy lab-policy.json";

@@ -66,16 +66,19 @@ double gaussian_z(double alpha) {
     }
     return high;
 }
-// Measured adjacent-window RMS fractional noise, from the published tail
-// lane itself. Correlated requests need not obey sigma_row * sqrt(2/n).
+// Measured adjacent-window RMS fractional noise in r = tail ns/row divided
+// by the same-window row-weighted mean ns/row of other helpers.
+// Correlated requests need not obey sigma_row * sqrt(2/n).
 // Only select lengths actually measured; there is no extrapolated i.i.d. cap.
 std::pair<uint64_t,uint64_t> derive_effect_gate(const Json& ladder,
-                                                uint64_t effect_ns,uint64_t row_mean_ns,
+                                                uint64_t predicted_gain_ppm,
                                                 uint64_t opportunities,double alpha) {
     const double z=gaussian_z(alpha);
     if(!ladder.is_array() || ladder.size()<3)
         bad("effect_window_noise_ladder: at least three observed lengths required");
-    const double effect_fraction=double(effect_ns)/double(row_mean_ns);
+    // For unchanged peer row-weighted service and tail ns/row proportional
+    // to predicted tail share: r_after = r_before*(1 - gain_ppm/1e6).
+    const double effect_fraction=double(predicted_gain_ppm)/double(kMillion);
     uint64_t previous=0,chosen=0,noise=0;
     for(const auto& pair:ladder) {
         if(!pair.is_array() || pair.size()!=2 ||
@@ -248,16 +251,13 @@ DerivedLivePolicy derive_live_policy(const LivePolicyRecord& record, const Calib
     const int64_t false_rate = calibration.integer("calibration.live_policy.false_revert_rate_ppm", match);
     if (windows <= 0 || false_rate <= 0 || false_rate >= int64_t(kMillion))
         bad("declared objectives must be positive windows and a false-revert rate in (0,1000000)");
-    // A committed plan's predicted relative tail-share reduction scales the
-    // tail lane's measured service per routed row, not a quiet-window
-    // statistic whose magnitude depends on the calibration gate window.
-    const uint64_t delta_effect_ns = div_ceil(
-        Wide(n("tail_lane_row_ns")) * n("tail_share_gain_ppm"), kMillion,
-        "delta_effect_ns");
+    // Compare relative tail service with the measured relative noise ladder.
+    // The predicted relative reduction in r equals tail_share_gain_ppm/1e6
+    // if other helpers' row-weighted mean is unchanged and tail per-row
+    // service scales with predicted tail-share reduction.
     const auto [effect_samples, effect_quiet] = derive_effect_gate(
-        m.at("effect_window_noise_ladder"), delta_effect_ns, n("tail_lane_row_ns"),
-        uint64_t(windows),
-        double(false_rate) / double(kMillion));
+        m.at("effect_window_noise_ladder"), n("tail_share_gain_ppm"),
+        uint64_t(windows), double(false_rate) / double(kMillion));
     const uint64_t window_ns = div_ceil(Wide(effect_samples) * kSecond,
                                         n("effect_rows_per_s"), "effect window");
     // A complete assessment needs k pre/post quiet comparisons. Never
@@ -346,7 +346,7 @@ DerivedLivePolicy derive_live_policy(const LivePolicyRecord& record, const Calib
     set("learned_eligibility_ttl_ns", cache_ttl,
         "one cadence plus observed gap and quiet-gate recovery; event invalidation requires v2", layout);
     set("effect_window_samples", effect_samples,
-        "smallest observed tail-window row length with measured adjacent-window fractional RMS noise x Gaussian z(false-revert objective) <= predicted committed-move fractional saving; correlated rows retained, no i.i.d. extrapolation",
+        "smallest observed relative-service (tail ns/row / row-weighted other-helpers ns/row) window with RMS fractional noise x Gaussian z <= predicted tail-share reduction g = gain_ppm/1e6; r_after = r_before*(1-g), assuming peer per-row service unchanged and tail service proportional to share; no i.i.d. extrapolation",
         Json::array({"/spec/calibration", "/spec/plan/engine_memory/cache_key"}));
     set("effect_min_quiet_windows", effect_quiet,
         "smallest consecutive quiet count with transaction_effect_windows * Gaussian noise-crossing probability^count <= declared false-revert objective",
@@ -357,7 +357,7 @@ DerivedLivePolicy derive_live_policy(const LivePolicyRecord& record, const Calib
                                                   "half_life_observations_milli"),
         "hot-set overlap drift half-life in observations, scaled by 1000", layout);
     set("effect_noise_multiplier_milli", noise_multiplier,
-        "Gaussian two-sided false-revert z score multiplying the fractional quiet-window noise envelope", layout);
+        "Gaussian two-sided false-revert z score multiplying same-window relative tail/peer service quiet noise", layout);
     // No guessed protected layer ids. The helper excludes experts with missing planes itself.
     // The v1 model container exposes no protected-layer list; an explicit guard needs RCS12's model metadata.
     set("protected_layers", Json::array(), "no model-global protected-layer metadata in the container (missing weights guarded by helper)",

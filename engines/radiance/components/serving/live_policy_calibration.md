@@ -10,6 +10,11 @@ records fail closed; a missing key means uncalibrated.
 All measurements are integers. Only `lane_lost_ns` and `heat_watermarked` can be zero. An unobserved
 quantity must have an explicit `absent = { quantity = "reason" }` entry;
 partial records are preserved but cannot derive a production live policy.
+A valid but incomplete or non-derivable record (including an unresolvable
+noise window or out-of-range budget) **never blocks production serving**:
+`bc-serve` omits `live_policy`, writes the record key and specific reason on
+stderr and under the existing `/spec/handoff/placement` manifest provenance
+record. A malformed TOML file or schema violation remains a hard error.
 
 | Required measured field | Meaning and units |
 |---|---|
@@ -28,7 +33,7 @@ partial records are preserved but cannot derive a production live policy.
 | effect_rows_per_s | Observed sampled-lane routed rows per wall second |
 | effect_noise_max_ns | Maximum absolute quiet-window difference; **not** a statistical quantile |
 | effect_row_noise_ns | Diagnostic per-row dispersion σ (not used to size a correlated window) |
-| effect_window_noise_ladder | Array of [routed rows, RMS adjacent-window fractional difference in ppm], from the continuously published tail lane; at least three measured lengths spanning a lab cadence |
+| effect_window_noise_ladder | Array of [routed rows, RMS adjacent-window fractional difference in ppm] of r = tail ns/row / row-weighted mean peer ns/row, over the same published service windows; at least three measured lengths spanning a lab cadence |
 | abort_quiescent_ns | Optional abort-to-quiescent p95, ns |
 
 The helper accumulates consecutive quiet-window per-row means and their actual routed-row
@@ -51,35 +56,43 @@ rescale the fractional quiet-window noise at the effect gate.
 ## Derived policy
 
 With α = false_revert_rate_ppm / 1000000, let z(α) be the two-sided
-Gaussian quantile defined by `erfc(z/sqrt(2)) = α`. Let
-`E = ceil(tail_lane_row_ns * tail_share_gain_ppm / 1000000)`.
-The gain is the median **predicted relative reduction** of committed
-plans; the service input is the median over pre-move intervals of large-lane
-service nanoseconds divided by completed routed rows from **the same
-snapshot interval**. E is thus a predicted service-time change **per routed row**,
-not a fraction of a wall-second and not an observed post-move improvement.
-Neither factor depends on the configured quiet-window size.
+Gaussian quantile defined by `erfc(z/sqrt(2)) = α`. The gate compares
+**relative service** `r = (tail lane service ns / tail routed rows) /
+(sum(peer lane service ns) / sum(peer routed rows))`, using all other
+policy-enabled helpers and the same published sampling interval. The
+peer denominator is the **row-weighted mean**, not a mean of helper
+ratios. Large and small lanes remain separate.
+
+Let `g = tail_share_gain_ppm / 1000000`, the committed plan's predicted
+*fractional* tail-share reduction. Assuming tail per-row service is
+proportional to predicted tail share and that the peers' row-weighted
+per-row service remains unchanged after moving, `r_after = r_before * (1-g)`,
+so the predicted **fractional reduction in r is g**. This is a model
+assumption, not an observed per-row saving. The earlier absolute prediction
+`E = ceil(tail_lane_row_ns * g)` cannot be used as a verdict against a
+workload-wide shift, since all helpers can become slower together.
 
 The helper retains a bounded CPU-epoch-tick history of the same
-published tail helper service counters that the effect gate judges. For
+published tail and peer helper service counters that the effect gate judges. For
 geometrically increasing routed-row lengths L, starting at the largest
 single observed tick and continuing only while at least four disjoint
 windows fit, it computes RMS fractional differences between consecutive
-non-overlapping window means. At least three differences per length
+non-overlapping window ratios r (tail ns/row divided by peer row-weighted ns/row). At least three differences per length
 are required; the worse measured lane class sets each point. It emits
 `effect_window_noise_ladder = [[L, noise_ppm], ...]` with at least three
 lengths spanning one lab cadence. Otherwise the ladder is absent
 with a named short-series reason and cannot activate production.
 
-Let `f = E / tail_lane_row_ns` be the predicted fractional effect.
+Let `f = g` be the predicted relative effect on r.
 The smallest *observed* L satisfying `noise_ppm(L)/1e6 * z(alpha) <= f`
 sets `effect_window_samples`. At that L,
 `p = erfc(f / (sqrt(2) * noise_ppm(L)/1e6))` (p=0 if noise=0), and
 the minimum positive k satisfies `T * p^k <= alpha`. Gaussian window
 tails and independence of successive crossings remain assumptions;
 **routed rows are not assumed independent**. If no measured L resolves
-f, derivation fails with a request for more tail series rather than
-fitting or fabricating an unmeasured window.
+f, policy derivation is skipped with a record-key diagnostic and provenance;
+production serves without live_policy rather than failing to start. No
+shorter fictitious window or i.i.d. extrapolation is substituted.
 
 Let `W = ceil(L * 1e9 / effect_rows_per_s)`; the legacy
 `effect_window_samples` control counts routed rows. Cadence is
@@ -112,13 +125,14 @@ heat-age, sample-count, eligibility and revert TTLs.
 - effect_noise_multiplier_milli = ceil(1000 * z(alpha)). The effect gate
   already compares fractional rates against fractional observed quiet noise;
   dividing absolute service-time noise by E multiplied noise twice.
-  Both the quiet fraction and verdict compare ns per routed row, as does
-  the predicted E; the legacy measured sigma is diagnostic only; variable request sizes would inflate
+  Both the quiet fraction and verdict compare the tail/peer service ratio r,
+  whose predicted fractional effect is g; the legacy measured absolute
+  per-row sigma is diagnostic only; variable request sizes would inflate
   noise by mixing 27K-row prefills and short decodes if divided by requests.
 
 | Derived effect setting | Inputs | Rule |
 |---|---|---|
-| effect_window_samples (routed rows) | observed tail-window ladder, predicted fractional E / tail_lane_row_ns, declared α | smallest measured L with `noise_ppm(L)/1e6 * z(α) <= E / tail_lane_row_ns` |
+| effect_window_samples (routed rows) | observed relative-service ladder, predicted tail-share gain g, declared α | smallest measured L with `noise_ppm(L)/1e6 * z(α) <= g` |
 | effect_min_quiet_windows | selected window noise(L), predicted fractional effect, declared T and α | minimum k with `T * p^k <= α`, using the measured-window Gaussian crossing probability |
 | effect_noise_multiplier_milli | declared false-revert fraction alpha | `ceil(1000 * z(alpha))` |
 

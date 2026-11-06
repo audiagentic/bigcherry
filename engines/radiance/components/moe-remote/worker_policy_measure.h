@@ -191,15 +191,18 @@ struct WindowNoisePoint {
 };
 class WindowNoiseTracker {
 public:
-    struct Counts { uint64_t samples=0, rows=0, time_ns=0; };
+    struct Counts { uint64_t samples=0, rows=0, time_ns=0;
+                    uint64_t reference_rows=0, reference_time_ns=0; };
 private:
-    struct Chunk { uint64_t rows=0, time_ns=0; };
+    struct Chunk { uint64_t rows=0, time_ns=0, reference_rows=0, reference_time_ns=0; };
     static constexpr size_t kRetainedTicks=131072; // bounded CPU tick history
     std::array<std::deque<Chunk>,2> intervals_{};
     std::array<Counts,2> previous_{};
     bool have_previous_=false;
+    bool relative_=false;
 
 public:
+    explicit WindowNoiseTracker(bool relative=false):relative_(relative){}
     // A missing/stale publication invalidates the continuity of the series.
     void reset() {
         for(auto& lane:intervals_)lane.clear();
@@ -209,14 +212,20 @@ public:
         if(!have_previous_) {previous_=now;have_previous_=true;return;}
         for(size_t lane=0;lane<2;++lane) {
             const auto& a=now[lane], b=previous_[lane];
-            if(a.rows<b.rows || a.time_ns<b.time_ns || a.samples<b.samples) {
+            if(a.rows<b.rows || a.time_ns<b.time_ns || a.samples<b.samples ||
+               a.reference_rows<b.reference_rows || a.reference_time_ns<b.reference_time_ns) {
                 reset();previous_=now;have_previous_=true;return;
             }
             const uint64_t rows=a.rows-b.rows, time=a.time_ns-b.time_ns;
+            const uint64_t ref_rows=a.reference_rows-b.reference_rows;
+            const uint64_t ref_time=a.reference_time_ns-b.reference_time_ns;
             if(!rows || !time)continue;
+            if(relative_ && (!ref_rows || !ref_time)) {
+                reset();previous_=now;have_previous_=true;return;
+            }
             auto& q=intervals_[lane];
             if(q.size()==kRetainedTicks)q.pop_front();
-            q.push_back({rows,time});
+            q.push_back({rows,time,ref_rows,ref_time});
 
         }
         previous_=now;
@@ -239,17 +248,20 @@ public:
             uint64_t max_noise=0, comparisons=0;
             for(const auto& q:intervals_) {
                 uint64_t rows=0;
-                long double time=0, previous_rate=0, squares=0;
+                long double time=0, ref_rows=0, ref_time=0, previous_rate=0, squares=0;
                 size_t count=0;
                 for(const auto& tick:q) {
                     rows+=tick.rows;time+=tick.time_ns;
+                    ref_rows+=tick.reference_rows;ref_time+=tick.reference_time_ns;
                     if(rows<length)continue;
-                    const long double rate=time/rows;
+                    if(relative_ && (!ref_rows || !ref_time))break;
+                    const long double rate=(time/rows) /
+                        (relative_ ? ref_time/ref_rows : 1.0L);
                     if(previous_rate>0) {
                         const long double delta=rate/previous_rate-1.0L;
                         squares+=delta*delta;++count;
                     }
-                    previous_rate=rate;rows=0;time=0;
+                    previous_rate=rate;rows=0;time=0;ref_rows=0;ref_time=0;
                 }
                 if(count<3)continue;
                 const long double ppm=std::ceil(std::sqrt(squares/count)*1000000.0L);

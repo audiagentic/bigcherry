@@ -613,7 +613,7 @@ int main(int argc, char** argv) {
         // and every post-move effect verdict.
         r3::policy::SharedTailServiceSource tail_service_signal(
             map,helper_count-1,cfg.policy.controls.max_heat_age_ns,
-            [&] {return epoch_clock.now_ns();});
+            [&] {return epoch_clock.now_ns();},helper_count);
         std::unique_ptr<r3::policy::Driver> policy_driver;
         if (helper_index==0 && cfg.policy.enabled) {
             const char* histogram_prefix=settings.handoff.histogram.c_str();
