@@ -1,0 +1,20 @@
+{
+  "change-class": "tests",
+  "event-id": "chg_20261106_081103_radiance-serving-and-helper-te_7709",
+  "files": [
+    "engines/radiance/components/serving/CMakeLists.txt",
+    "engines/radiance/components/moe-remote/CMakeLists.txt",
+    "engines/radiance/components/serving/live_policy_test.cpp",
+    "engines/radiance/components/serving/live_policy_ingest_test.cpp",
+    "engines/radiance/components/serving/live_policy_ingest.cpp",
+    "engines/radiance/components/serving/live_policy_ingest.h",
+    "engines/radiance/components/serving/live_policy.cpp"
+  ],
+  "plan-item-ids": [
+    "RHP16"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Component tests compiled with -DNDEBUG (Radiance plugin module defaults CMAKE_BUILD_TYPE to RelWithDebInfo), so assert() checks were no-ops. Test targets now build with -UNDEBUG and assert-based tests refuse to build under NDEBUG. Two latent failures fixed: the duplicate-record test now exercises the duplicate path, and calibration ingest requires the plan-store key (no silent store under the helper key).",
+  "timestamp-utc": "2026-11-06T08:11:03.440582Z",
+  "user-summary-candidate": "Radiance serving and helper tests now actually run their checks; two hidden test gaps were fixed."
+}
