@@ -68,15 +68,15 @@ int main() {
     row["measurements"]["heat_watermarked"] = 1;
     log_line(log,row);
     const fs::path watermarked_store = dir / "watermarked.toml";
-    sv::ingest_live_policy_record(log,watermarked_store,key,"flashnext-4gpu","balanced");
-    auto with_mark = sv::read_live_policy_record(watermarked_store,key);
+    sv::ingest_live_policy_record(log,watermarked_store,key,"flashnext-4gpu","balanced",store_key);
+    auto with_mark = sv::read_live_policy_record(watermarked_store,store_key);
     assert(with_mark && with_mark->measurements.at("heat_watermarked") == 1);
     assert(!sv::derive_live_policy(*with_mark,sv::Calibration::standard(watermarked_store),
             {"","flashnext-4gpu","balanced"},2500000,{1000000000,1000000000})
             .policy.at("accept_unwatermarked_heat").get<bool>());
     row["measurements"]["heat_watermarked"] = 2;
     log_line(log,row);
-    assert(refused(log,dir/"bad-mark.toml",key,"flashnext-4gpu","balanced"));
+    assert(refused(log,dir/"bad-mark.toml",key,"flashnext-4gpu","balanced",store_key));
     row["measurements"]["heat_watermarked"] = 0;
     log_line(log,row);
     const std::string original = [&] { std::ifstream in(cache); return std::string(
