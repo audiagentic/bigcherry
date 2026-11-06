@@ -1,0 +1,17 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261105_220549_builds-reuse-compiled-objects_8282",
+  "files": [
+    "tools/bigcherry/bin/bc-ccache",
+    "tools/bigcherry/campaign/ccache_paths.py",
+    "tools/bigcherry/campaign/workers.py",
+    "tools/bigcherry/campaign/build.py",
+    "tools/bigcherry/campaign/runtime_bundle.py",
+    "engines/radiance/recipes.toml",
+    "tools/tests/campaign/test_ccache_paths.py"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Compile commands now use stable symlinked source and build directories (bc-ccache launcher, exclusive per-build slots, plain-ccache fallback), so unchanged units hit ccache across builds with different content-addressed ids. Local two-build proof: 2.35% then 84.79% hits.",
+  "timestamp-utc": "2026-11-05T22:05:49.781035Z",
+  "user-summary-candidate": "Builds reuse compiled objects across changes, cutting CI build time."
+}

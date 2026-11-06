@@ -1,5 +1,26 @@
 # Changelog
 
+## [1170.3.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.2.0...bc-radiance-1170.3.0) (2026-11-05)
+
+
+### New and changed
+
+* **radiance:** RHP16 step 3, bc-serve derives the live placement policy from calibration records ([#666](https://github.com/audiagentic/bigcherry/issues/666)) ([7cf2592](https://github.com/audiagentic/bigcherry/commit/7cf259297b385e4fa9cdff9504799c1254fb46e5))
+
+## [1170.2.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.1.0...bc-radiance-1170.2.0) (2026-11-05)
+
+
+### New and changed
+
+* **build:** stable compile paths so ccache hits across build ids ([#661](https://github.com/audiagentic/bigcherry/issues/661)) ([54ecaa6](https://github.com/audiagentic/bigcherry/commit/54ecaa6b4c12e9a2647950c874d9c58f4b81bff5))
+
+## [1170.1.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.0.0...bc-radiance-1170.1.0) (2026-11-05)
+
+
+### New and changed
+
+* **patch:** promote rad0009_serving_manifest, rad0011_plan_memory ([#663](https://github.com/audiagentic/bigcherry/issues/663)) ([d610837](https://github.com/audiagentic/bigcherry/commit/d610837b304f1193d2f36c05051def91b5e2478d))
+
 ## [1170.0.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1160.5.0...bc-radiance-1170.0.0) (2026-11-05)
 
 

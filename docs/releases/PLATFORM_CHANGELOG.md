@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.15.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.14.0...bc-platform-1.15.0) (2026-11-06)
+
+
+### New and changed
+
+* **build:** stable compile paths so ccache hits across build ids ([#661](https://github.com/audiagentic/bigcherry/issues/661)) ([54ecaa6](https://github.com/audiagentic/bigcherry/commit/54ecaa6b4c12e9a2647950c874d9c58f4b81bff5))
+* **patch:** evidence carries through audited re-anchors; nine llama.cpp records from historical evidence ([#670](https://github.com/audiagentic/bigcherry/issues/670)) ([7fac72a](https://github.com/audiagentic/bigcherry/commit/7fac72a3c23b2fc880d301ba0b4f22b355415df0))
+* **radiance:** RHP16 step 3, bc-serve derives the live placement policy from calibration records ([#666](https://github.com/audiagentic/bigcherry/issues/666)) ([7cf2592](https://github.com/audiagentic/bigcherry/commit/7cf259297b385e4fa9cdff9504799c1254fb46e5))
+
+
+### Fixes
+
+* **tests:** bump-gate component configure expects the bc-ccache launcher ([#675](https://github.com/audiagentic/bigcherry/issues/675)) ([263e145](https://github.com/audiagentic/bigcherry/commit/263e145d0283273ba6b3abd8a4d72fec106ee8c1))
+
+## [1.14.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.13.0...bc-platform-1.14.0) (2026-11-05)
+
+
+### New and changed
+
+* **patch:** promote rad0009_serving_manifest, rad0011_plan_memory ([#663](https://github.com/audiagentic/bigcherry/issues/663)) ([d610837](https://github.com/audiagentic/bigcherry/commit/d610837b304f1193d2f36c05051def91b5e2478d))
+
 ## [1.13.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.12.1...bc-platform-1.13.0) (2026-11-05)
 
 

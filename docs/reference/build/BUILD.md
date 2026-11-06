@@ -125,6 +125,20 @@ source of truth; if a doc disagrees with it, fix the doc.
   scp "$BC_HOST:/tmp/thing.md" docs/reference/THING.md   # run from Windows
   ```
 
+### Compiler cache and stable compile paths
+
+Radiance builds compile through `bc-ccache` (`tools/bigcherry/bin/bc-ccache`, named by the `bc-ccache` launcher token in
+`engines/radiance/recipes.toml`). The source and build directories are content-addressed, so their names change with every
+source change and would make every unit a ccache miss. The campaign worker therefore holds one of four slots for the whole
+build (`<work root>/.cc-stable/slotN/{src,bld}`, symlinks to this build's directories, guarded by an OS file lock that is
+released if the holder dies). The launcher rewrites those two directories to the slot's links in the compile command only;
+links, RUNPATH and outputs keep the real paths. It reads `BC_CCACHE_REAL_SRC`, `BC_CCACHE_REAL_BLD`,
+`BC_CCACHE_LINK_SRC` and `BC_CCACHE_LINK_BLD`, which the worker sets (never set them by hand).
+
+A build that finds all four slots taken runs plain ccache: correct, but hits drop to the low single digits. If a build is
+unexpectedly slow, check the `Hits:` line in `ccache.txt` under its build logs. A second build with a different id after a
+one-line change should hit about 85%. More than four concurrent builds on one work root fall back as above.
+
 ## Queued qualification campaigns and the firing pre-flight
 
 Run every patch qualification campaign through `tools/lab/plan-qualification/queue.sh`,

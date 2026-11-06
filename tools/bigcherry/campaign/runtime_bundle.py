@@ -19,7 +19,7 @@ from typing import Callable
 from ..core import components, engines, paths
 from ..core import config as campaign_config
 from ..core.process import run_checked
-from .build import rocm_configure_options
+from .build import resolve_launcher, rocm_configure_options
 
 Runner = Callable[[list[str], Path], None]
 #: (component build tree, cwd) -> every CTest test registered there, by name, with its labels
@@ -56,7 +56,7 @@ def build_runtime(
     hits. A component's own declared ``configure`` entries still win if they already set the same key."""
     layout = engines.load(paths.REPO_ROOT, engine)
     c_compiler, cxx_compiler = platform.c_compiler, platform.cxx_compiler
-    launcher_options = tuple((k, v) for k, v in platform.options if k.endswith("_COMPILER_LAUNCHER"))
+    launcher_options = tuple((k, resolve_launcher(v)) for k, v in platform.options if k.endswith("_COMPILER_LAUNCHER"))
     built: dict[str, str] = {}
     if layout.runtime_targets:
         runner(["cmake", "--build", str(build_dir), "-j", "--target", *layout.runtime_targets], source_root)

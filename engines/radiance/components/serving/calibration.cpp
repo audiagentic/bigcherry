@@ -52,7 +52,7 @@ void Calibration::parse(const std::string& text, const std::string& where, const
     try { root = toml::parse(text, where); }
     catch (const toml::parse_error& e) { throw std::runtime_error(where + ": TOML parse error: " + e.what()); }
     for (const auto& [k, v] : root)
-        if (k.str() != "schema_version" && k.str() != "entry")
+        if (k.str() != "schema_version" && k.str() != "entry" && k.str() != "live_policy_record")
             throw std::runtime_error(where + ": unknown key " + std::string(k.str()));
     const auto* version = root.get("schema_version");
     if (!version || !version->as_integer() || version->as_integer()->get() != 1)

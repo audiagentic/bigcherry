@@ -39,6 +39,7 @@ from typing import Iterable, Mapping
 
 from ..core import paths
 from . import patchset, profile_evidence
+from . import lineage
 from .activation import ActivationEvidence
 
 SCHEMA_VERSION = 4
@@ -1154,6 +1155,7 @@ def _record_qualifies(
     record: Mapping[str, object], *, module: patchset.PatchModule, pinned_ref: str, subject_digest: str,
     resolved_base_revision: str | None = None, validation_digest: str | None = None,
     contracts: tuple[Mapping[str, str], ...] = (),
+    accepted_subject_digests: frozenset[str] = frozenset(),
 ) -> tuple[bool, tuple[str, ...]]:
     problems: list[str] = []
     expected = {
@@ -1300,6 +1302,9 @@ def _record_qualifies(
                 except ValidationEvidenceError as exc:
                     problems.append(str(exc))
     for key, wanted in expected.items():
+        if (key == "patch_validation_subject_digest"
+                and record.get(key) in accepted_subject_digests):
+            continue
         if record.get(key) != wanted:
             problems.append(f"{key}={record.get(key)!r}, expected {wanted!r}")
 
@@ -1604,7 +1609,7 @@ def _resolve_contract_identities(
 def verify_validated_patch(
     module: patchset.PatchModule, *, pinned_ref: str, required_architectures: Iterable[str] = (),
     root: Path | None = None, allow_legacy_grandfather: bool = True,
-    resolved_base_revision: str | None = None,
+    resolved_base_revision: str | None = None, allow_lineage: bool = False,
 ) -> EvidenceCheck:
     """resolved_base_revision (optional): the actual commit `pinned_ref`
     currently resolves to. When supplied, a record's base_revision must
@@ -1622,10 +1627,23 @@ def verify_validated_patch(
     stale: list[str] = []
 
     for record in poolable_records(module.patch_id, engine=module.engine, patches_root=_module_patches_root(module), root=root):
+        older = record.get("patch_validation_subject_digest")
+        try:
+            inherited = (
+                allow_lineage and isinstance(older, str)
+                and lineage.is_ancestor(
+                    module.path.parent, previous=older, current=subject_digest
+                )
+            )
+        except (ValueError, TypeError) as exc:
+            stale.append(f"invalid patch lineage: {exc}")
+            inherited = False
+        accepted = frozenset((older,)) if inherited else frozenset()
         ok, why = _record_qualifies(
             record, module=module, pinned_ref=pinned_ref, subject_digest=subject_digest,
             resolved_base_revision=resolved_base_revision,
             validation_digest=validation_digest, contracts=contracts,
+            accepted_subject_digests=accepted,
         )
         if ok:
             qualifying.append(record)
@@ -1654,6 +1672,7 @@ def verify_validated_patch(
     # when no HI83 campaign record does. A record that exists but does not qualify is reported with its own reasons.
     profile_problems = profile_evidence.verify(
         module.path.parent, patch_id=module.patch_id, pinned_ref=pinned_ref, subject_digest=subject_digest,
+        allow_lineage=allow_lineage,
     )
     if profile_problems is not None and not profile_problems:
         return EvidenceCheck("profile-evidence")

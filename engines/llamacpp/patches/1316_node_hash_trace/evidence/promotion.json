@@ -1,0 +1,17 @@
+{
+  "schema": 1,
+  "tier": "profile-evidence",
+  "patch-id": "1316_node_hash_trace",
+  "pinned": "b11474",
+  "subject-digest": "98d105ba73b1335fa15b95ed54c9ff07c174cc515a5afc1078392deb6a93424b",
+  "default-on": false,
+  "models": [
+    "Qwen3.8 Flash-Next UD-IQ4_XS"
+  ],
+  "checks": {
+    "ab": "engines/llamacpp/patches/1316_node_hash_trace/README.md ## Promotion record: b11474 2026-10-08 enabled 0:4 vs disabled, 29367 observations, 0 errors; diagnostic is intentionally intrusive, no performance claim",
+    "activation": "engines/llamacpp/patches/1316_node_hash_trace/README.md ## Promotion record: BIGCHERRY_NODE_HASH=0:4 emitted 29367 NODE_HASH lines on production tensor split",
+    "identity": "engines/llamacpp/patches/1316_node_hash_trace/README.md ## Promotion record: trace-on and trace-off yielded identical greedy md5 2571b60b1505",
+    "mechanics": "engines/llamacpp/patches/1316_node_hash_trace/README.md ## Fix/Promotion record: Meta-owned buffers skipped, deploy run on dev 2026-10-08 with 0 errors"
+  }
+}

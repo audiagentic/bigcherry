@@ -59,6 +59,14 @@ patch-sets = ["valid", "experimental"]
                          (gates.GateIntent.BUILD,) * 2)
         return outcome
 
+    def test_evaluator_requires_resolved_revision_for_framework_identity(self):
+        with self.assertRaisesRegex(ValueError, "resolved base revision required"):
+            build_evidence.evaluate_source(
+                engine="radiance", cfg=self.cfg, source_name="radiance",
+                patches_dir=self.root, pinned_ref="v1.17.0",
+                resolved_base_revision=None, mode="enforced",
+            )
+
     def test_stale_and_missing_records_are_named_and_untested_is_exempt(self):
         bad = gates.GateResult(gates.GateId.G4, gates.GateStatus.FAIL, "evidence",
                                "patch.catalog", ("stale record: wrong pin",))

@@ -1,0 +1,28 @@
+{
+  "findings": [
+    "In PA44-B the 1355 CUDA HC_POST gate kernel and dispatcher were extracted from an inline patch Edit into the owned bc-hc-post-gate-fuse.cuh file.",
+    "The old inline implementation text is exactly the new owned-file insertion payload, byte-for-byte.",
+    "The replacement at the old attachment point is one include of that owned file; expanding the include reconstructs the original insertion payload.",
+    "All other FilePatch edits, edit paths, attachment anchors, replacement texts, guards and application modes are unchanged.",
+    "The post-refactor patch.py is byte-for-byte the current file; the pre-refactor subject digest is the one recorded in promotion.json.",
+    "The historical b11474 performance, greedy identity and non-Qwen4Exp control remain those documented in README; this proves a code move, not new performance."
+  ],
+  "from_git_commit": "8607b6988b612fe1586e297e56d4283ef855ec5f",
+  "kind": "git-reanchor-audit-v1",
+  "original_subject_digest": "c3b6e1724f1aad15ab259c2867aa417deea5fe7d253f0b3be4c34c241f24da20",
+  "patch_id": "1355_hc_post_gate_fuse",
+  "pin_at_reanchor": "b11552",
+  "scope": "owned-file move checked against tracked Git history; no hardware measurement",
+  "source_paths": [
+    "engines/llamacpp/patches/1355_hc_post_gate_fuse/patch.py"
+  ],
+  "to_git_commit": "15a24cc91705714ec15e3c2b697d162a6c9a636b",
+  "updated_subject_digest": "027eef60db7bb1c2d4caf01cca234420792890e62018e8a495a4fe41d4a2ef97",
+  "verified": {
+    "code_payload_byte_identical": true,
+    "current_body_same_as_reanchor_commit": true,
+    "original_promotion_record_matches": true,
+    "other_edits_unchanged": true,
+    "site_include_expands_to_original": true
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "schema": 1,
+  "tier": "profile-evidence",
+  "patch-id": "1331_alloc_peak_live",
+  "pinned": "b11474",
+  "subject-digest": "b78e51924824aa528ebc8040f3a940ee53fccccd4c4c9cf09dee90a0fb730d1c",
+  "default-on": false,
+  "models": [
+    "Qwen3.8 Flash-Next UD-IQ4_XS"
+  ],
+  "checks": {
+    "ab": "engines/llamacpp/patches/1331_alloc_peak_live/README.md ## Promotion record: b11474 deploy-v6-alloc-peak, ALLOC_PEAK=1 ALLOC_TOP=1 vs disabled, 1298/1106 observations, 0 errors; no speed claim",
+    "activation": "engines/llamacpp/patches/1331_alloc_peak_live/README.md ## Promotion record: BIGCHERRY_ALLOC_PEAK=1 produced 1298 ALLOC_PEAK lines",
+    "identity": "engines/llamacpp/patches/1331_alloc_peak_live/README.md ## Promotion record: trace on vs off greedy md5 a34a34c1f48d identical",
+    "mechanics": "engines/llamacpp/patches/1331_alloc_peak_live/README.md ## Promotion record: deploy-v6-alloc-peak compiled clean, 0 error lines (2026-10-08)"
+  }
+}

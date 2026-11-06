@@ -15,4 +15,23 @@ is closed or deleted. The detailed notes are linked; the code lives on the named
 | WSL06-A legacy inventory | WSL06 | Superseded | Work-in-progress path inventory; item completed another way. | branch `feat/wsl06a-legacy-inventory` |
 | Platform release line from explicit change entries (`platform/changes/`) | release | Not adopted, archived | #564 `exclude-paths` fixed the 11552.0.0 platform version with less change; this stricter ownership model may be needed if unrelated changes keep triggering platform releases. | `experiments/release/PLATFORM-change-entries/` |
 
-Code for every row with a branch is archived as an inert patch under `experiments/radiance/<ITEM>-<name>/` (see `experiments/README.md`); the branches can be deleted. The Codex session's original RAD46 notes and reviews are in `experiments/radiance/RAD46-rad46/`.
+
+| 27B FP8/W8A8+DFlash2 and RDNA2 4/8 GiB tail layouts | 27B | Archived opt-in layouts | Three configuration-only commits; no measurements of exact variants, stopping reason unknown; no default changed. | `experiments/radiance/27B-fp8-w8a8-layouts/`; `exp/27b-fp8` |
+| gfx1100 MXFP4 row policy | RAD47 | Shipped via #596 | Both branch changes on main (`619590728`); tiled from M=17; +27% at four streams, +37% at six. | `experiments/radiance/RAD47-xtx-rows/`; `exp/rad47-xtx-rows` |
+| Helper serving-manifest original implementation | RSC06 | Superseded by #633; #527 closed | Original contract and helper-config patch replaced by v1 strict manifest reader. | `experiments/radiance/RSC06-helper-manifest/`; `feat/rsc06-helper-manifest` |
+
+
+| Helper fp32 result planes, protocol v20 | RAD23 | Archived inert patch | Novel unrounded-f32 combine and CPU bench not validated end-to-end; later chunk-wise combine shipped (#497). | `experiments/radiance/RAD23-result-f32/`; `feat/rad23-result-f32` |
+| Helper fp16 rows with exponent, protocol v21 | RAD23 | Archived inert patch | No recorded KLD or throughput A/B; later production protocol superseded the experiment. Apply only after v20 patch on historical base. | `experiments/radiance/RAD23-result-f16/`; `feat/rad23-result-f16` |
+
+
+| 1357 router split-K with 1358 eviction, 1330 mask trial | QFP17 | Shipped/partly rejected via main PRs | 1357 and scripts already present; 1358 via #107; 1330 ub1024 not adopted at 245760 (#77). | `experiments/radiance/router-splitk-cache-evict/`; `exp/router-splitk-with-cache-evict` |
+| Four-card Flash-Next with mixed heat default | RAD23 | Shipped via #488 | Launcher/layout and mixed heat already on main; +48% eight-session prefill in historical A/B. | `experiments/radiance/RAD23-flashnext-4gpu-default/`; `feat/flashnext-4gpu-default` |
+
+
+| ROCm SDK-pinned Radiance build | RCS11 | Shipped via #524 | Selected SDK code, validation and plan already on main; no residual patch. | `experiments/radiance/RCS11-rocm-sdk-selection/`; `rcs11-merge` |
+| Internal references and environment-driven paths | privacy | Shipped/superseded via #394, #399 and #544 | Older redaction substitutions obsolete; unsafe to replay historical removed strings. | `experiments/radiance/internal-refs-redaction/`; `redact-internal-refs` |
+
+Branch dispositions are archived under `experiments/radiance/<ITEM>-<name>/`. Each has a README; only changes not on main have inert patches. Experimental-only layout entries may instead be copied to `engines/radiance/layouts.toml` without changing defaults. The original RAD46 notes and reviews are in `experiments/radiance/RAD46-rad46/`.
+- `experiments/radiance/RAD27B-prefill-breakdown/`: 27B prefill breakdown arms (exact wire, one card, MTP depth 3/5/7). result on the 27B model page; arms only, not merged.
+- `experiments/radiance/RAD23-lane-quant/`: perf/rad23-lane-quant (PR #482). on main; PR closed only to drop a machine name.

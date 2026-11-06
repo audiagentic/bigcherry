@@ -228,6 +228,19 @@ def _find_rocm_prefix(compiler_realpath: Path) -> Path | None:
     return None
 
 
+#: The recipes name the compiler launcher by this token, not by a path: the build hashes the token (a build's identity must not
+#: depend on where the repository is checked out), and the script's real path is substituted only when cmake is configured.
+CCACHE_LAUNCHER_TOKEN = "bc-ccache"
+
+
+def resolve_launcher(value: str) -> str:
+    """The launcher a recipe names: the stable-path ccache launcher for its token, any other value (a plain `ccache`, a
+    path) unchanged."""
+    if value == CCACHE_LAUNCHER_TOKEN:
+        return str(paths.REPO_ROOT / "tools" / "bigcherry" / "bin" / "bc-ccache")
+    return value
+
+
 def selected_rocm_root(platform: campaign_config.Platform) -> Path:
     """The ROCm SDK a build compiles and links against: the root of the SDK the platform's stack names (stack.<name>.sdk
     through the host's rocm-sdks table), with symlinks resolved so the identity names the real install. Fails closed:
@@ -382,6 +395,8 @@ def cmake_configure_args(
         **engine_options,
         **_backend_configure_options(backend, platform, targets_option, rocm_paths),
     }
+    for key in [k for k in options if k.endswith("_COMPILER_LAUNCHER")]:
+        options[key] = resolve_launcher(options[key])
     if build.variant_set:
         options["GGML_HIP_AUTOTUNE_VARIANT_SET"] = build.variant_set
         if generated_root is not None:

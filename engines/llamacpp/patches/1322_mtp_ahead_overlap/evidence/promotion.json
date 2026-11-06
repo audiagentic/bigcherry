@@ -1,0 +1,17 @@
+{
+  "schema": 1,
+  "tier": "profile-evidence",
+  "patch-id": "1322_mtp_ahead_overlap",
+  "pinned": "b11474",
+  "subject-digest": "bb43d516571793c9a928cc8e491f1c18b45de18ed9a75980609c5ad1ca2a279f",
+  "default-on": false,
+  "models": [
+    "Qwen3.8 Flash-Next UD-IQ4_XS"
+  ],
+  "checks": {
+    "ab": "engines/llamacpp/patches/1322_mtp_ahead_overlap/README.md ## Promotion record: b11474 deploy-v6-plus-ahead ABBA A=production B=enabled, 8K 82.6/83.8 vs 87.0/86.5 t/s, 98K 64.8/65.3 vs 69.5/68.9; 24K overlap",
+    "activation": "engines/llamacpp/patches/1322_mtp_ahead_overlap/README.md ## Promotion record: BIGCHERRY_MTP_AHEAD=1 enables look-ahead in the B arm, 339-343 accepted/drafted observations",
+    "identity": "engines/llamacpp/patches/1322_mtp_ahead_overlap/README.md ## Promotion record: A/B identical greedy md5 at 8192, 24576 and 98304 depth",
+    "mechanics": "engines/llamacpp/patches/1322_mtp_ahead_overlap/README.md ## Promotion record: deploy-v6-plus-ahead compiled clean, 0 smoke errors, 2026-10-08"
+  }
+}

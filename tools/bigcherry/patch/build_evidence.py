@@ -55,7 +55,7 @@ class EvidenceAudit:
 
 def evaluate_source(
     *, engine: str, cfg: recipes_config.Config, source_name: str,
-    patches_dir: Path, pinned_ref: str, resolved_base_revision: str | None,
+    patches_dir: Path, pinned_ref: str, resolved_base_revision: str,
     mode: str,
 ) -> EvidenceAudit:
     """Evaluate G4 on each validated set member, not on exempt sets.
@@ -65,6 +65,8 @@ def evaluate_source(
     """
     if mode not in ("enforced", "pending-requalification"):
         raise ValueError(f"invalid evidence gate mode {mode!r}")
+    if not isinstance(resolved_base_revision, str) or not resolved_base_revision.strip():
+        raise ValueError("resolved base revision required for source identity")
     source = cfg.sources[source_name]
     validated: list[str] = []
     skipped: list[tuple[str, str]] = []

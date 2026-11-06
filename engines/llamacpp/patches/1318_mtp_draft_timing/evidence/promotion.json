@@ -1,0 +1,17 @@
+{
+  "schema": 1,
+  "tier": "profile-evidence",
+  "patch-id": "1318_mtp_draft_timing",
+  "pinned": "b11474",
+  "subject-digest": "038e96e75986f4f664eec873ae4998a4881c76981aa59935da7719ecffc962da",
+  "default-on": false,
+  "models": [
+    "Qwen3.8 Flash-Next UD-IQ4_XS"
+  ],
+  "checks": {
+    "ab": "engines/llamacpp/patches/1318_mtp_draft_timing/README.md ## Promotion record: b11474 deploy-v4-diag enabled vs production control, 23 draft timing observations, 0 errors; no throughput claim",
+    "activation": "engines/llamacpp/patches/1318_mtp_draft_timing/README.md ## Promotion record: BIGCHERRY_SPEC_TIMING=1 with BIGCHERRY_DRAFT_TIMING=1, 23 DRAFT_TIMING lines",
+    "identity": "engines/llamacpp/patches/1318_mtp_draft_timing/README.md ## Promotion record: timing on vs production: greedy md5 a34a34c1f48d identical",
+    "mechanics": "engines/llamacpp/patches/1318_mtp_draft_timing/README.md ## Promotion record: deploy-v4-diag compiled clean, 0 error lines (2026-10-08)"
+  }
+}
