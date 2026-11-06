@@ -10,6 +10,8 @@
 #include <cstdint>
 #include <deque>
 #include <limits>
+#include <functional>
+#include <utility>
 
 namespace r3::policy {
 struct ServiceTotals {
@@ -71,6 +73,62 @@ public:
         }
         *out=result;
         return true;
+    }
+};
+
+// Helper CPU epoch ticks publish the pre-existing sampled lane counters into
+// the helper's v24 shared slot. The two lane classes are read together under a
+// single-writer sequence. Every field is atomic to avoid racing a CPU reader;
+// none of this is on a GPU/route hot path.
+class SharedTailServiceSource final : public ServiceSource {
+    const moe_shm::PublishedServiceSlot* slot_=nullptr;
+    uint64_t max_age_ns_=0;
+    std::function<uint64_t()> clock_;
+public:
+    SharedTailServiceSource(const void* map,uint32_t tail_helper,
+                            uint64_t max_age_ns,std::function<uint64_t()> clock)
+        :slot_(moe_shm::published_service(map,tail_helper)),
+         max_age_ns_(max_age_ns),clock_(std::move(clock)) {}
+
+    static bool publish(moe_shm::PublishedServiceSlot* slot,
+                        const ServiceSnapshot& local,uint64_t now_ns) {
+        if(!slot || !now_ns)return false;
+        __atomic_add_fetch(&slot->sequence,uint64_t{1},__ATOMIC_ACQ_REL);
+        __atomic_thread_fence(__ATOMIC_SEQ_CST); // odd visible before counters
+        __atomic_store_n(&slot->published_ns,now_ns,__ATOMIC_RELAXED);
+        for(unsigned i=0;i<2;++i) {
+            __atomic_store_n(&slot->samples[i],local.lane[i].samples,__ATOMIC_RELAXED);
+            __atomic_store_n(&slot->rows[i],local.lane[i].rows,__ATOMIC_RELAXED);
+            __atomic_store_n(&slot->time_ns[i],local.lane[i].time_ns,__ATOMIC_RELAXED);
+        }
+        __atomic_add_fetch(&slot->sequence,uint64_t{1},__ATOMIC_RELEASE);
+        return true;
+    }
+    static bool read(const moe_shm::PublishedServiceSlot* slot,
+                     uint64_t now_ns,uint64_t max_age_ns,ServiceSnapshot* out) {
+        if(!slot || !out || !now_ns || !max_age_ns)return false;
+        for(unsigned attempt=0;attempt<8;++attempt) {
+            const uint64_t first=__atomic_load_n(&slot->sequence,__ATOMIC_ACQUIRE);
+            if(!first || (first&1))continue;
+            const uint64_t published=__atomic_load_n(&slot->published_ns,__ATOMIC_RELAXED);
+            ServiceSnapshot data{};
+            for(unsigned i=0;i<2;++i) {
+                data.lane[i].samples=__atomic_load_n(&slot->samples[i],__ATOMIC_RELAXED);
+                data.lane[i].rows=__atomic_load_n(&slot->rows[i],__ATOMIC_RELAXED);
+                data.lane[i].time_ns=__atomic_load_n(&slot->time_ns[i],__ATOMIC_RELAXED);
+            }
+            __atomic_thread_fence(__ATOMIC_ACQUIRE);
+            const uint64_t last=__atomic_load_n(&slot->sequence,__ATOMIC_ACQUIRE);
+            if(first!=last || (last&1))continue;
+            if(!published || published>now_ns || now_ns-published>max_age_ns)
+                return false; // uninitialised, future or stopped publisher
+            *out=data;
+            return true;
+        }
+        return false; // torn or interrupted writer; no guessed measurement
+    }
+    bool snapshot(ServiceSnapshot* out) const override {
+        return clock_ && read(slot_,clock_(),max_age_ns_,out);
     }
 };
 

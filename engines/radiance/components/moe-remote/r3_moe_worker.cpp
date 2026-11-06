@@ -607,6 +607,13 @@ int main(int argc, char** argv) {
                 return forced->submit(shared,c,epoch_clock.now_ns());
             });
         }
+        // The planner's baseline/predicted saving is always the LAST helper's
+        // heat share (worker_heat.h), not the helper 0 coordinator's work.
+        // This same continuous tail source feeds calibration quiet-window noise
+        // and every post-move effect verdict.
+        r3::policy::SharedTailServiceSource tail_service_signal(
+            map,helper_count-1,cfg.policy.controls.max_heat_age_ns,
+            [&] {return epoch_clock.now_ns();});
         std::unique_ptr<r3::policy::Driver> policy_driver;
         if (helper_index==0 && cfg.policy.enabled) {
             const char* histogram_prefix=settings.handoff.histogram.c_str();
@@ -637,7 +644,7 @@ int main(int argc, char** argv) {
                 cfg.policy,std::move(source),
                 std::vector<uint64_t>(budgets,budgets+helper_count),
                 gpu->expert_stride(),std::move(protected_experts),epoch_clock,
-                &lane_service_signal,
+                &tail_service_signal,
                 settings.lab_profile ?
                     std::optional<r3::policy::CalibrationIdentity>{
                         r3::policy::CalibrationIdentity{settings.plan_cache_key,settings.layout,settings.objective}} :
@@ -651,6 +658,15 @@ int main(int argc, char** argv) {
             });
         }
         for (uint32_t v; (v = g_stop_word.load(std::memory_order_acquire)) == 0;) {
+            // All enabled helpers publish their own lane totals at the existing
+            // CPU epoch tick (~2 ms). No collector thread or extra GPU query.
+            if(cfg.policy.enabled) {
+                r3::policy::ServiceSnapshot sampled{};
+                if(lane_service_signal.snapshot(&sampled))
+                    r3::policy::SharedTailServiceSource::publish(
+                        r3::moe_shm::published_service(map,helper_index),
+                        sampled,epoch_clock.now_ns());
+            }
             if (!epoch_cycle.tick()) {
                 PlacementControl failed{};
                 (void)placement_snapshot(map,&failed);

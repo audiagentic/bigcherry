@@ -338,3 +338,40 @@ Not yet default-on, two gates left:
    RSC11 provides that, run it by hand (helpers from the calibrated manifest, a KLD-mode engine on the same helpers).
 2. Churn: the effect gate judged 21 windows, kept 0, reverted 9, undecided 12. The gain survives, but reverts and re-moves cost
    copy bandwidth (37 GB in two arms) and can oscillate over a long soak. The gate must be able to keep a move it can see helping.
+
+
+## Step 5 follow-up 6: judge the continuously published tail service (2026-11-06)
+
+The calib7 21-window effect-gate result (0 kept, 9 reverted, 12
+undecided despite a 31.2% filler TTFT reduction) was judged using helper
+0's process-private service. A move that relieves the tail helper need not
+speed up coordinator helper 0; its local signal is therefore not a valid
+effect or calibration signal for tail relief.
+
+Each policy-enabled helper now snapshots the **existing** per-class
+LaneServiceSource totals (sampled requests, routed rows, service ns) on
+its CPU epoch tick and publishes both lanes into its own single-writer
+shared-memory slot. The slot occupies unused space in the placement ACK
+page: no larger mapping, collector thread or GPU sample. A seqlock over
+atomic fields prevents torn cross-process reads; uninitialised, future
+and stale monotonic timestamps fail closed. The segment protocol is
+**v24**, and v23 attachments are refused without compatibility parsing.
+
+worker_heat.h::propose optimises **only the last helper's tail share**:
+plan.baseline - plan.predicted is the predicted relative heat-share
+saving of that helper, even if other helpers send or receive experts.
+Consequently the effect gate for such a plan must read that last helper's
+published lane-class counters, not helper 0's. It retains the follow-up
+5 ns-per-routed-row maths, noise envelope, quiet windows, Gaussian row
+sigma and sampled rows/s. Calibration derives effect_row_noise_ns and
+effect_rows_per_s from exactly this continuous **tail** source as well.
+The transaction-phase RESERVED ACK still supplies the separate tail
+service-rate / ns-per-row calibration inputs.
+
+Card-free synthetic tests publish an unchanged helper 0 and a tail
+improved by 9% per row: the published tail gate returns KEPT, while the
+retired coordinator-local source returns UNDECIDED. A 10% slower tail
+returns WORSE; seqlock and freshness rejection are tested. The calib5
+planner acceptance test (steady no move, shifted heat moves) remains.
+Hardware churn and quality require follow-up validation; no new GPU
+measurement is implied by these CPU tests.

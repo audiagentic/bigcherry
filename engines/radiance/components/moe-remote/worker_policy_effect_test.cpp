@@ -3,6 +3,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <sys/mman.h>
 using namespace r3::policy;
 static void check(bool ok,const char* why) {
     if(!ok) {std::fprintf(stderr,"effect gate FAIL: %s\n",why);std::exit(1);}
@@ -28,7 +29,102 @@ static void calibrate(EffectGate& gate,Synthetic& s) {
     s.quiet(gate,101);
     check(gate.ready(s.t,1000),"two consecutive quiet comparisons");
 }
+// The hardware calib7 regression: helper0's own unchanged service is NOT
+// evidence that shifting heat off the tail had no effect. Use the exact v24
+// publication, reader and gate math for both before/after comparisons.
+static void test_published_tail_signal() {
+    using namespace r3::moe_shm;
+    const LayoutShape shape{128,2,3,8,128,64};
+    Layout layout{};
+    check(layout_for(shape,2,2,&layout),"shared tail test layout");
+    void* map=mmap(nullptr,layout.bytes,PROT_READ|PROT_WRITE,
+                   MAP_PRIVATE|MAP_ANONYMOUS,-1,0);
+    check(map!=MAP_FAILED && init(map,2,shape,2),"shared tail test init");
+    static_cast<Header*>(map)->helper_count=2;
+    auto* coordinator_slot=published_service(map,0);
+    auto* tail_slot=published_service(map,1);
+    check(coordinator_slot && tail_slot && !published_service(map,2),
+          "per-helper slots follow the active helper count");
+    uint64_t now=1000;
+    SharedTailServiceSource tail_source(map,1,1000,[&]{return now;});
+    SharedTailServiceSource old_helper0(map,0,1000,[&]{return now;});
+    ServiceSnapshot sampled{};
+    check(!tail_source.snapshot(&sampled),"unpublished tail is unavailable");
+    for(const double after : {91.0,110.0}) {
+        *coordinator_slot={};
+        *tail_slot={};
+        ServiceSnapshot own{},tail{};
+        EffectGate tail_gate({100,2,2.0});
+        EffectGate old_gate({100,2,2.0});
+        auto publish=[&] {
+            check(SharedTailServiceSource::publish(coordinator_slot,own,now) &&
+                  SharedTailServiceSource::publish(tail_slot,tail,now),
+                  "publish coherent two-lane snapshots");
+        };
+        auto sample=[&](EffectGate& gate,SharedTailServiceSource& source) {
+            ServiceSnapshot snap{};
+            check(source.snapshot(&snap),"read selected helper's fresh slot");
+            gate.quiet(snap,now);
+        };
+        publish();
+        sample(tail_gate,tail_source);
+        sample(old_gate,old_helper0);
+        for(unsigned i=0;i<3;++i) {
+            now+=100;
+            const double tail_rate=(i==0?100.0:(i==1?101.0:100.0));
+            own.lane[1].rows+=100;own.lane[1].samples++;
+            own.lane[1].time_ns+=10000;
+            tail.lane[1].rows+=100;tail.lane[1].samples++;
+            tail.lane[1].time_ns+=uint64_t(tail_rate*100);
+            publish();
+            sample(tail_gate,tail_source);
+            sample(old_gate,old_helper0);
+        }
+        check(tail_gate.ready(now,1000) && old_gate.ready(now,1000),
+              "both sources reach quiet windows");
+        check(tail_gate.observed().row_noise_ns()>0 &&
+              tail_gate.observed().sampled_rows_per_s>0 &&
+              old_gate.observed().row_noise_ns()==0,
+              "calibration sigma and row rate come from the judged tail");
+        check(tail_gate.begin(now,1000) && old_gate.begin(now,1000),
+              "both gates accept a measured baseline");
+        ServiceSnapshot tail_baseline{},own_baseline{};
+        check(tail_source.snapshot(&tail_baseline) &&
+              old_helper0.snapshot(&own_baseline),"captured committed baselines");
+        tail_gate.committed(tail_baseline);
+        old_gate.committed(own_baseline);
+        now+=100;
+        tail.lane[1].rows+=100;tail.lane[1].samples++;
+        tail.lane[1].time_ns+=uint64_t(after*100);
+        own.lane[1].rows+=100;own.lane[1].samples++;
+        own.lane[1].time_ns+=10000;
+        publish();
+        ServiceSnapshot tail_after{},own_after{};
+        check(tail_source.snapshot(&tail_after) &&
+              old_helper0.snapshot(&own_after),"read committed trial service");
+        check(tail_gate.judge(tail_after)==
+                  (after<100.0?EffectVerdict::KEPT:EffectVerdict::WORSE),
+              "tail's 9% gain is KEPT and 10% slowdown is WORSE");
+        check(old_gate.judge(own_after)==EffectVerdict::UNDECIDED,
+              "retired coordinator-local signal misses both tail effects");
+    }
+    // Publication may be interrupted; never use an odd sequence or a
+    // timestamp from a stopped (or impossibly future) helper.
+    check(SharedTailServiceSource::read(tail_slot,now,1000,&sampled),
+          "fresh coherent service still readable");
+    __atomic_add_fetch(&tail_slot->sequence,uint64_t{1},__ATOMIC_ACQ_REL);
+    __atomic_store_n(&tail_slot->rows[1],UINT64_MAX,__ATOMIC_RELAXED);
+    check(!tail_source.snapshot(&sampled),"torn odd snapshot rejected");
+    __atomic_add_fetch(&tail_slot->sequence,uint64_t{1},__ATOMIC_RELEASE);
+    check(!SharedTailServiceSource::read(tail_slot,now+1001,1000,&sampled),
+          "stale publisher rejected");
+    check(!SharedTailServiceSource::read(tail_slot,now-1,1000,&sampled),
+          "future publisher rejected");
+    munmap(map,layout.bytes);
+}
+
 int main() {
+    test_published_tail_signal();
     LaneServiceSource source;
     ServiceSnapshot observed{};
     check(source.snapshot(&observed),"empty snapshot");
@@ -122,5 +218,5 @@ int main() {
               retired_ratio<=1.0+2.576*retired_noise,
               "same 9% gain is undecided with old per-request noise envelope");
     }
-    puts("effect gate: class isolation, noise, good/bad/noise, partial, reset passed");
+    puts("effect gate: published tail, class isolation, noise, good/bad/noise, partial, reset passed");
 }
