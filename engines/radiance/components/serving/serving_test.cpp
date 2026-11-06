@@ -5,6 +5,7 @@
 #include "calibration.h"
 #include "ledger.h"
 #include "live_policy_ingest.h"
+#include "experts.h"
 #include "live_policy.h"
 #include "manifest_writer.h"
 #include "v1/manifest.h"
@@ -1286,8 +1287,13 @@ void layout_manifests_golden(Fixture& t, bool write_golden, const char* dump_dir
 // An engine-only layout (contract amendment 12): two RDNA3 ranks, no helpers, no handoff, read back by the strict reader.
 void engine_only_layout(Fixture& t) {
     namespace sv = bc::serving;
+    // A dense model: a container with no routed experts, which the expert reader refuses. Engine-only needs no experts.
     const auto model = t.root / "dense-model.rad";
-    bc::test::write_rad(model, 4, 16, 128, 128, {});
+    bc::test::write_rad(model, 0, 0, 128, 128, {});
+    {
+        bc::experts::Container refused;
+        assert(!refused.open(model.c_str()));
+    }
     Options opts;
     opts.site = t.file("dense-site.toml", "[engine]\nmodel = \"" + model.string() + "\"\nradiance_home = \"/runtime\"\n");
     opts.sets = {"layout.name=\"qwen27b-2xtx\"", "service.max_sessions=6", "service.max_context=8192"};

@@ -1,0 +1,13 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261106_222026_dense-models-such-as-the-27b-c_2598",
+  "files": [
+    "engines/radiance/components/serving/manifest_writer.cpp",
+    "engines/radiance/components/serving/serving_test.cpp",
+    "docs/reference/engines/radiance/SERVING_MANIFEST.md"
+  ],
+  "status": "unreleased",
+  "technical-summary": "bc-serve --write-manifest no longer opens the expert container for an engine-only configuration (it is read only to plan helper ownership), so a dense model gets an engine-only manifest; the engine-only test builds from a container with no experts and asserts the expert reader refuses it.",
+  "timestamp-utc": "2026-11-06T22:20:26.978163Z",
+  "user-summary-candidate": "Dense models such as the 27B can now get a serving manifest for engine-only layouts."
+}
