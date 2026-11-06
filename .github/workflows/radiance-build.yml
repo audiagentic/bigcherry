@@ -28,7 +28,7 @@ on:
       - 'tools/bigcherry/cli/main.py'
       - 'tools/bigcherry/cli/engine_scope.py'
       - '.github/workflows/radiance-build.yml'
-      - '.github/scripts/ci_build_layers.py'
+      - '.github/scripts/ci_sdk_identity.py'
       - '.github/workflows/radiance-build-image.yml'
       - '.github/docker/radiance-build/**'
   workflow_dispatch:
@@ -80,10 +80,10 @@ jobs:
 
       # The bare upstream clone is pure network/disk I/O with no computation (MEN24): cache it across runs and
       # fetch incrementally instead of cloning radiance's whole history from scratch every time. Restores on any
-      # prior cache (restore-keys) since a slightly stale clone still makes the fetch below cheap; always re-saves
+      # prior cache (restore-keys) since a slightly stale clone still makes the fetch below cheap; main re-saves it
       # (even on build failure) so the cache stays current.
-      - name: Cache the upstream radiance clone
-        uses: actions/cache@v4
+      - name: Restore the upstream radiance clone
+        uses: actions/cache/restore@v4
         with:
           path: work/upstream
           key: radiance-upstream-${{ github.run_id }}
@@ -93,78 +93,13 @@ jobs:
       # Without this the actual compile (not the clone above) runs from scratch every time regardless of how
       # small the diff is -- recipes.toml wires every compiler CMake invokes here (host C/C++ and the HIP
       # device-code compiler) through ccache, so this is what makes that actually pay off across CI runs.
-      - name: Cache ccache
-        uses: actions/cache@v4
+      - name: Restore ccache
+        uses: actions/cache/restore@v4
         with:
           path: work/.ccache
           key: radiance-ccache-${{ github.run_id }}
           restore-keys: |
             radiance-ccache-
-
-      - name: Bind prebuilt layers to the exact compiler image
-        run: |
-          image_id=$(docker image inspect '${{ needs.image.outputs.image }}' --format '{{.Id}}')
-          test -n "$image_id"
-          echo "CI_LAYER_IMAGE_ID=$image_id" >> "$GITHUB_ENV"
-
-      # BU03: one trusted build snapshot per engine and independently versioned
-      # component. Keys include the pinned source, toolchain, all build code,
-      # and (for components) that component's exact tracked file contents.
-      - name: Fingerprint prebuilt layer inputs
-        id: layer_keys
-        run: python3 .github/scripts/ci_build_layers.py keys --output "$GITHUB_OUTPUT"
-
-      - name: Restore prebuilt engine layer (from main)
-        id: layer_engine
-        uses: actions/cache/restore@v4
-        with:
-          path: work/ci-prebuilt/engine
-          key: radiance-prebuilt-v4-${{ steps.layer_keys.outputs.engine }}
-
-      - name: Restore prebuilt libr3 layer (from main)
-        id: layer_libr3
-        uses: actions/cache/restore@v4
-        with:
-          path: work/ci-prebuilt/libr3
-          key: radiance-prebuilt-v4-${{ steps.layer_keys.outputs.libr3 }}
-
-      - name: Restore prebuilt libr2 layer (from main)
-        id: layer_libr2
-        uses: actions/cache/restore@v4
-        with:
-          path: work/ci-prebuilt/libr2
-          key: radiance-prebuilt-v4-${{ steps.layer_keys.outputs.libr2 }}
-
-      - name: Restore prebuilt moe-remote layer (from main)
-        id: layer_moe_remote
-        uses: actions/cache/restore@v4
-        with:
-          path: work/ci-prebuilt/moe_remote
-          key: radiance-prebuilt-v4-${{ steps.layer_keys.outputs.moe_remote }}
-
-      - name: Restore prebuilt ngram-helper layer (from main)
-        id: layer_ngram_helper
-        uses: actions/cache/restore@v4
-        with:
-          path: work/ci-prebuilt/ngram_helper
-          key: radiance-prebuilt-v4-${{ steps.layer_keys.outputs.ngram_helper }}
-
-      - name: Restore prebuilt bc-gfx12 layer (from main)
-        id: layer_bc_gfx12
-        uses: actions/cache/restore@v4
-        with:
-          path: work/ci-prebuilt/bc_gfx12
-          key: radiance-prebuilt-v4-${{ steps.layer_keys.outputs.bc_gfx12 }}
-
-      - name: Restore prebuilt serving layer (from main)
-        id: layer_serving
-        uses: actions/cache/restore@v4
-        with:
-          path: work/ci-prebuilt/serving
-          key: radiance-prebuilt-v4-${{ steps.layer_keys.outputs.serving }}
-
-      - name: Validate and install verified prebuilt layers
-        run: python3 .github/scripts/ci_build_layers.py restore
 
       - name: Build in the ROCm image
         env:
@@ -215,68 +150,22 @@ jobs:
             python3 tools/lab/radiance/ci_ccache.py fingerprint --output work/ci-ccache-artifact/compiler.json
           '
 
-      # Only successful main builds may seed reusable binaries; PRs are
-      # restore-only. Export after running the real component test gate.
-      - name: Export verified prebuilt engine and component layers
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-        run: |
-          # CMake build trees and runtime outputs belong to root inside the
-          # build image. Export there too so cache publication is writable.
-          # CI_LAYER_IMAGE_ID must reach the export: the manifest key it writes is the one the restore recomputes on the
-          # host (with the image digest), so an export without it writes keys that never match and every restore fails.
-          docker run --rm -e CI_LAYER_IMAGE_ID -v "$GITHUB_WORKSPACE:/src" -w /src '${{ needs.image.outputs.image }}' bash -euo pipefail -c '
-            git config --global --add safe.directory /src
-            python3 .github/scripts/ci_build_layers.py export
-          '
-
-      - name: Seed engine prebuilt layer from main
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push' && steps.layer_engine.outputs.cache-hit != 'true'
+      # Only main writes the shared caches (one entry per main build, found by the restore-keys prefix above); a PR
+      # run restores them and never adds its own copy, which is what filled the repository's cache budget.
+      - name: Save ccache (main only)
+        if: always() && github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
         uses: actions/cache/save@v4
         with:
-          path: work/ci-prebuilt/engine
-          key: radiance-prebuilt-v4-${{ steps.layer_keys.outputs.engine }}
+          path: work/.ccache
+          key: radiance-ccache-${{ github.run_id }}
 
-      - name: Seed libr3 prebuilt layer from main
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push' && steps.layer_libr3.outputs.cache-hit != 'true'
+      - name: Save the upstream radiance clone (main only)
+        if: always() && github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
         uses: actions/cache/save@v4
         with:
-          path: work/ci-prebuilt/libr3
-          key: radiance-prebuilt-v4-${{ steps.layer_keys.outputs.libr3 }}
+          path: work/upstream
+          key: radiance-upstream-${{ github.run_id }}
 
-      - name: Seed libr2 prebuilt layer from main
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push' && steps.layer_libr2.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: work/ci-prebuilt/libr2
-          key: radiance-prebuilt-v4-${{ steps.layer_keys.outputs.libr2 }}
-
-      - name: Seed moe-remote prebuilt layer from main
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push' && steps.layer_moe_remote.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: work/ci-prebuilt/moe_remote
-          key: radiance-prebuilt-v4-${{ steps.layer_keys.outputs.moe_remote }}
-
-      - name: Seed ngram-helper prebuilt layer from main
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push' && steps.layer_ngram_helper.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: work/ci-prebuilt/ngram_helper
-          key: radiance-prebuilt-v4-${{ steps.layer_keys.outputs.ngram_helper }}
-
-      - name: Seed bc-gfx12 prebuilt layer from main
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push' && steps.layer_bc_gfx12.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: work/ci-prebuilt/bc_gfx12
-          key: radiance-prebuilt-v4-${{ steps.layer_keys.outputs.bc_gfx12 }}
-
-      - name: Seed serving prebuilt layer from main
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push' && steps.layer_serving.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: work/ci-prebuilt/serving
-          key: radiance-prebuilt-v4-${{ steps.layer_keys.outputs.serving }}
       - name: Report HIP compilation timings
         if: always()
         continue-on-error: true
