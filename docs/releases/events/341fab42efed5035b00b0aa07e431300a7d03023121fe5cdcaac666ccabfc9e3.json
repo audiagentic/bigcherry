@@ -1,0 +1,19 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261106_045338_dense-and-multi-card-engine-jo_3529",
+  "files": [
+    "engines/radiance/components/serving/contract/serving-v1.toml",
+    "engines/radiance/components/serving/serving.cpp",
+    "engines/radiance/components/serving/manifest_writer.cpp",
+    "engines/radiance/components/serving/v1/manifest.cpp",
+    "docs/design/serving-manifest-v1/spec.md",
+    "docs/reference/engines/radiance/SERVING_MANIFEST.md"
+  ],
+  "plan-item-ids": [
+    "RSC11"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Contract amendment 12 (owner decision): engine-only manifests with zero helpers, optional handoff and helper_common tied to helper presence. The serving resolver reads the compiled-in layouts.toml and archs.toml instead of a hard-coded recipe table, supports multi-card engines and derives engine.tp, tp_wire and kernels from the layout. Golden digests prove the six flashnext layout manifests are unchanged. Fixes TOML booleans read as integers.",
+  "timestamp-utc": "2026-11-06T04:53:38.970367Z",
+  "user-summary-candidate": "Dense and multi-card engine jobs can now be described by a serving manifest, the same single configuration method as the MoE layouts."
+}
