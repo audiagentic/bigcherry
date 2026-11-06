@@ -1,6 +1,9 @@
 #include "live_policy_ingest.h"
 #include "live_policy.h"
 #include <cassert>
+#ifdef NDEBUG
+#error "assert-based test built with NDEBUG: its assertions would not run"
+#endif
 #include <filesystem>
 #include <fstream>
 #include <stdexcept>
@@ -18,8 +21,8 @@ static void log_line(const fs::path& path, const Json& row) {
 }
 static bool refused(const fs::path& log, const fs::path& cache,
                     const std::string& key, const std::string& layout,
-                    const std::string& objective) {
-    try { sv::ingest_live_policy_record(log, cache, key, layout, objective); }
+                    const std::string& objective, const std::string& target) {
+    try { sv::ingest_live_policy_record(log, cache, key, layout, objective, target); }
     catch (const std::runtime_error&) { return true; }
     return false;
 }
@@ -61,30 +64,30 @@ int main() {
     assert(d.policy.at("min_residency_ns") == 32592592593ull);
     const std::string original = [&] { std::ifstream in(cache); return std::string(
         std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()); }();
-    assert(refused(log,cache,key,"flashnext-4gpu","balanced")); // different key namespace
+    assert(refused(log,cache,key,"flashnext-4gpu","balanced","")); // no plan-store key: the helper key is never stored
     try {
         sv::ingest_live_policy_record(log,cache,key,"flashnext-4gpu","balanced",store_key);
         assert(false); // no duplicates at the production plan-store key
     } catch (const std::runtime_error&) { }
-    assert(refused(log,cache,std::string(64,'b'),"flashnext-4gpu","balanced"));
-    assert(refused(log,cache,key,"other-layout","balanced"));
-    assert(refused(log,cache,key,"flashnext-4gpu","latency"));
+    assert(refused(log,cache,std::string(64,'b'),"flashnext-4gpu","balanced",store_key));
+    assert(refused(log,cache,key,"other-layout","balanced",store_key));
+    assert(refused(log,cache,key,"flashnext-4gpu","latency",store_key));
     assert([&] { std::ifstream in(cache); return std::string(
         std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()); }() == original);
     { std::ofstream out(log); out << "RHP16_CALIBRATION_JSON not-json\n"; }
-    assert(refused(log,dir/"bad.toml",key,"flashnext-4gpu","balanced"));
+    assert(refused(log,dir/"bad.toml",key,"flashnext-4gpu","balanced",store_key));
     // Missing a quantity is explicit, accepted and remains uncalibrated.
     row["plan_cache_key"] = std::string(64, 'c');
     row["measurements"].erase("copy_bytes_per_s");
     row["absent"]["copy_bytes_per_s"] = "no per-helper throughput hook";
     log_line(log, row);
     const fs::path partial_cache = dir / "partial.toml";
-    sv::ingest_live_policy_record(log, partial_cache, std::string(64,'c'), "flashnext-4gpu", "balanced");
-    const auto partial = sv::read_live_policy_record(partial_cache, std::string(64,'c'));
+    sv::ingest_live_policy_record(log, partial_cache, std::string(64,'c'), "flashnext-4gpu", "balanced", std::string(64,'e'));
+    const auto partial = sv::read_live_policy_record(partial_cache, std::string(64,'e'));
     assert(partial && !sv::live_policy_record_complete(*partial));
     assert(partial->absent.at("copy_bytes_per_s") == "no per-helper throughput hook");
     row["absent"].erase("copy_bytes_per_s");
     log_line(log, row);
-    assert(refused(log,dir/"missing-reason.toml",std::string(64,'c'),"flashnext-4gpu","balanced"));
+    assert(refused(log,dir/"missing-reason.toml",std::string(64,'c'),"flashnext-4gpu","balanced",store_key));
     fs::remove_all(dir);
 }

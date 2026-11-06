@@ -1,6 +1,9 @@
 #include "live_policy.h"
 
 #include <cassert>
+#ifdef NDEBUG
+#error "assert-based test built with NDEBUG: its assertions would not run"
+#endif
 #include <filesystem>
 #include <fstream>
 #include <stdexcept>
@@ -116,7 +119,12 @@ int main() {
     assert(throws_with(file, key, "unknown key"));
     write_fixture(fixture(key).substr(0, fixture(key).find("copy_bytes_per_s = ")));
     assert(throws_with(file, key, "copy_bytes_per_s"));
+    // Two records for one plan key under a single header: refused as a duplicate, never first-one-wins.
+    const std::string header = "schema_version = 1\n";
+    write_fixture(fixture(key) + fixture(key).substr(header.size()));
+    assert(throws_with(file, key, "duplicate"));
+    // A second header inside a record table is malformed TOML for this schema.
     write_fixture(fixture(key) + fixture(key));
-    assert(throws_with(file, key, "TOML") || throws_with(file, key, "duplicate"));
+    assert(throws_with(file, key, "unknown key"));
     fs::remove(file);
 }

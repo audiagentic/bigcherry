@@ -100,4 +100,12 @@ if(BUILD_TESTING)
   target_compile_definitions(bc_owner_map_test PRIVATE
     BC_CONTRACT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../../../docs/design/serving-manifest-v1")
   add_test(NAME bc_owner_map_test COMMAND bc_owner_map_test)
+  # Radiance's plugin module defaults CMAKE_BUILD_TYPE to RelWithDebInfo, which adds -DNDEBUG and turns every assert()
+  # in these tests into a no-op. Test executables keep their assertions; the assert-based tests refuse to build without.
+  get_property(_bc_tests DIRECTORY PROPERTY TESTS)
+  foreach(_bc_test IN LISTS _bc_tests)
+    if(TARGET ${_bc_test})
+      target_compile_options(${_bc_test} PRIVATE -UNDEBUG)
+    endif()
+  endforeach()
 endif()

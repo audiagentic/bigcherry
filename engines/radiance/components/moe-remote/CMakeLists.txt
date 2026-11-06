@@ -156,4 +156,12 @@ if(BUILD_TESTING)
   add_test(NAME r3_ticket_replay_test COMMAND r3_ticket_replay_test)
   # Both need a GPU: labelled so the card-free run (bigcherry component-tests) knows they are deliberately not declared.
   set_tests_properties(r3_route_compact_test r3_ticket_replay_test PROPERTIES LABELS gpu)
+  # Radiance's plugin module defaults CMAKE_BUILD_TYPE to RelWithDebInfo, which adds -DNDEBUG and turns every assert()
+  # in these tests into a no-op. Test executables keep their assertions; the assert-based tests refuse to build without.
+  get_property(_bc_tests DIRECTORY PROPERTY TESTS)
+  foreach(_bc_test IN LISTS _bc_tests)
+    if(TARGET ${_bc_test})
+      target_compile_options(${_bc_test} PRIVATE -UNDEBUG)
+    endif()
+  endforeach()
 endif()

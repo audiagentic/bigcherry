@@ -133,7 +133,8 @@ void ingest_live_policy_record(const fs::path& log, const fs::path& cache,
     }
     if (!found) invalid("no settled calibration record in helper log");
     check_record(record, key, layout, objective);
-    const std::string store_key = target_store_key.empty() ? key : target_store_key;
+    // Production reads records only at the RSC03 plan-store key; the helper's v1 key alone is never a store key.
+    const std::string& store_key = target_store_key;
     if (store_key.size() != 64 || store_key.find_first_not_of("0123456789abcdef") != std::string::npos)
         invalid("invalid target plan-store key");
     // Only after validating the helper's authentic, manifest-backed key is
