@@ -1,5 +1,13 @@
 # Changelog
 
+## [1170.5.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.4.0...bc-radiance-1170.5.0) (2026-11-06)
+
+
+### New and changed
+
+* **radiance:** RHP16 step 4, helper calibration records and the lab --calibrate run ([#682](https://github.com/audiagentic/bigcherry/issues/682)) ([a43c2cd](https://github.com/audiagentic/bigcherry/commit/a43c2cda93312bc3a079342b5938ddae442af642))
+* **serving:** engine-only layouts; resolver reads layouts.toml; contract amendment 12 (RSC11 A2) ([#683](https://github.com/audiagentic/bigcherry/issues/683)) ([f115420](https://github.com/audiagentic/bigcherry/commit/f115420b7669bbe4e861dbd629e3e43f0ea0d837))
+
 ## [1170.4.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.3.0...bc-radiance-1170.4.0) (2026-11-06)
 
 
