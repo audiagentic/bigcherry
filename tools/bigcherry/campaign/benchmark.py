@@ -1033,16 +1033,17 @@ def run_server_comparison_capture(
         arm_args = tuple(os.path.expandvars(value) for value in arm.get("server_args", []))
         if any(value.split("=", 1)[0] in ("-m", "--model", "--host", "--port") for value in arm_args):
             raise ValueError(f"{arm['name']}: server_args cannot override the managed model or endpoint")
-        manifest = Path(os.path.expandvars(arm["manifest"])).expanduser().resolve() if "manifest" in arm else None
-        if manifest is not None:
-            if not manifest.is_file():
-                raise ValueError(f"{arm['name']}: manifest {manifest} does not exist")
+        serving = arm.get("serving")
+        if serving is not None:
+            if not isinstance(serving, dict):
+                raise ValueError(f"{arm['name']}: serving must be an object")
+            serving = json.loads(os.path.expandvars(json.dumps(serving)))
             if extra_args or arm_args:
-                raise ValueError(f"{arm['name']}: a manifest arm takes no server_args; they belong in the manifest")
+                raise ValueError(f"{arm['name']}: a serving arm takes no server_args; they are settings under serving")
             if config.get("execution_evidence", "required") == "required":
                 raise ValueError(f"{arm['name']}: a manifest start has no attestation preflight; set execution_evidence to observe")
         prepared[arm["name"]] = {
-            "binary": binary, "env": env, "settings": settings, "controls": controls, "extra_args": (*extra_args, *arm_args), "manifest": manifest,
+            "binary": binary, "env": env, "settings": settings, "controls": controls, "extra_args": (*extra_args, *arm_args), "serving": serving, "manifest": None,
             "model": Path(os.path.expandvars(arm["model"])).expanduser().resolve() if "model" in arm else model, "shutdown_method": arm.get("shutdown_method", "sigint" if mode == "stock" else "http"),
             "source_root": source_root, "source_attestation": source_attestation,
             "provenance": {"campaign_metadata": metadata, "observed_runtime_artifacts": runtime,
@@ -1062,6 +1063,11 @@ def run_server_comparison_capture(
         validate_build_parity(prepared["stock"]["binary"].parent.parent / "CMakeCache.txt",
                               prepared["native"]["binary"].parent.parent / "CMakeCache.txt")
     output.mkdir(parents=True, exist_ok=False)
+    for name in names:   # a serving arm's manifest: measured here (the GPUs, like a cell) when its plan is not cached
+        if prepared[name]["serving"] is not None:
+            prepared[name]["manifest"] = adapter_.write_serving_manifest(
+                name, prepared[name]["serving"], binary=prepared[name]["binary"], model=prepared[name]["model"],
+                env=prepared[name]["env"], run_dir=output / "manifests" / name)
     run_schedule = [] if quality_only else schedule_named_arms(rounds, names, seed)
     summary = {
         "schema_version": 1, "capture_kind": "server-bench-balanced-v1", "evidence_role": role,

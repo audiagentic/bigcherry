@@ -200,6 +200,13 @@ class EngineAdapter(ABC):
         """Helper processes for one arm cell, in start order. ``arm`` carries ``name``, ``model`` and ``settings``;
         ``env`` is the arm complete server environment."""
 
+    def write_serving_manifest(
+        self, name: str, serving: dict[str, Any], *, binary: Path, model: Path, env: dict[str, str], run_dir: Path,
+    ) -> Path:
+        """The manifest an arm's ``serving`` block describes, written under ``run_dir`` (measured first when its plan
+        is not cached). An engine without a manifest start refuses."""
+        raise ValueError(f"{type(self).__name__} has no manifest start")
+
     def manifest_port(self, manifest: Path) -> int:
         """The port the engine will listen on when started from this serving manifest. An engine without a manifest
         start refuses."""

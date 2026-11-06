@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from ..core import environment
-from . import radiance_manifest
+from . import radiance_manifest, radiance_plan
 from .base import (
     BumpCheck, CompletionApi, CpuSmokeSpec, DeviceAssertion, DriftCheck, EngineAdapter, QualityCommand, SidecarSpec, SourceCheck, SMOKE_SEED,
     build_cpu_smoke,
@@ -103,6 +103,22 @@ class RadianceAdapter(EngineAdapter):
 
     def check_arm_environment(self, controls: dict[str, str]) -> None:
         return None
+
+    def write_serving_manifest(
+        self, name: str, serving: dict[str, Any], *, binary: Path, model: Path, env: dict[str, str], run_dir: Path,
+    ) -> Path:
+        from ..core import engines, paths
+
+        host = _host()
+        try:
+            return radiance_plan.write_manifest(
+                name=name, serving=serving, binary=binary, model=model, env=env,
+                serve=engines.load(paths.REPO_ROOT, "radiance").serve, run_dir=run_dir,
+                plan_cache=Path(host.work_root) / "plan-cache", host="127.0.0.1",
+                helper_specs=lambda manifest: self.sidecars(
+                    {"name": name, "model": model, "settings": {}, "manifest": manifest}, env, run_dir, binary))
+        except radiance_plan.PlanError as exc:
+            raise ValueError(str(exc)) from exc
 
     def manifest_port(self, manifest: Path) -> int:
         try:
