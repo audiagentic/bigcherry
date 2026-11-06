@@ -565,3 +565,18 @@ at fast or slow evaluation cadences rather than spanning only the last
 Card-free 1 s and 30 s synthetic-cadence tests require matching
 half-life in observations within one retained spacing, alongside the
 calib5 heat-shift planner acceptance regression.
+
+## calib9 to calib14 (2026-11-06): the effect gate cannot judge this layout; calibration made bounded and self-diagnosing
+
+On flashnext-4gpu the tail's work is on its large lane and the head helpers have no large-lane rows, so no peer reference exists
+for the work a move targets: the tail's absolute per-row service is too bursty to resolve the predicted effect (calib9 noise
+ladder best 3.3% against a 2.6% requirement) and the relative signal has no denominator on that lane (calib10-12). The derivation
+now sets `effect_gate=false` with that reason and keeps every other derived setting (calib8 delivered -35% this way, bounded by the
+derived margin, residency and move caps); an enabled gate can no longer block the driver; a calibration that cannot derive a policy
+serves without one; every calibration wait is named in the helper log and bounded; the drift window is spaced by observations, not
+evaluations. calib13 and calib14 surfaced, in turn, a drift window too short at a 5 s lab cadence, a planner quantity never measured
+once placement converged, and a deadline that started before the heat feed (follow-up 14). Hardware evidence for the policy's
+effect remains calib7 and calib8; the later changes are verified card-free.
+
+Merge: off by default (no record in the production store). Enabling waits on the KLD gate with the policy moving experts (RSC11
+#692 provides manifest-started quality arms) and one production calibration.
