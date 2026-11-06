@@ -123,11 +123,6 @@ static void test_sampling_error() {
 
 static void test_tail_series() {
     TailSamples t;
-    t.observe(42,0.20,true);
-    t.observe(42,0.22,true);
-    check(std::abs(t.noise_ppm.max()-100000.0)<1e-6,"observed no-move share noise");
-    t.observe(43,0.50,true);
-    check(t.noise_ppm.total()==1,"changed owner resets no-move baseline");
     t.commit(0.4,0.2);
     check(std::abs(t.gain_ppm.quantile(0.5)-500000.0)<1e-6,
           "committed predicted relative tail gain");

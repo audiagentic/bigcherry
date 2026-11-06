@@ -113,14 +113,14 @@ std::optional<LivePolicyRecord> read_live_policy_record(const std::filesystem::p
         "plan_cache_key", "layout", "objective", "seeded",
         "evidence", "txn_p50_ns", "txn_p95_ns", "copy_bytes_per_s",
         "heat_gap_max_ns", "heat_watermarked", "hot_set_k", "marginal_error_ppm", "marginal_observations",
-        "drift_half_life_observations", "observation_rate_per_s", "tail_share_noise_ppm", "tail_share_gain_ppm",
+        "drift_half_life_observations", "observation_rate_per_s", "tail_share_gain_ppm",
         "tail_lane_service_ns_per_s", "tail_lane_request_ns", "lane_lost_ns", "effect_requests_per_s",
         "effect_noise_max_ns", "effect_sample_noise_ns", "abort_quiescent_ns", "absent"
     };
     const std::set<std::string> names = {
         "txn_p50_ns", "txn_p95_ns", "copy_bytes_per_s", "heat_gap_max_ns", "heat_watermarked",
         "hot_set_k", "marginal_error_ppm", "marginal_observations", "drift_half_life_observations",
-        "observation_rate_per_s", "tail_share_noise_ppm", "tail_share_gain_ppm", "tail_lane_service_ns_per_s",
+        "observation_rate_per_s", "tail_share_gain_ppm", "tail_lane_service_ns_per_s",
         "tail_lane_request_ns", "lane_lost_ns", "effect_requests_per_s", "effect_noise_max_ns",
         "effect_sample_noise_ns"
     };
@@ -174,7 +174,7 @@ std::optional<LivePolicyRecord> read_live_policy_record(const std::filesystem::p
         const auto too_big = [&](const char* name) {
             return row.measurements.contains(name) && number(row.measurements, name) >= kMillion;
         };
-        if (too_big("tail_share_noise_ppm") || too_big("marginal_error_ppm") ||
+        if (too_big("marginal_error_ppm") ||
             too_big("tail_share_gain_ppm"))
             bad(where + ": invalid measured fraction");
         if (row.key == plan_key) found = std::move(row);
@@ -186,7 +186,7 @@ bool live_policy_record_complete(const LivePolicyRecord& record) {
     for (const char* name : {
         "txn_p50_ns", "txn_p95_ns", "copy_bytes_per_s", "heat_gap_max_ns", "heat_watermarked",
         "hot_set_k", "marginal_error_ppm", "marginal_observations", "drift_half_life_observations",
-        "observation_rate_per_s", "tail_share_noise_ppm", "tail_share_gain_ppm", "tail_lane_service_ns_per_s",
+        "observation_rate_per_s", "tail_share_gain_ppm", "tail_lane_service_ns_per_s",
         "tail_lane_request_ns", "lane_lost_ns", "effect_requests_per_s", "effect_noise_max_ns",
         "effect_sample_noise_ns"
     })
@@ -205,7 +205,7 @@ DerivedLivePolicy derive_live_policy(const LivePolicyRecord& record, const Calib
     const auto n = [&](const char* key) { return number(m, key, std::string(key) == "lane_lost_ns" || std::string(key) == "heat_watermarked"); };
     for (const char* key : {
         "txn_p95_ns", "copy_bytes_per_s", "heat_gap_max_ns", "heat_watermarked", "marginal_error_ppm",
-        "marginal_observations", "drift_half_life_observations", "observation_rate_per_s", "tail_share_noise_ppm",
+        "marginal_observations", "drift_half_life_observations", "observation_rate_per_s",
         "tail_share_gain_ppm", "tail_lane_service_ns_per_s", "tail_lane_request_ns", "lane_lost_ns", "effect_requests_per_s",
         "effect_noise_max_ns", "effect_sample_noise_ns"
     })
@@ -228,13 +228,16 @@ DerivedLivePolicy derive_live_policy(const LivePolicyRecord& record, const Calib
     const uint64_t cadence = div_ceil(Wide(n("txn_p95_ns")) + window_ns, 1, "cadence_ns");
     const uint64_t slow_budget = *std::min_element(budgets.begin(), budgets.end());
     if (!slow_budget || slow_budget < stride) bad("a helper budget cannot hold one expert stride");
+    // The byte cap is per proposed transaction, not the sum of T later
+    // effect windows. Otherwise the planner may stage thousands of copies
+    // in ONE quiescence (calib5: 2,399 experts).
     const uint64_t move_bytes = std::min(
-        slow_budget, div_ceil(Wide(n("copy_bytes_per_s")) * window_ns * uint64_t(windows),
+        slow_budget, div_ceil(Wide(n("copy_bytes_per_s")) * n("txn_p95_ns"),
                               kSecond, "max_moved_bytes"));
     const uint64_t max_moves = std::min<uint64_t>(move_bytes / stride, uint64_t(UINT32_MAX));
     if (!max_moves) bad("measured budget buys fewer than one complete expert; cannot activate policy");
-    const uint64_t margin = std::max(n("tail_share_noise_ppm"), n("marginal_error_ppm"));
-    if (!margin || margin >= kMillion) bad("relative noise is outside v1 margin_ppm range");
+    const uint64_t margin = n("marginal_error_ppm");
+    if (!margin || margin >= kMillion) bad("relative sampling error is outside v1 margin_ppm range");
     // The planner's per-expert gate counts heat WINDOWS (one per accepted delta, i.e. per cadence), not routed
     // observations: convert the observations the margin needs into windows of measured rate x cadence. Comparing an
     // observation count against the window counter (rhp16-calib4: 105,925,840 against ~50 windows) blocks every move.
@@ -244,21 +247,37 @@ DerivedLivePolicy derive_live_policy(const LivePolicyRecord& record, const Calib
     const uint64_t observations_per_window = div_ceil(
         Wide(n("observation_rate_per_s")) * cadence, kSecond, "observations per heat window");
     const uint64_t min_samples = div_ceil(needed_observations, observations_per_window, "min_samples");
-    const uint64_t move_cost_ns = div_ceil(Wide(move_bytes) * kSecond,
-                                           n("copy_bytes_per_s"), "move cost");
     const uint64_t savings_ns_per_s = div_ceil(
         Wide(n("tail_share_gain_ppm")) * n("tail_lane_service_ns_per_s"), kMillion,
         "predicted tail savings");
+    // The measured committed-transaction p95 is the cost of the typical
+    // gain, not the theoretical maximum byte allowance of a single plan.
     const uint64_t residency = div_ceil(
-        (Wide(move_cost_ns) + n("lane_lost_ns")) * kSecond,
+        (Wide(n("txn_p95_ns")) + n("lane_lost_ns")) * kSecond,
         savings_ns_per_s, "min_residency_ns");
     const uint64_t drift_ns = div_ceil(
         Wide(n("drift_half_life_observations")) * kSecond, n("observation_rate_per_s"),
         "effect_revert_ttl_ns");
-    const uint64_t noise_multiplier = div_ceil(
-        Wide(n("effect_noise_max_ns")) * 1000, delta_effect_ns,
-        "effect_noise_multiplier_milli");
-
+    // The effect gate compares FRACTIONAL before/after service rates with
+    // a FRACTIONAL quiet-window envelope. The old max-ns / E multiplier
+    // applied noise twice and made the calib5 improvement threshold >100%.
+    const uint64_t noise_multiplier = uint64_t(std::ceil(
+        gaussian_z(double(false_rate) / double(kMillion)) * 1000.0));
+    // A ban must outlast at least one new policy poll and the k+1 service
+    // windows needed to reestablish the effect gate after a transaction.
+    const uint64_t max_heat_age = div_ceil(Wide(cadence) + n("heat_gap_max_ns"),
+                                           1, "max_heat_age_ns");
+    const uint64_t recovery = div_ceil(Wide(window_ns) * (effect_quiet + 1),
+                                       1, "effect gate recovery");
+    const uint64_t cache_ttl = div_ceil(Wide(max_heat_age) + recovery,
+                                         1, "learned eligibility TTL");
+    // A WORSE verdict starts a rollback that refreshes per-expert move times.
+    // Keep the destination ban through rollback, the ensuing residency and
+    // one more policy poll; otherwise it expires before retry is even legal.
+    const uint64_t revert_ttl = div_ceil(
+        Wide(residency) + cadence + n("txn_p95_ns"), 1,
+        "effect_revert_ttl_ns");
+    const uint64_t effective_revert_ttl = std::max({drift_ns, cache_ttl, revert_ttl});
     DerivedLivePolicy out{Json::object(), Json::object()};
     const std::string base = "/spec/handoff/placement/live_policy/";
     const Json layout = Json::array({"/spec/intent/layout", "/spec/intent/service/objective",
@@ -277,30 +296,30 @@ DerivedLivePolicy derive_live_policy(const LivePolicyRecord& record, const Calib
             "watermarked feed",
         Json::array({"/spec/plan/engine_memory/cache_key"}));
     set("cadence_ns", cadence, "txn_p95_ns + measured effect-window duration (requests/rate)", layout);
-    set("max_moved_bytes", move_bytes, "slowest copy bytes/s x effect window x declared transaction windows, capped by helper budgets",
+    set("max_moved_bytes", move_bytes, "slowest copy bytes/s x measured transaction p95, capped by helper budgets",
         Json::array({"/spec/processes/helpers", "/spec/calibration", "/spec/plan/engine_memory/cache_key"}));
     set("max_moves", max_moves, "max_moved_bytes / device-layout expert stride (bounded by uint32)", budgets_input);
-    set("min_residency_ns", residency, "(bytes / measured copy rate + lane time lost) / predicted tail service saving per second", layout);
-    set("max_heat_age_ns", n("heat_gap_max_ns"), "largest measured heat-delta gap", layout);
+    set("min_residency_ns", residency, "(committed transaction p95 + observed lane time lost) / predicted tail service saving per second", layout);
+    set("max_heat_age_ns", max_heat_age, "one policy cadence plus largest accepted heat-delta gap", layout);
     set("min_samples", min_samples, "heat windows: marginal samples x (measured relative error / margin)^2 / (observation rate x cadence)", layout);
-    set("abort_cooldown_ns", m.contains("abort_quiescent_ns") ? n("abort_quiescent_ns") : cadence,
-        m.contains("abort_quiescent_ns") ? "measured abort-to-quiescent" :
-                                           "no abort seen: transaction settling cadence (conservative fallback; not abort-calibrated)", layout);
-    set("learned_eligibility_ttl_ns", n("heat_gap_max_ns"),
-        "v1 mandatory time TTL: one measured heat source gap (event invalidation requires v2)", layout);
+    set("abort_cooldown_ns", std::max(max_heat_age, m.contains("abort_quiescent_ns") ? n("abort_quiescent_ns") : cadence),
+        m.contains("abort_quiescent_ns") ? "max(measured abort-to-quiescent, one cadence plus measured gap)" :
+                                           "no abort seen: one cadence plus observed feed gap (conservative fallback; not abort-calibrated)", layout);
+    set("learned_eligibility_ttl_ns", cache_ttl,
+        "one cadence plus observed gap and quiet-gate recovery; event invalidation requires v2", layout);
     set("effect_window_samples", effect_samples,
         "smallest n with measured per-request sigma * sqrt(2/n) * Gaussian z(false-revert objective) <= predicted committed-move effect per request",
         Json::array({"/spec/calibration", "/spec/plan/engine_memory/cache_key"}));
     set("effect_min_quiet_windows", effect_quiet,
         "smallest consecutive quiet count with transaction_effect_windows * Gaussian noise-crossing probability^count <= declared false-revert objective",
         Json::array({"/spec/calibration", "/spec/plan/engine_memory/cache_key"}));
-    set("effect_revert_ttl_ns", drift_ns, "hot-set drift half-life / observation rate", layout);
-    set("margin_ppm", margin, "maximum of unchanged-tail noise and marginal sampling error", layout);
+    set("effect_revert_ttl_ns", effective_revert_ttl, "max(drift horizon, quiet-gate recovery, rollback p95 plus residency plus cadence)", layout);
+    set("margin_ppm", margin, "multinomial sampling error of the k-th hottest expert share", layout);
     set("half_life_observations_milli", div_ceil(Wide(n("drift_half_life_observations")) * 1000, 1,
                                                   "half_life_observations_milli"),
         "hot-set overlap drift half-life in observations, scaled by 1000", layout);
     set("effect_noise_multiplier_milli", noise_multiplier,
-        "conservative observed maximum quiet-window deviation / predicted committed-move effect per request", layout);
+        "Gaussian two-sided false-revert z score multiplying the fractional quiet-window noise envelope", layout);
     // No guessed protected layer ids. The helper excludes experts with missing planes itself.
     // The v1 model container exposes no protected-layer list; an explicit guard needs RCS12's model metadata.
     set("protected_layers", Json::array(), "no model-global protected-layer metadata in the container (missing weights guarded by helper)",

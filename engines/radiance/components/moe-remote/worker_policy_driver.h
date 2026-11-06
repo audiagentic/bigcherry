@@ -222,10 +222,6 @@ private:
         }
         r.evaluated=true;
         r.plan=heat::propose(input,settings_.head_shares);
-        if(r.plan.valid) {
-            std::lock_guard<std::mutex> guard(measure_lock_);
-            measured_.tail.observe(copy.owners.digest,r.plan.baseline,r.plan.no_change);
-        }
         if(!r.plan.valid)r.reason="plan_invalid";
         else if(r.plan.no_change) {
             if(poll_now<copy.cooldown_until_ns)r.reason="abort_cooldown";

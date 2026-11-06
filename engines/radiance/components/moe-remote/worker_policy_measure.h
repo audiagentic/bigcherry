@@ -157,26 +157,14 @@ inline double marginal_relative_error(const std::vector<double>& counts, size_t 
     return relative_share_error(sorted[k - 1], total);
 }
 
-// Tail-share evidence is taken from consecutive accepted heat windows with an
-// unchanged owner generation, and from plans that actually commit.
+// Tail-share gain is measured only from plans that actually commit.
+// Between-window changes reflect real workload shifts, not sampling noise.
 struct TailSamples {
-    Series noise_ppm{256}, gain_ppm{64};
-    uint64_t owner_digest=0;
-    double last_share=0;
-    void observe(uint64_t digest,double baseline,bool no_move) {
-        if (!digest || !std::isfinite(baseline) || baseline<=0) {
-            owner_digest=0;last_share=0;return;
-        }
-        if (owner_digest==digest && last_share>0 && no_move)
-            noise_ppm.add(std::abs(baseline/last_share-1.0)*1000000.0);
-        owner_digest=digest;
-        last_share=baseline;
-    }
+    Series gain_ppm{64};
     void commit(double baseline,double predicted) {
         if (std::isfinite(baseline) && std::isfinite(predicted) &&
             baseline>predicted && predicted>=0 && baseline>0)
             gain_ppm.add((baseline-predicted)/baseline*1000000.0);
-        owner_digest=0;last_share=0; // never compare heat across a move
     }
 };
 

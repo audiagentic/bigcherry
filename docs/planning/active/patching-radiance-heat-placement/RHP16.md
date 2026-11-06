@@ -220,7 +220,7 @@ calibration gate's configured window. The strict record removes
 |---|---|---|
 | `effect_window_samples` (n) | per-request noise sigma, E, declared false-revert fraction α | smallest n ≥ 1 with `sigma * sqrt(2/n) * z(α) <= E`, `erfc(z/sqrt(2)) = α` |
 | `effect_min_quiet_windows` (k) | E, sigma, derived n, declared opportunities T and α | smallest k ≥ 1 with `T * p^k <= α`; `p = erfc(E / (sqrt(2) * sigma * sqrt(2/n)))` |
-| `effect_noise_multiplier_milli` | measured `effect_noise_max_ns` and E | `ceil(1000 * effect_noise_max_ns / E)` |
+| `effect_noise_multiplier_milli` | declared false-revert fraction alpha | `ceil(1000 * z(alpha))`, multiplying the effect gate's fractional quiet noise |
 
 The Gaussian and independent quiet-crossing assumptions, including the
 union bound over T, are model assumptions not empirically certified false
@@ -257,3 +257,28 @@ recalibration. A change of any remaining input, or of the record schema, needs a
 unwatermarked heat after RHP02's watermarked feed arrives: as permissive as today, never less safe. Taking the
 benefit of the watermark (refusing incoherent snapshots) is a deliberate recalibration once RHP02 ships, not an
 automatic invalidation on every engine change.
+
+## Step 5 follow-up 4: planner-aligned calibration (2026-11-06)
+
+Calib5 produced a complete record but a zero-action derived policy. The margin
+was dominated by the median workload-shift change (224,359 ppm) instead of the
+decayed heat estimator's multinomial sampling error (31,905 ppm). The strict
+record now **rejects** `tail_share_noise_ppm`; it is neither sampled nor a
+convergence requirement. `margin_ppm = marginal_error_ppm` alone.
+
+An end-to-end card-free test derives the policy from the calib5 readings, passes
+the 17 members through the typed helper adapter and verifies the real CPU heat
+planner: unchanged heat yields no move; filler-to-docs synthetic heat moves.
+It separately verifies all coverage, heat-age, cooldown, residency, move-count
+and byte-budget gates, and a quiet effect gate that can become ready and retain
+a demonstrably faster lane.
+
+The derivation uses ns versus ns, ppm versus fractional shares, observation
+counts versus accepted heat **windows**, and the `half_life_observations_milli`
+1000x ABI conversion. The per-transaction copy budget is based on measured
+transaction p95, not T future effect windows; the effect multiplier applies the
+Gaussian z objective to an **already fractional** quiet noise envelope, not
+absolute nanoseconds divided by predicted per-request effect. Age, learned
+eligibility and effect-revert TTLs survive cadence, recovery, rollback and
+minimum residency. See `engines/radiance/components/serving/live_policy_calibration.md`
+for formulas and the separate Follow-up 4 report for all 17 comparisons.

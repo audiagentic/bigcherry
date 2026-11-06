@@ -81,5 +81,21 @@ int main() {
         EffectGate bad({0,0,0});
         check(!bad.valid(),"missing controls fail closed");
     }
+    {
+        // Both source noise and the committed effect are ns/request; variable
+        // routed rows per request must not turn an improvement into WORSE.
+        EffectGate g({2,1,2.576});
+        ServiceSnapshot snap{};
+        g.quiet(snap,1000);
+        snap.lane[1]={2,20,2000000};
+        g.quiet(snap,2000);
+        snap.lane[1]={4,220,4004000};
+        g.quiet(snap,3000);
+        check(g.begin(3000,2000),"request-normalised baseline available");
+        g.committed(snap);
+        snap.lane[1]={6,320,5804000};
+        check(g.judge(snap)==EffectVerdict::KEPT,
+              "row-mix shift cannot reverse a per-request improvement");
+    }
     puts("effect gate: class isolation, noise, good/bad/noise, partial, reset passed");
 }

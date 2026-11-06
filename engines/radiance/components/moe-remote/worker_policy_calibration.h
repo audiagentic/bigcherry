@@ -22,7 +22,7 @@ inline bool calibration_settled(const Measured& m) {
            m.marginal_observations && std::isfinite(m.observation_rate_per_s) &&
            m.observation_rate_per_s > 0 &&
            m.drift_half_life_observations && m.transaction_ns.quantile(0.5) > 0 &&
-           m.tail.noise_ppm.quantile(0.5) > 0 && m.tail.gain_ppm.quantile(0.5) > 0 &&
+           m.tail.gain_ppm.quantile(0.5) > 0 &&
            m.slowest_helper_copy_bps.quantile(0.5) > 0 &&
            m.tail_lane_service_ns_per_s.quantile(0.5) > 0 &&
            m.tail_lane_request_ns.quantile(0.5) > 0 &&
@@ -67,11 +67,6 @@ inline nlohmann::json calibration_record(const Measured& m,
            "half-overlap crossing not observed in retained drift horizon");
     sample("observation_rate_per_s", m.observation_rate_per_s,
            "no two accepted counter/time points establish a positive source rate");
-    // The median, like the gain it is compared with (margin_ppm): the calibration workload deliberately shifts heat, so
-    // the largest no-move change is the shift itself, not noise, and a max-based margin exceeds every move's gain
-    // (rhp16-calib3: max 110,185 ppm against a median gain of 80,562 ppm, so the derived policy never moved).
-    sample("tail_share_noise_ppm", m.tail.noise_ppm.quantile(0.5),
-           "no positive no-move tail-share change on the same owner generation");
     sample("tail_share_gain_ppm", m.tail.gain_ppm.quantile(0.5),
            "no committed plan with positive predicted relative tail-share saving");
     sample("tail_lane_service_ns_per_s", m.tail_lane_service_ns_per_s.quantile(0.5),

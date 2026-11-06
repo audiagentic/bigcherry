@@ -21,7 +21,6 @@ partial records are preserved but cannot derive a production live policy.
 | marginal_error_ppm, marginal_observations | Marginal expert sampling error, observed requests |
 | drift_half_life_observations | Measured top-K overlap half-life |
 | observation_rate_per_s | Observations per second |
-| tail_share_noise_ppm | Largest relative no-move tail-share change |
 | tail_share_gain_ppm | Positive predicted tail-share reduction from a committed plan |
 | tail_lane_service_ns_per_s | Sampled tail service per wall second |
 | tail_lane_request_ns | Same-interval tail large-lane service ns / completed sampled requests (ns/request), via RESERVED ACK |
@@ -38,9 +37,9 @@ these normalized deltas estimates per-request σ; for equal-size n this is
 `SD(delta) * sqrt(n/2)`. This is actual observed dispersion, not a configured
 gate count. A positive observed quiet deviation and at least two variable
 signed comparisons are required for convergence. The helper cannot see the objective
-false-revert rate, so the maximum (renamed from the misleading
-`effect_noise_quantile_ns`) supplies the conservative locked-v1 noise
-multiplier, rather than purporting to be an objective-specific empirical quantile.
+false-revert rate, so the measured maximum (renamed from `effect_noise_quantile_ns`) is
+retained as a diagnostic only. It is not a false-revert quantile and does not
+rescale the fractional quiet-window noise at the effect gate.
 
 `calibration.live_policy.transaction_effect_windows` (T) and
 `calibration.live_policy.false_revert_rate_ppm` (α in parts per million) are
@@ -72,34 +71,42 @@ Gaussian/independent-crossing model, not measured false-reversion outcomes.
 
 Let `W = ceil(n * 1e9 / effect_requests_per_s)`.
 
-- cadence_ns = transaction p95 + W; max_moved_bytes = min(slowest helper
-  budget, copy_bytes_per_s * W * T / 1e9).
-- max_moves = floor(max_moved_bytes / expert stride).
-- min_residency_ns = (move bytes / observed copy bandwidth + observed lost
-  lane time) / (predicted tail-share gain * sampled tail service rate).
-- half_life_observations_milli = 1000 * observed drift half-life;
-  max_heat_age_ns = largest heat-delta gap.
-- margin_ppm = max(no-move tail-share noise, marginal sampling error);
-  min_samples = ceil(ceil(marginal samples * (marginal error / margin)^2) / ceil(observation rate * cadence)),
-  in heat windows: the planner counts accepted heat deltas per expert, not routed observations.
-- abort_cooldown_ns = measured abort-to-quiescent, or the labelled cadence
-  fallback when no abort was observed.
+- cadence_ns = transaction p95 + W. The ONE-transaction byte allowance is
+  min(slowest helper budget, copy_bytes_per_s * transaction p95 / 1e9),
+  not T times the window copy allowance; max_moves = floor(bytes / stride).
+- min_residency_ns = (committed transaction p95 + observed lane downtime) /
+  (predicted tail-share gain * sampled tail service per wall second).
+- half_life_observations_milli = 1000 * top-K drift half-life observations:
+  the helper applies exp2(-routed_observations / half_life), not a heat-window decay.
+- max_heat_age_ns = cadence + largest accepted heat-delta gap.
+- margin_ppm = marginal_error_ppm, the multinomial sampling error of the
+  k-th hottest expert's share; no workload shift is treated as noise.
+  min_samples = ceil(marginal observations / ceil(observation rate * cadence)),
+  in accepted heat WINDOWS, not routed requests.
+- abort_cooldown_ns = max(max_heat_age_ns, measured abort-to-quiescent or cadence).
+- Let recovery = (k + 1) * W: the quiet gate needs its initial window plus
+  k consecutive comparisons after an abort or effect judgment.
+  learned_eligibility_ttl_ns = max_heat_age_ns + recovery, and
+  effect_revert_ttl_ns = max(drift half-life / observation rate, learned TTL,
+  transaction p95 + min_residency_ns + cadence). The revert ban survives
+  the rollback and the earliest per-expert residency-expired retry.
 - effect_window_samples = n; effect_min_quiet_windows = k.
-- effect_noise_multiplier_milli = ceil(1000 * effect_noise_max_ns / E),
-  an observed maximum quiet-window deviation scaled by predicted effect.
-- effect_revert_ttl_ns = drift half-life / observation rate;
-  learned_eligibility_ttl_ns = one observed heat gap as a locked-v1
-  approximation (event invalidation needs v2).
+- effect_noise_multiplier_milli = ceil(1000 * z(alpha)). The effect gate
+  already compares fractional rates against fractional observed quiet noise;
+  dividing absolute service-time noise by E multiplied noise twice.
+  Both the quiet fraction and verdict compare ns per sampled request, as do
+  the measured sigma and predicted E; a changing routed-row mix must not
+  turn a per-request improvement into an apparent regression.
 
 | Derived effect setting | Inputs | Rule |
 |---|---|---|
 | effect_window_samples | per-request σ, predicted E, declared α | minimum n with `σ sqrt(2/n) z(α) <= E` |
 | effect_min_quiet_windows | E, σ, derived n, declared T and α | minimum k with `T * p^k <= α` |
-| effect_noise_multiplier_milli | observed maximum quiet deviation and E | `ceil(1000 * effect_noise_max_ns / E)` |
+| effect_noise_multiplier_milli | declared false-revert fraction alpha | `ceil(1000 * z(alpha))` |
 
 Equal-σ synthetic quiet-window series at configured widths 2 and 8
-derive the same n and k. The observed maximum and resulting multiplier
-can differ with the calibration window; neither feeds n or k.
+derive the same n, k and multiplier. The observed maximum may differ
+with the calibration window, but is not used by the gate.
 
 Each emitted policy setting has `origin = derived` provenance. An uncalibrated
 locked-v1 plan omits the policy entirely, since v1 has no observe-only state.

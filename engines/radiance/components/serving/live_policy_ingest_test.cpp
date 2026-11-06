@@ -39,7 +39,7 @@ int main() {
         {"heat_watermarked",0},
         {"hot_set_k",5931}, {"marginal_error_ppm",23000},
         {"marginal_observations",3}, {"drift_half_life_observations",59000000},
-        {"observation_rate_per_s",10000000}, {"tail_share_noise_ppm",20000},
+        {"observation_rate_per_s",10000000},
         {"tail_share_gain_ppm",45000}, {"tail_lane_service_ns_per_s",750000000},
         {"tail_lane_request_ns",22222222},
         {"lane_lost_ns",100000000}, {"effect_requests_per_s",64},
@@ -57,13 +57,21 @@ int main() {
     const auto rec = sv::read_live_policy_record(cache, store_key);
     assert(!sv::read_live_policy_record(cache, key));
     assert(rec && sv::live_policy_record_complete(*rec));
+    // A previous-schema absolute share-change measurement must not be
+    // silently imported or accepted as a future policy input.
+    auto obsolete = row;
+    obsolete["measurements"]["tail_share_noise_ppm"] = 224359;
+    log_line(log,obsolete);
+    assert(refused(log,dir/"obsolete-tail-noise.toml",key,
+                   "flashnext-4gpu","balanced",store_key));
+    log_line(log,row);
     assert(rec->measurements.at("heat_watermarked") == 0);
     const auto d = sv::derive_live_policy(*rec, sv::Calibration::standard(cache),
                                           {"", "flashnext-4gpu", "balanced"},
                                           2500000, {1000000000,1000000000});
     assert(d.policy.at("cadence_ns") == 3220000000ull);
-    assert(d.policy.at("max_moves") == 64);
-    assert(d.policy.at("min_residency_ns") == 32592592593ull);
+    assert(d.policy.at("max_moves") == 174);
+    assert(d.policy.at("min_residency_ns") == 83555555556ull);
     assert(d.policy.at("accept_unwatermarked_heat") == true);
     row["measurements"]["heat_watermarked"] = 1;
     log_line(log,row);

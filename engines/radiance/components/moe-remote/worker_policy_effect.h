@@ -99,7 +99,10 @@ class EffectGate {
         return true;
     }
     static double rate(const ServiceTotals& t) {
-        return t.rows && t.time_ns ? double(t.time_ns)/double(t.rows) : 0;
+        // The measured quiet sigma and predicted committed effect are ns per
+        // sampled request, NOT ns per routed row. Comparing per-row rates
+        // would manufacture regressions when the request's row mix changes.
+        return t.samples && t.time_ns ? double(t.time_ns)/double(t.samples) : 0;
     }
 public:
     explicit EffectGate(EffectConfig c):cfg_(c){}

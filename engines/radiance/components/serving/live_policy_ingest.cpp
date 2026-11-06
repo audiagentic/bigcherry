@@ -23,7 +23,7 @@ const std::set<std::string> kMeasurements = {
     "txn_p50_ns", "txn_p95_ns", "copy_bytes_per_s", "heat_gap_max_ns", "heat_watermarked",
     "hot_set_k", "marginal_error_ppm", "marginal_observations",
     "drift_half_life_observations", "observation_rate_per_s",
-    "tail_share_noise_ppm", "tail_share_gain_ppm", "tail_lane_service_ns_per_s",
+    "tail_share_gain_ppm", "tail_lane_service_ns_per_s",
     "tail_lane_request_ns", "lane_lost_ns", "effect_requests_per_s",
     "effect_noise_max_ns", "effect_sample_noise_ns", "abort_quiescent_ns"
 };
