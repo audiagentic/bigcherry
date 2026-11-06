@@ -200,6 +200,11 @@ class EngineAdapter(ABC):
         """Helper processes for one arm cell, in start order. ``arm`` carries ``name``, ``model`` and ``settings``;
         ``env`` is the arm complete server environment."""
 
+    def manifest_port(self, manifest: Path) -> int:
+        """The port the engine will listen on when started from this serving manifest. An engine without a manifest
+        start refuses."""
+        raise ValueError(f"{type(self).__name__} has no manifest start")
+
     @abstractmethod
     def quality_command(
         self, kind: str, arm: dict[str, Any], env: dict[str, str], run_dir: Path, binary: Path, model: Path,

@@ -34,8 +34,18 @@ class AdapterLookupTests(unittest.TestCase):
 
 def inventory():
     """A host with two RDNA3 cards (0, 1), the engine card (2) and an RDNA2 card (3); only `devices` is read."""
-    return SimpleNamespace(devices=(Device(0, "gfx1100", "a", 24560), Device(1, "gfx1100", "a", 24560),
-                                    Device(2, "gfx1201", "b", 32624), Device(3, "gfx1030", "c", 16368)))
+    return SimpleNamespace(devices=(Device(0, "gfx1100", "a", 24560, "0000:03:00.0"), Device(1, "gfx1100", "a", 24560, "0000:06:00.0"),
+                                    Device(2, "gfx1201", "b", 32624, "0000:0a:00.0"), Device(3, "gfx1030", "c", 16368, "0000:0d:00.0")))
+
+
+def write_manifest(directory, helpers=("0000:03:00.0", "0000:06:00.0"), port=18401, shm="/r3-moe-helper"):
+    spec = {"processes": {"engine": {"server": {"port": port}},
+                          "helpers": [{"role": f"helper{i}", "gpu": gpu} for i, gpu in enumerate(helpers)]}}
+    if helpers:
+        spec["handoff"] = {"transport": {"shm": shm}}
+    path = Path(directory) / "manifest.json"
+    path.write_text(json.dumps({"apiVersion": "bigcherry/v1", "kind": "ServingManifest", "spec": spec}), encoding="utf-8")
+    return path
 
 
 class RadianceSidecarSpecTests(unittest.TestCase):
@@ -43,94 +53,64 @@ class RadianceSidecarSpecTests(unittest.TestCase):
         host = patch("bigcherry.engine_adapters.radiance._host", inventory)
         host.start()
         self.addCleanup(host.stop)
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.tmp = Path(tmp.name)
 
-    def arm(self):
-        return {"name": "helper-on", "model": Path("/models/fn.rad"), "settings": {}}
+    def arm(self, manifest=None):
+        return {"name": "helper-on", "model": Path("/models/fn.rad"), "settings": {}, "manifest": manifest}
 
-    def test_no_helper_switch_means_no_sidecars(self):
+    def test_no_manifest_means_no_sidecars(self):
         self.assertEqual(adapter("radiance").sidecars(self.arm(), {"HIP_VISIBLE_DEVICES": "2"}, Path("run"), Path("/b/bin/radiance")), [])
 
-    @staticmethod
-    def with_manifest(**kwargs):
-        return {"BC_SERVING_MANIFEST": "/run/manifest.json", **kwargs}
+    def test_engine_only_manifest_has_no_sidecars(self):
+        manifest = write_manifest(self.tmp, helpers=())
+        self.assertEqual(adapter("radiance").sidecars(self.arm(manifest), {}, Path("run"), Path("/b/bin/radiance")), [])
 
-    def test_one_spec_per_helper_device_in_order(self):
-        env = self.with_manifest(
-            HIP_VISIBLE_DEVICES="2", ROCR_VISIBLE_DEVICES="2",
-            R3_MOE_WORKER="1", R3_MOE_WORKER_DEVICES="0 1",
-            R3_MOE_WORKER_MIB="22528", R3_MOE_WORKER_ENGINE_RANKS="1",
-            PATH="/bin",
-        )
+    def test_the_manifest_names_the_port(self):
+        self.assertEqual(adapter("radiance").manifest_port(write_manifest(self.tmp, port=18407)), 18407)
+        with self.assertRaises(ValueError):
+            adapter("llamacpp").manifest_port(write_manifest(self.tmp))
+
+    def test_one_spec_per_manifest_helper_in_order(self):
+        manifest = write_manifest(self.tmp)
+        env = {"HIP_VISIBLE_DEVICES": "2", "ROCR_VISIBLE_DEVICES": "2", "R3_STRAY": "1", "RADIANCE_HOME": "/x", "PATH": "/bin"}
         run_dir = Path("run/cell")
-        specs = adapter("radiance").sidecars(self.arm(), env, run_dir, Path("/b/bin/radiance"))
+        specs = adapter("radiance").sidecars(self.arm(manifest), env, run_dir, Path("/b/bin/radiance"))
         self.assertEqual([s.name for s in specs], ["helper0", "helper1"])
         home = Path("/b/bin/radiance").parent.parent / "radiance_home"
         for index, (spec, device) in enumerate(zip(specs, ("0", "1"))):
-            self.assertEqual(
-                spec.argv,
-                (str(home / "helpers" / "r3_moe_worker"),
-                 "--manifest", "/run/manifest.json", "--role", f"helper{index}"),
-            )
+            self.assertEqual(spec.argv, (str(home / "helpers" / "r3_moe_worker"), "--manifest", str(manifest), "--role", f"helper{index}"))
             self.assertEqual(spec.env["HIP_VISIBLE_DEVICES"], "0")
             self.assertEqual(spec.env["ROCR_VISIBLE_DEVICES"], device)
             self.assertEqual(spec.env["PATH"], "/bin")
-            self.assertNotIn("BC_SERVING_MANIFEST", spec.env)
             self.assertNotIn("RADIANCE_HOME", spec.env)
             self.assertFalse(any(key.startswith("R3_") for key in spec.env))
             self.assertEqual(spec.log_path, run_dir / f"helper{index}.log")
             self.assertEqual(spec.pre_start_cleanup, (Path("/dev/shm/r3-moe-helper"),))
-            self.assertRegex("r3_moe_worker: waiting for engine runtime expert maps\n",
-                             spec.ready_pattern.replace("^", "(?m)^"))
+            self.assertRegex("r3_moe_worker: waiting for engine runtime expert maps\n", spec.ready_pattern.replace("^", "(?m)^"))
         self.assertEqual(env["HIP_VISIBLE_DEVICES"], "2")
 
-    def test_manifest_required_when_helpers_enabled(self):
-        with self.assertRaisesRegex(ValueError, "BC_SERVING_MANIFEST is required"):
-            adapter("radiance").sidecars(
-                self.arm(), {"R3_MOE_WORKER": "1", "R3_MOE_WORKER_DEVICES": "0"},
-                Path("r"), Path("/b/bin/radiance"))
+    def test_shm_cleanup_follows_the_manifest(self):
+        manifest = write_manifest(self.tmp, helpers=("0000:03:00.0",), shm="/other")
+        spec = adapter("radiance").sidecars(self.arm(manifest), {}, Path("r"), Path("/b/bin/radiance"))[0]
+        self.assertEqual(spec.pre_start_cleanup, (Path("/dev/shm/other"),))
 
-    def test_custom_shm_cleanup_and_bad_devices(self):
+    def test_helper_card_order_comes_from_the_manifest(self):
+        manifest = write_manifest(self.tmp, helpers=("0000:0d:00.0", "0000:03:00.0"))
+        specs = adapter("radiance").sidecars(self.arm(manifest), {}, Path("r"), Path("/b/bin/radiance"))
+        self.assertEqual([s.env["ROCR_VISIBLE_DEVICES"] for s in specs], ["3", "0"])
+
+    def test_a_card_outside_the_inventory_and_a_bad_manifest_are_refused(self):
         rad = adapter("radiance")
-        env = self.with_manifest(R3_MOE_WORKER="1", R3_MOE_WORKER_DEVICES="0",
-                                 R3_MOE_WORKER_SHM="/other")
-        self.assertEqual(rad.sidecars(self.arm(), env, Path("r"), Path("/b/bin/radiance"))[0].pre_start_cleanup,
-                         (Path("/dev/shm/other"),))
-        for devices in ("", "0 0", "x", "9"):
-            with self.subTest(devices=devices), self.assertRaises(ValueError):
-                rad.sidecars(self.arm(), self.with_manifest(
-                    R3_MOE_WORKER="1", R3_MOE_WORKER_DEVICES=devices), Path("r"),
-                    Path("/b/bin/radiance"))
-
-    def test_card_inventory_decides_helper_visibility_only(self):
-        specs = adapter("radiance").sidecars(
-            self.arm(), self.with_manifest(R3_MOE_WORKER="1", R3_MOE_WORKER_DEVICES="0 3"),
-            Path("r"), Path("/b/bin/radiance"))
-        self.assertEqual([s.env["ROCR_VISIBLE_DEVICES"] for s in specs], ["0", "3"])
-        self.assertEqual([s.argv[-1] for s in specs], ["helper0", "helper1"])
-        for spec in specs:
-            self.assertFalse(any(key.startswith("R3_") for key in spec.env))
-
-    def test_named_layout_fixes_helper_order(self):
-        specs = adapter("radiance").sidecars(self.arm(), self.with_manifest(
-            R3_MOE_WORKER="1", R3_MOE_WORKER_LAYOUT="flashnext-2xtx-rdna2-tail"),
-            Path("r"), Path("/b/bin/radiance"))
-        self.assertEqual([s.env["ROCR_VISIBLE_DEVICES"] for s in specs], ["0", "1", "3"])
-        for index, spec in enumerate(specs):
-            self.assertEqual(spec.argv[-1], f"helper{index}")
-            self.assertFalse(any(key.startswith("R3_") for key in spec.env))
-        for env in (
-            self.with_manifest(R3_MOE_WORKER="1", R3_MOE_WORKER_LAYOUT="flashnext-2xtx",
-                               R3_MOE_WORKER_DEVICES="0 1"),
-            self.with_manifest(R3_MOE_WORKER="1", R3_MOE_WORKER_LAYOUT="no-such-layout"),
-        ):
-            with self.subTest(env=env), self.assertRaises(ValueError):
-                adapter("radiance").sidecars(self.arm(), env, Path("r"), Path("/b/bin/radiance"))
-
-    def test_explicit_devices_are_held_to_the_card_roles_and_protocol_bound(self):
-        with self.assertRaisesRegex(ValueError, "exceed the protocol"):
-            adapter("radiance").sidecars(self.arm(), self.with_manifest(
-                R3_MOE_WORKER="1", R3_MOE_WORKER_DEVICES="0 1 2 3 4"),
-                Path("r"), Path("/b/bin/radiance"))
+        with self.assertRaisesRegex(ValueError, "not in the host inventory"):
+            rad.sidecars(self.arm(write_manifest(self.tmp, helpers=("0000:ff:00.0",))), {}, Path("r"), Path("/b/bin/radiance"))
+        bad = self.tmp / "bad.json"
+        bad.write_text("{}", encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "lacks"):
+            rad.sidecars(self.arm(bad), {}, Path("r"), Path("/b/bin/radiance"))
+        with self.assertRaisesRegex(ValueError, "cannot read"):
+            rad.sidecars(self.arm(self.tmp / "none.json"), {}, Path("r"), Path("/b/bin/radiance"))
 
 
 FAKE = textwrap.dedent('''
@@ -292,7 +272,7 @@ class ArmCaptureSidecarTests(unittest.TestCase):
             "bigcherry.tuning.server_runner.ServerRunner", Server), patch(
             "bigcherry.campaign.bench_runner.run_bench_runner_server_bench", return_value=metrics):
             result = run_server_arm_capture(
-                engine="radiance", health_timeout_s=180, binary=Path("/b/bin/radiance"), model=Path("m.rad"), extra_args=(),
+                engine="radiance", health_timeout_s=180, binary=Path("/b/bin/radiance"), model=Path("m.rad"), extra_args=(), manifest=None,
                 output=Path(tmp), pair=0, side="on", position=0, env={},
                 settings={"R3_MOE_WORKER": "1"}, bench_configs="tg512", runner_root=Path("r"),
                 required_metrics=("tg512_tps",), execution_evidence="observe",

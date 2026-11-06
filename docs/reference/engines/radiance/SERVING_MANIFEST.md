@@ -127,6 +127,20 @@ A manifest that fails the strict reader is refused with a stable error code and 
 start canary, **97** for plan measurement/storage/setup failure, **98** for a held launch lock or an already running
 server.
 
+## Campaign arms
+
+A campaign arm that serves from a manifest names it: `"manifest": "<path>"` on the arm of an `ab-benchmark` server
+configuration (environment variables are expanded). The harness starts the engine as `radiance --manifest M --role engine`
+(`[serve] manifest-args` in `engines/radiance/engine.toml`), takes the port to health-check from `spec.processes.engine.server.port`,
+and starts one `r3_moe_worker --manifest M --role helperN` per `spec.processes.helpers` entry, each seeing the host card whose
+`locator` equals the helper's `gpu`. Such an arm takes no `server_args` (they belong in the manifest) and needs
+`execution_evidence: "observe"` (a manifest start has no attestation preflight). The manifest must be measured: write it with the
+launcher's flow (`lib/plan-check.sh`: a measuring start, then `bc-serve --write-manifest ... --measured-plan`) or from the plan cache.
+The `R3_MOE_WORKER_*` environment settings, `R3_MOE_WORKER_LAYOUT` and `BC_SERVING_MANIFEST` are gone; the 36 job files that used
+them are archived in `experiments/radiance/archive-helper-env-jobs/`. The lab scripts that start a helper by hand
+(`fn-helper.sh`, `w4-replay-hash.sh`, `replay-kernel-time.sh`, `helper-gemm-counters.sh`, `helper-long-rows.sh`) take the
+manifest as an argument.
+
 ## Migration status
 
 | Step | State |
@@ -134,6 +148,6 @@ server.
 | Engine and helpers read a manifest; the engine admits the plan it carries | done (RSC06, RSC08) |
 | `--set` for `tp_wire`, `no_prefix_cache`, `gpu_headroom_mib` | done (RSC11 A1) |
 | Resolver reads `layouts.toml` and `archs.toml`; engine-only and multi-card-engine layouts; kernels derived per architecture; contract amendment 12 | done (RSC11 A2) |
-| Campaign arms get a manifest each; `BC_SERVING_MANIFEST` removed | pending (A3) |
+| Campaign arms name a manifest each (`manifest` on the arm); `BC_SERVING_MANIFEST` and the helper environment settings removed; the 36 helper-environment jobs archived | done in code (RSC11 A3); hardware validation pending |
 | Lab job files and `layouts.toml` side channels moved or retired | pending (B) |
 | The engine refuses direct config flags | pending (C) |

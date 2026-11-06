@@ -1,11 +1,12 @@
 #!/bin/bash
 # Flash-Next helper smoke/perf: R9700 owns cold experts, two XTX ranks serve the model.
-# Usage: MODEL=/path/to/model.rad tools/lab/radiance/fn-helper.sh [out-dir]
+# Usage: MODEL=/path/to/model.rad tools/lab/radiance/fn-helper.sh MANIFEST [out-dir]   (MANIFEST: the canonical bc-serve manifest)
 set -euo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd)
 repo=$(cd "$here/../../.." && pwd)
-out=${1:-/tmp/r3-fn-helper}
+manifest=${1:?usage: fn-helper.sh MANIFEST [out-dir] (the canonical bc-serve manifest)}
+out=${2:-/tmp/r3-fn-helper}
 mkdir -p "$out"
 model=${MODEL:?set MODEL to the Flash-Next .rad container}
 src=${RADIANCE_SRC:-${BC_WORK_ROOT}/engines/radiance}
@@ -13,7 +14,6 @@ rad=${RAD_BIN:-$src/build/bin/radiance}
 home=${RADIANCE_HOME:-$src/build/radiance_home}
 runtime=${RADIANCE_RUNTIME_HOME:-${home%%:*}}
 helper=${R3_MOE_WORKER_BIN:-$runtime/helpers/r3_moe_worker}
-manifest=${BC_SERVING_MANIFEST:?set BC_SERVING_MANIFEST to the canonical bc-serve output}
 recipes=$repo/engines/radiance/recipes.toml
 port=${PORT:-18437}
 

@@ -1,13 +1,13 @@
 #!/bin/bash
 # RAD06: long-run tile split (R3_MOE_WORKER_MOE_LONG_ROWS) - build, replay captured requests with the split off and on,
 # require rel_l2=0 between the two, and compare the grouped GEMM kernel times (gfx1100, rocprofv3 kernel trace).
-# Usage: helper-long-rows.sh <branch> [long_rows=65]
+# Usage: helper-long-rows.sh <branch> <long_rows> MANIFEST_OFF MANIFEST_ON   (the bc-serve manifests of long_rows=0 and of the tuned variant)
 set -u
-BR=${1:-origin/feat/rad06-gemm-counters}; LR=${2:-65}
+BR=${1:?usage: helper-long-rows.sh <branch> <long_rows> MANIFEST_OFF MANIFEST_ON}; LR=${2:?usage: helper-long-rows.sh <branch> <long_rows> MANIFEST_OFF MANIFEST_ON}
 # Each tile variant must be resolved by bc-serve into an independent
 # validated experiment manifest; the helper never mutates settings in-process.
-manifest_off=${BC_SERVING_MANIFEST_OFF:?set BC_SERVING_MANIFEST_OFF for long_rows=0}
-manifest_on=${BC_SERVING_MANIFEST_ON:?set BC_SERVING_MANIFEST_ON for the tuned variant}
+manifest_off=${3:?usage: helper-long-rows.sh <branch> <long_rows> MANIFEST_OFF MANIFEST_ON}
+manifest_on=${4:?usage: helper-long-rows.sh <branch> <long_rows> MANIFEST_OFF MANIFEST_ON}
 W=${BC_WORK_ROOT}
 cd $W/wt-pr8 && git fetch -q origin && git checkout -q --detach $BR && git log --oneline -1
 export BIGCHERRY_ENVIRONMENT=${BC_DEV_ROOT}/projects/bigcherry/workspaces/main/config/environment.local.toml; source "$(dirname "${BASH_SOURCE[0]}")/lab-env.sh"; export PATH=$ROCM_PATH/bin:$PATH

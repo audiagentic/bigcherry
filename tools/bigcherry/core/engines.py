@@ -55,6 +55,8 @@ class ServeSpec:
     env: tuple[tuple[str, str], ...] = ()               # fixed environment for the server process
     env_from_binary: tuple[tuple[str, str], ...] = ()   # variables set to a path relative to the binary's directory
     draft_stats: DraftStats | None = None
+    #: arguments that start the server from a serving manifest alone ({manifest} is the file); empty when the engine has none
+    manifest_args: tuple[str, ...] = ()
 
     @property
     def shutdown_method(self) -> str:
@@ -238,7 +240,7 @@ def _draft_stats(table: object, name: str) -> DraftStats | None:
 def _serve(table: object, name: str) -> ServeSpec:
     if not isinstance(table, dict):
         raise EngineError(f"engine {name!r}: missing [serve] table")
-    known = {"binary", "model-flag", "host-flag", "port-flag", "health", "shutdown", "env", "env-from-binary", "draft-stats"}
+    known = {"binary", "model-flag", "host-flag", "port-flag", "health", "shutdown", "env", "env-from-binary", "draft-stats", "manifest-args"}
     unknown = sorted(set(table) - known)
     if unknown:
         raise EngineError(f"engine {name!r}: unknown serve key(s): {', '.join(unknown)}")
@@ -258,7 +260,18 @@ def _serve(table: object, name: str) -> ServeSpec:
         env=_pairs(table, "env", "serve", name),
         env_from_binary=_pairs(table, "env-from-binary", "serve", name),
         draft_stats=_draft_stats(table.get("draft-stats"), name),
+        manifest_args=_manifest_args(table.get("manifest-args"), name),
     )
+
+
+def _manifest_args(value: object, name: str) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    if not isinstance(value, list) or not value or not all(isinstance(v, str) and v for v in value):
+        raise EngineError(f"engine {name!r}: serve.manifest-args must be a non-empty list of strings")
+    if sum(v.count("{manifest}") for v in value) != 1:
+        raise EngineError(f"engine {name!r}: serve.manifest-args must contain {{manifest}} exactly once")
+    return tuple(value)
 
 
 def _smoke_cpu(table: object, name: str) -> CpuSmokeDecl | None:

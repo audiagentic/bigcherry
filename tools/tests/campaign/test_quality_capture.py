@@ -87,7 +87,7 @@ class RunQualityTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp)
             quality = qc.validate_quality_block({"reference_dir": "ref", "args": [], "thresholds": THRESHOLDS}, names)
-            prepared = {n: {"binary": Path("b/bin/radiance"), "model": Path("m"), "env": {}, "settings": {}} for n in names}
+            prepared = {n: {"binary": Path("b/bin/radiance"), "model": Path("m"), "env": {}, "settings": {}, "manifest": None} for n in names}
             section, cells = qc.run_quality_capture(
                 adapter=FakeAdapter(), quality=quality, prepared=prepared, names=names, output=out, reference_env={})
             persisted = json.loads(json.dumps(section))
@@ -99,7 +99,7 @@ class RunQualityTests(unittest.TestCase):
             names = ["control", "good"]
             quality = qc.validate_quality_block({"reference_dir": str(ref), "args": [], "thresholds": THRESHOLDS,
                                                  "corpus": "c.jsonl", "record": {"args": [], "environment": {}}}, names)
-            prepared = {n: {"binary": Path("b/bin/radiance"), "model": Path("m"), "env": {}, "settings": {}} for n in names}
+            prepared = {n: {"binary": Path("b/bin/radiance"), "model": Path("m"), "env": {}, "settings": {}, "manifest": None} for n in names}
             qc.run_quality_capture(adapter=FakeAdapter(), quality=quality, prepared=prepared, names=names,
                                    output=Path(tmp) / "out", reference_env={})
             self.assertTrue(ref.is_dir())
@@ -159,7 +159,7 @@ class SidecarExitQualityTests(unittest.TestCase):
             output = Path(tmp)
             quality = {"reference_dir": "ref", "control": "control", "gate": "baselines", "args": []}
             prepared = {"control": {
-                "binary": Path("b/bin/radiance"), "model": Path("m"), "env": {}, "settings": {},
+                "binary": Path("b/bin/radiance"), "model": Path("m"), "env": {}, "settings": {}, "manifest": None,
             }}
             def run():
                 return qc.run_quality_capture(

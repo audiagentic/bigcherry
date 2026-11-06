@@ -47,6 +47,7 @@ binary = "bin/radiance"
 model-flag = "--model"
 host-flag = "--host"
 port-flag = "--port"
+manifest-args = ["--manifest", "{manifest}", "--role", "engine"]
 health = "/health"
 shutdown = "sigint"
 

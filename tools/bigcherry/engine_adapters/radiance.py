@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from ..core import environment
-from . import radiance_layout
+from . import radiance_manifest
 from .base import (
     BumpCheck, CompletionApi, CpuSmokeSpec, DeviceAssertion, DriftCheck, EngineAdapter, QualityCommand, SidecarSpec, SourceCheck, SMOKE_SEED,
     build_cpu_smoke,
@@ -15,15 +15,6 @@ from .base import (
 if TYPE_CHECKING:
     from ..core.context import ProjectContext
 
-HELPER_SWITCH = "R3_MOE_WORKER"
-HELPER_DEVICES = "R3_MOE_WORKER_DEVICES"
-#: harness-only: a named layout (engines/radiance/layouts.toml) in place of an explicit device list; it fixes the helper cards, their budgets and placement
-HELPER_LAYOUT = "R3_MOE_WORKER_LAYOUT"
-HELPER_SHM = "R3_MOE_WORKER_SHM"
-# Strict RSC06 helper argument: the launcher/campaign creates a canonical
-# serving manifest, and each helper loads and verifies its own role.
-HELPER_MANIFEST = "BC_SERVING_MANIFEST"
-DEFAULT_SHM = "/r3-moe-helper"
 #: what the retired fn-r9700-engine.sh waited for: the helper is up (helper 0 has created the segment) or waits for the engine
 #: runtime expert maps. ("runtime map owns" is logged only after the engine has connected, so it cannot gate the
 #: start; it is the activation marker, read from the helper logs afterwards.)
@@ -113,63 +104,39 @@ class RadianceAdapter(EngineAdapter):
     def check_arm_environment(self, controls: dict[str, str]) -> None:
         return None
 
-    def sidecars(self, arm: dict[str, Any], env: dict[str, str], run_dir: Path, binary: Path) -> list[SidecarSpec]:
-        if not env.get(HELPER_SWITCH):
-            return []
-        layout, listed = env.get(HELPER_LAYOUT, ""), env.get(HELPER_DEVICES, "")
-        if layout and listed:
-            raise ValueError(f"{arm['name']}: give {HELPER_LAYOUT} or {HELPER_DEVICES}, not both")
-        host = _host()
+    def manifest_port(self, manifest: Path) -> int:
         try:
-            if layout:
-                resolved = radiance_layout.resolve(layout, host)
-                devices = [str(h.index) for h in resolved.helpers]
-                derived = [{**resolved.common_env, **resolved.helper_env(i)} for i in range(len(devices))]
-            else:
-                devices = listed.split()
-                if not devices:
-                    raise ValueError(f"{arm['name']}: {HELPER_SWITCH} is set; {HELPER_DEVICES} must list the helper device indices (or {HELPER_LAYOUT} name a layout)")
-                if len(set(devices)) != len(devices) or not all(d.isdigit() for d in devices):
-                    raise ValueError(f"{arm['name']}: {HELPER_DEVICES} must be distinct device indices, got {devices}")
-                if len(devices) > radiance_layout.max_helpers():
-                    raise ValueError(f"{arm['name']}: {len(devices)} helpers exceed the protocol's {radiance_layout.max_helpers()}")
-                archs, by_index = radiance_layout.load_archs(), {d.index: d for d in host.devices}
-                derived = []
-                for d in devices:
-                    card = by_index.get(int(d))
-                    if card is None or card.arch not in archs:
-                        raise ValueError(f"{arm['name']}: device {d} is "
-                                         f"{'not in the host inventory' if card is None else card.arch + ', which engines/radiance/archs.toml does not describe'}")
-                    if "helper" not in archs[card.arch].roles:
-                        raise ValueError(f"{arm['name']}: device {d} is {card.arch}, which archs.toml does not allow as a helper")
-                    derived.append(radiance_layout.card_env(archs[card.arch]))
-        except radiance_layout.LayoutError as exc:
+            return radiance_manifest.read(manifest).port
+        except radiance_manifest.ManifestError as exc:
+            raise ValueError(str(exc)) from exc
+
+    def sidecars(self, arm: dict[str, Any], env: dict[str, str], run_dir: Path, binary: Path) -> list[SidecarSpec]:
+        manifest_path = arm.get("manifest")
+        if manifest_path is None:
+            return []
+        try:
+            manifest = radiance_manifest.read(Path(manifest_path))
+        except radiance_manifest.ManifestError as exc:
             raise ValueError(f"{arm['name']}: {exc}") from exc
-        home = binary.parent.parent / "radiance_home"
-        helper = home / "helpers" / "r3_moe_worker"
-        manifest = env.get(HELPER_MANIFEST)
-        if not manifest:
-            raise ValueError(f"{arm['name']}: {HELPER_MANIFEST} is required when enabling helpers; "
-                             "generate it with the build's bc-serve")
-        shm = env.get(HELPER_SHM, DEFAULT_SHM)
+        by_locator = {d.locator: d for d in _host().devices if d.locator}
+        devices = []
+        for gpu in manifest.helper_gpus:
+            card = by_locator.get(gpu)
+            if card is None:
+                raise ValueError(f"{arm['name']}: the manifest's helper card {gpu} is not in the host inventory (a device with that locator)")
+            devices.append(str(card.index))
+        helper = binary.parent.parent / "radiance_home" / "helpers" / "r3_moe_worker"
         # The POSIX segment /name lives at /dev/shm/name. Helper 0 creates it; SidecarSet starts in list order and
         # waits for each helper to be ready, so helper 1 attaches to an existing segment.
-        cleanup = (Path("/dev/shm") / shm.lstrip("/"),)
-        # Only process visibility is passed to helpers. The old R3_* tuning
-        # and RADIANCE_HOME variables remain for the not-yet-migrated engine
-        # side but are never forwarded to a helper.
-        base = {k: v for k, v in env.items()
-                if not k.startswith("R3_") and k not in (
-                    "RADIANCE_HOME", HELPER_MANIFEST)}
+        cleanup = (Path("/dev/shm") / manifest.shm.lstrip("/"),)
+        # A helper's whole configuration is the manifest; the environment only says which card it sees.
+        base = {k: v for k, v in env.items() if not k.startswith("R3_") and k != "RADIANCE_HOME"}
         specs = []
         for index, device in enumerate(devices):
-            helper_env = dict(base)
-            helper_env.update({
-                "ROCR_VISIBLE_DEVICES": device, "HIP_VISIBLE_DEVICES": "0",
-            })
+            helper_env = {**base, "ROCR_VISIBLE_DEVICES": device, "HIP_VISIBLE_DEVICES": "0"}
             specs.append(SidecarSpec(
                 name=f"helper{index}",
-                argv=(str(helper), "--manifest", manifest, "--role", f"helper{index}"),
+                argv=(str(helper), "--manifest", str(manifest_path), "--role", f"helper{index}"),
                 env=helper_env, ready_pattern=READY_PATTERN,
                 ready_timeout_s=READY_TIMEOUT_S,
                 log_path=run_dir / f"helper{index}.log", stop_timeout_s=STOP_TIMEOUT_S,

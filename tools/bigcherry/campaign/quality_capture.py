@@ -178,7 +178,7 @@ def run_quality_capture(
     results: dict[str, KldResult] = {}
     for name in names:
         arm = prepared[name]
-        arm_dict = {"name": name, "model": arm["model"], "settings": dict(arm["settings"])}
+        arm_dict = {"name": name, "model": arm["model"], "settings": dict(arm["settings"]), "manifest": arm["manifest"]}
         entry: dict[str, Any] = {"settings": dict(arm["settings"])}
         section["arms"][name] = entry
         command = adapter.quality_command("score", arm_dict, arm["env"], qdir, arm["binary"], arm["model"], quality)
