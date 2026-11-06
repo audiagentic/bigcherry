@@ -155,7 +155,7 @@ The helper process no longer reads `R3_MOE_POLICY_*`: contract amendment 10 make
 
 ## How a layout gets calibrated (RHP16 step 4)
 
-The production start does **not** auto-enable the live policy for an uncalibrated layout: in locked v1 the policy is absent, so there is no policy thread to measure anything. Calibrate on an **explicit lab experiment** first. Prepare a complete v1 live-policy JSON object (`--live-policy`), an empty experiment JSON object (`--experiment` containing `{}`, lab profile with no plan-affecting overrides), and a nonempty UTF-8 workload file with one representative prompt per line. The empty experiment ensures that the cache key for the lab run equals the subsequent production run, despite the lab profile. The lab policy has all required fields, including `enabled: true`, and can restrict proposals to observe rather than commit. The lab operator is responsible for choosing which experimental moves are allowed; the calibration record does not invent a production move budget.
+The production start does **not** auto-enable the live policy for an uncalibrated layout: in locked v1 the policy is absent, so there is no policy thread to measure anything. Calibrate with the launcher's `--calibrate` lab run: `--live-policy POLICY.json` (a non-empty v1 live-policy object; no `enabled` member, presence is activation) and `--calibration-prompts FILE` (one representative prompt per line), and no `--experiment`. The launcher passes `bc-serve --calibration-run`, which writes a lab-profile manifest with the explicit policy and no `spec.experiment` (v1 refuses an empty experiment), so the measured plan, and therefore the plan-cache key, is the production one. `calibration-ingest` accepts only that shape: lab profile, explicit live policy, no experiment.
 
 ```sh
 bash tools/lab/radiance/launch-flashnext-best.sh start   --layout flashnext-4gpu   --experiment /path/to/lab-experiment.json   --live-policy /path/to/explicit-lab-policy.json   --calibrate --calibration-prompts /path/to/workload-prompts.txt
@@ -172,3 +172,16 @@ bc-serve calibration-ingest --from-log /path/to/helper0.log --calibration /path/
 ```
 
 For manual ingestion, pass the **same** site, plan-extra, and all --set arguments used by the lab launch; the launcher supplies these automatically. The helper record bears the typed v1 key, and the stored TOML record bears the validated RSC03 plan-store key.
+
+## First hardware calibration, 2026-11-06 (rhp16-calib attempt 6): ingest works, the record is incomplete
+
+Run `/work/bigcherry/runs/rhp16-calib` (Flash-Next, flashnext-4gpu, build `45af79e5`, `--calibrate --record-period 1`, 40 documentation prompts of about 6K tokens, the policy-live-9 policy). The helper converged and emitted `RHP16_CALIBRATION_JSON`; `calibration-ingest` recorded it in `$BC_WORK_ROOT/live-policy-calibration.toml` (plan key `634585fb...`). Attempt 5 had been refused by ingest, which still required the old empty-experiment manifest; fixed on this PR with a card-free test that ingests against a real `--calibration-run` manifest and refuses the production one.
+
+Measured: `heat_gap_max_ns` 5,001,931,591 (the 5 s cadence, not the 1 s record period), `hot_set_k` 5,931, `marginal_error_ppm` 22,678, `marginal_observations` 121,478,390, `observation_rate_per_s` 1,560,435. Absent, 15 of 20, so production derives no policy from this record (`live_policy_manifest.cpp`: incomplete record, no policy) and the planned on/off A/B was stopped before its first arm, because both arms would have served without a policy.
+
+Two causes, which are the step-5 work:
+1. **The calibration workload must shift heat.** One kind of prompt gives a stable hot set: the policy proposed nothing (`proposed=0`), so no transaction closed (`txn_p50_ns`, `txn_p95_ns`, `copy_bytes_per_s` and `abort_quiescent_ns` absent) and the drift track never crossed half overlap (`drift_half_life_observations` absent). policy-live-9 committed moves because its workload shifted (filler then documentation). The calibration prompts must contain the shift in both orders.
+2. **Measurement hooks the helper does not have:** effect gate quantities in nanoseconds and counts (`effect_noise_floor_ns`, `effect_noise_quantile_ns`, `effect_window_samples`, `effect_quiet_windows`, `effect_requests_per_s`, `noise_false_revert_rate_ppm`), tail-lane service (`tail_lane_service_ns_per_s`, `tail_share_gain_ppm`, `tail_share_noise_ppm`, `lane_lost_ns`) and the slowest-helper copy rate. Each needs a hook where the helper already observes the event (effect gate windows, the tail lane's served requests, the transaction copy), not a new collector, and a card-free test from a recorded series.
+
+Until both land no layout can be calibrated, and the live policy stays lab-only (`--live-policy`).
+
