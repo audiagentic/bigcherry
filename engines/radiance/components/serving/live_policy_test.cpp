@@ -37,12 +37,10 @@ static std::string fixture(const std::string& key, bool malformed = false) {
            "tail_share_gain_ppm = 45000\n"
            "tail_lane_service_ns_per_s = 750000000\n"
            "lane_lost_ns = 100000000\n"
-           "effect_window_samples = 32\n"
            "effect_requests_per_s = 64\n"
-           "effect_quiet_windows = 3\n"
            "effect_noise_floor_ns = 1000000\n"
-           "effect_noise_quantile_ns = 2500000\n"
-           "noise_false_revert_rate_ppm = 10000\n"
+           "effect_noise_max_ns = 2500000\n"
+           "effect_sample_noise_ns = 1550000\n"
            "abort_quiescent_ns = 1500000000\n" +
            (malformed ? "unexpected_guess = 42\n" : "");
 }
@@ -83,10 +81,23 @@ int main() {
     assert(p.at("min_samples") == 3 && p.at("margin_ppm") == 23000);
     assert(p.at("abort_cooldown_ns") == 1500000000ull);
     assert(p.at("learned_eligibility_ttl_ns") == 5040000000ull);
-    assert(p.at("effect_window_samples") == 32 && p.at("effect_min_quiet_windows") == 3);
+    assert(p.at("effect_window_samples") == 32 && p.at("effect_min_quiet_windows") == 2);
     assert(p.at("half_life_observations_milli") == 59000000000ull);
     assert(p.at("effect_revert_ttl_ns") == 5900000000ull);
     assert(p.at("effect_noise_multiplier_milli") == 2500);
+    // Neither gate setting is copied from the lab policy: changing measured
+    // dispersion changes the derived window and can change the quiet count.
+    auto quieter = *rec;
+    quieter.measurements["effect_sample_noise_ns"] = 500000;
+    const auto q = sv::derive_live_policy(quieter, cal, at, 2500000, {1000000000, 1000000000});
+    assert(q.policy.at("effect_window_samples") == 4);
+    assert(q.policy.at("effect_min_quiet_windows") == 1);
+    auto noisier = *rec;
+    noisier.measurements["effect_sample_noise_ns"] = 3100000;
+    const auto h = sv::derive_live_policy(noisier, cal, at, 2500000, {1000000000, 1000000000});
+    assert(h.policy.at("effect_window_samples") == 128);
+    assert(q.provenance.at("/spec/handoff/placement/live_policy/effect_window_samples").at("origin") == "derived");
+    assert(q.provenance.at("/spec/handoff/placement/live_policy/effect_min_quiet_windows").at("origin") == "derived");
     assert(p.at("effect_gate") == true && p.at("accept_unwatermarked_heat") == false);
     assert(p.at("protected_layers").empty());
     assert(d.provenance.size() == p.size());
@@ -117,6 +128,12 @@ int main() {
 
     write_fixture(fixture(key, true));
     assert(throws_with(file, key, "unknown key"));
+    // Old measured keys must not have a compatibility path.
+    for (const char* obsolete : {"noise_false_revert_rate_ppm", "effect_window_samples",
+                                 "effect_quiet_windows", "effect_noise_quantile_ns"}) {
+        write_fixture(fixture(key) + std::string(obsolete) + " = 1\n");
+        assert(throws_with(file, key, "unknown key"));
+    }
     write_fixture(fixture(key).substr(0, fixture(key).find("copy_bytes_per_s = ")));
     assert(throws_with(file, key, "copy_bytes_per_s"));
     // Two records for one plan key under a single header: refused as a duplicate, never first-one-wins.

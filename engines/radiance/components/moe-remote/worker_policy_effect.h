@@ -91,6 +91,7 @@ class EffectGate {
     double last_ratio_=0, judged_noise_=0;
     EffectSamples quiet_stats_;
     std::array<double,2> last_latency_ns_{};
+    std::array<uint64_t,2> last_window_samples_{};
     std::array<uint64_t,2> first_sample_ns_{},first_sample_count_{};
     static bool subtract(const ServiceTotals& a,const ServiceTotals& b,ServiceTotals* delta) {
         if(a.samples<b.samples || a.rows<b.rows || a.time_ns<b.time_ns)return false;
@@ -123,6 +124,7 @@ public:
                 anchor_[i]=now.lane[i];valid_last_[i]=false;quiet_pairs_[i]=0;
                 quiet_deviations_[i].clear();last_quiet_ns_[i]=0;
                 quiet_stats_=EffectSamples{};first_sample_ns_={0,0};first_sample_count_={0,0};
+                last_window_samples_={0,0};
                 continue; // counter reset: recalibrate from scratch
             }
             if(d.samples<cfg_.window_samples)continue;
@@ -140,12 +142,17 @@ public:
                 quiet_stats_.sampled_requests_per_s=std::max(quiet_stats_.sampled_requests_per_s,rate);
             }
             const double latency=double(d.time_ns)/double(d.samples);
-            if (valid_last_[i]) {
-                quiet_stats_.quiet_delta_ns.add(std::abs(latency-last_latency_ns_[i]));
-                quiet_stats_.window_samples.add(double(d.samples));
+            if (valid_last_[i] && last_window_samples_[i]) {
+                const double delta = latency-last_latency_ns_[i];
+                quiet_stats_.quiet_delta_ns.add(std::abs(delta));
+                // Var(mean_current - mean_previous) = sigma^2 * (1/n_current + 1/n_previous).
+                const double scale = std::sqrt(1.0/double(d.samples) +
+                                               1.0/double(last_window_samples_[i]));
+                quiet_stats_.normalized_noise_ns.add(delta/scale);
                 ++quiet_stats_.quiet_comparisons;
             }
             last_latency_ns_[i]=latency;
+            last_window_samples_[i]=d.samples;
             if(valid_last_[i]) {
                 const double fractional=std::abs(next/last_rate_[i]-1.0);
                 if(std::isfinite(fractional)) {

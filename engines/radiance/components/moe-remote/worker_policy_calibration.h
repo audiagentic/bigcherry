@@ -17,15 +17,20 @@ inline bool calibration_settled(const Measured& m) {
     // caused a committed move. Quiet-window statistics must converge separately.
     return m.drift_capacity && m.drift_intervals == m.drift_capacity &&
            m.delta_gap_ns.total() >= m.drift_intervals - 1 &&
-           m.tail.noise_ppm.max() > 0 &&
-           m.drift_half_life_observations && m.transaction_ns.count() &&
-           m.tail.gain_ppm.count() && m.tail.noise_ppm.count() &&
-           m.slowest_helper_copy_bps.count() && m.tail_lane_service_ns_per_s.count() &&
+           m.delta_gap_ns.max() > 0 &&
+           m.hot_set_k && std::isfinite(m.marginal_error) && m.marginal_error > 0 &&
+           m.marginal_observations && std::isfinite(m.observation_rate_per_s) &&
+           m.observation_rate_per_s > 0 &&
+           m.drift_half_life_observations && m.transaction_ns.quantile(0.5) > 0 &&
+           m.tail.noise_ppm.max() > 0 && m.tail.gain_ppm.quantile(0.5) > 0 &&
+           m.slowest_helper_copy_bps.quantile(0.5) > 0 &&
+           m.tail_lane_service_ns_per_s.quantile(0.5) > 0 &&
            m.lane_lost_ns.count() &&
            m.effect_required_quiet_windows &&
            m.effect.quiet_comparisons >= m.effect_required_quiet_windows &&
-           m.effect.window_samples.count() &&
-           m.effect.quiet_delta_ns.max() > 0 &&
+           m.effect.normalized_noise_ns.count() >= 2 &&
+           m.effect.sample_noise_ns() > 0 &&
+           m.effect.quiet_delta_ns.quantile(0.5) > 0 &&
            m.effect.sampled_requests_per_s > 0;
 }
 inline nlohmann::json calibration_record(const Measured& m,
@@ -67,20 +72,16 @@ inline nlohmann::json calibration_record(const Measured& m,
         sample("lane_lost_ns", m.lane_lost_ns.quantile(0.95),
                "invalid measured quiesce-to-reopen interval", true);
     else no_hook("lane_lost_ns", "no verified tail-helper quiesce-to-reopen interval");
-    // These come from observed completed quiet windows, never the configured
-    // window_samples or min_quiet_windows targets.
-    sample("effect_window_samples", m.effect.window_samples.quantile(0.5),
-           "no observed full quiet-window sample series");
     sample("effect_requests_per_s", m.effect.sampled_requests_per_s,
            "no positive measured sampled-lane request rate over wall time");
-    sample("effect_quiet_windows", double(m.effect.quiet_comparisons),
-           "no measured consecutive quiet-window comparisons");
     sample("effect_noise_floor_ns", m.effect.quiet_delta_ns.quantile(0.5),
            "no positive observed quiet-window service-time difference in nanoseconds");
-    sample("effect_noise_quantile_ns", m.effect.quiet_delta_ns.max(),
-           "no positive measured quiet-window service-time quantile in nanoseconds");
-    no_hook("noise_false_revert_rate_ppm",
-            "no independently labelled false-revert outcomes; configured noise objective is not a measurement");
+    // No false-revert objective is available to the helper: this is the actual
+    // observed maximum, not a mislabeled objective-specific quantile.
+    sample("effect_noise_max_ns", m.effect.quiet_delta_ns.max(),
+           "no positive observed maximum quiet-window service-time difference");
+    sample("effect_sample_noise_ns", m.effect.sample_noise_ns(),
+           "no variable signed quiet-window deltas for per-request dispersion");
     sample("abort_quiescent_ns", m.abort_ns.quantile(0.95), "none observed");
     return Json{{"plan_cache_key", identity.plan_cache_key},
                 {"layout", identity.layout}, {"objective", identity.objective},

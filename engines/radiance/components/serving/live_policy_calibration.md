@@ -1,76 +1,95 @@
-# RHP16 per-plan live-policy calibration (step 3: read only)
+# RHP16 per-plan live-policy calibration
 
-The optional TOML supplied to bc-serve --calibration FILE supports normal resource
-[[entry]] parameters plus [[live_policy_record]]. The file requires
-schema_version = 1. Each live record is keyed by its 64-character lowercase
-plan_cache_key (sha256), with required layout, objective, seeded (measurement
-date) and evidence (source run). A missing key means uncalibrated; a malformed
-record or duplicate key fails closed, even if it does not match this plan.
-Step 4 will write these records after a helper settle period.
+The optional TOML supplied to `bc-serve --calibration FILE` supports normal
+resource `[[entry]]` parameters and `[[live_policy_record]]` with
+`schema_version = 1`. Each live record is identified by a lowercase 64-character
+SHA-256 plan-cache key plus required layout, objective, seeded date and evidence
+description. Unknown fields, duplicate keys and malformed or unsupported old
+records fail closed; a missing key means uncalibrated.
 
-Every measurement is an integer. Except lane_lost_ns (which may be zero), all
-are strictly positive. Unknown fields are refused.
+All measurements are integers. Only `lane_lost_ns` can be zero. An unobserved
+quantity must have an explicit `absent = { quantity = "reason" }` entry;
+partial records are preserved but cannot derive a production live policy.
 
-| Required record field | Meaning and units |
+| Required measured field | Meaning and units |
 |---|---|
-| txn_p50_ns, txn_p95_ns | Closed transaction wall time, ns |
-| copy_bytes_per_s | Slowest helper's achieved transfer bytes per wall second, including the epoch protocol |
-| heat_gap_max_ns | Largest gap between consumed heat deltas |
-| hot_set_k | Tail capacity divided by the device expert stride, experts |
-| marginal_error_ppm, marginal_observations | Measured marginal-expert sampling error and observations |
-| drift_half_life_observations | Half-life of top-K overlap from non-decayed interval counts |
-| observation_rate_per_s | Heat observations per second |
-| tail_share_noise_ppm | Largest no-move relative tail-share change |
-| tail_share_gain_ppm | Predicted relative change from the proposed placement |
-| tail_lane_service_ns_per_s | Measured tail lane service nanoseconds per wall second |
-| lane_lost_ns | Lost service time during a move (can be 0) |
-| effect_window_samples, effect_requests_per_s | Variance-convergence window count and observed lane request rate |
-| effect_quiet_windows | Quiet windows to confidence convergence |
-| effect_noise_floor_ns, effect_noise_quantile_ns | Quiet-window noise and empirical quantile |
-| noise_false_revert_rate_ppm | Measured quantile's false-revert rate |
-| abort_quiescent_ns | Optional measured abort-to-quiescent p95, ns |
+| txn_p50_ns, txn_p95_ns | Committed transaction wall time, ns |
+| copy_bytes_per_s | Slowest receiver helper's observed transfer rate |
+| heat_gap_max_ns | Maximum consumed heat-delta gap |
+| hot_set_k | Tail capacity / expert stride |
+| marginal_error_ppm, marginal_observations | Marginal expert sampling error, observed requests |
+| drift_half_life_observations | Measured top-K overlap half-life |
+| observation_rate_per_s | Observations per second |
+| tail_share_noise_ppm | Largest relative no-move tail-share change |
+| tail_share_gain_ppm | Positive predicted tail-share reduction from a committed plan |
+| tail_lane_service_ns_per_s | Sampled tail service per wall second |
+| lane_lost_ns | Observed quiesce-to-reopen downtime (zero permitted) |
+| effect_requests_per_s | Observed sampled lane requests per wall second |
+| effect_noise_floor_ns | Median absolute quiet-window service-time difference per request |
+| effect_noise_max_ns | Maximum absolute quiet-window difference; **not** a statistical quantile |
+| effect_sample_noise_ns | Per-request service-time dispersion σ from signed quiet-window deltas |
+| abort_quiescent_ns | Optional abort-to-quiescent p95, ns |
 
-The seeded calibration entries calibration.live_policy.transaction_effect_windows
-and calibration.live_policy.false_revert_rate_ppm are explicit objectives with
-written reasons, not hidden time/byte/step thresholds. The empirical noise
-quantile must match the requested false-revert rate.
+The helper accumulates consecutive quiet-window means and their actual sample
+counts. For each signed delta of two adjacent means of sizes n_previous and
+n_current, it records `delta / sqrt(1/n_previous + 1/n_current)`. The SD of
+these normalized deltas estimates per-request σ; for equal-size n this is
+`SD(delta) * sqrt(n/2)`. This is actual observed dispersion, not a configured
+gate count. A nonzero median noise floor and at least two variable signed
+comparisons are required for convergence. The helper cannot see the objective
+false-revert rate, so the maximum (renamed from the misleading
+`effect_noise_quantile_ns`) supplies the conservative locked-v1 noise
+multiplier, rather than purporting to be an objective-specific empirical quantile.
 
-## Derivations
+`calibration.live_policy.transaction_effect_windows` (T) and
+`calibration.live_policy.false_revert_rate_ppm` (α in parts per million) are
+**declared objectives**, never helper measurements. The removed record fields
+`effect_window_samples`, `effect_quiet_windows` and
+`noise_false_revert_rate_ppm` are refused, not silently accepted.
 
-Let W = ceil(effect_window_samples * 1e9 / effect_requests_per_s).
+## Derived policy
 
-- cadence_ns = transaction p95 + W.
-- max_moved_bytes = min(smallest helper budget, copy_bytes_per_s * W *
-  declared transaction_effect_windows / 1e9).
-- max_moves = floor(max_moved_bytes / device-layout expert stride).
-- min_residency_ns = (move_bytes / achieved copy bandwidth + lost lane time)
-  / (predicted relative tail gain * measured lane service rate).
-- half_life_observations_milli = 1000 * observed top-K drift half-life;
-  max_heat_age_ns = largest heat update gap.
+With α = false_revert_rate_ppm / 1000000, let z(α) be the two-sided
+Gaussian quantile, computed by inverting `erfc(z/sqrt(2)) = α`, and let F be
+the observed `effect_noise_floor_ns`. The derived effect window is the
+smallest positive integer n such that
+
+`σ * sqrt(2/n) * z(α) <= F`.
+
+For this n the Gaussian noise-only threshold-crossing probability is
+`p = erfc(F / (sqrt(2) * σ * sqrt(2/n)))`. The derived quiet count is the
+smallest positive integer k such that `T * p^k <= α`, treating the T
+transaction-effect opportunities with a union bound and the k consecutive
+noise crossings as independent. This model assumes Gaussian differences and
+independent crossings. Adjacent consecutive comparisons share a window, so
+these independence assumptions require hardware validation; they are **not**
+independently observed false-reversion outcomes.
+
+Let `W = ceil(n * 1e9 / effect_requests_per_s)`.
+
+- cadence_ns = transaction p95 + W; max_moved_bytes = min(slowest helper
+  budget, copy_bytes_per_s * W * T / 1e9).
+- max_moves = floor(max_moved_bytes / expert stride).
+- min_residency_ns = (move bytes / observed copy bandwidth + observed lost
+  lane time) / (predicted tail-share gain * sampled tail service rate).
+- half_life_observations_milli = 1000 * observed drift half-life;
+  max_heat_age_ns = largest heat-delta gap.
 - margin_ppm = max(no-move tail-share noise, marginal sampling error);
-  min_samples = ceil(marginal_observations * (marginal_error / margin)^2).
-- abort_cooldown_ns = measured abort-to-quiescent, if available; otherwise
-  cadence_ns as a labelled conservative settling fallback.
-- effect_window_samples and effect_min_quiet_windows = observed convergence;
-  effect_noise_multiplier_milli = 1000 * empirical noise quantile / noise floor.
-- effect_revert_ttl_ns = observed drift observations / observations per second.
-- learned_eligibility_ttl_ns = one observed heat gap as a mandatory v1
-  approximation; event invalidation is not representable in v1.
+  min_samples = ceil(marginal samples * (marginal error / margin)^2).
+- abort_cooldown_ns = measured abort-to-quiescent, or the labelled cadence
+  fallback when no abort was observed.
+- effect_window_samples = n; effect_min_quiet_windows = k.
+- effect_noise_multiplier_milli = ceil(1000 * effect_noise_max_ns / F),
+  a conservative observed maximum-to-floor envelope.
+- effect_revert_ttl_ns = drift half-life / observation rate;
+  learned_eligibility_ttl_ns = one observed heat gap as a locked-v1
+  approximation (event invalidation needs v2).
 
-The gate is required and unwatermarked heat is refused. Protected layer IDs
-cannot be discovered through the current container ABI; the policy emits an
-empty protected_layers array, while the helper still guards missing weights.
-RCS12 model metadata must supply model-specific protected layers when needed.
+Each emitted policy setting has `origin = derived` provenance. An uncalibrated
+locked-v1 plan omits the policy entirely, since v1 has no observe-only state.
+The policy requires the effect gate, refuses unwatermarked heat, and leaves
+protected_layers empty until model metadata supplies globally protected IDs
+(the helper separately guards missing weights).
 
-The locked v1 manifest has no enabled flag and no observe-only mode. Without
-calibration, the policy object is absent, disabling the policy thread and its
-driver-owned measurement hooks. This cannot satisfy the original observe-only
-request without a v2 contract change. v2 should introduce an explicit
-observe-only state and event-driven learned eligibility; v1 also requires the
-time-based learned TTL and a multiplier even though their replacements are
-event-based and an empirical quantile.
-
-The fixture writer in live_policy_test.cpp uses actual policy-live-9 p50
-1.77 s, p95 2.72 s, copy 0.16 GB/s, gap 5.04 s, marginal error 2.3% and
-hot-set k=5931. The missing effect-gate, noise, drift and lane-service
-readings in that test are explicitly synthetic, not production calibration.
+The synthetic quiet-window, drift and lane-service fixture measurements in
+`live_policy_test.cpp` are test inputs, not production hardware evidence.

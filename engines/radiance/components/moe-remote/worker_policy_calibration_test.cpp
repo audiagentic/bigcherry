@@ -33,8 +33,13 @@ int main() {
     m.slowest_helper_copy_bps.add(1000000.0);
     m.tail_lane_service_ns_per_s.add(200000000.0);
     m.lane_lost_ns.add(100.0);
+    m.hot_set_k = 2;
+    m.marginal_error = 0.025;
+    m.marginal_observations = 40;
+    m.observation_rate_per_s = 10.0;
     m.effect_required_quiet_windows=2;
-    m.effect.window_samples.add(2.0);
+    m.effect.normalized_noise_ns.add(10.0);
+    m.effect.normalized_noise_ns.add(-10.0);
     m.effect.quiet_delta_ns.add(5.0);
     m.effect.quiet_comparisons=2;
     m.effect.sampled_requests_per_s=20.0;
@@ -63,7 +68,13 @@ int main() {
     assert(row.at("measurements").at("tail_lane_service_ns_per_s") == 200000000);
     assert(row.at("measurements").at("lane_lost_ns") == 100);
     assert(row.at("measurements").at("effect_noise_floor_ns") == 5);
-    assert(row.at("absent").at("noise_false_revert_rate_ppm").is_string());
+    assert(row.at("measurements").at("effect_sample_noise_ns") == 10);
+    assert(row.at("measurements").at("effect_noise_max_ns") == 5);
+    for (const char* removed : {"effect_window_samples", "effect_quiet_windows",
+                                "noise_false_revert_rate_ppm", "effect_noise_quantile_ns"}) {
+        assert(!row.at("measurements").contains(removed));
+        assert(!row.at("absent").contains(removed));
+    }
     Measured no_copy=m;
     no_copy.slowest_helper_copy_bps=Series{64};
     const auto absent_copy=calibration_record(no_copy,
@@ -71,5 +82,5 @@ int main() {
     assert(absent_copy.at("absent").at("copy_bytes_per_s").is_string());
     assert(!absent_copy.at("measurements").contains("copy_bytes_per_s"));
     assert(row.at("absent").at("abort_quiescent_ns") == "none observed");
-    assert(row.at("absent").size() + row.at("measurements").size() == 20);
+    assert(row.at("absent").size() + row.at("measurements").size() == 18);
 }

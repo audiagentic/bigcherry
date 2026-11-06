@@ -689,7 +689,7 @@ int main() {
         const auto before=f.owners();
         check(pump_effect(f,d,service),"measured noise permits forward proposal");
         { const auto m=d.measured();
-          check(m.effect.quiet_comparisons>=2 && m.effect.window_samples.count()>=2 &&
+          check(m.effect.quiet_comparisons>=2 && m.effect.normalized_noise_ns.count()>=2 &&
                 m.effect.quiet_delta_ns.max()>0 && m.effect.sampled_requests_per_s>0,
                 "driver captures actual quiet service duration, counts and sampled rate");
         }

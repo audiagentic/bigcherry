@@ -143,17 +143,41 @@ static void test_effect_quiet_series() {
     for(unsigned i=0;i<5;++i) {
         auto& lane=snapshot.lane[1];
         lane.samples+=2;lane.rows+=20;
-        lane.time_ns+=uint64_t((100+i)*20);
+        lane.time_ns+=uint64_t((i%2 ? 110 : 100)*20);
         now+=100;
         gate.quiet(snapshot,now);
     }
     const EffectSamples e=gate.observed();
-    check(e.quiet_comparisons==4 && e.window_samples.quantile(0.5)==2,
-          "actual quiet-window sample counts, not configured numbers");
-    check(e.quiet_delta_ns.count()==4 && e.quiet_delta_ns.max()==10,
+    check(e.quiet_comparisons==4 && e.normalized_noise_ns.count()==4,
+          "signed quiet-window comparisons, not configured counts");
+    check(std::abs(e.sample_noise_ns()-100.0)<1e-9,
+          "known per-request sigma from signed quiet delta * sqrt(n/2)");
+    check(e.quiet_delta_ns.count()==4 && e.quiet_delta_ns.max()==100,
           "effect noise in ns per sampled request, not fractional noise");
     check(std::abs(e.sampled_requests_per_s-20000000.0)<1e-6,
           "sampled request rate from observed samples and wall clock");
+}
+
+
+static void test_effect_variable_windows() {
+    EffectGate gate({2,2,2.0});
+    ServiceSnapshot snapshot{};
+    uint64_t now=1000;
+    gate.quiet(snapshot,now);
+    for (unsigned i=0; i<5; ++i) {
+        auto& lane=snapshot.lane[1];
+        const unsigned n = i%2 ? 8 : 2;
+        lane.samples+=n;
+        lane.rows+=10*n;
+        lane.time_ns+=uint64_t((i%2 ? 110 : 100)*10*n);
+        now+=100;
+        gate.quiet(snapshot,now);
+    }
+    const auto e=gate.observed();
+    check(e.normalized_noise_ns.count()==4,
+          "all variable-sized quiet comparisons retained");
+    check(std::abs(e.sample_noise_ns()-100.0/std::sqrt(0.625))<1e-9,
+          "normalizer uses both actual adjacent n values, not configured n");
 }
 
 int main() {
@@ -166,5 +190,6 @@ int main() {
     test_sampling_error();
     test_tail_series();
     test_effect_quiet_series();
+    test_effect_variable_windows();
     std::puts("r3_policy_measure_test: ok");
 }

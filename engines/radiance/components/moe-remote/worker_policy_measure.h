@@ -25,6 +25,14 @@ public:
     size_t count() const { return values_.size(); }
     uint64_t total() const { return total_; }   // every sample ever added, retained or not
     double max() const { return values_.empty() ? 0.0 : *std::max_element(values_.begin(), values_.end()); }
+    // Population standard deviation of the retained signed observations.
+    double stddev() const {
+        if (values_.size() < 2) return 0.0;
+        const double mean = std::accumulate(values_.begin(), values_.end(), 0.0) / double(values_.size());
+        double sum = 0.0;
+        for (double x : values_) sum += (x - mean) * (x - mean);
+        return std::sqrt(sum / double(values_.size()));
+    }
     // Nearest-rank quantile, q in [0, 1]; 0 when there is no sample.
     double quantile(double q) const {
         if (values_.empty() || !(q >= 0.0) || q > 1.0) return 0.0;
@@ -176,9 +184,13 @@ struct TailSamples {
 // configuration). The rate counts sampled lane requests, i.e. the same
 // observations the effect gate's window consumes.
 struct EffectSamples {
-    Series quiet_delta_ns{256}, window_samples{256};
+    Series quiet_delta_ns{256};
+    // Signed quiet-window mean differences normalized by their standard-error
+    // scale, restoring per-request dispersion: equal n => delta * sqrt(n/2).
+    Series normalized_noise_ns{256};
     uint64_t quiet_comparisons=0;
     double sampled_requests_per_s=0;
+    double sample_noise_ns() const { return normalized_noise_ns.stddev(); }
 };
 
 // Everything the driver measures for the derivations, in one place so the evidence line and the tests read it alike.

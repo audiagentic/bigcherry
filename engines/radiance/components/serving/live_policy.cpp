@@ -2,6 +2,8 @@
 #include "third_party/toml.hpp"
 
 #include <algorithm>
+#include <utility>
+#include <cmath>
 #include <fstream>
 #include <limits>
 #include <set>
@@ -51,6 +53,45 @@ Json provenance(const std::string& description, const Json& inputs) {
     return {{"origin", "derived"}, {"source", description}, {"class", "policy"},
             {"lifecycle", "startup_only"}, {"confidence", "measured"}, {"inputs", inputs}};
 }
+// Two-sided normal-tail quantile from the declared false-revert objective.
+double gaussian_z(double alpha) {
+    const double root2 = std::sqrt(2.0);
+    double low = 0.0, high = 1.0;
+    while (std::erfc(high/root2) > alpha) high *= 2.0;
+    for (unsigned i = 0; i < 128; ++i) {
+        const double mid = low + (high-low)/2.0;
+        if (mid == low || mid == high) break;
+        if (std::erfc(mid/root2) > alpha) low = mid;
+        else high = mid;
+    }
+    return high;
+}
+// Gaussian null model: sd(delta of two n-request means) = sigma*sqrt(2/n).
+// Choose the smallest n satisfying a two-sided noise-crossing objective;
+// across transaction-effect opportunities, require opportunities*p^k <= alpha.
+// Consecutive quiet crossings are modelled as independent, not verified trials.
+std::pair<uint64_t,uint64_t> derive_effect_gate(uint64_t sigma_ns, uint64_t floor_ns,
+                                                uint64_t opportunities, double alpha) {
+    const double z = gaussian_z(alpha);
+    const double sigma = double(sigma_ns), floor = double(floor_ns);
+    const double needed = 2.0 * std::pow(sigma*z/floor, 2.0);
+    if (!std::isfinite(needed) || needed > double(kMaxJsonInteger))
+        bad("effect_window_samples: cannot represent the noise-bounded window");
+    const uint64_t n = std::max<uint64_t>(1, uint64_t(std::ceil(needed)));
+    const double sd_delta = sigma * std::sqrt(2.0/double(n));
+    const double p = std::erfc(floor/(std::sqrt(2.0)*sd_delta));
+    if (!std::isfinite(p) || p >= 1.0)
+        bad("effect_min_quiet_windows: invalid Gaussian noise probability");
+    uint64_t quiet = 1;
+    long double all_quiet_p = p;
+    while (static_cast<long double>(opportunities) * all_quiet_p > alpha) {
+        if (quiet >= kMaxJsonInteger)
+            bad("effect_min_quiet_windows: required quiet count exceeds v1 range");
+        ++quiet;
+        all_quiet_p *= p;
+    }
+    return {n, quiet};
+}
 } // namespace
 
 std::optional<LivePolicyRecord> read_live_policy_record(const std::filesystem::path& cache,
@@ -69,24 +110,19 @@ std::optional<LivePolicyRecord> read_live_policy_record(const std::filesystem::p
         return std::nullopt;
     }
     const std::set<std::string> fields = {
-        "plan_cache_key", "layout", "objective", "seeded", "evidence",
-        "txn_p50_ns", "txn_p95_ns", "copy_bytes_per_s", "heat_gap_max_ns",
-        "hot_set_k", "marginal_error_ppm", "marginal_observations",
-        "drift_half_life_observations", "observation_rate_per_s",
-        "tail_share_noise_ppm", "tail_share_gain_ppm", "tail_lane_service_ns_per_s",
-        "lane_lost_ns", "effect_window_samples", "effect_requests_per_s",
-        "effect_quiet_windows", "effect_noise_floor_ns", "effect_noise_quantile_ns",
-        "noise_false_revert_rate_ppm", "abort_quiescent_ns", "absent"
-
+        "plan_cache_key", "layout", "objective", "seeded",
+        "evidence", "txn_p50_ns", "txn_p95_ns", "copy_bytes_per_s",
+        "heat_gap_max_ns", "hot_set_k", "marginal_error_ppm", "marginal_observations",
+        "drift_half_life_observations", "observation_rate_per_s", "tail_share_noise_ppm", "tail_share_gain_ppm",
+        "tail_lane_service_ns_per_s", "lane_lost_ns", "effect_requests_per_s", "effect_noise_floor_ns",
+        "effect_noise_max_ns", "effect_sample_noise_ns", "abort_quiescent_ns", "absent"
     };
     const std::set<std::string> names = {
         "txn_p50_ns", "txn_p95_ns", "copy_bytes_per_s", "heat_gap_max_ns",
-        "hot_set_k", "marginal_error_ppm", "marginal_observations",
-        "drift_half_life_observations", "observation_rate_per_s",
-        "tail_share_noise_ppm", "tail_share_gain_ppm", "tail_lane_service_ns_per_s",
-        "lane_lost_ns", "effect_window_samples", "effect_requests_per_s",
-        "effect_quiet_windows", "effect_noise_floor_ns", "effect_noise_quantile_ns",
-        "noise_false_revert_rate_ppm"
+        "hot_set_k", "marginal_error_ppm", "marginal_observations", "drift_half_life_observations",
+        "observation_rate_per_s", "tail_share_noise_ppm", "tail_share_gain_ppm", "tail_lane_service_ns_per_s",
+        "lane_lost_ns", "effect_requests_per_s", "effect_noise_floor_ns", "effect_noise_max_ns",
+        "effect_sample_noise_ns"
     };
     std::set<std::string> seen;
     std::optional<LivePolicyRecord> found;
@@ -136,25 +172,26 @@ std::optional<LivePolicyRecord> read_live_policy_record(const std::filesystem::p
             return row.measurements.contains(name) && number(row.measurements, name) >= kMillion;
         };
         if (too_big("tail_share_noise_ppm") || too_big("marginal_error_ppm") ||
-            too_big("tail_share_gain_ppm") || too_big("noise_false_revert_rate_ppm") ||
-            (row.measurements.contains("effect_noise_quantile_ns") &&
+            too_big("tail_share_gain_ppm") ||
+            (row.measurements.contains("effect_noise_max_ns") &&
              row.measurements.contains("effect_noise_floor_ns") &&
-             number(row.measurements, "effect_noise_quantile_ns") <
+             number(row.measurements, "effect_noise_max_ns") <
              number(row.measurements, "effect_noise_floor_ns")))
 
-            bad(where + ": invalid measured fraction or noise quantile");
+            bad(where + ": invalid measured fraction or noise maximum");
         if (row.key == plan_key) found = std::move(row);
     }
     return found;
 }
 
 bool live_policy_record_complete(const LivePolicyRecord& record) {
-    for (const char* name : {"txn_p50_ns", "txn_p95_ns", "copy_bytes_per_s", "heat_gap_max_ns",
-        "hot_set_k", "marginal_error_ppm", "marginal_observations",
-        "drift_half_life_observations", "observation_rate_per_s", "tail_share_noise_ppm",
-        "tail_share_gain_ppm", "tail_lane_service_ns_per_s", "lane_lost_ns",
-        "effect_window_samples", "effect_requests_per_s", "effect_quiet_windows",
-        "effect_noise_floor_ns", "effect_noise_quantile_ns", "noise_false_revert_rate_ppm"})
+    for (const char* name : {
+        "txn_p50_ns", "txn_p95_ns", "copy_bytes_per_s", "heat_gap_max_ns",
+        "hot_set_k", "marginal_error_ppm", "marginal_observations", "drift_half_life_observations",
+        "observation_rate_per_s", "tail_share_noise_ppm", "tail_share_gain_ppm", "tail_lane_service_ns_per_s",
+        "lane_lost_ns", "effect_requests_per_s", "effect_noise_floor_ns", "effect_noise_max_ns",
+        "effect_sample_noise_ns"
+    })
         if (!record.measurements.contains(name)) return false;
     return true; // no abort seen is allowed, with the existing measured-cadence fallback
 }
@@ -168,20 +205,21 @@ DerivedLivePolicy derive_live_policy(const LivePolicyRecord& record, const Calib
         bad("record layout/objective does not match the resolved serving intent");
     const Json& m = record.measurements;
     const auto n = [&](const char* key) { return number(m, key, std::string(key) == "lane_lost_ns"); };
-    for (const char* key : {"txn_p95_ns", "copy_bytes_per_s", "heat_gap_max_ns",
-        "marginal_error_ppm", "marginal_observations", "drift_half_life_observations",
-        "observation_rate_per_s", "tail_share_noise_ppm", "tail_share_gain_ppm",
-        "tail_lane_service_ns_per_s", "lane_lost_ns", "effect_window_samples",
-        "effect_requests_per_s", "effect_quiet_windows", "effect_noise_floor_ns",
-        "effect_noise_quantile_ns", "noise_false_revert_rate_ppm"})
+    for (const char* key : {
+        "txn_p95_ns", "copy_bytes_per_s", "heat_gap_max_ns", "marginal_error_ppm",
+        "marginal_observations", "drift_half_life_observations", "observation_rate_per_s", "tail_share_noise_ppm",
+        "tail_share_gain_ppm", "tail_lane_service_ns_per_s", "lane_lost_ns", "effect_requests_per_s",
+        "effect_noise_floor_ns", "effect_noise_max_ns", "effect_sample_noise_ns"
+    })
         (void)n(key);
     const int64_t windows = calibration.integer("calibration.live_policy.transaction_effect_windows", match);
     const int64_t false_rate = calibration.integer("calibration.live_policy.false_revert_rate_ppm", match);
     if (windows <= 0 || false_rate <= 0 || false_rate >= int64_t(kMillion))
         bad("declared objectives must be positive windows and a false-revert rate in (0,1000000)");
-    if (n("noise_false_revert_rate_ppm") != uint64_t(false_rate))
-        bad("measured noise quantile does not match the declared false-revert objective");
-    const uint64_t window_ns = div_ceil(Wide(n("effect_window_samples")) * kSecond,
+    const auto [effect_samples, effect_quiet] = derive_effect_gate(
+        n("effect_sample_noise_ns"), n("effect_noise_floor_ns"), uint64_t(windows),
+        double(false_rate) / double(kMillion));
+    const uint64_t window_ns = div_ceil(Wide(effect_samples) * kSecond,
                                         n("effect_requests_per_s"), "effect window");
     const uint64_t cadence = div_ceil(Wide(n("txn_p95_ns")) + window_ns, 1, "cadence_ns");
     const uint64_t slow_budget = *std::min_element(budgets.begin(), budgets.end());
@@ -208,7 +246,7 @@ DerivedLivePolicy derive_live_policy(const LivePolicyRecord& record, const Calib
         Wide(n("drift_half_life_observations")) * kSecond, n("observation_rate_per_s"),
         "effect_revert_ttl_ns");
     const uint64_t noise_multiplier = div_ceil(
-        Wide(n("effect_noise_quantile_ns")) * 1000, n("effect_noise_floor_ns"),
+        Wide(n("effect_noise_max_ns")) * 1000, n("effect_noise_floor_ns"),
         "effect_noise_multiplier_milli");
 
     DerivedLivePolicy out{Json::object(), Json::object()};
@@ -235,15 +273,19 @@ DerivedLivePolicy derive_live_policy(const LivePolicyRecord& record, const Calib
                                            "no abort seen: transaction settling cadence (conservative fallback; not abort-calibrated)", layout);
     set("learned_eligibility_ttl_ns", n("heat_gap_max_ns"),
         "v1 mandatory time TTL: one measured heat source gap (event invalidation requires v2)", layout);
-    set("effect_window_samples", n("effect_window_samples"), "measured lane-noise variance convergence", layout);
-    set("effect_min_quiet_windows", n("effect_quiet_windows"), "measured quiet-window confidence convergence", layout);
+    set("effect_window_samples", effect_samples,
+        "smallest n with measured per-request sigma * sqrt(2/n) * Gaussian z(false-revert objective) <= measured noise floor",
+        Json::array({"/spec/calibration", "/spec/plan/engine_memory/cache_key"}));
+    set("effect_min_quiet_windows", effect_quiet,
+        "smallest consecutive quiet count with transaction_effect_windows * Gaussian noise-crossing probability^count <= declared false-revert objective",
+        Json::array({"/spec/calibration", "/spec/plan/engine_memory/cache_key"}));
     set("effect_revert_ttl_ns", drift_ns, "hot-set drift half-life / observation rate", layout);
     set("margin_ppm", margin, "maximum of unchanged-tail noise and marginal sampling error", layout);
     set("half_life_observations_milli", div_ceil(Wide(n("drift_half_life_observations")) * 1000, 1,
                                                   "half_life_observations_milli"),
         "hot-set overlap drift half-life in observations, scaled by 1000", layout);
     set("effect_noise_multiplier_milli", noise_multiplier,
-        "empirical noise quantile at declared false-revert rate / measured noise floor", layout);
+        "conservative observed maximum quiet-window deviation / measured noise floor", layout);
     // No guessed protected layer ids. The helper excludes experts with missing planes itself.
     // The v1 model container exposes no protected-layer list; an explicit guard needs RCS12's model metadata.
     set("protected_layers", Json::array(), "no model-global protected-layer metadata in the container (missing weights guarded by helper)",
