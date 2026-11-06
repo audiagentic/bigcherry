@@ -117,3 +117,80 @@ server-args = [
   "--kv-cache-dtype", "fp8",
   "--num-speculative-tokens", "3",
 ]
+
+# EXPERIMENT ONLY (not for merge): Qwen3.8-27B FP8 (8-bit, block FP8 E4M3) with the DFlash2 drafter on both XTX cards.
+[layout.qwen27b-fp8-2xtx]
+description = "experiment: Qwen3.8-27B FP8 + DFlash2 (depth 7), two RDNA3 engine ranks, wht6"
+model = "radiance/bigcherry/qwen3.8-27b-fp8/qwen3.8-27b-fp8-df2.rad"
+engine = { arch = "gfx1100", count = 2 }
+tp-wire = "wht6"
+server-args = ["--max-model-len", "8192", "--max-num-seqs", "6", "--max-num-batched-tokens", "2048", "--kv-cache-dtype", "fp8", "--num-speculative-tokens", "7"]
+
+# EXPERIMENT ONLY (not for merge): Qwen3.8-27B W8A8 (rotated INT8 trunk, int8 head), no drafter.
+[layout.qwen27b-w8a8-2xtx]
+description = "experiment: Qwen3.8-27B W8A8 fwht128 (INT8), two RDNA3 engine ranks, wht6, no speculation"
+model = "radiance/bigcherry/qwen3.8-27b-w8a8/qwen3.8-27b-w8a8.rad"
+engine = { arch = "gfx1100", count = 2 }
+tp-wire = "wht6"
+server-args = ["--max-model-len", "8192", "--max-num-seqs", "6", "--max-num-batched-tokens", "2048", "--kv-cache-dtype", "fp8", "--num-speculative-tokens", "0"]
+
+# EXPERIMENT ONLY (not for merge): Qwen3.8-27B W8A8 (INT8) + DFlash2, RAD48 prefill tile; context sized to use the KV the 8192 layouts left unusable.
+[layout.qwen27b-w8a8df2-2xtx]
+description = "experiment: Qwen3.8-27B W8A8 + DFlash2 depth 3, two RDNA3 engine ranks, wht6, 8192 x 6"
+model = "radiance/bigcherry/qwen3.8-27b-w8a8/qwen3.8-27b-w8a8-df2.rad"
+engine = { arch = "gfx1100", count = 2 }
+tp-wire = "wht6"
+server-args = ["--max-model-len", "8192", "--max-num-seqs", "6", "--max-num-batched-tokens", "2048", "--kv-cache-dtype", "fp8", "--num-speculative-tokens", "3"]
+
+[layout.qwen27b-w8a8df2-2xtx-long]
+description = "experiment: as qwen27b-w8a8df2-2xtx at 131072 tokens x 2 sequences"
+model = "radiance/bigcherry/qwen3.8-27b-w8a8/qwen3.8-27b-w8a8-df2.rad"
+engine = { arch = "gfx1100", count = 2 }
+tp-wire = "wht6"
+server-args = ["--max-model-len", "131072", "--max-num-seqs", "2", "--max-num-batched-tokens", "2048", "--kv-cache-dtype", "fp8", "--num-speculative-tokens", "3"]
+
+[layout.qwen27b-w8a8df2-2xtx-max]
+description = "experiment: as qwen27b-w8a8df2-2xtx at 262144 tokens x 1 sequence"
+model = "radiance/bigcherry/qwen3.8-27b-w8a8/qwen3.8-27b-w8a8-df2.rad"
+engine = { arch = "gfx1100", count = 2 }
+tp-wire = "wht6"
+server-args = ["--max-model-len", "262144", "--max-num-seqs", "1", "--max-num-batched-tokens", "2048", "--kv-cache-dtype", "fp8", "--num-speculative-tokens", "3"]
+
+[layout.qwen27b-w8a8df2-2xtx-kv]
+description = "experiment: as qwen27b-w8a8df2-2xtx at 262144 tokens x 5 sequences (KV claims what the budget allows)"
+model = "radiance/bigcherry/qwen3.8-27b-w8a8/qwen3.8-27b-w8a8-df2.rad"
+engine = { arch = "gfx1100", count = 2 }
+tp-wire = "wht6"
+server-args = ["--max-model-len", "262144", "--max-num-seqs", "5", "--max-num-batched-tokens", "2048", "--kv-cache-dtype", "fp8", "--num-speculative-tokens", "3"]
+
+# EXPERIMENT ONLY (not for merge): the 6900 XT tail at 4 GiB.
+[layout.flashnext-2xtx-rdna2-tail4g]
+model = "radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad"
+description = "experiment: flashnext-2xtx-rdna2-tail with a 4 GiB tail"
+engine = { arch = "gfx1201" }
+[[layout.flashnext-2xtx-rdna2-tail4g.helper]]
+arch = "gfx1100"
+count = "all"
+budget-mib = 22528
+placement = "head"
+[[layout.flashnext-2xtx-rdna2-tail4g.helper]]
+arch = "gfx1030"
+count = 1
+budget-mib = 4096
+placement = "tail"
+
+# EXPERIMENT ONLY (not for merge): the 6900 XT tail at 8 GiB.
+[layout.flashnext-2xtx-rdna2-tail8g]
+model = "radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad"
+description = "experiment: flashnext-2xtx-rdna2-tail with a 8 GiB tail"
+engine = { arch = "gfx1201" }
+[[layout.flashnext-2xtx-rdna2-tail8g.helper]]
+arch = "gfx1100"
+count = "all"
+budget-mib = 22528
+placement = "head"
+[[layout.flashnext-2xtx-rdna2-tail8g.helper]]
+arch = "gfx1030"
+count = 1
+budget-mib = 8192
+placement = "tail"

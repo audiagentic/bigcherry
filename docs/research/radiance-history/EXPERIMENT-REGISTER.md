@@ -15,4 +15,9 @@ is closed or deleted. The detailed notes are linked; the code lives on the named
 | WSL06-A legacy inventory | WSL06 | Superseded | Work-in-progress path inventory; item completed another way. | branch `feat/wsl06a-legacy-inventory` |
 | Platform release line from explicit change entries (`platform/changes/`) | release | Not adopted, archived | #564 `exclude-paths` fixed the 11552.0.0 platform version with less change; this stricter ownership model may be needed if unrelated changes keep triggering platform releases. | `experiments/release/PLATFORM-change-entries/` |
 
+
+| 27B FP8/W8A8+DFlash2 and RDNA2 4/8 GiB tail layouts | 27B | Archived opt-in layouts | Three configuration-only commits; no measurements of exact variants, stopping reason unknown; no default changed. | `experiments/radiance/27B-fp8-w8a8-layouts/`; `exp/27b-fp8` |
+| gfx1100 MXFP4 row policy | RAD47 | Shipped via #596 | Both branch changes on main (`619590728`); tiled from M=17; +27% at four streams, +37% at six. | `experiments/radiance/RAD47-xtx-rows/`; `exp/rad47-xtx-rows` |
+| Helper serving-manifest original implementation | RSC06 | Superseded by #633; #527 closed | Original contract and helper-config patch replaced by v1 strict manifest reader. | `experiments/radiance/RSC06-helper-manifest/`; `feat/rsc06-helper-manifest` |
+
 Code for every row with a branch is archived as an inert patch under `experiments/radiance/<ITEM>-<name>/` (see `experiments/README.md`); the branches can be deleted. The Codex session's original RAD46 notes and reviews are in `experiments/radiance/RAD46-rad46/`.
