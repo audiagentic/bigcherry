@@ -117,4 +117,52 @@ int main() {
     assert(!absent_copy.at("measurements").contains("copy_bytes_per_s"));
     assert(row.at("absent").at("abort_quiescent_ns") == "none observed");
     assert(row.at("absent").size() + row.at("measurements").size() == 19);
+
+    // The relative peer can remain unpublished indefinitely. Wait for the
+    // measured heat-gap horizon, not an arbitrary wall-clock timeout. All
+    // non-effect evidence must still be present before emitting the record.
+    Measured no_effect=m;
+    no_effect.effect=EffectSamples{};
+    no_effect.effect_window_noise_ladder.clear();
+    assert(!calibration_settled(no_effect));
+    EffectSignalTimeout unavailable;
+    const uint64_t start=1000000000ULL;
+    unavailable.observe(false,start);
+    const uint64_t gap=uint64_t(no_effect.delta_gap_ns.max());
+    const uint64_t age=2*no_effect.effect_cadence_ns;
+    const uint64_t period=std::max({gap,no_effect.effect_cadence_ns,age});
+    const uint64_t horizon=period*std::max<size_t>(3,no_effect.drift_capacity);
+    assert(!unavailable.expired(start+horizon-1,no_effect,no_effect.effect_cadence_ns,age));
+    assert(!calibration_settled(no_effect,unavailable.expired(
+        start+horizon-1,no_effect,no_effect.effect_cadence_ns,age)));
+    assert(unavailable.expired(start+horizon,no_effect,no_effect.effect_cadence_ns,age));
+    assert(calibration_settled(no_effect,true));
+    const auto fallback=calibration_record(no_effect,
+        {std::string(64,'f'),"flashnext-4gpu","balanced"},"2026-11-06",true);
+    for(const char* field : {"effect_rows_per_s","effect_noise_max_ns",
+                             "effect_row_noise_ns","effect_window_noise_ladder"}) {
+        assert(!fallback.at("measurements").contains(field));
+        assert(fallback.at("absent").at(field).get<std::string>().find(
+            "relative tail/peer service unavailable")!=std::string::npos);
+    }
+    // Even if old effect data was once collected, an active outage cannot
+    // claim it as fresh evidence. A resumed valid series clears the deadline.
+    const auto stale=calibration_record(m,
+        {std::string(64,'f'),"flashnext-4gpu","balanced"},"2026-11-06",true);
+    assert(!stale.at("measurements").contains("effect_window_noise_ladder"));
+    unavailable.observe(true,start+horizon);
+    assert(!unavailable.expired(start+2*horizon,no_effect,no_effect.effect_cadence_ns,age));
+    unavailable.observe(false,start+2*horizon);
+    assert(!unavailable.expired(start+3*horizon-1,no_effect,no_effect.effect_cadence_ns,age));
+    // No heat-gap observation => use the declared poll/heat-age basis;
+    // record must still settle as absent, not spin indefinitely.
+    Measured no_gaps=no_effect;
+    no_gaps.delta_gap_ns=Series{64};
+    assert(unavailable.expired(start+5*horizon,no_gaps,no_gaps.effect_cadence_ns,age));
+    Measured entirely_missing{};
+    assert(calibration_settled(entirely_missing,true));
+    const auto partial=calibration_record(entirely_missing,
+        {std::string(64,'g'),"flashnext-4gpu","balanced"},"2026-11-06",true);
+    assert(partial.at("absent").contains("drift_half_life_observations"));
+    assert(partial.at("absent").contains("effect_window_noise_ladder"));
 }

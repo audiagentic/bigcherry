@@ -465,3 +465,41 @@ relabelled as a measured relative ladder. A fresh hardware calibration
 is required before a production relative policy can be claimed to
 resolve this signal; the card-free results establish only the
 implementation and invariance of the new statistic.
+
+## Step 5 follow-up 9: sparse peer lanes and a bounded missing effect signal (2026-11-06)
+
+The calib10 relative-lane calibration was still missing a converged effect
+series after 26 minutes. Inspection confirmed that the typed manifest's
+placement policy is shared by all helpers, and all policy-enabled helpers
+publish on the CPU epoch tick; timestamps use process-independent
+`CLOCK_MONOTONIC`, not a process-relative epoch. Small-lane samples are
+currently excluded by the helper's timing collector because prequeued
+requests can mismatch their d_counts row counts; a missing small-lane
+sample is not evidence of zero service time.
+
+The relative publisher reader now excludes an idle peer from **that lane's**
+row-weighted denominator and invalidates only a lane with no peer rows;
+any other lane with usable tail and reference samples continues. An
+unpublished, torn, future or stale peer **slot** still invalidates the full
+relative snapshot, never falling back to absolute timing. One diagnostic
+per helper/condition/lane names the offender, including stale slot age.
+The CPU calibration ladder retains a partial tail or peer tick until both
+have observed rows across the same contiguous time interval, rather than
+resetting when the helpers publish on staggered 2 ms ticks. The effect
+gate and calibration ladder remain per routed row, comparing tail/peer
+windows; no small-lane counts are invented.
+
+If no overlapping tail and peer row progress is observed for at least
+`max(3, drift_capacity) * max(observed maximum heat-delta gap, cadence, max_heat_age_ns)`
+monotonic nanoseconds, the calibration emits a **partial** record even if
+other quantities have not converged. It preserves observed measurements
+and explicit absent reasons instead of waiting indefinitely. All four
+effect measurements are emitted under
+`absent` with the missing-relative-service reason, not stale values.
+The on-arm path then follows follow-up 8: a schema-valid incomplete
+record serves without live_policy, with logged/provenance reason. It
+does not authorize a live placement policy from absent evidence.
+
+Card-free tests cover a three-helper sparse peer, slot failures and
+deduplicated indexed diagnostics, and derived timeout/absent record;
+no calib10 hardware replay or GPU measurement is claimed.

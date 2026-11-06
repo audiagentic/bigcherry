@@ -2,6 +2,7 @@
 // Pure RHP16 lab evidence serialization. No GPU, clock, filesystem, or fabricated measurements.
 // An absent field names the unavailable event; configured gate targets are NEVER serialized as samples.
 #include "worker_policy_measure.h"
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <limits>
@@ -12,9 +13,36 @@ namespace r3::policy {
 struct CalibrationIdentity {
     std::string plan_cache_key, layout, objective;
 };
-inline bool calibration_settled(const Measured& m) {
-    // Require the complete observed drift horizon and a heat shift that actually
-    // caused a committed move. Quiet-window statistics must converge separately.
+// No relative service progress for a full measured heat horizon must not
+// hold the calibration launcher hostage. A single slot read is not progress:
+// both the tail and a peer must have added routed rows in a lane.
+class EffectSignalTimeout {
+    uint64_t missing_since_=0;
+public:
+    void observe(bool overlapping_rows,uint64_t now_ns) {
+        if(overlapping_rows)missing_since_=0;
+        else if(!missing_since_ && now_ns)missing_since_=now_ns;
+    }
+    bool expired(uint64_t now_ns,const Measured& m,uint64_t cadence_ns,
+                 uint64_t max_heat_age_ns) const {
+        if(!missing_since_ || now_ns<missing_since_ ||
+           !cadence_ns || !max_heat_age_ns)return false;
+        // A missing heat feed must not make the timeout itself unavailable.
+        // Use actual gaps if observed, otherwise the derived poll/freshness
+        // limits. The retained drift horizon supplies the gap count.
+        const long double gap=std::max({static_cast<long double>(m.delta_gap_ns.max()),
+                                        static_cast<long double>(cadence_ns),
+                                        static_cast<long double>(max_heat_age_ns)});
+        const long double span=gap*std::max<size_t>(3,m.drift_capacity);
+        return static_cast<long double>(now_ns-missing_since_)>=span;
+    }
+};
+inline bool calibration_settled(const Measured& m,bool effect_absent=false) {
+    // An explicitly timed-out effect is a *partial*, not a complete policy
+    // record. Emit the actual remaining measurements (or absent reasons)
+    // so the launcher stops and serving uses its safe no-policy fallback.
+    if(effect_absent)return true;
+    // Otherwise require each observation to converge before calibrating.
     return m.accepted_heat_deltas && m.drift_capacity && m.drift_intervals == m.drift_capacity &&
            m.delta_gap_ns.total() >= m.drift_intervals - 1 &&
            m.delta_gap_ns.max() > 0 &&
@@ -39,7 +67,8 @@ inline bool calibration_settled(const Measured& m) {
 }
 inline nlohmann::json calibration_record(const Measured& m,
                                           const CalibrationIdentity& identity,
-                                          const std::string& utc_date) {
+                                          const std::string& utc_date,
+                                          bool effect_absent=false) {
     using Json = nlohmann::json;
     Json measured = Json::object(), absent = Json::object();
     constexpr uint64_t max_exact = (uint64_t(1) << 53) - 1;
@@ -80,28 +109,41 @@ inline nlohmann::json calibration_record(const Measured& m,
         sample("lane_lost_ns", m.lane_lost_ns.quantile(0.95),
                "invalid measured quiesce-to-reopen interval", true);
     else no_hook("lane_lost_ns", "no verified tail-helper quiesce-to-reopen interval");
-    sample("effect_rows_per_s", m.effect.sampled_rows_per_s,
-           "no positive measured sampled-lane routed-row rate over wall time");
-    // No false-revert objective is available to the helper: this is the actual
-    // observed maximum, not a mislabeled objective-specific quantile.
-    sample("effect_noise_max_ns", m.effect.quiet_delta_ns.max(),
-           "no positive observed maximum quiet-window service-time difference");
-    sample("effect_row_noise_ns", m.effect.row_noise_ns(),
-           "no variable signed quiet-window deltas for per-row dispersion");
-    if(m.effect_window_noise_ladder.size() >= 3 &&
-       double(m.effect_window_noise_ladder.back().rows) >=
-           m.effect.sampled_rows_per_s * double(m.effect_cadence_ns) / 1000000000.0) {
-        Json ladder=Json::array();
-        for(const auto& point:m.effect_window_noise_ladder)
-            ladder.push_back(Json::array({point.rows,point.noise_ppm}));
-        measured["effect_window_noise_ladder"]=std::move(ladder);
-    } else no_hook("effect_window_noise_ladder",
-                  "published tail service too short to measure adjacent windows through one policy cadence");
+    if(effect_absent) {
+        // Never label stale or non-overlapping service samples as measured
+        // effect quantities. The serving reader keeps these fields absent and
+        // follows the no-live-policy serving fallback.
+        constexpr const char* reason=
+            "relative tail/peer service unavailable for a measured heat-gap horizon";
+        for(const char* name : {"effect_rows_per_s","effect_noise_max_ns",
+                                "effect_row_noise_ns","effect_window_noise_ladder"})
+            no_hook(name,reason);
+    } else {
+        sample("effect_rows_per_s", m.effect.sampled_rows_per_s,
+               "no positive measured sampled-lane routed-row rate over wall time");
+        // No false-revert objective is available to the helper: this is the actual
+        // observed maximum, not a mislabeled objective-specific quantile.
+        sample("effect_noise_max_ns", m.effect.quiet_delta_ns.max(),
+               "no positive observed maximum quiet-window service-time difference");
+        sample("effect_row_noise_ns", m.effect.row_noise_ns(),
+               "no variable signed quiet-window deltas for per-row dispersion");
+        if(m.effect_window_noise_ladder.size() >= 3 &&
+           double(m.effect_window_noise_ladder.back().rows) >=
+               m.effect.sampled_rows_per_s * double(m.effect_cadence_ns) / 1000000000.0) {
+            Json ladder=Json::array();
+            for(const auto& point:m.effect_window_noise_ladder)
+                ladder.push_back(Json::array({point.rows,point.noise_ppm}));
+            measured["effect_window_noise_ladder"]=std::move(ladder);
+        } else no_hook("effect_window_noise_ladder",
+                      "published tail service too short to measure adjacent windows through one policy cadence");
+    }
     sample("abort_quiescent_ns", m.abort_ns.quantile(0.95), "none observed");
     return Json{{"plan_cache_key", identity.plan_cache_key},
                 {"layout", identity.layout}, {"objective", identity.objective},
                 {"seeded", utc_date},
-                {"evidence", "accepted heat, closed journals, per-helper READY/RESERVED/CLEANED ACK timing, sampled lane service and committed planner gains"},
+                {"evidence", effect_absent ?
+                    "partial calibration: relative tail/peer service unavailable; other fields are present only when actually measured" :
+                    "accepted heat, closed journals, per-helper READY/RESERVED/CLEANED ACK timing, sampled lane service and committed planner gains"},
                 {"measurements", measured}, {"absent", absent}};
 }
 } // namespace r3::policy

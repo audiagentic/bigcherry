@@ -3,7 +3,12 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <string>
+#include <vector>
 #include <sys/mman.h>
+#include <sys/wait.h>
+#include <time.h>
+#include <unistd.h>
 using namespace r3::policy;
 static void check(bool ok,const char* why) {
     if(!ok) {std::fprintf(stderr,"effect gate FAIL: %s\n",why);std::exit(1);}
@@ -219,7 +224,145 @@ static void test_relative_shift_from_all_published_helpers() {
     munmap(map,layout.bytes);
 }
 
+
+// Three participants: a zero-row peer lane is excluded while the other
+// published peers still supply the row-weighted denominator for that lane.
+static void test_sparse_peer_and_unavailable_diagnostics() {
+    using namespace r3::moe_shm;
+    const LayoutShape shape{128,2,3,8,128,64};
+    Layout layout{};
+    check(layout_for(shape,3,2,&layout),"sparse peer layout");
+    void* map=mmap(nullptr,layout.bytes,PROT_READ|PROT_WRITE,
+                   MAP_PRIVATE|MAP_ANONYMOUS,-1,0);
+    check(map!=MAP_FAILED && init(map,3,shape,2),"sparse peer init");
+    static_cast<Header*>(map)->helper_count=3;
+    uint64_t now=1000;
+    std::vector<std::string> diagnostics;
+    SharedTailServiceSource relative(map,2,1000,[&]{return now;},3,
+        [&](const std::string& message){diagnostics.push_back(message);});
+    ServiceSnapshot helpers[3]{}, result{};
+    auto publish=[&] {
+        for(unsigned i=0;i<3;++i)
+            check(SharedTailServiceSource::publish(
+                published_service(map,i),helpers[i],now),"sparse peer publish");
+    };
+    auto tick=[&] {
+        // helper1 has no SMALL samples. helper0 and tail have SMALL work.
+        helpers[0].lane[0].rows+=100;
+        helpers[0].lane[0].time_ns+=10000;
+        helpers[0].lane[0].samples++;
+        helpers[2].lane[0].rows+=50;
+        helpers[2].lane[0].time_ns+=6000;
+        helpers[2].lane[0].samples++;
+        for(unsigned h=0;h<3;++h) {
+            helpers[h].lane[1].rows+=100;
+            helpers[h].lane[1].time_ns+=10000;
+            helpers[h].lane[1].samples++;
+        }
+        now+=100;publish();
+        check(relative.snapshot(&result),"zero-row peer does not disable other lanes");
+    };
+    publish();
+    check(relative.snapshot(&result),"empty baseline can be read");
+    tick();
+    const auto baseline=result;
+    tick();
+    check(result.lane[0].relative && result.lane[0].rows==100 &&
+          result.lane[0].reference_rows==200 &&
+          result.lane[0].reference_time_ns==20000,
+          "small lane reference excludes zero-row helper1");
+    const double ratio=
+        (double(result.lane[0].time_ns-baseline.lane[0].time_ns)/
+         double(result.lane[0].rows-baseline.lane[0].rows)) /
+        (double(result.lane[0].reference_time_ns-baseline.lane[0].reference_time_ns)/
+         double(result.lane[0].reference_rows-baseline.lane[0].reference_rows));
+    check(std::abs(ratio-1.2)<0.000001,"sparse peer relative small-lane ratio");
+    check(diagnostics.size()==1 &&
+          diagnostics[0].find("helper=1 condition=zero rows lane=0")!=std::string::npos,
+          "zero-row peer diagnosed once with helper and lane");
+    check(relative.snapshot(&result) && diagnostics.size()==1,
+          "repeated sparse peer snapshot does not spam");
+    // No helper1 publication is a *different* failure: no silent fallback.
+    auto* peer=published_service(map,1);
+    *peer={};
+    check(!relative.snapshot(&result),"never-published peer must fail");
+    check(diagnostics.size()==2 &&
+          diagnostics.back().find("helper=1 condition=no publication")!=std::string::npos,
+          "unpublished peer named in diagnostic");
+    check(!relative.snapshot(&result) && diagnostics.size()==2,
+          "never-published diagnostic is once only");
+    check(SharedTailServiceSource::publish(peer,helpers[1],now),"restore peer");
+    __atomic_store_n(&peer->published_ns,now-1001,__ATOMIC_RELAXED);
+    check(!relative.snapshot(&result) &&
+          diagnostics.back().find("helper=1 condition=stale age_ns=1001")!=std::string::npos,
+          "stale peer diagnosed with actual age");
+    check(SharedTailServiceSource::publish(peer,helpers[1],now),"restore freshness");
+    __atomic_add_fetch(&peer->sequence,uint64_t{1},__ATOMIC_ACQ_REL);
+    check(!relative.snapshot(&result) &&
+          diagnostics.back().find("helper=1 condition=torn")!=std::string::npos,
+          "torn peer named");
+    __atomic_add_fetch(&peer->sequence,uint64_t{1},__ATOMIC_RELEASE);
+    check(relative.snapshot(&result),"recovered peer works");
+    std::vector<std::string> no_slot_diagnostics;
+    SharedTailServiceSource invalid_count(map,2,1000,[&]{return now;},4,
+        [&](const std::string& message){no_slot_diagnostics.push_back(message);});
+    check(!invalid_count.snapshot(&result) &&
+          std::any_of(no_slot_diagnostics.begin(),no_slot_diagnostics.end(),
+              [](const std::string& message) {
+                  return message.find("helper=3 condition=no slot")!=std::string::npos;
+              }),"out-of-range peer slot diagnosed by index");
+
+    // Entire SMALL reference absent: skip only SMALL, keep valid LARGE.
+    helpers[0].lane[0]={};
+    publish();
+    check(relative.snapshot(&result) && !result.lane[0].rows &&
+          result.lane[1].rows>0 && result.lane[1].relative,
+          "no small denominator invalidates small only");
+    // If every peer lane lacks rows, no usable relative signal remains.
+    helpers[0].lane[1]={};
+    helpers[1].lane[1]={};
+    publish();
+    check(!relative.snapshot(&result),"all peer rows zero is unavailable");
+    munmap(map,layout.bytes);
+}
+
+
+// published_ns is CLOCK_MONOTONIC on every helper, not a helper-local
+// timestamp. A child process can publish and its parent can validate age.
+static void test_cross_process_monotonic_slot() {
+    using namespace r3::moe_shm;
+    void* shared=mmap(nullptr,sizeof(PublishedServiceSlot),
+                      PROT_READ|PROT_WRITE,MAP_SHARED|MAP_ANONYMOUS,-1,0);
+    check(shared!=MAP_FAILED,"shared cross-process slot");
+    auto* slot=static_cast<PublishedServiceSlot*>(shared);
+    const pid_t pid=fork();
+    check(pid>=0,"fork clock-domain test");
+    if(pid==0) {
+        timespec t{};
+        const bool clock_ok=clock_gettime(CLOCK_MONOTONIC,&t)==0;
+        ServiceSnapshot data{};
+        data.lane[1].samples=1;
+        data.lane[1].rows=100;
+        data.lane[1].time_ns=10000;
+        const uint64_t now=uint64_t(t.tv_sec)*1000000000ULL+uint64_t(t.tv_nsec);
+        _exit(clock_ok && SharedTailServiceSource::publish(slot,data,now)?0:1);
+    }
+    int status=0;
+    check(waitpid(pid,&status,0)==pid && WIFEXITED(status) && WEXITSTATUS(status)==0,
+          "child published monotonic slot");
+    timespec t{};
+    check(clock_gettime(CLOCK_MONOTONIC,&t)==0,"parent monotonic clock");
+    const uint64_t now=uint64_t(t.tv_sec)*1000000000ULL+uint64_t(t.tv_nsec);
+    ServiceSnapshot sample{};
+    check(SharedTailServiceSource::read(slot,now,1000000000ULL,&sample) &&
+          sample.lane[1].rows==100 && sample.lane[1].time_ns==10000,
+          "child timestamp shares parent CLOCK_MONOTONIC domain");
+    munmap(shared,sizeof(PublishedServiceSlot));
+}
+
 int main() {
+    test_cross_process_monotonic_slot();
+    test_sparse_peer_and_unavailable_diagnostics();
     test_relative_shift_from_all_published_helpers();
     test_published_tail_signal();
     LaneServiceSource source;

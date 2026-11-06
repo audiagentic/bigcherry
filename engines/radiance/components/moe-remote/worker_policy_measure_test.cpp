@@ -285,6 +285,27 @@ static void test_relative_ladder_and_calib9_observation() {
         resolves|=double(point.noise_ppm)*z<=predicted;
     }
     assert(resolves); // ratio is constant; no invented i.i.d. extrapolation
+
+    // The hardware helpers tick independently. Without pending intervals,
+    // every alternate tail-only tick reset the entire ladder to empty.
+    WindowNoiseTracker staggered(true);
+    std::array<WindowNoiseTracker::Counts,2> alternating{};
+    staggered.add(alternating);
+    for(unsigned i=0;i<256;++i) {
+        auto& x=alternating[1];
+        if(i%2==0) {
+            x.samples++;x.rows+=32;x.time_ns+=3200;
+        } else {
+            x.reference_rows+=64;x.reference_time_ns+=6400;
+        }
+        staggered.add(alternating);
+    }
+    const auto sparse_ladder=staggered.ladder();
+    assert(sparse_ladder.size()>=3);
+    for(const auto& rung:sparse_ladder) {
+        assert(rung.comparisons>=3);
+        assert(rung.noise_ppm==0);
+    }
 }
 
 int main() {

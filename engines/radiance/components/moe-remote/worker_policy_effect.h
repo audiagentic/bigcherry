@@ -11,6 +11,9 @@
 #include <deque>
 #include <limits>
 #include <functional>
+#include <cstdio>
+#include <set>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -85,21 +88,36 @@ public:
 // none of this is on a GPU/route hot path.
 class SharedTailServiceSource final : public ServiceSource {
     const moe_shm::PublishedServiceSlot* slot_=nullptr;
-    std::vector<const moe_shm::PublishedServiceSlot*> references_;
+    std::vector<std::pair<uint32_t,const moe_shm::PublishedServiceSlot*>> references_;
+    uint32_t tail_helper_=0;
+    std::function<void(const std::string&)> diagnostic_;
+    mutable std::set<std::string> reported_;
+    void report(uint32_t helper,const char* condition,int lane=-1,uint64_t age_ns=0) const {
+        const std::string key=std::to_string(helper)+":"+condition+":"+std::to_string(lane);
+        if(!reported_.insert(key).second)return; // once per helper, lane and failure type
+        std::string message="policy relative service unavailable helper="+std::to_string(helper)+
+                            " condition="+condition;
+        if(lane>=0)message+=" lane="+std::to_string(lane);
+        if(age_ns)message+=" age_ns="+std::to_string(age_ns);
+        if(diagnostic_)diagnostic_(message);
+        else std::fprintf(stderr,"%s\n",message.c_str());
+    }
     bool require_reference_=false;
     uint64_t max_age_ns_=0;
     std::function<uint64_t()> clock_;
 public:
     SharedTailServiceSource(const void* map,uint32_t tail_helper,
                             uint64_t max_age_ns,std::function<uint64_t()> clock,
-                            uint32_t helper_count=0)
+                            uint32_t helper_count=0,
+                            std::function<void(const std::string&)> diagnostic={})
         :slot_(moe_shm::published_service(map,tail_helper)),
-         max_age_ns_(max_age_ns),clock_(std::move(clock)),
-         require_reference_(helper_count>0) {
+         tail_helper_(tail_helper),diagnostic_(std::move(diagnostic)),
+         require_reference_(helper_count>0),max_age_ns_(max_age_ns),
+         clock_(std::move(clock)) {
         // Every enabled helper publishes the same v24 slot on its CPU tick.
         // Read all peers; the sum(time)/sum(rows) is the row-weighted mean.
         for(uint32_t h=0;h<helper_count;++h)
-            if(h!=tail_helper)references_.push_back(moe_shm::published_service(map,h));
+            if(h!=tail_helper)references_.push_back({h,moe_shm::published_service(map,h)});
     }
 
     static bool publish(moe_shm::PublishedServiceSlot* slot,
@@ -116,12 +134,23 @@ public:
         __atomic_add_fetch(&slot->sequence,uint64_t{1},__ATOMIC_RELEASE);
         return true;
     }
+    enum class ReadProblem { NONE, NO_SLOT, UNPUBLISHED, TORN, STALE, FUTURE, CLOCK };
     static bool read(const moe_shm::PublishedServiceSlot* slot,
-                     uint64_t now_ns,uint64_t max_age_ns,ServiceSnapshot* out) {
-        if(!slot || !out || !now_ns || !max_age_ns)return false;
+                     uint64_t now_ns,uint64_t max_age_ns,ServiceSnapshot* out,
+                     ReadProblem* problem=nullptr,uint64_t* age_ns=nullptr) {
+        if(problem)*problem=ReadProblem::NONE;
+        if(age_ns)*age_ns=0;
+        const auto fail=[&](ReadProblem why,uint64_t age=0) {
+            if(problem)*problem=why;
+            if(age_ns)*age_ns=age;
+            return false;
+        };
+        if(!slot)return fail(ReadProblem::NO_SLOT);
+        if(!out || !now_ns || !max_age_ns)return fail(ReadProblem::CLOCK);
         for(unsigned attempt=0;attempt<8;++attempt) {
             const uint64_t first=__atomic_load_n(&slot->sequence,__ATOMIC_ACQUIRE);
-            if(!first || (first&1))continue;
+            if(!first)return fail(ReadProblem::UNPUBLISHED);
+            if(first&1)continue;
             const uint64_t published=__atomic_load_n(&slot->published_ns,__ATOMIC_RELAXED);
             ServiceSnapshot data{};
             for(unsigned i=0;i<2;++i) {
@@ -132,36 +161,74 @@ public:
             __atomic_thread_fence(__ATOMIC_ACQUIRE);
             const uint64_t last=__atomic_load_n(&slot->sequence,__ATOMIC_ACQUIRE);
             if(first!=last || (last&1))continue;
-            if(!published || published>now_ns || now_ns-published>max_age_ns)
-                return false; // uninitialised, future or stopped publisher
+            if(!published)return fail(ReadProblem::UNPUBLISHED);
+            if(published>now_ns)return fail(ReadProblem::FUTURE,published-now_ns);
+            if(now_ns-published>max_age_ns)return fail(ReadProblem::STALE,now_ns-published);
             *out=data;
             return true;
         }
-        return false; // torn or interrupted writer; no guessed measurement
+        return fail(ReadProblem::TORN);
     }
     bool snapshot(ServiceSnapshot* out) const override {
         if(!clock_ || !out || (require_reference_ && references_.empty()))return false;
         const uint64_t now=clock_();
+        const auto check=[&](const moe_shm::PublishedServiceSlot* slot,uint32_t helper,
+                            ServiceSnapshot* value) {
+            ReadProblem why=ReadProblem::NONE;
+            uint64_t age=0;
+            if(read(slot,now,max_age_ns_,value,&why,&age))return true;
+            const char* condition="invalid clock";
+            switch(why) {
+            case ReadProblem::NO_SLOT: condition="no slot";break;
+            case ReadProblem::UNPUBLISHED: condition="no publication";break;
+            case ReadProblem::TORN: condition="torn";break;
+            case ReadProblem::STALE: condition="stale";break;
+            case ReadProblem::FUTURE: condition="future timestamp";break;
+            default: break;
+            }
+            report(helper,condition,-1,age);
+            return false;
+        };
         ServiceSnapshot tail{};
-        if(!read(slot_,now,max_age_ns_,&tail))return false;
-        for(const auto* slot:references_) {
+        if(!check(slot_,tail_helper_,&tail))return false;
+        for(const auto& [helper,slot]:references_) {
             ServiceSnapshot peer{};
-            if(!read(slot,now,max_age_ns_,&peer))return false;
+            if(!check(slot,helper,&peer))return false;
             for(unsigned i=0;i<2;++i) {
                 auto& x=tail.lane[i];
                 const auto& y=peer.lane[i];
+                // A helper with no sampled work in this lane must not poison
+                // the denominator for the *other* helpers in that lane.
+                if(!y.rows) {
+                    if(x.rows)report(helper,"zero rows",int(i));
+                    continue;
+                }
+                if(!y.time_ns) {
+                    report(helper,"zero service time",int(i));
+                    return false; // inconsistent published measurement
+                }
                 if(UINT64_MAX-x.reference_rows<y.rows ||
                    UINT64_MAX-x.reference_time_ns<y.time_ns)return false;
                 x.reference_rows+=y.rows;
                 x.reference_time_ns+=y.time_ns;
             }
         }
-        // Never silently use an absolute signal on a live multi-helper setup.
-        for(auto& x:tail.lane) {
+        bool usable=false;
+        bool any_tail_rows=false;
+        // Never use absolute service in a multi-helper run. A lane without
+        // any peer rows is unavailable *for that lane*, not for the whole
+        // signal when a different lane has a valid row-weighted reference.
+        for(unsigned i=0;i<2;++i) {
+            auto& x=tail.lane[i];
             x.relative=require_reference_;
-            if(require_reference_ && x.rows && (!x.reference_rows || !x.reference_time_ns))
-                return false;
+            any_tail_rows=any_tail_rows || x.rows>0;
+            if(require_reference_ && x.rows && (!x.reference_rows || !x.reference_time_ns)) {
+                report(tail_helper_,"zero reference rows",int(i));
+                x=ServiceTotals{};
+                x.relative=true;
+            } else if(x.rows && x.time_ns)usable=true;
         }
+        if(require_reference_ && any_tail_rows && !usable)return false;
         *out=tail;
         return true;
     }

@@ -197,6 +197,7 @@ private:
     struct Chunk { uint64_t rows=0, time_ns=0, reference_rows=0, reference_time_ns=0; };
     static constexpr size_t kRetainedTicks=131072; // bounded CPU tick history
     std::array<std::deque<Chunk>,2> intervals_{};
+    std::array<Chunk,2> pending_{}; // tail and peer may advance on different CPU ticks
     std::array<Counts,2> previous_{};
     bool have_previous_=false;
     bool relative_=false;
@@ -206,6 +207,7 @@ public:
     // A missing/stale publication invalidates the continuity of the series.
     void reset() {
         for(auto& lane:intervals_)lane.clear();
+        pending_={};
         have_previous_=false;
     }
     void add(const std::array<Counts,2>& now) {
@@ -219,13 +221,31 @@ public:
             const uint64_t rows=a.rows-b.rows, time=a.time_ns-b.time_ns;
             const uint64_t ref_rows=a.reference_rows-b.reference_rows;
             const uint64_t ref_time=a.reference_time_ns-b.reference_time_ns;
-            if(!rows || !time)continue;
-            if(relative_ && (!ref_rows || !ref_time)) {
-                reset();previous_=now;have_previous_=true;return;
-            }
+            Chunk chunk{rows,time,ref_rows,ref_time};
+            if(relative_) {
+                // Different helpers publish at separate CPU ticks. A tick
+                // with tail rows but no peer rows (or vice versa) is *not*
+                // a discontinuity. Buffer the contiguous time interval
+                // until both sides have work; never fabricate a zero-row
+                // denominator or throw away the previous quiet windows.
+                auto& pending=pending_[lane];
+                if(UINT64_MAX-pending.rows<rows ||
+                   UINT64_MAX-pending.time_ns<time ||
+                   UINT64_MAX-pending.reference_rows<ref_rows ||
+                   UINT64_MAX-pending.reference_time_ns<ref_time) {
+                    reset();previous_=now;have_previous_=true;return;
+                }
+                pending.rows+=rows;pending.time_ns+=time;
+                pending.reference_rows+=ref_rows;
+                pending.reference_time_ns+=ref_time;
+                if(!pending.rows || !pending.time_ns ||
+                   !pending.reference_rows || !pending.reference_time_ns)continue;
+                chunk=pending;
+                pending={};
+            } else if(!rows || !time)continue;
             auto& q=intervals_[lane];
             if(q.size()==kRetainedTicks)q.pop_front();
-            q.push_back({rows,time,ref_rows,ref_time});
+            q.push_back(chunk);
 
         }
         previous_=now;

@@ -59,6 +59,9 @@ private:
     EffectGate effect_;
     WindowNoiseTracker window_noise_{true}; // tail service RELATIVE to row-weighted peer service
     uint64_t next_window_noise_check_ns_=0;
+    EffectSignalTimeout effect_signal_timeout_;
+    ServiceSnapshot last_relative_service_{};
+    bool last_relative_service_valid_=false;
     OwnerSnapshot revert_before_{},revert_after_{};
     bool revert_requested_=false,reverting_=false,revert_failed_=false;
     std::unique_ptr<HeatSource> source_;
@@ -334,7 +337,25 @@ public:
             // existing CPU epoch heartbeat (~2 ms), not at the much slower
             // proposal cadence. No GPU query or additional collector thread.
             ServiceSnapshot tail{};
-            if(service_ && service_->snapshot(&tail)) {
+            const bool service_ok=service_ && service_->snapshot(&tail);
+            bool overlapping_rows=false;
+            if(service_ok) {
+                if(last_relative_service_valid_)
+                    for(unsigned i=0;i<2;++i) {
+                        const auto& current=tail.lane[i];
+                        const auto& prior=last_relative_service_.lane[i];
+                        if(current.relative && current.rows>prior.rows &&
+                           current.reference_rows>prior.reference_rows)
+                            overlapping_rows=true;
+                    }
+                // Preserve the interval baseline through staggered updates:
+                // tail rows and peer rows need not advance on the same 2 ms tick.
+                if(overlapping_rows || !last_relative_service_valid_)
+                    last_relative_service_=tail;
+                last_relative_service_valid_=true;
+            } else last_relative_service_valid_=false;
+            effect_signal_timeout_.observe(overlapping_rows,now_ns);
+            if(service_ok) {
                 std::array<WindowNoiseTracker::Counts,2> counters{};
                 for(unsigned i=0;i<2;++i)
                     counters[i]={tail.lane[i].samples,tail.lane[i].rows,tail.lane[i].time_ns,
@@ -350,13 +371,20 @@ public:
                 next_window_noise_check_ns_=add_saturating(now_ns,settings_.cadence_ns);
             }
             const Measured m=measured();
-            if (calibration_settled(m)) {
+            const bool effect_absent=
+                effect_signal_timeout_.expired(now_ns,m,settings_.cadence_ns,
+                                               settings_.controls.max_heat_age_ns);
+            if (calibration_settled(m,effect_absent)) {
                 std::time_t now=std::time(nullptr);
                 std::tm utc{};
                 char date[11]{};
                 if (now>=0 && ::gmtime_r(&now,&utc) &&
                     std::strftime(date,sizeof(date),"%Y-%m-%d",&utc)) {
-                    const auto row=calibration_record(m,*calibration_identity_,date);
+                    const auto row=calibration_record(m,*calibration_identity_,date,
+                                                      effect_absent);
+                    if(effect_absent)
+                        std::fprintf(stderr,
+                            "policy calibration: relative effect signal unavailable over measured heat-gap horizon; effect quantities absent\n");
                     std::fprintf(stderr,"RHP16_CALIBRATION_JSON %s\n",row.dump().c_str());
                     std::fflush(stderr);
                     calibration_printed_=true; // exactly once per helper run
