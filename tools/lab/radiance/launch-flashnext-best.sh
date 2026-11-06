@@ -27,7 +27,7 @@
 # Lab: bigcherry build --lane radiance:stock:linux-radiance
 #
 # Usage:
-#   bash tools/lab/radiance/launch-flashnext-best.sh [start] [--release TAG|latest | --build DIR] [--port N] [--heat FILE] [--host-pool-mib N] [--host-kv-mib N] [--chunk TOKENS] [--ngram-placement ram|disk|vram] [--kv-dtype fp8|fp8_v4|k6_v4] [--ngram-device INDEX] [--max-model-len TOKENS] [--record-heat PREFIX|off [--record-period S]] [--live-policy FILE] [--experiment FILE] [--calibrate --calibration-prompts FILE] [--gpu-power] [--layout NAME] [--budget ARCH=MIB] [--canary-prompt TEXT --canary-expect FACT]
+#   bash tools/lab/radiance/launch-flashnext-best.sh [start] [--release TAG|latest | --build DIR] [--port N] [--heat FILE] [--host-pool-mib N] [--host-kv-mib N] [--chunk TOKENS] [--ngram-placement ram|disk|vram] [--kv-dtype fp8|fp8_v4|k6_v4] [--ngram-device INDEX] [--max-model-len TOKENS] [--record-heat PREFIX|off [--record-period S]] [--live-policy FILE] [--experiment FILE] [--calibrate --calibration-prompts-a FILE --calibration-prompts-b FILE] [--gpu-power] [--layout NAME] [--budget ARCH=MIB] [--canary-prompt TEXT --canary-expect FACT]
 
 #     (every start ends with a canary completion that must contain the fact, default 'The capital of France is' -> Paris; a failure stops the launch, exit 96)
 #   bash tools/lab/radiance/launch-flashnext-best.sh stop
@@ -53,8 +53,9 @@
 # --kv-dtype T: the KV cache type (default fp8; fp8_v4 costs 0.78 of it per token and k6_v4 0.69, both lossy). There is no raw engine argument: the engine's
 # other flags are manifest fields (spec.experiment.engine: profile_ops, kv_resident, debug_selection, deterministic; give them in the
 # --calibrate: LAB ONLY. Requires --live-policy FILE (explicit
-# observe-or-move policy), --record-heat enabled and --calibration-prompts FILE
-# (one prompt per line, repeated until the helper's measurement horizon settles).
+# observe-or-move policy), --record-heat enabled and two distinct prompt
+# files (--calibration-prompts-a and --calibration-prompts-b). One prompt per
+# line; both workload orders (A,B and B,A) are repeated until convergence.
 # The helper prints one RHP16_CALIBRATION_JSON line; the launcher stops serving,
 # validates it against this run's strict v1 manifest, atomically ingests it into
 # $BC_WORK_ROOT/live-policy-calibration.toml and reports that path. No production
@@ -113,7 +114,8 @@ RECORD_PERIOD=60
 LIVE_POLICY_FILE=""   # a JSON object with every spec.handoff.placement.live_policy member (docs/design/serving-manifest-v1)
 EXPERIMENT_FILE=""    # a JSON object for spec.experiment (lab profile)
 CALIBRATE=0           # lab-only measurement run, never a serving hand-off
-CALIBRATION_PROMPTS=""
+CALIBRATION_PROMPTS_A=""
+CALIBRATION_PROMPTS_B=""
 # The start canary: after /health, every start (cold, measured or cached) sends this one deterministic completion and the answer
 # must contain the expected fact (case-insensitive, semantic, not a hash), or everything this launch started is stopped and the
 # launch fails (exit 96). It catches an engine that is up but answering garbage before any client does. The prompt is a fact the
@@ -148,7 +150,8 @@ while [ $# -gt 0 ]; do
     --live-policy) CUSTOM_SERVE_OPTIONS+=(--live-policy); LIVE_POLICY_FILE=$2; shift 2 ;;
     --experiment) CUSTOM_SERVE_OPTIONS+=(--experiment); EXPERIMENT_FILE=$2; shift 2 ;;
     --calibrate) CUSTOM_SERVE_OPTIONS+=(--calibrate); CALIBRATE=1; shift ;;
-    --calibration-prompts) CALIBRATION_PROMPTS=$2; shift 2 ;;
+    --calibration-prompts-a) CALIBRATION_PROMPTS_A=$2; shift 2 ;;
+    --calibration-prompts-b) CALIBRATION_PROMPTS_B=$2; shift 2 ;;
     --canary-prompt) CANARY_PROMPT=$2; shift 2 ;;
     --canary-expect) CANARY_EXPECT=$2; shift 2 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
@@ -163,12 +166,18 @@ if [ "$CALIBRATE" = 1 ]; then
     echo "RADIANCE_EXIT=2 --calibrate measures the production plan: it takes no --experiment" >&2
     exit 2
   fi
-  if [ -z "$CALIBRATION_PROMPTS" ] || [ ! -s "$CALIBRATION_PROMPTS" ]; then
-    echo "RADIANCE_EXIT=2 --calibrate requires a nonempty --calibration-prompts FILE" >&2
-    exit 2
-  fi
-  if ! grep -q "[^[:space:]]" "$CALIBRATION_PROMPTS"; then
-    echo "RADIANCE_EXIT=2 --calibrate needs at least one nonblank workload prompt" >&2
+  for prompts in "$CALIBRATION_PROMPTS_A" "$CALIBRATION_PROMPTS_B"; do
+    if [ -z "$prompts" ] || [ ! -s "$prompts" ]; then
+      echo "RADIANCE_EXIT=2 --calibrate requires nonempty --calibration-prompts-a and --calibration-prompts-b files" >&2
+      exit 2
+    fi
+    if ! grep -q "[^[:space:]]" "$prompts"; then
+      echo "RADIANCE_EXIT=2 --calibrate needs nonblank prompts in both workload files" >&2
+      exit 2
+    fi
+  done
+  if cmp -s "$CALIBRATION_PROMPTS_A" "$CALIBRATION_PROMPTS_B"; then
+    echo "RADIANCE_EXIT=2 --calibrate requires distinct heat-shifting workloads A and B" >&2
     exit 2
   fi
   if [ "$RECORD" = off ]; then
@@ -545,21 +554,25 @@ if [ "$CALIBRATE" = 1 ]; then
   # helper's convergence condition (the retained drift-track horizon).
   helper_log="$RUN/helper0-$STAMP.log"
   [ -f "$helper_log" ] || { echo "calibration: helper 0 log absent" >&2; exit 1; }
-  echo "calibration: replaying supplied prompts until RHP16_CALIBRATION_JSON appears" >&2
-  while ! grep -q '^RHP16_CALIBRATION_JSON ' "$helper_log"; do
-    while IFS= read -r calibration_prompt || [ -n "$calibration_prompt" ]; do
-      [ -n "$calibration_prompt" ] || continue
-      body=$(CALIBRATION_PROMPT="$calibration_prompt" python3 -c 'import json,os;print(json.dumps({"model":"default","prompt":os.environ["CALIBRATION_PROMPT"],"max_tokens":24,"temperature":0}))')
-      curl -fsS --max-time 120 "http://127.0.0.1:$PORT/v1/completions" -H 'content-type: application/json' -d "$body" >/dev/null || {
-        echo "calibration: workload request failed" >&2; exit 1;
-      }
-      grep -q '^RHP16_CALIBRATION_JSON ' "$helper_log" && break
-      for proc in engine helper0; do
-        [ -f "$PIDS/$proc" ] && kill -0 "$(cat "$PIDS/$proc")" 2>/dev/null || {
-          echo "calibration: $proc exited before convergence" >&2; exit 1;
+  echo "calibration: running A->B then B->A until convergence" >&2
+  # A marker is accepted only after both heat-shift orders completed.
+  while :; do
+    for prompts in "$CALIBRATION_PROMPTS_A" "$CALIBRATION_PROMPTS_B" \
+                   "$CALIBRATION_PROMPTS_B" "$CALIBRATION_PROMPTS_A"; do
+      while IFS= read -r calibration_prompt || [ -n "$calibration_prompt" ]; do
+        [[ "$calibration_prompt" =~ [^[:space:]] ]] || continue
+        body=$(CALIBRATION_PROMPT="$calibration_prompt" python3 -c 'import json,os;print(json.dumps({"model":"default","prompt":os.environ["CALIBRATION_PROMPT"],"max_tokens":24,"temperature":0}))')
+        curl -fsS --max-time 120 "http://127.0.0.1:$PORT/v1/completions" -H 'content-type: application/json' -d "$body" >/dev/null || {
+          echo "calibration: workload request failed" >&2; exit 1;
         }
-      done
-    done < "$CALIBRATION_PROMPTS"
+        for proc in engine helper0; do
+          [ -f "$PIDS/$proc" ] && kill -0 "$(cat "$PIDS/$proc")" 2>/dev/null || {
+            echo "calibration: $proc exited before convergence" >&2; exit 1;
+          }
+        done
+      done < "$prompts"
+    done
+    grep -q '^RHP16_CALIBRATION_JSON ' "$helper_log" && break
   done
   calibration_store="$WORK/live-policy-calibration.toml"
   "$RAD_HOME/bin/bc-serve" calibration-ingest --from-log "$helper_log" \

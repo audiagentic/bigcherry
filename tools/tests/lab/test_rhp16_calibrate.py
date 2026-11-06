@@ -1,4 +1,4 @@
-"""RHP16 lab-only calibration launcher guards; no build, device or GPU required."""
+"""RHP16 calibration launcher guards; entirely card-free."""
 from __future__ import annotations
 
 import os
@@ -14,91 +14,99 @@ LAUNCHER = REPO / "tools/lab/radiance/launch-flashnext-best.sh"
 class CalibrationLauncherTests(unittest.TestCase):
     def run_start(self, *flags: str) -> subprocess.CompletedProcess[str]:
         with tempfile.TemporaryDirectory() as root:
-            env = dict(os.environ, BC_WORK_ROOT=root)
             return subprocess.run(
                 ["bash", str(LAUNCHER), "start", *flags],
                 cwd=REPO,
-                env=env,
-                capture_output=True,
-                text=True,
-                timeout=10,
+                env=dict(os.environ, BC_WORK_ROOT=root),
+                capture_output=True, text=True, timeout=10,
             )
 
-    def test_calibrate_refuses_an_experiment(self) -> None:
-        r = self.run_start("--calibrate", "--live-policy", "/policy.json", "--experiment", "/experiment.json")
-        self.assertEqual(r.returncode, 2, r.stderr)
-        self.assertIn("takes no --experiment", r.stderr)
-        self.assertNotIn("gpu", r.stderr.lower())
+    def workloads(self, root: str) -> tuple[Path, Path, Path]:
+        base = Path(root)
+        policy, a, b = (base / n for n in ("policy.json", "workload-a.txt", "workload-b.txt"))
+        policy.write_text('{"cadence_ns": 5000000000}')
+        a.write_text("Distinct filler traffic\n")
+        b.write_text("Documentation queries with a different hot set\n")
+        return policy, a, b
 
-    def test_calibrate_requires_policy_override(self) -> None:
+    def args(self, policy: Path, a: Path, b: Path) -> tuple[str, ...]:
+        return ("--calibrate", "--live-policy", str(policy),
+                "--calibration-prompts-a", str(a), "--calibration-prompts-b", str(b))
+
+    def test_calibrate_requires_policy(self) -> None:
         r = self.run_start("--calibrate")
-        self.assertEqual(r.returncode, 2, r.stderr)
+        self.assertEqual(r.returncode, 2)
         self.assertIn("--live-policy", r.stderr)
 
-    def test_calibrate_requires_workload_prompts(self) -> None:
-        r = self.run_start(
-            "--calibrate", "--live-policy", "/policy.json",
-        )
-        self.assertEqual(r.returncode, 2, r.stderr)
-        self.assertIn("--calibration-prompts", r.stderr)
+    def test_calibrate_requires_both_workloads(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            policy, a, b = self.workloads(root)
+            for opts in (("--calibrate", "--live-policy", str(policy)),
+                         ("--calibrate", "--live-policy", str(policy),
+                          "--calibration-prompts-a", str(a))):
+                r = self.run_start(*opts)
+                self.assertEqual(r.returncode, 2)
+                self.assertIn("--calibration-prompts-a and --calibration-prompts-b", r.stderr)
+
+    def test_rejects_identical_workloads(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            policy, a, b = self.workloads(root)
+            b.write_bytes(a.read_bytes())
+            r = self.run_start(*self.args(policy, a, b))
+            self.assertEqual(r.returncode, 2)
+            self.assertIn("distinct heat-shifting workloads", r.stderr)
+
+    def test_rejects_blank_workload_in_either_position(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            policy, a, b = self.workloads(root)
+            for blank in (a, b):
+                blank.write_text("  \n\t\n")
+                r = self.run_start(*self.args(policy, a, b))
+                self.assertEqual(r.returncode, 2)
+                self.assertIn("nonblank", r.stderr)
+                if blank == a:
+                    a.write_text("Filler query\n")
+
+    def test_calibrate_refuses_experiment(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            policy, a, b = self.workloads(root)
+            r = self.run_start(*self.args(policy, a, b),
+                               "--experiment", str(Path(root) / "experiment.json"))
+            self.assertEqual(r.returncode, 2)
+            self.assertIn("takes no --experiment", r.stderr)
 
     def test_calibrate_rejects_disabled_measurement_source(self) -> None:
-        with tempfile.NamedTemporaryFile(mode="w") as prompt:
-            prompt.write("Example calibration workload\n")
-            prompt.flush()
-            r = self.run_start(
-                "--calibrate", "--live-policy", "/policy.json",
-                "--calibration-prompts", prompt.name, "--record-heat", "off",
-            )
-            self.assertEqual(r.returncode, 2, r.stderr)
+        with tempfile.TemporaryDirectory() as root:
+            policy, a, b = self.workloads(root)
+            r = self.run_start(*self.args(policy, a, b), "--record-heat", "off")
+            self.assertEqual(r.returncode, 2)
             self.assertIn("histogram", r.stderr)
 
     def test_calibrate_requires_active_policy_hooks(self) -> None:
         with tempfile.TemporaryDirectory() as root:
-            exp, policy, prompts = [Path(root) / n for n in ("experiment.json", "policy.json", "prompts.txt")]
-            exp.write_text('{"engine": {"profile_ops": "off"}}')
-            policy.write_text('{}')
-            prompts.write_text("A real calibration prompt\n")
-            r = self.run_start(
-                "--calibrate", "--live-policy", str(policy), "--calibration-prompts", str(prompts),
-            )
-            self.assertEqual(r.returncode, 2, r.stderr)
+            policy, a, b = self.workloads(root)
+            policy.write_text("{}")
+            r = self.run_start(*self.args(policy, a, b))
+            self.assertEqual(r.returncode, 2)
             self.assertIn("present = active", r.stderr)
 
-    def test_calibrate_refuses_an_enabled_member(self) -> None:
+    def test_calibrate_refuses_enabled_member(self) -> None:
         with tempfile.TemporaryDirectory() as root:
-            exp, policy, prompts = [Path(root) / n for n in ("experiment.json", "policy.json", "prompts.txt")]
-            exp.write_text('{"engine": {"profile_ops": "off"}}')
+            policy, a, b = self.workloads(root)
             policy.write_text('{"enabled": true, "cadence_ns": 5000000000}')
-            prompts.write_text("A real calibration prompt\n")
-            r = self.run_start(
-                "--calibrate", "--live-policy", str(policy), "--calibration-prompts", str(prompts),
-            )
-            self.assertEqual(r.returncode, 2, r.stderr)
+            r = self.run_start(*self.args(policy, a, b))
+            self.assertEqual(r.returncode, 2)
             self.assertIn("no 'enabled' member", r.stderr)
 
-    def test_calibrate_requires_production_equivalent_plan(self) -> None:
-        with tempfile.TemporaryDirectory() as root:
-            exp, policy, prompts = [Path(root) / n for n in ("experiment.json", "policy.json", "prompts.txt")]
-            exp.write_text('{"engine": {"profile_ops": "on"}}')
-            policy.write_text('{"cadence_ns": 5000000000}')
-            prompts.write_text("A real calibration prompt\n")
-            r = self.run_start(
-                "--calibrate", "--experiment", str(exp), "--live-policy", str(policy), "--calibration-prompts", str(prompts),
-            )
-            self.assertEqual(r.returncode, 2, r.stderr)
-            self.assertIn("takes no --experiment", r.stderr)
-
-    def test_calibrate_rejects_blank_prompt_file(self) -> None:
-        with tempfile.NamedTemporaryFile(mode="w") as prompt:
-            prompt.write("\n  \n")
-            prompt.flush()
-            r = self.run_start(
-                "--calibrate", "--live-policy", "/policy.json",
-                "--calibration-prompts", prompt.name,
-            )
-            self.assertEqual(r.returncode, 2, r.stderr)
-            self.assertIn("nonblank", r.stderr)
+    def test_both_orders_before_accepting_marker(self) -> None:
+        # Inspect the card-free shell control path: a single A->B sequence
+        # would not exercise the reversed direction of the hot-set shift.
+        source = LAUNCHER.read_text()
+        body = source.split('if [ "$CALIBRATE" = 1 ]; then')[-1]
+        self.assertIn('for prompts in "$CALIBRATION_PROMPTS_A" "$CALIBRATION_PROMPTS_B" \\\n                   "$CALIBRATION_PROMPTS_B" "$CALIBRATION_PROMPTS_A"; do', body)
+        self.assertLess(body.index('done < "$prompts"'),
+                        body.index("grep -q '^RHP16_CALIBRATION_JSON '"))
+        self.assertIn('grep -q \'^RHP16_CALIBRATION_JSON \' "$helper_log" && break', body)
 
 
 if __name__ == "__main__":
