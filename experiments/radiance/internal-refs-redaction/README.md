@@ -8,7 +8,7 @@ Replace machine-specific paths, addresses and names in examples, lab commands, d
 
 ## Outcome and why stopped
 
-**(a): general sanitisation and environment-key design already included in main's privacy/configuration work (#394 and follow-ups); (b): remaining historical path/name rewrites superseded by today's repository layout and privacy cleanup (#399, #544); (c): no safe, standalone implementation delta identified.** Main contains the current forbidden-terms workflow, example environment configuration and work-root settings. The original `BC_CACHE_ROOT` naming was specifically corrected back to `BC_WORK_ROOT` by #399. Reapplying the historical diff would overwrite newer documentation or revive removed sensitive references. The exact reason this branch was left undeleted is **unknown**; its purpose was satisfied via the other PRs. There is no performance measurement.
+**(a): general sanitisation and environment-key design already included in main's privacy/configuration work (#394 and follow-ups); (b): remaining historical path/name rewrites superseded by today's repository layout and privacy cleanup (#399, #544); (c): no safe, standalone implementation delta identified.** Main contains the current forbidden-terms workflow, example environment configuration and work-root settings. The original the old *_ROOT variables naming was specifically corrected back to `BC_WORK_ROOT` by #399. Reapplying the historical diff would overwrite newer documentation or revive removed sensitive references. The exact reason this branch was left undeleted is **unknown**; its purpose was satisfied via the other PRs. There is no performance measurement.
 
 ## Evidence and resumption
 
