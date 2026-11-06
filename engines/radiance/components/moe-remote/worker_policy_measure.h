@@ -202,6 +202,7 @@ struct Measured {
     EffectSamples effect;
     uint64_t effect_required_quiet_windows=0; // convergence gate, never a measurement
     Series tail_lane_service_ns_per_s{64}; // sampled tail-helper large-lane GPU service / wall second
+    Series tail_lane_request_ns{64}; // tail large-lane service ns / completed samples in the same interval
     Series lane_lost_ns{64}; // observed tail lane unavailable from quiesce ACK to reopen
     Series slowest_helper_copy_bps{64}; // minimum achieved READY ACK copy rate across receiving helpers
     Throughput copy;             // bytes of experts moved by committed transactions over their wall time

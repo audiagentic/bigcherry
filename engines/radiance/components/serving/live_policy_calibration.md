@@ -23,9 +23,9 @@ partial records are preserved but cannot derive a production live policy.
 | tail_share_noise_ppm | Largest relative no-move tail-share change |
 | tail_share_gain_ppm | Positive predicted tail-share reduction from a committed plan |
 | tail_lane_service_ns_per_s | Sampled tail service per wall second |
+| tail_lane_request_ns | Same-interval tail large-lane service ns / completed sampled requests (ns/request), via RESERVED ACK |
 | lane_lost_ns | Observed quiesce-to-reopen downtime (zero permitted) |
 | effect_requests_per_s | Observed sampled lane requests per wall second |
-| effect_noise_floor_ns | Median absolute quiet-window service-time difference per request |
 | effect_noise_max_ns | Maximum absolute quiet-window difference; **not** a statistical quantile |
 | effect_sample_noise_ns | Per-request service-time dispersion σ from signed quiet-window deltas |
 | abort_quiescent_ns | Optional abort-to-quiescent p95, ns |
@@ -35,8 +35,8 @@ counts. For each signed delta of two adjacent means of sizes n_previous and
 n_current, it records `delta / sqrt(1/n_previous + 1/n_current)`. The SD of
 these normalized deltas estimates per-request σ; for equal-size n this is
 `SD(delta) * sqrt(n/2)`. This is actual observed dispersion, not a configured
-gate count. A nonzero median noise floor and at least two variable signed
-comparisons are required for convergence. The helper cannot see the objective
+gate count. A positive observed quiet deviation and at least two variable
+signed comparisons are required for convergence. The helper cannot see the objective
 false-revert rate, so the maximum (renamed from the misleading
 `effect_noise_quantile_ns`) supplies the conservative locked-v1 noise
 multiplier, rather than purporting to be an objective-specific empirical quantile.
@@ -50,20 +50,24 @@ multiplier, rather than purporting to be an objective-specific empirical quantil
 ## Derived policy
 
 With α = false_revert_rate_ppm / 1000000, let z(α) be the two-sided
-Gaussian quantile, computed by inverting `erfc(z/sqrt(2)) = α`, and let F be
-the observed `effect_noise_floor_ns`. The derived effect window is the
-smallest positive integer n such that
+Gaussian quantile defined by `erfc(z/sqrt(2)) = α`. Let
+`E = ceil(tail_lane_request_ns * tail_share_gain_ppm / 1000000)`.
+The gain is the median **predicted relative reduction** of committed
+plans; the service input is the median over pre-move intervals of large-lane
+service nanoseconds divided by completed sampled requests from **the same
+snapshot interval**. E is thus a predicted service-time change **per request**,
+not a fraction of a wall-second and not an observed post-move improvement.
+Neither factor depends on the configured quiet-window size.
 
-`σ * sqrt(2/n) * z(α) <= F`.
-
-For this n the Gaussian noise-only threshold-crossing probability is
-`p = erfc(F / (sqrt(2) * σ * sqrt(2/n)))`. The derived quiet count is the
-smallest positive integer k such that `T * p^k <= α`, treating the T
-transaction-effect opportunities with a union bound and the k consecutive
-noise crossings as independent. This model assumes Gaussian differences and
-independent crossings. Adjacent consecutive comparisons share a window, so
-these independence assumptions require hardware validation; they are **not**
-independently observed false-reversion outcomes.
+The derived effect window is the smallest positive integer n with
+`σ * sqrt(2/n) * z(α) <= E`. At this n the Gaussian noise-only
+crossing probability is
+`p = erfc(E / (sqrt(2) * σ * sqrt(2/n)))`.
+The derived quiet count is the smallest positive integer k with
+`T * p^k <= α`, applying a union bound over T transaction-effect
+opportunities and modelling consecutive quiet crossings as independent.
+Adjacent quiet differences share a window, so this is an **unverified**
+Gaussian/independent-crossing model, not measured false-reversion outcomes.
 
 Let `W = ceil(n * 1e9 / effect_requests_per_s)`.
 
@@ -79,11 +83,21 @@ Let `W = ceil(n * 1e9 / effect_requests_per_s)`.
 - abort_cooldown_ns = measured abort-to-quiescent, or the labelled cadence
   fallback when no abort was observed.
 - effect_window_samples = n; effect_min_quiet_windows = k.
-- effect_noise_multiplier_milli = ceil(1000 * effect_noise_max_ns / F),
-  a conservative observed maximum-to-floor envelope.
+- effect_noise_multiplier_milli = ceil(1000 * effect_noise_max_ns / E),
+  an observed maximum quiet-window deviation scaled by predicted effect.
 - effect_revert_ttl_ns = drift half-life / observation rate;
   learned_eligibility_ttl_ns = one observed heat gap as a locked-v1
   approximation (event invalidation needs v2).
+
+| Derived effect setting | Inputs | Rule |
+|---|---|---|
+| effect_window_samples | per-request σ, predicted E, declared α | minimum n with `σ sqrt(2/n) z(α) <= E` |
+| effect_min_quiet_windows | E, σ, derived n, declared T and α | minimum k with `T * p^k <= α` |
+| effect_noise_multiplier_milli | observed maximum quiet deviation and E | `ceil(1000 * effect_noise_max_ns / E)` |
+
+Equal-σ synthetic quiet-window series at configured widths 2 and 8
+derive the same n and k. The observed maximum and resulting multiplier
+can differ with the calibration window; neither feeds n or k.
 
 Each emitted policy setting has `origin = derived` provenance. An uncalibrated
 locked-v1 plan omits the policy entirely, since v1 has no observe-only state.

@@ -42,7 +42,8 @@ struct Bridge : Transport {
             const auto previous=v;
             v={};
             if (helper && phase==AckPhase::RESERVED) {
-                // Synthetic sampled large-lane service: ns over wall ns.
+                // One synthetic interval: service ns, wall ns and completed requests.
+                v.drained_step=20;
                 v.reserved[0]=uint64_t(2000 + 1000*a);
                 v.reserved[1]=10000;
             } else if (helper && phase==AckPhase::READY) {
@@ -309,10 +310,10 @@ static void test_calibration_ack_roundtrip() {
     c.pending_epoch=c.active_epoch+1;
     c.pending_slot=1u-c.active_slot;
     c.pending_digest=c.active_digest+1;
-    publish_ack(f.map,0,c,AckPhase::RESERVED,0,2000,10000);
+    publish_ack(f.map,0,c,AckPhase::RESERVED,4,2000,10000);
     auto a=read_shared_ack(f.map,0);
-    check(a.reserved[0]==2000 && a.reserved[1]==10000,
-          "RESERVED carries sampled service ns over observed wall ns");
+    check(a.reserved[0]==2000 && a.reserved[1]==10000 && a.drained_step==4,
+          "RESERVED carries same-interval service ns, sampled requests and wall ns");
     publish_ack(f.map,0,c,AckPhase::READY,0,20,500);
     a=read_shared_ack(f.map,0);
     check(a.reserved[0]==20 && a.reserved[1]==500,
@@ -390,6 +391,8 @@ int main() {
                   m.slowest_helper_copy_bps.quantile(0.5)>0 &&
                   m.tail_lane_service_ns_per_s.count()==2 &&
                   m.tail_lane_service_ns_per_s.quantile(0.5)>0 &&
+                  m.tail_lane_request_ns.count()==2 &&
+                  m.tail_lane_request_ns.quantile(0.5)==150 &&
                   m.lane_lost_ns.count()==2 &&
                   m.lane_lost_ns.quantile(0.95)==2500,
                   "the driver measures committed transactions, update gaps and the tail's hot-set size");

@@ -70,16 +70,16 @@ double gaussian_z(double alpha) {
 // Choose the smallest n satisfying a two-sided noise-crossing objective;
 // across transaction-effect opportunities, require opportunities*p^k <= alpha.
 // Consecutive quiet crossings are modelled as independent, not verified trials.
-std::pair<uint64_t,uint64_t> derive_effect_gate(uint64_t sigma_ns, uint64_t floor_ns,
+std::pair<uint64_t,uint64_t> derive_effect_gate(uint64_t sigma_ns, uint64_t delta_effect_ns,
                                                 uint64_t opportunities, double alpha) {
     const double z = gaussian_z(alpha);
-    const double sigma = double(sigma_ns), floor = double(floor_ns);
-    const double needed = 2.0 * std::pow(sigma*z/floor, 2.0);
+    const double sigma = double(sigma_ns), effect = double(delta_effect_ns);
+    const double needed = 2.0 * std::pow(sigma*z/effect, 2.0);
     if (!std::isfinite(needed) || needed > double(kMaxJsonInteger))
-        bad("effect_window_samples: cannot represent the noise-bounded window");
+        bad("effect_window_samples: cannot represent the effect-size-resolving window");
     const uint64_t n = std::max<uint64_t>(1, uint64_t(std::ceil(needed)));
     const double sd_delta = sigma * std::sqrt(2.0/double(n));
-    const double p = std::erfc(floor/(std::sqrt(2.0)*sd_delta));
+    const double p = std::erfc(effect/(std::sqrt(2.0)*sd_delta));
     if (!std::isfinite(p) || p >= 1.0)
         bad("effect_min_quiet_windows: invalid Gaussian noise probability");
     uint64_t quiet = 1;
@@ -114,14 +114,14 @@ std::optional<LivePolicyRecord> read_live_policy_record(const std::filesystem::p
         "evidence", "txn_p50_ns", "txn_p95_ns", "copy_bytes_per_s",
         "heat_gap_max_ns", "hot_set_k", "marginal_error_ppm", "marginal_observations",
         "drift_half_life_observations", "observation_rate_per_s", "tail_share_noise_ppm", "tail_share_gain_ppm",
-        "tail_lane_service_ns_per_s", "lane_lost_ns", "effect_requests_per_s", "effect_noise_floor_ns",
+        "tail_lane_service_ns_per_s", "tail_lane_request_ns", "lane_lost_ns", "effect_requests_per_s",
         "effect_noise_max_ns", "effect_sample_noise_ns", "abort_quiescent_ns", "absent"
     };
     const std::set<std::string> names = {
         "txn_p50_ns", "txn_p95_ns", "copy_bytes_per_s", "heat_gap_max_ns",
         "hot_set_k", "marginal_error_ppm", "marginal_observations", "drift_half_life_observations",
         "observation_rate_per_s", "tail_share_noise_ppm", "tail_share_gain_ppm", "tail_lane_service_ns_per_s",
-        "lane_lost_ns", "effect_requests_per_s", "effect_noise_floor_ns", "effect_noise_max_ns",
+        "tail_lane_request_ns", "lane_lost_ns", "effect_requests_per_s", "effect_noise_max_ns",
         "effect_sample_noise_ns"
     };
     std::set<std::string> seen;
@@ -172,13 +172,8 @@ std::optional<LivePolicyRecord> read_live_policy_record(const std::filesystem::p
             return row.measurements.contains(name) && number(row.measurements, name) >= kMillion;
         };
         if (too_big("tail_share_noise_ppm") || too_big("marginal_error_ppm") ||
-            too_big("tail_share_gain_ppm") ||
-            (row.measurements.contains("effect_noise_max_ns") &&
-             row.measurements.contains("effect_noise_floor_ns") &&
-             number(row.measurements, "effect_noise_max_ns") <
-             number(row.measurements, "effect_noise_floor_ns")))
-
-            bad(where + ": invalid measured fraction or noise maximum");
+            too_big("tail_share_gain_ppm"))
+            bad(where + ": invalid measured fraction");
         if (row.key == plan_key) found = std::move(row);
     }
     return found;
@@ -189,7 +184,7 @@ bool live_policy_record_complete(const LivePolicyRecord& record) {
         "txn_p50_ns", "txn_p95_ns", "copy_bytes_per_s", "heat_gap_max_ns",
         "hot_set_k", "marginal_error_ppm", "marginal_observations", "drift_half_life_observations",
         "observation_rate_per_s", "tail_share_noise_ppm", "tail_share_gain_ppm", "tail_lane_service_ns_per_s",
-        "lane_lost_ns", "effect_requests_per_s", "effect_noise_floor_ns", "effect_noise_max_ns",
+        "tail_lane_request_ns", "lane_lost_ns", "effect_requests_per_s", "effect_noise_max_ns",
         "effect_sample_noise_ns"
     })
         if (!record.measurements.contains(name)) return false;
@@ -208,16 +203,22 @@ DerivedLivePolicy derive_live_policy(const LivePolicyRecord& record, const Calib
     for (const char* key : {
         "txn_p95_ns", "copy_bytes_per_s", "heat_gap_max_ns", "marginal_error_ppm",
         "marginal_observations", "drift_half_life_observations", "observation_rate_per_s", "tail_share_noise_ppm",
-        "tail_share_gain_ppm", "tail_lane_service_ns_per_s", "lane_lost_ns", "effect_requests_per_s",
-        "effect_noise_floor_ns", "effect_noise_max_ns", "effect_sample_noise_ns"
+        "tail_share_gain_ppm", "tail_lane_service_ns_per_s", "tail_lane_request_ns", "lane_lost_ns", "effect_requests_per_s",
+        "effect_noise_max_ns", "effect_sample_noise_ns"
     })
         (void)n(key);
     const int64_t windows = calibration.integer("calibration.live_policy.transaction_effect_windows", match);
     const int64_t false_rate = calibration.integer("calibration.live_policy.false_revert_rate_ppm", match);
     if (windows <= 0 || false_rate <= 0 || false_rate >= int64_t(kMillion))
         bad("declared objectives must be positive windows and a false-revert rate in (0,1000000)");
+    // A committed plan's predicted relative tail-share reduction scales the
+    // tail lane's measured service per completed request, not a quiet-window
+    // statistic whose magnitude depends on the calibration gate window.
+    const uint64_t delta_effect_ns = div_ceil(
+        Wide(n("tail_lane_request_ns")) * n("tail_share_gain_ppm"), kMillion,
+        "delta_effect_ns");
     const auto [effect_samples, effect_quiet] = derive_effect_gate(
-        n("effect_sample_noise_ns"), n("effect_noise_floor_ns"), uint64_t(windows),
+        n("effect_sample_noise_ns"), delta_effect_ns, uint64_t(windows),
         double(false_rate) / double(kMillion));
     const uint64_t window_ns = div_ceil(Wide(effect_samples) * kSecond,
                                         n("effect_requests_per_s"), "effect window");
@@ -246,7 +247,7 @@ DerivedLivePolicy derive_live_policy(const LivePolicyRecord& record, const Calib
         Wide(n("drift_half_life_observations")) * kSecond, n("observation_rate_per_s"),
         "effect_revert_ttl_ns");
     const uint64_t noise_multiplier = div_ceil(
-        Wide(n("effect_noise_max_ns")) * 1000, n("effect_noise_floor_ns"),
+        Wide(n("effect_noise_max_ns")) * 1000, delta_effect_ns,
         "effect_noise_multiplier_milli");
 
     DerivedLivePolicy out{Json::object(), Json::object()};
@@ -274,7 +275,7 @@ DerivedLivePolicy derive_live_policy(const LivePolicyRecord& record, const Calib
     set("learned_eligibility_ttl_ns", n("heat_gap_max_ns"),
         "v1 mandatory time TTL: one measured heat source gap (event invalidation requires v2)", layout);
     set("effect_window_samples", effect_samples,
-        "smallest n with measured per-request sigma * sqrt(2/n) * Gaussian z(false-revert objective) <= measured noise floor",
+        "smallest n with measured per-request sigma * sqrt(2/n) * Gaussian z(false-revert objective) <= predicted committed-move effect per request",
         Json::array({"/spec/calibration", "/spec/plan/engine_memory/cache_key"}));
     set("effect_min_quiet_windows", effect_quiet,
         "smallest consecutive quiet count with transaction_effect_windows * Gaussian noise-crossing probability^count <= declared false-revert objective",
@@ -285,7 +286,7 @@ DerivedLivePolicy derive_live_policy(const LivePolicyRecord& record, const Calib
                                                   "half_life_observations_milli"),
         "hot-set overlap drift half-life in observations, scaled by 1000", layout);
     set("effect_noise_multiplier_milli", noise_multiplier,
-        "conservative observed maximum quiet-window deviation / measured noise floor", layout);
+        "conservative observed maximum quiet-window deviation / predicted committed-move effect per request", layout);
     // No guessed protected layer ids. The helper excludes experts with missing planes itself.
     // The v1 model container exposes no protected-layer list; an explicit guard needs RCS12's model metadata.
     set("protected_layers", Json::array(), "no model-global protected-layer metadata in the container (missing weights guarded by helper)",

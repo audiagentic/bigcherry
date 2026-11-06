@@ -1,6 +1,8 @@
 #include "live_policy.h"
 
 #include <cassert>
+#include <cmath>
+#include "../moe-remote/worker_policy_effect.h"
 #ifdef NDEBUG
 #error "assert-based test built with NDEBUG: its assertions would not run"
 #endif
@@ -36,9 +38,9 @@ static std::string fixture(const std::string& key, bool malformed = false) {
            "tail_share_noise_ppm = 20000\n"
            "tail_share_gain_ppm = 45000\n"
            "tail_lane_service_ns_per_s = 750000000\n"
+           "tail_lane_request_ns = 22222222\n"
            "lane_lost_ns = 100000000\n"
            "effect_requests_per_s = 64\n"
-           "effect_noise_floor_ns = 1000000\n"
            "effect_noise_max_ns = 2500000\n"
            "effect_sample_noise_ns = 1550000\n"
            "abort_quiescent_ns = 1500000000\n" +
@@ -57,6 +59,24 @@ static bool throws_with(const fs::path& file, const std::string& key, const std:
     catch (const std::runtime_error& e) { return std::string(e.what()).find(part) != std::string::npos; }
     return false;
 }
+// Feed actual quiet-window means at two different configured sizes. Their
+// mean differences scale by sqrt(1/n), while normalized per-request sigma
+// stays fixed; neither the effect threshold nor the derived n/k may echo n_cfg.
+static r3::policy::EffectSamples synthetic_quiet(uint64_t n_cfg) {
+    r3::policy::EffectGate gate({n_cfg,2,2.0});
+    r3::policy::ServiceSnapshot snapshot{};
+    gate.quiet(snapshot,1000);
+    for (uint64_t i=0;i<9;++i) {
+        auto& tail=snapshot.lane[1];
+        tail.samples+=n_cfg;
+        tail.rows+=n_cfg*10;
+        const uint64_t mean_ns=5000000+(i%2)*(n_cfg==2?1550000:775000);
+        tail.time_ns+=n_cfg*mean_ns;
+        gate.quiet(snapshot,2000+1000*i);
+    }
+    return gate.observed();
+}
+
 int main() {
     const std::string key(64, 'a');
     const fs::path file = write_fixture("schema_version = 1\n");
@@ -85,6 +105,27 @@ int main() {
     assert(p.at("half_life_observations_milli") == 59000000000ull);
     assert(p.at("effect_revert_ttl_ns") == 5900000000ull);
     assert(p.at("effect_noise_multiplier_milli") == 2500);
+    const auto small_series=synthetic_quiet(2);
+    const auto wide_series=synthetic_quiet(8);
+    assert(small_series.quiet_comparisons==wide_series.quiet_comparisons &&
+           small_series.quiet_comparisons==8);
+    assert(small_series.quiet_delta_ns.max()==1550000 &&
+           wide_series.quiet_delta_ns.max()==775000);
+    assert(std::abs(small_series.sample_noise_ns()-1550000.0)<1e-6 &&
+           std::abs(wide_series.sample_noise_ns()-1550000.0)<1e-6);
+    auto small_window=*rec, wide_window=*rec;
+    small_window.measurements["effect_sample_noise_ns"]=uint64_t(std::ceil(small_series.sample_noise_ns()));
+    wide_window.measurements["effect_sample_noise_ns"]=uint64_t(std::ceil(wide_series.sample_noise_ns()));
+    small_window.measurements["effect_noise_max_ns"]=uint64_t(small_series.quiet_delta_ns.max());
+    wide_window.measurements["effect_noise_max_ns"]=uint64_t(wide_series.quiet_delta_ns.max());
+    const auto derived_small=sv::derive_live_policy(small_window,cal,at,2500000,{1000000000,1000000000});
+    const auto derived_wide=sv::derive_live_policy(wide_window,cal,at,2500000,{1000000000,1000000000});
+    assert(derived_small.policy.at("effect_window_samples")==derived_wide.policy.at("effect_window_samples") &&
+           derived_small.policy.at("effect_window_samples")==32);
+    assert(derived_small.policy.at("effect_min_quiet_windows")==derived_wide.policy.at("effect_min_quiet_windows") &&
+           derived_small.policy.at("effect_min_quiet_windows")==2);
+    assert(derived_small.policy.at("effect_noise_multiplier_milli") !=
+           derived_wide.policy.at("effect_noise_multiplier_milli"));
     // Neither gate setting is copied from the lab policy: changing measured
     // dispersion changes the derived window and can change the quiet count.
     auto quieter = *rec;
@@ -130,7 +171,8 @@ int main() {
     assert(throws_with(file, key, "unknown key"));
     // Old measured keys must not have a compatibility path.
     for (const char* obsolete : {"noise_false_revert_rate_ppm", "effect_window_samples",
-                                 "effect_quiet_windows", "effect_noise_quantile_ns"}) {
+                                 "effect_quiet_windows", "effect_noise_quantile_ns",
+                                 "effect_noise_floor_ns"}) {
         write_fixture(fixture(key) + std::string(obsolete) + " = 1\n");
         assert(throws_with(file, key, "unknown key"));
     }

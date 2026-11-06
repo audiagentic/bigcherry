@@ -189,8 +189,41 @@ Two causes, which are the step-5 work:
 Until both land no layout can be calibrated, and the live policy stays lab-only (`--live-policy`).
 
 
-## Step 5 follow-up 1: empirical noise dispersion and derived gate settings (2026-11-06)
+## Step 5 follow-up 1: empirical noise dispersion (2026-11-06)
 
-The strict measured record drops the objective `noise_false_revert_rate_ppm` and the two configured-gate echoes `effect_window_samples` and `effect_quiet_windows`. It adds `effect_sample_noise_ns`: the standard deviation of **signed** differences of consecutive quiet-window mean service times after scaling each by `1 / sqrt(1/n_previous + 1/n_current)`. For equal n, this is `sd(delta) * sqrt(n/2)`. At least two variable deltas are required for convergence. `effect_noise_floor_ns` remains the median absolute delta. `effect_noise_max_ns` is the observed maximum (formerly misnamed a quantile), retained for the conservative locked-v1 multiplier because the helper cannot select an objective-specific quantile without receiving the objective.
+The helper records per-request sigma from signed differences of quiet-window
+means normalized by `sqrt(1/n_previous + 1/n_current)` and the maximum
+absolute quiet-window deviation (`effect_noise_max_ns`). It does **not**
+serialize configured gate counts or the false-revert objective as readings.
+The first follow-up derived the window from the median quiet difference,
+which depends on calibration window size; that threshold was superseded by
+follow-up 2. Earlier hardware evidence uses the old schema and is not a
+complete current-format record.
 
-Serving computes the two-sided Gaussian z from the declared false-revert fraction α, then chooses the smallest integer n ≥ 1 with `sigma * sqrt(2/n) * z(alpha) <= noise_floor`. The Gaussian noise-only crossing probability at n is `p = erfc(noise_floor / (sqrt(2) * sigma * sqrt(2/n)))`. With declared transaction-effect opportunities T, it derives the smallest k ≥ 1 with `T * p^k <= alpha`; this is a union bound across T opportunities and assumes independent crossings over consecutive quiet windows. Adjacent comparisons share a window, so independence and Gaussian tails require hardware validation. These settings have `derived` provenance; the observed maximum does not prove the false-revert objective. The historical hardware calibration above used the old schema and is not a complete current-format record.
+## Step 5 follow-up 2: committed-move effect size (2026-11-06)
+
+The tail helper snapshots large-lane service nanoseconds **and**
+completed request samples together. The transaction RESERVED ACK conveys
+both deltas and elapsed wall nanoseconds without a shared-memory layout change.
+The driver records the median positive `service_ns / completed_requests` as
+`tail_lane_request_ns` (ns/request); `tail_lane_service_ns_per_s` remains
+service ns / wall ns. The settled record requires a valid per-request sample.
+
+Let `G = tail_share_gain_ppm` be the median **predicted relative reduction**
+of committed placement plans, `S = tail_lane_request_ns`, and
+`E = ceil(S * G / 1000000)` nanoseconds **per request**. E is a predicted
+effect, not a measured post-move saving; its factors are independent of the
+calibration gate's configured window. The strict record removes
+`effect_noise_floor_ns` and refuses the old key.
+
+| Derived effect setting | Measured and declared inputs | Formula |
+|---|---|---|
+| `effect_window_samples` (n) | per-request noise sigma, E, declared false-revert fraction α | smallest n ≥ 1 with `sigma * sqrt(2/n) * z(α) <= E`, `erfc(z/sqrt(2)) = α` |
+| `effect_min_quiet_windows` (k) | E, sigma, derived n, declared opportunities T and α | smallest k ≥ 1 with `T * p^k <= α`; `p = erfc(E / (sqrt(2) * sigma * sqrt(2/n)))` |
+| `effect_noise_multiplier_milli` | measured `effect_noise_max_ns` and E | `ceil(1000 * effect_noise_max_ns / E)` |
+
+The Gaussian and independent quiet-crossing assumptions, including the
+union bound over T, are model assumptions not empirically certified false
+reversion rates. Synthetic quiet series with identical per-request sigma
+at configured widths 2 and 8 derive the same n and k; hardware evidence
+is still required. All settings retain `derived` provenance.
