@@ -30,6 +30,7 @@ static std::string fixture(const std::string& key, bool malformed = false) {
            "txn_p95_ns = 2720000000\n"
            "copy_bytes_per_s = 160000000\n"
            "heat_gap_max_ns = 5040000000\n"
+           "heat_watermarked = 0\n"
            "hot_set_k = 5931\n"
            "marginal_error_ppm = 23000\n"
            "marginal_observations = 3\n"
@@ -139,7 +140,18 @@ int main() {
     assert(h.policy.at("effect_window_samples") == 128);
     assert(q.provenance.at("/spec/handoff/placement/live_policy/effect_window_samples").at("origin") == "derived");
     assert(q.provenance.at("/spec/handoff/placement/live_policy/effect_min_quiet_windows").at("origin") == "derived");
-    assert(p.at("effect_gate") == true && p.at("accept_unwatermarked_heat") == false);
+    assert(p.at("effect_gate") == true && p.at("accept_unwatermarked_heat") == true);
+    assert(d.provenance.at("/spec/handoff/placement/live_policy/accept_unwatermarked_heat")
+               .at("origin") == "derived");
+    assert(d.provenance.at("/spec/handoff/placement/live_policy/accept_unwatermarked_heat")
+               .at("source").get<std::string>().find("no step watermark; RHP02 replaces it") != std::string::npos);
+    auto watermarked = *rec;
+    watermarked.measurements["heat_watermarked"] = 1;
+    const auto with_watermark = sv::derive_live_policy(watermarked,cal,at,2500000,{1000000000,1000000000});
+    assert(with_watermark.policy.at("accept_unwatermarked_heat") == false);
+    assert(with_watermark.provenance.at("/spec/handoff/placement/live_policy/accept_unwatermarked_heat")
+               .at("source").get<std::string>().find("watermarked feed") != std::string::npos);
+
     assert(p.at("protected_layers").empty());
     assert(d.provenance.size() == p.size());
     for (auto it = d.provenance.begin(); it != d.provenance.end(); ++it)
@@ -167,6 +179,18 @@ int main() {
     write_fixture(partial);
     assert(throws_with(file, key, "copy_bytes_per_s"));
 
+    // The zero-valued reading is valid TOML, but a missing or nonbinary reading is not.
+    std::string no_watermark = fixture(key);
+    const std::string zero_field = "heat_watermarked = 0\n";
+    no_watermark.erase(no_watermark.find(zero_field),zero_field.size());
+    write_fixture(no_watermark);
+    assert(throws_with(file,key,"heat_watermarked"));
+    write_fixture(fixture(key) + "heat_watermarked = 2\n");
+    assert(throws_with(file,key,"TOML") || throws_with(file,key,"duplicate"));
+    auto bad_mark = fixture(key);
+    bad_mark.replace(bad_mark.find(zero_field),zero_field.size(),"heat_watermarked = 2\n");
+    write_fixture(bad_mark);
+    assert(throws_with(file,key,"heat_watermarked must be 0 or 1"));
     write_fixture(fixture(key, true));
     assert(throws_with(file, key, "unknown key"));
     // Old measured keys must not have a compatibility path.

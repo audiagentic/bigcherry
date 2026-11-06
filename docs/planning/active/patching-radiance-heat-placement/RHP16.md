@@ -227,3 +227,36 @@ union bound over T, are model assumptions not empirically certified false
 reversion rates. Synthetic quiet series with identical per-request sigma
 at configured widths 2 and 8 derive the same n and k; hardware evidence
 is still required. All settings retain `derived` provenance.
+
+## Watermark follows the measured feed (2026-11-06)
+
+The rhp16-calib2 hardware run produced a COMPLETE record and a derived
+production policy, but helper0 reported `evaluated=0`, `no_change=24`,
+`delta_gaps=0`: the policy always set `accept_unwatermarked_heat=false`.
+The only available production feed is `HistogramFileSource`, which cannot
+supply a complete observation/step watermark. Calibration had accepted its
+deltas only because the explicit lab policy allowed authenticated histogram
+files. Production therefore rejected every delta as `heat_unwatermarked`.
+
+The helper now records `heat_watermarked` over **accepted** heat deltas:
+`1` means every accepted delta had `complete_observations`; `0`
+means at least one accepted delta lacked it. This is a measured, zero-valid
+record field, required for a complete calibration; no accepted deltas means
+an explicitly absent field. Serving derives `accept_unwatermarked_heat =
+(heat_watermarked == 0)` with derived provenance. The existing helper-side
+capability check still limits the allowance to the authenticated engine
+histogram-file source; it does not authorize unknown feeds.
+
+**RHP02 invalidation requirement:** a histogram-file calibration must be
+re-taken when RHP02 installs the complete, watermarked engine feed. The
+RSC03 plan-store key already incorporates `engine_build`:
+`engine_identity` hashes the engine binary and its runtime-home files.
+When RHP02 changes the engine producer (and therefore that hashed engine
+build), the plan-store key changes. Serving cannot match the old
+histogram-file record to the new key, so a new calibration is required.
+RHP02 must verify this key change before rollout. If it replaces only
+the helper-side reader without changing the hashed engine artifacts,
+this automatic invalidation does **not** occur: RHP02 must then also add
+a feed identity/version to the plan key or reject old feed records
+explicitly. Never silently reuse a histogram-file calibration for a
+new watermarked producer.

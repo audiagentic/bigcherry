@@ -36,6 +36,7 @@ int main() {
     Json m = {
         {"txn_p50_ns",1770000000ull}, {"txn_p95_ns",2720000000ull},
         {"copy_bytes_per_s",160000000ull}, {"heat_gap_max_ns",5040000000ull},
+        {"heat_watermarked",0},
         {"hot_set_k",5931}, {"marginal_error_ppm",23000},
         {"marginal_observations",3}, {"drift_half_life_observations",59000000},
         {"observation_rate_per_s",10000000}, {"tail_share_noise_ppm",20000},
@@ -56,12 +57,28 @@ int main() {
     const auto rec = sv::read_live_policy_record(cache, store_key);
     assert(!sv::read_live_policy_record(cache, key));
     assert(rec && sv::live_policy_record_complete(*rec));
+    assert(rec->measurements.at("heat_watermarked") == 0);
     const auto d = sv::derive_live_policy(*rec, sv::Calibration::standard(cache),
                                           {"", "flashnext-4gpu", "balanced"},
                                           2500000, {1000000000,1000000000});
     assert(d.policy.at("cadence_ns") == 3220000000ull);
     assert(d.policy.at("max_moves") == 64);
     assert(d.policy.at("min_residency_ns") == 32592592593ull);
+    assert(d.policy.at("accept_unwatermarked_heat") == true);
+    row["measurements"]["heat_watermarked"] = 1;
+    log_line(log,row);
+    const fs::path watermarked_store = dir / "watermarked.toml";
+    sv::ingest_live_policy_record(log,watermarked_store,key,"flashnext-4gpu","balanced");
+    auto with_mark = sv::read_live_policy_record(watermarked_store,key);
+    assert(with_mark && with_mark->measurements.at("heat_watermarked") == 1);
+    assert(!sv::derive_live_policy(*with_mark,sv::Calibration::standard(watermarked_store),
+            {"","flashnext-4gpu","balanced"},2500000,{1000000000,1000000000})
+            .policy.at("accept_unwatermarked_heat").get<bool>());
+    row["measurements"]["heat_watermarked"] = 2;
+    log_line(log,row);
+    assert(refused(log,dir/"bad-mark.toml",key,"flashnext-4gpu","balanced"));
+    row["measurements"]["heat_watermarked"] = 0;
+    log_line(log,row);
     const std::string original = [&] { std::ifstream in(cache); return std::string(
         std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()); }();
     assert(refused(log,cache,key,"flashnext-4gpu","balanced","")); // no plan-store key: the helper key is never stored

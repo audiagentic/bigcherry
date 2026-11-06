@@ -38,6 +38,9 @@ int main() {
     m.marginal_error = 0.025;
     m.marginal_observations = 40;
     m.observation_rate_per_s = 10.0;
+    // No input accepted => no watermark measurement or settled record.
+    assert(!calibration_settled(m));
+    m.accepted_heat_delta(true);
     m.effect_required_quiet_windows=2;
     m.effect.normalized_noise_ns.add(10.0);
     m.effect.normalized_noise_ns.add(-10.0);
@@ -63,6 +66,19 @@ int main() {
     assert(row.at("measurements").at("txn_p50_ns") == 10);
     assert(row.at("measurements").at("txn_p95_ns") == 30);
     assert(row.at("measurements").at("hot_set_k") == 2);
+    assert(row.at("measurements").at("heat_watermarked") == 1);
+    Measured mixed = m;
+    mixed.accepted_heat_delta(false);
+    mixed.accepted_heat_delta(true); // once unwatermarked, always zero
+    assert(calibration_record(mixed, {std::string(64, 'd'), "flashnext-4gpu", "balanced"},
+                              "2026-11-06").at("measurements").at("heat_watermarked") == 0);
+    Measured unobserved = m;
+    unobserved.accepted_heat_deltas = 0;
+    unobserved.accepted_unwatermarked_heat = false;
+    assert(!calibration_settled(unobserved));
+    const auto no_heat = calibration_record(unobserved,
+        {std::string(64, 'e'), "flashnext-4gpu", "balanced"}, "2026-11-06");
+    assert(no_heat.at("absent").at("heat_watermarked") == "no accepted heat deltas");
     assert(row.at("measurements").at("marginal_error_ppm") == 25000);
     assert(row.at("measurements").at("copy_bytes_per_s") == 1000000);
     assert(!row.at("absent").contains("copy_bytes_per_s"));
@@ -91,5 +107,5 @@ int main() {
     assert(absent_copy.at("absent").at("copy_bytes_per_s").is_string());
     assert(!absent_copy.at("measurements").contains("copy_bytes_per_s"));
     assert(row.at("absent").at("abort_quiescent_ns") == "none observed");
-    assert(row.at("absent").size() + row.at("measurements").size() == 18);
+    assert(row.at("absent").size() + row.at("measurements").size() == 19);
 }

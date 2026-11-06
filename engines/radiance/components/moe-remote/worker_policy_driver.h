@@ -165,6 +165,7 @@ private:
         }
         {
             std::lock_guard<std::mutex> guard(measure_lock_);
+            measured_.accepted_heat_delta(delta.complete_observations);
             if(last_delta_poll_ns_ && poll_now>last_delta_poll_ns_)
                 measured_.delta_gap_ns.add(double(poll_now-last_delta_poll_ns_));
             last_delta_poll_ns_=poll_now;

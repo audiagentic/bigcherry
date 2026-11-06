@@ -201,6 +201,12 @@ struct Measured {
     TailSamples tail;
     EffectSamples effect;
     uint64_t effect_required_quiet_windows=0; // convergence gate, never a measurement
+    uint64_t accepted_heat_deltas=0; // only deltas successfully consumed by the planner
+    bool accepted_unwatermarked_heat=false; // sticky across heat baseline resets
+    void accepted_heat_delta(bool complete_observations) {
+        ++accepted_heat_deltas;
+        if (!complete_observations) accepted_unwatermarked_heat=true;
+    }
     Series tail_lane_service_ns_per_s{64}; // sampled tail-helper large-lane GPU service / wall second
     Series tail_lane_request_ns{64}; // tail large-lane service ns / completed samples in the same interval
     Series lane_lost_ns{64}; // observed tail lane unavailable from quiesce ACK to reopen

@@ -386,7 +386,8 @@ int main() {
         {
             const Measured m=d.measured();
             check(m.transaction_ns.total()==2 && m.abort_ns.total()==0 && m.hot_set_k==2 &&
-                  m.delta_gap_ns.total()>0 && m.tail.gain_ppm.total()>0 &&
+                  m.delta_gap_ns.total()>0 && m.accepted_heat_deltas>0 &&
+                  !m.accepted_unwatermarked_heat && m.tail.gain_ppm.total()>0 &&
                   m.slowest_helper_copy_bps.total()==2 &&
                   m.slowest_helper_copy_bps.quantile(0.5)>0 &&
                   m.tail_lane_service_ns_per_s.count()==2 &&

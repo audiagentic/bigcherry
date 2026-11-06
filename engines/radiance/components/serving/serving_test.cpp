@@ -1021,7 +1021,7 @@ void manifest_writer_step(Fixture& t) {
             "layout = \"flashnext-4gpu\"\nobjective = \"balanced\"\n"
             "seeded = \"2026-11-05\"\nevidence = \"policy-live-9 timing and sampling; synthetic noise/drift/lane readings\"\n"
             "txn_p50_ns = 1770000000\ntxn_p95_ns = 2720000000\n"
-            "copy_bytes_per_s = 160000000\nheat_gap_max_ns = 5040000000\n"
+            "copy_bytes_per_s = 160000000\nheat_gap_max_ns = 5040000000\nheat_watermarked = 0\n"
             "hot_set_k = 5931\nmarginal_error_ppm = 23000\n"
             "marginal_observations = 3\ndrift_half_life_observations = 59000000\n"
             "observation_rate_per_s = 10000000\ntail_share_noise_ppm = 20000\n"
@@ -1032,6 +1032,7 @@ void manifest_writer_step(Fixture& t) {
         const auto with_calibration = sv::build_manifest(calibrated);
         const auto& lp = with_calibration.document.at("spec").at("handoff").at("placement").at("live_policy");
         assert(lp.at("cadence_ns") == 3220000000ull);
+        assert(lp.at("accept_unwatermarked_heat") == true);
         assert(lp.at("max_moved_bytes") == 160000000ull && lp.at("margin_ppm") == 23000);
         assert(lp.at("half_life_observations_milli") == 59000000000ull);
         const auto& pv = with_calibration.document.at("provenance");
@@ -1064,7 +1065,7 @@ void manifest_writer_step(Fixture& t) {
         const auto& crm = cr_loaded.value();
         Json measured = {
             {"txn_p50_ns",1770000000ull}, {"txn_p95_ns",2720000000ull}, {"copy_bytes_per_s",160000000ull},
-            {"heat_gap_max_ns",5040000000ull}, {"hot_set_k",5931}, {"marginal_error_ppm",23000},
+            {"heat_gap_max_ns",5040000000ull}, {"heat_watermarked",0}, {"hot_set_k",5931}, {"marginal_error_ppm",23000},
             {"marginal_observations",3}, {"drift_half_life_observations",59000000}, {"observation_rate_per_s",10000000},
             {"tail_share_noise_ppm",20000}, {"tail_share_gain_ppm",45000}, {"tail_lane_service_ns_per_s",750000000},
             {"lane_lost_ns",100000000}, {"effect_requests_per_s",64},

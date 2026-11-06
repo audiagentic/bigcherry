@@ -112,13 +112,13 @@ std::optional<LivePolicyRecord> read_live_policy_record(const std::filesystem::p
     const std::set<std::string> fields = {
         "plan_cache_key", "layout", "objective", "seeded",
         "evidence", "txn_p50_ns", "txn_p95_ns", "copy_bytes_per_s",
-        "heat_gap_max_ns", "hot_set_k", "marginal_error_ppm", "marginal_observations",
+        "heat_gap_max_ns", "heat_watermarked", "hot_set_k", "marginal_error_ppm", "marginal_observations",
         "drift_half_life_observations", "observation_rate_per_s", "tail_share_noise_ppm", "tail_share_gain_ppm",
         "tail_lane_service_ns_per_s", "tail_lane_request_ns", "lane_lost_ns", "effect_requests_per_s",
         "effect_noise_max_ns", "effect_sample_noise_ns", "abort_quiescent_ns", "absent"
     };
     const std::set<std::string> names = {
-        "txn_p50_ns", "txn_p95_ns", "copy_bytes_per_s", "heat_gap_max_ns",
+        "txn_p50_ns", "txn_p95_ns", "copy_bytes_per_s", "heat_gap_max_ns", "heat_watermarked",
         "hot_set_k", "marginal_error_ppm", "marginal_observations", "drift_half_life_observations",
         "observation_rate_per_s", "tail_share_noise_ppm", "tail_share_gain_ppm", "tail_lane_service_ns_per_s",
         "tail_lane_request_ns", "lane_lost_ns", "effect_requests_per_s", "effect_noise_max_ns",
@@ -159,12 +159,15 @@ std::optional<LivePolicyRecord> read_live_policy_record(const std::filesystem::p
             }
         }
         for (const auto& n : names) {
-            if (t->contains(n)) row.measurements[n] = positive(*t, n.c_str(), where, n == "lane_lost_ns");
+            if (t->contains(n)) row.measurements[n] = positive(*t, n.c_str(), where, n == "lane_lost_ns" || n == "heat_watermarked");
             else if (!row.absent.contains(n)) bad(where + ": " + n + " missing without absent reason");
         }
         if (t->contains("abort_quiescent_ns"))
             row.measurements["abort_quiescent_ns"] = positive(*t, "abort_quiescent_ns", where);
         // Legacy complete records legitimately omit the optional abort duration.
+        if (row.measurements.contains("heat_watermarked") &&
+            number(row.measurements, "heat_watermarked", true) > 1)
+            bad(where + ": heat_watermarked must be 0 or 1");
         if (row.measurements.contains("txn_p50_ns") && row.measurements.contains("txn_p95_ns") &&
             number(row.measurements, "txn_p50_ns") > number(row.measurements, "txn_p95_ns"))
             bad(where + ": txn_p50_ns > txn_p95_ns");
@@ -181,7 +184,7 @@ std::optional<LivePolicyRecord> read_live_policy_record(const std::filesystem::p
 
 bool live_policy_record_complete(const LivePolicyRecord& record) {
     for (const char* name : {
-        "txn_p50_ns", "txn_p95_ns", "copy_bytes_per_s", "heat_gap_max_ns",
+        "txn_p50_ns", "txn_p95_ns", "copy_bytes_per_s", "heat_gap_max_ns", "heat_watermarked",
         "hot_set_k", "marginal_error_ppm", "marginal_observations", "drift_half_life_observations",
         "observation_rate_per_s", "tail_share_noise_ppm", "tail_share_gain_ppm", "tail_lane_service_ns_per_s",
         "tail_lane_request_ns", "lane_lost_ns", "effect_requests_per_s", "effect_noise_max_ns",
@@ -199,9 +202,9 @@ DerivedLivePolicy derive_live_policy(const LivePolicyRecord& record, const Calib
     if (record.layout != match.layout || record.objective != match.objective)
         bad("record layout/objective does not match the resolved serving intent");
     const Json& m = record.measurements;
-    const auto n = [&](const char* key) { return number(m, key, std::string(key) == "lane_lost_ns"); };
+    const auto n = [&](const char* key) { return number(m, key, std::string(key) == "lane_lost_ns" || std::string(key) == "heat_watermarked"); };
     for (const char* key : {
-        "txn_p95_ns", "copy_bytes_per_s", "heat_gap_max_ns", "marginal_error_ppm",
+        "txn_p95_ns", "copy_bytes_per_s", "heat_gap_max_ns", "heat_watermarked", "marginal_error_ppm",
         "marginal_observations", "drift_half_life_observations", "observation_rate_per_s", "tail_share_noise_ppm",
         "tail_share_gain_ppm", "tail_lane_service_ns_per_s", "tail_lane_request_ns", "lane_lost_ns", "effect_requests_per_s",
         "effect_noise_max_ns", "effect_sample_noise_ns"
@@ -261,7 +264,12 @@ DerivedLivePolicy derive_live_policy(const LivePolicyRecord& record, const Calib
             "RHP16 " + how + "; " + record.source, inputs);
     };
     set("effect_gate", true, "effect gate required to check measured service noise", layout);
-    set("accept_unwatermarked_heat", false, "complete heat watermark required; not an operator opt-in", layout);
+    if (n("heat_watermarked") > 1) bad("heat_watermarked must be 0 or 1");
+    set("accept_unwatermarked_heat", n("heat_watermarked") == 0,
+        n("heat_watermarked") == 0 ?
+            "calibration measured the production heat feed: no step watermark; RHP02 replaces it" :
+            "watermarked feed",
+        Json::array({"/spec/plan/engine_memory/cache_key"}));
     set("cadence_ns", cadence, "txn_p95_ns + measured effect-window duration (requests/rate)", layout);
     set("max_moved_bytes", move_bytes, "slowest copy bytes/s x effect window x declared transaction windows, capped by helper budgets",
         Json::array({"/spec/processes/helpers", "/spec/calibration", "/spec/plan/engine_memory/cache_key"}));

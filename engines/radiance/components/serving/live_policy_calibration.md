@@ -7,7 +7,7 @@ SHA-256 plan-cache key plus required layout, objective, seeded date and evidence
 description. Unknown fields, duplicate keys and malformed or unsupported old
 records fail closed; a missing key means uncalibrated.
 
-All measurements are integers. Only `lane_lost_ns` can be zero. An unobserved
+All measurements are integers. Only `lane_lost_ns` and `heat_watermarked` can be zero. An unobserved
 quantity must have an explicit `absent = { quantity = "reason" }` entry;
 partial records are preserved but cannot derive a production live policy.
 
@@ -16,6 +16,7 @@ partial records are preserved but cannot derive a production live policy.
 | txn_p50_ns, txn_p95_ns | Committed transaction wall time, ns |
 | copy_bytes_per_s | Slowest receiver helper's observed transfer rate |
 | heat_gap_max_ns | Maximum consumed heat-delta gap |
+| heat_watermarked | 1 if every accepted delta has a complete observation watermark; 0 if any accepted delta lacks it |
 | hot_set_k | Tail capacity / expert stride |
 | marginal_error_ppm, marginal_observations | Marginal expert sampling error, observed requests |
 | drift_half_life_observations | Measured top-K overlap half-life |
@@ -101,7 +102,13 @@ can differ with the calibration window; neither feeds n or k.
 
 Each emitted policy setting has `origin = derived` provenance. An uncalibrated
 locked-v1 plan omits the policy entirely, since v1 has no observe-only state.
-The policy requires the effect gate, refuses unwatermarked heat, and leaves
+The policy requires the effect gate and derives `accept_unwatermarked_heat`
+from the measured `heat_watermarked` (zero means allow the authenticated
+histogram-file feed; one means refuse unwatermarked deltas). RHP02's
+watermarked engine producer changes the engine build identity included in
+the plan-store key, forcing a new calibration rather than reusing the old
+histogram-file record (or RHP02 must explicitly version the feed in the key
+if its engine build fingerprint does not change). It leaves
 protected_layers empty until model metadata supplies globally protected IDs
 (the helper separately guards missing weights).
 

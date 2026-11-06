@@ -20,7 +20,7 @@ namespace fs = std::filesystem;
 constexpr const char* kMarker = "RHP16_CALIBRATION_JSON ";
 constexpr uint64_t kMaxExact = (uint64_t(1) << 53) - 1;
 const std::set<std::string> kMeasurements = {
-    "txn_p50_ns", "txn_p95_ns", "copy_bytes_per_s", "heat_gap_max_ns",
+    "txn_p50_ns", "txn_p95_ns", "copy_bytes_per_s", "heat_gap_max_ns", "heat_watermarked",
     "hot_set_k", "marginal_error_ppm", "marginal_observations",
     "drift_half_life_observations", "observation_rate_per_s",
     "tail_share_noise_ppm", "tail_share_gain_ppm", "tail_lane_service_ns_per_s",
@@ -59,7 +59,8 @@ void check_record(const Json& row, const std::string& key,
             (it.value().is_number_integer() && !it.value().is_number_unsigned() &&
              it.value().get<int64_t>() < 0) ||
             it.value().get<uint64_t>() > kMaxExact ||
-            (it.value().get<uint64_t>() == 0 && it.key() != "lane_lost_ns"))
+            (it.value().get<uint64_t>() == 0 && it.key() != "lane_lost_ns" && it.key() != "heat_watermarked") ||
+            (it.key() == "heat_watermarked" && it.value().get<uint64_t>() > 1))
             invalid("invalid measured quantity: " + it.key());
     }
     for (auto it = row.at("absent").begin(); it != row.at("absent").end(); ++it) {

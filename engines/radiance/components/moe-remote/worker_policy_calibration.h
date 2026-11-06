@@ -15,7 +15,7 @@ struct CalibrationIdentity {
 inline bool calibration_settled(const Measured& m) {
     // Require the complete observed drift horizon and a heat shift that actually
     // caused a committed move. Quiet-window statistics must converge separately.
-    return m.drift_capacity && m.drift_intervals == m.drift_capacity &&
+    return m.accepted_heat_deltas && m.drift_capacity && m.drift_intervals == m.drift_capacity &&
            m.delta_gap_ns.total() >= m.drift_intervals - 1 &&
            m.delta_gap_ns.max() > 0 &&
            m.hot_set_k && std::isfinite(m.marginal_error) && m.marginal_error > 0 &&
@@ -54,6 +54,10 @@ inline nlohmann::json calibration_record(const Measured& m,
     sample("copy_bytes_per_s", m.slowest_helper_copy_bps.quantile(0.5),
            "no committed transaction with complete per-receiving-helper copy ACK timings");
     sample("heat_gap_max_ns", m.delta_gap_ns.max(), "no consecutive accepted heat deltas");
+    if (m.accepted_heat_deltas)
+        sample("heat_watermarked", m.accepted_unwatermarked_heat ? 0.0 : 1.0,
+               "no accepted heat deltas", true);
+    else no_hook("heat_watermarked", "no accepted heat deltas");
     sample("hot_set_k", double(m.hot_set_k), "no tail-helper expert capacity");
     sample("marginal_error_ppm", m.marginal_error * 1000000.0,
            "marginal relative error absent, zero, or outside representable range");
