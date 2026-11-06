@@ -306,3 +306,35 @@ recovery / TTLs. The calib5 request-unit measurements are **not**
 hardware measurements of these new row fields; CPU acceptance tests use
 explicitly synthetic conversions alongside the genuine unchanged calib5
 planner measurements. See `live_policy_calibration.md`.
+
+## Hardware: the derived production policy works (2026-11-06, runs rhp16-calib2 to calib7)
+
+Each A/B from calib2 to calib6 found one more derivation defect that kept the derived policy from moving, fixed in turn on
+this branch: the policy refused the unwatermarked histogram feed (heat_watermarked now recorded and followed); the margin was
+the largest or median window-to-window tail-share change, which is the deliberate workload shift, not noise (margin is now the
+multinomial sampling error); min_samples was in routed observations while the planner counts heat windows; eight further
+unit/scale mismatches between derived settings and the helper's comparisons (follow-up 4, each with a test, plus a calib5-numbers
+planner test that must move on a shift and stay still on steady load); and the effect gate timed lanes per request, which on a
+mixed workload swings ~70% with request size, so it reverted good moves (now per routed row end to end). Separately, every
+assert in the serving and helper component tests had been compiled out (RelWithDebInfo, -DNDEBUG); fixed on main (#688).
+Calibration records key on the plan inputs without engine_build, so they carry across pin bumps.
+
+calib7 (flashnext-4gpu, production profile, policy derived from its own calibration record, two on/off pairs, policy-live-9
+workload, same build both arms):
+
+| | policy off (2 arms) | policy on (2 arms) | change |
+|---|---|---|---|
+| filler TTFT, fills 6-8 (after the shift) | 19.49 s | 13.42 s | -31.2% |
+| documentation prefill, mean of 20 | 3,663 tok/s | 3,652 tok/s | -0.3% (A/A spread about 1%) |
+| decode step, 1 stream / 6 streams | 25.5 / 50.0-50.3 ms | 25.5 / 49.6-49.8 ms | none |
+| transactions | - | 30 committed, 1 abort, 37 GB moved | |
+
+Decode tok/s at one stream on the single seed-7 prompt differs between arms (step time does not): moved experts are computed on
+another card, so greedy text and therefore MTP acceptance change. That is a numerics question, gated below.
+
+Not yet default-on, two gates left:
+1. Quality: KLD and top-1 against BF16 with the policy moving (moves put hot experts on the 6900 XT tail, RAD46). The campaign
+   quality arms cannot start a manifest-configured engine with --kld-* yet (rad0009) and cannot pass a calibration store; until
+   RSC11 provides that, run it by hand (helpers from the calibrated manifest, a KLD-mode engine on the same helpers).
+2. Churn: the effect gate judged 21 windows, kept 0, reverted 9, undecided 12. The gain survives, but reverts and re-moves cost
+   copy bandwidth (37 GB in two arms) and can oscillate over a long soak. The gate must be able to keep a move it can see helping.
