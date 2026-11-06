@@ -43,3 +43,4 @@ The [v1 manifest contract](../../../design/serving-manifest-v1/spec.md)
 and its C++ reader are in place; process-role configuration and resource
 planning are being integrated. Follow the schema and implementation,
 rather than copying launcher environment variables into new interfaces.
+See the [serving manifest guide](SERVING_MANIFEST.md) for usage.

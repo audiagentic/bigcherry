@@ -130,6 +130,15 @@ class PatchPromoteTests(unittest.TestCase):
             encoding="utf-8",
         )
 
+    def test_an_existing_readme_keeps_its_sections_and_gets_the_record_under_detail(self):
+        info = pp._load_patch(self.root, self.layout, "1348_demo")
+        (info.root / "README.md").write_text("# 1348_demo\n\n## Summary\n\nS\n\n## Outcome\n\nO\n\n## Detail\n\nD\n")
+        pp._write_promotion_record(info, self.evidence.read_text(encoding="utf-8"))
+        readme = (info.root / "README.md").read_text()
+        self.assertEqual(readme.count("## Detail"), 1)
+        self.assertLess(readme.index("## Detail"), readme.index("### Promotion record"))
+        self.assertIn("A/B: +3%", readme)
+
     def test_state_recipe_and_readme_are_promoted_together(self):
         info = pp._load_patch(self.root, self.layout, "1348_demo")
         pp._set_state(info)
@@ -144,7 +153,9 @@ class PatchPromoteTests(unittest.TestCase):
         self.assertEqual(patch_toml["state"], "validated")
         self.assertIn('STATE = "validated"', (info.root / "patch.py").read_text())
         self.assertIn("**Status:** validated", (info.root / "SUMMARY.md").read_text())
-        self.assertIn("## Promotion record", (info.root / "README.md").read_text())
+        readme = (info.root / "README.md").read_text()
+        for heading in ("## Summary", "## Outcome", "## Detail", "### Promotion record"):
+            self.assertIn(heading, readme)
         self.assertIn("A/B: +3%", (info.root / "README.md").read_text())
         self.assertEqual(
             release_evidence,

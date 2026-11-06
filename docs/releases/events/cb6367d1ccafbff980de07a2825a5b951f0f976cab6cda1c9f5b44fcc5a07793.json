@@ -1,0 +1,18 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261106_001758_serving-manifests-can-now-carr_2346",
+  "files": [
+    "engines/radiance/components/serving/serving.cpp",
+    "engines/radiance/components/serving/serving.h",
+    "engines/radiance/components/serving/manifest_writer.cpp",
+    "engines/radiance/components/serving/serving_test.cpp",
+    "docs/reference/engines/radiance/SERVING_MANIFEST.md",
+    "docs/reference/engines/radiance/RUNBOOK.md",
+    "docs/reference/engines/radiance/README.md",
+    "docs/reference/engines/radiance/LAYOUTS.md"
+  ],
+  "status": "unreleased",
+  "technical-summary": "bc-serve --set keys engine.tp_wire, engine.no_prefix_cache and engine.gpu_headroom_mib write the amendment-11 production engine fields only when set (absent otherwise, so existing manifests are unchanged); optional-field support in the resolver; component test; operator guide for writing a manifest, starting with one and the key-to-field-to-flag table, with a migration status table (RSC11 A1).",
+  "timestamp-utc": "2026-11-06T00:17:58.129570Z",
+  "user-summary-candidate": "Serving manifests can now carry the tensor-parallel wire, prefix-cache and GPU headroom options, and there is an operator guide for writing and starting from a manifest."
+}

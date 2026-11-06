@@ -30,6 +30,8 @@ struct Field {
     uint64_t lo = 0, hi = std::numeric_limits<uint32_t>::max();
     std::vector<std::string> choices;
     bool derived = false;
+    // Absent unless set: no default, no "missing required key", not in the schema's required list (RSC11 A1).
+    bool optional = false;
 };
 
 // Defaults are values from the 2026-11-02 launcher or WorkerConfig, not guesses
@@ -45,6 +47,10 @@ const std::vector<Field>& schema_fields() {
                        std::vector<std::string> choices = {}, bool derived = false) {
             f.push_back({k, kind, source, category, life, std::move(v), lo, hi,
                          std::move(choices), derived});
+        };
+        auto add_optional = [&](const char* k, const char* kind, const char* source, uint64_t lo, uint64_t hi,
+                                std::vector<std::string> choices = {}) {
+            f.push_back({k, kind, source, "policy", "startup-only", Json(), lo, hi, std::move(choices), false, true});
         };
         add("schema_version", "integer", 1, "RSC01: first versioned serving contract",
             "policy", "startup-only", 1, 1);
@@ -177,6 +183,11 @@ const std::vector<Field>& schema_fields() {
         add("engine.prefix_resume", "string", "nearest",
             "launcher PREFIX_RESUME=nearest", "policy", "startup-only", 0, 0,
             {"nearest", "exact"});
+        // Production engine options with no default: the manifest carries them only when an operator sets them, and an
+        // absent one leaves radiance to its own default (amendment 11 fields; the contract registry binds each to its flag).
+        add_optional("engine.tp_wire", "string", "radiance --tp-wire (cross-rank all-reduce payload)", 0, 0, {"exact", "wht6"});
+        add_optional("engine.no_prefix_cache", "string", "radiance --no-prefix-cache: the value \"on\" disables prefix caching", 0, 0, {"on"});
+        add_optional("engine.gpu_headroom_mib", "integer", "radiance --gpu-headroom-mib (VRAM left unclaimed on every engine card)", 0, UINT32_MAX);
         return f;
     }();
     return all;
@@ -740,7 +751,7 @@ Json json_schema() {
         const auto dot = f.key.find('.');
         if (dot == std::string::npos) {
             root["properties"][f.key] = prop;
-            if (f.fallback.is_null() && !f.derived)
+            if (f.fallback.is_null() && !f.derived && !f.optional)
                 root["required"].push_back(f.key);
         } else {
             const std::string section = f.key.substr(0, dot);
@@ -751,7 +762,7 @@ Json json_schema() {
                     {"properties", Json::object()}
                 };
             root["properties"][section]["properties"][key] = prop;
-            if (f.fallback.is_null() && !f.derived &&
+            if (f.fallback.is_null() && !f.derived && !f.optional &&
                 (section == "engine" || section == "handoff")) {
                 auto& group = root["properties"][section];
                 if (!group.contains("required")) group["required"] = Json::array();
@@ -943,7 +954,7 @@ Resolved resolve(const Options& options, const Json& facts) {
         if (!exists(values, key))
             throw std::runtime_error(std::string("missing required key: ") + key);
     for (const auto& field : schema_fields())
-        if (!exists(values, field.key))
+        if (!field.optional && !exists(values, field.key))
             throw std::runtime_error("missing required key: " + field.key +
                                      " (" + field.origin + ")");
     const auto max_rows = value_at(values, "handoff.max_rows").get<uint64_t>();
@@ -1027,6 +1038,9 @@ Resolved resolve(const Options& options, const Json& facts) {
                 e.at("checkpoint_interval"), e.at("num_speculative_tokens"),
                 e.at("max_model_len"), e.at("host_pool_mib"), e.at("prefix_cache_mib"),
                 e.at("host_headroom_mib")};
+    if (e.contains("tp_wire")) c.engine.tp_wire = e.at("tp_wire").get<std::string>();
+    c.engine.no_prefix_cache = e.contains("no_prefix_cache");
+    if (e.contains("gpu_headroom_mib")) c.engine.gpu_headroom_mib = e.at("gpu_headroom_mib").get<uint32_t>();
     Json process_helpers = Json::array();
     for (size_t i = 0; i < cards.size(); ++i) {
         Json worker = h;

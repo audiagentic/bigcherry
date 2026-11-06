@@ -211,15 +211,19 @@ Json handoff_of(const Json& v, const Json& live_policy) {
 
 Json engine_of(const Json& v) {
     const Json& e = v.at("engine");
-    return {{"device", {{"gpus", Json::array({v.at("layout").at("engine_card")})}}},
+    Json device = {{"gpus", Json::array({v.at("layout").at("engine_card")})}};
+    if (e.contains("gpu_headroom_mib")) device["headroom_mib"] = e.at("gpu_headroom_mib");
+    Json execution = {{"placement", e.at("placement")}, {"ngram_placement", e.at("ngram_placement")},
+                      {"kv_cache_dtype", e.at("kv_cache_dtype")}, {"num_speculative_tokens", e.at("num_speculative_tokens")},
+                      {"rope_scaling", e.at("rope_scaling")}, {"prefix_resume", e.at("prefix_resume")}};
+    if (e.contains("tp_wire")) execution["tp_wire"] = e.at("tp_wire");
+    if (e.contains("no_prefix_cache")) execution["no_prefix_cache"] = e.at("no_prefix_cache");
+    return {{"device", device},
             {"runtime", {{"radiance_home", e.at("radiance_home")}, {"kernels", split(e.at("kernels"), ',')}}},
             {"server", {{"port", e.at("port")}}},
             {"scheduler", {{"tp", e.at("tp")}, {"max_num_batched_tokens", e.at("max_num_batched_tokens")},
                            {"checkpoint_interval", e.at("checkpoint_interval")}}},
-            {"execution",
-             {{"placement", e.at("placement")}, {"ngram_placement", e.at("ngram_placement")},
-              {"kv_cache_dtype", e.at("kv_cache_dtype")}, {"num_speculative_tokens", e.at("num_speculative_tokens")},
-              {"rope_scaling", e.at("rope_scaling")}, {"prefix_resume", e.at("prefix_resume")}}}};
+            {"execution", execution}};
 }
 
 Json helpers_of(const Resolved& r) {
@@ -280,6 +284,9 @@ const std::map<std::string, std::string>& leaf_of_key() {
         {"engine.kv_cache_dtype", "/spec/processes/engine/execution/kv_cache_dtype"},
         {"engine.num_speculative_tokens", "/spec/processes/engine/execution/num_speculative_tokens"},
         {"engine.rope_scaling", "/spec/processes/engine/execution/rope_scaling"}, {"engine.prefix_resume", "/spec/processes/engine/execution/prefix_resume"},
+        {"engine.tp_wire", "/spec/processes/engine/execution/tp_wire"},
+        {"engine.no_prefix_cache", "/spec/processes/engine/execution/no_prefix_cache"},
+        {"engine.gpu_headroom_mib", "/spec/processes/engine/device/headroom_mib"},
         {"memory.host_pool_mib", "/spec/resources/host/pool_mib"}, {"memory.host_kv_mib", "/spec/resources/host/kv_mib"},
         {"memory.host_reserve_mib", "/spec/resources/host/reserve_mib"},
         {"handoff.shm", "/spec/handoff/transport/shm"}, {"handoff.max_rows", "/spec/handoff/transport/max_rows"},
