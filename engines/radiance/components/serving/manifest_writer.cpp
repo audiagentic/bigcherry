@@ -160,7 +160,8 @@ Json resources_of(const ManifestInputs& in, const Json& calibration) {
     // the plan echoes it and the check demands it equal), and the host memory the helpers and the engine itself held in the
     // measuring start that produced the plan (pageable, measured: stored with the cache entry; MemAvailable above is read now).
     constexpr uint64_t kMiB = 1048576;
-    if (in.measured->plan.resident.helpers_mib == 0 || in.measured->plan.resident.engine_mib == 0)
+    const bool has_helpers = !in.resolved.manifest.at("process_helpers").empty();
+    if ((has_helpers && in.measured->plan.resident.helpers_mib == 0) || in.measured->plan.resident.engine_mib == 0)
         fail("the measured plan has no resident host memory of the helpers and the engine: measure it again");
     li.consumers.push_back({"host_pool", mem.at("host_pool_mib").get<uint64_t>() * kMiB, Residence::pinned,
                             "resources.host.pool_mib (the launcher's pool; the engine pins it at start)", "lower memory.host_pool_mib"});
@@ -211,7 +212,7 @@ Json handoff_of(const Json& v, const Json& live_policy) {
 
 Json engine_of(const Json& v) {
     const Json& e = v.at("engine");
-    Json device = {{"gpus", Json::array({v.at("layout").at("engine_card")})}};
+    Json device = {{"gpus", v.at("layout").at("engine_cards")}};
     if (e.contains("gpu_headroom_mib")) device["headroom_mib"] = e.at("gpu_headroom_mib");
     Json execution = {{"placement", e.at("placement")}, {"ngram_placement", e.at("ngram_placement")},
                       {"kv_cache_dtype", e.at("kv_cache_dtype")}, {"num_speculative_tokens", e.at("num_speculative_tokens")},
@@ -238,7 +239,7 @@ Json helpers_of(const Resolved& r) {
     return out;
 }
 
-Json static_provenance(bool measured) {
+Json static_provenance(bool measured, bool engine_only) {
     Json p = Json::object();
     p[""] = record("schema_default", "serving contract v1", "policy", "exact");
     p["/spec/intent/model"] = record("site", "site.toml:engine.model", "policy", "exact");
@@ -251,17 +252,20 @@ Json static_provenance(bool measured) {
     if (measured) resource_inputs.push_back("/spec/plan/engine_memory/expected");
     p["/spec/resources"] = record("derived", measured ? "RSC03 host ledger over the measured plan" : "resolver memory settings (no measured plan yet)",
                                   "derived", "estimate", resource_inputs);
+    if (!engine_only) {
     p["/spec/handoff/transport/shm"] = record("derived", "launcher shared-memory name", "derived", "exact");
     p["/spec/handoff/transport"] = record("profile", "flashnext launcher transport literals (interim hand-picked tunables; RSC08: derive or calibrate)", "derived", "estimate");
     p["/spec/handoff/placement"] = record("derived", "layout and heat policy", "derived", "exact", Json::array({"/spec/intent/layout"}));
     p["/spec/handoff/telemetry"] = record("site", "site.toml:handoff", "policy", "exact");
     p["/spec/handoff/kernels"] = record("profile", "flashnext launcher kernel literals (interim hand-picked tunables; RSC08: derive or calibrate)", "derived", "estimate");
+    }
     p["/spec/processes/engine/device"] = record("derived", "layout engine card", "derived", "exact", Json::array({"/spec/facts/gpus", "/spec/intent/layout"}));
     p["/spec/processes/engine/runtime"] = record("site", "site.toml:engine runtime; architecture catalogue", "policy", "exact");
     p["/spec/processes/engine/server"] = record("site", "site.toml:engine port", "policy", "exact");
     p["/spec/processes/engine/scheduler"] = record("profile", "bc-serve resolver defaults and serving intent (interim)", "derived", "estimate", Json::array({"/spec/intent/service"}));
     p["/spec/processes/engine/execution"] = record("profile", "serving profile", "policy", "exact");
-    p["/spec/processes/helper_common"] = record("profile", "serving/helper_profile.toml (parity-tested against the launcher and component settings)", "policy", "exact");
+    if (!engine_only)
+        p["/spec/processes/helper_common"] = record("profile", "serving/helper_profile.toml (parity-tested against the launcher and component settings)", "policy", "exact");
     p["/spec/processes/helpers"] = record("derived", "archs.toml, layout and budget derivation", "derived", "estimate",
                                           Json::array({"/spec/facts/gpus", "/spec/intent/layout", "/spec/calibration"}));
     p["/spec/plan"] = record("derived", "bc::experts owner selection and the rad0011 measured plan", "derived", "estimate",
@@ -313,9 +317,9 @@ const Json* covering(const Json& p, std::string pointer) {
 /* Records for the manifest: the static records say how each section is produced; a leaf the operator set (--set, the site
  * file, the serving profile) gets its own record from Resolved::provenance, so an override is never filed under the
  * section's default origin. Class stays the class the leaf has at its position (the covering record's). */
-Json provenance_of(const ManifestInputs& in, const Json& derived_policy_provenance) {
+Json provenance_of(const ManifestInputs& in, const Json& derived_policy_provenance, bool engine_only) {
     const Resolved& r = in.resolved;
-    Json p = static_provenance(in.measured.has_value());
+    Json p = static_provenance(in.measured.has_value(), engine_only);
     if (!in.live_policy.is_null())
         p["/spec/handoff/placement/live_policy"] =
             record("cli", in.live_policy_from.c_str(), "policy", "exact", Json::array({"/spec/intent/layout"}));
@@ -323,9 +327,10 @@ Json provenance_of(const ManifestInputs& in, const Json& derived_policy_provenan
         p[it.key()] = it.value();
     if (!in.experiment.is_null())
         p["/spec/experiment"] = record("experiment", in.experiment_from.c_str(), "diagnostic", "exact",
-                                       Json::array({"/spec/processes/helper_common"}));
+                                       Json::array({engine_only ? "/spec/intent/layout" : "/spec/processes/helper_common"}));
     for (const auto& [key, pointer] : leaf_of_key()) {
         if (!r.provenance.contains(key)) continue;
+        if (engine_only && (pointer.rfind("/spec/handoff", 0) == 0 || pointer.rfind("/spec/processes/helper_common", 0) == 0)) continue;
         const Json& rp = r.provenance.at(key);
         const std::string origin = rp.at("origin").get<std::string>();
         if (origin != "cli" && origin != "site" && origin != "profile") continue;
@@ -371,9 +376,12 @@ BuiltManifest build_manifest(const ManifestInputs& in) {
     if (!container.open(model.c_str())) fail("cannot open the model container " + model);
     if (!in.live_policy.is_null() && in.profile != "lab")
         fail("--live-policy is an explicit lab-only override; production derives from calibration");
+    const bool engine_only = in.resolved.manifest.at("process_helpers").empty();   // contract amendment 12
+    if (engine_only && (!in.live_policy.is_null() || (!in.experiment.is_null() && in.experiment.contains("shape"))))
+        fail("an engine-only configuration has no helpers: no live placement policy or helper shape applies");
     Json live_policy = in.live_policy;
     Json derived_provenance = Json::object();
-    if (live_policy.is_null() && in.profile == "production") {
+    if (live_policy.is_null() && in.profile == "production" && !engine_only) {
         if (const auto derived = derive_manifest_live_policy(in, container)) {
             live_policy = derived->policy;
             derived_provenance = derived->provenance;
@@ -391,11 +399,13 @@ BuiltManifest build_manifest(const ManifestInputs& in) {
                  {"facts", facts_of(in.resolved.facts)},
                  {"calibration", calibration},
                  {"resources", {{"host", resources_of(in, calibration)}}},
-                 {"handoff", handoff_of(values, live_policy)},
-                 {"processes",
-                  {{"engine", engine_of(values)}, {"helper_common", helper_common(values)}, {"helpers", helpers_of(in.resolved)}}},
+                 {"processes", {{"engine", engine_of(values)}, {"helpers", helpers_of(in.resolved)}}},
                  {"plan", {{"state", in.measured ? "measured" : "unmeasured"},
                            {"owner_map", {{"owner_map_sha256", sha_hex_of_zero()}, {"helpers", Json::array()}}}}}};
+    if (!engine_only) {
+        spec["handoff"] = handoff_of(values, live_policy);
+        spec["processes"]["helper_common"] = helper_common(values);
+    }
     if (in.measured)
         spec["plan"]["engine_memory"] = {{"cache_version", 1}, {"cache_key", sha_hex_of_zero()},
                                          {"model_identity", in.measured->key_inputs.at("model")},
@@ -409,11 +419,13 @@ BuiltManifest build_manifest(const ManifestInputs& in) {
                 {"metadata",
                  {{"instance_id", in.instance_id}, {"producer", {{"name", "bc-serve"}, {"build_sha256", in.producer_sha256}}},
                   {"contract_version", v1::kContractVersion}, {"content_digest", "sha256:" + sha_hex_of_zero()}}},
-                {"spec", std::move(spec)}, {"provenance", provenance_of(in, derived_provenance)}};
+                {"spec", std::move(spec)}, {"provenance", provenance_of(in, derived_provenance, engine_only)}};
 
     // The owner map is the planner's answer for the placement this very document declares: decode a draft with an empty
     // map, ask the shared planner (the policies come from the draft), write its sets and digests into the document.
-    {
+    if (engine_only) {
+        doc["spec"]["plan"]["owner_map"] = {{"owner_map_sha256", sha256_hex("")}, {"helpers", Json::array()}};
+    } else {
         const std::size_t helper_count = doc.at("spec").at("processes").at("helpers").size();
         Json draft = doc;
         Json empty = Json::array();

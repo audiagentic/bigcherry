@@ -22,7 +22,7 @@ v1::Result<HelperSettings> helper_settings(const v1::Manifest& m, std::string_vi
     const v1::HelperView& v = view.value();
     const v1::HelperCommon& c = v.settings;
     const auto& p = m.spec.processes;
-    const v1::Handoff& h = m.spec.handoff;
+    const v1::Handoff& h = *m.spec.handoff;   // a helper exists, so the handoff does
 
     HelperSettings s;
     s.role = std::string(role);

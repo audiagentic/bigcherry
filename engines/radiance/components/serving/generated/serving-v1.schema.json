@@ -76,7 +76,6 @@
         "facts",
         "calibration",
         "resources",
-        "handoff",
         "processes",
         "plan"
       ],
@@ -554,7 +553,7 @@
           }
         },
         "handoff": {
-          "description": "The one shared remote-MoE handoff configuration.",
+          "description": "The one shared remote-MoE handoff configuration. Present exactly when `processes.helpers` is not empty (amendment 12).",
           "type": "object",
           "additionalProperties": false,
           "required": [
@@ -778,7 +777,6 @@
           "additionalProperties": false,
           "required": [
             "engine",
-            "helper_common",
             "helpers"
           ],
           "properties": {
@@ -958,11 +956,11 @@
               }
             },
             "helper_common": {
-              "description": "Settings shared by every helper; per-role and lab patches apply on top (spec §2.2).",
+              "description": "Settings shared by every helper; per-role and lab patches apply on top (spec §2.2). Present exactly when `processes.helpers` is not empty (amendment 12).",
               "$ref": "#/$defs/helperCommon"
             },
             "helpers": {
-              "description": "Helper processes, ordered helper0, helper1, ...; a helper's index is its position.",
+              "description": "Helper processes, ordered helper0, helper1, ...; a helper's index is its position. Empty for an engine-only configuration (amendment 12).",
               "type": "array",
               "items": {
                 "type": "object",
@@ -1030,7 +1028,7 @@
                   }
                 }
               },
-              "minItems": 1,
+              "minItems": 0,
               "maxItems": 4
             }
           }
@@ -1058,7 +1056,7 @@
                   "$ref": "#/$defs/hex64"
                 },
                 "helpers": {
-                  "description": "Owned sets, aligned by index with `processes.helpers`.",
+                  "description": "Owned sets, aligned by index with `processes.helpers`; empty exactly when there are no helpers.",
                   "type": "array",
                   "items": {
                     "type": "object",
@@ -1103,7 +1101,7 @@
                       }
                     }
                   },
-                  "minItems": 1,
+                  "minItems": 0,
                   "maxItems": 4
                 }
               }

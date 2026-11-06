@@ -1363,7 +1363,6 @@ Status d214(const Json& j, const std::string& at, int64_t* out) {  // /spec/proc
 
 Status d204(const Json& j, const std::string& at, std::vector<HelperProcess>* out) {  // /spec/processes/helpers
     if (!j.is_array()) return type_fault(C::invalid_type, at, "an array", j);
-    if (j.size() < 1) return fault(C::invalid_value, at, "needs at least 1 item(s), has " + std::to_string(j.size()));
     if (j.size() > 4) return fault(C::invalid_value, at, "allows at most 4 item(s), has " + std::to_string(j.size()));
     out->clear();
     out->reserve(j.size());
@@ -1415,7 +1414,6 @@ Status d224(const Json& j, const std::string& at, std::vector<std::array<int64_t
 
 Status d219(const Json& j, const std::string& at, std::vector<OwnedSet>* out) {  // /spec/plan/owner_map/helpers
     if (!j.is_array()) return type_fault(C::ownership_mismatch, at, "an array", j);
-    if (j.size() < 1) return fault(C::ownership_mismatch, at, "needs at least 1 item(s), has " + std::to_string(j.size()));
     if (j.size() > 4) return fault(C::ownership_mismatch, at, "allows at most 4 item(s), has " + std::to_string(j.size()));
     out->clear();
     out->reserve(j.size());
@@ -3431,7 +3429,6 @@ Status decode(const Json& j, const std::string& at, Processes* out) {  // /spec/
         out->engine = std::move(v);
     }
     if (const auto it = j.find("helper_common"); it == j.end()) {
-        return fault(C::missing_field, member(at, "helper_common"), "missing required member");
     } else {
         HelperCommon v{};
         if (auto e = decode(*it, member(at, "helper_common"), &v)) return e;
@@ -3903,7 +3900,6 @@ Status decode(const Json& j, const std::string& at, Spec* out) {  // /spec
         out->resources = std::move(v);
     }
     if (const auto it = j.find("handoff"); it == j.end()) {
-        return fault(C::missing_field, member(at, "handoff"), "missing required member");
     } else {
         Handoff v{};
         if (auto e = decode(*it, member(at, "handoff"), &v)) return e;
@@ -4477,7 +4473,7 @@ nlohmann::json encode(const HelperProcess& value) {
 nlohmann::json encode(const Processes& value) {
     Json j = Json::object();
     j["engine"] = encode(value.engine);
-    j["helper_common"] = encode(value.helper_common);
+    if (value.helper_common) j["helper_common"] = encode(*value.helper_common);
     j["helpers"] = [&] { Json a = Json::array(); for (const auto& x0 : value.helpers) a.push_back(encode(x0)); return a; }();
     return j;
 }
@@ -4613,7 +4609,7 @@ nlohmann::json encode(const Spec& value) {
     j["facts"] = encode(value.facts);
     j["calibration"] = [&] { Json a = Json::array(); for (const auto& x0 : value.calibration) a.push_back(encode(x0)); return a; }();
     j["resources"] = encode(value.resources);
-    j["handoff"] = encode(value.handoff);
+    if (value.handoff) j["handoff"] = encode(*value.handoff);
     j["processes"] = encode(value.processes);
     j["plan"] = encode(value.plan);
     if (value.experiment) j["experiment"] = encode(*value.experiment);

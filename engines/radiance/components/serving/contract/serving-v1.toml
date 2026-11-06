@@ -1020,9 +1020,10 @@ doc = "Prefix checkpoint slots (`--checkpoint-slots`), derived from the measured
 
 [[field]]
 path = "/spec/handoff"
+optional = true
 kind = "object"
 cpp = "Handoff"
-doc = "The one shared remote-MoE handoff configuration."
+doc = "The one shared remote-MoE handoff configuration. Present exactly when `processes.helpers` is not empty (amendment 12)."
 
 [[field]]
 path = "/spec/handoff/transport"
@@ -1413,17 +1414,18 @@ doc = "Present means prefix caching is disabled (`--no-prefix-cache`; amendment 
 
 [[field]]
 path = "/spec/processes/helper_common"
+optional = true
 kind = "ref"
 ref = "helperCommon"
-doc = "Settings shared by every helper; per-role and lab patches apply on top (spec §2.2)."
+doc = "Settings shared by every helper; per-role and lab patches apply on top (spec §2.2). Present exactly when `processes.helpers` is not empty (amendment 12)."
 
 [[field]]
 path = "/spec/processes/helpers"
 kind = "array"
 item_kind = "object"
-min_items = 1
+min_items = 0
 max_items = 4
-doc = "Helper processes, ordered helper0, helper1, ...; a helper's index is its position."
+doc = "Helper processes, ordered helper0, helper1, ...; a helper's index is its position. Empty for an engine-only configuration (amendment 12)."
 
 [[field]]
 path = "/spec/processes/helpers/[]"
@@ -1514,9 +1516,9 @@ doc = "Digest of all helpers' owned sets in helper order (spec §4)."
 path = "/spec/plan/owner_map/helpers"
 kind = "array"
 item_kind = "object"
-min_items = 1
+min_items = 0
 max_items = 4
-doc = "Owned sets, aligned by index with `processes.helpers`."
+doc = "Owned sets, aligned by index with `processes.helpers`; empty exactly when there are no helpers."
 
 [[field]]
 path = "/spec/plan/owner_map/helpers/[]"

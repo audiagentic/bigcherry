@@ -129,7 +129,7 @@ Status sorted_lanes(const std::vector<int64_t>& lanes, const std::string& at) {
 }
 
 HelperCommon effective(const Manifest& m, size_t i) {
-    HelperCommon s = m.spec.processes.helper_common;
+    HelperCommon s = *m.spec.processes.helper_common;   // semantics: present exactly when there are helpers
     const HelperProcess& h = m.spec.processes.helpers[i];
     if (h.settings) apply(s, *h.settings);
     if (m.spec.experiment && m.spec.experiment->shape) {
@@ -342,7 +342,7 @@ std::string plan_cache_key(const Manifest& m) {
           {"rope_scaling", x.rope_scaling},
           {"prefix_resume", kPrefixResumeNames[static_cast<size_t>(x.prefix_resume)]},
           {"kernels", e.runtime.kernels},
-          {"handoff_max_rows", s.handoff.transport.max_rows},
+          {"handoff_max_rows", s.handoff ? Json(s.handoff->transport.max_rows) : Json(nullptr)},
           {"helpers", helpers}}}};
     std::string bytes, why;
     if (!bc::serving::jcs_canonicalize(inputs, &bytes, &why)) return "";
@@ -383,14 +383,14 @@ static Status placement_experiment_semantics(const Manifest& m) {
  * bad manifest before any GPU work. */
 static Status live_policy_semantics(const Manifest& m) {
     const Spec& s = m.spec;
-    if (!s.handoff.placement.live_policy) return std::nullopt;
-    const LivePolicy& p = *s.handoff.placement.live_policy;
+    if (!s.handoff || !s.handoff->placement.live_policy) return std::nullopt;
+    const LivePolicy& p = *s.handoff->placement.live_policy;
     const std::string at = "spec.handoff.placement.live_policy";
     if (s.experiment && s.experiment->placement && s.experiment->placement->forced)
         return err(C::invalid_value, at, "a live policy excludes experiment.placement.forced: one placement driver at a time");
     if (s.processes.engine.scheduler.tp != 1)
         return err(C::invalid_value, at, "a live policy needs a one-rank engine (processes.engine.scheduler.tp 1)");
-    if (!s.handoff.telemetry.histogram_file)
+    if (!s.handoff->telemetry.histogram_file)
         return err(C::missing_field, "spec.handoff.telemetry.histogram_file", "a live policy reads the live histogram: histogram_file is required");
     if (p.max_moves > static_cast<int64_t>(UINT32_MAX))
         return err(C::invalid_value, at + ".max_moves", "max_moves " + std::to_string(p.max_moves) + " is over 4294967295");
@@ -477,8 +477,20 @@ Status validate_semantics(const Manifest& m) {
         if (!used.insert(helpers[i].gpu).second)
             return err(C::duplicate_field, helper_at(i) + ".gpu", "GPU " + helpers[i].gpu + " is already in use");
     }
-    if (auto e = sorted_lanes(s.processes.helper_common.lanes.small_lanes, "spec.processes.helper_common.lanes.small_lanes"))
-        return e;
+    // amendment 12: the helper-side sections exist exactly when there are helpers
+    if (helpers.empty() != !s.handoff)
+        return err(helpers.empty() ? C::invalid_value : C::missing_field, "spec.handoff",
+                   helpers.empty() ? "an engine-only configuration (no helpers) has no handoff section"
+                                   : "a configuration with helpers needs its handoff section");
+    if (helpers.empty() != !s.processes.helper_common)
+        return err(helpers.empty() ? C::invalid_value : C::missing_field, "spec.processes.helper_common",
+                   helpers.empty() ? "an engine-only configuration (no helpers) has no helper_common section"
+                                   : "a configuration with helpers needs its helper_common section");
+    if (helpers.empty() && s.experiment && s.experiment->shape && s.experiment->shape->helper_common)
+        return err(C::invalid_value, "spec.experiment.shape.helper_common", "an engine-only configuration has no helpers to shape");
+    if (!helpers.empty())
+        if (auto e = sorted_lanes(s.processes.helper_common->lanes.small_lanes, "spec.processes.helper_common.lanes.small_lanes"))
+            return e;
     // lab shape: role patches name existing helpers, once each
     if (s.experiment && s.experiment->shape && s.experiment->shape->helpers) {
         std::set<std::string> seen;
@@ -634,7 +646,7 @@ Result<HelperView> helper_view(const Manifest& m, std::string_view role) {
         if (helpers[i].role == role) {
             HelperCommon settings = effective(m, i);
             const bool rows = helpers[i].rows_kernel || settings.lanes.rows;
-            return HelperView{i, helpers[i], m.spec.plan.owner_map.helpers.at(i), m.spec.handoff, std::move(settings), rows};
+            return HelperView{i, helpers[i], m.spec.plan.owner_map.helpers.at(i), *m.spec.handoff, std::move(settings), rows};
         }
     return err(C::unresolved_reference, "spec.processes.helpers", "no helper has role " + std::string(role),
                "start the helper with a role the manifest defines");

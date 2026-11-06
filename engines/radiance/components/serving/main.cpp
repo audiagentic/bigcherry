@@ -57,7 +57,7 @@ void usage() {
 
 void explain(const bc::serving::Resolved& result) {
     std::cout << "layout: " << result.typed.layout.name << '\n';
-    std::cout << "engine card: " << result.typed.layout.engine_card << '\n';
+    std::cout << "engine cards: " << result.typed.layout.engine_cards.size() << '\n';
     std::cout << "helpers: " << result.typed.layout.helper_cards.size() << '\n';
     std::cout << "manifest sha256: " << result.hash << '\n';
     for (auto it = result.provenance.begin(); it != result.provenance.end(); ++it) {
@@ -76,12 +76,12 @@ void explain(const bc::serving::Resolved& result) {
 }
 } // namespace
 
-static uint64_t parse_mib(const std::string& text, const char* flag) {
+static uint64_t parse_mib(const std::string& text, const char* flag, bool zero_allowed) {
     size_t used = 0;
     unsigned long long n = 0;
     try { n = std::stoull(text, &used); } catch (const std::exception&) { used = 0; }
-    if (used != text.size() || text.empty() || text[0] == '-' || n == 0)
-        throw std::runtime_error(std::string(flag) + " must be a positive integer (MiB), is \"" + text + "\"");
+    if (used != text.size() || text.empty() || text[0] == '-' || (n == 0 && !zero_allowed))
+        throw std::runtime_error(std::string(flag) + (zero_allowed ? " must be a whole number of MiB, is \"" : " must be a positive integer (MiB), is \"") + text + "\"");
     return n;
 }
 
@@ -202,8 +202,8 @@ int main(int argc, char** argv) {
             else if (arg == "--experiment") experiment_file = need_arg("--experiment");
             else if (arg == "--plan-extra") plan_extra = need_arg("--plan-extra");
             else if (arg == "--measured-plan") measured_plan_file = need_arg("--measured-plan");
-            else if (arg == "--helpers-resident-mib") helpers_resident_mib = parse_mib(need_arg("--helpers-resident-mib"), "--helpers-resident-mib");
-            else if (arg == "--engine-resident-mib") engine_resident_mib = parse_mib(need_arg("--engine-resident-mib"), "--engine-resident-mib");
+            else if (arg == "--helpers-resident-mib") helpers_resident_mib = parse_mib(need_arg("--helpers-resident-mib"), "--helpers-resident-mib", true);
+            else if (arg == "--engine-resident-mib") engine_resident_mib = parse_mib(need_arg("--engine-resident-mib"), "--engine-resident-mib", false);
             else if (arg == "--plan-cache") plan_cache = need_arg("--plan-cache");
             else if (arg == "--engine-binary") engine_binary = need_arg("--engine-binary");
             else if (arg == "--set") opts.sets.push_back(need_arg("--set"));
