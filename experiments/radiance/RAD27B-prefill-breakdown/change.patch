@@ -1,0 +1,56 @@
+diff --git a/engines/radiance/layouts.toml b/engines/radiance/layouts.toml
+index b9627b43e..97f69980c 100644
+--- a/engines/radiance/layouts.toml
++++ b/engines/radiance/layouts.toml
+@@ -117,3 +117,38 @@ server-args = [
+   "--kv-cache-dtype", "fp8",
+   "--num-speculative-tokens", "0",
+ ]
++
++# EXPERIMENT ONLY (not for merge): prefill breakdown arms for the 27B.
++[layout.qwen27b-2xtx-exact]
++description = "experiment: qwen27b-2xtx with the exact (bf16) all-reduce"
++model = "radiance/StillDeadcode/qwen3.8-27b-mxfp4/qwen3.8-27b-mxfp4.rad"
++engine = { arch = "gfx1100", count = 2 }
++tp-wire = "exact"
++server-args = ["--max-model-len", "8192", "--max-num-seqs", "6", "--max-num-batched-tokens", "2048", "--kv-cache-dtype", "fp8", "--num-speculative-tokens", "0"]
++
++[layout.qwen27b-1xtx]
++description = "experiment: Qwen3.8-27B on one RX 7900 XTX (TP=1)"
++model = "radiance/StillDeadcode/qwen3.8-27b-mxfp4/qwen3.8-27b-mxfp4.rad"
++engine = { arch = "gfx1100", count = 1 }
++server-args = ["--max-model-len", "8192", "--max-num-seqs", "2", "--max-num-batched-tokens", "2048", "--kv-cache-dtype", "fp8", "--num-speculative-tokens", "0"]
++
++[layout.qwen27b-2xtx-spec3]
++description = "experiment: qwen27b-2xtx with 3 speculative (MTP) tokens"
++model = "radiance/StillDeadcode/qwen3.8-27b-mxfp4/qwen3.8-27b-mxfp4.rad"
++engine = { arch = "gfx1100", count = 2 }
++tp-wire = "wht6"
++server-args = ["--max-model-len", "8192", "--max-num-seqs", "6", "--max-num-batched-tokens", "2048", "--kv-cache-dtype", "fp8", "--num-speculative-tokens", "3"]
++
++[layout.qwen27b-2xtx-spec5]
++description = "experiment: qwen27b-2xtx with 5 speculative (MTP) tokens"
++model = "radiance/StillDeadcode/qwen3.8-27b-mxfp4/qwen3.8-27b-mxfp4.rad"
++engine = { arch = "gfx1100", count = 2 }
++tp-wire = "wht6"
++server-args = ["--max-model-len", "8192", "--max-num-seqs", "6", "--max-num-batched-tokens", "2048", "--kv-cache-dtype", "fp8", "--num-speculative-tokens", "5"]
++
++[layout.qwen27b-2xtx-spec7]
++description = "experiment: qwen27b-2xtx with 7 speculative (MTP) tokens"
++model = "radiance/StillDeadcode/qwen3.8-27b-mxfp4/qwen3.8-27b-mxfp4.rad"
++engine = { arch = "gfx1100", count = 2 }
++tp-wire = "wht6"
++server-args = ["--max-model-len", "8192", "--max-num-seqs", "6", "--max-num-batched-tokens", "2048", "--kv-cache-dtype", "fp8", "--num-speculative-tokens", "7"]
+diff --git a/tools/lab/radiance/launch-flashnext-best.sh b/tools/lab/radiance/launch-flashnext-best.sh
+index 973e62834..1366a5826 100644
+--- a/tools/lab/radiance/launch-flashnext-best.sh
++++ b/tools/lab/radiance/launch-flashnext-best.sh
+@@ -339,7 +339,7 @@ if [ "$LAYOUT_HELPER_COUNT" -gt 0 ]; then
+     NGRAM_ENV=(R3_NGRAM_DEV="$LAYOUT_ENGINE_RANKS" R3_NGRAM_HELPER_SO="$RAD_HOME/helpers/libr3_ngram_helper.so" R3_NGRAM_AVX="$RAD_HOME/kernels/libavx.so")
+   fi
+ else
+-  ENGINE_CONFIG_ARGS=("${LAYOUT_SERVER_ARGS[@]}")
++  ENGINE_CONFIG_ARGS=("${LAYOUT_SERVER_ARGS[@]}"); [ "${EXP_PROFILE_OPS:-0}" = 1 ] && ENGINE_CONFIG_ARGS+=(--profile-ops)   # EXPERIMENT ONLY
+ fi
+ start_engine() {
+   local log=$1; shift
