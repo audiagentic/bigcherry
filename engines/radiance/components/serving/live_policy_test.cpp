@@ -200,10 +200,50 @@ static void calib5_regression(const sv::LivePolicyRecord& base,
     };
     const auto stable=plan();
     assert(stable.valid && stable.no_change && stable.delta.empty());
+    const auto steady_counts=heat.counts;
+    const auto steady_samples=heat.samples;
     for (int i=0;i<4;++i) feed({900000,1000000,6200000,5700000});
     const auto shifted=plan();
     assert(shifted.valid && !shifted.no_change && !shifted.delta.empty());
     assert(r3::heat::delta_matches(shifted,in.current));
+    // calib12: effect-only measurements cannot be obtained on the tail
+    // LARGE lane, but this identical calib5 planner evidence still moves.
+    auto unjudgeable=rec;
+    for (const char* name : {"effect_rows_per_s","effect_noise_max_ns",
+                             "effect_row_noise_ns","effect_window_noise_ladder"}) {
+        unjudgeable.measurements.erase(name);
+        unjudgeable.absent[name]="tail large lane has no peer reference on this layout";
+    }
+    assert(sv::live_policy_record_complete(unjudgeable));
+    const auto no_effect=sv::derive_live_policy(
+        unjudgeable,cal,at,stride,{22ull<<30,22ull<<30,14ull<<30});
+    const auto& q=no_effect.policy;
+    assert(q.at("effect_gate")==false && q.at("cadence_ns")==6955375341ull);
+    assert(q.at("max_moved_bytes")==p.at("max_moved_bytes"));
+    assert(q.at("min_residency_ns")==p.at("min_residency_ns"));
+    assert(q.at("margin_ppm")==p.at("margin_ppm"));
+    assert(q.at("effect_window_samples")==1 && q.at("effect_min_quiet_windows")==1);
+    const auto reason=no_effect.provenance.at(
+        "/spec/handoff/placement/live_policy/effect_gate").at("source").get<std::string>();
+    assert(reason.find("tail large lane has no peer reference on this layout")!=std::string::npos);
+    assert(reason.find("churn bounded by derived margin, residency and move caps")!=std::string::npos);
+    auto missing_planner=unjudgeable;
+    missing_planner.measurements.erase("copy_bytes_per_s");
+    missing_planner.absent["copy_bytes_per_s"]="no per-helper DMA observation";
+    assert(!sv::live_policy_record_complete(missing_planner));
+
+    auto off_in=in;
+    off_in.max_heat_age_ns=q.at("max_heat_age_ns").get<uint64_t>();
+    off_in.min_residency_ns=q.at("min_residency_ns").get<uint64_t>();
+    off_in.max_moved_bytes=q.at("max_moved_bytes").get<uint64_t>();
+    off_in.min_samples=q.at("min_samples").get<uint64_t>();
+    off_in.margin=double(q.at("margin_ppm").get<uint64_t>())/1000000.0;
+    off_in.max_moves=q.at("max_moves").get<uint64_t>();
+    off_in.heat=steady_counts;off_in.samples=steady_samples;
+    assert(r3::heat::propose(off_in,cfg.head_shares).no_change);
+    off_in.heat=heat.counts;off_in.samples=heat.samples;
+    const auto off_shift=r3::heat::propose(off_in,cfg.head_shares);
+    assert(off_shift.valid && !off_shift.no_change && !off_shift.delta.empty());
     // Every planner guard is checked at its actual unit/scale.
     assert(in.max_moves >= 2 && in.max_moved_bytes >= 2*stride);
     in.samples.assign(4,cfg.controls.min_samples-1);
@@ -315,19 +355,20 @@ int main() {
            derived_small.policy.at("effect_min_quiet_windows").get<uint64_t>()>=1);
     assert(derived_small.policy.at("effect_noise_multiplier_milli") ==
            derived_wide.policy.at("effect_noise_multiplier_milli"));
-    // No measured length resolves a predicted effect: fail closed rather than
-    // synthesize a smaller i.i.d. window, or a fictitious longer one.
+    // No measured length resolves the predicted effect: run the planner
+    // without an effect verdict, never invent an absolute service window.
     auto unresolved=*rec;
     unresolved.measurements["effect_window_noise_ladder"]=Json::array({
         Json::array({uint64_t(8),uint64_t(500000)}),
         Json::array({uint64_t(16),uint64_t(400000)}),
         Json::array({uint64_t(32),uint64_t(300000)})});
-    try {
-        (void)sv::derive_live_policy(unresolved,cal,at,2500000,{1000000000,1000000000});
-        assert(false);
-    } catch(const std::runtime_error& e) {
-        assert(std::string(e.what()).find("cannot resolve predicted tail effect")!=std::string::npos);
-    }
+    const auto unresolved_policy=sv::derive_live_policy(
+        unresolved,cal,at,2500000,{1000000000,1000000000});
+    assert(unresolved_policy.policy.at("effect_gate")==false);
+    assert(unresolved_policy.policy.at("max_moves")==174);
+    assert(unresolved_policy.provenance.at(
+        "/spec/handoff/placement/live_policy/effect_gate").at("source")
+        .get<std::string>().find("cannot resolve predicted tail effect")!=std::string::npos);
     // The earliest resolvable published window is longer than the original
     // one; cadence must grow by the full k x window duration, not clamp it.
     auto slower=*rec;

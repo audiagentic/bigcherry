@@ -25,6 +25,9 @@ struct ServiceTotals {
 };
 struct ServiceSnapshot {
     std::array<ServiceTotals,2> lane{}; // 0 small, 1 large -- NEVER pooled
+    // CPU-only metadata: tail work in a lane with no peer denominator.
+    // This lane is unjudgeable, never replaced with absolute service.
+    std::array<bool,2> unjudgeable_tail_lane{};
 };
 struct ServiceSource {
     virtual ~ServiceSource()=default;
@@ -238,21 +241,22 @@ public:
             }
         }
         bool usable=false;
-        bool any_tail_rows=false;
         // Never use absolute service in a multi-helper run. A lane without
         // any peer rows is unavailable *for that lane*, not for the whole
         // signal when a different lane has a valid row-weighted reference.
         for(unsigned i=0;i<2;++i) {
             auto& x=tail.lane[i];
             x.relative=require_reference_;
-            any_tail_rows=any_tail_rows || x.rows>0;
             if(require_reference_ && x.rows && (!x.reference_rows || !x.reference_time_ns)) {
                 report(tail_helper_,"zero reference rows",int(i));
+                tail.unjudgeable_tail_lane[i]=true;
                 x=ServiceTotals{};
                 x.relative=true;
-            } else if(x.rows && x.time_ns)usable=true;
+            }
         }
-        if(require_reference_ && any_tail_rows && !usable)return false;
+        // A coherent publication without a judgeable lane still exposes
+        // the structural absence to calibration; the gate sees zero rows.
+        // Torn, stale or unpublished references continue to fail above.
         *out=tail;
         return true;
     }

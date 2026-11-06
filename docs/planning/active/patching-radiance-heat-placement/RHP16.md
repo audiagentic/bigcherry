@@ -503,3 +503,32 @@ does not authorize a live placement policy from absent evidence.
 Card-free tests cover a three-helper sparse peer, slot failures and
 deduplicated indexed diagnostics, and derived timeout/absent record;
 no calib10 hardware replay or GPU measurement is claimed.
+
+## Step 5 follow-up 11: effect unjudgeable means gate off, not policy off (2026-11-06)
+
+Calib12 demonstrated a structural lack of peer reference on the tail's
+LARGE lane: head helpers did no LARGE work, so that tail/peer relative
+ratio cannot be measured for the work being moved. Each lane remains
+relative where it has a reference, and unjudgeable where it does not;
+no absolute-service surrogate is permitted. A coherent published
+snapshot now flags unjudgeable tail lanes for the CPU calibration path
+without treating the slot as stale or fabricating a denominator.
+
+Once planner quantities converge, calibration can emit a record with
+effect-only quantities explicitly absent and the specific lane reason;
+it need not wait for an impossible effect ladder. A production record
+with the planner quantities present now derives a live policy with
+`effect_gate=false` if those effect readings are absent, or if its
+observed relative-service ladder has no resolvable length. Provenance
+identifies the missing peer or noise threshold. Cadence falls back to
+max(measured transaction p95, observed heat-feed gap) without a quiet-window
+wait, and the unused
+v1 effect-window and quiet-count fields are inert positive schema values,
+not fabricated observations. Derived margin, residency and move/byte
+caps still constrain churn. A missing planner input still omits
+`live_policy` and serving continues, as required by follow-up 8.
+
+Card-free live-assert regressions exercise the calib12-shaped record,
+the resolvable gate-on case, unresolvable gate-off ladder, missing
+planner evidence, and calib5 heat-shift acceptance with the gate off.
+No hardware remeasurement or GPU claim is made.

@@ -372,20 +372,33 @@ public:
                 next_window_noise_check_ns_=add_saturating(now_ns,settings_.cadence_ns);
             }
             const Measured m=measured();
-            const bool effect_absent=
-                effect_signal_timeout_.expired(now_ns,m,settings_.cadence_ns,
-                                               settings_.controls.max_heat_age_ns);
-            if (calibration_settled(m,effect_absent)) {
+            // A published tail lane without ANY peer rows cannot produce a
+            // relative verdict on that lane, even if another lane is usable.
+            // No quiet ladder can fix this layout mismatch.
+            const bool structural_unjudgeable=service_ok &&
+                service_->active_publishers() &&
+                (tail.unjudgeable_tail_lane[0] || tail.unjudgeable_tail_lane[1]);
+            const bool effect_timed_out=effect_signal_timeout_.expired(
+                now_ns,m,settings_.cadence_ns,settings_.controls.max_heat_age_ns);
+            const bool effect_absent=structural_unjudgeable || effect_timed_out;
+            const std::string effect_reason=structural_unjudgeable ?
+                (tail.unjudgeable_tail_lane[1] ?
+                    "tail large lane has no peer reference on this layout" :
+                    "tail small lane has no peer reference on this layout") :
+                "relative tail/peer service unavailable for a measured heat-gap horizon";
+            if (calibration_settled(m,effect_absent,
+                                    structural_unjudgeable && !effect_timed_out)) {
                 std::time_t now=std::time(nullptr);
                 std::tm utc{};
                 char date[11]{};
                 if (now>=0 && ::gmtime_r(&now,&utc) &&
                     std::strftime(date,sizeof(date),"%Y-%m-%d",&utc)) {
                     const auto row=calibration_record(m,*calibration_identity_,date,
-                                                      effect_absent);
+                                                      effect_absent,effect_reason);
                     if(effect_absent)
                         std::fprintf(stderr,
-                            "policy calibration: relative effect signal unavailable over measured heat-gap horizon; effect quantities absent\n");
+                            "policy calibration: effect unjudgeable (%s); effect quantities absent\n",
+                            effect_reason.c_str());
                     std::fprintf(stderr,"RHP16_CALIBRATION_JSON %s\n",row.dump().c_str());
                     std::fflush(stderr);
                     calibration_printed_=true; // exactly once per helper run

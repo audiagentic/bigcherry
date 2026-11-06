@@ -350,11 +350,16 @@ static void test_sparse_peer_and_unavailable_diagnostics() {
     check(relative.snapshot(&result) && !result.lane[0].rows &&
           result.lane[1].rows>0 && result.lane[1].relative,
           "no small denominator invalidates small only");
+    check(result.unjudgeable_tail_lane[0] && !result.unjudgeable_tail_lane[1],
+          "only the missing-reference lane is marked unjudgeable");
     // If every peer lane lacks rows, no usable relative signal remains.
     helpers[0].lane[1]={};
     helpers[1].lane[1]={};
     publish();
-    check(!relative.snapshot(&result),"all peer rows zero is unavailable");
+    check(relative.snapshot(&result) && result.unjudgeable_tail_lane[0] &&
+          result.unjudgeable_tail_lane[1] &&
+          !result.lane[0].rows && !result.lane[1].rows,
+          "all peer rows zero: coherent but both lanes unjudgeable, never absolute");
     munmap(map,layout.bytes);
 }
 

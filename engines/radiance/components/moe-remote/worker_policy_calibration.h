@@ -40,13 +40,14 @@ public:
         return static_cast<long double>(now_ns-missing_since_)>=span;
     }
 };
-inline bool calibration_settled(const Measured& m,bool effect_absent=false) {
-    // An explicitly timed-out effect is a *partial*, not a complete policy
-    // record. Emit the actual remaining measurements (or absent reasons)
-    // so the launcher stops and serving uses its safe no-policy fallback.
-    if(effect_absent)return true;
-    // Otherwise require each observation to converge before calibrating.
-    return m.accepted_heat_deltas && m.drift_capacity && m.drift_intervals == m.drift_capacity &&
+inline bool calibration_settled(const Measured& m,bool effect_absent=false,
+                                bool structural_unjudgeable=false) {
+    // Preserve the bounded timeout fallback: even missing planner evidence
+    // must be serialized with absent reasons so serving can start without
+    // a policy. A structurally unjudgeable lane instead settles as soon as
+    // planner quantities converge, without waiting for effect evidence.
+    if (effect_absent && !structural_unjudgeable) return true;
+    const bool planner_ready = m.accepted_heat_deltas && m.drift_capacity && m.drift_intervals == m.drift_capacity &&
            m.delta_gap_ns.total() >= m.drift_intervals - 1 &&
            m.delta_gap_ns.max() > 0 &&
            m.hot_set_k && std::isfinite(m.marginal_error) && m.marginal_error > 0 &&
@@ -57,8 +58,9 @@ inline bool calibration_settled(const Measured& m,bool effect_absent=false) {
            m.slowest_helper_copy_bps.quantile(0.5) > 0 &&
            m.tail_lane_service_ns_per_s.quantile(0.5) > 0 &&
            m.tail_lane_row_ns.quantile(0.5) > 0 &&
-           m.lane_lost_ns.count() &&
-           m.effect_required_quiet_windows &&
+           m.lane_lost_ns.count();
+    if (!planner_ready || effect_absent) return planner_ready;
+    return m.effect_required_quiet_windows &&
            m.effect.quiet_comparisons >= m.effect_required_quiet_windows &&
            m.effect.normalized_noise_ns.count() >= 2 &&
            m.effect.row_noise_ns() > 0 &&
@@ -71,7 +73,9 @@ inline bool calibration_settled(const Measured& m,bool effect_absent=false) {
 inline nlohmann::json calibration_record(const Measured& m,
                                           const CalibrationIdentity& identity,
                                           const std::string& utc_date,
-                                          bool effect_absent=false) {
+                                          bool effect_absent=false,
+                                          const std::string& effect_reason=
+                                              "relative tail/peer service unavailable for a measured heat-gap horizon") {
     using Json = nlohmann::json;
     Json measured = Json::object(), absent = Json::object();
     constexpr uint64_t max_exact = (uint64_t(1) << 53) - 1;
@@ -113,14 +117,11 @@ inline nlohmann::json calibration_record(const Measured& m,
                "invalid measured quiesce-to-reopen interval", true);
     else no_hook("lane_lost_ns", "no verified tail-helper quiesce-to-reopen interval");
     if(effect_absent) {
-        // Never label stale or non-overlapping service samples as measured
-        // effect quantities. The serving reader keeps these fields absent and
-        // follows the no-live-policy serving fallback.
-        constexpr const char* reason=
-            "relative tail/peer service unavailable for a measured heat-gap horizon";
+        // An unjudgeable lane has no relative effect measurement. Retain
+        // the actual cause in each absent field for serving provenance.
         for(const char* name : {"effect_rows_per_s","effect_noise_max_ns",
                                 "effect_row_noise_ns","effect_window_noise_ladder"})
-            no_hook(name,reason);
+            absent[name]=effect_reason;
     } else {
         sample("effect_rows_per_s", m.effect.sampled_rows_per_s,
                "no positive measured sampled-lane routed-row rate over wall time");
@@ -145,7 +146,7 @@ inline nlohmann::json calibration_record(const Measured& m,
                 {"layout", identity.layout}, {"objective", identity.objective},
                 {"seeded", utc_date},
                 {"evidence", effect_absent ?
-                    "partial calibration: relative tail/peer service unavailable; other fields are present only when actually measured" :
+                    "effect unjudgeable: " + effect_reason + "; planner measurements independently observed" :
                     "accepted heat, closed journals, per-helper READY/RESERVED/CLEANED ACK timing, sampled lane service and committed planner gains"},
                 {"measurements", measured}, {"absent", absent}};
 }

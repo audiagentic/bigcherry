@@ -6,6 +6,7 @@
 #include <cmath>
 #include <fstream>
 #include <limits>
+#include <optional>
 #include <set>
 #include <sstream>
 #include <stdexcept>
@@ -70,7 +71,7 @@ double gaussian_z(double alpha) {
 // by the same-window row-weighted mean ns/row of other helpers.
 // Correlated requests need not obey sigma_row * sqrt(2/n).
 // Only select lengths actually measured; there is no extrapolated i.i.d. cap.
-std::pair<uint64_t,uint64_t> derive_effect_gate(const Json& ladder,
+std::optional<std::pair<uint64_t,uint64_t>> derive_effect_gate(const Json& ladder,
                                                 uint64_t predicted_gain_ppm,
                                                 uint64_t opportunities,double alpha) {
     const double z=gaussian_z(alpha);
@@ -90,8 +91,7 @@ std::pair<uint64_t,uint64_t> derive_effect_gate(const Json& ladder,
         previous=rows;
         if(!chosen && double(ppm)*1e-6*z<=effect_fraction) {chosen=rows;noise=ppm;}
     }
-    if(!chosen)
-        bad("effect_window_noise_ladder: measured windows cannot resolve predicted tail effect; extend calibration series rather than shorten the window");
+    if(!chosen) return std::nullopt; // valid ladder, but no measured length resolves the gain
     // The observed adjacent-window difference supplies the null tail
     // probability. k uses the declared transaction opportunities; no
     // independence assumption is made about *rows* within the window.
@@ -105,7 +105,7 @@ std::pair<uint64_t,uint64_t> derive_effect_gate(const Json& ladder,
             bad("effect_min_quiet_windows: required quiet count exceeds v1 range");
         ++quiet;all_quiet_p*=p;
     }
-    return {chosen,quiet};
+    return std::make_pair(chosen,quiet);
 }
 } // namespace
 
@@ -224,8 +224,7 @@ bool live_policy_record_complete(const LivePolicyRecord& record) {
         "txn_p50_ns", "txn_p95_ns", "copy_bytes_per_s", "heat_gap_max_ns", "heat_watermarked",
         "hot_set_k", "marginal_error_ppm", "marginal_observations", "drift_half_life_observations",
         "observation_rate_per_s", "tail_share_gain_ppm", "tail_lane_service_ns_per_s",
-        "tail_lane_row_ns", "lane_lost_ns", "effect_rows_per_s", "effect_noise_max_ns",
-        "effect_row_noise_ns", "effect_window_noise_ladder"
+        "tail_lane_row_ns", "lane_lost_ns"
     })
         if (!record.measurements.contains(name)) return false;
     return true; // no abort seen is allowed, with the existing measured-cadence fallback
@@ -243,27 +242,45 @@ DerivedLivePolicy derive_live_policy(const LivePolicyRecord& record, const Calib
     for (const char* key : {
         "txn_p95_ns", "copy_bytes_per_s", "heat_gap_max_ns", "heat_watermarked", "marginal_error_ppm",
         "marginal_observations", "drift_half_life_observations", "observation_rate_per_s",
-        "tail_share_gain_ppm", "tail_lane_service_ns_per_s", "tail_lane_row_ns", "lane_lost_ns", "effect_rows_per_s",
-        "effect_noise_max_ns", "effect_row_noise_ns"
+        "tail_share_gain_ppm", "tail_lane_service_ns_per_s", "tail_lane_row_ns", "lane_lost_ns"
     })
         (void)n(key);
     const int64_t windows = calibration.integer("calibration.live_policy.transaction_effect_windows", match);
     const int64_t false_rate = calibration.integer("calibration.live_policy.false_revert_rate_ppm", match);
     if (windows <= 0 || false_rate <= 0 || false_rate >= int64_t(kMillion))
         bad("declared objectives must be positive windows and a false-revert rate in (0,1000000)");
-    // Compare relative tail service with the measured relative noise ladder.
-    // The predicted relative reduction in r equals tail_share_gain_ppm/1e6
-    // if other helpers' row-weighted mean is unchanged and tail per-row
-    // service scales with predicted tail-share reduction.
-    const auto [effect_samples, effect_quiet] = derive_effect_gate(
-        m.at("effect_window_noise_ladder"), n("tail_share_gain_ppm"),
-        uint64_t(windows), double(false_rate) / double(kMillion));
-    const uint64_t window_ns = div_ceil(Wide(effect_samples) * kSecond,
-                                        n("effect_rows_per_s"), "effect window");
-    // A complete assessment needs k pre/post quiet comparisons. Never
-    // truncate a measured length to squeeze it into the old cadence.
-    const uint64_t cadence = div_ceil(Wide(n("txn_p95_ns")) +
-                                     Wide(effect_quiet)*window_ns, 1, "cadence_ns");
+    // Missing effect-only observations or an unresolvable measured noise
+    // ladder disable ONLY the effect verdict; planner evidence remains mandatory.
+    std::string effect_reason;
+    for (const char* key : {"effect_rows_per_s", "effect_noise_max_ns",
+                            "effect_row_noise_ns", "effect_window_noise_ladder"}) {
+        if (!m.contains(key)) {
+            effect_reason = std::string(key) + " absent: " +
+                record.absent.value(key, std::string("not observed"));
+            break;
+        }
+    }
+    uint64_t effect_samples = 1, effect_quiet = 1, window_ns = 0;
+    if (effect_reason.empty()) {
+        // Relative tail/peer service only, never an absolute fallback.
+        const auto resolved = derive_effect_gate(
+            m.at("effect_window_noise_ladder"), n("tail_share_gain_ppm"),
+            uint64_t(windows), double(false_rate) / double(kMillion));
+        if (resolved) {
+            effect_samples = resolved->first;
+            effect_quiet = resolved->second;
+            window_ns = div_ceil(Wide(effect_samples) * kSecond,
+                                 n("effect_rows_per_s"), "effect window");
+        } else {
+            effect_reason = "measured relative-service noise ladder cannot resolve predicted tail effect";
+        }
+    }
+    const bool effect_enabled = effect_reason.empty();
+    // Inert positive effect controls satisfy the v1 schema when disabled.
+    // They are not inferred from nonexistent evidence and are never used.
+    const uint64_t cadence = effect_enabled ?
+        div_ceil(Wide(n("txn_p95_ns")) + Wide(effect_quiet)*window_ns, 1, "cadence_ns") :
+        std::max(n("txn_p95_ns"), n("heat_gap_max_ns"));
     const uint64_t slow_budget = *std::min_element(budgets.begin(), budgets.end());
     if (!slow_budget || slow_budget < stride) bad("a helper budget cannot hold one expert stride");
     // The byte cap is per proposed transaction, not the sum of T later
@@ -305,8 +322,8 @@ DerivedLivePolicy derive_live_policy(const LivePolicyRecord& record, const Calib
     // windows needed to reestablish the effect gate after a transaction.
     const uint64_t max_heat_age = div_ceil(Wide(cadence) + n("heat_gap_max_ns"),
                                            1, "max_heat_age_ns");
-    const uint64_t recovery = div_ceil(Wide(window_ns) * (effect_quiet + 1),
-                                       1, "effect gate recovery");
+    const uint64_t recovery = effect_enabled ?
+        div_ceil(Wide(window_ns) * (effect_quiet + 1), 1, "effect gate recovery") : 0;
     const uint64_t cache_ttl = div_ceil(Wide(max_heat_age) + recovery,
                                          1, "learned eligibility TTL");
     // A WORSE verdict starts a rollback that refreshes per-expert move times.
@@ -326,14 +343,18 @@ DerivedLivePolicy derive_live_policy(const LivePolicyRecord& record, const Calib
         out.provenance[base + field] = provenance(
             "RHP16 " + how + "; " + record.source, inputs);
     };
-    set("effect_gate", true, "effect gate required to check measured service noise", layout);
+    set("effect_gate", effect_enabled, effect_enabled ?
+        "relative tail/peer service judgeable with a measured resolvable noise ladder" :
+        effect_reason + "; churn bounded by derived margin, residency and move caps", layout);
     if (n("heat_watermarked") > 1) bad("heat_watermarked must be 0 or 1");
     set("accept_unwatermarked_heat", n("heat_watermarked") == 0,
         n("heat_watermarked") == 0 ?
             "calibration measured the production heat feed: no step watermark; RHP02 replaces it" :
             "watermarked feed",
         Json::array({"/spec/plan/engine_memory/cache_key"}));
-    set("cadence_ns", cadence, "cadence increased as necessary: txn_p95_ns + k x measured tail window duration; no window truncation", layout);
+    set("cadence_ns", cadence, effect_enabled ?
+        "cadence increased as necessary: txn_p95_ns + k x measured tail window duration; no window truncation" :
+        "effect gate off: max(measured transaction p95, observed heat gap); no unjudgeable quiet-window wait", layout);
     set("max_moved_bytes", move_bytes, "slowest copy bytes/s x measured transaction p95, capped by helper budgets",
         Json::array({"/spec/processes/helpers", "/spec/calibration", "/spec/plan/engine_memory/cache_key"}));
     set("max_moves", max_moves, "max_moved_bytes / device-layout expert stride (bounded by uint32)", budgets_input);
@@ -346,10 +367,12 @@ DerivedLivePolicy derive_live_policy(const LivePolicyRecord& record, const Calib
     set("learned_eligibility_ttl_ns", cache_ttl,
         "one cadence plus observed gap and quiet-gate recovery; event invalidation requires v2", layout);
     set("effect_window_samples", effect_samples,
-        "smallest observed relative-service (tail ns/row / row-weighted other-helpers ns/row) window with RMS fractional noise x Gaussian z <= predicted tail-share reduction g = gain_ppm/1e6; r_after = r_before*(1-g), assuming peer per-row service unchanged and tail service proportional to share; no i.i.d. extrapolation",
+        effect_enabled ? "smallest observed relative-service (tail ns/row / row-weighted other-helpers ns/row) window with RMS fractional noise x Gaussian z <= predicted tail-share reduction g = gain_ppm/1e6; r_after = r_before*(1-g), assuming peer per-row service unchanged and tail service proportional to share; no i.i.d. extrapolation" :
+        "effect gate off: inert schema value, no effect sample length inferred",
         Json::array({"/spec/calibration", "/spec/plan/engine_memory/cache_key"}));
     set("effect_min_quiet_windows", effect_quiet,
-        "smallest consecutive quiet count with transaction_effect_windows * Gaussian noise-crossing probability^count <= declared false-revert objective",
+        effect_enabled ? "smallest consecutive quiet count with transaction_effect_windows * Gaussian noise-crossing probability^count <= declared false-revert objective" :
+        "effect gate off: inert schema value, no quiet count inferred",
         Json::array({"/spec/calibration", "/spec/plan/engine_memory/cache_key"}));
     set("effect_revert_ttl_ns", effective_revert_ttl, "max(drift horizon, quiet-gate recovery, rollback p95 plus residency plus cadence)", layout);
     set("margin_ppm", margin, "multinomial sampling error of the k-th hottest expert share", layout);

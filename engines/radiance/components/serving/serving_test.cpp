@@ -1114,7 +1114,46 @@ void manifest_writer_step(Fixture& t) {
         noisy=replace_line(noisy,"tail_share_gain_ppm","66249");
         noisy=replace_line(noisy,"tail_lane_row_ns","4287");
         noisy=replace_line(noisy,"effect_rows_per_s","175034");
-        no_policy(noisy,"effect_window_noise_ladder");
+        sv::ManifestInputs noisy_input=calibrated;
+        noisy_input.calibration_cache=t.file("unresolvable-noise.toml",noisy);
+        const auto gate_off=sv::build_manifest(noisy_input);
+        const auto& off=gate_off.document.at("spec").at("handoff").at("placement")
+            .at("live_policy");
+        assert(off.at("effect_gate")==false);
+        assert(off.at("margin_ppm")==23000 && off.at("max_moves")>0);
+        assert(gate_off.document.at("provenance")
+            .at("/spec/handoff/placement/live_policy/effect_gate").at("source")
+            .get<std::string>().find("cannot resolve predicted tail effect")!=std::string::npos);
+        assert(bc::serving::v1::read_manifest(gate_off.text,"unresolvable",
+            bc::serving::v1::PlanUse::serving).ok());
+        // Calib12-shaped: all planner measurements present, but no peer
+        // reference on the tail LARGE lane and all effect fields absent.
+        auto structural=cal_text;
+        for (const char* name : {"effect_rows_per_s","effect_noise_max_ns",
+                                 "effect_row_noise_ns","effect_window_noise_ladder"}) {
+            const auto pos=structural.find(std::string(name)+" = ");
+            assert(pos!=std::string::npos);
+            const auto end=structural.find('\n',pos);
+            assert(end!=std::string::npos);
+            structural.erase(pos,end-pos+1);
+        }
+        structural+="absent = { effect_rows_per_s = \"tail large lane has no peer reference on this layout\", "
+                    "effect_noise_max_ns = \"tail large lane has no peer reference on this layout\", "
+                    "effect_row_noise_ns = \"tail large lane has no peer reference on this layout\", "
+                    "effect_window_noise_ladder = \"tail large lane has no peer reference on this layout\" }\n";
+        sv::ManifestInputs structural_input=calibrated;
+        structural_input.calibration_cache=t.file("calib12-structural.toml",structural);
+        const auto structural_manifest=sv::build_manifest(structural_input);
+        const auto& structural_policy=structural_manifest.document.at("spec").at("handoff")
+            .at("placement").at("live_policy");
+        assert(structural_policy.at("effect_gate")==false);
+        assert(structural_policy.at("max_moved_bytes")==435200000ull);
+        assert(structural_policy.at("margin_ppm")==23000);
+        assert(structural_manifest.document.at("provenance")
+            .at("/spec/handoff/placement/live_policy/effect_gate").at("source")
+            .get<std::string>().find("tail large lane has no peer reference")!=std::string::npos);
+        assert(bc::serving::v1::read_manifest(structural_manifest.text,"calib12",
+            bc::serving::v1::PlanUse::serving).ok());
         auto incomplete=replace_line(cal_text,"copy_bytes_per_s","1");
         // A schema-valid but unusable positive reading is not a malformed file.
         no_policy(incomplete,"measured budget buys fewer");

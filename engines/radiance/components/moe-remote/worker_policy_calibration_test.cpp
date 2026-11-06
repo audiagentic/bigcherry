@@ -144,7 +144,12 @@ int main() {
     assert(!calibration_settled(no_effect,unavailable.expired(
         start+horizon-1,no_effect,no_effect.effect_cadence_ns,age)));
     assert(unavailable.expired(start+horizon,no_effect,no_effect.effect_cadence_ns,age));
-    assert(calibration_settled(no_effect,true));
+    assert(calibration_settled(no_effect,true)); // planner ready; no effect wait
+    const auto structural=calibration_record(no_effect,
+        {std::string(64,'f'),"flashnext-4gpu","balanced"},"2026-11-06",true,
+        "tail large lane has no peer reference on this layout");
+    assert(structural.at("absent").at("effect_window_noise_ladder") ==
+           "tail large lane has no peer reference on this layout");
     const auto fallback=calibration_record(no_effect,
         {std::string(64,'f'),"flashnext-4gpu","balanced"},"2026-11-06",true);
     for(const char* field : {"effect_rows_per_s","effect_noise_max_ns",
@@ -180,7 +185,9 @@ int main() {
     no_gaps.delta_gap_ns=Series{64};
     assert(unavailable.expired(start+5*horizon,no_gaps,no_gaps.effect_cadence_ns,age));
     Measured entirely_missing{};
-    assert(calibration_settled(entirely_missing,true));
+    assert(calibration_settled(entirely_missing,true)); // bounded timeout emits incomplete record
+    assert(!calibration_settled(entirely_missing,true,true)); // structural no-peer awaits planner
+    assert(calibration_settled(no_effect,true,true)); // structural no-peer with planner ready
     const auto partial=calibration_record(entirely_missing,
         {std::string(64,'g'),"flashnext-4gpu","balanced"},"2026-11-06",true);
     assert(partial.at("absent").contains("drift_half_life_observations"));

@@ -63,6 +63,32 @@ int main() {
     const auto rec = sv::read_live_policy_record(cache, store_key);
     assert(!sv::read_live_policy_record(cache, key));
     assert(rec && sv::live_policy_record_complete(*rec));
+    // Calib12: effect-only quantities absent, but all planner inputs
+    // survived JSON -> strict ingest -> TOML -> strict reader.
+    auto structural=row;
+    for (const char* name : {"effect_rows_per_s","effect_noise_max_ns",
+                             "effect_row_noise_ns","effect_window_noise_ladder"}) {
+        structural["measurements"].erase(name);
+        structural["absent"][name]="tail large lane has no peer reference on this layout";
+    }
+    log_line(log,structural);
+    const fs::path structural_store=dir/"structural-effect-off.toml";
+    const std::string structural_key(64,'f');
+    sv::ingest_live_policy_record(log,structural_store,key,
+                                  "flashnext-4gpu","balanced",structural_key);
+    const auto structural_read=sv::read_live_policy_record(structural_store,structural_key);
+    assert(structural_read && sv::live_policy_record_complete(*structural_read));
+    assert(structural_read->absent.at("effect_window_noise_ladder") ==
+           "tail large lane has no peer reference on this layout");
+    const auto structural_policy=sv::derive_live_policy(
+        *structural_read,sv::Calibration::standard(structural_store),
+        {"","flashnext-4gpu","balanced"},2500000,{1000000000,1000000000});
+    assert(structural_policy.policy.at("effect_gate")==false);
+    assert(structural_policy.policy.at("max_moves")==174);
+    assert(structural_policy.provenance.at(
+        "/spec/handoff/placement/live_policy/effect_gate").at("source")
+        .get<std::string>().find("tail large lane has no peer reference")!=std::string::npos);
+    log_line(log,row);
     // A previous-schema absolute share-change measurement must not be
     // silently imported or accepted as a future policy input.
     auto obsolete = row;

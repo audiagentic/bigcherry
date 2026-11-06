@@ -81,7 +81,8 @@ non-overlapping window ratios r (tail ns/row divided by peer row-weighted ns/row
 are required; the worse measured lane class sets each point. It emits
 `effect_window_noise_ladder = [[L, noise_ppm], ...]` with at least three
 lengths spanning one lab cadence. Otherwise the ladder is absent
-with a named short-series reason and cannot activate production.
+with a named short-series reason and cannot activate the effect gate;
+production may still derive the planner policy with `effect_gate=false`.
 
 Let `f = g` be the predicted relative effect on r.
 The smallest *observed* L satisfying `noise_ppm(L)/1e6 * z(alpha) <= f`
@@ -90,9 +91,9 @@ sets `effect_window_samples`. At that L,
 the minimum positive k satisfies `T * p^k <= alpha`. Gaussian window
 tails and independence of successive crossings remain assumptions;
 **routed rows are not assumed independent**. If no measured L resolves
-f, policy derivation is skipped with a record-key diagnostic and provenance;
-production serves without live_policy rather than failing to start. No
-shorter fictitious window or i.i.d. extrapolation is substituted.
+f, derive `effect_gate=false` with the unresolvable-ladder reason in
+provenance. The planner policy remains active; no shorter fictitious
+window or i.i.d. extrapolation is substituted.
 
 Let `W = ceil(L * 1e9 / effect_rows_per_s)`; the legacy
 `effect_window_samples` control counts routed rows. Cadence is
@@ -141,9 +142,24 @@ windows derive the same n, k and multiplier. The legacy row-σ
 diagnostic and observed quiet-window maximum may differ, but neither
 determines the selected window length.
 
-Each emitted policy setting has `origin = derived` provenance. An uncalibrated
-locked-v1 plan omits the policy entirely, since v1 has no observe-only state.
-The policy requires the effect gate and derives `accept_unwatermarked_heat`
+Each emitted policy setting has `origin = derived` provenance. A record
+missing **planner-required** evidence (transaction time, helper copy rate,
+heat-gap, marginal error/observations, drift, tail gain/service or lane
+downtime) omits the policy; serving continues without live placement.
+Effect-only evidence (`effect_rows_per_s`, `effect_noise_max_ns`,
+`effect_row_noise_ns`, `effect_window_noise_ladder`) may instead be
+absent with explicit reasons. In that case the derived policy stays active
+with `effect_gate=false`; the gate-specific window and quiet controls
+are inert positive v1 schema values (1, 1), not alleged measurements.
+Cadence derives from max(transaction p95, observed heat-feed gap),
+with no imaginary quiet wait;
+heat age, samples, residency, margin, move caps and TTLs still derive from
+planner evidence. A non-judgable lane (tail LARGE with no peer LARGE
+rows on flashnext-4gpu) is never compared using absolute tail service.
+The gate-off provenance records why the relative effect cannot be
+judged, and that margin, residency and move caps bound churn.
+
+The policy derives `accept_unwatermarked_heat`
 from the measured `heat_watermarked` (zero means allow the authenticated
 histogram-file feed; one means refuse unwatermarked deltas). RHP02's
 watermarked engine producer changes the engine build identity included in
