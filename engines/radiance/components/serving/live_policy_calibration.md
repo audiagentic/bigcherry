@@ -115,3 +115,10 @@ protected_layers empty until model metadata supplies globally protected IDs
 
 The synthetic quiet-window, drift and lane-service fixture measurements in
 `live_policy_test.cpp` are test inputs, not production hardware evidence.
+
+## Store key
+
+Records are stored and looked up by `calibration_key(plan key inputs)`: the plan-key inputs without `engine_build`,
+so a record survives pin bumps. Changing the model, the cards, the layout, the engine arguments or settings, or the
+record schema needs a new calibration.
+

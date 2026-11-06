@@ -247,16 +247,13 @@ an explicitly absent field. Serving derives `accept_unwatermarked_heat =
 capability check still limits the allowance to the authenticated engine
 histogram-file source; it does not authorize unknown feeds.
 
-**RHP02 invalidation requirement:** a histogram-file calibration must be
-re-taken when RHP02 installs the complete, watermarked engine feed. The
-RSC03 plan-store key already incorporates `engine_build`:
-`engine_identity` hashes the engine binary and its runtime-home files.
-When RHP02 changes the engine producer (and therefore that hashed engine
-build), the plan-store key changes. Serving cannot match the old
-histogram-file record to the new key, so a new calibration is required.
-RHP02 must verify this key change before rollout. If it replaces only
-the helper-side reader without changing the hashed engine artifacts,
-this automatic invalidation does **not** occur: RHP02 must then also add
-a feed identity/version to the plan key or reject old feed records
-explicitly. Never silently reuse a histogram-file calibration for a
-new watermarked producer.
+**Records carry across pin bumps (2026-11-06, owner direction).** Calibration records are keyed by
+`calibration_key`: the plan-key inputs (model, card arch and VRAM, layout, engine arguments and engine settings)
+without `engine_build`. What calibration measures belongs to the cards, the layout, the model and the engine
+settings, not to the pinned engine commit, so a daily bump keeps the live policy instead of dropping it until a
+recalibration. A change of any remaining input, or of the record schema, needs a new calibration.
+
+**RHP02:** a histogram-file record says `heat_watermarked = 0`, so the policy derived from it keeps accepting
+unwatermarked heat after RHP02's watermarked feed arrives: as permissive as today, never less safe. Taking the
+benefit of the watermark (refusing incoherent snapshots) is a deliberate recalibration once RHP02 ships, not an
+automatic invalidation on every engine change.

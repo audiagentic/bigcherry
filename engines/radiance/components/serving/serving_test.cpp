@@ -1014,7 +1014,15 @@ void manifest_writer_step(Fixture& t) {
     // This synthetic tiny model has synthetic additional effect/lanes/drift readings.
     {
         sv::ManifestInputs calibrated = in;
-        const std::string key = sv::plan_key(calibrated.measured->key_inputs);
+        const std::string key = sv::calibration_key(calibrated.measured->key_inputs);
+        {   // The calibration key ignores the pinned engine commit (records carry across bumps) and nothing else.
+            auto bumped = calibrated.measured->key_inputs;
+            bumped["engine_build"] = std::string(64, 'f');
+            assert(sv::calibration_key(bumped) == key && sv::plan_key(bumped) != sv::plan_key(calibrated.measured->key_inputs));
+            auto other = calibrated.measured->key_inputs;
+            other["layout"] = "another-layout";
+            assert(sv::calibration_key(other) != key);
+        }
         calibrated.calibration_cache = t.file("live-policy-record.toml",
             "schema_version = 1\n[[live_policy_record]]\n"
             "plan_cache_key = \"" + key + "\"\n"

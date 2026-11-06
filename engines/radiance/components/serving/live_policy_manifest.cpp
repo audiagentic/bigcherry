@@ -11,7 +11,7 @@ namespace bc::serving {
 std::optional<DerivedLivePolicy> derive_manifest_live_policy(
     const ManifestInputs& in, const bc::experts::Container& container) {
     if (!in.measured || in.calibration_cache.empty()) return std::nullopt;
-    const std::string key = plan_key(in.measured->key_inputs);
+    const std::string key = calibration_key(in.measured->key_inputs);
     const auto record = read_live_policy_record(in.calibration_cache, key);
     if (!record || !live_policy_record_complete(*record)) return std::nullopt;
 
