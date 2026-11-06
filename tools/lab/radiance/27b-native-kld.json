@@ -9,28 +9,45 @@
  "server_args": [],
  "environment": {
   "HIP_VISIBLE_DEVICES": "0,1",
-  "ROCR_VISIBLE_DEVICES": "0,1",
-  "RADIANCE_HOME": "${RAD_HOME}"
+  "ROCR_VISIBLE_DEVICES": "0,1"
  },
  "expected_execution": {
   "backend": "ROCm",
-  "architectures": ["gfx1100", "gfx1100"],
-  "locators": ["0000:03:00.0", "0000:06:00.0"]
+  "architectures": [
+   "gfx1100",
+   "gfx1100"
+  ],
+  "locators": [
+   "0000:03:00.0",
+   "0000:06:00.0"
+  ]
  },
  "quality": {
   "reference_dir": "${KLD_REF_DIR}",
   "corpus": "${BC_WORK_ROOT}/corpus/rad-kld-corpus-4.jsonl",
   "control": "compat",
   "timeout_s": 5400,
-  "args": [
-   "--radiance-home", "${RAD_HOME}", "--kernels", "libr3,libref",
-   "--tp", "2", "--tp-wire", "exact", "--kv-cache-dtype", "fp8", "--max-model-len", "8192", "--max-num-seqs", "1"
-  ],
+  "args": [],
   "record": {
-   "environment": {"R3_ATTN_NATIVE": "0", "R3_MOE_NATIVE": "0"},
+   "environment": {
+    "R3_ATTN_NATIVE": "0",
+    "R3_MOE_NATIVE": "0"
+   },
    "args": [
-    "--radiance-home", "${RAD_HOME}", "--kernels", "libr3,libref",
-    "--tp", "2", "--tp-wire", "exact", "--kv-cache-dtype", "fp8", "--max-model-len", "8192", "--max-num-seqs", "1"
+    "--radiance-home",
+    "${RAD_HOME}",
+    "--kernels",
+    "libr3,libref",
+    "--tp",
+    "2",
+    "--tp-wire",
+    "exact",
+    "--kv-cache-dtype",
+    "fp8",
+    "--max-model-len",
+    "8192",
+    "--max-num-seqs",
+    "1"
    ]
   },
   "thresholds": {
@@ -44,12 +61,42 @@
  },
  "arms": [
   {
-   "name": "compat", "mode": "stock", "shutdown_method": "sigint", "binary": "${RAD_BIN}",
-   "settings": {"R3_ATTN_NATIVE": "0", "R3_MOE_NATIVE": "0"}
+   "name": "compat",
+   "mode": "stock",
+   "shutdown_method": "sigint",
+   "binary": "${RAD_BIN}",
+   "settings": {
+    "R3_ATTN_NATIVE": "0",
+    "R3_MOE_NATIVE": "0"
+   },
+   "serving": {
+    "layout": "qwen27b-2xtx",
+    "set": {
+     "engine.tp_wire": "exact",
+     "service.max_context": 8192,
+     "service.max_sessions": 1,
+     "engine.kv_cache_dtype": "fp8"
+    }
+   }
   },
   {
-   "name": "attn-native", "mode": "stock", "shutdown_method": "sigint", "binary": "${RAD_BIN}",
-   "settings": {"R3_ATTN_NATIVE": "1", "R3_MOE_NATIVE": "0"}
+   "name": "attn-native",
+   "mode": "stock",
+   "shutdown_method": "sigint",
+   "binary": "${RAD_BIN}",
+   "settings": {
+    "R3_ATTN_NATIVE": "1",
+    "R3_MOE_NATIVE": "0"
+   },
+   "serving": {
+    "layout": "qwen27b-2xtx",
+    "set": {
+     "engine.tp_wire": "exact",
+     "service.max_context": 8192,
+     "service.max_sessions": 1,
+     "engine.kv_cache_dtype": "fp8"
+    }
+   }
   }
  ]
 }

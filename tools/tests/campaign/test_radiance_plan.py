@@ -82,6 +82,20 @@ class PlanTests(unittest.TestCase):
         self.make()   # hit: no second measuring start
         self.assertEqual(len((self.log / "engine.args").read_text().splitlines()), 1)
 
+    def test_the_calibration_store_and_the_lab_objects_reach_every_bc_serve_call(self):
+        store, policy, experiment = (self.root / n for n in ("calibration.toml", "policy.json", "experiment.json"))
+        for f in (store, policy, experiment):
+            f.write_text("x", encoding="utf-8")
+        self.make({"layout": "qwen27b-2xtx", "calibration": str(store), "live_policy": str(policy),
+                   "experiment": str(experiment), "calibration_run": True})
+        calls = (self.log / "bc-serve.args").read_text().splitlines()
+        self.assertEqual(len(calls), 3)
+        for call in calls:   # the miss, the unmeasured manifest and the measured one all describe the same configuration
+            for expected in (f"--calibration {store}", f"--live-policy {policy}", f"--experiment {experiment}", "--calibration-run"):
+                self.assertIn(expected, call)
+        import hashlib
+        self.assertIn(f"experiment-sha256: {hashlib.sha256(b'x').hexdigest()}", calls[0])
+
     def test_the_engine_runs_in_the_arms_environment_with_the_runtime_home(self):
         self.env["FAKE_LOG"] = str(self.log)
         (self.binary.parent.parent / "radiance_home" / "x").parent.mkdir(exist_ok=True)

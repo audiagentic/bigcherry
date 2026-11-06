@@ -67,6 +67,19 @@ class RadianceSidecarSpecTests(unittest.TestCase):
         manifest = write_manifest(self.tmp, helpers=())
         self.assertEqual(adapter("radiance").sidecars(self.arm(manifest), {}, Path("run"), Path("/b/bin/radiance")), [])
 
+    def test_a_serving_arm_scores_from_its_manifest_with_only_the_kl_flags(self):
+        rad = adapter("radiance")
+        arm = {"name": "on", "model": Path("/m.rad"), "settings": {}, "manifest": Path("/run/m.json")}
+        quality = {"args": [], "reference_dir": "/ref", "corpus": "/c.jsonl"}
+        command = rad.quality_command("score", arm, {}, Path("run"), Path("/b/bin/radiance"), Path("/m.rad"), quality)
+        self.assertEqual(command.argv, ("/b/bin/radiance", "--manifest", "/run/m.json", "--role", "engine",
+                                        "--kld-ref", "/ref", "--kld-out", "run/on.kld.json"))
+        with self.assertRaisesRegex(ValueError, "quality.args must be empty"):
+            rad.quality_command("score", arm, {}, Path("run"), Path("/b/bin/radiance"), Path("/m.rad"), {**quality, "args": ["--tp", "1"]})
+        raw = rad.quality_command("score", {**arm, "manifest": None}, {}, Path("run"), Path("/b/bin/radiance"), Path("/m.rad"),
+                                  {**quality, "args": ["--tp", "1"]})
+        self.assertEqual(raw.argv[:5], ("/b/bin/radiance", "--model", "/m.rad", "--tp", "1"))
+
     def test_the_manifest_names_the_port(self):
         self.assertEqual(adapter("radiance").manifest_port(write_manifest(self.tmp, port=18407)), 18407)
         with self.assertRaises(ValueError):

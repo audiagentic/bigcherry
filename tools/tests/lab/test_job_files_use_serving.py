@@ -7,8 +7,8 @@ from bigcherry.core import paths
 from bigcherry.engine_adapters import radiance_layout
 
 JOBS = sorted((paths.REPO_ROOT / "tools/lab/radiance").glob("*.json"))
-#: acceptance and quality jobs that still carry raw flags until the quality path starts from a manifest
-NOT_YET = {"helper-ab.json", "helper-kld.json", "helper-combine-kld.json", "27b-native-kld.json"}
+#: the acceptance speed job, whose arms differ only by a knob the engine no longer has; the owner decides what it compares now
+NOT_YET = {"helper-ab.json"}
 
 
 class JobFileTests(unittest.TestCase):

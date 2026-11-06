@@ -42,10 +42,21 @@ class RadianceAdapter(EngineAdapter):
         """radiance's KL mode is offline and prefill-only: ``radiance --model M <args> --kld-record DIR --kld-corpus
         JSONL`` writes the reference, ``... --kld-ref DIR --kld-out JSON`` scores against it. ``quality["args"]`` are
         the engine arguments of the KL run (layout, placement, ``--max-num-batched-tokens`` no larger than the helper
-        lane cap); the arm's settings and sidecars apply as in serving."""
+        lane cap); an arm with a ``serving`` manifest starts ``--manifest M --role engine`` instead and takes none. The
+        arm's settings and sidecars apply as in serving."""
         if kind not in ("record", "score"):
             raise ValueError(f"quality kind must be record or score, not {kind!r}")
-        argv = [str(binary), "--model", str(model), *quality["args"]]
+        manifest = arm.get("manifest")
+        if manifest is None:
+            argv = [str(binary), "--model", str(model), *quality["args"]]
+        else:
+            # A serving arm: the manifest is the engine's whole configuration; only the KL run flags accompany it.
+            if quality["args"]:
+                raise ValueError(f"{arm['name']}: a serving arm takes its engine configuration from its manifest, so quality.args must be empty")
+            from ..core import engines, paths
+
+            serve = engines.load(paths.REPO_ROOT, "radiance").serve
+            argv = [str(binary), *(a.replace("{manifest}", str(manifest)) for a in serve.manifest_args)]
         result = None
         if kind == "record":
             argv += ["--kld-record", quality["reference_dir"], "--kld-corpus", quality["corpus"]]

@@ -139,7 +139,9 @@ A campaign arm that serves from a manifest describes its configuration under `se
 
 `layout` names an entry of `engines/radiance/layouts.toml` (required); `set` holds `bc-serve --set key=value` settings (strings, numbers,
 booleans); `heat` and `histogram` are the layout's route-heat inputs and are required exactly when the layout has helpers (`/dev/null`
-for no recording). The model, the runtime home and the engine port come from the job and the build; environment variables in the
+for no recording). `calibration` (a calibration store, from which bc-serve derives the live policy), `live_policy` and `experiment` (files)
+and `calibration_run` (true) are the matching `bc-serve --calibration`, `--live-policy`, `--experiment` and `--calibration-run`; they reach
+every bc-serve call of the arm and the experiment file's contents are part of the plan-cache key. The model, the runtime home and the engine port come from the job and the build; environment variables in the
 block are expanded. An arm with `serving` takes no `server_args` (they are settings) and needs `execution_evidence: "observe"` (a
 manifest start has no attestation preflight).
 
@@ -153,6 +155,11 @@ The engine is then started as `radiance --manifest M --role engine` (`[serve] ma
 to drive comes from the manifest, and one `r3_moe_worker --manifest M --role helperN` starts per `spec.processes.helpers` entry, each
 seeing the host card whose `locator` equals the helper's `gpu`. The engine still reads `R3_MOE_WORKER=1` from its environment to
 enable the helper hook (RSC08 S5: not yet a manifest field), so a job with helpers sets it in `environment`.
+
+A quality (KL) arm uses the same block. The engine KL run starts as `radiance --manifest M --role engine --kld-ref DIR --kld-out FILE` (or
+`--kld-record DIR --kld-corpus FILE` for the reference): the four KL flags are the only flags the engine takes beside a manifest (rad0009;
+they are a kind of run, not configuration), and `quality.args` must be empty for such an arm. A reference recorded in the same job
+(`quality.record`) still starts from raw flags; a stored reference is reused as before.
 
 `R3_MOE_WORKER_*` arm settings, `R3_MOE_WORKER_LAYOUT` and `BC_SERVING_MANIFEST` are gone. Jobs that used them and could not be migrated
 are archived in `experiments/radiance/archive-helper-env-jobs/` and `experiments/radiance/archive-engine-only-jobs/`. The lab scripts

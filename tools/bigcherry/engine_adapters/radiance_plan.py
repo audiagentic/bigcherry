@@ -24,7 +24,7 @@ from .base import SidecarError, SidecarSet, SidecarSpec
 
 CACHE_MISS = 10
 _ENGINE_MIB = re.compile(r"--plan-memory: wrote .*; engine start-up took (\d+) MiB of MemAvailable;")
-_KEYS = {"layout", "set", "heat", "histogram"}
+_KEYS = {"layout", "set", "heat", "histogram", "calibration", "live_policy", "experiment", "calibration_run"}
 
 
 class PlanError(RuntimeError):
@@ -94,8 +94,17 @@ def write_manifest(
     site = run_dir / "site.toml"
     _site(site, model, radiance_home, serving)
     set_args = [a for key in sorted(sets) for a in ("--set", f"{key}={_toml(sets[key])}")]
-    extra = "; ".join(f"{k}-sha256: {_file_sha256(Path(serving[k]))}" for k in ("heat",) if k in serving) or "none"
-    common = ["--site", str(site), *set_args]
+    # What else decides the plan but is not a bc-serve setting: the route-heat file's contents and the lab experiment.
+    extra = "; ".join(f"{k}-sha256: {_file_sha256(Path(serving[k]))}" for k in ("heat", "experiment") if k in serving) or "none"
+    # What the helpers read besides the layout and the settings: the calibration store the live policy is derived from, an explicit
+    # lab policy, the lab experiment, and the calibration-run profile.
+    objects = []
+    for key, flag in (("calibration", "--calibration"), ("live_policy", "--live-policy"), ("experiment", "--experiment")):
+        if key in serving:
+            objects += [flag, str(serving[key])]
+    if serving.get("calibration_run"):
+        objects.append("--calibration-run")
+    common = ["--site", str(site), *set_args, *objects]
 
     def run(out: Path, *args: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run([str(bc_serve), "--write-manifest", str(out), *args], capture_output=True, text=True)
