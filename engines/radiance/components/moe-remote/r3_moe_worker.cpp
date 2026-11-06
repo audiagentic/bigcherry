@@ -628,7 +628,11 @@ int main(int argc, char** argv) {
                 cfg.policy,std::move(source),
                 std::vector<uint64_t>(budgets,budgets+helper_count),
                 gpu->expert_stride(),std::move(protected_experts),epoch_clock,
-                &lane_service_signal);
+                &lane_service_signal,
+                settings.lab_profile ?
+                    std::optional<r3::policy::CalibrationIdentity>{
+                        r3::policy::CalibrationIdentity{settings.plan_cache_key,settings.layout,settings.objective}} :
+                    std::nullopt);
             if(!policy_driver->start()) {
                 std::fprintf(stderr,"r3_moe_worker: policy worker cannot start (invalid settings, source or budgets)\n");
                 raise_fault(h); lanes.stop_and_join(); return 2;

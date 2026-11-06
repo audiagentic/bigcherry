@@ -76,7 +76,8 @@ std::optional<LivePolicyRecord> read_live_policy_record(const std::filesystem::p
         "tail_share_noise_ppm", "tail_share_gain_ppm", "tail_lane_service_ns_per_s",
         "lane_lost_ns", "effect_window_samples", "effect_requests_per_s",
         "effect_quiet_windows", "effect_noise_floor_ns", "effect_noise_quantile_ns",
-        "noise_false_revert_rate_ppm", "abort_quiescent_ns"
+        "noise_false_revert_rate_ppm", "abort_quiescent_ns", "absent"
+
     };
     const std::set<std::string> names = {
         "txn_p50_ns", "txn_p95_ns", "copy_bytes_per_s", "heat_gap_max_ns",
@@ -107,22 +108,57 @@ std::optional<LivePolicyRecord> read_live_policy_record(const std::filesystem::p
         row.source = cache.filename().string() + " live_policy_record[" + std::to_string(i) +
                      "] (" + row.seeded + "; " + row.evidence + ")";
         row.measurements = Json::object();
-        for (const auto& n : names)
-            row.measurements[n] = positive(*t, n.c_str(), where, n == "lane_lost_ns");
+        row.absent = Json::object();
+        if (const auto* a = t->get("absent")) {
+            const toml::table* missing = a->as_table();
+            if (!missing) bad(where + ": absent must be a table of named reasons");
+            for (const auto& [name, reason] : *missing) {
+                const std::string field(name.str());
+                if (!names.count(field) && field != "abort_quiescent_ns")
+                    bad(where + ": unknown absent field " + field);
+                if (!reason.as_string() || reason.as_string()->get().empty())
+                    bad(where + ": absent." + field + " must have a reason");
+                if (t->contains(field)) bad(where + ": both measured and absent " + field);
+                row.absent[field] = reason.as_string()->get();
+            }
+        }
+        for (const auto& n : names) {
+            if (t->contains(n)) row.measurements[n] = positive(*t, n.c_str(), where, n == "lane_lost_ns");
+            else if (!row.absent.contains(n)) bad(where + ": " + n + " missing without absent reason");
+        }
         if (t->contains("abort_quiescent_ns"))
             row.measurements["abort_quiescent_ns"] = positive(*t, "abort_quiescent_ns", where);
-        if (number(row.measurements, "txn_p50_ns") > number(row.measurements, "txn_p95_ns"))
+        // Legacy complete records legitimately omit the optional abort duration.
+        if (row.measurements.contains("txn_p50_ns") && row.measurements.contains("txn_p95_ns") &&
+            number(row.measurements, "txn_p50_ns") > number(row.measurements, "txn_p95_ns"))
             bad(where + ": txn_p50_ns > txn_p95_ns");
-        if (number(row.measurements, "tail_share_noise_ppm") >= kMillion ||
-            number(row.measurements, "marginal_error_ppm") >= kMillion ||
-            number(row.measurements, "tail_share_gain_ppm") >= kMillion ||
-            number(row.measurements, "noise_false_revert_rate_ppm") >= kMillion ||
-            number(row.measurements, "effect_noise_quantile_ns") < number(row.measurements, "effect_noise_floor_ns"))
+        const auto too_big = [&](const char* name) {
+            return row.measurements.contains(name) && number(row.measurements, name) >= kMillion;
+        };
+        if (too_big("tail_share_noise_ppm") || too_big("marginal_error_ppm") ||
+            too_big("tail_share_gain_ppm") || too_big("noise_false_revert_rate_ppm") ||
+            (row.measurements.contains("effect_noise_quantile_ns") &&
+             row.measurements.contains("effect_noise_floor_ns") &&
+             number(row.measurements, "effect_noise_quantile_ns") <
+             number(row.measurements, "effect_noise_floor_ns")))
+
             bad(where + ": invalid measured fraction or noise quantile");
         if (row.key == plan_key) found = std::move(row);
     }
     return found;
 }
+
+bool live_policy_record_complete(const LivePolicyRecord& record) {
+    for (const char* name : {"txn_p50_ns", "txn_p95_ns", "copy_bytes_per_s", "heat_gap_max_ns",
+        "hot_set_k", "marginal_error_ppm", "marginal_observations",
+        "drift_half_life_observations", "observation_rate_per_s", "tail_share_noise_ppm",
+        "tail_share_gain_ppm", "tail_lane_service_ns_per_s", "lane_lost_ns",
+        "effect_window_samples", "effect_requests_per_s", "effect_quiet_windows",
+        "effect_noise_floor_ns", "effect_noise_quantile_ns", "noise_false_revert_rate_ppm"})
+        if (!record.measurements.contains(name)) return false;
+    return true; // no abort seen is allowed, with the existing measured-cadence fallback
+}
+
 
 DerivedLivePolicy derive_live_policy(const LivePolicyRecord& record, const Calibration& calibration,
                                      const CalibrationMatch& match, uint64_t stride,

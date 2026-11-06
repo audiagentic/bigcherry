@@ -13,7 +13,11 @@ struct ManifestInputs;
 struct LivePolicyRecord {
     std::string key, layout, objective, seeded, evidence, source;
     nlohmann::json measurements;
+    // Partial evidence has explicit missing reasons; never derive from it.
+    nlohmann::json absent = nlohmann::json::object();
 };
+bool live_policy_record_complete(const LivePolicyRecord& record);
+
 
 // Reads [[live_policy_record]] from the existing --calibration TOML cache.
 // Every record is validated, including nonmatching records; missing key means no calibration.

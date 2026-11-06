@@ -5,6 +5,9 @@
 #include "worker_policy_live.h"
 #include "worker_policy_effect.h"
 #include "worker_policy_measure.h"
+#include "worker_policy_calibration.h"
+#include <ctime>
+#include <optional>
 #include "worker_epoch.h"
 #include <algorithm>
 #include <atomic>
@@ -65,7 +68,9 @@ private:
     mutable std::mutex measure_lock_;
     Measured measured_;
     DriftTracker drift_{1};
-    uint64_t last_delta_poll_ns_=0;
+    uint64_t last_delta_poll_ns_=0, first_delta_poll_ns_=0, first_delta_observations_=0;
+    std::optional<CalibrationIdentity> calibration_identity_;
+    bool calibration_printed_=false;
     heat::Heat heat_;
     uint64_t consumed_=0;
     MoveHistory history_;
@@ -167,6 +172,18 @@ private:
             drift_.add(std::vector<double>(delta.counts.begin(),delta.counts.end()),delta.observation_count);
             measured_.drift_half_life_observations=drift_.half_life_observations();
             measured_.drift_horizon_observations=drift_.horizon_observations();
+            measured_.drift_intervals=drift_.intervals();
+            measured_.drift_capacity=drift_.capacity();
+            measured_.marginal_observations=delta.observation_count;
+            if (!first_delta_poll_ns_) {
+                first_delta_poll_ns_=poll_now;
+                first_delta_observations_=delta.observation_count;
+            } else if (poll_now>first_delta_poll_ns_ && delta.observation_count>first_delta_observations_) {
+                const unsigned __int128 numerator=
+                    static_cast<unsigned __int128>(delta.observation_count-first_delta_observations_)*1000000000ull;
+                measured_.observation_rate_per_s=
+                    double(numerator)/double(poll_now-first_delta_poll_ns_);
+            }
             measured_.marginal_error=marginal_relative_error(heat_.counts,drift_.k());
         }
         r.unwatermarked=unwatermarked;
@@ -253,12 +270,14 @@ public:
     Driver(Settings settings,std::unique_ptr<HeatSource> source,
            std::vector<uint64_t> budgets,uint64_t stride,
            std::vector<uint8_t> protected_experts,const r3::epoch::Clock& clock,
-           ServiceSource* service=nullptr)
+            ServiceSource* service=nullptr,
+            std::optional<CalibrationIdentity> calibration_identity=std::nullopt)
         :settings_(std::move(settings)),clock_(clock),service_(service),
          effect_({settings_.effect_window_samples,settings_.effect_min_quiet_windows,
                   settings_.effect_noise_multiplier}),source_(std::move(source)),
          budgets_(std::move(budgets)),stride_(stride),
          protected_(std::move(protected_experts)),
+          calibration_identity_(std::move(calibration_identity)),
          heat_(uint32_t(protected_.size()),1,settings_.controls.half_life_observations) {
         // Heat shape is replaced with the coherent ACTIVE layout at first
         // capture; no constructor accesses shared memory.
@@ -271,7 +290,10 @@ public:
         std::lock_guard<std::mutex> guard(measure_lock_);
         drift_=DriftTracker(std::max<size_t>(hot_set_k(),1));
         measured_.drift_half_life_observations=0;measured_.drift_horizon_observations=0;measured_.marginal_error=0;
-        measured_.hot_set_k=hot_set_k();last_delta_poll_ns_=0;
+        measured_.hot_set_k=hot_set_k();
+        measured_.drift_intervals=0;measured_.drift_capacity=drift_.capacity();
+        measured_.marginal_observations=0;measured_.observation_rate_per_s=0;
+        last_delta_poll_ns_=0;first_delta_poll_ns_=0;first_delta_observations_=0;
     }
     Measured measured() const {std::lock_guard<std::mutex> guard(measure_lock_);return measured_;}
     Driver(const Driver&)=delete;
@@ -302,6 +324,21 @@ public:
     }
     const Evidence& evidence() const {return evidence_;}
     void heartbeat(uint64_t now_ns) {
+        if (settings_.enabled && started_ns_ && calibration_identity_ && !calibration_printed_) {
+            const Measured m=measured();
+            if (calibration_settled(m)) {
+                std::time_t now=std::time(nullptr);
+                std::tm utc{};
+                char date[11]{};
+                if (now>=0 && ::gmtime_r(&now,&utc) &&
+                    std::strftime(date,sizeof(date),"%Y-%m-%d",&utc)) {
+                    const auto row=calibration_record(m,*calibration_identity_,date);
+                    std::fprintf(stderr,"RHP16_CALIBRATION_JSON %s\n",row.dump().c_str());
+                    std::fflush(stderr);
+                    calibration_printed_=true; // exactly once per helper run
+                }
+            }
+        }
         if(!settings_.enabled || !started_ns_ || now_ns<next_heartbeat_ns_)return;
         if(no_live_feed(now_ns))
             std::fprintf(stderr,

@@ -89,5 +89,7 @@ evidence = "RHP16 service objective: false revert in 1 percent of quiet comparis
 
 # A --calibration TOML cache may contain [[live_policy_record]] entries with
 # plan_cache_key, layout, objective, seeded, evidence, the measured fields
-# in live_policy.cpp, and optional abort_quiescent_ns. The records are read-only
-# in this step. No unmeasured production live policy is seeded here.
+# in live_policy.cpp, optional abort_quiescent_ns, and an optional 'absent'
+# inline table of measurement-name -> explicit unmeasured reason. The lab helper
+# emits a JSON evidence line; bc-serve calibration-ingest validates and atomically
+# appends the TOML record. Partial records never enable production live policy.

@@ -13,7 +13,8 @@ std::optional<DerivedLivePolicy> derive_manifest_live_policy(
     if (!in.measured || in.calibration_cache.empty()) return std::nullopt;
     const std::string key = plan_key(in.measured->key_inputs);
     const auto record = read_live_policy_record(in.calibration_cache, key);
-    if (!record) return std::nullopt;
+    if (!record || !live_policy_record_complete(*record)) return std::nullopt;
+
 
     // The GPU backend allocates fixed-size slots. Select the largest *device
     // layout* expert among the container's supported expert descriptors, not

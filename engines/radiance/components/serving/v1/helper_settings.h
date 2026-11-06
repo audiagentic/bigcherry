@@ -32,6 +32,9 @@ struct HelperSettings {
     WorkerHelper helper;
     WorkerHandoff handoff;
     std::string role, content_sha256, model, radiance_home;
+    // Projection of existing v1 identity fields, not new manifest members.
+    std::string plan_cache_key, layout, objective;
+    bool lab_profile = false;
     std::string plugin, plugin_file, formats;
     std::vector<uint64_t> budgets_mib, shares;
     std::vector<double> balance_speeds;

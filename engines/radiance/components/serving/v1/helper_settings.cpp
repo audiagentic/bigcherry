@@ -28,6 +28,10 @@ v1::Result<HelperSettings> helper_settings(const v1::Manifest& m, std::string_vi
     s.role = std::string(role);
     s.content_sha256 = m.metadata.content_digest;
     s.model = m.spec.intent.model;
+    s.plan_cache_key = v1::plan_cache_key(m);
+    s.layout = m.spec.intent.layout;
+    s.objective = std::string(v1::kObjectiveNames[static_cast<size_t>(m.spec.intent.service.objective)]);
+    s.lab_profile = m.spec.intent.service.profile == v1::Profile::kLab;
     s.radiance_home = p.engine.runtime.radiance_home;
     s.helper = {u32(p.helpers.size()), u32(v.index), u32(p.engine.scheduler.tp), c.cpu.reference, c.runtime.power_save,
                 c.runtime.queue_warm, c.combine.enabled, u32(c.combine.min_rows), u32(c.combine.threads),

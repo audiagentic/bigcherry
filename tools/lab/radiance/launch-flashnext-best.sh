@@ -27,7 +27,8 @@
 # Lab: bigcherry build --lane radiance:stock:linux-radiance
 #
 # Usage:
-#   bash tools/lab/radiance/launch-flashnext-best.sh [start] [--release TAG|latest | --build DIR] [--port N] [--heat FILE] [--host-pool-mib N] [--host-kv-mib N] [--chunk TOKENS] [--ngram-placement ram|disk|vram] [--kv-dtype fp8|fp8_v4|k6_v4] [--ngram-device INDEX] [--max-model-len TOKENS] [--record-heat PREFIX|off [--record-period S]] [--live-policy FILE] [--experiment FILE] [--gpu-power] [--layout NAME] [--budget ARCH=MIB] [--canary-prompt TEXT --canary-expect FACT]
+#   bash tools/lab/radiance/launch-flashnext-best.sh [start] [--release TAG|latest | --build DIR] [--port N] [--heat FILE] [--host-pool-mib N] [--host-kv-mib N] [--chunk TOKENS] [--ngram-placement ram|disk|vram] [--kv-dtype fp8|fp8_v4|k6_v4] [--ngram-device INDEX] [--max-model-len TOKENS] [--record-heat PREFIX|off [--record-period S]] [--live-policy FILE] [--experiment FILE] [--calibrate --calibration-prompts FILE] [--gpu-power] [--layout NAME] [--budget ARCH=MIB] [--canary-prompt TEXT --canary-expect FACT]
+
 #     (every start ends with a canary completion that must contain the fact, default 'The capital of France is' -> Paris; a failure stops the launch, exit 96)
 #   bash tools/lab/radiance/launch-flashnext-best.sh stop
 # --release re-execs from the verified release-tag worktree with --build. --release and --build
@@ -51,6 +52,14 @@
 # container and frees that RAM for --host-pool-mib.
 # --kv-dtype T: the KV cache type (default fp8; fp8_v4 costs 0.78 of it per token and k6_v4 0.69, both lossy). There is no raw engine argument: the engine's
 # other flags are manifest fields (spec.experiment.engine: profile_ops, kv_resident, debug_selection, deterministic; give them in the
+# --calibrate: LAB ONLY. Requires --live-policy FILE (explicit
+# observe-or-move policy), --record-heat enabled and --calibration-prompts FILE
+# (one prompt per line, repeated until the helper's measurement horizon settles).
+# The helper prints one RHP16_CALIBRATION_JSON line; the launcher stops serving,
+# validates it against this run's strict v1 manifest, atomically ingests it into
+# $BC_WORK_ROOT/live-policy-calibration.toml and reports that path. No production
+# start can use --calibrate. A missing measured quantity stays absent with a
+# reason and will NOT activate an uncalibrated production policy.
 # --experiment FILE object, e.g. {"engine": {"profile_ops": "on", "kv_resident": 65536}}).
 # --ngram-device INDEX: an inventory card (not the engine, not a helper) that holds as much of the n-gram table as fits and gathers its rows (libr3ngram, R3_NGRAM_DEV);
 # the rows past its VRAM stay in a host copy. The card then sits in the engine process beside the engine card.
@@ -103,6 +112,8 @@ PREFIX_RESUME=nearest
 RECORD_PERIOD=60
 LIVE_POLICY_FILE=""   # a JSON object with every spec.handoff.placement.live_policy member (docs/design/serving-manifest-v1)
 EXPERIMENT_FILE=""    # a JSON object for spec.experiment (lab profile)
+CALIBRATE=0           # lab-only measurement run, never a serving hand-off
+CALIBRATION_PROMPTS=""
 # The start canary: after /health, every start (cold, measured or cached) sends this one deterministic completion and the answer
 # must contain the expected fact (case-insensitive, semantic, not a hash), or everything this launch started is stopped and the
 # launch fails (exit 96). It catches an engine that is up but answering garbage before any client does. The prompt is a fact the
@@ -136,11 +147,58 @@ while [ $# -gt 0 ]; do
     --record-period) CUSTOM_SERVE_OPTIONS+=(--record-period); RECORD_PERIOD=$2; shift 2 ;;
     --live-policy) CUSTOM_SERVE_OPTIONS+=(--live-policy); LIVE_POLICY_FILE=$2; shift 2 ;;
     --experiment) CUSTOM_SERVE_OPTIONS+=(--experiment); EXPERIMENT_FILE=$2; shift 2 ;;
+    --calibrate) CUSTOM_SERVE_OPTIONS+=(--calibrate); CALIBRATE=1; shift ;;
+    --calibration-prompts) CALIBRATION_PROMPTS=$2; shift 2 ;;
     --canary-prompt) CANARY_PROMPT=$2; shift 2 ;;
     --canary-expect) CANARY_EXPECT=$2; shift 2 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
 done
+if [ "$CALIBRATE" = 1 ]; then
+  if [ "$CMD" != start ] || [ -z "$LIVE_POLICY_FILE" ]; then
+    echo "RADIANCE_EXIT=2 --calibrate is lab-only: an explicit --live-policy is required" >&2
+    exit 2
+  fi
+  if [ -n "$EXPERIMENT_FILE" ]; then
+    echo "RADIANCE_EXIT=2 --calibrate measures the production plan: it takes no --experiment" >&2
+    exit 2
+  fi
+  if [ -z "$CALIBRATION_PROMPTS" ] || [ ! -s "$CALIBRATION_PROMPTS" ]; then
+    echo "RADIANCE_EXIT=2 --calibrate requires a nonempty --calibration-prompts FILE" >&2
+    exit 2
+  fi
+  if ! grep -q "[^[:space:]]" "$CALIBRATION_PROMPTS"; then
+    echo "RADIANCE_EXIT=2 --calibrate needs at least one nonblank workload prompt" >&2
+    exit 2
+  fi
+  if [ "$RECORD" = off ]; then
+    echo "RADIANCE_EXIT=2 --calibrate needs the live route histogram (--record-heat cannot be off)" >&2
+    exit 2
+  fi
+  # The manifest is a lab-profile one (bc-serve --calibration-run) with the explicit policy and no experiment, so the plan it
+  # measures is the production plan and the record applies to the next production start.
+  if ! python3 - "$LIVE_POLICY_FILE" <<'RHP16_VALIDATE'
+import json
+import sys
+try:
+    with open(sys.argv[1], encoding="utf-8") as f:
+        policy = json.load(f)
+    # v1 has no live_policy.enabled: a PRESENT policy is an active one (its thread and measurement hooks run), an absent
+    # one is no policy. So the lab policy must be a non-empty object of v1 live_policy members; bc-serve then checks that
+    # every member is there and valid.
+    if not isinstance(policy, dict) or not policy:
+        raise ValueError("the explicit lab live policy must be a non-empty object of spec.handoff.placement.live_policy members (present = active)")
+    if "enabled" in policy:
+        raise ValueError("live_policy has no 'enabled' member in v1: a present policy is active; remove the key")
+except (OSError, ValueError) as e:
+    print("calibration: " + str(e), file=sys.stderr)
+    sys.exit(2)
+RHP16_VALIDATE
+  then
+    echo "RADIANCE_EXIT=2 calibration must not alter the production plan or disable measurement hooks" >&2
+    exit 2
+  fi
+fi
 
 if [ -n "$RELEASE_TAG" ]; then
   if [ -n "$BUILD" ]; then
@@ -237,6 +295,10 @@ LAYOUT_OUT=$(PYTHONPATH=tools python3 -m bigcherry layout env "$LAYOUT" "${BUDGE
 eval "$LAYOUT_OUT"
 if [ "$LAYOUT_HELPER_COUNT" = 0 ] && [ "${#CUSTOM_SERVE_OPTIONS[@]}" -ne 0 ]; then
   echo "RADIANCE_EXIT=2 these options configure helper-offload serving, not the helper-free layout $LAYOUT: ${CUSTOM_SERVE_OPTIONS[*]}; use its server-args in layouts.toml" >&2
+  exit 2
+fi
+if [ "$CALIBRATE" = 1 ] && [ "$LAYOUT_HELPER_COUNT" -eq 0 ]; then
+  echo "RADIANCE_EXIT=2 --calibrate requires a helper layout" >&2
   exit 2
 fi
 
@@ -478,6 +540,40 @@ start_canary() {
   return 1
 }
 start_canary || exit 96
+if [ "$CALIBRATE" = 1 ]; then
+  # No fixed number of requests or time-based guess: this loop stops on the
+  # helper's convergence condition (the retained drift-track horizon).
+  helper_log="$RUN/helper0-$STAMP.log"
+  [ -f "$helper_log" ] || { echo "calibration: helper 0 log absent" >&2; exit 1; }
+  echo "calibration: replaying supplied prompts until RHP16_CALIBRATION_JSON appears" >&2
+  while ! grep -q '^RHP16_CALIBRATION_JSON ' "$helper_log"; do
+    while IFS= read -r calibration_prompt || [ -n "$calibration_prompt" ]; do
+      [ -n "$calibration_prompt" ] || continue
+      body=$(CALIBRATION_PROMPT="$calibration_prompt" python3 -c 'import json,os;print(json.dumps({"model":"default","prompt":os.environ["CALIBRATION_PROMPT"],"max_tokens":24,"temperature":0}))')
+      curl -fsS --max-time 120 "http://127.0.0.1:$PORT/v1/completions" -H 'content-type: application/json' -d "$body" >/dev/null || {
+        echo "calibration: workload request failed" >&2; exit 1;
+      }
+      grep -q '^RHP16_CALIBRATION_JSON ' "$helper_log" && break
+      for proc in engine helper0; do
+        [ -f "$PIDS/$proc" ] && kill -0 "$(cat "$PIDS/$proc")" 2>/dev/null || {
+          echo "calibration: $proc exited before convergence" >&2; exit 1;
+        }
+      done
+    done < "$CALIBRATION_PROMPTS"
+  done
+  calibration_store="$WORK/live-policy-calibration.toml"
+  "$RAD_HOME/bin/bc-serve" calibration-ingest --from-log "$helper_log" \
+    --calibration "$calibration_store" --manifest "$PLAN_MANIFEST" \
+    --plan-cache "$RUN/plan-cache" --engine-binary "$RAD_BIN" \
+    "${PLAN_SITE[@]}" "${PLAN_EXTRA[@]}" "${PLAN_SET[@]}" || exit 1
+  echo "calibration: recorded in $calibration_store" >&2
+  stop_all || { echo "calibration: failed to stop all run processes" >&2; exit 1; }
+  trap - ERR
+  trap - EXIT INT TERM HUP
+  exec 9>&-
+  echo "RADIANCE_EXIT=0 calibration=$calibration_store"
+  exit 0
+fi
 trap - ERR
 LAUNCH_HANDED_OFF=1
 trap - EXIT INT TERM HUP

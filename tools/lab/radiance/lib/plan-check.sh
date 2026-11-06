@@ -42,6 +42,7 @@ plan_check_describe() {
   # The cache is durable across runs, and optional before the first calibration.
   [ -z "${WORK:-}" ] || [ ! -f "$WORK/live-policy-calibration.toml" ] || PLAN_OBJECTS+=(--calibration "$WORK/live-policy-calibration.toml")
   [ -z "$LIVE_POLICY_FILE" ] || PLAN_OBJECTS+=(--live-policy "$LIVE_POLICY_FILE")
+  [ "${CALIBRATE:-0}" != 1 ] || PLAN_OBJECTS+=(--calibration-run)
   [ -z "$EXPERIMENT_FILE" ] || PLAN_OBJECTS+=(--experiment "$EXPERIMENT_FILE")
 }
 

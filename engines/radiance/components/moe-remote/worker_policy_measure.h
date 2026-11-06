@@ -94,6 +94,7 @@ public:
         intervals_.push_back({interval_counts, observation_count});
     }
     size_t intervals() const { return intervals_.size(); }
+    size_t capacity() const { return capacity_; }
     // Overlap of the newest interval's hot set with each older one's, oldest first.
     std::vector<Point> curve() const {
         std::vector<Point> out;
@@ -156,7 +157,9 @@ struct Measured {
     Throughput copy;             // bytes of experts moved by committed transactions over their wall time
     uint64_t drift_half_life_observations = 0, drift_horizon_observations = 0;
     double marginal_error = 0;
-    size_t hot_set_k = 0;
+    size_t hot_set_k = 0, drift_intervals = 0, drift_capacity = 0;
+    uint64_t marginal_observations = 0;
+    double observation_rate_per_s = 0;
 };
 
 }  // namespace r3::policy
