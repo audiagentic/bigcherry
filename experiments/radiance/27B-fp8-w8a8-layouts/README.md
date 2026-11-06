@@ -15,3 +15,8 @@ Six opt-in Qwen3.8-27B two-XTX layouts: FP8 with DFlash2; W8A8 without a drafter
 - Commits `0bf6073a7` (initial variants), `5b1aab194` (262,144 × 5), `da541e20b` (4/8 GiB tails).
 - `docs/reference/engines/radiance/models/qwen3.8-27b.md` and `docs/planning/active/patching-radiance-rdna3/RAD47.md` cover other measured 27B configurations, **not** these entries.
 - To resume, verify model availability and budget fit, explicitly choose a named experimental layout and run correctness, KLD and throughput gates.
+
+
+## Where the layouts are
+
+Not in the live engines/radiance/layouts.toml: the serving configuration is being consolidated onto the manifest (RSC11), and these experiment-only layouts were never measured. They are kept here as `change.patch` (applies to engines/radiance/layouts.toml on main of 2026-11-06); re-apply it to resume.
