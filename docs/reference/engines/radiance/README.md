@@ -13,17 +13,17 @@ expert placement adapted to differing GPU memory and bandwidth.
 | HyperConn tuning | Selectable PF2 up-mix launch shape on RDNA4 | [up-mix patch](../../../../engines/radiance/patches/rad0008_hc_upmix_rt_sweep/SUMMARY.md) |
 | Serving configuration | Strict TOML loader, manifest reader and engine memory plan; full manifest-driven process startup remains incomplete | [serving](../../../../engines/radiance/components/serving/README.md), [manifest patch](../../../../engines/radiance/patches/rad0009_serving_manifest/SUMMARY.md), [memory-plan patch](../../../../engines/radiance/patches/rad0011_plan_memory/SUMMARY.md) |
 
-There are **10 engine patch packages** and **6 components**. The hand-off
+There are **12 engine patch packages** and **6 components**. The hand-off
 and up-mix patches are recorded as validated; other patches include
 diagnostic and unfinished work. See the [full catalogue](ENHANCEMENTS.md)
 for states and evidence. Recipe inclusion is not proof of qualification.
 
 ## Current-pin throughput
 
-The pinned upstream is Radiance **v1.17.0**. These figures are from **Radiance v1.14.0** and are not matched
-unmodified-stock throughput A/Bs: do not treat the earlier layout results as current-pin speedups. Re-measured
-2026-11-05 on v1.16.0 and v1.17.0 (prefill and decode step time within about 2%, see the Flash-Next model page).
-They are different workloads, not a like-for-like model ranking.
+The pinned upstream is Radiance **v1.17.0**. Fresh current-pin aggregate throughput and
+prefill measurements are not yet qualified for these layouts. The Flash-Next model page
+records a dated cross-pin check, not a matched unmodified-stock throughput comparison.
+The model workloads differ and must not be ranked against one another.
 
 | Model and layout | Prefill tokens/s | Aggregate output tokens/s |
 | --- | ---: | ---: |

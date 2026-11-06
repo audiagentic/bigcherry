@@ -33,11 +33,9 @@ llama.cpp has 70.
 
 ## Current-pin throughput
 
-The recorded figures below were measured on **v1.14.0**, not on the current pin, and are not matched
-unmodified-stock throughput A/Bs: do not treat the earlier layout results as current-pin speedups. A
-re-measurement on 2026-11-05 on v1.16.0 and v1.17.0 (same layout, temperature 0, fixed seeds: cold prefill and
-decode step time agree within about 2%) is on the Flash-Next model page. Rates are tokens per second, with
-different workloads.
+Fresh aggregate output and prefill throughput on the current **v1.17.0** pin is not yet
+qualified for these layouts. The Flash-Next model page records a dated cross-pin
+check, not a matched unmodified-stock throughput A/B. Earlier results remain archived.
 
 | Model and layout | Prefill tokens/s | Aggregate output tokens/s |
 | --- | ---: | ---: |
