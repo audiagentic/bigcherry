@@ -289,9 +289,14 @@ def _refresh_generated_docs(root: Path, engine: str) -> list[Path]:
     validated = sum(tomllib.loads(p.read_text(encoding="utf-8"))["state"] == "validated" for p in patches)
     readme = root / "README.md"
     text = readme.read_text(encoding="utf-8")
-    label = "Radiance" if engine == "radiance" else "llama.cpp"
-    updated = re.sub(rf"{re.escape(label)} has \d+ validated patch(es)?", f"{label} has {validated} validated patch"
-                     + ("es" if validated != 1 else ""), text, count=1)
+    # The README names the engine by its upstream project (llama.cpp, Radiance): matched case-insensitively, the
+    # README's own capitalisation kept.
+    label = engines.load(root, engine).upstream_name
+    updated = re.sub(
+        rf"({re.escape(label)}) has \d+ validated patch(es)?",
+        lambda m: f"{m.group(1)} has {validated} validated patch" + ("es" if validated != 1 else ""),
+        text, count=1, flags=re.IGNORECASE,
+    )
     readme.write_text(updated, encoding="utf-8", newline="\n")
     catalogs = (root / "docs/reference/engines/radiance/ENHANCEMENTS.md", root / "docs/reference/engines/llamacpp/PATCHES.md")
     return [readme, *(c for c in catalogs if c.is_file())]
