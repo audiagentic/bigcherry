@@ -80,7 +80,8 @@ Let `W = ceil(n * 1e9 / effect_requests_per_s)`.
 - half_life_observations_milli = 1000 * observed drift half-life;
   max_heat_age_ns = largest heat-delta gap.
 - margin_ppm = max(no-move tail-share noise, marginal sampling error);
-  min_samples = ceil(marginal samples * (marginal error / margin)^2).
+  min_samples = ceil(ceil(marginal samples * (marginal error / margin)^2) / ceil(observation rate * cadence)),
+  in heat windows: the planner counts accepted heat deltas per expert, not routed observations.
 - abort_cooldown_ns = measured abort-to-quiescent, or the labelled cadence
   fallback when no abort was observed.
 - effect_window_samples = n; effect_min_quiet_windows = k.

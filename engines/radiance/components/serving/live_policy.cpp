@@ -235,9 +235,15 @@ DerivedLivePolicy derive_live_policy(const LivePolicyRecord& record, const Calib
     if (!max_moves) bad("measured budget buys fewer than one complete expert; cannot activate policy");
     const uint64_t margin = std::max(n("tail_share_noise_ppm"), n("marginal_error_ppm"));
     if (!margin || margin >= kMillion) bad("relative noise is outside v1 margin_ppm range");
-    const uint64_t min_samples = div_ceil(
+    // The planner's per-expert gate counts heat WINDOWS (one per accepted delta, i.e. per cadence), not routed
+    // observations: convert the observations the margin needs into windows of measured rate x cadence. Comparing an
+    // observation count against the window counter (rhp16-calib4: 105,925,840 against ~50 windows) blocks every move.
+    const uint64_t needed_observations = div_ceil(
         Wide(n("marginal_observations")) * n("marginal_error_ppm") * n("marginal_error_ppm"),
-        Wide(margin) * margin, "min_samples");
+        Wide(margin) * margin, "observations for the margin");
+    const uint64_t observations_per_window = div_ceil(
+        Wide(n("observation_rate_per_s")) * cadence, kSecond, "observations per heat window");
+    const uint64_t min_samples = div_ceil(needed_observations, observations_per_window, "min_samples");
     const uint64_t move_cost_ns = div_ceil(Wide(move_bytes) * kSecond,
                                            n("copy_bytes_per_s"), "move cost");
     const uint64_t savings_ns_per_s = div_ceil(
@@ -276,7 +282,7 @@ DerivedLivePolicy derive_live_policy(const LivePolicyRecord& record, const Calib
     set("max_moves", max_moves, "max_moved_bytes / device-layout expert stride (bounded by uint32)", budgets_input);
     set("min_residency_ns", residency, "(bytes / measured copy rate + lane time lost) / predicted tail service saving per second", layout);
     set("max_heat_age_ns", n("heat_gap_max_ns"), "largest measured heat-delta gap", layout);
-    set("min_samples", min_samples, "marginal samples x (measured relative error / noise margin)^2", layout);
+    set("min_samples", min_samples, "heat windows: marginal samples x (measured relative error / margin)^2 / (observation rate x cadence)", layout);
     set("abort_cooldown_ns", m.contains("abort_quiescent_ns") ? n("abort_quiescent_ns") : cadence,
         m.contains("abort_quiescent_ns") ? "measured abort-to-quiescent" :
                                            "no abort seen: transaction settling cadence (conservative fallback; not abort-calibrated)", layout);

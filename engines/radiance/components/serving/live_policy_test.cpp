@@ -99,7 +99,18 @@ int main() {
     assert(p.at("max_moves") == 64);
     assert(p.at("min_residency_ns") == 32592592593ull);
     assert(p.at("max_heat_age_ns") == 5040000000ull);
-    assert(p.at("min_samples") == 3 && p.at("margin_ppm") == 23000);
+    // min_samples counts heat windows: 3 observations needed, 10M/s x 3.22 s per window -> one window.
+    assert(p.at("min_samples") == 1 && p.at("margin_ppm") == 23000);
+    {   // rhp16-calib4's measured sampling: 105,925,840 observations at 1,300,138/s. In observations the gate never
+        // opens (the planner counts windows); in windows it is ceil(needed / (rate x cadence)).
+        auto real = *rec;
+        real.measurements["marginal_observations"] = 105925840;
+        real.measurements["observation_rate_per_s"] = 1300138;
+        const Json& q = sv::derive_live_policy(real, cal, at, 2500000, {1000000000, 1000000000}).policy;
+        const uint64_t per_window = (uint64_t(1300138) * q.at("cadence_ns").get<uint64_t>() + 999999999) / 1000000000;
+        assert(q.at("min_samples") == (uint64_t(105925840) + per_window - 1) / per_window);
+        assert(q.at("min_samples").get<uint64_t>() < 100);
+    }
     assert(p.at("abort_cooldown_ns") == 1500000000ull);
     assert(p.at("learned_eligibility_ttl_ns") == 5040000000ull);
     assert(p.at("effect_window_samples") == 32 && p.at("effect_min_quiet_windows") == 2);
