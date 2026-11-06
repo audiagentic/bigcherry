@@ -60,7 +60,7 @@ class Controller {
     PlacementControl c_{};
     PlacementJournal journal_{};
     struct HelperMeasurements {
-        uint64_t transaction=0, service_ns=0, service_wall_ns=0, service_samples=0, copy_bytes=0, copy_ns=0;
+        uint64_t transaction=0, service_ns=0, service_wall_ns=0, service_rows=0, copy_bytes=0, copy_ns=0;
     };
     std::array<HelperMeasurements,kMaxHelpers> helper_measurements_{};
     bool failed_closed_ = false;
@@ -186,7 +186,7 @@ class Controller {
                 if (phase==AckPhase::RESERVED) {
                     m.service_ns=a.reserved[0];
                     m.service_wall_ns=a.reserved[1];
-                    m.service_samples=a.drained_step; // RESERVED-only: completed large-lane samples
+                    m.service_rows=a.drained_step; // RESERVED-only: completed large-lane routed rows
                 } else {
                     m.copy_bytes=a.reserved[0];
                     m.copy_ns=a.reserved[1];
@@ -1002,7 +1002,7 @@ class EpochCycle {
     HelperMigration* migration_ = nullptr;
     uint64_t copy_start_transaction_ = 0, copy_start_ns_ = 0;
     std::function<bool(uint64_t*,uint64_t*)> lane_service_probe_;
-    uint64_t service_baseline_ns_=0,service_baseline_total_ns_=0,service_baseline_samples_=0;
+    uint64_t service_baseline_ns_=0,service_baseline_total_ns_=0,service_baseline_rows_=0;
     uint64_t quiesced_at_ns_=0,quiesced_transaction_=0;
     std::function<bool(void*,Controller&)> forced_proposal_;
     bool schedule() {
@@ -1046,10 +1046,10 @@ public:
         // Reuse the helper's existing sampled lane timings on the CPU tick.
         // Baseline predates the move and requires no extra HIP event or thread.
         if (lane_service_probe_ && !service_baseline_ns_) {
-            uint64_t total=0,samples=0;
-            if (lane_service_probe_(&total,&samples)) {
+            uint64_t total=0,rows=0;
+            if (lane_service_probe_(&total,&rows)) {
                 service_baseline_total_ns_=total;
-                service_baseline_samples_=samples;
+                service_baseline_rows_=rows;
                 service_baseline_ns_=clock_.now_ns();
             }
         }
@@ -1084,18 +1084,18 @@ public:
             const FaultCode issue=migration_ ? migration_->reserve(map_,c) :
                 (same_map_cycle(map_,c) ? FaultCode::NONE : FaultCode::CAPACITY);
             if (issue==FaultCode::NONE) {
-                uint64_t serviced_ns=0,wall_ns=0,total_ns=0,total_samples=0,samples=0;
+                uint64_t serviced_ns=0,wall_ns=0,total_ns=0,total_rows=0,rows=0;
                 const uint64_t now=clock_.now_ns();
                 if (lane_service_probe_ && service_baseline_ns_ && now>service_baseline_ns_ &&
-                    lane_service_probe_(&total_ns,&total_samples) &&
-                    total_ns>=service_baseline_total_ns_ && total_samples>=service_baseline_samples_) {
+                    lane_service_probe_(&total_ns,&total_rows) &&
+                    total_ns>=service_baseline_total_ns_ && total_rows>=service_baseline_rows_) {
                     serviced_ns=total_ns-service_baseline_total_ns_;
-                    samples=total_samples-service_baseline_samples_;
+                    rows=total_rows-service_baseline_rows_;
                     wall_ns=now-service_baseline_ns_;
                 }
-                // RESERVED uses drained_step for the sampled request count; later phases
+                // RESERVED uses drained_step for the sampled routed-row count; later phases
                 // have their own cutoff. Both deltas come from one atomic service snapshot.
-                publish_ack(map_,helper_,c,AckPhase::RESERVED,samples,serviced_ns,wall_ns);
+                publish_ack(map_,helper_,c,AckPhase::RESERVED,rows,serviced_ns,wall_ns);
             }
             else publish_fault_ack(map_,helper_,c,AckPhase::RESERVED,issue);
         }
@@ -1219,10 +1219,10 @@ public:
                                      reopened-quiesced_at_ns_ : 0;
                 publish_cleanup_ack(map_,helper_,c,lost);
                 if (lane_service_probe_) {
-                    uint64_t total=0,samples=0;
-                    if (lane_service_probe_(&total,&samples)) {
+                    uint64_t total=0,rows=0;
+                    if (lane_service_probe_(&total,&rows)) {
                         service_baseline_total_ns_=total;
-                        service_baseline_samples_=samples;
+                        service_baseline_rows_=rows;
                         service_baseline_ns_=reopened;
                     }
                 }

@@ -42,7 +42,7 @@ struct Bridge : Transport {
             const auto previous=v;
             v={};
             if (helper && phase==AckPhase::RESERVED) {
-                // One synthetic interval: service ns, wall ns and completed requests.
+                // One synthetic interval: service ns, wall ns and 20 routed rows.
                 v.drained_step=20;
                 v.reserved[0]=uint64_t(2000 + 1000*a);
                 v.reserved[1]=10000;
@@ -313,7 +313,7 @@ static void test_calibration_ack_roundtrip() {
     publish_ack(f.map,0,c,AckPhase::RESERVED,4,2000,10000);
     auto a=read_shared_ack(f.map,0);
     check(a.reserved[0]==2000 && a.reserved[1]==10000 && a.drained_step==4,
-          "RESERVED carries same-interval service ns, sampled requests and wall ns");
+          "RESERVED carries same-interval service ns, sampled routed rows and wall ns");
     publish_ack(f.map,0,c,AckPhase::READY,0,20,500);
     a=read_shared_ack(f.map,0);
     check(a.reserved[0]==20 && a.reserved[1]==500,
@@ -392,8 +392,8 @@ int main() {
                   m.slowest_helper_copy_bps.quantile(0.5)>0 &&
                   m.tail_lane_service_ns_per_s.count()==2 &&
                   m.tail_lane_service_ns_per_s.quantile(0.5)>0 &&
-                  m.tail_lane_request_ns.count()==2 &&
-                  m.tail_lane_request_ns.quantile(0.5)==150 &&
+                  m.tail_lane_row_ns.count()==2 &&
+                  m.tail_lane_row_ns.quantile(0.5)==150 &&
                   m.lane_lost_ns.count()==2 &&
                   m.lane_lost_ns.quantile(0.95)==2500,
                   "the driver measures committed transactions, update gaps and the tail's hot-set size");
@@ -694,7 +694,7 @@ int main() {
         check(pump_effect(f,d,service),"measured noise permits forward proposal");
         { const auto m=d.measured();
           check(m.effect.quiet_comparisons>=2 && m.effect.normalized_noise_ns.count()>=2 &&
-                m.effect.quiet_delta_ns.max()>0 && m.effect.sampled_requests_per_s>0,
+                m.effect.quiet_delta_ns.max()>0 && m.effect.sampled_rows_per_s>0,
                 "driver captures actual quiet service duration, counts and sampled rate");
         }
         f.commit();f.clock.advance(1001);
@@ -702,7 +702,7 @@ int main() {
         const auto after=f.owners();
         check(after.owner!=before.owner,"forward moved exactly through Controller");
         check(pump(f,d,false,5) && d.evidence().effect_windows_judged==0,
-              "no verdict without enough postcommit sampled requests");
+              "no verdict without enough postcommit routed rows");
         service.add(125,2);
         check(d.submit(f.map,*f.controller,f.clock.now_ns()),
               "postcommit regression drives proposal");

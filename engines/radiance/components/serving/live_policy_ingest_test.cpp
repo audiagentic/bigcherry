@@ -41,10 +41,10 @@ int main() {
         {"marginal_observations",3}, {"drift_half_life_observations",59000000},
         {"observation_rate_per_s",10000000},
         {"tail_share_gain_ppm",45000}, {"tail_lane_service_ns_per_s",750000000},
-        {"tail_lane_request_ns",22222222},
-        {"lane_lost_ns",100000000}, {"effect_requests_per_s",64},
+        {"tail_lane_row_ns",22222222},
+        {"lane_lost_ns",100000000}, {"effect_rows_per_s",64},
         {"effect_noise_max_ns",2500000},
-        {"effect_sample_noise_ns",1550000}, {"abort_quiescent_ns",1500000000ull}
+        {"effect_row_noise_ns",1550000}, {"abort_quiescent_ns",1500000000ull}
     };
     Json row = {{"plan_cache_key",key}, {"layout","flashnext-4gpu"},
                 {"objective","balanced"}, {"seeded","2026-11-05"},

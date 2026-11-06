@@ -169,16 +169,16 @@ struct TailSamples {
 };
 
 // Independent counters from completed quiet windows (never copies of gate
-// configuration). The rate counts sampled lane requests, i.e. the same
+// configuration). The rate counts sampled lane routed rows, i.e. the same
 // observations the effect gate's window consumes.
 struct EffectSamples {
     Series quiet_delta_ns{256};
     // Signed quiet-window mean differences normalized by their standard-error
-    // scale, restoring per-request dispersion: equal n => delta * sqrt(n/2).
+    // scale, restoring per-row dispersion: equal n => delta * sqrt(n/2).
     Series normalized_noise_ns{256};
     uint64_t quiet_comparisons=0;
-    double sampled_requests_per_s=0;
-    double sample_noise_ns() const { return normalized_noise_ns.stddev(); }
+    double sampled_rows_per_s=0;
+    double row_noise_ns() const { return normalized_noise_ns.stddev(); }
 };
 
 // Everything the driver measures for the derivations, in one place so the evidence line and the tests read it alike.
@@ -196,7 +196,7 @@ struct Measured {
         if (!complete_observations) accepted_unwatermarked_heat=true;
     }
     Series tail_lane_service_ns_per_s{64}; // sampled tail-helper large-lane GPU service / wall second
-    Series tail_lane_request_ns{64}; // tail large-lane service ns / completed samples in the same interval
+    Series tail_lane_row_ns{64}; // tail large-lane service ns / routed rows in the same interval
     Series lane_lost_ns{64}; // observed tail lane unavailable from quiesce ACK to reopen
     Series slowest_helper_copy_bps{64}; // minimum achieved READY ACK copy rate across receiving helpers
     Throughput copy;             // bytes of experts moved by committed transactions over their wall time

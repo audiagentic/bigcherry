@@ -626,9 +626,9 @@ public:
                                 measured_.tail_lane_service_ns_per_s.add(
                                     double(tail.service_ns)*1000000000.0/
                                     double(tail.service_wall_ns));
-                            if (tail.transaction==txn_ && tail.service_ns && tail.service_samples)
-                                measured_.tail_lane_request_ns.add(
-                                    double(tail.service_ns)/double(tail.service_samples));
+                            if (tail.transaction==txn_ && tail.service_ns && tail.service_rows)
+                                measured_.tail_lane_row_ns.add(
+                                    double(tail.service_ns)/double(tail.service_rows));
                             const auto closed=controller.helper_ack(active.helpers-1);
                             if (closed.transaction_id==txn_ &&
                                 closed.phase==uint32_t(moe_shm::AckPhase::CLEANED) &&

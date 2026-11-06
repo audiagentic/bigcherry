@@ -75,7 +75,7 @@ public:
 };
 
 struct EffectConfig {
-    uint64_t window_samples=0, min_quiet_windows=0;
+    uint64_t window_samples=0, min_quiet_windows=0; // window_samples: routed ROWS (v1 field name)
     double noise_multiplier=0;
 };
 enum class EffectVerdict { WAITING, KEPT, WORSE, UNDECIDED, INVALID };
@@ -91,18 +91,17 @@ class EffectGate {
     double last_ratio_=0, judged_noise_=0;
     EffectSamples quiet_stats_;
     std::array<double,2> last_latency_ns_{};
-    std::array<uint64_t,2> last_window_samples_{};
-    std::array<uint64_t,2> first_sample_ns_{},first_sample_count_{};
+    std::array<uint64_t,2> last_window_rows_{};
+    std::array<uint64_t,2> first_sample_ns_{},first_row_count_{};
     static bool subtract(const ServiceTotals& a,const ServiceTotals& b,ServiceTotals* delta) {
         if(a.samples<b.samples || a.rows<b.rows || a.time_ns<b.time_ns)return false;
         *delta={a.samples-b.samples,a.rows-b.rows,a.time_ns-b.time_ns};
         return true;
     }
     static double rate(const ServiceTotals& t) {
-        // The measured quiet sigma and predicted committed effect are ns per
-        // sampled request, NOT ns per routed row. Comparing per-row rates
-        // would manufacture regressions when the request's row mix changes.
-        return t.samples && t.time_ns ? double(t.time_ns)/double(t.samples) : 0;
+        // The measurement, noise envelope and effect threshold are all per
+        // routed row. Requests may contain radically different row counts.
+        return t.rows && t.time_ns ? double(t.time_ns)/double(t.rows) : 0;
     }
 public:
     explicit EffectGate(EffectConfig c):cfg_(c){}
@@ -111,7 +110,7 @@ public:
         return cfg_.window_samples && cfg_.min_quiet_windows &&
                std::isfinite(cfg_.noise_multiplier) && cfg_.noise_multiplier>0;
     }
-    // A quiet pair is TWO consecutive, non-overlapping sample windows without
+    // A quiet pair is TWO consecutive, non-overlapping routed-row windows without
     // a proposal or an unclosed transaction. Worst measured absolute fractional
     // change over the most recent N pairs (per lane class) is an observed
     // conservative noise envelope, without an indefinitely sticky outlier.
@@ -126,36 +125,36 @@ public:
             if(!subtract(now.lane[i],anchor_[i],&d)) {
                 anchor_[i]=now.lane[i];valid_last_[i]=false;quiet_pairs_[i]=0;
                 quiet_deviations_[i].clear();last_quiet_ns_[i]=0;
-                quiet_stats_=EffectSamples{};first_sample_ns_={0,0};first_sample_count_={0,0};
-                last_window_samples_={0,0};
+                quiet_stats_=EffectSamples{};first_sample_ns_={0,0};first_row_count_={0,0};
+                last_window_rows_={0,0};
                 continue; // counter reset: recalibrate from scratch
             }
-            if(d.samples<cfg_.window_samples)continue;
+            if(d.rows<cfg_.window_samples)continue;
             const double next=rate(d);
             anchor_[i]=now.lane[i];
             if(next<=0) {valid_last_[i]=false;quiet_pairs_[i]=0;
                 quiet_deviations_[i].clear();last_quiet_ns_[i]=0;continue;}
             if (!first_sample_ns_[i]) {
                 first_sample_ns_[i]=now_ns;
-                first_sample_count_[i]=now.lane[i].samples;
+                first_row_count_[i]=now.lane[i].rows;
             } else if (now_ns>first_sample_ns_[i] &&
-                       now.lane[i].samples>first_sample_count_[i]) {
-                const double rate=double(now.lane[i].samples-first_sample_count_[i])*
+                       now.lane[i].rows>first_row_count_[i]) {
+                const double rate=double(now.lane[i].rows-first_row_count_[i])*
                                   1000000000.0/double(now_ns-first_sample_ns_[i]);
-                quiet_stats_.sampled_requests_per_s=std::max(quiet_stats_.sampled_requests_per_s,rate);
+                quiet_stats_.sampled_rows_per_s=std::max(quiet_stats_.sampled_rows_per_s,rate);
             }
-            const double latency=double(d.time_ns)/double(d.samples);
-            if (valid_last_[i] && last_window_samples_[i]) {
+            const double latency=double(d.time_ns)/double(d.rows);
+            if (valid_last_[i] && last_window_rows_[i]) {
                 const double delta = latency-last_latency_ns_[i];
                 quiet_stats_.quiet_delta_ns.add(std::abs(delta));
                 // Var(mean_current - mean_previous) = sigma^2 * (1/n_current + 1/n_previous).
-                const double scale = std::sqrt(1.0/double(d.samples) +
-                                               1.0/double(last_window_samples_[i]));
+                const double scale = std::sqrt(1.0/double(d.rows) +
+                                               1.0/double(last_window_rows_[i]));
                 quiet_stats_.normalized_noise_ns.add(delta/scale);
                 ++quiet_stats_.quiet_comparisons;
             }
             last_latency_ns_[i]=latency;
-            last_window_samples_[i]=d.samples;
+            last_window_rows_[i]=d.rows;
             if(valid_last_[i]) {
                 const double fractional=std::abs(next/last_rate_[i]-1.0);
                 if(std::isfinite(fractional)) {
@@ -223,7 +222,7 @@ public:
             if(!pre_active_[i])continue;
             ServiceTotals d;
             if(!subtract(now.lane[i],post_anchor_[i],&d))return EffectVerdict::INVALID;
-            if(d.samples<cfg_.window_samples)return EffectVerdict::WAITING;
+            if(d.rows<cfg_.window_samples)return EffectVerdict::WAITING;
             const double after=rate(d);
             if(after<=0 || pre_rate_[i]<=0)return EffectVerdict::INVALID;
             const double ratio=after/pre_rate_[i];

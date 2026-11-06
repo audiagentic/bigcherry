@@ -25,14 +25,14 @@ inline bool calibration_settled(const Measured& m) {
            m.tail.gain_ppm.quantile(0.5) > 0 &&
            m.slowest_helper_copy_bps.quantile(0.5) > 0 &&
            m.tail_lane_service_ns_per_s.quantile(0.5) > 0 &&
-           m.tail_lane_request_ns.quantile(0.5) > 0 &&
+           m.tail_lane_row_ns.quantile(0.5) > 0 &&
            m.lane_lost_ns.count() &&
            m.effect_required_quiet_windows &&
            m.effect.quiet_comparisons >= m.effect_required_quiet_windows &&
            m.effect.normalized_noise_ns.count() >= 2 &&
-           m.effect.sample_noise_ns() > 0 &&
+           m.effect.row_noise_ns() > 0 &&
            m.effect.quiet_delta_ns.max() > 0 &&
-           m.effect.sampled_requests_per_s > 0;
+           m.effect.sampled_rows_per_s > 0;
 }
 inline nlohmann::json calibration_record(const Measured& m,
                                           const CalibrationIdentity& identity,
@@ -71,20 +71,20 @@ inline nlohmann::json calibration_record(const Measured& m,
            "no committed plan with positive predicted relative tail-share saving");
     sample("tail_lane_service_ns_per_s", m.tail_lane_service_ns_per_s.quantile(0.5),
            "no positive tail-helper sampled lane service time over a measured wall interval");
-    sample("tail_lane_request_ns", m.tail_lane_request_ns.quantile(0.5),
-           "no positive tail-helper service nanoseconds per sampled request in the same interval");
+    sample("tail_lane_row_ns", m.tail_lane_row_ns.quantile(0.5),
+           "no positive tail-helper service nanoseconds per routed row in the same interval");
     if (m.lane_lost_ns.count())
         sample("lane_lost_ns", m.lane_lost_ns.quantile(0.95),
                "invalid measured quiesce-to-reopen interval", true);
     else no_hook("lane_lost_ns", "no verified tail-helper quiesce-to-reopen interval");
-    sample("effect_requests_per_s", m.effect.sampled_requests_per_s,
-           "no positive measured sampled-lane request rate over wall time");
+    sample("effect_rows_per_s", m.effect.sampled_rows_per_s,
+           "no positive measured sampled-lane routed-row rate over wall time");
     // No false-revert objective is available to the helper: this is the actual
     // observed maximum, not a mislabeled objective-specific quantile.
     sample("effect_noise_max_ns", m.effect.quiet_delta_ns.max(),
            "no positive observed maximum quiet-window service-time difference");
-    sample("effect_sample_noise_ns", m.effect.sample_noise_ns(),
-           "no variable signed quiet-window deltas for per-request dispersion");
+    sample("effect_row_noise_ns", m.effect.row_noise_ns(),
+           "no variable signed quiet-window deltas for per-row dispersion");
     sample("abort_quiescent_ns", m.abort_ns.quantile(0.95), "none observed");
     return Json{{"plan_cache_key", identity.plan_cache_key},
                 {"layout", identity.layout}, {"objective", identity.objective},

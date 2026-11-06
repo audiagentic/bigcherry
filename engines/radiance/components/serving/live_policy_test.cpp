@@ -40,11 +40,11 @@ static std::string fixture(const std::string& key, bool malformed = false) {
            "observation_rate_per_s = 10000000\n"
            "tail_share_gain_ppm = 45000\n"
            "tail_lane_service_ns_per_s = 750000000\n"
-           "tail_lane_request_ns = 22222222\n"
+           "tail_lane_row_ns = 22222222\n"
            "lane_lost_ns = 100000000\n"
-           "effect_requests_per_s = 64\n"
+           "effect_rows_per_s = 64\n"
            "effect_noise_max_ns = 2500000\n"
-           "effect_sample_noise_ns = 1550000\n"
+           "effect_row_noise_ns = 1550000\n"
            "abort_quiescent_ns = 1500000000\n" +
            (malformed ? "unexpected_guess = 42\n" : "");
 }
@@ -62,7 +62,7 @@ static bool throws_with(const fs::path& file, const std::string& key, const std:
     return false;
 }
 // Feed actual quiet-window means at two different configured sizes. Their
-// mean differences scale by sqrt(1/n), while normalized per-request sigma
+// mean differences scale by sqrt(1/n), while normalized per-row sigma
 // stays fixed; neither the effect threshold nor the derived n/k may echo n_cfg.
 static r3::policy::EffectSamples synthetic_quiet(uint64_t n_cfg) {
     r3::policy::EffectGate gate({n_cfg,2,2.0});
@@ -71,7 +71,7 @@ static r3::policy::EffectSamples synthetic_quiet(uint64_t n_cfg) {
     for (uint64_t i=0;i<9;++i) {
         auto& tail=snapshot.lane[1];
         tail.samples+=n_cfg;
-        tail.rows+=n_cfg*10;
+        tail.rows+=n_cfg;
         const uint64_t mean_ns=5000000+(i%2)*(n_cfg==2?1550000:775000);
         tail.time_ns+=n_cfg*mean_ns;
         gate.quiet(snapshot,2000+1000*i);
@@ -95,30 +95,43 @@ static void calib5_regression(const sv::LivePolicyRecord& base,
     m["observation_rate_per_s"]=1282858;
     m["tail_share_gain_ppm"]=98958;
     m["tail_lane_service_ns_per_s"]=468160374ull;
-    m["tail_lane_request_ns"]=6296371;
-    m["lane_lost_ns"]=14766582; m["effect_requests_per_s"]=71;
-    m["effect_noise_max_ns"]=3358515;
-    m["effect_sample_noise_ns"]=4446853;
+    // Calib5 predates row counters in the exported record. Retain its
+    // measured non-effect values, and translate the three request-unit
+    // readings using 100 rows/request strictly as synthetic CPU test inputs
+    // (service mean /100, individual-row sigma /sqrt(100), row rate x100).
+    // Do not treat these as measured per-row hardware evidence.
+    m["tail_lane_row_ns"]=62964;
+    m["lane_lost_ns"]=14766582; m["effect_rows_per_s"]=7100;
+    m["effect_noise_max_ns"]=33585;
+    m["effect_row_noise_ns"]=444685;
     constexpr uint64_t stride=2534544; // calib5: 14 GiB / 5,931 tail experts
     const auto derived = sv::derive_live_policy(
         rec,cal,at,stride,{22ull<<30,22ull<<30,14ull<<30});
     const Json& p=derived.policy;
     assert(p.size()==17);
     assert(p.at("protected_layers").empty());
-    assert(p.at("abort_cooldown_ns")==20270949615ull);
+    assert(p.at("abort_cooldown_ns")==20268977784ull);
     assert(p.at("margin_ppm")==31905);
     assert(p.at("min_samples")==7);
-    assert(p.at("cadence_ns")==13315574274ull);
+    assert(p.at("cadence_ns")==13313602443ull);
     assert(p.at("max_moved_bytes")==1211860770ull);
     assert(p.at("max_moves")==478);
     assert(p.at("min_residency_ns")==82222336756ull);
-    assert(p.at("max_heat_age_ns")==20270949615ull);
-    assert(p.at("learned_eligibility_ttl_ns")==48834329898ull);
-    assert(p.at("effect_revert_ttl_ns")==99332358543ull);
+    assert(p.at("max_heat_age_ns")==20268977784ull);
+    assert(p.at("learned_eligibility_ttl_ns")==48826442574ull);
+    assert(p.at("effect_revert_ttl_ns")==99330386712ull);
     assert(p.at("effect_revert_ttl_ns").get<uint64_t>() >
            p.at("min_residency_ns").get<uint64_t>() +
            p.at("cadence_ns").get<uint64_t>());
-    assert(p.at("effect_window_samples")==676);
+    const auto effect_rows=p.at("effect_window_samples").get<uint64_t>();
+    assert(effect_rows==67586);
+    const auto row_window_ns=(effect_rows*1000000000ull+7100-1)/7100;
+    assert(p.at("cadence_ns")==3794447513ull+row_window_ns);
+    assert(p.at("max_heat_age_ns")==p.at("cadence_ns").get<uint64_t>()+6955375341ull);
+    assert(p.at("learned_eligibility_ttl_ns")==
+           p.at("max_heat_age_ns").get<uint64_t>()+
+           (p.at("effect_min_quiet_windows").get<uint64_t>()+1)*row_window_ns);
+
     assert(p.at("effect_min_quiet_windows")==2);
     assert(p.at("effect_noise_multiplier_milli")==2576);
     assert(p.at("half_life_observations_milli")==15849692000ull);
@@ -207,21 +220,22 @@ static void calib5_regression(const sv::LivePolicyRecord& base,
                                  cfg.effect_noise_multiplier});
     r3::policy::ServiceSnapshot service{};
     const auto window=p.at("effect_window_samples").get<uint64_t>();
-    const auto step=9521126761ull;
+    const auto step=(window*1000000000ull+7100-1)/7100; // row window, not request window
     gate.quiet(service,1);
     for (uint64_t i=1;i<=cfg.effect_min_quiet_windows+1;++i) {
         auto& lane=service.lane[1];
-        lane.samples+=window; lane.rows+=window*10;
-        lane.time_ns+=window*(6296371ull+(i%2)*10000);
+        lane.samples+=(i%2?1:10); // vary the number of requests per window
+        lane.rows+=window;
+        lane.time_ns+=window*(62964ull+(i%2)*100ull);
         gate.quiet(service,1+i*step);
     }
     const uint64_t now=1+(cfg.effect_min_quiet_windows+1)*step;
     assert(gate.ready(now,cfg.controls.max_heat_age_ns));
     assert(gate.begin(now,cfg.controls.max_heat_age_ns));
     gate.committed(service);
-    service.lane[1].samples+=window;
-    service.lane[1].rows+=window*3; // post route mix changes: per-row rate would falsely report WORSE
-    service.lane[1].time_ns+=window*5000000ull;
+    service.lane[1].samples+=1; // request count mix changes; row rate matters
+    service.lane[1].rows+=window;
+    service.lane[1].time_ns+=window*57297ull; // a 9% row-normalised gain
     assert(gate.judge(service)==r3::policy::EffectVerdict::KEPT);
 }
 int main() {
@@ -270,11 +284,11 @@ int main() {
            small_series.quiet_comparisons==8);
     assert(small_series.quiet_delta_ns.max()==1550000 &&
            wide_series.quiet_delta_ns.max()==775000);
-    assert(std::abs(small_series.sample_noise_ns()-1550000.0)<1e-6 &&
-           std::abs(wide_series.sample_noise_ns()-1550000.0)<1e-6);
+    assert(std::abs(small_series.row_noise_ns()-1550000.0)<1e-6 &&
+           std::abs(wide_series.row_noise_ns()-1550000.0)<1e-6);
     auto small_window=*rec, wide_window=*rec;
-    small_window.measurements["effect_sample_noise_ns"]=uint64_t(std::ceil(small_series.sample_noise_ns()));
-    wide_window.measurements["effect_sample_noise_ns"]=uint64_t(std::ceil(wide_series.sample_noise_ns()));
+    small_window.measurements["effect_row_noise_ns"]=uint64_t(std::ceil(small_series.row_noise_ns()));
+    wide_window.measurements["effect_row_noise_ns"]=uint64_t(std::ceil(wide_series.row_noise_ns()));
     small_window.measurements["effect_noise_max_ns"]=uint64_t(small_series.quiet_delta_ns.max());
     wide_window.measurements["effect_noise_max_ns"]=uint64_t(wide_series.quiet_delta_ns.max());
     const auto derived_small=sv::derive_live_policy(small_window,cal,at,2500000,{1000000000,1000000000});
@@ -288,12 +302,12 @@ int main() {
     // Neither gate setting is copied from the lab policy: changing measured
     // dispersion changes the derived window and can change the quiet count.
     auto quieter = *rec;
-    quieter.measurements["effect_sample_noise_ns"] = 500000;
+    quieter.measurements["effect_row_noise_ns"] = 500000;
     const auto q = sv::derive_live_policy(quieter, cal, at, 2500000, {1000000000, 1000000000});
     assert(q.policy.at("effect_window_samples") == 4);
     assert(q.policy.at("effect_min_quiet_windows") == 1);
     auto noisier = *rec;
-    noisier.measurements["effect_sample_noise_ns"] = 3100000;
+    noisier.measurements["effect_row_noise_ns"] = 3100000;
     const auto h = sv::derive_live_policy(noisier, cal, at, 2500000, {1000000000, 1000000000});
     assert(h.policy.at("effect_window_samples") == 128);
     assert(q.provenance.at("/spec/handoff/placement/live_policy/effect_window_samples").at("origin") == "derived");
@@ -354,7 +368,9 @@ int main() {
     // Old measured keys must not have a compatibility path.
     for (const char* obsolete : {"noise_false_revert_rate_ppm", "effect_window_samples",
                                  "effect_quiet_windows", "effect_noise_quantile_ns",
-                                 "effect_noise_floor_ns", "tail_share_noise_ppm"}) {
+                                 "effect_noise_floor_ns", "tail_share_noise_ppm",
+                                 "effect_sample_noise_ns", "tail_lane_request_ns",
+                                 "effect_requests_per_s"}) {
         write_fixture(fixture(key) + std::string(obsolete) + " = 1\n");
         assert(throws_with(file, key, "unknown key"));
     }

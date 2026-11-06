@@ -114,15 +114,15 @@ std::optional<LivePolicyRecord> read_live_policy_record(const std::filesystem::p
         "evidence", "txn_p50_ns", "txn_p95_ns", "copy_bytes_per_s",
         "heat_gap_max_ns", "heat_watermarked", "hot_set_k", "marginal_error_ppm", "marginal_observations",
         "drift_half_life_observations", "observation_rate_per_s", "tail_share_gain_ppm",
-        "tail_lane_service_ns_per_s", "tail_lane_request_ns", "lane_lost_ns", "effect_requests_per_s",
-        "effect_noise_max_ns", "effect_sample_noise_ns", "abort_quiescent_ns", "absent"
+        "tail_lane_service_ns_per_s", "tail_lane_row_ns", "lane_lost_ns", "effect_rows_per_s",
+        "effect_noise_max_ns", "effect_row_noise_ns", "abort_quiescent_ns", "absent"
     };
     const std::set<std::string> names = {
         "txn_p50_ns", "txn_p95_ns", "copy_bytes_per_s", "heat_gap_max_ns", "heat_watermarked",
         "hot_set_k", "marginal_error_ppm", "marginal_observations", "drift_half_life_observations",
         "observation_rate_per_s", "tail_share_gain_ppm", "tail_lane_service_ns_per_s",
-        "tail_lane_request_ns", "lane_lost_ns", "effect_requests_per_s", "effect_noise_max_ns",
-        "effect_sample_noise_ns"
+        "tail_lane_row_ns", "lane_lost_ns", "effect_rows_per_s", "effect_noise_max_ns",
+        "effect_row_noise_ns"
     };
     std::set<std::string> seen;
     std::optional<LivePolicyRecord> found;
@@ -187,8 +187,8 @@ bool live_policy_record_complete(const LivePolicyRecord& record) {
         "txn_p50_ns", "txn_p95_ns", "copy_bytes_per_s", "heat_gap_max_ns", "heat_watermarked",
         "hot_set_k", "marginal_error_ppm", "marginal_observations", "drift_half_life_observations",
         "observation_rate_per_s", "tail_share_gain_ppm", "tail_lane_service_ns_per_s",
-        "tail_lane_request_ns", "lane_lost_ns", "effect_requests_per_s", "effect_noise_max_ns",
-        "effect_sample_noise_ns"
+        "tail_lane_row_ns", "lane_lost_ns", "effect_rows_per_s", "effect_noise_max_ns",
+        "effect_row_noise_ns"
     })
         if (!record.measurements.contains(name)) return false;
     return true; // no abort seen is allowed, with the existing measured-cadence fallback
@@ -206,8 +206,8 @@ DerivedLivePolicy derive_live_policy(const LivePolicyRecord& record, const Calib
     for (const char* key : {
         "txn_p95_ns", "copy_bytes_per_s", "heat_gap_max_ns", "heat_watermarked", "marginal_error_ppm",
         "marginal_observations", "drift_half_life_observations", "observation_rate_per_s",
-        "tail_share_gain_ppm", "tail_lane_service_ns_per_s", "tail_lane_request_ns", "lane_lost_ns", "effect_requests_per_s",
-        "effect_noise_max_ns", "effect_sample_noise_ns"
+        "tail_share_gain_ppm", "tail_lane_service_ns_per_s", "tail_lane_row_ns", "lane_lost_ns", "effect_rows_per_s",
+        "effect_noise_max_ns", "effect_row_noise_ns"
     })
         (void)n(key);
     const int64_t windows = calibration.integer("calibration.live_policy.transaction_effect_windows", match);
@@ -215,16 +215,16 @@ DerivedLivePolicy derive_live_policy(const LivePolicyRecord& record, const Calib
     if (windows <= 0 || false_rate <= 0 || false_rate >= int64_t(kMillion))
         bad("declared objectives must be positive windows and a false-revert rate in (0,1000000)");
     // A committed plan's predicted relative tail-share reduction scales the
-    // tail lane's measured service per completed request, not a quiet-window
+    // tail lane's measured service per routed row, not a quiet-window
     // statistic whose magnitude depends on the calibration gate window.
     const uint64_t delta_effect_ns = div_ceil(
-        Wide(n("tail_lane_request_ns")) * n("tail_share_gain_ppm"), kMillion,
+        Wide(n("tail_lane_row_ns")) * n("tail_share_gain_ppm"), kMillion,
         "delta_effect_ns");
     const auto [effect_samples, effect_quiet] = derive_effect_gate(
-        n("effect_sample_noise_ns"), delta_effect_ns, uint64_t(windows),
+        n("effect_row_noise_ns"), delta_effect_ns, uint64_t(windows),
         double(false_rate) / double(kMillion));
     const uint64_t window_ns = div_ceil(Wide(effect_samples) * kSecond,
-                                        n("effect_requests_per_s"), "effect window");
+                                        n("effect_rows_per_s"), "effect window");
     const uint64_t cadence = div_ceil(Wide(n("txn_p95_ns")) + window_ns, 1, "cadence_ns");
     const uint64_t slow_budget = *std::min_element(budgets.begin(), budgets.end());
     if (!slow_budget || slow_budget < stride) bad("a helper budget cannot hold one expert stride");
@@ -295,7 +295,7 @@ DerivedLivePolicy derive_live_policy(const LivePolicyRecord& record, const Calib
             "calibration measured the production heat feed: no step watermark; RHP02 replaces it" :
             "watermarked feed",
         Json::array({"/spec/plan/engine_memory/cache_key"}));
-    set("cadence_ns", cadence, "txn_p95_ns + measured effect-window duration (requests/rate)", layout);
+    set("cadence_ns", cadence, "txn_p95_ns + measured effect-window duration (routed rows / rows per wall second)", layout);
     set("max_moved_bytes", move_bytes, "slowest copy bytes/s x measured transaction p95, capped by helper budgets",
         Json::array({"/spec/processes/helpers", "/spec/calibration", "/spec/plan/engine_memory/cache_key"}));
     set("max_moves", max_moves, "max_moved_bytes / device-layout expert stride (bounded by uint32)", budgets_input);
@@ -308,7 +308,7 @@ DerivedLivePolicy derive_live_policy(const LivePolicyRecord& record, const Calib
     set("learned_eligibility_ttl_ns", cache_ttl,
         "one cadence plus observed gap and quiet-gate recovery; event invalidation requires v2", layout);
     set("effect_window_samples", effect_samples,
-        "smallest n with measured per-request sigma * sqrt(2/n) * Gaussian z(false-revert objective) <= predicted committed-move effect per request",
+        "smallest n routed rows with measured per-row sigma * sqrt(2/n) * Gaussian z(false-revert objective) <= predicted committed-move effect per row; effect_window_samples counts rows",
         Json::array({"/spec/calibration", "/spec/plan/engine_memory/cache_key"}));
     set("effect_min_quiet_windows", effect_quiet,
         "smallest consecutive quiet count with transaction_effect_windows * Gaussian noise-crossing probability^count <= declared false-revert objective",

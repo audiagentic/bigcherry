@@ -31,7 +31,7 @@ int main() {
     m.tail.gain_ppm.add(1000.0);
     m.slowest_helper_copy_bps.add(1000000.0);
     m.tail_lane_service_ns_per_s.add(200000000.0);
-    m.tail_lane_request_ns.add(1250.0);
+    m.tail_lane_row_ns.add(1250.0);
     m.lane_lost_ns.add(100.0);
     m.hot_set_k = 2;
     m.marginal_error = 0.025;
@@ -45,7 +45,7 @@ int main() {
     m.effect.normalized_noise_ns.add(-10.0);
     m.effect.quiet_delta_ns.add(5.0);
     m.effect.quiet_comparisons=2;
-    m.effect.sampled_requests_per_s=20.0;
+    m.effect.sampled_rows_per_s=20.0;
     assert(calibration_settled(m));
     assert(m.drift_capacity == 4 && m.drift_horizon_observations == 30);
     // A counter discontinuity clears the horizon; the same cadence must not
@@ -82,16 +82,16 @@ int main() {
     assert(row.at("measurements").at("copy_bytes_per_s") == 1000000);
     assert(!row.at("absent").contains("copy_bytes_per_s"));
     assert(row.at("measurements").at("tail_lane_service_ns_per_s") == 200000000);
-    assert(row.at("measurements").at("tail_lane_request_ns") == 1250);
+    assert(row.at("measurements").at("tail_lane_row_ns") == 1250);
     Measured no_requests=m;
-    no_requests.tail_lane_request_ns=Series{64};
+    no_requests.tail_lane_row_ns=Series{64};
     assert(!calibration_settled(no_requests));
     const auto missing_request=calibration_record(no_requests,
         {std::string(64, 'c'), "flashnext-4gpu", "balanced"}, "2026-11-06");
-    assert(missing_request.at("absent").at("tail_lane_request_ns").is_string());
-    assert(!missing_request.at("measurements").contains("tail_lane_request_ns"));
+    assert(missing_request.at("absent").at("tail_lane_row_ns").is_string());
+    assert(!missing_request.at("measurements").contains("tail_lane_row_ns"));
     assert(row.at("measurements").at("lane_lost_ns") == 100);
-    assert(row.at("measurements").at("effect_sample_noise_ns") == 10);
+    assert(row.at("measurements").at("effect_row_noise_ns") == 10);
     assert(row.at("measurements").at("effect_noise_max_ns") == 5);
     for (const char* removed : {"effect_window_samples", "effect_quiet_windows",
                                 "noise_false_revert_rate_ppm", "effect_noise_quantile_ns",

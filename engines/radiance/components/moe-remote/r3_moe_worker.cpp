@@ -582,12 +582,12 @@ int main(int argc, char** argv) {
             map, helper_index, epoch_clock, std::chrono::seconds{cfg.epoch_cycle_s},
             {}, &migration);
         if (cfg.policy.enabled)
-            epoch_cycle.set_lane_service_probe([&](uint64_t* service_ns,uint64_t* samples) {
-                if (!service_ns || !samples) return false;
+            epoch_cycle.set_lane_service_probe([&](uint64_t* service_ns,uint64_t* rows) {
+                if (!service_ns || !rows) return false;
                 r3::policy::ServiceSnapshot snapshot{};
                 if (!lane_service_signal.snapshot(&snapshot)) return false;
                 *service_ns=snapshot.lane[1].time_ns;
-                *samples=snapshot.lane[1].samples;
+                *rows=snapshot.lane[1].rows;
                 return true;
             });
         std::unique_ptr<r3::forced::Driver> forced;
