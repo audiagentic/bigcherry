@@ -140,6 +140,25 @@ int main(int, char** argv) {
     CHECK(run({"--manifest", example, "--role", "engine", "-v"}).rfind("engine -v --model ", 0) == 0);
     CHECK(run({"--manifest", example}) == got);   // deterministic
 
+    // The KL mode is a kind of run, not configuration: its four flags accompany the manifest, pass through unchanged and
+    // keep their command-line label; any other flag still refuses, and a flag without its path is refused.
+    for (const char* flag : {"--kld-record", "--kld-corpus", "--kld-ref", "--kld-out"}) {
+        if (!g_takes_arg.count(flag)) g_options.push_back(flag);
+        g_takes_arg[flag] = true;
+    }
+    {
+        const std::string kld = run({"--manifest", example, "--kld-ref", "/ref", "--kld-out", "/out.json"});
+        CHECK(kld != "ERROR" && g_parsed);
+        CHECK(kld.find("--kld-ref /ref --kld-out /out.json") != std::string::npos);
+        CHECK(bc_serving_mark_given(&g_given));
+        CHECK(g_given.at("--kld-ref") == "command line" && g_given.at("--kld-out") == "command line");
+        CHECK(g_given.at("--model").rfind("manifest ", 0) == 0);
+        const std::string record = run({"--manifest", example, "--kld-record", "/ref", "--kld-corpus", "/corpus.jsonl"});
+        CHECK(record != "ERROR" && g_parsed);
+        CHECK(run({"--manifest", example, "--kld-ref"}) == "ERROR");
+        CHECK(run({"--manifest", example, "--kld-ref", "/r", "--tp", "2"}) == "ERROR");
+    }
+
     // The measuring start. An unmeasured manifest (plan.state unmeasured, no engine_memory, no checkpoint slots) is taken only
     // with --plan-memory FILE, which is forwarded to radiance; a serving start refuses it, and --plan-memory with a measured
     // manifest is refused too: neither state is read as the other.

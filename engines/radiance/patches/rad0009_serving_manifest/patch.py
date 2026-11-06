@@ -120,6 +120,10 @@ bool bc_serving_engine_argv(int* argc, char*** argv) {
 
     std::string path, role, plan_memory;
     std::vector<std::string> verbosity;
+    /* Offline quality runs (the KL mode): which run to do and where its files are, not configuration. They name no manifest
+     * field, so they pass through to config_parse unchanged beside the manifest's own flags. */
+    static const std::set<std::string> kRunFlags = {"--kld-record", "--kld-corpus", "--kld-ref", "--kld-out"};
+    std::vector<std::pair<std::string, std::string>> run_flags;
     for (int i = 1; i < *argc; ++i) {
         const std::string a = (*argv)[i];
         if (a == "--manifest") {
@@ -138,8 +142,11 @@ bool bc_serving_engine_argv(int* argc, char*** argv) {
             plan_memory = (*argv)[++i];
         } else if (a == "-v" || a == "-vv") {
             verbosity.push_back(a);
+        } else if (kRunFlags.count(a)) {
+            if (i + 1 >= *argc || !*(*argv)[i + 1]) return fail(a + " needs a path");
+            run_flags.emplace_back(a, (*argv)[++i]);
         } else {
-            return fail("'" + a + "' cannot be combined with --manifest (only --role engine, --plan-memory FILE, -v and -vv may)");
+            return fail("'" + a + "' cannot be combined with --manifest (only --role engine, --plan-memory FILE, -v, -vv and the quality-run flags --kld-record, --kld-corpus, --kld-ref and --kld-out may)");
         }
     }
 
@@ -210,6 +217,10 @@ bool bc_serving_engine_argv(int* argc, char*** argv) {
         g_store.push_back("--plan-memory");
         g_store.push_back(plan_memory);
     }
+    for (const auto& kv : run_flags) {
+        g_store.push_back(kv.first);
+        g_store.push_back(kv.second);
+    }
     g_emitted.clear();
     for (const auto& kv : flags) {
         g_store.push_back(kv.first);
@@ -245,7 +256,8 @@ bool bc_serving_mark_given(std::map<std::string, std::string>* given) {
         }
     }
     for (auto& kv : *given)
-        if (kv.second == "command line" && kv.first != "-v" && kv.first != "-vv" && kv.first != "--plan-memory") kv.second = g_label;
+        if (kv.second == "command line" && kv.first != "-v" && kv.first != "-vv" && kv.first != "--plan-memory" &&
+            kv.first != "--kld-record" && kv.first != "--kld-corpus" && kv.first != "--kld-ref" && kv.first != "--kld-out") kv.second = g_label;
     return true;
 }
 """
