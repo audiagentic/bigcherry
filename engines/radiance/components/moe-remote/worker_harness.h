@@ -267,8 +267,11 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
                  "r3_moe_worker: --compare engine_ranks=%u, %s TP outputs (physical slots=%u)\n",
                  replay_ranks, replay_ranks == 1 ? "full-width" : "partial-width",
                  h->slot_count);
-    if (!gpu.prepare_lanes(classes.rows, classes.count, lane_large_rows,
-                           served_lanes(1, 0, classes.count))) {
+    r3::replay::LanePlan plan{};
+    if (!r3::replay::lane_plan(classes.rows, classes.count, rows, nr, topk,
+                              replay_ranks, &plan) ||
+        !gpu.prepare_lanes(classes.rows, classes.count, plan.large_rows,
+                           plan.open, plan.dense_routes)) {
         std::fprintf(stderr, "r3_moe_worker: --compare prepare lanes failed\n");
         munmap(map, lay.bytes);
         return 1;

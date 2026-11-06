@@ -9,6 +9,7 @@
 #include "moe_lane_quant.h"
 #include "moe_lane_reduce.h"
 #include "moe_lane_host.h"
+#include "worker_replay_memory.h"
 #include "worker_slot_pool.h"
 #include "worker_move_slots.h"
 #include "worker_generation_tables.h"
@@ -220,7 +221,8 @@ public:
         return largest && plan.expert_slots > 0;
     }
 
-    bool allocate(const std::vector<std::pair<uint32_t, uint32_t>>& owned, uint64_t budget) {
+    bool allocate(const std::vector<std::pair<uint32_t, uint32_t>>& owned, uint64_t budget,
+                  bool replay = false) {
         constexpr size_t kLoadBounceBytes = 64ull * 1024ull * 1024ull;
         if (!load_bounce_.ensure(kLoadBounceBytes) || !budget) return false;
         SlotPlan plan{};
@@ -228,6 +230,15 @@ public:
             owned.size() > UINT32_MAX || uint64_t(owned.size()) > UINT64_MAX / plan.stride) {
             std::fprintf(stderr, "r3_moe_worker: selected expert weights exceed expert budget\n");
             return false;
+        }
+        if (replay) {
+            // The manifest budget is an upper bound, not a reason to reserve
+            // thousands of empty expert slots during a captured replay.
+            uint64_t actual_budget = 0;
+            if (!r3::replay::expert_budget(plan.stride, owned.size(), budget, &actual_budget))
+                return false;
+            budget = actual_budget;
+            plan.expert_capacity = uint32_t(owned.size());
         }
         const r3::worker_slots::DeviceMemory memory{
             plan.lanes, plan.tables, plan.slot_map, plan.stride,
@@ -552,7 +563,8 @@ public:
     /* Small lanes are sized to their class's rows and pre-queued; the large lane to large_rows, launched per request.
      * `count` small classes are enabled (ascending `sizes`); the other small lanes are left unprepared (cap_rows 0). */
     bool prepare_lanes(const std::array<uint32_t, r3::moe_shm::kSmallClasses>& sizes, uint32_t count, uint32_t large_rows,
-                       const std::array<bool, r3::moe_shm::kLanes>& open) {
+                       const std::array<bool, r3::moe_shm::kLanes>& open,
+                       uint32_t dense_route_slots = 0) {
         using namespace r3::moe_shm;
         if (count == 0 || count > kSmallClasses || large_rows == 0 || large_rows > kMaxRows || !gu_code_dtype_)
             return false;
@@ -587,8 +599,14 @@ public:
                 continue;
             }
             const uint32_t cap = cls < kSmallClasses ? class_rows_[cls] : large_rows_;
+            // The lane's sorted index space is dense cap * top_k, even if
+            // the capture publishes fewer routes. Compare reserves that
+            // request-sized bound, not the manifest's 4096-row serving bound.
+            if (dense_route_slots && dense_route_slots > uint64_t(cap) * shape_.top_k)
+                return false;
+            const uint32_t routes = dense_route_slots ? dense_route_slots : cap * shape_.top_k;
             w.cap_rows = cap;
-            if (!ensure_lane_work(w, cap, cap * shape_.top_k, cap * shape_.top_k) ||
+            if (!ensure_lane_work(w, cap, routes, routes) ||
                 !w.d_stats.ensure(3 * sizeof(uint64_t)) || !w.d_publish_limit.ensure(sizeof(uint32_t)) ||
                 (cls == kSmallClasses && !w.d_chunk_cnt.ensure(kCombineChunks * sizeof(uint32_t))) ||
                 !hip_ok(hipMemset(w.d_publish_limit.p, 0xff, sizeof(uint32_t)), "lane publish limit"))
@@ -600,11 +618,22 @@ public:
                     !w.dn_scale[parity].ensure(nclass * sizeof(void*)))
                     return false;
             }
-            if (!prepare_lane_scratch(w, rank, cap, cap * shape_.top_k) ||
+            if (!prepare_lane_scratch(w, rank, cap, routes) ||
                 !hip_ok(hipMemset(w.d_stats.p, 0, 3 * sizeof(uint64_t)), "zero lane stats"))
                 return false;
         }
         return true;
+    }
+
+    bool release_compare_lanes() {
+        // No request may still reference a buffer when it is freed.
+        for (LaneWork& w : lane_)
+            if (w.stream && !hip_ok(hipStreamSynchronize(w.stream), "sync compare lane"))
+                return false;
+        bool ok = true;
+        for (LaneWork& w : lane_)
+            if (!w.release_allocations()) ok = false;
+        return ok;
     }
 
     bool stage_compare_activation(void* host_map, uint32_t lane,

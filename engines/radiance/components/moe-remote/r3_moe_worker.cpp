@@ -274,12 +274,24 @@ int main(int argc, char** argv) {
         return 1;
     }
     const uint32_t lane_large_rows = helper_max_rows();
-    // Allocate actual lane buffers and plugin scratch before checking device
-    // free VRAM. The expert-weight budget remains untouched for ownership.
+    // Serving reserves every configured lane at its manifest capacity.
+    // Compare/sweep instead primes only the first request's active row
+    // class, before the arena memory-fit check. Later captures re-plan.
+    r3::replay::LanePlan first_compare{};
+    if (compare && !r3::replay::lane_plan(
+            lane_classes.rows, lane_classes.count, compare_rows,
+            g_replay ? g_replay->hd.route_count : compare_rows * gpu->shape_.top_k,
+            gpu->shape_.top_k, gpu->engine_ranks_, &first_compare)) {
+        std::fprintf(stderr, "r3_moe_worker: invalid compare lane sizing\n");
+        return 2;
+    }
     if (gpu &&
         (!gpu->prime_weight_layout() ||
-         !gpu->prepare_lanes(lane_classes.rows, lane_classes.count, lane_large_rows,
-                             lanes_open(cfg.power_save, helper_count, helper_index, lane_classes.count)))) {
+         !gpu->prepare_lanes(lane_classes.rows, lane_classes.count,
+                             compare ? first_compare.large_rows : lane_large_rows,
+                             compare ? first_compare.open :
+                                       lanes_open(cfg.power_save, helper_count, helper_index, lane_classes.count),
+                             compare ? first_compare.dense_routes : 0))) {
         std::fprintf(stderr, "r3_moe_worker: GPU lane preparation failed\n");
         return 1;
     }
@@ -309,7 +321,7 @@ int main(int argc, char** argv) {
     } else if (!select_owned(model, gpu.get(), budgets, helper_index, helper_count, &owned)) {
         return 1;
     }
-    if (gpu && !gpu->allocate(owned.expert, budgets[helper_index])) {
+    if (gpu && !gpu->allocate(owned.expert, budgets[helper_index], g_replay != nullptr)) {
         std::fprintf(stderr, "r3_moe_worker: failed to prepare expert arena/pool for %zu selected experts\n",
                      owned.expert.size());
         return 1;
@@ -343,6 +355,10 @@ int main(int argc, char** argv) {
                 std::fflush(stdout);
                 rc |= compare_mode(model, *gpu, owned, g_replay->hd.layer, g_replay->hd.rows, lane_classes,
                                    lane_large_rows, false);
+                if (!gpu->release_compare_lanes()) {
+                    std::fprintf(stderr, "r3_moe_worker: --compare release lanes failed\n");
+                    return 1;
+                }
                 std::fflush(stdout);
             }
         }

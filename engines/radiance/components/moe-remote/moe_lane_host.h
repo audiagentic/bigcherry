@@ -42,11 +42,21 @@ struct Buffer {
     Buffer(const Buffer&) = delete;
     Buffer& operator=(const Buffer&) = delete;
     ~Buffer() { if (p) (void)hipFree(p); }
+    bool clear() {
+        if (p && !hip_ok(hipFree(p), "hipFree compare work buffer")) return false;
+        p = nullptr; bytes = 0;
+        return true;
+    }
     bool ensure(size_t need) {
         if (need <= bytes) return true;
         if (p) { if (!hip_ok(hipFree(p), "hipFree grow buffer")) return false; p = nullptr; bytes = 0; }
         if (!need) need = 16;
-        if (!hip_ok(hipMalloc(&p, need), "hipMalloc work buffer")) return false;
+        const hipError_t rc = hipMalloc(&p, need);
+        if (rc != hipSuccess) {
+            std::fprintf(stderr, "r3_moe_worker: hipMalloc work buffer: %s (requested %zu bytes)\n",
+                         hipGetErrorString(rc), need);
+            return false;
+        }
         bytes = need;
         return true;
     }
@@ -109,6 +119,27 @@ struct LaneWork {
     Buffer d_chunk_cnt;       /* uint32[kCombineChunks]: the large-lane reduce's per-chunk row counts (RAD42) */
     Buffer d_publish_limit;   /* uint32: newest sequence lane_publish_done may publish (RAD20 park); UINT32_MAX otherwise */
     Buffer gu_code[2], gu_scale[2], dn_code[2], dn_scale[2];
+
+    // Compare/sweep has no pre-queued serving requests. Once its lane streams
+    // drain, discard every per-lane device allocation before the next capture.
+    bool release_allocations() {
+        Buffer* buffers[] = {&d_counts, &d_cursor, &d_flat, &d_sorted, &d_off,
+            &d_ew, &d_inv, &d_dbg, &d_rowmask, &d_act, &d_aq, &d_as,
+            &d_gu, &d_mid, &d_mid_s, &d_down, &d_stats, &scratch,
+            &d_chunk_cnt, &d_publish_limit};
+        bool ok = true;
+        for (Buffer* b : buffers) if (!b->clear()) ok = false;
+        for (unsigned i = 0; i < 2; ++i) {
+            if (!gu_code[i].clear()) ok = false;
+            if (!gu_scale[i].clear()) ok = false;
+            if (!dn_code[i].clear()) ok = false;
+            if (!dn_scale[i].clear()) ok = false;
+        }
+        cap_rows = 0;
+        dbg_routes = 0;
+        sample_pending = false;
+        return ok;
+    }
 };
 
 struct WeightPlan {
