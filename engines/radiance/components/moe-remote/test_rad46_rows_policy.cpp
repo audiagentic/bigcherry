@@ -1,5 +1,8 @@
 #include "rad46_rows_policy.h"
 #include <cassert>
+#ifdef NDEBUG
+#error "assert-based test built with NDEBUG: its assertions would not run"
+#endif
 #include <initializer_list>
 
 int main() {

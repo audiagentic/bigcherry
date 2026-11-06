@@ -62,7 +62,7 @@ std::optional<LivePolicyRecord> read_live_policy_record(const std::filesystem::p
     contents << in.rdbuf();
     toml::table root;
     try { root = toml::parse(contents.str(), cache.string()); }
-    catch (const toml::parse_error& e) { bad(cache.string() + ": " + e.what()); }
+    catch (const toml::parse_error& e) { bad(cache.string() + ": TOML parse error: " + e.what()); }
     const auto* rows = root["live_policy_record"].as_array();
     if (!rows) {
         if (root.contains("live_policy_record")) bad("live_policy_record must be an array of tables");

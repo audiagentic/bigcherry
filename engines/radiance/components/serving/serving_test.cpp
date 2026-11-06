@@ -18,6 +18,9 @@
 
 #include <atomic>
 #include <cassert>
+#ifdef NDEBUG
+#error "assert-based test built with NDEBUG: its assertions would not run"
+#endif
 #include <thread>
 #include <vector>
 #include <cstdlib>

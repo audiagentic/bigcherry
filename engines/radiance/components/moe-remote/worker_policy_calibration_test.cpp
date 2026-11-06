@@ -1,5 +1,8 @@
 #include "worker_policy_calibration.h"
 #include <cassert>
+#ifdef NDEBUG
+#error "assert-based test built with NDEBUG: its assertions would not run"
+#endif
 #include <string>
 #include <vector>
 

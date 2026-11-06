@@ -3,6 +3,9 @@
 #endif
 #include "worker_plugin_config.h"
 #include <cassert>
+#ifdef NDEBUG
+#error "assert-based test built with NDEBUG: its assertions would not run"
+#endif
 #include <sys/wait.h>
 #include <unistd.h>
 

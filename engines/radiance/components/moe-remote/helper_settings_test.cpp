@@ -5,6 +5,9 @@
 // examples are real, digest-verified manifests, so every value below comes through the production read path.
 #include "../serving/v1/helper_settings.h"
 #include <cassert>
+#ifdef NDEBUG
+#error "assert-based test built with NDEBUG: its assertions would not run"
+#endif
 #include <cstdio>
 #include <iostream>
 

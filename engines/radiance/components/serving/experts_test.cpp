@@ -9,6 +9,9 @@
 #include "golden/golden_cases.h"
 
 #include <cassert>
+#ifdef NDEBUG
+#error "assert-based test built with NDEBUG: its assertions would not run"
+#endif
 #include <cstdio>
 #include <filesystem>
 #include <cstdlib>

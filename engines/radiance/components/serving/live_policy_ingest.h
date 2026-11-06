@@ -11,7 +11,7 @@ void ingest_live_policy_record(const std::filesystem::path& log,
                                const std::filesystem::path& cache,
                                const std::string& key, const std::string& layout,
                                const std::string& objective,
-                               const std::string& target_store_key = "");
+                               const std::string& target_store_key);
 void ingest_live_policy_log(const std::filesystem::path& log,
                             const std::filesystem::path& cache,
                             const std::filesystem::path& manifest,
