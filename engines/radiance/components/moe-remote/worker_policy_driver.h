@@ -77,6 +77,7 @@ private:
     DriftTracker drift_{1};
     uint64_t last_delta_poll_ns_=0, first_delta_poll_ns_=0, first_delta_observations_=0;
     std::optional<CalibrationIdentity> calibration_identity_;
+    CalibrationProgressTimeout calibration_progress_;
     bool calibration_printed_=false;
     heat::Heat heat_;
     uint64_t consumed_=0;
@@ -206,12 +207,6 @@ private:
             if(last_delta_poll_ns_ && poll_now>last_delta_poll_ns_)
                 measured_.delta_gap_ns.add(double(poll_now-last_delta_poll_ns_));
             last_delta_poll_ns_=poll_now;
-            // the interval's own counts: the accumulated heat is decayed by the very half-life this informs
-            drift_.add(std::vector<double>(delta.counts.begin(),delta.counts.end()),delta.observation_count);
-            measured_.drift_half_life_observations=drift_.half_life_observations();
-            measured_.drift_horizon_observations=drift_.horizon_observations();
-            measured_.drift_intervals=drift_.intervals();
-            measured_.drift_capacity=drift_.capacity();
             measured_.marginal_observations=delta.observation_count;
             if (!first_delta_poll_ns_) {
                 first_delta_poll_ns_=poll_now;
@@ -222,6 +217,22 @@ private:
                 measured_.observation_rate_per_s=
                     double(numerator)/double(poll_now-first_delta_poll_ns_);
             }
+            // Observation-spaced retention: base spacing is the observed
+            // route rate over one evaluation cadence, distributed across the
+            // measured drift ring. When that ring fills, DriftTracker
+            // coarsens by pairs so the horizon grows independent of cadence.
+            const long double base=std::ceil(
+                static_cast<long double>(measured_.observation_rate_per_s)*
+                static_cast<long double>(settings_.cadence_ns)/
+                (1000000000.0L*std::max<size_t>(drift_.capacity(),1)));
+            const uint64_t spacing=!std::isfinite(base) || base<1 ? 1 :
+                base>=static_cast<long double>(UINT64_MAX) ? UINT64_MAX : uint64_t(base);
+            drift_.add(std::vector<double>(delta.counts.begin(),delta.counts.end()),
+                       delta.observation_count,spacing);
+            measured_.drift_half_life_observations=drift_.half_life_observations();
+            measured_.drift_horizon_observations=drift_.horizon_observations();
+            measured_.drift_intervals=drift_.intervals();
+            measured_.drift_capacity=drift_.capacity();
             measured_.marginal_error=marginal_relative_error(heat_.counts,drift_.k());
         }
         r.unwatermarked=unwatermarked;
@@ -412,21 +423,39 @@ public:
                 (tail.unjudgeable_tail_lane[0] || tail.unjudgeable_tail_lane[1]);
             const bool effect_timed_out=effect_signal_timeout_.expired(
                 now_ns,m,settings_.cadence_ns,settings_.controls.max_heat_age_ns);
-            const bool effect_absent=structural_unjudgeable || effect_timed_out;
+            const bool effect_missing=structural_unjudgeable || effect_timed_out;
+            const auto missing=calibration_missing_planner(m);
+            const bool effect_waiting=missing.empty() && !effect_missing &&
+                !calibration_settled(m,false,false);
+            std::string waiting;
+            if(calibration_progress_.observe(missing,now_ns,effect_waiting,&waiting))
+                std::fprintf(stderr,"%s\\n",waiting.c_str());
+            const bool effect_stalled=calibration_progress_.effect_expired(
+                now_ns,m,settings_.cadence_ns,settings_.controls.max_heat_age_ns);
+            const bool effect_absent=effect_missing || effect_stalled;
             const std::string effect_reason=structural_unjudgeable ?
                 (tail.unjudgeable_tail_lane[1] ?
                     "tail large lane has no peer reference on this layout" :
                     "tail small lane has no peer reference on this layout") :
-                "relative tail/peer service unavailable for a measured heat-gap horizon";
+                (effect_stalled ?
+                    "relative tail/peer service did not converge within derived heat horizon" :
+                    "relative tail/peer service unavailable for a measured heat-gap horizon");
+            const bool planner_timed_out=calibration_progress_.expired(
+                now_ns,m,settings_.cadence_ns,settings_.controls.max_heat_age_ns);
             if (calibration_settled(m,effect_absent,
-                                    structural_unjudgeable && !effect_timed_out)) {
+                                    structural_unjudgeable && !effect_timed_out) ||
+                planner_timed_out) {
+                if(planner_timed_out)
+                    std::fprintf(stderr,
+                        "policy calibration: planner evidence stalled (%s); emitting partial record\n",
+                        calibration_waiting_message(missing).c_str());
                 std::time_t now=std::time(nullptr);
                 std::tm utc{};
                 char date[11]{};
                 if (now>=0 && ::gmtime_r(&now,&utc) &&
                     std::strftime(date,sizeof(date),"%Y-%m-%d",&utc)) {
                     const auto row=calibration_record(m,*calibration_identity_,date,
-                                                      effect_absent,effect_reason);
+                                                      effect_absent,effect_reason,planner_timed_out);
                     if(effect_absent)
                         std::fprintf(stderr,
                             "policy calibration: effect unjudgeable (%s); effect quantities absent\n",

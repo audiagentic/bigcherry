@@ -178,3 +178,25 @@ Records are stored and looked up by `calibration_key(plan key inputs)`: the plan
 so a record survives pin bumps. Changing the model, the cards, the layout, the engine arguments or settings, or the
 record schema needs a new calibration.
 
+
+### Calibration bounds and drift retention (RHP16 step 5 follow-up 13)
+
+Helper 0 lists unmet planner measurements in a deduplicated
+"calibration waiting:" line with specific reasons. A no-peer tail lane
+cannot indefinitely postpone an unmeasured planner quantity. Every
+missing planner input has its own monotonic no-progress watch, bounded
+by the larger of the observed heat gap, policy cadence and maximum
+heat age, multiplied by the drift ring capacity. The bound is frozen
+when that missing condition starts; later heat gaps cannot extend it.
+The effect-only wait has an independent frozen bound of the same length. At expiry the record
+contains actual observations and explicit absent entries for the rest.
+Valid partial planner records keep serving without live policy;
+malformed records remain hard errors. Effect-only absences can instead
+derive an effect-gate-off policy once planner inputs are present.
+
+The drift series retains source-interval route counts with growing
+observation-count spacing, adaptively thinning its bounded ring in
+pairs. The newest source interval remains available for comparison
+without overwriting the spaced samples. The measured route rate and
+ring capacity determine the initial spacing, and the observed span
+determines subsequent coarsening, independent of evaluation cadence.

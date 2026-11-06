@@ -109,6 +109,45 @@ int main() {
         assert(!row.at("measurements").contains(removed));
         assert(!row.at("absent").contains(removed));
     }
+    // Only the tail quiesce/reopen measurement is missing. The logged
+    // condition must be exact, deduplicated, and the structural no-peer
+    // path must still emit a partial record after one derived horizon.
+    Measured only_lane=m;
+    only_lane.lane_lost_ns=Series{64};
+    const auto missing_lane=calibration_missing_planner(only_lane);
+    assert(missing_lane.size()==1 && missing_lane[0].name=="lane_lost_ns");
+    CalibrationProgressTimeout planner_watch;
+    std::string line;
+    const uint64_t watch_start=1000000000ull;
+    assert(planner_watch.observe(missing_lane,watch_start,false,&line));
+    assert(line=="calibration waiting: lane_lost_ns (no tail quiesce/reopen interval yet)");
+    assert(!planner_watch.observe(missing_lane,watch_start+1,false,&line));
+    assert(!calibration_settled(only_lane,true,true));
+    const uint64_t wait_gap=uint64_t(std::max({
+        only_lane.delta_gap_ns.max(),double(only_lane.effect_cadence_ns),
+        double(only_lane.effect_cadence_ns*2)}));
+    const uint64_t wait_span=wait_gap*only_lane.drift_capacity;
+    assert(!planner_watch.expired(watch_start+1,only_lane,
+                                  only_lane.effect_cadence_ns,
+                                  only_lane.effect_cadence_ns*2));
+    Measured later_large_gap=only_lane;
+    later_large_gap.delta_gap_ns.add(double(wait_span*10));
+    assert(!planner_watch.expired(watch_start+wait_span-1,later_large_gap,
+                                  only_lane.effect_cadence_ns,
+                                  only_lane.effect_cadence_ns*2));
+    assert(planner_watch.expired(watch_start+wait_span,later_large_gap,
+                                 only_lane.effect_cadence_ns,
+                                 only_lane.effect_cadence_ns*2));
+    const auto partial_lane=calibration_record(only_lane,
+        {std::string(64,'f'),"flashnext-4gpu","balanced"},"2026-11-06",
+        true,"tail large lane has no peer reference on this layout",true);
+    assert(partial_lane.at("absent").size()>=1);
+    assert(partial_lane.at("absent").at("lane_lost_ns")==
+           "no verified tail-helper quiesce-to-reopen interval");
+    assert(!partial_lane.at("measurements").contains("lane_lost_ns"));
+    assert(partial_lane.at("measurements").contains("copy_bytes_per_s"));
+    assert(partial_lane.at("evidence").get<std::string>().find("partial calibration")!=std::string::npos);
+
     Measured no_copy=m;
     no_copy.slowest_helper_copy_bps=Series{64};
     const auto absent_copy=calibration_record(no_copy,
@@ -126,6 +165,24 @@ int main() {
     no_effect.effect_window_noise_ladder.clear();
     no_effect.abort_ns.add(100.0); // every non-effect field now measured
     assert(!calibration_settled(no_effect));
+    // Effect-only evidence is bounded even when no publisher becomes active.
+    CalibrationProgressTimeout no_publishers;
+    std::string effect_line;
+    const uint64_t effect_start=1000000000ull;
+    assert(no_publishers.observe({},effect_start,true,&effect_line));
+    assert(effect_line=="calibration waiting: effect signal (published relative-service windows not converged)");
+    assert(!no_publishers.observe({},effect_start+1,true,&effect_line));
+    const uint64_t effect_span=uint64_t(CalibrationProgressTimeout::wait_span(
+        no_effect,no_effect.effect_cadence_ns,2*no_effect.effect_cadence_ns));
+    assert(!no_publishers.effect_expired(effect_start+1,no_effect,
+        no_effect.effect_cadence_ns,2*no_effect.effect_cadence_ns));
+    Measured later_effect_gap=no_effect;
+    later_effect_gap.delta_gap_ns.add(double(effect_span*10));
+    assert(!no_publishers.effect_expired(effect_start+effect_span-1,later_effect_gap,
+        no_effect.effect_cadence_ns,2*no_effect.effect_cadence_ns));
+    assert(no_publishers.effect_expired(effect_start+effect_span,later_effect_gap,
+        no_effect.effect_cadence_ns,2*no_effect.effect_cadence_ns));
+    assert(calibration_settled(no_effect,true));
     // A long pre-request/helper warm-up must never consume the outage budget.
     EffectSignalTimeout warming;
     const uint64_t start=1000000000ULL;

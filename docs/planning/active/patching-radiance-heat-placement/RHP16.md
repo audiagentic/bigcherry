@@ -532,3 +532,36 @@ Card-free live-assert regressions exercise the calib12-shaped record,
 the resolvable gate-on case, unresolvable gate-off ladder, missing
 planner evidence, and calib5 heat-shift acceptance with the gate off.
 No hardware remeasurement or GPU claim is made.
+
+## Step 5 follow-up 13: bounded planner evidence and observation-spaced drift (2026-11-06)
+
+Helper 0 reports "calibration waiting: ..." only when the set of unmet
+conditions changes. It names every missing planner input and the reason,
+e.g. "lane_lost_ns (no tail quiesce/reopen interval yet)". Effect-only
+convergence is logged separately. An individual missing planner quantity
+is watched for progress in that quantity, not renewed by unrelated heat
+deltas or other transaction samples. After a period of monotonic time
+without progress derived as
+
+    max(observed maximum heat gap, policy cadence, max_heat_age_ns)
+      * drift ring capacity
+
+the pending condition's derived deadline is frozen, and calibration
+serializes a partial record with collected values and precise absent
+reasons. Later larger heat gaps cannot extend that deadline. This applies to structural no-peer lanes as
+well. An effect-only wait has the same derived finite bound, even if no
+service publisher ever appears. A valid incomplete planner record uses
+the established fail-safe: serving without live policy, with the
+specific reason in provenance.
+
+The source still feeds route counts of ONE update interval, not decayed
+heat. The driver derives base observation spacing from measured route
+rate, evaluation cadence and drift ring capacity. When the ring fills,
+it thins the history pairwise and doubles its spacing. Intermediate
+evaluations update the newest overlap point without overwriting
+retained spaced samples. The horizon expands to cover a heat shift
+at fast or slow evaluation cadences rather than spanning only the last
+16 evaluations. Counter regression and shape changes reset the ring.
+Card-free 1 s and 30 s synthetic-cadence tests require matching
+half-life in observations within one retained spacing, alongside the
+calib5 heat-shift planner acceptance regression.

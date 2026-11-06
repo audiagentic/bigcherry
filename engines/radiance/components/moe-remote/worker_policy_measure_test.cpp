@@ -114,6 +114,32 @@ static void test_drift_discontinuities() {
     check(d.intervals() == 1, "a different shape resets the tracker");
 }
 
+static void test_observation_spaced_drift_cadence() {
+    // Same 15-minute shifting route stream, evaluated every 1 s or 30 s.
+    // Retention is in observations, not one saved point per evaluation:
+    // the fast loop must retain the full filler->documentation transition.
+    const auto replay=[](uint64_t cadence_seconds) {
+        DriftTracker d(4,16);
+        const uint64_t rate=1000000; // synthetic source, observations per second
+        const uint64_t spacing=(rate*cadence_seconds+d.capacity()-1)/d.capacity();
+        for(uint64_t sec=cadence_seconds;sec<=900;sec+=cadence_seconds) {
+            const size_t start=size_t(sec/90);
+            d.add(window_at(start),sec*rate,spacing);
+        }
+        return d;
+    };
+    const auto fast=replay(1), slow=replay(30);
+    check(fast.intervals()<=fast.capacity() && slow.intervals()<=slow.capacity(),
+          "observation-spaced rings remain bounded");
+    check(fast.horizon_observations()>0 && slow.horizon_observations()>0 &&
+          fast.half_life_observations()>0 && slow.half_life_observations()>0,
+          "both evaluation cadences observe the shift crossing");
+    const uint64_t a=fast.half_life_observations(),b=slow.half_life_observations();
+    const uint64_t diff=a>b?a-b:b-a;
+    check(diff<=std::max(fast.spacing_observations(),slow.spacing_observations()),
+          "half-life agrees within one retained observation spacing");
+}
+
 static void test_sampling_error() {
     check(relative_share_error(0, 100) == 0 && relative_share_error(5, 4) == 0, "no information is zero");
     check(std::abs(relative_share_error(100, 10000) - std::sqrt(0.99 / 100.0)) < 1e-12, "multinomial relative error");
@@ -316,6 +342,7 @@ int main() {
     test_drift_half_life();
     test_drift_is_relative_to_sampling_noise();
     test_drift_discontinuities();
+    test_observation_spaced_drift_cadence();
     test_sampling_error();
     test_tail_series();
     test_effect_quiet_series();

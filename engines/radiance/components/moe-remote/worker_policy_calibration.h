@@ -8,6 +8,8 @@
 #include <limits>
 #include <nlohmann/json.hpp>
 #include <string>
+#include <map>
+#include <vector>
 
 namespace r3::policy {
 struct CalibrationIdentity {
@@ -40,25 +42,134 @@ public:
         return static_cast<long double>(now_ns-missing_since_)>=span;
     }
 };
+// One entry per unmet PLANNER requirement (effect-only evidence is optional).
+// The progress token advances only when evidence for this specific unmet
+// requirement advances, not when unrelated heat/transactions continue.
+struct MissingPlannerCondition {
+    std::string name, reason;
+    uint64_t progress = 0;
+};
+inline std::vector<MissingPlannerCondition> calibration_missing_planner(const Measured& m) {
+    std::vector<MissingPlannerCondition> out;
+    const auto need = [&](bool ready, const char* name, const char* reason, uint64_t progress=0) {
+        if (!ready) out.push_back({name,reason,progress});
+    };
+    need(m.accepted_heat_deltas>0, "heat_watermarked", "no accepted heat deltas");
+    need(m.drift_capacity && m.drift_intervals==m.drift_capacity,
+         "drift_window", "retained observation-spaced window not full", m.drift_intervals);
+    need(m.delta_gap_ns.total() >= (m.drift_intervals ? m.drift_intervals-1 : 1) &&
+         m.delta_gap_ns.max()>0, "heat_gap_max_ns",
+         "not enough consecutive accepted heat delta gaps", m.delta_gap_ns.total());
+    need(m.hot_set_k>0, "hot_set_k", "no tail-helper expert capacity");
+    need(std::isfinite(m.marginal_error) && m.marginal_error>0,
+         "marginal_error_ppm", "marginal relative error absent or zero");
+    need(m.marginal_observations>0, "marginal_observations",
+         "no positive accepted source observation count");
+    need(std::isfinite(m.observation_rate_per_s) && m.observation_rate_per_s>0,
+         "observation_rate_per_s", "no two accepted counter/time points establish a positive rate");
+    need(m.drift_half_life_observations>0, "drift_half_life_observations",
+         "half-overlap crossing not observed in retained drift horizon");
+    need(m.transaction_ns.quantile(0.5)>0, "txn_p50_ns",
+         "no positive committed transaction wall time", m.transaction_ns.positive_count());
+    need(m.tail.gain_ppm.quantile(0.5)>0, "tail_share_gain_ppm",
+         "no committed plan with positive predicted tail-share saving", m.tail.gain_ppm.positive_count());
+    need(m.slowest_helper_copy_bps.quantile(0.5)>0, "copy_bytes_per_s",
+         "no committed transaction with complete per-receiver READY ACK timings",
+         m.slowest_helper_copy_bps.positive_count());
+    need(m.tail_lane_service_ns_per_s.quantile(0.5)>0, "tail_lane_service_ns_per_s",
+         "no positive sampled tail-lane service per second", m.tail_lane_service_ns_per_s.positive_count());
+    need(m.tail_lane_row_ns.quantile(0.5)>0, "tail_lane_row_ns",
+         "no positive tail-lane service per routed row", m.tail_lane_row_ns.positive_count());
+    need(m.lane_lost_ns.count()>0, "lane_lost_ns",
+         "no tail quiesce/reopen interval yet", m.lane_lost_ns.total());
+    return out;
+}
+inline std::string calibration_waiting_message(const std::vector<MissingPlannerCondition>& missing,
+                                               bool effect_waiting=false) {
+    std::string message = "calibration waiting: ";
+    for (const auto& c : missing) {
+        if (message != "calibration waiting: ") message += ", ";
+        message += c.name + " (" + c.reason + ")";
+    }
+    if (effect_waiting) {
+        if (message != "calibration waiting: ") message += ", ";
+        message += "effect signal (published relative-service windows not converged)";
+    }
+    return message == "calibration waiting: " ? std::string{} : message;
+}
+// Per-missing-condition watchdog. Warm-up and unrelated counters never renew
+// the deadline for lane_lost_ns, copy_bytes_per_s, etc. The timeout derives
+// from the observed heat gap, configured freshness/cadence and ring capacity.
+class CalibrationProgressTimeout {
+    struct Pending {
+        uint64_t since_ns=0, progress=0;
+        long double frozen_span_ns=0;
+    };
+    std::map<std::string,Pending> pending_;
+    uint64_t effect_since_ns_=0;
+    long double effect_frozen_span_ns_=0;
+    std::string last_message_;
+public:
+    bool observe(const std::vector<MissingPlannerCondition>& missing,
+                 uint64_t now_ns, bool effect_waiting, std::string* changed_line) {
+        std::map<std::string,Pending> next;
+        for (const auto& c : missing) {
+            auto it=pending_.find(c.name);
+            Pending p=it==pending_.end() ? Pending{now_ns,c.progress,0} : it->second;
+            if (c.progress!=p.progress) p={now_ns,c.progress,0};
+            next.emplace(c.name,p);
+        }
+        pending_.swap(next);
+        if(effect_waiting) {
+            if(!effect_since_ns_) effect_since_ns_=now_ns;
+        } else {
+            effect_since_ns_=0;
+            effect_frozen_span_ns_=0;
+        }
+        const std::string message=calibration_waiting_message(missing,effect_waiting);
+        if (message==last_message_) return false;
+        last_message_=message;
+        if(changed_line) *changed_line=message;
+        return !message.empty();
+    }
+    static long double wait_span(const Measured& m,uint64_t cadence_ns,
+                                 uint64_t max_heat_age_ns) {
+        const long double gap=std::max({static_cast<long double>(m.delta_gap_ns.max()),
+                                        static_cast<long double>(cadence_ns),
+                                        static_cast<long double>(max_heat_age_ns)});
+        return gap*std::max<size_t>(m.drift_capacity,1);
+    }
+    bool expired(uint64_t now_ns,const Measured& m,uint64_t cadence_ns,
+                 uint64_t max_heat_age_ns) {
+        for(auto& [name,p]:pending_) {
+            // Freeze at the first observation of this missing condition.
+            // A later, larger observed heat gap cannot extend its deadline.
+            if(p.frozen_span_ns<=0)
+                p.frozen_span_ns=wait_span(m,cadence_ns,max_heat_age_ns);
+            if(p.since_ns && now_ns>=p.since_ns && p.frozen_span_ns>0 &&
+               static_cast<long double>(now_ns-p.since_ns)>=p.frozen_span_ns) return true;
+        }
+        return false;
+    }
+    // Effect-only evidence must also have a finite frozen deadline even when
+    // NO publisher ever becomes active, or publishes unusable rows forever.
+    bool effect_expired(uint64_t now_ns,const Measured& m,uint64_t cadence_ns,
+                        uint64_t max_heat_age_ns) {
+        if(effect_since_ns_ && effect_frozen_span_ns_<=0)
+            effect_frozen_span_ns_=wait_span(m,cadence_ns,max_heat_age_ns);
+        return effect_since_ns_ && now_ns>=effect_since_ns_ &&
+               effect_frozen_span_ns_>0 &&
+               static_cast<long double>(now_ns-effect_since_ns_)>=
+                   effect_frozen_span_ns_;
+    }
+};
 inline bool calibration_settled(const Measured& m,bool effect_absent=false,
                                 bool structural_unjudgeable=false) {
-    // Preserve the bounded timeout fallback: even missing planner evidence
-    // must be serialized with absent reasons so serving can start without
-    // a policy. A structurally unjudgeable lane instead settles as soon as
-    // planner quantities converge, without waiting for effect evidence.
+    // A separate progress watchdog bounds planner evidence on EVERY path,
+    // including the structural no-peer case. The effect timeout still
+    // independently permits a partial record when the peer never publishes.
     if (effect_absent && !structural_unjudgeable) return true;
-    const bool planner_ready = m.accepted_heat_deltas && m.drift_capacity && m.drift_intervals == m.drift_capacity &&
-           m.delta_gap_ns.total() >= m.drift_intervals - 1 &&
-           m.delta_gap_ns.max() > 0 &&
-           m.hot_set_k && std::isfinite(m.marginal_error) && m.marginal_error > 0 &&
-           m.marginal_observations && std::isfinite(m.observation_rate_per_s) &&
-           m.observation_rate_per_s > 0 &&
-           m.drift_half_life_observations && m.transaction_ns.quantile(0.5) > 0 &&
-           m.tail.gain_ppm.quantile(0.5) > 0 &&
-           m.slowest_helper_copy_bps.quantile(0.5) > 0 &&
-           m.tail_lane_service_ns_per_s.quantile(0.5) > 0 &&
-           m.tail_lane_row_ns.quantile(0.5) > 0 &&
-           m.lane_lost_ns.count();
+    const bool planner_ready=calibration_missing_planner(m).empty();
     if (!planner_ready || effect_absent) return planner_ready;
     return m.effect_required_quiet_windows &&
            m.effect.quiet_comparisons >= m.effect_required_quiet_windows &&
@@ -75,7 +186,8 @@ inline nlohmann::json calibration_record(const Measured& m,
                                           const std::string& utc_date,
                                           bool effect_absent=false,
                                           const std::string& effect_reason=
-                                              "relative tail/peer service unavailable for a measured heat-gap horizon") {
+                                              "relative tail/peer service unavailable for a measured heat-gap horizon",
+                                          bool planner_partial=false) {
     using Json = nlohmann::json;
     Json measured = Json::object(), absent = Json::object();
     constexpr uint64_t max_exact = (uint64_t(1) << 53) - 1;
@@ -145,7 +257,9 @@ inline nlohmann::json calibration_record(const Measured& m,
     return Json{{"plan_cache_key", identity.plan_cache_key},
                 {"layout", identity.layout}, {"objective", identity.objective},
                 {"seeded", utc_date},
-                {"evidence", effect_absent ?
+                {"evidence", planner_partial ?
+                    "partial calibration: stalled planner conditions remain absent with explicit reasons; serving must independently validate completeness" :
+                    effect_absent ?
                     "effect unjudgeable: " + effect_reason + "; planner measurements independently observed" :
                     "accepted heat, closed journals, per-helper READY/RESERVED/CLEANED ACK timing, sampled lane service and committed planner gains"},
                 {"measurements", measured}, {"absent", absent}};

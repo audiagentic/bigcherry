@@ -26,6 +26,10 @@ public:
     }
     size_t count() const { return values_.size(); }
     uint64_t total() const { return total_; }   // every sample ever added, retained or not
+    size_t positive_count() const {
+        return size_t(std::count_if(values_.begin(), values_.end(),
+                                    [](double x) { return x>0.0; }));
+    }
     double max() const { return values_.empty() ? 0.0 : *std::max_element(values_.begin(), values_.end()); }
     // Population standard deviation of the retained signed observations.
     double stddev() const {
@@ -91,28 +95,59 @@ public:
     // `interval_counts` is the route count of the interval that just ended, `observation_count` the monotone
     // observation counter of the source at its end. A counter that does not advance is not a new interval; one that goes
     // back (a source restart) or a different shape resets the tracker.
-    void add(const std::vector<double>& interval_counts, uint64_t observation_count) {
-        if (!intervals_.empty()) {
-            if (observation_count < intervals_.back().observations ||
-                interval_counts.size() != intervals_.back().counts.size()) {
-                intervals_.clear();
-            } else if (observation_count == intervals_.back().observations) {
-                return;
-            }
+    // In adaptive mode, retain an observation-spaced history instead of the
+    // last N evaluations. Once full, thin the history in pairs and double the
+    // observation spacing; the horizon then grows with the observed workload
+    // rather than shrinking when evaluation cadence is shortened. With no
+    // initial spacing hint the legacy bounded-ring behavior is unchanged (used
+    // by standalone replay). The current update is always available as the
+    // newest point, even between retained observation boundaries.
+    void add(const std::vector<double>& interval_counts, uint64_t observation_count,
+             uint64_t initial_spacing_observations = 0) {
+        if (last_observation_ && (observation_count < last_observation_ ||
+            (!intervals_.empty() && interval_counts.size() != current_.counts.size()))) {
+            intervals_.clear();
+            spacing_observations_ = 0;
+            sampled_observation_ = 0;
+        } else if (last_observation_ && observation_count == last_observation_) {
+            return;
         }
-        if (intervals_.size() == capacity_) intervals_.pop_front();
-        intervals_.push_back({interval_counts, observation_count});
+        last_observation_ = observation_count;
+        current_ = {interval_counts, observation_count};
+        if (!initial_spacing_observations) {
+            if (intervals_.size() == capacity_) intervals_.pop_front();
+            intervals_.push_back(current_);
+            return;
+        }
+        if (!spacing_observations_) spacing_observations_ = initial_spacing_observations;
+        // The newest update is available for overlap comparison but must
+        // NOT replace the last spaced sample: doing so would make successive
+        // retained samples arbitrarily close when the next boundary arrives.
+        if (!intervals_.empty() && sampled_observation_ &&
+            observation_count - sampled_observation_ < spacing_observations_) return;
+        if (intervals_.size() == capacity_) {
+            std::deque<Interval> thinned;
+            for (size_t i = 0; i < intervals_.size(); i += 2)
+                thinned.push_back(std::move(intervals_[i]));
+            intervals_ = std::move(thinned);
+            spacing_observations_ = spacing_observations_ > UINT64_MAX / 2 ?
+                UINT64_MAX : spacing_observations_ * 2;
+        }
+        intervals_.push_back(current_);
+        sampled_observation_ = observation_count;
     }
+    uint64_t spacing_observations() const { return spacing_observations_; }
     size_t intervals() const { return intervals_.size(); }
     size_t capacity() const { return capacity_; }
     // Overlap of the newest interval's hot set with each older one's, oldest first.
     std::vector<Point> curve() const {
         std::vector<Point> out;
-        if (intervals_.size() < 2) return out;
-        const Interval& now = intervals_.back();
-        for (size_t i = 0; i + 1 < intervals_.size(); ++i)
-            out.push_back({now.observations - intervals_[i].observations,
-                           topk_overlap(intervals_[i].counts, now.counts, k_)});
+        if (intervals_.empty()) return out;
+        const Interval& now = current_;
+        for (const auto& old : intervals_)
+            if(old.observations < now.observations)
+                out.push_back({now.observations - old.observations,
+                               topk_overlap(old.counts, now.counts, k_)});
         return out;
     }
     // How far back the retained intervals reach, in observations: a half-life of 0 means "not seen within this".
@@ -140,6 +175,9 @@ private:
     struct Interval { std::vector<double> counts; uint64_t observations = 0; };
     size_t k_, capacity_;
     std::deque<Interval> intervals_;
+    Interval current_{};
+    uint64_t last_observation_ = 0, sampled_observation_ = 0;
+    uint64_t spacing_observations_ = 0;
 };
 
 // Relative standard error of an expert's share of the heat, from its own count: the multinomial estimate
