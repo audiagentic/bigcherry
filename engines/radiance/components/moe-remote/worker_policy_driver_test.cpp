@@ -38,7 +38,27 @@ struct Bridge : Transport {
             const bool helper=a<kMaxHelpers;
             const uint32_t bit=1u<<(helper?a:a-kMaxHelpers);
             if(!(helper?c.expected_helpers:c.expected_ranks)&bit)continue;
-            auto& v=ack[a];v={};
+            auto& v=ack[a];
+            const auto previous=v;
+            v={};
+            if (helper && phase==AckPhase::RESERVED) {
+                // Synthetic sampled large-lane service: ns over wall ns.
+                v.reserved[0]=uint64_t(2000 + 1000*a);
+                v.reserved[1]=10000;
+            } else if (helper && phase==AckPhase::READY) {
+                // Fake participants advertise their own exact ingress bytes
+                // and distinct elapsed copy times in the ACK's reserved words.
+                const auto* current=generation_map(map,c.active_slot);
+                const auto* candidate=generation_map(map,c.pending_slot);
+                uint64_t incoming=0;
+                for (uint32_t e=0;e<4;++e)
+                    if (current[e]!=candidate[e] && candidate[e]==int32_t(a)) ++incoming;
+                v.reserved[0]=incoming*10;
+                v.reserved[1]=incoming ? 1000+1000*a : 0;
+            } else if (previous.transaction_id==c.transaction_id) {
+                v.reserved[0]=previous.reserved[0];
+                v.reserved[1]=previous.reserved[1];
+            }
             v.transaction_id=c.transaction_id;
             v.epoch=c.pending_epoch;v.digest=c.pending_digest;
             v.generation_slot=c.pending_slot;v.phase=uint32_t(phase);
@@ -49,7 +69,9 @@ struct Bridge : Transport {
             const bool helper=a<kMaxHelpers;
             const uint32_t bit=1u<<(helper?a:a-kMaxHelpers);
             if(!(helper?c.expected_helpers:c.expected_ranks)&bit)continue;
-            auto& v=ack[a];v={};
+            auto& v=ack[a];const auto previous=v;v={};
+            v.reserved[0]=2500; // sampled QUIESCED-to-REOPEN unavailable time
+            v.reserved[1]=1;    // marked valid by the real cleanup publication
             v.transaction_id=c.transaction_id;
             v.epoch=c.active_epoch;v.digest=c.active_digest;
             v.generation_slot=c.active_slot;
@@ -280,7 +302,35 @@ static bool pump_effect(Fixture& f,Driver& d,FakeService& service,int limit=200)
 static bool matches_rejection(const char* got,const char* expected) {
     return got && std::strcmp(got,expected)==0;
 }
+static void test_calibration_ack_roundtrip() {
+    Fixture f;
+    auto c=f.controller->control();
+    c.transaction_id=42;
+    c.pending_epoch=c.active_epoch+1;
+    c.pending_slot=1u-c.active_slot;
+    c.pending_digest=c.active_digest+1;
+    publish_ack(f.map,0,c,AckPhase::RESERVED,0,2000,10000);
+    auto a=read_shared_ack(f.map,0);
+    check(a.reserved[0]==2000 && a.reserved[1]==10000,
+          "RESERVED carries sampled service ns over observed wall ns");
+    publish_ack(f.map,0,c,AckPhase::READY,0,20,500);
+    a=read_shared_ack(f.map,0);
+    check(a.reserved[0]==20 && a.reserved[1]==500,
+          "READY carries per-helper bytes and elapsed copy ns");
+    publish_ack(f.map,0,c,AckPhase::QUIESCED);
+    a=read_shared_ack(f.map,0);
+    check(a.reserved[0]==20 && a.reserved[1]==500,
+          "later phases do not discard READY copy evidence");
+    c.state=uint32_t(PlacementState::ACTIVE);
+    publish_cleanup_ack(f.map,0,c,125);
+    a=read_shared_ack(f.map,0);
+    check(a.reserved[0]==125 && a.reserved[1]==1 &&
+          a.phase==uint32_t(AckPhase::CLEANED),
+          "CLEANED carries actual lane unavailable duration and valid flag");
+}
+
 int main() {
+    test_calibration_ack_roundtrip();
     {
         Fixture f;
         auto source=std::make_unique<HeatFake>();auto* h=source.get();
@@ -335,7 +385,13 @@ int main() {
         {
             const Measured m=d.measured();
             check(m.transaction_ns.total()==2 && m.abort_ns.total()==0 && m.hot_set_k==2 &&
-                  m.delta_gap_ns.total()>0,
+                  m.delta_gap_ns.total()>0 && m.tail.gain_ppm.total()>0 &&
+                  m.slowest_helper_copy_bps.total()==2 &&
+                  m.slowest_helper_copy_bps.quantile(0.5)>0 &&
+                  m.tail_lane_service_ns_per_s.count()==2 &&
+                  m.tail_lane_service_ns_per_s.quantile(0.5)>0 &&
+                  m.lane_lost_ns.count()==2 &&
+                  m.lane_lost_ns.quantile(0.95)==2500,
                   "the driver measures committed transactions, update gaps and the tail's hot-set size");
         }
         const auto back=f.owners();
@@ -632,6 +688,11 @@ int main() {
               "no proposal without minimum consecutive quiet windows");
         const auto before=f.owners();
         check(pump_effect(f,d,service),"measured noise permits forward proposal");
+        { const auto m=d.measured();
+          check(m.effect.quiet_comparisons>=2 && m.effect.window_samples.count()>=2 &&
+                m.effect.quiet_delta_ns.max()>0 && m.effect.sampled_requests_per_s>0,
+                "driver captures actual quiet service duration, counts and sampled rate");
+        }
         f.commit();f.clock.advance(1001);
         d.observe(*f.controller,f.map,f.clock.now_ns());
         const auto after=f.owners();

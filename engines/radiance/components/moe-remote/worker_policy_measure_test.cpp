@@ -1,4 +1,5 @@
 #include "worker_policy_measure.h"
+#include "worker_policy_effect.h"
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -120,6 +121,41 @@ static void test_sampling_error() {
     check(marginal_relative_error(counts, 0) == 0 && marginal_relative_error(counts, 11) == 0, "bad k answers zero");
 }
 
+static void test_tail_series() {
+    TailSamples t;
+    t.observe(42,0.20,true);
+    t.observe(42,0.22,true);
+    check(std::abs(t.noise_ppm.max()-100000.0)<1e-6,"observed no-move share noise");
+    t.observe(43,0.50,true);
+    check(t.noise_ppm.total()==1,"changed owner resets no-move baseline");
+    t.commit(0.4,0.2);
+    check(std::abs(t.gain_ppm.quantile(0.5)-500000.0)<1e-6,
+          "committed predicted relative tail gain");
+    t.commit(0.2,0.21);
+    check(t.gain_ppm.total()==1,"nonpositive gain is not observed improvement");
+}
+
+static void test_effect_quiet_series() {
+    EffectGate gate({2,2,2.0});
+    ServiceSnapshot snapshot{};
+    uint64_t now=1000;
+    gate.quiet(snapshot,now);
+    for(unsigned i=0;i<5;++i) {
+        auto& lane=snapshot.lane[1];
+        lane.samples+=2;lane.rows+=20;
+        lane.time_ns+=uint64_t((100+i)*20);
+        now+=100;
+        gate.quiet(snapshot,now);
+    }
+    const EffectSamples e=gate.observed();
+    check(e.quiet_comparisons==4 && e.window_samples.quantile(0.5)==2,
+          "actual quiet-window sample counts, not configured numbers");
+    check(e.quiet_delta_ns.count()==4 && e.quiet_delta_ns.max()==10,
+          "effect noise in ns per sampled request, not fractional noise");
+    check(std::abs(e.sampled_requests_per_s-20000000.0)<1e-6,
+          "sampled request rate from observed samples and wall clock");
+}
+
 int main() {
     test_series();
     test_throughput();
@@ -128,5 +164,7 @@ int main() {
     test_drift_is_relative_to_sampling_noise();
     test_drift_discontinuities();
     test_sampling_error();
+    test_tail_series();
+    test_effect_quiet_series();
     std::puts("r3_policy_measure_test: ok");
 }

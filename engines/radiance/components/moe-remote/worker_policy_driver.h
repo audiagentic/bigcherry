@@ -221,6 +221,10 @@ private:
         }
         r.evaluated=true;
         r.plan=heat::propose(input,settings_.head_shares);
+        if(r.plan.valid) {
+            std::lock_guard<std::mutex> guard(measure_lock_);
+            measured_.tail.observe(copy.owners.digest,r.plan.baseline,r.plan.no_change);
+        }
         if(!r.plan.valid)r.reason="plan_invalid";
         else if(r.plan.no_change) {
             if(poll_now<copy.cooldown_until_ns)r.reason="abort_cooldown";
@@ -282,6 +286,7 @@ public:
         // Heat shape is replaced with the coherent ACTIVE layout at first
         // capture; no constructor accesses shared memory.
         reset_drift();
+        measured_.effect_required_quiet_windows=settings_.effect_gate?settings_.effect_min_quiet_windows:0;
     }
     ~Driver() { stop(); }
     // The hot set the drift is measured on: as many experts as the tail helper holds.
@@ -391,6 +396,10 @@ public:
             } else if(!revert_requested_) {
                 effect_.quiet(service,now_ns);
                 evidence_.effect_noise_floor=effect_.noise_floor();
+            }
+            {
+                std::lock_guard<std::mutex> guard(measure_lock_);
+                measured_.effect=effect_.observed();
             }
             if(revert_requested_) {
                 // Restore the ENTIRE prior ACTIVE generation through the same
@@ -540,6 +549,7 @@ public:
         OwnerSnapshot active;
         if(!capture_owners(map,&active))return;
         const auto obs=history_.observe_closed(j,active,now_ns);
+        const bool transaction_was_revert=reverting_;
         if(obs==HistoryObservation::COMMITTED) {
             const bool was_revert=reverting_;
             if(reverting_) {
@@ -590,7 +600,42 @@ public:
                 if(obs==HistoryObservation::ABORTED)measured_.abort_ns.add(double(elapsed));
                 else {
                     measured_.transaction_ns.add(double(elapsed));
+                    if(!transaction_was_revert && pending_plan_.valid)
+                        measured_.tail.commit(pending_plan_.baseline,pending_plan_.predicted);
                     measured_.copy.add(uint64_t(pending_plan_.delta.size())*stride_,elapsed);
+                    if (!transaction_was_revert) {
+                        // READY timing is published by each actual receiving helper,
+                        // preserved through CLEANED. Do not substitute the transaction
+                        // wall time for an unavailable per-helper DMA measurement.
+                        std::vector<uint64_t> expected(active.helpers,0);
+                        for (const auto& move:pending_plan_.delta)
+                            if (move.to>=0 && size_t(move.to)<expected.size())
+                                expected[size_t(move.to)]+=stride_;
+                        bool complete=true, any=false;
+                        double slowest=0;
+                        for (size_t h=0;h<expected.size();++h) {
+                            if (!expected[h]) continue;
+                            any=true;
+                            const auto ack=controller.helper_measurement(uint32_t(h));
+                            if (ack.transaction!=txn_ || ack.copy_bytes!=expected[h] ||
+                                !ack.copy_ns) {complete=false;break;}
+                            const double bps=double(expected[h])*1000000000.0/double(ack.copy_ns);
+                            if (!slowest || bps<slowest) slowest=bps;
+                        }
+                        if (complete && any) measured_.slowest_helper_copy_bps.add(slowest);
+                        if (active.helpers) {
+                            const auto tail=controller.helper_measurement(active.helpers-1);
+                            if (tail.transaction==txn_ && tail.service_ns && tail.service_wall_ns)
+                                measured_.tail_lane_service_ns_per_s.add(
+                                    double(tail.service_ns)*1000000000.0/
+                                    double(tail.service_wall_ns));
+                            const auto closed=controller.helper_ack(active.helpers-1);
+                            if (closed.transaction_id==txn_ &&
+                                closed.phase==uint32_t(moe_shm::AckPhase::CLEANED) &&
+                                closed.reserved[1]==1)
+                                measured_.lane_lost_ns.add(double(closed.reserved[0]));
+                        }
+                    }
                 }
             }
             ++evidence_.transition_samples;

@@ -2,6 +2,7 @@
 // Measured-effect gate: CPU-only snapshots of OFF-LANE sampled HIP event timing.
 // No GPU hot-path store, device/system fence or added HIP query is required.
 #include "moe_remote_shm.h"
+#include "worker_policy_measure.h"
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -88,6 +89,9 @@ class EffectGate {
     std::array<bool,2> valid_last_{},pre_active_{};
     bool anchor_valid_=false,trial_=false,post_=false;
     double last_ratio_=0, judged_noise_=0;
+    EffectSamples quiet_stats_;
+    std::array<double,2> last_latency_ns_{};
+    std::array<uint64_t,2> first_sample_ns_{},first_sample_count_{};
     static bool subtract(const ServiceTotals& a,const ServiceTotals& b,ServiceTotals* delta) {
         if(a.samples<b.samples || a.rows<b.rows || a.time_ns<b.time_ns)return false;
         *delta={a.samples-b.samples,a.rows-b.rows,a.time_ns-b.time_ns};
@@ -98,6 +102,7 @@ class EffectGate {
     }
 public:
     explicit EffectGate(EffectConfig c):cfg_(c){}
+    EffectSamples observed() const { return quiet_stats_; }
     bool valid() const {
         return cfg_.window_samples && cfg_.min_quiet_windows &&
                std::isfinite(cfg_.noise_multiplier) && cfg_.noise_multiplier>0;
@@ -117,6 +122,7 @@ public:
             if(!subtract(now.lane[i],anchor_[i],&d)) {
                 anchor_[i]=now.lane[i];valid_last_[i]=false;quiet_pairs_[i]=0;
                 quiet_deviations_[i].clear();last_quiet_ns_[i]=0;
+                quiet_stats_=EffectSamples{};first_sample_ns_={0,0};first_sample_count_={0,0};
                 continue; // counter reset: recalibrate from scratch
             }
             if(d.samples<cfg_.window_samples)continue;
@@ -124,6 +130,22 @@ public:
             anchor_[i]=now.lane[i];
             if(next<=0) {valid_last_[i]=false;quiet_pairs_[i]=0;
                 quiet_deviations_[i].clear();last_quiet_ns_[i]=0;continue;}
+            if (!first_sample_ns_[i]) {
+                first_sample_ns_[i]=now_ns;
+                first_sample_count_[i]=now.lane[i].samples;
+            } else if (now_ns>first_sample_ns_[i] &&
+                       now.lane[i].samples>first_sample_count_[i]) {
+                const double rate=double(now.lane[i].samples-first_sample_count_[i])*
+                                  1000000000.0/double(now_ns-first_sample_ns_[i]);
+                quiet_stats_.sampled_requests_per_s=std::max(quiet_stats_.sampled_requests_per_s,rate);
+            }
+            const double latency=double(d.time_ns)/double(d.samples);
+            if (valid_last_[i]) {
+                quiet_stats_.quiet_delta_ns.add(std::abs(latency-last_latency_ns_[i]));
+                quiet_stats_.window_samples.add(double(d.samples));
+                ++quiet_stats_.quiet_comparisons;
+            }
+            last_latency_ns_[i]=latency;
             if(valid_last_[i]) {
                 const double fractional=std::abs(next/last_rate_[i]-1.0);
                 if(std::isfinite(fractional)) {

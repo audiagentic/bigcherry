@@ -551,9 +551,9 @@ int main(int argc, char** argv) {
          * the lanes, so it is destroyed after they have published the stop. */
         QueueWarm warm;
         if (!warm.start(h, cfg.power_save && cfg.queue_warm)) return 1;
-        r3::policy::LaneServiceSource lane_service_signal; // process-private, helper 0 only read
+        r3::policy::LaneServiceSource lane_service_signal; // process-private sampled service data for this helper
         Lanes lanes(h, map, dev_map, *gpu, lane_classes, cfg, lanes_served, combine);
-        if(helper_index==0 && cfg.policy.enabled && cfg.policy.effect_gate)
+        if(cfg.policy.enabled)
             lanes.set_service_signal(&lane_service_signal);
         if (!lanes.start()) return 1;
         struct EpochClock final : r3::epoch::Clock {
@@ -581,6 +581,14 @@ int main(int argc, char** argv) {
         r3::epoch::EpochCycle epoch_cycle(
             map, helper_index, epoch_clock, std::chrono::seconds{cfg.epoch_cycle_s},
             {}, &migration);
+        if (cfg.policy.enabled)
+            epoch_cycle.set_lane_service_probe([&](uint64_t* service_ns) {
+                if (!service_ns) return false;
+                r3::policy::ServiceSnapshot snapshot{};
+                if (!lane_service_signal.snapshot(&snapshot)) return false;
+                *service_ns=snapshot.lane[1].time_ns;
+                return true;
+            });
         std::unique_ptr<r3::forced::Driver> forced;
         if (helper_index==0 && cfg.force_enabled) {
             if (cfg.force_schedule.count()>UINT32_MAX-bootstrap_control.active_epoch) {

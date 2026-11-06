@@ -149,11 +149,49 @@ inline double marginal_relative_error(const std::vector<double>& counts, size_t 
     return relative_share_error(sorted[k - 1], total);
 }
 
+// Tail-share evidence is taken from consecutive accepted heat windows with an
+// unchanged owner generation, and from plans that actually commit.
+struct TailSamples {
+    Series noise_ppm{256}, gain_ppm{64};
+    uint64_t owner_digest=0;
+    double last_share=0;
+    void observe(uint64_t digest,double baseline,bool no_move) {
+        if (!digest || !std::isfinite(baseline) || baseline<=0) {
+            owner_digest=0;last_share=0;return;
+        }
+        if (owner_digest==digest && last_share>0 && no_move)
+            noise_ppm.add(std::abs(baseline/last_share-1.0)*1000000.0);
+        owner_digest=digest;
+        last_share=baseline;
+    }
+    void commit(double baseline,double predicted) {
+        if (std::isfinite(baseline) && std::isfinite(predicted) &&
+            baseline>predicted && predicted>=0 && baseline>0)
+            gain_ppm.add((baseline-predicted)/baseline*1000000.0);
+        owner_digest=0;last_share=0; // never compare heat across a move
+    }
+};
+
+// Independent counters from completed quiet windows (never copies of gate
+// configuration). The rate counts sampled lane requests, i.e. the same
+// observations the effect gate's window consumes.
+struct EffectSamples {
+    Series quiet_delta_ns{256}, window_samples{256};
+    uint64_t quiet_comparisons=0;
+    double sampled_requests_per_s=0;
+};
+
 // Everything the driver measures for the derivations, in one place so the evidence line and the tests read it alike.
 struct Measured {
     Series transaction_ns{64};   // wall time of committed transactions (start to finish of the journal)
     Series abort_ns{64};         // wall time from start to quiescent of aborted ones
     Series delta_gap_ns{256};    // gap between consecutive heat deltas the driver consumed
+    TailSamples tail;
+    EffectSamples effect;
+    uint64_t effect_required_quiet_windows=0; // convergence gate, never a measurement
+    Series tail_lane_service_ns_per_s{64}; // sampled tail-helper large-lane GPU service / wall second
+    Series lane_lost_ns{64}; // observed tail lane unavailable from quiesce ACK to reopen
+    Series slowest_helper_copy_bps{64}; // minimum achieved READY ACK copy rate across receiving helpers
     Throughput copy;             // bytes of experts moved by committed transactions over their wall time
     uint64_t drift_half_life_observations = 0, drift_horizon_observations = 0;
     double marginal_error = 0;

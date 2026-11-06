@@ -157,6 +157,7 @@ public:
         return FaultCode::NONE;
     }
 
+    uint64_t copy_bytes() const override { return uint64_t(gained_.size()) * stride_; }
     HelperCopy copy() override {
         if (!transaction_ || committed_ || candidate_slot_>1) return HelperCopy::FAILED;
         if (bank_built_) return HelperCopy::READY;

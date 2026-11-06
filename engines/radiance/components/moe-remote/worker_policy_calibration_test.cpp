@@ -24,6 +24,20 @@ int main() {
     m.drift_horizon_observations = drift.horizon_observations();
     m.drift_half_life_observations = drift.half_life_observations();
     m.delta_gap_ns.add(1000000000.0);
+    // Heat horizon alone is not convergence: a move and independent quiet
+    // timing series must also be observed.
+    assert(!calibration_settled(m));
+    m.transaction_ns.add(10.0);
+    m.tail.noise_ppm.add(100.0);
+    m.tail.gain_ppm.add(1000.0);
+    m.slowest_helper_copy_bps.add(1000000.0);
+    m.tail_lane_service_ns_per_s.add(200000000.0);
+    m.lane_lost_ns.add(100.0);
+    m.effect_required_quiet_windows=2;
+    m.effect.window_samples.add(2.0);
+    m.effect.quiet_delta_ns.add(5.0);
+    m.effect.quiet_comparisons=2;
+    m.effect.sampled_requests_per_s=20.0;
     assert(calibration_settled(m));
     assert(m.drift_capacity == 4 && m.drift_horizon_observations == 30);
     // A counter discontinuity clears the horizon; the same cadence must not
@@ -44,8 +58,18 @@ int main() {
     assert(row.at("measurements").at("txn_p95_ns") == 30);
     assert(row.at("measurements").at("hot_set_k") == 2);
     assert(row.at("measurements").at("marginal_error_ppm") == 25000);
-    assert(row.at("absent").at("copy_bytes_per_s").is_string());
+    assert(row.at("measurements").at("copy_bytes_per_s") == 1000000);
+    assert(!row.at("absent").contains("copy_bytes_per_s"));
+    assert(row.at("measurements").at("tail_lane_service_ns_per_s") == 200000000);
+    assert(row.at("measurements").at("lane_lost_ns") == 100);
+    assert(row.at("measurements").at("effect_noise_floor_ns") == 5);
+    assert(row.at("absent").at("noise_false_revert_rate_ppm").is_string());
+    Measured no_copy=m;
+    no_copy.slowest_helper_copy_bps=Series{64};
+    const auto absent_copy=calibration_record(no_copy,
+        {std::string(64, 'b'), "flashnext-4gpu", "balanced"}, "2026-11-06");
+    assert(absent_copy.at("absent").at("copy_bytes_per_s").is_string());
+    assert(!absent_copy.at("measurements").contains("copy_bytes_per_s"));
     assert(row.at("absent").at("abort_quiescent_ns") == "none observed");
-    assert(!row.at("measurements").contains("copy_bytes_per_s"));
     assert(row.at("absent").size() + row.at("measurements").size() == 20);
 }
