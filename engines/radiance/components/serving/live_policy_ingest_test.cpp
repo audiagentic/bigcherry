@@ -44,7 +44,13 @@ int main() {
         {"tail_lane_row_ns",22222222},
         {"lane_lost_ns",100000000}, {"effect_rows_per_s",64},
         {"effect_noise_max_ns",2500000},
-        {"effect_row_noise_ns",1550000}, {"abort_quiescent_ns",1500000000ull}
+        {"effect_row_noise_ns",1550000},
+        {"effect_window_noise_ladder",Json::array({
+            Json::array({uint64_t(8),uint64_t(80000)}),
+            Json::array({uint64_t(16),uint64_t(40000)}),
+            Json::array({uint64_t(32),uint64_t(16000)}),
+            Json::array({uint64_t(64),uint64_t(10000)})})},
+        {"abort_quiescent_ns",1500000000ull}
     };
     Json row = {{"plan_cache_key",key}, {"layout","flashnext-4gpu"},
                 {"objective","balanced"}, {"seeded","2026-11-05"},
@@ -65,11 +71,22 @@ int main() {
     assert(refused(log,dir/"obsolete-tail-noise.toml",key,
                    "flashnext-4gpu","balanced",store_key));
     log_line(log,row);
+    assert(rec->measurements.at("effect_window_noise_ladder").size()==4);
     assert(rec->measurements.at("heat_watermarked") == 0);
+    auto invalid_ladder=row;
+    invalid_ladder["measurements"]["effect_window_noise_ladder"]=Json::array({
+        Json::array({uint64_t(32),uint64_t(20000)}),
+        Json::array({uint64_t(16),uint64_t(10000)}),
+        Json::array({uint64_t(64),uint64_t(5000)})});
+    log_line(log,invalid_ladder);
+    assert(refused(log,dir/"bad-window-order.toml",key,"flashnext-4gpu","balanced",store_key));
+    log_line(log,row);
     const auto d = sv::derive_live_policy(*rec, sv::Calibration::standard(cache),
                                           {"", "flashnext-4gpu", "balanced"},
                                           2500000, {1000000000,1000000000});
-    assert(d.policy.at("cadence_ns") == 3220000000ull);
+    assert(d.policy.at("cadence_ns") == 2720000000ull+
+           d.policy.at("effect_min_quiet_windows").get<uint64_t>()*
+           ((d.policy.at("effect_window_samples").get<uint64_t>()*1000000000ull+63)/64));
     assert(d.policy.at("max_moves") == 174);
     assert(d.policy.at("min_residency_ns") == 83555555556ull);
     assert(d.policy.at("accept_unwatermarked_heat") == true);

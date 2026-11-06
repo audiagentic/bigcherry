@@ -85,7 +85,7 @@ worker_policy_measure.h (pure, no clock or thread): Series (bounded, exact neare
 
 | Setting | Derived from | Measured by |
 |---|---|---|
-| R3_MOE_POLICY_CADENCE_NS | at least the p95 transaction wall time plus one effect window, so a proposal never overlaps the previous one's settling | step 2a, 2e |
+| R3_MOE_POLICY_CADENCE_NS | p95 transaction wall time plus k measured effect windows, so quiet comparisons complete before the next poll | step 2a, 2e |
 | R3_MOE_POLICY_MAX_MOVED_BYTES | host-to-VRAM copy bytes per ns of the slowest helper (from past transitions) times the declared objective expressed as a number of effect windows a transaction may last | 2a, 2e |
 | R3_MOE_POLICY_MAX_MOVES | MAX_MOVED_BYTES divided by the expert stride: no separate setting | stride known to the driver |
 | R3_MOE_POLICY_MIN_RESIDENCY_NS | break-even: measured move cost (bytes over bandwidth plus the lane time lost) divided by the predicted saving per second (change of the tail's heat share times the tail lane's service rate) | 2a, 2e |
@@ -95,8 +95,8 @@ worker_policy_measure.h (pure, no clock or thread): Series (bounded, exact neare
 | R3_MOE_POLICY_MARGIN | the largest relative change of the tail heat share between consecutive windows with no move (the score's own noise floor) | 2d, 2e |
 | R3_MOE_POLICY_ABORT_COOLDOWN_NS | the measured abort-to-quiescent time of the epoch cycle | 2b |
 | R3_MOE_POLICY_LEARNED_ELIGIBILITY_TTL_NS | no time at all: a learned ineligibility is invalidated by any ledger, budget or layout change (an event) | driver |
-| R3_MOE_POLICY_EFFECT_WINDOW_SAMPLES | smallest n routed rows with measured per-row σ × sqrt(2/n) × Gaussian z(false-revert objective α) ≤ predicted effect per routed row; z is computed from α | signed per-row quiet deltas and routed-row window counts (2e), objective α |
-| R3_MOE_POLICY_EFFECT_MIN_QUIET_WINDOWS | smallest positive k with transaction_effect_windows × p(n)^k ≤ α for Gaussian noise-only crossing chance p(n), assuming independent comparisons | 2e, declared transaction windows and α |
+| R3_MOE_POLICY_EFFECT_WINDOW_SAMPLES | smallest measured tail window L with observed RMS fractional noise(L) × z(α) ≤ predicted E / tail_lane_row_ns | published-tail row-window noise ladder and objective α |
+| R3_MOE_POLICY_EFFECT_MIN_QUIET_WINDOWS | smallest positive k with transaction_effect_windows × p(n)^k ≤ α for measured-window noise-only crossing chance p(L), assuming independent comparisons (not independent rows) | 2e, declared transaction windows and α |
 | R3_MOE_POLICY_EFFECT_NOISE_MULTIPLIER | retained locked-v1 multiplier: observed max absolute quiet delta / observed median absolute quiet delta; conservative envelope, not an objective-specific quantile | 2e |
 | R3_MOE_POLICY_EFFECT_REVERT_TTL_NS | the heat drift half-life (a worse destination is blacklisted for as long as the workload stays the same) | 2d |
 
@@ -166,7 +166,7 @@ bash tools/lab/radiance/launch-flashnext-best.sh start \
 
 This is a *hardware lab procedure*, not part of the card-free verification suite. The launcher's mandatory measured plan check still applies. The helper uses the measurement hooks to wait for the retained hot-set drift horizon and accepted heat-delta observations. It then emits exactly one `RHP16_CALIBRATION_JSON {...}` line in helper0's log. Choose prompts whose observed routed-expert heat differs (e.g. filler versus documentation); distinct files alone cannot prove that model routing shifts. The launcher plays both workload orders (A then B, B then A), repeating complete cycles until the helper emits the marker. The launcher never accepts a marker before both orders complete. It runs `bc-serve calibration-ingest --from-log HELPER_LOG --calibration STORE --manifest LAB_MANIFEST`, stops its processes, and reports the store location at `$BC_WORK_ROOT/live-policy-calibration.toml`. Ingestion validates the exact v1 manifest key, layout, objective and lab profile, re-resolves the exact launch and checks its measured cached plan, then maps the verified v1 helper key to the distinct RSC03 plan-store key used by production. It locks the cache and writes with a temporary file and atomic rename. It refuses malformed, mismatched and duplicate records; to remeasure a plan, archive and deliberately remove its previous record rather than silently replacing evidence.
 
-The log route is required because v1 has **no manifest field for the calibration store path**. No v1 contract field or fingerprint is modified. Every known measured input appears in the TOML record. Unmeasurable inputs are recorded under `absent = { field = "reason" }` rather than filled with made-up values. The existing reader accepts and preserves partial records, but **production derives no live policy from one**; a genuinely complete set of empirical inputs is required. Step 5 now measures per-helper READY ACK copy rates, sampled large-lane service at RESERVED, quiesce-to-reopen downtime at CLEANED, quiet-window nanosecond noise, and committed tail-share gains. The follow-up removes `noise_false_revert_rate_ppm`, `effect_window_samples` and `effect_quiet_windows` from measured records: one was an objective, and two merely reflected configured gate values. An actual `effect_row_noise_ns` now drives objective-based derivation. The renamed `effect_noise_max_ns` states the observed maximum rather than claiming an objective-specific quantile. A record with all required observations can now derive policy; new hardware evidence is still pending. The existing policy-live-9 golden series tests the complete round-trip with its explicitly synthetic supplemental inputs; that test fixture is not production evidence.
+The log route is required because v1 has **no manifest field for the calibration store path**. No v1 contract field or fingerprint is modified. Every known measured input appears in the TOML record. Unmeasurable inputs are recorded under `absent = { field = "reason" }` rather than filled with made-up values. The existing reader accepts and preserves partial records, but **production derives no live policy from one**; a genuinely complete set of empirical inputs is required. Step 5 now measures per-helper READY ACK copy rates, sampled large-lane service at RESERVED, quiesce-to-reopen downtime at CLEANED, quiet-window nanosecond noise, and committed tail-share gains. The follow-up removes `noise_false_revert_rate_ppm`, `effect_window_samples` and `effect_quiet_windows` from measured records: one was an objective, and two merely reflected configured gate values. `effect_row_noise_ns` was added as a diagnostic; follow-up 7 derives the gate window from the measured tail-window ladder instead. The renamed `effect_noise_max_ns` states the observed maximum rather than claiming an objective-specific quantile. A record with all required observations can now derive policy; new hardware evidence is still pending. The existing policy-live-9 golden series tests the complete round-trip with its explicitly synthetic supplemental inputs; that test fixture is not production evidence.
 
 For manual ingestion after a lab run, use:
 
@@ -218,8 +218,8 @@ calibration gate's configured window. The strict record removes
 
 | Derived effect setting | Measured and declared inputs | Formula |
 |---|---|---|
-| `effect_window_samples` (n) | per-row noise sigma, E, declared false-revert fraction α | smallest n ≥ 1 with `sigma * sqrt(2/n) * z(α) <= E`, `erfc(z/sqrt(2)) = α` |
-| `effect_min_quiet_windows` (k) | E, sigma, derived n, declared opportunities T and α | smallest k ≥ 1 with `T * p^k <= α`; `p = erfc(E / (sqrt(2) * sigma * sqrt(2/n)))` |
+| `effect_window_samples` (n) | per-row noise sigma, E, declared false-revert fraction α | smallest n ≥ 1 with `noise_ppm(n) / 1e6 * z(α) <= E / tail_lane_row_ns`, `erfc(z/sqrt(2)) = α` |
+| `effect_min_quiet_windows` (k) | E, sigma, derived n, declared opportunities T and α | smallest k ≥ 1 with `T * p^k <= α`; `p = erfc((E/tail_lane_row_ns) / (sqrt(2) * noise_ppm(n)/1e6))` |
 | `effect_noise_multiplier_milli` | declared false-revert fraction alpha | `ceil(1000 * z(alpha))`, multiplying the effect gate's fractional quiet noise |
 
 The Gaussian and independent quiet-crossing assumptions, including the
@@ -300,7 +300,7 @@ settled record requires `tail_lane_row_ns` (ns/row) and
 request-unit field names. The predicted effect is
 `E = ceil(tail_lane_row_ns * tail_share_gain_ppm / 1e6)` ns/row;
 `n` is the smallest routed-row count satisfying
-`sigma_row * sqrt(2/n) * z(alpha) <= E` and
+`noise_ppm(n) * z(alpha)/1e6 <= E/tail_lane_row_ns` and
 `W = ceil(n * 1e9 / effect_rows_per_s)` controls cadence and quiet-gate
 recovery / TTLs. The calib5 request-unit measurements are **not**
 hardware measurements of these new row fields; CPU acceptance tests use
@@ -375,3 +375,42 @@ returns WORSE; seqlock and freshness rejection are tested. The calib5
 planner acceptance test (steady no move, shifted heat moves) remains.
 Hardware churn and quality require follow-up validation; no new GPU
 measurement is implied by these CPU tests.
+
+## Step 5 follow-up 7: size from correlated tail-window noise (2026-11-06)
+
+Calib8's published-tail effect gate judged ten windows: **0 kept,
+2 reverted, 8 undecided**, with a 236% consecutive-window noise floor
+despite an i.i.d.-derived 49,718-row window (~0.29 s). The request
+mix and tail service are bursty and correlated: estimating the
+variance of two window means as `sigma_row * sqrt(2/n)` is unsound.
+
+The existing CPU epoch heartbeat now samples the **same published tail**
+service slot as the production gate, without a GPU query, collector
+thread or shared-memory ABI change. A bounded ordered tick history
+produces a geometric ladder of routed-row window lengths and the
+observed RMS fractional differences of consecutive non-overlapping
+window means. The larger noise over the two lane classes is retained
+at each length. At least three differences per length and three
+lengths spanning one lab cadence are needed to settle; otherwise
+`effect_window_noise_ladder` is absent with a short-series reason.
+Old calibration records are missing a mandatory measurement and
+cannot silently derive.
+
+Let `E = ceil(tail_lane_row_ns * tail_share_gain_ppm / 1e6)`,
+`f = E/tail_lane_row_ns`, and z(alpha) be the declared
+two-sided Gaussian objective quantile. Production takes the
+**smallest measured** L with `z(alpha) * noise_ppm(L)/1e6 <= f`;
+k uses the selected measured noise and the declared T and alpha.
+For `W = ceil(L * 1e9 / effect_rows_per_s)`, the policy chooses
+`cadence_ns = txn_p95_ns + k * W`, enlarging cadence and all
+dependent timeouts when a longer observed window is needed.
+No unmeasured length is extrapolated; if no rung resolves the
+predicted effect, production fails closed pending more calibration
+evidence instead of shortening the gate window.
+
+Card-free tests include seeded AR(1) and i.i.d. series (the former
+demonstrates i.i.d. undersizing, the latter agreement), a KEPT 10%
+tail improvement and UNDECIDED unchanged tail, insufficient and
+invalid ladders, unresolvable effects, cadence expansion, and
+the existing calib5-numbers heat-shift planner acceptance test.
+No hardware remeasurement is claimed.

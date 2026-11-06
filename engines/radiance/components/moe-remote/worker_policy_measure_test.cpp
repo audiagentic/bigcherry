@@ -1,6 +1,10 @@
 #include "worker_policy_measure.h"
 #include "worker_policy_effect.h"
 #include <cmath>
+#include <cassert>
+#ifdef NDEBUG
+#error "assert-based test built with NDEBUG"
+#endif
 #include <cstdio>
 #include <cstdlib>
 #include <vector>
@@ -175,6 +179,83 @@ static void test_effect_variable_windows() {
           "normalizer uses both actual adjacent n values, not configured n");
 }
 
+// Same published tail counter stream, but two different temporal structures:
+// i.i.d. per-row jitter and AR(1) correlation across routed rows. A Gaussian
+// i.i.d. window estimate is valid for the first and badly undersizes the
+// second; the empirical ladder retains correlations and burst boundaries.
+static void test_measured_window_noise_ladder() {
+    constexpr uint64_t rows_per_tick=1;
+    constexpr double z=2.576, effect=0.10;
+    auto measure=[&](bool correlated) {
+        WindowNoiseTracker tracker;
+        std::array<WindowNoiseTracker::Counts,2> now{};
+        tracker.add(now);
+        Series sigma(16384);
+        uint32_t seed=0x1234abcd;
+        double state=0;
+        for(unsigned i=0;i<16384;++i) {
+            seed=1664525u*seed+1013904223u;
+            const double u=double(seed >> 8)/double(0xffffffu)*2.0-1.0;
+            if(correlated)state=0.8*state+0.5*u;
+            else state=u;
+            const double mean=1000000.0*(1.0+(correlated?0.32:0.27)*state);
+            assert(mean>0);
+            sigma.add(mean/1000000.0);
+            now[1].samples++;
+            now[1].rows+=rows_per_tick;
+            now[1].time_ns+=uint64_t(std::llround(mean*rows_per_tick));
+            tracker.add(now);
+        }
+        const auto ladder=tracker.ladder();
+        assert(ladder.size()>=5);
+        const uint64_t iid_n=uint64_t(std::ceil(2*std::pow(sigma.stddev()*z/effect,2)));
+        uint64_t selected=0;
+        for(const auto& point:ladder) {
+            assert(point.comparisons>=3);
+            if(!selected && double(point.noise_ppm)*z<=effect*1000000.0)
+                selected=point.rows;
+        }
+        assert(selected);
+        return std::pair<uint64_t,uint64_t>{iid_n,selected};
+    };
+    const auto correlated=measure(true);
+    const auto independent=measure(false);
+    assert(correlated.second > correlated.first*4); // i.i.d. makes the gate unresolvable
+    assert(independent.second >= independent.first/2 &&
+           independent.second <= independent.first*2); // agrees for i.i.d. rows
+
+    auto verdict=[&](uint64_t window, double quiet_fraction, double after_ratio) {
+        EffectGate gate({window,2,z});
+        ServiceSnapshot snapshot{};
+        gate.quiet(snapshot,1);
+        for(unsigned i=0;i<3;++i) {
+            auto& lane=snapshot.lane[1];
+            lane.rows+=window;lane.samples+=window;
+            const double rate=1000.0*(1.0+(i%2?quiet_fraction:0.0));
+            lane.time_ns+=uint64_t(std::llround(double(window)*rate));
+            gate.quiet(snapshot,2+i);
+        }
+        assert(gate.ready(4,100));
+        assert(gate.begin(4,100));
+        gate.committed(snapshot);
+        snapshot.lane[1].rows+=window;
+        snapshot.lane[1].samples+=window;
+        snapshot.lane[1].time_ns+=uint64_t(std::llround(double(window)*1000.0*after_ratio));
+        return gate.judge(snapshot);
+    };
+    assert(verdict(correlated.second,0.01,0.90)==EffectVerdict::KEPT);
+    assert(verdict(correlated.second,0.01,1.00)==EffectVerdict::UNDECIDED);
+    assert(verdict(correlated.first,0.06,0.90)==EffectVerdict::UNDECIDED);
+    WindowNoiseTracker empty;
+    std::array<WindowNoiseTracker::Counts,2> counter{};
+    empty.add(counter);
+    counter[1].rows=1;counter[1].samples=1;counter[1].time_ns=1000;
+    empty.add(counter);
+    assert(empty.ladder().empty()); // never certify an incomplete ladder
+    empty.reset();
+    assert(empty.ladder().empty());
+}
+
 int main() {
     test_series();
     test_throughput();
@@ -186,5 +267,6 @@ int main() {
     test_tail_series();
     test_effect_quiet_series();
     test_effect_variable_windows();
+    test_measured_window_noise_ladder();
     std::puts("r3_policy_measure_test: ok");
 }

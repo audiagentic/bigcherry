@@ -27,7 +27,8 @@ partial records are preserved but cannot derive a production live policy.
 | lane_lost_ns | Observed quiesce-to-reopen downtime (zero permitted) |
 | effect_rows_per_s | Observed sampled-lane routed rows per wall second |
 | effect_noise_max_ns | Maximum absolute quiet-window difference; **not** a statistical quantile |
-| effect_row_noise_ns | Per-routed-row service-time dispersion σ from signed quiet-window deltas |
+| effect_row_noise_ns | Diagnostic per-row dispersion σ (not used to size a correlated window) |
+| effect_window_noise_ladder | Array of [routed rows, RMS adjacent-window fractional difference in ppm], from the continuously published tail lane; at least three measured lengths spanning a lab cadence |
 | abort_quiescent_ns | Optional abort-to-quiescent p95, ns |
 
 The helper accumulates consecutive quiet-window per-row means and their actual routed-row
@@ -59,21 +60,35 @@ snapshot interval**. E is thus a predicted service-time change **per routed row*
 not a fraction of a wall-second and not an observed post-move improvement.
 Neither factor depends on the configured quiet-window size.
 
-The derived effect window is the smallest positive integer n with
-`σ * sqrt(2/n) * z(α) <= E`. At this n the Gaussian noise-only
-crossing probability is
-`p = erfc(E / (sqrt(2) * σ * sqrt(2/n)))`.
-The derived quiet count is the smallest positive integer k with
-`T * p^k <= α`, applying a union bound over T transaction-effect
-opportunities and modelling consecutive quiet crossings as independent.
-Adjacent quiet differences share a window, so this is an **unverified**
-Gaussian/independent-crossing model, not measured false-reversion outcomes.
+The helper retains a bounded CPU-epoch-tick history of the same
+published tail helper service counters that the effect gate judges. For
+geometrically increasing routed-row lengths L, starting at the largest
+single observed tick and continuing only while at least four disjoint
+windows fit, it computes RMS fractional differences between consecutive
+non-overlapping window means. At least three differences per length
+are required; the worse measured lane class sets each point. It emits
+`effect_window_noise_ladder = [[L, noise_ppm], ...]` with at least three
+lengths spanning one lab cadence. Otherwise the ladder is absent
+with a named short-series reason and cannot activate production.
 
-Let `W = ceil(n * 1e9 / effect_rows_per_s)`, where `n` and the v1
-`effect_window_samples` control count **routed rows**, not request completions.
-Both cadence and gate-recovery TTLs use this same measured row throughput.
+Let `f = E / tail_lane_row_ns` be the predicted fractional effect.
+The smallest *observed* L satisfying `noise_ppm(L)/1e6 * z(alpha) <= f`
+sets `effect_window_samples`. At that L,
+`p = erfc(f / (sqrt(2) * noise_ppm(L)/1e6))` (p=0 if noise=0), and
+the minimum positive k satisfies `T * p^k <= alpha`. Gaussian window
+tails and independence of successive crossings remain assumptions;
+**routed rows are not assumed independent**. If no measured L resolves
+f, derivation fails with a request for more tail series rather than
+fitting or fabricating an unmeasured window.
 
-- cadence_ns = transaction p95 + W. The ONE-transaction byte allowance is
+Let `W = ceil(L * 1e9 / effect_rows_per_s)`; the legacy
+`effect_window_samples` control counts routed rows. Cadence is
+`txn_p95_ns + k * W`, growing to fit the chosen measured length and
+every required quiet comparison. The same derived cadence feeds
+heat-age, sample-count, eligibility and revert TTLs.
+
+- cadence_ns = transaction p95 + k * W, never capped to an earlier
+  shorter cadence. The ONE-transaction byte allowance is
   min(slowest helper budget, copy_bytes_per_s * transaction p95 / 1e9),
   not T times the window copy allowance; max_moves = floor(bytes / stride).
 - min_residency_ns = (committed transaction p95 + observed lane downtime) /
@@ -97,19 +112,20 @@ Both cadence and gate-recovery TTLs use this same measured row throughput.
 - effect_noise_multiplier_milli = ceil(1000 * z(alpha)). The effect gate
   already compares fractional rates against fractional observed quiet noise;
   dividing absolute service-time noise by E multiplied noise twice.
-  Both the quiet fraction and verdict compare ns per routed row, as do
-  the measured sigma and predicted E; variable request sizes would inflate
+  Both the quiet fraction and verdict compare ns per routed row, as does
+  the predicted E; the legacy measured sigma is diagnostic only; variable request sizes would inflate
   noise by mixing 27K-row prefills and short decodes if divided by requests.
 
 | Derived effect setting | Inputs | Rule |
 |---|---|---|
-| effect_window_samples (routed rows) | per-row σ, predicted E, declared α | minimum n with `σ sqrt(2/n) z(α) <= E` |
-| effect_min_quiet_windows | E, σ, derived n, declared T and α | minimum k with `T * p^k <= α` |
+| effect_window_samples (routed rows) | observed tail-window ladder, predicted fractional E / tail_lane_row_ns, declared α | smallest measured L with `noise_ppm(L)/1e6 * z(α) <= E / tail_lane_row_ns` |
+| effect_min_quiet_windows | selected window noise(L), predicted fractional effect, declared T and α | minimum k with `T * p^k <= α`, using the measured-window Gaussian crossing probability |
 | effect_noise_multiplier_milli | declared false-revert fraction alpha | `ceil(1000 * z(alpha))` |
 
-Equal-σ synthetic quiet-window series at configured widths 2 and 8
-derive the same n, k and multiplier. The observed maximum may differ
-with the calibration window, but is not used by the gate.
+Equivalent observed noise ladders from different configured gate
+windows derive the same n, k and multiplier. The legacy row-σ
+diagnostic and observed quiet-window maximum may differ, but neither
+determines the selected window length.
 
 Each emitted policy setting has `origin = derived` provenance. An uncalibrated
 locked-v1 plan omits the policy entirely, since v1 has no observe-only state.

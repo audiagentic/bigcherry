@@ -3,6 +3,8 @@
 // the driver feeds them at the moments it already observes (a transaction closing, a heat delta arriving) and reads
 // them for evidence. Nothing here chooses a number; a derivation consumes these.
 #include <algorithm>
+#include <array>
+#include <limits>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -181,6 +183,88 @@ struct EffectSamples {
     double row_noise_ns() const { return normalized_noise_ns.stddev(); }
 };
 
+// RMS fractional differences of adjacent, non-overlapping published tail
+// service windows. Preserves request bursts and serial correlation that
+// disappear if window noise is estimated from an i.i.d. per-row sigma.
+struct WindowNoisePoint {
+    uint64_t rows=0, noise_ppm=0, comparisons=0;
+};
+class WindowNoiseTracker {
+public:
+    struct Counts { uint64_t samples=0, rows=0, time_ns=0; };
+private:
+    struct Chunk { uint64_t rows=0, time_ns=0; };
+    static constexpr size_t kRetainedTicks=131072; // bounded CPU tick history
+    std::array<std::deque<Chunk>,2> intervals_{};
+    std::array<Counts,2> previous_{};
+    bool have_previous_=false;
+
+public:
+    // A missing/stale publication invalidates the continuity of the series.
+    void reset() {
+        for(auto& lane:intervals_)lane.clear();
+        have_previous_=false;
+    }
+    void add(const std::array<Counts,2>& now) {
+        if(!have_previous_) {previous_=now;have_previous_=true;return;}
+        for(size_t lane=0;lane<2;++lane) {
+            const auto& a=now[lane], b=previous_[lane];
+            if(a.rows<b.rows || a.time_ns<b.time_ns || a.samples<b.samples) {
+                reset();previous_=now;have_previous_=true;return;
+            }
+            const uint64_t rows=a.rows-b.rows, time=a.time_ns-b.time_ns;
+            if(!rows || !time)continue;
+            auto& q=intervals_[lane];
+            if(q.size()==kRetainedTicks)q.pop_front();
+            q.push_back({rows,time});
+
+        }
+        previous_=now;
+    }
+    std::vector<WindowNoisePoint> ladder() const {
+        std::vector<WindowNoisePoint> out;
+        uint64_t largest_tick_rows=0,total_rows=0;
+        for(const auto& q:intervals_) {
+            uint64_t rows=0;
+            for(const auto& x:q) {
+                largest_tick_rows=std::max(largest_tick_rows,x.rows);
+                if(UINT64_MAX-rows<x.rows) {rows=UINT64_MAX;break;}
+                rows+=x.rows;
+            }
+            total_rows=std::max(total_rows,rows);
+        }
+        // Four disjoint windows yield three comparisons. Never extrapolate
+        // noise beyond lengths actually observed in this bounded series.
+        for(uint64_t length=largest_tick_rows;length && length<=total_rows/4;) {
+            uint64_t max_noise=0, comparisons=0;
+            for(const auto& q:intervals_) {
+                uint64_t rows=0;
+                long double time=0, previous_rate=0, squares=0;
+                size_t count=0;
+                for(const auto& tick:q) {
+                    rows+=tick.rows;time+=tick.time_ns;
+                    if(rows<length)continue;
+                    const long double rate=time/rows;
+                    if(previous_rate>0) {
+                        const long double delta=rate/previous_rate-1.0L;
+                        squares+=delta*delta;++count;
+                    }
+                    previous_rate=rate;rows=0;time=0;
+                }
+                if(count<3)continue;
+                const long double ppm=std::ceil(std::sqrt(squares/count)*1000000.0L);
+                if(!std::isfinite(double(ppm)) || ppm>double((uint64_t(1)<<53)-1))continue;
+                max_noise=std::max(max_noise,uint64_t(ppm));
+                comparisons+=count;
+            }
+            if(comparisons>=3)out.push_back({length,max_noise,comparisons});
+            if(length>UINT64_MAX/2)break;
+            length*=2;
+        }
+        return out;
+    }
+};
+
 // Everything the driver measures for the derivations, in one place so the evidence line and the tests read it alike.
 struct Measured {
     Series transaction_ns{64};   // wall time of committed transactions (start to finish of the journal)
@@ -188,6 +272,8 @@ struct Measured {
     Series delta_gap_ns{256};    // gap between consecutive heat deltas the driver consumed
     TailSamples tail;
     EffectSamples effect;
+    std::vector<WindowNoisePoint> effect_window_noise_ladder;
+    uint64_t effect_cadence_ns=0; // lab policy cadence only sets the measurement coverage requirement
     uint64_t effect_required_quiet_windows=0; // convergence gate, never a measurement
     uint64_t accepted_heat_deltas=0; // only deltas successfully consumed by the planner
     bool accepted_unwatermarked_heat=false; // sticky across heat baseline resets

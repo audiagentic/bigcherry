@@ -66,31 +66,43 @@ double gaussian_z(double alpha) {
     }
     return high;
 }
-// Gaussian null model: sd(delta of two n-request means) = sigma*sqrt(2/n).
-// Choose the smallest n satisfying a two-sided noise-crossing objective;
-// across transaction-effect opportunities, require opportunities*p^k <= alpha.
-// Consecutive quiet crossings are modelled as independent, not verified trials.
-std::pair<uint64_t,uint64_t> derive_effect_gate(uint64_t sigma_ns, uint64_t delta_effect_ns,
-                                                uint64_t opportunities, double alpha) {
-    const double z = gaussian_z(alpha);
-    const double sigma = double(sigma_ns), effect = double(delta_effect_ns);
-    const double needed = 2.0 * std::pow(sigma*z/effect, 2.0);
-    if (!std::isfinite(needed) || needed > double(kMaxJsonInteger))
-        bad("effect_window_samples: cannot represent the effect-size-resolving window");
-    const uint64_t n = std::max<uint64_t>(1, uint64_t(std::ceil(needed)));
-    const double sd_delta = sigma * std::sqrt(2.0/double(n));
-    const double p = std::erfc(effect/(std::sqrt(2.0)*sd_delta));
-    if (!std::isfinite(p) || p >= 1.0)
-        bad("effect_min_quiet_windows: invalid Gaussian noise probability");
-    uint64_t quiet = 1;
-    long double all_quiet_p = p;
-    while (static_cast<long double>(opportunities) * all_quiet_p > alpha) {
-        if (quiet >= kMaxJsonInteger)
-            bad("effect_min_quiet_windows: required quiet count exceeds v1 range");
-        ++quiet;
-        all_quiet_p *= p;
+// Measured adjacent-window RMS fractional noise, from the published tail
+// lane itself. Correlated requests need not obey sigma_row * sqrt(2/n).
+// Only select lengths actually measured; there is no extrapolated i.i.d. cap.
+std::pair<uint64_t,uint64_t> derive_effect_gate(const Json& ladder,
+                                                uint64_t effect_ns,uint64_t row_mean_ns,
+                                                uint64_t opportunities,double alpha) {
+    const double z=gaussian_z(alpha);
+    if(!ladder.is_array() || ladder.size()<3)
+        bad("effect_window_noise_ladder: at least three observed lengths required");
+    const double effect_fraction=double(effect_ns)/double(row_mean_ns);
+    uint64_t previous=0,chosen=0,noise=0;
+    for(const auto& pair:ladder) {
+        if(!pair.is_array() || pair.size()!=2 ||
+           !pair[0].is_number_unsigned() || !pair[1].is_number_unsigned())
+            bad("effect_window_noise_ladder: expected [positive rows, nonnegative noise ppm]");
+        const uint64_t rows=pair[0].get<uint64_t>(), ppm=pair[1].get<uint64_t>();
+        if(!rows || rows<=previous || rows>kMaxJsonInteger || ppm>kMaxJsonInteger)
+            bad("effect_window_noise_ladder: lengths must increase and fit v1");
+        previous=rows;
+        if(!chosen && double(ppm)*1e-6*z<=effect_fraction) {chosen=rows;noise=ppm;}
     }
-    return {n, quiet};
+    if(!chosen)
+        bad("effect_window_noise_ladder: measured windows cannot resolve predicted tail effect; extend calibration series rather than shorten the window");
+    // The observed adjacent-window difference supplies the null tail
+    // probability. k uses the declared transaction opportunities; no
+    // independence assumption is made about *rows* within the window.
+    const double p=noise ? std::erfc(effect_fraction/(std::sqrt(2.0)*double(noise)*1e-6)) : 0.0;
+    if(!std::isfinite(p) || p>=1.0)
+        bad("effect_min_quiet_windows: invalid measured window probability");
+    uint64_t quiet=1;
+    long double all_quiet_p=p;
+    while(static_cast<long double>(opportunities)*all_quiet_p>alpha) {
+        if(quiet>=kMaxJsonInteger)
+            bad("effect_min_quiet_windows: required quiet count exceeds v1 range");
+        ++quiet;all_quiet_p*=p;
+    }
+    return {chosen,quiet};
 }
 } // namespace
 
@@ -115,14 +127,14 @@ std::optional<LivePolicyRecord> read_live_policy_record(const std::filesystem::p
         "heat_gap_max_ns", "heat_watermarked", "hot_set_k", "marginal_error_ppm", "marginal_observations",
         "drift_half_life_observations", "observation_rate_per_s", "tail_share_gain_ppm",
         "tail_lane_service_ns_per_s", "tail_lane_row_ns", "lane_lost_ns", "effect_rows_per_s",
-        "effect_noise_max_ns", "effect_row_noise_ns", "abort_quiescent_ns", "absent"
+        "effect_noise_max_ns", "effect_row_noise_ns", "effect_window_noise_ladder", "abort_quiescent_ns", "absent"
     };
     const std::set<std::string> names = {
         "txn_p50_ns", "txn_p95_ns", "copy_bytes_per_s", "heat_gap_max_ns", "heat_watermarked",
         "hot_set_k", "marginal_error_ppm", "marginal_observations", "drift_half_life_observations",
         "observation_rate_per_s", "tail_share_gain_ppm", "tail_lane_service_ns_per_s",
         "tail_lane_row_ns", "lane_lost_ns", "effect_rows_per_s", "effect_noise_max_ns",
-        "effect_row_noise_ns"
+        "effect_row_noise_ns", "effect_window_noise_ladder"
     };
     std::set<std::string> seen;
     std::optional<LivePolicyRecord> found;
@@ -159,9 +171,31 @@ std::optional<LivePolicyRecord> read_live_policy_record(const std::filesystem::p
             }
         }
         for (const auto& n : names) {
+            if(n=="effect_window_noise_ladder") continue;
             if (t->contains(n)) row.measurements[n] = positive(*t, n.c_str(), where, n == "lane_lost_ns" || n == "heat_watermarked");
             else if (!row.absent.contains(n)) bad(where + ": " + n + " missing without absent reason");
         }
+        if(const auto* node=t->get("effect_window_noise_ladder")) {
+            const auto* ladder=node->as_array();
+            if(!ladder || ladder->size()<3)
+                bad(where + ": effect_window_noise_ladder requires at least three lengths");
+            Json pairs=Json::array();
+            uint64_t last=0;
+            for(const auto& item:*ladder) {
+                const auto* pair=item.as_array();
+                if(!pair || pair->size()!=2 || !(*pair)[0].as_integer() || !(*pair)[1].as_integer())
+                    bad(where + ": invalid effect_window_noise_ladder pair");
+                const auto rows=(*pair)[0].as_integer()->get();
+                const auto noise=(*pair)[1].as_integer()->get();
+                if(rows<=0 || uint64_t(rows)<=last || uint64_t(rows)>kMaxJsonInteger ||
+                   noise<0 || uint64_t(noise)>kMaxJsonInteger)
+                    bad(where + ": invalid effect_window_noise_ladder rows/noise");
+                last=uint64_t(rows);
+                pairs.push_back(Json::array({last,uint64_t(noise)}));
+            }
+            row.measurements["effect_window_noise_ladder"]=std::move(pairs);
+        } else if(!row.absent.contains("effect_window_noise_ladder"))
+            bad(where + ": effect_window_noise_ladder missing without absent reason");
         if (t->contains("abort_quiescent_ns"))
             row.measurements["abort_quiescent_ns"] = positive(*t, "abort_quiescent_ns", where);
         // Legacy complete records legitimately omit the optional abort duration.
@@ -188,7 +222,7 @@ bool live_policy_record_complete(const LivePolicyRecord& record) {
         "hot_set_k", "marginal_error_ppm", "marginal_observations", "drift_half_life_observations",
         "observation_rate_per_s", "tail_share_gain_ppm", "tail_lane_service_ns_per_s",
         "tail_lane_row_ns", "lane_lost_ns", "effect_rows_per_s", "effect_noise_max_ns",
-        "effect_row_noise_ns"
+        "effect_row_noise_ns", "effect_window_noise_ladder"
     })
         if (!record.measurements.contains(name)) return false;
     return true; // no abort seen is allowed, with the existing measured-cadence fallback
@@ -221,11 +255,15 @@ DerivedLivePolicy derive_live_policy(const LivePolicyRecord& record, const Calib
         Wide(n("tail_lane_row_ns")) * n("tail_share_gain_ppm"), kMillion,
         "delta_effect_ns");
     const auto [effect_samples, effect_quiet] = derive_effect_gate(
-        n("effect_row_noise_ns"), delta_effect_ns, uint64_t(windows),
+        m.at("effect_window_noise_ladder"), delta_effect_ns, n("tail_lane_row_ns"),
+        uint64_t(windows),
         double(false_rate) / double(kMillion));
     const uint64_t window_ns = div_ceil(Wide(effect_samples) * kSecond,
                                         n("effect_rows_per_s"), "effect window");
-    const uint64_t cadence = div_ceil(Wide(n("txn_p95_ns")) + window_ns, 1, "cadence_ns");
+    // A complete assessment needs k pre/post quiet comparisons. Never
+    // truncate a measured length to squeeze it into the old cadence.
+    const uint64_t cadence = div_ceil(Wide(n("txn_p95_ns")) +
+                                     Wide(effect_quiet)*window_ns, 1, "cadence_ns");
     const uint64_t slow_budget = *std::min_element(budgets.begin(), budgets.end());
     if (!slow_budget || slow_budget < stride) bad("a helper budget cannot hold one expert stride");
     // The byte cap is per proposed transaction, not the sum of T later
@@ -295,7 +333,7 @@ DerivedLivePolicy derive_live_policy(const LivePolicyRecord& record, const Calib
             "calibration measured the production heat feed: no step watermark; RHP02 replaces it" :
             "watermarked feed",
         Json::array({"/spec/plan/engine_memory/cache_key"}));
-    set("cadence_ns", cadence, "txn_p95_ns + measured effect-window duration (routed rows / rows per wall second)", layout);
+    set("cadence_ns", cadence, "cadence increased as necessary: txn_p95_ns + k x measured tail window duration; no window truncation", layout);
     set("max_moved_bytes", move_bytes, "slowest copy bytes/s x measured transaction p95, capped by helper budgets",
         Json::array({"/spec/processes/helpers", "/spec/calibration", "/spec/plan/engine_memory/cache_key"}));
     set("max_moves", max_moves, "max_moved_bytes / device-layout expert stride (bounded by uint32)", budgets_input);
@@ -308,7 +346,7 @@ DerivedLivePolicy derive_live_policy(const LivePolicyRecord& record, const Calib
     set("learned_eligibility_ttl_ns", cache_ttl,
         "one cadence plus observed gap and quiet-gate recovery; event invalidation requires v2", layout);
     set("effect_window_samples", effect_samples,
-        "smallest n routed rows with measured per-row sigma * sqrt(2/n) * Gaussian z(false-revert objective) <= predicted committed-move effect per row; effect_window_samples counts rows",
+        "smallest observed tail-window row length with measured adjacent-window fractional RMS noise x Gaussian z(false-revert objective) <= predicted committed-move fractional saving; correlated rows retained, no i.i.d. extrapolation",
         Json::array({"/spec/calibration", "/spec/plan/engine_memory/cache_key"}));
     set("effect_min_quiet_windows", effect_quiet,
         "smallest consecutive quiet count with transaction_effect_windows * Gaussian noise-crossing probability^count <= declared false-revert objective",

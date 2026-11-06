@@ -1036,10 +1036,14 @@ void manifest_writer_step(Fixture& t) {
             "tail_share_gain_ppm = 45000\ntail_lane_service_ns_per_s = 750000000\ntail_lane_row_ns = 22222222\n"
             "lane_lost_ns = 100000000\neffect_rows_per_s = 64\n"
             "effect_noise_max_ns = 2500000\n"
-            "effect_row_noise_ns = 1550000\nabort_quiescent_ns = 1500000000\n");
+            "effect_row_noise_ns = 1550000\n"
+            "effect_window_noise_ladder = [[8, 80000], [16, 40000], [32, 16000], [64, 10000]]\n"
+            "abort_quiescent_ns = 1500000000\n");
         const auto with_calibration = sv::build_manifest(calibrated);
         const auto& lp = with_calibration.document.at("spec").at("handoff").at("placement").at("live_policy");
-        assert(lp.at("cadence_ns") == 3220000000ull);
+        assert(lp.at("cadence_ns") == 2720000000ull+
+            lp.at("effect_min_quiet_windows").get<uint64_t>()*
+            ((lp.at("effect_window_samples").get<uint64_t>()*1000000000ull+63)/64));
         assert(lp.at("accept_unwatermarked_heat") == true);
         assert(lp.at("max_moved_bytes") == 435200000ull && lp.at("margin_ppm") == 23000);
         assert(lp.at("half_life_observations_milli") == 59000000000ull);
@@ -1078,7 +1082,13 @@ void manifest_writer_step(Fixture& t) {
             {"tail_share_gain_ppm",45000}, {"tail_lane_service_ns_per_s",750000000},
             {"lane_lost_ns",100000000}, {"effect_rows_per_s",64},
             {"tail_lane_row_ns",22222222}, {"effect_noise_max_ns",2500000},
-            {"effect_row_noise_ns",1550000}, {"abort_quiescent_ns",1500000000ull}};
+            {"effect_row_noise_ns",1550000},
+            {"effect_window_noise_ladder",Json::array({
+                Json::array({uint64_t(8),uint64_t(80000)}),
+                Json::array({uint64_t(16),uint64_t(40000)}),
+                Json::array({uint64_t(32),uint64_t(16000)}),
+                Json::array({uint64_t(64),uint64_t(10000)})})},
+            {"abort_quiescent_ns",1500000000ull}};
         const Json row = {{"plan_cache_key", bc::serving::v1::plan_cache_key(crm)}, {"layout", crm.spec.intent.layout},
             {"objective", std::string(bc::serving::v1::kObjectiveNames[static_cast<size_t>(crm.spec.intent.service.objective)])},
             {"seeded","2026-11-06"}, {"evidence","calibration-run ingest test"},

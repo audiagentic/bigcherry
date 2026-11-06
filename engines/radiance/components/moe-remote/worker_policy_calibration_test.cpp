@@ -46,6 +46,14 @@ int main() {
     m.effect.quiet_delta_ns.add(5.0);
     m.effect.quiet_comparisons=2;
     m.effect.sampled_rows_per_s=20.0;
+    m.effect_cadence_ns=1000000000ull;
+    // A too-short published series must not certify calibration.
+    m.effect_window_noise_ladder={{5,80000,3},{10,40000,3}};
+    assert(!calibration_settled(m));
+    const auto short_row=calibration_record(m,
+        {std::string(64,'b'),"flashnext-4gpu","balanced"},"2026-11-06");
+    assert(short_row.at("absent").at("effect_window_noise_ladder").is_string());
+    m.effect_window_noise_ladder.push_back({20,20000,3});
     assert(calibration_settled(m));
     assert(m.drift_capacity == 4 && m.drift_horizon_observations == 30);
     // A counter discontinuity clears the horizon; the same cadence must not
@@ -93,6 +101,8 @@ int main() {
     assert(row.at("measurements").at("lane_lost_ns") == 100);
     assert(row.at("measurements").at("effect_row_noise_ns") == 10);
     assert(row.at("measurements").at("effect_noise_max_ns") == 5);
+    assert(row.at("measurements").at("effect_window_noise_ladder").size()==3);
+    assert(row.at("measurements").at("effect_window_noise_ladder")[2][0]==20);
     for (const char* removed : {"effect_window_samples", "effect_quiet_windows",
                                 "noise_false_revert_rate_ppm", "effect_noise_quantile_ns",
                                 "effect_noise_floor_ns"}) {
@@ -106,5 +116,5 @@ int main() {
     assert(absent_copy.at("absent").at("copy_bytes_per_s").is_string());
     assert(!absent_copy.at("measurements").contains("copy_bytes_per_s"));
     assert(row.at("absent").at("abort_quiescent_ns") == "none observed");
-    assert(row.at("absent").size() + row.at("measurements").size() == 18);
+    assert(row.at("absent").size() + row.at("measurements").size() == 19);
 }

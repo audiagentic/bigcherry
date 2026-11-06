@@ -57,6 +57,8 @@ private:
     const r3::epoch::Clock& clock_;
     ServiceSource* service_=nullptr;
     EffectGate effect_;
+    WindowNoiseTracker window_noise_; // only epoch heartbeat reads the published tail stream
+    uint64_t next_window_noise_check_ns_=0;
     OwnerSnapshot revert_before_{},revert_after_{};
     bool revert_requested_=false,reverting_=false,revert_failed_=false;
     std::unique_ptr<HeatSource> source_;
@@ -284,6 +286,7 @@ public:
         // capture; no constructor accesses shared memory.
         reset_drift();
         measured_.effect_required_quiet_windows=settings_.effect_gate?settings_.effect_min_quiet_windows:0;
+        measured_.effect_cadence_ns=settings_.cadence_ns;
     }
     ~Driver() { stop(); }
     // The hot set the drift is measured on: as many experts as the tail helper holds.
@@ -327,6 +330,24 @@ public:
     const Evidence& evidence() const {return evidence_;}
     void heartbeat(uint64_t now_ns) {
         if (settings_.enabled && started_ns_ && calibration_identity_ && !calibration_printed_) {
+            // Sample the SAME published tail slots used by EffectGate, at the
+            // existing CPU epoch heartbeat (~2 ms), not at the much slower
+            // proposal cadence. No GPU query or additional collector thread.
+            ServiceSnapshot tail{};
+            if(service_ && service_->snapshot(&tail)) {
+                std::array<WindowNoiseTracker::Counts,2> counters{};
+                for(unsigned i=0;i<2;++i)
+                    counters[i]={tail.lane[i].samples,tail.lane[i].rows,tail.lane[i].time_ns};
+                window_noise_.add(counters);
+            } else window_noise_.reset(); // never bridge a missing/stale slot
+            if(!next_window_noise_check_ns_ || now_ns>=next_window_noise_check_ns_) {
+                auto ladder=window_noise_.ladder();
+                {
+                    std::lock_guard<std::mutex> guard(measure_lock_);
+                    measured_.effect_window_noise_ladder=std::move(ladder);
+                }
+                next_window_noise_check_ns_=add_saturating(now_ns,settings_.cadence_ns);
+            }
             const Measured m=measured();
             if (calibration_settled(m)) {
                 std::time_t now=std::time(nullptr);

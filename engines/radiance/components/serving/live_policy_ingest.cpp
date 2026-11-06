@@ -25,7 +25,7 @@ const std::set<std::string> kMeasurements = {
     "drift_half_life_observations", "observation_rate_per_s",
     "tail_share_gain_ppm", "tail_lane_service_ns_per_s",
     "tail_lane_row_ns", "lane_lost_ns", "effect_rows_per_s",
-    "effect_noise_max_ns", "effect_row_noise_ns", "abort_quiescent_ns"
+    "effect_noise_max_ns", "effect_row_noise_ns", "effect_window_noise_ladder", "abort_quiescent_ns"
 };
 [[noreturn]] void invalid(const std::string& message) {
     throw std::runtime_error("calibration-ingest: " + message);
@@ -55,6 +55,21 @@ void check_record(const Json& row, const std::string& key,
     if (!row.at("measurements").is_object() || !row.at("absent").is_object())
         invalid("measurements and absent must be objects");
     for (auto it = row.at("measurements").begin(); it != row.at("measurements").end(); ++it) {
+        if(it.key()=="effect_window_noise_ladder") {
+            const Json& ladder=it.value();
+            if(!ladder.is_array() || ladder.size()<3)
+                invalid("invalid measured window noise ladder");
+            uint64_t previous=0;
+            for(const auto& pair:ladder) {
+                if(!pair.is_array() || pair.size()!=2 ||
+                   !pair[0].is_number_unsigned() || !pair[1].is_number_unsigned() ||
+                   pair[0].get<uint64_t>()<=previous ||
+                   pair[0].get<uint64_t>()>kMaxExact || pair[1].get<uint64_t>()>kMaxExact)
+                    invalid("invalid measured window noise ladder pair");
+                previous=pair[0].get<uint64_t>();
+            }
+            continue;
+        }
         if (!kMeasurements.count(it.key()) || !it.value().is_number_integer() ||
             (it.value().is_number_integer() && !it.value().is_number_unsigned() &&
              it.value().get<int64_t>() < 0) ||
@@ -164,7 +179,7 @@ void ingest_live_policy_record(const fs::path& log, const fs::path& cache,
                 out << field << " = " << toml_string(record.at(field)) << '\n';
             for (auto it = record.at("measurements").begin();
                  it != record.at("measurements").end(); ++it)
-                out << it.key() << " = " << it.value().get<uint64_t>() << '\n';
+                out << it.key() << " = " << it.value().dump() << '\n';
             out << "absent = {";
             bool first = true;
             for (auto it = record.at("absent").begin(); it != record.at("absent").end(); ++it) {

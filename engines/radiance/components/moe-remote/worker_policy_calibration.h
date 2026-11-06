@@ -32,7 +32,10 @@ inline bool calibration_settled(const Measured& m) {
            m.effect.normalized_noise_ns.count() >= 2 &&
            m.effect.row_noise_ns() > 0 &&
            m.effect.quiet_delta_ns.max() > 0 &&
-           m.effect.sampled_rows_per_s > 0;
+           m.effect.sampled_rows_per_s > 0 &&
+           m.effect_window_noise_ladder.size() >= 3 &&
+           double(m.effect_window_noise_ladder.back().rows) >=
+               m.effect.sampled_rows_per_s * double(m.effect_cadence_ns) / 1000000000.0;
 }
 inline nlohmann::json calibration_record(const Measured& m,
                                           const CalibrationIdentity& identity,
@@ -85,6 +88,15 @@ inline nlohmann::json calibration_record(const Measured& m,
            "no positive observed maximum quiet-window service-time difference");
     sample("effect_row_noise_ns", m.effect.row_noise_ns(),
            "no variable signed quiet-window deltas for per-row dispersion");
+    if(m.effect_window_noise_ladder.size() >= 3 &&
+       double(m.effect_window_noise_ladder.back().rows) >=
+           m.effect.sampled_rows_per_s * double(m.effect_cadence_ns) / 1000000000.0) {
+        Json ladder=Json::array();
+        for(const auto& point:m.effect_window_noise_ladder)
+            ladder.push_back(Json::array({point.rows,point.noise_ppm}));
+        measured["effect_window_noise_ladder"]=std::move(ladder);
+    } else no_hook("effect_window_noise_ladder",
+                  "published tail service too short to measure adjacent windows through one policy cadence");
     sample("abort_quiescent_ns", m.abort_ns.quantile(0.95), "none observed");
     return Json{{"plan_cache_key", identity.plan_cache_key},
                 {"layout", identity.layout}, {"objective", identity.objective},
