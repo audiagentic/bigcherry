@@ -1,0 +1,935 @@
+diff --git a/engines/radiance/components/moe-remote/combine_f16.h b/engines/radiance/components/moe-remote/combine_f16.h
+index ac43e6251..a3e194904 100644
+--- a/engines/radiance/components/moe-remote/combine_f16.h
++++ b/engines/radiance/components/moe-remote/combine_f16.h
+@@ -33,11 +33,13 @@ inline float combine_bf16_to_f32(uint16_t v) { uint32_t u = (uint32_t)v << 16; f
+  * combine_f32_f16_rn. Checked once when the combine is enabled. */
+ inline bool combine_cpu_supported() { return __builtin_cpu_supports("avx2") && __builtin_cpu_supports("f16c"); }
+ 
+-/* One token's combined row: the fp32 sum of the present helper rows (mask bit 0: a, bit 1: b), written as fp16.
+- * True when some value is infinite or at least 65520 in magnitude (it would not fit fp16): the caller then marks the
+- * row for the engine's two-plane path. A NaN converts to a quiet NaN whose low mantissa bits are zero (bf16 inputs
+- * carry none), so it never equals kCombineFallback. */
+-__attribute__((target("avx2,f16c"))) inline bool combine_row_f16(const uint16_t* a, const uint16_t* b, uint8_t mask,
++/* One token's combined row: the fp32 sum of the present helper rows (mask bit k: src[k], each the helper's f32 partial),
++ * written as fp16. Helper 0's row
++ * is the starting value and the others are added in helper order, so two helpers give exactly what the two-row form did.
++ * True when some value is infinite or at least 65520 in magnitude (it would not fit fp16): the caller then marks the row
++ * for the engine's per-helper path. A NaN converts to the canonical quiet NaN (combine_f32_f16_rn) or the F16C quiet NaN, never
++ * kCombineFallback (checked by combine_f16_test). */
++__attribute__((target("avx2,f16c"))) inline bool combine_row_f16(const float* const* src, uint32_t nsrc, uint8_t mask,
+                                                                   uint16_t* out, uint32_t n) {
+     const __m256 limit = _mm256_set1_ps(65520.0f);
+     const __m256 abs_mask = _mm256_castsi256_ps(_mm256_set1_epi32(0x7fffffff));
+@@ -45,18 +47,17 @@ __attribute__((target("avx2,f16c"))) inline bool combine_row_f16(const uint16_t*
+     uint32_t c = 0;
+     for (; c + 8 <= n; c += 8) {
+         __m256 v = _mm256_setzero_ps();
+-        if (mask & 1u)
+-            v = _mm256_castsi256_ps(_mm256_slli_epi32(
+-                _mm256_cvtepu16_epi32(_mm_loadu_si128(reinterpret_cast<const __m128i*>(a + c))), 16));
+-        if (mask & 2u)
+-            v = _mm256_add_ps(v, _mm256_castsi256_ps(_mm256_slli_epi32(
+-                _mm256_cvtepu16_epi32(_mm_loadu_si128(reinterpret_cast<const __m128i*>(b + c))), 16)));
++        if (mask & 1u) v = _mm256_loadu_ps(src[0] + c);
++        for (uint32_t k = 1; k < nsrc; ++k)
++            if (mask & (1u << k)) v = _mm256_add_ps(v, _mm256_loadu_ps(src[k] + c));
+         over = _mm256_or_ps(over, _mm256_cmp_ps(_mm256_and_ps(v, abs_mask), limit, _CMP_GE_OQ));
+         _mm_storeu_si128(reinterpret_cast<__m128i*>(out + c), _mm256_cvtps_ph(v, _MM_FROUND_TO_NEAREST_INT));
+     }
+     bool overflow = _mm256_movemask_ps(over) != 0;
+     for (; c < n; ++c) {
+-        const float v = ((mask & 1u) ? combine_bf16_to_f32(a[c]) : 0.0f) + ((mask & 2u) ? combine_bf16_to_f32(b[c]) : 0.0f);
++        float v = (mask & 1u) ? src[0][c] : 0.0f;
++        for (uint32_t k = 1; k < nsrc; ++k)
++            if (mask & (1u << k)) v += src[k][c];
+         if (std::fabs(v) >= 65520.0f) overflow = true;
+         bool unused = false;
+         out[c] = combine_f32_f16_rn(v, &unused);
+diff --git a/engines/radiance/components/moe-remote/combine_f16_test.cpp b/engines/radiance/components/moe-remote/combine_f16_test.cpp
+index 6271e6851..dd8d9f02f 100644
+--- a/engines/radiance/components/moe-remote/combine_f16_test.cpp
++++ b/engines/radiance/components/moe-remote/combine_f16_test.cpp
+@@ -41,21 +41,32 @@ int main() {
+     // helper mask, a row length that is not a multiple of 8, and rows with and without a value past fp16 range
+     if (combine_cpu_supported()) {
+         const uint32_t n = 2048 + 5;
+-        uint16_t a[n], b[n], out[n];
+-        for (int trial = 0; trial < 200; ++trial) {
++        uint16_t a[n], b[n], c3[n], out[n];
++        float af[n], bf[n], cf[n];
++        const float* src[3] = {af, bf, cf};
++        for (int trial = 0; trial < 300; ++trial) {
+             for (uint32_t c = 0; c < n; ++c) {
+                 s = s * 1664525u + 1013904223u;
+                 a[c] = (uint16_t)(0x3800u + (s >> 20) % 0x0c00u) | (uint16_t)((s & 1u) << 15);  // |v| in ~[2^-15, 2^9)
+                 s = s * 1664525u + 1013904223u;
+                 b[c] = (uint16_t)(0x3800u + (s >> 20) % 0x0c00u) | (uint16_t)((s & 1u) << 15);
++                s = s * 1664525u + 1013904223u;
++                c3[c] = (uint16_t)(0x3800u + (s >> 20) % 0x0c00u) | (uint16_t)((s & 1u) << 15);
+             }
+             const bool big = trial % 4 == 3;
+             if (big) a[trial % n] = 0x4780u;  // 65536: past fp16 range
+-            const uint8_t mask = (uint8_t)(1 + trial % 3);
+-            const bool over = combine_row_f16(a, b, mask, out, n);
++            // two helpers (masks 1..3) as the two-row form had them, then three helpers (masks 1..7)
++            for (uint32_t c = 0; c < n; ++c) {   // the helpers' f32 partials (bf16-valued here, so the sums are the old ones)
++                af[c] = combine_bf16_to_f32(a[c]); bf[c] = combine_bf16_to_f32(b[c]); cf[c] = combine_bf16_to_f32(c3[c]);
++            }
++            const uint32_t nsrc = trial < 150 ? 2u : 3u;
++            const uint8_t mask = (uint8_t)(1 + trial % (nsrc == 2 ? 3 : 7));
++            const bool over = combine_row_f16(src, nsrc, mask, out, n);
+             bool want_over = false;
+             for (uint32_t c = 0; c < n; ++c) {
+-                const float v = ((mask & 1u) ? combine_bf16_to_f32(a[c]) : 0.0f) + ((mask & 2u) ? combine_bf16_to_f32(b[c]) : 0.0f);
++                float v = (mask & 1u) ? combine_bf16_to_f32(a[c]) : 0.0f;   // helper 0 first, the others added in order
++                if (mask & 2u) v += combine_bf16_to_f32(b[c]);
++                if (nsrc > 2 && (mask & 4u)) v += combine_bf16_to_f32(c3[c]);
+                 bool o = false;
+                 check(out[c] == combine_f32_f16_rn(v, &o), "row path matches the scalar conversion");
+                 want_over |= std::fabs(v) >= 65520.0f;
+diff --git a/engines/radiance/components/moe-remote/component.toml b/engines/radiance/components/moe-remote/component.toml
+index d9b23d5a4..20ba63703 100644
+--- a/engines/radiance/components/moe-remote/component.toml
++++ b/engines/radiance/components/moe-remote/component.toml
+@@ -176,7 +176,7 @@ evidence = ["docs/evidence/RAD06/R3_MOE_WORKER_VECIO.run.json"]
+ [setting.R3_MOE_WORKER_COMBINE]
+ default = ""
+ status = "experimental"
+-summary = "RAD18: two helpers behind a one-rank engine; on the large lane (steps of R3_MOE_WORKER_COMBINE_MIN_ROWS+ rows, default 256) helper 0 adds both helpers' bf16 rows on the CPU (R3_MOE_WORKER_COMBINE_THREADS, default 8) so the engine reads one row a token over its link instead of two; helper 0 combines on its large-lane thread after its stream sync and futex-waits on helper 1, no CPU polling; not bit-identical (one more bf16 rounding); set in both the engine and the helpers' environment; protocol v15"
++summary = "RAD18, RAD23: two to four helpers behind a one-rank engine; on the large lane (steps of R3_MOE_WORKER_COMBINE_MIN_ROWS+ rows, default 256) helper 0 adds every helper's bf16 rows on the CPU (R3_MOE_WORKER_COMBINE_THREADS, default 8) so the engine reads one row a token over its link instead of two; helper 0 combines on its large-lane thread after its stream sync and futex-waits on each other helper, no CPU polling; not bit-identical (one more rounding); set in both the engine and the helpers' environment; protocol v20"
+ activation = "libr3moe: R3_MOE_WORKER_COMBINE on"
+ 
+ [setting.R3_MOE_WORKER_COMBINE_MIN_ROWS]
+diff --git a/engines/radiance/components/moe-remote/moe_lane_reduce.h b/engines/radiance/components/moe-remote/moe_lane_reduce.h
+index b1bde6097..27be7fd0a 100644
+--- a/engines/radiance/components/moe-remote/moe_lane_reduce.h
++++ b/engines/radiance/components/moe-remote/moe_lane_reduce.h
+@@ -13,10 +13,11 @@ __global__ void lane_route_inverse(const int32_t* sorted, int32_t* inv, uint32_t
+ }
+ 
+ /* One row a token with any helper route: the router-weighted sum of its helper-computed experts, slot
+- * order, f32 accumulator, narrowed once to bf16 (moe_gather arithmetic over the slots this helper owns).
++ * order, f32 accumulator, written as f32 (RAD23: the partial is not rounded on the helper; the engine, or helper 0's
++ * combine, adds the helpers' partials and rounds once, as it does for the experts it computes itself).
+  * Tokens without a route are not written; the engine's merge reads only tokens it routed here. */
+ __global__ void lane_reduce_tokens(const uint16_t* down, const int32_t* inv,
+-                                   const uint16_t* ew, uint16_t* dst, uint32_t rows, uint32_t hidden,
++                                   const uint16_t* ew, float* dst, uint32_t rows, uint32_t hidden,
+                                    uint32_t poison, LaneShape shape) {
+     using namespace r3::moe_shm;
+     const uint32_t token = blockIdx.x;
+@@ -35,7 +36,7 @@ __global__ void lane_reduce_tokens(const uint16_t* down, const int32_t* inv,
+     }
+     __syncthreads();
+     if (!any) return;
+-    uint16_t* out = dst + (uint64_t)token * hidden;
++    float* out = dst + (uint64_t)token * hidden;
+     for (uint32_t col = threadIdx.x; col < hidden; col += blockDim.x) {
+         float acc = 0.0f;
+         for (uint32_t slot = 0; slot < shape.top_k; ++slot) {
+@@ -43,9 +44,8 @@ __global__ void lane_reduce_tokens(const uint16_t* down, const int32_t* inv,
+             const uint64_t at = (uint64_t)(uint32_t)row[slot] * hidden + col;
+             acc += w[slot] * __uint_as_float((uint32_t)down[at] << 16);
+         }
+-        uint32_t u = __float_as_uint(acc);
+-        u += 0x7fffu + ((u >> 16) & 1u);
+-        out[col] = poison == 1u ? (uint16_t)0x447au : poison == 2u ? (uint16_t)0 : (uint16_t)(u >> 16);
++        /* the token's f32 partial, unrounded: the engine (or helper 0's combine) adds the helpers' partials and rounds once */
++        out[col] = poison == 1u ? 1000.0f : poison == 2u ? 0.0f : acc;
+     }
+     /* Mapped host memory is fine-grained/uncached. Drain every writer wave's posted stores
+      * before the later release flag, matching libr4d's no-P2P all-reduce host path. */
+@@ -56,11 +56,11 @@ __global__ void lane_reduce_tokens(const uint16_t* down, const int32_t* inv,
+ #endif
+ }
+ 
+-/* lane_reduce_tokens, eight columns a thread: 16-byte loads of the expert rows and one 16-byte store to the mapped
+- * result. Per column the arithmetic is the scalar kernel's (slot order, f32 accumulator, one bf16 rounding), so the
+- * output is bit-identical; the 2-byte stores to uncached host memory ran at ~12 GB/s. */
++/* lane_reduce_tokens, eight columns a thread: 16-byte loads of the expert rows and two 16-byte stores to the mapped
++ * result. Per column the arithmetic is the scalar kernel's (slot order, f32 accumulator), so the output is bit-identical;
++ * the narrow stores to uncached host memory ran at ~12 GB/s. */
+ __global__ void lane_reduce_tokens_v(const uint16_t* down, const int32_t* inv,
+-                                     const uint16_t* ew, uint16_t* dst, uint32_t rows, uint32_t hidden,
++                                     const uint16_t* ew, float* dst, uint32_t rows, uint32_t hidden,
+                                      uint32_t poison, LaneShape shape) {
+     using namespace r3::moe_shm;
+     const uint32_t token = blockIdx.x;
+@@ -79,7 +79,7 @@ __global__ void lane_reduce_tokens_v(const uint16_t* down, const int32_t* inv,
+     }
+     __syncthreads();
+     if (!any) return;
+-    uint4* out = reinterpret_cast<uint4*>(dst + (uint64_t)token * hidden);
++    float4* out = reinterpret_cast<float4*>(dst + (uint64_t)token * hidden);
+     for (uint32_t c8 = threadIdx.x; c8 < hidden / 8; c8 += blockDim.x) {
+         float acc[8];
+ #pragma unroll
+@@ -94,19 +94,14 @@ __global__ void lane_reduce_tokens_v(const uint16_t* down, const int32_t* inv,
+                 acc[2 * k + 1] += w[slot] * __uint_as_float(dw[k] & 0xffff0000u);
+             }
+         }
+-        uint32_t o[4];
++        if (poison) {
++            const float pv = poison == 1u ? 1000.0f : 0.0f;
+ #pragma unroll
+-        for (uint32_t k = 0; k < 4; ++k) {
+-            uint32_t h[2];
+-#pragma unroll
+-            for (uint32_t j = 0; j < 2; ++j) {
+-                uint32_t u = __float_as_uint(acc[2 * k + j]);
+-                u += 0x7fffu + ((u >> 16) & 1u);
+-                h[j] = poison == 1u ? 0x447au : poison == 2u ? 0u : (u >> 16);
+-            }
+-            o[k] = h[0] | (h[1] << 16);
++            for (uint32_t k = 0; k < 8; ++k) acc[k] = pv;
+         }
+-        out[c8] = make_uint4(o[0], o[1], o[2], o[3]);
++        /* two 16-byte stores of the unrounded f32 partials (eight columns) */
++        out[2 * c8] = make_float4(acc[0], acc[1], acc[2], acc[3]);
++        out[2 * c8 + 1] = make_float4(acc[4], acc[5], acc[6], acc[7]);
+     }
+ #if defined(__GFX12__)
+     asm volatile("s_wait_storecnt 0x0" ::: "memory");
+diff --git a/engines/radiance/components/moe-remote/moe_mailbox_ops.hip b/engines/radiance/components/moe-remote/moe_mailbox_ops.hip
+index ba911ad28..c48419042 100644
+--- a/engines/radiance/components/moe-remote/moe_mailbox_ops.hip
++++ b/engines/radiance/components/moe-remote/moe_mailbox_ops.hip
+@@ -199,8 +199,8 @@ __global__ void mailbox_publish_kernel(
+         __syncthreads();
+     }
+ 
+-    /* Both helpers' sequences, and R3_MOE_WORKER_COMBINE's decision, before either request is released: helper 0 finds
+-     * the generation in its own Request and helper 1's lane/seq in combine, so neither side polls for them. */
++    /* Every helper's sequence, and R3_MOE_WORKER_COMBINE's decision, before any request is released: helper 0 finds the
++     * generation in its own Request and the other helpers' lane/seq in combine, so no side polls for them. */
+     if (threadIdx.x == 0) {
+         gen = 0;
+         for (uint32_t k = 0; k < helpers; ++k) {
+@@ -210,11 +210,17 @@ __global__ void mailbox_publish_kernel(
+             if (s == 0) __builtin_trap();
+             step_seq[k] = s;
+         }
+-        if (combine && helpers == 2 && cls == kSmallClasses && step_nr[0] && step_nr[1] &&
++        /* helper 0 combines, so it needs a request of its own, and at least one other helper must have one */
++        bool others = false;
++        for (uint32_t k = 1; k < helpers; ++k) others |= step_nr[k] != 0u;
++        if (combine && helpers >= 2 && helpers <= kCombineHelpers && cls == kSmallClasses && step_nr[0] && others &&
+             load_sys_acq(&h->combine.enabled) && rows >= h->combine.min_rows) {
+             uint32_t g = h->combine.request + 1u;
+             if (g == 0) g = 1;
+-            for (uint32_t k = 0; k < kCombineHelpers; ++k) { h->combine.lane[k] = lane_of(k, cls); h->combine.seq[k] = step_seq[k]; }
++            for (uint32_t k = 0; k < kCombineHelpers; ++k) {
++                h->combine.lane[k] = k < helpers ? lane_of(k, cls) : 0u;
++                h->combine.seq[k] = k < helpers ? step_seq[k] : 0u;
++            }
+             h->combine.rows = rows;
+             h->combine.request = g;
+             gen = g;
+@@ -250,7 +256,7 @@ __global__ void mailbox_publish_kernel(
+             q->activation_s_stride = scale_cols * (uint32_t)sizeof(float);
+             for (uint32_t r = 0; r < kMaxEngineRanks; ++r) {
+                 q->result_offset[r] = h->result_offset[result_index(slot, r)];
+-                q->result_stride[r] = hidden * (uint32_t)sizeof(uint16_t);
++                q->result_stride[r] = hidden * (uint32_t)sizeof(float);
+             }
+             q->sequence = seq;
+             q->trace[0] = wall_clock64();
+@@ -303,7 +309,7 @@ __global__ void mailbox_add_wait_kernel(
+     if (blockIdx.x || threadIdx.x) return;
+     Header* h = reinterpret_cast<Header*>(base);
+     const uint64_t entered = wall_clock64();   /* R3_MOE_WORKER_TRACE: engine clock */
+-    /* R3_MOE_WORKER_COMBINE: the combiner publishes done only after both helpers' done words, so the loop below then
++    /* R3_MOE_WORKER_COMBINE: the combiner publishes done only after every combined helper's done word, so the loop below then
+      * finds them already there. */
+     if (const uint32_t g = published[kMaxSlots]) {
+         unsigned long long spins = 0;
+@@ -426,8 +432,10 @@ __global__ void mailbox_add_rows_kernel(
+             if (mask_only && m && local_index[slot] >= 0) __builtin_trap();
+         }
+         /* R3_MOE_WORKER_COMBINE: the combined row is fp16; a row the combiner could not hold in fp16 range carries
+-         * kCombineFallback in its first element and is read from the two helper planes instead (worker_combine.h). */
+-        use_combined = combined && (from[0] || from[1]) &&
++         * kCombineFallback in its first element and is read from the helpers' own planes instead (worker_combine.h). */
++        bool any = false;
++        for (uint32_t k = 0; k < helpers && k < kMaxHelpers; ++k) any |= from[k] != 0u;
++        use_combined = combined && any &&
+                        __builtin_nontemporal_load(combined_row) != kCombineFallback;
+     }
+     __syncthreads();
+@@ -456,9 +464,9 @@ __global__ void mailbox_add_rows_kernel(
+             for (uint32_t k = 0; k < helpers; ++k) {
+                 if (!from[k]) continue;
+                 const uint32_t slot = step_slot(k, rank, helpers);
+-                const uint16_t* result = reinterpret_cast<const uint16_t*>(
++                const float* result = reinterpret_cast<const float*>(
+                     base + h->result_offset[result_index(slot, rank)]) + (uint64_t)token * hidden;
+-                acc += bf16_to_f32(__builtin_nontemporal_load(result + col));
++                acc += __builtin_nontemporal_load(result + col);   /* the helper's unrounded f32 partial */
+             }
+         const uint16_t gathered = f32_to_bf16_rn(acc);
+         if (!shared) {
+@@ -524,8 +532,8 @@ __global__ void mailbox_shadow_rows_kernel(
+         for (uint32_t k = 0; k < helpers; ++k) {
+             if (!from[k]) continue;
+             const uint32_t slot = step_slot(k, rank, helpers);
+-            hv += bf16_to_f32(reinterpret_cast<const uint16_t*>(
+-                base + h->result_offset[result_index(slot, rank)])[(uint64_t)token * hidden + col]);
++            hv += reinterpret_cast<const float*>(   /* the helper's f32 partial (protocol 20) */
++                base + h->result_offset[result_index(slot, rank)])[(uint64_t)token * hidden + col];
+         }
+         if (col < 4) { lref[col] = ref; lhelp[col] = hv; }
+         const float d = ref - hv;
+diff --git a/engines/radiance/components/moe-remote/moe_remote_gpu.h b/engines/radiance/components/moe-remote/moe_remote_gpu.h
+index e0bce0649..f80297cb4 100644
+--- a/engines/radiance/components/moe-remote/moe_remote_gpu.h
++++ b/engines/radiance/components/moe-remote/moe_remote_gpu.h
+@@ -242,126 +242,6 @@ public:
+         return true;
+     }
+ 
+-    int compute(void* map, r3::moe_shm::Request* q) {
+-        using namespace r3::moe_shm;
+-        if (!map || !q || q->rank >= kMaxSlots || q->rank_count != kMaxEngineRanks || q->layer >= model_.layers ||
+-            q->rows == 0 || q->rows > kMaxRows || q->hidden != shape_.hidden ||
+-            q->route_count == 0 || q->route_count > kMaxRoutes ||
+-            q->activation_stride != shape_.hidden * (uint32_t)sizeof(uint16_t)) return -EINVAL;
+-
+-        const Route* route = ptr<Route>(map, q->route_offset);
+-        const uint16_t* hact = ptr<uint16_t>(map, q->activation_offset);
+-        const uint32_t rows = q->rows;
+-        const uint32_t tr = rows * shape_.top_k;
+-
+-        std::vector<std::vector<uint32_t>> by_slot(experts());
+-        std::vector<uint16_t> ew((size_t)rows * shape_.top_k, 0);
+-        for (uint32_t i = 0; i < q->route_count; ++i) {
+-            const Route& r = route[i];
+-            if (r.token < 0 || (uint32_t)r.token >= rows || r.expert < 0 ||
+-                r.expert >= (int32_t)experts() || !owns(q->layer, (uint32_t)r.expert)) return -EINVAL;
+-            if (r.slot >= shape_.top_k) return -EINVAL;
+-            const int32_t es = layer_slot(map, q->layer, (uint32_t)r.expert);
+-            if (es < 0 || es >= (int32_t)experts()) return -EINVAL;
+-            const uint32_t flat = (uint32_t)r.token * shape_.top_k + r.slot;
+-            ew[flat] = r.weight_bf16;
+-            by_slot[(uint32_t)es].push_back(flat);
+-        }
+-
+-        std::vector<int32_t> sorted(tr, -1);
+-        std::vector<int32_t> off(experts() + 1, 0);
+-        uint32_t at = 0;
+-        for (uint32_t es = 0; es < experts(); ++es) {
+-            off[es] = (int32_t)at;
+-            for (uint32_t flat : by_slot[es]) sorted[at++] = (int32_t)flat;
+-        }
+-        off[experts()] = (int32_t)at;
+-        if (at != q->route_count) return -EINVAL;
+-
+-        if (!ensure_work(rows, tr)) return -ENOMEM;
+-        const size_t act_bytes = (size_t)rows * shape_.hidden * sizeof(uint16_t);
+-        if (!hip_ok(hipMemcpyAsync(d_act_.p, hact, act_bytes, hipMemcpyHostToDevice, stream_),
+-                    "upload activations")) return -EIO;
+-        if (!hip_ok(hipMemcpyAsync(d_sorted_.p, sorted.data(), (size_t)tr * sizeof(int32_t),
+-                                   hipMemcpyHostToDevice, stream_), "upload sorted routes") ||
+-            !hip_ok(hipMemcpyAsync(d_off_.p, off.data(), off.size() * sizeof(int32_t),
+-                                   hipMemcpyHostToDevice, stream_), "upload expert offsets") ||
+-            !hip_ok(hipMemcpyAsync(d_ew_.p, ew.data(), ew.size() * sizeof(uint16_t),
+-                                   hipMemcpyHostToDevice, stream_), "upload route weights"))
+-            return -EIO;
+-
+-        std::vector<RadParam> aqp = {
+-            pi("M", rows), pi("n", shape_.hidden), pi("group", kGroup), ps("dtype", "bf16")
+-        };
+-        if (launch(had_quant_,
+-                   { tensor(d_act_.p, RAD_BF16, {rows, shape_.hidden}),
+-                     tensor(d_aq_.p, RAD_F8E4M3, {rows, shape_.hidden}),
+-                     tensor(d_as_.p, RAD_F32, {rows, shape_.hidden / kGroup}) }, aqp) < 0)
+-            return -EIO;
+-
+-        for (uint32_t rank = 0; rank < kMaxEngineRanks; ++rank) {
+-            LayerTables& lt = tables_[q->layer];
+-            const int64_t w0 = rank_slice_width(rank, 0);
+-            const int64_t w1 = rank_slice_width(rank, 1);
+-
+-            std::vector<RadParam> gp =
+-                gemm_params(rows, 2 * w0, shape_.hidden, 2, "token", 2 * w1, shape_.hidden);
+-            if (launch(moe_,
+-                       { tensor(d_aq_.p, RAD_F8E4M3, {rows, shape_.hidden}),
+-                         tensor(d_as_.p, RAD_F32, {rows, shape_.hidden / kGroup}),
+-                         table_tensor(lt.gu_code[rank][0], lt.gu_code_dtype, 2 * w0, shape_.hidden),
+-                         table_scale_tensor(lt.gu_scale[rank][0], lt.gu_scale_dtype, 2 * w0, shape_.hidden),
+-                         tensor(d_sorted_.p, RAD_I32, {tr}),
+-                         tensor(d_off_.p, RAD_I32, {experts() + 1}),
+-                         table_tensor(lt.gu_code[rank][1], lt.gu_code_dtype, 2 * w1, shape_.hidden),
+-                         table_scale_tensor(lt.gu_scale[rank][1], lt.gu_scale_dtype, 2 * w1, shape_.hidden),
+-                         tensor(d_gu_.p, RAD_BF16, {tr, kRankGateUpWidth}) }, gp) < 0)
+-                return -EIO;
+-
+-            std::vector<RadParam> gqp = {
+-                pi("M", q->route_count), pi("n", kRankWidth), pi("group", kGroup),
+-                ps("dtype", "bf16"), ps("act", "silu")
+-            };
+-            if (launch(gated_quant_,
+-                       { tensor(d_gu_.p, RAD_BF16, {q->route_count, kRankGateUpWidth}),
+-                         tensor(d_mid_.p, RAD_F8E4M3, {q->route_count, kRankWidth}),
+-                         tensor(d_mid_s_.p, RAD_F32, {q->route_count, kRankWidth / kGroup}),
+-                         absent() }, gqp) < 0)
+-                return -EIO;
+-
+-            std::vector<RadParam> dp =
+-                gemm_params(rows, shape_.hidden, w0, 1, "sorted", shape_.hidden, w1);
+-            if (launch(moe_,
+-                       { tensor(d_mid_.p, RAD_F8E4M3, {tr, kRankWidth}),
+-                         tensor(d_mid_s_.p, RAD_F32, {tr, kRankWidth / kGroup}),
+-                         table_tensor(lt.dn_code[rank][0], lt.dn_code_dtype, shape_.hidden, w0),
+-                         table_scale_tensor(lt.dn_scale[rank][0], lt.dn_scale_dtype, shape_.hidden, w0),
+-                         tensor(d_sorted_.p, RAD_I32, {tr}),
+-                         tensor(d_off_.p, RAD_I32, {experts() + 1}),
+-                         table_tensor(lt.dn_code[rank][1], lt.dn_code_dtype, shape_.hidden, w1),
+-                         table_scale_tensor(lt.dn_scale[rank][1], lt.dn_scale_dtype, shape_.hidden, w1),
+-                         tensor(d_down_.p, RAD_BF16, {tr, shape_.hidden}) }, dp) < 0)
+-                return -EIO;
+-
+-            std::vector<RadParam> mp = {
+-                pi("M", rows), pi("n", shape_.hidden), pi("top_k", shape_.top_k), ps("dtype", "bf16")
+-            };
+-            if (launch(gather_,
+-                       { tensor(d_down_.p, RAD_BF16, {tr, shape_.hidden}),
+-                         tensor(d_ew_.p, RAD_BF16, {rows, shape_.top_k}),
+-                         tensor(d_sorted_.p, RAD_I32, {tr}),
+-                         absent(), absent(),
+-                         tensor(d_result_.p, RAD_BF16, {rows, shape_.hidden}) }, mp) < 0)
+-                return -EIO;
+-
+-            void* dst = ptr<void>(map, q->result_offset[out_rank_of(rank, q->rank_count)]);
+-            if (!hip_ok(hipMemcpyAsync(dst, d_result_.p, act_bytes,
+-                                       hipMemcpyDeviceToHost, stream_), "download TP partial"))
+-                return -EIO;
+-        }
+-        return hip_ok(hipStreamSynchronize(stream_), "helper stream sync") ? 0 : -EIO;
+-    }
+-
+     /* Small lanes are sized to their class's rows and pre-queued; the large lane to large_rows, launched per request.
+      * `count` small classes are enabled (ascending `sizes`); the other small lanes are left unprepared (cap_rows 0). */
+     bool prepare_lanes(const std::array<uint32_t, r3::moe_shm::kSmallClasses>& sizes, uint32_t count, uint32_t large_rows,
+@@ -481,8 +361,8 @@ public:
+         auto* act_s = static_cast<const float*>(
+             dev_at(ptr<float>(host_map,
+                 hhost->activation_offset[rank] + kActivationBf16Bytes + kActivationQBytes)));
+-        auto* dst = static_cast<uint16_t*>(
+-            dev_at(ptr<uint16_t>(
++        auto* dst = static_cast<float*>(
++            dev_at(ptr<float>(
+                 host_map, hhost->result_offset[result_index(rank, out_rank_of(rank, qhost->rank_count))])));
+ 
+         if (!hip_ok(hipStreamWaitValue32(w.stream, request_seq, sequence,
+diff --git a/engines/radiance/components/moe-remote/moe_remote_hook.cpp b/engines/radiance/components/moe-remote/moe_remote_hook.cpp
+index e55139447..44d17ab9e 100644
+--- a/engines/radiance/components/moe-remote/moe_remote_hook.cpp
++++ b/engines/radiance/components/moe-remote/moe_remote_hook.cpp
+@@ -570,13 +570,13 @@ extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevic
+         s.dev.mask_only = !mask_only ? 0u : (e && std::strcmp(e, "2") == 0 ? 2u : 1u);
+     }
+     s.dev.cpu_ref = cpu_ref_env() ? 1u : 0u;
+-    /* R3_MOE_WORKER_COMBINE=1 (default off): two helpers, no shadow/mask-only, and helper 0 started its combiner
++    /* R3_MOE_WORKER_COMBINE=1 (default off): two to kCombineHelpers helpers, no shadow/mask-only, and helper 0 started its combiner
+      * (Header::combine.enabled, checked again by the publish kernel each step). */
+     {
+         const char* e = std::getenv("R3_MOE_WORKER_COMBINE");
+-        s.dev.combine = (e && std::strcmp(e, "1") == 0 && helpers == 2 && !shadow && !mask_only) ? 1u : 0u;
++        s.dev.combine = (e && std::strcmp(e, "1") == 0 && helpers >= 2 && helpers <= kCombineHelpers && !shadow && !mask_only) ? 1u : 0u;
+         if (s.dev.combine)
+-            std::fprintf(stderr, "libr3moe: R3_MOE_WORKER_COMBINE on - helper 0 combines the two helpers' rows on the large lane\n");
++            std::fprintf(stderr, "libr3moe: R3_MOE_WORKER_COMBINE on - helper 0 combines the helpers' rows on the large lane\n");
+     }
+     s.ready = true;
+     *out = &s.dev;
+diff --git a/engines/radiance/components/moe-remote/moe_remote_shm.h b/engines/radiance/components/moe-remote/moe_remote_shm.h
+index fb79b91b7..705442dda 100644
+--- a/engines/radiance/components/moe-remote/moe_remote_shm.h
++++ b/engines/radiance/components/moe-remote/moe_remote_shm.h
+@@ -16,7 +16,7 @@
+ namespace r3::moe_shm {
+ 
+ constexpr uint64_t kMagic = 0x31454f4d33485253ull; /* "SRH3MOE1": reject unrelated/stale shm. */
+-constexpr uint32_t kVersion = 19;  /* 19: Header::slot_count (the request slots, route / activation staging and result planes, are sized from it; kMaxHelpers and kMaxSlots are 4; RAD23). 18: Header::helper_pid/helper_start (the engine watches each helper process and raises helper_fault when one exits), Header::notify (CPU waits sleep on one generation word); 17: Header::burst, LaneSignal::park (RAD20: small-lane waits armed only inside an inference burst); 16: the combined row is fp16 with a per-row fallback marker (kCombineFallback); 15: Header::combine (R3_MOE_WORKER_COMBINE); 14: the header records the model shape (intermediate, activation_group, shape_hash) and every region is laid out from it (layout_for); 13: several pre-queued small-lane sizes (Header::small_class_*), ten lanes; 12: Request carries the R3_MOE_WORKER_TRACE stamps (192 -> 256 bytes); 11: helper_fault; completion is an exact generation */
++constexpr uint32_t kVersion = 20;  /* 20: CombineSignal for up to kMaxHelpers helpers (128 bytes, helper_done[] per helper) and f32 result planes (a helper's partial is not rounded); 19: Header::slot_count (the request slots, route / activation staging and result planes, are sized from it; kMaxHelpers and kMaxSlots are 4; RAD23). 18: Header::helper_pid/helper_start (the engine watches each helper process and raises helper_fault when one exits), Header::notify (CPU waits sleep on one generation word); 17: Header::burst, LaneSignal::park (RAD20: small-lane waits armed only inside an inference burst); 16: the combined row is fp16 with a per-row fallback marker (kCombineFallback); 15: Header::combine (R3_MOE_WORKER_COMBINE); 14: the header records the model shape (intermediate, activation_group, shape_hash) and every region is laid out from it (layout_for); 13: several pre-queued small-lane sizes (Header::small_class_*), ten lanes; 12: Request carries the R3_MOE_WORKER_TRACE stamps (192 -> 256 bytes); 11: helper_fault; completion is an exact generation */
+ constexpr uint32_t kPage = 4096;
+ /* R3_MOE_WORKER_COMBINE: first element of a combined fp16 row the combiner could not hold in fp16 range (a NaN payload
+  * no arithmetic produces; a real NaN converts to 0x7E00); the engine then reads that row from the two helper planes. */
+@@ -94,7 +94,7 @@ struct alignas(64) Request {
+     uint32_t activation_stride;    /* bytes between BF16 reference rows. */
+     uint32_t activation_q_stride;  /* bytes between E4M3 rows. */
+     uint32_t activation_s_stride;  /* bytes between F32 scale rows. */
+-    uint32_t result_stride[kMaxEngineRanks]; /* BF16 row stride for each TP rank's result slot. */
++    uint32_t result_stride[kMaxEngineRanks]; /* f32 row stride for each TP rank's result slot (protocol 20). */
+     uint64_t result_offset[kResultPlanes]; /* partial-output slots; helper writes only req.rank. */
+     /* R3_MOE_WORKER_TRACE: wall_clock64() stamps, each from the clock of the device that wrote it (engine GPU for
+      * 0-2, the helper GPU for 3-4; never subtract across devices): 0 publish kernel, 1 wait kernel entered,
+@@ -119,26 +119,27 @@ struct alignas(64) LaneSignal {
+ };
+ static_assert(sizeof(LaneSignal) == 64);
+ 
+-/* R3_MOE_WORKER_COMBINE (two helpers behind a one-rank engine, large lane only): helper 0 adds the two helpers' bf16
+- * rows on the CPU into result plane [0][1], so the engine reads one row a token over its link instead of two. Nothing
+- * polls on the CPU side. The engine GPU allocates both helpers' sequences, writes lane/seq/rows here and the generation
+- * into helper 0's Request::combine_generation, then releases the requests. Helper 0 combines on its own large-lane
+- * thread after its stream sync, futex-waiting on helper1_done, which helper 1 stores and wakes after its own stream
+- * sync. Helper 0 release-stores `done` = generation; the engine's wait kernel waits for it. Not bit-identical to adding
+- * the two rows on the engine (one more bf16 rounding). `enabled` is set by helper 0 at start; the engine asks only then. */
+-constexpr uint32_t kCombineHelpers = 2;   /* the combine adds exactly two helpers' rows; a segment with more helpers runs with it off */
++/* R3_MOE_WORKER_COMBINE (two to kMaxHelpers helpers behind a one-rank engine, large lane only): helper 0 adds every helper's
++ * f32 rows on the CPU into result plane [0][1] as fp16, so the engine reads one row a token over its link instead of one a helper.
++ * Nothing polls on the CPU side. The engine GPU allocates the helpers' sequences, writes lane/seq/rows here (seq 0: that
++ * helper has no request this step) and the generation into helper 0's Request::combine_generation, then releases the
++ * requests. Helper 0 combines on its own large-lane thread after its stream sync, futex-waiting on helper_done[k], which
++ * helper k stores and wakes after its own stream sync. Helper 0 release-stores `done` = generation; the engine's wait kernel
++ * waits for it. Not bit-identical to adding the rows on the engine (the sum is rounded to fp16, not bf16). `enabled` is set by helper 0 at
++ * start; the engine asks only then. */
++constexpr uint32_t kCombineHelpers = kMaxHelpers;   /* the combine adds the rows of up to this many helpers */
+ struct alignas(64) CombineSignal {
+     uint32_t enabled;
+-    uint32_t min_rows;      /* steps with fewer rows keep the two-row merge */
++    uint32_t min_rows;      /* steps with fewer rows keep the per-helper merge */
+     uint32_t request;       /* last generation the engine issued (engine-only counter) */
+     uint32_t done;
+     uint32_t lane[kCombineHelpers];
+-    uint32_t seq[kCombineHelpers];
++    uint32_t seq[kCombineHelpers];   /* 0: no request from that helper this step */
+     uint32_t rows;
+-    uint32_t helper1_done;  /* helper 1's newest completed large-lane sequence, CPU-written, futex word */
+-    uint32_t reserved[6];
++    uint32_t helper_done[kCombineHelpers];  /* helper k's newest completed large-lane sequence (k >= 1), CPU-written futex words */
++    uint32_t reserved[15];
+ };
+-static_assert(sizeof(CombineSignal) == 64);
++static_assert(sizeof(CombineSignal) == 128);
+ 
+ struct alignas(kPage) Header {
+     uint64_t magic;                 /* segment identity. */
+@@ -211,7 +212,7 @@ static_assert(sizeof(Header) <= kPage);
+ constexpr uint64_t align_page(uint64_t n) { return (n + kPage - 1) & ~(uint64_t(kPage) - 1); }
+ constexpr uint32_t route_slot_bytes() { return kMaxRoutes * sizeof(Route); }
+ constexpr uint32_t activation_slot_bytes() { return kActivationBf16Bytes + kActivationQBytes + kActivationScaleBytes; }
+-constexpr uint32_t result_slot_bytes() { return kMaxRows * kHidden * sizeof(uint16_t); }
++constexpr uint32_t result_slot_bytes() { return kMaxRows * kHidden * sizeof(float); }   /* f32 partials (protocol 20) */
+ constexpr uint32_t owner_slot_bytes() { return kMaxLayers * ((kExperts + 7u) / 8u); }
+ constexpr uint32_t layer_map_slot_bytes() { return kMaxLayers * kExperts * sizeof(int32_t); }
+ 
+@@ -301,7 +302,7 @@ inline bool layout_for(const LayoutShape& s, uint32_t slots, Layout* out) {
+     scale_cols = groups;
+     if (!mul(s.max_rows, scale_cols, &tmp) || !mul(tmp, sizeof(float), &scale_b)) return false;
+     if (!add(bf16_b, q_b, &tmp) || !add(tmp, scale_b, &act_b)) return false;
+-    result_b = bf16_b;
++    result_b = bf16_b * 2u;   /* a helper's per-token partial is f32 (protocol 20), twice the bf16 activation row */
+     owner_row = ((uint64_t)s.experts + 7u) / 8u;
+     if (!mul(kMaxLayers, owner_row, &owner_b)) return false;
+     if (!mul((uint64_t)kMaxLayers * s.experts, sizeof(int32_t), &map_b)) return false;
+diff --git a/engines/radiance/components/moe-remote/moe_remote_shm_test.cpp b/engines/radiance/components/moe-remote/moe_remote_shm_test.cpp
+index 4a210a1f5..b46a11e7e 100644
+--- a/engines/radiance/components/moe-remote/moe_remote_shm_test.cpp
++++ b/engines/radiance/components/moe-remote/moe_remote_shm_test.cpp
+@@ -37,13 +37,13 @@ int main() {
+         /* RAD23 stage 2: helpers and slots are bounds (4), the engine ranks stay 2, and a segment is laid out for the slots it was made with. */
+         check(kMaxEngineRanks == 2 && kMaxHelpers == 4 && kMaxSlots == 4 && kResultPlanes == 8 && kLegacySlots == 2, "the axes and their bounds");
+         check(slots_for(1) == 2 && slots_for(2) == 2 && slots_for(3) == 3 && slots_for(4) == 4, "slots follow the helpers, never fewer than the engine ranks");
+-        check(sizeof(Header) == 4096 && sizeof(Request) == 256 && sizeof(CombineSignal) == 64, "header, request and combine signal sizes");
++        check(sizeof(Header) == 4096 && sizeof(Request) == 256 && sizeof(CombineSignal) == 128, "header, request and combine signal sizes");
+         check(offsetof(Header, slot_count) == 2520 && offsetof(Header, helper_pid) == 2692 && offsetof(Header, combine) == 2816 &&
+-              offsetof(Header, result_offset) == 2600 && offsetof(Header, owner_offset) == 128, "header field offsets (protocol 19)");
+-        check(layout(2).bytes == 148742144 && layout(2).result[0] == 32579584 && layout(2).result[result_index(1, 1)] == 127770624,
+-              "the two-slot layout: what it was, plus the lane ring grown for four slots (8 KiB)");
+-        check(layout(3).bytes == 222969856 && layout(4).bytes == 297197568 && layout(1).bytes == 74514432, "one, three and four slots");
+-        check(layout(3).bytes - layout(2).bytes == 74227712 && layout(4).bytes - layout(3).bytes == 74227712, "each slot adds its route, activation and two result planes");
++              offsetof(Header, result_offset) == 2600 && offsetof(Header, owner_offset) == 128, "header field offsets (protocol 20; the combine signal is the last field)");
++        check(layout(2).bytes == 232628224 && layout(2).result[0] == 32579584 && layout(2).result[result_index(1, 1)] == 190685184,
++              "the two-slot layout, with f32 result planes (protocol 20: 40 MiB a plane, was 20)");
++        check(layout(3).bytes == 348798976 && layout(4).bytes == 464969728 && layout(1).bytes == 116457472, "one, three and four slots");
++        check(layout(3).bytes - layout(2).bytes == 116170752 && layout(4).bytes - layout(3).bytes == 116170752, "each slot adds its route, activation and two result planes");
+         check(lane_of(0, 0) == 0 && lane_of(3, 0) == 3 && lane_of(0, 1) == 4 && lane_of(1, kSmallClasses) == 17 && lane_class(17) == 4, "lane numbering (stride kMaxSlots)");
+         check(kLanes == kMaxSlots * (kSmallClasses + 1) && kRingSlots == kLanes * kLaneSlots, "lane count and ring size");
+         check(lane_class(lane_of(1, 3)) == 3 && lane_is_small(lane_of(1, 3)) && !lane_is_small(lane_of(0, kSmallClasses)),
+diff --git a/engines/radiance/components/moe-remote/r3_moe_worker.cpp b/engines/radiance/components/moe-remote/r3_moe_worker.cpp
+index 7510d1f41..e0e716fbc 100644
+--- a/engines/radiance/components/moe-remote/r3_moe_worker.cpp
++++ b/engines/radiance/components/moe-remote/r3_moe_worker.cpp
+@@ -462,11 +462,12 @@ int main(int argc, char** argv) {
+             if (++seq == 0) break;
+         }
+     } else {
+-        /* R3_MOE_WORKER_COMBINE=1 (default off), two helpers: helper 0 adds both helpers' rows for the engine's large
+-         * lane on its large-lane thread after its stream sync (worker_combine.h); helper 1 wakes it after its own sync.
++        /* R3_MOE_WORKER_COMBINE=1 (default off), two to kCombineHelpers helpers: helper 0 adds every helper's rows for the
++         * engine's large lane on its large-lane thread after its stream sync (worker_combine.h); each other helper wakes it
++         * after its own sync.
+          * The engine asks only once combine.enabled is set. */
+         Combine combine;
+-        if (cfg.combine && helper_count == 2) {
++        if (cfg.combine && helper_count >= 2 && helper_count <= kCombineHelpers) {
+             if (!combine_cpu_supported()) {
+                 std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_COMBINE needs a CPU with AVX2 and F16C\n");
+                 return 1;
+diff --git a/engines/radiance/components/moe-remote/worker_combine.h b/engines/radiance/components/moe-remote/worker_combine.h
+index 983284332..742f7e8ff 100644
+--- a/engines/radiance/components/moe-remote/worker_combine.h
++++ b/engines/radiance/components/moe-remote/worker_combine.h
+@@ -1,6 +1,6 @@
+ #pragma once
+ 
+-// R3_MOE_WORKER_COMBINE (RAD18): helper 0 adds the two helpers' bf16 rows on the CPU so the one-rank engine reads one row
++// R3_MOE_WORKER_COMBINE (RAD18, RAD23): helper 0 adds the helpers' bf16 rows on the CPU so the one-rank engine reads one row
+ // a token over its link instead of two. The sum is written as fp16: the same two bytes as one bf16 row, but rounded 8x
+ // finer, since a bf16 sum measurably worsened KLD (RAD18 2026-10-23: p99 +0.275). A row with a value outside fp16 range
+ // is marked kCombineFallback in its first element and the engine reads that row from the two helper planes instead.
+@@ -39,9 +39,10 @@ public:
+         combine_futex_wake(&gen_, false);
+         for (auto& t : workers_) t.join();
+     }
+-    /* mask[t]: bit 0 helper 0 wrote row t, bit 1 helper 1 did. Rows with neither are not read by the engine. */
+-    void combine(const uint16_t* a, const uint16_t* b, uint16_t* out, const uint8_t* mask, uint32_t rows, uint32_t hidden) {
+-        a_ = a; b_ = b; out_ = out; mask_ = mask; rows_ = rows; hidden_ = hidden;
++    /* mask[t]: bit k set when helper k wrote row t. Rows with no bit are not read by the engine. */
++    void combine(const float* const* src, uint32_t nsrc, uint16_t* out, const uint8_t* mask, uint32_t rows, uint32_t hidden) {
++        nsrc_ = nsrc; for (uint32_t k = 0; k < nsrc; ++k) src_[k] = src[k];
++        out_ = out; mask_ = mask; rows_ = rows; hidden_ = hidden;
+         __atomic_store_n(&next_, 0u, __ATOMIC_RELAXED);
+         __atomic_store_n(&busy_, (uint32_t)workers_.size(), __ATOMIC_RELAXED);
+         __atomic_fetch_add(&gen_, 1u, __ATOMIC_RELEASE);
+@@ -62,12 +63,17 @@ private:
+                 const uint8_t m = mask_[t];
+                 if (!m) continue;   /* no helper row: the engine does not read it */
+                 const uint64_t at = (uint64_t)t * hidden_;
+-                if (combine_row_f16(a_ + at, b_ + at, m, out_ + at, hidden_)) out_[at] = r3::moe_shm::kCombineFallback;
++                const float* rowp[r3::moe_shm::kCombineHelpers];
++                for (uint32_t k = 0; k < nsrc_; ++k) rowp[k] = src_[k] + at;
++                if (combine_row_f16(rowp, nsrc_, m, out_ + at, hidden_)) out_[at] = r3::moe_shm::kCombineFallback;
+             }
+         }
+     }
+     void run() {
+-        uint32_t seen = __atomic_load_n(&gen_, __ATOMIC_ACQUIRE);
++        /* Start from the generation before any job (0, set before the workers exist), not from a load here: a worker that
++         * starts after the first combine() has already bumped gen_ would otherwise take that job as seen and sleep, and
++         * the caller would wait on busy_ forever. */
++        uint32_t seen = 0;
+         for (;;) {
+             uint32_t g;
+             while ((g = __atomic_load_n(&gen_, __ATOMIC_ACQUIRE)) == seen) combine_futex_wait(&gen_, seen, 0, false);
+@@ -79,8 +85,8 @@ private:
+     }
+     std::vector<std::thread> workers_;
+     uint32_t gen_ = 0, next_ = 0, busy_ = 0, quit_ = 0;
+-    const uint16_t* a_ = nullptr;
+-    const uint16_t* b_ = nullptr;
++    const float* src_[r3::moe_shm::kCombineHelpers] = {};
++    uint32_t nsrc_ = 0;
+     uint16_t* out_ = nullptr;
+     const uint8_t* mask_ = nullptr;
+     uint32_t rows_ = 0, hidden_ = 0;
+@@ -91,41 +97,55 @@ struct CombineStats {
+     double combine_us = 0.0;
+ };
+ 
+-/* Helper 1, after its large-lane request seq has synced: tell helper 0. */
+-inline void combine_helper1_done(void* map, uint32_t seq) {
++/* Helper k >= 1, after its large-lane request seq has synced: tell helper 0. */
++inline void combine_helper_done(void* map, uint32_t helper, uint32_t seq) {
+     auto* h = static_cast<r3::moe_shm::Header*>(map);
+-    r3::moe_shm::store(&h->combine.helper1_done, seq);
+-    combine_futex_wake(&h->combine.helper1_done, true);
++    if (helper == 0 || helper >= r3::moe_shm::kCombineHelpers) return;
++    r3::moe_shm::store(&h->combine.helper_done[helper], seq);
++    combine_futex_wake(&h->combine.helper_done[helper], true);
+ }
+ 
+-/* Helper 0, after its large-lane request q has synced: if the engine asked for a combine on this step, wait for helper 1
+- * (futex), combine into plane [0][1] and publish done. False on a protocol mismatch or a stop. */
+-inline bool combine_step(void* map, const r3::moe_shm::Request* q0, CombinePool* pool, std::vector<uint8_t>* mask,
+-                         CombineStats* st) {
++/* Helper 0, after its large-lane request q0 has synced: if the engine asked for a combine on this step, wait for each other
++ * helper that has a request this step (futex), combine into plane [0][1] and publish done. False on a protocol mismatch or
++ * a stop. */
++inline bool combine_step(void* map, const r3::moe_shm::Request* q0, uint32_t helpers, CombinePool* pool,
++                         std::vector<uint8_t>* mask, CombineStats* st) {
+     using namespace r3::moe_shm;
+     auto* h = static_cast<Header*>(map);
+     const uint32_t g = q0->combine_generation;
+     if (!g) return true;
+-    const uint32_t rows = h->combine.rows, lane1 = h->combine.lane[1], seq1 = h->combine.seq[1];
+-    if (rows == 0 || rows > h->max_rows || q0->rows != rows || h->combine.seq[0] != q0->sequence ||
+-        lane1 >= kLanes || lane1 % kMaxSlots != 1u || !seq1) {
++    const uint32_t rows = h->combine.rows;
++    if (helpers < 2 || helpers > kCombineHelpers || rows == 0 || rows > h->max_rows || q0->rows != rows ||
++        h->combine.seq[0] != q0->sequence) {
+         std::fprintf(stderr, "r3_moe_worker: combine stopped: the combine request does not match helper 0's request\n");
+         return false;
+     }
+-    for (uint32_t d; (int32_t)((d = load(&h->combine.helper1_done)) - seq1) < 0;) {
+-        if (stopping() || load(&h->helper_fault)) return false;
+-        combine_futex_wait(&h->combine.helper1_done, d, 200, true);
+-    }
+-    const Request* q1 = lane_request(map, lane1, seq1);
+-    if (load(&h->lane[lane1].done_sequence) != seq1 || !q1 || load(&q1->sequence) != seq1 || q1->rows != rows ||
+-        q1->status != 0) {
+-        std::fprintf(stderr, "r3_moe_worker: combine stopped: helper 1's request does not match\n");
+-        return false;
++    const Request* q[kCombineHelpers] = {q0};
++    for (uint32_t k = 1; k < helpers; ++k) {
++        const uint32_t lanek = h->combine.lane[k], seqk = h->combine.seq[k];
++        if (!seqk) continue;   /* no request from helper k this step: it contributes no rows */
++        if (lanek >= kLanes || lanek % kMaxSlots != k) {
++            std::fprintf(stderr, "r3_moe_worker: combine stopped: helper %u's lane does not match\n", k);
++            return false;
++        }
++        for (uint32_t d; (int32_t)((d = load(&h->combine.helper_done[k])) - seqk) < 0;) {
++            if (stopping() || load(&h->helper_fault)) return false;
++            combine_futex_wait(&h->combine.helper_done[k], d, 200, true);
++        }
++        const Request* qk = lane_request(map, lanek, seqk);
++        if (load(&h->lane[lanek].done_sequence) != seqk || !qk || load(&qk->sequence) != seqk || qk->rows != rows ||
++            qk->status != 0) {
++            std::fprintf(stderr, "r3_moe_worker: combine stopped: helper %u's request does not match\n", k);
++            return false;
++        }
++        q[k] = qk;
+     }
+     const auto t0 = std::chrono::steady_clock::now();
+     std::memset(mask->data(), 0, rows);
+-    const Request* q[kCombineHelpers] = {q0, q1};
+-    for (uint32_t k = 0; k < kCombineHelpers; ++k) {
++    const float* planes[kCombineHelpers] = {};
++    for (uint32_t k = 0; k < helpers; ++k) {
++        planes[k] = ptr<float>(map, h->result_offset[result_index(k, 0)]);
++        if (!q[k]) continue;
+         const Route* r = ptr<Route>(map, q[k]->route_offset);
+         for (uint32_t j = 0; j < q[k]->route_count; ++j) {
+             const int32_t t = r[j].token;
+@@ -136,9 +156,7 @@ inline bool combine_step(void* map, const r3::moe_shm::Request* q0, CombinePool*
+             (*mask)[(uint32_t)t] |= (uint8_t)(1u << k);
+         }
+     }
+-    pool->combine(ptr<uint16_t>(map, h->result_offset[result_index(0, 0)]),
+-                  ptr<uint16_t>(map, h->result_offset[result_index(1, 0)]),
+-                  ptr<uint16_t>(map, h->result_offset[result_index(0, 1)]), mask->data(), rows, h->hidden);
++    pool->combine(planes, helpers, ptr<uint16_t>(map, h->result_offset[result_index(0, 1)]), mask->data(), rows, h->hidden);
+     std::atomic_thread_fence(std::memory_order_release);
+     store(&h->combine.done, g);
+     st->combine_us += std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - t0).count();
+diff --git a/engines/radiance/components/moe-remote/worker_harness.h b/engines/radiance/components/moe-remote/worker_harness.h
+index a50ab9206..d1410a91e 100644
+--- a/engines/radiance/components/moe-remote/worker_harness.h
++++ b/engines/radiance/components/moe-remote/worker_harness.h
+@@ -288,7 +288,7 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
+         q->activation_s_stride = (hid / kActGroup) * sizeof(float);
+         for (uint32_t r = 0; r < kMaxEngineRanks; ++r) {
+             q->result_offset[r] = h->result_offset[result_index(rank, r)];
+-            q->result_stride[r] = hid * sizeof(uint16_t);
++            q->result_stride[r] = hid * sizeof(float);
+         }
+         q->sequence = sequence;
+         std::memcpy(ptr<Route>(map, q->route_offset), published.data(),
+@@ -325,20 +325,23 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
+             break;
+         }
+         /* The helper's per-token rows, taken before the host reference rewrites the same slot. */
+-        const uint16_t* res = ptr<uint16_t>(map, h->result_offset[result_index(rank, out_rank_of(rank, q->rank_count))]);
+-        const std::vector<uint16_t> got(res, res + (size_t)rows * hid);
++        const float* res = ptr<float>(map, h->result_offset[result_index(rank, out_rank_of(rank, q->rank_count))]);
++        const std::vector<float> got(res, res + (size_t)rows * hid);
+         {   /* FNV-1a over the helper's result bytes: two builds that print the same hash for the same capture and settings produced
+              * bit-identical output (the cross-build identity check of RCS05/RAD14; rel_l2 below only ever bounds the error). */
+             uint64_t fnv = 1469598103934665603ull;
+-            for (uint16_t v : got) { fnv = (fnv ^ (v & 0xffu)) * 1099511628211ull; fnv = (fnv ^ (v >> 8)) * 1099511628211ull; }
++            for (float f : got) {   /* the f32 partial's four bytes, low first (protocol 20) */
++                uint32_t v; std::memcpy(&v, &f, 4);
++                for (int b = 0; b < 4; ++b) fnv = (fnv ^ ((v >> (8 * b)) & 0xffu)) * 1099511628211ull;
++            }
+             std::printf("replay_hash layer %u rank %u rows %u fnv64=%016llx\n", layer, rank, rows,
+                         (unsigned long long)fnv);
+         }
+         if (g_sweep_fast) {
+-            static std::map<std::pair<const ReplayInput*, uint32_t>, std::vector<uint16_t>> base;
++            static std::map<std::pair<const ReplayInput*, uint32_t>, std::vector<float>> base;
+             double sum_abs = 0.0;
+             size_t nonzero = 0;
+-            for (uint16_t v : got) { const double x = std::abs((double)bf16(v)); sum_abs += x; nonzero += v != 0; }
++            for (float v : got) { sum_abs += std::abs((double)v); nonzero += v != 0.0f; }
+             std::printf("sweep_sum layer %u rank %u sum_abs=%.6g nonzero=%zu of %zu\n", layer, rank, sum_abs, nonzero, got.size());
+             const auto key = std::make_pair(g_replay, rank);
+             const auto it = base.find(key);
+@@ -350,8 +353,8 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
+                 long double dn = 0.0L, dd = 0.0L;
+                 double dmax = 0.0;
+                 for (size_t i = 0; i < got.size(); ++i) {
+-                    mism += got[i] != it->second[i];
+-                    const double a = bf16(got[i]), b = bf16(it->second[i]);   /* this variant against the first one */
++                    mism += std::memcmp(&got[i], &it->second[i], 4) != 0;
++                    const double a = got[i], b = it->second[i];   /* this variant against the first one */
+                     dn += (long double)(a - b) * (a - b);
+                     dd += (long double)b * b;
+                     dmax = std::max(dmax, std::abs(a - b));
+@@ -392,8 +395,8 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
+                     acc += bf16(published[(uint32_t)j].weight_bf16) *
+                            bf16(want_route[(size_t)(uint32_t)j * hid + col]);
+                 }
+-                const double b = bf16(to_bf16(acc));
+-                const double a = bf16(got[(size_t)t * hid + col]);
++                const double b = acc;   /* the helper writes the unrounded f32 partial (protocol 20), so compare unrounded */
++                const double a = got[(size_t)t * hid + col];
+                 const double d = a - b;
+                 num += (long double)d * d;
+                 den += (long double)b * b;
+diff --git a/engines/radiance/components/moe-remote/worker_hostref.h b/engines/radiance/components/moe-remote/worker_hostref.h
+index 5cc439ba3..3c493d7f0 100644
+--- a/engines/radiance/components/moe-remote/worker_hostref.h
++++ b/engines/radiance/components/moe-remote/worker_hostref.h
+@@ -160,7 +160,7 @@ int compute_host_engine(const Container& f, void* map, Request* q,
+ 
+     const Route* routes = ptr<Route>(map, q->route_offset);
+     const uint16_t* act = ptr<uint16_t>(map, q->activation_offset);
+-    uint16_t* dst = ptr<uint16_t>(map, q->result_offset[out_rank_of(q->rank, q->rank_count)]);
++    float* dst = ptr<float>(map, q->result_offset[out_rank_of(q->rank, q->rank_count)]);   /* f32 partials (protocol 20) */
+ 
+     std::vector<float> aq((size_t)q->rows * hid);
+     for (size_t i = 0; i < aq.size(); ++i) aq[i] = bf16(act[i]);
+@@ -241,7 +241,7 @@ int compute_host_engine(const Container& f, void* map, Request* q,
+                 acc += bf16(routes[(uint32_t)ri].weight_bf16) *
+                        bf16(down[(size_t)(uint32_t)ri * hid + h]);
+             }
+-            dst[(size_t)t * hid + h] = to_bf16(acc);
++            dst[(size_t)t * hid + h] = acc;
+         }
+     }
+     return 0;
+@@ -258,7 +258,7 @@ int compute_host_engine_fp8(const Container& f, void* map, Request* q,
+ 
+     const Route* routes = ptr<Route>(map, q->route_offset);
+     const uint16_t* act = ptr<uint16_t>(map, q->activation_offset);
+-    uint16_t* dst = ptr<uint16_t>(map, q->result_offset[out_rank_of(q->rank, q->rank_count)]);
++    float* dst = ptr<float>(map, q->result_offset[out_rank_of(q->rank, q->rank_count)]);   /* f32 partials (protocol 20) */
+ 
+     std::vector<float> aq((size_t)q->rows * hid);
+     for (size_t i = 0; i < aq.size(); ++i) aq[i] = bf16(act[i]);
+@@ -347,7 +347,7 @@ int compute_host_engine_fp8(const Container& f, void* map, Request* q,
+                 acc += bf16(routes[(uint32_t)ri].weight_bf16) *
+                        bf16(down[(size_t)(uint32_t)ri * hid + h]);
+             }
+-            dst[(size_t)t * hid + h] = to_bf16(acc);
++            dst[(size_t)t * hid + h] = acc;
+         }
+     }
+     return 0;
+@@ -360,7 +360,7 @@ int compute_host(const Container& f, void* map, Request* q) {
+         q->hidden != hid || q->route_count > kMaxRoutes || q->activation_stride != hid*2) return -EINVAL;
+     const Route* routes = ptr<Route>(map,q->route_offset);
+     const uint16_t* act = ptr<uint16_t>(map,q->activation_offset);
+-    uint16_t* dst = ptr<uint16_t>(map,q->result_offset[out_rank_of(q->rank, q->rank_count)]);
++    float* dst = ptr<float>(map,q->result_offset[out_rank_of(q->rank, q->rank_count)]);   /* f32 partials (protocol 20) */
+     std::vector<float> out((size_t)q->rows*hid,0.f);
+     std::vector<std::vector<uint32_t>> by_exp(f.experts);
+     for(uint32_t i=0;i<q->route_count;++i) {
+@@ -391,7 +391,7 @@ int compute_host(const Container& f, void* map, Request* q) {
+             }
+         }
+     }
+-    for(size_t i=0;i<out.size();++i) dst[i]=to_bf16(out[i]);
++    for(size_t i=0;i<out.size();++i) dst[i]=out[i];
+     return 0;
+ }
+ 
+diff --git a/engines/radiance/components/moe-remote/worker_lanes.h b/engines/radiance/components/moe-remote/worker_lanes.h
+index 8ec763b55..ace07bf22 100644
+--- a/engines/radiance/components/moe-remote/worker_lanes.h
++++ b/engines/radiance/components/moe-remote/worker_lanes.h
+@@ -32,7 +32,7 @@ inline bool wait_burst(r3::moe_shm::Header* h) {
+     }
+ }
+ 
+-/* The engine's large-lane rows added on the CPU by helper 0 (RAD18, worker_combine.h); helper 1 signals its sync. */
++/* The engine's large-lane rows added on the CPU by helper 0 (RAD18, worker_combine.h); the other helpers signal their syncs. */
+ struct Combine {
+     bool on = false;
+     std::unique_ptr<CombinePool> pool;   /* helper 0 only */
+@@ -74,7 +74,7 @@ public:
+     void stop_and_join() {
+         using namespace r3::moe_shm;
+         request_stop();
+-        combine_futex_wake(&h_->combine.helper1_done, true);
++        for (uint32_t k = 1; k < kCombineHelpers; ++k) combine_futex_wake(&h_->combine.helper_done[k], true);
+         (void)__atomic_fetch_or(&h_->burst, kBurstStop, __ATOMIC_ACQ_REL);
+         (void)futex_wake(&h_->burst);
+         for (uint32_t lane = 0; lane < kLanes; ++lane)
+@@ -163,9 +163,9 @@ private:
+                 break;
+             }
+             if (!gpu_.sync_lane(lane) || !collect(lane, next)) { request_stop(); break; }
+-            if (combine_.on && cfg_.helper_index == 1) combine_helper1_done(map_, next);
++            if (combine_.on && cfg_.helper_index >= 1) combine_helper_done(map_, cfg_.helper_index, next);
+             if (combine_.on && cfg_.helper_index == 0 &&
+-                !combine_step(map_, q, combine_.pool.get(), &combine_.mask, &combine_.stats)) {
++                !combine_step(map_, q, cfg_.helper_count, combine_.pool.get(), &combine_.mask, &combine_.stats)) {
+                 raise_fault(h_);   /* the engine's wait for combine.done fails now */
+                 request_stop();
+                 break;
+diff --git a/tools/lab/radiance/combine-cpu-bench.cpp b/tools/lab/radiance/combine-cpu-bench.cpp
+new file mode 100644
+index 000000000..5cbeb125a
+--- /dev/null
++++ b/tools/lab/radiance/combine-cpu-bench.cpp
+@@ -0,0 +1,57 @@
++// RAD23: helper 0's CPU combine (worker_combine.h CombinePool + combine_f16.h), timed without a model. Planes are the
++// helpers' f32 per-token partials (protocol 20), the output one fp16 row a token, all in page-aligned memory shaped like a
++// real large-lane step; a mask marks which helper wrote each row (density per helper is a parameter: the tail helper owns
++// few routes). Prints microseconds a step for 2..4 helpers and 1..N threads.
++// Build: g++ -O3 -std=c++20 -mavx2 -mf16c -pthread -I engines/radiance/components/moe-remote tools/lab/radiance/combine-cpu-bench.cpp -o combine-cpu-bench
++// Run:   ./combine-cpu-bench [rows=2048] [tail_density=0.05]
++#include <atomic>
++#include <chrono>
++#include <climits>
++#include <cstdio>
++#include <cstdlib>
++#include <cstring>
++#include <random>
++#include <thread>
++#include <vector>
++#include "moe_remote_shm.h"
++namespace { inline bool stopping() { return false; } }  // worker_container.h supplies this in the worker
++#include "worker_combine.h"
++
++int main(int argc, char** argv) {
++    const uint32_t rows = argc > 1 ? (uint32_t)std::atoi(argv[1]) : 2048u, hidden = 2560u;
++    const double tail = argc > 2 ? std::atof(argv[2]) : 0.05;
++    if (!combine_cpu_supported()) { std::printf("needs AVX2 and F16C\n"); return 1; }
++    std::mt19937 rng(7);
++    std::uniform_real_distribution<float> val(-2.0f, 2.0f);
++    // kSets copies of every plane, used in turn, so a step reads memory the last few steps did not touch (well past the
++    // 25 MiB L3), the way the helpers' DMA-written planes arrive.
++    constexpr int kSets = 6;
++    std::vector<std::vector<float>> plane(4 * kSets, std::vector<float>((size_t)rows * hidden));
++    for (auto& p : plane) for (auto& v : p) v = val(rng);
++    std::vector<std::vector<uint16_t>> out(kSets, std::vector<uint16_t>((size_t)rows * hidden));
++    for (uint32_t helpers = 2; helpers <= 4; ++helpers) {
++        // the heads (XTX) write nearly every row; the last helper is the tail and writes `tail` of them
++        std::vector<uint8_t> mask(rows, 0);
++        std::bernoulli_distribution head(0.97), tl(tail);
++        for (uint32_t t = 0; t < rows; ++t)
++            for (uint32_t k = 0; k < helpers; ++k)
++                if ((k + 1 < helpers || helpers == 2) ? head(rng) : tl(rng)) mask[t] |= (uint8_t)(1u << k);
++        auto step = [&](CombinePool& pool, int i) {
++            const int k = i % kSets;
++            const float* src[4] = {plane[4 * k].data(), plane[4 * k + 1].data(), plane[4 * k + 2].data(), plane[4 * k + 3].data()};
++            pool.combine(src, helpers, out[k].data(), mask.data(), rows, hidden);
++        };
++        for (uint32_t threads : {1u, 2u, 4u, 8u, 12u, 16u}) {
++            CombinePool pool(threads);
++            for (int w = 0; w < kSets; ++w) step(pool, w);
++            const int it = 30;
++            const auto t0 = std::chrono::steady_clock::now();
++            for (int i = 0; i < it; ++i) step(pool, i);
++            const double us = std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - t0).count() / it;
++            uint64_t rd = 0;   // bytes the step must move: every present helper row read, every touched row written
++            for (uint32_t t = 0; t < rows; ++t) { rd += 4ull * hidden * __builtin_popcount(mask[t]); if (mask[t]) rd += 2ull * hidden; }
++            std::printf("helpers %u threads %2u: %7.1f us a step (%.1f GB/s moved)\n", helpers, threads, us, rd / (us * 1e3));
++            std::fflush(stdout);
++        }
++    }
++}

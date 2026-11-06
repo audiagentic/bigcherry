@@ -20,4 +20,12 @@ is closed or deleted. The detailed notes are linked; the code lives on the named
 | gfx1100 MXFP4 row policy | RAD47 | Shipped via #596 | Both branch changes on main (`619590728`); tiled from M=17; +27% at four streams, +37% at six. | `experiments/radiance/RAD47-xtx-rows/`; `exp/rad47-xtx-rows` |
 | Helper serving-manifest original implementation | RSC06 | Superseded by #633; #527 closed | Original contract and helper-config patch replaced by v1 strict manifest reader. | `experiments/radiance/RSC06-helper-manifest/`; `feat/rsc06-helper-manifest` |
 
+
+| Helper fp32 result planes, protocol v20 | RAD23 | Archived inert patch | Novel unrounded-f32 combine and CPU bench not validated end-to-end; later chunk-wise combine shipped (#497). | `experiments/radiance/RAD23-result-f32/`; `feat/rad23-result-f32` |
+| Helper fp16 rows with exponent, protocol v21 | RAD23 | Archived inert patch | No recorded KLD or throughput A/B; later production protocol superseded the experiment. Apply only after v20 patch on historical base. | `experiments/radiance/RAD23-result-f16/`; `feat/rad23-result-f16` |
+
+
+| 1357 router split-K with 1358 eviction, 1330 mask trial | QFP17 | Shipped/partly rejected via main PRs | 1357 and scripts already present; 1358 via #107; 1330 ub1024 not adopted at 245760 (#77). | `experiments/radiance/router-splitk-cache-evict/`; `exp/router-splitk-with-cache-evict` |
+| Four-card Flash-Next with mixed heat default | RAD23 | Shipped via #488 | Launcher/layout and mixed heat already on main; +48% eight-session prefill in historical A/B. | `experiments/radiance/RAD23-flashnext-4gpu-default/`; `feat/flashnext-4gpu-default` |
+
 Code for every row with a branch is archived as an inert patch under `experiments/radiance/<ITEM>-<name>/` (see `experiments/README.md`); the branches can be deleted. The Codex session's original RAD46 notes and reviews are in `experiments/radiance/RAD46-rad46/`.
