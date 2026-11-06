@@ -372,11 +372,13 @@ BuiltManifest build_manifest(const ManifestInputs& in) {
     const Json& values = in.resolved.values;
     const Json calibration = calibration_entries(in.resolved, in.calibration_cache);
     const std::string model = values.at("engine").at("model");
-    bc::experts::Container container;
-    if (!container.open(model.c_str())) fail("cannot open the model container " + model);
     if (!in.live_policy.is_null() && in.profile != "lab")
         fail("--live-policy is an explicit lab-only override; production derives from calibration");
     const bool engine_only = in.resolved.manifest.at("process_helpers").empty();   // contract amendment 12
+    // The expert container is read only to place experts on helpers. An engine-only configuration places none, so a dense
+    // model (no routed experts, which Container::open refuses) is a valid engine-only model.
+    bc::experts::Container container;
+    if (!engine_only && !container.open(model.c_str())) fail("cannot open the model container " + model);
     if (engine_only && (!in.live_policy.is_null() || (!in.experiment.is_null() && in.experiment.contains("shape"))))
         fail("an engine-only configuration has no helpers: no live placement policy or helper shape applies");
     Json live_policy = in.live_policy;
