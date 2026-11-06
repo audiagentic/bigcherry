@@ -554,6 +554,17 @@ service publisher ever appears. A valid incomplete planner record uses
 the established fail-safe: serving without live policy, with the
 specific reason in provenance.
 
+Follow-up 14 refines the deadline start, not its measured duration.
+No baseline or pre-accepted-heat heartbeat starts any calibration timer.
+The first measured positive heat gap and retained drift snapshot establish
+the deadline basis; a first verified commit is needed for a missing
+copy-ACK measurement, and the first verified tail-involving commit for
+tail service or lane-loss. Evidence that never becomes measurable cannot
+time out merely because a configured cadence/heat-age interval elapsed.
+Progress in the condition itself renews its watch; unrelated samples do
+not. The calib14 pre-heat waiting sequence therefore cannot emit an
+early partial record.
+
 The source still feeds route counts of ONE update interval, not decayed
 heat. The driver derives base observation spacing from measured route
 rate, evaluation cadence and drift ring capacity. When the ring fills,
@@ -573,7 +584,7 @@ for the work a move targets: the tail's absolute per-row service is too bursty t
 ladder best 3.3% against a 2.6% requirement) and the relative signal has no denominator on that lane (calib10-12). The derivation
 now sets `effect_gate=false` with that reason and keeps every other derived setting (calib8 delivered -35% this way, bounded by the
 derived margin, residency and move caps); an enabled gate can no longer block the driver; a calibration that cannot derive a policy
-serves without one; every calibration wait is named in the helper log and bounded; the drift window is spaced by observations, not
+serves without one; every measurable calibration wait is named in the helper log and bounded; the drift window is spaced by observations, not
 evaluations. calib13 and calib14 surfaced, in turn, a drift window too short at a 5 s lab cadence, a planner quantity never measured
 once placement converged, and a deadline that started before the heat feed (follow-up 14). Hardware evidence for the policy's
 effect remains calib7 and calib8; the later changes are verified card-free.

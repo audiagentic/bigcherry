@@ -22,8 +22,13 @@ class EffectSignalTimeout {
     uint64_t missing_since_=0;
     bool publishers_seen_=false;
 public:
-    void observe(bool active_publishers,bool overlapping_rows,uint64_t now_ns) {
+    void observe(bool active_publishers,bool overlapping_rows,uint64_t now_ns,
+                 bool heat_evidence_ready) {
         if(active_publishers)publishers_seen_=true;
+        if(!heat_evidence_ready) {
+            missing_since_=0;
+            return; // baseline or one accepted delta does not establish a timed feed
+        }
         if(!publishers_seen_)return; // do not time out during helper/workload warm-up
         if(overlapping_rows)missing_since_=0;
         else if(!missing_since_ && now_ns)missing_since_=now_ns;
@@ -31,10 +36,11 @@ public:
     bool expired(uint64_t now_ns,const Measured& m,uint64_t cadence_ns,
                  uint64_t max_heat_age_ns) const {
         if(!missing_since_ || now_ns<missing_since_ ||
+           !m.accepted_heat_deltas || !m.delta_gap_ns.total() ||
+           m.delta_gap_ns.max()<=0 || !m.drift_intervals ||
            !cadence_ns || !max_heat_age_ns)return false;
-        // A missing heat feed must not make the timeout itself unavailable.
-        // Use actual gaps if observed, otherwise the derived poll/freshness
-        // limits. The retained drift horizon supplies the gap count.
+        // A measured accepted heat gap is mandatory. Cadence and freshness
+        // remain minimum horizon scales, not substitutes for that gap.
         const long double gap=std::max({static_cast<long double>(m.delta_gap_ns.max()),
                                         static_cast<long double>(cadence_ns),
                                         static_cast<long double>(max_heat_age_ns)});
@@ -62,24 +68,27 @@ inline std::vector<MissingPlannerCondition> calibration_missing_planner(const Me
          "not enough consecutive accepted heat delta gaps", m.delta_gap_ns.total());
     need(m.hot_set_k>0, "hot_set_k", "no tail-helper expert capacity");
     need(std::isfinite(m.marginal_error) && m.marginal_error>0,
-         "marginal_error_ppm", "marginal relative error absent or zero");
+         "marginal_error_ppm", "marginal relative error absent or zero",
+         m.marginal_observations);
     need(m.marginal_observations>0, "marginal_observations",
-         "no positive accepted source observation count");
+         "no positive accepted source observation count",m.accepted_heat_deltas);
     need(std::isfinite(m.observation_rate_per_s) && m.observation_rate_per_s>0,
-         "observation_rate_per_s", "no two accepted counter/time points establish a positive rate");
+         "observation_rate_per_s", "no two accepted counter/time points establish a positive rate",
+         m.accepted_heat_deltas);
     need(m.drift_half_life_observations>0, "drift_half_life_observations",
-         "half-overlap crossing not observed in retained drift horizon");
+         "half-overlap crossing not observed in retained drift horizon",
+         m.drift_horizon_observations);
     need(m.transaction_ns.quantile(0.5)>0, "txn_p50_ns",
-         "no positive committed transaction wall time", m.transaction_ns.positive_count());
+         "no positive committed transaction wall time", m.transaction_ns.total());
     need(m.tail.gain_ppm.quantile(0.5)>0, "tail_share_gain_ppm",
-         "no committed plan with positive predicted tail-share saving", m.tail.gain_ppm.positive_count());
+         "no committed plan with positive predicted tail-share saving", m.tail.gain_ppm.total());
     need(m.slowest_helper_copy_bps.quantile(0.5)>0, "copy_bytes_per_s",
          "no committed transaction with complete per-receiver READY ACK timings",
-         m.slowest_helper_copy_bps.positive_count());
+         m.slowest_helper_copy_bps.total());
     need(m.tail_lane_service_ns_per_s.quantile(0.5)>0, "tail_lane_service_ns_per_s",
-         "no positive sampled tail-lane service per second", m.tail_lane_service_ns_per_s.positive_count());
+         "no positive sampled tail-lane service per second", m.tail_lane_service_ns_per_s.total());
     need(m.tail_lane_row_ns.quantile(0.5)>0, "tail_lane_row_ns",
-         "no positive tail-lane service per routed row", m.tail_lane_row_ns.positive_count());
+         "no positive tail-lane service per routed row", m.tail_lane_row_ns.total());
     need(m.lane_lost_ns.count()>0, "lane_lost_ns",
          "no tail quiesce/reopen interval yet", m.lane_lost_ns.total());
     return out;
@@ -97,9 +106,9 @@ inline std::string calibration_waiting_message(const std::vector<MissingPlannerC
     }
     return message == "calibration waiting: " ? std::string{} : message;
 }
-// Per-missing-condition watchdog. Warm-up and unrelated counters never renew
-// the deadline for lane_lost_ns, copy_bytes_per_s, etc. The timeout derives
-// from the observed heat gap, configured freshness/cadence and ring capacity.
+// An accepted heat delta opens the feed, but the first positive measured heat
+// gap and a retained drift snapshot establish the no-progress timer basis.
+// Configured age/cadence alone cannot be used as evidence of feed progress.
 class CalibrationProgressTimeout {
     struct Pending {
         uint64_t since_ns=0, progress=0;
@@ -108,57 +117,94 @@ class CalibrationProgressTimeout {
     std::map<std::string,Pending> pending_;
     uint64_t effect_since_ns_=0;
     long double effect_frozen_span_ns_=0;
+    std::array<uint64_t,4> effect_progress_{};
     std::string last_message_;
+
+    static bool has_basis(const Measured& m) {
+        return m.accepted_heat_deltas && m.delta_gap_ns.total() &&
+               m.delta_gap_ns.max()>0 && m.drift_intervals && m.drift_capacity;
+    }
+    static bool measurable(const std::string& name,const Measured& m) {
+        if(!has_basis(m) || name=="heat_watermarked")return false;
+        if(name=="txn_p50_ns" || name=="tail_share_gain_ppm" ||
+           name=="copy_bytes_per_s")return m.committed_transactions>0;
+        if(name=="tail_lane_service_ns_per_s" || name=="tail_lane_row_ns" ||
+           name=="lane_lost_ns")return m.tail_committed_transactions>0;
+        // Drift/observation requirements need the first retained snapshot.
+        // Planner capacity is known, but may only time out after live heat.
+        return true;
+    }
 public:
-    bool observe(const std::vector<MissingPlannerCondition>& missing,
-                 uint64_t now_ns, bool effect_waiting, std::string* changed_line) {
+    bool observe(const Measured& m,const std::vector<MissingPlannerCondition>& missing,
+                 uint64_t now_ns,bool effect_waiting,std::string* changed_line) {
         std::map<std::string,Pending> next;
-        for (const auto& c : missing) {
+        for(const auto& c:missing) {
             auto it=pending_.find(c.name);
-            Pending p=it==pending_.end() ? Pending{now_ns,c.progress,0} : it->second;
-            if (c.progress!=p.progress) p={now_ns,c.progress,0};
+            Pending p=it==pending_.end()?Pending{}:it->second;
+            if(!measurable(c.name,m)) {
+                p.since_ns=0;
+                p.frozen_span_ns=0;
+            } else if(!p.since_ns || c.progress!=p.progress) {
+                p.since_ns=now_ns;
+                p.frozen_span_ns=0;
+            }
+            p.progress=c.progress;
             next.emplace(c.name,p);
         }
         pending_.swap(next);
-        if(effect_waiting) {
-            if(!effect_since_ns_) effect_since_ns_=now_ns;
+        // Only effect-specific quiet/ladder progress renews the effect timer.
+        const std::array<uint64_t,4> progress={
+            m.effect.quiet_comparisons,
+            m.effect.normalized_noise_ns.total(),
+            m.effect.quiet_delta_ns.total(),
+            m.effect_window_noise_ladder.empty()?0:
+                m.effect_window_noise_ladder.back().rows
+        };
+        if(effect_waiting && has_basis(m)) {
+            if(!effect_since_ns_ || progress!=effect_progress_) {
+                effect_since_ns_=now_ns;
+                effect_frozen_span_ns_=0;
+            }
         } else {
             effect_since_ns_=0;
             effect_frozen_span_ns_=0;
         }
+        effect_progress_=progress;
         const std::string message=calibration_waiting_message(missing,effect_waiting);
-        if (message==last_message_) return false;
+        if(message==last_message_)return false;
         last_message_=message;
-        if(changed_line) *changed_line=message;
+        if(changed_line)*changed_line=message;
         return !message.empty();
     }
     static long double wait_span(const Measured& m,uint64_t cadence_ns,
                                  uint64_t max_heat_age_ns) {
+        if(!has_basis(m) || !cadence_ns || !max_heat_age_ns)return 0;
         const long double gap=std::max({static_cast<long double>(m.delta_gap_ns.max()),
                                         static_cast<long double>(cadence_ns),
                                         static_cast<long double>(max_heat_age_ns)});
-        return gap*std::max<size_t>(m.drift_capacity,1);
+        return gap*m.drift_capacity;
     }
     bool expired(uint64_t now_ns,const Measured& m,uint64_t cadence_ns,
                  uint64_t max_heat_age_ns) {
+        const long double span=wait_span(m,cadence_ns,max_heat_age_ns);
+        if(span<=0)return false;
         for(auto& [name,p]:pending_) {
-            // Freeze at the first observation of this missing condition.
-            // A later, larger observed heat gap cannot extend its deadline.
-            if(p.frozen_span_ns<=0)
-                p.frozen_span_ns=wait_span(m,cadence_ns,max_heat_age_ns);
-            if(p.since_ns && now_ns>=p.since_ns && p.frozen_span_ns>0 &&
-               static_cast<long double>(now_ns-p.since_ns)>=p.frozen_span_ns) return true;
+            if(!p.since_ns || !measurable(name,m))continue;
+            // Freeze per-condition once it becomes measurable: subsequent
+            // larger heat gaps must not extend its deadline.
+            if(p.frozen_span_ns<=0)p.frozen_span_ns=span;
+            if(now_ns>=p.since_ns &&
+               static_cast<long double>(now_ns-p.since_ns)>=p.frozen_span_ns)
+                return true;
         }
         return false;
     }
-    // Effect-only evidence must also have a finite frozen deadline even when
-    // NO publisher ever becomes active, or publishes unusable rows forever.
     bool effect_expired(uint64_t now_ns,const Measured& m,uint64_t cadence_ns,
                         uint64_t max_heat_age_ns) {
-        if(effect_since_ns_ && effect_frozen_span_ns_<=0)
-            effect_frozen_span_ns_=wait_span(m,cadence_ns,max_heat_age_ns);
-        return effect_since_ns_ && now_ns>=effect_since_ns_ &&
-               effect_frozen_span_ns_>0 &&
+        const long double span=wait_span(m,cadence_ns,max_heat_age_ns);
+        if(!effect_since_ns_ || span<=0)return false;
+        if(effect_frozen_span_ns_<=0)effect_frozen_span_ns_=span;
+        return now_ns>=effect_since_ns_ &&
                static_cast<long double>(now_ns-effect_since_ns_)>=
                    effect_frozen_span_ns_;
     }

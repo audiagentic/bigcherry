@@ -179,20 +179,29 @@ so a record survives pin bumps. Changing the model, the cards, the layout, the e
 record schema needs a new calibration.
 
 
-### Calibration bounds and drift retention (RHP16 step 5 follow-up 13)
+### Calibration bounds and drift retention (RHP16 step 5 follow-ups 13-14)
 
 Helper 0 lists unmet planner measurements in a deduplicated
-"calibration waiting:" line with specific reasons. A no-peer tail lane
-cannot indefinitely postpone an unmeasured planner quantity. Every
-missing planner input has its own monotonic no-progress watch, bounded
-by the larger of the observed heat gap, policy cadence and maximum
-heat age, multiplied by the drift ring capacity. The bound is frozen
-when that missing condition starts; later heat gaps cannot extend it.
-The effect-only wait has an independent frozen bound of the same length. At expiry the record
-contains actual observations and explicit absent entries for the rest.
-Valid partial planner records keep serving without live policy;
-malformed records remain hard errors. Effect-only absences can instead
-derive an effect-gate-off policy once planner inputs are present.
+"calibration waiting:" line with specific reasons. The watchdog cannot
+start at the initial heartbeat or a heat baseline: its first basis is
+accepted heat deltas with a positive measured inter-delta gap and a
+retained drift snapshot. Copy-ACK requires the first committed transaction;
+tail service and lane-loss require the first non-revert committed transaction
+involving the tail. A condition with no measurable opportunity has no
+expiring deadline, even if the process has run for a long time.
+
+Once armed, each missing condition has its own no-progress watch, bounded
+by the larger of measured heat gap, policy cadence and maximum heat age,
+multiplied by the drift ring capacity. The duration freezes on arming;
+later heat gaps cannot extend it. Progress in that *specific* missing
+measurement renews the watch, whereas unrelated activity does not.
+Effect-only missing evidence follows the same basis and tracks its own
+quiet/ladder progress; the relative publisher timeout also cannot arm
+before the accepted heat feed. On expiry, a partial record contains actual
+observations and explicit absent entries. Valid partial planner records
+serve without live policy; malformed records remain hard errors. Effect-only
+absences can instead derive an effect-gate-off policy when planner inputs
+are present.
 
 The drift series retains source-interval route counts with growing
 observation-count spacing, adaptively thinning its bounded ring in

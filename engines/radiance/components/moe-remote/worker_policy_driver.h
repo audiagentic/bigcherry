@@ -397,8 +397,6 @@ public:
                     last_relative_service_=tail;
                 last_relative_service_valid_=true;
             } else last_relative_service_valid_=false;
-            effect_signal_timeout_.observe(service_ && service_->active_publishers(),
-                                           overlapping_rows,now_ns);
             if(service_ok) {
                 std::array<WindowNoiseTracker::Counts,2> counters{};
                 for(unsigned i=0;i<2;++i)
@@ -415,6 +413,11 @@ public:
                 next_window_noise_check_ns_=add_saturating(now_ns,settings_.cadence_ns);
             }
             const Measured m=measured();
+            const bool heat_timing_ready=m.accepted_heat_deltas &&
+                m.delta_gap_ns.total() && m.delta_gap_ns.max()>0 &&
+                m.drift_intervals>0;
+            effect_signal_timeout_.observe(service_ && service_->active_publishers(),
+                                           overlapping_rows,now_ns,heat_timing_ready);
             // A published tail lane without ANY peer rows cannot produce a
             // relative verdict on that lane, even if another lane is usable.
             // No quiet ladder can fix this layout mismatch.
@@ -428,7 +431,7 @@ public:
             const bool effect_waiting=missing.empty() && !effect_missing &&
                 !calibration_settled(m,false,false);
             std::string waiting;
-            if(calibration_progress_.observe(missing,now_ns,effect_waiting,&waiting))
+            if(calibration_progress_.observe(m,missing,now_ns,effect_waiting,&waiting))
                 std::fprintf(stderr,"%s\\n",waiting.c_str());
             const bool effect_stalled=calibration_progress_.effect_expired(
                 now_ns,m,settings_.cadence_ns,settings_.controls.max_heat_age_ns);
@@ -705,6 +708,17 @@ public:
                 else effect_.committed(service);
             }
             ++evidence_.committed;
+            {
+                std::lock_guard<std::mutex> guard(measure_lock_);
+                ++measured_.committed_transactions;
+                if(!was_revert && pending_plan_.valid && active.helpers &&
+                   std::any_of(pending_plan_.delta.begin(),pending_plan_.delta.end(),
+                       [&](const auto& move) {
+                           const int32_t tail=int32_t(active.helpers-1);
+                           return move.from==tail || move.to==tail;
+                       }))
+                    ++measured_.tail_committed_transactions;
+            }
             for(const auto& m:pending_plan_.delta)
                 evidence_.bytes_moved=add_saturating(evidence_.bytes_moved,stride_);
             if(!was_revert)
