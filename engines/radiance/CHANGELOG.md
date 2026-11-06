@@ -1,5 +1,12 @@
 # Changelog
 
+## [1170.5.1](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.5.0...bc-radiance-1170.5.1) (2026-11-06)
+
+
+### Fixes
+
+* **radiance:** calibration-ingest handles the optional handoff of amendment 12 ([#686](https://github.com/audiagentic/bigcherry/issues/686)) ([6833529](https://github.com/audiagentic/bigcherry/commit/68335292abc65b1366fab0391113c42742390c9c))
+
 ## [1170.5.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.4.0...bc-radiance-1170.5.0) (2026-11-06)
 
 
