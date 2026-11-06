@@ -102,8 +102,9 @@ void ingest_live_policy_log(const fs::path& log, const fs::path& cache,
     const auto& m = loaded.value();
     // A calibration run (bc-serve --calibration-run) measures the production plan: lab profile, an explicit live
     // policy, and no lab experiment, so nothing but the policy separates it from the production start.
+    // Amendment 12: an engine-only manifest has no handoff, so it has no live policy to calibrate.
     if (m.spec.intent.service.profile != v1::Profile::kLab || m.spec.experiment ||
-        !m.spec.handoff.placement.live_policy)
+        !m.spec.handoff || !m.spec.handoff->placement.live_policy)
         invalid("a calibration-run manifest (lab profile, explicit live policy, no experiment) is required");
     const std::string key = v1::plan_cache_key(m);
     const std::string layout = m.spec.intent.layout;
