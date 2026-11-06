@@ -28,4 +28,8 @@ is closed or deleted. The detailed notes are linked; the code lives on the named
 | 1357 router split-K with 1358 eviction, 1330 mask trial | QFP17 | Shipped/partly rejected via main PRs | 1357 and scripts already present; 1358 via #107; 1330 ub1024 not adopted at 245760 (#77). | `experiments/radiance/router-splitk-cache-evict/`; `exp/router-splitk-with-cache-evict` |
 | Four-card Flash-Next with mixed heat default | RAD23 | Shipped via #488 | Launcher/layout and mixed heat already on main; +48% eight-session prefill in historical A/B. | `experiments/radiance/RAD23-flashnext-4gpu-default/`; `feat/flashnext-4gpu-default` |
 
-Code for every row with a branch is archived as an inert patch under `experiments/radiance/<ITEM>-<name>/` (see `experiments/README.md`); the branches can be deleted. The Codex session's original RAD46 notes and reviews are in `experiments/radiance/RAD46-rad46/`.
+
+| ROCm SDK-pinned Radiance build | RCS11 | Shipped via #524 | Selected SDK code, validation and plan already on main; no residual patch. | `experiments/radiance/RCS11-rocm-sdk-selection/`; `rcs11-merge` |
+| Internal references and environment-driven paths | privacy | Shipped/superseded via #394, #399 and #544 | Older redaction substitutions obsolete; unsafe to replay historical removed strings. | `experiments/radiance/internal-refs-redaction/`; `redact-internal-refs` |
+
+Branch dispositions are archived under `experiments/radiance/<ITEM>-<name>/`. Each has a README; only changes not on main have inert patches. Experimental-only layout entries may instead be copied to `engines/radiance/layouts.toml` without changing defaults. The original RAD46 notes and reviews are in `experiments/radiance/RAD46-rad46/`.
