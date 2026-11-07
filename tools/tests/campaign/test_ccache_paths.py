@@ -165,6 +165,45 @@ class StableSlotTests(unittest.TestCase):
         build("d" * 32, True)
         self.assertEqual(hits(), 1, "with a slot the second build's unchanged unit hits")
 
+    @unittest.skipUnless(CC and shutil.which("ccache"), "needs a C compiler and the real ccache")
+    def test_a_local_build_with_debug_info_hits_without_hand_set_ccache_variables(self) -> None:
+        # A local lane build sets no CCACHE_* itself, compiles with -g (RelWithDebInfo) and runs from its own real build
+        # directory, which the launcher cannot rewrite: ccache's default hash_dir then puts that directory in the hash and
+        # nothing hits (18% locally against 85% in CI). The slot must set what CI sets.
+        env = {k: v for k, v in os.environ.items() if not k.startswith("CCACHE_")}
+
+        def hits() -> int:
+            out = subprocess.run(["ccache", "-s"], env={**env, "CCACHE_DIR": str(self.root / ".ccache")},
+                                 capture_output=True, text=True, check=True).stdout
+            line = next(l for l in out.splitlines() if l.strip().startswith("Hits:"))
+            return int(line.split()[1])
+
+        def build(name: str) -> None:
+            source, build_dir = self._tree(name)
+            (source / "inc").mkdir()
+            (source / "inc" / "value.h").write_text("#define VALUE 7\n")
+            (source / "unit.c").write_text('#include "value.h"\nint f(void) { return VALUE; }\n')
+            command = [str(LAUNCHER), CC, "-g", "-c", f"-I{source}/inc", f"{source}/unit.c", "-o", str(build_dir / "unit.o")]
+            with ccache_paths.stable_paths(self.root, source, build_dir):
+                names = ccache_paths.VARIABLES + ccache_paths.CCACHE_VARIABLES
+                subprocess.run(command, env={**env, **{k: os.environ[k] for k in names if k in os.environ}}, check=True,
+                               cwd=build_dir)
+
+        build("e" * 32)
+        build("f" * 32)
+        self.assertEqual(hits(), 1, "the second build's unchanged unit hits with only what the slot sets")
+        self.assertTrue((self.root / ".ccache").is_dir(), "the cache lives in the work root, not in $HOME")
+
+    def test_the_slot_restores_the_ccache_settings_it_set(self) -> None:
+        before = {k: os.environ.get(k) for k in ccache_paths.CCACHE_VARIABLES}
+        source, build_dir = self._tree("g" * 32)
+        with ccache_paths.stable_paths(self.root, source, build_dir) as slot:
+            self.assertIsNotNone(slot)
+            self.assertEqual(os.environ["CCACHE_NOHASHDIR"], "true")
+            self.assertEqual(os.environ["CCACHE_BASEDIR"], str(self.root / ".cc-stable" / f"slot{slot}"))
+        self.assertEqual({k: os.environ.get(k) for k in ccache_paths.CCACHE_VARIABLES}, before)
+
+
 
 class LauncherTokenTests(unittest.TestCase):
     def test_the_token_resolves_to_the_script_and_other_values_are_unchanged(self) -> None:
