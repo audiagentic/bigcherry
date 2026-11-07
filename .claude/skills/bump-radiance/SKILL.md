@@ -107,6 +107,14 @@ A green bump says it builds and loads. It does not say it is as fast.
 - **Parity A/B on Flash-Next** (launcher defaults, four cards, `temperature: 0`, alternate A B A B under the `gpu`
   lease): compare COLD PREFILL and STEP TIME. Do not compare tokens/s across builds: draft acceptance differs
   per build even with the text pinned (`bigcherry-benchmark` for the harness rules).
+- **The parity harness** (`tools/lab/radiance/flashnext-parity.sh`, under the `gpu` lease, run detached):
+  - Before the bump: `measure --build <current main build> --out <run dir>`, then `baseline --out <run dir> --name
+    <current pin>`, and commit `docs/reference/engines/radiance/baselines/flashnext-4gpu-parity.json` in a PR. Its
+    tolerances come from the spread the run measured; a single launch is refused.
+  - After the bump: `measure --build <bump build> --out <new run dir>`, then `compare --out <new run dir> --baseline
+    docs/reference/engines/radiance/baselines/flashnext-4gpu-parity.json`. It gates cold prefill and step time
+    one-sided (better never fails) and prints draft acceptance and policy transactions without gating them.
+  - A regression (exit 1) is investigated, not waived: find the cause before the pin moves.
 - **Kernel rows** touched by upstream (rows, prefill tile): `rad-kbench` replay with `kbench_ab.py` against the
   previous build, per row, minutes each.
 - **Quality**: KLD and top-1 against BF16 if numerics could move.
