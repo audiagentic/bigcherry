@@ -1,5 +1,12 @@
 # Changelog
 
+## [11552.5.0](https://github.com/audiagentic/bigcherry/compare/bc-llamacpp-11552.4.0...bc-llamacpp-11552.5.0) (2026-11-07)
+
+
+### New and changed
+
+* **patch:** evidence carries through audited re-anchors; nine llama.cpp records from historical evidence ([#670](https://github.com/audiagentic/bigcherry/issues/670)) ([7fac72a](https://github.com/audiagentic/bigcherry/commit/7fac72a3c23b2fc880d301ba0b4f22b355415df0))
+
 ## [11552.4.0](https://github.com/audiagentic/bigcherry/compare/bc-llamacpp-11552.3.0...bc-llamacpp-11552.4.0) (2026-11-04)
 
 
