@@ -38,7 +38,28 @@ struct Bridge : Transport {
             const bool helper=a<kMaxHelpers;
             const uint32_t bit=1u<<(helper?a:a-kMaxHelpers);
             if(!(helper?c.expected_helpers:c.expected_ranks)&bit)continue;
-            auto& v=ack[a];v={};
+            auto& v=ack[a];
+            const auto previous=v;
+            v={};
+            if (helper && phase==AckPhase::RESERVED) {
+                // One synthetic interval: service ns, wall ns and 20 routed rows.
+                v.drained_step=20;
+                v.reserved[0]=uint64_t(2000 + 1000*a);
+                v.reserved[1]=10000;
+            } else if (helper && phase==AckPhase::READY) {
+                // Fake participants advertise their own exact ingress bytes
+                // and distinct elapsed copy times in the ACK's reserved words.
+                const auto* current=generation_map(map,c.active_slot);
+                const auto* candidate=generation_map(map,c.pending_slot);
+                uint64_t incoming=0;
+                for (uint32_t e=0;e<4;++e)
+                    if (current[e]!=candidate[e] && candidate[e]==int32_t(a)) ++incoming;
+                v.reserved[0]=incoming*10;
+                v.reserved[1]=incoming ? 1000+1000*a : 0;
+            } else if (previous.transaction_id==c.transaction_id) {
+                v.reserved[0]=previous.reserved[0];
+                v.reserved[1]=previous.reserved[1];
+            }
             v.transaction_id=c.transaction_id;
             v.epoch=c.pending_epoch;v.digest=c.pending_digest;
             v.generation_slot=c.pending_slot;v.phase=uint32_t(phase);
@@ -49,7 +70,9 @@ struct Bridge : Transport {
             const bool helper=a<kMaxHelpers;
             const uint32_t bit=1u<<(helper?a:a-kMaxHelpers);
             if(!(helper?c.expected_helpers:c.expected_ranks)&bit)continue;
-            auto& v=ack[a];v={};
+            auto& v=ack[a];const auto previous=v;v={};
+            v.reserved[0]=2500; // sampled QUIESCED-to-REOPEN unavailable time
+            v.reserved[1]=1;    // marked valid by the real cleanup publication
             v.transaction_id=c.transaction_id;
             v.epoch=c.active_epoch;v.digest=c.active_digest;
             v.generation_slot=c.active_slot;
@@ -105,6 +128,9 @@ struct DriverTestAccess {
         return any;
     }
     static bool revert_blocked(Driver& d) {return d.revert_failed_;}
+    static uint64_t post_wait(Driver& d) {return d.effect_post_wait_ns();}
+    static uint64_t post_deadline(Driver& d) {return d.effect_post_deadline_ns_;}
+    static bool post_pending(Driver& d) {return d.effect_.waiting();}
 };
 }
 struct PausedHeat : HeatFake {
@@ -280,7 +306,35 @@ static bool pump_effect(Fixture& f,Driver& d,FakeService& service,int limit=200)
 static bool matches_rejection(const char* got,const char* expected) {
     return got && std::strcmp(got,expected)==0;
 }
+static void test_calibration_ack_roundtrip() {
+    Fixture f;
+    auto c=f.controller->control();
+    c.transaction_id=42;
+    c.pending_epoch=c.active_epoch+1;
+    c.pending_slot=1u-c.active_slot;
+    c.pending_digest=c.active_digest+1;
+    publish_ack(f.map,0,c,AckPhase::RESERVED,4,2000,10000);
+    auto a=read_shared_ack(f.map,0);
+    check(a.reserved[0]==2000 && a.reserved[1]==10000 && a.drained_step==4,
+          "RESERVED carries same-interval service ns, sampled routed rows and wall ns");
+    publish_ack(f.map,0,c,AckPhase::READY,0,20,500);
+    a=read_shared_ack(f.map,0);
+    check(a.reserved[0]==20 && a.reserved[1]==500,
+          "READY carries per-helper bytes and elapsed copy ns");
+    publish_ack(f.map,0,c,AckPhase::QUIESCED);
+    a=read_shared_ack(f.map,0);
+    check(a.reserved[0]==20 && a.reserved[1]==500,
+          "later phases do not discard READY copy evidence");
+    c.state=uint32_t(PlacementState::ACTIVE);
+    publish_cleanup_ack(f.map,0,c,125);
+    a=read_shared_ack(f.map,0);
+    check(a.reserved[0]==125 && a.reserved[1]==1 &&
+          a.phase==uint32_t(AckPhase::CLEANED),
+          "CLEANED carries actual lane unavailable duration and valid flag");
+}
+
 int main() {
+    test_calibration_ack_roundtrip();
     {
         Fixture f;
         auto source=std::make_unique<HeatFake>();auto* h=source.get();
@@ -335,7 +389,16 @@ int main() {
         {
             const Measured m=d.measured();
             check(m.transaction_ns.total()==2 && m.abort_ns.total()==0 && m.hot_set_k==2 &&
-                  m.delta_gap_ns.total()>0,
+                  m.delta_gap_ns.total()>0 && m.accepted_heat_deltas>0 &&
+                  !m.accepted_unwatermarked_heat && m.tail.gain_ppm.total()>0 &&
+                  m.slowest_helper_copy_bps.total()==2 &&
+                  m.slowest_helper_copy_bps.quantile(0.5)>0 &&
+                  m.tail_lane_service_ns_per_s.count()==2 &&
+                  m.tail_lane_service_ns_per_s.quantile(0.5)>0 &&
+                  m.tail_lane_row_ns.count()==2 &&
+                  m.tail_lane_row_ns.quantile(0.5)==150 &&
+                  m.lane_lost_ns.count()==2 &&
+                  m.lane_lost_ns.quantile(0.95)==2500,
                   "the driver measures committed transactions, update gaps and the tail's hot-set size");
         }
         const auto back=f.owners();
@@ -632,12 +695,18 @@ int main() {
               "no proposal without minimum consecutive quiet windows");
         const auto before=f.owners();
         check(pump_effect(f,d,service),"measured noise permits forward proposal");
+        { const auto m=d.measured();
+          check(m.effect.quiet_comparisons>=2 && m.effect.normalized_noise_ns.count()>=2 &&
+                m.effect.quiet_delta_ns.max()>0 && m.effect.sampled_rows_per_s>0,
+                "driver captures actual quiet service duration, counts and sampled rate");
+        }
         f.commit();f.clock.advance(1001);
         d.observe(*f.controller,f.map,f.clock.now_ns());
         const auto after=f.owners();
         check(after.owner!=before.owner,"forward moved exactly through Controller");
-        check(pump(f,d,false,5) && d.evidence().effect_windows_judged==0,
-              "no verdict without enough postcommit sampled requests");
+        check(d.submit(f.map,*f.controller,f.clock.now_ns()) &&
+              d.evidence().effect_windows_judged==0,
+              "no verdict without enough postcommit routed rows before derived deadline");
         service.add(125,2);
         check(d.submit(f.map,*f.controller,f.clock.now_ns()),
               "postcommit regression drives proposal");
@@ -716,6 +785,103 @@ int main() {
         service.add(130,2);
         check(pump(f,d,false,12)&&d.evidence().proposed==proposals,
               "revert abort blocks further attempts; no retry loop");
+        d.stop();
+    }
+    // Even with effect_gate=true, losing the post-move source must never
+    // deadlock the planner. Heat deltas and drift continue DURING the wait
+    // and AFTER an UNDECIDED timeout; no regression is invented.
+    {
+        Fixture f;FakeService service;
+        auto source=std::make_unique<HeatFake>();
+        auto* heat=source.get();
+        auto gate_settings=measured_settings();
+        gate_settings.effect_window_samples=40; // enough post time for several heat deltas
+        Driver d(gate_settings,std::move(source),{20,20},10,
+                 {0,0,0,0},f.clock,&service);
+        check(DriverTestAccess::post_wait(d)==gate_settings.controls.max_heat_age_ns,
+              "unmeasured post window falls back to heat-age limit");
+        check(d.start()&&pump_effect(f,d,service),"missing post source forward proposal");
+        service.available=false; // unavailable even at transaction close
+        f.commit();f.clock.advance(1001);d.observe(*f.controller,f.map,f.clock.now_ns());
+        const auto after=f.owners();
+        const uint64_t start=f.clock.now_ns();
+        const uint64_t wait=DriverTestAccess::post_wait(d);
+        check(wait>0 && wait<UINT64_MAX/2 && DriverTestAccess::post_pending(d) &&
+              DriverTestAccess::post_deadline(d)==start+wait,
+              "closed forward transaction freezes finite derived post deadline");
+        const auto m_before=d.measured();
+        const uint64_t evaluated_before=d.evidence().evaluated;
+        heat->reverse=true; // heat shifts again while verdict is unavailable
+        // A few evaluations before expiry must still poll the source.
+        for(int i=0;i<4 && f.clock.now_ns()+1001<start+wait;++i) {
+            check(d.submit(f.map,*f.controller,f.clock.now_ns()),"waiting driver submit");
+            f.clock.advance(1001);
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        const auto m_during=d.measured();
+        check(d.evidence().effect_undecided==0 &&
+              m_during.accepted_heat_deltas>m_before.accepted_heat_deltas &&
+              m_during.drift_intervals>m_before.drift_intervals,
+              "effect WAITING still consumes heat deltas and tracks drift");
+        if(f.clock.now_ns()<start+wait)f.clock.advance(start+wait-f.clock.now_ns());
+        check(d.submit(f.map,*f.controller,f.clock.now_ns()),"deadline submit");
+        check(d.evidence().effect_undecided==1 &&
+              d.evidence().reasons.count("effect_post_signal_timeout")==1 &&
+              !DriverTestAccess::post_pending(d) &&
+              !DriverTestAccess::revert_blocked(d) &&
+              f.owners().owner==after.owner &&
+              d.evidence().effect_reverted==0 &&
+              d.negative_count(f.clock.now_ns())==0,
+              "missing post source settles UNDECIDED, no revert, no block");
+        for(int i=0;i<24;++i) {
+            f.clock.advance(1001);
+            check(d.submit(f.map,*f.controller,f.clock.now_ns()),"next cadence submit");
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        const auto m_after=d.measured();
+        check(m_after.accepted_heat_deltas>m_before.accepted_heat_deltas+1 &&
+              m_after.drift_intervals>m_before.drift_intervals &&
+              d.evidence().evaluated>evaluated_before,
+              "gate state never blocks subsequent heat consumption and drift tracking");
+        d.stop();
+    }
+    // A tail lane without any peer reference is structurally unjudgeable:
+    // resolve immediately, irrespective of apparent degradation on that lane.
+    {
+        Fixture f;FakeService service;
+        auto source=std::make_unique<HeatFake>();
+        Driver d(measured_settings(),std::move(source),{20,20},10,
+                 {0,0,0,0},f.clock,&service);
+        check(d.start()&&pump_effect(f,d,service),"no-peer forward proposal");
+        f.commit();f.clock.advance(1001);d.observe(*f.controller,f.map,f.clock.now_ns());
+        const auto after=f.owners();
+        service.now.unjudgeable_tail_lane[1]=true;
+        service.add(150,2);
+        check(d.submit(f.map,*f.controller,f.clock.now_ns()),"no-peer submit");
+        check(d.evidence().effect_undecided==1 &&
+              d.evidence().reasons.count("effect_post_no_peer_reference")==1 &&
+              d.evidence().effect_revert_attempts==0 &&
+              !DriverTestAccess::post_pending(d) &&
+              f.owners().owner==after.owner,
+              "tail lane without peer is UNDECIDED not WORSE");
+        d.stop();
+    }
+    // A regressed/reset post counter is INVALID evidence, not a reason to
+    // permanently disable the driver or mark the move as WORSE.
+    {
+        Fixture f;FakeService service;
+        auto source=std::make_unique<HeatFake>();
+        Driver d(measured_settings(),std::move(source),{20,20},10,
+                 {0,0,0,0},f.clock,&service);
+        check(d.start()&&pump_effect(f,d,service),"invalid post forward proposal");
+        f.commit();f.clock.advance(1001);d.observe(*f.controller,f.map,f.clock.now_ns());
+        service.now.lane[1].rows=0; // below the saved post anchor
+        check(d.submit(f.map,*f.controller,f.clock.now_ns()),"invalid post submit");
+        check(d.evidence().effect_undecided==1 &&
+              d.evidence().reasons.count("effect_post_signal_invalid")==1 &&
+              !DriverTestAccess::revert_blocked(d) &&
+              d.evidence().effect_revert_attempts==0,
+              "invalid post signal resolves UNDECIDED, no permanent deadlock");
         d.stop();
     }
     {

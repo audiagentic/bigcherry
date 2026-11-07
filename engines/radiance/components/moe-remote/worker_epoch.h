@@ -8,6 +8,7 @@
 #include <chrono>
 #include <cstring>
 #include <memory>
+#include <array>
 #include <limits>
 #include <functional>
 
@@ -58,6 +59,10 @@ class Controller {
     Deadlines deadlines_;
     PlacementControl c_{};
     PlacementJournal journal_{};
+    struct HelperMeasurements {
+        uint64_t transaction=0, service_ns=0, service_wall_ns=0, service_rows=0, copy_bytes=0, copy_ns=0;
+    };
+    std::array<HelperMeasurements,kMaxHelpers> helper_measurements_{};
     bool failed_closed_ = false;
     bool deterministic_ = false;
     bool quiesced_ = false;
@@ -172,6 +177,21 @@ class Controller {
             if (!(helper ? (c_.expected_helpers & bit) : (c_.expected_ranks & bit))) continue;
             const PlacementAck a = transport_.read_ack(i);
             if (!exact(a, c_, phase)) continue; // stale/duplicate/lost never count
+            if (helper && (phase==AckPhase::RESERVED || phase==AckPhase::READY)) {
+                auto& m=helper_measurements_[i];
+                if (m.transaction!=c_.transaction_id) {
+                    m={};
+                    m.transaction=c_.transaction_id;
+                }
+                if (phase==AckPhase::RESERVED) {
+                    m.service_ns=a.reserved[0];
+                    m.service_wall_ns=a.reserved[1];
+                    m.service_rows=a.drained_step; // RESERVED-only: completed large-lane routed rows
+                } else {
+                    m.copy_bytes=a.reserved[0];
+                    m.copy_ns=a.reserved[1];
+                }
+            }
             if (helper) hm |= bit; else rm |= bit;
         }
         return hm == c_.expected_helpers && rm == c_.expected_ranks;
@@ -241,6 +261,12 @@ public:
     }
     const PlacementControl& control() const { return c_; }
     const PlacementJournal& journal() const { return journal_; }
+    HelperMeasurements helper_measurement(uint32_t helper) const {
+        return helper<kMaxHelpers ? helper_measurements_[helper] : HelperMeasurements{};
+    }
+    PlacementAck helper_ack(uint32_t helper) const {
+        return helper < kMaxHelpers ? transport_.read_ack(helper) : PlacementAck{};
+    }
     bool failed_closed() const { return failed_closed_; }
     bool can_propose() const {
         return !failed_closed_ && !deterministic_ && !c_.fault_code &&
@@ -724,6 +750,8 @@ inline PlacementAck read_shared_ack(const void* map, uint32_t actor) {
     out.drained_step = __atomic_load_n(&a->drained_step, __ATOMIC_RELAXED);
     out.generation_slot = __atomic_load_n(&a->generation_slot, __ATOMIC_RELAXED);
     out.fault_code = __atomic_load_n(&a->fault_code, __ATOMIC_RELAXED);
+    out.reserved[0] = __atomic_load_n(&a->reserved[0], __ATOMIC_RELAXED);
+    out.reserved[1] = __atomic_load_n(&a->reserved[1], __ATOMIC_RELAXED);
     if (__atomic_load_n(&a->phase, __ATOMIC_ACQUIRE) != phase ||
         __atomic_load_n(&a->transaction_id, __ATOMIC_ACQUIRE) != out.transaction_id)
         return PlacementAck{};
@@ -731,7 +759,8 @@ inline PlacementAck read_shared_ack(const void* map, uint32_t actor) {
     return out;
 }
 inline void publish_ack(void* map, uint32_t actor, const PlacementControl& c,
-                        AckPhase phase, uint64_t cutoff = 0) {
+                        AckPhase phase, uint64_t cutoff = 0,
+                        uint64_t copy_bytes = 0, uint64_t copy_ns = 0) {
     auto* a = placement_ack(map, actor);
     if (!a) return;
     const auto previous = read_shared_ack(map, actor);
@@ -744,6 +773,14 @@ inline void publish_ack(void* map, uint32_t actor, const PlacementControl& c,
     __atomic_store_n(&a->drained_step, cutoff, __ATOMIC_RELAXED);
     __atomic_store_n(&a->generation_slot, c.pending_slot, __ATOMIC_RELAXED);
     __atomic_store_n(&a->fault_code, uint32_t(0), __ATOMIC_RELAXED);
+    // The two pre-existing reserved words carry per-participant copy evidence
+    // for the current transaction. READY publishes exact bytes and elapsed
+    // nanoseconds; later phases preserve both until CLEANED.
+    if (phase == AckPhase::READY || phase == AckPhase::RESERVED ||
+        previous.transaction_id != c.transaction_id) {
+        __atomic_store_n(&a->reserved[0], (phase == AckPhase::READY || phase == AckPhase::RESERVED) ? copy_bytes : 0, __ATOMIC_RELAXED);
+        __atomic_store_n(&a->reserved[1], (phase == AckPhase::READY || phase == AckPhase::RESERVED) ? copy_ns : 0, __ATOMIC_RELAXED);
+    }
     __atomic_store_n(&a->phase, uint32_t(phase), __ATOMIC_RELEASE);
     notify(static_cast<Header*>(map));
 }
@@ -765,7 +802,8 @@ inline void publish_cleanup_fault_ack(void* map,uint32_t actor,
     __atomic_store_n(&a->phase,uint32_t(AckPhase::CLEANED),__ATOMIC_RELEASE);
     notify(static_cast<Header*>(map));
 }
-inline void publish_cleanup_ack(void* map,uint32_t actor,const PlacementControl& c) {
+inline void publish_cleanup_ack(void* map,uint32_t actor,const PlacementControl& c,
+                                uint64_t lane_unavailable_ns=0) {
     if (!map || !c.transaction_id ||
         c.state!=uint32_t(PlacementState::ACTIVE) || c.fault_code) return;
     auto* a=placement_ack(map,actor);
@@ -781,6 +819,9 @@ inline void publish_cleanup_ack(void* map,uint32_t actor,const PlacementControl&
     __atomic_store_n(&a->digest,c.active_digest,__ATOMIC_RELAXED);
     __atomic_store_n(&a->generation_slot,c.active_slot,__ATOMIC_RELAXED);
     __atomic_store_n(&a->fault_code,0u,__ATOMIC_RELAXED);
+    // Complete calibration-only downtime evidence, from quiesce ACK to reopen.
+    __atomic_store_n(&a->reserved[0],lane_unavailable_ns,__ATOMIC_RELAXED);
+    __atomic_store_n(&a->reserved[1],1ull,__ATOMIC_RELAXED);
     __atomic_store_n(&a->phase,uint32_t(AckPhase::CLEANED),__ATOMIC_RELEASE);
     notify(static_cast<Header*>(map));
 }
@@ -937,6 +978,8 @@ struct HelperMigration {
     virtual bool reclaim(const void*, const PlacementControl&) = 0;
     virtual bool abort() = 0;
     virtual uint64_t transaction() const = 0;
+    // Bytes actually uploaded by this participant in the currently reserved transaction.
+    virtual uint64_t copy_bytes() const { return 0; }
 };
 
 // Helper-side periodic driver. The caller polls it beside the serving lanes;
@@ -957,6 +1000,10 @@ class EpochCycle {
     bool placement_halted_ = false; // terminal placement diagnostic, not a helper failure
     FaultCode placement_fault_ = FaultCode::NONE;
     HelperMigration* migration_ = nullptr;
+    uint64_t copy_start_transaction_ = 0, copy_start_ns_ = 0;
+    std::function<bool(uint64_t*,uint64_t*)> lane_service_probe_;
+    uint64_t service_baseline_ns_=0,service_baseline_total_ns_=0,service_baseline_rows_=0;
+    uint64_t quiesced_at_ns_=0,quiesced_transaction_=0;
     std::function<bool(void*,Controller&)> forced_proposal_;
     bool schedule() {
         const uint64_t now = clock_.now_ns();
@@ -977,6 +1024,9 @@ public:
     // The tests inject their candidate through Controller::propose, not a
     // second path or a synthetic forced-move policy.
     Controller* proposal_controller() { return controller_.get(); }
+    void set_lane_service_probe(std::function<bool(uint64_t*,uint64_t*)> probe) {
+        lane_service_probe_=std::move(probe);
+    }
     void set_forced_proposal(std::function<bool(void*,Controller&)> proposal) {
         forced_proposal_=std::move(proposal);
     }
@@ -993,6 +1043,16 @@ public:
         if (!placement_snapshot(map_, &c)) return true;
         // Wait for the engine to publish its actual participating rank mask.
         if (!c.expected_ranks) return true;
+        // Reuse the helper's existing sampled lane timings on the CPU tick.
+        // Baseline predates the move and requires no extra HIP event or thread.
+        if (lane_service_probe_ && !service_baseline_ns_) {
+            uint64_t total=0,rows=0;
+            if (lane_service_probe_(&total,&rows)) {
+                service_baseline_total_ns_=total;
+                service_baseline_rows_=rows;
+                service_baseline_ns_=clock_.now_ns();
+            }
+        }
         if (helper_ == 0 && !controller_) {
             if (c.state != uint32_t(PlacementState::ACTIVE) || c.fault_code ||
                 c.expected_ranks >= (1u << kMaxEngineRanks) ||
@@ -1023,15 +1083,35 @@ public:
         if (phase == PlacementState::RESERVING) {
             const FaultCode issue=migration_ ? migration_->reserve(map_,c) :
                 (same_map_cycle(map_,c) ? FaultCode::NONE : FaultCode::CAPACITY);
-            if (issue==FaultCode::NONE) publish_ack(map_,helper_,c,AckPhase::RESERVED);
+            if (issue==FaultCode::NONE) {
+                uint64_t serviced_ns=0,wall_ns=0,total_ns=0,total_rows=0,rows=0;
+                const uint64_t now=clock_.now_ns();
+                if (lane_service_probe_ && service_baseline_ns_ && now>service_baseline_ns_ &&
+                    lane_service_probe_(&total_ns,&total_rows) &&
+                    total_ns>=service_baseline_total_ns_ && total_rows>=service_baseline_rows_) {
+                    serviced_ns=total_ns-service_baseline_total_ns_;
+                    rows=total_rows-service_baseline_rows_;
+                    wall_ns=now-service_baseline_ns_;
+                }
+                // RESERVED uses drained_step for the sampled routed-row count; later phases
+                // have their own cutoff. Both deltas come from one atomic service snapshot.
+                publish_ack(map_,helper_,c,AckPhase::RESERVED,rows,serviced_ns,wall_ns);
+            }
             else publish_fault_ack(map_,helper_,c,AckPhase::RESERVED,issue);
         }
         if (phase == PlacementState::COPYING) {
+            if (copy_start_transaction_ != c.transaction_id) {
+                copy_start_transaction_ = c.transaction_id;
+                copy_start_ns_ = clock_.now_ns();
+            }
             const HelperCopy result=migration_ ? migration_->copy() :
                 (same_map_cycle(map_,c) ? HelperCopy::READY : HelperCopy::FAILED);
-            if (result==HelperCopy::READY)
-                publish_ack(map_,helper_,c,AckPhase::READY);
-            else if (result==HelperCopy::FAILED)
+            if (result==HelperCopy::READY) {
+                const uint64_t end=clock_.now_ns();
+                const uint64_t elapsed=end>copy_start_ns_ ? end-copy_start_ns_ : 0;
+                publish_ack(map_,helper_,c,AckPhase::READY,0,
+                            migration_ ? migration_->copy_bytes() : 0,elapsed);
+            } else if (result==HelperCopy::FAILED)
                 publish_fault_ack(map_,helper_,c,AckPhase::READY,FaultCode::UPLOAD);
         }
         if (phase == PlacementState::COMMIT && migration_ &&
@@ -1056,8 +1136,13 @@ public:
             }
             if (drained) {
                 const auto previous=read_shared_ack(map_,helper_);
-                if (phase == PlacementState::QUIESCING)
+                if (phase == PlacementState::QUIESCING) {
+                    if (quiesced_transaction_ != c.transaction_id) {
+                        quiesced_transaction_=c.transaction_id;
+                        quiesced_at_ns_=clock_.now_ns();
+                    }
                     publish_ack(map_,helper_,c,AckPhase::QUIESCED);
+                }
                 else if (phase == PlacementState::COMMIT &&
                          previous.transaction_id == c.transaction_id &&
                          previous.phase == uint32_t(AckPhase::QUIESCED))
@@ -1127,8 +1212,21 @@ public:
                     placement_fault_ = FaultCode::REOPEN_TIMEOUT;
                     return true; // worker loop must keep serving the committed generation
                 }
+                const uint64_t reopened=clock_.now_ns(); // admission proven reopened
                 if (migration_ && !migration_->reclaim(map_,c)) return false;
-                publish_cleanup_ack(map_,helper_,c);
+                const uint64_t lost=(quiesced_transaction_==c.transaction_id &&
+                                     reopened>=quiesced_at_ns_) ?
+                                     reopened-quiesced_at_ns_ : 0;
+                publish_cleanup_ack(map_,helper_,c,lost);
+                if (lane_service_probe_) {
+                    uint64_t total=0,rows=0;
+                    if (lane_service_probe_(&total,&rows)) {
+                        service_baseline_total_ns_=total;
+                        service_baseline_rows_=rows;
+                        service_baseline_ns_=reopened;
+                    }
+                }
+                quiesced_transaction_=quiesced_at_ns_=0;
                 awaiting_reopen_ = 0;
                 reopen_deadline_ns_ = 0;
                 if (helper_ == 0) {

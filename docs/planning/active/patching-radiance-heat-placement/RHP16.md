@@ -85,7 +85,7 @@ worker_policy_measure.h (pure, no clock or thread): Series (bounded, exact neare
 
 | Setting | Derived from | Measured by |
 |---|---|---|
-| R3_MOE_POLICY_CADENCE_NS | at least the p95 transaction wall time plus one effect window, so a proposal never overlaps the previous one's settling | step 2a, 2e |
+| R3_MOE_POLICY_CADENCE_NS | p95 transaction wall time plus k measured effect windows, so quiet comparisons complete before the next poll | step 2a, 2e |
 | R3_MOE_POLICY_MAX_MOVED_BYTES | host-to-VRAM copy bytes per ns of the slowest helper (from past transitions) times the declared objective expressed as a number of effect windows a transaction may last | 2a, 2e |
 | R3_MOE_POLICY_MAX_MOVES | MAX_MOVED_BYTES divided by the expert stride: no separate setting | stride known to the driver |
 | R3_MOE_POLICY_MIN_RESIDENCY_NS | break-even: measured move cost (bytes over bandwidth plus the lane time lost) divided by the predicted saving per second (change of the tail's heat share times the tail lane's service rate) | 2a, 2e |
@@ -95,9 +95,9 @@ worker_policy_measure.h (pure, no clock or thread): Series (bounded, exact neare
 | R3_MOE_POLICY_MARGIN | the largest relative change of the tail heat share between consecutive windows with no move (the score's own noise floor) | 2d, 2e |
 | R3_MOE_POLICY_ABORT_COOLDOWN_NS | the measured abort-to-quiescent time of the epoch cycle | 2b |
 | R3_MOE_POLICY_LEARNED_ELIGIBILITY_TTL_NS | no time at all: a learned ineligibility is invalidated by any ledger, budget or layout change (an event) | driver |
-| R3_MOE_POLICY_EFFECT_WINDOW_SAMPLES | requests per lane class at which the noise estimate of the lane service rate stops changing (variance convergence) | 2e |
-| R3_MOE_POLICY_EFFECT_MIN_QUIET_WINDOWS | quiet windows until the noise estimate's confidence interval is inside MARGIN | 2e |
-| R3_MOE_POLICY_EFFECT_NOISE_MULTIPLIER | replaced by a declared false-revert rate and the empirical noise quantile it implies, not a factor | 2e |
+| R3_MOE_POLICY_EFFECT_WINDOW_SAMPLES | smallest measured tail window L with observed RMS fractional noise(L) × z(α) ≤ predicted E / tail_lane_row_ns | published-tail row-window noise ladder and objective α |
+| R3_MOE_POLICY_EFFECT_MIN_QUIET_WINDOWS | smallest positive k with transaction_effect_windows × p(n)^k ≤ α for measured-window noise-only crossing chance p(L), assuming independent comparisons (not independent rows) | 2e, declared transaction windows and α |
+| R3_MOE_POLICY_EFFECT_NOISE_MULTIPLIER | retained locked-v1 multiplier: observed max absolute quiet delta / observed median absolute quiet delta; conservative envelope, not an objective-specific quantile | 2e |
 | R3_MOE_POLICY_EFFECT_REVERT_TTL_NS | the heat drift half-life (a worse destination is blacklisted for as long as the workload stays the same) | 2d |
 
 The values used on hardware in policy-live-5 to policy-live-8 (for comparison with what the derivations produce, not as defaults): cadence 5 s, margin 0.005, 128 moves, 2 GiB, residency 30 s, half-life 20,000,000 observations, heat age 10 s, min samples 3, abort cooldown 30 s, eligibility TTL 600 s, effect window 32, 3 quiet windows, noise multiplier 3.0, revert TTL 600 s. Measured so far from those runs: transactions of 0.42 s average (15 in 6.3 s, 4.87 GB) in the churn gate and one of 3.0 s for 162 MB; 8 and 9 committed with no aborts in the repeat and reverse shifts.
@@ -155,15 +155,18 @@ The helper process no longer reads `R3_MOE_POLICY_*`: contract amendment 10 make
 
 ## How a layout gets calibrated (RHP16 step 4)
 
-The production start does **not** auto-enable the live policy for an uncalibrated layout: in locked v1 the policy is absent, so there is no policy thread to measure anything. Calibrate with the launcher's `--calibrate` lab run: `--live-policy POLICY.json` (a non-empty v1 live-policy object; no `enabled` member, presence is activation) and `--calibration-prompts FILE` (one representative prompt per line), and no `--experiment`. The launcher passes `bc-serve --calibration-run`, which writes a lab-profile manifest with the explicit policy and no `spec.experiment` (v1 refuses an empty experiment), so the measured plan, and therefore the plan-cache key, is the production one. `calibration-ingest` accepts only that shape: lab profile, explicit live policy, no experiment.
+The production start does **not** auto-enable the live policy for an uncalibrated layout: in locked v1 the policy is absent, so there is no policy thread to measure anything. Calibrate with the launcher's `--calibrate` lab run: `--live-policy POLICY.json` (a non-empty v1 live-policy object; no `enabled` member, presence is activation) and `--calibration-prompts-a FILE` plus `--calibration-prompts-b FILE` (distinct, representative workload sets, one prompt per line), and no `--experiment`. The launcher passes `bc-serve --calibration-run`, which writes a lab-profile manifest with the explicit policy and no `spec.experiment` (v1 refuses an empty experiment), so the measured plan, and therefore the plan-cache key, is the production one. `calibration-ingest` accepts only that shape: lab profile, explicit live policy, no experiment.
 
 ```sh
-bash tools/lab/radiance/launch-flashnext-best.sh start   --layout flashnext-4gpu   --experiment /path/to/lab-experiment.json   --live-policy /path/to/explicit-lab-policy.json   --calibrate --calibration-prompts /path/to/workload-prompts.txt
+bash tools/lab/radiance/launch-flashnext-best.sh start \
+  --layout flashnext-4gpu --live-policy /path/to/explicit-lab-policy.json \
+  --calibrate --calibration-prompts-a /path/to/filler-prompts.txt \
+  --calibration-prompts-b /path/to/documentation-prompts.txt
 ```
 
-This is a *hardware lab procedure*, not part of the card-free verification suite. The launcher's mandatory measured plan check still applies. The helper uses the measurement hooks to wait for the retained hot-set drift horizon and accepted heat-delta observations. It then emits exactly one `RHP16_CALIBRATION_JSON {...}` line in helper0's log. The launcher repeats the supplied prompts until that marker appears, runs `bc-serve calibration-ingest --from-log HELPER_LOG --calibration STORE --manifest LAB_MANIFEST`, stops its processes, and reports the store location at `$BC_WORK_ROOT/live-policy-calibration.toml`. Ingestion validates the exact v1 manifest key, layout, objective and lab profile, re-resolves the exact launch and checks its measured cached plan, then maps the verified v1 helper key to the distinct RSC03 plan-store key used by production. It locks the cache and writes with a temporary file and atomic rename. It refuses malformed, mismatched and duplicate records; to remeasure a plan, archive and deliberately remove its previous record rather than silently replacing evidence.
+This is a *hardware lab procedure*, not part of the card-free verification suite. The launcher's mandatory measured plan check still applies. The helper uses the measurement hooks to wait for the retained hot-set drift horizon and accepted heat-delta observations. It then emits exactly one `RHP16_CALIBRATION_JSON {...}` line in helper0's log. Choose prompts whose observed routed-expert heat differs (e.g. filler versus documentation); distinct files alone cannot prove that model routing shifts. The launcher plays both workload orders (A then B, B then A), repeating complete cycles until the helper emits the marker. The launcher never accepts a marker before both orders complete. It runs `bc-serve calibration-ingest --from-log HELPER_LOG --calibration STORE --manifest LAB_MANIFEST`, stops its processes, and reports the store location at `$BC_WORK_ROOT/live-policy-calibration.toml`. Ingestion validates the exact v1 manifest key, layout, objective and lab profile, re-resolves the exact launch and checks its measured cached plan, then maps the verified v1 helper key to the distinct RSC03 plan-store key used by production. It locks the cache and writes with a temporary file and atomic rename. It refuses malformed, mismatched and duplicate records; to remeasure a plan, archive and deliberately remove its previous record rather than silently replacing evidence.
 
-The log route is required because v1 has **no manifest field for the calibration store path**. No v1 contract field or fingerprint is modified. Every known measured input appears in the TOML record. Unmeasurable inputs are recorded under `absent = { field = "reason" }` rather than filled with made-up values. The existing reader accepts and preserves partial records, but **production derives no live policy from one**; a genuinely complete set of empirical inputs is required. In particular, current helper hooks do not separately measure slowest-helper DMA throughput, effect convergence in nanoseconds, or marginal tail-lane service gain. The lab record therefore documents those gaps and cannot yet calibrate them by extrapolating from unrelated signals. The existing policy-live-9 golden series tests the complete round-trip with its explicitly synthetic supplemental inputs; that test fixture is not production evidence.
+The log route is required because v1 has **no manifest field for the calibration store path**. No v1 contract field or fingerprint is modified. Every known measured input appears in the TOML record. Unmeasurable inputs are recorded under `absent = { field = "reason" }` rather than filled with made-up values. The existing reader accepts and preserves partial records, but **production derives no live policy from one**; a genuinely complete set of empirical inputs is required. Step 5 now measures per-helper READY ACK copy rates, sampled large-lane service at RESERVED, quiesce-to-reopen downtime at CLEANED, quiet-window nanosecond noise, and committed tail-share gains. The follow-up removes `noise_false_revert_rate_ppm`, `effect_window_samples` and `effect_quiet_windows` from measured records: one was an objective, and two merely reflected configured gate values. `effect_row_noise_ns` was added as a diagnostic; follow-up 7 derives the gate window from the measured tail-window ladder instead. The renamed `effect_noise_max_ns` states the observed maximum rather than claiming an objective-specific quantile. A record with all required observations can now derive policy; new hardware evidence is still pending. The existing policy-live-9 golden series tests the complete round-trip with its explicitly synthetic supplemental inputs; that test fixture is not production evidence.
 
 For manual ingestion after a lab run, use:
 
@@ -181,7 +184,399 @@ Measured: `heat_gap_max_ns` 5,001,931,591 (the 5 s cadence, not the 1 s record p
 
 Two causes, which are the step-5 work:
 1. **The calibration workload must shift heat.** One kind of prompt gives a stable hot set: the policy proposed nothing (`proposed=0`), so no transaction closed (`txn_p50_ns`, `txn_p95_ns`, `copy_bytes_per_s` and `abort_quiescent_ns` absent) and the drift track never crossed half overlap (`drift_half_life_observations` absent). policy-live-9 committed moves because its workload shifted (filler then documentation). The calibration prompts must contain the shift in both orders.
-2. **Measurement hooks the helper does not have:** effect gate quantities in nanoseconds and counts (`effect_noise_floor_ns`, `effect_noise_quantile_ns`, `effect_window_samples`, `effect_quiet_windows`, `effect_requests_per_s`, `noise_false_revert_rate_ppm`), tail-lane service (`tail_lane_service_ns_per_s`, `tail_share_gain_ppm`, `tail_share_noise_ppm`, `lane_lost_ns`) and the slowest-helper copy rate. Each needs a hook where the helper already observes the event (effect gate windows, the tail lane's served requests, the transaction copy), not a new collector, and a card-free test from a recorded series.
+2. **Measurement hooks the helper does not have:** effect gate quantities in nanoseconds and counts (`effect_noise_floor_ns`, `effect_noise_quantile_ns`, `effect_window_samples`, `effect_quiet_windows`, `effect_rows_per_s`, `noise_false_revert_rate_ppm`), tail-lane service (`tail_lane_service_ns_per_s`, `tail_share_gain_ppm`, `tail_share_noise_ppm`, `lane_lost_ns`) and the slowest-helper copy rate. Each needs a hook where the helper already observes the event (effect gate windows, the tail lane's served requests, the transaction copy), not a new collector, and a card-free test from a recorded series.
 
 Until both land no layout can be calibrated, and the live policy stays lab-only (`--live-policy`).
 
+
+## Step 5 follow-up 1: empirical noise dispersion (2026-11-06)
+
+The helper records per-row sigma from signed differences of quiet-window
+means normalized by `sqrt(1/n_previous + 1/n_current)` and the maximum
+absolute quiet-window deviation (`effect_noise_max_ns`). It does **not**
+serialize configured gate counts or the false-revert objective as readings.
+The first follow-up derived the window from the median quiet difference,
+which depends on calibration window size; that threshold was superseded by
+follow-up 2. Earlier hardware evidence uses the old schema and is not a
+complete current-format record.
+
+## Step 5 follow-up 2: committed-move effect size (2026-11-06)
+
+The tail helper snapshots large-lane service nanoseconds **and**
+completed routed-row counts together. The transaction RESERVED ACK conveys
+both deltas and elapsed wall nanoseconds without a shared-memory layout change.
+The driver records the median positive `service_ns / completed_rows` as
+`tail_lane_row_ns` (ns/row); `tail_lane_service_ns_per_s` remains
+service ns / wall ns. The settled record requires a valid per-row sample.
+
+Let `G = tail_share_gain_ppm` be the median **predicted relative reduction**
+of committed placement plans, `S = tail_lane_row_ns`, and
+`E = ceil(S * G / 1000000)` nanoseconds **per routed row**. E is a predicted
+effect, not a measured post-move saving; its factors are independent of the
+calibration gate's configured window. The strict record removes
+`effect_noise_floor_ns` and refuses the old key.
+
+| Derived effect setting | Measured and declared inputs | Formula |
+|---|---|---|
+| `effect_window_samples` (n) | per-row noise sigma, E, declared false-revert fraction α | smallest n ≥ 1 with `noise_ppm(n) / 1e6 * z(α) <= E / tail_lane_row_ns`, `erfc(z/sqrt(2)) = α` |
+| `effect_min_quiet_windows` (k) | E, sigma, derived n, declared opportunities T and α | smallest k ≥ 1 with `T * p^k <= α`; `p = erfc((E/tail_lane_row_ns) / (sqrt(2) * noise_ppm(n)/1e6))` |
+| `effect_noise_multiplier_milli` | declared false-revert fraction alpha | `ceil(1000 * z(alpha))`, multiplying the effect gate's fractional quiet noise |
+
+The Gaussian and independent quiet-crossing assumptions, including the
+union bound over T, are model assumptions not empirically certified false
+reversion rates. Synthetic quiet series with identical per-row sigma
+at configured widths 2 and 8 derive the same n and k; hardware evidence
+is still required. All settings retain `derived` provenance.
+
+## Watermark follows the measured feed (2026-11-06)
+
+The rhp16-calib2 hardware run produced a COMPLETE record and a derived
+production policy, but helper0 reported `evaluated=0`, `no_change=24`,
+`delta_gaps=0`: the policy always set `accept_unwatermarked_heat=false`.
+The only available production feed is `HistogramFileSource`, which cannot
+supply a complete observation/step watermark. Calibration had accepted its
+deltas only because the explicit lab policy allowed authenticated histogram
+files. Production therefore rejected every delta as `heat_unwatermarked`.
+
+The helper now records `heat_watermarked` over **accepted** heat deltas:
+`1` means every accepted delta had `complete_observations`; `0`
+means at least one accepted delta lacked it. This is a measured, zero-valid
+record field, required for a complete calibration; no accepted deltas means
+an explicitly absent field. Serving derives `accept_unwatermarked_heat =
+(heat_watermarked == 0)` with derived provenance. The existing helper-side
+capability check still limits the allowance to the authenticated engine
+histogram-file source; it does not authorize unknown feeds.
+
+**Records carry across pin bumps (2026-11-06, owner direction).** Calibration records are keyed by
+`calibration_key`: the plan-key inputs (model, card arch and VRAM, layout, engine arguments and engine settings)
+without `engine_build`. What calibration measures belongs to the cards, the layout, the model and the engine
+settings, not to the pinned engine commit, so a daily bump keeps the live policy instead of dropping it until a
+recalibration. A change of any remaining input, or of the record schema, needs a new calibration.
+
+**RHP02:** a histogram-file record says `heat_watermarked = 0`, so the policy derived from it keeps accepting
+unwatermarked heat after RHP02's watermarked feed arrives: as permissive as today, never less safe. Taking the
+benefit of the watermark (refusing incoherent snapshots) is a deliberate recalibration once RHP02 ships, not an
+automatic invalidation on every engine change.
+
+## Step 5 follow-up 4: planner-aligned calibration (2026-11-06)
+
+Calib5 produced a complete record but a zero-action derived policy. The margin
+was dominated by the median workload-shift change (224,359 ppm) instead of the
+decayed heat estimator's multinomial sampling error (31,905 ppm). The strict
+record now **rejects** `tail_share_noise_ppm`; it is neither sampled nor a
+convergence requirement. `margin_ppm = marginal_error_ppm` alone.
+
+An end-to-end card-free test derives the policy from the calib5 readings, passes
+the 17 members through the typed helper adapter and verifies the real CPU heat
+planner: unchanged heat yields no move; filler-to-docs synthetic heat moves.
+It separately verifies all coverage, heat-age, cooldown, residency, move-count
+and byte-budget gates, and a quiet effect gate that can become ready and retain
+a demonstrably faster lane.
+
+The derivation uses ns versus ns, ppm versus fractional shares, observation
+counts versus accepted heat **windows**, and the `half_life_observations_milli`
+1000x ABI conversion. The per-transaction copy budget is based on measured
+transaction p95, not T future effect windows; the effect multiplier applies the
+Gaussian z objective to an **already fractional** quiet noise envelope, not
+absolute nanoseconds divided by predicted per-row effect. Age, learned
+eligibility and effect-revert TTLs survive cadence, recovery, rollback and
+minimum residency. See `engines/radiance/components/serving/live_policy_calibration.md`
+for formulas and the separate Follow-up 4 report for all 17 comparisons.
+
+## Step 5 follow-up 5: routed-row effect units (2026-11-06)
+
+The calib6 on-arm hardware result overturned the request-denominator change
+from follow-up 4: request sizes can alternate 27,000 and 64 rows, producing
+a 70% fractional quiet envelope and hiding a real ~9% placement improvement.
+The **current** contract is nanoseconds per **routed row** across the entire
+effect pipeline, not per sampled request. `EffectGate::rate`, quiet deltas,
+normalised sigma (`effect_row_noise_ns`), observed quiet noise, and the
+after/before verdict divide by routed rows. `effect_window_samples` retains
+the v1 name but counts rows (`d.rows >= window_samples`); the window
+normalizer uses `sqrt(1/rows_current + 1/rows_previous)`.
+The tail-service RESERVED ACK carries same-interval routed rows; the
+settled record requires `tail_lane_row_ns` (ns/row) and
+`effect_rows_per_s` (sampled lane rows/wall second), refusing the old
+request-unit field names. The predicted effect is
+`E = ceil(tail_lane_row_ns * tail_share_gain_ppm / 1e6)` ns/row;
+`n` is the smallest routed-row count satisfying
+`noise_ppm(n) * z(alpha)/1e6 <= E/tail_lane_row_ns` and
+`W = ceil(n * 1e9 / effect_rows_per_s)` controls cadence and quiet-gate
+recovery / TTLs. The calib5 request-unit measurements are **not**
+hardware measurements of these new row fields; CPU acceptance tests use
+explicitly synthetic conversions alongside the genuine unchanged calib5
+planner measurements. See `live_policy_calibration.md`.
+
+## Hardware: the derived production policy works (2026-11-06, runs rhp16-calib2 to calib7)
+
+Each A/B from calib2 to calib6 found one more derivation defect that kept the derived policy from moving, fixed in turn on
+this branch: the policy refused the unwatermarked histogram feed (heat_watermarked now recorded and followed); the margin was
+the largest or median window-to-window tail-share change, which is the deliberate workload shift, not noise (margin is now the
+multinomial sampling error); min_samples was in routed observations while the planner counts heat windows; eight further
+unit/scale mismatches between derived settings and the helper's comparisons (follow-up 4, each with a test, plus a calib5-numbers
+planner test that must move on a shift and stay still on steady load); and the effect gate timed lanes per request, which on a
+mixed workload swings ~70% with request size, so it reverted good moves (now per routed row end to end). Separately, every
+assert in the serving and helper component tests had been compiled out (RelWithDebInfo, -DNDEBUG); fixed on main (#688).
+Calibration records key on the plan inputs without engine_build, so they carry across pin bumps.
+
+calib7 (flashnext-4gpu, production profile, policy derived from its own calibration record, two on/off pairs, policy-live-9
+workload, same build both arms):
+
+| | policy off (2 arms) | policy on (2 arms) | change |
+|---|---|---|---|
+| filler TTFT, fills 6-8 (after the shift) | 19.49 s | 13.42 s | -31.2% |
+| documentation prefill, mean of 20 | 3,663 tok/s | 3,652 tok/s | -0.3% (A/A spread about 1%) |
+| decode step, 1 stream / 6 streams | 25.5 / 50.0-50.3 ms | 25.5 / 49.6-49.8 ms | none |
+| transactions | - | 30 committed, 1 abort, 37 GB moved | |
+
+Decode tok/s at one stream on the single seed-7 prompt differs between arms (step time does not): moved experts are computed on
+another card, so greedy text and therefore MTP acceptance change. That is a numerics question, gated below.
+
+Not yet default-on, two gates left:
+1. Quality: KLD and top-1 against BF16 with the policy moving (moves put hot experts on the 6900 XT tail, RAD46). The campaign
+   quality arms cannot start a manifest-configured engine with --kld-* yet (rad0009) and cannot pass a calibration store; until
+   RSC11 provides that, run it by hand (helpers from the calibrated manifest, a KLD-mode engine on the same helpers).
+2. Churn: the effect gate judged 21 windows, kept 0, reverted 9, undecided 12. The gain survives, but reverts and re-moves cost
+   copy bandwidth (37 GB in two arms) and can oscillate over a long soak. The gate must be able to keep a move it can see helping.
+
+
+## Step 5 follow-up 6: judge the continuously published tail service (2026-11-06)
+
+The calib7 21-window effect-gate result (0 kept, 9 reverted, 12
+undecided despite a 31.2% filler TTFT reduction) was judged using helper
+0's process-private service. A move that relieves the tail helper need not
+speed up coordinator helper 0; its local signal is therefore not a valid
+effect or calibration signal for tail relief.
+
+Each policy-enabled helper now snapshots the **existing** per-class
+LaneServiceSource totals (sampled requests, routed rows, service ns) on
+its CPU epoch tick and publishes both lanes into its own single-writer
+shared-memory slot. The slot occupies unused space in the placement ACK
+page: no larger mapping, collector thread or GPU sample. A seqlock over
+atomic fields prevents torn cross-process reads; uninitialised, future
+and stale monotonic timestamps fail closed. The segment protocol is
+**v24**, and v23 attachments are refused without compatibility parsing.
+
+worker_heat.h::propose optimises **only the last helper's tail share**:
+plan.baseline - plan.predicted is the predicted relative heat-share
+saving of that helper, even if other helpers send or receive experts.
+Consequently the effect gate for such a plan must read that last helper's
+published lane-class counters, not helper 0's. It retains the follow-up
+5 ns-per-routed-row maths, noise envelope, quiet windows, Gaussian row
+sigma and sampled rows/s. Calibration derives effect_row_noise_ns and
+effect_rows_per_s from exactly this continuous **tail** source as well.
+The transaction-phase RESERVED ACK still supplies the separate tail
+service-rate / ns-per-row calibration inputs.
+
+Card-free synthetic tests publish an unchanged helper 0 and a tail
+improved by 9% per row: the published tail gate returns KEPT, while the
+retired coordinator-local source returns UNDECIDED. A 10% slower tail
+returns WORSE; seqlock and freshness rejection are tested. The calib5
+planner acceptance test (steady no move, shifted heat moves) remains.
+Hardware churn and quality require follow-up validation; no new GPU
+measurement is implied by these CPU tests.
+
+## Step 5 follow-up 7: size from correlated tail-window noise (2026-11-06)
+
+Calib8's published-tail effect gate judged ten windows: **0 kept,
+2 reverted, 8 undecided**, with a 236% consecutive-window noise floor
+despite an i.i.d.-derived 49,718-row window (~0.29 s). The request
+mix and tail service are bursty and correlated: estimating the
+variance of two window means as `sigma_row * sqrt(2/n)` is unsound.
+
+The existing CPU epoch heartbeat now samples the **same published tail**
+service slot as the production gate, without a GPU query, collector
+thread or shared-memory ABI change. A bounded ordered tick history
+produces a geometric ladder of routed-row window lengths and the
+observed RMS fractional differences of consecutive non-overlapping
+window means. The larger noise over the two lane classes is retained
+at each length. At least three differences per length and three
+lengths spanning one lab cadence are needed to settle; otherwise
+`effect_window_noise_ladder` is absent with a short-series reason.
+Old calibration records are missing a mandatory measurement and
+cannot silently derive.
+
+Let `E = ceil(tail_lane_row_ns * tail_share_gain_ppm / 1e6)`,
+`f = E/tail_lane_row_ns`, and z(alpha) be the declared
+two-sided Gaussian objective quantile. Production takes the
+**smallest measured** L with `z(alpha) * noise_ppm(L)/1e6 <= f`;
+k uses the selected measured noise and the declared T and alpha.
+For `W = ceil(L * 1e9 / effect_rows_per_s)`, the policy chooses
+`cadence_ns = txn_p95_ns + k * W`, enlarging cadence and all
+dependent timeouts when a longer observed window is needed.
+No unmeasured length is extrapolated; if no rung resolves the
+predicted effect, production fails closed pending more calibration
+evidence instead of shortening the gate window.
+
+Card-free tests include seeded AR(1) and i.i.d. series (the former
+demonstrates i.i.d. undersizing, the latter agreement), a KEPT 10%
+tail improvement and UNDECIDED unchanged tail, insufficient and
+invalid ladders, unresolvable effects, cadence expansion, and
+the existing calib5-numbers heat-shift planner acceptance test.
+No hardware remeasurement is claimed.
+
+## calib8 (2026-11-06): effect gate on the published tail lane, churn halved
+
+The effect gate now judges the tail helper's published lane service (follow-up 6). Two on/off pairs, same workload and build:
+filler TTFT fills 6-8 on 12.83 s vs off 19.85 s (-35.3%; -34% against off1 alone, off2 ran slow overall), documentation prefill
+on 3,660 vs off 3,564 tok/s (+0.7% against off1), decode step 25.3 / 49.8 ms vs 25.5 / 50.1 ms, 23 transactions, 0 aborts,
+16.6 GB moved (calib7: 30, 1, 37 GB). The gate still kept no move: on the tail lane consecutive 0.29 s windows differed by 236%
+(bursty, correlated service), so the i.i.d. window was far too short; follow-up 7 sizes the window from measured window-to-window
+noise over a ladder of lengths and lengthens the cadence instead of shortening the window.
+
+## Step 5 follow-up 8: calibration cannot stop serving; judge relative tail service (2026-11-06)
+
+The calib9 record's absolute tail-service ladder did not resolve its
+6.6249% predicted reduction: the smallest empirical RMS noise was
+32,781 ppm at 1,281,536 rows, versus a required maximum of
+66,249 / 2.576 = 25,718 ppm. This is a failure of the *absolute*
+signal under a workload phase change, not a reason to stop serving.
+
+A production start with a **schema-valid** record that is incomplete
+or cannot derive a live policy now writes the measured serving manifest
+without `live_policy`. Stderr and the existing placement provenance
+include the record key and reason. Unparseable TOML, schema errors,
+unknown keys and malformed ladders still refuse the file; they are
+not treated as a non-derivable valid record.
+
+The gate's measured quantity is now
+`r = (tail service ns / tail routed rows) /
+(sum(other helper service ns) / sum(other helper routed rows))`,
+computed for each lane class from *the same windows* of the continuously
+published, validated v24 service slots. The denominator is the
+row-weighted peer mean. All peer slots must be fresh and coherent;
+missing or stalled peer measurements cannot silently fall back to
+absolute service. The CPU tick ladder uses r, still requiring four
+observed windows per length and at least three comparisons. Its row-rate
+basis remains the sampled tail lane's routed rows per wall second.
+
+For a committed plan with predicted fractional tail-share gain
+`g = tail_share_gain_ppm / 1e6`, the predicted relative improvement
+is `r_after = r_before * (1-g)`. This assumes per-row tail service
+scales with the tail's predicted share and the other helpers'
+row-weighted per-row service is unchanged. The quiet envelope and the
+pre/post effect gate verdict compare r, not raw tail ns/row. A common
+30% workload-wide service increase therefore cancels; a simultaneous
+7% improvement in r is KEPT, no relative change is UNDECIDED, and a
+7% increase in r is WORSE in card-free synthetic tests.
+
+The old calib9 absolute numbers remain explicitly unresolvable, not
+relabelled as a measured relative ladder. A fresh hardware calibration
+is required before a production relative policy can be claimed to
+resolve this signal; the card-free results establish only the
+implementation and invariance of the new statistic.
+
+## Step 5 follow-up 9: sparse peer lanes and a bounded missing effect signal (2026-11-06)
+
+The calib10 relative-lane calibration was still missing a converged effect
+series after 26 minutes. Inspection confirmed that the typed manifest's
+placement policy is shared by all helpers, and all policy-enabled helpers
+publish on the CPU epoch tick; timestamps use process-independent
+`CLOCK_MONOTONIC`, not a process-relative epoch. Small-lane samples are
+currently excluded by the helper's timing collector because prequeued
+requests can mismatch their d_counts row counts; a missing small-lane
+sample is not evidence of zero service time.
+
+The relative publisher reader now excludes an idle peer from **that lane's**
+row-weighted denominator and invalidates only a lane with no peer rows;
+any other lane with usable tail and reference samples continues. An
+unpublished, torn, future or stale peer **slot** still invalidates the full
+relative snapshot, never falling back to absolute timing. One diagnostic
+per helper/condition/lane names the offender, including stale slot age.
+The CPU calibration ladder retains a partial tail or peer tick until both
+have observed rows across the same contiguous time interval, rather than
+resetting when the helpers publish on staggered 2 ms ticks. The effect
+gate and calibration ladder remain per routed row, comparing tail/peer
+windows; no small-lane counts are invented.
+
+If no overlapping tail and peer row progress is observed for at least
+`max(3, drift_capacity) * max(observed maximum heat-delta gap, cadence, max_heat_age_ns)`
+monotonic nanoseconds, the calibration emits a **partial** record even if
+other quantities have not converged. It preserves observed measurements
+and explicit absent reasons instead of waiting indefinitely. All four
+effect measurements are emitted under
+`absent` with the missing-relative-service reason, not stale values.
+The on-arm path then follows follow-up 8: a schema-valid incomplete
+record serves without live_policy, with logged/provenance reason. It
+does not authorize a live placement policy from absent evidence.
+
+Card-free tests cover a three-helper sparse peer, slot failures and
+deduplicated indexed diagnostics, and derived timeout/absent record;
+no calib10 hardware replay or GPU measurement is claimed.
+
+## Step 5 follow-up 11: effect unjudgeable means gate off, not policy off (2026-11-06)
+
+Calib12 demonstrated a structural lack of peer reference on the tail's
+LARGE lane: head helpers did no LARGE work, so that tail/peer relative
+ratio cannot be measured for the work being moved. Each lane remains
+relative where it has a reference, and unjudgeable where it does not;
+no absolute-service surrogate is permitted. A coherent published
+snapshot now flags unjudgeable tail lanes for the CPU calibration path
+without treating the slot as stale or fabricating a denominator.
+
+Once planner quantities converge, calibration can emit a record with
+effect-only quantities explicitly absent and the specific lane reason;
+it need not wait for an impossible effect ladder. A production record
+with the planner quantities present now derives a live policy with
+`effect_gate=false` if those effect readings are absent, or if its
+observed relative-service ladder has no resolvable length. Provenance
+identifies the missing peer or noise threshold. Cadence falls back to
+max(measured transaction p95, observed heat-feed gap) without a quiet-window
+wait, and the unused
+v1 effect-window and quiet-count fields are inert positive schema values,
+not fabricated observations. Derived margin, residency and move/byte
+caps still constrain churn. A missing planner input still omits
+`live_policy` and serving continues, as required by follow-up 8.
+
+Card-free live-assert regressions exercise the calib12-shaped record,
+the resolvable gate-on case, unresolvable gate-off ladder, missing
+planner evidence, and calib5 heat-shift acceptance with the gate off.
+No hardware remeasurement or GPU claim is made.
+
+## Step 5 follow-up 13: bounded planner evidence and observation-spaced drift (2026-11-06)
+
+Helper 0 reports "calibration waiting: ..." only when the set of unmet
+conditions changes. It names every missing planner input and the reason,
+e.g. "lane_lost_ns (no tail quiesce/reopen interval yet)". Effect-only
+convergence is logged separately. An individual missing planner quantity
+is watched for progress in that quantity, not renewed by unrelated heat
+deltas or other transaction samples. After a period of monotonic time
+without progress derived as
+
+    max(observed maximum heat gap, policy cadence, max_heat_age_ns)
+      * drift ring capacity
+
+the pending condition's derived deadline is frozen, and calibration
+serializes a partial record with collected values and precise absent
+reasons. Later larger heat gaps cannot extend that deadline. This applies to structural no-peer lanes as
+well. An effect-only wait has the same derived finite bound, even if no
+service publisher ever appears. A valid incomplete planner record uses
+the established fail-safe: serving without live policy, with the
+specific reason in provenance.
+
+The source still feeds route counts of ONE update interval, not decayed
+heat. The driver derives base observation spacing from measured route
+rate, evaluation cadence and drift ring capacity. When the ring fills,
+it thins the history pairwise and doubles its spacing. Intermediate
+evaluations update the newest overlap point without overwriting
+retained spaced samples. The horizon expands to cover a heat shift
+at fast or slow evaluation cadences rather than spanning only the last
+16 evaluations. Counter regression and shape changes reset the ring.
+Card-free 1 s and 30 s synthetic-cadence tests require matching
+half-life in observations within one retained spacing, alongside the
+calib5 heat-shift planner acceptance regression.
+
+## calib9 to calib14 (2026-11-06): the effect gate cannot judge this layout; calibration made bounded and self-diagnosing
+
+On flashnext-4gpu the tail's work is on its large lane and the head helpers have no large-lane rows, so no peer reference exists
+for the work a move targets: the tail's absolute per-row service is too bursty to resolve the predicted effect (calib9 noise
+ladder best 3.3% against a 2.6% requirement) and the relative signal has no denominator on that lane (calib10-12). The derivation
+now sets `effect_gate=false` with that reason and keeps every other derived setting (calib8 delivered -35% this way, bounded by the
+derived margin, residency and move caps); an enabled gate can no longer block the driver; a calibration that cannot derive a policy
+serves without one; every calibration wait is named in the helper log and bounded; the drift window is spaced by observations, not
+evaluations. calib13 and calib14 surfaced, in turn, a drift window too short at a 5 s lab cadence, a planner quantity never measured
+once placement converged, and a deadline that started before the heat feed (follow-up 14). Hardware evidence for the policy's
+effect remains calib7 and calib8; the later changes are verified card-free.
+
+Merge: off by default (no record in the production store). Enabling waits on the KLD gate with the policy moving experts (RSC11
+#692 provides manifest-started quality arms) and one production calibration.

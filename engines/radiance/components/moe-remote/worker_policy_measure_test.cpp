@@ -1,5 +1,10 @@
 #include "worker_policy_measure.h"
+#include "worker_policy_effect.h"
 #include <cmath>
+#include <cassert>
+#ifdef NDEBUG
+#error "assert-based test built with NDEBUG"
+#endif
 #include <cstdio>
 #include <cstdlib>
 #include <vector>
@@ -109,6 +114,32 @@ static void test_drift_discontinuities() {
     check(d.intervals() == 1, "a different shape resets the tracker");
 }
 
+static void test_observation_spaced_drift_cadence() {
+    // Same 15-minute shifting route stream, evaluated every 1 s or 30 s.
+    // Retention is in observations, not one saved point per evaluation:
+    // the fast loop must retain the full filler->documentation transition.
+    const auto replay=[](uint64_t cadence_seconds) {
+        DriftTracker d(4,16);
+        const uint64_t rate=1000000; // synthetic source, observations per second
+        const uint64_t spacing=(rate*cadence_seconds+d.capacity()-1)/d.capacity();
+        for(uint64_t sec=cadence_seconds;sec<=900;sec+=cadence_seconds) {
+            const size_t start=size_t(sec/90);
+            d.add(window_at(start),sec*rate,spacing);
+        }
+        return d;
+    };
+    const auto fast=replay(1), slow=replay(30);
+    check(fast.intervals()<=fast.capacity() && slow.intervals()<=slow.capacity(),
+          "observation-spaced rings remain bounded");
+    check(fast.horizon_observations()>0 && slow.horizon_observations()>0 &&
+          fast.half_life_observations()>0 && slow.half_life_observations()>0,
+          "both evaluation cadences observe the shift crossing");
+    const uint64_t a=fast.half_life_observations(),b=slow.half_life_observations();
+    const uint64_t diff=a>b?a-b:b-a;
+    check(diff<=std::max(fast.spacing_observations(),slow.spacing_observations()),
+          "half-life agrees within one retained observation spacing");
+}
+
 static void test_sampling_error() {
     check(relative_share_error(0, 100) == 0 && relative_share_error(5, 4) == 0, "no information is zero");
     check(std::abs(relative_share_error(100, 10000) - std::sqrt(0.99 / 100.0)) < 1e-12, "multinomial relative error");
@@ -120,13 +151,202 @@ static void test_sampling_error() {
     check(marginal_relative_error(counts, 0) == 0 && marginal_relative_error(counts, 11) == 0, "bad k answers zero");
 }
 
+static void test_tail_series() {
+    TailSamples t;
+    t.commit(0.4,0.2);
+    check(std::abs(t.gain_ppm.quantile(0.5)-500000.0)<1e-6,
+          "committed predicted relative tail gain");
+    t.commit(0.2,0.21);
+    check(t.gain_ppm.total()==1,"nonpositive gain is not observed improvement");
+}
+
+static void test_effect_quiet_series() {
+    EffectGate gate({2,2,2.0});
+    ServiceSnapshot snapshot{};
+    uint64_t now=1000;
+    gate.quiet(snapshot,now);
+    for(unsigned i=0;i<5;++i) {
+        auto& lane=snapshot.lane[1];
+        lane.samples+=2;lane.rows+=2;
+        lane.time_ns+=uint64_t((i%2 ? 110 : 100)*2);
+        now+=100;
+        gate.quiet(snapshot,now);
+    }
+    const EffectSamples e=gate.observed();
+    check(e.quiet_comparisons==4 && e.normalized_noise_ns.count()==4,
+          "signed quiet-window comparisons, not configured counts");
+    check(std::abs(e.row_noise_ns()-10.0)<1e-9,
+          "known per-row sigma from signed quiet delta * sqrt(n/2)");
+    check(e.quiet_delta_ns.count()==4 && e.quiet_delta_ns.max()==10,
+          "effect noise in ns per routed row, not fractional noise");
+    check(std::abs(e.sampled_rows_per_s-20000000.0)<1e-6,
+          "sampled routed-row rate from observed rows and wall clock");
+}
+
+
+static void test_effect_variable_windows() {
+    EffectGate gate({2,2,2.0});
+    ServiceSnapshot snapshot{};
+    uint64_t now=1000;
+    gate.quiet(snapshot,now);
+    for (unsigned i=0; i<5; ++i) {
+        auto& lane=snapshot.lane[1];
+        const unsigned n = i%2 ? 8 : 2;
+        lane.samples+=n;
+        lane.rows+=n;
+        lane.time_ns+=uint64_t((i%2 ? 110 : 100)*n);
+        now+=100;
+        gate.quiet(snapshot,now);
+    }
+    const auto e=gate.observed();
+    check(e.normalized_noise_ns.count()==4,
+          "all variable-sized quiet comparisons retained");
+    check(std::abs(e.row_noise_ns()-10.0/std::sqrt(0.625))<1e-9,
+          "normalizer uses both actual adjacent n values, not configured n");
+}
+
+// Same published tail counter stream, but two different temporal structures:
+// i.i.d. per-row jitter and AR(1) correlation across routed rows. A Gaussian
+// i.i.d. window estimate is valid for the first and badly undersizes the
+// second; the empirical ladder retains correlations and burst boundaries.
+static void test_measured_window_noise_ladder() {
+    constexpr uint64_t rows_per_tick=1;
+    constexpr double z=2.576, effect=0.10;
+    auto measure=[&](bool correlated) {
+        WindowNoiseTracker tracker;
+        std::array<WindowNoiseTracker::Counts,2> now{};
+        tracker.add(now);
+        Series sigma(16384);
+        uint32_t seed=0x1234abcd;
+        double state=0;
+        for(unsigned i=0;i<16384;++i) {
+            seed=1664525u*seed+1013904223u;
+            const double u=double(seed >> 8)/double(0xffffffu)*2.0-1.0;
+            if(correlated)state=0.8*state+0.5*u;
+            else state=u;
+            const double mean=1000000.0*(1.0+(correlated?0.32:0.27)*state);
+            assert(mean>0);
+            sigma.add(mean/1000000.0);
+            now[1].samples++;
+            now[1].rows+=rows_per_tick;
+            now[1].time_ns+=uint64_t(std::llround(mean*rows_per_tick));
+            tracker.add(now);
+        }
+        const auto ladder=tracker.ladder();
+        assert(ladder.size()>=5);
+        const uint64_t iid_n=uint64_t(std::ceil(2*std::pow(sigma.stddev()*z/effect,2)));
+        uint64_t selected=0;
+        for(const auto& point:ladder) {
+            assert(point.comparisons>=3);
+            if(!selected && double(point.noise_ppm)*z<=effect*1000000.0)
+                selected=point.rows;
+        }
+        assert(selected);
+        return std::pair<uint64_t,uint64_t>{iid_n,selected};
+    };
+    const auto correlated=measure(true);
+    const auto independent=measure(false);
+    assert(correlated.second > correlated.first*4); // i.i.d. makes the gate unresolvable
+    assert(independent.second >= independent.first/2 &&
+           independent.second <= independent.first*2); // agrees for i.i.d. rows
+
+    auto verdict=[&](uint64_t window, double quiet_fraction, double after_ratio) {
+        EffectGate gate({window,2,z});
+        ServiceSnapshot snapshot{};
+        gate.quiet(snapshot,1);
+        for(unsigned i=0;i<3;++i) {
+            auto& lane=snapshot.lane[1];
+            lane.rows+=window;lane.samples+=window;
+            const double rate=1000.0*(1.0+(i%2?quiet_fraction:0.0));
+            lane.time_ns+=uint64_t(std::llround(double(window)*rate));
+            gate.quiet(snapshot,2+i);
+        }
+        assert(gate.ready(4,100));
+        assert(gate.begin(4,100));
+        gate.committed(snapshot);
+        snapshot.lane[1].rows+=window;
+        snapshot.lane[1].samples+=window;
+        snapshot.lane[1].time_ns+=uint64_t(std::llround(double(window)*1000.0*after_ratio));
+        return gate.judge(snapshot);
+    };
+    assert(verdict(correlated.second,0.01,0.90)==EffectVerdict::KEPT);
+    assert(verdict(correlated.second,0.01,1.00)==EffectVerdict::UNDECIDED);
+    assert(verdict(correlated.first,0.06,0.90)==EffectVerdict::UNDECIDED);
+    WindowNoiseTracker empty;
+    std::array<WindowNoiseTracker::Counts,2> counter{};
+    empty.add(counter);
+    counter[1].rows=1;counter[1].samples=1;counter[1].time_ns=1000;
+    empty.add(counter);
+    assert(empty.ladder().empty()); // never certify an incomplete ladder
+    empty.reset();
+    assert(empty.ladder().empty());
+}
+
+static void test_relative_ladder_and_calib9_observation() {
+    // Real calib9 absolute-tail ladder: even its best measured point cannot
+    // resolve the reported 6.6249% gain at the declared 1% Gaussian z.
+    const std::array<uint64_t,9> absolute_ppm={
+        256051,199777,110659,79012,64111,63886,42779,32781,53553};
+    constexpr double z=2.576, predicted=66249;
+    for(const auto noise:absolute_ppm)
+        assert(noise*z>predicted);
+    // Synthetic common workload shifts, deliberately nonstationary in
+    // absolute ns/row, cancel when all helpers move together.
+    WindowNoiseTracker relative(true);
+    std::array<WindowNoiseTracker::Counts,2> counters{};
+    relative.add(counters);
+    for(unsigned i=0;i<4096;++i) {
+        const uint64_t shift=(i/71)%3==0?130:100;
+        auto& x=counters[1];
+        x.samples++;x.rows+=256;x.time_ns+=256*shift;
+        x.reference_rows+=512;
+        x.reference_time_ns+=512*shift*2;
+        relative.add(counters);
+    }
+    const auto ladder=relative.ladder();
+    assert(ladder.size()>=3);
+    bool resolves=false;
+    for(const auto& point:ladder) {
+        assert(point.comparisons>=3);
+        resolves|=double(point.noise_ppm)*z<=predicted;
+    }
+    assert(resolves); // ratio is constant; no invented i.i.d. extrapolation
+
+    // The hardware helpers tick independently. Without pending intervals,
+    // every alternate tail-only tick reset the entire ladder to empty.
+    WindowNoiseTracker staggered(true);
+    std::array<WindowNoiseTracker::Counts,2> alternating{};
+    staggered.add(alternating);
+    for(unsigned i=0;i<256;++i) {
+        auto& x=alternating[1];
+        if(i%2==0) {
+            x.samples++;x.rows+=32;x.time_ns+=3200;
+        } else {
+            x.reference_rows+=64;x.reference_time_ns+=6400;
+        }
+        staggered.add(alternating);
+    }
+    const auto sparse_ladder=staggered.ladder();
+    assert(sparse_ladder.size()>=3);
+    for(const auto& rung:sparse_ladder) {
+        assert(rung.comparisons>=3);
+        assert(rung.noise_ppm==0);
+    }
+}
+
 int main() {
+    test_relative_ladder_and_calib9_observation();
     test_series();
     test_throughput();
     test_topk_overlap();
     test_drift_half_life();
     test_drift_is_relative_to_sampling_noise();
     test_drift_discontinuities();
+    test_observation_spaced_drift_cadence();
     test_sampling_error();
+    test_tail_series();
+    test_effect_quiet_series();
+    test_effect_variable_windows();
+    test_measured_window_noise_ladder();
     std::puts("r3_policy_measure_test: ok");
 }

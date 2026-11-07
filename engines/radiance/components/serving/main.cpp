@@ -161,7 +161,7 @@ int main(int argc, char** argv) {
             if (raw.at("spec").at("plan").at("engine_memory").at("expected") != plan->plan_json)
                 throw std::runtime_error("calibration-ingest: cached measured plan differs from lab manifest");
             bc::serving::ingest_live_policy_log(
-                log, cache, manifest, bc::serving::plan_key(inputs));
+                log, cache, manifest, bc::serving::calibration_key(inputs));
             std::cout << "calibration: " << cache << '\n';
             return 0;
         }
@@ -341,7 +341,7 @@ int main(int argc, char** argv) {
             const auto& prov = built.document.at("provenance");
             const auto& placement = built.document.at("spec").at("handoff").at("placement");
             if (!placement.contains("live_policy"))
-                std::cerr << "live policy: no calibration for plan " << bc::serving::plan_key(key_inputs)
+                std::cerr << "live policy: no calibration for key " << bc::serving::calibration_key(key_inputs)
                           << "; policy omitted (v1 cannot represent observe-only)\n";
             else for (auto it = prov.begin(); it != prov.end(); ++it) {
                 const std::string pointer = "/spec/handoff/placement/live_policy/";

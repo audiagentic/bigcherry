@@ -22,8 +22,8 @@ static void V23Layout_ExactOffsetsAndBounds() {
           l.generation[0] == 28672 && l.owner_map_bytes == 6 &&
           l.generation_slot_bytes == 4096 && l.generation[1] == 32768 &&
           l.layer_map == 36864, "V23Layout exact offsets");
-    check((l.placement + sizeof(PlacementControl) + sizeof(PlacementJournal) +
-           (kMaxHelpers + kMaxEngineRanks) * sizeof(PlacementAck)) <= l.generation[0],
+    check(l.service == l.ack + (kMaxHelpers + kMaxEngineRanks)*sizeof(PlacementAck) &&
+          l.service + kMaxHelpers*sizeof(PublishedServiceSlot) <= l.generation[0],
           "V23Layout control/journal/ACK bounds");
     check(sizeof(Header) == kPage && sizeof(Request) == 256 &&
           sizeof(LaneSignal) == 64 && sizeof(CombineSignal) == 128,
@@ -74,7 +74,8 @@ static void V23Map_LocalProtectedAndDisjoint() {
           owner_at(base, 2, 0, 0) == kOwnerLocal &&
           owner_at(base, 0, 2, 0) == kOwnerLocal &&
           placement_ack(base, 0) != nullptr &&
-          placement_ack(base, kMaxHelpers + kMaxEngineRanks) == nullptr,
+          placement_ack(base, kMaxHelpers + kMaxEngineRanks) == nullptr &&
+          published_service(base, 1) != nullptr && published_service(base, 2) == nullptr,
           "V23Map one owner, protected/local, accessor bounds");
     const uint64_t digest = generation_digest(base, 0);
     generation_header(base, 0)->digest = digest;
@@ -97,8 +98,8 @@ static void V23Map_LocalProtectedAndDisjoint() {
     ++generation_header(base, 0)->epoch;
     check(!valid_self(h, l.bytes), "V23Map epoch mismatch rejected");
     --generation_header(base, 0)->epoch;
-    h->version = 22;
-    check(!valid_self(h, l.bytes), "V23Map rejects v22");
+    h->version = 23;
+    check(!valid_self(h, l.bytes), "v24 rejects stale v23");
     h->version = kVersion;
     check(valid_self(h, l.bytes), "V23Map restored descriptors validate");
     munmap(base, l.bytes);

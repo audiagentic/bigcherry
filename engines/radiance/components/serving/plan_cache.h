@@ -28,6 +28,10 @@ std::string engine_identity(const std::filesystem::path& binary, const std::file
 nlohmann::json plan_key_inputs(const nlohmann::json& values, const nlohmann::json& facts, const std::string& model_id,
                                const std::string& engine_id, const std::string& engine_args);
 std::string plan_key(const nlohmann::json& key_inputs);
+// Calibration-store key: the plan-key inputs without engine_build. What calibration measures (copy and lane times,
+// routing noise, drift) belongs to the cards, layout, model and engine settings, not to the pinned engine commit, so a
+// record carries across pin bumps; a change of any remaining input (or of the record schema) requires recalibrating.
+std::string calibration_key(const nlohmann::json& key_inputs);
 
 /* rad0011's plan (radiance --plan-memory) through the shared v1 decoder, plus what a single plan must satisfy by itself:
  * each host consumer once, and the checkpoint floor within the want. Throws naming `where` and the decoder's path. */

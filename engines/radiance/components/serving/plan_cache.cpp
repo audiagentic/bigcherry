@@ -152,6 +152,14 @@ void check_plan_for_configuration(const Json& values, const v1::EnginePlan& plan
 }
 
 std::string plan_key(const Json& key_inputs) { return sha256_hex(key_inputs.dump()); }
+std::string calibration_key(const Json& key_inputs) {
+    if (!key_inputs.contains("engine_build")) throw std::runtime_error("calibration key: plan key inputs without engine_build");
+    Json inputs = key_inputs;
+    inputs.erase("engine_build");
+    inputs.erase("cache_version");
+    inputs["calibration_key_version"] = 1;
+    return sha256_hex(inputs.dump());
+}
 
 std::optional<CachedPlan> plan_cache_lookup(const fs::path& dir, const Json& key_inputs) {
     const std::string key = plan_key(key_inputs);
