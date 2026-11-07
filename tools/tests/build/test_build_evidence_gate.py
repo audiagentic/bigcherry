@@ -59,14 +59,6 @@ patch-sets = ["valid", "experimental"]
                          (gates.GateIntent.BUILD,) * 2)
         return outcome
 
-    def test_evaluator_requires_resolved_revision_for_framework_identity(self):
-        with self.assertRaisesRegex(ValueError, "resolved base revision required"):
-            build_evidence.evaluate_source(
-                engine="radiance", cfg=self.cfg, source_name="radiance",
-                patches_dir=self.root, pinned_ref="v1.17.0",
-                resolved_base_revision=None, mode="enforced",
-            )
-
     def test_stale_and_missing_records_are_named_and_untested_is_exempt(self):
         bad = gates.GateResult(gates.GateId.G4, gates.GateStatus.FAIL, "evidence",
                                "patch.catalog", ("stale record: wrong pin",))
@@ -86,18 +78,21 @@ patch-sets = ["valid", "experimental"]
         self.assertIn("evidence gate skipped for set experimental (required-state untested)",
                       build_evidence.report_lines(outcome))
 
-    def test_all_qualify_carried_forward_is_logged_with_original_pin(self):
+    def test_provenance_notes_are_logged_and_do_not_fail(self):
         passed = gates.GateResult(gates.GateId.G4, gates.GateStatus.PASS,
                                   "evidence", "patch.catalog")
-        carried = gates.GateResult(gates.GateId.G4, gates.GateStatus.PASS,
-                                   "evidence", "patch.catalog",
-                                   ("qualified at v1.14.0; not revalidated at v1.17.0",))
-        result = self._evaluate({"rad0002_moe_remote_handoff": carried,
+        noted = gates.GateResult(gates.GateId.G4, gates.GateStatus.PASS,
+                                 "evidence", "patch.catalog",
+                                 (gates.EVIDENCE_NOTE_PREFIX + "evidence recorded at pin v1.14.0 (now v1.17.0)",))
+        result = self._evaluate({"rad0002_moe_remote_handoff": noted,
                                  "rad0008_hc_upmix_rt_sweep": passed})
         self.assertFalse(result.failed)
-        self.assertEqual(result.record()["carried_forward"],
-                         [{"patch": "rad0002_moe_remote_handoff", "qualified_at": "v1.14.0"}])
-        self.assertIn("qualified-at v1.14.0", " ".join(build_evidence.report_lines(result)))
+        self.assertEqual(result.record()["notes"],
+                         [{"patch": "rad0002_moe_remote_handoff",
+                           "note": "evidence recorded at pin v1.14.0 (now v1.17.0)"}])
+        self.assertNotIn("carried_forward", result.record())
+        self.assertIn("evidence note: rad0002_moe_remote_handoff: evidence recorded at pin v1.14.0 (now v1.17.0)",
+                      build_evidence.report_lines(result))
 
     def test_pending_warning_is_also_saved_in_build_summary_and_enforced_fails_pre_materialize(self):
         (self.root / "config").mkdir()
@@ -129,7 +124,7 @@ patch-sets = ["valid", "experimental"]
                 patch.object(lane.build_evidence, "evaluate_source",
                              return_value=build_evidence.EvidenceAudit(
                                  audit.engine, audit.source, audit.pin, mode,
-                                 audit.validated, audit.failed, audit.carried_forward, audit.skipped)),
+                                 audit.validated, audit.failed, audit.notes, audit.skipped)),
                 patch.object(lane.campaign_plan, "materialize_stage_graph",
                              side_effect=LookupError("beyond the gate")),
                 patch.object(lane.campaign_build, "materialize_source") as materializer,
@@ -206,7 +201,7 @@ class PinBumpEvidencePhaseTests(unittest.TestCase):
                 with self.assertRaises(pin_bump.PinBumpStop) as stop:
                     pin_bump.run_phase_evidence(**kw)
                 self.assertEqual(stop.exception.phase, "evidence")
-                self.assertEqual(stop.exception.code, "EVIDENCE_GATE_STALE")
+                self.assertEqual(stop.exception.code, "EVIDENCE_GATE_FAILED")
                 self.assertIn("--resume", " ".join(stop.exception.recommended_actions))
                 self.assertEqual(record.evidence_gate["pending_count"], 1)
                 self.assertTrue((root / "report" / "evidence-gate.json").exists())

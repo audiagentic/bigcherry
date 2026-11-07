@@ -90,7 +90,7 @@ class GateContractTests(unittest.TestCase):
             resolved_base_revision="abc",
             intent=GateIntent.PROMOTE,
         )
-        evidence = SimpleNamespace(status="validated-evidence", ok=True, problems=())
+        evidence = SimpleNamespace(status="validated-evidence", ok=True, problems=(), notes=())
         with mock.patch.object(
             gates.patch_catalog,
             "validation_evidence_statuses",
@@ -114,7 +114,7 @@ class GateContractTests(unittest.TestCase):
             intent=GateIntent.PROMOTE,
             composition=SimpleNamespace(modules=(SimpleNamespace(patch_id="P1", state="untested"),)),
         )
-        evidence = SimpleNamespace(status="profile-evidence", ok=True, problems=())
+        evidence = SimpleNamespace(status="profile-evidence", ok=True, problems=(), notes=())
         with mock.patch.object(gates.patch_catalog, "validation_evidence_statuses", return_value={"P1": evidence}):
             g4 = gates.evaluate_evidence_gate(context)
         self.assertEqual(g4.status, GateStatus.PASS)
@@ -154,7 +154,7 @@ class GateContractTests(unittest.TestCase):
             resolved_base_revision=None,
             intent=GateIntent.VALIDATE,
         )
-        evidence = SimpleNamespace(status="not-required", ok=True, problems=())
+        evidence = SimpleNamespace(status="not-required", ok=True, problems=(), notes=())
         with mock.patch.object(
             gates.patch_catalog,
             "validation_evidence_statuses",
@@ -174,7 +174,7 @@ class GateContractTests(unittest.TestCase):
             resolved_base_revision=None,
             intent=GateIntent.VALIDATE,
         )
-        evidence = SimpleNamespace(status="future-status", ok=True, problems=())
+        evidence = SimpleNamespace(status="future-status", ok=True, problems=(), notes=())
         with mock.patch.object(
             gates.patch_catalog,
             "validation_evidence_statuses",
@@ -182,6 +182,27 @@ class GateContractTests(unittest.TestCase):
         ):
             result = gates.evaluate_evidence_gate(context)
         self.assertEqual(result.status, GateStatus.BLOCKED)
+
+    def test_evidence_gate_blocks_malformed_notes(self) -> None:
+        context = SimpleNamespace(
+            descriptor=SimpleNamespace(patch_id="P1", engine="llamacpp"),
+            catalog_path=None,
+            patches_dir=Path("patches"),
+            pinned_ref="b10901",
+            evidence_root=None,
+            allow_legacy_grandfather=True,
+            resolved_base_revision=None,
+            intent=GateIntent.BUILD,
+        )
+        evidence = SimpleNamespace(status="validated-evidence", ok=True, problems=(), notes=(1,))
+        with mock.patch.object(
+            gates.patch_catalog,
+            "validation_evidence_statuses",
+            return_value={"P1": evidence},
+        ):
+            result = gates.evaluate_evidence_gate(context)
+        self.assertEqual(result.status, GateStatus.BLOCKED)
+        self.assertEqual(result.detail, ("evidence returned malformed notes",))
 
     def test_framework_promotion_blocks_before_evidence_resolution(self) -> None:
         descriptor = SimpleNamespace(

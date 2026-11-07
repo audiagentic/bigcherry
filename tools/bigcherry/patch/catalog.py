@@ -48,7 +48,6 @@ from typing import Mapping
 
 from ..core import config as campaign_config
 from . import evidence as patch_validation_evidence
-from . import profile_evidence
 from ..core import engines, paths
 from . import patchset
 from . import validation_policy
@@ -96,7 +95,7 @@ class CatalogEntry:
     subsystems: tuple[str, ...] = ()
     hardware: tuple[str, ...] = ()
     tags: tuple[str, ...] = ()
-    # HI83: which GPU architecture(s) must have a current, qualifying
+    # HI83: which GPU architecture(s) must have a qualifying
     # patch_validation_evidence record before this patch may claim global
     # STATE="validated" -- a distinct policy field from `hardware` (free-form
     # descriptive metadata, not validated against a closed vocabulary,
@@ -281,7 +280,7 @@ def load_catalog(engine: str, path: Path | None = None) -> dict[str, CatalogEntr
 # path. patch_catalog.py's own module docstring above states it is
 # "read-only, additive metadata... does not change what bigcherry apply/
 # bigcherry build actually select"; hard enforcement (refusing to apply/
-# build a STATE="validated" patch with stale evidence) is a deliberate,
+# build a STATE="validated" patch without qualifying evidence) is a deliberate,
 # separate, deferred decision -- see plan item HI83's notes for why. These
 # functions exist so `patch-verify-evidence` and cross_check() (also only
 # a diagnostic, not called from any production path today) can report the
@@ -300,21 +299,16 @@ def validation_evidence_statuses(
     resolved_base_revision: str | None = None,
     default_validation_architectures: tuple[str, ...] = (),
     assume_validated: frozenset[str] = frozenset(),
-    carry_forward: bool,
 ) -> dict[str, patch_validation_evidence.EvidenceCheck]:
-    """Current-evidence status per patch.
+    """Evidence status per patch, one rule for build, promotion and diagnostics.
 
-    ``carry_forward`` (build admission only -- never promotion or the
-    strict evidence diagnostic): a failing check is re-evaluated with the
-    same verifier at each earlier pin one of the patch's records was made
-    at. If a record fully qualifies there, the only defect is pin freshness
-    and the patch is ``carried-forward`` (qualification is re-established on
-    request). Changes to the patch itself (implementation/subject digest),
-    its validation package, bound contracts, eligibility or architecture
-    coverage still fail. By policy, changes to OTHER patches in the
-    surrounding composition do not force a re-bench of runtime evidence;
-    framework-configuration evidence (compile-only, cheap to regenerate)
-    still binds its composition.
+    A record qualifies when it is intact and says the patch passed: patch id,
+    record integrity, eligibility, activation, correctness, a passing verdict
+    for every contract the patch binds today (by id) and architecture
+    coverage. Code, digest and pin changes never disqualify evidence:
+    ``pinned_ref``/``resolved_base_revision`` and the patch's current digests
+    only produce provenance ``notes``. A rerun is requested deliberately by
+    demoting the patch.
     """
     entries = load_catalog(engine, catalog_path)
     patches_root = patches_dir or paths.patches_root(engine)
@@ -330,7 +324,7 @@ def validation_evidence_statuses(
     if pinned_ref is None:
         pinned_ref = campaign_config.load(engines.load(paths.REPO_ROOT, engine).recipes_path(paths.REPO_ROOT)).pinned
 
-    def _evaluate(patch_id: str, ref: str, resolved: str | None) -> patch_validation_evidence.EvidenceCheck:
+    def _evaluate(patch_id: str) -> patch_validation_evidence.EvidenceCheck:
         entry = entries.get(patch_id)
         packaged_descriptor = packaged.get(patch_id)
         if entry is None and packaged_descriptor is None:
@@ -370,11 +364,11 @@ def validation_evidence_statuses(
             compiled_targets = tuple(dict.fromkeys((*explicit_targets, *requested_targets)))
             return patch_validation_evidence.verify_framework_configuration_patch(
                 verification_module,
-                pinned_ref=ref,
+                pinned_ref=pinned_ref,
                 required_compiled_targets=compiled_targets,
                 root=evidence_root,
                 allow_legacy_grandfather=allow_legacy_grandfather,
-                resolved_base_revision=resolved,
+                resolved_base_revision=resolved_base_revision,
             )
 
         required_archs = (
@@ -390,76 +384,32 @@ def validation_evidence_statuses(
         # "deferred-hardware" at all (those are tracked-status values from
         # config/external-sources.toml, a separate axis). Dispatch to the
         # matching status-obligation verifier so those two tracked
-        # statuses are actually checked for current-pin qualification
-        # instead of silently reporting not-required.
+        # statuses are actually checked for qualification instead of
+        # silently reporting not-required.
         if verification_module.state == "validated":
             return patch_validation_evidence.verify_validated_patch(
-                verification_module, pinned_ref=ref,
+                verification_module, pinned_ref=pinned_ref,
                 required_architectures=required_archs,
                 root=evidence_root, allow_legacy_grandfather=allow_legacy_grandfather,
-                resolved_base_revision=resolved,
-                allow_lineage=carry_forward and (
-                    ref != pinned_ref or resolved != resolved_base_revision
-                ),
+                resolved_base_revision=resolved_base_revision,
             )
 
         tracked_statuses = validation_policy.tracked_statuses_for_patch(patch_id)
         if "deferred-hardware" in tracked_statuses:
             return patch_validation_evidence.verify_deferred_hardware_patch(
-                module, pinned_ref=ref, root=evidence_root,
-                resolved_base_revision=resolved,
+                module, pinned_ref=pinned_ref, root=evidence_root,
+                resolved_base_revision=resolved_base_revision,
             )
         elif "ported-benched" in tracked_statuses:
             return patch_validation_evidence.verify_ported_benched_patch(
-                module, pinned_ref=ref, root=evidence_root,
-                resolved_base_revision=resolved,
+                module, pinned_ref=pinned_ref, root=evidence_root,
+                resolved_base_revision=resolved_base_revision,
             )
         else:
             return patch_validation_evidence.EvidenceCheck("not-required")
 
-    result: dict[str, patch_validation_evidence.EvidenceCheck] = {}
-    for patch_id in patch_ids:
-        check = _evaluate(patch_id, pinned_ref, resolved_base_revision)
-        if carry_forward and not check.ok and check.status != "not-required":
-            check = _carried_forward(
-                patch_id, check, pinned_ref, resolved_base_revision, evidence_root, _evaluate,
-                engine=engine, patches_root=patches_root,
-            )
-        result[patch_id] = check
-    return result
+    return {patch_id: _evaluate(patch_id) for patch_id in patch_ids}
 
-
-def _carried_forward(patch_id, check, pinned_ref, resolved_base_revision, evidence_root, evaluate, *, engine, patches_root):
-    try:
-        records = patch_validation_evidence.load_records(
-            patch_id, engine=engine, patches_root=patches_root, root=evidence_root
-        )
-    except patch_validation_evidence.ValidationEvidenceError:
-        return check
-    earlier_pins: list[tuple[str, str]] = []
-    for record in reversed(records):
-        pin = (str(record.get("base_ref") or ""), str(record.get("base_revision") or ""))
-        live = pin[0] == pinned_ref and (
-            resolved_base_revision is None or pin[1] == resolved_base_revision
-        )
-        if pin[0] and not live and pin not in earlier_pins:
-            earlier_pins.append(pin)
-    # The profile-evidence tier carries its pin in the package record (no HI83 records). That pin is an earlier pin
-    # to try as well: the record carries forward exactly when the patch implementation is unchanged (the verifier
-    # reports any other defect, so a changed patch, a malformed or incomplete record still fail).
-    try:
-        profile = profile_evidence.load(patches_root / patch_id) if patches_root is not None else None
-    except ValueError:
-        profile = None
-    if profile is not None and profile.pinned and profile.pinned != pinned_ref and (profile.pinned, "") not in earlier_pins:
-        earlier_pins.append((profile.pinned, ""))
-    for ref, revision in earlier_pins:
-        if evaluate(patch_id, ref, revision or None).ok:
-            return patch_validation_evidence.EvidenceCheck(
-                "carried-forward",
-                (f"qualified at {ref}; not revalidated at {pinned_ref} -- revalidate on request",),
-            )
-    return check
 
 def require_validation_evidence(
     engine: str,
@@ -474,7 +424,7 @@ def require_validation_evidence(
     default_validation_architectures: tuple[str, ...] = (),
 ) -> None:
     """Raise ValueError describing every STATE='validated' patch (among
-    patch_ids) whose evidence is missing or stale. Callers decide whether
+    patch_ids) without qualifying evidence. Callers decide whether
     and where to treat that as fatal -- this function itself does not gate
     anything on its own."""
     statuses = validation_evidence_statuses(
@@ -483,7 +433,6 @@ def require_validation_evidence(
         evidence_root=evidence_root, allow_legacy_grandfather=allow_legacy_grandfather,
         resolved_base_revision=resolved_base_revision,
         default_validation_architectures=default_validation_architectures,
-        carry_forward=False,
     )
     failures = [(patch_id, status) for patch_id, status in statuses.items() if not status.ok]
     if not failures:
@@ -570,15 +519,12 @@ def cross_check(
             pinned_ref=pinned_ref, evidence_root=evidence_root,
             allow_legacy_grandfather=allow_legacy_grandfather,
             resolved_base_revision=resolved_base_revision,
-            # Local CI: pin-stale performance evidence is re-established on
-            # request, so it must not turn every post-bump check red.
-            carry_forward=True,
         )
         for patch_id, status in statuses.items():
             if status.ok:
                 continue
             problems.append(
-                f"{patch_id}: STATE='validated' has no current matching validation evidence: "
+                f"{patch_id}: STATE='validated' has no qualifying validation evidence: "
                 + ("; ".join(status.problems) or status.status)
             )
 

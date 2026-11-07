@@ -94,132 +94,61 @@ class TestPatchAdmission(unittest.TestCase):
             self.assertEqual(result.status, "escape-hatch")
             self.assertTrue(result.warnings)
 
-    def test_carried_forward_status_is_admitted_with_warning(self):
+    def test_evidence_with_provenance_notes_is_admitted_without_warnings(self):
         from bigcherry.patch import evidence as patch_evidence
-        carried = patch_evidence.EvidenceCheck(
-            "carried-forward", ("qualified at old-pin; not revalidated at pin -- revalidate on request",),
+        noted = patch_evidence.EvidenceCheck(
+            "validated-evidence", notes=("evidence recorded at pin old-pin (now pin)",),
         )
-        with mock.patch.object(patch_admission, "_has_non_grandfathered_eligible", return_value=True),              mock.patch.object(patch_admission.patch_catalog, "validation_evidence_statuses",
-                               return_value={"0001_test": carried}) as statuses:
+        with mock.patch.object(patch_admission, "_has_non_grandfathered_eligible", return_value=True), \
+             mock.patch.object(patch_admission.patch_catalog, "validation_evidence_statuses",
+                               return_value={"0001_test": noted}) as statuses:
             result = patch_admission.admit("llamacpp", ["0001_test"], pinned_ref="pin")
-        self.assertTrue(statuses.call_args.kwargs["carry_forward"])
+        self.assertNotIn("carry_forward", statuses.call_args.kwargs)
         self.assertTrue(result.admissible)
         self.assertEqual(result.status, "admitted")
-        self.assertIn("carried-forward", result.warnings[0])
+        self.assertEqual(result.warnings, ())
 
-    def test_non_pin_evidence_failure_is_still_rejected(self):
+    def test_ineligible_evidence_is_still_rejected(self):
         from bigcherry.patch import evidence as patch_evidence
-        stale = patch_evidence.EvidenceCheck("missing-or-stale", ("implementation digest mismatch",))
-        with mock.patch.object(patch_admission, "_has_non_grandfathered_eligible", return_value=True),              mock.patch.object(patch_admission.patch_catalog, "validation_evidence_statuses",
-                               return_value={"0001_test": stale}):
+        ineligible = patch_evidence.EvidenceCheck("missing-or-stale", ("correctness did not pass",))
+        with mock.patch.object(patch_admission, "_has_non_grandfathered_eligible", return_value=True), \
+             mock.patch.object(patch_admission.patch_catalog, "validation_evidence_statuses",
+                               return_value={"0001_test": ineligible}):
             result = patch_admission.admit("llamacpp", ["0001_test"], pinned_ref="pin")
         self.assertFalse(result.admissible)
 
 
-class CarryForwardAuthorityTests(unittest.TestCase):
-    def _records(self, *pins):
-        return tuple({"base_ref": ref, "base_revision": rev} for ref, rev in pins)
-
-    def test_qualifying_at_an_earlier_pin_carries_forward(self):
-        from bigcherry.patch import catalog, evidence as patch_evidence
-        failing = patch_evidence.EvidenceCheck("missing-or-stale", ("stale base_ref",))
-        seen = []
-
-        def evaluate(pid, ref, rev):
-            seen.append(ref)
-            return patch_evidence.EvidenceCheck("validated-evidence" if ref == "old" else "missing-or-stale")
-
-        with mock.patch.object(patch_evidence, "load_records", return_value=self._records(("old", "a" * 40))):
-            check = catalog._carried_forward("p", failing, "new", None, None, evaluate,
-                                             engine="llamacpp", patches_root=None)
-        self.assertEqual(check.status, "carried-forward")
-        self.assertIn("old", check.problems[0])
-        self.assertEqual(seen, ["old"])
-
-    def test_failure_at_every_earlier_pin_is_not_carried_forward(self):
-        from bigcherry.patch import catalog, evidence as patch_evidence
-        failing = patch_evidence.EvidenceCheck("missing-or-stale", ("implementation digest mismatch",))
-        with mock.patch.object(patch_evidence, "load_records", return_value=self._records(("old", "a" * 40))):
-            check = catalog._carried_forward(
-                "p", failing, "new", None, None,
-                lambda pid, ref, rev: patch_evidence.EvidenceCheck("missing-or-stale"),
-                engine="llamacpp", patches_root=None,
-            )
-        self.assertIs(check, failing)
-
-    def test_same_ref_at_a_different_revision_is_an_earlier_pin(self):
-        from bigcherry.patch import catalog, evidence as patch_evidence
-        failing = patch_evidence.EvidenceCheck("missing-or-stale", ("stale base_revision",))
-        records = self._records(("moving", "a" * 40))
-        with mock.patch.object(patch_evidence, "load_records", return_value=records):
-            check = catalog._carried_forward(
-                "p", failing, "moving", "b" * 40, None,
-                lambda pid, ref, rev: patch_evidence.EvidenceCheck(
-                    "validated-evidence" if rev == "a" * 40 else "missing-or-stale"),
-                engine="llamacpp", patches_root=None,
-            )
-        self.assertEqual(check.status, "carried-forward")
-
-    def _package(self, pinned, digest="d" * 64):
-        import tempfile
-        from pathlib import Path
-        from bigcherry.patch import profile_evidence
-        root = Path(tempfile.mkdtemp())
-        self.addCleanup(lambda: __import__("shutil").rmtree(root, ignore_errors=True))
-        (root / "p").mkdir()
-        profile_evidence.write(root / "p", profile_evidence.ProfileEvidence(
-            patch_id="p", pinned=pinned, subject_digest=digest, default_on=False, models=("Model X",),
-            checks={"mechanics": "m", "activation": "a", "identity": "i", "ab": "b"}))
-        return root
-
-    def test_a_profile_record_from_an_earlier_pin_carries_forward_when_only_the_pin_differs(self):
-        from bigcherry.patch import catalog, evidence as patch_evidence
-        root = self._package("v1.9.0")
-        seen = []
-
-        def evaluate(pid, ref, rev):
-            seen.append((ref, rev))
-            return patch_evidence.EvidenceCheck("profile-evidence" if ref == "v1.9.0" else "missing-or-stale")
-
-        with mock.patch.object(patch_evidence, "load_records", return_value=()):
-            check = catalog._carried_forward("p", patch_evidence.EvidenceCheck("missing-or-stale", ("pin",)),
-                                             "v1.17.0", None, None, evaluate, engine="radiance", patches_root=root)
-        self.assertEqual(check.status, "carried-forward")
-        self.assertIn("v1.9.0", check.problems[0])
-        self.assertEqual(seen, [("v1.9.0", None)])
-
-    def test_a_profile_record_does_not_carry_forward_when_the_patch_changed(self):
-        from bigcherry.patch import catalog, evidence as patch_evidence
-        root = self._package("v1.9.0")
-        failing = patch_evidence.EvidenceCheck("missing-or-stale", ("changed",))
-        with mock.patch.object(patch_evidence, "load_records", return_value=()):
-            check = catalog._carried_forward("p", failing, "v1.17.0", None, None,
-                                             lambda *a: patch_evidence.EvidenceCheck("missing-or-stale"),
-                                             engine="radiance", patches_root=root)
-        self.assertIs(check, failing)
-
-    def test_a_record_at_the_current_pin_is_not_an_earlier_pin(self):
-        from bigcherry.patch import catalog, evidence as patch_evidence
-        root = self._package("v1.17.0")
-        failing = patch_evidence.EvidenceCheck("missing-or-stale", ("changed",))
-        seen = []
-        with mock.patch.object(patch_evidence, "load_records", return_value=()):
-            check = catalog._carried_forward("p", failing, "v1.17.0", None, None,
-                                             lambda *a: seen.append(a) or patch_evidence.EvidenceCheck("profile-evidence"),
-                                             engine="radiance", patches_root=root)
-        self.assertEqual(seen, [])
-        self.assertIs(check, failing)
-
-    def test_build_g4_passes_carried_forward(self):
-        from bigcherry.patch import evidence as patch_evidence, gates
-        carried = patch_evidence.EvidenceCheck("carried-forward", ("qualified at old; revalidate on request",))
-        context = mock.Mock(intent=gates.GateIntent.BUILD)
+class EvidenceGateNoteTests(unittest.TestCase):
+    def _g4(self, intent, check):
+        from bigcherry.patch import gates
+        context = mock.Mock(intent=intent)
         context.descriptor.patch_id = "p"
-        with mock.patch.object(gates.patch_catalog, "validation_evidence_statuses",
-                               return_value={"p": carried}) as statuses:
+        with mock.patch.object(gates.validation_policy, "is_framework_configuration_patch", return_value=False), \
+             mock.patch.object(gates.patch_catalog, "validation_evidence_statuses",
+                               return_value={"p": check}) as statuses:
             result = gates.evaluate_evidence_gate(context)
-        self.assertTrue(statuses.call_args.kwargs["carry_forward"])
-        self.assertEqual(result.status, gates.GateStatus.PASS)
+        self.assertNotIn("carry_forward", statuses.call_args.kwargs)
+        return result
+
+    def test_build_and_promote_pass_with_notes_as_detail(self):
+        from bigcherry.patch import evidence as patch_evidence, gates
+        check = patch_evidence.EvidenceCheck(
+            "validated-evidence", notes=("evidence recorded at pin v1.16.0 (now v1.17.0)",),
+        )
+        for intent in (gates.GateIntent.BUILD, gates.GateIntent.PROMOTE):
+            with self.subTest(intent=intent):
+                result = self._g4(intent, check)
+                self.assertEqual(result.status, gates.GateStatus.PASS)
+                self.assertEqual(
+                    result.detail,
+                    (gates.EVIDENCE_NOTE_PREFIX + "evidence recorded at pin v1.16.0 (now v1.17.0)",),
+                )
+
+    def test_carried_forward_is_no_longer_a_recognized_status(self):
+        from bigcherry.patch import evidence as patch_evidence, gates
+        self.assertFalse(patch_evidence.EvidenceCheck("carried-forward").ok)
+        result = self._g4(gates.GateIntent.BUILD, patch_evidence.EvidenceCheck("carried-forward"))
+        self.assertEqual(result.status, gates.GateStatus.BLOCKED)
 
     def test_live_revision_uses_shared_identity_primitive(self):
         with mock.patch.object(patch_admission.source_identity, "git_revision", return_value="abc"):

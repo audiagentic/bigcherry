@@ -80,7 +80,8 @@ Stop and report instead of proceeding when:
 - the workload is not pinned (step 1);
 - a timed row would run without a passed PREFLIGHT for that patch on that config;
 - arms differ in more than one variable, or activation/work-equivalence evidence is missing;
-- a promotion would rely on evidence from an older pin or a changed patch.py;
+- a promotion would rely on evidence that does not qualify (patch-verify-evidence fails; a note about an older
+  pin or a changed patch.py is not a failure, but decide whether the change warrants a rerun);
 - a job script would be edited or pulled on the bench host while it executes in place;
 - a patch's gate cannot admit the workload (retarget or drop; do not "measure harder").
 

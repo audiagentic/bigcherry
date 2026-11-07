@@ -466,7 +466,7 @@ def cmd_patch_disposition(args: Namespace) -> int:
 
 
 def cmd_patch_verify_evidence(args: Namespace) -> int:
-    """Report current validation evidence for selected patches."""
+    """Report validation evidence (and its provenance notes) for selected patches."""
     ctx = _context(args)
     cfg = campaign_config.load(ctx.config_path)
     modules = patchset.catalog(args.engine, directory=ctx.patches_root)
@@ -475,13 +475,11 @@ def cmd_patch_verify_evidence(args: Namespace) -> int:
         if not modules:
             print(f"unknown patch {args.patch_id!r}", file=sys.stderr)
             return 1
-    # VA08 resolved-pin-SHA slice (GPT session ses_330ae3c055084f38,
-    # req_1c131ba025834afe): a record's base_revision must match the pin's
-    # actual RESOLVED commit, not just a string with the same ref name --
-    # otherwise stale evidence from before the pin moved could still
-    # "match" cfg.pinned by name alone. resolve_ref() is local-only (no
-    # fetch); if the configured pin cannot resolve locally, fail closed
-    # with a real CLI error rather than silently skipping the check.
+    # The pin's resolved commit is reported against each qualifying record's
+    # base_revision as a provenance note (evidence carries across pins; it
+    # is never a disqualifier). resolve_ref() is local-only (no fetch); if
+    # the configured pin cannot resolve locally, fail with a real CLI error
+    # rather than reporting against an unknown revision.
     try:
         mirror = ProjectContext.resolve(engine=args.engine).upstream_repo
         upstream = mirror if mirror.exists() else vendor_root(args.engine)
@@ -498,8 +496,6 @@ def cmd_patch_verify_evidence(args: Namespace) -> int:
         pinned_ref=cfg.pinned,
         resolved_base_revision=resolved_base_revision,
         allow_legacy_grandfather=not args.no_legacy_grandfather,
-        # Strict diagnostic: reports whether evidence is current for the pin.
-        carry_forward=False,
     )
     if args.json:
         print(
@@ -508,6 +504,7 @@ def cmd_patch_verify_evidence(args: Namespace) -> int:
                     patch_id: {
                         "status": status.status,
                         "problems": list(status.problems),
+                        "notes": list(status.notes),
                         "campaign_digests": list(status.campaign_digests),
                     }
                     for patch_id, status in sorted(statuses.items())
@@ -521,6 +518,8 @@ def cmd_patch_verify_evidence(args: Namespace) -> int:
             print(f"{patch_id}: {status.status}")
             for problem in status.problems:
                 print(f"  - {problem}")
+            for note in status.notes:
+                print(f"  note: {note}")
     return 0 if all(status.ok for status in statuses.values()) else 1
 
 

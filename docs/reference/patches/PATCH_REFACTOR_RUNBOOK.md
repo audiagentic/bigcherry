@@ -38,9 +38,10 @@ PYTHONPATH=tools python -m bigcherry --engine llamacpp patch-explain <patch-id>
 PYTHONPATH=tools python -m bigcherry --engine llamacpp patch-graph --roots <patch-id>
 ```
 
-Do not reuse a report, build directory, or evidence record from a different
-pin, source selection, patch digest, or validation identity. A symbolic tag is
-not enough for evidence; the resolved commit SHA is part of the identity.
+Do not reuse a rebase report or build directory from a different pin, source
+selection, patch digest, or validation identity. A symbolic tag is not enough
+for those; the resolved commit SHA is part of the identity. Validation evidence
+is different: it carries across these changes (section 7).
 
 ## 2. Probe applicability without mutating the vendor checkout
 
@@ -181,24 +182,32 @@ The package's `patch.toml` becomes the metadata authority. Do not keep a
 second `catalog.toml` entry for the packaged ID or rely on duplicated
 `STATE`/`GROUP` constants in its `patch.py`.
 
-## 7. Evidence invalidation and revalidation
+## 7. Evidence after a change, and requesting a rerun
 
-Use this matrix when deciding what must be rerun:
+Validation evidence is not invalidated by code or digest changes, nor by pin
+bumps. A record that is intact and says the patch passed keeps qualifying; the
+evidence verifier reports each recorded pin, patch digest, validation digest or
+contract hash that differs from the current one as a provenance note. We judge
+when a rerun is needed: request one deliberately by demoting the patch with the
+lifecycle tooling, never by relying on a digest change.
 
 | Change | Old apply/build evidence | Old validation evidence | Required follow-up |
 | --- | --- | --- | --- |
-| Upstream pin/tag or resolved SHA | Historical | Historical for current qualification | Rebase/apply against the new SHA; rerun current-pin validation as needed |
-| `patch.py` bytes or anchored semantics | Invalid for the changed implementation | Invalid | Re-run apply/build and the full affected claim |
-| `patch.toml` composition, contract, architecture, or state | Re-check composition | Usually invalid or no longer sufficient | Lint, re-resolve plan, rerun evidence gate; new execution if identity changed |
-| `validation.toml` or `validation/` | Reusable only if source/build identity still matches | Invalid | Re-run the validation plan and write a new record |
-| Bound Experiment Contract semantics | Reusable only for implementation mechanics | Invalid | Re-run contract-required checks against the new contract hash |
-| Validation framework semantic version | Reusable for production source identity | Invalid | Re-run validation under the new framework |
+| Upstream pin/tag or resolved SHA | Historical | Still qualifies (pin note) | Rebase/apply against the new SHA; rerun validation only if judged needed |
+| `patch.py` bytes or anchored semantics | Invalid for the changed implementation | Still qualifies (digest note) | Re-run apply/build; decide whether the change alters the claim, and demote to request a rerun if it does |
+| `patch.toml` contract binding: a contract newly bound | Re-check composition | Does not qualify until the record has a passing verdict for it | Run the contract-required checks and write a new record |
+| `patch.toml` architecture obligation added | Re-check composition | Does not qualify until the architecture is covered | Run on the added architecture |
+| `patch.toml` composition or state, other metadata | Re-check composition | Still qualifies | Lint, re-resolve plan, rerun the evidence gate |
+| `validation.toml` or `validation/` | Reusable only if source/build identity still matches | Still qualifies (validation-digest note); a newly required check must be present for configuration evidence | Decide whether a rerun is needed |
+| Bound Experiment Contract semantics (hash) | Reusable for implementation mechanics | Still qualifies (contract-hash note) | Decide whether the semantic change needs a rerun |
+| Validation framework semantic version | Reusable for production source identity | Still qualifies | Decide whether a rerun is needed |
 | `SUMMARY.md` prose only | Unchanged | Unchanged | Run summary/lint checks; do not present prose as evidence |
 
-Evidence records are append-only. Do not rewrite an old record's meaning,
-change its pin to the new SHA, or delete a failed run to make the catalog
-green. Use `patch-verify-evidence --no-legacy-grandfather` to confirm the
-current claim.
+Evidence records are append-only, and `record_digest` binds each record to its
+own payload. Do not rewrite an old record's meaning, change its pin or digests,
+or delete a failed run to make the catalog green. Use
+`patch-verify-evidence --no-legacy-grandfather` to confirm the claim and read
+its notes.
 
 ## 8. Final reconciliation gate
 

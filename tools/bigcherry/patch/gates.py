@@ -111,6 +111,9 @@ class GateContext:
 
 # G4 detail line that says the evidence is the package's lightweight promotion record (QFP18, PA45)
 PROFILE_EVIDENCE_DETAIL = "tier: profile-evidence"
+# Prefix of a G4 detail line carrying an evidence provenance note (a recorded digest or pin that differs from the
+# current one). Notes never fail a gate.
+EVIDENCE_NOTE_PREFIX = "note: "
 
 
 def gate_applies(gate_id: GateId, intent: GateIntent) -> bool:
@@ -284,7 +287,7 @@ def evaluate_repository_lint_gates(
 ) -> LintGateReport:
     """Evaluate the repository-static subset of the shared gate taxonomy.
 
-    Lint has no focal composition, upstream checkout, current-pin evidence,
+    Lint has no focal composition, upstream checkout, evidence,
     disposition target, or production admission decision.  Its two gates are
     therefore evaluated directly against the canonical registry and existing
     static policy authorities rather than by fabricating a ``GateContext``.
@@ -555,7 +558,9 @@ def evaluate_evidence_gate(context: GateContext) -> GateResult:
     Promotion is prospective: the focal untested module is evaluated as
     validated without mutating registry state.  Build keeps the existing
     ``not-required`` result as NA, while validation and promotion require an
-    actual evidence result.
+    actual evidence result.  Build and promotion use the same qualification
+    rule; provenance notes (evidence recorded at another digest or pin) are
+    reported as PASS detail lines, never as failures.
     """
     try:
         framework_configuration = validation_policy.is_framework_configuration_patch(
@@ -585,9 +590,6 @@ def evaluate_evidence_gate(context: GateContext) -> GateResult:
                 if context.intent is GateIntent.PROMOTE
                 else frozenset()
             ),
-            # Building may use pin-stale qualification (revalidate on
-            # request); promotion always needs current evidence.
-            carry_forward=context.intent is GateIntent.BUILD,
         )
     except (
         OSError,
@@ -618,9 +620,6 @@ def evaluate_evidence_gate(context: GateContext) -> GateResult:
             "ported-benched-evidence",
             "deferred-hardware-evidence",
             "framework-configuration-evidence",
-            # Build-only (carry_forward=True): qualified at an earlier pin;
-            # PASS with the revalidate-on-request note as its problem text.
-            "carried-forward",
             # Lightweight promotion record in the patch package (QFP18, PA45).
             "profile-evidence",
         }
@@ -651,6 +650,15 @@ def evaluate_evidence_gate(context: GateContext) -> GateResult:
             "patch.catalog",
             ("evidence returned malformed problems",),
         )
+    notes = getattr(status, "notes", None)
+    if not isinstance(notes, (tuple, list)) or not all(isinstance(item, str) for item in notes):
+        return GateResult(
+            GateId.G4,
+            GateStatus.BLOCKED,
+            "evidence",
+            "patch.catalog",
+            ("evidence returned malformed notes",),
+        )
     if evidence_status == "not-required":
         if context.intent in (GateIntent.VALIDATE, GateIntent.PROMOTE):
             return GateResult(
@@ -665,7 +673,7 @@ def evaluate_evidence_gate(context: GateContext) -> GateResult:
         return GateResult(
             GateId.G4, GateStatus.FAIL, "evidence", "patch.catalog", tuple(problems)
         )
-    detail = tuple(problems)
+    detail = (*problems, *(EVIDENCE_NOTE_PREFIX + note for note in notes))
     if evidence_status == "profile-evidence":
         detail = (PROFILE_EVIDENCE_DETAIL, *detail)
     return GateResult(GateId.G4, GateStatus.PASS, "evidence", "patch.catalog", detail)

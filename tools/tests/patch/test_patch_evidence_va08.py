@@ -145,15 +145,17 @@ class PortedBenchedTests(unittest.TestCase):
         self.assertEqual(result.status, "missing-or-stale")
         self.assertFalse(result.ok)
 
-    def test_stale_base_revision_fails(self) -> None:
+    def test_evidence_from_another_pin_revision_still_qualifies_with_a_note(self) -> None:
         record = self._real_v3_record()
         pve.write_record(record, engine="llamacpp", patches_root=self.root, root=self.root)
         result = pve.verify_ported_benched_patch(
-            self._module(), pinned_ref="b10705", root=self.root,
-            resolved_base_revision="c" * 40,  # does not match record's base_revision (_HEX40 = "b"*40)
+            self._module(), pinned_ref="b10900", root=self.root,
+            resolved_base_revision="c" * 40,  # record's base_revision is _HEX40 = "b"*40
         )
-        self.assertEqual(result.status, "missing-or-stale")
-        self.assertFalse(result.ok)
+        self.assertEqual(result.status, "ported-benched-evidence")
+        self.assertTrue(result.ok)
+        self.assertIn("evidence recorded at pin b10705 (now b10900)", result.notes)
+        self.assertIn("evidence recorded at pin revision bbbbbbbbbbbb (now cccccccccccc)", result.notes)
 
     def test_missing_benchmark_provenance_fails(self) -> None:
         record = self._real_v3_record()
@@ -271,13 +273,14 @@ class DeferredHardwareTests(unittest.TestCase):
         self.assertEqual(result.status, "missing-or-stale")
         self.assertFalse(result.ok)
 
-    def test_stale_resolved_base_revision_fails(self) -> None:
+    def test_evidence_from_another_pin_revision_still_qualifies_with_a_note(self) -> None:
         pve.write_record(self._blocked_record(), engine="llamacpp", patches_root=self.root, root=self.root)
         result = pve.verify_deferred_hardware_patch(
             self._module(), pinned_ref="b10705", root=self.root, resolved_base_revision="c" * 40,
         )
-        self.assertEqual(result.status, "missing-or-stale")
-        self.assertFalse(result.ok)
+        self.assertEqual(result.status, "deferred-hardware-evidence")
+        self.assertTrue(result.ok)
+        self.assertEqual(result.notes, ("evidence recorded at pin revision bbbbbbbbbbbb (now cccccccccccc)",))
 
 
 if __name__ == "__main__":

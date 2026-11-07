@@ -169,8 +169,6 @@ class SchemaV3RecordTests(unittest.TestCase):
         ok, problems = pve._record_qualifies(
             tampered,
             module=_FakeModule("9999_example"),
-            pinned_ref="b10692",
-            subject_digest=pve.patch_validation_subject_digest(self.patch_path),
         )
         self.assertFalse(ok)
         self.assertTrue(any("legacy top-level build_identities" in p for p in problems))
@@ -273,8 +271,7 @@ class HistoricalV2FixtureTests(unittest.TestCase):
     def test_hand_built_v2_record_qualifies_via_the_v2_read_path(self):
         record = self._v2_record()
         ok, problems = pve._record_qualifies(
-            record, module=_FakeModule("9999_example"), pinned_ref="b10502",
-            subject_digest="a" * 64, validation_digest="d" * 64, contracts=(),
+            record, module=_FakeModule("9999_example"), contracts=(),
         )
         self.assertTrue(ok, problems)
 
@@ -289,8 +286,7 @@ class HistoricalV2FixtureTests(unittest.TestCase):
         for key in ("representation", "validation_implementation_digest", "baseline_composition"):
             del record[key]
         ok, problems = pve._record_qualifies(
-            record, module=_FakeModule("9999_example"), pinned_ref="b10502",
-            subject_digest="a" * 64,
+            record, module=_FakeModule("9999_example"),
         )
         # record_schema_version missing -> "unsupported" (None not in
         # READABLE_SCHEMA_VERSIONS) -- this is the correct fail-closed

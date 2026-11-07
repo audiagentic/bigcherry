@@ -1524,8 +1524,11 @@ def run_phase_evidence(
 ) -> dict[str, Any]:
     """MEN28: re-audit production validated sets at the NEW pin.
 
-    Pending engines retain their failure count and proceed. Enforced engines
-    retain the report and stop, so --resume repeats this phase after repairs.
+    Evidence carries across the bump (the same qualification rule as any
+    build; the old recorded pin is only a note), so this stops only for a
+    validated patch with no qualifying record. Pending engines retain their
+    failure count and proceed. Enforced engines retain the report and stop,
+    so --resume repeats this phase after repairs.
     """
     from ..core import config as campaign_config
     from ..core import engines as engine_layouts
@@ -1578,7 +1581,7 @@ def run_phase_evidence(
         return result
     if audit.failed:
         raise PinBumpStop(
-            phase, "EVIDENCE_GATE_STALE", build_evidence.failure_text(audit),
+            phase, "EVIDENCE_GATE_FAILED", build_evidence.failure_text(audit),
             evidence=result,
             recommended_actions=[
                 *(
@@ -1586,8 +1589,8 @@ def run_phase_evidence(
                     f"--intent build --source {production_source} {patch}"
                     for patch, _ in audit.failed
                 ),
-                "re-record evidence using skill bigcherry-patch-qualification "
-                "(patch-qualification flow) at the new pin",
+                "record qualifying evidence using skill bigcherry-patch-qualification "
+                "(patch-qualification flow)",
                 f"python -m bigcherry --engine {engine} pin-bump {target_ref} --resume",
             ],
         )

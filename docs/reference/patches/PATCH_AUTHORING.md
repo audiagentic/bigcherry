@@ -358,8 +358,9 @@ temporary checkout. Cover at least:
 - external provenance and summary metadata agree;
 - custom validators return the correct check/capability and cannot escape the
   package;
-- tampered evidence, stale pin identity, missing artifacts, and missing named
-  checks do not qualify a patch.
+- tampered evidence, missing artifacts, and missing named checks do not
+  qualify a patch (a pin or digest that moved since the run is a provenance
+  note, not a disqualifier).
 
 Run the repository gates while iterating:
 
@@ -386,9 +387,9 @@ start packaged.
 3. Require both applications to succeed with the same expected edit results,
    then compare the complete source-tree identity, not just a hand-picked
    file or a similar diff.
-4. Preserve or migrate validation evidence only when its implementation,
-   validation, contract, framework, source, and hardware identities still
-   match. Otherwise record it as historical and revalidate.
+4. Migrate validation evidence with the patch ID: evidence is not
+   invalidated by identity changes. If the migration is judged to change what
+   was proven, demote the patch to request a rerun.
 5. Remove the old representation only after the equivalence evidence is
    recorded and the registry/lint/test gates pass. Do not leave duplicate IDs.
 

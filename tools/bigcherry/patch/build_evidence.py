@@ -2,10 +2,11 @@
 
 G4 is evaluated with patch.gates.evaluate_evidence_gate, the SAME authority
 used by patch-gates --intent build. No CLI subprocess or parallel verifier.
+Evidence carries across pin bumps and patch edits; where a qualifying record
+was taken at another digest or pin, the audit lists a provenance note.
 """
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -21,7 +22,7 @@ class EvidenceAudit:
     mode: str
     validated: tuple[str, ...]
     failed: tuple[tuple[str, str], ...]
-    carried_forward: tuple[tuple[str, str], ...]
+    notes: tuple[tuple[str, str], ...]
     skipped: tuple[tuple[str, str], ...]
 
     @property
@@ -42,9 +43,9 @@ class EvidenceAudit:
             "message": self.pending_line if self.mode == "pending-requalification" else "",
             "first_five_patch_ids": [patch for patch, _ in self.failed[:5]],
             "failures": [{"patch": patch, "reason": reason} for patch, reason in self.failed],
-            "carried_forward": [
-                {"patch": patch, "qualified_at": pin}
-                for patch, pin in self.carried_forward
+            "notes": [
+                {"patch": patch, "note": note}
+                for patch, note in self.notes
             ],
             "skipped_sets": [
                 {"set": name, "required_state": state}
@@ -61,12 +62,11 @@ def evaluate_source(
     """Evaluate G4 on each validated set member, not on exempt sets.
 
     A set omitted from recipes' required-state uses the validated default.
-    The shared evaluator returns a non-PASS for both missing and stale evidence.
+    The shared evaluator returns a non-PASS for missing or ineligible evidence.
+    ``pinned_ref``/``resolved_base_revision`` only produce provenance notes.
     """
     if mode not in ("enforced", "pending-requalification"):
         raise ValueError(f"invalid evidence gate mode {mode!r}")
-    if not isinstance(resolved_base_revision, str) or not resolved_base_revision.strip():
-        raise ValueError("resolved base revision required for source identity")
     source = cfg.sources[source_name]
     validated: list[str] = []
     skipped: list[tuple[str, str]] = []
@@ -92,7 +92,7 @@ def evaluate_source(
         allow_rejected=False,
     )
     failures: list[tuple[str, str]] = []
-    carried: list[tuple[str, str]] = []
+    notes: list[tuple[str, str]] = []
     for patch_id in validated:
         descriptor = descriptors[patch_id]
         context = gates.GateContext(
@@ -109,14 +109,14 @@ def evaluate_source(
         result = gates.evaluate_evidence_gate(context)
         if result.status is not gates.GateStatus.PASS:
             failures.append((patch_id, "; ".join(result.detail) or f"G4 {result.status.value}"))
-        for detail in result.detail:
-            found = re.search(r"qualified at ([^; ]+);", detail)
-            if found:
-                carried.append((patch_id, found.group(1)))
-                break
+        else:
+            notes.extend(
+                (patch_id, detail.removeprefix(gates.EVIDENCE_NOTE_PREFIX))
+                for detail in result.detail if detail.startswith(gates.EVIDENCE_NOTE_PREFIX)
+            )
     return EvidenceAudit(
         engine, source_name, pinned_ref, mode,
-        tuple(validated), tuple(failures), tuple(carried), tuple(skipped),
+        tuple(validated), tuple(failures), tuple(notes), tuple(skipped),
     )
 
 
@@ -127,8 +127,8 @@ def report_lines(audit: EvidenceAudit) -> tuple[str, ...]:
         for name, state in audit.skipped
     ]
     lines += [
-        f"evidence gate carried-forward: {patch} qualified-at {pin}"
-        for patch, pin in audit.carried_forward
+        f"evidence note: {patch}: {note}"
+        for patch, note in audit.notes
     ]
     if audit.mode == "pending-requalification":
         lines = [audit.pending_line, "first five patches: " +

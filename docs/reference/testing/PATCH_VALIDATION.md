@@ -23,7 +23,7 @@ silently treated as a pass.
 | G1 Documentation | author, lint, validate, promote, rebase, build | Focal `SUMMARY.md` exists and its Status/Plan item header agrees with the canonical descriptor; repository LINT applies the same summary authority per descriptor | focal: `patch.gates.evaluate_summary_gate()` -> `patch.docs.check_summary_for_patch()`; LINT: `patch.gates.evaluate_repository_lint_gates()` -> `patch.gates._evaluate_lint_summary()` |
 | G2 Revision/apply | validate, promote, rebase, build | Rebase report is fresh against live source/BigCherry/overlay/selection/patch identities and the focal patch is known-good | `patch.gates.evaluate_rebase_gate()` -> `patch.rebase.require_fresh_report()` |
 | G3 Validation definition | lint, validate, promote | Static package/ValidationPlan policy passes; focal operational paths reach execution-package and optimization checks according to the live evaluator; a not-required focal package returns NA before those checks; repository LINT still performs its per-descriptor performance check | focal: `patch.gates.evaluate_package_gate()` -> `patch.validation_policy.check_validation_packages()`, `patch.validation_policy.require_execution_package()`, `patch.validation_policy.check_performance_evidence_for_patch()`; LINT: `patch.gates.evaluate_repository_lint_gates()` -> `patch.gates._evaluate_lint_package()` |
-| G4 Evidence qualification | promote, build | Current qualifying focal evidence satisfies pin/resolved-SHA, identity, architecture/status obligations; malformed or stale evidence fails closed | `patch.gates.evaluate_evidence_gate()` -> `patch.catalog.validation_evidence_statuses()` |
+| G4 Evidence qualification | promote, build | An intact focal record that says the patch passed satisfies identity, contract-id, architecture and status obligations; recorded digests and pin are provenance notes, never failures; tampered, ineligible or missing evidence fails closed | `patch.gates.evaluate_evidence_gate()` -> `patch.catalog.validation_evidence_statuses()` |
 | G5 Lifecycle promotion | promote | For an untested focal patch, G0-G4 must all PASS; the gate only derives eligibility and never edits metadata | `patch.gates.evaluate_lifecycle_gate()` |
 | G6 Disposition coverage | rebase, build | Fresh all-patches report plus exact revision/digest dispositions cover every non-retired patch; recipe-selected failures cannot be waived | `patch.gates.evaluate_disposition_gate()` -> `patch.disposition.compute_coverage()` and `patch.rebase.require_fresh_report()` |
 | G7 Production admission | build | Complete ordered production composition passes production admission; inactive/not-ready is BLOCKED at the PA21 gate evaluator, active rejection is FAIL, and malformed/unknown output is BLOCKED | `patch.gates.evaluate_admission_gate()` -> `patch_admission.admit()` |
@@ -85,14 +85,14 @@ campaign evidence satisfies the full G3-G5 contract path.
 The gates model this tier through a **profile-evidence record**, `<patch package>/evidence/promotion.json`
 (`tools/bigcherry/patch/profile_evidence.py`), written by `patch-promote` from the evidence file:
 
-- it names the pin and the patch implementation it was taken for (the same subject digest the campaign records use:
-  the state change that promotion makes does not void it, any other edit to the patch does);
+- it names the pin and the patch implementation it was taken for (the same subject digest the campaign records use);
+  both are provenance: a later pin or an edited patch leaves the record qualifying, with a note naming the change;
 - it carries one line each for `mechanics`, `activation`, `identity` and `ab`, and at least one named model;
 - a patch whose runtime flag is on by default also needs a `no-regression` line and a second named model.
 
 G4 passes on a qualifying record (`tier: profile-evidence` in its detail), and G5 then accepts G3 = NA, since the
-record stands in for the validation package. A record for another pin, or for an implementation that has since
-changed, does not qualify and is reported with that reason. Nothing else about G0-G5 changes: a failed package check,
+record stands in for the validation package. A record taken at another pin, or for an implementation that has since
+changed, still qualifies; G4 adds a `note:` detail line for each difference. Nothing else about G0-G5 changes: a failed package check,
 a stale rebase report or a failed lint still stops the promotion.
 
 Use the lightweight tier only when the PR states it explicitly and the evidence is sufficient to establish activation,
@@ -112,17 +112,22 @@ change.
 Validation readiness is determined by the evidence and contract, not by a
 status string alone:
 
-- `ported-benched` requires a package, current-pin evidence, a bound contract,
-  and real hardware.
+- `ported-benched` requires a package, qualifying evidence covering every bound
+  contract, and real hardware.
 - `ported-validated` additionally requires every named contract check to pass.
-- `deferred-hardware` records a fresh structured `BLOCKED` result and does not
+- `deferred-hardware` records a structured `BLOCKED` result and does not
   claim hardware validation.
 - `eligible_for_validated_state` can support the package state `validated`;
   it does not mean `ported-validated` is a package state.
 
-A historical source status may remain after a pin bump; only fresh current-pin
-evidence is currently qualified. A stale pin, missing hardware, or harness
-error removes qualification but is not by itself a rejection.
+Evidence is not invalidated by code or digest changes, nor by pin bumps. A
+record that is intact and says the patch passed keeps qualifying when the pin
+moves, the patch is edited, or its validation package or a contract's content
+hash changes; each difference is reported as a provenance note. We judge when a
+rerun is needed: a rerun is requested deliberately by demoting the patch, never
+triggered by a note. A contract the patch newly binds, with no verdict in the
+record, is a requirement change and does disqualify. Missing hardware or a
+harness error leaves a patch unqualified but is not by itself a rejection.
 
 Do not collapse these layers:
 
@@ -152,7 +157,7 @@ PYTHONPATH=tools python -m bigcherry --engine llamacpp patch-graph --roots <patc
 ```
 
 `patch-lint` is the internal LINT consumer of G1 and G3 only. It has no focal
-composition, upstream checkout, current-pin evidence, disposition target, or
+composition, upstream checkout, evidence, disposition target, or
 production-admission decision.
 
 ## G0 — Exact composition identity
@@ -296,7 +301,7 @@ embeds the rebase report's `selector` payload, the only selector in evidence.
 `patch.toml` must resolve every bound Experiment Contract before a
 validation-ready patch is executed. Local, non-RD framework packages with no
 external-source binding may execute a complete package-local adapter without
-inventing an Experiment Contract. This exception does not waive current-pin or
+inventing an Experiment Contract. This exception does not waive qualifying or
 architecture evidence, qualify a performance claim, or apply to experimental
 enhancements. Both canonical `plan-ids` and the legacy `plan-item` identify RD
 scope. `apply` and `build` are universal capabilities; all other obligations
@@ -427,9 +432,11 @@ requires fresh build directories; previous evidence is preserved.
 Schema-5 `framework-configuration-v1` records cover **compiled targets**, not
 observed GPU execution. They cannot qualify runtime performance, external
 ported-benched status, or deferred-hardware evidence. Production end-to-end
-testing remains a separate campaign/server-bench operation. Failed adapters
-or stale implementation, validation, pin, or composition identities block
-configuration admission.
+testing remains a separate campaign/server-bench operation. Failed adapters,
+a tampered or internally inconsistent record, or a required check missing from
+the record block configuration admission; recorded implementation,
+validation, pin and composition identities that differ from today's are
+provenance notes.
 
 For focal patch `X`, define and record:
 
@@ -452,9 +459,9 @@ For focal patch `X`, define and record:
    visibility/topology, active processes, VRAM headroom, source pin, and exact
    commands/environment.
 
-## Pin bumps: hard mechanical validity, performance on request
+## Pin bumps: hard mechanical validity, evidence carries across
 
-After a pin bump, two things are **hard** gates and two are not:
+After a pin bump:
 
 - **Hard:** every selected patch applies without conflict (anchor/rebase
   failures stop the bump), and no patch has been absorbed upstream.
@@ -463,23 +470,31 @@ After a pin bump, two things are **hard** gates and two are not:
   (retire the patch via lifecycle); some edits present is
   `FAILED_NEEDS_RECONCILIATION` (drop the absorbed edits). No `known_broken`
   disposition can excuse either.
-- **Soft:** qualification/performance evidence that is stale only because
-  the pin or surrounding composition moved is `carried-forward` by patch
-  admission when an eligible record exists for the same
-  `patch_implementation_digest`; builds proceed with a warning and
-  re-benching is an explicit request. A changed patch implementation (e.g. a
-  conflict fix) or no eligible record at all remains a hard failure.
+- **Evidence carries across:** qualification/performance evidence is not
+  invalidated by the pin moving, the surrounding composition changing, or the
+  patch being edited (e.g. a conflict fix). Build, promotion and the pin-bump
+  evidence phase use the same rule; the recorded pin and digests are reported
+  as notes. Re-benching is an explicit request (demote the patch). No eligible
+  record at all remains a hard failure.
 
 The post-bump real-hardware build + smoke remains mandatory.
 
-## G4 — Current evidence qualification
+## G4 — Evidence qualification
 
 G4 consumes persisted evidence, not a README claim. The evidence authority is
-`validation_evidence_statuses()`: it checks the active pin and resolved SHA,
-patch/implementation and validation identities, bound contract identity,
-applicable architecture and source-status obligations, named results, and
-artifact bindings. Stale or missing qualifying evidence is a failure;
-malformed or unknown authority output is `BLOCKED`.
+`validation_evidence_statuses()`, one rule for build and promotion: a record
+qualifies when it is for this patch, intact (`record_digest` matches its
+payload) and complete in shape, eligible, activation-verified,
+correctness-passing, covers every contract the patch binds today (by id, with
+a passing verdict for validated state), and covers the required
+architectures. Withdrawn records never qualify. Missing or ineligible evidence
+is a failure; malformed or unknown authority output is `BLOCKED`.
+
+The recorded pin, resolved SHA, patch subject digest, validation digest and
+contract hashes are provenance. Where they differ from the current ones, G4
+passes and lists a `note:` detail line per difference (also shown by
+`patch-verify-evidence`, the build evidence gate and the pin-bump evidence
+phase).
 
 | Result | Meaning | Action |
 | --- | --- | --- |
@@ -528,7 +543,7 @@ external source status, or the release ledger.
 There is no automatic patch-state promotion command. Before changing
 `patch.toml`, `SUMMARY.md`, or an external tracked status:
 
-1. Confirm the evidence verifier passes for the active resolved pin.
+1. Confirm the evidence verifier passes (read its provenance notes).
 2. Confirm contract set, source composition, workload, hardware, correctness,
    activation, and named results match the requested claim.
 3. Check the plan/review and record the decision through planning and ledger
@@ -536,13 +551,15 @@ There is no automatic patch-state promotion command. Before changing
 4. Update synchronized lifecycle metadata and rerun the relevant static and
    evidence checks.
 
-Promotion requires complete current evidence for every bound contract and
-`eligible_for_validated_state = true`. Demotion/rejection retains prior
+Promotion requires qualifying evidence for every bound contract and
+`eligible_for_validated_state = true`; the evidence it writes records the
+current pin and digests as provenance. Demotion/rejection retains prior
 evidence and records the owner, old/new state, reason, evidence identity, pin,
-dependency impact, and re-promotion conditions. A stale pin, changed
-contract/framework, missing hardware, or harness error calls for
-revalidation/deferment, not silent rejection. Re-promotion requires fresh
-current-pin evidence and a reviewed transition record.
+dependency impact, and re-promotion conditions. Demoting a patch is also how a
+rerun is requested when a change is judged to need one; a pin bump or digest
+change alone never demotes. Missing hardware or a harness error calls for
+deferment, not silent rejection. Re-promotion after a requested rerun requires
+the rerun's evidence and a reviewed transition record.
 
 ## G6 — Revision-bound disposition coverage
 
@@ -563,10 +580,10 @@ disposition and rebase commands rather than duplicating that procedure here.
 
 G7 applies to BUILD only. Admission receives every ID in the complete resolved
 ordered production composition, not only the focal patch. Post-selection
-rejection never removes or substitutes a patch, and admission reuses current
+rejection never removes or substitutes a patch, and admission reuses the same
 evidence verification. At the PA21 evaluator, inactive or not-ready is
 explicitly `BLOCKED`, an active rejection is `FAIL`, and malformed or unknown
-results are `BLOCKED`. An apply-only stale-evidence escape is not valid for
+results are `BLOCKED`. An apply-only missing-evidence escape is not valid for
 production G7.
 
 The gate evaluator calls `patch_admission.admit(..., mode="production")` and

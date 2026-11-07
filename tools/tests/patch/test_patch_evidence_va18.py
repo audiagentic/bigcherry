@@ -5,10 +5,10 @@ GPT spec (session ses_d1759a9471d443d5, following up on the VA17 review
 thread after ses_5bbee8ce5c9a4265 went idle-timeout stale): schema v4
 replaces the singular contract_id/contract_hash fields with a canonical
 sorted contracts=[{id,hash},...] array plus contract_verdicts keyed by
-bound contract id; a validated-state record must have the EXACT current
-contract set (missing/extra/stale-hash on even one contract is
-nonqualification for the whole patch), a complete verdict set, and every
-verdict passed==true; v1-v3 remain readable only for a CURRENT 0/1-
+bound contract id; a validated-state record must cover every contract
+the patch binds today, by id (a missing one is nonqualification for the
+whole patch; a changed contract hash is a provenance note), with a passing
+verdict for each; v1-v3 remain readable only for a CURRENT 0/1-
 contract patch, never a multi-contract one; ported-benched stays
 qualifiable with BLOCKED contract verdicts (contract PASS is required
 only for validated promotion, never ported-benched); the broad
@@ -162,7 +162,7 @@ class RecordQualifiesV4MultiContractTests(unittest.TestCase):
     def test_exact_three_contract_set_with_all_pass_qualifies(self) -> None:
         record = self._record(contracts=list(self.contracts), contract_verdicts=self._all_pass_verdicts())
         ok, problems = pve._record_qualifies(
-            record, module=self.module, pinned_ref="b10502", subject_digest=self.subject_digest,
+            record, module=self.module,
             contracts=self.contracts,
         )
         self.assertTrue(ok, problems)
@@ -173,41 +173,45 @@ class RecordQualifiesV4MultiContractTests(unittest.TestCase):
             contract_verdicts={self.contracts[0]["id"]: {"passed": True}, self.contracts[1]["id"]: {"passed": True}},
         )
         ok, problems = pve._record_qualifies(
-            record, module=self.module, pinned_ref="b10502", subject_digest=self.subject_digest,
+            record, module=self.module,
             contracts=self.contracts,
         )
         self.assertFalse(ok)
-        self.assertTrue(any("contract identity set is stale" in p for p in problems))
+        self.assertTrue(any("does not cover currently bound contract(s): ['RD07']" in p for p in problems))
 
-    def test_extra_contract_in_record_rejects(self) -> None:
+    def test_contract_no_longer_bound_does_not_reject(self) -> None:
+        # The record covers more than the patch binds today (a contract was
+        # unbound since the run): every CURRENT contract still passed.
         record = self._record(
             contracts=list(self.contracts) + [{"id": "RD99", "hash": "h9"}],
             contract_verdicts={**self._all_pass_verdicts(), "RD99": {"passed": True}},
         )
         ok, problems = pve._record_qualifies(
-            record, module=self.module, pinned_ref="b10502", subject_digest=self.subject_digest,
+            record, module=self.module,
             contracts=self.contracts,
         )
-        self.assertFalse(ok)
-        self.assertTrue(any("contract identity set is stale" in p for p in problems))
+        self.assertTrue(ok, problems)
 
-    def test_stale_hash_on_one_contract_rejects(self) -> None:
-        stale = [dict(self.contracts[0]), self.contracts[1], self.contracts[2]]
-        stale[0]["hash"] = "STALE"
-        record = self._record(contracts=stale, contract_verdicts=self._all_pass_verdicts())
+    def test_changed_contract_hash_does_not_reject_and_is_noted(self) -> None:
+        changed = [dict(self.contracts[0]), self.contracts[1], self.contracts[2]]
+        changed[0]["hash"] = "a" * 64
+        record = self._record(contracts=changed, contract_verdicts=self._all_pass_verdicts())
         ok, problems = pve._record_qualifies(
-            record, module=self.module, pinned_ref="b10502", subject_digest=self.subject_digest,
+            record, module=self.module,
             contracts=self.contracts,
         )
-        self.assertFalse(ok)
-        self.assertTrue(any("contract identity set is stale" in p for p in problems))
+        self.assertTrue(ok, problems)
+        self.assertEqual(
+            pve.provenance_notes(record, contracts=self.contracts),
+            ("contract RD05 recorded at hash aaaaaaaaaaaa (now h5)",),
+        )
 
     def test_missing_verdict_for_one_bound_contract_rejects(self) -> None:
         verdicts = self._all_pass_verdicts()
         del verdicts[self.contracts[2]["id"]]  # RD07 has no verdict at all
         record = self._record(contracts=list(self.contracts), contract_verdicts=verdicts)
         ok, problems = pve._record_qualifies(
-            record, module=self.module, pinned_ref="b10502", subject_digest=self.subject_digest,
+            record, module=self.module,
             contracts=self.contracts,
         )
         self.assertFalse(ok)
@@ -218,7 +222,7 @@ class RecordQualifiesV4MultiContractTests(unittest.TestCase):
         verdicts[self.contracts[1]["id"]] = {"passed": False, "status": "blocked"}
         record = self._record(contracts=list(self.contracts), contract_verdicts=verdicts)
         ok, problems = pve._record_qualifies(
-            record, module=self.module, pinned_ref="b10502", subject_digest=self.subject_digest,
+            record, module=self.module,
             contracts=self.contracts,
         )
         self.assertFalse(ok)
@@ -229,7 +233,7 @@ class RecordQualifiesV4MultiContractTests(unittest.TestCase):
         verdicts[self.contracts[2]["id"]] = {"passed": False, "status": "fail"}
         record = self._record(contracts=list(self.contracts), contract_verdicts=verdicts)
         ok, problems = pve._record_qualifies(
-            record, module=self.module, pinned_ref="b10502", subject_digest=self.subject_digest,
+            record, module=self.module,
             contracts=self.contracts,
         )
         self.assertFalse(ok)
@@ -243,7 +247,7 @@ class RecordQualifiesV4MultiContractTests(unittest.TestCase):
         del record["validation_build_identities"]
         record["record_digest"] = pve._record_digest(record)
         ok, problems = pve._record_qualifies(
-            record, module=self.module, pinned_ref="b10502", subject_digest=self.subject_digest,
+            record, module=self.module,
             contracts=(),
         )
         self.assertTrue(ok, problems)
@@ -254,7 +258,7 @@ class RecordQualifiesV4MultiContractTests(unittest.TestCase):
         record["contract_hash"] = self.contracts[0]["hash"]
         record["record_digest"] = pve._record_digest(record)
         ok, problems = pve._record_qualifies(
-            record, module=self.module, pinned_ref="b10502", subject_digest=self.subject_digest,
+            record, module=self.module,
             contracts=self.contracts,  # patch is CURRENTLY bound to 3 contracts
         )
         self.assertFalse(ok)
@@ -276,7 +280,7 @@ class RecordQualifiesForBenchedV4Tests(unittest.TestCase):
 
     def test_v4_record_with_blocked_verdicts_still_qualifies_ported_benched(self) -> None:
         # VA18: contract PASS is required only for validated promotion --
-        # ported-benched only checks that the contract IDENTITY is fresh,
+        # ported-benched only checks that every bound contract id is covered,
         # never that any bound contract's verdict actually passed.
         artifact_path = self.root / "performance.json"
         artifact_path.write_text("{}", encoding="utf-8")
@@ -302,12 +306,12 @@ class RecordQualifiesForBenchedV4Tests(unittest.TestCase):
         }
         record["record_digest"] = pve._record_digest(record)
         ok, problems = pve._record_qualifies_for_benched(
-            record, module=self.module, pinned_ref="b10502", subject_digest=self.subject_digest,
+            record, module=self.module,
             contracts=self.contracts,
         )
         self.assertTrue(ok, problems)
 
-    def test_v4_stale_contract_set_rejects_ported_benched(self) -> None:
+    def test_v4_record_missing_a_bound_contract_rejects_ported_benched(self) -> None:
         record = {
             "record_schema_version": 4, "patch_id": "9999_example",
             "patch_validation_subject_digest": self.subject_digest, "base_ref": "b10502",
@@ -324,11 +328,11 @@ class RecordQualifiesForBenchedV4Tests(unittest.TestCase):
         }
         record["record_digest"] = pve._record_digest(record)
         ok, problems = pve._record_qualifies_for_benched(
-            record, module=self.module, pinned_ref="b10502", subject_digest=self.subject_digest,
+            record, module=self.module,
             contracts=self.contracts,
         )
         self.assertFalse(ok)
-        self.assertTrue(any("contract identity set is stale" in p for p in problems))
+        self.assertTrue(any("does not cover currently bound contract(s): ['RD06']" in p for p in problems))
 
 
 class ContractIdentityResolutionNotSwallowedTests(unittest.TestCase):

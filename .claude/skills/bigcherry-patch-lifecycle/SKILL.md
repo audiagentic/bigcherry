@@ -41,13 +41,15 @@ demote a patch;
 
 re-promote after repair/revalidation;
 
+request a rerun of a patch's qualification (by demoting it);
+
 mark rejected/superseded;
 
 quarantine a revision-specific broken patch;
 
 record/clear a disposition;
 
-decide what stale evidence means for lifecycle;
+decide whether a code change or pin bump warrants a rerun;
 
 assess dependency impact of changing a patch's state/status;
 
@@ -209,19 +211,15 @@ evidence-only
 
 These are historical lifecycle records.
 
-A pin bump may make evidence stale without erasing the historical fact that a patch was previously benched/validated.
-
 Axis C: current qualification
 
-Computed from evidence for the active resolved pin.
+Computed from the patch's evidence records: a record qualifies when it is intact (record_digest matches), is for this patch and says the patch passed (eligibility, activation, correctness, a passing verdict for every contract the patch binds today by id, architecture coverage).
+
+Evidence is NOT invalidated by code or digest changes, nor by pin bumps. A record taken at an older pin, against an earlier form of the patch, or under an earlier contract/validation-package hash keeps qualifying; the difference is reported as a provenance note (patch-verify-evidence, patch-gates, build and pin-bump evidence output). A contract the patch newly binds, with no verdict in the record, does disqualify: that is a deliberate requirement change.
+
+We judge when a rerun is needed, not blanket code or digest changes. A rerun is requested deliberately by demoting the patch (Workflow 4), never triggered by a note.
 
 This is not a mutable historical status.
-
-Examples:
-
-tracked ported-benched + stale evidence => historically benched, not currently qualified;
-
-tracked ported-validated + new pin => historical validated status may remain while current qualification becomes false pending revalidation.
 
 Axis D: revision-specific rebase compatibility
 
@@ -280,7 +278,7 @@ For current ported-benched qualification require the qualification skill's corre
 
 For ported-validated, require:
 
-current resolved-pin evidence;
+qualifying evidence (patch-verify-evidence; provenance notes do not block);
 
 all required named correctness checks;
 
@@ -300,15 +298,15 @@ Promotion is a deliberate mutation after qualification, never an automatic campa
 
 Determine the reason first.
 
-If only current evidence became stale after a pin bump:
+Evidence never goes stale on its own: a pin bump, a patch edit or a digest change is not a reason to demote.
 
-do NOT rewrite history;
+If a change is judged to need a rerun (for example the edit changes what the patch measures or claims):
 
-do NOT automatically demote historical ported-benched/ported-validated;
+demote the patch explicitly with the lifecycle tooling, stating the change that warrants the rerun;
 
-report current qualification as stale/unqualified;
+do NOT rewrite or delete the old evidence;
 
-schedule/recommend revalidation if needed.
+hand off to QUALIFICATION for the rerun, then re-promote on the new result.
 
 If new scientific evidence disproves the patch's claim:
 
@@ -328,7 +326,7 @@ Do not use superseded as a synonym for:
 
 broken anchor;
 
-stale evidence;
+a pin bump or patch edit;
 
 temporarily unavailable hardware;
 
@@ -387,29 +385,21 @@ Never create a disposition merely to make coverage appear green.
 
 7. Re-promotion after repair
 
-A changed patch.py changes implementation identity.
+A changed patch.py changes the implementation digest. That does not void its validation evidence (the recorded digest becomes a provenance note), but it does void a revision+digest-bound known_broken disposition, which records a specific failure.
 
-Consequences can include:
-
-prior validation evidence no longer qualifying the new implementation;
-
-prior revision-bound disposition no longer applying;
-
-structural grandfather identity becoming invalid.
-
-Therefore re-promotion requires:
+When a patch was deliberately demoted for a rerun, re-promotion requires:
 
 AUTHOR fixes implementation;
 
 VERIFY passes;
 
-QUALIFICATION generates/interprets fresh current evidence as required;
+QUALIFICATION produces the requested rerun evidence;
 
 preserve previous evidence;
 
 deliberately promote only to the newly proven level.
 
-Do not revive old evidence by editing its digest/revision fields.
+Never edit a record's digest/revision fields: those are provenance, and editing them breaks record_digest integrity.
 
 8. Deferred hardware
 
@@ -435,7 +425,7 @@ PYTHONPATH=tools python -m bigcherry check
 PYTHONPATH=tools python -m bigcherry --engine llamacpp patch-explain <patch-id>
 PYTHONPATH=tools python -m bigcherry --engine llamacpp patch-graph --roots <patch-id>
 
-Where the claim depends on current evidence:
+Where the claim depends on evidence:
 
 PYTHONPATH=tools python -m bigcherry --engine llamacpp patch-verify-evidence <patch-id>
 
@@ -480,7 +470,7 @@ Stop before mutation when:
 
 evidence does not support requested promotion;
 
-current evidence status is unknown/stale and the request assumes current qualification;
+evidence status is unknown or does not qualify and the request assumes qualification;
 
 dependency/source-selection impact has not been assessed;
 
@@ -488,13 +478,13 @@ a recipe-selected patch is being proposed for a known-broken waiver;
 
 target revision/digest for a disposition is not exact;
 
-requested "demotion" is actually only stale current qualification after a pin bump;
+requested demotion gives no reason beyond a pin bump or digest change (ask whether a rerun is actually wanted);
 
 requested rejection is based only on an anchor/rebase failure;
 
 requested supersession lacks an actual replacement;
 
-re-promotion attempts to reuse evidence for a changed implementation;
+re-promotion after a deliberate rerun request reuses the evidence the rerun was meant to replace;
 
 required qualification path does not exist.
 
@@ -540,16 +530,16 @@ rebase fix requires new applicability check.
 
 To QUALIFICATION:
 
-promotion/re-promotion requires fresh proof;
+promotion/re-promotion requires new proof (no qualifying record, or a deliberate rerun request);
 
-current qualification is stale or insufficient;
+current qualification is insufficient;
 
 scientific failure needs authoritative evidence.
 
 From QUALIFICATION:
 accept only explicit evidence facts:
 
-resolved pin;
+pin the evidence was recorded at (provenance);
 
 named checks;
 
@@ -581,7 +571,7 @@ Did I preserve append-only evidence?
 
 If setting a disposition, is it non-recipe and exact revision+digest bound?
 
-If re-promoting, was the current implementation freshly verified/qualified?
+If re-promoting after a rerun request, was the rerun evidence produced?
 
 Did I avoid automatic campaign-driven lifecycle mutation?
 
@@ -613,7 +603,7 @@ Experiment Contract owns scientific obligations. validation.toml only wires prod
 
 Validation provenance is CONTROL/SUBJECT/(actual) STOCK; tuning tune/replay/stock is a different namespace.
 
-Evidence is append-only and current qualification is resolved-pin/digest bound. Never rewrite history to satisfy a new pin or implementation.
+Evidence is append-only and is not invalidated by code, digest or pin changes; recorded digests and pins are provenance notes. Reruns are deliberate (demote the patch). Never rewrite history.
 
 Campaign execution never mutates lifecycle automatically.
 
@@ -624,4 +614,4 @@ Dependencies/conflicts are enforced composition. Never silently remove, substitu
 Generic full qualification must never be assumed. Re-read current validation_campaign.py; unsupported patches stop below ported-validated until real required producers exist.
 ## Promotion command
 
-For qualified patches of any engine, prefer `bigcherry --engine <name> patch-promote <id>... --evidence @file` over hand-editing lifecycle state. It updates `patch.toml`, `patch.py` STATE, SUMMARY, README Promotion record, a deterministic `releases/evidence/<id>-promotion.md` record and the engine's production patch set (`[promotion] patch-set` in `engines/<name>/engine.toml`: llama.cpp `validated-enhancements`, radiance `serving-core`) atomically, gating against the engine's `[promotion] source`; removes duplicate experiment membership; runs current-evidence, lint, governance and production-composition checks; commits on a slice branch; opens the conventional `feat(patch):`/`fix(patch):` PR; and prints the `record_change_event` payload with plan-item-ids. Promotion evidence needs two distinct `Model:`/`Model-ID:` lines unless `--profile-only` is explicitly selected. Validated optimization evidence must include the native llama.cpp / BigCherry baseline / subject comparison required by patch-lint. Never bypass a failed promotion gate by editing `STATE` manually.
+For qualified patches of any engine, prefer `bigcherry --engine <name> patch-promote <id>... --evidence @file` over hand-editing lifecycle state. It updates `patch.toml`, `patch.py` STATE, SUMMARY, README Promotion record, a deterministic `releases/evidence/<id>-promotion.md` record and the engine's production patch set (`[promotion] patch-set` in `engines/<name>/engine.toml`: llama.cpp `validated-enhancements`, radiance `serving-core`) atomically, gating against the engine's `[promotion] source`; removes duplicate experiment membership; runs evidence, lint, governance and production-composition checks; commits on a slice branch; opens the conventional `feat(patch):`/`fix(patch):` PR; and prints the `record_change_event` payload with plan-item-ids. Promotion evidence needs two distinct `Model:`/`Model-ID:` lines unless `--profile-only` is explicitly selected. Validated optimization evidence must include the native llama.cpp / BigCherry baseline / subject comparison required by patch-lint. Never bypass a failed promotion gate by editing `STATE` manually.

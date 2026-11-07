@@ -152,13 +152,13 @@ patch implementation identity/state;
 
 tracked historical lifecycle status;
 
-current-pin qualification from evidence;
+qualification from evidence (not invalidated by pin bumps or digest changes; reruns are requested by demoting);
 
 revision-specific rebase compatibility/disposition.
 
 Examples:
 
-stale evidence after a pin bump does not erase historical ported-benched;
+a pin bump or patch edit does not invalidate evidence; it only adds a provenance note;
 
 a rebase failure does not automatically make a patch rejected;
 
@@ -283,7 +283,7 @@ no lifecycle promotion implied.
 
 QUALIFICATION -> LIFECYCLE:
 
-evidence verdict and current-pin qualification explicitly stated;
+evidence verdict, qualification and any provenance notes explicitly stated;
 
 CONTROL/SUBJECT/STOCK provenance preserved;
 

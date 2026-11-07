@@ -293,23 +293,29 @@ class PatchPromoteTests(unittest.TestCase):
                 pp.promote(self.root, "llamacpp", ("1348_demo",), "@" + str(thin))
         start.assert_not_called()
 
-    def test_profile_record_binds_pin_and_implementation_and_survives_the_state_change(self):
+    def test_profile_record_records_pin_and_implementation_and_survives_changes(self):
         info = pp._load_patch(self.root, self.layout, "1348_demo")
         record = pp._profile_evidence(self.root, self.layout, info, self.evidence.read_text(encoding="utf-8"))
         profile_evidence.write(info.root, record)
+        recorded = patch_evidence.patch_validation_subject_digest(info.root / "patch.py")
+        self.assertEqual((record.pinned, record.subject_digest), ("b11474", recorded))
 
         def verify(pinned="b11474"):
             digest = patch_evidence.patch_validation_subject_digest(info.root / "patch.py")
             return profile_evidence.verify(info.root, patch_id="1348_demo", pinned_ref=pinned, subject_digest=digest)
 
-        self.assertEqual(verify(), ())
-        pp._set_state(info)  # promotion's own edit does not void the record
-        self.assertEqual(verify(), ())
-        self.assertIn("current pin is 'b99999'", " ".join(verify("b99999")))
+        self.assertEqual(verify(), profile_evidence.Verdict((), ()))
+        pp._set_state(info)  # promotion's own edit does not change the digest
+        self.assertEqual(verify(), profile_evidence.Verdict((), ()))
+        self.assertEqual(verify("b99999"),
+                         profile_evidence.Verdict((), ("evidence recorded at pin b11474 (now b99999)",)))
 
         py = info.root / "patch.py"
         py.write_text(py.read_text(encoding="utf-8") + "\n# an edit after the evidence was taken\n", encoding="utf-8")
-        self.assertIn("implementation changed", " ".join(verify()))
+        edited = verify()
+        self.assertEqual(edited.problems, ())
+        self.assertEqual(len(edited.notes), 1)
+        self.assertIn(f"evidence recorded at patch digest {recorded[:12]}", edited.notes[0])
         self.assertIsNone(profile_evidence.verify(self.root, patch_id="x", pinned_ref="b11474", subject_digest="0"))
 
     def test_default_on_patch_needs_a_second_model_run(self):

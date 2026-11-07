@@ -13,21 +13,21 @@ Policy decisions:
   Human confirmation is still required before declaring RDNA3+RDNA4 a global
   obligation; making that expansion here without records would block every
   future promotion.
-* A validated patch is admissible with current evidence (qualifying record or
-  retained legacy-grandfather record at the live pin/composition).
-* Performance/qualification evidence is re-established on request, not at
-  every pin bump: evidence that fully qualifies at an earlier pin it was
-  recorded at is admitted as ``carried-forward`` with a warning (shared
-  authority: ``patch.catalog.validation_evidence_statuses(engine, carry_forward=True)``).
-  Any non-pin mismatch, or no eligible record, stays a hard failure.  Hard
-  mechanical validity (applies without conflict, not absorbed upstream) is
-  enforced separately by patch-rebase-check and the apply transaction.
+* A validated patch is admissible with qualifying evidence (a qualifying
+  record or a retained legacy-grandfather entry).  Evidence is not
+  invalidated by pin bumps, patch edits or digest changes: a record that is
+  intact and says the patch passed keeps qualifying, and a rerun is requested
+  deliberately by demoting the patch (shared authority:
+  ``patch.catalog.validation_evidence_statuses``).  No eligible record stays a
+  hard failure.  Hard mechanical validity (applies without conflict, not
+  absorbed upstream) is enforced separately by patch-rebase-check and the
+  apply transaction.
 * Direct apply is hard-fail by default.  ``allow_stale_validation_evidence`` is
   an explicit development escape hatch and returns a warning; it never affects
   the production campaign/build gate.
-* ``mode="build"`` (campaign/lane builds) never blocks on evidence staleness:
-  every evidence problem (pin, implementation digest, missing record) is
-  returned as a warning and the composition is admitted.  A build is how a
+* ``mode="build"`` (campaign/lane builds) never blocks on missing evidence:
+  every evidence problem (missing or ineligible record) is returned as a
+  warning and the composition is admitted.  A build is how a
   patch's current form gets *compared*; requiring fresh proof before a build
   exists makes re-validation impossible.  Mechanical validity is still
   enforced by applicability, dependency resolution and the apply
@@ -127,31 +127,25 @@ def admit(
         allow_legacy_grandfather=allow_legacy_grandfather,
         resolved_base_revision=resolved_base_revision,
         default_validation_architectures=DEFAULT_VALIDATION_ARCHITECTURES,
-        carry_forward=True,
     )
     failures = tuple(
         f"{patch_id}: {('; '.join(check.problems) or check.status)}"
         for patch_id, check in statuses.items()
         if not check.ok
     )
-    carried = tuple(
-        f"{patch_id}: carried-forward ({'; '.join(check.problems)})"
-        for patch_id, check in statuses.items()
-        if check.status == "carried-forward"
-    )
     bootstrap_ready = _has_non_grandfathered_eligible(engine, evidence_root=evidence_root)
     if mode == "build":
         return AdmissionResult(
-            True, True, "admitted-with-warnings" if failures or carried else "admitted",
-            warnings=tuple(f"not fully validated: {item}" for item in failures) + carried,
+            True, True, "admitted-with-warnings" if failures else "admitted",
+            warnings=tuple(f"not fully validated: {item}" for item in failures),
         )
     if mode == "production" and not bootstrap_ready:
         return AdmissionResult(True, False, "not-ready", warnings=failures)
     if failures and mode == "apply" and allow_stale_validation_evidence:
-        return AdmissionResult(True, False, "escape-hatch", warnings=failures + carried)
+        return AdmissionResult(True, False, "escape-hatch", warnings=failures)
     return AdmissionResult(
         not failures, True, "admitted" if not failures else "rejected",
-        failures=failures, warnings=carried,
+        failures=failures,
     )
 
 
