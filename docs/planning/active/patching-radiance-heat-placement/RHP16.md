@@ -60,6 +60,18 @@ Depends on RHP11 slice D (live moves) and RHP06. Follows the owner's direction: 
 
 Production calibration 2026-11-07 (run rhp16-prod-calib, flashnext-4gpu, main with step 5 + rad0013): record complete (partial for effect-gate fields only; effect_gate=false derived). First on arm: 64 evaluations, 0 proposals (no_improvement_or_margin); derived min_samples 522 windows (43 min) against a 7.4 min drift half-life because margin was the whole calibration's sampling error. Fixed in #708 (margin over one drift half-life: 5.46%, min_samples 89). A/B rerun with a derived warmup: run rhp16-prod-ab2.
 
+Production-derived policy A/B (run rhp16-prod-ab2, 2026-11-07, main c86cf66b5 with #708; flashnext-4gpu; two on/off pairs, same build; both arms warmed for the derived gate period, 451 s = (min_samples+1) x cadence from the on-arm manifest). Derived: margin 54,624 ppm, min_samples 89, cadence 5.0 s, max_moves 256, min_residency 49.5 s, effect_gate false.
+
+| metric | on (pair 1 / 2) | off (pair 1 / 2) | change |
+|---|---|---|---|
+| filler TTFT, mean of 8 | 13.06 / 12.95 s | 19.44 / 19.44 s | -33% |
+| doc prefill, mean of 10 | 3,655 / 3,641 tok/s | 3,684 / 3,680 tok/s | -0.9% (A/A ~1%; same sign both pairs) |
+| decode ms/step, 1 stream | 25.09 / 25.07 | 25.04 / 25.04 | +0.1% |
+| decode ms/step, 6 streams | 48.31 / 47.15 | 46.84 / 48.29 | +0.4% |
+| transactions | 6 / 6 committed, 0 aborts, 3.9 GB each | - | |
+
+Moves take experts off the 6900 XT tail onto the XTXs (tail large-lane routes -22%, compute -18%). One-stream tok/s differs only through MTP acceptance (moved experts compute on another card, so greedy text changes): step time is unchanged. Remaining gate: KLD with the policy moving (run rhp16-kld, waits for #711), passing the derived production policy explicitly because the KL run's settings change the calibration key.
+
 ## Offline replay of the policy, 2026-11-05 (slim harness for steps 3-4)
 
 r3_policy_replay (engines/radiance/components/moe-remote/worker_policy_replay.h, worker_policy_replay_main.cpp, test worker_policy_replay_test.cpp) feeds a recorded SERIES of the engine's cumulative route-count snapshots through the driver's own heat accounting and planner (heat::Heat, heat::propose, DriftTracker, marginal_relative_error), applying each proposed transaction at once. It runs in seconds with no GPU and no server, and prints per snapshot the tail's heat share before and after, the experts moved, and at the end transactions, bytes moved, the hot-set drift half-life and the marginal sampling error. Every setting is an explicit argument (no defaults). It does NOT model transaction time and its disturbance of service, aborts, the effect gate or eligibility learned from refused destinations, so it answers what the plan does to the placement, not what it costs; the cost side still needs a serve run. tools/lab/radiance/heat-placement/record_heat_series.py copies the live route-count file (PREFIX.rank0, rewritten atomically by --record-heat) to numbered snapshots whenever it changes, so a run leaves the whole trajectory; it is the input of the replay. placement_sim.py in the same folder is an older simulator with its own cost-aware policy; the replay is the one that runs the real planner. Card-free tests: convergence off the tail, fixed point, determinism, a hot set that shifts twice (followed, drift measured), residency holding just-moved experts, refusal of bad input, a counter that goes back. Next: record the series in the next hardware runs and use the replay to try the step 3 derivations (cadence, move budget, residency, half-life, margin) against real drift, then confirm on hardware.
@@ -591,3 +603,4 @@ effect remains calib7 and calib8; the later changes are verified card-free.
 Merge: off by default (no record in the production store). Enabling waits on the KLD gate with the policy moving experts (RSC11
 #692 provides manifest-started quality arms) and one production calibration.
 - 2026-11-07T06:34:14.255034+00:00 (updated-by): Updated: section:notes
+- 2026-11-07T09:36:52.997112+00:00 (updated-by): Updated: section:notes
