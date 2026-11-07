@@ -77,7 +77,7 @@ class ReleaseNotesTests(unittest.TestCase):
     def test_radiance_has_its_own_release_line(self):
         config = notes.load_config(_REPO, "radiance")
         self.assertEqual(config.tag_prefix, "bc-radiance-")
-        self.assertEqual(config.build_patch_sets, ("serving-core", "host-compat", "serving-manifest"))
+        self.assertEqual(config.build_patch_sets, ("serving-core", "host-compat", "serving-manifest", "mtp-pass-replay"))
         self.assertEqual((config.recipes, config.patches, config.upstream_name),
                          ("engines/radiance/recipes.toml", "engines/radiance/patches", "radiance"))
         self.assertIn("engines/radiance", config.owned_paths)

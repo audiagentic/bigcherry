@@ -1,0 +1,11 @@
+schema = 1
+id = "rad0013_mtp_pass_replay"
+order = 13
+state = "untested"
+kind = "enhancement"
+origin = "local"
+backend = "agnostic"
+plan-ids = []
+requires = []
+conflicts = []
+tags = ["mtp", "speculative-decoding"]

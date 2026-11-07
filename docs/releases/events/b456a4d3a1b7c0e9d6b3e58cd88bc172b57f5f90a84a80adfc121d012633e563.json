@@ -1,0 +1,18 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261107_021213_restores-flash-nexts-decode-s_3263",
+  "files": [
+    "engines/radiance/patches/rad0013_mtp_pass_replay/patch.py",
+    "engines/radiance/patches/rad0013_mtp_pass_replay/patch.toml",
+    "engines/radiance/patches/rad0013_mtp_pass_replay/SUMMARY.md",
+    "engines/radiance/recipes.toml",
+    "config/release.toml",
+    "tools/lab/radiance/launch-flashnext-best.sh",
+    "tools/tests/patch/test_radiance_mtp_pass_replay.py",
+    "tools/tests/lab/test_mtp_replay_guard.py"
+  ],
+  "status": "unreleased",
+  "technical-summary": "rad0013: Radiance v1.17.0's qwen4exp pass_key refuses every nonzero MTP draft pass (serial rounds and head history), so they are issued live every speculation round instead of replayed from a recorded tape (v1.16 recorded draft passes -1, 0, 2, 3; v1.17 only 0). The patch keys fixed-geometry pure-decode draft/verify passes by every geometry input and keeps mixed/live-split passes live, fail-closed. Enters the one build as the untested mtp-pass-replay set. Launcher start guard refuses a start with MTP depth above 1 and no recorded draft pass beyond 0. Hardware (four-GPU Flash-Next, two passes): decode step 1.7-2.7% faster on all five accept-bench prompts, text and acceptance bit-identical.",
+  "timestamp-utc": "2026-11-07T02:12:13.338946Z",
+  "user-summary-candidate": "Restores Flash-Next's decode speed lost in Radiance v1.17 (about 2% per step) by replaying speculative draft passes again; outputs are unchanged."
+}
