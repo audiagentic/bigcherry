@@ -202,7 +202,7 @@ static inline void r3_mxfp4_dec11_launch(long a, long ascale, long wq, long ws, 
     auto Cp = (__hip_bfloat16*) c;
     // R3_D11_MODE: timing ablation, results are WRONG when set. 1 = no matrix instruction, 2 = no unpack, 4 = no
     // weight loads; add them to combine. For locating the kernel's cost with --profile-ops, nothing else.
-    static const int mode = std::getenv("R3_D11_MODE") ? std::atoi(std::getenv("R3_D11_MODE")) : 0;
+    const int mode = 0;   // the timing ablations (1 no matrix instruction, 2 no unpack, 4 no weight loads) were R3_D11_MODE; the kernel keeps its parameter
 #define R3_D11_L(MR_, NT_, AB_) \
     hipLaunchKernelGGL((r3_gemm_mxfp4a8_dec11_kernel<MR_, NT_, AB_>), grid, block, 0, st, Ap, Sp, Wp, Zp, Rp, Cp, M, K, N, ldws, ldc, as_rs, mode)
 #define R3_D11_AB(MR_, NT_) { if (ablk) R3_D11_L(MR_, NT_, true); else R3_D11_L(MR_, NT_, false); }

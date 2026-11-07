@@ -125,8 +125,7 @@ long align16(long v) { return (v + 15) & ~15L; }
     in->rank = rank;
     in->world = world;
     in->host = host;
-    const char* const timing = std::getenv("R3_AR_TIMING");
-    in->timing = timing && std::strcmp(timing, "1") == 0;
+    in->timing = false;   // R3_AR_TIMING (wall-clock timing between stream synchronisations) was a diagnostic environment switch (RSC12)
     const char* const wire4 = std::getenv("R3_AR_WIRE4");
     in->wire4 = host && wire4 && std::strcmp(wire4, "1") == 0;
     if (in->wire4) {

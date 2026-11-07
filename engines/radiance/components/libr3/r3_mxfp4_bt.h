@@ -37,28 +37,13 @@ enum {
     R3_BT_ABL_EPILOGUE = 8,
 };
 
-static inline int r3_bt_mode() {
-    static const int v=[] {
-        const char* e=std::getenv("R3_BT");
-        const int x=e?std::atoi(e):0;
-        return x==1||x==2?x:0;
-    }();
-    return v;
-}
-static inline bool r3_bt_on() { return r3_bt_mode()!=0; }
-static inline int r3_bt_batch() {
-    static const int v=[] { const char* e=std::getenv("R3_BT_B"); const int x=e?std::atoi(e):8;
-                            return x==4||x==6||x==8?x:8; }();
-    return v;
-}
-static inline bool r3_bt_nt() {
-    static const bool on=[] { const char* e=std::getenv("R3_BT_NT"); return !e||std::atoi(e)!=0; }();
-    return on;
-}
-static inline int r3_bt_abl() {
-    static const int v=[] { const char* e=std::getenv("R3_BT_ABL"); return e?std::atoi(e):0; }();
-    return v & 15;
-}
+// RR08 is shelved (slower at M=512): the forms stay compiled but off, at the geometry they were measured with. They were
+// R3_BT, R3_BT_B, R3_BT_NT and R3_BT_ABL environment settings; nothing reads the environment now (RSC12).
+static inline int r3_bt_mode() { return 0; }
+static inline bool r3_bt_on() { return false; }
+static inline int r3_bt_batch() { return 8; }
+static inline bool r3_bt_nt() { return true; }
+static inline int r3_bt_abl() { return 0; }
 
 __device__ __forceinline__ r3_v16h r3_bt_const_f16() {
     const r3_u8 v={0x3c003c00u,0x3c003c00u,0x3c003c00u,0x3c003c00u,
