@@ -15,8 +15,7 @@
  "environment": {
   "HIP_VISIBLE_DEVICES": "0",
   "ROCR_VISIBLE_DEVICES": "2",
-  "RADIANCE_HOME": "${RAD_HOME}",
-  "R3_MOE_WORKER_SKIP_OWNED": "1"
+  "RADIANCE_HOME": "${RAD_HOME}"
  },
  "expected_execution": {
   "backend": "ROCm",

@@ -238,7 +238,7 @@ bool bc_serving_engine_argv(int* argc, char*** argv) {
     /* The hand-off settings the engine's MoE hook reads from its environment (libr3, R3_MOE_WORKER*). The manifest is the one
      * place they are configured, so they are set from it here, before the engine initialises, and win over a value the
      * launcher left in the environment: R3_MOE_WORKER (the hand-off is on when the manifest has helpers), the segment name,
-     * the row cap, and the route-histogram file and period. */
+     * the row cap, whether the engine skips helper-owned experts, and the route-histogram file and period. */
     if (doc.at("spec").contains("handoff")) {
         const nlohmann::json& h = doc.at("spec").at("handoff");
         setenv("R3_MOE_WORKER", "1", 1);
@@ -247,6 +247,8 @@ bool bc_serving_engine_argv(int* argc, char*** argv) {
             if (tr.contains("shm") && tr.at("shm").is_string()) setenv("R3_MOE_WORKER_SHM", tr.at("shm").get<std::string>().c_str(), 1);
             if (tr.contains("max_rows") && tr.at("max_rows").is_number_integer())
                 setenv("R3_MOE_WORKER_MAX_ROWS", std::to_string(tr.at("max_rows").get<long long>()).c_str(), 1);
+            if (tr.contains("skip_owned") && tr.at("skip_owned").is_boolean())
+                setenv("R3_MOE_WORKER_SKIP_OWNED", tr.at("skip_owned").get<bool>() ? "1" : "0", 1);
         }
         if (h.contains("telemetry")) {
             const nlohmann::json& te = h.at("telemetry");

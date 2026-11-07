@@ -89,7 +89,7 @@ PIN_BLOBS = {
     },
     RAD0009: {
         "core/bc_serving_manifest.h": (None, "ea567e5"),
-        "core/bc_serving_manifest.cpp": (None, "dde5184"),
+        "core/bc_serving_manifest.cpp": (None, "790e049"),
         "core/CMakeLists.txt": ("921debd", "8750342"),
         "core/main.cpp": ("4cb6d43", "7feb7b6"),
     },
