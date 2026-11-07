@@ -81,7 +81,7 @@ class ServerRunner:
 
     def __init__(
         self, *, serve: ServeSpec, binary: Path, model: Path, host: str = "127.0.0.1",
-        port: int | None = None,
+        port: int | None = None, manifest: Path | None = None,
         extra_args: tuple[str, ...] = (), env_overrides: dict[str, str] | None = None,
         env_unset: tuple[str, ...] = (),
         log_path: Path | None = None, command_prefix: tuple[str, ...] = (),
@@ -111,6 +111,16 @@ class ServerRunner:
         # without either interfering with the other, and without an operator
         # remembering to pass a port.
         self.port = port if port is not None else _free_port(host)
+        # A manifest start is the whole configuration in one file: the engine takes its model, endpoint and settings from
+        # it, so none is passed here, and ``port`` must be the port the manifest names (the harness talks to it).
+        if manifest is not None:
+            if not serve.manifest_args:
+                raise ValueError("this engine declares no manifest start (serve.manifest-args)")
+            if extra_args:
+                raise ValueError("a manifest start takes no extra server arguments; they belong in the manifest")
+            if port is None:
+                raise ValueError("a manifest start needs the port its manifest names")
+        self.manifest = manifest
         self.extra_args = extra_args
         self.env_overrides = dict(env_overrides or {})
         # HI143 (gpt review, 2026-08-29): the launched process otherwise
@@ -155,12 +165,12 @@ class ServerRunner:
         for name, relative in self.serve.env_from_binary:
             env[name] = str((Path(self.binary).parent / relative).resolve())
         env.update(self.env_overrides)
-        args = [
-            *self.command_prefix,
-            str(self.binary), self.serve.model_flag, str(self.model),
-            self.serve.port_flag, str(self.port), self.serve.host_flag, self.host,
-            *self.extra_args,
-        ]
+        if self.manifest is not None:
+            served = [a.replace("{manifest}", str(self.manifest)) for a in self.serve.manifest_args]
+        else:
+            served = [self.serve.model_flag, str(self.model), self.serve.port_flag, str(self.port),
+                      self.serve.host_flag, self.host, *self.extra_args]
+        args = [*self.command_prefix, str(self.binary), *served]
         if self.log_path is not None:
             with self.log_path.open("w", encoding="utf-8") as log_file:
                 self._proc = subprocess.Popen(args, env=env, stdout=log_file, stderr=subprocess.STDOUT)

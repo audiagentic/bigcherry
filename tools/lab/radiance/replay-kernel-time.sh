@@ -3,10 +3,10 @@
 # rocprofv3's kernel trace and the script prints, per kernel name, the call count and mean duration. Run it per configuration
 # (SMALL_ROWS, GEMV settings, device) and compare. No server, no engine: kernel time only, so it separates kernel cost from
 # orchestration cost when the same captures are replayed on another card (DEV).
-# Usage: BUILD=... CAPDIR=... MODEL=... BC_SERVING_MANIFEST=... [DEV=0] [N=12] tools/lab/radiance/replay-kernel-time.sh
+# Usage: BUILD=... CAPDIR=... MODEL=... [DEV=0] [N=12] tools/lab/radiance/replay-kernel-time.sh MANIFEST   (MANIFEST: the per-run bc-serve manifest)
 set -u
 B=${BUILD:?set BUILD to the lane build directory}
-MANIFEST=${BC_SERVING_MANIFEST:?set BC_SERVING_MANIFEST to the per-run bc-serve output}
+MANIFEST=${1:?usage: replay-kernel-time.sh MANIFEST (the per-run bc-serve manifest)}
 CAP=${CAPDIR:?set CAPDIR to a directory of captures}
 M=${MODEL:?set MODEL to the .rad container the captures came from}
 DEV=${DEV:-0}

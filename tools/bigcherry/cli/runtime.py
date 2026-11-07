@@ -130,7 +130,7 @@ def _worker(cell, *, root: Path, base_env: Mapping[str, str]):
         env, settings = apply_arm_settings(
             engine, {**dict(cell.visibility), **dict(env_overrides)}, server_capture.get("settings", {}))
         result = run_server_arm_capture(
-            engine=engine, binary=Path(cell.binary), model=Path(model), extra_args=tuple(extra_args),
+            engine=engine, binary=Path(cell.binary), model=Path(model), extra_args=tuple(extra_args), manifest=None,
             output=root, pair=0, side=cell.cell_id, position=0,
             env=env, settings=settings, bench_configs=bench_configs,
             runner_root=Path(runner_root), required_metrics=tuple(metrics),

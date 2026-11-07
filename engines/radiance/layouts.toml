@@ -25,6 +25,11 @@ count = "all"
 budget-mib = 22528
 placement = "head"
 
+[layout.flashnext-r9700]
+model = "radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad"
+description = "Flash-Next on the R9700 alone: no helpers, the experts tiered to host memory (the engine-only isolation probe)"
+engine = { arch = "gfx1201" }
+
 [layout.flashnext-2xtx-rdna2-tail]
 model = "radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad"
 description = "flashnext-2xtx plus the RX 6900 XT as a third helper holding a small tail of the coldest experts (RAD23: 2 GiB passes the KLD gate cleanly)"

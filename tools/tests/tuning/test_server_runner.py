@@ -263,6 +263,23 @@ class EngineServeSpecTests(unittest.TestCase):
         if "LLAMA_SERVER_ENABLE_SHUTDOWN" not in os.environ:
             self.assertNotIn("LLAMA_SERVER_ENABLE_SHUTDOWN", env)  # that switch is llama.cpp's
 
+    def test_manifest_start_passes_only_the_manifest(self):
+        binary = Path("build") / "bin" / "radiance"
+        runner = ServerRunner(serve=self.radiance, binary=binary, model=Path("m.rad"), port=4321, manifest=Path("/run/m.json"))
+        with patch("bigcherry.tuning.server_runner.subprocess.Popen") as popen:
+            runner.launch()
+        self.assertEqual(popen.call_args.args[0], [str(binary), "--manifest", "/run/m.json", "--role", "engine"])
+        self.assertEqual(runner.port, 4321)
+
+    def test_manifest_start_refuses_flags_a_missing_port_and_engines_without_one(self):
+        kw = dict(binary=Path("x"), model=Path("m"), manifest=Path("/m.json"))
+        with self.assertRaisesRegex(ValueError, "extra server arguments"):
+            ServerRunner(serve=self.radiance, port=1, extra_args=("--tp", "1"), **kw)
+        with self.assertRaisesRegex(ValueError, "needs the port"):
+            ServerRunner(serve=self.radiance, **kw)
+        with self.assertRaisesRegex(ValueError, "no manifest start"):
+            ServerRunner(serve=LLAMACPP_SERVE, port=1, **kw)
+
     def test_llamacpp_launch_is_unchanged(self):
         runner = ServerRunner(serve=LLAMACPP_SERVE, binary=Path("x"), model=Path("m.gguf"), port=1234)
         with patch("bigcherry.tuning.server_runner.subprocess.Popen") as popen:

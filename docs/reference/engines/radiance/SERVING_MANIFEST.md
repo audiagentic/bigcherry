@@ -130,6 +130,46 @@ A manifest that fails the strict reader is refused with a stable error code and 
 start canary, **97** for plan measurement/storage/setup failure, **98** for a held launch lock or an already running
 server.
 
+## Campaign arms
+
+A campaign arm that serves from a manifest describes its configuration under `serving`; the harness makes the manifest.
+
+```json
+"serving": {"layout": "flashnext-2xtx-combine",
+            "set": {"service.max_sessions": 6, "service.max_context": 32768, "memory.host_pool_mib": 22528},
+            "heat": "${BC_WORK_ROOT}/heat/flashnext-mixed.hot-first", "histogram": "/dev/null"}
+```
+
+`layout` names an entry of `engines/radiance/layouts.toml` (required); `set` holds `bc-serve --set key=value` settings (strings, numbers,
+booleans); `heat` and `histogram` are the layout's route-heat inputs and are required exactly when the layout has helpers (`/dev/null`
+for no recording). `calibration` (a calibration store, from which bc-serve derives the live policy), `live_policy` and `experiment` (files)
+and `calibration_run` (true) are the matching `bc-serve --calibration`, `--live-policy`, `--experiment` and `--calibration-run`; they reach
+every bc-serve call of the arm and the experiment file's contents are part of the plan-cache key. The model, the runtime home and the engine port come from the job and the build; environment variables in the
+block are expanded. An arm with `serving` takes no `server_args` (they are settings) and needs `execution_evidence: "observe"` (a
+manifest start has no attestation preflight).
+
+Before the first cell the harness asks the arm's build for the measured manifest of that configuration (`bc-serve --write-manifest`,
+plan cache `<work-root>/plan-cache`). On a cache miss it measures first, as the launcher does: the helpers come up on their cards
+(`--measuring`), the engine runs to the end of its memory plan (`--plan-memory`) and exits, and `bc-serve ... --measured-plan` writes
+the measured manifest and stores the plan. That measuring start uses the GPUs, so a campaign with a new configuration runs under the
+`gpu` lease like any measurement. The manifests are kept in the output directory under `manifests/<arm>/`.
+
+The engine is then started as `radiance --manifest M --role engine` (`[serve] manifest-args` in `engines/radiance/engine.toml`), the port
+to drive comes from the manifest, and one `r3_moe_worker --manifest M --role helperN` starts per `spec.processes.helpers` entry, each
+seeing the host card whose `locator` equals the helper's `gpu`. The engine still reads `R3_MOE_WORKER=1` from its environment to
+enable the helper hook (RSC08 S5: not yet a manifest field), so a job with helpers sets it in `environment`.
+
+A quality (KL) arm uses the same block. The harness starts the engine KL run as `radiance --manifest M --role engine --kld-ref DIR --kld-out FILE`
+(or `--kld-record DIR --kld-corpus FILE` for the reference), and `quality.args` must be empty for such an arm. **The engine accepts those four
+flags beside a manifest only once rad0009 is changed to allow them (a separate change that needs the patch requalified on hardware); until then
+it refuses them, so a quality arm with a serving block cannot run.** A reference recorded in the same job
+(`quality.record`) still starts from raw flags; a stored reference is reused as before.
+
+`R3_MOE_WORKER_*` arm settings, `R3_MOE_WORKER_LAYOUT` and `BC_SERVING_MANIFEST` are gone. Jobs that used them and could not be migrated
+are archived in `experiments/radiance/archive-helper-env-jobs/` and `experiments/radiance/archive-engine-only-jobs/`. The lab scripts
+that start a helper by hand (`fn-helper.sh`, `w4-replay-hash.sh`, `replay-kernel-time.sh`, `helper-gemm-counters.sh`,
+`helper-long-rows.sh`) take the manifest as an argument.
+
 ## Migration status
 
 | Step | State |
@@ -138,6 +178,6 @@ server.
 | `--set` for `tp_wire`, `no_prefix_cache`, `gpu_headroom_mib` | done (RSC11 A1) |
 | Resolver reads `layouts.toml` and `archs.toml`; engine-only and multi-card-engine layouts; kernels derived per architecture; contract amendment 12 | done (RSC11 A2) |
 | Dense models (containers without routed experts) get engine-only manifests | done (RSC11 A2b) |
-| Campaign arms get a manifest each; `BC_SERVING_MANIFEST` removed | pending (A3) |
+| Campaign arms describe a `serving` configuration; the harness makes each arm's measured manifest; `BC_SERVING_MANIFEST` and the helper environment settings removed | done in code (RSC11 A3/B); the measuring path is not yet run on hardware |
 | Lab job files and `layouts.toml` side channels moved or retired | pending (B) |
 | The engine refuses direct config flags | pending (C) |

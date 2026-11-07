@@ -1,9 +1,9 @@
 #!/bin/bash
 # RAD06: hardware counters for the helper grouped MoE GEMM on replayed real requests (gfx1100).
-# Usage: helper-gemm-counters.sh <build-dir> <model.rad> <capture.bin> <out-dir>
+# Usage: helper-gemm-counters.sh <build-dir> <model.rad> <capture.bin> <out-dir> <manifest>   (manifest: the per-run bc-serve manifest)
 set -u
 B=$1; M=$2; F=$3; OUT=$4
-manifest=${BC_SERVING_MANIFEST:?set BC_SERVING_MANIFEST to the per-run bc-serve output}
+manifest=${5:?usage: helper-gemm-counters.sh BUILD_DIR MODEL CAPTURE OUT_DIR MANIFEST}
 source "$(dirname "${BASH_SOURCE[0]}")/lab-env.sh"; export PATH=$ROCM_PATH/bin:$PATH
 rm -rf "$OUT"
 for set in "SQ_WAVES SQ_INSTS_VALU SQ_INSTS_SALU SQ_INSTS_LDS" "SQ_WAIT_INST_LDS SQ_WAIT_ANY SQ_BUSY_CYCLES GRBM_GUI_ACTIVE" "SQ_INSTS_VMEM SQ_INSTS_WMMA SQ_LDS_BANK_CONFLICT SQ_LDS_IDX_ACTIVE"; do

@@ -1,0 +1,18 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261106_222027_benchmark-and-quality-campaign_4941",
+  "files": [
+    "tools/bigcherry/engine_adapters/radiance.py",
+    "tools/bigcherry/engine_adapters/radiance_plan.py",
+    "tools/bigcherry/engine_adapters/radiance_manifest.py",
+    "tools/bigcherry/tuning/server_runner.py",
+    "tools/bigcherry/campaign/benchmark.py",
+    "engines/radiance/engine.toml",
+    "engines/radiance/patches/rad0009_serving_manifest/patch.py",
+    "docs/reference/engines/radiance/SERVING_MANIFEST.md"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Campaign arms start the radiance engine and helpers from a serving manifest: an arm's serving block (layout, settings, heat inputs, optional calibration store, live policy, experiment) is turned into a measured manifest by radiance_plan (bc-serve write-manifest, plan-cache miss measured like the launcher), the engine starts as --manifest M --role engine, and quality arms run the KL mode from the manifest (the engine side, a rad0009 change, is a separate PR). BC_SERVING_MANIFEST and the R3_MOE_WORKER_* arm settings are removed; 55 unrunnable or unreferenced job files and drivers are archived and seven jobs migrated to serving blocks.",
+  "timestamp-utc": "2026-11-06T22:20:27.116910Z",
+  "user-summary-candidate": "Benchmark and quality campaigns for radiance now describe each arm as a serving configuration and run from the same manifest the engine uses, instead of raw flags and environment variables."
+}

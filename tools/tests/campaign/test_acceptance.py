@@ -467,7 +467,7 @@ class StoredReferenceTests(unittest.TestCase):
     def test_control_reproducing_its_reference_is_not_a_false_regression(self):
         names = ["control", "native"]
         block = qc.validate_quality_block(self.block(), names)
-        prepared = {n: {"binary": Path("b/bin/radiance"), "model": Path("m"), "env": {}, "settings": {}} for n in names}
+        prepared = {n: {"binary": Path("b/bin/radiance"), "model": Path("m"), "env": {}, "settings": {}, "manifest": None} for n in names}
         section, _ = qc.run_quality_capture(adapter=FakeAdapter(), quality=block, prepared=prepared, names=names,
                                             output=self.root / "out", reference_env={})
         self.assertTrue(section["passed"], section)
@@ -479,7 +479,7 @@ class StoredReferenceTests(unittest.TestCase):
     def test_accept_gates_the_arms_against_the_stored_baselines(self):
         names = ["control", "native"]
         block = qc.validate_quality_block(self.block(), names)
-        prepared = {n: {"binary": Path("b/bin/radiance"), "model": Path("m"), "env": {}, "settings": {}} for n in names}
+        prepared = {n: {"binary": Path("b/bin/radiance"), "model": Path("m"), "env": {}, "settings": {}, "manifest": None} for n in names}
         section, _ = qc.run_quality_capture(adapter=FakeAdapter(), quality=block, prepared=prepared, names=names,
                                             output=self.root / "out", reference_env={})
         run = {"runs": [], "quality": section}

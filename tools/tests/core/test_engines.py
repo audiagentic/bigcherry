@@ -94,6 +94,7 @@ class EngineDeclarations(unittest.TestCase):
         self.assertEqual(llamacpp.draft_stats.source, "log")
         self.assertEqual((radiance.binary, radiance.model_flag), ("bin/radiance", "--model"))
         self.assertEqual((radiance.shutdown_method, radiance.shutdown_path), ("sigint", ""))
+        self.assertEqual(radiance.manifest_args, ("--manifest", "{manifest}", "--role", "engine"))
         self.assertEqual(dict(radiance.env_from_binary), {"RADIANCE_HOME": "../radiance_home"})
         self.assertEqual((radiance.draft_stats.source, radiance.draft_stats.path), ("metrics", "/metrics"))
 
@@ -103,6 +104,8 @@ class EngineDeclarations(unittest.TestCase):
             "no-serve": good.split("[serve]")[0],
             "bad-shutdown": good.replace('shutdown = "sigint"', 'shutdown = "kill"'),
             "relative-health": good.replace('health = "/health"', 'health = "health"'),
+            "manifest-args-without-the-file": good + 'manifest-args = ["--role", "engine"]' + chr(10),
+            "manifest-args-empty": good + "manifest-args = []" + chr(10),
             "extra-serve-key": good + 'restart = "yes"' + chr(10),
             "bad-draft-source": good + chr(10) + "[serve.draft-stats]" + chr(10) + 'source = "guess"' + chr(10),
             "pattern-without-groups": good + chr(10) + "[serve.draft-stats]" + chr(10) + 'source = "log"' + chr(10) + "pattern = 'accepted (\\d+)'" + chr(10),

@@ -2,10 +2,11 @@
 # Cross-build identity check for the remote-MoE worker on W4 (Flash-Next): replay real captured requests in ONE worker process and
 # print a hash of the helper's result bytes for each (RCS05). Run it on a baseline build and on a candidate build with the same
 # captures and settings; every replay_hash line must match. (rel_l2 only bounds the error; this proves bit identity.)
-# Usage: BUILD=<lane build dir> [CAPDIR=<dir>] [N=4] tools/lab/radiance/w4-replay-hash.sh   (set MODEL for another container)
+# Usage: BUILD=<lane build dir> [CAPDIR=<dir>] [N=4] tools/lab/radiance/w4-replay-hash.sh MANIFEST   (set MODEL for another container;
+# MANIFEST is the per-run bc-serve manifest the helper reads its configuration from)
 set -u
 B=${BUILD:?set BUILD to the lane build directory}
-MANIFEST=${BC_SERVING_MANIFEST:?set BC_SERVING_MANIFEST to the per-run bc-serve output}
+MANIFEST=${1:?usage: w4-replay-hash.sh MANIFEST (the per-run bc-serve manifest)}
 W=${WORK:-${BC_WORK_ROOT}}
 M=${MODEL:-${BC_MODEL_ROOT}/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad}
 FILES=$(ls -S ${CAPDIR:-$W/captures}/*.bin | head -${N:-4} | tr '\n' ' ')

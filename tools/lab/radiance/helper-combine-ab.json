@@ -5,37 +5,11 @@
  "evidence_role": "diagnostic",
  "execution_evidence": "observe",
  "model": "${BC_MODEL_ROOT}/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad",
- "server_args": [
-  "--radiance-home",
-  "${RAD_HOME}",
-  "--kernels",
-  "libr4d,libr3moe,libref",
-  "--placement",
-  "expert_tiered",
-  "--ngram-placement",
-  "ram",
-  "--max-num-seqs",
-  "6",
-  "--max-num-batched-tokens",
-  "4096",
-  "--checkpoint-interval",
-  "4096",
-  "--kv-cache-dtype",
-  "fp8",
-  "--num-speculative-tokens",
-  "3",
-  "--tp",
-  "1",
-  "--host-pool-mib",
-  "22528",
-  "--max-model-len",
-  "32768"
- ],
+ "server_args": [],
  "environment": {
   "HIP_VISIBLE_DEVICES": "0",
   "ROCR_VISIBLE_DEVICES": "2",
-  "RADIANCE_HOME": "${RAD_HOME}",
-  "R3_MOE_WORKER_SKIP_OWNED": "1"
+  "R3_MOE_WORKER": "1"
  },
  "expected_execution": {
   "backend": "ROCm",
@@ -59,34 +33,44 @@
    "mode": "stock",
    "shutdown_method": "sigint",
    "binary": "${RAD_BIN}",
-   "settings": {
-    "R3_MOE_WORKER": "1",
-    "R3_MOE_WORKER_DEVICES": "0 1",
-    "R3_MOE_WORKER_MOE_DOWN_TILE": "1",
-    "R3_MOE_WORKER_ENGINE_RANKS": "1",
-    "R3_MOE_WORKER_MAX_ROWS": "4096",
-    "R3_MOE_WORKER_SMALL_ROWS": "8",
-    "R3_MOE_WORKER_MIB": "22528",
-    "R3_MOE_WORKER_HEAT": "${BC_WORK_ROOT}/runs/perf51/heat.rank0.hot-first",
-    "R3_MOE_WORKER_COMBINE": "0"
-   }
+   "serving": {
+    "layout": "flashnext-2xtx",
+    "set": {
+     "engine.checkpoint_interval": 4096,
+     "engine.kv_cache_dtype": "fp8",
+     "engine.max_num_batched_tokens": 4096,
+     "engine.ngram_placement": "ram",
+     "engine.num_speculative_tokens": 3,
+     "memory.host_pool_mib": 22528,
+     "service.max_context": 32768,
+     "service.max_sessions": 6
+    },
+    "heat": "${BC_WORK_ROOT}/heat/flashnext-mixed.hot-first",
+    "histogram": "/dev/null"
+   },
+   "settings": {}
   },
   {
    "name": "combine1",
    "mode": "stock",
    "shutdown_method": "sigint",
    "binary": "${RAD_BIN}",
-   "settings": {
-    "R3_MOE_WORKER": "1",
-    "R3_MOE_WORKER_DEVICES": "0 1",
-    "R3_MOE_WORKER_MOE_DOWN_TILE": "1",
-    "R3_MOE_WORKER_ENGINE_RANKS": "1",
-    "R3_MOE_WORKER_MAX_ROWS": "4096",
-    "R3_MOE_WORKER_SMALL_ROWS": "8",
-    "R3_MOE_WORKER_MIB": "22528",
-    "R3_MOE_WORKER_HEAT": "${BC_WORK_ROOT}/runs/perf51/heat.rank0.hot-first",
-    "R3_MOE_WORKER_COMBINE": "1"
-   }
+   "serving": {
+    "layout": "flashnext-2xtx-combine",
+    "set": {
+     "engine.checkpoint_interval": 4096,
+     "engine.kv_cache_dtype": "fp8",
+     "engine.max_num_batched_tokens": 4096,
+     "engine.ngram_placement": "ram",
+     "engine.num_speculative_tokens": 3,
+     "memory.host_pool_mib": 22528,
+     "service.max_context": 32768,
+     "service.max_sessions": 6
+    },
+    "heat": "${BC_WORK_ROOT}/heat/flashnext-mixed.hot-first",
+    "histogram": "/dev/null"
+   },
+   "settings": {}
   }
  ]
 }
