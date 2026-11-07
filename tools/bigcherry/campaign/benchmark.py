@@ -1065,8 +1065,11 @@ def run_server_comparison_capture(
     output.mkdir(parents=True, exist_ok=False)
     for name in names:   # a serving arm's manifest: measured here (the GPUs, like a cell) when its plan is not cached
         if prepared[name]["serving"] is not None:
+            serving = prepared[name]["serving"]
+            if quality_only:   # a KL run scores the trunk's own rows and refuses speculative drafting: no drafts unless the arm says otherwise
+                serving = {**serving, "set": {"engine.num_speculative_tokens": 0, **serving.get("set", {})}}
             prepared[name]["manifest"] = adapter_.write_serving_manifest(
-                name, prepared[name]["serving"], binary=prepared[name]["binary"], model=prepared[name]["model"],
+                name, serving, binary=prepared[name]["binary"], model=prepared[name]["model"],
                 env=prepared[name]["env"], run_dir=output / "manifests" / name)
     run_schedule = [] if quality_only else schedule_named_arms(rounds, names, seed)
     summary = {

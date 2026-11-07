@@ -10,6 +10,7 @@
 #include <nlohmann/json.hpp>
 
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <fstream>
 #include <iterator>
@@ -139,6 +140,27 @@ int main(int, char** argv) {
     for (const auto& kv : g_given) CHECK(kv.second == "manifest 44bdbe1a071a");   // "manifest <first 12 hex of the digest>"
     CHECK(run({"--manifest", example, "--role", "engine", "-v"}).rfind("engine -v --model ", 0) == 0);
     CHECK(run({"--manifest", example}) == got);   // deterministic
+
+    // The hand-off settings libr3's MoE hook reads from its environment come from the manifest: set before the engine
+    // initialises, winning over what the launcher left there.
+    {
+        setenv("R3_MOE_WORKER_SHM", "/stale", 1);
+        const nlohmann::json shape = nlohmann::json::parse(slurp(example));
+        const std::string handoff = run({"--manifest", example});
+        CHECK(handoff != "ERROR");
+        if (shape.at("spec").contains("handoff")) {
+            const auto& h = shape.at("spec").at("handoff");
+            CHECK(std::getenv("R3_MOE_WORKER") && std::string(std::getenv("R3_MOE_WORKER")) == "1");
+            CHECK(std::string(std::getenv("R3_MOE_WORKER_SHM")) == h.at("transport").at("shm").get<std::string>());
+            CHECK(std::string(std::getenv("R3_MOE_WORKER_MAX_ROWS")) == std::to_string(h.at("transport").at("max_rows").get<long long>()));
+            if (h.contains("telemetry") && h.at("telemetry").at("histogram_file").is_string()) {
+                CHECK(std::string(std::getenv("R3_MOE_WORKER_HISTOGRAM")) == h.at("telemetry").at("histogram_file").get<std::string>());
+                CHECK(std::string(std::getenv("R3_MOE_WORKER_HISTOGRAM_PERIOD_S")) == std::to_string(h.at("telemetry").at("period_s").get<long long>()));
+            }
+        }
+        unsetenv("R3_MOE_WORKER"); unsetenv("R3_MOE_WORKER_SHM"); unsetenv("R3_MOE_WORKER_MAX_ROWS");
+        unsetenv("R3_MOE_WORKER_HISTOGRAM"); unsetenv("R3_MOE_WORKER_HISTOGRAM_PERIOD_S");
+    }
 
     // The KL mode is a kind of run, not configuration: its four flags accompany the manifest, pass through unchanged and
     // keep their command-line label; any other flag still refuses, and a flag without its path is refused.

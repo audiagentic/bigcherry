@@ -61,6 +61,7 @@ _BC_SERVING_MANIFEST_CPP = r"""/* bc_serving_manifest.cpp -- policy behind bc_se
 
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <fstream>
 #include <iterator>
@@ -234,6 +235,27 @@ bool bc_serving_engine_argv(int* argc, char*** argv) {
     g_ptrs.push_back(nullptr);
     *argc = (int)g_store.size();
     *argv = g_ptrs.data();
+    /* The hand-off settings the engine's MoE hook reads from its environment (libr3, R3_MOE_WORKER*). The manifest is the one
+     * place they are configured, so they are set from it here, before the engine initialises, and win over a value the
+     * launcher left in the environment: R3_MOE_WORKER (the hand-off is on when the manifest has helpers), the segment name,
+     * the row cap, and the route-histogram file and period. */
+    if (doc.at("spec").contains("handoff")) {
+        const nlohmann::json& h = doc.at("spec").at("handoff");
+        setenv("R3_MOE_WORKER", "1", 1);
+        if (h.contains("transport")) {
+            const nlohmann::json& tr = h.at("transport");
+            if (tr.contains("shm") && tr.at("shm").is_string()) setenv("R3_MOE_WORKER_SHM", tr.at("shm").get<std::string>().c_str(), 1);
+            if (tr.contains("max_rows") && tr.at("max_rows").is_number_integer())
+                setenv("R3_MOE_WORKER_MAX_ROWS", std::to_string(tr.at("max_rows").get<long long>()).c_str(), 1);
+        }
+        if (h.contains("telemetry")) {
+            const nlohmann::json& te = h.at("telemetry");
+            if (te.contains("histogram_file") && te.at("histogram_file").is_string())
+                setenv("R3_MOE_WORKER_HISTOGRAM", te.at("histogram_file").get<std::string>().c_str(), 1);
+            if (te.contains("period_s") && te.at("period_s").is_number_integer())
+                setenv("R3_MOE_WORKER_HISTOGRAM_PERIOD_S", std::to_string(te.at("period_s").get<long long>()).c_str(), 1);
+        }
+    }
     const std::string digest = doc.at("metadata").at("content_digest").get<std::string>();   /* "sha256:<hex>" */
     g_label = "manifest " + digest.substr(digest.find(':') + 1, 12);
     return true;
