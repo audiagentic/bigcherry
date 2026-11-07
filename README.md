@@ -28,7 +28,7 @@ controls, adaptive AllReduce and selected AMD kernel fixes.
 [Patch catalogue](docs/reference/engines/llamacpp/PATCHES.md).
 
 Package counts include experimental, superseded and rejected work, not only
-patches selected for production. Radiance has 4 validated patches;
+patches selected for production. Radiance has 5 validated patches;
 llama.cpp has 70.
 
 ## Current-pin throughput
