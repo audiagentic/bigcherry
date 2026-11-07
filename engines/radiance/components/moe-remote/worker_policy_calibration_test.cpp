@@ -114,14 +114,16 @@ int main() {
     // path must still emit a partial record after one derived horizon.
     Measured only_lane=m;
     only_lane.lane_lost_ns=Series{64};
+    only_lane.committed_transactions=1;
+    only_lane.tail_committed_transactions=1;
     const auto missing_lane=calibration_missing_planner(only_lane);
     assert(missing_lane.size()==1 && missing_lane[0].name=="lane_lost_ns");
     CalibrationProgressTimeout planner_watch;
     std::string line;
     const uint64_t watch_start=1000000000ull;
-    assert(planner_watch.observe(missing_lane,watch_start,false,&line));
+    assert(planner_watch.observe(only_lane,missing_lane,watch_start,false,&line));
     assert(line=="calibration waiting: lane_lost_ns (no tail quiesce/reopen interval yet)");
-    assert(!planner_watch.observe(missing_lane,watch_start+1,false,&line));
+    assert(!planner_watch.observe(only_lane,missing_lane,watch_start+1,false,&line));
     assert(!calibration_settled(only_lane,true,true));
     const uint64_t wait_gap=uint64_t(std::max({
         only_lane.delta_gap_ns.max(),double(only_lane.effect_cadence_ns),
@@ -169,9 +171,9 @@ int main() {
     CalibrationProgressTimeout no_publishers;
     std::string effect_line;
     const uint64_t effect_start=1000000000ull;
-    assert(no_publishers.observe({},effect_start,true,&effect_line));
+    assert(no_publishers.observe(no_effect,{},effect_start,true,&effect_line));
     assert(effect_line=="calibration waiting: effect signal (published relative-service windows not converged)");
-    assert(!no_publishers.observe({},effect_start+1,true,&effect_line));
+    assert(!no_publishers.observe(no_effect,{},effect_start+1,true,&effect_line));
     const uint64_t effect_span=uint64_t(CalibrationProgressTimeout::wait_span(
         no_effect,no_effect.effect_cadence_ns,2*no_effect.effect_cadence_ns));
     assert(!no_publishers.effect_expired(effect_start+1,no_effect,
@@ -190,13 +192,13 @@ int main() {
     const uint64_t age=2*no_effect.effect_cadence_ns;
     const uint64_t period=std::max({gap,no_effect.effect_cadence_ns,age});
     const uint64_t horizon=period*std::max<size_t>(3,no_effect.drift_capacity);
-    warming.observe(false,false,start);
+    warming.observe(false,false,start,true);
     assert(!warming.expired(start+100*horizon,no_effect,no_effect.effect_cadence_ns,age));
-    warming.observe(true,false,start+100*horizon);
+    warming.observe(true,false,start+100*horizon,true);
     assert(!warming.expired(start+101*horizon-1,no_effect,no_effect.effect_cadence_ns,age));
     assert(warming.expired(start+101*horizon,no_effect,no_effect.effect_cadence_ns,age));
     EffectSignalTimeout unavailable;
-    unavailable.observe(true,false,start);
+    unavailable.observe(true,false,start,true);
     assert(!unavailable.expired(start+horizon-1,no_effect,no_effect.effect_cadence_ns,age));
     assert(!calibration_settled(no_effect,unavailable.expired(
         start+horizon-1,no_effect,no_effect.effect_cadence_ns,age)));
@@ -232,15 +234,111 @@ int main() {
     const auto stale=calibration_record(m,
         {std::string(64,'f'),"flashnext-4gpu","balanced"},"2026-11-06",true);
     assert(!stale.at("measurements").contains("effect_window_noise_ladder"));
-    unavailable.observe(true,true,start+horizon);
+    unavailable.observe(true,true,start+horizon,true);
     assert(!unavailable.expired(start+2*horizon,no_effect,no_effect.effect_cadence_ns,age));
-    unavailable.observe(false,false,start+2*horizon);
+    unavailable.observe(false,false,start+2*horizon,true);
     assert(!unavailable.expired(start+3*horizon-1,no_effect,no_effect.effect_cadence_ns,age));
-    // No heat-gap observation => use the declared poll/heat-age basis;
-    // record must still settle as absent, not spin indefinitely.
+    // No heat-gap measurement => no timeout can use a configured fallback
+    // as if the feed had actually made progress.
     Measured no_gaps=no_effect;
     no_gaps.delta_gap_ns=Series{64};
-    assert(unavailable.expired(start+5*horizon,no_gaps,no_gaps.effect_cadence_ns,age));
+    assert(!unavailable.expired(start+5*horizon,no_gaps,no_gaps.effect_cadence_ns,age));
+    // Calib14 ordering: helper heartbeat reports waiting before any accepted
+    // histogram delta; neither a baseline nor elapsed wall time arms a timer.
+    // Even preloaded other measurements cannot manufacture heat evidence.
+    const uint64_t epoch=1000000000ull;
+    const uint64_t cadence=only_lane.effect_cadence_ns;
+    const uint64_t age_bound=2*cadence;
+    Measured pre_heat=only_lane;
+    pre_heat.accepted_heat_deltas=0;
+    pre_heat.delta_gap_ns=Series{256};
+    pre_heat.drift_intervals=0;
+    CalibrationProgressTimeout startup;
+    auto pending=calibration_missing_planner(pre_heat);
+    assert(startup.observe(pre_heat,pending,epoch,false,&line));
+    assert(line.find("heat_watermarked (no accepted heat deltas)")!=std::string::npos);
+    assert(!startup.observe(pre_heat,pending,epoch+1000000000000ull,false,&line));
+    assert(!startup.expired(epoch+1000000000000ull,pre_heat,cadence,age_bound));
+    assert(!startup.effect_expired(epoch+1000000000000ull,pre_heat,cadence,age_bound));
+    assert(!calibration_settled(pre_heat,true,true));
+    // The first accepted delta opens the feed but is not a measured gap:
+    // no condition can expire on the second's initial heartbeat.
+    pre_heat.accepted_heat_delta(true);
+    pre_heat.drift_intervals=1;
+    pending=calibration_missing_planner(pre_heat);
+    startup.observe(pre_heat,pending,epoch+1000000000000ull,false,&line);
+    assert(!startup.expired(epoch+2000000000000ull,pre_heat,cadence,age_bound));
+    pre_heat.accepted_heat_delta(true); // second accepted delta establishes the gap
+    pre_heat.drift_intervals=2;
+    pre_heat.delta_gap_ns.add(double(cadence));
+    const uint64_t basis_start=epoch+2000000000000ull;
+    startup.observe(pre_heat,calibration_missing_planner(pre_heat),basis_start,false,&line);
+    const uint64_t span=uint64_t(CalibrationProgressTimeout::wait_span(
+        pre_heat,cadence,age_bound));
+    assert(span>0);
+    assert(!startup.expired(basis_start+span-1,pre_heat,cadence,age_bound));
+    // A missing measured condition with no further progress eventually emits
+    // exactly one partial calibration record with its true missing reason.
+    assert(startup.expired(basis_start+span,pre_heat,cadence,age_bound));
+    const auto stalled=calibration_record(pre_heat,
+        {std::string(64,'h'),"flashnext-4gpu","balanced"},"2026-11-06",
+        true,"tail large lane has no peer reference on this layout",true);
+    assert(stalled.at("evidence").get<std::string>().find("partial calibration")!=std::string::npos);
+    assert(stalled.at("absent").contains("lane_lost_ns"));
+
+    // Copy ACK cannot be timed before a committed transaction. In contrast,
+    // the lane-loss clock requires a COMMITTED move involving the tail;
+    // committing only on other helpers is not its first opportunity.
+    Measured no_tx=only_lane;
+    no_tx.slowest_helper_copy_bps=Series{64};
+    no_tx.committed_transactions=0;
+    no_tx.tail_committed_transactions=0;
+    CalibrationProgressTimeout tx_watch;
+    auto missing_tx=calibration_missing_planner(no_tx);
+    tx_watch.observe(no_tx,missing_tx,epoch,false,nullptr);
+    assert(!tx_watch.expired(epoch+100*span,no_tx,cadence,age_bound));
+    no_tx.committed_transactions=1;
+    tx_watch.observe(no_tx,missing_tx,epoch+100*span,false,nullptr);
+    assert(tx_watch.expired(epoch+101*span,no_tx,cadence,age_bound));
+    Measured tail_tx=only_lane;
+    tail_tx.tail_committed_transactions=0;
+    CalibrationProgressTimeout tail_watch;
+    tail_watch.observe(tail_tx,missing_lane,epoch,false,nullptr);
+    assert(!tail_watch.expired(epoch+100*span,tail_tx,cadence,age_bound));
+    tail_tx.tail_committed_transactions=1;
+    tail_watch.observe(tail_tx,missing_lane,epoch+100*span,false,nullptr);
+    assert(tail_watch.expired(epoch+101*span,tail_tx,cadence,age_bound));
+
+    // Genuine progress in the unmet condition, not a heartbeat or another
+    // counter, renews its frozen deadline. This applies to drift retention
+    // as well as to effect-only quiet-window measurements.
+    Measured drifting=m;
+    drifting.drift_half_life_observations=0;
+    drifting.drift_horizon_observations=100;
+    CalibrationProgressTimeout drift_watch;
+    auto missing_drift=calibration_missing_planner(drifting);
+    drift_watch.observe(drifting,missing_drift,epoch,false,nullptr);
+    assert(!drift_watch.expired(epoch+span-1,drifting,cadence,age_bound));
+    drifting.drift_horizon_observations+=100;
+    missing_drift=calibration_missing_planner(drifting);
+    drift_watch.observe(drifting,missing_drift,epoch+span-1,false,nullptr);
+    assert(!drift_watch.expired(epoch+span,drifting,cadence,age_bound));
+    assert(drift_watch.expired(epoch+2*span-1,drifting,cadence,age_bound));
+    CalibrationProgressTimeout effect_watch;
+    effect_watch.observe(no_effect,{},epoch,true,nullptr);
+    assert(!effect_watch.effect_expired(epoch+span-1,no_effect,cadence,age_bound));
+    Measured growing_effect=no_effect;
+    growing_effect.effect.quiet_comparisons++;
+    effect_watch.observe(growing_effect,{},epoch+span-1,true,nullptr);
+    assert(!effect_watch.effect_expired(epoch+span,growing_effect,cadence,age_bound));
+    assert(effect_watch.effect_expired(epoch+2*span-1,growing_effect,cadence,age_bound));
+
+    // The separate publisher timeout cannot run across the pre-feed phase.
+    EffectSignalTimeout prefeed_effect;
+    prefeed_effect.observe(true,false,epoch,false);
+    assert(!prefeed_effect.expired(epoch+100*span,pre_heat,cadence,age_bound));
+    prefeed_effect.observe(true,false,epoch+100*span,true);
+    assert(!prefeed_effect.expired(epoch+100*span+1,pre_heat,cadence,age_bound));
     Measured entirely_missing{};
     assert(calibration_settled(entirely_missing,true)); // bounded timeout emits incomplete record
     assert(!calibration_settled(entirely_missing,true,true)); // structural no-peer awaits planner

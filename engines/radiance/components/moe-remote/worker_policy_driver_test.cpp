@@ -109,6 +109,10 @@ struct HeatFake : HeatSource {
 // result without adding test-only hooks to production policy behavior.
 namespace r3::policy {
 struct DriverTestAccess {
+    static void start_calibration_heartbeat(Driver& d,uint64_t now) {
+        d.started_ns_=now; // no worker thread: replay the pre-feed heartbeat ordering
+    }
+    static bool calibration_printed(Driver& d) {return d.calibration_printed_;}
     static bool ready(Driver& d) {
         std::lock_guard<std::mutex> guard(d.lock_);
         return d.ready_;
@@ -335,6 +339,24 @@ static void test_calibration_ack_roundtrip() {
 
 int main() {
     test_calibration_ack_roundtrip();
+    // Calib14 replay: many heartbeats, including after the old derived
+    // deadline, arrive before the first accepted delta. None can print an
+    // incomplete calibration JSON line. An initial histogram BASELINE has
+    // this same measured state (it never increments accepted_heat_deltas).
+    {
+        Fixture f;
+        Driver d(settings(),std::make_unique<HeatFake>(),{20,20},10,
+                 {0,0,0,0},f.clock,nullptr,
+                 CalibrationIdentity{std::string(64,'b'),"flashnext-4gpu","balanced"});
+        DriverTestAccess::start_calibration_heartbeat(d,f.clock.now_ns());
+        d.heartbeat(f.clock.now_ns());
+        const auto first=d.measured();
+        check(first.accepted_heat_deltas==0,"baseline is not an accepted delta");
+        f.clock.advance(100000000000000ull);
+        d.heartbeat(f.clock.now_ns());
+        check(!DriverTestAccess::calibration_printed(d),
+              "no partial calibration before the first accepted heat delta");
+    }
     {
         Fixture f;
         auto source=std::make_unique<HeatFake>();auto* h=source.get();

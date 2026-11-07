@@ -345,6 +345,8 @@ struct Measured {
     std::vector<WindowNoisePoint> effect_window_noise_ladder;
     uint64_t effect_cadence_ns=0; // lab policy cadence only sets the measurement coverage requirement
     uint64_t effect_required_quiet_windows=0; // convergence gate, never a measurement
+    uint64_t committed_transactions=0; // verified committed transactions, even zero duration
+    uint64_t tail_committed_transactions=0; // non-revert commits involving the tail
     uint64_t accepted_heat_deltas=0; // only deltas successfully consumed by the planner
     bool accepted_unwatermarked_heat=false; // sticky across heat baseline resets
     void accepted_heat_delta(bool complete_observations) {
