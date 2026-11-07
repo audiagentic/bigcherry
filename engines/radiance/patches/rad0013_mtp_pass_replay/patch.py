@@ -152,7 +152,7 @@ PATCH = FilePatch(
             guard=r"BC_MTP_DECODE_REPLAY_GEOMETRY",
             expect_matches=1,
             max_span_lines=8,
-            rationale="Exactly the v1.17.0 seven-line rejection guard; refuse any drift.",
+            rationale="long-anchor: exactly the v1.17.0 seven-line pass_key rejection guard, matched whole so any upstream drift in it refuses to apply (the anti-regression contract)",
         ),
     ),
 )

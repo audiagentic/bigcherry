@@ -1,7 +1,9 @@
 # rad0013_mtp_pass_replay
 
-**Status:** untested (card-free patch and callback tests passed; no hardware run)
-**Scope:** Qwen4-Exp v1.17.0 recorded-pass regression
+**Status:** untested
+**Plan item:** none
+
+Scope: Qwen4-Exp v1.17.0 recorded-pass regression. Card-free patch and callback tests pass; hardware (four-GPU Flash-Next, two passes): decode step 1.7-2.7% faster on all five accept-bench prompts, generated text and acceptance identical to the unpatched build. Promotion to serving-core waits on a KLD check.
 
 ## Summary
 
