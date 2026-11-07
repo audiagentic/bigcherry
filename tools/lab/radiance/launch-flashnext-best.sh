@@ -549,6 +549,21 @@ start_canary() {
   return 1
 }
 start_canary || exit 96
+# rad0013 runtime guard: with MTP speculation the engine records its draft/verify passes and replays them. No "recorded pass:
+# draft pass" line after the canary means every speculation round is issued live (the v1.17 decode-step regression rad0013
+# removes). One more canary request covers a log line not yet written before deciding.
+mtp_replay_recorded() { grep -q 'recorded pass: draft pass' "$LOG"; }
+mtp_replay_check() {
+  local depth
+  depth=$(sed -n "s/^I speculation: 'mtp' drafts \([0-9][0-9]*\) token.*/\1/p" "$LOG" | tail -1)
+  [ -n "$depth" ] && [ "$depth" -gt 0 ] || return 0
+  mtp_replay_recorded && return 0
+  start_canary >/dev/null 2>&1 || return 1
+  mtp_replay_recorded && return 0
+  echo "RADIANCE_EXIT=95 MTP speculation is on (depth $depth) but the engine recorded no draft/verify pass: every speculation round is issued live instead of replayed (the v1.17 regression; is rad0013_mtp_pass_replay in this build?); stopping everything this launch started; engine log $LOG" >&2
+  return 1
+}
+mtp_replay_check || exit 95
 if [ "$CALIBRATE" = 1 ]; then
   # No fixed number of requests or time-based guess: this loop stops on the
   # helper's convergence condition (the retained drift-track horizon).
