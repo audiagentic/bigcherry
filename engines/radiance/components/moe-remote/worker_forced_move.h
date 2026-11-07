@@ -32,10 +32,12 @@ struct Step {
     }
 };
 // A schedule is `repeat` passes over its ordered move, explicit swap or automatic swap steps, typed from the manifest
-// (spec.experiment.placement.forced). Exactly one proposal is issued per step.
+// (spec.experiment.placement.forced). Exactly one proposal is issued per step. pace_requests (0: none) holds each
+// proposal until the helpers' completed lane requests have advanced by that many since the previous one was issued.
 struct Schedule {
     std::vector<Step> steps;
     uint32_t repeat=1;
+    uint32_t pace_requests=0;
     uint64_t issued=0;
     uint64_t count() const {return uint64_t(steps.size())*repeat;}
     bool pending() const {return issued<count();}
@@ -56,6 +58,17 @@ inline bool engine_serving(const void* map) {
     for(uint32_t lane=0;lane<kLanes;++lane)
         if(load(&h->lane[lane].done_sequence)!=0) return true;
     return false;
+}
+// Lane requests the helpers have completed: the sum over every lane of its
+// done_sequence, which counts that lane's requests from 1 (the engine
+// allocates each lane's sequences one at a time). The pacing measure of a
+// forced schedule; a lane would wrap only after 2^32 requests.
+inline uint64_t completed_requests(const void* map) {
+    if(!map) return 0;
+    const auto* h=static_cast<const Header*>(map);
+    uint64_t done=0;
+    for(uint32_t lane=0;lane<kLanes;++lane) done+=load(&h->lane[lane].done_sequence);
+    return done;
 }
 inline constexpr std::array<uint32_t,2> kNoPrevious{{UINT32_MAX,UINT32_MAX}};
 struct Resolved {
@@ -198,6 +211,10 @@ class Driver {
     uint64_t txn_=0,started_=0,pause_=0,attempted_=0,committed_=0,aborted_=0,bytes_=0;
     uint32_t phase_=0;
     bool inflight_=false;
+    // Pacing: completed_requests() when the previous proposal was issued, or
+    // when the serving gate was first seen open, before the first one.
+    bool paced_=false;
+    uint64_t paced_from_=0;
     std::array<uint32_t,2> previous_{{UINT32_MAX,UINT32_MAX}};
     std::array<uint32_t,2> pending_ids_{{UINT32_MAX,UINT32_MAX}};
     std::array<Duration,8> durations_{};
@@ -213,12 +230,19 @@ public:
     uint64_t aborted() const {return aborted_;}
     bool submit(void* map,Controller& c,uint64_t now) {
         if(inflight_||!pending()||!c.can_propose()||!engine_serving(map)) return true;
+        const uint64_t pace=schedule_.pace_requests;
+        const uint64_t done=pace ? completed_requests(map) : 0;
+        if(pace) {
+            if(!paced_) {paced_=true;paced_from_=done;}
+            if(done<paced_from_+pace) return true;
+        }
         FaultCode fault=FaultCode::NONE;
         Resolved chosen;
         const Step step=schedule_.next();
         if(!propose(map,c,step,budgets_,stride_,source_,previous_,&fault,&chosen))
             return false;
         schedule_.advance(); ++attempted_;
+        paced_from_=done;
         pending_ids_=chosen.ids;
         if(fault==FaultCode::NONE) {
             bytes_+=stride_*chosen.count;

@@ -492,8 +492,8 @@ int main() {
     std::string config_error;
     check(typed.configure_placement(typed_settings,&config_error) && typed.force_enabled &&
           typed.force_schedule.count()==1000 && typed.force_schedule.steps.size()==4 &&
-          typed.force_schedule.steps[0].move.destination==1,
-          "worker settings type a 1000-transaction move schedule from the manifest");
+          typed.force_schedule.steps[0].move.destination==1 && typed.force_schedule.pace_requests==0,
+          "worker settings type a 1000-transaction move schedule from the manifest, unpaced");
     Schedule schedule=typed.force_schedule;
     {
         using bc::serving::v1::ForcedKind;
@@ -530,15 +530,12 @@ int main() {
         store(&static_cast<Header*>(map)->lane[kLanes-1].done_sequence,1u);
         check(engine_serving(map),"a completed request on any lane opens the gate");
     }
-    Driver driver(schedule,budgets,stride,source);
     uint32_t active_slot=0;
-    for(uint32_t step=0;step<1000;++step) {
-        clock.step();
+    // One move transaction through the real participants: from the PROPOSED candidate the driver just issued (old_owner
+    // read from ACTIVE before it) to the CLEANED barrier, with `committed` transactions counted after it.
+    auto complete_move=[&](Driver& d,uint8_t old_owner,uint32_t target,uint64_t committed) {
         const uint32_t old=active_slot,next=1u-old;
-        const auto old_owner=owner_at(map,old,0,0);
-        const auto target=schedule.steps[step%schedule.steps.size()].move.destination;
-        check(driver.submit(map,controller,clock.now_ns()),"force request proposed");
-        driver.observe(controller,clock.now_ns());
+        d.observe(controller,clock.now_ns());
         check(controller.control().state==uint32_t(PlacementState::PROPOSED) &&
               controller.control().active_slot==old &&
               controller.control().pending_slot==next &&
@@ -547,7 +544,7 @@ int main() {
               placement_candidate_valid(map,controller.control()),
               "candidate is one changed byte, correctly digested, old generation immutable");
         check(controller.start_reserving(),"production reserving");
-        clock.step(); driver.observe(controller,clock.now_ns());
+        clock.step(); d.observe(controller,clock.now_ns());
         for(uint32_t i=0;i<3;++i) {
             check(participant[i]->reserve(map,controller.control())==FaultCode::NONE,
                   "real participant reserves legal transient physical slot");
@@ -555,7 +552,7 @@ int main() {
         }
         publish_ack(map,kMaxHelpers,controller.control(),AckPhase::RESERVED);
         check(controller.poll()==Poll::ADVANCED,"all reserving ACKs -> copying");
-        clock.step(); driver.observe(controller,clock.now_ns());
+        clock.step(); d.observe(controller,clock.now_ns());
         // The already-admitted old request keeps its old bank throughout
         // all private-stream uploads; the new bank cannot serve until COMMIT.
         for(uint32_t i=0;i<3;++i)
@@ -576,14 +573,14 @@ int main() {
         check(controller.poll()==Poll::ADVANCED &&
               controller.control().state==uint32_t(PlacementState::PREPARED),
               "all physical uploads and rank READY before prepare");
-        clock.step(); driver.observe(controller,clock.now_ns());
+        clock.step(); d.observe(controller,clock.now_ns());
         auto* pending=generation_header(map,next);
         pending->ready_helpers=controller.control().expected_helpers;
         pending->ready_ranks=controller.control().expected_ranks;
         pending->state=uint32_t(GenerationState::READY);
         check(controller.begin_quiesce(),"admission quiescing");
-        clock.step(); driver.observe(controller,clock.now_ns());
-        driver.observe(controller,clock.now_ns());
+        clock.step(); d.observe(controller,clock.now_ns());
+        d.observe(controller,clock.now_ns());
         // Four prequeued waits from the N bank cannot be counted as retired.
         // A missing helper QUIESCED ACK keeps the controller in QUIESCING.
         std::array<bool,4> prequeued{{true,true,true,true}};
@@ -597,7 +594,7 @@ int main() {
             publish_ack(map,i,controller.control(),AckPhase::QUIESCED);
         check(controller.poll()==Poll::ADVANCED && controller.commit(),
               "exact drain and ACK before commit");
-        clock.step(); driver.observe(controller,clock.now_ns());
+        clock.step(); d.observe(controller,clock.now_ns());
         pending->state=uint32_t(GenerationState::ACTIVE);
         for(uint32_t i=0;i<3;++i) {
             check(participant[i]->commit(controller.control()),"real participant bank commit");
@@ -607,7 +604,7 @@ int main() {
         check(controller.poll()==Poll::ADVANCED &&
               controller.control().state==uint32_t(PlacementState::RETIRING),
               "committed ACKs advance to retiring");
-        clock.step(); driver.observe(controller,clock.now_ns());
+        clock.step(); d.observe(controller,clock.now_ns());
         for(uint32_t i=0;i<3;++i) {
             check(participant[i]->physical(next)[0]==
                       (target==i?participant[i]->physical(next)[0]:-1) &&
@@ -621,7 +618,7 @@ int main() {
         check(controller.poll()==Poll::ADVANCED &&
               controller.control().state==uint32_t(PlacementState::ACTIVE),
               "retired phase returns to active without freeing old slots");
-        clock.step(); driver.observe(controller,clock.now_ns());
+        clock.step(); d.observe(controller,clock.now_ns());
         generation_header(map,old)->state=uint32_t(GenerationState::RETIRED);
         check(!controller.can_propose(),"RETIRED is not a REOPENED barrier");
         publish_reopen_ack(map,controller.control());
@@ -633,8 +630,8 @@ int main() {
         }
         check(controller.can_propose(),"all cleanup before next forced request");
         clock.step();
-        driver.observe(controller,clock.now_ns());
-        check(driver.committed()==step+1 &&
+        d.observe(controller,clock.now_ns());
+        check(d.committed()==committed &&
               pools[0]->ledger().valid() && pools[1]->ledger().valid() &&
               pools[2]->ledger().valid(),"transaction evidence and ledgers remain consistent");
         for(uint32_t i=0;i<3;++i) {
@@ -645,12 +642,67 @@ int main() {
                       "no leaked RESERVED/COPYING/RETIRING slot");
         }
         active_slot=next;
+    };
+    Driver driver(schedule,budgets,stride,source);
+    for(uint32_t step=0;step<1000;++step) {
+        clock.step();
+        const auto old_owner=owner_at(map,active_slot,0,0);
+        const auto target=schedule.steps[step%schedule.steps.size()].move.destination;
+        check(driver.submit(map,controller,clock.now_ns()),"force request proposed");
+        complete_move(driver,old_owner,target,step+1);
     }
     check(!driver.pending() && driver.attempted()==1000 &&
           driver.committed()==1000 && driver.aborted()==0 &&
           owner_at(map,active_slot,0,0)==0,
           "repeat schedule completes 1000 forward-only churn transactions");
     driver.report(map,pools[0]->ledger().charged(),0,0);
+
+    {   // A paced schedule (forced.pace_requests): each proposal waits for that many more completed lane requests.
+        constexpr uint32_t pace=5;
+        bc::serving::HelperSettings paced_settings=typed_settings;
+        paced_settings.forced->repeat=1;
+        paced_settings.forced->steps={paced_settings.forced->steps[0],paced_settings.forced->steps[1]};
+        paced_settings.forced->pace_requests=pace;
+        WorkerConfig paced_config(paced_settings);
+        check(paced_config.configure_placement(paced_settings,&config_error) &&
+              paced_config.force_schedule.pace_requests==pace && paced_config.force_schedule.count()==2,
+              "worker settings carry the pace");
+        Header* hh=static_cast<Header*>(map);
+        auto complete=[&](uint32_t lane,uint32_t n) {
+            store(&hh->lane[lane].done_sequence,load(&hh->lane[lane].done_sequence)+n);
+        };
+        for(uint32_t lane=0;lane<kLanes;++lane) store(&hh->lane[lane].done_sequence,0u);
+        check(completed_requests(map)==0 && !engine_serving(map),"lanes reset: the gate is closed");
+        Driver paced(paced_config.force_schedule,budgets,stride,source);
+        clock.step();
+        check(paced.submit(map,controller,clock.now_ns()) && paced.attempted()==0 && controller.can_propose(),
+              "paced: the serving gate still holds the first proposal");
+        complete(kLanes-1,1);
+        check(paced.submit(map,controller,clock.now_ns()) && paced.attempted()==0,
+              "paced: the gate opening is not the pace");
+        complete(0,2); complete(kLanes-1,pace-3);   // the count sums every lane
+        check(completed_requests(map)==pace && paced.submit(map,controller,clock.now_ns()) && paced.attempted()==0,
+              "paced: no proposal before pace requests completed after the gate opened");
+        complete(1,1);
+        uint8_t owner=owner_at(map,active_slot,0,0);
+        check(paced.submit(map,controller,clock.now_ns()) && paced.attempted()==1 &&
+              controller.control().state==uint32_t(PlacementState::PROPOSED),
+              "paced: the first proposal is issued once the pace is met");
+        complete(2,2);   // requests completed while the transaction is in flight count toward the next pace
+        complete_move(paced,owner,1,1);
+        check(controller.can_propose() && paced.submit(map,controller,clock.now_ns()) && paced.attempted()==1,
+              "paced: after the commit the next proposal waits for the pace again");
+        complete(0,pace-3);
+        check(paced.submit(map,controller,clock.now_ns()) && paced.attempted()==1,
+              "paced: the next proposal counts from when the previous one was issued");
+        complete(0,1);
+        owner=owner_at(map,active_slot,0,0);
+        check(paced.submit(map,controller,clock.now_ns()) && paced.attempted()==2,
+              "paced: the next proposal is issued pace requests after the previous");
+        complete_move(paced,owner,0,2);
+        check(!paced.pending() && paced.committed()==2 && paced.aborted()==0 && owner_at(map,active_slot,0,0)==0,
+              "paced schedule completes");
+    }
     check(munmap(map,layout.bytes)==0,"unmap");
     full_budget_swaps(false);
     full_budget_swaps(true);

@@ -1658,6 +1658,12 @@
                       "minimum": 1,
                       "maximum": 1000000
                     },
+                    "pace_requests": {
+                      "description": "Pacing: a proposal is issued only once the helpers' completed lane requests (the sum over lanes of `done_sequence`) have advanced by at least this many since the previous proposal was issued; the first waits for this many after the serving gate opens. Spreads the schedule across a run's work. Absent: no pacing, each proposal is issued as soon as the previous transaction finished.",
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 4294967295
+                    },
                     "steps": {
                       "description": "Ordered placement steps.",
                       "type": "array",

@@ -18,10 +18,10 @@ inline constexpr std::string_view kApiVersion = "bigcherry/v1";
 inline constexpr std::string_view kKind = "ServingManifest";
 inline constexpr int64_t kContractVersion = 1;
 // sha256 of the JCS validation schema without annotations (contract/README.md); the build pins it.
-inline constexpr std::string_view kFingerprint = "sha256:224432c7fa4d6c0ad6766d1084303ebc4a3a4ecd12e64f6a4b9722fadf31dcb3";
+inline constexpr std::string_view kFingerprint = "sha256:52bdaed905247b4d0289a621e4b4fcfab211e777e8fa1055e50a80200b8abe26";
 // sha256 of the schema plus the frozen semantics it does not express (classes, lifecycle, Radiance bindings,
 // reader error codes); README.md.
-inline constexpr std::string_view kSemanticFingerprint = "sha256:072e8b6c05cc91443fd26a53328d2cfc1353bd1b74cdd979832a0575d66a21ef";
+inline constexpr std::string_view kSemanticFingerprint = "sha256:0e8992e43836d33a9ff8c89898bef9fff8b5fe7ad2bdb475ac86e2faf3c13801";
 // spec §11 amendment 8: the deepest container nesting a valid document can have (the root object is 1),
 // derived from the closed schema by the generator. The strict reader refuses anything deeper.
 inline constexpr size_t kMaxDepth = 9;
@@ -1142,6 +1142,11 @@ struct ForcedStep {
 struct ForcedChurn {
     // How many times the step list is issued.
     int64_t repeat;
+    // Pacing: a proposal is issued only once the helpers' completed lane requests (the sum over lanes of
+    // `done_sequence`) have advanced by at least this many since the previous proposal was issued; the first waits for
+    // this many after the serving gate opens. Spreads the schedule across a run's work. Absent: no pacing, each
+    // proposal is issued as soon as the previous transaction finished.
+    std::optional<int64_t> pace_requests;
     // Ordered placement steps.
     std::vector<ForcedStep> steps;
 };
@@ -1309,7 +1314,7 @@ struct FieldInfo {
     std::string_view default_source;   // where the default comes from, or empty
     std::string_view ref_def;          // kind "ref": the shared type it uses, else empty
 };
-inline constexpr std::array<FieldInfo, 362> kFields = {{
+inline constexpr std::array<FieldInfo, 363> kFields = {{
     {"$defs/uint", "integer", "", true, false,
      "", "", false,
      "Unsigned integer within I-JSON's safe range.", "", "", ""},
@@ -2270,6 +2275,9 @@ inline constexpr std::array<FieldInfo, 362> kFields = {{
     {"/spec/experiment/placement/forced/repeat", "integer", "diagnostic", true, false,
      "", "", false,
      "How many times the step list is issued.", "", "", ""},
+    {"/spec/experiment/placement/forced/pace_requests", "integer", "diagnostic", false, false,
+     "", "", false,
+     "Pacing: a proposal is issued only once the helpers' completed lane requests (the sum over lanes of `done_sequence`) have advanced by at least this many since the previous proposal was issued; the first waits for this many after the serving gate opens. Spreads the schedule across a run's work. Absent: no pacing, each proposal is issued as soon as the previous transaction finished.", "", "", ""},
     {"/spec/experiment/placement/forced/steps", "array", "diagnostic", true, false,
      "", "", false,
      "Ordered placement steps.", "", "", ""},

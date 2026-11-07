@@ -701,6 +701,7 @@ int main() {
         if (ok_forced && ok_forced.value().spec.experiment && ok_forced.value().spec.experiment->placement) {
             const auto& f2 = ok_forced.value().spec.experiment->placement->forced;
             check(f2 && f2->repeat == 3 && f2->steps.size() == 3 && f2->steps[2].kind == ForcedKind::kAutoSwap, "forced schedule values");
+            check(f2 && !f2->pace_requests, "an absent pace_requests is no pacing");
             check(ok_forced.value().spec.experiment->placement->epoch_cycle_s == std::optional<int64_t>(30), "epoch cycle seconds");
         }
         const std::string at = "spec.experiment.placement";
@@ -729,6 +730,16 @@ int main() {
         Json zero_repeat = with_forced(Json::array({move}));
         zero_repeat["spec"]["experiment"]["placement"]["forced"]["repeat"] = 0;
         expect(from(rehashed(zero_repeat)), C::invalid_value, "below the minimum", "repeat 0", at + ".forced.repeat");
+        Json paced = with_forced(Json::array({move}));
+        paced["spec"]["experiment"]["placement"]["forced"]["pace_requests"] = 105;
+        Result<Manifest> ok_paced = from(rehashed(paced));
+        check(ok_paced.ok(), "a paced forced schedule loads: " + (ok_paced ? std::string() : render_human("bc_v1_test", ok_paced.error())));
+        if (ok_paced && ok_paced.value().spec.experiment && ok_paced.value().spec.experiment->placement) {
+            const auto& f3 = ok_paced.value().spec.experiment->placement->forced;
+            check(f3 && f3->pace_requests == std::optional<int64_t>(105), "pace_requests value");
+        }
+        paced["spec"]["experiment"]["placement"]["forced"]["pace_requests"] = 0;
+        expect(from(rehashed(paced)), C::invalid_value, "below the minimum", "pace_requests 0", at + ".forced.pace_requests");
         Json both_drivers = with_forced(Json::array({move}));
         both_drivers["spec"]["handoff"]["placement"]["live_policy"] = prod["spec"]["handoff"]["placement"]["live_policy"];
         both_drivers["provenance"]["/spec/handoff/placement/live_policy"] = prod["provenance"]["/spec/handoff/placement/live_policy"];

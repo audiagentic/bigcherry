@@ -37,6 +37,7 @@ struct WorkerConfig {
         }
         if (s.forced) {
             force_schedule.repeat = uint32_t(s.forced->repeat);
+            if (s.forced->pace_requests) force_schedule.pace_requests = uint32_t(*s.forced->pace_requests);
             for (const bc::serving::v1::ForcedStep& st : s.forced->steps) force_schedule.steps.push_back(step_of(st));
             force_enabled = true;
         }
