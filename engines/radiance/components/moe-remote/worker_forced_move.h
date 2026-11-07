@@ -43,12 +43,19 @@ struct Schedule {
     void advance() {++issued;}
 };
 using Source=std::function<bool(uint32_t,uint32_t)>;
-// The engine is serving once it has published a request ticket. Until then it
-// may still be initialising its mailbox kernels, which refuse to start while a
-// placement transaction is in flight ("called in the wrong phase"), and a KL
-// run would see every swap land before its first scored position.
+// The engine is serving once any lane has a completed request: done_sequence is
+// written only after the helper finishes a request the engine routed to it.
+// Until then the engine may still be initialising its mailbox kernels, which
+// refuse to start while a placement transaction is in flight ("called in the
+// wrong phase"), and a KL run would see every swap land before its first scored
+// position. (Header::publish_sequence is not this signal: the lane path never
+// sets it, so a gate on it never opened.)
 inline bool engine_serving(const void* map) {
-    return map && load(&static_cast<const Header*>(map)->publish_sequence)!=0;
+    if(!map) return false;
+    const auto* h=static_cast<const Header*>(map);
+    for(uint32_t lane=0;lane<kLanes;++lane)
+        if(load(&h->lane[lane].done_sequence)!=0) return true;
+    return false;
 }
 inline constexpr std::array<uint32_t,2> kNoPrevious{{UINT32_MAX,UINT32_MAX}};
 struct Resolved {

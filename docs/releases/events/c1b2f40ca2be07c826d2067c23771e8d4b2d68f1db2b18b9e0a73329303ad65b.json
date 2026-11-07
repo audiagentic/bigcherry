@@ -1,0 +1,15 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261107_172445_forced-expert-churn-test-runs_3122",
+  "files": [
+    "engines/radiance/components/moe-remote/worker_forced_move.h",
+    "engines/radiance/components/moe-remote/forced_move_test.cpp"
+  ],
+  "plan-item-ids": [
+    "RHP06"
+  ],
+  "status": "unreleased",
+  "technical-summary": "The forced placement driver's engine-serving gate (#718) read Header::publish_sequence, which the lane request path never sets, so on flashnext-4gpu KL runs the gate never opened (attempted=0). It now opens when any lane's done_sequence is nonzero (written only after the helper completes a request the engine routed to it). Test: publish_sequence alone does not open the gate; a completed request on any lane does.",
+  "timestamp-utc": "2026-11-07T17:24:45.796332Z",
+  "user-summary-candidate": "Forced expert-churn test runs swap experts again: they start once the helpers have completed the engine's first request."
+}
