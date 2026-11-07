@@ -1,5 +1,23 @@
 # Changelog
 
+## [1170.9.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.8.0...bc-radiance-1170.9.0) (2026-11-07)
+
+
+### New and changed
+
+* **patch:** promote rad0009_serving_manifest ([#716](https://github.com/audiagentic/bigcherry/issues/716)) ([07ce540](https://github.com/audiagentic/bigcherry/commit/07ce5401b5ed371b8b50e1b3207dfa1bd5c2e542))
+* **patch:** promote rad0009_serving_manifest ([#725](https://github.com/audiagentic/bigcherry/issues/725)) ([159a1c9](https://github.com/audiagentic/bigcherry/commit/159a1c9bb20f4b8f56a30376fc2f129dc52c1e1d))
+* **radiance:** KL runs start from a serving manifest (rad0009 requalification) ([#711](https://github.com/audiagentic/bigcherry/issues/711)) ([05ab5b1](https://github.com/audiagentic/bigcherry/commit/05ab5b17121a53cf18d6b9aa69a4ff43d2f334e8))
+* **radiance:** the engine takes its hand-off and route-histogram settings from the manifest; KL-only arms start with drafting off ([#714](https://github.com/audiagentic/bigcherry/issues/714)) ([b58adac](https://github.com/audiagentic/bigcherry/commit/b58adaca526b103577c7a311daa1b4bd14d11de1))
+* **radiance:** the engine takes skip_owned from the manifest (rad0009 demoted for requalification) ([#720](https://github.com/audiagentic/bigcherry/issues/720)) ([c92976d](https://github.com/audiagentic/bigcherry/commit/c92976ddc05ffba7f7561164545fdbdb9cb9d851))
+
+
+### Fixes
+
+* **radiance:** forced churn opens on the first completed lane request, not publish_sequence ([#724](https://github.com/audiagentic/bigcherry/issues/724)) ([41b55cc](https://github.com/audiagentic/bigcherry/commit/41b55ccd50174405597bb1dba583175ed7dbca5e))
+* **radiance:** forced placement churn waits for the engine's first published request ([#718](https://github.com/audiagentic/bigcherry/issues/718)) ([23d0ef4](https://github.com/audiagentic/bigcherry/commit/23d0ef44c89aec0540b9883de5b74d41416db78c))
+* **radiance:** live-policy margin is the sampling error over one drift half-life of heat, so the derived gate can open ([#708](https://github.com/audiagentic/bigcherry/issues/708)) ([c86cf66](https://github.com/audiagentic/bigcherry/commit/c86cf66b5a3e13309666ba8241caac4e5216ece8))
+
 ## [1170.8.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.7.0...bc-radiance-1170.8.0) (2026-11-07)
 
 
