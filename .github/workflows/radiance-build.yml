@@ -131,7 +131,14 @@ jobs:
             trap "ccache -s" EXIT
             if [ -d work/upstream/radiance.git ]; then
               git -C work/upstream/radiance.git worktree prune
-              git -C work/upstream/radiance.git fetch --prune origin "+refs/*:refs/*"
+              # The restored clone is normally current: fetch (every ref, all tags) only when it lacks the pin, and
+              # a failed fetch (upstream 503) is not fatal -- the build itself refuses a missing pin.
+              pin=$(sed -n "s/^pinned = \"\(.*\)\"/\1/p" engines/radiance/recipes.toml | head -1)
+              if git -C work/upstream/radiance.git cat-file -e "$pin^{commit}" 2>/dev/null; then
+                echo "upstream clone already has $pin; skipping fetch"
+              else
+                git -C work/upstream/radiance.git fetch --prune origin "+refs/*:refs/*" || echo "::warning::upstream fetch failed; building from the cached clone"
+              fi
             else
               git clone --bare https://codeberg.org/StillDeadcode/radiance.git work/upstream/radiance.git
             fi
