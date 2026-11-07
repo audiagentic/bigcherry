@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.19.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.18.1...bc-platform-1.19.0) (2026-11-07)
+
+
+### New and changed
+
+* **radiance:** campaign arms start from a serving manifest ([#692](https://github.com/audiagentic/bigcherry/issues/692)) ([7eb8664](https://github.com/audiagentic/bigcherry/commit/7eb8664105ec62f940424b94dc97b40379aa968b))
+
+
+### Fixes
+
+* **radiance:** rad0013 restores MTP draft/verify pass replay lost in v1.17 (~2% decode step), with a start guard ([#699](https://github.com/audiagentic/bigcherry/issues/699)) ([0976fa8](https://github.com/audiagentic/bigcherry/commit/0976fa82d12bf9d8efd4cc1b91713b19036f4a31))
+
 ## [1.18.1](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.18.0...bc-platform-1.18.1) (2026-11-07)
 
 
