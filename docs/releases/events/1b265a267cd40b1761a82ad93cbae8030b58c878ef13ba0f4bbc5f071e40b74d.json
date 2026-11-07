@@ -1,0 +1,15 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261107_024520_the-serving-manifest-can-now-c_8113",
+  "files": [
+    "engines/radiance/components/serving/contract/serving-v1.toml",
+    "engines/radiance/components/serving/serving.cpp",
+    "engines/radiance/components/serving/manifest_writer.cpp",
+    "docs/design/serving-manifest-v1/spec.md",
+    "docs/reference/engines/radiance/SERVING_MANIFEST.md"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Serving manifest v1 amendment 13: 80 more engine options get a manifest field (sampling 20, limits 13, chat 6, lora 5, vision 12, tuning 22, diagnostics 2 sections under spec.processes.engine), each bound to its flag by the registry; the resolver reads them as section.name keys from the generated registry, the writer nests them, rad0009 needs no change, and a contract test fails when a new engine option is neither bound nor a kind of run.",
+  "timestamp-utc": "2026-11-07T02:45:20.386457Z",
+  "user-summary-candidate": "The serving manifest can now carry every engine setting that was only available as a command-line flag (sampling defaults, HTTP limits, chat/reasoning, vision, tuning, diagnostics)."
+}
