@@ -1,5 +1,21 @@
 # Changelog
 
+## [1170.6.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.5.1...bc-radiance-1170.6.0) (2026-11-07)
+
+
+### New and changed
+
+* **radiance:** campaign arms start from a serving manifest ([#692](https://github.com/audiagentic/bigcherry/issues/692)) ([7eb8664](https://github.com/audiagentic/bigcherry/commit/7eb8664105ec62f940424b94dc97b40379aa968b))
+* **radiance:** RHP16 step 5, the live placement policy derives every setting from calibration (off until a layout is calibrated) ([#693](https://github.com/audiagentic/bigcherry/issues/693)) ([52c48e1](https://github.com/audiagentic/bigcherry/commit/52c48e1da291c2c47478146b054157cebbaefbe6))
+
+
+### Fixes
+
+* **moe:** replay sweep sizes its memory from the captured work ([#696](https://github.com/audiagentic/bigcherry/issues/696)) ([16f0110](https://github.com/audiagentic/bigcherry/commit/16f0110c543838d03c828b23374a0e87a75019e7))
+* **radiance:** bc-serve writes engine-only manifests for dense models ([#691](https://github.com/audiagentic/bigcherry/issues/691)) ([11e5078](https://github.com/audiagentic/bigcherry/commit/11e50786e6a8defb77c896b15ab9fe562959f4d5))
+* **radiance:** component tests run their assertions ([#688](https://github.com/audiagentic/bigcherry/issues/688)) ([8faeb6a](https://github.com/audiagentic/bigcherry/commit/8faeb6ab95151d30cac1ff2bb42428800a2e10f5))
+* **rhp16:** arm calibration deadlines only on measurable evidence ([#695](https://github.com/audiagentic/bigcherry/issues/695)) ([8f37034](https://github.com/audiagentic/bigcherry/commit/8f37034d634300ecf528db4b8c74937986f799a1))
+
 ## [1170.5.1](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.5.0...bc-radiance-1170.5.1) (2026-11-06)
 
 
