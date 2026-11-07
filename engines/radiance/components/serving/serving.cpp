@@ -190,7 +190,8 @@ const std::vector<Field>& schema_fields() {
         add_optional("engine.gpu_headroom_mib", "integer", "radiance --gpu-headroom-mib (VRAM left unclaimed on every engine card)", 0, UINT32_MAX);
         // The engine options the registry binds beyond those (amendment 13). The engine checks ranges and value text itself.
         for (const auto& o : engine_option_fields()) {
-            if (o.is_switch) f.push_back({o.key, "string", "radiance flag (present means given)", "policy", "startup-only", Json(), 0, 0, {"on"}, false, true});
+            if (!o.env.empty()) f.push_back({o.key, o.kind, "environment variable " + o.env + ", set from the manifest", "policy", "startup-only", Json(), 0, UINT32_MAX, {}, false, true});
+            else if (o.is_switch) f.push_back({o.key, "string", "radiance flag (present means given)", "policy", "startup-only", Json(), 0, 0, {"on"}, false, true});
             else if (o.kind == "ref") f.push_back({o.key, "integer", "radiance flag", "policy", "startup-only", Json(), 0, UINT32_MAX, {}, false, true});
             else f.push_back({o.key, "string", "radiance flag (value text as the flag takes it)", "policy", "startup-only", Json(), 0, 0, {}, false, true});
         }
@@ -737,6 +738,23 @@ const std::vector<OptionField>& engine_option_fields() {
         static constexpr std::string_view kPrefix = "/spec/processes/engine/";
         static const std::set<std::string> kSections = {"sampling", "limits", "chat", "lora", "vision", "tuning", "diagnostics"};
         std::vector<OptionField> out;
+        // Amendment 14: a field that stands in for an environment variable is a resolver key like the flags are. It has no
+        // flag; the engine sets the variable from it (rad0009).
+        for (const auto& b : v1::kEnvBindings) {
+            if (b.path.substr(0, kPrefix.size()) != kPrefix) continue;
+            const std::string_view rest = b.path.substr(kPrefix.size());
+            const auto slash = rest.find('/');
+            if (slash == std::string_view::npos) continue;
+            OptionField o;
+            o.section = std::string(rest.substr(0, slash));
+            o.name = std::string(rest.substr(slash + 1));
+            o.key = o.section + "." + o.name;
+            o.path = std::string(b.path);
+            o.kind = std::string(b.kind);
+            o.env = std::string(b.env);
+            for (const auto& f : v1::kFields) if (f.path == b.path) o.doc = std::string(f.doc);
+            out.push_back(std::move(o));
+        }
         for (const auto& f : v1::kFields) {
             if (f.radiance_option.empty() || f.path.substr(0, kPrefix.size()) != kPrefix) continue;
             const std::string_view rest = f.path.substr(kPrefix.size());

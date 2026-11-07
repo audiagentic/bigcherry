@@ -210,6 +210,30 @@ int main(int, char** argv) {
         CHECK(run({"--manifest", unmeasured, "--plan-memory", "a", "--plan-memory", "b"}) == "ERROR");
     }
 
+    // Amendment 14: a kernel switch that was an environment variable is a manifest field the engine sets in its environment
+    // before it initialises (kEnvBindings); it beats a stale value, and an absent field leaves the variable alone.
+    {
+        nlohmann::json doc = nlohmann::json::parse(slurp(example));
+        doc["spec"]["processes"]["engine"]["kernels"] = {{"moe_native", true}, {"dec11", false}, {"all_reduce_wire4", true}};
+        doc["provenance"]["/spec/processes/engine/kernels"] = {{"origin", "profile"}, {"source", "kernel switches"}, {"class", "policy"},
+                                                                 {"lifecycle", "startup_only"}, {"confidence", "exact"},
+                                                                 {"inputs", nlohmann::json::array()}};
+        std::string digest, why;
+        doc["metadata"].erase("content_digest");
+        CHECK(bc::serving::manifest_content_digest(doc, &digest, &why));
+        doc["metadata"]["content_digest"] = digest;
+        const std::string kernels = write("kernels.json", doc.dump(2));
+        setenv("R3_DEC11", "1", 1);
+        setenv("R3_GEMV", "1", 1);
+        CHECK(run({"--manifest", kernels}) != "ERROR");
+        CHECK(std::string(std::getenv("R3_MOE_NATIVE")) == "1");
+        CHECK(std::string(std::getenv("R3_DEC11")) == "0");                // the manifest wins over a stale value
+        CHECK(std::string(std::getenv("R3_AR_WIRE4")) == "1");
+        CHECK(std::string(std::getenv("R3_GEMV")) == "1");                 // no field: left alone
+        CHECK(!std::getenv("R3_ATTN_NATIVE"));
+        for (const char* v : {"R3_MOE_NATIVE", "R3_DEC11", "R3_AR_WIRE4", "R3_GEMV"}) unsetenv(v);
+    }
+
     // Amendment 11: the engine's other flags are manifest fields. Value-less flags (profile_ops, debug_selection, deterministic,
     // no_prefix_cache) are emitted without a value, the others with theirs, and radiance's own parser takes all of it.
     {

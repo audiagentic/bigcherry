@@ -67,6 +67,7 @@ Status decode(const nlohmann::json& j, const std::string& path, EngineLora* out)
 Status decode(const nlohmann::json& j, const std::string& path, EngineVision* out);
 Status decode(const nlohmann::json& j, const std::string& path, EngineTuning* out);
 Status decode(const nlohmann::json& j, const std::string& path, EngineDiagnostics* out);
+Status decode(const nlohmann::json& j, const std::string& path, EngineKernels* out);
 Status decode(const nlohmann::json& j, const std::string& path, EngineProcess* out);
 Status decode(const nlohmann::json& j, const std::string& path, HelperProcess* out);
 Status decode(const nlohmann::json& j, const std::string& path, Processes* out);
@@ -144,6 +145,7 @@ nlohmann::json encode(const EngineLora& value);
 nlohmann::json encode(const EngineVision& value);
 nlohmann::json encode(const EngineTuning& value);
 nlohmann::json encode(const EngineDiagnostics& value);
+nlohmann::json encode(const EngineKernels& value);
 nlohmann::json encode(const EngineProcess& value);
 nlohmann::json encode(const HelperProcess& value);
 nlohmann::json encode(const Processes& value);

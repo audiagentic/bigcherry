@@ -18,10 +18,10 @@ inline constexpr std::string_view kApiVersion = "bigcherry/v1";
 inline constexpr std::string_view kKind = "ServingManifest";
 inline constexpr int64_t kContractVersion = 1;
 // sha256 of the JCS validation schema without annotations (contract/README.md); the build pins it.
-inline constexpr std::string_view kFingerprint = "sha256:1619a73f86f79fc337f57f6fcc529b9e443c830d2abd05d5ff5a6215ef727f53";
+inline constexpr std::string_view kFingerprint = "sha256:224432c7fa4d6c0ad6766d1084303ebc4a3a4ecd12e64f6a4b9722fadf31dcb3";
 // sha256 of the schema plus the frozen semantics it does not express (classes, lifecycle, Radiance bindings,
 // reader error codes); README.md.
-inline constexpr std::string_view kSemanticFingerprint = "sha256:b0db773cbc5df7e2ff740dcecb939f2223415c1437c7719cc0e8d17fab316023";
+inline constexpr std::string_view kSemanticFingerprint = "sha256:072e8b6c05cc91443fd26a53328d2cfc1353bd1b74cdd979832a0575d66a21ef";
 // spec §11 amendment 8: the deepest container nesting a valid document can have (the root object is 1),
 // derived from the closed schema by the generator. The strict reader refuses anything deeper.
 inline constexpr size_t kMaxDepth = 9;
@@ -979,6 +979,28 @@ struct EngineDiagnostics {
     std::optional<OptDebugPlacement> debug_placement;
 };
 
+// /spec/processes/engine/kernels: Engine-process kernel switches that were environment variables (amendment 14). Every
+// member is optional; an absent member leaves the kernel's own default. The engine sets the matching variable from the
+// member at start (rad0009).
+struct EngineKernels {
+    // Native gfx11 prefill attention (`R3_ATTN_NATIVE`).
+    std::optional<bool> attn_native;
+    // Native w4nl64 MoE inner loop in the engine process (`R3_MOE_NATIVE`; an unset engine reads off).
+    std::optional<bool> moe_native;
+    // Grouped MoE GEMM widens E4M3 operands to f16 in the engine process (`R3_MOE_FP16`).
+    std::optional<bool> moe_fp16;
+    // Grouped MoE GEMM stages its activation tile as half in the engine process (`R3_MOE_AHALF`).
+    std::optional<bool> moe_ahalf;
+    // gfx12 fp8a8 MoE decode GEMV on the packed-f16 form (`BC_GFX12_MOE_GEMV`).
+    std::optional<bool> gfx12_moe_gemv;
+    // 4-bit cross-card all-reduce wire at M >= 512 (`R3_AR_WIRE4`; experimental, costs quality).
+    std::optional<bool> all_reduce_wire4;
+    // gfx11 MXFP4 decode GEMV form (`R3_DEC11`; experimental).
+    std::optional<bool> dec11;
+    // Decode GEMV selection (`R3_GEMV`).
+    std::optional<bool> gemv;
+};
+
 // /spec/processes/engine: Engine process settings.
 struct EngineProcess {
     // Engine GPUs.
@@ -1012,6 +1034,10 @@ struct EngineProcess {
     // Debug switches that change what the engine does (amendment 13). Every member is optional and binds to one engine
     // flag; an absent member leaves the engine's own default.
     std::optional<EngineDiagnostics> diagnostics;
+    // Engine-process kernel switches that were environment variables (amendment 14). Every member is optional; an
+    // absent member leaves the kernel's own default. The engine sets the matching variable from the member at start
+    // (rad0009).
+    std::optional<EngineKernels> kernels;
 };
 
 // /spec/processes/helpers/[]: One helper process.
@@ -1283,7 +1309,7 @@ struct FieldInfo {
     std::string_view default_source;   // where the default comes from, or empty
     std::string_view ref_def;          // kind "ref": the shared type it uses, else empty
 };
-inline constexpr std::array<FieldInfo, 353> kFields = {{
+inline constexpr std::array<FieldInfo, 362> kFields = {{
     {"$defs/uint", "integer", "", true, false,
      "", "", false,
      "Unsigned integer within I-JSON's safe range.", "", "", ""},
@@ -2118,6 +2144,33 @@ inline constexpr std::array<FieldInfo, 353> kFields = {{
     {"/spec/processes/engine/diagnostics/debug_placement", "enum", "policy", false, false,
      "--debug-placement", "Config.debug_placement", true,
      "Engine flag `--debug-placement` (amendment 13). Present means the flag is given.", "", "", ""},
+    {"/spec/processes/engine/kernels", "object", "policy", false, false,
+     "", "", false,
+     "Engine-process kernel switches that were environment variables (amendment 14). Every member is optional; an absent member leaves the kernel's own default. The engine sets the matching variable from the member at start (rad0009).", "", "", ""},
+    {"/spec/processes/engine/kernels/attn_native", "boolean", "policy", false, false,
+     "", "", false,
+     "Native gfx11 prefill attention (`R3_ATTN_NATIVE`).", "", "", ""},
+    {"/spec/processes/engine/kernels/moe_native", "boolean", "policy", false, false,
+     "", "", false,
+     "Native w4nl64 MoE inner loop in the engine process (`R3_MOE_NATIVE`; an unset engine reads off).", "", "", ""},
+    {"/spec/processes/engine/kernels/moe_fp16", "boolean", "policy", false, false,
+     "", "", false,
+     "Grouped MoE GEMM widens E4M3 operands to f16 in the engine process (`R3_MOE_FP16`).", "", "", ""},
+    {"/spec/processes/engine/kernels/moe_ahalf", "boolean", "policy", false, false,
+     "", "", false,
+     "Grouped MoE GEMM stages its activation tile as half in the engine process (`R3_MOE_AHALF`).", "", "", ""},
+    {"/spec/processes/engine/kernels/gfx12_moe_gemv", "boolean", "policy", false, false,
+     "", "", false,
+     "gfx12 fp8a8 MoE decode GEMV on the packed-f16 form (`BC_GFX12_MOE_GEMV`).", "", "", ""},
+    {"/spec/processes/engine/kernels/all_reduce_wire4", "boolean", "policy", false, false,
+     "", "", false,
+     "4-bit cross-card all-reduce wire at M >= 512 (`R3_AR_WIRE4`; experimental, costs quality).", "", "", ""},
+    {"/spec/processes/engine/kernels/dec11", "boolean", "policy", false, false,
+     "", "", false,
+     "gfx11 MXFP4 decode GEMV form (`R3_DEC11`; experimental).", "", "", ""},
+    {"/spec/processes/engine/kernels/gemv", "boolean", "policy", false, false,
+     "", "", false,
+     "Decode GEMV selection (`R3_GEMV`).", "", "", ""},
     {"/spec/processes/helper_common", "ref", "policy", false, false,
      "", "", false,
      "Settings shared by every helper; per-role and lab patches apply on top (spec §2.2). Present exactly when `processes.helpers` is not empty (amendment 12).", "", "", "helperCommon"},
@@ -2344,9 +2397,24 @@ inline constexpr std::array<FieldInfo, 353> kFields = {{
      "", "", false,
      "JSON Pointers of the values this one was derived from.", "", "", ""},
 }};
+struct EnvBinding {
+    std::string_view path;
+    std::string_view kind;   // "boolean" (1 or 0) or "integer"
+    std::string_view env;
+};
+inline constexpr std::array<EnvBinding, 8> kEnvBindings = {{
+    {"/spec/processes/engine/kernels/attn_native", "boolean", "R3_ATTN_NATIVE"},
+    {"/spec/processes/engine/kernels/moe_native", "boolean", "R3_MOE_NATIVE"},
+    {"/spec/processes/engine/kernels/moe_fp16", "boolean", "R3_MOE_FP16"},
+    {"/spec/processes/engine/kernels/moe_ahalf", "boolean", "R3_MOE_AHALF"},
+    {"/spec/processes/engine/kernels/gfx12_moe_gemv", "boolean", "BC_GFX12_MOE_GEMV"},
+    {"/spec/processes/engine/kernels/all_reduce_wire4", "boolean", "R3_AR_WIRE4"},
+    {"/spec/processes/engine/kernels/dec11", "boolean", "R3_DEC11"},
+    {"/spec/processes/engine/kernels/gemv", "boolean", "R3_GEMV"},
+}};
 
 // [[class_default]] rules: the provenance class of everything at or under a document position.
-inline constexpr std::array<std::array<std::string_view, 2>, 29> kClassDefaults = {{
+inline constexpr std::array<std::array<std::string_view, 2>, 30> kClassDefaults = {{
     {"/apiVersion", "envelope"},
     {"/kind", "envelope"},
     {"/metadata", "envelope"},
@@ -2369,6 +2437,7 @@ inline constexpr std::array<std::array<std::string_view, 2>, 29> kClassDefaults 
     {"/spec/processes/engine/vision", "policy"},
     {"/spec/processes/engine/tuning", "policy"},
     {"/spec/processes/engine/diagnostics", "policy"},
+    {"/spec/processes/engine/kernels", "policy"},
     {"/spec/processes/helper_common", "policy"},
     {"/spec/processes/helpers", "derived"},
     {"/spec/processes/helpers/[]/settings", "policy"},

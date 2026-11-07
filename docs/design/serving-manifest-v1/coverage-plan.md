@@ -43,7 +43,7 @@ Goal (owner, 2026-11-07): the manifest expresses every configuration the engine 
 
 ## Plan
 
-**Status 2026-11-07: slice 1 is done** (80 option fields, contract amendment 13, spec §11); rad0009 needed no change because it turns every registry-bound field into its flag. Slice 2 (environment settings) and slice 3 remain.
+**Status 2026-11-07: slice 1 is done** (80 option fields, contract amendment 13, spec §11); rad0009 needed no change because it turns every registry-bound field into its flag. Slice 2 (environment settings) has started: amendment 14 adds `spec.processes.engine.kernels` and the `env_setting` binding the engine applies at start; further groups follow. Slice 3 remains.
 
 This reopens the v1 contract (an additive amendment 13, as amendments 10-12 were: new optional fields, regenerated schema, types, codec and fingerprints). Slices, each its own PR:
 

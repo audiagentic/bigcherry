@@ -111,6 +111,10 @@ path = "/spec/processes/engine/diagnostics"
 class = "policy"
 
 [[class_default]]
+path = "/spec/processes/engine/kernels"
+class = "policy"
+
+[[class_default]]
 path = "/spec/processes/helper_common"
 class = "policy"
 
@@ -2218,6 +2222,69 @@ kind = "enum"
 values = ["on"]
 cpp_type = "OptDebugPlacement"
 doc = "Engine flag `--debug-placement` (amendment 13). Present means the flag is given."
+
+[[field]]
+path = "/spec/processes/engine/kernels"
+optional = true
+kind = "object"
+cpp = "EngineKernels"
+doc = "Engine-process kernel switches that were environment variables (amendment 14). Every member is optional; an absent member leaves the kernel's own default. The engine sets the matching variable from the member at start (rad0009)."
+
+[[field]]
+path = "/spec/processes/engine/kernels/attn_native"
+optional = true
+kind = "boolean"
+env_setting = "R3_ATTN_NATIVE"
+doc = "Native gfx11 prefill attention (`R3_ATTN_NATIVE`)."
+
+[[field]]
+path = "/spec/processes/engine/kernels/moe_native"
+optional = true
+kind = "boolean"
+env_setting = "R3_MOE_NATIVE"
+doc = "Native w4nl64 MoE inner loop in the engine process (`R3_MOE_NATIVE`; an unset engine reads off)."
+
+[[field]]
+path = "/spec/processes/engine/kernels/moe_fp16"
+optional = true
+kind = "boolean"
+env_setting = "R3_MOE_FP16"
+doc = "Grouped MoE GEMM widens E4M3 operands to f16 in the engine process (`R3_MOE_FP16`)."
+
+[[field]]
+path = "/spec/processes/engine/kernels/moe_ahalf"
+optional = true
+kind = "boolean"
+env_setting = "R3_MOE_AHALF"
+doc = "Grouped MoE GEMM stages its activation tile as half in the engine process (`R3_MOE_AHALF`)."
+
+[[field]]
+path = "/spec/processes/engine/kernels/gfx12_moe_gemv"
+optional = true
+kind = "boolean"
+env_setting = "BC_GFX12_MOE_GEMV"
+doc = "gfx12 fp8a8 MoE decode GEMV on the packed-f16 form (`BC_GFX12_MOE_GEMV`)."
+
+[[field]]
+path = "/spec/processes/engine/kernels/all_reduce_wire4"
+optional = true
+kind = "boolean"
+env_setting = "R3_AR_WIRE4"
+doc = "4-bit cross-card all-reduce wire at M >= 512 (`R3_AR_WIRE4`; experimental, costs quality)."
+
+[[field]]
+path = "/spec/processes/engine/kernels/dec11"
+optional = true
+kind = "boolean"
+env_setting = "R3_DEC11"
+doc = "gfx11 MXFP4 decode GEMV form (`R3_DEC11`; experimental)."
+
+[[field]]
+path = "/spec/processes/engine/kernels/gemv"
+optional = true
+kind = "boolean"
+env_setting = "R3_GEMV"
+doc = "Decode GEMV selection (`R3_GEMV`)."
 
 [[field]]
 path = "/spec/processes/helper_common"
