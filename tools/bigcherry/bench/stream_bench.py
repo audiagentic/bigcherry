@@ -77,6 +77,36 @@ def make_prompt(stream: int, prompt_tokens: int, seed: int, shared_prefix: bool)
     return "Continue this list of words with a short story.\n" + " ".join(words)
 
 
+def _probe_prompt_tokens(url: str, model: str, words: int, timeout: float) -> int:
+    """The server's own count of the prompt tokens in `words` words of benchmark prompt (one non-streaming request)."""
+    body = json.dumps({"model": model, "max_tokens": 1, "temperature": 0, "stream": False,
+                       "messages": [{"role": "user", "content": make_prompt(0, words, 0, True)}]}).encode()
+    req = urllib.request.Request(url.rstrip("/") + "/v1/chat/completions", data=body,
+                                 headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            usage = json.loads(resp.read()).get("usage") or {}
+    except (OSError, ValueError) as exc:
+        raise StreamBenchError(f"prompt-size probe failed: {exc}") from exc
+    tokens = int(usage.get("prompt_tokens") or 0)
+    if tokens <= 0:
+        raise StreamBenchError("prompt-size probe: the server reported no prompt_tokens (use --no-calibrate)")
+    return tokens
+
+
+def words_for_prompt_tokens(url: str, model: str, target_tokens: int, timeout: float = 600.0) -> int:
+    """How many words make a prompt of `target_tokens` tokens on THIS server's tokenizer. Words are not tokens (about 1.66
+    tokens a word on Flash-Next), so two probes of different length give the tokens-per-word slope and the fixed
+    template overhead; the target is then solved for."""
+    lo, hi = 200, 1000
+    t_lo, t_hi = _probe_prompt_tokens(url, model, lo, timeout), _probe_prompt_tokens(url, model, hi, timeout)
+    slope = (t_hi - t_lo) / (hi - lo)
+    if slope <= 0:
+        raise StreamBenchError("prompt-size probe: token count did not grow with the prompt")
+    overhead = t_lo - slope * lo
+    return max(1, round((target_tokens - overhead) / slope))
+
+
 def prompt_digests(streams: int, prompt_tokens: int, seed: int, shared_prefix: bool) -> list[str]:
     """SHA-256 of each stream's prompt, in stream order (a run of n streams uses the first n)."""
     return [hashlib.sha256(make_prompt(i, prompt_tokens, seed, shared_prefix).encode("utf-8")).hexdigest()
@@ -282,9 +312,14 @@ def run_round(url: str, model: str, streams: int, prompt_tokens: int, max_tokens
 
 def run(url: str, model: str, stream_counts: list, prompt_tokens: int, max_tokens: int, reps: int,
         temperature: float = 0.0, timeout: float = 600.0, seed: int = 1, shared_prefix: bool = False,
-        allow_estimate: bool = False) -> dict:
+        allow_estimate: bool = False, calibrate: bool = False) -> dict:
+    """`prompt_tokens` is a number of random words unless `calibrate`: then it is the target token count, measured against
+    the server's tokenizer (the record keeps both the target and the words used)."""
     if not stream_counts or any(n < 1 for n in stream_counts) or reps < 1:
         raise StreamBenchError("stream counts and reps must be at least 1")
+    target_tokens = prompt_tokens
+    if calibrate:
+        prompt_tokens = words_for_prompt_tokens(url, model, target_tokens, timeout)
     rounds = []
     for n in stream_counts:
         for rep in range(reps):
@@ -307,6 +342,7 @@ def run(url: str, model: str, stream_counts: list, prompt_tokens: int, max_token
                     summary[str(n)][key + "_median"] = statistics.median(vals)
     return {"schema": SCHEMA,
             "config": {"url": url, "model": model, "streams": stream_counts, "prompt_tokens": prompt_tokens,
+                       "prompt_words": prompt_tokens, "prompt_tokens_target": target_tokens if calibrate else None,
                        # the exact inputs, so a later run can prove it used the same ones
                        "prompt_sha256": prompt_digests(max(stream_counts), prompt_tokens, seed, shared_prefix),
                        "max_tokens": max_tokens, "reps": reps, "temperature": temperature, "seed": seed,
@@ -344,7 +380,10 @@ def build_parser(add_help: bool = True) -> argparse.ArgumentParser:
     ap.add_argument("--url", required=True, help="server base URL, e.g. http://127.0.0.1:8080")
     ap.add_argument("--model", default="default")
     ap.add_argument("--streams", default="1,2,4,8", help="comma-separated concurrent stream counts")
-    ap.add_argument("--prompt-tokens", type=int, default=512)
+    ap.add_argument("--prompt-tokens", type=int, default=512,
+                    help="target prompt size in tokens, measured against the server's tokenizer (see --no-calibrate)")
+    ap.add_argument("--no-calibrate", action="store_true",
+                    help="treat --prompt-tokens as a count of words (the old behaviour: about 1.66 tokens a word on Flash-Next)")
     ap.add_argument("--max-tokens", type=int, default=256)
     ap.add_argument("--reps", type=int, default=3)
     ap.add_argument("--temperature", type=float, default=0.0)
@@ -361,7 +400,7 @@ def run_from_namespace(args) -> int:
     try:
         counts = [int(x) for x in str(args.streams).split(",") if x.strip()]
         record = run(args.url, args.model, counts, args.prompt_tokens, args.max_tokens, args.reps, args.temperature,
-                     args.timeout, args.seed, args.shared_prefix, args.allow_estimate)
+                     args.timeout, args.seed, args.shared_prefix, args.allow_estimate, not args.no_calibrate)
     except (StreamBenchError, ValueError) as exc:
         print(f"stream-bench: ERROR: {exc}", file=sys.stderr)
         return 2

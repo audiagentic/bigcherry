@@ -65,6 +65,14 @@ class _Handler(BaseHTTPRequestHandler):
             self.send_response(500)
             self.end_headers()
             return
+        if body.get("stream") is False:   # the prompt-size probe: a tokenizer of 2 tokens a word plus 5 of template
+            out = json.dumps({"usage": {"prompt_tokens": 5 + 2 * len(body["messages"][0]["content"].split("\n", 1)[1].split()),
+                                        "completion_tokens": 1}}).encode()
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(out)))
+            self.end_headers()
+            self.wfile.write(out)
+            return
         n = int(body["max_tokens"])
         with cls.lock:
             cls.running += 1
@@ -151,6 +159,11 @@ class StreamBench(unittest.TestCase):
         shared = sb.prompt_digests(2, 8, 3, True)
         self.assertEqual(shared[0], shared[1])                           # --shared-prefix: one prompt
 
+    def test_prompt_tokens_are_calibrated_to_the_servers_tokenizer(self):
+        self.assertEqual(sb.words_for_prompt_tokens(self.url, "m", 1005), 500)   # 5 + 2 * 500
+        record = sb.run(self.url, "m", [1], 205, 2, 1, calibrate=True)
+        self.assertEqual((record["config"]["prompt_tokens_target"], record["config"]["prompt_words"]), (205, 100))
+
     def test_several_tokens_in_one_event_are_counted_from_usage_not_events(self):
         _Handler.tokens_per_event = 4
         rec = self.round(1, max_tokens=12)
@@ -224,7 +237,7 @@ class StreamBench(unittest.TestCase):
             out.unlink(missing_ok=True)
         _Handler.fail = True
         self.assertEqual(sb.main(["--url", self.url, "--streams", "1", "--reps", "1", "--max-tokens", "2",
-                                  "--prompt-tokens", "4", "--output", str(out)]), 1)
+                                  "--prompt-tokens", "4", "--no-calibrate", "--output", str(out)]), 1)
         out.unlink(missing_ok=True)
         self.assertEqual(sb.main(["--url", self.url, "--streams", "0"]), 2)
 
