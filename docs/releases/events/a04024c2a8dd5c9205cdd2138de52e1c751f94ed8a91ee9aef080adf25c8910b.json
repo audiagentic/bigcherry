@@ -1,0 +1,14 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261107_172614_a-checked-in-flash-next-parity_7516",
+  "files": [
+    "tools/lab/radiance/flashnext-parity.sh",
+    "tools/lab/radiance/flashnext_parity.py",
+    "tools/tests/lab/test_flashnext_parity.py",
+    ".claude/skills/bump-radiance/SKILL.md"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Flash-Next bump parity harness: flashnext-parity.sh measure launches production flashnext-4gpu (policy on via the calibration record, derived warmup), measures cold 27k-token TTFT, 44k doc prefill, decode ms/step at 1 and 6 streams, 8-session TTFT/ms-step, and ~256k-token prefill and ms/step, N launches -> parity.json; baseline derives per-metric tolerances from launch-to-launch and within-launch spread (refuses one launch); compare gates one-sided regressions, never acceptance. bump-radiance step 4 uses it before and after every bump.",
+  "timestamp-utc": "2026-11-07T17:26:14.031287Z",
+  "user-summary-candidate": "A checked-in Flash-Next parity harness locks in performance before a Radiance bump and checks the bump against it."
+}
