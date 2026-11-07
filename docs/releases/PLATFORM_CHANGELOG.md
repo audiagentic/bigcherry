@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.18.1](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.18.0...bc-platform-1.18.1) (2026-11-07)
+
+
+### Fixes
+
+* **rhp16:** arm calibration deadlines only on measurable evidence ([#695](https://github.com/audiagentic/bigcherry/issues/695)) ([8f37034](https://github.com/audiagentic/bigcherry/commit/8f37034d634300ecf528db4b8c74937986f799a1))
+
 ## [1.18.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.17.0...bc-platform-1.18.0) (2026-11-07)
 
 
