@@ -1,0 +1,19 @@
+# rad0013_mtp_pass_replay
+
+## Summary
+
+Restores recorded-pass replay for **fixed-shape decode MTP draft and speculative-verify passes** in the pinned Radiance v1.17.0 Qwen4-Exp architecture. It replaces the blanket draft/verify refusal with a guarded geometry fingerprint in `arch/qwen4exp_fp8/qwen4exp_fp8.cpp`. Does not change the core tape runtime, kernel selection or any GPU code.
+
+## Outcome
+
+Validated on the promotion evidence below.
+
+## Detail
+
+### Promotion record
+
+Model: Qwen3.8-Flash-Next (qwen4exp_fp8, MTP depth 3; qwen4exp is the only architecture whose pass_key the patch changes)
+Mechanics: tools/tests/patch/test_radiance_mtp_pass_replay.py: applies to the real v1.17.0 source, idempotent, refuses anchor drift (the whole seven-line upstream guard is the anchor), compiles the patched callback and checks keys for synthetic batches (fixed-geometry decode draft/verify keyed and distinct per geometry input; mixed batches, non-decode phases and wide queries live); patch-lint clean.
+Activation: the patched engine logs 'recorded pass: draft pass' -1, 0, 2 and 3 (as v1.16.0 did); the unpatched v1.17.0 engine records only draft pass 0. The launcher start guard (RADIANCE_EXIT=95) refuses a start with MTP depth above 1 and no recorded draft pass beyond 0; on the four hardware engine logs it refused both main arms and passed both patched arms.
+Identity: generated text (accept-bench text_sha256) and accepted token counts are identical between main and main+rad0013 on all five prompts: replay reproduces the live issue bit for bit. KLD scoring evaluates corpus logits and never runs speculative draft/verify passes, so the patch cannot change it.
+A/B: four-GPU flashnext-4gpu (R9700 engine, 2x 7900 XTX + 6900 XT helpers), accept-bench five prompts at temperature 0, ABAB main vs main+rad0013, same layout, no live policy (run rad0013-validate, 2026-11-07): ms/step main 26.15/26.63, 26.05/26.04, 25.36/25.49, 25.78/25.78, 25.36/25.36 vs patched 25.68/25.66, 25.51/25.51, 25.00/25.00, 28.92(one-off)/25.20, 24.88/24.87 for hello/story/code/list/random: -1.7% to -2.7% per decode step on every prompt, recovering the v1.16.0->v1.17.0 regression. Decode only; prefill is not on the changed path (the patch keys pure-decode passes only).
