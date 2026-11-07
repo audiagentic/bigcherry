@@ -43,6 +43,13 @@ struct Schedule {
     void advance() {++issued;}
 };
 using Source=std::function<bool(uint32_t,uint32_t)>;
+// The engine is serving once it has published a request ticket. Until then it
+// may still be initialising its mailbox kernels, which refuse to start while a
+// placement transaction is in flight ("called in the wrong phase"), and a KL
+// run would see every swap land before its first scored position.
+inline bool engine_serving(const void* map) {
+    return map && load(&static_cast<const Header*>(map)->publish_sequence)!=0;
+}
 inline constexpr std::array<uint32_t,2> kNoPrevious{{UINT32_MAX,UINT32_MAX}};
 struct Resolved {
     std::array<Move,2> changes{};
@@ -198,7 +205,7 @@ public:
     uint64_t committed() const {return committed_;}
     uint64_t aborted() const {return aborted_;}
     bool submit(void* map,Controller& c,uint64_t now) {
-        if(inflight_||!pending()||!c.can_propose()) return true;
+        if(inflight_||!pending()||!c.can_propose()||!engine_serving(map)) return true;
         FaultCode fault=FaultCode::NONE;
         Resolved chosen;
         const Step step=schedule_.next();
