@@ -1477,7 +1477,7 @@ void engine_only_layout(Fixture& t) {
         assert(e.at("kernels") == Json({{"moe_native", true}, {"dec11", false}}));   // amendment 14: environment settings are keys too
         assert(!e.contains("lora") && !e.contains("chat"));   // a section appears only with its members
         assert(bc::serving::v1::read_manifest(with_options.text, "options", bc::serving::v1::PlanUse::measuring).ok());
-        assert(bc::serving::engine_option_fields().size() == 88 /* 80 flags + 8 environment settings */);
+        assert(bc::serving::engine_option_fields().size() == 89 /* 80 flags + 9 environment settings */);
         Options bad = opts;
         bad.sets = {"layout.name=\"qwen27b-2xtx\"", "sampling.no_such_option=1"};
         fail(bad, t.facts, "no_such_option");

@@ -53,6 +53,7 @@ summary = "POSIX shm segment mapped by libr3 GPU mailbox ops and r3_moe_worker"
 default = "0"
 status = "diagnostic"
 summary = "force the slice-2a fp32 host reference path instead of gfx1201 compute"
+manifest = "/spec/processes/helper_common/cpu/reference"
 
 [setting.R3_MOE_WORKER_MIB]
 default = "28672"
@@ -254,6 +255,7 @@ status = "validated"
 summary = "RAD06: the engine's activation staging for a step of at most 16 rows (decode) is done by the publish kernel instead of a separate staging kernel in front of it: a launch and its gap off the path before every helper request; same data, same fence; read per launch in the engine process; 0 keeps the separate kernel"
 activation = "r3_moe: R3_MOE_WORKER_FUSESTAGE on"
 evidence = ["docs/evidence/RAD06/R3_MOE_WORKER_FUSESTAGE.run.json"]
+manifest = "/spec/processes/engine/kernels/fuse_stage"
 
 [setting.R3_MOE_WORKER_TRACE]
 default = ""
@@ -261,12 +263,6 @@ status = "diagnostic"
 summary = "RAD06: every Nth finished request a helper lane prints its critical-path stamps as a TRACE line on stderr: the engine's local work between publish and wait (local_us), the engine's wait for this helper (wait_us) and the helper GPU's own request time (helper_gpu_us), each within one device's wall clock; the stamps are nine stores to the mapped request slot (five at publish, two in the engine's wait, two on the helper) and are always written, so this only enables the printing (compare an arm with R3_MOE_WORKER_TRACE=0 against the build without stamps for their cost); read with tools/lab/radiance/heat-placement/trace_report.py"
 activation = "TRACE,lane"
 manifest = "/spec/experiment/diagnostics/lanes/trace_level"
-
-[setting.R3_MOE_WORKER_BURST_TRACE]
-default = ""
-status = "diagnostic"
-summary = "RAD20: the engine-side plugin (libr3moe) logs each inference-burst transition the engine reports through rad0002's burst callback (begin when the engine loop gets a step after being idle, end when it finds none) with a monotonic timestamp; read by tools/lab/radiance/burst-trace.sh, which checks begin/end pairing across single, concurrent, back-to-back and prefill requests"
-activation = "libr3moe: burst begin"
 
 [setting.R3_MOE_WORKER_POWER_SAVE]
 default = "1"
@@ -288,12 +284,6 @@ status = "diagnostic"
 summary = "RAD06 replay-sweep harness only: compare each variant bitwise against the first and print a sum_abs checksum instead of running the CPU reference (r3_moe_worker --replay-sweep); never set while serving"
 activation = "R3_MOE_SWEEP_FAST"
 manifest = "/spec/experiment/diagnostics/kernels/sweep_fast"
-
-[setting.R3_MOE_WORKER_LAYERS]
-default = ""
-status = "diagnostic"
-summary = "RAD13 bisection aid: MIN-MAX, the engine hands only layers in the range to the workers and runs every other layer itself (its map is published all-local); never set in production"
-activation = "libr3: R3_MOE_WORKER_LAYERS on"
 
 [setting.R3_MOE_WORKER_CAPTURE]
 default = ""
@@ -345,12 +335,6 @@ status = "experimental"
 summary = "RAD12: up to four ascending pre-queued small-lane sizes, e.g. 4,8,16,24; a step takes the first lane that fits its rows, else the large lane. Replaces the single R3_MOE_WORKER_SMALL_ROWS size when set. At three and four concurrent streams (12 and 16 rows with MTP) the 8-row lane sends the step to the large lane; a lane padded to 24 costs a 4-row step about 25%; the classes avoid both"
 activation = "r3_moe_worker: R3_MOE_WORKER_SMALL_LANES on"
 manifest = "/spec/processes/helper_common/lanes/small_lanes"
-
-[setting.R3_MOE_WORKER_POISON]
-default = "0"
-status = "diagnostic"
-summary = "1 (any non-zero): every helper result value becomes 1e3 (proves the mailbox merge consumes helper rows); zero: results become 0 (same output as dropping remote routes)"
-activation = "R3_MOE_WORKER poison"
 
 [setting.R3_MOE_WORKER_SHADOW]
 default = "0"

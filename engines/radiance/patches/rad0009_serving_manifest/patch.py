@@ -250,6 +250,13 @@ bool bc_serving_engine_argv(int* argc, char*** argv) {
             if (tr.contains("skip_owned") && tr.at("skip_owned").is_boolean())
                 setenv("R3_MOE_WORKER_SKIP_OWNED", tr.at("skip_owned").get<bool>() ? "1" : "0", 1);
         }
+        /* The engine and the helpers must agree on the combine (R3_MOE_WORKER_COMBINE): the helpers read it from the manifest's
+         * helper_common, the engine's hook from its environment, so the engine's comes from the same field. */
+        if (doc.at("spec").contains("processes") && doc.at("spec").at("processes").contains("helper_common")) {
+            const nlohmann::json& hc = doc.at("spec").at("processes").at("helper_common");
+            if (hc.contains("combine") && hc.at("combine").contains("enabled") && hc.at("combine").at("enabled").is_boolean())
+                setenv("R3_MOE_WORKER_COMBINE", hc.at("combine").at("enabled").get<bool>() ? "1" : "0", 1);
+        }
         if (h.contains("telemetry")) {
             const nlohmann::json& te = h.at("telemetry");
             if (te.contains("histogram_file") && te.at("histogram_file").is_string())
