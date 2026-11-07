@@ -14,6 +14,7 @@ patches = [
   "rad0002_moe_remote_handoff",
   "rad0009_serving_manifest",
   "rad0011_plan_memory",
+  "rad0013_mtp_pass_replay",
 ]
 
 # Host build compatibility for the pinned engine (rad0005: MP4 writer against FFmpeg 6). Enablers with no runtime path of
@@ -49,7 +50,7 @@ required-state = "untested"
 # verify pass, so each speculation round issues them live (~1.7% decode step). Untested until the decode-step A/B, output identity
 # and KLD on hardware, then moved to serving-core.
 [patch-set.mtp-pass-replay]
-patches = ["rad0013_mtp_pass_replay"]
+patches = []
 required-state = "untested"
 
 [patch-set.helper-config]

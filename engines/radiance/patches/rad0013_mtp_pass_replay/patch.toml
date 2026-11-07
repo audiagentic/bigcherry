@@ -1,7 +1,7 @@
 schema = 1
 id = "rad0013_mtp_pass_replay"
 order = 13
-state = "untested"
+state = "validated"
 kind = "enhancement"
 origin = "local"
 backend = "agnostic"
