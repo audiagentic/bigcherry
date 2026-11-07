@@ -62,7 +62,7 @@
 # start can use --calibrate. A missing measured quantity stays absent with a
 # reason and will NOT activate an uncalibrated production policy.
 # --experiment FILE object, e.g. {"engine": {"profile_ops": "on", "kv_resident": 65536}}).
-# --ngram-device INDEX: an inventory card (not the engine, not a helper) that holds as much of the n-gram table as fits and gathers its rows (libr3ngram, R3_NGRAM_DEV);
+# --ngram-device INDEX: an inventory card (not the engine, not a helper) that holds as much of the n-gram table as fits and gathers its rows (radiance's own --ngram-device; the old libr3ngram plugin and its R3_NGRAM_DEV are gone);
 # the rows past its VRAM stay in a host copy. The card then sits in the engine process beside the engine card.
 # --max-model-len TOKENS: the longest context a sequence may have (default 262144, the trained context).
 # --rope-scaling S: default none (contexts within the trained 262144); yarn:4 for the 1M stretch.
