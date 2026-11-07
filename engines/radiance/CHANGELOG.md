@@ -1,5 +1,12 @@
 # Changelog
 
+## [1170.10.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.9.0...bc-radiance-1170.10.0) (2026-11-07)
+
+
+### New and changed
+
+* **serving:** kernel switches are manifest fields the engine applies at start (contract amendment 14) ([#728](https://github.com/audiagentic/bigcherry/issues/728)) ([a77426d](https://github.com/audiagentic/bigcherry/commit/a77426dc1efd078a3db97c8bd990af61e8407301))
+
 ## [1170.9.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.8.0...bc-radiance-1170.9.0) (2026-11-07)
 
 
