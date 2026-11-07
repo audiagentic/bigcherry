@@ -1,6 +1,7 @@
 #include "serving.h"
 #include "calibration.h"
 #include "sha256.h"
+#include "generated/serving_types.h"
 #include "third_party/toml.hpp"
 
 #include <algorithm>
@@ -187,6 +188,12 @@ const std::vector<Field>& schema_fields() {
         add_optional("engine.tp_wire", "string", "radiance --tp-wire (cross-rank all-reduce payload)", 0, 0, {"exact", "wht6"});
         add_optional("engine.no_prefix_cache", "string", "radiance --no-prefix-cache: the value \"on\" disables prefix caching", 0, 0, {"on"});
         add_optional("engine.gpu_headroom_mib", "integer", "radiance --gpu-headroom-mib (VRAM left unclaimed on every engine card)", 0, UINT32_MAX);
+        // The engine options the registry binds beyond those (amendment 13). The engine checks ranges and value text itself.
+        for (const auto& o : engine_option_fields()) {
+            if (o.is_switch) f.push_back({o.key, "string", "radiance flag (present means given)", "policy", "startup-only", Json(), 0, 0, {"on"}, false, true});
+            else if (o.kind == "ref") f.push_back({o.key, "integer", "radiance flag", "policy", "startup-only", Json(), 0, UINT32_MAX, {}, false, true});
+            else f.push_back({o.key, "string", "radiance flag (value text as the flag takes it)", "policy", "startup-only", Json(), 0, 0, {}, false, true});
+        }
         return f;
     }();
     return all;
@@ -724,6 +731,31 @@ void check_caps(Json& values, const Json& baseline, const Json& caps, const Json
 }
 
 } // namespace
+
+const std::vector<OptionField>& engine_option_fields() {
+    static const std::vector<OptionField> all = [] {
+        static constexpr std::string_view kPrefix = "/spec/processes/engine/";
+        static const std::set<std::string> kSections = {"sampling", "limits", "chat", "lora", "vision", "tuning", "diagnostics"};
+        std::vector<OptionField> out;
+        for (const auto& f : v1::kFields) {
+            if (f.radiance_option.empty() || f.path.substr(0, kPrefix.size()) != kPrefix) continue;
+            const std::string_view rest = f.path.substr(kPrefix.size());
+            const auto slash = rest.find('/');
+            if (slash == std::string_view::npos || !kSections.count(std::string(rest.substr(0, slash)))) continue;
+            OptionField o;
+            o.section = std::string(rest.substr(0, slash));
+            o.name = std::string(rest.substr(slash + 1));
+            o.key = o.section + "." + o.name;
+            o.path = std::string(f.path);
+            o.kind = std::string(f.kind);
+            o.doc = std::string(f.doc);
+            o.is_switch = f.radiance_switch;
+            out.push_back(std::move(o));
+        }
+        return out;
+    }();
+    return all;
+}
 
 
 Json detect(const fs::path& root) {

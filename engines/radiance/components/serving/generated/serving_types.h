@@ -18,10 +18,10 @@ inline constexpr std::string_view kApiVersion = "bigcherry/v1";
 inline constexpr std::string_view kKind = "ServingManifest";
 inline constexpr int64_t kContractVersion = 1;
 // sha256 of the JCS validation schema without annotations (contract/README.md); the build pins it.
-inline constexpr std::string_view kFingerprint = "sha256:17adafd1c1bac5f71fdbdcffe473ec94e93073704671f67a963ce2dbb0cc25f4";
+inline constexpr std::string_view kFingerprint = "sha256:1619a73f86f79fc337f57f6fcc529b9e443c830d2abd05d5ff5a6215ef727f53";
 // sha256 of the schema plus the frozen semantics it does not express (classes, lifecycle, Radiance bindings,
 // reader error codes); README.md.
-inline constexpr std::string_view kSemanticFingerprint = "sha256:4273c97d6fc2bd469b065024dfcf3a29e486ac2fff5c9c2fcc1094f26b583253";
+inline constexpr std::string_view kSemanticFingerprint = "sha256:b0db773cbc5df7e2ff740dcecb939f2223415c1437c7719cc0e8d17fab316023";
 // spec §11 amendment 8: the deepest container nesting a valid document can have (the root object is 1),
 // derived from the closed schema by the generator. The strict reader refuses anything deeper.
 inline constexpr size_t kMaxDepth = 9;
@@ -105,6 +105,27 @@ inline constexpr std::array<std::string_view, 2> kTpWireNames = {"exact", "wht6"
 // size (`resources.host.kv_mib`, `--prefix-cache-mib`): that tier stays configurable with caching on.
 enum class NoPrefixCache : uint8_t { kOn };
 inline constexpr std::array<std::string_view, 1> kNoPrefixCacheNames = {"on"};
+
+// OptNoCors: Engine flag `--no-cors` (amendment 13). Present means the flag is given.
+enum class OptNoCors : uint8_t { kOn };
+inline constexpr std::array<std::string_view, 1> kOptNoCorsNames = {"on"};
+
+// OptLive: Engine flag `--live` (amendment 13). Present means the flag is given.
+enum class OptLive : uint8_t { kOn };
+inline constexpr std::array<std::string_view, 1> kOptLiveNames = {"on"};
+
+// OptWeightsDiskTier: Engine flag `--weights-disk-tier` (amendment 13). Present means the flag is given.
+enum class OptWeightsDiskTier : uint8_t { kOn };
+inline constexpr std::array<std::string_view, 1> kOptWeightsDiskTierNames = {"on"};
+
+// OptDebugAcceptReferenceKernels: Engine flag `--debug-accept-reference-kernels` (amendment 13). Present means the flag
+// is given.
+enum class OptDebugAcceptReferenceKernels : uint8_t { kOn };
+inline constexpr std::array<std::string_view, 1> kOptDebugAcceptReferenceKernelsNames = {"on"};
+
+// OptDebugPlacement: Engine flag `--debug-placement` (amendment 13). Present means the flag is given.
+enum class OptDebugPlacement : uint8_t { kOn };
+inline constexpr std::array<std::string_view, 1> kOptDebugPlacementNames = {"on"};
 
 // ExpertFormat:
 enum class ExpertFormat : uint8_t { kW4nl64, kFp8E4m3Block };
@@ -763,6 +784,201 @@ struct EngineExecution {
     std::optional<NoPrefixCache> no_prefix_cache;
 };
 
+// /spec/processes/engine/sampling: Default sampling for requests that set none (amendment 13). Every member is optional
+// and binds to one engine flag; an absent member leaves the engine's own default.
+struct EngineSampling {
+    // Engine flag `--default-max-tokens` (amendment 13).
+    std::optional<int64_t> default_max_tokens;
+    // Engine flag `--dry-allowed-length` (amendment 13).
+    std::optional<int64_t> dry_allowed_length;
+    // Engine flag `--dry-base` (amendment 13). Value text as the flag takes it (F).
+    std::optional<std::string> dry_base;
+    // Engine flag `--dry-multiplier` (amendment 13). Value text as the flag takes it (F).
+    std::optional<std::string> dry_multiplier;
+    // Engine flag `--dry-penalty-last-n` (amendment 13).
+    std::optional<int64_t> dry_penalty_last_n;
+    // Engine flag `--dry-sequence-breakers` (amendment 13). Value text as the flag takes it (JSON).
+    std::optional<std::string> dry_sequence_breakers;
+    // Engine flag `--frequency-penalty` (amendment 13). Value text as the flag takes it (F).
+    std::optional<std::string> frequency_penalty;
+    // Engine flag `--generation-config` (amendment 13). Value text as the flag takes it (PATH).
+    std::optional<std::string> generation_config;
+    // Engine flag `--max-n` (amendment 13).
+    std::optional<int64_t> max_n;
+    // Engine flag `--max-tokens-cap` (amendment 13).
+    std::optional<int64_t> max_tokens_cap;
+    // Engine flag `--min-p` (amendment 13). Value text as the flag takes it (F).
+    std::optional<std::string> min_p;
+    // Engine flag `--presence-penalty` (amendment 13). Value text as the flag takes it (F).
+    std::optional<std::string> presence_penalty;
+    // Engine flag `--repeat-last-n` (amendment 13).
+    std::optional<int64_t> repeat_last_n;
+    // Engine flag `--repetition-penalty` (amendment 13). Value text as the flag takes it (F).
+    std::optional<std::string> repetition_penalty;
+    // Engine flag `--temp` (amendment 13). Value text as the flag takes it (F).
+    std::optional<std::string> temp;
+    // Engine flag `--top-k` (amendment 13).
+    std::optional<int64_t> top_k;
+    // Engine flag `--top-p` (amendment 13). Value text as the flag takes it (F).
+    std::optional<std::string> top_p;
+    // Engine flag `--typical-p` (amendment 13). Value text as the flag takes it (F).
+    std::optional<std::string> typical_p;
+    // Engine flag `--xtc-probability` (amendment 13). Value text as the flag takes it (F).
+    std::optional<std::string> xtc_probability;
+    // Engine flag `--xtc-threshold` (amendment 13). Value text as the flag takes it (F).
+    std::optional<std::string> xtc_threshold;
+};
+
+// /spec/processes/engine/limits: HTTP server identity, transport and request limits (amendment 13). Every member is
+// optional and binds to one engine flag; an absent member leaves the engine's own default.
+struct EngineLimits {
+    // Engine flag `--api-key` (amendment 13). Value text as the flag takes it (KEY).
+    std::optional<std::string> api_key;
+    // Engine flag `--host` (amendment 13). Value text as the flag takes it (ADDR).
+    std::optional<std::string> host;
+    // Engine flag `--http-threads` (amendment 13).
+    std::optional<int64_t> http_threads;
+    // Engine flag `--keep-alive-timeout` (amendment 13). Value text as the flag takes it (S).
+    std::optional<std::string> keep_alive_timeout;
+    // Engine flag `--max-body-mib` (amendment 13).
+    std::optional<int64_t> max_body_mib;
+    // Engine flag `--max-queued-requests` (amendment 13).
+    std::optional<int64_t> max_queued_requests;
+    // Engine flag `--max-stop-bytes` (amendment 13).
+    std::optional<int64_t> max_stop_bytes;
+    // Engine flag `--max-stop-strings` (amendment 13).
+    std::optional<int64_t> max_stop_strings;
+    // Engine flag `--no-cors` (amendment 13). Present means the flag is given.
+    std::optional<OptNoCors> no_cors;
+    // Engine flag `--read-timeout` (amendment 13). Value text as the flag takes it (S).
+    std::optional<std::string> read_timeout;
+    // Engine flag `--retry-after` (amendment 13). Value text as the flag takes it (S).
+    std::optional<std::string> retry_after;
+    // Engine flag `--served-model-name` (amendment 13). Value text as the flag takes it (NAME).
+    std::optional<std::string> served_model_name;
+    // Engine flag `--write-timeout` (amendment 13). Value text as the flag takes it (S).
+    std::optional<std::string> write_timeout;
+};
+
+// /spec/processes/engine/chat: Chat template and reasoning behaviour (amendment 13). Every member is optional and binds
+// to one engine flag; an absent member leaves the engine's own default.
+struct EngineChat {
+    // Engine flag `--chat-template-kwargs` (amendment 13). Value text as the flag takes it (JSON).
+    std::optional<std::string> chat_template_kwargs;
+    // Engine flag `--override-chat-template` (amendment 13). Value text as the flag takes it (PATH).
+    std::optional<std::string> override_chat_template;
+    // Engine flag `--reasoning-effort` (amendment 13). Value text as the flag takes it (S).
+    std::optional<std::string> reasoning_effort;
+    // Engine flag `--reasoning-effort-map` (amendment 13). Value text as the flag takes it (MAP).
+    std::optional<std::string> reasoning_effort_map;
+    // Engine flag `--reasoning-format` (amendment 13). Value text as the flag takes it (MODE).
+    std::optional<std::string> reasoning_format;
+    // Engine flag `--thinking-token-budget` (amendment 13).
+    std::optional<int64_t> thinking_token_budget;
+};
+
+// /spec/processes/engine/lora: LoRA adapters and control vectors (amendment 13). Every member is optional and binds to
+// one engine flag; an absent member leaves the engine's own default.
+struct EngineLora {
+    // Engine flag `--control-vector` (amendment 13). Value text as the flag takes it (MODE).
+    std::optional<std::string> control_vector;
+    // Engine flag `--lora-dir` (amendment 13). Value text as the flag takes it (DIR).
+    std::optional<std::string> lora_dir;
+    // Engine flag `--lora-target-modules` (amendment 13). Value text as the flag takes it (LIST).
+    std::optional<std::string> lora_target_modules;
+    // Engine flag `--max-lora-rank` (amendment 13). Value text as the flag takes it (R).
+    std::optional<std::string> max_lora_rank;
+    // Engine flag `--max-loras` (amendment 13).
+    std::optional<int64_t> max_loras;
+};
+
+// /spec/processes/engine/vision: Image and video input limits and placement (amendment 13). Every member is optional
+// and binds to one engine flag; an absent member leaves the engine's own default.
+struct EngineVision {
+    // Engine flag `--image-max-pixels` (amendment 13).
+    std::optional<int64_t> image_max_pixels;
+    // Engine flag `--image-min-pixels` (amendment 13).
+    std::optional<int64_t> image_min_pixels;
+    // Engine flag `--image-tokens` (amendment 13).
+    std::optional<int64_t> image_tokens;
+    // Engine flag `--max-source-pixels` (amendment 13).
+    std::optional<int64_t> max_source_pixels;
+    // Engine flag `--mm-max-patches` (amendment 13).
+    std::optional<int64_t> mm_max_patches;
+    // Engine flag `--video-fps` (amendment 13). Value text as the flag takes it (F).
+    std::optional<std::string> video_fps;
+    // Engine flag `--video-max-frame-tokens` (amendment 13).
+    std::optional<int64_t> video_max_frame_tokens;
+    // Engine flag `--video-max-frames` (amendment 13).
+    std::optional<int64_t> video_max_frames;
+    // Engine flag `--video-max-pixels` (amendment 13).
+    std::optional<int64_t> video_max_pixels;
+    // Engine flag `--video-min-frames` (amendment 13).
+    std::optional<int64_t> video_min_frames;
+    // Engine flag `--video-min-pixels` (amendment 13).
+    std::optional<int64_t> video_min_pixels;
+    // Engine flag `--vision-tower-placement` (amendment 13). Value text as the flag takes it (WHERE).
+    std::optional<std::string> vision_tower_placement;
+};
+
+// /spec/processes/engine/tuning: Prefill, tensor-parallel, expert, draft and cache tuning (amendment 13). Every member
+// is optional and binds to one engine flag; an absent member leaves the engine's own default.
+struct EngineTuning {
+    // Engine flag `--attn-prefill-fp8` (amendment 13). Value text as the flag takes it (MODE).
+    std::optional<std::string> attn_prefill_fp8;
+    // Engine flag `--busy-prefill-chunk` (amendment 13). Value text as the flag takes it (MODE).
+    std::optional<std::string> busy_prefill_chunk;
+    // Engine flag `--checkpoint-policy` (amendment 13). Value text as the flag takes it (NAME).
+    std::optional<std::string> checkpoint_policy;
+    // Engine flag `--draft-coupling` (amendment 13). Value text as the flag takes it (MODE).
+    std::optional<std::string> draft_coupling;
+    // Engine flag `--draft-expert-placement` (amendment 13). Value text as the flag takes it (PLACEMENT).
+    std::optional<std::string> draft_expert_placement;
+    // Engine flag `--draft-model` (amendment 13). Value text as the flag takes it (PATH).
+    std::optional<std::string> draft_model;
+    // Engine flag `--draft-short-from` (amendment 13).
+    std::optional<int64_t> draft_short_from;
+    // Engine flag `--draft-window` (amendment 13). Value text as the flag takes it (MODE).
+    std::optional<std::string> draft_window;
+    // Engine flag `--embedding-placement` (amendment 13). Value text as the flag takes it (WHERE).
+    std::optional<std::string> embedding_placement;
+    // Engine flag `--expert-pin-top` (amendment 13). Value text as the flag takes it (F).
+    std::optional<std::string> expert_pin_top;
+    // Engine flag `--expert-profile` (amendment 13). Value text as the flag takes it (FILE).
+    std::optional<std::string> expert_profile;
+    // Engine flag `--expert-stats` (amendment 13). Value text as the flag takes it (FILE).
+    std::optional<std::string> expert_stats;
+    // Engine flag `--live` (amendment 13). Present means the flag is given.
+    std::optional<OptLive> live;
+    // Engine flag `--p2p` (amendment 13). Value text as the flag takes it (MODE).
+    std::optional<std::string> p2p;
+    // Engine flag `--prefill-interleave` (amendment 13).
+    std::optional<int64_t> prefill_interleave;
+    // Engine flag `--prefill-span` (amendment 13).
+    std::optional<int64_t> prefill_span;
+    // Engine flag `--prefix-cache-ttl` (amendment 13). Value text as the flag takes it (S).
+    std::optional<std::string> prefix_cache_ttl;
+    // Engine flag `--state-cache-dtype` (amendment 13). Value text as the flag takes it (T).
+    std::optional<std::string> state_cache_dtype;
+    // Engine flag `--tp-attn-split` (amendment 13). Value text as the flag takes it (MODE).
+    std::optional<std::string> tp_attn_split;
+    // Engine flag `--tp-wire-min-kb` (amendment 13).
+    std::optional<int64_t> tp_wire_min_kb;
+    // Engine flag `--weight-prefetch` (amendment 13). Value text as the flag takes it (MODE).
+    std::optional<std::string> weight_prefetch;
+    // Engine flag `--weights-disk-tier` (amendment 13). Present means the flag is given.
+    std::optional<OptWeightsDiskTier> weights_disk_tier;
+};
+
+// /spec/processes/engine/diagnostics: Debug switches that change what the engine does (amendment 13). Every member is
+// optional and binds to one engine flag; an absent member leaves the engine's own default.
+struct EngineDiagnostics {
+    // Engine flag `--debug-accept-reference-kernels` (amendment 13). Present means the flag is given.
+    std::optional<OptDebugAcceptReferenceKernels> debug_accept_reference_kernels;
+    // Engine flag `--debug-placement` (amendment 13). Present means the flag is given.
+    std::optional<OptDebugPlacement> debug_placement;
+};
+
 // /spec/processes/engine: Engine process settings.
 struct EngineProcess {
     // Engine GPUs.
@@ -775,6 +991,27 @@ struct EngineProcess {
     EngineScheduler scheduler;
     // Execution choices.
     EngineExecution execution;
+    // Default sampling for requests that set none (amendment 13). Every member is optional and binds to one engine
+    // flag; an absent member leaves the engine's own default.
+    std::optional<EngineSampling> sampling;
+    // HTTP server identity, transport and request limits (amendment 13). Every member is optional and binds to one
+    // engine flag; an absent member leaves the engine's own default.
+    std::optional<EngineLimits> limits;
+    // Chat template and reasoning behaviour (amendment 13). Every member is optional and binds to one engine flag; an
+    // absent member leaves the engine's own default.
+    std::optional<EngineChat> chat;
+    // LoRA adapters and control vectors (amendment 13). Every member is optional and binds to one engine flag; an
+    // absent member leaves the engine's own default.
+    std::optional<EngineLora> lora;
+    // Image and video input limits and placement (amendment 13). Every member is optional and binds to one engine flag;
+    // an absent member leaves the engine's own default.
+    std::optional<EngineVision> vision;
+    // Prefill, tensor-parallel, expert, draft and cache tuning (amendment 13). Every member is optional and binds to
+    // one engine flag; an absent member leaves the engine's own default.
+    std::optional<EngineTuning> tuning;
+    // Debug switches that change what the engine does (amendment 13). Every member is optional and binds to one engine
+    // flag; an absent member leaves the engine's own default.
+    std::optional<EngineDiagnostics> diagnostics;
 };
 
 // /spec/processes/helpers/[]: One helper process.
@@ -1046,7 +1283,7 @@ struct FieldInfo {
     std::string_view default_source;   // where the default comes from, or empty
     std::string_view ref_def;          // kind "ref": the shared type it uses, else empty
 };
-inline constexpr std::array<FieldInfo, 266> kFields = {{
+inline constexpr std::array<FieldInfo, 353> kFields = {{
     {"$defs/uint", "integer", "", true, false,
      "", "", false,
      "Unsigned integer within I-JSON's safe range.", "", "", ""},
@@ -1620,6 +1857,267 @@ inline constexpr std::array<FieldInfo, 266> kFields = {{
     {"/spec/processes/engine/execution/no_prefix_cache", "enum", "policy", false, false,
      "--no-prefix-cache", "Config.prefix_cache", true,
      "Present means prefix caching is disabled (`--no-prefix-cache`; amendment 11). Not the host KV tier size (`resources.host.kv_mib`, `--prefix-cache-mib`): that tier stays configurable with caching on.", "", "", ""},
+    {"/spec/processes/engine/sampling", "object", "policy", false, false,
+     "", "", false,
+     "Default sampling for requests that set none (amendment 13). Every member is optional and binds to one engine flag; an absent member leaves the engine's own default.", "", "", ""},
+    {"/spec/processes/engine/sampling/default_max_tokens", "ref", "policy", false, false,
+     "--default-max-tokens", "Config.default_max_tokens", false,
+     "Engine flag `--default-max-tokens` (amendment 13).", "", "", "uint"},
+    {"/spec/processes/engine/sampling/dry_allowed_length", "ref", "policy", false, false,
+     "--dry-allowed-length", "native option", false,
+     "Engine flag `--dry-allowed-length` (amendment 13).", "", "", "uint"},
+    {"/spec/processes/engine/sampling/dry_base", "string", "policy", false, false,
+     "--dry-base", "native option", false,
+     "Engine flag `--dry-base` (amendment 13). Value text as the flag takes it (F).", "", "", ""},
+    {"/spec/processes/engine/sampling/dry_multiplier", "string", "policy", false, false,
+     "--dry-multiplier", "native option", false,
+     "Engine flag `--dry-multiplier` (amendment 13). Value text as the flag takes it (F).", "", "", ""},
+    {"/spec/processes/engine/sampling/dry_penalty_last_n", "ref", "policy", false, false,
+     "--dry-penalty-last-n", "native option", false,
+     "Engine flag `--dry-penalty-last-n` (amendment 13).", "", "", "uint"},
+    {"/spec/processes/engine/sampling/dry_sequence_breakers", "string", "policy", false, false,
+     "--dry-sequence-breakers", "native option", false,
+     "Engine flag `--dry-sequence-breakers` (amendment 13). Value text as the flag takes it (JSON).", "", "", ""},
+    {"/spec/processes/engine/sampling/frequency_penalty", "string", "policy", false, false,
+     "--frequency-penalty", "native option", false,
+     "Engine flag `--frequency-penalty` (amendment 13). Value text as the flag takes it (F).", "", "", ""},
+    {"/spec/processes/engine/sampling/generation_config", "string", "policy", false, false,
+     "--generation-config", "Config.generation_config", false,
+     "Engine flag `--generation-config` (amendment 13). Value text as the flag takes it (PATH).", "", "", ""},
+    {"/spec/processes/engine/sampling/max_n", "ref", "policy", false, false,
+     "--max-n", "native option", false,
+     "Engine flag `--max-n` (amendment 13).", "", "", "uint"},
+    {"/spec/processes/engine/sampling/max_tokens_cap", "ref", "policy", false, false,
+     "--max-tokens-cap", "native option", false,
+     "Engine flag `--max-tokens-cap` (amendment 13).", "", "", "uint"},
+    {"/spec/processes/engine/sampling/min_p", "string", "policy", false, false,
+     "--min-p", "native option", false,
+     "Engine flag `--min-p` (amendment 13). Value text as the flag takes it (F).", "", "", ""},
+    {"/spec/processes/engine/sampling/presence_penalty", "string", "policy", false, false,
+     "--presence-penalty", "native option", false,
+     "Engine flag `--presence-penalty` (amendment 13). Value text as the flag takes it (F).", "", "", ""},
+    {"/spec/processes/engine/sampling/repeat_last_n", "ref", "policy", false, false,
+     "--repeat-last-n", "native option", false,
+     "Engine flag `--repeat-last-n` (amendment 13).", "", "", "uint"},
+    {"/spec/processes/engine/sampling/repetition_penalty", "string", "policy", false, false,
+     "--repetition-penalty", "native option", false,
+     "Engine flag `--repetition-penalty` (amendment 13). Value text as the flag takes it (F).", "", "", ""},
+    {"/spec/processes/engine/sampling/temp", "string", "policy", false, false,
+     "--temp", "native option", false,
+     "Engine flag `--temp` (amendment 13). Value text as the flag takes it (F).", "", "", ""},
+    {"/spec/processes/engine/sampling/top_k", "ref", "policy", false, false,
+     "--top-k", "native option", false,
+     "Engine flag `--top-k` (amendment 13).", "", "", "uint"},
+    {"/spec/processes/engine/sampling/top_p", "string", "policy", false, false,
+     "--top-p", "native option", false,
+     "Engine flag `--top-p` (amendment 13). Value text as the flag takes it (F).", "", "", ""},
+    {"/spec/processes/engine/sampling/typical_p", "string", "policy", false, false,
+     "--typical-p", "native option", false,
+     "Engine flag `--typical-p` (amendment 13). Value text as the flag takes it (F).", "", "", ""},
+    {"/spec/processes/engine/sampling/xtc_probability", "string", "policy", false, false,
+     "--xtc-probability", "native option", false,
+     "Engine flag `--xtc-probability` (amendment 13). Value text as the flag takes it (F).", "", "", ""},
+    {"/spec/processes/engine/sampling/xtc_threshold", "string", "policy", false, false,
+     "--xtc-threshold", "native option", false,
+     "Engine flag `--xtc-threshold` (amendment 13). Value text as the flag takes it (F).", "", "", ""},
+    {"/spec/processes/engine/limits", "object", "policy", false, false,
+     "", "", false,
+     "HTTP server identity, transport and request limits (amendment 13). Every member is optional and binds to one engine flag; an absent member leaves the engine's own default.", "", "", ""},
+    {"/spec/processes/engine/limits/api_key", "string", "policy", false, false,
+     "--api-key", "Config.api_key", false,
+     "Engine flag `--api-key` (amendment 13). Value text as the flag takes it (KEY).", "", "", ""},
+    {"/spec/processes/engine/limits/host", "string", "policy", false, false,
+     "--host", "Config.host", false,
+     "Engine flag `--host` (amendment 13). Value text as the flag takes it (ADDR).", "", "", ""},
+    {"/spec/processes/engine/limits/http_threads", "ref", "policy", false, false,
+     "--http-threads", "native option", false,
+     "Engine flag `--http-threads` (amendment 13).", "", "", "uint"},
+    {"/spec/processes/engine/limits/keep_alive_timeout", "string", "policy", false, false,
+     "--keep-alive-timeout", "native option", false,
+     "Engine flag `--keep-alive-timeout` (amendment 13). Value text as the flag takes it (S).", "", "", ""},
+    {"/spec/processes/engine/limits/max_body_mib", "ref", "policy", false, false,
+     "--max-body-mib", "Config.cors", false,
+     "Engine flag `--max-body-mib` (amendment 13).", "", "", "uint"},
+    {"/spec/processes/engine/limits/max_queued_requests", "ref", "policy", false, false,
+     "--max-queued-requests", "native option", false,
+     "Engine flag `--max-queued-requests` (amendment 13).", "", "", "uint"},
+    {"/spec/processes/engine/limits/max_stop_bytes", "ref", "policy", false, false,
+     "--max-stop-bytes", "native option", false,
+     "Engine flag `--max-stop-bytes` (amendment 13).", "", "", "uint"},
+    {"/spec/processes/engine/limits/max_stop_strings", "ref", "policy", false, false,
+     "--max-stop-strings", "native option", false,
+     "Engine flag `--max-stop-strings` (amendment 13).", "", "", "uint"},
+    {"/spec/processes/engine/limits/no_cors", "enum", "policy", false, false,
+     "--no-cors", "Config.cors", true,
+     "Engine flag `--no-cors` (amendment 13). Present means the flag is given.", "", "", ""},
+    {"/spec/processes/engine/limits/read_timeout", "string", "policy", false, false,
+     "--read-timeout", "native option", false,
+     "Engine flag `--read-timeout` (amendment 13). Value text as the flag takes it (S).", "", "", ""},
+    {"/spec/processes/engine/limits/retry_after", "string", "policy", false, false,
+     "--retry-after", "native option", false,
+     "Engine flag `--retry-after` (amendment 13). Value text as the flag takes it (S).", "", "", ""},
+    {"/spec/processes/engine/limits/served_model_name", "string", "policy", false, false,
+     "--served-model-name", "Config.served_model_name", false,
+     "Engine flag `--served-model-name` (amendment 13). Value text as the flag takes it (NAME).", "", "", ""},
+    {"/spec/processes/engine/limits/write_timeout", "string", "policy", false, false,
+     "--write-timeout", "native option", false,
+     "Engine flag `--write-timeout` (amendment 13). Value text as the flag takes it (S).", "", "", ""},
+    {"/spec/processes/engine/chat", "object", "policy", false, false,
+     "", "", false,
+     "Chat template and reasoning behaviour (amendment 13). Every member is optional and binds to one engine flag; an absent member leaves the engine's own default.", "", "", ""},
+    {"/spec/processes/engine/chat/chat_template_kwargs", "string", "policy", false, false,
+     "--chat-template-kwargs", "native option", false,
+     "Engine flag `--chat-template-kwargs` (amendment 13). Value text as the flag takes it (JSON).", "", "", ""},
+    {"/spec/processes/engine/chat/override_chat_template", "string", "policy", false, false,
+     "--override-chat-template", "Config.override_chat_template", false,
+     "Engine flag `--override-chat-template` (amendment 13). Value text as the flag takes it (PATH).", "", "", ""},
+    {"/spec/processes/engine/chat/reasoning_effort", "string", "policy", false, false,
+     "--reasoning-effort", "Config.reasoning_effort", false,
+     "Engine flag `--reasoning-effort` (amendment 13). Value text as the flag takes it (S).", "", "", ""},
+    {"/spec/processes/engine/chat/reasoning_effort_map", "string", "policy", false, false,
+     "--reasoning-effort-map", "native option", false,
+     "Engine flag `--reasoning-effort-map` (amendment 13). Value text as the flag takes it (MAP).", "", "", ""},
+    {"/spec/processes/engine/chat/reasoning_format", "string", "policy", false, false,
+     "--reasoning-format", "Config.reasoning_format", false,
+     "Engine flag `--reasoning-format` (amendment 13). Value text as the flag takes it (MODE).", "", "", ""},
+    {"/spec/processes/engine/chat/thinking_token_budget", "ref", "policy", false, false,
+     "--thinking-token-budget", "Config.generation_config", false,
+     "Engine flag `--thinking-token-budget` (amendment 13).", "", "", "uint"},
+    {"/spec/processes/engine/lora", "object", "policy", false, false,
+     "", "", false,
+     "LoRA adapters and control vectors (amendment 13). Every member is optional and binds to one engine flag; an absent member leaves the engine's own default.", "", "", ""},
+    {"/spec/processes/engine/lora/control_vector", "string", "policy", false, false,
+     "--control-vector", "Config.control_vector", false,
+     "Engine flag `--control-vector` (amendment 13). Value text as the flag takes it (MODE).", "", "", ""},
+    {"/spec/processes/engine/lora/lora_dir", "string", "policy", false, false,
+     "--lora-dir", "Config.lora.dir", false,
+     "Engine flag `--lora-dir` (amendment 13). Value text as the flag takes it (DIR).", "", "", ""},
+    {"/spec/processes/engine/lora/lora_target_modules", "string", "policy", false, false,
+     "--lora-target-modules", "native option", false,
+     "Engine flag `--lora-target-modules` (amendment 13). Value text as the flag takes it (LIST).", "", "", ""},
+    {"/spec/processes/engine/lora/max_lora_rank", "string", "policy", false, false,
+     "--max-lora-rank", "native option", false,
+     "Engine flag `--max-lora-rank` (amendment 13). Value text as the flag takes it (R).", "", "", ""},
+    {"/spec/processes/engine/lora/max_loras", "ref", "policy", false, false,
+     "--max-loras", "native option", false,
+     "Engine flag `--max-loras` (amendment 13).", "", "", "uint"},
+    {"/spec/processes/engine/vision", "object", "policy", false, false,
+     "", "", false,
+     "Image and video input limits and placement (amendment 13). Every member is optional and binds to one engine flag; an absent member leaves the engine's own default.", "", "", ""},
+    {"/spec/processes/engine/vision/image_max_pixels", "ref", "policy", false, false,
+     "--image-max-pixels", "native option", false,
+     "Engine flag `--image-max-pixels` (amendment 13).", "", "", "uint"},
+    {"/spec/processes/engine/vision/image_min_pixels", "ref", "policy", false, false,
+     "--image-min-pixels", "native option", false,
+     "Engine flag `--image-min-pixels` (amendment 13).", "", "", "uint"},
+    {"/spec/processes/engine/vision/image_tokens", "ref", "policy", false, false,
+     "--image-tokens", "Config.image_tokens", false,
+     "Engine flag `--image-tokens` (amendment 13).", "", "", "uint"},
+    {"/spec/processes/engine/vision/max_source_pixels", "ref", "policy", false, false,
+     "--max-source-pixels", "native option", false,
+     "Engine flag `--max-source-pixels` (amendment 13).", "", "", "uint"},
+    {"/spec/processes/engine/vision/mm_max_patches", "ref", "policy", false, false,
+     "--mm-max-patches", "Config.mm_max_patches", false,
+     "Engine flag `--mm-max-patches` (amendment 13).", "", "", "uint"},
+    {"/spec/processes/engine/vision/video_fps", "string", "policy", false, false,
+     "--video-fps", "Config.video_fps", false,
+     "Engine flag `--video-fps` (amendment 13). Value text as the flag takes it (F).", "", "", ""},
+    {"/spec/processes/engine/vision/video_max_frame_tokens", "ref", "policy", false, false,
+     "--video-max-frame-tokens", "Config.kld_record", false,
+     "Engine flag `--video-max-frame-tokens` (amendment 13).", "", "", "uint"},
+    {"/spec/processes/engine/vision/video_max_frames", "ref", "policy", false, false,
+     "--video-max-frames", "Config.kld_record", false,
+     "Engine flag `--video-max-frames` (amendment 13).", "", "", "uint"},
+    {"/spec/processes/engine/vision/video_max_pixels", "ref", "policy", false, false,
+     "--video-max-pixels", "native option", false,
+     "Engine flag `--video-max-pixels` (amendment 13).", "", "", "uint"},
+    {"/spec/processes/engine/vision/video_min_frames", "ref", "policy", false, false,
+     "--video-min-frames", "native option", false,
+     "Engine flag `--video-min-frames` (amendment 13).", "", "", "uint"},
+    {"/spec/processes/engine/vision/video_min_pixels", "ref", "policy", false, false,
+     "--video-min-pixels", "native option", false,
+     "Engine flag `--video-min-pixels` (amendment 13).", "", "", "uint"},
+    {"/spec/processes/engine/vision/vision_tower_placement", "string", "policy", false, false,
+     "--vision-tower-placement", "Config.tower_placement", false,
+     "Engine flag `--vision-tower-placement` (amendment 13). Value text as the flag takes it (WHERE).", "", "", ""},
+    {"/spec/processes/engine/tuning", "object", "policy", false, false,
+     "", "", false,
+     "Prefill, tensor-parallel, expert, draft and cache tuning (amendment 13). Every member is optional and binds to one engine flag; an absent member leaves the engine's own default.", "", "", ""},
+    {"/spec/processes/engine/tuning/attn_prefill_fp8", "string", "policy", false, false,
+     "--attn-prefill-fp8", "Config.attn_prefill_fp8", false,
+     "Engine flag `--attn-prefill-fp8` (amendment 13). Value text as the flag takes it (MODE).", "", "", ""},
+    {"/spec/processes/engine/tuning/busy_prefill_chunk", "string", "policy", false, false,
+     "--busy-prefill-chunk", "Config.busy_prefill_chunk", false,
+     "Engine flag `--busy-prefill-chunk` (amendment 13). Value text as the flag takes it (MODE).", "", "", ""},
+    {"/spec/processes/engine/tuning/checkpoint_policy", "string", "policy", false, false,
+     "--checkpoint-policy", "Config.checkpoint_policy", false,
+     "Engine flag `--checkpoint-policy` (amendment 13). Value text as the flag takes it (NAME).", "", "", ""},
+    {"/spec/processes/engine/tuning/draft_coupling", "string", "policy", false, false,
+     "--draft-coupling", "Config.draft_coupling", false,
+     "Engine flag `--draft-coupling` (amendment 13). Value text as the flag takes it (MODE).", "", "", ""},
+    {"/spec/processes/engine/tuning/draft_expert_placement", "string", "policy", false, false,
+     "--draft-expert-placement", "Config.draft_expert_placement", false,
+     "Engine flag `--draft-expert-placement` (amendment 13). Value text as the flag takes it (PLACEMENT).", "", "", ""},
+    {"/spec/processes/engine/tuning/draft_model", "string", "policy", false, false,
+     "--draft-model", "native option", false,
+     "Engine flag `--draft-model` (amendment 13). Value text as the flag takes it (PATH).", "", "", ""},
+    {"/spec/processes/engine/tuning/draft_short_from", "ref", "policy", false, false,
+     "--draft-short-from", "Config.draft_short_from", false,
+     "Engine flag `--draft-short-from` (amendment 13).", "", "", "uint"},
+    {"/spec/processes/engine/tuning/draft_window", "string", "policy", false, false,
+     "--draft-window", "Config.draft_window", false,
+     "Engine flag `--draft-window` (amendment 13). Value text as the flag takes it (MODE).", "", "", ""},
+    {"/spec/processes/engine/tuning/embedding_placement", "string", "policy", false, false,
+     "--embedding-placement", "native option", false,
+     "Engine flag `--embedding-placement` (amendment 13). Value text as the flag takes it (WHERE).", "", "", ""},
+    {"/spec/processes/engine/tuning/expert_pin_top", "string", "policy", false, false,
+     "--expert-pin-top", "Config.expert_pin_top", false,
+     "Engine flag `--expert-pin-top` (amendment 13). Value text as the flag takes it (F).", "", "", ""},
+    {"/spec/processes/engine/tuning/expert_profile", "string", "policy", false, false,
+     "--expert-profile", "Config.expert_profile", false,
+     "Engine flag `--expert-profile` (amendment 13). Value text as the flag takes it (FILE).", "", "", ""},
+    {"/spec/processes/engine/tuning/expert_stats", "string", "policy", false, false,
+     "--expert-stats", "Config.expert_stats", false,
+     "Engine flag `--expert-stats` (amendment 13). Value text as the flag takes it (FILE).", "", "", ""},
+    {"/spec/processes/engine/tuning/live", "enum", "policy", false, false,
+     "--live", "Config.live_view", true,
+     "Engine flag `--live` (amendment 13). Present means the flag is given.", "", "", ""},
+    {"/spec/processes/engine/tuning/p2p", "string", "policy", false, false,
+     "--p2p", "Config.p2p", false,
+     "Engine flag `--p2p` (amendment 13). Value text as the flag takes it (MODE).", "", "", ""},
+    {"/spec/processes/engine/tuning/prefill_interleave", "ref", "policy", false, false,
+     "--prefill-interleave", "native option", false,
+     "Engine flag `--prefill-interleave` (amendment 13).", "", "", "uint"},
+    {"/spec/processes/engine/tuning/prefill_span", "ref", "policy", false, false,
+     "--prefill-span", "Config.checkpoint_slots", false,
+     "Engine flag `--prefill-span` (amendment 13).", "", "", "uint"},
+    {"/spec/processes/engine/tuning/prefix_cache_ttl", "string", "policy", false, false,
+     "--prefix-cache-ttl", "Config.lora.dir", false,
+     "Engine flag `--prefix-cache-ttl` (amendment 13). Value text as the flag takes it (S).", "", "", ""},
+    {"/spec/processes/engine/tuning/state_cache_dtype", "string", "policy", false, false,
+     "--state-cache-dtype", "Config.state_cache_dtype", false,
+     "Engine flag `--state-cache-dtype` (amendment 13). Value text as the flag takes it (T).", "", "", ""},
+    {"/spec/processes/engine/tuning/tp_attn_split", "string", "policy", false, false,
+     "--tp-attn-split", "Config.tp_attn_rows", false,
+     "Engine flag `--tp-attn-split` (amendment 13). Value text as the flag takes it (MODE).", "", "", ""},
+    {"/spec/processes/engine/tuning/tp_wire_min_kb", "ref", "policy", false, false,
+     "--tp-wire-min-kb", "Config.busy_prefill_chunk", false,
+     "Engine flag `--tp-wire-min-kb` (amendment 13).", "", "", "uint"},
+    {"/spec/processes/engine/tuning/weight_prefetch", "string", "policy", false, false,
+     "--weight-prefetch", "Config.weight_prefetch", false,
+     "Engine flag `--weight-prefetch` (amendment 13). Value text as the flag takes it (MODE).", "", "", ""},
+    {"/spec/processes/engine/tuning/weights_disk_tier", "enum", "policy", false, false,
+     "--weights-disk-tier", "Config.weights_disk_tier", true,
+     "Engine flag `--weights-disk-tier` (amendment 13). Present means the flag is given.", "", "", ""},
+    {"/spec/processes/engine/diagnostics", "object", "policy", false, false,
+     "", "", false,
+     "Debug switches that change what the engine does (amendment 13). Every member is optional and binds to one engine flag; an absent member leaves the engine's own default.", "", "", ""},
+    {"/spec/processes/engine/diagnostics/debug_accept_reference_kernels", "enum", "policy", false, false,
+     "--debug-accept-reference-kernels", "Config.accept_reference_kernels", true,
+     "Engine flag `--debug-accept-reference-kernels` (amendment 13). Present means the flag is given.", "", "", ""},
+    {"/spec/processes/engine/diagnostics/debug_placement", "enum", "policy", false, false,
+     "--debug-placement", "Config.debug_placement", true,
+     "Engine flag `--debug-placement` (amendment 13). Present means the flag is given.", "", "", ""},
     {"/spec/processes/helper_common", "ref", "policy", false, false,
      "", "", false,
      "Settings shared by every helper; per-role and lab patches apply on top (spec §2.2). Present exactly when `processes.helpers` is not empty (amendment 12).", "", "", "helperCommon"},
@@ -1848,7 +2346,7 @@ inline constexpr std::array<FieldInfo, 266> kFields = {{
 }};
 
 // [[class_default]] rules: the provenance class of everything at or under a document position.
-inline constexpr std::array<std::array<std::string_view, 2>, 22> kClassDefaults = {{
+inline constexpr std::array<std::array<std::string_view, 2>, 29> kClassDefaults = {{
     {"/apiVersion", "envelope"},
     {"/kind", "envelope"},
     {"/metadata", "envelope"},
@@ -1864,6 +2362,13 @@ inline constexpr std::array<std::array<std::string_view, 2>, 22> kClassDefaults 
     {"/spec/processes/engine/runtime", "policy"},
     {"/spec/processes/engine/server", "policy"},
     {"/spec/processes/engine/execution", "policy"},
+    {"/spec/processes/engine/sampling", "policy"},
+    {"/spec/processes/engine/limits", "policy"},
+    {"/spec/processes/engine/chat", "policy"},
+    {"/spec/processes/engine/lora", "policy"},
+    {"/spec/processes/engine/vision", "policy"},
+    {"/spec/processes/engine/tuning", "policy"},
+    {"/spec/processes/engine/diagnostics", "policy"},
     {"/spec/processes/helper_common", "policy"},
     {"/spec/processes/helpers", "derived"},
     {"/spec/processes/helpers/[]/settings", "policy"},

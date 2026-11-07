@@ -952,6 +952,439 @@
                       ]
                     }
                   }
+                },
+                "sampling": {
+                  "description": "Default sampling for requests that set none (amendment 13). Every member is optional and binds to one engine flag; an absent member leaves the engine's own default.",
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [],
+                  "properties": {
+                    "default_max_tokens": {
+                      "description": "Engine flag `--default-max-tokens` (amendment 13).",
+                      "$ref": "#/$defs/uint"
+                    },
+                    "dry_allowed_length": {
+                      "description": "Engine flag `--dry-allowed-length` (amendment 13).",
+                      "$ref": "#/$defs/uint"
+                    },
+                    "dry_base": {
+                      "description": "Engine flag `--dry-base` (amendment 13). Value text as the flag takes it (F).",
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "dry_multiplier": {
+                      "description": "Engine flag `--dry-multiplier` (amendment 13). Value text as the flag takes it (F).",
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "dry_penalty_last_n": {
+                      "description": "Engine flag `--dry-penalty-last-n` (amendment 13).",
+                      "$ref": "#/$defs/uint"
+                    },
+                    "dry_sequence_breakers": {
+                      "description": "Engine flag `--dry-sequence-breakers` (amendment 13). Value text as the flag takes it (JSON).",
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "frequency_penalty": {
+                      "description": "Engine flag `--frequency-penalty` (amendment 13). Value text as the flag takes it (F).",
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "generation_config": {
+                      "description": "Engine flag `--generation-config` (amendment 13). Value text as the flag takes it (PATH).",
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "max_n": {
+                      "description": "Engine flag `--max-n` (amendment 13).",
+                      "$ref": "#/$defs/uint"
+                    },
+                    "max_tokens_cap": {
+                      "description": "Engine flag `--max-tokens-cap` (amendment 13).",
+                      "$ref": "#/$defs/uint"
+                    },
+                    "min_p": {
+                      "description": "Engine flag `--min-p` (amendment 13). Value text as the flag takes it (F).",
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "presence_penalty": {
+                      "description": "Engine flag `--presence-penalty` (amendment 13). Value text as the flag takes it (F).",
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "repeat_last_n": {
+                      "description": "Engine flag `--repeat-last-n` (amendment 13).",
+                      "$ref": "#/$defs/uint"
+                    },
+                    "repetition_penalty": {
+                      "description": "Engine flag `--repetition-penalty` (amendment 13). Value text as the flag takes it (F).",
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "temp": {
+                      "description": "Engine flag `--temp` (amendment 13). Value text as the flag takes it (F).",
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "top_k": {
+                      "description": "Engine flag `--top-k` (amendment 13).",
+                      "$ref": "#/$defs/uint"
+                    },
+                    "top_p": {
+                      "description": "Engine flag `--top-p` (amendment 13). Value text as the flag takes it (F).",
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "typical_p": {
+                      "description": "Engine flag `--typical-p` (amendment 13). Value text as the flag takes it (F).",
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "xtc_probability": {
+                      "description": "Engine flag `--xtc-probability` (amendment 13). Value text as the flag takes it (F).",
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "xtc_threshold": {
+                      "description": "Engine flag `--xtc-threshold` (amendment 13). Value text as the flag takes it (F).",
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                },
+                "limits": {
+                  "description": "HTTP server identity, transport and request limits (amendment 13). Every member is optional and binds to one engine flag; an absent member leaves the engine's own default.",
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [],
+                  "properties": {
+                    "api_key": {
+                      "description": "Engine flag `--api-key` (amendment 13). Value text as the flag takes it (KEY).",
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "host": {
+                      "description": "Engine flag `--host` (amendment 13). Value text as the flag takes it (ADDR).",
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "http_threads": {
+                      "description": "Engine flag `--http-threads` (amendment 13).",
+                      "$ref": "#/$defs/uint"
+                    },
+                    "keep_alive_timeout": {
+                      "description": "Engine flag `--keep-alive-timeout` (amendment 13). Value text as the flag takes it (S).",
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "max_body_mib": {
+                      "description": "Engine flag `--max-body-mib` (amendment 13).",
+                      "$ref": "#/$defs/uint"
+                    },
+                    "max_queued_requests": {
+                      "description": "Engine flag `--max-queued-requests` (amendment 13).",
+                      "$ref": "#/$defs/uint"
+                    },
+                    "max_stop_bytes": {
+                      "description": "Engine flag `--max-stop-bytes` (amendment 13).",
+                      "$ref": "#/$defs/uint"
+                    },
+                    "max_stop_strings": {
+                      "description": "Engine flag `--max-stop-strings` (amendment 13).",
+                      "$ref": "#/$defs/uint"
+                    },
+                    "no_cors": {
+                      "description": "Engine flag `--no-cors` (amendment 13). Present means the flag is given.",
+                      "enum": [
+                        "on"
+                      ]
+                    },
+                    "read_timeout": {
+                      "description": "Engine flag `--read-timeout` (amendment 13). Value text as the flag takes it (S).",
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "retry_after": {
+                      "description": "Engine flag `--retry-after` (amendment 13). Value text as the flag takes it (S).",
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "served_model_name": {
+                      "description": "Engine flag `--served-model-name` (amendment 13). Value text as the flag takes it (NAME).",
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "write_timeout": {
+                      "description": "Engine flag `--write-timeout` (amendment 13). Value text as the flag takes it (S).",
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                },
+                "chat": {
+                  "description": "Chat template and reasoning behaviour (amendment 13). Every member is optional and binds to one engine flag; an absent member leaves the engine's own default.",
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [],
+                  "properties": {
+                    "chat_template_kwargs": {
+                      "description": "Engine flag `--chat-template-kwargs` (amendment 13). Value text as the flag takes it (JSON).",
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "override_chat_template": {
+                      "description": "Engine flag `--override-chat-template` (amendment 13). Value text as the flag takes it (PATH).",
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "reasoning_effort": {
+                      "description": "Engine flag `--reasoning-effort` (amendment 13). Value text as the flag takes it (S).",
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "reasoning_effort_map": {
+                      "description": "Engine flag `--reasoning-effort-map` (amendment 13). Value text as the flag takes it (MAP).",
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "reasoning_format": {
+                      "description": "Engine flag `--reasoning-format` (amendment 13). Value text as the flag takes it (MODE).",
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "thinking_token_budget": {
+                      "description": "Engine flag `--thinking-token-budget` (amendment 13).",
+                      "$ref": "#/$defs/uint"
+                    }
+                  }
+                },
+                "lora": {
+                  "description": "LoRA adapters and control vectors (amendment 13). Every member is optional and binds to one engine flag; an absent member leaves the engine's own default.",
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [],
+                  "properties": {
+                    "control_vector": {
+                      "description": "Engine flag `--control-vector` (amendment 13). Value text as the flag takes it (MODE).",
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "lora_dir": {
+                      "description": "Engine flag `--lora-dir` (amendment 13). Value text as the flag takes it (DIR).",
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "lora_target_modules": {
+                      "description": "Engine flag `--lora-target-modules` (amendment 13). Value text as the flag takes it (LIST).",
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "max_lora_rank": {
+                      "description": "Engine flag `--max-lora-rank` (amendment 13). Value text as the flag takes it (R).",
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "max_loras": {
+                      "description": "Engine flag `--max-loras` (amendment 13).",
+                      "$ref": "#/$defs/uint"
+                    }
+                  }
+                },
+                "vision": {
+                  "description": "Image and video input limits and placement (amendment 13). Every member is optional and binds to one engine flag; an absent member leaves the engine's own default.",
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [],
+                  "properties": {
+                    "image_max_pixels": {
+                      "description": "Engine flag `--image-max-pixels` (amendment 13).",
+                      "$ref": "#/$defs/uint"
+                    },
+                    "image_min_pixels": {
+                      "description": "Engine flag `--image-min-pixels` (amendment 13).",
+                      "$ref": "#/$defs/uint"
+                    },
+                    "image_tokens": {
+                      "description": "Engine flag `--image-tokens` (amendment 13).",
+                      "$ref": "#/$defs/uint"
+                    },
+                    "max_source_pixels": {
+                      "description": "Engine flag `--max-source-pixels` (amendment 13).",
+                      "$ref": "#/$defs/uint"
+                    },
+                    "mm_max_patches": {
+                      "description": "Engine flag `--mm-max-patches` (amendment 13).",
+                      "$ref": "#/$defs/uint"
+                    },
+                    "video_fps": {
+                      "description": "Engine flag `--video-fps` (amendment 13). Value text as the flag takes it (F).",
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "video_max_frame_tokens": {
+                      "description": "Engine flag `--video-max-frame-tokens` (amendment 13).",
+                      "$ref": "#/$defs/uint"
+                    },
+                    "video_max_frames": {
+                      "description": "Engine flag `--video-max-frames` (amendment 13).",
+                      "$ref": "#/$defs/uint"
+                    },
+                    "video_max_pixels": {
+                      "description": "Engine flag `--video-max-pixels` (amendment 13).",
+                      "$ref": "#/$defs/uint"
+                    },
+                    "video_min_frames": {
+                      "description": "Engine flag `--video-min-frames` (amendment 13).",
+                      "$ref": "#/$defs/uint"
+                    },
+                    "video_min_pixels": {
+                      "description": "Engine flag `--video-min-pixels` (amendment 13).",
+                      "$ref": "#/$defs/uint"
+                    },
+                    "vision_tower_placement": {
+                      "description": "Engine flag `--vision-tower-placement` (amendment 13). Value text as the flag takes it (WHERE).",
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                },
+                "tuning": {
+                  "description": "Prefill, tensor-parallel, expert, draft and cache tuning (amendment 13). Every member is optional and binds to one engine flag; an absent member leaves the engine's own default.",
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [],
+                  "properties": {
+                    "attn_prefill_fp8": {
+                      "description": "Engine flag `--attn-prefill-fp8` (amendment 13). Value text as the flag takes it (MODE).",
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "busy_prefill_chunk": {
+                      "description": "Engine flag `--busy-prefill-chunk` (amendment 13). Value text as the flag takes it (MODE).",
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "checkpoint_policy": {
+                      "description": "Engine flag `--checkpoint-policy` (amendment 13). Value text as the flag takes it (NAME).",
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "draft_coupling": {
+                      "description": "Engine flag `--draft-coupling` (amendment 13). Value text as the flag takes it (MODE).",
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "draft_expert_placement": {
+                      "description": "Engine flag `--draft-expert-placement` (amendment 13). Value text as the flag takes it (PLACEMENT).",
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "draft_model": {
+                      "description": "Engine flag `--draft-model` (amendment 13). Value text as the flag takes it (PATH).",
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "draft_short_from": {
+                      "description": "Engine flag `--draft-short-from` (amendment 13).",
+                      "$ref": "#/$defs/uint"
+                    },
+                    "draft_window": {
+                      "description": "Engine flag `--draft-window` (amendment 13). Value text as the flag takes it (MODE).",
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "embedding_placement": {
+                      "description": "Engine flag `--embedding-placement` (amendment 13). Value text as the flag takes it (WHERE).",
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "expert_pin_top": {
+                      "description": "Engine flag `--expert-pin-top` (amendment 13). Value text as the flag takes it (F).",
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "expert_profile": {
+                      "description": "Engine flag `--expert-profile` (amendment 13). Value text as the flag takes it (FILE).",
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "expert_stats": {
+                      "description": "Engine flag `--expert-stats` (amendment 13). Value text as the flag takes it (FILE).",
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "live": {
+                      "description": "Engine flag `--live` (amendment 13). Present means the flag is given.",
+                      "enum": [
+                        "on"
+                      ]
+                    },
+                    "p2p": {
+                      "description": "Engine flag `--p2p` (amendment 13). Value text as the flag takes it (MODE).",
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "prefill_interleave": {
+                      "description": "Engine flag `--prefill-interleave` (amendment 13).",
+                      "$ref": "#/$defs/uint"
+                    },
+                    "prefill_span": {
+                      "description": "Engine flag `--prefill-span` (amendment 13).",
+                      "$ref": "#/$defs/uint"
+                    },
+                    "prefix_cache_ttl": {
+                      "description": "Engine flag `--prefix-cache-ttl` (amendment 13). Value text as the flag takes it (S).",
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "state_cache_dtype": {
+                      "description": "Engine flag `--state-cache-dtype` (amendment 13). Value text as the flag takes it (T).",
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "tp_attn_split": {
+                      "description": "Engine flag `--tp-attn-split` (amendment 13). Value text as the flag takes it (MODE).",
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "tp_wire_min_kb": {
+                      "description": "Engine flag `--tp-wire-min-kb` (amendment 13).",
+                      "$ref": "#/$defs/uint"
+                    },
+                    "weight_prefetch": {
+                      "description": "Engine flag `--weight-prefetch` (amendment 13). Value text as the flag takes it (MODE).",
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "weights_disk_tier": {
+                      "description": "Engine flag `--weights-disk-tier` (amendment 13). Present means the flag is given.",
+                      "enum": [
+                        "on"
+                      ]
+                    }
+                  }
+                },
+                "diagnostics": {
+                  "description": "Debug switches that change what the engine does (amendment 13). Every member is optional and binds to one engine flag; an absent member leaves the engine's own default.",
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [],
+                  "properties": {
+                    "debug_accept_reference_kernels": {
+                      "description": "Engine flag `--debug-accept-reference-kernels` (amendment 13). Present means the flag is given.",
+                      "enum": [
+                        "on"
+                      ]
+                    },
+                    "debug_placement": {
+                      "description": "Engine flag `--debug-placement` (amendment 13). Present means the flag is given.",
+                      "enum": [
+                        "on"
+                      ]
+                    }
+                  }
                 }
               }
             },

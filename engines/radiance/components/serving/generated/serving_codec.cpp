@@ -166,34 +166,34 @@ Status int_enum_in(const Json& j, const std::string& at, C tc, C vc, std::initia
 [[maybe_unused]] Status d47(const Json& j, const std::string& at, bool* out);
 [[maybe_unused]] Status d49(const Json& j, const std::string& at, int64_t* out);
 [[maybe_unused]] Status d48(const Json& j, const std::string& at, std::vector<int64_t>* out);
-[[maybe_unused]] Status d282(const Json& j, const std::string& at, bool* out);
-[[maybe_unused]] Status d283(const Json& j, const std::string& at, Affinity* out);
-[[maybe_unused]] Status d285(const Json& j, const std::string& at, bool* out);
-[[maybe_unused]] Status d286(const Json& j, const std::string& at, bool* out);
-[[maybe_unused]] Status d288(const Json& j, const std::string& at, int64_t* out);
-[[maybe_unused]] Status d289(const Json& j, const std::string& at, bool* out);
-[[maybe_unused]] Status d290(const Json& j, const std::string& at, int64_t* out);
-[[maybe_unused]] Status d291(const Json& j, const std::string& at, bool* out);
-[[maybe_unused]] Status d292(const Json& j, const std::string& at, bool* out);
-[[maybe_unused]] Status d295(const Json& j, const std::string& at, int64_t* out);
-[[maybe_unused]] Status d294(const Json& j, const std::string& at, std::vector<int64_t>* out);
-[[maybe_unused]] Status d296(const Json& j, const std::string& at, bool* out);
-[[maybe_unused]] Status d297(const Json& j, const std::string& at, bool* out);
-[[maybe_unused]] Status d299(const Json& j, const std::string& at, bool* out);
-[[maybe_unused]] Status d300(const Json& j, const std::string& at, int64_t* out);
-[[maybe_unused]] Status d301(const Json& j, const std::string& at, int64_t* out);
-[[maybe_unused]] Status d303(const Json& j, const std::string& at, bool* out);
-[[maybe_unused]] Status d304(const Json& j, const std::string& at, bool* out);
-[[maybe_unused]] Status d305(const Json& j, const std::string& at, bool* out);
-[[maybe_unused]] Status d306(const Json& j, const std::string& at, int64_t* out);
-[[maybe_unused]] Status d307(const Json& j, const std::string& at, int64_t* out);
-[[maybe_unused]] Status d308(const Json& j, const std::string& at, bool* out);
-[[maybe_unused]] Status d309(const Json& j, const std::string& at, bool* out);
-[[maybe_unused]] Status d310(const Json& j, const std::string& at, bool* out);
-[[maybe_unused]] Status d311(const Json& j, const std::string& at, bool* out);
-[[maybe_unused]] Status d313(const Json& j, const std::string& at, bool* out);
-[[maybe_unused]] Status d315(const Json& j, const std::string& at, int64_t* out);
-[[maybe_unused]] Status d314(const Json& j, const std::string& at, std::vector<int64_t>* out);
+[[maybe_unused]] Status d369(const Json& j, const std::string& at, bool* out);
+[[maybe_unused]] Status d370(const Json& j, const std::string& at, Affinity* out);
+[[maybe_unused]] Status d372(const Json& j, const std::string& at, bool* out);
+[[maybe_unused]] Status d373(const Json& j, const std::string& at, bool* out);
+[[maybe_unused]] Status d375(const Json& j, const std::string& at, int64_t* out);
+[[maybe_unused]] Status d376(const Json& j, const std::string& at, bool* out);
+[[maybe_unused]] Status d377(const Json& j, const std::string& at, int64_t* out);
+[[maybe_unused]] Status d378(const Json& j, const std::string& at, bool* out);
+[[maybe_unused]] Status d379(const Json& j, const std::string& at, bool* out);
+[[maybe_unused]] Status d382(const Json& j, const std::string& at, int64_t* out);
+[[maybe_unused]] Status d381(const Json& j, const std::string& at, std::vector<int64_t>* out);
+[[maybe_unused]] Status d383(const Json& j, const std::string& at, bool* out);
+[[maybe_unused]] Status d384(const Json& j, const std::string& at, bool* out);
+[[maybe_unused]] Status d386(const Json& j, const std::string& at, bool* out);
+[[maybe_unused]] Status d387(const Json& j, const std::string& at, int64_t* out);
+[[maybe_unused]] Status d388(const Json& j, const std::string& at, int64_t* out);
+[[maybe_unused]] Status d390(const Json& j, const std::string& at, bool* out);
+[[maybe_unused]] Status d391(const Json& j, const std::string& at, bool* out);
+[[maybe_unused]] Status d392(const Json& j, const std::string& at, bool* out);
+[[maybe_unused]] Status d393(const Json& j, const std::string& at, int64_t* out);
+[[maybe_unused]] Status d394(const Json& j, const std::string& at, int64_t* out);
+[[maybe_unused]] Status d395(const Json& j, const std::string& at, bool* out);
+[[maybe_unused]] Status d396(const Json& j, const std::string& at, bool* out);
+[[maybe_unused]] Status d397(const Json& j, const std::string& at, bool* out);
+[[maybe_unused]] Status d398(const Json& j, const std::string& at, bool* out);
+[[maybe_unused]] Status d400(const Json& j, const std::string& at, bool* out);
+[[maybe_unused]] Status d402(const Json& j, const std::string& at, int64_t* out);
+[[maybe_unused]] Status d401(const Json& j, const std::string& at, std::vector<int64_t>* out);
 [[maybe_unused]] Status d50(const Json& j, const std::string& at, int64_t* out);
 [[maybe_unused]] Status d51(const Json& j, const std::string& at, std::string* out);
 [[maybe_unused]] Status d54(const Json& j, const std::string& at, std::string* out);
@@ -312,62 +312,142 @@ Status int_enum_in(const Json& j, const std::string& at, C tc, C vc, std::initia
 [[maybe_unused]] Status d200(const Json& j, const std::string& at, PrefixResume* out);
 [[maybe_unused]] Status d201(const Json& j, const std::string& at, TpWire* out);
 [[maybe_unused]] Status d202(const Json& j, const std::string& at, NoPrefixCache* out);
+[[maybe_unused]] Status d204(const Json& j, const std::string& at, int64_t* out);
+[[maybe_unused]] Status d205(const Json& j, const std::string& at, int64_t* out);
 [[maybe_unused]] Status d206(const Json& j, const std::string& at, std::string* out);
 [[maybe_unused]] Status d207(const Json& j, const std::string& at, std::string* out);
 [[maybe_unused]] Status d208(const Json& j, const std::string& at, int64_t* out);
 [[maybe_unused]] Status d209(const Json& j, const std::string& at, std::string* out);
-[[maybe_unused]] Status d211(const Json& j, const std::string& at, ExpertFormat* out);
-[[maybe_unused]] Status d210(const Json& j, const std::string& at, std::vector<ExpertFormat>* out);
-[[maybe_unused]] Status d212(const Json& j, const std::string& at, bool* out);
-[[maybe_unused]] Status d213(const Json& j, const std::string& at, HelperTier* out);
-[[maybe_unused]] Status d214(const Json& j, const std::string& at, int64_t* out);
-[[maybe_unused]] Status d204(const Json& j, const std::string& at, std::vector<HelperProcess>* out);
+[[maybe_unused]] Status d210(const Json& j, const std::string& at, std::string* out);
+[[maybe_unused]] Status d211(const Json& j, const std::string& at, std::string* out);
+[[maybe_unused]] Status d212(const Json& j, const std::string& at, int64_t* out);
+[[maybe_unused]] Status d213(const Json& j, const std::string& at, int64_t* out);
+[[maybe_unused]] Status d214(const Json& j, const std::string& at, std::string* out);
+[[maybe_unused]] Status d215(const Json& j, const std::string& at, std::string* out);
+[[maybe_unused]] Status d216(const Json& j, const std::string& at, int64_t* out);
+[[maybe_unused]] Status d217(const Json& j, const std::string& at, std::string* out);
 [[maybe_unused]] Status d218(const Json& j, const std::string& at, std::string* out);
+[[maybe_unused]] Status d219(const Json& j, const std::string& at, int64_t* out);
+[[maybe_unused]] Status d220(const Json& j, const std::string& at, std::string* out);
 [[maybe_unused]] Status d221(const Json& j, const std::string& at, std::string* out);
-[[maybe_unused]] Status d222(const Json& j, const std::string& at, int64_t* out);
-[[maybe_unused]] Status d223(const Json& j, const std::string& at, int64_t* out);
-[[maybe_unused]] Status d225(const Json& j, const std::string& at, std::array<int64_t, 2>* out);
-[[maybe_unused]] Status d224(const Json& j, const std::string& at, std::vector<std::array<int64_t, 2>>* out);
-[[maybe_unused]] Status d219(const Json& j, const std::string& at, std::vector<OwnedSet>* out);
-[[maybe_unused]] Status d226(const Json& j, const std::string& at, PlanState* out);
-[[maybe_unused]] Status d228(const Json& j, const std::string& at, int64_t* out);
-[[maybe_unused]] Status d229(const Json& j, const std::string& at, std::string* out);
-[[maybe_unused]] Status d230(const Json& j, const std::string& at, std::string* out);
-[[maybe_unused]] Status d231(const Json& j, const std::string& at, std::string* out);
-[[maybe_unused]] Status d235(const Json& j, const std::string& at, PlacementMode* out);
-[[maybe_unused]] Status d237(const Json& j, const std::string& at, int64_t* out);
-[[maybe_unused]] Status d240(const Json& j, const std::string& at, ForcedKind* out);
-[[maybe_unused]] Status d241(const Json& j, const std::string& at, int64_t* out);
-[[maybe_unused]] Status d242(const Json& j, const std::string& at, int64_t* out);
-[[maybe_unused]] Status d243(const Json& j, const std::string& at, int64_t* out);
+[[maybe_unused]] Status d222(const Json& j, const std::string& at, std::string* out);
+[[maybe_unused]] Status d223(const Json& j, const std::string& at, std::string* out);
+[[maybe_unused]] Status d225(const Json& j, const std::string& at, std::string* out);
+[[maybe_unused]] Status d226(const Json& j, const std::string& at, std::string* out);
+[[maybe_unused]] Status d227(const Json& j, const std::string& at, int64_t* out);
+[[maybe_unused]] Status d228(const Json& j, const std::string& at, std::string* out);
+[[maybe_unused]] Status d229(const Json& j, const std::string& at, int64_t* out);
+[[maybe_unused]] Status d230(const Json& j, const std::string& at, int64_t* out);
+[[maybe_unused]] Status d231(const Json& j, const std::string& at, int64_t* out);
+[[maybe_unused]] Status d232(const Json& j, const std::string& at, int64_t* out);
+[[maybe_unused]] Status d233(const Json& j, const std::string& at, OptNoCors* out);
+[[maybe_unused]] Status d234(const Json& j, const std::string& at, std::string* out);
+[[maybe_unused]] Status d235(const Json& j, const std::string& at, std::string* out);
+[[maybe_unused]] Status d236(const Json& j, const std::string& at, std::string* out);
+[[maybe_unused]] Status d237(const Json& j, const std::string& at, std::string* out);
+[[maybe_unused]] Status d239(const Json& j, const std::string& at, std::string* out);
+[[maybe_unused]] Status d240(const Json& j, const std::string& at, std::string* out);
+[[maybe_unused]] Status d241(const Json& j, const std::string& at, std::string* out);
+[[maybe_unused]] Status d242(const Json& j, const std::string& at, std::string* out);
+[[maybe_unused]] Status d243(const Json& j, const std::string& at, std::string* out);
 [[maybe_unused]] Status d244(const Json& j, const std::string& at, int64_t* out);
-[[maybe_unused]] Status d245(const Json& j, const std::string& at, int64_t* out);
-[[maybe_unused]] Status d238(const Json& j, const std::string& at, std::vector<ForcedStep>* out);
-[[maybe_unused]] Status d246(const Json& j, const std::string& at, int64_t* out);
-[[maybe_unused]] Status d251(const Json& j, const std::string& at, std::string* out);
-[[maybe_unused]] Status d249(const Json& j, const std::string& at, std::vector<ShapePatch>* out);
+[[maybe_unused]] Status d246(const Json& j, const std::string& at, std::string* out);
+[[maybe_unused]] Status d247(const Json& j, const std::string& at, std::string* out);
+[[maybe_unused]] Status d248(const Json& j, const std::string& at, std::string* out);
+[[maybe_unused]] Status d249(const Json& j, const std::string& at, std::string* out);
+[[maybe_unused]] Status d250(const Json& j, const std::string& at, int64_t* out);
+[[maybe_unused]] Status d252(const Json& j, const std::string& at, int64_t* out);
+[[maybe_unused]] Status d253(const Json& j, const std::string& at, int64_t* out);
+[[maybe_unused]] Status d254(const Json& j, const std::string& at, int64_t* out);
 [[maybe_unused]] Status d255(const Json& j, const std::string& at, int64_t* out);
-[[maybe_unused]] Status d256(const Json& j, const std::string& at, bool* out);
-[[maybe_unused]] Status d258(const Json& j, const std::string& at, std::string* out);
+[[maybe_unused]] Status d256(const Json& j, const std::string& at, int64_t* out);
+[[maybe_unused]] Status d257(const Json& j, const std::string& at, std::string* out);
+[[maybe_unused]] Status d258(const Json& j, const std::string& at, int64_t* out);
 [[maybe_unused]] Status d259(const Json& j, const std::string& at, int64_t* out);
 [[maybe_unused]] Status d260(const Json& j, const std::string& at, int64_t* out);
 [[maybe_unused]] Status d261(const Json& j, const std::string& at, int64_t* out);
-[[maybe_unused]] Status d262(const Json& j, const std::string& at, std::string* out);
-[[maybe_unused]] Status d264(const Json& j, const std::string& at, std::string* out);
-[[maybe_unused]] Status d265(const Json& j, const std::string& at, Poison* out);
-[[maybe_unused]] Status d266(const Json& j, const std::string& at, bool* out);
-[[maybe_unused]] Status d268(const Json& j, const std::string& at, ProfileOps* out);
-[[maybe_unused]] Status d269(const Json& j, const std::string& at, DebugSelection* out);
-[[maybe_unused]] Status d270(const Json& j, const std::string& at, Deterministic* out);
+[[maybe_unused]] Status d262(const Json& j, const std::string& at, int64_t* out);
+[[maybe_unused]] Status d263(const Json& j, const std::string& at, std::string* out);
+[[maybe_unused]] Status d265(const Json& j, const std::string& at, std::string* out);
+[[maybe_unused]] Status d266(const Json& j, const std::string& at, std::string* out);
+[[maybe_unused]] Status d267(const Json& j, const std::string& at, std::string* out);
+[[maybe_unused]] Status d268(const Json& j, const std::string& at, std::string* out);
+[[maybe_unused]] Status d269(const Json& j, const std::string& at, std::string* out);
+[[maybe_unused]] Status d270(const Json& j, const std::string& at, std::string* out);
 [[maybe_unused]] Status d271(const Json& j, const std::string& at, int64_t* out);
-[[maybe_unused]] Status d274(const Json& j, const std::string& at, Origin* out);
+[[maybe_unused]] Status d272(const Json& j, const std::string& at, std::string* out);
+[[maybe_unused]] Status d273(const Json& j, const std::string& at, std::string* out);
+[[maybe_unused]] Status d274(const Json& j, const std::string& at, std::string* out);
 [[maybe_unused]] Status d275(const Json& j, const std::string& at, std::string* out);
-[[maybe_unused]] Status d276(const Json& j, const std::string& at, ValueClass* out);
-[[maybe_unused]] Status d277(const Json& j, const std::string& at, Lifecycle* out);
-[[maybe_unused]] Status d278(const Json& j, const std::string& at, Confidence* out);
-[[maybe_unused]] Status d280(const Json& j, const std::string& at, std::string* out);
-[[maybe_unused]] Status d279(const Json& j, const std::string& at, std::vector<std::string>* out);
-[[maybe_unused]] Status d272(const Json& j, const std::string& at, std::map<std::string, ProvenanceRecord>* out);
+[[maybe_unused]] Status d276(const Json& j, const std::string& at, std::string* out);
+[[maybe_unused]] Status d277(const Json& j, const std::string& at, OptLive* out);
+[[maybe_unused]] Status d278(const Json& j, const std::string& at, std::string* out);
+[[maybe_unused]] Status d279(const Json& j, const std::string& at, int64_t* out);
+[[maybe_unused]] Status d280(const Json& j, const std::string& at, int64_t* out);
+[[maybe_unused]] Status d281(const Json& j, const std::string& at, std::string* out);
+[[maybe_unused]] Status d282(const Json& j, const std::string& at, std::string* out);
+[[maybe_unused]] Status d283(const Json& j, const std::string& at, std::string* out);
+[[maybe_unused]] Status d284(const Json& j, const std::string& at, int64_t* out);
+[[maybe_unused]] Status d285(const Json& j, const std::string& at, std::string* out);
+[[maybe_unused]] Status d286(const Json& j, const std::string& at, OptWeightsDiskTier* out);
+[[maybe_unused]] Status d288(const Json& j, const std::string& at, OptDebugAcceptReferenceKernels* out);
+[[maybe_unused]] Status d289(const Json& j, const std::string& at, OptDebugPlacement* out);
+[[maybe_unused]] Status d293(const Json& j, const std::string& at, std::string* out);
+[[maybe_unused]] Status d294(const Json& j, const std::string& at, std::string* out);
+[[maybe_unused]] Status d295(const Json& j, const std::string& at, int64_t* out);
+[[maybe_unused]] Status d296(const Json& j, const std::string& at, std::string* out);
+[[maybe_unused]] Status d298(const Json& j, const std::string& at, ExpertFormat* out);
+[[maybe_unused]] Status d297(const Json& j, const std::string& at, std::vector<ExpertFormat>* out);
+[[maybe_unused]] Status d299(const Json& j, const std::string& at, bool* out);
+[[maybe_unused]] Status d300(const Json& j, const std::string& at, HelperTier* out);
+[[maybe_unused]] Status d301(const Json& j, const std::string& at, int64_t* out);
+[[maybe_unused]] Status d291(const Json& j, const std::string& at, std::vector<HelperProcess>* out);
+[[maybe_unused]] Status d305(const Json& j, const std::string& at, std::string* out);
+[[maybe_unused]] Status d308(const Json& j, const std::string& at, std::string* out);
+[[maybe_unused]] Status d309(const Json& j, const std::string& at, int64_t* out);
+[[maybe_unused]] Status d310(const Json& j, const std::string& at, int64_t* out);
+[[maybe_unused]] Status d312(const Json& j, const std::string& at, std::array<int64_t, 2>* out);
+[[maybe_unused]] Status d311(const Json& j, const std::string& at, std::vector<std::array<int64_t, 2>>* out);
+[[maybe_unused]] Status d306(const Json& j, const std::string& at, std::vector<OwnedSet>* out);
+[[maybe_unused]] Status d313(const Json& j, const std::string& at, PlanState* out);
+[[maybe_unused]] Status d315(const Json& j, const std::string& at, int64_t* out);
+[[maybe_unused]] Status d316(const Json& j, const std::string& at, std::string* out);
+[[maybe_unused]] Status d317(const Json& j, const std::string& at, std::string* out);
+[[maybe_unused]] Status d318(const Json& j, const std::string& at, std::string* out);
+[[maybe_unused]] Status d322(const Json& j, const std::string& at, PlacementMode* out);
+[[maybe_unused]] Status d324(const Json& j, const std::string& at, int64_t* out);
+[[maybe_unused]] Status d327(const Json& j, const std::string& at, ForcedKind* out);
+[[maybe_unused]] Status d328(const Json& j, const std::string& at, int64_t* out);
+[[maybe_unused]] Status d329(const Json& j, const std::string& at, int64_t* out);
+[[maybe_unused]] Status d330(const Json& j, const std::string& at, int64_t* out);
+[[maybe_unused]] Status d331(const Json& j, const std::string& at, int64_t* out);
+[[maybe_unused]] Status d332(const Json& j, const std::string& at, int64_t* out);
+[[maybe_unused]] Status d325(const Json& j, const std::string& at, std::vector<ForcedStep>* out);
+[[maybe_unused]] Status d333(const Json& j, const std::string& at, int64_t* out);
+[[maybe_unused]] Status d338(const Json& j, const std::string& at, std::string* out);
+[[maybe_unused]] Status d336(const Json& j, const std::string& at, std::vector<ShapePatch>* out);
+[[maybe_unused]] Status d342(const Json& j, const std::string& at, int64_t* out);
+[[maybe_unused]] Status d343(const Json& j, const std::string& at, bool* out);
+[[maybe_unused]] Status d345(const Json& j, const std::string& at, std::string* out);
+[[maybe_unused]] Status d346(const Json& j, const std::string& at, int64_t* out);
+[[maybe_unused]] Status d347(const Json& j, const std::string& at, int64_t* out);
+[[maybe_unused]] Status d348(const Json& j, const std::string& at, int64_t* out);
+[[maybe_unused]] Status d349(const Json& j, const std::string& at, std::string* out);
+[[maybe_unused]] Status d351(const Json& j, const std::string& at, std::string* out);
+[[maybe_unused]] Status d352(const Json& j, const std::string& at, Poison* out);
+[[maybe_unused]] Status d353(const Json& j, const std::string& at, bool* out);
+[[maybe_unused]] Status d355(const Json& j, const std::string& at, ProfileOps* out);
+[[maybe_unused]] Status d356(const Json& j, const std::string& at, DebugSelection* out);
+[[maybe_unused]] Status d357(const Json& j, const std::string& at, Deterministic* out);
+[[maybe_unused]] Status d358(const Json& j, const std::string& at, int64_t* out);
+[[maybe_unused]] Status d361(const Json& j, const std::string& at, Origin* out);
+[[maybe_unused]] Status d362(const Json& j, const std::string& at, std::string* out);
+[[maybe_unused]] Status d363(const Json& j, const std::string& at, ValueClass* out);
+[[maybe_unused]] Status d364(const Json& j, const std::string& at, Lifecycle* out);
+[[maybe_unused]] Status d365(const Json& j, const std::string& at, Confidence* out);
+[[maybe_unused]] Status d367(const Json& j, const std::string& at, std::string* out);
+[[maybe_unused]] Status d366(const Json& j, const std::string& at, std::vector<std::string>* out);
+[[maybe_unused]] Status d359(const Json& j, const std::string& at, std::map<std::string, ProvenanceRecord>* out);
 [[maybe_unused]] Status d0(const Json& j, const std::string& at, int64_t* out);
 [[maybe_unused]] Status d1(const Json& j, const std::string& at, int64_t* out);
 [[maybe_unused]] Status d2(const Json& j, const std::string& at, int64_t* out);
@@ -566,164 +646,164 @@ Status d48(const Json& j, const std::string& at, std::vector<int64_t>* out) {  /
     return std::nullopt;
 }
 
-Status d282(const Json& j, const std::string& at, bool* out) {  // $defs/helperPatch/cpu/reference
+Status d369(const Json& j, const std::string& at, bool* out) {  // $defs/helperPatch/cpu/reference
     if (!j.is_boolean()) return type_fault(C::invalid_type, at, "a boolean", j);
     *out = j.get<bool>();
     return std::nullopt;
 }
 
-Status d283(const Json& j, const std::string& at, Affinity* out) {  // $defs/helperPatch/cpu/affinity
+Status d370(const Json& j, const std::string& at, Affinity* out) {  // $defs/helperPatch/cpu/affinity
     return enum_in(j, at, C::invalid_type, C::invalid_value, kAffinityNames, out);
 }
 
-Status d285(const Json& j, const std::string& at, bool* out) {  // $defs/helperPatch/runtime/power_save
+Status d372(const Json& j, const std::string& at, bool* out) {  // $defs/helperPatch/runtime/power_save
     if (!j.is_boolean()) return type_fault(C::invalid_type, at, "a boolean", j);
     *out = j.get<bool>();
     return std::nullopt;
 }
 
-Status d286(const Json& j, const std::string& at, bool* out) {  // $defs/helperPatch/runtime/queue_warm
+Status d373(const Json& j, const std::string& at, bool* out) {  // $defs/helperPatch/runtime/queue_warm
     if (!j.is_boolean()) return type_fault(C::invalid_type, at, "a boolean", j);
     *out = j.get<bool>();
     return std::nullopt;
 }
 
-Status d288(const Json& j, const std::string& at, int64_t* out) {  // $defs/helperPatch/gemv/mode
+Status d375(const Json& j, const std::string& at, int64_t* out) {  // $defs/helperPatch/gemv/mode
     return int_enum_in(j, at, C::invalid_type, C::invalid_value, {0, 1, 2}, out);
 }
 
-Status d289(const Json& j, const std::string& at, bool* out) {  // $defs/helperPatch/gemv/wide
+Status d376(const Json& j, const std::string& at, bool* out) {  // $defs/helperPatch/gemv/wide
     if (!j.is_boolean()) return type_fault(C::invalid_type, at, "a boolean", j);
     *out = j.get<bool>();
     return std::nullopt;
 }
 
-Status d290(const Json& j, const std::string& at, int64_t* out) {  // $defs/helperPatch/gemv/h2
+Status d377(const Json& j, const std::string& at, int64_t* out) {  // $defs/helperPatch/gemv/h2
     return int_enum_in(j, at, C::invalid_type, C::invalid_value, {0, 1, 2, 4}, out);
 }
 
-Status d291(const Json& j, const std::string& at, bool* out) {  // $defs/helperPatch/gemv/w4h2
+Status d378(const Json& j, const std::string& at, bool* out) {  // $defs/helperPatch/gemv/w4h2
     if (!j.is_boolean()) return type_fault(C::invalid_type, at, "a boolean", j);
     *out = j.get<bool>();
     return std::nullopt;
 }
 
-Status d292(const Json& j, const std::string& at, bool* out) {  // $defs/helperPatch/gemv/mr
+Status d379(const Json& j, const std::string& at, bool* out) {  // $defs/helperPatch/gemv/mr
     if (!j.is_boolean()) return type_fault(C::invalid_type, at, "a boolean", j);
     *out = j.get<bool>();
     return std::nullopt;
 }
 
-Status d295(const Json& j, const std::string& at, int64_t* out) {  // $defs/helperPatch/lanes/small_lanes/[]
+Status d382(const Json& j, const std::string& at, int64_t* out) {  // $defs/helperPatch/lanes/small_lanes/[]
     return int_in(j, at, C::invalid_type, C::invalid_value, 1, 9007199254740991, std::nullopt, out);
 }
 
-Status d294(const Json& j, const std::string& at, std::vector<int64_t>* out) {  // $defs/helperPatch/lanes/small_lanes
+Status d381(const Json& j, const std::string& at, std::vector<int64_t>* out) {  // $defs/helperPatch/lanes/small_lanes
     if (!j.is_array()) return type_fault(C::invalid_type, at, "an array", j);
     if (j.size() > 4) return fault(C::invalid_value, at, "allows at most 4 item(s), has " + std::to_string(j.size()));
     out->clear();
     out->reserve(j.size());
     for (size_t k = 0; k < j.size(); ++k) {
         int64_t v{};
-        if (auto e = d295(j[k], index(at, k), &v)) return e;
+        if (auto e = d382(j[k], index(at, k), &v)) return e;
         out->push_back(std::move(v));
     }
     return std::nullopt;
 }
 
-Status d296(const Json& j, const std::string& at, bool* out) {  // $defs/helperPatch/lanes/rows
+Status d383(const Json& j, const std::string& at, bool* out) {  // $defs/helperPatch/lanes/rows
     if (!j.is_boolean()) return type_fault(C::invalid_type, at, "a boolean", j);
     *out = j.get<bool>();
     return std::nullopt;
 }
 
-Status d297(const Json& j, const std::string& at, bool* out) {  // $defs/helperPatch/lanes/rows_small
+Status d384(const Json& j, const std::string& at, bool* out) {  // $defs/helperPatch/lanes/rows_small
     if (!j.is_boolean()) return type_fault(C::invalid_type, at, "a boolean", j);
     *out = j.get<bool>();
     return std::nullopt;
 }
 
-Status d299(const Json& j, const std::string& at, bool* out) {  // $defs/helperPatch/combine/enabled
+Status d386(const Json& j, const std::string& at, bool* out) {  // $defs/helperPatch/combine/enabled
     if (!j.is_boolean()) return type_fault(C::invalid_type, at, "a boolean", j);
     *out = j.get<bool>();
     return std::nullopt;
 }
 
-Status d300(const Json& j, const std::string& at, int64_t* out) {  // $defs/helperPatch/combine/min_rows
+Status d387(const Json& j, const std::string& at, int64_t* out) {  // $defs/helperPatch/combine/min_rows
     return int_in(j, at, C::invalid_type, C::invalid_value, 1, 9007199254740991, std::nullopt, out);
 }
 
-Status d301(const Json& j, const std::string& at, int64_t* out) {  // $defs/helperPatch/combine/threads
+Status d388(const Json& j, const std::string& at, int64_t* out) {  // $defs/helperPatch/combine/threads
     return int_in(j, at, C::invalid_type, C::invalid_value, 1, 9007199254740991, std::nullopt, out);
 }
 
-Status d303(const Json& j, const std::string& at, bool* out) {  // $defs/helperPatch/kernels/native
+Status d390(const Json& j, const std::string& at, bool* out) {  // $defs/helperPatch/kernels/native
     if (!j.is_boolean()) return type_fault(C::invalid_type, at, "a boolean", j);
     *out = j.get<bool>();
     return std::nullopt;
 }
 
-Status d304(const Json& j, const std::string& at, bool* out) {  // $defs/helperPatch/kernels/fp16
+Status d391(const Json& j, const std::string& at, bool* out) {  // $defs/helperPatch/kernels/fp16
     if (!j.is_boolean()) return type_fault(C::invalid_type, at, "a boolean", j);
     *out = j.get<bool>();
     return std::nullopt;
 }
 
-Status d305(const Json& j, const std::string& at, bool* out) {  // $defs/helperPatch/kernels/ahalf
+Status d392(const Json& j, const std::string& at, bool* out) {  // $defs/helperPatch/kernels/ahalf
     if (!j.is_boolean()) return type_fault(C::invalid_type, at, "a boolean", j);
     *out = j.get<bool>();
     return std::nullopt;
 }
 
-Status d306(const Json& j, const std::string& at, int64_t* out) {  // $defs/helperPatch/kernels/moe_form
+Status d393(const Json& j, const std::string& at, int64_t* out) {  // $defs/helperPatch/kernels/moe_form
     return int_enum_in(j, at, C::invalid_type, C::invalid_value, {0, 1, 2}, out);
 }
 
-Status d307(const Json& j, const std::string& at, int64_t* out) {  // $defs/helperPatch/kernels/moe_long_rows
+Status d394(const Json& j, const std::string& at, int64_t* out) {  // $defs/helperPatch/kernels/moe_long_rows
     return int_in(j, at, C::invalid_type, C::invalid_value, 0, 9007199254740991, std::nullopt, out);
 }
 
-Status d308(const Json& j, const std::string& at, bool* out) {  // $defs/helperPatch/kernels/fuseroute
+Status d395(const Json& j, const std::string& at, bool* out) {  // $defs/helperPatch/kernels/fuseroute
     if (!j.is_boolean()) return type_fault(C::invalid_type, at, "a boolean", j);
     *out = j.get<bool>();
     return std::nullopt;
 }
 
-Status d309(const Json& j, const std::string& at, bool* out) {  // $defs/helperPatch/kernels/vecio
+Status d396(const Json& j, const std::string& at, bool* out) {  // $defs/helperPatch/kernels/vecio
     if (!j.is_boolean()) return type_fault(C::invalid_type, at, "a boolean", j);
     *out = j.get<bool>();
     return std::nullopt;
 }
 
-Status d310(const Json& j, const std::string& at, bool* out) {  // $defs/helperPatch/kernels/sparse_act
+Status d397(const Json& j, const std::string& at, bool* out) {  // $defs/helperPatch/kernels/sparse_act
     if (!j.is_boolean()) return type_fault(C::invalid_type, at, "a boolean", j);
     *out = j.get<bool>();
     return std::nullopt;
 }
 
-Status d311(const Json& j, const std::string& at, bool* out) {  // $defs/helperPatch/kernels/lane_quant
+Status d398(const Json& j, const std::string& at, bool* out) {  // $defs/helperPatch/kernels/lane_quant
     if (!j.is_boolean()) return type_fault(C::invalid_type, at, "a boolean", j);
     *out = j.get<bool>();
     return std::nullopt;
 }
 
-Status d313(const Json& j, const std::string& at, bool* out) {  // $defs/helperPatch/placement/balance
+Status d400(const Json& j, const std::string& at, bool* out) {  // $defs/helperPatch/placement/balance
     if (!j.is_boolean()) return type_fault(C::invalid_type, at, "a boolean", j);
     *out = j.get<bool>();
     return std::nullopt;
 }
 
-Status d315(const Json& j, const std::string& at, int64_t* out) {  // $defs/helperPatch/placement/balance_speeds_milli/[]
+Status d402(const Json& j, const std::string& at, int64_t* out) {  // $defs/helperPatch/placement/balance_speeds_milli/[]
     return int_in(j, at, C::invalid_type, C::invalid_value, 1, std::nullopt, std::nullopt, out);
 }
 
-Status d314(const Json& j, const std::string& at, std::vector<int64_t>* out) {  // $defs/helperPatch/placement/balance_speeds_milli
+Status d401(const Json& j, const std::string& at, std::vector<int64_t>* out) {  // $defs/helperPatch/placement/balance_speeds_milli
     if (!j.is_array()) return type_fault(C::invalid_type, at, "an array", j);
     out->clear();
     out->reserve(j.size());
     for (size_t k = 0; k < j.size(); ++k) {
         int64_t v{};
-        if (auto e = d315(j[k], index(at, k), &v)) return e;
+        if (auto e = d402(j[k], index(at, k), &v)) return e;
         out->push_back(std::move(v));
     }
     return std::nullopt;
@@ -1308,36 +1388,356 @@ Status d202(const Json& j, const std::string& at, NoPrefixCache* out) {  // /spe
     return enum_in(j, at, C::invalid_type, C::invalid_value, kNoPrefixCacheNames, out);
 }
 
-Status d206(const Json& j, const std::string& at, std::string* out) {  // /spec/processes/helpers/[]/role
+Status d204(const Json& j, const std::string& at, int64_t* out) {  // /spec/processes/engine/sampling/default_max_tokens
+    return int_in(j, at, C::invalid_type, C::invalid_value, 0, 9007199254740991, std::nullopt, out);
+}
+
+Status d205(const Json& j, const std::string& at, int64_t* out) {  // /spec/processes/engine/sampling/dry_allowed_length
+    return int_in(j, at, C::invalid_type, C::invalid_value, 0, 9007199254740991, std::nullopt, out);
+}
+
+Status d206(const Json& j, const std::string& at, std::string* out) {  // /spec/processes/engine/sampling/dry_base
+    return str_in(j, at, C::invalid_type, C::invalid_value, 1, -1, nullptr, "", false, out);
+}
+
+Status d207(const Json& j, const std::string& at, std::string* out) {  // /spec/processes/engine/sampling/dry_multiplier
+    return str_in(j, at, C::invalid_type, C::invalid_value, 1, -1, nullptr, "", false, out);
+}
+
+Status d208(const Json& j, const std::string& at, int64_t* out) {  // /spec/processes/engine/sampling/dry_penalty_last_n
+    return int_in(j, at, C::invalid_type, C::invalid_value, 0, 9007199254740991, std::nullopt, out);
+}
+
+Status d209(const Json& j, const std::string& at, std::string* out) {  // /spec/processes/engine/sampling/dry_sequence_breakers
+    return str_in(j, at, C::invalid_type, C::invalid_value, 1, -1, nullptr, "", false, out);
+}
+
+Status d210(const Json& j, const std::string& at, std::string* out) {  // /spec/processes/engine/sampling/frequency_penalty
+    return str_in(j, at, C::invalid_type, C::invalid_value, 1, -1, nullptr, "", false, out);
+}
+
+Status d211(const Json& j, const std::string& at, std::string* out) {  // /spec/processes/engine/sampling/generation_config
+    return str_in(j, at, C::invalid_type, C::invalid_value, 1, -1, nullptr, "", false, out);
+}
+
+Status d212(const Json& j, const std::string& at, int64_t* out) {  // /spec/processes/engine/sampling/max_n
+    return int_in(j, at, C::invalid_type, C::invalid_value, 0, 9007199254740991, std::nullopt, out);
+}
+
+Status d213(const Json& j, const std::string& at, int64_t* out) {  // /spec/processes/engine/sampling/max_tokens_cap
+    return int_in(j, at, C::invalid_type, C::invalid_value, 0, 9007199254740991, std::nullopt, out);
+}
+
+Status d214(const Json& j, const std::string& at, std::string* out) {  // /spec/processes/engine/sampling/min_p
+    return str_in(j, at, C::invalid_type, C::invalid_value, 1, -1, nullptr, "", false, out);
+}
+
+Status d215(const Json& j, const std::string& at, std::string* out) {  // /spec/processes/engine/sampling/presence_penalty
+    return str_in(j, at, C::invalid_type, C::invalid_value, 1, -1, nullptr, "", false, out);
+}
+
+Status d216(const Json& j, const std::string& at, int64_t* out) {  // /spec/processes/engine/sampling/repeat_last_n
+    return int_in(j, at, C::invalid_type, C::invalid_value, 0, 9007199254740991, std::nullopt, out);
+}
+
+Status d217(const Json& j, const std::string& at, std::string* out) {  // /spec/processes/engine/sampling/repetition_penalty
+    return str_in(j, at, C::invalid_type, C::invalid_value, 1, -1, nullptr, "", false, out);
+}
+
+Status d218(const Json& j, const std::string& at, std::string* out) {  // /spec/processes/engine/sampling/temp
+    return str_in(j, at, C::invalid_type, C::invalid_value, 1, -1, nullptr, "", false, out);
+}
+
+Status d219(const Json& j, const std::string& at, int64_t* out) {  // /spec/processes/engine/sampling/top_k
+    return int_in(j, at, C::invalid_type, C::invalid_value, 0, 9007199254740991, std::nullopt, out);
+}
+
+Status d220(const Json& j, const std::string& at, std::string* out) {  // /spec/processes/engine/sampling/top_p
+    return str_in(j, at, C::invalid_type, C::invalid_value, 1, -1, nullptr, "", false, out);
+}
+
+Status d221(const Json& j, const std::string& at, std::string* out) {  // /spec/processes/engine/sampling/typical_p
+    return str_in(j, at, C::invalid_type, C::invalid_value, 1, -1, nullptr, "", false, out);
+}
+
+Status d222(const Json& j, const std::string& at, std::string* out) {  // /spec/processes/engine/sampling/xtc_probability
+    return str_in(j, at, C::invalid_type, C::invalid_value, 1, -1, nullptr, "", false, out);
+}
+
+Status d223(const Json& j, const std::string& at, std::string* out) {  // /spec/processes/engine/sampling/xtc_threshold
+    return str_in(j, at, C::invalid_type, C::invalid_value, 1, -1, nullptr, "", false, out);
+}
+
+Status d225(const Json& j, const std::string& at, std::string* out) {  // /spec/processes/engine/limits/api_key
+    return str_in(j, at, C::invalid_type, C::invalid_value, 1, -1, nullptr, "", false, out);
+}
+
+Status d226(const Json& j, const std::string& at, std::string* out) {  // /spec/processes/engine/limits/host
+    return str_in(j, at, C::invalid_type, C::invalid_value, 1, -1, nullptr, "", false, out);
+}
+
+Status d227(const Json& j, const std::string& at, int64_t* out) {  // /spec/processes/engine/limits/http_threads
+    return int_in(j, at, C::invalid_type, C::invalid_value, 0, 9007199254740991, std::nullopt, out);
+}
+
+Status d228(const Json& j, const std::string& at, std::string* out) {  // /spec/processes/engine/limits/keep_alive_timeout
+    return str_in(j, at, C::invalid_type, C::invalid_value, 1, -1, nullptr, "", false, out);
+}
+
+Status d229(const Json& j, const std::string& at, int64_t* out) {  // /spec/processes/engine/limits/max_body_mib
+    return int_in(j, at, C::invalid_type, C::invalid_value, 0, 9007199254740991, std::nullopt, out);
+}
+
+Status d230(const Json& j, const std::string& at, int64_t* out) {  // /spec/processes/engine/limits/max_queued_requests
+    return int_in(j, at, C::invalid_type, C::invalid_value, 0, 9007199254740991, std::nullopt, out);
+}
+
+Status d231(const Json& j, const std::string& at, int64_t* out) {  // /spec/processes/engine/limits/max_stop_bytes
+    return int_in(j, at, C::invalid_type, C::invalid_value, 0, 9007199254740991, std::nullopt, out);
+}
+
+Status d232(const Json& j, const std::string& at, int64_t* out) {  // /spec/processes/engine/limits/max_stop_strings
+    return int_in(j, at, C::invalid_type, C::invalid_value, 0, 9007199254740991, std::nullopt, out);
+}
+
+Status d233(const Json& j, const std::string& at, OptNoCors* out) {  // /spec/processes/engine/limits/no_cors
+    return enum_in(j, at, C::invalid_type, C::invalid_value, kOptNoCorsNames, out);
+}
+
+Status d234(const Json& j, const std::string& at, std::string* out) {  // /spec/processes/engine/limits/read_timeout
+    return str_in(j, at, C::invalid_type, C::invalid_value, 1, -1, nullptr, "", false, out);
+}
+
+Status d235(const Json& j, const std::string& at, std::string* out) {  // /spec/processes/engine/limits/retry_after
+    return str_in(j, at, C::invalid_type, C::invalid_value, 1, -1, nullptr, "", false, out);
+}
+
+Status d236(const Json& j, const std::string& at, std::string* out) {  // /spec/processes/engine/limits/served_model_name
+    return str_in(j, at, C::invalid_type, C::invalid_value, 1, -1, nullptr, "", false, out);
+}
+
+Status d237(const Json& j, const std::string& at, std::string* out) {  // /spec/processes/engine/limits/write_timeout
+    return str_in(j, at, C::invalid_type, C::invalid_value, 1, -1, nullptr, "", false, out);
+}
+
+Status d239(const Json& j, const std::string& at, std::string* out) {  // /spec/processes/engine/chat/chat_template_kwargs
+    return str_in(j, at, C::invalid_type, C::invalid_value, 1, -1, nullptr, "", false, out);
+}
+
+Status d240(const Json& j, const std::string& at, std::string* out) {  // /spec/processes/engine/chat/override_chat_template
+    return str_in(j, at, C::invalid_type, C::invalid_value, 1, -1, nullptr, "", false, out);
+}
+
+Status d241(const Json& j, const std::string& at, std::string* out) {  // /spec/processes/engine/chat/reasoning_effort
+    return str_in(j, at, C::invalid_type, C::invalid_value, 1, -1, nullptr, "", false, out);
+}
+
+Status d242(const Json& j, const std::string& at, std::string* out) {  // /spec/processes/engine/chat/reasoning_effort_map
+    return str_in(j, at, C::invalid_type, C::invalid_value, 1, -1, nullptr, "", false, out);
+}
+
+Status d243(const Json& j, const std::string& at, std::string* out) {  // /spec/processes/engine/chat/reasoning_format
+    return str_in(j, at, C::invalid_type, C::invalid_value, 1, -1, nullptr, "", false, out);
+}
+
+Status d244(const Json& j, const std::string& at, int64_t* out) {  // /spec/processes/engine/chat/thinking_token_budget
+    return int_in(j, at, C::invalid_type, C::invalid_value, 0, 9007199254740991, std::nullopt, out);
+}
+
+Status d246(const Json& j, const std::string& at, std::string* out) {  // /spec/processes/engine/lora/control_vector
+    return str_in(j, at, C::invalid_type, C::invalid_value, 1, -1, nullptr, "", false, out);
+}
+
+Status d247(const Json& j, const std::string& at, std::string* out) {  // /spec/processes/engine/lora/lora_dir
+    return str_in(j, at, C::invalid_type, C::invalid_value, 1, -1, nullptr, "", false, out);
+}
+
+Status d248(const Json& j, const std::string& at, std::string* out) {  // /spec/processes/engine/lora/lora_target_modules
+    return str_in(j, at, C::invalid_type, C::invalid_value, 1, -1, nullptr, "", false, out);
+}
+
+Status d249(const Json& j, const std::string& at, std::string* out) {  // /spec/processes/engine/lora/max_lora_rank
+    return str_in(j, at, C::invalid_type, C::invalid_value, 1, -1, nullptr, "", false, out);
+}
+
+Status d250(const Json& j, const std::string& at, int64_t* out) {  // /spec/processes/engine/lora/max_loras
+    return int_in(j, at, C::invalid_type, C::invalid_value, 0, 9007199254740991, std::nullopt, out);
+}
+
+Status d252(const Json& j, const std::string& at, int64_t* out) {  // /spec/processes/engine/vision/image_max_pixels
+    return int_in(j, at, C::invalid_type, C::invalid_value, 0, 9007199254740991, std::nullopt, out);
+}
+
+Status d253(const Json& j, const std::string& at, int64_t* out) {  // /spec/processes/engine/vision/image_min_pixels
+    return int_in(j, at, C::invalid_type, C::invalid_value, 0, 9007199254740991, std::nullopt, out);
+}
+
+Status d254(const Json& j, const std::string& at, int64_t* out) {  // /spec/processes/engine/vision/image_tokens
+    return int_in(j, at, C::invalid_type, C::invalid_value, 0, 9007199254740991, std::nullopt, out);
+}
+
+Status d255(const Json& j, const std::string& at, int64_t* out) {  // /spec/processes/engine/vision/max_source_pixels
+    return int_in(j, at, C::invalid_type, C::invalid_value, 0, 9007199254740991, std::nullopt, out);
+}
+
+Status d256(const Json& j, const std::string& at, int64_t* out) {  // /spec/processes/engine/vision/mm_max_patches
+    return int_in(j, at, C::invalid_type, C::invalid_value, 0, 9007199254740991, std::nullopt, out);
+}
+
+Status d257(const Json& j, const std::string& at, std::string* out) {  // /spec/processes/engine/vision/video_fps
+    return str_in(j, at, C::invalid_type, C::invalid_value, 1, -1, nullptr, "", false, out);
+}
+
+Status d258(const Json& j, const std::string& at, int64_t* out) {  // /spec/processes/engine/vision/video_max_frame_tokens
+    return int_in(j, at, C::invalid_type, C::invalid_value, 0, 9007199254740991, std::nullopt, out);
+}
+
+Status d259(const Json& j, const std::string& at, int64_t* out) {  // /spec/processes/engine/vision/video_max_frames
+    return int_in(j, at, C::invalid_type, C::invalid_value, 0, 9007199254740991, std::nullopt, out);
+}
+
+Status d260(const Json& j, const std::string& at, int64_t* out) {  // /spec/processes/engine/vision/video_max_pixels
+    return int_in(j, at, C::invalid_type, C::invalid_value, 0, 9007199254740991, std::nullopt, out);
+}
+
+Status d261(const Json& j, const std::string& at, int64_t* out) {  // /spec/processes/engine/vision/video_min_frames
+    return int_in(j, at, C::invalid_type, C::invalid_value, 0, 9007199254740991, std::nullopt, out);
+}
+
+Status d262(const Json& j, const std::string& at, int64_t* out) {  // /spec/processes/engine/vision/video_min_pixels
+    return int_in(j, at, C::invalid_type, C::invalid_value, 0, 9007199254740991, std::nullopt, out);
+}
+
+Status d263(const Json& j, const std::string& at, std::string* out) {  // /spec/processes/engine/vision/vision_tower_placement
+    return str_in(j, at, C::invalid_type, C::invalid_value, 1, -1, nullptr, "", false, out);
+}
+
+Status d265(const Json& j, const std::string& at, std::string* out) {  // /spec/processes/engine/tuning/attn_prefill_fp8
+    return str_in(j, at, C::invalid_type, C::invalid_value, 1, -1, nullptr, "", false, out);
+}
+
+Status d266(const Json& j, const std::string& at, std::string* out) {  // /spec/processes/engine/tuning/busy_prefill_chunk
+    return str_in(j, at, C::invalid_type, C::invalid_value, 1, -1, nullptr, "", false, out);
+}
+
+Status d267(const Json& j, const std::string& at, std::string* out) {  // /spec/processes/engine/tuning/checkpoint_policy
+    return str_in(j, at, C::invalid_type, C::invalid_value, 1, -1, nullptr, "", false, out);
+}
+
+Status d268(const Json& j, const std::string& at, std::string* out) {  // /spec/processes/engine/tuning/draft_coupling
+    return str_in(j, at, C::invalid_type, C::invalid_value, 1, -1, nullptr, "", false, out);
+}
+
+Status d269(const Json& j, const std::string& at, std::string* out) {  // /spec/processes/engine/tuning/draft_expert_placement
+    return str_in(j, at, C::invalid_type, C::invalid_value, 1, -1, nullptr, "", false, out);
+}
+
+Status d270(const Json& j, const std::string& at, std::string* out) {  // /spec/processes/engine/tuning/draft_model
+    return str_in(j, at, C::invalid_type, C::invalid_value, 1, -1, nullptr, "", false, out);
+}
+
+Status d271(const Json& j, const std::string& at, int64_t* out) {  // /spec/processes/engine/tuning/draft_short_from
+    return int_in(j, at, C::invalid_type, C::invalid_value, 0, 9007199254740991, std::nullopt, out);
+}
+
+Status d272(const Json& j, const std::string& at, std::string* out) {  // /spec/processes/engine/tuning/draft_window
+    return str_in(j, at, C::invalid_type, C::invalid_value, 1, -1, nullptr, "", false, out);
+}
+
+Status d273(const Json& j, const std::string& at, std::string* out) {  // /spec/processes/engine/tuning/embedding_placement
+    return str_in(j, at, C::invalid_type, C::invalid_value, 1, -1, nullptr, "", false, out);
+}
+
+Status d274(const Json& j, const std::string& at, std::string* out) {  // /spec/processes/engine/tuning/expert_pin_top
+    return str_in(j, at, C::invalid_type, C::invalid_value, 1, -1, nullptr, "", false, out);
+}
+
+Status d275(const Json& j, const std::string& at, std::string* out) {  // /spec/processes/engine/tuning/expert_profile
+    return str_in(j, at, C::invalid_type, C::invalid_value, 1, -1, nullptr, "", false, out);
+}
+
+Status d276(const Json& j, const std::string& at, std::string* out) {  // /spec/processes/engine/tuning/expert_stats
+    return str_in(j, at, C::invalid_type, C::invalid_value, 1, -1, nullptr, "", false, out);
+}
+
+Status d277(const Json& j, const std::string& at, OptLive* out) {  // /spec/processes/engine/tuning/live
+    return enum_in(j, at, C::invalid_type, C::invalid_value, kOptLiveNames, out);
+}
+
+Status d278(const Json& j, const std::string& at, std::string* out) {  // /spec/processes/engine/tuning/p2p
+    return str_in(j, at, C::invalid_type, C::invalid_value, 1, -1, nullptr, "", false, out);
+}
+
+Status d279(const Json& j, const std::string& at, int64_t* out) {  // /spec/processes/engine/tuning/prefill_interleave
+    return int_in(j, at, C::invalid_type, C::invalid_value, 0, 9007199254740991, std::nullopt, out);
+}
+
+Status d280(const Json& j, const std::string& at, int64_t* out) {  // /spec/processes/engine/tuning/prefill_span
+    return int_in(j, at, C::invalid_type, C::invalid_value, 0, 9007199254740991, std::nullopt, out);
+}
+
+Status d281(const Json& j, const std::string& at, std::string* out) {  // /spec/processes/engine/tuning/prefix_cache_ttl
+    return str_in(j, at, C::invalid_type, C::invalid_value, 1, -1, nullptr, "", false, out);
+}
+
+Status d282(const Json& j, const std::string& at, std::string* out) {  // /spec/processes/engine/tuning/state_cache_dtype
+    return str_in(j, at, C::invalid_type, C::invalid_value, 1, -1, nullptr, "", false, out);
+}
+
+Status d283(const Json& j, const std::string& at, std::string* out) {  // /spec/processes/engine/tuning/tp_attn_split
+    return str_in(j, at, C::invalid_type, C::invalid_value, 1, -1, nullptr, "", false, out);
+}
+
+Status d284(const Json& j, const std::string& at, int64_t* out) {  // /spec/processes/engine/tuning/tp_wire_min_kb
+    return int_in(j, at, C::invalid_type, C::invalid_value, 0, 9007199254740991, std::nullopt, out);
+}
+
+Status d285(const Json& j, const std::string& at, std::string* out) {  // /spec/processes/engine/tuning/weight_prefetch
+    return str_in(j, at, C::invalid_type, C::invalid_value, 1, -1, nullptr, "", false, out);
+}
+
+Status d286(const Json& j, const std::string& at, OptWeightsDiskTier* out) {  // /spec/processes/engine/tuning/weights_disk_tier
+    return enum_in(j, at, C::invalid_type, C::invalid_value, kOptWeightsDiskTierNames, out);
+}
+
+Status d288(const Json& j, const std::string& at, OptDebugAcceptReferenceKernels* out) {  // /spec/processes/engine/diagnostics/debug_accept_reference_kernels
+    return enum_in(j, at, C::invalid_type, C::invalid_value, kOptDebugAcceptReferenceKernelsNames, out);
+}
+
+Status d289(const Json& j, const std::string& at, OptDebugPlacement* out) {  // /spec/processes/engine/diagnostics/debug_placement
+    return enum_in(j, at, C::invalid_type, C::invalid_value, kOptDebugPlacementNames, out);
+}
+
+Status d293(const Json& j, const std::string& at, std::string* out) {  // /spec/processes/helpers/[]/role
     static const std::regex re(R"re(^helper(?:0|[1-9][0-9]*)$)re", std::regex::ECMAScript);
     return str_in(j, at, C::invalid_type, C::invalid_value, -1, 32, &re, "^helper(?:0|[1-9][0-9]*)$", false, out);
 }
 
-Status d207(const Json& j, const std::string& at, std::string* out) {  // /spec/processes/helpers/[]/gpu
+Status d294(const Json& j, const std::string& at, std::string* out) {  // /spec/processes/helpers/[]/gpu
     static const std::regex re(R"re(^[0-9a-f]{4}:[0-9a-f]{2}:[0-1][0-9a-f]\.[0-7]$)re", std::regex::ECMAScript);
     return str_in(j, at, C::invalid_type, C::invalid_value, -1, 12, &re, "^[0-9a-f]{4}:[0-9a-f]{2}:[0-1][0-9a-f]\\.[0-7]$", false, out);
 }
 
-Status d208(const Json& j, const std::string& at, int64_t* out) {  // /spec/processes/helpers/[]/vram_budget_mib
+Status d295(const Json& j, const std::string& at, int64_t* out) {  // /spec/processes/helpers/[]/vram_budget_mib
     return int_in(j, at, C::invalid_type, C::invalid_value, 1, 9007199254740991, std::nullopt, out);
 }
 
-Status d209(const Json& j, const std::string& at, std::string* out) {  // /spec/processes/helpers/[]/plugin_file
+Status d296(const Json& j, const std::string& at, std::string* out) {  // /spec/processes/helpers/[]/plugin_file
     return str_in(j, at, C::invalid_type, C::invalid_value, 1, -1, nullptr, "", false, out);
 }
 
-Status d211(const Json& j, const std::string& at, ExpertFormat* out) {  // /spec/processes/helpers/[]/formats/[]
+Status d298(const Json& j, const std::string& at, ExpertFormat* out) {  // /spec/processes/helpers/[]/formats/[]
     return enum_in(j, at, C::invalid_type, C::invalid_value, kExpertFormatNames, out);
 }
 
-Status d210(const Json& j, const std::string& at, std::vector<ExpertFormat>* out) {  // /spec/processes/helpers/[]/formats
+Status d297(const Json& j, const std::string& at, std::vector<ExpertFormat>* out) {  // /spec/processes/helpers/[]/formats
     if (!j.is_array()) return type_fault(C::invalid_type, at, "an array", j);
     if (j.size() < 1) return fault(C::invalid_value, at, "needs at least 1 item(s), has " + std::to_string(j.size()));
     out->clear();
     out->reserve(j.size());
     for (size_t k = 0; k < j.size(); ++k) {
         ExpertFormat v{};
-        if (auto e = d211(j[k], index(at, k), &v)) return e;
+        if (auto e = d298(j[k], index(at, k), &v)) return e;
         out->push_back(std::move(v));
     }
     std::map<std::string, size_t> seen;
@@ -1347,21 +1747,21 @@ Status d210(const Json& j, const std::string& at, std::vector<ExpertFormat>* out
     return std::nullopt;
 }
 
-Status d212(const Json& j, const std::string& at, bool* out) {  // /spec/processes/helpers/[]/rows_kernel
+Status d299(const Json& j, const std::string& at, bool* out) {  // /spec/processes/helpers/[]/rows_kernel
     if (!j.is_boolean()) return type_fault(C::invalid_type, at, "a boolean", j);
     *out = j.get<bool>();
     return std::nullopt;
 }
 
-Status d213(const Json& j, const std::string& at, HelperTier* out) {  // /spec/processes/helpers/[]/tier
+Status d300(const Json& j, const std::string& at, HelperTier* out) {  // /spec/processes/helpers/[]/tier
     return enum_in(j, at, C::invalid_type, C::invalid_value, kHelperTierNames, out);
 }
 
-Status d214(const Json& j, const std::string& at, int64_t* out) {  // /spec/processes/helpers/[]/share
+Status d301(const Json& j, const std::string& at, int64_t* out) {  // /spec/processes/helpers/[]/share
     return int_in(j, at, C::invalid_type, C::invalid_value, 0, 9007199254740991, std::nullopt, out);
 }
 
-Status d204(const Json& j, const std::string& at, std::vector<HelperProcess>* out) {  // /spec/processes/helpers
+Status d291(const Json& j, const std::string& at, std::vector<HelperProcess>* out) {  // /spec/processes/helpers
     if (!j.is_array()) return type_fault(C::invalid_type, at, "an array", j);
     if (j.size() > 4) return fault(C::invalid_value, at, "allows at most 4 item(s), has " + std::to_string(j.size()));
     out->clear();
@@ -1374,25 +1774,25 @@ Status d204(const Json& j, const std::string& at, std::vector<HelperProcess>* ou
     return std::nullopt;
 }
 
-Status d218(const Json& j, const std::string& at, std::string* out) {  // /spec/plan/owner_map/owner_map_sha256
+Status d305(const Json& j, const std::string& at, std::string* out) {  // /spec/plan/owner_map/owner_map_sha256
     static const std::regex re(R"re(^[0-9a-f]{64}$)re", std::regex::ECMAScript);
     return str_in(j, at, C::ownership_mismatch, C::ownership_mismatch, -1, 64, &re, "^[0-9a-f]{64}$", false, out);
 }
 
-Status d221(const Json& j, const std::string& at, std::string* out) {  // /spec/plan/owner_map/helpers/[]/owned_sha256
+Status d308(const Json& j, const std::string& at, std::string* out) {  // /spec/plan/owner_map/helpers/[]/owned_sha256
     static const std::regex re(R"re(^[0-9a-f]{64}$)re", std::regex::ECMAScript);
     return str_in(j, at, C::ownership_mismatch, C::ownership_mismatch, -1, 64, &re, "^[0-9a-f]{64}$", false, out);
 }
 
-Status d222(const Json& j, const std::string& at, int64_t* out) {  // /spec/plan/owner_map/helpers/[]/count
+Status d309(const Json& j, const std::string& at, int64_t* out) {  // /spec/plan/owner_map/helpers/[]/count
     return int_in(j, at, C::ownership_mismatch, C::ownership_mismatch, 0, 9007199254740991, std::nullopt, out);
 }
 
-Status d223(const Json& j, const std::string& at, int64_t* out) {  // /spec/plan/owner_map/helpers/[]/bytes
+Status d310(const Json& j, const std::string& at, int64_t* out) {  // /spec/plan/owner_map/helpers/[]/bytes
     return int_in(j, at, C::ownership_mismatch, C::ownership_mismatch, 0, 9007199254740991, std::nullopt, out);
 }
 
-Status d225(const Json& j, const std::string& at, std::array<int64_t, 2>* out) {  // /spec/plan/owner_map/helpers/[]/experts/[]
+Status d312(const Json& j, const std::string& at, std::array<int64_t, 2>* out) {  // /spec/plan/owner_map/helpers/[]/experts/[]
     if (!j.is_array()) return type_fault(C::ownership_mismatch, at, "an array", j);
     if (j.size() != 2) return fault(C::ownership_mismatch, at, "must have exactly 2 items, has " + std::to_string(j.size()));
     if (auto e = d6(j[0], index(at, 0), &(*out)[0])) return e;
@@ -1400,19 +1800,19 @@ Status d225(const Json& j, const std::string& at, std::array<int64_t, 2>* out) {
     return std::nullopt;
 }
 
-Status d224(const Json& j, const std::string& at, std::vector<std::array<int64_t, 2>>* out) {  // /spec/plan/owner_map/helpers/[]/experts
+Status d311(const Json& j, const std::string& at, std::vector<std::array<int64_t, 2>>* out) {  // /spec/plan/owner_map/helpers/[]/experts
     if (!j.is_array()) return type_fault(C::ownership_mismatch, at, "an array", j);
     out->clear();
     out->reserve(j.size());
     for (size_t k = 0; k < j.size(); ++k) {
         std::array<int64_t, 2> v{};
-        if (auto e = d225(j[k], index(at, k), &v)) return e;
+        if (auto e = d312(j[k], index(at, k), &v)) return e;
         out->push_back(std::move(v));
     }
     return std::nullopt;
 }
 
-Status d219(const Json& j, const std::string& at, std::vector<OwnedSet>* out) {  // /spec/plan/owner_map/helpers
+Status d306(const Json& j, const std::string& at, std::vector<OwnedSet>* out) {  // /spec/plan/owner_map/helpers
     if (!j.is_array()) return type_fault(C::ownership_mismatch, at, "an array", j);
     if (j.size() > 4) return fault(C::ownership_mismatch, at, "allows at most 4 item(s), has " + std::to_string(j.size()));
     out->clear();
@@ -1425,65 +1825,65 @@ Status d219(const Json& j, const std::string& at, std::vector<OwnedSet>* out) { 
     return std::nullopt;
 }
 
-Status d226(const Json& j, const std::string& at, PlanState* out) {  // /spec/plan/state
+Status d313(const Json& j, const std::string& at, PlanState* out) {  // /spec/plan/state
     return enum_in(j, at, C::invalid_type, C::invalid_value, kPlanStateNames, out);
 }
 
-Status d228(const Json& j, const std::string& at, int64_t* out) {  // /spec/plan/engine_memory/cache_version
+Status d315(const Json& j, const std::string& at, int64_t* out) {  // /spec/plan/engine_memory/cache_version
     if (!j.is_number_integer()) return type_fault(C::invalid_type, at, "an integer", j);
     if (j.get<int64_t>() != 1) return fault(C::unsupported_version, at, "must be 1, is " + j.dump());
     *out = j.get<int64_t>();
     return std::nullopt;
 }
 
-Status d229(const Json& j, const std::string& at, std::string* out) {  // /spec/plan/engine_memory/cache_key
+Status d316(const Json& j, const std::string& at, std::string* out) {  // /spec/plan/engine_memory/cache_key
     static const std::regex re(R"re(^[0-9a-f]{64}$)re", std::regex::ECMAScript);
     return str_in(j, at, C::invalid_type, C::invalid_value, -1, 64, &re, "^[0-9a-f]{64}$", false, out);
 }
 
-Status d230(const Json& j, const std::string& at, std::string* out) {  // /spec/plan/engine_memory/model_identity
+Status d317(const Json& j, const std::string& at, std::string* out) {  // /spec/plan/engine_memory/model_identity
     static const std::regex re(R"re(^[0-9a-f]{64}$)re", std::regex::ECMAScript);
     return str_in(j, at, C::invalid_type, C::invalid_value, -1, 64, &re, "^[0-9a-f]{64}$", false, out);
 }
 
-Status d231(const Json& j, const std::string& at, std::string* out) {  // /spec/plan/engine_memory/engine_identity
+Status d318(const Json& j, const std::string& at, std::string* out) {  // /spec/plan/engine_memory/engine_identity
     static const std::regex re(R"re(^[0-9a-f]{64}$)re", std::regex::ECMAScript);
     return str_in(j, at, C::invalid_type, C::invalid_value, -1, 64, &re, "^[0-9a-f]{64}$", false, out);
 }
 
-Status d235(const Json& j, const std::string& at, PlacementMode* out) {  // /spec/experiment/placement/mode
+Status d322(const Json& j, const std::string& at, PlacementMode* out) {  // /spec/experiment/placement/mode
     return enum_in(j, at, C::invalid_type, C::invalid_value, kPlacementModeNames, out);
 }
 
-Status d237(const Json& j, const std::string& at, int64_t* out) {  // /spec/experiment/placement/forced/repeat
+Status d324(const Json& j, const std::string& at, int64_t* out) {  // /spec/experiment/placement/forced/repeat
     return int_in(j, at, C::invalid_type, C::invalid_value, 1, 1000000, std::nullopt, out);
 }
 
-Status d240(const Json& j, const std::string& at, ForcedKind* out) {  // /spec/experiment/placement/forced/steps/[]/kind
+Status d327(const Json& j, const std::string& at, ForcedKind* out) {  // /spec/experiment/placement/forced/steps/[]/kind
     return enum_in(j, at, C::invalid_type, C::invalid_value, kForcedKindNames, out);
 }
 
-Status d241(const Json& j, const std::string& at, int64_t* out) {  // /spec/experiment/placement/forced/steps/[]/a_layer
+Status d328(const Json& j, const std::string& at, int64_t* out) {  // /spec/experiment/placement/forced/steps/[]/a_layer
     return int_in(j, at, C::invalid_type, C::invalid_value, 0, 9007199254740991, std::nullopt, out);
 }
 
-Status d242(const Json& j, const std::string& at, int64_t* out) {  // /spec/experiment/placement/forced/steps/[]/a_expert
+Status d329(const Json& j, const std::string& at, int64_t* out) {  // /spec/experiment/placement/forced/steps/[]/a_expert
     return int_in(j, at, C::invalid_type, C::invalid_value, 0, 9007199254740991, std::nullopt, out);
 }
 
-Status d243(const Json& j, const std::string& at, int64_t* out) {  // /spec/experiment/placement/forced/steps/[]/destination
+Status d330(const Json& j, const std::string& at, int64_t* out) {  // /spec/experiment/placement/forced/steps/[]/destination
     return int_in(j, at, C::invalid_type, C::invalid_value, 0, 9007199254740991, std::nullopt, out);
 }
 
-Status d244(const Json& j, const std::string& at, int64_t* out) {  // /spec/experiment/placement/forced/steps/[]/b_layer
+Status d331(const Json& j, const std::string& at, int64_t* out) {  // /spec/experiment/placement/forced/steps/[]/b_layer
     return int_in(j, at, C::invalid_type, C::invalid_value, 0, 9007199254740991, std::nullopt, out);
 }
 
-Status d245(const Json& j, const std::string& at, int64_t* out) {  // /spec/experiment/placement/forced/steps/[]/b_expert
+Status d332(const Json& j, const std::string& at, int64_t* out) {  // /spec/experiment/placement/forced/steps/[]/b_expert
     return int_in(j, at, C::invalid_type, C::invalid_value, 0, 9007199254740991, std::nullopt, out);
 }
 
-Status d238(const Json& j, const std::string& at, std::vector<ForcedStep>* out) {  // /spec/experiment/placement/forced/steps
+Status d325(const Json& j, const std::string& at, std::vector<ForcedStep>* out) {  // /spec/experiment/placement/forced/steps
     if (!j.is_array()) return type_fault(C::invalid_type, at, "an array", j);
     if (j.size() < 1) return fault(C::invalid_value, at, "needs at least 1 item(s), has " + std::to_string(j.size()));
     if (j.size() > 1024) return fault(C::invalid_value, at, "allows at most 1024 item(s), has " + std::to_string(j.size()));
@@ -1497,16 +1897,16 @@ Status d238(const Json& j, const std::string& at, std::vector<ForcedStep>* out) 
     return std::nullopt;
 }
 
-Status d246(const Json& j, const std::string& at, int64_t* out) {  // /spec/experiment/placement/epoch_cycle_s
+Status d333(const Json& j, const std::string& at, int64_t* out) {  // /spec/experiment/placement/epoch_cycle_s
     return int_in(j, at, C::invalid_type, C::invalid_value, 1, 9007199254740991, std::nullopt, out);
 }
 
-Status d251(const Json& j, const std::string& at, std::string* out) {  // /spec/experiment/shape/helpers/[]/role
+Status d338(const Json& j, const std::string& at, std::string* out) {  // /spec/experiment/shape/helpers/[]/role
     static const std::regex re(R"re(^helper(?:0|[1-9][0-9]*)$)re", std::regex::ECMAScript);
     return str_in(j, at, C::invalid_type, C::invalid_value, -1, 32, &re, "^helper(?:0|[1-9][0-9]*)$", false, out);
 }
 
-Status d249(const Json& j, const std::string& at, std::vector<ShapePatch>* out) {  // /spec/experiment/shape/helpers
+Status d336(const Json& j, const std::string& at, std::vector<ShapePatch>* out) {  // /spec/experiment/shape/helpers
     if (!j.is_array()) return type_fault(C::invalid_type, at, "an array", j);
     if (j.size() < 1) return fault(C::invalid_value, at, "needs at least 1 item(s), has " + std::to_string(j.size()));
     if (j.size() > 4) return fault(C::invalid_value, at, "allows at most 4 item(s), has " + std::to_string(j.size()));
@@ -1520,104 +1920,104 @@ Status d249(const Json& j, const std::string& at, std::vector<ShapePatch>* out) 
     return std::nullopt;
 }
 
-Status d255(const Json& j, const std::string& at, int64_t* out) {  // /spec/experiment/diagnostics/gemv/probe_mode
+Status d342(const Json& j, const std::string& at, int64_t* out) {  // /spec/experiment/diagnostics/gemv/probe_mode
     return int_enum_in(j, at, C::invalid_type, C::invalid_value, {0, 1, 2}, out);
 }
 
-Status d256(const Json& j, const std::string& at, bool* out) {  // /spec/experiment/diagnostics/gemv/refusal_trace
+Status d343(const Json& j, const std::string& at, bool* out) {  // /spec/experiment/diagnostics/gemv/refusal_trace
     if (!j.is_boolean()) return type_fault(C::invalid_type, at, "a boolean", j);
     *out = j.get<bool>();
     return std::nullopt;
 }
 
-Status d258(const Json& j, const std::string& at, std::string* out) {  // /spec/experiment/diagnostics/lanes/capture_file
+Status d345(const Json& j, const std::string& at, std::string* out) {  // /spec/experiment/diagnostics/lanes/capture_file
     return str_in(j, at, C::invalid_type, C::invalid_value, 1, -1, nullptr, "", false, out);
 }
 
-Status d259(const Json& j, const std::string& at, int64_t* out) {  // /spec/experiment/diagnostics/lanes/capture_every
+Status d346(const Json& j, const std::string& at, int64_t* out) {  // /spec/experiment/diagnostics/lanes/capture_every
     return int_in(j, at, C::invalid_type, C::invalid_value, 1, 9007199254740991, std::nullopt, out);
 }
 
-Status d260(const Json& j, const std::string& at, int64_t* out) {  // /spec/experiment/diagnostics/lanes/capture_max
+Status d347(const Json& j, const std::string& at, int64_t* out) {  // /spec/experiment/diagnostics/lanes/capture_max
     return int_in(j, at, C::invalid_type, C::invalid_value, 1, 9007199254740991, std::nullopt, out);
 }
 
-Status d261(const Json& j, const std::string& at, int64_t* out) {  // /spec/experiment/diagnostics/lanes/trace_level
+Status d348(const Json& j, const std::string& at, int64_t* out) {  // /spec/experiment/diagnostics/lanes/trace_level
     return int_in(j, at, C::invalid_type, C::invalid_value, 0, 9007199254740991, std::nullopt, out);
 }
 
-Status d262(const Json& j, const std::string& at, std::string* out) {  // /spec/experiment/diagnostics/lanes/test_stop_at
+Status d349(const Json& j, const std::string& at, std::string* out) {  // /spec/experiment/diagnostics/lanes/test_stop_at
     return str_in(j, at, C::invalid_type, C::invalid_value, 1, -1, nullptr, "", false, out);
 }
 
-Status d264(const Json& j, const std::string& at, std::string* out) {  // /spec/experiment/diagnostics/kernels/plugin_override
+Status d351(const Json& j, const std::string& at, std::string* out) {  // /spec/experiment/diagnostics/kernels/plugin_override
     return str_in(j, at, C::invalid_type, C::invalid_value, 1, -1, nullptr, "", false, out);
 }
 
-Status d265(const Json& j, const std::string& at, Poison* out) {  // /spec/experiment/diagnostics/kernels/poison
+Status d352(const Json& j, const std::string& at, Poison* out) {  // /spec/experiment/diagnostics/kernels/poison
     return enum_in(j, at, C::invalid_type, C::invalid_value, kPoisonNames, out);
 }
 
-Status d266(const Json& j, const std::string& at, bool* out) {  // /spec/experiment/diagnostics/kernels/sweep_fast
+Status d353(const Json& j, const std::string& at, bool* out) {  // /spec/experiment/diagnostics/kernels/sweep_fast
     if (!j.is_boolean()) return type_fault(C::invalid_type, at, "a boolean", j);
     *out = j.get<bool>();
     return std::nullopt;
 }
 
-Status d268(const Json& j, const std::string& at, ProfileOps* out) {  // /spec/experiment/engine/profile_ops
+Status d355(const Json& j, const std::string& at, ProfileOps* out) {  // /spec/experiment/engine/profile_ops
     return enum_in(j, at, C::invalid_type, C::invalid_value, kProfileOpsNames, out);
 }
 
-Status d269(const Json& j, const std::string& at, DebugSelection* out) {  // /spec/experiment/engine/debug_selection
+Status d356(const Json& j, const std::string& at, DebugSelection* out) {  // /spec/experiment/engine/debug_selection
     return enum_in(j, at, C::invalid_type, C::invalid_value, kDebugSelectionNames, out);
 }
 
-Status d270(const Json& j, const std::string& at, Deterministic* out) {  // /spec/experiment/engine/deterministic
+Status d357(const Json& j, const std::string& at, Deterministic* out) {  // /spec/experiment/engine/deterministic
     return enum_in(j, at, C::invalid_type, C::invalid_value, kDeterministicNames, out);
 }
 
-Status d271(const Json& j, const std::string& at, int64_t* out) {  // /spec/experiment/engine/kv_resident
+Status d358(const Json& j, const std::string& at, int64_t* out) {  // /spec/experiment/engine/kv_resident
     return int_in(j, at, C::invalid_type, C::invalid_value, 1, 9007199254740991, std::nullopt, out);
 }
 
-Status d274(const Json& j, const std::string& at, Origin* out) {  // /provenance/*/origin
+Status d361(const Json& j, const std::string& at, Origin* out) {  // /provenance/*/origin
     return enum_in(j, at, C::provenance_invalid, C::provenance_invalid, kOriginNames, out);
 }
 
-Status d275(const Json& j, const std::string& at, std::string* out) {  // /provenance/*/source
+Status d362(const Json& j, const std::string& at, std::string* out) {  // /provenance/*/source
     return str_in(j, at, C::provenance_invalid, C::provenance_invalid, 1, -1, nullptr, "", false, out);
 }
 
-Status d276(const Json& j, const std::string& at, ValueClass* out) {  // /provenance/*/class
+Status d363(const Json& j, const std::string& at, ValueClass* out) {  // /provenance/*/class
     return enum_in(j, at, C::provenance_invalid, C::provenance_invalid, kValueClassNames, out);
 }
 
-Status d277(const Json& j, const std::string& at, Lifecycle* out) {  // /provenance/*/lifecycle
+Status d364(const Json& j, const std::string& at, Lifecycle* out) {  // /provenance/*/lifecycle
     return enum_in(j, at, C::provenance_invalid, C::provenance_invalid, kLifecycleNames, out);
 }
 
-Status d278(const Json& j, const std::string& at, Confidence* out) {  // /provenance/*/confidence
+Status d365(const Json& j, const std::string& at, Confidence* out) {  // /provenance/*/confidence
     return enum_in(j, at, C::provenance_invalid, C::provenance_invalid, kConfidenceNames, out);
 }
 
-Status d280(const Json& j, const std::string& at, std::string* out) {  // /provenance/*/inputs/[]
+Status d367(const Json& j, const std::string& at, std::string* out) {  // /provenance/*/inputs/[]
     static const std::regex re(R"re(^(|/(?:[^~/]|~[01])*(?:/(?:[^~/]|~[01])*)*)$)re", std::regex::ECMAScript);
     return str_in(j, at, C::provenance_invalid, C::provenance_invalid, -1, 1024, &re, "^(|/(?:[^~/]|~[01])*(?:/(?:[^~/]|~[01])*)*)$", false, out);
 }
 
-Status d279(const Json& j, const std::string& at, std::vector<std::string>* out) {  // /provenance/*/inputs
+Status d366(const Json& j, const std::string& at, std::vector<std::string>* out) {  // /provenance/*/inputs
     if (!j.is_array()) return type_fault(C::provenance_invalid, at, "an array", j);
     out->clear();
     out->reserve(j.size());
     for (size_t k = 0; k < j.size(); ++k) {
         std::string v{};
-        if (auto e = d280(j[k], index(at, k), &v)) return e;
+        if (auto e = d367(j[k], index(at, k), &v)) return e;
         out->push_back(std::move(v));
     }
     return std::nullopt;
 }
 
-Status d272(const Json& j, const std::string& at, std::map<std::string, ProvenanceRecord>* out) {  // /provenance
+Status d359(const Json& j, const std::string& at, std::map<std::string, ProvenanceRecord>* out) {  // /provenance
     if (!j.is_object()) return type_fault(C::provenance_invalid, at, "an object", j);
     if (!j.contains("")) return fault(C::provenance_invalid, keyed(at, ""), "missing required entry");
     if (j.size() < 1) return fault(C::provenance_invalid, at, "needs at least 1 entr(ies)");
@@ -1944,13 +2344,13 @@ Status decode(const Json& j, const std::string& at, HelperCpuPatch* out) {  // $
     if (const auto it = j.find("reference"); it == j.end()) {
     } else {
         bool v{};
-        if (auto e = d282(*it, member(at, "reference"), &v)) return e;
+        if (auto e = d369(*it, member(at, "reference"), &v)) return e;
         out->reference = std::move(v);
     }
     if (const auto it = j.find("affinity"); it == j.end()) {
     } else {
         Affinity v{};
-        if (auto e = d283(*it, member(at, "affinity"), &v)) return e;
+        if (auto e = d370(*it, member(at, "affinity"), &v)) return e;
         out->affinity = std::move(v);
     }
     return std::nullopt;
@@ -1963,13 +2363,13 @@ Status decode(const Json& j, const std::string& at, HelperRuntimePatch* out) {  
     if (const auto it = j.find("power_save"); it == j.end()) {
     } else {
         bool v{};
-        if (auto e = d285(*it, member(at, "power_save"), &v)) return e;
+        if (auto e = d372(*it, member(at, "power_save"), &v)) return e;
         out->power_save = std::move(v);
     }
     if (const auto it = j.find("queue_warm"); it == j.end()) {
     } else {
         bool v{};
-        if (auto e = d286(*it, member(at, "queue_warm"), &v)) return e;
+        if (auto e = d373(*it, member(at, "queue_warm"), &v)) return e;
         out->queue_warm = std::move(v);
     }
     return std::nullopt;
@@ -1982,31 +2382,31 @@ Status decode(const Json& j, const std::string& at, HelperGemvPatch* out) {  // 
     if (const auto it = j.find("mode"); it == j.end()) {
     } else {
         int64_t v{};
-        if (auto e = d288(*it, member(at, "mode"), &v)) return e;
+        if (auto e = d375(*it, member(at, "mode"), &v)) return e;
         out->mode = std::move(v);
     }
     if (const auto it = j.find("wide"); it == j.end()) {
     } else {
         bool v{};
-        if (auto e = d289(*it, member(at, "wide"), &v)) return e;
+        if (auto e = d376(*it, member(at, "wide"), &v)) return e;
         out->wide = std::move(v);
     }
     if (const auto it = j.find("h2"); it == j.end()) {
     } else {
         int64_t v{};
-        if (auto e = d290(*it, member(at, "h2"), &v)) return e;
+        if (auto e = d377(*it, member(at, "h2"), &v)) return e;
         out->h2 = std::move(v);
     }
     if (const auto it = j.find("w4h2"); it == j.end()) {
     } else {
         bool v{};
-        if (auto e = d291(*it, member(at, "w4h2"), &v)) return e;
+        if (auto e = d378(*it, member(at, "w4h2"), &v)) return e;
         out->w4h2 = std::move(v);
     }
     if (const auto it = j.find("mr"); it == j.end()) {
     } else {
         bool v{};
-        if (auto e = d292(*it, member(at, "mr"), &v)) return e;
+        if (auto e = d379(*it, member(at, "mr"), &v)) return e;
         out->mr = std::move(v);
     }
     return std::nullopt;
@@ -2019,19 +2419,19 @@ Status decode(const Json& j, const std::string& at, HelperLanesPatch* out) {  //
     if (const auto it = j.find("small_lanes"); it == j.end()) {
     } else {
         std::vector<int64_t> v{};
-        if (auto e = d294(*it, member(at, "small_lanes"), &v)) return e;
+        if (auto e = d381(*it, member(at, "small_lanes"), &v)) return e;
         out->small_lanes = std::move(v);
     }
     if (const auto it = j.find("rows"); it == j.end()) {
     } else {
         bool v{};
-        if (auto e = d296(*it, member(at, "rows"), &v)) return e;
+        if (auto e = d383(*it, member(at, "rows"), &v)) return e;
         out->rows = std::move(v);
     }
     if (const auto it = j.find("rows_small"); it == j.end()) {
     } else {
         bool v{};
-        if (auto e = d297(*it, member(at, "rows_small"), &v)) return e;
+        if (auto e = d384(*it, member(at, "rows_small"), &v)) return e;
         out->rows_small = std::move(v);
     }
     return std::nullopt;
@@ -2044,19 +2444,19 @@ Status decode(const Json& j, const std::string& at, HelperCombinePatch* out) {  
     if (const auto it = j.find("enabled"); it == j.end()) {
     } else {
         bool v{};
-        if (auto e = d299(*it, member(at, "enabled"), &v)) return e;
+        if (auto e = d386(*it, member(at, "enabled"), &v)) return e;
         out->enabled = std::move(v);
     }
     if (const auto it = j.find("min_rows"); it == j.end()) {
     } else {
         int64_t v{};
-        if (auto e = d300(*it, member(at, "min_rows"), &v)) return e;
+        if (auto e = d387(*it, member(at, "min_rows"), &v)) return e;
         out->min_rows = std::move(v);
     }
     if (const auto it = j.find("threads"); it == j.end()) {
     } else {
         int64_t v{};
-        if (auto e = d301(*it, member(at, "threads"), &v)) return e;
+        if (auto e = d388(*it, member(at, "threads"), &v)) return e;
         out->threads = std::move(v);
     }
     return std::nullopt;
@@ -2069,55 +2469,55 @@ Status decode(const Json& j, const std::string& at, HelperKernelsPatch* out) {  
     if (const auto it = j.find("native"); it == j.end()) {
     } else {
         bool v{};
-        if (auto e = d303(*it, member(at, "native"), &v)) return e;
+        if (auto e = d390(*it, member(at, "native"), &v)) return e;
         out->native = std::move(v);
     }
     if (const auto it = j.find("fp16"); it == j.end()) {
     } else {
         bool v{};
-        if (auto e = d304(*it, member(at, "fp16"), &v)) return e;
+        if (auto e = d391(*it, member(at, "fp16"), &v)) return e;
         out->fp16 = std::move(v);
     }
     if (const auto it = j.find("ahalf"); it == j.end()) {
     } else {
         bool v{};
-        if (auto e = d305(*it, member(at, "ahalf"), &v)) return e;
+        if (auto e = d392(*it, member(at, "ahalf"), &v)) return e;
         out->ahalf = std::move(v);
     }
     if (const auto it = j.find("moe_form"); it == j.end()) {
     } else {
         int64_t v{};
-        if (auto e = d306(*it, member(at, "moe_form"), &v)) return e;
+        if (auto e = d393(*it, member(at, "moe_form"), &v)) return e;
         out->moe_form = std::move(v);
     }
     if (const auto it = j.find("moe_long_rows"); it == j.end()) {
     } else {
         int64_t v{};
-        if (auto e = d307(*it, member(at, "moe_long_rows"), &v)) return e;
+        if (auto e = d394(*it, member(at, "moe_long_rows"), &v)) return e;
         out->moe_long_rows = std::move(v);
     }
     if (const auto it = j.find("fuseroute"); it == j.end()) {
     } else {
         bool v{};
-        if (auto e = d308(*it, member(at, "fuseroute"), &v)) return e;
+        if (auto e = d395(*it, member(at, "fuseroute"), &v)) return e;
         out->fuseroute = std::move(v);
     }
     if (const auto it = j.find("vecio"); it == j.end()) {
     } else {
         bool v{};
-        if (auto e = d309(*it, member(at, "vecio"), &v)) return e;
+        if (auto e = d396(*it, member(at, "vecio"), &v)) return e;
         out->vecio = std::move(v);
     }
     if (const auto it = j.find("sparse_act"); it == j.end()) {
     } else {
         bool v{};
-        if (auto e = d310(*it, member(at, "sparse_act"), &v)) return e;
+        if (auto e = d397(*it, member(at, "sparse_act"), &v)) return e;
         out->sparse_act = std::move(v);
     }
     if (const auto it = j.find("lane_quant"); it == j.end()) {
     } else {
         bool v{};
-        if (auto e = d311(*it, member(at, "lane_quant"), &v)) return e;
+        if (auto e = d398(*it, member(at, "lane_quant"), &v)) return e;
         out->lane_quant = std::move(v);
     }
     return std::nullopt;
@@ -2130,13 +2530,13 @@ Status decode(const Json& j, const std::string& at, HelperPlacementPatch* out) {
     if (const auto it = j.find("balance"); it == j.end()) {
     } else {
         bool v{};
-        if (auto e = d313(*it, member(at, "balance"), &v)) return e;
+        if (auto e = d400(*it, member(at, "balance"), &v)) return e;
         out->balance = std::move(v);
     }
     if (const auto it = j.find("balance_speeds_milli"); it == j.end()) {
     } else {
         std::vector<int64_t> v{};
-        if (auto e = d314(*it, member(at, "balance_speeds_milli"), &v)) return e;
+        if (auto e = d401(*it, member(at, "balance_speeds_milli"), &v)) return e;
         out->balance_speeds_milli = std::move(v);
     }
     return std::nullopt;
@@ -3309,9 +3709,531 @@ Status decode(const Json& j, const std::string& at, EngineExecution* out) {  // 
     return std::nullopt;
 }
 
+Status decode(const Json& j, const std::string& at, EngineSampling* out) {  // /spec/processes/engine/sampling
+    *out = EngineSampling{};   // the result replaces the destination; nothing stale survives
+    if (auto e = closed(j, at, C::invalid_type, C::unknown_field, {"default_max_tokens", "dry_allowed_length", "dry_base", "dry_multiplier", "dry_penalty_last_n", "dry_sequence_breakers", "frequency_penalty", "generation_config", "max_n", "max_tokens_cap", "min_p", "presence_penalty", "repeat_last_n", "repetition_penalty", "temp", "top_k", "top_p", "typical_p", "xtc_probability", "xtc_threshold"})) return e;
+    if (const auto it = j.find("default_max_tokens"); it == j.end()) {
+    } else {
+        int64_t v{};
+        if (auto e = d204(*it, member(at, "default_max_tokens"), &v)) return e;
+        out->default_max_tokens = std::move(v);
+    }
+    if (const auto it = j.find("dry_allowed_length"); it == j.end()) {
+    } else {
+        int64_t v{};
+        if (auto e = d205(*it, member(at, "dry_allowed_length"), &v)) return e;
+        out->dry_allowed_length = std::move(v);
+    }
+    if (const auto it = j.find("dry_base"); it == j.end()) {
+    } else {
+        std::string v{};
+        if (auto e = d206(*it, member(at, "dry_base"), &v)) return e;
+        out->dry_base = std::move(v);
+    }
+    if (const auto it = j.find("dry_multiplier"); it == j.end()) {
+    } else {
+        std::string v{};
+        if (auto e = d207(*it, member(at, "dry_multiplier"), &v)) return e;
+        out->dry_multiplier = std::move(v);
+    }
+    if (const auto it = j.find("dry_penalty_last_n"); it == j.end()) {
+    } else {
+        int64_t v{};
+        if (auto e = d208(*it, member(at, "dry_penalty_last_n"), &v)) return e;
+        out->dry_penalty_last_n = std::move(v);
+    }
+    if (const auto it = j.find("dry_sequence_breakers"); it == j.end()) {
+    } else {
+        std::string v{};
+        if (auto e = d209(*it, member(at, "dry_sequence_breakers"), &v)) return e;
+        out->dry_sequence_breakers = std::move(v);
+    }
+    if (const auto it = j.find("frequency_penalty"); it == j.end()) {
+    } else {
+        std::string v{};
+        if (auto e = d210(*it, member(at, "frequency_penalty"), &v)) return e;
+        out->frequency_penalty = std::move(v);
+    }
+    if (const auto it = j.find("generation_config"); it == j.end()) {
+    } else {
+        std::string v{};
+        if (auto e = d211(*it, member(at, "generation_config"), &v)) return e;
+        out->generation_config = std::move(v);
+    }
+    if (const auto it = j.find("max_n"); it == j.end()) {
+    } else {
+        int64_t v{};
+        if (auto e = d212(*it, member(at, "max_n"), &v)) return e;
+        out->max_n = std::move(v);
+    }
+    if (const auto it = j.find("max_tokens_cap"); it == j.end()) {
+    } else {
+        int64_t v{};
+        if (auto e = d213(*it, member(at, "max_tokens_cap"), &v)) return e;
+        out->max_tokens_cap = std::move(v);
+    }
+    if (const auto it = j.find("min_p"); it == j.end()) {
+    } else {
+        std::string v{};
+        if (auto e = d214(*it, member(at, "min_p"), &v)) return e;
+        out->min_p = std::move(v);
+    }
+    if (const auto it = j.find("presence_penalty"); it == j.end()) {
+    } else {
+        std::string v{};
+        if (auto e = d215(*it, member(at, "presence_penalty"), &v)) return e;
+        out->presence_penalty = std::move(v);
+    }
+    if (const auto it = j.find("repeat_last_n"); it == j.end()) {
+    } else {
+        int64_t v{};
+        if (auto e = d216(*it, member(at, "repeat_last_n"), &v)) return e;
+        out->repeat_last_n = std::move(v);
+    }
+    if (const auto it = j.find("repetition_penalty"); it == j.end()) {
+    } else {
+        std::string v{};
+        if (auto e = d217(*it, member(at, "repetition_penalty"), &v)) return e;
+        out->repetition_penalty = std::move(v);
+    }
+    if (const auto it = j.find("temp"); it == j.end()) {
+    } else {
+        std::string v{};
+        if (auto e = d218(*it, member(at, "temp"), &v)) return e;
+        out->temp = std::move(v);
+    }
+    if (const auto it = j.find("top_k"); it == j.end()) {
+    } else {
+        int64_t v{};
+        if (auto e = d219(*it, member(at, "top_k"), &v)) return e;
+        out->top_k = std::move(v);
+    }
+    if (const auto it = j.find("top_p"); it == j.end()) {
+    } else {
+        std::string v{};
+        if (auto e = d220(*it, member(at, "top_p"), &v)) return e;
+        out->top_p = std::move(v);
+    }
+    if (const auto it = j.find("typical_p"); it == j.end()) {
+    } else {
+        std::string v{};
+        if (auto e = d221(*it, member(at, "typical_p"), &v)) return e;
+        out->typical_p = std::move(v);
+    }
+    if (const auto it = j.find("xtc_probability"); it == j.end()) {
+    } else {
+        std::string v{};
+        if (auto e = d222(*it, member(at, "xtc_probability"), &v)) return e;
+        out->xtc_probability = std::move(v);
+    }
+    if (const auto it = j.find("xtc_threshold"); it == j.end()) {
+    } else {
+        std::string v{};
+        if (auto e = d223(*it, member(at, "xtc_threshold"), &v)) return e;
+        out->xtc_threshold = std::move(v);
+    }
+    return std::nullopt;
+}
+
+Status decode(const Json& j, const std::string& at, EngineLimits* out) {  // /spec/processes/engine/limits
+    *out = EngineLimits{};   // the result replaces the destination; nothing stale survives
+    if (auto e = closed(j, at, C::invalid_type, C::unknown_field, {"api_key", "host", "http_threads", "keep_alive_timeout", "max_body_mib", "max_queued_requests", "max_stop_bytes", "max_stop_strings", "no_cors", "read_timeout", "retry_after", "served_model_name", "write_timeout"})) return e;
+    if (const auto it = j.find("api_key"); it == j.end()) {
+    } else {
+        std::string v{};
+        if (auto e = d225(*it, member(at, "api_key"), &v)) return e;
+        out->api_key = std::move(v);
+    }
+    if (const auto it = j.find("host"); it == j.end()) {
+    } else {
+        std::string v{};
+        if (auto e = d226(*it, member(at, "host"), &v)) return e;
+        out->host = std::move(v);
+    }
+    if (const auto it = j.find("http_threads"); it == j.end()) {
+    } else {
+        int64_t v{};
+        if (auto e = d227(*it, member(at, "http_threads"), &v)) return e;
+        out->http_threads = std::move(v);
+    }
+    if (const auto it = j.find("keep_alive_timeout"); it == j.end()) {
+    } else {
+        std::string v{};
+        if (auto e = d228(*it, member(at, "keep_alive_timeout"), &v)) return e;
+        out->keep_alive_timeout = std::move(v);
+    }
+    if (const auto it = j.find("max_body_mib"); it == j.end()) {
+    } else {
+        int64_t v{};
+        if (auto e = d229(*it, member(at, "max_body_mib"), &v)) return e;
+        out->max_body_mib = std::move(v);
+    }
+    if (const auto it = j.find("max_queued_requests"); it == j.end()) {
+    } else {
+        int64_t v{};
+        if (auto e = d230(*it, member(at, "max_queued_requests"), &v)) return e;
+        out->max_queued_requests = std::move(v);
+    }
+    if (const auto it = j.find("max_stop_bytes"); it == j.end()) {
+    } else {
+        int64_t v{};
+        if (auto e = d231(*it, member(at, "max_stop_bytes"), &v)) return e;
+        out->max_stop_bytes = std::move(v);
+    }
+    if (const auto it = j.find("max_stop_strings"); it == j.end()) {
+    } else {
+        int64_t v{};
+        if (auto e = d232(*it, member(at, "max_stop_strings"), &v)) return e;
+        out->max_stop_strings = std::move(v);
+    }
+    if (const auto it = j.find("no_cors"); it == j.end()) {
+    } else {
+        OptNoCors v{};
+        if (auto e = d233(*it, member(at, "no_cors"), &v)) return e;
+        out->no_cors = std::move(v);
+    }
+    if (const auto it = j.find("read_timeout"); it == j.end()) {
+    } else {
+        std::string v{};
+        if (auto e = d234(*it, member(at, "read_timeout"), &v)) return e;
+        out->read_timeout = std::move(v);
+    }
+    if (const auto it = j.find("retry_after"); it == j.end()) {
+    } else {
+        std::string v{};
+        if (auto e = d235(*it, member(at, "retry_after"), &v)) return e;
+        out->retry_after = std::move(v);
+    }
+    if (const auto it = j.find("served_model_name"); it == j.end()) {
+    } else {
+        std::string v{};
+        if (auto e = d236(*it, member(at, "served_model_name"), &v)) return e;
+        out->served_model_name = std::move(v);
+    }
+    if (const auto it = j.find("write_timeout"); it == j.end()) {
+    } else {
+        std::string v{};
+        if (auto e = d237(*it, member(at, "write_timeout"), &v)) return e;
+        out->write_timeout = std::move(v);
+    }
+    return std::nullopt;
+}
+
+Status decode(const Json& j, const std::string& at, EngineChat* out) {  // /spec/processes/engine/chat
+    *out = EngineChat{};   // the result replaces the destination; nothing stale survives
+    if (auto e = closed(j, at, C::invalid_type, C::unknown_field, {"chat_template_kwargs", "override_chat_template", "reasoning_effort", "reasoning_effort_map", "reasoning_format", "thinking_token_budget"})) return e;
+    if (const auto it = j.find("chat_template_kwargs"); it == j.end()) {
+    } else {
+        std::string v{};
+        if (auto e = d239(*it, member(at, "chat_template_kwargs"), &v)) return e;
+        out->chat_template_kwargs = std::move(v);
+    }
+    if (const auto it = j.find("override_chat_template"); it == j.end()) {
+    } else {
+        std::string v{};
+        if (auto e = d240(*it, member(at, "override_chat_template"), &v)) return e;
+        out->override_chat_template = std::move(v);
+    }
+    if (const auto it = j.find("reasoning_effort"); it == j.end()) {
+    } else {
+        std::string v{};
+        if (auto e = d241(*it, member(at, "reasoning_effort"), &v)) return e;
+        out->reasoning_effort = std::move(v);
+    }
+    if (const auto it = j.find("reasoning_effort_map"); it == j.end()) {
+    } else {
+        std::string v{};
+        if (auto e = d242(*it, member(at, "reasoning_effort_map"), &v)) return e;
+        out->reasoning_effort_map = std::move(v);
+    }
+    if (const auto it = j.find("reasoning_format"); it == j.end()) {
+    } else {
+        std::string v{};
+        if (auto e = d243(*it, member(at, "reasoning_format"), &v)) return e;
+        out->reasoning_format = std::move(v);
+    }
+    if (const auto it = j.find("thinking_token_budget"); it == j.end()) {
+    } else {
+        int64_t v{};
+        if (auto e = d244(*it, member(at, "thinking_token_budget"), &v)) return e;
+        out->thinking_token_budget = std::move(v);
+    }
+    return std::nullopt;
+}
+
+Status decode(const Json& j, const std::string& at, EngineLora* out) {  // /spec/processes/engine/lora
+    *out = EngineLora{};   // the result replaces the destination; nothing stale survives
+    if (auto e = closed(j, at, C::invalid_type, C::unknown_field, {"control_vector", "lora_dir", "lora_target_modules", "max_lora_rank", "max_loras"})) return e;
+    if (const auto it = j.find("control_vector"); it == j.end()) {
+    } else {
+        std::string v{};
+        if (auto e = d246(*it, member(at, "control_vector"), &v)) return e;
+        out->control_vector = std::move(v);
+    }
+    if (const auto it = j.find("lora_dir"); it == j.end()) {
+    } else {
+        std::string v{};
+        if (auto e = d247(*it, member(at, "lora_dir"), &v)) return e;
+        out->lora_dir = std::move(v);
+    }
+    if (const auto it = j.find("lora_target_modules"); it == j.end()) {
+    } else {
+        std::string v{};
+        if (auto e = d248(*it, member(at, "lora_target_modules"), &v)) return e;
+        out->lora_target_modules = std::move(v);
+    }
+    if (const auto it = j.find("max_lora_rank"); it == j.end()) {
+    } else {
+        std::string v{};
+        if (auto e = d249(*it, member(at, "max_lora_rank"), &v)) return e;
+        out->max_lora_rank = std::move(v);
+    }
+    if (const auto it = j.find("max_loras"); it == j.end()) {
+    } else {
+        int64_t v{};
+        if (auto e = d250(*it, member(at, "max_loras"), &v)) return e;
+        out->max_loras = std::move(v);
+    }
+    return std::nullopt;
+}
+
+Status decode(const Json& j, const std::string& at, EngineVision* out) {  // /spec/processes/engine/vision
+    *out = EngineVision{};   // the result replaces the destination; nothing stale survives
+    if (auto e = closed(j, at, C::invalid_type, C::unknown_field, {"image_max_pixels", "image_min_pixels", "image_tokens", "max_source_pixels", "mm_max_patches", "video_fps", "video_max_frame_tokens", "video_max_frames", "video_max_pixels", "video_min_frames", "video_min_pixels", "vision_tower_placement"})) return e;
+    if (const auto it = j.find("image_max_pixels"); it == j.end()) {
+    } else {
+        int64_t v{};
+        if (auto e = d252(*it, member(at, "image_max_pixels"), &v)) return e;
+        out->image_max_pixels = std::move(v);
+    }
+    if (const auto it = j.find("image_min_pixels"); it == j.end()) {
+    } else {
+        int64_t v{};
+        if (auto e = d253(*it, member(at, "image_min_pixels"), &v)) return e;
+        out->image_min_pixels = std::move(v);
+    }
+    if (const auto it = j.find("image_tokens"); it == j.end()) {
+    } else {
+        int64_t v{};
+        if (auto e = d254(*it, member(at, "image_tokens"), &v)) return e;
+        out->image_tokens = std::move(v);
+    }
+    if (const auto it = j.find("max_source_pixels"); it == j.end()) {
+    } else {
+        int64_t v{};
+        if (auto e = d255(*it, member(at, "max_source_pixels"), &v)) return e;
+        out->max_source_pixels = std::move(v);
+    }
+    if (const auto it = j.find("mm_max_patches"); it == j.end()) {
+    } else {
+        int64_t v{};
+        if (auto e = d256(*it, member(at, "mm_max_patches"), &v)) return e;
+        out->mm_max_patches = std::move(v);
+    }
+    if (const auto it = j.find("video_fps"); it == j.end()) {
+    } else {
+        std::string v{};
+        if (auto e = d257(*it, member(at, "video_fps"), &v)) return e;
+        out->video_fps = std::move(v);
+    }
+    if (const auto it = j.find("video_max_frame_tokens"); it == j.end()) {
+    } else {
+        int64_t v{};
+        if (auto e = d258(*it, member(at, "video_max_frame_tokens"), &v)) return e;
+        out->video_max_frame_tokens = std::move(v);
+    }
+    if (const auto it = j.find("video_max_frames"); it == j.end()) {
+    } else {
+        int64_t v{};
+        if (auto e = d259(*it, member(at, "video_max_frames"), &v)) return e;
+        out->video_max_frames = std::move(v);
+    }
+    if (const auto it = j.find("video_max_pixels"); it == j.end()) {
+    } else {
+        int64_t v{};
+        if (auto e = d260(*it, member(at, "video_max_pixels"), &v)) return e;
+        out->video_max_pixels = std::move(v);
+    }
+    if (const auto it = j.find("video_min_frames"); it == j.end()) {
+    } else {
+        int64_t v{};
+        if (auto e = d261(*it, member(at, "video_min_frames"), &v)) return e;
+        out->video_min_frames = std::move(v);
+    }
+    if (const auto it = j.find("video_min_pixels"); it == j.end()) {
+    } else {
+        int64_t v{};
+        if (auto e = d262(*it, member(at, "video_min_pixels"), &v)) return e;
+        out->video_min_pixels = std::move(v);
+    }
+    if (const auto it = j.find("vision_tower_placement"); it == j.end()) {
+    } else {
+        std::string v{};
+        if (auto e = d263(*it, member(at, "vision_tower_placement"), &v)) return e;
+        out->vision_tower_placement = std::move(v);
+    }
+    return std::nullopt;
+}
+
+Status decode(const Json& j, const std::string& at, EngineTuning* out) {  // /spec/processes/engine/tuning
+    *out = EngineTuning{};   // the result replaces the destination; nothing stale survives
+    if (auto e = closed(j, at, C::invalid_type, C::unknown_field, {"attn_prefill_fp8", "busy_prefill_chunk", "checkpoint_policy", "draft_coupling", "draft_expert_placement", "draft_model", "draft_short_from", "draft_window", "embedding_placement", "expert_pin_top", "expert_profile", "expert_stats", "live", "p2p", "prefill_interleave", "prefill_span", "prefix_cache_ttl", "state_cache_dtype", "tp_attn_split", "tp_wire_min_kb", "weight_prefetch", "weights_disk_tier"})) return e;
+    if (const auto it = j.find("attn_prefill_fp8"); it == j.end()) {
+    } else {
+        std::string v{};
+        if (auto e = d265(*it, member(at, "attn_prefill_fp8"), &v)) return e;
+        out->attn_prefill_fp8 = std::move(v);
+    }
+    if (const auto it = j.find("busy_prefill_chunk"); it == j.end()) {
+    } else {
+        std::string v{};
+        if (auto e = d266(*it, member(at, "busy_prefill_chunk"), &v)) return e;
+        out->busy_prefill_chunk = std::move(v);
+    }
+    if (const auto it = j.find("checkpoint_policy"); it == j.end()) {
+    } else {
+        std::string v{};
+        if (auto e = d267(*it, member(at, "checkpoint_policy"), &v)) return e;
+        out->checkpoint_policy = std::move(v);
+    }
+    if (const auto it = j.find("draft_coupling"); it == j.end()) {
+    } else {
+        std::string v{};
+        if (auto e = d268(*it, member(at, "draft_coupling"), &v)) return e;
+        out->draft_coupling = std::move(v);
+    }
+    if (const auto it = j.find("draft_expert_placement"); it == j.end()) {
+    } else {
+        std::string v{};
+        if (auto e = d269(*it, member(at, "draft_expert_placement"), &v)) return e;
+        out->draft_expert_placement = std::move(v);
+    }
+    if (const auto it = j.find("draft_model"); it == j.end()) {
+    } else {
+        std::string v{};
+        if (auto e = d270(*it, member(at, "draft_model"), &v)) return e;
+        out->draft_model = std::move(v);
+    }
+    if (const auto it = j.find("draft_short_from"); it == j.end()) {
+    } else {
+        int64_t v{};
+        if (auto e = d271(*it, member(at, "draft_short_from"), &v)) return e;
+        out->draft_short_from = std::move(v);
+    }
+    if (const auto it = j.find("draft_window"); it == j.end()) {
+    } else {
+        std::string v{};
+        if (auto e = d272(*it, member(at, "draft_window"), &v)) return e;
+        out->draft_window = std::move(v);
+    }
+    if (const auto it = j.find("embedding_placement"); it == j.end()) {
+    } else {
+        std::string v{};
+        if (auto e = d273(*it, member(at, "embedding_placement"), &v)) return e;
+        out->embedding_placement = std::move(v);
+    }
+    if (const auto it = j.find("expert_pin_top"); it == j.end()) {
+    } else {
+        std::string v{};
+        if (auto e = d274(*it, member(at, "expert_pin_top"), &v)) return e;
+        out->expert_pin_top = std::move(v);
+    }
+    if (const auto it = j.find("expert_profile"); it == j.end()) {
+    } else {
+        std::string v{};
+        if (auto e = d275(*it, member(at, "expert_profile"), &v)) return e;
+        out->expert_profile = std::move(v);
+    }
+    if (const auto it = j.find("expert_stats"); it == j.end()) {
+    } else {
+        std::string v{};
+        if (auto e = d276(*it, member(at, "expert_stats"), &v)) return e;
+        out->expert_stats = std::move(v);
+    }
+    if (const auto it = j.find("live"); it == j.end()) {
+    } else {
+        OptLive v{};
+        if (auto e = d277(*it, member(at, "live"), &v)) return e;
+        out->live = std::move(v);
+    }
+    if (const auto it = j.find("p2p"); it == j.end()) {
+    } else {
+        std::string v{};
+        if (auto e = d278(*it, member(at, "p2p"), &v)) return e;
+        out->p2p = std::move(v);
+    }
+    if (const auto it = j.find("prefill_interleave"); it == j.end()) {
+    } else {
+        int64_t v{};
+        if (auto e = d279(*it, member(at, "prefill_interleave"), &v)) return e;
+        out->prefill_interleave = std::move(v);
+    }
+    if (const auto it = j.find("prefill_span"); it == j.end()) {
+    } else {
+        int64_t v{};
+        if (auto e = d280(*it, member(at, "prefill_span"), &v)) return e;
+        out->prefill_span = std::move(v);
+    }
+    if (const auto it = j.find("prefix_cache_ttl"); it == j.end()) {
+    } else {
+        std::string v{};
+        if (auto e = d281(*it, member(at, "prefix_cache_ttl"), &v)) return e;
+        out->prefix_cache_ttl = std::move(v);
+    }
+    if (const auto it = j.find("state_cache_dtype"); it == j.end()) {
+    } else {
+        std::string v{};
+        if (auto e = d282(*it, member(at, "state_cache_dtype"), &v)) return e;
+        out->state_cache_dtype = std::move(v);
+    }
+    if (const auto it = j.find("tp_attn_split"); it == j.end()) {
+    } else {
+        std::string v{};
+        if (auto e = d283(*it, member(at, "tp_attn_split"), &v)) return e;
+        out->tp_attn_split = std::move(v);
+    }
+    if (const auto it = j.find("tp_wire_min_kb"); it == j.end()) {
+    } else {
+        int64_t v{};
+        if (auto e = d284(*it, member(at, "tp_wire_min_kb"), &v)) return e;
+        out->tp_wire_min_kb = std::move(v);
+    }
+    if (const auto it = j.find("weight_prefetch"); it == j.end()) {
+    } else {
+        std::string v{};
+        if (auto e = d285(*it, member(at, "weight_prefetch"), &v)) return e;
+        out->weight_prefetch = std::move(v);
+    }
+    if (const auto it = j.find("weights_disk_tier"); it == j.end()) {
+    } else {
+        OptWeightsDiskTier v{};
+        if (auto e = d286(*it, member(at, "weights_disk_tier"), &v)) return e;
+        out->weights_disk_tier = std::move(v);
+    }
+    return std::nullopt;
+}
+
+Status decode(const Json& j, const std::string& at, EngineDiagnostics* out) {  // /spec/processes/engine/diagnostics
+    *out = EngineDiagnostics{};   // the result replaces the destination; nothing stale survives
+    if (auto e = closed(j, at, C::invalid_type, C::unknown_field, {"debug_accept_reference_kernels", "debug_placement"})) return e;
+    if (const auto it = j.find("debug_accept_reference_kernels"); it == j.end()) {
+    } else {
+        OptDebugAcceptReferenceKernels v{};
+        if (auto e = d288(*it, member(at, "debug_accept_reference_kernels"), &v)) return e;
+        out->debug_accept_reference_kernels = std::move(v);
+    }
+    if (const auto it = j.find("debug_placement"); it == j.end()) {
+    } else {
+        OptDebugPlacement v{};
+        if (auto e = d289(*it, member(at, "debug_placement"), &v)) return e;
+        out->debug_placement = std::move(v);
+    }
+    return std::nullopt;
+}
+
 Status decode(const Json& j, const std::string& at, EngineProcess* out) {  // /spec/processes/engine
     *out = EngineProcess{};   // the result replaces the destination; nothing stale survives
-    if (auto e = closed(j, at, C::invalid_type, C::unknown_field, {"device", "runtime", "server", "scheduler", "execution"})) return e;
+    if (auto e = closed(j, at, C::invalid_type, C::unknown_field, {"device", "runtime", "server", "scheduler", "execution", "sampling", "limits", "chat", "lora", "vision", "tuning", "diagnostics"})) return e;
     if (const auto it = j.find("device"); it == j.end()) {
         return fault(C::missing_field, member(at, "device"), "missing required member");
     } else {
@@ -3347,6 +4269,48 @@ Status decode(const Json& j, const std::string& at, EngineProcess* out) {  // /s
         if (auto e = decode(*it, member(at, "execution"), &v)) return e;
         out->execution = std::move(v);
     }
+    if (const auto it = j.find("sampling"); it == j.end()) {
+    } else {
+        EngineSampling v{};
+        if (auto e = decode(*it, member(at, "sampling"), &v)) return e;
+        out->sampling = std::move(v);
+    }
+    if (const auto it = j.find("limits"); it == j.end()) {
+    } else {
+        EngineLimits v{};
+        if (auto e = decode(*it, member(at, "limits"), &v)) return e;
+        out->limits = std::move(v);
+    }
+    if (const auto it = j.find("chat"); it == j.end()) {
+    } else {
+        EngineChat v{};
+        if (auto e = decode(*it, member(at, "chat"), &v)) return e;
+        out->chat = std::move(v);
+    }
+    if (const auto it = j.find("lora"); it == j.end()) {
+    } else {
+        EngineLora v{};
+        if (auto e = decode(*it, member(at, "lora"), &v)) return e;
+        out->lora = std::move(v);
+    }
+    if (const auto it = j.find("vision"); it == j.end()) {
+    } else {
+        EngineVision v{};
+        if (auto e = decode(*it, member(at, "vision"), &v)) return e;
+        out->vision = std::move(v);
+    }
+    if (const auto it = j.find("tuning"); it == j.end()) {
+    } else {
+        EngineTuning v{};
+        if (auto e = decode(*it, member(at, "tuning"), &v)) return e;
+        out->tuning = std::move(v);
+    }
+    if (const auto it = j.find("diagnostics"); it == j.end()) {
+    } else {
+        EngineDiagnostics v{};
+        if (auto e = decode(*it, member(at, "diagnostics"), &v)) return e;
+        out->diagnostics = std::move(v);
+    }
     return std::nullopt;
 }
 
@@ -3357,56 +4321,56 @@ Status decode(const Json& j, const std::string& at, HelperProcess* out) {  // /s
         return fault(C::missing_field, member(at, "role"), "missing required member");
     } else {
         std::string v{};
-        if (auto e = d206(*it, member(at, "role"), &v)) return e;
+        if (auto e = d293(*it, member(at, "role"), &v)) return e;
         out->role = std::move(v);
     }
     if (const auto it = j.find("gpu"); it == j.end()) {
         return fault(C::missing_field, member(at, "gpu"), "missing required member");
     } else {
         std::string v{};
-        if (auto e = d207(*it, member(at, "gpu"), &v)) return e;
+        if (auto e = d294(*it, member(at, "gpu"), &v)) return e;
         out->gpu = std::move(v);
     }
     if (const auto it = j.find("vram_budget_mib"); it == j.end()) {
         return fault(C::missing_field, member(at, "vram_budget_mib"), "missing required member");
     } else {
         int64_t v{};
-        if (auto e = d208(*it, member(at, "vram_budget_mib"), &v)) return e;
+        if (auto e = d295(*it, member(at, "vram_budget_mib"), &v)) return e;
         out->vram_budget_mib = std::move(v);
     }
     if (const auto it = j.find("plugin_file"); it == j.end()) {
         return fault(C::missing_field, member(at, "plugin_file"), "missing required member");
     } else {
         std::string v{};
-        if (auto e = d209(*it, member(at, "plugin_file"), &v)) return e;
+        if (auto e = d296(*it, member(at, "plugin_file"), &v)) return e;
         out->plugin_file = std::move(v);
     }
     if (const auto it = j.find("formats"); it == j.end()) {
         return fault(C::missing_field, member(at, "formats"), "missing required member");
     } else {
         std::vector<ExpertFormat> v{};
-        if (auto e = d210(*it, member(at, "formats"), &v)) return e;
+        if (auto e = d297(*it, member(at, "formats"), &v)) return e;
         out->formats = std::move(v);
     }
     if (const auto it = j.find("rows_kernel"); it == j.end()) {
         return fault(C::missing_field, member(at, "rows_kernel"), "missing required member");
     } else {
         bool v{};
-        if (auto e = d212(*it, member(at, "rows_kernel"), &v)) return e;
+        if (auto e = d299(*it, member(at, "rows_kernel"), &v)) return e;
         out->rows_kernel = std::move(v);
     }
     if (const auto it = j.find("tier"); it == j.end()) {
         return fault(C::missing_field, member(at, "tier"), "missing required member");
     } else {
         HelperTier v{};
-        if (auto e = d213(*it, member(at, "tier"), &v)) return e;
+        if (auto e = d300(*it, member(at, "tier"), &v)) return e;
         out->tier = std::move(v);
     }
     if (const auto it = j.find("share"); it == j.end()) {
         return fault(C::missing_field, member(at, "share"), "missing required member");
     } else {
         int64_t v{};
-        if (auto e = d214(*it, member(at, "share"), &v)) return e;
+        if (auto e = d301(*it, member(at, "share"), &v)) return e;
         out->share = std::move(v);
     }
     if (const auto it = j.find("settings"); it == j.end()) {
@@ -3438,7 +4402,7 @@ Status decode(const Json& j, const std::string& at, Processes* out) {  // /spec/
         return fault(C::missing_field, member(at, "helpers"), "missing required member");
     } else {
         std::vector<HelperProcess> v{};
-        if (auto e = d204(*it, member(at, "helpers"), &v)) return e;
+        if (auto e = d291(*it, member(at, "helpers"), &v)) return e;
         out->helpers = std::move(v);
     }
     return std::nullopt;
@@ -3451,28 +4415,28 @@ Status decode(const Json& j, const std::string& at, OwnedSet* out) {  // /spec/p
         return fault(C::ownership_mismatch, member(at, "owned_sha256"), "missing required member");
     } else {
         std::string v{};
-        if (auto e = d221(*it, member(at, "owned_sha256"), &v)) return e;
+        if (auto e = d308(*it, member(at, "owned_sha256"), &v)) return e;
         out->owned_sha256 = std::move(v);
     }
     if (const auto it = j.find("count"); it == j.end()) {
         return fault(C::ownership_mismatch, member(at, "count"), "missing required member");
     } else {
         int64_t v{};
-        if (auto e = d222(*it, member(at, "count"), &v)) return e;
+        if (auto e = d309(*it, member(at, "count"), &v)) return e;
         out->count = std::move(v);
     }
     if (const auto it = j.find("bytes"); it == j.end()) {
         return fault(C::ownership_mismatch, member(at, "bytes"), "missing required member");
     } else {
         int64_t v{};
-        if (auto e = d223(*it, member(at, "bytes"), &v)) return e;
+        if (auto e = d310(*it, member(at, "bytes"), &v)) return e;
         out->bytes = std::move(v);
     }
     if (const auto it = j.find("experts"); it == j.end()) {
         return fault(C::ownership_mismatch, member(at, "experts"), "missing required member");
     } else {
         std::vector<std::array<int64_t, 2>> v{};
-        if (auto e = d224(*it, member(at, "experts"), &v)) return e;
+        if (auto e = d311(*it, member(at, "experts"), &v)) return e;
         out->experts = std::move(v);
     }
     return std::nullopt;
@@ -3485,14 +4449,14 @@ Status decode(const Json& j, const std::string& at, OwnerMap* out) {  // /spec/p
         return fault(C::ownership_mismatch, member(at, "owner_map_sha256"), "missing required member");
     } else {
         std::string v{};
-        if (auto e = d218(*it, member(at, "owner_map_sha256"), &v)) return e;
+        if (auto e = d305(*it, member(at, "owner_map_sha256"), &v)) return e;
         out->owner_map_sha256 = std::move(v);
     }
     if (const auto it = j.find("helpers"); it == j.end()) {
         return fault(C::ownership_mismatch, member(at, "helpers"), "missing required member");
     } else {
         std::vector<OwnedSet> v{};
-        if (auto e = d219(*it, member(at, "helpers"), &v)) return e;
+        if (auto e = d306(*it, member(at, "helpers"), &v)) return e;
         out->helpers = std::move(v);
     }
     return std::nullopt;
@@ -3505,28 +4469,28 @@ Status decode(const Json& j, const std::string& at, EngineMemory* out) {  // /sp
         return fault(C::missing_field, member(at, "cache_version"), "missing required member");
     } else {
         int64_t v{};
-        if (auto e = d228(*it, member(at, "cache_version"), &v)) return e;
+        if (auto e = d315(*it, member(at, "cache_version"), &v)) return e;
         out->cache_version = std::move(v);
     }
     if (const auto it = j.find("cache_key"); it == j.end()) {
         return fault(C::missing_field, member(at, "cache_key"), "missing required member");
     } else {
         std::string v{};
-        if (auto e = d229(*it, member(at, "cache_key"), &v)) return e;
+        if (auto e = d316(*it, member(at, "cache_key"), &v)) return e;
         out->cache_key = std::move(v);
     }
     if (const auto it = j.find("model_identity"); it == j.end()) {
         return fault(C::missing_field, member(at, "model_identity"), "missing required member");
     } else {
         std::string v{};
-        if (auto e = d230(*it, member(at, "model_identity"), &v)) return e;
+        if (auto e = d317(*it, member(at, "model_identity"), &v)) return e;
         out->model_identity = std::move(v);
     }
     if (const auto it = j.find("engine_identity"); it == j.end()) {
         return fault(C::missing_field, member(at, "engine_identity"), "missing required member");
     } else {
         std::string v{};
-        if (auto e = d231(*it, member(at, "engine_identity"), &v)) return e;
+        if (auto e = d318(*it, member(at, "engine_identity"), &v)) return e;
         out->engine_identity = std::move(v);
     }
     if (const auto it = j.find("expected"); it == j.end()) {
@@ -3553,7 +4517,7 @@ Status decode(const Json& j, const std::string& at, Plan* out) {  // /spec/plan
         return fault(C::missing_field, member(at, "state"), "missing required member");
     } else {
         PlanState v{};
-        if (auto e = d226(*it, member(at, "state"), &v)) return e;
+        if (auto e = d313(*it, member(at, "state"), &v)) return e;
         out->state = std::move(v);
     }
     if (const auto it = j.find("engine_memory"); it == j.end()) {
@@ -3572,39 +4536,39 @@ Status decode(const Json& j, const std::string& at, ForcedStep* out) {  // /spec
         return fault(C::missing_field, member(at, "kind"), "missing required member");
     } else {
         ForcedKind v{};
-        if (auto e = d240(*it, member(at, "kind"), &v)) return e;
+        if (auto e = d327(*it, member(at, "kind"), &v)) return e;
         out->kind = std::move(v);
     }
     if (const auto it = j.find("a_layer"); it == j.end()) {
         return fault(C::missing_field, member(at, "a_layer"), "missing required member");
     } else {
         int64_t v{};
-        if (auto e = d241(*it, member(at, "a_layer"), &v)) return e;
+        if (auto e = d328(*it, member(at, "a_layer"), &v)) return e;
         out->a_layer = std::move(v);
     }
     if (const auto it = j.find("a_expert"); it == j.end()) {
         return fault(C::missing_field, member(at, "a_expert"), "missing required member");
     } else {
         int64_t v{};
-        if (auto e = d242(*it, member(at, "a_expert"), &v)) return e;
+        if (auto e = d329(*it, member(at, "a_expert"), &v)) return e;
         out->a_expert = std::move(v);
     }
     if (const auto it = j.find("destination"); it == j.end()) {
     } else {
         int64_t v{};
-        if (auto e = d243(*it, member(at, "destination"), &v)) return e;
+        if (auto e = d330(*it, member(at, "destination"), &v)) return e;
         out->destination = std::move(v);
     }
     if (const auto it = j.find("b_layer"); it == j.end()) {
     } else {
         int64_t v{};
-        if (auto e = d244(*it, member(at, "b_layer"), &v)) return e;
+        if (auto e = d331(*it, member(at, "b_layer"), &v)) return e;
         out->b_layer = std::move(v);
     }
     if (const auto it = j.find("b_expert"); it == j.end()) {
     } else {
         int64_t v{};
-        if (auto e = d245(*it, member(at, "b_expert"), &v)) return e;
+        if (auto e = d332(*it, member(at, "b_expert"), &v)) return e;
         out->b_expert = std::move(v);
     }
     return std::nullopt;
@@ -3617,14 +4581,14 @@ Status decode(const Json& j, const std::string& at, ForcedChurn* out) {  // /spe
         return fault(C::missing_field, member(at, "repeat"), "missing required member");
     } else {
         int64_t v{};
-        if (auto e = d237(*it, member(at, "repeat"), &v)) return e;
+        if (auto e = d324(*it, member(at, "repeat"), &v)) return e;
         out->repeat = std::move(v);
     }
     if (const auto it = j.find("steps"); it == j.end()) {
         return fault(C::missing_field, member(at, "steps"), "missing required member");
     } else {
         std::vector<ForcedStep> v{};
-        if (auto e = d238(*it, member(at, "steps"), &v)) return e;
+        if (auto e = d325(*it, member(at, "steps"), &v)) return e;
         out->steps = std::move(v);
     }
     return std::nullopt;
@@ -3637,7 +4601,7 @@ Status decode(const Json& j, const std::string& at, ExperimentPlacement* out) { 
         return fault(C::missing_field, member(at, "mode"), "missing required member");
     } else {
         PlacementMode v{};
-        if (auto e = d235(*it, member(at, "mode"), &v)) return e;
+        if (auto e = d322(*it, member(at, "mode"), &v)) return e;
         out->mode = std::move(v);
     }
     if (const auto it = j.find("forced"); it == j.end()) {
@@ -3649,7 +4613,7 @@ Status decode(const Json& j, const std::string& at, ExperimentPlacement* out) { 
     if (const auto it = j.find("epoch_cycle_s"); it == j.end()) {
     } else {
         int64_t v{};
-        if (auto e = d246(*it, member(at, "epoch_cycle_s"), &v)) return e;
+        if (auto e = d333(*it, member(at, "epoch_cycle_s"), &v)) return e;
         out->epoch_cycle_s = std::move(v);
     }
     return std::nullopt;
@@ -3662,7 +4626,7 @@ Status decode(const Json& j, const std::string& at, ShapePatch* out) {  // /spec
         return fault(C::missing_field, member(at, "role"), "missing required member");
     } else {
         std::string v{};
-        if (auto e = d251(*it, member(at, "role"), &v)) return e;
+        if (auto e = d338(*it, member(at, "role"), &v)) return e;
         out->role = std::move(v);
     }
     if (const auto it = j.find("settings"); it == j.end()) {
@@ -3688,7 +4652,7 @@ Status decode(const Json& j, const std::string& at, ExperimentShape* out) {  // 
     if (const auto it = j.find("helpers"); it == j.end()) {
     } else {
         std::vector<ShapePatch> v{};
-        if (auto e = d249(*it, member(at, "helpers"), &v)) return e;
+        if (auto e = d336(*it, member(at, "helpers"), &v)) return e;
         out->helpers = std::move(v);
     }
     return std::nullopt;
@@ -3701,13 +4665,13 @@ Status decode(const Json& j, const std::string& at, GemvDiagnostics* out) {  // 
     if (const auto it = j.find("probe_mode"); it == j.end()) {
     } else {
         int64_t v{};
-        if (auto e = d255(*it, member(at, "probe_mode"), &v)) return e;
+        if (auto e = d342(*it, member(at, "probe_mode"), &v)) return e;
         out->probe_mode = std::move(v);
     }
     if (const auto it = j.find("refusal_trace"); it == j.end()) {
     } else {
         bool v{};
-        if (auto e = d256(*it, member(at, "refusal_trace"), &v)) return e;
+        if (auto e = d343(*it, member(at, "refusal_trace"), &v)) return e;
         out->refusal_trace = std::move(v);
     }
     return std::nullopt;
@@ -3722,25 +4686,25 @@ Status decode(const Json& j, const std::string& at, LaneDiagnostics* out) {  // 
         out->capture_file.emplace(std::nullopt);
     } else {
         std::string v{};
-        if (auto e = d258(*it, member(at, "capture_file"), &v)) return e;
+        if (auto e = d345(*it, member(at, "capture_file"), &v)) return e;
         out->capture_file.emplace(std::move(v));
     }
     if (const auto it = j.find("capture_every"); it == j.end()) {
     } else {
         int64_t v{};
-        if (auto e = d259(*it, member(at, "capture_every"), &v)) return e;
+        if (auto e = d346(*it, member(at, "capture_every"), &v)) return e;
         out->capture_every = std::move(v);
     }
     if (const auto it = j.find("capture_max"); it == j.end()) {
     } else {
         int64_t v{};
-        if (auto e = d260(*it, member(at, "capture_max"), &v)) return e;
+        if (auto e = d347(*it, member(at, "capture_max"), &v)) return e;
         out->capture_max = std::move(v);
     }
     if (const auto it = j.find("trace_level"); it == j.end()) {
     } else {
         int64_t v{};
-        if (auto e = d261(*it, member(at, "trace_level"), &v)) return e;
+        if (auto e = d348(*it, member(at, "trace_level"), &v)) return e;
         out->trace_level = std::move(v);
     }
     if (const auto it = j.find("test_stop_at"); it == j.end()) {
@@ -3748,7 +4712,7 @@ Status decode(const Json& j, const std::string& at, LaneDiagnostics* out) {  // 
         out->test_stop_at.emplace(std::nullopt);
     } else {
         std::string v{};
-        if (auto e = d262(*it, member(at, "test_stop_at"), &v)) return e;
+        if (auto e = d349(*it, member(at, "test_stop_at"), &v)) return e;
         out->test_stop_at.emplace(std::move(v));
     }
     return std::nullopt;
@@ -3763,19 +4727,19 @@ Status decode(const Json& j, const std::string& at, KernelDiagnostics* out) {  /
         out->plugin_override.emplace(std::nullopt);
     } else {
         std::string v{};
-        if (auto e = d264(*it, member(at, "plugin_override"), &v)) return e;
+        if (auto e = d351(*it, member(at, "plugin_override"), &v)) return e;
         out->plugin_override.emplace(std::move(v));
     }
     if (const auto it = j.find("poison"); it == j.end()) {
     } else {
         Poison v{};
-        if (auto e = d265(*it, member(at, "poison"), &v)) return e;
+        if (auto e = d352(*it, member(at, "poison"), &v)) return e;
         out->poison = std::move(v);
     }
     if (const auto it = j.find("sweep_fast"); it == j.end()) {
     } else {
         bool v{};
-        if (auto e = d266(*it, member(at, "sweep_fast"), &v)) return e;
+        if (auto e = d353(*it, member(at, "sweep_fast"), &v)) return e;
         out->sweep_fast = std::move(v);
     }
     return std::nullopt;
@@ -3813,25 +4777,25 @@ Status decode(const Json& j, const std::string& at, ExperimentEngine* out) {  //
     if (const auto it = j.find("profile_ops"); it == j.end()) {
     } else {
         ProfileOps v{};
-        if (auto e = d268(*it, member(at, "profile_ops"), &v)) return e;
+        if (auto e = d355(*it, member(at, "profile_ops"), &v)) return e;
         out->profile_ops = std::move(v);
     }
     if (const auto it = j.find("debug_selection"); it == j.end()) {
     } else {
         DebugSelection v{};
-        if (auto e = d269(*it, member(at, "debug_selection"), &v)) return e;
+        if (auto e = d356(*it, member(at, "debug_selection"), &v)) return e;
         out->debug_selection = std::move(v);
     }
     if (const auto it = j.find("deterministic"); it == j.end()) {
     } else {
         Deterministic v{};
-        if (auto e = d270(*it, member(at, "deterministic"), &v)) return e;
+        if (auto e = d357(*it, member(at, "deterministic"), &v)) return e;
         out->deterministic = std::move(v);
     }
     if (const auto it = j.find("kv_resident"); it == j.end()) {
     } else {
         int64_t v{};
-        if (auto e = d271(*it, member(at, "kv_resident"), &v)) return e;
+        if (auto e = d358(*it, member(at, "kv_resident"), &v)) return e;
         out->kv_resident = std::move(v);
     }
     return std::nullopt;
@@ -3935,42 +4899,42 @@ Status decode(const Json& j, const std::string& at, ProvenanceRecord* out) {  //
         return fault(C::provenance_invalid, member(at, "origin"), "missing required member");
     } else {
         Origin v{};
-        if (auto e = d274(*it, member(at, "origin"), &v)) return e;
+        if (auto e = d361(*it, member(at, "origin"), &v)) return e;
         out->origin = std::move(v);
     }
     if (const auto it = j.find("source"); it == j.end()) {
         return fault(C::provenance_invalid, member(at, "source"), "missing required member");
     } else {
         std::string v{};
-        if (auto e = d275(*it, member(at, "source"), &v)) return e;
+        if (auto e = d362(*it, member(at, "source"), &v)) return e;
         out->source = std::move(v);
     }
     if (const auto it = j.find("class"); it == j.end()) {
         return fault(C::provenance_invalid, member(at, "class"), "missing required member");
     } else {
         ValueClass v{};
-        if (auto e = d276(*it, member(at, "class"), &v)) return e;
+        if (auto e = d363(*it, member(at, "class"), &v)) return e;
         out->value_class = std::move(v);
     }
     if (const auto it = j.find("lifecycle"); it == j.end()) {
         return fault(C::provenance_invalid, member(at, "lifecycle"), "missing required member");
     } else {
         Lifecycle v{};
-        if (auto e = d277(*it, member(at, "lifecycle"), &v)) return e;
+        if (auto e = d364(*it, member(at, "lifecycle"), &v)) return e;
         out->lifecycle = std::move(v);
     }
     if (const auto it = j.find("confidence"); it == j.end()) {
         return fault(C::provenance_invalid, member(at, "confidence"), "missing required member");
     } else {
         Confidence v{};
-        if (auto e = d278(*it, member(at, "confidence"), &v)) return e;
+        if (auto e = d365(*it, member(at, "confidence"), &v)) return e;
         out->confidence = std::move(v);
     }
     if (const auto it = j.find("inputs"); it == j.end()) {
         return fault(C::provenance_invalid, member(at, "inputs"), "missing required member");
     } else {
         std::vector<std::string> v{};
-        if (auto e = d279(*it, member(at, "inputs"), &v)) return e;
+        if (auto e = d366(*it, member(at, "inputs"), &v)) return e;
         out->inputs = std::move(v);
     }
     return std::nullopt;
@@ -4011,7 +4975,7 @@ Status decode(const Json& j, const std::string& at, Manifest* out) {  // ""
         return fault(C::missing_field, member(at, "provenance"), "missing required member");
     } else {
         std::map<std::string, ProvenanceRecord> v{};
-        if (auto e = d272(*it, member(at, "provenance"), &v)) return e;
+        if (auto e = d359(*it, member(at, "provenance"), &v)) return e;
         out->provenance = std::move(v);
     }
     return std::nullopt;
@@ -4446,6 +5410,121 @@ nlohmann::json encode(const EngineExecution& value) {
     return j;
 }
 
+nlohmann::json encode(const EngineSampling& value) {
+    Json j = Json::object();
+    if (value.default_max_tokens) j["default_max_tokens"] = Json(*value.default_max_tokens);
+    if (value.dry_allowed_length) j["dry_allowed_length"] = Json(*value.dry_allowed_length);
+    if (value.dry_base) j["dry_base"] = Json(*value.dry_base);
+    if (value.dry_multiplier) j["dry_multiplier"] = Json(*value.dry_multiplier);
+    if (value.dry_penalty_last_n) j["dry_penalty_last_n"] = Json(*value.dry_penalty_last_n);
+    if (value.dry_sequence_breakers) j["dry_sequence_breakers"] = Json(*value.dry_sequence_breakers);
+    if (value.frequency_penalty) j["frequency_penalty"] = Json(*value.frequency_penalty);
+    if (value.generation_config) j["generation_config"] = Json(*value.generation_config);
+    if (value.max_n) j["max_n"] = Json(*value.max_n);
+    if (value.max_tokens_cap) j["max_tokens_cap"] = Json(*value.max_tokens_cap);
+    if (value.min_p) j["min_p"] = Json(*value.min_p);
+    if (value.presence_penalty) j["presence_penalty"] = Json(*value.presence_penalty);
+    if (value.repeat_last_n) j["repeat_last_n"] = Json(*value.repeat_last_n);
+    if (value.repetition_penalty) j["repetition_penalty"] = Json(*value.repetition_penalty);
+    if (value.temp) j["temp"] = Json(*value.temp);
+    if (value.top_k) j["top_k"] = Json(*value.top_k);
+    if (value.top_p) j["top_p"] = Json(*value.top_p);
+    if (value.typical_p) j["typical_p"] = Json(*value.typical_p);
+    if (value.xtc_probability) j["xtc_probability"] = Json(*value.xtc_probability);
+    if (value.xtc_threshold) j["xtc_threshold"] = Json(*value.xtc_threshold);
+    return j;
+}
+
+nlohmann::json encode(const EngineLimits& value) {
+    Json j = Json::object();
+    if (value.api_key) j["api_key"] = Json(*value.api_key);
+    if (value.host) j["host"] = Json(*value.host);
+    if (value.http_threads) j["http_threads"] = Json(*value.http_threads);
+    if (value.keep_alive_timeout) j["keep_alive_timeout"] = Json(*value.keep_alive_timeout);
+    if (value.max_body_mib) j["max_body_mib"] = Json(*value.max_body_mib);
+    if (value.max_queued_requests) j["max_queued_requests"] = Json(*value.max_queued_requests);
+    if (value.max_stop_bytes) j["max_stop_bytes"] = Json(*value.max_stop_bytes);
+    if (value.max_stop_strings) j["max_stop_strings"] = Json(*value.max_stop_strings);
+    if (value.no_cors) j["no_cors"] = Json(kOptNoCorsNames[static_cast<size_t>(*value.no_cors)]);
+    if (value.read_timeout) j["read_timeout"] = Json(*value.read_timeout);
+    if (value.retry_after) j["retry_after"] = Json(*value.retry_after);
+    if (value.served_model_name) j["served_model_name"] = Json(*value.served_model_name);
+    if (value.write_timeout) j["write_timeout"] = Json(*value.write_timeout);
+    return j;
+}
+
+nlohmann::json encode(const EngineChat& value) {
+    Json j = Json::object();
+    if (value.chat_template_kwargs) j["chat_template_kwargs"] = Json(*value.chat_template_kwargs);
+    if (value.override_chat_template) j["override_chat_template"] = Json(*value.override_chat_template);
+    if (value.reasoning_effort) j["reasoning_effort"] = Json(*value.reasoning_effort);
+    if (value.reasoning_effort_map) j["reasoning_effort_map"] = Json(*value.reasoning_effort_map);
+    if (value.reasoning_format) j["reasoning_format"] = Json(*value.reasoning_format);
+    if (value.thinking_token_budget) j["thinking_token_budget"] = Json(*value.thinking_token_budget);
+    return j;
+}
+
+nlohmann::json encode(const EngineLora& value) {
+    Json j = Json::object();
+    if (value.control_vector) j["control_vector"] = Json(*value.control_vector);
+    if (value.lora_dir) j["lora_dir"] = Json(*value.lora_dir);
+    if (value.lora_target_modules) j["lora_target_modules"] = Json(*value.lora_target_modules);
+    if (value.max_lora_rank) j["max_lora_rank"] = Json(*value.max_lora_rank);
+    if (value.max_loras) j["max_loras"] = Json(*value.max_loras);
+    return j;
+}
+
+nlohmann::json encode(const EngineVision& value) {
+    Json j = Json::object();
+    if (value.image_max_pixels) j["image_max_pixels"] = Json(*value.image_max_pixels);
+    if (value.image_min_pixels) j["image_min_pixels"] = Json(*value.image_min_pixels);
+    if (value.image_tokens) j["image_tokens"] = Json(*value.image_tokens);
+    if (value.max_source_pixels) j["max_source_pixels"] = Json(*value.max_source_pixels);
+    if (value.mm_max_patches) j["mm_max_patches"] = Json(*value.mm_max_patches);
+    if (value.video_fps) j["video_fps"] = Json(*value.video_fps);
+    if (value.video_max_frame_tokens) j["video_max_frame_tokens"] = Json(*value.video_max_frame_tokens);
+    if (value.video_max_frames) j["video_max_frames"] = Json(*value.video_max_frames);
+    if (value.video_max_pixels) j["video_max_pixels"] = Json(*value.video_max_pixels);
+    if (value.video_min_frames) j["video_min_frames"] = Json(*value.video_min_frames);
+    if (value.video_min_pixels) j["video_min_pixels"] = Json(*value.video_min_pixels);
+    if (value.vision_tower_placement) j["vision_tower_placement"] = Json(*value.vision_tower_placement);
+    return j;
+}
+
+nlohmann::json encode(const EngineTuning& value) {
+    Json j = Json::object();
+    if (value.attn_prefill_fp8) j["attn_prefill_fp8"] = Json(*value.attn_prefill_fp8);
+    if (value.busy_prefill_chunk) j["busy_prefill_chunk"] = Json(*value.busy_prefill_chunk);
+    if (value.checkpoint_policy) j["checkpoint_policy"] = Json(*value.checkpoint_policy);
+    if (value.draft_coupling) j["draft_coupling"] = Json(*value.draft_coupling);
+    if (value.draft_expert_placement) j["draft_expert_placement"] = Json(*value.draft_expert_placement);
+    if (value.draft_model) j["draft_model"] = Json(*value.draft_model);
+    if (value.draft_short_from) j["draft_short_from"] = Json(*value.draft_short_from);
+    if (value.draft_window) j["draft_window"] = Json(*value.draft_window);
+    if (value.embedding_placement) j["embedding_placement"] = Json(*value.embedding_placement);
+    if (value.expert_pin_top) j["expert_pin_top"] = Json(*value.expert_pin_top);
+    if (value.expert_profile) j["expert_profile"] = Json(*value.expert_profile);
+    if (value.expert_stats) j["expert_stats"] = Json(*value.expert_stats);
+    if (value.live) j["live"] = Json(kOptLiveNames[static_cast<size_t>(*value.live)]);
+    if (value.p2p) j["p2p"] = Json(*value.p2p);
+    if (value.prefill_interleave) j["prefill_interleave"] = Json(*value.prefill_interleave);
+    if (value.prefill_span) j["prefill_span"] = Json(*value.prefill_span);
+    if (value.prefix_cache_ttl) j["prefix_cache_ttl"] = Json(*value.prefix_cache_ttl);
+    if (value.state_cache_dtype) j["state_cache_dtype"] = Json(*value.state_cache_dtype);
+    if (value.tp_attn_split) j["tp_attn_split"] = Json(*value.tp_attn_split);
+    if (value.tp_wire_min_kb) j["tp_wire_min_kb"] = Json(*value.tp_wire_min_kb);
+    if (value.weight_prefetch) j["weight_prefetch"] = Json(*value.weight_prefetch);
+    if (value.weights_disk_tier) j["weights_disk_tier"] = Json(kOptWeightsDiskTierNames[static_cast<size_t>(*value.weights_disk_tier)]);
+    return j;
+}
+
+nlohmann::json encode(const EngineDiagnostics& value) {
+    Json j = Json::object();
+    if (value.debug_accept_reference_kernels) j["debug_accept_reference_kernels"] = Json(kOptDebugAcceptReferenceKernelsNames[static_cast<size_t>(*value.debug_accept_reference_kernels)]);
+    if (value.debug_placement) j["debug_placement"] = Json(kOptDebugPlacementNames[static_cast<size_t>(*value.debug_placement)]);
+    return j;
+}
+
 nlohmann::json encode(const EngineProcess& value) {
     Json j = Json::object();
     j["device"] = encode(value.device);
@@ -4453,6 +5532,13 @@ nlohmann::json encode(const EngineProcess& value) {
     j["server"] = encode(value.server);
     j["scheduler"] = encode(value.scheduler);
     j["execution"] = encode(value.execution);
+    if (value.sampling) j["sampling"] = encode(*value.sampling);
+    if (value.limits) j["limits"] = encode(*value.limits);
+    if (value.chat) j["chat"] = encode(*value.chat);
+    if (value.lora) j["lora"] = encode(*value.lora);
+    if (value.vision) j["vision"] = encode(*value.vision);
+    if (value.tuning) j["tuning"] = encode(*value.tuning);
+    if (value.diagnostics) j["diagnostics"] = encode(*value.diagnostics);
     return j;
 }
 

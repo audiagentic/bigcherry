@@ -7,6 +7,15 @@
 #include <nlohmann/json.hpp>
 
 namespace bc::serving {
+
+/* The engine options the registry binds to a field of their own beyond the hand-written resolver keys (contract amendment 13):
+ * one `section.name` key each (`sampling.temp`, `limits.max_body_mib`, ...), the manifest leaf it becomes, and its shape. Read
+ * from the generated registry, so a field added there is a resolver key and a manifest leaf without another table. */
+struct OptionField {
+    std::string section, name, key, path, kind, doc;
+    bool is_switch = false;   // the flag takes no value: the key's one value is "on"
+};
+const std::vector<OptionField>& engine_option_fields();
 using Json = nlohmann::json;
 
 struct Service {
