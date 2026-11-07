@@ -74,7 +74,7 @@ radiance --manifest M --role engine --plan-memory PLAN.json   # measuring start 
 r3_moe_worker --manifest M --role helper0
 ```
 
-With `--manifest` the engine accepts only `--role engine`, `--plan-memory FILE`, `-v` and `-vv`; any other flag is an
+With `--manifest` the engine accepts only `--role engine`, `--plan-memory FILE`, `-v`, `-vv` and the quality-run flags `--kld-record`, `--kld-corpus`, `--kld-ref` and `--kld-out` (a KL run scores the model's own rows and never serves, so the serving plan check is not armed for it); any other flag is an
 error naming the flag. `--radiance-home` and `--kernels` must be in the manifest (the environment variables never fill
 them in). A serving start checks the live memory plan against the plan the manifest carries before any weights load; there
 is no switch to skip it.

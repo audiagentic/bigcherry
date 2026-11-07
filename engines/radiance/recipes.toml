@@ -12,7 +12,6 @@ pinned-version = "1.17.0"
 patches = [
   "rad0008_hc_upmix_rt_sweep",
   "rad0002_moe_remote_handoff",
-  "rad0009_serving_manifest",
   "rad0011_plan_memory",
   "rad0013_mtp_pass_replay",
 ]
@@ -27,7 +26,7 @@ required-state = "untested"
 # Start from a resolved serving manifest (rad0009, RSC07): `--manifest PATH` replaces command-line flags. Untested until a
 # manifest launch is shown to parse to the same config as the argv launch on hardware, then moved to serving-core.
 [patch-set.serving-manifest]
-patches = []
+patches = ["rad0009_serving_manifest"]
 required-state = "untested"
 
 # Remote-MoE diagnostics (shadow compare, mask-only); the hand-off is in serving-core. Patch-lint fails
@@ -65,7 +64,7 @@ patch-sets = []
 [source.radiance]
 description = "radiance 1.14.0 with BigCherry's validated engine patch sets."
 overlay = false
-patch-sets = ["serving-core", "host-compat", "serving-manifest", "helper-config", "mtp-pass-replay"]
+patch-sets = ["serving-manifest", "serving-core", "host-compat", "helper-config", "mtp-pass-replay"]
 
 [source.radiance-diag]
 description = "radiance 1.14.0 with the validated engine patch sets plus remote-MoE diagnostics (rad0004); build it with build.moe-diag."
