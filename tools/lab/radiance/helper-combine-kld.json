@@ -41,9 +41,7 @@
    "mode": "stock",
    "shutdown_method": "sigint",
    "binary": "${RAD_BIN}",
-   "environment": {
-    "R3_MOE_WORKER_SKIP_OWNED": "1"
-   },
+   "environment": {},
    "settings": {},
    "serving": {
     "layout": "flashnext-2xtx",
@@ -65,9 +63,7 @@
    "mode": "stock",
    "shutdown_method": "sigint",
    "binary": "${RAD_BIN}",
-   "environment": {
-    "R3_MOE_WORKER_SKIP_OWNED": "1"
-   },
+   "environment": {},
    "settings": {},
    "serving": {
     "layout": "flashnext-2xtx-combine",

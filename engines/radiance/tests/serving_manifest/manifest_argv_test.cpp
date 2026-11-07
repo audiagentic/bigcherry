@@ -145,6 +145,7 @@ int main(int, char** argv) {
     // initialises, winning over what the launcher left there.
     {
         setenv("R3_MOE_WORKER_SHM", "/stale", 1);
+        setenv("R3_MOE_WORKER_SKIP_OWNED", "stale", 1);
         const nlohmann::json shape = nlohmann::json::parse(slurp(example));
         const std::string handoff = run({"--manifest", example});
         CHECK(handoff != "ERROR");
@@ -153,12 +154,13 @@ int main(int, char** argv) {
             CHECK(std::getenv("R3_MOE_WORKER") && std::string(std::getenv("R3_MOE_WORKER")) == "1");
             CHECK(std::string(std::getenv("R3_MOE_WORKER_SHM")) == h.at("transport").at("shm").get<std::string>());
             CHECK(std::string(std::getenv("R3_MOE_WORKER_MAX_ROWS")) == std::to_string(h.at("transport").at("max_rows").get<long long>()));
+            CHECK(std::string(std::getenv("R3_MOE_WORKER_SKIP_OWNED")) == (h.at("transport").at("skip_owned").get<bool>() ? "1" : "0"));
             if (h.contains("telemetry") && h.at("telemetry").at("histogram_file").is_string()) {
                 CHECK(std::string(std::getenv("R3_MOE_WORKER_HISTOGRAM")) == h.at("telemetry").at("histogram_file").get<std::string>());
                 CHECK(std::string(std::getenv("R3_MOE_WORKER_HISTOGRAM_PERIOD_S")) == std::to_string(h.at("telemetry").at("period_s").get<long long>()));
             }
         }
-        unsetenv("R3_MOE_WORKER"); unsetenv("R3_MOE_WORKER_SHM"); unsetenv("R3_MOE_WORKER_MAX_ROWS");
+        unsetenv("R3_MOE_WORKER"); unsetenv("R3_MOE_WORKER_SHM"); unsetenv("R3_MOE_WORKER_MAX_ROWS"); unsetenv("R3_MOE_WORKER_SKIP_OWNED");
         unsetenv("R3_MOE_WORKER_HISTOGRAM"); unsetenv("R3_MOE_WORKER_HISTOGRAM_PERIOD_S");
     }
 
