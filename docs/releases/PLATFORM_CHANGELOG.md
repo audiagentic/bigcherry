@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.18.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.17.0...bc-platform-1.18.0) (2026-11-07)
+
+
+### New and changed
+
+* **radiance:** RHP16 step 5, the live placement policy derives every setting from calibration (off until a layout is calibrated) ([#693](https://github.com/audiagentic/bigcherry/issues/693)) ([52c48e1](https://github.com/audiagentic/bigcherry/commit/52c48e1da291c2c47478146b054157cebbaefbe6))
+
+
+### Fixes
+
+* **radiance:** bc-serve writes engine-only manifests for dense models ([#691](https://github.com/audiagentic/bigcherry/issues/691)) ([11e5078](https://github.com/audiagentic/bigcherry/commit/11e50786e6a8defb77c896b15ab9fe562959f4d5))
+
 ## [1.17.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.16.0...bc-platform-1.17.0) (2026-11-06)
 
 
