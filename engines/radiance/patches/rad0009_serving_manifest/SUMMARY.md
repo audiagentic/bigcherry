@@ -1,6 +1,6 @@
 # rad0009_serving_manifest
 
-**Status:** untested
+**Status:** validated
 **Plan item:** RSC07
 
 ## Summary
