@@ -23,6 +23,7 @@ import argparse
 import datetime as _dt
 import hashlib
 import json
+import os
 import re
 import statistics
 import subprocess
@@ -46,12 +47,24 @@ METRICS = {
     "decode6_ms_per_step": ("lower", True),
     "sess8_ttft_s": ("lower", True),
     "sess8_ms_per_step": ("lower", True),
-    "long_prefill_tps": ("higher", True),
-    "long_ms_per_step": ("lower", True),
+    "long7_prefill_tps": ("higher", True),
+    "long8_prefill_tps": ("higher", True),
+    "long7_ms_per_step": ("lower", True),
+    "long8_ms_per_step": ("lower", True),
     "decode1_acceptance": ("higher", False),
     "decode6_acceptance": ("higher", False),
-    "long_acceptance": ("higher", False),
+    "long7_acceptance": ("higher", False),
+    "long8_acceptance": ("higher", False),
     "policy_transactions": ("higher", False),
+}
+# The long-context seeds (flashnext-parity.sh LONG_SEEDS): each seed is its own prompt, so its own metrics.
+LONG_SEEDS = (7, 8)
+# What a reader of a baseline must know about a metric, carried into parity.json and the baseline.
+NOTES = {
+    "long7_ms_per_step": "content-specific slow decode: seed 7's generated text can route to experts that are not "
+                         "resident, and when it does the slow mode holds for both reps of that launch; the generated text "
+                         "differs between launches even at temperature 0, so the mode can differ between launches and its "
+                         "tolerance is that spread. A bump is judged per seed; read the per-rep values in the raw files.",
 }
 
 
@@ -286,22 +299,28 @@ def _files(launch: Path, pattern: str, expect: int | None = None) -> list:
 
 
 def launch_metrics(launch: Path, workload: dict) -> tuple[dict, dict, dict]:
-    """(metric -> per-launch value, metric -> repeat samples within the launch, detail) from one launch's raw files."""
-    value, samples, detail = {}, {}, {}
+    """(metric -> per-launch value, metric -> repeat groups, detail) from one launch's raw files.
+
+    A repeat group holds the values of the rounds of ONE prompt (the --reps rounds of one seed): only those measure run-to-run
+    noise. Distinct prompts (the cold fills, the document slices, the long-context seeds) differ by content, so they are
+    averaged into the per-launch value (or kept as separate metrics) and never form a group."""
+    value, repeats, detail = {}, {}, {}
 
     fills = [r["per_stream"][0]["ttft_ms"] / 1000.0
              for f in _files(launch, "cold-fill-*.json", workload.get("COLD_FILLS")) for r in _rounds(f)]
-    value["cold_ttft_s"], samples["cold_ttft_s"] = statistics.fmean(fills), fills
+    value["cold_ttft_s"] = statistics.fmean(fills)
+    detail["cold_ttft_s"] = fills
 
     docs = [_load(f)["prefill_tps"] for f in _files(launch, "doc-prefill-*.json", workload.get("DOC_FILLS"))]
-    value["doc_prefill_tps"], samples["doc_prefill_tps"] = statistics.fmean(docs), docs
+    value["doc_prefill_tps"] = statistics.fmean(docs)
+    detail["doc_prefill_tps"] = docs
 
     for name, file in (("decode1", "decode1.json"), ("decode6", "decode6.json")):
         rounds = _rounds(launch / file)
         steps = [_engine(r, "decode_ms_per_step", launch / file) for r in rounds]
         acc = [_engine(r, "draft_acceptance", launch / file) for r in rounds]
-        value[f"{name}_ms_per_step"], samples[f"{name}_ms_per_step"] = statistics.fmean(steps), steps
-        value[f"{name}_acceptance"], samples[f"{name}_acceptance"] = statistics.fmean(acc), acc
+        value[f"{name}_ms_per_step"], repeats[f"{name}_ms_per_step"] = statistics.fmean(steps), [steps]
+        value[f"{name}_acceptance"], repeats[f"{name}_acceptance"] = statistics.fmean(acc), [acc]
         detail[f"{name}_tokens_per_step"] = [_engine(r, "decode_tokens_per_step", launch / file) for r in rounds]
         detail[f"{name}_ttft_s"] = [r["aggregate"]["ttft_ms_max"] / 1000.0 for r in rounds]
 
@@ -312,28 +331,29 @@ def launch_metrics(launch: Path, workload: dict) -> tuple[dict, dict, dict]:
     value["sess8_ttft_s"] = cold[0]["aggregate"]["ttft_ms_p50"] / 1000.0
     detail["sess8_ttft_p50_s"] = [r["aggregate"]["ttft_ms_p50"] / 1000.0 for r in rounds]
     steps = [_engine(r, "decode_ms_per_step", launch / "sess8.json") for r in rounds]
-    value["sess8_ms_per_step"], samples["sess8_ms_per_step"] = statistics.fmean(steps), steps
+    value["sess8_ms_per_step"], repeats["sess8_ms_per_step"] = statistics.fmean(steps), [steps]
 
-    prefill, steps, acc, prompt = [], [], [], []
-    for f in _files(launch, "long-*.json", workload.get("LONG_SEEDS_COUNT")):
-        for r in _rounds(f):
-            steps.append(_engine(r, "decode_ms_per_step", f))
-            acc.append(_engine(r, "draft_acceptance", f))
-            s = r["per_stream"][0]
-            prompt.append(s["prompt_tokens"])
-            if r.get("rep") == 0:                       # a repeat of the same prompt is a prefix-cache hit, not a prefill
-                prefill.append(s["prompt_tokens"] / (s["ttft_ms"] / 1000.0))
-    if not prefill:
-        raise ParityError(f"{launch}: no cold long-context round")
-    value["long_prefill_tps"], samples["long_prefill_tps"] = statistics.fmean(prefill), prefill
-    value["long_ms_per_step"], samples["long_ms_per_step"] = statistics.fmean(steps), steps
-    value["long_acceptance"], samples["long_acceptance"] = statistics.fmean(acc), acc
-    detail["long_prompt_tokens"] = prompt
+    seeds = str(workload.get("LONG_SEEDS", " ".join(map(str, LONG_SEEDS)))).split()
+    if tuple(int(x) for x in seeds) != LONG_SEEDS:
+        raise ParityError(f"the run's long-context seeds {seeds} are not the metrics' seeds {list(LONG_SEEDS)}")
+    for seed in LONG_SEEDS:
+        f = launch / f"long-{seed}.json"
+        rounds = _rounds(f)
+        cold = [r for r in rounds if r.get("rep") == 0]       # a repeat of the same prompt is a prefix-cache hit
+        if not cold:
+            raise ParityError(f"{f}: no cold round")
+        s = cold[0]["per_stream"][0]
+        value[f"long{seed}_prefill_tps"] = s["prompt_tokens"] / (s["ttft_ms"] / 1000.0)
+        steps = [_engine(r, "decode_ms_per_step", f) for r in rounds]
+        acc = [_engine(r, "draft_acceptance", f) for r in rounds]
+        value[f"long{seed}_ms_per_step"], repeats[f"long{seed}_ms_per_step"] = statistics.fmean(steps), [steps]
+        value[f"long{seed}_acceptance"], repeats[f"long{seed}_acceptance"] = statistics.fmean(acc), [acc]
+        detail[f"long{seed}_prompt_tokens"] = [r["per_stream"][0]["prompt_tokens"] for r in rounds]
 
     pol = _load(launch / "policy.json") if (launch / "policy.json").is_file() else {"found": False}
     value["policy_transactions"] = pol["committed"] if pol.get("found") else None
     detail["policy_bytes_moved"] = pol.get("bytes_moved")
-    return value, samples, detail
+    return value, repeats, detail
 
 
 def _median(values):
@@ -347,16 +367,18 @@ def summarise(out: Path) -> dict:
     launches = sorted((p for p in out.glob("launch-*") if p.is_dir()), key=lambda p: int(p.name.split("-")[1]))
     if not launches:
         raise ParityError(f"{out}: no launch-* directories")
-    per_launch, metrics = [], {name: {"direction": d, "gated": g, "launches": [], "samples": []}
+    per_launch, metrics = [], {name: {"direction": d, "gated": g, "launches": [], "repeats": []}
                                for name, (d, g) in METRICS.items()}
+    for name, note in NOTES.items():
+        metrics[name]["note"] = note
     for launch in launches:
         info = _load(launch / "launch.json")
-        value, samples, detail = launch_metrics(launch, run.get("workload") or {})
+        value, repeats, detail = launch_metrics(launch, run.get("workload") or {})
         per_launch.append({"launch": launch.name, "policy": info["policy"], "warmup_s": info["warmup_s"],
                            "detail": detail})
         for name in METRICS:
             metrics[name]["launches"].append(value.get(name))
-            metrics[name]["samples"].append(samples.get(name, []))
+            metrics[name]["repeats"].append(repeats.get(name, []))
     for m in metrics.values():
         m["median"] = _median(m["launches"])
     policies = {p["policy"] for p in per_launch}
@@ -395,8 +417,10 @@ def _parity_file(path: Path) -> Path:
 
 
 def make_baseline(parity: dict, name: str, source: str) -> dict:
-    """Per gated metric: the median as the value; the tolerance is the larger of the relative spread between launches and
-    the largest relative spread of the repeats within one launch. Nothing is picked by hand, so one launch is refused."""
+    """Per gated metric: the median as the value; the tolerance is the larger of (a) the relative spread of the per-launch
+    values across launches and (b) the largest relative spread among true repeats (rounds of one prompt) in any launch;
+    a metric without true repeats takes (a) alone. Distinct prompts are content, not noise, and never widen it. Nothing is
+    picked by hand, so one launch is refused."""
     count = len(parity["launches"])
     if count < 2:
         raise ParityError(f"a baseline needs at least two launches to measure their spread; {source} has {count}")
@@ -407,9 +431,12 @@ def make_baseline(parity: dict, name: str, source: str) -> dict:
             if m["median"] is None or any(v is None for v in m["launches"]):
                 raise ParityError(f"{source}: gated metric {metric} is missing in a launch")
             across = _rel_spread(m["launches"])
-            within = max((_rel_spread(s) for s in m["samples"]), default=0.0)
-            entry.update({"tolerance": max(across, within), "spread_across_launches": across,
-                          "spread_within_launch": within, "launches": m["launches"]})
+            groups = [g for launch in m["repeats"] for g in launch if len(g) > 1]
+            repeat = max((_rel_spread(g) for g in groups), default=None)
+            entry.update({"tolerance": max(across, repeat or 0.0), "spread_across_launches": across,
+                          "spread_repeats": repeat, "launches": m["launches"]})
+        if "note" in m:
+            entry["note"] = m["note"]
         metrics[metric] = entry
     return {"schema": BASELINE_SCHEMA, "kind": "flashnext-parity-baseline", "name": name, "source_run": source,
             "build": parity["build"], "build_identity": parity.get("build_identity"), "revision": parity["revision"],
@@ -417,9 +444,21 @@ def make_baseline(parity: dict, name: str, source: str) -> dict:
             "launches": count, "workload": parity["workload"], "metrics": metrics}
 
 
+def portable_path(path: str) -> str:
+    """A path for a tracked file: under $BC_WORK_ROOT it is written as ${BC_WORK_ROOT}/..., and any other absolute path is
+    refused (a local path never goes into the repository)."""
+    root = os.environ.get("BC_WORK_ROOT", "").rstrip("/")
+    resolved = str(Path(path).resolve())
+    if root and (resolved == root or resolved.startswith(root + "/")):
+        return "${BC_WORK_ROOT}" + resolved[len(root):]
+    raise ParityError(f"{path} is not under $BC_WORK_ROOT ({root or 'unset'}): a baseline names its build and run that way")
+
+
 def cmd_baseline(args) -> int:
     src = _parity_file(Path(args.out))
-    baseline = make_baseline(_load(src), args.name, str(src.parent.resolve()))
+    parity = _load(src)
+    parity["build"] = portable_path(parity["build"])
+    baseline = make_baseline(parity, args.name, portable_path(str(src.parent)))
     to = Path(args.to) if args.to else DEFAULT_BASELINE
     to.parent.mkdir(parents=True, exist_ok=True)
     _write(to, baseline)

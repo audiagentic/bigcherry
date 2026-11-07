@@ -77,6 +77,7 @@ case "$CMD" in
   baseline)
     [ -n "$OUT" ] && [ -n "$NAME" ] || usage
     [ -f "$OUT/parity.json" ] || python3 "$PARITY" summarise "$OUT" || exit
+    source tools/env/bigcherry-env.sh >/dev/null 2>&1   # BC_WORK_ROOT: the baseline names its build and run under it
     exec python3 "$PARITY" baseline "$OUT" --name "$NAME" ${TO:+--to "$TO"} ;;
   compare)
     [ -n "$OUT" ] && [ -n "$BASELINE" ] || usage
