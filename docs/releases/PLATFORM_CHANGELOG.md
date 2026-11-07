@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.22.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.21.0...bc-platform-1.22.0) (2026-11-07)
+
+
+### New and changed
+
+* **serving:** kernel switches are manifest fields the engine applies at start (contract amendment 14) ([#728](https://github.com/audiagentic/bigcherry/issues/728)) ([a77426d](https://github.com/audiagentic/bigcherry/commit/a77426dc1efd078a3db97c8bd990af61e8407301))
+
 ## [1.21.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.20.1...bc-platform-1.21.0) (2026-11-07)
 
 
