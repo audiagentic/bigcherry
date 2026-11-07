@@ -339,11 +339,13 @@ int main(int argc, char** argv) {
             load_json_input(experiment_file, "--experiment", &in.experiment, &in.experiment_from);
             const auto built = bc::serving::build_manifest(in);
             const auto& prov = built.document.at("provenance");
-            const auto& placement = built.document.at("spec").at("handoff").at("placement");
-            if (!placement.contains("live_policy"))
+            const auto& spec = built.document.at("spec");
+            const bool has_handoff = spec.contains("handoff");   // an engine-only manifest has no hand-off section
+            const auto placement = has_handoff ? spec.at("handoff").at("placement") : bc::serving::Json::object();
+            if (has_handoff && !placement.contains("live_policy"))
                 std::cerr << "live policy: no calibration for key " << bc::serving::calibration_key(key_inputs)
                           << "; policy omitted (v1 cannot represent observe-only)\n";
-            else for (auto it = prov.begin(); it != prov.end(); ++it) {
+            else if (has_handoff) for (auto it = prov.begin(); it != prov.end(); ++it) {
                 const std::string pointer = "/spec/handoff/placement/live_policy/";
                 if (it.key().rfind(pointer, 0) != 0) continue;
                 const std::string field = it.key().substr(pointer.size());
