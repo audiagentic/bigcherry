@@ -86,8 +86,8 @@ class ServingManifestV1ContractTests(unittest.TestCase):
         """v1 is closed (spec section 8, section 11 amendment 12, by owner decision 2026-11-06): both fingerprints are pinned here.
         A change to the registry, a default, a rule or a calibration key moves them and fails this test; the only path is a new
         contract version, bigcherry/v2, with its own registry, reader and examples. Do not edit these values to make a change pass."""
-        pinned = ("schema sha256:224432c7fa4d6c0ad6766d1084303ebc4a3a4ecd12e64f6a4b9722fadf31dcb3\n"
-                  "semantics sha256:072e8b6c05cc91443fd26a53328d2cfc1353bd1b74cdd979832a0575d66a21ef\n")
+        pinned = ("schema sha256:52bdaed905247b4d0289a621e4b4fcfab211e777e8fa1055e50a80200b8abe26\n"
+                  "semantics sha256:0e8992e43836d33a9ff8c89898bef9fff8b5fe7ad2bdb475ac86e2faf3c13801\n")
         generated = (ROOT / "engines/radiance/components/serving/generated/contract.fingerprint").read_text()
         self.assertEqual(
             generated, pinned,

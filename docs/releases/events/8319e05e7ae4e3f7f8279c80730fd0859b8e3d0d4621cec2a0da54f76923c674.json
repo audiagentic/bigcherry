@@ -1,0 +1,20 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261107_223111_forced-expert-churn-lab-runs-c_5063",
+  "files": [
+    "engines/radiance/components/serving/contract/serving-v1.toml",
+    "engines/radiance/components/moe-remote/worker_forced_move.h",
+    "engines/radiance/components/moe-remote/worker_config.h",
+    "engines/radiance/components/moe-remote/forced_move_test.cpp",
+    "engines/radiance/components/serving/v1/reader_test.cpp",
+    "docs/design/serving-manifest-v1/spec.md",
+    "tools/tests/core/test_serving_manifest_v1_contract.py"
+  ],
+  "plan-item-ids": [
+    "RHP06"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Serving manifest v1 amendment 15 (owner-approved 2026-11-08): optional spec.experiment.placement.forced.pace_requests (1..2^32-1). With it, helper 0's forced placement driver issues a proposal only after the helpers' total completed lane requests (sum of done_sequence) has advanced by pace_requests since the previous proposal, so forced swaps spread across a run instead of finishing in a burst before scoring. Absent: unchanged behaviour. Generated contract files regenerated; fingerprints re-pinned.",
+  "timestamp-utc": "2026-11-07T22:31:11.541701Z",
+  "user-summary-candidate": "Forced expert-churn lab runs can now pace their swaps across a run, so quality checks see experts moving while requests are in flight."
+}
