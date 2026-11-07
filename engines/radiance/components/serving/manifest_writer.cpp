@@ -219,12 +219,20 @@ Json engine_of(const Json& v) {
                       {"rope_scaling", e.at("rope_scaling")}, {"prefix_resume", e.at("prefix_resume")}};
     if (e.contains("tp_wire")) execution["tp_wire"] = e.at("tp_wire");
     if (e.contains("no_prefix_cache")) execution["no_prefix_cache"] = e.at("no_prefix_cache");
-    return {{"device", device},
+    Json out_engine = {{"device", device},
             {"runtime", {{"radiance_home", e.at("radiance_home")}, {"kernels", split(e.at("kernels"), ',')}}},
             {"server", {{"port", e.at("port")}}},
             {"scheduler", {{"tp", e.at("tp")}, {"max_num_batched_tokens", e.at("max_num_batched_tokens")},
                            {"checkpoint_interval", e.at("checkpoint_interval")}}},
             {"execution", execution}};
+    // Amendment 13: the engine options with a field of their own, each section present only with the members that are set.
+    for (const auto& o : engine_option_fields()) {
+        if (!v.contains(o.section) || !v.at(o.section).contains(o.name)) continue;
+        Json value = v.at(o.section).at(o.name);
+        if (o.is_switch) value = "on";
+        out_engine[o.section][o.name] = value;
+    }
+    return out_engine;
 }
 
 Json helpers_of(const Resolved& r) {
@@ -275,7 +283,7 @@ Json static_provenance(bool measured, bool engine_only) {
 
 /* resolver key -> the manifest leaf it becomes. Only these leaves can carry a resolved origin of their own. */
 const std::map<std::string, std::string>& leaf_of_key() {
-    static const std::map<std::string, std::string> m = {
+    static std::map<std::string, std::string> m = {
         {"engine.model", "/spec/intent/model"}, {"layout.name", "/spec/intent/layout"},
         {"service.objective", "/spec/intent/service/objective"}, {"service.max_sessions", "/spec/intent/service/max_sessions"},
         {"service.max_context", "/spec/intent/service/max_context_tokens"}, {"service.retention", "/spec/intent/service/retention"},
@@ -302,6 +310,11 @@ const std::map<std::string, std::string>& leaf_of_key() {
         {"helper.combine_min_rows", "/spec/processes/helper_common/combine/min_rows"},
         {"helper.combine_threads", "/spec/processes/helper_common/combine/threads"},
     };
+    static const bool extended = [] {
+        for (const auto& o : engine_option_fields()) m.emplace(o.key, o.path);
+        return true;
+    }();
+    (void)extended;
     return m;
 }
 

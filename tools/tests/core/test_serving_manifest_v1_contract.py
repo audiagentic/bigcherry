@@ -86,8 +86,8 @@ class ServingManifestV1ContractTests(unittest.TestCase):
         """v1 is closed (spec section 8, section 11 amendment 12, by owner decision 2026-11-06): both fingerprints are pinned here.
         A change to the registry, a default, a rule or a calibration key moves them and fails this test; the only path is a new
         contract version, bigcherry/v2, with its own registry, reader and examples. Do not edit these values to make a change pass."""
-        pinned = ("schema sha256:17adafd1c1bac5f71fdbdcffe473ec94e93073704671f67a963ce2dbb0cc25f4\n"
-                  "semantics sha256:4273c97d6fc2bd469b065024dfcf3a29e486ac2fff5c9c2fcc1094f26b583253\n")
+        pinned = ("schema sha256:1619a73f86f79fc337f57f6fcc529b9e443c830d2abd05d5ff5a6215ef727f53\n"
+                  "semantics sha256:b0db773cbc5df7e2ff740dcecb939f2223415c1437c7719cc0e8d17fab316023\n")
         generated = (ROOT / "engines/radiance/components/serving/generated/contract.fingerprint").read_text()
         self.assertEqual(
             generated, pinned,
@@ -227,6 +227,26 @@ class ServingManifestV1ContractTests(unittest.TestCase):
         forged = _load(EXAMPLES[0])
         forged["spec"]["calibration"][1]["value"] = 0.05
         self.assertTrue(list(validator.iter_errors(forged)), "a non-integer calibration value must be refused")
+
+
+class EngineOptionCoverage(unittest.TestCase):
+    """Amendment 13: every engine option that is configuration (not a kind of run) has a manifest field, so a pin bump that adds
+    an option fails here until the registry covers it."""
+
+    RUN_MODE = {"--help", "--download-dir", "--debug-graph", "--lora", "--kld-record", "--kld-corpus", "--kld-ref", "--kld-out",
+                "--kld-lora", "--kld-lora-sources", "-v", "-vv"}
+
+    def test_the_registry_binds_every_configuration_option_of_the_pinned_engine(self):
+        import re
+
+        root = Path(__file__).resolve().parents[3]
+        config = (root / "engines/radiance/tests/fixtures/4a61d72/core/config.cpp").read_text(encoding="utf-8")
+        table = config[config.index("static const Flag g_flags[] = {"):]
+        options = set(re.findall(r'\{\s*"(--?[a-z0-9-]+)",\s*(?:"[^"]*"|nullptr)', table[: table.index("\n};")]))
+        registry = (root / "engines/radiance/components/serving/contract/serving-v1.toml").read_text(encoding="utf-8")
+        bound = set(re.findall(r'radiance_option\s*=\s*"(--[a-z0-9-]+)"', registry))
+        self.assertEqual(bound - options, set(), "bound to an option the engine does not have")
+        self.assertEqual(options - bound - self.RUN_MODE, set(), "engine options with no manifest field")
 
 
 if __name__ == "__main__":

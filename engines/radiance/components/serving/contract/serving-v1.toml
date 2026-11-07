@@ -83,6 +83,34 @@ path = "/spec/processes/engine/execution"
 class = "policy"
 
 [[class_default]]
+path = "/spec/processes/engine/sampling"
+class = "policy"
+
+[[class_default]]
+path = "/spec/processes/engine/limits"
+class = "policy"
+
+[[class_default]]
+path = "/spec/processes/engine/chat"
+class = "policy"
+
+[[class_default]]
+path = "/spec/processes/engine/lora"
+class = "policy"
+
+[[class_default]]
+path = "/spec/processes/engine/vision"
+class = "policy"
+
+[[class_default]]
+path = "/spec/processes/engine/tuning"
+class = "policy"
+
+[[class_default]]
+path = "/spec/processes/engine/diagnostics"
+class = "policy"
+
+[[class_default]]
 path = "/spec/processes/helper_common"
 class = "policy"
 
@@ -1411,6 +1439,785 @@ kind = "enum"
 values = ["on"]
 cpp_type = "NoPrefixCache"
 doc = "Present means prefix caching is disabled (`--no-prefix-cache`; amendment 11). Not the host KV tier size (`resources.host.kv_mib`, `--prefix-cache-mib`): that tier stays configurable with caching on."
+
+[[field]]
+path = "/spec/processes/engine/sampling"
+optional = true
+kind = "object"
+cpp = "EngineSampling"
+doc = "Default sampling for requests that set none (amendment 13). Every member is optional and binds to one engine flag; an absent member leaves the engine's own default."
+
+[[field]]
+path = "/spec/processes/engine/sampling/default_max_tokens"
+optional = true
+radiance_option = "--default-max-tokens"
+radiance_config = "Config.default_max_tokens"
+kind = "ref"
+ref = "uint"
+doc = "Engine flag `--default-max-tokens` (amendment 13)."
+
+[[field]]
+path = "/spec/processes/engine/sampling/dry_allowed_length"
+optional = true
+radiance_option = "--dry-allowed-length"
+radiance_config = "native option"
+kind = "ref"
+ref = "uint"
+doc = "Engine flag `--dry-allowed-length` (amendment 13)."
+
+[[field]]
+path = "/spec/processes/engine/sampling/dry_base"
+optional = true
+radiance_option = "--dry-base"
+radiance_config = "native option"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--dry-base` (amendment 13). Value text as the flag takes it (F)."
+
+[[field]]
+path = "/spec/processes/engine/sampling/dry_multiplier"
+optional = true
+radiance_option = "--dry-multiplier"
+radiance_config = "native option"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--dry-multiplier` (amendment 13). Value text as the flag takes it (F)."
+
+[[field]]
+path = "/spec/processes/engine/sampling/dry_penalty_last_n"
+optional = true
+radiance_option = "--dry-penalty-last-n"
+radiance_config = "native option"
+kind = "ref"
+ref = "uint"
+doc = "Engine flag `--dry-penalty-last-n` (amendment 13)."
+
+[[field]]
+path = "/spec/processes/engine/sampling/dry_sequence_breakers"
+optional = true
+radiance_option = "--dry-sequence-breakers"
+radiance_config = "native option"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--dry-sequence-breakers` (amendment 13). Value text as the flag takes it (JSON)."
+
+[[field]]
+path = "/spec/processes/engine/sampling/frequency_penalty"
+optional = true
+radiance_option = "--frequency-penalty"
+radiance_config = "native option"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--frequency-penalty` (amendment 13). Value text as the flag takes it (F)."
+
+[[field]]
+path = "/spec/processes/engine/sampling/generation_config"
+optional = true
+radiance_option = "--generation-config"
+radiance_config = "Config.generation_config"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--generation-config` (amendment 13). Value text as the flag takes it (PATH)."
+
+[[field]]
+path = "/spec/processes/engine/sampling/max_n"
+optional = true
+radiance_option = "--max-n"
+radiance_config = "native option"
+kind = "ref"
+ref = "uint"
+doc = "Engine flag `--max-n` (amendment 13)."
+
+[[field]]
+path = "/spec/processes/engine/sampling/max_tokens_cap"
+optional = true
+radiance_option = "--max-tokens-cap"
+radiance_config = "native option"
+kind = "ref"
+ref = "uint"
+doc = "Engine flag `--max-tokens-cap` (amendment 13)."
+
+[[field]]
+path = "/spec/processes/engine/sampling/min_p"
+optional = true
+radiance_option = "--min-p"
+radiance_config = "native option"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--min-p` (amendment 13). Value text as the flag takes it (F)."
+
+[[field]]
+path = "/spec/processes/engine/sampling/presence_penalty"
+optional = true
+radiance_option = "--presence-penalty"
+radiance_config = "native option"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--presence-penalty` (amendment 13). Value text as the flag takes it (F)."
+
+[[field]]
+path = "/spec/processes/engine/sampling/repeat_last_n"
+optional = true
+radiance_option = "--repeat-last-n"
+radiance_config = "native option"
+kind = "ref"
+ref = "uint"
+doc = "Engine flag `--repeat-last-n` (amendment 13)."
+
+[[field]]
+path = "/spec/processes/engine/sampling/repetition_penalty"
+optional = true
+radiance_option = "--repetition-penalty"
+radiance_config = "native option"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--repetition-penalty` (amendment 13). Value text as the flag takes it (F)."
+
+[[field]]
+path = "/spec/processes/engine/sampling/temp"
+optional = true
+radiance_option = "--temp"
+radiance_config = "native option"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--temp` (amendment 13). Value text as the flag takes it (F)."
+
+[[field]]
+path = "/spec/processes/engine/sampling/top_k"
+optional = true
+radiance_option = "--top-k"
+radiance_config = "native option"
+kind = "ref"
+ref = "uint"
+doc = "Engine flag `--top-k` (amendment 13)."
+
+[[field]]
+path = "/spec/processes/engine/sampling/top_p"
+optional = true
+radiance_option = "--top-p"
+radiance_config = "native option"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--top-p` (amendment 13). Value text as the flag takes it (F)."
+
+[[field]]
+path = "/spec/processes/engine/sampling/typical_p"
+optional = true
+radiance_option = "--typical-p"
+radiance_config = "native option"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--typical-p` (amendment 13). Value text as the flag takes it (F)."
+
+[[field]]
+path = "/spec/processes/engine/sampling/xtc_probability"
+optional = true
+radiance_option = "--xtc-probability"
+radiance_config = "native option"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--xtc-probability` (amendment 13). Value text as the flag takes it (F)."
+
+[[field]]
+path = "/spec/processes/engine/sampling/xtc_threshold"
+optional = true
+radiance_option = "--xtc-threshold"
+radiance_config = "native option"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--xtc-threshold` (amendment 13). Value text as the flag takes it (F)."
+
+[[field]]
+path = "/spec/processes/engine/limits"
+optional = true
+kind = "object"
+cpp = "EngineLimits"
+doc = "HTTP server identity, transport and request limits (amendment 13). Every member is optional and binds to one engine flag; an absent member leaves the engine's own default."
+
+[[field]]
+path = "/spec/processes/engine/limits/api_key"
+optional = true
+radiance_option = "--api-key"
+radiance_config = "Config.api_key"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--api-key` (amendment 13). Value text as the flag takes it (KEY)."
+
+[[field]]
+path = "/spec/processes/engine/limits/host"
+optional = true
+radiance_option = "--host"
+radiance_config = "Config.host"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--host` (amendment 13). Value text as the flag takes it (ADDR)."
+
+[[field]]
+path = "/spec/processes/engine/limits/http_threads"
+optional = true
+radiance_option = "--http-threads"
+radiance_config = "native option"
+kind = "ref"
+ref = "uint"
+doc = "Engine flag `--http-threads` (amendment 13)."
+
+[[field]]
+path = "/spec/processes/engine/limits/keep_alive_timeout"
+optional = true
+radiance_option = "--keep-alive-timeout"
+radiance_config = "native option"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--keep-alive-timeout` (amendment 13). Value text as the flag takes it (S)."
+
+[[field]]
+path = "/spec/processes/engine/limits/max_body_mib"
+optional = true
+radiance_option = "--max-body-mib"
+radiance_config = "Config.cors"
+kind = "ref"
+ref = "uint"
+doc = "Engine flag `--max-body-mib` (amendment 13)."
+
+[[field]]
+path = "/spec/processes/engine/limits/max_queued_requests"
+optional = true
+radiance_option = "--max-queued-requests"
+radiance_config = "native option"
+kind = "ref"
+ref = "uint"
+doc = "Engine flag `--max-queued-requests` (amendment 13)."
+
+[[field]]
+path = "/spec/processes/engine/limits/max_stop_bytes"
+optional = true
+radiance_option = "--max-stop-bytes"
+radiance_config = "native option"
+kind = "ref"
+ref = "uint"
+doc = "Engine flag `--max-stop-bytes` (amendment 13)."
+
+[[field]]
+path = "/spec/processes/engine/limits/max_stop_strings"
+optional = true
+radiance_option = "--max-stop-strings"
+radiance_config = "native option"
+kind = "ref"
+ref = "uint"
+doc = "Engine flag `--max-stop-strings` (amendment 13)."
+
+[[field]]
+path = "/spec/processes/engine/limits/no_cors"
+optional = true
+radiance_option = "--no-cors"
+radiance_config = "Config.cors"
+radiance_switch = true
+kind = "enum"
+values = ["on"]
+cpp_type = "OptNoCors"
+doc = "Engine flag `--no-cors` (amendment 13). Present means the flag is given."
+
+[[field]]
+path = "/spec/processes/engine/limits/read_timeout"
+optional = true
+radiance_option = "--read-timeout"
+radiance_config = "native option"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--read-timeout` (amendment 13). Value text as the flag takes it (S)."
+
+[[field]]
+path = "/spec/processes/engine/limits/retry_after"
+optional = true
+radiance_option = "--retry-after"
+radiance_config = "native option"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--retry-after` (amendment 13). Value text as the flag takes it (S)."
+
+[[field]]
+path = "/spec/processes/engine/limits/served_model_name"
+optional = true
+radiance_option = "--served-model-name"
+radiance_config = "Config.served_model_name"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--served-model-name` (amendment 13). Value text as the flag takes it (NAME)."
+
+[[field]]
+path = "/spec/processes/engine/limits/write_timeout"
+optional = true
+radiance_option = "--write-timeout"
+radiance_config = "native option"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--write-timeout` (amendment 13). Value text as the flag takes it (S)."
+
+[[field]]
+path = "/spec/processes/engine/chat"
+optional = true
+kind = "object"
+cpp = "EngineChat"
+doc = "Chat template and reasoning behaviour (amendment 13). Every member is optional and binds to one engine flag; an absent member leaves the engine's own default."
+
+[[field]]
+path = "/spec/processes/engine/chat/chat_template_kwargs"
+optional = true
+radiance_option = "--chat-template-kwargs"
+radiance_config = "native option"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--chat-template-kwargs` (amendment 13). Value text as the flag takes it (JSON)."
+
+[[field]]
+path = "/spec/processes/engine/chat/override_chat_template"
+optional = true
+radiance_option = "--override-chat-template"
+radiance_config = "Config.override_chat_template"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--override-chat-template` (amendment 13). Value text as the flag takes it (PATH)."
+
+[[field]]
+path = "/spec/processes/engine/chat/reasoning_effort"
+optional = true
+radiance_option = "--reasoning-effort"
+radiance_config = "Config.reasoning_effort"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--reasoning-effort` (amendment 13). Value text as the flag takes it (S)."
+
+[[field]]
+path = "/spec/processes/engine/chat/reasoning_effort_map"
+optional = true
+radiance_option = "--reasoning-effort-map"
+radiance_config = "native option"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--reasoning-effort-map` (amendment 13). Value text as the flag takes it (MAP)."
+
+[[field]]
+path = "/spec/processes/engine/chat/reasoning_format"
+optional = true
+radiance_option = "--reasoning-format"
+radiance_config = "Config.reasoning_format"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--reasoning-format` (amendment 13). Value text as the flag takes it (MODE)."
+
+[[field]]
+path = "/spec/processes/engine/chat/thinking_token_budget"
+optional = true
+radiance_option = "--thinking-token-budget"
+radiance_config = "Config.generation_config"
+kind = "ref"
+ref = "uint"
+doc = "Engine flag `--thinking-token-budget` (amendment 13)."
+
+[[field]]
+path = "/spec/processes/engine/lora"
+optional = true
+kind = "object"
+cpp = "EngineLora"
+doc = "LoRA adapters and control vectors (amendment 13). Every member is optional and binds to one engine flag; an absent member leaves the engine's own default."
+
+[[field]]
+path = "/spec/processes/engine/lora/control_vector"
+optional = true
+radiance_option = "--control-vector"
+radiance_config = "Config.control_vector"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--control-vector` (amendment 13). Value text as the flag takes it (MODE)."
+
+[[field]]
+path = "/spec/processes/engine/lora/lora_dir"
+optional = true
+radiance_option = "--lora-dir"
+radiance_config = "Config.lora.dir"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--lora-dir` (amendment 13). Value text as the flag takes it (DIR)."
+
+[[field]]
+path = "/spec/processes/engine/lora/lora_target_modules"
+optional = true
+radiance_option = "--lora-target-modules"
+radiance_config = "native option"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--lora-target-modules` (amendment 13). Value text as the flag takes it (LIST)."
+
+[[field]]
+path = "/spec/processes/engine/lora/max_lora_rank"
+optional = true
+radiance_option = "--max-lora-rank"
+radiance_config = "native option"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--max-lora-rank` (amendment 13). Value text as the flag takes it (R)."
+
+[[field]]
+path = "/spec/processes/engine/lora/max_loras"
+optional = true
+radiance_option = "--max-loras"
+radiance_config = "native option"
+kind = "ref"
+ref = "uint"
+doc = "Engine flag `--max-loras` (amendment 13)."
+
+[[field]]
+path = "/spec/processes/engine/vision"
+optional = true
+kind = "object"
+cpp = "EngineVision"
+doc = "Image and video input limits and placement (amendment 13). Every member is optional and binds to one engine flag; an absent member leaves the engine's own default."
+
+[[field]]
+path = "/spec/processes/engine/vision/image_max_pixels"
+optional = true
+radiance_option = "--image-max-pixels"
+radiance_config = "native option"
+kind = "ref"
+ref = "uint"
+doc = "Engine flag `--image-max-pixels` (amendment 13)."
+
+[[field]]
+path = "/spec/processes/engine/vision/image_min_pixels"
+optional = true
+radiance_option = "--image-min-pixels"
+radiance_config = "native option"
+kind = "ref"
+ref = "uint"
+doc = "Engine flag `--image-min-pixels` (amendment 13)."
+
+[[field]]
+path = "/spec/processes/engine/vision/image_tokens"
+optional = true
+radiance_option = "--image-tokens"
+radiance_config = "Config.image_tokens"
+kind = "ref"
+ref = "uint"
+doc = "Engine flag `--image-tokens` (amendment 13)."
+
+[[field]]
+path = "/spec/processes/engine/vision/max_source_pixels"
+optional = true
+radiance_option = "--max-source-pixels"
+radiance_config = "native option"
+kind = "ref"
+ref = "uint"
+doc = "Engine flag `--max-source-pixels` (amendment 13)."
+
+[[field]]
+path = "/spec/processes/engine/vision/mm_max_patches"
+optional = true
+radiance_option = "--mm-max-patches"
+radiance_config = "Config.mm_max_patches"
+kind = "ref"
+ref = "uint"
+doc = "Engine flag `--mm-max-patches` (amendment 13)."
+
+[[field]]
+path = "/spec/processes/engine/vision/video_fps"
+optional = true
+radiance_option = "--video-fps"
+radiance_config = "Config.video_fps"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--video-fps` (amendment 13). Value text as the flag takes it (F)."
+
+[[field]]
+path = "/spec/processes/engine/vision/video_max_frame_tokens"
+optional = true
+radiance_option = "--video-max-frame-tokens"
+radiance_config = "Config.kld_record"
+kind = "ref"
+ref = "uint"
+doc = "Engine flag `--video-max-frame-tokens` (amendment 13)."
+
+[[field]]
+path = "/spec/processes/engine/vision/video_max_frames"
+optional = true
+radiance_option = "--video-max-frames"
+radiance_config = "Config.kld_record"
+kind = "ref"
+ref = "uint"
+doc = "Engine flag `--video-max-frames` (amendment 13)."
+
+[[field]]
+path = "/spec/processes/engine/vision/video_max_pixels"
+optional = true
+radiance_option = "--video-max-pixels"
+radiance_config = "native option"
+kind = "ref"
+ref = "uint"
+doc = "Engine flag `--video-max-pixels` (amendment 13)."
+
+[[field]]
+path = "/spec/processes/engine/vision/video_min_frames"
+optional = true
+radiance_option = "--video-min-frames"
+radiance_config = "native option"
+kind = "ref"
+ref = "uint"
+doc = "Engine flag `--video-min-frames` (amendment 13)."
+
+[[field]]
+path = "/spec/processes/engine/vision/video_min_pixels"
+optional = true
+radiance_option = "--video-min-pixels"
+radiance_config = "native option"
+kind = "ref"
+ref = "uint"
+doc = "Engine flag `--video-min-pixels` (amendment 13)."
+
+[[field]]
+path = "/spec/processes/engine/vision/vision_tower_placement"
+optional = true
+radiance_option = "--vision-tower-placement"
+radiance_config = "Config.tower_placement"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--vision-tower-placement` (amendment 13). Value text as the flag takes it (WHERE)."
+
+[[field]]
+path = "/spec/processes/engine/tuning"
+optional = true
+kind = "object"
+cpp = "EngineTuning"
+doc = "Prefill, tensor-parallel, expert, draft and cache tuning (amendment 13). Every member is optional and binds to one engine flag; an absent member leaves the engine's own default."
+
+[[field]]
+path = "/spec/processes/engine/tuning/attn_prefill_fp8"
+optional = true
+radiance_option = "--attn-prefill-fp8"
+radiance_config = "Config.attn_prefill_fp8"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--attn-prefill-fp8` (amendment 13). Value text as the flag takes it (MODE)."
+
+[[field]]
+path = "/spec/processes/engine/tuning/busy_prefill_chunk"
+optional = true
+radiance_option = "--busy-prefill-chunk"
+radiance_config = "Config.busy_prefill_chunk"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--busy-prefill-chunk` (amendment 13). Value text as the flag takes it (MODE)."
+
+[[field]]
+path = "/spec/processes/engine/tuning/checkpoint_policy"
+optional = true
+radiance_option = "--checkpoint-policy"
+radiance_config = "Config.checkpoint_policy"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--checkpoint-policy` (amendment 13). Value text as the flag takes it (NAME)."
+
+[[field]]
+path = "/spec/processes/engine/tuning/draft_coupling"
+optional = true
+radiance_option = "--draft-coupling"
+radiance_config = "Config.draft_coupling"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--draft-coupling` (amendment 13). Value text as the flag takes it (MODE)."
+
+[[field]]
+path = "/spec/processes/engine/tuning/draft_expert_placement"
+optional = true
+radiance_option = "--draft-expert-placement"
+radiance_config = "Config.draft_expert_placement"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--draft-expert-placement` (amendment 13). Value text as the flag takes it (PLACEMENT)."
+
+[[field]]
+path = "/spec/processes/engine/tuning/draft_model"
+optional = true
+radiance_option = "--draft-model"
+radiance_config = "native option"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--draft-model` (amendment 13). Value text as the flag takes it (PATH)."
+
+[[field]]
+path = "/spec/processes/engine/tuning/draft_short_from"
+optional = true
+radiance_option = "--draft-short-from"
+radiance_config = "Config.draft_short_from"
+kind = "ref"
+ref = "uint"
+doc = "Engine flag `--draft-short-from` (amendment 13)."
+
+[[field]]
+path = "/spec/processes/engine/tuning/draft_window"
+optional = true
+radiance_option = "--draft-window"
+radiance_config = "Config.draft_window"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--draft-window` (amendment 13). Value text as the flag takes it (MODE)."
+
+[[field]]
+path = "/spec/processes/engine/tuning/embedding_placement"
+optional = true
+radiance_option = "--embedding-placement"
+radiance_config = "native option"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--embedding-placement` (amendment 13). Value text as the flag takes it (WHERE)."
+
+[[field]]
+path = "/spec/processes/engine/tuning/expert_pin_top"
+optional = true
+radiance_option = "--expert-pin-top"
+radiance_config = "Config.expert_pin_top"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--expert-pin-top` (amendment 13). Value text as the flag takes it (F)."
+
+[[field]]
+path = "/spec/processes/engine/tuning/expert_profile"
+optional = true
+radiance_option = "--expert-profile"
+radiance_config = "Config.expert_profile"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--expert-profile` (amendment 13). Value text as the flag takes it (FILE)."
+
+[[field]]
+path = "/spec/processes/engine/tuning/expert_stats"
+optional = true
+radiance_option = "--expert-stats"
+radiance_config = "Config.expert_stats"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--expert-stats` (amendment 13). Value text as the flag takes it (FILE)."
+
+[[field]]
+path = "/spec/processes/engine/tuning/live"
+optional = true
+radiance_option = "--live"
+radiance_config = "Config.live_view"
+radiance_switch = true
+kind = "enum"
+values = ["on"]
+cpp_type = "OptLive"
+doc = "Engine flag `--live` (amendment 13). Present means the flag is given."
+
+[[field]]
+path = "/spec/processes/engine/tuning/p2p"
+optional = true
+radiance_option = "--p2p"
+radiance_config = "Config.p2p"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--p2p` (amendment 13). Value text as the flag takes it (MODE)."
+
+[[field]]
+path = "/spec/processes/engine/tuning/prefill_interleave"
+optional = true
+radiance_option = "--prefill-interleave"
+radiance_config = "native option"
+kind = "ref"
+ref = "uint"
+doc = "Engine flag `--prefill-interleave` (amendment 13)."
+
+[[field]]
+path = "/spec/processes/engine/tuning/prefill_span"
+optional = true
+radiance_option = "--prefill-span"
+radiance_config = "Config.checkpoint_slots"
+kind = "ref"
+ref = "uint"
+doc = "Engine flag `--prefill-span` (amendment 13)."
+
+[[field]]
+path = "/spec/processes/engine/tuning/prefix_cache_ttl"
+optional = true
+radiance_option = "--prefix-cache-ttl"
+radiance_config = "Config.lora.dir"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--prefix-cache-ttl` (amendment 13). Value text as the flag takes it (S)."
+
+[[field]]
+path = "/spec/processes/engine/tuning/state_cache_dtype"
+optional = true
+radiance_option = "--state-cache-dtype"
+radiance_config = "Config.state_cache_dtype"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--state-cache-dtype` (amendment 13). Value text as the flag takes it (T)."
+
+[[field]]
+path = "/spec/processes/engine/tuning/tp_attn_split"
+optional = true
+radiance_option = "--tp-attn-split"
+radiance_config = "Config.tp_attn_rows"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--tp-attn-split` (amendment 13). Value text as the flag takes it (MODE)."
+
+[[field]]
+path = "/spec/processes/engine/tuning/tp_wire_min_kb"
+optional = true
+radiance_option = "--tp-wire-min-kb"
+radiance_config = "Config.busy_prefill_chunk"
+kind = "ref"
+ref = "uint"
+doc = "Engine flag `--tp-wire-min-kb` (amendment 13)."
+
+[[field]]
+path = "/spec/processes/engine/tuning/weight_prefetch"
+optional = true
+radiance_option = "--weight-prefetch"
+radiance_config = "Config.weight_prefetch"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--weight-prefetch` (amendment 13). Value text as the flag takes it (MODE)."
+
+[[field]]
+path = "/spec/processes/engine/tuning/weights_disk_tier"
+optional = true
+radiance_option = "--weights-disk-tier"
+radiance_config = "Config.weights_disk_tier"
+radiance_switch = true
+kind = "enum"
+values = ["on"]
+cpp_type = "OptWeightsDiskTier"
+doc = "Engine flag `--weights-disk-tier` (amendment 13). Present means the flag is given."
+
+[[field]]
+path = "/spec/processes/engine/diagnostics"
+optional = true
+kind = "object"
+cpp = "EngineDiagnostics"
+doc = "Debug switches that change what the engine does (amendment 13). Every member is optional and binds to one engine flag; an absent member leaves the engine's own default."
+
+[[field]]
+path = "/spec/processes/engine/diagnostics/debug_accept_reference_kernels"
+optional = true
+radiance_option = "--debug-accept-reference-kernels"
+radiance_config = "Config.accept_reference_kernels"
+radiance_switch = true
+kind = "enum"
+values = ["on"]
+cpp_type = "OptDebugAcceptReferenceKernels"
+doc = "Engine flag `--debug-accept-reference-kernels` (amendment 13). Present means the flag is given."
+
+[[field]]
+path = "/spec/processes/engine/diagnostics/debug_placement"
+optional = true
+radiance_option = "--debug-placement"
+radiance_config = "Config.debug_placement"
+radiance_switch = true
+kind = "enum"
+values = ["on"]
+cpp_type = "OptDebugPlacement"
+doc = "Engine flag `--debug-placement` (amendment 13). Present means the flag is given."
 
 [[field]]
 path = "/spec/processes/helper_common"

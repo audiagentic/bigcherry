@@ -43,9 +43,11 @@ Goal (owner, 2026-11-07): the manifest expresses every configuration the engine 
 
 ## Plan
 
+**Status 2026-11-07: slice 1 is done** (80 option fields, contract amendment 13, spec §11); rad0009 needed no change because it turns every registry-bound field into its flag. Slice 2 (environment settings) and slice 3 remain.
+
 This reopens the v1 contract (an additive amendment 13, as amendments 10-12 were: new optional fields, regenerated schema, types, codec and fingerprints). Slices, each its own PR:
 
-1. **Option fields** (engine side as flags): server and limits, sampling defaults, chat template and reasoning, placement/prefill/tensor-parallel tuning, LoRA, vision and video. Each group becomes an optional section under `spec.processes.engine`, bound to its option by the registry (`radiance_option`), so `bc-serve --set` writes it and rad0009 turns it into the flag. Needs rad0009 changed and requalified (G4) because it reads new fields.
+1. **Option fields** (engine side as flags): server and limits, sampling defaults, chat template and reasoning, placement/prefill/tensor-parallel tuning, LoRA, vision and video. Each group becomes an optional section under `spec.processes.engine`, bound to its option by the registry (`radiance_option`), so `bc-serve --set` writes it and rad0009 turns it into the flag. rad0009 already turns any registry-bound field into its flag, so it needs no change and keeps its qualification.
 2. **Environment settings as fields**: the engine- and component-side environment variables become typed manifest fields the engine applies at start (setenv before initialisation), starting with the helper-hook switch and its siblings (RSC08 S5), then the debug/diagnostic group. Also a rad0009 change.
 3. **Retire the side channels**: `layouts.toml`/`recipes.toml` `server-args`, the lab scripts that still pass flags, and the engine refusing a direct flag that has a field (RSC11 C).
 

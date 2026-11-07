@@ -130,6 +130,27 @@ A manifest that fails the strict reader is refused with a stable error code and 
 start canary, **97** for plan measurement/storage/setup failure, **98** for a held launch lock or an already running
 server.
 
+## Engine options
+
+Every engine option that is configuration has a manifest field (contract amendment 13; the full list is `docs/design/serving-manifest-v1/coverage-plan.md`
+and the generated field reference). Beyond the capacity and placement keys above, the engine options sit in seven optional sections under
+`spec.processes.engine`, set through `bc-serve --set section.name=value` or the same key in a profile TOML:
+
+| Section | What | Examples |
+|---|---|---|
+| `sampling` (20) | default sampling for requests that set none | `sampling.temp`, `sampling.top_k`, `sampling.dry_multiplier` |
+| `limits` (13) | HTTP identity, transport and request limits | `limits.host`, `limits.max_body_mib`, `limits.read_timeout`, `limits.no_cors` |
+| `chat` (6) | chat template and reasoning | `chat.reasoning_format`, `chat.thinking_token_budget` |
+| `lora` (5) | adapters directory and limits, control vector | `lora.lora_dir`, `lora.max_loras` |
+| `vision` (12) | image and video input limits and placement | `vision.image_max_pixels`, `vision.video_fps` |
+| `tuning` (22) | prefill, tensor-parallel, expert, draft and cache tuning | `tuning.prefill_span`, `tuning.p2p`, `tuning.draft_window` |
+| `diagnostics` (2) | debug switches that change what the engine does | `diagnostics.debug_placement` |
+
+Integers are integers; a decimal or free-text option is a string carrying the flag's value text (`sampling.temp="0.7"`); a flag with no value
+is the string `"on"`. The engine checks ranges and value text itself, as for every manifest flag. An unset key leaves the engine's own default.
+Still flags beside a manifest, because they are a kind of run: `--kld-*`, `--download-dir`, `--debug-graph`, `--lora` (repeatable), `--role`,
+`--plan-memory`, `-v`, `-vv`.
+
 ## Campaign arms
 
 A campaign arm that serves from a manifest describes its configuration under `serving`; the harness makes the manifest.
@@ -180,4 +201,6 @@ that start a helper by hand (`fn-helper.sh`, `w4-replay-hash.sh`, `replay-kernel
 | Dense models (containers without routed experts) get engine-only manifests | done (RSC11 A2b) |
 | Campaign arms describe a `serving` configuration; the harness makes each arm's measured manifest; `BC_SERVING_MANIFEST` and the helper environment settings removed | done in code (RSC11 A3/B); the measuring path is not yet run on hardware |
 | Lab job files and `layouts.toml` side channels moved or retired | pending (B) |
+| Every engine option that is configuration has a manifest field (80 more, contract amendment 13) | done (RSC12 slice 1) |
+| The engine reads its environment settings from the manifest | pending (RSC12 slice 2) |
 | The engine refuses direct config flags | pending (C) |
