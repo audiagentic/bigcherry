@@ -1,6 +1,7 @@
 """Card-free, compiled pass-key contract and managed patch mechanics for the MTP replay guard."""
 
 import importlib.util
+import os
 import shutil
 import subprocess
 import sys
@@ -14,7 +15,8 @@ from bigcherry.patch.apply import apply_all
 
 REPO = Path(__file__).resolve().parents[3]
 PACKAGE = REPO / "engines/radiance/patches/rad0013_mtp_pass_replay/patch.py"
-MIRROR = Path("/mnt/data/bigcherry-work/upstream/radiance.git")
+# The pinned upstream bare mirror under the work root; absent (CI) -> the minimal fixture below.
+MIRROR = Path(os.environ.get("BC_WORK_ROOT", "")) / "upstream/radiance.git" if os.environ.get("BC_WORK_ROOT") else None
 UPSTREAM = "arch/qwen4exp_fp8/qwen4exp_fp8.cpp"
 
 
@@ -44,7 +46,7 @@ def old_fixture(mod):
 
 
 def pinned_source():
-    if not MIRROR.is_dir():
+    if MIRROR is None or not MIRROR.is_dir():
         return None
     proc = subprocess.run(
         ["git", f"--git-dir={MIRROR}", "show", f"v1.17.0:{UPSTREAM}"],
