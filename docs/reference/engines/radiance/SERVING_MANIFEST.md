@@ -79,6 +79,8 @@ error naming the flag. `--radiance-home` and `--kernels` must be in the manifest
 them in). A serving start checks the live memory plan against the plan the manifest carries before any weights load; there
 is no switch to skip it.
 
+The engine also applies the manifest's hand-off settings to its environment at start, before it initialises, so the manifest is the only place they are configured and they win over a value the launcher left behind: `R3_MOE_WORKER` (set when the manifest has helpers), `R3_MOE_WORKER_SHM` (`spec.handoff.transport.shm`), `R3_MOE_WORKER_MAX_ROWS` (`transport.max_rows`), `R3_MOE_WORKER_HISTOGRAM` and `R3_MOE_WORKER_HISTOGRAM_PERIOD_S` (`telemetry.histogram_file`, `telemetry.period_s`). The other environment settings follow in the same way (RSC12 slice 2).
+
 ## Settings: `--set` key, manifest field, engine flag
 
 `--set key=value` (strings are JSON, so `engine.tp_wire='"wht6"'`). A key marked *derived* cannot be set; it follows from

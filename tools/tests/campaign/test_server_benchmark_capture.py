@@ -278,6 +278,40 @@ class ServerComparisonCaptureTests(unittest.TestCase):
         self.assertTrue(summary["quality"]["passed"])
         self.assertEqual(sorted(summary["quality"]["arms"]), sorted(item["name"] for item in self.arms))
 
+    def test_quality_only_serving_arms_draft_nothing_unless_the_arm_says_otherwise(self):
+        from bigcherry.engine_adapters import _ADAPTERS
+        import sys
+        from bigcherry.engine_adapters.base import QualityCommand
+        from bigcherry.engine_adapters.radiance import RadianceAdapter
+        written = {}
+
+        class FakeAdapter(RadianceAdapter):
+            def write_serving_manifest(self, name, serving, *, binary, model, env, run_dir):
+                written[name] = serving
+                path = run_dir / "manifest.json"
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("{}")
+                return path
+
+            def sidecars(self, arm, env, run_dir, binary):
+                return []
+
+            def quality_command(self, kind, arm, env, run_dir, binary, model, quality):
+                result = run_dir / f"{arm['name']}.kld.json"
+                program = ("import json,sys;json.dump({'all':{'kld':{'mean':0.003,'median':0.001,'p99':0.02,'p99_9':0.1},"
+                           "'top1_agreement':0.968,'ppl':{'candidate':8.55,'reference':8.56,'ratio':0.9988}}},open(sys.argv[1],'w'))")
+                return QualityCommand((sys.executable, "-c", program, str(result)), dict(env),
+                                      run_dir / f"{arm['name']}.score.log", result, 60.0)
+        arms = [dict(self.arms[0], mode="stock", serving={"layout": "l", "set": {}}),
+                dict(self.arms[1], mode="stock", serving={"layout": "l", "set": {"engine.num_speculative_tokens": 2}})]
+        self.write_config(engine="radiance", execution_evidence="observe", quality_only=True, quality=self.quality_block(), server_args=[],
+                          arms=arms)
+        with self.patches_for_preflight(), patch.dict(_ADAPTERS, {"radiance": FakeAdapter()}), patch(
+            "bigcherry.campaign.benchmark.run_server_arm_capture"):
+            benchmark.run_server_comparison_capture(self.config, self.output, rounds=2, seed=0, settle_seconds=0)
+        self.assertEqual(written[arms[0]["name"]]["set"]["engine.num_speculative_tokens"], 0)
+        self.assertEqual(written[arms[1]["name"]]["set"]["engine.num_speculative_tokens"], 2)
+
     def test_ambient_patch_and_allreduce_controls_do_not_leak_into_arms(self):
         captured = []
         def fake_capture(**kwargs):
