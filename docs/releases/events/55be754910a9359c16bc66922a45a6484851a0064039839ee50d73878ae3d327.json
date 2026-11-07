@@ -1,0 +1,17 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261107_032831_the-fix-that-restores-flash-ne_9279",
+  "files": [
+    "engines/radiance/patches/rad0013_mtp_pass_replay/patch.toml",
+    "engines/radiance/patches/rad0013_mtp_pass_replay/evidence/promotion.json",
+    "engines/radiance/patches/rad0013_mtp_pass_replay/SUMMARY.md",
+    "engines/radiance/recipes.toml",
+    "releases/evidence/rad0013_mtp_pass_replay-promotion.md",
+    "README.md",
+    "docs/reference/engines/radiance/ENHANCEMENTS.md"
+  ],
+  "status": "unreleased",
+  "technical-summary": "rad0013_mtp_pass_replay promoted to validated (profile-evidence, Flash-Next) and moved into serving-core: four-GPU ABAB decode step -1.7% to -2.7% on all five accept-bench prompts, identical generated text and acceptance, patched engine records draft passes -1/0/2/3 as v1.16 did; KLD scoring never runs draft/verify passes.",
+  "timestamp-utc": "2026-11-07T03:28:31.296750Z",
+  "user-summary-candidate": "The fix that restores Flash-Next's decode speed lost in Radiance v1.17 is now a validated serving patch."
+}
