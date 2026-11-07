@@ -13,9 +13,9 @@ expert placement adapted to differing GPU memory and bandwidth.
 | HyperConn tuning | Selectable PF2 up-mix launch shape on RDNA4 | [up-mix patch](../../../../engines/radiance/patches/rad0008_hc_upmix_rt_sweep/SUMMARY.md) |
 | Serving configuration | Strict TOML loader, manifest reader and engine memory plan; full manifest-driven process startup remains incomplete | [serving](../../../../engines/radiance/components/serving/README.md), [manifest patch](../../../../engines/radiance/patches/rad0009_serving_manifest/SUMMARY.md), [memory-plan patch](../../../../engines/radiance/patches/rad0011_plan_memory/SUMMARY.md) |
 
-There are **12 engine patch packages** and **6 components**. The hand-off
-and up-mix patches are recorded as validated; other patches include
-diagnostic and unfinished work. See the [full catalogue](ENHANCEMENTS.md)
+There are **13 engine patch packages** and **6 components**, including
+**5 validated patches**. The validated MTP pass-replay patch restores draft/verify
+pass replay on v1.17.0; other packages include diagnostic and unfinished work. See the [full catalogue](ENHANCEMENTS.md)
 for states and evidence. Recipe inclusion is not proof of qualification.
 
 ## Current-pin throughput
