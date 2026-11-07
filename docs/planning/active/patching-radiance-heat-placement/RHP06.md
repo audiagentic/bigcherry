@@ -64,6 +64,8 @@ Plan source: GPT staged plan 2026-11-01 (req_main_8f893e8abe79). Prior art in ra
 
 Hardware finding from RHP16's quality gate (2026-11-08): the forced-churn schedule starts as soon as the helpers hold the engine's runtime maps, so in a KL run (15-17 s of scoring) all swaps complete during engine start-up and scoring sees one fixed placement. (a) Gate the forced schedule on the engine's first served or scored step, so swaps land mid-run, which is what this item's forced-churn KLD needs. (b) That also removes a start-up race: a forced transaction in flight while the engine initialises makes it fail closed ('moe_mailbox_add/publish ... called in the wrong phase'; 1 of 5 passes). (c) Hot layer-0 experts swapped onto the gfx1030 tail give KLD p99 +0.23 against the static placement (tail accuracy, RAD46): XTX<->gfx1030 moves need the per-kernel accuracy work, not just copy correctness.
 
+Forced churn on flashnext-4gpu KL after #718/#724 (run rhp06-churn-mid2, main 41b55ccd5, 2026-11-08): the driver now waits for the first completed lane request, then attempts 161 swaps (160 committed, 0 aborted). The result is bit-identical to the ungated run (mean 0.0738, p99 0.938, p99.9 3.433, top-1 87.94% vs control 0.0660 / 0.704 / 3.003 / 88.54%; first differing position 70 in both): the engine's start-up warmup request opens the gate and the small swaps finish in a burst before scoring. Open: ownership changes while a scored request is in flight are not yet KLD-measured. Needed: a paced forced schedule (one proposal per N completed lane requests, N derived from the run's request count so swaps spread over the whole scored corpus), then rerun churn KL; the A/B serving runs already committed ~30 live-policy transactions under real requests with no faults.
+
 ## Implementation-grade notes (2026-10-15)
 
 ### Gate before any implementation
@@ -112,3 +114,4 @@ Validation: State-machine fault injection, epoch overlap, GPU stream and graph r
 - chg_20261102_022722_groundwork-for-live-expert-pla_5619
 - 2026-11-02T02:27:30.722797+00:00 (updated-by): Updated: section:ledger-events
 - 2026-11-07T13:22:01.241611+00:00 (updated-by): Updated: section:notes
+- 2026-11-07T19:21:49.384054+00:00 (updated-by): Updated: section:notes
