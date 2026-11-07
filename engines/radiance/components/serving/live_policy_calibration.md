@@ -110,10 +110,16 @@ heat-age, sample-count, eligibility and revert TTLs.
 - half_life_observations_milli = 1000 * top-K drift half-life observations:
   the helper applies exp2(-routed_observations / half_life), not a heat-window decay.
 - max_heat_age_ns = cadence + largest accepted heat-delta gap.
-- margin_ppm = marginal_error_ppm, the multinomial sampling error of the
-  k-th hottest expert's share; no workload shift is treated as noise.
-  min_samples = ceil(marginal observations / ceil(observation rate * cadence)),
-  in accepted heat WINDOWS, not routed requests.
+- Let H = min(marginal observations, drift half-life observations): the heat
+  the planner can hold before the hot set moves on. margin_ppm =
+  ceil(marginal_error_ppm * sqrt(marginal observations / H)), the multinomial
+  sampling error of the k-th hottest expert's share over H observations (never
+  below the measured error); no workload shift is treated as noise.
+  min_samples = ceil(H / ceil(observation rate * cadence)), in accepted heat
+  WINDOWS, not routed requests. Using the whole calibration's error as the
+  margin made the gate demand the whole calibration's sample, which grows with
+  calibration length (production calib: 522 windows, 43 min, against a 7.4 min
+  drift half-life; zero proposals).
 - abort_cooldown_ns = max(max_heat_age_ns, measured abort-to-quiescent or cadence).
 - Let recovery = (k + 1) * W: the quiet gate needs its initial window plus
   k consecutive comparisons after an abort or effect judgment.

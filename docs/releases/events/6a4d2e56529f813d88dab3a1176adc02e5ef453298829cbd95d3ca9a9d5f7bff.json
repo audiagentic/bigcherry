@@ -1,0 +1,16 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261107_063422_a-calibrated-live-expert-place_8471",
+  "files": [
+    "engines/radiance/components/serving/live_policy.cpp",
+    "engines/radiance/components/serving/live_policy_test.cpp",
+    "engines/radiance/components/serving/live_policy_calibration.md"
+  ],
+  "plan-item-ids": [
+    "RHP16"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Live-policy derivation: margin_ppm is the multinomial sampling error over H = min(measured observations, drift half-life observations), ceil(err*sqrt(N/H)), and min_samples = ceil(H / (rate x cadence)). Previously margin was the whole calibration's error, so min_samples equalled the whole calibration sample (production flashnext-4gpu record: 522 windows / 43 min vs 7.4 min drift half-life; 64 evaluations, 0 proposals).",
+  "timestamp-utc": "2026-11-07T06:34:22.166379Z",
+  "user-summary-candidate": "A calibrated live expert-placement policy can now actually move experts: its sampling threshold is set by how long heat stays current, not by how long the calibration ran."
+}

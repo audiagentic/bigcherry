@@ -58,9 +58,12 @@ The policy starts with no hand-picked policy number: every trigger, size and age
 
 Depends on RHP11 slice D (live moves) and RHP06. Follows the owner's direction: live placement, no restarts, auto-calibrate by default, no regressions.
 
+Production calibration 2026-11-07 (run rhp16-prod-calib, flashnext-4gpu, main with step 5 + rad0013): record complete (partial for effect-gate fields only; effect_gate=false derived). First on arm: 64 evaluations, 0 proposals (no_improvement_or_margin); derived min_samples 522 windows (43 min) against a 7.4 min drift half-life because margin was the whole calibration's sampling error. Fixed in #708 (margin over one drift half-life: 5.46%, min_samples 89). A/B rerun with a derived warmup: run rhp16-prod-ab2.
+
 ## Offline replay of the policy, 2026-11-05 (slim harness for steps 3-4)
 
 r3_policy_replay (engines/radiance/components/moe-remote/worker_policy_replay.h, worker_policy_replay_main.cpp, test worker_policy_replay_test.cpp) feeds a recorded SERIES of the engine's cumulative route-count snapshots through the driver's own heat accounting and planner (heat::Heat, heat::propose, DriftTracker, marginal_relative_error), applying each proposed transaction at once. It runs in seconds with no GPU and no server, and prints per snapshot the tail's heat share before and after, the experts moved, and at the end transactions, bytes moved, the hot-set drift half-life and the marginal sampling error. Every setting is an explicit argument (no defaults). It does NOT model transaction time and its disturbance of service, aborts, the effect gate or eligibility learned from refused destinations, so it answers what the plan does to the placement, not what it costs; the cost side still needs a serve run. tools/lab/radiance/heat-placement/record_heat_series.py copies the live route-count file (PREFIX.rank0, rewritten atomically by --record-heat) to numbered snapshots whenever it changes, so a run leaves the whole trajectory; it is the input of the replay. placement_sim.py in the same folder is an older simulator with its own cost-aware policy; the replay is the one that runs the real planner. Card-free tests: convergence off the tail, fixed point, determinism, a hot set that shifts twice (followed, drift measured), residency holding just-moved experts, refusal of bad input, a counter that goes back. Next: record the series in the next hardware runs and use the replay to try the step 3 derivations (cadence, move budget, residency, half-life, margin) against real drift, then confirm on hardware.
+
 ## First measured values and a measurement flaw they exposed, 2026-11-05 (policy-live-9)
 
 Run policy-live-9: the merged policy with the measurement hooks, effect gate on, Flash-Next four GPUs, eight 27K filler prefills then ten ~50K documentation prefills. The shift result reproduced again (filler TTFT 19.1 to 13.3 s, documentation prefill 3,705 to 3,668 tok/s, no aborts, decode 120 tok/s at one stream and 242 at six). The evidence line `policy measure` at the end of the run:
@@ -112,7 +115,6 @@ PROTECTED_LAYERS and ACCEPT_UNWATERMARKED_HEAT are not tunables: protected layer
 
 ## Ledger-events
 
-
 - chg_20261105_013526_planned-how-the-live-expert-pl_9955
 - 2026-11-05T01:35:30.040386+00:00 (updated-by): Updated: section:ledger-events
 - 2026-11-05T01:58:26.403837+00:00 (updated-by): Updated: section:notes
@@ -152,7 +154,6 @@ The helper process no longer reads `R3_MOE_POLICY_*`: contract amendment 10 make
 - **Deleted settings** (step 5) are deleted from the registry in the next contract version, not hidden: MAX_MOVES (bytes over stride), LEARNED_ELIGIBILITY_TTL_NS (invalidation instead). Because amendment 10 closed v1 for field changes, these deletions are a v2 change and wait for the next contract version; until then they are derived values like the others.
 - **Order of work:** #633 merges first; then the derivations (step 3) land in `bc-serve` against the recorded policy-live series and the `r3_policy_replay` harness; then the calibration store (step 4); the helper-side deletions ride the v2 contract.
 
-
 ## How a layout gets calibrated (RHP16 step 4)
 
 The production start does **not** auto-enable the live policy for an uncalibrated layout: in locked v1 the policy is absent, so there is no policy thread to measure anything. Calibrate with the launcher's `--calibrate` lab run: `--live-policy POLICY.json` (a non-empty v1 live-policy object; no `enabled` member, presence is activation) and `--calibration-prompts-a FILE` plus `--calibration-prompts-b FILE` (distinct, representative workload sets, one prompt per line), and no `--experiment`. The launcher passes `bc-serve --calibration-run`, which writes a lab-profile manifest with the explicit policy and no `spec.experiment` (v1 refuses an empty experiment), so the measured plan, and therefore the plan-cache key, is the production one. `calibration-ingest` accepts only that shape: lab profile, explicit live policy, no experiment.
@@ -187,7 +188,6 @@ Two causes, which are the step-5 work:
 2. **Measurement hooks the helper does not have:** effect gate quantities in nanoseconds and counts (`effect_noise_floor_ns`, `effect_noise_quantile_ns`, `effect_window_samples`, `effect_quiet_windows`, `effect_rows_per_s`, `noise_false_revert_rate_ppm`), tail-lane service (`tail_lane_service_ns_per_s`, `tail_share_gain_ppm`, `tail_share_noise_ppm`, `lane_lost_ns`) and the slowest-helper copy rate. Each needs a hook where the helper already observes the event (effect gate windows, the tail lane's served requests, the transaction copy), not a new collector, and a card-free test from a recorded series.
 
 Until both land no layout can be calibrated, and the live policy stays lab-only (`--live-policy`).
-
 
 ## Step 5 follow-up 1: empirical noise dispersion (2026-11-06)
 
@@ -338,7 +338,6 @@ Not yet default-on, two gates left:
    RSC11 provides that, run it by hand (helpers from the calibrated manifest, a KLD-mode engine on the same helpers).
 2. Churn: the effect gate judged 21 windows, kept 0, reverted 9, undecided 12. The gain survives, but reverts and re-moves cost
    copy bandwidth (37 GB in two arms) and can oscillate over a long soak. The gate must be able to keep a move it can see helping.
-
 
 ## Step 5 follow-up 6: judge the continuously published tail service (2026-11-06)
 
@@ -591,3 +590,4 @@ effect remains calib7 and calib8; the later changes are verified card-free.
 
 Merge: off by default (no record in the production store). Enabling waits on the KLD gate with the policy moving experts (RSC11
 #692 provides manifest-started quality arms) and one production calibration.
+- 2026-11-07T06:34:14.255034+00:00 (updated-by): Updated: section:notes

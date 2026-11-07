@@ -291,8 +291,18 @@ DerivedLivePolicy derive_live_policy(const LivePolicyRecord& record, const Calib
                               kSecond, "max_moved_bytes"));
     const uint64_t max_moves = std::min<uint64_t>(move_bytes / stride, uint64_t(UINT32_MAX));
     if (!max_moves) bad("measured budget buys fewer than one complete expert; cannot activate policy");
-    const uint64_t margin = n("marginal_error_ppm");
-    if (!margin || margin >= kMillion) bad("relative sampling error is outside v1 margin_ppm range");
+    // The margin is the sampling error of the heat the planner can actually hold: the observations of one drift
+    // half-life, after which the hot set has moved on. The calibration's own error was measured over however many
+    // observations it ran (production calib: 3.98e9, about six drift half-lives); using that error as the margin made
+    // the per-expert gate below demand the whole calibration's sample (522 windows, 43 min, against a 7.4 min drift
+    // half-life), so no expert was ever movable. Never extrapolate below the measured error: horizon <= measured.
+    const uint64_t horizon = std::min(n("marginal_observations"), n("drift_half_life_observations"));
+    if (!horizon) bad("no observations bound the heat sampling horizon");
+    const double margin_scaled = std::ceil(double(n("marginal_error_ppm")) *
+        std::sqrt(double(n("marginal_observations")) / double(horizon)));
+    if (!(margin_scaled >= 1.0) || margin_scaled >= double(kMillion))
+        bad("relative sampling error over one drift half-life is outside v1 margin_ppm range");
+    const uint64_t margin = uint64_t(margin_scaled);
     // The planner's per-expert gate counts heat WINDOWS (one per accepted delta, i.e. per cadence), not routed
     // observations: convert the observations the margin needs into windows of measured rate x cadence. Comparing an
     // observation count against the window counter (rhp16-calib4: 105,925,840 against ~50 windows) blocks every move.
@@ -360,7 +370,7 @@ DerivedLivePolicy derive_live_policy(const LivePolicyRecord& record, const Calib
     set("max_moves", max_moves, "max_moved_bytes / device-layout expert stride (bounded by uint32)", budgets_input);
     set("min_residency_ns", residency, "(committed transaction p95 + observed lane time lost) / predicted tail service saving per second", layout);
     set("max_heat_age_ns", max_heat_age, "one policy cadence plus largest accepted heat-delta gap", layout);
-    set("min_samples", min_samples, "heat windows: marginal samples x (measured relative error / margin)^2 / (observation rate x cadence)", layout);
+    set("min_samples", min_samples, "heat windows: min(measured, one drift half-life) observations / (observation rate x cadence)", layout);
     set("abort_cooldown_ns", std::max(max_heat_age, m.contains("abort_quiescent_ns") ? n("abort_quiescent_ns") : cadence),
         m.contains("abort_quiescent_ns") ? "max(measured abort-to-quiescent, one cadence plus measured gap)" :
                                            "no abort seen: one cadence plus observed feed gap (conservative fallback; not abort-calibrated)", layout);
@@ -375,7 +385,7 @@ DerivedLivePolicy derive_live_policy(const LivePolicyRecord& record, const Calib
         "effect gate off: inert schema value, no quiet count inferred",
         Json::array({"/spec/calibration", "/spec/plan/engine_memory/cache_key"}));
     set("effect_revert_ttl_ns", effective_revert_ttl, "max(drift horizon, quiet-gate recovery, rollback p95 plus residency plus cadence)", layout);
-    set("margin_ppm", margin, "multinomial sampling error of the k-th hottest expert share", layout);
+    set("margin_ppm", margin, "multinomial sampling error of the k-th hottest expert share over min(measured, one drift half-life) observations", layout);
     set("half_life_observations_milli", div_ceil(Wide(n("drift_half_life_observations")) * 1000, 1,
                                                   "half_life_observations_milli"),
         "hot-set overlap drift half-life in observations, scaled by 1000", layout);
