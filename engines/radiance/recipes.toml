@@ -45,6 +45,13 @@ patches = ["rad0010_routing_evidence"]
 required-state = "untested"
 
 # Required by the helper and kernel ports; engine behavior remains unchanged until RSC07.
+# MTP draft/verify recorded-pass replay restored on the v1.17 pin (rad0013): v1.17's qwen4exp pass_key refuses every draft and
+# verify pass, so each speculation round issues them live (~1.7% decode step). Untested until the decode-step A/B, output identity
+# and KLD on hardware, then moved to serving-core.
+[patch-set.mtp-pass-replay]
+patches = ["rad0013_mtp_pass_replay"]
+required-state = "untested"
+
 [patch-set.helper-config]
 patches = ["rad0012_helper_kernel_config"]
 required-state = "untested"
@@ -57,17 +64,17 @@ patch-sets = []
 [source.radiance]
 description = "radiance 1.14.0 with BigCherry's validated engine patch sets."
 overlay = false
-patch-sets = ["serving-core", "host-compat", "serving-manifest", "helper-config"]
+patch-sets = ["serving-core", "host-compat", "serving-manifest", "helper-config", "mtp-pass-replay"]
 
 [source.radiance-diag]
 description = "radiance 1.14.0 with the validated engine patch sets plus remote-MoE diagnostics (rad0004); build it with build.moe-diag."
 overlay = false
-patch-sets = ["serving-core", "host-compat", "serving-manifest", "moe-remote-diag", "helper-config"]
+patch-sets = ["serving-core", "host-compat", "serving-manifest", "moe-remote-diag", "helper-config", "mtp-pass-replay"]
 
 [source.radiance-routing-evidence]
 description = "Production Radiance plus RHP01 opt-in host histogram coverage diagnostics; not a production source."
 overlay = false
-patch-sets = ["serving-core", "host-compat", "serving-manifest", "routing-evidence", "helper-config"]
+patch-sets = ["serving-core", "host-compat", "serving-manifest", "routing-evidence", "helper-config", "mtp-pass-replay"]
 
 [build.stock]
 description = "radiance's own release build of the engine binary."
