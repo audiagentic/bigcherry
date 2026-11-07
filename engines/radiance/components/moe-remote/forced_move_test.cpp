@@ -230,10 +230,13 @@ static void full_budget_swaps(bool production_budgets) {
         schedule.steps.push_back(Step::automatic(pairs[n%3][0],pairs[n%3][1]));
     {   // No forced proposal before the engine publishes its first request (RHP06: engine start-up race).
         Driver idle(schedule,budgets,stride,source);
-        check(load(&static_cast<const Header*>(map)->publish_sequence)==0,"fresh segment has no published request");
+        check(!engine_serving(map),"fresh segment has no completed request");
+        store(&static_cast<Header*>(map)->publish_sequence,1u);
+        check(!engine_serving(map),"publish_sequence alone is not the serving signal");
         check(idle.submit(map,controller,clock.now_ns()) && idle.attempted()==0 && controller.can_propose(),
               "no forced proposal while the engine has published nothing");
-        store(&static_cast<Header*>(map)->publish_sequence,1u);
+        store(&static_cast<Header*>(map)->lane[kLanes-1].done_sequence,1u);
+        check(engine_serving(map),"a completed request on any lane opens the gate");
     }
     Driver driver(schedule,budgets,stride,source);
     std::array<uint32_t,2> previous{{UINT32_MAX,UINT32_MAX}};
@@ -519,10 +522,13 @@ int main() {
 
     {   // No forced proposal before the engine publishes its first request (RHP06: engine start-up race).
         Driver idle(schedule,budgets,stride,source);
-        check(load(&static_cast<const Header*>(map)->publish_sequence)==0,"fresh segment has no published request");
+        check(!engine_serving(map),"fresh segment has no completed request");
+        store(&static_cast<Header*>(map)->publish_sequence,1u);
+        check(!engine_serving(map),"publish_sequence alone is not the serving signal");
         check(idle.submit(map,controller,clock.now_ns()) && idle.attempted()==0 && controller.can_propose(),
               "no forced proposal while the engine has published nothing");
-        store(&static_cast<Header*>(map)->publish_sequence,1u);
+        store(&static_cast<Header*>(map)->lane[kLanes-1].done_sequence,1u);
+        check(engine_serving(map),"a completed request on any lane opens the gate");
     }
     Driver driver(schedule,budgets,stride,source);
     uint32_t active_slot=0;
