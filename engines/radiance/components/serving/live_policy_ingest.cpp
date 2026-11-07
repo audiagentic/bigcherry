@@ -20,13 +20,12 @@ namespace fs = std::filesystem;
 constexpr const char* kMarker = "RHP16_CALIBRATION_JSON ";
 constexpr uint64_t kMaxExact = (uint64_t(1) << 53) - 1;
 const std::set<std::string> kMeasurements = {
-    "txn_p50_ns", "txn_p95_ns", "copy_bytes_per_s", "heat_gap_max_ns",
+    "txn_p50_ns", "txn_p95_ns", "copy_bytes_per_s", "heat_gap_max_ns", "heat_watermarked",
     "hot_set_k", "marginal_error_ppm", "marginal_observations",
     "drift_half_life_observations", "observation_rate_per_s",
-    "tail_share_noise_ppm", "tail_share_gain_ppm", "tail_lane_service_ns_per_s",
-    "lane_lost_ns", "effect_window_samples", "effect_requests_per_s",
-    "effect_quiet_windows", "effect_noise_floor_ns", "effect_noise_quantile_ns",
-    "noise_false_revert_rate_ppm", "abort_quiescent_ns"
+    "tail_share_gain_ppm", "tail_lane_service_ns_per_s",
+    "tail_lane_row_ns", "lane_lost_ns", "effect_rows_per_s",
+    "effect_noise_max_ns", "effect_row_noise_ns", "effect_window_noise_ladder", "abort_quiescent_ns"
 };
 [[noreturn]] void invalid(const std::string& message) {
     throw std::runtime_error("calibration-ingest: " + message);
@@ -56,11 +55,27 @@ void check_record(const Json& row, const std::string& key,
     if (!row.at("measurements").is_object() || !row.at("absent").is_object())
         invalid("measurements and absent must be objects");
     for (auto it = row.at("measurements").begin(); it != row.at("measurements").end(); ++it) {
+        if(it.key()=="effect_window_noise_ladder") {
+            const Json& ladder=it.value();
+            if(!ladder.is_array() || ladder.size()<3)
+                invalid("invalid measured window noise ladder");
+            uint64_t previous=0;
+            for(const auto& pair:ladder) {
+                if(!pair.is_array() || pair.size()!=2 ||
+                   !pair[0].is_number_unsigned() || !pair[1].is_number_unsigned() ||
+                   pair[0].get<uint64_t>()<=previous ||
+                   pair[0].get<uint64_t>()>kMaxExact || pair[1].get<uint64_t>()>kMaxExact)
+                    invalid("invalid measured window noise ladder pair");
+                previous=pair[0].get<uint64_t>();
+            }
+            continue;
+        }
         if (!kMeasurements.count(it.key()) || !it.value().is_number_integer() ||
             (it.value().is_number_integer() && !it.value().is_number_unsigned() &&
              it.value().get<int64_t>() < 0) ||
             it.value().get<uint64_t>() > kMaxExact ||
-            (it.value().get<uint64_t>() == 0 && it.key() != "lane_lost_ns"))
+            (it.value().get<uint64_t>() == 0 && it.key() != "lane_lost_ns" && it.key() != "heat_watermarked") ||
+            (it.key() == "heat_watermarked" && it.value().get<uint64_t>() > 1))
             invalid("invalid measured quantity: " + it.key());
     }
     for (auto it = row.at("absent").begin(); it != row.at("absent").end(); ++it) {
@@ -164,7 +179,7 @@ void ingest_live_policy_record(const fs::path& log, const fs::path& cache,
                 out << field << " = " << toml_string(record.at(field)) << '\n';
             for (auto it = record.at("measurements").begin();
                  it != record.at("measurements").end(); ++it)
-                out << it.key() << " = " << it.value().get<uint64_t>() << '\n';
+                out << it.key() << " = " << it.value().dump() << '\n';
             out << "absent = {";
             bool first = true;
             for (auto it = record.at("absent").begin(); it != record.at("absent").end(); ++it) {

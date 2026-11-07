@@ -57,6 +57,13 @@ private:
     const r3::epoch::Clock& clock_;
     ServiceSource* service_=nullptr;
     EffectGate effect_;
+    WindowNoiseTracker window_noise_{true}; // tail service RELATIVE to row-weighted peer service
+    uint64_t next_window_noise_check_ns_=0;
+    EffectSignalTimeout effect_signal_timeout_;
+    uint64_t effect_post_started_ns_=0; // closed transaction time, even without a signal
+    uint64_t effect_post_deadline_ns_=0; // frozen at close, never extended by new gaps
+    ServiceSnapshot last_relative_service_{};
+    bool last_relative_service_valid_=false;
     OwnerSnapshot revert_before_{},revert_after_{};
     bool revert_requested_=false,reverting_=false,revert_failed_=false;
     std::unique_ptr<HeatSource> source_;
@@ -70,6 +77,7 @@ private:
     DriftTracker drift_{1};
     uint64_t last_delta_poll_ns_=0, first_delta_poll_ns_=0, first_delta_observations_=0;
     std::optional<CalibrationIdentity> calibration_identity_;
+    CalibrationProgressTimeout calibration_progress_;
     bool calibration_printed_=false;
     heat::Heat heat_;
     uint64_t consumed_=0;
@@ -93,6 +101,36 @@ private:
     uint64_t feed_window_ns() const {
         // Derived solely from mandatory explicit age and poll cadence controls.
         return add_saturating(settings_.cadence_ns,settings_.controls.max_heat_age_ns);
+    }
+    // Bound post-move judgment by the gate's own k routed-row windows at the
+    // measured row rate, plus one observed heat gap. Missing rate/window data
+    // falls back to the mandatory heat-age limit; never wait indefinitely.
+    uint64_t effect_post_wait_ns() const {
+        const Measured m=measured();
+        const double rows_per_s=m.effect.sampled_rows_per_s;
+        if(!settings_.effect_window_samples || !settings_.effect_min_quiet_windows ||
+           !std::isfinite(rows_per_s) || rows_per_s<=0)
+            return settings_.controls.max_heat_age_ns;
+        const long double duration=std::ceil(
+            (static_cast<long double>(settings_.effect_window_samples)*
+             static_cast<long double>(settings_.effect_min_quiet_windows)*1000000000.0L)/
+            static_cast<long double>(rows_per_s));
+        const uint64_t windows=duration>=static_cast<long double>(UINT64_MAX)?
+            UINT64_MAX:uint64_t(duration);
+        const double measured_gap=m.delta_gap_ns.quantile(0.5);
+        const uint64_t gap=std::isfinite(measured_gap) && measured_gap>0 ?
+            (measured_gap>=static_cast<double>(UINT64_MAX)?UINT64_MAX:
+             uint64_t(std::ceil(measured_gap))) :
+            settings_.controls.max_heat_age_ns;
+        return add_saturating(windows,gap);
+    }
+    void effect_unjudgeable(const char* reason) {
+        effect_.abort();
+        effect_post_started_ns_=0;
+        effect_post_deadline_ns_=0;
+        pending_plan_={};
+        ++evidence_.effect_undecided;
+        record_no_change(reason);
     }
     bool no_live_feed(uint64_t now_ns) const {
         const uint64_t advanced=last_feed_advance_ns_.load(std::memory_order_acquire);
@@ -165,15 +203,10 @@ private:
         }
         {
             std::lock_guard<std::mutex> guard(measure_lock_);
+            measured_.accepted_heat_delta(delta.complete_observations);
             if(last_delta_poll_ns_ && poll_now>last_delta_poll_ns_)
                 measured_.delta_gap_ns.add(double(poll_now-last_delta_poll_ns_));
             last_delta_poll_ns_=poll_now;
-            // the interval's own counts: the accumulated heat is decayed by the very half-life this informs
-            drift_.add(std::vector<double>(delta.counts.begin(),delta.counts.end()),delta.observation_count);
-            measured_.drift_half_life_observations=drift_.half_life_observations();
-            measured_.drift_horizon_observations=drift_.horizon_observations();
-            measured_.drift_intervals=drift_.intervals();
-            measured_.drift_capacity=drift_.capacity();
             measured_.marginal_observations=delta.observation_count;
             if (!first_delta_poll_ns_) {
                 first_delta_poll_ns_=poll_now;
@@ -184,6 +217,22 @@ private:
                 measured_.observation_rate_per_s=
                     double(numerator)/double(poll_now-first_delta_poll_ns_);
             }
+            // Observation-spaced retention: base spacing is the observed
+            // route rate over one evaluation cadence, distributed across the
+            // measured drift ring. When that ring fills, DriftTracker
+            // coarsens by pairs so the horizon grows independent of cadence.
+            const long double base=std::ceil(
+                static_cast<long double>(measured_.observation_rate_per_s)*
+                static_cast<long double>(settings_.cadence_ns)/
+                (1000000000.0L*std::max<size_t>(drift_.capacity(),1)));
+            const uint64_t spacing=!std::isfinite(base) || base<1 ? 1 :
+                base>=static_cast<long double>(UINT64_MAX) ? UINT64_MAX : uint64_t(base);
+            drift_.add(std::vector<double>(delta.counts.begin(),delta.counts.end()),
+                       delta.observation_count,spacing);
+            measured_.drift_half_life_observations=drift_.half_life_observations();
+            measured_.drift_horizon_observations=drift_.horizon_observations();
+            measured_.drift_intervals=drift_.intervals();
+            measured_.drift_capacity=drift_.capacity();
             measured_.marginal_error=marginal_relative_error(heat_.counts,drift_.k());
         }
         r.unwatermarked=unwatermarked;
@@ -282,6 +331,8 @@ public:
         // Heat shape is replaced with the coherent ACTIVE layout at first
         // capture; no constructor accesses shared memory.
         reset_drift();
+        measured_.effect_required_quiet_windows=settings_.effect_gate?settings_.effect_min_quiet_windows:0;
+        measured_.effect_cadence_ns=settings_.cadence_ns;
     }
     ~Driver() { stop(); }
     // The hot set the drift is measured on: as many experts as the tail helper holds.
@@ -325,14 +376,90 @@ public:
     const Evidence& evidence() const {return evidence_;}
     void heartbeat(uint64_t now_ns) {
         if (settings_.enabled && started_ns_ && calibration_identity_ && !calibration_printed_) {
+            // Sample the SAME published tail slots used by EffectGate, at the
+            // existing CPU epoch heartbeat (~2 ms), not at the much slower
+            // proposal cadence. No GPU query or additional collector thread.
+            ServiceSnapshot tail{};
+            const bool service_ok=service_ && service_->snapshot(&tail);
+            bool overlapping_rows=false;
+            if(service_ok) {
+                if(last_relative_service_valid_)
+                    for(unsigned i=0;i<2;++i) {
+                        const auto& current=tail.lane[i];
+                        const auto& prior=last_relative_service_.lane[i];
+                        if(current.relative && current.rows>prior.rows &&
+                           current.reference_rows>prior.reference_rows)
+                            overlapping_rows=true;
+                    }
+                // Preserve the interval baseline through staggered updates:
+                // tail rows and peer rows need not advance on the same 2 ms tick.
+                if(overlapping_rows || !last_relative_service_valid_)
+                    last_relative_service_=tail;
+                last_relative_service_valid_=true;
+            } else last_relative_service_valid_=false;
+            effect_signal_timeout_.observe(service_ && service_->active_publishers(),
+                                           overlapping_rows,now_ns);
+            if(service_ok) {
+                std::array<WindowNoiseTracker::Counts,2> counters{};
+                for(unsigned i=0;i<2;++i)
+                    counters[i]={tail.lane[i].samples,tail.lane[i].rows,tail.lane[i].time_ns,
+                                 tail.lane[i].reference_rows,tail.lane[i].reference_time_ns};
+                window_noise_.add(counters);
+            } else window_noise_.reset(); // never bridge a missing/stale slot
+            if(!next_window_noise_check_ns_ || now_ns>=next_window_noise_check_ns_) {
+                auto ladder=window_noise_.ladder();
+                {
+                    std::lock_guard<std::mutex> guard(measure_lock_);
+                    measured_.effect_window_noise_ladder=std::move(ladder);
+                }
+                next_window_noise_check_ns_=add_saturating(now_ns,settings_.cadence_ns);
+            }
             const Measured m=measured();
-            if (calibration_settled(m)) {
+            // A published tail lane without ANY peer rows cannot produce a
+            // relative verdict on that lane, even if another lane is usable.
+            // No quiet ladder can fix this layout mismatch.
+            const bool structural_unjudgeable=service_ok &&
+                service_->active_publishers() &&
+                (tail.unjudgeable_tail_lane[0] || tail.unjudgeable_tail_lane[1]);
+            const bool effect_timed_out=effect_signal_timeout_.expired(
+                now_ns,m,settings_.cadence_ns,settings_.controls.max_heat_age_ns);
+            const bool effect_missing=structural_unjudgeable || effect_timed_out;
+            const auto missing=calibration_missing_planner(m);
+            const bool effect_waiting=missing.empty() && !effect_missing &&
+                !calibration_settled(m,false,false);
+            std::string waiting;
+            if(calibration_progress_.observe(missing,now_ns,effect_waiting,&waiting))
+                std::fprintf(stderr,"%s\\n",waiting.c_str());
+            const bool effect_stalled=calibration_progress_.effect_expired(
+                now_ns,m,settings_.cadence_ns,settings_.controls.max_heat_age_ns);
+            const bool effect_absent=effect_missing || effect_stalled;
+            const std::string effect_reason=structural_unjudgeable ?
+                (tail.unjudgeable_tail_lane[1] ?
+                    "tail large lane has no peer reference on this layout" :
+                    "tail small lane has no peer reference on this layout") :
+                (effect_stalled ?
+                    "relative tail/peer service did not converge within derived heat horizon" :
+                    "relative tail/peer service unavailable for a measured heat-gap horizon");
+            const bool planner_timed_out=calibration_progress_.expired(
+                now_ns,m,settings_.cadence_ns,settings_.controls.max_heat_age_ns);
+            if (calibration_settled(m,effect_absent,
+                                    structural_unjudgeable && !effect_timed_out) ||
+                planner_timed_out) {
+                if(planner_timed_out)
+                    std::fprintf(stderr,
+                        "policy calibration: planner evidence stalled (%s); emitting partial record\n",
+                        calibration_waiting_message(missing).c_str());
                 std::time_t now=std::time(nullptr);
                 std::tm utc{};
                 char date[11]{};
                 if (now>=0 && ::gmtime_r(&now,&utc) &&
                     std::strftime(date,sizeof(date),"%Y-%m-%d",&utc)) {
-                    const auto row=calibration_record(m,*calibration_identity_,date);
+                    const auto row=calibration_record(m,*calibration_identity_,date,
+                                                      effect_absent,effect_reason,planner_timed_out);
+                    if(effect_absent)
+                        std::fprintf(stderr,
+                            "policy calibration: effect unjudgeable (%s); effect quantities absent\n",
+                            effect_reason.c_str());
                     std::fprintf(stderr,"RHP16_CALIBRATION_JSON %s\n",row.dump().c_str());
                     std::fflush(stderr);
                     calibration_printed_=true; // exactly once per helper run
@@ -353,44 +480,59 @@ public:
     }
     bool submit(void* map,r3::epoch::Controller& controller,uint64_t now_ns) {
         if(!settings_.enabled || !controller.can_propose() || inflight_)return true;
-        if(settings_.effect_gate) {
-            if(revert_failed_)return true; // a failed rollback is terminal until restart
+        if(settings_.effect_gate && !revert_failed_) {
             ServiceSnapshot service{};
-            if(!service_ || !service_->snapshot(&service)) {
-                record_no_change("effect_signal_unavailable");return true;
-            }
+            const bool service_ok=service_ && service_->snapshot(&service);
             if(effect_.waiting()) {
-                const auto verdict=effect_.judge(service);
-                if(verdict==EffectVerdict::WAITING)return true; // no other proposal while assessing
-                if(verdict==EffectVerdict::INVALID) {
-                    revert_failed_=true;
-                    record_no_change("effect_post_signal_invalid");
-                    return true; // fail closed, never guess a verdict
-                }
-                ++evidence_.effect_windows_judged;
-                evidence_.effect_noise_floor=effect_.noise_floor();
-                evidence_.effect_last_ratio=effect_.last_ratio();
-                if(verdict==EffectVerdict::WORSE) {
-                    // Exclude the destinations that produced the REGRESSION,
-                    // not the destinations in the map we are restoring.
-                    for(const auto& m:pending_plan_.delta) {
-                        auto& entry=negatives_[{m.expert,uint32_t(m.to)}];
-                        entry={now_ns,add_saturating(now_ns,
-                               settings_.effect_revert_ttl_ns),kMeasuredWorseReason};
-                        ++evidence_.learned_ineligible;
+                // Every tail lane carrying work requires a peer reference.
+                // A missing reference is not evidence of regression.
+                const bool no_peer=service_ok &&
+                    (service.unjudgeable_tail_lane[0] ||
+                     service.unjudgeable_tail_lane[1]);
+                const bool timed_out=effect_post_started_ns_ &&
+                    now_ns>=effect_post_deadline_ns_;
+                if(no_peer)effect_unjudgeable("effect_post_no_peer_reference");
+                else if(timed_out)effect_unjudgeable("effect_post_signal_timeout");
+                else if(service_ok) {
+                    // Post-commit publication may be temporarily missing.
+                    // Anchor at its first valid sample, but retain the
+                    // original closed-transaction deadline.
+                    if(!effect_.post_committed())effect_.committed(service);
+                    const auto verdict=effect_.judge(service);
+                    if(verdict==EffectVerdict::INVALID)
+                        effect_unjudgeable("effect_post_signal_invalid");
+                    else if(verdict!=EffectVerdict::WAITING) {
+                        effect_post_started_ns_=0;
+                        effect_post_deadline_ns_=0;
+                        ++evidence_.effect_windows_judged;
+                        evidence_.effect_noise_floor=effect_.noise_floor();
+                        evidence_.effect_last_ratio=effect_.last_ratio();
+                        if(verdict==EffectVerdict::WORSE) {
+                            for(const auto& m:pending_plan_.delta) {
+                                auto& entry=negatives_[{m.expert,uint32_t(m.to)}];
+                                entry={now_ns,add_saturating(now_ns,
+                                       settings_.effect_revert_ttl_ns),kMeasuredWorseReason};
+                                ++evidence_.learned_ineligible;
+                            }
+                            ++terminal_generation_;
+                            revert_requested_=true;
+                        } else if(verdict==EffectVerdict::KEPT) {
+                            ++evidence_.effect_kept;
+                            pending_plan_={};
+                        } else {
+                            ++evidence_.effect_undecided;
+                            pending_plan_={};
+                        }
                     }
-                    ++terminal_generation_;
-                    revert_requested_=true;
-                } else if(verdict==EffectVerdict::KEPT) {
-                    ++evidence_.effect_kept;
-                    pending_plan_={};
-                } else {
-                    ++evidence_.effect_undecided;
-                    pending_plan_={};
-                }
-            } else if(!revert_requested_) {
+                } else record_no_change("effect_signal_unavailable");
+                // WAITING gates only proposals, never heat or drift polling.
+            } else if(!revert_requested_ && service_ok) {
                 effect_.quiet(service,now_ns);
                 evidence_.effect_noise_floor=effect_.noise_floor();
+            } else if(!service_ok) record_no_change("effect_signal_unavailable");
+            {
+                std::lock_guard<std::mutex> guard(measure_lock_);
+                measured_.effect=effect_.observed();
             }
             if(revert_requested_) {
                 // Restore the ENTIRE prior ACTIVE generation through the same
@@ -472,6 +614,8 @@ public:
                         result.valid_until_ns,clock_.now_ns(),cooldown_until_ns_,
                         result.plan,negatives_))
                 record_no_change(reject);
+            else if(settings_.effect_gate && revert_failed_)
+                record_no_change("effect_revert_blocked");
             else if(settings_.effect_gate &&
                     !effect_.ready(clock_.now_ns(),settings_.controls.max_heat_age_ns))
                 record_no_change("effect_not_calibrated");
@@ -540,6 +684,7 @@ public:
         OwnerSnapshot active;
         if(!capture_owners(map,&active))return;
         const auto obs=history_.observe_closed(j,active,now_ns);
+        const bool transaction_was_revert=reverting_;
         if(obs==HistoryObservation::COMMITTED) {
             const bool was_revert=reverting_;
             if(reverting_) {
@@ -552,12 +697,12 @@ public:
                 reverting_=false;
             } else if(settings_.effect_gate) {
                 revert_after_=active;
+                effect_post_started_ns_=now_ns;
+                effect_post_deadline_ns_=add_saturating(now_ns,effect_post_wait_ns());
                 ServiceSnapshot service{};
-                if(!service_ || !service_->snapshot(&service)) {
-                    revert_failed_=true;
+                if(!service_ || !service_->snapshot(&service))
                     record_no_change("effect_commit_signal_unavailable");
-                    effect_.abort();
-                } else effect_.committed(service);
+                else effect_.committed(service);
             }
             ++evidence_.committed;
             for(const auto& m:pending_plan_.delta)
@@ -590,7 +735,45 @@ public:
                 if(obs==HistoryObservation::ABORTED)measured_.abort_ns.add(double(elapsed));
                 else {
                     measured_.transaction_ns.add(double(elapsed));
+                    if(!transaction_was_revert && pending_plan_.valid)
+                        measured_.tail.commit(pending_plan_.baseline,pending_plan_.predicted);
                     measured_.copy.add(uint64_t(pending_plan_.delta.size())*stride_,elapsed);
+                    if (!transaction_was_revert) {
+                        // READY timing is published by each actual receiving helper,
+                        // preserved through CLEANED. Do not substitute the transaction
+                        // wall time for an unavailable per-helper DMA measurement.
+                        std::vector<uint64_t> expected(active.helpers,0);
+                        for (const auto& move:pending_plan_.delta)
+                            if (move.to>=0 && size_t(move.to)<expected.size())
+                                expected[size_t(move.to)]+=stride_;
+                        bool complete=true, any=false;
+                        double slowest=0;
+                        for (size_t h=0;h<expected.size();++h) {
+                            if (!expected[h]) continue;
+                            any=true;
+                            const auto ack=controller.helper_measurement(uint32_t(h));
+                            if (ack.transaction!=txn_ || ack.copy_bytes!=expected[h] ||
+                                !ack.copy_ns) {complete=false;break;}
+                            const double bps=double(expected[h])*1000000000.0/double(ack.copy_ns);
+                            if (!slowest || bps<slowest) slowest=bps;
+                        }
+                        if (complete && any) measured_.slowest_helper_copy_bps.add(slowest);
+                        if (active.helpers) {
+                            const auto tail=controller.helper_measurement(active.helpers-1);
+                            if (tail.transaction==txn_ && tail.service_ns && tail.service_wall_ns)
+                                measured_.tail_lane_service_ns_per_s.add(
+                                    double(tail.service_ns)*1000000000.0/
+                                    double(tail.service_wall_ns));
+                            if (tail.transaction==txn_ && tail.service_ns && tail.service_rows)
+                                measured_.tail_lane_row_ns.add(
+                                    double(tail.service_ns)/double(tail.service_rows));
+                            const auto closed=controller.helper_ack(active.helpers-1);
+                            if (closed.transaction_id==txn_ &&
+                                closed.phase==uint32_t(moe_shm::AckPhase::CLEANED) &&
+                                closed.reserved[1]==1)
+                                measured_.lane_lost_ns.add(double(closed.reserved[0]));
+                        }
+                    }
                 }
             }
             ++evidence_.transition_samples;

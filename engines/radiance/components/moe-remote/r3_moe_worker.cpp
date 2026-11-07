@@ -551,9 +551,9 @@ int main(int argc, char** argv) {
          * the lanes, so it is destroyed after they have published the stop. */
         QueueWarm warm;
         if (!warm.start(h, cfg.power_save && cfg.queue_warm)) return 1;
-        r3::policy::LaneServiceSource lane_service_signal; // process-private, helper 0 only read
+        r3::policy::LaneServiceSource lane_service_signal; // process-private sampled service data for this helper
         Lanes lanes(h, map, dev_map, *gpu, lane_classes, cfg, lanes_served, combine);
-        if(helper_index==0 && cfg.policy.enabled && cfg.policy.effect_gate)
+        if(cfg.policy.enabled)
             lanes.set_service_signal(&lane_service_signal);
         if (!lanes.start()) return 1;
         struct EpochClock final : r3::epoch::Clock {
@@ -581,6 +581,15 @@ int main(int argc, char** argv) {
         r3::epoch::EpochCycle epoch_cycle(
             map, helper_index, epoch_clock, std::chrono::seconds{cfg.epoch_cycle_s},
             {}, &migration);
+        if (cfg.policy.enabled)
+            epoch_cycle.set_lane_service_probe([&](uint64_t* service_ns,uint64_t* rows) {
+                if (!service_ns || !rows) return false;
+                r3::policy::ServiceSnapshot snapshot{};
+                if (!lane_service_signal.snapshot(&snapshot)) return false;
+                *service_ns=snapshot.lane[1].time_ns;
+                *rows=snapshot.lane[1].rows;
+                return true;
+            });
         std::unique_ptr<r3::forced::Driver> forced;
         if (helper_index==0 && cfg.force_enabled) {
             if (cfg.force_schedule.count()>UINT32_MAX-bootstrap_control.active_epoch) {
@@ -598,6 +607,13 @@ int main(int argc, char** argv) {
                 return forced->submit(shared,c,epoch_clock.now_ns());
             });
         }
+        // The planner's baseline/predicted saving is always the LAST helper's
+        // heat share (worker_heat.h), not the helper 0 coordinator's work.
+        // This same continuous tail source feeds calibration quiet-window noise
+        // and every post-move effect verdict.
+        r3::policy::SharedTailServiceSource tail_service_signal(
+            map,helper_count-1,cfg.policy.controls.max_heat_age_ns,
+            [&] {return epoch_clock.now_ns();},helper_count);
         std::unique_ptr<r3::policy::Driver> policy_driver;
         if (helper_index==0 && cfg.policy.enabled) {
             const char* histogram_prefix=settings.handoff.histogram.c_str();
@@ -628,7 +644,7 @@ int main(int argc, char** argv) {
                 cfg.policy,std::move(source),
                 std::vector<uint64_t>(budgets,budgets+helper_count),
                 gpu->expert_stride(),std::move(protected_experts),epoch_clock,
-                &lane_service_signal,
+                &tail_service_signal,
                 settings.lab_profile ?
                     std::optional<r3::policy::CalibrationIdentity>{
                         r3::policy::CalibrationIdentity{settings.plan_cache_key,settings.layout,settings.objective}} :
@@ -642,6 +658,15 @@ int main(int argc, char** argv) {
             });
         }
         for (uint32_t v; (v = g_stop_word.load(std::memory_order_acquire)) == 0;) {
+            // All enabled helpers publish their own lane totals at the existing
+            // CPU epoch tick (~2 ms). No collector thread or extra GPU query.
+            if(cfg.policy.enabled) {
+                r3::policy::ServiceSnapshot sampled{};
+                if(lane_service_signal.snapshot(&sampled))
+                    r3::policy::SharedTailServiceSource::publish(
+                        r3::moe_shm::published_service(map,helper_index),
+                        sampled,epoch_clock.now_ns());
+            }
             if (!epoch_cycle.tick()) {
                 PlacementControl failed{};
                 (void)placement_snapshot(map,&failed);

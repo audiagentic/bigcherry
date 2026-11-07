@@ -63,6 +63,9 @@ mailbox plugin `libr3moe` only when helpers exist), `handoff.heat` and `handoff.
 measurement is the engine's alone (`--helpers-resident-mib 0`). A manifest with a `handoff` or `helper_common` and no helpers, or
 helpers and no `handoff`, is refused by the reader.
 
+An engine-only manifest never reads the model's expert tables, so a dense model (a container without routed experts, such as the
+27B) gets one like any other; only a layout with helpers needs the experts, to plan which ones each helper owns.
+
 ## Starting with a manifest
 
 ```bash
@@ -174,6 +177,7 @@ that start a helper by hand (`fn-helper.sh`, `w4-replay-hash.sh`, `replay-kernel
 | Engine and helpers read a manifest; the engine admits the plan it carries | done (RSC06, RSC08) |
 | `--set` for `tp_wire`, `no_prefix_cache`, `gpu_headroom_mib` | done (RSC11 A1) |
 | Resolver reads `layouts.toml` and `archs.toml`; engine-only and multi-card-engine layouts; kernels derived per architecture; contract amendment 12 | done (RSC11 A2) |
+| Dense models (containers without routed experts) get engine-only manifests | done (RSC11 A2b) |
 | Campaign arms describe a `serving` configuration; the harness makes each arm's measured manifest; `BC_SERVING_MANIFEST` and the helper environment settings removed | done in code (RSC11 A3/B); the measuring path is not yet run on hardware |
 | Lab job files and `layouts.toml` side channels moved or retired | pending (B) |
 | The engine refuses direct config flags | pending (C) |

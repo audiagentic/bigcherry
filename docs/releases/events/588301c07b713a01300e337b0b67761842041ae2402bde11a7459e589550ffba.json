@@ -1,0 +1,26 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261106_233802_flash-next-can-now-move-hot-ex_8706",
+  "files": [
+    "engines/radiance/components/moe-remote/worker_policy_calibration.h",
+    "engines/radiance/components/moe-remote/worker_policy_measure.h",
+    "engines/radiance/components/moe-remote/worker_policy_driver.h",
+    "engines/radiance/components/moe-remote/worker_policy_effect.h",
+    "engines/radiance/components/moe-remote/worker_epoch.h",
+    "engines/radiance/components/moe-remote/moe_remote_shm.h",
+    "engines/radiance/components/moe-remote/r3_moe_worker.cpp",
+    "engines/radiance/components/serving/live_policy.cpp",
+    "engines/radiance/components/serving/live_policy_ingest.cpp",
+    "engines/radiance/components/serving/plan_cache.cpp",
+    "engines/radiance/components/serving/main.cpp",
+    "tools/lab/radiance/launch-flashnext-best.sh",
+    "docs/planning/active/patching-radiance-heat-placement/RHP16.md"
+  ],
+  "plan-item-ids": [
+    "RHP16"
+  ],
+  "status": "unreleased",
+  "technical-summary": "RHP16 step 5: helper measurement hooks complete the calibration record; heat-shifting calibration workload; every live-policy setting derived from measured quantities in the planner's own units (margin = sampling error, min_samples in heat windows, per-transaction caps, timers matched to evaluation); effect gate per routed row on per-helper service published in the shared segment (v24), relative to peers, window sized from measured noise, derived off where the tail's work has no peer reference; calibration that cannot derive a policy serves without one; bounded, self-diagnosing calibration waits; observation-spaced drift window; calibration key excludes engine_build so records carry across pin bumps. Off by default: active only with a calibration record. Hardware: derived policy cuts filler TTFT 31-35% with prefill and decode level (calib7, calib8).",
+  "timestamp-utc": "2026-11-06T23:38:02.303064Z",
+  "user-summary-candidate": "Flash-Next can now move hot experts between GPUs at runtime with every setting derived from a calibration run; in testing it cut time-to-first-token on a shifting workload by about a third. Off until a layout is calibrated."
+}

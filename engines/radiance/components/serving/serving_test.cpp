@@ -5,6 +5,7 @@
 #include "calibration.h"
 #include "ledger.h"
 #include "live_policy_ingest.h"
+#include "experts.h"
 #include "live_policy.h"
 #include "manifest_writer.h"
 #include "v1/manifest.h"
@@ -15,6 +16,8 @@
 
 #undef NDEBUG   /* the checks below are assert()s: keep them live in Release component builds */
 #include <sys/stat.h>
+#include <unistd.h>
+#include <cstdio>
 
 #include <atomic>
 #include <cassert>
@@ -1014,26 +1017,38 @@ void manifest_writer_step(Fixture& t) {
     // This synthetic tiny model has synthetic additional effect/lanes/drift readings.
     {
         sv::ManifestInputs calibrated = in;
-        const std::string key = sv::plan_key(calibrated.measured->key_inputs);
+        const std::string key = sv::calibration_key(calibrated.measured->key_inputs);
+        {   // The calibration key ignores the pinned engine commit (records carry across bumps) and nothing else.
+            auto bumped = calibrated.measured->key_inputs;
+            bumped["engine_build"] = std::string(64, 'f');
+            assert(sv::calibration_key(bumped) == key && sv::plan_key(bumped) != sv::plan_key(calibrated.measured->key_inputs));
+            auto other = calibrated.measured->key_inputs;
+            other["layout"] = "another-layout";
+            assert(sv::calibration_key(other) != key);
+        }
         calibrated.calibration_cache = t.file("live-policy-record.toml",
             "schema_version = 1\n[[live_policy_record]]\n"
             "plan_cache_key = \"" + key + "\"\n"
             "layout = \"flashnext-4gpu\"\nobjective = \"balanced\"\n"
             "seeded = \"2026-11-05\"\nevidence = \"policy-live-9 timing and sampling; synthetic noise/drift/lane readings\"\n"
             "txn_p50_ns = 1770000000\ntxn_p95_ns = 2720000000\n"
-            "copy_bytes_per_s = 160000000\nheat_gap_max_ns = 5040000000\n"
+            "copy_bytes_per_s = 160000000\nheat_gap_max_ns = 5040000000\nheat_watermarked = 0\n"
             "hot_set_k = 5931\nmarginal_error_ppm = 23000\n"
             "marginal_observations = 3\ndrift_half_life_observations = 59000000\n"
-            "observation_rate_per_s = 10000000\ntail_share_noise_ppm = 20000\n"
-            "tail_share_gain_ppm = 45000\ntail_lane_service_ns_per_s = 750000000\n"
-            "lane_lost_ns = 100000000\neffect_window_samples = 32\n"
-            "effect_requests_per_s = 64\neffect_quiet_windows = 3\n"
-            "effect_noise_floor_ns = 1000000\neffect_noise_quantile_ns = 2500000\n"
-            "noise_false_revert_rate_ppm = 10000\nabort_quiescent_ns = 1500000000\n");
+            "observation_rate_per_s = 10000000\n"
+            "tail_share_gain_ppm = 45000\ntail_lane_service_ns_per_s = 750000000\ntail_lane_row_ns = 22222222\n"
+            "lane_lost_ns = 100000000\neffect_rows_per_s = 64\n"
+            "effect_noise_max_ns = 2500000\n"
+            "effect_row_noise_ns = 1550000\n"
+            "effect_window_noise_ladder = [[8, 80000], [16, 40000], [32, 16000], [64, 10000]]\n"
+            "abort_quiescent_ns = 1500000000\n");
         const auto with_calibration = sv::build_manifest(calibrated);
         const auto& lp = with_calibration.document.at("spec").at("handoff").at("placement").at("live_policy");
-        assert(lp.at("cadence_ns") == 3220000000ull);
-        assert(lp.at("max_moved_bytes") == 160000000ull && lp.at("margin_ppm") == 23000);
+        assert(lp.at("cadence_ns") == 2720000000ull+
+            lp.at("effect_min_quiet_windows").get<uint64_t>()*
+            ((lp.at("effect_window_samples").get<uint64_t>()*1000000000ull+63)/64));
+        assert(lp.at("accept_unwatermarked_heat") == true);
+        assert(lp.at("max_moved_bytes") == 435200000ull && lp.at("margin_ppm") == 23000);
         assert(lp.at("half_life_observations_milli") == 59000000000ull);
         const auto& pv = with_calibration.document.at("provenance");
         assert(pv.at("/spec/handoff/placement/live_policy/cadence_ns").at("origin") == "derived");
@@ -1041,6 +1056,127 @@ void manifest_writer_step(Fixture& t) {
         assert(bc::serving::v1::read_manifest(with_calibration.text, "calibrated policy",
                                               bc::serving::v1::PlanUse::serving).ok());
         assert(with_calibration.digest != built.digest);
+        std::ifstream cal_input(calibrated.calibration_cache);
+        const std::string cal_text((std::istreambuf_iterator<char>(cal_input)),
+                                   std::istreambuf_iterator<char>());
+        // Capture the production diagnostic, not only the helper's return value.
+        auto no_policy=[&](const std::string& file_text,const std::string& reason) {
+            sv::ManifestInputs failed=calibrated;
+            failed.calibration_cache=t.file("failed-live-policy.toml",file_text);
+            FILE* log=std::tmpfile();
+            assert(log);
+            std::fflush(stderr);
+            const int saved=::dup(STDERR_FILENO);
+            assert(saved>=0 && ::dup2(::fileno(log),STDERR_FILENO)>=0);
+            sv::BuiltManifest no_live;
+            try { no_live=sv::build_manifest(failed); }
+            catch(...) {
+                std::fflush(stderr);
+                assert(::dup2(saved,STDERR_FILENO)>=0);
+                ::close(saved);
+                std::fclose(log);
+                throw;
+            }
+            std::fflush(stderr);
+            assert(::dup2(saved,STDERR_FILENO)>=0);
+            ::close(saved);
+            std::rewind(log);
+            std::string diagnostic;
+            char chunk[512];
+            while(const size_t count=std::fread(chunk,1,sizeof(chunk),log))
+                diagnostic.append(chunk,count);
+            std::fclose(log);
+            const auto& placement=no_live.document.at("spec").at("handoff").at("placement");
+            assert(!placement.contains("live_policy"));
+            const auto& origin=no_live.document.at("provenance")
+                .at("/spec/handoff/placement").at("source").get_ref<const std::string&>();
+            assert(origin.find(key)!=std::string::npos && origin.find(reason)!=std::string::npos);
+            assert(diagnostic.find("serving without live_policy")!=std::string::npos &&
+                   diagnostic.find(key)!=std::string::npos &&
+                   diagnostic.find(reason)!=std::string::npos);
+            assert(bc::serving::v1::read_manifest(no_live.text,"fallback",
+                bc::serving::v1::PlanUse::serving).ok());
+            sv::write_manifest_file(t.root / ("fallback-" + reason + ".json"),no_live.text);
+        };
+        auto replace_line=[&](std::string src,const std::string& name,
+                              const std::string& value) {
+            const auto from=src.find(name + " = ");
+            assert(from!=std::string::npos);
+            const auto end=src.find('\n',from);
+            assert(end!=std::string::npos);
+            src.replace(from,end-from,name+" = "+value);
+            return src;
+        };
+        const std::string calib9_ladder=
+            "[[10012, 256051], [20024, 199777], [40048, 110659], "
+            "[80096, 79012], [160192, 64111], [320384, 63886], "
+            "[640768, 42779], [1281536, 32781], [2563072, 53553]]";
+        auto noisy=replace_line(cal_text,"effect_window_noise_ladder",calib9_ladder);
+        noisy=replace_line(noisy,"tail_share_gain_ppm","66249");
+        noisy=replace_line(noisy,"tail_lane_row_ns","4287");
+        noisy=replace_line(noisy,"effect_rows_per_s","175034");
+        sv::ManifestInputs noisy_input=calibrated;
+        noisy_input.calibration_cache=t.file("unresolvable-noise.toml",noisy);
+        const auto gate_off=sv::build_manifest(noisy_input);
+        const auto& off=gate_off.document.at("spec").at("handoff").at("placement")
+            .at("live_policy");
+        assert(off.at("effect_gate")==false);
+        assert(off.at("margin_ppm")==23000 && off.at("max_moves")>0);
+        assert(gate_off.document.at("provenance")
+            .at("/spec/handoff/placement/live_policy/effect_gate").at("source")
+            .get<std::string>().find("cannot resolve predicted tail effect")!=std::string::npos);
+        assert(bc::serving::v1::read_manifest(gate_off.text,"unresolvable",
+            bc::serving::v1::PlanUse::serving).ok());
+        // Calib12-shaped: all planner measurements present, but no peer
+        // reference on the tail LARGE lane and all effect fields absent.
+        auto structural=cal_text;
+        for (const char* name : {"effect_rows_per_s","effect_noise_max_ns",
+                                 "effect_row_noise_ns","effect_window_noise_ladder"}) {
+            const auto pos=structural.find(std::string(name)+" = ");
+            assert(pos!=std::string::npos);
+            const auto end=structural.find('\n',pos);
+            assert(end!=std::string::npos);
+            structural.erase(pos,end-pos+1);
+        }
+        structural+="absent = { effect_rows_per_s = \"tail large lane has no peer reference on this layout\", "
+                    "effect_noise_max_ns = \"tail large lane has no peer reference on this layout\", "
+                    "effect_row_noise_ns = \"tail large lane has no peer reference on this layout\", "
+                    "effect_window_noise_ladder = \"tail large lane has no peer reference on this layout\" }\n";
+        sv::ManifestInputs structural_input=calibrated;
+        structural_input.calibration_cache=t.file("calib12-structural.toml",structural);
+        const auto structural_manifest=sv::build_manifest(structural_input);
+        const auto& structural_policy=structural_manifest.document.at("spec").at("handoff")
+            .at("placement").at("live_policy");
+        assert(structural_policy.at("effect_gate")==false);
+        assert(structural_policy.at("max_moved_bytes")==435200000ull);
+        assert(structural_policy.at("margin_ppm")==23000);
+        assert(structural_manifest.document.at("provenance")
+            .at("/spec/handoff/placement/live_policy/effect_gate").at("source")
+            .get<std::string>().find("tail large lane has no peer reference")!=std::string::npos);
+        assert(bc::serving::v1::read_manifest(structural_manifest.text,"calib12",
+            bc::serving::v1::PlanUse::serving).ok());
+        auto incomplete=replace_line(cal_text,"copy_bytes_per_s","1");
+        // A schema-valid but unusable positive reading is not a malformed file.
+        no_policy(incomplete,"measured budget buys fewer");
+        auto missing=cal_text;
+        const std::string copy_line="copy_bytes_per_s = 160000000\n";
+        assert(missing.find(copy_line)!=std::string::npos);
+        missing.erase(missing.find(copy_line),copy_line.size());
+        missing+="absent = { copy_bytes_per_s = \"no DMA observation\" }\n";
+        no_policy(missing,"copy_bytes_per_s");
+        auto malformed=calibrated;
+        malformed.calibration_cache=t.file("malformed-live-policy.toml",
+                                            cal_text+"unexpected_guess = 12\n");
+        try { (void)sv::build_manifest(malformed); assert(false); }
+        catch(const std::runtime_error& e) {
+            assert(std::string(e.what()).find("unknown key")!=std::string::npos);
+        }
+        malformed.calibration_cache=t.file("unparseable-live-policy.toml", cal_text+"unexpected_guess = \"unterminated\n");
+        try { (void)sv::build_manifest(malformed); assert(false); }
+        catch(const std::runtime_error& e) {
+            assert(std::string(e.what()).find("TOML parse error")!=std::string::npos);
+        }
+
         sv::ManifestInputs forbidden = calibrated;
         forbidden.live_policy = lp;
         forbidden.live_policy_from = "--live-policy lab-policy.json";
@@ -1065,12 +1201,18 @@ void manifest_writer_step(Fixture& t) {
         const auto& crm = cr_loaded.value();
         Json measured = {
             {"txn_p50_ns",1770000000ull}, {"txn_p95_ns",2720000000ull}, {"copy_bytes_per_s",160000000ull},
-            {"heat_gap_max_ns",5040000000ull}, {"hot_set_k",5931}, {"marginal_error_ppm",23000},
+            {"heat_gap_max_ns",5040000000ull}, {"heat_watermarked",0}, {"hot_set_k",5931}, {"marginal_error_ppm",23000},
             {"marginal_observations",3}, {"drift_half_life_observations",59000000}, {"observation_rate_per_s",10000000},
-            {"tail_share_noise_ppm",20000}, {"tail_share_gain_ppm",45000}, {"tail_lane_service_ns_per_s",750000000},
-            {"lane_lost_ns",100000000}, {"effect_window_samples",32}, {"effect_requests_per_s",64},
-            {"effect_quiet_windows",3}, {"effect_noise_floor_ns",1000000}, {"effect_noise_quantile_ns",2500000},
-            {"noise_false_revert_rate_ppm",10000}, {"abort_quiescent_ns",1500000000ull}};
+            {"tail_share_gain_ppm",45000}, {"tail_lane_service_ns_per_s",750000000},
+            {"lane_lost_ns",100000000}, {"effect_rows_per_s",64},
+            {"tail_lane_row_ns",22222222}, {"effect_noise_max_ns",2500000},
+            {"effect_row_noise_ns",1550000},
+            {"effect_window_noise_ladder",Json::array({
+                Json::array({uint64_t(8),uint64_t(80000)}),
+                Json::array({uint64_t(16),uint64_t(40000)}),
+                Json::array({uint64_t(32),uint64_t(16000)}),
+                Json::array({uint64_t(64),uint64_t(10000)})})},
+            {"abort_quiescent_ns",1500000000ull}};
         const Json row = {{"plan_cache_key", bc::serving::v1::plan_cache_key(crm)}, {"layout", crm.spec.intent.layout},
             {"objective", std::string(bc::serving::v1::kObjectiveNames[static_cast<size_t>(crm.spec.intent.service.objective)])},
             {"seeded","2026-11-06"}, {"evidence","calibration-run ingest test"},
@@ -1286,8 +1428,13 @@ void layout_manifests_golden(Fixture& t, bool write_golden, const char* dump_dir
 // An engine-only layout (contract amendment 12): two RDNA3 ranks, no helpers, no handoff, read back by the strict reader.
 void engine_only_layout(Fixture& t) {
     namespace sv = bc::serving;
+    // A dense model: a container with no routed experts, which the expert reader refuses. Engine-only needs no experts.
     const auto model = t.root / "dense-model.rad";
-    bc::test::write_rad(model, 4, 16, 128, 128, {});
+    bc::test::write_rad(model, 0, 0, 128, 128, {});
+    {
+        bc::experts::Container refused;
+        assert(!refused.open(model.c_str()));
+    }
     Options opts;
     opts.site = t.file("dense-site.toml", "[engine]\nmodel = \"" + model.string() + "\"\nradiance_home = \"/runtime\"\n");
     opts.sets = {"layout.name=\"qwen27b-2xtx\"", "service.max_sessions=6", "service.max_context=8192"};

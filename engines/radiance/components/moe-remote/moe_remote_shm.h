@@ -17,7 +17,7 @@
 namespace r3::moe_shm {
 
 constexpr uint64_t kMagic = 0x31454f4d33485253ull; /* "SRH3MOE1": reject unrelated/stale shm. */
-constexpr uint32_t kVersion = 23;  /* placement generations; no v22 compatibility */
+constexpr uint32_t kVersion = 24;  /* continuous helper service slots; no v23 compatibility */
 constexpr uint32_t kPage = 4096;
 /* One existing helper segment-attach/startup window, shared by helper
  * helper publication/filter sealing and the engine's first rank bitmap upload. */
@@ -138,6 +138,18 @@ struct alignas(64) PlacementAck {
     uint32_t reserved32;
     uint64_t reserved[2];
 };
+/* Each helper's CPU epoch thread is the sole writer of one coherent two-lane
+ * service snapshot. These slots occupy the previously unused ACK page tail.
+ * The engine/other helpers never write a foreign helper's slot. */
+struct alignas(64) PublishedServiceSlot {
+    uint64_t sequence;       /* odd while the helper publishes */
+    uint64_t published_ns;   /* CLOCK_MONOTONIC, for rejecting stalled helpers */
+    uint64_t samples[2];     /* small and large lanes, never mixed */
+    uint64_t rows[2];
+    uint64_t time_ns[2];
+};
+static_assert(sizeof(PublishedServiceSlot)==64);
+
 struct alignas(64) JournalRecord {
     uint64_t transaction_id;
     uint64_t before_epoch;
@@ -390,7 +402,7 @@ struct alignas(kPage) Header {
     uint32_t placement_control_bytes;  /* +3312 */
     uint32_t placement_ack_count;      /* +3316 */
 };
-static_assert(kVersion == 23 && kRingSlots == kLanes * kLaneSlots);
+static_assert(kVersion == 24 && kRingSlots == kLanes * kLaneSlots);
 static_assert(sizeof(Header) == 4096 && alignof(Header) == 4096);
 static_assert(sizeof(Request) == 256 && alignof(Request) == 64);
 static_assert(offsetof(Request, generation_slot) == 36);
@@ -427,7 +439,7 @@ constexpr uint32_t layer_map_slot_bytes() { return kMaxLayers * kExperts * sizeo
 
 struct Layout {
     uint64_t ring;
-    uint64_t placement, journal, ack, generation[2];
+    uint64_t placement, journal, ack, service, generation[2];
     uint64_t layer_map;
     uint64_t route[kMaxSlots];
     uint64_t activation[kMaxSlots];
@@ -508,7 +520,8 @@ inline bool layout_for(const LayoutShape& s, uint32_t layer_count, uint32_t slot
     x.journal = at;
     if (!add(at, sizeof(PlacementJournal), &at)) return false;
     x.ack = at;
-    if (!add(at, (kMaxHelpers + kMaxEngineRanks) * sizeof(PlacementAck), &tmp) ||
+    if (!add(at, (kMaxHelpers + kMaxEngineRanks) * sizeof(PlacementAck), &x.service) ||
+        !add(x.service, kMaxHelpers * sizeof(PublishedServiceSlot), &tmp) ||
         !page(tmp, &at)) return false;
     x.generation[0] = at;
     if (!add(at, generation_b, &at)) return false;
@@ -573,6 +586,8 @@ inline bool init(void* base, uint32_t layers, const LayoutShape& shape, uint32_t
     h->owner_map_bytes = l.owner_map_bytes; h->generation_slot_bytes = l.generation_slot_bytes;
     h->placement_control_bytes = sizeof(PlacementControl);
     h->placement_ack_count = kMaxHelpers + kMaxEngineRanks;
+    std::memset(static_cast<uint8_t*>(base) + l.service, 0,
+                kMaxHelpers * sizeof(PublishedServiceSlot));
     for (uint32_t slot = 0; slot < 2; ++slot) {
         auto* g = reinterpret_cast<GenerationHeader*>(static_cast<uint8_t*>(base) + l.generation[slot]);
         g->map_bytes = l.owner_map_bytes; g->layer_count = layers;
@@ -753,6 +768,18 @@ inline const PlacementJournal* placement_journal(const void* base) {
     auto* h = static_cast<const Header*>(base);
     return ptr<PlacementJournal>(base, h->journal_offset);
 }
+/* The v24 service slots are part of the control page, directly after ACKs.
+ * No extra mapping or dynamic allocator; layout_for validates the page fit. */
+inline PublishedServiceSlot* published_service(void* base, uint32_t helper) {
+    auto* h = static_cast<Header*>(base);
+    return h && helper < h->helper_count && helper < kMaxHelpers
+        ? ptr<PublishedServiceSlot>(base, h->ack_offset +
+                (kMaxHelpers + kMaxEngineRanks) * sizeof(PlacementAck)) + helper : nullptr;
+}
+inline const PublishedServiceSlot* published_service(const void* base, uint32_t helper) {
+    return published_service(const_cast<void*>(base), helper);
+}
+
 inline PlacementAck* placement_ack(void* base, uint32_t actor) {
     auto* h = static_cast<Header*>(base);
     return actor < h->placement_ack_count ? ptr<PlacementAck>(base, h->ack_offset) + actor : nullptr;

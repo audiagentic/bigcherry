@@ -372,19 +372,30 @@ BuiltManifest build_manifest(const ManifestInputs& in) {
     const Json& values = in.resolved.values;
     const Json calibration = calibration_entries(in.resolved, in.calibration_cache);
     const std::string model = values.at("engine").at("model");
-    bc::experts::Container container;
-    if (!container.open(model.c_str())) fail("cannot open the model container " + model);
     if (!in.live_policy.is_null() && in.profile != "lab")
         fail("--live-policy is an explicit lab-only override; production derives from calibration");
     const bool engine_only = in.resolved.manifest.at("process_helpers").empty();   // contract amendment 12
+    // The expert container is read only to place experts on helpers. An engine-only configuration places none, so a dense
+    // model (no routed experts, which Container::open refuses) is a valid engine-only model.
+    bc::experts::Container container;
+    if (!engine_only && !container.open(model.c_str())) fail("cannot open the model container " + model);
     if (engine_only && (!in.live_policy.is_null() || (!in.experiment.is_null() && in.experiment.contains("shape"))))
         fail("an engine-only configuration has no helpers: no live placement policy or helper shape applies");
     Json live_policy = in.live_policy;
     Json derived_provenance = Json::object();
     if (live_policy.is_null() && in.profile == "production" && !engine_only) {
-        if (const auto derived = derive_manifest_live_policy(in, container)) {
+        std::string skipped_reason;
+        if (const auto derived = derive_manifest_live_policy(in, container, &skipped_reason)) {
             live_policy = derived->policy;
             derived_provenance = derived->provenance;
+        } else if (!skipped_reason.empty()) {
+            std::fprintf(stderr, "live policy calibration skipped: %s; serving without live_policy\n",
+                         skipped_reason.c_str());
+            // The absent live_policy has no JSON pointer. Record the decision
+            // on its existing placement parent, which survives strict reading.
+            derived_provenance["/spec/handoff/placement"] =
+                record("derived", ("live policy disabled: " + skipped_reason).c_str(),
+                       "derived", "measured", Json::array({"/spec/calibration"}));
         }
     }
 

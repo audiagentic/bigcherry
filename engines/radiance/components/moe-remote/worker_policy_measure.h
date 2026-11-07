@@ -3,6 +3,8 @@
 // the driver feeds them at the moments it already observes (a transaction closing, a heat delta arriving) and reads
 // them for evidence. Nothing here chooses a number; a derivation consumes these.
 #include <algorithm>
+#include <array>
+#include <limits>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -24,7 +26,19 @@ public:
     }
     size_t count() const { return values_.size(); }
     uint64_t total() const { return total_; }   // every sample ever added, retained or not
+    size_t positive_count() const {
+        return size_t(std::count_if(values_.begin(), values_.end(),
+                                    [](double x) { return x>0.0; }));
+    }
     double max() const { return values_.empty() ? 0.0 : *std::max_element(values_.begin(), values_.end()); }
+    // Population standard deviation of the retained signed observations.
+    double stddev() const {
+        if (values_.size() < 2) return 0.0;
+        const double mean = std::accumulate(values_.begin(), values_.end(), 0.0) / double(values_.size());
+        double sum = 0.0;
+        for (double x : values_) sum += (x - mean) * (x - mean);
+        return std::sqrt(sum / double(values_.size()));
+    }
     // Nearest-rank quantile, q in [0, 1]; 0 when there is no sample.
     double quantile(double q) const {
         if (values_.empty() || !(q >= 0.0) || q > 1.0) return 0.0;
@@ -81,28 +95,59 @@ public:
     // `interval_counts` is the route count of the interval that just ended, `observation_count` the monotone
     // observation counter of the source at its end. A counter that does not advance is not a new interval; one that goes
     // back (a source restart) or a different shape resets the tracker.
-    void add(const std::vector<double>& interval_counts, uint64_t observation_count) {
-        if (!intervals_.empty()) {
-            if (observation_count < intervals_.back().observations ||
-                interval_counts.size() != intervals_.back().counts.size()) {
-                intervals_.clear();
-            } else if (observation_count == intervals_.back().observations) {
-                return;
-            }
+    // In adaptive mode, retain an observation-spaced history instead of the
+    // last N evaluations. Once full, thin the history in pairs and double the
+    // observation spacing; the horizon then grows with the observed workload
+    // rather than shrinking when evaluation cadence is shortened. With no
+    // initial spacing hint the legacy bounded-ring behavior is unchanged (used
+    // by standalone replay). The current update is always available as the
+    // newest point, even between retained observation boundaries.
+    void add(const std::vector<double>& interval_counts, uint64_t observation_count,
+             uint64_t initial_spacing_observations = 0) {
+        if (last_observation_ && (observation_count < last_observation_ ||
+            (!intervals_.empty() && interval_counts.size() != current_.counts.size()))) {
+            intervals_.clear();
+            spacing_observations_ = 0;
+            sampled_observation_ = 0;
+        } else if (last_observation_ && observation_count == last_observation_) {
+            return;
         }
-        if (intervals_.size() == capacity_) intervals_.pop_front();
-        intervals_.push_back({interval_counts, observation_count});
+        last_observation_ = observation_count;
+        current_ = {interval_counts, observation_count};
+        if (!initial_spacing_observations) {
+            if (intervals_.size() == capacity_) intervals_.pop_front();
+            intervals_.push_back(current_);
+            return;
+        }
+        if (!spacing_observations_) spacing_observations_ = initial_spacing_observations;
+        // The newest update is available for overlap comparison but must
+        // NOT replace the last spaced sample: doing so would make successive
+        // retained samples arbitrarily close when the next boundary arrives.
+        if (!intervals_.empty() && sampled_observation_ &&
+            observation_count - sampled_observation_ < spacing_observations_) return;
+        if (intervals_.size() == capacity_) {
+            std::deque<Interval> thinned;
+            for (size_t i = 0; i < intervals_.size(); i += 2)
+                thinned.push_back(std::move(intervals_[i]));
+            intervals_ = std::move(thinned);
+            spacing_observations_ = spacing_observations_ > UINT64_MAX / 2 ?
+                UINT64_MAX : spacing_observations_ * 2;
+        }
+        intervals_.push_back(current_);
+        sampled_observation_ = observation_count;
     }
+    uint64_t spacing_observations() const { return spacing_observations_; }
     size_t intervals() const { return intervals_.size(); }
     size_t capacity() const { return capacity_; }
     // Overlap of the newest interval's hot set with each older one's, oldest first.
     std::vector<Point> curve() const {
         std::vector<Point> out;
-        if (intervals_.size() < 2) return out;
-        const Interval& now = intervals_.back();
-        for (size_t i = 0; i + 1 < intervals_.size(); ++i)
-            out.push_back({now.observations - intervals_[i].observations,
-                           topk_overlap(intervals_[i].counts, now.counts, k_)});
+        if (intervals_.empty()) return out;
+        const Interval& now = current_;
+        for (const auto& old : intervals_)
+            if(old.observations < now.observations)
+                out.push_back({now.observations - old.observations,
+                               topk_overlap(old.counts, now.counts, k_)});
         return out;
     }
     // How far back the retained intervals reach, in observations: a half-life of 0 means "not seen within this".
@@ -130,6 +175,9 @@ private:
     struct Interval { std::vector<double> counts; uint64_t observations = 0; };
     size_t k_, capacity_;
     std::deque<Interval> intervals_;
+    Interval current_{};
+    uint64_t last_observation_ = 0, sampled_observation_ = 0;
+    uint64_t spacing_observations_ = 0;
 };
 
 // Relative standard error of an expert's share of the heat, from its own count: the multinomial estimate
@@ -149,11 +197,164 @@ inline double marginal_relative_error(const std::vector<double>& counts, size_t 
     return relative_share_error(sorted[k - 1], total);
 }
 
+// Tail-share gain is measured only from plans that actually commit.
+// Between-window changes reflect real workload shifts, not sampling noise.
+struct TailSamples {
+    Series gain_ppm{64};
+    void commit(double baseline,double predicted) {
+        if (std::isfinite(baseline) && std::isfinite(predicted) &&
+            baseline>predicted && predicted>=0 && baseline>0)
+            gain_ppm.add((baseline-predicted)/baseline*1000000.0);
+    }
+};
+
+// Independent counters from completed quiet windows (never copies of gate
+// configuration). The rate counts sampled lane routed rows, i.e. the same
+// observations the effect gate's window consumes.
+struct EffectSamples {
+    Series quiet_delta_ns{256};
+    // Signed quiet-window mean differences normalized by their standard-error
+    // scale, restoring per-row dispersion: equal n => delta * sqrt(n/2).
+    Series normalized_noise_ns{256};
+    uint64_t quiet_comparisons=0;
+    double sampled_rows_per_s=0;
+    double row_noise_ns() const { return normalized_noise_ns.stddev(); }
+};
+
+// RMS fractional differences of adjacent, non-overlapping published tail
+// service windows. Preserves request bursts and serial correlation that
+// disappear if window noise is estimated from an i.i.d. per-row sigma.
+struct WindowNoisePoint {
+    uint64_t rows=0, noise_ppm=0, comparisons=0;
+};
+class WindowNoiseTracker {
+public:
+    struct Counts { uint64_t samples=0, rows=0, time_ns=0;
+                    uint64_t reference_rows=0, reference_time_ns=0; };
+private:
+    struct Chunk { uint64_t rows=0, time_ns=0, reference_rows=0, reference_time_ns=0; };
+    static constexpr size_t kRetainedTicks=131072; // bounded CPU tick history
+    std::array<std::deque<Chunk>,2> intervals_{};
+    std::array<Chunk,2> pending_{}; // tail and peer may advance on different CPU ticks
+    std::array<Counts,2> previous_{};
+    bool have_previous_=false;
+    bool relative_=false;
+
+public:
+    explicit WindowNoiseTracker(bool relative=false):relative_(relative){}
+    // A missing/stale publication invalidates the continuity of the series.
+    void reset() {
+        for(auto& lane:intervals_)lane.clear();
+        pending_={};
+        have_previous_=false;
+    }
+    void add(const std::array<Counts,2>& now) {
+        if(!have_previous_) {previous_=now;have_previous_=true;return;}
+        for(size_t lane=0;lane<2;++lane) {
+            const auto& a=now[lane], b=previous_[lane];
+            if(a.rows<b.rows || a.time_ns<b.time_ns || a.samples<b.samples ||
+               a.reference_rows<b.reference_rows || a.reference_time_ns<b.reference_time_ns) {
+                reset();previous_=now;have_previous_=true;return;
+            }
+            const uint64_t rows=a.rows-b.rows, time=a.time_ns-b.time_ns;
+            const uint64_t ref_rows=a.reference_rows-b.reference_rows;
+            const uint64_t ref_time=a.reference_time_ns-b.reference_time_ns;
+            Chunk chunk{rows,time,ref_rows,ref_time};
+            if(relative_) {
+                // Different helpers publish at separate CPU ticks. A tick
+                // with tail rows but no peer rows (or vice versa) is *not*
+                // a discontinuity. Buffer the contiguous time interval
+                // until both sides have work; never fabricate a zero-row
+                // denominator or throw away the previous quiet windows.
+                auto& pending=pending_[lane];
+                if(UINT64_MAX-pending.rows<rows ||
+                   UINT64_MAX-pending.time_ns<time ||
+                   UINT64_MAX-pending.reference_rows<ref_rows ||
+                   UINT64_MAX-pending.reference_time_ns<ref_time) {
+                    reset();previous_=now;have_previous_=true;return;
+                }
+                pending.rows+=rows;pending.time_ns+=time;
+                pending.reference_rows+=ref_rows;
+                pending.reference_time_ns+=ref_time;
+                if(!pending.rows || !pending.time_ns ||
+                   !pending.reference_rows || !pending.reference_time_ns)continue;
+                chunk=pending;
+                pending={};
+            } else if(!rows || !time)continue;
+            auto& q=intervals_[lane];
+            if(q.size()==kRetainedTicks)q.pop_front();
+            q.push_back(chunk);
+
+        }
+        previous_=now;
+    }
+    std::vector<WindowNoisePoint> ladder() const {
+        std::vector<WindowNoisePoint> out;
+        uint64_t largest_tick_rows=0,total_rows=0;
+        for(const auto& q:intervals_) {
+            uint64_t rows=0;
+            for(const auto& x:q) {
+                largest_tick_rows=std::max(largest_tick_rows,x.rows);
+                if(UINT64_MAX-rows<x.rows) {rows=UINT64_MAX;break;}
+                rows+=x.rows;
+            }
+            total_rows=std::max(total_rows,rows);
+        }
+        // Four disjoint windows yield three comparisons. Never extrapolate
+        // noise beyond lengths actually observed in this bounded series.
+        for(uint64_t length=largest_tick_rows;length && length<=total_rows/4;) {
+            uint64_t max_noise=0, comparisons=0;
+            for(const auto& q:intervals_) {
+                uint64_t rows=0;
+                long double time=0, ref_rows=0, ref_time=0, previous_rate=0, squares=0;
+                size_t count=0;
+                for(const auto& tick:q) {
+                    rows+=tick.rows;time+=tick.time_ns;
+                    ref_rows+=tick.reference_rows;ref_time+=tick.reference_time_ns;
+                    if(rows<length)continue;
+                    if(relative_ && (!ref_rows || !ref_time))break;
+                    const long double rate=(time/rows) /
+                        (relative_ ? ref_time/ref_rows : 1.0L);
+                    if(previous_rate>0) {
+                        const long double delta=rate/previous_rate-1.0L;
+                        squares+=delta*delta;++count;
+                    }
+                    previous_rate=rate;rows=0;time=0;ref_rows=0;ref_time=0;
+                }
+                if(count<3)continue;
+                const long double ppm=std::ceil(std::sqrt(squares/count)*1000000.0L);
+                if(!std::isfinite(double(ppm)) || ppm>double((uint64_t(1)<<53)-1))continue;
+                max_noise=std::max(max_noise,uint64_t(ppm));
+                comparisons+=count;
+            }
+            if(comparisons>=3)out.push_back({length,max_noise,comparisons});
+            if(length>UINT64_MAX/2)break;
+            length*=2;
+        }
+        return out;
+    }
+};
+
 // Everything the driver measures for the derivations, in one place so the evidence line and the tests read it alike.
 struct Measured {
     Series transaction_ns{64};   // wall time of committed transactions (start to finish of the journal)
     Series abort_ns{64};         // wall time from start to quiescent of aborted ones
     Series delta_gap_ns{256};    // gap between consecutive heat deltas the driver consumed
+    TailSamples tail;
+    EffectSamples effect;
+    std::vector<WindowNoisePoint> effect_window_noise_ladder;
+    uint64_t effect_cadence_ns=0; // lab policy cadence only sets the measurement coverage requirement
+    uint64_t effect_required_quiet_windows=0; // convergence gate, never a measurement
+    uint64_t accepted_heat_deltas=0; // only deltas successfully consumed by the planner
+    bool accepted_unwatermarked_heat=false; // sticky across heat baseline resets
+    void accepted_heat_delta(bool complete_observations) {
+        ++accepted_heat_deltas;
+        if (!complete_observations) accepted_unwatermarked_heat=true;
+    }
+    Series tail_lane_service_ns_per_s{64}; // sampled tail-helper large-lane GPU service / wall second
+    Series tail_lane_row_ns{64}; // tail large-lane service ns / routed rows in the same interval
+    Series lane_lost_ns{64}; // observed tail lane unavailable from quiesce ACK to reopen
+    Series slowest_helper_copy_bps{64}; // minimum achieved READY ACK copy rate across receiving helpers
     Throughput copy;             // bytes of experts moved by committed transactions over their wall time
     uint64_t drift_half_life_observations = 0, drift_horizon_observations = 0;
     double marginal_error = 0;
