@@ -241,6 +241,8 @@ void check_scalar(const Node& n, const std::string& at) {
         if (n.kind == "string" && !n.constant->is_string()) fault(at, "a string const must be a string");
     }
     if (n.kind == "ref" && n.ref.empty()) fault(at, "kind 'ref' needs a ref");
+    if (!n.env_setting.empty() && n.kind != "boolean" && n.kind != "integer")
+        fault(at, "an env_setting field is a boolean (written 1 or 0) or an integer");
     if (n.radiance_switch && (n.kind != "enum" || n.values.size() != 1 || n.values[0] != "on"))
         fault(at, "a radiance_switch is an enum with the one value \"on\" (presence is the flag)");
     if (n.kind == "enum" || n.kind == "int_enum") {
@@ -308,7 +310,7 @@ struct Loader {
                       "item_kind", "item_ref", "item_min_length", "item_max_length", "item_minimum", "item_values",
                       "item_pattern",
                       "min_items", "max_items", "unique_items", "tuple", "key_ref", "required_keys", "min_properties",
-                      "constraints", "radiance_option", "radiance_config", "radiance_switch", "error_class", "mismatch", "default",
+                      "constraints", "radiance_option", "radiance_config", "radiance_switch", "env_setting", "error_class", "mismatch", "default",
                       "default_source"},
                   at);
         Node n;
@@ -327,6 +329,8 @@ struct Loader {
         if (n.radiance_option.empty() != n.radiance_config.empty())
             fault(where, "radiance_option and radiance_config go together");
         n.radiance_switch = boolean(t, "radiance_switch", where);
+        n.env_setting = str(t, "env_setting", where, false);
+        if (!n.env_setting.empty() && !n.radiance_option.empty()) fault(where, "env_setting and radiance_option are two different bindings; a field has one");
         if (n.radiance_switch && n.radiance_option.empty()) fault(where, "radiance_switch needs a radiance_option");
         if (!n.cpp_member.empty() && !identifier(n.cpp_member)) fault(where, "cpp_member is not a C++ identifier");
         n.error_class = str(t, "error_class", where, false);
@@ -951,6 +955,17 @@ struct TypesWriter {
              "    std::string_view ref_def;          // kind \"ref\": the shared type it uses, else empty\n"
              "};\n";
         o << "inline constexpr std::array<FieldInfo, " << count << "> kFields = {{\n" << rows.str() << "}};\n";
+        // The fields that stand in for a process environment variable (amendment 14): the engine sets each variable from
+        // the field at start, so the manifest is the one place it is configured.
+        std::ostringstream envs;
+        size_t env_count = 0;
+        for (const Node& n : r.nodes) {
+            if (n.env_setting.empty() || n.patch) continue;
+            envs << "    {" << literal(n.path) << ", " << literal(n.kind) << ", " << literal(n.env_setting) << "},\n";
+            ++env_count;
+        }
+        o << "struct EnvBinding {\n    std::string_view path;\n    std::string_view kind;   // \"boolean\" (1 or 0) or \"integer\"\n    std::string_view env;\n};\n";
+        o << "inline constexpr std::array<EnvBinding, " << env_count << "> kEnvBindings = {{\n" << envs.str() << "}};\n";
         // A patch def copies the members of the object def it patches: a field below one is described by the copied member.
         std::ostringstream patches;
         size_t patch_count = 0;
@@ -1030,8 +1045,9 @@ struct FieldsWriter {
             const std::string binding = n.radiance_option.empty()
                                             ? std::string()
                                             : "`" + n.radiance_option + "` / " + n.radiance_config;
+            const std::string shown = !n.env_setting.empty() ? "env `" + n.env_setting + "`" : binding;
             o << "| `" << md_cell(n.path) << "` | " << md_cell(describe(n)) << " | " << (n.optional ? "" : "yes")
-              << " | " << n.cls << " | " << md_cell(binding) << " | " << md_cell(n.doc) << " |\n";
+              << " | " << n.cls << " | " << md_cell(shown) << " | " << md_cell(n.doc) << " |\n";
         }
         for (size_t c : n.children) rows(o, c);
     }
@@ -1842,6 +1858,7 @@ std::string semantic_fingerprint(const Registry& r) {
                       {"radiance_config", n.radiance_config}, {"error_class", n.error_class},
                       {"mismatch", n.mismatch}};
         if (n.radiance_switch) f["radiance_switch"] = true;   // present only where a field is a value-less flag
+        if (!n.env_setting.empty()) f["env_setting"] = n.env_setting;   // present only where a field stands in for an environment variable
         // spec section 7 / section 11 amendment 9: a default decides which leaves need a provenance record, so it is
         // contract semantics (present only where a field has one)
         if (n.default_value) {

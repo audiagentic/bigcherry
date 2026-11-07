@@ -13,6 +13,7 @@ namespace bc::serving {
  * from the generated registry, so a field added there is a resolver key and a manifest leaf without another table. */
 struct OptionField {
     std::string section, name, key, path, kind, doc;
+    std::string env;          // the environment variable the field stands in for (amendment 14), or empty for a flag
     bool is_switch = false;   // the flag takes no value: the key's one value is "on"
 };
 const std::vector<OptionField>& engine_option_fields();

@@ -29,6 +29,7 @@ configure = { RADIANCE_SRC = "{engine_source}", R3_TARGETS = "{targets}", R3_NAT
 default = "1"
 status = "production"
 summary = "native gfx11 prefill attention; KLD 0.0035 / 96.8% top-1 vs the compatibility form's 0.0037, +5% prefill"
+manifest = "/spec/processes/engine/kernels/attn_native"
 
 [setting.R3_GDN_NATIVE]
 default = "0"
@@ -40,6 +41,7 @@ default = "0"
 status = "experimental"
 summary = "4-bit cross-card wire at M >= 512; +5.6% 27B prefill at KLD 0.0044 -> 0.0126 (owner's call). Off by default pending current-pin qualification of the fused kernel"
 activation = "R3_AR_WIRE4 active"
+manifest = "/spec/processes/engine/kernels/all_reduce_wire4"
 
 [setting.R3_AR_PIPE]
 default = "0"
@@ -86,6 +88,7 @@ summary = "RR08 selftest oracle (R3_BT)"
 default = "0"
 status = "experimental"
 summary = "gfx11 MXFP4 decode GEMV form"
+manifest = "/spec/processes/engine/kernels/dec11"
 
 [setting.R3_D11_MODE]
 default = ""
@@ -96,6 +99,7 @@ summary = "decode GEMV variant (R3_DEC11)"
 default = ""
 status = "tuning"
 summary = "decode GEMV selection"
+manifest = "/spec/processes/engine/kernels/gemv"
 
 [setting.R3_MXD_BK]
 default = ""

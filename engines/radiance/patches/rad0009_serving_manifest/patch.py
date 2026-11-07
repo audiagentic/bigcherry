@@ -258,6 +258,17 @@ bool bc_serving_engine_argv(int* argc, char*** argv) {
                 setenv("R3_MOE_WORKER_HISTOGRAM_PERIOD_S", std::to_string(te.at("period_s").get<long long>()).c_str(), 1);
         }
     }
+    /* Every field the contract binds to an environment variable (kEnvBindings, generated from the registry's env_setting):
+     * the variable is set from the manifest, so the manifest is the one place the setting is configured, and it wins over a
+     * value the launcher left in the environment. An absent field leaves the variable alone (the kernel's own default). */
+    for (const bc::serving::v1::EnvBinding& b : bc::serving::v1::kEnvBindings) {
+        const nlohmann::json::json_pointer ptr{std::string(b.path)};
+        if (!doc.contains(ptr)) continue;
+        const nlohmann::json& v = doc.at(ptr);
+        if (b.kind == "boolean" && v.is_boolean()) setenv(std::string(b.env).c_str(), v.get<bool>() ? "1" : "0", 1);
+        else if (b.kind == "integer" && v.is_number_integer())
+            setenv(std::string(b.env).c_str(), std::to_string(v.get<long long>()).c_str(), 1);
+    }
     const std::string digest = doc.at("metadata").at("content_digest").get<std::string>();   /* "sha256:<hex>" */
     g_label = "manifest " + digest.substr(digest.find(':') + 1, 12);
     return true;

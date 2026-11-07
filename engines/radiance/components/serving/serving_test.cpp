@@ -1465,7 +1465,8 @@ void engine_only_layout(Fixture& t) {
     {
         Options more = opts;
         more.sets = {"layout.name=\"qwen27b-2xtx\"", "sampling.temp=\"0.7\"", "sampling.top_k=40", "limits.max_body_mib=64",
-                     "limits.no_cors=\"on\"", "tuning.p2p=\"off\"", "vision.video_fps=\"2\"", "diagnostics.debug_placement=\"on\""};
+                     "limits.no_cors=\"on\"", "tuning.p2p=\"off\"", "vision.video_fps=\"2\"", "diagnostics.debug_placement=\"on\"",
+                     "kernels.moe_native=true", "kernels.dec11=false"};
         sv::ManifestInputs mi = in;
         mi.resolved = sv::resolve(more, t.facts);
         const auto with_options = sv::build_manifest(mi);
@@ -1473,9 +1474,10 @@ void engine_only_layout(Fixture& t) {
         assert(e.at("sampling").at("temp") == "0.7" && e.at("sampling").at("top_k") == 40);
         assert(e.at("limits").at("max_body_mib") == 64 && e.at("limits").at("no_cors") == "on");
         assert(e.at("tuning").at("p2p") == "off" && e.at("vision").at("video_fps") == "2" && e.at("diagnostics").at("debug_placement") == "on");
+        assert(e.at("kernels") == Json({{"moe_native", true}, {"dec11", false}}));   // amendment 14: environment settings are keys too
         assert(!e.contains("lora") && !e.contains("chat"));   // a section appears only with its members
         assert(bc::serving::v1::read_manifest(with_options.text, "options", bc::serving::v1::PlanUse::measuring).ok());
-        assert(bc::serving::engine_option_fields().size() == 80);
+        assert(bc::serving::engine_option_fields().size() == 88 /* 80 flags + 8 environment settings */);
         Options bad = opts;
         bad.sets = {"layout.name=\"qwen27b-2xtx\"", "sampling.no_such_option=1"};
         fail(bad, t.facts, "no_such_option");

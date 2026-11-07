@@ -8,6 +8,8 @@ from bigcherry.core import components, config, engines, paths
 #: getenv, and the moe-remote helper's validated readers (worker_config.h: u32/flag, peek_u32/peek_flag)
 _GETENV = re.compile(r'(?:getenv|\bu32|\bflag|\bchoice|\bpeek_u32|\bpeek_flag)\("((?:R3|BC)_[A-Z0-9_]+)"')
 #: settings the campaign harness reads (engine_adapters/radiance.py), not the plugin source
+#: manifest fields whose variable rad0009 sets from the manifest (the registry's env_setting binding)
+BRIDGED_PREFIX = "/spec/processes/engine/kernels/"
 HARNESS_ONLY = {"R3_MOE_WORKER_DEVICES", "R3_MOE_WORKER_LAYOUT"}
 
 
@@ -27,7 +29,11 @@ class Libr3ComponentTests(unittest.TestCase):
             for path in component.root.rglob("*"):
                 if path.is_file() and path.suffix in {".cpp", ".hip", ".h", ".rw"}:
                     read |= set(_GETENV.findall(path.read_text(encoding="utf-8", errors="replace")))
-            moved = {s.name for s in component.settings.values() if s.manifest}
+            # A setting bound to an engine kernels field (amendment 14) is still read by the kernel, from the variable rad0009
+            # sets out of the manifest before the engine initialises: the field is where it is configured, the variable only
+            # carries it into the plugin. Every other manifest-bound setting is read from the manifest, not the environment.
+            moved = {s.name for s in component.settings.values()
+                     if s.manifest and not s.manifest.startswith(BRIDGED_PREFIX)}
             self.assertEqual(read, set(component.settings) - HARNESS_ONLY - moved, name)
             self.assertEqual(read & moved, set(), f"{name}: a setting that became a manifest field is still read from the environment")
 
