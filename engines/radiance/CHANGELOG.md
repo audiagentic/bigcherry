@@ -1,5 +1,17 @@
 # Changelog
 
+## [1170.7.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.6.0...bc-radiance-1170.7.0) (2026-11-07)
+
+
+### New and changed
+
+* **serving:** manifest fields for 80 more engine options (contract amendment 13) ([#700](https://github.com/audiagentic/bigcherry/issues/700)) ([e097088](https://github.com/audiagentic/bigcherry/commit/e0970887e18d76830c92032f3916c11398b5e0f4))
+
+
+### Fixes
+
+* **radiance:** rad0013 restores MTP draft/verify pass replay lost in v1.17 (~2% decode step), with a start guard ([#699](https://github.com/audiagentic/bigcherry/issues/699)) ([0976fa8](https://github.com/audiagentic/bigcherry/commit/0976fa82d12bf9d8efd4cc1b91713b19036f4a31))
+
 ## [1170.6.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.5.1...bc-radiance-1170.6.0) (2026-11-07)
 
 
