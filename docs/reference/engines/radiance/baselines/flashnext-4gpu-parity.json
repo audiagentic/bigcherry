@@ -76,15 +76,8 @@
   },
   "long7_ms_per_step": {
    "direction": "lower",
-   "gated": true,
-   "launches": [
-    42.86895,
-    28.20415
-   ],
-   "note": "content-specific slow decode: seed 7's generated text can route to experts that are not resident, and when it does the slow mode holds for both reps of that launch; the generated text differs between launches even at temperature 0, so the mode can differ between launches and its tolerance is that spread. A bump is judged per seed; read the per-rep values in the raw files.",
-   "spread_across_launches": 0.4126680839867686,
-   "spread_repeats": 0.03514198504978552,
-   "tolerance": 0.4126680839867686,
+   "gated": false,
+   "note": "informational, not gated: bimodal between launches (v1.17.0 baseline: 42-44 ms/step in one launch, 28 in the other). The greedy text differs between launches, and with it where the live policy moves experts; in the slow mode the text routes to experts that are not resident. Long-context decode is gated on long8_ms_per_step.",
    "value": 35.53655
   },
   "long7_prefill_tps": {

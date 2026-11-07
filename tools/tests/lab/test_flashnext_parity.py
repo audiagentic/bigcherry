@@ -147,8 +147,10 @@ class BaselineTests(unittest.TestCase):
         dec = b["metrics"]["decode1_ms_per_step"]                 # reps of one prompt: 20.0 and 20.2 ms
         self.assertEqual(dec["spread_across_launches"], 0.0)
         self.assertAlmostEqual(dec["tolerance"], 0.2 / 20.1)
-        long7 = b["metrics"]["long7_ms_per_step"]                 # the two reps of seed 7: 1% apart
-        self.assertAlmostEqual(long7["tolerance"], 0.01 / 1.005)
+        long8 = b["metrics"]["long8_ms_per_step"]                 # the two reps of seed 8: 1% apart
+        self.assertAlmostEqual(long8["tolerance"], 0.01 / 1.005)
+        long7 = b["metrics"]["long7_ms_per_step"]                 # bimodal between launches: informational
+        self.assertNotIn("tolerance", long7)
         self.assertIn("note", long7)
 
     def test_distinct_prompt_spread_does_not_widen_the_tolerance(self):
@@ -233,7 +235,7 @@ class CompareTests(unittest.TestCase):
 
     def test_missing_gated_metric_fails(self):
         def drop(p):
-            p["metrics"]["long7_ms_per_step"]["median"] = None
+            p["metrics"]["long8_ms_per_step"]["median"] = None
         rc, text = self.run_compare([1.02, 1.02], drop)
         self.assertEqual(rc, 1)
         self.assertIn("MISSING", text)

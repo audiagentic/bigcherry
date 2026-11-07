@@ -49,7 +49,7 @@ METRICS = {
     "sess8_ms_per_step": ("lower", True),
     "long7_prefill_tps": ("higher", True),
     "long8_prefill_tps": ("higher", True),
-    "long7_ms_per_step": ("lower", True),
+    "long7_ms_per_step": ("lower", False),
     "long8_ms_per_step": ("lower", True),
     "decode1_acceptance": ("higher", False),
     "decode6_acceptance": ("higher", False),
@@ -61,10 +61,10 @@ METRICS = {
 LONG_SEEDS = (7, 8)
 # What a reader of a baseline must know about a metric, carried into parity.json and the baseline.
 NOTES = {
-    "long7_ms_per_step": "content-specific slow decode: seed 7's generated text can route to experts that are not "
-                         "resident, and when it does the slow mode holds for both reps of that launch; the generated text "
-                         "differs between launches even at temperature 0, so the mode can differ between launches and its "
-                         "tolerance is that spread. A bump is judged per seed; read the per-rep values in the raw files.",
+    "long7_ms_per_step": "informational, not gated: bimodal between launches (v1.17.0 baseline: 42-44 ms/step in one "
+                         "launch, 28 in the other). The greedy text differs between launches, and with it where the live "
+                         "policy moves experts; in the slow mode the text routes to experts that are not resident. "
+                         "Long-context decode is gated on long8_ms_per_step.",
 }
 
 
