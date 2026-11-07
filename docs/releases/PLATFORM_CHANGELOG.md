@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.21.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.20.1...bc-platform-1.21.0) (2026-11-07)
+
+
+### New and changed
+
+* **radiance:** KL runs start from a serving manifest (rad0009 requalification) ([#711](https://github.com/audiagentic/bigcherry/issues/711)) ([05ab5b1](https://github.com/audiagentic/bigcherry/commit/05ab5b17121a53cf18d6b9aa69a4ff43d2f334e8))
+* **radiance:** the engine takes its hand-off and route-histogram settings from the manifest; KL-only arms start with drafting off ([#714](https://github.com/audiagentic/bigcherry/issues/714)) ([b58adac](https://github.com/audiagentic/bigcherry/commit/b58adaca526b103577c7a311daa1b4bd14d11de1))
+
+
+### Fixes
+
+* **radiance:** live-policy margin is the sampling error over one drift half-life of heat, so the derived gate can open ([#708](https://github.com/audiagentic/bigcherry/issues/708)) ([c86cf66](https://github.com/audiagentic/bigcherry/commit/c86cf66b5a3e13309666ba8241caac4e5216ece8))
+
 ## [1.20.1](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.20.0...bc-platform-1.20.1) (2026-11-07)
 
 
