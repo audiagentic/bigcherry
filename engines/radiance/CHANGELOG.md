@@ -1,5 +1,12 @@
 # Changelog
 
+## [1170.8.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.7.0...bc-radiance-1170.8.0) (2026-11-07)
+
+
+### New and changed
+
+* **patch:** promote rad0013_mtp_pass_replay ([#702](https://github.com/audiagentic/bigcherry/issues/702)) ([57b87c0](https://github.com/audiagentic/bigcherry/commit/57b87c093d677b96e8faa78c057320523421e1dd))
+
 ## [1170.7.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.6.0...bc-radiance-1170.7.0) (2026-11-07)
 
 
