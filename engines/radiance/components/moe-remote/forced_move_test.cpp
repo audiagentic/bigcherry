@@ -228,6 +228,13 @@ static void full_budget_swaps(bool production_budgets) {
     const uint32_t pairs[3][2]={{0,1},{0,2},{1,2}};
     for(uint32_t n=0;n<transitions;++n)
         schedule.steps.push_back(Step::automatic(pairs[n%3][0],pairs[n%3][1]));
+    {   // No forced proposal before the engine publishes its first request (RHP06: engine start-up race).
+        Driver idle(schedule,budgets,stride,source);
+        check(load(&static_cast<const Header*>(map)->publish_sequence)==0,"fresh segment has no published request");
+        check(idle.submit(map,controller,clock.now_ns()) && idle.attempted()==0 && controller.can_propose(),
+              "no forced proposal while the engine has published nothing");
+        store(&static_cast<Header*>(map)->publish_sequence,1u);
+    }
     Driver driver(schedule,budgets,stride,source);
     std::array<uint32_t,2> previous{{UINT32_MAX,UINT32_MAX}};
     uint32_t active_slot=0;
@@ -510,6 +517,13 @@ int main() {
               off.epoch_cycle_s==0,"a manifest without placement experiments forces nothing");
     }
 
+    {   // No forced proposal before the engine publishes its first request (RHP06: engine start-up race).
+        Driver idle(schedule,budgets,stride,source);
+        check(load(&static_cast<const Header*>(map)->publish_sequence)==0,"fresh segment has no published request");
+        check(idle.submit(map,controller,clock.now_ns()) && idle.attempted()==0 && controller.can_propose(),
+              "no forced proposal while the engine has published nothing");
+        store(&static_cast<Header*>(map)->publish_sequence,1u);
+    }
     Driver driver(schedule,budgets,stride,source);
     uint32_t active_slot=0;
     for(uint32_t step=0;step<1000;++step) {

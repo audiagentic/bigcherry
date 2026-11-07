@@ -1,0 +1,15 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261107_153813_forced-expert-churn-test-runs_6072",
+  "files": [
+    "engines/radiance/components/moe-remote/worker_forced_move.h",
+    "engines/radiance/components/moe-remote/forced_move_test.cpp"
+  ],
+  "plan-item-ids": [
+    "RHP06"
+  ],
+  "status": "unreleased",
+  "technical-summary": "The forced placement driver (RHP06/RHP11 forced churn) issues no proposal until the engine has published a request ticket (Header::publish_sequence != 0). Before that the engine may still be initialising its mailbox kernels, which refuse to start while a transaction is in flight ('called in the wrong phase'; 1 of 5 KL passes on flashnext-4gpu), and a KL run saw every swap complete before its first scored position. Test: a fresh segment gets no proposal; after the first published ticket the 1,000-transition schedules run as before.",
+  "timestamp-utc": "2026-11-07T15:38:13.121363Z",
+  "user-summary-candidate": "Forced expert-churn test runs now start swapping only once the engine is serving, so they no longer race engine start-up and their swaps land during the measured work."
+}
