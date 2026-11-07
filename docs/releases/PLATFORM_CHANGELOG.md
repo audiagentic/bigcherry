@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.20.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.19.0...bc-platform-1.20.0) (2026-11-07)
+
+
+### New and changed
+
+* **patch:** promote rad0013_mtp_pass_replay ([#702](https://github.com/audiagentic/bigcherry/issues/702)) ([57b87c0](https://github.com/audiagentic/bigcherry/commit/57b87c093d677b96e8faa78c057320523421e1dd))
+* **serving:** manifest fields for 80 more engine options (contract amendment 13) ([#700](https://github.com/audiagentic/bigcherry/issues/700)) ([e097088](https://github.com/audiagentic/bigcherry/commit/e0970887e18d76830c92032f3916c11398b5e0f4))
+
 ## [1.19.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.18.1...bc-platform-1.19.0) (2026-11-07)
 
 
