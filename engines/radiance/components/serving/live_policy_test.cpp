@@ -116,9 +116,10 @@ static void calib5_regression(const sv::LivePolicyRecord& base,
     assert(p.size()==17);
     assert(p.at("protected_layers").empty());
     assert(p.at("abort_cooldown_ns")==p.at("max_heat_age_ns"));
-    assert(p.at("margin_ppm")==31905);
+    // Margin over one drift half-life (15,849,692 of the 105,169,020 measured observations), not the whole run.
+    assert(p.at("margin_ppm")==uint64_t(std::ceil(31905.0*std::sqrt(105169020.0/15849692.0))));
     const auto per_cadence_observations=(uint64_t(1282858)*p.at("cadence_ns").get<uint64_t>()+999999999)/1000000000;
-    assert(p.at("min_samples")==((105169020ull+per_cadence_observations-1)/per_cadence_observations));
+    assert(p.at("min_samples").get<uint64_t>()<=(15849692ull+per_cadence_observations-1)/per_cadence_observations);
     assert(p.at("cadence_ns")==3794447513ull+
            p.at("effect_min_quiet_windows").get<uint64_t>()*((67586ull*1000000000ull+7099)/7100));
     assert(p.at("max_moved_bytes")==1211860770ull);
@@ -164,7 +165,7 @@ static void calib5_regression(const sv::LivePolicyRecord& base,
     std::string error;
     assert(cfg.from_manifest(typed,{1,1},&error));
     assert(cfg.accept_unwatermarked_heat && cfg.effect_gate);
-    assert(cfg.controls.margin==0.031905);
+    assert(cfg.controls.margin==double(p.at("margin_ppm").get<uint64_t>())/1000000.0);
     assert(cfg.controls.half_life_observations==15849692.0);
     assert(cfg.protected_layers.empty());
     assert(cfg.effect_noise_multiplier==2.576);
@@ -322,8 +323,33 @@ int main() {
         real.measurements["observation_rate_per_s"] = 1300138;
         const Json& q = sv::derive_live_policy(real, cal, at, 2500000, {1000000000, 1000000000}).policy;
         const uint64_t per_window = (uint64_t(1300138) * q.at("cadence_ns").get<uint64_t>() + 999999999) / 1000000000;
-        assert(q.at("min_samples") == (uint64_t(105925840) + per_window - 1) / per_window);
+        // drift half-life 59M of the 105.9M measured: the gate holds one drift half-life of heat, not the whole run.
+        assert(q.at("min_samples").get<uint64_t>() <= (uint64_t(59000000) + per_window - 1) / per_window);
         assert(q.at("min_samples").get<uint64_t>() < 100);
+    }
+    {   // rhp16-prod-calib (2026-11-07): 3.98e9 observations, about six drift half-lives. With the whole-run error as
+        // the margin the gate demanded 522 windows (43 min) against a 7.4 min drift half-life: 64 evaluations, zero
+        // proposals. The gate must open within one drift half-life of heat windows.
+        auto prod = *rec;
+        prod.measurements["marginal_error_ppm"] = 22473;
+        prod.measurements["marginal_observations"] = 3980008190ull;
+        prod.measurements["drift_half_life_observations"] = 673678249ull;
+        prod.measurements["observation_rate_per_s"] = 1524407;
+        const Json& q = sv::derive_live_policy(prod, cal, at, 2500000, {1000000000, 1000000000}).policy;
+        const uint64_t per_window = (uint64_t(1524407) * q.at("cadence_ns").get<uint64_t>() + 999999999) / 1000000000;
+        const uint64_t drift_windows = (uint64_t(673678249) + per_window - 1) / per_window;
+        assert(q.at("min_samples").get<uint64_t>() <= drift_windows);
+        assert(q.at("min_samples").get<uint64_t>() * q.at("cadence_ns").get<uint64_t>() <=
+               (673678249ull * 1000000000ull) / 1524407 + q.at("cadence_ns").get<uint64_t>());
+        assert(q.at("margin_ppm") == uint64_t(std::ceil(22473.0 * std::sqrt(3980008190.0 / 673678249.0))));
+        assert(q.at("margin_ppm").get<uint64_t>() > 22473);
+    }
+    {   // A calibration shorter than one drift half-life keeps its measured error: never extrapolate below it.
+        auto shortrun = *rec;
+        shortrun.measurements["marginal_observations"] = 1000000;
+        shortrun.measurements["drift_half_life_observations"] = 59000000;
+        const Json& q = sv::derive_live_policy(shortrun, cal, at, 2500000, {1000000000, 1000000000}).policy;
+        assert(q.at("margin_ppm") == shortrun.measurements.at("marginal_error_ppm"));
     }
     assert(p.at("abort_cooldown_ns") == p.at("max_heat_age_ns"));
     assert(p.at("learned_eligibility_ttl_ns")==p.at("max_heat_age_ns").get<uint64_t>()+
