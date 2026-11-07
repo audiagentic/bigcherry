@@ -86,10 +86,8 @@ class FrameworkConfigurationEvidenceTests(unittest.TestCase):
             record = self._record(directory)
             ok, problems = evidence.verify_framework_configuration_record(
                 record, descriptor=self.descriptor,
-                patch_path=self.module.path, pinned_ref="bigcherry",
-                required_compiled_targets=("gfx1100",), resolved_base_revision="b" * 40,
-                source_composition=self.composition,
-                source_identity=self.source_identity,
+                patch_path=self.module.path,
+                required_compiled_targets=("gfx1100",),
             )
             self.assertTrue(ok, problems)
             root = Path(directory) / "evidence"
@@ -104,47 +102,59 @@ class FrameworkConfigurationEvidenceTests(unittest.TestCase):
             )
             self.assertEqual(status.status, "framework-configuration-evidence")
             self.assertTrue(status.ok)
+            self.assertEqual(status.notes, ())
+            # Pin, overlay and patch-application-semantics changes do not
+            # invalidate configuration evidence; the pin change is a note.
             from unittest import mock
-            for target, value in (
-                ("bigcherry.patch.source.overlay_digest", "d" * 64),
-                ("bigcherry.patch.source.PATCH_APPLICATION_SEMANTICS_VERSION", "changed-semantics"),
-            ):
-                patcher = (mock.patch(target, return_value=value) if target.endswith("overlay_digest")
-                           else mock.patch(target, value))
-                with patcher:
-                    stale = evidence.verify_framework_configuration_patch(
-                        self.module, pinned_ref="bigcherry", required_compiled_targets=("gfx1100",), root=root,
-                        allow_legacy_grandfather=False, resolved_base_revision="b" * 40,
-                    )
-                self.assertFalse(stale.ok, target)
+            with mock.patch("bigcherry.patch.source.overlay_digest", return_value="d" * 64), \
+                 mock.patch("bigcherry.patch.source.PATCH_APPLICATION_SEMANTICS_VERSION", "changed-semantics"):
+                moved = evidence.verify_framework_configuration_patch(
+                    self.module, pinned_ref="next-pin", required_compiled_targets=("gfx1100",), root=root,
+                    allow_legacy_grandfather=False, resolved_base_revision="e" * 40,
+                )
+            self.assertTrue(moved.ok, moved.problems)
+            self.assertIn("evidence recorded at pin bigcherry (now next-pin)", moved.notes)
+            self.assertIn("evidence recorded at pin revision bbbbbbbbbbbb (now eeeeeeeeeeee)", moved.notes)
 
-    def test_verifier_rejects_stale_identity_runtime_claim_and_missing_checks(self):
+    def test_verifier_treats_identity_drift_as_provenance_but_rejects_inconsistency(self):
         with tempfile.TemporaryDirectory() as directory:
             base = self._record(directory)
+            # Recorded digests and pin differing from today's are provenance.
+            for field, value in (("validation_digest", "e" * 64), ("base_ref", "other")):
+                candidate = dict(base); candidate[field] = value
+                candidate["record_digest"] = evidence._record_digest(candidate)
+                ok, problems = evidence.verify_framework_configuration_record(
+                    candidate, descriptor=self.descriptor, patch_path=self.module.path,
+                    required_compiled_targets=("gfx1100",),
+                )
+                self.assertTrue(ok, (field, problems))
+            # A record that contradicts itself is not intact evidence.
             for field, value, expected in (
-                ("patch_implementation_digest", "d" * 64, "implementation digest"),
-                ("validation_digest", "e" * 64, "validation digest"),
-                ("base_ref", "other", "stale base_ref"),
-                ("base_revision", "f" * 40, "stale base_revision"),
-                ("source_composition", [{"id": "other", "digest": HEX}], "source composition"),
+                ("patch_implementation_digest", "d" * 64, "focal implementation absent from composition"),
+                ("base_revision", "f" * 40, "invalid source materialization identity"),
+                ("source_composition", [{"id": "other", "digest": HEX}], "focal implementation absent"),
             ):
                 candidate = dict(base); candidate[field] = value
                 candidate["record_digest"] = evidence._record_digest(candidate)
                 ok, problems = evidence.verify_framework_configuration_record(
                     candidate, descriptor=self.descriptor, patch_path=self.module.path,
-                    pinned_ref="bigcherry", required_compiled_targets=("gfx1100",),
-                    resolved_base_revision="b" * 40,
-                    source_composition=tuple((name, HEX) for name in ("0100_cmake_options", "0200_dispatch_hook")),
+                    required_compiled_targets=("gfx1100",),
                 )
                 self.assertFalse(ok)
                 self.assertTrue(any(expected in problem for problem in problems), problems)
+            tampered = dict(base); tampered["compiled_targets"] = ["gfx1100", "gfx1201"]
+            ok, problems = evidence.verify_framework_configuration_record(
+                tampered, descriptor=self.descriptor, patch_path=self.module.path,
+                required_compiled_targets=("gfx1100",),
+            )
+            self.assertFalse(ok)
+            self.assertIn("record_digest mismatch", problems)
             missing = dict(base)
             missing["check_results"] = {"apply": base["check_results"]["apply"]}
             missing["record_digest"] = evidence._record_digest(missing)
             ok, problems = evidence.verify_framework_configuration_record(
                 missing, descriptor=self.descriptor, patch_path=self.module.path,
-                pinned_ref="bigcherry", required_compiled_targets=("gfx1100",),
-                resolved_base_revision="b" * 40,
+                required_compiled_targets=("gfx1100",),
             )
             self.assertFalse(ok)
             self.assertIn("required manifest check missing", problems)
@@ -157,7 +167,7 @@ class FrameworkConfigurationEvidenceTests(unittest.TestCase):
             bad["record_digest"] = evidence._record_digest(bad)
             ok, problems = evidence.verify_framework_configuration_record(
                 bad, descriptor=self.descriptor, patch_path=self.module.path,
-                pinned_ref="bigcherry", required_compiled_targets=("gfx1100",),
+                required_compiled_targets=("gfx1100",),
             )
             self.assertFalse(ok); self.assertIn("forbidden runtime", " ".join(problems))
             bad = dict(record)
@@ -165,11 +175,11 @@ class FrameworkConfigurationEvidenceTests(unittest.TestCase):
             bad["record_digest"] = evidence._record_digest(bad)
             ok, problems = evidence.verify_framework_configuration_record(
                 bad, descriptor=self.descriptor, patch_path=self.module.path,
-                pinned_ref="bigcherry", required_compiled_targets=("gfx1100",),
+                required_compiled_targets=("gfx1100",),
             )
             self.assertFalse(ok); self.assertIn("generated_inputs.production invalid", problems)
 
-    def test_verifier_rejects_overlay_digest_drift_with_same_composition(self):
+    def test_overlay_digest_drift_is_not_a_binding(self):
         with tempfile.TemporaryDirectory() as directory:
             candidate = self._record(directory)
             candidate["source_identity"] = copy.deepcopy(candidate["source_identity"])
@@ -177,13 +187,11 @@ class FrameworkConfigurationEvidenceTests(unittest.TestCase):
             candidate["record_digest"] = evidence._record_digest(candidate)
             ok, problems = evidence.verify_framework_configuration_record(
                 candidate, descriptor=self.descriptor, patch_path=self.module.path,
-                pinned_ref="bigcherry", required_compiled_targets=("gfx1100",),
-                source_identity=self.source_identity,
+                required_compiled_targets=("gfx1100",),
             )
-            self.assertFalse(ok)
-            self.assertIn("source materialization identity mismatch", problems)
+            self.assertTrue(ok, problems)
 
-    def test_verifier_rejects_materialization_semantics_drift(self):
+    def test_verifier_rejects_inconsistent_materialization_identity(self):
         with tempfile.TemporaryDirectory() as directory:
             candidate = self._record(directory)
             candidate["source_identity"] = copy.deepcopy(candidate["source_identity"])
@@ -191,11 +199,10 @@ class FrameworkConfigurationEvidenceTests(unittest.TestCase):
             candidate["record_digest"] = evidence._record_digest(candidate)
             ok, problems = evidence.verify_framework_configuration_record(
                 candidate, descriptor=self.descriptor, patch_path=self.module.path,
-                pinned_ref="bigcherry", required_compiled_targets=("gfx1100",),
-                source_identity=self.source_identity,
+                required_compiled_targets=("gfx1100",),
             )
             self.assertFalse(ok)
-            self.assertIn("source materialization identity mismatch", problems)
+            self.assertIn("invalid source materialization identity", problems)
 
     def test_verifier_requires_both_compiler_observations(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -205,8 +212,7 @@ class FrameworkConfigurationEvidenceTests(unittest.TestCase):
             candidate["record_digest"] = evidence._record_digest(candidate)
             ok, problems = evidence.verify_framework_configuration_record(
                 candidate, descriptor=self.descriptor, patch_path=self.module.path,
-                pinned_ref="bigcherry", required_compiled_targets=("gfx1100",),
-                source_identity=self.source_identity,
+                required_compiled_targets=("gfx1100",),
             )
             self.assertFalse(ok)
             self.assertIn("compiler observation missing: diagnostic", problems)
@@ -222,8 +228,7 @@ class FrameworkConfigurationEvidenceTests(unittest.TestCase):
             candidate["record_digest"] = evidence._record_digest(candidate)
             ok, problems = evidence.verify_framework_configuration_record(
                 candidate, descriptor=self.descriptor, patch_path=self.module.path,
-                pinned_ref="bigcherry", required_compiled_targets=("gfx1100",),
-                source_identity=self.source_identity,
+                required_compiled_targets=("gfx1100",),
             )
             self.assertFalse(ok)
             self.assertIn("compiler observation invalid: production", problems)
@@ -239,8 +244,7 @@ class FrameworkConfigurationEvidenceTests(unittest.TestCase):
             candidate["record_digest"] = evidence._record_digest(candidate)
             ok, problems = evidence.verify_framework_configuration_record(
                 candidate, descriptor=self.descriptor, patch_path=self.module.path,
-                pinned_ref="bigcherry", required_compiled_targets=("gfx1100",),
-                source_identity=self.source_identity,
+                required_compiled_targets=("gfx1100",),
             )
             self.assertFalse(ok)
             self.assertIn("compiler observation invalid: diagnostic", problems)
@@ -253,8 +257,7 @@ class FrameworkConfigurationEvidenceTests(unittest.TestCase):
             candidate["record_digest"] = evidence._record_digest(candidate)
             ok, problems = evidence.verify_framework_configuration_record(
                 candidate, descriptor=self.descriptor, patch_path=self.module.path,
-                pinned_ref="bigcherry", required_compiled_targets=("gfx1100",),
-                source_identity=self.source_identity,
+                required_compiled_targets=("gfx1100",),
             )
             self.assertFalse(ok)
             self.assertTrue(

@@ -6,6 +6,7 @@ from __future__ import annotations
 import sys
 import tempfile
 import unittest
+import unittest.mock
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -316,35 +317,39 @@ class VerifyValidatedPatchTests(unittest.TestCase):
         self.assertEqual(result.status, "validated-evidence")
         self.assertTrue(result.ok)
 
-    def test_editing_patch_after_evidence_makes_it_stale(self):
+    def test_editing_patch_after_evidence_still_qualifies_with_a_digest_note(self):
         pve.write_record(self._qualifying_record(), engine="llamacpp", patches_root=self.root, root=self.root)
         self.patch_path.write_text('STATE = "validated"\nEXTRA = 1\n', encoding="utf-8")
         module = self._module()
         result = pve.verify_validated_patch(
             module, pinned_ref="b10502", root=self.root, allow_legacy_grandfather=False,
         )
-        self.assertFalse(result.ok)
+        self.assertTrue(result.ok, result.problems)
+        self.assertEqual(result.status, "validated-evidence")
+        now = pve.patch_validation_subject_digest(self.patch_path)
+        self.assertEqual(
+            result.notes,
+            (f"evidence recorded at patch digest {self.subject_digest[:12]} (now {now[:12]})",),
+        )
 
-    def test_pin_change_makes_old_evidence_stale(self):
+    def test_pin_change_keeps_old_evidence_with_a_pin_note(self):
         pve.write_record(self._qualifying_record(), engine="llamacpp", patches_root=self.root, root=self.root)
         module = self._module()
         result = pve.verify_validated_patch(
             module, pinned_ref="different-pin", root=self.root, allow_legacy_grandfather=False,
         )
-        self.assertFalse(result.ok)
+        self.assertTrue(result.ok, result.problems)
+        self.assertEqual(result.notes, ("evidence recorded at pin b10502 (now different-pin)",))
 
-    def test_resolved_base_revision_mismatch_fails_closed(self):
-        # GPT review, req_b87ea92609fa45fe: base_ref string equality alone
-        # doesn't catch a moving ref that has since resolved to a different
-        # commit -- only checked when a caller supplies the real resolved
-        # commit (opt-in, backward compatible).
+    def test_resolved_base_revision_mismatch_is_a_note_not_a_failure(self):
         pve.write_record(self._qualifying_record(), engine="llamacpp", patches_root=self.root, root=self.root)
         module = self._module()
         result = pve.verify_validated_patch(
             module, pinned_ref="b10502", root=self.root, allow_legacy_grandfather=False,
             resolved_base_revision="f" * 40,
         )
-        self.assertFalse(result.ok)
+        self.assertTrue(result.ok, result.problems)
+        self.assertEqual(result.notes, ("evidence recorded at pin revision bbbbbbbbbbbb (now ffffffffffff)",))
 
     def test_resolved_base_revision_match_still_passes(self):
         record = self._qualifying_record()
@@ -355,6 +360,7 @@ class VerifyValidatedPatchTests(unittest.TestCase):
             resolved_base_revision=record["base_revision"],
         )
         self.assertTrue(result.ok)
+        self.assertEqual(result.notes, ())
 
     def test_missing_required_architecture_fails(self):
         pve.write_record(self._qualifying_record(), engine="llamacpp", patches_root=self.root, root=self.root)
@@ -376,29 +382,189 @@ class VerifyValidatedPatchTests(unittest.TestCase):
         )
         self.assertFalse(result.ok)
 
-    def test_exact_grandfather_hash_passes(self):
-        legacy_path = self.root / "legacy-baseline.json"
+    def _legacy_baseline(self):
         import json
-        legacy_path.write_text(json.dumps({
+        (self.root / "legacy-baseline.json").write_text(json.dumps({
             "schema_version": 1, "contract": "hi83-legacy-grandfather-v1",
             "patches": {"9999_example": "c" * 64},
         }), encoding="utf-8")
+
+    def test_grandfathered_patch_id_passes(self):
+        self._legacy_baseline()
         module = self._module(content_hash="c" * 64)
         result = pve.verify_validated_patch(module, pinned_ref="b10502", root=self.root)
         self.assertEqual(result.status, "legacy-grandfathered")
         self.assertTrue(result.ok)
 
-    def test_one_byte_change_to_grandfathered_patch_fails(self):
-        legacy_path = self.root / "legacy-baseline.json"
-        import json
-        legacy_path.write_text(json.dumps({
-            "schema_version": 1, "contract": "hi83-legacy-grandfather-v1",
-            "patches": {"9999_example": "c" * 64},
-        }), encoding="utf-8")
-        # content_hash no longer matches the grandfathered snapshot.
+    def test_edited_grandfathered_patch_stays_grandfathered(self):
+        self._legacy_baseline()
+        # The recorded hash is provenance: grandfathering is by patch id.
         module = self._module(content_hash="d" * 64)
         result = pve.verify_validated_patch(module, pinned_ref="b10502", root=self.root)
+        self.assertEqual(result.status, "legacy-grandfathered")
+        self.assertTrue(result.ok)
+
+    def test_patch_absent_from_the_baseline_is_not_grandfathered(self):
+        self._legacy_baseline()
+        module = patchset.PatchModule(engine="llamacpp",
+            patch_id="9998_other", path=self.patch_path, order=0, state="validated",
+            upstream=None, content_hash="c" * 64, catalog_root=self.root,
+        )
+        result = pve.verify_validated_patch(module, pinned_ref="b10502", root=self.root)
         self.assertFalse(result.ok)
+
+
+class EvidenceSurvivesChangeTests(unittest.TestCase):
+    """Owner rule: evidence is not invalidated by code, digest or pin changes.
+
+    A record qualifies while it is intact and says the patch passed; recorded
+    digests and the pin are provenance notes. Reruns are requested by demoting
+    the patch, never triggered by a change."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self.patches = self.root / "patches"
+        self.patches.mkdir()
+        self.evidence = self.root / "evidence"
+        self.patch_path = self.patches / "0001_test.py"
+        self._write_patch("untested")
+        self.workdir = self.root / "campaign"
+        self.workdir.mkdir()
+        (self.workdir / "activation.json").write_text("{}", encoding="utf-8")
+        self.catalog = self.root / "catalog.toml"
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def _write_patch(self, state, extra=""):
+        self.patch_path.write_text(
+            f'GROUP = "core"\nSTATE = "{state}"\nPATCHES = []\n{extra}', encoding="utf-8",
+        )
+
+    def _write_catalog(self, state):
+        self.catalog.write_text(
+            'version = 1\n\n[[patch]]\nid = "0001_test"\n'
+            'kind = "framework"\norigin = "local"\nbackend = "hip"\n'
+            f'state = "{state}"\n', encoding="utf-8",
+        )
+
+    def _record(self, *, contracts=(), verdicts=None, base_ref="v1.16.0"):
+        return pve.make_record(
+            patch_id="0001_test", patch_path=self.patch_path,
+            patch_implementation_digest=_HEX64, base_ref=base_ref, base_revision=_HEX40,
+            framework_baseline_digest=_HEX64, patched_source_tree=_HEX40,
+            gpu_architectures="gfx1100",
+            activation_evidence=ActivationEvidence(status="executed", mechanism="m", detail="d"),
+            activation_disposition="activation-verified",
+            correctness={"schema_version": 1, "disposition": "passed", "mechanism": "m", "detail": "d"},
+            campaign_identity_digest=_HEX64,
+            build_identities={"tune": _build_identity("1"), "replay": _build_identity("2"),
+                               "stock": _build_identity("3")},
+            validation_build_identities={"control": _build_identity("4"), "subject": _build_identity("5")},
+            campaign_workdir=self.workdir, lane_effects=(),
+            contracts=contracts, contract_verdicts=verdicts,
+            baseline_composition={"modules": []}, control_composition={"modules": []},
+            subject_composition={"modules": ["0001_test"]},
+            control_tree=_HEX40, subject_tree=_HEX40, stock_tree=_HEX40,
+        )
+
+    def _module(self, state="validated"):
+        return patchset.PatchModule(engine="llamacpp",
+            patch_id="0001_test", path=self.patch_path, order=1, state=state,
+            upstream=None, content_hash="deadbeef" * 8, catalog_root=self.patches,
+        )
+
+    def _verify(self, **kwargs):
+        kwargs.setdefault("pinned_ref", "v1.16.0")
+        return pve.verify_validated_patch(
+            self._module(), root=self.evidence, allow_legacy_grandfather=False, **kwargs,
+        )
+
+    def test_a_validated_patch_whose_code_changed_still_qualifies_with_a_digest_note(self):
+        recorded = pve.patch_validation_subject_digest(self.patch_path)
+        pve.write_record(self._record(), engine="llamacpp", patches_root=self.patches, root=self.evidence)
+        self._write_patch("validated", extra="# a later edit\n")
+        now = pve.patch_validation_subject_digest(self.patch_path)
+        self.assertNotEqual(recorded, now)
+        result = self._verify()
+        self.assertEqual(result.status, "validated-evidence", result.problems)
+        self.assertEqual(result.problems, ())
+        self.assertIn(f"evidence recorded at patch digest {recorded[:12]} (now {now[:12]})", result.notes)
+
+    def test_evidence_at_an_older_pin_qualifies_for_build_and_promote_with_a_pin_note(self):
+        from types import SimpleNamespace
+        from bigcherry.patch import gates
+        pve.write_record(self._record(base_ref="v1.16.0"), engine="llamacpp",
+                         patches_root=self.patches, root=self.evidence)
+        for intent, state in ((gates.GateIntent.BUILD, "validated"), (gates.GateIntent.PROMOTE, "untested")):
+            with self.subTest(intent=intent):
+                self._write_patch(state)
+                self._write_catalog(state)
+                context = SimpleNamespace(
+                    intent=intent, descriptor=SimpleNamespace(engine="llamacpp", patch_id="0001_test"),
+                    catalog_path=self.catalog, patches_dir=self.patches, pinned_ref="v1.17.0",
+                    evidence_root=self.evidence, allow_legacy_grandfather=False,
+                    resolved_base_revision="c" * 40,
+                )
+                result = gates.evaluate_evidence_gate(context)
+                self.assertEqual(result.status, gates.GateStatus.PASS, result.detail)
+                self.assertIn(gates.EVIDENCE_NOTE_PREFIX + "evidence recorded at pin v1.16.0 (now v1.17.0)",
+                              result.detail)
+                self.assertIn(gates.EVIDENCE_NOTE_PREFIX
+                              + "evidence recorded at pin revision bbbbbbbbbbbb (now cccccccccccc)",
+                              result.detail)
+
+    def test_a_changed_contract_hash_does_not_disqualify(self):
+        contracts = ({"id": "RD05", "hash": "1" * 64},)
+        pve.write_record(
+            self._record(contracts=contracts, verdicts={"RD05": {"passed": True}}),
+            engine="llamacpp", patches_root=self.patches, root=self.evidence,
+        )
+        self._write_patch("validated")
+        current = (None, ({"id": "RD05", "hash": "2" * 64},))
+        with unittest.mock.patch.object(pve, "_resolve_contract_identities", return_value=current):
+            result = self._verify()
+        self.assertEqual(result.status, "validated-evidence", result.problems)
+        self.assertIn("contract RD05 recorded at hash 111111111111 (now 222222222222)", result.notes)
+
+    def test_a_newly_bound_contract_without_a_verdict_disqualifies(self):
+        contracts = ({"id": "RD05", "hash": "1" * 64},)
+        pve.write_record(
+            self._record(contracts=contracts, verdicts={"RD05": {"passed": True}}),
+            engine="llamacpp", patches_root=self.patches, root=self.evidence,
+        )
+        self._write_patch("validated")
+        current = (None, ({"id": "RD05", "hash": "1" * 64}, {"id": "RD06", "hash": "3" * 64}))
+        with unittest.mock.patch.object(pve, "_resolve_contract_identities", return_value=current):
+            result = self._verify()
+        self.assertFalse(result.ok)
+        joined = "; ".join(result.problems)
+        self.assertIn("does not cover currently bound contract(s): ['RD06']", joined)
+        self.assertIn("missing contract_verdicts for: ['RD06']", joined)
+
+    def test_record_digest_tampering_still_disqualifies(self):
+        import json
+        path = pve.write_record(self._record(), engine="llamacpp", patches_root=self.patches, root=self.evidence)
+        self._write_patch("validated")
+        document = json.loads(path.read_text(encoding="utf-8"))
+        document["records"][0]["gpu_architectures"] = ["gfx1100", "gfx1201"]
+        path.write_text(json.dumps(document), encoding="utf-8")
+        result = self._verify()
+        self.assertFalse(result.ok)
+        self.assertIn("record_digest does not match the evidence payload", "; ".join(result.problems))
+
+    def test_a_withdrawn_record_still_does_not_qualify(self):
+        import json
+        record = self._record()
+        path = pve.write_record(record, engine="llamacpp", patches_root=self.patches, root=self.evidence)
+        self._write_patch("validated")
+        (path.parent / pve.WITHDRAWALS_FILE).write_text(json.dumps({"withdrawn": [
+            {"record_digest": record["record_digest"], "reason": "measured beside another GPU job"},
+        ]}), encoding="utf-8")
+        result = self._verify()
+        self.assertFalse(result.ok)
+        self.assertIn("no qualifying HI83 validation record", result.problems)
 
 
 if __name__ == "__main__":

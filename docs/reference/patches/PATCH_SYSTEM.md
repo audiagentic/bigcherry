@@ -97,13 +97,13 @@ failure; do not skip ahead to hardware or promotion.
 | `patches [--source NAME]` | Lists packages, metadata, state, and source selection | Does not apply or validate a patch |
 | `patch-explain ID` | Shows identity, provenance, dependencies, conflicts, and source/experiment references | Does not prove runtime behaviour |
 | `patch-graph [--roots ID]` | Shows `requires`/`conflicts` topology and dependency closure | Does not choose a scientific baseline |
-| `patch-lint` | Static package, metadata, summary, adapter, contract-producer, and path checks | Does not inspect current evidence freshness or run patch code |
+| `patch-lint` | Static package, metadata, summary, adapter, contract-producer, and path checks | Does not inspect evidence or run patch code |
 | `check --quick/--default/--full` | Deterministic local CI; hardware-free and non-mutating | Does not build ROCm targets, launch models, or prove GPU behaviour |
 | `patch-rebase-check --source/--all` | Observes whether patches apply to the current upstream revision in isolated worktrees | Does not mutate the vendor checkout or advance release state |
 | `apply --source NAME` | Applies the exact canonical source selection after audit | Does not validate a performance claim |
 | `apply --rebase-report PATH --known-good` | Applies only the fresh, report-authorised known-good subset | Does not make a stale report current; it refuses identity mismatches |
 | `patch-validate [ID]` | Alias for existing-evidence verification | Does not execute a new campaign |
-| `patch-verify-evidence [ID]` | Checks current-pin, identity, named-result, artifact, and status qualification | Does not promote or demote metadata |
+| `patch-verify-evidence [ID]` | Checks identity, integrity, named-result, contract, architecture, and status qualification, and prints provenance notes where the recorded pin or digests differ from the current ones | Does not promote or demote metadata; a note is not a failure |
 | `python -m bigcherry.patch.validation_campaign` | Runs the explicit patch validation campaign and writes evidence | Does not change patch lifecycle state automatically |
 | `patch-disposition` | Manages a revision- and digest-bound known-broken rebase disposition | Is not a permanent waiver and is not patch rejection |
 | `patch-status [--item ID]` | Computes plan/source/package/contract signals | Does not fabricate trigger, correctness, performance, or promotion evidence |
@@ -196,10 +196,10 @@ contradiction. Read both records and the evidence verifier.
 - A campaign may print `eligible_for_validated_state = true`, but it never
   edits `patch.toml`, `SUMMARY.md`, or the external-source registry.
 - Promote a patch implementation to `state = "validated"` only after the
-  applicable current-pin evidence verifier passes and the review accepts the
+  applicable evidence verifier passes and the review accepts the
   actual claim. Update the matching summary header and source-tracking status
   in the same deliberate change when applicable.
-- `ported-benched` requires a real current-pin control/subject benchmark with
+- `ported-benched` requires a real control/subject benchmark with
   build and hardware identities. A required correctness failure forbids this
   qualification; performance alone cannot override it.
 - `ported-validated` requires every named required check to pass and a
@@ -209,13 +209,14 @@ contradiction. Read both records and the evidence verifier.
   `BLOCKED` result records the unavailable prerequisite. It is not a pass and
   must not be converted to `validated` without the missing execution.
 - `rejected` means the candidate was tested and the implementation was not
-  accepted. A missing GPU, harness error, stale pin, or inability to reproduce
+  accepted. A missing GPU, harness error, pin bump, or inability to reproduce
   a fault is not by itself evidence for rejection.
 - `superseded` means the same change is independently present upstream. It is
   different from rejecting a patch as incorrect.
-- A pin bump makes prior evidence historical; it does not authorize rewriting
-  or deleting the old record. Re-run the current-pin gates and update metadata
-  only if the current policy decision changes.
+- Evidence is not invalidated by a pin bump, a patch edit, or a digest change:
+  the record keeps qualifying and the difference is a provenance note. We
+  judge when a rerun is needed; request one deliberately by demoting the
+  patch. Never rewrite or delete the old record.
 
 ### Transition record and dependency effects
 
@@ -241,14 +242,15 @@ compose until the dependency is restored or `X` is reworked. Re-run
 `patch-graph`, resolve the source again, and make an explicit decision for
 `X`; do not leave a production recipe carrying an unresolvable dependency.
 Installed/composed state must be treated as invalid until the source is
-reconciled. Re-promoting `X` requires the same current-pin evidence and review
+reconciled. Re-promoting `X` requires the same qualifying evidence and review
 as any other promotion, plus a fresh dependency/composition check.
 
 When demoting because of a measured regression or failed required check,
-retain the evidence and point to the failing campaign. When demoting only
-because evidence is stale, a pin moved, or a harness errored, retain the old
-record as historical and state the revalidation condition; do not relabel an
-unknown result as a rejection. A previously `rejected` patch must not be
+retain the evidence and point to the failing campaign. When demoting to
+request a rerun (a change judged to need one), or because a harness errored,
+retain the old record and state the rerun condition; do not relabel an
+unknown result as a rejection. A pin bump or digest change alone is never a
+reason to demote. A previously `rejected` patch must not be
 silently revived: either create a corrected patch identity or record an
 explicit review that resets it to `untested` before new validation.
 
@@ -259,7 +261,7 @@ Never weaken these rules to get a green report:
 - `BLOCKED`, `ERROR`, and missing results are not `PASS`.
 - A validation-ready experimental package must bind a resolvable Experiment
   Contract. Local non-RD framework packages without external-source bindings
-  may execute a package-local adapter with zero contracts; that is not current
+  may execute a package-local adapter with zero contracts; that is not
   qualification or a throughput claim. Every package must provide producers
   for all universal and bound-contract-required capabilities.
 - Required checks must pass individually. `not_applicable` never satisfies a

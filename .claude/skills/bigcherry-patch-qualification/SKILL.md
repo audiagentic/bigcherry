@@ -41,7 +41,7 @@ determine whether evidence supports ported-benched or ported-validated;
 
 diagnose PASS, FAIL, BLOCKED, or ERROR;
 
-assess stale/current evidence;
+assess whether evidence qualifies, and read its provenance notes;
 
 determine whether generic qualification exists for a patch.
 
@@ -177,7 +177,7 @@ evidence/validation.json:
 compact tracked record of what actually happened.
 
 tracked status:
-historical lifecycle record, not proof that current evidence is fresh.
+historical lifecycle record, not proof that evidence qualifies.
 
 Never duplicate contract thresholds or hypothesis text into validation.toml or README.
 
@@ -490,11 +490,13 @@ ERROR is not FAIL/PASS evidence.
 
 inability to reproduce an originating fault is not proof that the fault is fixed.
 
-missing/stale/tampered/fabricated evidence is not PASS.
+missing/tampered/fabricated evidence is not PASS.
+
+Evidence is not invalidated by code, digest or pin changes. A record taken at another pin, or against an earlier form of the patch, its validation package or a contract hash, still qualifies; patch-verify-evidence reports the difference as a note. A rerun is requested deliberately by demoting the patch (lifecycle), never triggered by a note. A contract the patch newly binds, with no verdict in the record, does block qualification.
 
 13. Preserve evidence immutability/history
 
-Evidence must bind, as applicable:
+Evidence must record, as applicable (these are provenance, used for notes and audit, not freshness bindings):
 
 human pin/ref;
 
@@ -635,7 +637,7 @@ hardware authorization was not explicit;
 
 current code lacks a full qualification path for the patch;
 
-evidence is stale/tampered/mismatched;
+evidence is tampered (record_digest mismatch) or internally inconsistent;
 
 CONTROL/SUBJECT attribution is ambiguous;
 
@@ -683,7 +685,7 @@ To LIFECYCLE:
 
 patch ID;
 
-current pin/resolved SHA;
+pin/resolved SHA the evidence was recorded at (and any provenance notes);
 
 evidence verification status;
 
@@ -719,7 +721,7 @@ Did I treat BLOCKED/ERROR correctly?
 
 Did I preserve append-only evidence?
 
-Did I verify current pin by resolved revision?
+Did I record the pin and resolved revision the run used?
 
 Did I avoid lifecycle mutation?
 

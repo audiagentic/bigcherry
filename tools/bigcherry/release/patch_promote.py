@@ -153,7 +153,7 @@ def _set_state(info: PatchInfo) -> list[Path]:
     if py_path.is_file():
         text = py_path.read_text(encoding="utf-8")
         # [ \t], not \s: \s would also take the line break and any blank lines after the field, which changes the
-        # file beyond the state and with it the digest the evidence is bound to
+        # file beyond the state and with it the digest the evidence records as provenance
         if re.search(r'(?m)^STATE[ \t]*=[ \t]*"[^"]+"[ \t]*$', text):
             text = _replace_once(
                 text,
@@ -540,7 +540,7 @@ def _is_default_on(info: PatchInfo) -> bool:
 
 def _profile_evidence(root: Path, layout: engines.EngineLayout, info: PatchInfo,
                       evidence: str) -> profile_evidence.ProfileEvidence:
-    """The lightweight promotion record for a patch, bound to the current pin and to its implementation.
+    """The lightweight promotion record for a patch, recording the current pin and its implementation's digest.
 
     Built after any default flip, so the digest is the one of the implementation that is promoted.
     """
@@ -785,7 +785,7 @@ def promote(
         "using the supplied qualification evidence, recorded in both the patch README "
         "and releases/evidence/.\n\n"
         "## Verified\n\n"
-        "- promotion gates with current evidence\n"
+        "- promotion gates with qualifying evidence\n"
         "- patch-local tests where present\n"
         "- catalog/governance/recipe tests\n"
         "- patch-lint and production patch-rebase-check\n\n"

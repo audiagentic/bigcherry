@@ -279,6 +279,12 @@ be named, not silently reused.
 | committed evidence bundles (e.g. `docs/evidence/2026-08-21-hi35-hi36-27b-r9700/`) | the README names the `source_revision`; every checksum is for that revision | the bundle is *of* that pin — never mutate it; new pin = new bundle |
 | `releases/` records + index | monotonic per-revision evidence; the old record stays at its stage | new record for the new revision; old records are never edited |
 
+Patch validation evidence (`evidence/validation.json`, `evidence/promotion.json`, the legacy baseline) is **not** on
+this list. It carries across the bump: the pin-bump evidence phase and every build apply the same qualification rule as
+before the bump, and report the old recorded pin as a note. A patch is rerun only when someone decides its change
+warrants it and demotes the patch; a genuine failure (the patch no longer applies, a build or check fails) still stops
+the bump as above.
+
 ## What `pin-status` does and does not do
 
 It reads. It never moves a checkout, never edits config, never advances a

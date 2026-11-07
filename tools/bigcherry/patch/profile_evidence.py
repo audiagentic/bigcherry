@@ -5,9 +5,9 @@ offline mechanics, an activation marker from the run that produced the numbers, 
 greedy output, on the current pin. A patch that is on by default additionally needs a no-regression run on a second
 model.
 
-The record is ``<patch package>/evidence/promotion.json``. It is bound to the pin and to the patch implementation
-(the same subject digest HI83 records use, so the STATE change that promotion itself makes does not void it; any
-other edit to the patch does, and the evidence has to be confirmed again).
+The record is ``<patch package>/evidence/promotion.json``. It records the pin and the patch implementation's subject
+digest (the same digest HI83 records use) as provenance. Neither binds it: a later pin or an edited patch leaves the
+record qualifying, with a note naming what changed. A rerun is requested deliberately, by demoting the patch.
 
 This module holds the record's shape and its checks. ``evidence.verify_validated_patch`` consults it when no HI83
 record qualifies; ``release.patch_promote`` writes it.
@@ -18,8 +18,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
-
-from . import lineage
+from typing import NamedTuple
 
 SCHEMA = 1
 TIER = "profile-evidence"
@@ -53,8 +52,15 @@ class ProfileEvidence:
         }
 
 
+class Verdict(NamedTuple):
+    """``problems`` disqualify the record; ``notes`` are provenance differences that do not."""
+
+    problems: tuple[str, ...]
+    notes: tuple[str, ...]
+
+
 def problems(evidence: ProfileEvidence) -> tuple[str, ...]:
-    """What a record lacks. Empty means it qualifies on its own terms (binding is checked by ``verify``)."""
+    """What a record lacks. Empty means it qualifies on its own terms (identity is checked by ``verify``)."""
     found: list[str] = []
     if not evidence.models or not all(isinstance(m, str) and m.strip() for m in evidence.models):
         found.append("at least one named model is required")
@@ -108,29 +114,25 @@ def load(package_dir: Path) -> ProfileEvidence | None:
     )
 
 
-def verify(package_dir: Path, *, patch_id: str, pinned_ref: str, subject_digest: str,
-           allow_lineage: bool = False) -> tuple[str, ...] | None:
-    """None when the package has no record; otherwise the reasons it does not qualify (empty = it qualifies)."""
+def verify(package_dir: Path, *, patch_id: str, pinned_ref: str, subject_digest: str) -> Verdict | None:
+    """None when the package has no record; otherwise its verdict (no problems = it qualifies).
+
+    ``pinned_ref`` and ``subject_digest`` are the current pin and patch digest; a record taken at another pin or
+    against an earlier form of the patch still qualifies and says so in ``notes``."""
     try:
         evidence = load(package_dir)
     except ValueError as exc:
-        return (str(exc),)
+        return Verdict((str(exc),), ())
     if evidence is None:
         return None
     found = list(problems(evidence))
     if evidence.patch_id != patch_id:
         found.append(f"record is for {evidence.patch_id!r}")
+    if not evidence.pinned.strip() or not evidence.subject_digest.strip():
+        found.append("record must name the pin and patch digest it was taken at")
+    notes: list[str] = []
     if evidence.pinned != pinned_ref:
-        found.append(f"record is for pin {evidence.pinned!r}, current pin is {pinned_ref!r}")
+        notes.append(f"evidence recorded at pin {evidence.pinned} (now {pinned_ref})")
     if evidence.subject_digest != subject_digest:
-        inherited = False
-        if allow_lineage:
-            try:
-                inherited = lineage.is_ancestor(
-                    package_dir, previous=evidence.subject_digest, current=subject_digest
-                )
-            except (ValueError, TypeError) as exc:
-                found.append(f"invalid patch lineage: {exc}")
-        if not inherited:
-            found.append("the patch implementation changed since the evidence was taken; confirm it again")
-    return tuple(found)
+        notes.append(f"evidence recorded at patch digest {evidence.subject_digest[:12]} (now {subject_digest[:12]})")
+    return Verdict(tuple(found), tuple(notes))

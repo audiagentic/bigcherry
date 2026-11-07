@@ -1,12 +1,10 @@
-"""MEN28: committed profile records are verifiable and survive an unrelated pin bump."""
+"""MEN28: committed profile records are verifiable and survive pin bumps and patch edits."""
 from __future__ import annotations
 
-import hashlib
-import json
 import unittest
 from pathlib import Path
 
-from bigcherry.patch import catalog, evidence, lineage, profile_evidence
+from bigcherry.patch import catalog, profile_evidence
 from bigcherry.patch.evidence import patch_validation_subject_digest
 
 PATCHES_ROOT = Path(__file__).resolve().parents[3] / "engines/llamacpp/patches"
@@ -39,60 +37,33 @@ class TestHistoricalPromotionEvidence(unittest.TestCase):
                 self.assertEqual(
                     profile_evidence.verify(package, patch_id=pid,
                         pinned_ref=record.pinned, subject_digest=record.subject_digest),
-                    (),
+                    profile_evidence.Verdict((), ()),
                 )
 
-    def test_reviewed_git_reanchor_has_matching_record_and_report(self):
-        for pid in ("1274_mmvq_kquant_f32_decode", "1355_hc_post_gate_fuse"):
-            with self.subTest(pid=pid):
-                package = PATCHES_ROOT / pid
-                transitions = lineage.load(package)
-                self.assertEqual(len(transitions), 1)
-                entry = transitions[0]
-                report_path = (PATCHES_ROOT.parents[2] /
-                               f"docs/evidence/men28-llamacpp-evidence/{pid[:4]}-reanchor-audit.json")
-                raw = report_path.read_bytes()
-                self.assertEqual(entry["rebase_report_sha256"], hashlib.sha256(raw).hexdigest())
-                report = json.loads(raw)
-                self.assertEqual(report["kind"], "git-reanchor-audit-v1")
-                self.assertEqual(entry["from_digest"], report["original_subject_digest"])
-                self.assertEqual(entry["to_digest"], report["updated_subject_digest"])
-                self.assertEqual(entry["pin"], report["pin_at_reanchor"])
-                self.assertEqual(entry["to_digest"],
-                                 patch_validation_subject_digest(package / "patch.py"))
-                self.assertTrue(lineage.is_ancestor(
-                    package, previous=entry["from_digest"], current=entry["to_digest"]))
-        package = PATCHES_ROOT / "1355_hc_post_gate_fuse"
-        self.assertEqual(profile_evidence.verify(
-            package, patch_id="1355_hc_post_gate_fuse", pinned_ref="b11474",
-            subject_digest=patch_validation_subject_digest(package / "patch.py"),
-            allow_lineage=True), ())
-        self.assertNotEqual(profile_evidence.verify(
-            package, patch_id="1355_hc_post_gate_fuse", pinned_ref="b11474",
-            subject_digest=patch_validation_subject_digest(package / "patch.py")), ())
-
-    def test_original_pin_proof_carries_forward_but_still_fails_for_changed_code(self):
+    def test_a_later_pin_or_changed_code_keeps_the_record_qualifying_with_notes(self):
         for pid in RECORDED:
             with self.subTest(pid=pid):
                 record = profile_evidence.load(PATCHES_ROOT / pid)
-                def evaluate(patch_id, ref, revision, subject_digest=record.subject_digest):
-                    reasons = profile_evidence.verify(
-                        PATCHES_ROOT / patch_id, patch_id=patch_id, pinned_ref=ref,
-                        subject_digest=subject_digest,
-                    )
-                    return evidence.EvidenceCheck(
-                        "profile-evidence" if reasons == () else "missing-or-stale"
-                    )
-                result = catalog._carried_forward(
-                    pid, evidence.EvidenceCheck("missing-or-stale"), "future-pin",
-                    None, None, evaluate, engine="llamacpp", patches_root=PATCHES_ROOT,
+                verdict = profile_evidence.verify(
+                    PATCHES_ROOT / pid, patch_id=pid, pinned_ref="future-pin", subject_digest="f" * 64,
                 )
-                self.assertEqual(result.status, "carried-forward")
-                stale = profile_evidence.verify(
-                    PATCHES_ROOT / pid, patch_id=pid, pinned_ref=record.pinned,
-                    subject_digest="f" * 64,
-                )
-                self.assertNotEqual(stale, ())
+                self.assertEqual(verdict.problems, ())
+                self.assertEqual(verdict.notes, (
+                    f"evidence recorded at pin {record.pinned} (now future-pin)",
+                    f"evidence recorded at patch digest {record.subject_digest[:12]} (now ffffffffffff)",
+                ))
+
+    def test_edited_promoted_patches_still_qualify_at_the_live_pin(self):
+        # 1355 (profile record) and 1274 (campaign record) were edited after
+        # their evidence was taken; that is provenance, not a rerun trigger.
+        statuses = catalog.validation_evidence_statuses(
+            "llamacpp", ["1274_mmvq_kquant_f32_decode", "1355_hc_post_gate_fuse"],
+        )
+        for pid, check in statuses.items():
+            with self.subTest(pid=pid):
+                self.assertTrue(check.ok, check.problems)
+                self.assertTrue(any("evidence recorded at patch digest" in note for note in check.notes),
+                                check.notes)
 
 
 if __name__ == "__main__":

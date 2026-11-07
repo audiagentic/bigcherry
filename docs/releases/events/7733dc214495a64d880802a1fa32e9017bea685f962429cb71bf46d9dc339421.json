@@ -1,0 +1,22 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261107_162820_patch-evidence-now-survives-co_5456",
+  "files": [
+    "tools/bigcherry/patch/evidence.py",
+    "tools/bigcherry/patch/profile_evidence.py",
+    "tools/bigcherry/patch/catalog.py",
+    "tools/bigcherry/patch/gates.py",
+    "tools/bigcherry/patch/build_evidence.py",
+    "tools/bigcherry/patch_admission.py",
+    "tools/bigcherry/cli/patch.py",
+    "tools/bigcherry/release/pin_bump.py",
+    "tools/bigcherry/release/patch_promote.py",
+    "tools/bigcherry/patch/lineage.py",
+    ".claude/skills/bigcherry-patch-lifecycle/SKILL.md",
+    "docs/reference/testing/PATCH_VALIDATION.md"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Patch validation evidence is no longer bound to code or digests. A record qualifies by patch id, record_digest integrity, required provenance shape, eligibility/activation/correctness, passing verdicts for every contract id the patch binds now (ids, not hashes), and architecture coverage. Patch subject/implementation digest, validation-tooling digest, contract hash, base_ref and base_revision differences are EvidenceCheck.notes (G4 PASS detail 'note: ...'), never disqualifiers. Removed: the build-only carried-forward status and carry_forward plumbing, digest lineage (patch/lineage.py and its records), and the promote-needs-current-pin rule; legacy grandfather matches by patch id. Pin-bump evidence phase stops only on real failures (EVIDENCE_GATE_FAILED). known_broken dispositions stay revision/digest bound (they record a failure). Skills and reference docs rewritten to the new policy.",
+  "timestamp-utc": "2026-11-07T16:28:20.876563Z",
+  "user-summary-candidate": "Patch evidence now survives code, digest and pin changes; a rerun is requested deliberately by demoting the patch, not forced by a changed hash."
+}

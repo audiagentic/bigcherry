@@ -109,8 +109,9 @@ required-state = "validated"
 # evidence exists. Of the 17 patches currently marked validated, 14 hold only
 # the one-time HI83 legacy grandfather waiver and 2 report missing-or-stale.
 # A patch belongs here when `patch-verify-evidence` reports
-# validated-evidence against the ACTIVE pin -- otherwise a release build
-# would ship on the strength of a label rather than a measurement.
+# validated-evidence (a qualifying record; it carries across pin bumps) --
+# otherwise a release build would ship on the strength of a label rather
+# than a measurement.
 #
 # Adding one is a deliberate act with a real consequence: production runs it.
 # Record what qualified it and what the evidence does NOT cover.

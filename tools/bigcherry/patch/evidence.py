@@ -5,8 +5,9 @@ req_6b1466ee8369406c) found the most consequential remaining gap: BigCherry
 can now produce strong, real evidence that a patch was genuinely built,
 activated, and tested (HI82) -- but the repository's authoritative patch
 STATE="validated" is not mechanically tied to that evidence. A developer can
-still hand-edit a patch module's STATE with no machine check that matching
-evidence exists, or that it still matches the CURRENT patch implementation.
+still hand-edit a patch module's STATE with no machine check that qualifying
+evidence exists. Qualifying evidence is not invalidated by later code, digest
+or pin changes; the recorded identities are provenance (``provenance_notes``).
 
 This module is the tracked evidence contract itself: a JSON record per
 patch, stored with packaged patches under their ``evidence/`` directory and
@@ -39,7 +40,6 @@ from typing import Iterable, Mapping
 
 from ..core import paths
 from . import patchset, profile_evidence
-from . import lineage
 from .activation import ActivationEvidence
 
 SCHEMA_VERSION = 4
@@ -85,18 +85,81 @@ class ValidationEvidenceError(RuntimeError):
 
 @dataclass(frozen=True)
 class EvidenceCheck:
+    """One patch's evidence verdict.
+
+    ``problems`` are the reasons a patch does not qualify. ``notes`` are
+    informational provenance only: where a qualifying record's recorded
+    patch/validation digests, contract hashes or pin differ from the current
+    ones. Evidence is not invalidated by code, digest or pin changes; a rerun
+    is requested deliberately by demoting the patch, never by a note.
+    """
+
     status: str
     problems: tuple[str, ...] = ()
     campaign_digests: tuple[str, ...] = ()
+    notes: tuple[str, ...] = ()
 
     @property
     def ok(self) -> bool:
         return self.status in {
             "not-required", "validated-evidence", "legacy-grandfathered",
             "ported-benched-evidence", "deferred-hardware-evidence",
-            "framework-configuration-evidence", "carried-forward",
-            "profile-evidence",
+            "framework-configuration-evidence", "profile-evidence",
         }
+
+
+def _short(value: object) -> str:
+    text = str(value)
+    return text[:12] if _HEX_RE.fullmatch(text or "x") and len(text) > 12 else text
+
+
+def provenance_notes(
+    record: Mapping[str, object], *, subject_digest: str | None = None,
+    validation_digest: str | None = None,
+    contracts: Iterable[Mapping[str, str]] = (), pinned_ref: str | None = None,
+    resolved_base_revision: str | None = None,
+) -> tuple[str, ...]:
+    """Where a record's recorded identity differs from the current one.
+
+    Informational only: none of these differences disqualifies evidence.
+    The comparisons cover the recorded patch subject digest, validation
+    tooling digest, contract hashes, pin name and resolved pin revision."""
+    notes: list[str] = []
+
+    def differs(field: str, current: str | None, label: str) -> None:
+        recorded = record.get(field)
+        if current is not None and recorded is not None and recorded != current:
+            notes.append(f"evidence recorded at {label} {_short(recorded)} (now {_short(current)})")
+
+    differs("patch_validation_subject_digest", subject_digest, "patch digest")
+    if record.get("validation_implementation_digest") is not None:
+        differs("validation_implementation_digest", validation_digest, "validation digest")
+    else:
+        differs("validation_digest", validation_digest, "validation digest")
+    recorded_hashes: dict[str, object] = {}
+    raw_contracts = record.get("contracts")
+    if isinstance(raw_contracts, list):
+        recorded_hashes = {
+            str(entry.get("id")): entry.get("hash") for entry in raw_contracts if isinstance(entry, Mapping)
+        }
+    elif record.get("contract_id") is not None:
+        recorded_hashes = {str(record.get("contract_id")): record.get("contract_hash")}
+    for entry in contracts:
+        contract_id, current_hash = entry.get("id"), entry.get("hash")
+        recorded_hash = recorded_hashes.get(str(contract_id))
+        if recorded_hash and current_hash and recorded_hash != current_hash:
+            notes.append(
+                f"contract {contract_id} recorded at hash {_short(recorded_hash)} (now {_short(current_hash)})"
+            )
+    differs("base_ref", pinned_ref, "pin")
+    differs("base_revision", resolved_base_revision, "pin revision")
+    return tuple(notes)
+
+
+def _merge_notes(records: Iterable[Mapping[str, object]], **current) -> tuple[str, ...]:
+    return tuple(dict.fromkeys(
+        note for record in records for note in provenance_notes(record, **current)
+    ))
 
 
 def _sha256_file(path: Path) -> str:
@@ -151,7 +214,8 @@ def patch_validation_subject_digest(path: Path) -> str:
 
     The validation campaign normally executes while STATE="untested".
     Changing exactly that literal assignment to STATE="validated" must
-    therefore not invalidate the proof that authorized the transition.
+    therefore not show up as a change of the recorded patch digest (a
+    provenance note) on the proof that authorized the transition.
     Every other byte of the patch module remains identity-relevant --
     this is NOT a replacement for patch_source_isolation.
     patch_implementation_digest(), which still records the exact bytes a
@@ -568,10 +632,8 @@ def make_framework_configuration_record(
     # The producer and offline admission share the same complete predicate.
     record["record_digest"] = _record_digest(record)
     eligible, _ = verify_framework_configuration_record(
-        record, descriptor=descriptor, patch_path=patch_path, pinned_ref=base_ref,
-        required_compiled_targets=targets, resolved_base_revision=base_revision,
-        source_composition=source_composition,
-        source_identity=source_identity,
+        record, descriptor=descriptor, patch_path=patch_path,
+        required_compiled_targets=targets,
     )
     record["eligible_for_validated_state"] = eligible
     record["record_digest"] = _record_digest(record)
@@ -579,11 +641,15 @@ def make_framework_configuration_record(
 
 
 def verify_framework_configuration_record(
-    record: Mapping[str, object], *, descriptor, patch_path: Path, pinned_ref: str,
-    required_compiled_targets=(), resolved_base_revision: str | None = None,
-    source_composition=None, source_identity=None,
+    record: Mapping[str, object], *, descriptor, patch_path: Path,
+    required_compiled_targets=(),
 ) -> tuple[bool, tuple[str, ...]]:
-    """Strict offline verifier for schema-5 framework configuration proof."""
+    """Strict offline verifier for schema-5 framework configuration proof.
+
+    The record must be intact (record_digest), internally consistent and
+    say the configuration passed. It is NOT bound to the current pin, patch
+    digests, validation digest or composition: those are provenance (see
+    :func:`provenance_notes`), and a rerun is a deliberate decision."""
     problems: list[str] = []
     try:
         from . import validation_policy
@@ -598,22 +664,23 @@ def verify_framework_configuration_record(
     if record.get("claim_scope") != "configuration-only" or record.get("runtime_performance_qualified") is not False or record.get("hardware_execution_qualified") is not False:
         problems.append("forbidden runtime or hardware claim")
     if record.get("record_digest") != _record_digest(record): problems.append("record_digest mismatch")
-    if record.get("base_ref") != pinned_ref: problems.append("stale base_ref")
-    if source_identity is None or record.get("source_identity") != source_identity:
-        problems.append("source materialization identity mismatch")
-    if isinstance(source_identity, Mapping):
-        if (source_identity.get("resolved_revision") != record.get("base_revision")
-                or source_identity.get("materialization_plan_id") != source_identity.get("source_key")
-                or not source_identity.get("source_key")):
-            problems.append("invalid source materialization identity")
-    if resolved_base_revision is not None and record.get("base_revision") != resolved_base_revision: problems.append("stale base_revision")
+    if not isinstance(record.get("base_ref"), str) or not record.get("base_ref"):
+        problems.append("base_ref missing")
+    source_identity = record.get("source_identity")
+    if not isinstance(source_identity, Mapping):
+        problems.append("source materialization identity missing")
+    elif (source_identity.get("resolved_revision") != record.get("base_revision")
+            or source_identity.get("materialization_plan_id") != source_identity.get("source_key")
+            or not source_identity.get("source_key")):
+        problems.append("invalid source materialization identity")
     if record.get("patch_id") != getattr(descriptor, "patch_id", None): problems.append("patch identity mismatch")
-    expected_validation_digest = getattr(descriptor, "validation_digest", None)
-    if record.get("validation_digest") != expected_validation_digest: problems.append("validation digest is stale")
-    try:
-        if record.get("patch_implementation_digest") != getattr(descriptor, "implementation_digest", None): problems.append("implementation digest mismatch")
-        if record.get("patch_validation_subject_digest") != patch_validation_subject_digest(Path(patch_path)): problems.append("subject digest mismatch")
-    except Exception as exc: problems.append(f"cannot recompute patch digest: {exc}")
+    for field in ("patch_implementation_digest", "patch_validation_subject_digest", "validation_digest"):
+        if field == "validation_digest" and record.get(field) is None:
+            continue
+        try:
+            _require_hex(record.get(field), field, (64,))
+        except ValidationEvidenceError as exc:
+            problems.append(str(exc))
     targets = record.get("compiled_targets")
     if (not isinstance(targets, list) or not targets
             or any(not isinstance(target, str) or not re.fullmatch(r"gfx[0-9a-f]+", target) for target in targets)
@@ -695,13 +762,15 @@ def verify_framework_configuration_record(
                 if not isinstance(artifact, Mapping) or artifacts.get(artifact.get("path")) != artifact.get("sha256"): problems.append("check artifact missing or tampered")
     if record.get("eligible_for_validated_state") is not True:
         problems.append("record is not eligible")
-    if source_composition is None or record.get("source_composition") != [{"id": str(p[0]), "digest": str(p[1])} for p in source_composition]:
-        problems.append("source composition mismatch")
     # source_name is receipt provenance only (PA31): historical records may
-    # legitimately retain the deleted "bigcherry-native" name. Composition/
-    # base/source identity are the actual authority checks, enforced above
-    # via source_identity/source_composition.
-    if source_composition is not None and (descriptor.patch_id, descriptor.implementation_digest) not in source_composition:
+    # legitimately retain the deleted "bigcherry-native" name. The recorded
+    # composition must contain the focal patch at the implementation the
+    # record names (internal consistency, not a binding to today's tree).
+    composition = record.get("source_composition")
+    if (not isinstance(composition, list)
+            or not all(isinstance(entry, Mapping) and set(entry) == {"id", "digest"} for entry in composition)):
+        problems.append("source composition malformed")
+    elif {"id": str(record.get("patch_id")), "digest": str(record.get("patch_implementation_digest"))} not in composition:
         problems.append("focal implementation absent from composition")
     for field, lengths in (("base_revision", (40,64)), ("source_tree", (40,64)), ("source_slice_id", (32,))):
         try:
@@ -719,7 +788,9 @@ def verify_framework_configuration_patch(
     root: Path | None = None, allow_legacy_grandfather: bool = True,
     resolved_base_revision: str | None = None,
 ) -> EvidenceCheck:
-    """Catalog-facing adapter; framework records never use runtime gates."""
+    """Catalog-facing adapter; framework records never use runtime gates.
+
+    ``pinned_ref``/``resolved_base_revision`` only produce provenance notes."""
     descriptor = None
     try:
         from . import registry as patch_registry
@@ -728,51 +799,32 @@ def verify_framework_configuration_patch(
         return EvidenceCheck("missing-or-stale", (f"cannot load packaged descriptor: {exc}",))
     records = poolable_records(module.patch_id, engine=module.engine, patches_root=_module_patches_root(module), root=root)
     qualifying: list[dict[str, object]] = []
-    stale: list[str] = []
-    try:
-        from bigcherry.core import config
-        from bigcherry.campaign import resolution
-        catalog_root = _module_patches_root(module)
-        cfg = config.load(paths.RECIPES)
-        lane = resolution.resolve_lane(module.engine, 
-            "bigcherry-qualification-tuning", cfg, patchset.catalog(module.engine, directory=catalog_root)
-        )
-        resolved = patchset.resolve_exact(module.engine, tuple(lane.patch_set.module_ids), directory=catalog_root)
-        registry = patch_registry.load_registry(module.engine, catalog_root)
-        composition = tuple((member.patch_id, registry.get(member.patch_id).implementation_digest)
-                            for member in resolved.modules)
-        from . import source as patch_source
-        if resolved_base_revision is None:
-            raise ValidationEvidenceError("resolved base revision required for source identity")
-        identity = patch_source._make_source_identity_v2(
-            resolved_revision=resolved_base_revision, composition=composition,
-            overlay_root=patch_source.OVERLAY_ROOT
-            if cfg.sources["bigcherry-qualification-tuning"].overlay else None,
-        )
-        identity["materialization_plan_id"] = identity["source_key"]
-    except Exception as exc:
-        return EvidenceCheck("missing-or-stale", (f"cannot resolve canonical framework composition: {exc}",))
+    ineligible: list[str] = []
     for record in records:
         if record.get("record_schema_version") != FRAMEWORK_CONFIGURATION_SCHEMA_VERSION:
             continue
         ok, why = verify_framework_configuration_record(
-            record, descriptor=descriptor, patch_path=module.path, pinned_ref=pinned_ref,
+            record, descriptor=descriptor, patch_path=module.path,
             required_compiled_targets=required_compiled_targets,
-            resolved_base_revision=resolved_base_revision,
-            source_composition=composition,
-            source_identity=identity,
         )
         if ok:
             qualifying.append(record)
         else:
-            stale.append("; ".join(why))
+            ineligible.append("; ".join(why))
     if qualifying:
-        return EvidenceCheck("framework-configuration-evidence", campaign_digests=tuple(
-            sorted(str(r.get("campaign_identity_digest", "")) for r in qualifying)
-        ))
-    if allow_legacy_grandfather and _legacy_hashes(root, patches_root=_module_patches_root(module)).get(module.patch_id) == module.content_hash:
+        return EvidenceCheck(
+            "framework-configuration-evidence",
+            campaign_digests=tuple(sorted(str(r.get("campaign_identity_digest", "")) for r in qualifying)),
+            notes=_merge_notes(
+                qualifying,
+                subject_digest=patch_validation_subject_digest(module.path),
+                validation_digest=descriptor.validation_digest,
+                pinned_ref=pinned_ref, resolved_base_revision=resolved_base_revision,
+            ),
+        )
+    if allow_legacy_grandfather and module.patch_id in _legacy_hashes(root, patches_root=_module_patches_root(module)):
         return EvidenceCheck("legacy-grandfathered")
-    return EvidenceCheck("missing-or-stale", tuple(stale or ("no current framework configuration evidence",)))
+    return EvidenceCheck("missing-or-stale", tuple(ineligible or ("no qualifying framework configuration evidence",)))
 
 
 def make_record(
@@ -952,7 +1004,7 @@ def make_record(
         "patch_implementation_digest": _require_hex(
             patch_implementation_digest, "patch_implementation_digest", (64,)
         ),
-        # STATE-normalized freshness identity.
+        # STATE-normalized subject identity (provenance; never a freshness gate).
         "patch_validation_subject_digest": subject_digest,
         "base_ref": _require_string(base_ref, "base_ref"),
         "base_revision": _require_hex(base_revision, "base_revision", (40, 64)),
@@ -1151,17 +1203,82 @@ def poolable_records(patch_id: str, *, engine: str, patches_root: Path, root: Pa
     return tuple(r for r in records if r.get("record_digest") not in withdrawn)
 
 
+def _bound_contract_problems(
+    record: Mapping[str, object], contracts: tuple[Mapping[str, str], ...], *, require_pass: bool,
+) -> list[str]:
+    """Every contract the patch binds TODAY must appear in the record by id
+    (and, for validated-state qualification, carry a passing verdict).
+
+    Ids, not hashes: a contract whose content changed since the run is
+    provenance (a note), while a contract the patch newly binds is a
+    deliberate requirement change the record cannot have satisfied. A
+    contract the record covers but the patch no longer binds is ignored."""
+    problems: list[str] = []
+    bound = [entry["id"] for entry in contracts]
+    record_version = record.get("record_schema_version")
+    if record_version == 4:
+        raw = record.get("contracts")
+        if not (isinstance(raw, list) and all(isinstance(entry, Mapping) for entry in raw)):
+            return ["contracts must be a list of {id,hash} objects"]
+        recorded = {str(entry.get("id")) for entry in raw}
+        for entry in raw:
+            if not entry.get("hash"):
+                problems.append(f"contract {entry.get('id')!r} has no recorded hash")
+        missing = sorted(set(bound) - recorded)
+        if missing:
+            problems.append(f"record does not cover currently bound contract(s): {missing!r}")
+        if require_pass:
+            verdicts = record.get("contract_verdicts")
+            if not isinstance(verdicts, Mapping):
+                problems.append("contract_verdicts must be an object")
+            else:
+                missing_verdicts = sorted(set(bound) - set(verdicts))
+                if missing_verdicts:
+                    problems.append(f"missing contract_verdicts for: {missing_verdicts!r}")
+                failing = sorted(
+                    contract_id for contract_id in bound
+                    if contract_id in verdicts and not (
+                        isinstance(verdicts[contract_id], Mapping)
+                        and verdicts[contract_id].get("passed") is True
+                    )
+                )
+                if failing:
+                    problems.append(f"contract_verdicts did not pass for: {failing!r}")
+    elif record_version in (2, 3):
+        if bound and record.get("contract_id") != bound[0]:
+            problems.append(
+                f"record contract_id={record.get('contract_id')!r} does not cover currently "
+                f"bound contract {bound[0]!r}"
+            )
+        if record.get("contract_id") is not None and not record.get("contract_hash"):
+            problems.append("contract_hash is required when contract_id is present")
+    return problems
+
+
+def _provenance_shape_problems(record: Mapping[str, object]) -> list[str]:
+    """The pin and patch digest a record was taken at must be recorded (they
+    are provenance and produce notes), even though neither binds it."""
+    problems: list[str] = []
+    if not isinstance(record.get("base_ref"), str) or not record.get("base_ref"):
+        problems.append("provenance field 'base_ref' is missing")
+    try:
+        _require_hex(record.get("patch_validation_subject_digest"), "patch_validation_subject_digest", (64,))
+    except ValidationEvidenceError as exc:
+        problems.append(str(exc))
+    return problems
+
+
 def _record_qualifies(
-    record: Mapping[str, object], *, module: patchset.PatchModule, pinned_ref: str, subject_digest: str,
-    resolved_base_revision: str | None = None, validation_digest: str | None = None,
+    record: Mapping[str, object], *, module: patchset.PatchModule,
     contracts: tuple[Mapping[str, str], ...] = (),
-    accepted_subject_digests: frozenset[str] = frozenset(),
 ) -> tuple[bool, tuple[str, ...]]:
+    """Validated-state qualification: the record is intact, is for this patch
+    and says it passed. Recorded digests, contract hashes and the pin are
+    provenance (:func:`provenance_notes`), never disqualifiers."""
     problems: list[str] = []
     expected = {
         "validation_contract_version": CONTRACT_VERSION,
-        "patch_id": module.patch_id, "patch_validation_subject_digest": subject_digest,
-        "base_ref": pinned_ref, "validation_disposition": "validated",
+        "patch_id": module.patch_id, "validation_disposition": "validated",
         "eligible_for_validated_state": True,
     }
     record_version = record.get("record_schema_version")
@@ -1178,16 +1295,9 @@ def _record_qualifies(
             f"{len(contracts)}-contract patch (schema v4 required for multi-contract identity)"
         )
 
-    single_contract_id = contracts[0]["id"] if len(contracts) == 1 else None
-    single_contract_hash = contracts[0].get("hash") if len(contracts) == 1 else None
-
+    if record_version in (2, 3, 4):
+        problems.extend(_bound_contract_problems(record, contracts, require_pass=True))
     if record_version in (2, 3):
-        if validation_digest is not None and record.get("validation_implementation_digest") != validation_digest:
-            problems.append("validation implementation digest is stale")
-        if record.get("contract_id") != single_contract_id:
-            problems.append("contract identity is stale")
-        if single_contract_hash is not None and record.get("contract_hash") != single_contract_hash:
-            problems.append("contract hash is stale")
         if record.get("record_digest") != _record_digest(record):
             problems.append("record_digest does not match the evidence payload")
         required_v2 = ("representation", "validation_implementation_digest",
@@ -1203,11 +1313,7 @@ def _record_qualifies(
                          "validation_implementation_digest", (64,))
         except ValidationEvidenceError as exc:
             problems.append(str(exc))
-        if record.get("contract_id") is not None and not record.get("contract_hash"):
-            problems.append("contract_hash is required when contract_id is present")
     elif record_version == 4:
-        if validation_digest is not None and record.get("validation_implementation_digest") != validation_digest:
-            problems.append("validation implementation digest is stale")
         if record.get("record_digest") != _record_digest(record):
             problems.append("record_digest does not match the evidence payload")
         required_v2 = ("representation", "validation_implementation_digest",
@@ -1224,43 +1330,6 @@ def _record_qualifies(
         except ValidationEvidenceError as exc:
             problems.append(str(exc))
 
-        # VA18: exact current contract ID/hash SET (order-independent),
-        # complete verdict set, and every verdict must have passed --
-        # missing/extra/stale-hash on even ONE bound contract is
-        # nonqualification for the WHOLE patch (never partial credit).
-        expected_contracts = {entry["id"]: entry.get("hash") for entry in contracts}
-        record_contracts_raw = record.get("contracts")
-        record_contracts: dict[str, object] = {}
-        if isinstance(record_contracts_raw, list) and all(
-            isinstance(entry, Mapping) for entry in record_contracts_raw
-        ):
-            record_contracts = {
-                str(entry.get("id")): entry.get("hash") for entry in record_contracts_raw
-            }
-        else:
-            problems.append("contracts must be a list of {id,hash} objects")
-        if record_contracts != expected_contracts:
-            problems.append(
-                f"contract identity set is stale: record has {sorted(record_contracts)!r}, "
-                f"current bound set is {sorted(expected_contracts)!r} (or a hash differs)"
-            )
-        verdicts = record.get("contract_verdicts")
-        if not isinstance(verdicts, Mapping):
-            problems.append("contract_verdicts must be an object")
-        else:
-            missing_verdicts = sorted(set(expected_contracts) - set(verdicts))
-            if missing_verdicts:
-                problems.append(f"missing contract_verdicts for: {missing_verdicts!r}")
-            failing_verdicts = sorted(
-                contract_id for contract_id in expected_contracts
-                if contract_id in verdicts
-                and not (
-                    isinstance(verdicts[contract_id], Mapping)
-                    and verdicts[contract_id].get("passed") is True
-                )
-            )
-            if failing_verdicts:
-                problems.append(f"contract_verdicts did not pass for: {failing_verdicts!r}")
     if record_version in (3, 4):
         # VA07: v3 records use campaign_build_identities/
         # validation_build_identities exclusively -- the legacy top-level
@@ -1302,24 +1371,9 @@ def _record_qualifies(
                 except ValidationEvidenceError as exc:
                     problems.append(str(exc))
     for key, wanted in expected.items():
-        if (key == "patch_validation_subject_digest"
-                and record.get(key) in accepted_subject_digests):
-            continue
         if record.get(key) != wanted:
             problems.append(f"{key}={record.get(key)!r}, expected {wanted!r}")
-
-    # GPT review (req_b87ea92609fa45fe): base_ref matching alone only proves
-    # the record was made against a ref with the same NAME -- if that ref is
-    # ever a moving target (unlike this project's current tag-pin practice),
-    # a record could still "match" a base_ref string that now resolves to a
-    # different commit. Only checked when a caller actually supplies the
-    # real resolved commit (patch_catalog.py does not yet do this -- see its
-    # module docstring); existing callers are unaffected.
-    if resolved_base_revision is not None and record.get("base_revision") != resolved_base_revision:
-        problems.append(
-            f"base_revision={record.get('base_revision')!r} does not match the currently "
-            f"resolved pin {resolved_base_revision!r}"
-        )
+    problems.extend(_provenance_shape_problems(record))
 
     activation = record.get("activation")
     if (
@@ -1356,12 +1410,11 @@ def _record_qualifies(
 
 
 def _record_qualifies_for_benched(
-    record: Mapping[str, object], *, module: patchset.PatchModule, pinned_ref: str, subject_digest: str,
-    resolved_base_revision: str | None = None, validation_digest: str | None = None,
+    record: Mapping[str, object], *, module: patchset.PatchModule,
     contracts: tuple[Mapping[str, str], ...] = (),
 ) -> tuple[bool, tuple[str, ...]]:
     """VA08: the 'ported-benched' tracked-status obligation -- the same
-    identity/freshness/schema-v3-or-v4 provenance discipline as
+    identity/integrity/schema-v3-or-v4 provenance discipline as
     _record_qualifies(), but requires only that a real control/subject
     benchmark actually ran -- validation_build_identities populated with
     real build identities, real hardware architectures recorded, AND a
@@ -1377,8 +1430,8 @@ def _record_qualifies_for_benched(
     bar) and NOT activation executed+verified (activation is an
     orthogonal claim from "a real paired benchmark ran").
 
-    VA18: contract identity is checked for STALENESS only (the current
-    bound contract SET must match, same as _record_qualifies()) -- unlike
+    VA18: contract coverage is checked by id only (every currently bound
+    contract must be covered, same as _record_qualifies()) -- unlike
     validated-state qualification, a v4 record's contract_verdicts may be
     entirely BLOCKED/incomplete and still qualify ported-benched. Contract
     PASS is required only for validated promotion, never for ported-
@@ -1392,43 +1445,12 @@ def _record_qualifies_for_benched(
         return False, (
             f"record_schema_version=3 cannot qualify a current {len(contracts)}-contract patch",
         )
-    expected = {
-        "patch_id": module.patch_id, "patch_validation_subject_digest": subject_digest,
-        "base_ref": pinned_ref,
-    }
-    for key, wanted in expected.items():
-        if record.get(key) != wanted:
-            problems.append(f"{key}={record.get(key)!r}, expected {wanted!r}")
-    if validation_digest is not None and record.get("validation_implementation_digest") != validation_digest:
-        problems.append("validation implementation digest is stale")
-    if record_version == 4:
-        expected_contracts = {entry["id"]: entry.get("hash") for entry in contracts}
-        record_contracts_raw = record.get("contracts")
-        record_contracts: dict[str, object] = {}
-        if isinstance(record_contracts_raw, list) and all(
-            isinstance(entry, Mapping) for entry in record_contracts_raw
-        ):
-            record_contracts = {
-                str(entry.get("id")): entry.get("hash") for entry in record_contracts_raw
-            }
-        else:
-            problems.append("contracts must be a list of {id,hash} objects")
-        if record_contracts != expected_contracts:
-            problems.append("contract identity set is stale")
-    else:
-        single_contract_id = contracts[0]["id"] if len(contracts) == 1 else None
-        single_contract_hash = contracts[0].get("hash") if len(contracts) == 1 else None
-        if record.get("contract_id") != single_contract_id:
-            problems.append("contract identity is stale")
-        if single_contract_hash is not None and record.get("contract_hash") != single_contract_hash:
-            problems.append("contract hash is stale")
+    if record.get("patch_id") != module.patch_id:
+        problems.append(f"patch_id={record.get('patch_id')!r}, expected {module.patch_id!r}")
+    problems.extend(_provenance_shape_problems(record))
+    problems.extend(_bound_contract_problems(record, contracts, require_pass=False))
     if record.get("record_digest") != _record_digest(record):
         problems.append("record_digest does not match the evidence payload")
-    if resolved_base_revision is not None and record.get("base_revision") != resolved_base_revision:
-        problems.append(
-            f"base_revision={record.get('base_revision')!r} does not match the currently "
-            f"resolved pin {resolved_base_revision!r}"
-        )
     validation_builds = record.get("validation_build_identities")
     if not isinstance(validation_builds, Mapping):
         problems.append("validation_build_identities must be an object")
@@ -1506,12 +1528,11 @@ def _record_qualifies_for_benched(
 
 
 def _record_qualifies_for_deferred_hardware(
-    record: Mapping[str, object], *, module: patchset.PatchModule, pinned_ref: str, subject_digest: str,
-    resolved_base_revision: str | None = None,
+    record: Mapping[str, object], *, module: patchset.PatchModule,
 ) -> tuple[bool, tuple[str, ...]]:
     """VA08: the 'deferred-hardware' tracked-status obligation -- requires
-    only a fresh, structured BLOCKED evidence record (real patch identity
-    + resolved base revision, both current). Deliberately does NOT require
+    only a structured BLOCKED evidence record for this patch (its recorded
+    digest and pin are provenance only). Deliberately does NOT require
     completed hardware/build/benchmark evidence -- the entire point of
     this status is that hardware was unavailable, so demanding hardware
     evidence to qualify it would be self-defeating."""
@@ -1520,15 +1541,7 @@ def _record_qualifies_for_deferred_hardware(
         return False, ("framework configuration evidence cannot qualify deferred hardware",)
     if record.get("patch_id") != module.patch_id:
         problems.append(f"patch_id={record.get('patch_id')!r}, expected {module.patch_id!r}")
-    if record.get("patch_validation_subject_digest") != subject_digest:
-        problems.append("patch implementation digest is stale")
-    if record.get("base_ref") != pinned_ref:
-        problems.append(f"base_ref={record.get('base_ref')!r}, expected {pinned_ref!r}")
-    if resolved_base_revision is not None and record.get("base_revision") != resolved_base_revision:
-        problems.append(
-            f"base_revision={record.get('base_revision')!r} does not match the currently "
-            f"resolved pin {resolved_base_revision!r}"
-        )
+    problems.extend(_provenance_shape_problems(record))
     if not record.get("blockers"):
         problems.append("no structured blockers recorded")
     try:
@@ -1609,47 +1622,35 @@ def _resolve_contract_identities(
 def verify_validated_patch(
     module: patchset.PatchModule, *, pinned_ref: str, required_architectures: Iterable[str] = (),
     root: Path | None = None, allow_legacy_grandfather: bool = True,
-    resolved_base_revision: str | None = None, allow_lineage: bool = False,
+    resolved_base_revision: str | None = None,
 ) -> EvidenceCheck:
-    """resolved_base_revision (optional): the actual commit `pinned_ref`
-    currently resolves to. When supplied, a record's base_revision must
-    match it exactly, catching the case where pinned_ref names a moving
-    ref that has since advanced past what the record was validated
-    against. Omitted by default since no caller resolves this yet (see
-    patch_catalog.py's module docstring on why hard enforcement, which is
-    where this would matter, is still deferred)."""
+    """Validated-state qualification for one patch.
+
+    A record qualifies when it is intact and says the patch passed (see
+    :func:`_record_qualifies`). ``pinned_ref`` and ``resolved_base_revision``
+    (the commit the pin resolves to) are not qualification inputs: a record
+    made at another pin, or against an earlier form of the patch, still
+    qualifies, and the difference is reported in ``notes``."""
     if module.state != "validated":
         return EvidenceCheck("not-required")
 
     subject_digest = patch_validation_subject_digest(module.path)
     validation_digest, contracts = _resolve_contract_identities(module)
+    current = {
+        "subject_digest": subject_digest, "validation_digest": validation_digest,
+        "contracts": contracts, "pinned_ref": pinned_ref,
+        "resolved_base_revision": resolved_base_revision,
+    }
     qualifying: list[dict[str, object]] = []
-    stale: list[str] = []
+    ineligible: list[str] = []
 
     for record in poolable_records(module.patch_id, engine=module.engine, patches_root=_module_patches_root(module), root=root):
-        older = record.get("patch_validation_subject_digest")
-        try:
-            inherited = (
-                allow_lineage and isinstance(older, str)
-                and lineage.is_ancestor(
-                    module.path.parent, previous=older, current=subject_digest
-                )
-            )
-        except (ValueError, TypeError) as exc:
-            stale.append(f"invalid patch lineage: {exc}")
-            inherited = False
-        accepted = frozenset((older,)) if inherited else frozenset()
-        ok, why = _record_qualifies(
-            record, module=module, pinned_ref=pinned_ref, subject_digest=subject_digest,
-            resolved_base_revision=resolved_base_revision,
-            validation_digest=validation_digest, contracts=contracts,
-            accepted_subject_digests=accepted,
-        )
+        ok, why = _record_qualifies(record, module=module, contracts=contracts)
         if ok:
             qualifying.append(record)
         else:
             digest_prefix = str(record.get("campaign_identity_digest", "?"))[:12]
-            stale.append(f"{digest_prefix}: " + "; ".join(why))
+            ineligible.append(f"{digest_prefix}: " + "; ".join(why))
 
     required = set(_architectures(required_architectures))
     covered: set[str] = set()
@@ -1666,31 +1667,30 @@ def verify_validated_patch(
             campaign_digests=tuple(
                 sorted({str(record["campaign_identity_digest"]) for record in qualifying})
             ),
+            notes=_merge_notes(qualifying, **current),
         )
 
     # Profile-evidence tier (QFP18, PA45): the lightweight promotion record in the patch package qualifies the patch
     # when no HI83 campaign record does. A record that exists but does not qualify is reported with its own reasons.
-    profile_problems = profile_evidence.verify(
+    profile = profile_evidence.verify(
         module.path.parent, patch_id=module.patch_id, pinned_ref=pinned_ref, subject_digest=subject_digest,
-        allow_lineage=allow_lineage,
     )
-    if profile_problems is not None and not profile_problems:
-        return EvidenceCheck("profile-evidence")
+    if profile is not None and not profile.problems:
+        return EvidenceCheck("profile-evidence", notes=profile.notes)
 
     if allow_legacy_grandfather:
-        legacy = _legacy_hashes(root, patches_root=_module_patches_root(module))
-        if legacy.get(module.patch_id) == module.content_hash:
+        if module.patch_id in _legacy_hashes(root, patches_root=_module_patches_root(module)):
             return EvidenceCheck("legacy-grandfathered")
 
     problems: list[str] = []
-    if profile_problems:
-        problems.append("profile-evidence record does not qualify: " + "; ".join(profile_problems))
+    if profile is not None:
+        problems.append("profile-evidence record does not qualify: " + "; ".join(profile.problems))
     if not qualifying:
-        problems.append("no current qualifying HI83 validation record")
+        problems.append("no qualifying HI83 validation record")
     if missing_architectures:
         problems.append("missing architecture(s): " + ", ".join(missing_architectures))
-    if stale:
-        problems.append("stale/ineligible: " + " | ".join(stale[:3]))
+    if ineligible:
+        problems.append("ineligible: " + " | ".join(ineligible[:3]))
     return EvidenceCheck("missing-or-stale", tuple(problems))
 
 
@@ -1698,36 +1698,37 @@ def verify_ported_benched_patch(
     module: patchset.PatchModule, *, pinned_ref: str, root: Path | None = None,
     resolved_base_revision: str | None = None,
 ) -> EvidenceCheck:
-    """VA08: current-pin qualification for the 'ported-benched'
-    tracked-status (docs/reference/testing/PATCH_VALIDATION.md's table) --
-    a real control/subject benchmark actually ran, with build and hardware
+    """VA08: qualification for the 'ported-benched' tracked-status
+    (docs/reference/testing/PATCH_VALIDATION.md's table) -- a real
+    control/subject benchmark actually ran, with build and hardware
     identities recorded, and no recorded correctness failure. A failing
     required correctness result forbids qualification at this level; a
     generic missing/unattempted correctness claim does not (STATE=
-    'validated' is the status that demands full correctness passing)."""
-    subject_digest = patch_validation_subject_digest(module.path)
+    'validated' is the status that demands full correctness passing).
+    ``pinned_ref``/``resolved_base_revision`` only produce notes."""
     validation_digest, contracts = _resolve_contract_identities(module)
     qualifying: list[dict[str, object]] = []
-    stale: list[str] = []
+    ineligible: list[str] = []
     for record in poolable_records(module.patch_id, engine=module.engine, patches_root=_module_patches_root(module), root=root):
-        ok, why = _record_qualifies_for_benched(
-            record, module=module, pinned_ref=pinned_ref, subject_digest=subject_digest,
-            resolved_base_revision=resolved_base_revision, validation_digest=validation_digest,
-            contracts=contracts,
-        )
+        ok, why = _record_qualifies_for_benched(record, module=module, contracts=contracts)
         if ok:
             qualifying.append(record)
         else:
             digest_prefix = str(record.get("campaign_identity_digest", "?"))[:12]
-            stale.append(f"{digest_prefix}: " + "; ".join(why))
+            ineligible.append(f"{digest_prefix}: " + "; ".join(why))
     if qualifying:
         return EvidenceCheck(
             "ported-benched-evidence",
             campaign_digests=tuple(sorted({str(r["campaign_identity_digest"]) for r in qualifying})),
+            notes=_merge_notes(
+                qualifying, subject_digest=patch_validation_subject_digest(module.path),
+                validation_digest=validation_digest, contracts=contracts,
+                pinned_ref=pinned_ref, resolved_base_revision=resolved_base_revision,
+            ),
         )
-    problems = ["no current qualifying ported-benched evidence"]
-    if stale:
-        problems.append("stale/ineligible: " + " | ".join(stale[:3]))
+    problems = ["no qualifying ported-benched evidence"]
+    if ineligible:
+        problems.append("ineligible: " + " | ".join(ineligible[:3]))
     return EvidenceCheck("missing-or-stale", tuple(problems))
 
 
@@ -1735,43 +1736,44 @@ def verify_deferred_hardware_patch(
     module: patchset.PatchModule, *, pinned_ref: str, root: Path | None = None,
     resolved_base_revision: str | None = None,
 ) -> EvidenceCheck:
-    """VA08: current-pin qualification for the 'deferred-hardware'
-    tracked-status -- requires only a fresh, structured BLOCKED/deferred
-    evidence record whose patch identity and resolved base revision are
-    current. Never requires completed hardware/build/benchmark evidence
+    """VA08: qualification for the 'deferred-hardware' tracked-status --
+    requires only a structured BLOCKED/deferred evidence record for this
+    patch. Never requires completed hardware/build/benchmark evidence
     (that would be self-defeating for a status whose whole meaning is
-    "hardware was unavailable")."""
-    subject_digest = patch_validation_subject_digest(module.path)
+    "hardware was unavailable"). ``pinned_ref``/``resolved_base_revision``
+    only produce notes."""
     qualifying: list[dict[str, object]] = []
-    stale: list[str] = []
+    ineligible: list[str] = []
     for record in poolable_records(module.patch_id, engine=module.engine, patches_root=_module_patches_root(module), root=root):
-        ok, why = _record_qualifies_for_deferred_hardware(
-            record, module=module, pinned_ref=pinned_ref, subject_digest=subject_digest,
-            resolved_base_revision=resolved_base_revision,
-        )
+        ok, why = _record_qualifies_for_deferred_hardware(record, module=module)
         if ok:
             qualifying.append(record)
         else:
             digest_prefix = str(record.get("campaign_identity_digest", "?"))[:12]
-            stale.append(f"{digest_prefix}: " + "; ".join(why))
+            ineligible.append(f"{digest_prefix}: " + "; ".join(why))
     if qualifying:
         return EvidenceCheck(
             "deferred-hardware-evidence",
             campaign_digests=tuple(sorted({str(r["campaign_identity_digest"]) for r in qualifying})),
+            notes=_merge_notes(
+                qualifying, subject_digest=patch_validation_subject_digest(module.path),
+                pinned_ref=pinned_ref, resolved_base_revision=resolved_base_revision,
+            ),
         )
-    problems = ["no current qualifying deferred-hardware (BLOCKED) evidence"]
-    if stale:
-        problems.append("stale/ineligible: " + " | ".join(stale[:3]))
+    problems = ["no qualifying deferred-hardware (BLOCKED) evidence"]
+    if ineligible:
+        problems.append("ineligible: " + " | ".join(ineligible[:3]))
     return EvidenceCheck("missing-or-stale", tuple(problems))
 
 
 def generate_legacy_baseline(*, engine: str, patches_root: Path, root: Path | None = None) -> Path:
     """One-time migration snapshot: every currently-STATE='validated' patch's
-    exact content hash, as project history already accepted it pre-HI83.
+    content hash, as project history already accepted it pre-HI83.
     This does NOT claim those patches have HI82 hardware evidence -- it only
     prevents HI83 from retroactively invalidating the whole existing
-    validated baseline the moment it lands. Editing any grandfathered patch
-    by even one byte immediately requires real HI83 evidence."""
+    validated baseline the moment it lands. A patch is grandfathered by its
+    id; the recorded hash is provenance, so editing the patch does not void
+    it (a rerun is requested deliberately by demoting the patch)."""
     modules = patchset.catalog(engine, directory=patches_root)
     payload = {
         "schema_version": LEGACY_SCHEMA_VERSION,

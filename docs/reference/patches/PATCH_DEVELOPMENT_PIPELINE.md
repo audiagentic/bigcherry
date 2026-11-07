@@ -29,8 +29,9 @@ Record a ledger event after each substantive stage and keep the plan item curren
   timed lane; a failed check exits 3 with `producer-blocked.json` and no evidence record.
 - **One variable per comparison.** Same binary with env arms (e.g. AllReduce provider), or
   same lane with one extra patch. Read composition from the builds, not labels.
-- **Promotion needs current evidence.** A pin bump or patch.py change makes prior evidence
-  stale; run fresh sessions before adding a patch to the production patch-set.
+- **Promotion needs qualifying evidence.** Evidence carries across pin bumps and patch.py
+  changes (the verifier notes the recorded pin and digest); we decide when a rerun is
+  needed and request it by demoting the patch, never because a digest changed.
 - **Scripts and configs live in `tools/lab/<topic>/`**, never `/tmp` on the bench host.
   Don't edit or pull scripts on the bench host while one is executing in place.
 - **Models** for new comparisons go under `${BC_MODEL_ROOT}/<model>/gguf/<vendor>/`.

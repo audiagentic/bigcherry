@@ -595,7 +595,7 @@ def build_parser() -> argparse.ArgumentParser:
     patch_gates_cmd.add_argument(
         "--no-legacy-grandfather",
         action="store_true",
-        help="require current evidence instead of the one-time legacy baseline",
+        help="require a qualifying evidence record instead of the one-time legacy baseline",
     )
     patch_gates_cmd.add_argument(
         "--json",

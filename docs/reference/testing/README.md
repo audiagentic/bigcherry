@@ -33,10 +33,11 @@ promotion verdict.
 6. Persist the exact commands, environment, source/build/contract identity,
    measurements, correctness result, failures, and artifact references through
    the canonical evidence writer.
-7. Promote only when complete current evidence exists for every bound
-   contract and `eligible_for_validated_state` is true. On failure or a
-   blocked run, preserve the evidence and reason; re-promotion requires fresh
-   evidence at the current pin.
+7. Promote only when qualifying evidence exists for every bound contract and
+   `eligible_for_validated_state` is true (evidence carries across pin bumps
+   and patch edits; recorded pins and digests are provenance notes). On
+   failure or a blocked run, preserve the evidence and reason; re-promotion
+   after a deliberate rerun request requires the rerun's evidence.
 
 ## Hardware and evidence boundary
 
