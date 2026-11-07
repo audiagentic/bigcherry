@@ -48,36 +48,10 @@ default = "0"
 status = "evaluated"
 summary = "sliced all-reduce in one kernel; byte-identical but 6% slower, shelved (its native form is kept in native-shelved/)"
 
-[setting.R3_AR_TIMING]
-default = "0"
-status = "diagnostic"
-summary = "wall-clock all-reduce timing between stream synchronisations"
-activation = "^R3_AR_TIMING "
-
 [setting.R3_GDN_COMPARE]
 default = "0"
 status = "diagnostic"
 summary = "run compatibility and native delta-net scan side by side and report the first mismatch"
-
-[setting.R3_BT]
-default = "0"
-status = "evaluated"
-summary = "RR08 bf16-tile MXFP4 GEMM forms 1 and 2; slower at M=512, shelved"
-
-[setting.R3_BT_B]
-default = ""
-status = "tuning"
-summary = "RR08 tile geometry (R3_BT)"
-
-[setting.R3_BT_NT]
-default = ""
-status = "tuning"
-summary = "RR08 tile geometry (R3_BT)"
-
-[setting.R3_BT_ABL]
-default = "0"
-status = "diagnostic"
-summary = "RR08 ablation masks (R3_BT)"
 
 [setting.R3_BT_ORACLE]
 default = "0"
@@ -90,31 +64,11 @@ status = "experimental"
 summary = "gfx11 MXFP4 decode GEMV form"
 manifest = "/spec/processes/engine/kernels/dec11"
 
-[setting.R3_D11_MODE]
-default = ""
-status = "tuning"
-summary = "decode GEMV variant (R3_DEC11)"
-
 [setting.R3_GEMV]
 default = ""
 status = "tuning"
 summary = "decode GEMV selection"
 manifest = "/spec/processes/engine/kernels/gemv"
-
-[setting.R3_MXD_BK]
-default = ""
-status = "tuning"
-summary = "MXFP4 decode geometry"
-
-[setting.R3_MXD_KS]
-default = ""
-status = "tuning"
-summary = "MXFP4 decode geometry"
-
-[setting.R3_MXD_NT]
-default = ""
-status = "tuning"
-summary = "MXFP4 decode geometry"
 
 [setting.R3_MOE_NATIVE]
 default = "1"
@@ -127,12 +81,6 @@ status = "validated"
 summary = "RAD06: with R3_MOE_NATIVE, the grouped MoE GEMM widens E4M3 operands to f16 and uses the f16 WMMA (a cheaper widening than bf16; the sums carry a 2^-16 scale removed before the scale fold, so output is bit-identical to the bf16 form). On by default in the r3_moe_worker processes (main() sets 1 unless the variable is set); prefill 2,130 -> 3,150 tok/s, decode unchanged, KLD unchanged; the engine process reads an unset variable as off, and 0 turns it off everywhere"
 activation = "r3_moe_worker: R3_MOE_FP16 on"
 evidence = ["docs/evidence/RAD06/R3_MOE_FP16.run.json"]
-
-[setting.R3_MOE_PROBE]
-default = ""
-status = "diagnostic"
-summary = "RAD06 timing-only ablation of the f16 MoE GEMM (needs R3_MOE_FP16=1; OUTPUT IS INVALID): 1 no WMMA, 2 no E4M3 widening; never set in production"
-activation = "R3_MOE_PROBE"
 
 [setting.R3_MOE_AHALF]
 default = "1"

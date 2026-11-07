@@ -32,8 +32,8 @@ int main(int argc, char** argv) {
             if (variant == 48) {
                 // Engine path still has its original environment semantics.
                 const auto engine = read();
-                assert(!engine.native && !engine.fp16 && !engine.ahalf && engine.moe_probe == 2);
-                assert(trace() == 1 && env_reads() == 5);
+                assert(!engine.native && !engine.fp16 && !engine.ahalf && engine.moe_probe == 0);   // R3_MOE_PROBE (a timing-only ablation) is no longer read from the environment (RSC12)
+                assert(trace() == 1 && env_reads() == 4);
             } else {
                 BcR4dHelperConfig bad{};
                 assert(configure(nullptr) == -1 && configure(&bad) == -1);
