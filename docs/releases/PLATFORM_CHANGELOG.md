@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.20.1](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.20.0...bc-platform-1.20.1) (2026-11-07)
+
+
+### Fixes
+
+* **build:** local builds hit ccache: the stable-path slot sets what CI sets (base dir, no hash dir, content check, work-root cache) ([#704](https://github.com/audiagentic/bigcherry/issues/704)) ([4c40c11](https://github.com/audiagentic/bigcherry/commit/4c40c1183e678b4e1a54c359bf8d62beb18aa6de))
+
 ## [1.20.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.19.0...bc-platform-1.20.0) (2026-11-07)
 
 
