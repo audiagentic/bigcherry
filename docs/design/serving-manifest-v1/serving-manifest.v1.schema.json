@@ -1423,6 +1423,10 @@
                     "gemv": {
                       "description": "Decode GEMV selection (`R3_GEMV`).",
                       "type": "boolean"
+                    },
+                    "fuse_stage": {
+                      "description": "Stage a decode-sized step (at most 16 rows) in the publish kernel itself (`R3_MOE_WORKER_FUSESTAGE`; amendment 15).",
+                      "type": "boolean"
                     }
                   }
                 }

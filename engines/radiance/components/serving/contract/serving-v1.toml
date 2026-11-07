@@ -2287,6 +2287,13 @@ env_setting = "R3_GEMV"
 doc = "Decode GEMV selection (`R3_GEMV`)."
 
 [[field]]
+path = "/spec/processes/engine/kernels/fuse_stage"
+optional = true
+kind = "boolean"
+env_setting = "R3_MOE_WORKER_FUSESTAGE"
+doc = "Stage a decode-sized step (at most 16 rows) in the publish kernel itself (`R3_MOE_WORKER_FUSESTAGE`; amendment 15)."
+
+[[field]]
 path = "/spec/processes/helper_common"
 optional = true
 kind = "ref"

@@ -132,8 +132,7 @@ bool enabled_env() {
 }
 
 bool poison_env() {
-    const char* e = std::getenv("R3_MOE_WORKER_POISON");
-    return e && *e && std::strcmp(e, "0") != 0;
+    return false;   // R3_MOE_WORKER_POISON was a diagnostic environment switch (experiment.helper.poison is the manifest's); RSC12
 }
 
 bool shadow_env() {
@@ -147,8 +146,7 @@ bool mask_only_env() {
 }
 
 bool cpu_ref_env() {
-    const char* e = std::getenv("R3_MOE_WORKER_CPU");
-    return e && *e && std::strcmp(e, "0") != 0;
+    return false;   // the engine-side fp32 host reference was R3_MOE_WORKER_CPU; the helper's is helper_common.cpu.reference (RSC12)
 }
 
 const char* shm_name() {
@@ -171,19 +169,8 @@ bool hip_ok(hipError_t e, const char* what) {
 /* R3_MOE_WORKER_LAYERS=MIN-MAX (diagnostic, RAD13): only layers in the range are served by the workers; every other layer's map is
  * published all-local (the same state as a layer with protected experts), so the engine runs it itself. Bisects a quality or
  * correctness difference by layer range without touching the engine's own path. Unset: every layer. */
-bool layer_enabled(int layer) {
-    static const std::pair<int, int> range = [] {
-        const char* v = std::getenv("R3_MOE_WORKER_LAYERS");
-        int lo = 0, hi = 1 << 30;
-        if (v && *v && std::sscanf(v, "%d-%d", &lo, &hi) != 2) {
-            std::fprintf(stderr, "libr3: R3_MOE_WORKER_LAYERS=%s: want MIN-MAX, using every layer\n", v);
-            lo = 0; hi = 1 << 30;
-        } else if (v && *v) {
-            std::fprintf(stderr, "libr3: R3_MOE_WORKER_LAYERS on - workers serve layers %d to %d only\n", lo, hi);
-        }
-        return std::make_pair(lo, hi);
-    }();
-    return layer >= range.first && layer <= range.second;
+bool layer_enabled(int) {
+    return true;   // R3_MOE_WORKER_LAYERS (a MIN-MAX bisection aid, RAD13) is no longer read from the environment (RSC12): every layer
 }
 
 /* All parent tickets originate in this coordinator. Neither a scheduler
@@ -436,10 +423,7 @@ void hold_burst_for_drain(Header* h) {
  * empty and the GPUs idle between bursts). R3_MOE_WORKER_BURST_TRACE=1 logs each transition with a monotonic
  * timestamp, for checking begin/end pairing across single-stream, multi-stream and MTP runs. */
 void burst_transition(int active) {
-    static const bool trace = [] {
-        const char* e = std::getenv("R3_MOE_WORKER_BURST_TRACE");
-        return e && *e && std::strcmp(e, "0") != 0;
-    }();
+    static const bool trace = false;   // R3_MOE_WORKER_BURST_TRACE (a RAD20 transition log) is no longer read from the environment (RSC12)
     static std::atomic<uint64_t> begins{0}, ends{0};
     const uint64_t n = active ? begins.fetch_add(1) + 1 : ends.fetch_add(1) + 1;
     /* One engine process drives the segment's burst word. During a helper drain only radiance's wanted state is

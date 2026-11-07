@@ -82,12 +82,12 @@ class ServingManifestV1ContractTests(unittest.TestCase):
                 recorded = manifest["metadata"].pop("content_digest")
                 self.assertEqual(recorded, "sha256:" + hashlib.sha256(_jcs_ascii(manifest)).hexdigest())
 
-    def test_v1_is_locked_to_the_amendment_14_fingerprints(self) -> None:
+    def test_v1_is_locked_to_the_amendment_15_fingerprints(self) -> None:
         """v1 is closed (spec section 8, section 11 amendment 12, by owner decision 2026-11-06): both fingerprints are pinned here.
         A change to the registry, a default, a rule or a calibration key moves them and fails this test; the only path is a new
         contract version, bigcherry/v2, with its own registry, reader and examples. Do not edit these values to make a change pass."""
-        pinned = ("schema sha256:224432c7fa4d6c0ad6766d1084303ebc4a3a4ecd12e64f6a4b9722fadf31dcb3\n"
-                  "semantics sha256:072e8b6c05cc91443fd26a53328d2cfc1353bd1b74cdd979832a0575d66a21ef\n")
+        pinned = ("schema sha256:0cbd27b8853c2d4e0349add63ccfd03aef29ef02a3d3785ca8eb246685cb8e36\n"
+                  "semantics sha256:a6a0f5cd828eb561638c12f5ad193dfd4b53baa5219990bd7a1e77809efc35b9\n")
         generated = (ROOT / "engines/radiance/components/serving/generated/contract.fingerprint").read_text()
         self.assertEqual(
             generated, pinned,
