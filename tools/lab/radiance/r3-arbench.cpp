@@ -14,8 +14,8 @@
 //                A rank's time includes waiting for the later rank, so the smaller rank's median is the closer transfer cost.
 // and checks the exact sum (rank 0 sends 1.0, rank 1 sends 2.0: every rank must read 3.0 back).
 //
-// Build (card-free): g++ -O2 -std=c++20 -D__HIP_PLATFORM_AMD__ -I<rad include> -I/opt/rocm/include r3-arbench.cpp
-//                    -L/opt/rocm/lib -lamdhip64 -ldl -lpthread -o r3-arbench
+// Build (card-free): g++ -O2 -std=c++20 -D__HIP_PLATFORM_AMD__ -I<rad include> -I<ROCm root>/include r3-arbench.cpp
+//                    -L<ROCm root>/lib -lamdhip64 -ldl -lpthread -o r3-arbench
 // Run (needs the gpu lease; tools/lab/radiance/rad49-arbench.sh takes it):
 //   HIP_VISIBLE_DEVICES=<xtx0>,<xtx1> r3-arbench --lib <radiance_home>/kernels/libr3.so [--rows 1,4,24,32,2048] [--iters 200]
 //        [--ops hc,ar] [--wires exact,wht6] --n HIDDEN --hc HC_COUNT

@@ -24,6 +24,9 @@ source tools/env/bigcherry-env.sh >/dev/null
 B=${B:?set B to a radiance lane build directory}
 LIB=$B/radiance_home/kernels/libr3.so
 INC=$B/runtime-prefix/include/radiance
+# The ROCm SDK the build was configured with (its recorded HIP compiler), never the unversioned system one.
+ROCM=$(sed -n 's#^CMAKE_HIP_COMPILER:[A-Z]*=\(.*\)/lib/llvm/bin/clang++$#\1#p' "$B/CMakeCache.txt")
+[ -d "$ROCM/include/hip" ] || { echo "no recorded ROCm SDK in $B/CMakeCache.txt" >&2; exit 1; }
 [ -f "$LIB" ] && [ -f "$INC/rad_abi.h" ] || { echo "no libr3.so / ABI headers in $B" >&2; exit 1; }
 # The message shape is the served model's: n_embd and hc_count from its container (the layout's model), never a literal here.
 MODEL=${MODEL:-$BC_MODEL_ROOT/$(python3 -c "import tomllib,sys;print(tomllib.load(open(sys.argv[1],'rb'))['layout']['flashnext-tp2xtx-r9700']['model'])" engines/radiance/layouts.toml)}
@@ -42,9 +45,9 @@ BIN=${BUILD_DIR:-$BC_WORK_ROOT/builds-rad49/arbench}/$digest
 if [ ! -x "$BIN/r3-arbench" ] || [ ! -x "$BIN/host-pull" ]; then
   mkdir -p "$BIN"
   CXX=${CXX:-$(command -v g++-14 || command -v g++)}
-  "$CXX" -O2 -std=c++20 -D__HIP_PLATFORM_AMD__ -I"$INC" -I/opt/rocm/include "$HERE/r3-arbench.cpp" \
-    -L/opt/rocm/lib -Wl,-rpath,/opt/rocm/lib -lamdhip64 -ldl -lpthread -o "$BIN/r3-arbench" || { echo "r3-arbench build failed" >&2; exit 1; }
-  /opt/rocm/bin/hipcc -O3 --offload-arch=gfx1201 "$HERE/host-pull.hip" -o "$BIN/host-pull" || { echo "host-pull build failed" >&2; exit 1; }
+  "$CXX" -O2 -std=c++20 -D__HIP_PLATFORM_AMD__ -I"$INC" -I"$ROCM/include" "$HERE/r3-arbench.cpp" \
+    -L"$ROCM/lib" -Wl,-rpath,"$ROCM/lib" -lamdhip64 -ldl -lpthread -o "$BIN/r3-arbench" || { echo "r3-arbench build failed" >&2; exit 1; }
+  "$ROCM/bin/hipcc" -O3 --offload-arch=gfx1201 "$HERE/host-pull.hip" -o "$BIN/host-pull" || { echo "host-pull build failed" >&2; exit 1; }
 fi
 
 # Which cards: the host inventory, never a literal index.
