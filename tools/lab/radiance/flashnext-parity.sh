@@ -15,7 +15,11 @@
 #   context, stops the launcher (always, also on failure) and keeps the helper's `policy placement` line. Raw records go
 #   to OUT/launch-<i>/, the summary to OUT/parity.json (flashnext_parity.py summarise). It uses all four cards: hold the
 #   gpu lease (agent-lease acquire gpu ... -- bash tools/lab/radiance/flashnext-parity.sh measure ...). It runs in the
-#   foreground for about an hour a launch; run it detached (setsid nohup ... > OUT.log 2>&1 &).
+#   foreground for about 20 minutes a launch (measured 2026-11-08: ~7.5 min policy warmup, ~3.5 min cold/doc/decode/sess8,
+#   ~3 min for the two 256K long rounds, plus start and stop); run it detached (setsid nohup ... > OUT.log 2>&1 &).
+#   To isolate one change (a launcher, a flag) compare two arms of the SAME build in one session, A B A B with --launches 1
+#   each: a stored baseline drifts a few percent from day to day (cold sess8: 28.9 vs 30.4 ms for one build a day apart).
+#   For kernels without a model use tools/lab/radiance/kbench_ab.py (rad-kbench per row, two builds).
 # baseline: docs/reference/engines/radiance/baselines/flashnext-4gpu-parity.json (or --to) from a measured OUT, each
 #   gated metric's tolerance derived from the spread the run measured; refuses a single launch.
 # compare: the table against a baseline; exit 1 on a gated regression beyond its allowance.
