@@ -98,7 +98,7 @@ RankOut run_rank(const Model& m, uint32_t l, uint32_t rank, Mutation mut) {
         for (uint32_t s = 0; s < kK; ++s) {
             const int32_t e = ids[t][s];
             const int owner = m.owner_of(l, uint32_t(e));
-            const RouteRole role = route_role(l, rank, kWorld, true, owner >= 0, false);
+            const RouteRole role = route_role(consumer_of(l, kWorld) == rank, true, owner >= 0, false);
             if (role.count_heat) ++r.heat[uint32_t(e)];
             if (role.publish || (mut.both_ranks_add_helper_rows && owner >= 0))
                 r.sent[slot_of(uint32_t(owner), rank, kWorld)].emplace_back(t, s);
@@ -190,13 +190,15 @@ int main() {
     check(!tp_matches(m, both, nullptr, nullptr), "both ranks adding full-width helper rows double counts them");
     /* a one-rank engine is its own consumer for every layer and publishes every helper route */
     for (uint32_t l = 0; l < kL; ++l) {
-        const RouteRole r = route_role(l, 0, 1, true, true, false);
+        const RouteRole r = route_role(consumer_of(l, 1) == 0, true, true, false);
         check(r.publish && r.mask_local && r.count_heat, "a one-rank engine publishes and masks every owned route");
     }
-    check(!route_role(0, 0, 2, true, true, true).mask_local && route_role(0, 0, 2, true, true, true).publish,
+    check(!route_role(true, true, true, true).mask_local && route_role(true, true, true, true).publish,
           "the shadow diagnostic keeps the local path but still publishes");
-    check(!route_role(0, 0, 2, false, true, false).count_heat && !route_role(0, 0, 2, false, true, false).publish,
+    check(!route_role(true, false, true, false).count_heat && !route_role(true, false, true, false).publish,
           "an out-of-range id is neither counted nor published");
+    check(!route_role(false, true, true, false).publish && route_role(false, true, true, false).mask_local,
+          "a non-consumer masks but does not publish");
     std::puts("tp_exactly_once_test: ok");
     return 0;
 }

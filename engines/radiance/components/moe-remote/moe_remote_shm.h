@@ -43,14 +43,15 @@ constexpr bool slots_fit(uint32_t helpers, uint32_t world) {
     return helpers >= 1 && helpers <= kMaxHelpers && world >= 1 && world <= kMaxEngineRanks && helpers * world <= kMaxSlots;
 }
 constexpr uint32_t slot_of(uint32_t helper, uint32_t consumer, uint32_t world) { return helper * world + consumer; }
-constexpr uint32_t slot_helper(uint32_t slot, uint32_t world) { return slot / world; }
-constexpr uint32_t slot_consumer(uint32_t slot, uint32_t world) { return slot % world; }
+/* A one-rank engine (world 1) is the common case: these then cost no division (they run in the helper lane kernels). */
+constexpr uint32_t slot_helper(uint32_t slot, uint32_t world) { return world == 1u ? slot : slot / world; }
+constexpr uint32_t slot_consumer(uint32_t slot, uint32_t world) { return world == 1u ? 0u : slot % world; }
 /* FULL WIDTH ONCE (RAD49): the helper computes every routed expert it owns at the full intermediate width, and ONE engine
  * rank a layer stages the activations, publishes, waits and adds the helper rows; the other ranks mask the same routes out
  * of their local GEMMs and add nothing for them, so the TP all-reduce that follows sums every helper row exactly once.
  * The consumer alternates by layer, so the ranks' links share the helper traffic (two XTX: half each); every rank derives
  * it from the layer it is given and the world, so the ranks always agree. A one-rank engine is its own consumer. */
-constexpr uint32_t consumer_of(uint32_t layer, uint32_t world) { return world ? layer % world : 0u; }
+constexpr uint32_t consumer_of(uint32_t layer, uint32_t world) { return world > 1u ? layer % world : 0u; }
 /* The role of one routed (token, top-k slot) on one engine rank for one layer (RAD49), the single definition the publish
  * kernel uses and the card-free exactly-once test (tp_exactly_once_test.cpp) checks: every rank counts the route's heat (so
  * rank 0's histogram covers every layer, consumed by it or not) and masks a helper-owned route out of its local GEMMs (unless
@@ -58,9 +59,10 @@ constexpr uint32_t consumer_of(uint32_t layer, uint32_t world) { return world ? 
 struct RouteRole {
     bool count_heat, mask_local, publish;
 };
-constexpr RouteRole route_role(uint32_t layer, uint32_t rank, uint32_t world, bool in_range, bool helper_owned, bool shadow) {
-    return RouteRole{in_range, in_range && helper_owned && !shadow,
-                     in_range && helper_owned && consumer_of(layer, world) == rank};
+/* `consumer`: this rank is the layer's consumer, consumer_of(layer, world) == rank, decided once a pass (the publish kernel's
+ * route loop runs rows x top-k x helpers times on one block, so nothing per route may cost more than the route itself). */
+constexpr RouteRole route_role(bool consumer, bool in_range, bool helper_owned, bool shadow) {
+    return RouteRole{in_range, in_range && helper_owned && !shadow, in_range && helper_owned && consumer};
 }
 /* The plane a slot writes for an output rank. Every reader and writer takes the index from here (the host layout, the device kernels
  * and the helper), so the convention lives in one place. A slot writes only its consumer's plane, [slot][slot_consumer]. */
@@ -248,10 +250,19 @@ static_assert(sizeof(Request) == 256, "Request layout changed: bump kVersion");
 /* The slot identity a request must carry (RAD49): its lane's slot, the engine width the segment was made for
  * (Header::rank_count, not merely a width the request agrees with itself on), and the consumer the slot and the layer both
  * name. Every reader (helper lanes, CPU reference, combine, replay) checks it the same way. */
+/* The same identity without the consumer word, for the helper lane kernels: every thread of a lane kernel validates the request
+ * it reads from host-mapped memory, so they read only the Request's first two cache lines (layer, slot and world are +12..+23,
+ * as rank/rank_count were before v25); Request::consumer (+252, a fourth line) would add a host-memory read to every thread of
+ * every large-lane launch. consumer is slot_consumer(slot, world), so the slot, the world and the layer pin it; the CPU readers
+ * (combine, host references), which read it, check it as well. */
+constexpr bool request_lane_identity_valid(uint32_t slot, uint32_t world, uint32_t layer, uint32_t lane_slot,
+                                           uint32_t segment_world) {
+    return slot == lane_slot && slot < kMaxSlots && world >= 1 && world <= kMaxEngineRanks && world == segment_world &&
+           slot_consumer(slot, world) == consumer_of(layer, world);
+}
 constexpr bool request_slot_valid(uint32_t slot, uint32_t world, uint32_t consumer, uint32_t layer, uint32_t lane_slot,
                                   uint32_t segment_world) {
-    return slot == lane_slot && slot < kMaxSlots && world >= 1 && world <= kMaxEngineRanks && world == segment_world &&
-           consumer == slot_consumer(slot, world) && consumer == consumer_of(layer, world);
+    return request_lane_identity_valid(slot, world, layer, lane_slot, segment_world) && consumer == slot_consumer(slot, world);
 }
 
 struct alignas(64) LaneSignal {
@@ -456,6 +467,8 @@ static_assert(offsetof(Request, placement_epoch) == 232);
 static_assert(offsetof(Request, completion_epoch) == 240);
 static_assert(offsetof(Request, completion_slot) == 248);
 static_assert(offsetof(Request, consumer) == 252);
+/* what request_lane_identity_valid reads stays on the first cache line, with the rest of the lane validation */
+static_assert(offsetof(Request, layer) / 64 == 0 && offsetof(Request, slot) / 64 == 0 && offsetof(Request, world) / 64 == 0);
 static_assert(sizeof(LaneSignal) == 64 && offsetof(LaneSignal, done_epoch) == 24);
 static_assert(offsetof(LaneSignal, consumed_epoch) == 32);
 static_assert(sizeof(CombineSignal) == 128);

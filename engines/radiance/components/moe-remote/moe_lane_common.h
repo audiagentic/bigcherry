@@ -60,7 +60,7 @@ __device__ __forceinline__ bool lane_request_valid(
     /* The request is this lane's slot, for the consumer its slot and its layer both name (RAD49); it always asks for the
      * full expert width. */
     return q && q->sequence == sequence &&
-           request_slot_valid(q->slot, q->world, q->consumer, q->layer, slot, shape.world) &&
+           request_lane_identity_valid(q->slot, q->world, q->layer, slot, shape.world) &&
            q->layer < layers && q->rows > 0 && q->rows <= max_rows &&
            q->hidden == shape.hidden && q->route_count > 0 &&
            q->route_count <= q->rows * shape.top_k &&

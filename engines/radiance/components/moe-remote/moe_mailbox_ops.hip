@@ -14,6 +14,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 namespace {
@@ -218,11 +219,12 @@ __global__ void mailbox_publish_kernel(
         for (uint32_t i = threadIdx.x; i < rows * top_k; i += blockDim.x) {
             const int32_t le = ids[i] - expert_base;
             const bool in_range = le >= 0 && (uint32_t)le < n_expert && (uint32_t)le < h->expert_count;
-            const bool owned = in_range && slot_map[(uint32_t)le] >= 0 &&
-                               r3_moe_owner_has(own, layer, (uint32_t)le, h->expert_count);
-            const RouteRole role = route_role(layer, rank, world, in_range, owned, shadow != 0u);
-            /* R3_MOE_WORKER_HISTOGRAM: every route this step makes, owned or not, counted once (first slot), in LDS. */
-            if (heat && k == 0 && role.count_heat && (uint32_t)le < kExperts) atomicAdd(&step_heat[(uint32_t)le], 1u);
+            /* R3_MOE_WORKER_HISTOGRAM: every route this step makes, owned or not, counted once (first slot), in LDS
+             * (route_role's count_heat: every in-range route, on every rank). */
+            if (heat && k == 0 && in_range && (uint32_t)le < kExperts) atomicAdd(&step_heat[(uint32_t)le], 1u);
+            if (!in_range || slot_map[(uint32_t)le] < 0 || !r3_moe_owner_has(own, layer, (uint32_t)le, h->expert_count))
+                continue;
+            const RouteRole role = route_role(consume, true, true, shadow != 0u);   /* an owned route's role */
             if (role.publish) {
                 const uint32_t p = atomicAdd(&nr, 1u);
                 route[p].token = (int32_t)(i / top_k);
