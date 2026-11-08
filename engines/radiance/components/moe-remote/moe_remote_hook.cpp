@@ -22,6 +22,7 @@
 #include <cstdio>
 #include <utility>
 #include <cstdlib>
+#include <cerrno>
 #include <cstring>
 #include <ctime>
 #include <fcntl.h>
@@ -588,7 +589,9 @@ void register_mailbox() {
     if (!enabled_env()) return;
     g.fd = ::shm_open(shm_name(), O_RDWR | O_CLOEXEC, 0);
     if (g.fd < 0) {
-        std::fprintf(stderr, "libr3: R3_MOE_WORKER shm %s is not ready\n", shm_name());
+        // errno tells a segment that is not there (ENOENT: no helper has made it, or something removed it) from one that is
+        // there but cannot be opened (EACCES, EMFILE); without the hand-off the engine plans every expert locally.
+        std::fprintf(stderr, "libr3: R3_MOE_WORKER shm %s is not ready: %s\n", shm_name(), std::strerror(errno));
         return;
     }
     struct stat st{};

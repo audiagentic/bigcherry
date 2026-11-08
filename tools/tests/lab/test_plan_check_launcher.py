@@ -269,7 +269,8 @@ plan_manifest_prepare && printf 'MANIFEST:%s\\n' "$PLAN_MANIFEST"
         # there is no argv start left: not for a helper layout, and not for a dense one either
         self.assertNotIn("start_engine ", text.replace("start_engine_manifest", ""))
         # the manifest is made, and fails the launch, before anything starts for real
-        self.assertLess(text.index("plan_manifest_prepare ||"), text.index('start_helpers "$PLAN_MANIFEST"; fi\nLOG='))
+        self.assertLess(text.index("plan_manifest_prepare ||"), text.index('start_helpers "$PLAN_MANIFEST"; fi'))
+        self.assertLess(text.index('start_helpers "$PLAN_MANIFEST"; fi'), text.index('start_engine_manifest "$LOG" "$PLAN_MANIFEST"'))
         self.assertIn("exit 97", text)
         for banned in ("--no-check", "SKIP_PLAN_CHECK", "NO_PLAN_CHECK", "--plan-check", "plan-check-floor-ppm", "PLAN_CHECK_ARGS",
                        "--plan-store", "--plan-key", "--plan-check-args", "plan_check_flags"):
