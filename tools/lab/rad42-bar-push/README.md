@@ -1,76 +1,96 @@
-# RAD42 — CPU BAR push transport experiment (isolated)
+# RAD50 — isolated CPU BAR-push transport experiment
 
-**Status:** Stage 0 card-free tests passed (10/10); Stage 1 C++ syntax check passed. No GPU run or engine integration.
-**Owner / question:** RAD40 / RAD42, with future RAD49 TP2 applicability.
-**Code boundary:** This folder is **lab-only**, never linked into the serving engine.
-**What to test:** Whether CPU-produced remote-MoE result chunks written into GPU-local,
-CPU-addressable VRAM are faster than the current mapped-host GPU pull, without changing
-the GPU's model scheduling.
+**Status (2026-11-09):** Gate 0 **PASS** (13/13 card-free tests).
+Gate 1 HSA inventory and Gate 2 CPU→GPU canary **built but not run**:
+remote command allowlist does not permit `agent-lease status`, and no
+exclusive GPU lease was acquired. Gate 3 onward is not started.
 
-## Existing evidence (not new measurements)
+**Plan:** `docs/planning/active/patching-radiance-rdna3/RAD50.md`
+(existing `patching-radiance-rdna3` group). Production owner RAD42 design B;
+context RAD40 (PCIe contention) and RAD49 (multi-rank consumer).
+**Journal:** [PROGRESS.md](PROGRESS.md) is updated per experiment gate.
+**Boundary:** All files are lab-only, never linked into the serving engine.
 
-RAD40 measured 2026-11-01: under XTX0 host reads, the R9700's GPU pull fell
-from 6.7 to 3.4 GB/s and XTX1's from 13.3 to 6.8 GB/s; CPU BAR pushes
-remained at 5.6 GB/s (R9700) and 10.3 GB/s (XTX1). These are transfer microbench
-rates, **not** proven end-to-end inference improvements. RAD42 delivered chunked
-GPU consumption but deliberately left CPU BAR push unimplemented. RAD49's
-multi-rank engine makes correct consumer rank and exactly-once results essential.
+## Question and existing evidence
 
-## Small gates — do not skip ahead
+Can CPU-produced remote-MoE FP16 result chunks be pushed straight into
+CPU-addressable GPU-local VRAM, instead of the consuming GPU pulling
+a mapped-host result plane, while leaving GPU model orchestration intact?
 
-| Gate | Harness | Only proceed if |
+RAD40 (2026-11-01) measured that, while XTX0 pulls from host memory,
+XTX1's GPU pull falls from 13.3 to 6.8 GB/s, R9700's from 6.7 to
+3.4 GB/s, but CPU BAR pushes remain at 10.3 GB/s (XTX1) and
+5.6 GB/s (R9700). These are **existing microbenchmarks**, not evidence
+of a live inference gain. Uncontended GPU pulls are faster than BAR
+pushes, so the design must win on *contended critical-path makespan*.
+RAD42's chunked combine is shipped; its BAR-push design is not.
+
+## Progressive stop/go gates
+
+| Gate | Harness | Acceptance / current state |
 | --- | --- | --- |
-| 0. Contract/lifetime (card-free) | `chunk_contract.py`, `test_chunk_contract.py` | Old generations rejected; publication cannot precede write drain; no buffer reuse while in-flight; fault requires quiescence |
-| 1. VRAM reachability (GPU lease; discovery only) | `pool_inventory.cpp` | Each prospective destination has an HSA GPU-local allocatable pool that the host CPU *can* access; record GPU PCI identity (not ordinal-only). A candidate is not proof of a usable BAR mapping |
-| 2. Minimal correctness canary (not implemented yet) | Dedicated HSA/HIP CPU-write → GPU-read probe | One GPU and one CPU, 4 KiB then 4 MiB, checked bytes; explicit allocation/access, GPU-visible publication with independent generation; no crashes, stale reads or bad data |
-| 3. Standalone transfer cost (not implemented yet) | Add checksum-preserving CPU BAR vs mapped-host GPU-pull modes | 4 KiB–21 MiB sweep, 1/2/4 CPU threads, median/p95 and CPU cost, both XTX and R9700, with and without GPU0 host-pull contention |
-| 4. Chunk pipeline (not implemented yet) | Two-process producer CPU + consumer GPU, 128/256/512/1024 rows | GPU waits on *separate readiness*, every chunk exactly once under generation recycling/fault; p50/p95 step makespan beats baseline |
-| 5. Harnessed MoE behavior (not implemented yet) | Replayed real result planes, CPU combine and BAR writes, no engine changes | FP16 numerical fidelity; overflow fallback; TP2 rank ownership; repeated steps; no hang; measured critical-path gain |
-| 6. Optional separate implementation branch | RAD42/RAD49 runtime behind opt-in transport setting | Only after above gates, A/B, KLD, and GPU lease qualification. No default change in this experiment |
+| 0. CPU model, card-free | `chunk_contract.py`, `test_chunk_contract.py`, `test_chunk_stress.py` | **PASS**: no early ready, stale epoch, reuse while busy, duplicate consume, or recovery without quiescence; 13 tests, 12,800 orderly multi-chunk consumptions |
+| 1. VRAM reachability | `pool_inventory.cpp` | **Build PASS / run blocked**: find an allocatable HSA GPU-local pool the host CPU is allowed to access; map physical PCI identity; pool availability alone is *not* proof of BAR usability |
+| 2. CPU→GPU exact canary | `bar_write_canary.hip` | **Build PASS / run blocked**: 4 KiB and 4 MiB, 12 generations each, GPU checks every word of CPU-written GPU-local storage; refuse unsupported allocations and PCI mismatch |
+| 3. Bandwidth and contention | Not implemented | **BLOCKED on Gate 2**: measure BAR write vs mapped-host GPU pull on both XTXs/R9700, 4 KiB–21 MiB, 1/2/4 CPU threads, p50/p95 and CPU load, alone and under GPU0 host-pull contention |
+| 4. Live chunks | Not implemented | **BLOCKED on Gate 3**: separate CPU producer/GPU consumer, independently published ready generations, 128/256/512/1024 rows, bounded timeouts, stale-data and fault cases |
+| 5. MoE reference | Not implemented | **BLOCKED on Gate 4**: actual FP16 CPU combine, overflow sentinel fallback, TP2 consumer rank, once-only rows, captured replay and latency |
+| 6. Opt-in integration | Not authorised | Only a future reviewed branch, after hardware A/B, numerical parity and explicit go decision |
 
-The GPU producer's existing `request_sequence` cannot be reused to claim that
-the CPU has finished writing BAR memory. Two independent events are required:
-the GPU's result generation and a **CPU write-drained** payload-ready generation.
-Buffer recycling must wait for the consumer's observed completion. Cross-process
-VRAM mapping, IPC lifetime, cache coherence and fence semantics remain hardware
-questions; the card-free model asserts ordering *requirements*, not a real fence.
+**Critical ordering boundary:** the engine GPU's request publication is
+not evidence that a CPU BAR push has finished. A prospective protocol
+needs an independent *CPU-write-drained and GPU-visible* chunk-ready
+generation and a consumer acknowledgment before buffer reuse.
+A Python state model proves only state-transition rules; it cannot
+prove PCIe posted-write ordering, cache-coherence fences or HSA IPC.
+The single-process Gate 2 probe tests a **serial launch after CPU
+stores**, not a concurrent GPU/CPU handoff.
 
-### Card-free gate 0
+## Commands and requirements
 
-From this directory:
+From the experiment worktree root, card-free:
 
 ```sh
-python3 -m unittest discover -s . -p 'test_*.py' -v
+python3 -m unittest discover -s tools/lab/rad42-bar-push -p 'test_*.py' -v
 ```
 
-No GPUs or ROCm dependencies.
-
-### Build gate 1 (compile only; does NOT use a GPU)
-
-From the repository root, output into a scoped build directory outside the worktree:
+Gate 1/2 compile-only (does not run HSA/GPU operations):
 
 ```sh
+source tools/env/bigcherry-env.sh
 mkdir -p "$BC_WORK_ROOT/builds/rad42-bar-push"
-g++ -std=c++17 -O2 -Wall -Wextra tools/lab/rad42-bar-push/pool_inventory.cpp \
-    -I"$ROCM_PATH/include" -L"$ROCM_PATH/lib" -Wl,-rpath,"$ROCM_PATH/lib" \
-    -lhsa-runtime64 -o "$BC_WORK_ROOT/builds/rad42-bar-push/pool_inventory"
+g++ -std=c++17 -O2 -Wall -Wextra \
+  -I"$ROCM_PATH/include" \
+  tools/lab/rad42-bar-push/pool_inventory.cpp \
+  -L"$ROCM_PATH/lib" -Wl,-rpath,"$ROCM_PATH/lib" -lhsa-runtime64 \
+  -o "$BC_WORK_ROOT/builds/rad42-bar-push/pool_inventory"
+for arch in gfx1100 gfx1201; do
+  hipcc -std=c++17 -O2 --offload-arch="$arch" \
+    tools/lab/rad42-bar-push/bar_write_canary.hip -lhsa-runtime64 \
+    -o "$BC_WORK_ROOT/builds/rad42-bar-push/bar_write_canary-$arch"
+done
 ```
 
-To **run** gate 1: obtain the normal exclusive `agent-lease gpu` first and
-check GPU processes / PCIe links. Do not run under a running server or while
-another measurement owns the GPU lease. The probe only enumerates HSA pools;
-it does **not** allocate VRAM or establish transfer correctness.
+**Hardware run preconditions:** acquire/check the project's exclusive GPU
+lease by its approved mechanism; confirm no active serving and log
+hardware identity, ROCm/kernel versions and PCI topology. A missing
+lease command is a **hard stop**; don't use a subprocess wrapper to evade
+the remote tool allowlist.
 
-### Scope and safety
+With lease held, run the pool inventory first. Only if it reports
+eligible GPU-local memory for the intended destination, run the matching
+canary binary with `--device HIP_VISIBLE_ORDINAL`. Do not assume
+HIP and HSA enumerations match; the canary compares PCI identity.
+Require zero mismatches on every generation. Any unsupported mapping,
+crash, hang, failed HIP API, or mismatch is a stop condition.
 
-- No production engine / helper / patch / manifest edits.
-- No live server restarts, model loads, GPU probes, leases taken on another owner's behalf, or GPU benchmarks without the lease.
-- No assumptions about resizable BAR access from HSA capability alone.
-- Experiments must refuse to proceed on unsupported mappings or failed checks.
-- No absolute device BDF addresses or local environment values in committed files.
-- Store hardware evidence (once permitted) under a named RAD42 run in
-  `${BC_WORK_ROOT}/runs/` (outside the checkout), with run identity and logs.
-- Preserve both the existing GPU-pull path and bit-identical/quality-tested
-  fallback in any future integration. Decode and prefill must be evaluated separately.
+## Hygiene and disposition
 
-**Disposition:** Explore locally. Neither promotion nor PR is authorized here.
+- No vendor, serving engine, helper, patch, manifest or production
+  configuration changes in this experiment.
+- Never infer transfer benefit or correctness from a compile alone.
+- Retain the existing mapped-host GPU-pull transport as control/fallback.
+- Store raw hardware logs, once authorized, in a named project work-root
+  evidence run with source commit, device and command provenance.
+- No push, PR or merge. Continue only after the previous gate succeeds.
+- Current disposition: exploratory and isolated; read [PROGRESS.md](PROGRESS.md).
