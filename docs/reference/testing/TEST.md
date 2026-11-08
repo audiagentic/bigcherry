@@ -445,7 +445,20 @@ PYTHONPATH=tools python3 -m bigcherry ab-benchmark \
 ```
 
 Two arms require complete two-order blocks; three require six-order blocks.
-Use separate contrasts for larger build matrices. Capture validates the
+Use separate contrasts for larger build matrices. A `quality_only` (KL) run
+takes any number of arms (two or more): each is scored alone against the fixed
+reference and judged against the control, so order does not matter.
+
+An arm whose `serving` block names a `layout` serves that layout's model and
+runs on its engine cards, resolved as the launcher and bc-serve resolve them
+(the model under `BC_MODEL_ROOT`; `ROCR_VISIBLE_DEVICES` the cards in rank
+order, HIP ordinals `0..n-1`, and the architectures and PCI locators it must
+execute on). An explicit `model` (the arm's or the top-level one) that names
+another file is refused, never silently replaced. The shared `environment`
+device selectors and `expected_execution` are the topology of the non-layout
+arms; a run whose arms all serve layouts gives neither, nor a top-level
+`model`, so an R9700-only arm and a TP2 XTX arm can share one run. No arm may
+set device selectors in its own `environment`. Capture validates the
 instrumentation role against compiler observations, checks runtime bytes
 against campaign metadata, verifies each server's own startup device evidence
 against the expected physical devices before timing, retains bench-config content and cell

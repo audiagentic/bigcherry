@@ -928,11 +928,14 @@ def run_server_comparison_capture(
     if config.get("schema_version") != 1:
         raise ValueError("server capture configuration requires schema_version 1")
     arms = config.get("arms", [])
-    if not isinstance(arms, list) or not 2 <= len(arms) <= 3:
-        raise ValueError("server comparisons require two or three arms; use separate balanced contrasts for larger matrices")
     quality_only = config.get("quality_only", False)
     if not isinstance(quality_only, bool) or (quality_only and "quality" not in config):
         raise ValueError("quality_only must be true or false, and needs a quality block")
+    # A performance comparison runs every order of its arms (balanced positions), so it stays at two or three; a quality-only
+    # (KL) run scores each arm alone against the fixed reference and judges it against the control, so order does not matter.
+    if not isinstance(arms, list) or len(arms) < 2 or (not quality_only and len(arms) > 3):
+        raise ValueError("a quality-only comparison takes two or more arms; a performance comparison takes two or three "
+                         "(every order is run; use separate balanced contrasts for larger matrices)")
     if not math.isfinite(settle_seconds) or settle_seconds < 0 or (
             not quality_only and (rounds < 2 or rounds % math.factorial(len(arms)))):
         raise ValueError("server captures require complete permutation blocks and nonnegative finite settling")
@@ -942,7 +945,8 @@ def run_server_comparison_capture(
     role = config.get("evidence_role")
     if role not in ("production", "diagnostic"):
         raise ValueError("explicit production or diagnostic evidence_role required")
-    model = Path(os.path.expandvars(config["model"])).expanduser().resolve()
+    # The shared model: every arm's unless the arm names its own, or serves a layout (which names its model).
+    model = Path(os.path.expandvars(config["model"])).expanduser().resolve() if "model" in config else None
     extra_args = tuple(os.path.expandvars(value) for value in config["server_args"])
     if any(value.split("=", 1)[0] in ("-m", "--model", "--host", "--port") for value in extra_args):
         raise ValueError("server_args cannot override the managed model or endpoint")
@@ -956,8 +960,12 @@ def run_server_comparison_capture(
         raise ValueError("health_timeout_s must be a positive integer")
     if not isinstance(repetitions, int) or isinstance(repetitions, bool) or repetitions < 1:
         raise ValueError("repetitions must be a positive integer")
-    supplied_env = {key: os.path.expandvars(value) for key, value in config["environment"].items()}
+    supplied_env = {key: os.path.expandvars(value) for key, value in config.get("environment", {}).items()}
     expected_execution = config.get("expected_execution")
+    # An arm that serves a named layout runs on that layout's engine cards and serves its model; the shared environment's
+    # device selectors and expected_execution are the topology of every other arm.
+    layout_arms = {arm.get("name") for arm in arms if isinstance(arm.get("serving"), dict) and "layout" in arm["serving"]}
+    shared_topology = len(layout_arms) < len(arms)
     execution_evidence = config.get("execution_evidence", "required")
     if execution_evidence not in ("required", "observe"):
         raise ValueError("execution_evidence must be required or observe")
@@ -971,12 +979,16 @@ def run_server_comparison_capture(
         raise ValueError(f"{engine}: device-execution attestation is not parsed for this engine; use execution_evidence 'observe'")
     if "execution_attestor" in config:
         raise ValueError("optional execution_attestor integration is deferred under HI169")
-    if not isinstance(expected_execution, dict) or not expected_execution.get("locators"):
-        raise ValueError("server comparison requires expected_execution backend, architectures and physical device locators")
     from bigcherry.experiment.attestation import ExecutionIdentity
-    ExecutionIdentity(expected_execution["backend"], tuple(expected_execution["architectures"]), tuple(expected_execution["locators"]))
-    if any(not supplied_env.get(key) for key in ("HIP_VISIBLE_DEVICES", "ROCR_VISIBLE_DEVICES")):
-        raise ValueError("both explicit device selectors are required")
+    if shared_topology:
+        if not isinstance(expected_execution, dict) or not expected_execution.get("locators"):
+            raise ValueError("server comparison requires expected_execution backend, architectures and physical device locators")
+        ExecutionIdentity(expected_execution["backend"], tuple(expected_execution["architectures"]), tuple(expected_execution["locators"]))
+        if any(not supplied_env.get(key) for key in ("HIP_VISIBLE_DEVICES", "ROCR_VISIBLE_DEVICES")):
+            raise ValueError("both explicit device selectors are required")
+    elif expected_execution is not None or {"HIP_VISIBLE_DEVICES", "ROCR_VISIBLE_DEVICES"} & set(supplied_env):
+        raise ValueError("every arm serves a layout, whose engine cards are its topology: drop the shared device selectors "
+                         "and expected_execution")
     runner_root = None if quality_only else _resolve_runner_root(
         Path(os.path.expandvars(config["runner_root"])) if config.get("runner_root") else None)
     quality = None
@@ -1037,7 +1049,8 @@ def run_server_comparison_capture(
         # Only explicitly supplied arm controls survive ambient sanitization.
         controls = {key: os.path.expandvars(value) for key, value in arm.get("environment", {}).items()}
         if {"HIP_VISIBLE_DEVICES", "ROCR_VISIBLE_DEVICES"} & set(controls):
-            raise ValueError(f"{arm['name']}: device selectors are topology; topology belongs to the shared environment")
+            raise ValueError(f"{arm['name']}: device selectors are topology; topology belongs to the shared environment "
+                             "(or, for a layout arm, to its layout)")
         adapter_.check_arm_environment(controls)
         # A component setting is an environment variable of the server (and is passed to the adapter); an ambient
         # value of a declared setting never leaks into an arm.
@@ -1061,9 +1074,25 @@ def run_server_comparison_capture(
                 raise ValueError(f"{arm['name']}: a serving arm takes no server_args; they are settings under serving")
             if config.get("execution_evidence", "required") == "required":
                 raise ValueError(f"{arm['name']}: a manifest start has no attestation preflight; set execution_evidence to observe")
+        arm_model = Path(os.path.expandvars(arm["model"])).expanduser().resolve() if "model" in arm else model
+        arm_execution = expected_execution
+        if arm["name"] in layout_arms:
+            # The layout decides the model and the cards, as the launcher and bc-serve resolve it; an explicit model that
+            # names another file is a contradiction, never silently replaced either way.
+            served = adapter_.serving_layout(serving["layout"])
+            if arm_model is not None and arm_model != served.model:
+                raise ValueError(f"{arm['name']}: layout {serving['layout']} serves {served.model}, but the "
+                                 f"{'arm' if 'model' in arm else 'shared'} model is {arm_model}")
+            arm_model = served.model
+            env.update(served.environment)
+            arm_execution = served.expected_execution
+            ExecutionIdentity(arm_execution["backend"], tuple(arm_execution["architectures"]), tuple(arm_execution["locators"]))
+        if arm_model is None:
+            raise ValueError(f"{arm['name']}: no model (the config's model, the arm's, or its layout's)")
         prepared[arm["name"]] = {
             "binary": binary, "env": env, "settings": settings, "controls": controls, "extra_args": (*extra_args, *arm_args), "serving": serving, "manifest": None,
-            "model": Path(os.path.expandvars(arm["model"])).expanduser().resolve() if "model" in arm else model, "shutdown_method": arm.get("shutdown_method", "sigint" if mode == "stock" else "http"),
+            "model": arm_model, "expected_execution": arm_execution,
+            "shutdown_method": arm.get("shutdown_method", "sigint" if mode == "stock" else "http"),
             "source_root": source_root, "source_attestation": source_attestation,
             "provenance": {"campaign_metadata": metadata, "observed_runtime_artifacts": runtime,
                            "compiler_observation": observation,
@@ -1098,8 +1127,11 @@ def run_server_comparison_capture(
             "full source provenance and work equivalence require verification",
             "replay activation, if applicable, requires separate admission",
         ],
-        "configuration": config, "model_sha256": binary_hash(model),
+        "configuration": config, "model_sha256": binary_hash(model) if model is not None else None,
         "arm_model_sha256": {name: binary_hash(arm["model"]) for name, arm in prepared.items() if arm["model"] != model},
+        # Each arm's served model and the cards it must execute on (a layout arm's own, else the shared ones).
+        "arm_models": {name: str(arm["model"]) for name, arm in prepared.items()},
+        "arm_expected_execution": {name: arm["expected_execution"] for name, arm in prepared.items()},
         "arm_provenance": {name: value["provenance"] for name, value in prepared.items()},
         # The varied variables of each arm: what differs between arms is visible here, not only in the configuration.
         "arm_variables": {name: {"environment": value["controls"], "settings": value["settings"]}
@@ -1134,7 +1166,7 @@ def run_server_comparison_capture(
                 bench_configs=config["bench_configs"], runner_root=runner_root,
                 required_metrics=metrics, repetitions=repetitions, stream_bench=config.get("stream_bench"),
                 shutdown_method=arm["shutdown_method"],
-                health_timeout_s=health_timeout_s, expected_execution=expected_execution,
+                health_timeout_s=health_timeout_s, expected_execution=arm["expected_execution"],
                 execution_evidence=execution_evidence,
             )
             summary["runs"].append(result)
