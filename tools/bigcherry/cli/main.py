@@ -19,6 +19,7 @@ from ..patch import catalog as patch_catalog
 from ..source import sources
 from ..release import pin as _release_pin
 from ..release.install import cmd_release_install
+from ..release import ci_bundle as _ci_bundle
 from ..release.patch_promote import cmd_patch_promote
 from ..tuning.engine_bench import cmd_engine_bench
 from . import engine_scope
@@ -894,6 +895,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     release_install_cmd.add_argument("--json", action="store_true", help=argparse.SUPPRESS)
     release_install_cmd.set_defaults(func=cmd_release_install)
+
+    _ci_bundle.add_parser(sub)
 
     replay_inspect_cmd = sub.add_parser(
         "replay-inspect",

@@ -1,0 +1,120 @@
+name: Radiance release bundle
+
+# Makes a bc-radiance-* GitHub release runnable: builds the tagged source in the ROCm 7.2.4 image, runs the card-free component
+# tests, packs the runtime (bin, radiance_home, runtime-prefix) into a verified bundle and attaches the archive, its checksum and
+# its receipt to the release. `bigcherry release-install <tag>` installs it on a lab host with the same ROCm version.
+#
+# Most radiance releases change only documentation or tooling, so the runtime is keyed on the git trees of engines/radiance and
+# config plus the image's ROCm version (tools/bigcherry/release/ci_bundle.py). A release whose key equals an earlier release's
+# key gets that bundle attached again instead of a build (about 30-55 minutes).
+#
+# Manual for now (workflow_dispatch with a tag); the release trigger comes after a lab install proves a bundle on hardware.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: bc-radiance-* release tag to attach a bundle to
+        type: string
+        required: true
+
+# the build workflow it calls pushes its image to ghcr, so the caller must allow packages: write
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: radiance-release-bundle-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      tag: ${{ steps.plan.outputs.tag }}
+      reuse: ${{ steps.plan.outputs.reuse }}
+    steps:
+      - name: Check the tag
+        id: tag
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -eu
+          printf '%s' "$TAG" | grep -Eq '^bc-radiance-[0-9]+\.[0-9]+\.[0-9]+$' || { echo "::error::not a bc-radiance release tag: $TAG" >&2; exit 1; }
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+          fetch-depth: 0
+      - name: Is the runtime already bundled?
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+          PYTHONPATH: tools
+        run: |
+          set -eu
+          if gh release view "$TAG" --json assets --jq '.assets[].name' | grep -q '\.receipt\.json$'; then
+            echo "::error::$TAG already has a runtime bundle" >&2; exit 1
+          fi
+          found=$(python3 -m bigcherry release-bundle "$TAG" --find-reusable)
+          echo "$found"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "reuse=$(printf '%s' "$found" | python3 -c 'import json,sys; print(json.load(sys.stdin)["reuse"] or "")')" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: plan
+    if: needs.plan.outputs.reuse == ''
+    uses: ./.github/workflows/radiance-build.yml
+    with:
+      source_ref: ${{ needs.plan.outputs.tag }}
+      bundle_tag: ${{ needs.plan.outputs.tag }}
+
+  attach-built:
+    needs: [plan, build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: radiance-release-bundle
+          path: bundle
+      - name: Attach the bundle to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.plan.outputs.tag }}
+        run: |
+          set -eu
+          cd bundle
+          sha256sum -c radiance-*.tar.gz.sha256
+          gh release upload "$TAG" radiance-*.tar.gz radiance-*.tar.gz.sha256 radiance-*.receipt.json --repo "$GITHUB_REPOSITORY"
+
+  attach-reused:
+    needs: plan
+    if: needs.plan.outputs.reuse != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - name: Attach the earlier bundle of the same runtime
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.plan.outputs.tag }}
+          FROM: ${{ needs.plan.outputs.reuse }}
+        run: |
+          set -eu
+          mkdir bundle && cd bundle
+          gh release download "$FROM" --repo "$GITHUB_REPOSITORY" -p 'radiance-*.tar.gz' -p 'radiance-*.sha256' -p 'radiance-*.receipt.json'
+          sha256sum -c radiance-*.tar.gz.sha256
+          python3 - "$TAG" "$FROM" <<'PY'
+          import glob, json, sys
+          tag, source = sys.argv[1:3]
+          path = glob.glob("radiance-*.receipt.json")[0]
+          receipt = json.load(open(path))
+          receipt["reused_from"] = source          # same archive; release_tag stays the release that built it
+          json.dump(receipt, open(path, "w"), sort_keys=True, indent=1)
+          PY
+          gh release upload "$TAG" radiance-*.tar.gz radiance-*.tar.gz.sha256 radiance-*.receipt.json --repo "$GITHUB_REPOSITORY"
