@@ -227,7 +227,7 @@ jobs:
         run: |
           docker run --rm -e BUNDLE_TAG -v "$GITHUB_WORKSPACE:/src" -w /src '${{ needs.image.outputs.image }}' bash -euxo pipefail -c '
             git config --global --add safe.directory /src
-            PYTHONPATH=/src/tooling/tools python3 -m bigcherry release-bundle "$BUNDLE_TAG" --root /src --work /src/work --sdk /opt/rocm-7.2.4
+            PYTHONPATH=/src/tooling/tools python3 -m bigcherry --engine radiance release-bundle "$BUNDLE_TAG" --root /src --work /src/work --sdk /opt/rocm-7.2.4
           '
 
       - name: Hand on the runtime bundle
