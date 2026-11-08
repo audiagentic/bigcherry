@@ -47,6 +47,7 @@ METRICS = {
     "decode6_ms_per_step": ("lower", True),
     "sess8_ttft_s": ("lower", True),
     "sess8_ms_per_step": ("lower", True),
+    "sess8_warm_ms_per_step": ("lower", False),
     "long7_prefill_tps": ("higher", True),
     "long8_prefill_tps": ("higher", True),
     "long7_ms_per_step": ("lower", False),
@@ -330,8 +331,14 @@ def launch_metrics(launch: Path, workload: dict) -> tuple[dict, dict, dict]:
         raise ParityError(f"{launch}/sess8.json: no first (cold) round")
     value["sess8_ttft_s"] = cold[0]["aggregate"]["ttft_ms_p50"] / 1000.0
     detail["sess8_ttft_p50_s"] = [r["aggregate"]["ttft_ms_p50"] / 1000.0 for r in rounds]
-    steps = [_engine(r, "decode_ms_per_step", launch / "sess8.json") for r in rounds]
-    value["sess8_ms_per_step"], repeats["sess8_ms_per_step"] = statistics.fmean(steps), [steps]
+    # Gated: the cold round only. Later rounds hit the prefix cache to a varying degree, so a different number of the 8
+    # sessions decode together in each step (all 8 on a full hit: longer steps, several times the throughput); their
+    # ms/step is informational, never comparable across rounds or builds.
+    value["sess8_ms_per_step"] = _engine(cold[0], "decode_ms_per_step", launch / "sess8.json")
+    warm = [_engine(r, "decode_ms_per_step", launch / "sess8.json") for r in rounds if r.get("rep") != 0]
+    if warm:
+        value["sess8_warm_ms_per_step"] = statistics.fmean(warm)
+    detail["sess8_ms_per_step_rounds"] = [_engine(r, "decode_ms_per_step", launch / "sess8.json") for r in rounds]
 
     seeds = str(workload.get("LONG_SEEDS", " ".join(map(str, LONG_SEEDS)))).split()
     if tuple(int(x) for x in seeds) != LONG_SEEDS:

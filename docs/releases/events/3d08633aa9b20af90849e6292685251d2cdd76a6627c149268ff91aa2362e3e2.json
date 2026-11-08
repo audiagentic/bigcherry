@@ -1,0 +1,13 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261108_075328_the-flash-next-parity-check-no_2607",
+  "files": [
+    "tools/lab/radiance/flashnext_parity.py",
+    "docs/reference/engines/radiance/baselines/flashnext-4gpu-parity.json",
+    ".claude/skills/bump-radiance/SKILL.md"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Parity gates the 8-session decode step on the cold round only. Later rounds hit the prefix cache to a varying degree, so the number of sessions decoding together per step varies (all 8 on a full hit: ~2x longer steps, ~7x the throughput), which made sess8_ms_per_step mix concurrency levels and report a false +8.7% regression on the CI release (a same-session A/B of 23d0ef44c vs 1e1953270 showed identical cold rounds, 30.39 vs 30.38 ms). Later rounds are recorded as sess8_warm_ms_per_step (informational). v1.17.0 baseline regenerated. bump-radiance: confirm a compare failure with a same-session alternating A/B (old release via release-install) before calling it a regression.",
+  "timestamp-utc": "2026-11-08T07:53:28.941836Z",
+  "user-summary-candidate": "The Flash-Next parity check no longer reports false multi-session decode regressions caused by prefix-cache hits."
+}
