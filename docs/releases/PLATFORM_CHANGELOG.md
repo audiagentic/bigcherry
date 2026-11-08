@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.25.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.24.0...bc-platform-1.25.0) (2026-11-08)
+
+
+### New and changed
+
+* **release:** patch-promote releases radiance without waiting for a lab-staged bundle; CI bundles the published release ([#747](https://github.com/audiagentic/bigcherry/issues/747)) ([028f049](https://github.com/audiagentic/bigcherry/commit/028f049d9f5039b20ebfbdaf1fb330d9a7ec503e))
+* **release:** the bundle workflow prunes bundles beyond the newest 10 distinct runtimes (report-only until enabled) ([#755](https://github.com/audiagentic/bigcherry/issues/755)) ([80a1a95](https://github.com/audiagentic/bigcherry/commit/80a1a95be8e6680c45546eb8b626d3889c852007))
+
 ## [1.24.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.23.0...bc-platform-1.24.0) (2026-11-08)
 
 
