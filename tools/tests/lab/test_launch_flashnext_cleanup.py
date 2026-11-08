@@ -45,9 +45,13 @@ echo "helper $FAKE_ID manifest $manifest ${measuring:+measuring}" >> "$FAKE_HELP
 [ "${FAKE_FAIL_HELPER:-}" = "$FAKE_ID" ] && { echo "r3_moe_worker: cannot start" ; exit 1; }
 [ -f "$manifest" ] || { echo "r3_moe_worker: no manifest $manifest"; exit 2; }
 sleep "${FAKE_READY_DELAY:-0}"
-echo "r3_moe_worker: ready (helper $FAKE_ID)"
-echo "helper-ready $FAKE_ID $(date +%s.%N)" >> "$FAKE_TIMES"
-exec "$REAL_PYTHON" -c 'import signal, sys, time; signal.signal(signal.SIGINT, lambda *a: sys.exit(0)); signal.signal(signal.SIGTERM, lambda *a: sys.exit(0)); time.sleep(600)'
+# ready only once the signal handlers are in (a helper the launcher starts with & begins with SIGINT ignored; see the engine)
+exec "$REAL_PYTHON" -c '
+import signal, sys, time
+signal.signal(signal.SIGINT, lambda *a: sys.exit(0)); signal.signal(signal.SIGTERM, lambda *a: sys.exit(0))
+print("r3_moe_worker: ready (helper %s)" % sys.argv[1], flush=True)
+with open(sys.argv[2], "a") as f: f.write("helper-ready %s %.9f\n" % (sys.argv[1], time.time()))
+time.sleep(600)' "$FAKE_ID" "$FAKE_TIMES"
 """
 
 FAKE_ENGINE = r"""#!/bin/bash
@@ -62,8 +66,11 @@ done
 [ -n "$manifest" ] && port=$(sed -n 's/.*"port": *\([0-9]*\).*/\1/p' "$manifest")
 echo "engine-start ${plan:+measure} $(date +%s.%N)" >> "$FAKE_TIMES"
 if [ -n "$plan" ]; then
+  # A hanging measuring engine marks itself as started only once its signal handlers are in: a process started with & by the
+  # (non-interactive) launcher begins with SIGINT ignored, so a marker written before the handler let a test interrupt the
+  # launch while the engine still ignored the launcher's SIGINT, and the stop then waited out its 60 s grace (the -n 8 flake).
+  [ -n "${FAKE_MEASURE_HANG:-}" ] && exec "$REAL_PYTHON" -c 'import pathlib, signal, sys, time; signal.signal(signal.SIGINT, lambda *a: sys.exit(0)); signal.signal(signal.SIGTERM, lambda *a: sys.exit(0)); pathlib.Path(sys.argv[1]).touch(); time.sleep(600)' "$FAKE_MEASURING"
   touch "$FAKE_MEASURING"
-  [ -n "${FAKE_MEASURE_HANG:-}" ] && exec "$REAL_PYTHON" -c 'import signal, sys, time; signal.signal(signal.SIGINT, lambda *a: sys.exit(0)); signal.signal(signal.SIGTERM, lambda *a: sys.exit(0)); time.sleep(600)'
   [ -n "${FAKE_MEASURE_FAIL:-}" ] && exit 1
   echo '{"plan_version": 1}' > "$plan"; echo "radiance: --plan-memory: wrote $plan; engine start-up took 1536 MiB of MemAvailable; nothing loaded" >&2; exit 0
 fi

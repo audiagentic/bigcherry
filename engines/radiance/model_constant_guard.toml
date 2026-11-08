@@ -282,7 +282,7 @@ reason = "bounded route capacity, the request is refused above it"
 
 [[allow]]
 path = "engines/radiance/components/moe-remote/worker_selftest.h"
-anchor = "const LaneShape lane_shape{kHidden, kTopK, kActGroup, experts};   // passed to the kernels as an arg"
+anchor = "const LaneShape lane_shape{kHidden, kTopK, kActGroup, experts, 1u};   // passed to the kernels as an arg"
 category = "B"
 reason = "self-test fixture at Flash-Next's shape"
 

@@ -30,7 +30,7 @@ int route_selftest() {
                 for (uint32_t t = 0; t < rows; ++t)
                     for (uint32_t k = 0; k < kTopK; ++k)
                         routes[t * kTopK + k] = Route{(int32_t)t, (int32_t)(next() % experts), (uint16_t)(0x3f80u + k), (uint16_t)k};
-                const LaneShape lane_shape{kHidden, kTopK, kActGroup, experts};   // passed to the kernels as an argument
+                const LaneShape lane_shape{kHidden, kTopK, kActGroup, experts, 1u};   // passed to the kernels as an argument
                 std::vector<uint32_t> counts(experts, 0), excl(experts + 1, 0);
                 std::vector<std::vector<int32_t>> want(experts);
                 for (uint32_t i = 0; i < nr; ++i) {

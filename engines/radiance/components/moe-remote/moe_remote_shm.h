@@ -51,6 +51,17 @@ constexpr uint32_t slot_consumer(uint32_t slot, uint32_t world) { return slot % 
  * The consumer alternates by layer, so the ranks' links share the helper traffic (two XTX: half each); every rank derives
  * it from the layer it is given and the world, so the ranks always agree. A one-rank engine is its own consumer. */
 constexpr uint32_t consumer_of(uint32_t layer, uint32_t world) { return world ? layer % world : 0u; }
+/* The role of one routed (token, top-k slot) on one engine rank for one layer (RAD49), the single definition the publish
+ * kernel uses and the card-free exactly-once test (tp_exactly_once_test.cpp) checks: every rank counts the route's heat (so
+ * rank 0's histogram covers every layer, consumed by it or not) and masks a helper-owned route out of its local GEMMs (unless
+ * the shadow diagnostic keeps the local path); only the layer's consumer publishes it to the owning helper. */
+struct RouteRole {
+    bool count_heat, mask_local, publish;
+};
+constexpr RouteRole route_role(uint32_t layer, uint32_t rank, uint32_t world, bool in_range, bool helper_owned, bool shadow) {
+    return RouteRole{in_range, in_range && helper_owned && !shadow,
+                     in_range && helper_owned && consumer_of(layer, world) == rank};
+}
 /* The plane a slot writes for an output rank. Every reader and writer takes the index from here (the host layout, the device kernels
  * and the helper), so the convention lives in one place. A slot writes only its consumer's plane, [slot][slot_consumer]. */
 constexpr uint32_t result_index(uint32_t slot, uint32_t out_rank) { return slot * kMaxEngineRanks + out_rank; }
@@ -234,10 +245,12 @@ struct alignas(64) Request {
 static_assert(sizeof(Request) % 64 == 0);
 /* Both engine publisher and helper include this one definition; no older-version compatibility path. */
 static_assert(sizeof(Request) == 256, "Request layout changed: bump kVersion");
-/* The slot identity a request must carry (RAD49): its lane's slot, an engine width within the bound, and the consumer the
- * slot and the layer both name. Every reader (helper lanes, CPU reference, combine, replay) checks it the same way. */
-constexpr bool request_slot_valid(uint32_t slot, uint32_t world, uint32_t consumer, uint32_t layer, uint32_t lane_slot) {
-    return slot == lane_slot && slot < kMaxSlots && world >= 1 && world <= kMaxEngineRanks &&
+/* The slot identity a request must carry (RAD49): its lane's slot, the engine width the segment was made for
+ * (Header::rank_count, not merely a width the request agrees with itself on), and the consumer the slot and the layer both
+ * name. Every reader (helper lanes, CPU reference, combine, replay) checks it the same way. */
+constexpr bool request_slot_valid(uint32_t slot, uint32_t world, uint32_t consumer, uint32_t layer, uint32_t lane_slot,
+                                  uint32_t segment_world) {
+    return slot == lane_slot && slot < kMaxSlots && world >= 1 && world <= kMaxEngineRanks && world == segment_world &&
            consumer == slot_consumer(slot, world) && consumer == consumer_of(layer, world);
 }
 
@@ -284,6 +297,12 @@ inline bool acknowledge_lane_drain(LaneSignal& lane, uint64_t closure, Drain&& d
  * bit-identical to adding the rows on the engine (the sum is rounded to fp16, not bf16). `enabled` is set by helper 0 at
  * start; the engine asks only then. */
 constexpr uint32_t kCombineHelpers = kMaxHelpers;   /* the combine adds the rows of up to this many helpers */
+/* R3_MOE_WORKER_COMBINE's step shape (RAD49): the consumer asks helper 0 to combine a large-lane step only when helper 0 and at
+ * least one other helper have routes in it (a step owned by one helper alone, or by none, keeps the per-helper planes). The
+ * publish kernel then also needs CombineSignal::enabled and rows >= min_rows, read from host memory only after this. */
+constexpr bool combine_shape_wanted(bool asked, uint32_t helpers, uint32_t cls, bool helper0_routes, bool other_routes) {
+    return asked && helpers >= 2 && helpers <= kMaxHelpers && cls == kSmallClasses && helper0_routes && other_routes;
+}
 struct alignas(64) CombineSignal {
     uint32_t enabled;
     uint32_t min_rows;      /* steps with fewer rows keep the per-helper merge */
@@ -299,6 +318,13 @@ struct alignas(64) CombineSignal {
     uint32_t reserved[14];
 };
 static_assert(sizeof(CombineSignal) == 128);
+/* A consumer rank's combine is quiescent when every generation it issued was combined and its result consumed (the engine's
+ * helper-drain check, one consumer at a time). */
+inline bool combine_quiesced(const CombineSignal& c) {
+    const uint32_t request = __atomic_load_n(&c.request, __ATOMIC_ACQUIRE);
+    return !request || (__atomic_load_n(&c.done, __ATOMIC_ACQUIRE) == request &&
+                        __atomic_load_n(&c.result_consumed_generation, __ATOMIC_ACQUIRE) == request);
+}
 
 /* Engine-GPU consumption records, rank-local device memory (never mapped).
  * mailbox_add_finish_kernel updates them every layer without host traffic;

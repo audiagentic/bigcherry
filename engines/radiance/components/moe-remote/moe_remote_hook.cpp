@@ -334,13 +334,8 @@ bool helper_drained(uint64_t closure) {
     const Header* h = g.hdr;
     for (uint32_t lane = 0; lane < kLanes; ++lane)
         if (!lane_quiesced(h, lane, closure, served_lane(lane))) return false;
-    for (uint32_t r = 0; r < h->rank_count && r < kMaxEngineRanks; ++r) {
-        const CombineSignal& c = h->combine[r];
-        if (c.request &&
-            (load(&c.done) != load(&c.request) ||
-             load(&c.result_consumed_generation) != load(&c.request)))
-            return false;
-    }
+    for (uint32_t r = 0; r < h->rank_count && r < kMaxEngineRanks; ++r)
+        if (!combine_quiesced(h->combine[r])) return false;
     return true;
 }
 

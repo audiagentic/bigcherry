@@ -90,6 +90,12 @@ public:
         if (gemv_h2_) std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_GEMV_H2 on - packed f16 dot products in the FP8 decode GEMV, %d row(s) a block\n", gemv_h2_);
         return true;
     }
+    /* The engine width of the segment this runner serves (Header::rank_count), checked on every request at the lane boundary. */
+    bool set_engine_world(uint32_t world) {
+        if (world < 1 || world > r3::moe_shm::kMaxEngineRanks) return false;
+        lane_shape_.world = world;
+        return true;
+    }
     bool set_shape(const r3::moe_shm::LayoutShape& s) {
         if (!s.hidden || !s.top_k || s.top_k > r3::moe_shm::kMaxTopK || !s.act_group || s.hidden % 16 || s.hidden % s.act_group ||
             ((s.hidden / s.act_group) * 4) % 16 || s.hidden > kGemvMaxK) {
@@ -97,7 +103,7 @@ public:
             return false;
         }
         shape_ = s;
-        lane_shape_ = LaneShape{s.hidden, s.top_k, s.act_group, s.experts};
+        lane_shape_ = LaneShape{s.hidden, s.top_k, s.act_group, s.experts, lane_shape_.world};
         return true;
     }
     // Only --replay-sweep calls this method; production never reads RAD46

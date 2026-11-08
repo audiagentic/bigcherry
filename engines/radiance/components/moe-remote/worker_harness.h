@@ -255,7 +255,13 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
         munmap(map, lay.bytes);
         return 1;
     }
-    /* One full-width request: the helper never computes a TP slice (RAD49), whatever the engine's width. */
+    /* One full-width request: the helper never computes a TP slice (RAD49), whatever the engine's width. The compare
+     * segment is a one-rank segment, so the lanes check requests against world 1. */
+    if (!gpu.set_engine_world(h->rank_count)) {
+        std::fprintf(stderr, "r3_moe_worker: --compare segment engine width %u is invalid\n", h->rank_count);
+        munmap(map, lay.bytes);
+        return 1;
+    }
     std::fprintf(stderr, "r3_moe_worker: --compare one full-width request (physical slots=%u)\n", h->slot_count);
     r3::replay::LanePlan plan{};
     if (!r3::replay::lane_plan(classes.rows, classes.count, rows, nr, topk, &plan) ||

@@ -218,18 +218,19 @@ __global__ void mailbox_publish_kernel(
         for (uint32_t i = threadIdx.x; i < rows * top_k; i += blockDim.x) {
             const int32_t le = ids[i] - expert_base;
             const bool in_range = le >= 0 && (uint32_t)le < n_expert && (uint32_t)le < h->expert_count;
+            const bool owned = in_range && slot_map[(uint32_t)le] >= 0 &&
+                               r3_moe_owner_has(own, layer, (uint32_t)le, h->expert_count);
+            const RouteRole role = route_role(layer, rank, world, in_range, owned, shadow != 0u);
             /* R3_MOE_WORKER_HISTOGRAM: every route this step makes, owned or not, counted once (first slot), in LDS. */
-            if (heat && k == 0 && in_range && (uint32_t)le < kExperts) atomicAdd(&step_heat[(uint32_t)le], 1u);
-            if (!in_range || slot_map[(uint32_t)le] < 0 || !r3_moe_owner_has(own, layer, (uint32_t)le, h->expert_count))
-                continue;
-            if (consume) {
+            if (heat && k == 0 && role.count_heat && (uint32_t)le < kExperts) atomicAdd(&step_heat[(uint32_t)le], 1u);
+            if (role.publish) {
                 const uint32_t p = atomicAdd(&nr, 1u);
                 route[p].token = (int32_t)(i / top_k);
                 route[p].expert = le;
                 route[p].weight_bf16 = ew[i];
                 route[p].slot = (uint16_t)(i % top_k);
             }
-            if (!shadow) ids[i] = -1;
+            if (role.mask_local) ids[i] = -1;
         }
         __syncthreads();
         if (threadIdx.x == 0) step_nr[k] = nr;
@@ -264,7 +265,7 @@ __global__ void mailbox_publish_kernel(
         bool others = false;
         for (uint32_t k = 1; k < helpers; ++k) others |= step_nr[k] != 0u;
         CombineSignal& cs = h->combine[rank];   /* this rank's own: it is the only engine writer */
-        if (combine && helpers >= 2 && helpers <= kCombineHelpers && cls == kSmallClasses && step_nr[0] && others &&
+        if (combine_shape_wanted(combine != 0u, helpers, cls, step_nr[0] != 0u, others) &&
             load_sys_acq(&cs.enabled) && rows >= cs.min_rows) {
             uint32_t g = cs.request + 1u;
             if (g == 0) g = 1;

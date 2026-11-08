@@ -264,6 +264,9 @@ int main(int argc, char** argv) {
                      helper_index, helper_count, engine_ranks, kMaxHelpers, kMaxEngineRanks, kMaxSlots);
         return 2;
     }
+    /* Every lane checks each request's world against the segment's (RAD49); compare mode serves a one-rank segment and
+     * sets its own (worker_harness.h). */
+    if (gpu && !gpu->set_engine_world(engine_ranks)) return 2;
     uint64_t budgets[r3::worker_share::kMaxHelperShares] = {};
     for (uint32_t i = 0; i < cfg.helper_count; ++i)
         budgets[i] = settings.budgets_mib.at(i) * 1024ull * 1024ull;
@@ -418,7 +421,8 @@ int main(int argc, char** argv) {
             struct timespec ts{1, 0};
             (void)::syscall(SYS_futex, &h->helper_count, FUTEX_WAIT, seen, &ts, nullptr, 0);
         }
-        bool same_lanes = load(&h->helper_count) == helper_count && valid(h, lay.bytes, shape) && h->small_class_count == lane_classes.count;
+        bool same_lanes = load(&h->helper_count) == helper_count && valid(h, lay.bytes, shape) && h->rank_count == engine_ranks &&
+                          h->small_class_count == lane_classes.count;
         for (uint32_t c = 0; same_lanes && c < lane_classes.count; ++c)
             same_lanes = h->small_class_rows[c] == lane_classes.rows[c];
         if (!same_lanes) {
@@ -633,8 +637,10 @@ int main(int argc, char** argv) {
         std::unique_ptr<r3::policy::Driver> policy_driver;
         if (helper_index==0 && cfg.policy.enabled) {
             const char* histogram_prefix=settings.handoff.histogram.c_str();
-            /* Behind TP (RAD49) every rank counts every route of a step (the routes are replicated), so rank 0's
-             * histogram covers every routed row, and a move is a full-width expert like the ones the helpers store. */
+            /* Behind TP (RAD49) every rank counts every route of a handed-off pass (the routes are replicated), so rank 0's
+             * histogram covers the layers rank 1 consumes too (tp_exactly_once_test), and a move is a full-width expert like
+             * the ones the helpers store. Coverage is of the passes the remote row gate admits: the histogram is counted by
+             * the publish op, which runs only on those. */
             if (!histogram_prefix || !*histogram_prefix || !gpu || !gpu->expert_stride()) {
                 std::fprintf(stderr,
                     "r3_moe_worker: R3_MOE_POLICY_ENABLE needs an exact expert stride and R3_MOE_WORKER_HISTOGRAM prefix\n");

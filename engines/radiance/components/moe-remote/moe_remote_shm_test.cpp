@@ -227,13 +227,28 @@ static void Rad49Slots_HelperConsumerAxes() {
     }
     check(combine_index(0) == result_index(0, 1) && combine_index(1) == result_index(1, 0),
           "combine planes: [0][1] (one rank and rank 0), [1][0] (rank 1)");
-    check(request_slot_valid(3, 2, 1, 5, 3), "helper 1's slot for rank 1, odd layer");
-    check(!request_slot_valid(3, 2, 1, 4, 3), "an even layer is rank 0's");
-    check(!request_slot_valid(3, 2, 0, 4, 3), "a consumer that is not its slot's");
-    check(!request_slot_valid(2, 2, 0, 4, 3), "a request in another lane's slot");
-    check(!request_slot_valid(1, 1, 0, 0, 1) || slot_consumer(1, 1) == 0, "a one-rank slot is consumer 0");
-    check(!request_slot_valid(0, 3, 0, 0, 0) && !request_slot_valid(0, 0, 0, 0, 0), "engine width outside the bound");
-    check(!request_slot_valid(kMaxSlots, 1, 0, 0, kMaxSlots), "slot outside the bound");
+    check(request_slot_valid(3, 2, 1, 5, 3, 2), "helper 1's slot for rank 1, odd layer");
+    check(!request_slot_valid(3, 2, 1, 4, 3, 2), "an even layer is rank 0's");
+    check(!request_slot_valid(3, 2, 0, 4, 3, 2), "a consumer that is not its slot's");
+    check(!request_slot_valid(2, 2, 0, 4, 3, 2), "a request in another lane's slot");
+    check(request_slot_valid(1, 1, 0, 0, 1, 1) && slot_consumer(1, 1) == 0, "a one-rank slot is consumer 0");
+    check(!request_slot_valid(0, 3, 0, 0, 0, 3) && !request_slot_valid(0, 0, 0, 0, 0, 0), "engine width outside the bound");
+    check(!request_slot_valid(kMaxSlots, 1, 0, 0, kMaxSlots, 1), "slot outside the bound");
+    {   /* Lane boundary (PR #771 review): a TP2 segment refuses a self-consistent TP1 request, and a TP1 segment a TP2 one. */
+        const LayoutShape shape{128, 2, 3, 8, 128, 64};
+        Layout l{};
+        check(layout_for(shape, 2, slots_for(2, 2), &l), "TP2 two-helper layout");
+        std::vector<uint8_t> seg((size_t)l.bytes);
+        check(init(seg.data(), 2, shape, 2, 2), "TP2 two-helper segment");
+        const auto* h = reinterpret_cast<const Header*>(seg.data());
+        check(h->rank_count == 2, "the segment records its engine width");
+        check(request_slot_valid(0, 1, 0, 0, 0, 1), "slot 0 / world 1 / consumer 0 / layer 0 agrees with itself");
+        check(!request_slot_valid(0, 1, 0, 0, 0, h->rank_count), "but a TP2 segment refuses it");
+        check(!request_slot_valid(1, 1, 0, 0, 1, h->rank_count), "and helper 1's TP1-shaped request too");
+        check(request_slot_valid(0, 2, 0, 0, 0, h->rank_count) && request_slot_valid(3, 2, 1, 1, 3, h->rank_count),
+              "the segment's own width is accepted for both consumers");
+        check(!request_slot_valid(1, 2, 1, 1, 1, 1), "a TP1 segment refuses a TP2 request");
+    }
     std::puts("Rad49Slots_HelperConsumerAxes: PASS");
 }
 
@@ -345,7 +360,7 @@ int main() {
             if (seen < 1) futex_wait(&h->publish_sequence, seen);
         }
         check(q->layer == 7 && q->slot == 1 && q->consumer == 1 && q->rows == 1 && q->route_count == 1 &&
-              request_slot_valid(q->slot, q->world, q->consumer, q->layer, 1), "q->layer == 7, slot 1 for consumer 1");
+              request_slot_valid(q->slot, q->world, q->consumer, q->layer, 1, h->rank_count), "q->layer == 7, slot 1 for consumer 1");
         const Route* r = ptr<Route>(m, q->route_offset);
         check(r[0].token == 0 && r[0].expert == 23 && r[0].weight_bf16 == 0x3f80 && r[0].slot == 7,
               "route payload preserves token/expert/weight/top-k slot");

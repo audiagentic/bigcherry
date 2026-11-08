@@ -187,6 +187,158 @@ static void publisher_shaped_combine(uint32_t helpers, uint32_t world, uint32_t 
     check(munmap(map, layout.bytes) == 0, "publisher unmap");
 }
 
+// PR #771 review: TP2 combine transitions for both consumers. The step shape (combine_shape_wanted, the publish kernel's own
+// predicate) decides combined against per-helper planes for helper 0 only / helper 1 only / both / neither, around the lane and
+// chunk boundaries; the combined steps run through combine_step on one segment with distinct sequences and generations per
+// consumer; a consumer's outstanding combined work blocks quiescence (combine_quiesced, the hook's drain check) and an epoch
+// change refuses the combine before any chunk is published.
+static void tp2_combine_transitions() {
+    using namespace r3::moe_shm;
+    constexpr uint32_t world = 2, helpers = 2, max_rows = 2 * kCombineChunkRows + 64;
+    const LayoutShape shape{128, 2, 3, max_rows, 128, 64};
+    Layout layout{};
+    check(layout_for(shape, 2, slots_for(helpers, world), &layout), "tp2 transitions layout");
+    void* map = mmap(nullptr, layout.bytes, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    check(map != MAP_FAILED && init(map, 2, shape, helpers, world), "tp2 transitions init");
+    auto* h = static_cast<Header*>(map);
+    h->helper_count = helpers;
+    h->small_class_count = 2; h->small_class_rows[0] = 16; h->small_class_rows[1] = 32;
+    auto* ctrl = placement_control(map);
+    ctrl->expected_ranks = 3u;
+    for (uint32_t k = 0; k < helpers; ++k) check(r3::epoch::mark_bootstrap_filtered(map, k), "tp2 bootstrap filtered");
+    r3::epoch::SharedTransport bootstrap(map);
+    check(bootstrap.seal_bootstrap(), "tp2 bootstrap sealed");
+    constexpr uint32_t min_rows = 256;   /* the setting's default (component.toml) */
+    for (uint32_t c = 0; c < world; ++c) { h->combine[c].enabled = 1; h->combine[c].min_rows = min_rows; }
+
+    /* 1. the decision: only a large-lane step with routes on helper 0 AND helper 1, of at least min_rows, is combined */
+    for (uint32_t rows : {16u, 17u, 32u, 33u, 255u, 256u, 257u})
+        for (uint32_t part = 0; part < 4; ++part) {   /* bit 0: helper 0 has routes, bit 1: helper 1 has routes */
+            const uint32_t cls = step_class(h, rows);
+            const bool combined = combine_shape_wanted(true, helpers, cls, part & 1u, part & 2u) &&
+                                  h->combine[0].enabled && rows >= h->combine[0].min_rows;
+            check(combined == (part == 3u && rows >= min_rows), "combined only with both helpers' routes on a large step");
+            check(!combine_shape_wanted(false, helpers, cls, true, true), "never without R3_MOE_WORKER_COMBINE");
+            if (rows <= 16) check(cls == 0, "16 rows take the 16-row small lane");
+            else if (rows <= 32) check(cls == 1, "17..32 rows take the 32-row small lane");
+            else check(cls == kSmallClasses, "33+ rows take the large lane");
+        }
+
+    /* 2. combined and non-combined steps for both consumers on one segment */
+    constexpr uint16_t one = 0x3f80, two = 0x4000;                        /* bf16 1 and 2 */
+    constexpr uint16_t f16_for[4] = {0xbeef, 0x3c00, 0x4000, 0x4200};     /* fill, 1, 2, 3 */
+    CombinePool pool(2);
+    std::vector<uint8_t> mask(h->max_rows);
+    CombineStats stats{};
+    auto stage = [&](uint32_t consumer, uint32_t rows, uint32_t part, uint32_t gen, uint32_t seq_base,
+                     std::vector<uint8_t>* expected) -> Request* {
+        CombineSignal& cs = h->combine[consumer];
+        CombineChunks& ch = h->chunks[consumer];
+        const uint32_t layer = consumer;   /* consumer_of(layer, 2) == consumer */
+        expected->assign(rows, 0);
+        Request* q0 = nullptr;
+        for (uint32_t k = 0; k < helpers; ++k) {
+            const uint32_t slot = slot_of(k, consumer, world), lane = lane_of(slot, kSmallClasses);
+            const uint32_t seq = seq_base + k;
+            cs.lane[k] = lane;
+            if (!(part & (1u << k))) { cs.seq[k] = 0; continue; }
+            cs.seq[k] = seq;
+            Request* q = lane_request(map, lane, seq);
+            std::memset(q, 0, sizeof(*q));
+            q->sequence = seq; q->layer = layer; q->slot = slot; q->world = world; q->consumer = consumer;
+            q->rows = rows; q->hidden = h->hidden; q->row_base = 3;
+            q->route_offset = h->route_offset[slot]; q->activation_offset = h->activation_offset[slot];
+            q->activation_stride = h->hidden * sizeof(uint16_t); q->activation_q_stride = h->hidden;
+            q->activation_s_stride = h->hidden / shape.act_group * sizeof(float);
+            q->placement_epoch = ctrl->active_epoch; q->generation_slot = ctrl->active_slot;
+            q->combine_generation = k == 0 ? gen : 0;
+            auto* routes = ptr<Route>(map, q->route_offset);
+            uint32_t n = 0;
+            for (uint32_t t = 0; t < rows; ++t)   /* t%3: 0 helper 0 only, 1 helper 1 only, 2 both */
+                if ((k == 0 && t % 3 != 1) || (k == 1 && t % 3 != 0)) {
+                    routes[n++] = Route{(int32_t)t, (int32_t)k, 0x3f80, (uint16_t)k};
+                    (*expected)[t] |= uint8_t(1u << k);
+                }
+            q->route_count = n;
+            std::fill_n(ptr<uint16_t>(map, h->result_offset[result_index(slot, consumer)]), (size_t)rows * h->hidden,
+                        k == 0 ? one : two);
+            for (uint32_t c = 0; c * kCombineChunkRows < rows; ++c) ch.seq[k][c] = seq;
+            h->lane[lane].request_sequence = seq;
+            h->lane[lane].done_sequence = seq;
+            if (k == 0) q0 = q;
+        }
+        cs.rows = rows;
+        if (gen) cs.request = gen;
+        return q0;
+    };
+    auto out_of = [&](uint32_t consumer) { return ptr<uint16_t>(map, h->result_offset[combine_index(consumer)]); };
+    for (uint32_t c = 0; c < world; ++c) std::fill_n(out_of(c), (size_t)max_rows * h->hidden, f16_for[0]);
+    const uint32_t gen_of[2] = {7, 3}, seq_of[2] = {5, 41};   /* distinct per consumer */
+    for (uint32_t rows : {255u, 256u, 257u}) {
+        for (uint32_t consumer = 0; consumer < world; ++consumer) {
+            const uint32_t other = 1u - consumer;
+            const CombineSignal before_other = h->combine[other];
+            const uint32_t other_chunk0 = h->chunks[other].done[0];
+            for (uint32_t part = 0; part < 4; ++part) {
+                const bool combined = combine_shape_wanted(true, helpers, step_class(h, rows), part & 1u, part & 2u) &&
+                                      rows >= min_rows;
+                const uint32_t gen = combined ? gen_of[consumer] + rows : 0u;
+                const uint32_t done_before = h->combine[consumer].done;
+                std::vector<uint8_t> expected;
+                Request* q0 = stage(consumer, rows, part, gen, seq_of[consumer] + rows, &expected);
+                if (!q0) {   /* helper 1 only, or neither: no helper-0 request, nothing for helper 0 to combine */
+                    check(!combined, "a step without helper 0's routes is never combined");
+                    check(h->combine[consumer].done == done_before, "no combine generation without helper 0");
+                    continue;
+                }
+                std::fill_n(out_of(consumer), (size_t)rows * h->hidden, f16_for[0]);
+                check(combine_step(map, q0, helpers, &pool, &mask, &stats), "combine_step on a staged step");
+                if (!combined) {   /* helper 0 only: the per-helper plane path, combine_step leaves everything alone */
+                    check(h->combine[consumer].done == done_before && out_of(consumer)[0] == f16_for[0],
+                          "a non-combined step writes no combine words and no combined plane");
+                    continue;
+                }
+                check(h->combine[consumer].done == gen, "the consumer's own generation is published");
+                for (uint32_t c = 0; c * kCombineChunkRows < rows; ++c)
+                    check(h->chunks[consumer].done[c] == gen, "every chunk of the consumer's step is published");
+                for (uint32_t t = 0; t < rows; ++t)
+                    check(out_of(consumer)[(size_t)t * h->hidden] == f16_for[expected[t]] &&
+                          out_of(consumer)[(size_t)t * h->hidden + h->hidden - 1] == f16_for[expected[t]],
+                          "the combined row of each token is its helpers' sum (1, 2 or 3)");
+                check(h->combine[other].done == before_other.done && h->combine[other].request == before_other.request &&
+                      h->chunks[other].done[0] == other_chunk0, "the other consumer's combine words are untouched");
+            }
+        }
+    }
+
+    /* 3. drain: a consumer whose combined result is not yet consumed keeps the engine from quiescing; the other does not */
+    for (uint32_t c = 0; c < world; ++c) h->combine[c].result_consumed_generation = h->combine[c].request;
+    check(combine_quiesced(h->combine[0]) && combine_quiesced(h->combine[1]), "consumed combines are quiescent");
+    h->combine[1].result_consumed_generation = h->combine[1].request - 1u;
+    check(combine_quiesced(h->combine[0]) && !combine_quiesced(h->combine[1]),
+          "consumer 1's unconsumed combined result blocks quiescence, consumer 0's state does not hide it");
+    h->combine[1].result_consumed_generation = h->combine[1].request;
+    const uint32_t done1 = h->combine[1].done;
+    h->combine[1].done = done1 - 1u;
+    check(!combine_quiesced(h->combine[1]), "an uncombined generation blocks quiescence");
+    h->combine[1].done = done1;
+
+    /* 4. epoch transition with combined work outstanding: the staged step's epoch is no longer active, so the combine is
+     * refused before any chunk is published, and the outstanding generation stays unquiesced (no completion is invented) */
+    {
+        std::vector<uint8_t> expected;
+        const uint32_t gen = 99;
+        Request* q0 = stage(1, 300, 3u, gen, 200, &expected);
+        h->chunks[1].done[0] = 0;
+        ctrl->active_epoch += 1;
+        check(!combine_step(map, q0, helpers, &pool, &mask, &stats), "a combine of the previous epoch is refused");
+        check(h->combine[1].done != gen && h->chunks[1].done[0] == 0, "no chunk and no done for the refused combine");
+        check(!combine_quiesced(h->combine[1]), "the outstanding combined generation keeps the drain open");
+        ctrl->active_epoch -= 1;
+    }
+    check(munmap(map, layout.bytes) == 0, "tp2 transitions unmap");
+}
+
 int main() {
     publisher_shaped_combine(2, 1, 0, false);
     publisher_shaped_combine(3, 1, 0, false);
@@ -194,6 +346,7 @@ int main() {
     /* RAD49: two helpers behind a TP2 engine, each consumer rank with its own slots, signal, chunks and plane. */
     publisher_shaped_combine(2, 2, 0, false);
     publisher_shaped_combine(2, 2, 1, false);
+    tp2_combine_transitions();
     using namespace r3::moe_shm;
     const LayoutShape shape{128,2,3,8,128,64};
     Layout layout{};
