@@ -168,3 +168,5 @@ Do not claim CPU BAR push is faster without the complete comparison.
   Lease command is now available, but RAD49 holds the exclusive GPU lease.
   Hardware Gates 1 and 2 remain unrun; no performance or coherence claims.
 - 2026-11-08T22:27:00+00:00 (updated-by): Added model of already-overlapped CPU combine and GPU pull, 10 more card-free tests, host-only wakeup probe and GPU canary/IPC/transfer microbenchmark binaries. 23 Python tests pass; no GPU run. Actual serving integration is described in new pending RAD51, blocked by these gates.
+
+- 2026-11-08T23:50:00+00:00 (updated-by): Checked all four GPUs idle, acquired the exclusive GPU lease and inspected ROCm devices/pools. The remote command policy rejected running the separately compiled `pool_inventory` executable. No BAR or GPU canary ran. Released the lease promptly. Gate 1 remains unverified; explicit executable allowlisting is required.
