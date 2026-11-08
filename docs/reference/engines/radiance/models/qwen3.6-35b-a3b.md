@@ -4,8 +4,8 @@ The 34.6 GiB FP8 MoE container routes eight of 256 experts and uses host-tiered 
 
 ## Current pin
 
-Radiance v1.16.0 is pinned as of 3 November 2026. Fresh qualified prefill throughput (tokens/s), aggregate client output throughput (tokens/s), aggregate engine decode throughput (tokens/s), and a like-for-like unmodified-stock comparison are unavailable for this model on the current pin. No previous-version result is presented as a current measurement.
+The current upstream pin is Radiance v1.17.0. Fresh qualified prefill throughput (tokens/s), aggregate client output throughput (tokens/s), aggregate engine decode throughput (tokens/s), and a like-for-like unmodified-stock comparison are unavailable for this model on the current pin. No previous-version result is presented as a current measurement.
 
 ## Configuration and limits
 
-See the [archived v1.14.0 measurements](../../../../archive/radiance/v1.14-model-results/qwen3.6-35b-a3b.md) for model quantisation, hardware layout, prompt, stream count, context, dates, metric type and quality limitations. Those historical results are not evidence of v1.16.0 performance. The [Radiance overview](../README.md) describes the current implementation.
+See the [archived v1.14.0 measurements](../../../../archive/radiance/v1.14-model-results/qwen3.6-35b-a3b.md) for model quantisation, hardware layout, prompt, stream count, context, dates, metric type and quality limitations. Those historical results are not evidence of v1.17.0 performance. The [Radiance overview](../README.md) describes the current implementation.
