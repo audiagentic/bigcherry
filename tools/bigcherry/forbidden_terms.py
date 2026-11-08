@@ -39,6 +39,10 @@ GENERIC = (
         r"-----BEGIN (?:RSA |OPENSSH |EC |DSA )?PRIVATE KEY-----")),
     ("local build or run path", re.compile(
         r"/work/bigcherry/(?:builds|runs)/[A-Za-z0-9]")),
+    # The agent container's own roots (AGENTS.md): work root, model store, development tree, account and team folders.
+    ("container work path", re.compile(
+        r"/work/(?:bigcherry|models|development)/[A-Za-z0-9]|/(?:accounts|instances)/[a-z][a-z0-9_-]*/")),
+    ("absolute srv path", re.compile(r"(?<![A-Za-z0-9_])/srv/(?!example)[A-Za-z0-9]")),
     ("absolute mount path", re.compile(r"/mnt/[A-Za-z0-9]")),
     ("absolute home path", re.compile(r"/home/[a-z][a-z0-9_-]*/")),
     ("drive-letter path", re.compile(r"\b[A-Za-z]:\\\\?[A-Za-z]{2,}")),

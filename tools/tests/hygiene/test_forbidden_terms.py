@@ -54,6 +54,16 @@ class ForbiddenTermsTests(unittest.TestCase):
         labels = sorted(label for _, _, label in ft.findings(self.root, staged=True))
         self.assertEqual(["absolute mount path", "private IPv4 address"], labels)
 
+    def test_container_and_srv_paths_are_reported(self) -> None:
+        # Built from parts so this file holds no literal container path of its own.
+        work = "/" + "work" + "/models/x"
+        team = "/" + "instances" + "/a-1/f"
+        srv = "/" + "srv" + "/data"
+        example = "/" + "srv" + "/example/data"
+        self._stage("docs/a.md", f"model {work}\nteam {team}\nroot {srv}\nok {example}\n")
+        labels = sorted(label for _, _, label in ft.findings(self.root, staged=True))
+        self.assertEqual(["absolute srv path", "container work path", "container work path"], labels)
+
     def test_allowlisted_phrase_containing_a_term_is_not_reported(self) -> None:
         os.environ["BIGCHERRY_FORBIDDEN_TERMS"] = "gpu_host"
         (self.root / "config" / "forbidden-terms-allow.txt").write_text(
