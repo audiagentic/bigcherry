@@ -95,8 +95,10 @@ The counts are exact per (parent, rank):
   2^32 publications by one parent on one rank, far beyond passes x layers x
   helpers.
 * Ranks count independently in their own rings, and each rank's lanes are its
-  own (a two-rank engine uses its rank slot; several helpers serve only a
-  one-rank engine), so the lane records never race across ranks.
+  own (a request slot is one (helper, rank) pair, slot_of(helper, rank, world);
+  only a layer's consumer rank publishes, and a rank that is not the consumer
+  publishes and consumes nothing for that layer, so its stamp stays 0 == 0),
+  so the lane records never race across ranks.
 * A stale host stamp (an older parent of the same slot, or a rank that never
   sealed) has a different ticket_id and never proves a newer parent; a
   sealed stamp with an unconsumed request keeps its parent pending.

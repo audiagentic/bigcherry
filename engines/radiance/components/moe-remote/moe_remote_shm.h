@@ -17,33 +17,59 @@
 namespace r3::moe_shm {
 
 constexpr uint64_t kMagic = 0x31454f4d33485253ull; /* "SRH3MOE1": reject unrelated/stale shm. */
-constexpr uint32_t kVersion = 24;  /* continuous helper service slots; no v23 compatibility */
+constexpr uint32_t kVersion = 25;  /* RAD49: request slots (helper, consumer rank), full-width-once helper rows, per-rank combine; no v24 compatibility */
 constexpr uint32_t kPage = 4096;
 /* One existing helper segment-attach/startup window, shared by helper
  * helper publication/filter sealing and the engine's first rank bitmap upload. */
 constexpr int kStartupWaitSeconds = 1800;
 /* R3_MOE_WORKER_COMBINE: first element of a combined fp16 row the combiner could not hold in fp16 range (a NaN payload
- * no arithmetic produces; a real NaN converts to 0x7E00); the engine then reads that row from the two helper planes. */
+ * no arithmetic produces; a real NaN converts to 0x7E00); the engine then reads that row from the helper planes. */
 constexpr uint16_t kCombineFallback = 0x7E01;
-/* kMaxRanks used to be one constant for three different things (RAD23): the engine's TP ranks, the helpers, and the request slots the
- * two are aliased onto (a one-rank engine with two helpers serves helper h from slot h). They are named apart so each can move on its own;
- * the engine ranks stay 2 (Flash-Next: TP=2, or one rank and two helpers); helpers and slots are bounds, and a segment is laid out for the
- * number it was made with (Header::slot_count): a segment for two slots is the layout it was before, plus the larger lane ring. */
-constexpr uint32_t kMaxEngineRanks = 2;  /* engine TP ranks: Request::rank_count, RankState, the stored weight slices */
+/* Three axes (RAD23, RAD49): the engine's TP ranks, the helpers, and the request slots. A slot is one (helper, consumer
+ * rank) pair: slot = helper * world + consumer, for every engine width, so one helper behind a TP2 engine uses slots 0
+ * and 1 (one a rank) and two helpers behind a one-rank engine use slots 0 and 1 (one a helper), as before, and two helpers
+ * behind TP2 use slots 0..3. Every slot has exactly one producer (its helper) and one consumer (its rank), so a lane's
+ * sequence counter, its consumed record and its result plane each have one writer. A segment is laid out for the slots
+ * it was made with (Header::slot_count = helpers * world). */
+constexpr uint32_t kMaxEngineRanks = 2;  /* engine TP ranks: Header::rank_count, Request::world, RankState */
 constexpr uint32_t kMaxHelpers = 4;      /* helper processes, helper_pid / helper_start, helper_count */
-constexpr uint32_t kMaxSlots = 4;        /* request slots: route / activation staging, lanes, published flags; max(engine ranks, helpers) */
+constexpr uint32_t kMaxSlots = 4;        /* request slots: helpers * engine ranks, at most */
 static_assert(kMaxSlots >= kMaxEngineRanks && kMaxSlots >= kMaxHelpers, "a slot is needed for every engine rank and every helper");
-constexpr uint32_t kResultPlanes = kMaxSlots * kMaxEngineRanks;  /* result planes at the bound: [producing slot][output rank] */
-constexpr uint32_t kLegacySlots = 2;     /* the slots of every segment made before RAD23, and the least a segment has: one a TP rank, or one a helper */
-/* Request slots a segment needs for this many helpers: a helper is served from the slot of its index, and a single helper serves every
- * engine rank's slot, so never fewer than the engine ranks. */
-constexpr uint32_t slots_for(uint32_t helpers) { return helpers > kMaxEngineRanks ? helpers : kMaxEngineRanks; }
+constexpr uint32_t kResultPlanes = kMaxSlots * kMaxEngineRanks;  /* result planes at the bound: [slot][output rank] */
+/* Request slots a segment needs: one per (helper, engine rank). */
+constexpr uint32_t slots_for(uint32_t helpers, uint32_t world) { return helpers * world; }
+/* Whether a helper count fits the slot bound behind an engine of this width. */
+constexpr bool slots_fit(uint32_t helpers, uint32_t world) {
+    return helpers >= 1 && helpers <= kMaxHelpers && world >= 1 && world <= kMaxEngineRanks && helpers * world <= kMaxSlots;
+}
+constexpr uint32_t slot_of(uint32_t helper, uint32_t consumer, uint32_t world) { return helper * world + consumer; }
+/* A one-rank engine (world 1) is the common case: these then cost no division (they run in the helper lane kernels). */
+constexpr uint32_t slot_helper(uint32_t slot, uint32_t world) { return world == 1u ? slot : slot / world; }
+constexpr uint32_t slot_consumer(uint32_t slot, uint32_t world) { return world == 1u ? 0u : slot % world; }
+/* FULL WIDTH ONCE (RAD49): the helper computes every routed expert it owns at the full intermediate width, and ONE engine
+ * rank a layer stages the activations, publishes, waits and adds the helper rows; the other ranks mask the same routes out
+ * of their local GEMMs and add nothing for them, so the TP all-reduce that follows sums every helper row exactly once.
+ * The consumer alternates by layer, so the ranks' links share the helper traffic (two XTX: half each); every rank derives
+ * it from the layer it is given and the world, so the ranks always agree. A one-rank engine is its own consumer. */
+constexpr uint32_t consumer_of(uint32_t layer, uint32_t world) { return world > 1u ? layer % world : 0u; }
+/* The role of one routed (token, top-k slot) on one engine rank for one layer (RAD49), the single definition the publish
+ * kernel uses and the card-free exactly-once test (tp_exactly_once_test.cpp) checks: every rank counts the route's heat (so
+ * rank 0's histogram covers every layer, consumed by it or not) and masks a helper-owned route out of its local GEMMs (unless
+ * the shadow diagnostic keeps the local path); only the layer's consumer publishes it to the owning helper. */
+struct RouteRole {
+    bool count_heat, mask_local, publish;
+};
+/* `consumer`: this rank is the layer's consumer, consumer_of(layer, world) == rank, decided once a pass (the publish kernel's
+ * route loop runs rows x top-k x helpers times on one block, so nothing per route may cost more than the route itself). */
+constexpr RouteRole route_role(bool consumer, bool in_range, bool helper_owned, bool shadow) {
+    return RouteRole{in_range, in_range && helper_owned && !shadow, in_range && helper_owned && consumer};
+}
 /* The plane a slot writes for an output rank. Every reader and writer takes the index from here (the host layout, the device kernels
- * and the helper), so the convention lives in one place. */
+ * and the helper), so the convention lives in one place. A slot writes only its consumer's plane, [slot][slot_consumer]. */
 constexpr uint32_t result_index(uint32_t slot, uint32_t out_rank) { return slot * kMaxEngineRanks + out_rank; }
-/* The engine rank whose output a request of this slot is for: its own slot when the engine has several ranks (each rank is its own slot), rank 0
- * when one engine rank is served by several helpers (the slots are then the helpers and every one writes rank 0's output, in its own plane). */
-constexpr uint32_t out_rank_of(uint32_t slot, uint32_t world) { return world > 1 ? slot : 0; }
+/* R3_MOE_WORKER_COMBINE: the plane helper 0 writes the combined fp16 rows of a consumer rank into: the unused output-rank
+ * plane of helper 0's slot for that consumer ([0][1] for a one-rank engine; [0][1] and [1][0] behind TP2). */
+constexpr uint32_t combine_index(uint32_t consumer) { return result_index(consumer, (consumer + 1u) % kMaxEngineRanks); }
 constexpr uint32_t kMaxLayers = 128;     /* protocol layer bound */
 /* Lanes a producer rank (RAD12): up to kSmallClasses small lanes, each pre-queued by the helper at its own fixed row
  * count (Header::small_class_rows, ascending; a step goes to the first class that fits its rows), and one large lane
@@ -185,8 +211,8 @@ struct alignas(64) Request {
     uint32_t completion_sequence;  /* helper GPU completion stamp; engine waits for exact sequence. */
     int32_t status;                /* 0 on success, negative errno-style protocol/helper error. */
     uint32_t layer;                /* chooses the expert group in the .rad container. */
-    uint32_t rank;                 /* rank whose TP slice this helper must compute. */
-    uint32_t rank_count;           /* carried per request so a mismatched engine is rejected. */
+    uint32_t slot;                 /* request slot, slot_of(helper, consumer, world): the lane's slot (lane % kMaxSlots). */
+    uint32_t world;                /* engine TP ranks, carried per request so a mismatched engine is rejected. */
     uint32_t rows;                 /* number of activation/result rows in this pass. */
     uint32_t hidden;               /* must be 2560; explicit so ABI/model mismatch fails closed. */
     uint32_t route_count;          /* number of Route records valid at route_offset. */
@@ -199,7 +225,7 @@ struct alignas(64) Request {
     uint32_t activation_q_stride;  /* bytes between E4M3 rows. */
     uint32_t activation_s_stride;  /* bytes between F32 scale rows. */
     uint32_t result_stride[kMaxEngineRanks]; /* BF16 row stride for each TP rank's result slot. */
-    uint64_t result_offset[kResultPlanes]; /* partial-output slots; helper writes only req.rank. */
+    uint64_t result_offset[kResultPlanes]; /* [output rank] planes of this slot; the helper writes only [consumer], full width. */
     /* R3_MOE_WORKER_TRACE: wall_clock64() stamps, each from the clock of the device that wrote it (engine GPU for
      * 0-2, the helper GPU for 3-4; never subtract across devices): 0 publish kernel, 1 wait kernel entered,
      * 2 this request's completion seen by the wait kernel, 3 helper lane began, 4 helper lane published done. On a
@@ -216,12 +242,31 @@ struct alignas(64) Request {
     uint64_t placement_epoch;      /* request epoch, +232. */
     uint64_t completion_epoch;     /* helper completion epoch, +240. */
     uint32_t completion_slot;      /* helper completion generation slot, +248. */
-    uint32_t reserved_tail;        /* +252, zero on publication. */
+    uint32_t consumer;             /* +252: the engine rank that consumes this request, consumer_of(layer, world) == slot_consumer(slot). */
 };
 static_assert(sizeof(Request) % 64 == 0);
-/* Slice E revised the still-unpublished v23 Request: generation_slot is +36, row_base +204.
- * Both engine publisher and helper include this one definition; no prior-v23 compatibility path. */
+/* Both engine publisher and helper include this one definition; no older-version compatibility path. */
 static_assert(sizeof(Request) == 256, "Request layout changed: bump kVersion");
+/* The slot identity a request must carry (RAD49): its lane's slot, the engine width the segment was made for
+ * (Header::rank_count, not merely a width the request agrees with itself on), and the consumer the slot and the layer both
+ * name. Every reader (helper lanes, CPU reference, combine, replay) checks it the same way. */
+/* The same identity without the consumer word, for the helper lane kernels: every thread of a lane kernel validates the request
+ * it reads from host-mapped memory, so they read only the Request's first two cache lines (layer, slot and world are +12..+23,
+ * as rank/rank_count were before v25); Request::consumer (+252, a fourth line) would add a host-memory read to every thread of
+ * every large-lane launch. What the GPU lane check establishes is the EFFECTIVE consumer, slot_consumer(slot, world), and that
+ * it is the layer's (consumer_of): the lane writes its result to that rank's plane, chosen from the slot and the segment's
+ * width, never from the stored word. The stored Request::consumer word itself is checked only by the CPU readers (combine,
+ * host references) through request_slot_valid; a corrupt consumer word alone is therefore not refused by a non-combined GPU
+ * lane, but it cannot redirect any result. */
+constexpr bool request_lane_identity_valid(uint32_t slot, uint32_t world, uint32_t layer, uint32_t lane_slot,
+                                           uint32_t segment_world) {
+    return slot == lane_slot && slot < kMaxSlots && world >= 1 && world <= kMaxEngineRanks && world == segment_world &&
+           slot_consumer(slot, world) == consumer_of(layer, world);
+}
+constexpr bool request_slot_valid(uint32_t slot, uint32_t world, uint32_t consumer, uint32_t layer, uint32_t lane_slot,
+                                  uint32_t segment_world) {
+    return request_lane_identity_valid(slot, world, layer, lane_slot, segment_world) && consumer == slot_consumer(slot, world);
+}
 
 struct alignas(64) LaneSignal {
     uint32_t request_sequence; /* engine GPU writes after route/activation data is visible. */
@@ -255,15 +300,23 @@ inline bool acknowledge_lane_drain(LaneSignal& lane, uint64_t closure, Drain&& d
     return true;
 }
 
-/* R3_MOE_WORKER_COMBINE (two to kMaxHelpers helpers behind a one-rank engine, large lane only): helper 0 adds every helper's
- * bf16 rows on the CPU into result plane [0][1] as fp16, so the engine reads one row a token over its link instead of one a
- * helper. The engine GPU allocates the helpers' sequences, writes lane/seq/rows here (seq 0: that helper has no request this
- * step) and the generation into helper 0's Request::combine_generation, then releases the requests. The rows go chunk by
+/* R3_MOE_WORKER_COMBINE (two to kMaxHelpers helpers, large lane only): helper 0 adds every helper's bf16 rows on the CPU into
+ * the consumer rank's combine plane (combine_index) as fp16, so the consumer reads one row a token over its link instead of
+ * one a helper. One CombineSignal and one CombineChunks a consumer rank (RAD49): each has one engine writer, and helper 0
+ * reads the consumer from its request. The consumer's GPU allocates the helpers' sequences, writes lane/seq/rows here
+ * (seq 0: that helper has no request this step) and the generation into helper 0's Request::combine_generation, then
+ * releases the requests. The rows go chunk by
  * chunk (CombineChunks, RAD42): helper 0 combines each chunk once every helper has published it and stores chunks.done[c];
  * the engine adds each chunk as it lands and finally waits for `done` = generation and every helper's done word. Not
  * bit-identical to adding the rows on the engine (the sum is rounded to fp16, not bf16). `enabled` is set by helper 0 at
  * start; the engine asks only then. */
 constexpr uint32_t kCombineHelpers = kMaxHelpers;   /* the combine adds the rows of up to this many helpers */
+/* R3_MOE_WORKER_COMBINE's step shape (RAD49): the consumer asks helper 0 to combine a large-lane step only when helper 0 and at
+ * least one other helper have routes in it (a step owned by one helper alone, or by none, keeps the per-helper planes). The
+ * publish kernel then also needs CombineSignal::enabled and rows >= min_rows, read from host memory only after this. */
+constexpr bool combine_shape_wanted(bool asked, uint32_t helpers, uint32_t cls, bool helper0_routes, bool other_routes) {
+    return asked && helpers >= 2 && helpers <= kMaxHelpers && cls == kSmallClasses && helper0_routes && other_routes;
+}
 struct alignas(64) CombineSignal {
     uint32_t enabled;
     uint32_t min_rows;      /* steps with fewer rows keep the per-helper merge */
@@ -279,6 +332,13 @@ struct alignas(64) CombineSignal {
     uint32_t reserved[14];
 };
 static_assert(sizeof(CombineSignal) == 128);
+/* A consumer rank's combine is quiescent when every generation it issued was combined and its result consumed (the engine's
+ * helper-drain check, one consumer at a time). */
+inline bool combine_quiesced(const CombineSignal& c) {
+    const uint32_t request = __atomic_load_n(&c.request, __ATOMIC_ACQUIRE);
+    return !request || (__atomic_load_n(&c.done, __ATOMIC_ACQUIRE) == request &&
+                        __atomic_load_n(&c.result_consumed_generation, __ATOMIC_ACQUIRE) == request);
+}
 
 /* Engine-GPU consumption records, rank-local device memory (never mapped).
  * mailbox_add_finish_kernel updates them every layer without host traffic;
@@ -330,15 +390,15 @@ struct alignas(kPage) Header {
     uint32_t version;               /* protocol compatibility gate. */
     uint32_t header_bytes;          /* lets validation reject layout drift explicitly. */
     uint32_t layer_count;           /* model bound; validates request.layer before file access. */
-    uint32_t rank_count;            /* configured TP ranks; fixed to 2 for this slice. */
+    uint32_t rank_count;            /* the engine's TP ranks (1..kMaxEngineRanks), set by helper 0 from its manifest. */
     uint32_t ring_slots;            /* Request entries following ring_offset. */
     uint32_t max_rows;              /* capacity contract: 4096 activation rows. */
     uint32_t hidden;                /* capacity/model contract: 2560. */
     uint32_t top_k;                 /* capacity contract: 10 routes per token. */
     uint32_t expert_count;          /* model contract: 512 global routed experts. */
-    uint32_t route_slot_bytes[kMaxSlots];      /* per-rank routing-list capacity. */
-    uint32_t activation_slot_bytes[kMaxSlots]; /* per-rank BF16 reference + exact E4M3 q/F32 scale staging. */
-    uint32_t result_slot_bytes[kResultPlanes]; /* [producer rank][output rank]. */
+    uint32_t route_slot_bytes[kMaxSlots];      /* per-slot routing-list capacity. */
+    uint32_t activation_slot_bytes[kMaxSlots]; /* per-slot BF16 reference + exact E4M3 q/F32 scale staging. */
+    uint32_t result_slot_bytes[kResultPlanes]; /* [slot][output rank]. */
     uint32_t owned_count;            /* v23 tombstone, must remain zero. */
     uint32_t owner_slot_bytes;       /* v23 tombstone, must remain zero. */
     uint64_t owned_bytes;            /* v23 tombstone, must remain zero. */
@@ -352,18 +412,17 @@ struct alignas(kPage) Header {
     LaneSignal lane[kLanes];          /* GPU-only request/done words, one cache line per lane (lane_of). */
     uint32_t small_class_count;     /* helper-set: enabled small-lane sizes, 1..kSmallClasses. */
     uint32_t small_class_rows[kSmallClasses]; /* helper-set: strictly ascending row limits; a step above the last goes to the large lane. */
-    /* Helpers serving this segment (helper 0 sets it). 1: one helper serves every rank's slot. 2: a one-rank
-     * engine (the R9700) with two helpers (the XTX cards); helper h owns bitmap h and serves rank slot h, and
-     * the engine sends each route to the slot of the helper that owns its expert. */
+    /* Helpers serving this segment (helper 0 sets it). Helper h owns bitmap h and serves the slots slot_of(h, r, world)
+     * of every engine rank r; a layer's consumer sends each route to the slot of the helper that owns its expert. */
     uint32_t helper_count;
-    uint32_t slot_count;            /* request slots this segment was laid out for (slots_for(helpers)); fixed at init, 1..kMaxSlots. */
+    uint32_t slot_count;            /* request slots this segment was laid out for (slots_for(helpers, world)); fixed at init, 1..kMaxSlots. */
     /* Set by a helper whose lanes stopped (error or shutdown): an engine still waiting traps at once
      * instead of spinning on a done word that will never move. */
     uint32_t helper_fault;
     uint64_t ring_offset;           /* Request[kRingSlots], page aligned. */
     uint64_t route_offset[kMaxSlots];
     uint64_t activation_offset[kMaxSlots];
-    uint64_t result_offset[kResultPlanes]; /* [producer rank][output rank], like result_slot_bytes. */
+    uint64_t result_offset[kResultPlanes]; /* [slot][output rank], like result_slot_bytes. */
     uint64_t segment_bytes;         /* exact mmap/ftruncate/hipHostRegister-able length. */
     uint32_t intermediate;          /* expert intermediate width (RCS09-03): part of the shape both sides must agree on. */
     uint32_t activation_group;      /* activation quantisation group width. */
@@ -391,18 +450,18 @@ struct alignas(kPage) Header {
     /* Bootstrap-only: each helper publishes its final filtered map before helper 0 seals slot 0. */
     uint32_t bootstrap_filtered_helpers;
     uint32_t reserved32[24 - 3 * kMaxHelpers - 2];
-    CombineSignal combine;
-    CombineChunks chunks;
-    uint64_t placement_offset;         /* +3264 */
-    uint64_t journal_offset;           /* +3272 */
-    uint64_t ack_offset;               /* +3280 */
-    uint64_t generation_offset[2];     /* +3288, +3296 */
-    uint32_t owner_map_bytes;          /* +3304, layer_count * expert_count */
-    uint32_t generation_slot_bytes;    /* +3308, page aligned */
-    uint32_t placement_control_bytes;  /* +3312 */
-    uint32_t placement_ack_count;      /* +3316 */
+    CombineSignal combine[kMaxEngineRanks];   /* [consumer rank] */
+    CombineChunks chunks[kMaxEngineRanks];    /* [consumer rank] */
+    uint64_t placement_offset;         /* +3712 */
+    uint64_t journal_offset;           /* +3720 */
+    uint64_t ack_offset;               /* +3728 */
+    uint64_t generation_offset[2];     /* +3736, +3744 */
+    uint32_t owner_map_bytes;          /* +3752, layer_count * expert_count */
+    uint32_t generation_slot_bytes;    /* +3756, page aligned */
+    uint32_t placement_control_bytes;  /* +3760 */
+    uint32_t placement_ack_count;      /* +3764 */
 };
-static_assert(kVersion == 24 && kRingSlots == kLanes * kLaneSlots);
+static_assert(kVersion == 25 && kRingSlots == kLanes * kLaneSlots);
 static_assert(sizeof(Header) == 4096 && alignof(Header) == 4096);
 static_assert(sizeof(Request) == 256 && alignof(Request) == 64);
 static_assert(offsetof(Request, generation_slot) == 36);
@@ -410,6 +469,9 @@ static_assert(offsetof(Request, row_base) == 204);
 static_assert(offsetof(Request, placement_epoch) == 232);
 static_assert(offsetof(Request, completion_epoch) == 240);
 static_assert(offsetof(Request, completion_slot) == 248);
+static_assert(offsetof(Request, consumer) == 252);
+/* what request_lane_identity_valid reads stays on the first cache line, with the rest of the lane validation */
+static_assert(offsetof(Request, layer) / 64 == 0 && offsetof(Request, slot) / 64 == 0 && offsetof(Request, world) / 64 == 0);
 static_assert(sizeof(LaneSignal) == 64 && offsetof(LaneSignal, done_epoch) == 24);
 static_assert(offsetof(LaneSignal, consumed_epoch) == 32);
 static_assert(sizeof(CombineSignal) == 128);
@@ -422,8 +484,8 @@ static_assert(offsetof(PlacementControl, notify) == 104);
 static_assert(sizeof(GenerationHeader) == 64 && alignof(GenerationHeader) == 64);
 static_assert(sizeof(PlacementAck) == 64 && alignof(PlacementAck) == 64);
 static_assert(sizeof(JournalRecord) == 128 && sizeof(PlacementJournal) == 256);
-static_assert(offsetof(Header, placement_offset) == 3264);
-static_assert(offsetof(Header, owner_map_bytes) == 3304);
+static_assert(offsetof(Header, placement_offset) == 3712);
+static_assert(offsetof(Header, owner_map_bytes) == 3752);
 static_assert(sizeof(PlacementControl) + sizeof(PlacementJournal) +
               (kMaxHelpers + kMaxEngineRanks) * sizeof(PlacementAck) <= kPage);
 static_assert(std::is_standard_layout_v<PlacementControl> && std::is_trivially_copyable_v<PlacementControl>);
@@ -492,7 +554,7 @@ inline bool layout_for(const LayoutShape& s, uint32_t layer_count, uint32_t slot
         return true;
     };
     if (!out || layer_count == 0 || layer_count > kMaxLayers ||
-        slots < kMaxEngineRanks || slots > kMaxSlots ||
+        slots < 1 || slots > kMaxSlots ||
         !s.hidden || !s.top_k || !s.experts || !s.max_rows || !s.act_group ||
         !s.intermediate || s.top_k > s.experts) return false;
     uint64_t routes = 0, rows_hidden = 0, groups = 0;
@@ -565,14 +627,14 @@ inline uint64_t placement_digest(uint64_t model_shape_hash, uint32_t layers,
 
 /* Lay out and stamp a segment for this shape. The caller has mapped at least layout_for(shape).bytes. False (and nothing written)
  * when the shape does not lay out. */
-inline bool init(void* base, uint32_t layers, const LayoutShape& shape, uint32_t helper_count) {
+inline bool init(void* base, uint32_t layers, const LayoutShape& shape, uint32_t helper_count, uint32_t engine_ranks) {
     Layout l{};
-    if (!base || helper_count == 0 || helper_count > kMaxHelpers ||
-        !layout_for(shape, layers, slots_for(helper_count), &l)) return false;
+    if (!base || !slots_fit(helper_count, engine_ranks) ||
+        !layout_for(shape, layers, slots_for(helper_count, engine_ranks), &l)) return false;
     std::memset(base, 0, static_cast<size_t>(l.bytes));
     auto* h = static_cast<Header*>(base);
     h->magic = kMagic; h->version = kVersion; h->header_bytes = sizeof(Header);
-    h->layer_count = layers; h->rank_count = kMaxEngineRanks; h->slot_count = slots_for(helper_count);
+    h->layer_count = layers; h->rank_count = engine_ranks; h->slot_count = slots_for(helper_count, engine_ranks);
     h->ring_slots = kRingSlots;
     h->max_rows = shape.max_rows; h->hidden = shape.hidden; h->top_k = shape.top_k; h->expert_count = shape.experts;
     h->intermediate = shape.intermediate; h->activation_group = shape.act_group; h->shape_hash = shape_hash(shape);
@@ -607,7 +669,9 @@ inline bool init(void* base, uint32_t layers, const LayoutShape& shape, uint32_t
     for (uint32_t r = 0; r < h->slot_count; ++r) {
         h->route_slot_bytes[r] = l.route_bytes;
         h->activation_slot_bytes[r] = l.activation_bytes;
-        h->route_offset[r] = l.route[r]; h->activation_offset[r] = l.activation[r];
+        h->route_offset[r] = l.route[r];
+        /* Every helper reads the consumer's step activations: they are staged once, in helper 0's slot for that rank. */
+        h->activation_offset[r] = l.activation[slot_of(0, slot_consumer(r, engine_ranks), engine_ranks)];
         for (uint32_t o = 0; o < kMaxEngineRanks; ++o) {
             const uint32_t i = result_index(r, o);
             h->result_slot_bytes[i] = l.result_bytes;
@@ -623,8 +687,8 @@ inline bool init(void* base, uint32_t layers, const LayoutShape& shape, uint32_t
  * before any request is published or any expert buffer is touched. */
 inline bool valid(const Header* h, size_t mapped, const LayoutShape& expect) {
     if (!h || h->magic != kMagic || h->version != kVersion || h->header_bytes != sizeof(Header) ||
-        h->rank_count != kMaxEngineRanks || h->helper_count == 0 || h->helper_count > kMaxHelpers ||
-        h->slot_count != slots_for(h->helper_count) || h->ring_slots != kRingSlots ||
+        !slots_fit(h->helper_count, h->rank_count) ||
+        h->slot_count != slots_for(h->helper_count, h->rank_count) || h->ring_slots != kRingSlots ||
         h->layer_count == 0 || h->layer_count > kMaxLayers ||
         h->small_class_count == 0 || h->small_class_count > kSmallClasses ||
         h->owned_count || h->owner_slot_bytes || h->owned_bytes || h->owner_offset) return false;
@@ -683,10 +747,10 @@ inline bool valid(const Header* h, size_t mapped, const LayoutShape& expect) {
     }
     for (uint32_t r = 0; r < kMaxSlots; ++r) {
         const bool used = r < h->slot_count;
-        /* Several helpers share slot 0's activation staging. */
+        /* Every helper's slot for a rank shares helper 0's activation staging for that rank. */
+        const uint32_t home = used ? slot_of(0, slot_consumer(r, h->rank_count), h->rank_count) : 0u;
         if (h->route_offset[r] != (used ? l.route[r] : 0) ||
-            (h->activation_offset[r] != (used ? l.activation[r] : 0) &&
-             !(used && h->activation_offset[r] == l.activation[0])) ||
+            h->activation_offset[r] != (used ? l.activation[home] : 0) ||
             h->route_slot_bytes[r] != (used ? l.route_bytes : 0) ||
             h->activation_slot_bytes[r] != (used ? l.activation_bytes : 0)) return false;
         for (uint32_t o = 0; o < kMaxEngineRanks; ++o) {

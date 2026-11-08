@@ -101,10 +101,10 @@ static void full_budget_swaps(bool production_budgets) {
               "production four-GPU helper budget slots");
     const LayoutShape shape{128,layers,experts,8,128,64};
     Layout layout{};
-    check(layout_for(shape,layers,slots_for(helpers),&layout),"swap layout");
+    check(layout_for(shape,layers,slots_for(helpers,1),&layout),"swap layout");
     void* map=mmap(nullptr,layout.bytes,PROT_READ|PROT_WRITE,
                    MAP_PRIVATE|MAP_ANONYMOUS,-1,0);
-    check(map!=MAP_FAILED && init(map,layers,shape,helpers),"swap init");
+    check(map!=MAP_FAILED && init(map,layers,shape,helpers,1),"swap init");
     auto* h=static_cast<Header*>(map);
     h->helper_count=helpers;
     placement_control(map)->expected_ranks=1;
@@ -381,10 +381,10 @@ int main() {
     using namespace r3::forced;
     const LayoutShape shape{128,2,3,8,128,64};
     Layout layout{};
-    check(layout_for(shape,2,slots_for(3),&layout),"layout");
+    check(layout_for(shape,2,slots_for(3, 1),&layout),"layout");
     void* map=mmap(nullptr,layout.bytes,PROT_READ|PROT_WRITE,
                    MAP_PRIVATE|MAP_ANONYMOUS,-1,0);
-    check(map!=MAP_FAILED && init(map,2,shape,3),"init");
+    check(map!=MAP_FAILED && init(map,2,shape,3, 1),"init");
     Header* h=static_cast<Header*>(map);
     h->helper_count=3;
     placement_control(map)->expected_ranks=1;

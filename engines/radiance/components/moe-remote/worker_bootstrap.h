@@ -98,7 +98,7 @@ bool prepare_compare_bootstrap(void* map, uint32_t layers,
     if (!map || !active || !runtime_slots || !class_rows ||
         !class_count || class_count > kSmallClasses || layer >= layers)
         return fail("invalid compare bootstrap arguments");
-    if (!init(map, layers, shape, 1)) return fail("compare segment init failed");
+    if (!init(map, layers, shape, 1, 1)) return fail("compare segment init failed");
     auto* h = static_cast<Header*>(map);
     h->small_class_count = class_count;
     for (uint32_t c = 0; c < class_count; ++c) h->small_class_rows[c] = class_rows[c];
@@ -138,30 +138,20 @@ inline bool bind_compare_request(void* map, Request* request,
 }
 
 
-/* The segment reserves two physical slots even for one TP rank. Replay must
- * submit exactly the configured number of engine-rank requests; a one-rank
- * engine computes the full expert width, while two ranks each compute a
- * distinct partial-width contribution. */
-inline uint32_t compare_request_ranks(uint32_t engine_ranks, uint32_t slots) {
-    return (engine_ranks == 1 || engine_ranks == kMaxEngineRanks) &&
-           engine_ranks <= slots ? engine_ranks : 0;
-}
-
 /* The captured routes, not the selected candidate count, are the work
  * contract. Before launching, require each captured slot to have an active
- * sealed owner and a fully resident weight for EVERY requested TP slice.
+ * sealed owner and a fully resident full-width weight.
  * Refuse invalid or duplicate routes instead of silently omitting work. */
 template<class Routes, class Resident>
 bool validate_compare_routes(const void* map, uint32_t layer,
                              uint32_t rows, const Routes& routes,
-                             uint32_t ranks, Resident&& resident,
+                             Resident&& resident,
                              const char** why = nullptr) {
     auto fail = [&](const char* reason) { if (why) *why = reason; return false; };
     if (!map || !bootstrap_generation_sealed(map))
         return fail("replay generation not sealed");
     const auto* h = static_cast<const Header*>(map);
     if (layer >= h->layer_count || !rows || rows > h->max_rows ||
-        !compare_request_ranks(ranks, h->slot_count) ||
         routes.empty() || routes.size() > size_t(rows) * h->top_k ||
         !load(&h->layer_map_ready[layer]) ||
         !load(&h->layer_map_consumed[layer]))
@@ -185,9 +175,8 @@ bool validate_compare_routes(const void* map, uint32_t layer,
         if (owners[size_t(layer) * h->expert_count + expert] != 0 ||
             slots[expert] < 0 || uint32_t(slots[expert]) >= h->expert_count)
             return fail("captured route has no resident runtime owner");
-        for (uint32_t rank = 0; rank < ranks; ++rank)
-            if (!resident(layer, expert, rank, uint32_t(slots[expert])))
-                return fail("captured route weights not resident for requested TP slice");
+        if (!resident(layer, expert, uint32_t(slots[expert])))
+            return fail("captured route weights not resident");
     }
     return true;
 }

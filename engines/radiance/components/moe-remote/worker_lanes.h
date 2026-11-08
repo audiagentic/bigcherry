@@ -1,4 +1,6 @@
 #pragma once
+
+#include <mutex>
 // Included only by r3_moe_worker.cpp, after worker_container.h, worker_combine.h and worker_harness.h.
 //
 // The GPU serving loop: one thread per lane this helper serves. A small lane pre-queues kQueueDepth requests at its
@@ -42,6 +44,10 @@ struct Combine {
     std::unique_ptr<CombinePool> pool;   /* helper 0 only */
     std::vector<uint8_t> mask;
     CombineStats stats;
+    /* Behind TP helper 0 has one large lane a consumer rank (RAD49), and each lane thread combines its own steps. The
+     * consumers' steps follow each other through the engine's all-reduce, so this lock is uncontended; it keeps the
+     * shared pool and mask single-user even so. */
+    std::mutex mu;
 };
 
 class Lanes {
@@ -218,7 +224,10 @@ private:
             }
             /* R3_MOE_WORKER_COMBINE (RAD42): helper 0 combines chunk by chunk while its own GPU and the others still write. */
             if (combine_.on && cfg_.helper_index == 0 &&
-                !combine_step(map_, q, cfg_.helper_count, combine_.pool.get(), &combine_.mask, &combine_.stats)) {
+                ![&] {
+                    std::lock_guard<std::mutex> lock(combine_.mu);
+                    return combine_step(map_, q, cfg_.helper_count, combine_.pool.get(), &combine_.mask, &combine_.stats);
+                }()) {
                 raise_fault(h_);   /* the engine's waits for the chunks and combine.done fail now */
                 request_stop();
                 break;

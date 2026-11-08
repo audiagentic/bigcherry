@@ -135,6 +135,11 @@ if(BUILD_TESTING)
   # component-tests builds each declared test by target name: script tests get a target of the same name.
   add_custom_target(r3_rewrite_check)
   add_custom_target(r3_helper_config_exports DEPENDS libr3)
+  # The engine's MoE form switches (r3_moe_settings.h): unset on, 0 off, the helper configuration first. Card-free.
+  add_executable(r3_moe_settings_test EXCLUDE_FROM_ALL ${CMAKE_CURRENT_SOURCE_DIR}/r3_moe_settings_test.cpp)
+  target_include_directories(r3_moe_settings_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${RADIANCE_SRC}/libr4d)
+  set_target_properties(r3_moe_settings_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
+  add_test(NAME r3_moe_settings_test COMMAND r3_moe_settings_test)
   add_test(NAME r3_helper_config_exports
     COMMAND ${CMAKE_COMMAND} -DNM=${R3_NM} -DLIBRARY=$<TARGET_FILE:libr3>
       -P ${CMAKE_CURRENT_SOURCE_DIR}/helper_config_exports_test.cmake)

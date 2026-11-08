@@ -29,11 +29,11 @@ int main() {
     using namespace r3::moe_shm;
     const LayoutShape shape{128,2,3,8,128,64};
     Layout layout{};
-    check(layout_for(shape,2,slots_for(2),&layout),"layout");
+    check(layout_for(shape,2,slots_for(2, 1),&layout),"layout");
     const std::string name="/bc-v24-"+std::to_string(getpid());
     Segment creator;
     check(creator.open(name.c_str(),layout.bytes,true,1),"create");
-    check(init(creator.host(),2,shape,2),"valid v24 init");
+    check(init(creator.host(),2,shape,2, 1),"valid v24 init");
     auto* h=creator.header();
     h->helper_count=2;
     h->version=23;
@@ -107,7 +107,7 @@ int main() {
     void* delayed_map = mmap(nullptr, layout.bytes, PROT_READ | PROT_WRITE,
                              MAP_SHARED, delayed_fd, 0);
     check(delayed_map != MAP_FAILED, "map sized creator segment");
-    check(init(delayed_map, 2, shape, 2), "initialize late-sized v24");
+    check(init(delayed_map, 2, shape, 2, 1), "initialize late-sized v24");
     static_cast<Header*>(delayed_map)->helper_count = 2;
     attacher.join();
     check(accepted.load(std::memory_order_acquire), "attacher waits for sizing and v24");

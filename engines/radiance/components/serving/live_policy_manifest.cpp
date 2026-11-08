@@ -19,11 +19,11 @@ std::optional<DerivedLivePolicy> derive_manifest_live_policy(
         if (skipped_reason) *skipped_reason = "record key=" + key + ": " + why;
         return std::nullopt;
     };
-    // r3_moe_worker refuses R3_MOE_POLICY_ENABLE behind a multi-rank engine (its histogram is one rank's, its moves full-width)
-    const auto ranks = in.resolved.values.at("engine").at("tp").get<uint64_t>();
-    if (ranks > 1)
-        return skip("the live placement policy needs a one-rank engine (r3_moe_worker); this engine has " +
-                    std::to_string(ranks) + " ranks");
+    // Behind a TP engine (RAD49) every rank counts every routed row of a handed-off pass (the router is replicated), so rank
+    // 0's histogram covers the layers either rank consumes, and the helpers store and move full-width experts: the policy
+    // applies to any engine width. The histogram counts only passes the remote row gate admits (the publish op runs only
+    // there, R3_MOE_REMOTE_MIN_ROWS / MAX_ROWS), as for a one-rank engine: run the policy on a workload whose steps the gate
+    // admits.
     if (!live_policy_record_complete(*record)) {
         for (auto it = record->absent.begin(); it != record->absent.end(); ++it)
             return skip("incomplete " + it.key() + ": " + it.value().get<std::string>());

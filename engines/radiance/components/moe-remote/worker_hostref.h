@@ -153,14 +153,14 @@ int compute_host_engine(const Container& f, void* map, Request* q,
                         std::vector<uint16_t>* route_down = nullptr) {
     const uint32_t hid = static_cast<const Header*>(map)->hidden, topk = static_cast<const Header*>(map)->top_k;
     const int64_t hdr_intermediate = static_cast<const Header*>(map)->intermediate;
-    if (q->rank_count != kMaxEngineRanks || q->rank >= kMaxSlots || q->layer >= f.layers ||
+    if (q->layer >= f.layers || !request_slot_valid(q->slot, q->world, q->consumer, q->layer, q->slot, static_cast<const Header*>(map)->rank_count) ||
         q->rows == 0 || q->rows > kMaxRows || q->hidden != hid ||
         q->route_count > kMaxRoutes || q->activation_stride != hid * 2)
         return -EINVAL;
 
     const Route* routes = ptr<Route>(map, q->route_offset);
     const uint16_t* act = ptr<uint16_t>(map, q->activation_offset);
-    uint16_t* dst = ptr<uint16_t>(map, q->result_offset[out_rank_of(q->rank, q->rank_count)]);
+    uint16_t* dst = ptr<uint16_t>(map, q->result_offset[q->consumer]);
 
     std::vector<float> aq((size_t)q->rows * hid);
     for (size_t i = 0; i < aq.size(); ++i) aq[i] = bf16(act[i]);
@@ -197,10 +197,10 @@ int compute_host_engine(const Container& f, void* map, Request* q,
 
         const int32_t es = layer_slot(map, q->layer, e);
         if (es < 0) return -ENOTSUP;
-        const bool wide = q->rank == ((uint32_t)es & 1u);
-        const int64_t lo = wide ? 0 : 384;
-        const int64_t width = wide ? 384 : 256;
-        std::vector<float> mid(ri.size() * 384u, 0.0f);
+        const int64_t lo = 0;                 // every expert is served full width (RAD49)
+        const int64_t width = dnc;
+        const size_t mw = (size_t)dnc;
+        std::vector<float> mid(ri.size() * mw, 0.0f);
 
         for (int64_t j = 0; j < width; ++j) {
             if (!decode_row(f, gu, lo + j, wg, false) ||
@@ -211,18 +211,18 @@ int compute_host_engine(const Container& f, void* map, Request* q,
                 const float* x = aq.data() + (size_t)r.token * hid;
                 const float gate = bf16(to_bf16(dot_f32(x, wg)));
                 const float up = bf16(to_bf16(dot_f32(x, wu)));
-                mid[a * 384u + (size_t)j] =
+                mid[a * mw + (size_t)j] =
                     bf16(to_bf16((gate / (1.0f + ::expf(-gate))) * up));
             }
         }
         for (size_t a = 0; a < ri.size(); ++a)
-            if (!quant_had_engine(mid.data() + a * 384u, 384u)) return -EINVAL;
+            if (!quant_had_engine(mid.data() + a * mw, mw)) return -EINVAL;
 
         for (int64_t h = 0; h < hid; ++h) {
             if (!decode_row(f, dn, h, wd, false)) return -ENOTSUP;
             for (size_t a = 0; a < ri.size(); ++a) {
                 float sum = 0.0f;
-                const float* m = mid.data() + a * 384u;
+                const float* m = mid.data() + a * mw;
                 for (int64_t j = 0; j < width; ++j) sum += m[j] * wd[(size_t)(lo + j)];
                 down[(size_t)ri[a] * hid + (size_t)h] = to_bf16(sum);
             }
@@ -251,14 +251,14 @@ int compute_host_engine_fp8(const Container& f, void* map, Request* q,
                         std::vector<uint16_t>* route_down = nullptr) {
     const uint32_t hid = static_cast<const Header*>(map)->hidden, topk = static_cast<const Header*>(map)->top_k;
     const int64_t hdr_intermediate = static_cast<const Header*>(map)->intermediate;
-    if (q->rank_count != kMaxEngineRanks || q->rank >= kMaxSlots || q->layer >= f.layers ||
+    if (q->layer >= f.layers || !request_slot_valid(q->slot, q->world, q->consumer, q->layer, q->slot, static_cast<const Header*>(map)->rank_count) ||
         q->rows == 0 || q->rows > kMaxRows || q->hidden != hid ||
         q->route_count > kMaxRoutes || q->activation_stride != hid * 2)
         return -EINVAL;
 
     const Route* routes = ptr<Route>(map, q->route_offset);
     const uint16_t* act = ptr<uint16_t>(map, q->activation_offset);
-    uint16_t* dst = ptr<uint16_t>(map, q->result_offset[out_rank_of(q->rank, q->rank_count)]);
+    uint16_t* dst = ptr<uint16_t>(map, q->result_offset[q->consumer]);
 
     std::vector<float> aq((size_t)q->rows * hid);
     for (size_t i = 0; i < aq.size(); ++i) aq[i] = bf16(act[i]);
@@ -298,7 +298,7 @@ int compute_host_engine_fp8(const Container& f, void* map, Request* q,
             return -ENOTSUP;
         }
         (void)es;
-        const int64_t lo = 0;                 // FP8 experts are served full width, whole experts
+        const int64_t lo = 0;                 // every expert is served full width (RAD49)
         const int64_t width = dnc;
         const size_t mw = (size_t)dnc;
         std::vector<float> mid(ri.size() * mw, 0.0f);
@@ -356,11 +356,11 @@ int compute_host_engine_fp8(const Container& f, void* map, Request* q,
 int compute_host(const Container& f, void* map, Request* q) {
     const uint32_t hid = static_cast<const Header*>(map)->hidden, topk = static_cast<const Header*>(map)->top_k;
     const int64_t hdr_intermediate = static_cast<const Header*>(map)->intermediate;
-    if (q->rank_count != kMaxEngineRanks || q->rank >= kMaxSlots || q->layer >= f.layers || q->rows > kMaxRows ||
+    if (q->layer >= f.layers || !request_slot_valid(q->slot, q->world, q->consumer, q->layer, q->slot, static_cast<const Header*>(map)->rank_count) || q->rows > kMaxRows ||
         q->hidden != hid || q->route_count > kMaxRoutes || q->activation_stride != hid*2) return -EINVAL;
     const Route* routes = ptr<Route>(map,q->route_offset);
     const uint16_t* act = ptr<uint16_t>(map,q->activation_offset);
-    uint16_t* dst = ptr<uint16_t>(map,q->result_offset[out_rank_of(q->rank, q->rank_count)]);
+    uint16_t* dst = ptr<uint16_t>(map,q->result_offset[q->consumer]);
     std::vector<float> out((size_t)q->rows*hid,0.f);
     std::vector<std::vector<uint32_t>> by_exp(f.experts);
     for(uint32_t i=0;i<q->route_count;++i) {
@@ -374,7 +374,7 @@ int compute_host(const Container& f, void* map, Request* q) {
         int64_t gur=1,guc=1,dnr=1,dnc=1; rad_enc_view(gu->rank,gu->shape,&gur,&guc); rad_enc_view(dn->rank,dn->shape,&dnr,&dnc);
         if(guc!=hid || dnr!=hid || gur!=2*dnc || dnc!=hdr_intermediate) return -EINVAL;
         const int32_t es=layer_slot(map,q->layer,e); if(es<0) return -ENOTSUP;
-        const int parity=(int)((uint32_t)es&1u); const bool wide=((int)q->rank==parity); const int64_t lo=wide?0:384, hi=wide?384:640, width=hi-lo;
+        (void)es; const int64_t lo=0, width=dnc;   /* full width (RAD49) */
         std::vector<float> mid(ri.size()*(size_t)width);
         for(int64_t j=0;j<width;++j) {
             if(!decode_row(f,gu,lo+j,wg) || !decode_row(f,gu,dnc+lo+j,wu)) return -ENOTSUP;

@@ -1,7 +1,8 @@
 #pragma once
 
-// R3_MOE_WORKER_COMBINE (RAD18, RAD23): helper 0 adds the helpers' bf16 rows on the CPU so the one-rank engine reads one row
-// a token over its link instead of two. The sum is written as fp16: the same two bytes as one bf16 row, but rounded 8x
+// R3_MOE_WORKER_COMBINE (RAD18, RAD23, RAD49): helper 0 adds the helpers' bf16 rows on the CPU so the layer's consumer rank
+// reads one row a token over its link instead of one a helper (a one-rank engine is always the consumer; behind TP the
+// consumer alternates by layer, and each consumer rank has its own CombineSignal, CombineChunks and combine plane). The sum is written as fp16: the same two bytes as one bf16 row, but rounded 8x
 // finer, since a bf16 sum measurably worsened KLD (RAD18 2026-10-23: p99 +0.275). A row with a value outside fp16 range
 // is marked kCombineFallback in its first element and the engine reads that row from the two helper planes instead.
 // Helper 0 combines on its large-lane thread chunk by chunk while the helpers' GPUs still write (RAD42), spinning with a
@@ -40,12 +41,16 @@ inline bool combine_ticket_valid(const CombineIdentity& t,uint32_t helpers) {
 inline bool combine_request_valid(const r3::moe_shm::Request& first,
                                   const r3::moe_shm::Request& other,
                                   const r3::moe_shm::PlacementControl& active,
-                                  uint32_t rows,uint32_t sequence,uint32_t helper_slot) {
-    // The publisher uses step_slot(k, rank, helpers) == k for a one-rank engine
-    // with multiple helpers, and stamps world == 1 on every request.
+                                  uint32_t rows,uint32_t sequence,uint32_t helper,uint32_t segment_world) {
+    // The consumer publishes helper k's request in slot_of(k, consumer, world), every
+    // request of the step stamped with the same world and consumer (RAD49).
     // row_base comes from the same activation pointer for every helper in a pass.
+    using namespace r3::moe_shm;
     return sequence && other.sequence==sequence &&
-        other.rank==helper_slot && other.rank_count==1 &&
+        request_slot_valid(first.slot,first.world,first.consumer,first.layer,
+                           slot_of(0,first.consumer,first.world),segment_world) &&
+        other.slot==slot_of(helper,first.consumer,first.world) &&
+        other.world==first.world && other.consumer==first.consumer &&
         other.rows==rows && other.layer==first.layer &&
         other.row_base==first.row_base &&
         other.hidden==first.hidden && other.placement_epoch==first.placement_epoch &&
@@ -132,7 +137,7 @@ struct CombineStats {
 /* Helper 0, right after queueing its own large-lane request q0 (before its stream sync): if the engine asked for a combine
  * on this step, combine chunk by chunk (RAD42). For each chunk of kCombineChunkRows rows it waits until every helper with a
  * request this step, helper 0 included, has published the chunk (Header::chunks.seq, stored by their reduce kernels), sums
- * it into plane [0][1] and publishes chunks.done[c]; the engine's add kernel takes each chunk as it lands. Once every chunk
+ * it into the consumer's combine plane (combine_index) and publishes chunks.done[c]; the engine's add kernel takes each chunk as it lands. Once every chunk
  * is out it checks the other helpers' requests completed and publishes combine.done. The waits spin with a yield: they last
  * only while this step's helpers run (helper 0's own GPU is busy then too), never between bursts. False on a protocol
  * mismatch, a helper fault or a stop. */
@@ -142,30 +147,38 @@ inline bool combine_step(void* map, const r3::moe_shm::Request* q0, uint32_t hel
     auto* h = static_cast<Header*>(map);
     const uint32_t g = q0->combine_generation;
     if (!g) return true;
-    const uint32_t rows = h->combine.rows;
+    /* The consumer rank this step's rows are for; its own signal, chunk words and plane (RAD49). */
+    const uint32_t consumer = q0->consumer, world = q0->world;
+    if (consumer >= kMaxEngineRanks || world != h->rank_count || consumer >= world) {
+        std::fprintf(stderr, "r3_moe_worker: combine stopped: helper 0's request names consumer %u of %u ranks\n", consumer, world);
+        return false;
+    }
+    CombineSignal& cs = h->combine[consumer];
+    CombineChunks& ch = h->chunks[consumer];
+    const uint32_t rows = cs.rows;
     PlacementControl active{};
     if (!placement_snapshot(map,&active)) return false;
     uint32_t participants=0;
     for (uint32_t i=0;i<helpers && i<kCombineHelpers;++i)
-        if (h->combine.seq[i]) participants|=1u<<i;
+        if (cs.seq[i]) participants|=1u<<i;
     const CombineIdentity ticket{q0->placement_epoch,q0->generation_slot,g,participants};
     if (!combine_ticket_valid(ticket,helpers) ||
-        !combine_request_valid(*q0,*q0,active,rows,q0->sequence,0) ||
-        load(&h->combine.request)!=g ||
-        h->combine.lane[0]!=lane_of(0,kSmallClasses)) return false;
+        !combine_request_valid(*q0,*q0,active,rows,q0->sequence,0,h->rank_count) ||
+        load(&cs.request)!=g ||
+        cs.lane[0]!=lane_of(slot_of(0,consumer,world),kSmallClasses)) return false;
     if (helpers < 2 || helpers > kCombineHelpers || rows == 0 || rows > h->max_rows || q0->rows != rows ||
-        h->combine.seq[0] != q0->sequence) {
+        cs.seq[0] != q0->sequence) {
         std::fprintf(stderr, "r3_moe_worker: combine stopped: the combine request does not match helper 0's request\n");
         return false;
     }
     const Request* q[kCombineHelpers] = {q0};
     uint32_t seq[kCombineHelpers] = {q0->sequence};
     for (uint32_t k = 1; k < helpers; ++k) {
-        const uint32_t lanek = h->combine.lane[k], seqk = h->combine.seq[k];
+        const uint32_t lanek = cs.lane[k], seqk = cs.seq[k];
         if (!seqk) continue;   /* no request from helper k this step: it contributes no rows */
         const Request* qk = lane_request(map, lanek, seqk);
         if (lanek >= kLanes || lane_class(lanek)!=kSmallClasses ||
-            lanek % kMaxSlots != k || !qk) {
+            lanek % kMaxSlots != slot_of(k, consumer, world) || !qk) {
             std::fprintf(stderr, "r3_moe_worker: combine stopped: helper %u's lane does not match\n", k);
             return false;
         }
@@ -176,7 +189,7 @@ inline bool combine_step(void* map, const r3::moe_shm::Request* q0, uint32_t hel
             std::this_thread::yield();
         }
         if (lane_class(lanek)!=kSmallClasses ||
-            !combine_request_valid(*q0,*qk,active,rows,seqk,k)) {
+            !combine_request_valid(*q0,*qk,active,rows,seqk,k,h->rank_count)) {
             std::fprintf(stderr, "r3_moe_worker: combine stopped: helper %u's request does not match\n", k);
             return false;
         }
@@ -187,7 +200,7 @@ inline bool combine_step(void* map, const r3::moe_shm::Request* q0, uint32_t hel
     std::memset(mask->data(), 0, rows);
     const uint16_t* planes[kCombineHelpers] = {};
     for (uint32_t k = 0; k < helpers; ++k) {
-        planes[k] = ptr<uint16_t>(map, h->result_offset[result_index(k, 0)]);
+        planes[k] = ptr<uint16_t>(map, h->result_offset[result_index(slot_of(k, consumer, world), consumer)]);
         if (!q[k]) continue;
         const Route* r = ptr<Route>(map, q[k]->route_offset);
         for (uint32_t j = 0; j < q[k]->route_count; ++j) {
@@ -199,7 +212,7 @@ inline bool combine_step(void* map, const r3::moe_shm::Request* q0, uint32_t hel
             (*mask)[(uint32_t)t] |= (uint8_t)(1u << k);
         }
     }
-    uint16_t* out = ptr<uint16_t>(map, h->result_offset[result_index(0, 1)]);
+    uint16_t* out = ptr<uint16_t>(map, h->result_offset[combine_index(consumer)]);
     const uint32_t hid = h->hidden;
     std::chrono::steady_clock::duration waited{}, combined{};
     for (uint32_t c = 0, r0 = 0; r0 < rows; ++c, r0 += kCombineChunkRows) {
@@ -207,7 +220,7 @@ inline bool combine_step(void* map, const r3::moe_shm::Request* q0, uint32_t hel
         const auto tw = std::chrono::steady_clock::now();
         for (uint32_t k = 0; k < helpers; ++k) {
             if (!q[k]) continue;
-            while (load(&h->chunks.seq[k][c]) != seq[k]) {
+            while (load(&ch.seq[k][c]) != seq[k]) {
                 if (stopping() || load(&h->helper_fault)) return false;
                 std::this_thread::yield();
             }
@@ -218,7 +231,7 @@ inline bool combine_step(void* map, const r3::moe_shm::Request* q0, uint32_t hel
         if (!pool->combine(src, helpers, out + (uint64_t)r0 * hid,
                            mask->data() + r0, n, hid, ticket)) return false;
         std::atomic_thread_fence(std::memory_order_release);
-        store(&h->chunks.done[c], g);
+        store(&ch.done[c], g);
         const auto t1 = std::chrono::steady_clock::now();
         waited += t0 - tw;
         combined += t1 - t0;
@@ -226,7 +239,7 @@ inline bool combine_step(void* map, const r3::moe_shm::Request* q0, uint32_t hel
     /* every other helper's request finished cleanly (its rows are all in; its done word follows its last chunk) */
     for (uint32_t k = 1; k < helpers; ++k) {
         if (!q[k]) continue;
-        const uint32_t lanek = h->combine.lane[k];
+        const uint32_t lanek = cs.lane[k];
         while (load(&h->lane[lanek].done_sequence) != seq[k]) {
             if (stopping() || load(&h->helper_fault)) return false;
             std::this_thread::yield();
@@ -241,9 +254,9 @@ inline bool combine_step(void* map, const r3::moe_shm::Request* q0, uint32_t hel
     PlacementControl finish{};
     if (!placement_snapshot(map,&finish) ||
         finish.active_epoch!=ticket.epoch || finish.active_slot!=ticket.slot ||
-        load(&h->combine.request)!=ticket.generation)
+        load(&cs.request)!=ticket.generation)
         return false;
-    store(&h->combine.done, g);
+    store(&cs.done, g);
     st->combine_us += std::chrono::duration<double, std::micro>(combined).count();
     {   /* R3_MOE_WORKER_TRACE (RAD40): this step's waits for chunks and its combine time, on helper 0's request */
         const auto us = [](auto d) { return (uint64_t)std::min<int64_t>(UINT32_MAX, std::chrono::duration_cast<std::chrono::microseconds>(d).count()); };
