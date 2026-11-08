@@ -8,9 +8,13 @@ name: Radiance release bundle
 # config plus the image's ROCm version (tools/bigcherry/release/ci_bundle.py). A release whose key equals an earlier release's
 # key gets that bundle attached again instead of a build (about 30-55 minutes).
 #
-# Manual for now (workflow_dispatch with a tag); the release trigger comes after a lab install proves a bundle on hardware.
+# Runs when a bc-radiance-* release is published (release-please makes them with its personal token, so the event fires), and by hand
+# with workflow_dispatch and a tag (a release that has no bundle yet, or a re-run after a failure). A lab install of the first CI
+# bundle (bc-radiance-1170.11.0) launched flashnext-4gpu, the 4-GPU layout with the gfx1030 tail on libr2, before this trigger was on.
 
 on:
+  release:
+    types: [published]
   workflow_dispatch:
     inputs:
       tag:
@@ -24,11 +28,13 @@ permissions:
   packages: write
 
 concurrency:
-  group: radiance-release-bundle-${{ inputs.tag }}
+  group: radiance-release-bundle-${{ github.event.release.tag_name || inputs.tag }}
   cancel-in-progress: false
 
 jobs:
   plan:
+    # Other releases (bc-platform-*, llama.cpp) are not radiance runtimes.
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.event.release.tag_name, 'bc-radiance-')
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     outputs:
@@ -38,7 +44,7 @@ jobs:
       - name: Check the tag
         id: tag
         env:
-          TAG: ${{ inputs.tag }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
         run: |
           set -eu
           printf '%s' "$TAG" | grep -Eq '^bc-radiance-[0-9]+\.[0-9]+\.[0-9]+$' || { echo "::error::not a bc-radiance release tag: $TAG" >&2; exit 1; }
@@ -46,7 +52,7 @@ jobs:
       # not have the release-bundle command).
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.tag }}
+          ref: ${{ github.event.release.tag_name || inputs.tag }}
           fetch-depth: 0
           path: src
       - uses: actions/checkout@v4
@@ -56,7 +62,7 @@ jobs:
         id: plan
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ inputs.tag }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
           PYTHONPATH: tooling/tools
         run: |
           set -eu
