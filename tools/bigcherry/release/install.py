@@ -1,7 +1,8 @@
 """Install and verify a published Radiance runtime in its release-tag worktree.
 
 The release tag, not the current development checkout, supplies both the record
-and the immutable engine/config trees used by BU01 runtime_assets.restore.
+and the immutable engine/config trees used by BU01 runtime_assets.restore. A tag
+with no record entry (made by CI) installs from its release's own verified bundle.
 """
 
 from __future__ import annotations
@@ -10,8 +11,10 @@ import json
 import os
 import re
 import shlex
+import shutil
 import subprocess
 import sys
+import tarfile
 import tempfile
 import uuid
 from datetime import UTC, datetime
@@ -41,8 +44,11 @@ def _git(
     return result
 
 
-def _record_at_tag(root: Path, tag: str) -> dict:
-    """Find the pin's record *at this release tag*, never from the live checkout."""
+def _record_at_tag(root: Path, tag: str) -> dict | None:
+    """Find the pin's record *at this release tag*, never from the live checkout.
+
+    None when the tag has no record entry (a release made by CI).
+    """
     ref = f"refs/tags/{tag}"
     if _git(root, "rev-parse", "--verify", f"{ref}^{{commit}}", check=False).returncode:
         raise ReleaseInstallError(
@@ -75,14 +81,17 @@ def _record_at_tag(root: Path, tag: str) -> dict:
                     f"release asset is not in its pin's record: {path}"
                 )
             matches.append(record)
-    if len(matches) != 1:
+    if not matches:
+        return None
+    if len(matches) > 1:
         raise ReleaseInstallError(
             f"{tag}: expected one pin release record with runtime_assets entry, found {len(matches)}"
         )
     return matches[0]
 
 
-def resolve_tag(root: Path, requested: str) -> tuple[str, dict]:
+def resolve_tag(root: Path, requested: str) -> tuple[str, dict | None]:
+    """The tag and its record, or None for a CI-made release installed from its own bundle."""
     if requested != "latest":
         if not _TAG.fullmatch(requested):
             raise ReleaseInstallError(f"invalid Radiance release tag: {requested!r}")
@@ -94,18 +103,17 @@ def resolve_tag(root: Path, requested: str) -> tuple[str, dict]:
         reverse=True,
     )
     for match, tag in eligible:
-        if match:
-            try:
-                return tag, _record_at_tag(root, tag)
-            except ReleaseInstallError as exc:
-                # An old tag with no runtime bundle is not an install candidate.
-                if (
-                    "expected one pin release record with runtime_assets entry, found 0"
-                    not in str(exc)
-                ):
-                    raise
+        if not match:
+            continue
+        record = _record_at_tag(root, tag)
+        if record is not None:
+            return tag, record
+        # An old tag with no runtime bundle is not an install candidate.
+        names = runtime_assets.release_asset_names(root, tag)
+        if names is not None and runtime_assets.has_ci_bundle(names):
+            return tag, None
     raise ReleaseInstallError(
-        "no bc-radiance release tag has a recorded runtime_assets bundle"
+        "no bc-radiance release tag has a recorded or CI runtime bundle"
     )
 
 
@@ -148,9 +156,10 @@ def _create_worktree(root: Path, src: Path, tag: str) -> bool:
             _git(root, "worktree", "remove", "--force", str(pending), check=False)
 
 
-def _receipt(tag: str, src: Path, build: Path, asset: dict) -> dict:
+def _receipt(tag: str, src: Path, build: Path, asset: dict, source: str) -> dict:
     return {
         "tag": tag,
+        "source": source,
         "worktree": str(src),
         "build_dir": str(build),
         "plan_id": asset["plan_id"],
@@ -189,10 +198,46 @@ def _save_receipt(path: Path, receipt: dict) -> None:
 
 
 def install(requested: str, *, root: Path, work_root: Path, sdk: Path) -> dict:
-    """Install once or verify an existing runtime, returning the installation receipt."""
+    """Install once or verify an existing runtime, returning the installation receipt.
+
+    A record entry at the tag is preferred; otherwise the release's own CI bundle is
+    downloaded and verified (checksum, per-file digests, source trees, ROCm SDK).
+    """
     root, work_root = root.resolve(), work_root.resolve()
     tag, record = resolve_tag(root, requested)
-    asset = record["runtime_assets"][tag]
+    if record is not None:
+        return _install(tag, record, None, root, work_root, sdk)
+    downloads = work_root / "release-assets" / "downloads"
+    downloads.mkdir(parents=True, exist_ok=True)
+    stage = Path(tempfile.mkdtemp(prefix="ci-release-", dir=downloads))
+    try:
+        try:
+            ci = runtime_assets.ci_asset(root, tag, stage)
+        except (
+            runtime_assets.BundleError,
+            OSError,
+            ValueError,
+            tarfile.TarError,
+        ) as exc:
+            raise ReleaseInstallError(
+                f"{tag}: CI runtime bundle refused: {exc}"
+            ) from exc
+        return _install(tag, None, ci, root, work_root, sdk)
+    finally:
+        shutil.rmtree(stage, ignore_errors=True)
+
+
+def _install(
+    tag: str,
+    record: dict | None,
+    ci: tuple[dict, Path, Path] | None,
+    root: Path,
+    work_root: Path,
+    sdk: Path,
+) -> dict:
+    """Shared install for a record entry or a downloaded CI bundle (asset, archive, checksum)."""
+    asset = record["runtime_assets"][tag] if record is not None else ci[0]
+    source = "record" if record is not None else "ci"
     if not isinstance(asset, dict) or asset.get("schema") != runtime_assets.SCHEMA:
         raise ReleaseInstallError(
             f"{tag}: unsupported or missing runtime asset receipt"
@@ -233,12 +278,12 @@ def install(requested: str, *, root: Path, work_root: Path, sdk: Path) -> dict:
                 raise ReleaseInstallError(
                     f"{tag}: invalid existing install.json"
                 ) from exc
-            expected = _receipt(tag, src, target, asset)
+            expected = _receipt(tag, src, target, asset, source)
             if not isinstance(saved, dict) or any(
                 saved.get(k) != v for k, v in expected.items() if k != "installed_at"
             ):
                 raise ReleaseInstallError(
-                    f"{tag}: install.json differs from the signed release record or expected paths"
+                    f"{tag}: install.json differs from the release bundle or expected paths"
                 )
         if target.exists():
             binary = target / "bin/radiance"
@@ -254,8 +299,19 @@ def install(requested: str, *, root: Path, work_root: Path, sdk: Path) -> dict:
                 )
         else:
             try:
-                restored = runtime_assets.fetch(record, src, work_root, sdk, tag)
-            except (runtime_assets.BundleError, OSError, KeyError, ValueError) as exc:
+                if record is not None:
+                    restored = runtime_assets.fetch(record, src, work_root, sdk, tag)
+                else:
+                    restored = runtime_assets.restore(
+                        ci[1], ci[2], asset, src, work_root, sdk
+                    )
+            except (
+                runtime_assets.BundleError,
+                OSError,
+                KeyError,
+                ValueError,
+                tarfile.TarError,
+            ) as exc:
                 raise ReleaseInstallError(
                     f"{tag}: verified runtime fetch/restore failed: {exc}"
                 ) from exc
@@ -265,7 +321,7 @@ def install(requested: str, *, root: Path, work_root: Path, sdk: Path) -> dict:
                 )
         if receipt_path.is_file():
             return saved
-        receipt = _receipt(tag, src, target, asset)
+        receipt = _receipt(tag, src, target, asset, source)
         _save_receipt(receipt_path, receipt)
         return receipt
     except Exception:

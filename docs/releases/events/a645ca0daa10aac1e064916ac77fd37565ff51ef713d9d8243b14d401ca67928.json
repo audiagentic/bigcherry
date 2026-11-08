@@ -1,0 +1,15 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261108_020315_releases-built-by-ci-can-be-in_7298",
+  "files": [
+    "tools/bigcherry/release/install.py",
+    "tools/bigcherry/release/runtime_assets.py",
+    "tools/tests/release/test_release_install.py",
+    "docs/reference/build/RELEASES.md",
+    "docs/reference/engines/radiance/RUNBOOK.md"
+  ],
+  "status": "unreleased",
+  "technical-summary": "release-install installs a bc-radiance release that has no committed release-record entry from the release's own CI assets (radiance-<plan>.tar.gz, .sha256, .receipt.json) after verifying: one archive whose sha256 matches its .sha256 and the receipt; receipt release_tag == requested tag; runtime_key engine/config trees equal the tag's git trees; ROCm equals the host SDK; every extracted file's digest/size equals bundle.json (restore); a reused bundle's bundle.json may name another tag only via reused_from with equal trees. A record entry still wins. Receipt gains source record|ci. latest picks the newest tag with a record entry or a CI bundle.",
+  "timestamp-utc": "2026-11-08T02:03:15.955618Z",
+  "user-summary-candidate": "Releases built by CI can be installed with release-install; the bundle is verified against the release tag and the host's ROCm before it is used."
+}

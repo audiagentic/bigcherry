@@ -47,6 +47,24 @@ older tag family, and extra repository paths owned by the engine). The package p
    gate output and hardware evidence into the pin's release record. `--dry-run` prints the concrete actions and writes
    nothing. See [PIN_BUMP.md](PIN_BUMP.md) for the bump that precedes it.
 
+## Installing a release
+
+`release-install <tag|latest>` (Radiance) installs a release's runtime bundle into a clean detached worktree at the
+tag; see the [Radiance runbook](../engines/radiance/RUNBOOK.md) for paths and launch.
+
+- A `runtime_assets[<tag>]` entry in a pin record committed at the tag is the source of truth and takes precedence
+  (receipt `source: "record"`).
+- A tag with no entry (a release made by CI) installs from its release's own `radiance-<plan>.tar.gz`, `.sha256` and
+  `radiance-<plan>.receipt.json` (receipt `source: "ci"`). The receipt is the asset entry plus `release_tag`,
+  `runtime_key` and an optional `reused_from`. It installs only when the archive matches the `.sha256` asset and the
+  receipt; the receipt's `release_tag` is the tag; `runtime_key`'s `engine_tree`/`config_tree` equal the tag's trees
+  (git objects at the tag) and the bundle's; every extracted file matches the archive's `bundle.json`; and
+  `rocm_version` equals the host SDK. `bundle.json` may name another tag only when `reused_from` names that tag and
+  its trees equal this tag's. Any failure refuses the install.
+- `latest` is the numerically newest local `bc-radiance-*` tag with a record entry or a release carrying exactly one
+  archive with its `.sha256` and receipt. A bundle that then fails verification refuses; it does not fall back to an
+  older tag.
+
 ## Bump gates per engine
 
 `pin-bump` runs the gates the engine declares through its adapter: llama.cpp the ggml-cuda contract compile and the ggml
@@ -86,3 +104,11 @@ upstream version. `pinned-version` is a declared recipes field, updated with `pi
 
 Decision (owner, 2026-10-17): "upstream as major" for radiance, as above. The manifest starts the radiance package at
 `130.0.0`; its first release is stated with `release-as` by `pin-release`, as for llama.cpp.
+
+## What a radiance release asset is called
+
+A radiance runtime bundle is BigCherry's build of the radiance engine (the pinned upstream release with BigCherry's patches and
+components), not the upstream release, so its assets are named `bigcherryrad-<plan id>` (`.tar.gz`, `.tar.gz.sha256`,
+`.receipt.json`) and its `bundle.json` says `product: bigcherryrad` and what it was built from (the upstream project, URL and
+pinned tag). The files inside keep the engine's own names (`bin/radiance`, `radiance_home`), because scripts and the engine find
+each other by them. Bundles a lab `pin-release` packed before this name existed are `radiance-<plan id>.tar.gz` and still install.

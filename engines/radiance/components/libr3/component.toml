@@ -93,3 +93,6 @@ evidence = ["docs/evidence/RAD06/R3_MOE_AHALF.run.json"]
 default = "0"
 status = "diagnostic"
 summary = "selftest: compare compatibility and native MoE forms"
+
+[test]
+targets = ["r3_rewrite_check", "r3_helper_config_exports"]

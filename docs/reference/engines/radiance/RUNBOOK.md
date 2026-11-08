@@ -22,7 +22,7 @@ For builds with helper offload, confirm both `bin/radiance` and `radiance_home/h
 
 ## Launch Flash-Next
 
-**Production starts from a verified Radiance release, not the most recent lab build.** Install the newest locally known tag with a recorded runtime bundle (fetch tags first if needed), then launch:
+**Production starts from a verified Radiance release, not the most recent lab build.** Install the newest locally known tag with a recorded or CI runtime bundle (fetch tags first if needed), then launch:
 
 ```sh
 PYTHONPATH=tools python3 -m bigcherry --engine radiance release-install latest
@@ -30,7 +30,7 @@ bash tools/lab/radiance/launch-flashnext-best.sh start --release latest
 bash tools/lab/radiance/launch-flashnext-best.sh stop --release latest
 ```
 
-`release-install <tag|latest>` creates/reuses a clean detached worktree at `$BC_WORK_ROOT/releases/<tag>/src`, verifies the archive, binary SHA-256, engine/config source trees and ROCm SDK, and writes `$BC_WORK_ROOT/releases/<tag>/install.json`. It prints the exact tagged-script launch command with `--build`. The launcher's `--release` verifies the installed binary and re-execs that tagged script so its manifest contract matches the bundle. It refuses `--release` with `--build`; missing assets, dirty release worktrees, and checksum/SDK mismatches stop installation. `latest` chooses the numerically newest locally known `bc-radiance-*` tag with a runtime asset in its pin record.
+`release-install <tag|latest>` creates/reuses a clean detached worktree at `$BC_WORK_ROOT/releases/<tag>/src`, verifies the archive, binary SHA-256, engine/config source trees and ROCm SDK, and writes `$BC_WORK_ROOT/releases/<tag>/install.json`. It prints the exact tagged-script launch command with `--build`. The launcher's `--release` verifies the installed binary and re-execs that tagged script so its manifest contract matches the bundle. It refuses `--release` with `--build`; missing assets, dirty release worktrees, and checksum/SDK mismatches stop installation. `latest` chooses the numerically newest locally known `bc-radiance-*` tag with a runtime asset in its pin record or a verifiable CI bundle on its release ([RELEASES.md](../../build/RELEASES.md#installing-a-release)).
 
 **Lab experiments** may still use an explicit local build:
 
