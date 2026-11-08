@@ -5,7 +5,9 @@ if(NOT result EQUAL 0)
   message(FATAL_ERROR "Cannot inspect kernel configuration ABI: ${error}")
 endif()
 foreach(symbol bc_r4d_configure_helper bc_r4d_helper_config)
-  if(NOT symbols MATCHES "[0-9a-fA-F]+ T ${symbol}[\r\n]")
+  # T or W: rad0012 declares bc_r4d_helper_config weak (the engine tolerates a library without it), so its definition
+  # here is a weak one; the loader resolves a weak definition exactly like a strong one.
+  if(NOT symbols MATCHES "[0-9a-fA-F]+ [TW] ${symbol}[\r\n]")
     message(FATAL_ERROR "Kernel library does not export ${symbol}")
   endif()
 endforeach()

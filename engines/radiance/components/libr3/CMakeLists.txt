@@ -129,6 +129,9 @@ if(BUILD_TESTING)
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/r3_rewrite.py
       --source ${RADIANCE_SRC}/libr4d --rules ${CMAKE_CURRENT_SOURCE_DIR}/rewrites.txt
       ${native_arg} --check)
+  # component-tests builds each declared test by target name: script tests get a target of the same name.
+  add_custom_target(r3_rewrite_check)
+  add_custom_target(r3_helper_config_exports DEPENDS libr3)
   add_test(NAME r3_helper_config_exports
     COMMAND ${CMAKE_COMMAND} -DNM=${R3_NM} -DLIBRARY=$<TARGET_FILE:libr3>
       -P ${CMAKE_CURRENT_SOURCE_DIR}/helper_config_exports_test.cmake)
