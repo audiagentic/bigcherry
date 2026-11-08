@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.24.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.23.0...bc-platform-1.24.0) (2026-11-08)
+
+
+### New and changed
+
+* **release:** a published bc-radiance release gets its runtime bundle from CI ([#751](https://github.com/audiagentic/bigcherry/issues/751)) ([5712e04](https://github.com/audiagentic/bigcherry/commit/5712e04aaebec87f29cf1b1c12ea7c4e0d32a88a))
+
+
+### Fixes
+
+* **campaign:** a build restored from a release bundle needs no CMake cache or source slice ([#752](https://github.com/audiagentic/bigcherry/issues/752)) ([8289f2a](https://github.com/audiagentic/bigcherry/commit/8289f2aa27e279ceb7e9a525e7b626250118693a))
+* **lab:** parity gates the 8-session decode step on the cold round only; confirm a compare failure with a same-session A/B ([#754](https://github.com/audiagentic/bigcherry/issues/754)) ([0635e34](https://github.com/audiagentic/bigcherry/commit/0635e34423e35e34d68e8d0d795a64e19207e142))
+
 ## [1.23.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.22.0...bc-platform-1.23.0) (2026-11-08)
 
 
