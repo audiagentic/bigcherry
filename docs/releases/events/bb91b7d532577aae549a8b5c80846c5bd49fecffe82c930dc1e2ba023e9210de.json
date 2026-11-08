@@ -1,0 +1,27 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261108_204256_flash-next-can-now-run-tensor_7631",
+  "files": [
+    "engines/radiance/components/moe-remote/moe_remote_shm.h",
+    "engines/radiance/components/moe-remote/moe_mailbox_ops.hip",
+    "engines/radiance/components/moe-remote/moe_remote_hook.cpp",
+    "engines/radiance/components/moe-remote/moe_remote_gpu.h",
+    "engines/radiance/components/moe-remote/r3_moe_worker.cpp",
+    "engines/radiance/components/moe-remote/worker_combine.h",
+    "engines/radiance/components/moe-remote/worker_footprint.h",
+    "engines/radiance/components/libr3/r3_moe_settings.h",
+    "engines/radiance/components/serving/serving.cpp",
+    "engines/radiance/components/serving/manifest_writer.cpp",
+    "engines/radiance/components/serving/helper_profile.toml",
+    "engines/radiance/components/serving/live_policy_manifest.cpp",
+    "engines/radiance/layouts.toml",
+    "tools/bigcherry/engine_adapters/radiance_layout.py"
+  ],
+  "plan-item-ids": [
+    "RAD49"
+  ],
+  "status": "unreleased",
+  "technical-summary": "moe-remote protocol v25: request slot = (helper, consumer rank); helpers compute routed experts full-width once and the consumer rank of a layer (layer % world) adds them, so a TP engine sums each helper row exactly once; N helpers behind M engine ranks; per-consumer combine; live placement behind TP. Derived helper budgets subtract the helper's own lane/bank footprint (worker_footprint.h shared by worker and bc-serve, incl. power save and small-lane classes). libr3 engine takes R3_MOE_NATIVE/FP16/AHALF default on when unset. Lab layout flashnext-tp2xtx (2x gfx1100 TP, R9700 head + 6900 XT tail). One-rank path verified neutral on flashnext-4gpu (same-session A/B).",
+  "timestamp-utc": "2026-11-08T20:42:56.049691Z",
+  "user-summary-candidate": "Flash-Next can now run tensor-parallel on the two 7900 XTX with the R9700 and RX 6900 XT holding experts (lab layouts); helper experts are computed once instead of once per rank."
+}
