@@ -263,6 +263,20 @@ class ReleaseInstallTests(unittest.TestCase):
         self.assertEqual(receipt["source"], "record")
         self.assertEqual(receipt["archive_sha256"], self.asset["sha256"])
 
+    def test_ci_receipt_that_is_not_a_bigcherryrad_bundle_refused(self):
+        for product in ("radiance", None):
+            with self.subTest(product=product):
+                self._ci_bundle(CI_TAG, product=product)
+                self._refused(CI_TAG, "receipt asset is not a bigcherryrad bundle")
+
+    def test_bundle_json_that_is_not_a_bigcherryrad_bundle_refused(self):
+        for document in ({"product": "radiance"}, {}, []):
+            with self.subTest(document=document), self.assertRaisesRegex(
+                runtime_assets.BundleError, "bundle.json is not a bigcherryrad bundle"
+            ):
+                runtime_assets.require_product("bundle.json", document)
+        runtime_assets.require_product("bundle.json", {"product": "bigcherryrad"})
+
     def _refused(self, tag, pattern):
         with (
             mock.patch.dict(os.environ, self.env),

@@ -297,6 +297,13 @@ def tag_identity(root: Path, tag: str) -> dict[str, str]:
     return {"engine_tree": tree("engines/radiance"), "config_tree": tree("config")}
 
 
+def require_product(what: str, document: object) -> None:
+    """A CI release bundle says it is BigCherry's build; one that does not (or names another product) is refused."""
+    product = document.get("product") if isinstance(document, dict) else None
+    if product != PRODUCT:
+        raise BundleError(f"{what} is not a {PRODUCT} bundle (product {product!r})")
+
+
 def ci_asset(root: Path, tag: str, stage: Path) -> tuple[dict, Path, Path]:
     """Download a CI-made release's own bundle and return its receipt (the asset), archive and checksum.
 
@@ -327,6 +334,7 @@ def ci_asset(root: Path, tag: str, stage: Path) -> tuple[dict, Path, Path]:
     if not isinstance(asset, dict) or asset.get("name") != archive.name or asset.get("sha256") != sha \
             or asset.get("checksum_name") != checksum.name:
         raise BundleError("receipt asset does not describe the release archive")
+    require_product("receipt asset", asset)
     if asset.get("release_tag") != tag:
         raise BundleError(f"receipt asset is for {asset.get('release_tag')}, not {tag}")
     key = asset.get("runtime_key")
@@ -343,6 +351,7 @@ def ci_asset(root: Path, tag: str, stage: Path) -> tuple[dict, Path, Path]:
             raise BundleError("runtime archive does not start with bundle.json")
         with tar.extractfile(member) as stream:
             manifest = json.loads(stream.read())
+    require_product("bundle.json", manifest)
     built_for = manifest.get("release_tag") if isinstance(manifest, dict) else None
     if built_for != tag:
         reused = asset.get("reused_from")
