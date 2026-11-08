@@ -33,6 +33,8 @@ plan_check_describe() {
     --set "handoff.histogram_period_s=$RECORD_PERIOD"
   )
   [ "$PREFIX_RESUME" = off ] || PLAN_SET+=(--set "engine.prefix_resume=\"$PREFIX_RESUME\"")
+  # A TP engine's ranks exchange through host memory, never P2P (this host has none), as in the helper-free path below.
+  [ "${LAYOUT_ENGINE_RANKS:-1}" -le 1 ] || PLAN_SET+=(--set 'tuning.p2p="off"')
   # What else decides the plan but is not a bc-serve setting: the route-heat file's contents (they decide which experts the
   # helpers own), the per-card budget overrides and the lab experiment. Passed to every bc-serve call as --plan-extra and
   # hashed into the key. (No raw engine flag and no n-gram card: a helper layout refuses both, they are not manifest fields.)

@@ -1,0 +1,23 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261108_121904_new-lab-layout-flashnext-tp2xt_5152",
+  "files": [
+    "engines/radiance/layouts.toml",
+    "tools/bigcherry/engine_adapters/radiance_layout.py",
+    "engines/radiance/components/serving/serving.cpp",
+    "engines/radiance/components/serving/manifest_writer.cpp",
+    "engines/radiance/components/serving/live_policy_manifest.cpp",
+    "tools/lab/radiance/launch-flashnext-best.sh",
+    "tools/lab/radiance/lib/plan-check.sh",
+    "tools/lab/radiance/r3-arbench.cpp",
+    "tools/lab/radiance/host-pull.hip",
+    "tools/lab/radiance/rad49-arbench.sh"
+  ],
+  "plan-item-ids": [
+    "RAD49"
+  ],
+  "status": "unreleased",
+  "technical-summary": "A tensor-parallel radiance engine may now have the one remote-MoE helper the mailbox protocol allows (resolver, bc-serve, launcher, plan check); helper budget-mib omitted derives from card VRAM less reserve; host ledger counts the host pool per rank; layout flashnext-tp2xtx-r9700 (2x gfx1100 TP, exact wire, R9700 helper); two-rank exchange bench harness for RAD49 step 1.",
+  "timestamp-utc": "2026-11-08T12:19:04.015496Z",
+  "user-summary-candidate": "New lab layout flashnext-tp2xtx-r9700: Flash-Next tensor-parallel on the two 7900 XTX with the R9700 holding experts."
+}

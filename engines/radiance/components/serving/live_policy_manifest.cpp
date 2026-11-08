@@ -19,6 +19,11 @@ std::optional<DerivedLivePolicy> derive_manifest_live_policy(
         if (skipped_reason) *skipped_reason = "record key=" + key + ": " + why;
         return std::nullopt;
     };
+    // r3_moe_worker refuses R3_MOE_POLICY_ENABLE behind a multi-rank engine (its histogram is one rank's, its moves full-width)
+    const auto ranks = in.resolved.values.at("engine").at("tp").get<uint64_t>();
+    if (ranks > 1)
+        return skip("the live placement policy needs a one-rank engine (r3_moe_worker); this engine has " +
+                    std::to_string(ranks) + " ranks");
     if (!live_policy_record_complete(*record)) {
         for (auto it = record->absent.begin(); it != record->absent.end(); ++it)
             return skip("incomplete " + it.key() + ": " + it.value().get<std::string>());

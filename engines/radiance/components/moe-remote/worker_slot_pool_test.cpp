@@ -8,6 +8,7 @@
 #include <cstdlib>
 #include <fstream>
 #include <map>
+#include <set>
 #include <new>
 #include <string>
 #include <vector>
@@ -155,12 +156,16 @@ static void production_layout_parity() {
     std::ifstream in(R3_LAYOUTS_TOML);
     check(in.good(), "layouts.toml readable");
     std::map<std::string,std::vector<HelperConfig>> layouts;
+    std::set<std::string> derived;
     std::string name, line;
     HelperConfig group;
     bool open = false;
     auto flush = [&] {
         if (!open) return;
-        check(group.budget && !group.arch.empty(), "valid helper group");
+        check(!group.arch.empty(), "valid helper group");
+        /* A group without budget-mib takes its card's VRAM less the arch reserve (layouts.toml header): derived from
+         * the inventory at launch, so it has no card-free budget and its layout is not planned here. */
+        if (!group.budget) { derived.insert(name); open=false; return; }
         for (uint32_t i=0; i<group.count; ++i)
             layouts[name].push_back({group.budget, group.arch, group.placement, group.share, 1});
         open=false;
@@ -187,6 +192,7 @@ static void production_layout_parity() {
         }
     }
     flush(); check(!layouts.empty(),"production layouts present");
+    for(const auto& d: derived) layouts.erase(d);
     for(const auto& [name,helpers]:layouts) {
         check(!helpers.empty() && helpers.size()<=r3::moe_shm::kMaxHelpers,
               "production layout helper count");

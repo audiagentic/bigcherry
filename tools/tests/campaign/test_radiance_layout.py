@@ -31,6 +31,10 @@ class RepoDataTests(unittest.TestCase):
             elif name == "flashnext-r9700":   # the R9700 alone, no helpers
                 self.assertEqual(r.engine_indices, (2,))
                 self.assertEqual(len(r.helpers), 0)
+            elif name == "flashnext-tp2xtx-r9700":   # RAD49: the XTX pair tensor-parallel, the R9700 its one helper
+                self.assertEqual(r.engine_indices, (0, 1))
+                self.assertEqual([h.index for h in r.helpers], [2])
+                self.assertEqual(r.tp_wire, "exact")
             else:
                 self.assertEqual(r.engine_indices, (2,))
                 self.assertGreaterEqual(len(r.helpers), 2)
@@ -98,13 +102,34 @@ class ResolveTests(unittest.TestCase):
             ('engine = { devices = [0, 2] }\ntp-wire = "wht6"', "share an architecture"),
             ('engine = { arch = "gfx1100", count = 2 }\ntp-wire = "wht6"\nserver-args = ["--p2p", "on"]', "server-args"),
             ('engine = { arch = "gfx1100", count = 2 }\ntp-wire = "wht6"\nserver-args = ["--tp", "1"]', "server-args"),
-            ('engine = { arch = "gfx1100", count = 2 }\ntp-wire = "wht6"\n[[layout.t.helper]]\narch = "gfx1030"\nbudget-mib = 100', "remote-MoE helpers require"),
+            ('engine = { arch = "gfx1100", count = 2 }\n[[layout.t.helper]]\narch = "gfx1030"\nbudget-mib = 100', "requires tp-wire"),
+            ('engine = { arch = "gfx1100", count = 2 }\ntp-wire = "wht6"\n[[layout.t.helper]]\narch = "gfx1201"\nbudget-mib = 100\n'
+             '[[layout.t.helper]]\narch = "gfx1030"\nbudget-mib = 100\nplacement = "tail"', "one remote-MoE helper only"),
         ]
         for recipe, expected in cases:
             with self.subTest(recipe=recipe):
                 root = FileRuleTests.roots(self, archs, 'schema = 1\n[layout.t]\nmodel = "m.rad"\n'+recipe+'\n')
                 with self.assertRaisesRegex(rl.LayoutError, expected):
                     rl.resolve("t", host(*WITH_6900), repo_root=root)
+
+    def test_a_tensor_parallel_engine_with_its_one_helper(self):
+        from bigcherry.cli.layout_cmds import _env_lines
+
+        r = rl.resolve("flashnext-tp2xtx-r9700", host(*WITH_6900))
+        self.assertEqual((r.engine_indices, r.engine_arch, r.engine_plugin, r.tp_wire), ((0, 1), "gfx1100", "libr3.so", "exact"))
+        self.assertEqual([(h.index, h.arch.name, h.placement) for h in r.helpers], [(2, "gfx1201", "head")])
+        # no budget-mib in the layout: the whole card less its archs.toml reserve, from the inventory
+        self.assertEqual(r.helpers[0].budget_mib, 32624 - rl.load_archs()["gfx1201"].reserve_mib)
+        self.assertEqual(r.common_env, {"R3_MOE_WORKER_COUNT": "1", "R3_MOE_WORKER_ENGINE_RANKS": "2",
+                                        "R3_MOE_WORKER_MIBS": str(r.helpers[0].budget_mib)})
+        self.assertEqual(r.server_args, ("--max-model-len", "65536", "--max-num-seqs", "6", "--host-pool-mib", "4096"))
+        lines = "\n".join(_env_lines(r))
+        for want in ("LAYOUT_ENGINE_DEVICES=0,1", "LAYOUT_ENGINE_RANKS=2", "LAYOUT_TP_WIRE=exact", "LAYOUT_HELPER_COUNT=1",
+                     "LAYOUT_SERVER_ARGS=(--max-model-len 65536 --max-num-seqs 6 --host-pool-mib 4096)"):
+            self.assertIn(want, lines)
+        self.assertIn("TP ranks: 0,1 (gfx1100), wire exact; helper0: card 2 gfx1201", lines)
+        # a budget override still applies to the helper's architecture
+        self.assertEqual(rl.resolve("flashnext-tp2xtx-r9700", host(*WITH_6900), budgets={"gfx1201": 20480}).helpers[0].budget_mib, 20480)
 
     def test_two_xtx(self):
         r = rl.resolve("flashnext-2xtx", host(*XTX2))
@@ -200,7 +225,7 @@ roles = ["helper"]
             "already used": self.HEAD + '[[layout.t.helper]]\ndevices = [0]\nbudget-mib = 100\n',
             "may not be used as engine": '[layout.t]\nengine = { arch = "gfx1100" }\n[[layout.t.helper]]\narch = "gfx1030"\nbudget-mib = 100\n',
             "arch or devices": '[layout.t]\nengine = { arch = "gfx1201" }\n[[layout.t.helper]]\nbudget-mib = 100\n',
-            "positive integer": '[layout.t]\nengine = { arch = "gfx1201" }\n[[layout.t.helper]]\narch = "gfx1100"\n',
+            "positive integer": '[layout.t]\nengine = { arch = "gfx1201" }\n[[layout.t.helper]]\narch = "gfx1100"\nbudget-mib = 0\n',
             "unknown key": '[layout.t]\nengine = { arch = "gfx1201" }\n[[layout.t.helper]]\narch = "gfx1100"\nbudget-mib = 100\nflavour = "x"\n',
             "no head helper with a share": '[layout.t]\nengine = { arch = "gfx1201" }\n[[layout.t.helper]]\narch = "gfx1100"\nbudget-mib = 100\nshare = 0\n',
             "devices lists a card twice": '[layout.t]\nengine = { arch = "gfx1201" }\n[[layout.t.helper]]\ndevices = [0, 0]\nbudget-mib = 100\n',
@@ -213,6 +238,10 @@ roles = ["helper"]
         for why, text in bad.items():
             with self.subTest(why=why), self.assertRaisesRegex(rl.LayoutError, why if why != "the protocol bound" else "exceed"):
                 self.resolve(text)
+
+    def test_an_absent_budget_is_the_card_less_its_reserve(self):
+        r = self.resolve('[layout.t]\nengine = { arch = "gfx1201" }\n[[layout.t.helper]]\narch = "gfx1100"\n')
+        self.assertEqual([h.budget_mib for h in r.helpers], [24560 - 1024, 24560 - 1024])
 
     def test_layout_env_reaches_the_common_settings_for_two_helpers(self):
         r = self.resolve(self.HEAD + '[layout.t.env]\nR3_MOE_WORKER_COMBINE = "1"\n')

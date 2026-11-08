@@ -216,12 +216,10 @@ def resolve(name: str, host: environment.Host, *, budgets: dict[str, int] | None
     if len({d.arch for d in engine}) != 1:
         raise LayoutError(f"{where}.engine: all tensor-parallel ranks must share an architecture")
     groups = lay.get("helper") or []
-    if groups and len(engine) != 1:
-        raise LayoutError(f"{where}: remote-MoE helpers require exactly one engine rank")
     tp_wire = lay.get("tp-wire")
     if len(engine) > 1:
-        if groups or tp_wire not in ("exact", "wht6"):
-            raise LayoutError(f"{where}: multi-rank engine requires a helper-free layout and tp-wire exact or wht6")
+        if tp_wire not in ("exact", "wht6"):
+            raise LayoutError(f"{where}: a multi-rank engine requires tp-wire exact or wht6")
     elif tp_wire is not None:
         raise LayoutError(f"{where}: tp-wire is only for multiple engine ranks")
     server_args = lay.get("server-args", [])
@@ -236,8 +234,6 @@ def resolve(name: str, host: environment.Host, *, budgets: dict[str, int] | None
                    or server_args[i + 1].startswith("-") for i in range(0, len(server_args), 2))
             or len(set(server_args[::2])) != len(server_args[::2])):
         raise LayoutError(f"{where}.server-args: expected unique, allowed option/value pairs")
-    if groups and server_args:
-        raise LayoutError(f"{where}: server-args are for helper-free layouts only")
     if not groups:
         if budgets:
             raise LayoutError(f"{where}: budget overrides require remote-MoE helpers")
@@ -262,13 +258,14 @@ def resolve(name: str, host: environment.Host, *, budgets: dict[str, int] | None
         if not isinstance(share, int) or isinstance(share, bool) or share < 0:
             raise LayoutError(f"{gwhere}: share is a non-negative integer")
         for d in cards:
-            budget = g.get("budget-mib")
+            limit = d.vram_mib - archs[d.arch].reserve_mib
+            # absent: the whole card less its archs.toml reserve (derived from the inventory, not a literal in the layout)
+            budget = g.get("budget-mib", limit)
             if d.arch in budgets:
                 budget = budgets[d.arch]
                 used_overrides.add(d.arch)
             if not isinstance(budget, int) or isinstance(budget, bool) or budget <= 0:
                 raise LayoutError(f"{gwhere}: budget-mib is a positive integer")
-            limit = d.vram_mib - archs[d.arch].reserve_mib
             if budget > limit:
                 raise LayoutError(f"{gwhere}: budget {budget} MiB on device {d.index} ({d.arch}, {d.vram_mib} MiB, reserve {archs[d.arch].reserve_mib}) exceeds {limit} MiB")
             helpers.append(HelperCard(d.index, archs[d.arch], d.vram_mib, budget, placement, share))
@@ -279,9 +276,14 @@ def resolve(name: str, host: environment.Host, *, budgets: dict[str, int] | None
         raise LayoutError(f"{where}: {len(helpers)} helpers exceed the protocol's {max_helpers(repo_root)}")
     if not any(h.placement == "head" and h.share > 0 for h in helpers):
         raise LayoutError(f"{where}: no head helper with a share")
+    if len(engine) > 1 and len(helpers) > 1:
+        # moe_remote_hook.cpp r3_moe_mailbox_device: a multi-rank engine uses the request slot axis for its ranks, so it is served
+        # by one helper only (step_slot in moe_mailbox_ops.hip); N helpers behind M ranks is RAD49 step 3.
+        raise LayoutError(f"{where}: a {len(engine)}-rank engine is served by one remote-MoE helper only (the mailbox protocol); "
+                          f"this layout selects {len(helpers)}")
     common = {
         "R3_MOE_WORKER_COUNT": str(len(helpers)),
-        "R3_MOE_WORKER_ENGINE_RANKS": "1",
+        "R3_MOE_WORKER_ENGINE_RANKS": str(len(engine)),
         "R3_MOE_WORKER_MIBS": ",".join(str(h.budget_mib) for h in helpers),
         # one weight per helper (the tail helper's is not read: tail placement gives it what the heads left); only when a head differs from 1
         "R3_MOE_WORKER_SHARES": ",".join(str(h.share if h.placement == "head" else 0) for h in helpers)
@@ -302,5 +304,5 @@ def resolve(name: str, host: environment.Host, *, budgets: dict[str, int] | None
     if common.get("R3_MOE_WORKER_COMBINE") == "1" and len(helpers) < 2:
         # the combine adds the rows of two to kCombineHelpers (= kMaxHelpers, the bound checked above) helpers; one has nothing to add
         raise LayoutError(f"{where}: the helper-row combine needs at least two helpers; {len(helpers)} would run with it silently off")
-    return Resolved(name, (engine[0].index,), engine[0].arch, archs[engine[0].arch].plugin,
-                    model, None, (), tuple(helpers), {k: v for k, v in common.items() if v != ""})
+    return Resolved(name, tuple(d.index for d in engine), engine[0].arch, archs[engine[0].arch].plugin,
+                    model, tp_wire, tuple(server_args), tuple(helpers), {k: v for k, v in common.items() if v != ""})

@@ -218,6 +218,44 @@ class LaunchCleanupTests(unittest.TestCase):
                            cwd=REPO, capture_output=True, text=True, timeout=120)
         self.assertEqual(self._alive_pids(), [])
 
+    def test_a_tensor_parallel_engine_with_a_helper_starts_from_its_manifest(self) -> None:
+        """RAD49: the XTX pair as two TP ranks and the R9700 as the one helper: the layout's server-args are the launcher's
+        defaults (a command-line option still wins), TP goes through host memory, and the helper sees only its own card."""
+        from bigcherry.engine_adapters import radiance_layout as rl
+        from bigcherry.cli.layout_cmds import _env_lines
+        from bigcherry.core.environment import Device
+        from types import SimpleNamespace
+
+        inventory = SimpleNamespace(devices=(
+            Device(0, "gfx1100", "a", 24560), Device(1, "gfx1100", "b", 24560), Device(2, "gfx1201", "c", 32624),
+        ))
+        resolved = rl.resolve("flashnext-tp2xtx-r9700", inventory)
+        (self.root / "layout.env").write_text("\n".join(_env_lines(resolved)) + "\n")
+        for plugin in ("libr3.so", "libr4d.so"):
+            (self.build / "radiance_home" / "kernels" / plugin).write_bytes(b"plugin")
+        describe = self.work / "flashnext" / "plan-cache" / "describe.log"
+        for extra, sessions in (([], "6"), (["--max-num-seqs", "2"], "2")):
+            with self.subTest(extra=extra):
+                if describe.exists():
+                    describe.unlink()
+                args = ["bash", str(LAUNCHER), "--build", str(self.build), "--port", str(self.port), "--record-heat", "off",
+                        "--layout", resolved.name, *extra]
+                done = subprocess.run(args, env=self.env, cwd=REPO, capture_output=True, text=True, timeout=120)
+                try:
+                    self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+                    self.assertIn("start canary: ok", done.stderr)
+                    sets = describe.read_text().splitlines()
+                    for want in ('layout.name="flashnext-tp2xtx-r9700"', "service.max_context=65536",
+                                 f"service.max_sessions={sessions}", 'tuning.p2p="off"', "memory.host_pool_mib=4096"):
+                        self.assertIn(want, sets)
+                    self.assertTrue([x for x in sets if x.startswith("handoff.")], sets)   # a hand-off, unlike a dense layout
+                    self.assertEqual((self.root / "engine-env").read_text().strip(), "0,1|0,1|unset")
+                    self.assertEqual(sorted(p.name for p in self.work.joinpath("flashnext/pids").glob("helper*")), ["helper0"])
+                    self.assertIn("engine TP=2 cards 0,1", done.stderr)
+                finally:
+                    subprocess.run(["bash", str(LAUNCHER), "stop"], env=self.env, cwd=REPO, capture_output=True, text=True, timeout=120)
+        self.assertEqual(self._alive_pids(), [])
+
     def test_dense_rejects_helper_only_options_and_missing_model(self) -> None:
         env_text = """LAYOUT_ENGINE_DEVICE=0
 LAYOUT_ENGINE_DEVICES=0,1

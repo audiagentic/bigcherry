@@ -1399,7 +1399,7 @@ void layout_manifests_golden(Fixture& t, bool write_golden, const char* dump_dir
     }
     std::string got;
     for (const char* name : {"flashnext-4gpu", "flashnext-2xtx", "flashnext-2xtx-combine", "flashnext-2xtx-rdna2-head",
-                             "flashnext-2xtx-rdna2-tail", "flashnext-2xtx-rdna2-tail-combine"}) {
+                             "flashnext-2xtx-rdna2-tail", "flashnext-2xtx-rdna2-tail-combine", "flashnext-tp2xtx-r9700"}) {
         Options opts;
         opts.site = t.file("golden-site.toml", "[engine]\nmodel = \"" + model.string() + "\"\nradiance_home = \"/runtime\"\n"
                                               "[handoff]\nheat = \"" + heat.string() + "\"\nhistogram = \"/heat.live\"\n");
@@ -1496,6 +1496,45 @@ void engine_only_layout(Fixture& t) {
     (void)sv::resolve(no_wire, t.facts);
 }
 
+// RAD49: a tensor-parallel engine (the two RDNA3 cards) with the one remote-MoE helper the mailbox protocol allows behind it.
+void tp_engine_with_helper_layout(Fixture& t) {
+    namespace sv = bc::serving;
+    const auto model = t.root / "tp-helper-model.rad";
+    bc::test::write_rad(model, 4, 16, 128, 128, {});
+    const auto heat = t.root / "tp-helper.hot-first";
+    {
+        std::vector<uint32_t> counts(128 * 16, 1);
+        std::ofstream(heat, std::ios::binary).write(reinterpret_cast<const char*>(counts.data()), counts.size() * 4);
+    }
+    Options opts;
+    opts.site = t.file("tp-helper-site.toml", "[engine]\nmodel = \"" + model.string() + "\"\nradiance_home = \"/runtime\"\n"
+                                              "[handoff]\nheat = \"" + heat.string() + "\"\nhistogram = \"/heat.live\"\n");
+    opts.sets = {"layout.name=\"flashnext-tp2xtx-r9700\"", "service.max_sessions=6", "service.max_context=65536"};
+    const auto r = sv::resolve(opts, t.facts);
+    assert(r.typed.layout.engine_cards.size() == 2 && r.typed.layout.helper_cards.size() == 1);
+    assert(r.typed.engine.tp == 2 && r.typed.engine.tp_wire == "exact");
+    assert(r.typed.engine.kernels == "libr3,libr3moe,libref");
+    assert(r.typed.helper.count == 1 && r.typed.helper.engine_ranks == 2);
+    // no budget-mib in the layout: the helper's card (the fixture's R9700, 32624 MiB) less its archs.toml reserve
+    assert(r.values.at("memory").at("helper_budgets_mib") == Json::array({32624 - 2048}));
+    sv::ManifestInputs in;
+    in.resolved = r;
+    in.instance_id = "11111111-1111-4111-8111-111111111111";
+    in.producer_sha256 = std::string(64, 'a');
+    in.profile = "production";
+    const auto built = sv::build_manifest(in);
+    const Json& spec = built.document.at("spec");
+    assert(spec.at("processes").at("engine").at("device").at("gpus").size() == 2);
+    assert(spec.at("processes").at("engine").at("scheduler").at("tp") == 2);
+    assert(spec.at("processes").at("engine").at("execution").at("tp_wire") == "exact");
+    assert(spec.at("processes").at("helpers").size() == 1 && spec.contains("handoff"));
+    assert(bc::serving::v1::read_manifest(built.text, "tp-helper", bc::serving::v1::PlanUse::measuring).ok());
+    // the transport is required with helpers too
+    Options no_wire = opts;
+    no_wire.sets.push_back("engine.tp_wire=\"wht6\"");
+    assert(sv::resolve(no_wire, t.facts).typed.engine.tp_wire == "wht6");
+}
+
 int main(int argc, char** argv) {
     bool write_golden = false;
     const char* dump_dir = nullptr;
@@ -1520,6 +1559,7 @@ int main(int argc, char** argv) {
         manifest_writer_step(t);
         layout_manifests_golden(t, write_golden, dump_dir);
         engine_only_layout(t);
+        tp_engine_with_helper_layout(t);
         sdk_environment_step(t);
         std::cout << "PASS: fake KFD/PCI/proc detection; strict keys; types/ranges; required; "
                      "precedence/caps; provenance/hash; launcher engine/WorkerConfig parity; "
