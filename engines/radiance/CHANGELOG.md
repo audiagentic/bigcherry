@@ -1,5 +1,20 @@
 # Changelog
 
+## [1170.13.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.12.0...bc-radiance-1170.13.0) (2026-11-08)
+
+
+### New and changed
+
+* **moe-remote:** full-width-once helper rows and N helpers behind a TP engine (protocol v25, flashnext-tp2xtx) ([#771](https://github.com/audiagentic/bigcherry/issues/771)) ([a139d29](https://github.com/audiagentic/bigcherry/commit/a139d293c620b4db93c544df6ee2b6ae4943979e))
+* **radiance:** a tensor-parallel engine with its remote-MoE helper (flashnext-tp2xtx-r9700) ([#770](https://github.com/audiagentic/bigcherry/issues/770)) ([6f7de47](https://github.com/audiagentic/bigcherry/commit/6f7de471ae874d5339648aca02c9e53ebf732e5a))
+
+
+### Fixes
+
+* **build:** the build plan id covers the repository files components read outside their directories ([#763](https://github.com/audiagentic/bigcherry/issues/763)) ([aaa923b](https://github.com/audiagentic/bigcherry/commit/aaa923bceddf5619c67aabbb3d7be0d4e8903d6f))
+* **launcher:** say at once when the helpers are up but the hand-off segment is missing; name the errno when the engine cannot open it ([#772](https://github.com/audiagentic/bigcherry/issues/772)) ([9cadcd2](https://github.com/audiagentic/bigcherry/commit/9cadcd2d50329d1640a9caf2b06c35f2d6d1218e))
+* **moe-remote:** a helper unlinks the hand-off segment only if the name still names the one it created ([#773](https://github.com/audiagentic/bigcherry/issues/773)) ([9bbfa19](https://github.com/audiagentic/bigcherry/commit/9bbfa19a5e109226f487ff7f2a4c07effb40db48))
+
 ## [1170.12.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.11.0...bc-radiance-1170.12.0) (2026-11-08)
 
 
