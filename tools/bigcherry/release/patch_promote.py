@@ -676,17 +676,9 @@ def _finish_release_if_ready(root: Path, layout: engines.EngineLayout, bump: str
         version=version,
         branch=branch,
     )
-    # BU01: patch-promote cannot attach a trustworthy runtime bundle by itself.
-    # Do not tag an unbundled Radiance release: require the explicit pin-release
-    # lane build/record phase to stage an exact SHA-256 receipt first.
-    if layout.name == engines.RADIANCE:
-        record_path = root / "releases" / f"{pinned}.json"
-        record = json.loads(record_path.read_text()) if record_path.is_file() else {}
-        if plan.release_tag not in record.get("runtime_assets", {}):
-            print(f"release pending: {plan.release_tag} has no verified lane runtime bundle; "
-                  f"run bigcherry --engine radiance pin-release {pinned} --version {version} "
-                  "with the lane build and hardware evidence before tagging")
-            return False
+    # Radiance releases are bundled by CI after release-please publishes them (radiance-release-bundle.yml, on
+    # release: published): the tag comes first, the verified runtime bundle is attached to it, and release-install
+    # verifies that bundle against the tag. Promotion therefore does not wait for a lab-staged bundle.
     pr = pin_release._release_pr(plan)
     if pr is None:
         pin_release._open_release_pr(plan)

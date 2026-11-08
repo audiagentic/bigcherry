@@ -1,0 +1,11 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261108_030726_patch-promotions-release-witho_4860",
+  "files": [
+    "tools/bigcherry/release/patch_promote.py"
+  ],
+  "status": "unreleased",
+  "technical-summary": "patch-promote no longer refuses to open a radiance release PR until a lab-staged runtime_assets record exists for the tag. Radiance releases are bundled by CI after release-please publishes them (radiance-release-bundle.yml on release: published), and release-install verifies that bundle against the tag. pin-release's lab bundle path is unchanged.",
+  "timestamp-utc": "2026-11-08T03:07:26.865335Z",
+  "user-summary-candidate": "Patch promotions release without waiting for a lab-built bundle; CI bundles each published radiance release."
+}
