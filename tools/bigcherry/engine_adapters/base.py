@@ -25,6 +25,16 @@ if TYPE_CHECKING:
     from ..core.context import ProjectContext
 
 
+@dataclass(frozen=True)
+class ServingLayout:
+    """What a named layout decides for an arm that serves it: the model file it serves and the engine cards it runs on
+    (the device selectors of those cards and the execution identity they must show)."""
+
+    model: Path
+    environment: dict[str, str]
+    expected_execution: dict[str, Any]
+
+
 class SidecarError(RuntimeError):
     """A sidecar failed to start, exited early or never reported ready."""
 
@@ -199,6 +209,11 @@ class EngineAdapter(ABC):
     def sidecars(self, arm: dict[str, Any], env: dict[str, str], run_dir: Path, binary: Path) -> list[SidecarSpec]:
         """Helper processes for one arm cell, in start order. ``arm`` carries ``name``, ``model`` and ``settings``;
         ``env`` is the arm complete server environment."""
+
+    def serving_layout(self, layout: str) -> ServingLayout:
+        """The model and engine cards of a named layout, resolved against this host. An engine without named layouts
+        refuses."""
+        raise ValueError(f"{type(self).__name__} has no named layouts")
 
     def write_serving_manifest(
         self, name: str, serving: dict[str, Any], *, binary: Path, model: Path, env: dict[str, str], run_dir: Path,

@@ -249,6 +249,168 @@ class ServerComparisonCaptureTests(unittest.TestCase):
             "max_kld_mean_increase": 0.002, "max_kld_median_increase": 0.001, "max_kld_p99_increase": 0.02,
             "max_kld_p999_increase": 0.1, "max_top1_drop_points": 0.5, "max_ppl_ratio_increase": 0.005}, **updates}
 
+    def fake_layout(self, layout):
+        """A layout on this fixture: 'l' and 'xtx' serve the fixture model on two gfx1100 cards, 'r9700' on one gfx1201,
+        'other' serves another file."""
+        from bigcherry.engine_adapters.base import ServingLayout
+        cards = {"l": ([0, 1], "gfx1100"), "xtx": ([0, 1], "gfx1100"), "r9700": ([2], "gfx1201"), "other": ([2], "gfx1201")}
+        if layout not in cards:
+            raise ValueError(f"unknown layout {layout!r}")
+        indices, arch = cards[layout]
+        model = (self.root / "other.gguf") if layout == "other" else self.model
+        return ServingLayout(
+            model=model.resolve(),
+            environment={"ROCR_VISIBLE_DEVICES": ",".join(map(str, indices)),
+                         "HIP_VISIBLE_DEVICES": ",".join(str(i) for i in range(len(indices)))},
+            expected_execution={"backend": "ROCm", "architectures": [arch] * len(indices),
+                                "locators": [f"0000:0{i + 1}:00.0" for i in indices]})
+
+    def write_layout_config(self, arms, **updates):
+        """A radiance quality-only config whose arms all serve layouts: no shared model, selectors or expected execution."""
+        config = {key: value for key, value in self.base_config.items()
+                  if key not in ("model", "environment", "expected_execution")}
+        config.update(engine="radiance", execution_evidence="observe", quality_only=True, quality=self.quality_block(),
+                      server_args=[], arms=arms, **updates)
+        self.config.write_text(json.dumps(config), encoding="utf-8")
+
+    def layout_adapter(self, served):
+        """A radiance adapter whose layouts are fake_layout's; records each arm's manifest inputs and scores every arm."""
+        import sys
+        from bigcherry.engine_adapters.base import QualityCommand
+        from bigcherry.engine_adapters.radiance import RadianceAdapter
+        test = self
+
+        class LayoutAdapter(RadianceAdapter):
+            def serving_layout(self, layout):
+                return test.fake_layout(layout)
+
+            def write_serving_manifest(self, name, serving, *, binary, model, env, run_dir):
+                served[name] = {"model": model, "rocr": env.get("ROCR_VISIBLE_DEVICES"), "hip": env.get("HIP_VISIBLE_DEVICES")}
+                path = run_dir / "manifest.json"
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("{}")
+                return path
+
+            def sidecars(self, arm, env, run_dir, binary):
+                return []
+
+            def quality_command(self, kind, arm, env, run_dir, binary, model, quality):
+                result = run_dir / f"{arm['name']}.kld.json"
+                program = ("import json,sys;json.dump({'all':{'kld':{'mean':0.003,'median':0.001,'p99':0.02,'p99_9':0.1},"
+                           "'top1_agreement':0.968,'ppl':{'candidate':8.55,'reference':8.56,'ratio':0.9988}}},open(sys.argv[1],'w'))")
+                return QualityCommand((sys.executable, "-c", program, str(result)), dict(env),
+                                      run_dir / f"{arm['name']}.score.log", result, 60.0)
+        return LayoutAdapter()
+
+    def layout_arms(self, *layouts):
+        arms = []
+        for i, layout in enumerate(layouts):
+            arm = dict(self.arms[i % 2], mode="stock", serving={"layout": layout, "set": {}})
+            arm["name"] = f"arm{i}"
+            arms.append(arm)
+        return arms
+
+    def run_layouts(self, served):
+        from bigcherry.engine_adapters import _ADAPTERS
+        with self.patches_for_preflight(), patch.dict(_ADAPTERS, {"radiance": self.layout_adapter(served)}), patch(
+                "bigcherry.campaign.benchmark.run_server_arm_capture"):
+            return benchmark.run_server_comparison_capture(self.config, self.output, rounds=2, seed=0, settle_seconds=0)
+
+    def test_a_quality_only_run_takes_any_number_of_arms_each_judged_against_the_control(self):
+        served = {}
+        self.write_layout_config(self.layout_arms("l", "xtx", "r9700", "l"))
+        self.assertEqual(self.run_layouts(served), 0)
+        summary = json.loads((self.output / "run.json").read_text())
+        self.assertEqual(sorted(summary["quality"]["arms"]), ["arm0", "arm1", "arm2", "arm3"])
+        gated = {name for name, entry in summary["quality"]["arms"].items() if "gate" in entry}
+        self.assertEqual(gated, {"arm1", "arm2", "arm3"}, "every non-control arm is judged against the control")
+        self.assertTrue(summary["quality"]["passed"])
+
+    def test_a_performance_comparison_stays_at_two_or_three_arms(self):
+        arms = [dict(self.arms[i % 2], name=f"arm{i}") for i in range(4)]
+        self.write_config(arms=arms)
+        with self.patches_for_preflight(), self.assertRaisesRegex(ValueError, "performance comparison takes two or three"):
+            benchmark.run_server_comparison_capture(self.config, self.output, rounds=24, seed=0, settle_seconds=0)
+        self.write_layout_config(self.layout_arms("l"))
+        with self.patches_for_preflight(), self.assertRaisesRegex(ValueError, "two or more arms"):
+            benchmark.run_server_comparison_capture(self.config, self.output, rounds=2, seed=0, settle_seconds=0)
+
+    def test_a_layout_arm_serves_its_layouts_model_and_a_contradicting_model_is_refused(self):
+        other = self.root / "other.gguf"
+        other.write_bytes(b"other")
+        served = {}
+        self.write_layout_config(self.layout_arms("l", "other"))
+        self.assertEqual(self.run_layouts(served), 0)
+        self.assertEqual(served["arm0"]["model"], self.model.resolve())
+        self.assertEqual(served["arm1"]["model"], other.resolve(), "the layout's model, not the first arm's")
+        summary = json.loads((self.output / "run.json").read_text())
+        self.assertEqual(summary["arm_models"], {"arm0": str(self.model.resolve()), "arm1": str(other.resolve())})
+        # an explicit arm model naming another file than its layout's
+        arms = self.layout_arms("l", "other")
+        arms[1]["model"] = str(self.model)
+        self.write_layout_config(arms)
+        with self.patches_for_preflight(), self.assertRaisesRegex(ValueError, "layout other serves .* but the arm model"):
+            self.run_layouts({})
+        # a shared model that a layout arm contradicts (the int4 KL that compared the served file with itself)
+        self.write_layout_config(self.layout_arms("l", "other"), model=str(self.model))
+        from bigcherry.engine_adapters import _ADAPTERS
+        with self.patches_for_preflight(), patch.dict(_ADAPTERS, {"radiance": self.layout_adapter({})}), \
+                self.assertRaisesRegex(ValueError, "but the shared model"):
+            benchmark.run_server_comparison_capture(self.config, self.root / "out2", rounds=2, seed=0, settle_seconds=0)
+
+    def test_a_non_layout_arm_needs_a_model(self):
+        arms = [dict(self.arms[0], mode="stock"), dict(self.arms[1], mode="stock", serving={"layout": "l", "set": {}})]
+        config = {key: value for key, value in self.base_config.items() if key != "model"}
+        config.update(engine="radiance", execution_evidence="observe", quality_only=True, quality=self.quality_block(),
+                      server_args=[], arms=arms)
+        self.config.write_text(json.dumps(config), encoding="utf-8")
+        from bigcherry.engine_adapters import _ADAPTERS
+        with self.patches_for_preflight(), patch.dict(_ADAPTERS, {"radiance": self.layout_adapter({})}), \
+                self.assertRaisesRegex(ValueError, "no model"):
+            benchmark.run_server_comparison_capture(self.config, self.output, rounds=2, seed=0, settle_seconds=0)
+
+    def test_layout_arms_bring_their_own_cards_in_one_run(self):
+        served = {}
+        self.write_layout_config(self.layout_arms("r9700", "xtx"))
+        self.assertEqual(self.run_layouts(served), 0)
+        self.assertEqual((served["arm0"]["rocr"], served["arm0"]["hip"]), ("2", "0"), "the R9700 alone")
+        self.assertEqual((served["arm1"]["rocr"], served["arm1"]["hip"]), ("0,1", "0,1"), "the XTX pair")
+        summary = json.loads((self.output / "run.json").read_text())
+        self.assertEqual(summary["arm_expected_execution"]["arm0"],
+                         {"backend": "ROCm", "architectures": ["gfx1201"], "locators": ["0000:03:00.0"]})
+        self.assertEqual(summary["arm_expected_execution"]["arm1"]["architectures"], ["gfx1100", "gfx1100"])
+
+    def test_layout_arms_refuse_a_shared_topology_and_arm_selectors(self):
+        self.write_layout_config(self.layout_arms("r9700", "xtx"), environment={"HIP_VISIBLE_DEVICES": "0", "ROCR_VISIBLE_DEVICES": "0"})
+        with self.patches_for_preflight(), self.assertRaisesRegex(ValueError, "drop the shared device selectors"):
+            self.run_layouts({})
+        arms = self.layout_arms("r9700", "xtx")
+        arms[0]["environment"] = {"ROCR_VISIBLE_DEVICES": "1"}
+        self.write_layout_config(arms)
+        with self.patches_for_preflight(), self.assertRaisesRegex(ValueError, "topology"):
+            self.run_layouts({})
+
+    def test_a_mixed_run_keeps_the_shared_topology_for_its_non_layout_arm(self):
+        served, scored = {}, {}
+        adapter = self.layout_adapter(served)
+        original = adapter.quality_command
+
+        def recording(kind, arm, env, run_dir, binary, model, quality):
+            scored[arm["name"]] = (env.get("ROCR_VISIBLE_DEVICES"), model)
+            return original(kind, arm, env, run_dir, binary, model, quality)
+        adapter.quality_command = recording
+        arms = [dict(self.arms[0], mode="stock"), dict(self.arms[1], mode="stock", serving={"layout": "r9700", "set": {}})]
+        self.write_config(engine="radiance", execution_evidence="observe", quality_only=True, quality=self.quality_block(),
+                          server_args=[], arms=arms)
+        from bigcherry.engine_adapters import _ADAPTERS
+        with self.patches_for_preflight(), patch.dict(_ADAPTERS, {"radiance": adapter}), patch(
+                "bigcherry.campaign.benchmark.run_server_arm_capture"):
+            self.assertEqual(benchmark.run_server_comparison_capture(self.config, self.output, rounds=2, seed=0, settle_seconds=0), 0)
+        self.assertEqual(scored[self.arms[0]["name"]][0], "0,1", "the shared environment's cards")
+        self.assertEqual(served[self.arms[1]["name"]]["rocr"], "2", "the layout's card")
+        summary = json.loads((self.output / "run.json").read_text())
+        self.assertEqual(summary["arm_expected_execution"][self.arms[0]["name"]], self.base_config["expected_execution"])
+
     def test_quality_block_needs_an_engine_with_a_quality_mode(self):
         self.write_config(quality=self.quality_block())
         with self.patches_for_preflight(), self.assertRaisesRegex(ValueError, "no quality measurement mode"):
@@ -285,7 +447,12 @@ class ServerComparisonCaptureTests(unittest.TestCase):
         from bigcherry.engine_adapters.radiance import RadianceAdapter
         written = {}
 
+        test = self
+
         class FakeAdapter(RadianceAdapter):
+            def serving_layout(self, layout):
+                return test.fake_layout(layout)
+
             def write_serving_manifest(self, name, serving, *, binary, model, env, run_dir):
                 written[name] = serving
                 path = run_dir / "manifest.json"
@@ -304,8 +471,7 @@ class ServerComparisonCaptureTests(unittest.TestCase):
                                       run_dir / f"{arm['name']}.score.log", result, 60.0)
         arms = [dict(self.arms[0], mode="stock", serving={"layout": "l", "set": {}}),
                 dict(self.arms[1], mode="stock", serving={"layout": "l", "set": {"engine.num_speculative_tokens": 2}})]
-        self.write_config(engine="radiance", execution_evidence="observe", quality_only=True, quality=self.quality_block(), server_args=[],
-                          arms=arms)
+        self.write_layout_config(arms)
         with self.patches_for_preflight(), patch.dict(_ADAPTERS, {"radiance": FakeAdapter()}), patch(
             "bigcherry.campaign.benchmark.run_server_arm_capture"):
             benchmark.run_server_comparison_capture(self.config, self.output, rounds=2, seed=0, settle_seconds=0)
