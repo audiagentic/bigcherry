@@ -130,5 +130,8 @@ SDK check and the campaign tools read. The first CI bundle (bc-radiance-1170.11.
 
 A run that fails leaves the release without assets and the next `release-install latest` skips it. Fix the cause and run the
 workflow again from the Actions tab with the tag (`workflow_dispatch`). To replace a bundle that was attached in error, delete its
-three assets from the release first: the workflow refuses a release that already has one. Every bundle is kept; how many to keep is
-the owner's call (a bundle is about 240 MB compressed, and a release that changes only documentation attaches an existing one).
+three assets from the release first: the workflow refuses a release that already has one. Retention (owner decision): the bundles of the newest 10
+distinct runtimes are kept (a release that reuses a bundle counts with the release it reuses), the newest radiance release's
+always, and any release whose notes have a line `keep-bundle`; the assets of older releases are deleted. The last job of the
+workflow prints that plan on every run and deletes only when the repository variable `RADIANCE_BUNDLE_PRUNE` is `true`, so
+turning deletion on is an explicit decision. A bundle is about 240 MB compressed.

@@ -124,6 +124,46 @@ class CiBundleTests(unittest.TestCase):
             self.assertNotEqual(before, cb.runtime_key(self.root, "7.2.4"))
 
 
+class PruneTests(unittest.TestCase):
+    def fake(self, releases):
+        """releases: {tag: (createdAt, runtime_key or None, body)}; returns a _gh double and the delete log."""
+        deleted = []
+        def gh(args, root):
+            if args[:2] == ["release", "list"]:
+                return json.dumps([{"tagName": t, "createdAt": v[0]} for t, v in releases.items()])
+            if args[:2] == ["release", "view"]:
+                tag = args[2]
+                assets = [] if releases[tag][1] is None else [
+                    {"name": "bigcherryrad-" + "a" * 32 + ".tar.gz"}, {"name": "bigcherryrad-" + "a" * 32 + ".tar.gz.sha256"},
+                    {"name": "bigcherryrad-" + "a" * 32 + cb.RECEIPT_SUFFIX}]
+                return json.dumps({"assets": assets, "body": releases[tag][2]})
+            if args[:2] == ["release", "download"]:
+                (Path(args[args.index("-D") + 1]) / args[args.index("-p") + 1]).write_text(json.dumps({"runtime_key": releases[args[2]][1]}))
+                return ""
+            if args[:2] == ["release", "delete-asset"]:
+                deleted.append((args[2], args[3]))
+                return ""
+            raise AssertionError(args)
+        return gh, deleted
+
+    def test_keeps_the_newest_distinct_runtimes_the_newest_release_and_marked_ones(self):
+        releases = {f"bc-radiance-1170.{n}.0": (f"2026-11-{n:02d}T00:00:00Z", {"k": n // 2}, "") for n in range(1, 13)}
+        releases["bc-radiance-1170.2.0"] = ("2026-11-02T00:00:00Z", {"k": 1}, "notes\nkeep-bundle\n")
+        releases["bc-radiance-1170.13.0"] = ("2026-11-13T00:00:00Z", None, "")          # no bundle: ignored
+        gh, deleted = self.fake(releases)
+        with mock.patch.object(cb, "_gh", gh):
+            plan = cb.prune_plan(root=Path("."), keep=3)
+            # keys by release number: 12->6, 11->5, 10->5, 9->4, ..., so the newest three distinct keys are 6, 5, 4 (12, 11, 10, 9, 8)
+            self.assertEqual(sorted(plan["kept"]), sorted(["bc-radiance-1170.12.0", "bc-radiance-1170.11.0", "bc-radiance-1170.10.0",
+                                                          "bc-radiance-1170.9.0", "bc-radiance-1170.8.0", "bc-radiance-1170.2.0"]))
+            self.assertEqual({e["tag"] for e in plan["prune"]},
+                             {f"bc-radiance-1170.{n}.0" for n in (7, 6, 5, 4, 3, 1)})
+            self.assertTrue(all(len(e["assets"]) == 3 for e in plan["prune"]))
+            self.assertEqual(deleted, [])                      # planning deletes nothing
+            cb.apply_prune(plan, root=Path("."))
+            self.assertEqual(len(deleted), 18)
+
+
 class BuildInputsExistTests(unittest.TestCase):
     def test_every_listed_path_exists_in_the_repository(self):
         repo = Path(__file__).resolve().parents[3]
