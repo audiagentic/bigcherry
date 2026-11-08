@@ -1,0 +1,131 @@
+{
+  "data_kind": "synthetic",
+  "evidence_id": null,
+  "note": "SYNTHETIC ILLUSTRATION ONLY. All latencies, fractions, budgets and costs must be replaced with measured values before a decision. Modeled 16 * (3 GDN + 1 full attention) Qwen3.8-27B-like layers, not a Qwen4 model card.",
+  "devices": {
+    "xtx0": {
+      "budget_mib": 21504
+    },
+    "xtx1": {
+      "budget_mib": 21504
+    },
+    "r9700": {
+      "budget_mib": 29696
+    }
+  },
+  "groups": {
+    "xtx0": {
+      "fractions": {
+        "xtx0": {
+          "weights_mib": 1,
+          "kv_mib": 1,
+          "state_mib": 1
+        }
+      }
+    },
+    "xtx1": {
+      "fractions": {
+        "xtx1": {
+          "weights_mib": 1,
+          "kv_mib": 1,
+          "state_mib": 1
+        }
+      }
+    },
+    "r9700": {
+      "fractions": {
+        "r9700": {
+          "weights_mib": 1,
+          "kv_mib": 1,
+          "state_mib": 1
+        }
+      }
+    },
+    "tp2xtx": {
+      "fractions": {
+        "xtx0": {
+          "weights_mib": 0.52,
+          "kv_mib": 0.5,
+          "state_mib": 0.5
+        },
+        "xtx1": {
+          "weights_mib": 0.52,
+          "kv_mib": 0.5,
+          "state_mib": 0.5
+        }
+      }
+    }
+  },
+  "layer_pattern": [
+    {
+      "repeat": 3,
+      "kind": "gdn",
+      "weights_mib": 300,
+      "kv_mib": 0,
+      "state_mib": 5,
+      "decode_us": {
+        "xtx0": 105,
+        "xtx1": 107,
+        "r9700": 130,
+        "tp2xtx": 66
+      },
+      "prefill_us": {
+        "xtx0": 170,
+        "xtx1": 172,
+        "r9700": 220,
+        "tp2xtx": 135
+      }
+    },
+    {
+      "repeat": 1,
+      "kind": "full-attention",
+      "weights_mib": 250,
+      "kv_mib": 128,
+      "state_mib": 0,
+      "decode_us": {
+        "xtx0": 110,
+        "xtx1": 112,
+        "r9700": 100,
+        "tp2xtx": 68
+      },
+      "prefill_us": {
+        "xtx0": 200,
+        "xtx1": 202,
+        "r9700": 180,
+        "tp2xtx": 147
+      }
+    }
+  ],
+  "repeat_pattern": 16,
+  "topologies": {
+    "xtx_tp2": [
+      "tp2xtx"
+    ],
+    "r9700_only": [
+      "r9700"
+    ],
+    "layer3": [
+      "xtx0",
+      "xtx1",
+      "r9700"
+    ],
+    "hybrid_tp2_r9700": [
+      "tp2xtx",
+      "r9700"
+    ]
+  },
+  "transfer_us": {
+    "xtx0>xtx1": {
+      "decode": 60,
+      "prefill": 400
+    },
+    "xtx1>r9700": {
+      "decode": 75,
+      "prefill": 500
+    },
+    "tp2xtx>r9700": {
+      "decode": 85,
+      "prefill": 550
+    }
+  }
+}
