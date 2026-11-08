@@ -228,7 +228,8 @@ def resolve(name: str, host: environment.Host, *, budgets: dict[str, int] | None
     # Reject data that could override model, rank/card, host transport,
     # kernel selection or the plan safety flags.
     allowed = {"--max-model-len", "--max-num-seqs", "--max-num-batched-tokens",
-               "--kv-cache-dtype", "--num-speculative-tokens", "--checkpoint-interval"}
+               "--kv-cache-dtype", "--num-speculative-tokens", "--checkpoint-interval",
+               "--host-pool-mib", "--host-kv-mib", "--ngram-placement"}
     if (not isinstance(server_args, list) or len(server_args) % 2
             or any(not isinstance(x, str) for x in server_args)
             or any(server_args[i] not in allowed or not server_args[i + 1]
