@@ -355,7 +355,8 @@ class ComponentGateTests(unittest.TestCase):
         stop = stopped.exception
         self.assertEqual((stop.phase, stop.code), ("compile", "COMPONENT_TEST_FAILED"))
         self.assertEqual(stop.evidence["check"], "component-tests")
-        self.assertIn("moe-remote", stop.evidence["failures"][0])
+        # every component with a declared test target fails here (libr3 gained one in #741): the list names each, in any order
+        self.assertTrue(any("moe-remote" in failure for failure in stop.evidence["failures"]))
 
     def test_abi_mismatch_stops_the_bump(self):
         with self.assertRaises(pin_bump.PinBumpStop) as stopped:

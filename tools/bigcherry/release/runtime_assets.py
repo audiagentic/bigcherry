@@ -22,6 +22,8 @@ SCHEMA = "bigcherry-radiance-runtime-v1"
 PLAN = re.compile(r"(?m)^(?:pin-bump lane build|release asset lane build): radiance:stock:linux-radiance build_plan_id=([0-9a-f]{32}) binary_sha256=([0-9a-f]{64})$")
 FILE_LIMIT = 10000
 BYTE_LIMIT = 16 * 1024**3
+CI_ARCHIVE = re.compile(r"radiance-[0-9a-f]{32}\.tar\.gz")
+CI_RECEIPT_SUFFIX = ".receipt.json"
 RUN_DIRS = ("bin", "radiance_home", "runtime-prefix/bin", "runtime-prefix/lib", "runtime-prefix/lib64")
 
 
@@ -242,6 +244,98 @@ def restore(archive: Path, checksum: Path, asset: dict, root: Path, work_root: P
     return dest
 
 
+def download(root: Path, tag: str, patterns: tuple[str, ...], dest: Path) -> None:
+    args = [arg for pattern in patterns for arg in ("-p", pattern)]
+    result = subprocess.run(["gh", "release", "download", tag, *args, "-D", str(dest)],
+                            cwd=root, text=True, capture_output=True, check=False)
+    if result.returncode:
+        raise BundleError(f"release asset download failed: {result.stderr.strip()[-250:]}")
+
+
+def release_asset_names(root: Path, tag: str) -> set[str] | None:
+    """Names of the assets attached to a GitHub release, or None when it cannot be read."""
+    result = subprocess.run(["gh", "release", "view", tag, "--json", "assets"],
+                            cwd=root, capture_output=True, text=True, check=False)
+    if result.returncode:
+        return None
+    return {entry["name"] for entry in json.loads(result.stdout).get("assets", [])}
+
+
+def _ci_names(archive: str) -> tuple[str, str]:
+    return archive + ".sha256", archive[: -len(".tar.gz")] + CI_RECEIPT_SUFFIX
+
+
+def has_ci_bundle(names: set[str]) -> bool:
+    archives = [n for n in names if CI_ARCHIVE.fullmatch(n)]
+    return len(archives) == 1 and set(_ci_names(archives[0])) <= names
+
+
+def tag_identity(root: Path, tag: str) -> dict[str, str]:
+    """stock_identity of a tag, from git objects rather than any checkout."""
+    def tree(path: str) -> str:
+        result = subprocess.run(["git", "-C", str(root), "rev-parse", f"refs/tags/{tag}:{path}"],
+                                capture_output=True, text=True, check=False)
+        if result.returncode:
+            raise BundleError(f"cannot read {path} tree at tag {tag} (fetch tags first)")
+        return result.stdout.strip()
+    return {"engine_tree": tree("engines/radiance"), "config_tree": tree("config")}
+
+
+def ci_asset(root: Path, tag: str, stage: Path) -> tuple[dict, Path, Path]:
+    """Download a CI-made release's own bundle and return its receipt (the asset), archive and checksum.
+
+    Checks here: the archive matches its .sha256 asset and the receipt's digest; the receipt
+    is for this tag and its runtime_key matches its asset fields and the tag's source trees;
+    bundle.json names this tag, or the reused_from tag whose source trees are the same. The
+    caller checks the ROCm SDK and restores, which checks every file against bundle.json.
+    """
+    download(root, tag, ("radiance-*.tar.gz", "radiance-*.tar.gz.sha256",
+                         "radiance-*" + CI_RECEIPT_SUFFIX), stage)
+    archives = [p for p in stage.iterdir() if CI_ARCHIVE.fullmatch(p.name)]
+    if len(archives) != 1:
+        raise BundleError(f"expected one runtime archive in release {tag}, found {len(archives)}")
+    archive = archives[0]
+    checksum, receipt_path = (stage / n for n in _ci_names(archive.name))
+    for path in (checksum, receipt_path):
+        if not path.is_file():
+            raise BundleError(f"release {tag} has no {path.name} asset")
+    sha, _, name = checksum.read_text().strip().partition("  ")
+    if name != archive.name or not re.fullmatch(r"[0-9a-f]{64}", sha):
+        raise BundleError(f"malformed checksum asset {checksum.name}")
+    if digest(archive) != sha:
+        raise BundleError("runtime release archive SHA-256 does not match its .sha256 asset")
+    try:
+        asset = json.loads(receipt_path.read_text())
+    except ValueError as exc:
+        raise BundleError(f"invalid receipt asset {receipt_path.name}") from exc
+    if not isinstance(asset, dict) or asset.get("name") != archive.name or asset.get("sha256") != sha \
+            or asset.get("checksum_name") != checksum.name:
+        raise BundleError("receipt asset does not describe the release archive")
+    if asset.get("release_tag") != tag:
+        raise BundleError(f"receipt asset is for {asset.get('release_tag')}, not {tag}")
+    key = asset.get("runtime_key")
+    if not isinstance(key, dict) or any(key.get(k) != asset.get(k)
+                                        for k in ("engine_tree", "config_tree", "rocm_version")):
+        raise BundleError("receipt runtime_key differs from its asset fields")
+    identity = tag_identity(root, tag)
+    if any(key[k] != v for k, v in identity.items()):
+        raise BundleError(f"bundle source trees differ from tag {tag}")
+    with tarfile.open(archive, "r:gz") as tar:
+        member = tar.next()
+        if member is None or member.name != "bundle.json" or not member.isfile() \
+                or member.size > 2 * 1024 * 1024:
+            raise BundleError("runtime archive does not start with bundle.json")
+        with tar.extractfile(member) as stream:
+            manifest = json.loads(stream.read())
+    built_for = manifest.get("release_tag") if isinstance(manifest, dict) else None
+    if built_for != tag:
+        reused = asset.get("reused_from")
+        if reused is None or built_for != reused or tag_identity(root, reused) != identity:
+            raise BundleError(f"bundle.json is for {built_for}, not {tag}, and is not a reuse of "
+                              "a release with the same source trees")
+    return asset, archive, checksum
+
+
 def fetch(record: dict, root: Path, work_root: Path, sdk: Path,
           tag: str | None = None) -> Path:
     assets = record.get("runtime_assets", {})
@@ -265,11 +359,7 @@ def fetch(record: dict, root: Path, work_root: Path, sdk: Path,
     stage_dir.mkdir(parents=True, exist_ok=True)
     stage = Path(tempfile.mkdtemp(prefix="bu01-release-", dir=stage_dir))
     try:
-        result = subprocess.run(["gh", "release", "download", tag, "-p", asset["name"],
-                                 "-p", asset["checksum_name"], "-D", str(stage)],
-                                cwd=root, text=True, capture_output=True)
-        if result.returncode:
-            raise BundleError(f"release asset download failed: {result.stderr.strip()[-250:]}")
+        download(root, tag, (asset["name"], asset["checksum_name"]), stage)
         return restore(stage / asset["name"], stage / asset["checksum_name"],
                        asset, root, work_root, sdk)
     finally:

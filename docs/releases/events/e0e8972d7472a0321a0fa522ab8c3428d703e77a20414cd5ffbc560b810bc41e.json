@@ -1,0 +1,13 @@
+{
+  "change-class": "tests",
+  "event-id": "chg_20261108_010504_libr3s-kernel-configuration-e_4973",
+  "files": [
+    "engines/radiance/components/libr3/helper_config_exports_test.cmake",
+    "engines/radiance/components/libr3/CMakeLists.txt",
+    "engines/radiance/components/libr3/component.toml"
+  ],
+  "status": "unreleased",
+  "technical-summary": "libr3's r3_helper_config_exports accepted only a strong (T) export, but rad0012 declares bc_r4d_helper_config weak, so libr3's definition is W and the test failed on every build (including the production lane's libr3.so); it now accepts T or W. libr3 declares its two card-free tests ([test] targets r3_rewrite_check, r3_helper_config_exports, each with a same-named custom target as component-tests requires), so CI runs them.",
+  "timestamp-utc": "2026-11-08T01:05:04.156212Z",
+  "user-summary-candidate": "libr3's kernel-configuration export check now passes and runs in CI."
+}
