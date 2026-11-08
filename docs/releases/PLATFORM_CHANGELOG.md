@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.27.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.26.0...bc-platform-1.27.0) (2026-11-08)
+
+
+### New and changed
+
+* **moe-remote:** full-width-once helper rows and N helpers behind a TP engine (protocol v25, flashnext-tp2xtx) ([#771](https://github.com/audiagentic/bigcherry/issues/771)) ([a139d29](https://github.com/audiagentic/bigcherry/commit/a139d293c620b4db93c544df6ee2b6ae4943979e))
+* **radiance:** a tensor-parallel engine with its remote-MoE helper (flashnext-tp2xtx-r9700) ([#770](https://github.com/audiagentic/bigcherry/issues/770)) ([6f7de47](https://github.com/audiagentic/bigcherry/commit/6f7de471ae874d5339648aca02c9e53ebf732e5a))
+* **release:** bump radiance to an untagged commit; its version is the one upstream declares there ([#762](https://github.com/audiagentic/bigcherry/issues/762)) ([2993540](https://github.com/audiagentic/bigcherry/commit/299354049564907700e3e8739ad475e28f3338d4))
+
+
+### Fixes
+
+* **build:** the build plan id covers the repository files components read outside their directories ([#763](https://github.com/audiagentic/bigcherry/issues/763)) ([aaa923b](https://github.com/audiagentic/bigcherry/commit/aaa923bceddf5619c67aabbb3d7be0d4e8903d6f))
+* **ci:** layouts.toml and archs.toml changes run the radiance build (declared build inputs) ([#764](https://github.com/audiagentic/bigcherry/issues/764)) ([06516c0](https://github.com/audiagentic/bigcherry/commit/06516c0acfd2494c78b9a96ba7b6b3c077146b94))
+* **launcher:** say at once when the helpers are up but the hand-off segment is missing; name the errno when the engine cannot open it ([#772](https://github.com/audiagentic/bigcherry/issues/772)) ([9cadcd2](https://github.com/audiagentic/bigcherry/commit/9cadcd2d50329d1640a9caf2b06c35f2d6d1218e))
+* **release:** pin-bump commits a commit pin's release record under its 12-hex key ([#767](https://github.com/audiagentic/bigcherry/issues/767)) ([e1993a6](https://github.com/audiagentic/bigcherry/commit/e1993a632bf6aa0a3722f87b60a94c46e70a4f88))
+
 ## [1.26.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.25.0...bc-platform-1.26.0) (2026-11-08)
 
 
