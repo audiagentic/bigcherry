@@ -224,6 +224,15 @@ static void tp2_combine_transitions() {
             else check(cls == kSmallClasses, "33+ rows take the large lane");
         }
 
+    /* RAD49 KL runs (max_num_batched_tokens 64, combine on): no step of up to 64 rows is ever combined, on either consumer,
+     * whatever the helpers' participation -- the KL error of flashnext-tp2xtx is not the combine's. */
+    for (uint32_t consumer = 0; consumer < world; ++consumer)
+        for (uint32_t rows = 1; rows <= 64; ++rows)
+            for (uint32_t part = 0; part < 4; ++part)
+                check(!(combine_shape_wanted(true, helpers, step_class(h, rows), part & 1u, part & 2u) &&
+                        h->combine[consumer].enabled && rows >= h->combine[consumer].min_rows),
+                      "a KL-sized step (<= 64 rows) is never combined");
+
     /* 2. combined and non-combined steps for both consumers on one segment */
     constexpr uint16_t one = 0x3f80, two = 0x4000;                        /* bf16 1 and 2 */
     constexpr uint16_t f16_for[4] = {0xbeef, 0x3c00, 0x4000, 0x4200};     /* fill, 1, 2, 3 */

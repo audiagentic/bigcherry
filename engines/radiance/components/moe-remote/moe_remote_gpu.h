@@ -568,8 +568,17 @@ public:
     }
 
     /* rows: the fixed small-lane size (pre-queued), or the request's own row count on a large lane. */
+    /* R3_MOE_WORKER_CAPTURE (RAD49 probe): pinned host buffers that receive, on a captured request, what the lane really
+     * computed with and produced: the activation as the GPU copied it from the engine's staging (E4M3 codes and group scales,
+     * only the routed rows when the copy is sparse) and the result rows it wrote to the consumer's plane. Copied on the lane's
+     * stream before its done word, so the engine cannot have moved on. */
+    struct LaneCapture {
+        void* aq = nullptr;
+        void* as = nullptr;
+        void* out = nullptr;
+    };
     int enqueue_lane(void* host_map, void* device_map, uint32_t lane, uint32_t sequence,
-                     uint32_t rows, bool sample) {
+                     uint32_t rows, bool sample, const LaneCapture* capture) {
         using namespace r3::moe_shm;
         if (!host_map || !device_map || lane >= kLanes || sequence == 0 || rows == 0 ||
             rows > lane_[lane].cap_rows)
@@ -1029,6 +1038,14 @@ public:
 
         if (sample && w.sample_pending && w.sample_sequence == sequence &&
             !hip_ok(hipEventRecord(w.sample_stop, w.stream), "lane timing stop"))
+            return -EIO;
+        if (capture && (!capture->aq || !capture->as || !capture->out ||
+                        !hip_ok(hipMemcpyAsync(capture->aq, w.d_aq.p, (size_t)rows * shape_.hidden, hipMemcpyDefault, w.stream),
+                                "capture lane activation codes") ||
+                        !hip_ok(hipMemcpyAsync(capture->as, w.d_as.p, (size_t)rows * (shape_.hidden / kGroup) * sizeof(float),
+                                               hipMemcpyDefault, w.stream), "capture lane activation scales") ||
+                        !hip_ok(hipMemcpyAsync(capture->out, dst, (size_t)rows * shape_.hidden * sizeof(uint16_t),
+                                               hipMemcpyDefault, w.stream), "capture lane result rows")))
             return -EIO;
         hipLaunchKernelGGL(lane_publish_done, dim3(1), dim3(1), 0, w.stream,
                            q, done_seq, sequence, static_cast<const uint32_t*>(w.d_publish_limit.p));

@@ -288,7 +288,7 @@ manifest = "/spec/experiment/diagnostics/kernels/sweep_fast"
 [setting.R3_MOE_WORKER_CAPTURE]
 default = ""
 status = "diagnostic"
-summary = "directory: the helper writes real large-lane requests (layer slot map, routes, bf16 activations) there for `r3_moe_worker --replay MODEL FILE` (RAD06 kernel tuning on real request shapes)"
+summary = "directory: the helper writes real large-lane requests (layer slot map, routes, the staged E4M3 activations) there for `r3_moe_worker --replay MODEL FILE` (RAD06 kernel tuning on real request shapes), and beside each <file>.gpu with what the lane really computed with and wrote (its copy of the activation, its result rows, the request's slot/world/consumer); --replay then prints captured_gpu: the routed rows whose copied activation differs from the staged one, and the result's rel_l2 against the host reference (RAD49 tail probe)"
 manifest = "/spec/experiment/diagnostics/lanes/capture_file"
 
 [setting.R3_MOE_WORKER_CAPTURE_EVERY]

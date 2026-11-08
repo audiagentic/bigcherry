@@ -213,11 +213,23 @@ private:
             }
             const Request* q = lane_request(map_, lane, next);
             const uint32_t rows = load(&q->rows);
-            capture_request(map_, q, lane, next);
+            const std::string captured = capture_request(map_, q, lane, next);
             trace_dump(map_, lane, next - 1u);
+            /* A captured request also records what the lane computed with and produced (capture_gpu_side). */
+            r3_moe_gpu::Runner::LaneCapture cap{};
+            const size_t hid = h_->hidden, groups = h_->hidden / h_->activation_group;
+            if (!captured.empty() &&
+                (hipHostMalloc(&cap.aq, (size_t)rows * hid) != hipSuccess ||
+                 hipHostMalloc(&cap.as, (size_t)rows * groups * sizeof(float)) != hipSuccess ||
+                 hipHostMalloc(&cap.out, (size_t)rows * hid * sizeof(uint16_t)) != hipSuccess)) {
+                std::fprintf(stderr, "r3_moe_worker: capture buffers for lane %u seq %u not allocated\n", lane, next);
+                request_stop();
+                break;
+            }
             /* Every large request is timed by stage: they are few, and the engine cannot send the next one until it
              * has merged this one, so waiting here costs nothing. */
-            if (const int rc = gpu_.enqueue_lane(map_, dev_map_, lane, next, rows, true); rc != 0) {
+            if (const int rc = gpu_.enqueue_lane(map_, dev_map_, lane, next, rows, true, captured.empty() ? nullptr : &cap);
+                rc != 0) {
                 std::fprintf(stderr, "r3_moe_worker: large lane %u seq %u rows %u failed rc=%d\n", lane, next, rows, rc);
                 request_stop();
                 break;
@@ -233,6 +245,10 @@ private:
                 break;
             }
             if (!gpu_.sync_lane(lane) || !collect(lane, next)) { request_stop(); break; }
+            if (!captured.empty()) {
+                capture_gpu_side(captured, q, cap.aq, cap.as, cap.out, h_->hidden, h_->activation_group);
+                (void)hipHostFree(cap.aq); (void)hipHostFree(cap.as); (void)hipHostFree(cap.out);
+            }
             if (++next == 0) {
                 std::fprintf(stderr, "r3_moe_worker: large lane %u sequence space exhausted\n", lane);
                 request_stop();
@@ -252,7 +268,7 @@ private:
                 std::fprintf(stderr, "r3_moe_worker: lane %u sequence space exhausted\n", lane);
                 return false;
             }
-            if (const int rc = gpu_.enqueue_lane(map_, dev_map_, lane, next, rows, (next & 63u) == 0); rc != 0) {
+            if (const int rc = gpu_.enqueue_lane(map_, dev_map_, lane, next, rows, (next & 63u) == 0, nullptr); rc != 0) {
                 std::fprintf(stderr, "r3_moe_worker: lane %u enqueue seq %u failed rc=%d\n", lane, next, rc);
                 return false;
             }

@@ -14,20 +14,22 @@ struct CaptureHeader {
 constexpr uint32_t kCaptureVersion = 3;
 constexpr uint32_t kCaptureMagic = 0x52335243u;  // "CR3R"
 
-void capture_request(void* map, const Request* q, uint32_t lane, uint32_t seq) {
+/* The capture's path when this request is captured, else "" (the caller then also records what the GPU computed with and
+ * produced, capture_gpu_side). */
+std::string capture_request(void* map, const Request* q, uint32_t lane, uint32_t seq) {
     const char* dir = r3_serving::settings().capture.c_str();
-    if (!dir || !*dir) return;
+    if (!dir || !*dir) return {};
     const uint32_t every = r3_serving::settings().capture_every;
     const uint32_t max_n = r3_serving::settings().capture_max;
     static std::atomic<uint32_t> written{0};
-    if (seq % every != 0 || written.load() >= max_n) return;
+    if (seq % every != 0 || written.load() >= max_n) return {};
     const Header* sh = static_cast<const Header*>(map);
     CaptureHeader hd{kCaptureMagic, kCaptureVersion, load(&q->layer), load(&q->rows), load(&q->route_count),
                      sh->hidden, sh->expert_count, sh->top_k, sh->activation_group};
-    if (hd.layer >= kMaxLayers || hd.rows == 0 || hd.rows > kMaxRows) return;
+    if (hd.layer >= kMaxLayers || hd.rows == 0 || hd.rows > kMaxRows) return {};
     const std::string path = std::string(dir) + "/req-" + std::to_string(lane) + "-" + std::to_string(seq) + ".bin";
     FILE* f = std::fopen(path.c_str(), "wb");
-    if (!f) return;
+    if (!f) return {};
     std::fwrite(&hd, sizeof(hd), 1, f);
     std::fwrite(layer_slots(map, hd.layer), sizeof(int32_t), hd.experts, f);
     std::fwrite(ptr<Route>(map, q->route_offset), sizeof(Route), hd.route_count, f);
@@ -37,6 +39,30 @@ void capture_request(void* map, const Request* q, uint32_t lane, uint32_t seq) {
     std::fwrite(ptr<float>(map, q->activation_s_offset), sizeof(float), (size_t)hd.rows * (hd.hidden / hd.act_group), f);
     std::fclose(f);
     written.fetch_add(1);
+    return path;
+}
+
+/* RAD49 probe: beside a capture, <capture>.gpu holds what the helper's lane really computed with and wrote -- the activation
+ * as its GPU copied it out of the engine's staging (only the routed rows when the copy is sparse) and the result rows of the
+ * consumer's plane -- with the request's slot, world and consumer. `--replay` then checks the copied activation against the
+ * staged one (a stale or raced staging read shows as differing routed rows) and the result rows against the host reference
+ * (a compute error shows as a rel_l2), per slot, so the tail behind each TP consumer is told apart. */
+struct GpuCaptureHeader {
+    uint32_t magic, version, slot, world, consumer, rows, hidden, act_group;
+};
+constexpr uint32_t kGpuCaptureMagic = 0x55504752u;   // "RGPU"
+constexpr uint32_t kGpuCaptureVersion = 1;
+void capture_gpu_side(const std::string& path, const Request* q, const void* aq, const void* as, const void* out,
+                      uint32_t hidden, uint32_t act_group) {
+    const GpuCaptureHeader hd{kGpuCaptureMagic, kGpuCaptureVersion, load(&q->slot), load(&q->world), load(&q->consumer),
+                              load(&q->rows), hidden, act_group};
+    FILE* f = std::fopen((path + ".gpu").c_str(), "wb");
+    if (!f) return;
+    std::fwrite(&hd, sizeof(hd), 1, f);
+    std::fwrite(aq, 1, (size_t)hd.rows * hidden, f);
+    std::fwrite(as, sizeof(float), (size_t)hd.rows * (hidden / act_group), f);
+    std::fwrite(out, sizeof(uint16_t), (size_t)hd.rows * hidden, f);
+    std::fclose(f);
 }
 
 /* R3_MOE_WORKER_TRACE=N: print the stamps of every Nth finished request ("TRACE,..." on stderr). The engine writes its
@@ -70,6 +96,7 @@ void trace_dump(void* map, uint32_t lane, uint32_t seq) {
 }
 
 struct ReplayInput {
+    std::string path;   /* the capture file; <path>.gpu, when present, is what the capturing lane computed with (RAD49) */
     CaptureHeader hd{};
     std::vector<int32_t> slots;
     std::vector<Route> routes;
@@ -84,6 +111,7 @@ bool g_sweep_fast = false;
 bool load_replay(const char* path, ReplayInput* out) {
     FILE* f = std::fopen(path, "rb");
     if (!f) return false;
+    out->path = path;
     bool ok = std::fread(&out->hd, sizeof(out->hd), 1, f) == 1 && out->hd.magic == kCaptureMagic && out->hd.version == kCaptureVersion &&
               out->hd.hidden > 0 && out->hd.hidden <= 16384 && out->hd.experts > 0 && out->hd.experts <= 4096 && out->hd.top_k > 0 &&
               out->hd.top_k <= kMaxTopK && out->hd.act_group > 0 && out->hd.hidden % out->hd.act_group == 0 &&
@@ -339,7 +367,7 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
 
         /* Queue the production lane before publishing the sequence, as the service worker does. */
         const int erc = gpu.enqueue_lane(map, dev_map, lane, sequence,
-                                         lane_is_small(lane) ? h->small_class_rows[lane_class(lane)] : rows, false);
+                                         lane_is_small(lane) ? h->small_class_rows[lane_class(lane)] : rows, false, nullptr);
         if (erc != 0) {
             std::fprintf(stderr, "r3_moe_worker: --compare lane rank %u enqueue failed rc=%d\n",
                          rank, erc);
@@ -410,11 +438,38 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
         long double num = 0.0L, den = 0.0L;
         double max_abs = 0.0;
         uint32_t tokens = 0;
+        /* RAD49 probe: what the capturing lane computed with and wrote (<capture>.gpu), when it was recorded */
+        GpuCaptureHeader gh{};
+        std::vector<uint8_t> gq;
+        std::vector<float> gs;
+        std::vector<uint16_t> gout;
+        bool have_gpu = false;
+        if (g_replay && !g_replay->path.empty()) {
+            if (FILE* gf = std::fopen((g_replay->path + ".gpu").c_str(), "rb")) {
+                have_gpu = std::fread(&gh, sizeof(gh), 1, gf) == 1 && gh.magic == kGpuCaptureMagic &&
+                           gh.version == kGpuCaptureVersion && gh.rows == rows && gh.hidden == hid && gh.act_group == kActGroup;
+                if (have_gpu) {
+                    gq.resize((size_t)rows * hid); gs.resize((size_t)rows * (hid / kActGroup)); gout.resize((size_t)rows * hid);
+                    have_gpu = std::fread(gq.data(), 1, gq.size(), gf) == gq.size() &&
+                               std::fread(gs.data(), sizeof(float), gs.size(), gf) == gs.size() &&
+                               std::fread(gout.data(), sizeof(uint16_t), gout.size(), gf) == gout.size();
+                }
+                std::fclose(gf);
+            }
+        }
+        long double gnum = 0.0L;
+        double gmax = 0.0;
+        uint32_t act_rows_differing = 0;
         for (uint32_t t = 0; t < rows; ++t) {
             bool any = false;
             for (uint32_t slot = 0; slot < topk; ++slot) any = any || route_of[(size_t)t * topk + slot] >= 0;
             if (!any) continue;
             ++tokens;
+            if (have_gpu &&
+                (std::memcmp(gq.data() + (size_t)t * hid, g_replay->actq.data() + (size_t)t * hid, hid) != 0 ||
+                 std::memcmp(gs.data() + (size_t)t * (hid / kActGroup), g_replay->acts.data() + (size_t)t * (hid / kActGroup),
+                             (hid / kActGroup) * sizeof(float)) != 0))
+                ++act_rows_differing;   /* the lane read other activation bytes than the engine had staged for this request */
             for (uint32_t col = 0; col < hid; ++col) {
                 float acc = 0.0f;
                 for (uint32_t slot = 0; slot < topk; ++slot) {
@@ -429,8 +484,17 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
                 num += (long double)d * d;
                 den += (long double)b * b;
                 max_abs = std::max(max_abs, std::abs(d));
+                if (have_gpu) {
+                    const double g = bf16(gout[(size_t)t * hid + col]) - b;
+                    gnum += (long double)g * g;
+                    gmax = std::max(gmax, std::abs(g));
+                }
             }
         }
+        if (have_gpu)
+            std::printf("captured_gpu layer %u slot %u world %u consumer %u rows %u tokens %u act_rows_differing %u "
+                        "out_rel_l2=%.8g out_max_abs=%.8g\n", layer, gh.slot, gh.world, gh.consumer, rows, tokens,
+                        act_rows_differing, std::sqrt((double)(gnum / std::max<long double>(den, 1.0e-30L))), gmax);
         const double rel =
             std::sqrt((double)(num / std::max<long double>(den, 1.0e-30L)));
         std::printf("engine_join layer %u rank %u lane %u routes=%u tokens=%u rel_l2=%.8g max_abs=%.8g\n",
