@@ -9,6 +9,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[2]
 SELECTOR = ROOT / ".github/scripts/changed_paths.py"
 WORKFLOW = ROOT / ".github/workflows/pr-ci.yml"
+PUSH_WORKFLOW = ROOT / ".github/workflows/radiance-build.yml"
 
 
 def patterns() -> str:
@@ -72,8 +73,37 @@ class ChangedPathsIntegration(unittest.TestCase):
             "engines/radiance/components/libr3/CMakeLists.txt": "cmake"
         }), "run=true")
 
-    def test_component_test_and_patches_build(self):
-        self.assertEqual(self.check({"engines/radiance/tests/check.py": "test"}), "run=true")
+    def test_patches_build(self):
+        self.assertEqual(self.check({"engines/radiance/patches/rad0001_x/patch.py": "patch"}), "run=true")
+
+    def test_patch_tests_and_runtime_layout_data_skip(self):
+        # read by the offline patch and core tests, never by the lane build or the component tests
+        self.assertEqual(self.check({
+            "engines/radiance/tests/check.py": "test",
+            "engines/radiance/tests/fixtures/abc/core/config.cpp": "fixture",
+            "engines/radiance/layouts.toml": "layouts",
+            "engines/radiance/archs.toml": "archs",
+            "engines/radiance/model_constant_guard.toml": "guard",
+        }), "run=false")
+
+    def test_build_tooling_and_config_build(self):
+        # the build command, source materialisation, patch application and evidence gates, and the configuration
+        # the lane build reads
+        for name in ("tools/bigcherry/__main__.py", "tools/bigcherry/cli/build.py",
+                     "tools/bigcherry/source/workspace.py", "tools/bigcherry/patch/apply.py",
+                     "tools/bigcherry/patch/gates.py", "tools/bigcherry/release/pin_status.py",
+                     "config/recipes.toml", "config/release.toml", "tools/lab/radiance/ci_ccache.py"):
+            self.assertEqual(self.check({name: name}), "run=true", name)
+
+    def test_push_paths_match_the_pr_check(self):
+        source = PUSH_WORKFLOW.read_text()
+        block = re.search(r"\n    paths:\n((?:      - '[^']+'\n)+)", source)
+        assert block, "radiance-build.yml must keep its push paths list"
+        push = re.findall(r"      - '([^']+)'", block.group(1))
+        pr = [line for line in patterns().splitlines() if line and not line.startswith("#")]
+        # the PR check also reruns when its own workflow or the matcher changes
+        self.assertEqual(sorted(push), sorted(set(pr) - {".github/workflows/pr-ci.yml",
+                                                         ".github/scripts/changed_paths.py"}))
 
     def test_diff_failure_runs_checks(self):
         p = subprocess.run([sys.executable, str(SELECTOR), "not_a_sha", "also_bad"],
