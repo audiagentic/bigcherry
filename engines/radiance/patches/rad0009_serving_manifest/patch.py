@@ -273,7 +273,7 @@ bool bc_serving_engine_argv(int* argc, char*** argv) {
         if (!doc.contains(ptr)) continue;
         const nlohmann::json& v = doc.at(ptr);
         if (b.kind == "boolean" && v.is_boolean()) setenv(std::string(b.env).c_str(), v.get<bool>() ? "1" : "0", 1);
-        else if (b.kind == "integer" && v.is_number_integer())
+        else if ((b.kind == "integer" || b.kind == "int_enum") && v.is_number_integer())
             setenv(std::string(b.env).c_str(), std::to_string(v.get<long long>()).c_str(), 1);
     }
     const std::string digest = doc.at("metadata").at("content_digest").get<std::string>();   /* "sha256:<hex>" */
