@@ -76,15 +76,18 @@ class ChangedPathsIntegration(unittest.TestCase):
     def test_patches_build(self):
         self.assertEqual(self.check({"engines/radiance/patches/rad0001_x/patch.py": "patch"}), "run=true")
 
-    def test_patch_tests_and_runtime_layout_data_skip(self):
+    def test_patch_tests_and_model_guard_skip(self):
         # read by the offline patch and core tests, never by the lane build or the component tests
         self.assertEqual(self.check({
             "engines/radiance/tests/check.py": "test",
             "engines/radiance/tests/fixtures/abc/core/config.cpp": "fixture",
-            "engines/radiance/layouts.toml": "layouts",
-            "engines/radiance/archs.toml": "archs",
             "engines/radiance/model_constant_guard.toml": "guard",
         }), "run=false")
+
+    def test_layout_and_arch_data_build(self):
+        # declared build inputs (engine.toml [build] repo-inputs): bc-serve embeds both, moe-remote reads archs.toml
+        for name in ("engines/radiance/layouts.toml", "engines/radiance/archs.toml"):
+            self.assertEqual(self.check({name: name}), "run=true", name)
 
     def test_build_tooling_and_config_build(self):
         # the build command, source materialisation, patch application and evidence gates, and the configuration
