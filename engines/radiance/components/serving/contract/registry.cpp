@@ -241,8 +241,8 @@ void check_scalar(const Node& n, const std::string& at) {
         if (n.kind == "string" && !n.constant->is_string()) fault(at, "a string const must be a string");
     }
     if (n.kind == "ref" && n.ref.empty()) fault(at, "kind 'ref' needs a ref");
-    if (!n.env_setting.empty() && n.kind != "boolean" && n.kind != "integer")
-        fault(at, "an env_setting field is a boolean (written 1 or 0) or an integer");
+    if (!n.env_setting.empty() && n.kind != "boolean" && n.kind != "integer" && n.kind != "int_enum")
+        fault(at, "an env_setting field is a boolean (written 1 or 0), an integer or an integer enum");
     if (n.radiance_switch && (n.kind != "enum" || n.values.size() != 1 || n.values[0] != "on"))
         fault(at, "a radiance_switch is an enum with the one value \"on\" (presence is the flag)");
     if (n.kind == "enum" || n.kind == "int_enum") {

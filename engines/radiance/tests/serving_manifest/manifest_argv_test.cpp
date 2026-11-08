@@ -218,6 +218,10 @@ int main(int, char** argv) {
     {
         nlohmann::json doc = nlohmann::json::parse(slurp(example));
         doc["spec"]["processes"]["engine"]["kernels"] = {{"moe_native", true}, {"dec11", false}, {"all_reduce_wire4", true}, {"fuse_stage", false}};
+        doc["spec"]["intent"]["service"]["profile"] = "lab";   // spec.experiment is lab-only
+        doc["spec"]["experiment"] = {{"engine", {{"mtp_full_head", true}, {"mask_only", 2}, {"freeze_promotion_after", 5}}}};
+        doc["provenance"]["/spec/experiment"] = {{"origin", "profile"}, {"source", "lab"}, {"class", "diagnostic"},
+                                                  {"lifecycle", "startup_only"}, {"confidence", "exact"}, {"inputs", nlohmann::json::array()}};
         doc["provenance"]["/spec/processes/engine/kernels"] = {{"origin", "profile"}, {"source", "kernel switches"}, {"class", "policy"},
                                                                  {"lifecycle", "startup_only"}, {"confidence", "exact"},
                                                                  {"inputs", nlohmann::json::array()}};
@@ -233,9 +237,12 @@ int main(int, char** argv) {
         CHECK(std::string(std::getenv("R3_DEC11")) == "0");                // the manifest wins over a stale value
         CHECK(std::string(std::getenv("R3_AR_WIRE4")) == "1");
         CHECK(std::string(std::getenv("R3_MOE_WORKER_FUSESTAGE")) == "0");
+        CHECK(std::string(std::getenv("RAD_MTP_FULL_HEAD")) == "1");                       // spec.experiment.engine (amendment 17)
+        CHECK(std::string(std::getenv("R3_MOE_WORKER_MASK_ONLY")) == "2");
+        CHECK(std::string(std::getenv("RAD_DIAG_FREEZE_PROMOTION_AFTER")) == "5");
         CHECK(std::string(std::getenv("R3_GEMV")) == "1");                 // no field: left alone
         CHECK(!std::getenv("R3_ATTN_NATIVE"));
-        for (const char* v : {"R3_MOE_NATIVE", "R3_DEC11", "R3_AR_WIRE4", "R3_GEMV", "R3_MOE_WORKER_FUSESTAGE"}) unsetenv(v);
+        for (const char* v : {"R3_MOE_NATIVE", "R3_DEC11", "R3_AR_WIRE4", "R3_GEMV", "R3_MOE_WORKER_FUSESTAGE", "RAD_MTP_FULL_HEAD", "R3_MOE_WORKER_MASK_ONLY", "RAD_DIAG_FREEZE_PROMOTION_AFTER"}) unsetenv(v);
     }
 
     // Amendment 11: the engine's other flags are manifest fields. Value-less flags (profile_ops, debug_selection, deterministic,

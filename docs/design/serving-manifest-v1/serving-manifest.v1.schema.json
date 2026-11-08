@@ -1933,6 +1933,35 @@
                 "kv_resident": {
                   "description": "Stream the sparse attention group's KV from host memory, resident tokens (`--kv-resident`).",
                   "$ref": "#/$defs/positive"
+                },
+                "mtp_full_head": {
+                  "description": "Draft through the trunk head instead of the 2-bit copy (`RAD_MTP_FULL_HEAD`, patch rad0003).",
+                  "type": "boolean"
+                },
+                "hc_pf2_fp8_down": {
+                  "description": "FP8 PF2 down-product (`RAD_HC_PF2_FP8_DOWN`, patch rad0007).",
+                  "type": "boolean"
+                },
+                "routing_evidence": {
+                  "description": "Record routing evidence (`RAD_ROUTING_EVIDENCE`, patch rad0010).",
+                  "type": "boolean"
+                },
+                "freeze_promotion_after": {
+                  "description": "Stop heat promotion after this many calls (`RAD_DIAG_FREEZE_PROMOTION_AFTER`, patch rad0006, diagnostic build).",
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "shadow": {
+                  "description": "Publish owned routes and compare the helper's rows against the engine's (`R3_MOE_WORKER_SHADOW`, diagnostic build, patches rad0002 and rad0004).",
+                  "type": "boolean"
+                },
+                "mask_only": {
+                  "description": "Mask and rescatter owned routes: 1 adds the engine's captured rows, 2 adds the helper's (`R3_MOE_WORKER_MASK_ONLY`, diagnostic build, patches rad0002 and rad0004).",
+                  "enum": [
+                    0,
+                    1,
+                    2
+                  ]
                 }
               },
               "minProperties": 1

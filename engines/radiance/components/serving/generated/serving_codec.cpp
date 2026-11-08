@@ -166,34 +166,34 @@ Status int_enum_in(const Json& j, const std::string& at, C tc, C vc, std::initia
 [[maybe_unused]] Status d47(const Json& j, const std::string& at, bool* out);
 [[maybe_unused]] Status d49(const Json& j, const std::string& at, int64_t* out);
 [[maybe_unused]] Status d48(const Json& j, const std::string& at, std::vector<int64_t>* out);
-[[maybe_unused]] Status d380(const Json& j, const std::string& at, bool* out);
-[[maybe_unused]] Status d381(const Json& j, const std::string& at, Affinity* out);
-[[maybe_unused]] Status d383(const Json& j, const std::string& at, bool* out);
-[[maybe_unused]] Status d384(const Json& j, const std::string& at, bool* out);
-[[maybe_unused]] Status d386(const Json& j, const std::string& at, int64_t* out);
-[[maybe_unused]] Status d387(const Json& j, const std::string& at, bool* out);
-[[maybe_unused]] Status d388(const Json& j, const std::string& at, int64_t* out);
+[[maybe_unused]] Status d386(const Json& j, const std::string& at, bool* out);
+[[maybe_unused]] Status d387(const Json& j, const std::string& at, Affinity* out);
 [[maybe_unused]] Status d389(const Json& j, const std::string& at, bool* out);
 [[maybe_unused]] Status d390(const Json& j, const std::string& at, bool* out);
-[[maybe_unused]] Status d393(const Json& j, const std::string& at, int64_t* out);
-[[maybe_unused]] Status d392(const Json& j, const std::string& at, std::vector<int64_t>* out);
-[[maybe_unused]] Status d394(const Json& j, const std::string& at, bool* out);
+[[maybe_unused]] Status d392(const Json& j, const std::string& at, int64_t* out);
+[[maybe_unused]] Status d393(const Json& j, const std::string& at, bool* out);
+[[maybe_unused]] Status d394(const Json& j, const std::string& at, int64_t* out);
 [[maybe_unused]] Status d395(const Json& j, const std::string& at, bool* out);
-[[maybe_unused]] Status d397(const Json& j, const std::string& at, bool* out);
-[[maybe_unused]] Status d398(const Json& j, const std::string& at, int64_t* out);
+[[maybe_unused]] Status d396(const Json& j, const std::string& at, bool* out);
 [[maybe_unused]] Status d399(const Json& j, const std::string& at, int64_t* out);
+[[maybe_unused]] Status d398(const Json& j, const std::string& at, std::vector<int64_t>* out);
+[[maybe_unused]] Status d400(const Json& j, const std::string& at, bool* out);
 [[maybe_unused]] Status d401(const Json& j, const std::string& at, bool* out);
-[[maybe_unused]] Status d402(const Json& j, const std::string& at, bool* out);
 [[maybe_unused]] Status d403(const Json& j, const std::string& at, bool* out);
 [[maybe_unused]] Status d404(const Json& j, const std::string& at, int64_t* out);
 [[maybe_unused]] Status d405(const Json& j, const std::string& at, int64_t* out);
-[[maybe_unused]] Status d406(const Json& j, const std::string& at, bool* out);
 [[maybe_unused]] Status d407(const Json& j, const std::string& at, bool* out);
 [[maybe_unused]] Status d408(const Json& j, const std::string& at, bool* out);
 [[maybe_unused]] Status d409(const Json& j, const std::string& at, bool* out);
-[[maybe_unused]] Status d411(const Json& j, const std::string& at, bool* out);
-[[maybe_unused]] Status d413(const Json& j, const std::string& at, int64_t* out);
-[[maybe_unused]] Status d412(const Json& j, const std::string& at, std::vector<int64_t>* out);
+[[maybe_unused]] Status d410(const Json& j, const std::string& at, int64_t* out);
+[[maybe_unused]] Status d411(const Json& j, const std::string& at, int64_t* out);
+[[maybe_unused]] Status d412(const Json& j, const std::string& at, bool* out);
+[[maybe_unused]] Status d413(const Json& j, const std::string& at, bool* out);
+[[maybe_unused]] Status d414(const Json& j, const std::string& at, bool* out);
+[[maybe_unused]] Status d415(const Json& j, const std::string& at, bool* out);
+[[maybe_unused]] Status d417(const Json& j, const std::string& at, bool* out);
+[[maybe_unused]] Status d419(const Json& j, const std::string& at, int64_t* out);
+[[maybe_unused]] Status d418(const Json& j, const std::string& at, std::vector<int64_t>* out);
 [[maybe_unused]] Status d50(const Json& j, const std::string& at, int64_t* out);
 [[maybe_unused]] Status d51(const Json& j, const std::string& at, std::string* out);
 [[maybe_unused]] Status d54(const Json& j, const std::string& at, std::string* out);
@@ -450,14 +450,20 @@ Status int_enum_in(const Json& j, const std::string& at, C tc, C vc, std::initia
 [[maybe_unused]] Status d367(const Json& j, const std::string& at, DebugSelection* out);
 [[maybe_unused]] Status d368(const Json& j, const std::string& at, Deterministic* out);
 [[maybe_unused]] Status d369(const Json& j, const std::string& at, int64_t* out);
-[[maybe_unused]] Status d372(const Json& j, const std::string& at, Origin* out);
-[[maybe_unused]] Status d373(const Json& j, const std::string& at, std::string* out);
-[[maybe_unused]] Status d374(const Json& j, const std::string& at, ValueClass* out);
-[[maybe_unused]] Status d375(const Json& j, const std::string& at, Lifecycle* out);
-[[maybe_unused]] Status d376(const Json& j, const std::string& at, Confidence* out);
-[[maybe_unused]] Status d378(const Json& j, const std::string& at, std::string* out);
-[[maybe_unused]] Status d377(const Json& j, const std::string& at, std::vector<std::string>* out);
-[[maybe_unused]] Status d370(const Json& j, const std::string& at, std::map<std::string, ProvenanceRecord>* out);
+[[maybe_unused]] Status d370(const Json& j, const std::string& at, bool* out);
+[[maybe_unused]] Status d371(const Json& j, const std::string& at, bool* out);
+[[maybe_unused]] Status d372(const Json& j, const std::string& at, bool* out);
+[[maybe_unused]] Status d373(const Json& j, const std::string& at, int64_t* out);
+[[maybe_unused]] Status d374(const Json& j, const std::string& at, bool* out);
+[[maybe_unused]] Status d375(const Json& j, const std::string& at, int64_t* out);
+[[maybe_unused]] Status d378(const Json& j, const std::string& at, Origin* out);
+[[maybe_unused]] Status d379(const Json& j, const std::string& at, std::string* out);
+[[maybe_unused]] Status d380(const Json& j, const std::string& at, ValueClass* out);
+[[maybe_unused]] Status d381(const Json& j, const std::string& at, Lifecycle* out);
+[[maybe_unused]] Status d382(const Json& j, const std::string& at, Confidence* out);
+[[maybe_unused]] Status d384(const Json& j, const std::string& at, std::string* out);
+[[maybe_unused]] Status d383(const Json& j, const std::string& at, std::vector<std::string>* out);
+[[maybe_unused]] Status d376(const Json& j, const std::string& at, std::map<std::string, ProvenanceRecord>* out);
 [[maybe_unused]] Status d0(const Json& j, const std::string& at, int64_t* out);
 [[maybe_unused]] Status d1(const Json& j, const std::string& at, int64_t* out);
 [[maybe_unused]] Status d2(const Json& j, const std::string& at, int64_t* out);
@@ -656,164 +662,164 @@ Status d48(const Json& j, const std::string& at, std::vector<int64_t>* out) {  /
     return std::nullopt;
 }
 
-Status d380(const Json& j, const std::string& at, bool* out) {  // $defs/helperPatch/cpu/reference
+Status d386(const Json& j, const std::string& at, bool* out) {  // $defs/helperPatch/cpu/reference
     if (!j.is_boolean()) return type_fault(C::invalid_type, at, "a boolean", j);
     *out = j.get<bool>();
     return std::nullopt;
 }
 
-Status d381(const Json& j, const std::string& at, Affinity* out) {  // $defs/helperPatch/cpu/affinity
+Status d387(const Json& j, const std::string& at, Affinity* out) {  // $defs/helperPatch/cpu/affinity
     return enum_in(j, at, C::invalid_type, C::invalid_value, kAffinityNames, out);
 }
 
-Status d383(const Json& j, const std::string& at, bool* out) {  // $defs/helperPatch/runtime/power_save
+Status d389(const Json& j, const std::string& at, bool* out) {  // $defs/helperPatch/runtime/power_save
     if (!j.is_boolean()) return type_fault(C::invalid_type, at, "a boolean", j);
     *out = j.get<bool>();
     return std::nullopt;
 }
 
-Status d384(const Json& j, const std::string& at, bool* out) {  // $defs/helperPatch/runtime/queue_warm
+Status d390(const Json& j, const std::string& at, bool* out) {  // $defs/helperPatch/runtime/queue_warm
     if (!j.is_boolean()) return type_fault(C::invalid_type, at, "a boolean", j);
     *out = j.get<bool>();
     return std::nullopt;
 }
 
-Status d386(const Json& j, const std::string& at, int64_t* out) {  // $defs/helperPatch/gemv/mode
+Status d392(const Json& j, const std::string& at, int64_t* out) {  // $defs/helperPatch/gemv/mode
     return int_enum_in(j, at, C::invalid_type, C::invalid_value, {0, 1, 2}, out);
 }
 
-Status d387(const Json& j, const std::string& at, bool* out) {  // $defs/helperPatch/gemv/wide
+Status d393(const Json& j, const std::string& at, bool* out) {  // $defs/helperPatch/gemv/wide
     if (!j.is_boolean()) return type_fault(C::invalid_type, at, "a boolean", j);
     *out = j.get<bool>();
     return std::nullopt;
 }
 
-Status d388(const Json& j, const std::string& at, int64_t* out) {  // $defs/helperPatch/gemv/h2
+Status d394(const Json& j, const std::string& at, int64_t* out) {  // $defs/helperPatch/gemv/h2
     return int_enum_in(j, at, C::invalid_type, C::invalid_value, {0, 1, 2, 4}, out);
 }
 
-Status d389(const Json& j, const std::string& at, bool* out) {  // $defs/helperPatch/gemv/w4h2
+Status d395(const Json& j, const std::string& at, bool* out) {  // $defs/helperPatch/gemv/w4h2
     if (!j.is_boolean()) return type_fault(C::invalid_type, at, "a boolean", j);
     *out = j.get<bool>();
     return std::nullopt;
 }
 
-Status d390(const Json& j, const std::string& at, bool* out) {  // $defs/helperPatch/gemv/mr
+Status d396(const Json& j, const std::string& at, bool* out) {  // $defs/helperPatch/gemv/mr
     if (!j.is_boolean()) return type_fault(C::invalid_type, at, "a boolean", j);
     *out = j.get<bool>();
     return std::nullopt;
 }
 
-Status d393(const Json& j, const std::string& at, int64_t* out) {  // $defs/helperPatch/lanes/small_lanes/[]
+Status d399(const Json& j, const std::string& at, int64_t* out) {  // $defs/helperPatch/lanes/small_lanes/[]
     return int_in(j, at, C::invalid_type, C::invalid_value, 1, 9007199254740991, std::nullopt, out);
 }
 
-Status d392(const Json& j, const std::string& at, std::vector<int64_t>* out) {  // $defs/helperPatch/lanes/small_lanes
+Status d398(const Json& j, const std::string& at, std::vector<int64_t>* out) {  // $defs/helperPatch/lanes/small_lanes
     if (!j.is_array()) return type_fault(C::invalid_type, at, "an array", j);
     if (j.size() > 4) return fault(C::invalid_value, at, "allows at most 4 item(s), has " + std::to_string(j.size()));
     out->clear();
     out->reserve(j.size());
     for (size_t k = 0; k < j.size(); ++k) {
         int64_t v{};
-        if (auto e = d393(j[k], index(at, k), &v)) return e;
+        if (auto e = d399(j[k], index(at, k), &v)) return e;
         out->push_back(std::move(v));
     }
     return std::nullopt;
 }
 
-Status d394(const Json& j, const std::string& at, bool* out) {  // $defs/helperPatch/lanes/rows
+Status d400(const Json& j, const std::string& at, bool* out) {  // $defs/helperPatch/lanes/rows
     if (!j.is_boolean()) return type_fault(C::invalid_type, at, "a boolean", j);
     *out = j.get<bool>();
     return std::nullopt;
 }
 
-Status d395(const Json& j, const std::string& at, bool* out) {  // $defs/helperPatch/lanes/rows_small
+Status d401(const Json& j, const std::string& at, bool* out) {  // $defs/helperPatch/lanes/rows_small
     if (!j.is_boolean()) return type_fault(C::invalid_type, at, "a boolean", j);
     *out = j.get<bool>();
     return std::nullopt;
 }
 
-Status d397(const Json& j, const std::string& at, bool* out) {  // $defs/helperPatch/combine/enabled
+Status d403(const Json& j, const std::string& at, bool* out) {  // $defs/helperPatch/combine/enabled
     if (!j.is_boolean()) return type_fault(C::invalid_type, at, "a boolean", j);
     *out = j.get<bool>();
     return std::nullopt;
 }
 
-Status d398(const Json& j, const std::string& at, int64_t* out) {  // $defs/helperPatch/combine/min_rows
+Status d404(const Json& j, const std::string& at, int64_t* out) {  // $defs/helperPatch/combine/min_rows
     return int_in(j, at, C::invalid_type, C::invalid_value, 1, 9007199254740991, std::nullopt, out);
 }
 
-Status d399(const Json& j, const std::string& at, int64_t* out) {  // $defs/helperPatch/combine/threads
+Status d405(const Json& j, const std::string& at, int64_t* out) {  // $defs/helperPatch/combine/threads
     return int_in(j, at, C::invalid_type, C::invalid_value, 1, 9007199254740991, std::nullopt, out);
 }
 
-Status d401(const Json& j, const std::string& at, bool* out) {  // $defs/helperPatch/kernels/native
+Status d407(const Json& j, const std::string& at, bool* out) {  // $defs/helperPatch/kernels/native
     if (!j.is_boolean()) return type_fault(C::invalid_type, at, "a boolean", j);
     *out = j.get<bool>();
     return std::nullopt;
 }
 
-Status d402(const Json& j, const std::string& at, bool* out) {  // $defs/helperPatch/kernels/fp16
+Status d408(const Json& j, const std::string& at, bool* out) {  // $defs/helperPatch/kernels/fp16
     if (!j.is_boolean()) return type_fault(C::invalid_type, at, "a boolean", j);
     *out = j.get<bool>();
     return std::nullopt;
 }
 
-Status d403(const Json& j, const std::string& at, bool* out) {  // $defs/helperPatch/kernels/ahalf
+Status d409(const Json& j, const std::string& at, bool* out) {  // $defs/helperPatch/kernels/ahalf
     if (!j.is_boolean()) return type_fault(C::invalid_type, at, "a boolean", j);
     *out = j.get<bool>();
     return std::nullopt;
 }
 
-Status d404(const Json& j, const std::string& at, int64_t* out) {  // $defs/helperPatch/kernels/moe_form
+Status d410(const Json& j, const std::string& at, int64_t* out) {  // $defs/helperPatch/kernels/moe_form
     return int_enum_in(j, at, C::invalid_type, C::invalid_value, {0, 1, 2}, out);
 }
 
-Status d405(const Json& j, const std::string& at, int64_t* out) {  // $defs/helperPatch/kernels/moe_long_rows
+Status d411(const Json& j, const std::string& at, int64_t* out) {  // $defs/helperPatch/kernels/moe_long_rows
     return int_in(j, at, C::invalid_type, C::invalid_value, 0, 9007199254740991, std::nullopt, out);
 }
 
-Status d406(const Json& j, const std::string& at, bool* out) {  // $defs/helperPatch/kernels/fuseroute
+Status d412(const Json& j, const std::string& at, bool* out) {  // $defs/helperPatch/kernels/fuseroute
     if (!j.is_boolean()) return type_fault(C::invalid_type, at, "a boolean", j);
     *out = j.get<bool>();
     return std::nullopt;
 }
 
-Status d407(const Json& j, const std::string& at, bool* out) {  // $defs/helperPatch/kernels/vecio
+Status d413(const Json& j, const std::string& at, bool* out) {  // $defs/helperPatch/kernels/vecio
     if (!j.is_boolean()) return type_fault(C::invalid_type, at, "a boolean", j);
     *out = j.get<bool>();
     return std::nullopt;
 }
 
-Status d408(const Json& j, const std::string& at, bool* out) {  // $defs/helperPatch/kernels/sparse_act
+Status d414(const Json& j, const std::string& at, bool* out) {  // $defs/helperPatch/kernels/sparse_act
     if (!j.is_boolean()) return type_fault(C::invalid_type, at, "a boolean", j);
     *out = j.get<bool>();
     return std::nullopt;
 }
 
-Status d409(const Json& j, const std::string& at, bool* out) {  // $defs/helperPatch/kernels/lane_quant
+Status d415(const Json& j, const std::string& at, bool* out) {  // $defs/helperPatch/kernels/lane_quant
     if (!j.is_boolean()) return type_fault(C::invalid_type, at, "a boolean", j);
     *out = j.get<bool>();
     return std::nullopt;
 }
 
-Status d411(const Json& j, const std::string& at, bool* out) {  // $defs/helperPatch/placement/balance
+Status d417(const Json& j, const std::string& at, bool* out) {  // $defs/helperPatch/placement/balance
     if (!j.is_boolean()) return type_fault(C::invalid_type, at, "a boolean", j);
     *out = j.get<bool>();
     return std::nullopt;
 }
 
-Status d413(const Json& j, const std::string& at, int64_t* out) {  // $defs/helperPatch/placement/balance_speeds_milli/[]
+Status d419(const Json& j, const std::string& at, int64_t* out) {  // $defs/helperPatch/placement/balance_speeds_milli/[]
     return int_in(j, at, C::invalid_type, C::invalid_value, 1, std::nullopt, std::nullopt, out);
 }
 
-Status d412(const Json& j, const std::string& at, std::vector<int64_t>* out) {  // $defs/helperPatch/placement/balance_speeds_milli
+Status d418(const Json& j, const std::string& at, std::vector<int64_t>* out) {  // $defs/helperPatch/placement/balance_speeds_milli
     if (!j.is_array()) return type_fault(C::invalid_type, at, "an array", j);
     out->clear();
     out->reserve(j.size());
     for (size_t k = 0; k < j.size(); ++k) {
         int64_t v{};
-        if (auto e = d413(j[k], index(at, k), &v)) return e;
+        if (auto e = d419(j[k], index(at, k), &v)) return e;
         out->push_back(std::move(v));
     }
     return std::nullopt;
@@ -2048,44 +2054,76 @@ Status d369(const Json& j, const std::string& at, int64_t* out) {  // /spec/expe
     return int_in(j, at, C::invalid_type, C::invalid_value, 1, 9007199254740991, std::nullopt, out);
 }
 
-Status d372(const Json& j, const std::string& at, Origin* out) {  // /provenance/*/origin
+Status d370(const Json& j, const std::string& at, bool* out) {  // /spec/experiment/engine/mtp_full_head
+    if (!j.is_boolean()) return type_fault(C::invalid_type, at, "a boolean", j);
+    *out = j.get<bool>();
+    return std::nullopt;
+}
+
+Status d371(const Json& j, const std::string& at, bool* out) {  // /spec/experiment/engine/hc_pf2_fp8_down
+    if (!j.is_boolean()) return type_fault(C::invalid_type, at, "a boolean", j);
+    *out = j.get<bool>();
+    return std::nullopt;
+}
+
+Status d372(const Json& j, const std::string& at, bool* out) {  // /spec/experiment/engine/routing_evidence
+    if (!j.is_boolean()) return type_fault(C::invalid_type, at, "a boolean", j);
+    *out = j.get<bool>();
+    return std::nullopt;
+}
+
+Status d373(const Json& j, const std::string& at, int64_t* out) {  // /spec/experiment/engine/freeze_promotion_after
+    return int_in(j, at, C::invalid_type, C::invalid_value, 0, std::nullopt, std::nullopt, out);
+}
+
+Status d374(const Json& j, const std::string& at, bool* out) {  // /spec/experiment/engine/shadow
+    if (!j.is_boolean()) return type_fault(C::invalid_type, at, "a boolean", j);
+    *out = j.get<bool>();
+    return std::nullopt;
+}
+
+Status d375(const Json& j, const std::string& at, int64_t* out) {  // /spec/experiment/engine/mask_only
+    return int_enum_in(j, at, C::invalid_type, C::invalid_value, {0, 1, 2}, out);
+}
+
+Status d378(const Json& j, const std::string& at, Origin* out) {  // /provenance/*/origin
     return enum_in(j, at, C::provenance_invalid, C::provenance_invalid, kOriginNames, out);
 }
 
-Status d373(const Json& j, const std::string& at, std::string* out) {  // /provenance/*/source
+Status d379(const Json& j, const std::string& at, std::string* out) {  // /provenance/*/source
     return str_in(j, at, C::provenance_invalid, C::provenance_invalid, 1, -1, nullptr, "", false, out);
 }
 
-Status d374(const Json& j, const std::string& at, ValueClass* out) {  // /provenance/*/class
+Status d380(const Json& j, const std::string& at, ValueClass* out) {  // /provenance/*/class
     return enum_in(j, at, C::provenance_invalid, C::provenance_invalid, kValueClassNames, out);
 }
 
-Status d375(const Json& j, const std::string& at, Lifecycle* out) {  // /provenance/*/lifecycle
+Status d381(const Json& j, const std::string& at, Lifecycle* out) {  // /provenance/*/lifecycle
     return enum_in(j, at, C::provenance_invalid, C::provenance_invalid, kLifecycleNames, out);
 }
 
-Status d376(const Json& j, const std::string& at, Confidence* out) {  // /provenance/*/confidence
+Status d382(const Json& j, const std::string& at, Confidence* out) {  // /provenance/*/confidence
     return enum_in(j, at, C::provenance_invalid, C::provenance_invalid, kConfidenceNames, out);
 }
 
-Status d378(const Json& j, const std::string& at, std::string* out) {  // /provenance/*/inputs/[]
+Status d384(const Json& j, const std::string& at, std::string* out) {  // /provenance/*/inputs/[]
     static const std::regex re(R"re(^(|/(?:[^~/]|~[01])*(?:/(?:[^~/]|~[01])*)*)$)re", std::regex::ECMAScript);
     return str_in(j, at, C::provenance_invalid, C::provenance_invalid, -1, 1024, &re, "^(|/(?:[^~/]|~[01])*(?:/(?:[^~/]|~[01])*)*)$", false, out);
 }
 
-Status d377(const Json& j, const std::string& at, std::vector<std::string>* out) {  // /provenance/*/inputs
+Status d383(const Json& j, const std::string& at, std::vector<std::string>* out) {  // /provenance/*/inputs
     if (!j.is_array()) return type_fault(C::provenance_invalid, at, "an array", j);
     out->clear();
     out->reserve(j.size());
     for (size_t k = 0; k < j.size(); ++k) {
         std::string v{};
-        if (auto e = d378(j[k], index(at, k), &v)) return e;
+        if (auto e = d384(j[k], index(at, k), &v)) return e;
         out->push_back(std::move(v));
     }
     return std::nullopt;
 }
 
-Status d370(const Json& j, const std::string& at, std::map<std::string, ProvenanceRecord>* out) {  // /provenance
+Status d376(const Json& j, const std::string& at, std::map<std::string, ProvenanceRecord>* out) {  // /provenance
     if (!j.is_object()) return type_fault(C::provenance_invalid, at, "an object", j);
     if (!j.contains("")) return fault(C::provenance_invalid, keyed(at, ""), "missing required entry");
     if (j.size() < 1) return fault(C::provenance_invalid, at, "needs at least 1 entr(ies)");
@@ -2412,13 +2450,13 @@ Status decode(const Json& j, const std::string& at, HelperCpuPatch* out) {  // $
     if (const auto it = j.find("reference"); it == j.end()) {
     } else {
         bool v{};
-        if (auto e = d380(*it, member(at, "reference"), &v)) return e;
+        if (auto e = d386(*it, member(at, "reference"), &v)) return e;
         out->reference = std::move(v);
     }
     if (const auto it = j.find("affinity"); it == j.end()) {
     } else {
         Affinity v{};
-        if (auto e = d381(*it, member(at, "affinity"), &v)) return e;
+        if (auto e = d387(*it, member(at, "affinity"), &v)) return e;
         out->affinity = std::move(v);
     }
     return std::nullopt;
@@ -2431,13 +2469,13 @@ Status decode(const Json& j, const std::string& at, HelperRuntimePatch* out) {  
     if (const auto it = j.find("power_save"); it == j.end()) {
     } else {
         bool v{};
-        if (auto e = d383(*it, member(at, "power_save"), &v)) return e;
+        if (auto e = d389(*it, member(at, "power_save"), &v)) return e;
         out->power_save = std::move(v);
     }
     if (const auto it = j.find("queue_warm"); it == j.end()) {
     } else {
         bool v{};
-        if (auto e = d384(*it, member(at, "queue_warm"), &v)) return e;
+        if (auto e = d390(*it, member(at, "queue_warm"), &v)) return e;
         out->queue_warm = std::move(v);
     }
     return std::nullopt;
@@ -2450,31 +2488,31 @@ Status decode(const Json& j, const std::string& at, HelperGemvPatch* out) {  // 
     if (const auto it = j.find("mode"); it == j.end()) {
     } else {
         int64_t v{};
-        if (auto e = d386(*it, member(at, "mode"), &v)) return e;
+        if (auto e = d392(*it, member(at, "mode"), &v)) return e;
         out->mode = std::move(v);
     }
     if (const auto it = j.find("wide"); it == j.end()) {
     } else {
         bool v{};
-        if (auto e = d387(*it, member(at, "wide"), &v)) return e;
+        if (auto e = d393(*it, member(at, "wide"), &v)) return e;
         out->wide = std::move(v);
     }
     if (const auto it = j.find("h2"); it == j.end()) {
     } else {
         int64_t v{};
-        if (auto e = d388(*it, member(at, "h2"), &v)) return e;
+        if (auto e = d394(*it, member(at, "h2"), &v)) return e;
         out->h2 = std::move(v);
     }
     if (const auto it = j.find("w4h2"); it == j.end()) {
     } else {
         bool v{};
-        if (auto e = d389(*it, member(at, "w4h2"), &v)) return e;
+        if (auto e = d395(*it, member(at, "w4h2"), &v)) return e;
         out->w4h2 = std::move(v);
     }
     if (const auto it = j.find("mr"); it == j.end()) {
     } else {
         bool v{};
-        if (auto e = d390(*it, member(at, "mr"), &v)) return e;
+        if (auto e = d396(*it, member(at, "mr"), &v)) return e;
         out->mr = std::move(v);
     }
     return std::nullopt;
@@ -2487,19 +2525,19 @@ Status decode(const Json& j, const std::string& at, HelperLanesPatch* out) {  //
     if (const auto it = j.find("small_lanes"); it == j.end()) {
     } else {
         std::vector<int64_t> v{};
-        if (auto e = d392(*it, member(at, "small_lanes"), &v)) return e;
+        if (auto e = d398(*it, member(at, "small_lanes"), &v)) return e;
         out->small_lanes = std::move(v);
     }
     if (const auto it = j.find("rows"); it == j.end()) {
     } else {
         bool v{};
-        if (auto e = d394(*it, member(at, "rows"), &v)) return e;
+        if (auto e = d400(*it, member(at, "rows"), &v)) return e;
         out->rows = std::move(v);
     }
     if (const auto it = j.find("rows_small"); it == j.end()) {
     } else {
         bool v{};
-        if (auto e = d395(*it, member(at, "rows_small"), &v)) return e;
+        if (auto e = d401(*it, member(at, "rows_small"), &v)) return e;
         out->rows_small = std::move(v);
     }
     return std::nullopt;
@@ -2512,19 +2550,19 @@ Status decode(const Json& j, const std::string& at, HelperCombinePatch* out) {  
     if (const auto it = j.find("enabled"); it == j.end()) {
     } else {
         bool v{};
-        if (auto e = d397(*it, member(at, "enabled"), &v)) return e;
+        if (auto e = d403(*it, member(at, "enabled"), &v)) return e;
         out->enabled = std::move(v);
     }
     if (const auto it = j.find("min_rows"); it == j.end()) {
     } else {
         int64_t v{};
-        if (auto e = d398(*it, member(at, "min_rows"), &v)) return e;
+        if (auto e = d404(*it, member(at, "min_rows"), &v)) return e;
         out->min_rows = std::move(v);
     }
     if (const auto it = j.find("threads"); it == j.end()) {
     } else {
         int64_t v{};
-        if (auto e = d399(*it, member(at, "threads"), &v)) return e;
+        if (auto e = d405(*it, member(at, "threads"), &v)) return e;
         out->threads = std::move(v);
     }
     return std::nullopt;
@@ -2537,55 +2575,55 @@ Status decode(const Json& j, const std::string& at, HelperKernelsPatch* out) {  
     if (const auto it = j.find("native"); it == j.end()) {
     } else {
         bool v{};
-        if (auto e = d401(*it, member(at, "native"), &v)) return e;
+        if (auto e = d407(*it, member(at, "native"), &v)) return e;
         out->native = std::move(v);
     }
     if (const auto it = j.find("fp16"); it == j.end()) {
     } else {
         bool v{};
-        if (auto e = d402(*it, member(at, "fp16"), &v)) return e;
+        if (auto e = d408(*it, member(at, "fp16"), &v)) return e;
         out->fp16 = std::move(v);
     }
     if (const auto it = j.find("ahalf"); it == j.end()) {
     } else {
         bool v{};
-        if (auto e = d403(*it, member(at, "ahalf"), &v)) return e;
+        if (auto e = d409(*it, member(at, "ahalf"), &v)) return e;
         out->ahalf = std::move(v);
     }
     if (const auto it = j.find("moe_form"); it == j.end()) {
     } else {
         int64_t v{};
-        if (auto e = d404(*it, member(at, "moe_form"), &v)) return e;
+        if (auto e = d410(*it, member(at, "moe_form"), &v)) return e;
         out->moe_form = std::move(v);
     }
     if (const auto it = j.find("moe_long_rows"); it == j.end()) {
     } else {
         int64_t v{};
-        if (auto e = d405(*it, member(at, "moe_long_rows"), &v)) return e;
+        if (auto e = d411(*it, member(at, "moe_long_rows"), &v)) return e;
         out->moe_long_rows = std::move(v);
     }
     if (const auto it = j.find("fuseroute"); it == j.end()) {
     } else {
         bool v{};
-        if (auto e = d406(*it, member(at, "fuseroute"), &v)) return e;
+        if (auto e = d412(*it, member(at, "fuseroute"), &v)) return e;
         out->fuseroute = std::move(v);
     }
     if (const auto it = j.find("vecio"); it == j.end()) {
     } else {
         bool v{};
-        if (auto e = d407(*it, member(at, "vecio"), &v)) return e;
+        if (auto e = d413(*it, member(at, "vecio"), &v)) return e;
         out->vecio = std::move(v);
     }
     if (const auto it = j.find("sparse_act"); it == j.end()) {
     } else {
         bool v{};
-        if (auto e = d408(*it, member(at, "sparse_act"), &v)) return e;
+        if (auto e = d414(*it, member(at, "sparse_act"), &v)) return e;
         out->sparse_act = std::move(v);
     }
     if (const auto it = j.find("lane_quant"); it == j.end()) {
     } else {
         bool v{};
-        if (auto e = d409(*it, member(at, "lane_quant"), &v)) return e;
+        if (auto e = d415(*it, member(at, "lane_quant"), &v)) return e;
         out->lane_quant = std::move(v);
     }
     return std::nullopt;
@@ -2598,13 +2636,13 @@ Status decode(const Json& j, const std::string& at, HelperPlacementPatch* out) {
     if (const auto it = j.find("balance"); it == j.end()) {
     } else {
         bool v{};
-        if (auto e = d411(*it, member(at, "balance"), &v)) return e;
+        if (auto e = d417(*it, member(at, "balance"), &v)) return e;
         out->balance = std::move(v);
     }
     if (const auto it = j.find("balance_speeds_milli"); it == j.end()) {
     } else {
         std::vector<int64_t> v{};
-        if (auto e = d412(*it, member(at, "balance_speeds_milli"), &v)) return e;
+        if (auto e = d418(*it, member(at, "balance_speeds_milli"), &v)) return e;
         out->balance_speeds_milli = std::move(v);
     }
     return std::nullopt;
@@ -4912,7 +4950,7 @@ Status decode(const Json& j, const std::string& at, Diagnostics* out) {  // /spe
 
 Status decode(const Json& j, const std::string& at, ExperimentEngine* out) {  // /spec/experiment/engine
     *out = ExperimentEngine{};   // the result replaces the destination; nothing stale survives
-    if (auto e = closed(j, at, C::invalid_type, C::unknown_field, {"profile_ops", "debug_selection", "deterministic", "kv_resident"})) return e;
+    if (auto e = closed(j, at, C::invalid_type, C::unknown_field, {"profile_ops", "debug_selection", "deterministic", "kv_resident", "mtp_full_head", "hc_pf2_fp8_down", "routing_evidence", "freeze_promotion_after", "shadow", "mask_only"})) return e;
     if (j.size() < 1) return fault(C::invalid_value, at, "must not be empty");
     if (const auto it = j.find("profile_ops"); it == j.end()) {
     } else {
@@ -4937,6 +4975,42 @@ Status decode(const Json& j, const std::string& at, ExperimentEngine* out) {  //
         int64_t v{};
         if (auto e = d369(*it, member(at, "kv_resident"), &v)) return e;
         out->kv_resident = std::move(v);
+    }
+    if (const auto it = j.find("mtp_full_head"); it == j.end()) {
+    } else {
+        bool v{};
+        if (auto e = d370(*it, member(at, "mtp_full_head"), &v)) return e;
+        out->mtp_full_head = std::move(v);
+    }
+    if (const auto it = j.find("hc_pf2_fp8_down"); it == j.end()) {
+    } else {
+        bool v{};
+        if (auto e = d371(*it, member(at, "hc_pf2_fp8_down"), &v)) return e;
+        out->hc_pf2_fp8_down = std::move(v);
+    }
+    if (const auto it = j.find("routing_evidence"); it == j.end()) {
+    } else {
+        bool v{};
+        if (auto e = d372(*it, member(at, "routing_evidence"), &v)) return e;
+        out->routing_evidence = std::move(v);
+    }
+    if (const auto it = j.find("freeze_promotion_after"); it == j.end()) {
+    } else {
+        int64_t v{};
+        if (auto e = d373(*it, member(at, "freeze_promotion_after"), &v)) return e;
+        out->freeze_promotion_after = std::move(v);
+    }
+    if (const auto it = j.find("shadow"); it == j.end()) {
+    } else {
+        bool v{};
+        if (auto e = d374(*it, member(at, "shadow"), &v)) return e;
+        out->shadow = std::move(v);
+    }
+    if (const auto it = j.find("mask_only"); it == j.end()) {
+    } else {
+        int64_t v{};
+        if (auto e = d375(*it, member(at, "mask_only"), &v)) return e;
+        out->mask_only = std::move(v);
     }
     return std::nullopt;
 }
@@ -5039,42 +5113,42 @@ Status decode(const Json& j, const std::string& at, ProvenanceRecord* out) {  //
         return fault(C::provenance_invalid, member(at, "origin"), "missing required member");
     } else {
         Origin v{};
-        if (auto e = d372(*it, member(at, "origin"), &v)) return e;
+        if (auto e = d378(*it, member(at, "origin"), &v)) return e;
         out->origin = std::move(v);
     }
     if (const auto it = j.find("source"); it == j.end()) {
         return fault(C::provenance_invalid, member(at, "source"), "missing required member");
     } else {
         std::string v{};
-        if (auto e = d373(*it, member(at, "source"), &v)) return e;
+        if (auto e = d379(*it, member(at, "source"), &v)) return e;
         out->source = std::move(v);
     }
     if (const auto it = j.find("class"); it == j.end()) {
         return fault(C::provenance_invalid, member(at, "class"), "missing required member");
     } else {
         ValueClass v{};
-        if (auto e = d374(*it, member(at, "class"), &v)) return e;
+        if (auto e = d380(*it, member(at, "class"), &v)) return e;
         out->value_class = std::move(v);
     }
     if (const auto it = j.find("lifecycle"); it == j.end()) {
         return fault(C::provenance_invalid, member(at, "lifecycle"), "missing required member");
     } else {
         Lifecycle v{};
-        if (auto e = d375(*it, member(at, "lifecycle"), &v)) return e;
+        if (auto e = d381(*it, member(at, "lifecycle"), &v)) return e;
         out->lifecycle = std::move(v);
     }
     if (const auto it = j.find("confidence"); it == j.end()) {
         return fault(C::provenance_invalid, member(at, "confidence"), "missing required member");
     } else {
         Confidence v{};
-        if (auto e = d376(*it, member(at, "confidence"), &v)) return e;
+        if (auto e = d382(*it, member(at, "confidence"), &v)) return e;
         out->confidence = std::move(v);
     }
     if (const auto it = j.find("inputs"); it == j.end()) {
         return fault(C::provenance_invalid, member(at, "inputs"), "missing required member");
     } else {
         std::vector<std::string> v{};
-        if (auto e = d377(*it, member(at, "inputs"), &v)) return e;
+        if (auto e = d383(*it, member(at, "inputs"), &v)) return e;
         out->inputs = std::move(v);
     }
     return std::nullopt;
@@ -5115,7 +5189,7 @@ Status decode(const Json& j, const std::string& at, Manifest* out) {  // ""
         return fault(C::missing_field, member(at, "provenance"), "missing required member");
     } else {
         std::map<std::string, ProvenanceRecord> v{};
-        if (auto e = d370(*it, member(at, "provenance"), &v)) return e;
+        if (auto e = d376(*it, member(at, "provenance"), &v)) return e;
         out->provenance = std::move(v);
     }
     return std::nullopt;
@@ -5833,6 +5907,12 @@ nlohmann::json encode(const ExperimentEngine& value) {
     if (value.debug_selection) j["debug_selection"] = Json(kDebugSelectionNames[static_cast<size_t>(*value.debug_selection)]);
     if (value.deterministic) j["deterministic"] = Json(kDeterministicNames[static_cast<size_t>(*value.deterministic)]);
     if (value.kv_resident) j["kv_resident"] = Json(*value.kv_resident);
+    if (value.mtp_full_head) j["mtp_full_head"] = Json(*value.mtp_full_head);
+    if (value.hc_pf2_fp8_down) j["hc_pf2_fp8_down"] = Json(*value.hc_pf2_fp8_down);
+    if (value.routing_evidence) j["routing_evidence"] = Json(*value.routing_evidence);
+    if (value.freeze_promotion_after) j["freeze_promotion_after"] = Json(*value.freeze_promotion_after);
+    if (value.shadow) j["shadow"] = Json(*value.shadow);
+    if (value.mask_only) j["mask_only"] = Json(*value.mask_only);
     return j;
 }
 

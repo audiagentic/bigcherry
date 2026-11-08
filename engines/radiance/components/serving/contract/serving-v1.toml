@@ -2786,6 +2786,50 @@ kind = "ref"
 ref = "positive"
 doc = "Stream the sparse attention group's KV from host memory, resident tokens (`--kv-resident`)."
 [[field]]
+path = "/spec/experiment/engine/mtp_full_head"
+optional = true
+kind = "boolean"
+env_setting = "RAD_MTP_FULL_HEAD"
+doc = "Draft through the trunk head instead of the 2-bit copy (`RAD_MTP_FULL_HEAD`, patch rad0003)."
+
+[[field]]
+path = "/spec/experiment/engine/hc_pf2_fp8_down"
+optional = true
+kind = "boolean"
+env_setting = "RAD_HC_PF2_FP8_DOWN"
+doc = "FP8 PF2 down-product (`RAD_HC_PF2_FP8_DOWN`, patch rad0007)."
+
+[[field]]
+path = "/spec/experiment/engine/routing_evidence"
+optional = true
+kind = "boolean"
+env_setting = "RAD_ROUTING_EVIDENCE"
+doc = "Record routing evidence (`RAD_ROUTING_EVIDENCE`, patch rad0010)."
+
+[[field]]
+path = "/spec/experiment/engine/freeze_promotion_after"
+optional = true
+kind = "integer"
+minimum = 0
+env_setting = "RAD_DIAG_FREEZE_PROMOTION_AFTER"
+doc = "Stop heat promotion after this many calls (`RAD_DIAG_FREEZE_PROMOTION_AFTER`, patch rad0006, diagnostic build)."
+
+[[field]]
+path = "/spec/experiment/engine/shadow"
+optional = true
+kind = "boolean"
+env_setting = "R3_MOE_WORKER_SHADOW"
+doc = "Publish owned routes and compare the helper's rows against the engine's (`R3_MOE_WORKER_SHADOW`, diagnostic build, patches rad0002 and rad0004)."
+
+[[field]]
+path = "/spec/experiment/engine/mask_only"
+optional = true
+kind = "int_enum"
+values = [0, 1, 2]
+env_setting = "R3_MOE_WORKER_MASK_ONLY"
+doc = "Mask and rescatter owned routes: 1 adds the engine's captured rows, 2 adds the helper's (`R3_MOE_WORKER_MASK_ONLY`, diagnostic build, patches rad0002 and rad0004)."
+
+[[field]]
 path = "/provenance"
 error_class = "provenance_invalid"
 kind = "map"
