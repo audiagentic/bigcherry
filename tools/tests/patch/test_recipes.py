@@ -136,3 +136,31 @@ def test_version_of_tag(tag, version):
 def test_version_of_tag_refuses_non_release_tags(tag):
     with pytest.raises(recipes.RecipeError):
         recipes.version_of_tag(tag)
+
+
+def _upstream_repo(tmp_path, cmake: str):
+    import subprocess
+    repo = tmp_path / "upstream"
+    repo.mkdir()
+    git = ["git", "-C", str(repo), "-c", "user.email=t@t", "-c", "user.name=t"]
+    subprocess.run(git[:3] + ["init", "-q"], check=True)
+    (repo / "CMakeLists.txt").write_text(cmake)
+    subprocess.run(git + ["add", "CMakeLists.txt"], check=True)
+    subprocess.run(git + ["commit", "-q", "-m", "c"], check=True)
+    sha = subprocess.run(git[:3] + ["rev-parse", "HEAD"], check=True, capture_output=True, text=True).stdout.strip()
+    return repo, sha
+
+
+def test_version_of_ref_tag_needs_no_checkout(tmp_path):
+    assert recipes.version_of_ref("v1.18.0", tmp_path / "absent") == "1.18.0"
+
+
+def test_version_of_ref_untagged_commit_reads_the_declared_project_version(tmp_path):
+    repo, sha = _upstream_repo(tmp_path, "cmake_minimum_required(VERSION 3.21)\nproject(radiance VERSION 1.17.0 LANGUAGES C CXX)\n")
+    assert recipes.version_of_ref(sha, repo) == "1.17.0"
+
+
+def test_version_of_ref_refuses_a_commit_without_a_project_version(tmp_path):
+    repo, sha = _upstream_repo(tmp_path, "cmake_minimum_required(VERSION 3.21)\nproject(radiance LANGUAGES C)\n")
+    with pytest.raises(recipes.RecipeError):
+        recipes.version_of_ref(sha, repo)

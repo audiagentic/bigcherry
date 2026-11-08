@@ -1,0 +1,14 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261108_092348_radiance-can-be-bumped-to-an-u_2143",
+  "files": [
+    "tools/bigcherry/recipes.py",
+    "tools/bigcherry/release/pin_bump.py",
+    "tools/bigcherry/release/pin.py",
+    "tools/tests/patch/test_recipes.py"
+  ],
+  "status": "unreleased",
+  "technical-summary": "pin-bump/repin of an engine whose release line follows the upstream version (radiance) no longer requires a version tag: recipes.version_of_ref takes the version a tag names, or, for an untagged commit, the version upstream declares there (project(<name> VERSION x.y.z) in its top-level CMakeLists.txt), and refuses when neither exists. Used by pin-bump's declare phase and the repin CLI.",
+  "timestamp-utc": "2026-11-08T09:23:48.274608Z",
+  "user-summary-candidate": "Radiance can be bumped to an untagged upstream commit; its release version comes from the version upstream declares at that commit."
+}

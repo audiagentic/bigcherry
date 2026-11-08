@@ -498,7 +498,7 @@ def run_phase_declare(*, repo_root: Path, engine: str, vendor_root: Path, target
     # What moves with the pin: the release version beside it (engines whose release line follows upstream) and every
     # component's built-against, so the declarations the tests compare never lag the pin.
     if engines.load(repo_root, engine).version_source == "pinned-version":
-        recipes_module.set_pinned_version(recipes_module.version_of_tag(target_ref), recipes_file)
+        recipes_module.set_pinned_version(recipes_module.version_of_ref(target_ref, vendor_root), recipes_file)
     declarations = components_module.repin_components(repo_root, engine, target_ref)
     from_sha = resolve_pin_sha(engine, old, vendor_root)
     to_sha = resolve_pin_sha(engine, target_ref, vendor_root)
