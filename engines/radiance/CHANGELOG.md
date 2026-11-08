@@ -1,5 +1,20 @@
 # Changelog
 
+## [1170.11.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.10.0...bc-radiance-1170.11.0) (2026-11-08)
+
+
+### New and changed
+
+* **libr3:** shelved and diagnostic kernel switches no longer read the environment ([#729](https://github.com/audiagentic/bigcherry/issues/729)) ([efe82db](https://github.com/audiagentic/bigcherry/commit/efe82db34c31b11c8671c9dbdf5ce410045c74a8))
+* **radiance:** n-gram and engine-side hand-off settings leave the environment (contract amendment 16) ([#736](https://github.com/audiagentic/bigcherry/issues/736)) ([b748873](https://github.com/audiagentic/bigcherry/commit/b74887322b042849627f12750cf2a66dc29de944))
+* **radiance:** paced forced churn (spec.experiment.placement.forced.pace_requests, contract amendment 15) ([#733](https://github.com/audiagentic/bigcherry/issues/733)) ([30c7752](https://github.com/audiagentic/bigcherry/commit/30c775265cf2098d23ce16970ce13995d4eb83e8))
+* **serving:** the patch and diagnostic-build switches are spec.experiment.engine fields (contract amendment 17) ([#738](https://github.com/audiagentic/bigcherry/issues/738)) ([d5d149b](https://github.com/audiagentic/bigcherry/commit/d5d149b4441ec27ee087b3ecd60663cade18e977))
+
+
+### Fixes
+
+* **build:** libr3/libr2 unit cuids do not depend on the build directory, so their compiles hit ccache; radiance build triggers match its inputs ([#740](https://github.com/audiagentic/bigcherry/issues/740)) ([b96f1c1](https://github.com/audiagentic/bigcherry/commit/b96f1c11c9ea11c648cd36720255c94c54268273))
+
 ## [1170.10.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.9.0...bc-radiance-1170.10.0) (2026-11-07)
 
 

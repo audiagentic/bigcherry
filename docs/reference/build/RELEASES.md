@@ -104,3 +104,31 @@ upstream version. `pinned-version` is a declared recipes field, updated with `pi
 
 Decision (owner, 2026-10-17): "upstream as major" for radiance, as above. The manifest starts the radiance package at
 `130.0.0`; its first release is stated with `release-as` by `pin-release`, as for llama.cpp.
+
+## What a radiance release asset is called
+
+A radiance runtime bundle is BigCherry's build of the radiance engine (the pinned upstream release with BigCherry's patches and
+components), not the upstream release, so its assets are named `bigcherryrad-<plan id>` (`.tar.gz`, `.tar.gz.sha256`,
+`.receipt.json`) and its `bundle.json` says `product: bigcherryrad` and what it was built from (the upstream project, URL and
+pinned tag). The files inside keep the engine's own names (`bin/radiance`, `radiance_home`), because scripts and the engine find
+each other by them. Bundles a lab `pin-release` packed before this name existed are `radiance-<plan id>.tar.gz` and still install.
+
+### How a release gets its bundle
+
+When release-please publishes a `bc-radiance-*` release, `.github/workflows/radiance-release-bundle.yml` runs (it ignores every
+other release). It decides first whether the runtime is already bundled: the runtime key is the git trees of `engines/radiance`
+and `config`, the trees of the build tooling (`BUILD_INPUTS` in `tools/bigcherry/release/ci_bundle.py`) and the ROCm version of
+the build image. If an earlier release has a receipt with the same key, that archive is attached again and the receipt names the
+new tag as `release_tag` and the earlier one as `reused_from`; otherwise the tag is built in the ROCm 7.2.4 image, the card-free
+component tests run, the lane build is packed, the archive is restored into a scratch directory to prove it installs, and the
+archive, its `.sha256` and its receipt are attached (30-55 minutes; most releases only change documentation, so most are reuses).
+
+`bigcherry --engine radiance release-install <tag|latest>` installs it: checksum, per-file digests, source trees against the
+tag, the ROCm version against the host SDK. The bundle includes `bigcherry-build-metadata-radiance.json`, which the launcher's
+SDK check and the campaign tools read. The first CI bundle (bc-radiance-1170.11.0) was installed on the lab host and brought up
+`flashnext-4gpu` (R9700 engine, two RX 7900 XTX and the RX 6900 XT tail on libr2) before the trigger was turned on.
+
+A run that fails leaves the release without assets and the next `release-install latest` skips it. Fix the cause and run the
+workflow again from the Actions tab with the tag (`workflow_dispatch`). To replace a bundle that was attached in error, delete its
+three assets from the release first: the workflow refuses a release that already has one. Every bundle is kept; how many to keep is
+the owner's call (a bundle is about 240 MB compressed, and a release that changes only documentation attaches an existing one).

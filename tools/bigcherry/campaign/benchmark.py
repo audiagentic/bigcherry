@@ -880,6 +880,23 @@ def _setting_activation_evidence(engine: str, names: list[str], prepared: dict[s
     return evidence
 
 
+
+def release_bundle_identity(build_dir: Path) -> dict | None:
+    """The identity of a build `release-install` restored from a verified release bundle, or None for a lane build.
+
+    A bundle is built elsewhere (CI), so it has no CMakeCache.txt and no source slice beside it for a source attestation; what
+    stands in for them is the installer's own check, recorded in the `.lab-source-tree` marker it writes: every file digest
+    against bundle.json, and the engine and config trees against the release tag. The binary bytes are still compared with the
+    build metadata by the caller.
+    """
+    marker = build_dir / ".lab-source-tree"
+    if (build_dir / "CMakeCache.txt").is_file() or not marker.is_file():
+        return None
+    parts = marker.read_text(encoding="utf-8").split()
+    if len(parts) < 4:
+        raise ValueError(f"{marker}: not a release-install marker")
+    return {"engine_tree": parts[0], "config_tree": parts[1], "rocm_sdk": parts[2], "rocm_version": parts[3]}
+
 def run_server_comparison_capture(
     config_path: Path, output: Path, *, rounds: int, seed: int, settle_seconds: float,
 ) -> int:
@@ -983,25 +1000,27 @@ def run_server_comparison_capture(
         # Every managed comparison must record its canonical source worktree;
         # source identity is never optional for an admitted server arm.
         source_root = None
-        for line in (build_dir / "CMakeCache.txt").read_text(encoding="utf-8", errors="replace").splitlines():
-            if line.startswith("CMAKE_HOME_DIRECTORY:") and "=" in line:
-                source_root = Path(line.split("=", 1)[1].strip())
-                break
         source_attestation = None
-        if source_root is None:
-            raise ValueError(f"{arm['name']}: CMAKE_HOME_DIRECTORY is required for source attestation")
-        from bigcherry.campaign.build import _source_metadata_path
         from bigcherry.campaign.workers import _source_attestation, _verify_source
-        metadata_sidecar = _source_metadata_path(source_root)
-        if not metadata_sidecar.is_file() or not metadata.get("source_slice_id"):
-            raise ValueError(f"{arm['name']}: source attestation metadata is incomplete")
-        source_attestation = _source_attestation(
-            source_root,
-            source_slice_id=str(metadata["source_slice_id"]),
-        )
-        if source_attestation is None:
-            raise ValueError(f"{arm['name']}: source attestation is unavailable")
-        _verify_source(source_root, source_attestation)
+        release_build = release_bundle_identity(build_dir)
+        if release_build is None:
+            for line in (build_dir / "CMakeCache.txt").read_text(encoding="utf-8", errors="replace").splitlines():
+                if line.startswith("CMAKE_HOME_DIRECTORY:") and "=" in line:
+                    source_root = Path(line.split("=", 1)[1].strip())
+                    break
+            if source_root is None:
+                raise ValueError(f"{arm['name']}: CMAKE_HOME_DIRECTORY is required for source attestation")
+            from bigcherry.campaign.build import _source_metadata_path
+            metadata_sidecar = _source_metadata_path(source_root)
+            if not metadata_sidecar.is_file() or not metadata.get("source_slice_id"):
+                raise ValueError(f"{arm['name']}: source attestation metadata is incomplete")
+            source_attestation = _source_attestation(
+                source_root,
+                source_slice_id=str(metadata["source_slice_id"]),
+            )
+            if source_attestation is None:
+                raise ValueError(f"{arm['name']}: source attestation is unavailable")
+            _verify_source(source_root, source_attestation)
         runtime = {runtime_artifact_key(binary, path): binary_hash(path) for path in resolve_runtime_artifacts(binary)}
         if metadata.get("binary_hash") != binary_hash(binary) or any(
                 metadata.get("runtime_artifacts", {}).get(name) != digest for name, digest in runtime.items()):
@@ -1052,14 +1071,15 @@ def run_server_comparison_capture(
                                {**dataclasses.asdict(source_attestation),
                                 "allowed_untracked": sorted(source_attestation.allowed_untracked)}
                                if source_attestation is not None else None
-                           )},
+                           ),
+                           "release_bundle": release_build},
         }
     if quality is not None:
         first = prepared[names[0]]
         if adapter_.quality_command("score", {"name": names[0], "model": first["model"], "settings": {}}, {},
                                     Path("."), first["binary"], first["model"], quality) is None:
             raise ValueError(f"{engine} has no quality measurement mode; remove the quality block")
-    if "stock" in names and "native" in names:
+    if "stock" in names and "native" in names and not any(prepared[n]["provenance"]["release_bundle"] for n in names):
         validate_build_parity(prepared["stock"]["binary"].parent.parent / "CMakeCache.txt",
                               prepared["native"]["binary"].parent.parent / "CMakeCache.txt")
     output.mkdir(parents=True, exist_ok=False)

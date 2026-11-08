@@ -130,13 +130,13 @@
    "direction": "lower",
    "gated": true,
    "launches": [
-    28.918750000000003,
-    28.86345
+    28.5118,
+    29.2763
    ],
-   "spread_across_launches": 0.0019140842681657176,
-   "spread_repeats": 0.0286071138412074,
-   "tolerance": 0.0286071138412074,
-   "value": 28.8911
+   "spread_across_launches": 0.026458734583763723,
+   "spread_repeats": null,
+   "tolerance": 0.026458734583763723,
+   "value": 28.89405
   },
   "sess8_ttft_s": {
    "direction": "lower",
@@ -149,6 +149,11 @@
    "spread_repeats": null,
    "tolerance": 0.00665079640695526,
    "value": 20.934335
+  },
+  "sess8_warm_ms_per_step": {
+   "direction": "lower",
+   "gated": false,
+   "value": 28.888150000000003
   }
  },
  "name": "v1.17.0",

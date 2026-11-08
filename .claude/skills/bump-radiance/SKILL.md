@@ -20,11 +20,11 @@ It covers the pin range, anchors, patch targets, core commit subjects
 and exact drift with upstream line suggestions without touching vendor.
 The commands below explain its inputs.
 
-    git -C /work/bigcherry/upstream/radiance.git fetch -q origin "+refs/*:refs/*"
-    git -C /work/bigcherry/upstream/radiance.git tag -l 'v*' | sort -V | tail -5      # newest tags
+    git -C ${BC_WORK_ROOT}/upstream/radiance.git fetch -q origin "+refs/*:refs/*"
+    git -C ${BC_WORK_ROOT}/upstream/radiance.git tag -l 'v*' | sort -V | tail -5      # newest tags
     grep -n '^pinned' engines/radiance/recipes.toml                                    # what we are on
 
-`/work/bigcherry/upstream/radiance.git` is the shared bare mirror (CI uses the same layout). Do not clone
+`${BC_WORK_ROOT}/upstream/radiance.git` is the shared bare mirror (CI uses the same layout). Do not clone
 anything else and do not touch `vendor/radiance` for triage.
 
 ## 2. Triage the diff against OUR anchors (no checkout, no build)
@@ -33,7 +33,7 @@ Read the `pin-triage` verdict and each failing block; a non-clean verdict is
 advice, not a gate. The manual commands below explain its checks and
 can inspect a particular change:
 
-    A=v1.16.0 B=v1.17.0; G=/work/bigcherry/upstream/radiance.git
+    A=v1.16.0 B=v1.17.0; G=${BC_WORK_ROOT}/upstream/radiance.git
     git -C $G log --oneline $A..$B | wc -l ; git -C $G diff --stat $A $B | tail -1
     git -C $G diff --name-only $A $B > changed.txt
 
@@ -85,7 +85,7 @@ gate (`components-build`, `component-plugin-abi`, `component-tests`), lane build
   on the run's recorded target by itself (it refuses only when the tree has tracked changes a checkout would lose:
   `VENDOR_TREE_NOT_AT_TARGET`). If you ABANDON the bump, restore the old pin yourself:
   `git -C vendor/radiance checkout <old tag>`. Builds are not affected (they read content-addressed copies under
-  `/work/bigcherry/sources/`).
+  `${BC_WORK_ROOT}/sources/`).
 - **A bare `--resume` is enough**: the run records its compile platform and lane-build profile when it starts, and the
   tool commits its own release records (`releases/index.json`, `releases/<tag>.json`) before the lane build, which
   refuses a dirty tree. (Both needed workarounds until 2026-11-05: repeating `--source/--build/--platform`, and
@@ -114,7 +114,12 @@ A green bump says it builds and loads. It does not say it is as fast.
   - After the bump: `measure --build <bump build> --out <new run dir>`, then `compare --out <new run dir> --baseline
     docs/reference/engines/radiance/baselines/flashnext-4gpu-parity.json`. It gates cold prefill and step time
     one-sided (better never fails) and prints draft acceptance and policy transactions without gating them.
-  - A regression (exit 1) is investigated, not waived: find the cause before the pin moves.
+  - A regression (exit 1) is investigated, not waived: find the cause before the pin moves. First confirm it in one
+    session: a stored baseline drifts a few percent from day to day, so alternate the old build (reinstall the previous
+    release with `release-install`) and the new one, A B A B under the same lease, before calling it a regression.
+  - The 8-session decode step is gated on the cold round only. Later rounds hit the prefix cache to a varying degree,
+    so a different number of sessions decode together per step (all 8 on a full hit: longer steps, several times the
+    throughput); their ms/step (`sess8_warm_ms_per_step`) is informational.
 - **Kernel rows** touched by upstream (rows, prefill tile): `rad-kbench` replay with `kbench_ab.py` against the
   previous build, per row, minutes each.
 - **Quality**: KLD and top-1 against BF16 if numerics could move.

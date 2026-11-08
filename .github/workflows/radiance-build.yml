@@ -212,6 +212,14 @@ jobs:
       # A release bundle (radiance-release-bundle.yml): pack the lane build, restore it into a scratch work root to prove the
       # archive installs, and hand the archive, its checksum and its receipt on. Attaching them to the release needs write
       # access this workflow does not have, so the caller does it.
+      # The release-bundle command comes from this workflow's own commit (a tag older than the command does not have it); it reads
+      # the tag's source trees from /src and the lane build under /src/work. Checked out after the build so the build never sees it.
+      - name: Fetch the packaging tooling
+        if: inputs.bundle_tag != ''
+        uses: actions/checkout@v4
+        with:
+          path: tooling
+
       - name: Pack and verify the runtime bundle
         if: inputs.bundle_tag != ''
         env:
@@ -219,7 +227,7 @@ jobs:
         run: |
           docker run --rm -e BUNDLE_TAG -v "$GITHUB_WORKSPACE:/src" -w /src '${{ needs.image.outputs.image }}' bash -euxo pipefail -c '
             git config --global --add safe.directory /src
-            PYTHONPATH=tools python3 -m bigcherry release-bundle "$BUNDLE_TAG" --root /src --work /src/work --sdk /opt/rocm-7.2.4
+            PYTHONPATH=/src/tooling/tools python3 -m bigcherry --engine radiance release-bundle "$BUNDLE_TAG" --root /src --work /src/work --sdk /opt/rocm-7.2.4
           '
 
       - name: Hand on the runtime bundle
@@ -228,9 +236,9 @@ jobs:
         with:
           name: radiance-release-bundle
           path: |
-            work/release-assets/${{ inputs.bundle_tag }}/radiance-*.tar.gz
-            work/release-assets/${{ inputs.bundle_tag }}/radiance-*.sha256
-            work/release-assets/${{ inputs.bundle_tag }}/radiance-*.receipt.json
+            work/release-assets/${{ inputs.bundle_tag }}/bigcherryrad-*.tar.gz
+            work/release-assets/${{ inputs.bundle_tag }}/bigcherryrad-*.sha256
+            work/release-assets/${{ inputs.bundle_tag }}/bigcherryrad-*.receipt.json
           if-no-files-found: error
           retention-days: 1
           compression-level: 0

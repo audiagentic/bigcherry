@@ -80,7 +80,9 @@ def pack_and_verify(tag: str, *, root: Path, work_root: Path, sdk: Path, plan_id
     """Pack the lane build into the release archive and restore it into a scratch work root; only a restorable archive is kept."""
     if not TAG.fullmatch(tag):
         raise CiBundleError(f"not a bc-radiance release tag: {tag}")
-    _, plan, binary_sha = lane_build(work_root, plan_id)
+    build, plan, binary_sha = lane_build(work_root, plan_id)
+    if not (build / ra.BUILD_METADATA).is_file():
+        raise CiBundleError(f"the lane build has no {ra.BUILD_METADATA}: an installed bundle would not launch")
     record = {"notes": f"release asset lane build: radiance:stock:linux-radiance build_plan_id={plan} binary_sha256={binary_sha}"}
     asset = ra.pack(record, root, work_root, sdk, tag)
     out = work_root / "release-assets" / tag
