@@ -5,7 +5,8 @@
 #   [layout.NAME]                  description, model (relative to BC_MODEL_ROOT), engine
 #   engine = { arch = "gfx1201" }  engine card(s); count = 2 makes two TP ranks; devices pins explicit indices
 #   tp-wire                         required for TP > 1 (host-memory transport, no P2P)
-#   server-args                     optional allowed engine tuning flags for helper-free layouts
+#   server-args                     optional engine options for helper-free layouts, each one a manifest setting (context, sessions, chunk,
+#                                   KV dtype, speculative tokens, checkpoint interval, host pool, host KV tier, n-gram placement)
 #   [[layout.NAME.helper]]         a group of helper cards, in order (helper 0 first; helper 0 creates the shared segment)
 #     arch      architecture to take from the inventory         devices  explicit indices instead of arch
 #     count     how many of that arch ("all" or a number)       budget-mib  VRAM for experts on each card
@@ -29,6 +30,19 @@ placement = "head"
 model = "radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad"
 description = "Flash-Next on the R9700 alone: no helpers, the experts tiered to host memory (the engine-only isolation probe)"
 engine = { arch = "gfx1201" }
+# The experts live in the pinned host pool and the n-gram table on disk (47.7 GiB of it in RAM beside the pool does not fit 91 GiB):
+# the engine's own default pool is 0, so this layout cannot start without a pool. Context and sessions are what the KL arms use.
+# Known limit (launcher, 2026-11-08): a SERVING start of this layout reaches the plan check and is refused by about 1 MiB of VRAM
+# (live claimable 33241.7 MB against 33242.7 MB required), because the plan fills the card with experts exactly and the real
+# start has a little less free than the measuring start. KL runs (no plan check) are unaffected. A planner margin is the fix.
+server-args = [
+  "--max-model-len", "8192",
+  "--max-num-seqs", "1",
+  "--max-num-batched-tokens", "64",
+  "--kv-cache-dtype", "fp8",
+  "--host-pool-mib", "45056",
+  "--ngram-placement", "disk",
+]
 
 [layout.flashnext-2xtx-rdna2-tail]
 model = "radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad"

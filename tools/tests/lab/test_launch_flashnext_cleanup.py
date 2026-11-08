@@ -172,7 +172,7 @@ class LaunchCleanupTests(unittest.TestCase):
     def _events(self) -> list[str]:
         return self.log.read_text().split() if self.log.exists() else []
 
-    def test_dense_layout_runs_two_ranks_without_moe_helpers_using_layout_argv(self) -> None:
+    def test_dense_layout_starts_from_its_manifest_like_every_other_layout(self) -> None:
         from bigcherry.engine_adapters import radiance_layout as rl
         from bigcherry.cli.layout_cmds import _env_lines
         from bigcherry.core.environment import Device
@@ -194,17 +194,24 @@ class LaunchCleanupTests(unittest.TestCase):
         done = subprocess.run(args, env=dense_env, cwd=REPO, capture_output=True, text=True, timeout=120)
         try:
             self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
-            self.assertIn("dense memory plan measured", done.stderr)
+            self.assertIn("no measured plan for this configuration", done.stderr)   # measured first, like any layout
             self.assertIn("start canary: ok", done.stderr)
             self.assertEqual(list(self.work.joinpath("flashnext/pids").glob("helper*")), [])
+            # the engine is started from the manifest alone: no model, topology or option flag of the launcher's own
             actual = (self.root / "engine-args").read_text().splitlines()
-            self.assertEqual(actual[actual.index("--model") + 1], str(model))
-            self.assertEqual(actual[actual.index("--kernels") + 1], "libr3,libref")
-            self.assertEqual(actual[actual.index("--tp") + 1], "2")
-            self.assertEqual(actual[actual.index("--tp-wire") + 1], "wht6")
-            self.assertEqual(actual[actual.index("--p2p") + 1], "off")
-            self.assertEqual(actual[actual.index("--max-model-len") + 1], "8192")
-            self.assertNotIn("--placement", actual)
+            self.assertEqual([a for a in actual if a.startswith("--")], ["--manifest", "--role"])
+            self.assertEqual(actual[actual.index("--role") + 1], "engine")
+            for raw in ("--model", "--tp", "--tp-wire", "--p2p", "--kernels", "--max-model-len", "--port"):
+                self.assertNotIn(raw, actual)
+            # what bc-serve was asked for: the layout and its allowed options as settings, TP through host memory, no hand-off
+            sets = (self.work / "flashnext" / "plan-cache" / "describe.log").read_text().splitlines()
+            for want in ('layout.name="qwen27b-2xtx"', "service.max_context=8192", "service.max_sessions=6",
+                         "engine.max_num_batched_tokens=2048", 'engine.kv_cache_dtype="fp8"',
+                         "engine.num_speculative_tokens=3", 'tuning.p2p="off"'):
+                self.assertIn(want, sets)
+            self.assertFalse([s for s in sets if s.startswith("handoff.")], sets)
+            for want in ("memory.host_pool_mib=0", "memory.host_kv_mib=0", 'engine.ngram_placement="disk"'):
+                self.assertIn(want, sets)
             self.assertEqual((self.root / "engine-env").read_text().strip(), "0,1|0,1|unset")
         finally:
             subprocess.run(["bash", str(LAUNCHER), "stop"], env=dense_env,

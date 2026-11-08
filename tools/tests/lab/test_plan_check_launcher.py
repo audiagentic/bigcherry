@@ -15,6 +15,7 @@ from __future__ import annotations
 import itertools
 import json
 import os
+import re
 import shlex
 import stat
 import subprocess
@@ -173,16 +174,24 @@ plan_manifest_prepare && printf 'MANIFEST:%s\\n' "$PLAN_MANIFEST"
                 self.assertEqual(again.returncode, 0, again.stderr)
                 self.assertFalse(self.engine_calls.exists(), f"{name} is not part of the key; the measurement still applies")
 
-    def test_there_is_no_raw_engine_argument_and_the_n_gram_card_is_refused_with_helpers(self) -> None:
+    def test_there_is_no_raw_engine_argument_and_the_n_gram_card_is_refused(self) -> None:
         # RSC08 amendment 11: the engine's flags are manifest fields (spec.experiment.engine, spec.processes.engine), so the launcher
-        # has no way to pass one raw; the n-gram card is not a manifest field yet and a helper layout refuses it
+        # has no way to pass one raw; the n-gram card is not a manifest field yet and every layout refuses it
         text = LAUNCHER.read_text()
         self.assertNotIn("--engine-arg)", text)
         self.assertNotIn("ENGINE_ARGS", text)
-        self.assertIn("--ngram-device cannot be combined with a helper layout", text)
-        self.assertIn("exit 99", text[text.index("--ngram-device cannot be combined with a helper layout"):][:400])
+        self.assertIn("--ngram-device cannot be used", text)
+        self.assertIn("exit 99", text[text.index("--ngram-device cannot be used"):][:400])
         self.assertNotIn("engine-args:", LIB.read_text())
         self.assertNotIn("ngram-device:", LIB.read_text())
+
+    def test_the_launcher_exports_no_setting_to_the_engine_or_the_helpers(self) -> None:
+        # RSC11/RSC12: the manifest is the one configuration; the process environment is only where the runtime lives
+        text = LAUNCHER.read_text()
+        code = "\n".join(line.split("#", 1)[0] for line in text.splitlines())
+        # an assignment; the sed that READS the layout's plugin file is not one
+        self.assertEqual(re.findall(r"(?<![\^\w])(?:R3_[A-Z0-9_]+|RAD_(?!BIN=|HOME=)[A-Z0-9_]+|BC_GFX12_[A-Z0-9_]+)=", code), [])
+        self.assertIn('ENGINE_ENV=(RADIANCE_HOME="$RAD_HOME")', text)
 
     def test_the_measuring_start_and_the_real_start_describe_one_configuration(self) -> None:
         self._launch()
@@ -254,14 +263,11 @@ plan_manifest_prepare && printf 'MANIFEST:%s\\n' "$PLAN_MANIFEST"
     def test_the_launcher_has_no_way_to_start_the_engine_without_the_manifest_and_its_check(self) -> None:
         text = LAUNCHER.read_text()
         lib = LIB.read_text()
-        # a helper layout's one real engine start is from the measured manifest; the measuring start is from the unmeasured one
+        # every layout's one real engine start is from the measured manifest; the measuring start is from the unmeasured one
         self.assertEqual(text.count('start_engine_manifest "$LOG" "$PLAN_MANIFEST"'), 1)
         self.assertEqual(text.count('start_engine_manifest "$RUN/engine-measure.log" "$PLAN_MEASURING_MANIFEST" --plan-memory'), 1)
-        # the argv start remains only for the dense layout (no manifest writer yet): its memory-plan measurement and its real start
-        argv_calls = [l.strip() for l in text.splitlines() if l.strip().startswith("start_engine ") and "()" not in l]
-        self.assertEqual(len(argv_calls), 1, argv_calls)
-        self.assertIn("--plan-memory", argv_calls[0])
-        self.assertEqual(text.count('else start_engine "$LOG"; fi'), 1)
+        # there is no argv start left: not for a helper layout, and not for a dense one either
+        self.assertNotIn("start_engine ", text.replace("start_engine_manifest", ""))
         # the manifest is made, and fails the launch, before anything starts for real
         self.assertLess(text.index("plan_manifest_prepare ||"), text.index('start_helpers "$PLAN_MANIFEST"; fi\nLOG='))
         self.assertIn("exit 97", text)
@@ -318,6 +324,44 @@ plan_manifest_prepare && printf 'MANIFEST:%s\\n' "$PLAN_MANIFEST"
         self.assertNotEqual(done.returncode, 0)
         self.assertNotIn("MANIFEST:", done.stdout)
         self.assertIn("manifest was not written", done.stderr)
+
+    def _engine_only(self, **overrides: str) -> subprocess.CompletedProcess[str]:
+        """Describe a helper-free layout: LAYOUT_HELPER_COUNT=0 and its resolved server-args, no heat file, no hand-off settings."""
+        values = dict(LAYOUT="qwen27b-2xtx", PORT="36080", MODEL="/model.rad", LAYOUT_HELPER_COUNT="0", LAYOUT_ENGINE_RANKS="2")
+        values.update(overrides)
+        server_args = values.pop("SERVER_ARGS", "")
+        assigns = "\n".join(f"{k}={shlex.quote(v)}" for k, v in values.items())
+        script = f"""
+set -u
+RUN={shlex.quote(str(self.run_dir))}; RAD_HOME={shlex.quote(str(self.home))}; RAD_BIN=/engine; BUDGETS=()
+{assigns}
+LAYOUT_SERVER_ARGS=({server_args})
+source {shlex.quote(str(LIB))}
+plan_check_describe /site.toml && printf '%s\\n' "${{PLAN_SET[@]}}" "${{PLAN_EXTRA[@]}}" "${{PLAN_SITE[@]}}"
+"""
+        return _run(script, dict(os.environ), REPO)
+
+    def test_a_helper_free_layout_is_described_by_its_layout_and_its_options_alone(self) -> None:
+        done = self._engine_only(SERVER_ARGS="--max-model-len 8192 --max-num-seqs 6 --max-num-batched-tokens 2048 "
+                                             "--kv-cache-dtype fp8 --num-speculative-tokens 3 --checkpoint-interval 2048")
+        self.assertEqual(done.returncode, 0, done.stderr)
+        sets = done.stdout.splitlines()
+        for want in ('layout.name="qwen27b-2xtx"', "engine.port=36080", "service.max_context=8192", "service.max_sessions=6",
+                     "engine.max_num_batched_tokens=2048", 'engine.kv_cache_dtype="fp8"', "engine.num_speculative_tokens=3",
+                     "engine.checkpoint_interval=2048", 'tuning.p2p="off"'):
+            self.assertIn(want, sets)
+        self.assertFalse([x for x in sets if x.startswith("handoff.")], sets)   # no hand-off
+        for want in ("memory.host_pool_mib=0", "memory.host_kv_mib=0", 'engine.ngram_placement="disk"'):   # the engine's own defaults
+            self.assertIn(want, sets)
+        self.assertFalse([x for x in sets if "heat-sha256" in x], sets)
+
+    def test_one_engine_card_needs_no_p2p_setting_and_an_unknown_option_is_refused(self) -> None:
+        done = self._engine_only(LAYOUT_ENGINE_RANKS="1")
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertNotIn('tuning.p2p="off"', done.stdout.splitlines())
+        bad = self._engine_only(SERVER_ARGS="--tp 4")
+        self.assertNotEqual(bad.returncode, 0)
+        self.assertIn("not a manifest setting", bad.stderr)
 
     def test_the_launcher_script_parses(self) -> None:
         for path in (LAUNCHER, LIB):

@@ -7,11 +7,15 @@
 # writes the measured manifest from that plan, storing it in the cache. There is no switch that starts the engine without the
 # check, and the floor comes only from bc-serve's selected calibration, never a literal here.
 #
+# A helper-free layout takes the same path with no helpers: the manifest has no hand-off, the measuring start is the engine alone,
+# and the helpers' resident host memory is zero.
+#
 # Retired by RSC02 with the launcher: bc-serve then supervises the engine and helpers itself.
 
 # plan_check_describe: sets PLAN_SET (the --set arguments) from the launcher's own configuration, so the measuring start and
 # the real start describe exactly the same thing to bc-serve. One source, so they cannot differ.
 plan_check_describe() {
+  if [ "${LAYOUT_HELPER_COUNT:-1}" -eq 0 ]; then plan_check_describe_engine_only "$1"; return; fi
   PLAN_SET=(
     --set "layout.name=\"$LAYOUT\""
     --set "service.max_sessions=$SEQS"
@@ -46,6 +50,38 @@ plan_check_describe() {
   [ -z "$EXPERIMENT_FILE" ] || PLAN_OBJECTS+=(--experiment "$EXPERIMENT_FILE")
 }
 
+# plan_check_describe_engine_only SITE: a helper-free layout. It has no hand-off and no route heat; what it is configured with is
+# the layout (cards, tp-wire, model) and its allowed engine options (layouts.toml server-args), each one a manifest setting. The
+# pool, the KV tier and the rest are what bc-serve derives. Tensor-parallel traffic goes through host memory, no P2P.
+plan_check_describe_engine_only() {
+  # The pool and the KV tier default to 0 (the engine sizes them) and the n-gram table to disk: bc-serve's constants (a 9 GiB pool,
+  # a 12 GiB KV tier, the table in RAM) are measured for helper layouts, where the helpers own the experts and the model has an
+  # n-gram table; a dense model has none (the plan then refuses RAM), and a single-card Flash-Next needs its whole expert tier in
+  # RAM. A layout says otherwise with these server-args (--host-pool-mib, --host-kv-mib, --ngram-placement).
+  local pool=0 kv=0 ngram=disk
+  PLAN_SET=(--set "layout.name=\"$LAYOUT\"" --set "engine.port=$PORT")
+  local args=(${LAYOUT_SERVER_ARGS[@]+"${LAYOUT_SERVER_ARGS[@]}"}) i
+  for ((i = 0; i < ${#args[@]}; i += 2)); do
+    case "${args[i]}" in
+      --max-model-len)           PLAN_SET+=(--set "service.max_context=${args[i+1]}") ;;
+      --max-num-seqs)            PLAN_SET+=(--set "service.max_sessions=${args[i+1]}") ;;
+      --max-num-batched-tokens)  PLAN_SET+=(--set "engine.max_num_batched_tokens=${args[i+1]}") ;;
+      --kv-cache-dtype)          PLAN_SET+=(--set "engine.kv_cache_dtype=\"${args[i+1]}\"") ;;
+      --num-speculative-tokens)  PLAN_SET+=(--set "engine.num_speculative_tokens=${args[i+1]}") ;;
+      --checkpoint-interval)     PLAN_SET+=(--set "engine.checkpoint_interval=${args[i+1]}") ;;
+      --host-pool-mib)           pool=${args[i+1]} ;;
+      --host-kv-mib)             kv=${args[i+1]} ;;
+      --ngram-placement)         ngram=${args[i+1]} ;;
+      *) echo "plan check: layout $LAYOUT server-args has ${args[i]}, which is not a manifest setting" >&2; return 1 ;;
+    esac
+  done
+  PLAN_SET+=(--set "memory.host_pool_mib=$pool" --set "memory.host_kv_mib=$kv" --set "engine.ngram_placement=\"$ngram\"")
+  [ "${LAYOUT_ENGINE_RANKS:-1}" -le 1 ] || PLAN_SET+=(--set 'tuning.p2p="off"')
+  PLAN_SITE=(--site "$1")
+  PLAN_EXTRA=(--plan-extra "budgets: ${BUDGETS[*]:-default}")
+  PLAN_OBJECTS=()
+}
+
 # plan_manifest_write OUT [unmeasured | measured-plan FILE HELPERS_MIB ENGINE_MIB]: the v1 serving manifest the engine and the helpers start from,
 # written once (bc-serve refuses an existing OUT). With `unmeasured`: the measuring start's manifest (owner map and settings,
 # no plan). Otherwise the measured one, from the plan the cache holds for this exact configuration (exit 10 when it holds none),
@@ -69,10 +105,14 @@ plan_check_site() {
 [engine]
 model = "$MODEL"
 radiance_home = "$RAD_HOME"
+SITE
+  if [ "${LAYOUT_HELPER_COUNT:-1}" -gt 0 ]; then
+    cat >> "$1" <<SITE
 [handoff]
 heat = "$HEAT"
 histogram = "${RECORD:-/dev/null}"
 SITE
+  fi
 }
 
 # plan_manifest_prepare: sets PLAN_MANIFEST to the measured manifest this start uses. Returns non-zero (after saying why) if it
@@ -82,7 +122,7 @@ plan_manifest_prepare() {
   [ -x "$serve" ] || { echo "plan check: no bc-serve in the build ($serve); rebuild with the radiance lane" >&2; return 1; }
   mkdir -p "$cache"
   plan_check_site "$site"
-  plan_check_describe "$site"
+  plan_check_describe "$site" || return 1
   PLAN_MANIFEST="$RUN/manifest-$STAMP-$$.json"
   plan_manifest_write "$PLAN_MANIFEST" 2> "$RUN/plan-check.err"
   rc=$?

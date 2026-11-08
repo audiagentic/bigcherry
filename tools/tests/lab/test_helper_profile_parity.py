@@ -28,18 +28,9 @@ LAUNCHER = REPO / "tools" / "lab" / "radiance" / "launch-flashnext-best.sh"
 LAB_HOST = SimpleNamespace(devices=(Device(0, "gfx1100", "x", 24560), Device(1, "gfx1100", "x", 24560),
                                     Device(2, "gfx1201", "r", 32624), Device(3, "gfx1030", "s", 16368)))
 
-# R3_* the launcher or the layout exports that are not helper_common leaves, and the section that carries them.
+# R3_* the layout exports that are not helper_common leaves, and the section that carries them. (The launcher exports none:
+# RSC11/RSC12, the manifest is the one configuration; test_the_launcher_exports_no_setting guards it.)
 OTHER_SECTIONS = {
-    "R3_MOE_WORKER": "engine process switch (the engine's own, not a helper setting)",
-    "R3_MOE_WORKER_SHM": "handoff.transport.shm",
-    "R3_MOE_WORKER_MAX_ROWS": "handoff.transport.max_rows",
-    "R3_MOE_WORKER_SMALL_ROWS": "handoff.transport.small_rows",
-    "R3_MOE_WORKER_GEMV_LARGE_ROWS": "handoff.transport.gemv_large_rows",
-    "R3_MOE_WORKER_MOE_DOWN_TILE": "handoff.kernels.moe_down_tile",
-    "R3_MOE_WORKER_SKIP_OWNED": "handoff.transport.skip_owned",
-    "R3_MOE_WORKER_HEAT": "handoff.placement.heat_file",
-    "R3_MOE_WORKER_HISTOGRAM": "handoff.telemetry.histogram_file",
-    "R3_MOE_WORKER_HISTOGRAM_PERIOD_S": "handoff.telemetry.period_s",
     "R3_MOE_WORKER_COUNT": "processes.helpers (its length)",
     "R3_MOE_WORKER_ENGINE_RANKS": "processes.engine.scheduler.tp",
     "R3_MOE_WORKER_MIBS": "processes.helpers[].vram_budget_mib",
@@ -70,7 +61,7 @@ def _launcher_exports() -> dict[str, str]:
     out: dict[str, str] = {}
     for line in LAUNCHER.read_text(encoding="utf-8").splitlines():
         code = line.split("#", 1)[0]
-        for name, value in re.findall(r"\b(R3_MOE_[A-Z0-9_]+)=(\"[^\"]*\"|[^\s)\"]+)", code):
+        for name, value in re.findall(r"(?<![\^\w])(R3_MOE_[A-Z0-9_]+)=(\"[^\"]*\"|[^\s)\"]+)", code):
             out[name] = value.strip('"')
     return out
 
@@ -180,7 +171,7 @@ class HelperProfileParityTests(unittest.TestCase):
         seen = set(self.launcher) | set(self.layout_common)
         for env in self.layout_helpers:
             seen |= set(env)
-        # R3_MOE_WORKER_HISTOGRAM(_PERIOD_S) are exported only with --record-heat, which the launcher text still mentions
+        self.assertEqual(self.launcher, {}, "the launcher exports no R3_MOE_* setting: the manifest carries them")
         for name in OTHER_SECTIONS:
             self.assertIn(name, seen, f"{name} is no longer exported: drop it from OTHER_SECTIONS")
 

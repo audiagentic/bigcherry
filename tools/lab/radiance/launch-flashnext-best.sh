@@ -71,15 +71,17 @@
 # --gpu-power (or GPU_POWER=1): apply the cards' configured power settings ([host.*.devices.power]) for this run and
 # put back what the cards ran before at stop. Without write access it lists the setup steps still missing and runs
 # with the cards as they are.
-# Serving manifest and plan check (RSC03 / RSC08 S3, mandatory, no way to skip it): with helpers, every start asks bc-serve for
-#   the measured v1 manifest of the exact configuration it launches; the engine and the helpers start from that one file
-#   (--manifest M --role ...), and the engine checks its live memory plan against the plan the manifest carries before it
-#   allocates anything. The first start of a configuration that has no measured plan (a cache miss, logged once with its reason)
-#   first MEASURES it: the helpers come up on their cards and the engine stops after its memory plan, about 1-2 minutes, then
+# Serving manifest and plan check (RSC03 / RSC08 S3 / RSC11, mandatory, no way to skip it): every start of every layout asks bc-serve
+#   for the measured v1 manifest of the exact configuration it launches; the engine (and the helpers, with helpers) start from that
+#   one file (--manifest M --role ...), and the engine checks its live memory plan against the plan the manifest carries before it
+#   allocates anything. This script exports no setting of its own: the process environment is only where the runtime lives. A
+#   helper-free layout takes its options from its server-args in layouts.toml (each one a manifest setting) and has no hand-off.
+#   The first start of a configuration that has no measured plan (a cache miss, logged once with its reason)
+#   first MEASURES it: the helpers (if any) come up on their cards and the engine stops after its memory plan, about 1-2 minutes, then
 #   the real start goes ahead. That measuring start uses the GPUs exactly as a launch does, so the first launch of a new
 #   configuration needs the gpu lease like any launch (agent-lease acquire gpu). Any setting above (layout, sessions, context,
 #   pool, KV tier, chunk, n-gram placement, KV dtype, rope, resume) changes the configuration. Plans live in $RUN/plan-cache.
-#   With helpers, --ngram-device is refused (it is not a manifest field yet).
+#   --ngram-device is refused (it is not a manifest field yet).
 # HELPER_WRAP=<command>: run each helper under it (e.g. a profiler wrapper; its arguments --role helperN tell it which helper).
 # ENGINE_WRAP=<command>: run the engine under it (a debugger, numactl, strace; the stop command signals the engine through the
 #   wrapper, so it must forward SIGINT/SIGTERM). Not rocprofv3: radiance drives the card through its own AQL backend and fails
@@ -377,24 +379,12 @@ for ((i = 0; i < LAYOUT_HELPER_COUNT; i++)); do
 done
 echo "layout $LAYOUT: engine cards $LAYOUT_ENGINE_DEVICES; $LAYOUT_SUMMARY" >&2
 
-# shared by the engine and the helpers (helper-ab.json "environment" + arm settings), then what the layout says
-COMMON=(RADIANCE_HOME="$RAD_HOME")
+# The process environment is only where the runtime lives. Every setting (the hand-off, the kernel switches, the options) is in the
+# serving manifest bc-serve writes, and the engine and the helpers take it from there.
+ENGINE_ENV=(RADIANCE_HOME="$RAD_HOME")
 if [ "$LAYOUT_HELPER_COUNT" -gt 0 ]; then
-  COMMON+=(
-    R3_MOE_WORKER_SHM="$SHM"
-    R3_MOE_WORKER_MAX_ROWS=4096
-    R3_MOE_WORKER_SMALL_ROWS=8
-    R3_MOE_WORKER_GEMV_LARGE_ROWS=32
-    R3_MOE_WORKER_MOE_DOWN_TILE=1
-    R3_MOE_WORKER_HEAT="$HEAT"
-    R3_MOE_WORKER_SKIP_OWNED=1
-    "${LAYOUT_COMMON[@]}"
-  )
   [ "$RECORD" = off ] && RECORD=""
-  if [ -n "$RECORD" ]; then
-    COMMON+=(R3_MOE_WORKER_HISTOGRAM="$RECORD" R3_MOE_WORKER_HISTOGRAM_PERIOD_S="$RECORD_PERIOD")
-    echo "recording the route histogram to $RECORD.rank0 every ${RECORD_PERIOD}s" >&2
-  fi
+  [ -z "$RECORD" ] || echo "recording the route histogram to $RECORD.rank0 every ${RECORD_PERIOD}s" >&2
 fi
 
 mkdir -p "$PIDS"
@@ -437,28 +427,16 @@ ENGINE_HIP=""
 for ((i = 0; i < LAYOUT_ENGINE_RANKS; i++)); do
   [ -z "$ENGINE_HIP" ] && ENGINE_HIP="$i" || ENGINE_HIP="$ENGINE_HIP,$i"
 done
-ENGINE_KERNELS="$LAYOUT_ENGINE_PLUGIN,libref"
-ENGINE_TOPO_ARGS=(--tp "$LAYOUT_ENGINE_RANKS")
-ENGINE_ENV=("${COMMON[@]}")
-if [ "$LAYOUT_ENGINE_RANKS" -gt 1 ]; then
-  [ -n "$LAYOUT_TP_WIRE" ] || { echo "RADIANCE_EXIT=99 multi-rank layout missing tp-wire" >&2; exit 99; }
-  ENGINE_TOPO_ARGS+=(--tp-wire "$LAYOUT_TP_WIRE" --p2p off)
+if [ "$LAYOUT_ENGINE_RANKS" -gt 1 ] && [ -z "$LAYOUT_TP_WIRE" ]; then
+  echo "RADIANCE_EXIT=99 multi-rank layout missing tp-wire" >&2
+  exit 99
 fi
-if [ "$LAYOUT_HELPER_COUNT" -gt 0 ]; then
-  ENGINE_ENV+=(R3_MOE_WORKER=1)
-  # RSC08 S3: with helpers the engine starts from the measured manifest alone (--manifest M --role engine). The n-gram card is
-  # therefore not passable here until it is a manifest field.
-  if [ -n "$NGRAM_DEV" ]; then
-    echo "RADIANCE_EXIT=99 --ngram-device cannot be combined with a helper layout: the engine starts from its serving manifest and the n-gram card is not a manifest field yet" >&2
-    exit 99
-  fi
-else
-  ENGINE_CONFIG_ARGS=("${LAYOUT_SERVER_ARGS[@]}")
+# RSC08 S3 / RSC11: every layout starts from its measured manifest alone (--manifest M --role engine). The n-gram card is therefore
+# not passable until it is a manifest field.
+if [ -n "$NGRAM_DEV" ]; then
+  echo "RADIANCE_EXIT=99 --ngram-device cannot be used: the engine starts from its serving manifest and the n-gram card is not a manifest field yet" >&2
+  exit 99
 fi
-start_engine() {
-  local log=$1; shift
-  env "${ENGINE_ENV[@]}" ROCR_VISIBLE_DEVICES="$ENGINE_VISIBLE" HIP_VISIBLE_DEVICES="$ENGINE_HIP"     setsid ${ENGINE_WRAP:-} "$RAD_BIN" --model "$MODEL" --radiance-home "$RAD_HOME" --port "$PORT"       --kernels "$ENGINE_KERNELS" "${ENGINE_TOPO_ARGS[@]}" "${ENGINE_CONFIG_ARGS[@]}" "$@" > "$log" 2>&1 9>&- &
-}
 
 # helpers_resident_mib: the sum of the helpers' RssAnon plus the largest RssShmem (the shared segment, once), in MiB, rounded up.
 helpers_resident_mib() {
@@ -472,9 +450,9 @@ helpers_resident_mib() {
   echo $(( (anon + shm + 1023) / 1024 ))
 }
 
-# The engine of a helper layout starts from its serving manifest alone: the manifest is its whole configuration, and a measured
+# The engine of a layout starts from its serving manifest alone: the manifest is its whole configuration, and a measured
 # one also carries the plan it must admit before any weight loads (radiance --manifest M --role engine [--plan-memory FILE]).
-# Only the card it sees and the engine-side environment the manifest does not yet carry (RSC08 S5) come from here.
+# Only the card it sees and where the runtime lives come from here.
 start_engine_manifest() {
   local log=$1 manifest=$2; shift 2
   env "${ENGINE_ENV[@]}" ROCR_VISIBLE_DEVICES="$ENGINE_VISIBLE" HIP_VISIBLE_DEVICES="$ENGINE_HIP" \
@@ -484,11 +462,15 @@ start_engine_manifest() {
 # The measuring start of the plan check (plan-check.sh): helpers up, the engine runs to the end of its memory plan and
 # exits by itself (--plan-memory, with the unmeasured manifest), then the helpers stop. It never serves and never runs a request.
 plan_check_start_engine_measure() {
-  rm -f "/dev/shm${SHM}"
-  start_helpers "$PLAN_MEASURING_MANIFEST" --measuring || { stop_procs; return 1; }
-  # what the helpers hold of the host while they are up: anonymous memory of each plus the shared segment once (file pages are
-  # reclaimable and not counted); bc-serve plans the checkpoint slots around it (plan-check.sh passes it with the plan)
-  PLAN_HELPERS_RESIDENT_MIB=$(helpers_resident_mib) || { stop_procs; return 1; }
+  if [ "$LAYOUT_HELPER_COUNT" -gt 0 ]; then
+    rm -f "/dev/shm${SHM}"
+    start_helpers "$PLAN_MEASURING_MANIFEST" --measuring || { stop_procs; return 1; }
+    # what the helpers hold of the host while they are up: anonymous memory of each plus the shared segment once (file pages are
+    # reclaimable and not counted); bc-serve plans the checkpoint slots around it (plan-check.sh passes it with the plan)
+    PLAN_HELPERS_RESIDENT_MIB=$(helpers_resident_mib) || { stop_procs; return 1; }
+  else
+    PLAN_HELPERS_RESIDENT_MIB=0   # no helpers: the engine is alone
+  fi
   start_engine_manifest "$RUN/engine-measure.log" "$PLAN_MEASURING_MANIFEST" --plan-memory "$PLAN_MEASURE_FILE"
   local pid=$! rc=0
   echo $pid > "$PIDS/engine"
@@ -497,33 +479,14 @@ plan_check_start_engine_measure() {
   [ $rc = 0 ] && [ -s "$PLAN_MEASURE_FILE" ]
 }
 
-if [ "$LAYOUT_HELPER_COUNT" -gt 0 ]; then
-  source "$(dirname "${BASH_SOURCE[0]}")/lib/plan-check.sh"
-  plan_manifest_prepare || { echo "RADIANCE_EXIT=97 the measured serving manifest could not be made (above); nothing was started for serving"; exit 97; }
-else
-  # The interim bc-serve recipes only understand the single-engine-card
-  # remote-MoE layout. Require a fresh engine memory plan for dense TP.
-  # This is not a calibrated plan check; do not reuse a MoE plan here.
-  PLAN_MEASURE_FILE="$RUN/plan-dense.json"
-  rm -f "$PLAN_MEASURE_FILE"
-  start_engine "$RUN/engine-measure.log" --plan-memory "$PLAN_MEASURE_FILE"
-  measure_pid=$!
-  echo "$measure_pid" > "$PIDS/engine"
-  measure_rc=0
-  wait "$measure_pid" || measure_rc=$?
-  stop_procs || { echo "RADIANCE_EXIT=97 dense plan measurement did not stop cleanly" >&2; exit 97; }
-  if [ "$measure_rc" != 0 ] || [ ! -s "$PLAN_MEASURE_FILE" ] || ! python3 -m json.tool "$PLAN_MEASURE_FILE" >/dev/null 2>&1; then
-    echo "RADIANCE_EXIT=97 dense engine plan measurement failed; see $RUN/engine-measure.log" >&2
-    exit 97
-  fi
-  echo "dense memory plan measured; calibrated bc-serve plan-check is not yet available for TP layouts" >&2
-fi
+source "$(dirname "${BASH_SOURCE[0]}")/lib/plan-check.sh"
+plan_manifest_prepare || { echo "RADIANCE_EXIT=97 the measured serving manifest could not be made (above); nothing was started for serving"; exit 97; }
 
 trap 'exit 1' ERR
 rm -f "/dev/shm${SHM}"
 if [ "$LAYOUT_HELPER_COUNT" -gt 0 ]; then start_helpers "$PLAN_MANIFEST"; fi
 LOG=$RUN/engine-$STAMP.log
-if [ "$LAYOUT_HELPER_COUNT" -gt 0 ]; then start_engine_manifest "$LOG" "$PLAN_MANIFEST"; else start_engine "$LOG"; fi
+start_engine_manifest "$LOG" "$PLAN_MANIFEST"
 echo $! > "$PIDS/engine"
 echo "engine TP=$LAYOUT_ENGINE_RANKS cards $LAYOUT_ENGINE_DEVICES (pid $!, log $LOG): waiting for /health..." >&2
 up=0
