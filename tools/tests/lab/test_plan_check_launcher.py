@@ -363,6 +363,27 @@ plan_check_describe /site.toml && printf '%s\\n' "${{PLAN_SET[@]}}" "${{PLAN_EXT
         self.assertNotEqual(bad.returncode, 0)
         self.assertIn("not a manifest setting", bad.stderr)
 
+    def test_a_tensor_parallel_engine_with_helpers_exchanges_through_host_memory(self) -> None:
+        """RAD49: a helper layout with two engine ranks asks bc-serve for the host-memory TP path, as a helper-free one does."""
+        for ranks, p2p in (("2", True), ("1", False)):
+            with self.subTest(ranks=ranks):
+                heat = Path(self.temp.name) / "heat"
+                heat.write_bytes(b"\0")
+                script = f"""
+set -u
+RUN={shlex.quote(str(self.run_dir))}; RAD_HOME={shlex.quote(str(self.home))}; RAD_BIN=/engine; BUDGETS=(); WORK=""
+LAYOUT=t; LAYOUT_HELPER_COUNT=1; LAYOUT_ENGINE_RANKS={ranks}; SEQS=6; MAX_LEN=65536; HOST_POOL_MIB=9216; HOST_KV_MIB=12288
+CHUNK=2048; NGRAM=ram; KV_DTYPE=fp8; ROPE=none; PORT=36080; CKPT_INTERVAL=4096; NUM_SPEC=3; SHM=/s; RECORD_PERIOD=60
+PREFIX_RESUME=nearest; HEAT={shlex.quote(str(heat))}; EXPERIMENT_FILE=""; LIVE_POLICY_FILE=""; CALIBRATE=0
+source {shlex.quote(str(LIB))}
+plan_check_describe /site.toml && printf '%s\\n' "${{PLAN_SET[@]}}"
+"""
+                done = _run(script, dict(os.environ), REPO)
+                self.assertEqual(done.returncode, 0, done.stderr)
+                sets = done.stdout.splitlines()
+                self.assertIn('handoff.shm="/s"', sets)
+                self.assertEqual('tuning.p2p="off"' in sets, p2p, sets)
+
     def test_the_launcher_script_parses(self) -> None:
         for path in (LAUNCHER, LIB):
             done = subprocess.run(["bash", "-n", str(path)], capture_output=True, text=True)

@@ -120,7 +120,7 @@ const std::vector<Field>& schema_fields() {
             "WorkerConfig helper_index=0; RSC06 derives process ordinal", "derived",
             "startup-only", 0, 3);
         add("helper.engine_ranks", "integer", nullptr,
-            "WorkerConfig default 0 (unset), launcher single engine rank=1", "derived",
+            "layouts.toml engine count: the engine's TP ranks the helpers serve (WorkerConfig default 0 = unset)", "derived",
             "startup-only", 1, 4);
         add("helper.cpu", "boolean", false, "WorkerConfig cpu=false");
         add("helper.power_save", "boolean", true, "WorkerConfig power_save=true");
@@ -476,7 +476,8 @@ LayoutRecipe recipe_for(const std::string& name) {
                 g.count = h.at("count");
                 if (g.count < 1) throw std::runtime_error(where + "helper count must be at least 1");
             }
-            g.budget_mib = h.at("budget-mib");
+            // absent: the card's own VRAM less its archs.toml reserve-mib, per selected card (derived, not a literal)
+            g.budget_mib = h.value("budget-mib", uint64_t{0});
             g.share = h.value("share", 1);
             g.tail = h.at("placement") == "tail";
             r.groups.push_back(g);
@@ -487,6 +488,12 @@ LayoutRecipe recipe_for(const std::string& name) {
     r.tail = !r.groups.empty() && r.groups.back().tail;
     if (r.engine_count > 1 && !r.tp_wire)
         throw std::runtime_error(where + "an engine of " + std::to_string(r.engine_count) + " cards needs tp-wire");
+    // moe_remote_hook.cpp r3_moe_mailbox_device: behind a multi-rank engine the request slots are the ranks, so one helper
+    // serves them all (step_slot, moe_mailbox_ops.hip). Refused here, before any card, as the hook would refuse it at start.
+    if (r.engine_count > 1 && !r.groups.empty() &&
+        (r.groups.size() > 1 || r.groups.front().count != 1))
+        throw std::runtime_error(where + "an engine of " + std::to_string(r.engine_count) +
+                                 " ranks is served by one remote-MoE helper only: give one helper group with count = 1");
     return r;
 }
 
@@ -962,7 +969,9 @@ Resolved resolve(const Options& options, const Json& facts) {
     for (size_t gi = 0; gi < layout.groups.size(); ++gi) {
         const HelperGroup& group = layout.groups[gi];
         for (const auto& g : choose(facts, group.arch, used, group.count < 0 ? kEveryCard : size_t(group.count))) {
-            cards.push_back(g.at("bdf")); budgets.push_back(group.budget_mib);
+            const uint64_t limit = g.at("vram_total_mib").get<uint64_t>() - std::min<uint64_t>(
+                g.at("vram_total_mib").get<uint64_t>(), arch_info(g.at("arch")).reserve_mib);
+            cards.push_back(g.at("bdf")); budgets.push_back(group.budget_mib ? group.budget_mib : limit);
             selected.push_back(g); group_of.push_back(gi);
         }
     }
@@ -1104,7 +1113,7 @@ Resolved resolve(const Options& options, const Json& facts) {
     for (const char* key : {"handoff.heat", "handoff.histogram"})
         if (!engine_only && !exists(values, key))
             throw std::runtime_error(std::string("missing required key: ") + key + " (" + field_for(key)->origin + ")");
-    if (engine_only && value_at(values, "engine.tp").get<size_t>() > 1 && !exists(values, "engine.tp_wire"))
+    if (value_at(values, "engine.tp").get<size_t>() > 1 && !exists(values, "engine.tp_wire"))
         throw std::runtime_error("missing required key: engine.tp_wire (a multi-card engine needs its all-reduce transport)");
     const auto max_rows = value_at(values, "handoff.max_rows").get<uint64_t>();
     const auto small = value_at(values, "handoff.small_rows").get<uint64_t>();

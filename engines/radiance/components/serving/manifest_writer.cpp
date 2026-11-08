@@ -163,8 +163,11 @@ Json resources_of(const ManifestInputs& in, const Json& calibration) {
     const bool has_helpers = !in.resolved.manifest.at("process_helpers").empty();
     if ((has_helpers && in.measured->plan.resident.helpers_mib == 0) || in.measured->plan.resident.engine_mib == 0)
         fail("the measured plan has no resident host memory of the helpers and the engine: measure it again");
-    li.consumers.push_back({"host_pool", mem.at("host_pool_mib").get<uint64_t>() * kMiB, Residence::pinned,
-                            "resources.host.pool_mib (the launcher's pool; the engine pins it at start)", "lower memory.host_pool_mib"});
+    // radiance pins --host-pool-mib once per rank (engine_bringup.cpp: "is pinned once per rank"), so a TP engine holds tp pools.
+    const uint64_t ranks = in.resolved.values.at("engine").at("tp").get<uint64_t>();
+    li.consumers.push_back({"host_pool", ranks * mem.at("host_pool_mib").get<uint64_t>() * kMiB, Residence::pinned,
+                            "resources.host.pool_mib x engine.tp (the launcher's pool; the engine pins it once per rank at start)",
+                            "lower memory.host_pool_mib"});
     li.consumers.push_back({"helpers", in.measured->plan.resident.helpers_mib * kMiB, Residence::pageable,
                             "measured in the measuring start: the helpers' resident anonymous and shared memory", ""});
     li.consumers.push_back({"engine_start", in.measured->plan.resident.engine_mib * kMiB, Residence::pageable,

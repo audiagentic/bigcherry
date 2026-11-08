@@ -5,11 +5,15 @@
 #   [layout.NAME]                  description, model (relative to BC_MODEL_ROOT), engine
 #   engine = { arch = "gfx1201" }  engine card(s); count = 2 makes two TP ranks; devices pins explicit indices
 #   tp-wire                         required for TP > 1 (host-memory transport, no P2P)
-#   server-args                     optional engine options for helper-free layouts, each one a manifest setting (context, sessions, chunk,
-#                                   KV dtype, speculative tokens, checkpoint interval, host pool, host KV tier, n-gram placement)
+#   server-args                     optional engine options, each one a manifest setting (context, sessions, chunk, KV dtype, speculative
+#                                   tokens, checkpoint interval, host pool, host KV tier, n-gram placement); for a helper layout they are the
+#                                   launcher's defaults, which its command-line options override
+#   A TP engine (count > 1) may have helpers: one helper only, behind every rank (the mailbox protocol's request slots are the ranks).
 #   [[layout.NAME.helper]]         a group of helper cards, in order (helper 0 first; helper 0 creates the shared segment)
 #     arch      architecture to take from the inventory         devices  explicit indices instead of arch
-#     count     how many of that arch ("all" or a number)       budget-mib  VRAM for experts on each card
+#     count     how many of that arch ("all" or a number)       budget-mib  VRAM for experts on each card; omitted: derived, the card's own
+#                                                               VRAM (inventory / sysfs) less its archs.toml reserve-mib -- prefer that
+#                                                               to a hand-picked number (a literal here is an interim value, RSC03)
 #     placement "head": the group takes the heat ranking by `share` (round robin)  "tail": takes the coldest experts that fit what the heads
 #               left; only the last group may be tail, and only after a head group
 #     share     weight of each card in a head group (default 1; 0 owns nothing)
@@ -121,6 +125,33 @@ budget-mib = 14336
 placement = "tail"
 [layout.flashnext-4gpu.env]
 R3_MOE_WORKER_COMBINE = "1"
+
+# RAD49 step 2: the two XTX run the model tensor-parallel (attention by KV head, GDN by head, the trunk and every resident expert
+# split by width, ARCHITECTURES.md qwen4exp) and the R9700 is the one remote-MoE helper the mailbox protocol allows behind a
+# multi-rank engine (each rank asks it for its own TP slice). No budget-mib: the helper takes its whole card less archs.toml
+# reserve-mib (derived from the inventory). The XTX pair holds the ~29 GiB of experts the R9700 cannot, so the sessions are
+# few and short: 6 x 65536 bounds the KV at about 2.7 GiB a rank (7 KiB a token a rank at fp8), leaving ~14 GiB a rank for
+# experts; the engine's measured plan (plan check) decides the split, the rest goes to the host pool. The exact wire: wht6 cost
+# Flash-Next 0.075 KLD at 1.3.0 and is a KL-gated arm only.
+# --host-pool-mib is INTERIM (RSC03: to be derived per rank from the experts neither the helper's budget nor the ranks' measured
+# VRAM holds). radiance pins it once per rank, so 4096 is 8 GiB pinned: the RAD49 estimate's shortfall (expert bytes 59.2 GiB less
+# the helper's ~29.9 GiB, halved per rank, against ~14 GiB of each XTX left by trunk, KV bound, GDN state and workspaces) is near
+# zero, with ~4 GiB a rank of slack; beside the 47.7 GiB n-gram table in RAM and the 12 GiB host KV tier that stays below what
+# flashnext-4gpu pins (9 GiB pool), so the host check keeps its margin. The plan check refuses it if the estimate is wrong.
+[layout.flashnext-tp2xtx-r9700]
+model = "radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad"
+description = "RAD49: Flash-Next tensor-parallel on the two 7900 XTX (exact host-memory wire), the R9700 the one remote-MoE helper (its whole card less the arch reserve), 6 sessions of up to 65,536 tokens"
+engine = { arch = "gfx1100", count = 2 }
+tp-wire = "exact"
+server-args = [
+  "--max-model-len", "65536",
+  "--max-num-seqs", "6",
+  "--host-pool-mib", "4096",
+]
+[[layout.flashnext-tp2xtx-r9700.helper]]
+arch = "gfx1201"
+count = 1
+placement = "head"
 
 # Dense tensor-parallel lane: the model is sharded across both selected XTX
 # engine cards. There are no remote-MoE helper processes or route-heat inputs.

@@ -6,8 +6,9 @@
 # docs/reference/engines/radiance/models/qwen3.8-flash-next.md ("Current best layout and numbers") and the harness config
 # tools/lab/radiance/helper-ab.json, which this mirrors outside the harness.
 #
-# Offload: the engine card runs the model (--tp 1); one r3_moe_worker helper per helper card holds full-width experts (the hottest by route
-# heat, up to the layout's budget), helper-owned experts skipped on the engine card; n-gram table in host
+# Offload: the engine card(s) run the model (--tp = the layout's engine card count; TP traffic through host memory, tp-wire from the
+# layout); one r3_moe_worker helper per helper card holds experts (the hottest by route heat, up to the layout's budget: full width
+# behind one engine rank, each rank's TP slice behind two), helper-owned experts skipped on the engine cards; n-gram table in host
 # RAM; fp8 KV; MTP depth 3; 2048-token chunks; up to 8 sessions of up to 262,144 tokens each (the context the model was
 # trained on, so no rope stretch). The fp8 cache on the R9700 holds about 1.48M tokens, shared by the sessions (5.7 full-length ones);
 # --max-model-len 1048576 --rope-scaling yarn:4 --max-num-seqs 2 serves the stretched 1M context instead. A prefix hit resumes at the nearest cached token (--prefix-resume nearest) rather
@@ -304,6 +305,31 @@ done
 BUDGET_ARGS=(); for b in "${BUDGETS[@]:-}"; do [ -n "$b" ] && BUDGET_ARGS+=(--budget "$b"); done
 LAYOUT_OUT=$(PYTHONPATH=tools python3 -m bigcherry layout env "$LAYOUT" "${BUDGET_ARGS[@]}") || { echo "RADIANCE_EXIT=99 layout '$LAYOUT' does not resolve on this host (above)"; exit 99; }
 eval "$LAYOUT_OUT"
+# A helper layout's server-args are its defaults for the settings below (a TP engine with a helper must hold the experts the helper
+# cannot, so it serves fewer or shorter sessions than the one-rank defaults); an option given on the command line still wins.
+if [ "$LAYOUT_HELPER_COUNT" -gt 0 ]; then
+  layout_default() {   # layout_default CLI_OPTION VARIABLE VALUE
+    local o
+    for o in ${CUSTOM_SERVE_OPTIONS[@]+"${CUSTOM_SERVE_OPTIONS[@]}"}; do [ "$o" = "$1" ] && return 0; done
+    printf -v "$2" '%s' "$3"
+  }
+  for ((i = 0; i < ${#LAYOUT_SERVER_ARGS[@]}; i += 2)); do
+    v=${LAYOUT_SERVER_ARGS[i+1]}
+    case "${LAYOUT_SERVER_ARGS[i]}" in
+      --max-model-len)          layout_default --max-model-len MAX_LEN "$v" ;;
+      --max-num-seqs)           layout_default --max-num-seqs SEQS "$v" ;;
+      --max-num-batched-tokens) layout_default --chunk CHUNK "$v" ;;
+      --kv-cache-dtype)         layout_default --kv-dtype KV_DTYPE "$v" ;;
+      --num-speculative-tokens) NUM_SPEC=$v ;;
+      --checkpoint-interval)    CKPT_INTERVAL=$v ;;
+      --host-pool-mib)          layout_default --host-pool-mib HOST_POOL_MIB "$v" ;;
+      --host-kv-mib)            layout_default --host-kv-mib HOST_KV_MIB "$v" ;;
+      --ngram-placement)        layout_default --ngram-placement NGRAM "$v" ;;
+      *) echo "RADIANCE_EXIT=2 layout $LAYOUT server-args has ${LAYOUT_SERVER_ARGS[i]}, which the launcher does not set" >&2; exit 2 ;;
+    esac
+  done
+  unset -f layout_default
+fi
 if [ "$LAYOUT_HELPER_COUNT" = 0 ] && [ "${#CUSTOM_SERVE_OPTIONS[@]}" -ne 0 ]; then
   echo "RADIANCE_EXIT=2 these options configure helper-offload serving, not the helper-free layout $LAYOUT: ${CUSTOM_SERVE_OPTIONS[*]}; use its server-args in layouts.toml" >&2
   exit 2

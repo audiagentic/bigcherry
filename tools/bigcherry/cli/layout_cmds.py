@@ -46,9 +46,9 @@ def _env_lines(r: radiance_layout.Resolved) -> list[str]:
     ]
     for i in range(len(r.helpers)):
         lines.append(f"LAYOUT_HELPER_{i}=(" + " ".join(q(f"{k}={v}") for k, v in r.helper_env(i).items()) + ")")
-    summary = ("; ".join(f"helper{i}: card {h.index} {h.arch.name} {h.budget_mib} MiB {h.placement}"
-                         for i, h in enumerate(r.helpers)) if r.helpers
-               else f"TP ranks: {','.join(map(str, r.engine_indices))} ({r.engine_arch}), wire {r.tp_wire or 'default'}")
+    ranks = f"TP ranks: {','.join(map(str, r.engine_indices))} ({r.engine_arch}), wire {r.tp_wire or 'default'}"
+    helpers = "; ".join(f"helper{i}: card {h.index} {h.arch.name} {h.budget_mib} MiB {h.placement}" for i, h in enumerate(r.helpers))
+    summary = (f"{ranks}; {helpers}" if len(r.engine_indices) > 1 else helpers) if r.helpers else ranks
     lines.append("LAYOUT_SUMMARY=" + q(summary))
     return lines
 
