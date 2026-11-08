@@ -22,7 +22,11 @@ SCHEMA = "bigcherry-radiance-runtime-v1"
 PLAN = re.compile(r"(?m)^(?:pin-bump lane build|release asset lane build): radiance:stock:linux-radiance build_plan_id=([0-9a-f]{32}) binary_sha256=([0-9a-f]{64})$")
 FILE_LIMIT = 10000
 BYTE_LIMIT = 16 * 1024**3
-CI_ARCHIVE = re.compile(r"radiance-[0-9a-f]{32}\.tar\.gz")
+#: BigCherry's own build of radiance, patched and extended, is not the upstream release: its assets are named bigcherryrad. Bundles a
+#: lab pin-release packed before this name existed are still called radiance-<plan>.tar.gz and still restore.
+PRODUCT = "bigcherryrad"
+CI_ARCHIVE = re.compile(r"bigcherryrad-[0-9a-f]{32}\.tar\.gz")
+ARCHIVE_NAME = re.compile(r"(?:bigcherryrad|radiance)-[0-9a-f]{32}\.tar\.gz")
 CI_RECEIPT_SUFFIX = ".receipt.json"
 RUN_DIRS = ("bin", "radiance_home", "runtime-prefix/bin", "runtime-prefix/lib", "runtime-prefix/lib64")
 
@@ -71,6 +75,18 @@ def select_build(record: dict, work_root: Path) -> tuple[Path, str, str]:
     return matches[0], plan_id, binary_sha
 
 
+def built_from(root: Path) -> dict[str, str]:
+    """What this build is made from: the upstream radiance release it patches, named so the bundle cannot pass for that release."""
+    import tomllib
+    try:
+        engine = tomllib.loads((root / "engines/radiance/engine.toml").read_text(encoding="utf-8"))
+        recipes = tomllib.loads((root / "engines/radiance/recipes.toml").read_text(encoding="utf-8"))
+    except OSError:   # a checkout without the engine files (a unit-test fixture) has nothing to say
+        engine, recipes = {}, {}
+    return {"project": "radiance", "upstream": str(engine.get("upstream", "")),
+            "pinned": str(recipes.get("pinned", "")), "note": "BigCherry's patched build, not an upstream release"}
+
+
 def runtime_files(build: Path) -> dict[str, Path]:
     files: dict[str, Path] = {}
     for dirname in RUN_DIRS:
@@ -105,7 +121,7 @@ def pack(record: dict, root: Path, work_root: Path, sdk: Path, tag: str) -> dict
     identity = stock_identity(root)
     version = sdk_version(sdk)
     manifest = {
-        "schema": SCHEMA, "release_tag": tag,
+        "schema": SCHEMA, "product": PRODUCT, "built_from": built_from(root), "release_tag": tag,
         "plan_id": plan_id, "source_slice_id": build.parent.name,
         "binary_sha256": binary_sha,
         "rocm_version": version, **identity,
@@ -118,7 +134,7 @@ def pack(record: dict, root: Path, work_root: Path, sdk: Path, tag: str) -> dict
     encoded = (json.dumps(manifest, sort_keys=True, separators=(",", ":")) + "\n").encode()
     out = work_root / "release-assets" / tag
     out.mkdir(parents=True, exist_ok=True)
-    name = f"radiance-{plan_id}.tar.gz"
+    name = f"{PRODUCT}-{plan_id}.tar.gz"
     dest = out / name
     staged = out / (name + ".pending")
     with staged.open("wb") as raw:
@@ -137,7 +153,7 @@ def pack(record: dict, root: Path, work_root: Path, sdk: Path, tag: str) -> dict
                         tar.addfile(info, f)
     sha = digest(staged)
     checksums = name + ".sha256"
-    asset = {"schema": SCHEMA, "name": name, "sha256": sha,
+    asset = {"schema": SCHEMA, "product": PRODUCT, "name": name, "sha256": sha,
              "checksum_name": checksums, "manifest_sha256": hashlib.sha256(encoded).hexdigest(),
              "plan_id": plan_id, "source_slice_id": build.parent.name,
              "rocm_version": version, "binary_sha256": binary_sha, **identity}
@@ -207,7 +223,7 @@ def restore(archive: Path, checksum: Path, asset: dict, root: Path, work_root: P
             sdk: Path) -> Path:
     if asset.get("schema") != SCHEMA:
         raise BundleError("unsupported runtime asset schema")
-    if not re.fullmatch(r"radiance-[0-9a-f]{32}\.tar\.gz", asset.get("name", "")):
+    if not ARCHIVE_NAME.fullmatch(asset.get("name", "")):
         raise BundleError("unsafe runtime asset name")
     if asset.get("checksum_name") != asset["name"] + ".sha256":
         raise BundleError("unsafe checksum asset name")
@@ -289,8 +305,8 @@ def ci_asset(root: Path, tag: str, stage: Path) -> tuple[dict, Path, Path]:
     bundle.json names this tag, or the reused_from tag whose source trees are the same. The
     caller checks the ROCm SDK and restores, which checks every file against bundle.json.
     """
-    download(root, tag, ("radiance-*.tar.gz", "radiance-*.tar.gz.sha256",
-                         "radiance-*" + CI_RECEIPT_SUFFIX), stage)
+    download(root, tag, (PRODUCT + "-*.tar.gz", PRODUCT + "-*.tar.gz.sha256",
+                         PRODUCT + "-*" + CI_RECEIPT_SUFFIX), stage)
     archives = [p for p in stage.iterdir() if CI_ARCHIVE.fullmatch(p.name)]
     if len(archives) != 1:
         raise BundleError(f"expected one runtime archive in release {tag}, found {len(archives)}")
@@ -351,7 +367,7 @@ def fetch(record: dict, root: Path, work_root: Path, sdk: Path,
         raise BundleError("release tag missing from record")
     # Validate names before passing record-derived patterns to gh download.
     if (asset.get("schema") != SCHEMA
-        or not re.fullmatch(r"radiance-[0-9a-f]{32}\.tar\.gz", asset.get("name", ""))
+        or not ARCHIVE_NAME.fullmatch(asset.get("name", ""))
         or asset.get("checksum_name") != asset["name"] + ".sha256"
         or not re.fullmatch(r"[0-9a-f]{64}", asset.get("sha256", ""))):
         raise BundleError("unsafe release asset receipt")

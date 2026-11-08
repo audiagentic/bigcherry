@@ -148,7 +148,7 @@ class ReleaseInstallTests(unittest.TestCase):
         )
         out = self.pack_work / "release-assets" / tag
         archive, checksum = out / asset["name"], out / asset["checksum_name"]
-        receipt = out / f"radiance-{PLAN}.receipt.json"
+        receipt = out / f"bigcherryrad-{PLAN}.receipt.json"
         key = {k: asset[k] for k in ("engine_tree", "config_tree", "rocm_version")}
         receipt.write_text(
             json.dumps(
@@ -295,7 +295,7 @@ class ReleaseInstallTests(unittest.TestCase):
         archive.write_bytes(repacked.getvalue())
         sha = runtime_assets.digest(archive)
         checksum.write_text(f"{sha}  {archive.name}\n")
-        receipt = archive.parent / f"radiance-{PLAN}.receipt.json"
+        receipt = archive.parent / f"bigcherryrad-{PLAN}.receipt.json"
         receipt.write_text(
             json.dumps({**json.loads(receipt.read_text()), "sha256": sha})
         )

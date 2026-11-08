@@ -104,3 +104,11 @@ upstream version. `pinned-version` is a declared recipes field, updated with `pi
 
 Decision (owner, 2026-10-17): "upstream as major" for radiance, as above. The manifest starts the radiance package at
 `130.0.0`; its first release is stated with `release-as` by `pin-release`, as for llama.cpp.
+
+## What a radiance release asset is called
+
+A radiance runtime bundle is BigCherry's build of the radiance engine (the pinned upstream release with BigCherry's patches and
+components), not the upstream release, so its assets are named `bigcherryrad-<plan id>` (`.tar.gz`, `.tar.gz.sha256`,
+`.receipt.json`) and its `bundle.json` says `product: bigcherryrad` and what it was built from (the upstream project, URL and
+pinned tag). The files inside keep the engine's own names (`bin/radiance`, `radiance_home`), because scripts and the engine find
+each other by them. Bundles a lab `pin-release` packed before this name existed are `radiance-<plan id>.tar.gz` and still install.

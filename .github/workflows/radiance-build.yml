@@ -236,9 +236,9 @@ jobs:
         with:
           name: radiance-release-bundle
           path: |
-            work/release-assets/${{ inputs.bundle_tag }}/radiance-*.tar.gz
-            work/release-assets/${{ inputs.bundle_tag }}/radiance-*.sha256
-            work/release-assets/${{ inputs.bundle_tag }}/radiance-*.receipt.json
+            work/release-assets/${{ inputs.bundle_tag }}/bigcherryrad-*.tar.gz
+            work/release-assets/${{ inputs.bundle_tag }}/bigcherryrad-*.sha256
+            work/release-assets/${{ inputs.bundle_tag }}/bigcherryrad-*.receipt.json
           if-no-files-found: error
           retention-days: 1
           compression-level: 0

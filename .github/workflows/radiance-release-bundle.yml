@@ -94,8 +94,8 @@ jobs:
         run: |
           set -eu
           cd bundle
-          sha256sum -c radiance-*.tar.gz.sha256
-          gh release upload "$TAG" radiance-*.tar.gz radiance-*.tar.gz.sha256 radiance-*.receipt.json --repo "$GITHUB_REPOSITORY"
+          sha256sum -c bigcherryrad-*.tar.gz.sha256
+          gh release upload "$TAG" bigcherryrad-*.tar.gz bigcherryrad-*.tar.gz.sha256 bigcherryrad-*.receipt.json --repo "$GITHUB_REPOSITORY"
 
   attach-reused:
     needs: plan
@@ -113,15 +113,15 @@ jobs:
         run: |
           set -eu
           mkdir bundle && cd bundle
-          gh release download "$FROM" --repo "$GITHUB_REPOSITORY" -p 'radiance-*.tar.gz' -p 'radiance-*.sha256' -p 'radiance-*.receipt.json'
-          sha256sum -c radiance-*.tar.gz.sha256
+          gh release download "$FROM" --repo "$GITHUB_REPOSITORY" -p 'bigcherryrad-*.tar.gz' -p 'bigcherryrad-*.sha256' -p 'bigcherryrad-*.receipt.json'
+          sha256sum -c bigcherryrad-*.tar.gz.sha256
           python3 - "$TAG" "$FROM" <<'PY'
           import glob, json, sys
           tag, source = sys.argv[1:3]
-          path = glob.glob("radiance-*.receipt.json")[0]
+          path = glob.glob("bigcherryrad-*.receipt.json")[0]
           receipt = json.load(open(path))
           receipt["release_tag"] = tag             # the release this copy is attached to ...
           receipt["reused_from"] = source          # ... and the release whose archive it is (bundle.json names that one)
           json.dump(receipt, open(path, "w"), sort_keys=True, indent=1)
           PY
-          gh release upload "$TAG" radiance-*.tar.gz radiance-*.tar.gz.sha256 radiance-*.receipt.json --repo "$GITHUB_REPOSITORY"
+          gh release upload "$TAG" bigcherryrad-*.tar.gz bigcherryrad-*.tar.gz.sha256 bigcherryrad-*.receipt.json --repo "$GITHUB_REPOSITORY"

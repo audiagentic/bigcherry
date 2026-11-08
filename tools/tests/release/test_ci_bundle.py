@@ -54,6 +54,19 @@ class CiBundleTests(unittest.TestCase):
         self.assertEqual((receipt["release_tag"], receipt["plan_id"]), (TAG, PLAN))
         self.assertEqual(list(out.glob("ci-bundle-verify-*")), [])      # the scratch restore is gone
 
+    def test_the_bundle_is_named_and_marked_as_bigcherry_s_build_not_upstream(self):
+        import tarfile
+        receipt = cb.pack_and_verify(TAG, root=self.root, work_root=self.work, sdk=self.sdk)
+        self.assertTrue(receipt["name"].startswith("bigcherryrad-") and receipt["name"].endswith(".tar.gz"))
+        self.assertEqual(receipt["product"], "bigcherryrad")
+        with tarfile.open(self.work / "release-assets" / TAG / receipt["name"], "r:gz") as tar:
+            manifest = json.loads(tar.extractfile("bundle.json").read())
+        self.assertEqual((manifest["product"], manifest["built_from"]["project"]), ("bigcherryrad", "radiance"))
+        # bundles a lab pin-release packed under the old name still restore
+        self.assertTrue(assets.ARCHIVE_NAME.fullmatch("radiance-" + PLAN + ".tar.gz"))
+        self.assertTrue(assets.ARCHIVE_NAME.fullmatch("bigcherryrad-" + PLAN + ".tar.gz"))
+        self.assertFalse(assets.CI_ARCHIVE.fullmatch("radiance-" + PLAN + ".tar.gz"))
+
     def test_a_tampered_archive_is_not_kept_silently(self):
         original = assets.restore
         def broken(*a, **k):
@@ -83,7 +96,7 @@ class CiBundleTests(unittest.TestCase):
                 return json.dumps([{"tagName": TAG}, {"tagName": "bc-radiance-1170.11.0"}, {"tagName": "bc-radiance-1170.10.0"},
                                    {"tagName": "bc-platform-1.2.3"}])
             if args[:2] == ["release", "view"]:
-                return json.dumps({"assets": [{"name": f"radiance-{PLAN}.receipt.json"}]})
+                return json.dumps({"assets": [{"name": f"bigcherryrad-{PLAN}.receipt.json"}]})
             if args[:2] == ["release", "download"]:
                 (Path(args[args.index("-D") + 1]) / args[args.index("-p") + 1]).write_text(json.dumps(receipts[args[2]]))
                 return ""
