@@ -114,7 +114,8 @@ jobs:
           tag, source = sys.argv[1:3]
           path = glob.glob("radiance-*.receipt.json")[0]
           receipt = json.load(open(path))
-          receipt["reused_from"] = source          # same archive; release_tag stays the release that built it
+          receipt["release_tag"] = tag             # the release this copy is attached to ...
+          receipt["reused_from"] = source          # ... and the release whose archive it is (bundle.json names that one)
           json.dump(receipt, open(path, "w"), sort_keys=True, indent=1)
           PY
           gh release upload "$TAG" radiance-*.tar.gz radiance-*.tar.gz.sha256 radiance-*.receipt.json --repo "$GITHUB_REPOSITORY"
