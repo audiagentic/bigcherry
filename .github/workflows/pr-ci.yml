@@ -164,8 +164,6 @@ jobs:
           !engines/radiance/**/*.mdx
           !engines/radiance/**/docs/**
           !engines/radiance/tests/**
-          !engines/radiance/archs.toml
-          !engines/radiance/layouts.toml
           !engines/radiance/model_constant_guard.toml
           tools/bigcherry/campaign/**
           tools/bigcherry/core/**

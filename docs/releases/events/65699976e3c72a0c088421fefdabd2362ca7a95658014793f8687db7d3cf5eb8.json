@@ -1,0 +1,13 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261108_092919_a-change-to-the-radiance-layou_1478",
+  "files": [
+    ".github/workflows/pr-ci.yml",
+    ".github/workflows/radiance-build.yml",
+    "tools/tests/test_bu01_path_gate_integration.py"
+  ],
+  "status": "unreleased",
+  "technical-summary": "The radiance build triggers (PR changes job and push paths) no longer exclude engines/radiance/archs.toml and layouts.toml: bc-serve embeds both and moe-remote reads archs.toml (declared build inputs in engine.toml since #763), so a layouts-only change must run the radiance build. Path-gate test updated.",
+  "timestamp-utc": "2026-11-08T09:29:19.493960Z",
+  "user-summary-candidate": "A change to the radiance layout or architecture tables now runs the radiance build in CI."
+}
