@@ -46,6 +46,9 @@ older tag family, and extra repository paths owned by the engine). The package p
    runs stages 2 to 4 as resumable phases (`gate`, `record`, `notes`, `main`, `release`, `unpin`, `sync`) and writes the
    gate output and hardware evidence into the pin's release record. `--dry-run` prints the concrete actions and writes
    nothing. See [PIN_BUMP.md](PIN_BUMP.md) for the bump that precedes it.
+6. **Runtime bundle (radiance).** CI attaches a verified runtime bundle to every published `bc-radiance-*` release
+   ([How a release gets its bundle](#how-a-release-gets-its-bundle)); `patch-promote` therefore releases without waiting
+   for a lab-staged bundle, and a lab `pin-release` bundle is needed only when a release must be bundled from the lab.
 
 ## Installing a release
 
@@ -54,8 +57,9 @@ tag; see the [Radiance runbook](../engines/radiance/RUNBOOK.md) for paths and la
 
 - A `runtime_assets[<tag>]` entry in a pin record committed at the tag is the source of truth and takes precedence
   (receipt `source: "record"`).
-- A tag with no entry (a release made by CI) installs from its release's own `radiance-<plan>.tar.gz`, `.sha256` and
-  `radiance-<plan>.receipt.json` (receipt `source: "ci"`). The receipt is the asset entry plus `release_tag`,
+- A tag with no entry (a release made by CI) installs from its release's own `bigcherryrad-<plan>.tar.gz`, `.sha256` and
+  `bigcherryrad-<plan>.receipt.json` (receipt `source: "ci"`); a receipt or `bundle.json` whose `product` is not
+  `bigcherryrad` is refused before anything else is checked. The receipt is the asset entry plus `release_tag`,
   `runtime_key` and an optional `reused_from`. It installs only when the archive matches the `.sha256` asset and the
   receipt; the receipt's `release_tag` is the tag; `runtime_key`'s `engine_tree`/`config_tree` equal the tag's trees
   (git objects at the tag) and the bundle's; every extracted file matches the archive's `bundle.json`; and
@@ -121,7 +125,8 @@ and `config`, the trees of the build tooling (`BUILD_INPUTS` in `tools/bigcherry
 the build image. If an earlier release has a receipt with the same key, that archive is attached again and the receipt names the
 new tag as `release_tag` and the earlier one as `reused_from`; otherwise the tag is built in the ROCm 7.2.4 image, the card-free
 component tests run, the lane build is packed, the archive is restored into a scratch directory to prove it installs, and the
-archive, its `.sha256` and its receipt are attached (30-55 minutes; most releases only change documentation, so most are reuses).
+archive, its `.sha256` and its receipt are attached (the build starts from main's compiler cache, so only what the tag changed
+recompiles; most releases only change documentation, so most are reuses).
 
 `bigcherry --engine radiance release-install <tag|latest>` installs it: checksum, per-file digests, source trees against the
 tag, the ROCm version against the host SDK. The bundle includes `bigcherry-build-metadata-radiance.json`, which the launcher's
