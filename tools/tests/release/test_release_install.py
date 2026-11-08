@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import io
 import json
 import os
 import stat
 import subprocess
+import tarfile
 import tempfile
 import unittest
 from pathlib import Path
@@ -17,19 +19,31 @@ from bigcherry.release import runtime_assets
 ROOT = Path(__file__).resolve().parents[3]
 TAG = "bc-radiance-1170.0.0"
 PLAN = "a" * 32
+CI_TAG = "bc-radiance-1180.0.0"
 
 FAKE_GH = """#!/usr/bin/env python3
+import fnmatch
+import json
 import os
 from pathlib import Path
 import shutil
 import sys
 args = sys.argv[1:]
-if args[:2] != ["release", "download"]:
+releases = json.loads(os.environ["FAKE_RELEASES"])
+if args[:2] not in (["release", "download"], ["release", "view"]):
     sys.exit("unexpected gh invocation")
+files = [Path(f) for f in releases.get(args[2], [])]
+if not files:
+    sys.exit("release not found")
+if args[1] == "view":
+    print(json.dumps({"assets": [{"name": f.name} for f in files]}))
+    sys.exit(0)
+patterns = [args[i + 1] for i, arg in enumerate(args) if arg == "-p"]
 dest = Path(args[args.index("-D") + 1])
 dest.mkdir(parents=True, exist_ok=True)
-for name in ("FAKE_ARCHIVE", "FAKE_CHECKSUM"):
-    shutil.copy2(os.environ[name], dest / Path(os.environ[name]).name)
+for f in files:
+    if any(fnmatch.fnmatch(f.name, p) for p in patterns):
+        shutil.copy2(f, dest / f.name)
 with open(os.environ["FAKE_GH_CALLS"], "a", encoding="utf-8") as f:
     f.write("download\\n")
 """
@@ -92,10 +106,10 @@ class ReleaseInstallTests(unittest.TestCase):
         asset_dir = self.pack_work / "release-assets" / TAG
         self.archive = asset_dir / self.asset["name"]
         self.checksum = asset_dir / self.asset["checksum_name"]
+        self.releases = {TAG: [str(self.archive), str(self.checksum)]}
         self.env = {
             "PATH": f"{fakebin}:{os.environ['PATH']}",
-            "FAKE_ARCHIVE": str(self.archive),
-            "FAKE_CHECKSUM": str(self.checksum),
+            "FAKE_RELEASES": json.dumps(self.releases),
             "FAKE_GH_CALLS": str(self.gh_calls),
         }
 
@@ -123,6 +137,33 @@ class ReleaseInstallTests(unittest.TestCase):
         self._git("add", ".")
         self._git("commit", "-qm", message)
 
+    def _ci_bundle(self, tag, receipt_tag=None, **extra):
+        """Pack a bundle for a tag with no record entry and attach it, with its receipt, to the fake release."""
+        notes = (
+            f"release asset lane build: radiance:stock:linux-radiance build_plan_id={PLAN} "
+            f"binary_sha256={self.asset['binary_sha256']}"
+        )
+        asset = runtime_assets.pack(
+            {"notes": notes}, self.root, self.pack_work, self.sdk, tag
+        )
+        out = self.pack_work / "release-assets" / tag
+        archive, checksum = out / asset["name"], out / asset["checksum_name"]
+        receipt = out / f"radiance-{PLAN}.receipt.json"
+        key = {k: asset[k] for k in ("engine_tree", "config_tree", "rocm_version")}
+        receipt.write_text(
+            json.dumps(
+                {
+                    **asset,
+                    "release_tag": receipt_tag or tag,
+                    "runtime_key": key,
+                    **extra,
+                }
+            )
+        )
+        self.releases[receipt_tag or tag] = [str(archive), str(checksum), str(receipt)]
+        self.env["FAKE_RELEASES"] = json.dumps(self.releases)
+        return archive, checksum
+
     def _install(self, tag=TAG):
         return release_install.install(
             tag, root=self.root, work_root=self.install_work, sdk=self.sdk
@@ -135,6 +176,7 @@ class ReleaseInstallTests(unittest.TestCase):
         self.assertEqual(first, second)
         self.assertEqual(self.gh_calls.read_text().splitlines(), ["download"])
         self.assertEqual(first["plan_id"], PLAN)
+        self.assertEqual(first["source"], "record")
         self.assertEqual(first["binary_sha256"], self.asset["binary_sha256"])
         self.assertEqual(first["rocm_version"], "7.2.4")
         self.assertEqual(first["archive_sha256"], self.asset["sha256"])
@@ -162,14 +204,115 @@ class ReleaseInstallTests(unittest.TestCase):
             f"bash {first['worktree']}/tools/lab/radiance/launch-flashnext-best.sh start --build {first['build_dir']}",
         )
 
-    def test_latest_only_selects_tag_with_own_pin_receipt(self):
-        self.assertEqual(release_install.resolve_tag(self.root, "latest")[0], TAG)
+    def test_latest_only_selects_tag_with_record_or_ci_bundle(self):
         with mock.patch.dict(os.environ, self.env):
+            self.assertEqual(release_install.resolve_tag(self.root, "latest")[0], TAG)
             self.assertEqual(self._install("latest")["tag"], TAG)
-        with self.assertRaisesRegex(
-            release_install.ReleaseInstallError, "expected one pin release record"
+            with self.assertRaisesRegex(
+                release_install.ReleaseInstallError, "release not found"
+            ):
+                self._install("bc-radiance-1180.0.0")
+
+    def test_latest_picks_ci_bundled_tag(self):
+        self._ci_bundle(CI_TAG)
+        with mock.patch.dict(os.environ, self.env):
+            self.assertEqual(
+                release_install.resolve_tag(self.root, "latest"), (CI_TAG, None)
+            )
+
+    def test_ci_bundle_installs_with_ci_receipt(self):
+        self._ci_bundle(CI_TAG)
+        with mock.patch.dict(os.environ, self.env):
+            first = self._install(CI_TAG)
+            second = self._install(CI_TAG)
+        self.assertEqual(first, second)
+        self.assertEqual(first["source"], "ci")
+        self.assertEqual(first["tag"], CI_TAG)
+        self.assertEqual(
+            (Path(first["build_dir"]) / "bin/radiance").read_bytes(), b"tiny-radiance"
+        )
+        downloads = self.install_work / "release-assets" / "downloads"
+        self.assertEqual(list(downloads.iterdir()), [])
+
+    def test_reused_ci_bundle_needs_reused_from_with_same_trees(self):
+        reuse_tag = "bc-radiance-1190.0.0"
+        self._git("tag", reuse_tag)  # same source trees as CI_TAG
+        self._ci_bundle(CI_TAG, receipt_tag=reuse_tag)
+        self._refused(reuse_tag, "bundle.json is for bc-radiance-1180.0.0")
+        self._ci_bundle(CI_TAG, receipt_tag=reuse_tag, reused_from=CI_TAG)
+        with mock.patch.dict(os.environ, self.env):
+            self.assertEqual(self._install(reuse_tag)["source"], "ci")
+
+    def test_ci_receipt_for_another_tag_refused(self):
+        self._ci_bundle(CI_TAG)
+        self.releases["bc-radiance-1190.0.0"] = self.releases[CI_TAG]
+        self.env["FAKE_RELEASES"] = json.dumps(self.releases)
+        self._git("tag", "bc-radiance-1190.0.0")
+        self._refused(
+            "bc-radiance-1190.0.0", "receipt asset is for bc-radiance-1180.0.0"
+        )
+
+    def test_record_entry_preferred_over_ci_bundle(self):
+        with (
+            mock.patch.dict(os.environ, self.env),
+            mock.patch.object(
+                runtime_assets, "ci_asset", side_effect=AssertionError("CI path used")
+            ),
         ):
-            self._install("bc-radiance-1180.0.0")
+            receipt = self._install(TAG)
+        self.assertEqual(receipt["source"], "record")
+        self.assertEqual(receipt["archive_sha256"], self.asset["sha256"])
+
+    def _refused(self, tag, pattern):
+        with (
+            mock.patch.dict(os.environ, self.env),
+            self.assertRaisesRegex(release_install.ReleaseInstallError, pattern),
+        ):
+            self._install(tag)
+        self.assertFalse(
+            (self.install_work / "releases" / tag / "install.json").exists()
+        )
+        self.assertFalse((self.install_work / "releases" / tag / "src").exists())
+        self.assertFalse((self.install_work / "builds/src-1" / PLAN).exists())
+
+    def test_ci_archive_checksum_mismatch_refused(self):
+        archive, _ = self._ci_bundle(CI_TAG)
+        archive.write_bytes(archive.read_bytes() + b"tampered")
+        self._refused(CI_TAG, "does not match its .sha256 asset")
+
+    def test_ci_file_digest_mismatch_refused(self):
+        archive, checksum = self._ci_bundle(CI_TAG)
+        repacked = io.BytesIO()
+        with (
+            tarfile.open(archive, "r:gz") as src,
+            tarfile.open(fileobj=repacked, mode="w:gz") as dst,
+        ):
+            for member in src:
+                data = src.extractfile(member).read()
+                if member.name == "bin/radiance":
+                    data = b"tiny-radiancX"
+                dst.addfile(member, io.BytesIO(data))
+        archive.write_bytes(repacked.getvalue())
+        sha = runtime_assets.digest(archive)
+        checksum.write_text(f"{sha}  {archive.name}\n")
+        receipt = archive.parent / f"radiance-{PLAN}.receipt.json"
+        receipt.write_text(
+            json.dumps({**json.loads(receipt.read_text()), "sha256": sha})
+        )
+        self._refused(CI_TAG, "runtime file SHA-256 mismatch: bin/radiance")
+
+    def test_ci_source_tree_mismatch_refused(self):
+        tag = "bc-radiance-1190.0.0"
+        self._ci_bundle(tag)  # packed from the trees before the commit below
+        (self.root / "engines/radiance/source.txt").write_text("radiance changed")
+        self._commit("change engine after the bundle")
+        self._git("tag", tag)
+        self._refused(tag, "bundle source trees differ from tag")
+
+    def test_ci_sdk_mismatch_refused(self):
+        self._ci_bundle(CI_TAG)
+        (self.sdk / ".info/version").write_text("7.1.0")
+        self._refused(CI_TAG, "ROCm SDK mismatch")
 
     def test_existing_binary_mismatch_is_refused(self):
         with mock.patch.dict(os.environ, self.env):
