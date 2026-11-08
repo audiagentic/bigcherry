@@ -1,5 +1,27 @@
 # Changelog
 
+## [1.23.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.22.0...bc-platform-1.23.0) (2026-11-08)
+
+
+### New and changed
+
+* **radiance:** n-gram and engine-side hand-off settings leave the environment (contract amendment 16) ([#736](https://github.com/audiagentic/bigcherry/issues/736)) ([b748873](https://github.com/audiagentic/bigcherry/commit/b74887322b042849627f12750cf2a66dc29de944))
+* **radiance:** paced forced churn (spec.experiment.placement.forced.pace_requests, contract amendment 15) ([#733](https://github.com/audiagentic/bigcherry/issues/733)) ([30c7752](https://github.com/audiagentic/bigcherry/commit/30c775265cf2098d23ce16970ce13995d4eb83e8))
+* **release:** CI packs and verifies the radiance runtime bundle; a manual workflow attaches it to a release ([#743](https://github.com/audiagentic/bigcherry/issues/743)) ([cc7e116](https://github.com/audiagentic/bigcherry/commit/cc7e116d5cb217abcdad82a921dae1f81362facd))
+* **release:** release-install verifies and installs a CI-built release bundle without a committed record ([#744](https://github.com/audiagentic/bigcherry/issues/744)) ([b53632b](https://github.com/audiagentic/bigcherry/commit/b53632bc1cb41fd02f8927c84db2c1a0e6a50d80))
+* **release:** the runtime bundle is named bigcherryrad and says it is BigCherry's build of radiance ([#748](https://github.com/audiagentic/bigcherry/issues/748)) ([8c988c1](https://github.com/audiagentic/bigcherry/commit/8c988c172ae8fd3bfd139223ee2eff6353c6b116))
+* **serving:** the patch and diagnostic-build switches are spec.experiment.engine fields (contract amendment 17) ([#738](https://github.com/audiagentic/bigcherry/issues/738)) ([d5d149b](https://github.com/audiagentic/bigcherry/commit/d5d149b4441ec27ee087b3ecd60663cade18e977))
+
+
+### Fixes
+
+* **build:** libr3/libr2 unit cuids do not depend on the build directory, so their compiles hit ccache; radiance build triggers match its inputs ([#740](https://github.com/audiagentic/bigcherry/issues/740)) ([b96f1c1](https://github.com/audiagentic/bigcherry/commit/b96f1c11c9ea11c648cd36720255c94c54268273))
+* **hygiene:** scan for the container's own paths, and make the pre-commit hook executable ([#737](https://github.com/audiagentic/bigcherry/issues/737)) ([7eaacee](https://github.com/audiagentic/bigcherry/commit/7eaacee17c82decf1e26afb1d20a74febfc8b02c))
+* **release:** the bundle workflow passes --engine radiance to release-bundle ([#749](https://github.com/audiagentic/bigcherry/issues/749)) ([5f0db17](https://github.com/audiagentic/bigcherry/commit/5f0db17028c300739033188fa5f00d620d492ac9))
+* **release:** the bundle workflow runs its tooling from its own commit, not from the tag being bundled ([#746](https://github.com/audiagentic/bigcherry/issues/746)) ([cdc26da](https://github.com/audiagentic/bigcherry/commit/cdc26da2c90e2930c1af9bf53943986ccf43201c))
+* **release:** the runtime bundle carries the build metadata the launcher and campaign tools read ([#750](https://github.com/audiagentic/bigcherry/issues/750)) ([ca35ecf](https://github.com/audiagentic/bigcherry/commit/ca35ecfff0251133dc2fecc1bbc0d89e3af6261d))
+* **tests:** the bump-gate failure test no longer assumes moe-remote is the first failing component ([#745](https://github.com/audiagentic/bigcherry/issues/745)) ([c108e5b](https://github.com/audiagentic/bigcherry/commit/c108e5b4b2e93c5f0c2a7c4ff6545edf6d07ce3e))
+
 ## [1.22.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.21.0...bc-platform-1.22.0) (2026-11-07)
 
 
