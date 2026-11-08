@@ -281,7 +281,7 @@ class RemoteAndInstallTests(unittest.TestCase):
         units = unit_texts(
             project_root=PurePosixPath("/project/root"),
             work_root=PurePosixPath("/fixture/bc"),
-            python=PurePosixPath("/srv/venv/bin/python"),
+            python=PurePosixPath("/opt/example/venv/bin/python"),
             user="bigcherry",
             engine="llamacpp",
         )

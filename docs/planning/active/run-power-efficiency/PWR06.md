@@ -54,7 +54,7 @@ Loaded-idle penalty removed or the trial documented as ineffective and rolled ba
 
 ## Notes
 
-Owner-run (root). Evidence: /work/bigcherry/runs/r9700-idle/result.txt; GPT R9700 idle-power deep dive 2026-11-02 (request req_main_2126dc6cc0a2). Do not reduce GPU_MAX_HW_QUEUES globally (helpers need separate queues).
+Owner-run (root). Evidence: $BC_WORK_ROOT/runs/r9700-idle/result.txt; GPT R9700 idle-power deep dive 2026-11-02 (request req_main_2126dc6cc0a2). Do not reduce GPU_MAX_HW_QUEUES globally (helpers need separate queues).
 
 ## Change Log
 
