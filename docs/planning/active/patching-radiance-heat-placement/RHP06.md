@@ -66,6 +66,8 @@ Hardware finding from RHP16's quality gate (2026-11-08): the forced-churn schedu
 
 Forced churn on flashnext-4gpu KL after #718/#724 (run rhp06-churn-mid2, main 41b55ccd5, 2026-11-08): the driver now waits for the first completed lane request, then attempts 161 swaps (160 committed, 0 aborted). The result is bit-identical to the ungated run (mean 0.0738, p99 0.938, p99.9 3.433, top-1 87.94% vs control 0.0660 / 0.704 / 3.003 / 88.54%; first differing position 70 in both): the engine's start-up warmup request opens the gate and the small swaps finish in a burst before scoring. Open: ownership changes while a scored request is in flight are not yet KLD-measured. Needed: a paced forced schedule (one proposal per N completed lane requests, N derived from the run's request count so swaps spread over the whole scored corpus), then rerun churn KL; the A/B serving runs already committed ~30 live-policy transactions under real requests with no faults.
 
+Paced forced churn (#733, pace_requests=104 = floor(16,849 completed helper requests / (161 swaps + 1)), run rhp06-churn-paced, main 30c775265, 2026-11-08): the repeat pass committed 131 swaps during scoring (0 aborts; only 118 of 8,240 rows identical to the first pass, so swaps landed while scored requests were in flight): KLD mean 0.0625 / p99 0.697 / p99.9 1.844 / top-1 88.09% vs policy-off 0.0660 / 0.704 / 3.003 / 88.54%, within every threshold. Mid-request ownership changes do not corrupt output: the open hardware item of this validation is closed. The first pass reproduced the unpaced burst result bit for bit; it alone follows the harness's measuring start (plan-cache miss), so pacing likely counted requests from that start. Not pursued.
+
 ## Implementation-grade notes (2026-10-15)
 
 ### Gate before any implementation
@@ -115,3 +117,4 @@ Validation: State-machine fault injection, epoch overlap, GPU stream and graph r
 - 2026-11-02T02:27:30.722797+00:00 (updated-by): Updated: section:ledger-events
 - 2026-11-07T13:22:01.241611+00:00 (updated-by): Updated: section:notes
 - 2026-11-07T19:21:49.384054+00:00 (updated-by): Updated: section:notes
+- 2026-11-08T00:36:48.562539+00:00 (updated-by): Updated: section:notes
