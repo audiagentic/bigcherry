@@ -1,5 +1,6 @@
 #include "serving.h"
 #include "calibration.h"
+#include "moe_remote_shm.h"
 #include "sha256.h"
 #include "generated/serving_types.h"
 #include "third_party/toml.hpp"
@@ -488,12 +489,14 @@ LayoutRecipe recipe_for(const std::string& name) {
     r.tail = !r.groups.empty() && r.groups.back().tail;
     if (r.engine_count > 1 && !r.tp_wire)
         throw std::runtime_error(where + "an engine of " + std::to_string(r.engine_count) + " cards needs tp-wire");
-    // moe_remote_hook.cpp r3_moe_mailbox_device: behind a multi-rank engine the request slots are the ranks, so one helper
-    // serves them all (step_slot, moe_mailbox_ops.hip). Refused here, before any card, as the hook would refuse it at start.
-    if (r.engine_count > 1 && !r.groups.empty() &&
-        (r.groups.size() > 1 || r.groups.front().count != 1))
-        throw std::runtime_error(where + "an engine of " + std::to_string(r.engine_count) +
-                                 " ranks is served by one remote-MoE helper only: give one helper group with count = 1");
+    // RAD49: one request slot a (helper, engine rank), at most r3::moe_shm::kMaxSlots of them. A fixed helper count that
+    // cannot fit is refused here, before any card; a group of count "all" is bounded once the cards are known (resolve).
+    size_t fixed = 0;
+    for (const auto& g : r.groups) fixed += g.count < 0 ? 1 : size_t(g.count);
+    if (!r.groups.empty() && !r3::moe_shm::slots_fit(uint32_t(fixed), uint32_t(r.engine_count)))
+        throw std::runtime_error(where + std::to_string(fixed) + " remote-MoE helper(s) behind an engine of " +
+                                 std::to_string(r.engine_count) + " rank(s) need more than the protocol's " +
+                                 std::to_string(r3::moe_shm::kMaxSlots) + " request slots (one a helper and rank)");
     return r;
 }
 
@@ -1129,6 +1132,10 @@ Resolved resolve(const Options& options, const Json& facts) {
         throw std::runtime_error("helper.index must be below helper.count");
     if (hcount != cards.size())
         throw std::runtime_error("helper.count must match selected layout helper cards");
+    if (!engine_only && !r3::moe_shm::slots_fit(uint32_t(hcount), uint32_t(engine_cards.size())))
+        throw std::runtime_error("layout " + name + ": " + std::to_string(hcount) + " helper(s) behind " +
+                                 std::to_string(engine_cards.size()) + " engine rank(s) exceed the protocol's " +
+                                 std::to_string(r3::moe_shm::kMaxSlots) + " request slots");
     if (value_at(values, "helper.engine_ranks").get<size_t>() !=
         value_at(values, "engine.tp").get<size_t>())
         throw std::runtime_error("helper.engine_ranks must equal engine.tp");

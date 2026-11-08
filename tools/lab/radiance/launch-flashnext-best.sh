@@ -7,8 +7,8 @@
 # tools/lab/radiance/helper-ab.json, which this mirrors outside the harness.
 #
 # Offload: the engine card(s) run the model (--tp = the layout's engine card count; TP traffic through host memory, tp-wire from the
-# layout); one r3_moe_worker helper per helper card holds experts (the hottest by route heat, up to the layout's budget: full width
-# behind one engine rank, each rank's TP slice behind two), helper-owned experts skipped on the engine cards; n-gram table in host
+# layout); one r3_moe_worker helper per helper card holds experts (the hottest by route heat, up to the layout's budget, always full
+# width; behind TP one rank a layer adds them, RAD49), helper-owned experts skipped on the engine cards; n-gram table in host
 # RAM; fp8 KV; MTP depth 3; 2048-token chunks; up to 8 sessions of up to 262,144 tokens each (the context the model was
 # trained on, so no rope stretch). The fp8 cache on the R9700 holds about 1.48M tokens, shared by the sessions (5.7 full-length ones);
 # --max-model-len 1048576 --rope-scaling yarn:4 --max-num-seqs 2 serves the stretched 1M context instead. A prefix hit resumes at the nearest cached token (--prefix-resume nearest) rather

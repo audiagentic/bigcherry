@@ -85,13 +85,22 @@ def _root(repo_root: Path | None) -> Path:
 
 
 
+def _protocol_bound(name: str, repo_root: Path | None) -> int:
+    text = (_root(repo_root) / _HEADER).read_text(encoding="utf-8")
+    m = re.search(r"constexpr\s+uint32_t\s+" + name + r"\s*=\s*(\d+)\s*;", text)
+    if not m:
+        raise LayoutError(f"{_HEADER}: {name} not found")
+    return int(m.group(1))
+
+
 def max_helpers(repo_root: Path | None = None) -> int:
     """The protocol's helper bound, read from the header that defines it (kMaxHelpers), so the two cannot drift."""
-    text = (_root(repo_root) / _HEADER).read_text(encoding="utf-8")
-    m = re.search(r"constexpr\s+uint32_t\s+kMaxHelpers\s*=\s*(\d+)\s*;", text)
-    if not m:
-        raise LayoutError(f"{_HEADER}: kMaxHelpers not found")
-    return int(m.group(1))
+    return _protocol_bound("kMaxHelpers", repo_root)
+
+
+def max_slots(repo_root: Path | None = None) -> int:
+    """The protocol's request-slot bound (kMaxSlots): one slot a (helper, engine rank) pair (RAD49)."""
+    return _protocol_bound("kMaxSlots", repo_root)
 
 
 def _load(path: Path) -> dict:
@@ -276,11 +285,10 @@ def resolve(name: str, host: environment.Host, *, budgets: dict[str, int] | None
         raise LayoutError(f"{where}: {len(helpers)} helpers exceed the protocol's {max_helpers(repo_root)}")
     if not any(h.placement == "head" and h.share > 0 for h in helpers):
         raise LayoutError(f"{where}: no head helper with a share")
-    if len(engine) > 1 and len(helpers) > 1:
-        # moe_remote_hook.cpp r3_moe_mailbox_device: a multi-rank engine uses the request slot axis for its ranks, so it is served
-        # by one helper only (step_slot in moe_mailbox_ops.hip); N helpers behind M ranks is RAD49 step 3.
-        raise LayoutError(f"{where}: a {len(engine)}-rank engine is served by one remote-MoE helper only (the mailbox protocol); "
-                          f"this layout selects {len(helpers)}")
+    if helpers and len(helpers) * len(engine) > max_slots(repo_root):
+        # moe_remote_shm.h slots_for: one request slot a (helper, engine rank); the hook and the helpers refuse more at start
+        raise LayoutError(f"{where}: {len(helpers)} helpers behind a {len(engine)}-rank engine need {len(helpers) * len(engine)} "
+                          f"request slots; the mailbox protocol has {max_slots(repo_root)}")
     common = {
         "R3_MOE_WORKER_COUNT": str(len(helpers)),
         "R3_MOE_WORKER_ENGINE_RANKS": str(len(engine)),

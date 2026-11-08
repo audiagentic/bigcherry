@@ -1399,7 +1399,8 @@ void layout_manifests_golden(Fixture& t, bool write_golden, const char* dump_dir
     }
     std::string got;
     for (const char* name : {"flashnext-4gpu", "flashnext-2xtx", "flashnext-2xtx-combine", "flashnext-2xtx-rdna2-head",
-                             "flashnext-2xtx-rdna2-tail", "flashnext-2xtx-rdna2-tail-combine", "flashnext-tp2xtx-r9700"}) {
+                             "flashnext-2xtx-rdna2-tail", "flashnext-2xtx-rdna2-tail-combine", "flashnext-tp2xtx-r9700",
+                             "flashnext-tp2xtx"}) {
         Options opts;
         opts.site = t.file("golden-site.toml", "[engine]\nmodel = \"" + model.string() + "\"\nradiance_home = \"/runtime\"\n"
                                               "[handoff]\nheat = \"" + heat.string() + "\"\nhistogram = \"/heat.live\"\n");
@@ -1535,6 +1536,47 @@ void tp_engine_with_helper_layout(Fixture& t) {
     assert(sv::resolve(no_wire, t.facts).typed.engine.tp_wire == "wht6");
 }
 
+// RAD49 steps 3-4: two helpers behind a TP2 engine. The budgets are each card less its archs.toml reserve (no budget-mib), the
+// RX 6900 XT is the tail, the combine is on, and the manifest carries both helpers behind the two ranks.
+void tp_engine_with_two_helpers_layout(Fixture& t) {
+    namespace sv = bc::serving;
+    const auto model = t.root / "tp-two-helper-model.rad";
+    bc::test::write_rad(model, 4, 16, 128, 128, {});
+    const auto heat = t.root / "tp-two-helper.hot-first";
+    {
+        std::vector<uint32_t> counts(128 * 16, 1);
+        std::ofstream(heat, std::ios::binary).write(reinterpret_cast<const char*>(counts.data()), counts.size() * 4);
+    }
+    Options opts;
+    opts.site = t.file("tp-two-helper-site.toml", "[engine]\nmodel = \"" + model.string() + "\"\nradiance_home = \"/runtime\"\n"
+                                                  "[handoff]\nheat = \"" + heat.string() + "\"\nhistogram = \"/heat.live\"\n");
+    opts.sets = {"layout.name=\"flashnext-tp2xtx\""};
+    const auto r = sv::resolve(opts, t.facts);
+    assert(r.typed.layout.engine_cards.size() == 2 && r.typed.layout.helper_cards.size() == 2);
+    assert(r.typed.engine.tp == 2 && r.typed.engine.tp_wire == "exact");
+    assert(r.typed.helper.count == 2 && r.typed.helper.engine_ranks == 2 && r.typed.helper.combine);
+    // no budget-mib: the R9700 (32624 MiB) less 2048, the RX 6900 XT (16368 MiB) less 1024; the tail is the last one
+    assert(r.values.at("memory").at("helper_budgets_mib") == Json::array({32624 - 2048, 16368 - 1024}));
+    assert(r.typed.memory.tail_budget_mib == 16368 - 1024);
+    sv::ManifestInputs in;
+    in.resolved = r;
+    in.instance_id = "11111111-1111-4111-8111-111111111111";
+    in.producer_sha256 = std::string(64, 'a');
+    in.profile = "production";
+    const auto built = sv::build_manifest(in);
+    const Json& spec = built.document.at("spec");
+    assert(spec.at("processes").at("engine").at("scheduler").at("tp") == 2);
+    assert(spec.at("processes").at("helpers").size() == 2 && spec.contains("handoff"));
+    assert(bc::serving::v1::read_manifest(built.text, "tp-two-helper", bc::serving::v1::PlanUse::measuring).ok());
+    // a helper count other than the cards the layout selects is refused (the slot bound, helpers x ranks <= kMaxSlots, is
+    // checked on the same path; moe_remote_shm_test covers slots_fit)
+    Options three = opts;
+    three.sets = {"layout.name=\"flashnext-tp2xtx\"", "helper.count=3"};
+    bool refused = false;
+    try { (void)sv::resolve(three, t.facts); } catch (const std::exception&) { refused = true; }
+    assert(refused);
+}
+
 int main(int argc, char** argv) {
     bool write_golden = false;
     const char* dump_dir = nullptr;
@@ -1560,6 +1602,7 @@ int main(int argc, char** argv) {
         layout_manifests_golden(t, write_golden, dump_dir);
         engine_only_layout(t);
         tp_engine_with_helper_layout(t);
+        tp_engine_with_two_helpers_layout(t);
         sdk_environment_step(t);
         std::cout << "PASS: fake KFD/PCI/proc detection; strict keys; types/ranges; required; "
                      "precedence/caps; provenance/hash; launcher engine/WorkerConfig parity; "

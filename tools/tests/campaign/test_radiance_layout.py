@@ -35,6 +35,10 @@ class RepoDataTests(unittest.TestCase):
                 self.assertEqual(r.engine_indices, (0, 1))
                 self.assertEqual([h.index for h in r.helpers], [2])
                 self.assertEqual(r.tp_wire, "exact")
+            elif name == "flashnext-tp2xtx":   # RAD49: the XTX pair tensor-parallel, the R9700 and the RX 6900 XT its helpers
+                self.assertEqual(r.engine_indices, (0, 1))
+                self.assertEqual([h.index for h in r.helpers], [2, 3])
+                self.assertEqual(r.tp_wire, "exact")
             else:
                 self.assertEqual(r.engine_indices, (2,))
                 self.assertGreaterEqual(len(r.helpers), 2)
@@ -42,6 +46,7 @@ class RepoDataTests(unittest.TestCase):
     def test_the_protocol_bound_is_read_from_the_header(self):
         header = (paths.REPO_ROOT / "engines/radiance/components/moe-remote/moe_remote_shm.h").read_text(encoding="utf-8")
         self.assertEqual(rl.max_helpers(), int(re.search(r"kMaxHelpers\s*=\s*(\d+)", header).group(1)))
+        self.assertEqual(rl.max_slots(), int(re.search(r"kMaxSlots\s*=\s*(\d+)", header).group(1)))
 
     def test_archs_name_a_plugin_that_a_component_builds(self):
         # every plugin file in archs.toml is the output of a declared radiance component, or the engine's own libr4d
@@ -103,8 +108,9 @@ class ResolveTests(unittest.TestCase):
             ('engine = { arch = "gfx1100", count = 2 }\ntp-wire = "wht6"\nserver-args = ["--p2p", "on"]', "server-args"),
             ('engine = { arch = "gfx1100", count = 2 }\ntp-wire = "wht6"\nserver-args = ["--tp", "1"]', "server-args"),
             ('engine = { arch = "gfx1100", count = 2 }\n[[layout.t.helper]]\narch = "gfx1030"\nbudget-mib = 100', "requires tp-wire"),
+            # the fixture header bounds the request slots at 2: two helpers behind two ranks need 4
             ('engine = { arch = "gfx1100", count = 2 }\ntp-wire = "wht6"\n[[layout.t.helper]]\narch = "gfx1201"\nbudget-mib = 100\n'
-             '[[layout.t.helper]]\narch = "gfx1030"\nbudget-mib = 100\nplacement = "tail"', "one remote-MoE helper only"),
+             '[[layout.t.helper]]\narch = "gfx1030"\nbudget-mib = 100\nplacement = "tail"', "need 4 request slots; the mailbox protocol has 2"),
         ]
         for recipe, expected in cases:
             with self.subTest(recipe=recipe):
@@ -130,6 +136,28 @@ class ResolveTests(unittest.TestCase):
         self.assertIn("TP ranks: 0,1 (gfx1100), wire exact; helper0: card 2 gfx1201", lines)
         # a budget override still applies to the helper's architecture
         self.assertEqual(rl.resolve("flashnext-tp2xtx-r9700", host(*WITH_6900), budgets={"gfx1201": 20480}).helpers[0].budget_mib, 20480)
+
+    def test_a_tensor_parallel_engine_with_two_helpers(self):
+        """RAD49: N helpers behind M ranks; the budgets are derived, the tail and the combine are the layout's."""
+        from bigcherry.cli.layout_cmds import _env_lines
+
+        r = rl.resolve("flashnext-tp2xtx", host(*WITH_6900))
+        archs = rl.load_archs()
+        self.assertEqual((r.engine_indices, r.engine_arch, r.tp_wire), ((0, 1), "gfx1100", "exact"))
+        self.assertEqual([(h.index, h.arch.name, h.placement, h.budget_mib) for h in r.helpers],
+                         [(2, "gfx1201", "head", 32624 - archs["gfx1201"].reserve_mib),
+                          (3, "gfx1030", "tail", 16368 - archs["gfx1030"].reserve_mib)])
+        self.assertEqual(r.common_env, {"R3_MOE_WORKER_COUNT": "2", "R3_MOE_WORKER_ENGINE_RANKS": "2",
+                                        "R3_MOE_WORKER_MIBS": f"{r.helpers[0].budget_mib},{r.helpers[1].budget_mib}",
+                                        "R3_MOE_WORKER_PLACEMENT": "tail", "R3_MOE_WORKER_COMBINE": "1"})
+        self.assertEqual(r.server_args, ("--max-model-len", "131072", "--max-num-seqs", "8", "--host-pool-mib", "2048"))
+        self.assertEqual(r.helper_env(1)["R3_MOE_WORKER_INDEX"], "1")
+        self.assertEqual(r.helper_env(1)["ROCR_VISIBLE_DEVICES"], "3")
+        lines = "\n".join(_env_lines(r))
+        for want in ("LAYOUT_ENGINE_DEVICES=0,1", "LAYOUT_ENGINE_RANKS=2", "LAYOUT_TP_WIRE=exact", "LAYOUT_HELPER_COUNT=2"):
+            self.assertIn(want, lines)
+        # the slot bound is the protocol's: helpers x ranks
+        self.assertLessEqual(len(r.helpers) * len(r.engine_indices), rl.max_slots())
 
     def test_two_xtx(self):
         r = rl.resolve("flashnext-2xtx", host(*XTX2))
@@ -182,7 +210,7 @@ class FileRuleTests(unittest.TestCase):
         (root / "engines/radiance/layouts.toml").write_text(layouts, encoding="utf-8")
         hdr = root / "engines/radiance/components/moe-remote"
         hdr.mkdir(parents=True)
-        (hdr / "moe_remote_shm.h").write_text("constexpr uint32_t kMaxHelpers = 2;\n", encoding="utf-8")
+        (hdr / "moe_remote_shm.h").write_text("constexpr uint32_t kMaxHelpers = 2;\nconstexpr uint32_t kMaxSlots = 2;\n", encoding="utf-8")
         return root
 
     ARCHS = '''schema = 1
