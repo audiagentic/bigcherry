@@ -33,23 +33,15 @@ struct LaneShape {
 
 constexpr int64_t kExpertWidth = 640;
 constexpr int64_t kGateUpWidth = 2 * kExpertWidth;
-constexpr int64_t kRankWidth = 384;
-constexpr int64_t kRankGateUpWidth = 2 * kRankWidth;
 constexpr int64_t kGroup = 128;
 constexpr const char* kDtype = "w4nl64a8h";
 
-inline int64_t rank_slice_lo(uint32_t rank, uint32_t parity) {
-    return rank == parity ? 0 : kRankWidth;
-}
-inline int64_t rank_slice_width(uint32_t rank, uint32_t parity) {
-    return rank == parity ? kRankWidth : kExpertWidth - kRankWidth;
-}
-
+/* One stored form an expert: full width, whatever the engine's TP width (RAD49), in two tables by expert-slot parity. */
 struct DeviceLayerTables {
-    void* gu_code[r3::moe_shm::kMaxEngineRanks][2]{};
-    void* gu_scale[r3::moe_shm::kMaxEngineRanks][2]{};
-    void* dn_code[r3::moe_shm::kMaxEngineRanks][2]{};
-    void* dn_scale[r3::moe_shm::kMaxEngineRanks][2]{};
+    void* gu_code[2]{};
+    void* gu_scale[2]{};
+    void* dn_code[2]{};
+    void* dn_scale[2]{};
     const uint16_t* expert_slot = nullptr;
 };
 
@@ -61,13 +53,13 @@ __device__ __forceinline__ uint32_t lane_load_sys_acq(const uint32_t* p) {
 }
 
 __device__ __forceinline__ bool lane_request_valid(
-    const r3::moe_shm::Request* q, uint32_t rank, uint32_t sequence,
+    const r3::moe_shm::Request* q, uint32_t slot, uint32_t sequence,
     uint32_t max_rows, uint32_t layers, const LaneShape& shape) {
     using namespace r3::moe_shm;
-    /* A one-rank engine stamps rank_count 1 and uses the rank slot as the helper index (each slot's
-     * request asks for full expert width); a two-rank engine's slot is its rank. */
-    return q && q->sequence == sequence && q->rank == rank &&
-           q->rank_count >= 1 && q->rank_count <= kMaxEngineRanks && (q->rank_count == 1 || rank < q->rank_count) &&
+    /* The request is this lane's slot, for the consumer its slot and its layer both name (RAD49); it always asks for the
+     * full expert width. */
+    return q && q->sequence == sequence &&
+           request_slot_valid(q->slot, q->world, q->consumer, q->layer, slot) &&
            q->layer < layers && q->rows > 0 && q->rows <= max_rows &&
            q->hidden == shape.hidden && q->route_count > 0 &&
            q->route_count <= q->rows * shape.top_k &&

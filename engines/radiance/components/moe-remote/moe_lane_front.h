@@ -118,7 +118,7 @@ __global__ void lane_prepare_activation_sparse(
 
 __global__ void lane_select_tables(
     r3::moe_shm::Request* q, const DeviceLayerTables* layers_table,
-    uint32_t layers, uint32_t rank, uint32_t slice, uint32_t sequence, uint32_t max_rows, uint32_t experts,
+    uint32_t layers, uint32_t rank, uint32_t sequence, uint32_t max_rows, uint32_t experts,
     void** guc0, void** gus0, void** dnc0, void** dns0,
     void** guc1, void** gus1, void** dnc1, void** dns1, LaneShape shape) {
     using namespace r3::moe_shm;
@@ -134,14 +134,14 @@ __global__ void lane_select_tables(
         return;
     }
     const DeviceLayerTables t = layers_table[r3::worker_tables::table_index(generation, q->layer, layers)];
-    guc0[i] = static_cast<void**>(t.gu_code[slice][0])[i];
-    gus0[i] = static_cast<void**>(t.gu_scale[slice][0])[i];
-    dnc0[i] = static_cast<void**>(t.dn_code[slice][0])[i];
-    dns0[i] = static_cast<void**>(t.dn_scale[slice][0])[i];
-    guc1[i] = static_cast<void**>(t.gu_code[slice][1])[i];
-    gus1[i] = static_cast<void**>(t.gu_scale[slice][1])[i];
-    dnc1[i] = static_cast<void**>(t.dn_code[slice][1])[i];
-    dns1[i] = static_cast<void**>(t.dn_scale[slice][1])[i];
+    guc0[i] = static_cast<void**>(t.gu_code[0])[i];
+    gus0[i] = static_cast<void**>(t.gu_scale[0])[i];
+    dnc0[i] = static_cast<void**>(t.dn_code[0])[i];
+    dns0[i] = static_cast<void**>(t.dn_scale[0])[i];
+    guc1[i] = static_cast<void**>(t.gu_code[1])[i];
+    gus1[i] = static_cast<void**>(t.gu_scale[1])[i];
+    dnc1[i] = static_cast<void**>(t.dn_code[1])[i];
+    dns1[i] = static_cast<void**>(t.dn_scale[1])[i];
 }
 
 __global__ void lane_route_count(
@@ -226,7 +226,7 @@ template <uint32_t N>
 __global__ __launch_bounds__(N) void lane_front_small(
     const r3::moe_shm::Route* route, r3::moe_shm::Request* q, const DeviceLayerTables* layers_table,
     const uint16_t* runtime_slots, const uint4* src_q, const uint4* src_s, uint4* dst_q, uint4* dst_s, uint64_t* stats,
-    uint32_t rank, uint32_t slice, uint32_t sequence, uint32_t max_rows, uint32_t layers, uint32_t routes_cap,
+    uint32_t rank, uint32_t sequence, uint32_t max_rows, uint32_t layers, uint32_t routes_cap,
     uint32_t experts, int32_t* off, int32_t* sorted, int32_t* inv, uint16_t* ew,
     void** guc0, void** gus0, void** dnc0, void** dns0, void** guc1, void** gus1, void** dnc1, void** dns1, LaneShape shape) {
     using namespace r3::moe_shm;
@@ -267,14 +267,14 @@ __global__ __launch_bounds__(N) void lane_front_small(
             guc1[i] = gus1[i] = dnc1[i] = dns1[i] = nullptr;
         } else {
             const DeviceLayerTables tl = layers_table[r3::worker_tables::table_index(generation, q->layer, layers)];
-            guc0[i] = static_cast<void**>(tl.gu_code[slice][0])[i];
-            gus0[i] = static_cast<void**>(tl.gu_scale[slice][0])[i];
-            dnc0[i] = static_cast<void**>(tl.dn_code[slice][0])[i];
-            dns0[i] = static_cast<void**>(tl.dn_scale[slice][0])[i];
-            guc1[i] = static_cast<void**>(tl.gu_code[slice][1])[i];
-            gus1[i] = static_cast<void**>(tl.gu_scale[slice][1])[i];
-            dnc1[i] = static_cast<void**>(tl.dn_code[slice][1])[i];
-            dns1[i] = static_cast<void**>(tl.dn_scale[slice][1])[i];
+            guc0[i] = static_cast<void**>(tl.gu_code[0])[i];
+            gus0[i] = static_cast<void**>(tl.gu_scale[0])[i];
+            dnc0[i] = static_cast<void**>(tl.dn_code[0])[i];
+            dns0[i] = static_cast<void**>(tl.dn_scale[0])[i];
+            guc1[i] = static_cast<void**>(tl.gu_code[1])[i];
+            gus1[i] = static_cast<void**>(tl.gu_scale[1])[i];
+            dnc1[i] = static_cast<void**>(tl.dn_code[1])[i];
+            dns1[i] = static_cast<void**>(tl.dn_scale[1])[i];
         }
     }
     __syncthreads();   /* the status above is written before a route error below can overwrite it */

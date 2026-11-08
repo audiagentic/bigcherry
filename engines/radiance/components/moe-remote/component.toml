@@ -100,7 +100,7 @@ summary = "largest step (rows) handed to the helper (engine and helper both read
 [setting.R3_MOE_WORKER_ENGINE_RANKS]
 default = "2"
 status = "experimental"
-summary = "engine TP ranks the helper serves: 2 = two XTX ranks, each asking for its TP slice; 1 = one engine (the R9700, RAD02) asking for full expert width (the helper runs both slices and sums them)"
+summary = "engine TP ranks the helper serves (RAD49): one request slot a (helper, rank); the helper always computes full expert width, and a layer's consumer rank (layer % ranks) publishes it and adds it once before the all-reduce"
 manifest = "/spec/processes/engine/scheduler/tp"
 
 [setting.R3_MOE_WORKER_COUNT]
@@ -206,7 +206,7 @@ manifest = "/spec/processes/helper_common/kernels/vecio"
 [setting.R3_MOE_WORKER_COMBINE]
 default = ""
 status = "experimental"
-summary = "RAD18, RAD23: two to four helpers behind a one-rank engine; on the large lane (steps of R3_MOE_WORKER_COMBINE_MIN_ROWS+ rows, default 256) helper 0 adds every helper's bf16 rows on the CPU (R3_MOE_WORKER_COMBINE_THREADS, default 8) so the engine reads one row a token over its link instead of two; helper 0 combines on its large-lane thread after its stream sync and futex-waits on each other helper, no CPU polling; not bit-identical (one more rounding); set in both the engine and the helpers' environment; protocol v20"
+summary = "RAD18, RAD23, RAD49: two to four helpers (two behind a TP2 engine, per consumer rank); on the large lane (steps of R3_MOE_WORKER_COMBINE_MIN_ROWS+ rows, default 256) helper 0 adds every helper's bf16 rows on the CPU (R3_MOE_WORKER_COMBINE_THREADS, default 8) so the engine reads one row a token over its link instead of two; helper 0 combines on its large-lane thread after its stream sync and futex-waits on each other helper, no CPU polling; not bit-identical (one more rounding); set in both the engine and the helpers' environment; protocol v20"
 activation = "libr3moe: R3_MOE_WORKER_COMBINE on"
 
 [setting.R3_MOE_WORKER_COMBINE_MIN_ROWS]

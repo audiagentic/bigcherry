@@ -41,7 +41,7 @@ int route_selftest() {
                 for (uint32_t e = 0; e < experts; ++e) excl[e + 1] = excl[e] + counts[e];
 
                 Request q{};
-                q.sequence = 1; q.rank = 0; q.rank_count = 1; q.layer = 0; q.rows = rows; q.hidden = kHidden; q.route_count = nr;
+                q.sequence = 1; q.slot = 0; q.world = 1; q.consumer = 0; q.layer = 0; q.rows = rows; q.hidden = kHidden; q.route_count = nr;
                 q.activation_stride = kHidden * (uint32_t)sizeof(uint16_t);
                 q.activation_q_stride = kHidden;
                 q.activation_s_stride = (kHidden / kActGroup) * (uint32_t)sizeof(float);
@@ -70,8 +70,8 @@ int route_selftest() {
                 if (good) {
                     for (auto& t : tables) good = good && hip(hipMemset(t, 0, (half + 1) * sizeof(void*)), "zero table");
                     for (int c = 0; c < 2; ++c) {
-                        tl.gu_code[0][c] = tables[c * 4 + 0]; tl.gu_scale[0][c] = tables[c * 4 + 1];
-                        tl.dn_code[0][c] = tables[c * 4 + 2]; tl.dn_scale[0][c] = tables[c * 4 + 3];
+                        tl.gu_code[c] = tables[c * 4 + 0]; tl.gu_scale[c] = tables[c * 4 + 1];
+                        tl.dn_code[c] = tables[c * 4 + 2]; tl.dn_scale[c] = tables[c * 4 + 3];
                     }
                     tl.expert_slot = static_cast<const uint16_t*>(d_slot);
                     good = good && hip(hipMemcpy(d_route, routes.data(), nr * sizeof(Route), hipMemcpyHostToDevice), "upload routes") &&
@@ -97,7 +97,7 @@ int route_selftest() {
                                        static_cast<const uint16_t*>(d_slot),
                                        static_cast<const uint4*>(d_srcq), static_cast<const uint4*>(d_srcs),
                                        static_cast<uint4*>(d_dstq), static_cast<uint4*>(d_dsts), static_cast<uint64_t*>(d_stats),
-                                       0u, 0u, 1u, kMaxRowsFused, 1u, nr, experts, static_cast<int32_t*>(d_off),
+                                       0u, 1u, kMaxRowsFused, 1u, nr, experts, static_cast<int32_t*>(d_off),
                                        static_cast<int32_t*>(d_sorted), static_cast<int32_t*>(d_inv), static_cast<uint16_t*>(d_ew),
                                        static_cast<void**>(tables[0]), static_cast<void**>(tables[1]), static_cast<void**>(tables[2]),
                                        static_cast<void**>(tables[3]), static_cast<void**>(tables[4]), static_cast<void**>(tables[5]),

@@ -181,9 +181,9 @@ struct Fixture {
     Bridge* bridge=nullptr;
     std::unique_ptr<Controller> controller;
     Fixture() {
-        check(layout_for(shape,2,slots_for(2),&layout),"layout");
+        check(layout_for(shape,2,slots_for(2, 1),&layout),"layout");
         map=mmap(nullptr,layout.bytes,PROT_READ|PROT_WRITE,MAP_PRIVATE|MAP_ANONYMOUS,-1,0);
-        check(map!=MAP_FAILED && init(map,1,shape,2),"init");
+        check(map!=MAP_FAILED && init(map,1,shape,2, 1),"init");
         auto* h=static_cast<Header*>(map);
         store(&h->helper_count,2u);
         for(uint32_t e=0;e<4;++e)layer_slots(map,0)[e]=int32_t(e);

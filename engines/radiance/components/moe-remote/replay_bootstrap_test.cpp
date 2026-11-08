@@ -60,8 +60,8 @@ struct FakeRunner {
             if (!banks.build(gen, bindings)) return false;
         return true;
     }
-    bool resident(uint32_t layer, uint32_t expert, uint32_t rank, uint32_t local) const {
-        if (rank >= 2 || layer >= layers_ || expert >= experts_ ||
+    bool resident(uint32_t layer, uint32_t expert, uint32_t local) const {   /* one full-width form (RAD49) */
+        if (layer >= layers_ || expert >= experts_ ||
             loaded_local[size_t(layer) * experts_ + expert] != int32_t(local)) return false;
         uint32_t first = 0, second = 0;
         if (!banks.select(0, layer, expert, &first) ||
@@ -85,7 +85,7 @@ struct FakeRunner {
 static void run(bool bad_load) {
     const LayoutShape shape{128, 2, 4, 8, 128, 64};
     Layout layout{};
-    check(layout_for(shape, 2, slots_for(1), &layout), "layout");
+    check(layout_for(shape, 2, slots_for(1, 1), &layout), "layout");
     void* map = mmap(nullptr, layout.bytes, PROT_READ | PROT_WRITE,
                      MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
     check(map != MAP_FAILED, "mmap");
@@ -118,32 +118,28 @@ static void run(bool bad_load) {
               owners[shape.experts + 2] == kOwnerLocal,
               "protected and undeclared experts filtered");
         check(device.before_launch(map, 0, 0), "real pool and two table banks prepared");
-        check(r3::epoch::compare_request_ranks(1, h->slot_count) == 1 &&
-              r3::epoch::compare_request_ranks(2, h->slot_count) == 2 &&
-              r3::epoch::compare_request_ranks(3, h->slot_count) == 0,
-              "one-rank full-width is not two duplicate TP requests");
+        check(h->slot_count == 1 && h->rank_count == 1,
+              "a compare segment is one full-width slot, whatever the engine's width (RAD49)");
         const std::vector<Route> captured{{0, 0, 0x3f80, 0}};
-        auto resident = [&](uint32_t l, uint32_t e, uint32_t rank, uint32_t local) {
-            return device.resident(l, e, rank, local);
+        auto resident = [&](uint32_t l, uint32_t e, uint32_t local) {
+            return device.resident(l, e, local);
         };
-        check(r3::epoch::validate_compare_routes(map, 0, 2, captured, 2, resident),
-              "captured route has both TP slices and both generation banks");
+        check(r3::epoch::validate_compare_routes(map, 0, 2, captured, resident),
+              "captured route is resident full width in both generation banks");
         const std::vector<Route> protected_route{{0, 1, 0x3f80, 0}};
-        check(!r3::epoch::validate_compare_routes(map, 0, 2, protected_route, 2, resident),
+        check(!r3::epoch::validate_compare_routes(map, 0, 2, protected_route, resident),
               "captured protected route fails closed");
         const std::vector<Route> duplicate{{0, 0, 0x3f80, 0}, {0, 0, 0x3f80, 0}};
-        check(!r3::epoch::validate_compare_routes(map, 0, 2, duplicate, 2, resident),
+        check(!r3::epoch::validate_compare_routes(map, 0, 2, duplicate, resident),
               "duplicate top-k route fails closed");
         check(!r3::epoch::validate_compare_routes(
-                  map, 0, 2, captured, 2,
-                  [&](uint32_t l, uint32_t e, uint32_t rank, uint32_t local) {
-                      return rank == 0 && device.resident(l, e, rank, local);
-                  }),
-              "missing rank-1 weight slice fails closed");
+                  map, 0, 2, captured,
+                  [&](uint32_t, uint32_t, uint32_t) { return false; }),
+              "a missing resident weight fails closed");
         check(!r3::epoch::validate_compare_routes(
-                  map, 0, 2, captured, 2,
-                  [&](uint32_t l, uint32_t e, uint32_t rank, uint32_t local) {
-                      return device.resident(l, e, rank, local + 1);
+                  map, 0, 2, captured,
+                  [&](uint32_t l, uint32_t e, uint32_t local) {
+                      return device.resident(l, e, local + 1);
                   }),
               "mismatched runtime local slot fails closed");
         Request* q = lane_request(map, lane_of(0, 0), 1);
@@ -192,7 +188,7 @@ static void run_capture(const char* path) {
           selected.expert.size() == 23, "expected req-18-7 fixture");
     LayoutShape shape{128, hd[7], hd[6], hd[3], 128, 640};
     Layout layout{};
-    check(layout_for(shape, hd[2] + 1, slots_for(1), &layout), "capture layout");
+    check(layout_for(shape, hd[2] + 1, slots_for(1, 1), &layout), "capture layout");
     void* map = mmap(nullptr, layout.bytes, PROT_READ | PROT_WRITE,
                      MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
     check(map != MAP_FAILED, "capture mmap");
@@ -209,9 +205,9 @@ static void run_capture(const char* path) {
               }, &control, &why),
           why ? why : "real capture bootstraps");
     check(r3::epoch::validate_compare_routes(
-              map, hd[2], hd[3], routes, 2,
-              [&](uint32_t l, uint32_t e, uint32_t rank, uint32_t local) {
-                  return device.resident(l, e, rank, local);
+              map, hd[2], hd[3], routes,
+              [&](uint32_t l, uint32_t e, uint32_t local) {
+                  return device.resident(l, e, local);
               }, &why),
           why ? why : "all captured routes bound to loaded physical residents");
     check(device.before_launch(map, hd[2], uint32_t(routes[0].expert)),
@@ -220,12 +216,12 @@ static void run_capture(const char* path) {
     check(r3::epoch::bind_compare_request(map, q, control),
           "actual capture binds sealed request generation");
     check(!r3::epoch::validate_compare_routes(
-              map, hd[2], hd[3], routes, 2,
-              [&](uint32_t l, uint32_t e, uint32_t rank, uint32_t local) {
-                  return rank == 0 && device.resident(l, e, rank, local);
+              map, hd[2], hd[3], routes,
+              [&](uint32_t l, uint32_t e, uint32_t local) {
+                  return e != uint32_t(routes.back().expert) && device.resident(l, e, local);
               }),
-          "all captured routes require second rank residency");
-    std::printf("replay_bootstrap_test: real capture %zu routes / %zu residents / 2 slices PASS\n",
+          "every captured route requires its resident weight");
+    std::printf("replay_bootstrap_test: real capture %zu routes / %zu residents / full width PASS\n",
                 routes.size(), distinct.size());
     munmap(map, layout.bytes);
 }

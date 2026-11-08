@@ -23,9 +23,9 @@ struct Fixture {
     HeatDelta delta{};
     PolicyControls controls{};
     Fixture() {
-        check(layout_for(shape,2,slots_for(2),&layout),"v23 layout");
+        check(layout_for(shape,2,slots_for(2, 1),&layout),"v23 layout");
         map=mmap(nullptr,layout.bytes,PROT_READ|PROT_WRITE,MAP_PRIVATE|MAP_ANONYMOUS,-1,0);
-        check(map!=MAP_FAILED && init(map,1,shape,2),"v23 segment");
+        check(map!=MAP_FAILED && init(map,1,shape,2, 1),"v23 segment");
         store(&static_cast<Header*>(map)->helper_count,2);
         for (uint32_t e=0;e<5;++e) layer_slots(map,0)[e]=(e<4 ? int32_t(e) : -1);
         store(&static_cast<Header*>(map)->layer_map_ready[0],1);

@@ -93,16 +93,16 @@ int main(int argc, char** argv) {
      * MES busy (~95 W) with nothing to run (RAD20). With power save off (R3_MOE_WORKER_POWER_SAVE=0), every protocol
      * lane gets one (lanes_open): the extra queues keep MES and the command processor awake, which dispatches ~0.3%
      * faster in decode at ~95 W per GPU at idle. The environment is only peeked here; it is validated below. */
-    auto lanes_open = [](bool save, uint32_t count, uint32_t index, uint32_t classes) {
+    auto lanes_open = [](bool save, uint32_t count, uint32_t index, uint32_t world, uint32_t classes) {
         std::array<bool, kLanes> all;
         all.fill(true);
-        return save ? served_lanes(count, index, classes) : all;
+        return save ? served_lanes(count, index, world, classes) : all;
     };
     {
         uint32_t lanes = 0;
         for (bool s : lanes_open(settings.helper.power_save,
                                  settings.helper.count,
-                                 settings.helper.index, helper_small_classes().count))
+                                 settings.helper.index, settings.helper.engine_ranks, helper_small_classes().count))
             lanes += s;
         (void)::setenv("GPU_MAX_HW_QUEUES", std::to_string(lanes + 3).c_str(), 0);
     }
@@ -224,7 +224,6 @@ int main(int argc, char** argv) {
     std::unique_ptr<r3_moe_gpu::Runner> gpu;
     if (!cpu) {
         gpu = std::make_unique<r3_moe_gpu::Runner>(model);
-        if (cfg.engine_ranks) gpu->engine_ranks_ = cfg.engine_ranks;
         if (!gpu->open()) {
             std::fprintf(stderr, "r3_moe_worker: GPU backend open failed\n");
             return 1;
@@ -255,14 +254,14 @@ int main(int argc, char** argv) {
         }
     }
 
-    /* R3_MOE_WORKER_COUNT=2 with R3_MOE_WORKER_INDEX=0/1: two helpers (the XTX cards) behind a one-rank engine
-     * (the R9700) share one segment; helper 0 creates it, helper 1 attaches, each owns half the candidates and
-     * serves its own rank slot. */
-    const uint32_t helper_index = cfg.helper_index, helper_count = cfg.helper_count;
-    if (helper_count > 1 && (!gpu || gpu->engine_ranks_ != 1)) {
-        std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_INDEX %u of R3_MOE_WORKER_COUNT %u: want index < count <= %u, "
-                     "and multiple helpers only on GPU behind a one-rank engine (R3_MOE_WORKER_ENGINE_RANKS=1)\n",
-                     helper_index, helper_count, kMaxHelpers);
+    /* N helpers behind an engine of M ranks (RAD49) share one segment; helper 0 creates it, the others attach, each owns
+     * its share of the candidates and serves its own slots, slot_of(index, r, M) for every engine rank r. The helper
+     * computes every expert at full width; a layer's consumer rank adds it once. */
+    const uint32_t helper_index = cfg.helper_index, helper_count = cfg.helper_count, engine_ranks = cfg.engine_ranks;
+    if (helper_index >= helper_count || !slots_fit(helper_count, engine_ranks)) {
+        std::fprintf(stderr, "r3_moe_worker: helper %u of %u behind %u engine rank(s): want index < count <= %u, ranks <= %u "
+                     "and count * ranks <= %u request slots\n",
+                     helper_index, helper_count, engine_ranks, kMaxHelpers, kMaxEngineRanks, kMaxSlots);
         return 2;
     }
     uint64_t budgets[r3::worker_share::kMaxHelperShares] = {};
@@ -281,7 +280,7 @@ int main(int argc, char** argv) {
     if (compare && !r3::replay::lane_plan(
             lane_classes.rows, lane_classes.count, compare_rows,
             g_replay ? g_replay->hd.route_count : compare_rows * gpu->shape_.top_k,
-            gpu->shape_.top_k, gpu->engine_ranks_, &first_compare)) {
+            gpu->shape_.top_k, &first_compare)) {
         std::fprintf(stderr, "r3_moe_worker: invalid compare lane sizing\n");
         return 2;
     }
@@ -290,7 +289,7 @@ int main(int argc, char** argv) {
          !gpu->prepare_lanes(lane_classes.rows, lane_classes.count,
                              compare ? first_compare.large_rows : lane_large_rows,
                              compare ? first_compare.open :
-                                       lanes_open(cfg.power_save, helper_count, helper_index, lane_classes.count),
+                                       lanes_open(cfg.power_save, helper_count, helper_index, engine_ranks, lane_classes.count),
                              compare ? first_compare.dense_routes : 0))) {
         std::fprintf(stderr, "r3_moe_worker: GPU lane preparation failed\n");
         return 1;
@@ -385,7 +384,7 @@ int main(int argc, char** argv) {
 
     r3::moe_shm::LayoutShape shape{};
     Layout lay{};
-    if (!segment_shape(model, helper_count, &shape, &lay)) return 1;
+    if (!segment_shape(model, helper_count, engine_ranks, &shape, &lay)) return 1;
     /* The mailbox segment: helper 0 creates it, the others attach (up to 30 minutes while the first loads). Owned by
      * `seg` from here on; every return below releases it, and only helper 0 unlinks the name. */
     /* Before the first wait (segment attach, the engine's maps): a stop signal must end every one of them. No
@@ -405,11 +404,10 @@ int main(int argc, char** argv) {
     Header* const h = seg.header();
     const char* const name = seg.name();
     if (helper_index == 0) {
-        if (!init(map, model.layers, shape, helper_count)) return 1;
+        /* init aliases every helper's slot for a rank to helper 0's activation staging for it (one staging a step). */
+        if (!init(map, model.layers, shape, helper_count, engine_ranks)) return 1;
         h->small_class_count = lane_classes.count;
         for (uint32_t c = 0; c < lane_classes.count; ++c) h->small_class_rows[c] = lane_classes.rows[c];
-        /* Every helper reads the same step activations: stage them once, in slot 0. */
-        for (uint32_t r = 1; r < helper_count; ++r) h->activation_offset[r] = h->activation_offset[0];
         store(&h->helper_count, helper_count);   /* last: an attaching helper waits for it */
         (void)futex_wake(&h->helper_count);
     } else {
@@ -508,7 +506,7 @@ int main(int argc, char** argv) {
             return 1;
         }
     }
-    const auto lanes_served = served_lanes(helper_count, helper_index, lane_classes.count);
+    const auto lanes_served = served_lanes(helper_count, helper_index, engine_ranks, lane_classes.count);
     std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_POWER_SAVE %s\n", cfg.power_save ? "on" : "off");
     if (gpu) (void)posix_fadvise(model.fd, 0, 0, POSIX_FADV_DONTNEED);
     std::fprintf(stderr, "r3_moe_worker: runtime map owns %zu experts, %.3f GiB\n",
@@ -556,8 +554,10 @@ int main(int argc, char** argv) {
                 const uint32_t threads = std::min(cfg.combine_threads, std::max(1u, std::thread::hardware_concurrency()));
                 combine.pool = std::make_unique<CombinePool>(threads);
                 combine.mask.resize(h->max_rows);
-                h->combine.min_rows = cfg.combine_min_rows;
-                store(&h->combine.enabled, 1u);
+                for (uint32_t r = 0; r < engine_ranks; ++r) {   /* one combine a consumer rank (RAD49) */
+                    h->combine[r].min_rows = cfg.combine_min_rows;
+                    store(&h->combine[r].enabled, 1u);
+                }
                 std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_COMBINE on - %u CPU thread(s), large-lane steps of %u+ rows\n",
                              threads, cfg.combine_min_rows);
             }
@@ -633,10 +633,11 @@ int main(int argc, char** argv) {
         std::unique_ptr<r3::policy::Driver> policy_driver;
         if (helper_index==0 && cfg.policy.enabled) {
             const char* histogram_prefix=settings.handoff.histogram.c_str();
-            if (!histogram_prefix || !*histogram_prefix || !gpu ||
-                gpu->engine_ranks_!=1 || !gpu->expert_stride()) {
+            /* Behind TP (RAD49) every rank counts every route of a step (the routes are replicated), so rank 0's
+             * histogram covers every routed row, and a move is a full-width expert like the ones the helpers store. */
+            if (!histogram_prefix || !*histogram_prefix || !gpu || !gpu->expert_stride()) {
                 std::fprintf(stderr,
-                    "r3_moe_worker: R3_MOE_POLICY_ENABLE needs a one-rank engine, exact expert stride and R3_MOE_WORKER_HISTOGRAM prefix\n");
+                    "r3_moe_worker: R3_MOE_POLICY_ENABLE needs an exact expert stride and R3_MOE_WORKER_HISTOGRAM prefix\n");
                 raise_fault(h); lanes.stop_and_join(); return 2;
             }
             for(uint32_t layer:cfg.policy.protected_layers)
@@ -750,7 +751,7 @@ int main(int argc, char** argv) {
                          (unsigned long long)epoch_cycle.completed(), cfg.epoch_cycle_s);
         warm.stop();
         if (combine.pool) {
-            store(&h->combine.enabled, 0u);
+            for (uint32_t r = 0; r < engine_ranks; ++r) store(&h->combine[r].enabled, 0u);
             combine.pool.reset();
             std::fprintf(stderr, "r3_moe_worker: combine steps %llu, CPU %.1f ms (%.1f us a step)\n",
                          (unsigned long long)combine.stats.steps, combine.stats.combine_us / 1000.0,

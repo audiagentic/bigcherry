@@ -31,14 +31,17 @@ SmallClasses helper_small_classes() {
     return sc;
 }
 
-/* The lanes this helper serves: with several helpers each serves only its own rank slot's lanes, and a disabled small
- * class (beyond `classes`) has none. Only these get a stream, a hardware queue, buffers and a worker thread. */
-std::array<bool, r3::moe_shm::kLanes> served_lanes(uint32_t helper_count, uint32_t helper_index, uint32_t classes) {
+/* The lanes this helper serves: its own slots, slot_of(helper_index, r, world) for every engine rank r (RAD49), and a
+ * disabled small class (beyond `classes`) has none. Only these get a stream, a hardware queue, buffers and a worker thread. */
+std::array<bool, r3::moe_shm::kLanes> served_lanes(uint32_t helper_count, uint32_t helper_index, uint32_t world,
+                                                   uint32_t classes) {
     using namespace r3::moe_shm;
     std::array<bool, kLanes> s{};
-    for (uint32_t lane = 0; lane < kLanes; ++lane)
-        s[lane] = (helper_count <= 1 || lane % kMaxSlots == helper_index) &&
+    for (uint32_t lane = 0; lane < kLanes; ++lane) {
+        const uint32_t slot = lane % kMaxSlots;
+        s[lane] = world && slot < slots_for(helper_count, world) && slot_helper(slot, world) == helper_index &&
                   !(lane_is_small(lane) && lane_class(lane) >= classes);
+    }
     return s;
 }
 
@@ -57,7 +60,8 @@ int64_t laid_out_bytes(const Container& f, r3_moe_gpu::Runner* gpu, uint32_t l, 
 /* The shared-memory shape and layout for this container (RCS09-03): hidden, experts and expert width are the container's own; the
  * row capacity, top-k and activation group are the protocol's until the engine negotiates them. A shape other than the one the
  * execution paths run is refused by the backend probe before this (moe_backend.h), not here. */
-bool segment_shape(const Container& f, uint32_t helpers, r3::moe_shm::LayoutShape* shape, r3::moe_shm::Layout* lay) {
+bool segment_shape(const Container& f, uint32_t helpers, uint32_t world, r3::moe_shm::LayoutShape* shape,
+                   r3::moe_shm::Layout* lay) {
     MoeShape cs{};
     if (!container_shape(f, &cs)) {
         std::fprintf(stderr, "r3_moe_worker: the container's shape could not be read\n");
@@ -65,7 +69,8 @@ bool segment_shape(const Container& f, uint32_t helpers, r3::moe_shm::LayoutShap
     }
     *shape = r3::moe_shm::LayoutShape{cs.hidden, cs.top_k ? cs.top_k : r3::moe_shm::kTopK, cs.experts, r3::moe_shm::kMaxRows,
                                       r3::moe_shm::kActGroup, cs.intermediate};
-    if (!r3::moe_shm::layout_for(*shape, f.layers, r3::moe_shm::slots_for(helpers), lay)) {
+    if (!r3::moe_shm::slots_fit(helpers, world) ||
+        !r3::moe_shm::layout_for(*shape, f.layers, r3::moe_shm::slots_for(helpers, world), lay)) {
         std::fprintf(stderr, "r3_moe_worker: the shared-memory layout for this shape is invalid\n");
         return false;
     }

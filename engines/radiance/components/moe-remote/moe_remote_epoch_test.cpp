@@ -542,10 +542,10 @@ static void V23Cycle_UnreadyAndAbortPreserveOldGeneration() {
 static void V23Cycle_PrecommitAbortDuringLiveServing() {
     const LayoutShape shape{128,3,5,8,128,64};
     Layout layout{};
-    check(layout_for(shape,3,slots_for(3),&layout),"abort segment layout");
+    check(layout_for(shape,3,slots_for(3, 1),&layout),"abort segment layout");
     void* map=mmap(nullptr,layout.bytes,PROT_READ|PROT_WRITE,
                    MAP_PRIVATE|MAP_ANONYMOUS,-1,0);
-    check(map!=MAP_FAILED && init(map,3,shape,slots_for(3)),
+    check(map!=MAP_FAILED && init(map,3,shape,3,1),
           "abort segment created");
     auto* h=static_cast<Header*>(map);
     h->helper_count=3;
@@ -683,10 +683,10 @@ static void V23Cycle_PrecommitAbortDuringLiveServing() {
 static void V23Cycle_StalledParkFaultsAndKeepsAdmissionClosed() {
     const LayoutShape shape{128,1,3,8,128,64};
     Layout layout{};
-    check(layout_for(shape,2,slots_for(1),&layout),"park layout");
+    check(layout_for(shape,2,slots_for(2, 1),&layout),"park layout");
     void* map=mmap(nullptr,layout.bytes,PROT_READ|PROT_WRITE,
                    MAP_PRIVATE|MAP_ANONYMOUS,-1,0);
-    check(map!=MAP_FAILED && init(map,2,shape,slots_for(1)),"park segment");
+    check(map!=MAP_FAILED && init(map,2,shape,2,1),"park segment");
     auto* h=static_cast<Header*>(map);
     h->lane[0].park=kParkDraining;
     r3::admission::Ledger ledger(2);
@@ -711,9 +711,9 @@ static void V23Cycle_StalledParkFaultsAndKeepsAdmissionClosed() {
 static void V23Bootstrap_UnsealedTickReportsInvalidMap() {
     const LayoutShape shape{128,3,3,8,128,64};
     Layout layout{};
-    check(layout_for(shape,2,slots_for(3),&layout),"bootstrap negative layout");
+    check(layout_for(shape,2,slots_for(3, 1),&layout),"bootstrap negative layout");
     void* base=mmap(nullptr,layout.bytes,PROT_READ|PROT_WRITE,MAP_PRIVATE|MAP_ANONYMOUS,-1,0);
-    check(base!=MAP_FAILED && init(base,2,shape,3),"bootstrap negative init");
+    check(base!=MAP_FAILED && init(base,2,shape,3, 1),"bootstrap negative init");
     auto* h=static_cast<Header*>(base);
     h->helper_count=3;
     placement_control(base)->expected_ranks=1;
@@ -749,13 +749,13 @@ static void V23Bootstrap_UnsealedTickReportsInvalidMap() {
  * events. No GPU or background threads. */
 static void V23Cycle_SamePlacementAndSharedProtocol(
     uint32_t helper_count,uint32_t rank_count,bool lose_reopen_ack=false) {
-    check((helper_count==1 && rank_count==2) ||
+    check((helper_count==1 && rank_count==2) || (helper_count==2 && rank_count==2) ||
           (helper_count==3 && rank_count==1),"only supported production shapes");
     const LayoutShape shape{128,helper_count,3,8,128,64};
     Layout layout{};
-    check(layout_for(shape,2,slots_for(helper_count),&layout), "cycle layout");
+    check(layout_for(shape,2,slots_for(helper_count,rank_count),&layout), "cycle layout");
     void* base=mmap(nullptr,layout.bytes,PROT_READ|PROT_WRITE,MAP_PRIVATE|MAP_ANONYMOUS,-1,0);
-    check(base!=MAP_FAILED && init(base,2,shape,helper_count), "cycle segment");
+    check(base!=MAP_FAILED && init(base,2,shape,helper_count,rank_count), "cycle segment");
     auto* h=static_cast<Header*>(base);
     h->helper_count=helper_count;
     auto* control=placement_control(base);
@@ -938,8 +938,7 @@ static void V23Cycle_SamePlacementAndSharedProtocol(
               "every rank and ticket in closed epoch consumed");
         for (uint32_t lane=0;lane<kLanes;++lane) {
             const uint32_t slot_id=lane%kMaxSlots;
-            if ((helper_count>1 ? slot_id>=helper_count :
-                        !(control->expected_ranks & (1u<<slot_id))) ||
+            if (slot_id>=slots_for(helper_count,rank_count) ||   /* RAD49: one slot a (helper, rank) */
                 (lane_is_small(lane) && lane_class(lane)>=h->small_class_count)) continue;
             h->lane[lane].drain_request=cycle;
             h->lane[lane].drain_ack=cycle-1;
@@ -1205,15 +1204,15 @@ static void V23Move_PhysicalSlotLimitIndependentOfByteBudget() {
 }
 
 static void V23Move_ChangedMapThroughProduction(uint32_t helpers,uint32_t ranks) {
-    check((helpers==1 && ranks==2) ||
+    check((helpers==1 && ranks==2) || (helpers==2 && ranks==2) ||
           ((helpers==2 || helpers==3) && ranks==1),
           "single-helper negative and multi-helper migration shapes");
     const LayoutShape shape{128,helpers,3,8,128,64};
     Layout layout{};
-    check(layout_for(shape,2,slots_for(helpers),&layout),"move layout");
+    check(layout_for(shape,2,slots_for(helpers,ranks),&layout),"move layout");
     void* map=mmap(nullptr,layout.bytes,PROT_READ|PROT_WRITE,
                    MAP_PRIVATE|MAP_ANONYMOUS,-1,0);
-    check(map!=MAP_FAILED && init(map,2,shape,helpers),"move segment");
+    check(map!=MAP_FAILED && init(map,2,shape,helpers,ranks),"move segment");
     auto* h=static_cast<Header*>(map);
     h->helper_count=helpers;
     auto* control=placement_control(map);
@@ -1438,9 +1437,10 @@ static void V23Move_ChangedMapThroughProduction(uint32_t helpers,uint32_t ranks)
               !controller->can_propose() &&
               read_shared_ack(map,kMaxHelpers).phase!=uint32_t(AckPhase::CLEANED),
               "rank must not acknowledge abort while bitmap DMA is pending");
-        gpu[0].complete(1);
+        for (uint32_t rank=0;rank<ranks;++rank) gpu[rank].complete(1);
         check(coordinator.step(map,snapshot,rank_ops) &&
               read_shared_ack(map,kMaxHelpers).phase==uint32_t(AckPhase::CLEANED) &&
+              read_shared_ack(map,kMaxHelpers+ranks-1).phase==uint32_t(AckPhase::CLEANED) &&
               controller->can_propose(),
               "rank event completion publishes abort cleanup and unblocks proposal");
     }
@@ -1570,8 +1570,7 @@ static void V23Move_ChangedMapThroughProduction(uint32_t helpers,uint32_t ranks)
               "move all ranks consumed");
         for (uint32_t lane=0;lane<kLanes;++lane) {
             const uint32_t lane_slot=lane%kMaxSlots;
-            const bool served=(helpers>1 ? lane_slot<helpers :
-                (control->expected_ranks & (1u<<lane_slot))!=0) &&
+            const bool served=lane_slot<slots_for(helpers,ranks) &&   /* RAD49 */
                 (!lane_is_small(lane)||lane_class(lane)<h->small_class_count);
             if (!served) continue;
             h->lane[lane].drain_request=transaction;
@@ -1728,10 +1727,13 @@ int main() {
     V23Bootstrap_UnsealedTickReportsInvalidMap();
     V23Cycle_SamePlacementAndSharedProtocol(1,2);
     V23Cycle_SamePlacementAndSharedProtocol(3,1);
+    V23Cycle_SamePlacementAndSharedProtocol(2,2);
     V23Move_PhysicalSlotLimitIndependentOfByteBudget();
     V23Move_ChangedMapThroughProduction(1,2);
     V23Move_ChangedMapThroughProduction(2,1);
     V23Move_ChangedMapThroughProduction(3,1);
+    /* RAD49: two helpers behind a TP2 engine (flashnext-tp2xtx): full-width moves, both ranks ACK every phase. */
+    V23Move_ChangedMapThroughProduction(2,2);
     V23Cycle_SamePlacementAndSharedProtocol(1,2,true);
     V23Cycle_SamePlacementAndSharedProtocol(3,1,true);
     V23Cleanup_DeadlineAndExactAcks();

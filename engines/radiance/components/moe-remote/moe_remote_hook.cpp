@@ -308,7 +308,7 @@ void poll_tickets() {
 }
 
 bool served_lane(uint32_t lane) {
-    return (g.hdr->helper_count <= 1 || lane % kMaxSlots < g.hdr->helper_count) &&
+    return lane % kMaxSlots < g.hdr->slot_count &&
            (!lane_is_small(lane) || lane_class(lane) < g.hdr->small_class_count);
 }
 void hold_burst_for_drain(Header* h);
@@ -334,10 +334,13 @@ bool helper_drained(uint64_t closure) {
     const Header* h = g.hdr;
     for (uint32_t lane = 0; lane < kLanes; ++lane)
         if (!lane_quiesced(h, lane, closure, served_lane(lane))) return false;
-    if (h->combine.request &&
-        (load(&h->combine.done) != load(&h->combine.request) ||
-         load(&h->combine.result_consumed_generation) != load(&h->combine.request)))
-        return false;
+    for (uint32_t r = 0; r < h->rank_count && r < kMaxEngineRanks; ++r) {
+        const CombineSignal& c = h->combine[r];
+        if (c.request &&
+            (load(&c.done) != load(&c.request) ||
+             load(&c.result_consumed_generation) != load(&c.request)))
+            return false;
+    }
     return true;
 }
 
@@ -1108,9 +1111,20 @@ extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevic
     if (!hip_ok(hipHostGetDevicePointer(&dev_map, g.map, 0), "hipHostGetDevicePointer"))
         return RAD_E_DEVICE;
     const uint32_t helpers = g.hdr->helper_count;
-    if (helpers < 1 || helpers > kMaxHelpers || (helpers > 1 && world_size != 1)) {
-        std::fprintf(stderr, "libr3: R3_MOE_WORKER %u helpers need a one-rank engine (world %d)\n",
-                     helpers, world_size);
+    /* RAD49: N helpers behind M ranks, one slot a (helper, rank). The segment is laid out for the engine width the
+     * helpers were started for; a different engine is refused here, before any request. */
+    if (!slots_fit(helpers, (uint32_t)world_size) || g.hdr->rank_count != (uint32_t)world_size ||
+        g.hdr->slot_count != slots_for(helpers, (uint32_t)world_size)) {
+        std::fprintf(stderr, "libr3: R3_MOE_WORKER segment is for %u helper(s) behind %u engine rank(s) (%u slots, at most %u), "
+                     "this engine has %d rank(s)\n", helpers, g.hdr->rank_count, g.hdr->slot_count, kMaxSlots, world_size);
+        return RAD_E_STATE;
+    }
+    /* The shadow compare and mask-only control compare a helper row with the engine's own rows for the same slots. Behind
+     * TP an engine rank holds only its width slice of a local expert, while the helper row is full width and added once
+     * (consumer_of), so neither comparison is defined there. */
+    if (world_size > 1 && (shadow_env() || mask_only_env())) {
+        std::fprintf(stderr, "libr3: R3_MOE_WORKER_SHADOW / R3_MOE_WORKER_MASK_ONLY need a one-rank engine (world %d): the "
+                     "helper rows are full width and added once by the layer's consumer rank\n", world_size);
         return RAD_E_STATE;
     }
     /* Helper 0 already sealed the fully filtered map under the controller

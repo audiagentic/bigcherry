@@ -77,10 +77,6 @@ public:
             std::fprintf(stderr, "r3_moe_worker: installed libr4d lacks the fp8a8 grouped GEMM or the plain quantiser rows\n");
             return false;
         }
-        if (!full_width()) {
-            std::fprintf(stderr, "r3_moe_worker: FP8 experts are served full width (one engine rank), not sliced across two\n");
-            return false;
-        }
         weight_format_ = fmt;
         dtype_ = "fp8a8";   // the decode GEMV (R3_MOE_WORKER_GEMV, default on) now has an FP8 form
         moe_ = moe_fp8_;
@@ -98,10 +94,6 @@ public:
         if (!s.hidden || !s.top_k || s.top_k > r3::moe_shm::kMaxTopK || !s.act_group || s.hidden % 16 || s.hidden % s.act_group ||
             ((s.hidden / s.act_group) * 4) % 16 || s.hidden > kGemvMaxK) {
             std::fprintf(stderr, "r3_moe_worker: lane kernels cannot run hidden %u, top-k %u, group %u\n", s.hidden, s.top_k, s.act_group);
-            return false;
-        }
-        if (!full_width() && s.intermediate != kExpertWidth) {   // the two-rank slice split (384 + 256) is defined for width 640 only
-            std::fprintf(stderr, "r3_moe_worker: two-rank slicing is defined for expert width %lld, not %u\n", (long long)kExpertWidth, s.intermediate);
             return false;
         }
         shape_ = s;
@@ -136,7 +128,6 @@ public:
             (void)hipStreamDestroy(copy_stream_);
         }
         if (move_host_) (void)hipHostFree(move_host_);
-        if (stream_) (void)hipStreamDestroy(stream_);
         for (auto& l : lane_) {
             if (l.sample_start) (void)hipEventDestroy(l.sample_start);
             if (l.sample_stop) (void)hipEventDestroy(l.sample_stop);
@@ -171,7 +162,6 @@ public:
         const size_t colon = arch_.find(':');
         if (colon != std::string::npos) arch_.resize(colon);
         if (!load_plugin()) return false;
-        if (!hip_ok(hipStreamCreateWithFlags(&stream_, hipStreamNonBlocking), "hipStreamCreate")) return false;
         experts_.resize((size_t)model_.layers * experts());
         tables_.resize(size_t(r3::worker_tables::kGenerations) * model_.layers);
         initial_locals_.assign(size_t(model_.layers)*experts(),-1);
@@ -212,7 +202,7 @@ public:
         const uint64_t n = uint64_t(model_.layers) * experts();
         const uint64_t table_bytes = uint64_t(model_.layers) * sizeof(DeviceLayerTables);
         const uint64_t tables = r3::worker_tables::kGenerations *
-            (table_bytes + uint64_t(model_.layers) * stored_slices() * 2u * 4u *
+            (table_bytes + uint64_t(model_.layers) * 2u * 4u *
              (experts() / 2u) * sizeof(void*));
         uint64_t lanes = 0;
         for (const LaneWork& w : lane_) lanes += lane_bytes(w);
@@ -311,8 +301,8 @@ public:
             loading_base_ = static_cast<uint8_t*>(slots_->address(id));
             loading_size_ = bytes;
             loading_used_ = 0;
-            if (!upload_weight(model_.weight(l, e, 0), true, es, &x.gu) ||
-                !upload_weight(model_.weight(l, e, 1), false, es, &x.dn) ||
+            if (!upload_weight(model_.weight(l, e, 0), true, &x.gu) ||
+                !upload_weight(model_.weight(l, e, 1), false, &x.dn) ||
                 loading_used_ != loading_size_) return false;
             loading_base_ = nullptr;
             loading_size_ = loading_used_ = 0;
@@ -325,15 +315,14 @@ public:
     }
 
     /* Replay admission uses the same bootstrapped physical residency ledger
-     * and rank-specific weight bindings that serving will read. */
-    bool compare_resident(uint32_t layer, uint32_t expert, uint32_t rank, uint32_t local) const {
-        if (layer >= model_.layers || expert >= experts() ||
-            rank >= stored_slices() || !slots_) return false;
+     * and full-width weight bindings that serving will read. */
+    bool compare_resident(uint32_t layer, uint32_t expert, uint32_t local) const {
+        if (layer >= model_.layers || expert >= experts() || !slots_) return false;
         const size_t key = size_t(layer) * experts() + expert;
         const Expert& x = experts_[key];
         if (!x.live || initial_locals_[key] != int32_t(local) ||
-            !x.gu[rank].code || !x.gu[rank].scale ||
-            !x.dn[rank].code || !x.dn[rank].scale) return false;
+            !x.gu.code || !x.gu.scale ||
+            !x.dn.code || !x.dn.scale) return false;
         for (const auto& s : slots_->ledger().slots())
             if (s.expert == key && s.state == r3::residency::State::ACTIVE &&
                 s.completed_planes == 15 && s.bytes == slots_->stride())
@@ -371,8 +360,8 @@ public:
         std::memset(move_host_,0,size_t(slots_->stride()));
         Expert& x=experts_[expert];
         const bool encoded=
-            upload_weight(model_.weight(l,e,0),true,local,&x.gu) &&
-            upload_weight(model_.weight(l,e,1),false,local,&x.dn) &&
+            upload_weight(model_.weight(l,e,0),true,&x.gu) &&
+            upload_weight(model_.weight(l,e,1),false,&x.dn) &&
             loading_used_==bytes;
         staging_upload_=false; loading_base_=nullptr;
         loading_size_=loading_used_=0;
@@ -420,126 +409,6 @@ public:
     }
     void forget(uint32_t expert) override {
         if (expert<experts_.size()) experts_[expert]={};
-    }
-
-    int compute(void* map, r3::moe_shm::Request* q) {
-        using namespace r3::moe_shm;
-        if (!map || !q || q->rank >= kMaxSlots || q->rank_count != kMaxEngineRanks || q->layer >= model_.layers ||
-            q->rows == 0 || q->rows > kMaxRows || q->hidden != shape_.hidden ||
-            q->route_count == 0 || q->route_count > kMaxRoutes ||
-            q->activation_stride != shape_.hidden * (uint32_t)sizeof(uint16_t)) return -EINVAL;
-
-        const Route* route = ptr<Route>(map, q->route_offset);
-        const uint16_t* hact = ptr<uint16_t>(map, q->activation_offset);
-        const uint32_t rows = q->rows;
-        const uint32_t tr = rows * shape_.top_k;
-
-        std::vector<std::vector<uint32_t>> by_slot(experts());
-        std::vector<uint16_t> ew((size_t)rows * shape_.top_k, 0);
-        for (uint32_t i = 0; i < q->route_count; ++i) {
-            const Route& r = route[i];
-            if (r.token < 0 || (uint32_t)r.token >= rows || r.expert < 0 ||
-                r.expert >= (int32_t)experts() || !owns(q->layer, (uint32_t)r.expert)) return -EINVAL;
-            if (r.slot >= shape_.top_k) return -EINVAL;
-            const int32_t es = layer_slot(map, q->layer, (uint32_t)r.expert);
-            if (es < 0 || es >= (int32_t)experts()) return -EINVAL;
-            const uint32_t flat = (uint32_t)r.token * shape_.top_k + r.slot;
-            ew[flat] = r.weight_bf16;
-            by_slot[(uint32_t)es].push_back(flat);
-        }
-
-        std::vector<int32_t> sorted(tr, -1);
-        std::vector<int32_t> off(experts() + 1, 0);
-        uint32_t at = 0;
-        for (uint32_t es = 0; es < experts(); ++es) {
-            off[es] = (int32_t)at;
-            for (uint32_t flat : by_slot[es]) sorted[at++] = (int32_t)flat;
-        }
-        off[experts()] = (int32_t)at;
-        if (at != q->route_count) return -EINVAL;
-
-        if (!ensure_work(rows, tr)) return -ENOMEM;
-        const size_t act_bytes = (size_t)rows * shape_.hidden * sizeof(uint16_t);
-        if (!hip_ok(hipMemcpyAsync(d_act_.p, hact, act_bytes, hipMemcpyHostToDevice, stream_),
-                    "upload activations")) return -EIO;
-        if (!hip_ok(hipMemcpyAsync(d_sorted_.p, sorted.data(), (size_t)tr * sizeof(int32_t),
-                                   hipMemcpyHostToDevice, stream_), "upload sorted routes") ||
-            !hip_ok(hipMemcpyAsync(d_off_.p, off.data(), off.size() * sizeof(int32_t),
-                                   hipMemcpyHostToDevice, stream_), "upload expert offsets") ||
-            !hip_ok(hipMemcpyAsync(d_ew_.p, ew.data(), ew.size() * sizeof(uint16_t),
-                                   hipMemcpyHostToDevice, stream_), "upload route weights"))
-            return -EIO;
-
-        std::vector<RadParam> aqp = {
-            pi("M", rows), pi("n", shape_.hidden), pi("group", kGroup), ps("dtype", "bf16")
-        };
-        if (launch(had_quant_,
-                   { tensor(d_act_.p, RAD_BF16, {rows, shape_.hidden}),
-                     tensor(d_aq_.p, RAD_F8E4M3, {rows, shape_.hidden}),
-                     tensor(d_as_.p, RAD_F32, {rows, shape_.hidden / kGroup}) }, aqp) < 0)
-            return -EIO;
-
-        for (uint32_t rank = 0; rank < kMaxEngineRanks; ++rank) {
-            LayerTables& lt = tables_[q->layer];
-            const int64_t w0 = rank_slice_width(rank, 0);
-            const int64_t w1 = rank_slice_width(rank, 1);
-
-            std::vector<RadParam> gp =
-                gemm_params(rows, 2 * w0, shape_.hidden, 2, "token", 2 * w1, shape_.hidden);
-            if (launch(moe_,
-                       { tensor(d_aq_.p, RAD_F8E4M3, {rows, shape_.hidden}),
-                         tensor(d_as_.p, RAD_F32, {rows, shape_.hidden / kGroup}),
-                         table_tensor(lt.gu_code[rank][0], lt.gu_code_dtype, 2 * w0, shape_.hidden),
-                         table_scale_tensor(lt.gu_scale[rank][0], lt.gu_scale_dtype, 2 * w0, shape_.hidden),
-                         tensor(d_sorted_.p, RAD_I32, {tr}),
-                         tensor(d_off_.p, RAD_I32, {experts() + 1}),
-                         table_tensor(lt.gu_code[rank][1], lt.gu_code_dtype, 2 * w1, shape_.hidden),
-                         table_scale_tensor(lt.gu_scale[rank][1], lt.gu_scale_dtype, 2 * w1, shape_.hidden),
-                         tensor(d_gu_.p, RAD_BF16, {tr, kRankGateUpWidth}) }, gp) < 0)
-                return -EIO;
-
-            std::vector<RadParam> gqp = {
-                pi("M", q->route_count), pi("n", kRankWidth), pi("group", kGroup),
-                ps("dtype", "bf16"), ps("act", "silu")
-            };
-            if (launch(gated_quant_,
-                       { tensor(d_gu_.p, RAD_BF16, {q->route_count, kRankGateUpWidth}),
-                         tensor(d_mid_.p, RAD_F8E4M3, {q->route_count, kRankWidth}),
-                         tensor(d_mid_s_.p, RAD_F32, {q->route_count, kRankWidth / kGroup}),
-                         absent() }, gqp) < 0)
-                return -EIO;
-
-            std::vector<RadParam> dp =
-                gemm_params(rows, shape_.hidden, w0, 1, "sorted", shape_.hidden, w1);
-            if (launch(moe_,
-                       { tensor(d_mid_.p, RAD_F8E4M3, {tr, kRankWidth}),
-                         tensor(d_mid_s_.p, RAD_F32, {tr, kRankWidth / kGroup}),
-                         table_tensor(lt.dn_code[rank][0], lt.dn_code_dtype, shape_.hidden, w0),
-                         table_scale_tensor(lt.dn_scale[rank][0], lt.dn_scale_dtype, shape_.hidden, w0),
-                         tensor(d_sorted_.p, RAD_I32, {tr}),
-                         tensor(d_off_.p, RAD_I32, {experts() + 1}),
-                         table_tensor(lt.dn_code[rank][1], lt.dn_code_dtype, shape_.hidden, w1),
-                         table_scale_tensor(lt.dn_scale[rank][1], lt.dn_scale_dtype, shape_.hidden, w1),
-                         tensor(d_down_.p, RAD_BF16, {tr, shape_.hidden}) }, dp) < 0)
-                return -EIO;
-
-            std::vector<RadParam> mp = {
-                pi("M", rows), pi("n", shape_.hidden), pi("top_k", shape_.top_k), ps("dtype", "bf16")
-            };
-            if (launch(gather_,
-                       { tensor(d_down_.p, RAD_BF16, {tr, shape_.hidden}),
-                         tensor(d_ew_.p, RAD_BF16, {rows, shape_.top_k}),
-                         tensor(d_sorted_.p, RAD_I32, {tr}),
-                         absent(), absent(),
-                         tensor(d_result_.p, RAD_BF16, {rows, shape_.hidden}) }, mp) < 0)
-                return -EIO;
-
-            void* dst = ptr<void>(map, q->result_offset[out_rank_of(rank, q->rank_count)]);
-            if (!hip_ok(hipMemcpyAsync(dst, d_result_.p, act_bytes,
-                                       hipMemcpyDeviceToHost, stream_), "download TP partial"))
-                return -EIO;
-        }
-        return hip_ok(hipStreamSynchronize(stream_), "helper stream sync") ? 0 : -EIO;
     }
 
     // Resolve the actual plugin weight dtypes before sizing per-lane scratch.
@@ -703,9 +572,11 @@ public:
         auto* act_s = static_cast<const float*>(
             dev_at(ptr<float>(host_map,
                 hhost->activation_offset[rank] + kActivationBf16Bytes + kActivationQBytes)));
+        /* The slot's consumer plane (RAD49): fixed by the slot and the segment's engine width, so a pre-queued small lane
+         * needs no request field. */
         auto* dst = static_cast<uint16_t*>(
             dev_at(ptr<uint16_t>(
-                host_map, hhost->result_offset[result_index(rank, out_rank_of(rank, qhost->rank_count))])));
+                host_map, hhost->result_offset[result_index(rank, slot_consumer(rank, hhost->rank_count))])));
 
         if (!hip_ok(hipStreamWaitValue32(w.stream, request_seq, sequence,
                                          hipStreamWaitValueGte, 0xffffffffu),
@@ -789,7 +660,7 @@ public:
                                    reinterpret_cast<const uint4*>(act_q), reinterpret_cast<const uint4*>(act_s),
                                    reinterpret_cast<uint4*>(w.d_aq.p), reinterpret_cast<uint4*>(w.d_as.p),
                                    static_cast<uint64_t*>(w.d_stats.p),
-                                   rank, full_width() ? 0u : rank, sequence, rows, model_.layers, routes,
+                                   rank, sequence, rows, model_.layers, routes,
                                    experts(), static_cast<int32_t*>(w.d_off.p), static_cast<int32_t*>(w.d_sorted.p),
                                    static_cast<int32_t*>(w.d_inv.p), static_cast<uint16_t*>(w.d_ew.p),
                                    static_cast<void**>(w.gu_code[0].p), static_cast<void**>(w.gu_scale[0].p),
@@ -836,15 +707,14 @@ public:
         if (sampling && !hip_ok(hipEventRecord(w.stage[0], w.stream), "lane stage 0")) return -EIO;
         if (trace_) hipLaunchKernelGGL(lane_stage_stamp, dim3(1), dim3(1), 0, w.stream, q, 0u);   /* activations ready */
 
-        /* A two-rank engine asks for its own TP slice; a one-rank engine for the whole expert (full width). */
+        /* Every request asks for the whole expert (full width, RAD49). */
         {
-            const uint32_t slice = full_width() ? 0u : rank;
             void* out_down = w.d_down.p;
             if (!fuse)
             hipLaunchKernelGGL(lane_select_tables,
                                dim3((experts() / 2 + block.x - 1) / block.x), block, 0, w.stream,
                                q, static_cast<const DeviceLayerTables*>(d_layer_tables_.p),
-                               model_.layers, rank, slice, sequence, rows, experts(),
+                               model_.layers, rank, sequence, rows, experts(),
                                static_cast<void**>(w.gu_code[0].p),
                                static_cast<void**>(w.gu_scale[0].p),
                                static_cast<void**>(w.dn_code[0].p),
@@ -853,8 +723,8 @@ public:
                                static_cast<void**>(w.gu_scale[1].p),
                                static_cast<void**>(w.dn_code[1].p),
                                static_cast<void**>(w.dn_scale[1].p), lane_shape_);
-            const int64_t w0 = slice_w(slice, 0);
-            const int64_t w1 = slice_w(slice, 1);
+            const int64_t w0 = mid_w();
+            const int64_t w1 = mid_w();
             /* Small lane, decode GEMV (RAD05): the step's routes, one block a (row, 64 outputs). */
             const bool gemv = gemv_ && (lane_is_small(lane) || rows <= gemv_large_rows_);
             /* R3_MOE_WORKER_ROWS_SMALL (RAD06): the few-rows kernel on the small (decode) lane too. A decode request's 8 rows
@@ -1114,7 +984,8 @@ public:
             if (!hip_ok(hipMemsetAsync(w.d_chunk_cnt.p, 0, kCombineChunks * sizeof(uint32_t), w.stream), "lane chunk counters"))
                 return -EIO;
             chunks = LaneChunks{static_cast<uint32_t*>(w.d_chunk_cnt.p),
-                                static_cast<uint32_t*>(dev_at(&hhost->chunks.seq[chunk_helper_][0])), sequence};
+                                static_cast<uint32_t*>(dev_at(&hhost->chunks[slot_consumer(rank, hhost->rank_count)].seq[chunk_helper_][0])),
+                                sequence};
         }
         if (vecio)
             hipLaunchKernelGGL(lane_reduce_tokens_v, dim3(rows), block, 0, w.stream,
@@ -1269,7 +1140,6 @@ private:
     void* so_ = nullptr;
     void (*plugin_close_)() = nullptr;
     bool plugin_opened_ = false;
-    hipStream_t stream_ = nullptr;
     std::array<LaneWork, r3::moe_shm::kLanes> lane_{};
     uint32_t gu_code_dtype_ = 0, gu_scale_dtype_ = 0;
     uint32_t dn_code_dtype_ = 0, dn_scale_dtype_ = 0;
@@ -1325,24 +1195,12 @@ private:
     uint64_t loading_size_ = 0, loading_used_ = 0;
 
     HostBounce load_bounce_;
-    Buffer d_act_, d_aq_, d_as_, d_sorted_, d_off_, d_ew_, d_gu_;
-    Buffer d_mid_, d_mid_s_, d_down_, d_result_, scratch_;
     Buffer d_layer_tables_, d_expert_slot_;
     std::array<uint32_t, r3::moe_shm::kSmallClasses> class_rows_{};   /* enabled small-lane (pre-queued) step sizes */
     uint32_t class_count_ = 0;
-public:
-    /* Engine tensor-parallel ranks (R3_MOE_WORKER_ENGINE_RANKS): 2 = two XTX ranks, each asking for its TP
-     * slice; 1 = one engine (the R9700, RAD02), asking for the full expert width -- both slices, summed. */
-    uint32_t engine_ranks_ = r3::moe_shm::kMaxEngineRanks;
-private:
-    /* FULL WIDTH: a one-rank engine wants each expert whole, so the helper stores it whole (one copy, the
-     * relayout's own form) and runs one GEMM chain at the full 640 intermediate width -- instead of two TP
-     * halves run one after the other and summed. A two-rank engine keeps one stored slice per rank. */
-    bool full_width() const { return engine_ranks_ == 1; }
-    uint32_t stored_slices() const { return full_width() ? 1u : r3::moe_shm::kMaxEngineRanks; }
-    int64_t slice_lo(uint32_t s, uint32_t parity) const { return full_width() ? 0 : rank_slice_lo(s, parity); }
-    int64_t slice_w(uint32_t s, uint32_t parity) const { return full_width() ? (int64_t)shape_.intermediate : rank_slice_width(s, parity); }
-    int64_t mid_w() const { return full_width() ? (int64_t)shape_.intermediate : kRankWidth; }
+    /* FULL WIDTH (RAD49, for every engine width): the helper stores each expert whole (one copy, the relayout's own form)
+     * and runs one GEMM chain at the full intermediate width; behind TP the layer's consumer rank adds that row once. */
+    int64_t mid_w() const { return (int64_t)shape_.intermediate; }
     uint32_t large_rows_ = 0;   /* large-lane capacity */
     uint32_t poison_ = 0;
     bool gemv_ = true;          /* R3_MOE_WORKER_GEMV: decode GEMV on the small lane (RAD05); 0 = off */
@@ -1481,12 +1339,11 @@ private:
 
     static size_t arena_round(int64_t n) { return ((size_t)(n > 0 ? n : 1) + 255u) & ~(size_t)255u; }
 
-    bool slice_bytes(const RadFileEntry* e, bool gate_up, uint32_t expert_slot, uint32_t rank,
-                     int64_t* code, int64_t* scale) const {
-        if (!e || !code || !scale || rank >= r3::moe_shm::kMaxEngineRanks) return false;
+    bool stored_bytes(const RadFileEntry* e, bool gate_up, int64_t* code, int64_t* scale) const {
+        if (!e || !code || !scale) return false;
         int64_t nr = 1, nc = 1;
         rad_enc_view(e->rank, e->shape, &nr, &nc);
-        const int64_t width = slice_w(rank, expert_slot & 1u);
+        const int64_t width = mid_w();
         if (weight_format_ == MOE_FMT_FP8_E4M3_BLOCK) {   // one byte a weight, one bf16 scale a 128x128 tile
             const int64_t rows = gate_up ? 2 * width : nr, cols = gate_up ? nc : width;
             if (gate_up ? (nr != 2 * (int64_t)shape_.intermediate || nc != shape_.hidden)
@@ -1509,15 +1366,13 @@ private:
 
     uint64_t slot_cost(uint32_t l, uint32_t e) const {
         uint64_t total = 0;
-        for (uint32_t rank = 0; rank < stored_slices(); ++rank)
-            for (uint32_t weight = 0; weight < 2; ++weight) {
-                int64_t cb = 0, sb = 0;
-                if (!slice_bytes(model_.weight(l, e, weight), weight == 0,
-                                 0, rank, &cb, &sb) || cb <= 0 || sb <= 0) return 0;
-                const uint64_t add = arena_round(cb) + arena_round(sb);
-                if (add > UINT64_MAX - total) return 0;
-                total += add;
-            }
+        for (uint32_t weight = 0; weight < 2; ++weight) {
+            int64_t cb = 0, sb = 0;
+            if (!stored_bytes(model_.weight(l, e, weight), weight == 0, &cb, &sb) || cb <= 0 || sb <= 0) return 0;
+            const uint64_t add = arena_round(cb) + arena_round(sb);
+            if (add > UINT64_MAX - total) return 0;
+            total += add;
+        }
         return total;
     }
     void* arena_take(size_t n) {
@@ -1650,8 +1505,7 @@ private:
         std::memcpy(move_host_+(address-base),src,bytes);
         return true;
     }
-    bool upload_weight(const RadFileEntry* e, bool gate_up, uint32_t expert_slot,
-                       std::array<StoredWeight, r3::moe_shm::kMaxEngineRanks>* out) {
+    bool upload_weight(const RadFileEntry* e, bool gate_up, StoredWeight* out) {
         WeightPlan p;
         if (!plan_weight(e, gate_up, &p)) {
             std::fprintf(stderr, "r3_moe_worker: expert weight is not %s-compatible\n", dtype_);
@@ -1668,12 +1522,12 @@ private:
                 return false;
             }
             int64_t cb = 0, sb = 0;
-            if (!slice_bytes(e, gate_up, expert_slot, 0, &cb, &sb) || (int64_t)code.size() != cb || (int64_t)scale.size() != sb ||
+            if (!stored_bytes(e, gate_up, &cb, &sb) || (int64_t)code.size() != cb || (int64_t)scale.size() != sb ||
                 p.code.bytes != cb || p.scale.bytes != sb) {
                 std::fprintf(stderr, "r3_moe_worker: unexpected fp8a8 plane geometry for %s\n", gate_up ? "gate/up" : "down");
                 return false;
             }
-            StoredWeight& w = (*out)[0];
+            StoredWeight& w = *out;
             w.code = arena_take(code.size());
             w.scale = arena_take(scale.size());
             if (!w.code || !w.scale ||
@@ -1723,61 +1577,29 @@ private:
             return false;
         }
 
-        for (uint32_t rank = 0; rank < stored_slices(); ++rank) {
-            const int64_t lo = slice_lo(rank, expert_slot & 1u);
-            const int64_t width = slice_w(rank, expert_slot & 1u);
-            int64_t cb = 0, sb = 0;
-            if (!slice_bytes(e, gate_up, expert_slot, rank, &cb, &sb)) return false;
-            std::vector<uint8_t> code((size_t)cb);
-            std::vector<uint8_t> scale((size_t)sb);
-            if (gate_up) {
-                const size_t crb = (size_t)nc / 2;
-                const size_t srb = (size_t)nc / 64;
-                for (int part = 0; part < 2; ++part) {
-                    const int64_t src0 = part * (int64_t)shape_.intermediate + lo;
-                    const int64_t dst0 = part * width;
-                    std::memcpy(code.data() + (size_t)dst0 * crb,
-                                full_code.data() + (size_t)src0 * crb,
-                                (size_t)width * crb);
-                    std::memcpy(scale.data() + (size_t)dst0 * srb,
-                                full_scale.data() + (size_t)src0 * srb,
-                                (size_t)width * srb);
-                }
-            } else {
-                const size_t fcrb = (size_t)nc / 2;
-                const size_t fsrb = (size_t)nc / 64;
-                const size_t crb = (size_t)width / 2;
-                const size_t srb = (size_t)width / 64;
-                for (int64_t row = 0; row < nr; ++row) {
-                    std::memcpy(code.data() + (size_t)row * crb,
-                                full_code.data() + (size_t)row * fcrb + (size_t)lo / 2,
-                                crb);
-                    std::memcpy(scale.data() + (size_t)row * srb,
-                                full_scale.data() + (size_t)row * fsrb + (size_t)lo / 64,
-                                srb);
-                }
-            }
-
-            StoredWeight& w = (*out)[rank];
-            w.code = arena_take(code.size());
-            w.scale = arena_take(scale.size());
-            if (!w.code || !w.scale ||
-                !transfer_plane(w.code, code.data(), code.size(), "upload sliced expert codes") ||
-                !transfer_plane(w.scale, scale.data(), scale.size(), "upload sliced expert scales"))
-                return false;
-            w.code_dtype = p.code.dtype;
-            w.scale_dtype = p.scale.dtype;
-            w.code_bytes = cb;
-            w.scale_bytes = sb;
-            uint32_t& cd = gate_up ? gu_code_dtype_ : dn_code_dtype_;
-            uint32_t& sd = gate_up ? gu_scale_dtype_ : dn_scale_dtype_;
-            if ((cd && cd != w.code_dtype) || (sd && sd != w.scale_dtype)) {
-                std::fprintf(stderr, "r3_moe_worker: owned expert stored layouts disagree\n");
-                return false;
-            }
-            cd = w.code_dtype;
-            sd = w.scale_dtype;
+        /* The relayout's own form IS the stored form: full width (RAD49), no TP slice is cut out of it. */
+        int64_t cb = 0, sb = 0;
+        if (!stored_bytes(e, gate_up, &cb, &sb) || (int64_t)full_code.size() != cb || (int64_t)full_scale.size() != sb)
+            return false;
+        StoredWeight& w = *out;
+        w.code = arena_take(full_code.size());
+        w.scale = arena_take(full_scale.size());
+        if (!w.code || !w.scale ||
+            !transfer_plane(w.code, full_code.data(), full_code.size(), "upload expert codes") ||
+            !transfer_plane(w.scale, full_scale.data(), full_scale.size(), "upload expert scales"))
+            return false;
+        w.code_dtype = p.code.dtype;
+        w.scale_dtype = p.scale.dtype;
+        w.code_bytes = cb;
+        w.scale_bytes = sb;
+        uint32_t& cd = gate_up ? gu_code_dtype_ : dn_code_dtype_;
+        uint32_t& sd = gate_up ? gu_scale_dtype_ : dn_scale_dtype_;
+        if ((cd && cd != w.code_dtype) || (sd && sd != w.scale_dtype)) {
+            std::fprintf(stderr, "r3_moe_worker: owned expert stored layouts disagree\n");
+            return false;
         }
+        cd = w.code_dtype;
+        sd = w.scale_dtype;
         return true;
     }
 
@@ -1802,25 +1624,23 @@ private:
         LayerTables& lt = tables_[r3::worker_tables::table_index(generation,l,model_.layers)];
         lt.gu_code_dtype = gu_code_dtype_; lt.gu_scale_dtype = gu_scale_dtype_;
         lt.dn_code_dtype = dn_code_dtype_; lt.dn_scale_dtype = dn_scale_dtype_;
-        for (uint32_t rank = 0; rank < stored_slices(); ++rank) {
-            for (uint32_t parity = 0; parity < 2; ++parity) {
-                std::vector<void*> guc(nclass, nullptr), gus(nclass, nullptr);
-                std::vector<void*> dnc(nclass, nullptr), dns(nclass, nullptr);
-                for (uint32_t e = 0; e < experts(); ++e) {
-                    const int32_t es = slot_of_expert[e];
-                    if (es < 0 || ((uint32_t)es & 1u) != parity) continue;
-                    const Expert& x = experts_[(size_t)l * experts() + e];
-                    if (!x.live) continue;
-                    const size_t ix = (size_t)es / 2;
-                    guc[ix] = x.gu[rank].code; gus[ix] = x.gu[rank].scale;
-                    dnc[ix] = x.dn[rank].code; dns[ix] = x.dn[rank].scale;
-                }
-                if (!build_one_table(guc, &lt.gu_code[rank][parity]) ||
-                    !build_one_table(gus, &lt.gu_scale[rank][parity]) ||
-                    !build_one_table(dnc, &lt.dn_code[rank][parity]) ||
-                    !build_one_table(dns, &lt.dn_scale[rank][parity]))
-                    return false;
+        for (uint32_t parity = 0; parity < 2; ++parity) {
+            std::vector<void*> guc(nclass, nullptr), gus(nclass, nullptr);
+            std::vector<void*> dnc(nclass, nullptr), dns(nclass, nullptr);
+            for (uint32_t e = 0; e < experts(); ++e) {
+                const int32_t es = slot_of_expert[e];
+                if (es < 0 || ((uint32_t)es & 1u) != parity) continue;
+                const Expert& x = experts_[(size_t)l * experts() + e];
+                if (!x.live) continue;
+                const size_t ix = (size_t)es / 2;
+                guc[ix] = x.gu.code; gus[ix] = x.gu.scale;
+                dnc[ix] = x.dn.code; dns[ix] = x.dn.scale;
             }
+            if (!build_one_table(guc, &lt.gu_code[parity]) ||
+                !build_one_table(gus, &lt.gu_scale[parity]) ||
+                !build_one_table(dnc, &lt.dn_code[parity]) ||
+                !build_one_table(dns, &lt.dn_scale[parity]))
+                return false;
         }
 
         const size_t slot_off = (size_t)l * experts() * sizeof(uint16_t);
@@ -1832,13 +1652,11 @@ private:
             return false;
 
         DeviceLayerTables dt{};
-        for (uint32_t rank = 0; rank < stored_slices(); ++rank) {
-            for (uint32_t parity = 0; parity < 2; ++parity) {
-                dt.gu_code[rank][parity] = lt.gu_code[rank][parity];
-                dt.gu_scale[rank][parity] = lt.gu_scale[rank][parity];
-                dt.dn_code[rank][parity] = lt.dn_code[rank][parity];
-                dt.dn_scale[rank][parity] = lt.dn_scale[rank][parity];
-            }
+        for (uint32_t parity = 0; parity < 2; ++parity) {
+            dt.gu_code[parity] = lt.gu_code[parity];
+            dt.gu_scale[parity] = lt.gu_scale[parity];
+            dt.dn_code[parity] = lt.dn_code[parity];
+            dt.dn_scale[parity] = lt.dn_scale[parity];
         }
         dt.expert_slot = static_cast<const uint16_t*>(d_expert_slot_.p) +
             size_t(l)*experts();
@@ -1906,8 +1724,8 @@ private:
                           aqp, &need))
             return false;
 
-        const int64_t w0 = slice_w(full_width() ? 0u : rank, 0);
-        const int64_t w1 = slice_w(full_width() ? 0u : rank, 1);
+        const int64_t w0 = mid_w();
+        const int64_t w1 = mid_w();
         std::vector<RadParam> gp =
             gemm_params(rows, 2 * w0, shape_.hidden, 2, "token", 2 * w1, shape_.hidden);
         if (!scratch_need(moe_,
@@ -1981,10 +1799,6 @@ private:
         return rc;
     }
 
-    int launch(const RadKernelInfo* r, std::vector<RadTensor> ts, std::vector<RadParam> ps) {
-        return launch_on(r, std::move(ts), std::move(ps), stream_, scratch_);
-    }
-
     bool ensure_lane_work(LaneWork& w, uint32_t rows, uint32_t routes, uint32_t tr) {
         return w.d_counts.ensure((size_t)experts() * 4) &&
                w.d_rowmask.ensure((size_t)rows) &&
@@ -2002,20 +1816,6 @@ private:
                w.d_mid_s.ensure((size_t)tr * (mid_w() / kGroup) * 4) &&
                w.d_down.ensure((size_t)tr * shape_.hidden * 2) &&
                w.d_dbg.ensure((size_t)tr * 2 * mid_w() * 2);
-    }
-
-    bool ensure_work(uint32_t rows, uint32_t tr) {
-        return d_act_.ensure((size_t)rows * shape_.hidden * 2) &&
-               d_aq_.ensure((size_t)rows * shape_.hidden) &&
-               d_as_.ensure((size_t)rows * (shape_.hidden / kGroup) * 4) &&
-               d_sorted_.ensure((size_t)tr * 4) &&
-               d_off_.ensure((experts() + 1ull) * 4) &&
-               d_ew_.ensure((size_t)rows * shape_.top_k * 2) &&
-               d_gu_.ensure((size_t)tr * kRankGateUpWidth * 2) &&
-               d_mid_.ensure((size_t)tr * kRankWidth) &&
-               d_mid_s_.ensure((size_t)tr * (kRankWidth / kGroup) * 4) &&
-               d_down_.ensure((size_t)tr * shape_.hidden * 2) &&
-               d_result_.ensure((size_t)rows * shape_.hidden * 2);
     }
 };
 
