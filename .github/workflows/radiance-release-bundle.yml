@@ -63,7 +63,7 @@ jobs:
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' | grep -q '\.receipt\.json$'; then
             echo "::error::$TAG already has a runtime bundle" >&2; exit 1
           fi
-          found=$(python3 -m bigcherry release-bundle "$TAG" --root src --find-reusable)
+          found=$(python3 -m bigcherry --engine radiance release-bundle "$TAG" --root src --find-reusable)
           echo "$found"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "reuse=$(printf '%s' "$found" | python3 -c 'import json,sys; print(json.load(sys.stdin)["reuse"] or "")')" >> "$GITHUB_OUTPUT"
