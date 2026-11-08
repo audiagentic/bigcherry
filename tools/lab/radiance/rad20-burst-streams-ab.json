@@ -8,8 +8,7 @@
  "server_args": [],
  "environment": {
   "HIP_VISIBLE_DEVICES": "0",
-  "ROCR_VISIBLE_DEVICES": "${R9700_ROCR}",
-  "R3_MOE_WORKER": "1"
+  "ROCR_VISIBLE_DEVICES": "${R9700_ROCR}"
  },
  "expected_execution": {
   "backend": "ROCm",
