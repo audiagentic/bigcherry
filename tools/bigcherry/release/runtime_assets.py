@@ -30,6 +30,9 @@ PRODUCT = "bigcherryrad"
 CI_ARCHIVE = re.compile(r"bigcherryrad-[0-9a-f]{32}\.tar\.gz")
 ARCHIVE_NAME = re.compile(r"(?:bigcherryrad|radiance)-[0-9a-f]{32}\.tar\.gz")
 CI_RECEIPT_SUFFIX = ".receipt.json"
+#: The build's own record (rocm_root, plan identity, toolchain): the launcher's SDK check and the campaign tools read it from the
+#: build directory, so an installed build is not usable by them without it. It travels in the bundle like any file, digest included.
+BUILD_METADATA = "bigcherry-build-metadata-radiance.json"
 RUN_DIRS = ("bin", "radiance_home", "runtime-prefix/bin", "runtime-prefix/lib", "runtime-prefix/lib64")
 
 
@@ -103,6 +106,8 @@ def runtime_files(build: Path) -> dict[str, Path]:
                 raise BundleError(f"runtime symlink escapes build directory: {item}")
             rel = item.relative_to(build).as_posix()
             files[rel] = item
+    if (build / BUILD_METADATA).is_file():
+        files[BUILD_METADATA] = build / BUILD_METADATA
     for required in ("bin/radiance", "radiance_home/helpers/r3_moe_worker"):
         if required not in files:
             raise BundleError(f"lane build does not contain runtime requirement {required}")
