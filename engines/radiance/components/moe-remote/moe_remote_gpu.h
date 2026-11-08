@@ -180,6 +180,7 @@ public:
     }
 
     const std::string& arch() const { return arch_; }
+    uint32_t large_rows() const { return large_rows_; }   /* the large lanes' row capacity (prepare_lanes) */
 
     int64_t expert_bytes(uint32_t layer, uint32_t expert) {
         const RadFileEntry* gu = model_.weight(layer, expert, 0);

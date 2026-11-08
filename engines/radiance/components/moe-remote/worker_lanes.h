@@ -64,12 +64,35 @@ public:
     ~Lanes() {
         for (const auto& t : threads_)
             if (t.joinable()) { stop_and_join(); break; }
+        for (auto& c : capture_) {   /* every lane thread has joined: no stream still copies into them */
+            if (c.aq) (void)hipHostFree(c.aq);
+            if (c.as) (void)hipHostFree(c.as);
+            if (c.out) (void)hipHostFree(c.out);
+        }
     }
 
     void set_service_signal(r3::policy::LaneServiceSource* signal) { service_signal_=signal; }
 
     /* One thread per served lane. A thread that cannot start stops and joins the ones that did. */
     bool start() {
+        /* R3_MOE_WORKER_CAPTURE: the pinned buffers a captured large-lane request copies into, one set a served large lane,
+         * allocated here, before any lane queues its waits, and freed only after the lanes have joined. Allocating or
+         * freeing pinned memory while the serving runs is not allowed: hipHostFree synchronises the device, and a small
+         * lane's pre-queued wait for its next request never completes, so the lane thread blocked there forever (the
+         * RAD49 tail-probe capture arm stalled after its first captures). */
+        if (!r3_serving::settings().capture.empty()) {
+            const size_t rows = gpu_.large_rows(), hid = h_->hidden, groups = h_->hidden / h_->activation_group;
+            for (uint32_t lane = 0; lane < r3::moe_shm::kLanes; ++lane) {
+                if (!served_[lane] || r3::moe_shm::lane_is_small(lane)) continue;
+                auto& c = capture_[lane];
+                if (hipHostMalloc(&c.aq, rows * hid) != hipSuccess ||
+                    hipHostMalloc(&c.as, rows * groups * sizeof(float)) != hipSuccess ||
+                    hipHostMalloc(&c.out, rows * hid * sizeof(uint16_t)) != hipSuccess) {
+                    std::fprintf(stderr, "r3_moe_worker: capture buffers for lane %u not allocated\n", lane);
+                    return false;
+                }
+            }
+        }
         try {
             for (uint32_t lane = 0; lane < r3::moe_shm::kLanes; ++lane)
                 if (served_[lane]) threads_[lane] = std::thread([this, lane] { run(lane); });
@@ -215,17 +238,9 @@ private:
             const uint32_t rows = load(&q->rows);
             const std::string captured = capture_request(map_, q, lane, next);
             trace_dump(map_, lane, next - 1u);
-            /* A captured request also records what the lane computed with and produced (capture_gpu_side). */
-            r3_moe_gpu::Runner::LaneCapture cap{};
-            const size_t hid = h_->hidden, groups = h_->hidden / h_->activation_group;
-            if (!captured.empty() &&
-                (hipHostMalloc(&cap.aq, (size_t)rows * hid) != hipSuccess ||
-                 hipHostMalloc(&cap.as, (size_t)rows * groups * sizeof(float)) != hipSuccess ||
-                 hipHostMalloc(&cap.out, (size_t)rows * hid * sizeof(uint16_t)) != hipSuccess)) {
-                std::fprintf(stderr, "r3_moe_worker: capture buffers for lane %u seq %u not allocated\n", lane, next);
-                request_stop();
-                break;
-            }
+            /* A captured request also records what the lane computed with and produced (capture_gpu_side), into this lane's
+             * pinned buffers (allocated at start: never allocate or free pinned memory while serving). */
+            const r3_moe_gpu::Runner::LaneCapture& cap = capture_[lane];
             /* Every large request is timed by stage: they are few, and the engine cannot send the next one until it
              * has merged this one, so waiting here costs nothing. */
             if (const int rc = gpu_.enqueue_lane(map_, dev_map_, lane, next, rows, true, captured.empty() ? nullptr : &cap);
@@ -245,10 +260,7 @@ private:
                 break;
             }
             if (!gpu_.sync_lane(lane) || !collect(lane, next)) { request_stop(); break; }
-            if (!captured.empty()) {
-                capture_gpu_side(captured, q, cap.aq, cap.as, cap.out, h_->hidden, h_->activation_group);
-                (void)hipHostFree(cap.aq); (void)hipHostFree(cap.as); (void)hipHostFree(cap.out);
-            }
+            if (!captured.empty()) capture_gpu_side(captured, q, cap.aq, cap.as, cap.out, h_->hidden, h_->activation_group);
             if (++next == 0) {
                 std::fprintf(stderr, "r3_moe_worker: large lane %u sequence space exhausted\n", lane);
                 request_stop();
@@ -366,5 +378,6 @@ private:
     Combine& combine_;
     r3::policy::LaneServiceSource* service_signal_=nullptr;
     std::array<std::thread, r3::moe_shm::kLanes> threads_;
+    std::array<r3_moe_gpu::Runner::LaneCapture, r3::moe_shm::kLanes> capture_{};   /* R3_MOE_WORKER_CAPTURE, large lanes */
     std::array<Stats, r3::moe_shm::kLanes> stats_{};
 };
