@@ -645,7 +645,12 @@ Result<HelperView> helper_view(const Manifest& m, std::string_view role) {
     for (size_t i = 0; i < helpers.size(); ++i)
         if (helpers[i].role == role) {
             HelperCommon settings = effective(m, i);
-            const bool rows = helpers[i].rows_kernel || settings.lanes.rows;
+            // A lab experiment may replace the architecture capability (amendment 18: experiment.diagnostics.kernels.rows_kernel).
+            bool arch_rows = helpers[i].rows_kernel;
+            if (m.spec.experiment && m.spec.experiment->diagnostics && m.spec.experiment->diagnostics->kernels &&
+                m.spec.experiment->diagnostics->kernels->rows_kernel)
+                arch_rows = *m.spec.experiment->diagnostics->kernels->rows_kernel;
+            const bool rows = arch_rows || settings.lanes.rows;
             return HelperView{i, helpers[i], m.spec.plan.owner_map.helpers.at(i), *m.spec.handoff, std::move(settings), rows};
         }
     return err(C::unresolved_reference, "spec.processes.helpers", "no helper has role " + std::string(role),

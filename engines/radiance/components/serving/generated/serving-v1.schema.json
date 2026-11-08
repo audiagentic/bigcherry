@@ -1899,6 +1899,10 @@
                     "sweep_fast": {
                       "description": "Shorten kernel sweeps.",
                       "type": "boolean"
+                    },
+                    "rows_kernel": {
+                      "description": "Replaces every helper's architecture rows_kernel capability for this run: false runs the grouped expert GEMM on the large lane also where the architecture takes the rows kernel (RAD49 tail probe); lanes.rows still asks for the rows kernel.",
+                      "type": "boolean"
                     }
                   },
                   "minProperties": 1

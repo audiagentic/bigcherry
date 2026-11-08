@@ -342,6 +342,25 @@ int main() {
         rm.spec.processes.helpers[0].settings = off;
         Result<HelperView> hv = helper_view(rm, "helper0");
         check(hv && !hv.value().settings.lanes.rows && hv.value().rows_active, "rows_kernel makes the rows kernel active");
+        // amendment 18: a lab experiment replaces the capability; lanes.rows still asks for the rows kernel
+        rm.spec.experiment = Experiment{};
+        rm.spec.experiment->diagnostics = Diagnostics{};
+        rm.spec.experiment->diagnostics->kernels = KernelDiagnostics{};
+        rm.spec.experiment->diagnostics->kernels->rows_kernel = false;
+        Result<HelperView> off_view = helper_view(rm, "helper0");
+        check(off_view && !off_view.value().rows_active, "experiment rows_kernel false turns the architecture's rows kernel off");
+        rm.spec.processes.helpers[0].rows_kernel = false;
+        rm.spec.experiment->diagnostics->kernels->rows_kernel = true;
+        Result<HelperView> on_view = helper_view(rm, "helper0");
+        check(on_view && on_view.value().rows_active, "experiment rows_kernel true asks for it where the architecture does not");
+        rm.spec.experiment->diagnostics->kernels->rows_kernel = false;
+        HelperLanesPatch ask;
+        ask.rows = true;
+        HelperPatch policy;
+        policy.lanes = ask;
+        rm.spec.processes.helpers[0].settings = policy;
+        Result<HelperView> policy_view = helper_view(rm, "helper0");
+        check(policy_view && policy_view.value().rows_active, "lanes.rows still asks for the rows kernel");
     }
     {   // the decoder: sibling members of one name are fine; absent, null and a value stay distinct; patches apply 0/false
         check(parse_strict_json("{\"a\":{\"x\":1},\"b\":{\"x\":1}}", "t").ok(), "the same name in sibling objects");

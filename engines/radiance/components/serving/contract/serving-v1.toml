@@ -2735,6 +2735,12 @@ optional = true
 kind = "boolean"
 doc = "Shorten kernel sweeps."
 
+[[field]]
+path = "/spec/experiment/diagnostics/kernels/rows_kernel"
+optional = true
+kind = "boolean"
+doc = "Replaces every helper's architecture rows_kernel capability for this run: false runs the grouped expert GEMM on the large lane also where the architecture takes the rows kernel (RAD49 tail probe); lanes.rows still asks for the rows kernel."
+
 
 [[field]]
 path = "/spec/experiment/engine"

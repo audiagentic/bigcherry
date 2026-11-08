@@ -1535,6 +1535,54 @@ uint64_t derived_budget_mib(const fs::path& model, uint64_t card_mib, uint64_t r
  * its small lanes, hand-off rows, index, engine width, power save) give, through the worker's functions (small_classes,
  * lanes_for), exactly the budget the manifest declares. An experiment that patches a helper's lanes is refused while the
  * budgets are derived. */
+/* RAD49 tail probe (runs/rad49-tailprobe): the KL arms' lab experiments are accepted by bc-serve on flashnext-tp2xtx and reach
+ * the helpers through the manifest: capture (both helpers; each writes its own lanes' files), sparse activation off for helper1
+ * only (a role patch), and the rows kernel off (amendment 18) -- on the tail, whose architecture takes it, only. */
+void tail_probe_experiments(Fixture& t) {
+    namespace sv = bc::serving;
+    const auto model = t.root / "tail-probe-model.rad";
+    bc::test::write_rad(model, 4, 16, 128, 128, {});
+    const auto heat = t.root / "tail-probe.hot-first";
+    {
+        std::vector<uint32_t> counts(128 * 16, 1);
+        std::ofstream(heat, std::ios::binary).write(reinterpret_cast<const char*>(counts.data()), counts.size() * 4);
+    }
+    auto build = [&](const Json& experiment) {
+        Options opts;
+        opts.site = t.file("tail-probe-site.toml", "[engine]\nmodel = \"" + model.string() + "\"\nradiance_home = \"/runtime\"\n"
+                                                    "[handoff]\nheat = \"" + heat.string() + "\"\nhistogram = \"/heat.live\"\n");
+        opts.sets = {"layout.name=\"flashnext-tp2xtx\"", "handoff.max_rows=64", "engine.max_num_batched_tokens=64"};
+        sv::ManifestInputs in;
+        in.resolved = sv::resolve(opts, t.facts);
+        in.instance_id = "11111111-1111-4111-8111-111111111111";
+        in.producer_sha256 = std::string(64, 'a');
+        in.profile = "lab";
+        in.experiment = experiment;
+        in.experiment_from = "test";
+        const auto built = sv::build_manifest(in);
+        auto read = bc::serving::v1::read_manifest(built.text, "tail-probe", bc::serving::v1::PlanUse::measuring);
+        assert(read.ok());
+        std::vector<bc::serving::HelperSettings> out;
+        for (uint32_t i = 0; i < 2; ++i) {
+            auto s = bc::serving::helper_settings(read.value(), "helper" + std::to_string(i));
+            assert(s.ok());
+            out.push_back(s.value());
+        }
+        return out;
+    };
+    const auto plain = build(Json(nullptr));
+    assert(!plain[0].rows && plain[1].rows && plain[0].sparse_act && plain[1].sparse_act && plain[1].capture.empty());
+    const auto capture = build(Json{{"diagnostics", {{"lanes", {{"capture_file", "/runs/capture"}, {"capture_every", 1},
+                                                                {"capture_max", 300}}}}}});
+    for (const auto& s : capture)
+        assert(s.capture == "/runs/capture" && s.capture_every == 1 && s.capture_max == 300);
+    const auto sparse0 = build(Json{{"shape", {{"helpers", Json::array({Json{{"role", "helper1"},
+                                    {"settings", {{"kernels", {{"sparse_act", false}}}}}}})}}}});
+    assert(sparse0[0].sparse_act && !sparse0[1].sparse_act);
+    const auto rows0 = build(Json{{"diagnostics", {{"kernels", {{"rows_kernel", false}}}}}});
+    assert(!rows0[0].rows && !rows0[1].rows && rows0[1].rows_kernel);   /* the capability stays recorded; the run uses the GEMM */
+}
+
 void derived_budget_is_the_workers(Fixture& t) {
     namespace sv = bc::serving;
     const auto model = t.root / "derived-budget-model.rad";
@@ -1701,6 +1749,7 @@ int main(int argc, char** argv) {
         tp_engine_with_helper_layout(t);
         tp_engine_with_two_helpers_layout(t);
         derived_budget_is_the_workers(t);
+        tail_probe_experiments(t);
         sdk_environment_step(t);
         std::cout << "PASS: fake KFD/PCI/proc detection; strict keys; types/ranges; required; "
                      "precedence/caps; provenance/hash; launcher engine/WorkerConfig parity; "
