@@ -25,11 +25,15 @@ B=${B:?set B to a radiance lane build directory}
 LIB=$B/radiance_home/kernels/libr3.so
 INC=$B/runtime-prefix/include/radiance
 [ -f "$LIB" ] && [ -f "$INC/rad_abi.h" ] || { echo "no libr3.so / ABI headers in $B" >&2; exit 1; }
+# The message shape is the served model's: n_embd and hc_count from its container (the layout's model), never a literal here.
+MODEL=${MODEL:-$BC_MODEL_ROOT/$(python3 -c "import tomllib,sys;print(tomllib.load(open(sys.argv[1],'rb'))['layout']['flashnext-tp2xtx-r9700']['model'])" engines/radiance/layouts.toml)}
+read -r NEMBD HCN < <("$B/bin/rad-info" "$MODEL" | awk '$1=="n_embd"{n=$2} $1=="hc_count"{h=$2} END{print n, h}')
+[ -n "$NEMBD" ] && [ -n "$HCN" ] || { echo "no n_embd / hc_count in $MODEL" >&2; exit 1; }
 ROWS=${ROWS:-1,4,24,32,2048}
 ITERS=${ITERS:-200}
 OUT=$BC_WORK_ROOT/runs/rad49-arbench/harness-$(date +%Y%m%d-%H%M%S)
 mkdir -p "$OUT"
-{ git -C "$REPO" log -1 --format='checkout %H %s'; echo "build $B"; } > "$OUT/summary.txt"
+{ git -C "$REPO" log -1 --format='checkout %H %s'; echo "build $B"; echo "model $MODEL n_embd=$NEMBD hc_count=$HCN"; } > "$OUT/summary.txt"
 
 # The harness is built against the ABI headers of the build it loads (it refuses a plugin of another ABI version): one build
 # per header digest, card-free, reused across runs.
@@ -57,7 +61,7 @@ rocm-smi --showmeminfo vram --showpids > "$OUT/gpus-before.txt" 2>&1
 PULL_PID=""
 trap '[ -n "$PULL_PID" ] && kill -INT "$PULL_PID" 2>/dev/null; wait 2>/dev/null' EXIT INT TERM
 bench() {
-  HIP_VISIBLE_DEVICES="$XTX" ROCR_VISIBLE_DEVICES="$XTX" timeout 1800 "$BIN/r3-arbench" --lib "$LIB" --rows "$ROWS" --iters "$ITERS"
+  HIP_VISIBLE_DEVICES="$XTX" ROCR_VISIBLE_DEVICES="$XTX" timeout 1800 "$BIN/r3-arbench" --lib "$LIB" --rows "$ROWS" --iters "$ITERS" --n "$NEMBD" --hc "$HCN"
 }
 echo "== R9700 idle" | tee -a "$OUT/summary.txt"
 bench > "$OUT/pull0.tsv" 2> "$OUT/pull0.err"; echo "rc=$?" >> "$OUT/summary.txt"

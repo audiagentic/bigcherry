@@ -8,7 +8,7 @@
 //   ar_oneshot_2rank_exact_host    the standalone exact all_reduce (the embedding, and the MoE output while handed off, rad0002)
 //   ar_oneshot_2rank_wht6_host     the standalone rotated 6-bit all_reduce (min_bytes 0: the lossy wire forced at every height)
 //
-// For each (op, wire, M rows of n = 2560, hc = 4) it reports, per rank:
+// For each (op, wire, M rows of the model's hidden width n, hc connections) it reports, per rank:
 //   loop us   -- `iters` launches back to back on the rank's stream, event-timed: the steady exchange cost a step pays
 //   iso us    -- one launch at a time, both ranks released by a barrier, event pair around the launch; median and p90 over iters.
 //                A rank's time includes waiting for the later rank, so the smaller rank's median is the closer transfer cost.
@@ -18,7 +18,7 @@
 //                    -L/opt/rocm/lib -lamdhip64 -ldl -lpthread -o r3-arbench
 // Run (needs the gpu lease; tools/lab/radiance/rad49-arbench.sh takes it):
 //   HIP_VISIBLE_DEVICES=<xtx0>,<xtx1> r3-arbench --lib <radiance_home>/kernels/libr3.so [--rows 1,4,24,32,2048] [--iters 200]
-//        [--ops hc,ar] [--wires exact,wht6] [--n 2560] [--hc 4]
+//        [--ops hc,ar] [--wires exact,wht6] --n HIDDEN --hc HC_COUNT
 #include <hip/hip_runtime.h>
 
 #include "rad_abi.h"
@@ -44,7 +44,7 @@ struct Opts {
     std::vector<long> rows{1, 4, 24, 32, 2048};
     std::vector<std::string> ops{"hc", "ar"};
     std::vector<std::string> wires{"exact", "wht6"};
-    long n = 2560, hc = 4;
+    long n = 0, hc = 0;  /* the model's hidden width and hyper-connection count: required, from the container (the runner reads rad-info) */
     int iters = 200, warm = 20;
 };
 
@@ -101,6 +101,7 @@ int main(int argc, char** argv) {
         else { std::fprintf(stderr, "r3-arbench: unknown argument %s\n", a.c_str()); return 2; }
     }
     if (o.lib.empty()) { std::fprintf(stderr, "r3-arbench: --lib PATH (libr3.so) is required\n"); return 2; }
+    if (o.n <= 0 || o.hc <= 0) { std::fprintf(stderr, "r3-arbench: --n HIDDEN and --hc HC_COUNT (the model's n_embd and hc_count) are required\n"); return 2; }
 
     int ndev = 0;
     HIP_OK(hipGetDeviceCount(&ndev));
