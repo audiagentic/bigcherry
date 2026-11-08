@@ -49,18 +49,19 @@ class ReleaseIntegrationTests(unittest.TestCase):
             with self.assertRaisesRegex(pr.PinReleaseError, "no recorded runtime bundle"):
                 pr.phase_release(self.plan)
 
-    def test_patch_promote_defers_unbundled_release_before_tagging(self):
+    def test_patch_promote_releases_without_a_lab_staged_bundle(self):
+        # CI bundles the release after release-please publishes it, so promotion goes ahead with no recorded bundle.
         layout = SimpleNamespace(name="radiance", release_package=lambda: "engines/radiance")
         notes = SimpleNamespace(upstream_name="radiance", tag_prefix="bc-radiance-")
         with mock.patch.object(pp, "_release_version",
                                return_value=("v1.16.0", "1160.0.1", 1160)), \
              mock.patch.object(pp.release_notes, "load_config", return_value=notes), \
              mock.patch.object(pp, "_git", return_value="feat/promotion"), \
-             mock.patch.object(pp.pin_release, "_release_pr") as pr_lookup, \
+             mock.patch.object(pp.pin_release, "_release_pr", return_value=object()) as pr_lookup, \
              mock.patch.object(pp.pin_release, "phase_release") as publish:
-            self.assertFalse(pp._finish_release_if_ready(self.repo, layout, "minor"))
-            pr_lookup.assert_not_called()
-            publish.assert_not_called()
+            self.assertTrue(pp._finish_release_if_ready(self.repo, layout, "minor"))
+            pr_lookup.assert_called()
+            publish.assert_called_once()
 
     def test_release_receipt_survives_record_dataclass_roundtrip(self):
         from dataclasses import asdict
