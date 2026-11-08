@@ -78,34 +78,6 @@ reason = "lane widths fixed at expert width 640 and rank width 384 (audit MC-013
 owner = "RCS12"
 
 [[allow]]
-path = "engines/radiance/components/moe-remote/moe_lane_common.h"
-anchor = "constexpr int64_t kRankWidth = 384;"
-category = "C"
-reason = "lane widths fixed at expert width 640 and rank width 384 (audit MC-013)"
-owner = "RCS12"
-
-[[allow]]
-path = "engines/radiance/components/moe-remote/moe_lane_common.h"
-anchor = "constexpr int64_t kRankGateUpWidth = 2 * kRankWidth;"
-category = "C"
-reason = "lane widths fixed at expert width 640 and rank width 384 (audit MC-013)"
-owner = "RCS12"
-
-[[allow]]
-path = "engines/radiance/components/moe-remote/moe_lane_common.h"
-anchor = "return rank == parity ? 0 : kRankWidth;"
-category = "C"
-reason = "lane widths fixed at expert width 640 and rank width 384 (audit MC-013)"
-owner = "RCS12"
-
-[[allow]]
-path = "engines/radiance/components/moe-remote/moe_lane_common.h"
-anchor = "return rank == parity ? kRankWidth : kExpertWidth - kRankWidth;"
-category = "C"
-reason = "lane widths fixed at expert width 640 and rank width 384 (audit MC-013)"
-owner = "RCS12"
-
-[[allow]]
 path = "engines/radiance/components/moe-remote/moe_lane_gemm.h"
 anchor = "constexpr uint32_t kGemvMaxK = 2560;"
 category = "C"
@@ -162,59 +134,6 @@ reason = "descriptive shape string of a declared op"
 
 [[allow]]
 path = "engines/radiance/components/moe-remote/moe_remote_gpu.h"
-anchor = "if (!full_width() && s.intermediate != kExpertWidth) {   // the two-rank slice split (384 + 256) is "
-category = "A"
-reason = "the two-rank 384+256 slice split refuses any expert width but 640"
-
-[[allow]]
-path = "engines/radiance/components/moe-remote/moe_remote_gpu.h"
-anchor = "std::fprintf(stderr, \"r3_moe_worker: two-rank slicing is defined for expert width %lld, not %u\\n\", ("
-category = "A"
-reason = "the two-rank 384+256 slice split refuses any expert width but 640"
-
-[[allow]]
-path = "engines/radiance/components/moe-remote/moe_remote_gpu.h"
-anchor = "q->route_count == 0 || q->route_count > kMaxRoutes ||"
-category = "A"
-reason = "bounded route capacity, the request is refused above it"
-
-[[allow]]
-path = "engines/radiance/components/moe-remote/moe_remote_gpu.h"
-anchor = "pi(\"M\", q->route_count), pi(\"n\", kRankWidth), pi(\"group\", kGroup),"
-category = "C"
-reason = "two-rank slice width kRankWidth=384 assumes expert width 640 (audit MC-013)"
-owner = "RCS12"
-
-[[allow]]
-path = "engines/radiance/components/moe-remote/moe_remote_gpu.h"
-anchor = "tensor(d_mid_.p, RAD_F8E4M3, {q->route_count, kRankWidth}),"
-category = "C"
-reason = "two-rank slice width kRankWidth=384 assumes expert width 640 (audit MC-013)"
-owner = "RCS12"
-
-[[allow]]
-path = "engines/radiance/components/moe-remote/moe_remote_gpu.h"
-anchor = "tensor(d_mid_s_.p, RAD_F32, {q->route_count, kRankWidth / kGroup}),"
-category = "C"
-reason = "two-rank slice width kRankWidth=384 assumes expert width 640 (audit MC-013)"
-owner = "RCS12"
-
-[[allow]]
-path = "engines/radiance/components/moe-remote/moe_remote_gpu.h"
-anchor = "{ tensor(d_mid_.p, RAD_F8E4M3, {tr, kRankWidth}),"
-category = "C"
-reason = "two-rank slice width kRankWidth=384 assumes expert width 640 (audit MC-013)"
-owner = "RCS12"
-
-[[allow]]
-path = "engines/radiance/components/moe-remote/moe_remote_gpu.h"
-anchor = "tensor(d_mid_s_.p, RAD_F32, {tr, kRankWidth / kGroup}),"
-category = "C"
-reason = "two-rank slice width kRankWidth=384 assumes expert width 640 (audit MC-013)"
-owner = "RCS12"
-
-[[allow]]
-path = "engines/radiance/components/moe-remote/moe_remote_gpu.h"
 anchor = "auto* hq = ptr<uint8_t>(host_map, h->activation_offset[rank] + kActivationBf16Bytes);"
 category = "C"
 reason = "staged Q plane offset assumes hidden 2560 on the helper side (audit MC-001..003)"
@@ -239,27 +158,6 @@ path = "engines/radiance/components/moe-remote/moe_remote_gpu.h"
 anchor = "hhost->activation_offset[rank] + kActivationBf16Bytes + kActivationQBytes)));"
 category = "C"
 reason = "staged Q plane offset assumes hidden 2560 on the helper side (audit MC-001..003)"
-owner = "RCS12"
-
-[[allow]]
-path = "engines/radiance/components/moe-remote/moe_remote_gpu.h"
-anchor = "int64_t mid_w() const { return full_width() ? (int64_t)shape_.intermediate : kRankWidth; }"
-category = "C"
-reason = "two-rank slice width kRankWidth=384 assumes expert width 640 (audit MC-013)"
-owner = "RCS12"
-
-[[allow]]
-path = "engines/radiance/components/moe-remote/moe_remote_gpu.h"
-anchor = "d_mid_.ensure((size_t)tr * kRankWidth) &&"
-category = "C"
-reason = "two-rank slice width kRankWidth=384 assumes expert width 640 (audit MC-013)"
-owner = "RCS12"
-
-[[allow]]
-path = "engines/radiance/components/moe-remote/moe_remote_gpu.h"
-anchor = "d_mid_s_.ensure((size_t)tr * (kRankWidth / kGroup) * 4) &&"
-category = "C"
-reason = "two-rank slice width kRankWidth=384 assumes expert width 640 (audit MC-013)"
 owner = "RCS12"
 
 [[allow]]
@@ -378,30 +276,9 @@ reason = "bounded route capacity, the request is refused above it"
 
 [[allow]]
 path = "engines/radiance/components/moe-remote/worker_hostref.h"
-anchor = "const int64_t lo = wide ? 0 : 384;"
-category = "C"
-reason = "CPU helper reference splits 384+256 for width 640 with no refusal for other widths (audit MC-013..014)"
-owner = "RCS12"
-
-[[allow]]
-path = "engines/radiance/components/moe-remote/worker_hostref.h"
-anchor = "const int64_t width = wide ? 384 : 256;"
-category = "C"
-reason = "CPU helper reference splits 384+256 for width 640 with no refusal for other widths (audit MC-013..014)"
-owner = "RCS12"
-
-[[allow]]
-path = "engines/radiance/components/moe-remote/worker_hostref.h"
 anchor = "q->hidden != hid || q->route_count > kMaxRoutes || q->activation_stride != hid*2) return -EINVAL;"
 category = "A"
 reason = "bounded route capacity, the request is refused above it"
-
-[[allow]]
-path = "engines/radiance/components/moe-remote/worker_hostref.h"
-anchor = "const int parity=(int)((uint32_t)es&1u); const bool wide=((int)q->rank==parity); const int64_t lo=wi"
-category = "C"
-reason = "CPU helper reference splits 384+256 for width 640 with no refusal for other widths (audit MC-013..014)"
-owner = "RCS12"
 
 [[allow]]
 path = "engines/radiance/components/moe-remote/worker_selftest.h"
@@ -411,7 +288,7 @@ reason = "self-test fixture at Flash-Next's shape"
 
 [[allow]]
 path = "engines/radiance/components/moe-remote/worker_selftest.h"
-anchor = "q.sequence = 1; q.rank = 0; q.rank_count = 1; q.layer = 0; q.rows = rows; q.hidden = kHidden; q.rout"
+anchor = "q.sequence = 1; q.slot = 0; q.world = 1; q.consumer = 0; q.layer = 0; q.rows = rows; q.hidden = kHidden; q.rout"
 category = "B"
 reason = "self-test fixture at Flash-Next's shape"
 
