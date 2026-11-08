@@ -9,12 +9,13 @@ remains RAD42, and RAD49 is the TP2 consumer context.
 
 | Gate | State | Evidence / decision |
 | --- | --- | --- |
-| 0: lifecycle contract, card-free | **PASS** | `test_chunk_contract.py` (10 tests) and deterministic multi-chunk stress (`test_chunk_stress.py`, 3 tests); no real GPU visibility implied |
+| 0: lifecycle and critical-path model, card-free | **PASS** | 23 tests: 10 lifecycle, 3 multi-chunk stress, 10 critical-path/overlap model; no GPU visibility implied |
 | 1: host-visible GPU-local pool discovery | **BUILD PASS, RUN BLOCKED** | `pool_inventory.cpp` compiled with g++; lease command available but GPU lease held by RAD49, so no HSA hardware discovery performed |
 | 2: CPU-write/GPU-read canary | **BUILD PASS, RUN BLOCKED** | `bar_write_canary.hip` compiled for gfx1100 and gfx1201; hardware correctness is unverified. Requires Gate 1 PASS and an exclusive GPU lease before launch |
-| 3: isolated transfer A/B | **NOT STARTED** | Do not implement a benchmark or claim throughput until Gate 2 verifies CPU-writable GPU VRAM |
-| 4: chunked producer/consumer | **NOT STARTED** | Requires Gate 3 throughput case and dedicated CPU-write-drained flag semantics |
-| 5: captured MoE data / TP2 exact-once | **NOT STARTED** | Requires proven chunk visibility and explicit quality parity |
+| 2b: separate CPU-only IPC import | **BUILT, RUN BLOCKED** | `bar_ipc_canary.hip` compiled gfx1100/gfx1201; import/CPU write/GPU full verification not run. Requires Gates 1 and 2 |
+| 3: isolated transfer A/B | **BUILT, RUN BLOCKED** | `bar_transfer_ab.hip` compiled for gfx1100/gfx1201. No actual bandwidth, CPU cost or latency result. Requires Gate 2b PASS |
+| 4: chunked producer/consumer | **PARTIAL BUILD, RUN BLOCKED** | `bar_live_ready_canary.hip` compiled gfx1100/gfx1201: GPU already running before CPU writes. Multi-process chunk pipeline still not implemented. Requires Gate 3 |
+| 5: captured MoE data / TP2 exact-once | **PREP ONLY** | `combine_reference_test.cpp` compiled against BigCherry; execution blocked by remote policy. Captured KLD/TP2 replay still pending |
 | 6: opt-in engine integration | **NOT AUTHORISED** | Separate future review after Gates 0–5 and end-to-end A/B |
 
 ## Chronology
@@ -59,6 +60,18 @@ remains RAD42, and RAD49 is the TP2 consumer context.
   even those currently at zero utilisation. Gates 1/2 remain build-only.
 - Recheck GPU processes and acquire our own lease after RAD49 releases
   its lease before any HSA or HIP hardware probe.
+
+### 2026-11-09 — next-stage preparation and production risk review
+
+- Read the merged RAD49 v25 protocol from origin/main, without merging into this worktree.
+- Added pending RAD51 for future opt-in BigCherry integration; no production edit.
+- 23 card-free Python tests pass; the overlap model distinguishes serial CPU copy from direct VRAM output.
+- Built host-only CPU wake timing and FP16 reference test binaries, but did not execute them.
+- Built gfx1100/gfx1201 serial IPC import and CPU-BAR/GPU-pull A/B harnesses; NO GPU runs.
+- See FINDINGS.md for ranked risks and a clearly labelled unmeasured illustrative scenario.
+- See RUNBOOK.md for lease-safe ordered testing and required trace fields.
+- A single-process GPU-live waiter correctness canary (`bar_live_ready_canary.hip`) also built for gfx1100/gfx1201; its test and multiprocess extension remain blocked.
+- The GPU lease remains owned by the RAD49 measurement; Gate 1 onward is hardware blocked.
 
 ## Next action when a GPU lease is available
 

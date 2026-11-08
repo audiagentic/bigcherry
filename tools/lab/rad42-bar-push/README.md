@@ -1,14 +1,14 @@
 # RAD50 — isolated CPU BAR-push transport experiment
 
-**Status (2026-11-09):** Gate 0 **PASS** (13/13 card-free tests).
+**Status (2026-11-09):** Gate 0 **PASS** (23/23 card-free tests).
 Gate 1 HSA inventory and Gate 2 CPU→GPU canary **built but not run**:
 lease command access is restored; RAD49 currently holds the exclusive
-GPU lease. No hardware tests have been run. Gate 3 onward is not started.
+GPU lease. No GPU tests have been run. Gates 1, 2, 2b and 3 are compiled but unrun; a Gate 4 live-waiter canary is compiled, while the full chunked multiprocess protocol is unimplemented.
 
 **Plan:** `docs/planning/active/patching-radiance-rdna3/RAD50.md`
 (existing `patching-radiance-rdna3` group). Production owner RAD42 design B;
 context RAD40 (PCIe contention) and RAD49 (multi-rank consumer).
-**Journal:** [PROGRESS.md](PROGRESS.md) is updated per experiment gate.
+**Journal:** [PROGRESS.md](PROGRESS.md) tracks gate progress. [FINDINGS.md](FINDINGS.md) explains risks, [RUNBOOK.md](RUNBOOK.md) governs hardware runs, and RAD51 is the future production plan.
 **Boundary:** All files are lab-only, never linked into the serving engine.
 
 ## Question and existing evidence
@@ -29,12 +29,13 @@ RAD42's chunked combine is shipped; its BAR-push design is not.
 
 | Gate | Harness | Acceptance / current state |
 | --- | --- | --- |
-| 0. CPU model, card-free | `chunk_contract.py`, `test_chunk_contract.py`, `test_chunk_stress.py` | **PASS**: no early ready, stale epoch, reuse while busy, duplicate consume, or recovery without quiescence; 13 tests, 12,800 orderly multi-chunk consumptions |
+| 0. CPU model, card-free | `chunk_contract.py`, `test_chunk_contract.py`, `test_chunk_stress.py`, `critical_path_model.py`, `test_critical_path_model.py` | **PASS**: no early ready, stale epoch, reuse while busy, duplicate consume, or recovery without quiescence; 23 tests, 12,800 multi-chunk consumptions and 10 critical-path model tests |
 | 1. VRAM reachability | `pool_inventory.cpp` | **Build PASS / run blocked**: find an allocatable HSA GPU-local pool the host CPU is allowed to access; map physical PCI identity; pool availability alone is *not* proof of BAR usability |
 | 2. CPU→GPU exact canary | `bar_write_canary.hip` | **Build PASS / run blocked**: 4 KiB and 4 MiB, 12 generations each, GPU checks every word of CPU-written GPU-local storage; refuse unsupported allocations and PCI mismatch |
-| 3. Bandwidth and contention | Not implemented | **BLOCKED on Gate 2**: measure BAR write vs mapped-host GPU pull on both XTXs/R9700, 4 KiB–21 MiB, 1/2/4 CPU threads, p50/p95 and CPU load, alone and under GPU0 host-pull contention |
-| 4. Live chunks | Not implemented | **BLOCKED on Gate 3**: separate CPU producer/GPU consumer, independently published ready generations, 128/256/512/1024 rows, bounded timeouts, stale-data and fault cases |
-| 5. MoE reference | Not implemented | **BLOCKED on Gate 4**: actual FP16 CPU combine, overflow sentinel fallback, TP2 consumer rank, once-only rows, captured replay and latency |
+| 2b. Cross-process CPU-only IPC | `bar_ipc_canary.hip` (built, not run) | **BLOCKED on Gate 2**: prove a separate CPU-only process can map/write engine-owned GPU-local VRAM through HSA IPC, with no peer-GPU mapping |
+| 3. Bandwidth and contention | `bar_transfer_ab.hip` (built, not run) | **BLOCKED on Gates 2/2b**: measure BAR write vs mapped-host GPU pull on both XTXs/R9700, 4 KiB–21 MiB, 1/2/4 CPU threads, p50/p95 and CPU load, alone and under GPU0 host-pull contention |
+| 4. Live chunks | `bar_live_ready_canary.hip` built (live single-process canary); full multi-process chunk pipeline not built | **BLOCKED on Gate 3**: separate CPU producer/GPU consumer, independently published ready generations, 128/256/512/1024 rows, bounded timeouts, stale-data and fault cases |
+| 5. MoE reference | `combine_reference_test.cpp` (compiled, not run) | **BLOCKED on Gate 4**: actual FP16 CPU combine, overflow sentinel fallback, TP2 consumer rank, once-only rows, captured replay and latency |
 | 6. Opt-in integration | Not authorised | Only a future reviewed branch, after hardware A/B, numerical parity and explicit go decision |
 
 **Critical ordering boundary:** the engine GPU's request publication is
@@ -73,8 +74,8 @@ done
 
 **Hardware run preconditions:** acquire/check the project's exclusive GPU
 lease by its approved mechanism; confirm no active serving and log
-hardware identity, ROCm/kernel versions and PCI topology. A missing
-missing or held lease is a **hard stop**; don't use a subprocess wrapper to evade
+hardware identity, ROCm/kernel versions and PCI topology. A missing or
+held lease is a **hard stop**; don't use a subprocess wrapper to evade
 the remote tool allowlist.
 
 With lease held, run the pool inventory first. Only if it reports

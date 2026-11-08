@@ -36,17 +36,21 @@ design item; RAD49 is a future TP2/consumer-rank integration concern.
 3. Single-process CPU-write -> GPU-read canary on 4 KiB then 4 MiB,
    with fully checked payload, repeated generation patterns, no
    streaming and no interprocess sharing.
-4. Measure CPU BAR push and mapped-host GPU pull on the same destination
+4. Before bandwidth tests, validate GPU-local memory sharing across
+   a **separate CPU-only helper process** via HSA IPC and confirm that
+   the importer can write without enabling GPU peer access. Serial
+   verification is only an IPC feasibility gate, not device-live ordering.
+5. Measure CPU BAR push and mapped-host GPU pull on the same destination
    and payload, across sizes, thread counts and contention arms.
    Record CPU utilisation, p50/p95 latency, time to first chunk and
    final completion, not bandwidth alone.
-5. Prove per-chunk publication and visibility in a bounded, separate
+6. Prove per-chunk publication and visibility in a bounded, separate
    producer/consumer harness. Use distinct ready and consumed generations;
    timeout and fail closed. Run the 128/256/512/1024-row matrix.
-6. Reproduce the real CPU-combine FP16 semantics (overflow sentinel
+7. Reproduce the real CPU-combine FP16 semantics (overflow sentinel
    fallback and consumer-rank/once-only ownership) on representative
    captured rows, without a serving engine.
-7. Only if all gates pass, propose a new, separately reviewed
+8. Only if all gates pass, propose a new, separately reviewed
    opt-in moe-remote transport branch. No production edits,
    default change, push or PR are authorised by this item.
 
@@ -93,6 +97,13 @@ the single-process gate passes.
 - `tools/lab/rad42-bar-push/test_chunk_contract.py`
 - `tools/lab/rad42-bar-push/pool_inventory.cpp`
 - `tools/lab/rad42-bar-push/bar_write_canary.hip` (Gate 2)
+- `tools/lab/rad42-bar-push/critical_path_model.py` (pure scenario model)
+- `tools/lab/rad42-bar-push/cpu_handoff_bench.cpp` (host-only lower bound)
+- `tools/lab/rad42-bar-push/bar_ipc_canary.hip` (Gate 2b, no peer GPU)
+- `tools/lab/rad42-bar-push/bar_transfer_ab.hip` (Gate 3, not run)
+- `tools/lab/rad42-bar-push/bar_live_ready_canary.hip` (Gate 4 single-process canary, not run)
+- `tools/lab/rad42-bar-push/combine_reference_test.cpp` (reference parity)
+- `tools/lab/rad42-bar-push/PROGRESS.md`, `RUNBOOK.md` and `FINDINGS.md`
 - `tools/lab/rad42-bar-push/README.md` (per-gate progress and decisions)
 - Subsequent isolated lab harnesses only after the preceding gate passes.
 
@@ -143,6 +154,7 @@ lease; do not bypass unavailable lease controls.
 ## Notes
 
 Related: RAD40 (link measurements), RAD42 (production design B),
+RAD51 (future production integration plan, blocked on RAD50),
 RAD49 (TP2 engine and remote experts). Start from the existing
 `exp/rad42-cpu-bar-push` lab worktree, not production sources.
 Do not claim CPU BAR push is faster without the complete comparison.
@@ -155,3 +167,4 @@ Do not claim CPU BAR push is faster without the complete comparison.
   inventory and single-process GPU canary compiled for two GPU architectures.
   Lease command is now available, but RAD49 holds the exclusive GPU lease.
   Hardware Gates 1 and 2 remain unrun; no performance or coherence claims.
+- 2026-11-08T22:27:00+00:00 (updated-by): Added model of already-overlapped CPU combine and GPU pull, 10 more card-free tests, host-only wakeup probe and GPU canary/IPC/transfer microbenchmark binaries. 23 Python tests pass; no GPU run. Actual serving integration is described in new pending RAD51, blocked by these gates.
