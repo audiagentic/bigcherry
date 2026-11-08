@@ -57,6 +57,33 @@ int main() {
               "bad v24 generation never registered");
         g->digest=saved;
     }
+    // A creator unlinks only the segment it made. Its name can be taken over by a later start's segment before it is destroyed
+    // (a late exit): destroying the old creator must leave the new one in place, and the new one still removes its own.
+    {
+        const std::string own = "/bc-v24-own-" + std::to_string(getpid());
+        auto exists = [&] {
+            const int fd = shm_open(own.c_str(), O_RDONLY | O_CLOEXEC, 0);
+            if (fd >= 0) ::close(fd);
+            return fd >= 0;
+        };
+        Segment* first = new Segment;
+        check(first->open(own.c_str(), layout.bytes, true, 1), "create the first segment");
+        check(shm_unlink(own.c_str()) == 0, "the first segment's name is removed behind its back");
+        {
+            Segment second;
+            check(second.open(own.c_str(), layout.bytes, true, 1), "a later start makes a new segment under the same name");
+            delete first;                                  // the late exit of the first creator
+            check(exists(), "the late creator did not remove the newer segment");
+        }
+        check(!exists(), "the newer creator removes its own name");
+        // and the ordinary case: a creator whose name is still its own removes it
+        {
+            Segment only;
+            check(only.open(own.c_str(), layout.bytes, true, 1), "create");
+            check(exists(), "exists while open");
+        }
+        check(!exists(), "an ordinary creator removes its name");
+    }
     // The name can exist before ftruncate: an attacher must not mmap and
     // read a zero-length object (SIGBUS), even when shm_open succeeds.
     const std::string delayed_name = "/bc-v24-sizing-" + std::to_string(getpid());
