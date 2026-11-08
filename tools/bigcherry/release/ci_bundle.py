@@ -130,6 +130,8 @@ def cmd_release_bundle(args) -> int:
             found = find_reusable(args.tag, root=root, rocm_version=rocm)
             print(json.dumps({"reuse": found[0], "receipt": found[1]} if found else {"reuse": None}, sort_keys=True))
             return 0
+        if not args.sdk:
+            raise CiBundleError("--sdk is required to pack a bundle")
         sdk = Path(args.sdk)
         receipt = pack_and_verify(args.tag, root=root, work_root=Path(args.work), sdk=sdk, plan_id=args.plan_id)
     except (CiBundleError, ra.BundleError, OSError, ValueError, KeyError) as exc:
@@ -145,7 +147,7 @@ def add_parser(sub) -> None:
     p.add_argument("tag", help="bc-radiance-* release tag the bundle is for")
     p.add_argument("--root", default=".", help="repository checkout at the tag")
     p.add_argument("--work", default="work", help="work root holding builds/ (default work)")
-    p.add_argument("--sdk", default="/opt/rocm", help="ROCm SDK root the build used")
+    p.add_argument("--sdk", help="ROCm SDK root the build used (required to pack; the build names its SDK, never the host default)")
     p.add_argument("--plan-id", help="lane build plan id (default: the one build under the work root)")
     p.add_argument("--find-reusable", action="store_true",
                    help="print the earlier release whose bundle has this runtime key (no build needed), then exit")
