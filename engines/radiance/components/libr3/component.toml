@@ -73,12 +73,12 @@ manifest = "/spec/processes/engine/kernels/gemv"
 [setting.R3_MOE_NATIVE]
 default = "1"
 status = "experimental"
-summary = "native w4nl64 MoE inner loop; -6% call time, Flash-Next quality neutral (KLD unchanged). On by default in the r3_moe_worker processes (main() sets 1 unless the variable is set, 2bf231e3: prefill 2,518 -> 2,665 tok/s, decode 91.4/95.6 -> 108.2/108.8); the engine process reads an unset variable as off, so an arm or profile that wants the engine's own MoE GEMM native sets it explicitly, and 0 turns it off everywhere"
+summary = "native w4nl64 MoE inner loop; -6% call time, Flash-Next quality neutral (KLD unchanged). On by default in the r3_moe_worker processes (main() sets 1 unless the variable is set, 2bf231e3: prefill 2,518 -> 2,665 tok/s, decode 91.4/95.6 -> 108.2/108.8); the engine process (a gfx1100 TP rank) takes the same default when it is unset, and 0 turns it off everywhere"
 
 [setting.R3_MOE_FP16]
 default = "1"
 status = "validated"
-summary = "RAD06: with R3_MOE_NATIVE, the grouped MoE GEMM widens E4M3 operands to f16 and uses the f16 WMMA (a cheaper widening than bf16; the sums carry a 2^-16 scale removed before the scale fold, so output is bit-identical to the bf16 form). On by default in the r3_moe_worker processes (main() sets 1 unless the variable is set); prefill 2,130 -> 3,150 tok/s, decode unchanged, KLD unchanged; the engine process reads an unset variable as off, and 0 turns it off everywhere"
+summary = "RAD06: with R3_MOE_NATIVE, the grouped MoE GEMM widens E4M3 operands to f16 and uses the f16 WMMA (a cheaper widening than bf16; the sums carry a 2^-16 scale removed before the scale fold, so output is bit-identical to the bf16 form). On by default in the r3_moe_worker processes (main() sets 1 unless the variable is set); prefill 2,130 -> 3,150 tok/s, decode unchanged, KLD unchanged; the engine process takes the same default when it is unset, and 0 turns it off everywhere"
 activation = "r3_moe_worker: R3_MOE_FP16 on"
 evidence = ["docs/evidence/RAD06/R3_MOE_FP16.run.json"]
 
