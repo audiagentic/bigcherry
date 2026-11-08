@@ -124,9 +124,55 @@ def find_reusable(tag: str, *, root: Path, rocm_version: str, limit: int = 40) -
     return None
 
 
+KEEP_MARK = "keep-bundle"
+
+
+def prune_plan(*, root: Path, keep: int = 10, limit: int = 200) -> dict:
+    """Which releases' bundle assets are older than the newest `keep` distinct runtimes (owner decision: keep the last 10).
+
+    Releases are walked newest first. A release is kept when its runtime key is among the first `keep` distinct keys seen
+    (releases that reuse a bundle share the key, so they count once), when it is the newest radiance release (the current pin's),
+    or when its notes carry a `keep-bundle` line (owner-marked). Everything else with a bundle is listed for pruning.
+    """
+    listing = json.loads(_gh(["release", "list", "--limit", str(limit), "--json", "tagName,createdAt"], root))
+    tags = sorted((e["tagName"] for e in listing if TAG.fullmatch(e["tagName"])),
+                  key=lambda t: next(e["createdAt"] for e in listing if e["tagName"] == t), reverse=True)
+    seen: list[str] = []
+    keep_tags, prune = [], []
+    for position, tag in enumerate(tags):
+        info = json.loads(_gh(["release", "view", tag, "--json", "assets,body"], root))
+        receipts = [a["name"] for a in info.get("assets", []) if a["name"].endswith(RECEIPT_SUFFIX)]
+        if not receipts:
+            continue
+        with tempfile.TemporaryDirectory() as tmp:
+            _gh(["release", "download", tag, "-p", receipts[0], "-D", tmp], root)
+            key = json.dumps(json.loads((Path(tmp) / receipts[0]).read_text()).get("runtime_key"), sort_keys=True)
+        marked = any(line.strip() == KEEP_MARK for line in (info.get("body") or "").splitlines())
+        if key not in seen:
+            seen.append(key)
+        if position == 0 or marked or seen.index(key) < keep:
+            keep_tags.append(tag)
+        else:
+            prune.append({"tag": tag, "assets": [a["name"] for a in info["assets"]
+                                                 if a["name"].startswith(ra.PRODUCT + "-")]})
+    return {"keep": keep, "kept": keep_tags, "prune": prune}
+
+
+def apply_prune(plan: dict, *, root: Path) -> None:
+    for entry in plan["prune"]:
+        for name in entry["assets"]:
+            _gh(["release", "delete-asset", entry["tag"], name, "-y"], root)
+
+
 def cmd_release_bundle(args) -> int:
     root = Path(args.root).resolve()
     try:
+        if args.prune:
+            plan = prune_plan(root=root, keep=args.keep)
+            print(json.dumps(plan, sort_keys=True))
+            if args.apply:
+                apply_prune(plan, root=root)
+            return 0
         if args.find_reusable:
             rocm = args.rocm or image_rocm_version(root)
             found = find_reusable(args.tag, root=root, rocm_version=rocm)
@@ -153,5 +199,9 @@ def add_parser(sub) -> None:
     p.add_argument("--plan-id", help="lane build plan id (default: the one build under the work root)")
     p.add_argument("--find-reusable", action="store_true",
                    help="print the earlier release whose bundle has this runtime key (no build needed), then exit")
+    p.add_argument("--prune", action="store_true",
+                   help="list (and with --apply delete) the bundle assets of releases older than the newest --keep distinct runtimes")
+    p.add_argument("--keep", type=int, default=10, help="with --prune: distinct runtimes to keep (default 10)")
+    p.add_argument("--apply", action="store_true", help="with --prune: delete; without it only the plan is printed")
     p.add_argument("--rocm", help="with --find-reusable: ROCm version of the build image (default: the Dockerfile's)")
     p.set_defaults(func=cmd_release_bundle)

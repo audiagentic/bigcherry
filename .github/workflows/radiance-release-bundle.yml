@@ -131,3 +131,27 @@ jobs:
           json.dump(receipt, open(path, "w"), sort_keys=True, indent=1)
           PY
           gh release upload "$TAG" bigcherryrad-*.tar.gz bigcherryrad-*.tar.gz.sha256 bigcherryrad-*.receipt.json --repo "$GITHUB_REPOSITORY"
+
+  # Retention (owner decision): keep the bundles of the newest 10 distinct runtimes (a reused bundle counts once), always the
+  # newest radiance release's, and any release whose notes have a line `keep-bundle`. The job always prints the plan; it deletes
+  # only when the repository variable RADIANCE_BUNDLE_PRUNE is 'true', so turning deletion on is an explicit owner action.
+  prune:
+    needs: [attach-built, attach-reused]
+    if: always() && (needs.attach-built.result == 'success' || needs.attach-reused.result == 'success')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prune old bundles
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APPLY: ${{ vars.RADIANCE_BUNDLE_PRUNE }}
+          PYTHONPATH: tools
+        run: |
+          set -eu
+          flag=""
+          [ "$APPLY" = "true" ] && flag="--apply"
+          python3 -m bigcherry --engine radiance release-bundle unused --root . --prune --keep 10 $flag
+
