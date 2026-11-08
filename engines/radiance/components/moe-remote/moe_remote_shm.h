@@ -253,8 +253,11 @@ static_assert(sizeof(Request) == 256, "Request layout changed: bump kVersion");
 /* The same identity without the consumer word, for the helper lane kernels: every thread of a lane kernel validates the request
  * it reads from host-mapped memory, so they read only the Request's first two cache lines (layer, slot and world are +12..+23,
  * as rank/rank_count were before v25); Request::consumer (+252, a fourth line) would add a host-memory read to every thread of
- * every large-lane launch. consumer is slot_consumer(slot, world), so the slot, the world and the layer pin it; the CPU readers
- * (combine, host references), which read it, check it as well. */
+ * every large-lane launch. What the GPU lane check establishes is the EFFECTIVE consumer, slot_consumer(slot, world), and that
+ * it is the layer's (consumer_of): the lane writes its result to that rank's plane, chosen from the slot and the segment's
+ * width, never from the stored word. The stored Request::consumer word itself is checked only by the CPU readers (combine,
+ * host references) through request_slot_valid; a corrupt consumer word alone is therefore not refused by a non-combined GPU
+ * lane, but it cannot redirect any result. */
 constexpr bool request_lane_identity_valid(uint32_t slot, uint32_t world, uint32_t layer, uint32_t lane_slot,
                                            uint32_t segment_world) {
     return slot == lane_slot && slot < kMaxSlots && world >= 1 && world <= kMaxEngineRanks && world == segment_world &&

@@ -10,8 +10,10 @@
 #include "moe_remote_shm.h"
 #include "worker_generation_tables.h"
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
+#include <vector>
 
 namespace r3::worker_footprint {
 
@@ -43,6 +45,36 @@ inline std::array<bool, kLanes> served_lanes(uint32_t helper_count, uint32_t hel
         s[lane] = mine && !(lane_is_small(lane) && lane_class(lane) >= classes);
     }
     return s;
+}
+
+/* The small-lane classes a helper prepares (RAD12): its lanes/small_lanes list (up to kSmallClasses, ascending), else the one
+ * class of handoff.small_rows within the large lane's capacity. The worker takes its classes from here, and bc-serve the
+ * footprint it derives a budget with, from the same helper settings. */
+struct SmallClasses {
+    std::array<uint32_t, kSmallClasses> rows{};
+    uint32_t count = 0;
+};
+inline SmallClasses small_classes(const std::vector<uint32_t>& small_lanes, uint32_t small_rows, uint32_t max_rows) {
+    SmallClasses c;
+    if (small_lanes.empty()) {
+        c.rows[0] = std::min(small_rows, max_rows);
+        c.count = 1;
+    } else {
+        for (uint32_t v : small_lanes)
+            if (c.count < kSmallClasses) c.rows[c.count++] = v;
+    }
+    return c;
+}
+
+/* The lanes a helper prepares from its lane settings, the way r3_moe_worker opens them (power save: its own slots only). */
+inline Lanes lanes_for(const SmallClasses& classes, uint32_t max_rows, uint32_t helpers, uint32_t index, uint32_t world,
+                       bool power_save) {
+    Lanes l;
+    l.small_rows = classes.rows;
+    l.small_count = classes.count;
+    l.large_rows = max_rows;
+    l.open = served_lanes(helpers, index, world, classes.count, power_save);
+    return l;
 }
 
 /* One lane's work buffers (moe_remote_gpu.h ensure_lane_work, its stats, publish limit, the large lane's chunk counters and the

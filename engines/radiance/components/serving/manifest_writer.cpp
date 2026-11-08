@@ -312,6 +312,7 @@ const std::map<std::string, std::string>& leaf_of_key() {
         {"helper.combine", "/spec/processes/helper_common/combine/enabled"},
         {"helper.combine_min_rows", "/spec/processes/helper_common/combine/min_rows"},
         {"helper.combine_threads", "/spec/processes/helper_common/combine/threads"},
+        {"helper.power_save", "/spec/processes/helper_common/runtime/power_save"},
     };
     static const bool extended = [] {
         for (const auto& o : engine_option_fields()) m.emplace(o.key, o.path);
@@ -374,6 +375,8 @@ v1::Manifest checked_decode(const Json& doc, const char* step) {
 
 std::string sha_hex_of_zero() { return std::string(64, '0'); }
 }  // namespace
+
+nlohmann::json helper_common_settings(const nlohmann::json& values) { return helper_common(values); }
 
 std::string new_instance_id() {
     std::string id = slurp("/proc/sys/kernel/random/uuid");
@@ -460,6 +463,18 @@ BuiltManifest build_manifest(const ManifestInputs& in) {
             empty.push_back({{"owned_sha256", sha_hex_of_zero()}, {"count", 0}, {"bytes", 0}, {"experts", Json::array()}});
         draft["spec"]["plan"]["owner_map"]["helpers"] = empty;
         const v1::Manifest m = checked_decode(draft, "draft manifest");
+        // A derived budget (RAD49) was sized for the helper_common lanes and power save (worker_footprint.h). An experiment
+        // that patches either for a helper would make that helper's lanes differ from the footprint its budget leaves room for,
+        // so it needs the layout's explicit budgets.
+        if (in.resolved.provenance.contains("memory.helper_budgets_mib") &&
+            in.resolved.provenance.at("memory.helper_budgets_mib").at("origin") == "derived" && m.spec.processes.helper_common)
+            for (std::size_t i = 0; i < helper_count; ++i) {
+                const auto eff = v1::effective_helper_settings(m, i);
+                const auto& common = *m.spec.processes.helper_common;
+                if (eff.lanes.small_lanes != common.lanes.small_lanes || eff.runtime.power_save != common.runtime.power_save)
+                    fail("helper " + std::to_string(i) + ": an experiment changes its small lanes or power save, but its budget "
+                         "is derived from the helper_common lanes; give the layout's helpers budget-mib for such an experiment");
+            }
         bc::experts::OwnerMap planned;
         std::string why;
         if (!bc::experts::plan_owners(container, owner_policies(m), helper_archs(m), helper_budgets(m), &planned, &why))

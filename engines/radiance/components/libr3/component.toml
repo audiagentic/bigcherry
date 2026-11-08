@@ -95,4 +95,4 @@ status = "diagnostic"
 summary = "selftest: compare compatibility and native MoE forms"
 
 [test]
-targets = ["r3_rewrite_check", "r3_helper_config_exports"]
+targets = ["r3_rewrite_check", "r3_helper_config_exports", "r3_moe_settings_test"]

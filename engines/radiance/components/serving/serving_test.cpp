@@ -13,6 +13,7 @@
 #include "sdk_check.h"
 #include "test_rad_fixture.h"
 #include "worker_footprint.h"
+#include "v1/helper_settings.h"
 #include "sha256.h"
 
 #undef NDEBUG   /* the checks below are assert()s: keep them live in Release component builds */
@@ -1503,7 +1504,7 @@ void engine_only_layout(Fixture& t) {
 // lanes, pointer banks, slot map and incoming slot (worker_footprint.h, which the worker checks its lanes against), for this
 // model and this helper's lanes (one small class of handoff.small_rows, the large lane of handoff.max_rows, power save on).
 uint64_t derived_budget_mib(const fs::path& model, uint64_t card_mib, uint64_t reserve_mib, uint32_t helpers, uint32_t index,
-                            uint32_t world) {
+                            uint32_t world, const r3::worker_footprint::SmallClasses& classes, uint32_t max_rows, bool power_save) {
     namespace fp = r3::worker_footprint;
     bc::experts::Container c;
     MoeShape cs{};
@@ -1513,15 +1514,78 @@ uint64_t derived_budget_mib(const fs::path& model, uint64_t card_mib, uint64_t r
         for (uint32_t e = 0; e < c.experts; ++e)
             if (c.weight(l, e, 0) && c.weight(l, e, 1))
                 largest = std::max(largest, uint64_t(bc::experts::laid_out_bytes(c, true, l, e)));
-    fp::Lanes lanes{};
-    lanes.small_rows[0] = 8; lanes.small_count = 1; lanes.large_rows = 4096;   /* the schema defaults */
-    lanes.open = fp::served_lanes(helpers, index, world, 1);
+    const fp::Lanes lanes = fp::lanes_for(classes, max_rows, helpers, index, world, power_save);
     const fp::Shape shape{c.layers, cs.experts, cs.hidden, cs.intermediate, cs.top_k ? cs.top_k : r3::moe_shm::kTopK,
                           r3::moe_shm::kActGroup};
     const uint64_t fixed = fp::fixed_bytes(shape, lanes, fp::stride_bound(largest));
     const uint64_t budget = fp::expert_budget_bytes(card_mib << 20, reserve_mib << 20, fixed) >> 20;
     assert(budget > 0 && budget < card_mib - reserve_mib);   /* strictly less than the old whole-card derivation */
     return budget;
+}
+
+/* the schema defaults: helper_profile.toml's empty small-lane list (one class of handoff.small_rows 8), max_rows 4096, power save */
+uint64_t derived_budget_mib(const fs::path& model, uint64_t card_mib, uint64_t reserve_mib, uint32_t helpers, uint32_t index,
+                            uint32_t world) {
+    return derived_budget_mib(model, card_mib, reserve_mib, helpers, index, world,
+                              r3::worker_footprint::small_classes({}, 8, 4096), 4096, true);
+}
+
+/* PR #771 review: the budget bc-serve derives is the one the worker's own settings imply. For both power-save modes the
+ * manifest's helper_common carries the resolved value, and each helper's settings as the worker reads them (v1 helper settings:
+ * its small lanes, hand-off rows, index, engine width, power save) give, through the worker's functions (small_classes,
+ * lanes_for), exactly the budget the manifest declares. An experiment that patches a helper's lanes is refused while the
+ * budgets are derived. */
+void derived_budget_is_the_workers(Fixture& t) {
+    namespace sv = bc::serving;
+    const auto model = t.root / "derived-budget-model.rad";
+    bc::test::write_rad(model, 4, 16, 128, 128, {});
+    const auto heat = t.root / "derived-budget.hot-first";
+    {
+        std::vector<uint32_t> counts(128 * 16, 1);
+        std::ofstream(heat, std::ios::binary).write(reinterpret_cast<const char*>(counts.data()), counts.size() * 4);
+    }
+    uint64_t budgets_on[2] = {}, budgets_off[2] = {};
+    for (const bool power_save : {true, false}) {
+        Options opts;
+        opts.site = t.file("derived-budget-site.toml", "[engine]\nmodel = \"" + model.string() + "\"\nradiance_home = \"/runtime\"\n"
+                                                        "[handoff]\nheat = \"" + heat.string() + "\"\nhistogram = \"/heat.live\"\n");
+        opts.sets = {"layout.name=\"flashnext-tp2xtx\"", std::string("helper.power_save=") + (power_save ? "true" : "false")};
+        sv::ManifestInputs in;
+        in.resolved = sv::resolve(opts, t.facts);
+        in.instance_id = "11111111-1111-4111-8111-111111111111";
+        in.producer_sha256 = std::string(64, 'a');
+        in.profile = "lab";
+        const auto built = sv::build_manifest(in);
+        assert(built.document.at("spec").at("processes").at("helper_common").at("runtime").at("power_save") == power_save);
+        auto read = bc::serving::v1::read_manifest(built.text, "derived-budget", bc::serving::v1::PlanUse::measuring);
+        assert(read.ok());
+        const uint64_t card[2] = {32624, 16368}, reserve[2] = {2048, 1024};
+        for (uint32_t i = 0; i < 2; ++i) {
+            auto s = bc::serving::helper_settings(read.value(), "helper" + std::to_string(i));
+            assert(s.ok());
+            const auto& hs = s.value();
+            assert(hs.helper.power_save == power_save);   /* the worker runs the mode the budget was sized for */
+            const auto classes = r3::worker_footprint::small_classes(hs.small_lanes, hs.handoff.small_rows, hs.handoff.max_rows);
+            const uint64_t want = derived_budget_mib(model, card[i], reserve[i], hs.helper.count, hs.helper.index,
+                                                     hs.helper.engine_ranks, classes, hs.handoff.max_rows, hs.helper.power_save);
+            assert(hs.budget_mib == want);
+            (power_save ? budgets_on : budgets_off)[i] = hs.budget_mib;
+        }
+        if (!power_save) {   /* an experiment patching a helper's lanes while the budgets are derived is refused */
+            sv::ManifestInputs patched = in;
+            patched.experiment = Json{{"shape", {{"helpers", Json::array({Json{{"role", "helper1"},
+                                        {"settings", {{"lanes", {{"small_lanes", Json::array({4, 8})}}}}}}})}}}};
+            patched.experiment_from = "test";
+            bool refused = false;
+            try { (void)sv::build_manifest(patched); } catch (const std::exception& e) {
+                refused = std::string(e.what()).find("budget-mib") != std::string::npos;
+                if (!refused) std::fprintf(stderr, "derived_budget_is_the_workers: refused for another reason: %s\n", e.what());
+            }
+            assert(refused);
+        }
+    }
+    /* power save off opens every protocol lane: more lanes, smaller budgets */
+    assert(budgets_off[0] < budgets_on[0] && budgets_off[1] < budgets_on[1]);
 }
 
 void tp_engine_with_helper_layout(Fixture& t) {
@@ -1636,6 +1700,7 @@ int main(int argc, char** argv) {
         engine_only_layout(t);
         tp_engine_with_helper_layout(t);
         tp_engine_with_two_helpers_layout(t);
+        derived_budget_is_the_workers(t);
         sdk_environment_step(t);
         std::cout << "PASS: fake KFD/PCI/proc detection; strict keys; types/ranges; required; "
                      "precedence/caps; provenance/hash; launcher engine/WorkerConfig parity; "

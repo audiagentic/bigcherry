@@ -1,6 +1,7 @@
 #include "serving.h"
 #include "calibration.h"
 #include "moe_remote_shm.h"
+#include "manifest_writer.h"
 #include "experts.h"
 #include "worker_footprint.h"
 #include "sha256.h"
@@ -1056,18 +1057,23 @@ Resolved resolve(const Options& options, const Json& facts) {
                     if (b <= 0) throw std::runtime_error("memory.helper_budgets_mib: an expert has no device layout size");
                     largest = std::max(largest, uint64_t(b));
                 }
-        const uint64_t max_rows = value_at(values, "handoff.max_rows").get<uint64_t>();
-        fp::Lanes lanes{};
-        lanes.small_rows[0] = uint32_t(std::min(value_at(values, "handoff.small_rows").get<uint64_t>(), max_rows));
-        lanes.small_count = 1;   /* helper_profile.toml lanes/small_lanes is empty: the one small class */
-        lanes.large_rows = uint32_t(max_rows);
-        const bool power_save = value_at(values, "helper.power_save").get<bool>();
+        // The lanes the helpers will prepare: the helper_common section the manifest emits for these values (its small-lane
+        // classes and power save, helper_profile.toml with the resolved rows) and the hand-off rows -- the settings the worker
+        // reads (v1 helper settings) and sizes its lanes with through the same worker_footprint.h functions.
+        const Json common = helper_common_settings(values);
+        std::vector<uint32_t> small_lanes;
+        for (const auto& v : common.at("lanes").at("small_lanes")) small_lanes.push_back(v.get<uint32_t>());
+        const bool power_save = common.at("runtime").at("power_save").get<bool>();
+        const uint32_t max_rows = uint32_t(value_at(values, "handoff.max_rows").get<uint64_t>());
+        const fp::SmallClasses classes =
+            fp::small_classes(small_lanes, uint32_t(value_at(values, "handoff.small_rows").get<uint64_t>()), max_rows);
         Json derived_budgets = value_at(values, "memory.helper_budgets_mib");
         Json inputs = Json::array({"layout.name", "facts.gpus", "engine.model", "handoff.max_rows", "handoff.small_rows",
-                                   "helper.power_save"});
+                                   "helper.power_save", "helper_profile.toml lanes/small_lanes"});
         for (size_t i = 0; i < selected.size(); ++i) {
             if (!budget_derived[i]) continue;
-            lanes.open = fp::served_lanes(uint32_t(cards.size()), uint32_t(i), uint32_t(engine_cards.size()), 1u, power_save);
+            const fp::Lanes lanes = fp::lanes_for(classes, max_rows, uint32_t(cards.size()), uint32_t(i),
+                                                  uint32_t(engine_cards.size()), power_save);
             const uint64_t fixed = fp::fixed_bytes(shape, lanes, fp::stride_bound(largest));
             const uint64_t mib = 1ull << 20;
             const uint64_t card = selected[i].at("vram_total_mib").get<uint64_t>() * mib;

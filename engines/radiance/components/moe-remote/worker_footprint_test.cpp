@@ -80,6 +80,42 @@ int main() {
     const auto one = fp::served_lanes(3, 2, 1, 1);
     for (uint32_t lane = 0; lane < kLanes; ++lane)
         check(one[lane] == (lane % kMaxSlots == 2 && (!lane_is_small(lane) || lane_class(lane) < 1)), "TP1 helper lanes");
+    /* PR #771 review: the lanes come from the helper's lane settings, the same functions for the worker (worker_shape.h
+     * helper_small_classes, lanes_open) and for bc-serve: an empty small-lane list is one class of small_rows (within the large
+     * lane), a list is its classes; both power-save modes. */
+    {
+        const auto one = fp::small_classes({}, 8, 4096);
+        check(one.count == 1 && one.rows[0] == 8, "empty list: one class of small_rows");
+        check(fp::small_classes({}, 64, 32).rows[0] == 32, "small_rows within the large lane");
+        const auto four = fp::small_classes({4, 8, 16, 24}, 8, 4096);
+        check(four.count == 4 && four.rows[0] == 4 && four.rows[3] == 24, "a list of four classes");
+        for (const bool save : {true, false}) {
+            const fp::Lanes l1 = fp::lanes_for(one, 4096, 2, 1, 2, save), l4 = fp::lanes_for(four, 4096, 2, 1, 2, save);
+            uint32_t n1 = 0, n4 = 0;
+            for (uint32_t lane = 0; lane < kLanes; ++lane) { n1 += l1.open[lane]; n4 += l4.open[lane]; }
+            const uint32_t slots = save ? 2u : kMaxSlots;   /* power save: helper 1's two slots; off: every protocol slot */
+            check(n1 == slots * 2 && n4 == slots * 5, "open lanes: (classes + the large lane) a served slot");
+            uint64_t want = 0;
+            for (uint32_t lane = 0; lane < kLanes; ++lane) {
+                if (!l4.open[lane]) continue;
+                const uint32_t cls = lane_class(lane);
+                const uint64_t cap = cls < kSmallClasses ? four.rows[cls] : 4096;
+                want += fp::lane_bytes(flash, cap, cap * flash.top_k, cls == kSmallClasses);
+            }
+            check(fp::lanes_bytes(flash, l4) == want && want > fp::lanes_bytes(flash, l1), "four classes cost their own lanes");
+            /* the worker with power save off opens every lane (lanes_open: all true); a disabled class gets no buffers, so the
+             * footprint of that mask is the planner's */
+            fp::Lanes all = l4;
+            all.open.fill(true);
+            check(fp::lanes_bytes(flash, all) == (save ? fp::lanes_bytes(flash, fp::lanes_for(four, 4096, 2, 1, 2, false))
+                                                       : fp::lanes_bytes(flash, l4)),
+                  "the worker's all-lanes mask costs what the planner's power-save-off plan does");
+            fp::Lanes all1 = l1;
+            all1.open.fill(true);
+            check(fp::lanes_bytes(flash, all1) == fp::lanes_bytes(flash, fp::lanes_for(one, 4096, 2, 1, 2, false)),
+                  "and so for one class: classes past the count are not prepared");
+        }
+    }
     std::puts("r3_worker_footprint_test: ok");
     return 0;
 }

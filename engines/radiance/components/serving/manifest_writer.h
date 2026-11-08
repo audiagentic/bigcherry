@@ -50,6 +50,10 @@ struct BuiltManifest {
 /* Throws std::runtime_error with the failing step's message. */
 BuiltManifest build_manifest(const ManifestInputs& in);
 
+/* spec.processes.helper_common as the manifest emits it for these resolved values (helper_profile.toml, resolved rows taken
+ * from the values): what the helpers run with unless an experiment patches a helper. */
+nlohmann::json helper_common_settings(const nlohmann::json& values);
+
 /* Atomically creates `path` read-only with `text`; refuses an existing path (a manifest is immutable and never replaced). */
 void write_manifest_file(const std::filesystem::path& path, const std::string& text);
 

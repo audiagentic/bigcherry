@@ -9,26 +9,13 @@ uint64_t helper_budget_bytes() {
     return r3_serving::settings().budget_mib * 1024ull * 1024ull;
 }
 uint32_t helper_max_rows() { return r3_serving::settings().handoff.max_rows; }
-uint32_t helper_small_rows() {
-    return std::min(r3_serving::settings().handoff.small_rows, helper_max_rows());
-}
 
 /* The pre-queued small-lane sizes (RAD12): R3_MOE_WORKER_SMALL_LANES="4,8,16,24" (up to kSmallClasses, strictly ascending,
  * each within the large-lane capacity), else the single size R3_MOE_WORKER_SMALL_ROWS gives (the production behaviour). */
-struct SmallClasses {
-    std::array<uint32_t, r3::moe_shm::kSmallClasses> rows{};
-    uint32_t count = 0;
-};
-SmallClasses helper_small_classes() {
-    SmallClasses sc;
-    const auto& lanes = r3_serving::settings().small_lanes;
-    if (lanes.empty()) {
-        sc.rows[0] = helper_small_rows();
-        sc.count = 1;
-    } else {
-        for (uint32_t v : lanes) sc.rows[sc.count++] = v;
-    }
-    return sc;
+using SmallClasses = r3::worker_footprint::SmallClasses;
+SmallClasses helper_small_classes() {   /* the one definition bc-serve sizes the derived budget with (worker_footprint.h) */
+    return r3::worker_footprint::small_classes(r3_serving::settings().small_lanes, r3_serving::settings().handoff.small_rows,
+                                               helper_max_rows());
 }
 
 /* The lanes this helper serves: its own slots, slot_of(helper_index, r, world) for every engine rank r (RAD49), and a

@@ -37,6 +37,7 @@ leaf = "runtime/power_save"
 setting = "R3_MOE_WORKER_POWER_SAVE"
 value = true
 basis = "component_default"
+from = "helper.power_save"
 
 [[row]]
 leaf = "runtime/queue_warm"
