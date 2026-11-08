@@ -39,6 +39,7 @@ while [ $# -gt 0 ]; do
   case "$1" in --manifest) manifest=$2; shift 2 ;; --role) role=$2; shift 2 ;; --measuring) measuring=1; shift ;; *) shift ;; esac
 done
 FAKE_ID=${role#helper}
+[ "$FAKE_ID" = 0 ] && [ -z "${FAKE_NO_SEGMENT:-}" ] && : > "$SHM_DIR/r3-moe-helper"   # helper 0 makes the shared segment
 echo $$ >> "$FAKE_PIDS"
 echo "helper $FAKE_ID manifest $manifest ${measuring:+measuring}" >> "$FAKE_HELPER_ARGS"
 [ "${FAKE_FAIL_HELPER:-}" = "$FAKE_ID" ] && { echo "r3_moe_worker: cannot start" ; exit 1; }
@@ -141,7 +142,8 @@ class LaunchCleanupTests(unittest.TestCase):
                     "PATH": f"{self.root / 'fakebin'}:{os.environ['PATH']}", "REAL_PYTHON": sys.executable,
                     "FAKE_LOG": str(self.log), "FAKE_LAYOUT_ENV": str(self.root / "layout.env"), "FAKE_PIDS": str(self.pids),
                     "FAKE_MEASURING": str(self.measuring), "FAKE_TIMES": str(self.root / "times.log"), "FAKE_HELPER_ARGS": str(self.root / "helper-args.log"),
-                    "FAKE_ENGINE_ARGS": str(self.root / "engine-args"), "FAKE_ENGINE_ENV": str(self.root / "engine-env")}
+                    "SHM_DIR": str(self.root / "shm"), "FAKE_ENGINE_ARGS": str(self.root / "engine-args"), "FAKE_ENGINE_ENV": str(self.root / "engine-env")}
+        (self.root / "shm").mkdir()
         self.addCleanup(self._kill_leftovers)
 
     @staticmethod
@@ -302,6 +304,17 @@ LAYOUT_SUMMARY=dense
                 self.assertFalse(self.measuring.exists(), "the engine must not start with an incomplete helper set")
                 self.assertEqual(self._events(), ["apply", "restore"])
                 self.assertEqual(self._alive_pids(), [])
+
+    def test_helpers_up_but_no_shared_segment_stops_before_the_engine_starts(self) -> None:
+        # seen on the lab host 2026-11-09: the engine could not open the hand-off segment, ran without the hand-off, planned every
+        # expert locally and was refused with a memory mismatch that named the wrong cause; the launcher now says it at once
+        done = subprocess.run(self._args(), env={**self.env, "FAKE_NO_SEGMENT": "1"}, cwd=REPO, capture_output=True, text=True, timeout=120)
+        self.assertNotEqual(done.returncode, 0, done.stdout + done.stderr)
+        self.assertIn("does not exist; not starting the engine", done.stdout + done.stderr)
+        self.assertTrue(all(len(l.split()) >= 3 and l.split()[1] == "measure" for l in
+                            (self.root / "times.log").read_text().splitlines() if l.startswith("engine-start")),
+                        "only the measuring start of the engine may have run, not the serving start")
+        self.assertEqual(self._alive_pids(), [])
 
     def test_an_interrupt_during_the_measuring_start_stops_the_processes_and_restores_the_power_settings(self) -> None:
         proc = subprocess.Popen(self._args(), env={**self.env, "FAKE_MEASURE_HANG": "1"}, cwd=REPO,

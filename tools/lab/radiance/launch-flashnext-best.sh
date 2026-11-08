@@ -93,6 +93,7 @@ WORK=${BC_WORK_ROOT:?set BC_WORK_ROOT (source tools/env/bigcherry-env.sh)}
 RUN=$WORK/flashnext
 PIDS=$RUN/pids
 SHM=/r3-moe-helper
+SHM_DIR=${SHM_DIR:-/dev/shm}   # where POSIX shared memory lives; a test points it at a scratch directory
 PORT=36080
 HEAT=$WORK/heat/flashnext-mixed.hot-first
 BUILD=""
@@ -489,7 +490,7 @@ start_engine_manifest() {
 # exits by itself (--plan-memory, with the unmeasured manifest), then the helpers stop. It never serves and never runs a request.
 plan_check_start_engine_measure() {
   if [ "$LAYOUT_HELPER_COUNT" -gt 0 ]; then
-    rm -f "/dev/shm${SHM}"
+    rm -f "$SHM_DIR${SHM}"
     start_helpers "$PLAN_MEASURING_MANIFEST" --measuring || { stop_procs; return 1; }
     # what the helpers hold of the host while they are up: anonymous memory of each plus the shared segment once (file pages are
     # reclaimable and not counted); bc-serve plans the checkpoint slots around it (plan-check.sh passes it with the plan)
@@ -509,8 +510,14 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib/plan-check.sh"
 plan_manifest_prepare || { echo "RADIANCE_EXIT=97 the measured serving manifest could not be made (above); nothing was started for serving"; exit 97; }
 
 trap 'exit 1' ERR
-rm -f "/dev/shm${SHM}"
+rm -f "$SHM_DIR${SHM}"
 if [ "$LAYOUT_HELPER_COUNT" -gt 0 ]; then start_helpers "$PLAN_MANIFEST"; fi
+if [ "$LAYOUT_HELPER_COUNT" -gt 0 ] && [ ! -e "$SHM_DIR${SHM}" ]; then
+  # The helpers reported ready, so helper 0 made the segment; if it is gone now something removed it, and an engine that cannot
+  # open it runs without the hand-off and is refused by the plan check with a misleading memory mismatch (seen 2026-11-09).
+  echo "RADIANCE_EXIT=1 the helpers are up but $SHM_DIR${SHM} does not exist; not starting the engine" >&2
+  false
+fi
 LOG=$RUN/engine-$STAMP.log
 start_engine_manifest "$LOG" "$PLAN_MANIFEST"
 echo $! > "$PIDS/engine"
