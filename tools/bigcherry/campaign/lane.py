@@ -770,6 +770,8 @@ def _execute_build_phase(
                 + [(f"runtime-target:{target}", "") for target in layout.runtime_targets]
                 + [(f"component:{name}", component.content_digest())
                    for name, component in components.load_all(paths.REPO_ROOT, cfg.engine).items()]
+                # The repository files the components read outside their own directories (engine.toml build.repo-inputs).
+                + list(layout.repo_input_hashes(paths.REPO_ROOT))
             )
         ),
         toolchain_request=campaign_build.toolchain_request_for_platform(platform_cfg, layout.rocm_paths),

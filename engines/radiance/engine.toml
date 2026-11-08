@@ -29,6 +29,11 @@ runtime-home = "radiance_home"
 # managed patch rad0011 links the shared serving manifest v1 library (one source list for the serving component and the
 # engine; it fails closed when this is not passed).
 repo-paths = { BC_SERVING_V1_CMAKE = "engines/radiance/components/serving/bc_serving_v1.cmake" }
+# Repository files the components read at configure or build time from outside their own directories. A build's identity
+# (build_plan_id) covers each one's bytes, so a change to one is a new build, never "already built": archs.toml chooses
+# moe-remote's GPU targets and, with layouts.toml, is embedded in bc-serve (components/serving/CMakeLists.txt).
+# tools/tests/campaign/test_build_identity_inputs.py fails when a component reads another such file undeclared.
+repo-inputs = ["engines/radiance/archs.toml", "engines/radiance/layouts.toml"]
 rocm-paths = { RAD_HIPCC = "bin/hipcc", CMAKE_HIP_COMPILER = "lib/llvm/bin/clang++", RAD_HIP_RUNTIME = "lib/libamdhip64.so", RAD_HSA_RUNTIME = "lib/libhsa-runtime64.so" }
 
 # Where `bigcherry patch-promote` puts a validated patch (MEN25): the production patch set it joins, and the production
