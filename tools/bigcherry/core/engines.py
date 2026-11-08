@@ -128,6 +128,10 @@ class EngineLayout:
     #: (managed patch rad0011 builds the shared serving manifest v1 library from the repository's own source list); the
     #: build passes each as an absolute path, so an engine tree never carries a copy
     repo_paths: tuple[tuple[str, str], ...] = ()
+    #: repository-relative files outside every component directory that the components read at configure or build time
+    #: (radiance: archs.toml sets moe-remote's GPU targets, and serving embeds layouts.toml and archs.toml): their bytes
+    #: are part of what a build produces, so they are part of its identity (see repo_input_hashes)
+    repo_inputs: tuple[str, ...] = ()
     #: (name, repository-relative directory) of each component the engine builds, from [components]
     components: tuple[tuple[str, str], ...] = ()
     #: repository-relative registry of the external sources (forks, upstream PRs) this engine's patches are ported
@@ -163,6 +167,17 @@ class EngineLayout:
                 raise EngineError(f"engine {self.name!r}: build.repo-paths.{key} names {relative}, which is not a file in {project_root}")
             options[key] = path.as_posix()
         return options
+
+    def repo_input_hashes(self, project_root: Path) -> tuple[tuple[str, str], ...]:
+        """(``repo:<path>``, sha256 of the file) for each declared repository input; a missing file is an error here."""
+        import hashlib
+        out = []
+        for relative in self.repo_inputs:
+            path = project_root / relative
+            if not path.is_file():
+                raise EngineError(f"engine {self.name!r}: build.repo-inputs names {relative}, which is not a file in {project_root}")
+            out.append((f"repo:{relative}", hashlib.sha256(path.read_bytes()).hexdigest()))
+        return tuple(out)
 
     def recipes_path(self, project_root: Path) -> Path:
         return project_root / self.recipes
@@ -332,7 +347,7 @@ def _acceptance(value: object, name: str) -> tuple[AcceptanceEntry, ...]:
 def _build_table(table: object, name: str) -> dict[str, object]:
     if not isinstance(table, dict):
         raise EngineError(f"engine {name!r}: missing [build] table")
-    unknown = sorted(set(table) - {"targets-option", "binary", "runtime-targets", "runtime-home", "rocm-paths", "repo-paths"})
+    unknown = sorted(set(table) - {"targets-option", "binary", "runtime-targets", "runtime-home", "rocm-paths", "repo-paths", "repo-inputs"})
     if unknown:
         raise EngineError(f"engine {name!r}: unknown build key(s): {', '.join(unknown)}")
     return {
@@ -347,6 +362,9 @@ def _build_table(table: object, name: str) -> dict[str, object]:
         "repo_paths": tuple(sorted(
             (key, _relative(value, f"build.repo-paths.{key}", name))
             for key, value in _pairs(table, "repo-paths", "build", name)
+        )),
+        "repo_inputs": tuple(sorted(
+            _relative(value, "build.repo-inputs", name) for value in table.get("repo-inputs", ())
         )),
     }
 
