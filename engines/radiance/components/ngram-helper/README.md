@@ -2,7 +2,7 @@
 
 ## Summary
 
-Opt-in n-gram row gather on a non-rank card (`R3_NGRAM_DEV`), split out of
+Opt-in n-gram row gather on a non-rank card (once `R3_NGRAM_DEV`; now off), split out of
 `libr3` (RCS06).
 
 ## Outcome
@@ -16,9 +16,8 @@ topology question is revisited.
 
 ## Detail
 
-All settings under this component (`R3_NGRAM_DEV`, `R3_NGRAM_HELPER_SO`,
-`R3_NGRAM_AVX`, `R3_NGRAM_RAM`, `R3_NGRAM_MIB`) are `evaluated` — see
-`component.toml` for each one's summary and activation marker. To use it
-anyway for further investigation: list `libr3ngram` in `--kernels` ahead of the
-engine's kernel library and set `R3_NGRAM_DEV`. Do not spend new measurement
-runs on R9700-as-storage topologies per the owner's 2026-10-13 call.
+The component's environment settings (`R3_NGRAM_DEV`, `R3_NGRAM_HELPER_SO`, `R3_NGRAM_AVX`, `R3_NGRAM_RAM`,
+`R3_NGRAM_MIB`, `R3_NGRAM_RESERVE_MIB`, `R3_NGRAM_MAX_M`) are gone (RSC12: no environment settings): the gather is off, and
+the helper libraries are found next to the plugin. It is not a manifest field because nothing uses it and the owner
+shelved it (2026-10-13); if the topology question is revisited, selecting a card becomes a field under
+`spec.processes.engine`, bound like the kernel switches. History: `docs/archive/radiance/LAB_HISTORY.md`.

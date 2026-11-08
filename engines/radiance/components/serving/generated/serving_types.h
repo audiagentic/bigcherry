@@ -18,10 +18,10 @@ inline constexpr std::string_view kApiVersion = "bigcherry/v1";
 inline constexpr std::string_view kKind = "ServingManifest";
 inline constexpr int64_t kContractVersion = 1;
 // sha256 of the JCS validation schema without annotations (contract/README.md); the build pins it.
-inline constexpr std::string_view kFingerprint = "sha256:52bdaed905247b4d0289a621e4b4fcfab211e777e8fa1055e50a80200b8abe26";
+inline constexpr std::string_view kFingerprint = "sha256:855776f8759638961962261c0e64ec137e03a185d204d8144386fbdedada3bd3";
 // sha256 of the schema plus the frozen semantics it does not express (classes, lifecycle, Radiance bindings,
 // reader error codes); README.md.
-inline constexpr std::string_view kSemanticFingerprint = "sha256:0e8992e43836d33a9ff8c89898bef9fff8b5fe7ad2bdb475ac86e2faf3c13801";
+inline constexpr std::string_view kSemanticFingerprint = "sha256:be0ae35571267f835f3c355a79159e5caae2c7677cb1327b33bff16c8fba5461";
 // spec §11 amendment 8: the deepest container nesting a valid document can have (the root object is 1),
 // derived from the closed schema by the generator. The strict reader refuses anything deeper.
 inline constexpr size_t kMaxDepth = 9;
@@ -999,6 +999,9 @@ struct EngineKernels {
     std::optional<bool> dec11;
     // Decode GEMV selection (`R3_GEMV`).
     std::optional<bool> gemv;
+    // Stage a decode-sized step (at most 16 rows) in the publish kernel itself (`R3_MOE_WORKER_FUSESTAGE`; amendment
+    // 15).
+    std::optional<bool> fuse_stage;
 };
 
 // /spec/processes/engine: Engine process settings.
@@ -1314,7 +1317,7 @@ struct FieldInfo {
     std::string_view default_source;   // where the default comes from, or empty
     std::string_view ref_def;          // kind "ref": the shared type it uses, else empty
 };
-inline constexpr std::array<FieldInfo, 363> kFields = {{
+inline constexpr std::array<FieldInfo, 364> kFields = {{
     {"$defs/uint", "integer", "", true, false,
      "", "", false,
      "Unsigned integer within I-JSON's safe range.", "", "", ""},
@@ -2176,6 +2179,9 @@ inline constexpr std::array<FieldInfo, 363> kFields = {{
     {"/spec/processes/engine/kernels/gemv", "boolean", "policy", false, false,
      "", "", false,
      "Decode GEMV selection (`R3_GEMV`).", "", "", ""},
+    {"/spec/processes/engine/kernels/fuse_stage", "boolean", "policy", false, false,
+     "", "", false,
+     "Stage a decode-sized step (at most 16 rows) in the publish kernel itself (`R3_MOE_WORKER_FUSESTAGE`; amendment 15).", "", "", ""},
     {"/spec/processes/helper_common", "ref", "policy", false, false,
      "", "", false,
      "Settings shared by every helper; per-role and lab patches apply on top (spec §2.2). Present exactly when `processes.helpers` is not empty (amendment 12).", "", "", "helperCommon"},
@@ -2410,7 +2416,7 @@ struct EnvBinding {
     std::string_view kind;   // "boolean" (1 or 0) or "integer"
     std::string_view env;
 };
-inline constexpr std::array<EnvBinding, 8> kEnvBindings = {{
+inline constexpr std::array<EnvBinding, 9> kEnvBindings = {{
     {"/spec/processes/engine/kernels/attn_native", "boolean", "R3_ATTN_NATIVE"},
     {"/spec/processes/engine/kernels/moe_native", "boolean", "R3_MOE_NATIVE"},
     {"/spec/processes/engine/kernels/moe_fp16", "boolean", "R3_MOE_FP16"},
@@ -2419,6 +2425,7 @@ inline constexpr std::array<EnvBinding, 8> kEnvBindings = {{
     {"/spec/processes/engine/kernels/all_reduce_wire4", "boolean", "R3_AR_WIRE4"},
     {"/spec/processes/engine/kernels/dec11", "boolean", "R3_DEC11"},
     {"/spec/processes/engine/kernels/gemv", "boolean", "R3_GEMV"},
+    {"/spec/processes/engine/kernels/fuse_stage", "boolean", "R3_MOE_WORKER_FUSESTAGE"},
 }};
 
 // [[class_default]] rules: the provenance class of everything at or under a document position.

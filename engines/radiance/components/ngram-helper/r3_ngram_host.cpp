@@ -96,8 +96,10 @@ long long pget(const RadParam* p, int n, const char* key, long long def) {
 }
 
 std::vector<int> parse_devices() {
+    // The gather is opt-in and was selected by R3_NGRAM_DEV (a comma list of card indices). The environment is no longer
+    // read (RSC12): nothing selects a card, so the gather stays off. The parser stays for the day it is a manifest field.
     std::vector<int> out;
-    const char* e = std::getenv("R3_NGRAM_DEV");
+    const char* e = nullptr;
     if (!e || !*e) return out;
     const char* p = e;
     while (*p) {
@@ -122,8 +124,7 @@ std::string sibling_helper() {
 }
 
 bool open_helper(Helper* h) {
-    const char* e = std::getenv("R3_NGRAM_HELPER_SO");
-    const std::string path = e && *e ? e : sibling_helper();
+    const std::string path = sibling_helper();
     h->h = dlopen(path.c_str(), RTLD_NOW | RTLD_LOCAL);
     if (!h->h) {
         std::fprintf(stderr, "libr3: R3_NGRAM_DEV helper dlopen failed: %s\n", dlerror());
@@ -153,8 +154,7 @@ bool open_avx(State* s) {
     if (s->avx_launch) return true;
     AvxPath found;
     dl_iterate_phdr(avx_cb, &found);
-    const char* e = std::getenv("R3_NGRAM_AVX");
-    const std::string path = !found.path.empty() ? found.path : (e && *e ? e : "libavx.so");
+    const std::string path = !found.path.empty() ? found.path : "libavx.so";
     s->avx_h = dlopen(path.c_str(), RTLD_NOW | RTLD_LOCAL);
     if (!s->avx_h) return false;
     using CountFn = int (*)(void);
@@ -249,8 +249,7 @@ int read_table(const uint8_t* src, size_t bytes, Sink sink) {
 }
 
 bool ram_wanted() {
-    const char* e = std::getenv("R3_NGRAM_RAM");
-    return !(e && *e == '0');
+    return true;   // rows the device does not hold go to a host copy (was R3_NGRAM_RAM, default on)
 }
 
 void ram_copy(State* s, const uint8_t* table) {
@@ -334,8 +333,7 @@ int init_ngram(const RadParam* p, int n_p, int, int, void** out) {
     const int n = (int)pget(p, n_p, "n_embd", 0);
     const int64_t vocab = pget(p, n_p, "n_vocab", 0);
     int max_m = (int)pget(p, n_p, "M", 1);
-    if (const char* e = std::getenv("R3_NGRAM_MAX_M")) max_m = std::max(max_m, std::atoi(e));
-    else max_m = std::max(max_m, 32768);
+    max_m = std::max(max_m, 32768);   // was R3_NGRAM_MAX_M, default 32768
     if (n <= 0 || vocab <= 0 || max_m <= 0) return RAD_E_SHAPE;
 
     if (g) {
@@ -350,11 +348,9 @@ int init_ngram(const RadParam* p, int n_p, int, int, void** out) {
     if (!open_helper(&s->hp)) return RAD_E_DEVICE;
 
     uint64_t reserve = 2048ull << 20;
-    if (const char* e = std::getenv("R3_NGRAM_RESERVE_MIB"))
-        reserve = (uint64_t)std::strtoull(e, nullptr, 10) << 20;
+    // reserve stays 2048 MiB (was R3_NGRAM_RESERVE_MIB)
     uint64_t limit = UINT64_MAX;
-    if (const char* e = std::getenv("R3_NGRAM_MIB"))
-        limit = (uint64_t)std::strtoull(e, nullptr, 10) << 20;
+    // limit stays unbounded (was R3_NGRAM_MIB)
 
     int64_t first = 0;
     for (int dev : devs) {
@@ -513,8 +509,7 @@ int launch_ngram(const RadArgs* a, RadStream) {
 }  // namespace
 
 extern "C" int r3_ngram_enabled(void) {
-    const char* e = std::getenv("R3_NGRAM_DEV");
-    return e && *e;
+    return 0;   // the gather was selected by R3_NGRAM_DEV; it is off until a manifest field selects it (RSC12)
 }
 
 extern "C" const RadKernelInfo* r3_ngram_row(void) {
