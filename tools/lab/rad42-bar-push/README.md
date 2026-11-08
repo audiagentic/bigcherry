@@ -2,8 +2,8 @@
 
 **Status (2026-11-09):** Gate 0 **PASS** (13/13 card-free tests).
 Gate 1 HSA inventory and Gate 2 CPU→GPU canary **built but not run**:
-remote command allowlist does not permit `agent-lease status`, and no
-exclusive GPU lease was acquired. Gate 3 onward is not started.
+lease command access is restored; RAD49 currently holds the exclusive
+GPU lease. No hardware tests have been run. Gate 3 onward is not started.
 
 **Plan:** `docs/planning/active/patching-radiance-rdna3/RAD50.md`
 (existing `patching-radiance-rdna3` group). Production owner RAD42 design B;
@@ -74,7 +74,7 @@ done
 **Hardware run preconditions:** acquire/check the project's exclusive GPU
 lease by its approved mechanism; confirm no active serving and log
 hardware identity, ROCm/kernel versions and PCI topology. A missing
-lease command is a **hard stop**; don't use a subprocess wrapper to evade
+missing or held lease is a **hard stop**; don't use a subprocess wrapper to evade
 the remote tool allowlist.
 
 With lease held, run the pool inventory first. Only if it reports

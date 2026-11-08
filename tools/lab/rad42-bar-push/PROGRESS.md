@@ -10,8 +10,8 @@ remains RAD42, and RAD49 is the TP2 consumer context.
 | Gate | State | Evidence / decision |
 | --- | --- | --- |
 | 0: lifecycle contract, card-free | **PASS** | `test_chunk_contract.py` (10 tests) and deterministic multi-chunk stress (`test_chunk_stress.py`, 3 tests); no real GPU visibility implied |
-| 1: host-visible GPU-local pool discovery | **BUILD PASS, RUN BLOCKED** | `pool_inventory.cpp` compiled with g++; GPU lease command not available via current remote command allowlist, so no HSA hardware discovery performed |
-| 2: CPU-write/GPU-read canary | **BUILD PASS, RUN BLOCKED** | `bar_write_canary.hip` compiled for gfx1100 and gfx1201; hardware correctness is unverified. Requires Gate 1 PASS and GPU lease before launch |
+| 1: host-visible GPU-local pool discovery | **BUILD PASS, RUN BLOCKED** | `pool_inventory.cpp` compiled with g++; lease command available but GPU lease held by RAD49, so no HSA hardware discovery performed |
+| 2: CPU-write/GPU-read canary | **BUILD PASS, RUN BLOCKED** | `bar_write_canary.hip` compiled for gfx1100 and gfx1201; hardware correctness is unverified. Requires Gate 1 PASS and an exclusive GPU lease before launch |
 | 3: isolated transfer A/B | **NOT STARTED** | Do not implement a benchmark or claim throughput until Gate 2 verifies CPU-writable GPU VRAM |
 | 4: chunked producer/consumer | **NOT STARTED** | Requires Gate 3 throughput case and dedicated CPU-write-drained flag semantics |
 | 5: captured MoE data / TP2 exact-once | **NOT STARTED** | Requires proven chunk visibility and explicit quality parity |
@@ -45,6 +45,20 @@ remains RAD42, and RAD49 is the TP2 consumer context.
   without a legitimate GPU lease.
 - No conclusions about BAR mappability, coherence, speed or real
   concurrent generation publication can be drawn from offline builds.
+
+### 2026-11-09 — lease access restored, RAD49 hardware work in progress
+
+- The remote command policy now permits `agent-lease status`; the earlier command-permission blocker is resolved.
+- At 2026-11-08 22:01 UTC, the exclusive `gpu` lease was held by
+  another RAD49 measurement (expiry 2026-11-09 03:48 UTC).
+- `amd-smi` remains disallowed; the permitted `rocm-smi` reported GPU
+  0 and 1 at 0% use, and the R9700 / RX 6900 XT at 13% / 11% use,
+  with approximately 94% / 95% VRAM allocated on the latter pair.
+  Radiance and remote-MoE worker processes were visible.
+- No hardware testing was started for RAD50. The lease covers all GPUs,
+  even those currently at zero utilisation. Gates 1/2 remain build-only.
+- Recheck GPU processes and acquire our own lease after RAD49 releases
+  its lease before any HSA or HIP hardware probe.
 
 ## Next action when a GPU lease is available
 

@@ -150,6 +150,8 @@ Do not claim CPU BAR push is faster without the complete comparison.
 ## Change Log
 
 - 2026-11-08T21:44:12+00:00 (created-by): Created as an isolated
-  proof-first experiment item; Gate 0 passed 10 card-free tests,
-  Gate 1 inventory compiled but is not hardware-run (GPU lease
-  control unavailable through current access). No GPU claims.
+  proof-first experiment item; initial Gate 0 passed 10 card-free tests.
+- 2026-11-08T22:01:00+00:00 (updated-by): Gate 0 extended to 13 card-free tests;
+  inventory and single-process GPU canary compiled for two GPU architectures.
+  Lease command is now available, but RAD49 holds the exclusive GPU lease.
+  Hardware Gates 1 and 2 remain unrun; no performance or coherence claims.
