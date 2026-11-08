@@ -18,6 +18,8 @@ import subprocess
 import tarfile
 import tempfile
 
+from ..core import engines
+
 SCHEMA = "bigcherry-radiance-runtime-v1"
 PLAN = re.compile(r"(?m)^(?:pin-bump lane build|release asset lane build): radiance:stock:linux-radiance build_plan_id=([0-9a-f]{32}) binary_sha256=([0-9a-f]{64})$")
 FILE_LIMIT = 10000
@@ -83,7 +85,7 @@ def built_from(root: Path) -> dict[str, str]:
         recipes = tomllib.loads((root / "engines/radiance/recipes.toml").read_text(encoding="utf-8"))
     except OSError:   # a checkout without the engine files (a unit-test fixture) has nothing to say
         engine, recipes = {}, {}
-    return {"project": "radiance", "upstream": str(engine.get("upstream", "")),
+    return {"project": engines.RADIANCE, "upstream": str(engine.get("upstream", "")),
             "pinned": str(recipes.get("pinned", "")), "note": "BigCherry's patched build, not an upstream release"}
 
 
