@@ -198,7 +198,7 @@ half), and the kernel's callers do not feed NaN codes. The PCIe figure is the sa
 Flash-Next, v1.14.0 lab build, R9700 engine + two XTX helpers, `launch-flashnext-best.sh` at the new defaults (1M context, 2 sequences),
 `R3_MOE_WORKER_TRACE=10` (every 10th finished request; stamps from worker_harness.h: engine clock for publish / wait entered, helper
 clock for the helper's own span). Random-word prompts tokenise to about 5.8 tokens a word, so the prompts were 16.8K and 66.5K tokens.
-Run output: `/work/development/tmp/bigcherry/rad23/trace.out`, helper logs `/work/bigcherry/flashnext/helper*-1031-020842.log`.
+Run output: `<scratch>/rad23/trace.out`, helper logs `$BC_WORK_ROOT/flashnext/helper*-1031-020842.log`.
 
 | Lane | Rows a request (median) | Helper GPU span (median / p90) | Requests traced |
 |---|---|---|---|
@@ -286,7 +286,7 @@ it) and only the speed changes.
 Flash-Next, R9700 engine, two XTX helpers (22 GiB each) and the RX 6900 XT as helper 2 on the existing kernels (a gfx1030 libr3 built
 with R3_ONLY and the emulated 16x16x16 tile, RCS07), `R3_MOE_WORKER_PLACEMENT=tail`, `R3_MOE_WORKER_MIBS=22528,22528,<tail MiB>`. The
 tail helper takes the COLDEST leftovers that fit its budget (from the end of the heat ranking backwards). Run through
-`/work/development/tmp/bigcherry/rad23/sweep3.sh`: decode is the mean of two 384-token rates (416 minus 32 tokens), prefill is one request
+`<scratch>/rad23/sweep3.sh`: decode is the mean of two 384-token rates (416 minus 32 tokens), prefill is one request
 each on three slices of the repository docs (natural text), one run a configuration, so decode is good to about +-5% (story 90.2 to 103.0 between runs).
 
 | Tail budget (experts held) | Decode story / code / count, tok/s | Natural prefill 25K / 14K / 72K, tok/s | Pool slots freed on the engine |

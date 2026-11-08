@@ -71,7 +71,7 @@ Results (2026-11-02, agent-dev container, environment rocm-root /opt/rocm-7.2.4)
 
 ## Notes
 
-Quick fix in use since 2026-10-29 (RAD32 libr3 GEMV K-slab work): export CMAKE_PREFIX_PATH=/opt/rocm-7.2.4 in the job (/work/development/tmp/bigcherry/rad32-gemv/job.sh). Also tracked in the team task list /instances/.teams/bigcherry/TASKS.md. Option (b) fits the no-machine-paths rule better; option (a) is a container change owned outside this repo.
+Quick fix in use since 2026-10-29 (RAD32 libr3 GEMV K-slab work): export CMAKE_PREFIX_PATH=/opt/rocm-7.2.4 in the job (<scratch>/rad32-gemv/job.sh). Also tracked in the team task list /instances/.teams/bigcherry/TASKS.md. Option (b) fits the no-machine-paths rule better; option (a) is a container change owned outside this repo.
 
 ## Change Log
 

@@ -850,7 +850,7 @@ a substitute for RHP12 hardware equality/performance gates.
 On normal \`flashnext-4gpu\`, all three helpers fill their expert
 weight budgets (22528/22528/14336 MiB), so normal rebalancing requires
 a full two-way exchange rather than freeing one helper. The
-\`/work/development/tmp/bigcherry/rhp11-g/flashnext-4gpu-swaps-1000.schedule\`
+\`<scratch>/rhp11-g/flashnext-4gpu-swaps-1000.schedule\`
 harness rotates automatic pair selections through (0,1), (0,2),
 (1,2) for 1,000 transactions; this is a test harness, not a
 production placement policy. There is no alternate layout.

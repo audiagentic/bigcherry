@@ -19,7 +19,7 @@ Qwen3.8-27B MXFP4 on two XTX (tp2) with radiance's dflash2 drafter (depth 7, ver
 
 ## Steps
 
-1. GPT design review of the current kernel (consult text saved at /work/development/tmp/bigcherry/rad32-gemv/gpt-consult.md; the gateway rejected it with RES-EXP-004 on 2026-10-29: execution profile surface gpt-auto-cdp not validated).
+1. GPT design review of the current kernel (consult text saved at <scratch>/rad32-gemv/gpt-consult.md; the gateway rejected it with RES-EXP-004 on 2026-10-29: execution profile surface gpt-auto-cdp not validated).
 2. Find what still costs at M=8: every block re-stages and re-widens the whole M x K activation (two column tiles a block halve it; four spill), the per-row scale fmaf, the sP cross-wave reduction at 8 live rows. Measure each with --perfmxd at the 27B shapes.
 3. Candidate designs keeping a K-only sum order: a bf16 activation pre-pass shared by all blocks (one widen, not one per block); activation held in VGPRs across column tiles; a TN=4 form that does not spill (fewer live weight fragments).
 4. A/B against f6ce657d4: --perfmxd M=1/8, 27B drafter decode (2.3K/6.5K, exact and wht6), 27B no-drafter decode/prefill, selftest rows byte-identical.
@@ -54,7 +54,7 @@ Qwen3.8-27B MXFP4 on two XTX (tp2) with radiance's dflash2 drafter (depth 7, ver
 
 ## Notes
 
-PR #451 already carries: K-slab staging (any K at M=1: K=25600 207 -> 417-553 GB/s), 32-byte row pad, TN=2 at 2-16 rows incl. the one-row-tile launch. TN=4 from three rows was tried and reverted (spills: 86-107 GB/s at M=8, drafter 41-60 tok/s). Runs and logs: /work/development/tmp/bigcherry/rad32-gemv/ (base.txt, after-*.txt, drafter-*.log).
+PR #451 already carries: K-slab staging (any K at M=1: K=25600 207 -> 417-553 GB/s), 32-byte row pad, TN=2 at 2-16 rows incl. the one-row-tile launch. TN=4 from three rows was tried and reverted (spills: 86-107 GB/s at M=8, drafter 41-60 tok/s). Runs and logs: <scratch>/rad32-gemv/ (base.txt, after-*.txt, drafter-*.log).
 
 GPT review 2026-10-29 (reviewer-gpt-agent, req_main_7ee5e132f3b2): conditional approval of the #451 changes, no defect
 found; the one check it asked for (WMMA forms only at K % 128 == 0) holds. Its order for this item: (1) resource
@@ -62,7 +62,7 @@ baseline first -- VGPRs, spills, waves/CU, LDS and kernel time at M=1/2/4/8 x TN
 logical bytes over time), and rank the whole drafter step's kernels; (2) a bf16 activation pre-pass shared by all blocks
 (same conversion, scale/FMA and chunk order; scratch buffer; dispatched only where it wins); (3) register-lean pipelined
 TN=2; (4) a TN=4 that keeps one s fragment live, only if the resource data says it can avoid spills. No split-K (it
-changes the sum order). Full text: /work/development/tmp/bigcherry/rad32-gemv/gpt-review-req_main_7ee5e132f3b2.md.
+changes the sum order). Full text: <scratch>/rad32-gemv/gpt-review-req_main_7ee5e132f3b2.md.
 
 
 
