@@ -1,0 +1,17 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261108_003738_ci-and-local-builds-reuse-cach_1634",
+  "files": [
+    "engines/radiance/components/libr3/r3_cuid.cmake",
+    "engines/radiance/components/libr3/CMakeLists.txt",
+    "engines/radiance/components/libr2/CMakeLists.txt",
+    ".github/workflows/pr-ci.yml",
+    ".github/workflows/radiance-build.yml",
+    "tools/tests/test_bu01_path_gate_integration.py",
+    "tools/tests/test_bu01_radiance_paths.py"
+  ],
+  "status": "unreleased",
+  "technical-summary": "rad_add_plugin hashes each HIP source's -cuid from its path relative to the component source dir; libr3/libr2 unit wrappers live in the build tree, whose path holds the build-plan id, so every new plan changed every unit's command line and no libr3/libr2 unit ever hit ccache (CI: 142 misses on a PR that did not touch libr3; r4d_gemm_iqr alone 35 min). r3_build_tree_cuid re-hashes the cuid from the wrapper's path inside the build tree (unique, location-independent); configure fails if rad_add_plugin stops setting -cuid. Also the radiance-build trigger patterns (PR and push, kept identical, with a test): added inputs the build reads (build CLI, source materialisation, patch application/evidence, release preflight, recipes/release config, ci_ccache.py) and dropped paths it never reads (engines/radiance/tests, archs/layouts/model_constant_guard tomls).",
+  "timestamp-utc": "2026-11-08T00:37:38.125713Z",
+  "user-summary-candidate": "CI and local builds reuse cached libr3/libr2 kernel compiles again, so most radiance PR builds no longer recompile the 20-35 minute kernel units."
+}

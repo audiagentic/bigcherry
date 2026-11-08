@@ -33,7 +33,6 @@ def test_buildable_changes_still_run():
         "engines/radiance/components/libr3/src/kernel.hip",
         "engines/radiance/components/libr3/component.toml",
         "engines/radiance/patches/fix.patch",
-        "engines/radiance/tests/component_test.py",
         "tools/bigcherry/build/recipe.py",
     ):
         assert selected([name])

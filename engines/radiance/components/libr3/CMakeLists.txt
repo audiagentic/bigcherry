@@ -93,6 +93,9 @@ rad_add_plugin(libr3 kernels
   GPU_TARGETS ${R3_TARGETS}
   INCLUDES    ${r4d} ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_definitions(libr3 PRIVATE R3_TARGETS="${R3_TARGETS}")
+# the wrappers' -cuid from their path in the build tree, so a new build directory does not miss the compiler cache
+include(${CMAKE_CURRENT_SOURCE_DIR}/r3_cuid.cmake)
+r3_build_tree_cuid(libr3 ${device})
 # libr4d builds its device code at C++17 (its own build file says why); the same here
 set_target_properties(libr3 PROPERTIES HIP_STANDARD 17 HIP_STANDARD_REQUIRED ON)
 target_link_libraries(libr3 PRIVATE ${CMAKE_DL_LIBS})

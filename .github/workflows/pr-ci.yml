@@ -158,14 +158,38 @@ jobs:
           HEAD: ${{ github.event.pull_request.head.sha }}
         run: |
           python3 .github/scripts/changed_paths.py "$BASE" "$HEAD" >> "$GITHUB_OUTPUT" <<'PATTERNS'
+          # what the lane build and the component tests read; the same list as radiance-build.yml's push paths
           engines/radiance/**
           !engines/radiance/**/*.md
           !engines/radiance/**/*.mdx
           !engines/radiance/**/docs/**
+          !engines/radiance/tests/**
+          !engines/radiance/archs.toml
+          !engines/radiance/layouts.toml
+          !engines/radiance/model_constant_guard.toml
           tools/bigcherry/campaign/**
           tools/bigcherry/core/**
           tools/bigcherry/build/**
           config/environment.example.toml
+          tools/bigcherry/__main__.py
+          tools/bigcherry/cli/build.py
+          tools/bigcherry/engine_adapters/base.py
+          tools/bigcherry/source/identity.py
+          tools/bigcherry/source/workspace.py
+          tools/bigcherry/patch/apply.py
+          tools/bigcherry/patch/patchset.py
+          tools/bigcherry/patch/registry.py
+          tools/bigcherry/patch/catalog.py
+          tools/bigcherry/patch/evidence.py
+          tools/bigcherry/patch/gates.py
+          tools/bigcherry/patch/build_evidence.py
+          tools/bigcherry/patch/profile_evidence.py
+          tools/bigcherry/patch/validation_policy.py
+          tools/bigcherry/release/notes.py
+          tools/bigcherry/release/pin_status.py
+          config/recipes.toml
+          config/release.toml
+          tools/lab/radiance/ci_ccache.py
           tools/bigcherry/engine_adapters/radiance*.py
           tools/bigcherry/cli/component_tests.py
           tools/bigcherry/cli/main.py
