@@ -79,3 +79,21 @@ def version_of_tag(tag: str) -> str:
     if not match:
         raise RecipeError(f"tag {tag!r} does not name a release version (v1.13.0)")
     return match.group(1)
+
+
+def version_of_ref(ref: str, vendor_root) -> str:
+    """The upstream version at a pin ref: the version a tag names, or, for an untagged commit, the version upstream itself
+    declares there (``project(<name> VERSION x.y.z)`` in its top-level CMakeLists.txt)."""
+    try:
+        return version_of_tag(ref)
+    except RecipeError:
+        pass
+    import subprocess
+    shown = subprocess.run(["git", "-C", str(vendor_root), "show", f"{ref}:CMakeLists.txt"],
+                           capture_output=True, text=True)
+    if shown.returncode != 0:
+        raise RecipeError(f"{ref!r} is not a version tag and its CMakeLists.txt cannot be read: {shown.stderr.strip()}")
+    match = re.search(r"^\s*project\s*\(\s*[A-Za-z0-9_-]+\s+VERSION\s+(\d+(?:\.\d+)*)", shown.stdout, re.MULTILINE)
+    if not match:
+        raise RecipeError(f"{ref!r} is not a version tag and its CMakeLists.txt declares no project VERSION")
+    return match.group(1)

@@ -78,7 +78,7 @@ def cmd_repin(args: argparse.Namespace) -> int:
         return 1
     try:
         # An engine whose release line follows the upstream version carries it beside the pin; it moves with the pin.
-        version = recipes.version_of_tag(target) if engines.load(paths.REPO_ROOT, engine).version_source == "pinned-version" else None
+        version = recipes.version_of_ref(target, context.vendor_root) if engines.load(paths.REPO_ROOT, engine).version_source == "pinned-version" else None
         old = recipes.repin(target, recipes_path(engine))
         if version is not None:
             recipes.set_pinned_version(version, recipes_path(engine))
