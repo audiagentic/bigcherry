@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.26.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.25.0...bc-platform-1.26.0) (2026-11-08)
+
+
+### New and changed
+
+* **launcher:** every layout starts from its measured manifest, and the launcher exports no setting ([#759](https://github.com/audiagentic/bigcherry/issues/759)) ([969b446](https://github.com/audiagentic/bigcherry/commit/969b446454f47663ca1aa3cabd4e79d0abdd3529))
+
 ## [1.25.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.24.0...bc-platform-1.25.0) (2026-11-08)
 
 
