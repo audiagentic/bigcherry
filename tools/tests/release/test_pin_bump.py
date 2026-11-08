@@ -1120,6 +1120,20 @@ class CommitReleaseRecordsTests(unittest.TestCase):
             ).stdout.strip()
             self.assertEqual(head_before, head_after)  # no commit made
 
+    def test_untagged_commit_pin_commits_the_12_hex_record(self):
+        # A commit pin's record is named by records.release_key: the 12-hex prefix, not the full sha.
+        sha = "451b136874084650992668bed9e8662deb58de88"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _init_repo(root)
+            (root / "releases").mkdir()
+            (root / "releases" / f"{sha[:12]}.json").write_text('{"x": 1}\n', encoding="utf-8")
+            (root / "releases" / "index.json").write_text("[]\n", encoding="utf-8")
+            pin_bump._commit_release_records(repo_root=root, target_ref=sha)
+            status = subprocess.run(["git", "-C", str(root), "status", "--porcelain"],
+                                    check=True, capture_output=True, text=True).stdout
+            self.assertEqual(status.strip(), "")
+
     def test_commits_only_owned_paths_not_an_unrelated_dirty_file(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

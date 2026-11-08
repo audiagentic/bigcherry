@@ -1,0 +1,12 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261108_100752_a-radiance-bump-to-an-untagged_4444",
+  "files": [
+    "tools/bigcherry/release/pin_bump.py",
+    "tools/tests/release/test_pin_bump.py"
+  ],
+  "status": "unreleased",
+  "technical-summary": "pin-bump's _commit_release_records staged releases/<target_ref>.json, but the record writer names records by records.release_key (the pinned tag, else the 12-hex commit prefix). For an untagged commit pin the record file stayed untracked and the lane build refused the dirty tree. It now commits releases/<key>.json and <key>-patches.md with the same key.",
+  "timestamp-utc": "2026-11-08T10:07:52.395674Z",
+  "user-summary-candidate": "A radiance bump to an untagged upstream commit commits its own release record and proceeds to the lane build."
+}
