@@ -1,14 +1,17 @@
 """CI side of the Radiance runtime release bundle (BU01): pack the lane build a CI run just made, check the archive by restoring
 it, and find an earlier release whose bundle already is this runtime.
 
-A runtime is identified by the git tree of ``engines/radiance`` and of ``config`` plus the ROCm version the build image carries
-(``runtime_key``). Most radiance releases change only documentation or tooling, so a release whose key equals an earlier
-release's key reuses that bundle instead of building again. The receipt published beside the archive is the same
+A runtime is identified by the git trees of ``engines/radiance`` and of ``config``, the trees of the build tooling that decides
+how the lane is compiled and configured (``BUILD_INPUTS``), and the ROCm version the build image carries (``runtime_key``).
+Most radiance releases change only documentation or unrelated tooling, so a release whose key equals an earlier release's key
+reuses that bundle instead of building again. A change to the build tooling changes the key, so a tooling change that alters
+compile flags can never reuse a stale bundle (it may rebuild when it did not need to; that is the safe side). The receipt published beside the archive is the same
 ``runtime_assets`` entry a lab ``pin-release`` records in git, plus ``release_tag`` and ``runtime_key``.
 """
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import shutil
@@ -22,6 +25,18 @@ from . import runtime_assets as ra
 RECEIPT_SUFFIX = ".receipt.json"
 TAG = re.compile(r"bc-radiance-[0-9]+\.[0-9]+\.[0-9]+")
 DOCKERFILE = Path(".github/docker/radiance-build/Dockerfile")
+#: Paths whose content decides how the lane is built: the lane planner and compiler launchers, the campaign build code, the
+#: engine adapter and source materialiser, the patch applier, and the build image. Release notes, lab scripts and the rest of
+#: the CLI are not here, so editing them does not force a rebuild.
+BUILD_INPUTS = (
+    "tools/bigcherry/build",
+    "tools/bigcherry/campaign",
+    "tools/bigcherry/core",
+    "tools/bigcherry/engine_adapters",
+    "tools/bigcherry/source",
+    "tools/bigcherry/patch",
+    ".github/docker/radiance-build",
+)
 
 
 class CiBundleError(RuntimeError):
@@ -37,8 +52,16 @@ def image_rocm_version(root: Path) -> str:
     return found.group(1)
 
 
+def build_inputs_tree(root: Path) -> str:
+    """One digest over the git tree ids of BUILD_INPUTS at HEAD (a missing path is an error: the list must follow the code)."""
+    lines = []
+    for rel in BUILD_INPUTS:
+        lines.append(f"{rel} {ra.git_tree(root, rel)}")
+    return hashlib.sha256("\n".join(lines).encode()).hexdigest()
+
+
 def runtime_key(root: Path, rocm_version: str) -> dict[str, str]:
-    return {**ra.stock_identity(root), "rocm_version": rocm_version}
+    return {**ra.stock_identity(root), "build_inputs": build_inputs_tree(root), "rocm_version": rocm_version}
 
 
 def lane_build(work_root: Path, plan_id: str | None = None) -> tuple[Path, str, str]:

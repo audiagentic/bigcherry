@@ -32,9 +32,10 @@ class CiBundleTests(unittest.TestCase):
             (build / rel).write_bytes(data)
             (build / rel).chmod(0o755)
         self.build = build
-        patch = mock.patch.object(assets, "stock_identity", return_value=TREE_ID)
-        patch.start()
-        self.addCleanup(patch.stop)
+        for target, name, value in ((assets, "stock_identity", TREE_ID), (cb, "build_inputs_tree", "e" * 64)):
+            patch = mock.patch.object(target, name, return_value=value)
+            patch.start()
+            self.addCleanup(patch.stop)
         self.addCleanup(self.temp.cleanup)
 
     def test_image_rocm_version_is_read_from_the_dockerfile(self):
@@ -49,7 +50,7 @@ class CiBundleTests(unittest.TestCase):
         self.assertTrue((out / receipt["name"]).is_file() and (out / receipt["checksum_name"]).is_file())
         written = json.loads((out / (receipt["name"][:-7] + cb.RECEIPT_SUFFIX)).read_text())
         self.assertEqual(written, receipt)
-        self.assertEqual(receipt["runtime_key"], {**TREE_ID, "rocm_version": "7.2.4"})
+        self.assertEqual(receipt["runtime_key"], {**TREE_ID, "build_inputs": "e" * 64, "rocm_version": "7.2.4"})
         self.assertEqual((receipt["release_tag"], receipt["plan_id"]), (TAG, PLAN))
         self.assertEqual(list(out.glob("ci-bundle-verify-*")), [])      # the scratch restore is gone
 
@@ -72,7 +73,7 @@ class CiBundleTests(unittest.TestCase):
         cb.pack_and_verify(TAG, root=self.root, work_root=self.work, sdk=self.sdk, plan_id=PLAN)
 
     def test_find_reusable_matches_the_runtime_key_and_skips_the_tag_itself(self):
-        key = {**TREE_ID, "rocm_version": "7.2.4"}
+        key = {**TREE_ID, "build_inputs": "e" * 64, "rocm_version": "7.2.4"}
         receipts = {
             "bc-radiance-1170.11.0": {"schema": assets.SCHEMA, "runtime_key": {**key, "engine_tree": "f" * 40}},
             "bc-radiance-1170.10.0": {"schema": assets.SCHEMA, "runtime_key": key, "plan_id": PLAN},
@@ -91,6 +92,24 @@ class CiBundleTests(unittest.TestCase):
             found = cb.find_reusable(TAG, root=self.root, rocm_version="7.2.4")
             self.assertEqual(found[0], "bc-radiance-1170.10.0")
             self.assertIsNone(cb.find_reusable(TAG, root=self.root, rocm_version="7.14"))
+
+    def test_a_build_tooling_change_changes_the_key(self):
+        before = cb.runtime_key(self.root, "7.2.4")
+        with mock.patch.object(cb, "build_inputs_tree", return_value="f" * 64):
+            self.assertNotEqual(before, cb.runtime_key(self.root, "7.2.4"))
+
+
+class BuildInputsExistTests(unittest.TestCase):
+    def test_every_listed_path_exists_in_the_repository(self):
+        repo = Path(__file__).resolve().parents[3]
+        for rel in cb.BUILD_INPUTS:
+            self.assertTrue((repo / rel).exists(), f"{rel}: BUILD_INPUTS must follow the build code")
+
+    def test_the_real_digest_is_computed_from_git(self):
+        repo = Path(__file__).resolve().parents[3]
+        digest = cb.build_inputs_tree(repo)
+        self.assertRegex(digest, r"^[0-9a-f]{64}$")
+        self.assertEqual(digest, cb.build_inputs_tree(repo))
 
 
 if __name__ == "__main__":
