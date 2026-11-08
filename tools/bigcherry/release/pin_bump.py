@@ -2373,9 +2373,12 @@ def _commit_release_records(*, repo_root: Path, target_ref: str) -> None:
     shared checkout. The transition marker is NOT owned here; it requires
     a separately proven completion. Repeated resume commits are no-ops.
     """
-    owned = [f"releases/{target_ref}.json", "releases/index.json"]
-    if (repo_root / "releases" / f"{target_ref}-patches.md").is_file():
-        owned.append(f"releases/{target_ref}-patches.md")
+    # The record writer names records by records.release_key: the pinned tag, else the 12-hex commit prefix (an untagged
+    # commit pin such as a radiance bump to upstream main). Commit exactly the files it wrote.
+    key = target_ref[:12] if re.fullmatch(r"[0-9a-f]{40}", target_ref) else target_ref
+    owned = [f"releases/{key}.json", "releases/index.json"]
+    if (repo_root / "releases" / f"{key}-patches.md").is_file():
+        owned.append(f"releases/{key}-patches.md")
 
     existing = [p for p in owned if (repo_root / p).exists()]
     if not existing:
