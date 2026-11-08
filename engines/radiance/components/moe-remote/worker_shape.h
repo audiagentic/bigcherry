@@ -35,14 +35,7 @@ SmallClasses helper_small_classes() {
  * disabled small class (beyond `classes`) has none. Only these get a stream, a hardware queue, buffers and a worker thread. */
 std::array<bool, r3::moe_shm::kLanes> served_lanes(uint32_t helper_count, uint32_t helper_index, uint32_t world,
                                                    uint32_t classes) {
-    using namespace r3::moe_shm;
-    std::array<bool, kLanes> s{};
-    for (uint32_t lane = 0; lane < kLanes; ++lane) {
-        const uint32_t slot = lane % kMaxSlots;
-        s[lane] = world && slot < slots_for(helper_count, world) && slot_helper(slot, world) == helper_index &&
-                  !(lane_is_small(lane) && lane_class(lane) >= classes);
-    }
-    return s;
+    return r3::worker_footprint::served_lanes(helper_count, helper_index, world, classes);   /* bc-serve's footprint uses it */
 }
 
 /* Expert description, sizing and backend acceptance are bc::experts' (components/serving/experts.h), the code bc-serve

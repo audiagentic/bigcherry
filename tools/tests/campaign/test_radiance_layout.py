@@ -126,8 +126,9 @@ class ResolveTests(unittest.TestCase):
         self.assertEqual([(h.index, h.arch.name, h.placement) for h in r.helpers], [(2, "gfx1201", "head")])
         # no budget-mib in the layout: the whole card less its archs.toml reserve, from the inventory
         self.assertEqual(r.helpers[0].budget_mib, 32624 - rl.load_archs()["gfx1201"].reserve_mib)
-        self.assertEqual(r.common_env, {"R3_MOE_WORKER_COUNT": "1", "R3_MOE_WORKER_ENGINE_RANKS": "2",
-                                        "R3_MOE_WORKER_MIBS": str(r.helpers[0].budget_mib)})
+        # a derived budget is bc-serve's (the card limit less the helper's own lanes and tables): no MIBS export, the limit flagged
+        self.assertTrue(r.helpers[0].budget_derived)
+        self.assertEqual(r.common_env, {"R3_MOE_WORKER_COUNT": "1", "R3_MOE_WORKER_ENGINE_RANKS": "2"})
         self.assertEqual(r.server_args, ("--max-model-len", "65536", "--max-num-seqs", "6", "--host-pool-mib", "4096"))
         lines = "\n".join(_env_lines(r))
         for want in ("LAYOUT_ENGINE_DEVICES=0,1", "LAYOUT_ENGINE_RANKS=2", "LAYOUT_TP_WIRE=exact", "LAYOUT_HELPER_COUNT=1",
@@ -147,8 +148,8 @@ class ResolveTests(unittest.TestCase):
         self.assertEqual([(h.index, h.arch.name, h.placement, h.budget_mib) for h in r.helpers],
                          [(2, "gfx1201", "head", 32624 - archs["gfx1201"].reserve_mib),
                           (3, "gfx1030", "tail", 16368 - archs["gfx1030"].reserve_mib)])
+        self.assertTrue(all(h.budget_derived for h in r.helpers))
         self.assertEqual(r.common_env, {"R3_MOE_WORKER_COUNT": "2", "R3_MOE_WORKER_ENGINE_RANKS": "2",
-                                        "R3_MOE_WORKER_MIBS": f"{r.helpers[0].budget_mib},{r.helpers[1].budget_mib}",
                                         "R3_MOE_WORKER_PLACEMENT": "tail", "R3_MOE_WORKER_COMBINE": "1"})
         self.assertEqual(r.server_args, ("--max-model-len", "131072", "--max-num-seqs", "8", "--host-pool-mib", "2048"))
         self.assertEqual(r.helper_env(1)["R3_MOE_WORKER_INDEX"], "1")

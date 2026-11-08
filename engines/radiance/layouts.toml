@@ -12,9 +12,12 @@
 #                                   helpers behind two ranks. A helper computes each expert full width; a layer's consumer rank adds it once.
 #   [[layout.NAME.helper]]         a group of helper cards, in order (helper 0 first; helper 0 creates the shared segment)
 #     arch      architecture to take from the inventory         devices  explicit indices instead of arch
-#     count     how many of that arch ("all" or a number)       budget-mib  VRAM for experts on each card; omitted: derived, the card's own
-#                                                               VRAM (inventory / sysfs) less its archs.toml reserve-mib -- prefer that
-#                                                               to a hand-picked number (a literal here is an interim value, RSC03)
+#     count     how many of that arch ("all" or a number)       budget-mib  VRAM for experts on each card; omitted: derived by bc-serve, the
+#                                                               card's own VRAM (inventory / sysfs) less its archs.toml reserve-mib less
+#                                                               the helper's own lanes, pointer banks, slot map and incoming slot for
+#                                                               this model (moe-remote worker_footprint.h, which the helper checks its
+#                                                               lanes against) -- prefer that to a hand-picked number (a literal here is
+#                                                               an interim value, RSC03)
 #     placement "head": the group takes the heat ranking by `share` (round robin)  "tail": takes the coldest experts that fit what the heads
 #               left; only the last group may be tail, and only after a head group
 #     share     weight of each card in a head group (default 1; 0 owns nothing)
@@ -129,8 +132,8 @@ R3_MOE_WORKER_COMBINE = "1"
 
 # RAD49 step 2: the two XTX run the model tensor-parallel (attention by KV head, GDN by head, the trunk and every resident expert
 # split by width, ARCHITECTURES.md qwen4exp) and the R9700 is one remote-MoE helper behind both ranks (it computes each routed
-# expert full width once; the layer's consumer rank, alternating by layer, adds it before the all-reduce). No budget-mib: the helper takes its whole card less archs.toml
-# reserve-mib (derived from the inventory). The XTX pair holds the ~29 GiB of experts the R9700 cannot, so the sessions are
+# expert full width once; the layer's consumer rank, alternating by layer, adds it before the all-reduce). No budget-mib: the helper takes its card less archs.toml
+# reserve-mib less its own lanes and tables (derived by bc-serve, worker_footprint.h). The XTX pair holds the ~29 GiB of experts the R9700 cannot, so the sessions are
 # few and short: 6 x 65536 bounds the KV at about 2.7 GiB a rank (7 KiB a token a rank at fp8), leaving ~14 GiB a rank for
 # experts; the engine's measured plan (plan check) decides the split, the rest goes to the host pool. The exact wire: wht6 cost
 # Flash-Next 0.075 KLD at 1.3.0 and is a KL-gated arm only.
@@ -141,7 +144,7 @@ R3_MOE_WORKER_COMBINE = "1"
 # flashnext-4gpu pins (9 GiB pool), so the host check keeps its margin. The plan check refuses it if the estimate is wrong.
 [layout.flashnext-tp2xtx-r9700]
 model = "radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad"
-description = "RAD49: Flash-Next tensor-parallel on the two 7900 XTX (exact host-memory wire), the R9700 the one remote-MoE helper (its whole card less the arch reserve), 6 sessions of up to 65,536 tokens"
+description = "RAD49: Flash-Next tensor-parallel on the two 7900 XTX (exact host-memory wire), the R9700 the one remote-MoE helper (its card less the arch reserve and its own lanes), 6 sessions of up to 65,536 tokens"
 engine = { arch = "gfx1100", count = 2 }
 tp-wire = "exact"
 server-args = [
@@ -158,17 +161,18 @@ placement = "head"
 # cards are remote-MoE helpers behind both ranks: the R9700 takes the hottest experts it holds, the RX 6900 XT the coldest that fit
 # what it left (tail), and helper 0 combines both helpers' rows on the CPU into the consumer rank's plane (one plane a consumer, so
 # the alternating consumer reads one row a token over its link). No budget-mib on either: each is its card less archs.toml
-# reserve-mib (about 29.9 + 15.0 GiB of the 59.2 GiB of experts). Context and sessions (RAD49 STEP1 D, per XTX of about 23 GiB):
-# trunk ~2.2 GiB + lm_head/embed/MTP ~1.1-1.7 + workspaces ~1.5-2.5, the ~14.3 GiB of experts neither helper holds width-split
-# (~7.2 GiB a rank), which leaves ~9-10 GiB for the KV (fp8, ~7 KiB a token a rank) and the GDN state (~54 MiB a session):
+# reserve-mib less the helper's own lanes, pointer banks, slot map and incoming slot (worker_footprint.h; ~0.9 GiB a helper behind
+# TP2, two consumer ranks' lanes): about 29.0 + 14.1 GiB of the 59.2 GiB of experts. Context and sessions (RAD49 STEP1 D, per XTX of about 23 GiB):
+# trunk ~2.2 GiB + lm_head/embed/MTP ~1.1-1.7 + workspaces ~1.5-2.5, the ~16 GiB of experts neither helper holds width-split
+# (~8 GiB a rank), which leaves ~8-9 GiB for the KV (fp8, ~7 KiB a token a rank) and the GDN state (~54 MiB a session):
 # 8 x 131072 (the 1.05M tokens flashnext-4gpu serves) is ~7.4 GiB of it. 8 x 262144 does not fit (~14.7 GiB). The engine's
 # measured plan (plan check) decides the actual split.
 # --host-pool-mib is INTERIM (RSC03: to be derived per rank from the experts neither the helpers' budgets nor the ranks' measured
-# VRAM hold): the estimate leaves ~2 GiB a rank of slack, and the pool (pinned once per rank, 4 GiB in all) covers an estimate
+# VRAM hold): the estimate leaves ~1 GiB a rank of slack, and the pool (pinned once per rank, 4 GiB in all) covers an estimate
 # error of the same size instead of a start refused by the plan check.
 [layout.flashnext-tp2xtx]
 model = "radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad"
-description = "RAD49: Flash-Next tensor-parallel on the two 7900 XTX (exact host-memory wire); the R9700 (head) and the RX 6900 XT (tail) are remote-MoE helpers behind both ranks, each its whole card less the arch reserve, with the helper-row combine; 8 sessions of up to 131,072 tokens"
+description = "RAD49: Flash-Next tensor-parallel on the two 7900 XTX (exact host-memory wire); the R9700 (head) and the RX 6900 XT (tail) are remote-MoE helpers behind both ranks, each its card less the arch reserve and its own lanes, with the helper-row combine; 8 sessions of up to 131,072 tokens"
 engine = { arch = "gfx1100", count = 2 }
 tp-wire = "exact"
 server-args = [

@@ -1,6 +1,8 @@
 #include "serving.h"
 #include "calibration.h"
 #include "moe_remote_shm.h"
+#include "experts.h"
+#include "worker_footprint.h"
 #include "sha256.h"
 #include "generated/serving_types.h"
 #include "third_party/toml.hpp"
@@ -969,13 +971,14 @@ Resolved resolve(const Options& options, const Json& facts) {
     Json engine_cards = Json::array();
     for (const auto& g : engine) engine_cards.push_back(g.at("bdf"));
     Json cards = Json::array(), budgets = Json::array(), selected = Json::array(), group_of = Json::array();
+    std::vector<bool> budget_derived;   /* no budget-mib: re-derived below from the card and the helper's own footprint */
     for (size_t gi = 0; gi < layout.groups.size(); ++gi) {
         const HelperGroup& group = layout.groups[gi];
         for (const auto& g : choose(facts, group.arch, used, group.count < 0 ? kEveryCard : size_t(group.count))) {
             const uint64_t limit = g.at("vram_total_mib").get<uint64_t>() - std::min<uint64_t>(
                 g.at("vram_total_mib").get<uint64_t>(), arch_info(g.at("arch")).reserve_mib);
             cards.push_back(g.at("bdf")); budgets.push_back(group.budget_mib ? group.budget_mib : limit);
-            selected.push_back(g); group_of.push_back(gi);
+            selected.push_back(g); group_of.push_back(gi); budget_derived.push_back(group.budget_mib == 0);
         }
     }
     const bool engine_only = cards.empty();
@@ -1029,6 +1032,57 @@ Resolved resolve(const Options& options, const Json& facts) {
     }
     if (value_at(values, "layout.name") != name)
         throw std::runtime_error("layout.name: resolution inconsistency");
+    // An omitted budget-mib (RAD49): the EXPERT budget is the card's VRAM less its archs.toml reserve-mib less the helper's own
+    // device memory besides its arena (its lanes, pointer banks, slot map and one incoming slot, worker_footprint.h, the
+    // definition the worker checks its allocations against), so the owner planner (plan_owners) and the helper's arena agree.
+    // Only while no site, profile or --set gave the budgets; the lanes follow the resolved hand-off and power-save settings.
+    if (std::find(budget_derived.begin(), budget_derived.end(), true) != budget_derived.end() &&
+        provenance.contains("memory.helper_budgets_mib") &&
+        provenance.at("memory.helper_budgets_mib").at("origin") == "discovered" && exists(values, "engine.model")) {
+        const std::string model = value_at(values, "engine.model").get<std::string>();
+        bc::experts::Container container;
+        MoeShape cs{};
+        if (!container.open(model.c_str()) || !bc::experts::container_shape(container, &cs))
+            throw std::runtime_error("memory.helper_budgets_mib: cannot read the model container " + model +
+                                     " to derive the helpers' expert budgets");
+        namespace fp = r3::worker_footprint;
+        const fp::Shape shape{container.layers, cs.experts, cs.hidden, cs.intermediate,
+                              cs.top_k ? cs.top_k : r3::moe_shm::kTopK, r3::moe_shm::kActGroup};
+        uint64_t largest = 0;
+        for (uint32_t l = 0; l < container.layers; ++l)
+            for (uint32_t e = 0; e < container.experts; ++e)
+                if (container.weight(l, e, 0) && container.weight(l, e, 1)) {
+                    const int64_t b = bc::experts::laid_out_bytes(container, true, l, e);
+                    if (b <= 0) throw std::runtime_error("memory.helper_budgets_mib: an expert has no device layout size");
+                    largest = std::max(largest, uint64_t(b));
+                }
+        const uint64_t max_rows = value_at(values, "handoff.max_rows").get<uint64_t>();
+        fp::Lanes lanes{};
+        lanes.small_rows[0] = uint32_t(std::min(value_at(values, "handoff.small_rows").get<uint64_t>(), max_rows));
+        lanes.small_count = 1;   /* helper_profile.toml lanes/small_lanes is empty: the one small class */
+        lanes.large_rows = uint32_t(max_rows);
+        const bool power_save = value_at(values, "helper.power_save").get<bool>();
+        Json derived_budgets = value_at(values, "memory.helper_budgets_mib");
+        Json inputs = Json::array({"layout.name", "facts.gpus", "engine.model", "handoff.max_rows", "handoff.small_rows",
+                                   "helper.power_save"});
+        for (size_t i = 0; i < selected.size(); ++i) {
+            if (!budget_derived[i]) continue;
+            lanes.open = fp::served_lanes(uint32_t(cards.size()), uint32_t(i), uint32_t(engine_cards.size()), 1u, power_save);
+            const uint64_t fixed = fp::fixed_bytes(shape, lanes, fp::stride_bound(largest));
+            const uint64_t mib = 1ull << 20;
+            const uint64_t card = selected[i].at("vram_total_mib").get<uint64_t>() * mib;
+            const uint64_t reserve = arch_info(selected[i].at("arch")).reserve_mib * mib;
+            const uint64_t budget = fp::expert_budget_bytes(card, reserve, fixed) / mib;
+            if (!budget)
+                throw std::runtime_error("memory.helper_budgets_mib[" + std::to_string(i) + "]: the " +
+                                         selected[i].at("arch").get<std::string>() + " card's VRAM less its reserve does not "
+                                         "hold the helper's own lanes, pointer banks and slot map");
+            derived_budgets[i] = budget;
+        }
+        put(values, provenance, *field_for("memory.helper_budgets_mib"), derived_budgets, "derived",
+            "card VRAM less archs.toml reserve-mib less the helper's lanes, pointer banks, slot map and incoming slot "
+            "(worker_footprint.h)", inputs);
+    }
     {
         // The host RAM reserve: calibrated rule parameters for this layout and objective, then the site's floor.
         const Calibration calibration = Calibration::standard(options.calibration_cache);

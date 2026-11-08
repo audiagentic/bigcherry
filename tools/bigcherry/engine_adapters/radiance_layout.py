@@ -43,9 +43,13 @@ class HelperCard:
     index: int                    # HIP/ROCR ordinal of the card
     arch: Arch
     vram_mib: int
+    #: the expert budget; when ``budget_derived`` it is the card limit (VRAM less archs.toml reserve-mib), an upper bound: bc-serve
+    #: derives the expert budget the owner planner and the helper use as this less the helper's own lanes, pointer banks, slot map
+    #: and incoming slot (moe-remote worker_footprint.h, RAD49), which needs the model's shape
     budget_mib: int
     placement: str
     share: int
+    budget_derived: bool = False
 
 
 @dataclass(frozen=True)
@@ -268,16 +272,18 @@ def resolve(name: str, host: environment.Host, *, budgets: dict[str, int] | None
             raise LayoutError(f"{gwhere}: share is a non-negative integer")
         for d in cards:
             limit = d.vram_mib - archs[d.arch].reserve_mib
-            # absent: the whole card less its archs.toml reserve (derived from the inventory, not a literal in the layout)
+            # absent: derived by bc-serve from the card (this limit) less the helper's own footprint; not a literal in the layout
             budget = g.get("budget-mib", limit)
+            derived = "budget-mib" not in g
             if d.arch in budgets:
                 budget = budgets[d.arch]
+                derived = False
                 used_overrides.add(d.arch)
             if not isinstance(budget, int) or isinstance(budget, bool) or budget <= 0:
                 raise LayoutError(f"{gwhere}: budget-mib is a positive integer")
             if budget > limit:
                 raise LayoutError(f"{gwhere}: budget {budget} MiB on device {d.index} ({d.arch}, {d.vram_mib} MiB, reserve {archs[d.arch].reserve_mib}) exceeds {limit} MiB")
-            helpers.append(HelperCard(d.index, archs[d.arch], d.vram_mib, budget, placement, share))
+            helpers.append(HelperCard(d.index, archs[d.arch], d.vram_mib, budget, placement, share, derived))
     unused = set(budgets) - used_overrides
     if unused:
         raise LayoutError(f"{where}: a budget override names {sorted(unused)}, which no helper group uses")
@@ -292,7 +298,8 @@ def resolve(name: str, host: environment.Host, *, budgets: dict[str, int] | None
     common = {
         "R3_MOE_WORKER_COUNT": str(len(helpers)),
         "R3_MOE_WORKER_ENGINE_RANKS": str(len(engine)),
-        "R3_MOE_WORKER_MIBS": ",".join(str(h.budget_mib) for h in helpers),
+        # the expert budgets, when the layout (or an override) gives them all; a derived one is bc-serve's (worker_footprint.h)
+        "R3_MOE_WORKER_MIBS": "" if any(h.budget_derived for h in helpers) else ",".join(str(h.budget_mib) for h in helpers),
         # one weight per helper (the tail helper's is not read: tail placement gives it what the heads left); only when a head differs from 1
         "R3_MOE_WORKER_SHARES": ",".join(str(h.share if h.placement == "head" else 0) for h in helpers)
                                 if any(h.placement == "head" and h.share != 1 for h in helpers) else "",

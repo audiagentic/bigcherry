@@ -10,9 +10,11 @@
 #include "moe_lane_reduce.h"
 #include "moe_lane_host.h"
 #include "worker_replay_memory.h"
+#include "worker_footprint.h"
 #include "worker_slot_pool.h"
 #include "worker_move_slots.h"
 #include "worker_generation_tables.h"
+#include "worker_footprint.h"
 #include <memory>
 #include "rad_abi_layout.h"
 
@@ -206,14 +208,13 @@ public:
                     largest = std::max(largest, n);
                 }
         const uint64_t n = uint64_t(model_.layers) * experts();
-        const uint64_t table_bytes = uint64_t(model_.layers) * sizeof(DeviceLayerTables);
-        const uint64_t tables = r3::worker_tables::kGenerations *
-            (table_bytes + uint64_t(model_.layers) * 2u * 4u *
-             (experts() / 2u) * sizeof(void*));
+        static_assert(sizeof(DeviceLayerTables) == r3::worker_footprint::kDeviceLayerTablesBytes,
+                      "worker_footprint.h counts the pointer banks with this table size");
+        const uint64_t tables = r3::worker_footprint::pointer_bank_bytes(footprint_shape());
         uint64_t lanes = 0;
         for (const LaneWork& w : lane_) lanes += lane_bytes(w);
         const auto plan = r3::worker_slots::budget_plan(budget, largest, n);
-        *out = {largest, lanes, tables, n * sizeof(uint16_t), plan.expert_slots};
+        *out = {largest, lanes, tables, r3::worker_footprint::slot_map_bytes(footprint_shape()), plan.expert_slots};
         return largest && plan.expert_slots > 0;
     }
 
@@ -497,7 +498,26 @@ public:
                 !hip_ok(hipMemset(w.d_stats.p, 0, 3 * sizeof(uint64_t)), "zero lane stats"))
                 return false;
         }
+        /* The serving lanes are exactly the shared footprint (worker_footprint.h), the one bc-serve derives an omitted
+         * budget-mib with; a drift here would let the planner fill an arena the card cannot hold. Compare re-plans per capture
+         * (dense route slots) and is not a serving footprint. */
+        if (!dense_route_slots) {
+            r3::worker_footprint::Lanes plan{};
+            plan.small_rows = sizes; plan.small_count = count; plan.large_rows = large_rows; plan.open = open;
+            uint64_t prepared = 0;
+            for (const LaneWork& w : lane_) prepared += lane_bytes(w) - w.scratch.bytes;
+            const uint64_t want = r3::worker_footprint::lanes_bytes(footprint_shape(), plan);
+            if (prepared != want) {
+                std::fprintf(stderr, "r3_moe_worker: prepared lanes take %llu bytes, the shared footprint says %llu "
+                             "(worker_footprint.h out of step with the lane buffers)\n",
+                             (unsigned long long)prepared, (unsigned long long)want);
+                return false;
+            }
+        }
         return true;
+    }
+    r3::worker_footprint::Shape footprint_shape() const {
+        return {model_.layers, experts(), shape_.hidden, shape_.intermediate, shape_.top_k, (uint64_t)kGroup};
     }
 
     bool release_compare_lanes() {
