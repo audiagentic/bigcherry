@@ -73,10 +73,14 @@ __global__ void relay_publish_done(LiveControl* control,uint32_t generation,
 bool relay_rounds(int sock,int device,unsigned iterations,uint32_t rows,
                   LiveControl* host,LiveControl* device_control,
                   const void* gpu_local,unsigned* errors,unsigned* wait_timeout,
-                  uint64_t deadline_wall_ticks,bool parent_publish) {
+                  uint64_t deadline_wall_ticks,bool parent_publish,
+                  unsigned verifier_blocks) {
     if(!host || !device_control || !gpu_local || !errors || !wait_timeout ||
        !rows || rows>768 || !iterations || iterations>200 ||
-       deadline_wall_ticks==0)return false;
+       deadline_wall_ticks==0 ||
+       (verifier_blocks!=1 && verifier_blocks!=32 &&
+        verifier_blocks!=64 && verifier_blocks!=128 &&
+        verifier_blocks!=256))return false;
     const uint32_t bytes=rows*COMBINE_ROW_BYTES;
     if(bytes>MAX_BYTES)return false;
     std::vector<double> total,combine,cpu_ack_us,gpu_after_ready_us,arm_us;
@@ -99,7 +103,7 @@ bool relay_rounds(int sock,int device,unsigned iterations,uint32_t rows,
         hipLaunchKernelGGL(relay_waiter,dim3(1),dim3(1),0,0,
                            device_control,generation,wait_timeout,
                            deadline_wall_ticks);
-        hipLaunchKernelGGL(relay_verify,dim3(256),dim3(256),0,0,
+        hipLaunchKernelGGL(relay_verify,dim3(verifier_blocks),dim3(256),0,0,
                            static_cast<const uint16_t*>(gpu_local),
                            bytes/2,generation,wait_timeout,errors);
         hipLaunchKernelGGL(relay_publish_done,dim3(1),dim3(1),0,0,
@@ -183,7 +187,7 @@ bool relay_rounds(int sock,int device,unsigned iterations,uint32_t rows,
         // in-process percentile vectors, never suppress a failure.
         if(iterations<=15 || n<3u || (n+1u)%10u==0u || n+1u==iterations) {
         std::printf("RAD50_%s_SAMPLE device=%d rows=%u bytes=%u gen=%u "
-                    "control=%s delivery=%s gpu_parallel_blocks=256 "
+                    "control=%s delivery=%s gpu_parallel_blocks=%u "
                     "arm_us=%.2f cpu_combine_us=%.2f dma_sync_us=%.2f "
                     "helper_ack_us=%.2f post_ack_complete_us=%.2f "
                     "serial_us=%.2f gpu_seen_ready=%u wait_loops=%u "
@@ -191,7 +195,7 @@ bool relay_rounds(int sock,int device,unsigned iterations,uint32_t rows,
                     parent_publish?"RELAY":"PARALLEL",device,rows,bytes,generation,
                     parent_publish?"hip-host-coherent":"hip-register-mapped",
                     parent_publish?"parent-after-socket-ack":"child-after-dma-sync-end",
-                    armed-start,reply.write_us,
+                    verifier_blocks,armed-start,reply.write_us,
                     reply.sync_start_us+reply.sync_end_us,acked-armed,
                     end-published,end-start,gpu_seen,spins);
         std::fflush(stdout); // Partial logs remain useful.
@@ -206,12 +210,12 @@ bool relay_rounds(int sock,int device,unsigned iterations,uint32_t rows,
         return v[static_cast<size_t>(q*(v.size()-1))];
     };
     std::printf("RAD50_%s_SUMMARY device=%d rows=%u bytes=%u "
-                "iterations=%u verified=%u p50_us=%.2f p95_us=%.2f "
+                "iterations=%u verified=%u gpu_parallel_blocks=%u p50_us=%.2f p95_us=%.2f "
                 "p99_us=%.2f max_us=%.2f emitted=%u "
                 "combine_p50_us=%.2f arm_p50_us=%.2f ack_p50_us=%.2f "
                 "post_ack_complete_p50_us=%.2f status=0\n",
                 parent_publish?"RELAY":"PARALLEL",device,rows,bytes,
-                iterations,iterations,median(total),quantile(total,.95),
+                iterations,iterations,verifier_blocks,median(total),quantile(total,.95),
                 quantile(total,.99),*std::max_element(total.begin(),total.end()),
                 iterations<=15?iterations:(3u+iterations/10u+(iterations%10u?1u:0u)),
                 median(combine),median(arm_us),median(cpu_ack_us),

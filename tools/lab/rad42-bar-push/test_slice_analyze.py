@@ -3,7 +3,7 @@ import unittest
 from slice_analyze import expected_offsets, parse, report, provisional
 
 
-def fixture(mode="PARALLEL", device=0, rows=768, iterations=100, complete=True):
+def fixture(mode="PARALLEL", device=0, rows=768, iterations=100, complete=True, blocks=256):
     control=("hip-register-mapped-direct-parallel" if mode=="PARALLEL"
              else "hip-host-coherent-relay")
     delivery=("child-after-dma-sync-end" if mode=="PARALLEL"
@@ -12,13 +12,13 @@ def fixture(mode="PARALLEL", device=0, rows=768, iterations=100, complete=True):
            f"RAD50_LIVE_CONTEXT device={device} pci=0000:03:00.0 rows={rows} "
            f"bytes={rows*5120} iterations={iterations} cpu_child=persistent "
            "consumer_armed_before_write=1 dma_buf_sync=1 ready_scope=system "
-           f"reuse_after_done=1 control={control}"]
+           f"reuse_after_done=1 control={control} gpu_parallel_blocks={blocks}"]
     offsets=expected_offsets(iterations)
     for offset in offsets:
         gen=100000+rows*1000+offset
         lines.append(f"RAD50_{mode}_SAMPLE device={device} rows={rows} "
             f"bytes={rows*5120} gen={gen} control=host "
-            f"delivery={delivery} gpu_parallel_blocks=256 "
+            f"delivery={delivery} gpu_parallel_blocks={blocks} "
             "arm_us=1.00 cpu_combine_us=5.00 dma_sync_us=0.30 "
             "helper_ack_us=6.00 post_ack_complete_us=3.00 "
             f"serial_us=10.00 gpu_seen_ready={gen} wait_loops=3 "
@@ -26,6 +26,7 @@ def fixture(mode="PARALLEL", device=0, rows=768, iterations=100, complete=True):
     if complete:
         lines.append(f"RAD50_{mode}_SUMMARY device={device} rows={rows} "
             f"bytes={rows*5120} iterations={iterations} verified={iterations} "
+            f"gpu_parallel_blocks={blocks} "
             "p50_us=10.00 p95_us=10.00 p99_us=10.00 max_us=10.00 "
             f"emitted={len(offsets)} combine_p50_us=5.00 arm_p50_us=1.00 "
             "ack_p50_us=6.00 post_ack_complete_p50_us=3.00 status=0")
@@ -53,6 +54,28 @@ class SliceAnalysisTests(unittest.TestCase):
 
     def test_full_10_pass(self):
         self.assertEqual(1,len(parse(fixture(iterations=10))))
+
+    def test_grid_sweep_keeps_bitwise_proof(self):
+        for blocks in (1,32,64,128,256):
+            self.assertEqual(1,len(parse(fixture(iterations=10,blocks=blocks))))
+
+    def test_mixed_grid_metadata_is_rejected(self):
+        text=fixture(blocks=32).replace("gpu_parallel_blocks=32",
+                                         "gpu_parallel_blocks=64",1)
+        with self.assertRaisesRegex(ValueError,"wrong/stale"):
+            parse(text)
+
+    def test_unsupported_grid_is_rejected(self):
+        with self.assertRaisesRegex(ValueError,"invalid GPU verifier"):
+            parse(fixture(blocks=7))
+
+    def test_grid_summary_must_match_samples(self):
+        # Corrupt only summary grid metadata instead of the context.
+        lines=fixture(blocks=32).splitlines()
+        lines=[line.replace("gpu_parallel_blocks=32","gpu_parallel_blocks=64")
+               if line.startswith("RAD50_PARALLEL_SUMMARY ") else line for line in lines]
+        with self.assertRaisesRegex(ValueError,"incomplete or mismatched"):
+            parse("\n".join(lines))
 
     def test_truncated_rejected_but_provisional(self):
         text=fixture(complete=False)

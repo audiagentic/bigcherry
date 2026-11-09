@@ -181,3 +181,11 @@ The existing unified `rad50-tester` now has fixed `dmabuf-live-parallel` (CPU he
 ## 2026-11-09 GFX11 live tests (latest)
 
 Fixed `dmabuf-live-parallel` and `dmabuf-live-relay` now use a `wall_clock64()` deadline scaled by the HIP device wall clock rate; the old `clock64()` deadline caused false gfx11 timeouts. Both paths passed 100 generations of 768 rows on both XTXs with GPU pre-armed and all FP16 words checked. Use `--test dmabuf-live-parallel --device 0|1 --iterations 100 --rows 768 --lease-confirmed` only under your own exclusive GPU lease. Direct publication (~464 us p50) vs parent relay (~469–471 us p50) is **not** a paired inference comparison. Long runs print first three, every tenth and final sample plus full-run percentiles and failure/cleanup markers. Parse with `slice_analyze.py` for strict completion, or `--provisional` for failed/partial logs; details in `SLICE_OPTIMIZATION.md`.
+
+## S4 verifier-grid experimental option (2026-11-09)
+
+The existing allowlisted `rad50-tester` accepts `--verifier-blocks 1|32|64|128|256` **only** with `--test dmabuf-live-parallel` or `--test dmabuf-live-relay`. Default remains 256, and GPU waiter, independent helper, full GPU FP16 comparison, SYNC and ticket protocol are unchanged. For example, **only under an independently acquired exclusive lease and verified no-foreign-KFD preflight**:
+
+`rad50-tester --test dmabuf-live-parallel --device 0 --iterations 30 --rows 768 --verifier-blocks 128 --lease-confirmed`
+
+The strict `slice_analyze.py` rejects mismatched grid metadata, incomplete records and missing post-cleanup success; old 256-block log format is compatible. 22 complete S4 logs strictly passed; one locally interrupted capture is marked PARTIAL. Keep the 256-block baseline; see [S4_VERIFIER_SWEEP.md](S4_VERIFIER_SWEEP.md).

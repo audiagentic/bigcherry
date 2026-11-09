@@ -62,3 +62,26 @@
     check({"rad50-tester","--test","dmabuf-live-fg","--device","0",
            "--iterations","10","--rows","1000","--lease-confirmed"},
           false,"fine-grained live bounded rows");
+
+    // S4: fixed GPU verifier grid sweep; only parallel and relay can use it.
+    check({"rad50-tester","--test","dmabuf-live-parallel","--device","0",
+           "--iterations","10","--rows","768","--verifier-blocks","1",
+           "--lease-confirmed"},true,"one-block full-bit verifier isolation");
+    check({"rad50-tester","--test","dmabuf-live-relay","--device","1",
+           "--iterations","100","--rows","768","--verifier-blocks","128",
+           "--lease-confirmed"},true,"128-block coherent relay");
+    check({"rad50-tester","--test","dmabuf-live-parallel","--device","0",
+           "--iterations","10","--rows","768","--verifier-blocks","2",
+           "--lease-confirmed"},false,"no arbitrary verifier grid");
+    check({"rad50-tester","--test","dmabuf-live-parallel","--device","0",
+           "--iterations","10","--rows","768","--verifier-blocks","32",
+           "--verifier-blocks","64","--lease-confirmed"},false,"no repeated verifier grids");
+    check({"rad50-tester","--test","dmabuf-live","--device","0",
+           "--iterations","10","--rows","768","--verifier-blocks","32",
+           "--lease-confirmed"},false,"not valid for legacy one-block reader");
+    check({"rad50-tester","--test","combine-ab","--device","0",
+           "--iterations","10","--mode","direct","--rows","768",
+           "--verifier-blocks","32","--lease-confirmed"},false,"not valid for serial combine");
+    check({"rad50-tester","--test","dmabuf-live-parallel","--device","0",
+           "--iterations","10","--rows","768","--verifier-blocks","32"},
+          false,"cannot bypass GPU lease acknowledgement");

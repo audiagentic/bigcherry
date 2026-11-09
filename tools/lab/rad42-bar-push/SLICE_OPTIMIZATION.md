@@ -180,3 +180,9 @@ fallback.
 exclusive lease, preserve successful and failed logs, release only
 a lease owned by the test session. RAD49 can use the GPUs at any
 time; avoid competing with its work. No extra git worktrees.
+
+## S4 follow-up: measured verifier-block sweep (2026-11-09)
+
+The same RAD50 lab executable now supports 1/32/64/128/256 verifier blocks for direct-child and parent-relay GPU-live tests; default 256. It retains full-bit payload checks, explicit ready/done tickets and strict post-cleanup completion. **22 complete captured runs strictly passed; one interrupted local capture was rejected and retained as PARTIAL.** At 768 rows XTX0, 100-generation p50/p95 were 479.48/1698.41 us with 128 blocks versus 464.23/520.50 us with 256; a single block took 7.5 ms. Both cards favored 256 for post-ACK GPU/host completion, although XTX1's CPU-combine contention prevented a clean total-time comparison. One-row differences were small/inconsistent. Concurrent build activity prevents causal inference.
+
+**No change to the 256-block default** and no S4 production-consumer DONE claim. Highest-value next slice is S1 CPU combine/destination, then failure/restart safety, real fused consumer and TP2 overlap. See [S4_VERIFIER_SWEEP.md](S4_VERIFIER_SWEEP.md). RAD50 GPU lease released and RAD49 now owns it.

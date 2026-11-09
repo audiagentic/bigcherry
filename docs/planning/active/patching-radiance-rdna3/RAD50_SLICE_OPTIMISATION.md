@@ -182,3 +182,9 @@ Upstream device semantics:
   https://docs.kernel.org/driver-api/dma-buf.html
   (`DMA_BUF_IOCTL_SYNC` is cache coherency, not the whole
   application-level producer/consumer protocol).
+
+## S4 update - 2026-11-09 verifier-grid sweep
+
+Existing RAD50 tester accepts bounded `--verifier-blocks 1|32|64|128|256` for live direct and relay modes; 256 remains the default. Strict log parsing enforces matching block-count metadata. Both gfx1100 XTXs passed **22 complete captured full-word and ticket verification runs**; one interrupted local capture remains explicitly partial. At 768 rows on XTX0, 100-generation p50/p95: 256 blocks 464.23/520.50 us, versus 128 blocks 479.48/1698.41 us; a one-block verifier took ~7.5 ms. Both cards had faster post-ACK completion with 256 blocks, while XTX1's higher CPU-combine time confounded total comparisons. These runs overlapped another build; no causal/production speedup claim is warranted.
+
+**Retain 256-block baseline.** S4 fused GPU consumer, S0/S3 failure lifecycle and S6 paired TP2 serving gates are open. S1 production CPU FP16 combine plus destination-placement isolation is next priority. Raw hardware logs, SHA, test status and limitations: `tools/lab/rad42-bar-push/S4_VERIFIER_SWEEP.md`. The RAD50 exclusive GPU lease was released; RAD49 holds the GPUs.

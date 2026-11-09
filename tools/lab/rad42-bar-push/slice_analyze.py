@@ -79,8 +79,11 @@ def parse(text:str)->list[dict]:
                 meta.get("ready_scope")!="system" or
                 meta.get("reuse_after_done")!="1"):
                 raise ValueError("missing GPU-live ordering contract")
+            blocks=int(meta.get("gpu_parallel_blocks","256"))
+            if blocks not in {1,32,64,128,256}:
+                raise ValueError("invalid GPU verifier block count")
             active={"kind":kind,"device":device,"rows":rows,"count":count,
-                    "samples":[],"summarized":False,"summary":None}
+                    "blocks":blocks,"samples":[],"summarized":False,"summary":None}
         else:
             found=False
             for kind in KINDS:
@@ -100,7 +103,7 @@ def parse(text:str)->list[dict]:
                         index>=active["count"] or number(row,"mismatches") or
                         number(row,"status") or
                         number(row,"gpu_seen_ready")!=gen or
-                        number(row,"gpu_parallel_blocks")!=256):
+                        number(row,"gpu_parallel_blocks")!=active["blocks"]):
                         raise ValueError("wrong/stale/unverified GPU-ready generation")
                     if ((kind=="PARALLEL" and
                          row.get("delivery")!="child-after-dma-sync-end") or
@@ -122,6 +125,7 @@ def parse(text:str)->list[dict]:
                         number(row,"iterations")!=active["count"] or
                         number(row,"verified")!=active["count"] or
                         number(row,"emitted")!=len(expected_offsets(active["count"])) or
+                        int(row.get("gpu_parallel_blocks","256"))!=active["blocks"] or
                         number(row,"status")!=0 or
                         len(active["samples"])!=len(expected_offsets(active["count"]))):
                         raise ValueError("incomplete or mismatched summary")

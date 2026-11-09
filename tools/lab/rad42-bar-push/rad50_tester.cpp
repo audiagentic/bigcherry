@@ -68,6 +68,7 @@ struct Args {
     int iterations = -1;
     int selected_bytes = -1;
     int selected_rows = -1;
+    int verifier_blocks = 256;
     int samples = -1;
     std::string mode;
 };
@@ -78,7 +79,8 @@ void print_help(const char* binary) {
         "       %s --test NAME [--device HIP_ORDINAL] [--iterations 10..200]\n"
         "          [--mode spin|yield|sleep1|condvar|direct|staged]\n"
         "          [--samples 100..100000] [--bytes 4096|65536|262144|1048576|4194304]\n"
-        "          [--rows 1|16|64|256|768] (combine-ab only)\n"
+        "          [--rows 1|16|64|256|768]\n"
+        "          [--verifier-blocks 1|32|64|128|256] (live parallel/relay only)\n"
         "          [--lease-confirmed]\n"
         "GPU and host-latency tests require --lease-confirmed. The flag is\n"
         "an operator declaration, not an automatic lease acquisition/check.\n"
@@ -111,7 +113,7 @@ const Test* find_test(const char* name) {
 bool parse(int argc, char** argv, Args* result) {
     bool seen_test = false, seen_device = false, seen_iterations = false;
     bool seen_samples = false, seen_mode = false, seen_ack = false;
-    bool seen_bytes = false, seen_rows = false;
+    bool seen_bytes = false, seen_rows = false, seen_verifier_blocks = false;
     for (int i=1; i<argc; ++i) {
         const char* a=argv[i];
         if (!std::strcmp(a,"--test")) {
@@ -141,6 +143,13 @@ bool parse(int argc, char** argv, Args* result) {
             if (result->selected_rows!=1 && result->selected_rows!=16 &&
                 result->selected_rows!=64 && result->selected_rows!=256 &&
                 result->selected_rows!=768) return false;
+        } else if (!std::strcmp(a,"--verifier-blocks")) {
+            if (seen_verifier_blocks || i+1>=argc ||
+                !parse_int(argv[++i],1,256,&result->verifier_blocks)) return false;
+            seen_verifier_blocks=true;
+            if (result->verifier_blocks!=1 && result->verifier_blocks!=32 &&
+                result->verifier_blocks!=64 && result->verifier_blocks!=128 &&
+                result->verifier_blocks!=256) return false;
         } else if (!std::strcmp(a,"--samples")) {
             if (seen_samples || i+1>=argc ||
                 !parse_int(argv[++i],100,100000,&result->samples)) return false;
@@ -166,6 +175,8 @@ bool parse(int argc, char** argv, Args* result) {
          t.kind==Kind::DmaBufLiveFG || t.kind==Kind::DmaBufLiveRelay ||
          t.kind==Kind::DmaBufLiveParallel)!=seen_iterations) return false;
     if (seen_bytes && t.kind!=Kind::DmaBufAB) return false;
+    if (seen_verifier_blocks && t.kind!=Kind::DmaBufLiveRelay &&
+        t.kind!=Kind::DmaBufLiveParallel) return false;
     if (seen_rows && t.kind!=Kind::CombineAB &&
         t.kind!=Kind::DmaBufLive && t.kind!=Kind::DmaBufLiveFG &&
         t.kind!=Kind::DmaBufLiveRelay && t.kind!=Kind::DmaBufLiveParallel) return false;
@@ -252,12 +263,14 @@ int run(const Args& a,const char* self) {
       case Kind::DmaBufLiveRelay:
         args.insert(args.end(),{"--live-relay","--device",std::to_string(a.device),
                                 "--iterations",std::to_string(a.iterations),
-                                "--rows",std::to_string(a.selected_rows)});
+                                "--rows",std::to_string(a.selected_rows),
+                                "--verifier-blocks",std::to_string(a.verifier_blocks)});
         return call_entry(rad50_dmabuf_ab_entry,args);
       case Kind::DmaBufLiveParallel:
         args.insert(args.end(),{"--live-parallel","--device",std::to_string(a.device),
                                 "--iterations",std::to_string(a.iterations),
-                                "--rows",std::to_string(a.selected_rows)});
+                                "--rows",std::to_string(a.selected_rows),
+                                "--verifier-blocks",std::to_string(a.verifier_blocks)});
         return call_entry(rad50_dmabuf_ab_entry,args);
       case Kind::Transfer:
         args.insert(args.end(),{"--device",std::to_string(a.device),

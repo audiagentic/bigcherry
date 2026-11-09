@@ -254,7 +254,7 @@ void report(int device,size_t bytes,int iterations,const char* method,int path,c
                 q([](const Sample& s){return s.gpu_host;},.5),
                 p50,p95,p99,p50>0?bytes/(p50*1000):0);
 }
-bool bench(const char* self,int device,unsigned iterations,int method,size_t selected_bytes,bool live,int control_kind) {
+bool bench(const char* self,int device,unsigned iterations,int method,size_t selected_bytes,bool live,int control_kind,unsigned verifier_blocks) {
     const bool finegrained=control_kind==1;
     const bool relay=control_kind==2;
     const bool parallel=control_kind==2 || control_kind==3;
@@ -361,12 +361,13 @@ bool bench(const char* self,int device,unsigned iterations,int method,size_t sel
             std::printf("RAD50_LIVE_CONTEXT device=%d pci=%s rows=%zu "
                         "bytes=%zu iterations=%u cpu_child=persistent "
                         "consumer_armed_before_write=1 dma_buf_sync=1 "
-                        "ready_scope=system reuse_after_done=1 control=%s\n",
+                        "ready_scope=system reuse_after_done=1 control=%s gpu_parallel_blocks=%u\n",
                         device,pci,selected_bytes/COMBINE_ROW_BYTES,
                         selected_bytes,iterations,
                         relay?"hip-host-coherent-relay":
                             (parallel?"hip-register-mapped-direct-parallel":
-                            (finegrained?"hip-ext-uncached":"hip-register-mapped")));
+                            (finegrained?"hip-ext-uncached":"hip-register-mapped")),
+                        verifier_blocks);
             std::fflush(stdout);
             const uint32_t count=static_cast<uint32_t>(selected_bytes/COMBINE_ROW_BYTES);
             const bool passed=parallel?
@@ -374,7 +375,8 @@ bool bench(const char* self,int device,unsigned iterations,int method,size_t sel
                              static_cast<LiveControl*>(relay?relay_host:host_va),
                              static_cast<LiveControl*>(relay?relay_device:host_device),
                              device_va,mismatch,relay_wait_timeout,
-                             static_cast<uint64_t>(gpu_wallclock_khz)*3000ull,relay):
+                             static_cast<uint64_t>(gpu_wallclock_khz)*3000ull,
+                             relay,verifier_blocks):
                 live_rounds(pair[0],device,iterations,count,
                             static_cast<LiveControl*>(host_va),
                             static_cast<LiveControl*>(host_device),device_va,
@@ -517,7 +519,7 @@ bool bench(const char* self,int device,unsigned iterations,int method,size_t sel
 int main(int argc,char** argv) {
     if(argc==3 && !std::strcmp(argv[1],"--bench-child") &&
        !std::strcmp(argv[2],"3")) return worker(CHILD_SOCKET);
-    if(argc==8 && (!std::strcmp(argv[1],"--live") ||
+    if((argc==8 || argc==10) && (!std::strcmp(argv[1],"--live") ||
                    !std::strcmp(argv[1],"--live-fg") ||
                    !std::strcmp(argv[1],"--live-relay") ||
                    !std::strcmp(argv[1],"--live-parallel")) &&
@@ -537,8 +539,17 @@ int main(int argc,char** argv) {
         const bool fg=!std::strcmp(argv[1],"--live-fg");
         const int control_kind=!std::strcmp(argv[1],"--live-relay")?2:
                                (!std::strcmp(argv[1],"--live-parallel")?3:(fg?1:0));
+        unsigned blocks=256;
+        if(argc==10) {
+            if(control_kind!=2 && control_kind!=3) return 2;
+            if(std::strcmp(argv[8],"--verifier-blocks")) return 2;
+            const long chosen=std::strtol(argv[9],&end,10);
+            if(!argv[9][0] || *end || (chosen!=1 && chosen!=32 &&
+               chosen!=64 && chosen!=128 && chosen!=256)) return 2;
+            blocks=static_cast<unsigned>(chosen);
+        }
         return bench(argv[0],static_cast<int>(dev),static_cast<unsigned>(n),
-                     2,static_cast<size_t>(rows)*COMBINE_ROW_BYTES,true,control_kind)?0:3;
+                     2,static_cast<size_t>(rows)*COMBINE_ROW_BYTES,true,control_kind,blocks)?0:3;
     }
     if((argc!=7 && argc!=9) || std::strcmp(argv[1],"--device") ||
        std::strcmp(argv[3],"--iterations") || std::strcmp(argv[5],"--mode"))
@@ -568,5 +579,5 @@ int main(int argc,char** argv) {
         selected_bytes=static_cast<size_t>(chosen);
     }
     return bench(argv[0],static_cast<int>(d),static_cast<unsigned>(it),
-                 method,selected_bytes,false,false)?0:3;
+                 method,selected_bytes,false,0,256)?0:3;
 }
