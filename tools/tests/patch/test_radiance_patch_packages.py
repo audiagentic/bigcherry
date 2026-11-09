@@ -68,9 +68,8 @@ PREREQUISITES = {RAD0004: (RAD0002,)}
 PIN_BLOBS = {
     RAD0002: {
         "abi/bc_moe_remote.h": (None, "d3748b9"),
-        "arch/common/bc_moe_remote_block.h": (None, "271a9a6"),
-        "arch/common/rad_block_hc.h": ("3a602e5", "d1124d5"),
-        "arch/common/rad_block_moe_fp8.h": ("614db0e", "5777cc8"),
+        "arch/common/bc_moe_remote_block.h": (None, "65b28ba"),
+        "arch/common/rad_block_moe_fp8.h": ("614db0e", "286e154"),
         "core/engine.cpp": ("7544310", "c0c5357"),
         "core/engine.h": ("b10743c", "11473eb"),
         "core/engine_bringup.cpp": ("3ecdba8", "fe411f0"),
@@ -85,7 +84,7 @@ PIN_BLOBS = {
     },
     RAD0004: {
         "arch/common/bc_moe_remote_diag.h": (None, "3998d25"),
-        "arch/common/rad_block_moe_fp8.h": ("5777cc8", "feb3865"),
+        "arch/common/rad_block_moe_fp8.h": ("286e154", "dda77b2"),
     },
     RAD0009: {
         "core/bc_serving_manifest.h": (None, "ea567e5"),
@@ -97,7 +96,6 @@ PIN_BLOBS = {
 
 #: the core files rad0002 edits (everything else it ships is a file of its own)
 RAD0002_CORE_FILES = (
-    "arch/common/rad_block_hc.h",
     "arch/common/rad_block_moe_fp8.h",
     "core/engine.cpp",
     "core/engine.h",
@@ -230,7 +228,7 @@ class TestRadiancePatchPackages(unittest.TestCase):
             patches = _load(RAD0002)
             core_edits = {p.path: len(p.edits) for p in patches if not p.create}
             self.assertEqual(set(core_edits), set(RAD0002_CORE_FILES))
-            self.assertEqual(sum(core_edits.values()), 28)
+            self.assertEqual(sum(core_edits.values()), 25)
             self.assertEqual(sum(1 for p in patches if p.create), 5)
             self.assertTrue(all(result.ok for result in apply_all(list(patches), root)))
             for relative in RAD0002_CORE_FILES:
@@ -276,12 +274,11 @@ class TestRadiancePatchPackages(unittest.TestCase):
             self.assertLess(n4, merge)
             self.assertLess(merge, gather)
             self.assertLess(gather, ar)
-            self.assertIn("return op_ar && (bc_remote.active(T) ||", moe)
+            # RAD49: the hand-off keeps upstream's all-reduce path; the fused gather + reducing hc write takes the
+            # helper rows (moe_mailbox_inject) instead of a forced standalone all-reduce.
+            self.assertNotIn("bc_remote.active(T) ||", moe)
             hc = (root / "arch/common/rad_block_hc.h").read_text(encoding="utf-8")
-            self.assertIn(
-                "bool takes_ar(int64_t T) const { return ar_write(T) != 0 && !bc_moe_remote_hc_open(gsrc.top_k, T); }",
-                hc,
-            )
+            self.assertNotIn("bc_moe_remote", hc)
             planner = (root / "core/place/planner.cpp").read_text(encoding="utf-8")
             self.assertIn("if (bc_moe_remote_pin_unit(mu, in_.config->max_tok)) continue;", planner)
             self.assertIn("bc_moe_remote_mark_footprint(units);", planner)
@@ -310,6 +307,15 @@ class TestRadiancePatchPackages(unittest.TestCase):
             block = (root / "arch/common/bc_moe_remote_block.h").read_text(encoding="utf-8")
             self.assertIn("moe_mailbox_publish", block)
             self.assertIn("moe_mailbox_add", block)
+            self.assertIn("moe_mailbox_inject", block)
+            self.assertNotIn("bc_moe_remote_hc_open", block)
+            inject = block.index("RAD_ISSUE_N(c_, inject, rows,")
+            self.assertLess(
+                block.index("if (!m.op_combine && gather_taken(g, T, m.gather_out_rows, m.gather_out_rows6)) {"),
+                inject,
+            )
+            self.assertLess(inject, block.index("RAD_ISSUE_N(c_, add, rows,"))
+            self.assertIn("brows(w.eoff, c.n_expert + 1));", block)
             self.assertNotIn("moe_mailbox_shadow", block)
             self.assertNotIn("moe_mailbox_mask_ref", block)
             self.assertIn("brows(q, T));", block)

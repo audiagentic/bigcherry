@@ -110,6 +110,7 @@ struct R3MoeMailboxDevice {
     uint16_t* mask_ref = nullptr;
     int32_t* inv = nullptr;     /* [max_rows * top_k] engine sorted row of each locally computed slot, else -1. */
     uint32_t* rmask = nullptr;  /* [max_rows * top_k] 1 where the helper computed the slot. */
+    uint32_t* inject_next = nullptr;  /* moe_mailbox_inject: the next spare sorted row (device memory, one word) */
     R3MoeShadowLayerStats* shadow_stats = nullptr;
     R3MoeShadowFirst* shadow_first = nullptr;
     uint32_t max_rows = 0;

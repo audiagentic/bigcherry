@@ -64,6 +64,18 @@ struct RouteRole {
 constexpr RouteRole route_role(bool consumer, bool in_range, bool helper_owned, bool shadow) {
     return RouteRole{in_range, in_range && helper_owned && !shadow, in_range && helper_owned && consumer};
 }
+/* RAD49 fused gather (moe_mailbox_inject): on the layer's consumer, helper k's row for token t joins the engine's fused
+ * MoE gather + reducing write as one more sorted row, at the first of t's slots whose route helper k computed
+ * (rmask[t*K+s] == k+1, as route-mark writes it). Those slots were masked out of the local sort, so the slot is unclaimed,
+ * and two helpers never share one. -1: helper k has no route of t. One definition for the inject kernel and the card-free
+ * exactly-once test. */
+constexpr int32_t inject_slot(const uint32_t* rmask_row, uint32_t top_k, uint32_t helper) {
+    for (uint32_t s = 0; s < top_k; ++s)
+        if (rmask_row[s] == helper + 1u) return (int32_t)s;
+    return -1;
+}
+/* The router weight the injected slot takes: bf16 1.0, so the gather adds the helper's already weighted row unchanged. */
+constexpr uint16_t kInjectWeightBf16 = 0x3F80;
 /* The plane a slot writes for an output rank. Every reader and writer takes the index from here (the host layout, the device kernels
  * and the helper), so the convention lives in one place. A slot writes only its consumer's plane, [slot][slot_consumer]. */
 constexpr uint32_t result_index(uint32_t slot, uint32_t out_rank) { return slot * kMaxEngineRanks + out_rank; }

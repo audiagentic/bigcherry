@@ -9,6 +9,13 @@
 // one-device reference bit for bit; a mutant that drops the non-consumer's mask, or lets both ranks add the helper rows, must
 // not. The heat histogram is checked too: both ranks count every route of every layer, so rank 0's histogram covers the layers
 // rank 1 consumes.
+//
+// The fused path (RAD49, moe_mailbox_inject): where the engine's fused MoE gather + reducing hc write takes the gather, the
+// block gathers nothing; instead the consumer gives each helper row of a token a spare sorted row past the scatter's live
+// count, at that helper's first masked slot of the token (inject_slot), with weight 1 (kInjectWeightBf16). The fused gather
+// then sums every claimed slot of the token in slot order through the inverse table, adds the rank's shared slice, and the
+// reduction sums the ranks. That too must equal the reference bit for bit, with every injected row on a spare sorted row;
+// mutants that inject on both ranks, keep the route's router weight, or put two helpers' rows at one slot must not.
 #include "moe_remote_hook.h"
 #include "moe_remote_shm.h"
 
@@ -82,7 +89,11 @@ Model make_model() {
     return m;
 }
 
-struct Mutation { bool skip_mask_on_non_consumer = false, both_ranks_add_helper_rows = false; };
+struct Mutation {
+    bool skip_mask_on_non_consumer = false, both_ranks_add_helper_rows = false;
+    /* fused-path mutants */
+    bool keep_route_weight = false, one_slot_for_all_helpers = false;
+};
 
 /* One layer on one rank: its partial output and the routes it sent to each slot. */
 struct RankOut {
@@ -91,9 +102,10 @@ struct RankOut {
     std::array<uint32_t, kE> heat{};
 };
 
-RankOut run_rank(const Model& m, uint32_t l, uint32_t rank, Mutation mut) {
-    RankOut r;
-    auto ids = m.ids[l];   /* every rank gets the same routed ids */
+/* Route roles for one layer on one rank: the ids with the masked routes cleared, and the routes sent to each slot. */
+void take_roles(const Model& m, uint32_t l, uint32_t rank, Mutation mut,
+                std::array<std::array<int32_t, kK>, kT>& ids, RankOut& r) {
+    ids = m.ids[l];   /* every rank gets the same routed ids */
     for (uint32_t t = 0; t < kT; ++t)
         for (uint32_t s = 0; s < kK; ++s) {
             const int32_t e = ids[t][s];
@@ -105,6 +117,18 @@ RankOut run_rank(const Model& m, uint32_t l, uint32_t rank, Mutation mut) {
             const bool consumer = consumer_of(l, kWorld) == rank;
             if (role.mask_local && !(mut.skip_mask_on_non_consumer && !consumer)) ids[t][s] = -1;
         }
+    for (uint32_t slot = 0; slot < kMaxSlots; ++slot)
+        for (auto [t, s] : r.sent[slot]) {
+            check(slot_consumer(slot, kWorld) == rank, "a rank only sends to its own slots");
+            check(m.owner_of(l, uint32_t(m.ids[l][t][s])) == int(slot_helper(slot, kWorld)),
+                  "a route goes to the helper that owns it");
+        }
+}
+
+RankOut run_rank(const Model& m, uint32_t l, uint32_t rank, Mutation mut) {
+    RankOut r;
+    std::array<std::array<int32_t, kK>, kT> ids{};
+    take_roles(m, l, rank, mut, ids, r);
     for (uint32_t t = 0; t < kT; ++t) {
         /* local resident experts (width slice) in slot order, then this rank's slice of the shared expert */
         for (uint32_t s = 0; s < kK; ++s)
@@ -113,13 +137,108 @@ RankOut run_rank(const Model& m, uint32_t l, uint32_t rank, Mutation mut) {
     }
     /* the helpers: each computes its slot's routes at full width; the rank that published adds the rows */
     for (uint32_t slot = 0; slot < kMaxSlots; ++slot)
-        for (auto [t, s] : r.sent[slot]) {
-            check(slot_consumer(slot, kWorld) == rank, "a rank only sends to its own slots");
-            const uint32_t helper = slot_helper(slot, kWorld);
-            check(m.owner_of(l, uint32_t(m.ids[l][t][s])) == int(helper), "a route goes to the helper that owns it");
+        for (auto [t, s] : r.sent[slot])
             add(r.partial[t], expert(l, uint32_t(m.ids[l][t][s]), m.in[l][t], -1), m.w[l][t][s]);
-        }
     return r;
+}
+
+bool same(const std::array<Row, kT>& a, const std::array<Row, kT>& b);
+
+float bf16_value(uint16_t b) {
+    const uint32_t u = uint32_t(b) << 16;
+    float f;
+    std::memcpy(&f, &u, sizeof f);
+    return f;
+}
+
+/* One layer on one rank, fused: the scatter's sorted rows (local routes grouped by expert, then -1), the down rows (each
+ * sorted row's unweighted width-slice output), the router weights; the inject (the consumer's helper rows onto spare sorted
+ * rows, weight 1); then the fused gather (every claimed slot of a token in slot order, through the inverse table) and the
+ * rank's shared slice. Counts the injected rows. */
+RankOut run_rank_fused(const Model& m, uint32_t l, uint32_t rank, Mutation mut, uint32_t* injected) {
+    RankOut r;
+    std::array<std::array<int32_t, kK>, kT> ids{};
+    take_roles(m, l, rank, mut, ids, r);
+    constexpr uint32_t cap = kT * kK;
+    std::array<int32_t, cap> sorted{};
+    sorted.fill(-1);
+    std::array<Row, cap> down{};
+    std::array<float, cap> ew{};
+    uint32_t live = 0;
+    for (uint32_t e = 0; e < kE; ++e)   /* the scatter: grouped by expert; eoff[n_expert] == live */
+        for (uint32_t t = 0; t < kT; ++t)
+            for (uint32_t s = 0; s < kK; ++s)
+                if (ids[t][s] == int32_t(e)) {
+                    sorted[live] = int32_t(t * kK + s);
+                    down[live] = expert(l, e, m.in[l][t], int(rank));
+                    ++live;
+                }
+    for (uint32_t t = 0; t < kT; ++t)
+        for (uint32_t s = 0; s < kK; ++s) ew[t * kK + s] = m.w[l][t][s];
+    /* the helpers' planes: per helper, per token, the weighted sum of its routes at full width; the route mark */
+    std::array<std::array<Row, kT>, kHelpers> plane{};
+    std::array<std::array<bool, kT>, kHelpers> has{};
+    std::array<uint32_t, cap> rmask{};
+    bool live_slots = false;
+    for (uint32_t k = 0; k < kHelpers; ++k)
+        for (auto [t, s] : r.sent[slot_of(k, rank, kWorld)]) {
+            add(plane[k][t], expert(l, uint32_t(m.ids[l][t][s]), m.in[l][t], -1), m.w[l][t][s]);
+            has[k][t] = true;
+            check(rmask[t * kK + s] == 0, "one route a slot");
+            rmask[t * kK + s] = k + 1;
+            live_slots = true;
+        }
+    if (!mut.both_ranks_add_helper_rows)
+        check(!live_slots || consumer_of(l, kWorld) == rank, "only the consumer finds live helper slots (the kernel traps)");
+    /* the inject */
+    uint32_t next = live;
+    for (uint32_t t = 0; t < kT; ++t)
+        for (uint32_t k = 0; k < kHelpers; ++k) {
+            int32_t s = inject_slot(rmask.data() + t * kK, kK, k);
+            if (mut.one_slot_for_all_helpers && s >= 0)
+                for (uint32_t j = 0; j < kK; ++j)
+                    if (rmask[t * kK + j]) { s = int32_t(j); break; }
+            check(has[k][t] == (s >= 0), "a helper has a row for a token exactly when it owns one of its slots");
+            if (s < 0) continue;
+            const uint32_t p = next++;
+            check(p < cap, "every injected row finds a spare sorted row");
+            check(sorted[p] == -1, "an injected row takes a spare sorted row");
+            const uint32_t flat = t * kK + uint32_t(s);
+            sorted[p] = int32_t(flat);
+            if (!mut.keep_route_weight) ew[flat] = bf16_value(kInjectWeightBf16);
+            down[p] = plane[k][t];
+            ++*injected;
+        }
+    /* the fused gather: the inverse table (the last sorted row claiming a slot wins, as r4d_ar_gather_inv_kernel) */
+    std::array<int32_t, cap> inv{};
+    inv.fill(-1);
+    for (uint32_t i = 0; i < cap; ++i)
+        if (sorted[i] >= 0) inv[uint32_t(sorted[i])] = int32_t(i);
+    for (uint32_t t = 0; t < kT; ++t) {
+        for (uint32_t s = 0; s < kK; ++s) {
+            const int32_t i = inv[t * kK + s];
+            if (i >= 0) add(r.partial[t], down[uint32_t(i)], ew[t * kK + s]);
+        }
+        add(r.partial[t], expert(l, kShared, m.in[l][t], int(rank)), 1.0f);
+    }
+    return r;
+}
+
+/* The fused TP sum over every layer; true when it equals the one-device reference exactly. Counts the injected rows. */
+bool tp_fused_matches(const Model& m, Mutation mut, uint32_t* injected) {
+    bool all = true;
+    for (uint32_t l = 0; l < kL; ++l) {
+        std::array<Row, kT> ref{};
+        for (uint32_t t = 0; t < kT; ++t) {
+            for (uint32_t s = 0; s < kK; ++s) add(ref[t], expert(l, uint32_t(m.ids[l][t][s]), m.in[l][t], -1), m.w[l][t][s]);
+            add(ref[t], expert(l, kShared, m.in[l][t], -1), 1.0f);
+        }
+        const RankOut r0 = run_rank_fused(m, l, 0, mut, injected), r1 = run_rank_fused(m, l, 1, mut, injected);
+        std::array<Row, kT> sum = r0.partial;
+        for (uint32_t t = 0; t < kT; ++t) add(sum[t], r1.partial[t], 1.0f);   /* the reducing write */
+        all = all && same(sum, ref);
+    }
+    return all;
 }
 
 bool same(const std::array<Row, kT>& a, const std::array<Row, kT>& b) {
@@ -188,6 +307,41 @@ int main() {
     check(!tp_matches(m, no_mask, nullptr, nullptr), "a non-consumer that keeps helper routes local double counts them");
     Mutation both; both.both_ranks_add_helper_rows = true;
     check(!tp_matches(m, both, nullptr, nullptr), "both ranks adding full-width helper rows double counts them");
+
+    /* the fused gather + reducing write */
+    check(bf16_value(kInjectWeightBf16) == 1.0f, "the injected weight is exactly 1");
+    {   /* the model has a token with rows from both helpers on one rank (two injections for one token) */
+        bool two = false;
+        for (uint32_t l = 0; l < kL; ++l)
+            for (uint32_t t = 0; t < kT; ++t) {
+                bool h[kHelpers]{};
+                for (uint32_t s = 0; s < kK; ++s) {
+                    const int o = m.owner_of(l, uint32_t(m.ids[l][t][s]));
+                    if (o >= 0) h[o] = true;
+                }
+                two = two || (h[0] && h[1]);
+            }
+        check(two, "some token has rows from both helpers");
+    }
+    uint32_t injected = 0;
+    check(tp_fused_matches(m, {}, &injected), "the fused TP2 gather with injected helper rows equals the reference exactly");
+    {   /* one injected row per (layer, token, helper with a route of that token) */
+        uint32_t want = 0;
+        for (uint32_t l = 0; l < kL; ++l)
+            for (uint32_t t = 0; t < kT; ++t)
+                for (uint32_t k = 0; k < kHelpers; ++k) {
+                    bool any = false;
+                    for (uint32_t s = 0; s < kK; ++s) any = any || m.owner_of(l, uint32_t(m.ids[l][t][s])) == int(k);
+                    want += any;
+                }
+        check(injected == want && want > 0, "each helper row is injected exactly once");
+    }
+    uint32_t sink = 0;
+    check(!tp_fused_matches(m, both, &sink), "injecting the helper rows on both ranks double counts them");
+    Mutation weight; weight.keep_route_weight = true;
+    check(!tp_fused_matches(m, weight, &sink), "an injected row keeping its route's router weight is weighted twice");
+    Mutation one_slot; one_slot.one_slot_for_all_helpers = true;
+    check(!tp_fused_matches(m, one_slot, &sink), "two helpers' rows at one slot lose one of them");
     /* a one-rank engine is its own consumer for every layer and publishes every helper route */
     for (uint32_t l = 0; l < kL; ++l) {
         const RouteRole r = route_role(consumer_of(l, 1) == 0, true, true, false);
