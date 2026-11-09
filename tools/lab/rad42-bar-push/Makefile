@@ -31,7 +31,7 @@ rad50-tester: $(OUT_DIR)/rad50-tester
 $(OBJ) $(OUT_DIR):
 	mkdir -p "$@"
 
-$(OBJ)/tester.o: $(SRC)/rad50_tester.cpp $(SRC)/tester_selfcheck.inc $(SRC)/combine_cli_selfcheck.inc | $(OBJ)
+$(OBJ)/tester.o: $(SRC)/rad50_tester.cpp $(SRC)/tester_selfcheck.inc $(SRC)/combine_cli_selfcheck.inc $(SRC)/live_cli_selfcheck.inc | $(OBJ)
 	$(CXX) $(COMMON) -c "$<" -o "$@"
 
 $(OBJ)/inventory.o: $(SRC)/pool_inventory.cpp | $(OBJ)
@@ -55,7 +55,7 @@ $(OBJ)/vmem-cap.o: $(SRC)/bar_vmem_cap.hip $(SRC)/bar_access.h | $(OBJ)
 $(OBJ)/dmabuf-map.o: $(SRC)/bar_dmabuf_map.hip $(SRC)/bar_access.h | $(OBJ)
 	$(HIPCC) $(COMMON) $(ARCHES) -Dmain=rad50_dmabuf_map_entry -c "$<" -o "$@"
 
-$(OBJ)/dmabuf-ab.o: $(SRC)/bar_dmabuf_ab.hip $(SRC)/bar_access.h $(SRC)/combine_patterns.hip.h $(SRC)/../../../engines/radiance/components/moe-remote/combine_f16.h | $(OBJ)
+$(OBJ)/dmabuf-ab.o: $(SRC)/bar_dmabuf_ab.hip $(SRC)/bar_access.h $(SRC)/combine_patterns.hip.h $(SRC)/live_control.hip.h $(SRC)/live_rounds.hip.h $(SRC)/../../../engines/radiance/components/moe-remote/combine_f16.h | $(OBJ)
 	$(HIPCC) $(COMMON) $(ARCHES) -I$(SRC)/../../../engines/radiance/components/moe-remote -Dmain=rad50_dmabuf_ab_entry -c "$<" -o "$@"
 
 $(OBJ)/transfer.o: $(SRC)/bar_transfer_ab.hip $(SRC)/bar_access.h | $(OBJ)

@@ -1,6 +1,6 @@
 # RAD50 — isolated CPU BAR-push transport experiment
 
-**Status (2026-11-09):** Gate 0 **PASS** (23 card-free tests), Gate 1 **PASS** (7 HSA GPU-local CPU-accessible pools); Gate 2 **PASS on both XTXs**, R9700 **INCONCLUSIVE** (exit 1 during first HIP verification launch). R9700 HIP-only smoke passed, but its serial BAR verification remains inconclusive. **DMA-BUF cross-process CPU mapping and actual 4 KiB/4 MiB writes now pass on both XTXs**, although direct HSA IPC CPU-agent mapping fails. Serial repeated-generation reuse and serial performance now have hardware evidence (including actual production FP16 combine); GPU-live readiness, FD lifetime/restart and inference performance remain unverified.
+**Status (2026-11-09):** Gate 0 **PASS** (23 card-free tests), Gate 1 **PASS** (7 HSA GPU-local CPU-accessible pools); Gate 2 **PASS on both XTXs**, R9700 **INCONCLUSIVE** (exit 1 during first HIP verification launch). R9700 HIP-only smoke passed, but its serial BAR verification remains inconclusive. **DMA-BUF cross-process CPU mapping and actual 4 KiB/4 MiB writes now pass on both XTXs**, although direct HSA IPC CPU-agent mapping fails. Serial repeated-generation reuse and serial performance now have hardware evidence (including actual production FP16 combine); GPU-live readiness passes 1/16/256 rows but **FAILED at 768 rows** on XTX0; FD lifetime/restart and inference performance remain unverified. See GATE4_LIVE_RESULTS.md.
 Gate 2 ran under an exclusive RAD50 GPU lease: XTX0/XTX1 each passed 12 serial generations at 4 KiB and 4 MiB (every word checked). The R9700 probe reached HSA VRAM allocation, CPU stores and HIP memset but did not return from the first verification launch; the HIP-only smoke mode now passes. Direct HSA IPC CPU mapping failed, but Linux DMA-BUF mmap in a separate CPU-only process succeeded, and the parent GPU verified the 4 KiB and 4 MiB writes. GPU lease released; **isolated synthetic Gate 3 serial performance measurements now completed** on both XTXs (see GATE3_RESULTS.md), while concurrent readiness and real inference A/B remain unrun.
 
 **Plan:** `docs/planning/active/patching-radiance-rdna3/RAD50.md`
@@ -11,7 +11,7 @@ context RAD40 (PCIe contention) and RAD49 (multi-rank consumer).
 
 **Preferred interface:** [TESTER.md](TESTER.md) documents the new single
 `rad50-tester` executable with fixed `--test` cases and both GPU architectures
-in one binary. It is **built and allowlisted**: `--list`, 47/47 CLI checks and
+in one binary. It is **built and allowlisted**: `--list`, 60/60 CLI checks and
 seven FP16 reference checks have run successfully, without a GPU.
 One stable executable name replaces per-test allowlist entries.
 The old standalone probes remain as source/reference, not subprocess targets.
@@ -39,7 +39,7 @@ RAD42's chunked combine is shipped; its BAR-push design is not.
 | 2. CPU→GPU exact canary | `bar_write_canary.hip` | **XTX0 + XTX1 PASS; R9700 INCONCLUSIVE**: 4 KiB and 4 MiB, 12 generations each, GPU checks every word of CPU-written GPU-local storage; refuse unsupported allocations and PCI mismatch |
 | 2b. Cross-process CPU-only IPC | `rad50-tester --test dmabuf-map`, `dmabuf-write`, `dmabuf-full`, `combine-ab` | **PARTIAL PASS**: both XTXs pass separate-process DMA-BUF 4 KiB/4 MiB correctness and real FP16-combine repeated-generation serial reuse (100 cycles). Direct HSA CPU-agent IPC failed; live readiness and crash/restart still pending |
 | 3. Bandwidth and contention | `rad50-tester --test dmabuf-ab` completed serial benchmark, plus historical `bar_transfer_ab.hip` | **ISOLATED SERIAL A/B MEASURED**: same CPU-only child and GPU verification kernel over 4 KiB–4 MiB, 30 iterations, direct/staged paths. 4 MiB direct push 1.36–1.41x faster than mapped-host GPU-pull. Controlled contention and inference replay still pending; see GATE3_RESULTS.md |
-| 4. Live chunks | `bar_live_ready_canary.hip` built (live single-process canary); full multi-process chunk pipeline not built | **NEXT GATE AFTER SERIAL A/B**: separate CPU producer/GPU consumer, independently published ready generations, 128/256/512/1024 rows, bounded timeouts, stale-data and fault cases |
+| 4. Live chunks | `rad50-tester --test dmabuf-live` and `dmabuf-live-fg` candidate | **BLOCKED: 768-row GPU visibility FAIL**: persistent CPU helper and GPU-already-waiting verification pass 1/16/256 rows on both XTXs, but XTX0 768-row failed twice (CPU saw generation, GPU saw stale 0). Fine-grained host registration candidate compiled but untested; see GATE4_LIVE_RESULTS.md |
 | 5. MoE reference | `combine_reference_test.cpp`, `rad50-tester --test combine-ab` | **PARTIAL PASS**: actual CPU AVX2/F16C combine into DMA-BUF/host tested across helper masks, overflow sentinel, NaN and repeated generations, verified on GPU. Captured MoE replay, TP2 rank exact-once and live GPU-ready semantics still pending |
 | 6. Opt-in integration | Not authorised | Only a future reviewed branch, after hardware A/B, numerical parity and explicit go decision |
 

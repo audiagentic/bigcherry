@@ -19,6 +19,7 @@
 #include <poll.h>
 #include <spawn.h>
 #include <unistd.h>
+#include <thread>
 #include <cerrno>
 #include <csignal>
 #include <cstdint>
@@ -48,6 +49,7 @@ constexpr unsigned WARMUPS=3;
 using Clock=std::chrono::steady_clock;
 double tick_us(){return std::chrono::duration<double,std::micro>(Clock::now().time_since_epoch()).count();}
 #include "combine_patterns.hip.h"
+#include "live_control.hip.h"
 struct Hello {uint32_t magic=MAGIC,version=VERSION,bytes=MAX_BYTES;};
 struct Command {uint32_t magic=MAGIC,path=0,bytes=0,generation=0,method=0;};
 struct Ack {
@@ -139,7 +141,8 @@ int worker(int sock) {
         if(cmd.bytes==0)break;
         Ack reply{};reply.generation=cmd.generation;
         if(!cmd.generation || cmd.bytes>MAX_BYTES || cmd.bytes%4 ||
-           cmd.path>1 || cmd.method>3 ||
+           cmd.path>2 || cmd.method>3 ||
+           (cmd.path==2 && cmd.method!=2) ||
            (cmd.method>=2 && (cmd.bytes%COMBINE_ROW_BYTES || !combine_cpu_supported()))) {
             reply.status=3; (void)write_exact(sock,&reply,sizeof(reply));
             ok=false;break;
@@ -148,7 +151,7 @@ int worker(int sock) {
         double begin=tick_us();
         dma_buf_sync sync{};
         int rc=0;
-        if(cmd.path==1) {
+        if(cmd.path!=0) {
             sync.flags=DMA_BUF_SYNC_START|DMA_BUF_SYNC_WRITE;
             errno=0;
             do {rc=::ioctl(gpu_fd,DMA_BUF_IOCTL_SYNC,&sync);}
@@ -182,7 +185,7 @@ int worker(int sock) {
             std::atomic_thread_fence(std::memory_order_seq_cst);
             reply.write_us=tick_us()-write_begin;
         }
-        if(cmd.path==1 && reply.status==0) {
+        if(cmd.path!=0 && reply.status==0) {
             sync.flags=DMA_BUF_SYNC_END|DMA_BUF_SYNC_WRITE;
             const double t=tick_us();
             errno=0;
@@ -190,6 +193,13 @@ int worker(int sock) {
             while(rc<0&&(errno==EINTR||errno==EAGAIN));
             reply.sync_end_us=tick_us()-t;
             if(rc<0)reply.status=errno?errno:3;
+        }
+        // Cross-process GPU-live publication: after DMA-BUF SYNC_END,
+        // never before the full FP16 combine has drained.
+        if(cmd.path==2 && reply.status==0){
+            std::atomic_thread_fence(std::memory_order_seq_cst);
+            __atomic_store_n(&static_cast<LiveControl*>(host)->ready,
+                             cmd.generation,__ATOMIC_RELEASE);
         }
         reply.total_us=tick_us()-begin;
         if(!write_exact(sock,&reply,sizeof(reply))){ok=false;break;}
@@ -200,6 +210,8 @@ int worker(int sock) {
     ::close(gpu_fd);::close(host_fd);::close(sock);
     return ok?0:3;
 }
+
+#include "live_rounds.hip.h"
 struct Sample {
     double cpu_prepare=0,cpu_write=0,sync_start=0,sync_end=0;
     double child_total=0,roundtrip=0,gpu_kernel=0,gpu_host=0,serial_total=0;
@@ -241,7 +253,7 @@ void report(int device,size_t bytes,int iterations,const char* method,int path,c
                 q([](const Sample& s){return s.gpu_host;},.5),
                 p50,p95,p99,p50>0?bytes/(p50*1000):0);
 }
-bool bench(const char* self,int device,unsigned iterations,int method,size_t selected_bytes) {
+bool bench(const char* self,int device,unsigned iterations,int method,size_t selected_bytes,bool live,bool finegrained) {
     int count=0;char pci[64]{};
     uint32_t dom=0,bdf=0;
     if(!check_hip(hipGetDeviceCount(&count),"A/B HIP device count") ||
@@ -297,7 +309,11 @@ bool bench(const char* self,int device,unsigned iterations,int method,size_t sel
         if(hostfd<0 || ::ftruncate(hostfd,MAX_BYTES)!=0)break;
         host_va=::mmap(nullptr,MAX_BYTES,PROT_READ|PROT_WRITE,MAP_SHARED,hostfd,0);
         if(host_va==MAP_FAILED){host_va=nullptr;break;}
-        if(!check_hip(hipHostRegister(host_va,MAX_BYTES,hipHostRegisterMapped),"A/B HIP host register"))break;
+        if(live) std::memset(host_va,0,sizeof(LiveControl));
+        const unsigned register_flags=hipHostRegisterMapped |
+            (finegrained?hipExtHostRegisterUncached:0u);
+        if(!check_hip(hipHostRegister(host_va,MAX_BYTES,register_flags),
+                      finegrained?"live fine-grained host register":"A/B HIP host register"))break;
         have_reg=true;
         if(!check_hip(hipHostGetDevicePointer(&host_device,host_va,0),"A/B host GPU pointer") ||
            !check_hip(hipMalloc(&mismatch,sizeof(unsigned)),"A/B mismatch count")||
@@ -320,6 +336,24 @@ bool bench(const char* self,int device,unsigned iterations,int method,size_t sel
         if(!send_handles(pair[0],dmafd,hostfd) ||
            !read_exact(pair[0],&ready,sizeof(ready)) ||
            ready.magic!=MAGIC || ready.status!=0)break;
+        if(live){
+            std::printf("RAD50_LIVE_CONTEXT device=%d pci=%s rows=%zu "
+                        "bytes=%zu iterations=%u cpu_child=persistent "
+                        "consumer_armed_before_write=1 dma_buf_sync=1 "
+                        "ready_scope=system reuse_after_done=1 control=%s\n",
+                        device,pci,selected_bytes/COMBINE_ROW_BYTES,
+                        selected_bytes,iterations,
+                        finegrained?"hip-ext-uncached":"hip-register-mapped");
+            std::fflush(stdout);
+            if(!live_rounds(pair[0],device,iterations,
+                            static_cast<uint32_t>(selected_bytes/COMBINE_ROW_BYTES),
+                            static_cast<LiveControl*>(host_va),
+                            static_cast<LiveControl*>(host_device),device_va))break;
+            Command stop{};
+            if(!write_exact(pair[0],&stop,sizeof(stop)))break;
+            ok=true;
+            break; // Parent cleanup waits for worker before success marker.
+        }
         std::printf("RAD50_AB_CONTEXT device=%d pci=%s cpu_child=persistent "
                     "dma_buf_mmap=persistent host_memfd=hipHostRegisterMapped "
                     "serial_handoff=1 sync_start_end_per_push=1 "
@@ -414,6 +448,9 @@ bool bench(const char* self,int device,unsigned iterations,int method,size_t sel
         if(::waitpid(pid,&status,0)!=pid || !WIFEXITED(status) ||
            WEXITSTATUS(status)!=0)ok=false;
     }
+    // A failed live arm/publish must not unmap host control or VRAM while
+    // the bounded GPU waiter might still be polling it.
+    if(live && !check_hip(hipDeviceSynchronize(),"RAD50 final live GPU drain"))ok=false;
     if(event_start&&!check_hip(hipEventDestroy(event_start),"A/B event cleanup"))ok=false;
     if(event_stop&&!check_hip(hipEventDestroy(event_stop),"A/B event cleanup"))ok=false;
     if(mismatch&&!check_hip(hipFree(mismatch),"A/B GPU error cleanup"))ok=false;
@@ -427,9 +464,13 @@ bool bench(const char* self,int device,unsigned iterations,int method,size_t sel
     if(hsa_shut_down()!=HSA_STATUS_SUCCESS)ok=false;
     if(!ok)std::fputs("RAD50 A/B FAILED: no speed claim; check mapped-host registration, correctness, or GPU availability\n",stderr);
     else {
-        std::printf("RAD50_AB_COMPLETE device=%d iterations=%u style=%s bytes_filter=%zu status=0\n",
-                    device,iterations,style_name(method),selected_bytes);
-        std::fflush(stdout); // Success marker only after child exit and cleanup.
+        if(live)
+            std::printf("RAD50_LIVE_COMPLETE device=%d rows=%zu iterations=%u verified=%u status=0\n",
+                        device,selected_bytes/COMBINE_ROW_BYTES,iterations,iterations);
+        else
+            std::printf("RAD50_AB_COMPLETE device=%d iterations=%u style=%s bytes_filter=%zu status=0\n",
+                        device,iterations,style_name(method),selected_bytes);
+        std::fflush(stdout); // Marker only after child exit and cleanup.
     }
     return ok;
 }
@@ -437,6 +478,25 @@ bool bench(const char* self,int device,unsigned iterations,int method,size_t sel
 int main(int argc,char** argv) {
     if(argc==3 && !std::strcmp(argv[1],"--bench-child") &&
        !std::strcmp(argv[2],"3")) return worker(CHILD_SOCKET);
+    if(argc==8 && (!std::strcmp(argv[1],"--live") ||
+                   !std::strcmp(argv[1],"--live-fg")) &&
+       !std::strcmp(argv[2],"--device") &&
+       !std::strcmp(argv[4],"--iterations") &&
+       !std::strcmp(argv[6],"--rows")) {
+        char* end=nullptr;
+        const long dev=std::strtol(argv[3],&end,10);
+        if(!argv[3][0]||*end||dev<0||dev>127)return 2;
+        const long n=std::strtol(argv[5],&end,10);
+        if(!argv[5][0]||*end||n<10||n>200)return 2;
+        const long rows=std::strtol(argv[7],&end,10);
+        if(!argv[7][0]||*end)return 2;
+        bool allowed=false;
+        for(size_t r:COMBINE_ROWS)if(rows==static_cast<long>(r))allowed=true;
+        if(!allowed)return 2;
+        const bool fg=!std::strcmp(argv[1],"--live-fg");
+        return bench(argv[0],static_cast<int>(dev),static_cast<unsigned>(n),
+                     2,static_cast<size_t>(rows)*COMBINE_ROW_BYTES,true,fg)?0:3;
+    }
     if((argc!=7 && argc!=9) || std::strcmp(argv[1],"--device") ||
        std::strcmp(argv[3],"--iterations") || std::strcmp(argv[5],"--mode"))
         return 2;
@@ -465,5 +525,5 @@ int main(int argc,char** argv) {
         selected_bytes=static_cast<size_t>(chosen);
     }
     return bench(argv[0],static_cast<int>(d),static_cast<unsigned>(it),
-                 method,selected_bytes)?0:3;
+                 method,selected_bytes,false,false)?0:3;
 }

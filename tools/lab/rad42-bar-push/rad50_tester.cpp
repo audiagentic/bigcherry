@@ -30,7 +30,7 @@ int rad50_cpu_handoff_entry(int, char**);
 
 namespace {
 enum class Kind {
-    Pools, HipSmoke, Serial, Ipc, IpcMap, IpcGpuCpu, VmemCap, DmaBufMap, DmaBufWrite, DmaBufFull, DmaBufAB, CombineAB, Transfer, LiveReady, Combine, CpuHandoff
+    Pools, HipSmoke, Serial, Ipc, IpcMap, IpcGpuCpu, VmemCap, DmaBufMap, DmaBufWrite, DmaBufFull, DmaBufAB, CombineAB, DmaBufLive, DmaBufLiveFG, Transfer, LiveReady, Combine, CpuHandoff
 };
 struct Test {
     const char* name;
@@ -52,6 +52,8 @@ constexpr Test tests[] = {
     {"dmabuf-full", Kind::DmaBufFull, true, true, "CPU-only child writes 4MiB DMA-BUF; parent GPU verifies every word"},
     {"dmabuf-ab", Kind::DmaBufAB, true, true, "Persistent two-process GPU-pull vs CPU BAR-push A/B, exact GPU read and stage latency"},
     {"combine-ab", Kind::CombineAB, true, true, "Production AVX2/F16C FP16 combine into host vs DMA-BUF GPU VRAM; full GPU bit check"},
+    {"dmabuf-live", Kind::DmaBufLive, true, true, "Cross-process CPU FP16 write while GPU is already waiting; system-scope generation/ACK"},
+    {"dmabuf-live-fg", Kind::DmaBufLiveFG, true, true, "Experimental fine-grained host-register control; XTX-only verification candidate"},
     {"transfer", Kind::Transfer, true, true, "Uncontended CPU BAR write versus mapped-host GPU pull (Gate 3)"},
     {"live-ready", Kind::LiveReady, true, true, "GPU already waiting before CPU BAR data and ready flag (Gate 4 canary)"},
     {"combine-ref", Kind::Combine, false, false, "Card-free FP16 combine/sentinel reference checks"},
@@ -158,9 +160,12 @@ bool parse(int argc, char** argv, Args* result) {
     if (t.needs_lease && !seen_ack) return false;
     if (!t.needs_lease && seen_ack) return false;
     if ((t.kind==Kind::Transfer || t.kind==Kind::DmaBufAB ||
-         t.kind==Kind::CombineAB)!=seen_iterations) return false;
+         t.kind==Kind::CombineAB || t.kind==Kind::DmaBufLive ||
+         t.kind==Kind::DmaBufLiveFG)!=seen_iterations) return false;
     if (seen_bytes && t.kind!=Kind::DmaBufAB) return false;
-    if (seen_rows && t.kind!=Kind::CombineAB) return false;
+    if (seen_rows && t.kind!=Kind::CombineAB &&
+        t.kind!=Kind::DmaBufLive && t.kind!=Kind::DmaBufLiveFG) return false;
+    if ((t.kind==Kind::DmaBufLive || t.kind==Kind::DmaBufLiveFG) && !seen_rows) return false;
     if ((t.kind==Kind::CpuHandoff || t.kind==Kind::DmaBufAB ||
          t.kind==Kind::CombineAB)!=seen_mode ||
         (t.kind==Kind::CpuHandoff)!=seen_samples) return false;
@@ -228,6 +233,16 @@ int run(const Args& a,const char* self) {
                                 "--mode",a.mode=="direct"?"combine-direct":"combine-staged"});
         if (a.selected_rows>0)
             args.insert(args.end(),{"--bytes",std::to_string(a.selected_rows*5120)});
+        return call_entry(rad50_dmabuf_ab_entry,args);
+      case Kind::DmaBufLive:
+        args.insert(args.end(),{"--live","--device",std::to_string(a.device),
+                                "--iterations",std::to_string(a.iterations),
+                                "--rows",std::to_string(a.selected_rows)});
+        return call_entry(rad50_dmabuf_ab_entry,args);
+      case Kind::DmaBufLiveFG:
+        args.insert(args.end(),{"--live-fg","--device",std::to_string(a.device),
+                                "--iterations",std::to_string(a.iterations),
+                                "--rows",std::to_string(a.selected_rows)});
         return call_entry(rad50_dmabuf_ab_entry,args);
       case Kind::Transfer:
         args.insert(args.end(),{"--device",std::to_string(a.device),

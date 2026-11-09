@@ -1,0 +1,23 @@
+command: ${BC_WORK_ROOT}/builds/rad42-bar-push/rad50-tester --test dmabuf-live --device 1 --iterations 10 --rows 256 --lease-confirmed
+exitCode: 0
+timedOut: false
+truncated: false
+-- stdout --
+RAD50 case=dmabuf-live device=1 (no production engine integration)
+RAD50_LIVE_CONTEXT device=1 pci=0000:06:00.0 rows=256 bytes=1310720 iterations=10 cpu_child=persistent consumer_armed_before_write=1 dma_buf_sync=1 ready_scope=system reuse_after_done=1
+RAD50_LIVE_SAMPLE device=1 rows=256 bytes=1310720 gen=356001 armed_before_helper=1 stale_ready_retained=1 cpu_combine_us=297.55 dma_sync_us=2.66 helper_ack_after_arm_us=325.88 serial_us=17964.60 mismatches=0 status=0
+RAD50_LIVE_SAMPLE device=1 rows=256 bytes=1310720 gen=356002 armed_before_helper=1 stale_ready_retained=1 cpu_combine_us=129.84 dma_sync_us=1.67 helper_ack_after_arm_us=183.91 serial_us=3017.04 mismatches=0 status=0
+RAD50_LIVE_SAMPLE device=1 rows=256 bytes=1310720 gen=356003 armed_before_helper=1 stale_ready_retained=1 cpu_combine_us=122.44 dma_sync_us=1.19 helper_ack_after_arm_us=179.40 serial_us=2875.86 mismatches=0 status=0
+RAD50_LIVE_SAMPLE device=1 rows=256 bytes=1310720 gen=356004 armed_before_helper=1 stale_ready_retained=1 cpu_combine_us=125.22 dma_sync_us=0.36 helper_ack_after_arm_us=132.88 serial_us=2532.50 mismatches=0 status=0
+RAD50_LIVE_SAMPLE device=1 rows=256 bytes=1310720 gen=356005 armed_before_helper=1 stale_ready_retained=1 cpu_combine_us=124.68 dma_sync_us=0.32 helper_ack_after_arm_us=135.82 serial_us=2509.63 mismatches=0 status=0
+RAD50_LIVE_SAMPLE device=1 rows=256 bytes=1310720 gen=356006 armed_before_helper=1 stale_ready_retained=1 cpu_combine_us=125.49 dma_sync_us=0.33 helper_ack_after_arm_us=132.05 serial_us=2497.54 mismatches=0 status=0
+RAD50_LIVE_SAMPLE device=1 rows=256 bytes=1310720 gen=356007 armed_before_helper=1 stale_ready_retained=1 cpu_combine_us=125.36 dma_sync_us=0.31 helper_ack_after_arm_us=132.09 serial_us=2507.87 mismatches=0 status=0
+RAD50_LIVE_SAMPLE device=1 rows=256 bytes=1310720 gen=356008 armed_before_helper=1 stale_ready_retained=1 cpu_combine_us=125.23 dma_sync_us=0.35 helper_ack_after_arm_us=131.82 serial_us=2500.90 mismatches=0 status=0
+RAD50_LIVE_SAMPLE device=1 rows=256 bytes=1310720 gen=356009 armed_before_helper=1 stale_ready_retained=1 cpu_combine_us=125.60 dma_sync_us=0.34 helper_ack_after_arm_us=132.47 serial_us=2556.47 mismatches=0 status=0
+RAD50_LIVE_SAMPLE device=1 rows=256 bytes=1310720 gen=356010 armed_before_helper=1 stale_ready_retained=1 cpu_combine_us=138.36 dma_sync_us=0.33 helper_ack_after_arm_us=186.51 serial_us=2524.46 mismatches=0 status=0
+RAD50_LIVE_SUMMARY device=1 rows=256 bytes=1310720 iterations=10 verified=10 total_p50_us=2524.46 total_p95_us=3017.04 cpu_combine_p50_us=125.36 sync_p50_us=0.34 status=0
+RAD50_LIVE_COMPLETE device=1 rows=256 iterations=10 verified=10 status=0
+
+-- stderr --
+RAD50 lease acknowledged by operator; runner cannot verify lease ownership.
+RAD50 RESULT test=dmabuf-live exit=0
