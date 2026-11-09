@@ -554,6 +554,8 @@ mtp_replay_check() {
   local depth
   depth=$(sed -n "s/^I speculation: 'mtp' drafts \([0-9][0-9]*\) token.*/\1/p" "$LOG" | tail -1)
   [ -n "$depth" ] && [ "$depth" -gt 1 ] || return 0
+  # --profile-ops times every op and so records no pass at all: nothing to check, and the profiled run is not a measurement.
+  grep -q '^W\[0\] per-op timing is on' "$LOG" && return 0
   mtp_replay_recorded && return 0
   start_canary >/dev/null 2>&1 || return 1
   mtp_replay_recorded && return 0
