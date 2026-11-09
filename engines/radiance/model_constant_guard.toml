@@ -496,3 +496,9 @@ path = "tools/lab/radiance/small_capture.py"
 anchor = "HIDDEN = 2560"
 category = "B"
 reason = "lab diagnostic tool, not an execution path of the product"
+
+[[allow]]
+path = "tools/lab/radiance/xtx27_quant_plan.py"
+anchor = 'model_path = output_dir / f"{stem}.rad"'
+category = "E"
+reason = "Generic filename suffix for the planning-only candidate artifact; not a model-specific shape, path, or runtime default."
