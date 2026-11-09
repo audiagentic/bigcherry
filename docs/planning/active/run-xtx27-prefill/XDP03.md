@@ -209,6 +209,17 @@ all-reduce improvements already proven relevant in XDP01. The W4
 decode-only hint remains a separate, quality-gated investigation, not
 a runtime recommendation.
 
+## Follow-on native gfx11 W4A4 experiment
+
+See [XDP04](XDP04.md): an **isolated** gfx1100 signed-A4 x
+unsigned-W4 native IU4 WMMA probe, including exact group128
+asymmetric-zero correction, has compiled and passed six GPU
+oracle cases. The untiled kernel is a correctness reference, **not**
+a serving/prefill speed optimization. Synthetic outlier activation
+error is substantial (relative L2 0.374 W4A4 vs 0.193 W4A8),
+so real Qwen3.8 activation/KL qualification is mandatory before
+using A4 for any layer. Broad W4 conversion remains deferred.
+
 ## Risks and promotion gates
 
 - The W4 `u4+zero+scale` path may widen activations and do several

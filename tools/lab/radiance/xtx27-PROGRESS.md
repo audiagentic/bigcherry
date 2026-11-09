@@ -1,4 +1,4 @@
-# XDP01/XDP02 progress — 2026-11-09
+# XDP01–XDP04 progress — 2026-11-09
 
 ## Implemented and checked
 
@@ -21,11 +21,16 @@
 - [x] Ran actual gfx1100 `libr3` shape N17408 K5120 kernel timings: at M512 W4A8I8 3226.6 µs minimum vs MXFP4 tiled 931.6 µs (W4 3.46x slower); M64 W4A16 best 368.3 vs MXFP4 tiled 308.7 µs; M1 W4A16 best 76.9 µs vs MXFP4 gated 103.4 µs / decode 146.9 µs (not matching end-to-end paths). Raw logs isolated in `quant-lab/` scratch.
 - [x] STOP broad W4 prefill conversion under existing kernels (insignificant memory saving, severe kernel slowdown); runtime quality/KL not measured. GPU probes ended cleanly and exclusive lease released.
 
+- [x] XDP04: isolated HIP gfx1100 native W4A4 IU4 WMMA microkernel + one `xtx27_w4a4.py` CLI for plan, CPU synthetic quant quality, stand-alone compile and one-leased GPU six-case suite. No Radiance patch, model conversion or runtime integration.
+- [x] gfx1100 HIP compiler succeeded (warning-free); initial off-diagonal GPU mismatch traced to gfx11 interleaved accumulator/transposed W-first layout and fixed. Native W4A4 unsigned-weight/signed-activation group128 zero correction now passes all outputs of six GPU oracle geometries, K up to 1024, error zero. Lease auto-released.
+- [x] 45 card-free XDP tests pass, including 14 new XDP04 cases; Ruff clean; scratch build binary/manifest and GPU logs in `${BC_WORK_ROOT}/xtx27-prefill/w4a4`.
+- [x] Synthetic outlier caution: W4A4 relative L2 0.374 vs W4A8 0.193 on random 16x32x256 sampled matrices; this is not model KL. No production quality or speed claims.
+
 ## Still required
 
 - [ ] Bench 32K-256K **native** model context with actual resident KV/GDN/graph/runtime accounting; quality, TTFT and decode measured across context and sequences.
 - [ ] Exact/WHT6 correctness/KL gate and longer repeated, rotated A/B to qualify speed improvement.
-- [ ] To reconsider W4: build a *genuinely faster* native gfx11 integer GEMM microkernel and verify it against the existing MXFP4 baseline including activation quantization, quality and KV impact. Existing W4 broad model conversion is deferred by the 3.46x prefill-kernel regression. Do not claim the current W4 storage path uses native gfx11 IU4 WMMA.
+- [ ] To reconsider W4: optimize XDP04's working **untiled** native gfx11 W4A4 arithmetic oracle into a genuinely fast, tiled implementation and verify it against MXFP4 including activation quantization, real-model quality and KV impact. Existing W4 broad model conversion is deferred by the 3.46x prefill-kernel regression. Do not claim the current W4 storage path uses native gfx11 IU4 WMMA.
 - [ ] If native W4 becomes viable, convert BF16->MXFP4 matched control and mixed candidate and run full end-to-end KLD, TP2 throughput, memory and KV residency gates. This conversion was deliberately not started.
 - [ ] Obtain comparable measured per-layer W4/MXFP4/FP8 perf, peak weights and reserves; run the XDP03 GPU-aware selector with real evidence and measure selected profile end-to-end before admitting or promoting any dynamic policy.
 - [ ] Native gfx1100 MXFP4 GEMM and TP all-reduce isolated kernel experiments with correctness; identify safe speed/capacity trade-off.
