@@ -127,6 +127,10 @@ Json plan_key_inputs(const Json& values, const Json& facts, const std::string& m
             {"engine_build", engine_id},
             {"card", {{"arch", gpu->at("arch")}, {"vram_total_mib", gpu->at("vram_total_mib")}}},
             {"layout", values.at("layout").at("name")},
+            // The helpers' budgets decide which experts the engine itself holds, and so the VRAM floor the plan measures
+            // (a plan measured with a 14 GiB tail must never be found for a 7 GiB one).
+            {"helper_budgets_mib", values.contains("memory") && values.at("memory").contains("helper_budgets_mib")
+                                       ? values.at("memory").at("helper_budgets_mib") : Json::array()},
             {"engine_args", engine_args},
             {"engine", engine}};
 }

@@ -684,7 +684,8 @@ void measured_plan_cache(Fixture& t) {
             {"service.objective", "latency"}, {"service.max_sessions", "4"}, {"service.max_context", "131072"},
             {"engine.max_num_batched_tokens", "1024"}, {"engine.checkpoint_interval", "2048"},
             {"engine.kv_cache_dtype", "fp8_v4"}, {"engine.num_speculative_tokens", "2"}, {"engine.rope_scaling", "yarn:4"},
-            {"engine.ngram_placement", "disk"}, {"engine.prefix_resume", "exact"}, {"engine.tp", "2"}};
+            {"engine.ngram_placement", "disk"}, {"engine.prefix_resume", "exact"}, {"engine.tp", "2"},
+            {"memory.helper_budgets_mib", "[22528,22528,7168]"}};
         for (const auto& [key, value] : changes) {
             auto opts = t.standard();
             opts.sets = {std::string(key) + "=" + value};
