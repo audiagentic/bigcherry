@@ -1,5 +1,12 @@
 # Changelog
 
+## [1170.14.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.13.0...bc-radiance-1170.14.0) (2026-11-09)
+
+
+### New and changed
+
+* **moe-remote:** helper rows join the fused MoE gather + reducing hc write at decode-sized steps (RAD49) ([#777](https://github.com/audiagentic/bigcherry/issues/777)) ([2465b38](https://github.com/audiagentic/bigcherry/commit/2465b383ca35a0975d1de3fe02d4f35091fe1a3f))
+
 ## [1170.13.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.12.0...bc-radiance-1170.13.0) (2026-11-08)
 
 
