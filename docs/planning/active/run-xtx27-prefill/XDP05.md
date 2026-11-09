@@ -326,6 +326,10 @@ necessary before any wire/collective optimization is promoted.
 Original Qwen3.8-27B context is 262,144 and its future 1M
 KV objective remains separate (XDP02).
 
+## Scope clarification after upstream gfx11 research
+
+[XDP06](XDP06.md) compared this proof against published RDNA3 engines. Hipfire already has a native gfx1100 IU4 128x128 output-tile kernel and reports a 1,061-us XTX projection at corresponding dimensions, versus XDP05 1,747 us (cross-project, nonpaired). That reopens **isolated architecture research**, but not production promotion: 1,061 us is still above BigCherry MXFP4 923 us before A4 producer cost, and the quantization layouts/quality differ. XDP05 D1 remains a no-go for *this* tested kernel and broad BF16->W4A4 conversion.
+
 ## Progress and decisions
 
 - 2026-11-09: Implemented and verified three tiled HIP variants;

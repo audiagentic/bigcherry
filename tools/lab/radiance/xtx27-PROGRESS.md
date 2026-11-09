@@ -1,4 +1,4 @@
-# XDP01–XDP05 progress — 2026-11-09
+# XDP01–XDP06 progress — 2026-11-09
 
 ## Implemented and checked
 
@@ -32,12 +32,15 @@
 - [x] Same-card 3-rep MXFP4 tiled median **922.7 µs** vs best native W4A4 tiled median **1,747.0 µs** (1.89× slower). W4A4 4×2=1,839 µs and 8×1=2,213 µs. W4A4 excludes new activation quantization, repacking, TP/serving; code arithmetic correct but both performance and real-model quality are **NOT qualified**. Logs saved in `${BC_WORK_ROOT}/xtx27-prefill/w4a4`; leases released.
 - [x] XDP05 NO-GO (D1–D3): do not convert BF16 to broad W4A4, patch production libr3 or promote dynamic format policy. Prioritize proven MXFP4 path and TP all-reduce/CPU coordination profiling and optimization. Card-free checks and doc catalog updated.
 
+- [x] XDP06 read-only RDNA3 upstream survey recorded: hipfire genuine gfx1100 IU4 128x128 (8/16 wave), XTX 1,061-us kernel report at N17408 K5120 M512 (unpaired), group128 A4 MSE candidates and fused producer; Strata FP16/BF16 WMMA and K-quant MMQ (Blackwell FP4 W4A4 is not RDNA3); hipEngine tuning, llama.cpp/Lucebox small-row specializations, Quark W4A16 GPTQ nibble repacking. Full sources, transfer limits, legal/quality caveats and design decisions in XDP06.md.
+- [x] XDP06 reopens only a **bounded** independent 128x128 native IU4 research kernel (16-wave low-live-acc first); current 32x64 XDP05 remains no-go for serving. No full conversion, production integration or GPU launch from the source survey.
+
 ## Still required
 
 - [ ] Bench 32K-256K **native** model context with actual resident KV/GDN/graph/runtime accounting; quality, TTFT and decode measured across context and sequences.
 - [ ] Exact/WHT6 correctness/KL gate and longer repeated, rotated A/B to qualify speed improvement.
 - [x] Tiled native IU4 W4A4 feasibility vs MXFP4: **tested and rejected for now** (XDP05, 1.89× slower GEMM-only). Native gfx11 IU4 instruction is real, but standalone correctness does not imply viable model throughput.
-- [ ] Only reopen native W4A4 with measured, credible improvement beyond 923 µs at M512/N17408/K5120 **including activation quantization**, and real-model KL parity. Preserve the correct XDP05 tile/oracle code as a research fixture.
+- [ ] XDP06 gated follow-up: independently test 128x128 native gfx11 IU4 16-wave output tile, full-output oracle, ISA/occupancy, 3-rep matched XTX A/B against XDP05 and MXFP4; include per-group A4 quantization/fused producer and model KL before any promotion. Require a measured complete path faster than 923 µs at M512/N17408/K5120 and real-model KL parity. Preserve the correct XDP05 tile/oracle code as a research fixture.
 - [ ] If native W4 becomes viable, convert BF16->MXFP4 matched control and mixed candidate and run full end-to-end KLD, TP2 throughput, memory and KV residency gates. This conversion was deliberately not started.
 - [ ] Obtain comparable measured per-layer W4/MXFP4/FP8 perf, peak weights and reserves; run the XDP03 GPU-aware selector with real evidence and measure selected profile end-to-end before admitting or promoting any dynamic policy.
 - [ ] Native gfx1100 MXFP4 GEMM and TP all-reduce isolated kernel experiments with correctness; identify safe speed/capacity trade-off.
