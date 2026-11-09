@@ -42,6 +42,23 @@ class XDP08Int8ScaleStage(unittest.TestCase):
                             for word in range(8):
                                 self.assertEqual(staged[lds_first + word], first + word)
 
+    def test_ping_pong_scale_slots_respect_existing_group_barriers(self) -> None:
+        # Reader of group kb consumes slot kb%2 *after* the two tile
+        # barriers. Fast workitems cannot reach the kb+2 write of that
+        # slot without crossing the first kb+1 group-wide barrier;
+        # that rendezvous waits for the slowest kb reader to finish.
+        writers = [kb % 2 for kb in range(40)]
+        self.assertTrue(all(writers[k] != writers[k + 1] for k in range(39)))
+        self.assertTrue(all(writers[k] == writers[k + 2] for k in range(38)))
+        rules = REWRITE.read_text()
+        self.assertIn(
+            "uint16_t s_ws_i8[2][(I8 && RB == 0 && !ROWF) ? kPBN : 1]",
+            rules,
+        )
+        self.assertIn("s_ws_i8[kb & 1u][tid] = Sw[", rules)
+        self.assertIn("w8[i] = *(const uint4*)(s_ws_i8[kb & 1u] +", rules)
+        self.assertIn("tile(kb, 1u, w1, w0);", rules)
+
     def test_opt_in_gates_and_native_upstream_rewrite(self) -> None:
         cmake = CMAKE.read_text()
         self.assertIn("option(R3_I8_SWS_LDS ", cmake)
@@ -55,8 +72,8 @@ class XDP08Int8ScaleStage(unittest.TestCase):
         self.assertIn("#if defined(R3_I8_SWS_LDS)", rules)
         self.assertIn("if constexpr (I8 && RB == 0 && !ROWF)", rules)
         self.assertIn("#if !defined(R3_I8_SWS_LDS)", rules)
-        self.assertIn("s_ws_i8[tid]", rules)
-        self.assertIn("s_ws_i8 + (ww * kPTW + i) * 16u", rules)
+        self.assertIn("s_ws_i8[kb & 1u][tid]", rules)
+        self.assertIn("s_ws_i8[kb & 1u] + (ww * kPTW + i) * 16u", rules)
         self.assertIn("tile(kb, 1u, w1, w0);", rules)
         self.assertIn("r3_acc_i32_11_to_12", rules)
         self.assertNotIn("R3_I8_SWS_LDS", str(LIBR3 / "rewrites.txt"))
@@ -70,7 +87,7 @@ class XDP08Int8ScaleStage(unittest.TestCase):
         replacement = native_block.split("@@ replace\n")[1].split("@@ end")[0]
         self.assertLess(
             replacement.index("tile(kb, 1u, w1, w0);"),
-            replacement.index("w8[i] = *(const uint4*)(s_ws_i8"),
+            replacement.index("w8[i] = *(const uint4*)(s_ws_i8[kb & 1u]"),
         )
         # Exactly the current input/padded-row layout. No precision or
         # BF16 output arithmetic is modified by the staged-scale path.

@@ -81,7 +81,7 @@
             // Keep the exact uint4-to-bf16 conversion in the fold below.
 #pragma unroll
             for (uint32_t i = 0; i < kPTW; ++i)
-                w8[i] = *(const uint4*)(s_ws_i8 + (ww * kPTW + i) * 16u + (lane >> 4) * 8u);
+                w8[i] = *(const uint4*)(s_ws_i8[kb & 1u] + (ww * kPTW + i) * 16u + (lane >> 4) * 8u);
         }
 #endif
 @@ end
@@ -97,7 +97,7 @@
 @@ replace
     __shared__ float s_as[2][kPBM];
 #if defined(R3_I8_SWS_LDS)
-    __shared__ __attribute__((aligned(16))) uint16_t s_ws_i8[(I8 && RB == 0 && !ROWF) ? kPBN : 1];
+    __shared__ __attribute__((aligned(16))) uint16_t s_ws_i8[2][(I8 && RB == 0 && !ROWF) ? kPBN : 1];
 #endif
 @@ end
 
@@ -110,7 +110,7 @@
         if constexpr (I8 && RB == 0 && !ROWF) {
             if (tid < kPBN) {
                 const uint32_t row = n0 + tid;
-                s_ws_i8[tid] = Sw[((size_t)(row / 16u) * nkb + kb) * 16u + (row & 15u)];
+                s_ws_i8[kb & 1u][tid] = Sw[((size_t)(row / 16u) * nkb + kb) * 16u + (row & 15u)];
             }
         }
 #endif

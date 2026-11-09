@@ -64,17 +64,17 @@ Sw[((wt0+i)*nkb + kb)*16 + (lane>>4)*8 + t], t=0..7
 ```
 
 The replacement has 128 cooperative lanes (`tid<128`)
-load exactly one f16 scale each into a 128-element LDS array:
+load exactly one f16 scale each into a 128-element LDS array with two K-group buffers:
 
 ```text
-s_ws[tid] = Sw[((n0/16 + tid/16)*nkb + kb)*16 + (tid%16)]
+s_ws[kb & 1][tid] = Sw[((n0/16 + tid/16)*nkb + kb)*16 + (tid%16)]
 ```
 
-The existing `tile(kb,0)` `lds_barrier()` publishes these
+Double buffering is essential: after group kb completes, faster waves may load group kb+1 while slower waves still read kb scales. Alternate `kb & 1` buffers prevent that race; before a slot is reused at kb+2, every thread must cross the existing kb+1 tile barrier, so no extra barrier is needed. The existing `tile(kb,0)` `lds_barrier()` publishes these
 values. After the K128's two 64-wide weight/activation tiles
 and their barriers, the unchanged fold reads its eight weight
 scales per wave from
-`s_ws[(ww*kPTW+i)*16 + (lane>>4)*8]` as `uint4`.
+`s_ws[kb & 1][(ww*kPTW+i)*16 + (lane>>4)*8]` as `uint4`.
 Every source and destination index must be proven equal on
 128 rows, all `kb<nkb`, and both lane halves. There must
 be no race with the next K128 group's write: reads occur
@@ -163,7 +163,7 @@ The managed change is now in
 behind `-DR3_I8_SWS_LDS=ON` in libr3's
 `CMakeLists.txt`. The option is **OFF** by default and
 requires `R3_NATIVE=ON`. The implementation uses
-a 16-byte-aligned, 128 × `uint16_t` LDS slab (256 bytes)
+a 16-byte-aligned, 2 × 128 × `uint16_t` LDS double-buffer (512 bytes)
 for the per-row weight scales. Threads 0..127 each
 load exactly one scale, and the existing pair of
 `tile(kb,half)` barriers publishes the values.
@@ -261,3 +261,5 @@ missing INT8 W-scale reuse independently.
 Keep OFF unless both isolated numerical
 equivalence and repeatable same-card
 speed-up are demonstrated.
+
+- 2026-11-09 follow-up: spotted and corrected an LDS producer/consumer race before merge. Added two-group ping-pong scale buffers; 67 XDP card-free tests and native drift checks pass. No GPU benchmark claim.
