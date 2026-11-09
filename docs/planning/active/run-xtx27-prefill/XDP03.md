@@ -165,6 +165,50 @@ Never invoke the converter just because a recipe/manifest exists.
 
 Given reviewed **measured** selection output, the generator accepts `--profile selected --selection-file SELECTION.json --cut 40` and emits one format per logical FFN weight plus the MXFP4 fallback for other projections. It rejects synthetic selections, mismatched checkpoint configuration, incomplete coverage and inconsistent stage ordering. This creates a future *static model-load candidate*, not live runtime re-quantization.
 
+## Actual pinned-engine feasibility (2026-11-09)
+
+An **exclusive GPU lease** and the pinned Radiance build's `rad-convert
+--plan-only` with `qwen35_fp8`, `libr3,libref`, BF16 source,
+`--max-spec 0`, and `--set quantization_config.quant_method=fp8` /
+`fmt=e4m3` accepted both experimental recipes. Each planned 1,024
+logical weights (289 recipe-quantized, 735 left unchanged, including the
+BF16 vision weights); **nothing was converted**:
+
+| Variant | Estimated container | Engine plan result |
+| --- | ---: | --- |
+| BF16-derived MXFP4 control | 16.50 GiB | PASS |
+| Middle-prefix W4 FFN, MXFP4 remainder | 16.43 GiB | PASS |
+
+The ~0.07 GiB saving is **not** a compelling capacity win. The
+reference Quark MXFP4 container is a different source/recipe and is not
+the matched comparison for this BF16-derived experiment.
+
+A single RX 7900 XTX running the pinned `libr3` GPU plugin was also
+tested with `r4d_selftest` on `N=17408, K=5120` projection shapes.
+These are **kernel-only** timings without the real activation,
+quantization, TP collective, GDN or serving graph costs:
+
+| Token rows M | Existing W4 kernel | MXFP4 comparison | Interpretation |
+| ---: | ---: | ---: | --- |
+| 1 | W4A16 BF16-input best tuning 76.9 µs | gated GEMV 103.4 µs, decode 146.9 µs | W4 decode may have a narrow advantage; different variants and tuning vs selected runtime |
+| 64 | W4A16 BF16-input best tuning 368.3 µs | tiled 308.7 µs | W4 is ~19% slower even at 64 rows |
+| 512 | W4A8I8 tiled minimum 3226.6 µs | MXFP4 tiled 931.6 µs | W4 is **3.46x slower**; does not include separate int8 activation quantization |
+
+Raw stdout evidence is in the isolated scratch `${BC_WORK_ROOT}/xtx27-prefill/quant-lab/` under
+`plan-baseline.log`, `plan-mixed.log`, `w4-gfx11-*-perf.log`,
+`mxfp4-gfx11-*-perf.log`. All probes completed successfully and the
+GPU lease was released.
+
+**Decision:** do **not** spend resources converting the full 27B to
+this existing broad W4 format for prefill, nor treat it as an improved
+KV-capacity profile. The GPU-compatible encoding is real, but the
+current gfx11 GEMM kernel is dramatically slower at prefill. Focus
+next on either a genuinely native gfx11 IU4 MMA with carefully
+quantized activation plus numerical/KL proof, or MXFP4 GEMM / TP
+all-reduce improvements already proven relevant in XDP01. The W4
+decode-only hint remains a separate, quality-gated investigation, not
+a runtime recommendation.
+
 ## Risks and promotion gates
 
 - The W4 `u4+zero+scale` path may widen activations and do several
@@ -194,6 +238,9 @@ dynamic hardware-specific execution.
 
 ## Change Log
 
+- 2026-11-09: Pinned-engine plan-only accepts both recipes; isolated W4
+  prefill kernel is 3.46x slower than MXFP4 at M512. Broad W4
+  conversion held pending a genuinely faster native gfx11 kernel.
 - 2026-11-09: BF16 source confirmed local; generator, per-weight W4/MXFP4
   with optional FP8 suffix, dry-run provenance and card-free tests added. A measured-input-constrained, card-free
   quantization selector and selected-profile recipe integration are now present.

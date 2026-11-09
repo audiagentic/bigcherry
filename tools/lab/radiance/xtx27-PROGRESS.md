@@ -17,12 +17,16 @@
 - [x] Emitted matched BF16-origin baseline/mixed recipe and config-fingerprinted manifests to isolated scratch `quant-lab/` (no `.rad` conversion yet); `--write` only, default read-only.
 - [x] Card-free measured-input-constrained selector tests: stage-owned logical FP8 KV reservation, per-card VRAM reserve and exact bounded memory/latency DP. Accepts `selected` generator profile only with measured evidence; no actual placement or runtime quant switching.
 - [x] 31 `unittest` card-free tests pass (including 21 new XDP03 tests); Ruff clean.
+- [x] Once RAD49 lease cleared, acquired exclusive GPU lease and ran pinned `rad-convert --plan-only` on the BF16 control and mixed W4 recipes; both PASS, 1,024 planned weights, 289 quantized/735 as-is, estimated 16.50 GiB (control) vs 16.43 GiB (mixed), no .rad files written.
+- [x] Ran actual gfx1100 `libr3` shape N17408 K5120 kernel timings: at M512 W4A8I8 3226.6 µs minimum vs MXFP4 tiled 931.6 µs (W4 3.46x slower); M64 W4A16 best 368.3 vs MXFP4 tiled 308.7 µs; M1 W4A16 best 76.9 µs vs MXFP4 gated 103.4 µs / decode 146.9 µs (not matching end-to-end paths). Raw logs isolated in `quant-lab/` scratch.
+- [x] STOP broad W4 prefill conversion under existing kernels (insignificant memory saving, severe kernel slowdown); runtime quality/KL not measured. GPU probes ended cleanly and exclusive lease released.
 
 ## Still required
 
 - [ ] Bench 32K-256K **native** model context with actual resident KV/GDN/graph/runtime accounting; quality, TTFT and decode measured across context and sequences.
 - [ ] Exact/WHT6 correctness/KL gate and longer repeated, rotated A/B to qualify speed improvement.
-- [ ] Engine `rad-convert --plan-only` under an exclusive GPU lease, then convert the BF16->MXFP4 control and mixed candidate and run KLD/rad-kbench/VRAM/perf; the RAD49 fused-gather owner currently holds the GPUs. W4 is a supported *storage* encoding, not yet proven native gfx11 IU4 instruction execution.
+- [ ] To reconsider W4: build a *genuinely faster* native gfx11 integer GEMM microkernel and verify it against the existing MXFP4 baseline including activation quantization, quality and KV impact. Existing W4 broad model conversion is deferred by the 3.46x prefill-kernel regression. Do not claim the current W4 storage path uses native gfx11 IU4 WMMA.
+- [ ] If native W4 becomes viable, convert BF16->MXFP4 matched control and mixed candidate and run full end-to-end KLD, TP2 throughput, memory and KV residency gates. This conversion was deliberately not started.
 - [ ] Obtain comparable measured per-layer W4/MXFP4/FP8 perf, peak weights and reserves; run the XDP03 GPU-aware selector with real evidence and measure selected profile end-to-end before admitting or promoting any dynamic policy.
 - [ ] Native gfx1100 MXFP4 GEMM and TP all-reduce isolated kernel experiments with correctness; identify safe speed/capacity trade-off.
 - [ ] Full-layer R9700 stage + activation handoff microharness, memory planner admission and KV/GDN state ownership proof. Current Radiance helper infrastructure is MoE-only and does not implement this split.
