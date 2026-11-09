@@ -108,3 +108,7 @@ The historical 768-row GPU-ready timeouts were caused by an invalid GFX11 `clock
 ### Latest RAD50 Gate 4 slice result (2026-11-09)
 
 The earlier 768-row GPU live failure was traced to the unreliable gfx11 `clock64()` deadline, not demonstrated FP16 data corruption. The corrected `wall_clock64()` GPU waiter and 256-block verifier pass 100 repeated 768-row generations on **both XTXs**. Direct CPU-published ready p50: 463.87 us (XTX0), 463.71 us (XTX1). CPU combine (~363 us) dominates; DMA-BUF SYNC is sub-microsecond after warmup. See `SLICE_OPTIMIZATION.md` and `evidence/2026-11-09/rad50-slices-validated-summary.txt`. These are experimental lab results, not production memory-model guarantees or inference speedups. Host pull remains the fallback; end-to-end integration remains gated.
+
+## Promotion boundary (2026-11-09)
+
+The card-free Gate 0 handoff contract and critical-path model were merged into `main` by PR #785 (`c4da56706`). This full experimental worktree retains the expanded README and later hardware/optimization gates; they remain unmerged and do not enable production transport.
