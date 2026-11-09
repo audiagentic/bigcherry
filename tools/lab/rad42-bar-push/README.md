@@ -1,9 +1,7 @@
 # RAD50 — isolated CPU BAR-push transport experiment
 
-**Status (2026-11-09):** Gate 0 **PASS** (23/23 card-free tests).
-Gate 1 HSA inventory and Gate 2 CPU→GPU canary **built but not run**:
-lease command access is restored; RAD49 currently holds the exclusive
-GPU lease. No GPU tests have been run. Gates 1, 2, 2b and 3 are compiled but unrun; a Gate 4 live-waiter canary is compiled, while the full chunked multiprocess protocol is unimplemented.
+**Status (2026-11-09):** Gate 0 **PASS** (23/23 card-free tests); Gate 1 **PASS** (7 GPU-local CPU-accessible candidate pools across four GPUs). Gate 2 **RUN BLOCKED** (canary executables not on remote allowlist).
+Gate 1 inventory ran successfully under a RAD50 exclusive GPU lease. Gate 2 CPU→GPU canaries were built but their executable names are still blocked by the remote command allowlist. No BAR writes or test kernels were run. The lease was released. Later gates remain blocked.
 
 **Plan:** `docs/planning/active/patching-radiance-rdna3/RAD50.md`
 (existing `patching-radiance-rdna3` group). Production owner RAD42 design B;
@@ -30,8 +28,8 @@ RAD42's chunked combine is shipped; its BAR-push design is not.
 | Gate | Harness | Acceptance / current state |
 | --- | --- | --- |
 | 0. CPU model, card-free | `chunk_contract.py`, `test_chunk_contract.py`, `test_chunk_stress.py`, `critical_path_model.py`, `test_critical_path_model.py` | **PASS**: no early ready, stale epoch, reuse while busy, duplicate consume, or recovery without quiescence; 23 tests, 12,800 multi-chunk consumptions and 10 critical-path model tests |
-| 1. VRAM reachability | `pool_inventory.cpp` | **Build PASS / run blocked**: find an allocatable HSA GPU-local pool the host CPU is allowed to access; map physical PCI identity; pool availability alone is *not* proof of BAR usability |
-| 2. CPU→GPU exact canary | `bar_write_canary.hip` | **Build PASS / run blocked**: 4 KiB and 4 MiB, 12 generations each, GPU checks every word of CPU-written GPU-local storage; refuse unsupported allocations and PCI mismatch |
+| 1. VRAM reachability | `pool_inventory.cpp` | **PASS (API discovery)**: 7 GPU-local pools reported CPU-accessible across four GPUs; find an allocatable HSA GPU-local pool the host CPU is allowed to access; map physical PCI identity; pool availability alone is *not* proof of BAR usability |
+| 2. CPU→GPU exact canary | `bar_write_canary.hip` | **Build PASS / executable allowlist blocked**: 4 KiB and 4 MiB, 12 generations each, GPU checks every word of CPU-written GPU-local storage; refuse unsupported allocations and PCI mismatch |
 | 2b. Cross-process CPU-only IPC | `bar_ipc_canary.hip` (built, not run) | **BLOCKED on Gate 2**: prove a separate CPU-only process can map/write engine-owned GPU-local VRAM through HSA IPC, with no peer-GPU mapping |
 | 3. Bandwidth and contention | `bar_transfer_ab.hip` (built, not run) | **BLOCKED on Gates 2/2b**: measure BAR write vs mapped-host GPU pull on both XTXs/R9700, 4 KiB–21 MiB, 1/2/4 CPU threads, p50/p95 and CPU load, alone and under GPU0 host-pull contention |
 | 4. Live chunks | `bar_live_ready_canary.hip` built (live single-process canary); full multi-process chunk pipeline not built | **BLOCKED on Gate 3**: separate CPU producer/GPU consumer, independently published ready generations, 128/256/512/1024 rows, bounded timeouts, stale-data and fault cases |

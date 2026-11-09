@@ -107,5 +107,4 @@ parameter with actual traces once a GPU lease is available.
 5. Actual FP16 combined rows and KLD/TP2 reference; then only
    consider the future opt-in production plan `RAD51`.
 
-**Status:** Hardware Gates 1/2/2b/3 built but unrun; a single-process GPU-live readiness canary for Gate 4 also builds, but *concurrent visibility has not been run or proven*. Full multiprocess chunk integration is unimplemented. The exclusive GPU
-lease is held by RAD49. The current lab is proof preparation only.
+**Status (2026-11-09):** Gate 1 HSA discovery PASS: 7 GPU-local CPU-accessible candidate pools across the four GPUs. Gate 2 GPU correctness canaries are compiled but their executable names are still blocked by the remote allowlist, so **no CPU BAR writes or GPU verification have run**. IPC, transfer performance and concurrent readiness remain unverified. RAD50 released its lease after this block; no GPU lease is held by the experiment.

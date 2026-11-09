@@ -10,8 +10,8 @@ remains RAD42, and RAD49 is the TP2 consumer context.
 | Gate | State | Evidence / decision |
 | --- | --- | --- |
 | 0: lifecycle and critical-path model, card-free | **PASS** | 23 tests: 10 lifecycle, 3 multi-chunk stress, 10 critical-path/overlap model; no GPU visibility implied |
-| 1: host-visible GPU-local pool discovery | **BUILD PASS, RUN BLOCKED** | `pool_inventory.cpp` compiled with g++; lease command available but GPU lease held by RAD49, so no HSA hardware discovery performed |
-| 2: CPU-write/GPU-read canary | **BUILD PASS, RUN BLOCKED** | `bar_write_canary.hip` compiled for gfx1100 and gfx1201; hardware correctness is unverified. Requires Gate 1 PASS and an exclusive GPU lease before launch |
+| 1: host-visible GPU-local pool discovery | **PASS (API discovery)** | Under exclusive RAD50 lease, HSA enumerated 7 CPU-accessible GPU-local allocatable pools: XTX0 2, XTX1 2, R9700 1, 6900XT 2. Not proof of BAR writes |
+| 2: CPU-write/GPU-read canary | **BUILD PASS, EXECUTION BLOCKED** | Gate 1 passed, but `bar_write_canary-gfx1100` and `bar_write_canary-gfx1201` are missing from executable allowlist. No CPU BAR stores or GPU verification launched |
 | 2b: separate CPU-only IPC import | **BUILT, RUN BLOCKED** | `bar_ipc_canary.hip` compiled gfx1100/gfx1201; import/CPU write/GPU full verification not run. Requires Gates 1 and 2 |
 | 3: isolated transfer A/B | **BUILT, RUN BLOCKED** | `bar_transfer_ab.hip` compiled for gfx1100/gfx1201. No actual bandwidth, CPU cost or latency result. Requires Gate 2b PASS |
 | 4: chunked producer/consumer | **PARTIAL BUILD, RUN BLOCKED** | `bar_live_ready_canary.hip` compiled gfx1100/gfx1201: GPU already running before CPU writes. Multi-process chunk pipeline still not implemented. Requires Gate 3 |
@@ -106,3 +106,12 @@ remains RAD42, and RAD49 is the TP2 consumer context.
 - Attempting the compiled `pool_inventory` executable was denied with `Command 'pool_inventory' not in allowlist`. This was **not** an HSA test failure; no experimental GPU kernels, allocations or BAR writes were launched.
 - After observing this command-policy block, released the GPU lease; no lease left held by RAD50. No workaround through another allowed interpreter/build/debugger was attempted.
 - Next: user/host administrator must explicitly permit the experiment executables in the remote command policy (start with `pool_inventory`, then `bar_write_canary-gfx1100` / `bar_write_canary-gfx1201`; only authorize later executables as earlier gates pass). Recheck all GPUs and obtain a fresh lease before any run. Do not call subsequent gates passing based on `rocminfo`.
+
+### 2026-11-09 — Gate 1 API discovery PASS; Gate 2 executable policy BLOCKED
+
+- Preflight `agent-lease status` showed no leases and `rocm-smi` reported 0% GPU use, 0% VRAM allocation, no KFD processes. Acquired exclusive RAD50 GPU lease.
+- First `pool_inventory` run enumerated XTX0's two pools, then failed on a GROUP (non-global) memory pool. Fixed the lab-only HSA inventory and shared selector to skip non-global segments before querying global-only properties. No engine sources changed.
+- Rebuilt and reran inventory under the lease: exit 0, seven GPU-local allocatable CPU-accessible pools: XTX0 (gfx1100, PCI 0000:03:00.0) 2, XTX1 (gfx1100, 0000:06:00.0) 2, R9700 (gfx1201, 0000:09:00.0) 1, 6900 XT (gfx1030, 0000:17:00.0) 2. This is HSA **capability discovery only**, NOT a CPU BAR write or a GPU verification.
+- Attempting `bar_write_canary-gfx1100 --device 0` was rejected by the remote command allowlist, without running the executable. The policy allows `pool_inventory` but not `bar_write_canary-gfx1100` or `bar_write_canary-gfx1201`.
+- Released our GPU lease immediately; confirmed no RAD50 lease retained. No experimental GPU allocations, kernels, IPC, BAR stores or transfer timings. All later gates remain pending.
+- Required authorisation before Gate 2: permit those **exact two executable basenames**. Then recheck GPU users, acquire fresh lease, run XTX0 then XTX1 (and optionally R9700); stop on any wrong bytes, kernel error or unsupported mapping.

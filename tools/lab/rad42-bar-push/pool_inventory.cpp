@@ -34,8 +34,13 @@ hsa_status_t show_pool(hsa_amd_memory_pool_t pool, void* opaque) {
     uint32_t flags = 0;
     bool alloc = false;
     size_t size = 0;
-    if (hsa_amd_memory_pool_get_info(pool, HSA_AMD_MEMORY_POOL_INFO_SEGMENT, &segment) != HSA_STATUS_SUCCESS ||
-        hsa_amd_memory_pool_get_info(pool, HSA_AMD_MEMORY_POOL_INFO_LOCATION, &location) != HSA_STATUS_SUCCESS ||
+    if (hsa_amd_memory_pool_get_info(pool, HSA_AMD_MEMORY_POOL_INFO_SEGMENT, &segment) != HSA_STATUS_SUCCESS) return HSA_STATUS_ERROR;
+    if (segment != HSA_AMD_SEGMENT_GLOBAL) {
+        ++c.count;
+        std::printf("gpu=%u pool=%u segment=non-global skipped\n", c.ordinal, c.count);
+        return HSA_STATUS_SUCCESS;
+    }
+    if (hsa_amd_memory_pool_get_info(pool, HSA_AMD_MEMORY_POOL_INFO_LOCATION, &location) != HSA_STATUS_SUCCESS ||
         hsa_amd_memory_pool_get_info(pool, HSA_AMD_MEMORY_POOL_INFO_RUNTIME_ALLOC_ALLOWED, &alloc) != HSA_STATUS_SUCCESS ||
         hsa_amd_memory_pool_get_info(pool, HSA_AMD_MEMORY_POOL_INFO_SIZE, &size) != HSA_STATUS_SUCCESS)
         return HSA_STATUS_ERROR;

@@ -59,8 +59,10 @@ hsa_status_t select_pool(hsa_amd_memory_pool_t p, void* raw) {
     hsa_amd_memory_pool_location_t loc{};
     bool can_alloc = false;
     size_t bytes = 0;
-    if (hsa_amd_memory_pool_get_info(p, HSA_AMD_MEMORY_POOL_INFO_SEGMENT, &segment) != HSA_STATUS_SUCCESS ||
-        hsa_amd_memory_pool_get_info(p, HSA_AMD_MEMORY_POOL_INFO_LOCATION, &loc) != HSA_STATUS_SUCCESS ||
+    if (c.found) return HSA_STATUS_SUCCESS;
+    if (hsa_amd_memory_pool_get_info(p, HSA_AMD_MEMORY_POOL_INFO_SEGMENT, &segment) != HSA_STATUS_SUCCESS) return HSA_STATUS_ERROR;
+    if (segment != HSA_AMD_SEGMENT_GLOBAL) return HSA_STATUS_SUCCESS;
+    if (hsa_amd_memory_pool_get_info(p, HSA_AMD_MEMORY_POOL_INFO_LOCATION, &loc) != HSA_STATUS_SUCCESS ||
         hsa_amd_memory_pool_get_info(p, HSA_AMD_MEMORY_POOL_INFO_RUNTIME_ALLOC_ALLOWED, &can_alloc) != HSA_STATUS_SUCCESS ||
         hsa_amd_memory_pool_get_info(p, HSA_AMD_MEMORY_POOL_INFO_SIZE, &bytes) != HSA_STATUS_SUCCESS)
         return HSA_STATUS_ERROR;
