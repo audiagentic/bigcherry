@@ -124,7 +124,9 @@ class W4A4ProbeTests(unittest.TestCase):
     def test_plan_uses_selected_rocm_compiler_without_build(self):
         with (
             tempfile.TemporaryDirectory() as temp,
-            mock.patch.dict(w4.os.environ, {"RAD_HIPCC": "/selected/rocm-7.2/bin/hipcc"}),
+            mock.patch.dict(
+                w4.os.environ, {"RAD_HIPCC": "/selected/rocm-7.2/bin/hipcc"}
+            ),
             mock.patch.object(
                 w4.subprocess, "run", side_effect=AssertionError("subprocess invoked")
             ),
