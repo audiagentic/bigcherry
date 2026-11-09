@@ -98,12 +98,15 @@ class PlanCheckLauncherTests(unittest.TestCase):
                       MODEL="/model.rad", HEAT=str(self.heat), RECORD="/heat.live", CKPT_INTERVAL="4096", NUM_SPEC="3",
                       SHM="/r3-moe-helper", RECORD_PERIOD="60", STAMP=f"1105-{next(self._stamps):06d}", LIVE_POLICY_FILE="", EXPERIMENT_FILE="")
         budgets = overrides.pop("BUDGETS", "")
+        # what `bigcherry layout env` resolves for flashnext-4gpu, the per-helper budgets with any --budget override applied
+        layout_common = overrides.pop("LAYOUT_COMMON", "R3_MOE_WORKER_COUNT=3 R3_MOE_WORKER_MIBS=22528,22528,14336")
         values.update(overrides)
         assigns = "\n".join(f"{k}={shlex.quote(v)}" for k, v in values.items())
         script = f"""
 set -u
 RUN={shlex.quote(str(self.run_dir))}; RAD_HOME={shlex.quote(str(self.home))}; RAD_BIN=/engine
 BUDGETS=({budgets})
+LAYOUT_COMMON=({layout_common})
 {assigns}
 source {shlex.quote(str(LIB))}
 # the measuring start: the engine is asked for a plan and writes one; recorded so the tests see what ran
@@ -155,6 +158,22 @@ plan_manifest_prepare && printf 'MANIFEST:%s\\n' "$PLAN_MANIFEST"
                 changed = self._launch(**{name: value})
                 self.assertEqual(changed.returncode, 0, changed.stderr)
                 self.assertTrue(self.engine_calls.exists(), f"{name}={value} must be a different configuration")
+
+    def test_a_budget_override_reaches_bc_serve_as_the_helper_budgets(self) -> None:
+        # --budget gfx1030=7168: the launcher hands bc-serve the budgets `layout env` resolved with the override, in helper order,
+        # so the helpers' manifest carries them (not only the plan key); without --budget bc-serve derives them from the layout.
+        self._launch(BUDGETS="gfx1030=7168", LAYOUT_COMMON="R3_MOE_WORKER_COUNT=3 R3_MOE_WORKER_MIBS=22528,22528,7168")
+        sets = [l for l in self._blocks()[0][1:] if not l.startswith("plan-extra=")]
+        self.assertIn("memory.helper_budgets_mib=[22528,22528,7168]", sets)
+        self.engine_calls.unlink(missing_ok=True)
+        self._launch()
+        sets = [l for l in self._blocks()[-1][1:] if not l.startswith("plan-extra=")]
+        self.assertFalse([l for l in sets if l.startswith("memory.helper_budgets_mib=")])
+
+    def test_a_budget_override_without_resolved_budgets_stops_the_start(self) -> None:
+        done = self._launch(BUDGETS="gfx1030=7168", LAYOUT_COMMON="R3_MOE_WORKER_COUNT=3")
+        self.assertNotEqual(done.returncode, 0)
+        self.assertIn("--budget given but the layout resolved no helper budgets", done.stderr)
 
     def test_the_route_heat_files_contents_are_part_of_the_configuration(self) -> None:
         self._launch()
