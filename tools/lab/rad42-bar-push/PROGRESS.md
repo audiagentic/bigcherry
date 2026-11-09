@@ -12,7 +12,7 @@ remains RAD42, and RAD49 is the TP2 consumer context.
 | 0: lifecycle and critical-path model, card-free | **PASS** | 23 tests: 10 lifecycle, 3 multi-chunk stress, 10 critical-path/overlap model; no GPU visibility implied |
 | 1: host-visible GPU-local pool discovery | **PASS (API discovery)** | Under exclusive RAD50 lease, HSA enumerated 7 CPU-accessible GPU-local allocatable pools: XTX0 2, XTX1 2, R9700 1, 6900XT 2. Not proof of BAR writes |
 | 2: CPU-write/GPU-read canary | **PASS XTX0/XTX1; R9700 INCONCLUSIVE** | Both gfx1100 GPUs: 4 KiB and 4 MiB, 12 generations each, zero mismatches, exit 0 (48 fully verified buffers total). gfx1201 R9700 (HIP ordinal 2): executable exit 1 with no stdout/stderr; no memory correctness established. Diagnosing, no retry yet |
-| 2b: separate CPU-only IPC import | **BUILT, EXECUTION BLOCKED** | XTX Gate 2 passed; `bar_ipc_canary-gfx1100` denied by command allowlist. No IPC attach or GPU verification attempted. Requires a fresh exclusive GPU lease and executable permission |
+| 2b: separate CPU-only IPC import | **BUILT, PENDING LEASE** | XTX Gate 2 passed. The allowlisted combined `rad50-tester --test ipc` contains the IPC implementation. No IPC attach or GPU verification performed; another task holds the GPU lease |
 | 3: isolated transfer A/B | **BUILT, RUN BLOCKED** | `bar_transfer_ab.hip` compiled for gfx1100/gfx1201. No actual bandwidth, CPU cost or latency result. Requires Gate 2b PASS |
 | 4: chunked producer/consumer | **PARTIAL BUILD, RUN BLOCKED** | `bar_live_ready_canary.hip` compiled gfx1100/gfx1201: GPU already running before CPU writes. Multi-process chunk pipeline still not implemented. Requires Gate 3 |
 | 5: captured MoE data / TP2 exact-once | **PREP ONLY** | `combine_reference_test.cpp` compiled against BigCherry; execution blocked by remote policy. Captured KLD/TP2 replay still pending |
@@ -127,3 +127,29 @@ remains RAD42, and RAD49 is the TP2 consumer context.
 - Added `--device 2 --probe-hip-only` to the existing canary: HIP `hipMalloc`, tiny kernel and readback, **no HSA allocation or BAR writes**. Compiled gfx1201, not run.
 - Tried reacquiring a lease; HD2701 had acquired the exclusive GPU lease, so no further GPU work was attempted or foreign lease touched.
 - Next: obtain fresh lease after HD2701, run HIP-only diagnostic. For XTXs, authorise `bar_ipc_canary-gfx1100`, acquire lease, then run cross-process mapping before transfer A/B.
+
+### 2026-11-09 — single tester built; one allowlist entry still needed
+
+- Added `rad50-tester` from `rad50_tester.cpp`, `tester_selfcheck.inc`
+  and `Makefile`. HIP fat binary for gfx1100/gfx1201 **builds and links**.
+- Named modes: `pools`, `hip-smoke`, `serial`, `ipc`,
+  `transfer`, `live-ready`, `combine-ref`, `cpu-handoff`.
+  This binary links all existing tests directly; no generic command
+  execution or shell wrapper. IPC spawns only this same binary's fixed
+  private child, using an inherited Unix socket.
+- The remote policy already allows `rad50-tester`: `--list` ran,
+  `--self-check` passed 19/19 strict CLI cases, and
+  `--test combine-ref` passed all seven FP16 checks (2,560 elements).
+  No GPU mode ran; HD2701 holds the GPU lease.
+- The `--lease-confirmed` flag is an explicit operator acknowledgement,
+  **not** automatic verification/acquisition. See [TESTER.md](TESTER.md).
+- At preparation time HD2701 held the GPU lease and a foreign
+  server was observed; no GPU testing or serving changes occurred.
+  Recheck lease/processes immediately before any later GPU run.
+
+- `llvm-objdump --offloading` verified four HIP kernel bundles with both
+  `gfx1100` and `gfx1201` device images inside this one ELF. The current
+  proof build SHA256 is `95a40d6c390970c9c04dc3dadb45ea54480762d080374c2b58a49a819fa8d202`
+  (changes on rebuild). Its build default is `OPT=-O1`; rebuild with
+  `OPT=-O2` for actual transfer-performance evidence, after the other
+  GPU work has finished.

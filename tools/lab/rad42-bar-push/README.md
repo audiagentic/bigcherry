@@ -9,6 +9,13 @@ context RAD40 (PCIe contention) and RAD49 (multi-rank consumer).
 **Journal:** [PROGRESS.md](PROGRESS.md) tracks gate progress. [FINDINGS.md](FINDINGS.md) explains risks, [RUNBOOK.md](RUNBOOK.md) governs hardware runs, and RAD51 is the future production plan.
 **Boundary:** All files are lab-only, never linked into the serving engine.
 
+**Preferred interface:** [TESTER.md](TESTER.md) documents the new single
+`rad50-tester` executable with fixed `--test` cases and both GPU architectures
+in one binary. It is **built and now allowlisted**: `--list`, 19/19 CLI checks and
+seven FP16 reference checks have run successfully, without a GPU.
+One stable executable name replaces per-test allowlist entries.
+The old standalone probes remain as source/reference, not subprocess targets.
+
 ## Question and existing evidence
 
 Can CPU-produced remote-MoE FP16 result chunks be pushed straight into
@@ -30,7 +37,7 @@ RAD42's chunked combine is shipped; its BAR-push design is not.
 | 0. CPU model, card-free | `chunk_contract.py`, `test_chunk_contract.py`, `test_chunk_stress.py`, `critical_path_model.py`, `test_critical_path_model.py` | **PASS**: no early ready, stale epoch, reuse while busy, duplicate consume, or recovery without quiescence; 23 tests, 12,800 multi-chunk consumptions and 10 critical-path model tests |
 | 1. VRAM reachability | `pool_inventory.cpp` | **PASS (API discovery)**: 7 GPU-local pools reported CPU-accessible across four GPUs; find an allocatable HSA GPU-local pool the host CPU is allowed to access; map physical PCI identity; pool availability alone is *not* proof of BAR usability |
 | 2. CPU→GPU exact canary | `bar_write_canary.hip` | **XTX0 + XTX1 PASS; R9700 INCONCLUSIVE**: 4 KiB and 4 MiB, 12 generations each, GPU checks every word of CPU-written GPU-local storage; refuse unsupported allocations and PCI mismatch |
-| 2b. Cross-process CPU-only IPC | `bar_ipc_canary.hip` (built, not run) | **BLOCKED on Gate 2**: prove a separate CPU-only process can map/write engine-owned GPU-local VRAM through HSA IPC, with no peer-GPU mapping |
+| 2b. Cross-process CPU-only IPC | `rad50-tester --test ipc` (compiled in) | **PENDING GPU LEASE**: both XTXs passed serial Gate 2; now test the CPU-only helper's IPC mapping without peer-GPU access. No IPC result yet |
 | 3. Bandwidth and contention | `bar_transfer_ab.hip` (built, not run) | **BLOCKED on Gates 2/2b**: measure BAR write vs mapped-host GPU pull on both XTXs/R9700, 4 KiB–21 MiB, 1/2/4 CPU threads, p50/p95 and CPU load, alone and under GPU0 host-pull contention |
 | 4. Live chunks | `bar_live_ready_canary.hip` built (live single-process canary); full multi-process chunk pipeline not built | **BLOCKED on Gate 3**: separate CPU producer/GPU consumer, independently published ready generations, 128/256/512/1024 rows, bounded timeouts, stale-data and fault cases |
 | 5. MoE reference | `combine_reference_test.cpp` (compiled, not run) | **BLOCKED on Gate 4**: actual FP16 CPU combine, overflow sentinel fallback, TP2 consumer rank, once-only rows, captured replay and latency |

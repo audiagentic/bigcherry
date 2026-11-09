@@ -26,6 +26,17 @@ Do not run the steps out of order, and do not terminate a lease owner.
 
 ## B. Build-only preparation (no GPU execution)
 
+**Preferred new interface:** [TESTER.md](TESTER.md) documents a compiled-in,
+single `rad50-tester` executable. Build it with
+`make -C tools/lab/rad42-bar-push OUT_DIR="$BC_WORK_ROOT/builds/rad42-bar-push" rad50-tester`.
+The exact name `rad50-tester` is currently allowed; use its fixed `--test`
+modes with `--lease-confirmed` when an approved exclusive GPU lease is
+actually held. This acknowledgement does not acquire or verify the lease.
+Use `--self-check` and `--list` (CPU-only) after permission is granted.
+Existing separate commands below document their original implementations;
+there is no need to authorise each standalone executable.
+
+
 From the *experimental worktree root*, after loading the project's
 environment, compile into the project work-root build folder:
 

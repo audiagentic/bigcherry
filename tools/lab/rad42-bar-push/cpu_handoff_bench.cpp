@@ -99,4 +99,5 @@ int main(int argc, char** argv) {
                 percentile(measured, .99), *std::max_element(measured.begin(), measured.end()),
                 static_cast<double>(cpu_thread_ns) / 1000.0 / total);
     std::puts("NOT GPU->CPU latency. Do not use as direct RAD50 go/no-go evidence.");
+    return 0; // Required when this entrypoint is linked into rad50-tester.
 }

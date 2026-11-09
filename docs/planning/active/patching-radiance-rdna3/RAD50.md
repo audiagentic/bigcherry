@@ -161,6 +161,17 @@ Do not claim CPU BAR push is faster without the complete comparison.
 
 ## Change Log
 
+- 2026-11-09 (updated-by): Prepared one fixed-mode RAD50 test executable
+  (`rad50-tester`, dual gfx1100/gfx1201) and a source-based Makefile,
+  with strict argument parser and card-free self-check. Existing HSA
+  inventory, serial canary, IPC, A/B, live-ready, CPU handoff and FP16
+  reference implementations are compiled directly into one binary;
+  there is no command forwarding to separate test executables. Build
+  and link pass; the one `rad50-tester` executable is allowed and
+  passes 19/19 CLI self-checks and seven FP16 reference checks. No
+  GPU run or serving change made for this update.
+
+
 - 2026-11-08T21:44:12+00:00 (created-by): Created as an isolated
   proof-first experiment item; initial Gate 0 passed 10 card-free tests.
 - 2026-11-08T22:01:00+00:00 (updated-by): Gate 0 extended to 13 card-free tests;
