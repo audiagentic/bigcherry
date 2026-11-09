@@ -122,6 +122,23 @@ class W4A4ProbeTests(unittest.TestCase):
                     m=shape[0], n=shape[1], k=shape[2], seed=0, distribution="normal"
                 )
 
+    def test_plan_uses_selected_rocm_compiler_without_build(self):
+        with (
+            tempfile.TemporaryDirectory() as temp,
+            mock.patch.dict(
+                w4.os.environ, {"RAD_HIPCC": "/selected/rocm-7.2/bin/hipcc"}
+            ),
+            mock.patch.object(
+                w4.subprocess, "run", side_effect=AssertionError("subprocess invoked")
+            ),
+            contextlib.redirect_stdout(io.StringIO()) as stdout,
+        ):
+            self.assertEqual(w4.main(["--phase", "plan", "--output-dir", temp]), 0)
+        record = json.loads(stdout.getvalue())
+        self.assertEqual(
+            record["commands"]["compiler"][0], "/selected/rocm-7.2/bin/hipcc"
+        )
+
     def test_plan_mode_never_builds_or_acquires_gpu(self):
         with tempfile.TemporaryDirectory() as temp:
             out = Path(temp) / "scratch"

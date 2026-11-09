@@ -591,7 +591,11 @@ def main(argv: list[str] | None = None) -> int:
         help="XDP06 output store: direct, LDS-coalesced, or paired same-lease full-shape A/B",
     )
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_SCRATCH)
-    parser.add_argument("--hipcc", default="/opt/rocm/bin/hipcc")
+    parser.add_argument(
+        "--hipcc",
+        default=os.environ.get("RAD_HIPCC") or shutil.which("hipcc") or "hipcc",
+        help="Use hipcc from the selected ROCm stack (RAD_HIPCC or PATH)",
+    )
     parser.add_argument(
         "--device",
         type=int,
