@@ -278,11 +278,13 @@ bool tp_matches(const Model& m, Mutation mut, std::array<std::array<uint32_t, kE
 
 /* ---- The production BF16 arithmetic (GPT review of 405b6b435). Each rank's down rows `y` are bf16 (an expert's width-slice
  * output); a helper's expert output is its full width, rounded to bf16, and its plane row is the f32 sum over its routes of
- * weight * output, rounded to bf16. Three ways to the layer's reduced row:
- *  - local:  every expert on the ranks, the engine's fused gather: per rank f32 sum in slot order of ew * y plus the shared
- *            arm (gate * shared, f32), rounded to bf16; the reducing write sums the ranks in f32 and rounds to bf16;
+ * bf16 router weight (Route.weight_bf16) * output, rounded
+ * to bf16. Three ways to the layer's reduced row:
+ *  - local:  every expert on the ranks, the engine's fused gather: per rank f32 sum in slot order of ew * y rounded to bf16,
+ *            the gated shared product rounded to bf16, their sum rounded (r4d_ar_gather_word); the reducing write sums
+ *            the ranks in f32 and rounds to bf16;
  *  - add:    the v25 hand-off with the unfused write: the add's f32 sum of the local slots and the helper rows (consumer
- *            only), rounded, plus the shared part rounded on its own (mailbox_add_rows_kernel), then the reducing write;
+ *            only), with the shared arm rounded the same way (mailbox_add_rows_kernel), then the reduction;
  *  - inject: the fused path: the consumer's helper rows sit at their injected slots with weight bf16(1), the gather as in
  *            `local`, then the reducing write.
  * Signed nonintegral weights and values; `add` and `inject` must each stay within the rounding bound of `local`; a step with
@@ -338,7 +340,7 @@ std::array<Row, kT> num_rank(const NumModel& n, uint32_t l, uint32_t rank, Path 
     for (uint32_t k = 0; k < kHelpers && path != Path::local; ++k)
         for (auto [t, s] : ro.sent[slot_of(k, rank, kWorld)]) {
             for (uint32_t c = 0; c < kH; ++c)
-                plane[k][t][c] += n.weight(l, t, s) * n.full(l, uint32_t(m.ids[l][t][s]), t, c);
+                plane[k][t][c] += n.ew(l, t, s) * n.full(l, uint32_t(m.ids[l][t][s]), t, c);   /* Route.weight_bf16 */
             has[k][t] = true;
             rmask[t][s] = k + 1;
         }
@@ -367,13 +369,12 @@ std::array<Row, kT> num_rank(const NumModel& n, uint32_t l, uint32_t rank, Path 
             for (uint32_t s = 0; s < kK; ++s)
                 if (src[s]) acc += w_slot[s] * (*src[s])[c];
             const float sh = n.shared(l, t, rank, c), g = n.gate(l, t);
-            if (path == Path::add) {
+            if (path == Path::add)
                 for (uint32_t k = 0; k < kHelpers; ++k)
                     if (has[k][t]) acc += plane[k][t][c];
-                out[t][c] = bf16r(bf16r(sh * g) + bf16r(acc));
-            } else {
-                out[t][c] = bf16r(acc + g * sh);
-            }
+            /* the shared arm as both kernels fold it: the routed sum and the gated shared product each rounded to bf16,
+             * then their sum rounded (mailbox_add_rows_kernel; r4d_ar_gather_word in libr4d/r4d_ar_hc.h) */
+            out[t][c] = bf16r(bf16r(sh * g) + bf16r(acc));
             if (mag) {
                 float a = std::fabs(g * sh);
                 for (uint32_t s = 0; s < kK; ++s)

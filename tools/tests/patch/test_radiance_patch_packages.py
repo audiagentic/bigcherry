@@ -68,7 +68,7 @@ PREREQUISITES = {RAD0004: (RAD0002,)}
 PIN_BLOBS = {
     RAD0002: {
         "abi/bc_moe_remote.h": (None, "d3748b9"),
-        "arch/common/bc_moe_remote_block.h": (None, "3798bbb"),
+        "arch/common/bc_moe_remote_block.h": (None, "76d01f6"),
         "arch/common/rad_block_hc.h": ("3a602e5", "2d573ec"),
         "arch/common/rad_block_moe_fp8.h": ("614db0e", "177e79c"),
         "core/engine.cpp": ("7544310", "c0c5357"),
@@ -319,7 +319,7 @@ class TestRadiancePatchPackages(unittest.TestCase):
             self.assertIn("inline int64_t bc_moe_remote_fuse_rows(const Geom& g) { return 1 + (g.max_spec > 0 ? g.max_spec : 0); }",
                           block)
             self.assertIn(
-                "return active(T) && !m.op_combine && bc_moe_remote_fuses(m.g, T, m.gather_out_rows, m.gather_out_rows6);",
+                "return active(T) && bc_moe_remote_fuses(m.g, T, m.gather_out_rows, m.gather_out_rows6);",
                 block,
             )
             # a fused step's publish never asks for the helper combine (the inject reads each helper's own plane)
@@ -415,6 +415,8 @@ int main(int argc, char** argv) {
             self.assertTrue(all(result.ok for result in apply_all(list(_load(RAD0002)), root)))
             block = (root / "arch/common/bc_moe_remote_block.h").read_text(encoding="utf-8")
             free = block[block.index("inline int64_t bc_moe_remote_fuse_rows("):block.index("struct BcMoeRemote {")]
+            self.assertIn("if (refuses(m, T)) {\n            rad_step_fail(c_,", block)
+            self.assertLess(block.index("if (refuses(m, T)) {"), block.index("if (fused(m, T)) {"))
             fused = block[block.index("    template <class Moe>\n    bool fused("):
                           block.index("    /* Block declare, after the quantised experts' order")]
             program = """
@@ -423,7 +425,11 @@ int main(int argc, char** argv) {
 struct Geom { int64_t max_spec; int64_t max_seqs; };
 enum { kArOutNorm = 0, kArOutExact = 1, kArOutBoth = 2 };
 static int64_t g_lo, g_hi; static int g_shadow, g_mask;
-inline bool gather_taken(const Geom&, int64_t T, int64_t rows, int64_t) { return rows > 0 && T <= rows; }
+/* both wires: the exact bound on even T, the rotated one on odd T (the real choice is ar_exact_write_takes) */
+inline bool gather_taken(const Geom&, int64_t T, int64_t rows, int64_t rows6) {
+    const int64_t r = T % 2 == 0 ? rows : rows6;
+    return r > 0 && T <= r;
+}
 extern "C" int bc_moe_remote_wanted(int64_t T) { return T >= g_lo && T <= g_hi; }
 extern "C" int bc_moe_remote_shadow() { return g_shadow; }
 extern "C" int bc_moe_remote_mask_only() { return g_mask; }
@@ -435,27 +441,33 @@ struct R {
 };
 int main() {
     R r;
-    int fused_any = 0, unfused_any = 0;
+    int fused_any = 0, unfused_any = 0, refused_any = 0;
     for (int64_t spec = 0; spec <= 5; ++spec)
     for (int64_t grows = 0; grows <= 64; grows += 32)
+    for (int64_t grows6 = 0; grows6 <= 64; grows6 += 32)
+    for (int combine = 0; combine <= 1; ++combine)
     for (int shadow = 0; shadow <= 1; ++shadow)
     for (int mask = 0; mask <= 1; ++mask)
     for (int64_t T = 1; T <= 48; ++T) {
         g_lo = 1; g_hi = 40; g_shadow = shadow; g_mask = mask;
-        const Moe m{{spec, 6}, false, grows, 0, kArOutBoth};
+        const Moe m{{spec, 6}, combine != 0, grows, grows6, kArOutBoth};
         const bool f = r.fused(m, T), forced = r.forces_ar(m, T);
-        const bool open = bc_moe_remote_hc_open(10, m.g, T, grows, 0);
+        const bool open = bc_moe_remote_hc_open(10, m.g, T, grows, grows6);
         if (f && T > 1 + spec) return 2;                       /* fuses only up to one sequence's step */
-        if (f && (mask || shadow || grows < T)) return 3;
+        if (f && (mask || shadow || !gather_taken(m.g, T, grows, grows6))) return 3;
+        if (r.refuses(m, T) != (combine && f)) return 10;      /* a separate FP32 combine fails a fused step closed */
+        if (!r.active(T) || !gather_taken(m.g, T, grows, grows6) || T > 1 + spec || mask) {
+            if (f) return 11;
+        } else if (!f) return 12;                              /* the block's choice is the write's, combine or not */
         if (forced != open) return 4;                          /* the block reduces exactly when the write leaves it */
         if (f && open) return 5;
         if (!r.active(T) && (f || forced)) return 6;
         Moe norm = m; norm.ar_out_take = kArOutNorm;
         if (r.forces_ar(norm, T)) return 7;                    /* a norm-fused consumer keeps its fold */
-        if (bc_moe_remote_hc_open(0, m.g, T, grows, 0)) return 8;   /* attention / delta-net connections untouched */
-        fused_any |= f; unfused_any |= r.active(T) && !f;
+        if (bc_moe_remote_hc_open(0, m.g, T, grows, grows6)) return 8;   /* attention / delta-net connections untouched */
+        fused_any |= f; unfused_any |= r.active(T) && !f; refused_any |= r.refuses(m, T);
     }
-    return fused_any && unfused_any ? 0 : 9;
+    return fused_any && unfused_any && refused_any ? 0 : 9;
 }
 """
             with tempfile.TemporaryDirectory() as build:

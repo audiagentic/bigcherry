@@ -528,13 +528,19 @@ struct BcMoeRemote {
     /* The step `T` is handed off (shadow keeps the local path and only publishes). */
     bool policy(int64_t T) const { return publish && add && bc_moe_remote_wanted(T); }
     bool active(int64_t T) const { return policy(T) && !bc_moe_remote_shadow(); }
-    /* A handed-off step whose helper rows join the fused MoE gather + reducing hc write (bc_moe_remote_fuses, which
-     * HyperConn asks too, with no separate FP32 combine). It depends on T and declared bounds only, so every rank and
-     * every pass of the step agree; after_route and merge both ask it. */
+    /* A handed-off step whose helper rows join the fused MoE gather + reducing hc write: exactly the predicate
+     * HyperConn asks (bc_moe_remote_fuses, through bc_moe_remote_hc_open), on the same T and bounds, so the block and
+     * the write always agree. It depends on T and declared bounds only, so every rank and every pass of the step agree;
+     * after_route and merge both ask it. */
     template <class Moe>
     bool fused(const Moe& m, int64_t T) const {
-        return active(T) && !m.op_combine && bc_moe_remote_fuses(m.g, T, m.gather_out_rows, m.gather_out_rows6);
+        return active(T) && bc_moe_remote_fuses(m.g, T, m.gather_out_rows, m.gather_out_rows6);
     }
+    /* A fused step on a block with a separate FP32 combine: its routed rows go to `moe` for the combine, which the fused
+     * write never reads, so the step cannot be served exactly once. Upstream never declares the fused gather behind such
+     * a block; if one is, merge fails the step (fail closed) rather than let the write read un-added rows. */
+    template <class Moe>
+    bool refuses(const Moe& m, int64_t T) const { return m.op_combine && fused(m, T); }
     /* MoeFP8::issues_ar: a handed-off step that does not fuse, behind a HyperConn write (which then leaves the
      * reduction, bc_moe_remote_hc_open), runs the block's own all-reduce. A norm-fused consumer keeps its fold. */
     template <class Moe>
@@ -634,6 +640,11 @@ struct BcMoeRemote {
         const auto& g = m.g;
         const auto& w = m.w;
         const int64_t k = c.top_k;
+        if (refuses(m, T)) {
+            rad_step_fail(c_, "radiance: MoE remote hand-off: a fused MoE gather behind a block with a separate FP32 "
+                              "combine cannot take the helper rows exactly once");
+            return true;
+        }
         if (fused(m, T)) {
             moe_debug_weights(c_, m.layer, k, w.ids, w.ew, c.sigmoid_router != 0);   /* off: one static check */
             RAD_ISSUE_N(c_, inject, rows,
