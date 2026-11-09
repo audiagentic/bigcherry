@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.28.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.27.0...bc-platform-1.28.0) (2026-11-09)
+
+
+### New and changed
+
+* **moe-remote:** helper rows join the fused MoE gather + reducing hc write at decode-sized steps (RAD49) ([#777](https://github.com/audiagentic/bigcherry/issues/777)) ([2465b38](https://github.com/audiagentic/bigcherry/commit/2465b383ca35a0975d1de3fe02d4f35091fe1a3f))
+
+
+### Fixes
+
+* **benchmark:** quality runs take any number of arms; layout arms bring their own model and cards ([#774](https://github.com/audiagentic/bigcherry/issues/774)) ([fa2416f](https://github.com/audiagentic/bigcherry/commit/fa2416f676079402540cd520f68ff02f4e6bf500))
+* **lab:** r3-arbench prints each case's progress (a hang names its case) ([#776](https://github.com/audiagentic/bigcherry/issues/776)) ([b1f9ba9](https://github.com/audiagentic/bigcherry/commit/b1f9ba9f91bc961aafd56cd8957118afeeb78702))
+
 ## [1.27.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.26.0...bc-platform-1.27.0) (2026-11-08)
 
 
