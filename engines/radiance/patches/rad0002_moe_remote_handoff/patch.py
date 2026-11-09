@@ -469,16 +469,21 @@ inline bool bc_moe_remote_publish_placeholder(int64_t max_tok, W& w, const E* e,
 """
 
 _BC_MOE_REMOTE_BLOCK_H = r"""/* bc_moe_remote_block.h -- the MoE block's side of the BigCherry remote-expert extension point
- * (abi/bc_moe_remote.h). MoeFP8 holds one BcMoeRemote and calls it at five places; HyperConn asks
- * bc_moe_remote_hc_open. Everything else (what is handed off, when, and how the helper's rows rejoin the
- * block's output) is decided here, in the engine's C ABI and in the libr3moe plugin.
+ * (abi/bc_moe_remote.h). MoeFP8 holds one BcMoeRemote and calls it at four places; HyperConn asks
+ * bc_moe_remote_hc_open. Everything else (what is handed off, when, and how the helper's rows rejoin the block's
+ * output) is decided here, in the engine's C ABI and in the libr3moe plugin.
  *
  * Hand-off of a step: the routed ids are published to the helper (the publish op masks the helper-owned routes
- * out of the sort in place), the scatter is re-run so the local grouped GEMMs skip them, and moe_mailbox_add
- * replaces moe_gather: it sums the local rows and the helper's rows in slot order. The standalone all-reduce
- * then runs before the residual write (BcMoeRemote::active makes MoeFP8::issues_ar say so), and HyperConn
- * leaves its fused gather / reducing write for that step. With the mailbox ops absent or the step excluded, no
- * call changes anything. */
+ * out of the sort in place), the scatter is re-run so the local grouped GEMMs skip them, and the helper rows
+ * rejoin the block:
+ *  - on a step that fuses (bc_moe_remote_fuses: the write behind the block takes the gather, a TP engine's fused
+ *    MoE gather + reducing hc write, and the step is at most one sequence's decode or verify step),
+ *    moe_mailbox_inject gives each helper row a spare sorted row of that gather, with weight 1, on the layer's
+ *    consumer rank (RAD49; the other ranks add nothing for it), and the block gathers nothing;
+ *  - otherwise moe_mailbox_add replaces moe_gather: it sums the local rows and the helper's rows in slot order
+ *    into the block's output; a HyperConn write behind it then leaves the reduction to the block's own all-reduce
+ *    and writes plainly (the v25 path), and a norm-fused consumer keeps its fold.
+ * With the mailbox ops absent or the step excluded, no call changes anything. */
 #ifndef BC_MOE_REMOTE_BLOCK_H
 #define BC_MOE_REMOTE_BLOCK_H
 
@@ -492,18 +497,56 @@ _BC_MOE_REMOTE_BLOCK_H = r"""/* bc_moe_remote_block.h -- the MoE block's side of
 namespace rad {
 namespace arch {
 
-/* HyperConn::takes_ar: the connection fed by a MoE gather source (top_k > 0) does not take the reduction while
- * the step is handed off; attention and delta-net connections keep their fused writes. */
-inline bool bc_moe_remote_hc_open(int64_t moe_top_k, int64_t T) {
-    return moe_top_k > 0 && bc_moe_remote_wanted(T) && !bc_moe_remote_shadow();
+/* RADIANCE_DEBUG_ROUTING's print (rad_block_moe_fp8.h, defined after this header is included): the inject calls it first
+ * on a fused step, while the router weights are still the router's, which also spends the layer's one print. */
+inline void moe_debug_weights(RadCtx* c_, int layer, int64_t top_k, rad_buf ids, rad_buf ew, bool f32);
+
+/* RAD49 per-step choice between the two ways a handed-off step's helper rows rejoin a TP engine's MoE-fed HyperConn
+ * write (DESIGN: runs/rad49-fuse-ab measured the fused form -4.3% ms/step at one stream's MTP step, 4 rows, and +4.9%
+ * at six streams, 24 rows; doc prefill flat):
+ *  - fused: moe_mailbox_inject + the write's fused MoE gather + reducing write (ar_gather_hc_write);
+ *  - unfused: moe_mailbox_add, the block's own standalone all-reduce, then the plain hc write (the v25 path).
+ * A step fuses up to one sequence's decode or verify step (1 + max_spec rows, the geometry's own bound, which is where
+ * it measured faster) and where the write takes the gather (gather_taken). The block and HyperConn ask the same
+ * function of the same T and bounds, so they agree, as every rank does. Mask-only (diagnostic) never fuses: it restores
+ * the local rows for the add. */
+inline int64_t bc_moe_remote_fuse_rows(const Geom& g) { return 1 + (g.max_spec > 0 ? g.max_spec : 0); }
+inline bool bc_moe_remote_fuses(const Geom& g, int64_t T, int64_t gather_rows, int64_t gather_rows6) {
+    return !bc_moe_remote_mask_only() && T <= bc_moe_remote_fuse_rows(g) && gather_taken(g, T, gather_rows, gather_rows6);
+}
+/* HyperConn::takes_ar: the connection fed by a MoE gather source (top_k > 0) leaves the reduction to the block on a
+ * handed-off step that does not fuse; attention and delta-net connections keep their fused writes. */
+inline bool bc_moe_remote_hc_open(int64_t moe_top_k, const Geom& g, int64_t T, int64_t gather_rows, int64_t gather_rows6) {
+    return moe_top_k > 0 && bc_moe_remote_wanted(T) && !bc_moe_remote_shadow() &&
+           !bc_moe_remote_fuses(g, T, gather_rows, gather_rows6);
 }
 
 struct BcMoeRemote {
-    rad_op publish = 0, add = 0;
+    /* publish_fused: the same op for a step whose helper rows join the fused gather (param fused = 1: no combine) */
+    rad_op publish = 0, publish_fused = 0, add = 0, inject = 0;
 
     /* The step `T` is handed off (shadow keeps the local path and only publishes). */
     bool policy(int64_t T) const { return publish && add && bc_moe_remote_wanted(T); }
     bool active(int64_t T) const { return policy(T) && !bc_moe_remote_shadow(); }
+    /* A handed-off step whose helper rows join the fused MoE gather + reducing hc write: exactly the predicate
+     * HyperConn asks (bc_moe_remote_fuses, through bc_moe_remote_hc_open), on the same T and bounds, so the block and
+     * the write always agree. It depends on T and declared bounds only, so every rank and every pass of the step agree;
+     * after_route and merge both ask it. */
+    template <class Moe>
+    bool fused(const Moe& m, int64_t T) const {
+        return active(T) && bc_moe_remote_fuses(m.g, T, m.gather_out_rows, m.gather_out_rows6);
+    }
+    /* A fused step on a block with a separate FP32 combine: its routed rows go to `moe` for the combine, which the fused
+     * write never reads, so the step cannot be served exactly once. Upstream never declares the fused gather behind such
+     * a block; if one is, merge fails the step (fail closed) rather than let the write read un-added rows. */
+    template <class Moe>
+    bool refuses(const Moe& m, int64_t T) const { return m.op_combine && fused(m, T); }
+    /* MoeFP8::issues_ar: a handed-off step that does not fuse, behind a HyperConn write (which then leaves the
+     * reduction, bc_moe_remote_hc_open), runs the block's own all-reduce. A norm-fused consumer keeps its fold. */
+    template <class Moe>
+    bool forces_ar(const Moe& m, int64_t T) const {
+        return m.ar_out_take != kArOutNorm && active(T) && !fused(m, T);
+    }
 
     /* Block declare, after the quantised experts' order `reg` is final: publish the layer's runtime slot map,
      * and declare the two mailbox ops when the step gate admits any step. The gate comes from libr3moe, so an
@@ -522,13 +565,15 @@ struct BcMoeRemote {
         if (!bc_moe_remote_wanted_upto(g.max_tok)) return RAD_OK;
         const rad_buf q = c.expert_rot ? w.hr.q : w.h.q;
         const rad_buf s = c.expert_rot ? w.hr.s : w.h.s;
-        publish = rw(b, RAD_OP(b, "moe_mailbox_publish",
-                               RAD_PARAMS(RAD_INT("layer", layer), RAD_RANGE("M", 1, c.rows),
-                                          RAD_INT("n", g.n_embd), RAD_INT("top_k", c.top_k),
-                                          RAD_INT("expert_base", c.expert_base),
-                                          RAD_INT("n_expert", c.n_expert)),
-                               RAD_NOWEIGHTS),
-                     {w.ids, w.ew, w.h.x, q, s, q}, {w.ids});
+        for (int f = 0; f < 2; ++f)
+            (f ? publish_fused : publish) =
+                rw(b, RAD_OP(b, "moe_mailbox_publish",
+                             RAD_PARAMS(RAD_INT("layer", layer), RAD_RANGE("M", 1, c.rows),
+                                        RAD_INT("n", g.n_embd), RAD_INT("top_k", c.top_k),
+                                        RAD_INT("expert_base", c.expert_base),
+                                        RAD_INT("n_expert", c.n_expert), RAD_INT("fused", f)),
+                             RAD_NOWEIGHTS),
+                   {w.ids, w.ew, w.h.x, q, s, q}, {w.ids});
         add = RAD_OP(b, "moe_mailbox_add",
                      RAD_PARAMS(RAD_RANGE("M", 1, c.rows), RAD_INT("n", g.n_embd), RAD_INT("top_k", c.top_k)),
                      RAD_NOWEIGHTS);
@@ -538,10 +583,20 @@ struct BcMoeRemote {
             rad_op_reads(b, add, rd, m.gfold ? 5 : 3);
             rad_op_writes(b, add, wr, 1);
         }
-        if (!publish || !add) {
+        inject = RAD_OP(b, "moe_mailbox_inject",
+                        RAD_PARAMS(RAD_INT("layer", layer), RAD_RANGE("M", 1, c.rows), RAD_INT("n", g.n_embd),
+                                   RAD_INT("top_k", c.top_k), RAD_INT("n_expert", c.n_expert)),
+                        RAD_NOWEIGHTS);
+        if (inject) {
+            const rad_buf rd[4] = { w.sorted, w.edn, w.ew, w.eoff };
+            const rad_buf wr[3] = { w.sorted, w.edn, w.ew };
+            rad_op_reads(b, inject, rd, 4);
+            rad_op_writes(b, inject, wr, 3);
+        }
+        if (!publish || !publish_fused || !add || !inject) {
             std::fprintf(stderr, "radiance: MoE remote hand-off is on but its mailbox ops are not declared at layer "
-                         "%d (publish %d merge %d; q %d s %d rot %d); is libr3moe loaded?\n", layer,
-                         publish != 0, add != 0, q != 0, s != 0, (int)c.expert_rot);
+                         "%d (publish %d/%d merge %d inject %d; q %d s %d rot %d); is libr3moe loaded?\n", layer,
+                         publish != 0, publish_fused != 0, add != 0, inject != 0, q != 0, s != 0, (int)c.expert_rot);
             return RAD_E_INVAL;
         }
         return RAD_OK;
@@ -559,7 +614,7 @@ struct BcMoeRemote {
         const int64_t k = c.top_k;
         const rad_buf q = c.expert_rot ? w.hr.q : w.h.q;
         const rad_buf s = c.expert_rot ? w.hr.s : w.h.s;
-        RAD_ISSUE_N(c_, publish, rows,
+        RAD_ISSUE_N(c_, fused(m, T) ? publish_fused : publish, rows,
                     brow_slice(w.ids, r0, rows, k),
                     brow_slice(w.ew, r0, rows, k),
                     brow_slice(w.h.x, r0, rows, g.n_embd),
@@ -571,9 +626,13 @@ struct BcMoeRemote {
                         brows(w.sorted, rows * k), brows(w.eoff, c.n_expert + 1), ecnt);
     }
 
-    /* In place of the gather: one slot-order merge of the local rows and the helper's rows (and the shared arm
-     * when folded) into the gather's output (`moe` when a separate FP32 combine follows). Returns whether it ran;
-     * false leaves the normal gather. */
+    /* In place of the gather. When the write behind the block takes the gather this step (the fused MoE gather +
+     * reducing hc write of a TP engine; the same gather_taken the block asks), the helper rows join that gather:
+     * moe_mailbox_inject on the layer's consumer rank, nothing on the others, and the block gathers nothing.
+     * The inject overwrites the injected slots' router weights with 1, so the routing print is taken before it.
+     * Otherwise one slot-order merge of the local rows and the helper's rows (and the shared arm when folded) into
+     * the gather's output (`moe` when a separate FP32 combine follows). Returns whether it ran; false leaves the
+     * normal gather. Every rank takes the same branch (it depends on T and the declared bounds only). */
     template <class Moe>
     bool merge(RadCtx* c_, const Moe& m, int64_t T, int64_t r0, int64_t rows) const {
         if (!active(T)) return false;
@@ -581,6 +640,18 @@ struct BcMoeRemote {
         const auto& g = m.g;
         const auto& w = m.w;
         const int64_t k = c.top_k;
+        if (refuses(m, T)) {
+            rad_step_fail(c_, "radiance: MoE remote hand-off: a fused MoE gather behind a block with a separate FP32 "
+                              "combine cannot take the helper rows exactly once");
+            return true;
+        }
+        if (fused(m, T)) {
+            moe_debug_weights(c_, m.layer, k, w.ids, w.ew, c.sigmoid_router != 0);   /* off: one static check */
+            RAD_ISSUE_N(c_, inject, rows,
+                        brows(w.sorted, rows * k), brows(w.edn, rows * k),
+                        brow_slice(w.ew, r0, rows, k), brows(w.eoff, c.n_expert + 1));
+            return true;
+        }
         RAD_ISSUE_N(c_, add, rows,
                     brows(w.sorted, rows * k), brows(w.edn, rows * k),
                     brow_slice(w.ew, r0, rows, k),
@@ -700,16 +771,16 @@ PATCHES = (
                 id="bc-remote-issues-ar",
                 anchor=r"^[ \t]*return op_ar && !ar_taken\(g, ar_out_take != kArOutNorm \? T : rows, ar_out, ar_out_take\);$",
                 mode="replace",
-                text="        return op_ar && (bc_remote.active(T) || !ar_taken(g, ar_out_take != kArOutNorm ? T : rows, ar_out, ar_out_take));",
-                guard=r"return op_ar && \(bc_remote\.active\(T\) \|\|",
+                text="        return op_ar && (bc_remote.forces_ar(*this, T) || !ar_taken(g, ar_out_take != kArOutNorm ? T : rows, ar_out, ar_out_take));",
+                guard=r"return op_ar && \(bc_remote\.forces_ar\(\*this, T\) \|\|",
                 expect_matches=1,
-                rationale="issues_ar is the one place every caller (pass and the pipelined prefill callers) asks whether the block runs its own all-reduce; a handed-off step must, since the merged row is not a fused reduction input.",
+                rationale="issues_ar is the one place every caller (pass and the pipelined prefill callers) asks whether the block runs its own all-reduce; a handed-off step that does not fuse must when a HyperConn write follows, since that write then leaves the reduction (RAD49).",
             ),
         ),
     ),
     FilePatch(
         path="arch/common/rad_block_hc.h",
-        description="Keep HyperConn's fused gather / reducing write off while a MoE-fed connection is handed off.",
+        description="Keep HyperConn's fused gather / reducing write off on a handed-off step of a MoE-fed connection that does not fuse.",
         edits=(
             Edit(
                 id="include-bc-moe-remote-block-hc",
@@ -723,8 +794,8 @@ PATCHES = (
                 id="bc-remote-takes-ar",
                 anchor=r"^[ \t]*bool takes_ar\(int64_t T\) const \{ return ar_write\(T\) != 0; \}$",
                 mode="replace",
-                text="    bool takes_ar(int64_t T) const { return ar_write(T) != 0 && !bc_moe_remote_hc_open(gsrc.top_k, T); }",
-                guard=r"!bc_moe_remote_hc_open\(gsrc\.top_k, T\)",
+                text="    bool takes_ar(int64_t T) const { return ar_write(T) != 0 && !bc_moe_remote_hc_open(gsrc.top_k, g, T, gather_rows, gather_rows6); }",
+                guard=r"!bc_moe_remote_hc_open\(gsrc\.top_k, g, T, gather_rows, gather_rows6\)",
                 expect_matches=1,
                 rationale="write() reaches the gather form through takes_gather() = takes_ar() && ..., and the reducing write through takes_ar(), so this one predicate closes both for a MoE-fed connection.",
             ),

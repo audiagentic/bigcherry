@@ -1,0 +1,20 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261109_034640_flash-next-tensor-parallel-on_4558",
+  "files": [
+    "engines/radiance/patches/rad0002_moe_remote_handoff/patch.py",
+    "engines/radiance/patches/rad0002_moe_remote_handoff/SUMMARY.md",
+    "engines/radiance/components/moe-remote/moe_mailbox_ops.hip",
+    "engines/radiance/components/moe-remote/moe_remote_hook.cpp",
+    "engines/radiance/components/moe-remote/moe_remote_hook.h",
+    "engines/radiance/components/moe-remote/moe_remote_shm.h",
+    "engines/radiance/components/moe-remote/tp_exactly_once_test.cpp"
+  ],
+  "plan-item-ids": [
+    "RAD49"
+  ],
+  "status": "unreleased",
+  "technical-summary": "With remote-MoE helpers behind a 2/4-rank TP engine, decode-sized steps (at most 1 + max_spec rows) inject each helper's full-width row as a spare sorted row of HyperConn's fused ar_gather_hc_write (moe_mailbox_inject on the consumer rank, ew=1.0), so the fused gather + reducing write runs instead of add + standalone all-reduce + hc write; larger steps keep the unfused path. Fused steps never request the helper-row combine. Block and HyperConn share one fused/unfused predicate.",
+  "timestamp-utc": "2026-11-09T03:46:40.097872Z",
+  "user-summary-candidate": "Flash-Next tensor-parallel on the two 7900 XTX with remote experts: about 4% faster single-stream decode."
+}

@@ -1155,7 +1155,8 @@ extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevic
         !hip_ok(hipMalloc(reinterpret_cast<void**>(&s.published), (kMaxSlots + 1 + kCombineChunks + 4) * sizeof(uint32_t)),
                 "hipMalloc published flags") ||
         !hip_ok(hipMemset(s.published, 0, (kMaxSlots + 1 + kCombineChunks + 4) * sizeof(uint32_t)), "zero published flags") ||
-        !hip_ok(hipMalloc(&s.maps, (size_t)max_rows() * g.hdr->top_k * (sizeof(int32_t) + sizeof(uint32_t))),
+        !hip_ok(hipMalloc(&s.maps, (size_t)max_rows() * g.hdr->top_k * (sizeof(int32_t) + sizeof(uint32_t)) +
+                                   sizeof(uint32_t)),
                 "hipMalloc merge slot maps") ||
         !hip_ok(hipMalloc(reinterpret_cast<void**>(&s.ticket), sizeof(StepTicket)),
                 "hipMalloc step ticket cell") ||
@@ -1264,6 +1265,7 @@ extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevic
     s.dev.mask_ref = s.mask_ref;
     s.dev.inv = static_cast<int32_t*>(s.maps);
     s.dev.rmask = reinterpret_cast<uint32_t*>(s.dev.inv + (size_t)row_cap * g.hdr->top_k);
+    s.dev.inject_next = s.dev.rmask + (size_t)row_cap * g.hdr->top_k;   /* the word past the maps (allocated with them) */
     s.dev.shadow_stats = shadow_stats;
     s.dev.shadow_first = shadow_first;
     s.dev.max_rows = row_cap;
