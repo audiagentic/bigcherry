@@ -75,4 +75,60 @@
                 for (uint32_t j = 0; j < kPTA; ++j)
                     raw[i][j] = __builtin_bit_cast(f8v, r3_acc_i32_11_to_12(__builtin_bit_cast(r3_i8, raw[i][j]), lane));
         }
+#if defined(R3_I8_SWS_LDS)
+        if constexpr (I8 && RB == 0 && !ROWF) {
+            // The two tile barriers have published the scale headers.
+            // Keep the exact uint4-to-bf16 conversion in the fold below.
+#pragma unroll
+            for (uint32_t i = 0; i < kPTW; ++i)
+                w8[i] = *(const uint4*)(s_ws_i8 + (ww * kPTW + i) * 16u + (lane >> 4) * 8u);
+        }
+#endif
+@@ end
+
+# XDP08: opt-in and OFF by default. In the native I8 per-row scale
+# form only (RB==0 and not ROWF), stage all 128 weight-row bf16 scales
+# in LDS once per K128 group. The first existing tile barrier publishes
+# them, so no additional workgroup barrier is introduced.
+# This leaves the existing FP8/RB8/RB32/IQR forms untouched and does
+# not change the INT8 scale multiply/FMA order.
+@@ find 1
+    __shared__ float s_as[2][kPBM];
+@@ replace
+    __shared__ float s_as[2][kPBM];
+#if defined(R3_I8_SWS_LDS)
+    __shared__ __attribute__((aligned(16))) uint16_t s_ws_i8[(I8 && RB == 0 && !ROWF) ? kPBN : 1];
+#endif
+@@ end
+
+@@ find 1
+    for (uint32_t kb = 0; kb < nkb; ++kb) {
+        // The weight's scales for this block, read ahead of the two tiles that hide them: one bf16
+@@ replace
+    for (uint32_t kb = 0; kb < nkb; ++kb) {
+#if defined(R3_I8_SWS_LDS)
+        if constexpr (I8 && RB == 0 && !ROWF) {
+            if (tid < kPBN) {
+                const uint32_t row = n0 + tid;
+                s_ws_i8[tid] = Sw[((size_t)(row / 16u) * nkb + kb) * 16u + (row & 15u)];
+            }
+        }
+#endif
+        // The weight's scales for this block, read ahead of the two tiles that hide them: one bf16
+@@ end
+
+@@ find 1
+        } else if constexpr (I8) {
+#pragma unroll
+            for (uint32_t i = 0; i < kPTW; ++i)
+                w8[i] = *(const uint4*)(Sw + ((size_t)(wt0 + i) * nkb + kb) * 16u + (lane >> 4) * 8u);
+        } else {
+@@ replace
+        } else if constexpr (I8) {
+#if !defined(R3_I8_SWS_LDS)
+#pragma unroll
+            for (uint32_t i = 0; i < kPTW; ++i)
+                w8[i] = *(const uint4*)(Sw + ((size_t)(wt0 + i) * nkb + kb) * 16u + (lane >> 4) * 8u);
+#endif
+        } else {
 @@ end

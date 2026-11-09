@@ -18,6 +18,8 @@ rad_plugin_defaults()
 set(R3_TARGETS "gfx1100" CACHE STRING "GPU targets libr3 is compiled for")
 set(RADIANCE_SRC "" CACHE PATH "radiance source tree (libr4d is read from it)")
 option(R3_NATIVE "apply the native gfx11 forms in native/ (OFF = every kernel through the compatibility layer)" ON)
+# XDP08: opt-in experiment; OFF preserves current native INT8 implementation.
+option(R3_I8_SWS_LDS "stage native i8a8 per-row weight scales in LDS (experimental)" OFF)
 set(R3_ONLY "" CACHE STRING "build only these units (for a compile check of one unit); empty = all not excluded")
 if(NOT EXISTS "${RADIANCE_SRC}/libr4d/CMakeLists.txt")
   message(FATAL_ERROR "libr3: -DRADIANCE_SRC must name a radiance source tree (no ${RADIANCE_SRC}/libr4d)")
@@ -93,6 +95,12 @@ rad_add_plugin(libr3 kernels
   GPU_TARGETS ${R3_TARGETS}
   INCLUDES    ${r4d} ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_definitions(libr3 PRIVATE R3_TARGETS="${R3_TARGETS}")
+if(R3_I8_SWS_LDS)
+  if(NOT R3_NATIVE)
+    message(FATAL_ERROR "R3_I8_SWS_LDS requires R3_NATIVE=ON")
+  endif()
+  target_compile_definitions(libr3 PRIVATE R3_I8_SWS_LDS=1)
+endif()
 # the wrappers' -cuid from their path in the build tree, so a new build directory does not miss the compiler cache
 include(${CMAKE_CURRENT_SOURCE_DIR}/r3_cuid.cmake)
 r3_build_tree_cuid(libr3 ${device})

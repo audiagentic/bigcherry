@@ -50,6 +50,8 @@
 - [x] XDP07 negative arms: 8-wave 2732.5 us; 96-VGPR forced cap 8/12 spills; group-major metadata 1083.8 us median (2 runs), no speed win and added prepack overhead. All leased GPU runs released.
 - [ ] XDP07 production gate: real A4 producer, BF16-origin KL/PPL and full TP2 serving. No model conversion or vendor modifications.
 
+- [x] XDP08 reviewed the existing gfx11 libr3 kernel bodies: INT8 prefill already stages A scales, MXFP4 already stages decode table and scale ratios, MoE already stages A/W scales. Added default-OFF `R3_I8_SWS_LDS` to experiment only on native INT8 RB0 per-row W scales; 128 cooperative loads replace duplicate per-wave `uint4` source, published by existing K tile barrier, no math/output modifications. 3 card-free index/barrier tests pass and full rewrite drift check clean; **no GPU or compilation while RAD49 holds its lease**. Design in XDP08.md.
+
 ## Still required
 
 - [ ] Bench 32K-256K **native** model context with actual resident KV/GDN/graph/runtime accounting; quality, TTFT and decode measured across context and sequences.
