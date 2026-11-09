@@ -63,4 +63,4 @@ Official HIP documentation distinguishes fine- versus coarse-grained memory; Lin
 
 Gate 4 **not passed**; the 768-row GPU-live publication failed twice on XTX0. No XTX1 768-row run or R9700 Gate 4 run was launched. No inference or serving speedup is established. Both RAD50 GPU leases were released after tests, and the host was idle/no KFD PIDs. RAD49 subsequently reacquired the exclusive GPU lease, so all further GPU work was stopped.
 
-The unified tester remains one executable, the existing worktree only. Lab-only code, no production/vendor changes, no push or PR. Card-free: 71 Python unit tests passed; 60 CLI parser checks passed.
+The unified tester remains one executable, the existing worktree only. Lab-only code, no production/vendor changes, no push or PR. Card-free: 72 Python unit tests passed; 60 CLI parser checks passed.
