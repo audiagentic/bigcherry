@@ -460,3 +460,141 @@ Optional longer-term candidates:
   reopen architecture research as a **bounded**
   128×128 test, not production adoption; preserve
   independent quality and exact-wire gates.
+
+## Implementation result: independent gfx1100 128×128 / 16-wave candidate
+
+**Experimental source:** `tools/lab/radiance/xtx27_w4a4_wide16.hip`,
+never compiled into Radiance or wired to serving. The existing
+`tools/lab/radiance/xtx27_w4a4.py` exposes `--kernel wide`
+through the *same* tester/lease command; XDP04 `oracle` and
+XDP05 `tiled` remain available. Every variant has a distinct
+binary, source SHA and executable SHA manifest in scratch;
+any stale binary/source combination fails closed before
+a GPU test. The CLI defaults to plan/no GPU and requires
+`--run` for builds or hardware. No new worktree or
+third-party code copy.
+
+### Layout / output proof
+
+- Fixed **128 M × 128 N** workgroup, 16 wave32 /
+  512 threads; `blockIdx.y` owns the M tile,
+  `blockIdx.x` the N tile.
+- `wave 0..15`: M subtiles `wm=wave>>1`
+  (8 distinct M16 bands), N half selection
+  `wn0=4*(wave&1)`. Each wave computes
+  four independent N16 subtiles sequentially,
+  with one int32x8 WMMA chain live at a time
+  and 32 persistent f32 outputs/lane.
+- Lane `l` owns `m=128*by+16*wm+(l&15)`,
+  `n=128*bx+16*(wn0+c)+2*e+(l>>4)`,
+  `c=0..3, e=0..7`. Card-free enumeration
+  confirms **16,384 unique writers**/full
+  tile; M/N partial edge stores are guarded.
+- The same `XDP05` packed-tile input
+  `Layout` and independent host INT32 oracle
+  are deliberately copied into this private
+  research binary for a clean same-data
+  comparison. No change to K128 scale/zero
+  correction, signed A4/unsigned W4 or
+  f32 `fmaf` accumulation ordering.
+- Each K128 group stages **eight A16 plus
+  eight W16 subtiles**, `4096 uint32` /
+  **16,384 B LDS**, using all 512 threads
+  and eight words/thread. Two barriers
+  per group, **80** per K5120 projection.
+  This is a different workgroup arithmetic
+  intensity from XDP05, not just a
+  rearrangement of its 2,048 outputs.
+- At M512 N17408, the grid is
+  **136×4 = 544 blocks** versus
+  XDP05 **272×16 = 4,352 blocks**.
+  Larger tiles can reduce redundant
+  global input requests but may decrease
+  occupancy, especially at 512 threads.
+- **Output-store risk:** native IU4 maps
+  `lane&15` to M, so the unchanged
+  row-major `C[M,N]` direct epilogue
+  scatters stores across widely separated
+  rows. Hipfire's column-major output
+  favors coalesced stores. A separate
+  LDS-transpose store ablation is justified
+  if the direct wide kernel is still slow;
+  this must preserve the *same row-major
+  output* for apples-to-apples XDP05
+  comparison. No store optimization
+  is claimed until measured.
+
+### Compiler findings (no GPU used)
+
+Compiled with `/opt/rocm/bin/hipcc -O2 -std=c++17
+--offload-arch=gfx1100`, extracted actual
+gfx1100 code using `llvm-objdump --offloading`
+and inspected `llvm-readelf -n` plus the
+disassembled `v_wmma_i32_16x16x16_iu4`.
+The first `#pragma unroll` eight-step K16
+inner loop made a native WMMA kernel
+at **235 VGPR / 65 SGPR**, 16 KiB LDS,
+zero reported spills. That register
+footprint is not acceptable for a
+low-live-state 16-wave design.
+With `#pragma unroll 1` on the eight
+steps while keeping four independent
+output subtiles, the same compile used
+**147 VGPR / 66 SGPR**, 16 KiB LDS,
+zero reported spills and zero fixed
+private segment. No source code
+changes to arithmetic, scaling,
+output shape or memory ownership.
+This is a **compiler resource result**,
+not a measured latency or occupancy
+measurement. The high-VGPR initial
+binary and hash are preserved in
+scratch as `gfx1100-w4a4-wide16-u8-prelim`
+for provenance, not a promoted arm.
+
+### Test runner / validation
+
+```sh
+python3 tools/lab/radiance/xtx27_w4a4.py --phase plan \
+  --kernel wide --suite
+python3 tools/lab/radiance/xtx27_w4a4.py --phase compile \
+  --kernel wide --run
+python3 tools/lab/radiance/xtx27_w4a4.py --phase gpu \
+  --kernel wide --suite --run --device 0
+python3 tools/lab/radiance/xtx27_w4a4.py --phase gpu \
+  --kernel wide --shape-27b --run --device 0
+```
+
+Card-free tests include the bijective
+output-writer mapping, exact plan
+provenance, separate manifests,
+reject-invalid flags, native intrinsic
+and source structure. All **53 XDP
+card-free tests** pass at this stage,
+including XDP04/XDP05 regression
+tests; Ruff passes. The hardware suite
+includes 12 shapes, notably (129,129),
+(128,257), (257,128) and nonmultiple-16
+tails, plus full M512,N17408,K5120
+sampled oracle with all outputs
+nonfinite-scanned. GPU correctness
+and timings are **not yet run**: RAD49
+held the exclusive GPU lease at the
+time of this build. Do not infer a
+speedup from a successful compile.
+
+**Decision XDP06-D4:** retain the
+147-VGPR rolled K loop as the first
+wide-tile GPU candidate. Reject the
+235-VGPR full-unroll configuration
+unless a later same-device, quality-
+qualified A/B justifies the loss of
+occupancy. Before considering engine
+integration, test the entire small
+oracle suite, full-size sampled
+oracle and three independent
+same-card paired benchmark
+repetitions against unchanged XDP05
+and pinned MXFP4; include GPU
+activation quantization and BF16
+model-level KL before any promotion.

@@ -35,6 +35,8 @@
 - [x] XDP06 read-only RDNA3 upstream survey recorded: hipfire genuine gfx1100 IU4 128x128 (8/16 wave), XTX 1,061-us kernel report at N17408 K5120 M512 (unpaired), group128 A4 MSE candidates and fused producer; Strata FP16/BF16 WMMA and K-quant MMQ (Blackwell FP4 W4A4 is not RDNA3); hipEngine tuning, llama.cpp/Lucebox small-row specializations, Quark W4A16 GPTQ nibble repacking. Full sources, transfer limits, legal/quality caveats and design decisions in XDP06.md.
 - [x] XDP06 reopens only a **bounded** independent 128x128 native IU4 research kernel (16-wave low-live-acc first); current 32x64 XDP05 remains no-go for serving. No full conversion, production integration or GPU launch from the source survey.
 
+- [x] XDP06 implemented **independent** gfx1100 128x128/16-wave native IU4 correctness candidate with separate source/binary manifests under existing single tester --kernel wide. 16,384 exclusive outputs/workgroup (card-free proof), 544 CTAs at M512 N17408; rolled K16 schedule lowered compiled VGPR 235 to 147 with zero reported spills, 16KiB LDS and real IU4 ISA. All 53 card-free XDP tests pass; hardware numerical suite and speed are **PENDING GPU lease**. Full design/resource decision in XDP06.md.
+
 ## Still required
 
 - [ ] Bench 32K-256K **native** model context with actual resident KV/GDN/graph/runtime accounting; quality, TTFT and decode measured across context and sequences.

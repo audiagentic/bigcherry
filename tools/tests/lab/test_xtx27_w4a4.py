@@ -321,6 +321,104 @@ class W4A4ProbeTests(unittest.TestCase):
         self.assertIn("XDP05_TILED_PASS", code)
         self.assertNotIn("gemm_mxfp4", code)
 
+    def test_wide16_output_ownership_card_free(self):
+        """Each of 16 wave32s owns 32 distinct f32 results per lane."""
+        written = set()
+        for wave in range(16):
+            wm, wn0 = wave >> 1, (wave & 1) * 4
+            for lane in range(32):
+                m = 16 * wm + (lane & 15)
+                for c in range(4):
+                    for e in range(8):
+                        n = 16 * (wn0 + c) + 2 * e + (lane >> 4)
+                        self.assertTrue(0 <= m < 128 and 0 <= n < 128)
+                        self.assertNotIn((m, n), written)
+                        written.add((m, n))
+        self.assertEqual(len(written), 128 * 128)
+
+    def test_wide16_plan_is_separate_fail_closed_artifact(self):
+        with tempfile.TemporaryDirectory() as temp:
+            for flags in (["--suite"], ["--shape-27b"], []):
+                with (
+                    self.subTest(flags=flags),
+                    mock.patch.object(
+                        w4.subprocess,
+                        "run",
+                        side_effect=AssertionError("subprocess invoked"),
+                    ),
+                    contextlib.redirect_stdout(io.StringIO()) as stdout,
+                ):
+                    self.assertEqual(
+                        w4.main(
+                            [
+                                "--phase",
+                                "plan",
+                                "--kernel",
+                                "wide",
+                                "--output-dir",
+                                temp,
+                                *flags,
+                            ]
+                        ),
+                        0,
+                    )
+                rec = json.loads(stdout.getvalue())
+                self.assertEqual(rec["source_sha256"], w4.sha256_file(w4.WIDE_SOURCE))
+                self.assertTrue(
+                    any(
+                        x.endswith("xtx27_w4a4_wide16.hip")
+                        for x in rec["commands"]["compiler"]
+                    )
+                )
+                self.assertTrue(rec["commands"]["binary"].endswith("-wide16"))
+                self.assertEqual(rec["kernel"], "wide")
+                self.assertEqual(rec["output_tile"], [128, 128])
+                self.assertEqual(rec["wave32_per_block"], 16)
+                self.assertEqual(
+                    rec["commands"]["gpu"][0:3], ["agent-lease", "acquire", "gpu"]
+                )
+                self.assertTrue(
+                    any(x.startswith("XDP06 wide16") for x in rec["commands"]["gpu"])
+                )
+                self.assertEqual(
+                    rec["commands"]["gpu"][-1] if flags else "",
+                    flags[-1] if flags else "",
+                )
+            self.assertFalse(Path(temp, "w4a4-wide16-manifest.json").exists())
+
+    def test_wide16_reject_unsupported_flags_and_avoids_other_controls(self):
+        with tempfile.TemporaryDirectory() as temp:
+            for flags in (
+                ["--phase", "gpu", "--kernel", "wide", "--tile-m", "8"],
+                ["--phase", "cpu", "--kernel", "wide", "--shape-27b"],
+                ["--phase", "gpu", "--kernel", "wide", "--shape-27b", "--suite"],
+                ["--phase", "gpu", "--kernel", "oracle", "--shape-27b"],
+            ):
+                with (
+                    self.subTest(flags=flags),
+                    contextlib.redirect_stderr(io.StringIO()),
+                    self.assertRaises(SystemExit),
+                ):
+                    w4.main(["--output-dir", temp, *flags])
+        self.assertNotEqual(
+            w4.binaries(Path("/tmp"), "wide"),
+            w4.binaries(Path("/tmp"), "tiled"),
+        )
+        self.assertNotEqual(
+            w4.binaries(Path("/tmp"), "wide"),
+            w4.binaries(Path("/tmp"), "oracle"),
+        )
+
+    def test_wide16_kernel_explicit_native_wmma_and_two_barriers(self):
+        code = w4.WIDE_SOURCE.read_text()
+        self.assertIn("__launch_bounds__(512)", code)
+        self.assertIn("float sums[4][8]", code)
+        self.assertIn("__shared__ unsigned stage[STAGE_WORDS]", code)
+        self.assertIn("__builtin_amdgcn_wmma_i32_16x16x16_iu4_w32", code)
+        self.assertIn("XDP06_WIDE_PASS", code)
+        self.assertIn("XDP06_WIDE_SUITE_PASS cases=12", code)
+        self.assertNotIn("gemm_mxfp4", code)
+
     def test_isolated_hip_contains_real_native_opcode_and_group_fix(self):
         code = w4.SOURCE.read_text()
         self.assertIn("__builtin_amdgcn_wmma_i32_16x16x16_iu4_w32", code)

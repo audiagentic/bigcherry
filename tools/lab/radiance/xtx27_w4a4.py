@@ -27,6 +27,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 SOURCE = Path(__file__).with_name("xtx27_w4a4_probe.hip")
 TILED_SOURCE = Path(__file__).with_name("xtx27_w4a4_tiled.hip")
+WIDE_SOURCE = Path(__file__).with_name("xtx27_w4a4_wide16.hip")
 GROUP = 128
 FORMATS = ("normal", "outlier")
 DEFAULT_SCRATCH = (
@@ -215,13 +216,18 @@ def binaries(output_dir: Path, kernel: str = "oracle") -> tuple[Path, Path]:
             output_dir / "gfx1100-w4a4-tiled",
             output_dir / "w4a4-tiled-manifest.json",
         )
+    if kernel == "wide":
+        return (
+            output_dir / "gfx1100-w4a4-wide16",
+            output_dir / "w4a4-wide16-manifest.json",
+        )
     if kernel != "oracle":
         raise ValueError("unknown kernel")
     return (output_dir / "gfx1100-w4a4-probe", output_dir / "w4a4-manifest.json")
 
 
 def source_for(kernel: str) -> Path:
-    return TILED_SOURCE if kernel == "tiled" else SOURCE
+    return {"oracle": SOURCE, "tiled": TILED_SOURCE, "wide": WIDE_SOURCE}[kernel]
 
 
 def command_lines(args: argparse.Namespace) -> dict:
@@ -245,13 +251,19 @@ def command_lines(args: argparse.Namespace) -> dict:
             "--ttl",
             "30m",
             "--purpose",
-            "XDP05 tiled gfx1100 W4A4"
+            "XDP06 wide16 gfx1100 native W4A4"
+            if args.kernel == "wide"
+            else "XDP05 tiled gfx1100 W4A4"
             if args.kernel == "tiled"
             else "XDP04 isolated gfx1100 native W4A4 WMMA correctness",
             "--",
             str(binary),
             *(
-                ["--shape-27b", str(args.tile_m)]
+                (
+                    ["--shape-27b", str(args.tile_m)]
+                    if args.kernel == "tiled"
+                    else ["--shape-27b"]
+                )
                 if args.shape_27b
                 else ["--suite"]
                 if args.suite
@@ -291,6 +303,8 @@ def execute(args: argparse.Namespace) -> dict:
         "native_gfx1100_iu4": True,
         "kernel": args.kernel,
         "tile_m": args.tile_m if args.kernel == "tiled" else None,
+        "output_tile": [128, 128] if args.kernel == "wide" else None,
+        "wave32_per_block": 16 if args.kernel == "wide" else None,
         "prepacked_operands": True,
         "gpu_activation_quantization_implemented": False,
         "algorithm": "A4 signed x W4 unsigned, asymmetric W zero correction, group128",
@@ -343,7 +357,15 @@ def execute(args: argparse.Namespace) -> dict:
         raise ValueError("probe or binary has changed since compile; rebuild first")
     if args.device < 0:
         raise ValueError("device must be a nonnegative inventory index")
-    if args.kernel == "tiled":
+    if args.kernel == "wide":
+        logfile = (
+            "gpu-wide16-27b.log"
+            if args.shape_27b
+            else "gpu-wide16-suite.log"
+            if args.suite
+            else f"gpu-wide16-M{args.m}-N{args.n}-K{args.k}-seed{args.seed}.log"
+        )
+    elif args.kernel == "tiled":
         logfile = (
             f"gpu-tiled-27b-tile{args.tile_m}.log"
             if args.shape_27b
@@ -372,7 +394,9 @@ def execute(args: argparse.Namespace) -> dict:
         )
     contents = log.read_text()
     marker = (
-        ("XDP05_TILED_SUITE_PASS" if args.suite else "XDP05_TILED_PASS")
+        ("XDP06_WIDE_SUITE_PASS" if args.suite else "XDP06_WIDE_PASS")
+        if args.kernel == "wide"
+        else ("XDP05_TILED_SUITE_PASS" if args.suite else "XDP05_TILED_PASS")
         if args.kernel == "tiled"
         else ("XDP04_GPU_SUITE_PASS" if args.suite else "XDP04_GPU_PASS")
     )
@@ -382,7 +406,9 @@ def execute(args: argparse.Namespace) -> dict:
         )
     result["gpu"] = {
         "status": (
-            "PASS_EXPERIMENTAL_TILED_ORACLE_ONLY"
+            "PASS_EXPERIMENTAL_WIDE_ORACLE_ONLY"
+            if args.kernel == "wide"
+            else "PASS_EXPERIMENTAL_TILED_ORACLE_ONLY"
             if args.kernel == "tiled"
             else "PASS_EXPERIMENTAL_ORACLE_ONLY"
         ),
@@ -403,18 +429,18 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--suite",
         action="store_true",
-        help="GPU oracle cases in one lease (six untiled, 27 tiled variants)",
+        help="GPU oracle cases in one lease (six oracle, 27 tiled, 12 wide)",
     )
     parser.add_argument(
         "--kernel",
-        choices=("oracle", "tiled"),
+        choices=("oracle", "tiled", "wide"),
         default="oracle",
-        help="standalone kernel (oracle default preserves XDP04)",
+        help="standalone kernel (oracle default preserves XDP04; wide is XDP06)",
     )
     parser.add_argument(
         "--shape-27b",
         action="store_true",
-        help="tiled M512/N17408/K5120, 512+ sampled CPU oracle cells",
+        help="tiled or wide M512/N17408/K5120, 768 sampled CPU oracle cells",
     )
     parser.add_argument(
         "--tile-m",
@@ -448,14 +474,16 @@ def main(argv: list[str] | None = None) -> int:
             or args.iters > 10000
         ):
             raise ValueError("positive dimensions and 1..10000 iterations required")
-        if args.kernel == "oracle" and args.tile_m != 2:
+        if args.kernel != "tiled" and args.tile_m != 2:
             raise ValueError("--tile-m only applies to tiled probe")
         if args.suite and args.phase not in ("plan", "gpu"):
             raise ValueError("--suite is for plan/gpu only")
         if args.shape_27b and (
-            args.kernel != "tiled" or args.phase not in ("plan", "gpu") or args.suite
+            args.kernel not in ("tiled", "wide")
+            or args.phase not in ("plan", "gpu")
+            or args.suite
         ):
-            raise ValueError("--shape-27b requires tiled plan/gpu, not --suite")
+            raise ValueError("--shape-27b requires tiled/wide plan/gpu, not --suite")
         if (
             args.phase == "gpu"
             and not args.suite
