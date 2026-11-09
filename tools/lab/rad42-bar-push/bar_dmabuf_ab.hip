@@ -212,6 +212,7 @@ int worker(int sock) {
 }
 
 #include "live_rounds.hip.h"
+#include "live_relay.hip.h"
 struct Sample {
     double cpu_prepare=0,cpu_write=0,sync_start=0,sync_end=0;
     double child_total=0,roundtrip=0,gpu_kernel=0,gpu_host=0,serial_total=0;
@@ -253,7 +254,10 @@ void report(int device,size_t bytes,int iterations,const char* method,int path,c
                 q([](const Sample& s){return s.gpu_host;},.5),
                 p50,p95,p99,p50>0?bytes/(p50*1000):0);
 }
-bool bench(const char* self,int device,unsigned iterations,int method,size_t selected_bytes,bool live,bool finegrained) {
+bool bench(const char* self,int device,unsigned iterations,int method,size_t selected_bytes,bool live,int control_kind) {
+    const bool finegrained=control_kind==1;
+    const bool relay=control_kind==2;
+    const bool parallel=control_kind==2 || control_kind==3;
     int count=0;char pci[64]{};
     uint32_t dom=0,bdf=0;
     if(!check_hip(hipGetDeviceCount(&count),"A/B HIP device count") ||
@@ -265,15 +269,20 @@ bool bench(const char* self,int device,unsigned iterations,int method,size_t sel
         std::fputs("RAD50 combine-ab unsupported CPU: AVX2/F16C required\n",stderr);
         return false;
     }
+    int gpu_wallclock_khz=0;
+    if(live && (!check_hip(hipDeviceGetAttribute(&gpu_wallclock_khz,
+                       hipDeviceAttributeWallClockRate,device),
+                       "live GPU wall-clock rate") || gpu_wallclock_khz<=0))return false;
     if(hsa_init()!=HSA_STATUS_SUCCESS)return false;
     Inventory agents;
     hsa_amd_vmem_alloc_handle_t handle{};
     bool have_handle=false,have_va=false,have_map=false,have_reg=false;
     void* device_va=nullptr,*host_va=nullptr,*host_device=nullptr;
+    void* relay_host=nullptr,*relay_device=nullptr;
     size_t alloc=0;
     int dmafd=-1,hostfd=-1,pair[2]{-1,-1};
     pid_t pid=-1;bool ok=false;
-    unsigned* mismatch=nullptr;
+    unsigned* mismatch=nullptr,*relay_wait_timeout=nullptr;
     hipEvent_t event_start=nullptr,event_stop=nullptr;
     do {
         if(hsa_iterate_agents(collect_agent,&agents)!=HSA_STATUS_SUCCESS ||
@@ -319,6 +328,18 @@ bool bench(const char* self,int device,unsigned iterations,int method,size_t sel
            !check_hip(hipMalloc(&mismatch,sizeof(unsigned)),"A/B mismatch count")||
            !check_hip(hipEventCreate(&event_start),"A/B event start")||
            !check_hip(hipEventCreate(&event_stop),"A/B event stop"))break;
+        if(parallel) {
+            if(relay) {
+                if(!check_hip(hipHostMalloc(&relay_host,sizeof(LiveControl),
+                           hipHostMallocCoherent|hipHostMallocMapped),
+                           "relay coherent host control allocate") ||
+                   !check_hip(hipHostGetDevicePointer(&relay_device,relay_host,0),
+                           "relay coherent control GPU pointer"))break;
+                std::memset(relay_host,0,sizeof(LiveControl));
+            }
+            if(!check_hip(hipMalloc(&relay_wait_timeout,5*sizeof(unsigned)),
+                          "parallel wait diagnostic device buffer"))break;
+        }
         if(::socketpair(AF_UNIX,SOCK_STREAM,0,pair)!=0)break;
         posix_spawn_file_actions_t actions{};
         if(posix_spawn_file_actions_init(&actions)!=0)break;
@@ -343,12 +364,22 @@ bool bench(const char* self,int device,unsigned iterations,int method,size_t sel
                         "ready_scope=system reuse_after_done=1 control=%s\n",
                         device,pci,selected_bytes/COMBINE_ROW_BYTES,
                         selected_bytes,iterations,
-                        finegrained?"hip-ext-uncached":"hip-register-mapped");
+                        relay?"hip-host-coherent-relay":
+                            (parallel?"hip-register-mapped-direct-parallel":
+                            (finegrained?"hip-ext-uncached":"hip-register-mapped")));
             std::fflush(stdout);
-            if(!live_rounds(pair[0],device,iterations,
-                            static_cast<uint32_t>(selected_bytes/COMBINE_ROW_BYTES),
+            const uint32_t count=static_cast<uint32_t>(selected_bytes/COMBINE_ROW_BYTES);
+            const bool passed=parallel?
+                relay_rounds(pair[0],device,iterations,count,
+                             static_cast<LiveControl*>(relay?relay_host:host_va),
+                             static_cast<LiveControl*>(relay?relay_device:host_device),
+                             device_va,mismatch,relay_wait_timeout,
+                             static_cast<uint64_t>(gpu_wallclock_khz)*3000ull,relay):
+                live_rounds(pair[0],device,iterations,count,
                             static_cast<LiveControl*>(host_va),
-                            static_cast<LiveControl*>(host_device),device_va))break;
+                            static_cast<LiveControl*>(host_device),device_va,
+                            static_cast<uint64_t>(gpu_wallclock_khz)*3000ull);
+            if(!passed)break;
             Command stop{};
             if(!write_exact(pair[0],&stop,sizeof(stop)))break;
             ok=true;
@@ -453,7 +484,11 @@ bool bench(const char* self,int device,unsigned iterations,int method,size_t sel
     if(live && !check_hip(hipDeviceSynchronize(),"RAD50 final live GPU drain"))ok=false;
     if(event_start&&!check_hip(hipEventDestroy(event_start),"A/B event cleanup"))ok=false;
     if(event_stop&&!check_hip(hipEventDestroy(event_stop),"A/B event cleanup"))ok=false;
+    if(relay_wait_timeout &&
+       !check_hip(hipFree(relay_wait_timeout),"relay timeout cleanup"))ok=false;
     if(mismatch&&!check_hip(hipFree(mismatch),"A/B GPU error cleanup"))ok=false;
+    if(relay_host &&
+       !check_hip(hipHostFree(relay_host),"relay coherent host cleanup"))ok=false;
     if(have_reg&&!check_hip(hipHostUnregister(host_va),"A/B host unregister"))ok=false;
     if(host_va&&::munmap(host_va,MAX_BYTES)!=0)ok=false;
     if(hostfd>=0)::close(hostfd);
@@ -464,7 +499,11 @@ bool bench(const char* self,int device,unsigned iterations,int method,size_t sel
     if(hsa_shut_down()!=HSA_STATUS_SUCCESS)ok=false;
     if(!ok)std::fputs("RAD50 A/B FAILED: no speed claim; check mapped-host registration, correctness, or GPU availability\n",stderr);
     else {
-        if(live)
+        if(live && parallel)
+            std::printf("RAD50_%s_COMPLETE device=%d rows=%zu iterations=%u verified=%u status=0\n",
+                        relay?"RELAY":"PARALLEL",device,
+                        selected_bytes/COMBINE_ROW_BYTES,iterations,iterations);
+        else if(live)
             std::printf("RAD50_LIVE_COMPLETE device=%d rows=%zu iterations=%u verified=%u status=0\n",
                         device,selected_bytes/COMBINE_ROW_BYTES,iterations,iterations);
         else
@@ -479,7 +518,9 @@ int main(int argc,char** argv) {
     if(argc==3 && !std::strcmp(argv[1],"--bench-child") &&
        !std::strcmp(argv[2],"3")) return worker(CHILD_SOCKET);
     if(argc==8 && (!std::strcmp(argv[1],"--live") ||
-                   !std::strcmp(argv[1],"--live-fg")) &&
+                   !std::strcmp(argv[1],"--live-fg") ||
+                   !std::strcmp(argv[1],"--live-relay") ||
+                   !std::strcmp(argv[1],"--live-parallel")) &&
        !std::strcmp(argv[2],"--device") &&
        !std::strcmp(argv[4],"--iterations") &&
        !std::strcmp(argv[6],"--rows")) {
@@ -494,8 +535,10 @@ int main(int argc,char** argv) {
         for(size_t r:COMBINE_ROWS)if(rows==static_cast<long>(r))allowed=true;
         if(!allowed)return 2;
         const bool fg=!std::strcmp(argv[1],"--live-fg");
+        const int control_kind=!std::strcmp(argv[1],"--live-relay")?2:
+                               (!std::strcmp(argv[1],"--live-parallel")?3:(fg?1:0));
         return bench(argv[0],static_cast<int>(dev),static_cast<unsigned>(n),
-                     2,static_cast<size_t>(rows)*COMBINE_ROW_BYTES,true,fg)?0:3;
+                     2,static_cast<size_t>(rows)*COMBINE_ROW_BYTES,true,control_kind)?0:3;
     }
     if((argc!=7 && argc!=9) || std::strcmp(argv[1],"--device") ||
        std::strcmp(argv[3],"--iterations") || std::strcmp(argv[5],"--mode"))

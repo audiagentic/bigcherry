@@ -55,7 +55,7 @@ $(OBJ)/vmem-cap.o: $(SRC)/bar_vmem_cap.hip $(SRC)/bar_access.h | $(OBJ)
 $(OBJ)/dmabuf-map.o: $(SRC)/bar_dmabuf_map.hip $(SRC)/bar_access.h | $(OBJ)
 	$(HIPCC) $(COMMON) $(ARCHES) -Dmain=rad50_dmabuf_map_entry -c "$<" -o "$@"
 
-$(OBJ)/dmabuf-ab.o: $(SRC)/bar_dmabuf_ab.hip $(SRC)/bar_access.h $(SRC)/combine_patterns.hip.h $(SRC)/live_control.hip.h $(SRC)/live_rounds.hip.h $(SRC)/../../../engines/radiance/components/moe-remote/combine_f16.h | $(OBJ)
+$(OBJ)/dmabuf-ab.o: $(SRC)/bar_dmabuf_ab.hip $(SRC)/bar_access.h $(SRC)/combine_patterns.hip.h $(SRC)/live_control.hip.h $(SRC)/live_rounds.hip.h $(SRC)/live_relay.hip.h $(SRC)/../../../engines/radiance/components/moe-remote/combine_f16.h | $(OBJ)
 	$(HIPCC) $(COMMON) $(ARCHES) -I$(SRC)/../../../engines/radiance/components/moe-remote -Dmain=rad50_dmabuf_ab_entry -c "$<" -o "$@"
 
 $(OBJ)/transfer.o: $(SRC)/bar_transfer_ab.hip $(SRC)/bar_access.h | $(OBJ)

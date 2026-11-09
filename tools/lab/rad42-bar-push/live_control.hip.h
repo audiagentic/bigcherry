@@ -8,23 +8,27 @@
 struct alignas(64) LiveControl {
     uint32_t armed=0,ready=0,done=0,errors=0;
     uint32_t gpu_seen_ready=0,spin_loops=0;
+    uint64_t gpu_wait_cycles=0; // diagnostic clock64 delta, not elapsed microseconds
 };
 __global__ void live_combine_reader(const uint16_t* gpu_local,
                                     uint32_t count,uint32_t gen,
-                                    LiveControl* ctrl) {
+                                    LiveControl* ctrl,uint64_t deadline_wall_ticks) {
     if(blockIdx.x!=0)return;
     __shared__ uint32_t shared_bad[256];
     __shared__ uint32_t wait_failed;
     if(threadIdx.x==0){
         __hip_atomic_store(&ctrl->armed,gen,__ATOMIC_RELEASE,
                            __HIP_MEMORY_SCOPE_SYSTEM);
-        const uint64_t start=clock64();
+        // clock64() is unreliable on GFX11. wall_clock64() runs at the
+        // frequency reported by hipDeviceAttributeWallClockRate.
+        const uint64_t start=static_cast<uint64_t>(wall_clock64());
         uint32_t spins=0;
         uint32_t seen=0;
         while((seen=__hip_atomic_load(&ctrl->ready,__ATOMIC_ACQUIRE,
                                      __HIP_MEMORY_SCOPE_SYSTEM))!=gen){
             __builtin_amdgcn_s_sleep(8);
-            if(++spins>100000000u || clock64()-start>3000000000ull)
+            if(++spins>100000000u ||
+               static_cast<uint64_t>(wall_clock64())-start>deadline_wall_ticks)
                 break;
         }
         seen=__hip_atomic_load(&ctrl->ready,__ATOMIC_ACQUIRE,

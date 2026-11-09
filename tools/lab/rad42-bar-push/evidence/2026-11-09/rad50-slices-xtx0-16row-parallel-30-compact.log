@@ -1,0 +1,19 @@
+command: ${BC_WORK_ROOT}/builds/rad42-bar-push/rad50-tester --test dmabuf-live-parallel --device 0 --iterations 30 --rows 16 --lease-confirmed
+exitCode: 0
+timedOut: false
+truncated: false
+-- stdout --
+RAD50 case=dmabuf-live-parallel device=0 (no production engine integration)
+RAD50_LIVE_CONTEXT device=0 pci=0000:03:00.0 rows=16 bytes=81920 iterations=30 cpu_child=persistent consumer_armed_before_write=1 dma_buf_sync=1 ready_scope=system reuse_after_done=1 control=hip-register-mapped-direct-parallel
+RAD50_PARALLEL_SAMPLE device=0 rows=16 bytes=81920 gen=116001 control=hip-register-mapped delivery=child-after-dma-sync-end gpu_parallel_blocks=256 arm_us=425.17 cpu_combine_us=27.63 dma_sync_us=2.69 helper_ack_us=122.16 post_ack_complete_us=106.99 serial_us=654.44 gpu_seen_ready=116001 wait_loops=35 mismatches=0 status=0
+RAD50_PARALLEL_SAMPLE device=0 rows=16 bytes=81920 gen=116002 control=hip-register-mapped delivery=child-after-dma-sync-end gpu_parallel_blocks=256 arm_us=39.42 cpu_combine_us=9.67 dma_sync_us=1.12 helper_ack_us=62.61 post_ack_complete_us=81.87 serial_us=184.12 gpu_seen_ready=116002 wait_loops=31 mismatches=0 status=0
+RAD50_PARALLEL_SAMPLE device=0 rows=16 bytes=81920 gen=116003 control=hip-register-mapped delivery=child-after-dma-sync-end gpu_parallel_blocks=256 arm_us=39.07 cpu_combine_us=9.63 dma_sync_us=0.34 helper_ack_us=15.37 post_ack_complete_us=81.46 serial_us=135.98 gpu_seen_ready=116003 wait_loops=4 mismatches=0 status=0
+RAD50_PARALLEL_SAMPLE device=0 rows=16 bytes=81920 gen=116010 control=hip-register-mapped delivery=child-after-dma-sync-end gpu_parallel_blocks=256 arm_us=36.08 cpu_combine_us=9.58 dma_sync_us=0.29 helper_ack_us=14.18 post_ack_complete_us=83.15 serial_us=133.50 gpu_seen_ready=116010 wait_loops=4 mismatches=0 status=0
+RAD50_PARALLEL_SAMPLE device=0 rows=16 bytes=81920 gen=116020 control=hip-register-mapped delivery=child-after-dma-sync-end gpu_parallel_blocks=256 arm_us=36.09 cpu_combine_us=9.61 dma_sync_us=0.29 helper_ack_us=14.44 post_ack_complete_us=82.48 serial_us=133.12 gpu_seen_ready=116020 wait_loops=4 mismatches=0 status=0
+RAD50_PARALLEL_SAMPLE device=0 rows=16 bytes=81920 gen=116030 control=hip-register-mapped delivery=child-after-dma-sync-end gpu_parallel_blocks=256 arm_us=34.17 cpu_combine_us=9.61 dma_sync_us=0.31 helper_ack_us=14.46 post_ack_complete_us=82.11 serial_us=130.84 gpu_seen_ready=116030 wait_loops=4 mismatches=0 status=0
+RAD50_PARALLEL_SUMMARY device=0 rows=16 bytes=81920 iterations=30 verified=30 p50_us=133.23 p95_us=135.98 p99_us=184.12 max_us=654.44 emitted=6 combine_p50_us=9.61 arm_p50_us=36.09 ack_p50_us=14.42 post_ack_complete_p50_us=82.34 status=0
+RAD50_PARALLEL_COMPLETE device=0 rows=16 iterations=30 verified=30 status=0
+
+-- stderr --
+RAD50 lease acknowledged by operator; runner cannot verify lease ownership.
+RAD50 RESULT test=dmabuf-live-parallel exit=0

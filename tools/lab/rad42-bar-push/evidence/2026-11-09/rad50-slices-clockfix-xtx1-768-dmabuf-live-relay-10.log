@@ -1,0 +1,23 @@
+command: ${BC_WORK_ROOT}/builds/rad42-bar-push/rad50-tester --test dmabuf-live-relay --device 1 --iterations 10 --rows 768 --lease-confirmed
+exitCode: 0
+timedOut: false
+truncated: false
+-- stdout --
+RAD50 case=dmabuf-live-relay device=1 (no production engine integration)
+RAD50_LIVE_CONTEXT device=1 pci=0000:06:00.0 rows=768 bytes=3932160 iterations=10 cpu_child=persistent consumer_armed_before_write=1 dma_buf_sync=1 ready_scope=system reuse_after_done=1 control=hip-host-coherent-relay
+RAD50_RELAY_SAMPLE device=1 rows=768 bytes=3932160 gen=868001 control=hip-host-coherent delivery=parent-after-socket-ack gpu_parallel_blocks=256 arm_us=445.34 cpu_combine_us=805.08 dma_sync_us=2.64 helper_ack_us=872.12 post_ack_complete_us=198.93 serial_us=1516.43 gpu_seen_ready=868001 wait_loops=526 mismatches=0 status=0
+RAD50_RELAY_SAMPLE device=1 rows=768 bytes=3932160 gen=868002 control=hip-host-coherent delivery=parent-after-socket-ack gpu_parallel_blocks=256 arm_us=38.56 cpu_combine_us=378.45 dma_sync_us=1.38 helper_ack_us=433.62 post_ack_complete_us=153.92 serial_us=626.15 gpu_seen_ready=868002 wait_loops=258 mismatches=0 status=0
+RAD50_RELAY_SAMPLE device=1 rows=768 bytes=3932160 gen=868003 control=hip-host-coherent delivery=parent-after-socket-ack gpu_parallel_blocks=256 arm_us=39.02 cpu_combine_us=362.32 dma_sync_us=0.33 helper_ack_us=369.36 post_ack_complete_us=142.23 serial_us=550.62 gpu_seen_ready=868003 wait_loops=224 mismatches=0 status=0
+RAD50_RELAY_SAMPLE device=1 rows=768 bytes=3932160 gen=868004 control=hip-host-coherent delivery=parent-after-socket-ack gpu_parallel_blocks=256 arm_us=37.50 cpu_combine_us=363.55 dma_sync_us=0.34 helper_ack_us=371.58 post_ack_complete_us=142.78 serial_us=551.91 gpu_seen_ready=868004 wait_loops=220 mismatches=0 status=0
+RAD50_RELAY_SAMPLE device=1 rows=768 bytes=3932160 gen=868005 control=hip-host-coherent delivery=parent-after-socket-ack gpu_parallel_blocks=256 arm_us=37.27 cpu_combine_us=362.13 dma_sync_us=0.32 helper_ack_us=372.77 post_ack_complete_us=157.52 serial_us=567.61 gpu_seen_ready=868005 wait_loops=215 mismatches=0 status=0
+RAD50_RELAY_SAMPLE device=1 rows=768 bytes=3932160 gen=868006 control=hip-host-coherent delivery=parent-after-socket-ack gpu_parallel_blocks=256 arm_us=37.74 cpu_combine_us=362.16 dma_sync_us=0.31 helper_ack_us=369.10 post_ack_complete_us=442.67 serial_us=849.52 gpu_seen_ready=868006 wait_loops=217 mismatches=0 status=0
+RAD50_RELAY_SAMPLE device=1 rows=768 bytes=3932160 gen=868007 control=hip-host-coherent delivery=parent-after-socket-ack gpu_parallel_blocks=256 arm_us=38.05 cpu_combine_us=361.19 dma_sync_us=0.33 helper_ack_us=367.70 post_ack_complete_us=101.60 serial_us=507.36 gpu_seen_ready=868007 wait_loops=226 mismatches=0 status=0
+RAD50_RELAY_SAMPLE device=1 rows=768 bytes=3932160 gen=868008 control=hip-host-coherent delivery=parent-after-socket-ack gpu_parallel_blocks=256 arm_us=36.87 cpu_combine_us=362.26 dma_sync_us=0.31 helper_ack_us=367.86 post_ack_complete_us=101.28 serial_us=506.03 gpu_seen_ready=868008 wait_loops=217 mismatches=0 status=0
+RAD50_RELAY_SAMPLE device=1 rows=768 bytes=3932160 gen=868009 control=hip-host-coherent delivery=parent-after-socket-ack gpu_parallel_blocks=256 arm_us=37.07 cpu_combine_us=363.77 dma_sync_us=0.33 helper_ack_us=369.84 post_ack_complete_us=101.55 serial_us=508.48 gpu_seen_ready=868009 wait_loops=219 mismatches=0 status=0
+RAD50_RELAY_SAMPLE device=1 rows=768 bytes=3932160 gen=868010 control=hip-host-coherent delivery=parent-after-socket-ack gpu_parallel_blocks=256 arm_us=35.21 cpu_combine_us=363.83 dma_sync_us=0.36 helper_ack_us=369.79 post_ack_complete_us=99.88 serial_us=504.90 gpu_seen_ready=868010 wait_loops=221 mismatches=0 status=0
+RAD50_RELAY_SUMMARY device=1 rows=768 bytes=3932160 iterations=10 verified=10 p50_us=550.62 combine_p50_us=362.32 arm_p50_us=37.50 ack_p50_us=369.79 post_ack_complete_p50_us=142.23 status=0
+RAD50_RELAY_COMPLETE device=1 rows=768 iterations=10 verified=10 status=0
+
+-- stderr --
+RAD50 lease acknowledged by operator; runner cannot verify lease ownership.
+RAD50 RESULT test=dmabuf-live-relay exit=0

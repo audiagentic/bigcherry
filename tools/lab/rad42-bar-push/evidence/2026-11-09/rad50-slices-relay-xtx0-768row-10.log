@@ -1,0 +1,13 @@
+command: ${BC_WORK_ROOT}/builds/rad42-bar-push/rad50-tester --test dmabuf-live-relay --device 0 --iterations 10 --rows 768 --lease-confirmed
+exitCode: 1
+timedOut: false
+truncated: false
+-- stdout --
+RAD50 case=dmabuf-live-relay device=0 (no production engine integration)
+RAD50_LIVE_CONTEXT device=0 pci=0000:03:00.0 rows=768 bytes=3932160 iterations=10 cpu_child=persistent consumer_armed_before_write=1 dma_buf_sync=1 ready_scope=system reuse_after_done=1 control=hip-host-coherent-relay
+
+-- stderr --
+RAD50 lease acknowledged by operator; runner cannot verify lease ownership.
+RAD50_RELAY_FAIL device=0 rows=768 gen=868001 reason=ready-or-data bad=4294967295 gpu_bad=0 gpu_timeout=1 host_ready=868001 seen=0 spins=523
+RAD50 A/B FAILED: no speed claim; check mapped-host registration, correctness, or GPU availability
+RAD50 RESULT test=dmabuf-live-relay exit=3

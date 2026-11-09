@@ -2,8 +2,9 @@
 // This is a bounded, fail-closed hardware canary, not a production protocol.
 bool live_rounds(int sock,int device,unsigned iterations,uint32_t rows,
                  LiveControl* ctrl,LiveControl* device_ctrl,
-                 const void* device_va) {
-    if(!rows || rows>768 || !ctrl || !device_ctrl || !device_va)return false;
+                 const void* device_va,uint64_t deadline_wall_ticks) {
+    if(!rows || rows>768 || !ctrl || !device_ctrl || !device_va ||
+       deadline_wall_ticks==0)return false;
     const uint32_t bytes=rows*COMBINE_ROW_BYTES;
     if(bytes>MAX_BYTES)return false;
     std::vector<double> latency,write_times,sync_times;
@@ -21,7 +22,7 @@ bool live_rounds(int sock,int device,unsigned iterations,uint32_t rows,
         const auto* source=static_cast<const uint16_t*>(device_va);
         const double begin=tick_us();
         hipLaunchKernelGGL(live_combine_reader,dim3(1),dim3(256),0,0,
-                           source,bytes/2,ticket,device_ctrl);
+                           source,bytes/2,ticket,device_ctrl,deadline_wall_ticks);
         if(!check_hip(hipGetLastError(),"RAD50 live GPU launch"))return false;
         // No HIP device synchronization before the CPU child writes!
         // The GPU kernel must already have reached its wait loop.

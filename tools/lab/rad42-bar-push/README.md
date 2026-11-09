@@ -100,3 +100,11 @@ crash, hang, failed HIP API, or mismatch is a stop condition.
   evidence run with source commit, device and command provenance.
 - No push, PR or merge. Continue only after the previous gate succeeds.
 - Current disposition: exploratory and isolated; read [PROGRESS.md](PROGRESS.md).
+
+### 2026-11-09 updated Gate 4 status
+
+The historical 768-row GPU-ready timeouts were caused by an invalid GFX11 `clock64()` deadline in the test canary. With HIP's `wall_clock64()` and the device wall-clock rate, 768-row direct CPU-published and coherent-parent-relay paths now pass **100 concurrent-ready generations per XTX**, including production CPU FP16 combine into GPU VRAM and every-word GPU verification. Isolating the GPU waiter and using a 256-block verifier reduced the 768-row diagnostic from ~7.38 ms p50 (single block) to ~0.464 ms p50 (direct publish, 100 generations). These are synthetic input and diagnostic consumer timings, **not inferred inference speedups**. See `SLICE_OPTIMIZATION.md`, `GATE4_LIVE_RESULTS.md`, and `docs/planning/active/patching-radiance-rdna3/RAD50_SLICE_OPTIMISATION.md`. Real model ranks, fault/restart, GPU fused consumers, PCIe contention and TP2 inference remain blocked. Old failures remain retained as historical diagnostic records.
+
+### Latest RAD50 Gate 4 slice result (2026-11-09)
+
+The earlier 768-row GPU live failure was traced to the unreliable gfx11 `clock64()` deadline, not demonstrated FP16 data corruption. The corrected `wall_clock64()` GPU waiter and 256-block verifier pass 100 repeated 768-row generations on **both XTXs**. Direct CPU-published ready p50: 463.87 us (XTX0), 463.71 us (XTX1). CPU combine (~363 us) dominates; DMA-BUF SYNC is sub-microsecond after warmup. See `SLICE_OPTIMIZATION.md` and `evidence/2026-11-09/rad50-slices-validated-summary.txt`. These are experimental lab results, not production memory-model guarantees or inference speedups. Host pull remains the fallback; end-to-end integration remains gated.

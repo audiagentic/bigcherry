@@ -26,6 +26,30 @@
     check({"rad50-tester","--test","dmabuf-live","--device","0",
            "--iterations","201","--rows","16","--lease-confirmed"},
           false,"live rejects unbounded iterations");
+    check({"rad50-tester","--test","dmabuf-live-parallel","--device","0",
+           "--iterations","10","--rows","768","--lease-confirmed"},
+          true,"direct child publication plus parallel verifier");
+    check({"rad50-tester","--test","dmabuf-live-parallel","--device","1",
+           "--iterations","100","--rows","256","--lease-confirmed"},
+          true,"bounded repeated direct parallel consumer");
+    check({"rad50-tester","--test","dmabuf-live-parallel","--device","0",
+           "--iterations","10","--rows","768"},
+          false,"direct parallel consumer requires lease acknowledgement");
+    check({"rad50-tester","--test","dmabuf-live-parallel","--device","0",
+           "--iterations","10","--rows","999","--lease-confirmed"},
+          false,"direct parallel consumer rejects unsupported rows");
+    check({"rad50-tester","--test","dmabuf-live-relay","--device","0",
+           "--iterations","10","--rows","1","--lease-confirmed"},
+          true,"coherent parent relay single-row");
+    check({"rad50-tester","--test","dmabuf-live-relay","--device","1",
+           "--iterations","100","--rows","768","--lease-confirmed"},
+          true,"coherent parent relay large-row");
+    check({"rad50-tester","--test","dmabuf-live-relay","--device","0",
+           "--iterations","10","--rows","768"},
+          false,"coherent parent relay requires GPU lease acknowledgement");
+    check({"rad50-tester","--test","dmabuf-live-relay","--device","0",
+           "--iterations","10","--rows","2","--lease-confirmed"},
+          false,"coherent parent relay rejects unsupported rows");
     check({"rad50-tester","--test","dmabuf-live-fg","--device","0",
            "--iterations","10","--rows","768","--lease-confirmed"},
           true,"fine-grained live XTX candidate");
