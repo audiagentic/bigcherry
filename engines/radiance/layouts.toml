@@ -189,6 +189,10 @@ arch = "gfx1030"
 count = 1
 placement = "tail"
 [layout.flashnext-tp2xtx.env]
+# The combine serves only the steps whose helper rows the engine merges with
+# moe_mailbox_add (rows the fused MoE gather + reducing write does not take).
+# A step whose rows join the fused gather (moe_mailbox_inject) reads each
+# helper's own plane, so its publish never asks for the combine (RAD49).
 R3_MOE_WORKER_COMBINE = "1"
 
 # Dense tensor-parallel lane: the model is sharded across both selected XTX

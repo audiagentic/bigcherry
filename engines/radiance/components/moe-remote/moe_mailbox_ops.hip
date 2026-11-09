@@ -29,6 +29,9 @@ static const RadParamSpec kPublishParams[] = {
     {"top_k", RAD_P_INT, RAD_REQUIRED},
     {"expert_base", RAD_P_INT, RAD_REQUIRED},
     {"n_expert", RAD_P_INT, RAD_REQUIRED},
+    /* 1: the step's helper rows join the engine's fused gather (moe_mailbox_inject), which reads each helper's own plane,
+     * so the step never asks for the R3_MOE_WORKER_COMBINE combine; 0: the add merges them and may use it (RAD49) */
+    {"fused", RAD_P_INT, RAD_REQUIRED},
 };
 static const RadOperandSpec kPublishOperands[] = {
     {"ids", RAD_OPD_INOUT, 0},
@@ -617,10 +620,14 @@ __global__ void mailbox_add_rows_kernel(
 }
 
 /* RAD49 fused gather. The first spare sorted row: the scatter's live count, eoff[n_expert] (every row past it is -1). */
-__global__ void mailbox_inject_init_kernel(uint32_t* next, const int32_t* eoff, uint32_t n_expert) {
+__global__ void mailbox_inject_init_kernel(uint32_t* next, const int32_t* eoff, uint32_t n_expert,
+                                           const uint32_t* published) {
     if (blockIdx.x || threadIdx.x) return;
     const int32_t live = eoff[n_expert];
     if (live < 0) __builtin_trap();
+    /* The fused step's publish never asks for the combine (its `fused` param), so no combine generation is live and the
+     * add's wait has seen every helper finish; a generation here means the publish and the merge disagree. */
+    if (published[kMaxSlots] != 0u) __builtin_trap();
     *next = (uint32_t)live;
 }
 
@@ -863,6 +870,7 @@ int publish_launch(const RadArgs* a, RadStream stream) {
     const long long top_k = geti(a, "top_k");
     const long long expert_base = geti(a, "expert_base");
     const long long n_expert = geti(a, "n_expert");
+    const long long fused = geti(a, "fused");
     const long long rows = a->t[3].rank > 0 ? a->t[3].shape[0] : 0;
     /* Every refusal says why, once: "this kernel does not serve the shape" alone cost a debugging round (RAD13). */
     auto reject = [&](const char* why) {
@@ -873,6 +881,7 @@ int publish_launch(const RadArgs* a, RadStream stream) {
         return RAD_E_SHAPE;
     };
     if (layer < 0 || layer >= (long long)kMaxLayers) return reject("layer outside the protocol bound");
+    if (fused != 0 && fused != 1) return reject("fused is neither 0 nor 1");
     if (rows <= 0 || rows > (long long)kMaxRows) return reject("rows outside the protocol bound");
     if (hidden != (long long)d->hidden) return reject("hidden differs from the segment's");
     if (top_k != (long long)d->top_k) return reject("top_k differs from the segment's");
@@ -929,7 +938,8 @@ int publish_launch(const RadArgs* a, RadStream stream) {
                        d->shadow, d->world,
                        fuse_stage ? static_cast<const uint8_t*>(a->t[3].data) : nullptr,
                        static_cast<const float*>(a->t[4].data),
-                       static_cast<const uint16_t*>(a->t[2].data), d->cpu_ref, d->combine);
+                       static_cast<const uint16_t*>(a->t[2].data), d->cpu_ref,
+                       fused ? 0u : d->combine);   /* a fused step never asks for the combine (see kPublishParams) */
     return hipGetLastError() == hipSuccess ? RAD_OK : RAD_E_DEVICE;
 }
 
@@ -1054,15 +1064,21 @@ int inject_launch(const RadArgs* a, RadStream stream) {
         a->t[3].rank >= 1 && a->t[3].shape[0] >= n_expert + 1 &&
         rad_tensor_is_contiguous(&a->t[0]) && rad_tensor_is_contiguous(&a->t[1]) &&
         rad_tensor_is_contiguous(&a->t[2]) && rad_tensor_is_contiguous(&a->t[3]) &&
-        !d->shadow && !d->mask_only;
+        !d->shadow;
     if (!ok) return RAD_E_SHAPE;
+    if (d->mask_only) {   /* mask-only restores the local rows for the add; the fused gather never reads them */
+        static std::atomic<int> said{0};
+        if (said.fetch_add(1) == 0)
+            std::fprintf(stderr, "libr3moe: moe_mailbox_inject refused: R3_MOE_WORKER_MASK_ONLY does not serve a step whose "
+                                 "gather the engine's reducing write takes (layer %lld)\n", layer);
+        return RAD_E_STATE;
+    }
     const uint32_t consumer = consumer_of((uint32_t)layer, d->world);
     const uint32_t slots = (uint32_t)rows * (uint32_t)top_k;
     /* the helpers' completion and the requests' identity, as the add checks them (the route-mark reads the router weights
-     * before the inject overwrites the injected slots' weights) */
+     * before the inject overwrites the injected slots' weights). A fused step has no combine (inject_init checks), so the
+     * wait sees every helper done and there is no combine tail to wait for. */
     hipLaunchKernelGGL(mailbox_add_wait_kernel, dim3(1), dim3(1), 0, (hipStream_t)stream,
-                       static_cast<uint8_t*>(d->mailbox), d->sequence, d->published, d->rank, d->world, d->helpers);
-    hipLaunchKernelGGL(mailbox_add_tail_wait_kernel, dim3(1), dim3(1), 0, (hipStream_t)stream,
                        static_cast<uint8_t*>(d->mailbox), d->sequence, d->published, d->rank, d->world, d->helpers);
     if (hipMemsetAsync(d->rmask, 0, (size_t)slots * sizeof(uint32_t), (hipStream_t)stream) != hipSuccess)
         return RAD_E_DEVICE;
@@ -1072,7 +1088,7 @@ int inject_launch(const RadArgs* a, RadStream stream) {
                        static_cast<const uint16_t*>(a->t[2].data), d->rmask, (uint32_t)rows, (uint32_t)hidden,
                        (uint32_t)top_k);
     hipLaunchKernelGGL(mailbox_inject_init_kernel, dim3(1), dim3(1), 0, (hipStream_t)stream,
-                       d->inject_next, static_cast<const int32_t*>(a->t[3].data), (uint32_t)n_expert);
+                       d->inject_next, static_cast<const int32_t*>(a->t[3].data), (uint32_t)n_expert, d->published);
     hipLaunchKernelGGL(mailbox_inject_kernel, dim3((uint32_t)rows), dim3(256), 0, (hipStream_t)stream,
                        static_cast<uint8_t*>(d->mailbox), d->published, d->rank, d->world, d->helpers, consumer,
                        d->rmask, static_cast<int32_t*>(a->t[0].data), static_cast<uint16_t*>(a->t[1].data),

@@ -496,12 +496,24 @@ _BC_MOE_REMOTE_BLOCK_H = r"""/* bc_moe_remote_block.h -- the MoE block's side of
 namespace rad {
 namespace arch {
 
+/* RADIANCE_DEBUG_ROUTING's print (rad_block_moe_fp8.h, defined after this header is included): the inject calls it first
+ * on a fused step, while the router weights are still the router's, which also spends the layer's one print. */
+inline void moe_debug_weights(RadCtx* c_, int layer, int64_t top_k, rad_buf ids, rad_buf ew, bool f32);
+
 struct BcMoeRemote {
-    rad_op publish = 0, add = 0, inject = 0;
+    /* publish_fused: the same op for a step whose helper rows join the fused gather (param fused = 1: no combine) */
+    rad_op publish = 0, publish_fused = 0, add = 0, inject = 0;
 
     /* The step `T` is handed off (shadow keeps the local path and only publishes). */
     bool policy(int64_t T) const { return publish && add && bc_moe_remote_wanted(T); }
     bool active(int64_t T) const { return policy(T) && !bc_moe_remote_shadow(); }
+    /* A handed-off step whose helper rows join the fused MoE gather + reducing hc write (gather_taken, the predicate the
+     * block and HyperConn ask, with no separate FP32 combine). It depends on T and declared bounds only, so every rank and
+     * every pass of the step agree; after_route and merge both ask it. */
+    template <class Moe>
+    bool fused(const Moe& m, int64_t T) const {
+        return active(T) && !m.op_combine && gather_taken(m.g, T, m.gather_out_rows, m.gather_out_rows6);
+    }
 
     /* Block declare, after the quantised experts' order `reg` is final: publish the layer's runtime slot map,
      * and declare the two mailbox ops when the step gate admits any step. The gate comes from libr3moe, so an
@@ -520,13 +532,15 @@ struct BcMoeRemote {
         if (!bc_moe_remote_wanted_upto(g.max_tok)) return RAD_OK;
         const rad_buf q = c.expert_rot ? w.hr.q : w.h.q;
         const rad_buf s = c.expert_rot ? w.hr.s : w.h.s;
-        publish = rw(b, RAD_OP(b, "moe_mailbox_publish",
-                               RAD_PARAMS(RAD_INT("layer", layer), RAD_RANGE("M", 1, c.rows),
-                                          RAD_INT("n", g.n_embd), RAD_INT("top_k", c.top_k),
-                                          RAD_INT("expert_base", c.expert_base),
-                                          RAD_INT("n_expert", c.n_expert)),
-                               RAD_NOWEIGHTS),
-                     {w.ids, w.ew, w.h.x, q, s, q}, {w.ids});
+        for (int f = 0; f < 2; ++f)
+            (f ? publish_fused : publish) =
+                rw(b, RAD_OP(b, "moe_mailbox_publish",
+                             RAD_PARAMS(RAD_INT("layer", layer), RAD_RANGE("M", 1, c.rows),
+                                        RAD_INT("n", g.n_embd), RAD_INT("top_k", c.top_k),
+                                        RAD_INT("expert_base", c.expert_base),
+                                        RAD_INT("n_expert", c.n_expert), RAD_INT("fused", f)),
+                             RAD_NOWEIGHTS),
+                   {w.ids, w.ew, w.h.x, q, s, q}, {w.ids});
         add = RAD_OP(b, "moe_mailbox_add",
                      RAD_PARAMS(RAD_RANGE("M", 1, c.rows), RAD_INT("n", g.n_embd), RAD_INT("top_k", c.top_k)),
                      RAD_NOWEIGHTS);
@@ -546,10 +560,10 @@ struct BcMoeRemote {
             rad_op_reads(b, inject, rd, 4);
             rad_op_writes(b, inject, wr, 3);
         }
-        if (!publish || !add || !inject) {
+        if (!publish || !publish_fused || !add || !inject) {
             std::fprintf(stderr, "radiance: MoE remote hand-off is on but its mailbox ops are not declared at layer "
-                         "%d (publish %d merge %d inject %d; q %d s %d rot %d); is libr3moe loaded?\n", layer,
-                         publish != 0, add != 0, inject != 0, q != 0, s != 0, (int)c.expert_rot);
+                         "%d (publish %d/%d merge %d inject %d; q %d s %d rot %d); is libr3moe loaded?\n", layer,
+                         publish != 0, publish_fused != 0, add != 0, inject != 0, q != 0, s != 0, (int)c.expert_rot);
             return RAD_E_INVAL;
         }
         return RAD_OK;
@@ -567,7 +581,7 @@ struct BcMoeRemote {
         const int64_t k = c.top_k;
         const rad_buf q = c.expert_rot ? w.hr.q : w.h.q;
         const rad_buf s = c.expert_rot ? w.hr.s : w.h.s;
-        RAD_ISSUE_N(c_, publish, rows,
+        RAD_ISSUE_N(c_, fused(m, T) ? publish_fused : publish, rows,
                     brow_slice(w.ids, r0, rows, k),
                     brow_slice(w.ew, r0, rows, k),
                     brow_slice(w.h.x, r0, rows, g.n_embd),
@@ -582,6 +596,7 @@ struct BcMoeRemote {
     /* In place of the gather. When the write behind the block takes the gather this step (the fused MoE gather +
      * reducing hc write of a TP engine; the same gather_taken the block asks), the helper rows join that gather:
      * moe_mailbox_inject on the layer's consumer rank, nothing on the others, and the block gathers nothing.
+     * The inject overwrites the injected slots' router weights with 1, so the routing print is taken before it.
      * Otherwise one slot-order merge of the local rows and the helper's rows (and the shared arm when folded) into
      * the gather's output (`moe` when a separate FP32 combine follows). Returns whether it ran; false leaves the
      * normal gather. Every rank takes the same branch (it depends on T and the declared bounds only). */
@@ -592,7 +607,8 @@ struct BcMoeRemote {
         const auto& g = m.g;
         const auto& w = m.w;
         const int64_t k = c.top_k;
-        if (!m.op_combine && gather_taken(g, T, m.gather_out_rows, m.gather_out_rows6)) {
+        if (fused(m, T)) {
+            moe_debug_weights(c_, m.layer, k, w.ids, w.ew, c.sigmoid_router != 0);   /* off: one static check */
             RAD_ISSUE_N(c_, inject, rows,
                         brows(w.sorted, rows * k), brows(w.edn, rows * k),
                         brow_slice(w.ew, r0, rows, k), brows(w.eoff, c.n_expert + 1));

@@ -68,7 +68,7 @@ PREREQUISITES = {RAD0004: (RAD0002,)}
 PIN_BLOBS = {
     RAD0002: {
         "abi/bc_moe_remote.h": (None, "d3748b9"),
-        "arch/common/bc_moe_remote_block.h": (None, "65b28ba"),
+        "arch/common/bc_moe_remote_block.h": (None, "808d959"),
         "arch/common/rad_block_moe_fp8.h": ("614db0e", "286e154"),
         "core/engine.cpp": ("7544310", "c0c5357"),
         "core/engine.h": ("b10743c", "11473eb"),
@@ -309,11 +309,19 @@ class TestRadiancePatchPackages(unittest.TestCase):
             self.assertIn("moe_mailbox_add", block)
             self.assertIn("moe_mailbox_inject", block)
             self.assertNotIn("bc_moe_remote_hc_open", block)
-            inject = block.index("RAD_ISSUE_N(c_, inject, rows,")
-            self.assertLess(
-                block.index("if (!m.op_combine && gather_taken(g, T, m.gather_out_rows, m.gather_out_rows6)) {"),
-                inject,
+            self.assertIn(
+                "return active(T) && !m.op_combine && gather_taken(m.g, T, m.gather_out_rows, m.gather_out_rows6);",
+                block,
             )
+            # a fused step's publish never asks for the helper combine (the inject reads each helper's own plane)
+            self.assertIn('RAD_INT("fused", f)', block)
+            self.assertIn("RAD_ISSUE_N(c_, fused(m, T) ? publish_fused : publish, rows,", block)
+            inject = block.index("RAD_ISSUE_N(c_, inject, rows,")
+            fused_branch = block.index("if (fused(m, T)) {")
+            # the routing print reads the router weights before the inject overwrites the injected slots'
+            debug = block.index("moe_debug_weights(c_, m.layer, k, w.ids, w.ew, c.sigmoid_router != 0);")
+            self.assertLess(fused_branch, debug)
+            self.assertLess(debug, inject)
             self.assertLess(inject, block.index("RAD_ISSUE_N(c_, add, rows,"))
             self.assertIn("brows(w.eoff, c.n_expert + 1));", block)
             self.assertNotIn("moe_mailbox_shadow", block)

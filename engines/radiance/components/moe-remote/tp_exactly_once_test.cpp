@@ -19,7 +19,9 @@
 #include "moe_remote_hook.h"
 #include "moe_remote_shm.h"
 
+#include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -273,6 +275,144 @@ bool tp_matches(const Model& m, Mutation mut, std::array<std::array<uint32_t, kE
     }
     return all;
 }
+
+/* ---- The production BF16 arithmetic (GPT review of 405b6b435). Each rank's down rows `y` are bf16 (an expert's width-slice
+ * output); a helper's expert output is its full width, rounded to bf16, and its plane row is the f32 sum over its routes of
+ * weight * output, rounded to bf16. Three ways to the layer's reduced row:
+ *  - local:  every expert on the ranks, the engine's fused gather: per rank f32 sum in slot order of ew * y plus the shared
+ *            arm (gate * shared, f32), rounded to bf16; the reducing write sums the ranks in f32 and rounds to bf16;
+ *  - add:    the v25 hand-off with the unfused write: the add's f32 sum of the local slots and the helper rows (consumer
+ *            only), rounded, plus the shared part rounded on its own (mailbox_add_rows_kernel), then the reducing write;
+ *  - inject: the fused path: the consumer's helper rows sit at their injected slots with weight bf16(1), the gather as in
+ *            `local`, then the reducing write.
+ * Signed nonintegral weights and values; `add` and `inject` must each stay within the rounding bound of `local`; a step with
+ * no helper route must give `inject` == `local` bit for bit; the double-count and router-weight mutants must break the bound. */
+float bf16r(float f) {   /* round to nearest even, as f32_to_bf16_rn */
+    uint32_t u;
+    std::memcpy(&u, &f, sizeof u);
+    u += 0x7FFFu + ((u >> 16) & 1u);
+    u &= 0xFFFF0000u;
+    std::memcpy(&f, &u, sizeof f);
+    return f;
+}
+
+struct NumModel {
+    const Model* m;
+    uint32_t seed;
+    /* deterministic signed nonintegral values, bf16-exact */
+    float val(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e) const {
+        uint32_t x = seed * 2654435761u ^ (a * 97u + b) * 40503u ^ (c * 131u + d) * 2246822519u ^ e * 3266489917u;
+        x ^= x >> 15; x *= 2246822519u; x ^= x >> 13; x *= 3266489917u; x ^= x >> 16;
+        return bf16r((float(int(x % 20001u)) - 10000.0f) / 1777.0f);
+    }
+    float weight(uint32_t l, uint32_t t, uint32_t s) const { return val(l, t, s, 7, 1) / 6.0f + 0.03125f; }
+    float ew(uint32_t l, uint32_t t, uint32_t s) const { return bf16r(weight(l, t, s)); }
+    /* expert e's width-slice output on rank r for token t (bf16), and the helper's full-width output */
+    float y(uint32_t l, uint32_t e, uint32_t t, uint32_t r, uint32_t c) const { return val(l, e, t, r, 3 + c); }
+    float full(uint32_t l, uint32_t e, uint32_t t, uint32_t c) const {
+        float f = 0.0f;
+        for (uint32_t r = 0; r < kWorld; ++r) f += y(l, e, t, r, c);
+        return bf16r(f);
+    }
+    float shared(uint32_t l, uint32_t t, uint32_t r, uint32_t c) const { return val(l, kE, t, r, 9 + c); }
+    float gate(uint32_t l, uint32_t t) const { return 0.25f + std::fabs(val(l, kE, t, 9, 1)) / 8.0f; }
+};
+
+struct NumMut { bool inject_both = false, keep_weight = false; };
+
+/* One rank's pre-reduction row for every token: `local`, `add` or `inject`. Fills |terms| for the bound. */
+enum class Path { local, add, inject };
+std::array<Row, kT> num_rank(const NumModel& n, uint32_t l, uint32_t rank, Path path, NumMut mut,
+                             std::array<Row, kT>* mag) {
+    const Model& m = *n.m;
+    std::array<Row, kT> out{};
+    Mutation roles;
+    roles.both_ranks_add_helper_rows = mut.inject_both;
+    RankOut ro;
+    std::array<std::array<int32_t, kK>, kT> ids = m.ids[l];
+    if (path != Path::local) take_roles(m, l, rank, roles, ids, ro);
+    /* helper planes */
+    std::array<std::array<Row, kT>, kHelpers> plane{};
+    std::array<std::array<bool, kT>, kHelpers> has{};
+    std::array<std::array<uint32_t, kK>, kT> rmask{};
+    for (uint32_t k = 0; k < kHelpers && path != Path::local; ++k)
+        for (auto [t, s] : ro.sent[slot_of(k, rank, kWorld)]) {
+            for (uint32_t c = 0; c < kH; ++c)
+                plane[k][t][c] += n.weight(l, t, s) * n.full(l, uint32_t(m.ids[l][t][s]), t, c);
+            has[k][t] = true;
+            rmask[t][s] = k + 1;
+        }
+    for (auto& pl : plane) for (auto& row : pl) for (auto& v : row) v = bf16r(v);
+    for (uint32_t t = 0; t < kT; ++t) {
+        std::array<float, kK> w_slot{};
+        std::array<const Row*, kK> src{};
+        std::array<Row, kK> ys{};
+        for (uint32_t s = 0; s < kK; ++s) {
+            w_slot[s] = n.ew(l, t, s);
+            if (ids[t][s] >= 0) {
+                for (uint32_t c = 0; c < kH; ++c) ys[s][c] = n.y(l, uint32_t(ids[t][s]), t, rank, c);
+                src[s] = &ys[s];
+            }
+        }
+        if (path == Path::inject)
+            for (uint32_t k = 0; k < kHelpers; ++k) {
+                const int32_t s = inject_slot(rmask[t].data(), kK, k);
+                if (s < 0) continue;
+                check(src[uint32_t(s)] == nullptr, "an injected slot is one the local sort left unclaimed");
+                src[uint32_t(s)] = &plane[k][t];
+                if (!mut.keep_weight) w_slot[uint32_t(s)] = bf16_value(kInjectWeightBf16);
+            }
+        for (uint32_t c = 0; c < kH; ++c) {
+            float acc = 0.0f;
+            for (uint32_t s = 0; s < kK; ++s)
+                if (src[s]) acc += w_slot[s] * (*src[s])[c];
+            const float sh = n.shared(l, t, rank, c), g = n.gate(l, t);
+            if (path == Path::add) {
+                for (uint32_t k = 0; k < kHelpers; ++k)
+                    if (has[k][t]) acc += plane[k][t][c];
+                out[t][c] = bf16r(bf16r(sh * g) + bf16r(acc));
+            } else {
+                out[t][c] = bf16r(acc + g * sh);
+            }
+            if (mag) {
+                float a = std::fabs(g * sh);
+                for (uint32_t s = 0; s < kK; ++s)
+                    for (uint32_t r = 0; r < kWorld; ++r)
+                        a += std::fabs(n.ew(l, t, s) * n.y(l, uint32_t(m.ids[l][t][s]), t, r, c)) / float(kWorld);
+                (*mag)[t][c] += a;
+            }
+        }
+    }
+    return out;
+}
+
+std::array<Row, kT> num_reduce(const NumModel& n, uint32_t l, Path path, NumMut mut, std::array<Row, kT>* mag) {
+    std::array<Row, kT> sum{};
+    for (uint32_t r = 0; r < kWorld; ++r) {
+        const auto part = num_rank(n, l, r, path, mut, mag);
+        for (uint32_t t = 0; t < kT; ++t)
+            for (uint32_t c = 0; c < kH; ++c) sum[t][c] += part[t][c];
+    }
+    for (auto& row : sum) for (auto& v : row) v = bf16r(v);   /* the reducing write's bf16 */
+    return sum;
+}
+
+/* Every element of `path` within the bound of `local` over every layer: a few bf16 roundings (2^-8 relative each) of the
+ * summed magnitudes. Returns the largest error-to-bound ratio. */
+float num_worst(const NumModel& n, Path path, NumMut mut) {
+    float worst = 0.0f;
+    for (uint32_t l = 0; l < kL; ++l) {
+        std::array<Row, kT> mag{};
+        const auto ref = num_reduce(n, l, Path::local, {}, &mag);
+        const auto got = num_reduce(n, l, path, mut, nullptr);
+        for (uint32_t t = 0; t < kT; ++t)
+            for (uint32_t c = 0; c < kH; ++c) {
+                const float bound = 8.0f * std::ldexp(mag[t][c], -8) + 1e-30f;
+                worst = std::max(worst, std::fabs(got[t][c] - ref[t][c]) / bound);
+            }
+    }
+    return worst;
+}
 }  // namespace
 
 int main() {
@@ -353,6 +493,51 @@ int main() {
           "an out-of-range id is neither counted nor published");
     check(!route_role(false, true, true, false).publish && route_role(false, true, true, false).mask_local,
           "a non-consumer masks but does not publish");
+    /* the production bf16 arithmetic: add + reducing write and inject + fused gather both within the rounding bound of
+     * the all-local fused path, for several value seeds */
+    for (uint32_t seed = 1; seed <= 6; ++seed) {
+        const NumModel n{&m, seed};
+        check(num_worst(n, Path::add, {}) <= 1.0f, "add + reducing write within the bf16 bound of the all-local path");
+        check(num_worst(n, Path::inject, {}) <= 1.0f, "inject + fused gather within the bf16 bound of the all-local path");
+        NumMut both_num; both_num.inject_both = true;
+        check(num_worst(n, Path::inject, both_num) > 1.0f, "a bf16 double count of helper rows breaks the bound");
+        NumMut weight_num; weight_num.keep_weight = true;
+        check(num_worst(n, Path::inject, weight_num) > 1.0f, "a helper row weighted twice breaks the bound");
+    }
+    {   /* a step with no helper route: no inject, the fused gather is the all-local one bit for bit */
+        Model none = m;
+        std::fill(none.owner_bits.begin(), none.owner_bits.end(), uint8_t(0));
+        const NumModel n{&none, 3};
+        check(num_worst(n, Path::inject, {}) == 0.0f, "no helper route: the inject path equals the all-local path exactly");
+        uint32_t injected_none = 0;
+        check(tp_fused_matches(none, {}, &injected_none) && injected_none == 0, "no helper route injects nothing");
+    }
+    {   /* unequal helper contributions: helper 1 owns one expert of one layer, helper 0 every other helper expert */
+        Model skew = m;
+        std::fill(skew.owner_bits.begin(), skew.owner_bits.end(), uint8_t(0));
+        uint32_t h1_routes = 0, h0_routes = 0;
+        for (uint32_t l = 0; l < kL; ++l)
+            for (uint32_t e = 0; e < kE; ++e) {
+                const uint32_t bit = l * kE + e;
+                const uint32_t k = (l == 1 && e == uint32_t(skew.ids[1][0][0])) ? 1u : (e % 3 == 0 ? 0u : kHelpers);
+                if (k < kHelpers) skew.owner_bits[k * skew.bitmap_bytes + bit / 8] |= uint8_t(1u << (bit % 8));
+            }
+        for (uint32_t l = 0; l < kL; ++l)
+            for (uint32_t t = 0; t < kT; ++t)
+                for (uint32_t s = 0; s < kK; ++s) {
+                    const int o = skew.owner_of(l, uint32_t(skew.ids[l][t][s]));
+                    h0_routes += o == 0;
+                    h1_routes += o == 1;
+                }
+        check(h1_routes > 0 && h0_routes > 2 * h1_routes, "the skewed model's helpers contribute unequally");
+        uint32_t injected_skew = 0;
+        check(tp_fused_matches(skew, {}, &injected_skew), "unequal helpers: the exact fused TP sum equals the reference");
+        for (uint32_t seed = 1; seed <= 3; ++seed) {
+            const NumModel n{&skew, seed};
+            check(num_worst(n, Path::add, {}) <= 1.0f, "unequal helpers: add within the bf16 bound");
+            check(num_worst(n, Path::inject, {}) <= 1.0f, "unequal helpers: inject within the bf16 bound");
+        }
+    }
     std::puts("tp_exactly_once_test: ok");
     return 0;
 }
