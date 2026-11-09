@@ -302,3 +302,23 @@ remains RAD42, and RAD49 is the TP2 consumer context.
   768 rows 824.3 us.
 - Evidence: evidence/2026-11-10/rad50-r9700-*.log. Next: combine-ab at 1/16/64/256 rows on the R9700 (decode sizes), then an
   opt-in flashnext-4gpu combine-path A/B (separately reviewed before any moe-remote change).
+
+### 2026-11-10 — R9700 combine A/B at every row count (idle CPU, load ~1)
+
+- `combine-ab --device 2 --iterations 100`, all words GPU-verified. Serial producer + GPU consume p50, mapped-host pull vs
+  DMA-BUF push into R9700 VRAM:
+
+  | Rows | Direct pull / push us | Direct speedup | Staged pull / push us | Staged speedup |
+  | ---: | ---: | ---: | ---: | ---: |
+  | 1 | 74.2 / 76.7 | 0.97x | 75.2 / 76.6 | 0.98x |
+  | 16 | 91.6 / 85.7 | 1.07x | 96.9 / 92.1 | 1.05x |
+  | 64 | 143.3 / 129.3 | 1.11x | 165.2 / 156.9 | 1.05x |
+  | 256 | 364.5 / 307.7 | 1.18x | 439.7 / 411.8 | 1.07x |
+  | 768 | 959.0 / 770.4 | 1.25x | 1223.6 / 1099.9 | 1.11x |
+
+- Reading against the RAD50 stop/go (>= 15% transfer makespan or >= 0.3 ms off a layer step): met from about 256 rows (direct)
+  and by 0.3 ms only near 768+ rows, i.e. prefill-sized steps. Decode steps (1-24 rows on flashnext-4gpu) gain ~0-6 us a layer,
+  under 1% of a step; at one row the push is slightly slower. A prefill upper bound from the 768-row delta, scaled to 2048-row
+  chunks over 48 layers, is a few percent of prefill, and only if the combine sits on the critical path.
+- Next: decide whether an opt-in, prefill-only push (direct mode, >= 256 rows) in the flashnext-4gpu combine is worth a
+  separately reviewed moe-remote change; first measure on a real prefill trace whether the combine is on the critical path.
