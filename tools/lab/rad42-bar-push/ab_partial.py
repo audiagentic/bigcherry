@@ -37,7 +37,7 @@ def provisional_report(text: str) -> str:
                 path = data["path"]
                 p50 = float(data["seq_p50_us"])
                 if (dev < 0 or size <= 0 or path not in PATHS or
-                        style not in ("direct-scalar", "staged-memcpy") or
+                        style not in ("direct-scalar", "staged-memcpy", "combine-direct", "combine-staged") or
                         not math.isfinite(p50) or p50 <= 0):
                     raise ValueError("invalid numeric or path value")
             except (KeyError, ValueError) as exc:
@@ -52,7 +52,8 @@ def provisional_report(text: str) -> str:
             rows[key][path]=p50
         elif (line.startswith("RAD50 A/B FAILED") or
               line.startswith("RAD50 A/B WRONG DATA") or
-              line.startswith("RAD50 RESULT test=dmabuf-ab ") or
+              (line.startswith("RAD50 RESULT test=dmabuf-ab ") or
+               line.startswith("RAD50 RESULT test=combine-ab ")) or
               line.startswith("exitCode: ") or
               line.startswith("timedOut: ") or
               line.startswith("truncated: ")):

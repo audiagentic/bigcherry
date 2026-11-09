@@ -92,6 +92,7 @@ int cli_self_check() {
     check({"rad50-tester","--test","serial","--device","0","--program","/bin/sh",
            "--lease-confirmed"},false,"arbitrary command disallowed");
     check({"rad50-tester","--helper","3"},false,"internal mode not public parser");
+    #include "combine_cli_selfcheck.inc"
     std::printf("RAD50 CLI self-check: %d/%d passed (no GPU)\n",checks-failures,checks);
     return failures?1:0;
 }

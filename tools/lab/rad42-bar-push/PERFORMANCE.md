@@ -1,6 +1,6 @@
 # RAD50 Gate 3 — paired speed comparison
 
-Status (2026-11-09): **completed measured synthetic serial Gate 3 A/B** on both gfx1100 XTXs, 5 sizes, direct/staged CPU writes, 30 iterations plus warmups per case. All data verified on GPU, exit 0. Direct CPU-push at 4 MiB: XTX0 1.414x and XTX1 1.362x over mapped-host GPU-pull; at 4 KiB, push loses ~2%. These are **not inference speedups**. See [GATE3_RESULTS.md](GATE3_RESULTS.md). 39 CLI checks and 50 card-free Python tests pass.
+Status (2026-11-09): **completed measured synthetic serial Gate 3 A/B** on both gfx1100 XTXs, 5 sizes, direct/staged CPU writes, 30 iterations plus warmups per case. All data verified on GPU, exit 0. Direct CPU-push at 4 MiB: XTX0 1.414x and XTX1 1.362x over mapped-host GPU-pull; at 4 KiB, push loses ~2%. These are **not inference speedups**. See [GATE3_RESULTS.md](GATE3_RESULTS.md). 47 CLI checks and 58 card-free Python tests pass.
 
 ## Baseline versus candidate
 
@@ -119,3 +119,7 @@ GPU/device synchronization.
 ## Partial logs and durable evidence
 
 Do not discard data when a run fails or times out. Save the raw stdout, stderr, command, exit status, timeout and truncation flags. The default ab_analyze.py parser requires a successful post-cleanup RAD50_AB_COMPLETE marker for final paired comparisons. Use `python3 tools/lab/rad42-bar-push/ab_analyze.py --provisional <log>` to inspect observed rows, incomplete pairs and diagnostics without claiming a verified run. The first complete and intermediate logs are checked into `tools/lab/rad42-bar-push/evidence/2026-11-09/` with the measured findings in [GATE3_RESULTS.md](GATE3_RESULTS.md).
+
+## Gate 3b: actual CPU FP16 combine (measured 2026-11-09)
+
+The fixed `combine-ab` mode now calls `combine_row_f16` from the production MoE helper in the separate CPU-only worker and compares writing straight to GPU-local DMA-BUF versus mapped-host GPU pull, using an independent per-FP16 GPU bit verifier. Synthetic BF16 profiles exercise helper masks, overflow fallback and canonical NaN across repeated generations. At 768 rows (3,932,160 bytes) and 100 measured iterations on both XTXs, direct GPU push saves ~79–81 us serial median (1.13x), not the 300+ us of a simpler synthetic scalar store. At one row, push remains slower. Smaller/grouped row counts have a size-dependent break-even. 30-sample large-payload variation is significant and kept in evidence. Refer to [GATE3_COMBINE_RESULTS.md](GATE3_COMBINE_RESULTS.md). No GPU concurrent-ready or inference speedup implied.

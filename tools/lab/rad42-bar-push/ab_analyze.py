@@ -15,8 +15,11 @@ import math
 from pathlib import Path
 
 SIZES = (4096, 65536, 262144, 1048576, 4194304)
+COMBINE_SIZES = (5120, 81920, 327680, 1310720, 3932160)
 PATHS = {"mapped-host-pull", "dmabuf-cpu-push"}
-STYLES = {"direct-scalar", "staged-memcpy"}
+STYLES = {"direct-scalar", "staged-memcpy", "combine-direct", "combine-staged"}
+def valid_sizes(style: str) -> tuple[int, ...]:
+    return COMBINE_SIZES if style.startswith("combine-") else SIZES
 REQUIRED = (
     "device", "bytes", "iterations", "style", "path",
     "cpu_write_p50_us", "sync_start_p50_us", "sync_end_p50_us",
@@ -46,7 +49,7 @@ def metadata(row: dict[str, str]) -> tuple[int, int, int, str]:
         raise ValueError(f"bad benchmark metadata: {e}") from e
     if dev < 0 or not 10 <= iterations <= 200 or style not in STYLES:
         raise ValueError("invalid benchmark device, sample count or style")
-    if size_filter not in (0, *SIZES):
+    if size_filter not in (0, *valid_sizes(style)):
         raise ValueError("invalid benchmark byte filter")
     return dev, iterations, size_filter, style
 
@@ -64,7 +67,8 @@ def parse(text: str) -> dict[tuple[int, int, str], dict[str, dict[str, str]]]:
             raise ValueError("truncated benchmark log")
         if line.startswith("RAD50 A/B FAILED") or line.startswith("RAD50 A/B WRONG DATA"):
             raise ValueError("benchmark logged a failure")
-        if line.startswith("RAD50 RESULT test=dmabuf-ab "):
+        if (line.startswith("RAD50 RESULT test=dmabuf-ab ") or
+            line.startswith("RAD50 RESULT test=combine-ab ")):
             result = fields(line, "RAD50 RESULT ")
             if result.get("exit") != "0":
                 raise ValueError("benchmark process returned nonzero")
@@ -87,7 +91,7 @@ def parse(text: str) -> dict[tuple[int, int, str], dict[str, dict[str, str]]]:
                 raise ValueError(f"invalid sample metadata: {e}") from e
             expected_dev, expected_count, size_filter, style, rows, _ = active
             if (dev != expected_dev or count != expected_count or
-                    size not in SIZES or
+                    size not in valid_sizes(style) or
                     (size_filter != 0 and size != size_filter) or
                     row["style"] != style or row["path"] not in PATHS):
                 raise ValueError("sample does not match benchmark context")
@@ -127,7 +131,7 @@ def parse(text: str) -> dict[tuple[int, int, str], dict[str, dict[str, str]]]:
             if end.get("status") != "0" or metadata(end) != (
                     dev, count, size_filter, style):
                 raise ValueError("completion status/metadata mismatch")
-            sizes = {size_filter} if size_filter else set(SIZES)
+            sizes = {size_filter} if size_filter else set(valid_sizes(style))
             if set(rows) != sizes or compared != sizes:
                 raise ValueError("incomplete size coverage or missing comparison")
             for size, pair in rows.items():
@@ -165,16 +169,17 @@ def format_report(text: str) -> str:
             f"{a:.2f} {b:.2f} {a/b:.3f} {a-b:+.2f} "
             f"{overhead:.2f} {float(push['cpu_write_p50_us']):.2f}"
         )
-        key = (dev, size)
+        workload="real-combine-synthetic-inputs" if style.startswith("combine-") else "synthetic-write"
+        key = (dev, size, workload)
         if key not in best or b < best[key][0]:
             best[key] = (b, style)
-    for (dev, size), (latency, style) in sorted(best.items()):
+    for (dev, size, workload), (latency, style) in sorted(best.items()):
         output.append(
-            f"FASTEST_SUBMITTED_PUSH_METHOD device={dev} bytes={size} "
+            f"FASTEST_SUBMITTED_PUSH_METHOD device={dev} bytes={size} workload={workload} "
             f"style={style} seq_p50_us={latency:.2f} "
             "NOTE=synthetic_serial_only"
         )
-    output.append("Gate 4, measured combine and paired inference tests remain required.")
+    output.append("Gate 4 concurrent visibility, representative real MoE workload and paired inference tests remain required.")
     return "\n".join(output)
 
 

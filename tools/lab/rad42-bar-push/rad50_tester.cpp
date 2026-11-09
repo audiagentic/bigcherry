@@ -30,7 +30,7 @@ int rad50_cpu_handoff_entry(int, char**);
 
 namespace {
 enum class Kind {
-    Pools, HipSmoke, Serial, Ipc, IpcMap, IpcGpuCpu, VmemCap, DmaBufMap, DmaBufWrite, DmaBufFull, DmaBufAB, Transfer, LiveReady, Combine, CpuHandoff
+    Pools, HipSmoke, Serial, Ipc, IpcMap, IpcGpuCpu, VmemCap, DmaBufMap, DmaBufWrite, DmaBufFull, DmaBufAB, CombineAB, Transfer, LiveReady, Combine, CpuHandoff
 };
 struct Test {
     const char* name;
@@ -51,6 +51,7 @@ constexpr Test tests[] = {
     {"dmabuf-write", Kind::DmaBufWrite, true, true, "CPU-only child writes 4KiB DMA-BUF; parent GPU verifies every word"},
     {"dmabuf-full", Kind::DmaBufFull, true, true, "CPU-only child writes 4MiB DMA-BUF; parent GPU verifies every word"},
     {"dmabuf-ab", Kind::DmaBufAB, true, true, "Persistent two-process GPU-pull vs CPU BAR-push A/B, exact GPU read and stage latency"},
+    {"combine-ab", Kind::CombineAB, true, true, "Production AVX2/F16C FP16 combine into host vs DMA-BUF GPU VRAM; full GPU bit check"},
     {"transfer", Kind::Transfer, true, true, "Uncontended CPU BAR write versus mapped-host GPU pull (Gate 3)"},
     {"live-ready", Kind::LiveReady, true, true, "GPU already waiting before CPU BAR data and ready flag (Gate 4 canary)"},
     {"combine-ref", Kind::Combine, false, false, "Card-free FP16 combine/sentinel reference checks"},
@@ -62,6 +63,7 @@ struct Args {
     int device = -1;
     int iterations = -1;
     int selected_bytes = -1;
+    int selected_rows = -1;
     int samples = -1;
     std::string mode;
 };
@@ -72,6 +74,7 @@ void print_help(const char* binary) {
         "       %s --test NAME [--device HIP_ORDINAL] [--iterations 10..200]\n"
         "          [--mode spin|yield|sleep1|condvar|direct|staged]\n"
         "          [--samples 100..100000] [--bytes 4096|65536|262144|1048576|4194304]\n"
+        "          [--rows 1|16|64|256|768] (combine-ab only)\n"
         "          [--lease-confirmed]\n"
         "GPU and host-latency tests require --lease-confirmed. The flag is\n"
         "an operator declaration, not an automatic lease acquisition/check.\n"
@@ -104,7 +107,7 @@ const Test* find_test(const char* name) {
 bool parse(int argc, char** argv, Args* result) {
     bool seen_test = false, seen_device = false, seen_iterations = false;
     bool seen_samples = false, seen_mode = false, seen_ack = false;
-    bool seen_bytes = false;
+    bool seen_bytes = false, seen_rows = false;
     for (int i=1; i<argc; ++i) {
         const char* a=argv[i];
         if (!std::strcmp(a,"--test")) {
@@ -127,6 +130,13 @@ bool parse(int argc, char** argv, Args* result) {
             if (result->selected_bytes!=4096 && result->selected_bytes!=65536 &&
                 result->selected_bytes!=262144 && result->selected_bytes!=1048576 &&
                 result->selected_bytes!=4194304) return false;
+        } else if (!std::strcmp(a,"--rows")) {
+            if (seen_rows || i+1>=argc ||
+                !parse_int(argv[++i],1,768,&result->selected_rows)) return false;
+            seen_rows=true;
+            if (result->selected_rows!=1 && result->selected_rows!=16 &&
+                result->selected_rows!=64 && result->selected_rows!=256 &&
+                result->selected_rows!=768) return false;
         } else if (!std::strcmp(a,"--samples")) {
             if (seen_samples || i+1>=argc ||
                 !parse_int(argv[++i],100,100000,&result->samples)) return false;
@@ -147,11 +157,15 @@ bool parse(int argc, char** argv, Args* result) {
     if (t.needs_device != seen_device) return false;
     if (t.needs_lease && !seen_ack) return false;
     if (!t.needs_lease && seen_ack) return false;
-    if ((t.kind==Kind::Transfer || t.kind==Kind::DmaBufAB)!=seen_iterations) return false;
+    if ((t.kind==Kind::Transfer || t.kind==Kind::DmaBufAB ||
+         t.kind==Kind::CombineAB)!=seen_iterations) return false;
     if (seen_bytes && t.kind!=Kind::DmaBufAB) return false;
-    if ((t.kind==Kind::CpuHandoff || t.kind==Kind::DmaBufAB)!=seen_mode ||
+    if (seen_rows && t.kind!=Kind::CombineAB) return false;
+    if ((t.kind==Kind::CpuHandoff || t.kind==Kind::DmaBufAB ||
+         t.kind==Kind::CombineAB)!=seen_mode ||
         (t.kind==Kind::CpuHandoff)!=seen_samples) return false;
-    if (t.kind==Kind::DmaBufAB && result->mode!="direct" && result->mode!="staged")return false;
+    if ((t.kind==Kind::DmaBufAB || t.kind==Kind::CombineAB) &&
+        result->mode!="direct" && result->mode!="staged")return false;
     if (t.kind==Kind::CpuHandoff && (result->mode=="direct" || result->mode=="staged"))return false;
     return true;
 }
@@ -207,6 +221,13 @@ int run(const Args& a,const char* self) {
                                 "--iterations",std::to_string(a.iterations),
                                 "--mode",a.mode});
         if (a.selected_bytes>0) args.insert(args.end(),{"--bytes",std::to_string(a.selected_bytes)});
+        return call_entry(rad50_dmabuf_ab_entry,args);
+      case Kind::CombineAB:
+        args.insert(args.end(),{"--device",std::to_string(a.device),
+                                "--iterations",std::to_string(a.iterations),
+                                "--mode",a.mode=="direct"?"combine-direct":"combine-staged"});
+        if (a.selected_rows>0)
+            args.insert(args.end(),{"--bytes",std::to_string(a.selected_rows*5120)});
         return call_entry(rad50_dmabuf_ab_entry,args);
       case Kind::Transfer:
         args.insert(args.end(),{"--device",std::to_string(a.device),

@@ -6,6 +6,9 @@
 // No P2P, no serving changes, no generic command/subprocess runner.
 // Requires a separately acquired, exclusive GPU lease.
 #include "bar_access.h"
+#include "combine_f16.h"
+#include "moe_remote_shm.h"
+#include <array>
 #include <linux/dma-buf.h>
 #include <linux/memfd.h>
 #include <sys/syscall.h>
@@ -30,12 +33,21 @@
 extern char** environ;
 namespace {
 constexpr size_t MAX_BYTES=4u*1024u*1024u;
+constexpr uint32_t COMBINE_WIDTH=2560;
+constexpr uint32_t COMBINE_ROW_BYTES=2u*COMBINE_WIDTH;
+constexpr size_t COMBINE_ROWS[]={1,16,64,256,768};
+const char* style_name(int method){
+    switch(method) {case 0:return "direct-scalar";case 1:return "staged-memcpy";
+    case 2:return "combine-direct";case 3:return "combine-staged";}
+    return "invalid";
+}
 constexpr uint32_t MAGIC=0x50335052u;
 constexpr uint32_t VERSION=1;
 constexpr int CHILD_SOCKET=3;
 constexpr unsigned WARMUPS=3;
 using Clock=std::chrono::steady_clock;
 double tick_us(){return std::chrono::duration<double,std::micro>(Clock::now().time_since_epoch()).count();}
+#include "combine_patterns.hip.h"
 struct Hello {uint32_t magic=MAGIC,version=VERSION,bytes=MAX_BYTES;};
 struct Command {uint32_t magic=MAGIC,path=0,bytes=0,generation=0,method=0;};
 struct Ack {
@@ -117,6 +129,7 @@ int worker(int sock) {
     // One staging allocation, outside timed loops, for comparing direct
     // computational stores with CPU staging plus memcpy.
     std::vector<uint32_t> staging(MAX_BYTES/sizeof(uint32_t));
+    CombineInput combine_inputs; // actual production AVX2/F16C combiner inputs
     Ack start{};start.status=mapped?0:3;
     bool ok=write_exact(sock,&start,sizeof(start))&&mapped;
     while(ok) {
@@ -126,7 +139,8 @@ int worker(int sock) {
         if(cmd.bytes==0)break;
         Ack reply{};reply.generation=cmd.generation;
         if(!cmd.generation || cmd.bytes>MAX_BYTES || cmd.bytes%4 ||
-           cmd.path>1 || cmd.method>1) {
+           cmd.path>1 || cmd.method>3 ||
+           (cmd.method>=2 && (cmd.bytes%COMBINE_ROW_BYTES || !combine_cpu_supported()))) {
             reply.status=3; (void)write_exact(sock,&reply,sizeof(reply));
             ok=false;break;
         }
@@ -143,16 +157,24 @@ int worker(int sock) {
             if(rc<0)reply.status=errno?errno:3;
         }
         if(reply.status==0) {
-            if(cmd.method==1) {
+            if(cmd.method==1 || cmd.method==3) {
                 const double prep=tick_us();
-                for(uint32_t i=0;i<cmd.bytes/4;++i)
-                    staging[i]=value_at(i,cmd.generation);
+                if(cmd.method==1) {
+                    for(uint32_t i=0;i<cmd.bytes/4;++i)
+                        staging[i]=value_at(i,cmd.generation);
+                } else if(!combine_inputs.into(reinterpret_cast<uint16_t*>(staging.data()),
+                                                cmd.bytes/COMBINE_ROW_BYTES,
+                                                cmd.generation)) reply.status=4;
                 reply.prepare_us=tick_us()-prep;
             }
             const double write_begin=tick_us();
-            if(cmd.method==1)
+            if(reply.status==0 && (cmd.method==1 || cmd.method==3))
                 std::memcpy(target,staging.data(),cmd.bytes);
-            else {
+            else if(reply.status==0 && cmd.method==2) {
+                if(!combine_inputs.into(static_cast<uint16_t*>(target),
+                                        cmd.bytes/COMBINE_ROW_BYTES,
+                                        cmd.generation)) reply.status=4;
+            } else if(reply.status==0) {
                 volatile uint32_t* out=static_cast<volatile uint32_t*>(target);
                 for(uint32_t i=0;i<cmd.bytes/4;++i)
                     out[i]=value_at(i,cmd.generation);
@@ -227,6 +249,10 @@ bool bench(const char* self,int device,unsigned iterations,int method,size_t sel
        !check_hip(hipSetDevice(device),"A/B HIP set device") ||
        !check_hip(hipDeviceGetPCIBusId(pci,sizeof(pci),device),"A/B HIP PCI")||
        !parse_pci(pci,&dom,&bdf))return false;
+    if(method>=2 && !combine_cpu_supported()){
+        std::fputs("RAD50 combine-ab unsupported CPU: AVX2/F16C required\n",stderr);
+        return false;
+    }
     if(hsa_init()!=HSA_STATUS_SUCCESS)return false;
     Inventory agents;
     hsa_amd_vmem_alloc_handle_t handle{};
@@ -298,12 +324,16 @@ bool bench(const char* self,int device,unsigned iterations,int method,size_t sel
                     "dma_buf_mmap=persistent host_memfd=hipHostRegisterMapped "
                     "serial_handoff=1 sync_start_end_per_push=1 "
                     "engine_semantics=direct_gpu_load source_is_synthetic=1 "
-                    "bytes_filter=%zu iterations=%u style=%s\n",
-                    device,pci,selected_bytes,iterations,
-                    method==0?"direct-scalar":"staged-memcpy");
-        constexpr size_t cases[]={4096,65536,262144,1048576,4194304};
+                    "bytes_filter=%zu iterations=%u style=%s real_combine=%d row_width=%u\n",
+                    device,pci,selected_bytes,iterations,style_name(method),
+                    method>=2?1:0,COMBINE_WIDTH);
+        constexpr size_t cases_scalar[]={4096,65536,262144,1048576,4194304};
+        const size_t* cases=method>=2?COMBINE_ROWS:cases_scalar;
+        const size_t ncases=method>=2?(sizeof(COMBINE_ROWS)/sizeof(COMBINE_ROWS[0])):
+                                   (sizeof(cases_scalar)/sizeof(cases_scalar[0]));
         bool all=true;
-        for(const size_t bytes:cases){
+        for(size_t case_idx=0;case_idx<ncases;++case_idx){
+            const size_t bytes=cases[case_idx]*(method>=2?COMBINE_ROW_BYTES:1u);
             if(selected_bytes && selected_bytes!=bytes)continue;
             Stats by_path[2];
             for(unsigned iteration=0;iteration<iterations+WARMUPS && all;++iteration){
@@ -331,8 +361,13 @@ bool bench(const char* self,int device,unsigned iterations,int method,size_t sel
                     if(!check_hip(hipEventRecord(event_start),"A/B event start")){all=false;break;}
                     const uint32_t* source=static_cast<const uint32_t*>(
                         path==0?host_device:device_va);
-                    hipLaunchKernelGGL(verify_words,dim3(256),dim3(256),0,0,
-                        source,static_cast<uint32_t>(bytes/4),generation,mismatch);
+                    if(method>=2)
+                        hipLaunchKernelGGL(verify_combine_rows,dim3(256),dim3(256),0,0,
+                            reinterpret_cast<const uint16_t*>(source),
+                            static_cast<uint32_t>(bytes/2),generation,mismatch);
+                    else
+                        hipLaunchKernelGGL(verify_words,dim3(256),dim3(256),0,0,
+                            source,static_cast<uint32_t>(bytes/4),generation,mismatch);
                     if(!check_hip(hipGetLastError(),"A/B verify launch") ||
                        !check_hip(hipEventRecord(event_stop),"A/B event end") ||
                        !check_hip(hipEventSynchronize(event_stop),"A/B GPU wait")){all=false;break;}
@@ -356,14 +391,14 @@ bool bench(const char* self,int device,unsigned iterations,int method,size_t sel
             if(!all)break;
             for(int path=0;path<2;++path)
                 report(device,bytes,static_cast<int>(iterations),
-                       method==0?"direct-scalar":"staged-memcpy",path,by_path[path]);
+                       style_name(method),path,by_path[path]);
             const double base=quant(by_path[0],[](const Sample& s){return s.serial_total;},.5);
             const double push=quant(by_path[1],[](const Sample& s){return s.serial_total;},.5);
             std::printf("RAD50_AB_COMPARE device=%d bytes=%zu method=%s "
                         "baseline_seq_p50_us=%.2f push_seq_p50_us=%.2f "
                         "push_speedup=%.3f delta_us=%.2f "
                         "NOTE=serial_synthetic_not_inference\n",
-                        device,bytes,method==0?"direct-scalar":"staged-memcpy",
+                        device,bytes,style_name(method),
                         base,push,push>0?base/push:0,base-push);
         }
         if(!all)break;
@@ -393,7 +428,7 @@ bool bench(const char* self,int device,unsigned iterations,int method,size_t sel
     if(!ok)std::fputs("RAD50 A/B FAILED: no speed claim; check mapped-host registration, correctness, or GPU availability\n",stderr);
     else {
         std::printf("RAD50_AB_COMPLETE device=%d iterations=%u style=%s bytes_filter=%zu status=0\n",
-                    device,iterations,method==0?"direct-scalar":"staged-memcpy",selected_bytes);
+                    device,iterations,style_name(method),selected_bytes);
         std::fflush(stdout); // Success marker only after child exit and cleanup.
     }
     return ok;
@@ -413,14 +448,20 @@ int main(int argc,char** argv) {
     int method=0;
     if(!std::strcmp(argv[6],"direct"))method=0;
     else if(!std::strcmp(argv[6],"staged"))method=1;
+    else if(!std::strcmp(argv[6],"combine-direct"))method=2;
+    else if(!std::strcmp(argv[6],"combine-staged"))method=3;
     else return 2;
     size_t selected_bytes=0;
     if(argc==9) {
         if(std::strcmp(argv[7],"--bytes"))return 2;
         const long chosen=std::strtol(argv[8],&end,10);
         if(!argv[8][0]||*end)return 2;
-        if(chosen!=4096 && chosen!=65536 && chosen!=262144 &&
-           chosen!=1048576 && chosen!=4194304)return 2;
+        const bool valid_synthetic=chosen==4096 || chosen==65536 ||
+                                   chosen==262144 || chosen==1048576 || chosen==4194304;
+        bool valid_combine=false;
+        for(size_t rows:COMBINE_ROWS)
+            if(chosen==static_cast<long>(rows*COMBINE_ROW_BYTES))valid_combine=true;
+        if(!(method>=2?valid_combine:valid_synthetic))return 2;
         selected_bytes=static_cast<size_t>(chosen);
     }
     return bench(argv[0],static_cast<int>(d),static_cast<unsigned>(it),

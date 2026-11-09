@@ -1,0 +1,15 @@
+command: ${BC_WORK_ROOT}/builds/rad42-bar-push/rad50-tester --test combine-ab --device 0 --iterations 10 --mode direct --rows 1 --lease-confirmed
+exitCode: 0
+timedOut: false
+truncated: false
+-- stdout --
+RAD50 case=combine-ab device=0 (no production engine integration)
+RAD50_AB_CONTEXT device=0 pci=0000:03:00.0 cpu_child=persistent dma_buf_mmap=persistent host_memfd=hipHostRegisterMapped serial_handoff=1 sync_start_end_per_push=1 engine_semantics=direct_gpu_load source_is_synthetic=1 bytes_filter=5120 iterations=10 style=combine-direct real_combine=1 row_width=2560
+RAD50_AB device=0 bytes=5120 iterations=10 style=combine-direct path=mapped-host-pull prepare_p50_us=0.00 cpu_write_p50_us=0.57 sync_start_p50_us=0.00 sync_end_p50_us=0.00 child_total_p50_us=0.62 roundtrip_p50_us=5.25 gpu_kernel_p50_us=16.24 gpu_host_p50_us=69.34 seq_p50_us=74.95 seq_p95_us=76.52 seq_p99_us=76.52 seq_GBps=0.068
+RAD50_AB device=0 bytes=5120 iterations=10 style=combine-direct path=dmabuf-cpu-push prepare_p50_us=0.00 cpu_write_p50_us=0.62 sync_start_p50_us=0.20 sync_end_p50_us=0.13 child_total_p50_us=1.02 roundtrip_p50_us=5.76 gpu_kernel_p50_us=15.96 gpu_host_p50_us=68.94 seq_p50_us=75.70 seq_p95_us=76.41 seq_p99_us=76.41 seq_GBps=0.068
+RAD50_AB_COMPARE device=0 bytes=5120 method=combine-direct baseline_seq_p50_us=74.95 push_seq_p50_us=75.70 push_speedup=0.990 delta_us=-0.74 NOTE=serial_synthetic_not_inference
+RAD50_AB_COMPLETE device=0 iterations=10 style=combine-direct bytes_filter=5120 status=0
+
+-- stderr --
+RAD50 lease acknowledged by operator; runner cannot verify lease ownership.
+RAD50 RESULT test=combine-ab exit=0
