@@ -36,6 +36,7 @@ static bool ok(hipError_t e, const char *site) {
 // so the XDP05 binary/source and its hash-bound benchmark remain unchanged.
 // Per wave: one M16 band, four separate N16 subtile output chains. Only one
 // live 8-lane int32 WMMA chain at a time; 32 persistent f32 output sums.
+template <bool COALESCED>
 __global__ __launch_bounds__(512) void w4a4_wide16(
     const unsigned* __restrict__ aq, const unsigned* __restrict__ wq,
     const float* __restrict__ sa, const float* __restrict__ sw,
@@ -43,7 +44,11 @@ __global__ __launch_bounds__(512) void w4a4_wide16(
     float* __restrict__ out, int M, int N, int G) {
     constexpr int BLOCK_TILES = 8, WORDS_PER_TILE = 256;
     constexpr int STAGE_WORDS = 2 * BLOCK_TILES * WORDS_PER_TILE;
-    __shared__ unsigned stage[STAGE_WORDS];  // 16 KiB per workgroup
+    // The direct mode stages 16 KiB. Coalesced mode reuses the same slab
+    // after K accumulation as a 32x128 f32 epilogue, skewed by 1 float/row
+    // to avoid 16-way LDS bank conflicts for column-constant WMMA stores.
+    constexpr int OUT_STRIDE = 129, OUT_STAGE_WORDS = 32 * OUT_STRIDE;
+    __shared__ unsigned stage[COALESCED ? OUT_STAGE_WORDS : STAGE_WORDS];
 
     const int tid = threadIdx.x, wave = tid >> 5, lane = tid & 31;
     const int wm = wave >> 1;
@@ -110,13 +115,47 @@ __global__ __launch_bounds__(512) void w4a4_wide16(
         // The LDS slab is not reused until all waves consume this group.
         __syncthreads();
     }
+    if constexpr (COALESCED) {
+        // The K128 staging slab is dead after the last group-wide barrier.
+        // Four 32x128 slices reuse that 16-KiB slab.  Exactly four waves
+        // publish each slice, then ALL waves flush contiguous row-major C.
+        // Inactive/edge lanes also publish their initialized sums, but
+        // only in-bounds global C cells are written. All barriers uniform.
+        float* tile = reinterpret_cast<float*>(stage);
+        for (int slice = 0; slice < 4; ++slice) {
+            if ((wm >> 1) == slice) {
+                const int local_m = 16 * (wm - 2 * slice) + (lane & 15);
 #pragma unroll
-    for (int c = 0; c < 4; ++c) {
+                for (int c = 0; c < 4; ++c) {
 #pragma unroll
-        for (int e = 0; e < 8; ++e) {
-            const int n = n0 + c * 16 + 2 * e + (lane >> 4);
-            if (m < M && n < N)
-                out[size_t(m) * N + n] = sums[c][e];
+                    for (int e = 0; e < 8; ++e) {
+                        const int local_n = 16 * (wn0 + c) + 2 * e + (lane >> 4);
+                        tile[local_m * OUT_STRIDE + local_n] = sums[c][e];
+                    }
+                }
+            }
+            __syncthreads();
+#pragma unroll
+            for (int t = tid; t < 4096; t += 512) {
+                const int local_m = t / 128;
+                const int local_n = t % 128;
+                const int global_m = int(blockIdx.y) * 128 + 32 * slice + local_m;
+                const int global_n = int(blockIdx.x) * 128 + local_n;
+                if (global_m < M && global_n < N)
+                    out[size_t(global_m) * N + global_n] =
+                        tile[local_m * OUT_STRIDE + local_n];
+            }
+            __syncthreads();
+        }
+    } else {
+#pragma unroll
+        for (int c = 0; c < 4; ++c) {
+#pragma unroll
+            for (int e = 0; e < 8; ++e) {
+                const int n = n0 + c * 16 + 2 * e + (lane >> 4);
+                if (m < M && n < N)
+                    out[size_t(m) * N + n] = sums[c][e];
+            }
         }
     }
 }
@@ -229,7 +268,8 @@ struct Device {
     }
 };
 
-static int one(int M, int N, int K, int iters, unsigned seed, bool full) {
+static int one(int M, int N, int K, int iters, unsigned seed, bool full,
+               bool coalesced) {
     if (M < 1 || M > 512 || N < 1 || N > 17408 || K < 128 ||
         K > 5120 || K % 128 || iters < 1 || iters > 1000) {
         std::fprintf(stderr, "XDP06_INVALID_SHAPE M=%d N=%d K=%d\n", M, N, K);
@@ -246,9 +286,14 @@ static int one(int M, int N, int K, int iters, unsigned seed, bool full) {
     if (!d.alloc_and_copy(h)) return 4;
     const dim3 grid((N + 127) / 128, (M + 127) / 128), block(512);
     auto launch = [&] {
-        hipLaunchKernelGGL(w4a4_wide16, grid, block, 0, 0,
-                          d.A, d.W, d.Sa, d.Sw, d.Asum, d.Wzero, d.C,
-                          M, N, h.G);
+        if (coalesced)
+            hipLaunchKernelGGL((w4a4_wide16<true>), grid, block, 0, 0,
+                              d.A, d.W, d.Sa, d.Sw, d.Asum, d.Wzero, d.C,
+                              M, N, h.G);
+        else
+            hipLaunchKernelGGL((w4a4_wide16<false>), grid, block, 0, 0,
+                              d.A, d.W, d.Sa, d.Sw, d.Asum, d.Wzero, d.C,
+                              M, N, h.G);
     };
     launch();
     if (!ok(hipGetLastError(), "launch") || !ok(hipDeviceSynchronize(), "sync"))
@@ -328,8 +373,9 @@ static int one(int M, int N, int K, int iters, unsigned seed, bool full) {
     (void)hipEventDestroy(stop);
     std::sort(timing.begin(), timing.end());
     const double ops = 2.0 * double(M) * double(N) * double(K);
-    std::printf("XDP06_WIDE_PASS arch=%s tile=128x128 waves=16 M=%d N=%d K=%d groups=%d checked=%zu/%zu worst_abs=%g mean_abs=%g iters=%d min_us=%.3f median_us=%.3f max_us=%.3f tops_median=%.3f prepacked=1 gpu_a4_quant=0\n",
-        props.gcnArchName, M, N, K, h.G, checked.size(), output.size(),
+    std::printf("XDP06_WIDE_PASS arch=%s tile=128x128 waves=16 store=%s M=%d N=%d K=%d groups=%d checked=%zu/%zu worst_abs=%g mean_abs=%g iters=%d min_us=%.3f median_us=%.3f max_us=%.3f tops_median=%.3f prepacked=1 gpu_a4_quant=0\n",
+        props.gcnArchName, coalesced ? "coalesced" : "direct",
+        M, N, K, h.G, checked.size(), output.size(),
         worst, avg / checked.size(), iters, timing[0], timing[1],
         timing[2], ops / (timing[1] * 1.0e6));
     return 0;
@@ -343,24 +389,35 @@ int main(int argc, char** argv) {
             {64, 128, 1024, 23}, {128, 256, 256, 29},
             {16, 16, 1024, 103}, {17, 65, 384, 61},
             {33, 63, 512, 67}, {1, 1, 128, 71},
-            // Exercise both the 128-row and 128-column tile boundaries:
             {129, 129, 256, 79}, {128, 257, 512, 83},
             {257, 128, 128, 89}
         };
         for (const auto& shape : shapes) {
-            int rc = one(shape.m, shape.n, shape.k, 20, shape.seed, true);
-            if (rc) return rc;
+            for (bool coalesced : {false, true}) {
+                int rc = one(shape.m, shape.n, shape.k, 20, shape.seed,
+                             true, coalesced);
+                if (rc) return rc;
+            }
         }
-        std::puts("XDP06_WIDE_SUITE_PASS cases=12");
+        std::puts("XDP06_WIDE_SUITE_PASS cases=24");
         return 0;
     }
-    if (argc == 2 && std::strcmp(argv[1], "--shape-27b") == 0)
-        return one(512, 17408, 5120, 15, 73, false);
-    if (argc != 6) {
-        std::fprintf(stderr, "usage: wide16-probe --suite | --shape-27b | M N K iters seed\\n");
+    if (argc >= 2 && std::strcmp(argv[1], "--shape-27b") == 0) {
+        if (argc != 3 ||
+            (std::strcmp(argv[2], "direct") != 0 &&
+             std::strcmp(argv[2], "coalesced") != 0))
+            return 2;
+        return one(512, 17408, 5120, 15, 73, false,
+                   std::strcmp(argv[2], "coalesced") == 0);
+    }
+    if (argc != 7 ||
+        (std::strcmp(argv[6], "direct") != 0 &&
+         std::strcmp(argv[6], "coalesced") != 0)) {
+        std::fprintf(stderr, "usage: wide16-probe --suite | --shape-27b direct|coalesced | M N K iters seed direct|coalesced\\n");
         return 2;
     }
     return one(std::atoi(argv[1]), std::atoi(argv[2]),
                std::atoi(argv[3]), std::atoi(argv[4]),
-               unsigned(std::strtoul(argv[5], nullptr, 10)), true);
+               unsigned(std::strtoul(argv[5], nullptr, 10)), true,
+               std::strcmp(argv[6], "coalesced") == 0);
 }

@@ -37,6 +37,8 @@
 
 - [x] XDP06 implemented **independent** gfx1100 128x128/16-wave native IU4 correctness candidate with separate source/binary manifests under existing single tester --kernel wide. 16,384 exclusive outputs/workgroup (card-free proof), 544 CTAs at M512 N17408; rolled K16 schedule lowered compiled VGPR 235 to 147 with zero reported spills, 16KiB LDS and real IU4 ISA. All 53 card-free XDP tests pass; hardware numerical suite and speed are **PENDING GPU lease**. Full design/resource decision in XDP06.md.
 
+- [x] XDP06 second *same-binary* output-store ablation: compile-time direct vs LDS-transposed/coalesced row-major final store (32x129 skewed scratch reused after group K loop, 4 slices, +8 barriers). Card-free proves 4096 unique producer/consumer LDS cells per slice and 16384 unique final outputs. Actual gfx1100 compiler: direct 147 VGPR/66 SGPR/16384 LDS B, coalesced 149 VGPR/68 SGPR/16512 LDS B; both 0 spill/private. One lease-guarded wide suite checks 12 shapes x 2 modes=24; full 27B via --wide-store direct|coalesced. 55 XDP card-free checks PASS. Hardware speed/correctness **NOT YET TESTED** while RAD49 GPU lease is held.
+
 ## Still required
 
 - [ ] Bench 32K-256K **native** model context with actual resident KV/GDN/graph/runtime accounting; quality, TTFT and decode measured across context and sequences.

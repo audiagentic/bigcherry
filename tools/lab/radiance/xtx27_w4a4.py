@@ -262,6 +262,8 @@ def command_lines(args: argparse.Namespace) -> dict:
                 (
                     ["--shape-27b", str(args.tile_m)]
                     if args.kernel == "tiled"
+                    else ["--shape-27b", args.wide_store]
+                    if args.kernel == "wide"
                     else ["--shape-27b"]
                 )
                 if args.shape_27b
@@ -274,6 +276,7 @@ def command_lines(args: argparse.Namespace) -> dict:
                     str(args.iters),
                     str(args.seed),
                     *([str(args.tile_m)] if args.kernel == "tiled" else []),
+                    *([args.wide_store] if args.kernel == "wide" else []),
                 ]
             ),
         ],
@@ -305,6 +308,7 @@ def execute(args: argparse.Namespace) -> dict:
         "tile_m": args.tile_m if args.kernel == "tiled" else None,
         "output_tile": [128, 128] if args.kernel == "wide" else None,
         "wave32_per_block": 16 if args.kernel == "wide" else None,
+        "wide_store": args.wide_store if args.kernel == "wide" else None,
         "prepacked_operands": True,
         "gpu_activation_quantization_implemented": False,
         "algorithm": "A4 signed x W4 unsigned, asymmetric W zero correction, group128",
@@ -359,11 +363,11 @@ def execute(args: argparse.Namespace) -> dict:
         raise ValueError("device must be a nonnegative inventory index")
     if args.kernel == "wide":
         logfile = (
-            "gpu-wide16-27b.log"
+            f"gpu-wide16-27b-{args.wide_store}.log"
             if args.shape_27b
             else "gpu-wide16-suite.log"
             if args.suite
-            else f"gpu-wide16-M{args.m}-N{args.n}-K{args.k}-seed{args.seed}.log"
+            else f"gpu-wide16-M{args.m}-N{args.n}-K{args.k}-store{args.wide_store}-seed{args.seed}.log"
         )
     elif args.kernel == "tiled":
         logfile = (
@@ -429,7 +433,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--suite",
         action="store_true",
-        help="GPU oracle cases in one lease (six oracle, 27 tiled, 12 wide)",
+        help="GPU oracle cases in one lease (six oracle, 27 tiled, 24 wide)",
     )
     parser.add_argument(
         "--kernel",
@@ -448,6 +452,12 @@ def main(argv: list[str] | None = None) -> int:
         type=int,
         default=2,
         help="tiled wave geometry: 2x4, 4x2 or 8x1 (M waves x N waves)",
+    )
+    parser.add_argument(
+        "--wide-store",
+        choices=("direct", "coalesced"),
+        default="direct",
+        help="XDP06 output store: direct scatter or LDS-transposed coalesced",
     )
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_SCRATCH)
     parser.add_argument("--hipcc", default="/opt/rocm/bin/hipcc")
@@ -474,6 +484,10 @@ def main(argv: list[str] | None = None) -> int:
             or args.iters > 10000
         ):
             raise ValueError("positive dimensions and 1..10000 iterations required")
+        if args.kernel != "wide" and args.wide_store != "direct":
+            raise ValueError("--wide-store only applies to wide kernel")
+        if args.kernel == "wide" and args.suite and args.wide_store != "direct":
+            raise ValueError("wide suite tests both stores; do not select --wide-store")
         if args.kernel != "tiled" and args.tile_m != 2:
             raise ValueError("--tile-m only applies to tiled probe")
         if args.suite and args.phase not in ("plan", "gpu"):

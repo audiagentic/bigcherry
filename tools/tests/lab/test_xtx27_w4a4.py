@@ -336,6 +336,78 @@ class W4A4ProbeTests(unittest.TestCase):
                         written.add((m, n))
         self.assertEqual(len(written), 128 * 128)
 
+    def test_wide16_coalesced_stage_and_global_store_ownership(self):
+        # Model exactly one 32x128 skewed-LDS tile per slice; 4 waves
+        # publish, all 16 waves read 8 contiguous columns per workitem.
+        seen_global = set()
+        for slice_id in range(4):
+            written_lds = set()
+            for wave in range(16):
+                wm, wn0 = wave >> 1, (wave & 1) * 4
+                if wm >> 1 != slice_id:
+                    continue
+                for lane in range(32):
+                    local_m = 16 * (wm - 2 * slice_id) + (lane & 15)
+                    for c in range(4):
+                        for e in range(8):
+                            local_n = 16 * (wn0 + c) + 2 * e + (lane >> 4)
+                            at = local_m * 129 + local_n
+                            self.assertNotIn(at, written_lds)
+                            written_lds.add(at)
+            self.assertEqual(len(written_lds), 4096)
+            for tid in range(512):
+                for offset in range(0, 4096, 512):
+                    t = tid + offset
+                    local_m, local_n = divmod(t, 128)
+                    self.assertIn(local_m * 129 + local_n, written_lds)
+                    global_cell = (32 * slice_id + local_m, local_n)
+                    self.assertNotIn(global_cell, seen_global)
+                    seen_global.add(global_cell)
+        self.assertEqual(len(seen_global), 128 * 128)
+
+    def test_wide16_coalesced_plan_arg_and_reject_wrong_variants(self):
+        with tempfile.TemporaryDirectory() as temp:
+            with (
+                mock.patch.object(
+                    w4.subprocess,
+                    "run",
+                    side_effect=AssertionError("subprocess invoked"),
+                ),
+                contextlib.redirect_stdout(io.StringIO()) as stdout,
+            ):
+                self.assertEqual(
+                    w4.main(
+                        [
+                            "--phase",
+                            "plan",
+                            "--kernel",
+                            "wide",
+                            "--shape-27b",
+                            "--wide-store",
+                            "coalesced",
+                            "--output-dir",
+                            temp,
+                        ]
+                    ),
+                    0,
+                )
+            record = json.loads(stdout.getvalue())
+            self.assertEqual(record["wide_store"], "coalesced")
+            self.assertEqual(
+                record["commands"]["gpu"][-2:], ["--shape-27b", "coalesced"]
+            )
+            for flags in (
+                ["--kernel", "tiled", "--wide-store", "coalesced"],
+                ["--kernel", "oracle", "--wide-store", "coalesced"],
+                ["--kernel", "wide", "--suite", "--wide-store", "coalesced"],
+            ):
+                with (
+                    self.subTest(flags=flags),
+                    contextlib.redirect_stderr(io.StringIO()),
+                    self.assertRaises(SystemExit),
+                ):
+                    w4.main(["--output-dir", temp, *flags])
+
     def test_wide16_plan_is_separate_fail_closed_artifact(self):
         with tempfile.TemporaryDirectory() as temp:
             for flags in (["--suite"], ["--shape-27b"], []):
@@ -382,7 +454,9 @@ class W4A4ProbeTests(unittest.TestCase):
                 )
                 self.assertEqual(
                     rec["commands"]["gpu"][-1] if flags else "",
-                    flags[-1] if flags else "",
+                    ("direct" if flags == ["--shape-27b"] else flags[-1])
+                    if flags
+                    else "",
                 )
             self.assertFalse(Path(temp, "w4a4-wide16-manifest.json").exists())
 
@@ -411,12 +485,17 @@ class W4A4ProbeTests(unittest.TestCase):
 
     def test_wide16_kernel_explicit_native_wmma_and_two_barriers(self):
         code = w4.WIDE_SOURCE.read_text()
+        self.assertIn("template <bool COALESCED>", code)
         self.assertIn("__launch_bounds__(512)", code)
+        self.assertIn("constexpr int OUT_STRIDE = 129", code)
+        self.assertIn("if constexpr (COALESCED)", code)
         self.assertIn("float sums[4][8]", code)
-        self.assertIn("__shared__ unsigned stage[STAGE_WORDS]", code)
+        self.assertIn(
+            "__shared__ unsigned stage[COALESCED ? OUT_STAGE_WORDS : STAGE_WORDS]", code
+        )
         self.assertIn("__builtin_amdgcn_wmma_i32_16x16x16_iu4_w32", code)
         self.assertIn("XDP06_WIDE_PASS", code)
-        self.assertIn("XDP06_WIDE_SUITE_PASS cases=12", code)
+        self.assertIn("XDP06_WIDE_SUITE_PASS cases=24", code)
         self.assertNotIn("gemm_mxfp4", code)
 
     def test_isolated_hip_contains_real_native_opcode_and_group_fix(self):

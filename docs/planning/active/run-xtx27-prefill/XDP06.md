@@ -565,15 +565,17 @@ python3 tools/lab/radiance/xtx27_w4a4.py --phase gpu \
   --kernel wide --shape-27b --run --device 0
 ```
 
-Card-free tests include the bijective
+Card-free tests include bijective
 output-writer mapping, exact plan
 provenance, separate manifests,
 reject-invalid flags, native intrinsic
-and source structure. All **53 XDP
-card-free tests** pass at this stage,
+and source structure. The revised
+direct/coalesced variant pair has
+**55 XDP card-free tests** passing,
 including XDP04/XDP05 regression
 tests; Ruff passes. The hardware suite
-includes 12 shapes, notably (129,129),
+includes 12 shapes × 2 store modes =
+24 oracle cases, notably (129,129),
 (128,257), (257,128) and nonmultiple-16
 tails, plus full M512,N17408,K5120
 sampled oracle with all outputs
@@ -598,3 +600,168 @@ repetitions against unchanged XDP05
 and pinned MXFP4; include GPU
 activation quantization and BF16
 model-level KL before any promotion.
+
+## Follow-up ablation: row-major output coalescing without changing WMMA
+
+**New mode:** `--kernel wide --wide-store
+direct|coalesced`. The wide test executable
+now holds **two separately compiled
+template instantiations**, which share the
+same device-resident A4/W4 codes and
+the same native WMMA inner loop.
+The default `direct` preserves the
+XDP06 original direct-output kernel;
+`coalesced` adds only a final
+LDS transpose. A `--suite`
+GPU invocation tests **both** modes
+across all 12 cases with the exact
+same source SHA and one exclusive lease.
+A full-size run selects one mode and
+records it unambiguously in its log
+name and `XDP06_WIDE_PASS ... store=`
+line. The Python tester still uses a
+single allowed command, not a new
+permission/launcher.
+
+### Why address this separately
+
+The GPU's native gfx11 IU4
+accumulator mapping is weight-row
+N in the fast accumulator lane and
+activation-row M across
+`lane&15`. But our pinned
+`C[m*N+n]` is **row-major**.
+The original direct epilogue emits
+writes that stride by N rows across
+neighboring lanes; eight kernel
+wave outputs can write 2 adjacent N
+values but not 16 consecutive M
+entries in an aligned global cache
+line. This may create excess global
+write transactions and cause stalls.
+It is a **source-level hypothesis**;
+generated GPU performance counters
+are needed to attribute stalls.
+Changing `C` to column-major
+without restoring row-major would
+make the benchmark contract
+non-equivalent to XDP05 and is
+deliberately forbidden.
+
+### Explicit coalesced design / safety proof
+
+- After all 40 K128 group iterations
+  and their last `__syncthreads`,
+  the shared 16-KiB packed
+  A/W stage can be reused.
+  With transpose mode its compile-time
+  allocation is `32×129 float`
+  = **16,512 B**, and the
+  first 4096 dwords remain identical
+  to the 16,384-B packed-input layout.
+- Loop four slices `s=0..3`,
+  one `32 M ×128 N` output plane
+  at a time. The four waves with
+  `wave>>2 == s` are the sole
+  plane producers. Each stores
+  its 32 f32 sums/lane into
+  `tile[(16*(wm−2s)+(lane&15))*129
+  + 16*(wn0+c)+2*e+(lane>>4)]`.
+  A *one-float row skew* (129
+  instead of 128) breaks the
+  pathological 16-to-1 LDS bank
+  alias on column-fixed m rows.
+- All 16 waves rendezvous, then all
+  512 threads iterate eight
+  contiguous 512-float chunks:
+  `t=tid+512*i`, `i=0..7`,
+  `row=t/128`, `col=t%128`,
+  `out[(128*by+32*s+row)*N
+  +128*bx+col]=tile[row*129+col]`
+  under M,N bounds. This produces
+  128 adjacent global n values
+  per m row, independent of
+  original WMMA lane output.
+- A second barrier prevents any
+  producer overwriting shared
+  values while a consumer reads.
+  Repeat all four slices, so
+  **eight extra workgroup barriers
+  per output tile**, after the 80
+  group-stage barriers.
+- Card-free enumerate all 4096
+  LDS indices per slice and all
+  16,384 global stores; **every
+  location has exactly one writer
+  and one reader**. No uninitialized
+  edge output is used because the
+  global store is guarded; padded
+  output entries are initialized
+  by the same zeroed 32-sum lanes.
+  Host oracle/GPU pass-fail gates
+  are identical to the direct arm.
+
+### Compiled gfx1100 resources
+
+Confirmed both actual gfx1100
+`hipcc -O2` code objects,
+not merely source inspection:
+
+| Variant | VGPR | SGPR | LDS | Fixed private | VGPR spills |
+|---|---:|---:|---:|---:|---:|
+| direct scatter | 147 | 66 | 16,384 B | 0 B | 0 |
+| LDS-transposed coalesced | 149 | 68 | 16,512 B | 0 B | 0 |
+
+Both emit native `v_wmma_i32_16x16x16_iu4`.
+The additional stage only costs
+128 B LDS and 2 VGPRs in the
+compiled object; whether the eight
+barriers and extra LDS traffic
+are repaid by global-store savings
+is **unknown until GPU timings**.
+Both variants meet the planned
+no-spill resource screen.
+
+### Reproducible tests
+
+```sh
+# Card-free planning + one compile:
+python3 tools/lab/radiance/xtx27_w4a4.py --phase plan \
+  --kernel wide --suite
+python3 tools/lab/radiance/xtx27_w4a4.py --phase compile \
+  --kernel wide --run
+
+# GPU: one exclusive lease, both store modes, 12 shapes each:
+python3 tools/lab/radiance/xtx27_w4a4.py --phase gpu \
+  --kernel wide --suite --run --device 0
+
+# GPU: exact full shape with independent output/sample checks:
+python3 tools/lab/radiance/xtx27_w4a4.py --phase gpu \
+  --kernel wide --shape-27b --wide-store direct --run --device 0
+python3 tools/lab/radiance/xtx27_w4a4.py --phase gpu \
+  --kernel wide --shape-27b --wide-store coalesced --run --device 0
+```
+
+**Decision XDP06-D5:** do not assume
+a column-major output swap or a
+store-transpose improves throughput;
+run paired on the same card with
+all numerical probes and identical
+packed operands. If transpose wins
+at M512 N17408 K5120, inspect
+the produced global store
+instruction/address patterns and
+retain the quantization and
+quality barriers to production.
+If it loses, record the regression,
+keep the direct store, and profile
+source-copy, group folds and
+effective occupancy instead.
+
+**Status:** compiled and card-free
+tested (**55** XDP tests) while
+another agent holds the exclusive
+GPU lease; **no GPU numerical
+or performance result yet**.
+No production engine patch,
+model conversion or extra worktree.
