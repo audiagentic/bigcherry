@@ -108,3 +108,5 @@ parameter with actual traces once a GPU lease is available.
    consider the future opt-in production plan `RAD51`.
 
 **Status (2026-11-09):** Gate 1 HSA discovery PASS (7 GPU-local CPU-accessible pools). Gate 2 serial CPU write → GPU read PASS on both RX 7900 XTX GPUs: 4 KiB and 4 MiB, 12 generations each, all words verified. The R9700 gfx1201 executable exited 1 with no diagnostics: its result is **inconclusive** pending a targeted rerun. Serial correctness does not establish cross-process access, concurrent visibility, CPU overhead or throughput; all remain unverified. RAD50 released its GPU lease.
+
+**Later R9700 diagnosis:** HSA allocation, CPU access, 4 KiB stores and HIP memset all complete; execution stops before the first verification `hipLaunchKernelGGL` returns. This could be a launch stall/fault or the command's execution limit; **no GPU read was verified**. A separate HIP-only launch smoke mode is compiled but not run. XTX cross-process IPC remains unrun because `bar_ipc_canary-gfx1100` is not allowlisted. RAD50 released its own lease; HD2701 subsequently acquired the exclusive GPU lease.

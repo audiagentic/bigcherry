@@ -1,7 +1,7 @@
 # RAD50 — isolated CPU BAR-push transport experiment
 
-**Status (2026-11-09):** Gate 0 **PASS** (23 card-free tests), Gate 1 **PASS** (7 HSA GPU-local CPU-accessible pools); Gate 2 **PASS on both XTXs**, R9700 **INCONCLUSIVE** (exit 1, no diagnostics). IPC, concurrent readiness and performance remain unverified.
-Gate 2 ran under an exclusive RAD50 GPU lease: XTX0/XTX1 each passed 12 serial generations at 4 KiB and 4 MiB (every word checked). The R9700 binary exited 1 without stdout/stderr; investigate before retry. GPU lease released; later gates have not run.
+**Status (2026-11-09):** Gate 0 **PASS** (23 card-free tests), Gate 1 **PASS** (7 HSA GPU-local CPU-accessible pools); Gate 2 **PASS on both XTXs**, R9700 **INCONCLUSIVE** (exit 1 during first HIP verification launch). IPC, concurrent readiness and performance remain unverified.
+Gate 2 ran under an exclusive RAD50 GPU lease: XTX0/XTX1 each passed 12 serial generations at 4 KiB and 4 MiB (every word checked). The R9700 probe reached HSA VRAM allocation, CPU stores and HIP memset but did not return from the first verification launch; a HIP-only smoke mode is compiled, not run. GPU lease released; later gates have not run.
 
 **Plan:** `docs/planning/active/patching-radiance-rdna3/RAD50.md`
 (existing `patching-radiance-rdna3` group). Production owner RAD42 design B;

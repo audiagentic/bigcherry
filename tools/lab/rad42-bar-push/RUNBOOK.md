@@ -70,6 +70,7 @@ A successful compilation is not an executed correctness test.
    generations, 0 mismatches. A coherent kernel launched after the
    CPU stores might internally impose a flush: this only proves
    *serial API visibility*, not GPU-live polling.
+   R9700: before rerunning BAR, use `bar_write_canary-gfx1201 --device 2 --probe-hip-only` under a fresh GPU lease. This dispatches a tiny HIP kernel with no HSA allocation or CPU BAR writes. A PASS only checks ordinary HIP dispatch, not Gate 2. Previous canary exited 1 before its HIP launch returned; possible launch stall/fault or command execution limit, not a confirmed data mismatch.
 3. **Gate 2b cross-process serial IPC:** Run the matching
    `bar_ipc_canary --device HIP_ORDINAL` binary by an absolute path.
    It launches a fresh **CPU-only** child, passes an HSA GPU-allocation

@@ -13,12 +13,14 @@
 namespace {
 
 bool exercise(hsa_agent_t selected, const Inventory& inventory, int device) {
+    std::fprintf(stderr, "RAD50 diagnostic: begin HSA pool search on device %d\n", device);
     PoolChoice choice{&inventory};
     if (hsa_amd_agent_iterate_memory_pools(selected, select_pool, &choice) != HSA_STATUS_SUCCESS ||
         !choice.found) {
         std::fprintf(stderr, "BLOCKED: no CPU-accessible GPU-local allocation pool\n");
         return false;
     }
+    std::fprintf(stderr, "RAD50 diagnostic: pool selected, granule=%zu\n", choice.granule);
     constexpr size_t max_bytes = 4u * 1024u * 1024u;
     if (choice.granule > SIZE_MAX - max_bytes) return false;
     const size_t alloc_bytes = ((max_bytes + choice.granule - 1) / choice.granule) * choice.granule;
@@ -27,6 +29,7 @@ bool exercise(hsa_agent_t selected, const Inventory& inventory, int device) {
         std::fprintf(stderr, "FAIL: GPU-local HSA allocation rejected\n");
         return false;
     }
+    std::fprintf(stderr, "RAD50 diagnostic: HSA GPU-local allocation succeeded bytes=%zu\n", alloc_bytes);
     unsigned* device_errors = nullptr;
     bool ok = false;
     do {
@@ -36,6 +39,7 @@ bool exercise(hsa_agent_t selected, const Inventory& inventory, int device) {
             std::fprintf(stderr, "FAIL: HSA CPU access grant rejected\n");
             break;
         }
+        std::fprintf(stderr, "RAD50 diagnostic: CPU access granted, allocating HIP error counter\n");
         if (!check_hip(hipMalloc(&device_errors, sizeof(unsigned)), "error-count allocation")) break;
         std::printf("device=%d pool=GPU-local CPU access granted allocation=%zu bytes\n", device, alloc_bytes);
         bool succeeded = true;
@@ -45,20 +49,26 @@ bool exercise(hsa_agent_t selected, const Inventory& inventory, int device) {
                 // mapping. The GPU consumes via a kernel after launch ordering.
                 uint32_t* cpu = static_cast<uint32_t*>(ptr);
                 const uint32_t words = static_cast<uint32_t>(bytes / sizeof(uint32_t));
+                std::fprintf(stderr, "RAD50 diagnostic: starting host stores bytes=%zu gen=%u\n", bytes, generation);
                 for (uint32_t i = 0; i < words; ++i) cpu[i] = value_at(i, generation);
+                std::fprintf(stderr, "RAD50 diagnostic: completed host stores bytes=%zu gen=%u\n", bytes, generation);
                 std::atomic_thread_fence(std::memory_order_seq_cst);
+                std::fprintf(stderr, "RAD50 diagnostic: starting HIP error-counter memset\n");
                 if (!check_hip(hipMemset(device_errors, 0, sizeof(unsigned)), "error-count reset")) {
                     succeeded = false;
                     break;
                 }
+                std::fprintf(stderr, "RAD50 diagnostic: HIP memset completed, launching verification\n");
                 hipLaunchKernelGGL(verify_words, dim3(256), dim3(256), 0, 0,
                                    static_cast<const uint32_t*>(ptr), words,
                                    generation, device_errors);
+                std::fprintf(stderr, "RAD50 diagnostic: HIP launch returned, checking errors and synchronizing\n");
                 if (!check_hip(hipGetLastError(), "GPU verify launch") ||
                     !check_hip(hipDeviceSynchronize(), "GPU verify synchronize")) {
                     succeeded = false;
                     break;
                 }
+                std::fprintf(stderr, "RAD50 diagnostic: GPU synchronize completed, copying mismatch counter\n");
                 unsigned bad = 0;
                 if (!check_hip(hipMemcpy(&bad, device_errors, sizeof(bad), hipMemcpyDeviceToHost),
                                "error-count copy") || bad) {
@@ -83,9 +93,32 @@ bool exercise(hsa_agent_t selected, const Inventory& inventory, int device) {
 
 } // namespace
 
+// Distinguishes HIP dispatch failure from HSA GPU-local pointer interop.
+__global__ void hip_smoke_kernel(uint32_t* p) { if (!blockIdx.x && !threadIdx.x) p[0]=0x504c414eu; }
+static bool hip_smoke_only(int dev) {
+    fprintf(stderr, "RAD50 smoke: HIP set device %d\n",dev);
+    if (!check_hip(hipSetDevice(dev),"smoke set device")) return false;
+    uint32_t* p=nullptr;
+    if (!check_hip(hipMalloc(&p,sizeof(uint32_t)),"smoke hipMalloc")) return false;
+    fprintf(stderr, "RAD50 smoke: launch HIP-only kernel (no HSA allocation)\n");
+    hipLaunchKernelGGL(hip_smoke_kernel,dim3(1),dim3(1),0,0,p);
+    fprintf(stderr, "RAD50 smoke: returned from launch\n");
+    bool ok=check_hip(hipGetLastError(),"smoke launch") && check_hip(hipDeviceSynchronize(),"smoke sync");
+    uint32_t result=0;
+    if (ok) ok=check_hip(hipMemcpy(&result,p,sizeof(result),hipMemcpyDeviceToHost),"smoke readback");
+    if (!check_hip(hipFree(p),"smoke free")) ok=false;
+    fprintf(stderr,"RAD50 smoke: %s value=0x%x\n",ok && result==0x504c414eu?"PASS":"FAIL",result);
+    return ok && result==0x504c414eu;
+}
+
 int main(int argc, char** argv) {
     (void)std::setvbuf(stderr, nullptr, _IONBF, 0);
     std::fprintf(stderr, "RAD50 diagnostic: entered canary process\n");
+    if (argc == 4 && !std::strcmp(argv[1], "--device") && !std::strcmp(argv[3], "--probe-hip-only")) {
+        char* endp=nullptr; long ordinal=std::strtol(argv[2],&endp,10);
+        if (!argv[2][0] || *endp || ordinal<0 || ordinal>127) return 2;
+        return hip_smoke_only(static_cast<int>(ordinal)) ? 0 : 3;
+    }
     if (argc != 3 || std::strcmp(argv[1], "--device")) {
         std::fprintf(stderr, "usage: bar_write_canary --device HIP_VISIBLE_ORDINAL\n");
         return 2;
@@ -115,9 +148,11 @@ int main(int argc, char** argv) {
     std::fprintf(stderr, "RAD50 diagnostic: HSA initialized; enumerate agents\n");
     Inventory all;
     hsa_status_t rc = hsa_iterate_agents(collect_agent, &all);
+    std::fprintf(stderr, "RAD50 diagnostic: hsa_iterate_agents rc=%d cpu=%zu gpu=%zu\n", (int)rc, all.cpus.size(), all.gpus.size());
     hsa_agent_t selected{};
     unsigned matches = 0;
     for (hsa_agent_t a : all.gpus) {
+        std::fprintf(stderr, "RAD50 diagnostic: query agent #%u\n", matches);
         uint32_t dom = 0, bdf = 0;
         if (hsa_agent_get_info(a, (hsa_agent_info_t)HSA_AMD_AGENT_INFO_DOMAIN, &dom) != HSA_STATUS_SUCCESS ||
             hsa_agent_get_info(a, (hsa_agent_info_t)HSA_AMD_AGENT_INFO_BDFID, &bdf) != HSA_STATUS_SUCCESS) {
@@ -129,6 +164,7 @@ int main(int argc, char** argv) {
             selected = a;
         }
     }
+    std::fprintf(stderr, "RAD50 diagnostic: agents inspected, matches=%u rc=%d\n", matches, (int)rc);
     bool success = false;
     if (rc == HSA_STATUS_SUCCESS && matches == 1 && !all.cpus.empty()) {
         std::printf("HIP ordinal=%ld PCI=%s matched HSA GPU\n", requested, pci);
@@ -136,6 +172,7 @@ int main(int argc, char** argv) {
     } else {
         std::fprintf(stderr, "FAIL: HSA GPU/CPU agent discovery or unique HIP PCI match (matches=%u)\n", matches);
     }
+    std::fprintf(stderr, "RAD50 diagnostic: exercise returned success=%d, shutting down\n", (int)success);
     if (hsa_shut_down() != HSA_STATUS_SUCCESS) success = false;
     return success ? 0 : 3;
 }
