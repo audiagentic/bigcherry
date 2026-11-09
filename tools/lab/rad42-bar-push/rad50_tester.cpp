@@ -61,6 +61,7 @@ struct Args {
     bool lease_ack = false;
     int device = -1;
     int iterations = -1;
+    int selected_bytes = -1;
     int samples = -1;
     std::string mode;
 };
@@ -69,7 +70,8 @@ void print_help(const char* binary) {
         "RAD50 isolated fixed-test binary (no arbitrary command runner)\n"
         "usage: %s --list | --help | --self-check\n"
         "       %s --test NAME [--device HIP_ORDINAL] [--iterations 10..200]\n"
-        "          [--mode spin|yield|sleep1|condvar] [--samples 100..100000]\n"
+        "          [--mode spin|yield|sleep1|condvar|direct|staged]\n"
+        "          [--samples 100..100000] [--bytes 4096|65536|262144|1048576|4194304]\n"
         "          [--lease-confirmed]\n"
         "GPU and host-latency tests require --lease-confirmed. The flag is\n"
         "an operator declaration, not an automatic lease acquisition/check.\n"
@@ -102,6 +104,7 @@ const Test* find_test(const char* name) {
 bool parse(int argc, char** argv, Args* result) {
     bool seen_test = false, seen_device = false, seen_iterations = false;
     bool seen_samples = false, seen_mode = false, seen_ack = false;
+    bool seen_bytes = false;
     for (int i=1; i<argc; ++i) {
         const char* a=argv[i];
         if (!std::strcmp(a,"--test")) {
@@ -117,6 +120,13 @@ bool parse(int argc, char** argv, Args* result) {
             if (seen_iterations || i+1>=argc ||
                 !parse_int(argv[++i],10,200,&result->iterations)) return false;
             seen_iterations=true;
+        } else if (!std::strcmp(a,"--bytes")) {
+            if (seen_bytes || i+1>=argc ||
+                !parse_int(argv[++i],4096,4194304,&result->selected_bytes)) return false;
+            seen_bytes=true;
+            if (result->selected_bytes!=4096 && result->selected_bytes!=65536 &&
+                result->selected_bytes!=262144 && result->selected_bytes!=1048576 &&
+                result->selected_bytes!=4194304) return false;
         } else if (!std::strcmp(a,"--samples")) {
             if (seen_samples || i+1>=argc ||
                 !parse_int(argv[++i],100,100000,&result->samples)) return false;
@@ -138,6 +148,7 @@ bool parse(int argc, char** argv, Args* result) {
     if (t.needs_lease && !seen_ack) return false;
     if (!t.needs_lease && seen_ack) return false;
     if ((t.kind==Kind::Transfer || t.kind==Kind::DmaBufAB)!=seen_iterations) return false;
+    if (seen_bytes && t.kind!=Kind::DmaBufAB) return false;
     if ((t.kind==Kind::CpuHandoff || t.kind==Kind::DmaBufAB)!=seen_mode ||
         (t.kind==Kind::CpuHandoff)!=seen_samples) return false;
     if (t.kind==Kind::DmaBufAB && result->mode!="direct" && result->mode!="staged")return false;
@@ -195,6 +206,7 @@ int run(const Args& a,const char* self) {
         args.insert(args.end(),{"--device",std::to_string(a.device),
                                 "--iterations",std::to_string(a.iterations),
                                 "--mode",a.mode});
+        if (a.selected_bytes>0) args.insert(args.end(),{"--bytes",std::to_string(a.selected_bytes)});
         return call_entry(rad50_dmabuf_ab_entry,args);
       case Kind::Transfer:
         args.insert(args.end(),{"--device",std::to_string(a.device),

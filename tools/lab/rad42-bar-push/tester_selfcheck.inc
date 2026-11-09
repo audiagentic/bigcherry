@@ -42,6 +42,20 @@ int cli_self_check() {
           false,"DMA-BUF mode without lease");
     check({"rad50-tester","--test","vmem-cap","--device","0","--lease-confirmed"},
           true,"GPU-local VMM export capability");
+    check({"rad50-tester","--test","dmabuf-ab","--device","0","--iterations","10",
+           "--mode","direct","--bytes","4096","--lease-confirmed"},
+          true,"short 4KiB A/B");
+    check({"rad50-tester","--test","dmabuf-ab","--device","1","--iterations","10",
+           "--mode","staged","--bytes","4194304","--lease-confirmed"},
+          true,"short 4MiB A/B");
+    check({"rad50-tester","--test","dmabuf-ab","--device","0","--iterations","10",
+           "--mode","direct","--bytes","8000","--lease-confirmed"},
+          false,"A/B invalid payload size");
+    check({"rad50-tester","--test","dmabuf-ab","--device","0","--iterations","10",
+           "--mode","direct","--bytes","4096","--bytes","65536","--lease-confirmed"},
+          false,"A/B duplicate bytes selector");
+    check({"rad50-tester","--test","serial","--device","0","--bytes","4096",
+           "--lease-confirmed"},false,"A/B payload selector on different test");
     check({"rad50-tester","--test","dmabuf-ab","--device","0","--iterations","30",
            "--mode","direct","--lease-confirmed"},true,"two-process direct A/B");
     check({"rad50-tester","--test","dmabuf-ab","--device","1","--iterations","10",

@@ -214,3 +214,9 @@ remains RAD42, and RAD49 is the TP2 consumer context.
 - The A/B program uses a persistent child and persistent mappings, not per-iteration spawn/mmap. It tests serial handoff; it **does not prove** GPU-live readiness, contention behavior, actual MoE combine or end-to-end inference performance.
 - **No GPU speed run performed:** RAD49 held exclusive GPU lease and the host reported three heavily occupied GPUs. Next when the lease is free: rebuild benchmark at OPT=-O2, run same-session direct/staged modes on both XTXs, collect raw logs and analyze. Do not interrupt RAD49; no live speed claim.
 - Full protocol, method and stop/go criteria are documented in [PERFORMANCE.md](PERFORMANCE.md). Same worktree; no production/vendor edits.
+
+### 2026-11-09 — bounded per-size A/B readiness; hardware still occupied
+
+- Added bounded optional `--bytes` to the existing `dmabuf-ab` mode (4 KiB, 64 KiB, 256 KiB, 1 MiB, 4 MiB only). This avoids packing all 5 sizes into a single short remote-shell invocation and permits 10-iteration first smoke, then 30+ iteration speed runs. Other modes reject the option; new parser tests verify duplicate/unsupported sizes and lease requirements.
+- The unified gfx1100/gfx1201 benchmark **rebuilds at OPT=-O1**, CLI self-check **39/39 PASS**, existing Python card-free tests **32/32 PASS**. The initial speed evidence will require rebuild at OPT=-O2 under a quiet lease.
+- No hardware A/B run or speed tuning result: RAD49 owns the exclusive GPU lease, and Radiance / remote-MoE worker processes have large VRAM allocations. No leases or GPU processes touched. See PERFORMANCE.md.

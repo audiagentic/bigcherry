@@ -219,7 +219,7 @@ void report(int device,size_t bytes,int iterations,const char* method,int path,c
                 q([](const Sample& s){return s.gpu_host;},.5),
                 p50,p95,p99,p50>0?bytes/(p50*1000):0);
 }
-bool bench(const char* self,int device,unsigned iterations,int method) {
+bool bench(const char* self,int device,unsigned iterations,int method,size_t selected_bytes) {
     int count=0;char pci[64]{};
     uint32_t dom=0,bdf=0;
     if(!check_hip(hipGetDeviceCount(&count),"A/B HIP device count") ||
@@ -302,6 +302,7 @@ bool bench(const char* self,int device,unsigned iterations,int method) {
         constexpr size_t cases[]={4096,65536,262144,1048576,4194304};
         bool all=true;
         for(const size_t bytes:cases){
+            if(selected_bytes && selected_bytes!=bytes)continue;
             Stats by_path[2];
             for(unsigned iteration=0;iteration<iterations+WARMUPS && all;++iteration){
                 // Alternate order per iteration; no concealed extra copy.
@@ -394,7 +395,7 @@ bool bench(const char* self,int device,unsigned iterations,int method) {
 int main(int argc,char** argv) {
     if(argc==3 && !std::strcmp(argv[1],"--bench-child") &&
        !std::strcmp(argv[2],"3")) return worker(CHILD_SOCKET);
-    if(argc!=7 || std::strcmp(argv[1],"--device") ||
+    if((argc!=7 && argc!=9) || std::strcmp(argv[1],"--device") ||
        std::strcmp(argv[3],"--iterations") || std::strcmp(argv[5],"--mode"))
         return 2;
     char* end=nullptr;
@@ -406,5 +407,15 @@ int main(int argc,char** argv) {
     if(!std::strcmp(argv[6],"direct"))method=0;
     else if(!std::strcmp(argv[6],"staged"))method=1;
     else return 2;
-    return bench(argv[0],static_cast<int>(d),static_cast<unsigned>(it),method)?0:3;
+    size_t selected_bytes=0;
+    if(argc==9) {
+        if(std::strcmp(argv[7],"--bytes"))return 2;
+        const long chosen=std::strtol(argv[8],&end,10);
+        if(!argv[8][0]||*end)return 2;
+        if(chosen!=4096 && chosen!=65536 && chosen!=262144 &&
+           chosen!=1048576 && chosen!=4194304)return 2;
+        selected_bytes=static_cast<size_t>(chosen);
+    }
+    return bench(argv[0],static_cast<int>(d),static_cast<unsigned>(it),
+                 method,selected_bytes)?0:3;
 }

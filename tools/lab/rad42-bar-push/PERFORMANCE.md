@@ -1,7 +1,7 @@
 # RAD50 Gate 3 — paired speed comparison
 
 Status (2026-11-09): lab benchmark built into existing rad50-tester, for
-gfx1100 and gfx1201. 34 CLI checks and 32 Python card-free tests pass. Hardware A/B is still **unrun**
+gfx1100 and gfx1201. 39 CLI checks and 32 Python card-free tests pass. Hardware A/B is still **unrun**
 because RAD49 holds the exclusive GPU lease. No speedup can be claimed.
 
 ## Baseline versus candidate
@@ -37,6 +37,15 @@ CPU writing styles:
 - staged: prepares the same data in ordinary RAM, then performs memcpy
   to the destination. Reports preparation and memcpy separately.
 
+To keep each remote-shell invocation bounded (the shell currently has a
+short execution limit), the optional --bytes selector restricts an A/B run to
+exactly one approved payload: 4096, 65536, 262144, 1048576 or 4194304.
+With no --bytes argument the runner tests all five sizes. The selector is
+accepted only for dmabuf-ab and never accepts an arbitrary allocation size.
+Use --bytes 4096 --iterations 10 for the first correctness/performance smoke,
+then move to 30 samples and larger payloads. Do not publish p99 based on
+a 10-sample smoke as meaningful tail latency.
+
 For each device/size/style/path the program emits RAD50_AB records:
 prepare, CPU write, SYNC START/END, child total, parent socket roundtrip,
 GPU kernel event, host GPU completion and serial producer+consumer
@@ -57,6 +66,11 @@ Only after a verified-free GPU lease and no serving/KFD processes:
 3. Run the following exact commands from the RAD50 worktree, with T set
    to the allowed absolute rad50-tester path:
 
+    # First bounded smoke after acquiring lease:
+    $T --test dmabuf-ab --device 0 --iterations 10 --mode direct --bytes 4096 --lease-confirmed
+    $T --test dmabuf-ab --device 1 --iterations 10 --mode direct --bytes 4096 --lease-confirmed
+
+    # After both smoke runs finish with full-word GPU correctness:
     $T --test dmabuf-ab --device 0 --iterations 30 --mode direct --lease-confirmed
     $T --test dmabuf-ab --device 0 --iterations 30 --mode staged --lease-confirmed
     $T --test dmabuf-ab --device 1 --iterations 30 --mode direct --lease-confirmed
