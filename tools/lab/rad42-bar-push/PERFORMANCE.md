@@ -1,8 +1,6 @@
 # RAD50 Gate 3 — paired speed comparison
 
-Status (2026-11-09): lab benchmark built into existing rad50-tester, for
-gfx1100 and gfx1201. 39 CLI checks and 32 Python card-free tests pass. Hardware A/B is still **unrun**
-because RAD49 holds the exclusive GPU lease. No speedup can be claimed.
+Status (2026-11-09): **completed measured synthetic serial Gate 3 A/B** on both gfx1100 XTXs, 5 sizes, direct/staged CPU writes, 30 iterations plus warmups per case. All data verified on GPU, exit 0. Direct CPU-push at 4 MiB: XTX0 1.414x and XTX1 1.362x over mapped-host GPU-pull; at 4 KiB, push loses ~2%. These are **not inference speedups**. See [GATE3_RESULTS.md](GATE3_RESULTS.md). 39 CLI checks and 50 card-free Python tests pass.
 
 ## Baseline versus candidate
 
@@ -117,3 +115,7 @@ Reference: AMD HIP documents hipHostRegisterMapped and
 hipHostGetDevicePointer; the Linux kernel's DMA-BUF documentation
 requires SYNC START/END and separately says the caller handles
 GPU/device synchronization.
+
+## Partial logs and durable evidence
+
+Do not discard data when a run fails or times out. Save the raw stdout, stderr, command, exit status, timeout and truncation flags. The default ab_analyze.py parser requires a successful post-cleanup RAD50_AB_COMPLETE marker for final paired comparisons. Use `python3 tools/lab/rad42-bar-push/ab_analyze.py --provisional <log>` to inspect observed rows, incomplete pairs and diagnostics without claiming a verified run. The first complete and intermediate logs are checked into `tools/lab/rad42-bar-push/evidence/2026-11-09/` with the measured findings in [GATE3_RESULTS.md](GATE3_RESULTS.md).

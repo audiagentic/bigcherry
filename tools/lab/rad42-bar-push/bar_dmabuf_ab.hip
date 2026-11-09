@@ -297,8 +297,10 @@ bool bench(const char* self,int device,unsigned iterations,int method,size_t sel
         std::printf("RAD50_AB_CONTEXT device=%d pci=%s cpu_child=persistent "
                     "dma_buf_mmap=persistent host_memfd=hipHostRegisterMapped "
                     "serial_handoff=1 sync_start_end_per_push=1 "
-                    "engine_semantics=direct_gpu_load source_is_synthetic=1\n",
-                    device,pci);
+                    "engine_semantics=direct_gpu_load source_is_synthetic=1 "
+                    "bytes_filter=%zu iterations=%u style=%s\n",
+                    device,pci,selected_bytes,iterations,
+                    method==0?"direct-scalar":"staged-memcpy");
         constexpr size_t cases[]={4096,65536,262144,1048576,4194304};
         bool all=true;
         for(const size_t bytes:cases){
@@ -389,6 +391,11 @@ bool bench(const char* self,int device,unsigned iterations,int method,size_t sel
     if(have_handle&&hsa_amd_vmem_handle_release(handle)!=HSA_STATUS_SUCCESS)ok=false;
     if(hsa_shut_down()!=HSA_STATUS_SUCCESS)ok=false;
     if(!ok)std::fputs("RAD50 A/B FAILED: no speed claim; check mapped-host registration, correctness, or GPU availability\n",stderr);
+    else {
+        std::printf("RAD50_AB_COMPLETE device=%d iterations=%u style=%s bytes_filter=%zu status=0\n",
+                    device,iterations,method==0?"direct-scalar":"staged-memcpy",selected_bytes);
+        std::fflush(stdout); // Success marker only after child exit and cleanup.
+    }
     return ok;
 }
 } // namespace

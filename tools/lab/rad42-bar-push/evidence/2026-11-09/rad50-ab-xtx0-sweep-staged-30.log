@@ -1,0 +1,27 @@
+command: ${BC_WORK_ROOT}/builds/rad42-bar-push/rad50-tester --test dmabuf-ab --device 0 --iterations 30 --mode staged --lease-confirmed
+exitCode: 0
+timedOut: false
+truncated: false
+-- stdout --
+RAD50 case=dmabuf-ab device=0 (no production engine integration)
+RAD50_AB_CONTEXT device=0 pci=0000:03:00.0 cpu_child=persistent dma_buf_mmap=persistent host_memfd=hipHostRegisterMapped serial_handoff=1 sync_start_end_per_push=1 engine_semantics=direct_gpu_load source_is_synthetic=1 bytes_filter=0 iterations=30 style=staged-memcpy
+RAD50_AB device=0 bytes=4096 iterations=30 style=staged-memcpy path=mapped-host-pull prepare_p50_us=0.43 cpu_write_p50_us=0.44 sync_start_p50_us=0.00 sync_end_p50_us=0.00 child_total_p50_us=0.92 roundtrip_p50_us=5.02 gpu_kernel_p50_us=15.96 gpu_host_p50_us=66.43 seq_p50_us=72.15 seq_p95_us=74.01 seq_p99_us=74.16 seq_GBps=0.057
+RAD50_AB device=0 bytes=4096 iterations=30 style=staged-memcpy path=dmabuf-cpu-push prepare_p50_us=0.43 cpu_write_p50_us=0.58 sync_start_p50_us=0.17 sync_end_p50_us=0.13 child_total_p50_us=1.38 roundtrip_p50_us=5.48 gpu_kernel_p50_us=15.72 gpu_host_p50_us=67.53 seq_p50_us=73.63 seq_p95_us=75.14 seq_p99_us=75.78 seq_GBps=0.056
+RAD50_AB_COMPARE device=0 bytes=4096 method=staged-memcpy baseline_seq_p50_us=72.15 push_seq_p50_us=73.63 push_speedup=0.980 delta_us=-1.47 NOTE=serial_synthetic_not_inference
+RAD50_AB device=0 bytes=65536 iterations=30 style=staged-memcpy path=mapped-host-pull prepare_p50_us=6.57 cpu_write_p50_us=6.84 sync_start_p50_us=0.00 sync_end_p50_us=0.00 child_total_p50_us=13.49 roundtrip_p50_us=17.79 gpu_kernel_p50_us=19.76 gpu_host_p50_us=66.75 seq_p50_us=85.59 seq_p95_us=89.99 seq_p99_us=90.20 seq_GBps=0.766
+RAD50_AB device=0 bytes=65536 iterations=30 style=staged-memcpy path=dmabuf-cpu-push prepare_p50_us=6.57 cpu_write_p50_us=6.22 sync_start_p50_us=0.18 sync_end_p50_us=0.15 child_total_p50_us=13.22 roundtrip_p50_us=18.02 gpu_kernel_p50_us=15.60 gpu_host_p50_us=62.83 seq_p50_us=82.20 seq_p95_us=87.56 seq_p99_us=90.87 seq_GBps=0.797
+RAD50_AB_COMPARE device=0 bytes=65536 method=staged-memcpy baseline_seq_p50_us=85.59 push_seq_p50_us=82.20 push_speedup=1.041 delta_us=3.39 NOTE=serial_synthetic_not_inference
+RAD50_AB device=0 bytes=262144 iterations=30 style=staged-memcpy path=mapped-host-pull prepare_p50_us=35.04 cpu_write_p50_us=15.90 sync_start_p50_us=0.00 sync_end_p50_us=0.00 child_total_p50_us=51.03 roundtrip_p50_us=56.41 gpu_kernel_p50_us=34.56 gpu_host_p50_us=80.00 seq_p50_us=137.84 seq_p95_us=147.44 seq_p99_us=159.48 seq_GBps=1.902
+RAD50_AB device=0 bytes=262144 iterations=30 style=staged-memcpy path=dmabuf-cpu-push prepare_p50_us=35.03 cpu_write_p50_us=26.85 sync_start_p50_us=0.25 sync_end_p50_us=0.20 child_total_p50_us=62.50 roundtrip_p50_us=67.90 gpu_kernel_p50_us=18.12 gpu_host_p50_us=63.32 seq_p50_us=132.51 seq_p95_us=167.79 seq_p99_us=192.63 seq_GBps=1.978
+RAD50_AB_COMPARE device=0 bytes=262144 method=staged-memcpy baseline_seq_p50_us=137.84 push_seq_p50_us=132.51 push_speedup=1.040 delta_us=5.33 NOTE=serial_synthetic_not_inference
+RAD50_AB device=0 bytes=1048576 iterations=30 style=staged-memcpy path=mapped-host-pull prepare_p50_us=102.71 cpu_write_p50_us=60.92 sync_start_p50_us=0.00 sync_end_p50_us=0.00 child_total_p50_us=163.94 roundtrip_p50_us=169.20 gpu_kernel_p50_us=95.52 gpu_host_p50_us=145.82 seq_p50_us=315.66 seq_p95_us=353.80 seq_p99_us=359.09 seq_GBps=3.322
+RAD50_AB device=0 bytes=1048576 iterations=30 style=staged-memcpy path=dmabuf-cpu-push prepare_p50_us=102.72 cpu_write_p50_us=98.32 sync_start_p50_us=0.27 sync_end_p50_us=0.21 child_total_p50_us=201.61 roundtrip_p50_us=206.97 gpu_kernel_p50_us=31.48 gpu_host_p50_us=86.15 seq_p50_us=293.73 seq_p95_us=325.92 seq_p99_us=327.05 seq_GBps=3.570
+RAD50_AB_COMPARE device=0 bytes=1048576 method=staged-memcpy baseline_seq_p50_us=315.66 push_seq_p50_us=293.73 push_speedup=1.075 delta_us=21.94 NOTE=serial_synthetic_not_inference
+RAD50_AB device=0 bytes=4194304 iterations=30 style=staged-memcpy path=mapped-host-pull prepare_p50_us=412.60 cpu_write_p50_us=239.06 sync_start_p50_us=0.00 sync_end_p50_us=0.00 child_total_p50_us=653.42 roundtrip_p50_us=667.99 gpu_kernel_p50_us=332.92 gpu_host_p50_us=550.84 seq_p50_us=1218.11 seq_p95_us=1331.62 seq_p99_us=1511.01 seq_GBps=3.443
+RAD50_AB device=0 bytes=4194304 iterations=30 style=staged-memcpy path=dmabuf-cpu-push prepare_p50_us=410.82 cpu_write_p50_us=385.97 sync_start_p50_us=0.41 sync_end_p50_us=0.43 child_total_p50_us=799.93 roundtrip_p50_us=808.43 gpu_kernel_p50_us=79.68 gpu_host_p50_us=287.76 seq_p50_us=1096.22 seq_p95_us=1160.39 seq_p99_us=1184.79 seq_GBps=3.826
+RAD50_AB_COMPARE device=0 bytes=4194304 method=staged-memcpy baseline_seq_p50_us=1218.11 push_seq_p50_us=1096.22 push_speedup=1.111 delta_us=121.89 NOTE=serial_synthetic_not_inference
+RAD50_AB_COMPLETE device=0 iterations=30 style=staged-memcpy bytes_filter=0 status=0
+
+-- stderr --
+RAD50 lease acknowledged by operator; runner cannot verify lease ownership.
+RAD50 RESULT test=dmabuf-ab exit=0

@@ -1,0 +1,15 @@
+command: ${BC_WORK_ROOT}/builds/rad42-bar-push/rad50-tester --test dmabuf-ab --device 0 --iterations 10 --mode direct --bytes 4096 --lease-confirmed
+exitCode: 0
+timedOut: false
+truncated: false
+-- stdout --
+RAD50 case=dmabuf-ab device=0 (no production engine integration)
+RAD50_AB_CONTEXT device=0 pci=0000:03:00.0 cpu_child=persistent dma_buf_mmap=persistent host_memfd=hipHostRegisterMapped serial_handoff=1 sync_start_end_per_push=1 engine_semantics=direct_gpu_load source_is_synthetic=1 bytes_filter=4096 iterations=10 style=direct-scalar
+RAD50_AB device=0 bytes=4096 iterations=10 style=direct-scalar path=mapped-host-pull prepare_p50_us=0.00 cpu_write_p50_us=0.59 sync_start_p50_us=0.00 sync_end_p50_us=0.00 child_total_p50_us=0.63 roundtrip_p50_us=4.74 gpu_kernel_p50_us=16.16 gpu_host_p50_us=67.79 seq_p50_us=73.22 seq_p95_us=74.30 seq_p99_us=74.30 seq_GBps=0.056
+RAD50_AB device=0 bytes=4096 iterations=10 style=direct-scalar path=dmabuf-cpu-push prepare_p50_us=0.00 cpu_write_p50_us=0.64 sync_start_p50_us=0.17 sync_end_p50_us=0.13 child_total_p50_us=0.99 roundtrip_p50_us=5.02 gpu_kernel_p50_us=15.92 gpu_host_p50_us=67.87 seq_p50_us=73.92 seq_p95_us=74.71 seq_p99_us=74.71 seq_GBps=0.055
+RAD50_AB_COMPARE device=0 bytes=4096 method=direct-scalar baseline_seq_p50_us=73.22 push_seq_p50_us=73.92 push_speedup=0.990 delta_us=-0.70 NOTE=serial_synthetic_not_inference
+RAD50_AB_COMPLETE device=0 iterations=10 style=direct-scalar bytes_filter=4096 status=0
+
+-- stderr --
+RAD50 lease acknowledged by operator; runner cannot verify lease ownership.
+RAD50 RESULT test=dmabuf-ab exit=0
