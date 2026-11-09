@@ -1,4 +1,4 @@
-# XDP01–XDP06 progress — 2026-11-09
+# XDP01–XDP07 progress — 2026-11-09
 
 ## Implemented and checked
 
@@ -37,14 +37,25 @@
 
 - [x] XDP06 implemented **independent** gfx1100 128x128/16-wave native IU4 correctness candidate with separate source/binary manifests under existing single tester --kernel wide. 16,384 exclusive outputs/workgroup (card-free proof), 544 CTAs at M512 N17408; rolled K16 schedule lowered compiled VGPR 235 to 147 with zero reported spills, 16KiB LDS and real IU4 ISA. All 53 card-free XDP tests pass; hardware numerical suite and speed are **PENDING GPU lease**. Full design/resource decision in XDP06.md.
 
-- [x] XDP06 second *same-binary* output-store ablation: compile-time direct vs LDS-transposed/coalesced row-major final store (32x129 skewed scratch reused after group K loop, 4 slices, +8 barriers). Card-free proves 4096 unique producer/consumer LDS cells per slice and 16384 unique final outputs. Actual gfx1100 compiler: direct 147 VGPR/66 SGPR/16384 LDS B, coalesced 149 VGPR/68 SGPR/16512 LDS B; both 0 spill/private. One lease-guarded wide suite checks 12 shapes x 2 modes=24; full 27B via --wide-store direct|coalesced. 55 XDP card-free checks PASS. Hardware speed/correctness **NOT YET TESTED** while RAD49 GPU lease is held.
+- [x] XDP06 second *same-binary* output-store ablation: compile-time direct vs LDS-transposed/coalesced row-major final store (32x129 skewed scratch reused after group K loop, 4 slices, +8 barriers). Card-free proves 4096 unique producer/consumer LDS cells per slice and 16384 unique final outputs. Actual gfx1100 compiler: direct 147 VGPR/66 SGPR/16384 LDS B, coalesced 149 VGPR/68 SGPR/16512 LDS B; both 0 spill/private. One lease-guarded wide suite checks 12 shapes x 2 modes=24; full 27B via --wide-store direct|coalesced. 56 XDP card-free checks PASS. Hardware speed/correctness **NOT YET TESTED** while RAD49 GPU lease is held.
+
+- [x] XDP06 single-lease M512/N17408/K5120 direct+coalesced pair: --kernel wide --shape-27b --wide-store paired, same seed, full nonfinite scan + 768+ oracle samples for each mode and explicit paired PASS marker only after both succeed. Compiled actual gfx1100 147/149-VGPR variants, 0 spills. All 56 card-free XDP tests pass. **Not yet GPU-tested** while RAD49 lease is held.
+
+- [x] XDP06 GPU validation completed under exclusive lease: 24/24 full-output wide16 oracle cases, then full M512/N17408/K5120 all 8,912,896 outputs finite and 768 sampled exact CPU oracle per mode. Wide16 direct **2,310.7 µs**, coalesced **1,951.9 µs** median (15.5% faster direct-to-coalesced, still slower than prior XDP05 1,747 µs and MXFP4 923 µs). A fresh XDP05 rerun was denied by RAD49's next lease; no invalid timing counted.
+- [x] XDP06 hipfire dataflow audit led to two controlled compiler ablations: `wide16sched` schedule fence alone **unchanged** 147/149 VGPR; `wide16meta` cooperative per-K128 header staging (four 128-entry A scale/sum, W scale/zero arrays) reduced **147/149→104/110 VGPR**, ~18KiB LDS, **zero spills**, native gfx11 IU4 ISA. This is a **compiler-only result**, not GPU speed evidence.
+- [x] XDP06 8-wave 128×128 `wide8` prototype compiles with 165 VGPRs and no reported spills. 96-VGPR forced cap on metadata variant produced **8/12 spills** and 36/52 B private/thread (rejected). One tester supports all variants with independent scratch binaries, manifest hashes over included source, and a single GPU lease per suite or 27B paired run. New GPU suites are **pending RAD49's lease**.
+- [x] XDP06 exact header staging/producer ownership and include-dependent fingerprint tests added; all **62 XDP card-free tests** pass. Complete design, measured failures, source-based decisions and reproduction instructions in XDP06.md.
+
+- [x] XDP07: 16-wave native IU4 staged-header 24/24 GPU oracle PASS, 3 independent 27B-shape coalesced medians 1064.0/1033.3/1056.9 us, median 1056.9 us vs fresh XDP05 1762.5 us and MXFP4 927.9 us. 768 sampled exact CPU oracle outputs and full finite scan per run. See XDP07.md.
+- [x] XDP07 negative arms: 8-wave 2732.5 us; 96-VGPR forced cap 8/12 spills; group-major metadata 1083.8 us median (2 runs), no speed win and added prepack overhead. All leased GPU runs released.
+- [ ] XDP07 production gate: real A4 producer, BF16-origin KL/PPL and full TP2 serving. No model conversion or vendor modifications.
 
 ## Still required
 
 - [ ] Bench 32K-256K **native** model context with actual resident KV/GDN/graph/runtime accounting; quality, TTFT and decode measured across context and sequences.
 - [ ] Exact/WHT6 correctness/KL gate and longer repeated, rotated A/B to qualify speed improvement.
 - [x] Tiled native IU4 W4A4 feasibility vs MXFP4: **tested and rejected for now** (XDP05, 1.89× slower GEMM-only). Native gfx11 IU4 instruction is real, but standalone correctness does not imply viable model throughput.
-- [ ] XDP06 gated follow-up: independently test 128x128 native gfx11 IU4 16-wave output tile, full-output oracle, ISA/occupancy, 3-rep matched XTX A/B against XDP05 and MXFP4; include per-group A4 quantization/fused producer and model KL before any promotion. Require a measured complete path faster than 923 µs at M512/N17408/K5120 and real-model KL parity. Preserve the correct XDP05 tile/oracle code as a research fixture.
+- [ ] XDP06 next hardware gate: run the `wide16meta` and `wide8` 24-case full GPU oracle suites and M512/N17408/K5120 sampled full-shape paired timings, then repeat matched/rotated XDP05 and MXFP4 controls; include A4 quantization/fused producer and real BF16-origin model KL before promotion. Require a measured complete path faster than 923 µs at M512/N17408/K5120 and real-model KL parity. Preserve the correct XDP05 tile/oracle code as a research fixture.
 - [ ] If native W4 becomes viable, convert BF16->MXFP4 matched control and mixed candidate and run full end-to-end KLD, TP2 throughput, memory and KV residency gates. This conversion was deliberately not started.
 - [ ] Obtain comparable measured per-layer W4/MXFP4/FP8 perf, peak weights and reserves; run the XDP03 GPU-aware selector with real evidence and measure selected profile end-to-end before admitting or promoting any dynamic policy.
 - [ ] Native gfx1100 MXFP4 GEMM and TP all-reduce isolated kernel experiments with correctness; identify safe speed/capacity trade-off.

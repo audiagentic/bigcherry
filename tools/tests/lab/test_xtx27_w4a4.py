@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import io
 import json
 import math
@@ -321,6 +322,98 @@ class W4A4ProbeTests(unittest.TestCase):
         self.assertIn("XDP05_TILED_PASS", code)
         self.assertNotIn("gemm_mxfp4", code)
 
+    def test_wide8_output_and_skewed_stage_ownership_card_free(self):
+        """Eight-wave M32xN64 tile covers 128x128 exactly once."""
+        seen = set()
+        for wave in range(8):
+            wm_pair, wn0 = wave >> 1, (wave & 1) * 4
+            for lane in range(32):
+                for mi in range(2):
+                    m = 32 * wm_pair + 16 * mi + (lane & 15)
+                    for c in range(4):
+                        for e in range(8):
+                            n = 16 * (wn0 + c) + 2 * e + (lane >> 4)
+                            self.assertTrue(0 <= m < 128 and 0 <= n < 128)
+                            self.assertNotIn((m, n), seen)
+                            seen.add((m, n))
+        self.assertEqual(len(seen), 16384)
+
+        for slice_id in range(4):
+            staged = set()
+            for wave in range(8):
+                wp, wn0 = wave >> 1, (wave & 1) * 4
+                if wp != slice_id:
+                    continue
+                for lane in range(32):
+                    for mi in range(2):
+                        lm = 16 * mi + (lane & 15)
+                        for c in range(4):
+                            for e in range(8):
+                                ln = 16 * (wn0 + c) + 2 * e + (lane >> 4)
+                                at = 129 * lm + ln
+                                self.assertNotIn(at, staged)
+                                staged.add(at)
+            self.assertEqual(len(staged), 4096)
+            consumed = {
+                129 * (t // 128) + t % 128
+                for tid in range(256)
+                for t in range(tid, 4096, 256)
+            }
+            self.assertEqual(staged, consumed)
+
+    def test_wide8_source_native_opcode_and_no_model_route(self):
+        code = w4.WIDE8_SOURCE.read_text()
+        self.assertIn("template <bool COALESCED>", code)
+        self.assertIn("__launch_bounds__(256)", code)
+        self.assertIn("float sums[2][4][8]", code)
+        self.assertIn("__builtin_amdgcn_wmma_i32_16x16x16_iu4_w32", code)
+        self.assertIn("XDP06_WIDE8_SUITE_PASS cases=24", code)
+        self.assertIn("XDP06_WIDE8_PAIRED_PASS modes=2", code)
+        self.assertNotIn("gemm_mxfp4", code)
+
+    def test_wide8_plan_is_distinct_and_single_lease(self):
+        with tempfile.TemporaryDirectory() as temp:
+            for store in ("direct", "coalesced", "paired"):
+                with (
+                    self.subTest(store=store),
+                    mock.patch.object(
+                        w4.subprocess,
+                        "run",
+                        side_effect=AssertionError("subprocess invoked"),
+                    ),
+                    contextlib.redirect_stdout(io.StringIO()) as stdout,
+                ):
+                    self.assertEqual(
+                        w4.main(
+                            [
+                                "--phase",
+                                "plan",
+                                "--kernel",
+                                "wide8",
+                                "--shape-27b",
+                                "--wide-store",
+                                store,
+                                "--output-dir",
+                                temp,
+                            ]
+                        ),
+                        0,
+                    )
+                rec = json.loads(stdout.getvalue())
+                self.assertEqual(rec["source_sha256"], w4.sha256_file(w4.WIDE8_SOURCE))
+                self.assertEqual(rec["wave32_per_block"], 8)
+                self.assertEqual(rec["wide_store"], store)
+                self.assertEqual(rec["commands"]["gpu"][-2:], ["--shape-27b", store])
+                self.assertEqual(
+                    rec["commands"]["gpu"][0:3], ["agent-lease", "acquire", "gpu"]
+                )
+                self.assertTrue(rec["commands"]["binary"].endswith("-wide8"))
+            self.assertNotEqual(
+                w4.binaries(Path(temp), "wide8"),
+                w4.binaries(Path(temp), "wide"),
+            )
+            self.assertFalse(Path(temp, "w4a4-wide8-manifest.json").exists())
+
     def test_wide16_output_ownership_card_free(self):
         """Each of 16 wave32s owns 32 distinct f32 results per lane."""
         written = set()
@@ -460,6 +553,49 @@ class W4A4ProbeTests(unittest.TestCase):
                 )
             self.assertFalse(Path(temp, "w4a4-wide16-manifest.json").exists())
 
+    def test_wide16_paired_full_shape_uses_one_lease(self):
+        with tempfile.TemporaryDirectory() as temp:
+            with (
+                mock.patch.object(
+                    w4.subprocess,
+                    "run",
+                    side_effect=AssertionError("subprocess invoked"),
+                ),
+                contextlib.redirect_stdout(io.StringIO()) as stdout,
+            ):
+                self.assertEqual(
+                    w4.main(
+                        [
+                            "--phase",
+                            "plan",
+                            "--kernel",
+                            "wide",
+                            "--shape-27b",
+                            "--wide-store",
+                            "paired",
+                            "--output-dir",
+                            temp,
+                        ]
+                    ),
+                    0,
+                )
+            rec = json.loads(stdout.getvalue())
+            self.assertEqual(rec["commands"]["gpu"][-2:], ["--shape-27b", "paired"])
+            self.assertEqual(rec["commands"]["gpu"].count("agent-lease"), 1)
+            self.assertEqual(rec["wide_store"], "paired")
+            self.assertFalse(Path(temp, "w4a4-wide16-manifest.json").exists())
+            for flags in (
+                ["--kernel", "wide", "--wide-store", "paired"],
+                ["--kernel", "wide", "--suite", "--wide-store", "paired"],
+                ["--kernel", "tiled", "--shape-27b", "--wide-store", "paired"],
+            ):
+                with (
+                    self.subTest(flags=flags),
+                    contextlib.redirect_stderr(io.StringIO()),
+                    self.assertRaises(SystemExit),
+                ):
+                    w4.main(["--output-dir", temp, *flags])
+
     def test_wide16_reject_unsupported_flags_and_avoids_other_controls(self):
         with tempfile.TemporaryDirectory() as temp:
             for flags in (
@@ -483,6 +619,143 @@ class W4A4ProbeTests(unittest.TestCase):
             w4.binaries(Path("/tmp"), "oracle"),
         )
 
+    def test_wide16_group_major_meta_repacking_exact_card_free(self):
+        # Unlike the regular row-major [row,G] metadata, the new physical
+        # sidecar groups 128 adjacent rows for each g. Its only extra
+        # storage is right-padding on incomplete M/N tiles.
+        for rows, groups in ((1, 1), (17, 3), (129, 5), (257, 40)):
+            with self.subTest(rows=rows, groups=groups):
+                src = [row * 1000 + g for row in range(rows) for g in range(groups)]
+                packed = [0] * (((rows + 127) // 128) * groups * 128)
+                locations = set()
+                for row in range(rows):
+                    for g in range(groups):
+                        dst = ((row // 128) * groups + g) * 128 + row % 128
+                        self.assertNotIn(dst, locations)
+                        locations.add(dst)
+                        packed[dst] = src[row * groups + g]
+                for row in range(rows):
+                    for g in range(groups):
+                        dst = ((row // 128) * groups + g) * 128 + row % 128
+                        self.assertEqual(src[row * groups + g], packed[dst])
+                self.assertEqual(len(locations), rows * groups)
+        code = w4.WIDE_SOURCE.read_text()
+        for phrase in (
+            "#if defined(XDP06_META_TILE_MAJOR)",
+            "meta_group_offset(ma, g, G)",
+            "meta_group_offset(nw, g, G)",
+            "pack_group_headers(h.Sa, h.M, h.G)",
+            "pack_group_headers(h.Sw, h.N, h.G)",
+            "pack_group_headers(h.Asum, h.M, h.G)",
+            "pack_group_headers(h.Wzero, h.N, h.G)",
+        ):
+            self.assertIn(phrase, code)
+        self.assertIn(
+            "#define XDP06_META_TILE_MAJOR 1",
+            w4.WIDE16METATILE_SOURCE.read_text(),
+        )
+
+    def test_wide16_header_staging_cohorts_and_source(self):
+        # Four nonoverlapping 128-thread cohorts load exactly 128 A scales,
+        # 128 A sums, 128 W scales and 128 W zeros per K128 group.
+        cohorts = {(t >> 7, t & 127) for t in range(512)}
+        self.assertEqual(len(cohorts), 4 * 128)
+        for group in range(4):
+            self.assertEqual({row for g, row in cohorts if g == group}, set(range(128)))
+        source = w4.WIDE_SOURCE.read_text()
+        for code in (
+            "#if defined(XDP06_STAGE_META)",
+            "tile_sa[local]",
+            "tile_asum[local]",
+            "tile_sw[local]",
+            "tile_wz[local]",
+            "const int adjusted = acc[e] - tile_wz[ln] * tile_asum[lm]",
+            "__builtin_amdgcn_sched_barrier(0)",
+        ):
+            self.assertIn(code, source)
+        self.assertEqual(
+            w4.WIDE16META_SOURCE.read_text().count("#define XDP06_STAGE_META 1"),
+            1,
+        )
+
+    def test_wide16_wrappers_track_included_source_in_binary_provenance(self):
+        with tempfile.TemporaryDirectory() as temp:
+            source = Path(temp) / "base.hip"
+            source.write_text("old-base")
+            for kernel in ("wide16sched", "wide16meta", "wide16metatile"):
+                wrapper = Path(temp) / (kernel + ".hip")
+                wrapper.write_text("wrapper " + kernel)
+                field = (
+                    "WIDE16SCHED_SOURCE"
+                    if kernel == "wide16sched"
+                    else "WIDE16META_SOURCE"
+                    if kernel == "wide16meta"
+                    else "WIDE16METATILE_SOURCE"
+                )
+                with (
+                    self.subTest(kernel=kernel),
+                    mock.patch.object(w4, "WIDE_SOURCE", source),
+                    mock.patch.object(w4, field, wrapper),
+                ):
+                    first = w4.source_digest(kernel)
+                    expected = hashlib.sha256(
+                        wrapper.read_bytes() + bytes([0]) + source.read_bytes()
+                    ).hexdigest()
+                    self.assertEqual(first, expected)
+                    source.write_text("new-base")
+                    self.assertNotEqual(first, w4.source_digest(kernel))
+                    source.write_text("old-base")
+                    wrapper.write_text("changed-wrapper")
+                    self.assertNotEqual(first, w4.source_digest(kernel))
+                    wrapper.write_text("wrapper " + kernel)
+
+    def test_wide16_wrapped_variants_one_lease_and_isolated_builds(self):
+        with tempfile.TemporaryDirectory() as temp:
+            variants = ("wide16sched", "wide16meta", "wide16metatile")
+            for kernel in variants:
+                for store in ("direct", "paired"):
+                    with (
+                        self.subTest(kernel=kernel, store=store),
+                        mock.patch.object(
+                            w4.subprocess,
+                            "run",
+                            side_effect=AssertionError("subprocess invoked"),
+                        ),
+                        contextlib.redirect_stdout(io.StringIO()) as out,
+                    ):
+                        self.assertEqual(
+                            w4.main(
+                                [
+                                    "--phase",
+                                    "plan",
+                                    "--kernel",
+                                    kernel,
+                                    "--shape-27b",
+                                    "--wide-store",
+                                    store,
+                                    "--output-dir",
+                                    temp,
+                                ]
+                            ),
+                            0,
+                        )
+                    report = json.loads(out.getvalue())
+                    self.assertEqual(report["source_sha256"], w4.source_digest(kernel))
+                    self.assertEqual(
+                        report["commands"]["gpu"][0:3],
+                        ["agent-lease", "acquire", "gpu"],
+                    )
+                    self.assertEqual(
+                        report["commands"]["gpu"][-2:], ["--shape-27b", store]
+                    )
+                    self.assertIn(kernel, report["commands"]["binary"])
+                    self.assertEqual(report["wave32_per_block"], 16)
+                    self.assertFalse(Path(report["commands"]["manifest"]).exists())
+            self.assertNotEqual(
+                w4.binaries(Path(temp), "wide16meta"),
+                w4.binaries(Path(temp), "wide16sched"),
+            )
+
     def test_wide16_kernel_explicit_native_wmma_and_two_barriers(self):
         code = w4.WIDE_SOURCE.read_text()
         self.assertIn("template <bool COALESCED>", code)
@@ -496,6 +769,7 @@ class W4A4ProbeTests(unittest.TestCase):
         self.assertIn("__builtin_amdgcn_wmma_i32_16x16x16_iu4_w32", code)
         self.assertIn("XDP06_WIDE_PASS", code)
         self.assertIn("XDP06_WIDE_SUITE_PASS cases=24", code)
+        self.assertIn("XDP06_WIDE_PAIRED_PASS modes=2", code)
         self.assertNotIn("gemm_mxfp4", code)
 
     def test_isolated_hip_contains_real_native_opcode_and_group_fix(self):

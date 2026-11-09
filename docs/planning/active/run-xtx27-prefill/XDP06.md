@@ -571,7 +571,7 @@ provenance, separate manifests,
 reject-invalid flags, native intrinsic
 and source structure. The revised
 direct/coalesced variant pair has
-**55 XDP card-free tests** passing,
+**56 XDP card-free tests** passing,
 including XDP04/XDP05 regression
 tests; Ruff passes. The hardware suite
 includes 12 shapes × 2 store modes =
@@ -759,9 +759,276 @@ source-copy, group folds and
 effective occupancy instead.
 
 **Status:** compiled and card-free
-tested (**55** XDP tests) while
+tested (**56** XDP tests) while
 another agent holds the exclusive
 GPU lease; **no GPU numerical
 or performance result yet**.
 No production engine patch,
 model conversion or extra worktree.
+
+## Single-lease 27B direct/coalesced paired command
+
+The wide binary also accepts
+`--shape-27b paired`; the
+same tester exposes this as
+`--kernel wide --shape-27b
+--wide-store paired`. Within
+**one exclusive agent-lease** it
+runs the direct and coalesced
+M512/N17408/K5120 experiments,
+each with the **same deterministic
+Host seed 73**, full C nonfinite
+scan, 768+ CPU oracle samples
+and three timed HIP event rounds.
+The candidate modes have
+independent run markers, and the
+terminal `XDP06_WIDE_PAIRED_PASS
+modes=2` marker appears only
+after **both** numeric gates pass.
+The Python runner additionally
+requires the per-mode markers
+`store=direct` and
+`store=coalesced` and a
+fresh source+binary SHA manifest
+before accepting success.
+
+```sh
+python3 tools/lab/radiance/xtx27_w4a4.py --phase gpu \
+  --kernel wide --shape-27b --wide-store paired --run --device 0
+```
+
+This is a **sequential same-lease
+comparison**, not fully randomized
+or clock-rotated. Because the
+benchmark constructs and uploads
+the deterministic Host twice,
+it does not time a single shared
+prepacked device allocation across
+both modes. To promote a speed
+claim, repeat the same-lease pair
+at least three times, interleave
+direction/order if controls permit,
+record clocks/temperature and
+compare the unchanged XDP05 and
+MXFP4 kernels with their own
+provenance. Workload and
+numeric seeds match, but neither
+synthetic quantization nor same-
+shape MXFP4 constitutes a
+real-model quality comparison.
+
+**Decision XDP06-D6:** use
+this single tester and one lease
+for the first paired direct-vs-
+coalesced 27B experiment.
+Retain a nonzero exit on any
+oracle or metadata mismatch;
+do not derive speed conclusions
+from a partial log or from the
+compile-only resource screen.
+The source compiles to the same
+147/149-VGPR, 16,384/16,512-B
+LDS no-spill code objects.
+The initial 56 card-free XDP
+tests pass. Hardware remains
+pending while RAD49 is serving/
+profiling under its GPU lease.
+
+## Follow-up: Hipfire dataflow and per-group metadata scheduling, 2026-11-09
+
+### Verified XDP06 wide-tile GPU result (supersedes earlier pending notes)
+
+The first `--kernel wide --suite --run` GPU invocation ran
+under an exclusive GPU lease and passed **24/24** exact-output
+cases across 12 dimensions and both store modes.
+`--kernel wide --shape-27b --wide-store paired --run` also
+passed: **all 8,912,896 outputs** were scanned for nonfinite
+values, and **768 of those** per mode were compared to
+the independent int32/group128 host oracle, with **zero
+reported absolute error**. At M512/N17408/K5120, three
+HIP-event rounds within the same leased run produced:
+
+| XDP06 128×128 / 16 wave | Minimum | Median | Maximum |
+|---|---:|---:|---:|
+| Direct row-major stores | 2,267 µs | **2,311 µs** | 2,317 µs |
+| LDS-transposed, coalesced stores | 1,933 µs | **1,952 µs** | 2,019 µs |
+
+This is **15.5% faster** for the same wide-tile kernel after
+coalescing, but **~11.7% slower** than XDP05's previous
+1,747-µs, 32×64 kernel and **~2.12× slower** than the
+previous ~923-µs pinned MXFP4 control. They are not a
+fully clock-rotated three-run A/B, and none includes GPU
+A4 quantization or original BF16 quality measurement.
+Logs: `${BC_WORK_ROOT}/xtx27-prefill/w4a4/gpu-wide16-suite.log`
+and `gpu-wide16-27b-paired.log`.
+A later XDP05 rerun was rejected by the exclusive lease
+because RAD49 resumed GPU work; **no value from that
+rejected rerun is used as timing evidence**.
+
+This observation invalidates the simple hypothesis that a
+larger 128×128 tile alone explains Hipfire's better timings.
+The output layout also matters and a more efficient
+metadata/codegen pipeline is needed.
+
+### Hipfire source-level comparison: where the remaining gap is
+
+Reviewed the default-branch hipfire
+`kernels/src/gemm_mq4g256v2_residual_mmq_iu4.gfx11.hip`
+and its accompanying historical gfx1100 Lloyd-split
+investigation. Its native IU4 kernel stages packed weight
+data **plus dual f16 weight scale/zero headers** and per
+128-element activation sidecars `(f32 scale, i32 sum,
+64 packed bytes)` into LDS. The consumer reads its group
+headers from LDS at the point of integer-accumulator fold.
+Its tuned 16-wave variant has 32 f32 sums/lane, one live
+int32 chain, and a compiler scheduling fence between
+subtiles; hipfire notes a **98-VGPR** low-live-state
+configuration in its own compiler experiment. These
+details belong to hipfire's MQ4G256V2 tensor encoding and
+column-major output: the model format and quantization
+scheme are **not** interchangeable with BigCherry's
+current row-major W4A4 research representation.
+
+By contrast, before this follow-up BigCherry's wide
+kernel read `sa[m,g]`, `sw[n,g]`,
+`asum[m,g]` and `wz[n,g]` from global memory
+**inside each output fold**, with 40 K128 groups and 32
+f32 persistent sums/lane. Even if L2 caches these values,
+the generated code maintains additional addresses,
+scalar-to-vector flows and live intermediates. The
+compiler reported 147/149 VGPR per direct/coalesced
+thread. Hypothesis: *metadata address/lifetime, not
+simply WMMA arithmetic or 80 barriers*, is a large
+part of this gap. GPU timing is still required.
+
+### Controlled, independent code experiments
+
+The existing 128×128 / 16-wave kernel now has **two
+optional compile-time code ablations** (both off in the
+XDP06 default `--kernel wide`):
+
+- **`wide16sched`**, wrapper
+  `xtx27_w4a4_wide16_sched.hip`, invokes
+  `__builtin_amdgcn_sched_barrier(0)` after each
+  16×16 fold. The compiler generated **exactly the
+  same resource allocation**, direct 147 VGPR /
+  66 SGPR /16,384 B LDS and coalesced 149 VGPR /
+  68 SGPR /16,512 B LDS; no spills. Therefore
+  **scheduling fence alone is not the solution**,
+  and the arm is deprioritized pending a specific
+  measured reason to benchmark it.
+- **`wide16meta`**, wrapper
+  `xtx27_w4a4_wide16_meta.hip`, stages four
+  128-element header arrays per K128 group:
+  A f32 scale, A exact int32 sum, W f32 scale,
+  W int32 zero. Four nonoverlapping 128-thread
+  cohorts perform 512 total header loads, all
+  before the existing first group barrier.
+  The same signed-A4×unsigned-W4 8-WMMA chain,
+  i32 subtraction and f32 per-group
+  multiplication/fmaf remain unchanged.
+  The compiler produced a substantial
+  **register-allocation reduction**:
+
+  | Variant | VGPR | SGPR | LDS | Spills | Fixed private segment |
+  |---|---:|---:|---:|---:|---:|
+  | wide direct (unchanged) | 147 | 66 | 16,384 B | 0 | 0 |
+  | wide coalesced (unchanged) | 149 | 68 | 16,512 B | 0 | 0 |
+  | wide16sched direct / coalesced | 147 / 149 | 66 / 68 | unchanged | 0 | 0 |
+  | **wide16meta direct** | **104** | 68 | 18,432 B | 0 | 0 |
+  | **wide16meta coalesced** | **110** | 70 | 18,560 B | 0 | 0 |
+
+  These are actual `hipcc -O2 --offload-arch=gfx1100`
+  and `llvm-readelf -n` results, not an assumed
+  occupancy improvement. Both variants still emit
+  real `v_wmma_i32_16x16x16_iu4`, 0 reported
+  spills and 0 fixed private segment.
+
+- **96-VGPR cap is rejected**: a scratch-only
+  `__launch_bounds__(512,2)` +
+  `amdgpu_num_vgpr(96)` build of staged metadata
+  forced 8 VGPR spills/36 B private per direct
+  thread, and 12 spills/52 B private per coalesced
+  thread. Do **not** force an attractive 96-VGPR
+  metric by introducing new global scratch traffic.
+  This failed compiler preflight is retained
+  under `${BC_WORK_ROOT}/xtx27-prefill/w4a4/meta96-preflight*`;
+  it is **not** a selectable GPU arm.
+
+- **`wide8`** is the separate 8-wave/256-thread
+  128×128 candidate from the prior ablation.
+  Its 64 f32 sums/lane resulted in **165 VGPR**
+  (direct and coalesced), 91/93 SGPR and
+  16,384/16,512 B LDS, no spills. That
+  higher register count than the 16-wave
+  staged metadata option means it is a
+  valuable experimental control but not
+  an occupancy win by construction.
+
+All source variants are BigCherry-owned, isolated
+standalone HIP programs. No third-party kernel was
+copied or executed and no vendor files were modified.
+
+### CLI, provenance and GPU acceptance
+
+The existing `xtx27_w4a4.py` command
+supports the `oracle`, `tiled`, `wide`,
+`wide8`, `wide16sched` and `wide16meta`
+kernels, each with a **distinct scratch binary,
+manifest and log prefix**. The two new
+include-based wrappers have a composite SHA-256
+over the wrapper and the included base source,
+so a modification to either invalidates a
+compiled binary. `--phase plan` never builds
+or acquires a GPU, and `--phase compile --run`
+never launches GPU kernels. `--phase gpu --run`
+requires a fresh matching source/binary SHA
+and acquires an exclusive `agent-lease`.
+
+The GPU tests are **pending** for `wide8`,
+`wide16sched`, and `wide16meta`. The
+highest-priority new arm is `wide16meta`;
+there is no speed or model-quality claim from
+its successful compile. When GPUs are free:
+
+```sh
+python3 tools/lab/radiance/xtx27_w4a4.py --phase gpu \
+  --kernel wide16meta --suite --run --device 0
+python3 tools/lab/radiance/xtx27_w4a4.py --phase gpu \
+  --kernel wide16meta --shape-27b --wide-store paired --run --device 0
+python3 tools/lab/radiance/xtx27_w4a4.py --phase gpu \
+  --kernel wide8 --suite --run --device 0
+python3 tools/lab/radiance/xtx27_w4a4.py --phase gpu \
+  --kernel wide8 --shape-27b --wide-store paired --run --device 0
+```
+
+First require **24/24 full-output small GPU oracle
+cases per kernel** and then full-size
+nonfinite scan + **768 sampled integer oracle
+checks** per mode. Only after correctness, compare
+paired full-shape medians with `wide`, XDP05
+and pinned MXFP4 on the **same GPU**.
+Repeat and rotate arms when the lease permits,
+tracking GPU clocks/conditions. Any new
+GPU A4 quantization, tile-major weight
+repacking or quantizer quality cost remains
+excluded from this isolated kernel timing
+and must be included before runtime promotion.
+
+**Decision XDP06-D7:** staged metadata is the
+leading path because it is a measured
+compiler-resource improvement and more
+closely matches the benchmarked hipfire
+dataflow. It is not yet a measured
+performance improvement. Reject the
+96-VGPR forced-spill build, deprioritize
+the no-impact scheduling fence and retain
+the 8-wave case as a controlled topology
+comparison. Do not modify the production
+engine or convert the 27B checkpoint
+until isolated performance and real-model
+KL pass.
+
+## Measured continuation and decisions
+
+See [XDP07](XDP07.md) for the completed same-XTX 24-case GPU oracles, three independent staged-header 27B projection runs, two group-major-header runs, the 8-wave rejection, source/ISA allocation evidence and quality/promotion gates. The 16-wave staged-header/coalesced median reached **1,056.9 us**, versus fresh XDP05 **1,762.5 us** and MXFP4 **927.9 us**. XDP06 and XDP07 remain experimental; no production kernel or BF16 model conversion was changed.

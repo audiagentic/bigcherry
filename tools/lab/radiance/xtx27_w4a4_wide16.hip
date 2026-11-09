@@ -24,6 +24,18 @@
 using vi2 = int __attribute__((ext_vector_type(2)));
 using vi8 = int __attribute__((ext_vector_type(8)));
 
+// Layout-only experiment: the host independently packs row-major headers
+// once into 128-row group-major slabs before H2D. This never changes the
+// original CPU oracle's row-major metadata or the K128 quantization math.
+static __host__ __device__ __forceinline__ size_t meta_group_offset(
+    int row, int group, int groups) {
+#if defined(XDP06_META_TILE_MAJOR)
+    return (size_t(row >> 7) * groups + group) * 128 + (row & 127);
+#else
+    return size_t(row) * groups + group;
+#endif
+}
+
 static bool ok(hipError_t e, const char *site) {
     if (e == hipSuccess) return true;
     std::fprintf(stderr, "XDP06_HIP_FAIL %s: %s\n", site, hipGetErrorString(e));
@@ -36,8 +48,13 @@ static bool ok(hipError_t e, const char *site) {
 // so the XDP05 binary/source and its hash-bound benchmark remain unchanged.
 // Per wave: one M16 band, four separate N16 subtile output chains. Only one
 // live 8-lane int32 WMMA chain at a time; 32 persistent f32 output sums.
+#if defined(XDP06_CAP96)
+#define XDP06_WIDE_LAUNCH __launch_bounds__(512, 2) __attribute__((amdgpu_num_vgpr(96)))
+#else
+#define XDP06_WIDE_LAUNCH __launch_bounds__(512)
+#endif
 template <bool COALESCED>
-__global__ __launch_bounds__(512) void w4a4_wide16(
+__global__ XDP06_WIDE_LAUNCH void w4a4_wide16(
     const unsigned* __restrict__ aq, const unsigned* __restrict__ wq,
     const float* __restrict__ sa, const float* __restrict__ sw,
     const int* __restrict__ asum, const int* __restrict__ wz,
@@ -49,6 +66,13 @@ __global__ __launch_bounds__(512) void w4a4_wide16(
     // to avoid 16-way LDS bank conflicts for column-constant WMMA stores.
     constexpr int OUT_STRIDE = 129, OUT_STAGE_WORDS = 32 * OUT_STRIDE;
     __shared__ unsigned stage[COALESCED ? OUT_STAGE_WORDS : STAGE_WORDS];
+#if defined(XDP06_STAGE_META)
+    // Coalesce group-header loading once per physical A/W row, then reuse
+    // through four independent N16 output subtiles. This is the same logical
+    // per-row/group metadata as XDP05, NOT a different quantization formula.
+    __shared__ float tile_sa[128], tile_sw[128];
+    __shared__ int tile_asum[128], tile_wz[128];
+#endif
 
     const int tid = threadIdx.x, wave = tid >> 5, lane = tid & 31;
     const int wm = wave >> 1;
@@ -81,6 +105,22 @@ __global__ __launch_bounds__(512) void w4a4_wide16(
             }
             stage[word] = value;
         }
+#if defined(XDP06_STAGE_META)
+        // The four 128-thread cohorts each read one scalar per live row;
+        // invalid edge rows are initialized to zero (never used by C).
+        const int local = tid & 127;
+        const int ma = int(blockIdx.y) * 128 + local;
+        const int nw = int(blockIdx.x) * 128 + local;
+        if (tid < 128) {
+            tile_sa[local] = ma < M ? sa[meta_group_offset(ma, g, G)] : 0.f;
+        } else if (tid < 256) {
+            tile_asum[local] = ma < M ? asum[meta_group_offset(ma, g, G)] : 0;
+        } else if (tid < 384) {
+            tile_sw[local] = nw < N ? sw[meta_group_offset(nw, g, G)] : 0.f;
+        } else {
+            tile_wz[local] = nw < N ? wz[meta_group_offset(nw, g, G)] : 0;
+        }
+#endif
         __syncthreads();
 
         // The native gfx11 IU4 C layout is transposed relative to A/W:
@@ -105,12 +145,26 @@ __global__ __launch_bounds__(512) void w4a4_wide16(
             for (int e = 0; e < 8; ++e) {
                 const int n = n0 + c * 16 + 2 * e + (lane >> 4);
                 if (m < M && n < N) {
+#if defined(XDP06_STAGE_META)
+                    const int lm = 16 * wm + (lane & 15);
+                    const int ln = 16 * (wn0 + c) + 2 * e + (lane >> 4);
+                    const int adjusted = acc[e] - tile_wz[ln] * tile_asum[lm];
+                    sums[c][e] = fmaf(
+                        float(adjusted) * tile_sa[lm], tile_sw[ln], sums[c][e]);
+#else
                     const int adjusted = acc[e]
                         - wz[size_t(n) * G + g] * asum[size_t(m) * G + g];
                     sums[c][e] = fmaf(float(adjusted) * sa[size_t(m) * G + g],
                                       sw[size_t(n) * G + g], sums[c][e]);
+#endif
                 }
             }
+#if defined(XDP06_SCHED_FENCE)
+            // Research-only compiler scheduling fence. Hipfire measured a
+            // shorter accumulator live range with an equivalent barrier.
+            // No machine instruction; never changes scalar math or ownership.
+            __builtin_amdgcn_sched_barrier(0);
+#endif
         }
         // The LDS slab is not reused until all waves consume this group.
         __syncthreads();
@@ -236,6 +290,20 @@ struct Host {
     }
 };
 
+// Keep the CPU oracle and random generators unchanged; the group-major
+// layout exists only in the *input staging* to the research GPU kernel.
+// A real engine needs a co-designed producer and must price this repack.
+template <typename T>
+static std::vector<T> pack_group_headers(
+    const std::vector<T>& row_major, int rows, int groups) {
+    std::vector<T> packed(size_t((rows + 127) / 128) * groups * 128, T{});
+    for (int row = 0; row < rows; ++row)
+        for (int g = 0; g < groups; ++g)
+            packed[(size_t(row / 128) * groups + g) * 128 + (row & 127)]
+                = row_major[size_t(row) * groups + g];
+    return packed;
+}
+
 struct Device {
     unsigned *A = nullptr, *W = nullptr;
     float *Sa = nullptr, *Sw = nullptr, *C = nullptr;
@@ -249,11 +317,23 @@ struct Device {
                       sizeof(typename std::decay_t<decltype(src)>::value_type),
                       hipMemcpyHostToDevice), site);
         };
-        // HIP code reads uint32 for coalesced packed operands. Host
-        // byte vectors have exact 4B multiples and are cast on GPU.
+        // HIP reads uint32 packed operand fragments. For this isolated
+        // layout ablation, metadata may be repacked *once* on the host
+        // before H2D (not timed in the kernel-only benchmark).
+#if defined(XDP06_META_TILE_MAJOR)
+        const auto sa_in = pack_group_headers(h.Sa, h.M, h.G);
+        const auto sw_in = pack_group_headers(h.Sw, h.N, h.G);
+        const auto asum_in = pack_group_headers(h.Asum, h.M, h.G);
+        const auto wz_in = pack_group_headers(h.Wzero, h.N, h.G);
+#else
+        const auto& sa_in = h.Sa;
+        const auto& sw_in = h.Sw;
+        const auto& asum_in = h.Asum;
+        const auto& wz_in = h.Wzero;
+#endif
         if (!xfer(&A, h.A, "A") || !xfer(&W, h.W, "W")
-            || !xfer(&Sa, h.Sa, "Sa") || !xfer(&Sw, h.Sw, "Sw")
-            || !xfer(&Asum, h.Asum, "Asum") || !xfer(&Wzero, h.Wzero, "Wzero"))
+            || !xfer(&Sa, sa_in, "Sa") || !xfer(&Sw, sw_in, "Sw")
+            || !xfer(&Asum, asum_in, "Asum") || !xfer(&Wzero, wz_in, "Wzero"))
             return false;
         return ok(hipMalloc(&C, size_t(h.M) * h.N * sizeof(float)), "C");
     }
@@ -403,10 +483,19 @@ int main(int argc, char** argv) {
         return 0;
     }
     if (argc >= 2 && std::strcmp(argv[1], "--shape-27b") == 0) {
-        if (argc != 3 ||
-            (std::strcmp(argv[2], "direct") != 0 &&
-             std::strcmp(argv[2], "coalesced") != 0))
-            return 2;
+        if (argc != 3) return 2;
+        // One lease, same deterministic Host seed and shape in both modes.
+        // This is sequential A/B, NOT a fully interleaved temperature A/B.
+        if (std::strcmp(argv[2], "paired") == 0) {
+            int rc = one(512, 17408, 5120, 15, 73, false, false);
+            if (rc) return rc;
+            rc = one(512, 17408, 5120, 15, 73, false, true);
+            if (rc) return rc;
+            std::puts("XDP06_WIDE_PAIRED_PASS modes=2 M=512 N=17408 K=5120");
+            return 0;
+        }
+        if (std::strcmp(argv[2], "direct") != 0 &&
+            std::strcmp(argv[2], "coalesced") != 0) return 2;
         return one(512, 17408, 5120, 15, 73, false,
                    std::strcmp(argv[2], "coalesced") == 0);
     }

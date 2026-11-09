@@ -28,6 +28,10 @@ ROOT = Path(__file__).resolve().parents[3]
 SOURCE = Path(__file__).with_name("xtx27_w4a4_probe.hip")
 TILED_SOURCE = Path(__file__).with_name("xtx27_w4a4_tiled.hip")
 WIDE_SOURCE = Path(__file__).with_name("xtx27_w4a4_wide16.hip")
+WIDE8_SOURCE = Path(__file__).with_name("xtx27_w4a4_wide8.hip")
+WIDE16SCHED_SOURCE = Path(__file__).with_name("xtx27_w4a4_wide16_sched.hip")
+WIDE16META_SOURCE = Path(__file__).with_name("xtx27_w4a4_wide16_meta.hip")
+WIDE16METATILE_SOURCE = Path(__file__).with_name("xtx27_w4a4_wide16_metatile.hip")
 GROUP = 128
 FORMATS = ("normal", "outlier")
 DEFAULT_SCRATCH = (
@@ -221,13 +225,50 @@ def binaries(output_dir: Path, kernel: str = "oracle") -> tuple[Path, Path]:
             output_dir / "gfx1100-w4a4-wide16",
             output_dir / "w4a4-wide16-manifest.json",
         )
+    if kernel == "wide8":
+        return (
+            output_dir / "gfx1100-w4a4-wide8",
+            output_dir / "w4a4-wide8-manifest.json",
+        )
+    if kernel == "wide16sched":
+        return (
+            output_dir / "gfx1100-w4a4-wide16sched",
+            output_dir / "w4a4-wide16sched-manifest.json",
+        )
+    if kernel == "wide16meta":
+        return (
+            output_dir / "gfx1100-w4a4-wide16meta",
+            output_dir / "w4a4-wide16meta-manifest.json",
+        )
+    if kernel == "wide16metatile":
+        return (
+            output_dir / "gfx1100-w4a4-wide16metatile",
+            output_dir / "w4a4-wide16metatile-manifest.json",
+        )
     if kernel != "oracle":
         raise ValueError("unknown kernel")
     return (output_dir / "gfx1100-w4a4-probe", output_dir / "w4a4-manifest.json")
 
 
 def source_for(kernel: str) -> Path:
-    return {"oracle": SOURCE, "tiled": TILED_SOURCE, "wide": WIDE_SOURCE}[kernel]
+    return {
+        "oracle": SOURCE,
+        "tiled": TILED_SOURCE,
+        "wide": WIDE_SOURCE,
+        "wide8": WIDE8_SOURCE,
+        "wide16sched": WIDE16SCHED_SOURCE,
+        "wide16meta": WIDE16META_SOURCE,
+        "wide16metatile": WIDE16METATILE_SOURCE,
+    }[kernel]
+
+
+def source_digest(kernel: str) -> str:
+    """Fingerprint the wrapper and its included kernel for stale-binary safety."""
+    if kernel in ("wide16sched", "wide16meta", "wide16metatile"):
+        return hashlib.sha256(
+            source_for(kernel).read_bytes() + b"\0" + WIDE_SOURCE.read_bytes()
+        ).hexdigest()
+    return sha256_file(source_for(kernel))
 
 
 def command_lines(args: argparse.Namespace) -> dict:
@@ -251,7 +292,15 @@ def command_lines(args: argparse.Namespace) -> dict:
             "--ttl",
             "30m",
             "--purpose",
-            "XDP06 wide16 gfx1100 native W4A4"
+            "XDP06 wide16 group-major-metadata gfx1100 native W4A4"
+            if args.kernel == "wide16metatile"
+            else "XDP06 wide16 staged-metadata gfx1100 native W4A4"
+            if args.kernel == "wide16meta"
+            else "XDP06 wide16 compiler-sched gfx1100 native W4A4"
+            if args.kernel == "wide16sched"
+            else "XDP06 wide8 gfx1100 native W4A4"
+            if args.kernel == "wide8"
+            else "XDP06 wide16 gfx1100 native W4A4"
             if args.kernel == "wide"
             else "XDP05 tiled gfx1100 W4A4"
             if args.kernel == "tiled"
@@ -263,7 +312,8 @@ def command_lines(args: argparse.Namespace) -> dict:
                     ["--shape-27b", str(args.tile_m)]
                     if args.kernel == "tiled"
                     else ["--shape-27b", args.wide_store]
-                    if args.kernel == "wide"
+                    if args.kernel
+                    in ("wide", "wide8", "wide16sched", "wide16meta", "wide16metatile")
                     else ["--shape-27b"]
                 )
                 if args.shape_27b
@@ -276,7 +326,18 @@ def command_lines(args: argparse.Namespace) -> dict:
                     str(args.iters),
                     str(args.seed),
                     *([str(args.tile_m)] if args.kernel == "tiled" else []),
-                    *([args.wide_store] if args.kernel == "wide" else []),
+                    *(
+                        [args.wide_store]
+                        if args.kernel
+                        in (
+                            "wide",
+                            "wide8",
+                            "wide16sched",
+                            "wide16meta",
+                            "wide16metatile",
+                        )
+                        else []
+                    ),
                 ]
             ),
         ],
@@ -299,16 +360,30 @@ def execute(args: argparse.Namespace) -> dict:
         "schema": "xtx27.w4a4.execution.v1",
         "phase": args.phase,
         "git_root": str(ROOT),
-        "source_sha256": sha256_file(source_for(args.kernel)),
+        "source_sha256": source_digest(args.kernel),
         "output_dir": str(args.output_dir),
         "commands": commands,
         "does_not_patch_production": True,
         "native_gfx1100_iu4": True,
         "kernel": args.kernel,
         "tile_m": args.tile_m if args.kernel == "tiled" else None,
-        "output_tile": [128, 128] if args.kernel == "wide" else None,
-        "wave32_per_block": 16 if args.kernel == "wide" else None,
-        "wide_store": args.wide_store if args.kernel == "wide" else None,
+        "output_tile": [128, 128]
+        if args.kernel
+        in ("wide", "wide8", "wide16sched", "wide16meta", "wide16metatile")
+        else None,
+        "wave32_per_block": (
+            16
+            if args.kernel in ("wide", "wide16sched", "wide16meta", "wide16metatile")
+            else 8
+            if args.kernel == "wide8"
+            else None
+        ),
+        "wide_store": (
+            args.wide_store
+            if args.kernel
+            in ("wide", "wide8", "wide16sched", "wide16meta", "wide16metatile")
+            else None
+        ),
         "prepacked_operands": True,
         "gpu_activation_quantization_implemented": False,
         "algorithm": "A4 signed x W4 unsigned, asymmetric W zero correction, group128",
@@ -361,7 +436,39 @@ def execute(args: argparse.Namespace) -> dict:
         raise ValueError("probe or binary has changed since compile; rebuild first")
     if args.device < 0:
         raise ValueError("device must be a nonnegative inventory index")
-    if args.kernel == "wide":
+    if args.kernel == "wide16metatile":
+        logfile = (
+            f"gpu-wide16metatile-27b-{args.wide_store}.log"
+            if args.shape_27b
+            else "gpu-wide16metatile-suite.log"
+            if args.suite
+            else f"gpu-wide16metatile-M{args.m}-N{args.n}-K{args.k}-store{args.wide_store}-seed{args.seed}.log"
+        )
+    elif args.kernel == "wide16meta":
+        logfile = (
+            f"gpu-wide16meta-27b-{args.wide_store}.log"
+            if args.shape_27b
+            else "gpu-wide16meta-suite.log"
+            if args.suite
+            else f"gpu-wide16meta-M{args.m}-N{args.n}-K{args.k}-store{args.wide_store}-seed{args.seed}.log"
+        )
+    elif args.kernel == "wide16sched":
+        logfile = (
+            f"gpu-wide16sched-27b-{args.wide_store}.log"
+            if args.shape_27b
+            else "gpu-wide16sched-suite.log"
+            if args.suite
+            else f"gpu-wide16sched-M{args.m}-N{args.n}-K{args.k}-store{args.wide_store}-seed{args.seed}.log"
+        )
+    elif args.kernel == "wide8":
+        logfile = (
+            f"gpu-wide8-27b-{args.wide_store}.log"
+            if args.shape_27b
+            else "gpu-wide8-suite.log"
+            if args.suite
+            else f"gpu-wide8-M{args.m}-N{args.n}-K{args.k}-store{args.wide_store}-seed{args.seed}.log"
+        )
+    elif args.kernel == "wide":
         logfile = (
             f"gpu-wide16-27b-{args.wide_store}.log"
             if args.shape_27b
@@ -399,11 +506,25 @@ def execute(args: argparse.Namespace) -> dict:
     contents = log.read_text()
     marker = (
         ("XDP06_WIDE_SUITE_PASS" if args.suite else "XDP06_WIDE_PASS")
-        if args.kernel == "wide"
+        if args.kernel in ("wide", "wide16sched", "wide16meta", "wide16metatile")
+        else ("XDP06_WIDE8_SUITE_PASS" if args.suite else "XDP06_WIDE8_PASS")
+        if args.kernel == "wide8"
         else ("XDP05_TILED_SUITE_PASS" if args.suite else "XDP05_TILED_PASS")
         if args.kernel == "tiled"
         else ("XDP04_GPU_SUITE_PASS" if args.suite else "XDP04_GPU_PASS")
     )
+    if (
+        args.kernel in ("wide", "wide8", "wide16sched", "wide16meta", "wide16metatile")
+        and args.shape_27b
+        and args.wide_store == "paired"
+    ):
+        marker = (
+            "XDP06_WIDE8_PAIRED_PASS"
+            if args.kernel == "wide8"
+            else "XDP06_WIDE_PAIRED_PASS"
+        )
+        if "store=direct" not in contents or "store=coalesced" not in contents:
+            raise RuntimeError(f"paired mode missing one benchmark: {log}")
     if completed.returncode != 0 or marker not in contents:
         raise RuntimeError(
             f"GPU oracle/lease failed (exit {completed.returncode}): {log}"
@@ -411,7 +532,9 @@ def execute(args: argparse.Namespace) -> dict:
     result["gpu"] = {
         "status": (
             "PASS_EXPERIMENTAL_WIDE_ORACLE_ONLY"
-            if args.kernel == "wide"
+            if args.kernel in ("wide", "wide16sched", "wide16meta", "wide16metatile")
+            else "PASS_EXPERIMENTAL_WIDE8_ORACLE_ONLY"
+            if args.kernel == "wide8"
             else "PASS_EXPERIMENTAL_TILED_ORACLE_ONLY"
             if args.kernel == "tiled"
             else "PASS_EXPERIMENTAL_ORACLE_ONLY"
@@ -433,13 +556,21 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--suite",
         action="store_true",
-        help="GPU oracle cases in one lease (six oracle, 27 tiled, 24 wide)",
+        help="GPU oracle cases in one lease (six oracle, 27 tiled, 24 wide16 or wide8)",
     )
     parser.add_argument(
         "--kernel",
-        choices=("oracle", "tiled", "wide"),
+        choices=(
+            "oracle",
+            "tiled",
+            "wide",
+            "wide8",
+            "wide16sched",
+            "wide16meta",
+            "wide16metatile",
+        ),
         default="oracle",
-        help="standalone kernel (oracle default preserves XDP04; wide is XDP06)",
+        help="standalone kernel (oracle default; wide16/8, sched, meta, metatile are XDP06 research)",
     )
     parser.add_argument(
         "--shape-27b",
@@ -455,9 +586,9 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--wide-store",
-        choices=("direct", "coalesced"),
+        choices=("direct", "coalesced", "paired"),
         default="direct",
-        help="XDP06 output store: direct scatter or LDS-transposed coalesced",
+        help="XDP06 output store: direct, LDS-coalesced, or paired same-lease full-shape A/B",
     )
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_SCRATCH)
     parser.add_argument("--hipcc", default="/opt/rocm/bin/hipcc")
@@ -484,16 +615,35 @@ def main(argv: list[str] | None = None) -> int:
             or args.iters > 10000
         ):
             raise ValueError("positive dimensions and 1..10000 iterations required")
-        if args.kernel != "wide" and args.wide_store != "direct":
+        if args.wide_store == "paired" and (not args.shape_27b or args.suite):
+            raise ValueError("--wide-store paired requires --shape-27b without --suite")
+        if (
+            args.kernel
+            not in ("wide", "wide8", "wide16sched", "wide16meta", "wide16metatile")
+            and args.wide_store != "direct"
+        ):
             raise ValueError("--wide-store only applies to wide kernel")
-        if args.kernel == "wide" and args.suite and args.wide_store != "direct":
+        if (
+            args.kernel
+            in ("wide", "wide8", "wide16sched", "wide16meta", "wide16metatile")
+            and args.suite
+            and args.wide_store != "direct"
+        ):
             raise ValueError("wide suite tests both stores; do not select --wide-store")
         if args.kernel != "tiled" and args.tile_m != 2:
             raise ValueError("--tile-m only applies to tiled probe")
         if args.suite and args.phase not in ("plan", "gpu"):
             raise ValueError("--suite is for plan/gpu only")
         if args.shape_27b and (
-            args.kernel not in ("tiled", "wide")
+            args.kernel
+            not in (
+                "tiled",
+                "wide",
+                "wide8",
+                "wide16sched",
+                "wide16meta",
+                "wide16metatile",
+            )
             or args.phase not in ("plan", "gpu")
             or args.suite
         ):
