@@ -22,12 +22,13 @@ int rad50_serial_entry(int, char**);
 int rad50_ipc_entry(int, char**);
 int rad50_transfer_entry(int, char**);
 int rad50_live_ready_entry(int, char**);
+int rad50_vmem_cap_entry(int, char**);
 int rad50_combine_entry();
 int rad50_cpu_handoff_entry(int, char**);
 
 namespace {
 enum class Kind {
-    Pools, HipSmoke, Serial, Ipc, Transfer, LiveReady, Combine, CpuHandoff
+    Pools, HipSmoke, Serial, Ipc, IpcMap, IpcGpuCpu, VmemCap, Transfer, LiveReady, Combine, CpuHandoff
 };
 struct Test {
     const char* name;
@@ -41,6 +42,9 @@ constexpr Test tests[] = {
     {"hip-smoke", Kind::HipSmoke, true, true, "HIP-only kernel launch; no BAR or HSA allocation (R9700 diagnostic)"},
     {"serial", Kind::Serial, true, true, "CPU store into HSA GPU-local VRAM, then GPU full-word check (Gate 2)"},
     {"ipc", Kind::Ipc, true, true, "CPU-only child imports GPU VRAM and writes; parent GPU verifies (Gate 2b)"},
+    {"ipc-map", Kind::IpcMap, true, true, "GPU-agent-only same-device IPC import, CPU grant metadata; no writes"},
+    {"ipc-gpu-cpu", Kind::IpcGpuCpu, true, true, "GPU-agent IPC import then CPU writes 4 KiB; parent GPU verifies"},
+    {"vmem-cap", Kind::VmemCap, true, true, "GPU-local VMM DMA-BUF export and local CPU VMA capability"},
     {"transfer", Kind::Transfer, true, true, "Uncontended CPU BAR write versus mapped-host GPU pull (Gate 3)"},
     {"live-ready", Kind::LiveReady, true, true, "GPU already waiting before CPU BAR data and ready flag (Gate 4 canary)"},
     {"combine-ref", Kind::Combine, false, false, "Card-free FP16 combine/sentinel reference checks"},
@@ -160,6 +164,15 @@ int run(const Args& a,const char* self) {
       case Kind::Ipc:
         args.insert(args.end(),{"--device",std::to_string(a.device)});
         return call_entry(rad50_ipc_entry,args);
+      case Kind::IpcMap:
+        args.insert(args.end(),{"--device",std::to_string(a.device),"--probe-attach-gpu-only"});
+        return call_entry(rad50_ipc_entry,args);
+      case Kind::IpcGpuCpu:
+        args.insert(args.end(),{"--device",std::to_string(a.device),"--probe-gpu-then-cpu"});
+        return call_entry(rad50_ipc_entry,args);
+      case Kind::VmemCap:
+        args.insert(args.end(),{"--device",std::to_string(a.device)});
+        return call_entry(rad50_vmem_cap_entry,args);
       case Kind::Transfer:
         args.insert(args.end(),{"--device",std::to_string(a.device),
                                 "--iterations",std::to_string(a.iterations)});

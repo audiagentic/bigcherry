@@ -187,3 +187,13 @@ Do not claim CPU BAR push is faster without the complete comparison.
 - 2026-11-09 (updated-by): Gate 2 serial CPU BAR/GPU read **passed on both RX 7900 XTX cards**: 4 KiB and 4 MiB each, 12 generations each, every word checked, exits 0. R9700 `gfx1201` canary exited 1 without output, leaving its correctness unresolved. Added lab-only early diagnostic markers and recompiled R9700 probe without retesting. Exclusive GPU lease released. Cross-process mapping, live ready signalling and speed are still unverified.
 
 - 2026-11-09 (updated-by): R9700 gfx1201 exit-1 narrowed to the first HIP GPU-verification kernel launch; HSA VRAM CPU allocation/stores and HIP error-counter memset completed, but launch did not return. No GPU result was read and the failure mechanism is unresolved. Compiled a HIP-only smoke diagnostic without rerunning it. XTX IPC executable remains disallowed, and subsequent GPU lease was obtained by HD2701. RAD50 did not retain a lease or run further GPU tests.
+
+- 2026-11-09 (updated-by): Hardware: R9700 HIP-only smoke PASS;
+  XTX0/XTX1 GPU-agent HSA IPC import PASS, but CPU-agent import
+  fails 4104 OUT_OF_RESOURCES and the GPU-first imported pointer
+  has no writable CPU VMA. Guarded CPU-store probe refused writes,
+  with no GPU readback. VMM GPU-local DMA-BUF export/map PASS on
+  XTX0; CPU get_access fails 4100 INVALID_AGENT. No actual
+  cross-process CPU BAR payload verified; Gate 2b blocked.
+  Added explicit diagnostics and fixed-mode VMM capability probe
+  to the unified tester; no model/serving changes.

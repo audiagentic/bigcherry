@@ -24,6 +24,12 @@ int cli_self_check() {
           true,"R9700 HIP diagnosis");
     check({"rad50-tester","--test","ipc","--device","1","--lease-confirmed"},
           true,"IPC exact mode");
+    check({"rad50-tester","--test","ipc-map","--device","0","--lease-confirmed"},
+          true,"IPC GPU-only attach diagnostics");
+    check({"rad50-tester","--test","ipc-gpu-cpu","--device","0","--lease-confirmed"},
+          true,"IPC GPU-first CPU BAR verification");
+    check({"rad50-tester","--test","vmem-cap","--device","0","--lease-confirmed"},
+          true,"GPU-local VMM export capability");
     check({"rad50-tester","--test","transfer","--device","0","--iterations","30",
            "--lease-confirmed"},true,"A/B bounded mode");
     check({"rad50-tester","--test","live-ready","--device","0","--lease-confirmed"},

@@ -88,6 +88,16 @@ A successful compilation is not an executed correctness test.
    handle over an AF_UNIX socket and has the child attach as a CPU
    agent. If either export/attach or GPU verification fails, STOP:
    simple GPU-local CPU access is not enough for production.
+   **Current XTX evidence (2026-11-09):** direct CPU-agent IPC
+   import fails HSA 4104. Same-GPU IPC attach works on both XTXs,
+   but the imported hostBaseAddress is not a writable CPU VMA.
+   `rad50-tester --test ipc-map` is metadata only;
+   `--test ipc-gpu-cpu` refuses writes if the mapping is unsafe.
+   The separate `--test vmem-cap` checks local VMM handle/DMA-BUF
+   export, GPU/CPU access and host VMA without storing bytes.
+   On XTX0, VMM CPU get_access fails HSA 4100. **None of these
+   results passes Gate 2b.** Do not run Gate 3 on this evidence.
+
 4. **Gate 3 transfer A/B:** Only after Gates 1/2/2b PASS, run
    `bar_transfer_ab --device HIP_ORDINAL --iterations 30`. Report
    per-size (4 KiB to 21 MiB) and CPU 1/2/4 thread p50/p95 of

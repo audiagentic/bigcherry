@@ -11,11 +11,11 @@ remains RAD42, and RAD49 is the TP2 consumer context.
 | --- | --- | --- |
 | 0: lifecycle and critical-path model, card-free | **PASS** | 23 tests: 10 lifecycle, 3 multi-chunk stress, 10 critical-path/overlap model; no GPU visibility implied |
 | 1: host-visible GPU-local pool discovery | **PASS (API discovery)** | Under exclusive RAD50 lease, HSA enumerated 7 CPU-accessible GPU-local allocatable pools: XTX0 2, XTX1 2, R9700 1, 6900XT 2. Not proof of BAR writes |
-| 2: CPU-write/GPU-read canary | **PASS XTX0/XTX1; R9700 INCONCLUSIVE** | Both gfx1100 GPUs: 4 KiB and 4 MiB, 12 generations each, zero mismatches, exit 0 (48 fully verified buffers total). gfx1201 R9700 (HIP ordinal 2): executable exit 1 with no stdout/stderr; no memory correctness established. Diagnosing, no retry yet |
-| 2b: separate CPU-only IPC import | **BUILT, PENDING LEASE** | XTX Gate 2 passed. The allowlisted combined `rad50-tester --test ipc` contains the IPC implementation. No IPC attach or GPU verification performed; another task holds the GPU lease |
+| 2: CPU-write/GPU-read canary | **PASS XTX0/XTX1; R9700 INCONCLUSIVE** | Both gfx1100 GPUs: 4 KiB and 4 MiB, 12 generations each, zero mismatches, exit 0 (48 buffers). R9700 HIP-only kernel passes, but its HSA BAR verification stops during GPU verify launch; no serial result established |
+| 2b: separate CPU-only IPC import | **BLOCKED: CPU mapping unavailable** | XTX0 CPU-agent import fails HSA 4104; XTX0/XTX1 GPU-agent-only import works, but imported hostBaseAddress is not a writable CPU VMA even after CPU grant. No cross-process CPU writes verified. Explore alternate VMM sharing |
 | 3: isolated transfer A/B | **BUILT, RUN BLOCKED** | `bar_transfer_ab.hip` compiled for gfx1100/gfx1201. No actual bandwidth, CPU cost or latency result. Requires Gate 2b PASS |
 | 4: chunked producer/consumer | **PARTIAL BUILD, RUN BLOCKED** | `bar_live_ready_canary.hip` compiled gfx1100/gfx1201: GPU already running before CPU writes. Multi-process chunk pipeline still not implemented. Requires Gate 3 |
-| 5: captured MoE data / TP2 exact-once | **PREP ONLY** | `combine_reference_test.cpp` compiled against BigCherry; execution blocked by remote policy. Captured KLD/TP2 replay still pending |
+| 5: captured MoE data / TP2 exact-once | **PARTIAL REFERENCE PASS** | Unified `rad50-tester --test combine-ref` ran the actual BigCherry FP16/NaN/fallback checks, 7/7 PASS. Captured KLD/TP2 replay remains blocked by Gate 2b |
 | 6: opt-in engine integration | **NOT AUTHORISED** | Separate future review after Gates 0–5 and end-to-end A/B |
 
 ## Chronology
@@ -153,3 +153,44 @@ remains RAD42, and RAD49 is the TP2 consumer context.
   (changes on rebuild). Its build default is `OPT=-O1`; rebuild with
   `OPT=-O2` for actual transfer-performance evidence, after the other
   GPU work has finished.
+
+### 2026-11-09 — unified GPU tests and cross-process IPC diagnosis
+
+- Preflight: four GPUs idle, no KFD process or lease. Acquired/released
+  exclusive RAD50 leases for each staged hardware attempt.
+- `rad50-tester --test hip-smoke --device 2`: **PASS**, R9700 basic
+  HIP kernel launch and readback. R9700 HSA BAR verification remains unresolved.
+- `--test ipc --device 0`: **FAIL**, HSA CPU-agent IPC attach status
+  4104 = OUT_OF_RESOURCES, even after granting CPU access before export.
+- `--test ipc-map --device 0` and `--device 1`: **PASS GPU-ONLY
+  IMPORT** to the owning GPU agent. No CPU stores or GPU data check.
+- XTX0 imported pointer reports hostBaseAddress and CPU agent grant
+  succeeds; neither proves a writable CPU virtual address.
+- `--test ipc-gpu-cpu --device 0`: **FAIL**. Guarded 4 KiB attempt
+  refused to write: imported hostBaseAddress is NOT in a writable
+  `/proc/self/maps` CPU VMA. No GPU verification occurred. The
+  helper signal 15 was caused by parent aborting the failed protocol;
+  do not interpret as a GPU memory fault or proven SIGSEGV.
+- Parser self-check **21/21 PASS**; all modes remain in the single
+  allowlisted `rad50-tester`. No production code changed.
+- **Gate 2b remains FAILED for CPU writes**. Do not run bandwidth,
+  live-ready, or model integration. Next: explore GPU-local VMM
+  dma-buf export/import with CPU-access gate, or change architecture.
+
+### 2026-11-09 — VMM DMA-BUF capability alternative
+
+- Added fixed `rad50-tester --test vmem-cap --device 0`, a new
+  lab-only ROCr VMM probe. Compiled for gfx1100+gfx1201.
+- Under an exclusive RAD50 lease on XTX0, GPU-local VMM handle
+  creation, DMA-BUF export, address reservation/map and combined
+  CPU/GPU `set_access` all returned **HSA SUCCESS**.
+- GPU `get_access` returned RW (status 0, permission 3).
+  CPU `get_access` returned **4100 INVALID_AGENT**, not success.
+  `/proc/self/maps` reported writable host VA, but that is only
+  a virtual reservation, not proof of CPU GPU-local access.
+- **VMM capability probe FAIL (exit 3)** on CPU access gate.
+  Did not attempt CPU stores, cross-process DMA-BUF import or a GPU
+  verification kernel. Unmapped, released handles, and released lease.
+- Strict CLI self-check now **22/22 PASS**. Do not claim VMM
+  is a viable alternative until an actual CPU mapping and parent
+  GPU payload verification pass in separate processes.

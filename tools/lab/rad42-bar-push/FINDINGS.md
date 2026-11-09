@@ -110,3 +110,29 @@ parameter with actual traces once a GPU lease is available.
 **Status (2026-11-09):** Gate 1 HSA discovery PASS (7 GPU-local CPU-accessible pools). Gate 2 serial CPU write → GPU read PASS on both RX 7900 XTX GPUs: 4 KiB and 4 MiB, 12 generations each, all words verified. The R9700 gfx1201 executable exited 1 with no diagnostics: its result is **inconclusive** pending a targeted rerun. Serial correctness does not establish cross-process access, concurrent visibility, CPU overhead or throughput; all remain unverified. RAD50 released its GPU lease.
 
 **Later R9700 diagnosis:** HSA allocation, CPU access, 4 KiB stores and HIP memset all complete; execution stops before the first verification `hipLaunchKernelGGL` returns. This could be a launch stall/fault or the command's execution limit; **no GPU read was verified**. A separate HIP-only launch smoke mode is compiled but not run. XTX cross-process IPC remains unrun because `bar_ipc_canary-gfx1100` is not allowlisted. RAD50 released its own lease; HD2701 subsequently acquired the exclusive GPU lease.
+
+## 2026-11-09 — cross-process sharing results
+
+- XTX0/XTX1 serial, *same-process* CPU BAR stores to GPU-local HSA
+  allocation remain verified (4 KiB/4 MiB, 12 generations each).
+- XTX0 legacy HSA IPC **CPU-agent attach fails 4104 OUT_OF_RESOURCES**
+  even after the exporter grants CPU access.
+- XTX0/XTX1 HSA IPC **same-GPU-agent attach succeeds**. On XTX0,
+  imported pointer info reports a hostBaseAddress and a later CPU grant
+  succeeds, but the address is **not a writable CPU VMA**. The guarded
+  4 KiB test refused to write; no parent GPU payload verification.
+- New HSA VMM-capability probe on XTX0: GPU-local handle create,
+  DMA-BUF export, reserve/map, CPU/GPU set_access and GPU get_access
+  all succeed. CPU get_access fails **4100 INVALID_AGENT**. Linux
+  reports a writable virtual region but the HSA CPU access proof
+  fails, so **no CPU stores or cross-process VMM import attempted**.
+- On R9700, HIP-only kernel dispatch and readback **PASS**, but the
+  serial HSA BAR verification still stops at GPU kernel launch.
+- **Architectural decision:** Direct CPU BAR push by a *separate*
+  helper process is NOT currently demonstrated. Never promote RAD51
+  or run throughput tests using GPU-only IPC as a substitute for CPU
+  access. Possibilities to examine separately: a properly supported
+  GPU-local DMA-BUF CPU mmap mechanism, or relocating the CPU combine
+  destination/write into the engine process. The latter adds
+  orchestration and may erase existing CPU combine/GPU pull overlap;
+  model and trace it before any production change.

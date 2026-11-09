@@ -278,6 +278,24 @@ Blocked by RAD50. Related RAD40, RAD42 (existing design B), RAD49
 (merged v25 / TP2), and the existing no-P2P deployment constraints.
 Do not use a historical v24 worktree as the production source.
 
+### Current hard gate (2026-11-09)
+
+RAD50 serial CPU BAR writes passed on both XTX cards, but the
+**cross-process CPU writer remains blocked**. Legacy HSA CPU-agent
+IPC attach fails with OUT_OF_RESOURCES; GPU-only IPC attach
+succeeds but does not provide a writable CPU VMA, even after a
+CPU access grant. GPU-local VMM DMA-BUF export also succeeds,
+yet CPU `get_access` reports INVALID_AGENT. No helper CPU has
+verified a GPU-local payload written into the engine's allocation.
+
+**Do not implement the file-level BAR transport proposed here** until
+a cross-process CPU mapping and GPU readback both pass. If mapping
+is unavailable, a *separate* redesign may place CPU BAR writes in
+the engine process and keep results in host shared memory; that
+adds CPU orchestration/copying on the critical path and must be
+measured against the already-overlapped GPU-pull baseline first.
+No default engine change is justified by serial single-process data.
+
 ## Change Log
 
 - 2026-11-08T22:20:00+00:00 (created-by): Proposed staged,

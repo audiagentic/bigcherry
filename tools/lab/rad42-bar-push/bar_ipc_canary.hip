@@ -29,6 +29,9 @@ struct Init {
     hsa_amd_ipc_memory_t ipc{};
     uint64_t alloc_bytes=0;
     uint32_t tag=0xBAD50A11;
+    uint32_t probe_gpu_only=0;
+    uint32_t domain=0;
+    uint32_t bdf=0;
 };
 struct Work {
     uint32_t bytes=0;
@@ -63,6 +66,42 @@ bool read_exact(int fd, void* p, size_t n) {
     }
     return true;
 }
+bool writable_cpu_vma(const void* ptr, size_t bytes) {
+    const uintptr_t address=reinterpret_cast<uintptr_t>(ptr);
+    if (!ptr || bytes > UINTPTR_MAX-address) return false;
+    FILE* f=std::fopen("/proc/self/maps","r");
+    if (!f) return false;
+    bool valid=false;
+    char line[512]{};
+    while (std::fgets(line,sizeof(line),f)) {
+        unsigned long start=0,end=0;
+        char perms[5]{};
+        if (std::sscanf(line,"%lx-%lx %4s",&start,&end,perms)==3 &&
+            address>=start && address+bytes<=end &&
+            perms[0]=='r' && perms[1]=='w') {
+            valid=true;break;
+        }
+    }
+    std::fclose(f);
+    return valid;
+}
+bool process_chunks(int fd, uint32_t* words) {
+    const Reply ready{0,0};
+    if (!write_exact(fd,&ready,sizeof(ready))) return false;
+    for (;;) {
+        Work w{};
+        if (!read_exact(fd,&w,sizeof(w))) return false;
+        if (!w.bytes) {
+            const Reply done{0,0};
+            return write_exact(fd,&done,sizeof(done));
+        }
+        if (w.bytes>kBytes || w.bytes%4 || !w.generation) return false;
+        for (uint32_t i=0;i<w.bytes/4;++i) words[i]=value_at(i,w.generation);
+        std::atomic_thread_fence(std::memory_order_seq_cst);
+        const Reply ack{0,w.generation};
+        if (!write_exact(fd,&ack,sizeof(ack))) return false;
+    }
+}
 bool hsa_agents(Inventory* inv) {
     return hsa_iterate_agents(collect_agent,inv)==HSA_STATUS_SUCCESS;
 }
@@ -96,6 +135,62 @@ int child(int fd) {
         Init init{};
         if (!read_exact(fd,&init,sizeof(init)) || init.tag!=0xBAD50A11 ||
             init.alloc_bytes<kBytes || init.alloc_bytes>1u<<28) break;
+        if (init.probe_gpu_only) {
+            hsa_agent_t selected{};
+            unsigned count=0;
+            for (auto gpu : inv.gpus) {
+                uint32_t d=0,b=0;
+                if (hsa_agent_get_info(gpu,(hsa_agent_info_t)HSA_AMD_AGENT_INFO_DOMAIN,&d)!=HSA_STATUS_SUCCESS ||
+                    hsa_agent_get_info(gpu,(hsa_agent_info_t)HSA_AMD_AGENT_INFO_BDFID,&b)!=HSA_STATUS_SUCCESS)
+                    break;
+                if (d==init.domain && b==init.bdf) { selected=gpu; ++count; }
+            }
+            if (count!=1) { std::fprintf(stderr,"BLOCKED: IPC GPU agent PCI match=%u\n",count); break; }
+            const hsa_status_t status=hsa_amd_ipc_memory_attach(&init.ipc,init.alloc_bytes,1,&selected,&mapped);
+            const char* description=nullptr;
+            (void)hsa_status_string(status,&description);
+            std::fprintf(stderr,"RAD50 IPC GPU-agent attach: status=%d %s (no writes yet)\n",
+                         (int)status,description?description:"unknown");
+            if (status!=HSA_STATUS_SUCCESS || !mapped) break;
+            // Diagnostics only; metadata does not itself prove CPU dereference safety.
+            hsa_amd_pointer_info_t info{};
+            info.size=sizeof(info);
+            const hsa_status_t pstatus=hsa_amd_pointer_info(mapped,&info,nullptr,nullptr,nullptr);
+            std::fprintf(stderr,"RAD50 IPC GPU import pointer: status=%d type=%d host_addr=%d\n",
+                         (int)pstatus,(int)info.type,
+                         (int)(pstatus==HSA_STATUS_SUCCESS && info.hostBaseAddress!=nullptr));
+            const hsa_status_t grant=hsa_amd_agents_allow_access(
+                1,&inv.cpus[0],nullptr,mapped);
+            const char* grant_str=nullptr;
+            (void)hsa_status_string(grant,&grant_str);
+            std::fprintf(stderr,"RAD50 IPC CPU grant after GPU import: %d %s (no writes yet)\n",
+                         (int)grant,grant_str?grant_str:"unknown");
+            hsa_amd_pointer_info_t after{};
+            after.size=sizeof(after);
+            const hsa_status_t ast=hsa_amd_pointer_info(mapped,&after,nullptr,nullptr,nullptr);
+            std::fprintf(stderr,"RAD50 IPC after grant: info_status=%d host_addr=%d\n",
+                         (int)ast,(int)(ast==HSA_STATUS_SUCCESS && after.hostBaseAddress!=nullptr));
+            if (init.probe_gpu_only==2) {
+                // Only the explicitly requested diagnostic write uses this
+                // CPU virtual address. Keep mapped for the actual IPC detach.
+                if (grant!=HSA_STATUS_SUCCESS || ast!=HSA_STATUS_SUCCESS ||
+                    after.hostBaseAddress==nullptr) {
+                    std::fputs("BLOCKED: imported GPU memory lacks CPU mapping\n",stderr);
+                    break;
+                }
+                if (!writable_cpu_vma(after.hostBaseAddress,4096)) {
+                    std::fputs("BLOCKED: imported hostBaseAddress is not a writable CPU VMA\n",stderr);
+                    break;
+                }
+                std::fputs("RAD50 IPC: host VMA writable; attempting 4 KiB CPU write\n",stderr);
+                exit_code=process_chunks(fd,static_cast<uint32_t*>(after.hostBaseAddress))?0:3;
+                break;
+            }
+            const Reply reply{0,0};
+            if (!write_exact(fd,&reply,sizeof(reply))) break;
+            exit_code=0;
+            break;
+        }
         // Request direct *CPU* access, never a peer GPU agent.
         hsa_status_t attached=HSA_STATUS_ERROR;
         // The exporting process selected an accessible CPU NUMA agent.
@@ -107,30 +202,13 @@ int child(int fd) {
             if (attached==HSA_STATUS_SUCCESS && mapped) break;
         }
         if (attached!=HSA_STATUS_SUCCESS || !mapped) {
-            std::fprintf(stderr,"BLOCKED: IPC attach does not permit CPU access to GPU VRAM (HSA=%d)\n",
-                         (int)attached);
+            const char* description=nullptr;
+            (void)hsa_status_string(attached,&description);
+            std::fprintf(stderr,"BLOCKED: CPU-agent HSA IPC attach failed: status=%d (%s), agents_tried=%zu\n",
+                         (int)attached,description?description:"unknown",inv.cpus.size());
             break;
         }
-        const Reply ready{0,0};
-        if (!write_exact(fd,&ready,sizeof(ready))) break;
-        exit_code=0;
-        for (;;) {
-            Work w{};
-            if (!read_exact(fd,&w,sizeof(w))) {exit_code=3;break;}
-            if (!w.bytes) {
-                Reply done{0,0};
-                if (!write_exact(fd,&done,sizeof(done))) exit_code=3;
-                break;
-            }
-            if (w.bytes>kBytes || w.bytes%sizeof(uint32_t) || !w.generation) {
-                exit_code=3;break;
-            }
-            uint32_t* words=static_cast<uint32_t*>(mapped);
-            for (uint32_t i=0;i<w.bytes/4;++i) words[i]=value_at(i,w.generation);
-            std::atomic_thread_fence(std::memory_order_seq_cst);
-            const Reply replied{0,w.generation};
-            if (!write_exact(fd,&replied,sizeof(replied))) { exit_code=3;break; }
-        }
+        exit_code=process_chunks(fd,static_cast<uint32_t*>(mapped))?0:3;
     } while (false);
     if (mapped && hsa_amd_ipc_memory_detach(mapped)!=HSA_STATUS_SUCCESS)
         exit_code=3;
@@ -154,7 +232,7 @@ bool verify_gpu(const void* ptr, size_t bytes, uint32_t generation,
                            generation,bytes,bad);
     return bad==0;
 }
-bool run_parent(const char* self,int dev) {
+bool run_parent(const char* self,int dev,int mode) {
     if (hsa_init()!=HSA_STATUS_SUCCESS) return false;
     bool ok=false;
     void* ptr=nullptr;
@@ -175,6 +253,17 @@ bool run_parent(const char* self,int dev) {
         const size_t size=((kBytes+choice.granule-1)/choice.granule)*choice.granule;
         if (hsa_amd_memory_pool_allocate(choice.pool,size,0,&ptr)!=HSA_STATUS_SUCCESS || !ptr)
             break;
+        // Match the successful serial path: grant the CPU agent access
+        // *before* sharing. This is a diagnostic hypothesis, not proof that
+        // grant survives IPC import into another process.
+        const hsa_status_t cpu_grant=hsa_amd_agents_allow_access(
+            1,&choice.cpu,nullptr,ptr);
+        if (cpu_grant!=HSA_STATUS_SUCCESS) {
+            std::fprintf(stderr,"BLOCKED: exporter CPU access grant HSA=%d\n",
+                         (int)cpu_grant);
+            break;
+        }
+        std::fprintf(stderr,"RAD50 IPC: parent CPU access granted before export\n");
         hsa_amd_ipc_memory_t handle{};
         const auto ipc_status=hsa_amd_ipc_memory_create(ptr,size,&handle);
         if (ipc_status!=HSA_STATUS_SUCCESS) {
@@ -196,13 +285,21 @@ bool run_parent(const char* self,int dev) {
         (void)posix_spawn_file_actions_destroy(&actions);
         if (spawned) {pid=-1;break;}
         ::close(pair[1]);pair[1]=-1;
-        const Init init{handle,size,0xBAD50A11};
+        uint32_t domain=0,bdf=0;
+        if (hsa_agent_get_info(gpu,(hsa_agent_info_t)HSA_AMD_AGENT_INFO_DOMAIN,&domain)!=HSA_STATUS_SUCCESS ||
+            hsa_agent_get_info(gpu,(hsa_agent_info_t)HSA_AMD_AGENT_INFO_BDFID,&bdf)!=HSA_STATUS_SUCCESS) break;
+        const Init init{handle,size,0xBAD50A11,(uint32_t)mode,domain,bdf};
         Reply reply{};
         if (!write_exact(pair[0],&init,sizeof(init)) ||
             !read_exact(pair[0],&reply,sizeof(reply)) || reply.status) break;
+        if (mode==1) {
+            std::puts("RAD50 IPC GPU-agent-only attach PASS; no CPU access, no payload tested");
+            ok=true;break;
+        }
         bool all=true;
         for (uint32_t bytes : {uint32_t{4096},uint32_t{kBytes}}) {
-            for (uint32_t gen=1;gen<=12;++gen) {
+            if (mode==2 && bytes>4096) break;
+            for (uint32_t gen=1;gen<=(mode==2?1u:12u);++gen) {
                 const Work w{bytes,gen+(bytes==4096?0u:100u)};
                 if (!write_exact(pair[0],&w,sizeof(w)) ||
                     !read_exact(pair[0],&reply,sizeof(reply)) ||
@@ -212,7 +309,8 @@ bool run_parent(const char* self,int dev) {
                 }
             }
             if (!all) break;
-            std::printf("PASS IPC parent GPU verify bytes=%u generations=12\n",bytes);
+            std::printf("PASS IPC parent GPU verify bytes=%u generations=%u mode=%d\n",
+                        bytes,mode==2?1u:12u,mode);
         }
         if (!all) break;
         const Work stop{};
@@ -228,8 +326,12 @@ bool run_parent(const char* self,int dev) {
         // to avoid a stuck reader. Never touch foreign processes.
         if (!ok) (void)::kill(pid,SIGTERM);
         int status=0;
-        if (::waitpid(pid,&status,0)!=pid || !WIFEXITED(status) ||
-            WEXITSTATUS(status)!=0) ok=false;
+        const pid_t waited=::waitpid(pid,&status,0);
+        if (waited==pid && WIFSIGNALED(status))
+            std::fprintf(stderr,"RAD50 IPC helper terminated by signal %d\n",WTERMSIG(status));
+        else if (waited==pid && WIFEXITED(status) && WEXITSTATUS(status)!=0)
+            std::fprintf(stderr,"RAD50 IPC helper exited %d\n",WEXITSTATUS(status));
+        if (waited!=pid || !WIFEXITED(status) || WEXITSTATUS(status)!=0) ok=false;
     }
     if (errors) (void)hipFree(errors);
     if (ptr && hsa_amd_memory_pool_free(ptr)!=HSA_STATUS_SUCCESS) ok=false;
@@ -243,14 +345,16 @@ int main(int argc,char** argv) {
         const int fd=std::atoi(argv[2]);
         return fd==kFd ? child(fd) : 2;
     }
-    if (argc!=3 || std::strcmp(argv[1],"--device")) {
+    const bool gpu_only=argc==4 && !std::strcmp(argv[3],"--probe-attach-gpu-only");
+    const bool gpu_cpu=argc==4 && !std::strcmp(argv[3],"--probe-gpu-then-cpu");
+    if ((argc!=3 && !gpu_only && !gpu_cpu) || std::strcmp(argv[1],"--device")) {
         std::fputs("usage: bar_ipc_canary --device HIP_ORDINAL\n",stderr);
         return 2;
     }
     char* end=nullptr;
     const long dev=std::strtol(argv[2],&end,10);
     if (!argv[2][0] || *end || dev<0 || dev>127) return 2;
-    const bool ok=run_parent(argv[0],(int)dev);
+    const bool ok=run_parent(argv[0],(int)dev,gpu_only?1:(gpu_cpu?2:0));
     if (!ok) std::fputs("STOP: two-process HSA CPU->GPU VRAM IPC not proven\n",stderr);
     return ok?0:3;
 }

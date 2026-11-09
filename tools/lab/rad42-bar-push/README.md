@@ -1,7 +1,7 @@
 # RAD50 — isolated CPU BAR-push transport experiment
 
-**Status (2026-11-09):** Gate 0 **PASS** (23 card-free tests), Gate 1 **PASS** (7 HSA GPU-local CPU-accessible pools); Gate 2 **PASS on both XTXs**, R9700 **INCONCLUSIVE** (exit 1 during first HIP verification launch). IPC, concurrent readiness and performance remain unverified.
-Gate 2 ran under an exclusive RAD50 GPU lease: XTX0/XTX1 each passed 12 serial generations at 4 KiB and 4 MiB (every word checked). The R9700 probe reached HSA VRAM allocation, CPU stores and HIP memset but did not return from the first verification launch; a HIP-only smoke mode is compiled, not run. GPU lease released; later gates have not run.
+**Status (2026-11-09):** Gate 0 **PASS** (23 card-free tests), Gate 1 **PASS** (7 HSA GPU-local CPU-accessible pools); Gate 2 **PASS on both XTXs**, R9700 **INCONCLUSIVE** (exit 1 during first HIP verification launch). R9700 HIP-only smoke passed, but its serial BAR verification remains inconclusive. Cross-process CPU mapping is blocked by the current HSA IPC/VMM attempts; concurrent readiness and performance remain unverified.
+Gate 2 ran under an exclusive RAD50 GPU lease: XTX0/XTX1 each passed 12 serial generations at 4 KiB and 4 MiB (every word checked). The R9700 probe reached HSA VRAM allocation, CPU stores and HIP memset but did not return from the first verification launch; the HIP-only smoke mode now passes. Subsequent cross-process probes fail at CPU mapping, not GPU-only IPC import. GPU lease released; later gates have not run.
 
 **Plan:** `docs/planning/active/patching-radiance-rdna3/RAD50.md`
 (existing `patching-radiance-rdna3` group). Production owner RAD42 design B;
@@ -11,7 +11,7 @@ context RAD40 (PCIe contention) and RAD49 (multi-rank consumer).
 
 **Preferred interface:** [TESTER.md](TESTER.md) documents the new single
 `rad50-tester` executable with fixed `--test` cases and both GPU architectures
-in one binary. It is **built and now allowlisted**: `--list`, 19/19 CLI checks and
+in one binary. It is **built and now allowlisted**: `--list`, 22/22 CLI checks and
 seven FP16 reference checks have run successfully, without a GPU.
 One stable executable name replaces per-test allowlist entries.
 The old standalone probes remain as source/reference, not subprocess targets.
@@ -37,7 +37,7 @@ RAD42's chunked combine is shipped; its BAR-push design is not.
 | 0. CPU model, card-free | `chunk_contract.py`, `test_chunk_contract.py`, `test_chunk_stress.py`, `critical_path_model.py`, `test_critical_path_model.py` | **PASS**: no early ready, stale epoch, reuse while busy, duplicate consume, or recovery without quiescence; 23 tests, 12,800 multi-chunk consumptions and 10 critical-path model tests |
 | 1. VRAM reachability | `pool_inventory.cpp` | **PASS (API discovery)**: 7 GPU-local pools reported CPU-accessible across four GPUs; find an allocatable HSA GPU-local pool the host CPU is allowed to access; map physical PCI identity; pool availability alone is *not* proof of BAR usability |
 | 2. CPU→GPU exact canary | `bar_write_canary.hip` | **XTX0 + XTX1 PASS; R9700 INCONCLUSIVE**: 4 KiB and 4 MiB, 12 generations each, GPU checks every word of CPU-written GPU-local storage; refuse unsupported allocations and PCI mismatch |
-| 2b. Cross-process CPU-only IPC | `rad50-tester --test ipc` (compiled in) | **PENDING GPU LEASE**: both XTXs passed serial Gate 2; now test the CPU-only helper's IPC mapping without peer-GPU access. No IPC result yet |
+| 2b. Cross-process CPU-only IPC | `rad50-tester --test ipc`, `ipc-map`, `ipc-gpu-cpu`, `vmem-cap` | **BLOCKED (no verified CPU writes)**: direct HSA CPU-agent import fails 4104; GPU-agent import works on both XTXs but has no writable CPU VMA on XTX0; VMM DMA-BUF export succeeds but CPU get_access fails 4100. No multiprocess BAR payload verified |
 | 3. Bandwidth and contention | `bar_transfer_ab.hip` (built, not run) | **BLOCKED on Gates 2/2b**: measure BAR write vs mapped-host GPU pull on both XTXs/R9700, 4 KiB–21 MiB, 1/2/4 CPU threads, p50/p95 and CPU load, alone and under GPU0 host-pull contention |
 | 4. Live chunks | `bar_live_ready_canary.hip` built (live single-process canary); full multi-process chunk pipeline not built | **BLOCKED on Gate 3**: separate CPU producer/GPU consumer, independently published ready generations, 128/256/512/1024 rows, bounded timeouts, stale-data and fault cases |
 | 5. MoE reference | `combine_reference_test.cpp` (compiled, not run) | **BLOCKED on Gate 4**: actual FP16 CPU combine, overflow sentinel fallback, TP2 consumer rank, once-only rows, captured replay and latency |

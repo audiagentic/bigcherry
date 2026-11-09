@@ -1,6 +1,6 @@
 # RAD50 single test executable
 
-**Built and card-free runtime validated; no GPU test run by the unified binary yet.**
+**Built and exercised on GPUs under exclusive leases; hardware results are gate-specific.**
 The combined binary contains both gfx1100 and gfx1201 device images and
 reuses the experiment's existing implementations, without a second
 test executable per architecture. The remote shell **currently permits the one exact executable name `rad50-tester`**;
@@ -11,7 +11,7 @@ This is not a way to bypass remote command policy.
 The executable's source is `rad50_tester.cpp`; `Makefile` links
 `pool_inventory.cpp`, `bar_write_canary.hip`,
 `bar_ipc_canary.hip`, `bar_transfer_ab.hip`,
-`bar_live_ready_canary.hip`, `combine_reference_test.cpp` and
+`bar_live_ready_canary.hip`, `bar_vmem_cap.hip`, `combine_reference_test.cpp` and
 `cpu_handoff_bench.cpp` directly, with their original `main`
 functions renamed at compile time. Future *reviewed, compiled-in*
 RAD50 tests can use the same binary name after a rebuild. It does
@@ -62,7 +62,7 @@ T="$BC_WORK_ROOT/builds/rad42-bar-push/rad50-tester"
 
 "$T" --help
 "$T" --list
-"$T" --self-check             # 19 strict argument cases, no GPU
+"$T" --self-check             # 22 strict argument cases, no GPU
 
 # For every GPU test below: CHECK GPU USE, ACQUIRE AND HOLD THE
 # EXCLUSIVE 'gpu' LEASE FIRST. '--lease-confirmed' is an explicit
@@ -74,6 +74,9 @@ T="$BC_WORK_ROOT/builds/rad42-bar-push/rad50-tester"
 "$T" --test serial --device 2 --lease-confirmed
 "$T" --test ipc --device 0 --lease-confirmed
 "$T" --test ipc --device 1 --lease-confirmed
+"$T" --test ipc-map --device 0 --lease-confirmed
+"$T" --test ipc-gpu-cpu --device 0 --lease-confirmed
+"$T" --test vmem-cap --device 0 --lease-confirmed
 "$T" --test transfer --device 1 --iterations 30 --lease-confirmed
 "$T" --test live-ready --device 0 --lease-confirmed
 
@@ -88,7 +91,7 @@ T="$BC_WORK_ROOT/builds/rad42-bar-push/rad50-tester"
 | `hip-smoke` | `--device N --lease-confirmed` | HIP-only launch, no HSA pointer or BAR |
 | `serial` | `--device N --lease-confirmed` | Serial CPU BAR write then GPU verification |
 | `ipc` | `--device N --lease-confirmed` | Separate CPU-only child HSA IPC attach, serial GPU verify |
-| `transfer` | `--device N --iterations 10..200 --lease-confirmed` | Single-process transfer A/B, NOT end-to-end serving |
+| `ipc-map` | `--device N --lease-confirmed` | Same-GPU-agent cross-process import/CPU grant metadata; no stores |\n| `ipc-gpu-cpu` | `--device N --lease-confirmed` | Guarded 4 KiB CPU write via imported host VA, parent GPU verifies only on success |\n| `vmem-cap` | `--device N --lease-confirmed` | GPU-local VMM/DMA-BUF export, mapping and CPU access query; no stores |\n| `transfer` | `--device N --iterations 10..200 --lease-confirmed` | Single-process transfer A/B, NOT end-to-end serving |
 | `live-ready` | `--device N --lease-confirmed` | GPU running before CPU stores, single-process readiness canary |
 | `combine-ref` | No extras | Actual FP16 combine format, NaN and fallback parity (CPU) |
 | `cpu-handoff` | `--mode spin|yield|sleep1|condvar --samples 100..100000 --lease-confirmed` | CPU-to-CPU wake overhead only, NOT GPU notification |
@@ -113,9 +116,12 @@ test time. On the measured host, 0 and 1 are the RX 7900 XTX cards,
   ownership; `--lease-confirmed` only blocks accidental unacknowledged
   GPU execution.
 - Gate 2 passed on both XTX cards using the standalone canary. The
-  R9700 still needs HIP-only dispatch isolation; its BAR verification
-  did not complete. Run `hip-smoke --device 2` first, under a lease.
-- Gate 2b `ipc` has not run and might fail due to HSA IPC semantics.
+  R9700 HIP-only dispatch **passes**, but its HSA BAR verification
+  did not complete. Treat them as separate gates.
+- Gate 2b `ipc` **failed** on XTX0 with HSA 4104 (CPU-agent import).
+  Same-GPU IPC import passes on both XTXs but XTX0's imported host VA
+  is not CPU-writable. VMM DMA-BUF export works but CPU access query
+  fails 4100. **No cross-process CPU writes are verified.**
   Never proceed to `transfer` on an unsupported mapping. The live
   ready mode tests observation of concurrent publication, not a
   formal guarantee of posted-write ordering.
@@ -134,10 +140,10 @@ test time. On the measured host, 0 and 1 are the RX 7900 XTX cards,
   `--offload-arch=gfx1201` into the project work root.
 - C++ syntax check passed and link succeeded. The 23 existing
   Python card-free gate tests still apply.
-- `--list` returned all eight modes, `--self-check` passed 19/19
+- `--list` returned the compiled modes, `--self-check` passed 22/22
   strict argument cases, and `--test combine-ref` passed seven FP16
   reference checks (2,560 elements); each exited 0 without any GPU.
-  The **GPU** modes were deliberately not run in this preparation
-  while another task held the lease and serving was observed.
-  Check current lease/processes anew before any hardware mode.
+  Selected hardware modes have since run under exclusive leases;
+  see `PROGRESS.md` for their exact outcomes. Recheck lease/processes
+  before any further hardware mode.
   No subprocess/alias/interpreter was used to evade policy.
