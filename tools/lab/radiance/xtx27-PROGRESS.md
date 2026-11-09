@@ -13,11 +13,17 @@
 - [x] Saved capacity envelope under `${BC_WORK_ROOT}/xtx27-prefill/1m-kv-envelope.json`; benchmark evidence under the same scratch parent, no benchmark evidence committed to Git.
 - [x] 10 `unittest` card-free tests pass; Ruff check clean.
 - [x] Our GPU lease released after all engines exited; no GPU processes remained.
+- [x] XDP03 new BF16-based mixed-quantization plan and dry-run recipe generator, matched MXFP4 control, W4 FFN middle-prefix profile, optional R9700 suffix FP8. Local original BF16 model checkpoint/18 shards verified; no download.
+- [x] Emitted matched BF16-origin baseline/mixed recipe and config-fingerprinted manifests to isolated scratch `quant-lab/` (no `.rad` conversion yet); `--write` only, default read-only.
+- [x] Card-free measured-input-constrained selector tests: stage-owned logical FP8 KV reservation, per-card VRAM reserve and exact bounded memory/latency DP. Accepts `selected` generator profile only with measured evidence; no actual placement or runtime quant switching.
+- [x] 31 `unittest` card-free tests pass (including 21 new XDP03 tests); Ruff clean.
 
 ## Still required
 
 - [ ] Bench 32K-256K **native** model context with actual resident KV/GDN/graph/runtime accounting; quality, TTFT and decode measured across context and sequences.
 - [ ] Exact/WHT6 correctness/KL gate and longer repeated, rotated A/B to qualify speed improvement.
+- [ ] Engine `rad-convert --plan-only` under an exclusive GPU lease, then convert the BF16->MXFP4 control and mixed candidate and run KLD/rad-kbench/VRAM/perf; the RAD49 fused-gather owner currently holds the GPUs. W4 is a supported *storage* encoding, not yet proven native gfx11 IU4 instruction execution.
+- [ ] Obtain comparable measured per-layer W4/MXFP4/FP8 perf, peak weights and reserves; run the XDP03 GPU-aware selector with real evidence and measure selected profile end-to-end before admitting or promoting any dynamic policy.
 - [ ] Native gfx1100 MXFP4 GEMM and TP all-reduce isolated kernel experiments with correctness; identify safe speed/capacity trade-off.
 - [ ] Full-layer R9700 stage + activation handoff microharness, memory planner admission and KV/GDN state ownership proof. Current Radiance helper infrastructure is MoE-only and does not implement this split.
 - [ ] Future 1M checkpoint availability, true geometry, architecture and training/rope scaling support; 1M on current local Qwen3.8-27B is outside its declared 262,144-token native limit.
