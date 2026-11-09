@@ -28,6 +28,18 @@ int cli_self_check() {
           true,"IPC GPU-only attach diagnostics");
     check({"rad50-tester","--test","ipc-gpu-cpu","--device","0","--lease-confirmed"},
           true,"IPC GPU-first CPU BAR verification");
+    check({"rad50-tester","--test","dmabuf-full","--device","1","--lease-confirmed"},
+          true,"DMA-BUF 4MiB CPU write and GPU verification");
+    check({"rad50-tester","--test","dmabuf-full","--device","0"},
+          false,"DMA-BUF full without lease");
+    check({"rad50-tester","--test","dmabuf-write","--device","0","--lease-confirmed"},
+          true,"DMA-BUF 4KiB CPU write and GPU verification");
+    check({"rad50-tester","--test","dmabuf-write","--device","0"},
+          false,"DMA-BUF write without lease");
+    check({"rad50-tester","--test","dmabuf-map","--device","0","--lease-confirmed"},
+          true,"DMA-BUF mmap capability mode");
+    check({"rad50-tester","--test","dmabuf-map","--device","0"},
+          false,"DMA-BUF mode without lease");
     check({"rad50-tester","--test","vmem-cap","--device","0","--lease-confirmed"},
           true,"GPU-local VMM export capability");
     check({"rad50-tester","--test","transfer","--device","0","--iterations","30",

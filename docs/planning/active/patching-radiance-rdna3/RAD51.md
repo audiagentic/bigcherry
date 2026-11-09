@@ -301,3 +301,7 @@ No default engine change is justified by serial single-process data.
 - 2026-11-08T22:20:00+00:00 (created-by): Proposed staged,
   opt-in production plan with risk ranking and measured-vs-modelled
   distinction. No serving code changes authorised or made.
+
+### RAD50 cross-process feasibility update (2026-11-09)
+
+Both XTXs passed serial direct **CPU-only helper process to GPU-local VRAM** payloads through ROCr VMM DMA-BUF export, SCM_RIGHTS, Linux mmap and DMA_BUF_IOCTL_SYNC. A parent GPU verified 4 KiB and 4 MiB payloads completely on each XTX. Direct HSA CPU-agent IPC and HSA VMM CPU `get_access` remain unsupported in the tested configurations; do not use those negative APIs as a reason to discard DMA-BUF. This lifts the *basic interprocess serial feasibility* blocker only. RAD51 must still wait for repeated generations, crash/restart/lifetime behavior, concurrent GPU visibility and p95/p99 CPU synchronization overhead, then full prefill A/B. No serving code changes are authorised by this result.

@@ -197,3 +197,5 @@ Do not claim CPU BAR push is faster without the complete comparison.
   cross-process CPU BAR payload verified; Gate 2b blocked.
   Added explicit diagnostics and fixed-mode VMM capability probe
   to the unified tester; no model/serving changes.
+
+- 2026-11-09 (updated-by): **New cross-process positive result** through Linux DMA-BUF (not HSA IPC attach): both XTXs' GPU-local ROCr VMM allocations exported and passed to separate CPU-only helper via SCM_RIGHTS; mmap and DMA_BUF_IOCTL_SYNC start/end succeed; CPU writes **4 KiB** and **4 MiB**, and parent GPU verifies every 32-bit word for each, exit 0. One generation per size/card, **Gate 2b partial pass** pending repeated generations, fault/lifetime behavior and concurrent readiness. R9700 remains unverified. No speed or serving claim. GPU lease released after runs; no new worktree.

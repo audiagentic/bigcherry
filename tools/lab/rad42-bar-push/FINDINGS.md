@@ -136,3 +136,7 @@ parameter with actual traces once a GPU lease is available.
   destination/write into the engine process. The latter adds
   orchestration and may erase existing CPU combine/GPU pull overlap;
   model and trace it before any production change.
+
+### DMA-BUF alternative (2026-11-09) — positive hardware evidence
+
+The HSA IPC negative result applies to CPU-agent attach, **not** all cross-process CPU access. GPU-local ROCr VMM memory exported as a DMA-BUF fd and sent over `SCM_RIGHTS` can be mapped from a CPU-only child through Linux `mmap`. On both XTXs the child successfully bracketed CPU writes with `DMA_BUF_IOCTL_SYNC START/END`; the engine-like parent mapped the same VMM allocation into the GPU and fully verified both **4 KiB** and **4 MiB** deterministic CPU-written patterns (one generation per size/card, no mismatches). This establishes the serial interprocess data route that earlier probes could not establish. It does not prove a concurrent GPU consumer sees a published ready flag in the right order, repeated lifetime/reuse, acceptable CPU cost, or a real inference gain. Kernel DMA-BUF synchronization APIs address cache coherency; higher-level producer/consumer ordering remains our responsibility. See `PROGRESS.md` and `TESTER.md`.

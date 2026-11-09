@@ -23,12 +23,13 @@ int rad50_ipc_entry(int, char**);
 int rad50_transfer_entry(int, char**);
 int rad50_live_ready_entry(int, char**);
 int rad50_vmem_cap_entry(int, char**);
+int rad50_dmabuf_map_entry(int, char**);
 int rad50_combine_entry();
 int rad50_cpu_handoff_entry(int, char**);
 
 namespace {
 enum class Kind {
-    Pools, HipSmoke, Serial, Ipc, IpcMap, IpcGpuCpu, VmemCap, Transfer, LiveReady, Combine, CpuHandoff
+    Pools, HipSmoke, Serial, Ipc, IpcMap, IpcGpuCpu, VmemCap, DmaBufMap, DmaBufWrite, DmaBufFull, Transfer, LiveReady, Combine, CpuHandoff
 };
 struct Test {
     const char* name;
@@ -45,6 +46,9 @@ constexpr Test tests[] = {
     {"ipc-map", Kind::IpcMap, true, true, "GPU-agent-only same-device IPC import, CPU grant metadata; no writes"},
     {"ipc-gpu-cpu", Kind::IpcGpuCpu, true, true, "GPU-agent IPC import then CPU writes 4 KiB; parent GPU verifies"},
     {"vmem-cap", Kind::VmemCap, true, true, "GPU-local VMM DMA-BUF export and local CPU VMA capability"},
+    {"dmabuf-map", Kind::DmaBufMap, true, true, "DMA-BUF FD passed to CPU-only child; mmap and SYNC ioctl only, NO writes"},
+    {"dmabuf-write", Kind::DmaBufWrite, true, true, "CPU-only child writes 4KiB DMA-BUF; parent GPU verifies every word"},
+    {"dmabuf-full", Kind::DmaBufFull, true, true, "CPU-only child writes 4MiB DMA-BUF; parent GPU verifies every word"},
     {"transfer", Kind::Transfer, true, true, "Uncontended CPU BAR write versus mapped-host GPU pull (Gate 3)"},
     {"live-ready", Kind::LiveReady, true, true, "GPU already waiting before CPU BAR data and ready flag (Gate 4 canary)"},
     {"combine-ref", Kind::Combine, false, false, "Card-free FP16 combine/sentinel reference checks"},
@@ -173,6 +177,15 @@ int run(const Args& a,const char* self) {
       case Kind::VmemCap:
         args.insert(args.end(),{"--device",std::to_string(a.device)});
         return call_entry(rad50_vmem_cap_entry,args);
+      case Kind::DmaBufMap:
+        args.insert(args.end(),{"--device",std::to_string(a.device)});
+        return call_entry(rad50_dmabuf_map_entry,args);
+      case Kind::DmaBufWrite:
+        args.insert(args.end(),{"--device",std::to_string(a.device),"--write-verify"});
+        return call_entry(rad50_dmabuf_map_entry,args);
+      case Kind::DmaBufFull:
+        args.insert(args.end(),{"--device",std::to_string(a.device),"--full-verify"});
+        return call_entry(rad50_dmabuf_map_entry,args);
       case Kind::Transfer:
         args.insert(args.end(),{"--device",std::to_string(a.device),
                                 "--iterations",std::to_string(a.iterations)});
@@ -213,6 +226,13 @@ int main(int argc,char** argv) {
     if (argc==2 && !std::strcmp(argv[1],"--self-check")) return cli_self_check();
     if (is_fixed_ipc_child(argc,argv))
         return rad50_ipc_entry(argc,argv);
+    if (argc==3 && !std::strcmp(argv[1],"--dmabuf-child") &&
+        !std::strcmp(argv[2],"3") && fcntl(3,F_GETFD)!=-1) {
+        int type=0; socklen_t size=sizeof(type);
+        if (getsockopt(3,SOL_SOCKET,SO_TYPE,&type,&size)==0 &&
+            size==sizeof(type) && type==SOCK_STREAM)
+            return rad50_dmabuf_map_entry(argc,argv);
+    }
     Args args;
     if (!parse(argc,argv,&args)) {
         std::fputs("RAD50: unknown test or invalid arguments; use --help/--list.\n",

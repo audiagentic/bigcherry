@@ -147,3 +147,7 @@ test time. On the measured host, 0 and 1 are the RX 7900 XTX cards,
   see `PROGRESS.md` for their exact outcomes. Recheck lease/processes
   before any further hardware mode.
   No subprocess/alias/interpreter was used to evade policy.
+
+## 2026-11-09 DMA-BUF interprocess probe (Gate 2b partial pass)
+
+The single executable also provides `--test dmabuf-map` (no CPU stores), `--test dmabuf-write` (4 KiB) and `--test dmabuf-full` (4 MiB). Each requires `--device N --lease-confirmed`. A GPU-local HSA VMM handle is exported as DMA-BUF, passed via SCM_RIGHTS to a CPU-only child, then CPU-mapped with Linux `mmap` and DMA_BUF_IOCTL_SYNC START/END. The child writes deterministic data only in the write/full modes; the parent checks every 32-bit word from a GPU kernel after the child ACKs. Both XTXs passed 4 KiB and 4 MiB once each. These are **serial** proofs, not live GPU readiness, generation reuse or any bandwidth result. Never run a GPU mode without a fresh exclusive `gpu` lease and GPU-process preflight; the runner's flag does not acquire the lease.

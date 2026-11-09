@@ -12,7 +12,7 @@ remains RAD42, and RAD49 is the TP2 consumer context.
 | 0: lifecycle and critical-path model, card-free | **PASS** | 23 tests: 10 lifecycle, 3 multi-chunk stress, 10 critical-path/overlap model; no GPU visibility implied |
 | 1: host-visible GPU-local pool discovery | **PASS (API discovery)** | Under exclusive RAD50 lease, HSA enumerated 7 CPU-accessible GPU-local allocatable pools: XTX0 2, XTX1 2, R9700 1, 6900XT 2. Not proof of BAR writes |
 | 2: CPU-write/GPU-read canary | **PASS XTX0/XTX1; R9700 INCONCLUSIVE** | Both gfx1100 GPUs: 4 KiB and 4 MiB, 12 generations each, zero mismatches, exit 0 (48 buffers). R9700 HIP-only kernel passes, but its HSA BAR verification stops during GPU verify launch; no serial result established |
-| 2b: separate CPU-only IPC import | **BLOCKED: CPU mapping unavailable** | XTX0 CPU-agent import fails HSA 4104; XTX0/XTX1 GPU-agent-only import works, but imported hostBaseAddress is not a writable CPU VMA even after CPU grant. No cross-process CPU writes verified. Explore alternate VMM sharing |
+| 2b: separate CPU-only IPC import | **PARTIAL PASS (DMA-BUF cross-process)** | HSA IPC CPU-agent attach failed, but VMM-exported DMA-BUF + separate CPU child mmap and SYNC START/END passed on XTX0/1; child CPU wrote 4 KiB and 4 MiB, parent GPU verified every 32-bit word in each (one generation/size). Reuse, faults, GPU-live visibility and p99 still unverified |
 | 3: isolated transfer A/B | **BUILT, RUN BLOCKED** | `bar_transfer_ab.hip` compiled for gfx1100/gfx1201. No actual bandwidth, CPU cost or latency result. Requires Gate 2b PASS |
 | 4: chunked producer/consumer | **PARTIAL BUILD, RUN BLOCKED** | `bar_live_ready_canary.hip` compiled gfx1100/gfx1201: GPU already running before CPU writes. Multi-process chunk pipeline still not implemented. Requires Gate 3 |
 | 5: captured MoE data / TP2 exact-once | **PARTIAL REFERENCE PASS** | Unified `rad50-tester --test combine-ref` ran the actual BigCherry FP16/NaN/fallback checks, 7/7 PASS. Captured KLD/TP2 replay remains blocked by Gate 2b |
@@ -194,3 +194,14 @@ remains RAD42, and RAD49 is the TP2 consumer context.
 - Strict CLI self-check now **22/22 PASS**. Do not claim VMM
   is a viable alternative until an actual CPU mapping and parent
   GPU payload verification pass in separate processes.
+
+### 2026-11-09 — Linux DMA-BUF cross-process path works on both XTXs
+
+- New fixed unified-tester modes `dmabuf-map`, `dmabuf-write`, `dmabuf-full` use HSA GPU-local VMM handle export, SCM_RIGHTS to an independent CPU-only child, Linux `mmap(PROT_READ|PROT_WRITE)`, and `DMA_BUF_IOCTL_SYNC START/END`. No helper GPU calls/P2P.
+- Under exclusive GPU lease, both XTX0 (PCI 0000:03:00.0) and XTX1 (0000:06:00.0) passed the no-store mapping capability probe. `mmap_errno=0`, `sync_start_errno=0`, `sync_end_errno=0` on each. No data proof from these probes alone.
+- Both XTXs also passed separate-process CPU-written **4 KiB**, verified by a parent GPU kernel checking every 32-bit word (1,024 words).
+- Both XTXs passed separate-process CPU-written **4 MiB**, verified by a parent GPU kernel checking every 32-bit word (1,048,576 words). Exit 0, no mismatches reported. One generation per payload/card; no repeated reuse or concurrency claim yet.
+- The first `dmabuf-full` attempt failed due to a lab-mode dispatch bug (`op==2` not entering the CPU-write branch; `wrote=0`); fixed by allowing any nonzero op and reran successfully. This was not observed data corruption.
+- Existing HSA CPU-agent IPC and HSA VMM CPU `get_access` failures remain valid negative results for those APIs, **not** evidence that DMA-BUF CPU mmap is impossible.
+- **Gate 2b partial pass**, not final: repeated generations/consumer ACK, stale buffers, close/restart, concurrent GPU-visible publication and end-to-end latency are outstanding. `DMA_BUF_IOCTL_SYNC` may add significant syscall overhead; do not enable RAD51 or claim a speedup.
+- Released RAD50 exclusive lease after results; all GPUs idle and no KFD processes. Single existing worktree, no vendor/production files altered.

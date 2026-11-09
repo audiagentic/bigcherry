@@ -167,3 +167,7 @@ CPU wake, store latency and cross-process ordering are the hard gates.
 - Keep status updated in [PROGRESS.md](PROGRESS.md); RAD50 remains
   pending, RAD51 is a *future-only* integration plan.
 - No production edits, push, PR or merge in the experiment branch.
+
+### New Linux DMA-BUF cross-process Gate 2b evidence
+
+Use the existing `rad50-tester` with `--test dmabuf-map`, `dmabuf-write` (4 KiB) or `dmabuf-full` (4 MiB), plus `--device N --lease-confirmed`. XTX0 and XTX1 passed the first serial write/verify runs under an exclusive GPU lease. Parent ROCr GPU-local VMM export plus SCM_RIGHTS, child CPU-only mmap with DMA_BUF_IOCTL_SYNC start/end, and parent GPU exact-word validation succeeded. Direct HSA CPU-agent IPC still fails, but is not the selected transport. Before marking Gate 2b complete, require many generations, reuse, helper restart/close, failed import, per-rank isolation and concurrent publication; 4 MiB serial correctness alone is not a production throughput result. Check current GPU lease and KFD PIDs before all further runs.
