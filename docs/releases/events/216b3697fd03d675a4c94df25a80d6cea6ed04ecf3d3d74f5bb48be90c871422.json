@@ -1,0 +1,15 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261109_063852_flash-next-on-the-two-7900-xtx_4939",
+  "files": [
+    "engines/radiance/layouts.toml",
+    "engines/radiance/model-recipes/qwen4exp-served-hcbf16.recipe"
+  ],
+  "plan-item-ids": [
+    "RAD49"
+  ],
+  "status": "unreleased",
+  "technical-summary": "flashnext-tp2xtx-r9700 and flashnext-tp2xtx serve qwen3.8-next-flash-hcbf16: the served container with the hyper-connection mixing matrices kept bf16 (native WMMA on gfx1100 instead of widened E4M3); recipe = served recipe minus the hc rules, converted with --reuse.",
+  "timestamp-utc": "2026-11-09T06:38:52.907339Z",
+  "user-summary-candidate": "Flash-Next on the two 7900 XTX with the R9700 helper: about 6% faster decode."
+}

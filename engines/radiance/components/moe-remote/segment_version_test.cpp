@@ -29,11 +29,11 @@ int main() {
     using namespace r3::moe_shm;
     const LayoutShape shape{128,2,3,8,128,64};
     Layout layout{};
-    check(layout_for(shape,2,slots_for(2),&layout),"layout");
+    check(layout_for(shape,2,slots_for(2, 1),&layout),"layout");
     const std::string name="/bc-v24-"+std::to_string(getpid());
     Segment creator;
     check(creator.open(name.c_str(),layout.bytes,true,1),"create");
-    check(init(creator.host(),2,shape,2),"valid v24 init");
+    check(init(creator.host(),2,shape,2, 1),"valid v24 init");
     auto* h=creator.header();
     h->helper_count=2;
     h->version=23;
@@ -56,6 +56,33 @@ int main() {
         check(!creator.register_gpu() && registers==1,
               "bad v24 generation never registered");
         g->digest=saved;
+    }
+    // A creator unlinks only the segment it made. Its name can be taken over by a later start's segment before it is destroyed
+    // (a late exit): destroying the old creator must leave the new one in place, and the new one still removes its own.
+    {
+        const std::string own = "/bc-v24-own-" + std::to_string(getpid());
+        auto exists = [&] {
+            const int fd = shm_open(own.c_str(), O_RDONLY | O_CLOEXEC, 0);
+            if (fd >= 0) ::close(fd);
+            return fd >= 0;
+        };
+        Segment* first = new Segment;
+        check(first->open(own.c_str(), layout.bytes, true, 1), "create the first segment");
+        check(shm_unlink(own.c_str()) == 0, "the first segment's name is removed behind its back");
+        {
+            Segment second;
+            check(second.open(own.c_str(), layout.bytes, true, 1), "a later start makes a new segment under the same name");
+            delete first;                                  // the late exit of the first creator
+            check(exists(), "the late creator did not remove the newer segment");
+        }
+        check(!exists(), "the newer creator removes its own name");
+        // and the ordinary case: a creator whose name is still its own removes it
+        {
+            Segment only;
+            check(only.open(own.c_str(), layout.bytes, true, 1), "create");
+            check(exists(), "exists while open");
+        }
+        check(!exists(), "an ordinary creator removes its name");
     }
     // The name can exist before ftruncate: an attacher must not mmap and
     // read a zero-length object (SIGBUS), even when shm_open succeeds.
@@ -80,7 +107,7 @@ int main() {
     void* delayed_map = mmap(nullptr, layout.bytes, PROT_READ | PROT_WRITE,
                              MAP_SHARED, delayed_fd, 0);
     check(delayed_map != MAP_FAILED, "map sized creator segment");
-    check(init(delayed_map, 2, shape, 2), "initialize late-sized v24");
+    check(init(delayed_map, 2, shape, 2, 1), "initialize late-sized v24");
     static_cast<Header*>(delayed_map)->helper_count = 2;
     attacher.join();
     check(accepted.load(std::memory_order_acquire), "attacher waits for sizing and v24");

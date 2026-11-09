@@ -1124,8 +1124,8 @@ public:
             bool drained = true;
             for (uint32_t lane = 0; lane < kLanes; ++lane) {
                 const uint32_t slot=lane % kMaxSlots;
-                const bool served=h->helper_count > 1 ? slot == helper_ :
-                    (c.expected_ranks & (1u<<slot)) != 0;
+                const bool served=slot < h->slot_count && h->rank_count &&
+                    slot_helper(slot,h->rank_count) == helper_;   /* this helper's slots, one an engine rank (RAD49) */
                 if (!served ||
                     (lane_is_small(lane) && lane_class(lane) >= h->small_class_count)) continue;
                 const auto& signal = h->lane[lane];

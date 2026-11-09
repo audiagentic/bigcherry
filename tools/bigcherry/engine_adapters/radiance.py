@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from ..core import environment
-from . import radiance_manifest, radiance_plan
+from . import radiance_layout, radiance_manifest, radiance_plan
 from .base import (
-    BumpCheck, CompletionApi, CpuSmokeSpec, DeviceAssertion, DriftCheck, EngineAdapter, QualityCommand, SidecarSpec, SourceCheck, SMOKE_SEED,
-    build_cpu_smoke,
+    BumpCheck, CompletionApi, CpuSmokeSpec, DeviceAssertion, DriftCheck, EngineAdapter, QualityCommand, ServingLayout, SidecarSpec,
+    SourceCheck, SMOKE_SEED, build_cpu_smoke,
 )
 
 if TYPE_CHECKING:
@@ -114,6 +115,30 @@ class RadianceAdapter(EngineAdapter):
 
     def check_arm_environment(self, controls: dict[str, str]) -> None:
         return None
+
+    def serving_layout(self, layout: str) -> ServingLayout:
+        """The layout as the launcher and bc-serve resolve it (radiance_layout against the host inventory): its model under
+        BC_MODEL_ROOT (else the host's model-root), and its engine cards -- ROCR_VISIBLE_DEVICES the cards in rank order, HIP
+        ordinals 0..n-1 as the launcher sets them, and the architectures and PCI locators they must execute on."""
+        host = _host()
+        try:
+            resolved = radiance_layout.resolve(layout, host)
+        except radiance_layout.LayoutError as exc:
+            raise ValueError(str(exc)) from exc
+        root = os.environ.get("BC_MODEL_ROOT") or host.model_root
+        if not root:
+            raise ValueError(f"layout {layout}: no model root (BC_MODEL_ROOT or the host's model-root) to find {resolved.model} under")
+        by_index = {d.index: d for d in host.devices}
+        locators = [by_index[i].locator for i in resolved.engine_indices]
+        if any(not locator for locator in locators):
+            raise ValueError(f"layout {layout}: an engine card has no PCI locator in the host inventory")
+        ranks = len(resolved.engine_indices)
+        return ServingLayout(
+            model=(Path(root) / resolved.model).expanduser().resolve(),
+            environment={"ROCR_VISIBLE_DEVICES": ",".join(str(i) for i in resolved.engine_indices),
+                         "HIP_VISIBLE_DEVICES": ",".join(str(i) for i in range(ranks))},
+            expected_execution={"backend": "ROCm", "architectures": [resolved.engine_arch] * ranks, "locators": locators},
+        )
 
     def write_serving_manifest(
         self, name: str, serving: dict[str, Any], *, binary: Path, model: Path, env: dict[str, str], run_dir: Path,

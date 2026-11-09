@@ -199,13 +199,20 @@ int main(int argc, char** argv) {
                 const int rc = c.k->launch(&a, st);
                 if (rc != RAD_OK && rc != RAD_LINK_ENDED) { std::fprintf(stderr, "r3-arbench: launch %s rc %d\n", c.k->name, rc); std::exit(4); }
             };
+            auto step = [&](const char* what) {
+                if (rank) return;
+                std::lock_guard<std::mutex> lk(log_mu);
+                std::fprintf(stderr, "r3-arbench: %s %s M=%ld: %s\n", c.k->name, c.wire.c_str(), M, what);
+            };
             if (go) {
                 // the exact sum, once: 1.0 + 2.0 = 3.0 on both ranks (0x4040)
+                step("first launch");
                 fill(); launch();
                 HIP_OK(hipStreamSynchronize(st));
                 uint16_t got = 0;
                 HIP_OK(hipMemcpy(&got, y, 2, hipMemcpyDeviceToHost));
                 r.sum_ok = c.wire != "exact" || got == 0x4040;
+                step("sum checked; warm and timed loops");
                 for (int w = 0; w < o.warm; ++w) launch();
                 HIP_OK(hipStreamSynchronize(st));
                 sync.arrive_and_wait();
@@ -226,6 +233,7 @@ int main(int argc, char** argv) {
                     HIP_OK(hipEventElapsedTime(&ms, e0, e1));
                     iso.push_back(ms * 1000.0f);
                 }
+                step("done");
                 r.iso_med = pct(iso, 0.5);
                 r.iso_p90 = pct(iso, 0.9);
             }

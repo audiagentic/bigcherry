@@ -84,17 +84,17 @@ struct StoredWeight {
     int64_t scale_bytes = 0;
 };
 
-struct Expert {
-    std::array<StoredWeight, r3::moe_shm::kMaxEngineRanks> gu;
-    std::array<StoredWeight, r3::moe_shm::kMaxEngineRanks> dn;
+struct Expert {   /* one full-width stored form (RAD49) */
+    StoredWeight gu;
+    StoredWeight dn;
     bool live = false;
 };
 
-struct LayerTables {
-    void* gu_code[r3::moe_shm::kMaxEngineRanks][2]{};
-    void* gu_scale[r3::moe_shm::kMaxEngineRanks][2]{};
-    void* dn_code[r3::moe_shm::kMaxEngineRanks][2]{};
-    void* dn_scale[r3::moe_shm::kMaxEngineRanks][2]{};
+struct LayerTables {   /* [expert-slot parity] */
+    void* gu_code[2]{};
+    void* gu_scale[2]{};
+    void* dn_code[2]{};
+    void* dn_scale[2]{};
     uint32_t gu_code_dtype = 0, gu_scale_dtype = 0;
     uint32_t dn_code_dtype = 0, dn_scale_dtype = 0;
 };

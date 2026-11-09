@@ -34,11 +34,11 @@ struct LanePlan {
 // expert-indexed tables still span the model's logical expert IDs.
 inline bool lane_plan(const std::array<uint32_t, r3::moe_shm::kSmallClasses>& classes,
                       uint32_t class_count, uint32_t rows, uint32_t published_routes,
-                      uint32_t top_k, uint32_t ranks, LanePlan* out) {
+                      uint32_t top_k, LanePlan* out) {
     using namespace r3::moe_shm;
     if (!out || !class_count || class_count > kSmallClasses ||
         !rows || rows > kMaxRows || !top_k || top_k > kMaxTopK ||
-        published_routes > uint64_t(rows) * top_k || !ranks || ranks > kMaxEngineRanks)
+        published_routes > uint64_t(rows) * top_k)
         return false;
     for (uint32_t c = 0; c < class_count; ++c)
         if (!classes[c] || classes[c] > kMaxRows || (c && classes[c] <= classes[c - 1]))
@@ -49,8 +49,7 @@ inline bool lane_plan(const std::array<uint32_t, r3::moe_shm::kSmallClasses>& cl
     for (uint32_t c = 0; c < class_count; ++c)
         if (rows <= classes[c]) { cls = c; break; }
     plan.dense_routes = (cls == kSmallClasses ? rows : classes[cls]) * top_k;
-    for (uint32_t rank = 0; rank < ranks; ++rank)
-        plan.open[lane_of(rank, cls)] = true;
+    plan.open[lane_of(0, cls)] = true;   /* the replay's one full-width request, slot 0 (RAD49) */
     *out = plan;
     return true;
 }

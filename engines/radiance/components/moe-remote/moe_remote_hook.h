@@ -102,7 +102,7 @@ struct R3MoeMailboxDevice {
     ConsumptionStamp* stamps = nullptr;    /* device-memory counting ring, same index */
     r3::moe_shm::ConsumedRecords* consumed_rec = nullptr;  /* device memory: last consumed request a lane, last combine */
     uint32_t consumed_capacity = 0;
-    uint32_t* sequence = nullptr;   /* [kMaxSlots slots][2 lane classes] request counters */
+    uint32_t* sequence = nullptr;   /* [kLanes] request counters; this rank uses only its own slots' lanes */
     uint32_t* published = nullptr;  /* [kMaxSlots slots]: 0, or 1 + the lane class of this step's request; then [kMaxSlots]:
                                        the step's R3_MOE_WORKER_COMBINE generation, 0 when the step merges two rows; then
                                        [kCombineChunks]: the generation whose chunk c the engine has seen combined (RAD42, device
@@ -110,6 +110,7 @@ struct R3MoeMailboxDevice {
     uint16_t* mask_ref = nullptr;
     int32_t* inv = nullptr;     /* [max_rows * top_k] engine sorted row of each locally computed slot, else -1. */
     uint32_t* rmask = nullptr;  /* [max_rows * top_k] 1 where the helper computed the slot. */
+    uint32_t* inject_next = nullptr;  /* moe_mailbox_inject: the next spare sorted row (device memory, one word) */
     R3MoeShadowLayerStats* shadow_stats = nullptr;
     R3MoeShadowFirst* shadow_first = nullptr;
     uint32_t max_rows = 0;
@@ -117,8 +118,9 @@ struct R3MoeMailboxDevice {
     uint32_t top_k = 0;
     uint32_t experts = 0;
     uint32_t rank = 0;
-    uint32_t world = 0;   /* engine TP ranks: 1 asks the helper for full expert width, 2 for this rank's slice */
-    uint32_t helpers = 1; /* 1: this rank's slot only; 2 (world 1): slot h is helper h's */
+    uint32_t world = 0;   /* engine TP ranks; the helper always computes full expert width, and a layer's consumer
+                             rank (consumer_of(layer, world)) is the one that publishes and adds it (RAD49) */
+    uint32_t helpers = 1; /* helper h is served from this rank's slot slot_of(h, rank, world) */
     uint32_t* heat = nullptr;   /* [kMaxLayers][kExperts] route counts (R3_MOE_WORKER_HISTOGRAM) */
     uint32_t shadow = 0;
     uint32_t mask_only = 0;

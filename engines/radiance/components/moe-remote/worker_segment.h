@@ -32,6 +32,8 @@ public:
             fd_ = shm_open(name, O_CREAT | O_EXCL | O_RDWR | O_CLOEXEC, 0600);
             if (fd_ < 0) return fail("shm_open");
             unlink_ = true;
+            struct stat made {};
+            if (fstat(fd_, &made) == 0) { dev_ = made.st_dev; ino_ = made.st_ino; }
             if (ftruncate(fd_, (off_t)bytes) != 0) return fail("ftruncate");
         } else {
             // Opening the name is not enough: the creator has not necessarily ftruncated yet.
@@ -105,11 +107,23 @@ private:
         std::fprintf(stderr, "r3_moe_worker: %s %s: %s\n", what, name_, std::strerror(errno));
         return false;
     }
+    /* Remove the name only if it still names the segment this object created. A later start may already have made a new
+     * segment under the same name (the launcher removes a stale name and the next helper 0 recreates it): unlinking by name
+     * alone would remove THAT one, and the engine then finds no hand-off. Compare the object behind the name with ours
+     * (device and inode, from fstat at create) and leave it alone when it differs. */
+    void unlink_if_ours() {
+        const int now = shm_open(name_, O_RDONLY | O_CLOEXEC, 0);
+        if (now < 0) return;                       // already gone: nothing to remove
+        struct stat s {};
+        const bool ours = fstat(now, &s) == 0 && s.st_dev == dev_ && s.st_ino == ino_;
+        (void)::close(now);
+        if (ours) (void)shm_unlink(name_);
+    }
     void close_all() {
         if (registered_) (void)hipHostUnregister(map_);
         if (map_) (void)munmap(map_, bytes_);
         if (fd_ >= 0) (void)::close(fd_);
-        if (unlink_) (void)shm_unlink(name_);
+        if (unlink_) unlink_if_ours();
         registered_ = false;
         map_ = nullptr;
         fd_ = -1;
@@ -119,6 +133,8 @@ private:
     const char* name_ = "";
     size_t bytes_ = 0;
     bool unlink_ = false;
+    dev_t dev_ = 0;     // the object this creator made (fstat at create), so unlink_if_ours can tell it from a later one
+    ino_t ino_ = 0;
     int fd_ = -1;
     void* map_ = nullptr;
     void* dev_map_ = nullptr;

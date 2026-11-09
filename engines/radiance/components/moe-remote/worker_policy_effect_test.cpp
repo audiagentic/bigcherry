@@ -45,7 +45,7 @@ static void test_postread_peer_clock() {
     check(layout_for(shape,2,2,&layout),"clock layout");
     void* map=mmap(nullptr,layout.bytes,PROT_READ|PROT_WRITE,
                    MAP_PRIVATE|MAP_ANONYMOUS,-1,0);
-    check(map!=MAP_FAILED && init(map,2,shape,2),"clock map");
+    check(map!=MAP_FAILED && init(map,2,shape,2, 1),"clock map");
     static_cast<Header*>(map)->helper_count=2;
     uint64_t now=1000;
     SharedTailServiceSource source(map,1,1000,[&]{return now+=2;},2);
@@ -76,7 +76,7 @@ static void test_published_tail_signal() {
     check(layout_for(shape,2,2,&layout),"shared tail test layout");
     void* map=mmap(nullptr,layout.bytes,PROT_READ|PROT_WRITE,
                    MAP_PRIVATE|MAP_ANONYMOUS,-1,0);
-    check(map!=MAP_FAILED && init(map,2,shape,2),"shared tail test init");
+    check(map!=MAP_FAILED && init(map,2,shape,2, 1),"shared tail test init");
     static_cast<Header*>(map)->helper_count=2;
     auto* coordinator_slot=published_service(map,0);
     auto* tail_slot=published_service(map,1);
@@ -169,7 +169,7 @@ static void test_relative_shift_from_all_published_helpers() {
     check(layout_for(shape,3,2,&layout),"relative shared layout");
     void* map=mmap(nullptr,layout.bytes,PROT_READ|PROT_WRITE,
                    MAP_PRIVATE|MAP_ANONYMOUS,-1,0);
-    check(map!=MAP_FAILED && init(map,3,shape,2),"relative shared init");
+    check(map!=MAP_FAILED && init(map,3,shape,2, 1),"relative shared init");
     static_cast<Header*>(map)->helper_count=3;
     uint64_t now=1000;
     SharedTailServiceSource source(map,2,1000,[&]{return now;},3);
@@ -266,7 +266,7 @@ static void test_sparse_peer_and_unavailable_diagnostics() {
     check(layout_for(shape,3,2,&layout),"sparse peer layout");
     void* map=mmap(nullptr,layout.bytes,PROT_READ|PROT_WRITE,
                    MAP_PRIVATE|MAP_ANONYMOUS,-1,0);
-    check(map!=MAP_FAILED && init(map,3,shape,2),"sparse peer init");
+    check(map!=MAP_FAILED && init(map,3,shape,2, 1),"sparse peer init");
     static_cast<Header*>(map)->helper_count=3;
     uint64_t now=1000;
     std::vector<std::string> diagnostics;

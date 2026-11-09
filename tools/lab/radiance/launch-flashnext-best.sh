@@ -7,8 +7,8 @@
 # tools/lab/radiance/helper-ab.json, which this mirrors outside the harness.
 #
 # Offload: the engine card(s) run the model (--tp = the layout's engine card count; TP traffic through host memory, tp-wire from the
-# layout); one r3_moe_worker helper per helper card holds experts (the hottest by route heat, up to the layout's budget: full width
-# behind one engine rank, each rank's TP slice behind two), helper-owned experts skipped on the engine cards; n-gram table in host
+# layout); one r3_moe_worker helper per helper card holds experts (the hottest by route heat, up to the layout's budget, always full
+# width; behind TP one rank a layer adds them, RAD49), helper-owned experts skipped on the engine cards; n-gram table in host
 # RAM; fp8 KV; MTP depth 3; 2048-token chunks; up to 8 sessions of up to 262,144 tokens each (the context the model was
 # trained on, so no rope stretch). The fp8 cache on the R9700 holds about 1.48M tokens, shared by the sessions (5.7 full-length ones);
 # --max-model-len 1048576 --rope-scaling yarn:4 --max-num-seqs 2 serves the stretched 1M context instead. A prefix hit resumes at the nearest cached token (--prefix-resume nearest) rather
@@ -93,6 +93,7 @@ WORK=${BC_WORK_ROOT:?set BC_WORK_ROOT (source tools/env/bigcherry-env.sh)}
 RUN=$WORK/flashnext
 PIDS=$RUN/pids
 SHM=/r3-moe-helper
+SHM_DIR=${SHM_DIR:-/dev/shm}   # where POSIX shared memory lives; a test points it at a scratch directory
 PORT=36080
 HEAT=$WORK/heat/flashnext-mixed.hot-first
 BUILD=""
@@ -489,7 +490,7 @@ start_engine_manifest() {
 # exits by itself (--plan-memory, with the unmeasured manifest), then the helpers stop. It never serves and never runs a request.
 plan_check_start_engine_measure() {
   if [ "$LAYOUT_HELPER_COUNT" -gt 0 ]; then
-    rm -f "/dev/shm${SHM}"
+    rm -f "$SHM_DIR${SHM}"
     start_helpers "$PLAN_MEASURING_MANIFEST" --measuring || { stop_procs; return 1; }
     # what the helpers hold of the host while they are up: anonymous memory of each plus the shared segment once (file pages are
     # reclaimable and not counted); bc-serve plans the checkpoint slots around it (plan-check.sh passes it with the plan)
@@ -509,8 +510,14 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib/plan-check.sh"
 plan_manifest_prepare || { echo "RADIANCE_EXIT=97 the measured serving manifest could not be made (above); nothing was started for serving"; exit 97; }
 
 trap 'exit 1' ERR
-rm -f "/dev/shm${SHM}"
+rm -f "$SHM_DIR${SHM}"
 if [ "$LAYOUT_HELPER_COUNT" -gt 0 ]; then start_helpers "$PLAN_MANIFEST"; fi
+if [ "$LAYOUT_HELPER_COUNT" -gt 0 ] && [ ! -e "$SHM_DIR${SHM}" ]; then
+  # The helpers reported ready, so helper 0 made the segment; if it is gone now something removed it, and an engine that cannot
+  # open it runs without the hand-off and is refused by the plan check with a misleading memory mismatch (seen 2026-11-09).
+  echo "RADIANCE_EXIT=1 the helpers are up but $SHM_DIR${SHM} does not exist; not starting the engine" >&2
+  false
+fi
 LOG=$RUN/engine-$STAMP.log
 start_engine_manifest "$LOG" "$PLAN_MANIFEST"
 echo $! > "$PIDS/engine"
@@ -547,6 +554,8 @@ mtp_replay_check() {
   local depth
   depth=$(sed -n "s/^I speculation: 'mtp' drafts \([0-9][0-9]*\) token.*/\1/p" "$LOG" | tail -1)
   [ -n "$depth" ] && [ "$depth" -gt 1 ] || return 0
+  # --profile-ops times every op and so records no pass at all: nothing to check, and the profiled run is not a measurement.
+  grep -q '^W\[0\] per-op timing is on' "$LOG" && return 0
   mtp_replay_recorded && return 0
   start_canary >/dev/null 2>&1 || return 1
   mtp_replay_recorded && return 0

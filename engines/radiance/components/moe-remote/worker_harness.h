@@ -220,7 +220,7 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
 
     r3::moe_shm::LayoutShape shape{};
     Layout lay{};
-    if (!segment_shape(model, 1, &shape, &lay)) {
+    if (!segment_shape(model, 1, 1, &shape, &lay)) {
         std::fprintf(stderr, "r3_moe_worker: --compare segment shape invalid\n");
         return 1;
     }
@@ -244,32 +244,27 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
         return 1;
     }
     Header* h = static_cast<Header*>(map);
-    const uint32_t replay_ranks =
-        r3::epoch::compare_request_ranks(gpu.engine_ranks_, h->slot_count);
-    if (!replay_ranks) {
-        std::fprintf(stderr, "r3_moe_worker: --compare invalid configured engine rank count %u\n",
-                     gpu.engine_ranks_);
-        munmap(map, lay.bytes);
-        return 1;
-    }
     const char* route_error = nullptr;
     if (!r3::epoch::validate_compare_routes(
-            map, layer, rows, published, replay_ranks,
-            [&](uint32_t l, uint32_t e, uint32_t rank, uint32_t local) {
-                return gpu.compare_resident(l, e, rank, local);
+            map, layer, rows, published,
+            [&](uint32_t l, uint32_t e, uint32_t local) {
+                return gpu.compare_resident(l, e, local);
             }, &route_error)) {
         std::fprintf(stderr, "r3_moe_worker: --compare captured route residency: %s\n",
                      route_error ? route_error : "unknown error");
         munmap(map, lay.bytes);
         return 1;
     }
-    std::fprintf(stderr,
-                 "r3_moe_worker: --compare engine_ranks=%u, %s TP outputs (physical slots=%u)\n",
-                 replay_ranks, replay_ranks == 1 ? "full-width" : "partial-width",
-                 h->slot_count);
+    /* One full-width request: the helper never computes a TP slice (RAD49), whatever the engine's width. The compare
+     * segment is a one-rank segment, so the lanes check requests against world 1. */
+    if (!gpu.set_engine_world(h->rank_count)) {
+        std::fprintf(stderr, "r3_moe_worker: --compare segment engine width %u is invalid\n", h->rank_count);
+        munmap(map, lay.bytes);
+        return 1;
+    }
+    std::fprintf(stderr, "r3_moe_worker: --compare one full-width request (physical slots=%u)\n", h->slot_count);
     r3::replay::LanePlan plan{};
-    if (!r3::replay::lane_plan(classes.rows, classes.count, rows, nr, topk,
-                              replay_ranks, &plan) ||
+    if (!r3::replay::lane_plan(classes.rows, classes.count, rows, nr, topk, &plan) ||
         !gpu.prepare_lanes(classes.rows, classes.count, plan.large_rows,
                            plan.open, plan.dense_routes)) {
         std::fprintf(stderr, "r3_moe_worker: --compare prepare lanes failed\n");
@@ -296,14 +291,15 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
 
     bool bad = false;
     constexpr uint32_t sequence = 1;
-    for (uint32_t rank = 0; rank < replay_ranks; ++rank) {
+    for (const uint32_t rank : {0u}) {   /* the one request: slot 0, consumer 0 of a one-rank segment */
         const uint32_t lane = lane_of(rank, step_class(h, rows));
         Request* q = lane_request(map, lane, sequence);
         q->completion_sequence = 0;
         q->status = 0;
         q->layer = layer;
-        q->rank = rank;
-        q->rank_count = replay_ranks;
+        q->slot = rank;
+        q->world = 1;
+        q->consumer = 0;
         q->rows = rows;
         q->hidden = hid;
         q->route_count = nr;
@@ -360,7 +356,7 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
             break;
         }
         /* The helper's per-token rows, taken before the host reference rewrites the same slot. */
-        const uint16_t* res = ptr<uint16_t>(map, h->result_offset[result_index(rank, out_rank_of(rank, q->rank_count))]);
+        const uint16_t* res = ptr<uint16_t>(map, h->result_offset[result_index(rank, q->consumer)]);
         const std::vector<uint16_t> got(res, res + (size_t)rows * hid);
         {   /* FNV-1a over the helper's result bytes: two builds that print the same hash for the same capture and settings produced
              * bit-identical output (the cross-build identity check of RCS05/RAD14; rel_l2 below only ever bounds the error). */

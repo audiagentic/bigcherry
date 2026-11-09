@@ -47,7 +47,9 @@ def _env_lines(r: radiance_layout.Resolved) -> list[str]:
     for i in range(len(r.helpers)):
         lines.append(f"LAYOUT_HELPER_{i}=(" + " ".join(q(f"{k}={v}") for k, v in r.helper_env(i).items()) + ")")
     ranks = f"TP ranks: {','.join(map(str, r.engine_indices))} ({r.engine_arch}), wire {r.tp_wire or 'default'}"
-    helpers = "; ".join(f"helper{i}: card {h.index} {h.arch.name} {h.budget_mib} MiB {h.placement}" for i, h in enumerate(r.helpers))
+    helpers = "; ".join(f"helper{i}: card {h.index} {h.arch.name} "
+                        f"{'up to ' if h.budget_derived else ''}{h.budget_mib} MiB{' (derived by bc-serve)' if h.budget_derived else ''} "
+                        f"{h.placement}" for i, h in enumerate(r.helpers))
     summary = (f"{ranks}; {helpers}" if len(r.engine_indices) > 1 else helpers) if r.helpers else ranks
     lines.append("LAYOUT_SUMMARY=" + q(summary))
     return lines
@@ -76,7 +78,7 @@ def _run(args: Namespace) -> int:
             return 0
         print(json.dumps({
             "layout": r.name, "model": r.model, "engine": {"device": r.engine_index, "devices": list(r.engine_indices), "tp": len(r.engine_indices), "tp_wire": r.tp_wire, "arch": r.engine_arch, "plugin": r.engine_plugin, "server_args": list(r.server_args)},
-            "helpers": [{"helper": i, "device": h.index, "arch": h.arch.name, "vram_mib": h.vram_mib, "budget_mib": h.budget_mib, "placement": h.placement,
+            "helpers": [{"helper": i, "device": h.index, "arch": h.arch.name, "vram_mib": h.vram_mib, "budget_mib": h.budget_mib, "budget_derived": h.budget_derived, "placement": h.placement,
                          "share": h.share, "plugin": h.arch.plugin, "formats": list(h.arch.formats), "rows_kernel": h.arch.rows_kernel} for i, h in enumerate(r.helpers)],
             "common_env": r.common_env}, indent=2))
         return 0

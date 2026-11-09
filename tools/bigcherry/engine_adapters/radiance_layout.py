@@ -43,9 +43,13 @@ class HelperCard:
     index: int                    # HIP/ROCR ordinal of the card
     arch: Arch
     vram_mib: int
+    #: the expert budget; when ``budget_derived`` it is the card limit (VRAM less archs.toml reserve-mib), an upper bound: bc-serve
+    #: derives the expert budget the owner planner and the helper use as this less the helper's own lanes, pointer banks, slot map
+    #: and incoming slot (moe-remote worker_footprint.h, RAD49), which needs the model's shape
     budget_mib: int
     placement: str
     share: int
+    budget_derived: bool = False
 
 
 @dataclass(frozen=True)
@@ -85,13 +89,22 @@ def _root(repo_root: Path | None) -> Path:
 
 
 
+def _protocol_bound(name: str, repo_root: Path | None) -> int:
+    text = (_root(repo_root) / _HEADER).read_text(encoding="utf-8")
+    m = re.search(r"constexpr\s+uint32_t\s+" + name + r"\s*=\s*(\d+)\s*;", text)
+    if not m:
+        raise LayoutError(f"{_HEADER}: {name} not found")
+    return int(m.group(1))
+
+
 def max_helpers(repo_root: Path | None = None) -> int:
     """The protocol's helper bound, read from the header that defines it (kMaxHelpers), so the two cannot drift."""
-    text = (_root(repo_root) / _HEADER).read_text(encoding="utf-8")
-    m = re.search(r"constexpr\s+uint32_t\s+kMaxHelpers\s*=\s*(\d+)\s*;", text)
-    if not m:
-        raise LayoutError(f"{_HEADER}: kMaxHelpers not found")
-    return int(m.group(1))
+    return _protocol_bound("kMaxHelpers", repo_root)
+
+
+def max_slots(repo_root: Path | None = None) -> int:
+    """The protocol's request-slot bound (kMaxSlots): one slot a (helper, engine rank) pair (RAD49)."""
+    return _protocol_bound("kMaxSlots", repo_root)
 
 
 def _load(path: Path) -> dict:
@@ -259,16 +272,18 @@ def resolve(name: str, host: environment.Host, *, budgets: dict[str, int] | None
             raise LayoutError(f"{gwhere}: share is a non-negative integer")
         for d in cards:
             limit = d.vram_mib - archs[d.arch].reserve_mib
-            # absent: the whole card less its archs.toml reserve (derived from the inventory, not a literal in the layout)
+            # absent: derived by bc-serve from the card (this limit) less the helper's own footprint; not a literal in the layout
             budget = g.get("budget-mib", limit)
+            derived = "budget-mib" not in g
             if d.arch in budgets:
                 budget = budgets[d.arch]
+                derived = False
                 used_overrides.add(d.arch)
             if not isinstance(budget, int) or isinstance(budget, bool) or budget <= 0:
                 raise LayoutError(f"{gwhere}: budget-mib is a positive integer")
             if budget > limit:
                 raise LayoutError(f"{gwhere}: budget {budget} MiB on device {d.index} ({d.arch}, {d.vram_mib} MiB, reserve {archs[d.arch].reserve_mib}) exceeds {limit} MiB")
-            helpers.append(HelperCard(d.index, archs[d.arch], d.vram_mib, budget, placement, share))
+            helpers.append(HelperCard(d.index, archs[d.arch], d.vram_mib, budget, placement, share, derived))
     unused = set(budgets) - used_overrides
     if unused:
         raise LayoutError(f"{where}: a budget override names {sorted(unused)}, which no helper group uses")
@@ -276,15 +291,15 @@ def resolve(name: str, host: environment.Host, *, budgets: dict[str, int] | None
         raise LayoutError(f"{where}: {len(helpers)} helpers exceed the protocol's {max_helpers(repo_root)}")
     if not any(h.placement == "head" and h.share > 0 for h in helpers):
         raise LayoutError(f"{where}: no head helper with a share")
-    if len(engine) > 1 and len(helpers) > 1:
-        # moe_remote_hook.cpp r3_moe_mailbox_device: a multi-rank engine uses the request slot axis for its ranks, so it is served
-        # by one helper only (step_slot in moe_mailbox_ops.hip); N helpers behind M ranks is RAD49 step 3.
-        raise LayoutError(f"{where}: a {len(engine)}-rank engine is served by one remote-MoE helper only (the mailbox protocol); "
-                          f"this layout selects {len(helpers)}")
+    if helpers and len(helpers) * len(engine) > max_slots(repo_root):
+        # moe_remote_shm.h slots_for: one request slot a (helper, engine rank); the hook and the helpers refuse more at start
+        raise LayoutError(f"{where}: {len(helpers)} helpers behind a {len(engine)}-rank engine need {len(helpers) * len(engine)} "
+                          f"request slots; the mailbox protocol has {max_slots(repo_root)}")
     common = {
         "R3_MOE_WORKER_COUNT": str(len(helpers)),
         "R3_MOE_WORKER_ENGINE_RANKS": str(len(engine)),
-        "R3_MOE_WORKER_MIBS": ",".join(str(h.budget_mib) for h in helpers),
+        # the expert budgets, when the layout (or an override) gives them all; a derived one is bc-serve's (worker_footprint.h)
+        "R3_MOE_WORKER_MIBS": "" if any(h.budget_derived for h in helpers) else ",".join(str(h.budget_mib) for h in helpers),
         # one weight per helper (the tail helper's is not read: tail placement gives it what the heads left); only when a head differs from 1
         "R3_MOE_WORKER_SHARES": ",".join(str(h.share if h.placement == "head" else 0) for h in helpers)
                                 if any(h.placement == "head" and h.share != 1 for h in helpers) else "",
