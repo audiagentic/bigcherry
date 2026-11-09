@@ -830,7 +830,9 @@ constexpr uint32_t kQuadDppN = 32, kQuadDppRB = 16;
 // Each row has an independent, bit-identical K-fold; the down path keeps the
 // established 16-row batch until its separate regression gate is measured.
 constexpr uint32_t kQuadV2GuRB = kQuadDppRB / 2;
-template <bool TOKEN, uint32_t RB>
+// PERM (RAD49): decode the W4 levels with the register byte-permute decoder (w4nl_to_h2x2, the GEMV's) instead of the LDS table;
+// both produce the exact f16 bits of the same levels in the same element order, so results are bit-identical.
+template <bool TOKEN, uint32_t RB, bool PERM>
 __global__ __launch_bounds__(128) void lane_moe_rows_w4_quaddpp(
     const uint8_t* aq, const float* as, const int32_t* sorted, const int32_t* off, uint32_t top_k,
     void* const* code0, void* const* scale0, void* const* code1, void* const* scale1,
@@ -860,6 +862,13 @@ __global__ __launch_bounds__(128) void lane_moe_rows_w4_quaddpp(
                ((uint32_t)__builtin_bit_cast(uint16_t, y) << 16);
     };
     auto decode = [&](uint32_t w) {
+        if constexpr (PERM) {
+            h2v a01, a23, b01, b23;
+            w4nl_to_h2x2(w & 0x0F0F0F0Fu, &a01, &a23);
+            w4nl_to_h2x2((w >> 4) & 0x0F0F0F0Fu, &b01, &b23);
+            return make_uint4(__builtin_bit_cast(uint32_t, a01), __builtin_bit_cast(uint32_t, a23),
+                              __builtin_bit_cast(uint32_t, b01), __builtin_bit_cast(uint32_t, b23));
+        }
         return make_uint4(
             lut[w & 15u] | (lut[(w >> 8) & 15u] << 16),
             lut[(w >> 16) & 15u] | (lut[(w >> 24) & 15u] << 16),
