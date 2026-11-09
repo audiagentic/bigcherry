@@ -638,6 +638,11 @@ Radiance patches also use `bigcherry --engine radiance patch-promote <id> --evid
 | `tools/lab/radiance/xtx27_prefill.py` | **TRANSITIONAL** | XDP01 dual-XTX prefill measurement and fixture harness; lab-only. |
 | `tools/lab/radiance/xtx27_quant_plan.py` | **TRANSITIONAL** | XDP03 card-free BF16-origin mixed-quant recipe planner; preview only, does not convert the checkpoint. |
 | `tools/lab/radiance/xtx27_quant_select.py` | **TRANSITIONAL** | XDP03 card-free device-aware quant and KV-budget selector; lab-only, no production routing. |
+| `tools/lab/rad42-bar-push/chunk_contract.py` | **TRANSITIONAL** | RAD42 card-free chunk-splitting contract model; experiment-only. |
+| `tools/lab/rad42-bar-push/critical_path_model.py` | **TRANSITIONAL** | RAD42 card-free GPU/CPU overlap critical-path simulator; experiment-only. |
+| `tools/lab/rad42-bar-push/test_chunk_contract.py` | **TRANSITIONAL** | RAD42 card-free chunk contract tests; experiment-only. |
+| `tools/lab/rad42-bar-push/test_chunk_stress.py` | **TRANSITIONAL** | RAD42 card-free chunk stress test; experiment-only. |
+| `tools/lab/rad42-bar-push/test_critical_path_model.py` | **TRANSITIONAL** | RAD42 card-free critical-path model tests; experiment-only. |
 | `tools/residency_gates.py` | **MOVE** | HI34 plan-specific gate moved to non-package `tools/lab/hi34-residency-gates/`; root wrapper retained for tests/legacy CLI. |
 | `tools/rocm-env.ps1` | **MOVE** | Environment bootstrap; canonical destination tools/env/ in TR05. |
 | `tools/rocm-env.sh` | **MOVE** | Environment bootstrap; canonical destination tools/env/ in TR05. |
