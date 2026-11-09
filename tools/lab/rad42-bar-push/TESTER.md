@@ -189,3 +189,11 @@ The existing allowlisted `rad50-tester` accepts `--verifier-blocks 1|32|64|128|2
 `rad50-tester --test dmabuf-live-parallel --device 0 --iterations 30 --rows 768 --verifier-blocks 128 --lease-confirmed`
 
 The strict `slice_analyze.py` rejects mismatched grid metadata, incomplete records and missing post-cleanup success; old 256-block log format is compatible. 22 complete S4 logs strictly passed; one locally interrupted capture is marked PARTIAL. Keep the 256-block baseline; see [S4_VERIFIER_SWEEP.md](S4_VERIFIER_SWEEP.md).
+
+## S1 CPU-only combine host baseline
+
+The existing rad50-tester has a **GPU-free** mode for the actual production combine_row_f16:
+
+    rad50-tester --test combine-cpu --rows 768 --iterations 100 --helpers 2 --mode hot
+
+Rows are 1/16/64/256/768, helpers 1/2/4, iterations 10..200 and mode hot/unique. No --device or --lease-confirmed; this benchmark allocates no GPU memory and never launches HIP. Each generation verifies both host-direct combine and combine into a host staging plane plus memcpy against independent scalar FP16 bits, then emits first-three/tenth/final samples and full-run quantiles. Use cpu_analyze.py for strict completion; --provisional preserves partial logs. It is NOT a GPU-local BAR or model inference timing. See [S1_CPU_COMBINE.md](S1_CPU_COMBINE.md) for CPU contention and validation caveats.

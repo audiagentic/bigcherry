@@ -1,0 +1,23 @@
+command: ${BC_WORK_ROOT}/builds/rad42-bar-push/rad50-tester --test combine-cpu --rows 768 --iterations 100 --helpers 2 --mode unique
+exitCode: 0
+timedOut: false
+truncated: false
+RAD50 case=combine-cpu device=-1 (no production engine integration)
+RAD50_CPU_CONTEXT rows=768 width=2560 helpers=2 layout=unique iterations=100 paths=host-direct,host-stage-copy source=deterministic_bf16 bitwise_oracle=1 gpu=0
+RAD50_CPU_SAMPLE rows=768 helpers=2 layout=unique iteration=1 direct_us=742.660 stage_combine_us=727.744 stage_copy_us=289.078 stage_total_us=1016.822 mismatches=0 status=0
+RAD50_CPU_SAMPLE rows=768 helpers=2 layout=unique iteration=2 direct_us=781.558 stage_combine_us=991.481 stage_copy_us=386.564 stage_total_us=1378.045 mismatches=0 status=0
+RAD50_CPU_SAMPLE rows=768 helpers=2 layout=unique iteration=3 direct_us=768.891 stage_combine_us=834.376 stage_copy_us=353.559 stage_total_us=1187.935 mismatches=0 status=0
+RAD50_CPU_SAMPLE rows=768 helpers=2 layout=unique iteration=10 direct_us=891.644 stage_combine_us=813.706 stage_copy_us=405.597 stage_total_us=1219.303 mismatches=0 status=0
+RAD50_CPU_SAMPLE rows=768 helpers=2 layout=unique iteration=20 direct_us=840.942 stage_combine_us=848.182 stage_copy_us=396.671 stage_total_us=1244.853 mismatches=0 status=0
+RAD50_CPU_SAMPLE rows=768 helpers=2 layout=unique iteration=30 direct_us=769.793 stage_combine_us=753.799 stage_copy_us=398.390 stage_total_us=1152.189 mismatches=0 status=0
+RAD50_CPU_SAMPLE rows=768 helpers=2 layout=unique iteration=40 direct_us=766.467 stage_combine_us=797.532 stage_copy_us=440.842 stage_total_us=1238.374 mismatches=0 status=0
+RAD50_CPU_SAMPLE rows=768 helpers=2 layout=unique iteration=50 direct_us=898.653 stage_combine_us=781.332 stage_copy_us=426.307 stage_total_us=1207.639 mismatches=0 status=0
+RAD50_CPU_SAMPLE rows=768 helpers=2 layout=unique iteration=60 direct_us=764.263 stage_combine_us=763.557 stage_copy_us=410.471 stage_total_us=1174.028 mismatches=0 status=0
+RAD50_CPU_SAMPLE rows=768 helpers=2 layout=unique iteration=70 direct_us=795.310 stage_combine_us=794.626 stage_copy_us=450.129 stage_total_us=1244.755 mismatches=0 status=0
+RAD50_CPU_SAMPLE rows=768 helpers=2 layout=unique iteration=80 direct_us=784.181 stage_combine_us=740.573 stage_copy_us=418.385 stage_total_us=1158.958 mismatches=0 status=0
+RAD50_CPU_SAMPLE rows=768 helpers=2 layout=unique iteration=90 direct_us=770.602 stage_combine_us=766.712 stage_copy_us=429.629 stage_total_us=1196.341 mismatches=0 status=0
+RAD50_CPU_SAMPLE rows=768 helpers=2 layout=unique iteration=100 direct_us=753.250 stage_combine_us=781.102 stage_copy_us=430.333 stage_total_us=1211.435 mismatches=0 status=0
+RAD50_CPU_SUMMARY rows=768 helpers=2 layout=unique iterations=100 verified=100 emitted=13 direct_p50_us=785.452 direct_p95_us=880.937 direct_max_us=930.814 stage_combine_p50_us=781.102 stage_copy_p50_us=398.640 stage_total_p50_us=1186.235 stage_total_p95_us=1292.186 stage_total_max_us=1378.045 status=0
+RAD50_CPU_COMPLETE rows=768 helpers=2 layout=unique verified=100 status=0
+
+RAD50 RESULT test=combine-cpu exit=0

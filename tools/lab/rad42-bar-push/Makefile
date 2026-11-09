@@ -22,7 +22,7 @@ OPT ?= -O1
 COMMON := -std=c++17 $(OPT) -Wall -Wextra -pthread
 HSA := -L$(ROCM_PATH)/lib -Wl,-rpath,$(ROCM_PATH)/lib -lhsa-runtime64
 HIP_OBJECTS := $(OBJ)/serial.o $(OBJ)/ipc.o $(OBJ)/vmem-cap.o $(OBJ)/dmabuf-map.o $(OBJ)/dmabuf-ab.o $(OBJ)/transfer.o $(OBJ)/live-ready.o
-CPU_OBJECTS := $(OBJ)/tester.o $(OBJ)/inventory.o $(OBJ)/combine.o $(OBJ)/cpu-handoff.o
+CPU_OBJECTS := $(OBJ)/tester.o $(OBJ)/inventory.o $(OBJ)/combine.o $(OBJ)/cpu-combine.o $(OBJ)/cpu-handoff.o
 OBJECTS := $(CPU_OBJECTS) $(HIP_OBJECTS)
 
 .PHONY: rad50-tester
@@ -31,7 +31,7 @@ rad50-tester: $(OUT_DIR)/rad50-tester
 $(OBJ) $(OUT_DIR):
 	mkdir -p "$@"
 
-$(OBJ)/tester.o: $(SRC)/rad50_tester.cpp $(SRC)/tester_selfcheck.inc $(SRC)/combine_cli_selfcheck.inc $(SRC)/live_cli_selfcheck.inc | $(OBJ)
+$(OBJ)/tester.o: $(SRC)/rad50_tester.cpp $(SRC)/tester_selfcheck.inc $(SRC)/combine_cli_selfcheck.inc $(SRC)/live_cli_selfcheck.inc $(SRC)/cpu_cli_selfcheck.inc | $(OBJ)
 	$(CXX) $(COMMON) -c "$<" -o "$@"
 
 $(OBJ)/inventory.o: $(SRC)/pool_inventory.cpp | $(OBJ)
@@ -39,6 +39,9 @@ $(OBJ)/inventory.o: $(SRC)/pool_inventory.cpp | $(OBJ)
 
 $(OBJ)/combine.o: $(SRC)/combine_reference_test.cpp $(SRC)/../../../engines/radiance/components/moe-remote/combine_f16.h | $(OBJ)
 	$(CXX) $(COMMON) -I$(SRC)/../../../engines/radiance/components/moe-remote -Dmain=rad50_combine_entry -c "$<" -o "$@"
+
+$(OBJ)/cpu-combine.o: $(SRC)/cpu_combine_sweep.cpp $(SRC)/../../../engines/radiance/components/moe-remote/combine_f16.h | $(OBJ)
+	$(CXX) $(COMMON) -I$(SRC)/../../../engines/radiance/components/moe-remote -Dmain=rad50_cpu_combine_entry -c "$<" -o "$@"
 
 $(OBJ)/cpu-handoff.o: $(SRC)/cpu_handoff_bench.cpp | $(OBJ)
 	$(CXX) $(COMMON) -Dmain=rad50_cpu_handoff_entry -c "$<" -o "$@"

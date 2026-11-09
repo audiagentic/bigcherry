@@ -26,11 +26,12 @@ int rad50_vmem_cap_entry(int, char**);
 int rad50_dmabuf_map_entry(int, char**);
 int rad50_dmabuf_ab_entry(int, char**);
 int rad50_combine_entry();
+int rad50_cpu_combine_entry(int, char**);
 int rad50_cpu_handoff_entry(int, char**);
 
 namespace {
 enum class Kind {
-    Pools, HipSmoke, Serial, Ipc, IpcMap, IpcGpuCpu, VmemCap, DmaBufMap, DmaBufWrite, DmaBufFull, DmaBufAB, CombineAB, DmaBufLive, DmaBufLiveFG, DmaBufLiveRelay, DmaBufLiveParallel, Transfer, LiveReady, Combine, CpuHandoff
+    Pools, HipSmoke, Serial, Ipc, IpcMap, IpcGpuCpu, VmemCap, DmaBufMap, DmaBufWrite, DmaBufFull, DmaBufAB, CombineAB, DmaBufLive, DmaBufLiveFG, DmaBufLiveRelay, DmaBufLiveParallel, Transfer, LiveReady, Combine, CombineCPU, CpuHandoff
 };
 struct Test {
     const char* name;
@@ -59,6 +60,7 @@ constexpr Test tests[] = {
     {"transfer", Kind::Transfer, true, true, "Uncontended CPU BAR write versus mapped-host GPU pull (Gate 3)"},
     {"live-ready", Kind::LiveReady, true, true, "GPU already waiting before CPU BAR data and ready flag (Gate 4 canary)"},
     {"combine-ref", Kind::Combine, false, false, "Card-free FP16 combine/sentinel reference checks"},
+    {"combine-cpu", Kind::CombineCPU, false, false, "CPU-only AVX2/F16C FP16 host direct vs staged copy (no GPU)"},
     {"cpu-handoff", Kind::CpuHandoff, false, true, "Host-only CPU-to-CPU wake latency; NOT GPU notification"}
 };
 struct Args {
@@ -69,6 +71,7 @@ struct Args {
     int selected_bytes = -1;
     int selected_rows = -1;
     int verifier_blocks = 256;
+    int helpers = -1;
     int samples = -1;
     std::string mode;
 };
@@ -77,9 +80,9 @@ void print_help(const char* binary) {
         "RAD50 isolated fixed-test binary (no arbitrary command runner)\n"
         "usage: %s --list | --help | --self-check\n"
         "       %s --test NAME [--device HIP_ORDINAL] [--iterations 10..200]\n"
-        "          [--mode spin|yield|sleep1|condvar|direct|staged]\n"
+        "          [--mode spin|yield|sleep1|condvar|direct|staged|hot|unique]\n"
         "          [--samples 100..100000] [--bytes 4096|65536|262144|1048576|4194304]\n"
-        "          [--rows 1|16|64|256|768]\n"
+        "          [--rows 1|16|64|256|768] [--helpers 1|2|4] (CPU combine only)\n"
         "          [--verifier-blocks 1|32|64|128|256] (live parallel/relay only)\n"
         "          [--lease-confirmed]\n"
         "GPU and host-latency tests require --lease-confirmed. The flag is\n"
@@ -114,6 +117,7 @@ bool parse(int argc, char** argv, Args* result) {
     bool seen_test = false, seen_device = false, seen_iterations = false;
     bool seen_samples = false, seen_mode = false, seen_ack = false;
     bool seen_bytes = false, seen_rows = false, seen_verifier_blocks = false;
+    bool seen_helpers = false;
     for (int i=1; i<argc; ++i) {
         const char* a=argv[i];
         if (!std::strcmp(a,"--test")) {
@@ -143,6 +147,12 @@ bool parse(int argc, char** argv, Args* result) {
             if (result->selected_rows!=1 && result->selected_rows!=16 &&
                 result->selected_rows!=64 && result->selected_rows!=256 &&
                 result->selected_rows!=768) return false;
+        } else if (!std::strcmp(a,"--helpers")) {
+            if (seen_helpers || i+1>=argc ||
+                !parse_int(argv[++i],1,4,&result->helpers)) return false;
+            seen_helpers=true;
+            if (result->helpers!=1 && result->helpers!=2 &&
+                result->helpers!=4) return false;
         } else if (!std::strcmp(a,"--verifier-blocks")) {
             if (seen_verifier_blocks || i+1>=argc ||
                 !parse_int(argv[++i],1,256,&result->verifier_blocks)) return false;
@@ -159,7 +169,8 @@ bool parse(int argc, char** argv, Args* result) {
             result->mode=argv[++i]; seen_mode=true;
             if (result->mode!="spin" && result->mode!="yield" &&
                 result->mode!="sleep1" && result->mode!="condvar" &&
-                result->mode!="direct" && result->mode!="staged") return false;
+                result->mode!="direct" && result->mode!="staged" &&
+                result->mode!="hot" && result->mode!="unique") return false;
         } else if (!std::strcmp(a,"--lease-confirmed")) {
             if (seen_ack) return false;
             result->lease_ack=true;seen_ack=true;
@@ -173,21 +184,28 @@ bool parse(int argc, char** argv, Args* result) {
     if ((t.kind==Kind::Transfer || t.kind==Kind::DmaBufAB ||
          t.kind==Kind::CombineAB || t.kind==Kind::DmaBufLive ||
          t.kind==Kind::DmaBufLiveFG || t.kind==Kind::DmaBufLiveRelay ||
-         t.kind==Kind::DmaBufLiveParallel)!=seen_iterations) return false;
+         t.kind==Kind::DmaBufLiveParallel ||
+         t.kind==Kind::CombineCPU)!=seen_iterations) return false;
     if (seen_bytes && t.kind!=Kind::DmaBufAB) return false;
+    if (seen_helpers != (t.kind==Kind::CombineCPU)) return false;
     if (seen_verifier_blocks && t.kind!=Kind::DmaBufLiveRelay &&
         t.kind!=Kind::DmaBufLiveParallel) return false;
-    if (seen_rows && t.kind!=Kind::CombineAB &&
+    if (seen_rows && t.kind!=Kind::CombineAB && t.kind!=Kind::CombineCPU &&
         t.kind!=Kind::DmaBufLive && t.kind!=Kind::DmaBufLiveFG &&
         t.kind!=Kind::DmaBufLiveRelay && t.kind!=Kind::DmaBufLiveParallel) return false;
     if ((t.kind==Kind::DmaBufLive || t.kind==Kind::DmaBufLiveFG ||
-         t.kind==Kind::DmaBufLiveRelay || t.kind==Kind::DmaBufLiveParallel) && !seen_rows) return false;
+         t.kind==Kind::DmaBufLiveRelay || t.kind==Kind::DmaBufLiveParallel ||
+         t.kind==Kind::CombineCPU) && !seen_rows) return false;
     if ((t.kind==Kind::CpuHandoff || t.kind==Kind::DmaBufAB ||
-         t.kind==Kind::CombineAB)!=seen_mode ||
+         t.kind==Kind::CombineAB || t.kind==Kind::CombineCPU)!=seen_mode ||
         (t.kind==Kind::CpuHandoff)!=seen_samples) return false;
     if ((t.kind==Kind::DmaBufAB || t.kind==Kind::CombineAB) &&
         result->mode!="direct" && result->mode!="staged")return false;
-    if (t.kind==Kind::CpuHandoff && (result->mode=="direct" || result->mode=="staged"))return false;
+    if (t.kind==Kind::CombineCPU && result->mode!="hot" && result->mode!="unique")
+        return false;
+    if (t.kind==Kind::CpuHandoff &&
+        (result->mode=="direct" || result->mode=="staged" ||
+         result->mode=="hot" || result->mode=="unique"))return false;
     return true;
 }
 int call_entry(int(*entry)(int,char**), const std::vector<std::string>& strings) {
@@ -281,6 +299,12 @@ int run(const Args& a,const char* self) {
         return call_entry(rad50_live_ready_entry,args);
       case Kind::Combine:
         return rad50_combine_entry();
+      case Kind::CombineCPU:
+        args.insert(args.end(),{"--rows",std::to_string(a.selected_rows),
+                                "--iterations",std::to_string(a.iterations),
+                                "--helpers",std::to_string(a.helpers),
+                                "--mode",a.mode});
+        return call_entry(rad50_cpu_combine_entry,args);
       case Kind::CpuHandoff:
         args.insert(args.end(),{"--mode",a.mode,"--samples",std::to_string(a.samples)});
         return call_entry(rad50_cpu_handoff_entry,args);
