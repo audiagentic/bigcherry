@@ -1,0 +1,3 @@
+commit 84af8541d01696b0b4399bef6417b9d483eba24d
+e1e349b2686dfa1d7d2192da523290fc97502cfa1c7874bcfa784f0aa93af92c  ${BC_WORK_ROOT}/builds/rad42-bar-push/rad50-tester
+GPU[2]		: PCI Bus: 0000:09:00.0

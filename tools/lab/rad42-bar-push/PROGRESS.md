@@ -285,3 +285,20 @@ remains RAD42, and RAD49 is the TP2 consumer context.
 - All rows in both paths match an independent scalar bitwise oracle including masks, overflow fallback, canonical NaN, signed zero, BF16 subnormal and helper-order cases. Stage timings and all generation summaries have a strict/provisional parser; CPU CLI checks **87/87**, Python card-free **106/106**, OPT=-O2 fat binary link pass. Four current-format complete CPU captures strictly validated.
 - Diagnostic 768-row p50: 2-helper hot 335.86 us, unique 785.45 us, 4-helper unique 1284.64 us. But earlier 2-helper unique was ~382.96 us and a concurrent CPU check showed **98.55% nice utilization** during independent HIP builds. **Reject speed rankings under this load**; correctness only. Full method, table and next gates [S1_CPU_COMBINE.md](S1_CPU_COMBINE.md).
 - RAD50 Gate 0 offline handoff and overlap models already merged to main in PR #785. All later hardware and S1 optimization remain in this existing experimental worktree; no production changes or new worktrees.
+
+### 2026-11-10 — R9700 retarget: DMA-BUF CPU push passes on the production engine card
+
+- Why: RAD49 measured the three- and four-card layouts (runs/rad49-3card-split, rad49-4gpu-regress): the R9700 engine layouts
+  (flashnext-4gpu, flashnext-2xtx) beat TP2 on the two XTX on every metric, so the CPU combine's destination that matters is
+  R9700 VRAM, not an XTX rank's.
+- The DMA-BUF path (HSA VMM export, SCM_RIGHTS to a CPU-only child, Linux mmap + DMA_BUF_IOCTL_SYNC) was never run on the R9700;
+  the earlier R9700 stall was the HSA-pool serial path. Under an exclusive lease, device 2 (gfx1201, 0000:09:00.0): `vmem-cap`
+  fails the HSA CPU get_access query (4100 INVALID_AGENT) exactly as XTX0 did, which the DMA-BUF mmap path does not use; then
+  `dmabuf-map`, `dmabuf-write` (4 KiB) and `dmabuf-full` (4 MiB) PASS with every word GPU-verified.
+- `combine-ab` 768 rows, direct, 30 iterations: mapped-host pull 318 us CPU write + 595 us GPU read = 1006 us serial; DMA-BUF
+  push 691 us CPU write into R9700 VRAM + 23 us GPU read = 815 us (1.234x, -191 us). The R9700 sits on PCIe Gen4 x4, so its
+  host pull is the slow side; the CPU writes ~5.7 GB/s into its VRAM. Serial synthetic, not inference.
+- `dmabuf-live-parallel` (GPU already waiting), 30 generations each, all verified: 1 row 121.6 us p50, 256 rows 352.9 us,
+  768 rows 824.3 us.
+- Evidence: evidence/2026-11-10/rad50-r9700-*.log. Next: combine-ab at 1/16/64/256 rows on the R9700 (decode sizes), then an
+  opt-in flashnext-4gpu combine-path A/B (separately reviewed before any moe-remote change).
