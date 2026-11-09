@@ -235,6 +235,92 @@ class W4A4ProbeTests(unittest.TestCase):
             ):
                 w4.main(args("--phase", "cpu", "--suite", "--output-dir", temp))
 
+    def test_tiled_plan_source_hash_and_separate_binary(self):
+        with tempfile.TemporaryDirectory() as temp:
+            with (
+                mock.patch.object(
+                    w4.subprocess,
+                    "run",
+                    side_effect=AssertionError("subprocess invoked"),
+                ),
+                contextlib.redirect_stdout(io.StringIO()) as stdout,
+            ):
+                self.assertEqual(
+                    w4.main(
+                        [
+                            "--phase",
+                            "plan",
+                            "--kernel",
+                            "tiled",
+                            "--suite",
+                            "--output-dir",
+                            temp,
+                        ]
+                    ),
+                    0,
+                )
+            record = json.loads(stdout.getvalue())
+            self.assertEqual(record["source_sha256"], w4.sha256_file(w4.TILED_SOURCE))
+            self.assertEqual(record["kernel"], "tiled")
+            self.assertEqual(record["commands"]["gpu"][-1], "--suite")
+            self.assertEqual(record["commands"]["gpu"].count("agent-lease"), 1)
+            self.assertIn("tiled", record["commands"]["binary"])
+            self.assertIn(str(w4.TILED_SOURCE), record["commands"]["compiler"])
+            self.assertFalse((Path(temp) / "w4a4-tiled-manifest.json").exists())
+
+    def test_tiled_27b_explicit_geometry_in_one_lease(self):
+        with tempfile.TemporaryDirectory() as temp:
+            for tm in (2, 4, 8):
+                with (
+                    self.subTest(tile_m=tm),
+                    contextlib.redirect_stdout(io.StringIO()) as stdout,
+                ):
+                    self.assertEqual(
+                        w4.main(
+                            [
+                                "--phase",
+                                "plan",
+                                "--kernel",
+                                "tiled",
+                                "--shape-27b",
+                                "--tile-m",
+                                str(tm),
+                                "--output-dir",
+                                temp,
+                            ]
+                        ),
+                        0,
+                    )
+                rec = json.loads(stdout.getvalue())
+                self.assertEqual(rec["commands"]["gpu"][-2:], ["--shape-27b", str(tm)])
+                self.assertEqual(rec["tile_m"], tm)
+
+    def test_tiled_reject_shape_27b_on_oracle_and_mixed_modes(self):
+        with tempfile.TemporaryDirectory() as temp:
+            for flags in (
+                ["--kernel", "oracle", "--shape-27b"],
+                ["--kernel", "tiled", "--shape-27b", "--suite"],
+                ["--kernel", "tiled", "--phase", "cpu", "--shape-27b"],
+                ["--kernel", "oracle", "--tile-m", "4"],
+            ):
+                with (
+                    self.subTest(flags=flags),
+                    contextlib.redirect_stderr(io.StringIO()),
+                    self.assertRaises(SystemExit),
+                ):
+                    w4.main(["--output-dir", temp, *flags])
+
+    def test_tiled_source_layout_and_l2_reuse_are_explicit(self):
+        code = w4.TILED_SOURCE.read_text()
+        self.assertIn("template <int WM, int WN>", code)
+        self.assertIn("WM * WN == 8", code)
+        self.assertIn("wm * 256 + step * 32", code)
+        self.assertIn("WM * 256 + wn * 256 + step * 32", code)
+        self.assertIn("__builtin_amdgcn_wmma_i32_16x16x16_iu4_w32", code)
+        self.assertIn("XDP05_TILED_SUITE_PASS cases=27", code)
+        self.assertIn("XDP05_TILED_PASS", code)
+        self.assertNotIn("gemm_mxfp4", code)
+
     def test_isolated_hip_contains_real_native_opcode_and_group_fix(self):
         code = w4.SOURCE.read_text()
         self.assertIn("__builtin_amdgcn_wmma_i32_16x16x16_iu4_w32", code)

@@ -170,6 +170,10 @@ Provenance/logs:
 `w4a4-manifest.json`, and `gpu-suite.log`. No model weights were
 converted, no serving engine was modified, and no GPU lease remains.
 
+## Follow-on tiled proof and measured speed decision
+
+See [XDP05](XDP05.md) for the 8-wave native gfx11 tiled implementation, 27/27 GPU correctness probes and Qwen3.8-27B shape benchmark. Native IU4 is confirmed in assembled ISA, but the best prepacked W4A4 tile is 1.89x slower than pinned MXFP4 before A4 quantization. Therefore W4A4 **does not progress to engine integration**; retain this arithmetic oracle for future research. The actual BF16 model was not converted, and serving/KLD is not claimed.
+
 ## Risks and exit criteria
 
 1. **Correctness first.** GPU must pass all outputs of 16×16/16×32

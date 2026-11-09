@@ -26,6 +26,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
 SOURCE = Path(__file__).with_name("xtx27_w4a4_probe.hip")
+TILED_SOURCE = Path(__file__).with_name("xtx27_w4a4_tiled.hip")
 GROUP = 128
 FORMATS = ("normal", "outlier")
 DEFAULT_SCRATCH = (
@@ -208,12 +209,24 @@ def sha256_file(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def binaries(output_dir: Path) -> tuple[Path, Path]:
+def binaries(output_dir: Path, kernel: str = "oracle") -> tuple[Path, Path]:
+    if kernel == "tiled":
+        return (
+            output_dir / "gfx1100-w4a4-tiled",
+            output_dir / "w4a4-tiled-manifest.json",
+        )
+    if kernel != "oracle":
+        raise ValueError("unknown kernel")
     return (output_dir / "gfx1100-w4a4-probe", output_dir / "w4a4-manifest.json")
 
 
+def source_for(kernel: str) -> Path:
+    return TILED_SOURCE if kernel == "tiled" else SOURCE
+
+
 def command_lines(args: argparse.Namespace) -> dict:
-    binary, manifest = binaries(args.output_dir)
+    binary, manifest = binaries(args.output_dir, args.kernel)
+    source = source_for(args.kernel)
     hipcc = Path(args.hipcc)
     return {
         "compiler": [
@@ -221,7 +234,7 @@ def command_lines(args: argparse.Namespace) -> dict:
             "-O2",
             "-std=c++17",
             "--offload-arch=gfx1100",
-            str(SOURCE),
+            str(source),
             "-o",
             str(binary),
         ],
@@ -232,11 +245,15 @@ def command_lines(args: argparse.Namespace) -> dict:
             "--ttl",
             "30m",
             "--purpose",
-            "XDP04 isolated gfx1100 native W4A4 WMMA correctness",
+            "XDP05 tiled gfx1100 W4A4"
+            if args.kernel == "tiled"
+            else "XDP04 isolated gfx1100 native W4A4 WMMA correctness",
             "--",
             str(binary),
             *(
-                ["--suite"]
+                ["--shape-27b", str(args.tile_m)]
+                if args.shape_27b
+                else ["--suite"]
                 if args.suite
                 else [
                     str(args.m),
@@ -244,6 +261,7 @@ def command_lines(args: argparse.Namespace) -> dict:
                     str(args.k),
                     str(args.iters),
                     str(args.seed),
+                    *([str(args.tile_m)] if args.kernel == "tiled" else []),
                 ]
             ),
         ],
@@ -266,11 +284,15 @@ def execute(args: argparse.Namespace) -> dict:
         "schema": "xtx27.w4a4.execution.v1",
         "phase": args.phase,
         "git_root": str(ROOT),
-        "source_sha256": sha256_file(SOURCE),
+        "source_sha256": sha256_file(source_for(args.kernel)),
         "output_dir": str(args.output_dir),
         "commands": commands,
         "does_not_patch_production": True,
         "native_gfx1100_iu4": True,
+        "kernel": args.kernel,
+        "tile_m": args.tile_m if args.kernel == "tiled" else None,
+        "prepacked_operands": True,
+        "gpu_activation_quantization_implemented": False,
         "algorithm": "A4 signed x W4 unsigned, asymmetric W zero correction, group128",
         "limits": "kernel-only timings exclude quantizer, host transfers, TP and serving",
     }
@@ -284,7 +306,7 @@ def execute(args: argparse.Namespace) -> dict:
     if not args.run:
         raise ValueError("--run required for compile/gpu")
     args.output_dir.mkdir(parents=True, exist_ok=True)
-    binary, manifest = binaries(args.output_dir)
+    binary, manifest = binaries(args.output_dir, args.kernel)
     if args.phase == "compile":
         if shutil.which(args.hipcc) is None and not Path(args.hipcc).is_file():
             raise ValueError("HIP compiler not available")
@@ -321,11 +343,21 @@ def execute(args: argparse.Namespace) -> dict:
         raise ValueError("probe or binary has changed since compile; rebuild first")
     if args.device < 0:
         raise ValueError("device must be a nonnegative inventory index")
-    log = args.output_dir / (
-        "gpu-suite.log"
-        if args.suite
-        else f"gpu-M{args.m}-N{args.n}-K{args.k}-seed{args.seed}.log"
-    )
+    if args.kernel == "tiled":
+        logfile = (
+            f"gpu-tiled-27b-tile{args.tile_m}.log"
+            if args.shape_27b
+            else "gpu-tiled-suite.log"
+            if args.suite
+            else f"gpu-tiled-M{args.m}-N{args.n}-K{args.k}-tile{args.tile_m}-seed{args.seed}.log"
+        )
+    else:
+        logfile = (
+            "gpu-suite.log"
+            if args.suite
+            else f"gpu-M{args.m}-N{args.n}-K{args.k}-seed{args.seed}.log"
+        )
+    log = args.output_dir / logfile
     environment = os.environ.copy()
     environment["ROCR_VISIBLE_DEVICES"] = str(args.device)
     with log.open("w") as stream:
@@ -339,13 +371,21 @@ def execute(args: argparse.Namespace) -> dict:
             timeout=1200,
         )
     contents = log.read_text()
-    marker = "XDP04_GPU_SUITE_PASS" if args.suite else "XDP04_GPU_PASS"
+    marker = (
+        ("XDP05_TILED_SUITE_PASS" if args.suite else "XDP05_TILED_PASS")
+        if args.kernel == "tiled"
+        else ("XDP04_GPU_SUITE_PASS" if args.suite else "XDP04_GPU_PASS")
+    )
     if completed.returncode != 0 or marker not in contents:
         raise RuntimeError(
             f"GPU oracle/lease failed (exit {completed.returncode}): {log}"
         )
     result["gpu"] = {
-        "status": "PASS_EXPERIMENTAL_ORACLE_ONLY",
+        "status": (
+            "PASS_EXPERIMENTAL_TILED_ORACLE_ONLY"
+            if args.kernel == "tiled"
+            else "PASS_EXPERIMENTAL_ORACLE_ONLY"
+        ),
         "log": str(log),
         "device": args.device,
     }
@@ -361,7 +401,27 @@ def main(argv: list[str] | None = None) -> int:
         "--run", action="store_true", help="allow compiler or GPU; default no hardware"
     )
     parser.add_argument(
-        "--suite", action="store_true", help="six GPU oracle cases in one leased run"
+        "--suite",
+        action="store_true",
+        help="GPU oracle cases in one lease (six untiled, 27 tiled variants)",
+    )
+    parser.add_argument(
+        "--kernel",
+        choices=("oracle", "tiled"),
+        default="oracle",
+        help="standalone kernel (oracle default preserves XDP04)",
+    )
+    parser.add_argument(
+        "--shape-27b",
+        action="store_true",
+        help="tiled M512/N17408/K5120, 512+ sampled CPU oracle cells",
+    )
+    parser.add_argument(
+        "--tile-m",
+        choices=(2, 4, 8),
+        type=int,
+        default=2,
+        help="tiled wave geometry: 2x4, 4x2 or 8x1 (M waves x N waves)",
     )
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_SCRATCH)
     parser.add_argument("--hipcc", default="/opt/rocm/bin/hipcc")
@@ -388,11 +448,19 @@ def main(argv: list[str] | None = None) -> int:
             or args.iters > 10000
         ):
             raise ValueError("positive dimensions and 1..10000 iterations required")
+        if args.kernel == "oracle" and args.tile_m != 2:
+            raise ValueError("--tile-m only applies to tiled probe")
         if args.suite and args.phase not in ("plan", "gpu"):
             raise ValueError("--suite is for plan/gpu only")
+        if args.shape_27b and (
+            args.kernel != "tiled" or args.phase not in ("plan", "gpu") or args.suite
+        ):
+            raise ValueError("--shape-27b requires tiled plan/gpu, not --suite")
         if (
             args.phase == "gpu"
             and not args.suite
+            and not args.shape_27b
+            and args.kernel == "oracle"
             and (args.m % 16 or args.n % 16 or args.k % GROUP)
         ):
             raise ValueError(

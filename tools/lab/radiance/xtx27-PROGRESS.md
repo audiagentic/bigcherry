@@ -1,4 +1,4 @@
-# XDP01–XDP04 progress — 2026-11-09
+# XDP01–XDP05 progress — 2026-11-09
 
 ## Implemented and checked
 
@@ -26,11 +26,18 @@
 - [x] 45 card-free XDP tests pass, including 14 new XDP04 cases; Ruff clean; scratch build binary/manifest and GPU logs in `${BC_WORK_ROOT}/xtx27-prefill/w4a4`.
 - [x] Synthetic outlier caution: W4A4 relative L2 0.374 vs W4A8 0.193 on random 16x32x256 sampled matrices; this is not model KL. No production quality or speed claims.
 
+- [x] XDP05 detailed design/decision log: cooperative 8-wave tiled gfx11 native IU4 × IU4 WMMA, 2×4 / 4×2 / 8×1 geometries (32×64, 64×32, 128×16), tile-major operand prepack, signed-A4/unsigned-W4 per-group scales/zero correction. No production modification or new worktree.
+- [x] Added tiled source to existing lease-guarded `xtx27_w4a4.py --kernel tiled` runner, with distinct source/binary hash manifests, nine shape cases × three tilings = **27 complete CPU-oracle GPU tests**; all passed exactly including tails/non-aligned dimensions.
+- [x] Actual dense 27B projection (M512,N17408,K5120) per-tile experiments scan all 8,912,896 outputs for non-finite and CPU-verify 768 stratified/random samples; every sample passed exactly. ISA confirmed native gfx11 `v_wmma_i32_16x16x16_iu4`, VGPR 86–91, LDS 6–9 KiB, no reported spills.
+- [x] Same-card 3-rep MXFP4 tiled median **922.7 µs** vs best native W4A4 tiled median **1,747.0 µs** (1.89× slower). W4A4 4×2=1,839 µs and 8×1=2,213 µs. W4A4 excludes new activation quantization, repacking, TP/serving; code arithmetic correct but both performance and real-model quality are **NOT qualified**. Logs saved in `${BC_WORK_ROOT}/xtx27-prefill/w4a4`; leases released.
+- [x] XDP05 NO-GO (D1–D3): do not convert BF16 to broad W4A4, patch production libr3 or promote dynamic format policy. Prioritize proven MXFP4 path and TP all-reduce/CPU coordination profiling and optimization. Card-free checks and doc catalog updated.
+
 ## Still required
 
 - [ ] Bench 32K-256K **native** model context with actual resident KV/GDN/graph/runtime accounting; quality, TTFT and decode measured across context and sequences.
 - [ ] Exact/WHT6 correctness/KL gate and longer repeated, rotated A/B to qualify speed improvement.
-- [ ] To reconsider W4: optimize XDP04's working **untiled** native gfx11 W4A4 arithmetic oracle into a genuinely fast, tiled implementation and verify it against MXFP4 including activation quantization, real-model quality and KV impact. Existing W4 broad model conversion is deferred by the 3.46x prefill-kernel regression. Do not claim the current W4 storage path uses native gfx11 IU4 WMMA.
+- [x] Tiled native IU4 W4A4 feasibility vs MXFP4: **tested and rejected for now** (XDP05, 1.89× slower GEMM-only). Native gfx11 IU4 instruction is real, but standalone correctness does not imply viable model throughput.
+- [ ] Only reopen native W4A4 with measured, credible improvement beyond 923 µs at M512/N17408/K5120 **including activation quantization**, and real-model KL parity. Preserve the correct XDP05 tile/oracle code as a research fixture.
 - [ ] If native W4 becomes viable, convert BF16->MXFP4 matched control and mixed candidate and run full end-to-end KLD, TP2 throughput, memory and KV residency gates. This conversion was deliberately not started.
 - [ ] Obtain comparable measured per-layer W4/MXFP4/FP8 perf, peak weights and reserves; run the XDP03 GPU-aware selector with real evidence and measure selected profile end-to-end before admitting or promoting any dynamic policy.
 - [ ] Native gfx1100 MXFP4 GEMM and TP all-reduce isolated kernel experiments with correctness; identify safe speed/capacity trade-off.
