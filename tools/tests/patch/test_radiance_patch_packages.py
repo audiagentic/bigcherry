@@ -68,8 +68,9 @@ PREREQUISITES = {RAD0004: (RAD0002,)}
 PIN_BLOBS = {
     RAD0002: {
         "abi/bc_moe_remote.h": (None, "d3748b9"),
-        "arch/common/bc_moe_remote_block.h": (None, "808d959"),
-        "arch/common/rad_block_moe_fp8.h": ("614db0e", "286e154"),
+        "arch/common/bc_moe_remote_block.h": (None, "3798bbb"),
+        "arch/common/rad_block_hc.h": ("3a602e5", "2d573ec"),
+        "arch/common/rad_block_moe_fp8.h": ("614db0e", "177e79c"),
         "core/engine.cpp": ("7544310", "c0c5357"),
         "core/engine.h": ("b10743c", "11473eb"),
         "core/engine_bringup.cpp": ("3ecdba8", "fe411f0"),
@@ -84,7 +85,7 @@ PIN_BLOBS = {
     },
     RAD0004: {
         "arch/common/bc_moe_remote_diag.h": (None, "3998d25"),
-        "arch/common/rad_block_moe_fp8.h": ("286e154", "dda77b2"),
+        "arch/common/rad_block_moe_fp8.h": ("177e79c", "86160d0"),
     },
     RAD0009: {
         "core/bc_serving_manifest.h": (None, "ea567e5"),
@@ -96,6 +97,7 @@ PIN_BLOBS = {
 
 #: the core files rad0002 edits (everything else it ships is a file of its own)
 RAD0002_CORE_FILES = (
+    "arch/common/rad_block_hc.h",
     "arch/common/rad_block_moe_fp8.h",
     "core/engine.cpp",
     "core/engine.h",
@@ -228,7 +230,7 @@ class TestRadiancePatchPackages(unittest.TestCase):
             patches = _load(RAD0002)
             core_edits = {p.path: len(p.edits) for p in patches if not p.create}
             self.assertEqual(set(core_edits), set(RAD0002_CORE_FILES))
-            self.assertEqual(sum(core_edits.values()), 25)
+            self.assertEqual(sum(core_edits.values()), 28)
             self.assertEqual(sum(1 for p in patches if p.create), 5)
             self.assertTrue(all(result.ok for result in apply_all(list(patches), root)))
             for relative in RAD0002_CORE_FILES:
@@ -274,11 +276,16 @@ class TestRadiancePatchPackages(unittest.TestCase):
             self.assertLess(n4, merge)
             self.assertLess(merge, gather)
             self.assertLess(gather, ar)
-            # RAD49: the hand-off keeps upstream's all-reduce path; the fused gather + reducing hc write takes the
-            # helper rows (moe_mailbox_inject) instead of a forced standalone all-reduce.
-            self.assertNotIn("bc_remote.active(T) ||", moe)
+            # RAD49: a handed-off step that fuses (bc_moe_remote_fuses) keeps the write's fused gather + reducing write,
+            # which takes the helper rows (moe_mailbox_inject); one that does not runs the block's own all-reduce
+            # behind a plain HyperConn write, and both sides ask the same predicate.
+            self.assertIn("return op_ar && (bc_remote.forces_ar(*this, T) ||", moe)
             hc = (root / "arch/common/rad_block_hc.h").read_text(encoding="utf-8")
-            self.assertNotIn("bc_moe_remote", hc)
+            self.assertIn(
+                "bool takes_ar(int64_t T) const { return ar_write(T) != 0 && "
+                "!bc_moe_remote_hc_open(gsrc.top_k, g, T, gather_rows, gather_rows6); }",
+                hc,
+            )
             planner = (root / "core/place/planner.cpp").read_text(encoding="utf-8")
             self.assertIn("if (bc_moe_remote_pin_unit(mu, in_.config->max_tok)) continue;", planner)
             self.assertIn("bc_moe_remote_mark_footprint(units);", planner)
@@ -308,9 +315,11 @@ class TestRadiancePatchPackages(unittest.TestCase):
             self.assertIn("moe_mailbox_publish", block)
             self.assertIn("moe_mailbox_add", block)
             self.assertIn("moe_mailbox_inject", block)
-            self.assertNotIn("bc_moe_remote_hc_open", block)
+            self.assertIn("return m.ar_out_take != kArOutNorm && active(T) && !fused(m, T);", block)
+            self.assertIn("inline int64_t bc_moe_remote_fuse_rows(const Geom& g) { return 1 + (g.max_spec > 0 ? g.max_spec : 0); }",
+                          block)
             self.assertIn(
-                "return active(T) && !m.op_combine && gather_taken(m.g, T, m.gather_out_rows, m.gather_out_rows6);",
+                "return active(T) && !m.op_combine && bc_moe_remote_fuses(m.g, T, m.gather_out_rows, m.gather_out_rows6);",
                 block,
             )
             # a fused step's publish never asks for the helper combine (the inject reads each helper's own plane)
@@ -394,6 +403,68 @@ int main(int argc, char** argv) {
                                           capture_output=True, text=True, check=False)
                     self.assertEqual(case.returncode, 0,
                                      f"actual engine policy min={lo} max={hi}: {case.stderr}")
+        finally:
+            temp.cleanup()
+
+    def test_rad0002_fused_choice_agrees_between_block_and_hyperconn(self):
+        """RAD49: the actual predicates, compiled. A handed-off step fuses (inject + the fused gather + reducing write)
+        exactly when HyperConn keeps its reducing write; otherwise the block runs its own all-reduce behind a plain
+        write. The switch is one sequence's decode or verify step (1 + max_spec rows), never a literal."""
+        temp, root = self._tree()
+        try:
+            self.assertTrue(all(result.ok for result in apply_all(list(_load(RAD0002)), root)))
+            block = (root / "arch/common/bc_moe_remote_block.h").read_text(encoding="utf-8")
+            free = block[block.index("inline int64_t bc_moe_remote_fuse_rows("):block.index("struct BcMoeRemote {")]
+            fused = block[block.index("    template <class Moe>\n    bool fused("):
+                          block.index("    /* Block declare, after the quantised experts' order")]
+            program = """
+#include <cstdint>
+#include <cstdio>
+struct Geom { int64_t max_spec; int64_t max_seqs; };
+enum { kArOutNorm = 0, kArOutExact = 1, kArOutBoth = 2 };
+static int64_t g_lo, g_hi; static int g_shadow, g_mask;
+inline bool gather_taken(const Geom&, int64_t T, int64_t rows, int64_t) { return rows > 0 && T <= rows; }
+extern "C" int bc_moe_remote_wanted(int64_t T) { return T >= g_lo && T <= g_hi; }
+extern "C" int bc_moe_remote_shadow() { return g_shadow; }
+extern "C" int bc_moe_remote_mask_only() { return g_mask; }
+""" + free + """
+struct Moe { Geom g; bool op_combine; int64_t gather_out_rows, gather_out_rows6; int ar_out_take; };
+struct R {
+    bool active(int64_t T) const { return bc_moe_remote_wanted(T) && !bc_moe_remote_shadow(); }
+""" + fused + """
+};
+int main() {
+    R r;
+    int fused_any = 0, unfused_any = 0;
+    for (int64_t spec = 0; spec <= 5; ++spec)
+    for (int64_t grows = 0; grows <= 64; grows += 32)
+    for (int shadow = 0; shadow <= 1; ++shadow)
+    for (int mask = 0; mask <= 1; ++mask)
+    for (int64_t T = 1; T <= 48; ++T) {
+        g_lo = 1; g_hi = 40; g_shadow = shadow; g_mask = mask;
+        const Moe m{{spec, 6}, false, grows, 0, kArOutBoth};
+        const bool f = r.fused(m, T), forced = r.forces_ar(m, T);
+        const bool open = bc_moe_remote_hc_open(10, m.g, T, grows, 0);
+        if (f && T > 1 + spec) return 2;                       /* fuses only up to one sequence's step */
+        if (f && (mask || shadow || grows < T)) return 3;
+        if (forced != open) return 4;                          /* the block reduces exactly when the write leaves it */
+        if (f && open) return 5;
+        if (!r.active(T) && (f || forced)) return 6;
+        Moe norm = m; norm.ar_out_take = kArOutNorm;
+        if (r.forces_ar(norm, T)) return 7;                    /* a norm-fused consumer keeps its fold */
+        if (bc_moe_remote_hc_open(0, m.g, T, grows, 0)) return 8;   /* attention / delta-net connections untouched */
+        fused_any |= f; unfused_any |= r.active(T) && !f;
+    }
+    return fused_any && unfused_any ? 0 : 9;
+}
+"""
+            with tempfile.TemporaryDirectory() as build:
+                exe = Path(build) / "fused_choice"
+                compiled = subprocess.run(["c++", "-std=c++17", "-x", "c++", "-", "-o", str(exe)],
+                                          input=program, text=True, capture_output=True, check=False)
+                self.assertEqual(compiled.returncode, 0, compiled.stderr)
+                case = subprocess.run([str(exe)], capture_output=True, text=True, check=False)
+                self.assertEqual(case.returncode, 0, case.stderr)
         finally:
             temp.cleanup()
 
