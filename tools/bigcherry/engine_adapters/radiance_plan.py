@@ -38,7 +38,10 @@ def _toml(value: Any) -> str:
         return repr(value)
     if isinstance(value, str):
         return json.dumps(value)
-    raise PlanError(f"serving.set values are strings, numbers or booleans, got {value!r}")
+    # an array setting (memory.helper_budgets_mib): a flat list of the scalars above, written as a TOML array
+    if isinstance(value, list) and all(isinstance(v, (bool, int, float, str)) for v in value):
+        return "[" + ",".join(_toml(v) for v in value) + "]"
+    raise PlanError(f"serving.set values are strings, numbers, booleans or flat lists of them, got {value!r}")
 
 
 def _site(path: Path, model: Path, radiance_home: Path, serving: dict[str, Any]) -> None:

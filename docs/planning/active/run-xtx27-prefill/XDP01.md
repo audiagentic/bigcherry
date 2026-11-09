@@ -118,7 +118,7 @@ WHT6 has known large-row lossiness.
 Current-pin MXFP4 dual-XTX baseline and profile captured; dominant
 bottleneck identified; at least one bounded optimisation tested against an
 unmodified control on identical 27B workload with no quality regression.
-Parallel card-free three-card capacity design is active (XDP02); runtime changes remain gated on TP2 performance, stage memory and transfer proof.
+Parallel card-free three-card capacity design (XDP02) and BF16-derived heterogeneous quantization (XDP03) are active; runtime changes remain gated on TP2 performance, stage memory, quality and transfer proof.
 
 ## Notes
 
@@ -132,5 +132,6 @@ Parallel card-free three-card capacity design is active (XDP02); runtime changes
 
 ## Change Log
 
+- 2026-11-09: XDP03 added as a parallel candidate for faster XTX-compatible weight execution and KV-preserving mixed precision; no format presumed faster without measured KL and end-to-end bench.
 - 2026-11-09: Started independent dual-XTX Radiance throughput harness and
   gated staged optimisation plan.

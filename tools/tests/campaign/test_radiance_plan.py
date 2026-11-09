@@ -111,8 +111,17 @@ class PlanTests(unittest.TestCase):
         for serving in ({"set": {}}, {"layout": "x", "flags": []}):
             with self.subTest(serving=serving), self.assertRaisesRegex(radiance_plan.PlanError, "serving takes"):
                 self.make(serving)
-        with self.assertRaisesRegex(radiance_plan.PlanError, "strings, numbers or booleans"):
-            self.make({"layout": "x", "set": {"a": [1]}})
+        with self.assertRaisesRegex(radiance_plan.PlanError, "strings, numbers, booleans or flat lists"):
+            self.make({"layout": "x", "set": {"a": [[1]]}})
+        with self.assertRaisesRegex(radiance_plan.PlanError, "strings, numbers, booleans or flat lists"):
+            self.make({"layout": "x", "set": {"a": {"b": 1}}})
+
+    def test_an_array_setting_reaches_bc_serve_as_a_toml_array(self):
+        # memory.helper_budgets_mib: a KL arm that varies the helpers' budgets (a smaller RX 6900 XT tail)
+        self.make({"layout": "qwen27b-2xtx", "set": {"memory.helper_budgets_mib": [22528, 22528, 3584]}})
+        calls = (self.log / "bc-serve.args").read_text().splitlines()
+        for call in calls:
+            self.assertIn("--set memory.helper_budgets_mib=[22528,22528,3584]", call)
 
     def test_helpers_resident_memory_counts_anonymous_memory_and_the_segment_once(self):
         status = self.root / "status"

@@ -1,6 +1,6 @@
 ---
 id: XDP02
-order: 0
+order: 1
 plan: run-xtx27-prefill
 state: active
 created-at: '2026-11-09T00:00:00+00:00'
@@ -125,10 +125,12 @@ production integration. No `vendor/radiance` direct edits, no push or PR.
 
 Existing Radiance heterogeneity is primarily remote-MoE expert
 offload; this is a separate full-transformer-stage interface/design.
+Hardware-specific weight variants are tracked in XDP03. For any stage cut, the GPU-aware quant selector must cost all stage weights and KV against per-card headroom; variant storage on disk does not imply duplicated VRAM.
 Link to HD2701 (heterogeneous dense workstream) in review; that plan is
 in a different experimental worktree, so do not edit or merge it here.
 
 ## Change Log
 
+- 2026-11-09: Linked XDP03 heterogeneous quant variants and resident-VRAM admission; stage execution remains unimplemented.
 - 2026-11-09: Added capacity-first owner constraint and card-free
   full-attention KV geometry and placement feasibility model.

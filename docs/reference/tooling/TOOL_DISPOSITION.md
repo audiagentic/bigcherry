@@ -636,6 +636,13 @@ Radiance patches also use `bigcherry --engine radiance patch-promote <id> --evid
 | `tools/lab/radiance/xtx27-PROGRESS.md` | **TRANSITIONAL** | XDP01-02 dual-XTX prefill and KV-budget lab progress ledger; experiment-only. |
 | `tools/lab/radiance/xtx27_kv_budget.py` | **TRANSITIONAL** | XDP02 card-free long-context KV and dual-XTX memory budget estimator; lab-only. |
 | `tools/lab/radiance/xtx27_prefill.py` | **TRANSITIONAL** | XDP01 dual-XTX prefill measurement and fixture harness; lab-only. |
+| `tools/lab/radiance/xtx27_quant_plan.py` | **TRANSITIONAL** | XDP03 card-free quantization/precision budget and risk planner; experiment-only. |
+| `tools/lab/radiance/xtx27_quant_select.py` | **TRANSITIONAL** | XDP03 fail-closed mixed-precision candidate selector and evidence gate; experiment-only. |
+| `tools/lab/rad42-bar-push/chunk_contract.py` | **TRANSITIONAL** | RAD42 CPU-only chunk-contract model and replay fixture; lab-only. |
+| `tools/lab/rad42-bar-push/critical_path_model.py` | **TRANSITIONAL** | RAD42 CPU-only stage/critical-path timing model; lab-only. |
+| `tools/lab/rad42-bar-push/test_chunk_contract.py` | **TRANSITIONAL** | RAD42 card-free chunk-contract regression checks; lab-only. |
+| `tools/lab/rad42-bar-push/test_chunk_stress.py` | **TRANSITIONAL** | RAD42 card-free chunk stress and adversarial fixtures; lab-only. |
+| `tools/lab/rad42-bar-push/test_critical_path_model.py` | **TRANSITIONAL** | RAD42 card-free critical-path timing model tests; lab-only. |
 | `tools/residency_gates.py` | **MOVE** | HI34 plan-specific gate moved to non-package `tools/lab/hi34-residency-gates/`; root wrapper retained for tests/legacy CLI. |
 | `tools/rocm-env.ps1` | **MOVE** | Environment bootstrap; canonical destination tools/env/ in TR05. |
 | `tools/rocm-env.sh` | **MOVE** | Environment bootstrap; canonical destination tools/env/ in TR05. |

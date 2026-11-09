@@ -33,6 +33,14 @@ plan_check_describe() {
     --set "handoff.histogram_period_s=$RECORD_PERIOD"
   )
   [ "$PREFIX_RESUME" = off ] || PLAN_SET+=(--set "engine.prefix_resume=\"$PREFIX_RESUME\"")
+  # --budget ARCH=MIB: the per-helper budgets `bigcherry layout env` resolved with the overrides applied (R3_MOE_WORKER_MIBS, helper
+  # order). Without this --set bc-serve derives them from layouts.toml again and the override would reach only the plan key.
+  if [ "${#BUDGETS[@]}" -gt 0 ] && [ -n "${BUDGETS[0]}" ]; then
+    local kv mibs=""
+    for kv in "${LAYOUT_COMMON[@]}"; do case "$kv" in R3_MOE_WORKER_MIBS=*) mibs=${kv#R3_MOE_WORKER_MIBS=} ;; esac; done
+    [ -n "$mibs" ] || { echo "plan check: --budget given but the layout resolved no helper budgets" >&2; return 1; }
+    PLAN_SET+=(--set "memory.helper_budgets_mib=[$mibs]")
+  fi
   # A TP engine's ranks exchange through host memory, never P2P (this host has none), as in the helper-free path below.
   [ "${LAYOUT_ENGINE_RANKS:-1}" -le 1 ] || PLAN_SET+=(--set 'tuning.p2p="off"')
   # What else decides the plan but is not a bc-serve setting: the route-heat file's contents (they decide which experts the
