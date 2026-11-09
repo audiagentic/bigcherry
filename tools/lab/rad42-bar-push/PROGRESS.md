@@ -11,7 +11,7 @@ remains RAD42, and RAD49 is the TP2 consumer context.
 | --- | --- | --- |
 | 0: lifecycle and critical-path model, card-free | **PASS** | 23 tests: 10 lifecycle, 3 multi-chunk stress, 10 critical-path/overlap model; no GPU visibility implied |
 | 1: host-visible GPU-local pool discovery | **PASS (API discovery)** | Under exclusive RAD50 lease, HSA enumerated 7 CPU-accessible GPU-local allocatable pools: XTX0 2, XTX1 2, R9700 1, 6900XT 2. Not proof of BAR writes |
-| 2: CPU-write/GPU-read canary | **BUILD PASS, EXECUTION BLOCKED** | Gate 1 passed, but `bar_write_canary-gfx1100` and `bar_write_canary-gfx1201` are missing from executable allowlist. No CPU BAR stores or GPU verification launched |
+| 2: CPU-write/GPU-read canary | **PASS XTX0/XTX1; R9700 INCONCLUSIVE** | Both gfx1100 GPUs: 4 KiB and 4 MiB, 12 generations each, zero mismatches, exit 0 (48 fully verified buffers total). gfx1201 R9700 (HIP ordinal 2): executable exit 1 with no stdout/stderr; no memory correctness established. Diagnosing, no retry yet |
 | 2b: separate CPU-only IPC import | **BUILT, RUN BLOCKED** | `bar_ipc_canary.hip` compiled gfx1100/gfx1201; import/CPU write/GPU full verification not run. Requires Gates 1 and 2 |
 | 3: isolated transfer A/B | **BUILT, RUN BLOCKED** | `bar_transfer_ab.hip` compiled for gfx1100/gfx1201. No actual bandwidth, CPU cost or latency result. Requires Gate 2b PASS |
 | 4: chunked producer/consumer | **PARTIAL BUILD, RUN BLOCKED** | `bar_live_ready_canary.hip` compiled gfx1100/gfx1201: GPU already running before CPU writes. Multi-process chunk pipeline still not implemented. Requires Gate 3 |
@@ -73,19 +73,12 @@ remains RAD42, and RAD49 is the TP2 consumer context.
 - A single-process GPU-live waiter correctness canary (`bar_live_ready_canary.hip`) also built for gfx1100/gfx1201; its test and multiprocess extension remain blocked.
 - The GPU lease remains owned by the RAD49 measurement; Gate 1 onward is hardware blocked.
 
-## Next action when a GPU lease is available
+## Next hardware steps
 
-1. Acquire/check the project's exclusive GPU lease by its supported tool,
-   identify physical PCI devices and verify there is no live serving.
-2. Run `pool_inventory` **first**; preserve output with ROCm/kernel versions,
-   PCI identities and selected GPU-local pool. If CPU access is not
-   supported, STOP and record the negative result.
-3. Only if the selected devices have an eligible pool, run the
-   architecture-matched `bar_write_canary` for each XTX destination
-   (and separately for the R9700 if useful). Demand 0 mismatches at
-   4 KiB and 4 MiB on every generation.
-4. Review CPU read/write ordering, buffer placement, and timing evidence.
-   Only then design the standalone bandwidth A/B gate.
+1. Confirm the GPU lease is free, no KFD processes or serving remains, and acquire a new exclusive GPU lease.
+2. Diagnose R9700's exit-1/empty-output failure using the newly instrumented `bar_write_canary-gfx1201 --device 2` probe. Record whether process entry, HIP initialization, HSA match or allocation is reached. Do not classify it as GPU memory corruption without evidence.
+3. After resolving or explicitly isolating that failure, proceed on the two XTXs with a separate-process CPU-only HSA IPC canary (Gate 2b), then the transfer A/B and live-GPU-ready experiments. Those executable names require remote command-policy permission.
+4. Preserve the GPU-pull baseline, obtain measured latency/CPU overhead, and require all later safety gates before considering RAD51 runtime changes.
 
 ## What is still unknown
 
@@ -115,3 +108,12 @@ remains RAD42, and RAD49 is the TP2 consumer context.
 - Attempting `bar_write_canary-gfx1100 --device 0` was rejected by the remote command allowlist, without running the executable. The policy allows `pool_inventory` but not `bar_write_canary-gfx1100` or `bar_write_canary-gfx1201`.
 - Released our GPU lease immediately; confirmed no RAD50 lease retained. No experimental GPU allocations, kernels, IPC, BAR stores or transfer timings. All later gates remain pending.
 - Required authorisation before Gate 2: permit those **exact two executable basenames**. Then recheck GPU users, acquire fresh lease, run XTX0 then XTX1 (and optionally R9700); stop on any wrong bytes, kernel error or unsupported mapping.
+
+### 2026-11-09 — Gate 2 XTX correctness confirmed, R9700 inconclusive
+
+- Confirmed all four GPUs idle and no other lease; acquired RAD50 exclusive `gpu` lease.
+- `bar_write_canary-gfx1100 --device 0`: exit 0; HIP PCI `0000:03:00.0`; HSA GPU-local 4,194,304-byte allocation with CPU access; every word matched for **4 KiB × 12** and **4 MiB × 12** generations.
+- `bar_write_canary-gfx1100 --device 1`: exit 0; HIP PCI `0000:06:00.0`; same allocation and both payload/generation sets passed. **Both XTXs serial CPU BAR write → GPU verification PASS.**
+- `bar_write_canary-gfx1201 --device 2` (R9700): executable returned exit code **1** with empty stdout and stderr. Root cause unknown; no GPU verification can be claimed. Do not interpret this as measured data corruption or a valid rejection of CPU BAR.
+- GPU state afterwards: 0% usage, 0% rounded VRAM allocation and no KFD PIDs. Released the lease (`no leases` verified).
+- Added early unbuffered diagnostic markers to the lab canary for a future R9700 reproduction; recompiled gfx1201 **but did not rerun**. First investigate the exit stage, then repeat under a fresh lease. No IPC, transfer benchmark, GPU-live waiter or production changes.

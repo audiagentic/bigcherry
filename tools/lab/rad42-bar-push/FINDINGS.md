@@ -107,4 +107,4 @@ parameter with actual traces once a GPU lease is available.
 5. Actual FP16 combined rows and KLD/TP2 reference; then only
    consider the future opt-in production plan `RAD51`.
 
-**Status (2026-11-09):** Gate 1 HSA discovery PASS: 7 GPU-local CPU-accessible candidate pools across the four GPUs. Gate 2 GPU correctness canaries are compiled but their executable names are still blocked by the remote allowlist, so **no CPU BAR writes or GPU verification have run**. IPC, transfer performance and concurrent readiness remain unverified. RAD50 released its lease after this block; no GPU lease is held by the experiment.
+**Status (2026-11-09):** Gate 1 HSA discovery PASS (7 GPU-local CPU-accessible pools). Gate 2 serial CPU write → GPU read PASS on both RX 7900 XTX GPUs: 4 KiB and 4 MiB, 12 generations each, all words verified. The R9700 gfx1201 executable exited 1 with no diagnostics: its result is **inconclusive** pending a targeted rerun. Serial correctness does not establish cross-process access, concurrent visibility, CPU overhead or throughput; all remain unverified. RAD50 released its GPU lease.

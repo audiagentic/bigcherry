@@ -84,6 +84,8 @@ bool exercise(hsa_agent_t selected, const Inventory& inventory, int device) {
 } // namespace
 
 int main(int argc, char** argv) {
+    (void)std::setvbuf(stderr, nullptr, _IONBF, 0);
+    std::fprintf(stderr, "RAD50 diagnostic: entered canary process\n");
     if (argc != 3 || std::strcmp(argv[1], "--device")) {
         std::fprintf(stderr, "usage: bar_write_canary --device HIP_VISIBLE_ORDINAL\n");
         return 2;
@@ -94,6 +96,7 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "invalid device ordinal\n");
         return 2;
     }
+    std::fprintf(stderr, "RAD50 diagnostic: query HIP ordinal %ld\n", requested);
     int count = 0;
     if (!check_hip(hipGetDeviceCount(&count), "device count") || requested >= count ||
         !check_hip(hipSetDevice(static_cast<int>(requested)), "select HIP device")) return 2;
@@ -109,6 +112,7 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "FAIL: HSA init\n");
         return 2;
     }
+    std::fprintf(stderr, "RAD50 diagnostic: HSA initialized; enumerate agents\n");
     Inventory all;
     hsa_status_t rc = hsa_iterate_agents(collect_agent, &all);
     hsa_agent_t selected{};
