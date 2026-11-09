@@ -21,7 +21,7 @@ ARCHES ?= --offload-arch=gfx1100 --offload-arch=gfx1201
 OPT ?= -O1
 COMMON := -std=c++17 $(OPT) -Wall -Wextra -pthread
 HSA := -L$(ROCM_PATH)/lib -Wl,-rpath,$(ROCM_PATH)/lib -lhsa-runtime64
-HIP_OBJECTS := $(OBJ)/serial.o $(OBJ)/ipc.o $(OBJ)/vmem-cap.o $(OBJ)/dmabuf-map.o $(OBJ)/transfer.o $(OBJ)/live-ready.o
+HIP_OBJECTS := $(OBJ)/serial.o $(OBJ)/ipc.o $(OBJ)/vmem-cap.o $(OBJ)/dmabuf-map.o $(OBJ)/dmabuf-ab.o $(OBJ)/transfer.o $(OBJ)/live-ready.o
 CPU_OBJECTS := $(OBJ)/tester.o $(OBJ)/inventory.o $(OBJ)/combine.o $(OBJ)/cpu-handoff.o
 OBJECTS := $(CPU_OBJECTS) $(HIP_OBJECTS)
 
@@ -54,6 +54,9 @@ $(OBJ)/vmem-cap.o: $(SRC)/bar_vmem_cap.hip $(SRC)/bar_access.h | $(OBJ)
 
 $(OBJ)/dmabuf-map.o: $(SRC)/bar_dmabuf_map.hip $(SRC)/bar_access.h | $(OBJ)
 	$(HIPCC) $(COMMON) $(ARCHES) -Dmain=rad50_dmabuf_map_entry -c "$<" -o "$@"
+
+$(OBJ)/dmabuf-ab.o: $(SRC)/bar_dmabuf_ab.hip $(SRC)/bar_access.h | $(OBJ)
+	$(HIPCC) $(COMMON) $(ARCHES) -Dmain=rad50_dmabuf_ab_entry -c "$<" -o "$@"
 
 $(OBJ)/transfer.o: $(SRC)/bar_transfer_ab.hip $(SRC)/bar_access.h | $(OBJ)
 	$(HIPCC) $(COMMON) $(ARCHES) -Dmain=rad50_transfer_entry -c "$<" -o "$@"

@@ -10,7 +10,7 @@ This is not a way to bypass remote command policy.
 
 The executable's source is `rad50_tester.cpp`; `Makefile` links
 `pool_inventory.cpp`, `bar_write_canary.hip`,
-`bar_ipc_canary.hip`, `bar_transfer_ab.hip`,
+`bar_ipc_canary.hip`, `bar_transfer_ab.hip`, `bar_dmabuf_ab.hip`,
 `bar_live_ready_canary.hip`, `bar_vmem_cap.hip`, `combine_reference_test.cpp` and
 `cpu_handoff_bench.cpp` directly, with their original `main`
 functions renamed at compile time. Future *reviewed, compiled-in*
@@ -62,7 +62,7 @@ T="$BC_WORK_ROOT/builds/rad42-bar-push/rad50-tester"
 
 "$T" --help
 "$T" --list
-"$T" --self-check             # 22 strict argument cases, no GPU
+"$T" --self-check             # 34 strict argument cases, no GPU
 
 # For every GPU test below: CHECK GPU USE, ACQUIRE AND HOLD THE
 # EXCLUSIVE 'gpu' LEASE FIRST. '--lease-confirmed' is an explicit
@@ -121,7 +121,7 @@ test time. On the measured host, 0 and 1 are the RX 7900 XTX cards,
 - Gate 2b `ipc` **failed** on XTX0 with HSA 4104 (CPU-agent import).
   Same-GPU IPC import passes on both XTXs but XTX0's imported host VA
   is not CPU-writable. VMM DMA-BUF export works but CPU access query
-  fails 4100. **No cross-process CPU writes are verified.**
+  fails 4100 by those APIs, but the **DMA-BUF mmap alternative now passes cross-process 4 KiB and 4 MiB CPU writes and parent GPU verification on both XTXs**.
   Never proceed to `transfer` on an unsupported mapping. The live
   ready mode tests observation of concurrent publication, not a
   formal guarantee of posted-write ordering.
@@ -140,7 +140,7 @@ test time. On the measured host, 0 and 1 are the RX 7900 XTX cards,
   `--offload-arch=gfx1201` into the project work root.
 - C++ syntax check passed and link succeeded. The 23 existing
   Python card-free gate tests still apply.
-- `--list` returned the compiled modes, `--self-check` passed 22/22
+- `--list` returned the compiled modes, `--self-check` passed 34/34
   strict argument cases, and `--test combine-ref` passed seven FP16
   reference checks (2,560 elements); each exited 0 without any GPU.
   Selected hardware modes have since run under exclusive leases;
@@ -151,3 +151,7 @@ test time. On the measured host, 0 and 1 are the RX 7900 XTX cards,
 ## 2026-11-09 DMA-BUF interprocess probe (Gate 2b partial pass)
 
 The single executable also provides `--test dmabuf-map` (no CPU stores), `--test dmabuf-write` (4 KiB) and `--test dmabuf-full` (4 MiB). Each requires `--device N --lease-confirmed`. A GPU-local HSA VMM handle is exported as DMA-BUF, passed via SCM_RIGHTS to a CPU-only child, then CPU-mapped with Linux `mmap` and DMA_BUF_IOCTL_SYNC START/END. The child writes deterministic data only in the write/full modes; the parent checks every 32-bit word from a GPU kernel after the child ACKs. Both XTXs passed 4 KiB and 4 MiB once each. These are **serial** proofs, not live GPU readiness, generation reuse or any bandwidth result. Never run a GPU mode without a fresh exclusive `gpu` lease and GPU-process preflight; the runner's flag does not acquire the lease.
+
+## Gate 3 — new paired mapped-host GPU-pull vs DMA-BUF CPU-push speed harness
+
+See [PERFORMANCE.md](PERFORMANCE.md) for required lease preflight, OPT=-O2 performance-build instructions, A/B controls, exact GPU validation, CSV-like outputs and optimization decision thresholds. The fixed mode is `--test dmabuf-ab --device N --iterations 30 --mode direct|staged --lease-confirmed`. It uses one persistent CPU-only child for both the existing mapped-host GPU-pull baseline and the DMA-BUF CPU BAR-push candidate, samples 4 KiB/64 KiB/256 KiB/1 MiB/4 MiB, alternates path order, and reports p50/p95/p99 plus exact GPU word verification. The `ab_analyze.py` companion checks logs. **Built/card-free tested; hardware speed results pending exclusive GPU lease.** No new permissions or worktrees needed.

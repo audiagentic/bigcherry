@@ -24,12 +24,13 @@ int rad50_transfer_entry(int, char**);
 int rad50_live_ready_entry(int, char**);
 int rad50_vmem_cap_entry(int, char**);
 int rad50_dmabuf_map_entry(int, char**);
+int rad50_dmabuf_ab_entry(int, char**);
 int rad50_combine_entry();
 int rad50_cpu_handoff_entry(int, char**);
 
 namespace {
 enum class Kind {
-    Pools, HipSmoke, Serial, Ipc, IpcMap, IpcGpuCpu, VmemCap, DmaBufMap, DmaBufWrite, DmaBufFull, Transfer, LiveReady, Combine, CpuHandoff
+    Pools, HipSmoke, Serial, Ipc, IpcMap, IpcGpuCpu, VmemCap, DmaBufMap, DmaBufWrite, DmaBufFull, DmaBufAB, Transfer, LiveReady, Combine, CpuHandoff
 };
 struct Test {
     const char* name;
@@ -49,6 +50,7 @@ constexpr Test tests[] = {
     {"dmabuf-map", Kind::DmaBufMap, true, true, "DMA-BUF FD passed to CPU-only child; mmap and SYNC ioctl only, NO writes"},
     {"dmabuf-write", Kind::DmaBufWrite, true, true, "CPU-only child writes 4KiB DMA-BUF; parent GPU verifies every word"},
     {"dmabuf-full", Kind::DmaBufFull, true, true, "CPU-only child writes 4MiB DMA-BUF; parent GPU verifies every word"},
+    {"dmabuf-ab", Kind::DmaBufAB, true, true, "Persistent two-process GPU-pull vs CPU BAR-push A/B, exact GPU read and stage latency"},
     {"transfer", Kind::Transfer, true, true, "Uncontended CPU BAR write versus mapped-host GPU pull (Gate 3)"},
     {"live-ready", Kind::LiveReady, true, true, "GPU already waiting before CPU BAR data and ready flag (Gate 4 canary)"},
     {"combine-ref", Kind::Combine, false, false, "Card-free FP16 combine/sentinel reference checks"},
@@ -123,7 +125,8 @@ bool parse(int argc, char** argv, Args* result) {
             if (seen_mode || i+1>=argc) return false;
             result->mode=argv[++i]; seen_mode=true;
             if (result->mode!="spin" && result->mode!="yield" &&
-                result->mode!="sleep1" && result->mode!="condvar") return false;
+                result->mode!="sleep1" && result->mode!="condvar" &&
+                result->mode!="direct" && result->mode!="staged") return false;
         } else if (!std::strcmp(a,"--lease-confirmed")) {
             if (seen_ack) return false;
             result->lease_ack=true;seen_ack=true;
@@ -134,9 +137,11 @@ bool parse(int argc, char** argv, Args* result) {
     if (t.needs_device != seen_device) return false;
     if (t.needs_lease && !seen_ack) return false;
     if (!t.needs_lease && seen_ack) return false;
-    if ((t.kind==Kind::Transfer)!=seen_iterations) return false;
-    if ((t.kind==Kind::CpuHandoff)!=seen_mode ||
+    if ((t.kind==Kind::Transfer || t.kind==Kind::DmaBufAB)!=seen_iterations) return false;
+    if ((t.kind==Kind::CpuHandoff || t.kind==Kind::DmaBufAB)!=seen_mode ||
         (t.kind==Kind::CpuHandoff)!=seen_samples) return false;
+    if (t.kind==Kind::DmaBufAB && result->mode!="direct" && result->mode!="staged")return false;
+    if (t.kind==Kind::CpuHandoff && (result->mode=="direct" || result->mode=="staged"))return false;
     return true;
 }
 int call_entry(int(*entry)(int,char**), const std::vector<std::string>& strings) {
@@ -186,6 +191,11 @@ int run(const Args& a,const char* self) {
       case Kind::DmaBufFull:
         args.insert(args.end(),{"--device",std::to_string(a.device),"--full-verify"});
         return call_entry(rad50_dmabuf_map_entry,args);
+      case Kind::DmaBufAB:
+        args.insert(args.end(),{"--device",std::to_string(a.device),
+                                "--iterations",std::to_string(a.iterations),
+                                "--mode",a.mode});
+        return call_entry(rad50_dmabuf_ab_entry,args);
       case Kind::Transfer:
         args.insert(args.end(),{"--device",std::to_string(a.device),
                                 "--iterations",std::to_string(a.iterations)});
@@ -232,6 +242,13 @@ int main(int argc,char** argv) {
         if (getsockopt(3,SOL_SOCKET,SO_TYPE,&type,&size)==0 &&
             size==sizeof(type) && type==SOCK_STREAM)
             return rad50_dmabuf_map_entry(argc,argv);
+    }
+    if (argc==3 && !std::strcmp(argv[1],"--bench-child") &&
+        !std::strcmp(argv[2],"3") && fcntl(3,F_GETFD)!=-1) {
+        int type=0; socklen_t n=sizeof(type);
+        if (getsockopt(3,SOL_SOCKET,SO_TYPE,&type,&n)==0 &&
+            n==sizeof(type) && type==SOCK_STREAM)
+            return rad50_dmabuf_ab_entry(argc,argv);
     }
     Args args;
     if (!parse(argc,argv,&args)) {

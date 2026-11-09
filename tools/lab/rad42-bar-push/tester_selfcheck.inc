@@ -42,6 +42,18 @@ int cli_self_check() {
           false,"DMA-BUF mode without lease");
     check({"rad50-tester","--test","vmem-cap","--device","0","--lease-confirmed"},
           true,"GPU-local VMM export capability");
+    check({"rad50-tester","--test","dmabuf-ab","--device","0","--iterations","30",
+           "--mode","direct","--lease-confirmed"},true,"two-process direct A/B");
+    check({"rad50-tester","--test","dmabuf-ab","--device","1","--iterations","10",
+           "--mode","staged","--lease-confirmed"},true,"two-process staged A/B");
+    check({"rad50-tester","--test","dmabuf-ab","--device","0","--iterations","30",
+           "--lease-confirmed"},false,"A/B requires explicit method");
+    check({"rad50-tester","--test","dmabuf-ab","--device","0","--iterations","30",
+           "--mode","yield","--lease-confirmed"},false,"A/B rejects CPU handoff mode");
+    check({"rad50-tester","--test","dmabuf-ab","--device","0","--iterations","500",
+           "--mode","direct","--lease-confirmed"},false,"A/B bounded iterations");
+    check({"rad50-tester","--test","cpu-handoff","--mode","direct",
+           "--samples","3000","--lease-confirmed"},false,"handoff rejects transfer mode");
     check({"rad50-tester","--test","transfer","--device","0","--iterations","30",
            "--lease-confirmed"},true,"A/B bounded mode");
     check({"rad50-tester","--test","live-ready","--device","0","--lease-confirmed"},

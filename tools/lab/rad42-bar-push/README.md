@@ -11,7 +11,7 @@ context RAD40 (PCIe contention) and RAD49 (multi-rank consumer).
 
 **Preferred interface:** [TESTER.md](TESTER.md) documents the new single
 `rad50-tester` executable with fixed `--test` cases and both GPU architectures
-in one binary. It is **built and allowlisted**: `--list`, 28/28 CLI checks and
+in one binary. It is **built and allowlisted**: `--list`, 34/34 CLI checks and
 seven FP16 reference checks have run successfully, without a GPU.
 One stable executable name replaces per-test allowlist entries.
 The old standalone probes remain as source/reference, not subprocess targets.
@@ -38,7 +38,7 @@ RAD42's chunked combine is shipped; its BAR-push design is not.
 | 1. VRAM reachability | `pool_inventory.cpp` | **PASS (API discovery)**: 7 GPU-local pools reported CPU-accessible across four GPUs; find an allocatable HSA GPU-local pool the host CPU is allowed to access; map physical PCI identity; pool availability alone is *not* proof of BAR usability |
 | 2. CPU→GPU exact canary | `bar_write_canary.hip` | **XTX0 + XTX1 PASS; R9700 INCONCLUSIVE**: 4 KiB and 4 MiB, 12 generations each, GPU checks every word of CPU-written GPU-local storage; refuse unsupported allocations and PCI mismatch |
 | 2b. Cross-process CPU-only IPC | `rad50-tester --test dmabuf-map`, `dmabuf-write`, `dmabuf-full` | **PARTIAL PASS**: both XTXs pass separate-process DMA-BUF mapping and SYNC, CPU-written 4 KiB / 4 MiB, full parent GPU verification. Direct HSA IPC CPU-agent attach fails; generation reuse and fault tests still pending |
-| 3. Bandwidth and contention | `bar_transfer_ab.hip` (built, not run) | **BLOCKED on Gates 2/2b**: measure BAR write vs mapped-host GPU pull on both XTXs/R9700, 4 KiB–21 MiB, 1/2/4 CPU threads, p50/p95 and CPU load, alone and under GPU0 host-pull contention |
+| 3. Bandwidth and contention | `rad50-tester --test dmabuf-ab` (built, no hardware run), plus historical `bar_transfer_ab.hip` | **READY FOR ISOLATED A/B AFTER LEASE**: same CPU-only child and GPU verification kernel comparing direct mapped-host GPU reads with DMA-BUF CPU-to-VRAM writes, 4 KiB–4 MiB, direct/staged writes, p50/p95/p99 and SYNC costs. Controlled contention and production replay remain pending |
 | 4. Live chunks | `bar_live_ready_canary.hip` built (live single-process canary); full multi-process chunk pipeline not built | **BLOCKED on Gate 3**: separate CPU producer/GPU consumer, independently published ready generations, 128/256/512/1024 rows, bounded timeouts, stale-data and fault cases |
 | 5. MoE reference | `combine_reference_test.cpp` (compiled, not run) | **BLOCKED on Gate 4**: actual FP16 CPU combine, overflow sentinel fallback, TP2 consumer rank, once-only rows, captured replay and latency |
 | 6. Opt-in integration | Not authorised | Only a future reviewed branch, after hardware A/B, numerical parity and explicit go decision |
