@@ -10,7 +10,7 @@
 // already available in the dispatch; no request-specific probing is needed.
 namespace r3_moe_gpu {
 enum class Rad46RowsForm { OutputLane, Quad16, Quad8, RowLane16, RowLane8, StockReplay };
-enum class Rad46Sweep { Production, Stock, OutputLane, Quad, QuadV2, RowLane16, RowLane8 };
+enum class Rad46Sweep { Production, Stock, OutputLane, Quad, QuadV2, RowLane16, RowLane8, Split };
 
 constexpr int kRad46SmallRows = 64;
 constexpr int kRad46LargeRows = 2048;
@@ -38,7 +38,8 @@ constexpr Rad46RowsForm rad46_rows_form(Rad46Sweep sweep, bool gate_up, uint32_t
     switch (sweep) {
     case Rad46Sweep::Stock: return Rad46RowsForm::StockReplay;
     case Rad46Sweep::OutputLane: return Rad46RowsForm::OutputLane;
-    case Rad46Sweep::Quad: return Rad46RowsForm::Quad16;
+    case Rad46Sweep::Quad:
+    case Rad46Sweep::Split: return Rad46RowsForm::Quad16;
     case Rad46Sweep::QuadV2: return gate_up ? Rad46RowsForm::Quad8 : Rad46RowsForm::Quad16;
     case Rad46Sweep::RowLane16:
         if (gate_up) return Rad46RowsForm::RowLane16;

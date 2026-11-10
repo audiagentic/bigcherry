@@ -674,13 +674,13 @@ __global__ __launch_bounds__(128) void lane_moe_rows_w4_outputlane(
     const uint8_t* aq, const float* as, const int32_t* sorted, const int32_t* off, uint32_t top_k,
     void* const* code0, void* const* scale0, void* const* code1, void* const* scale1,
     uint32_t n0, uint32_t n1, uint32_t k0, uint32_t k1, uint32_t a_stride, uint32_t out_stride,
-    uint16_t* out, uint32_t part_pitch) {
+    uint16_t* out, uint32_t part_pitch, uint32_t lo, uint32_t hi) {
 #pragma clang fp contract(off)
 #pragma clang fp reassociate(off)
     static_assert(RB > 0 && RB <= 16, "output-lane row batch must fit the staging geometry");
     const uint32_t e = blockIdx.x, tid = threadIdx.x;
     const uint32_t rs = (uint32_t)off[e], re = (uint32_t)off[e + 1];
-    if (rs >= re) return;
+    if (rs >= re || re - rs < lo || re - rs >= hi) return; // TK03: this launch serves experts with lo <= routes < hi
     const uint32_t cls = e & 1u, ix = e >> 1;
     const uint32_t N = cls ? n1 : n0, K = cls ? k1 : k0;
     const uint32_t n_base = blockIdx.y * kOutputLaneN, n = n_base + tid;
@@ -839,13 +839,13 @@ __global__ __launch_bounds__(128) void lane_moe_rows_w4_quaddpp(
     const uint8_t* aq, const float* as, const int32_t* sorted, const int32_t* off, uint32_t top_k,
     void* const* code0, void* const* scale0, void* const* code1, void* const* scale1,
     uint32_t n0, uint32_t n1, uint32_t k0, uint32_t k1, uint32_t a_stride, uint32_t out_stride,
-    uint16_t* out, uint32_t part_pitch) {
+    uint16_t* out, uint32_t part_pitch, uint32_t lo, uint32_t hi) {
 #pragma clang fp contract(off)
 #pragma clang fp reassociate(off)
     static_assert(RB > 0 && RB <= 16, "quad-DPP row batch exceeds staging geometry");
     const uint32_t e = blockIdx.x, tid = threadIdx.x, qlane = tid & 3u;
     const uint32_t rs = (uint32_t)off[e], re = (uint32_t)off[e + 1];
-    if (rs >= re) return;
+    if (rs >= re || re - rs < lo || re - rs >= hi) return; // TK03: this launch serves experts with lo <= routes < hi
     const uint32_t cls = e & 1u, ix = e >> 1;
     const uint32_t N = cls ? n1 : n0, K = cls ? k1 : k0;
     const uint32_t n_base = blockIdx.y * kQuadDppN, n = n_base + tid / 4u;
