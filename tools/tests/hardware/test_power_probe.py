@@ -157,3 +157,97 @@ class CpuProbeTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class GpuProbeTest(unittest.TestCase):
+    def root(self) -> Path:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        return Path(tmp.name)
+
+    def test_four_cards_have_different_matrices(self):
+        root = fx.four_amdgpu_mixed(self.root())
+        g = {x.bdf: x for x in pp.probe_gpus(["0000:03:00.0", "0000:09:00.0", "0000:17:00.0"], sysfs_root=root, platform_name="linux")}
+        xtx, r9700, rdna2 = g["0000:03:00.0"].controls, g["0000:09:00.0"].controls, g["0000:17:00.0"].controls
+        self.assertEqual((xtx["vddgfx_offset_mv"].minimum, xtx["vddgfx_offset_mv"].maximum), (-450, 0))
+        self.assertEqual(xtx["sclk_max_mhz"].current.value, 3010)
+        self.assertEqual(xtx["sclk_offset_mhz"].status, "unsupported")
+        self.assertEqual((r9700["vddgfx_offset_mv"].minimum, r9700["vddgfx_offset_mv"].maximum), (-200, 0))
+        self.assertEqual(r9700["sclk_offset_mhz"].maximum, 1000)
+        self.assertEqual(r9700["sclk_max_mhz"].status, "unsupported")
+        # the RDNA2 card reports no voltage range: no value is assumed for it
+        self.assertEqual(rdna2["vddgfx_offset_mv"].status, "unsupported")
+        self.assertEqual(rdna2["vddgfx_offset_mv"].reason, "range_not_reported")
+        self.assertEqual(rdna2["power_cap_w"].maximum, 339_000_000)
+
+    def test_only_selected_devices_are_probed(self):
+        root = fx.four_amdgpu_mixed(self.root())
+        got = pp.probe_gpus(["0000:03:00.0"], sysfs_root=root, platform_name="linux")
+        self.assertEqual([x.bdf for x in got], ["0000:03:00.0"])
+
+    def test_amdgpu_without_overdrive_keeps_power_cap(self):
+        root = fx.gpu(self.root(), "0000:03:00.0", od=None)
+        g = pp.probe_gpus(["0000:03:00.0"], sysfs_root=root, platform_name="linux")[0]
+        self.assertEqual(g.controls["vddgfx_offset_mv"].reason, "overdrive_absent")
+        self.assertEqual(g.controls["power_cap_w"].status, "supported")
+
+    def test_unknown_overdrive_format_enables_no_control(self):
+        root = fx.gpu(self.root(), "0000:03:00.0", od="OD_NEWTHING:\n1: 2\n")
+        g = pp.probe_gpus(["0000:03:00.0"], sysfs_root=root, platform_name="linux")[0]
+        for k in ("vddgfx_offset_mv", "sclk_max_mhz", "sclk_offset_mhz"):
+            self.assertEqual(g.controls[k].status, "unsupported", k)
+
+    def test_missing_range_refuses_the_control(self):
+        od = fx.OD_RDNA3.replace("VDDGFX_OFFSET:    -450mv          0mv\n", "")
+        root = fx.gpu(self.root(), "0000:03:00.0", od=od)
+        g = pp.probe_gpus(["0000:03:00.0"], sysfs_root=root, platform_name="linux")[0]
+        self.assertEqual(g.controls["vddgfx_offset_mv"].status, "unsupported")
+
+    def test_multiple_hwmon_is_ambiguous_and_cap_refused(self):
+        root = fx.gpu(self.root(), "0000:03:00.0", hwmons=("hwmon8", "hwmon9"))
+        g = pp.probe_gpus(["0000:03:00.0"], sysfs_root=root, platform_name="linux")[0]
+        self.assertEqual(g.hwmon.reason, "ambiguous_hwmon")
+        self.assertEqual(g.controls["power_cap_w"].status, "unsupported")
+        self.assertEqual(g.sensors, {})
+
+    def test_unknown_driver_has_identity_and_no_controls(self):
+        root = fx.gpu(self.root(), "0000:03:00.0", driver="nvidia", od=None)
+        g = pp.probe_gpus(["0000:03:00.0"], sysfs_root=root, platform_name="linux")[0]
+        self.assertEqual(g.driver.value, "nvidia")
+        self.assertEqual(g.vendor.value, "0x1002")
+        self.assertTrue(all(c.reason == "no_backend_for_driver" for c in g.controls.values()))
+
+    def test_absent_device_and_windows(self):
+        root = self.root()
+        (root / "sys").mkdir()
+        g = pp.probe_gpus(["0000:99:00.0"], sysfs_root=root, platform_name="linux")[0]
+        self.assertEqual(g.driver.reason, "device_absent")
+        w = pp.probe_gpus(["0000:03:00.0"], platform_name="win32")[0]
+        self.assertEqual(w.controls["power_cap_w"].reason, "platform_not_linux")
+
+    def test_permission_denied_on_overdrive(self):
+        root = fx.gpu(self.root(), "0000:03:00.0")
+        real = Path.read_text
+
+        def deny(self, *a, **k):
+            if self.name == "pp_od_clk_voltage":
+                raise PermissionError(errno.EACCES, "denied")
+            return real(self, *a, **k)
+
+        with mock.patch.object(Path, "read_text", deny):
+            g = pp.probe_gpus(["0000:03:00.0"], sysfs_root=root, platform_name="linux")[0]
+        self.assertEqual(g.controls["vddgfx_offset_mv"].status, "not_permitted")
+        self.assertEqual(g.controls["power_cap_w"].status, "supported")
+
+    def test_inverted_cap_range_is_unreadable(self):
+        root = fx.gpu(self.root(), "0000:03:00.0", cap=(300, 400, 200))
+        g = pp.probe_gpus(["0000:03:00.0"], sysfs_root=root, platform_name="linux")[0]
+        self.assertEqual(g.controls["power_cap_w"].reason, "range_inverted")
+
+    def test_probe_host_serialises_and_never_raises(self):
+        root = fx.four_amdgpu_mixed(self.root())
+        fx.vm_without_cpufreq(root)
+        with mock.patch.object(pp, "_gpu", side_effect=RuntimeError("boom")):
+            p = pp.probe_host(["0000:03:00.0"], sysfs_root=root, platform_name="linux")
+        self.assertEqual(p.gpus[0].driver.reason, "probe_error:RuntimeError")
+        json.dumps(p.to_dict())

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import errno
 import os
+import re as _re
 import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -309,3 +310,238 @@ def _guard_pair(fn, source: str) -> tuple[Observation, Observation]:
     except Exception as exc:  # noqa: BLE001
         gone = _unavailable("unreadable", f"probe_error:{type(exc).__name__}", source)
         return gone, gone
+
+
+# --------------------------------------------------------------------------------------------------------------------
+# GPU capability probe (PWR07 slice 2). Per physical PCI device; amdgpu OverDrive is recognised from its table, with the
+# device-reported OD_RANGE as the only source of limits. A control the parser cannot positively identify, with its range
+# and current value, is "unsupported" for application; the rest of the card's observations continue.
+
+
+@dataclass(frozen=True)
+class ControlCapability:
+    status: Status
+    current: Observation
+    minimum: int | None
+    maximum: int | None
+    unit: str
+    reason: str | None = None
+
+    def to_dict(self) -> dict:
+        d = asdict(self)
+        return d
+
+
+@dataclass(frozen=True)
+class GpuCapability:
+    bdf: str
+    vendor: Observation
+    device: Observation
+    driver: Observation
+    controls: dict
+    sensors: dict
+    hwmon: Observation
+
+    def to_dict(self) -> dict:
+        return {
+            "bdf": self.bdf,
+            "vendor": self.vendor.to_dict(),
+            "device": self.device.to_dict(),
+            "driver": self.driver.to_dict(),
+            "controls": {k: v.to_dict() for k, v in self.controls.items()},
+            "sensors": {k: v.to_dict() for k, v in self.sensors.items()},
+            "hwmon": self.hwmon.to_dict(),
+        }
+
+
+@dataclass(frozen=True)
+class PowerProbe:
+    cpu: CpuProbe
+    gpus: tuple[GpuCapability, ...]
+
+    def to_dict(self) -> dict:
+        return {"cpu": self.cpu.to_dict(), "gpus": [g.to_dict() for g in self.gpus]}
+
+
+#: the controls an amdgpu card can carry; every one is optional per card
+CONTROLS = ("vddgfx_offset_mv", "sclk_max_mhz", "sclk_offset_mhz", "power_cap_w")
+
+
+def _no_control(reason: str, status: Status = "unsupported", unit: str = "") -> ControlCapability:
+    return ControlCapability(status, _unavailable(status, reason, None, unit or None), None, None, unit, reason)
+
+
+def _od_section(text: str, header: str) -> list[str] | None:
+    """Lines of the OverDrive table section that starts at ``header:`` and ends at the next header."""
+    lines = text.splitlines()
+    for i, line in enumerate(lines):
+        if line.strip() == f"{header}:":
+            out = []
+            for nxt in lines[i + 1:]:
+                if _re.match(r"^[A-Z_]+:\s*$", nxt.strip()) or not nxt.strip():
+                    break
+                out.append(nxt.strip())
+            return out
+    return None
+
+
+def _od_range(text: str, key: str, unit: str) -> tuple[int, int] | None:
+    """The device-reported ``key:   LOmhz  HImhz`` pair of the OD_RANGE section, or None."""
+    sec = _od_section(text, "OD_RANGE")
+    if not sec:
+        return None
+    for line in sec:
+        m = _re.match(rf"^{key}:\s*(-?\d+)\s*{unit}\s+(-?\d+)\s*{unit}\s*$", line, _re.IGNORECASE)
+        if m:
+            return int(m.group(1)), int(m.group(2))
+    return None
+
+
+def _writable(path: Path) -> bool:
+    """Preliminary only: the kernel can still refuse a write that permission bits allow."""
+    try:
+        return os.access(path, os.W_OK)
+    except OSError:
+        return False
+
+
+def _overdrive_controls(od_path: Path) -> dict:
+    obs = read_field(od_path)
+    if obs.status != "supported":
+        reason = "overdrive_absent" if obs.reason == "interface_absent" else (obs.reason or "unreadable")
+        return {k: _no_control(reason, obs.status, u) for k, u in
+                (("vddgfx_offset_mv", "mV"), ("sclk_max_mhz", "MHz"), ("sclk_offset_mhz", "MHz"))}
+    text = str(obs.value)
+    src = str(od_path)
+    out: dict = {}
+
+    # voltage offset: needs the OD_VDDGFX_OFFSET current value AND a VDDGFX_OFFSET range from OD_RANGE
+    sec = _od_section(text, "OD_VDDGFX_OFFSET")
+    rng = _od_range(text, "VDDGFX_OFFSET", "mv")
+    cur = _re.match(r"^(-?\d+)\s*mV$", sec[0], _re.IGNORECASE) if sec else None
+    if cur and rng:
+        out["vddgfx_offset_mv"] = ControlCapability(
+            "supported", Observation("supported", int(cur.group(1)), "mV", src), rng[0], rng[1], "mV")
+    else:
+        out["vddgfx_offset_mv"] = _no_control("range_not_reported" if cur else "control_not_recognised", unit="mV")
+
+    # maximum clock, absolute form (OD_SCLK rows 0/1) with an SCLK range
+    sec = _od_section(text, "OD_SCLK")
+    rng = _od_range(text, "SCLK", "mhz")
+    rows = {}
+    for line in sec or []:
+        m = _re.match(r"^(\d+):\s*(\d+)\s*Mhz$", line, _re.IGNORECASE)
+        if m:
+            rows[int(m.group(1))] = int(m.group(2))
+    if 1 in rows and 0 in rows and rng:
+        out["sclk_max_mhz"] = ControlCapability(
+            "supported", Observation("supported", rows[1], "MHz", src), rng[0], rng[1], "MHz")
+    else:
+        out["sclk_max_mhz"] = _no_control("control_not_recognised", unit="MHz")
+
+    # newer cards: a signed offset instead of a table
+    sec = _od_section(text, "OD_SCLK_OFFSET")
+    rng = _od_range(text, "SCLK_OFFSET", "mhz")
+    cur = _re.match(r"^(-?\d+)\s*Mhz$", sec[0], _re.IGNORECASE) if sec else None
+    if cur and rng:
+        out["sclk_offset_mhz"] = ControlCapability(
+            "supported", Observation("supported", int(cur.group(1)), "MHz", src), rng[0], rng[1], "MHz")
+    else:
+        out["sclk_offset_mhz"] = _no_control("control_not_recognised", unit="MHz")
+    for k, c in out.items():
+        if c.status == "supported" and not _writable(od_path):
+            out[k] = ControlCapability("not_permitted", c.current, c.minimum, c.maximum, c.unit, "not_writable")
+    return out
+
+
+def _pick_hwmon(dev: Path) -> tuple[Path | None, Observation]:
+    """The one amdgpu hwmon directory under the device; zero or several is not a controller we may write through."""
+    base = dev / "hwmon"
+    src = str(base)
+    try:
+        mons = sorted(p for p in base.iterdir() if p.name.startswith("hwmon"))
+    except FileNotFoundError:
+        return None, _unavailable("unsupported", "interface_absent", src)
+    except PermissionError:
+        return None, _unavailable("not_permitted", "access_denied", src)
+    except OSError:
+        return None, _unavailable("unreadable", "io_error", src)
+    named = [m for m in mons if read_field(m / "name").value == "amdgpu"]
+    if len(named) == 1:
+        return named[0], Observation("supported", named[0].name, source=str(named[0]))
+    if not named:
+        return None, _unavailable("unsupported", "no_matching_hwmon", src)
+    return None, _unavailable("unreadable", "ambiguous_hwmon", src)
+
+
+def _cap_control(hw: Path | None) -> ControlCapability:
+    if hw is None:
+        return _no_control("hwmon_unavailable", unit="microwatts")
+    cur = read_int(hw / "power1_cap", unit="microwatts")
+    lo = read_int(hw / "power1_cap_min", unit="microwatts")
+    hi = read_int(hw / "power1_cap_max", unit="microwatts")
+    for o in (cur, lo, hi):
+        if o.status != "supported":
+            return ControlCapability(o.status, cur, None, None, "microwatts", o.reason)
+    if lo.value > hi.value:
+        return ControlCapability("unreadable", cur, None, None, "microwatts", "range_inverted")
+    status: Status = "supported" if _writable(hw / "power1_cap") else "not_permitted"
+    return ControlCapability(status, cur, int(lo.value), int(hi.value), "microwatts",
+                             None if status == "supported" else "not_writable")
+
+
+def _gpu(dev: Path, bdf: str) -> GpuCapability:
+    drv_link = dev / "driver"
+    try:
+        driver = Observation("supported", os.path.basename(os.path.realpath(drv_link)), source=str(drv_link)) \
+            if drv_link.is_symlink() else _unavailable("unsupported", "no_driver_bound", str(drv_link))
+    except OSError:
+        driver = _unavailable("unreadable", "io_error", str(drv_link))
+    hw, hw_obs = _pick_hwmon(dev)
+    if driver.value == "amdgpu":
+        controls = _overdrive_controls(dev / "pp_od_clk_voltage")
+        controls["power_cap_w"] = _cap_control(hw)
+    else:
+        controls = {k: _no_control("no_backend_for_driver") for k in CONTROLS}
+    sensors = {}
+    if hw is not None:
+        for key, fname, unit in (("power_w_average", "power1_average", "microwatts"),
+                                 ("temp_c", "temp1_input", "millidegrees_c"),
+                                 ("energy_uj", "energy1_input", "microjoules")):
+            sensors[key] = read_int(hw / fname, unit=unit)
+    return GpuCapability(
+        bdf=bdf,
+        vendor=read_field(dev / "vendor"),
+        device=read_field(dev / "device"),
+        driver=driver,
+        controls=controls,
+        sensors=sensors,
+        hwmon=hw_obs,
+    )
+
+
+def probe_gpus(bdfs, *, sysfs_root: Path = Path("/"), platform_name: str | None = None) -> tuple[GpuCapability, ...]:
+    """Capabilities of exactly the named PCI devices; never raises, never writes."""
+    _, is_linux = _platform_is_linux(platform_name)
+    out = []
+    for bdf in bdfs:
+        dev = Path(sysfs_root) / "sys" / "bus" / "pci" / "devices" / bdf
+        if not is_linux:
+            gone = _unavailable("unsupported", "platform_not_linux", None)
+            out.append(GpuCapability(bdf, gone, gone, gone, {k: _no_control("platform_not_linux") for k in CONTROLS}, {}, gone))
+            continue
+        try:
+            if not dev.is_dir():
+                gone = _unavailable("unsupported", "device_absent", str(dev))
+                out.append(GpuCapability(bdf, gone, gone, gone, {k: _no_control("device_absent") for k in CONTROLS}, {}, gone))
+                continue
+            out.append(_gpu(dev, bdf))
+        except Exception as exc:  # noqa: BLE001
+            gone = _unavailable("unreadable", f"probe_error:{type(exc).__name__}", str(dev))
+            out.append(GpuCapability(bdf, gone, gone, gone, {k: _no_control("probe_error") for k in CONTROLS}, {}, gone))
+    return tuple(out)
+
+
+def probe_host(bdfs, *, sysfs_root: Path = Path("/"), platform_name: str | None = None) -> PowerProbe:
+    return PowerProbe(cpu=probe_cpu(sysfs_root=sysfs_root, platform_name=platform_name),
+                      gpus=probe_gpus(bdfs, sysfs_root=sysfs_root, platform_name=platform_name))
