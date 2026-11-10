@@ -173,3 +173,55 @@ Do not place credentials in side environment overrides. Use equal fixture,
 seed, warm-up, flush footprint, filters and runtime policy on both sides.
 An omitted flag uses rad-kbench's own default, so specify it to make a
 measurement fully pinned.
+
+
+## VTP06 — original-BF16 27B IQ6R calibration and holdout qualification
+
+Owner: VTP06 (experiment only; no production default or model changes).
+Inputs: the original 64-layer Qwen3.8-27B BF16 checkpoint, existing
+full 18-shard SHA-256 audit, tested isolated VTP11 host/device guard
+engine, and a manually source/licence-reviewed JSONL dataset.
+Outputs: an immutable corpus bundle, bounded layer-range receipts,
+packed F32 Hessians and a separate provisional KLD evaluation receipt
+under the configured BC_WORK_ROOT.
+
+Lab commands:
+  - xtx27_calib_corpus.py audit --input SOURCE.jsonl --mode candidate
+  - xtx27_calib_corpus.py prepare --input SOURCE.jsonl --checkpoint CHECKPOINT --out BUNDLE --mode candidate
+  - xtx27_calib_corpus.py verify --bundle BUNDLE --checkpoint CHECKPOINT
+  - xtx27_calib_ranges.py plan --bundle BUNDLE --checkpoint CHECKPOINT --audit FULLSHA_RECEIPT --build EXACT_ISOLATED_BUILD --reference MEASURED_LAYER0_HESSIANS --out CAMPAIGN --work-root WORK_ROOT --chunk-size 2 --tp 2 --devices 0,1 --host-pool-mib 16384
+  - xtx27_calib_ranges.py status --campaign CAMPAIGN --full-verify
+
+On a genuinely idle GPU, first acquire the exclusive gpu lease with a
+unique purpose beginning VTP06/, and configure only one planned range:
+  - agent-lease acquire gpu --ttl 2h --purpose VTP06/27b-candidate-00-02
+  - xtx27_calib_ranges.py run-range --campaign CAMPAIGN --lo 0 --hi 2 --attempt 1 --lease-purpose VTP06/27b-candidate-00-02
+  - xtx27_calib_ranges.py verify-range --campaign CAMPAIGN --lo 0 --hi 2 --attempt 1
+  - agent-lease release gpu
+
+Release the GPU lease even if validation fails (shell trap/finally).
+Never run a hidden multi-layer campaign loop or override another
+agent's lease. Retry with a new attempt number; existing outputs are
+immutable. The range runner checks free RAM, disk and exact model,
+tokenizer, corpus and binary identities; kills only the subprocess
+it owns on monitored failure. Full verification rehashes every
+Hessian, including lm_head.input on the 62:64 run.
+
+The original 2-document pilot lives at
+${BC_WORK_ROOT}/xtx27-prefill/VTP06-pilot-two-doc-20261111/
+and is NOT representative; no quality inference may use it.
+The existing measured layer-0 output is 0.75 GiB; 64 layers project
+to roughly 46.88 GiB before final head, safety margin or
+checkpoint-wide variability. Plan-time approval never replaces a
+fresh run-time RAM/GPU admission.
+
+Once a native IQ6R model actually exists and is separately qualified
+for kernel/ABI/dispatch, use Radiance's BF16 --kld-record --kld-top 128
+on the independent BUNDLE/holdout.jsonl and the candidate's --kld-ref
+--kld-out on the same holdout. Then call
+xtx27_iq6r_quality.py --bundle BUNDLE --checkpoint CHECKPOINT
+--reference-dir KLD_BF16_REFERENCE --report KLD_IQ6R_REPORT
+--candidate IQ6R_RAD_FILE --policy PROPOSED_POLICY_JSON --out REPORT.
+The reference is sparse top-128+tail, NOT full-vocabulary KL.
+The policy is explicitly not owner-approved and no emitted status
+alone can approve a production checkpoint. See VTP06 for acceptance.

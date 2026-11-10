@@ -255,3 +255,70 @@ BC_WORK_ROOT/xtx27-prefill/vtp11-gdn-kbench-20261110-v5-m512-strict/validation.j
 These are seeded GDN operands drawn using pre-existing W8A8 RAD2
 geometry. Warm convolution history, original-BF16 full-model logits
 and representative 64-layer Q6 quality are still unqualified.
+
+
+## 2026-11-11 — card-free calibration and IQ6R quality workflow
+
+**Implementation state: tools and a synthetic-only pilot are staged; no
+representative all-layer run, IQ6R conversion or quality approval.**
+This remains under VTP06 in the existing worktree. Production is unchanged.
+
+The card-free tools added in tools/lab/radiance are:
+
+- xtx27_calib_corpus.py: audit, prepare and verify. Requires source, licence,
+  category and split for each JSONL document; deduplicates text across
+  calibration and holdout, preserves native score_from on holdout only,
+  records exact tokenizer/corpus/source SHA-256 and refuses drift. Candidate
+  mode has structural minima of 200 calibration / 50 holdout documents,
+  three source identities and five categories. These counts are neither
+  a representative native-token dataset nor legal verification.
+- xtx27_calib_ranges.py: immutable 64-layer plan, explicit 1–4 layer runs,
+  unique attempt numbers, per-range verification, status --full-verify.
+  Binds the exact previously fingerprinted original BF16 checkpoint,
+  experimental source/build binary, tokenizer and corpus. A run requires
+  its own exclusive GPU lease, no competing KFD PIDs and fresh memory/disk
+  admission; its monitor stops only its own process if RAM falls or the
+  lease disappears. It never loops over 64 layers automatically.
+  The verifier streams entire F32 packed-upper Hessians and rejects
+  nonfinite values, missing/overlapping layers, incorrect row counts,
+  preemption and unexpected files. Exactly four declared inputs per
+  layer are required, with distinct full-attention/GDN names, plus
+  lm_head.input in the last range ending at 64.
+- xtx27_iq6r_quality.py: offline validation of native Radiance's BF16
+  KLD reference and IQ6R report with the .rows F32 position records,
+  independent frozen holdout, native token offsets/sources and
+  proposed numerical thresholds. Checks KL mean/p99/p99.9, top1,
+  perplexity ratio and source-level coverage. Uses sparse top-128
+  plus tail, which is a lower bound on true full-vocabulary KL.
+  The companion policy JSON is explicitly PROPOSED_NOT_APPROVED.
+  Even if metrics pass, the report never self-promotes to quality
+  or production approval.
+
+The tests are in tools/tests/lab/test_xtx27_calib_pipeline.py and
+test_xtx27_iq6r_quality.py and are card-free; negative cases check
+source/holdout leakage, missing model inputs and final head, memory
+and lease fail-closed behavior, file checksum drift and KLD provenance.
+
+**Real pilot:** the earlier successful two-document 185-token smoke
+corpus was frozen under
+${BC_WORK_ROOT}/xtx27-prefill/VTP06-pilot-two-doc-20261111/.
+It has zero holdout documents, 32 planned two-layer ranges and
+zero newly completed calibration layers. The isolated VTP11
+successful engine build and BF16 full-shard fingerprint are pinned.
+Observed layer-0 Hessians total about 0.75 GiB, extrapolated to
+46.88 GiB across 64 layers (EXCLUDES final head and variation);
+about 695 GiB filesystem headroom was observed. Host free memory
+has varied widely and swap is almost exhausted during concurrent
+measurements, so every run requires fresh admission. Another
+BigCherry session held the exclusive GPU lease; no GPU run was
+started or interfered with.
+
+**Remaining gates:** source/licence-reviewed representative dataset,
+native tokenizer token counts and token-length histogram, sufficient
+and genuinely disjoint held-out eval, one fresh 0:2 or 2:4
+candidate-range under an owned GPU lease, remaining 64-layer
+resumable validated Hessians, native IQ6R conversion and encoding
+checks, original BF16-vs-IQ6R KLD/top1/PPL and serving/KV/p95
+quality. The two-document pilot must never be fed to a production
+converter to claim calibrated quality. See tools/lab/radiance/README.md
+for explicit commands and restart rules.

@@ -1,0 +1,14 @@
+{
+  "schema": "VTP06_KLD_POLICY_PROPOSAL_V1",
+  "authority": "PROPOSED_NOT_APPROVED",
+  "rationale": "Conservative starting gates for held-out Qwen3.8-27B IQ6R; not experimentally calibrated or owner-approved. Radiance KLD is sparse top-128 plus tail, not exact full-vocabulary KL.",
+  "min_positions": 50000,
+  "min_source_positions": 1000,
+  "min_top1": 0.98,
+  "min_source_top1": 0.95,
+  "max_mean_kld": 0.01,
+  "max_p99_kld": 0.08,
+  "max_p999_kld": 0.25,
+  "max_source_mean_kld": 0.025,
+  "max_ppl_ratio": 1.02
+}
