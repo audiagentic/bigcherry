@@ -62,3 +62,8 @@ POWER REVIEW 2026-11-10 (gateway, verified against the code): DELIVERED: bigcher
 
 - 2026-10-27T10:13:52.881547+00:00 (created-by): Created by agent
 - 2026-11-10T13:12:52.379299+00:00 (updated-by): Updated: section:notes
+
+
+## Update 2026-11-10 (GPT power manifest review, req_main_eb983900e21b)
+
+Remaining work split: PWR08 (named profiles in the manifest, v2) and PWR09 (Python transactional controller, launcher adapter, strict failure). The environment-to-hardware path in gpu_power/power_cmds applies every inventory card one at a time with no whole-layout preflight and the launcher continues after a failed apply: both are replaced by PWR09, not extended.

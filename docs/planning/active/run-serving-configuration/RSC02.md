@@ -79,3 +79,8 @@ CORRECTION 2026-11-04: the earlier note that MEN14, MEN18 were absorbed into thi
 - 2026-11-02T03:54:04.045012+00:00 (updated-by): Updated: section:ledger-events
 - 2026-11-04T03:47:55.795874+00:00 (updated-by): Updated: section:notes
 - 2026-11-04T04:45:47.730785+00:00 (updated-by): Updated: section:notes
+
+
+## Update 2026-11-10 (GPT power manifest review, req_main_eb983900e21b)
+
+Acceptance gate added: the Python power transaction (PWR09) and its receipt lifecycle are part of supervisor acceptance (apply before the first measuring or serving process, restore after verified shutdown). bc-serve starts no processes today and the shell launcher remains the supervisor (it also does readiness waits, the canary, MTP replay verification, cleanup); recommended: a thin Python bigcherry serve calling the C++ resolver/validator, not a second resolver. The launcher stays until RSC02 reaches equivalence (RSC04).

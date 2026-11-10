@@ -59,3 +59,8 @@ Plan: gateway request req_main_8ad977841284 (power slice 1). Brief: runs/rad49-g
 ## Change Log
 
 - 2026-11-10T13:12:56.453273+00:00 (created-by): Created by agent
+
+
+## Update 2026-11-10 (GPT power manifest review, req_main_eb983900e21b)
+
+Scope narrowed to portability and observability: CPU probe (PR #810), GPU capability probe, receipt types. Manifest-owned profiles moved to PWR08 (bigcherry/v2) and the transactional controller to PWR09; no manifest field is added by this item.
