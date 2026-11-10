@@ -32,6 +32,9 @@ struct WorkerConfig {
      * when an invariant the policy relies on does not hold. */
     bool configure_placement(const bc::serving::HelperSettings& s, std::string* err) {
         if (s.live_policy) {
+            if (!r3::policy::live_policy_arrangement_supported(
+                    s.helper.engine_ranks, s.handoff.placement, s.shares, err))
+                return false;
             std::vector<uint32_t> shares(s.shares.begin(), s.shares.end());
             if (!policy.from_manifest(*s.live_policy, shares, err)) return false;
         }

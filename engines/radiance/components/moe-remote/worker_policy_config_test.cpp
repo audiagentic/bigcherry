@@ -1,5 +1,6 @@
 #include "worker_policy_config.h"
 #include "worker_policy_driver.h"
+#include "worker_config.h"
 #include <cstdio>
 #include "worker_epoch.h"
 #include <cstdlib>
@@ -99,5 +100,55 @@ int main() {
         p.protected_layers={-1};
         check(!probe.from_manifest(p,shares,&err),"negative protected layer refused");
     }
+    // RHP20: even a lab explicit policy cannot bypass the resolver's
+    // topology refusal and make the last XTX or an engine rank a tail.
+    using r3::policy::live_policy_arrangement_supported;
+    check(live_policy_arrangement_supported(1, "tail", {1,1,0}, &err),
+          "gfx1100/gfx1030 head-head-tail arrangement is eligible to calibrate");
+    check(live_policy_arrangement_supported(1, "tail", {1,0}, &err),
+          "one head and one tail are eligible to calibrate");
+    for (const auto& bad: std::vector<std::pair<std::string,std::vector<uint64_t>>>{
+             {"roundrobin",{1,1}}, {"tail",{1,1}}, {"tail",{0,0}},
+             {"tail",{1}}, {"tail",{0,0,0}}, {"head",{1,1,0}}}) {
+        err.clear();
+        check(!live_policy_arrangement_supported(1,bad.first,bad.second,&err) && !err.empty(),
+              "explicit live policy must not make head-only/non-tail topology live");
+    }
+    err.clear();
+    check(!live_policy_arrangement_supported(2,"tail",{1,0},&err) &&
+          err.find("multi-rank")!=std::string::npos,
+          "TP policy remains fail-closed until owner-generation acceptance");
+    err.clear();
+    check(!live_policy_arrangement_supported(1,"tail",{1000001,0},&err),
+          "invalid high share refused");
+    bc::serving::HelperSettings manifest;
+    manifest.helper.count=2;
+    manifest.helper.index=0;
+    manifest.helper.engine_ranks=1;
+    manifest.handoff.placement="tail";
+    manifest.shares={1,0};
+    manifest.live_policy=valid();
+    WorkerConfig actual(manifest);
+    check(actual.configure_placement(manifest,&err) && actual.policy.enabled,
+          "production helper configuration accepts exactly a validated tail policy");
+    manifest.handoff.placement="roundrobin";
+    WorkerConfig head_only(manifest);
+    err.clear();
+    check(!head_only.configure_placement(manifest,&err) &&
+          err.find("tail strategy")!=std::string::npos &&
+          !head_only.policy.enabled,
+          "helper startup with explicit policy refuses head-only pre-GPU");
+    manifest.handoff.placement="tail";
+    manifest.helper.engine_ranks=2;
+    WorkerConfig tp(manifest);
+    err.clear();
+    check(!tp.configure_placement(manifest,&err) &&
+          err.find("TP/multi-rank")!=std::string::npos &&
+          !tp.policy.enabled,
+          "helper startup with explicit policy refuses unverified TP pre-GPU");
+    manifest.live_policy.reset();
+    check(tp.configure_placement(manifest,&err) && !tp.policy.enabled,
+          "unsupported topology still supports static/off policy");
+
     puts("policy config: typed controls and invariants passed");
 }

@@ -151,6 +151,48 @@ static void test_gates_coverage_dwell() {
     in.devices.pop_back(); in.allowed.assign(6,{1}); in.current={0,0,0,0,0,0}; in.devices={{100}};
     check(!propose(in,{1}).valid, "a single helper has no tail to plan");
 }
+// RHP20 fake-device matrix: gfx1100 head slots and gfx1030 tail slots
+// consume different legal encodings. The physical receiver remains the
+// authority, but the detached CPU planner must NEVER propose an excluded
+// destination even under full-budget chain pressure or mixed expert formats.
+static void test_cross_arch_eligibility_matrix() {
+    Input in;
+    in.bytes.assign(9,10);
+    in.current={0,0,0,1,1,1,2,2,-1};
+    in.heat={5,4,0,3,2,0,90,80,200};
+    in.devices={{30},{30},{20}}; // gfx1100, gfx1100, gfx1030
+    in.allowed.assign(9,{1,1,1});
+    // fp8_e4m3_block: gfx1100 can execute, gfx1030 cannot.
+    for (size_t i: {size_t(0),size_t(3)})
+        in.allowed[i][2]=0;
+    // Engine-owned expert is not part of the helper transaction, even if hot.
+    in.allowed[8]={0,0,0};
+    in.max_moves=8;
+    in.max_moved_bytes=1ULL<<20;
+    in.now_ns=2'000'000'000'000ULL;
+    in.margin=0.01;
+    const std::vector<uint32_t> shares{1,1,0};
+    const Plan p=propose(in,shares);
+    check(p.valid && delta_matches(p,in.current), "three helper owner map remains valid");
+    check(p.owner[8]==-1, "engine-resident ownership is immutable");
+    for (const Move& m:p.delta) {
+        check(m.from>=0 && m.to>=0 && in.allowed[m.expert][size_t(m.to)]==1,
+              "cross-arch move only to explicitly compatible receiver");
+    }
+    check(p.owner[0]!=2 && p.owner[3]!=2,
+          "gfx1030 never receives unsupported fp8 expert");
+    for (size_t i=0;i<3;++i)
+        check(p.used[i]<=in.devices[i].budget, "device budget not exceeded");
+    // Fail closed if an incumbent is not supported by its own GPU ISA.
+    in.allowed[6][2]=0;
+    check(!propose(in,shares).valid, "invalid gfx1030 incumbent refuses plan");
+    // No live helper movement when every expert is engine-resident.
+    in.current.assign(9,-1);
+    in.allowed.assign(9,{0,0,0});
+    const Plan engine_only=propose(in,shares);
+    check(engine_only.valid && engine_only.no_change && engine_only.delta.empty(),
+          "engine-local/zero helper owners never create a synthetic migration");
+}
 static void test_zero_owner_and_static() {
     const std::vector<int64_t> b(12,10);
     uint32_t shares[]={1,0,1};uint64_t budgets[]={40,0,20};
@@ -164,5 +206,6 @@ int main() {
     test_chain_across_three_helpers();
     test_gates_coverage_dwell();
     test_zero_owner_and_static();
+    test_cross_arch_eligibility_matrix();
     std::puts("r3_worker_heat_test: ok");
 }
