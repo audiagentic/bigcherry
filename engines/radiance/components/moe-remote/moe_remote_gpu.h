@@ -19,9 +19,12 @@
 #include "rad_abi_layout.h"
 
 namespace r3_moe_gpu {
-/* The quad-DPP rows kernel with the replay-selected W4 decoder (quad_perm_, RAD49): a statement, usable in an else-if chain. */
-#define R3_QUADDPP_LAUNCH(T, RB, ...) do { if (quad_perm_) hipLaunchKernelGGL((lane_moe_rows_w4_quaddpp<T, RB, true>), __VA_ARGS__); \
-    else hipLaunchKernelGGL((lane_moe_rows_w4_quaddpp<T, RB, false>), __VA_ARGS__); } while (0)
+/* The quad-DPP rows kernel with the replay-selected bit-identical form (quad_opt_, RAD49): a statement for an else-if chain. */
+#define R3_QUADDPP_LAUNCH(T, RB, ...) do { switch (quad_opt_) { \
+    case 1: hipLaunchKernelGGL((lane_moe_rows_w4_quaddpp<T, RB, 1u>), __VA_ARGS__); break; \
+    case 2: hipLaunchKernelGGL((lane_moe_rows_w4_quaddpp<T, RB, 2u>), __VA_ARGS__); break; \
+    case 3: hipLaunchKernelGGL((lane_moe_rows_w4_quaddpp<T, RB, 3u>), __VA_ARGS__); break; \
+    default: hipLaunchKernelGGL((lane_moe_rows_w4_quaddpp<T, RB, 0u>), __VA_ARGS__); } } while (0)
 
 class Runner : public r3::worker_moves::Operations {
 public:
@@ -115,13 +118,15 @@ public:
     // switches and always uses the measured, stage-specific accurate policy.
     bool set_rad46_sweep_variant(const char* name) {
         if (!name) return false;
-        quad_perm_ = false;
+        quad_opt_ = 0;
         if (std::strcmp(name, "stock") == 0) rad46_sweep_ = Rad46Sweep::Stock;
         else if (std::strcmp(name, "output_lane") == 0) rad46_sweep_ = Rad46Sweep::OutputLane;
         else if (std::strcmp(name, "quad") == 0) rad46_sweep_ = Rad46Sweep::Quad;
         else if (std::strcmp(name, "quad_v2") == 0) rad46_sweep_ = Rad46Sweep::QuadV2;
         else if (std::strcmp(name, "production") == 0) rad46_sweep_ = Rad46Sweep::Production;
-        else if (std::strcmp(name, "quad_perm") == 0) { rad46_sweep_ = Rad46Sweep::Production; quad_perm_ = true; return true; }
+        else if (std::strcmp(name, "quad_perm") == 0) { rad46_sweep_ = Rad46Sweep::Production; quad_opt_ = 1; }
+        else if (std::strcmp(name, "quad_dppadd") == 0) { rad46_sweep_ = Rad46Sweep::Production; quad_opt_ = 2; }
+        else if (std::strcmp(name, "quad_perm_dppadd") == 0) { rad46_sweep_ = Rad46Sweep::Production; quad_opt_ = 3; }
         else if (std::strcmp(name, "rowlane16") == 0) rad46_sweep_ = Rad46Sweep::RowLane16;
         else if (std::strcmp(name, "rowlane8") == 0) rad46_sweep_ = Rad46Sweep::RowLane8;
         else return false;
@@ -1243,7 +1248,7 @@ private:
     int gemv_wide_env_ = -1;    /* R3_MOE_WORKER_GEMV_WIDE as set: -1 unset, 0 off, 1 on */
     bool gemv_wide_ = false;    /* R3_MOE_WORKER_GEMV_WIDE: sixteen-byte FP8 loads in the decode GEMV (RAD14) */
     Rad46Sweep rad46_sweep_ = Rad46Sweep::Production; // replay-sweep overrides only between runs
-    bool quad_perm_ = false;   // replay-sweep "quad_perm": the production forms with the register W4 decoder (RAD49)
+    uint32_t quad_opt_ = 0;   // replay-sweep quad_perm / quad_dppadd / quad_perm_dppadd: OPT bits of the quad kernel (RAD49)
     bool rows_ = false;         /* R3_MOE_WORKER_ROWS: few-rows-a-expert kernel on the large lane (RAD06) */
     uint32_t chunk_helper_ = UINT32_MAX;   /* R3_MOE_WORKER_COMBINE: this helper's index for the chunk words (RAD42) */
     bool trace_ = r3_serving::settings().trace > 0;   /* RAD40 stage stamps */
