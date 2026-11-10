@@ -221,7 +221,7 @@ plan_manifest_prepare && printf 'MANIFEST:%s\\n' "$PLAN_MANIFEST"
         self.assertGreaterEqual(len(sets[0]), 10)
         self.assertIn('layout.name="flashnext-4gpu"', sets[0])
         self.assertIn("memory.host_pool_mib=9216", sets[0])
-        self.assertIn("handoff.histogram_period_s=60", sets[0])
+        self.assertIn("handoff.histogram_period_s=1", sets[0])
         self.assertIn('handoff.shm="/r3-moe-helper"', sets[0])
 
     def test_the_floor_is_never_a_launcher_literal(self) -> None:
