@@ -190,3 +190,32 @@ Upstream warns each full dense 27B layer costs ~786 MB of host Gram
 accumulator, so collect limited adjacent layer ranges and ensure the
 final layer range captures head input. Do not run calibration until a
 BF16 model-serving configuration and GPU lease are available.
+
+## Fully fingerprinted pre-existing W8A8 containers
+
+Both existing RAD2 files were streamed end to end for SHA-256.
+These are **whole-file** hashes (not earlier 8-MiB header hashes):
+
+- `qwen3.8-27b-w8a8.rad` (29,524,840,448 bytes):
+  `6bbf6e4a3dbf5634babdd5659b27336a11c372cdfa641802f2d451fb3233d619`.
+- `qwen3.8-27b-w8a8-df2.rad` (31,180,201,984 bytes):
+  `5a9af2dfaf3150e59cfc0001f8fe4f33549b201c6be19700c09c9e9209cc2701`.
+
+Pinned `rad-info -v` reports the DFlash2 container encoding
+breakdown (display-rounded, not VRAM allocations):
+
+| Component | RAD2 entries | Approx GiB |
+| --- | ---: | ---: |
+| Fused FFN gate/up and down | 128 | 16.187 |
+| Embedding and output head | 2 | 3.570 |
+| Other text, attention and GDN | 561 | 6.873 |
+| DFlash2 drafter | 77 | 1.542 |
+| Vision tower | 333 | 0.858 |
+| **Total** | **1101** | **29.029** |
+
+Only the FFN class corresponds directly to VTP05 row-specific GEMM
+split experiments; the other operators can have different rank
+legality, replication and allocator costs. The Q8 file is exact-id
+fingerprinted, but that alone does not prove it was converted from
+the new fully hashed source (the RAD2 contains source name, not
+source full-shard digests); compare inference logits to original BF16.
