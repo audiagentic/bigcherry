@@ -1,0 +1,18 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261110_135643_gpu-power-settings-can-now-be_7267",
+  "files": [
+    "tools/bigcherry/hardware/power_transaction.py",
+    "tools/bigcherry/hardware/power_receipt.py",
+    "tools/tests/hardware/test_power_transaction.py"
+  ],
+  "plan-item-ids": [
+    "PWR09",
+    "PWR07",
+    "RSC11"
+  ],
+  "status": "unreleased",
+  "technical-summary": "PWR09 slice 1: PowerTransaction (preflight against fresh probes, durable journal before first write, BDF-ordered apply with exact readback, reverse rollback, restore gated on process exit, journal recovery) and power_receipt (atomic JSON persistence, manifest digest binding); fault-injection tests on a fake amdgpu model.",
+  "timestamp-utc": "2026-11-10T13:56:43.039174Z",
+  "user-summary-candidate": "GPU power settings can now be applied as a safe all-or-nothing transaction with a crash-recovery journal."
+}
