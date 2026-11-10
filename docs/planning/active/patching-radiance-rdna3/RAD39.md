@@ -55,6 +55,10 @@ The h2 control on bf16, f32 and fp16 builds all fall inside the band; a delibera
 
 Found while bisecting the f32-partials h2 shift (RAD23).
 
+
+
+2026-11-10 evidence for the noise band (runs/rad49-sens-kl, rad49-tail4g-kl, -rep, rad49-2xtx-kl): the KL runs are deterministic (repeat bit-identical), but changing only the R9700's step size (64 -> 128 tokens) moves p99.9 2.07 -> 2.35 (+0.29 of the +0.5 allowance) and tips doc-00 position 117 from 0.14 to 5.71. flashnext-2xtx p99.9 +0.48 (pass), flashnext-4gpu +0.94 (fail), 3.5 GiB tail +0.59 (fail); mean/median/top-1/ppl pass everywhere. A valid-path noise floor (same model, other batching) should be part of the gate, and known hypersensitive positions reported separately.
+
 ## Change Log
 
 - 2026-11-01T07:17:29.719220+00:00 (created-by): Created by agent
@@ -64,4 +68,4 @@ Found while bisecting the f32-partials h2 shift (RAD23).
 - Bisect: the combine-n build reproduces h2 exactly (0.05518 / 1.6424 / 89.745%, `rad23-kld-combn-11010650`), so the f32-partials build alone moved it; fp16 row partials then gave 0.0651 / 2.019 / 88.70% (`rad23-kld-f16-11010708`). All three are one model under different rounding.
 - The gfx1030 dot2 kernel (#486) moved the 14 GiB tail arm from 0.0587 / 2.22 / 89.39% to 0.0660 / 2.28 / 88.93%, failing p99.9 against h2 by the same margin the f32 kernel did (+0.63 against +0.57).
 - At 2048-token steps (so the helper-row combine engages, `rad23-kld-comb-11011010`) the h2 control itself is 0.0699 / 2.545 / 88.92%, against 0.0552 at 64-token steps: chunking alone moves the control by more than the gate's mean limit.
-
+- 2026-11-10T00:11:18.393050+00:00 (updated-by): Updated: section:notes

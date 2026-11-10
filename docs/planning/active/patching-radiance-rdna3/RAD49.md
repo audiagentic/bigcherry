@@ -56,6 +56,10 @@ Parity harness (tools/lab/radiance/flashnext-parity.sh) against flashnext-4gpu b
 
 No P2P (host-memory transport only). No hand-picked budgets: derive from runtime VRAM, expert sizes, heat. Kernel changes only in libr3/moe-remote or managed patches. MIT attribution for any Strata code.
 
+
+
+2026-11-09/10 outcome (findings: runs/rad49-findings-20261109.md): TP2 on the two XTX loses to the R9700-engine layouts on every metric. flashnext-tp2xtx-r9700 vs flashnext-2xtx (A B A B, runs/rad49-3card-split): prefill ~1,945 vs ~3,100 tok/s, decode 6 streams ~72 vs ~46 ms/step, context 6x65k vs 8x262k. TP2 prefill cost: host-memory all-reduce ~22% + helper waits ~15% (runs/rad49-tp-prefill-prof). Best layouts: flashnext-4gpu overall, flashnext-2xtx on three cards. Current main equals pre-RAD49 main on flashnext-4gpu within ~1% (runs/rad49-4gpu-regress). Follow-ons split out: tail kernel (tuning-radiance-tail-kernel TK01-05), host link (run-radiance-host-link HL01-05), speed-aware placement (RHP17).
+
 ## Change Log
 
 - 2026-11-08T11:39:12.700554+00:00 (created-by): Created by agent
@@ -81,3 +85,4 @@ KL gate pending; w4nl needs a two-pass integer form), (2) re-enable the fused ga
 (3) per-layer consumer / combine choice from measured link rates (calibration at the measuring start, then live from
 wait counters carried in the existing heat snapshot - one telemetry path), (4) hc mixing matrices int8 in the recipe.
 The RX 6900 XT tail does not pay behind TP2 yet (its expert compute ~3.9 ms a request).
+- 2026-11-10T00:11:22.301887+00:00 (updated-by): Updated: section:notes

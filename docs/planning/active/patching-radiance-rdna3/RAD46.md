@@ -78,12 +78,15 @@ Interim production choice is the owner's: keep the tail layout (more expert capa
 
 Per position (the .rows files of each arm): (1) position 117 is a persistent defect: tail minus control is +5.34 on v1.16.0 and +5.55 on v1.17.0, so it is not from the bump and it is the residual tail error this item exists for; the runs are deterministic, so it can be traced to a token and the experts the 6900 XT served. (2) The gate flip between builds is a cluster of numerically unstable positions (about 6180 to 6230 and 6504) whose KLD moves by 2 to 5 between builds in BOTH arms (position 6504: control 0.33 to 2.61; 6182: control 4.26 to 2.52), so the p99.9 of 8,240 positions rests on about eight chaotic positions and flips with any small engine change; the bulk (mean, median, p99, top-1, perplexity) is equal across builds. Not a bump regression on this evidence. Open: trace position 117; propose a gate that does not rest on a handful of positions (more corpora, or positions stable in the control), which is the owner's call because it changes a threshold.
 
+
+
+2026-11-10 (RAD49 session, runs/rad49-sens-kl, rad49-shadow-kl, rad49-maskonly-kl): position 117 is NOT a tail/helper defect. The R9700 alone with 128-token steps instead of 64 also gives position 117 KL 5.71 (control 0.14); every helper layout and every helper kernel variant lands on the same ~5.7. Diagnostic-build shadow compare shows helper per-expert rows equal the engine's to ~0.23% rel L2 on every layer; mask-only 1 (engine rows merged) is exact, mask-only 2 (helper per-token rows) spikes. It is a hypersensitive token: any bf16-level difference tips it. The p99.9 gate partly measures distance from the reference's exact rounding (see RAD39). Tail speed work moves to tuning-radiance-tail-kernel (TK01-TK05).
+
 ## Change Log
 
 - 2026-11-03T02:29:34.417938+00:00 (created-by): Created by agent
 
 ## Ledger-events
-
 
 - chg_20261103_022951_measured-that-offloading-exper_7122
 - 2026-11-03T02:29:58.843319+00:00 (updated-by): Updated: section:ledger-events
@@ -91,3 +94,4 @@ Per position (the .rows files of each arm): (1) position 117 is a persistent def
 - 2026-11-04T06:57:23.943415+00:00 (updated-by): Updated: section:notes
 - chg_20261104_071139_the-rx-6900-xt-expert-helper-n_8892
 - 2026-11-04T07:11:43.593853+00:00 (updated-by): Updated: section:ledger-events
+- 2026-11-10T00:11:14.423620+00:00 (updated-by): Updated: section:notes
