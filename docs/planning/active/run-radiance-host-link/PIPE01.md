@@ -56,6 +56,9 @@ Tail layer call >=0.3 ms faster in replay, bit-identical output, cold 27k TTFT i
 
 Source: GPT review (2026-11-10) and runs/rad49-gpt-review/followups/PIPE01-notes.md. Expert-chunking is not used: a token's tail contributions span experts, so result pushes cannot start per expert chunk without changing the summation order. Host memory only (no P2P).
 
+UPDATE 2026-11-10: deprioritised for flashnext-4gpu. With the live policy warmed the tail finishes its cold layer call in 5.5 ms, under the engine's 6.8 ms, so overlapping its 3.5 ms of link time with the GEMM (bounded at ~0.65 ms net) would not shorten the step. Revisit if a layout or workload leaves the tail the critical path with the policy on. HL01's duplex/copy-engine result stands (copy engines carry both directions with no slowdown of concurrent compute; kernel transfers add ~0.5 ms).
+
 ## Change Log
 
 - 2026-11-10T02:09:11.799110+00:00 (created-by): Created by agent
+- 2026-11-10T10:37:15.238254+00:00 (updated-by): Updated: section:notes

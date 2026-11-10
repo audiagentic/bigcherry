@@ -13,8 +13,13 @@ running system and the checks to make before you trust a measurement.
 - **Live placement policy** (RHP slices H-J, #597): the target map is the static placer's plan for the live heat.
 - **Policy settings derived from calibration** (RHP16, #666 #693 #708): margin, minimum samples, cadence, move cap, residency and the effect
   gate come from measured quantities, never from literals. The policy is **off until the layout is calibrated**.
-- **Measured effect** (RHP16.md, runs rhp16-prod-ab2 and rhp16-ctx-ab, flashnext-4gpu, policy on versus off after the derived warm-up):
-  filler TTFT -33%, 8-session fill TTFT -31%, decode ms/step and long-context prefill unchanged.
+- **Measured effect** (RHP16.md; flashnext-4gpu, policy on versus off after the derived warm-up). Latest, on a freshly calibrated record
+  (2026-11-10, ABBA, arm state checked from each manifest): cold 27k TTFT 7.4 s against 10.9 s (-32%); document prefill flat; 6-stream decode
+  flat to +13%; 1-stream decode flat on average over six prompts (single prompts move -20% to +24% through speculative-decoding acceptance:
+  moved experts change the greedy text). Per cold layer call the tail carries 1,258 routes instead of 2,874 and is no longer the straggler
+  (5.5 ms against the engine's 6.8 ms). After a documents-only period the first cold prompt costs the static time and the policy is at
+  steady state by the 3rd-4th prompt (~30-40 s). Quality (forced-churn KL): mean +0.008, p99 +0.23 (over the 0.2 limit: the known tail
+  accuracy effect), top-1 -0.6 points.
 
 Not built yet: the device-speed and phase-aware solver (RHP17, RHP04 stage 3), the single allocator (RHP13), request/time reevaluation (RHP07).
 
@@ -50,6 +55,16 @@ PY
 An A/B that moves the store aside (to measure "policy off") must say so in its result. Runs that did this by habit measured the static
 start-up layout, not production.
 
+## Measuring policy on versus off
+
+Both arms get the same warm-up traffic (derived: `(min_samples + 1) * cadence + min_residency`). The off arm moves the calibration store
+aside; each arm's manifest is read and the arm is marked INVALID if its state differs from its label (runs/policy-onoff-ab/run.sh is the
+template). Report engine decode tok/s, client aggregate and ms/step separately; judge 1-stream decode over several prompts, not one.
+An instrumented run (`--experiment`) needs `--live-policy FILE`. The launcher prints `live placement: ON (...)` or `OFF -- reason`
+at start; a missing record, a layout the planner is not built for (heads followed by exactly one tail), and the lab profile are all
+named there. The default heat period is 1 s (a 60 s period starved the policy). Servers the launcher starts inside a lease are still listed
+by `agent-lease status` as outside any lease (they are detached).
+
 ## How to restore it after a key change
 
 Re-calibrate the layout (lab only, takes the `gpu` lease): `launch-flashnext-best.sh start --build DIR --port N --calibrate
@@ -59,8 +74,8 @@ record atomically into the store and a plain start then carries the derived `liv
 
 ## When measuring
 
-- Warm the policy first: the derived warm-up is `(min_samples + 1) * cadence` of mixed filler and document traffic (about 451 s for
-  flashnext-4gpu); both arms of an on/off A/B get the same warm-up (RHP16.md).
+- Warm the policy first: the derived warm-up is `(min_samples + 1) * cadence` of mixed filler and document traffic (about 451 s with
+  the 2026-11-07 settings, 18 s with the 2026-11-10 ones); both arms of an on/off A/B get the same warm-up (RHP16.md).
 - A transaction takes 1.5-2.0 s (p50/p95) and overlaps a decode step; two on-arm rounds in the long-context run were slowed by one.
 - Cold-prompt tail load measured with the policy off (HL04: tail 11.36 ms and 2,874 routes against XTX 3.5-3.7 ms per layer call) is the
   static layout; re-measure policy-on before using it as the tail's cost.
