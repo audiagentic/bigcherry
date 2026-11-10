@@ -1,0 +1,27 @@
+# PWR08: named intent, never a command to write power controls.
+# All profiles default to observe. Explicit operator apply plus per-device
+# qualification is required by the resolver and PowerTransaction.
+# No physical BDF or host-specific calibration may be committed here.
+[profiles.stock]
+default_mode = "observe"
+
+[profiles.efficient]
+default_mode = "observe"
+
+[profiles.quiet]
+default_mode = "observe"
+
+[profiles.performance]
+default_mode = "observe"
+
+[profiles.xtx-soak-candidate]
+default_mode = "observe"
+
+# Only locally measured extended test: two XTX helper devices, not all gfx1100.
+# This is a CANDIDATE RULE, never an automatic write. The S10 resolver must
+# require evidence for the exact card/build/driver in an explicit apply plan.
+[[profiles.xtx-soak-candidate.rules]]
+role = "helper*"
+arch = "gfx1100"
+evidence = "${BC_WORK_ROOT}/runs/pwr01-baseline-10272216/summary.txt"
+settings = { vddgfx_offset_mv = -125 }
