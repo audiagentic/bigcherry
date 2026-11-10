@@ -125,6 +125,28 @@ SITE
   fi
 }
 
+# plan_live_placement_report: one line, from the manifest this start will use, saying whether the live expert placement policy is on and why not.
+# (bc-serve's own "live policy calibration skipped" message goes to plan-check.err, which a successful start never shows.)
+plan_live_placement_report() {
+  [ "${LAYOUT_HELPER_COUNT:-1}" -gt 0 ] || return 0
+  python3 - "$PLAN_MANIFEST" <<'PY' >&2
+import json, sys
+m = json.load(open(sys.argv[1]))
+placement = m["spec"]["handoff"]["placement"]
+if "live_policy" in placement:
+    p = placement["live_policy"]
+    print("live placement: ON (cadence %.1f s, margin %d ppm, min samples %d, effect gate %s, heat period %s s)" % (
+        p["cadence_ns"] / 1e9, p["margin_ppm"], p["min_samples"], p["effect_gate"],
+        m["spec"]["handoff"]["telemetry"]["period_s"]))
+else:
+    why = m.get("provenance", {}).get("/spec/handoff/placement", {}).get("source", "")
+    if not why.startswith("live policy disabled: "):
+        why = ("live policy disabled: not derived for this start (the lab service profile of an --experiment start derives none; "
+               "pass --live-policy FILE, or run without --experiment)")
+    print("live placement: OFF -- " + why[len("live policy disabled: "):] + " (docs/reference/engines/radiance/LIVE_PLACEMENT.md)")
+PY
+}
+
 # plan_manifest_prepare: sets PLAN_MANIFEST to the measured manifest this start uses. Returns non-zero (after saying why) if it
 # cannot be made; the launcher then does not start the engine.
 plan_manifest_prepare() {
@@ -143,6 +165,7 @@ plan_manifest_prepare() {
     cat "$RUN/plan-check.err" >&2
     return 1
   fi
+  plan_live_placement_report
 }
 
 # plan_check_measure: no measured plan exists for this configuration. Say so once, measure it with a start that brings the
