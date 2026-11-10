@@ -1,0 +1,14 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261110_025842_long-prompts-start-answering-s_5984",
+  "files": [
+    "engines/radiance/components/moe-remote/moe_lane_gemm.h"
+  ],
+  "plan-item-ids": [
+    "TK04"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Tail quad rows kernel (lane_moe_rows_w4_quaddpp) widens E4M3 activations to fp16 two codes at a time (exponent/mantissa placement plus one v_pk_mul_f16 by 2^8) instead of one code at a time. All 256 codes bit-identical on gfx1030; replay output identical on 40 captured tail requests; quad kernel time -5.7% (304.5 -> 287.3 ms); cold 27k TTFT median -1.8% (p=0.018, 95% CI -4.7%..+0.7%); doc prefill and decode at parity.",
+  "timestamp-utc": "2026-11-10T02:58:42.760575Z",
+  "user-summary-candidate": "Long prompts start answering slightly sooner on the four-GPU layout because the tail GPU converts its input values in fewer steps; output is unchanged."
+}
