@@ -85,3 +85,8 @@ Source: GPT configuration assessment 2026-11-02 (gateway request req_main_fa1c9e
 - chg_20261102_050920_new-bc-serve-tool-one-strict_1973
 - 2026-11-02T05:09:24.836486+00:00 (updated-by): Updated: section:ledger-events
 - 2026-11-02T12:12:43.760997+00:00 (updated-by): Updated: section:ledger-events
+
+
+## Update 2026-11-10 (GPT power manifest review, req_main_eb983900e21b)
+
+Reconciliation: the C++ resolver, generated contract, strict reader, writer and explain path exist (serving/main.cpp, manifest_writer.cpp, contract/README.md); the item is implemented in core and open on acceptance (Python command migration, release-path equivalence, obsolete configuration surfaces). Do not read the pending state as 'no resolver': do not build a second one. The v1 contract is closed; power profiles (PWR08) and any other added field need bigcherry/v2, so batch them (RSC09 literals, RSC10).
