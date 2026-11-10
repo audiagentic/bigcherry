@@ -63,6 +63,8 @@ Reversible host setting; needs explicit hardware authorisation and sudo. Owner r
 
 2026-10-27 deep undervolt (runs 10272121..45): -100 mV XTX 142/180 W, -125 mV 136/175 W, speed equal or +1%, identical decode text set, no errors. Soak at -125 mV (pwr01-soak, 40 min, run 10272216): XTX 133/177 W, decode 90.5 tok/s, prefill 3344 tok/s, 53 responses with the stock text set, no amdgpu faults/resets. Recommendation: -125 mV per XTX as the calibrated setting ([host.*.devices.power], evidence = this run), applied by `bigcherry gpu-power apply`; R9700 sweep next.
 
+RECONCILED 2026-11-10 (gateway audit): DONE: the XTX sweeps and one 40-minute soak at -125 mV (53 decode responses with matching text, no amdgpu faults or resets): ~24 W per XTX saved in decode with no measured throughput penalty; the XTX minimum board cap sits above the workload's draw (the cap is ineffective); a 2,500 MHz clock limit cut two-XTX power by ~120 W for a 2-3% speed loss (a trade, not free). Evidence caveats: J/token came from summed median watts and throughput, not synchronised energy integration; the October 27 figure included the CPU package (~590 W decode) and the October 29 one was GPU-only (~498 W): not comparable. STILL OPEN: per-card qualification (each XTX and the R9700 separately; -125 mV is evidence for the tested cards only, not a default), the R9700 sweep, quality/identity gates per operating point, named profiles (PWR04).
+
 ## Change Log
 
 - 2026-10-27T02:15:44.041717+00:00 (created-by): Created by agent
@@ -70,3 +72,4 @@ Reversible host setting; needs explicit hardware authorisation and sudo. Owner r
 - 2026-10-27T10:09:45.576821+00:00 (updated-by): Updated: section:notes
 - 2026-10-27T10:11:28.723089+00:00 (updated-by): Updated: section:notes
 - 2026-10-27T11:59:08.273830+00:00 (updated-by): Updated: section:notes
+- 2026-11-10T13:13:15.318951+00:00 (updated-by): Updated: section:notes

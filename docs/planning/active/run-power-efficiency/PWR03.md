@@ -61,9 +61,12 @@ Depends on PWR01 for the baseline; most useful after RAD25.
 
 2026-11-04 harness (pwr03-ecore-ab.sh, idle diagnosis with helpers on efficiency cores) archived as experiments/radiance/PWR03-pwr03-cpu-placement/change.patch. No result recorded. Depends on RAD26 for CPU-state comparison.
 
+RECONCILED 2026-11-10 (gateway audit): the automatic efficiency-core placement of the helpers' small-lane threads is DELIVERED and measured (PR #448: ~30 W lower CPU package power at unchanged speed; component description ~77 -> 42 W decode, 83 -> 52 W prefill; moe-remote worker_cpu.h, helper_common.cpu.affinity = auto). The experiment-register line saying there is no result conflates it with the whole-process pinning experiment. Still open here: intel_pstate EPP/governor (this host: powersave + balance_performance, the engine's startup report flags the governor), C-state residency, and the remaining CPU busy waits. Engine-side E-core avoidance (runs/rad49-engine-pcores) showed no consistent speed gain and is unshipped.
+
 ## Change Log
 
 - 2026-10-27T02:15:48.543469+00:00 (created-by): Created by agent
 - 2026-10-27T08:23:38.621255+00:00 (updated-by): Updated: section:title, section:notes
 - 2026-10-27T11:53:12.335444+00:00 (updated-by): Updated: section:notes
 - 2026-11-04T06:15:53.149502+00:00 (updated-by): Updated: section:notes
+- 2026-11-10T13:13:11.280087+00:00 (updated-by): Updated: section:notes

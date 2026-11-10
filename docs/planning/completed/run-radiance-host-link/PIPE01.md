@@ -2,7 +2,7 @@
 id: PIPE01
 order: 0
 plan: run-radiance-host-link
-state: pending
+state: deprecated
 created-at: '2026-11-10T02:09:11.799110+00:00'
 breadth: ''
 skill: advanced
@@ -62,3 +62,4 @@ UPDATE 2026-11-10: deprioritised for flashnext-4gpu. With the live policy warmed
 
 - 2026-11-10T02:09:11.799110+00:00 (created-by): Created by agent
 - 2026-11-10T10:37:15.238254+00:00 (updated-by): Updated: section:notes
+- 2026-11-10T13:11:11.279005+00:00 (state-transition): State: pending → deprecated
