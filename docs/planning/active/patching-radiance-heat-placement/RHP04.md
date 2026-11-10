@@ -2,7 +2,7 @@
 id: RHP04
 order: 12
 plan: patching-radiance-heat-placement
-state: pending
+state: in_progress
 created-at: '2026-10-15T01:35:00+00:00'
 breadth: ''
 skill: advanced
@@ -197,3 +197,4 @@ Merged build with the live policy on and the effect gate on (the same experiment
 - 2026-11-04T20:54:20.931133+00:00 (updated-by): Updated: section:ledger-events
 - chg_20261105_011757_the-live-expert-placement-poli_4015
 - 2026-11-05T01:18:01.236336+00:00 (updated-by): Updated: section:ledger-events
+- 2026-11-10T03:37:06.845356+00:00 (state-transition): State: pending → in_progress
