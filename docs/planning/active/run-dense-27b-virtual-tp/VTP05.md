@@ -18,7 +18,7 @@ work: M
 User goal: Q6 or Q8 (not Q4), maximum resident KV, 4+ streams, two gfx1100 XTX and one gfx1201 R9700. This plan measures **existing quantised GPU kernels** before building a virtual TP4 graph.
 
 1. Card-free shape and kernel audit. Qwen3.8-27B hidden 5120, FFN intermediate 17408, combined gate/up N34816 K5120, down N5120 K17408. V4 IQR runs impose 256-alignment on both N and K. Split the *intermediate* in whole 256-element tiles, and use twice each logical width for gate/up N, one width for down K. Rounded percentages are not exact. Attention/KV/GDN splits require separate proof.
-2. Reuse Radiance's real selftest performance hooks, not another pretend Q6 kernel: --perfiqr N K M 6 [iters] for the native IQ6R V4 trellis decoder and GEMM; --perfw8 N K M [iters] for the native W8A8 and additional 8-bit kernels. The selected rows must be matched to the intended dtype and M. Optionally --cold 256 for realistic cold-weight timing.
+2. Reuse Radiance's real selftest performance hooks, not another pretend Q6 kernel: --perfiqr N K M 6 [iters] for the native IQ6R V4 trellis decoder and GEMM; --perfw8 N K M [iters] for the native W8A8 and additional 8-bit kernels. The selected rows must be matched to the intended dtype and M. For IQ6R, --cold 256 requests cache flushing in the underlying perf_row helper. Radiance --perfw8 has its own warmed HIP-event loop and **ignores --cold**; W8A8 selftest results are warm only. Use checked rad-kbench with --bench-flush for cold Q8 evidence.
 3. One bounded case per exclusive lease invocation: physical card XTX0, XTX1 or R9700; gate/up or down; capacity (30/30/20/20), intermediate (35/35/15/15) or bandwidth (37.5/37.5/12.5/12.5); M=1,4,8 then 64,128,512. Run small probes before increasing. Compare R9700 one combined physical GEMM with its two separate logical shard GEMMs (sequential; not falsely treated as concurrent).
 4. Repeat stable candidates under matched clock/cold/warm conditions. Use KAB01/rad-kbench for numerical checks against libref on the existing Q8 fixture, and selftest IQR correctness suites. Timing-only selftest does not prove numerical fidelity. No model weights are loaded.
 5. Combine physical GEMM times with separately measured VTP04 three-GPU communication lower bounds to reject clearly bottlenecked ratios. Only then consider VTP01 virtual-rank implementation; VTP06 owns complete Q6/Q8 model quality/resident KV.
@@ -76,3 +76,64 @@ GPU correctness and latency have NOT been run under the held lease.
 The runner now fails closed on missing mode/row capability and
 records build metadata hash in each timing receipt. 9 dedicated
 card-free tests and 92 XDP tests pass after the correction.
+
+## CPU-only prebuild: resumable VTP05 campaign
+
+The companion `tools/lab/radiance/xtx27_quant_campaign.py` builds
+a **fixed per-case manifest** and tests ABI/architecture provenance
+against the already-built Radiance binary and plugins. No GPU is
+touched by `plan`, `prepare`, `next` or `status`.
+Its `run-next --run` performs exactly one case through the
+exclusive-lease `xtx27_quant_kernel.py` runner, verifies the matching
+receipt and keeps unsuccessful attempts visible. It never silently
+skips failures or launches an uncontrolled multi-hour sweep.
+
+Candidate matched prebuilt (replace with a newer verified build
+only if its kernel/compiler/ABI evidence agrees):
+
+```sh
+BUILD="${BC_WORK_ROOT}/builds/f17f21fda44979e9abe84f13e96b8896/08b5dd81b4874390bf0cbf489db0d7df"
+CAMPAIGN="${BC_WORK_ROOT}/xtx27-prefill/quant-shape/campaigns/pilot-v1"
+
+python3 tools/lab/radiance/xtx27_quant_campaign.py --phase plan --tier pilot
+python3 tools/lab/radiance/xtx27_quant_campaign.py --phase prepare \
+  --tier pilot --build-dir "$BUILD" --campaign-dir "$CAMPAIGN"
+python3 tools/lab/radiance/xtx27_quant_campaign.py --phase next --campaign-dir "$CAMPAIGN"
+
+# Only once the GPU is free, explicitly run ONE case at a time:
+python3 tools/lab/radiance/xtx27_quant_campaign.py --phase run-next \
+  --run --campaign-dir "$CAMPAIGN"
+
+python3 tools/lab/radiance/xtx27_quant_campaign.py --phase status --campaign-dir "$CAMPAIGN"
+```
+
+The five *independent*, progressively justified tiers are:
+`pilot` 12 cases (3 physical cards × 2 precisions × 2 FFN
+projections at M4); `decode` 24 (M1 and M8);
+`placement` 72 (three legal ratios at M4/M8);
+`prefill` 48 (two ratios at M64/M512); and `r9700-local`
+48 (combined versus each logical R9700 shard).
+Do **not** start the latter tiers before reviewing the pilot
+kernel selection and numerical correctness. No tier launches on
+preparation or automatically continues after a lease failure.
+
+The read-only build preflight verifies the selected binary supports
+both `--perfiqr` and `--perfw8`; both physical plugin families
+contain the required narrow/tiled kernels; main CMake records
+`RAD_GPU_TARGETS=gfx1201`; component records
+`R3_TARGETS=gfx1100`; and the RADIANCE_SRC path. It records
+artifact SHA-256 digests and rejects mismatched builds, modified
+scripts or corrupt/duplicated per-case receipts.
+
+After each physical rank has *both* FFN projections for the
+same quant, ratio and M, `status` computes an explicitly labelled
+**ideal FFN-only barrier lower bound** as max(gate/up device time)
++ max(down device time). It also reports the per-card serial workload
+and, only when separately measured, R9700 physical-combined
+versus logical-two-shard *sequential* results. It is not an engine
+latency, interleaving speedup or tokens/s estimate.
+
+**CPU-only gate:** 99 XDP tests passed, including 7 new
+campaign tests and 9 VTP05 harness tests; Ruff clean. No
+new Q6/Q8 GPU timings were recorded during the active
+Flash-Next exclusive GPU lease.

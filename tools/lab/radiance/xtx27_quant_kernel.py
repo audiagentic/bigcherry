@@ -132,6 +132,8 @@ def command(exe: Path, plugin: Path, *, quant: str, geo: dict, m: int,
         raise ValueError("unsupported token-row count")
     if iters < 1 or iters > 20 or cold_mib not in (0, 64, 128, 256):
         raise ValueError("iters or cache-flush size out of bounds")
+    if quant == "w8a8" and cold_mib:
+        raise ValueError("--perfw8 ignores --cold: W8A8 is warm-only in this selftest; use checked rad-kbench for cold")
     args = [str(exe), str(plugin)]
     if quant == "iq6r":
         args += ["--perfiqr", str(geo["N"]), str(geo["K"]), str(m), "6", str(iters)]
@@ -169,6 +171,7 @@ def execute_one(args: argparse.Namespace, geo: dict) -> Path:
         "geometry": geo,
         "m": args.m, "quant": args.quant, "iters": args.iters,
         "cold_mib": args.cold_mib,
+        "cache_mode": "cold_quant_iqr" if args.cold_mib else "warm_or_resident",
         "physical_device_index": device_id,
         "build_dir": str(build),
         "binary_sha256": sha256(exe), "plugin_sha256": sha256(plugin),
@@ -226,9 +229,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--quant", choices=("iq6r", "w8a8"), default="iq6r")
     parser.add_argument("--m", type=int, default=4)
     parser.add_argument("--iters", type=int, default=3)
-    parser.add_argument("--cold-mib", type=int, choices=(0, 64, 128, 256), default=256)
+    parser.add_argument("--cold-mib", type=int, choices=(0, 64, 128, 256),
+                        help="default: IQ6R=256 cold, W8A8=0 warm (selftest --perfw8 ignores --cold)")
     parser.add_argument("--timeout-s", type=int, default=9)
     args = parser.parse_args(argv)
+    if args.cold_mib is None:
+        args.cold_mib = 256 if args.quant == "iq6r" else 0
     try:
         geo = geometry(args.candidate, args.gpu, args.projection, args.part)
         checked = command(Path("selftest"), Path("matching-plugin"), quant=args.quant,
@@ -246,6 +252,9 @@ def main(argv: list[str] | None = None) -> int:
             },
             "per_case_command_template": checked,
             "selected_expected_kernel": selected_row(args.quant, args.m),
+            "effective_cold_mib": args.cold_mib,
+            "cache_mode": "cold_quant_iqr" if args.cold_mib else "warm_or_resident",
+            "w8a8_cold_requires_different_tool": True,
             "timing_only": True, "does_not_prove": [
                 "Q6/IQ6R model quality", "GFLOPS proportional to end-to-end tokens/sec",
                 "three-GPU parallelism", "full-layer/attention/GDN tensor mapping",

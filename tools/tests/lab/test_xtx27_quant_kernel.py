@@ -118,6 +118,14 @@ class QuantKernelGeometryTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             mod.command(pathlib.Path("test"), pathlib.Path("plugin"),
                         quant="iq6r", geo=geo, m=4, iters=100, cold_mib=0)
+        with self.assertRaisesRegex(ValueError, "W8A8 is warm-only"):
+            mod.command(pathlib.Path("test"), pathlib.Path("plugin"),
+                        quant="w8a8", geo=geo, m=4, iters=3, cold_mib=256)
+        with redirect_stdout(io.StringIO()) as buffer:
+            self.assertEqual(mod.main(["--phase", "plan", "--quant", "w8a8"]), 0)
+        report = json.loads(buffer.getvalue())
+        self.assertEqual(report["effective_cold_mib"], 0)
+        self.assertEqual(report["cache_mode"], "warm_or_resident")
 
     def test_plan_never_executes_subprocess_or_checks_build(self):
         buffer = io.StringIO()
