@@ -1,0 +1,14 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261110_131409_the-lab-launcher-can-now-start_2833",
+  "files": [
+    "tools/lab/radiance/launch-flashnext-best.sh"
+  ],
+  "plan-item-ids": [
+    "ENG02"
+  ],
+  "status": "unreleased",
+  "technical-summary": "The Flash-Next launcher gains --num-spec N (MTP speculative depth, 0 = off); the depth was fixed at 3 and only a layout's server-args could change it. Another depth is another plan key, so it starts without the live policy and the launcher's live placement line says so.",
+  "timestamp-utc": "2026-11-10T13:14:09.651587Z",
+  "user-summary-candidate": "The lab launcher can now start the model with a different speculative-decoding depth, so depths can be compared."
+}

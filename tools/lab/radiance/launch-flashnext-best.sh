@@ -51,6 +51,8 @@
 # --chunk TOKENS: the largest step (default 2048): the activation arena and the prefill staging are sized from it, so a smaller chunk leaves the KV cache more VRAM.
 # --ngram-placement ram|disk|vram: where the 47.7 GiB n-gram table lives (default ram: pinned host memory the cards read). disk reads its rows from the
 # container and frees that RAM for --host-pool-mib.
+# --num-spec N: the MTP speculative depth (default 3; 0 turns speculation off). It is part of the plan and calibration key, so a depth other than the
+# calibrated one starts without the live policy (the launcher's live placement line says so); a depth sweep states its policy state per arm.
 # --kv-dtype T: the KV cache type (default fp8; fp8_v4 costs 0.78 of it per token and k6_v4 0.69, both lossy). There is no raw engine argument: the engine's
 # other flags are manifest fields (spec.experiment.engine: profile_ops, kv_resident, debug_selection, deterministic; give them in the
 # --calibrate: LAB ONLY. Requires --live-policy FILE (explicit
@@ -146,6 +148,7 @@ while [ $# -gt 0 ]; do
     --host-kv-mib) CUSTOM_SERVE_OPTIONS+=(--host-kv-mib); HOST_KV_MIB=$2; shift 2 ;;
     --chunk) CUSTOM_SERVE_OPTIONS+=(--chunk); CHUNK=$2; shift 2 ;;
     --kv-dtype) CUSTOM_SERVE_OPTIONS+=(--kv-dtype); KV_DTYPE=$2; shift 2 ;;
+    --num-spec) CUSTOM_SERVE_OPTIONS+=(--num-spec); NUM_SPEC=$2; shift 2 ;;   # MTP depth (0 = no speculation); another depth is another plan key
     --ngram-device) CUSTOM_SERVE_OPTIONS+=(--ngram-device); NGRAM_DEV=$2; shift 2 ;;
     --max-model-len) CUSTOM_SERVE_OPTIONS+=(--max-model-len); MAX_LEN=$2; shift 2 ;;
     --rope-scaling) CUSTOM_SERVE_OPTIONS+=(--rope-scaling); ROPE=$2; shift 2 ;;
