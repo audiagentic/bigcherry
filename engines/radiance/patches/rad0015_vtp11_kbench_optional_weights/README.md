@@ -31,3 +31,17 @@ the row, and even then the fixture geometry and warm/cold states
 must be reviewed against original BF16 serving. Earlier benchmark
 attempts from VTP11 produced 0 checked/28 skipped, which is FAIL
 despite exit zero.
+
+## Hardware reference evidence
+
+Source radiance-vtp11-gdn-kbench built successfully in an isolated
+build, plan a231db79c1d59b4e550585ccaf460281. Using seeded
+model-shape GDN operands against libref, the corrected benchmark
+exercised the actual gfx1201 and gfx1100 GDN conv prep row rather
+than silently skipping it. All **80 cases per card** passed on
+R9700, XTX0 and XTX1 through M=512 with --tol 0.001 and
+worst rel-L2 0.0003186; zero failures and bounds violations.
+See VTP11 and the work-root machine-checked aggregate receipt.
+Status remains untested for general promotion: this is numerical
+validation of the seeded cold-prefill cases, not warm-cache or
+original-BF16 full-model correctness.

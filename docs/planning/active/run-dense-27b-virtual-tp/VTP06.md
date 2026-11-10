@@ -243,3 +243,15 @@ Next work under existing VTP06 (no separate duplicate plan):
    per-tensor encodings and actual gfx1100/gfx1201 graph dispatch.
 5. Compare logits, top1, KLD and held-out perplexity to original BF16,
    then benchmark 4+ concurrent streams with resident KV (VTP03).
+
+## 2026-11-10 GDN seeded per-op reference gate
+
+VTP11's repaired kbench checked the actual BF16 h128/w4/chunk64
+gdn_conv_prep GPU row against libref on **R9700, XTX0 and XTX1**.
+With an independent seed, M=1..512 and 0.001 relative tolerance,
+**80/80 cases per card** passed, 0 skips and no guarded-buffer
+overwrites. See VTP11 and
+BC_WORK_ROOT/xtx27-prefill/vtp11-gdn-kbench-20261110-v5-m512-strict/validation.json.
+These are seeded GDN operands drawn using pre-existing W8A8 RAD2
+geometry. Warm convolution history, original-BF16 full-model logits
+and representative 64-layer Q6 quality are still unqualified.

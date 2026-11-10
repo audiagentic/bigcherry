@@ -226,3 +226,55 @@ Three focused tests, pinned-source patch/idempotence check, Ruff and
 GCC 14 syntax passed. A numerical oracle result is **pending** an
 isolated benchmark build and nonzero checked GPU cases, on both
 gfx1201 and gfx1100. Do not interpret exit code alone as a pass.
+
+
+## 2026-11-10 — three-card GDN cold-prefill oracle qualification
+
+**Independent per-op seeded reference gate: PASS for tested prefill geometries.**
+After rad0015 fixed kbench's absent optional convolution-bias cursor,
+an opt-in isolated source radiance-vtp11-gdn-kbench built successfully.
+The production serving recipe remains untouched. The new build plan ID
+is a231db79c1d59b4e550585ccaf460281, build status succeeded,
+with logs under
+BC_WORK_ROOT/build-logs/vtp11-gdn-kbench-build-v1/.
+The test-only patch is committed as 5600a10ed. Its three unit tests,
+pinned-source application/idempotence, Ruff and GCC 14 C++23 syntax
+all passed.
+
+Using the existing W8A8 RAD2 container's real Qwen3.8-27B GDN geometry
+(the GDN operator is BF16 h128, w4, chunk64), seeded kbench inputs,
+--op gdn_conv_prep, --ref libref, and libraries
+libr4d:libref for gfx1201 or libr3:libref for gfx1100:
+
+| Gate | R9700 gfx1201 | XTX0 gfx1100 | XTX1 gfx1100 |
+| --- | ---: | ---: | ---: |
+| M=1–128, 8 cases per M, seed 20261110 | 64/64 PASS | 64/64 PASS | 64/64 PASS |
+| M=1–512, 8 cases per M, seed 20261111, tolerance 0.001 | 80/80 PASS | 80/80 PASS | 80/80 PASS |
+| Unchecked GDN cases | 0 | 0 | 0 |
+| Failed or diverged GDN comparisons | 0 | 0 | 0 |
+| Guarded-allocation out-of-bounds writes | 0 | 0 | 0 |
+| Strict-sweep worst relative L2 | 0.0003186 | 0.0003186 | 0.0003186 |
+
+**M=512** spans eight 64-token chunks and the exact h128/w4/chunk64
+operator row was selected on each card. The 0.001 strict-sweep tolerance
+is tighter than kbench's standard GDN relative-L2 allowance (0.02).
+The third sweep tests a distinct seed, not a copied answer. It does
+not cover an initialized convolution-history cache (has_init=1),
+speculative rollback, complete BF16 graph outputs, or full-model logits.
+
+All raw per-GPU argv/receipt/log/report artifacts for the tight
+sweep are below
+BC_WORK_ROOT/xtx27-prefill/vtp11-gdn-kbench-20261110-v5-m512-strict/.
+A machine-checked aggregate is at validation.json there, recording
+**240 actual GPU-vs-libref cases**, all passed with 0 skipped.
+The earlier 0-checked/28-skipped benchmark is kept as negative evidence;
+rad-kbench exit code 0 alone is never admission.
+
+A separate proper-BF16 .rad container or an original-weight-loaded
+operator oracle is needed to exclude any W8A8 artifact-dependent
+differences. The cold-prefill numerical gate is **qualified for the
+tested seeded fixtures**, not universally for all warm/decode states.
+Keep both patches in isolated experimental source until the remaining
+gates and integration/quality tests pass.
+
+The GPU lease was explicitly released and no KFD processes remained.
