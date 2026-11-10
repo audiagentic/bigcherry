@@ -105,8 +105,8 @@ class CalibrationLauncherTests(unittest.TestCase):
         body = source.split('if [ "$CALIBRATE" = 1 ]; then')[-1]
         self.assertIn('for prompts in "$CALIBRATION_PROMPTS_A" "$CALIBRATION_PROMPTS_B" \\\n                   "$CALIBRATION_PROMPTS_B" "$CALIBRATION_PROMPTS_A"; do', body)
         self.assertLess(body.index('done < "$prompts"'),
-                        body.index("grep -q '^RHP16_CALIBRATION_JSON '"))
-        self.assertIn('grep -q \'^RHP16_CALIBRATION_JSON \' "$helper_log" && break', body)
+                        body.index('if python3 "$CAL_MONITOR" marker "$helper_log"; then'))
+        self.assertIn('python3 "$CAL_MONITOR" marker "$helper_log"', body)
 
 
 if __name__ == "__main__":

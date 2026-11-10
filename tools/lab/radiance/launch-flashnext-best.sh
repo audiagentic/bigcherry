@@ -593,8 +593,29 @@ mtp_replay_check() {
 }
 mtp_replay_check || exit 95
 if [ "$CALIBRATE" = 1 ]; then
-  # No fixed number of requests or time-based guess: this loop stops on the
-  # helper's convergence condition (the retained drift-track horizon).
+  # Four measured-policy workload phases give a finite envelope. The helper
+  # still controls convergence; a partial record never activates production.
+  CAL_MONITOR=tools/lab/radiance/calibration_watchdog.py
+  calibration_limits=$(python3 "$CAL_MONITOR" limits "$LIVE_POLICY_FILE") || {
+    echo "calibration: cannot derive finite horizon from selected policy" >&2; exit 2;
+  }
+  read -r calibration_limit_s calibration_report_s <<< "$calibration_limits"
+  calibration_start_s=$SECONDS
+  calibration_next_report_s=$calibration_report_s
+  calibration_watch() {
+    local elapsed=$((SECONDS - calibration_start_s))
+    if [ "$elapsed" -ge "$calibration_next_report_s" ]; then
+      echo "calibration: COLLECTING elapsed=$elapsed bound=$calibration_limit_s; missing:" >&2
+      python3 "$CAL_MONITOR" waiting "$helper_log" >&2 || return 1
+      calibration_next_report_s=$((elapsed + calibration_report_s))
+    fi
+    if [ "$elapsed" -ge "$calibration_limit_s" ]; then
+      echo "calibration: FAILED policy-derived bound exhausted; missing:" >&2
+      python3 "$CAL_MONITOR" waiting "$helper_log" >&2 || true
+      return 1
+    fi
+  }
+  echo "calibration: finite bound $calibration_limit_s s; waiting report period $calibration_report_s s" >&2
   helper_log="$RUN/helper0-$STAMP.log"
   [ -f "$helper_log" ] || { echo "calibration: helper 0 log absent" >&2; exit 1; }
   echo "calibration: running A->B then B->A until convergence" >&2
@@ -613,9 +634,16 @@ if [ "$CALIBRATE" = 1 ]; then
             echo "calibration: $proc exited before convergence" >&2; exit 1;
           }
         done
+        calibration_watch || exit 1
       done < "$prompts"
     done
-    grep -q '^RHP16_CALIBRATION_JSON ' "$helper_log" && break
+    if python3 "$CAL_MONITOR" marker "$helper_log"; then
+      break
+    else
+      marker_rc=$?
+      [ "$marker_rc" = 10 ] || exit 1
+    fi
+    calibration_watch || exit 1
   done
   calibration_store="$WORK/live-policy-calibration.toml"
   "$RAD_HOME/bin/bc-serve" calibration-ingest --from-log "$helper_log" \
