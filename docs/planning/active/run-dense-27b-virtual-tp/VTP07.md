@@ -257,3 +257,27 @@ not a replacement for the canonical mainline build and model conversion.
    host-root collective, fused gate/down dependency, attention and
    KV residence in the 4+ stream throughput/concurrency screen.
    Microkernel-only results are not sufficient for rollout.
+
+### Canonical full gfx1100 rebuild (2026-11-10 follow-through)
+
+The corrected, pinned-source *entire* libr3 is configured at
+`${BC_WORK_ROOT}/xtx27-prefill/iqr-layout-fix/gfx11-full` with
+`R3_TARGETS=gfx1100`, `R3_NATIVE=ON`, no `R3_ONLY` subset, and
+all 107 HIP units (115 total Ninja build actions). It was built
+in scratch using `cmake --build ... --target libr3 --parallel 2`,
+not by substituting historical GPU objects. **All 115 actions completed**
+and the resulting 214,238,784-byte plugin is SHA-256
+`d5715493f70bc08c8f37ec0aa1e005b1bfdb6c91e86e28e46664f36a0a1a75f2`.
+The real layout/relayout/unrelayout functions are exported outside the
+`r3_stub_begin/r3_stub_end` section. The matching canonical full
+`r3_selftest` also built successfully. Separate lease-protected
+canonical gated-IQR numerical receipts **passed 36/36** on XTX0 and
+**36/36** on XTX1, no failures; see scratch
+`${BC_WORK_ROOT}/xtx27-prefill/iqr-layout-fix/canonical-oracle-runs/`
+for per-card binary/plugin SHA, argv and stdout. The earlier 1032
+narrow and 129 tiled checks per card used the *diagnostic relink*,
+not the complete new canonical plugin; repeat on canonical plugin
+for its full numerical gate. Production libraries have not been
+installed or overwritten.
+ROCm occupancy warning messages from unrelated GEMM/MoE units are
+not proof of failure or runtime quality.
