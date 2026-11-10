@@ -96,7 +96,7 @@ class PlanCheckLauncherTests(unittest.TestCase):
         values = dict(LAYOUT="flashnext-4gpu", SEQS="8", MAX_LEN="262144", HOST_POOL_MIB="9216", HOST_KV_MIB="12288",
                       CHUNK="2048", NGRAM="ram", KV_DTYPE="fp8", ROPE="none", PORT="36080", PREFIX_RESUME="nearest",
                       MODEL="/model.rad", HEAT=str(self.heat), RECORD="/heat.live", CKPT_INTERVAL="4096", NUM_SPEC="3",
-                      SHM="/r3-moe-helper", RECORD_PERIOD="60", STAMP=f"1105-{next(self._stamps):06d}", LIVE_POLICY_FILE="", EXPERIMENT_FILE="")
+                      SHM="/r3-moe-helper", RECORD_PERIOD="1", STAMP=f"1105-{next(self._stamps):06d}", LIVE_POLICY_FILE="", EXPERIMENT_FILE="")
         budgets = overrides.pop("BUDGETS", "")
         # what `bigcherry layout env` resolves for flashnext-4gpu, the per-helper budgets with any --budget override applied
         layout_common = overrides.pop("LAYOUT_COMMON", "R3_MOE_WORKER_COUNT=3 R3_MOE_WORKER_MIBS=22528,22528,14336")
@@ -221,7 +221,7 @@ plan_manifest_prepare && printf 'MANIFEST:%s\\n' "$PLAN_MANIFEST"
         self.assertGreaterEqual(len(sets[0]), 10)
         self.assertIn('layout.name="flashnext-4gpu"', sets[0])
         self.assertIn("memory.host_pool_mib=9216", sets[0])
-        self.assertIn("handoff.histogram_period_s=60", sets[0])
+        self.assertIn("handoff.histogram_period_s=1", sets[0])
         self.assertIn('handoff.shm="/r3-moe-helper"', sets[0])
 
     def test_the_floor_is_never_a_launcher_literal(self) -> None:
@@ -393,7 +393,7 @@ plan_check_describe /site.toml && printf '%s\\n' "${{PLAN_SET[@]}}" "${{PLAN_EXT
 set -u
 RUN={shlex.quote(str(self.run_dir))}; RAD_HOME={shlex.quote(str(self.home))}; RAD_BIN=/engine; BUDGETS=(); WORK=""
 LAYOUT=t; LAYOUT_HELPER_COUNT=1; LAYOUT_ENGINE_RANKS={ranks}; SEQS=6; MAX_LEN=65536; HOST_POOL_MIB=9216; HOST_KV_MIB=12288
-CHUNK=2048; NGRAM=ram; KV_DTYPE=fp8; ROPE=none; PORT=36080; CKPT_INTERVAL=4096; NUM_SPEC=3; SHM=/s; RECORD_PERIOD=60
+CHUNK=2048; NGRAM=ram; KV_DTYPE=fp8; ROPE=none; PORT=36080; CKPT_INTERVAL=4096; NUM_SPEC=3; SHM=/s; RECORD_PERIOD=1
 PREFIX_RESUME=nearest; HEAT={shlex.quote(str(heat))}; EXPERIMENT_FILE=""; LIVE_POLICY_FILE=""; CALIBRATE=0
 source {shlex.quote(str(LIB))}
 plan_check_describe /site.toml && printf '%s\\n' "${{PLAN_SET[@]}}"

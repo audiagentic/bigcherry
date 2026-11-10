@@ -37,7 +37,7 @@
 # --heat FILE: the route-heat file that ranks the experts, hottest first (default $WORK/heat/flashnext-mixed.hot-first, C++/HIP source and
 # documentation recorded in RAD23 at equal weight; the RX 6900 XT tail only pays when it matches the workload, so record your own with --record-heat) (uint32[128][512] = max - count of a recorded histogram; heat-placement/heat-invert.py
 # makes one). --record-heat PREFIX (default $WORK/flashnext/heat.live; off to disable): the engine counts every routed expert and rewrites
-# PREFIX.rank0 every --record-period seconds (default 60) while serving. The counts sit in pinned host memory and cost no measurable
+# PREFIX.rank0 every --record-period seconds (default 1: the live placement policy needs fresh heat) while serving. The counts sit in pinned host memory and cost no measurable
 # speed (RHP02: 8 sessions 2,473 against 2,513 tok/s, inside the run-to-run spread), so it is on by default, and
 # tools/lab/radiance/heat-placement/heat-watch.py (the start message prints the command) says when the active --heat file stops fitting. Invert the file, restart with --heat and a larger
 # --budget (RHP10: workload-recorded heat plus gfx1100=23500 gave +34% prefill at 675K used context on a corpus it had not seen).
@@ -114,7 +114,10 @@ MAX_LEN=262144
 ROPE=none
 SEQS=8
 PREFIX_RESUME=nearest
-RECORD_PERIOD=60
+# The live placement policy (RHP16) judges heat younger than its derived max_heat_age_ns (about 10 s on flashnext-4gpu) and evaluates every
+# cadence (about 5 s); a 60 s histogram period left it with a feed it called stale (26 'no_live_feed' lines, 6 evaluations and no move in 15
+# minutes of traffic, runs/histogram-period-default). Every calibration and on/off A/B ran at 1 s.
+RECORD_PERIOD=1
 LIVE_POLICY_FILE=""   # a JSON object with every spec.handoff.placement.live_policy member (docs/design/serving-manifest-v1)
 EXPERIMENT_FILE=""    # a JSON object for spec.experiment (lab profile)
 CALIBRATE=0           # lab-only measurement run, never a serving hand-off

@@ -1,0 +1,16 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261110_052303_the-live-expert-placement-now_3951",
+  "files": [
+    "tools/lab/radiance/launch-flashnext-best.sh",
+    "tools/tests/lab/test_rhp16_calibrate.py",
+    "tools/tests/lab/test_plan_check_launcher.py"
+  ],
+  "plan-item-ids": [
+    "RHP18"
+  ],
+  "status": "unreleased",
+  "technical-summary": "The Flash-Next launcher passed handoff.histogram_period_s=60 by default while the derived live placement policy judges heat younger than ~10 s and evaluates every ~5 s; a default start carried the policy but its feed was stale (26 no_live_feed lines, 6 evaluations, 0 moves in ~15 min). The default is now 1 s, the period every calibration and A/B used; it is not part of the plan or calibration key.",
+  "timestamp-utc": "2026-11-10T05:23:03.769676Z",
+  "user-summary-candidate": "The live expert placement now actually receives fresh usage data on a normal start instead of sitting idle."
+}
