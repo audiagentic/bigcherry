@@ -23,6 +23,8 @@ from xtx27_virtual_tp4 import parse_ratios, tile_counts
 LEASE_PURPOSE = "VTP12 gfx11-gfx12 Qwen27B mixed-format FFN ABBA pilot"
 CANDIDATES = {
     "control": ("0.30", "0.30", "0.20", "0.20"),
+    "r9700-43": ("0.28676470588235294", "0.28676470588235294",
+                 "0.21323529411764706", "0.21323529411764706"),
     "r9700-45": ("0.275", "0.275", "0.225", "0.225"),
     "r9700-50": ("0.25", "0.25", "0.25", "0.25"),
 }
@@ -35,12 +37,15 @@ def geometry(candidate: str, gpu: str, projection: str) -> dict:
     if candidate not in CANDIDATES or gpu not in ROLES or projection not in PROJECTIONS:
         raise ValueError("unsupported VTP12 candidate, GPU or projection")
     fr = parse_ratios(CANDIDATES[candidate])
-    widths = [t * q.TILE for t in tile_counts(fr, width=q.INTERMEDIATE, tile=q.TILE)]
+    # Preserve 256-tile v1 control geometry for immutable replay.
+    # The 43% candidate needs legal 128-wide K tiles for 4992/4992/7424.
+    tile = 128 if candidate == "r9700-43" else q.TILE
+    widths = [t * tile for t in tile_counts(fr, width=q.INTERMEDIATE, tile=tile)]
     physical = (widths[0], widths[1], widths[2] + widths[3])
     width = physical[ROLES.index(gpu)]
     n, k = ((2 * width, q.HIDDEN) if projection == "gate_up"
             else (q.HIDDEN, width))
-    if width <= 0 or n % 256 or k % 256:
+    if width <= 0 or n % 256 or k % 128:
         raise ValueError("illegal FFN matrix/tile dimensions")
     return {
         "candidate": candidate, "fractions": list(CANDIDATES[candidate]),
@@ -53,7 +58,7 @@ def geometry(candidate: str, gpu: str, projection: str) -> dict:
 
 
 def schedule(challenger: str, m: int) -> list[dict]:
-    if challenger not in ("r9700-45", "r9700-50"):
+    if challenger not in ("r9700-43", "r9700-45", "r9700-50"):
         raise ValueError("challenger must be a heavier R9700 candidate")
     if m not in (1, 4, 8, 64):
         raise ValueError("pilot limited to M=1/4/8/64")
@@ -236,7 +241,7 @@ def run(manifest: dict, out_dir: Path, timeout: int) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--phase", choices=("plan", "run"), default="plan")
-    parser.add_argument("--challenger", choices=("r9700-45", "r9700-50"), default="r9700-45")
+    parser.add_argument("--challenger", choices=("r9700-43", "r9700-45", "r9700-50"), default="r9700-43")
     parser.add_argument("--m", type=int, choices=(1, 4, 8, 64), default=4)
     parser.add_argument("--iters", type=int, default=9)
     parser.add_argument("--build-dir", type=Path)

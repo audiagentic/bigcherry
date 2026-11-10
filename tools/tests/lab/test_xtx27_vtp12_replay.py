@@ -73,6 +73,17 @@ class ReplayTests(unittest.TestCase):
             self.assertEqual(policy["stage_estimates"]["control_i8_us"]["ideal_ffn_stage_barriers_us"], 450)
             self.assertEqual(optimistic["stage_estimates"]["control_i8_us"]["ideal_ffn_stage_barriers_us"], 360)
 
+    def test_43_percent_128_tile_candidate_replays(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            fixture(root, m=4, challenger="r9700-43")
+            data = r.replay(root)
+            self.assertEqual(data["challenger"], "r9700-43")
+            self.assertEqual(data["cases_validated"], 24)
+            self.assertEqual(data["policies"]["vtp05_declared_i8_dispatch"]
+                             ["stage_estimates"]["control_i8_us"]
+                             ["ideal_ffn_stage_barriers_us"], 490)
+
     def test_decode_m4_preserves_narrow_row(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

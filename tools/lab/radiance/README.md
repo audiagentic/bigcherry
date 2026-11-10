@@ -267,3 +267,12 @@ best-observed INT8 dispatch; original raw evidence remains intact.
 The three 2026-11-11 hardware campaigns and exact results are in
 VTP12. Tests: `test_xtx27_vtp12_pilot.py` and
 `test_xtx27_vtp12_replay.py`, plus earlier VTP12 comparison tests.
+
+### VTP12 finer 43% R9700 candidate
+
+The VTP12 pilot now accepts `--challenger r9700-43`: 4992/4992/7424
+physical FFN widths, using 128-column legal K tiles. The older 256-tile
+ABBA candidate geometries and source receipts remain unchanged. Run the
+new M4 ABBA only when `agent-lease status` is free and no KFD process
+is resident; the runner acquires/releases the lease itself. See VTP12
+for exact commands, M64 corrected-replay requirement and promotion gates.

@@ -11,13 +11,14 @@ import xtx27_vtp12_pilot as v
 
 
 class GeometryTests(unittest.TestCase):
-    def test_total_exact_and_256_aligned_all_candidates(self) -> None:
+    def test_total_exact_and_128_aligned_all_candidates(self) -> None:
         for candidate in v.CANDIDATES:
             shapes = [v.geometry(candidate, role, "down") for role in v.ROLES]
             self.assertEqual(sum(x["effective_intermediate"] for x in shapes), 17408)
-            self.assertTrue(all(x["effective_intermediate"] % 256 == 0 for x in shapes))
+            self.assertTrue(all(x["effective_intermediate"] % 128 == 0 for x in shapes))
             self.assertEqual([x["effective_intermediate"] for x in shapes],
                              {"control": [5120, 5120, 7168],
+                              "r9700-43": [4992, 4992, 7424],
                               "r9700-45": [4864, 4864, 7680],
                               "r9700-50": [4352, 4352, 8704]}[candidate])
 
@@ -31,6 +32,17 @@ class GeometryTests(unittest.TestCase):
                 self.assertEqual(down["N"], 5120)
                 self.assertEqual(gate["arch"], v.q.ARCH[role])
 
+    def test_r9700_43_native_benchmark_command_has_128_aligned_k(self) -> None:
+        for gpu, expected_k in (("xtx0", 4992), ("xtx1", 4992), ("r9700", 7424)):
+            geo = v.geometry("r9700-43", gpu, "down")
+            args = v.q.command(Path("/fake/bin/r4d_selftest"),
+                               Path("/fake/lib.so"), quant="w8a8", geo=geo,
+                               m=4, iters=9, cold_mib=0)
+            self.assertEqual(args[2:],
+                             ["--perfw8", "5120", str(expected_k), "4", "9"])
+            self.assertEqual(expected_k % 128, 0)
+        self.assertEqual(v.geometry("r9700-43", "r9700", "gate_up")["N"], 14848)
+
     def test_invalid_candidate_or_projection_rejected(self) -> None:
         for candidate, gpu, proj in [
             ("unknown", "xtx0", "down"), ("control", "unknown", "down"),
@@ -40,7 +52,7 @@ class GeometryTests(unittest.TestCase):
                 v.geometry(candidate, gpu, proj)
 
     def test_abba_schedule_complete_and_deterministic(self) -> None:
-        for challenger in ("r9700-45", "r9700-50"):
+        for challenger in ("r9700-43", "r9700-45", "r9700-50"):
             schedule = v.schedule(challenger, 4)
             self.assertEqual(len(schedule), 24)
             for role in v.ROLES:

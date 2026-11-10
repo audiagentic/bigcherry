@@ -263,3 +263,52 @@ timing-only selftest.
   *net* benefit over optimised all-three INT8 dispatch AND full-model
   BF16-relative quality. Retain VTP08 FP8-KV/R9700 32-GiB admission
   constraints; FP8 weights are not automatically smaller than INT8.
+
+## 2026-11-11 — finer physical R9700 split prepared (card-free, hardware pending)
+
+Candidate `r9700-43`: **4992 / 4992 / 7424** physical FFN intermediate
+columns (28.68 / 28.68 / 42.65%). Its four logical benchmark
+partitions are **4992 / 4992 / 3712 / 3712**, each 128-aligned.
+The prior 30/30/40, ~28/28/44 and 25/25/50 candidates retain their
+original 256-tile geometry and unchanged frozen VTP12 manifests. The
+new split is a microbenchmark **shape** only, not an implemented
+physical-TP3 or fused virtual-TP4 execution path.
+
+The existing pinned selftest's `--perfw8` accepts N multiple 256 and
+K multiple 128. XTX gate/up: N=9984, K=5120; R9700 gate/up: N=14848,
+K=5120. Down: N=5120, K=4992 (XTX) or K=7424 (R9700). Matching
+native narrow/tiled GEMM row constraints allow these *shapes*, not
+yet a correct engine or mixed quant graph. Updated the existing
+`xtx27_vtp12_pilot.py` and `xtx27_vtp12_replay.py` to include the
+new candidate, preserving lease checks, provenance and immutable
+ABBA receipts. 19 focused tests + Ruff passed; all 72 prior cases
+replayed with unchanged schedules.
+
+**No new hardware results yet:** the initial check found an XTX
+-125 mV power A/B GPU lease and KFD processes. At the final check,
+the lease was free but other Radiance/MoE KFD processes were still
+resident *outside any lease*. Never stop/preempt their processes.
+Do not acquire a measuring lease or start a benchmark until both
+`agent-lease status` and `rocm-smi --showpids` are clear.
+
+When `agent-lease status` says no leases and `rocm-smi --showpids`
+says no KFD processes, the first hardware command is:
+
+```bash
+# From the existing VTP12 worktree, with BC_WORK_ROOT configured.
+: ${BC_WORK_ROOT:?Set BC_WORK_ROOT in environment.local.toml}
+BUILD="${BC_WORK_ROOT}/builds/f17f21fda44979e9abe84f13e96b8896/08b5dd81b4874390bf0cbf489db0d7df"
+OUT="${BC_WORK_ROOT}/xtx27-prefill"
+python3 tools/lab/radiance/xtx27_vtp12_pilot.py --phase run --run --challenger r9700-43 --m 4 --iters 9 --build-dir "$BUILD" --output-dir "$OUT/vtp12-abba-43-m4-UNIQUE" --timeout-s 30
+python3 tools/lab/radiance/xtx27_vtp12_replay.py --campaign-dir "$OUT/vtp12-abba-43-m4-UNIQUE" --output "$OUT/vtp12-abba-43-m4-UNIQUE/summary-replay-v1.json"
+```
+
+The runner acquires/releases the exclusive lease, refuses inherited
+GPU masks and pre-existing KFD processes, and rejects changed pinned
+binary/plugin hashes. Do not double-acquire its lease. After a passing
+M4 test, use unique directories for M1/M8/M64. M64 must use the
+separate corrected replay (VTP05-declared INT8 tiled at M>16 versus
+optimistic best-native INT8 row). Require >=3 fresh ABBA campaigns,
+actual 3-card simultaneous communication, real GDN/attention
+two-head tests, numerical oracles, BF16-relative full-model quality
+and physical VRAM/KV admission before any serving promotion.
