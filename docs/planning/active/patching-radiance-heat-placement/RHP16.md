@@ -2,7 +2,7 @@
 id: RHP16
 order: 0
 plan: patching-radiance-heat-placement
-state: pending
+state: in_progress
 created-at: '2026-11-03T00:02:23.382624+00:00'
 breadth: ''
 skill: advanced
@@ -613,3 +613,4 @@ Merge: off by default (no record in the production store). Enabling waits on the
 - 2026-11-07T11:23:52.981370+00:00 (updated-by): Updated: section:notes
 - 2026-11-07T13:21:57.400240+00:00 (updated-by): Updated: section:notes
 - 2026-11-07T16:21:50.404006+00:00 (updated-by): Updated: section:notes
+- 2026-11-10T03:37:11.008607+00:00 (state-transition): State: pending → in_progress

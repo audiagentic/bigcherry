@@ -2,7 +2,7 @@
 id: RHP11
 order: 10
 plan: patching-radiance-heat-placement
-state: pending
+state: in_progress
 created-at: '2026-10-31T00:00:00+00:00'
 breadth: ''
 skill: advanced
@@ -101,3 +101,4 @@ PROGRESS 2026-11-04 slice E (PR #558, branch feat/rhp11-slice-e-helper-slots): h
 - 2026-11-04T06:50:47.247787+00:00 (updated-by): Updated: section:ledger-events
 - chg_20261104_150859_flash-next-can-now-move-hot-ex_3589
 - 2026-11-04T15:09:07.352451+00:00 (updated-by): Updated: section:ledger-events
+- 2026-11-10T03:37:02.402821+00:00 (state-transition): State: pending → in_progress
