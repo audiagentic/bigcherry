@@ -12,6 +12,8 @@ llama.cpp remains active as the secondary engine.
   integration patches and BigCherry-owned extensions.
 - [Flash-Next measurements](engines/radiance/models/qwen3.8-flash-next.md) —
   four-card layout, prefill, multi-stream decode and retained-session results.
+- [Live expert placement](engines/radiance/LIVE_PLACEMENT.md) —
+  what is built (live migration and the heat-driven policy), how it is switched on, how to check it is on, how to restore it.
 - [Serving configuration](../../engines/radiance/components/serving/README.md) —
   the current C++ loader and manifest work.
 

@@ -165,7 +165,7 @@ A campaign arm that serves from a manifest describes its configuration under `se
 
 `layout` names an entry of `engines/radiance/layouts.toml` (required); `set` holds `bc-serve --set key=value` settings (strings, numbers,
 booleans); `heat` and `histogram` are the layout's route-heat inputs and are required exactly when the layout has helpers (`/dev/null`
-for no recording). `calibration` (a calibration store, from which bc-serve derives the live policy), `live_policy` and `experiment` (files)
+for no recording). `calibration` (a calibration store, from which bc-serve derives the live policy) (the policy is absent, silently, when the store has no record for this configuration's calibration key: see [live placement](LIVE_PLACEMENT.md)), `live_policy` and `experiment` (files)
 and `calibration_run` (true) are the matching `bc-serve --calibration`, `--live-policy`, `--experiment` and `--calibration-run`; they reach
 every bc-serve call of the arm and the experiment file's contents are part of the plan-cache key. The model, the runtime home and the engine port come from the job and the build; environment variables in the
 block are expanded. An arm with `serving` takes no `server_args` (they are settings) and needs `execution_evidence: "observe"` (a
