@@ -1,5 +1,13 @@
 # Flash-Next MTP verification-overlap pipeline
 
+## Next actions (reconciled 2026-11-10)
+
+1. FMTP07 with ENG02: one shared current-build MTP sweep.
+2. Do not extrapolate older pipeline acceptance to new live policy.
+
+See [Flash-Next execution status](../../FLASHNEXT_EXECUTION_STATUS.md) for item states, evidence paths and tail sizes.
+
+
 Plan set for hiding native MTP work under target verification on BigCherry's separate-draft-GPU Flash-Next topology.
 
 ## Baseline and scope

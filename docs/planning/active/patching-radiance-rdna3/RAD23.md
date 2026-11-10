@@ -13,6 +13,10 @@ priority: P1
 
 # moe-remote: helper count and topology as runtime values (no fixed 2), selectable combine methods
 
+## Current evidence reconciliation (2026-11-10)
+
+The old future-tense KLD/test notes were written before later runs. The 2G tail is the conservative named default; the 14G+CPU-combine flashnext-4gpu layout exists. RAD46 v1.17.0 4G/14G p99.9 gate failures supersede the earlier pass for current quality decisions. RHP10 closed the long-context tail matrix. See the linked status matrix; do not rerun it.
+
 ## Description
 
 Owner rules (2026-10-23, CLAUDE.local.md): code for unknown topologies - no fixed helper/device counts; topology-dependent methods stay selectable with a derived auto. The moe-remote protocol and helper hard-code two: kMaxRanks = 2 (moe_remote_shm.h) indexes result planes [rank][helper], combine.lane/seq are 2-element arrays, and R3_MOE_WORKER_COMBINE requires helper_count == 2. Make helper count (1..N) and engine ranks runtime values with separate axes, and make the helper-row combine a selectable method: R3_MOE_WORKER_COMBINE=off|cpu|gpu|auto (later p2p).

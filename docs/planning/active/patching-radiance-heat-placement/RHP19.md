@@ -13,6 +13,10 @@ work: M
 
 # Calibration that always terminates with a usable record: bounded loop, periodic waiting report, and a deliberate tail-lane move to measure the tail-lane quantities
 
+## Current evidence reconciliation (2026-11-10)
+
+PR #801 repaired report newlines and the original 30-minute run had a COMPLETE record, not a stuck tail watchdog. The finite/partial lifecycle and passive event measurement gates remain open.
+
 ## Description
 
 launch-flashnext-best.sh --calibrate loops until the helper prints RHP16_CALIBRATION_JSON. The helper's timeout machinery (worker_policy_calibration.h CalibrationProgressTimeout) only starts a quantity's timer once it is measurable; tail_lane_service_ns_per_s, tail_lane_row_ns and lane_lost_ns are measurable only after a committed transaction that involves the tail lane (m.tail_committed_transactions > 0). If the policy never proposes such a move (835 of 845 evaluations on 2026-11-10 found no improvement above the margin because the startup placement already fits both prompt sets), no timer starts and the loop never ends. It also prints the waiting list only when it changes, so the operator cannot see what is missing. The 2026-11-07 calibration ended with a partial record after the planner timed out.
