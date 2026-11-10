@@ -306,6 +306,12 @@ static void derive_says_why() {
     why.clear();
     assert(!sv::derive_manifest_live_policy(in, container, &why));                   // no store given
     assert(why.find("no calibration store") != std::string::npos);
+    // Helper arrangement the planner is not built for: no tail (flashnext-2xtx) is refused with the arrangement named.
+    in.resolved.manifest = Json{{"process_helpers", Json::array({Json{{"placement", "head"}}, Json{{"placement", "head"}}})}};
+    why.clear();
+    assert(!sv::derive_manifest_live_policy(in, container, &why));
+    assert(why.find("exactly one tail helper") != std::string::npos && why.find("[head,head]") != std::string::npos);
+    in.resolved.manifest = Json{{"process_helpers", Json::array({Json{{"placement", "head"}}, Json{{"placement", "tail"}}})}};
     const fs::path store = write_fixture("schema_version = 1\n");
     in.calibration_cache = store;
     why.clear();

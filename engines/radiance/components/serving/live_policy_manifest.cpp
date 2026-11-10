@@ -13,6 +13,26 @@ std::optional<DerivedLivePolicy> derive_manifest_live_policy(
     const ManifestInputs& in, const bc::experts::Container& container, std::string* skipped_reason) {
     // An unmeasured manifest is never what a start uses (the measured one follows), so it carries no reason.
     if (!in.measured) return std::nullopt;
+    // The placement planner (worker_heat.h, worker_share::plan_tail) takes the LAST helper to be the tail and every other helper a head.
+    // Another arrangement would make it treat a head as a tail (flashnext-2xtx has no tail) or override a weighted head split
+    // (flashnext-2xtx-rdna2-head); a layout it was not built for gets no policy, with the reason, until the planner is topology-aware (RHP20).
+    if (in.resolved.manifest.is_object() && in.resolved.manifest.contains("process_helpers") &&
+        !in.resolved.manifest.at("process_helpers").empty()) {
+        const Json& ph = in.resolved.manifest.at("process_helpers");
+        std::string arrangement;
+        bool heads_then_one_tail = ph.size() >= 2;
+        for (size_t i = 0; i < ph.size(); ++i) {
+            const std::string where = ph.at(i).value("placement", "");
+            arrangement += (i ? "," : "") + where;
+            if (where != (i + 1 == ph.size() ? "tail" : "head")) heads_then_one_tail = false;
+        }
+        if (!heads_then_one_tail) {
+            if (skipped_reason)
+                *skipped_reason = "the live placement planner needs head helpers followed by exactly one tail helper; this layout's "
+                                  "helpers are [" + arrangement + "] (no tail helper, or heads weighted by share, are not supported yet)";
+            return std::nullopt;
+        }
+    }
     if (in.calibration_cache.empty()) {
         if (skipped_reason) *skipped_reason = "no calibration store was given (bc-serve --calibration)";
         return std::nullopt;
