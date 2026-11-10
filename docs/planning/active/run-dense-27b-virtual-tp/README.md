@@ -1,6 +1,6 @@
 # VTP27 — virtual four-way tensor sharding on three physical GPUs
 
-Status: research and card-free qualification only. No virtual rank runtime, GPU benchmark, production layout or memory admission exists.
+Status: real 2-XTX Q8 engine and per-physical-GPU Q6/Q8 microkernel measurements exist (VTP05/VTP07/VTP09/VTP10); no virtual-rank TP4 runtime, three-card full-model benchmark, production layout or three-card memory admission exists.
 
 **Owner requirement:** dense 27B served at Q6 or Q8 (not Q4), maximise *resident* KV and sustain 4+ simultaneous streams. Physical hardware: gfx1100 RX 7900 XTX 24 GiB ×2 and gfx1201 R9700 32 GiB ×1. PCIe upstream: XTX Gen4 x8 each, R9700 Gen4 x4. No proven GPU-to-GPU P2P.
 
@@ -14,6 +14,7 @@ Three independent, bounded work items:
 - [VTP07](VTP07.md): actual Q6/Q8 M4 GPU results and the gfx11 IQ6R layout compatibility blocker.
 - [VTP08](VTP08.md): native W8A8 RAD2 FFN plus FP8 attention-KV strict physical-VRAM lower bounds and no-go cases.
 - [VTP09](VTP09.md): gfx1100 IQ6R M64 tiled dispatch override, numeric qualification and crossover measurements.
+- [VTP10](VTP10.md): real native W8A8 TP2 prefill/concurrency control, source BF16 calibration debugging and IQ6R prerequisites.
 
 - [VTP03](VTP03.md): gated Q6/Q8 full-model prototype, 4+/long-context A/B benchmark and go/no-go.
 
