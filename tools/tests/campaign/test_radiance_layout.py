@@ -163,14 +163,14 @@ class ResolveTests(unittest.TestCase):
     def test_two_xtx(self):
         r = rl.resolve("flashnext-2xtx", host(*XTX2))
         self.assertEqual([h.index for h in r.helpers], [0, 1])
-        self.assertEqual(r.common_env, {"R3_MOE_WORKER_COUNT": "2", "R3_MOE_WORKER_ENGINE_RANKS": "1", "R3_MOE_WORKER_MIBS": "22528,22528"})
+        self.assertEqual(r.common_env, {"R3_MOE_WORKER_COUNT": "2", "R3_MOE_WORKER_ENGINE_RANKS": "1"})
         self.assertEqual(r.helper_env(1)["ROCR_VISIBLE_DEVICES"], "1")
         self.assertEqual(r.helper_env(1)["R3_MOE_WORKER_INDEX"], "1")
 
     def test_a_third_card_comes_from_the_inventory_not_the_code(self):
         r = rl.resolve("flashnext-2xtx-rdna2-tail", host(*WITH_6900))
         self.assertEqual([(h.index, h.arch.name, h.budget_mib, h.placement) for h in r.helpers],
-                         [(0, "gfx1100", 22528, "head"), (1, "gfx1100", 22528, "head"), (3, "gfx1030", 2048, "tail")])
+                         [(0, "gfx1100", 24560 - 1024, "head"), (1, "gfx1100", 24560 - 1024, "head"), (3, "gfx1030", 16368 - 1024, "tail")])
         self.assertEqual(r.common_env["R3_MOE_WORKER_PLACEMENT"], "tail")
         self.assertEqual(r.helper_env(2)["R3_MOE_WORKER_PLUGIN_FILE"], "libr2.so")
         self.assertEqual(r.helper_env(2)["R3_MOE_WORKER_ROWS"], "1")
@@ -187,7 +187,8 @@ class ResolveTests(unittest.TestCase):
 
     def test_a_budget_override_by_architecture_and_its_limit(self):
         r = rl.resolve("flashnext-2xtx-rdna2-tail", host(*WITH_6900), budgets={"gfx1030": 4096})
-        self.assertEqual(r.common_env["R3_MOE_WORKER_MIBS"], "22528,22528,4096")
+        self.assertEqual(r.helpers[-1].budget_mib, 4096)
+        self.assertNotIn("R3_MOE_WORKER_MIBS", r.common_env)
         with self.assertRaisesRegex(rl.LayoutError, "exceeds 15344 MiB"):
             rl.resolve("flashnext-2xtx-rdna2-tail", host(*WITH_6900), budgets={"gfx1030": 16000})
         with self.assertRaisesRegex(rl.LayoutError, "no helper group uses"):

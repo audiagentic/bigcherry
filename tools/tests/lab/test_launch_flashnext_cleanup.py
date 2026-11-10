@@ -26,6 +26,11 @@ case "$*" in
   *"-m bigcherry host-check"*) exit 0 ;;
   *"-m bigcherry gpu-power apply"*) echo apply >> "$FAKE_LOG"; [ -n "${FAKE_POWER_APPLY_FAIL:-}" ] && exit 1; exit 0 ;;
   *"-m bigcherry gpu-power restore"*) echo restore >> "$FAKE_LOG"; exit 0 ;;
+  *"-m bigcherry resources derive-launch"*)
+    echo "HOST_POOL_MIB=8192"
+    echo "HOST_KV_MIB=10240"
+    echo "RSC03 derived resource ledger: fake inventory and owner-map measurements" >&2
+    exit 0 ;;
   *"-m bigcherry layout env"*) cat "$FAKE_LAYOUT_ENV"; exit 0 ;;
 esac
 exec "$REAL_PYTHON" "$@"

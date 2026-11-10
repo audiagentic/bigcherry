@@ -68,6 +68,8 @@ def main(argv: list[str] | None = None) -> int:
     if effective[:1] == ["jobs"]:
         jobs_main = cast(Any, importlib.import_module("bigcherry.cli.jobs").main)
         return int(jobs_main(effective[1:]))
+    if effective[:1] == ["resources"]:
+        return int(importlib.import_module("bigcherry.engine_adapters.radiance_launch").main(effective[1:]))
     if effective[:1] == ["hardware"]:
         hardware_main = cast(Any, importlib.import_module("bigcherry.cli.hardware").main)
         return int(hardware_main(effective[1:]))

@@ -41,9 +41,9 @@
 # speed (RHP02: 8 sessions 2,473 against 2,513 tok/s, inside the run-to-run spread), so it is on by default, and
 # tools/lab/radiance/heat-placement/heat-watch.py (the start message prints the command) says when the active --heat file stops fitting. Invert the file, restart with --heat and a larger
 # --budget (RHP10: workload-recorded heat plus gfx1100=23500 gave +34% prefill at 675K used context on a corpus it had not seen).
-# --host-pool-mib N: pinned host memory for the engine's expert tier (default 9216). With the helpers owning almost every
+# --host-pool-mib N: pinned host memory for the engine's expert tier (explicit value required until v2). With the helpers owning almost every
 #   expert the engine uses ~7.1 GiB of it; the old 22528 pinned ~16 GiB unused (RSC03 will derive this from ownership).
-# --host-kv-mib N: host KV tier (--prefix-cache-mib) for finished sessions (default 12288, 0 = off). Without it finished
+# --host-kv-mib N: host KV tier (--prefix-cache-mib) for finished sessions (explicit value required until v2; 0 = off). Without it finished
 #   sessions keep their KV in VRAM, the KV cache stops lending VRAM to the engine's experts and a long-running server
 #   loses ~half its prefill speed (49K prefill after an ~1M-token session fill: 1,901 -> 3,165 tok/s with the tier).
 #   With the 47.7 GiB n-gram table in RAM, 9 GiB pool + 12 GiB tier is about the most that fits; a 24 GiB tier is refused.
@@ -105,8 +105,8 @@ GPU_POWER=${GPU_POWER:-0}
 LAYOUT=${FLASHNEXT_LAYOUT:-flashnext-4gpu}
 BUDGETS=()
 RECORD=$RUN/heat.live   # RHP02: on by default; --record-heat off disables
-HOST_POOL_MIB=9216        # interim, measured (RSC03 derives it): the engine uses ~7.1 GiB of it with the helpers owning ~all experts
-HOST_KV_MIB=12288         # interim, measured (RSC03 derives it): host KV tier for finished sessions, funded by the smaller pool
+HOST_POOL_MIB=             # no fallback: a v1 lab launch must pass an explicit measured --host-pool-mib
+HOST_KV_MIB=               # no fallback: a v1 lab launch must pass an explicit measured --host-kv-mib
 CHUNK=2048
 CKPT_INTERVAL=4096   # the engine's --checkpoint-interval; the plan check's configuration (plan-check.sh) names it too
 NUM_SPEC=3                # the engine's --num-speculative-tokens (MTP depth); likewise
@@ -422,6 +422,24 @@ MODEL=${MODEL:-${BC_MODEL_ROOT:?set BC_MODEL_ROOT (source tools/env/bigcherry-en
 [ -f "$MODEL" ] || { echo "RADIANCE_EXIT=99 model not found: $MODEL"; exit 99; }
 if [ "$LAYOUT_HELPER_COUNT" -gt 0 ]; then
   [ -f "$HEAT" ] || { echo "RADIANCE_EXIT=99 route-heat file not found: $HEAT"; exit 99; }
+fi
+# S7: derive the budgets at every start from the bc-serve BDF/owner-map
+# resolution, model RAD directory, RAM and calibrated retention target.
+# The CLI writes shell assignments to stdout and its complete breakdown
+# to stderr. There is no implicit fixed-size memory fallback.
+if [ "$LAYOUT_HELPER_COUNT" -gt 0 ]; then
+  requested_pool=$HOST_POOL_MIB requested_kv=$HOST_KV_MIB
+  RESOURCE_ASSIGNMENTS=$(PYTHONPATH=tools python3 -m bigcherry resources derive-launch \
+    --layout "$LAYOUT" --model "$MODEL" --bc-serve "$BC_SERVE_BINARY" \
+    --radiance-home "$RAD_HOME" --heat "$HEAT" --histogram "$RECORD" \
+    --sessions "$SEQS" --context "$MAX_LEN" --ngram "$NGRAM") || {
+      echo "RADIANCE_EXIT=97 RSC03 resource derivation refused the start" >&2
+      exit 97
+    }
+  eval "$RESOURCE_ASSIGNMENTS"
+  [ -z "$requested_pool" ] || HOST_POOL_MIB=$requested_pool
+  [ -z "$requested_kv" ] || HOST_KV_MIB=$requested_kv
+  echo "RSC03 resolved host pool $HOST_POOL_MIB MiB, host KV $HOST_KV_MIB MiB" >&2
 fi
 
 source "$(dirname "${BASH_SOURCE[0]}")/lab-env.sh"

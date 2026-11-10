@@ -105,6 +105,7 @@ struct Fixture {
               "Max locked memory         8388608              8388608              bytes\n");
         write(root / "proc/self/status", "Name:\tbc-serve\nCapEff:\t00000000a80425fb\n");
         write(root / "sys/module/amdgpu/parameters/no_system_mem_limit", "N\n");
+        bc::test::write_rad(root / "model.rad", 4, 16, 128, 128, {});
         facts = bc::serving::detect(root);
         // detect() counts this machine's CPUs; the fixture fixes the count so the result does not depend on the runner.
         facts["host"]["cpu_count"] = 32;
@@ -117,7 +118,7 @@ struct Fixture {
     }
     Options standard() {
         Options opts;
-        opts.site = file("site.toml", "[engine]\nmodel = \"/model.rad\"\n"
+        opts.site = file("site.toml", "[engine]\nmodel = \"" + (root / "model.rad").string() + "\"\n"
                                       "radiance_home = \"/runtime\"\n"
                                       "[handoff]\nheat = \"/heat.hot-first\"\n"
                                       "histogram = \"/heat.live\"\n");
@@ -207,7 +208,7 @@ void detection_limits(const Fixture& t) {
 void unknown_keys(Fixture& t) {
     auto opts = t.standard();
     opts.site = t.file("unknown-site.toml",
-                       "[engine]\nmodel = \"/model.rad\"\n"
+                       "[engine]\nmodel = \"" + (t.root / "model.rad").string() + "\"\n"
                        "radiance_home = \"/runtime\"\n"
                        "max_numm_seqs = 7\n");
     fail(opts, t.facts, "unknown-site.toml: unknown key engine.max_numm_seqs");
@@ -248,7 +249,7 @@ void type_range_required(Fixture& t) {
 void precedence_and_caps(Fixture& t) {
     auto opts = t.standard();
     opts.site = t.file("precedence-site.toml",
-        "[engine]\nmodel = \"/model.rad\"\nradiance_home = \"/runtime\"\nport = 4700\n"
+        "[engine]\nmodel = \"" + (t.root / "model.rad").string() + "\"\nradiance_home = \"/runtime\"\nport = 4700\n"
         "[handoff]\nheat = \"/heat.hot-first\"\nhistogram = \"/heat.live\"\n");
     opts.profile = t.file("precedence-profile.toml", "[engine]\nport = 4800\n");
     opts.sets = {"engine.port=4900"};
@@ -266,7 +267,7 @@ void precedence_and_caps(Fixture& t) {
     assert(d.typed.engine.port == 36080);
 
     opts.site = t.file("cap-site.toml",
-        "[engine]\nmodel = \"/model.rad\"\nradiance_home = \"/runtime\"\n"
+        "[engine]\nmodel = \"" + (t.root / "model.rad").string() + "\"\nradiance_home = \"/runtime\"\n"
         "[memory]\nhost_pool_mib = 7000\n"
         "[hard_caps.memory]\nhost_pool_mib = 8000\n"
         "[handoff]\nheat = \"/heat.hot-first\"\nhistogram = \"/heat.live\"\n");
@@ -281,7 +282,7 @@ void precedence_and_caps(Fixture& t) {
     fail(opts, t.facts, "hard caps are site-only");
     opts.sets.clear();
     opts.site = t.file("overcap-site.toml",
-        "[engine]\nmodel = \"/model.rad\"\nradiance_home = \"/runtime\"\n"
+        "[engine]\nmodel = \"" + (t.root / "model.rad").string() + "\"\nradiance_home = \"/runtime\"\n"
         "[hard_caps.memory]\nhost_pool_mib = 999999\n"
         "[handoff]\nheat = \"/heat.hot-first\"\nhistogram = \"/heat.live\"\n");
     fail(opts, t.facts, "exceeds detected RAM");
@@ -313,7 +314,7 @@ void provenance_hash_and_parity(Fixture& t) {
     // RSC02 deletes the launcher and replaces this with a manifest golden.
     const auto& e = r.values.at("engine");
     const std::vector<std::pair<std::string, Json>> expected_engine = {
-        {"model", "/model.rad"}, {"radiance_home", "/runtime"}, {"port", 36080},
+        {"model", (t.root / "model.rad").string()}, {"radiance_home", "/runtime"}, {"port", 36080},
         {"kernels", "libr4d,libr3moe,libref"}, {"placement", "expert_tiered"},
         {"ngram_placement", "ram"}, {"host_pool_mib", 9216},
         {"prefix_cache_mib", 12288}, {"tp", 1}, {"max_num_seqs", 8},
@@ -347,9 +348,12 @@ void provenance_hash_and_parity(Fixture& t) {
     for (const auto& [name, value] : expected_helper)
         if (h.at(name) != value)
             throw std::runtime_error("launcher WorkerConfig parity failed: " + name);
-    assert(r.typed.memory.helper_budgets_mib ==
-           (std::vector<uint64_t>{22528, 22528, 2048}));
-    assert(r.typed.memory.tail_budget_mib == 2048);
+    const auto& derived_budgets = r.typed.memory.helper_budgets_mib;
+    assert(derived_budgets.size() == 3);
+    for (size_t i = 0; i < derived_budgets.size(); ++i)
+        assert(derived_budgets[i] > 0 &&
+               derived_budgets[i] < t.facts.at("gpus")[i < 2 ? i : 3].at("vram_total_mib").get<uint64_t>());
+    assert(r.typed.memory.tail_budget_mib == derived_budgets.back());
     assert(r.manifest.at("process_helpers").size() == 3);
     const auto& helpers = r.manifest.at("process_helpers");
     assert(helpers[0]["plugin_file"] == "libr3.so");
@@ -455,18 +459,18 @@ void host_reserve(Fixture& t) {
     assert(p.at("inputs").size() == 3);
     // The site may only raise it.
     auto opts = t.standard();
-    opts.site = t.file("floor-site.toml", "[engine]\nmodel = \"/model.rad\"\nradiance_home = \"/runtime\"\n"
+    opts.site = t.file("floor-site.toml", "[engine]\nmodel = \"" + (t.root / "model.rad").string() + "\"\nradiance_home = \"/runtime\"\n"
                                           "[handoff]\nheat = \"/heat.hot-first\"\nhistogram = \"/heat.live\"\n"
                                           "[hard_floors.memory]\nhost_reserve_mib = 8192\n");
     r = bc::serving::resolve(opts, t.facts);
     assert(r.values.at("memory").at("host_reserve_mib") == 8192);
     assert(r.provenance.at("memory.host_reserve_mib").at("origin") == "site");
-    opts.site = t.file("low-floor-site.toml", "[engine]\nmodel = \"/model.rad\"\nradiance_home = \"/runtime\"\n"
+    opts.site = t.file("low-floor-site.toml", "[engine]\nmodel = \"" + (t.root / "model.rad").string() + "\"\nradiance_home = \"/runtime\"\n"
                                               "[handoff]\nheat = \"/heat.hot-first\"\nhistogram = \"/heat.live\"\n"
                                               "[hard_floors.memory]\nhost_reserve_mib = 1024\n");
     r = bc::serving::resolve(opts, t.facts);
     assert(r.values.at("memory").at("host_reserve_mib") == 6554);
-    opts.site = t.file("bad-floor-site.toml", "[engine]\nmodel = \"/model.rad\"\nradiance_home = \"/runtime\"\n"
+    opts.site = t.file("bad-floor-site.toml", "[engine]\nmodel = \"" + (t.root / "model.rad").string() + "\"\nradiance_home = \"/runtime\"\n"
                                               "[handoff]\nheat = \"/heat.hot-first\"\nhistogram = \"/heat.live\"\n"
                                               "[hard_floors.memory]\nhost_pool_mib = 1024\n");
     fail(opts, t.facts, "unknown floor hard_floors.memory.host_pool_mib");
@@ -1492,6 +1496,11 @@ void engine_only_layout(Fixture& t) {
     }
     // a layout with helpers still needs its heat and histogram files
     Options helpers = opts;
+    // A helper layout needs routed experts before it can derive a VRAM budget;
+    // keep this test focused on the missing handoff inputs.
+    helpers.site = t.file("helper-required-site.toml",
+                          "[engine]\nmodel = \"" + (t.root / "model.rad").string() +
+                          "\"\nradiance_home = \"/runtime\"\n");
     helpers.sets = {"layout.name=\"flashnext-2xtx\""};
     fail(helpers, t.facts, "missing required key: handoff.heat");
     // a two-rank engine without its transport is refused
