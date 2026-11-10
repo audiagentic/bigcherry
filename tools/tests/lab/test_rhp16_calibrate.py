@@ -111,3 +111,12 @@ class CalibrationLauncherTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class HeatPeriodDefaultTest(unittest.TestCase):
+    def test_default_record_period_serves_the_live_policy(self):
+        # A 60 s histogram period left the derived policy (heat age ~10 s, cadence ~5 s) with a stale feed and no moves.
+        launcher = Path(__file__).resolve().parents[3] / "tools/lab/radiance/launch-flashnext-best.sh"
+        text = launcher.read_text()
+        self.assertRegex(text, r"(?m)^RECORD_PERIOD=1$")
+        self.assertNotRegex(text, r"(?m)^RECORD_PERIOD=60$")
