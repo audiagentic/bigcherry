@@ -88,3 +88,62 @@ Only the FFN category corresponds directly to the VTP05 measured FFN
 shard geometry. The other categories do NOT imply whole-card replication
 or straightforward proportional sharding; the actual Radiance
 converter/operator ownership must determine physical allocation.
+
+## 2026-11-10: real converter preflight and existing native W8A8 inventory
+
+**No conversion required to get first Q8 test artifact.** Original
+`rad-convert --plan-only -v` with BF16 source, pinned
+`data/recipes/q38-27b-w8a8-df2.recipe`,
+`--set quantization_config.quant_method=w8a8`,
+`--set quantization_config.fmt=fwht128`, `--kernels libr3,libref`,
+and pinned build's `--home` succeeded with no GPU or write:
+
+| Source combination | Planned weights | Recipe quantized | Kept | Converter plan size |
+| --- | ---: | ---: | ---: | ---: |
+| BF16 27B, no external draft | 1038 | 295 | 743 | 27.94 GiB |
+| BF16 27B + local DFlash2 FP8 | 1101 | 321 | 780 | 29.03 GiB |
+
+Plan logs and commands:
+`${BC_WORK_ROOT}/xtx27-prefill/quant-shape/w8-plan-probe/{receipt.json,stderr.log}`
+and `w8-plan-probe-draft`.
+The DFlash2 plan reports 15 source MTP tensors not declared or
+written; verify drafter/MTP choice against quality before production.
+
+**Existing containers**, not newly generated:
+`${BC_MODEL_ROOT}/radiance/bigcherry/qwen3.8-27b-w8a8/`
+
+| Existing RAD2 file | Exact bytes | Actual size | RAD2 directory tensors | First 8 MiB SHA-256 |
+| --- | ---: | ---: | ---: | --- |
+| `qwen3.8-27b-w8a8.rad` | 29524840448 | 27.50 GiB | 1024 | `9224b7e0bdb29085d33b548538c6f8f1a6d544c1b8b16d85aa13067df7fff590` |
+| `qwen3.8-27b-w8a8-df2.rad` | 31180201984 | 29.04 GiB | 1101 | `e98ccbfbdd62342687d609bf07d0d875cc10ff89c4673e75744a0d12cdf81e91` |
+
+Both open through pinned `rad-info` and report
+`qwen35 / w8a8_fwht128`, geometry 64/5120/17408 and
+262144 native context. Each embedded recipe has 17 normalized
+rules and matches the currently pinned source recipe text.
+Source recipe SHA-256:
+`09725afb09d1816380c4128332ebf0eda8488e6018f9248843514a95d826d9ed`.
+RAD2 headers identify source name and original November 4 conversion,
+**not a full content hash binding to the BF16 source**. First-8-MiB
+hashes fingerprint the headers only; full payload integrity is
+not yet verified.
+
+Archived historical baseline at
+`docs/archive/radiance/qwen3.8-27b-pre-v117-reference.md`:
+dual XTX, W8A8+DFlash2, FP8 KV, measured **205.6 aggregate tok/s
+at 4 streams, 201.4 at 6** (2026-11-04 single run per row). Do not
+present these as current three-physical-GPU performance or rigorous p95.
+
+The same plan restricted to `--kernels libr4d,libref` initially
+failed declaring the architecture because Radiance selected
+**physical GPU0 gfx1100** and correctly excluded the gfx1201-only
+libr4d device code. This is a *device selection mismatch*, not
+evidence that R9700 W8A8 is broken. A gfx1201-only plan requires
+isolating GPU2 and running under the GPU lease.
+
+**IQ6R-V4** needs matching RADGRAM2 calibration Hessians, plus
+the prepared vocabulary-head classes (the pinned
+`data/vhead/q38-27b-vhead-5.0.cls` exists) and GPTQ producer.
+No matching model calibration corpus was confirmed in the inspected
+local locations. Do not run an uncalibrated, unqualified 6-bit
+conversion or replace IQ6R with GGUF Q6_K.
