@@ -138,8 +138,20 @@ The same plan restricted to `--kernels libr4d,libref` initially
 failed declaring the architecture because Radiance selected
 **physical GPU0 gfx1100** and correctly excluded the gfx1201-only
 libr4d device code. This is a *device selection mismatch*, not
-evidence that R9700 W8A8 is broken. A gfx1201-only plan requires
-isolating GPU2 and running under the GPU lease.
+evidence that R9700 W8A8 is broken. A gfx1201-only plan was subsequently **completed successfully** under
+the exclusive GPU lease, with GPU2 isolated by
+`ROCR_VISIBLE_DEVICES=2` and `--kernels libr4d,libref`.
+The converter reported one visible `gfx1201` device,
+**1038 planned weights (295 quantised, 743 retained)**,
+and **27.94 GiB** estimated output, exit code zero.
+Receipt/log: `${BC_WORK_ROOT}/xtx27-prefill/quant-shape/w8-plan-probe-r9700-v2/`.
+A second exclusive-leased gfx1201-only plan **with the local DFlash2
+drafter** also succeeded: 1101 weights (321 quantised, 780 kept),
+29.03 GiB estimate, one visible gfx1201 device, exit code zero.
+Receipt/log: `${BC_WORK_ROOT}/xtx27-prefill/quant-shape/w8-plan-probe-r9700-draft/`.
+Both R9700 checks are plan-only and wrote no converted model.
+This validates the R9700 *graph/encoding plan only*, not serving or
+mathematical quality. The GPU lease was released and no KFD processes remained.
 
 **IQ6R-V4** needs matching RADGRAM2 calibration Hessians, plus
 the prepared vocabulary-head classes (the pinned
