@@ -361,13 +361,6 @@ if [ "$LAYOUT_HELPER_COUNT" = 0 ] && [ "${#CUSTOM_SERVE_OPTIONS[@]}" -ne 0 ]; th
   echo "RADIANCE_EXIT=2 these options configure helper-offload serving, not the helper-free layout $LAYOUT: ${CUSTOM_SERVE_OPTIONS[*]}; use its server-args in layouts.toml" >&2
   exit 2
 fi
-# S7 is intentionally inactive for v1 manifests: the old Bash launcher
-# cannot derive the real owner-map-sized pool or retained KV tier. Refuse an
-# implicit heuristic instead of reaching its measured interim fallback.
-if [ "$LAYOUT_HELPER_COUNT" -gt 0 ] && { [ -z "$HOST_POOL_MIB" ] || [ -z "$HOST_KV_MIB" ]; }; then
-  echo "RADIANCE_EXIT=2 v1 helper launch requires explicit measured --host-pool-mib and --host-kv-mib; v2 auto-derivation is not active" >&2
-  exit 2
-fi
 if [ "$CALIBRATE" = 1 ] && [ "$LAYOUT_HELPER_COUNT" -eq 0 ]; then
   echo "RADIANCE_EXIT=2 --calibrate requires a helper layout" >&2
   exit 2
@@ -429,6 +422,24 @@ MODEL=${MODEL:-${BC_MODEL_ROOT:?set BC_MODEL_ROOT (source tools/env/bigcherry-en
 [ -f "$MODEL" ] || { echo "RADIANCE_EXIT=99 model not found: $MODEL"; exit 99; }
 if [ "$LAYOUT_HELPER_COUNT" -gt 0 ]; then
   [ -f "$HEAT" ] || { echo "RADIANCE_EXIT=99 route-heat file not found: $HEAT"; exit 99; }
+fi
+# S7: derive the budgets at every start from the bc-serve BDF/owner-map
+# resolution, model RAD directory, RAM and calibrated retention target.
+# The CLI writes shell assignments to stdout and its complete breakdown
+# to stderr. There is no implicit fixed-size memory fallback.
+if [ "$LAYOUT_HELPER_COUNT" -gt 0 ]; then
+  requested_pool=$HOST_POOL_MIB requested_kv=$HOST_KV_MIB
+  RESOURCE_ASSIGNMENTS=$(PYTHONPATH=tools python3 -m bigcherry resources derive-launch \
+    --layout "$LAYOUT" --model "$MODEL" --bc-serve "$BC_SERVE_BINARY" \
+    --radiance-home "$RAD_HOME" --heat "$HEAT" --histogram "$RECORD" \
+    --sessions "$SEQS" --context "$MAX_LEN" --ngram "$NGRAM") || {
+      echo "RADIANCE_EXIT=97 RSC03 resource derivation refused the start" >&2
+      exit 97
+    }
+  eval "$RESOURCE_ASSIGNMENTS"
+  [ -z "$requested_pool" ] || HOST_POOL_MIB=$requested_pool
+  [ -z "$requested_kv" ] || HOST_KV_MIB=$requested_kv
+  echo "RSC03 resolved host pool $HOST_POOL_MIB MiB, host KV $HOST_KV_MIB MiB" >&2
 fi
 
 source "$(dirname "${BASH_SOURCE[0]}")/lab-env.sh"

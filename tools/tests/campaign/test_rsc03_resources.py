@@ -68,7 +68,8 @@ class ResourceTests(unittest.TestCase):
         launcher = (paths.REPO_ROOT / "tools/lab/radiance/launch-flashnext-best.sh").read_text()
         self.assertNotIn("HOST_POOL_MIB=9216", launcher)
         self.assertNotIn("HOST_KV_MIB=12288", launcher)
-        self.assertIn("v1 helper launch requires explicit measured", launcher)
+        self.assertIn("resources derive-launch", launcher)
+        self.assertIn("RSC03 resolved host pool", launcher)
 
     def test_shipped_layouts_have_no_literal_helper_budgets(self):
         for name, recipe in layouts.load_layouts().items():

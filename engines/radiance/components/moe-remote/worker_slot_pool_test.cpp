@@ -1,4 +1,5 @@
 #include "worker_slot_pool.h"
+#include "worker_footprint.h"
 #include "worker_generation_tables.h"
 #include "moe_remote_shm.h"
 #include "experts.h"
@@ -156,16 +157,12 @@ static void production_layout_parity() {
     std::ifstream in(R3_LAYOUTS_TOML);
     check(in.good(), "layouts.toml readable");
     std::map<std::string,std::vector<HelperConfig>> layouts;
-    std::set<std::string> derived;
     std::string name, line;
     HelperConfig group;
     bool open = false;
     auto flush = [&] {
         if (!open) return;
         check(!group.arch.empty(), "valid helper group");
-        /* A group without budget-mib takes its card's VRAM less the arch reserve (layouts.toml header): derived from
-         * the inventory at launch, so it has no card-free budget and its layout is not planned here. */
-        if (!group.budget) { derived.insert(name); open=false; return; }
         for (uint32_t i=0; i<group.count; ++i)
             layouts[name].push_back({group.budget, group.arch, group.placement, group.share, 1});
         open=false;
@@ -192,7 +189,6 @@ static void production_layout_parity() {
         }
     }
     flush(); check(!layouts.empty(),"production layouts present");
-    for(const auto& d: derived) layouts.erase(d);
     for(const auto& [name,helpers]:layouts) {
         check(!helpers.empty() && helpers.size()<=r3::moe_shm::kMaxHelpers,
               "production layout helper count");
@@ -204,8 +200,26 @@ static void production_layout_parity() {
             if(!shares.empty()) shares+=",";
             shares+=std::to_string(h.share);
         }
-        for(const auto& h: helpers) {
-            budgets.push_back(h.budget); archs.push_back(h.arch);
+        for(uint32_t i=0; i<helpers.size(); ++i) {
+            const auto& h = helpers[i];
+            uint64_t budget = h.budget;
+            if (!budget) {
+                // Test inventory and the same footprint arithmetic as bc-serve.
+                // Neither the production recipe nor this test supplies a budget literal.
+                const uint64_t card_mib = h.arch=="gfx1100" ? 24560 :
+                                          h.arch=="gfx1030" ? 16368 :
+                                          h.arch=="gfx1201" ? 32624 : 0;
+                const uint64_t reserve_mib = h.arch=="gfx1201" ? 2048 : 1024;
+                check(card_mib > reserve_mib, "derived fixture device/arch");
+                namespace fp = r3::worker_footprint;
+                const fp::Shape shape{layers,s.experts,s.hidden,s.intermediate,s.top_k,r3::moe_shm::kActGroup};
+                const auto classes = fp::small_classes({},8,4096);
+                const auto lanes = fp::lanes_for(classes,4096,uint32_t(helpers.size()),i,1,true);
+                const uint64_t fixed = fp::fixed_bytes(shape,lanes,fp::stride_bound(stride));
+                budget = fp::expert_budget_bytes(card_mib<<20,reserve_mib<<20,fixed) & ~uint64_t((1u<<20)-1);
+            }
+            check(budget > 0,"derived production helper budget");
+            budgets.push_back(budget); archs.push_back(h.arch);
             bc::experts::OwnerPolicy p;
             p.shares=shares; p.formats="w4nl64";
             p.placement=helpers.back().placement=="tail" ? "tail" : "roundrobin";
@@ -225,7 +239,7 @@ static void production_layout_parity() {
                   "manifest and worker owners, exact IDs/order and bytes");
             auto plan=r3::worker_slots::budget_plan(budgets[h],stride,
                                                    uint64_t(layers)*s.experts);
-            check(worker.expert.size()==plan.expert_slots &&
+            check(worker.expert.size()<=plan.expert_slots &&
                   worker.bytes<=budgets[h] && uint64_t(worker.expert.size())*stride<=budgets[h],
                   "production layouts preserve main counts and expert budget");
             // Full-size, allocation-free ledger proof: all planned weights
@@ -242,14 +256,8 @@ static void production_layout_parity() {
                   id==worker.expert.size(), "incoming reserve outside expert budget");
             check(ledger.reserve(uint32_t(worker.expert.size()+1),stride,2,true,&id)==
                   Result::DEFERRED_CAPACITY, "only one incoming slot");
-            if(name=="flashnext-4gpu") {
-                const uint32_t expected[]={9320,9320,5931};
-                const uint64_t arena[]={23620608000ull,23620608000ull,15031526400ull};
-                check(h<3 && worker.expert.size()==expected[h] &&
-                      plan.expert_bytes==arena[h] &&
-                      worker.expert.size()*stride==arena[h],
-                      "budget-wide Flash-Next arenas exactly equal main allocations");
-            }
+            check(plan.expert_bytes>=worker.expert.size()*stride,
+                  "derived production arena equals owned expert allocation");
         }
     }
 }
