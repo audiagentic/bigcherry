@@ -917,10 +917,16 @@ __global__ __launch_bounds__(128) void lane_moe_rows_w4_quaddpp(
                 uint32_t hw[8];
 #pragma unroll
                 for (uint32_t j = 0; j < 4; ++j) {
-                    hw[2 * j] = pack((_Float16)gemv_e4m3(qw[j] & 255u),
-                                    (_Float16)gemv_e4m3((qw[j] >> 8) & 255u));
-                    hw[2 * j + 1] = pack((_Float16)gemv_e4m3((qw[j] >> 16) & 255u),
-                                        (_Float16)gemv_e4m3(qw[j] >> 24));
+                    // RAD49 TK04: exact E4M3 -> fp16, two codes a lane op. The seven magnitude bits placed as an fp16 exponent
+                    // and mantissa read as 2^(e-15)(1+m/8) (the denormal m/8 2^-14 for e = 0); times 2^8 both are the code's
+                    // value (bias 7, subnormal m 2^-9), and the sign moves to bit 15. All 256 codes match gemv_e4m3 bit for bit.
+                    const uint32_t t01 = (qw[j] & 0xFFu) | ((qw[j] << 8) & 0x00FF0000u);
+                    const uint32_t t23 = ((qw[j] >> 16) & 0xFFu) | ((qw[j] >> 8) & 0x00FF0000u);
+                    const h2v k256 = {(_Float16)256.0f, (_Float16)256.0f};
+                    const uint32_t b01 = ((t01 & 0x007F007Fu) << 7) | ((t01 & 0x00800080u) << 8);
+                    const uint32_t b23 = ((t23 & 0x007F007Fu) << 7) | ((t23 & 0x00800080u) << 8);
+                    hw[2 * j] = __builtin_bit_cast(uint32_t, __builtin_bit_cast(h2v, b01) * k256);
+                    hw[2 * j + 1] = __builtin_bit_cast(uint32_t, __builtin_bit_cast(h2v, b23) * k256);
                 }
                 activation[buf][r][2 * p16] = make_uint4(hw[0], hw[1], hw[2], hw[3]);
                 activation[buf][r][2 * p16 + 1] = make_uint4(hw[4], hw[5], hw[6], hw[7]);
