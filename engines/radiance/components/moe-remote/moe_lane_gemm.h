@@ -834,7 +834,7 @@ constexpr uint32_t kQuadV2GuRB = kQuadDppRB / 2;
 // bits of the same levels in the same element order as the former LDS table -- and each quad broadcast is folded into its
 // add (v_add_f32_dpp): the same operands in swapped order, exact for an fp32 add. Bit-identical to the RAD46 form on 40
 // captured tail requests (runs/rad49-tail-quadopt), 9% less GEMM time on gfx1030.
-template <bool TOKEN, uint32_t RB, bool BYPASS = false>
+template <bool TOKEN, uint32_t RB, uint32_t STAGE = 0>
 __global__ __launch_bounds__(128) void lane_moe_rows_w4_quaddpp(
     const uint8_t* aq, const float* as, const int32_t* sorted, const int32_t* off, uint32_t top_k,
     void* const* code0, void* const* scale0, void* const* code1, void* const* scale1,
@@ -917,8 +917,19 @@ __global__ __launch_bounds__(128) void lane_moe_rows_w4_quaddpp(
                 uint32_t hw[8];
 #pragma unroll
                 for (uint32_t j = 0; j < 4; ++j) {
-                    if constexpr (BYPASS) { // TK04 timing experiment: no E4M3 conversion, input-dependent garbage; output invalid
+                    if constexpr (STAGE == 1u) { // TK04 timing experiment: no E4M3 conversion, input-dependent garbage; output invalid
                         hw[2 * j] = qw[j]; hw[2 * j + 1] = qw[j] ^ 0x80008000u; continue;
+                    }
+                    if constexpr (STAGE == 2u) { // TK04: packed exact E4M3 -> fp16: the 7 magnitude bits placed as an fp16 exponent/mantissa
+                        // read as 2^(e-15)(1+m/8) (denormal m/8 2^-14 for e = 0); times 2^8 both are the code's value.
+                        const uint32_t t01 = (qw[j] & 0xFFu) | ((qw[j] << 8) & 0x00FF0000u);
+                        const uint32_t t23 = ((qw[j] >> 16) & 0xFFu) | ((qw[j] >> 8) & 0x00FF0000u);
+                        const h2v k256 = {(_Float16)256.0f, (_Float16)256.0f};
+                        const uint32_t b01 = ((t01 & 0x007F007Fu) << 7) | ((t01 & 0x00800080u) << 8);
+                        const uint32_t b23 = ((t23 & 0x007F007Fu) << 7) | ((t23 & 0x00800080u) << 8);
+                        hw[2 * j] = __builtin_bit_cast(uint32_t, __builtin_bit_cast(h2v, b01) * k256);
+                        hw[2 * j + 1] = __builtin_bit_cast(uint32_t, __builtin_bit_cast(h2v, b23) * k256);
+                        continue;
                     }
                     hw[2 * j] = pack((_Float16)gemv_e4m3(qw[j] & 255u),
                                     (_Float16)gemv_e4m3((qw[j] >> 8) & 255u));
