@@ -146,3 +146,71 @@ versus 649.42 us for R9700-local combine and one packet, both PASS.
 Receipt: ${BC_WORK_ROOT}/xtx27-prefill/virtual-tp4/runs/20261110T021037926582Z-3541c5ee06.
 A full forward/reverse balanced series, actual Q8/Q6 kernels and
 whole-model performance remain future gated measurements. Lease released.
+
+## 2026-11-11: opt-in *single-R9700-partial* physical TP3 collective — executed
+
+A new opt-in `--physical-tp3` mode in
+`tools/lab/radiance/xtx27_vtp_micro.py` and
+`xtx27_vtp3_host_collective.hip` measures a different
+**transport contract** from virtual TP4: exactly one already-computed
+F32 partial on each of the three physical devices. Each is copied
+from GPU to pinned host, combined in exact F32 on CPU, then broadcast
+to all three physical devices. It does NOT enqueue two R9700 virtual
+rank operations or combine them locally. The legacy two-R9700-partials
+modes are unchanged and remain the default; TP3 is opt-in.
+
+The independent GPU-output oracle changes from four partials
+(10 + (i&7)*0.5) to three
+(6 + (i&7)*0.375). All three device results are checked at
+every output element, not just a host copy. This is synthetic
+F32 transport, **not** overlapped quant GEMMs or full serving.
+No P2P is enabled. The runner checks a lease held for its own exact
+purpose and refuses active KFD processes or inherited device masks
+before touching GPUs. HIP compiled for gfx1100/gfx1201 from
+source digest `542dc438f977b2ea6725aadae8fb515377348f83dad246b600708a14f560de45`
+under the pinned ROCm compiler, without changing a vendor component.
+
+**Three independent exclusively leased starts**, alternating
+normal/reverse order, seven cases each (one 4-MiB local scan,
+virtual-TP4 local-combine and two-packet comparisons at
+1/4/64 rows, plus physical-TP3 at each row count). All **21/21
+cases passed**. Each case's internal timed part had
+nine measured iterations; the table is the median of the three
+*per-start p50 wall times*, not a combined p95 or end-to-end inference:
+
+| FP32 rows × 5120 | one physical TP3 partial / card | R9700 local-combined 2 virtual partials | R9700 2 D2H packets (virtual TP4) |
+| --- | ---: | ---: | ---: |
+| 1 | **76.35 us** | 80.41 us | 93.92 us |
+| 4 | **96.28 us** | 102.41 us | 121.59 us |
+| 64 | **627.52 us** | 645.70 us | 892.24 us |
+
+All figures include D2H, CPU-root F32 reduction and H2D
+broadcast. Three-physical-partial TP3 requires **3 host packets**,
+vs 3 for locally combined virtual TP4 and 4 for uncombined virtual
+TP4. It is ~5.0% / 6.0% / 2.8% faster than the virtual-local
+mode for these rows, but has *less source computation* by design:
+the three-versus-four-partial input data are not interchangeable
+for a real model's numeric/quality gate. This strictly qualifies
+**physical transport structure**, not end-to-end TP3 speed, mixed
+activation precision or the R9700's two-head execution efficiency.
+
+Immutable receipts in
+`${BC_WORK_ROOT}/xtx27-prefill/virtual-tp4/runs/`:
+`20261110T212615596840Z-542dc438f9`,
+`20261110T212707070604Z-542dc438f9`
+(reverse order) and
+`20261110T212725728026Z-542dc438f9`.
+All exited 0, all oracle checks passed, and their
+auto-acquired GPU leases released successfully. Final
+`agent-lease status` => no leases, `rocm-smi --showpids`
+=> no KFD processes.
+
+**Next unresolved gate:** VTP12/VTP13 must run *concurrent
+real per-operator* gfx1100 INT8 and gfx1201 INT8/FP8,
+including original BF16-derived Q/GDN attention tensor
+ownership, a common output ABI, native per-card kernel/activation
+conversion costs, and 3-way exact collective in one timed dependency
+chain. The measured transport alone (including 627us at M64)
+may dominate FFN microbench compute; never add isolated estimates
+and call them tokens/s. Prove p95 slowest-rank and KV/GDN memory
+headroom. No production engine modification or serving defaults.

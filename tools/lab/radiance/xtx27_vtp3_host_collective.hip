@@ -79,7 +79,9 @@ int main(int argc, char** argv) {
     const int rows = read_arg(argc, argv, "--rows", 4);
     const int iterations = read_arg(argc, argv, "--iterations", 9);
     bool reverse = false;
+    bool single_r9700 = false; // physical TP3: one R9700 partial, not virtual TP4 combine
     for (int i = 1; i < argc; ++i) if (std::strcmp(argv[i], "--reverse") == 0) reverse = true;
+    for (int i = 1; i < argc; ++i) if (std::strcmp(argv[i], "--single-r9700") == 0) single_r9700 = true;
     if (rows > 2048 || iterations > 100)
       throw std::runtime_error("limits: rows <= 2048, iterations <= 100");
     constexpr int hidden = 5120;
@@ -95,12 +97,12 @@ int main(int argc, char** argv) {
       HC(hipEventCreateWithFlags(&p.ready, hipEventDisableTiming));
       HC(hipMalloc((void**)&p.input0, bytes));
       HC(hipMalloc((void**)&p.result, bytes));
-      if (i == 2) {
+      if (i == 2 && !single_r9700) {
         HC(hipMalloc((void**)&p.input1, bytes));
         HC(hipMalloc((void**)&p.combined, bytes));
       }
       make_float<<<blocks, 256, 0, p.stream>>>(p.input0, count, (float)(i + 1));
-      if (i == 2) make_float<<<blocks, 256, 0, p.stream>>>(p.input1, count, 4.0f);
+      if (i == 2 && !single_r9700) make_float<<<blocks, 256, 0, p.stream>>>(p.input1, count, 4.0f);
       HC(hipGetLastError());
       HC(hipStreamSynchronize(p.stream));
     }
@@ -113,6 +115,9 @@ int main(int argc, char** argv) {
         HC(hipSetDevice(d[i].id));
         if (i != 2) {
           HC(hipMemcpyAsync(host[i], d[i].input0, bytes,
+                            hipMemcpyDeviceToHost, d[i].stream));
+        } else if (single_r9700) {
+          HC(hipMemcpyAsync(host[2], d[i].input0, bytes,
                             hipMemcpyDeviceToHost, d[i].stream));
         } else if (local) {
           local_add<<<blocks, 256, 0, d[i].stream>>>(d[i].input0, d[i].input1,
@@ -135,8 +140,9 @@ int main(int argc, char** argv) {
       const double from_gpu = micro(total);
       const auto cpu = Clock::now();
       for (size_t k = 0; k < count; ++k)
-        host[4][k] = local ? (host[0][k] + host[1][k] + host[2][k])
-                            : ((host[0][k] + host[1][k] + host[2][k]) + host[3][k]);
+        host[4][k] = single_r9700 ? (host[0][k] + host[1][k] + host[2][k])
+                   : local ? (host[0][k] + host[1][k] + host[2][k])
+                           : ((host[0][k] + host[1][k] + host[2][k]) + host[3][k]);
       const double cpu_us = micro(cpu);
       const auto back = Clock::now();
       for (int i = 0; i < 3; ++i) {
@@ -153,8 +159,8 @@ int main(int argc, char** argv) {
                 ids[0], ids[1], ids[2], rows, hidden, bytes);
     std::puts("mode,wall_us_p50,wall_us_p95,from_gpu_us_p50,host_sum_us_p50,to_gpu_us_p50,host_packets,oracle");
     std::vector<float> check(count);
-    for (int mode = 0; mode < 2; ++mode) {
-      const bool local = reverse ? mode == 1 : mode == 0;
+    for (int mode = 0; mode < (single_r9700 ? 1 : 2); ++mode) {
+      const bool local = !single_r9700 && (reverse ? mode == 1 : mode == 0);
       for (int warm = 0; warm < 2; ++warm) (void)once(local);
       std::vector<double> wall, from, cpu, back;
       for (int n = 0; n < iterations; ++n) {
@@ -166,16 +172,18 @@ int main(int argc, char** argv) {
         HC(hipSetDevice(d[i].id));
         HC(hipMemcpy(check.data(), d[i].result, bytes, hipMemcpyDeviceToHost));
         for (size_t k = 0; k < count; ++k) {
-          const float expected = 10.0f + (float)(k & 7) * 0.5f;
+          const float expected = single_r9700 ? 6.0f + (float)(k & 7) * 0.375f
+                                              : 10.0f + (float)(k & 7) * 0.5f;
           if (check[k] != expected)
             throw std::runtime_error("exact F32 host collective oracle mismatch");
         }
       }
       std::printf("%s,%.2f,%.2f,%.2f,%.2f,%.2f,%d,PASS\n",
-                  local ? "r9700_gpu_local" : "r9700_host_two_packets",
+                  single_r9700 ? "physical_tp3_single_r9700"
+                      : local ? "r9700_gpu_local" : "r9700_host_two_packets",
                   percentile(wall, 0.50), percentile(wall, 0.95),
                   percentile(from, 0.50), percentile(cpu, 0.50),
-                  percentile(back, 0.50), local ? 3 : 4);
+                  percentile(back, 0.50), single_r9700 || local ? 3 : 4);
     }
     for (auto& p : d) {
       HC(hipSetDevice(p.id));

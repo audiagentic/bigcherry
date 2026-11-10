@@ -2,7 +2,7 @@
 id: VTP13
 order: 12
 plan: run-dense-27b-virtual-tp
-state: pending
+state: active
 created-at: '2026-11-11T00:00:00+00:00'
 breadth: ''
 skill: advanced
@@ -112,3 +112,79 @@ common physical ratio. Require the actual three-GPU concurrent
 exact reduction, GDN and full-attention numeric and performance
 acceptance before enabling any execution path. Native INT8 kernel
 dispatch is the control; the FP8 loader remains XDP10-gated.
+
+## 2026-11-11 card-free physical-TP3 checkpoint ownership evidence
+
+`tools/lab/radiance/xtx27_vtp13_ownership.py` now audits the
+**original Qwen3.8-27B BF16 source safetensors metadata**, checking
+all indexed tensor names against bounded, dtype/offset-validated
+headers without reading 55.6 GB of payload. Exact output is an
+immutable JSON receipt in
+`${BC_WORK_ROOT}/xtx27-prefill/vtp13-physical-tp3-ownership-header-only-20261111.json`.
+The config/index/header hashes provide **metadata** provenance only;
+payload SHA-256 and converted artifact provenance are still open
+(VTP06). All output remains opt-in research, not runtime admission.
+
+The formal 3-physical-rank candidate keeps:
+- FFN widths **5120 / 4864 / 7424**. Each gate/up rows are sliced;
+  down projection uses the same *input column* offsets, resulting in
+  partial hidden-5120 outputs to reduce exactly.
+- Full attention **6/6/12 Q heads, 1/1/2 KV heads**. Qwen's
+  `self_attn.q_proj.weight` is **[12288,5120]**, not [6144,5120]:
+  query and output-gate values are interleaved per 256-wide head. The
+  three query/gate segments therefore have 3072/3072/6144 output
+  rows; K/V have 256/256/512 rows each; O projection has
+  1536/1536/3072 input columns. Q/K norm vectors are shared
+  256-wide constants, **not** split like heads.
+- GDN **4/4/8 key heads, 12/12/24 value heads**, with packed
+  `in_proj_qkv` groups Q=[0,2048), K=[2048,4096) and
+  V=[4096,10240); R9700 gathers Q=[1024,2048),
+  K=[3072,4096), V=[7168,10240). The same three disjoint
+  ranges apply to `conv1d.weight`, rather than slicing the
+  10,240-channel weight contiguously. Source tensors
+  `in_proj_a/b`, `in_proj_z`, `A_log`, `dt_bias`
+  and `out_proj` follow value-head ownership, retaining three
+  value heads per key head. The GDN shared 128-wide norm is
+  replicated. The existing Radiance GDN packer accepts
+  Q|K|V|a|b as five separate groups; conversion and the on-device
+  state protocol must still implement this per-physical layout.
+
+The card-free source census covers **640 sharded tensor sources**
+(192 FFN + 64 full-attention + 384 GDN); 96 of them
+(48 GDN QKV + 48 GDN conv) require **non-contiguous source
+extraction/repacking**. It checks rank coverage and rejects
+overlap, gaps, illegal 128-wide tiles, missing/changed q/gate
+rows or GDN coefficients, wrong layer order, and attempts to
+overwrite receipts. It does *not* assume a fully qualified model
+or assign the vision/MTP/embedding/head allocations.
+
+**Next stage, still open:** implement and independently numerically
+validate the native rank-local GDN packed producer, conv/recurrent
+state, full Q+gate attention, per-op kernel variant layout,
+shared activation/partial-output ABI, vocab/embedding/MTP ownership,
+real no-P2P three-GPU collective and physical memory admission.
+The legacy Radiance `divide_or_fail(...g.world...)` uniform
+head/kernel contract and one-architecture-per-engine restriction
+remain blockers. No artificial `--tp 3` workaround or default.
+
+## 2026-11-11 physical collective hardware result
+
+VTP04 now has an explicit one-partial-per-physical-GPU TP3 host-transport mode.
+It compiled for gfx1100+gfx1201 and passed exact GPU-result F32 oracles
+in **three independent exclusive-lease hardware starts** (including a
+reverse-order control). Median across per-start p50 times: physical
+TP3 76.35/96.28/627.52 us at 1/4/64 rows versus two logical
+R9700 contributions locally combined then sent as one packet:
+80.41/102.41/645.70 us. One extra R9700 host packet was still slower.
+These are 3 physical endpoints, NOT 3-GPU serving or native quant
+GEMMs; the physical TP3 has one source contribution rather than two.
+Do not call it an equal-work speedup. See VTP04 for raw receipts.
+
+Stage 1 tensor ownership now has a concrete BF16-header-only checker
+(`xtx27_vtp13_ownership.py`, 640 sharded tensor sources, 96 GDN
+noncontiguous packed tensors) and stage 5 transport has a synthetic
+three-physical-partial oracle. **Still blocked** for runtime on
+nonuniform engine-rank dimensions, gfx11/gfx12 mixed kernel registry,
+GDN Q|K|V/conv repacking and recurrent state, attention Q+gate pairing,
+real three-GPU GEMM-to-collective numerical integration, and measured
+KV/VRAM admission. Production and quant defaults remain unchanged.

@@ -8,6 +8,7 @@ import pathlib
 import tempfile
 import unittest
 from contextlib import redirect_stdout
+from types import SimpleNamespace
 from unittest.mock import patch
 
 SOURCE = pathlib.Path(__file__).resolve().parents[2] / "lab" / "radiance" / "xtx27_vtp_micro.py"
@@ -41,6 +42,19 @@ class VtpMicroTests(unittest.TestCase):
         rotated = vtp.plan(mib=(4,), rows=(1,), lanes=32768, iterations=3, reverse=True)
         self.assertTrue(all("--reverse" in case["args"] for case in rotated))
 
+    def test_opt_in_single_r9700_three_physical_partials(self):
+        cases = vtp.plan(mib=(4,), rows=(1, 4, 64), lanes=32768,
+                         iterations=9, physical_tp3=True)
+        physical = [c for c in cases if c["label"].startswith("host-f32-physical-tp3-")]
+        self.assertEqual(len(physical), 3)
+        self.assertTrue(all("--single-r9700" in c["args"] for c in physical))
+        self.assertTrue(all("three" not in c["label"] for c in physical))
+        old = vtp.plan(mib=(4,), rows=(1, 4, 64), lanes=32768, iterations=9)
+        self.assertTrue(all("--single-r9700" not in c["args"] for c in old))
+        rotated = vtp.plan(mib=(4,), rows=(1,), lanes=32768,
+                           iterations=3, physical_tp3=True, reverse=True)
+        self.assertTrue(all("--reverse" in c["args"] for c in rotated))
+
     def test_reject_unsafe_test_inputs(self):
         for val in ("", "0", "1,", "1,1", "2,999", "nan", "2;3", "-1", "1 2"):
             with self.subTest(val=val), self.assertRaises(ValueError):
@@ -66,6 +80,27 @@ class VtpMicroTests(unittest.TestCase):
             # This fails before trying to build a binary.
             vtp.main(["--phase", "compile", "--run", "--scratch", str(vtp.ROOT)])
         self.assertEqual(c.exception.code, 2)
+
+    def test_leased_gpu_run_refuses_wrong_owner_before_scratch(self):
+        with (patch.dict(vtp.os.environ, {"VTP04_LEASED": "1"}),
+              patch.object(vtp.subprocess, "run", return_value=SimpleNamespace(
+                  stdout="gpu: held by other for \"another owner\"")) as calls,
+              tempfile.TemporaryDirectory() as tmp):
+            with self.assertRaisesRegex(RuntimeError, "not owned"):
+                vtp.run_leased(scratch=pathlib.Path(tmp), binaries={}, cases=[], digest="abcd")
+            self.assertEqual(calls.call_count, 1)
+            self.assertFalse((pathlib.Path(tmp) / "runs").exists())
+
+    def test_leased_gpu_run_refuses_active_kfd_before_scratch(self):
+        good = 'gpu: held by owner for "VTP04: isolated virtual TP4 local/host microbench"'
+        with (patch.dict(vtp.os.environ, {"VTP04_LEASED": "1"}),
+              patch.object(vtp.subprocess, "run", side_effect=[
+                  SimpleNamespace(stdout=good), SimpleNamespace(stdout="PID 123 radiance")
+              ]) as calls, tempfile.TemporaryDirectory() as tmp):
+            with self.assertRaisesRegex(RuntimeError, "KFD processes"):
+                vtp.run_leased(scratch=pathlib.Path(tmp), binaries={}, cases=[], digest="abcd")
+            self.assertEqual(calls.call_count, 2)
+            self.assertFalse((pathlib.Path(tmp) / "runs").exists())
 
     def test_digest_tracks_each_hip_source(self):
         source_before = vtp.source_digest()
@@ -94,6 +129,11 @@ class VtpMicroTests(unittest.TestCase):
         self.assertIn("hipMemcpyHostToDevice", collective)
         self.assertIn("exact F32 host collective oracle mismatch", collective)
         self.assertIn("local_add", collective)
+        self.assertIn("--single-r9700", collective)
+        self.assertIn("physical_tp3_single_r9700", collective)
+        self.assertIn("single_r9700 ? 6.0f", collective)
+        self.assertIn("single_r9700 ? (host[0][k] + host[1][k] + host[2][k])", collective)
+        self.assertIn("single_r9700 || local ? 3 : 4", collective)
         self.assertNotIn("hipDeviceEnablePeerAccess", local + collective)
         self.assertNotIn("hipDeviceGetP2PAttribute", local + collective)
 

@@ -60,7 +60,8 @@ def source_digest() -> str:
     return h.hexdigest()
 
 
-def plan(*, mib: tuple[int, ...], rows: tuple[int, ...], lanes: int, iterations: int, reverse: bool = False) -> list[dict]:
+def plan(*, mib: tuple[int, ...], rows: tuple[int, ...], lanes: int, iterations: int,
+         reverse: bool = False, physical_tp3: bool = False) -> list[dict]:
     if lanes < 256 or lanes > 262144 or lanes % 256:
         raise ValueError("lanes must be a multiple of 256 in [256,262144]")
     if not 1 <= iterations <= 100:
@@ -83,6 +84,14 @@ def plan(*, mib: tuple[int, ...], rows: tuple[int, ...], lanes: int, iterations:
             "label": f"host-f32-{v}rows",
             "data_definition": "physical 3-GPU host-staged F32 collective, width=5120, no P2P",
         })
+    if physical_tp3:
+        for v in rows:
+            result.append({
+                "kind": "host_collective",
+                "args": ["--rows", str(v), "--iterations", str(iterations), "--single-r9700"],
+                "label": f"host-f32-physical-tp3-{v}rows",
+                "data_definition": "3 physical GPU F32 contributions, one R9700 rank, no P2P",
+            })
     if reverse:
         for case in result:
             case["args"].append("--reverse")
@@ -129,6 +138,20 @@ def build_binaries(hipcc: Path, scratch: Path, digest: str) -> dict[str, Path]:
 def run_leased(
     *, scratch: Path, binaries: dict[str, Path], cases: list[dict], digest: str,
 ) -> Path:
+    if os.environ.get("VTP04_LEASED") != "1":
+        raise RuntimeError("VTP04 GPU runner requires the exclusive lease wrapper")
+    for key in ("ROCR_VISIBLE_DEVICES", "HIP_VISIBLE_DEVICES", "CUDA_VISIBLE_DEVICES",
+                "GPU_DEVICE_ORDINAL"):
+        if key in os.environ:
+            raise RuntimeError(f"refusing inherited GPU mask: {key}")
+    lease = subprocess.run(["agent-lease", "status"], check=True, text=True,
+                           capture_output=True, timeout=8).stdout
+    if 'for "VTP04: isolated virtual TP4 local/host microbench"' not in lease:
+        raise RuntimeError("VTP04 global GPU lease not owned by this pilot")
+    show = subprocess.run(["rocm-smi", "--showpids"], check=True, text=True,
+                          capture_output=True, timeout=8).stdout
+    if "No KFD PIDs currently running" not in show:
+        raise RuntimeError("other KFD processes already resident")
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
     out = scratch / "runs" / f"{stamp}-{digest[:10]}"
     out.mkdir(parents=True, exist_ok=False)
@@ -178,6 +201,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--lanes", type=int, default=32768)
     parser.add_argument("--iterations", type=int, default=9)
     parser.add_argument("--reverse-order", action="store_true")
+    parser.add_argument("--physical-tp3", action="store_true",
+                        help="add one-partial-per-physical-GPU exact F32 collective")
     parser.add_argument("--scratch", type=Path, default=DEFAULT_SCRATCH)
     parser.add_argument("--hipcc", type=str)
     args = parser.parse_args(argv)
@@ -187,7 +212,7 @@ def main(argv: list[str] | None = None) -> int:
         mib = csv_positive(args.local_mib, upper=256, name="local-mib")
         rows = csv_positive(args.rows, upper=2048, name="rows")
         cases = plan(mib=mib, rows=rows, lanes=args.lanes, iterations=args.iterations,
-                     reverse=args.reverse_order)
+                     reverse=args.reverse_order, physical_tp3=args.physical_tp3)
     except ValueError as exc:
         parser.error(str(exc))
     digest = source_digest()
@@ -224,7 +249,8 @@ def main(argv: list[str] | None = None) -> int:
                      "--_under-lease", "--local-mib", args.local_mib, "--rows", args.rows,
                      "--lanes", str(args.lanes), "--iterations", str(args.iterations),
                      "--scratch", str(scratch), "--hipcc", str(hipcc),
-                     *(["--reverse-order"] if args.reverse_order else [])]
+                     *(["--reverse-order"] if args.reverse_order else []),
+                     *(["--physical-tp3"] if args.physical_tp3 else [])]
         cmd = ["agent-lease", "acquire", "gpu", "--ttl", "30m",
                "--purpose", "VTP04: isolated virtual TP4 local/host microbench",
                "--", "env", "VTP04_LEASED=1", *forwarded]

@@ -291,3 +291,25 @@ a literal pathname). VTP12 has the exact per-run folders and
 results. Single-card warm synthetic GEMM timing is not concurrent
 TP or quality; the next gate is matched model-shaped numerical
 operator and no-P2P three-GPU collective measurement.
+
+## VTP04 physical TP3 F32 host collective and VTP13 ownership checker
+
+`xtx27_vtp_micro.py --physical-tp3` adds an opt-in 3-contribution
+mode (one partial for XTX0, XTX1, R9700) beside legacy virtual TP4
+local-combined/two-packet modes. `--phase plan` never touches GPUs;
+`--phase compile --run` builds in BC_WORK_ROOT scratch without a GPU;
+`--phase gpu --run --physical-tp3 --local-mib 4 --rows 1,4,64
+--iterations 9` acquires and releases the exclusive lease. It refuses
+pre-existing KFD processes or a different lease owner; never stop
+other agents' processes. One output oracle is checked on every GPU.
+Three leased starts passed; see VTP04 for exact receipts/timings.
+This is F32 host transport only, NOT actual mixed INT8/FP8 compute.
+
+`xtx27_vtp13_ownership.py --checkpoint ORIGINAL_BF16 --output
+${BC_WORK_ROOT}/xtx27-prefill/NEW_OWNERSHIP_RECEIPT.json` reads only
+original safetensors headers and audits 1/1/2 KV heads, 6/6/12
+query+gate, 4/4/8 GDN key, 12/12/24 GDN value and 5120/4864/7424
+FFN offsets. It proves structural coverage of 640 text tensor sources,
+including 96 noncontiguous GDN QKV/conv source repacks. No GPU,
+quantisation or full weight hashes. See VTP13 and
+`test_xtx27_vtp13_ownership.py` for adversarial tests and limits.

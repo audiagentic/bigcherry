@@ -418,3 +418,15 @@ BF16-reference quality and throughput/KV/PCIe/TTFT/latency
 A/B across both architectures. Three new independent ABBA
 campaigns are still required for hardware promotion; the
 single pilot per M with two ABBA points is screening only.
+
+## 2026-11-11 — one-physical-rank TP3 transport baseline delivered
+
+VTP04's opt-in 3-physical-GPU exact F32 host transport now passes
+independent GPU output oracles across three fresh lease-bound runs.
+For 1/4/64 rows, the single R9700 physical-partial median wall times
+were 76.35/96.28/627.52 us; the R9700 two-virtual-partial local
+combine was 80.41/102.41/645.70 us. **This is an already-computed
+F32 partial transport**, not native three-card W8A8/FP8 GEMM or
+an equal-work comparison: VTP12's simultaneous mixed quant GEMM,
+common activation/output ABI, attention/GDN and model quality
+acceptance remain OPEN. See VTP04/VTP13 for receipts and contracts.
