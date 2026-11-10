@@ -41,6 +41,18 @@ IqrM64Overlay& iqr_m64() {
     static IqrM64Overlay overlay;
     return overlay;
 }
+// A second disjoint row preserves the individually proven M=64
+// implementation while accelerating M=17..63 ONLY at measured
+// K=5120, N=5120/10240. M<=16 and unmeasured K/N retain narrow.
+struct IqrEarlyOverlay {
+    RadKernelInfo row{};
+    std::array<RadConstraint, 8> constraints{};
+    bool enabled = false;
+};
+IqrEarlyOverlay& iqr_early() {
+    static IqrEarlyOverlay overlay;
+    return overlay;
+}
 bool safe_iqr_m64_overlay(const RadKernelInfo* narrow, const RadKernelInfo* tiled) {
     if (!narrow || !tiled || !narrow->op || !tiled->op ||
         !narrow->constraints || !tiled->constraints ||
@@ -94,6 +106,21 @@ const std::vector<LiveRow>& live() {
                 patch.row.n_constraints = static_cast<int>(patch.constraints.size());
                 out.push_back({tiled_idx, &patch.row});
                 patch.enabled = true;
+                IqrEarlyOverlay& early = iqr_early();
+                std::copy_n(tiled->constraints, 4, early.constraints.begin());
+                early.constraints[4] = {"M", RAD_C_GE, 17, nullptr};
+                early.constraints[5] = {"M", RAD_C_LE, 63, nullptr};
+                // Only geometry verified by the VTP09 27B FFN crossover.
+                // Small K/N regress; keep the original narrow row there.
+                early.constraints[6] = {"K", RAD_C_EQ, 5120, nullptr};
+                early.constraints[7] = {"N", RAD_C_IN, 0, "5120 10240"};
+                early.row = *tiled;
+                early.row.name = "gemm_iqr_tiled_m17_63_gfx11";
+                early.row.priority = narrow->priority + 1;
+                early.row.constraints = early.constraints.data();
+                early.row.n_constraints = static_cast<int>(early.constraints.size());
+                out.push_back({tiled_idx, &early.row});
+                early.enabled = true;
             }
         }
         return out;
@@ -107,6 +134,10 @@ const std::vector<LiveRow>& live() {
 extern "C" int r3_iqr_m64_tiled_override(void) {
     (void)live();
     return iqr_m64().enabled ? 1 : 0;
+}
+extern "C" int r3_iqr_m17_63_tiled_override(void) {
+    (void)live();
+    return iqr_early().enabled ? 1 : 0;
 }
 extern "C" const RadPluginInfo* rad_plugin_info(void) {
     static const RadPluginInfo info = {

@@ -86,15 +86,101 @@ priority and shape selection among these rows, and the standalone
 numeric test proves the row works when selected by name. Keep
 full-engine selection/profiling as a required integration gate.
 
-## Next bounded experiment: crossover below M64
+## Completed follow-up: crossover below M64 (2026-11-10)
 
-Benchmark original narrow versus the **same** tiled kernel at
-M=16, 32, 48, 63 on both XTXs, separately for FFN gate/up and
-down, under an exclusive GPU lease. Use paired/interleaved cold
-measurements and a strict numerical reference before extending
-the overlay to any lower batch size. The current production
-change intentionally covers **only M64**; M<64 is unchanged.
+The paired A/B experiments described here were executed and are
+recorded below. The first M64-only commit is preserved; a separate
+model-shape-gated M17-63 extension is being committed independently.
 
 Do not merge this branch based only on microkernels if production
 dispatch is expected to cover a different weight encoding or
 full-model flow; document and test the real operator selection.
+
+### Crossover measurements: 36/36 qualified paired cases
+
+The same complete gfx1100 plugin and two dedicated scratch selftest
+executables ran ABBA narrow/tiled/tiled/narrow comparisons with the
+original Qwen3.8-27B FFN shapes (gate/up N=10240 K=5120; down N=5120
+K=5120). Both XTXs were tested at M=16,17,20,24,28,31,32,48,63.
+Every case used native IQ6R-V4 B=6, nine iterations and 256-MiB cold
+weight flushing. Exact immutable per-case logs and receipt hashes:
+`${BC_WORK_ROOT}/xtx27-prefill/iqr-layout-fix/iqr-crossover/measurements/`.
+The two resume-safe summary receipts are `sweep-summary.json`
+(16/16 M16,32,48,63) and `sweep-near-summary.json` (20/20
+M17,20,24,28,31), zero failed or partial cases.
+
+| M | Gate/up tiled speedup, XTX0/XTX1 | Down tiled speedup, XTX0/XTX1 |
+| ---: | ---: | ---: |
+| 16 | 0.33x / 0.33x | 0.31x / 0.32x |
+| 17 | 1.75x / 1.73x | 1.48x / 1.47x |
+| 20 | 1.70x / 1.76x | 1.43x / 1.41x |
+| 24 | 1.73x / 1.75x | 1.42x / 1.41x |
+| 28 | 1.70x / 1.72x | 1.47x / 1.47x |
+| 31 | 1.75x / 1.76x | 1.53x / 1.54x |
+| 32 | 1.73x / 1.71x | 1.57x / 1.48x |
+| 48 | 3.53x / 3.65x | 3.16x / 3.26x |
+| 63 | 4.51x / 4.59x | 4.18x / 4.95x |
+
+**Important negative control:** at M=17, N=512, K=1024, narrow ran
+49.5 us and tiled averaged 87.8 us on XTX0; a globally higher
+priority M17..63 tiled row would regress small shapes by ~1.77x.
+At M=64, the same small N/K shape favoured tiled (413.1 vs
+91.8 us), supporting retention of the already-tested M64 rule.
+
+### Safe gfx1100 extension: exact measured 27B geometry only
+
+Added a second disjoint row `gemm_iqr_tiled_m17_63_gfx11` in
+`engines/radiance/components/libr3/r3_registry.cpp`, which copies
+the existing tiled row's hooks and original shape constraints,
+and additionally requires **17 <= M <= 63, K == 5120,
+N in {5120,10240}**. It has narrow-priority+1.
+For all other N/K (including the demonstrated small-shape
+regression), the narrow row remains eligible and preferred.
+M<=16 stays narrow; M=64 retains the separately qualified
+`gemm_iqr_tiled_m64_gfx11`; M>=65 uses native tiled.
+
+This is intentionally more conservative than a global M17
+crossover. It does not affect the gfx1201 plugin or modify pinned
+Radiance. Upstream numeric IN constraint matching was checked at
+`core/util/rad_util.cpp` and the native band builder.
+
+The full gfx1100 plugin rebuilt in two isolated scratch build
+actions. Binary ABI/constraint/pointer/selection validator
+`tools/lab/radiance/xtx27_iqr_m64_registry_check.py`
+successfully checked 29 selection and negative-fallback bands;
+final plugin SHA-256:
+`387309a3c54f453d30a0020a05c485e82ab0b3613ba2ee7440dff823852093a8`.
+Receipt:
+`${BC_WORK_ROOT}/xtx27-prefill/iqr-layout-fix/iqr-crossover/registry-m17-64-shapegated.json`.
+The seven card-free contract tests include missing row, bad
+constraint, pointer, priority, ABI, small-shape fallback and
+no-overwrite cases.
+
+### Numerical qualification of the actual overlay rows
+
+The rebuilt plugin's **new early row was invoked by name** using a
+dedicated scratch `r3_selftest`, including five explicitly legal
+Qwen27 FFN shapes: M17 N5120/10240 K5120; M32 N5120 K5120;
+M48 N10240 K5120; M63 N5120 K5120. **192 / 192 numerical checks
+passed per XTX, zero failures**, including the extra crossover
+cases. Underlying tiled IQR tests also passed 435 checks per XTX,
+but not all synthetic shapes were legal for the shape-gated row.
+Receipts:
+`${BC_WORK_ROOT}/xtx27-prefill/iqr-layout-fix/iqr-crossover/numeric/model-oracle/runs/`.
+
+The existing M64 overlay was requalified **129 / 129 checks per
+XTX** against the final shape-gated plugin, zero failures:
+`${BC_WORK_ROOT}/xtx27-prefill/iqr-layout-fix/m64-overlay-smoke/runs/`.
+All four final overlay runs used the identical plugin hash above.
+The GPU lease was held exclusively for each run; no production
+binary, model or serving process was modified.
+
+### Remaining release gates
+
+These tests demonstrate per-row numerical agreement and strong
+model-shaped kernel speedups, **not** automatic row selection within
+the full production engine. Calibrated 27B IQ6R weights and a
+real mixed-architecture virtual TP4 runtime remain unavailable.
+Require an actual IQ6R model-format and end-to-end graph-selection
+trace, BF16 quality comparisons, and full runtime/VRAM/collective
+tests before production rollout.

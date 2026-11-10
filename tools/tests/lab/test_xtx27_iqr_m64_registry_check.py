@@ -1,4 +1,4 @@
-"""Card-free VTP09 gfx11 exact M64 IQ6R tiled row contract tests."""
+"""Card-free VTP09 gfx11 M17..64 IQ6R tiled row contract tests."""
 from __future__ import annotations
 
 import importlib.util
@@ -33,16 +33,23 @@ def fixture() -> dict[str, dict]:
              "constraints": common}
     custom = {**basic, "name": q.CUSTOM, "priority": 61,
               "constraints": common + [("M", q.EQ, 64, None)]}
-    return {q.NARROW: narrow, q.TILED: tiled, q.CUSTOM: custom}
+    early = {**basic, "name": q.EARLY, "priority": 61,
+             "constraints": common + [("M", q.GE, 17, None),
+                                      ("M", q.LE, 63, None),
+                                      ("K", q.EQ, 5120, None),
+                                      ("N", q.IN, 0, "5120 10240")]}
+    return {q.NARROW: narrow, q.TILED: tiled, q.CUSTOM: custom, q.EARLY: early}
 
 
 class M64RegistryTests(unittest.TestCase):
     def test_valid_model_shape_and_no_n16_orphan(self):
         result = q.validate(fixture(), active=True)
         self.assertTrue(result["narrow_fallback_remains"])
-        self.assertEqual(result["tested_bands"], 10)
-        for m, expected in ((1, q.NARROW), (8, q.NARROW),
-                            (63, q.NARROW), (64, q.CUSTOM),
+        self.assertGreaterEqual(result["tested_bands"], 25)
+        for m, expected in ((1, q.NARROW), (8, q.NARROW), (16, q.NARROW),
+                            (17, q.EARLY), (20, q.EARLY), (24, q.EARLY),
+                            (28, q.EARLY), (31, q.EARLY), (32, q.EARLY),
+                            (48, q.EARLY), (63, q.EARLY), (64, q.CUSTOM),
                             (65, q.TILED), (512, q.TILED)):
             self.assertEqual(
                 q.selected(fixture(), m=m, n=10240, k=5120), expected,
@@ -53,7 +60,7 @@ class M64RegistryTests(unittest.TestCase):
         rows = fixture()
         with self.assertRaisesRegex(ValueError, "missing"):
             q.validate(rows, active=False)
-        rows.pop(q.CUSTOM)
+        rows.pop(q.EARLY)
         with self.assertRaisesRegex(ValueError, "missing"):
             q.validate(rows, active=True)
 
@@ -62,6 +69,8 @@ class M64RegistryTests(unittest.TestCase):
             (q.NARROW, "constraints", [("M", q.LE, 63, None)]),
             (q.TILED, "constraints", [("N", q.DIV, 16, None)]),
             (q.CUSTOM, "constraints", [("M", q.EQ, 64, None)]),
+            (q.EARLY, "constraints", [("M", q.GE, 16, None)]),
+            (q.EARLY, "priority", 59),
             (q.CUSTOM, "priority", 59),
             (q.TILED, "priority", 62),
             (q.CUSTOM, "op", "gemm_nt"),
@@ -78,9 +87,12 @@ class M64RegistryTests(unittest.TestCase):
                       "unrelayout", "domain"):
             with self.subTest(field=field):
                 rows = deepcopy(fixture())
-                rows[q.CUSTOM][field] = 0
-                with self.assertRaises(ValueError):
-                    q.validate(rows, active=True)
+                for row_name in (q.CUSTOM, q.EARLY):
+                    with self.subTest(row=row_name):
+                        rows = deepcopy(fixture())
+                        rows[row_name][field] = 0
+                        with self.assertRaises(ValueError):
+                            q.validate(rows, active=True)
 
     def test_unsupported_shapes_do_not_gain_priority(self):
         rows = fixture()
@@ -88,7 +100,15 @@ class M64RegistryTests(unittest.TestCase):
         self.assertIsNone(q.selected(rows, m=64, n=10240, k=5000))
         self.assertEqual(q.selected(rows, m=64, n=48, k=5120), q.NARROW)
         self.assertEqual(q.selected(rows, m=64, n=128, k=5120), q.CUSTOM)
+        self.assertEqual(q.selected(rows, m=16, n=128, k=5120), q.NARROW)
+        self.assertEqual(q.selected(rows, m=17, n=128, k=5120), q.NARROW)
         self.assertEqual(q.selected(rows, m=32, n=128, k=5120), q.NARROW)
+        self.assertEqual(q.selected(rows, m=17, n=5120, k=5120), q.EARLY)
+        self.assertEqual(q.selected(rows, m=31, n=10240, k=5120), q.EARLY)
+        self.assertEqual(q.selected(rows, m=17, n=8192, k=5120), q.NARROW)
+        self.assertEqual(q.selected(rows, m=17, n=5120, k=1024), q.NARROW)
+        self.assertEqual(q.selected(rows, m=17, n=512, k=1024), q.NARROW)
+        self.assertEqual(q.selected(rows, m=63, n=48, k=5120), q.NARROW)
 
     def test_checked_ctypes_struct_constraint_offsets(self):
         self.assertEqual(q.CConstraint.ival.offset, 16)

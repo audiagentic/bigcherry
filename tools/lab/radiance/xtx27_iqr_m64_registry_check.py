@@ -1,4 +1,4 @@
-"""VTP09 card-free audit of gfx11 IQ6R M64 tiled registry selection.
+"""VTP09 card-free audit of gfx11 IQ6R M17..64 tiled registry selection.
 
 Loads a built libr3.so, never runs kernels or touches GPUs. Fails closed
 if the custom row is missing, its constraints drift, its function pointers
@@ -36,7 +36,8 @@ class CKernel(c.Structure):
 NARROW = "gemm_iqr_nt_m64"
 TILED = "gemm_iqr_tiled"
 CUSTOM = "gemm_iqr_tiled_m64_gfx11"
-REQUIRED = (NARROW, TILED, CUSTOM)
+EARLY = "gemm_iqr_tiled_m17_63_gfx11"
+REQUIRED = (NARROW, TILED, CUSTOM, EARLY)
 EQ, LE, GE, DIV, IN = 0, 1, 2, 3, 4
 
 
@@ -90,44 +91,75 @@ def selected(rows: dict[str, dict], *, m: int, n: int, k: int) -> str | None:
 
 def validate(rows: dict[str, dict], *, active: bool) -> dict:
     if not active or set(rows) != set(REQUIRED):
-        raise ValueError("gfx11 M64 tiled override missing or unexpected row identity")
-    narrow, tiled, extra = (rows[name] for name in REQUIRED)
-    if any(row["op"] != "gemm_nt_q" for row in (narrow, tiled, extra)):
+        raise ValueError("gfx11 IQR tiled crossover overlays missing or unexpected")
+    narrow, tiled, m64, early = (rows[name] for name in REQUIRED)
+    if any(row["op"] != "gemm_nt_q" for row in (narrow, tiled, m64, early)):
         raise ValueError("unexpected kernel operation")
-    if not (extra["priority"] > narrow["priority"] > tiled["priority"]):
+    if not (m64["priority"] == early["priority"] == narrow["priority"] + 1
+            and narrow["priority"] > tiled["priority"]):
         raise ValueError("wrong row selection priority")
     if ("M", LE, 64, None) not in narrow["constraints"]:
-        raise ValueError("original narrow row M<=64 must remain intact")
+        raise ValueError("original narrow M<=64 must remain intact")
     if ("N", DIV, 16, None) not in narrow["constraints"]:
         raise ValueError("original N16 fallback missing")
     if ("N", DIV, 128, None) not in tiled["constraints"]:
         raise ValueError("tiled N128 legality missing")
-    if extra["constraints"] != tiled["constraints"] + [("M", EQ, 64, None)]:
-        raise ValueError("custom row must use EXACT tiled constraints plus M==64")
-    if any(not extra[key] or extra[key] != tiled[key]
-           for key in ("launch", "scratch", "layout", "relayout")):
-        raise ValueError("custom kernel must call identical real tiled hooks")
-    if extra["domain"] != tiled["domain"] or extra["unrelayout"] != tiled["unrelayout"]:
-        raise ValueError("custom ABI differs from native tiled")
-    for m, n, want in (
+    if m64["constraints"] != tiled["constraints"] + [("M", EQ, 64, None)]:
+        raise ValueError("M64 overlay must retain exact tiled constraints plus M==64")
+    if early["constraints"] != tiled["constraints"] + [
+        ("M", GE, 17, None), ("M", LE, 63, None),
+        ("K", EQ, 5120, None), ("N", IN, 0, "5120 10240"),
+    ]:
+        raise ValueError("early overlay must retain tiled legality and measured 27B FFN geometry")
+    for row in (m64, early):
+        if any(not row[key] or row[key] != tiled[key]
+               for key in ("launch", "scratch", "layout", "relayout")):
+            raise ValueError("overlay must call identical real tiled hooks")
+        if (row["domain"] != tiled["domain"]
+                or row["unrelayout"] != tiled["unrelayout"]
+                or row["replaces"] != tiled["replaces"]):
+            raise ValueError("overlay kernel ABI differs from native tiled")
+    bands = (
         (1, 10240, NARROW),
         (8, 10240, NARROW),
-        (32, 10240, NARROW),
-        (63, 10240, NARROW),
+        (16, 10240, NARROW),
+        (17, 10240, EARLY),
+        (20, 10240, EARLY),
+        (24, 10240, EARLY),
+        (28, 10240, EARLY),
+        (31, 10240, EARLY),
+        (32, 10240, EARLY),
+        (48, 10240, EARLY),
+        (63, 10240, EARLY),
         (64, 10240, CUSTOM),
         (64, 5120, CUSTOM),
-        (64, 16, NARROW),
-        (64, 48, NARROW),
         (65, 10240, TILED),
         (128, 10240, TILED),
-    ):
+        (17, 48, NARROW),
+        (63, 48, NARROW),
+        (64, 16, NARROW),
+        (64, 48, NARROW),
+        (17, 128, NARROW),
+        (63, 128, NARROW),
+        (17, 5120, EARLY),
+        (63, 5120, EARLY),
+        (17, 8192, NARROW),
+        (63, 8192, NARROW),
+        (64, 128, CUSTOM),
+    )
+    for m, n, want in bands:
         actual = selected(rows, m=m, n=n, k=5120)
         if actual != want:
             raise ValueError(f"selection failed M={m} N={n}: expected {want}, got {actual}")
+    invalid_k_cases = ((17, 5120, 1024), (32, 10240, 4096),
+                       (63, 5120, 2560))
+    for m, n, k in invalid_k_cases:
+        if selected(rows, m=m, n=n, k=k) != NARROW:
+            raise ValueError(f"unmeasured K={k} would steal narrow fallback")
     return {
-        "status": "GFX11_M64_TILED_OVERRIDE_PRESENT_EXACT_AND_SHAPE_SAFE",
-        "tested_bands": 10,
-        "new_row": CUSTOM,
+        "status": "GFX11_IQR_M17_64_TILED_OVERLAYS_PRESENT_EXACT_AND_SHAPE_SAFE",
+        "tested_bands": len(bands) + len(invalid_k_cases),
+        "new_rows": [EARLY, CUSTOM],
         "narrow_fallback_remains": True,
         "device_kernels_executed": False,
     }
@@ -139,6 +171,7 @@ def read_plugin(path: Path) -> tuple[dict[str, dict], int]:
     plugin.rad_kernel_at.argtypes = [c.c_int]
     plugin.rad_kernel_at.restype = c.c_void_p
     plugin.r3_iqr_m64_tiled_override.restype = c.c_int
+    plugin.r3_iqr_m17_63_tiled_override.restype = c.c_int
     count = plugin.rad_kernel_count()
     if count <= 0 or count > 3000:
         raise ValueError("invalid plugin kernel count")
@@ -153,7 +186,8 @@ def read_plugin(path: Path) -> tuple[dict[str, dict], int]:
             if name in rows:
                 raise ValueError("duplicate required kernel row")
             rows[name] = row_summary(row)
-    return rows, plugin.r3_iqr_m64_tiled_override()
+    return rows, int(plugin.r3_iqr_m64_tiled_override() == 1
+                     and plugin.r3_iqr_m17_63_tiled_override() == 1)
 
 
 def sha256(path: Path) -> str:
