@@ -55,7 +55,7 @@ Update **Status** in place as it moves — don't duplicate the entry.
 
 ### Radeon AI PRO R9700 (gfx1201) draws +4 W with 3% phantom GPU activity for as long as any HIP process holds it (MES 0x81) — 2026-11-02
 
-**Status:** internal-only (known upstream: ROCm issues #5706 / #6298, reported fixed in MES firmware 0x8b)
+**Status:** internal-only (known upstream: ROCm issues #5706 / #6298 and TheRock #9245; root cause is the amdgpu driver disabling GFXOFF for GFX12 compute queues, fixed by drm/amdgpu 6a1dbb006056 (2026-10-27), not by MES 0x8b/0x93 alone; PWR06)
 
 **Summary:** With no GPU process the R9700 idles at 15.0 W (graphics rail power-gated, VDDGFX ~29 mV, memory clock at its
 96 MHz floor); as soon as a HIP inference engine has the card open it settles at 19.0 W with a constant 3%
