@@ -46,6 +46,19 @@ int main() {
     m.marginal_error = 0.025;
     m.marginal_observations = 40;
     m.observation_rate_per_s = 10.0;
+
+    // RHP19: serialized helper progress carries the exact retained ring,
+    // accepted delta gap and observation-space horizon for the launcher.
+    {
+        const auto progress=calibration_drift_progress(m);
+        assert(progress.at("capacity")==4);
+        assert(progress.at("intervals")==4);
+        assert(progress.at("horizon_observations")==30);
+        assert(progress.at("observation_rate_per_s")==10);
+        assert(progress.at("accepted_gap_ns")==1000000000ull);
+        assert(progress.at("accepted_heat_deltas")==0);
+    }
+
     // No input accepted => no watermark measurement or settled record.
     assert(!calibration_settled(m));
     m.accepted_heat_delta(true);
@@ -78,6 +91,7 @@ int main() {
     m.marginal_error = 0.025;
     m.marginal_observations = 40;
     m.observation_rate_per_s = 10.0;
+
     const auto row = calibration_record(m, {std::string(64, 'a'), "flashnext-4gpu", "balanced"}, "2026-11-05");
     assert(row.at("measurements").at("txn_p50_ns") == 10);
     assert(row.at("measurements").at("txn_p95_ns") == 30);

@@ -620,8 +620,21 @@ if [ "$CALIBRATE" = 1 ]; then
   read -r calibration_limit_s calibration_report_s <<< "$calibration_limits"
   calibration_start_s=$SECONDS
   calibration_next_report_s=$calibration_report_s
+  calibration_drift_bound_locked=0
   calibration_watch() {
     local elapsed=$((SECONDS - calibration_start_s))
+    # Lock the first helper-measured drift-horizon extension. A growing ring
+    # must not create an endlessly moving deadline.
+    if [ "$calibration_drift_bound_locked" = 0 ]; then
+      local derived_limits derived_limit_s derived_report_s
+      derived_limits=$(python3 "$CAL_MONITOR" limits "$LIVE_POLICY_FILE" "$helper_log") || return 1
+      read -r derived_limit_s derived_report_s <<< "$derived_limits"
+      if [ "$derived_limit_s" -gt "$calibration_limit_s" ]; then
+        calibration_limit_s=$derived_limit_s
+        calibration_drift_bound_locked=1
+        echo "calibration: measured helper drift horizon included; finite bound $calibration_limit_s s" >&2
+      fi
+    fi
     if [ "$elapsed" -ge "$calibration_next_report_s" ]; then
       echo "calibration: COLLECTING elapsed=$elapsed bound=$calibration_limit_s; missing:" >&2
       python3 "$CAL_MONITOR" waiting "$helper_log" >&2 || return 1

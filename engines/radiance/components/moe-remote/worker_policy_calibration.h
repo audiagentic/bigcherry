@@ -110,6 +110,20 @@ inline std::string calibration_waiting_message(const std::vector<MissingPlannerC
 // `grep '^RHP16_CALIBRATION_JSON '`, so no line may end in anything else (a literal backslash-n here once glued the record onto the
 // end of a waiting line and the launcher never saw it).
 inline std::string calibration_report_line(const std::string& text) { return text + "\n"; }
+
+// Evidence for the outer launcher deadline: measured by the helper from
+// actual retained source deltas. No configured gate is forged as a sample.
+inline nlohmann::json calibration_drift_progress(const Measured& m) {
+    return {
+        {"capacity",m.drift_capacity},
+        {"intervals",m.drift_intervals},
+        {"horizon_observations",m.drift_horizon_observations},
+        {"observation_rate_per_s",uint64_t(std::ceil(std::max(0.0,m.observation_rate_per_s)))},
+        {"accepted_gap_ns",uint64_t(std::ceil(std::max(0.0,m.delta_gap_ns.max())))},
+        {"accepted_heat_deltas",m.accepted_heat_deltas}
+    };
+}
+
 // An accepted heat delta opens the feed, but the first positive measured heat
 // gap and a retained drift snapshot establish the no-progress timer basis.
 // Configured age/cadence alone cannot be used as evidence of feed progress.

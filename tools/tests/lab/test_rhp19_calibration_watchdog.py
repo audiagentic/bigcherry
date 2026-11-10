@@ -70,12 +70,59 @@ class CalibrationWatchdogTests(unittest.TestCase):
                          "effect_row_noise_ns": "structurally unjudgeable"}
         self.assertIsNotNone(watch.record_in_log(watch.MARKER + json.dumps(row)))
 
+    def drift_progress(self, **changed):
+        import json
+        row = {"capacity": 16, "intervals": 7, "horizon_observations": 100_000_000,
+               "observation_rate_per_s": 1_000_000, "accepted_gap_ns": 5_000_000_000,
+               "accepted_heat_deltas": 8}
+        row.update(changed)
+        return watch.DRIFT_MARKER + json.dumps(row) + "\n"
+
+    def test_helper_measured_drift_window_extends_policy_envelope(self):
+        baseline, report = watch.limits(self.policy())
+        measured = watch.measured_drift(self.drift_progress())
+        budget, measured_report = watch.limits(self.policy(), measured)
+        # 16 retained samples * max(policy cadence/age, measured gap)
+        self.assertEqual(budget, baseline + 4 * 16 * 10)
+        self.assertEqual(measured_report, report)
+        # An observed retained horizon longer than that ring minimum wins.
+        long_horizon = watch.measured_drift(
+            self.drift_progress(horizon_observations=300_000_000))
+        self.assertEqual(watch.limits(self.policy(), long_horizon)[0],
+                         baseline + 4 * 300)
+        # Larger measured gaps extend the envelope with no guessed constant.
+        slow = watch.measured_drift(
+            self.drift_progress(accepted_gap_ns=20_000_000_000))
+        self.assertEqual(watch.limits(self.policy(), slow)[0],
+                         baseline + 4 * 16 * 20)
+
+    def test_drift_waits_for_measured_feed_and_rejects_bad_telemetry(self):
+        baseline = watch.limits(self.policy())
+        self.assertIsNone(watch.measured_drift("no helper progress\n"))
+        for drift in ({"accepted_heat_deltas": 1}, {"accepted_gap_ns": 0}):
+            progress = watch.measured_drift(self.drift_progress(**drift))
+            self.assertEqual(watch.limits(self.policy(), progress), baseline)
+        for log in (watch.DRIFT_MARKER + "{bad\n",
+                    self.drift_progress(capacity=0),
+                    self.drift_progress(intervals=17),
+                    self.drift_progress(observation_rate_per_s=-1)):
+            with self.assertRaises(watch.CalibrationError):
+                watch.measured_drift(log)
+
+    def test_progress_uses_latest_helper_record(self):
+        progress = watch.measured_drift(
+            self.drift_progress(accepted_gap_ns=2_000_000_000) +
+            self.drift_progress(accepted_gap_ns=15_000_000_000))
+        self.assertEqual(progress["accepted_gap_ns"], 15_000_000_000)
+
     def test_launcher_syntax_and_does_not_wait_forever(self):
         launcher = ROOT / "tools/lab/radiance/launch-flashnext-best.sh"
         body = launcher.read_text()
         self.assertIn('calibration_limits=$(python3 "$CAL_MONITOR" limits', body)
         self.assertIn('python3 "$CAL_MONITOR" marker "$helper_log"', body)
         self.assertIn('calibration_watch || exit 1', body)
+        self.assertIn('calibration_drift_bound_locked=0', body)
+        self.assertIn('limits "$LIVE_POLICY_FILE" "$helper_log"', body)
         r = subprocess.run(["bash", "-n", str(launcher)],
                            capture_output=True, text=True, timeout=5)
         self.assertEqual(r.returncode, 0, r.stderr)

@@ -94,3 +94,11 @@ The first two commands are supported launcher entry points. The two fault-inject
 
 - 2026-11-10T04:35:36.821205+00:00 (created-by): Created by agent
 - 2026-11-10T05:23:56.608044+00:00 (updated-by): Updated: section:notes
+
+## 2026-11-11 hardware finding: measured drift horizon omitted from launcher envelope
+
+runs/rhp18-acceptance/calib.log: flashnext-4gpu, build 674f08546ca07ab7f9e9be15d1193217, 1s route feed, explicit policy/prompt A/B; launcher reported a 240s "policy-derived" deadline and FAILED at 240s with only drift_window and drift_half_life_observations missing. The helper0-1111-093708.log subsequently contains a COMPLETE marker; prior runs/recalibrate-4gpu had emitted one at about +30min (previous marker-framing bug). A 240s deadline is not evidence of helper failure.
+
+Cause: calibration_watchdog.py covered minimum samples, heat age and residency, but omitted the observation-spaced retained DriftTracker horizon. worker_policy_calibration.h derives its own watchdog basis from observed accepted heat gap * drift capacity; the ring coarsens when full. Fix: the helper now reports structured measured drift capacity, gap, observation rate and retained horizon; after the first measured heat gap the launcher extends and freezes its finite A/B/B/A bound using the larger of capacity * max(gap,cadence,heat age) and observed horizon/rate. No guessed wall time. Without measured feed it retains the policy-only finite deadline. Even with the extension, absent half-overlap crossing must end with named missing conditions rather than an endlessly sliding bound.
+
+Acceptance still hardware-pending: rebuild engine/helper from this slice, re-run same flashnext-4gpu calibration within lease, save progress/deadline/COMPLETE marker, verify manifest+store key and subsequent ON + live epochs. Card-free unit and C++ syntax checks are the slice gate, not proof of hardware convergence.
