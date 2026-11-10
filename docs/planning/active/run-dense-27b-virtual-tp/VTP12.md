@@ -2,7 +2,7 @@
 id: VTP12
 order: 11
 plan: run-dense-27b-virtual-tp
-state: pending
+state: active
 created-at: '2026-11-11T00:00:00+00:00'
 breadth: ''
 skill: advanced
@@ -94,3 +94,75 @@ be proved. Findings feed XDP10 variant selection and VTP13 engine,
 not VTP03 virtual-rank integration by assumption.
 
 Dependencies: VTP01/02/04/05/07/08/09, XDP03, XDP10, VTP06, KAB01.
+
+## 2026-11-11 — first VTP12 execution: existing-native-row reanalysis
+
+**Status: card-free analysis executed; no new leased GPU work.**
+The GPU lease was held by another agent (R9700 PM study). We used the
+36 immutable VTP05 same-invocation `--perfw8` receipts instead of
+interrupting that lease. Source receipts:
+`${BC_WORK_ROOT}/xtx27-prefill/quant-shape/placement-w8a8-20261110/runs/`.
+Verified offline machine report:
+`${BC_WORK_ROOT}/xtx27-prefill/vtp12-fp8-int8-prior-20261111/report.json`.
+Reproduce with `tools/lab/radiance/xtx27_vtp12_compare.py --runs-dir
+${BC_WORK_ROOT}/xtx27-prefill/quant-shape/placement-w8a8-20261110/runs`.
+The tool validates stored receipt geometry/ABI/provenance, paired
+actual FP8 and INT8 kernel rows, reports missing/partial cases rather
+than extrapolating, and makes no hardware calls. Ten focused card-free
+tests plus Ruff lint pass.
+
+| Candidate; M | Three-device FFN ideal W8A8 barrier | XTX INT8 + R9700 FP8 ideal barrier | R9700 gate+down INT8 -> FP8 |
+| --- | ---: | ---: | ---: |
+| 30/30/40; 1 | 138.6 us | 138.6 us | 103.9 -> 97.3 us |
+| 30/30/40; 4 | 138.3 us | 138.3 us | 102.7 -> 97.7 us |
+| 30/30/40; 8 | 138.6 us | 138.6 us | 106.5 -> 102.1 us |
+| 30/30/40; 64 | 314.5 us | 314.5 us | 197.3 -> 140.4 us* |
+| 35/35/30; 4 | 149.2 us | 149.2 us | 63.3 -> 61.7 us |
+| 37.5/37.5/25; 4 | 173.6 us | 173.6 us | 54.6 -> 52.8 us |
+
+*At M64 the provisional FP8 narrow row is compared against VTP05's
+INT8 selected tiled row; independent INT8 narrow timing also exists
+(161.5 us for R9700 gate+down) and should be evaluated for actual
+registry dispatch. **All stages remained XTX-limited in the ideal
+no-communication FFN lower bound, so this matrix predicts 0%
+three-GPU barrier improvement from changing ONLY the R9700 format.**
+None of these numbers includes activation quantisers, per-rank
+mixed-mode compatibility, overlap, collective, actual weight residency
+or model quality, nor is the FP8 runtime row selector proven.
+
+**Next discriminating GPU experiment**: measure new 27.5/27.5/45
+(tile-rounded) and 25/25/50 physical FFN partitions, initially at
+M1/4/8/64, both real FP8 and INT8 R9700 rows and matching XTX INT8.
+The existing tested 30/30/40 remains the control. Run one card at a
+time with the exclusive lease, paired ABBA repeats and original
+binary/plugin digests. Only after local balance improves should a
+single **simultaneous** three-card exact reduction be built and timed.
+Account for R9700's **two** KV heads: 50% FFN allocation leaves less
+32-GiB VRAM for four long 256K contexts, GDN and scratch; use VTP08
+strict lower bounds before proposing any resident serving admission.
+Do not declare the FP8 variant faster end-to-end from this screen.
+
+### Source-contract blockers to resolve before within-layer mixed format
+
+Pinned upstream `libr4d/r4d_rows.cpp` exposes
+`gemm_fp8a8_nt_m16` / `gemm_fp8a8_tiled` with E4M3 activation,
+F32 per-row/128 activation scales and BF16 per-block weight scales;
+the INT8 rows use different activation and weight scale layouts.
+`libr4d/r4d_selftest.cpp` `w8_perf` times both from the same
+synthetic input, but **does not** prove an INT8 rank and FP8 rank
+consume the same correct upstream activation or can combine with
+one engine graph. `arch/qwen35_fp8/qwen35_fp8.cpp` divides GDN
+heads by uniform world size, so native `--tp 3` is also unqualified.
+XDP10/VTP13 must address these as explicit fail-closed ABI gates.
+
+### Card-free next-shape geometry/capacity gate
+
+For 256-wide FFN tiles (17,408 total intermediate), candidate
+27.5/27.5/45 rounds to physical widths **4864/4864/7680**
+(27.94/27.94/44.12%); 25/25/50 gives **4352/4352/8704** exactly.
+All FFN widths are 256-aligned, allowing native GEMM-shape probes;
+this does not prove other attention/GDN/legal tensor boundaries.
+At 4 x 256K aggregate resident tokens with FP8 KV, the R9700
+50%-FFN choice has a strict **~8.093 GiB W8A8 FFN + 16 GiB KV**
+minimum, leaving **<7.91 GiB** of nominal 32 GiB for everything
+else; this is a *floor*, not an admission approval (VTP08).

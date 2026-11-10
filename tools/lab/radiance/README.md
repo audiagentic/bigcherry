@@ -225,3 +225,17 @@ xtx27_iq6r_quality.py --bundle BUNDLE --checkpoint CHECKPOINT
 The reference is sparse top-128+tail, NOT full-vocabulary KL.
 The policy is explicitly not owner-approved and no emitted status
 alone can approve a production checkpoint. See VTP06 for acceptance.
+
+## VTP12 prior-run FP8 versus INT8 comparison (card-free)
+
+`xtx27_vtp12_compare.py` reads **existing** VTP05 `--perfw8`
+receipts and logs. It checks the paired rows, geometry, per-GPU
+plugin provenance, selected INT8 receipt and complete three-device
+case groups. Inputs: `BC_WORK_ROOT/xtx27-prefill/quant-shape/
+placement-w8a8-20261110/runs/`; output: optional separate JSON
+report via `--output` under BC_WORK_ROOT. No GPUs, conversion,
+serving or mutation of receipts. It estimates only ideal FFN stage
+barriers with *synthetic warm-weight* timings: FP8 row selection,
+activation production, collective, attention/GDN and language-model
+quality remain untested. Owner VTP12; see VTP05 for source results.
+Card-free test: `tools/tests/lab/test_xtx27_vtp12_compare.py`.
