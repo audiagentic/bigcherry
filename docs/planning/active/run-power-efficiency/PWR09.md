@@ -56,3 +56,8 @@ Steps 1-7 do not need v2 and proceed first. Fake sysfs proves portability behavi
 ## Change Log
 
 - 2026-11-10T13:32:42.998106+00:00 (created-by): Created by agent
+
+
+## Update 2026-11-10 (PWR06 R9700 GFXOFF finding)
+
+Any R9700 idle optimisation proven by PWR06 is applied only through this controller (capability check, lease, rollback, performance validation); nothing in the shell launcher or a global environment flag.

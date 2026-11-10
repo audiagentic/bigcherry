@@ -56,3 +56,8 @@ Depends on PWR07 (probe) and feeds PWR09. Challenged against GPT's proposal: kee
 ## Change Log
 
 - 2026-11-10T13:32:38.583551+00:00 (created-by): Created by agent
+
+
+## Update 2026-11-10 (PWR06 R9700 GFXOFF finding)
+
+Kernel and firmware are host prerequisites, never manifest settings (PWR06: the GFXOFF fix is an amdgpu driver change). A proven runtime optimisation for the R9700 idle floor, if any, becomes a profile control here.
