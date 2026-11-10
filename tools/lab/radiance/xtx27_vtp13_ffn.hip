@@ -33,7 +33,10 @@ static double us(Clock::time_point t) {
 }
 static double percentile(std::vector<double> v, double p) {
   std::sort(v.begin(), v.end());
-  return v[static_cast<size_t>((v.size() - 1) * p)];
+  // Nearest-rank percentile: with three iterations p95 must select the worst,
+  // not the median (floor((n-1)*p) loses the upper tail).
+  const auto rank=std::clamp(static_cast<size_t>(std::ceil(p*v.size())), size_t{1}, v.size());
+  return v[rank-1];
 }
 static int positive_arg(int argc, char** argv, const char* name, int fallback) {
   for (int i=1; i<argc; ++i) if (std::strcmp(argv[i], name)==0) {

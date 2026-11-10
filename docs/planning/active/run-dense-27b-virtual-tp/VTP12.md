@@ -448,7 +448,7 @@ The timing will not compare directly with native VTP12 selftests.
 automatically requires the exclusive lease and empty KFD inventory;
 a reversed-order fresh start is the immediate control. During staging
 another agent held an XTX power A/B lease and four KFD processes were
-present; **no VTP13 hardware execution** occurred.
+present; **no VTP13 hardware execution had yet occurred at staging**.
 Next: GPU numerical proof, real BF16-checkpoint-derived shard weights,
 native INT8/FP8 ABI and R9700 attention/GDN head-local measurements.
 
@@ -467,3 +467,30 @@ The source's Nov 9 README says its current SGLang-main profile is
 unqualified and historical op234 runtime cannot be reproduced as
 documented. No MXFP4 quality, speed or production choice is imported.
 Source: https://github.com/Drgr33nSenior/Spry.ai-rdna4-serving .
+
+### 2026-11-11 — first real concurrent three-GPU FFN hardware observations
+
+Two **exclusive-lease starts** on the original prototype
+source digest `c4a9d96253e3c824` completed. Raw immutable receipts:
+`BC_WORK_ROOT/xtx27-prefill/vtp13-ffn-chain/runs/20261110T215450941137Z-c4a9d96253/`
+and `20261110T215529616898Z-c4a9d96253/`.
+The first ran M1; the second M1/M4/M8, with 3 timed repetitions per case
+plus warm-ups. All four cases had `rc=0`, an independent CPU quantized
+oracle with reported max-abs error 0, and identical three-GPU broadcast
+outputs. The full **INT8 FFN chain did run concurrently**.
+
+| M | FFN+host TP3 median wall | XTX0 / XTX1 / R9700 device execution |
+| --- | ---: | --- |
+| 1 | 852.84 us (first); 863.48 us (second) | 503 / 480 / 745 us (first) |
+| 4 | 1622.85 us | 1525 / 1429 / 812 us |
+| 8 | 2957.80 us | 2494 / 2512 / 1498 us |
+
+These are intentionally **non-native scalar-warp INT8 kernels with
+synthetic exact-BF16 weights**, and cannot be compared as production
+speed or BF16-checkpoint validation. The limiting device switches
+from R9700 at M1 to an XTX at M4/M8 under this kernel. The original
+three-sample p95 was incorrectly a second median; do not use it.
+Nearest-rank p95 was repaired and compiled card-free as digest
+`49408233ba43eac2`, still awaiting a GPU re-run. A reversed-order
+start was correctly refused when the power agent reacquired the lease.
+No third matched start, native GEMM A/B or model text generation.

@@ -99,6 +99,7 @@ class ConcurrentInt8FfnTests(unittest.TestCase):
             "cpu_reference(dev,input,rows,false)",
             "BF16-derived independent INT8 FFN CPU oracle mismatch",
             "rank-divergent physical TP3 broadcast",
+            "std::ceil(p*v.size())",
             "gfx1100", "gfx1201",
         ):
             self.assertIn(token, source)

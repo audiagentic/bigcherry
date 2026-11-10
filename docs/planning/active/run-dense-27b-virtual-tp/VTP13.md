@@ -204,7 +204,7 @@ Radiance dispatch**. No end-to-end speed comparison is justified.
 
 The HIP file compiled under `hipcc -O3 -std=c++17` for gfx1100 and
 gfx1201. Card-free planning, source hashing and lease tests passed.
-No GPU case ran: the lease was held by another agent doing power tuning
+At initial staging no GPU case ran: the lease was held by another agent doing power tuning
 and `rocm-smi --showpids` listed four KFD processes. Start under lease
 with `python3 tools/lab/radiance/xtx27_vtp13_chain.py --phase gpu --run
 --rows 1,4 --iterations 3`; repeat reversed; use M8/M64 only after
@@ -215,3 +215,30 @@ Still open: checkpoint-BF16 numerical operator proof, native per-arch
 W8A8 (and optional common-ABI FP8), two-head full-attention and GDN
 Q|K|V/conv/recurrent state, VRAM admission, integrated Radiance TP3,
 matched TP2/TP4 and 4/6/8-stream full-model acceptance.
+
+## 2026-11-11 — executed synthetic INT8 FFN/host-TP3 (limited PASS)
+
+After the compile-only staging note, the lease cleared for **two**
+bounded fresh starts. First: M1; second: M1/M4/M8. Every GPU returned
+the same host-reduced vector and all four cases passed the
+independent INT8 CPU oracle (max-abs 0). The three physical devices
+actually computed the full gate/up/SwiGLU/down chain concurrently;
+this goes beyond the previous separately timed native selftests and
+synthetic-only F32 partials. The host transfer path uses 3 D2H and
+3 H2D, with one physical worker/context per GPU. Source digest
+`c4a9d96253e3c824`, HIP ROCm 7.2.4, checkout `28b116e3e`.
+
+M1 wall median 852.84/863.48 us across two fresh starts; M4 1622.85 us,
+M8 2957.80 us (one start each). Per-device M1 503/480/745 us
+(XTX0/XTX1/R9700); M4 1525/1429/812 us; M8 2494/2512/1498 us.
+The device bottleneck **changes with M** on this simple kernel.
+The raw receipts are in VTP12; none uses original model payloads
+or optimized Radiance GEMMs. Report **NO QUALIFIED THROUGHPUT GAIN**.
+
+A three-sample p95 reporting defect (p95 accidentally selected the
+median) was corrected to nearest rank and recompiled as source digest
+`49408233ba43eac2`; its hardware p95 remains unmeasured. A
+reverse-order attempt failed closed when the power A/B agent reacquired
+the lease. Next: a fresh reverse-order and repeated matched starts,
+checkpoint-BF16/native-W8A8 operator-oracle, then real R9700 two-KV-head
+attention and GDN key/value/conv/state execution, before engine TP3.
