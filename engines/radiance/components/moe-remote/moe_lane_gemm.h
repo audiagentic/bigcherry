@@ -830,6 +830,10 @@ constexpr uint32_t kQuadDppN = 32, kQuadDppRB = 16;
 // Each row has an independent, bit-identical K-fold; the down path keeps the
 // established 16-row batch until its separate regression gate is measured.
 constexpr uint32_t kQuadV2GuRB = kQuadDppRB / 2;
+// RAD49 (TK01/TK02): W4 levels decode with the register byte-permute decoder (w4nl_to_h2x2, the GEMV's) -- the exact f16
+// bits of the same levels in the same element order as the former LDS table -- and each quad broadcast is folded into its
+// add (v_add_f32_dpp): the same operands in swapped order, exact for an fp32 add. Bit-identical to the RAD46 form on 40
+// captured tail requests (runs/rad49-tail-quadopt), 9% less GEMM time on gfx1030.
 template <bool TOKEN, uint32_t RB>
 __global__ __launch_bounds__(128) void lane_moe_rows_w4_quaddpp(
     const uint8_t* aq, const float* as, const int32_t* sorted, const int32_t* off, uint32_t top_k,
@@ -852,19 +856,16 @@ __global__ __launch_bounds__(128) void lane_moe_rows_w4_quaddpp(
     __shared__ uint4 activation[2][RB][16];
     __shared__ float activation_scale[2][RB];
     __shared__ uint32_t arow[RB];
-    __shared__ uint32_t lut[16];
-    // Store exact half bits: weight decode needs no float-to-half conversions.
-    if (tid < 16) lut[tid] = __builtin_bit_cast(uint16_t, (_Float16)kGemvW4nl[tid]);
     auto pack = [](_Float16 x, _Float16 y) {
         return (uint32_t)__builtin_bit_cast(uint16_t, x) |
                ((uint32_t)__builtin_bit_cast(uint16_t, y) << 16);
     };
-    auto decode = [&](uint32_t w) {
-        return make_uint4(
-            lut[w & 15u] | (lut[(w >> 8) & 15u] << 16),
-            lut[(w >> 16) & 15u] | (lut[(w >> 24) & 15u] << 16),
-            lut[(w >> 4) & 15u] | (lut[(w >> 12) & 15u] << 16),
-            lut[(w >> 20) & 15u] | (lut[(w >> 28) & 15u] << 16));
+    auto decode = [](uint32_t w) {
+        h2v a01, a23, b01, b23;
+        w4nl_to_h2x2(w & 0x0F0F0F0Fu, &a01, &a23);
+        w4nl_to_h2x2((w >> 4) & 0x0F0F0F0Fu, &b01, &b23);
+        return make_uint4(__builtin_bit_cast(uint32_t, a01), __builtin_bit_cast(uint32_t, a23),
+                          __builtin_bit_cast(uint32_t, b01), __builtin_bit_cast(uint32_t, b23));
     };
     auto dot8 = [](uint4 x, uint4 w) {
         float s = 0.0f;
@@ -875,18 +876,15 @@ __global__ __launch_bounds__(128) void lane_moe_rows_w4_quaddpp(
         return s;
     };
     auto quad_sum = [](float partial) {
-        // Keep each broadcast next to its consuming add. Separate intrinsics
-        // let LLVM hoist 96 broadcast results across next-tile staging. Both
-        // early-clobbers prevent either temporary overwriting the source that
-        // the later broadcasts still need. All four source lanes stay active.
-        float sum, exchanged;
-        asm("v_mov_b32_dpp %1, %2 quad_perm:[1,1,1,1] row_mask:0xf bank_mask:0xf\n\t"
-            "v_add_f32 %0, %2, %1\n\t"
-            "v_mov_b32_dpp %1, %2 quad_perm:[2,2,2,2] row_mask:0xf bank_mask:0xf\n\t"
-            "v_add_f32 %0, %0, %1\n\t"
-            "v_mov_b32_dpp %1, %2 quad_perm:[3,3,3,3] row_mask:0xf bank_mask:0xf\n\t"
-            "v_add_f32 %0, %0, %1"
-            : "=&v"(sum), "=&v"(exchanged) : "v"(partial));
+        // One asm block keeps each DPP add next to its source; LLVM cannot hoist broadcasts across next-tile staging. Lane q
+        // sums partial[q] + partial[1], + partial[2], + partial[3] in that order (the DPP operand is src0, the running sum
+        // src1: fp32 add is commutative, so the order of operations matches the former mov+add form bit for bit). The
+        // early-clobber keeps the sum off the source register. All four source lanes stay active.
+        float sum;
+        asm("v_add_f32_dpp %0, %1, %1 quad_perm:[1,1,1,1] row_mask:0xf bank_mask:0xf\n\t"
+            "v_add_f32_dpp %0, %1, %0 quad_perm:[2,2,2,2] row_mask:0xf bank_mask:0xf\n\t"
+            "v_add_f32_dpp %0, %1, %0 quad_perm:[3,3,3,3] row_mask:0xf bank_mask:0xf"
+            : "=&v"(sum) : "v"(partial));
         return sum;
     };
     for (uint32_t r0 = rs; r0 < re; r0 += RB) {
