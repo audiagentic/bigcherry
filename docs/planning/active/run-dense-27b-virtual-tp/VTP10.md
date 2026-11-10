@@ -164,6 +164,20 @@ assume the AVX SIGSEGV itself is the only blocker. A solution must
 prove correct GDN results, bounded memory and usable end-to-end
 calibration speed on model-sized inputs.
 
+## Single-threaded AVX discriminant
+
+A further R9700-only replay of the v6 native BF16 calibration
+retained libavx and forced OMP_NUM_THREADS=1 with OMP_DYNAMIC=FALSE.
+This also failed **SIGSEGV (-11)** after original-BF16 load, before
+any Hessian output; isolated receipt/log at
+BC_WORK_ROOT/xtx27-prefill/vtp10-bf16-calibration-smoke-20261110-v8/.
+Single-threaded OpenMP therefore does not remove the crash in this
+configuration, and a simple multithread race is not established as
+its cause. The crash PC from the bounded GDB trace remains in the
+libavx gdn_conv_prep write path. Audit device/host destination
+provenance, shape/stride and lifetime around that path before changing
+the kernel. The unmodified pinned upstream mirror remains read-only.
+
 ## Release decisions
 
 PASS: actual W8A8 TP2 engine prefill/decode under both exact and
