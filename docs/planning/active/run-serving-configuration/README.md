@@ -11,6 +11,7 @@ resolved value carries its provenance and `explain` says why it has that value.
 | [RSC02](RSC02.md) | `bigcherry serve` replaces the shell launcher; generated, allowlisted process environments; lifecycle | RSC01 |
 | [RSC03](RSC03.md) | One derived start-up resource plan across host RAM, pinned memory and VRAM | RSC01, RSC02 |
 | [RSC04](RSC04.md) | Retire the legacy launch surfaces once callers migrate | RSC02, RSC03, RCS10 |
+| [RSC11](RSC11.md) | Completion programme: slices S0-S17 to finish RSC01-RSC10 and PWR06-PWR09 with one v2 cutover | all |
 
 Runs in parallel with the live-placement roadmap (patching-radiance-heat-placement, stage 1 first) and joins it at stage
 2: calibration and derived kernel/lane settings stay in build-radiance-components/RCS10 and RHP09; runtime movement
