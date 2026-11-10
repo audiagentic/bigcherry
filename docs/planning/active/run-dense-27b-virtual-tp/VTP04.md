@@ -100,6 +100,18 @@ scratch. Do not run under other agents' leases.
   count, quant format and device dispatch are proved; final gate is
   the actual Qwen3.8-27B model and a future 1M-capable model separately.
 
+## Next bounded test: architecture and precision alternatives
+
+The original two-slice R9700 fused/sequential/two-stream and physical
+host collective results stay valid as **synthetic** controls, not a
+requirement to implement virtual ranks. [VTP12](VTP12.md) now owns
+actual model-shaped concurrent three-GPU INT8-XTX/FP8-R9700 versus
+all-three INT8 comparisons, including common-activation/numerical
+proof, 1/1/2 attention heads, GDN and total exposed barrier timing.
+[VTP13](VTP13.md) owns an opt-in unequal physical TP3 runtime as an
+alternative to [VTP03](VTP03.md) fused virtual TP4. This must not
+silently become a serial R9700 layer stage (XDP02).
+
 ## Status log
 
 - 2026-11-10: Existing worktree rebased onto origin/main at

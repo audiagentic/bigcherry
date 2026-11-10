@@ -220,6 +220,28 @@ error is substantial (relative L2 0.374 W4A4 vs 0.193 W4A8),
 so real Qwen3.8 activation/KL qualification is mandatory before
 using A4 for any layer. Broad W4 conversion remains deferred.
 
+## 2026-11-11: same-layer GPU-specific quantisation extension
+
+The original XDP03 layer-stage selection is distinct from the owner's
+new goal: **simultaneous, same-layer** three-card TP with INT8 W8A8
+on gfx1100 XTX0/XTX1 and a compatible native FP8 on gfx1201 R9700.
+
+- [XDP10](XDP10.md): immutable BF16-origin multi-variant package,
+  per-GPU load-time selection, selected-only VRAM and fail-closed ABI.
+- [VTP12](../run-dense-27b-virtual-tp/VTP12.md): real FP8/INT8
+  native 27B-shape kernels, mixed activation/output numeric contract,
+  concurrent physical three-GPU collective versus W8A8 controls.
+- [VTP13](../run-dense-27b-virtual-tp/VTP13.md): unequal physical TP3
+  (1/1/2 attention KV heads) as a competitor to virtual TP4 (VTP03).
+
+The existing qwen35_w8a8 global activation-mode rule **does not**
+prove INT8/FP8 compatibility across tensor ranks. Require converter
+plans, exact split/scale semantics, mixed output numerical oracle,
+BF16-relative full-model quality and real model/VRAM admission before
+enabling it. First engine baseline is uniform all-three W8A8.
+XTX0/XTX1 must remain representation-matched unless separately proven.
+Load-time selection only; no serving-time re-quantisation.
+
 ## Risks and promotion gates
 
 - The W4 `u4+zero+scale` path may widen activations and do several

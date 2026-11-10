@@ -72,6 +72,28 @@ and scratch allocations, exposed per-step collective, measured PCIe
 bytes/latency and no unplanned RAM spill. Do not use summed
 GPU kernel time as exposed wall time.
 
+## Required competing three-physical-GPU design (2026-11-11)
+
+Before committing to a four-logical-rank engine, compare the **one
+physical rank per GPU, asymmetric TP3** design in [VTP12](VTP12.md)
+and [VTP13](VTP13.md). Both have 1/1/2 physical KV-head ownership and
+three collective endpoints; TP3 handles both R9700 heads in one
+physical GPU context and concurrently with XTX compute, rather than
+running a serial TP2-plus-R9700 layer stage. Do not presume two
+virtual slices offer extra R9700 compute. Keep fused virtual TP4 as
+an A/B candidate if a single unequal rank's kernel shapes regress.
+
+Add to each matched candidate a **uniform W8A8 on all three** control
+and a provisional **XTX INT8 / R9700 FP8** arm when XDP10's variant
+loader and VTP12's cross-rank activation/output/numeric contract are
+proved. IQ6R remains a separate BF16-calibrated, quality-qualified
+arm. With per-format weight sizes, test actual VRAM/KV tradeoffs and
+both FFN and attention/GDN slowest-worker barriers. A faster local FP8
+GEMM does not by itself prove a faster model; measure quantisation,
+layout, PCIe and all-reduce exposed time. Only run the 4+ stream full
+model campaigns after the small kernels and exact three-way operator
+harness pass.
+
 ## Go/no-go
 
 Reject virtual TP4 if any legal tensor/attention/GDN split or

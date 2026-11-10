@@ -82,6 +82,27 @@ implicit production-valid conclusions. Validation:
    if actual allocated KV exceeds plan, if host spill is hidden, or
    if quality/KLD/MTP acceptance differs unacceptably from exact control.
 
+## Physical TP3 and mixed-precision extension (2026-11-11)
+
+Keep **two independent ownership axes**: FFN/shardable weight ratio
+30/30/40 (and measured alternatives 35/35/30, 37.5/37.5/25), versus
+full-attention KV heads 1/1/2 (25/25/50% KV) on physical XTX0/XTX1/
+R9700. The latter is unchanged whether R9700 is one unequal TP3
+rank or two virtual TP4 ranks. Operators may have distinct legal tile
+rounding and replication rules; physical combined VRAM is not equal
+to four equal logical ranks. Reuse [VTP08](VTP08.md) exact W8A8 FFN
+floor and extend to real FP8 layouts rather than applying assumed bpw.
+
+A multi-variant disk bundle (XDP10) consumes VRAM only for its
+**selected** INT8/FP8/IQ6R shards. Count actual per-format scale,
+activation staging, GDN/conv recurrent state, replicated/output
+weights, KV, graphs, allocator padding and 10% provisional reserve.
+FP8 and INT8 are both eight-bit weight codes, so do not credit a
+capacity win without byte receipts. Assess 4/6/8 streams up to
+native 262144 tokens each and verify R9700's two-head KV/compute
+work neither stalls the XTX nor spills. VTP13 owns runtime admission;
+VTP12 owns mixed-precision operator measurements.
+
 ## Completion criterion
 
 Measured, per-physical-GPU Q6/Q8 *resident* weight+KV+state+scratch

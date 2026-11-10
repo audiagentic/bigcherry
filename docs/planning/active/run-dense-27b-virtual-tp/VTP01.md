@@ -74,6 +74,32 @@ per-physical-device capacity, missing gfx11/gfx12 kernels or illegal layout.
   30/30/20/20 capacity: shape and/or partial replication may dictate
   additional work, requiring a complete per-op mapping table.
 
+## Competing architecture: unequal *physical* TP3 (VTP12/VTP13)
+
+Do not confuse "two KV heads on R9700" with "two execution ranks on
+R9700." A single gfx1201 executor can own and process both heads
+**concurrently** within one kernel/grid (or proven overlap-safe launches),
+without serial per-layer pipeline stages or co-resident logical ranks.
+One XTX rank each owns a KV head; the R9700 owns two (1/1/2). For
+full attention the natural Q-head mapping is 6/6/12 of 24; GDN key
+4/4/8 of 16 and value 12/12/24 of 48 are candidate head layouts,
+not proof of legal fused GDN/conv/state geometry. Independently split
+FFN tiles and preserve a single three-physical-endpoint collective.
+
+Asymmetric TP3 needs new per-op offsets, nonuniform rank dimensions,
+arch-specific kernel dispatch, attention/GDN state ownership and
+per-GPU allocator accounting. Existing `--tp 3` is NOT supported for
+this model: equal division of four KV heads fails. It is not a
+shortcut around the present uniform-world-size and mixed-architecture
+checks. The alternative must compete with TP4 and identical dual-XTX
+control at real concurrent serving speed and resident KV capacity.
+
+[VTP12](VTP12.md) owns the native INT8/FP8 and mixed-precision
+operator proof; [VTP13](VTP13.md) owns the asymmetric physical TP3
+runtime and full A/B. [XDP10](../run-xtx27-prefill/XDP10.md) owns
+load-time model variant selection. Do not choose TP3 or virtual TP4
+from bandwidth-only theoretical splits.
+
 ## Deliverable / acceptance
 
 Card-free table of logical-to-physical ownership for *every* affected
