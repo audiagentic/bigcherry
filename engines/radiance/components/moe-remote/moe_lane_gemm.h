@@ -834,7 +834,7 @@ constexpr uint32_t kQuadV2GuRB = kQuadDppRB / 2;
 // bits of the same levels in the same element order as the former LDS table -- and each quad broadcast is folded into its
 // add (v_add_f32_dpp): the same operands in swapped order, exact for an fp32 add. Bit-identical to the RAD46 form on 40
 // captured tail requests (runs/rad49-tail-quadopt), 9% less GEMM time on gfx1030.
-template <bool TOKEN, uint32_t RB>
+template <bool TOKEN, uint32_t RB, bool BYPASS = false>
 __global__ __launch_bounds__(128) void lane_moe_rows_w4_quaddpp(
     const uint8_t* aq, const float* as, const int32_t* sorted, const int32_t* off, uint32_t top_k,
     void* const* code0, void* const* scale0, void* const* code1, void* const* scale1,
@@ -917,6 +917,9 @@ __global__ __launch_bounds__(128) void lane_moe_rows_w4_quaddpp(
                 uint32_t hw[8];
 #pragma unroll
                 for (uint32_t j = 0; j < 4; ++j) {
+                    if constexpr (BYPASS) { // TK04 timing experiment: no E4M3 conversion, input-dependent garbage; output invalid
+                        hw[2 * j] = qw[j]; hw[2 * j + 1] = qw[j] ^ 0x80008000u; continue;
+                    }
                     hw[2 * j] = pack((_Float16)gemv_e4m3(qw[j] & 255u),
                                     (_Float16)gemv_e4m3((qw[j] >> 8) & 255u));
                     hw[2 * j + 1] = pack((_Float16)gemv_e4m3((qw[j] >> 16) & 255u),

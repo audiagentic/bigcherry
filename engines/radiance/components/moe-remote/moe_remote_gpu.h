@@ -119,6 +119,7 @@ public:
         else if (std::strcmp(name, "production") == 0) rad46_sweep_ = Rad46Sweep::Production;
         else if (std::strcmp(name, "rowlane16") == 0) rad46_sweep_ = Rad46Sweep::RowLane16;
         else if (std::strcmp(name, "rowlane8") == 0) rad46_sweep_ = Rad46Sweep::RowLane8;
+        else if (std::strcmp(name, "stagebypass") == 0) rad46_sweep_ = Rad46Sweep::Bypass;
         else if (std::strncmp(name, "split", 5) == 0 && name[5] >= '0' && name[5] <= '9') {
             // TK03 experiment: experts with fewer routes than this run the output-lane kernel, the rest the quad kernel.
             rad46_sweep_ = Rad46Sweep::Split;
@@ -812,7 +813,17 @@ public:
                                    (uint32_t)shape_.hidden, (uint32_t)(2 * mid_w()), static_cast<uint16_t*>(w.d_gu.p),
                                    (uint32_t)mid_w(), quad_lo_, 0xFFFFFFFFu);
                 else if (gu_form == Rad46RowsForm::Quad16)
-                    hipLaunchKernelGGL((lane_moe_rows_w4_quaddpp<true, kQuadDppRB>),
+                    if (rad46_sweep_ == Rad46Sweep::Bypass) hipLaunchKernelGGL((lane_moe_rows_w4_quaddpp<true, kQuadDppRB, true>),
+                                   dim3(experts(), (uint32_t)(2 * std::max(w0, w1) / kQuadDppN)), dim3(128), 0, w.stream,
+                                   static_cast<const uint8_t*>(w.d_aq.p), static_cast<const float*>(w.d_as.p),
+                                   static_cast<const int32_t*>(w.d_sorted.p), static_cast<const int32_t*>(w.d_off.p),
+                                   (uint32_t)shape_.top_k,
+                                   static_cast<void* const*>(w.gu_code[0].p), static_cast<void* const*>(w.gu_scale[0].p),
+                                   static_cast<void* const*>(w.gu_code[1].p), static_cast<void* const*>(w.gu_scale[1].p),
+                                   (uint32_t)(2 * w0), (uint32_t)(2 * w1), (uint32_t)shape_.hidden, (uint32_t)shape_.hidden,
+                                   (uint32_t)shape_.hidden, (uint32_t)(2 * mid_w()), static_cast<uint16_t*>(w.d_gu.p),
+                                   (uint32_t)mid_w(), quad_lo_, 0xFFFFFFFFu);
+                    else hipLaunchKernelGGL((lane_moe_rows_w4_quaddpp<true, kQuadDppRB>),
                                    dim3(experts(), (uint32_t)(2 * std::max(w0, w1) / kQuadDppN)), dim3(128), 0, w.stream,
                                    static_cast<const uint8_t*>(w.d_aq.p), static_cast<const float*>(w.d_as.p),
                                    static_cast<const int32_t*>(w.d_sorted.p), static_cast<const int32_t*>(w.d_off.p),
@@ -961,7 +972,16 @@ public:
                                    (uint32_t)shape_.hidden, (uint32_t)shape_.hidden, (uint32_t)w0, (uint32_t)w1,
                                    (uint32_t)mid_w(), (uint32_t)shape_.hidden, static_cast<uint16_t*>(out_down), 0u);
                 else if (dn_form == Rad46RowsForm::Quad16 || dn_form == Rad46RowsForm::Quad8)
-                    hipLaunchKernelGGL((lane_moe_rows_w4_quaddpp<false, kQuadDppRB>),
+                    if (rad46_sweep_ == Rad46Sweep::Bypass) hipLaunchKernelGGL((lane_moe_rows_w4_quaddpp<false, kQuadDppRB, true>),
+                                   dim3(experts(), (uint32_t)(shape_.hidden / kQuadDppN)), dim3(128), 0, w.stream,
+                                   static_cast<const uint8_t*>(w.d_mid.p), static_cast<const float*>(w.d_mid_s.p),
+                                   static_cast<const int32_t*>(w.d_sorted.p), static_cast<const int32_t*>(w.d_off.p),
+                                   (uint32_t)shape_.top_k,
+                                   static_cast<void* const*>(w.dn_code[0].p), static_cast<void* const*>(w.dn_scale[0].p),
+                                   static_cast<void* const*>(w.dn_code[1].p), static_cast<void* const*>(w.dn_scale[1].p),
+                                   (uint32_t)shape_.hidden, (uint32_t)shape_.hidden, (uint32_t)w0, (uint32_t)w1,
+                                   (uint32_t)mid_w(), (uint32_t)shape_.hidden, static_cast<uint16_t*>(out_down), 0u, quad_lo_, 0xFFFFFFFFu);
+                    else hipLaunchKernelGGL((lane_moe_rows_w4_quaddpp<false, kQuadDppRB>),
                                    dim3(experts(), (uint32_t)(shape_.hidden / kQuadDppN)), dim3(128), 0, w.stream,
                                    static_cast<const uint8_t*>(w.d_mid.p), static_cast<const float*>(w.d_mid_s.p),
                                    static_cast<const int32_t*>(w.d_sorted.p), static_cast<const int32_t*>(w.d_off.p),
