@@ -650,6 +650,7 @@ Radiance patches also use `bigcherry --engine radiance patch-promote <id> --evid
 | `tools/lab/radiance/xtx27_vtp_micro.py` | **TRANSITIONAL** | VTP04 gated one-command plan/compile/exclusive-lease experiment runner; scratch receipts, no automatic GPU use. |
 | `tools/lab/radiance/xtx27_quant_kernel.py` | **TRANSITIONAL** | VTP05 card-free geometry planner and lease-gated per-case real Radiance IQ6R/W8A8 kernel timing tool; no serving or quality claim. |
 | `tools/lab/radiance/xtx27_quant_campaign.py` | **TRANSITIONAL** | VTP05 staged no-model Q6/Q8 shape campaign with immutable build hashes and one-case leased execution/resume. |
+| `tools/lab/radiance/xtx27_checkpoint_audit.py` | **TRANSITIONAL** | VTP06 card-free original BF16 index, safetensors header/shape, tokenizer and source metadata audit; opt-in streamed full-data SHA; does not quantize or qualify numerical quality. |
 | `tools/residency_gates.py` | **MOVE** | HI34 plan-specific gate moved to non-package `tools/lab/hi34-residency-gates/`; root wrapper retained for tests/legacy CLI. |
 | `tools/rocm-env.ps1` | **MOVE** | Environment bootstrap; canonical destination tools/env/ in TR05. |
 | `tools/rocm-env.sh` | **MOVE** | Environment bootstrap; canonical destination tools/env/ in TR05. |

@@ -88,3 +88,15 @@ Measured, per-physical-GPU Q6/Q8 *resident* weight+KV+state+scratch
 budgets and maximum **quality-qualified** context at 4+ streams for each
 candidate; explicit out-of-memory and unsupported-format refusals.
 No engine integration before these receipts.
+
+### Original checkpoint census cross-check (VTP06, 2026-11-10)
+
+The structural BF16 header/index audit reads the actual 18-shard
+Qwen3.8-27B source and finds **34,225,520,640 BF16 bytes** in its
+192 text-FFN gate/up/down projection tensors. This is 31.875 GiB
+**before quantization**. The other 21,337,335,264 BF16 bytes include
+attention/GDN, embeddings/head, MTP and vision, each requiring its
+own explicit quantization and physical-placement plan. This census
+does not make Q8 weights equal to BF16/2: actual scales, alignment,
+side tables, replicated tensors and MTP/vision handling must be
+accounted for by the real converted .rad artifact (VTP06).
