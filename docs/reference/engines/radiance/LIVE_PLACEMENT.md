@@ -27,8 +27,9 @@ Not built yet: the device-speed and phase-aware solver (RHP17, RHP04 stage 3), t
 
 The policy is a field of the serving manifest: `spec.handoff.placement.live_policy`. bc-serve fills it when
 `derive_manifest_live_policy` finds a record in the calibration store (`${BC_WORK_ROOT}/live-policy-calibration.toml`) for this
-configuration's **calibration key** and the record is complete. Otherwise the field is simply absent and the policy is off. **Nothing
-reports this**: a missing record produces no message (RHP18 tracks making it say so).
+configuration's **calibration key** and the record is complete. Otherwise the field is absent and the policy is off. The launcher
+reports ON (with measured cadence) or OFF (with the missing-record/unsupported-layout reason derived from manifest provenance).
+A helper-free start is NOT_APPLICABLE. RHP18 tracks the remaining per-epoch runtime/degraded status and audit identity.
 
 The calibration key is `sha256` of the plan key inputs without `engine_build` and `cache_version`
 (`calibration_key` in `engines/radiance/components/serving/plan_cache.cpp`). The inputs are `card`, `engine`, `engine_args`,
@@ -41,6 +42,30 @@ re-calibrated.
 policy is derived only for the *production* profile: such a run never carries a policy unless one is passed explicitly with
 `--live-policy FILE` (the derived `live_policy` object of a production manifest is a valid file). The experiment file's hash is also part of
 the calibration key.
+
+## RHP20 card and layout policy eligibility (2026-11-10 card-free review)
+
+A startup ON state reports only startup derivation, **not** that every owner-generation transition is valid. The helper independently
+refuses a manually supplied explicit policy on head-only, single-helper or multi-rank TP layouts, even if a lab experiment would
+otherwise bypass derived policy selection. Only source/target slot eligibility plus the receiving helper's authoritative checks
+can permit a transaction. gfx1201 and gfx1100 support w4nl64 and fp8_e4m3_block, but gfx1030 supports w4nl64 only.
+
+| Layout | Helper roles | Live policy | Calibrated key / run | Hardware migration and quality |
+| --- | --- | --- | --- | --- |
+| flashnext-4gpu | gfx1100 head/head, gfx1030 tail; gfx1201 engine | Topology eligible, ON only with current-key calibration | Historical RHP16 key; current key recheck needed | 131 paced forced swaps, zero aborts (RHP06); current 1,000-epoch/format/KLD and per-card receipts pending |
+| flashnext-2xtx-rdna2-tail | gfx1100 head/head, gfx1030 tail; gfx1201 engine | Topology eligible, not yet calibrated | None verified under current key | Cross-arch w4nl64 / 2 GiB tail KLD pending |
+| flashnext-2xtx-rdna2-tail-combine | Same, combine enabled | Topology eligible, not yet calibrated | None verified | Combine/migration/KLD pending |
+| flashnext-2xtx-rdna2-head | gfx1100 head/head, gfx1030 head | OFF; no tail, #805 | Not applicable | Static placement and forced-only safety pending |
+| flashnext-2xtx / flashnext-2xtx-combine | gfx1100 head/head | OFF; no tail, #805 | Not applicable | False last-XTX-tail must never occur; baseline pending |
+| flashnext-tp2xtx-r9700 | gfx1201 single helper, 2x gfx1100 engine TP | OFF; one helper plus TP | Not applicable | TP rank generation and baseline pending |
+| flashnext-tp2xtx | gfx1201 head, gfx1030 tail; TP engine | OFF; unverified TP | Not applicable until TP validated | Both rank ACKs, format/KLD and epoch trials pending |
+| flashnext-r9700 | gfx1201 engine, no helpers | NOT_APPLICABLE | Not applicable | Engine-only residency; known separate VRAM margin problem |
+| qwen27b-2xtx | 2x gfx1100 dense engine, no helpers | NOT_APPLICABLE | Not applicable | No remote MoE helper migration |
+
+The lease-holder acceptance commands and precise per-cell gates are in
+docs/planning/active/patching-radiance-heat-placement/RHP20.md. Do not mark a layout verified without a recorded manifest,
+key, helper transaction log, owner generation, RHP12 timing and numerical/KL verdict. When kernel architectures differ,
+bit identity is not the criterion: use the documented numeric quality gates.
 
 ## How to check it is on (do this before any placement-sensitive measurement)
 

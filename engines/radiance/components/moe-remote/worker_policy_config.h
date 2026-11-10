@@ -12,6 +12,35 @@
 #include <vector>
 
 namespace r3::policy {
+// Independent helper-side guard: a lab's explicit live_policy bypasses the
+// serving-derived policy gate, so the strict v1 reader alone is not sufficient
+// to certify that the CPU solver's LAST-helper-is-tail topology holds.
+// The only validated live-policy arrangement is one engine rank, at least one
+// head and exactly one final tail with zero weight in the head selector.
+// TP engines and head-only layouts remain available with static placement.
+inline bool live_policy_arrangement_supported(
+    uint32_t engine_ranks, const std::string& placement,
+    const std::vector<uint64_t>& shares, std::string* why) {
+    auto refuse = [&](const char* reason) {
+        if (why) *why = reason;
+        return false;
+    };
+    if (engine_ranks != 1)
+        return refuse("live_policy: TP/multi-rank engine is not validated for live migration");
+    if (placement != "tail")
+        return refuse("live_policy: helper planner requires tail strategy; head-only is unsupported");
+    if (shares.size() < 2 || shares.size() > worker_share::kMaxHelperShares ||
+        shares.back() != 0)
+        return refuse("live_policy: requires head helpers followed by one zero-share tail helper");
+    bool head = false;
+    for (size_t i = 0; i + 1 < shares.size(); ++i) {
+        if (shares[i] > 1000000)
+            return refuse("live_policy: invalid head share");
+        head = head || shares[i] > 0;
+    }
+    if (!head) return refuse("live_policy: at least one positive head share is required");
+    return true;
+}
 struct Settings {
     bool enabled = false, accept_unwatermarked_heat = false, effect_gate = false;
     uint64_t cadence_ns = 0, abort_cooldown_ns = 0, learned_eligibility_ttl_ns = 0;
