@@ -138,6 +138,32 @@ def contains_file_tokens(path: Path, tokens: tuple[bytes, ...]) -> bool:
         return all(view.find(token) >= 0 for token in tokens)
 
 
+def iq6r_layout_hooks_live(plugin: Path) -> bool:
+    """Reject IQR rows backed by r3_gen_stubs (-18), not real layouts."""
+    try:
+        out = subprocess.run(["nm", "-D", "--defined-only", str(plugin)],
+                             capture_output=True, text=True, check=False, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    if out.returncode:
+        return False
+    symbols: dict[str, int] = {}
+    for line in out.stdout.splitlines():
+        match = re.fullmatch(r"\s*([0-9a-fA-F]+)\s+[A-Za-z]\s+(\w+)\s*", line)
+        if match:
+            symbols[match.group(2)] = int(match.group(1), 16)
+    required = ("r4d_rad_layout_iqr", "r4d_rad_relayout_iqr",
+                "r4d_rad_unrelayout_iqr")
+    if any(name not in symbols for name in required):
+        return False
+    begin, end = symbols.get("r3_stub_begin"), symbols.get("r3_stub_end")
+    if (begin is None) != (end is None):
+        return False
+    return begin is None or (begin < end and all(
+        not begin <= symbols[name] < end for name in required
+    ))
+
+
 def build_paths(build: Path, gpu: str, quant: str) -> tuple[Path, Path]:
     exe = build / "bin" / "r4d_selftest"
     plugin = build / "radiance_home" / "kernels" / ("libr4d.so" if gpu == "r9700" else "libr3.so")
@@ -149,6 +175,8 @@ def build_paths(build: Path, gpu: str, quant: str) -> tuple[Path, Path]:
             plugin, (b"gemm_iqr_nt_m64", b"gemm_iqr_tiled")
         ):
             raise ValueError("selected prebuilt binary/plugin lacks native IQR V4 timing rows")
+        if not iq6r_layout_hooks_live(plugin):
+            raise ValueError("selected plugin has missing or stubbed IQR layout hooks (-18)")
     elif quant == "w8a8":
         if not contains_file_tokens(exe, (b"--perfw8",)) or not contains_file_tokens(
             plugin, (b"gemm_i8a8_nt_m16", b"gemm_i8a8_tiled")

@@ -68,7 +68,8 @@ class CampaignTests(unittest.TestCase):
                     b"gemm_iqr_nt_m64 gemm_iqr_tiled "
                     b"gemm_i8a8_nt_m16 gemm_i8a8_tiled"
                 )
-            self.assertEqual(len(campaign.preflight(build)["objects"]), 6)
+            with patch.object(campaign.q, "iq6r_layout_hooks_live", return_value=True):
+                self.assertEqual(len(campaign.preflight(build)["objects"]), 6)
             (build / "radiance_home/kernels/libr3.so").write_bytes(b"bad")
             with self.assertRaises(ValueError):
                 campaign.preflight(build)
@@ -155,6 +156,7 @@ class CampaignTests(unittest.TestCase):
             with (
                 patch.object(campaign.subprocess, "run",
                              return_value=Mock(stdout="abcd1234\n")) as command_mock,
+                patch.object(campaign.q, "iq6r_layout_hooks_live", return_value=True),
                 redirect_stdout(io.StringIO()),
             ):
                 self.assertEqual(campaign.main([
@@ -163,7 +165,8 @@ class CampaignTests(unittest.TestCase):
                 ]), 0)
                 self.assertEqual(command_mock.call_count, 1)
             doc = campaign.manifest_at(manifest_dir)
-            campaign.validate_frozen(doc)
+            with patch.object(campaign.q, "iq6r_layout_hooks_live", return_value=True):
+                campaign.validate_frozen(doc)
             self.assertEqual(doc["checkout"], "abcd1234")
             self.assertEqual(len(doc["cases"]), 12)
             with redirect_stdout(io.StringIO()), self.assertRaises(SystemExit):

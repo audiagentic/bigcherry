@@ -128,6 +128,7 @@ class ExecutionSafetyTests(unittest.TestCase):
             with (
                 patch.dict(runner.os.environ, {"VTP05_LEASED": "1"}, clear=True),
                 patch.object(runner.subprocess, "run", side_effect=fake_run),
+                patch.object(runner, "iq6r_layout_hooks_live", return_value=True),
             ):
                 if expected_success:
                     path = runner.execute_one(args, geo)

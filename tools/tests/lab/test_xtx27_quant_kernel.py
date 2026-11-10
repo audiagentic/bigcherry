@@ -9,7 +9,7 @@ import sys
 import tempfile
 import unittest
 from contextlib import redirect_stdout
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 SOURCE = pathlib.Path(__file__).resolve().parents[2] / "lab" / "radiance" / "xtx27_quant_kernel.py"
 sys.path.insert(0, str(SOURCE.parent))
@@ -85,6 +85,26 @@ class QuantKernelGeometryTests(unittest.TestCase):
             mod.extract_timing("  iqr k6 m64 51.4 us\nFAIL kernel",
                                quant="iq6r", m=4)
 
+    def test_iqr_real_layout_hooks_vs_r3_stub_region(self):
+        stub = ("0000000000001000 T r3_stub_begin\n"
+                "0000000000001100 T r3_stub_end\n"
+                "0000000000001010 T r4d_rad_layout_iqr\n"
+                "0000000000001020 T r4d_rad_relayout_iqr\n"
+                "0000000000001030 T r4d_rad_unrelayout_iqr\n")
+        real = stub.replace("0000000000001010", "0000000000002010").replace(
+            "0000000000001020", "0000000000002020").replace(
+            "0000000000001030", "0000000000002030")
+        for stdout, expected in ((stub, False), (real, True),
+                                 (real.splitlines()[0] + "\n", False)):
+            with patch.object(mod.subprocess, "run", return_value=Mock(
+                returncode=0, stdout=stdout,
+            )):
+                self.assertEqual(mod.iq6r_layout_hooks_live(pathlib.Path("stub.so")), expected)
+        with patch.object(mod.subprocess, "run", return_value=Mock(
+            returncode=1, stdout="",
+        )):
+            self.assertFalse(mod.iq6r_layout_hooks_live(pathlib.Path("bad.so")))
+
     def test_prebuilt_abi_capability_checks_fail_closed(self):
         with tempfile.TemporaryDirectory() as temp:
             root = pathlib.Path(temp)
@@ -99,7 +119,8 @@ class QuantKernelGeometryTests(unittest.TestCase):
                 mod.build_paths(root, "xtx0", "iq6r")
             exe.write_bytes(b"--perfw8 --perfiqr")
             lib.write_bytes(b"gemm_iqr_nt_m64 gemm_iqr_tiled")
-            self.assertEqual(mod.build_paths(root, "xtx0", "iq6r"), (exe, lib))
+            with patch.object(mod, "iq6r_layout_hooks_live", return_value=True):
+                self.assertEqual(mod.build_paths(root, "xtx0", "iq6r"), (exe, lib))
             with self.assertRaisesRegex(ValueError, "lacks native W8A8"):
                 mod.build_paths(root, "xtx0", "w8a8")
 

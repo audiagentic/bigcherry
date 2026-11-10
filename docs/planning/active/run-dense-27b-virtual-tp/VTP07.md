@@ -96,3 +96,57 @@ also not automatically the full calibrated mixed-bit IQ6R recipe.
    combined-vs-two-shard execution and three-way host collective.
    Neither a fast kernel nor a theoretical 138.2-us floor authorises
    changing production dispatch or a virtual-GPU illusion.
+
+## 2026-11-10 follow-up: concrete gfx11 root cause and bounded fix
+
+**Root cause confirmed, superseding the earlier unknown-cause hypothesis.**
+The gfx1100 `engines/radiance/components/libr3/CMakeLists.txt` declared
+`r4d_rows.cpp`, `r4d_layout.cpp`, `r4d_fp8_layout.cpp`,
+`r4d_shapes.cpp` and `r4d_fuse.cpp`, but **omitted
+`r4d_iqr_layout.cpp`**. Pinned upstream `libr4d/CMakeLists.txt`
+includes that source in `R4D_DECLARATION`. The omitted file is pure host
+C++ and provides the core IQ6R layout / relayout / unrelayout hooks.
+
+Proof from the original gfx11 plugin:
+
+- Its generated `components/libr3/r3_stubs.S` contains labels
+  `r4d_rad_layout_iqr`, `r4d_rad_relayout_iqr` and
+  `r4d_rad_unrelayout_iqr` that return `RAD_E_UNSUPPORTED = -18`.
+- `nm -D` places all three between `r3_stub_begin` and
+  `r3_stub_end`. The IQR **GEMM launch** was real, so its row existed
+  and an ELF string or row-presence preflight falsely accepted it.
+- The pinned gfx1201 `libr4d.so` exports proper 0x526 / 0x118b /
+  0x1262-byte implementations instead of the stub functions.
+- The corrected host source passes standalone C++17 syntax compilation
+  and the isolated gfx11 scratch build compiled
+  `r4d_iqr_layout.cpp.o` with real global symbols for all three hooks.
+
+**Minimal fix:** add `${r4d}/r4d_iqr_layout.cpp` to the libr3 host
+`set(declaration ...)` alongside the other layouts. Do not edit
+`vendor/radiance` or change kernel dispatch priority. A matching
+card-free test at `tools/tests/lab/test_xtx27_iqr_build.py` checks the
+complete host source list so another layout function cannot be
+silently replaced by a -18 stub.
+
+**Additional guard:** VTP05's `build_paths` checks `nm -D` dynamic
+symbols and rejects the selected IQ6R plugin if any required hooks
+fall inside `r3_stub_begin/r3_stub_end`, or if the symbols are absent.
+The old gfx11 build fails that check; the existing gfx1201 build passes.
+Synthetic tests cover stub/nonstub symbols and a failed nm call.
+This prevents future *campaign preparation* from greenlighting a
+broken IQR kernel.
+
+**Validation:** 110 XTX27 card-free tests and Ruff passed. A
+single-unit gfx11 `libr3` build was configured in scratch with
+`-DR3_ONLY=r4d_gemm_iqr` and `-DR3_TARGETS=gfx1100`; host layout
+object compiled successfully and IQR GPU code compilation is in
+progress at the time of this note. Production engine binaries and
+GPU data remain untouched. The old frozen pilot-v2 manifest is
+invalidated by the new benchmark runner hash; recreate after a
+complete same-source prebuilt binary/plugin pair is available.
+
+**Remaining gates:** finish and inspect the isolated plugin's real
+symbols and registration, run a correctly leased IQ6R relayout and
+numerical check on **both** XTX cards, and only then collect new
+timings against a matching gfx1201 control. A host-source build fix
+does not by itself prove that the gfx11 GPU kernel executes correctly.
