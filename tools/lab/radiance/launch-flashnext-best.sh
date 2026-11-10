@@ -614,41 +614,47 @@ if [ "$CALIBRATE" = 1 ]; then
   # Four measured-policy workload phases give a finite envelope. The helper
   # still controls convergence; a partial record never activates production.
   CAL_MONITOR=tools/lab/radiance/calibration_watchdog.py
-  calibration_limits=$(python3 "$CAL_MONITOR" limits "$LIVE_POLICY_FILE") || {
-    echo "calibration: cannot derive finite horizon from selected policy" >&2; exit 2;
+  # The bound is tied to the real nonempty A/B/B/A prompt files and the
+  # existing curl request deadline. This supplies a fixed outer ceiling
+  # while the helper's observation-spaced drift retention continues to grow.
+  CALIBRATION_REQUEST_TIMEOUT_S=120
+  helper_log="$RUN/helper0-$STAMP.log"
+  [ -f "$helper_log" ] || { echo "calibration: helper 0 log absent" >&2; exit 1; }
+  calibration_limits=$(python3 "$CAL_MONITOR" bounded "$LIVE_POLICY_FILE" "$CALIBRATION_PROMPTS_A" "$CALIBRATION_PROMPTS_B" "$CALIBRATION_REQUEST_TIMEOUT_S" "$helper_log") || {
+    echo "calibration: cannot derive finite measured-drift/workload envelope" >&2; exit 2;
   }
-  read -r calibration_limit_s calibration_report_s <<< "$calibration_limits"
+  read -r calibration_limit_s calibration_report_s calibration_prefeed_s calibration_have_feed <<< "$calibration_limits"
   calibration_start_s=$SECONDS
   calibration_next_report_s=$calibration_report_s
-  calibration_drift_bound_locked=0
   calibration_watch() {
     local elapsed=$((SECONDS - calibration_start_s))
-    # Lock the first helper-measured drift-horizon extension. A growing ring
-    # must not create an endlessly moving deadline.
-    if [ "$calibration_drift_bound_locked" = 0 ]; then
-      local derived_limits derived_limit_s derived_report_s
-      derived_limits=$(python3 "$CAL_MONITOR" limits "$LIVE_POLICY_FILE" "$helper_log") || return 1
-      read -r derived_limit_s derived_report_s <<< "$derived_limits"
-      if [ "$derived_limit_s" -gt "$calibration_limit_s" ]; then
-        calibration_limit_s=$derived_limit_s
-        calibration_drift_bound_locked=1
-        echo "calibration: measured helper drift horizon included; finite bound $calibration_limit_s s" >&2
-      fi
+    local derived_limits derived_limit_s derived_report_s derived_prefeed_s derived_feed
+    derived_limits=$(python3 "$CAL_MONITOR" bounded "$LIVE_POLICY_FILE" "$CALIBRATION_PROMPTS_A" "$CALIBRATION_PROMPTS_B" "$CALIBRATION_REQUEST_TIMEOUT_S" "$helper_log") || return 1
+    read -r derived_limit_s derived_report_s derived_prefeed_s derived_feed <<< "$derived_limits"
+    if [ "$derived_feed" = 1 ]; then calibration_have_feed=1; fi
+    if [ "$derived_limit_s" -gt "$calibration_limit_s" ]; then
+      calibration_limit_s=$derived_limit_s
+      echo "calibration: new measured drift horizon; fixed-workload-capped bound $calibration_limit_s s" >&2
     fi
     if [ "$elapsed" -ge "$calibration_next_report_s" ]; then
       echo "calibration: COLLECTING elapsed=$elapsed bound=$calibration_limit_s; missing:" >&2
       python3 "$CAL_MONITOR" waiting "$helper_log" >&2 || return 1
       calibration_next_report_s=$((elapsed + calibration_report_s))
     fi
+    # The real feed must start within the original policy-only envelope;
+    # missing heat never borrows the full prompt-time ceiling.
+    if [ "$elapsed" -ge "$calibration_prefeed_s" ] && [ "$calibration_have_feed" != 1 ]; then
+      echo "calibration: FAILED no measured helper heat feed inside $calibration_prefeed_s s; missing:" >&2
+      python3 "$CAL_MONITOR" waiting "$helper_log" >&2 || true
+      return 1
+    fi
     if [ "$elapsed" -ge "$calibration_limit_s" ]; then
-      echo "calibration: FAILED policy-derived bound exhausted; missing:" >&2
+      echo "calibration: FAILED bounded workload/drift deadline exhausted; missing:" >&2
       python3 "$CAL_MONITOR" waiting "$helper_log" >&2 || true
       return 1
     fi
   }
-  echo "calibration: finite bound $calibration_limit_s s; waiting report period $calibration_report_s s" >&2
-  helper_log="$RUN/helper0-$STAMP.log"
-  [ -f "$helper_log" ] || { echo "calibration: helper 0 log absent" >&2; exit 1; }
+  echo "calibration: finite workload-and-drift bound $calibration_limit_s s (policy-only no-feed bound $calibration_prefeed_s s); waiting report period $calibration_report_s s" >&2
   echo "calibration: running A->B then B->A until convergence" >&2
   # A marker is accepted only after both heat-shift orders completed.
   while :; do
@@ -657,7 +663,7 @@ if [ "$CALIBRATE" = 1 ]; then
       while IFS= read -r calibration_prompt || [ -n "$calibration_prompt" ]; do
         [[ "$calibration_prompt" =~ [^[:space:]] ]] || continue
         body=$(CALIBRATION_PROMPT="$calibration_prompt" python3 -c 'import json,os;print(json.dumps({"model":"default","prompt":os.environ["CALIBRATION_PROMPT"],"max_tokens":24,"temperature":0}))')
-        curl -fsS --max-time 120 "http://127.0.0.1:$PORT/v1/completions" -H 'content-type: application/json' -d "$body" >/dev/null || {
+        curl -fsS --max-time "$CALIBRATION_REQUEST_TIMEOUT_S" "http://127.0.0.1:$PORT/v1/completions" -H 'content-type: application/json' -d "$body" >/dev/null || {
           echo "calibration: workload request failed" >&2; exit 1;
         }
         for proc in engine helper0; do

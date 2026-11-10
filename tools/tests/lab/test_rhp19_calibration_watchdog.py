@@ -115,14 +115,76 @@ class CalibrationWatchdogTests(unittest.TestCase):
             self.drift_progress(accepted_gap_ns=15_000_000_000))
         self.assertEqual(progress["accepted_gap_ns"], 15_000_000_000)
 
+    def test_bounded_deadline_covers_workload_and_later_drift_growth(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as directory:
+            a, b = Path(directory) / "a.txt", Path(directory) / "b.txt"
+            a.write_text("first\n\nsecond\n")
+            b.write_text("one\ntwo\nthree\n")
+            budget = watch.workload_budget(a, b, 120)
+            self.assertEqual(budget, 2 * (2 + 3) * 120)
+            baseline, _ = watch.limits(self.policy())
+            early = watch.measured_drift(self.drift_progress())
+            later = watch.measured_drift(
+                self.drift_progress(horizon_observations=300_000_000))
+            self.assertEqual(watch.bounded_deadline(self.policy(), budget),
+                             baseline + budget)
+            first = watch.bounded_deadline(self.policy(), budget, early)
+            second = watch.bounded_deadline(self.policy(), budget, later)
+            self.assertGreater(first, baseline + budget)
+            self.assertGreater(second, first)
+            self.assertEqual(second, baseline + 2 * budget)
+            extreme = watch.measured_drift(
+                self.drift_progress(horizon_observations=10_000_000_000))
+            self.assertEqual(
+                watch.bounded_deadline(self.policy(), budget, extreme),
+                baseline + 2 * budget)
+            b.write_text("\n \n")
+            with self.assertRaisesRegex(watch.CalibrationError, "empty"):
+                watch.workload_budget(a, b, 120)
+
+    def test_bounded_cli_emits_feed_gate_and_fixed_limit(self):
+        import tempfile
+        import json
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)
+            policy, a, b, helper = [path / name for name in
+                                    ("policy.json", "a.txt", "b.txt", "helper.log")]
+            policy.write_text(json.dumps(self.policy()))
+            a.write_text("a\n")
+            b.write_text("b\n")
+            helper.write_text("")
+            args = [str(policy), str(a), str(b), "120", str(helper)]
+            run = subprocess.run(["python3", str(MODULE), "bounded", *args],
+                                 capture_output=True, text=True)
+            self.assertEqual(run.returncode, 0, run.stderr)
+            total, report, prefeed, feed = map(int, run.stdout.split())
+            self.assertEqual(feed, 0)
+            self.assertEqual(total, prefeed + 4 * 120)
+            helper.write_text(self.drift_progress())
+            with_feed = subprocess.run(["python3", str(MODULE), "bounded", *args],
+                                       capture_output=True, text=True)
+            self.assertEqual(with_feed.returncode, 0, with_feed.stderr)
+            new_total, _, _, feed = map(int, with_feed.stdout.split())
+            self.assertEqual(feed, 1)
+            self.assertGreater(new_total, total)
+
+    def test_helper_republishes_drift_without_waiting_reason_change(self):
+        source = (ROOT / "engines/radiance/components/moe-remote"
+                  / "worker_policy_driver.h").read_text()
+        self.assertIn("RHP19_DRIFT_PROGRESS_JSON ", source)
+        self.assertIn('calibration_report_line("RHP19_DRIFT_PROGRESS_JSON "',
+                      source)
+        self.assertIn("next_window_noise_check_ns_=add_saturating", source)
+
     def test_launcher_syntax_and_does_not_wait_forever(self):
         launcher = ROOT / "tools/lab/radiance/launch-flashnext-best.sh"
         body = launcher.read_text()
-        self.assertIn('calibration_limits=$(python3 "$CAL_MONITOR" limits', body)
+        self.assertIn('calibration_limits=$(python3 "$CAL_MONITOR" bounded', body)
         self.assertIn('python3 "$CAL_MONITOR" marker "$helper_log"', body)
         self.assertIn('calibration_watch || exit 1', body)
-        self.assertIn('calibration_drift_bound_locked=0', body)
-        self.assertIn('limits "$LIVE_POLICY_FILE" "$helper_log"', body)
+        self.assertIn('calibration_have_feed=1', body)
+        self.assertIn('bounded "$LIVE_POLICY_FILE"', body)
         r = subprocess.run(["bash", "-n", str(launcher)],
                            capture_output=True, text=True, timeout=5)
         self.assertEqual(r.returncode, 0, r.stderr)
