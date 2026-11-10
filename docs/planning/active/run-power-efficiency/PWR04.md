@@ -56,6 +56,9 @@ Unit tests for the schema and helper command building; on the bench host the con
 
 Owner rules: settings configurable, not hard coded; hosts by role; derive over configure where possible (calibrate per device x build, cache). Prior art: LACT daemon model, amdgpu-clocks (PWR02 notes).
 
+POWER REVIEW 2026-11-10 (gateway, verified against the code): DELIVERED: bigcherry gpu-power status|apply|restore|grant|revoke, per-card configuration ([host.*.devices.power]), launcher --gpu-power apply/restore, host-check. NOT delivered: named power profiles, lease-fenced ownership, durable crash recovery (the saved state is a per-user JSON file with no lease/manifest identity), strict failure (an apply error restores and then continues serving with the cards as they are), apply to the layout's cards only (the CLI selects every configured card), evidence validation (a non-empty string), the systemd boot-unit installer the ledger mentions (tools/admin/install_bigcherry_gpu_power.py is absent). Design: PWR07 (portable capability probe + receipt + safe-failure policy first), then named profiles resolved against per-card calibration (config/power-profiles.toml: default preserves, efficiency, quiet, max-throughput), launcher-level selection with a receipt keyed by the manifest digest in stage 1 and a versioned manifest extension in stage 2 (the v1 contract is closed), a host controller with lease fencing for ownership (hardest question: lease-fenced, crash-recoverable GPU power transactions; Fable brief in runs/rad49-gpt-review/followups, power review section 9). Depends on the lease item for detached servers.
+
 ## Change Log
 
 - 2026-10-27T10:13:52.881547+00:00 (created-by): Created by agent
+- 2026-11-10T13:12:52.379299+00:00 (updated-by): Updated: section:notes

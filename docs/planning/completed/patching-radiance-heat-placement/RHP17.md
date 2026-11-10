@@ -2,7 +2,7 @@
 id: RHP17
 order: 0
 plan: patching-radiance-heat-placement
-state: pending
+state: deprecated
 created-at: '2026-11-10T00:10:41.824087+00:00'
 breadth: ''
 skill: advanced
@@ -61,7 +61,7 @@ M for offline modelling; L for live policy integration; higher again for replica
 
 ## Acceptance Criteria
 
-
+Closed without implementation (2026-11-10): the premise (the tail is the cold-prompt straggler) was a property of the static placement; with the live policy warmed the tail finishes under the engine and the helpers, so a speed-aware solver has no measured residual to win. Reopen criterion: a policy-on trace on a layout showing a helper finishing >=1 ms after the engine and the other helpers.
 
 ## Notes
 
@@ -79,3 +79,5 @@ RESULT 2026-11-10: closed for flashnext-4gpu. With the live policy (RHP16) on an
 
 - 2026-11-10T00:10:41.824087+00:00 (created-by): Created by agent
 - 2026-11-10T10:37:11.272018+00:00 (updated-by): Updated: section:notes
+- 2026-11-10T13:10:40.948401+00:00 (updated-by): Updated: section:acceptance_criteria
+- 2026-11-10T13:10:59.116784+00:00 (state-transition): State: pending → deprecated

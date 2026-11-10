@@ -56,14 +56,17 @@ Idle table per card and process; every idle consumer above the thresholds explai
 
 Measurements need the gpu lease; idle check is queued after RHP10 (runs/pwr-idle4).
 
+RECONCILED 2026-11-10: the four-card loaded-idle measurement is done (XTX 5-6 W each, 6900 XT 6 W, R9700 ~20 W). Open: the profile-on/off load A/B at 42K and eight sessions with explicit power receipts (PWR07), and default selection. This host today: all four cards on driver defaults (303/303/300/303 W caps, perf level auto), CPU governor powersave with EPP balance_performance, no [host.*.devices.power] section in environment.local.toml.
+
 ## Change Log
 
 - 2026-11-01T11:26:28.930896+00:00 (created-by): Created by agent
 
-## Idle result (2026-11-01, `runs/pwr-idle4`)
+## Idle result (2026-11-01, )
 
 flashnext-4gpu loaded, after one warm-up request, 60 s idle: XTX 5-6 W each, 6900 XT 6 W, R9700 20 W (17 W before the
 server started); engine 1.1% CPU (48 threads), helpers 0.0%. Only the R9700 is above ~15 W, and mostly at its own floor:
 the open checks are PCIe ASPM (policy `default`; `powersupersave` lets idle links sleep) and its power profile
 (BOOTUP_DEFAULT; POWER_SAVING exists), both root-only. Review: report joules per token, qualify the XTX -125 mV offset per
 card (-75/-100/-125 mV, stress, errors) before any default; audit queues for armed waits at idle.
+- 2026-11-10T13:13:19.431127+00:00 (updated-by): Updated: section:notes
