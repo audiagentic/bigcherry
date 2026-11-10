@@ -1,0 +1,102 @@
+"""RHP19 calibration loop envelope and marker validation; no GPU access.
+
+This is a launcher-side safety bound, not a replacement for helper convergence.
+The final bc-serve calibration-ingest remains the strict manifest/key validator.
+"""
+from __future__ import annotations
+
+import json
+import math
+from pathlib import Path
+import sys
+
+# Match serving/live_policy.cpp::live_policy_record_complete. Optional effect
+# quantities (including abort_quiescent_ns) cannot block production calibration.
+REQUIRED = frozenset((
+    "txn_p50_ns", "txn_p95_ns", "copy_bytes_per_s", "heat_gap_max_ns",
+    "heat_watermarked", "hot_set_k", "marginal_error_ppm",
+    "marginal_observations", "drift_half_life_observations",
+    "observation_rate_per_s", "tail_share_gain_ppm",
+    "tail_lane_service_ns_per_s", "tail_lane_row_ns", "lane_lost_ns",
+))
+MARKER = "RHP16_CALIBRATION_JSON "
+
+
+class CalibrationError(ValueError):
+    pass
+
+
+def _positive(policy: dict, key: str) -> int:
+    value = policy.get(key)
+    if type(value) is not int or value <= 0 or value >= 2**63:
+        raise CalibrationError(f"{key} must be a positive policy-derived integer")
+    return value
+
+
+def limits(policy: dict) -> tuple[int, int]:
+    """Four A,B,B,A phases, each allowed a full warmup, drift-age and residency.
+
+    Everything comes from the explicitly selected policy/derived measurements;
+    no guessed wall-clock timeout or request count is introduced.
+    """
+    cadence = _positive(policy, "cadence_ns")
+    age = _positive(policy, "max_heat_age_ns")
+    residency = _positive(policy, "min_residency_ns")
+    samples = _positive(policy, "min_samples")
+    phase_ns = (samples + 1) * cadence + age + residency
+    return math.ceil(4 * phase_ns / 1_000_000_000), math.ceil(max(cadence, age) / 1_000_000_000)
+
+
+def record_in_log(log: str) -> dict | None:
+    markers = [line[len(MARKER):] for line in log.splitlines() if line.startswith(MARKER)]
+    if not markers:
+        return None
+    if len(markers) != 1:
+        raise CalibrationError(f"expected exactly one complete calibration marker, found {len(markers)}")
+    try:
+        row = json.loads(markers[0])
+    except json.JSONDecodeError as e:
+        raise CalibrationError(f"malformed calibration marker: {e}") from e
+    if not isinstance(row, dict) or not isinstance(row.get("measurements"), dict):
+        raise CalibrationError("calibration record has no measurements object")
+    missing = sorted(REQUIRED - row["measurements"].keys())
+    if missing:
+        absent = row.get("absent", {})
+        reasons = ", ".join(f"{name}: {absent.get(name, 'not reported')}" for name in missing)
+        raise CalibrationError(f"partial record is NOT production calibration: {reasons}")
+    return row
+
+
+def waiting_reason(log: str) -> str:
+    lines = [line for line in log.splitlines() if "calibration waiting:" in line]
+    if not lines:
+        return "heat_watermarked: no measurable helper progress report yet"
+    return lines[-1].split("calibration waiting:", 1)[1].strip()
+
+
+def main(argv: list[str]) -> int:
+    try:
+        if len(argv) != 3 or argv[1] not in {"limits", "marker", "waiting"}:
+            raise CalibrationError("usage: calibration_watchdog.py limits POLICY.json | marker|waiting HELPER.log")
+        if argv[1] == "limits":
+            policy = json.loads(Path(argv[2]).read_text(encoding="utf-8"))
+            if not isinstance(policy, dict):
+                raise CalibrationError("policy must be a JSON object")
+            print(*limits(policy))
+        else:
+            log = Path(argv[2]).read_text(encoding="utf-8")
+            if argv[1] == "waiting":
+                print(waiting_reason(log))
+            else:
+                row = record_in_log(log)
+                if row is None:
+                    return 10
+                print("calibration: once-only complete planner record validated", file=sys.stderr)
+        return 0
+    except (CalibrationError, OSError, json.JSONDecodeError) as e:
+        print(f"calibration: {e}", file=sys.stderr)
+        return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv))
