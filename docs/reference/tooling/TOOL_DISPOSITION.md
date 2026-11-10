@@ -648,6 +648,7 @@ Radiance patches also use `bigcherry --engine radiance patch-promote <id> --evid
 | `tools/lab/radiance/xtx27_vtp_local.hip` | **TRANSITIONAL** | VTP04 R9700 isolated two-logical-shard GPU scheduling experiment; oracle checked, no model integration. |
 | `tools/lab/radiance/xtx27_vtp3_host_collective.hip` | **TRANSITIONAL** | VTP04 three-physical-GPU exact-F32 no-P2P host collective experiment; no Radiance patch. |
 | `tools/lab/radiance/xtx27_vtp_micro.py` | **TRANSITIONAL** | VTP04 gated one-command plan/compile/exclusive-lease experiment runner; scratch receipts, no automatic GPU use. |
+| `tools/lab/radiance/xtx27_quant_kernel.py` | **TRANSITIONAL** | VTP05 card-free geometry planner and lease-gated per-case real Radiance IQ6R/W8A8 kernel timing tool; no serving or quality claim. |
 | `tools/residency_gates.py` | **MOVE** | HI34 plan-specific gate moved to non-package `tools/lab/hi34-residency-gates/`; root wrapper retained for tests/legacy CLI. |
 | `tools/rocm-env.ps1` | **MOVE** | Environment bootstrap; canonical destination tools/env/ in TR05. |
 | `tools/rocm-env.sh` | **MOVE** | Environment bootstrap; canonical destination tools/env/ in TR05. |
