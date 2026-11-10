@@ -106,6 +106,10 @@ inline std::string calibration_waiting_message(const std::vector<MissingPlannerC
     }
     return message == "calibration waiting: " ? std::string{} : message;
 }
+// One calibration report line as it reaches the helper's log: the text and a real newline. The launcher finds the record with
+// `grep '^RHP16_CALIBRATION_JSON '`, so no line may end in anything else (a literal backslash-n here once glued the record onto the
+// end of a waiting line and the launcher never saw it).
+inline std::string calibration_report_line(const std::string& text) { return text + "\n"; }
 // An accepted heat delta opens the feed, but the first positive measured heat
 // gap and a retained drift snapshot establish the no-progress timer basis.
 // Configured age/cadence alone cannot be used as evidence of feed progress.

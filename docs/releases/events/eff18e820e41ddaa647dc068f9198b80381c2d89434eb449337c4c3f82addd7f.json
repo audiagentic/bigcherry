@@ -1,0 +1,16 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261110_050851_calibrating-the-live-expert-pl_2482",
+  "files": [
+    "engines/radiance/components/moe-remote/worker_policy_driver.h",
+    "engines/radiance/components/moe-remote/worker_policy_calibration.h",
+    "engines/radiance/components/moe-remote/worker_policy_calibration_test.cpp"
+  ],
+  "plan-item-ids": [
+    "RHP19"
+  ],
+  "status": "unreleased",
+  "technical-summary": "The helper printed its live-policy calibration waiting line with a literal backslash-n, so the RHP16_CALIBRATION_JSON record was emitted mid-line and the launcher's anchored grep never saw it; calibration kept serving prompts after the record was complete. Report lines now end in a real newline (calibration_report_line) with a framing test.",
+  "timestamp-utc": "2026-11-10T05:08:51.034429Z",
+  "user-summary-candidate": "Calibrating the live expert placement now stops when it has finished instead of running until someone stops it."
+}

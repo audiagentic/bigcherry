@@ -432,7 +432,7 @@ public:
                 !calibration_settled(m,false,false);
             std::string waiting;
             if(calibration_progress_.observe(m,missing,now_ns,effect_waiting,&waiting))
-                std::fprintf(stderr,"%s\\n",waiting.c_str());
+                std::fputs(calibration_report_line(waiting).c_str(),stderr);
             const bool effect_stalled=calibration_progress_.effect_expired(
                 now_ns,m,settings_.cadence_ns,settings_.controls.max_heat_age_ns);
             const bool effect_absent=effect_missing || effect_stalled;
