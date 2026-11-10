@@ -34,17 +34,13 @@
 #include <hip/hip_runtime.h>
 #include <hip/hip_bf16.h>
 
-#include <cstdlib>
+#include "../serving/bc_engine_settings.h"
 
 #define R3_GEMV_MAX_K 24576
 #define R3_GEMV_WAVES 8
 
 static inline bool r3_gemv_on() {
-    static const bool on = [] {
-        const char* e = std::getenv("R3_GEMV");
-        return e != nullptr && std::atoi(e) != 0;
-    }();
-    return on;
+    return bc_engine_settings_snapshot().gemv != 0;
 }
 
 // One E4M3 code as the f16 with the same value (exact). Normal codes shift into place; the eight subnormal

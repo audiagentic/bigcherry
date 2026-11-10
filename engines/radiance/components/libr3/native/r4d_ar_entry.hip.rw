@@ -10,6 +10,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <cstdio>
+#include "bc_engine_settings.h"
 @@ end
 
 @@ find 1
@@ -126,8 +127,8 @@ long align16(long v) { return (v + 15) & ~15L; }
     in->world = world;
     in->host = host;
     in->timing = false;   // R3_AR_TIMING (wall-clock timing between stream synchronisations) was a diagnostic environment switch (RSC12)
-    const char* const wire4 = std::getenv("R3_AR_WIRE4");
-    in->wire4 = host && wire4 && std::strcmp(wire4, "1") == 0;
+    // RSC11: typed engine-only policy is declared here in the native replacement.
+    in->wire4 = host && bc_engine_settings_snapshot().all_reduce_wire4 != 0;
     if (in->wire4) {
         static std::once_flag r3_wire4_once;
         std::call_once(r3_wire4_once, [] {

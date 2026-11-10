@@ -124,7 +124,7 @@ target_include_directories(r3_selftest PRIVATE ${r4d} $ENV{ROCM_PATH}/include)
 target_compile_definitions(r3_selftest PRIVATE __HIP_PLATFORM_AMD__)
 set_property(TARGET r3_selftest PROPERTY HIP_ARCHITECTURES ${R3_TARGETS})
 
-target_include_directories(libr3 PRIVATE ${RADIANCE_SRC}/abi)
+target_include_directories(libr3 PRIVATE ${RADIANCE_SRC}/abi ${CMAKE_CURRENT_SOURCE_DIR}/../serving)
 
 include(CTest)
 if(BUILD_TESTING)

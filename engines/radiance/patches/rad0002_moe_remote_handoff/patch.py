@@ -55,8 +55,8 @@ typedef struct BcMoeRemotePlugin {
 /* Register the plugin (NULL unregisters). Layer maps published before registration are replayed to it.
  * Returns 0, or -1 when struct_size does not match. */
 int bc_moe_remote_register(const BcMoeRemotePlugin* plugin);
-/* Runtime step gate (R3_MOE_REMOTE_MIN_ROWS / R3_MOE_REMOTE_MAX_ROWS, set by libr3moe once its mapped segment
- * is pinned and ready; an unset minimum means remote MoE is off). */
+/* Runtime step gate: remote transport's typed manifest max_rows (min is zero).
+ * When there is no manifest handoff, remote MoE is off. */
 int bc_moe_remote_wanted(int64_t step_rows);
 int bc_moe_remote_wanted_upto(int64_t max_step_rows);
 /* Diagnostics: always 0 unless the engine is built with BC_MOE_REMOTE_DIAG (patch rad0004). A production build
@@ -86,7 +86,7 @@ int bc_moe_remote_before_pass(int rank, BcMoeRemoteTicket ticket, int64_t rows, 
 int bc_moe_remote_rank_done(int rank, BcMoeRemoteTicket ticket, void* stream);
 /* Block declare publishes a layer's map here; it is forwarded to the plugin and kept for replay. */
 void bc_moe_remote_layer_map(int layer, int n_expert, const int32_t* slot_of_expert);
-/* Placement (R3_MOE_WORKER_SKIP_OWNED): whether the engine may leave a routed expert unplaced because the
+/* Placement (manifest handoff.transport.skip_owned): whether the engine may leave a routed expert unplaced because the
  * helper computes it and nothing local ever reads it. */
 int bc_moe_remote_skip_unit(int layer, int expert, int64_t max_step_rows);
 #ifdef __cplusplus
@@ -117,27 +117,27 @@ static constexpr bool kDiagBuild = true;
 static constexpr bool kDiagBuild = false;
 #endif
 
+// Weak only for builds using rad0002 without rad0009 (handoff remains off).
+extern "C" int bc_serving_remote_settings(int64_t*, uint32_t*, uint32_t*, uint32_t*) __attribute__((weak));
 namespace {
-bool env_on(const char* name) {
-    const char* e = std::getenv(name);
-    return e && *e && !(e[0] == '0' && e[1] == 0);
+// From rad0009's strict manifest reader. No environment fallback. Without
+// a manifest the helper path cannot be enabled by inherited R3_* variables.
+struct RemotePolicy {
+    int64_t max_rows = 0;
+    uint32_t skip_owned = 0, shadow = 0, mask_only = 0;
+};
+RemotePolicy remote_policy() {
+    RemotePolicy c{};
+    if (bc_serving_remote_settings)
+        (void)bc_serving_remote_settings(&c.max_rows, &c.skip_owned, &c.shadow, &c.mask_only);
+    return c;
 }
-
-int64_t rows_env(const char* name) {
-    const char* s = std::getenv(name);
-    if (!s || !*s) return (int64_t)LLONG_MAX;
-    char* end = nullptr;
-    const long long n = std::strtoll(s, &end, 10);
-    return end && *end == 0 && n >= 0 ? (int64_t)n : (int64_t)LLONG_MAX;
-}
-
 int64_t min_rows() {
-    static const int64_t v = rows_env("R3_MOE_REMOTE_MIN_ROWS");
-    return v;
+    return remote_policy().max_rows > 0 ? 0 : LLONG_MAX;
 }
 int64_t max_rows() {
-    static const int64_t v = rows_env("R3_MOE_REMOTE_MAX_ROWS");
-    return v;
+    const auto v = remote_policy().max_rows;
+    return v > 0 ? v : LLONG_MAX;
 }
 
 /* The diagnostic modes exist only in a diagnostic build. Asked for in a production build they must not be
@@ -145,7 +145,8 @@ int64_t max_rows() {
  * expert computes locally, and says so once. */
 bool diag_refused() {
     if (kDiagBuild) return false;
-    static const bool requested = env_on("R3_MOE_WORKER_SHADOW") || env_on("R3_MOE_WORKER_MASK_ONLY");
+    const auto policy = remote_policy();
+    const bool requested = policy.shadow || policy.mask_only;
     if (!requested) return false;
     static std::atomic<bool> said{false};
     if (!said.exchange(true))
@@ -173,12 +174,12 @@ extern "C" int bc_moe_remote_wanted_upto(int64_t max_step_rows) {
 }
 
 extern "C" int bc_moe_remote_shadow(void) {
-    static const bool v = kDiagBuild && env_on("R3_MOE_WORKER_SHADOW");
+    static const bool v = kDiagBuild && remote_policy().shadow;
     return v;
 }
 
 extern "C" int bc_moe_remote_mask_only(void) {
-    static const bool v = kDiagBuild && env_on("R3_MOE_WORKER_MASK_ONLY");
+    static const bool v = kDiagBuild && remote_policy().mask_only;
     return v;
 }
 
@@ -322,7 +323,7 @@ extern "C" void bc_moe_remote_layer_map(int layer, int n_expert, const int32_t* 
  * no protected expert in the layer (those layers stay local; the helper drops ownership on exactly the same
  * test). */
 extern "C" int bc_moe_remote_skip_unit(int layer, int expert, int64_t max_step_rows) {
-    static const bool on = env_on("R3_MOE_WORKER_SKIP_OWNED");
+    static const bool on = remote_policy().skip_owned != 0;
     if (!on || diag_refused() || bc_moe_remote_shadow() || bc_moe_remote_mask_only()) return 0;
     if (min_rows() == (int64_t)LLONG_MAX || min_rows() > 1 || max_rows() < max_step_rows) return 0;
     int (*owns)(int, int) = nullptr;
