@@ -13,6 +13,10 @@ work: L
 
 # Stage 1: live helper expert migration - slot manager, async host->VRAM upload, retirement
 
+## Current evidence reconciliation (2026-11-10)
+
+Live helper migration is implemented (#542/#557/#558/#572) and paced mid-request forced moves passed KLD (#733). The file state pending understates implementation progress; completion still requires the RHP12 8-session, 6-stream, 42K latency and heterogeneous moves. Request the appropriate ag-planning progress state, not an unproven completion.
+
 ## Description
 
 Stage 1 with RHP11 (no longer optional - owner direction 2026-11-01). Each helper manages its own physical expert slots and moves an expert in by uploading it from the immutable host weight source (no P2P on this host), never from the old owner's GPU. Applies the RHP04 stage 1 policy through RHP11's epochs. Within stage 1 the engine-local / remote split stays fixed; any helper-owned expert may move to any eligible helper (including one that owns none today) if it fits.

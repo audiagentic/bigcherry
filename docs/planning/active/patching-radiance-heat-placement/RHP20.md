@@ -13,6 +13,10 @@ work: L
 
 # Live expert swapping and its observability verified on every card type and layout (gfx1201, gfx1100, gfx1030; head, tail, TP and engine-resident placement)
 
+## Current evidence reconciliation (2026-11-10)
+
+PR #805 rejects incompatible helper arrangements; it is not proof of supported movement on each card. The last-helper-as-tail heuristic must be replaced by the actual placement role.
+
 ## Description
 
 Live migration (RHP11) and the policy (RHP16) were developed and measured on flashnext-4gpu: R9700 engine (gfx1201), two 7900 XTX helpers (gfx1100, head) and the RX 6900 XT tail (gfx1030, rows kernel, w4nl64 only, PCIe 3.0 x4). Nothing establishes that swapping and the policy hold on the other layouts (flashnext-2xtx, -2xtx-rdna2-tail, -2xtx-rdna2-head, -tp2xtx-r9700 where the R9700 is a helper and the XTX cards are the engine, -tp2xtx), nor which cards can receive which expert formats (gfx1030 holds w4nl64 only, so a swap between a tail and a head helper must not move fp8 experts to it). Observability must be per card: which device owns what, moves committed and rejected with reasons, bytes and time, and the policy state.

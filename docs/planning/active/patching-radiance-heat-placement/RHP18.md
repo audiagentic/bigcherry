@@ -13,6 +13,10 @@ work: M
 
 # Live placement observability: the manifest, the launcher and the helper say whether the policy is on, why not, and what a calibration is waiting for
 
+## Current evidence reconciliation (2026-11-10)
+
+PRs #798/#802/#804 deliver guide, cadence and explicit no-policy reasons; #790 invalidated the former calibration record. This is partial: manifest/preflight/degraded/runtime status and every supported layout remain to be accepted.
+
 ## Description
 
 derive_manifest_live_policy returns nothing, silently, when the calibration store has no record for the configuration's calibration key. #790 added helper_budgets_mib to the plan key inputs on 2026-11-09, which orphaned the flashnext-4gpu record seeded on 2026-11-07: every production start of the layout since then ran with no live policy and nothing said so (found 2026-11-10 by checking the manifests: live_policy present until 2026-11-09, absent after; 35 plan-cache entries before #790 reproduce the stored key, none after). Placement A/Bs and kernel A/Bs measured in that window are policy-off.

@@ -1,12 +1,23 @@
 # RHP - live heat-driven expert placement roadmap
 
+## Next actions (reconciled 2026-11-10)
+
+1. RHP18/RHP19/RHP20: confirm visible policy state, calibration lifecycle and all card/layout eligibility.
+2. RHP22: settle forced-churn KLD quality breach before production default-on.
+3. RHP01/RHP02/RHP08: close histogram coverage and shared tail/engine feed, not a second collector.
+4. RHP21/RHP04/RHP09: first cold after docs, then measured-cost solver, enforcing RHP12.
+5. RHP13/RHP12: memory allocator and retained-session baselines; RHP10 is complete.
+
+See [Flash-Next execution status](../../FLASHNEXT_EXECUTION_STATUS.md) for item states, evidence paths and tail sizes.
+
+
 ## Target
 
 One canonical ownership map, one placement decision path, and one live activation mechanism across engine, host and helpers, without restarts. Layout (which cards help and where the engine runs) is an input. Calibration improves placement decisions, never how they are applied: all changes use live epochs. Returning to a known layout must meet its recorded baseline ([RHP12](RHP12.md)).
 
 ## Implemented foundation
 
-Heat recording in pinned host memory (#500/#502), drift watch (#501), heat-ordered start-up placement in `worker_owners.h`, **live helper re-placement** (RHP11 slices C-G: epoch protocol, live slot migration, owner-map generations; #542 #557 #558 #572), the **live placement policy** (#597) and its **settings derived from calibration** (RHP16; #666 #693 #708) are done and measured (policy on vs off: filler TTFT -33%, RHP16.md). The policy is on only for a calibrated layout, and a layout's calibration record is orphaned by any change to the plan key inputs (#790 did this on 2026-11-09). How to check and restore: [live placement guide](../../../reference/engines/radiance/LIVE_PLACEMENT.md). Still open: [RHP02](RHP02.md)'s shared histogram feed (the pinned-memory histogram is the interim source), the cost-aware solver (RHP04 stage 3, RHP17) and the stages after it. RHP11, RHP04 and RHP16 carry delivered slices and now read in_progress; RHP06, RHP02, RHP01 and RHP08 have not been re-checked against what shipped.
+Heat recording in pinned host memory (#500/#502), drift watch (#501), heat-ordered start-up placement in `worker_owners.h`, **live helper re-placement** (RHP11 slices C-G: epoch protocol, live slot migration, owner-map generations; #542 #557 #558 #572), the **live placement policy** (#597) and its **settings derived from calibration** (RHP16; #666 #693 #708) are done and measured (policy on vs off: filler TTFT -33%, RHP16.md). The policy is on only for a calibrated layout, and a layout's calibration record is orphaned by any change to the plan key inputs (#790 did this on 2026-11-09). How to check and restore: [live placement guide](../../../reference/engines/radiance/LIVE_PLACEMENT.md). Still open: [RHP02](RHP02.md)'s shared histogram feed (the pinned-memory histogram is the interim source), the cost-aware solver (RHP04 stage 3, RHP17) and the stages after it. RHP11, RHP04 and RHP16 carry delivered slices and read in_progress; RHP06, RHP02, RHP01 and RHP08 are reconciled as partially delivered with open acceptance gates (see the Next actions and linked status matrix).
 
 ## Stages
 

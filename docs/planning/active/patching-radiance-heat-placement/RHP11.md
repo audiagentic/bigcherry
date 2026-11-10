@@ -13,6 +13,10 @@ work: L
 
 # Stage 1: placement-epoch mailbox protocol v23 (live helper ownership changes)
 
+## Current evidence reconciliation (2026-11-10)
+
+Historical notes saying no real move had run are stale: live migration shipped in PRs #542/#557/#558/#572 and paced 131-committed-move KLD is in RHP06. The broader RHP12 performance and per-layout acceptance remains open; do not rebuild slice G.
+
 ## Description
 
 Stage 1 prerequisite of the live-placement roadmap (README). Owner direction 2026-11-01: expert placement across the helpers changes live, never by restart. The v22 mailbox (engines/radiance/components/moe-remote/moe_remote_shm.h) carries per-helper ownership bitsets that the engine uploads to its GPU once at start (moe_remote_hook.cpp) and that worker_heat.h's proposals never change. v23 adds a placement epoch: a PlacementControl block (active_epoch, pending_epoch, transaction_state, owner_map_digest, ready_mask, fault_code, two generation slots each holding the complete canonical owner map, one byte an expert, sized from the model shape), and Request gains placement_epoch + generation_slot written before the sequence. A completion is valid only when sequence and epoch both match. Breaking revision: every engine and helper caller migrates together, no v22 reader or writer remains.

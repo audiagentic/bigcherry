@@ -13,6 +13,10 @@ work: M
 
 # Runtime tail-heat collector
 
+## Current evidence reconciliation (2026-11-10)
+
+The #807 and HL04 tail route evidence partially answers this item. Do not rebuild a duplicate collector: finish parity against coherent engine histograms under held-out workloads.
+
 ## Description
 
 Establish the actual route frequency and coverage of the experts the 6900 XT owns, including the MTP layer, from the RHP02 feed. The static profile gave the tail 0.68% of routes; natural text gave 1.7%, random-word prompts 14%.
