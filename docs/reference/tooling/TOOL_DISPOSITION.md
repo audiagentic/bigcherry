@@ -644,6 +644,7 @@ Radiance patches also use `bigcherry --engine radiance patch-promote <id> --evid
 | `tools/lab/rad42-bar-push/test_chunk_contract.py` | **TRANSITIONAL** | RAD42 card-free chunk-contract regression checks; lab-only. |
 | `tools/lab/rad42-bar-push/test_chunk_stress.py` | **TRANSITIONAL** | RAD42 card-free chunk stress and adversarial fixtures; lab-only. |
 | `tools/lab/rad42-bar-push/test_critical_path_model.py` | **TRANSITIONAL** | RAD42 card-free critical-path timing model tests; lab-only. |
+| `tools/lab/radiance/xtx27_virtual_tp4.py` | **TRANSITIONAL** | VTP02 card-free weighted four-logical-rank / three-physical-GPU Q6/Q8/KV projection tool; no runtime admission or GPU use. |
 | `tools/residency_gates.py` | **MOVE** | HI34 plan-specific gate moved to non-package `tools/lab/hi34-residency-gates/`; root wrapper retained for tests/legacy CLI. |
 | `tools/rocm-env.ps1` | **MOVE** | Environment bootstrap; canonical destination tools/env/ in TR05. |
 | `tools/rocm-env.sh` | **MOVE** | Environment bootstrap; canonical destination tools/env/ in TR05. |

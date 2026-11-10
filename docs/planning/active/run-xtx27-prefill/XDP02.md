@@ -129,6 +129,10 @@ Hardware-specific weight variants are tracked in XDP03. For any stage cut, the G
 Link to HD2701 (heterogeneous dense workstream) in review; that plan is
 in a different experimental worktree, so do not edit or merge it here.
 
+## Alternative placement: weighted virtual TP4 (2026-11-10)
+
+The separate [VTP27 group](../run-dense-27b-virtual-tp/README.md) investigates 30/30/20/20 **logical weight shards** mapped to XTX/XTX/R9700+R9700, with a single physical R9700 memory ledger and locally fused reduction. It is NOT the complete-layer stage designed in this item. Four logical KV heads imply 25/25/50% **physical attention KV**, regardless of weighted FFN split; VTP02 owns that capacity experiment and VTP03 owns the three-device collective/4+ streams gate. No virtual TP4 runtime exists or alters XDP02 admission.
+
 ## Change Log
 
 - 2026-11-09: Linked XDP03 heterogeneous quant variants and resident-VRAM admission; stage execution remains unimplemented.
