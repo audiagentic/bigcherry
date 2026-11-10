@@ -1,0 +1,15 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261110_013725_long-prompts-start-answering-a_1567",
+  "files": [
+    "engines/radiance/components/moe-remote/moe_lane_gemm.h"
+  ],
+  "plan-item-ids": [
+    "TK01",
+    "TK02"
+  ],
+  "status": "unreleased",
+  "technical-summary": "RX 6900 XT tail quad rows kernel (lane_moe_rows_w4_quaddpp) decodes W4NL in registers instead of an LDS table and folds its quad reduction into v_add_f32_dpp. gfx1030: ds_read 108->76, ~133 fewer instructions, VGPR 115->116, no scratch. Output hashes identical on 40 captured tail requests; quad GEMM -9%; cold 27k TTFT median -1.8% (95% CI -3.6%..-0.6%); doc prefill and decode at parity. XTX helpers use the grouped GEMM and are unaffected.",
+  "timestamp-utc": "2026-11-10T01:37:25.889452Z",
+  "user-summary-candidate": "Long prompts start answering about 2% sooner on the four-GPU layout because the tail GPU's expert kernel does less work per step; output is unchanged."
+}
