@@ -2,7 +2,7 @@
 id: XDP02
 order: 1
 plan: run-xtx27-prefill
-state: active
+state: in_progress
 created-at: '2026-11-09T00:00:00+00:00'
 breadth: ''
 skill: advanced
