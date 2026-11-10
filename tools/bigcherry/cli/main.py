@@ -1640,6 +1640,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     _register_layout(sub)
 
+    from .serve import register as _register_serve
+
+    _register_serve(sub)
+
     from .host_check import register as _register_host_check
 
     _register_host_check(sub)
