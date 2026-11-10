@@ -111,3 +111,22 @@ Do not change production serving defaults or the pinned vendor tree.
 
 Dependencies: XDP03, VTP06, VTP08, VTP12 and VTP13. No push or PR
 without an owner instruction; use the existing experimental worktree.
+
+## 2026-11-11 feasibility gate — defer heavy loader changes
+
+VTP12 executed 72 same-build native INT8/FP8 timing-only selftest
+invocations under exclusive GPU leases, A/B/B/A over 30/30/40,
+~28/28/44 and 25/25/50 physical FFN partitions. Mixed FP8 on R9700
+slowed the *ideal FFN decode* barrier by 9.6% for ~28/28/44 and
+34.4% for 25/25/50 at M4; at M64 it improved the ideal barrier by
+2.7%, **exactly matching** a hypothetical best-native-INT8-row
+choice on the R9700. These are not numerical or model-serving results.
+
+Do **not** promote XDP10's multi-variant loader based on this small
+FP8 gain. First determine which actual mixed-architecture kernel rows
+Radiance selects at M4/M64, benchmark native activation preparation,
+model quality and three-card no-P2P collectives. Retain the immutable
+sidecar variant contract and fail-closed tests as planned; native per-GPU
+INT8 dispatch tuning is now a mandatory control before larger work.
+See VTP12 for source receipts and corrected replay of the M64 narrow
+versus tiled INT8 control.

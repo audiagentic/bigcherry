@@ -166,3 +166,100 @@ At 4 x 256K aggregate resident tokens with FP8 KV, the R9700
 50%-FFN choice has a strict **~8.093 GiB W8A8 FFN + 16 GiB KV**
 minimum, leaving **<7.91 GiB** of nominal 32 GiB for everything
 else; this is a *floor*, not an admission approval (VTP08).
+
+## 2026-11-11 — leased R9700-heavy native kernel ABBA experiments
+
+**Executed:** three matched, fresh, exclusive-GPU-lease campaigns,
+24 standalone `r4d_selftest --perfw8` processes per campaign
+(**72 total**, two ABBA samples per arm for each of three physical
+GPUs and two FFN projections). All 72 processes exited 0, all paired
+actual native INT8/FP8 kernel rows parsed, zero missing/rejected cases,
+and every lease was released automatically. Independent final check:
+`agent-lease status` => no leases; `rocm-smi --showpids` => no KFD PIDs.
+
+Code: `tools/lab/radiance/xtx27_vtp12_pilot.py`, which requires the
+exclusive `agent-lease gpu` wrapper, fails on inherited device masks,
+requires the pinned selftest binary and gfx11/gfx12 kernel plugin
+provenance, validates each measured shape and writes independent
+immutable per-case receipt/stdout/stderr. Builds, converter, model
+weights and production service were not touched. M=4 and M=64,
+9 selftest iterations/row, **warm synthetic constant weights** only.
+Exact full manifests, instrument results and numerical-unchecked
+receipts:
+
+- `${BC_WORK_ROOT}/xtx27-prefill/vtp12-abba-45-m4-20261111/`
+- `${BC_WORK_ROOT}/xtx27-prefill/vtp12-abba-45-m64-20261111/`
+- `${BC_WORK_ROOT}/xtx27-prefill/vtp12-abba-50-m4-20261111/`
+
+### M64 dispatch correction, raw receipts preserved
+
+The original VTP12 pilot `summary.json` at M64 used the narrow INT8
+kernel for **all three** cards. At M64 this is not the VTP05
+`selected_row` convention: VTP05 chooses `gemm_i8a8_tiled` for
+M>16; the XTX tiled kernels are much faster than narrow there.
+Do **not** quote the original M64 summary as the selected INT8
+engine-control result. Added a separate card-free read-only verifier
+`xtx27_vtp12_replay.py`, which checks each case/shape, source
+stdout SHA and all measured native rows, then writes
+`summary-replay-v1.json` **without rewriting the raw cases or the
+original summary**. It reports both VTP05-declared INT8 dispatch
+and a separate *optimistic best-measured INT8 row per GPU* lower bound.
+Neither is proof the actual engine graph will select that row.
+
+### Experimental result — ideal FFN-only barriers, microseconds
+
+| Physical FFN split; M | INT8 control 30/30/40 | Challenger INT8, VTP05-selected | Challenger XTX INT8 + R9700 FP8 | Best observed INT8 challenger |
+| --- | ---: | ---: | ---: | ---: |
+| ~28/28/44; 4 | 138.95 | 156.00 | 152.30 | 156.00 |
+| 25/25/50; 4 | 139.00 | 192.45 | 186.80 | 192.45 |
+| ~28/28/44; 64 | 312.70 | 317.00 | **304.35** | **304.35** |
+
+`~28/28/44` rounds intermediate tensor widths to
+**4864/4864/7680** (27.94/27.94/44.12%); 25/25/50 is
+**4352/4352/8704** exactly. All figures are sums of two serial
+FFN dependency-stage *ideal* barriers: for each projection, take
+max(three GPU **independently measured** kernel times). They **exclude**
+overlap, activations, no-P2P wire/CPU combine, GDN/attention, actual
+mixed model layout and quality. The ABBA has only two samples/arm
+per projection; repeat with >=3 fresh campaigns before promotion.
+
+At M4 the 44% candidate raises the gate/up R9700 FP8 time to
+99.3 us, beyond XTX1's 83.4 us. The 50% candidate raises R9700 gate/up
+FP8 to 139.0 us against XTX1's 66.45 us: **a severe R9700 critical
+path, not a balanced three-card distribution**. Exceeding ~41%
+physical FFN weight share is a poor **current decode-kernel** choice.
+A change from 7168 to 7680 intermediate columns produces a much
+larger latency jump than the width ratio alone suggests. Source
+`libr4d/r4d_gemm_fp8a8.hip` narrow_mw/ksplit policy does not
+obviously change at M4 with these aligned N values; check weight
+residency, cache, waves and actual kernel counters before proposing a
+firm mechanism.
+
+At M64 the same 44% split produces a modest **2.67% ideal FFN
+barrier reduction** versus the 30/30/40 control if R9700 uses FP8.
+However, R9700's **best measured native INT8 narrow** kernel yields
+the *identical* 304.35-us bound, while using the VTP05-selected tiled
+INT8 row gives 317.0 us (slower than baseline). **Optimised
+per-architecture/per-shape dispatch may recover all this apparent
+mixed-format win without producing a multi-variant model package.**
+Verify dispatch with the real registry and matched numerics, not a
+timing-only selftest.
+
+### Decision and next bounded work
+
+- Keep 30/30/40 as the M1/M4/M8 decode baseline; reject 25/25/50
+  for current M4 kernels. No full-engine promotion.
+- First tune/check the gfx1201 gate/up latency cliff across
+  neighboring 256-aligned widths near 7168..7680 and assess cold
+  weights/pinned clocks, and review gfx1100 M64 tiled-vs-narrow and
+  gfx1201 M64 narrow-vs-tiled dispatch. Reuse VTP05 oracles,
+  card-free checks and an explicit kernel policy test.
+- Next run legally sized GDN and full-attention **two-head R9700
+  versus one-head XTX** tests and prove a shared mixed activation/output
+  ABI, then a bounded simultaneous three-device exact reduction
+  through VTP04 harness. Those gates may outweigh any FFN-only gain.
+- Preserve XDP10's multi-variant format as a candidate, **not a default**.
+  Only undertake loader/producer changes after a meaningful
+  *net* benefit over optimised all-three INT8 dispatch AND full-model
+  BF16-relative quality. Retain VTP08 FP8-KV/R9700 32-GiB admission
+  constraints; FP8 weights are not automatically smaller than INT8.

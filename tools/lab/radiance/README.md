@@ -239,3 +239,31 @@ barriers with *synthetic warm-weight* timings: FP8 row selection,
 activation production, collective, attention/GDN and language-model
 quality remain untested. Owner VTP12; see VTP05 for source results.
 Card-free test: `tools/tests/lab/test_xtx27_vtp12_compare.py`.
+
+## VTP12 leased per-GPU FFN ratio ABBA and corrected replay
+
+`xtx27_vtp12_pilot.py` is a bounded **single-physical-GPU-at-a-time**
+Radiance `--perfw8` microbenchmark, with 24 ordered A/B/B/A cases
+per campaign (3 physical GPUs, gate/up + down). It verifies exact
+shared build/plugin hashes and ROCm inventory, rejects resident KFD
+processes, acquires and releases the global gpu lease through
+`agent-lease`, and writes immutable case receipts/stdout/stderr
+under the configured `BC_WORK_ROOT`. Never run on a busy GPU.
+
+`python3 tools/lab/radiance/xtx27_vtp12_pilot.py --phase plan --challenger r9700-45 --m 4`
+
+For a hardware run, add `--phase run --run --build-dir EXACT_BUILD
+--output-dir BC_WORK_ROOT/xtx27-prefill/UNIQUE_RUN_DIR`; explicit
+`--m 4` or `--m 64`, fresh output directory only. The tool does
+not run serving, conversion, three-way collective or numeric quality.
+
+`xtx27_vtp12_replay.py --campaign-dir EXISTING_RUN --output
+EXISTING_RUN/summary-replay-v1.json` is **card-free** and verifies
+all raw case/log hashes. Required for the M64 campaign: its original
+summary used narrow INT8 across all cards, but VTP05 declares tiled
+INT8 above M16. Corrected replay reports both VTP05-declared and
+best-observed INT8 dispatch; original raw evidence remains intact.
+
+The three 2026-11-11 hardware campaigns and exact results are in
+VTP12. Tests: `test_xtx27_vtp12_pilot.py` and
+`test_xtx27_vtp12_replay.py`, plus earlier VTP12 comparison tests.
