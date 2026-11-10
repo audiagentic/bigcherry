@@ -1,0 +1,16 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261110_133544_gpu-power-capabilities-are-now_2739",
+  "files": [
+    "tools/bigcherry/hardware/power_probe.py",
+    "tools/tests/hardware/test_power_probe.py",
+    "tools/tests/hardware/fixtures/power_sysfs.py"
+  ],
+  "plan-item-ids": [
+    "PWR07"
+  ],
+  "status": "unreleased",
+  "technical-summary": "PWR07 slice 2: per-BDF GPU capability probe; OverDrive controls recognised from the card's own table with device-reported ranges (RDNA2/3/4 real fixtures), hwmon chosen by name with ambiguity refused, sensors; unknown drivers get identity only.",
+  "timestamp-utc": "2026-11-10T13:35:44.007508Z",
+  "user-summary-candidate": "GPU power capabilities are now discovered per card from what the driver reports, instead of assumed."
+}
