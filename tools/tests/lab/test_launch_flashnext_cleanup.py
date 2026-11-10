@@ -376,14 +376,17 @@ LAYOUT_SUMMARY=dense
         self.assertEqual(self._events(), ["apply", "restore"])
         self.assertEqual(self._alive_pids(), [])
 
-    def test_a_partly_applied_power_setting_is_put_back(self) -> None:
-        # apply fails after changing a card: it is restored at once, and again by the cleanup if the start then fails
-        done = subprocess.run(self._args(), env={**self.env, "FAKE_POWER_APPLY_FAIL": "1", "FAKE_MEASURE_FAIL": "1"}, cwd=REPO,
+    def test_a_failed_power_request_stops_the_launch_before_anything_starts(self) -> None:
+        # an explicit --gpu-power is all or nothing: when apply fails, no helper or engine starts (not even the measuring
+        # start) and the cleanup restores from the journal; serving on cards that were asked for settings and did not get
+        # them is not an option
+        done = subprocess.run(self._args(), env={**self.env, "FAKE_POWER_APPLY_FAIL": "1"}, cwd=REPO,
                               capture_output=True, text=True, timeout=120)
         self.assertEqual(done.returncode, 97, done.stdout + done.stderr)
-        self.assertEqual(self._events()[0], "apply")
-        self.assertIn("restore", self._events()[1:])
+        self.assertIn("were not applied", done.stdout + done.stderr)
+        self.assertEqual(self._events(), ["apply", "restore"])
         self.assertEqual(self._alive_pids(), [])
+        self.assertFalse(self.pids.exists() and self.pids.read_text().strip(), "no process may have been started")
 
     def test_helpers_start_from_manifests_the_measuring_start_from_the_unmeasured_one(self) -> None:
         done = subprocess.run(self._args(), env=self.env, cwd=REPO, capture_output=True, text=True, timeout=180)

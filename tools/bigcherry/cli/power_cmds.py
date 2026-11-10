@@ -3,11 +3,14 @@
 The settings come from the environment's device inventory (``[host.*.devices.power]``, environment.py); the sysfs work
 is hardware/gpu_power.py and the setup checks hardware/power_setup.py, neither of which knows about bigcherry config.
 
-``status`` reads what each card runs and compares it with the configuration (no privileges). ``apply`` records what
-each configured card runs, then applies its setting; ``restore`` puts the recorded values back and forgets them, so a
-run leaves the cards as it found them. Both run as whoever launches: root, or a member of the group ``grant`` gave write
-access to the cards' power files (a udev rule, installed once with sudo). When they cannot write, they change nothing
-and print the setup steps still missing on this host, worked out from what is actually there.
+``status`` reads what each card runs and compares it with the configuration (no privileges). ``apply`` and ``restore``
+go through ``hardware.power_transaction``: ``apply --layout NAME --run-id ID`` changes ONLY the cards that layout uses,
+after every requested setting passed preflight against the card's own reported ranges, the gpu lease is verified, and a
+recovery journal is on disk; any failure rolls everything back and exits non-zero. ``restore --run-id ID
+--processes-exited`` puts the journal's original values back and verifies them; it refuses without the assertion that
+nothing is using the cards any more, and a failed restore keeps the journal. Both run as whoever launches: root, or a
+member of the group ``grant`` gave write access to the cards' power files (a udev rule, installed once with sudo); a
+refusal for missing access prints the setup steps still missing on this host.
 """
 
 from __future__ import annotations
@@ -21,7 +24,10 @@ from argparse import Namespace
 from pathlib import Path
 
 from ..core import environment
+from ..engine_adapters import radiance_layout
 from ..hardware import gpu_power, power_setup
+from ..hardware import lease as gpu_lease
+from ..hardware.power_transaction import PowerFailed, PowerRefused, PowerTransaction
 
 #: where grant writes its rules (udev reads /etc/udev/rules.d)
 RULES = Path(power_setup.RULES)
@@ -30,31 +36,13 @@ RULES = Path(power_setup.RULES)
 GROUP = "bigcherry-gpu"
 
 
-def _state_file() -> Path:
-    """Where apply records what the cards ran before it (per user; survives the launcher's process)."""
-    override = os.environ.get("BIGCHERRY_GPU_POWER_STATE")
-    if override:
-        return Path(override)
+def _journal_dir() -> Path:
+    """Where the transaction journals live: the work root's power folder (survives the launcher's process)."""
+    root = os.environ.get("BC_WORK_ROOT")
+    if root:
+        return Path(root) / "flashnext" / "power" / "journals"
     base = os.environ.get("XDG_STATE_HOME") or os.path.join(os.path.expanduser("~"), ".local", "state")
-    return Path(base) / "bigcherry" / "gpu-power.json"
-
-
-def _load_saved() -> dict:
-    try:
-        return json.loads(_state_file().read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {}
-
-
-def _save(saved: dict) -> None:
-    path = _state_file()
-    if not saved:
-        path.unlink(missing_ok=True)
-        return
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps(saved, indent=2), encoding="utf-8")
-    os.replace(tmp, path)
+    return Path(base) / "bigcherry" / "power-journals"
 
 
 def _setting(power: environment.DevicePower) -> gpu_power.Setting:
@@ -64,11 +52,6 @@ def _setting(power: environment.DevicePower) -> gpu_power.Setting:
 def _devices(args: Namespace) -> list[environment.Device]:
     host = environment.load_default().host(args.host)
     return [d for d in host.devices if d.locator]
-
-
-def _configured(args: Namespace) -> list[tuple[environment.Device, str | None, str | None]]:
-    """The cards with power settings: (device, driver, hwmon dir)."""
-    return [(d, gpu_power.driver_of(d.locator), gpu_power.hwmon_of(d.locator)) for d in _devices(args) if d.power]
 
 
 def _mismatches(want: gpu_power.Setting, have: gpu_power.State) -> list[str]:
@@ -108,11 +91,6 @@ def cmd_status(args: Namespace) -> int:
     return 1 if differs and args.strict else 0
 
 
-def _write(path: str, value: str) -> None:
-    with open(path, "w", encoding="utf-8") as f:
-        f.write(value + "\n")
-
-
 def _command(args: Namespace, *words: str) -> str:
     """A bigcherry command line as this session runs it: this checkout's tools and environment file."""
     host = ["--host", args.host] if getattr(args, "host", None) else []
@@ -122,66 +100,75 @@ def _command(args: Namespace, *words: str) -> str:
     return " ".join(shlex.quote(c) for c in cmd)
 
 
-def _blocked(cards) -> list[str]:
-    return [path for d, driver, hw in cards for path in gpu_power.targets(d.locator, driver, hw, _setting(d.power))
-            if not os.access(path, os.W_OK)]
-
-
 def _explain(args: Namespace) -> str:
     return power_setup.render(power_setup.probe(GROUP), lambda *w: _command(args, *w))
 
 
+def _sys() -> dict:
+    """Where the transaction reads and writes sysfs: the real one (a seam for the tests' fake tree)."""
+    return {}
+
+
+def _selected(args: Namespace) -> dict[str, environment.Device]:
+    """The cards the layout uses, by PCI locator: the only ones a transaction may touch."""
+    host = environment.load_default().host(getattr(args, "host", None))
+    r = radiance_layout.resolve(args.layout, host, budgets={})
+    wanted = list(r.engine_indices) + [h.index for h in r.helpers]
+    by_index = {d.index: d for d in host.devices}
+    out: dict[str, environment.Device] = {}
+    for i in wanted:
+        d = by_index.get(i)
+        if d is None or not d.locator:
+            raise radiance_layout.LayoutError(f"layout {args.layout}: card {i} has no PCI locator in the host inventory")
+        out[d.locator] = d
+    return out
+
+
 def cmd_apply(args: Namespace) -> int:
-    cards = _configured(args)
-    blocked = _blocked(cards)
-    if blocked:
-        print(_explain(args), file=sys.stderr)
+    try:
+        selected = _selected(args)
+    except radiance_layout.LayoutError as exc:
+        print(f"gpu-power apply: {exc}", file=sys.stderr)
         return 2
-    saved = _load_saved()
-    failed = 0
-    for d, driver, hw in cards:
-        setting = _setting(d.power)
-        # The first apply records what ran before; a repeat (no restore in between) keeps that original record.
-        saved.setdefault(d.locator, {"before": gpu_power.read_state(d.locator, driver, hw).to_json(),
-                                     "setting": setting.__dict__})
-        _save(saved)
-        for path, value in gpu_power.apply_writes(d.locator, driver, hw, setting):
-            _write(path, value)
-        bad = _mismatches(setting, gpu_power.read_state(d.locator, driver, hw))
-        print(f"{d.index} {d.locator}: " + ("applied" if not bad else "NOT APPLIED: " + "; ".join(bad)))
-        failed += bool(bad)
-    return 1 if failed else 0
+    requested = {loc: _setting(d.power) for loc, d in selected.items() if d.power}
+    tx = PowerTransaction(args.run_id, _journal_dir(), lease_ok=gpu_lease.held_by_this_process, **_sys())
+    try:
+        tx.prepare(requested, sorted(selected))
+        tx.apply()
+    except PowerRefused as exc:
+        print("gpu-power apply: refused, nothing was written:", file=sys.stderr)
+        for reason in exc.reasons:
+            print(f"  - {reason}", file=sys.stderr)
+        if any("not_writable" in r or "not_permitted" in r or "access_denied" in r for r in exc.reasons):
+            print(_explain(args), file=sys.stderr)
+        return 2
+    except PowerFailed as exc:
+        print(f"gpu-power apply: FAILED ({exc}); " + ("everything was put back" if exc.rolled_back else
+              f"NOT restored: journal {tx.journal_path} holds the original values (gpu-power restore --run-id {args.run_id})"),
+              file=sys.stderr)
+        return 1
+    for d in tx.devs:
+        print(f"{selected[d.bdf].index} {d.bdf}: applied and read back")
+    return 0
 
 
 def cmd_restore(args: Namespace) -> int:
-    saved = _load_saved()
-    if not saved:
-        print("gpu-power restore: nothing applied by gpu-power to put back")
+    path = _journal_dir() / f"{args.run_id}.json"
+    if not path.exists():
+        print(f"gpu-power restore: no journal for run {args.run_id} (nothing applied by that run)")
         return 0
-    cards = [(loc, gpu_power.driver_of(loc), gpu_power.hwmon_of(loc)) for loc in saved]
-    blocked = [p for loc, driver, hw in cards
-               for p in gpu_power.targets(loc, driver, hw, gpu_power.Setting(**saved[loc]["setting"]))
-               if not os.access(p, os.W_OK)]
-    if blocked:
-        print(_explain(args), file=sys.stderr)
+    if not args.processes_exited:
+        print("gpu-power restore: refused: pass --processes-exited once nothing is using the cards "
+              "(restoring under a running process would change its clocks)", file=sys.stderr)
         return 2
-    failed = 0
-    for loc, driver, hw in cards:
-        before = gpu_power.State.from_json(saved[loc]["before"])
-        for path, value in gpu_power.restore_writes(loc, driver, hw, before, gpu_power.Setting(**saved[loc]["setting"])):
-            _write(path, value)
-        now = gpu_power.read_state(loc, driver, hw)
-        setting = gpu_power.Setting(**saved[loc]["setting"])
-        same = (now.vddgfx_offset_mv, now.sclk_max_mhz) == (before.vddgfx_offset_mv, before.sclk_max_mhz)
-        if setting.power_cap_w is not None:   # the cap is restored only when apply changed it, and then it is verified too
-            same = same and now.power_cap_uw == before.power_cap_uw
-        print(f"{loc}: " + ("restored to what ran before" if same else
-                            f"NOT RESTORED: running {now}, recorded {before}"))
-        if same:
-            del saved[loc]
-            _save(saved)
-        failed += not same
-    return 1 if failed else 0
+    try:
+        ok = PowerTransaction.recover(path, lease_ok=gpu_lease.held_by_this_process, processes_exited=True, **_sys())
+    except PowerRefused as exc:
+        print("gpu-power restore: refused: " + str(exc), file=sys.stderr)
+        return 2
+    print("restored to what ran before and verified" if ok else
+          f"NOT RESTORED: journal {path} kept with the original values; see its events")
+    return 0 if ok else 1
 
 
 def _run(cmd: list[str]) -> None:
@@ -248,11 +235,17 @@ def register(sub) -> None:
     st.add_argument("--host", help="configured [host.*] entry (default: default-host)")
     st.add_argument("--strict", action="store_true", help="exit 1 when a configured setting is not applied")
     st.set_defaults(func=cmd_status)
-    ap = psub.add_parser("apply", help="record what the cards run, then apply the configured settings (root, or after grant)")
+    ap = psub.add_parser("apply", help="apply the configured settings to the cards of one layout, all or nothing "
+                                       "(gpu lease required; root, or after grant)")
     ap.add_argument("--host")
+    ap.add_argument("--layout", required=True, help="the layout whose cards may be changed (and no others)")
+    ap.add_argument("--run-id", required=True, help="names the recovery journal")
     ap.set_defaults(func=cmd_apply)
-    rs = psub.add_parser("restore", help="put back what ran before apply (root, or after grant)")
+    rs = psub.add_parser("restore", help="put back what ran before apply, from its journal (gpu lease required)")
     rs.add_argument("--host")
+    rs.add_argument("--run-id", required=True)
+    rs.add_argument("--processes-exited", action="store_true",
+                    help="assert that no process uses the cards any more (restore refuses without it)")
     rs.set_defaults(func=cmd_restore)
     gr = psub.add_parser("grant", help="create the group with write access to the GPUs' power settings (sudo)")
     gr.add_argument("--group", default=GROUP, help=f"default {GROUP}")
