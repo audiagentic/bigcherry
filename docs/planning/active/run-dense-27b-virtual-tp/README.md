@@ -15,6 +15,7 @@ Three independent, bounded work items:
 - [VTP08](VTP08.md): native W8A8 RAD2 FFN plus FP8 attention-KV strict physical-VRAM lower bounds and no-go cases.
 - [VTP09](VTP09.md): gfx1100 IQ6R M64 tiled dispatch override, numeric qualification and crossover measurements.
 - [VTP10](VTP10.md): real native W8A8 TP2 prefill/concurrency control, source BF16 calibration debugging and IQ6R prerequisites.
+- [VTP11](VTP11.md): fail-closed original-BF16 GDN kernel routing / host-buffer ownership diagnosis before Hessian calibration.
 
 - [VTP03](VTP03.md): gated Q6/Q8 full-model prototype, 4+/long-context A/B benchmark and go/no-go.
 
