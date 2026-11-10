@@ -219,3 +219,27 @@ legality, replication and allocator costs. The Q8 file is exact-id
 fingerprinted, but that alone does not prove it was converted from
 the new fully hashed source (the RAD2 contains source name, not
 source full-shard digests); compare inference logits to original BF16.
+
+## VTP11 calibration plumbing milestone (2026-11-10)
+
+Original-BF16 layer-0 Hessian generation now passes on R9700 TP1 and
+dual-XTX TP2 (both 2 documents / 185 rows, four F32 safetensors
+matrices with finite values and nonnegative diagonals). See VTP11.
+**Pipeline unblocked; production IQ6R quality not qualified.**
+
+Next work under existing VTP06 (no separate duplicate plan):
+1. Choose and license-check a diverse, reproducible corpus: language,
+   code, maths, variable lengths and realistic deployment prompts.
+   Capture text provenance, deduplication, filtering, tokenizer
+   fingerprint, seed, token histogram, held-out subset and SHA-256.
+   This must not be the 185-row micro-corpus.
+2. Disk/RAM preflight for all 64 layers of full upper-triangular F32
+   Hessians. Run bounded adjacent 2-4 layer ranges with resumable
+   per-layer outputs and reject gaps, duplicate outputs, drifted hashes
+   or invalid shapes.
+3. Independently compare gfx11/gfx12 GDN GPU kernels against a trusted
+   BF16 reference before treating Hessians as numerically qualified.
+4. Calibrate and convert IQ6R using the exact pinned producer, verify
+   per-tensor encodings and actual gfx1100/gfx1201 graph dispatch.
+5. Compare logits, top1, KLD and held-out perplexity to original BF16,
+   then benchmark 4+ concurrent streams with resident KV (VTP03).

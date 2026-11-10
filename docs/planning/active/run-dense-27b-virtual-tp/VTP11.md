@@ -80,7 +80,7 @@ from a device miss.
 5. **Minimal Hessian smoke:** under a verified *exclusive* GPU lease and
    with GPUs/processes idle, use the original fingerprinted BF16 source,
    a known 2-document smoke corpus and `--calib-layers 0:1`. Pass only
-   if both documents complete, nonempty RADGRAM2 output has valid
+   if both documents complete, nonempty packed-F32 hessian_upper safetensors output has valid
    schema/shape, memory bounds hold, and the reference forward path
    is numerically acceptable. This is plumbing proof, NOT calibrated Q6.
 6. **Scale gate:** only after step 5, plan representative corpus, bounded
@@ -108,7 +108,7 @@ validation of layer-0 calibration, (d) a documented reason for the prior
 `libref`-only hang, (e) card-free regression tests, and (f) a separate
 quality-gated plan for representative 64-layer calibration.
 
-**Status:** diagnosis staged; no GDN patch and no Hessian smoke PASS.
+**Status:** isolated fix and build passed; first layer-0 Hessian smoke PASS on R9700 TP1 and dual-XTX TP2. Representative corpus, independent GDN oracle and model quality remain open.
 
 
 ## Experimental host/device domain guard — 2026-11-10
@@ -133,9 +133,67 @@ Card-free evidence: 10/10 anchored edits applied to a scratch pinned-source
 copy; all idempotent; 3 dedicated Python tests pass (including malformed
 upstream anchor refusal), Ruff passes, and GCC 14 syntax checks passed for all
 four changed C++ translation units. Full integration, GPU GDN numerical
-qualification and layer-0 RADGRAM2 calibration remain **PENDING**.
+qualification and layer-0 Hessian calibration were **PENDING at that stage**.
 
 First isolated build attempt stopped at BigCherry's dirty-repository
 materialization gate (no C++ compilation); commit changes and retry from a
 clean worktree. Logs under BC_WORK_ROOT/build-logs/vtp11-host-guard-isolated/.
 Do not count that build attempt as evidence of a functional calibration path.
+
+
+## 2026-11-10 — first completed BF16 calibration, both GPU configurations
+
+**Result: layer-0 Hessian pipeline passes, independent numerical oracle pending.**
+
+Experimental source radiance-vtp11-bf16 with managed
+rad0014_vtp11_host_device_guard built successfully in isolation: all
+materialize/configure/build stages succeeded. Build plan ID:
+8dd8360cb45d3c86998a9026dcfad293; logs:
+BC_WORK_ROOT/build-logs/vtp11-host-guard-isolated-v2/.
+The patch was committed at 0acea3809; no production default changed.
+
+Using an exclusive GPU lease and the original fully fingerprinted BF16
+checkpoint (VTP06), both configurations ran the **same** 2-document,
+185-token micro-corpus (SHA-256
+3907585b5cb21b71baaeae584c730c577674732d3259f40dee809903667718c9),
+--calib-layers 0:1, exact TP, layer_offload, context 512, batch 128,
+BF16 KV and no speculation:
+
+| Hardware | TP | Host pool | Exit | Hessians | Elapsed incl. load |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| R9700 gfx1201 | 1 | 32768 MiB | 0 | 4 | 95.49 s |
+| RX 7900 XTX gfx1100 x2 | 2 | 16384 MiB | 0 | 4 | 78.07 s |
+
+Run-specific argv, selected GPU device, logs, SHA-256s and validation
+receipts:
+BC_WORK_ROOT/xtx27-prefill/vtp11-bf16-calibration-smoke-20261110-v1/
+BC_WORK_ROOT/xtx27-prefill/vtp11-bf16-calibration-tp2-20261110-v1/
+
+The engine wrote four Hessians at rank 0 in each run; dual-XTX rank 1
+reported zero files, avoiding writer races. A full F32 element scan of
+**every** matrix in both runs passed: valid packed-upper safetensors
+schema and offsets, dimensions 5120/6144/17408/5120, exactly 185 rows,
+no NaN/Inf and no negative diagonals.
+
+Full-matrix same-corpus comparisons, TP2 dual XTX vs TP1 R9700:
+
+| Layer-0 input | Relative L2 difference | Cosine |
+| --- | ---: | ---: |
+| input (GDN in-projection) | 1.0133e-7 | 1.000000 |
+| linear_attn.out_proj.input | 3.0171e-5 | 0.9999999995 |
+| post_attention.input (MLP) | 0.0022303 | 0.99999755 |
+| mlp.down_proj.input | 0.0034094 | 0.99999419 |
+
+Comparison receipt:
+BC_WORK_ROOT/xtx27-prefill/vtp11-bf16-calibration-compare-20261110-v1.json.
+These establish **cross-backend consistency**, not an independent
+numerical oracle: the GDN GPU gdn_conv_prep_w4_h128_bf16 row remains
+upstream-marked UNVALIDATED. The precise AVX crash pointer was not
+recorded dynamically; source-level host/device ownership mismatch
+plus same-run before/after recovery support, but do not independently
+prove, pointer provenance. The libref-only hang remains unresolved.
+
+**Do not use the 185-row outputs to quantise a production IQ6R model.**
+They prove calibration plumbing, not representative 27B quality. VTP06
+owns the diverse corpus, bounded 64-layer runs, conversion and BF16
+quality comparison. The GPU lease was released; no KFD PIDs remained.

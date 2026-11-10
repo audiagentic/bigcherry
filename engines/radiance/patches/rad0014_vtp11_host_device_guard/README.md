@@ -76,3 +76,17 @@ dynamically.
 
 The small smoke corpus is solely for validating the calibration pipeline,
 never a valid quantisation-quality calibration dataset.
+
+## Hardware smoke evidence — not production qualification
+
+An isolated v1.17.0 build succeeded (build plan
+8dd8360cb45d3c86998a9026dcfad293). Original-BF16 layer-0
+calibration exited 0 on R9700 gfx1201 TP1 and dual RX 7900 XTX
+gfx1100 TP2. Both produced four packed-F32 Hessian safetensors from
+185 rows, all finite with nonnegative diagonals. VTP11 contains the
+full receipts, shape checks and cross-backend matrix comparison.
+
+This resolves the crashing **plumbing** smoke, not the independent
+GDN numerical oracle, representative 64-layer calibration, IQ6R
+quality or production patch admission. Preserve state=untested and
+the isolated source recipe until formal qualification.
