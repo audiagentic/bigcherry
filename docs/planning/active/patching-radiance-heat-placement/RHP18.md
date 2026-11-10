@@ -11,7 +11,7 @@ priority: P1
 work: M
 ---
 
-# Say why the live placement policy is off: manifest field, launcher message, and a calibration key that survives unrelated key-input changes
+# Live placement observability: the manifest, the launcher and the helper say whether the policy is on, why not, and what a calibration is waiting for
 
 ## Description
 
@@ -57,6 +57,9 @@ No start can run with the policy off without the manifest and the launcher sayin
 
 Operator guide: docs/reference/engines/radiance/LIVE_PLACEMENT.md. Re-calibration run: runs/recalibrate-4gpu (2026-11-10).
 
+FINDINGS 2026-11-10 (why the policy was silently off or never calibrated): (1) the calibration key includes helper_budgets_mib since #790, orphaning the 2026-11-07 flashnext-4gpu record; no message. (2) Any start with --experiment (lane trace, profile_ops, kv_resident...) gets the lab service profile, and derive_manifest_live_policy runs only for the production profile, so an instrumented run never carries the policy unless --live-policy is given explicitly; no message. (3) The experiment hash is also part of the calibration key. (4) A missing record is silent; only an incomplete record logs a skip reason. (5) The helper prints its calibration waiting list only when it changes, and the calibration loop has no bound: a 2026-11-10 run served 1,600 requests over 80 minutes with 8 committed moves and never emitted its record. Interim: the Nov-7 record was migrated to the new key (store backup in runs/recalibrate-4gpu). Operator guide: docs/reference/engines/radiance/LIVE_PLACEMENT.md.
+
 ## Change Log
 
 - 2026-11-10T03:10:34.325501+00:00 (created-by): Created by agent
+- 2026-11-10T04:35:32.723532+00:00 (updated-by): Updated: section:title, section:notes

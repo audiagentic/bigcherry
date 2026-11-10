@@ -32,6 +32,11 @@ helper budget (`--budget`), different engine arguments. #790 added `helper_budge
 flashnext-4gpu record seeded on 2026-11-07: from that point no production start of the layout carried a live policy until it was
 re-calibrated.
 
+**Instrumented runs.** Any start with `--experiment` (lane trace, `profile_ops`, `kv_resident`, ...) gets the *lab* service profile, and the
+policy is derived only for the *production* profile: such a run never carries a policy unless one is passed explicitly with
+`--live-policy FILE` (the derived `live_policy` object of a production manifest is a valid file). The experiment file's hash is also part of
+the calibration key.
+
 ## How to check it is on (do this before any placement-sensitive measurement)
 
 ```
