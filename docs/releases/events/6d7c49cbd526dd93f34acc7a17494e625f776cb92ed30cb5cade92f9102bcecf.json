@@ -1,0 +1,16 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261110_131941_added-a-portable-read-only-cp_3436",
+  "files": [
+    "tools/bigcherry/hardware/power_probe.py",
+    "tools/tests/hardware/test_power_probe.py",
+    "tools/tests/hardware/fixtures/power_sysfs.py"
+  ],
+  "plan-item-ids": [
+    "PWR07"
+  ],
+  "status": "unreleased",
+  "technical-summary": "PWR07 slice 1: portable read-only CPU power probe (cpufreq policies, EPP, boost/turbo, pstate, cpuidle, powercap/amd_energy counters) with injectable sysfs root and platform; Observation status/reason model; fake-sysfs tests for Intel/AMD/VM/Windows/permission failures.",
+  "timestamp-utc": "2026-11-10T13:19:41.178627Z",
+  "user-summary-candidate": "Added a portable, read-only CPU power probe that works across Intel, AMD, VMs and non-Linux hosts and reports why anything is unavailable."
+}
