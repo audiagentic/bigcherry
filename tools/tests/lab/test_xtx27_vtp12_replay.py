@@ -84,6 +84,14 @@ class ReplayTests(unittest.TestCase):
                              ["stage_estimates"]["control_i8_us"]
                              ["ideal_ffn_stage_barriers_us"], 490)
 
+    def test_skew_candidate_replays_full_abba(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            fixture(root, m=4, challenger="r9700-43-skew")
+            data = r.replay(root)
+            self.assertEqual(data["challenger"], "r9700-43-skew")
+            self.assertEqual(data["cases_validated"], 24)
+
     def test_decode_m4_preserves_narrow_row(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

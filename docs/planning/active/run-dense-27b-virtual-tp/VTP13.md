@@ -95,3 +95,20 @@ question rather than silently enabling a slower engine configuration.
 Dependencies: VTP01/02/04/08/12, XDP03/XDP10, VTP06;
 VTP03 is an independent competing path. No production default change,
 no vendor edits, no PR/push until explicitly authorised.
+
+## 2026-11-11 TP3 physical FFN design input from VTP12
+
+VTP12 measured two 42.65%-R9700 FFN allocations. A symmetric
+4992/4992/7424 physical split is strongly decode-regressed by
+128-aligned XTX down-K shapes. An unequal **5120/4864/7424**
+physical split keeps all three down-K sizes 256-aligned and the
+ideal warm-weight FFN barrier within 2.1% of 30/30/40 uniform
+INT8 across M=1/4/8/64. This is not yet real simultaneous TP3.
+
+VTP13 must permit **nonidentical XTX partition widths** as well
+as R9700 1/1/2 KV-head ownership; different legal FFN, GDN and
+attention offsets are explicit per-operator dimensions, not a
+common physical ratio. Require the actual three-GPU concurrent
+exact reduction, GDN and full-attention numeric and performance
+acceptance before enabling any execution path. Native INT8 kernel
+dispatch is the control; the FP8 loader remains XDP10-gated.

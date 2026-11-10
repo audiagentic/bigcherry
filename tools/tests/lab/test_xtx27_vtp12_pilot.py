@@ -19,6 +19,7 @@ class GeometryTests(unittest.TestCase):
             self.assertEqual([x["effective_intermediate"] for x in shapes],
                              {"control": [5120, 5120, 7168],
                               "r9700-43": [4992, 4992, 7424],
+                              "r9700-43-skew": [5120, 4864, 7424],
                               "r9700-45": [4864, 4864, 7680],
                               "r9700-50": [4352, 4352, 8704]}[candidate])
 
@@ -43,6 +44,16 @@ class GeometryTests(unittest.TestCase):
             self.assertEqual(expected_k % 128, 0)
         self.assertEqual(v.geometry("r9700-43", "r9700", "gate_up")["N"], 14848)
 
+    def test_skew_avoids_xtx_128_k_path_without_changing_r9700(self) -> None:
+        symmetric = v.geometry("r9700-43", "r9700", "gate_up")
+        skewed = v.geometry("r9700-43-skew", "r9700", "gate_up")
+        self.assertEqual((symmetric["N"], symmetric["K"]),
+                         (skewed["N"], skewed["K"]))
+        for gpu, width in (("xtx0", 5120), ("xtx1", 4864), ("r9700", 7424)):
+            down = v.geometry("r9700-43-skew", gpu, "down")
+            self.assertEqual(down["K"], width)
+            self.assertEqual(down["K"] % 256, 0)
+
     def test_invalid_candidate_or_projection_rejected(self) -> None:
         for candidate, gpu, proj in [
             ("unknown", "xtx0", "down"), ("control", "unknown", "down"),
@@ -52,7 +63,7 @@ class GeometryTests(unittest.TestCase):
                 v.geometry(candidate, gpu, proj)
 
     def test_abba_schedule_complete_and_deterministic(self) -> None:
-        for challenger in ("r9700-43", "r9700-45", "r9700-50"):
+        for challenger in ("r9700-43", "r9700-43-skew", "r9700-45", "r9700-50"):
             schedule = v.schedule(challenger, 4)
             self.assertEqual(len(schedule), 24)
             for role in v.ROLES:

@@ -284,7 +284,7 @@ new candidate, preserving lease checks, provenance and immutable
 ABBA receipts. 19 focused tests + Ruff passed; all 72 prior cases
 replayed with unchanged schedules.
 
-**No new hardware results yet:** the initial check found an XTX
+**At initial preparation (before later GPU runs):** the initial check found an XTX
 -125 mV power A/B GPU lease and KFD processes. At the final check,
 the lease was free but other Radiance/MoE KFD processes were still
 resident *outside any lease*. Never stop/preempt their processes.
@@ -292,7 +292,7 @@ Do not acquire a measuring lease or start a benchmark until both
 `agent-lease status` and `rocm-smi --showpids` are clear.
 
 When `agent-lease status` says no leases and `rocm-smi --showpids`
-says no KFD processes, the first hardware command is:
+says no KFD processes, the reproducible hardware command is:
 
 ```bash
 # From the existing VTP12 worktree, with BC_WORK_ROOT configured.
@@ -312,3 +312,109 @@ optimistic best-native INT8 row). Require >=3 fresh ABBA campaigns,
 actual 3-card simultaneous communication, real GDN/attention
 two-head tests, numerical oracles, BF16-relative full-model quality
 and physical VRAM/KV admission before any serving promotion.
+
+## 2026-11-11 — complete 42.65%-R9700 ratio sweep (GPU measured)
+
+**Executed, not merely planned.** Two physical layouts were tested at
+M=1,4,8,64 with pinned same-build `r4d_selftest --perfw8`: eight
+24-case ABBA campaigns = **192 GPU selftest invocations** across XTX0,
+XTX1 and R9700, nine timing iterations per row. All 192 cases exited
+successfully, all eight corrected read-only replay reports validate the
+full case/log hash census, zero failure receipts. Every exclusive GPU
+lease auto-released; final `agent-lease status` and KFD PID checks clear.
+These are independently timed warm, synthetic-value GEMMs and
+mathematically combined **ideal** FFN dependency-stage barriers, not
+simultaneous TP, model tensors, language accuracy, KLD, or throughput.
+
+Physical width assignments:
+- **Symmetric** `r9700-43`: 4992 / 4992 / 7424, physical share
+  28.68/28.68/42.65%; 128-column tile support required for both XTX
+  down K=4992.
+- **Unequal XTX** `r9700-43-skew`: 5120 / 4864 / 7424, physical
+  share 29.41/27.94/42.65%; all three down-K widths divisible by
+  256. The R9700 computes **exactly the same** gate/down shapes in
+  both layouts; only the XTX split changes. Both are per-operator
+  *candidate shapes*, not full legal attention/GDN/TP contracts.
+
+### Corrected paired results (microseconds; lower is better)
+
+M64 uses the independent replay's `vtp05_declared_i8_dispatch`
+(tiled INT8 M>16), **not** the earlier pilot's narrow-INT8
+`summary.json`. For each case the R9700-FP8 arm keeps INT8 on both
+XTX cards. Each row has its own same-campaign 30/30/40 INT8 control.
+
+| M | Symmetric control INT8 | Symmetric 42.65% INT8 | Symmetric 42.65% mixed FP8 | Unequal control INT8 | Unequal 42.65% INT8 | Unequal 42.65% mixed FP8 |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | 139.00 | 181.40 | 179.80 | 138.95 | 139.95 | **138.80** |
+| 4 | 139.10 | 188.55 | 184.85 | 139.05 | 142.40 | **142.00** |
+| 8 | 139.15 | 187.05 | 183.30 | 139.30 | 144.80 | **141.35** |
+| 64 | 313.20 | 312.15 | 312.15 | 312.65 | 319.10 | **309.90** |
+
+Exact source folders with raw per-case receipts, console logs,
+immutable original `summary.json` and validated
+`summary-replay-v1.json`:
+`${BC_WORK_ROOT}/xtx27-prefill/vtp12-abba-43-m1-20261111/`,
+`${BC_WORK_ROOT}/xtx27-prefill/vtp12-abba-43-m4-20261111/`,
+`${BC_WORK_ROOT}/xtx27-prefill/vtp12-abba-43-m8-20261111/`,
+`${BC_WORK_ROOT}/xtx27-prefill/vtp12-abba-43-m64-20261111/`, and
+`${BC_WORK_ROOT}/xtx27-prefill/vtp12-abba-43-skew-m1-20261111/`,
+`${BC_WORK_ROOT}/xtx27-prefill/vtp12-abba-43-skew-m4-20261111/`,
+`${BC_WORK_ROOT}/xtx27-prefill/vtp12-abba-43-skew-m8-20261111/`,
+`${BC_WORK_ROOT}/xtx27-prefill/vtp12-abba-43-skew-m64-20261111/`
+(all prefixes are `${BC_WORK_ROOT}/xtx27-prefill/`).
+These 8 runs are distinct from the prior VTP05 records and
+VTP12's earlier 30/30/40-vs-44% and -50% measurements.
+
+### Interpretation and decision
+
+1. **Avoid symmetric 128-wide XTX down shards at decode.** At M4,
+   the XTX down rows jump from ~54-56 us (K=5120 control) to
+   ~93-96 us (K=4992 symmetric). This occurs despite *less*
+   weight work. `libhalo/halo_gemm_fp8a8.hip` `fp8_sk` explicitly
+   chooses FK=128 when K is not divisible by 256 (versus FK=256
+   otherwise). This is a **plausible causal mechanism** for a slower
+   kernel path, not a proven explanation absent counters/pins.
+2. Unequal XTX physical 5120/4864 keeps both down K sizes divisible
+   by 256 and recovers almost the full loss. At M4 the ideal mixed
+   FFN barrier is **142.00 us**, versus **139.05 us** control
+   (2.12% slower), rather than symmetric **184.85 us**
+   (~32.9% slower than its control). At M1 the unequal mixed arm
+   is virtually tied at 138.80 vs 138.95 us, and at M8 it is
+   141.35 vs 139.30 us (1.47% slower).
+3. At M64 unequal mixed FP8 reaches **309.90 us** vs control
+   312.65 us (~0.88% lower), but the independent
+   **best-observed native INT8 rows** reach the *same*
+   309.90-us ideal barrier (the declared INT8 kernel policy gives
+   319.10 us). That makes native per-GPU shape-specific dispatch
+   a mandatory no-new-model-format control before XDP10.
+4. At M4, the unequal R9700 FP8 gate/up takes **88.05 us**,
+   versus XTX1 **83.35 us**; the R9700 becomes the critical
+   gate/up contributor. The next speed experiment should target
+   its native gfx1201 gate/up at N=14848 K=5120 M=1/4/8
+   and optimise the launch/split/grid before adding yet more
+   FFN work. Check actual activation preparation and whether
+   the claimed native FP8 selector is used by the engine.
+5. Do not assume added GPU VRAM increases resident KV. Full
+   attention KV-head ownership (1/1/2), GDN state/conv,
+   duplicated head/embedding/MTP, graph scratch, no-P2P PCIe
+   transport and host accumulation may change the conclusion.
+   8K concurrent 4/6/8 streams and long-context admission
+   remain mandatory. The current data do **not** establish a
+   faster three-card model or a production-ready mixed-precision
+   runtime.
+
+**Go/no-go:** retain 30/30/40 as the native INT8 decode baseline;
+advance the **unequal physical 5120/4864/7424** layout as a
+provisional competitor, reject the symmetric 4992/4992/7424
+decode proposal with current kernels. Do not promote a
+multi-variant model bundle yet. Next steps: (a) bounded
+shape-specific numeric and dispatch oracle for K=4992/4864/5120
+on gfx1100 and R9700 FP8 N=14848, (b) simultaneous three-card
+FFN + exact F32 host combine with measured D2H/CPU/H2D
+and engine-ordering correctness, (c) 1/1/2 two-head full
+attention and 4/4/8 GDN key, 12/12/24 value concurrent
+operator acceptance, (d) repeated full-model 4/6/8 stream
+BF16-reference quality and throughput/KV/PCIe/TTFT/latency
+A/B across both architectures. Three new independent ABBA
+campaigns are still required for hardware promotion; the
+single pilot per M with two ABBA points is screening only.

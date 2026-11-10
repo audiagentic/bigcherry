@@ -130,3 +130,19 @@ sidecar variant contract and fail-closed tests as planned; native per-GPU
 INT8 dispatch tuning is now a mandatory control before larger work.
 See VTP12 for source receipts and corrected replay of the M64 narrow
 versus tiled INT8 control.
+
+## VTP12 42.65% split evidence (2026-11-11)
+
+Eight additional exclusive-lease 24-case, synthetic warm-weight
+ABBA runs (192 selftests total) compared symmetric 4992/4992/7424
+with uneven 5120/4864/7424 physical FFN widths at M=1/4/8/64.
+Unequal XTX widths remove the severe 128-aligned down-K decode
+slowdown, keeping the ideal FFN barrier within 2.1% of 30/30/40
+INT8 control. At M64, mixed R9700 FP8 improves the ideal bound
+by <1%, matched by best-observed native INT8 dispatch. Neither
+within-layer mixed activation graph nor simultaneous three-GPU
+collective, GDN/attention, BF16 quality or real service speed
+has been proved. **Defer loader implementation/promotion until
+optimised all-INT8 dispatch and cross-device numerical/transport
+are measured.** Preserve the static XDP10 artifact plan as a
+separate eventual option. See VTP12 hardware receipt matrix.

@@ -22,7 +22,7 @@ SCHEMA = "vtp12-ffn-abba-replay-v1"
 def replay(directory: Path) -> dict:
     doc = json.loads((directory / "campaign.json").read_text())
     if (doc.get("schema") != pilot.SCHEMA or doc.get("challenger") not in
-            ("r9700-43", "r9700-45", "r9700-50") or doc.get("m") not in (1, 4, 8, 64)
+            ("r9700-43", "r9700-43-skew", "r9700-45", "r9700-50") or doc.get("m") not in (1, 4, 8, 64)
             or doc.get("cases") != pilot.schedule(doc["challenger"], doc["m"])):
         raise ValueError("invalid/drifted immutable VTP12 campaign")
     source = []

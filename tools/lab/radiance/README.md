@@ -276,3 +276,18 @@ ABBA candidate geometries and source receipts remain unchanged. Run the
 new M4 ABBA only when `agent-lease status` is free and no KFD process
 is resident; the runner acquires/releases the lease itself. See VTP12
 for exact commands, M64 corrected-replay requirement and promotion gates.
+
+### VTP12 unequal XTX 42.65%-R9700 evidence
+
+The pilot also accepts `--challenger r9700-43-skew` with **5120 /
+4864 / 7424** physical FFN widths (256-aligned down-K on each GPU),
+versus symmetric `r9700-43` (4992 / 4992 / 7424). The eight
+2026-11-11 exclusive-lease runs at M=1/4/8/64 contain **192
+validated selftest cases**, with immutable `summary.json` and
+separate corrected `summary-replay-v1.json` in
+`${BC_WORK_ROOT}/xtx27-prefill/vtp12-abba-43[-skew]-m{M}-20261111/`
+(the bracketed expression is a *folder-family illustration*, not
+a literal pathname). VTP12 has the exact per-run folders and
+results. Single-card warm synthetic GEMM timing is not concurrent
+TP or quality; the next gate is matched model-shaped numerical
+operator and no-P2P three-GPU collective measurement.
