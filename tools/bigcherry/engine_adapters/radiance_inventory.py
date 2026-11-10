@@ -97,6 +97,16 @@ class Layout:
     engine_bdfs: tuple[str, ...]
     helper_bdfs: tuple[str, ...]
 
+    def derive_resources(self, model, targets, host, *, worker_footprints_bytes):
+        """Prepare the inactive v2 budget from this exact bc-serve BDF resolution.
+
+        The measurements are deliberately mandatory. V1 uses its own C++
+        resolver until the single RSC11 S13 cutover.
+        """
+        from .radiance_resources import derive
+        return derive(self, model, targets, host,
+                      worker_footprints_bytes=worker_footprints_bytes)
+
 
 def binary_path(explicit: Path | None = None) -> Path:
     name = str(explicit or os.environ.get("BC_SERVE_BINARY") or

@@ -180,3 +180,13 @@ v1 contract decisions affecting RSC03 (lead, 2026-11-02; v1 slice 1 design appro
 - 2026-11-02T19:33:16.115864+00:00 (updated-by): Updated: section:ledger-events
 - chg_20261102_185212_bc-serve-and-the-moe-helpers-n_5105
 - 2026-11-02T18:52:16.705767+00:00 (updated-by): Updated: section:ledger-events
+
+## RSC11 S7: offline v2 resource derivation (2026-11-10)
+
+The preparatory GPU-free Python ledger is `tools/bigcherry/engine_adapters/radiance_resources.py`. A caller obtains `radiance_inventory.Layout` from bc-serve's BDF inventory and calls `Layout.derive_resources(model, targets, host, worker_footprints_bytes=...)`. The result carries a host pool, host KV tier, per-helper expert budgets and a byte-exact explanation. Inputs are mandatory: no guessed model footprint, ownership plan, or worker footprint. Re-resolve on device/owner-map/model/context/RAM change.
+
+The shipped `engines/radiance/layouts.toml` now omits all literal helper `budget-mib` settings, allowing the existing v1 bc-serve worker-footprint-based budget derivation to take effect. The v1 manifest schema, C++ resolver, manifest writer and generated registry have not been changed.
+
+**Required v2 handoff, for S10/S13:** bc-serve must publish the engine-measured host embedding, unowned expert, staging, n-gram, checkpoint and other resident bytes; the actual owner-map digest; host-pool margin calibration; KV bytes per token and the context/retention target; live MemAvailable, effective cgroup headroom and pin availability; and each selected helper BDF's complete non-expert worker memory (lanes, pointer banks, slot map, incoming slot) from `worker_footprint.h`. The output must carry provenance and be invalidated/recomputed with inventory, owner map, model or targets. The v2 writer should use those values to populate the existing resource budget concepts, enforce RAM/pin admission and compare with engine `--plan-memory`; fail closed if any required measurement is missing. No v2 contract fields are introduced by S7.
+
+**Unresolved until the single v2 cutover:** `serving.cpp` still holds the v1 host-pool/host-KV defaults and engine-only recipe-specific pool sizes remain in layouts.toml. The old Bash helper launcher now refuses to launch without explicit measured pool and KV values, rather than silently applying its removed fallback. No Python v2 derivation is activated for v1 manifests; S13 must remove remaining C++ and engine-only recipe defaults with the v2 writer/supervisor, and S16 removes the Bash launcher. The new Python derivation is not an opt-in compatibility path or independent owner planner.
