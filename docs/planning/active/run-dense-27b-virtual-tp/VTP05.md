@@ -212,3 +212,30 @@ Each sample is a short single benchmark, not a stable p95.
 
 VTP07 records the gfx11 IQ6R host-source omission and corrective
 scratch build. Full 27B model/KV validation remains under VTP06.
+
+## W8A8 native kernel numerical-reference qualification (2026-11-10)
+
+In addition to the 36 native W8A8 shape timings above, both
+`gemm_i8a8_nt_m16` and `gemm_i8a8_tiled` were checked using
+Radiance's independent numerical selftests on **both** gfx1100 XTXs
+and the gfx1201 R9700. The gfx1100 cards ran BigCherry's
+gfx11-rewritten `r3_selftest` against the original full `libr3.so`;
+gfx1201 ran the matching pinned `r4d_selftest` against the original
+`libr4d.so`. Each case acquired and released the global GPU lease.
+The scratch wrapper records argv, selected physical index, object
+SHA-256, return code, and complete stdout/stderr under
+`${BC_WORK_ROOT}/xtx27-prefill/iqr-layout-fix/w8-oracle-runs/`.
+
+| Engine test | XTX0 checks | XTX1 checks | R9700 checks |
+| --- | ---: | ---: | ---: |
+| `gemm_i8a8_nt_m16` | 13 pass / 0 fail | 13 / 0 | 13 / 0 |
+| `gemm_i8a8_tiled` | 8 pass / 0 fail | 8 / 0 | 8 / 0 |
+| **Total** | **21 / 0** | **21 / 0** | **21 / 0** |
+
+**All 63 numeric selftest checks passed** with zero exit status.
+The selftest includes several shapes per kernel, including
+intermediate matrices, but this is not a 27B model's full per-layer
+BF16-vs-quantised quality/accuracy comparison. We have not established
+KLD, maximum KV, multi-rank numerical or fused full-FFN parity;
+those gates remain in VTP06 and VTP03. IQ6R cold and W8A8 warm
+comparisons remain intentionally non-equivalent.
