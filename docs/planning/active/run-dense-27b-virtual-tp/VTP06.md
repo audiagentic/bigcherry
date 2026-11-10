@@ -159,3 +159,34 @@ the prepared vocabulary-head classes (the pinned
 No matching model calibration corpus was confirmed in the inspected
 local locations. Do not run an uncalibrated, unqualified 6-bit
 conversion or replace IQ6R with GGUF Q6_K.
+
+## Full original BF16 payload fingerprint: completed
+
+Full, bounded-memory SHA-256 across all **18** original safetensors
+shards completed twice, independently. Each of the 18 per-file
+full-payload digests matched between receipts, covering exactly
+55,562,855,904 tensor bytes plus safetensors headers. The corrected
+immutable audit receipt is at
+`${BC_WORK_ROOT}/xtx27-prefill/quant-shape/bf16-audit-fullsha-20261110-v2.json`
+with receipt SHA-256
+`28ae5dd7678a07d9558a7328d78c1cc1b19c7f45ffe6011fb6776ddc6aeeed13`.
+Status: `STRUCTURALLY_VALID_FULL_SHARDS_SHA256_FINGERPRINTED`;
+payload integrity: `FULL_SHARD_SHA256_FINGERPRINTED_NOT_EXTERNALLY_VERIFIED`.
+Original earlier receipt had all hashes but an inconsistent header-only
+status string, now corrected in code/tests; earlier receipt remains
+untouched. Full hashes are identities, not publisher authenticity or
+per-layer/model numerical quality proof. Bind the v2 receipt digest
+and 18 shard hashes into future conversion/quality campaigns.
+
+## IQ6R calibration input contract (not executed)
+
+Pinned Radiance `docs/TOOLS.md` calibration mode accepts
+`radiance --model BF16.rad --calib-corpus CORPUS.jsonl --calib-dir DIR --calib-layers LO:HI`.
+It records whole-input `hessian_upper` (f32) safetensors, even when
+TP shards input columns, with metadata k, rows and linears.
+The same model, tokenizer, prompt corpus and precision must be used
+for IQ6R GPTQ; a reused Q4/MXFP4 calibration is not qualified.
+Upstream warns each full dense 27B layer costs ~786 MB of host Gram
+accumulator, so collect limited adjacent layer ranges and ensure the
+final layer range captures head input. Do not run calibration until a
+BF16 model-serving configuration and GPU lease are available.

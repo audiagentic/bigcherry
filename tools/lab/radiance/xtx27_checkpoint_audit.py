@@ -237,7 +237,10 @@ def audit(checkpoint: Path, *, fingerprint_payload: bool = False) -> dict:
             raise ValueError(f"missing required tokenizer metadata: {name}")
     return {
         "schema": SCHEMA,
-        "status": "STRUCTURALLY_VALID_HEADER_ONLY_PAYLOAD_NOT_HASHED",
+        "status": (
+            "STRUCTURALLY_VALID_FULL_SHARDS_SHA256_FINGERPRINTED"
+            if fingerprint_payload else "STRUCTURALLY_VALID_HEADER_ONLY_PAYLOAD_NOT_HASHED"
+        ),
         "checkpoint": str(checkpoint),
         "config_sha256": config_hash,
         "index_sha256": index_hash,

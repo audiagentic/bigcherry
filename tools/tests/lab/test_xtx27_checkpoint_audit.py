@@ -80,6 +80,8 @@ class SourceAuditTests(unittest.TestCase):
 
     def test_full_payload_fingerprint_only_when_selected(self):
         result = self._audit(fingerprint_payload=True)
+        self.assertEqual(result["status"],
+                         "STRUCTURALLY_VALID_FULL_SHARDS_SHA256_FINGERPRINTED")
         self.assertEqual(
             result["shards"]["a.safetensors"]["full_shard_sha256"],
             hashlib.sha256((self.root / "a.safetensors").read_bytes()).hexdigest(),
