@@ -102,3 +102,8 @@ runs/rhp18-acceptance/calib.log failed at the launcher policy-derived 240s bound
 The archived 2026-11-10 vs 2026-11-11 manifest comparison shows engine_identity unchanged (13714aee7c27...), owner map unchanged and helper budgets still 22528/22528/14336 MiB. The changed measurement-relevant input is memory.host_pool_mib, from the old literal 9216 MiB to RSC03's derived 2259 MiB (#821). The RSC03 plan key includes engine.host_pool_mib (plan_cache.cpp:plan_key_inputs) because the measured engine plan echoes/checks it; host pool changes also changed planned engine VRAM expert/kv placement. Thus the old 0667fa18... live calibration store key does not automatically apply to the new 7443c748... key, even with the same engine binary. Keep this key input and fail closed: no blind migration. The old record is evidence, not current-key calibration. Record the distinct v1 manifest identity vs RSC03 plan-store identity when reporting keys.
 
 Hardware pending: a fresh build must calibrate against the new exact key, then a plain start must prove startup ON, valid feed and committed migration epochs. The #827 startup reason writer must be in the selected build.
+
+
+## 2026-11-11 follow-up to merged PR #833
+
+RHP18 follow-up, 2026-11-11: PR #833 merged the initial measured drift-window repair and identified the host-pool key input. A separate card-free follow-up closes the first-snapshot deadline freeze: progressive drift reporting and an A/B/B/A workload-derived finite upper bound. Both changes still require a rebuild and lease-held four-card acceptance against the current key, followed by a plain start proving policy ON and live epochs. No GPU work is part of this follow-up.

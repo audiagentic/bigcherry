@@ -411,6 +411,10 @@ public:
                     measured_.effect_window_noise_ladder=std::move(ladder);
                 }
                 next_window_noise_check_ns_=add_saturating(now_ns,settings_.cadence_ns);
+                // The adaptive ring can coarsen after its first measurement;
+                // publish the latest measured basis every policy cadence.
+                const auto live_drift=calibration_drift_progress(measured());
+                std::fputs(calibration_report_line("RHP19_DRIFT_PROGRESS_JSON " + live_drift.dump()).c_str(),stderr);
             }
             const Measured m=measured();
             const bool heat_timing_ready=m.accepted_heat_deltas &&
@@ -431,12 +435,8 @@ public:
             const bool effect_waiting=missing.empty() && !effect_missing &&
                 !calibration_settled(m,false,false);
             std::string waiting;
-            if(calibration_progress_.observe(m,missing,now_ns,effect_waiting,&waiting)) {
+            if(calibration_progress_.observe(m,missing,now_ns,effect_waiting,&waiting))
                 std::fputs(calibration_report_line(waiting).c_str(),stderr);
-                // Observed drift ring size/gap: input to the finite launcher bound.
-                const auto drift_progress=calibration_drift_progress(m);
-                std::fprintf(stderr,"RHP19_DRIFT_PROGRESS_JSON %s\n",drift_progress.dump().c_str());
-            }
             const bool effect_stalled=calibration_progress_.effect_expired(
                 now_ns,m,settings_.cadence_ns,settings_.controls.max_heat_age_ns);
             const bool effect_absent=effect_missing || effect_stalled;
