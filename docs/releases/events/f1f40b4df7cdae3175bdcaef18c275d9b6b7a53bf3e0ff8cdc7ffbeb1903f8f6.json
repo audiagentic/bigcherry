@@ -1,0 +1,23 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261110_143002_serving-layouts-use-live-bdf-inventory_dad7",
+  "files": [
+    "tools/bigcherry/cli/layout_cmds.py",
+    "tools/bigcherry/engine_adapters/radiance_inventory.py",
+    "tools/bigcherry/engine_adapters/radiance.py",
+    "tools/lab/radiance/launch-flashnext-best.sh",
+    "tools/tests/campaign/test_engine_adapters.py",
+    "tools/tests/campaign/test_radiance_layout.py",
+    "tools/tests/campaign/test_rsc11_inventory.py",
+    "tools/tests/campaign/test_rsc11_detector_fixture.py"
+  ],
+  "plan-item-ids": [
+    "RSC06",
+    "RSC07",
+    "RSC11"
+  ],
+  "status": "unreleased",
+  "technical-summary": "S2: serving layout show/env, card-env and Radiance benchmark/sidecar assignments consume bc-serve C++ KFD/PCI BDF and HIP ordinal resolution; reject stale or duplicate GPU identity and validate BDF-scoped local power overrides. Launcher selects the same build's bc-serve before resolving. Synthetic KFD/PCI and stub-binary card-free tests cover matching roles and fail-closed behavior.",
+  "timestamp-utc": "2026-11-10T14:30:02.053362Z",
+  "user-summary-candidate": "Serving layouts use the live C++ GPU inventory instead of static host device indices, rejecting stale or duplicate PCI identities."
+}

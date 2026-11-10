@@ -319,7 +319,16 @@ for name in engine $(cd "$PIDS" 2>/dev/null && ls helper* 2>/dev/null); do
   fi
 done
 
-# Resolve the layout before choosing binaries and the model container.
+# The C++ resolver's KFD/PCI BDF assignments are authoritative. Select its
+# build before asking Python for layout values; never use a separate host-card
+# list or a resolver from a different build.
+if [ -z "$BUILD" ]; then
+  for d in $(ls -td "$WORK"/builds/*/*/ 2>/dev/null); do
+    [ -x "${d}bin/radiance" ] && [ -x "${d}radiance_home/bin/bc-serve" ] && [ -x "${d}radiance_home/helpers/r3_moe_worker" ] && { BUILD=${d%/}; break; }
+  done
+fi
+export BC_SERVE_BINARY="$BUILD/radiance_home/bin/bc-serve"
+export RADIANCE_HOME="$BUILD/radiance_home"
 BUDGET_ARGS=(); for b in "${BUDGETS[@]:-}"; do [ -n "$b" ] && BUDGET_ARGS+=(--budget "$b"); done
 LAYOUT_OUT=$(PYTHONPATH=tools python3 -m bigcherry layout env "$LAYOUT" "${BUDGET_ARGS[@]}") || { echo "RADIANCE_EXIT=99 layout '$LAYOUT' does not resolve on this host (above)"; exit 99; }
 eval "$LAYOUT_OUT"
