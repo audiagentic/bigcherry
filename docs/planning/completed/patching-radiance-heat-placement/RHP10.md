@@ -2,7 +2,7 @@
 id: RHP10
 order: 10
 plan: patching-radiance-heat-placement
-state: pending
+state: completed
 created-at: '2026-10-31T00:00:00+00:00'
 breadth: ''
 skill: advanced
@@ -48,11 +48,13 @@ Depends on: none (needs the gpu lease and all four cards). Added by the 2026-10-
 
 ## Acceptance Criteria
 
-
+Met (2026-10-31 to 2026-11-05, recorded in this item): the retained-session thrash root cause is identified and fixed (host KV tier and host pool, #512); the tail-size matrix at 1M context (tails none/3/6/14 GiB, 362K and 710K used context) shows expert traffic falling 1,392 -> 613 GiB and 710K prefill rising 1,244 -> 2,307 tok/s, while decode at long context follows KV attention (110-131 tok/s at 362K, 58-80 at 710K) whatever the placement. Decision for RHP05-07: residency work pays on long-context prefill and cannot be expected to recover long-context decode.
 
 ## Notes
 
 ROOT CAUSE FOUND 2026-11-01/02 (retained-session thrash). On flashnext-4gpu with the old defaults, after an 8-session ~1M-token fill (finished sessions retained in VRAM because no host KV tier existed), a 49-50K prefill on new text fell 3,837 -> ~1,900 tok/s and 6-stream decode 46.9 -> 53.0 ms/step; the engine's mover then copied ~1.2 TB host-to-card in one run (healthy ~9 GiB) with 86% of promotions readmitting just-demoted experts. Mechanism (radiance core/engine.cpp loan_tick, core/mem/kv.cpp spare_tokens/grow_for): finished sessions hold KV blocks high in the cache, spare_tokens collapses, the KV cache's loan of spare VRAM to the expert slab is recalled, ~2,500 expert units fall back to the pinned host pool and are streamed on every prefill step, and the loan regrows as sessions come and go. Partial fix merged (#512): host pool 22,528 -> 9,216 MiB and a 12 GiB host KV tier for finished sessions: post-fill 50K prefill 1,901 -> 3,165 tok/s, 6-stream slowest first token 3.6 -> 2.2 s, mover 1,160 -> 600 GiB, fresh-server speed unchanged. Remaining gap to fresh (~17% prefill) is the loan policy: RSC03 (one derived memory budget) and RHP13 (allocator weighing retained KV against expert residency). The retained-session state is now a mandatory RHP12 cohort.
+
+CLOSED 2026-11-10. The policy-on long-context variant was measured in RHP16 (129K prefill 3,365 tok/s on vs 3,337/3,355 off; 258K 3,238 vs 3,250/3,239; one-stream decode at ~256K equal), so no further RHP10 run is planned.
 
 ## Tail-size matrix at the 1M setting, 2026-11-04/05
 
@@ -183,9 +185,10 @@ Next: quality (KLD) of the 14 GiB tail on this build, and the per-step decode ti
 
 ## Ledger-events
 
-
 - chg_20261102_024204_planning-records-updated-with_6210
 - 2026-11-02T02:42:12.731682+00:00 (updated-by): Updated: section:ledger-events
 - 2026-11-05T00:14:47.901947+00:00 (updated-by): Updated: section:notes
 - chg_20261105_001453_measured-how-the-6900-xt-tail_7908
 - 2026-11-05T00:14:57.905702+00:00 (updated-by): Updated: section:ledger-events
+- 2026-11-10T12:07:06.240313+00:00 (updated-by): Updated: section:acceptance_criteria, section:notes
+- 2026-11-10T12:07:14.138030+00:00 (state-transition): State: pending → completed

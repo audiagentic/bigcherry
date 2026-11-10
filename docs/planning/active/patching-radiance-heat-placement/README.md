@@ -27,7 +27,7 @@ Heat recording in pinned host memory (#500/#502), drift watch (#501), heat-order
 | [RHP01](RHP01.md) | Prove long-prefill histogram coverage, delayed vs overwritten banks, exact credit and bounded overflow without GPU waits. |
 | [RHP03](RHP03.md) | Existing telemetry and bounded snapshots for the **epoch journal, recovery and comparisons**, not restart activation: generations, coverage, budgets, gains, rollback. |
 | [RHP08](RHP08.md) | Tail heat largely answered by drift watch and live-histogram comparisons; close with coverage/parity evidence or explicit gaps. |
-| [RHP10](RHP10.md) | Stage 1 long-context thrash validation: distinguish KV/attention growth from residency using step time, promotions and host traffic, not token/s alone. |
+| RHP10 | Closed 2026-11-10: thrash root cause fixed, tail-size matrix at 1M context recorded (completed/RHP10.md). |
 
 ## Superseded / folded
 

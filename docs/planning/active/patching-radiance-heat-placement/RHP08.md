@@ -24,9 +24,15 @@ Establish the actual route frequency and coverage of the experts the 6900 XT own
 
 ## Detailed Solution & Technical Design
 
+
+
 ## Code Samples & Guidance
 
+
+
 ## Files
+
+
 
 ## Validation
 
@@ -35,6 +41,18 @@ Observed route counts match the engine histograms; the static-profile bias is ex
 ## Effort & Risk
 
 Depends on: RHP02. Added by the 2026-10-31 GPT review of this plan.
+
+## Standards
+
+
+
+## Acceptance Criteria
+
+
+
+## Notes
+
+EVIDENCE 2026-11-10 (HL04 lane trace, flashnext-4gpu, routes per 2048-row layer call, tail = the 14 GiB 6900 XT helper): static placement (policy off) cold 27k prompt 2,874 tail routes (~14% of ~20,500 routes), document prefill 195 (~1%); policy on and warmed: cold 1,258 (~6%), document 388 (~2%). Matches the earlier static-profile 0.68%, natural text 1.7%, random-word 14% figures, and shows the tail's share is workload-dependent by 10x, which is what the live policy exploits. Still open from this item: the MTP-layer coverage from the RHP02 shared feed.
 
 ## First live measurement, 2026-10-31
 
@@ -52,8 +70,7 @@ So the profile under-predicts the leftover traffic five-fold for this mix, and t
 
 Whether the recovered 2.5% of routes shows as speed is open: the tail runs moved host-to-R9700 traffic from 51 to 32 GiB with no change in speed at short context, so the test belongs to RHP10 (long context, where the engine's expert pool shrinks).
 
-
-## Re-seeding the helpers, and more XTX budget, 2026-10-31 (`rad23-heatab`)
+## Re-seeding the helpers, and more XTX budget, 2026-10-31 ()
 
 Flash-Next, `flashnext-2xtx-rdna2-tail` (4 GiB tail), the documentation-text sweep at 37K and 147K used context. The live histogram above, inverted the way the launcher's `--heat` file is (hot-first = max - count), against the static profile:
 
@@ -64,3 +81,7 @@ Flash-Next, `flashnext-2xtx-rdna2-tail` (4 GiB tail), the documentation-text swe
 | live heat, XTX 23,500 MiB | 3221 / 2925 | 113 / 131 | 7261 | 74.4 GiB |
 
 Re-seeding the helpers' ownership from live heat changes nothing measurable: the engine's own heat engine already promotes to the R9700 pool, and what the two XTX sets hold moves little traffic. Raising the XTX budget to 23,500 MiB (the layout's validated limit is VRAM minus the 1,024 MiB reserve, 23,536) cuts host-to-GPU traffic and promotions by about 10% and starts and runs cleanly; the speed differences are inside the run-to-run spread (decode +-5%, prefill a few percent). One run each, self-fitted heat for the live arms: a lead, not a result. The step that would show it in speed is the long-context test (RHP10), where the R9700 pool shrinks as the KV cache fills.
+
+## Change Log
+
+- 2026-11-10T12:07:10.184829+00:00 (updated-by): Updated: section:notes
