@@ -47,3 +47,7 @@ a matched stock soak before reading anything into it. Both cards restored to 0 m
 - PWR03: helper processes on the four E-cores vs default placement, by package watts.
 - PWR04: settings live per card in the environment config (`[host.*.devices.power]`, with the validating run as
   evidence); `bigcherry gpu-power` applies/restores/reports them; a privileged helper and start-up apply remain.
+
+## Historical-only qualification note (added 2026-11-11)
+
+The power record above is a record of **October** measurements, not current operational advice. The earliest valid preserved stock run is `pwr01-baseline-10271708` (not the earlier written `10271712`; `10271703` had a prefix-cached prefill and is unsuitable). The -125 mV October soak produced ~21–22 W less board power per XTX against a non-matched earlier baseline, with stable outputs; it was not a proven whole-system energy saving or a guarantee on a new kernel/layout. A November ABBA on Radiance 1.17.0/kernel 7.0.13-gfxoff (`runs/xtx-undervolt-ab`, PR #832 evidence) shows **no saving**: ~190–191 W/card stock vs 192–196 W/card -125 mV at equal decode speed. The recommendation to apply -125 mV as the calibrated/current setting is **withdrawn**. For supported controls, source confidence limits, separate-phase gates and the ranked lead-only recovery plan see `docs/reference/power-tuning-evidence-2026-11.md`. No new hardware experiment was run while preparing this note.
