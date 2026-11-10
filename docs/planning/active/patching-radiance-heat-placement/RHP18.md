@@ -2,7 +2,7 @@
 id: RHP18
 order: 0
 plan: patching-radiance-heat-placement
-state: pending
+state: in_progress
 created-at: '2026-11-10T03:10:34.325501+00:00'
 breadth: ''
 skill: intermediate
@@ -64,6 +64,30 @@ Operator guide: docs/reference/engines/radiance/LIVE_PLACEMENT.md. Re-calibratio
 FINDINGS 2026-11-10 (why the policy was silently off or never calibrated): (1) the calibration key includes helper_budgets_mib since #790, orphaning the 2026-11-07 flashnext-4gpu record; no message. (2) Any start with --experiment (lane trace, profile_ops, kv_resident...) gets the lab service profile, and derive_manifest_live_policy runs only for the production profile, so an instrumented run never carries the policy unless --live-policy is given explicitly; no message. (3) The experiment hash is also part of the calibration key. (4) A missing record is silent; only an incomplete record logs a skip reason. (5) The helper prints its calibration waiting list only when it changes, and the calibration loop has no bound: a 2026-11-10 run served 1,600 requests over 80 minutes with 8 committed moves and never emitted its record. Interim: the Nov-7 record was migrated to the new key (store backup in runs/recalibrate-4gpu). Operator guide: docs/reference/engines/radiance/LIVE_PLACEMENT.md.
 
 GATEWAY REVIEW 2026-11-10 (verified findings): (a) default heat period: the launcher passed handoff.histogram_period_s=60 while the derived policy needs heat younger than ~10 s (cadence ~5 s): a default start carried the policy with a stale feed (26 no_live_feed lines, 6 evaluations, 0 moves in ~15 min; runs/histogram-period-default); FIXED in #802 (launcher default 1 s; the period is not in the plan or calibration key). Still to do: bc-serve refuses or derives a period inconsistent with the policy (max_heat_age/cadence) instead of trusting the launcher. (b) Manifest contract v1 is closed (serving/contract/README.md): live_policy_state needs a contract-version decision; stage 1 records the startup decision in the existing /spec/handoff/placement provenance entry (requested on/off/not_applicable, configured, reason_code, reason_detail, calibration_key, record identity, effect_gate, histogram period, cadence, max_heat_age) plus a launcher line; runtime per-device state is a separate snapshot keyed by manifest digest + epoch + owner-generation digest. (c) Calibration key v2: explicit canonical measurement-relevant inputs (model/format/stride, helper count/order/arch/role/formats/actual budgets, engine topology and TP ranks, initial placement strategy and heat ranking identity, runtime geometry, kernel/transport compatibility, heat-source semantics and cadence, objective/workload class); trace-only experiments must not change it; no automatic fallback to a historical record; an explicit migration utility reuses a record only after reconstructing and comparing every measurement-relevant field (the 2026-11-10 manual migration of the flashnext-4gpu record is of that kind). (d) Preflight shared by bigcherry check, the launcher and benchmarks: layout/model/digest/measured plan/calibration key; policy expectation on|off|not_applicable (explicit, recorded); calibration match; topology compatibility; histogram period/freshness vs derived policy; owner-generation agreement; benchmark results labelled policy-on/off/not-applicable; policy-off arms use an explicit recorded option, never a moved store. (e) Runtime can stop migrating after a cleanup fault (worker_epoch.h:441-457) while the start still reads configured-on: report degraded/placement_stopped separately.
+
+## Card-free execution and lease-only acceptance (2026-11-10)
+
+Reconciled: #798 operator guide; #802 one-second heat default; #804 v1 provenance reason; #805 unsupported arrangements refused; #801 calibration log framing. Merged commits are not layout acceptance.
+
+- Step 1 PARTIAL: v1 stores the startup reason in /provenance, not in a typed live_policy_state. Typed on/off/not_applicable/degraded and runtime owner-generation keyed snapshots are for the v2 contract lane; do not change the closed v1 writer.
+- Step 2 CARD-FREE DONE here: launcher fail-closed preflight rejects malformed/unknown state, policy-on heat cadence stale relative to derived cadence/max_heat_age, and policy expectations mismatched via BC_EXPECT_LIVE_POLICY=on|off|not_applicable. Helper-free prints NOT_APPLICABLE. Existing bench scripts need to declare expected state on each arm; not every bench is wired.
+- Step 3 DECIDED/OPEN: budgets must remain in the calibration key; no fallback to historical records. Canonical key v2, workload semantics and trace-only experiment hashing remain open.
+- Step 4 PARTIAL: launcher preflight checks startup state and heat freshness; bigcherry check, record identity, and runtime epoch-generation agreement remain.
+- Step 5 HARDWARE: recalibrate flashnext-4gpu under today's exact key; verify normal plain start ON and live epochs committed, not only manifest presence.
+
+### Lease-only acceptance runs
+
+Set BUILD to the matching build directory, POLICY_JSON to the valid lab policy, PROMPTS_A and PROMPTS_B to the independent recorded workload lists. Run from repository root, **inside the GPU lease**; stop the launcher between rows.
+
+| Layout and arm | Exact command | Gate | Expected record |
+| --- | --- | --- | --- |
+| flashnext-4gpu policy ON | BC_EXPECT_LIVE_POLICY=on bash tools/lab/radiance/launch-flashnext-best.sh start --build "$BUILD" --layout flashnext-4gpu --record-period 1 | Startup ON and policy cadence compatible; check helper owner generation and migrations throughout the run | Manifest under run/flashnext, startup stderr, helper0 log and calibration key |
+| flashnext-4gpu stale heat | BC_EXPECT_LIVE_POLICY=on bash tools/lab/radiance/launch-flashnext-best.sh start --build "$BUILD" --layout flashnext-4gpu --record-period 60 | Must refuse before process launch, naming cadence/max age | Preflight stderr; zero serving PIDs |
+| flashnext-2xtx unsupported | BC_EXPECT_LIVE_POLICY=off bash tools/lab/radiance/launch-flashnext-best.sh start --build "$BUILD" --layout flashnext-2xtx | Explicit OFF reason: last XTX is not a tail | Manifest provenance and startup line |
+| flashnext-r9700 helper-free | BC_EXPECT_LIVE_POLICY=not_applicable bash tools/lab/radiance/launch-flashnext-best.sh start --build "$BUILD" --layout flashnext-r9700 | Explicit NOT_APPLICABLE, no helper migration | Manifest and startup line |
+| flashnext-4gpu new calibration | bash tools/lab/radiance/launch-flashnext-best.sh start --build "$BUILD" --layout flashnext-4gpu --calibrate --record-period 1 --live-policy "$POLICY_JSON" --calibration-prompts-a "$PROMPTS_A" --calibration-prompts-b "$PROMPTS_B" | RHP19 finite termination, complete once-only record, subsequent plain start ON | live-policy-calibration.toml, exact key, helper log, measured manifest |
+
+Hardware quality: pair policy-on and -off under RHP12 and RHP22; no startup ON state proves the policy has not degraded later.
 
 ## Change Log
 
