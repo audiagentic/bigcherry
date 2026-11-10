@@ -62,3 +62,17 @@ Record selected real kernel, physical device, N/K/M and precision, repeated p50/
   by W8A8 in matched build and M=1/8/64. Every cell is separately
   leased, hash-receipted and numerical-unchecked until dedicated
   oracle/kbench passes.
+
+### Native Q6 executable compatibility correction
+
+An older local build contained --perfw8 but NOT --perfiqr. It is
+unsuitable for IQ6R benchmarking despite having historical W8A8
+fixtures. Audited newer prebuilt source-slice f17f21fda44979e9abe84f13e96b8896,
+build plan 08b5dd81b4874390bf0cbf489db0d7df (under BC_WORK_ROOT/builds).
+Its selftest has both --perfiqr and --perfw8, and its gfx1100 libr3
+and gfx1201 libr4d plugins both have IQ6R narrow/tiled and W8A8
+narrow/tiled rows. This is symbol/ABI-file preflight ONLY: actual
+GPU correctness and latency have NOT been run under the held lease.
+The runner now fails closed on missing mode/row capability and
+records build metadata hash in each timing receipt. 9 dedicated
+card-free tests and 92 XDP tests pass after the correction.

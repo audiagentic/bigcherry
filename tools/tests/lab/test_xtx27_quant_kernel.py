@@ -6,6 +6,7 @@ import io
 import json
 import pathlib
 import sys
+import tempfile
 import unittest
 from contextlib import redirect_stdout
 from unittest.mock import patch
@@ -83,6 +84,24 @@ class QuantKernelGeometryTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             mod.extract_timing("  iqr k6 m64 51.4 us\nFAIL kernel",
                                quant="iq6r", m=4)
+
+    def test_prebuilt_abi_capability_checks_fail_closed(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = pathlib.Path(temp)
+            exe = root / "bin/r4d_selftest"
+            lib = root / "radiance_home/kernels/libr3.so"
+            exe.parent.mkdir(parents=True)
+            lib.parent.mkdir(parents=True)
+            exe.write_bytes(b"--perfw8 only")
+            lib.write_bytes(b"gemm_i8a8_nt_m16 gemm_i8a8_tiled")
+            self.assertEqual(mod.build_paths(root, "xtx0", "w8a8"), (exe, lib))
+            with self.assertRaisesRegex(ValueError, "lacks native IQR"):
+                mod.build_paths(root, "xtx0", "iq6r")
+            exe.write_bytes(b"--perfw8 --perfiqr")
+            lib.write_bytes(b"gemm_iqr_nt_m64 gemm_iqr_tiled")
+            self.assertEqual(mod.build_paths(root, "xtx0", "iq6r"), (exe, lib))
+            with self.assertRaisesRegex(ValueError, "lacks native W8A8"):
+                mod.build_paths(root, "xtx0", "w8a8")
 
     def test_command_is_bounded_and_knows_quant_encoding(self):
         geo = mod.geometry("capacity", "r9700", "gate_up")

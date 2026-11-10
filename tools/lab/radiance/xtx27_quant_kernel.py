@@ -103,11 +103,26 @@ def extract_timing(stdout: str, *, quant: str, m: int) -> float:
     return us
 
 
-def build_paths(build: Path, gpu: str) -> tuple[Path, Path]:
+def build_paths(build: Path, gpu: str, quant: str) -> tuple[Path, Path]:
     exe = build / "bin" / "r4d_selftest"
     plugin = build / "radiance_home" / "kernels" / ("libr4d.so" if gpu == "r9700" else "libr3.so")
     if not exe.is_file() or not plugin.is_file():
         raise ValueError("matching prebuilt r4d_selftest and plugin required; no auto-build")
+    executable_bytes, plugin_bytes = exe.read_bytes(), plugin.read_bytes()
+    if quant == "iq6r":
+        if b"--perfiqr" not in executable_bytes or any(
+            row not in plugin_bytes
+            for row in (b"gemm_iqr_nt_m64", b"gemm_iqr_tiled")
+        ):
+            raise ValueError("selected prebuilt binary/plugin lacks native IQR V4 timing rows")
+    elif quant == "w8a8":
+        if b"--perfw8" not in executable_bytes or any(
+            row not in plugin_bytes
+            for row in (b"gemm_i8a8_nt_m16", b"gemm_i8a8_tiled")
+        ):
+            raise ValueError("selected prebuilt binary/plugin lacks native W8A8 timing rows")
+    else:
+        raise ValueError("unknown quantization mode")
     return exe, plugin
 
 
@@ -134,7 +149,7 @@ def execute_one(args: argparse.Namespace, geo: dict) -> Path:
     if not args._under_lease or os.environ.get("VTP05_LEASED") != "1":
         raise ValueError("GPU execution only inside exclusive lease")
     build = args.build_dir.expanduser().resolve()
-    exe, plugin = build_paths(build, args.gpu)
+    exe, plugin = build_paths(build, args.gpu, args.quant)
     device_info = subprocess.run(["rocm-smi", "--showproductname"], text=True,
                                  capture_output=True, check=True, timeout=8)
     device_id = parse_devices(device_info.stdout)[args.gpu]
@@ -158,6 +173,10 @@ def execute_one(args: argparse.Namespace, geo: dict) -> Path:
         "build_dir": str(build),
         "binary_sha256": sha256(exe), "plugin_sha256": sha256(plugin),
         "runner_sha256": sha256(Path(__file__)),
+        "build_metadata_sha256": (
+            sha256(build / "bigcherry-build-metadata-radiance.json")
+            if (build / "bigcherry-build-metadata-radiance.json").is_file() else None
+        ),
         "argv": cmd,
         "checkout": subprocess.run(["git", "-C", str(ROOT), "rev-parse", "HEAD"],
                                    capture_output=True, text=True, check=True).stdout.strip(),
@@ -241,7 +260,7 @@ def main(argv: list[str] | None = None) -> int:
     if scratch == ROOT or ROOT in scratch.parents:
         parser.error("scratch must be outside repository")
     try:
-        build_paths(args.build_dir.expanduser().resolve(), args.gpu)
+        build_paths(args.build_dir.expanduser().resolve(), args.gpu, args.quant)
     except ValueError as exc:
         parser.error(str(exc))
     if not args._under_lease:
