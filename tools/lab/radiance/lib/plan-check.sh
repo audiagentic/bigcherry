@@ -131,8 +131,12 @@ plan_live_placement_report() {
   [ "${LAYOUT_HELPER_COUNT:-1}" -gt 0 ] || return 0
   python3 - "$PLAN_MANIFEST" <<'PY' >&2
 import json, sys
-m = json.load(open(sys.argv[1]))
-placement = m["spec"]["handoff"]["placement"]
+try:
+    m = json.load(open(sys.argv[1]))
+    placement = m["spec"]["handoff"]["placement"]
+except (OSError, ValueError, KeyError, TypeError):
+    print("live placement: state unknown (the manifest could not be read for its placement section)")
+    sys.exit(0)
 if "live_policy" in placement:
     p = placement["live_policy"]
     print("live placement: ON (cadence %.1f s, margin %d ppm, min samples %d, effect gate %s, heat period %s s)" % (
@@ -145,6 +149,7 @@ else:
                "pass --live-policy FILE, or run without --experiment)")
     print("live placement: OFF -- " + why[len("live policy disabled: "):] + " (docs/reference/engines/radiance/LIVE_PLACEMENT.md)")
 PY
+  return 0
 }
 
 # plan_manifest_prepare: sets PLAN_MANIFEST to the measured manifest this start uses. Returns non-zero (after saying why) if it
