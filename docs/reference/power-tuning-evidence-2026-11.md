@@ -23,6 +23,21 @@ Retrospective audit of the recorded host measurements; **not** an instruction to
 - R9700 POWER_SAVING was ineffective; forced-low FCLK only saved ~1 W unloaded and lacks performance acceptance. The R9700 runtime-PM/BACO D3 investigation was read-only, with no forced low state or claimed solution: `${BC_WORK_ROOT}/runs/r9700-deepidle/`. Owner notes possible BIOS PCIe power-saving crashes; no new setting was tested.
 - Pending gfx1100 AQL barriers draw ~95 W at idle, resolved operationally by the RAD20 park/drain design (~4–7 W), **not** by board undervolting: `docs/reference/FINDINGS.md`, `tools/lab/radiance/rad20-mes-idle.cpp`.
 
+## XTX -125 mV recheck, 2026-11-11 (kernel 7.0.13-gfxoff, Radiance 1.17.0 build, MTP depth 3)
+
+The 2026-10-27 saving did **not** reproduce. Setting applied through the lease-fenced PowerTransaction on both XTX (read back -125 mV, restored to 0 mV after every arm), ABBA over two lease windows, `flashnext-4gpu`, 6-stream decode, 900-token prompts, 1,500 new tokens x 4 reps, power sampled at 1 Hz only inside the decode window:
+
+| Arm | Per-XTX power, mean (median) | Decode tok/s |
+|---|---|---|
+| stock C1 | 190 / 190 W (197 / 196) | 325 |
+| -125 mV D1 | 194 / 192 W (200 / 200) | 324 |
+| -125 mV D2 | 196 / 195 W (202 / 201) | 326 |
+| stock C2 | 191 / 190 W (197 / 197) | 326 |
+
+Speed is identical; power is not lower and is about 4 W higher with the offset. A short-protocol ABBA (1- and 6-stream decode, 8K prefill, whole-run power) agreed: 161-165 W stock against 167-170 W undervolted, speed within noise. A saturating single-card stress test (two repeats per arm) shows the mechanism: held near its power limit the undervolted card drew 288 W at 3158 MHz and 989 mV against 272 W at 2915 MHz and 1002 mV stock, so the voltage headroom is spent on clock, and measured voltage fell by only 13 mV. Under serving decode the cards now draw about 190 W (the October decode phase measured 154 W), i.e. they run harder than in the October soak, which used a different workload and build.
+
+Verdict: **-125 mV is not a validated saving on the current build.** It is withdrawn as the candidate profile value; no named profile may carry it until a power-saving mechanism is shown on the current build. Raw runs: run folder xtx-undervolt-ab (A1/B1/B2/A2 short protocol, C1/D1/D2/C2 sustained, stress-out).
+
 ## Profile decision
 
 Only **-125 mV on the two named host XTX cards** has extended workload/output testing. Record it as an *opt-in candidate tied to device-specific calibration and current driver/build*, not a portable automatic setting. Observe/no-write is the default for named profiles; no measured R9700/6900 XT power-control optimum can be populated. A calibrated candidate must never auto-activate from a cached observation. The v2 serving plan owns role/BDF/settings and content digest, while actual probe/apply/restore observations belong in a separate receipt (PWR07–PWR09). CPU EPP/governor controls remain out of scope.
