@@ -64,7 +64,26 @@ else
   echo "plan: cached $skey (measured then)" >&2
 fi
 printf '%s\n' "${sets[@]}" >> "$(dirname "$out")/plan-cache/describe.log"
-port=$(printf '%s\n' "${sets[@]}" | sed -n 's/^engine\.port=//p'); printf '{"plan_state": "%s", "port": %s}\n' "$state" "${port:-0}" > "$out"
+port=$(printf '%s\n' "${sets[@]}" | sed -n 's/^engine\.port=//p')
+# The fake bc-serve emits a structurally valid v1-shaped manifest with a
+# provenance-backed policy absence. It never falsely claims calibration.
+printf '{"plan_state": "%s", "port": %s}\n' "$state" "${port:-0}" > "$out"
+# The fake now adds the closed v1 policy shape and its explicit OFF
+# provenance, preserving the original manifest-write failure injection.
+python3 - "$out" <<'MANIFEST_POLICY'
+import json
+import sys
+from pathlib import Path
+path = Path(sys.argv[1])
+manifest = json.loads(path.read_text())
+manifest["spec"] = {"handoff": {"placement": {}, "telemetry": {"period_s": 1}}}
+manifest["provenance"] = {
+    "/spec/handoff/placement": {
+        "source": "live policy disabled: fake bc-serve has no calibration record"
+    }
+}
+path.write_text(json.dumps(manifest) + "\n")
+MANIFEST_POLICY
 { echo "$state $out ${objects[*]:-}"; printf '%s\n' "${sets[@]}"; } >> "$(dirname "$out")/manifests.log"
 echo "manifest: $out"
 """
