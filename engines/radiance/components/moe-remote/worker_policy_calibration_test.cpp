@@ -9,6 +9,15 @@
 using namespace r3::policy;
 
 int main() {
+    // A calibration report line ends in a real newline and carries no backslash-n text: the launcher anchors its record search
+    // at the start of a line, so a waiting line that ran into the next report hid a complete record for 80 minutes.
+    {
+        const std::string line = calibration_report_line("calibration waiting: drift_window (x)");
+        assert(line.size() > 1 && line.back() == '\n');
+        assert(line.find("\\n") == std::string::npos);
+        const std::string joined = line + "RHP16_CALIBRATION_JSON {}\n";
+        assert(joined.find("\nRHP16_CALIBRATION_JSON ") != std::string::npos);
+    }
     // Use the hook's actual ring capacity and accepted source observations.
     DriftTracker drift(1, 4);
     Measured m;
