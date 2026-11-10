@@ -11,76 +11,82 @@ priority: P1
 work: M
 ---
 
-# Three-device collective, local R9700 combine and end-to-end experiment
+# Quality-qualified Q6/Q8 virtual TP4: full 27B A/B acceptance
 
-## Experiment hypothesis
+## Scope
 
-Three physical contributions (XTX0, XTX1, locally combined R9700)
-can execute one logical four-shard transformer layer faster than
-a serial XTX TP2 + R9700 layer pipeline **at the same Q6/Q8 quality
-and resident-context target**, despite the R9700 Gen4 x4 upstream link.
-Must outperform the best qualified control, not just an equal-share
-synthetic computation graph. No such runtime is implemented today.
+Only after VTP01 has a reviewed physical-GPU execution contract,
+VTP02 has real per-device memory receipts, VTP04 has qualified small
+physical-device tests, and XDP03 has proven native Q6 or Q8 dispatch,
+implement opt-in Radiance virtual TP4 over two XTX + one R9700.
 
-## Isolated bench matrix and stop gates
+This is the **end-to-end experiment** plan, not the owner of synthetic
+GPU communication/local-shard microbenches (VTP04), of model conversion
+(XDP03), or of full-layer R9700 staging (XDP02/HD2701).
 
-**Stage A — card-free**: VTP01 shape/buffer/epoch audit and VTP02
-memory feasibility. For FFN GEMM compare both single-device native
-kernel libraries and compute-only full-shape time at real M=1/4/8/64/
-128/512/2048; include quantize/dequantize overhead. Capture measured
-per-output-tile cost, not solely peak TFLOPS.
+## Hard preconditions
 
-**Stage B — exclusive GPU lease; physical transport microbench only**:
-reuse r3-arbench, host-link-bw and PGC/RAD50 link findings where
-compatible, otherwise make a new bounded bench in the existing
-worktree. Measure exact-F32 and explicitly quality-qualified optional
-wires, local R9700 two-slice reduction and a three-physical-participant
-host-mediated collective across decode, MTP verify and prefill row bands.
-Place the R9700 both idle and doing local GEMM work; measure PCIe bytes,
-kernel launch/service time, GPU wait, root link contention, p50/p95,
-and deadlock/replay/cancel safety. Compare a single R9700 combined
-packet versus **two** independent host packets. NO fake four-physical
-participants or unsound spin-wait synchronisation.
+- Four logical weight partitions with legal per-operator alignment,
+  routed through three physical executors, R9700 ranks 2 and 3
+  sharing a single VRAM allocator, KV ownership and GPU context.
+- A real heterogeneous gfx1100/gfx1201 kernel dispatch for every
+  dense projection, complete attention and recurrent/GDN operator.
+  The present Radiance launcher prohibits mixed engine architectures;
+  no tricked physical-device enumeration is acceptable.
+- One on-GPU sum for R9700 local partials, and one safe exact
+  three-physical-GPU no-P2P reduction (or independently proven
+  quality-safe compressed option). No GPU-side spin-wait on sibling
+  logical ranks; cancellation and graph replay epochs tested.
+- Quality-qualified original-BF16-derived INT8 W8A8 and/or IQ6R or
+  separately compatible GGUF Q6_K/Q8_0. Conversion support alone
+  does not establish native GPU kernels. Do not substitute Q4
+  to make the experiment fit.
+- Actual current 27B native 262K maximum per request, with four
+  heads of full attention. 1M aggregate over four 256K streams
+  is distinct from a future single-request 1M model.
 
-**Stage C — candidate physical compute partition**:
-30/30/20/20, 35/35/15/15 and 37.5/37.5/12.5/12.5; use rounded legal
-operator widths, separate attention/KV head map (1,1,1,1).
-On the R9700 compare (i) one fused 40% or 30% or 25% local workload,
-(ii) two sequential sub-shards, (iii) two event-synchronised
-streams with proper nonblocking event dependencies. If two streams
-contend or regress, select one fused physical executor.
+## A/B experiment design
 
-**Stage D — opt-in engine prototype only after Stage B go**:
-model Q6/Q8 + matching BF16-origin reference, four logical shards
-over 3 physical cards, repeatable prompt corpus, 1/4/6/8 concurrent
-streams, short (8K), medium (32/64K), long (128/256K native) context.
-Control arms: XTX TP2 same quant/KV; XTX TP2 + R9700 full-layer
-stage (once implemented), and where memory permits independent
-R9700 replica. Same binary/pin, tokenizer, sampling, batch budget,
-draft depth, resident KV and model tensor encoding; do not mislabel
-Flash-Next MoE results as dense 27B controls.
+Compare on the SAME checkpoint, quant, KV precision, build, prompt,
+sampling, MTP setting and resident token budget:
 
-## Evidence and decisions
+- Existing dual-XTX TP2 control.
+- Virtual four logical shards mapped 30/30/20/20, 35/35/15/15,
+  37.5/37.5/12.5/12.5, with measured legal integer rounding.
+- TP2-XTX plus R9700 full-layer stage if a safe prototype exists.
+- Independent R9700 replica if the same Q6/Q8 model fits and the
+  same total GPU resources are accounted for.
 
-Capture TTFT, client-output tok/s **and** engine output separately,
-per-stream latency and p95 step, steady-state tokens/step,
-acceptance, cold/warm prefill, energy optional, physical VRAM split,
-KV allocation/spill, GPU GEMM %, host copy %, collective exposed
-wall time (not summed across devices), GPU clocks and all four-stream
-quality. Run balanced paired ABBA order with at least 3 repeats and
-different startup orders; increase only to resolve noise.
+Stages: first M1/4/8 GEMM+collective and full layer with 4/6/8
+independent streams at 8K; next pp512/2048/8192;
+then 32K/64K/128K/256K native context and 4/6/8 streams.
+Where memory fails, report explicit admission refusal rather than
+host-spilled tokens or lowering precision. Reuse KAB01/rad-kbench
+captured native operator fixtures before any whole-model run.
 
-- Reject virtual TP4 if the R9700 is still a dominant straggler after
-  candidate ratio tuning, if collective overhead overwhelms compute
-  savings, or if four logical head/state ownership cannot be correct.
-- Reject unsafe local-GPU spin waits, graph epoch reuse, stale host
-  visibility and same-GPU deadlocks regardless of throughput.
-- Proceed to production admission work only if quality passes,
-  4+ stream throughput and p95 beat best feasible Q6/Q8 baseline,
-  and measured resident KV headroom improves, with no unsafe OOM.
-  No invented percentage speed target or production default change.
+Balanced paired ABBA repeats at least three times, with multiple
+fresh starts and rotated mode order. Record p50/p95 per-stream
+step, real client output tokens/s, cold/warm TTFT, MTP accepted
+tokens/step and quality/KLD/top1, physical GPU weight/KV/GDN/state
+and scratch allocations, exposed per-step collective, measured PCIe
+bytes/latency and no unplanned RAM spill. Do not use summed
+GPU kernel time as exposed wall time.
+
+## Go/no-go
+
+Reject virtual TP4 if any legal tensor/attention/GDN split or
+correctness/lifetime check fails; if the R9700 dominates steps
+after shape/rank tuning; if three-device communication plus
+synchronisation erases the compute gain; or if no resident-context
+benefit remains at Q6/Q8 after real memory accounting.
+
+Promote only after end-to-end 4+ stream quality, throughput and
+p95 latency beat the best **feasible** same-precision control with
+useful resident KV headroom and safe restart/abort/replay. Document
+a negative conclusion rather than promising an unmeasured speedup.
 
 ## Status
 
-All stages specified only. No GPU lease taken, no new benchmark executed,
-no live kernel/collective prototype and no claims of runtime support.
+PENDING. No virtual-TP4 engine graph, production layout, model
+conversion or model-serving benchmark has been created. Small
+GPU experiments are independently scoped and leased under VTP04.

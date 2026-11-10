@@ -8,7 +8,8 @@ Three independent, bounded work items:
 
 - [VTP01](VTP01.md): logical-rank/physical-executor contract, supported-geometry analysis and safe three-device collective design.
 - [VTP02](VTP02.md): Q6/Q8 + resident-KV feasibility, card-free ratio/capacity experiment and geometry gates.
-- [VTP03](VTP03.md): measurements, 4+/long-context A/B benchmark matrix and explicit implementation go/no-go.
+- [VTP04](VTP04.md): fast local R9700 and three-physical-GPU microbench harnesses (compile-only and leased runs).
+- [VTP03](VTP03.md): gated Q6/Q8 full-model prototype, 4+/long-context A/B benchmark and go/no-go.
 
 Dependencies only, not duplicated:
 - XDP01/XDP03: Radiance dual-XTX current-pin and BF16-derived Q8/Q6 kernel/quality work.
