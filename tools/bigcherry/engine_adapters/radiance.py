@@ -7,10 +7,20 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from ..core import environment
-from . import radiance_layout, radiance_manifest, radiance_plan
+from . import radiance_inventory, radiance_manifest, radiance_plan
 from .base import (
-    BumpCheck, CompletionApi, CpuSmokeSpec, DeviceAssertion, DriftCheck, EngineAdapter, QualityCommand, ServingLayout, SidecarSpec,
-    SourceCheck, SMOKE_SEED, build_cpu_smoke,
+    SMOKE_SEED,
+    BumpCheck,
+    CompletionApi,
+    CpuSmokeSpec,
+    DeviceAssertion,
+    DriftCheck,
+    EngineAdapter,
+    QualityCommand,
+    ServingLayout,
+    SidecarSpec,
+    SourceCheck,
+    build_cpu_smoke,
 )
 
 if TYPE_CHECKING:
@@ -26,7 +36,7 @@ KLD_TIMEOUT_S = 5400.0
 
 
 def _host() -> environment.Host:
-    """The host whose device inventory says which architecture each card is (a seam for tests)."""
+    """Host scalar paths and BDF-scoped power overrides; never device selection."""
     return environment.load_default().host(None)
 
 
@@ -117,27 +127,23 @@ class RadianceAdapter(EngineAdapter):
         return None
 
     def serving_layout(self, layout: str) -> ServingLayout:
-        """The layout as the launcher and bc-serve resolve it (radiance_layout against the host inventory): its model under
-        BC_MODEL_ROOT (else the host's model-root), and its engine cards -- ROCR_VISIBLE_DEVICES the cards in rank order, HIP
-        ordinals 0..n-1 as the launcher sets them, and the architectures and PCI locators they must execute on."""
+        """Use the C++ resolver's detected role/BDF assignments for serving ranks."""
         host = _host()
         try:
-            resolved = radiance_layout.resolve(layout, host)
-        except radiance_layout.LayoutError as exc:
+            selection = radiance_inventory.resolve(layout, host=host)
+        except radiance_inventory.InventoryError as exc:
             raise ValueError(str(exc)) from exc
+        resolved = selection.resolved
         root = os.environ.get("BC_MODEL_ROOT") or host.model_root
         if not root:
-            raise ValueError(f"layout {layout}: no model root (BC_MODEL_ROOT or the host's model-root) to find {resolved.model} under")
-        by_index = {d.index: d for d in host.devices}
-        locators = [by_index[i].locator for i in resolved.engine_indices]
-        if any(not locator for locator in locators):
-            raise ValueError(f"layout {layout}: an engine card has no PCI locator in the host inventory")
-        ranks = len(resolved.engine_indices)
+            raise ValueError(f"layout {layout}: no model root (BC_MODEL_ROOT or host model-root)")
+        engine = [selection.inventory.by_bdf(bdf) for bdf in selection.engine_bdfs]
         return ServingLayout(
             model=(Path(root) / resolved.model).expanduser().resolve(),
-            environment={"ROCR_VISIBLE_DEVICES": ",".join(str(i) for i in resolved.engine_indices),
-                         "HIP_VISIBLE_DEVICES": ",".join(str(i) for i in range(ranks))},
-            expected_execution={"backend": "ROCm", "architectures": [resolved.engine_arch] * ranks, "locators": locators},
+            environment={"ROCR_VISIBLE_DEVICES": ",".join(str(g.ordinal) for g in engine),
+                         "HIP_VISIBLE_DEVICES": ",".join(str(i) for i in range(len(engine)))},
+            expected_execution={"backend": "ROCm", "architectures": [g.arch for g in engine],
+                                "locators": list(selection.engine_bdfs)},
         )
 
     def write_serving_manifest(
@@ -170,13 +176,17 @@ class RadianceAdapter(EngineAdapter):
             manifest = radiance_manifest.read(Path(manifest_path))
         except radiance_manifest.ManifestError as exc:
             raise ValueError(f"{arm['name']}: {exc}") from exc
-        by_locator = {d.locator: d for d in _host().devices if d.locator}
-        devices = []
-        for gpu in manifest.helper_gpus:
-            card = by_locator.get(gpu)
-            if card is None:
-                raise ValueError(f"{arm['name']}: the manifest's helper card {gpu} is not in the host inventory (a device with that locator)")
-            devices.append(str(card.index))
+        if not manifest.helper_gpus:
+            return []
+        detector = binary.parent.parent / "radiance_home" / "bin" / "bc-serve"
+        try:
+            inventory = radiance_inventory.detect(binary=detector)
+            inventory.check_power_overrides(_host())
+            if len(set(manifest.helper_gpus)) != len(manifest.helper_gpus):
+                raise radiance_inventory.InventoryError("duplicate helper PCI BDF in serving manifest")
+            devices = [str(inventory.by_bdf(bdf).ordinal) for bdf in manifest.helper_gpus]
+        except radiance_inventory.InventoryError as exc:
+            raise ValueError(f"{arm['name']}: {exc}") from exc
         helper = binary.parent.parent / "radiance_home" / "helpers" / "r3_moe_worker"
         # The POSIX segment /name lives at /dev/shm/name. Helper 0 creates it; SidecarSet starts in list order and
         # waits for each helper to be ready, so helper 1 attaches to an existing segment.

@@ -53,6 +53,16 @@ class RadianceSidecarSpecTests(unittest.TestCase):
         host = patch("bigcherry.engine_adapters.radiance._host", inventory)
         host.start()
         self.addCleanup(host.stop)
+        from bigcherry.engine_adapters.radiance_inventory import Inventory, Gpu
+        detector = patch("bigcherry.engine_adapters.radiance_inventory.detect",
+                         return_value=Inventory((
+                             Gpu("0000:03:00.0", 0, "gfx1100", 24560),
+                             Gpu("0000:06:00.0", 1, "gfx1100", 24560),
+                             Gpu("0000:0a:00.0", 2, "gfx1201", 32624),
+                             Gpu("0000:0d:00.0", 3, "gfx1030", 16368),
+                         )))
+        detector.start()
+        self.addCleanup(detector.stop)
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.tmp = Path(tmp.name)
@@ -116,7 +126,7 @@ class RadianceSidecarSpecTests(unittest.TestCase):
 
     def test_a_card_outside_the_inventory_and_a_bad_manifest_are_refused(self):
         rad = adapter("radiance")
-        with self.assertRaisesRegex(ValueError, "not in the host inventory"):
+        with self.assertRaisesRegex(ValueError, "stale or unavailable PCI BDF"):
             rad.sidecars(self.arm(write_manifest(self.tmp, helpers=("0000:ff:00.0",))), {}, Path("r"), Path("/b/bin/radiance"))
         bad = self.tmp / "bad.json"
         bad.write_text("{}", encoding="utf-8")

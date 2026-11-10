@@ -305,11 +305,36 @@ class ServingLayoutTests(unittest.TestCase):
     cards as device selectors (ROCR in rank order, HIP 0..n-1) and the locators they must execute on."""
 
     def adapter_host(self, model_root):
+        from contextlib import ExitStack
         from unittest.mock import patch
-        devices = (Device(0, "gfx1100", "x", 24560, locator="0000:03:00.0"), Device(1, "gfx1100", "x", 24560, locator="0000:06:00.0"),
-                   Device(2, "gfx1201", "r", 32624, locator="0000:09:00.0"), Device(3, "gfx1030", "s", 16368, locator="0000:17:00.0"))
-        return patch("bigcherry.engine_adapters.radiance._host",
-                     return_value=SimpleNamespace(devices=devices, model_root=model_root, work_root="/w"))
+        from bigcherry.engine_adapters import radiance_layout
+        bdfs = ("0000:03:00.0", "0000:06:00.0", "0000:09:00.0", "0000:17:00.0")
+        arches = ("gfx1100", "gfx1100", "gfx1201", "gfx1030")
+        mem = (24560, 24560, 32624, 16368)
+        facts = {"gpus": [{"bdf": bdf, "hip_ordinal": i, "arch": arches[i], "vram_total_mib": mem[i]}
+                          for i, bdf in enumerate(bdfs)]}
+
+        def fake_resolve(binary, args):
+            name = next(arg.split("=", 1)[1] for arg in args if arg.startswith("layout.name="))
+            two = name == "flashnext-tp2xtx-r9700"
+            engine_bdfs = list(bdfs[:2] if two else (bdfs[2],))
+            helper_bdfs = [bdfs[2]] if two else []
+            arch = radiance_layout.load_archs()["gfx1201"]
+            helpers = ([{"bdf": bdfs[2], "hip_ordinal": 2, "arch": "gfx1201",
+                         "budget_mib": 30000, "plugin_file": arch.plugin,
+                         "formats": list(arch.formats), "rows_kernel": arch.rows_kernel,
+                         "placement": "head", "share": 1}] if two else [])
+            return {"facts": facts,
+                    "values": {"layout": {"name": name, "engine_cards": engine_bdfs,
+                                          "helper_cards": helper_bdfs},
+                               "engine": {"tp_wire": "exact" if two else None}},
+                    "process_helpers": helpers}
+
+        stack = ExitStack()
+        stack.enter_context(patch("bigcherry.engine_adapters.radiance._host",
+                                  return_value=SimpleNamespace(devices=(), model_root=model_root, work_root="/w")))
+        stack.enter_context(patch("bigcherry.engine_adapters.radiance_inventory._run", side_effect=fake_resolve))
+        return stack
 
     def test_a_tp_layout_and_a_one_card_layout(self):
         import os
