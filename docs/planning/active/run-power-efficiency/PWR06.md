@@ -36,6 +36,18 @@ Measured 2026-11-02 (flashnext-4gpu, run r9700-idle): the R9700 (gfx1201, GC 12.
 
 **Programme integration.** Kernel and firmware are host prerequisites, never manifest settings. PWR07 receipts record the R9700's MES/KIQ/SMC firmware, kernel, amdgpu srcversion, measured idle watts, `gpu_busy_percent`, VDDGFX (the GFXOFF-active proxy: tens of mV when powered down) and queue count where observable, as observations, not controls. A runtime optimisation, if later proven, goes through the PWR08 profile and PWR09 controller (capability check, lease, rollback, performance validation); no new global environment flag and no logic in the shell launcher.
 
+## Update 2026-11-11 (GFXOFF fix measured; deep-idle / runtime-PM investigation)
+
+**GFXOFF kernel patch (7.0.13-gfxoff, MES firmware 0x81 unchanged), R9700, 3 reps x 60 s per phase, 1 Hz hwmon:** no process 15.0 W / 29 mV; HIP context resident idle 15.0 W, 0% busy, 29 mV (stock kernel: 20.6 W, 3%, 612 mV); after exit 15.0 W. Model loaded idle 15.1 W, after one request 15.0 W; the request decoded coherently at 95 tok/s with the spec head active. Kernel log clean. Kernel is a host prerequisite, not a manifest setting. Raw data: run folder r9700-gfxoff (gfxoff-7.0.13-mes81, baseline-7.0.13-mes81).
+
+**Runtime PM (read-only, run folder r9700-deepidle):**
+- All four GPUs report `Using BACO for runtime pm`, control=auto, autosuspend 5000 ms, runtime_usage 0, no active children, no DRM/KFD fds open, all connectors disconnected/disabled, yet every GPU function stays `active`/D0. Each has only 12-17 s of suspended time since boot (early boot), none since. The R9700 audio function (09:00.1) is runtime-suspended in D3hot, so runtime PM works on this platform; the GPU functions are what stay awake.
+- Monitoring does not cause it: no-telemetry, runtime-PM-counters-only and hwmon+rocm-smi observation windows (3 reps x 120 s) all show zero suspended time and constant D0.
+- Opening and closing the render node (which re-arms autosuspend on close) does not suspend it either; usage stays 0.
+- So the blocker is not a held usage reference. Remaining candidates: the amdgpu runtime_idle callback returning busy, or BACO entry being refused for gfx1201; needs ftrace on `amdgpu_pmops_runtime_idle`/`amdgpu_pmops_runtime_suspend` in a maintenance window (not done).
+- Platform: ACPI FADT declares PCIe ASPM unsupported ("using BIOS configuration"); the R9700 and its switch port have ASPM L1 enabled by BIOS, the root port 00:06.0 is ASPM-not-supported and limits the path to Gen4 x4; D3hot and D3cold are PME-capable (D3cold_allowed=1). The owner notes BIOS PCI power saving may be off because it caused crashes.
+- No deeper state was forced; nothing was written to the device. A resident model could not be shown to survive a BACO/D3 cycle (VRAM is lost across BACO), so runtime suspend is not a serving mechanism unless that is separately proven.
+
 ## Steps
 
 0. (Superseded as the first step by the update above: driver change first.)
