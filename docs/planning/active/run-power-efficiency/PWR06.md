@@ -101,3 +101,7 @@ Owner-run (root). Evidence: $BC_WORK_ROOT/runs/r9700-idle/result.txt; GPT R9700 
 ## Power programme status: 2026-11-10
 
 R9700 GFXOFF kernel fix is measured (3 x 60-second phases): HIP-context idle at 15.0 W, 0% busy and 29 mV on patched kernel versus stock 20.6 W, 3% and 612 mV. This is a kernel prerequisite, not a manifest profile setting. PWR06 stays in progress for deep-idle/BACO investigation; no new R9700 clock or voltage default is justified. PWR08/PWR09 must not encode the kernel patch as a control.
+
+## Cross-card isolation / XTX saving regression — 2026-11-11
+
+GFXOFF remains **measured on the R9700 idle phase only**, at 15.0 W with a resident HIP context on kernel 7.0.13-gfxoff (R9700 MES 0x81 unchanged). It does **not** validate any XTX undervolt, SCLK, DPM, or profile change. The same patched kernel was in use when the XTX -125 mV recheck **failed** to save power in `runs/xtx-undervolt-ab/`. Neither the R9700's no-process/loaded-idle delta nor its firmware version can be used to infer XTX decode behavior. Record the actual XTX MES/SMU version and DPM/clock telemetry next time; do not assume the patch is causal for the XTX result. Cross-reference `docs/reference/power-tuning-evidence-2026-11.md` recovery queue. No new GPU validation and no change to the remaining R9700 long-run acceptance requirements.
