@@ -1496,6 +1496,11 @@ void engine_only_layout(Fixture& t) {
     }
     // a layout with helpers still needs its heat and histogram files
     Options helpers = opts;
+    // A helper layout needs routed experts before it can derive a VRAM budget;
+    // keep this test focused on the missing handoff inputs.
+    helpers.site = t.file("helper-required-site.toml",
+                          "[engine]\nmodel = \"" + (t.root / "model.rad").string() +
+                          "\"\nradiance_home = \"/runtime\"\n");
     helpers.sets = {"layout.name=\"flashnext-2xtx\""};
     fail(helpers, t.facts, "missing required key: handoff.heat");
     // a two-rank engine without its transport is refused
