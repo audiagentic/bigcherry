@@ -1,0 +1,15 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261110_102237_live-expert-placement-no-longe_2693",
+  "files": [
+    "engines/radiance/components/serving/live_policy_manifest.cpp",
+    "engines/radiance/components/serving/live_policy_test.cpp"
+  ],
+  "plan-item-ids": [
+    "RHP20"
+  ],
+  "status": "unreleased",
+  "technical-summary": "The live placement planner treats the last helper as the tail and the others as heads. derive_manifest_live_policy now declines the policy, with the helper arrangement named, for layouts that are not heads followed by exactly one tail (flashnext-2xtx has no tail; -2xtx-rdna2-head weights its heads). flashnext-4gpu and -2xtx-rdna2-tail are unchanged.",
+  "timestamp-utc": "2026-11-10T10:22:37.038264Z",
+  "user-summary-candidate": "Live expert placement no longer switches on for layouts it was not built for, and says why."
+}
