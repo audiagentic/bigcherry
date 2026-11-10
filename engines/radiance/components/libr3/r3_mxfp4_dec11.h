@@ -35,16 +35,12 @@
 #include <hip/hip_runtime.h>
 #include <hip/hip_bf16.h>
 
-#include <cstdlib>
+#include "../serving/bc_engine_settings.h"
 
 #define R3_D11_WAVES 8
 
 static inline bool r3_dec11_on() {
-    static const bool on = [] {
-        const char* e = std::getenv("R3_DEC11");
-        return e != nullptr && std::atoi(e) != 0;
-    }();
-    return on;
+    return bc_engine_settings_snapshot().dec11 != 0;
 }
 
 // r3_mxfp4_unpack8_bf16 with the table rows already in registers (they change once per 32 of K).

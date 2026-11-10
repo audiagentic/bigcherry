@@ -4,6 +4,7 @@
 // usage: manifest_argv_test SCRATCH_DIR V1_EXAMPLE_MANIFEST OPTIONS_FILE LAB_EXAMPLE_MANIFEST
 #include "bc_plan_check.h"
 #include "bc_serving_manifest.h"
+#include "bc_engine_settings.h"
 #include "jcs.h"
 #include "serving_codec.h"
 
@@ -141,30 +142,39 @@ int main(int, char** argv) {
     CHECK(run({"--manifest", example, "--role", "engine", "-v"}).rfind("engine -v --model ", 0) == 0);
     CHECK(run({"--manifest", example}) == got);   // deterministic
 
-    // The hand-off settings libr3's MoE hook reads from its environment come from the manifest: set before the engine
-    // initialises, winning over what the launcher left there.
+    // Hostile inherited R3_* variables must be inert. The manifest's typed
+    // handoff settings are authoritative; the startup code must not rewrite them.
     {
+        setenv("R3_MOE_WORKER", "0", 1);
         setenv("R3_MOE_WORKER_SHM", "/stale", 1);
-        setenv("R3_MOE_WORKER_SKIP_OWNED", "stale", 1);
-        setenv("R3_MOE_WORKER_COMBINE", "stale", 1);
+        setenv("R3_MOE_WORKER_MAX_ROWS", "1", 1);
+        setenv("R3_MOE_WORKER_COMBINE", "0", 1);
+        setenv("R3_MOE_WORKER_HISTOGRAM", "/stale-heat", 1);
+        setenv("R3_MOE_WORKER_MASK_ONLY", "2", 1);
         const nlohmann::json shape = nlohmann::json::parse(slurp(example));
-        const std::string handoff = run({"--manifest", example});
-        CHECK(handoff != "ERROR");
-        if (shape.at("spec").contains("handoff")) {
-            const auto& h = shape.at("spec").at("handoff");
-            CHECK(std::getenv("R3_MOE_WORKER") && std::string(std::getenv("R3_MOE_WORKER")) == "1");
-            CHECK(std::string(std::getenv("R3_MOE_WORKER_SHM")) == h.at("transport").at("shm").get<std::string>());
-            CHECK(std::string(std::getenv("R3_MOE_WORKER_MAX_ROWS")) == std::to_string(h.at("transport").at("max_rows").get<long long>()));
-            CHECK(std::string(std::getenv("R3_MOE_WORKER_SKIP_OWNED")) == (h.at("transport").at("skip_owned").get<bool>() ? "1" : "0"));
-            const auto& hc = shape.at("spec").at("processes").at("helper_common");
-            CHECK(std::string(std::getenv("R3_MOE_WORKER_COMBINE")) == (hc.at("combine").at("enabled").get<bool>() ? "1" : "0"));
-            if (h.contains("telemetry") && h.at("telemetry").at("histogram_file").is_string()) {
-                CHECK(std::string(std::getenv("R3_MOE_WORKER_HISTOGRAM")) == h.at("telemetry").at("histogram_file").get<std::string>());
-                CHECK(std::string(std::getenv("R3_MOE_WORKER_HISTOGRAM_PERIOD_S")) == std::to_string(h.at("telemetry").at("period_s").get<long long>()));
-            }
+        CHECK(run({"--manifest", example}) != "ERROR");
+        BcEngineSettings cfg{};
+        CHECK(bc_serving_engine_settings(&cfg));
+        CHECK(cfg.manifest == 1);
+        const auto& h = shape.at("spec").at("handoff");
+        CHECK(cfg.handoff == 1);
+        CHECK(std::string(cfg.shm) == h.at("transport").at("shm").get<std::string>());
+        CHECK(cfg.max_rows == h.at("transport").at("max_rows").get<long long>());
+        CHECK(cfg.skip_owned == (h.at("transport").at("skip_owned").get<bool>() ? 1u : 0u));
+        CHECK(cfg.combine == (shape.at("spec").at("processes").at("helper_common").at("combine").at("enabled").get<bool>() ? 1u : 0u));
+        if (h.at("telemetry").at("histogram_file").is_string()) {
+            CHECK(cfg.histogram_file != nullptr);
+            CHECK(std::string(cfg.histogram_file) == h.at("telemetry").at("histogram_file").get<std::string>());
         }
-        unsetenv("R3_MOE_WORKER"); unsetenv("R3_MOE_WORKER_SHM"); unsetenv("R3_MOE_WORKER_MAX_ROWS"); unsetenv("R3_MOE_WORKER_SKIP_OWNED"); unsetenv("R3_MOE_WORKER_COMBINE");
-        unsetenv("R3_MOE_WORKER_HISTOGRAM"); unsetenv("R3_MOE_WORKER_HISTOGRAM_PERIOD_S");
+        CHECK(cfg.histogram_period_s == h.at("telemetry").at("period_s").get<long long>());
+        CHECK(std::string(std::getenv("R3_MOE_WORKER")) == "0");
+        CHECK(std::string(std::getenv("R3_MOE_WORKER_SHM")) == "/stale");
+        CHECK(std::string(std::getenv("R3_MOE_WORKER_MAX_ROWS")) == "1");
+        CHECK(std::string(std::getenv("R3_MOE_WORKER_COMBINE")) == "0");
+        CHECK(std::string(std::getenv("R3_MOE_WORKER_HISTOGRAM")) == "/stale-heat");
+        CHECK(std::string(std::getenv("R3_MOE_WORKER_MASK_ONLY")) == "2");
+        for (const char* v : {"R3_MOE_WORKER", "R3_MOE_WORKER_SHM", "R3_MOE_WORKER_MAX_ROWS",
+                               "R3_MOE_WORKER_COMBINE", "R3_MOE_WORKER_HISTOGRAM", "R3_MOE_WORKER_MASK_ONLY"}) unsetenv(v);
     }
 
     // The KL mode is a kind of run, not configuration: its four flags accompany the manifest, pass through unchanged and
@@ -213,36 +223,47 @@ int main(int, char** argv) {
         CHECK(run({"--manifest", unmeasured, "--plan-memory", "a", "--plan-memory", "b"}) == "ERROR");
     }
 
-    // Amendment 14: a kernel switch that was an environment variable is a manifest field the engine sets in its environment
-    // before it initialises (kEnvBindings); it beats a stale value, and an absent field leaves the variable alone.
+    // Amendment 14/15: typed kernel settings, with independent defaults.
     {
         nlohmann::json doc = nlohmann::json::parse(slurp(example));
-        doc["spec"]["processes"]["engine"]["kernels"] = {{"moe_native", true}, {"dec11", false}, {"all_reduce_wire4", true}, {"fuse_stage", false}};
-        doc["spec"]["intent"]["service"]["profile"] = "lab";   // spec.experiment is lab-only
+        doc["spec"]["processes"]["engine"]["kernels"] = {{"moe_native", false}, {"moe_fp16", false}, {"moe_ahalf", true},
+            {"dec11", false}, {"gemv", true}, {"fuse_stage", false}, {"all_reduce_wire4", true}};
+        doc["spec"]["intent"]["service"]["profile"] = "lab";
         doc["spec"]["experiment"] = {{"engine", {{"mtp_full_head", true}, {"mask_only", 2}, {"freeze_promotion_after", 5}}}};
         doc["provenance"]["/spec/experiment"] = {{"origin", "profile"}, {"source", "lab"}, {"class", "diagnostic"},
-                                                  {"lifecycle", "startup_only"}, {"confidence", "exact"}, {"inputs", nlohmann::json::array()}};
+            {"lifecycle", "startup_only"}, {"confidence", "exact"}, {"inputs", nlohmann::json::array()}};
         doc["provenance"]["/spec/processes/engine/kernels"] = {{"origin", "profile"}, {"source", "kernel switches"}, {"class", "policy"},
-                                                                 {"lifecycle", "startup_only"}, {"confidence", "exact"},
-                                                                 {"inputs", nlohmann::json::array()}};
+            {"lifecycle", "startup_only"}, {"confidence", "exact"}, {"inputs", nlohmann::json::array()}};
         std::string digest, why;
         doc["metadata"].erase("content_digest");
         CHECK(bc::serving::manifest_content_digest(doc, &digest, &why));
         doc["metadata"]["content_digest"] = digest;
         const std::string kernels = write("kernels.json", doc.dump(2));
+        setenv("R3_MOE_NATIVE", "1", 1);
+        setenv("R3_MOE_FP16", "1", 1);
+        setenv("R3_MOE_AHALF", "0", 1);
         setenv("R3_DEC11", "1", 1);
-        setenv("R3_GEMV", "1", 1);
+        setenv("R3_GEMV", "0", 1);
+        setenv("R3_MOE_WORKER_FUSESTAGE", "1", 1);
+        setenv("R3_MOE_WORKER_MASK_ONLY", "0", 1);
         CHECK(run({"--manifest", kernels}) != "ERROR");
+        BcEngineSettings cfg{};
+        CHECK(bc_serving_engine_settings(&cfg));
+        CHECK(cfg.moe_native == 0 && cfg.moe_fp16 == 0 && cfg.moe_ahalf == 1);
+        CHECK(cfg.dec11 == 0 && cfg.gemv == 1 && cfg.fuse_stage == 0);
+        CHECK(cfg.all_reduce_wire4 == 1 && cfg.mask_only == 2);
         CHECK(std::string(std::getenv("R3_MOE_NATIVE")) == "1");
-        CHECK(std::string(std::getenv("R3_DEC11")) == "0");                // the manifest wins over a stale value
-        CHECK(std::string(std::getenv("R3_AR_WIRE4")) == "1");
-        CHECK(std::string(std::getenv("R3_MOE_WORKER_FUSESTAGE")) == "0");
-        CHECK(std::string(std::getenv("RAD_MTP_FULL_HEAD")) == "1");                       // spec.experiment.engine (amendment 17)
-        CHECK(std::string(std::getenv("R3_MOE_WORKER_MASK_ONLY")) == "2");
+        CHECK(std::string(std::getenv("R3_MOE_FP16")) == "1");
+        CHECK(std::string(std::getenv("R3_MOE_AHALF")) == "0");
+        CHECK(std::string(std::getenv("R3_DEC11")) == "1");
+        CHECK(std::string(std::getenv("R3_GEMV")) == "0");
+        CHECK(std::string(std::getenv("R3_MOE_WORKER_FUSESTAGE")) == "1");
+        CHECK(std::string(std::getenv("R3_MOE_WORKER_MASK_ONLY")) == "0");
+        CHECK(std::string(std::getenv("RAD_MTP_FULL_HEAD")) == "1");
         CHECK(std::string(std::getenv("RAD_DIAG_FREEZE_PROMOTION_AFTER")) == "5");
-        CHECK(std::string(std::getenv("R3_GEMV")) == "1");                 // no field: left alone
-        CHECK(!std::getenv("R3_ATTN_NATIVE"));
-        for (const char* v : {"R3_MOE_NATIVE", "R3_DEC11", "R3_AR_WIRE4", "R3_GEMV", "R3_MOE_WORKER_FUSESTAGE", "RAD_MTP_FULL_HEAD", "R3_MOE_WORKER_MASK_ONLY", "RAD_DIAG_FREEZE_PROMOTION_AFTER"}) unsetenv(v);
+        for (const char* v : {"R3_MOE_NATIVE", "R3_MOE_FP16", "R3_MOE_AHALF", "R3_DEC11", "R3_GEMV",
+                               "R3_MOE_WORKER_FUSESTAGE", "R3_MOE_WORKER_MASK_ONLY",
+                               "RAD_MTP_FULL_HEAD", "RAD_DIAG_FREEZE_PROMOTION_AFTER", "R3_AR_WIRE4"}) unsetenv(v);
     }
 
     // Amendment 11: the engine's other flags are manifest fields. Value-less flags (profile_ops, debug_selection, deterministic,

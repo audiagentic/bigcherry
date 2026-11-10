@@ -30,10 +30,14 @@ int main(int argc, char** argv) {
             auto env_reads = symbol<unsigned (*)()>(library, "test_env_reads");
             assert(!current() && env_reads() == 0);
             if (variant == 48) {
-                // Engine path still has its original environment semantics.
+                // An unconfigured fixture has the typed engine kernel defaults.
+                // The R3_* legacy environment is not consulted. The separate
+                // RAD_R4D_TRACE diagnostic still uses its own trace setting.
                 const auto engine = read();
-                assert(!engine.native && !engine.fp16 && !engine.ahalf && engine.moe_probe == 0);   // R3_MOE_PROBE (a timing-only ablation) is no longer read from the environment (RSC12)
-                assert(trace() == 1 && env_reads() == 4);
+                assert(engine.native == 1 && engine.fp16 == 1 && engine.ahalf == 1);
+                assert(engine.moe_probe == 0 && engine.refusal_trace == 0);
+                assert(env_reads() == 0);
+                assert(trace() == 1 && env_reads() == 1);
             } else {
                 BcR4dHelperConfig bad{};
                 assert(configure(nullptr) == -1 && configure(&bad) == -1);

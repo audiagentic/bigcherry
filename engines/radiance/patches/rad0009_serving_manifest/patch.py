@@ -53,6 +53,7 @@ bool bc_serving_expected_plan(bc::serving::v1::EnginePlan* expected, int64_t* fl
 _BC_SERVING_MANIFEST_CPP = r"""/* bc_serving_manifest.cpp -- policy behind bc_serving_manifest.h: a serving manifest v1, read by the shared strict reader,
  * to radiance's own flags through the generated registry, and the report source label. */
 #include "bc_serving_manifest.h"
+#include "bc_engine_settings.h"
 
 #include "manifest.h"
 #include "serving_types.h"
@@ -87,6 +88,9 @@ std::string g_label;                /* "manifest <12 hex>" once a manifest was l
 v1::EnginePlan g_expected;          /* a serving start's expected plan, from the manifest's measured plan */
 int64_t g_floor_ppm = 0;
 bool g_have_expected = false;
+BcEngineSettings g_engine_settings{};
+std::string g_shm;
+std::string g_histogram;
 
 bool fail(const std::string& why) {
     std::fprintf(stderr, "radiance: --manifest: %s\n", why.c_str());
@@ -114,6 +118,9 @@ bool flag_text(const nlohmann::json& v, std::string* out) {
 
 bool bc_serving_engine_argv(int* argc, char*** argv) {
     g_have_expected = false;   /* each call starts from nothing: a start without --manifest holds no plan */
+    g_engine_settings = BcEngineSettings{};
+    g_shm.clear();
+    g_histogram.clear();
     bool manifest_mode = false;
     for (int i = 1; i < *argc; ++i)
         if (!std::strcmp((*argv)[i], "--manifest")) manifest_mode = true;
@@ -235,40 +242,49 @@ bool bc_serving_engine_argv(int* argc, char*** argv) {
     g_ptrs.push_back(nullptr);
     *argc = (int)g_store.size();
     *argv = g_ptrs.data();
-    /* The hand-off settings the engine's MoE hook reads from its environment (libr3, R3_MOE_WORKER*). The manifest is the one
-     * place they are configured, so they are set from it here, before the engine initialises, and win over a value the
-     * launcher left in the environment: R3_MOE_WORKER (the hand-off is on when the manifest has helpers), the segment name,
-     * the row cap, whether the engine skips helper-owned experts, and the route-histogram file and period. */
-    if (doc.at("spec").contains("handoff")) {
-        const nlohmann::json& h = doc.at("spec").at("handoff");
-        setenv("R3_MOE_WORKER", "1", 1);
-        if (h.contains("transport")) {
-            const nlohmann::json& tr = h.at("transport");
-            if (tr.contains("shm") && tr.at("shm").is_string()) setenv("R3_MOE_WORKER_SHM", tr.at("shm").get<std::string>().c_str(), 1);
-            if (tr.contains("max_rows") && tr.at("max_rows").is_number_integer())
-                setenv("R3_MOE_WORKER_MAX_ROWS", std::to_string(tr.at("max_rows").get<long long>()).c_str(), 1);
-            if (tr.contains("skip_owned") && tr.at("skip_owned").is_boolean())
-                setenv("R3_MOE_WORKER_SKIP_OWNED", tr.at("skip_owned").get<bool>() ? "1" : "0", 1);
+    // Fill one immutable typed snapshot from the strict reader's decoded manifest.
+    // Dynamic plugins consume this via bc_serving_engine_settings, not getenv.
+    const auto& spec = manifest.value().spec;
+    BcEngineSettings settings{};
+    settings.manifest = 1;
+    if (spec.handoff) {
+        const auto& h = *spec.handoff;
+        settings.handoff = 1;
+        settings.max_rows = h.transport.max_rows;
+        settings.skip_owned = h.transport.skip_owned ? 1u : 0u;
+        g_shm = h.transport.shm;
+        settings.shm = g_shm.c_str();
+        if (h.telemetry.histogram_file) {
+            g_histogram = *h.telemetry.histogram_file;
+            settings.histogram_file = g_histogram.c_str();
         }
-        /* The engine and the helpers must agree on the combine (R3_MOE_WORKER_COMBINE): the helpers read it from the manifest's
-         * helper_common, the engine's hook from its environment, so the engine's comes from the same field. */
-        if (doc.at("spec").contains("processes") && doc.at("spec").at("processes").contains("helper_common")) {
-            const nlohmann::json& hc = doc.at("spec").at("processes").at("helper_common");
-            if (hc.contains("combine") && hc.at("combine").contains("enabled") && hc.at("combine").at("enabled").is_boolean())
-                setenv("R3_MOE_WORKER_COMBINE", hc.at("combine").at("enabled").get<bool>() ? "1" : "0", 1);
-        }
-        if (h.contains("telemetry")) {
-            const nlohmann::json& te = h.at("telemetry");
-            if (te.contains("histogram_file") && te.at("histogram_file").is_string())
-                setenv("R3_MOE_WORKER_HISTOGRAM", te.at("histogram_file").get<std::string>().c_str(), 1);
-            if (te.contains("period_s") && te.at("period_s").is_number_integer())
-                setenv("R3_MOE_WORKER_HISTOGRAM_PERIOD_S", std::to_string(te.at("period_s").get<long long>()).c_str(), 1);
-        }
+        settings.histogram_period_s = h.telemetry.period_s;
+        settings.combine = spec.processes.helper_common->combine.enabled ? 1u : 0u;
     }
-    /* Every field the contract binds to an environment variable (kEnvBindings, generated from the registry's env_setting):
-     * the variable is set from the manifest, so the manifest is the one place the setting is configured, and it wins over a
-     * value the launcher left in the environment. An absent field leaves the variable alone (the kernel's own default). */
+    if (spec.processes.engine.kernels) {
+        const auto& k = *spec.processes.engine.kernels;
+        settings.moe_native = k.moe_native.value_or(true) ? 1u : 0u;
+        settings.moe_fp16 = k.moe_fp16.value_or(true) ? 1u : 0u;
+        settings.moe_ahalf = k.moe_ahalf.value_or(true) ? 1u : 0u;
+        settings.gemv = k.gemv.value_or(false) ? 1u : 0u;
+        settings.dec11 = k.dec11.value_or(false) ? 1u : 0u;
+        settings.fuse_stage = k.fuse_stage.value_or(true) ? 1u : 0u;
+        settings.attn_native = k.attn_native.value_or(true) ? 1u : 0u;
+        settings.all_reduce_wire4 = k.all_reduce_wire4.value_or(false) ? 1u : 0u;
+    }
+    if (spec.experiment && spec.experiment->engine) {
+        const auto& e = *spec.experiment->engine;
+        settings.shadow = e.shadow.value_or(false) ? 1u : 0u;
+        settings.mask_only = static_cast<uint32_t>(e.mask_only.value_or(0));
+    }
+    g_engine_settings = settings;
+    // The remaining non-migrated engine switches retain their original bridge
+    // pending RSC11's separately-owned consumers (RAD_* and BC_GFX12_*).
     for (const bc::serving::v1::EnvBinding& b : bc::serving::v1::kEnvBindings) {
+        if (b.env == "R3_MOE_NATIVE" || b.env == "R3_MOE_FP16" || b.env == "R3_MOE_AHALF" ||
+            b.env == "R3_GEMV" || b.env == "R3_DEC11" || b.env == "R3_MOE_WORKER_FUSESTAGE" ||
+            b.env == "R3_MOE_WORKER_MASK_ONLY" || b.env == "R3_ATTN_NATIVE" ||
+            b.env == "R3_AR_WIRE4") continue;
         const nlohmann::json::json_pointer ptr{std::string(b.path)};
         if (!doc.contains(ptr)) continue;
         const nlohmann::json& v = doc.at(ptr);
@@ -279,6 +295,24 @@ bool bc_serving_engine_argv(int* argc, char*** argv) {
     const std::string digest = doc.at("metadata").at("content_digest").get<std::string>();   /* "sha256:<hex>" */
     g_label = "manifest " + digest.substr(digest.find(':') + 1, 12);
     return true;
+}
+
+extern "C" int bc_serving_engine_settings(BcEngineSettings* out) {
+    if (!out || out->struct_size != sizeof(BcEngineSettings) || !g_engine_settings.manifest) return 0;
+    *out = g_engine_settings;
+    return 1;
+}
+
+// Engine-core remote policy consumed by rad0002's declaration and placement
+// gates; never uses environment variables, including before plugin registration.
+extern "C" int bc_serving_remote_settings(int64_t* rows, uint32_t* skip_owned,
+                                          uint32_t* shadow, uint32_t* mask_only) {
+    if (!rows || !skip_owned || !shadow || !mask_only || !g_engine_settings.manifest) return 0;
+    *rows = g_engine_settings.handoff ? g_engine_settings.max_rows : 0;
+    *skip_owned = g_engine_settings.skip_owned;
+    *shadow = g_engine_settings.shadow;
+    *mask_only = g_engine_settings.mask_only;
+    return 1;
 }
 
 bool bc_serving_expected_plan(v1::EnginePlan* expected, int64_t* floor_ppm) {

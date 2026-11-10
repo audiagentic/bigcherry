@@ -67,14 +67,14 @@ PREREQUISITES = {RAD0004: (RAD0002,)}
 # prerequisites, after they are applied), `after` the file with the package applied.
 PIN_BLOBS = {
     RAD0002: {
-        "abi/bc_moe_remote.h": (None, "d3748b9"),
+        "abi/bc_moe_remote.h": (None, "ef3527a"),
         "arch/common/bc_moe_remote_block.h": (None, "76d01f6"),
         "arch/common/rad_block_hc.h": ("3a602e5", "2d573ec"),
         "arch/common/rad_block_moe_fp8.h": ("614db0e", "177e79c"),
         "core/engine.cpp": ("7544310", "c0c5357"),
         "core/engine.h": ("b10743c", "11473eb"),
         "core/engine_bringup.cpp": ("3ecdba8", "fe411f0"),
-        "core/place/bc_moe_remote.cpp": (None, "381430e"),
+        "core/place/bc_moe_remote.cpp": (None, "6ffd837"),
         "core/place/bc_moe_remote_engine.h": (None, "cfb316a"),
         "core/place/bc_moe_remote_place.h": (None, "da896b6"),
         "core/place/planner.cpp": ("2ea4220", "7944888"),
@@ -89,7 +89,7 @@ PIN_BLOBS = {
     },
     RAD0009: {
         "core/bc_serving_manifest.h": (None, "ea567e5"),
-        "core/bc_serving_manifest.cpp": (None, "f5c8522"),
+        "core/bc_serving_manifest.cpp": (None, "673b33b"),
         "core/CMakeLists.txt": ("921debd", "8750342"),
         "core/main.cpp": ("4cb6d43", "7feb7b6"),
     },
@@ -310,7 +310,9 @@ class TestRadiancePatchPackages(unittest.TestCase):
             self.assertIn("static constexpr bool kDiagBuild = false;", core)
             self.assertIn("need the diagnostic build", core)
             self.assertIn("plugin->struct_size != sizeof(BcMoeRemotePlugin)", core)
-            self.assertIn('env_on("R3_MOE_WORKER_SKIP_OWNED")', core)
+            self.assertIn("remote_policy().skip_owned != 0", core)
+            self.assertIn("bc_serving_remote_settings", core)
+            self.assertNotIn("std::getenv(", core)
             block = (root / "arch/common/bc_moe_remote_block.h").read_text(encoding="utf-8")
             self.assertIn("moe_mailbox_publish", block)
             self.assertIn("moe_mailbox_add", block)
@@ -342,8 +344,8 @@ class TestRadiancePatchPackages(unittest.TestCase):
             temp.cleanup()
 
     def test_rad0002_actual_declare_policy_to_engine_admission_gate(self):
-        # Compile the ACTUAL managed-patch policy functions, not a duplicated
-        # Python parser of MIN_ROWS/MAX_ROWS. Feed their output to the exact
+        # Compile the ACTUAL managed-patch policy functions with a typed
+        # manifest policy source, not a duplicated Python parser. Feed their output to the exact
         # header called by moe_remote_hook.cpp::admit_ticket. No GPU required.
         temp, root = self._tree()
         try:
@@ -367,11 +369,18 @@ class TestRadiancePatchPackages(unittest.TestCase):
 #include <mutex>
 #include <vector>
 #include "engine_admission_gate.h"
+static int64_t g_remote_rows = 0;
+extern "C" int bc_serving_remote_settings(int64_t* rows, uint32_t* skip, uint32_t* shadow, uint32_t* mask) {
+    *rows = g_remote_rows; *skip = 0; *shadow = 0; *mask = 0;
+    return 1;
+}
 """ + policy_helpers + policy_entry + """
 int main(int argc, char** argv) {
     if (argc != 4) return 7;
-    setenv("R3_MOE_REMOTE_MIN_ROWS", argv[1], 1);
-    setenv("R3_MOE_REMOTE_MAX_ROWS", argv[2], 1);
+    g_remote_rows = std::atoll(argv[2]);
+    // Inherited variables cannot change the typed manifest policy.
+    setenv("R3_MOE_REMOTE_MIN_ROWS", "999", 1);
+    setenv("R3_MOE_REMOTE_MAX_ROWS", "0", 1);
     const bool declared = bc_moe_remote_wanted_upto(128) != 0;
     const bool any_remote = bc_moe_remote_wanted_upto(LLONG_MAX) != 0;
     const bool expect = argv[3][0] == '1';
@@ -568,9 +577,9 @@ int main() {
         helper = REPO / "engines" / "radiance" / "components" / "moe-remote"
         hook = (helper / "moe_remote_hook.cpp").read_text(encoding="utf-8")
         ops = (helper / "moe_mailbox_ops.hip").read_text(encoding="utf-8")
-        self.assertIn('setenv("R3_MOE_REMOTE_MIN_ROWS", "0", 0)', hook)
-        self.assertIn('setenv("R3_MOE_REMOTE_MAX_ROWS", mr.c_str(), 0)', hook)
-        self.assertNotIn('setenv("R3_MOE_REMOTE_MAX_ROWS", mr.c_str(), 1)', hook)
+        self.assertNotIn('setenv("R3_MOE_REMOTE_MIN_ROWS"', hook)
+        self.assertNotIn('setenv("R3_MOE_REMOTE_MAX_ROWS"', hook)
+        self.assertIn("The block's declaration and plugin admission share ONE typed manifest", hook)
         self.assertIn('{"sorted", RAD_OPD_IN, 0}', ops)
         self.assertIn('{"down", RAD_OPD_IN, 0}', ops)
         self.assertIn('{"ew", RAD_OPD_IN, 0}', ops)
@@ -621,8 +630,9 @@ int main() {
         self.assertIn("did not shift an owned TP class", helper_main)
         self.assertNotIn("regular_slot", helper_main)
         component = (REPO / "engines" / "radiance" / "components" / "moe-remote" / "component.toml").read_text(encoding="utf-8")
-        self.assertIn("[setting.R3_MOE_WORKER_SHADOW]", component)
-        self.assertIn("[setting.R3_MOE_WORKER_MASK_ONLY]", component)
+        self.assertNotIn("[setting.R3_MOE_WORKER_SHADOW]", component)
+        self.assertNotIn("[setting.R3_MOE_WORKER_MASK_ONLY]", component)
+        self.assertIn("std::optional<bool> shadow;", (REPO / "engines/radiance/components/serving/generated/serving_types.h").read_text(encoding="utf-8"))
         self.assertIn('status = "diagnostic"', component)
 
     def test_missing_anchor_fails_closed_and_is_atomic(self):

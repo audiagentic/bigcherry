@@ -1,7 +1,7 @@
 # moe-remote: the remote-MoE hand-off (RAD02, RCS04). The helper process r3_moe_worker computes routed experts for an engine
 # on another card family; libr3moe is the engine-side mailbox plugin (engine patch rad0002 declares the ops it fills). The
-# card types it runs on are engines/radiance/archs.toml. Split from libr3, which keeps the
-# engine kernel overrides. Setting names are runtime identifiers and did not change in the move.
+# card types it runs on are engines/radiance/archs.toml. Split from libr3.
+# Serving engine and handoff switches use typed manifest settings, not environment variables.
 schema = 1
 name = "moe-remote"
 engine = "radiance"
@@ -26,13 +26,9 @@ targets = ["r3_moe_shm_test", "r3_moe_backend_test", "r3_worker_share_test", "r3
            "r3_worker_slot_pool_test", "r3_replay_bootstrap_test", "r3_rad46_rows_policy_test", "r3_combine_epoch_test",
            "r3_forced_move_test", "r3_segment_version_test", "r3_helper_settings_test", "r3_helper_plugin_config_test", "r3_policy_calibration_test", "r3_replay_memory_test", "r3_tp_exactly_once_test", "r3_worker_footprint_test"]
 
-# Runtime settings: see libr3/component.toml for the status vocabulary.
-
-[setting.R3_MOE_WORKER]
-default = ""
-status = "experimental"
-summary = "enable patch rad0002 GPU mailbox ops; helper process must already own the configured POSIX shm segment"
-activation = "r3_moe_worker: runtime map owns [0-9]+ experts, [0-9.]+ GiB"
+# Only active helper-side environment readers remain here. Engine-side
+# remote-MoE handoff, combine, telemetry, diagnostics and fuse-stage now
+# consume immutable typed v1 manifest fields (RSC11 S1).
 
 [setting.R3_MOE_WORKER_DEVICES]
 default = ""
@@ -43,11 +39,6 @@ summary = "harness-only: space-separated HIP device indices, one r3_moe_worker p
 default = ""
 status = "experimental"
 summary = "harness-only: a named layout from engines/radiance/layouts.toml (the engine card, the helper cards by architecture, their budgets and placement), resolved against the host's device inventory, instead of R3_MOE_WORKER_DEVICES. Settings the arm names itself win over what the layout and the card types imply (RAD23)"
-
-[setting.R3_MOE_WORKER_SHM]
-default = "/r3-moe-helper"
-status = "diagnostic"
-summary = "POSIX shm segment mapped by libr3 GPU mailbox ops and r3_moe_worker"
 
 [setting.R3_MOE_WORKER_CPU]
 default = "0"
@@ -92,11 +83,6 @@ status = "experimental"
 summary = "each helper's part of the expert ranking, comma separated non-negative weights one a helper (empty = equal); a weight of 0 gives a helper no experts (RAD23)"
 manifest = "/spec/processes/helpers/[]/share"
 
-[setting.R3_MOE_WORKER_MAX_ROWS]
-default = "64"
-status = "experimental"
-summary = "largest step (rows) handed to the helper (engine and helper both read it); larger steps keep the engine path. Steps above R3_MOE_WORKER_SMALL_ROWS take the large lane, launched sized to the request"
-
 [setting.R3_MOE_WORKER_ENGINE_RANKS]
 default = "2"
 status = "experimental"
@@ -108,16 +94,6 @@ default = "1"
 status = "experimental"
 summary = "helpers sharing the segment: 2 = two XTX helpers behind a one-rank (R9700) engine, each owning half the candidates and serving its own rank slot"
 manifest = "/spec/processes/helpers"
-
-[setting.R3_MOE_WORKER_HISTOGRAM]
-default = ""
-status = "diagnostic"
-summary = "path prefix: the engine counts every routed (layer, expert) in VRAM and writes uint32[128][512] to <path>.rank<r> at shutdown"
-
-[setting.R3_MOE_WORKER_HISTOGRAM_PERIOD_S]
-default = "0"
-status = "diagnostic"
-summary = "Engine-side required for live policy input: set this to a positive period in the ENGINE process (not only in the helper); with R3_MOE_WORKER_HISTOGRAM, also rewrite the cumulative route histogram <path>.rank<r> every this many seconds (at least 1) while the engine runs, by rename, so a reader sees complete files and differences two snapshots for the routes between them; 0 writes only at shutdown"
 
 [setting.R3_MOE_WORKER_HEAT]
 default = ""
@@ -203,12 +179,6 @@ activation = "r3_moe_worker: R3_MOE_WORKER_VECIO on"
 evidence = ["docs/evidence/RAD06/R3_MOE_WORKER_VECIO.run.json"]
 manifest = "/spec/processes/helper_common/kernels/vecio"
 
-[setting.R3_MOE_WORKER_COMBINE]
-default = ""
-status = "experimental"
-summary = "RAD18, RAD23, RAD49: two to four helpers (two behind a TP2 engine, per consumer rank); on the large lane (steps of R3_MOE_WORKER_COMBINE_MIN_ROWS+ rows, default 256) helper 0 adds every helper's bf16 rows on the CPU (R3_MOE_WORKER_COMBINE_THREADS, default 8) so the engine reads one row a token over its link instead of two; helper 0 combines on its large-lane thread after its stream sync and futex-waits on each other helper, no CPU polling; not bit-identical (one more rounding); set in both the engine and the helpers' environment; protocol v20"
-activation = "libr3moe: R3_MOE_WORKER_COMBINE on"
-
 [setting.R3_MOE_WORKER_COMBINE_MIN_ROWS]
 default = "256"
 status = "experimental"
@@ -248,14 +218,6 @@ status = "evaluated"
 summary = "RAD06: the few-rows-a-expert kernel (R3_MOE_WORKER_ROWS's) on the small (decode) lane: weights read once an expert for all its rows instead of once a route, since a decode request sends ~2.4 routes to each distinct expert; read per request, not bit-exact (different accumulation order)"
 activation = "R3_MOE_WORKER_ROWS_SMALL"
 manifest = "/spec/processes/helper_common/lanes/rows_small"
-
-[setting.R3_MOE_WORKER_FUSESTAGE]
-default = "1"
-status = "validated"
-summary = "RAD06: the engine's activation staging for a step of at most 16 rows (decode) is done by the publish kernel instead of a separate staging kernel in front of it: a launch and its gap off the path before every helper request; same data, same fence; read per launch in the engine process; 0 keeps the separate kernel"
-activation = "r3_moe: R3_MOE_WORKER_FUSESTAGE on"
-evidence = ["docs/evidence/RAD06/R3_MOE_WORKER_FUSESTAGE.run.json"]
-manifest = "/spec/processes/engine/kernels/fuse_stage"
 
 [setting.R3_MOE_WORKER_TRACE]
 default = ""
@@ -335,18 +297,6 @@ status = "experimental"
 summary = "RAD12: up to four ascending pre-queued small-lane sizes, e.g. 4,8,16,24; a step takes the first lane that fits its rows, else the large lane. Replaces the single R3_MOE_WORKER_SMALL_ROWS size when set. At three and four concurrent streams (12 and 16 rows with MTP) the 8-row lane sends the step to the large lane; a lane padded to 24 costs a 4-row step about 25%; the classes avoid both"
 activation = "r3_moe_worker: R3_MOE_WORKER_SMALL_LANES on"
 manifest = "/spec/processes/helper_common/lanes/small_lanes"
-
-[setting.R3_MOE_WORKER_SHADOW]
-default = "0"
-status = "diagnostic"
-summary = "diagnostic build only (patch rad0004, BC_MOE_REMOTE_DIAG): publish owned routes without masking them and compare helper unweighted down rows against the engine rows; a production engine ignores it and computes locally"
-activation = "R3_MOE_WORKER_SHADOW layer="
-
-[setting.R3_MOE_WORKER_MASK_ONLY]
-default = "0"
-status = "diagnostic"
-summary = "diagnostic build only (patch rad0004, BC_MOE_REMOTE_DIAG): 1: mask and rescatter after the local GEMMs, merge engine-captured rows; 2: same late publish, merge the helper's per-token rows; a production engine ignores it and computes locally"
-activation = "R3_MOE_WORKER_MASK_ONLY enabled"
 
 [setting.R3_MOE_WORKER_PLUGIN]
 default = ""

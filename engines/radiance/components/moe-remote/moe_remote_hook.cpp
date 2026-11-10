@@ -1,4 +1,5 @@
 #include "moe_remote_hook.h"
+#include "../serving/bc_engine_settings.h"
 #include "admission_ledger.h"
 #include "admission_completion.h"
 #include "owner_generation.h"
@@ -127,37 +128,14 @@ struct HookState {
 };
 HookState g;
 
-bool enabled_env() {
-    const char* e = std::getenv("R3_MOE_WORKER");
-    return e && *e && std::strcmp(e, "0") != 0;
-}
-
-bool poison_env() {
-    return false;   // R3_MOE_WORKER_POISON was a diagnostic environment switch (experiment.helper.poison is the manifest's); RSC12
-}
-
-bool shadow_env() {
-    const char* e = std::getenv("R3_MOE_WORKER_SHADOW");
-    return e && *e && std::strcmp(e, "0") != 0;
-}
-
-bool mask_only_env() {
-    const char* e = std::getenv("R3_MOE_WORKER_MASK_ONLY");
-    return e && *e && std::strcmp(e, "0") != 0;
-}
-
-bool cpu_ref_env() {
-    return false;   // the engine-side fp32 host reference was R3_MOE_WORKER_CPU; the helper's is helper_common.cpu.reference (RSC12)
-}
-
-const char* shm_name() {
-    const char* e = std::getenv("R3_MOE_WORKER_SHM");
-    return e && *e ? e : "/r3-moe-helper";
-}
-
+bool enabled_env() { return bc_engine_settings_snapshot().handoff != 0; }
+bool poison_env() { return false; } // RSC12: no production poison diagnostic
+bool shadow_env() { return bc_engine_settings_snapshot().shadow != 0; }
+bool mask_only_env() { return bc_engine_settings_snapshot().mask_only != 0; }
+bool cpu_ref_env() { return false; } // RSC12: helper-only CPU reference
+const char* shm_name() { return bc_engine_settings_snapshot().shm; }
 int64_t max_rows() {
-    const char* e = std::getenv("R3_MOE_WORKER_MAX_ROWS");
-    const long long n = e && *e ? std::atoll(e) : 64;
+    const int64_t n = bc_engine_settings_snapshot().max_rows;
     return std::min<int64_t>(n > 0 ? n : 64, kMaxRows);
 }
 
@@ -661,12 +639,8 @@ void register_mailbox() {
         raise_fault(g.hdr);
         return;
     }
-    // The block's declare() and the plugin's admission must share ONE policy.
-    // The symbol is supplied by the managed rad0002 engine extension; fail
-    // closed if it is missing. Environment defaults are set BEFORE querying.
-    (void)::setenv("R3_MOE_REMOTE_MIN_ROWS", "0", 0);
-    const std::string mr = std::to_string((long long)max_rows());
-    (void)::setenv("R3_MOE_REMOTE_MAX_ROWS", mr.c_str(), 0);
+    // The block's declaration and plugin admission share ONE typed manifest
+    // policy, exported by the managed engine extension; fail closed if missing.
     using WantedUpto = int (*)(int64_t);
     dlerror();
     const auto wanted = reinterpret_cast<WantedUpto>(
@@ -860,7 +834,7 @@ void report_shadow(uint32_t rank, RankState& s) {
  * between. The file is replaced by rename, so a reader never sees a half-written one. `final`: the engine is shutting down
  * (sync first, report the file). */
 void write_heat(uint32_t rank, RankState& s, bool final) {
-    const char* path = std::getenv("R3_MOE_WORKER_HISTOGRAM");
+    const char* path = bc_engine_settings_snapshot().histogram_file;
     if (!path || !*path || !s.heat_host) return;
     /* The counts live in pinned host memory (RHP02): a snapshot is a CPU copy, with no HIP stream or queue of its own. */
     if (final) (void)hip_ok(hipDeviceSynchronize(), "sync before route histogram");
@@ -1274,7 +1248,7 @@ extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevic
     s.dev.experts = g.hdr->expert_count;
     s.dev.rank = (uint32_t)rank;
     s.dev.world = (uint32_t)world_size;
-    if (const char* hp = std::getenv("R3_MOE_WORKER_HISTOGRAM"); hp && *hp) {
+    if (const char* hp = bc_engine_settings_snapshot().histogram_file; hp && *hp) {
         const size_t hb = (size_t)kMaxLayers * g.hdr->expert_count * sizeof(uint32_t);
         /* RHP02: pinned, mapped host memory -- no engine VRAM and no copy stream; the publish kernel adds a step's counts
          * once an expert (it is one block and the steps run in order, so the adds need no atomics over the link). */
@@ -1287,24 +1261,19 @@ extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevic
             std::memset(s.heat_host, 0, hb);
         }
         if (s.heat_host && !g.snapshotter.joinable()) {
-            const char* ps = std::getenv("R3_MOE_WORKER_HISTOGRAM_PERIOD_S");
-            const double period = ps && *ps ? std::atof(ps) : 0.0;
+            const double period = static_cast<double>(bc_engine_settings_snapshot().histogram_period_s);
             if (period >= 1.0) g.snapshotter = std::thread(snapshot_loop, period);
         }
     }
     s.dev.helpers = helpers;
     s.dev.shadow = shadow ? 1u : 0u;
     /* 1: add the engine's captured rows; 2: same late publish/mask/rescatter, but add the helper's rows. */
-    {
-        const char* e = std::getenv("R3_MOE_WORKER_MASK_ONLY");
-        s.dev.mask_only = !mask_only ? 0u : (e && std::strcmp(e, "2") == 0 ? 2u : 1u);
-    }
+    s.dev.mask_only = !mask_only ? 0u : bc_engine_settings_snapshot().mask_only;
     s.dev.cpu_ref = cpu_ref_env() ? 1u : 0u;
     /* R3_MOE_WORKER_COMBINE=1 (default off): two to kCombineHelpers helpers, no shadow/mask-only, and helper 0 started its combiner
      * (Header::combine.enabled, checked again by the publish kernel each step). */
     {
-        const char* e = std::getenv("R3_MOE_WORKER_COMBINE");
-        s.dev.combine = (e && std::strcmp(e, "1") == 0 && helpers >= 2 && helpers <= kCombineHelpers && !shadow && !mask_only) ? 1u : 0u;
+        s.dev.combine = (bc_engine_settings_snapshot().combine && helpers >= 2 && helpers <= kCombineHelpers && !shadow && !mask_only) ? 1u : 0u;
         if (s.dev.combine)
             std::fprintf(stderr, "libr3moe: R3_MOE_WORKER_COMBINE on - helper 0 combines the helpers' rows on the large lane\n");
     }

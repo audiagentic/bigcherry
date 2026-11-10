@@ -17,19 +17,15 @@ outputs = ["kernels/libr3.so"]
 [build]
 configure = { RADIANCE_SRC = "{engine_source}", R3_TARGETS = "{targets}", R3_NATIVE = "ON" }
 
-# Runtime settings: each environment variable the plugin reads, its default, and what it is.
+# Only variables still read directly by the component are catalogued below.
+# Serving kernel switches (attention, MoE f16/ahalf, GEMV and DEC11) are typed
+# spec.processes.engine.kernels / helper settings, never environment carriers.
 #   status = production    on (or meaningful) in served configurations, with quality and speed evidence
 #   status = experimental  measured, not adopted; may appear only in an experiment
 #   status = evaluated     shelved with evidence (kept, default off); never in a profile
 #   status = diagnostic    instrumentation or comparison; never in a production profile
 #   status = tuning        a kernel geometry knob for the lab's sweeps
 # Evidence: docs/archive/radiance/LAB_HISTORY.md (dated lab record), sections per setting.
-
-[setting.R3_ATTN_NATIVE]
-default = "1"
-status = "production"
-summary = "native gfx11 prefill attention; KLD 0.0035 / 96.8% top-1 vs the compatibility form's 0.0037, +5% prefill"
-manifest = "/spec/processes/engine/kernels/attn_native"
 
 [setting.R3_GDN_NATIVE]
 default = "0"
@@ -58,36 +54,10 @@ default = "0"
 status = "diagnostic"
 summary = "RR08 selftest oracle (R3_BT)"
 
-[setting.R3_DEC11]
-default = "0"
-status = "experimental"
-summary = "gfx11 MXFP4 decode GEMV form"
-manifest = "/spec/processes/engine/kernels/dec11"
-
-[setting.R3_GEMV]
-default = ""
-status = "tuning"
-summary = "decode GEMV selection"
-manifest = "/spec/processes/engine/kernels/gemv"
-
 [setting.R3_MOE_NATIVE]
 default = "1"
 status = "experimental"
 summary = "native w4nl64 MoE inner loop; -6% call time, Flash-Next quality neutral (KLD unchanged). On by default in the r3_moe_worker processes (main() sets 1 unless the variable is set, 2bf231e3: prefill 2,518 -> 2,665 tok/s, decode 91.4/95.6 -> 108.2/108.8); the engine process (a gfx1100 TP rank) takes the same default when it is unset, and 0 turns it off everywhere"
-
-[setting.R3_MOE_FP16]
-default = "1"
-status = "validated"
-summary = "RAD06: with R3_MOE_NATIVE, the grouped MoE GEMM widens E4M3 operands to f16 and uses the f16 WMMA (a cheaper widening than bf16; the sums carry a 2^-16 scale removed before the scale fold, so output is bit-identical to the bf16 form). On by default in the r3_moe_worker processes (main() sets 1 unless the variable is set); prefill 2,130 -> 3,150 tok/s, decode unchanged, KLD unchanged; the engine process takes the same default when it is unset, and 0 turns it off everywhere"
-activation = "r3_moe_worker: R3_MOE_FP16 on"
-evidence = ["docs/evidence/RAD06/R3_MOE_FP16.run.json"]
-
-[setting.R3_MOE_AHALF]
-default = "1"
-status = "validated"
-summary = "RAD06: with R3_MOE_FP16, widen the grouped MoE GEMM's activation tile to half once at staging instead of in every wave that reads it (four wave columns share each A fragment); bit-identical, 7-8% off the grouped GEMM on four real captured requests, about 4 KB more LDS. On by default in the r3_moe_worker processes (main() sets 1 unless set); 0 turns it off"
-activation = "r3_moe_worker: R3_MOE_AHALF on"
-evidence = ["docs/evidence/RAD06/R3_MOE_AHALF.run.json"]
 
 [setting.R3_MOE_COMPARE]
 default = "0"

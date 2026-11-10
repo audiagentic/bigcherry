@@ -1,6 +1,7 @@
 #include <atomic>
 #include <cstdio>
 #include "moe_remote_hook.h"
+#include "../serving/bc_engine_settings.h"
 #include "step_ticket_kernel.h"
 #include "mailbox_completion.h"
 #include "mailbox_inverse_kernel.h"
@@ -908,8 +909,7 @@ int publish_launch(const RadArgs* a, RadStream stream) {
     /* kHidden is a multiple of 16, so the 16-byte copies cover every row exactly. */
     const uint32_t blocks16 = ((uint32_t)rows * (uint32_t)hidden / 16u + 255u) / 256u;
     /* R3_MOE_WORKER_FUSESTAGE (default on): a step of at most 16 rows is staged by the publish kernel itself. */
-    const char* fs_env = std::getenv("R3_MOE_WORKER_FUSESTAGE");
-    const bool fuse_stage = rows <= 16 && (!fs_env || std::strcmp(fs_env, "0") != 0);
+    const bool fuse_stage = rows <= 16 && bc_engine_settings_snapshot().fuse_stage != 0;
     if (fuse_stage) {   /* the activation marker component.toml names, printed once */
         static const bool announced = [] {
             std::fprintf(stderr, "r3_moe: R3_MOE_WORKER_FUSESTAGE on - decode-sized staging in the publish kernel\n");
