@@ -57,6 +57,12 @@ required-state = "untested"
 patches = ["rad0012_helper_kernel_config"]
 required-state = "untested"
 
+# VTP11: experimental fix for CPU fallback touching device-only BF16 activations.
+# Deliberately NOT part of serving-core or the default radiance source.
+[patch-set.vtp11-bf16-host-guard]
+patches = ["rad0014_vtp11_host_device_guard"]
+required-state = "untested"
+
 [source.radiance-native]
 description = "radiance 1.14.0 as released: no overlay, no patches."
 overlay = false
@@ -76,6 +82,11 @@ patch-sets = ["serving-core", "host-compat", "serving-manifest", "moe-remote-dia
 description = "Production Radiance plus RHP01 opt-in host histogram coverage diagnostics; not a production source."
 overlay = false
 patch-sets = ["serving-core", "host-compat", "serving-manifest", "routing-evidence", "helper-config", "mtp-pass-replay"]
+
+[source.radiance-vtp11-bf16]
+description = "Experimental BF16 calibration source; staged device activations, no unsafe AVX fallback."
+overlay = false
+patch-sets = ["serving-core", "host-compat", "serving-manifest", "helper-config", "mtp-pass-replay", "vtp11-bf16-host-guard"]
 
 [build.stock]
 description = "radiance's own release build of the engine binary."

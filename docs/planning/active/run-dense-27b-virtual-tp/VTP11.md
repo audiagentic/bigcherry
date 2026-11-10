@@ -109,3 +109,33 @@ validation of layer-0 calibration, (d) a documented reason for the prior
 quality-gated plan for representative 64-layer calibration.
 
 **Status:** diagnosis staged; no GDN patch and no Hessian smoke PASS.
+
+
+## Experimental host/device domain guard — 2026-11-10
+
+Pinned Radiance source confirms a **credible static crash path**: Ctx::bind_ops
+selects host execution for operations whose weights were placed on Site::Host
+while the Qwen3.8 BF16 GDN architecture uses the default RAD_DOMAIN_DEVICE
+for its convolution inputs and q/k/v/gate outputs. Ctx::bind_buffers places
+those in a device-only arena. The AVX writer receives the kernel output
+pointers unchanged and can fault. The precise crashing pointer still needs a
+run-time trace; this is a source-backed diagnosis, not a full fault proof.
+
+An **opt-in** managed patch rad0014_vtp11_host_device_guard now carries each
+op's declared device-buffer ownership to placement. Where a GPU row exists,
+weights offloaded from VRAM are staged for GPU execution rather than driving
+AVX kernels against GPU-only output memory. Host launch and explicit-host
+remapping have fail-closed guards. A CPU-only backend retains its prior behavior.
+The patch is packaged only in experimental radiance-vtp11-bf16 and is
+**not added to production serving-core**.
+
+Card-free evidence: 10/10 anchored edits applied to a scratch pinned-source
+copy; all idempotent; 3 dedicated Python tests pass (including malformed
+upstream anchor refusal), Ruff passes, and GCC 14 syntax checks passed for all
+four changed C++ translation units. Full integration, GPU GDN numerical
+qualification and layer-0 RADGRAM2 calibration remain **PENDING**.
+
+First isolated build attempt stopped at BigCherry's dirty-repository
+materialization gate (no C++ compilation); commit changes and retry from a
+clean worktree. Logs under BC_WORK_ROOT/build-logs/vtp11-host-guard-isolated/.
+Do not count that build attempt as evidence of a functional calibration path.

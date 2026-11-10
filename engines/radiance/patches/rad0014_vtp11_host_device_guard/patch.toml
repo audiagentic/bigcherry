@@ -1,0 +1,11 @@
+schema = 1
+id = "rad0014_vtp11_host_device_guard"
+order = 14
+state = "untested"
+kind = "enhancement"
+origin = "local"
+backend = "agnostic"
+plan-ids = ["VTP11"]
+requires = []
+conflicts = []
+tags = ["gated-delta-net", "dispatch"]
