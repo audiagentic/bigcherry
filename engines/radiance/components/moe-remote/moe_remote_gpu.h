@@ -19,12 +19,6 @@
 #include "rad_abi_layout.h"
 
 namespace r3_moe_gpu {
-/* The quad-DPP rows kernel with the replay-selected bit-identical form (quad_opt_, RAD49): a statement for an else-if chain. */
-#define R3_QUADDPP_LAUNCH(T, RB, ...) do { switch (quad_opt_) { \
-    case 1: hipLaunchKernelGGL((lane_moe_rows_w4_quaddpp<T, RB, 1u>), __VA_ARGS__); break; \
-    case 2: hipLaunchKernelGGL((lane_moe_rows_w4_quaddpp<T, RB, 2u>), __VA_ARGS__); break; \
-    case 3: hipLaunchKernelGGL((lane_moe_rows_w4_quaddpp<T, RB, 3u>), __VA_ARGS__); break; \
-    default: hipLaunchKernelGGL((lane_moe_rows_w4_quaddpp<T, RB, 0u>), __VA_ARGS__); } } while (0)
 
 class Runner : public r3::worker_moves::Operations {
 public:
@@ -118,15 +112,11 @@ public:
     // switches and always uses the measured, stage-specific accurate policy.
     bool set_rad46_sweep_variant(const char* name) {
         if (!name) return false;
-        quad_opt_ = 0;
         if (std::strcmp(name, "stock") == 0) rad46_sweep_ = Rad46Sweep::Stock;
         else if (std::strcmp(name, "output_lane") == 0) rad46_sweep_ = Rad46Sweep::OutputLane;
         else if (std::strcmp(name, "quad") == 0) rad46_sweep_ = Rad46Sweep::Quad;
         else if (std::strcmp(name, "quad_v2") == 0) rad46_sweep_ = Rad46Sweep::QuadV2;
         else if (std::strcmp(name, "production") == 0) rad46_sweep_ = Rad46Sweep::Production;
-        else if (std::strcmp(name, "quad_perm") == 0) { rad46_sweep_ = Rad46Sweep::Production; quad_opt_ = 1; }
-        else if (std::strcmp(name, "quad_dppadd") == 0) { rad46_sweep_ = Rad46Sweep::Production; quad_opt_ = 2; }
-        else if (std::strcmp(name, "quad_perm_dppadd") == 0) { rad46_sweep_ = Rad46Sweep::Production; quad_opt_ = 3; }
         else if (std::strcmp(name, "rowlane16") == 0) rad46_sweep_ = Rad46Sweep::RowLane16;
         else if (std::strcmp(name, "rowlane8") == 0) rad46_sweep_ = Rad46Sweep::RowLane8;
         else return false;
@@ -805,7 +795,7 @@ public:
                                    (uint32_t)shape_.hidden, (uint32_t)(2 * mid_w()), static_cast<uint16_t*>(w.d_gu.p),
                                    (uint32_t)mid_w());
                 else if (gu_form == Rad46RowsForm::Quad8)
-                    R3_QUADDPP_LAUNCH(true, kQuadV2GuRB,
+                    hipLaunchKernelGGL((lane_moe_rows_w4_quaddpp<true, kQuadV2GuRB>),
                                    dim3(experts(), (uint32_t)(2 * std::max(w0, w1) / kQuadDppN)), dim3(128), 0, w.stream,
                                    static_cast<const uint8_t*>(w.d_aq.p), static_cast<const float*>(w.d_as.p),
                                    static_cast<const int32_t*>(w.d_sorted.p), static_cast<const int32_t*>(w.d_off.p),
@@ -816,7 +806,7 @@ public:
                                    (uint32_t)shape_.hidden, (uint32_t)(2 * mid_w()), static_cast<uint16_t*>(w.d_gu.p),
                                    (uint32_t)mid_w());
                 else if (gu_form == Rad46RowsForm::Quad16)
-                    R3_QUADDPP_LAUNCH(true, kQuadDppRB,
+                    hipLaunchKernelGGL((lane_moe_rows_w4_quaddpp<true, kQuadDppRB>),
                                    dim3(experts(), (uint32_t)(2 * std::max(w0, w1) / kQuadDppN)), dim3(128), 0, w.stream,
                                    static_cast<const uint8_t*>(w.d_aq.p), static_cast<const float*>(w.d_as.p),
                                    static_cast<const int32_t*>(w.d_sorted.p), static_cast<const int32_t*>(w.d_off.p),
@@ -954,7 +944,7 @@ public:
                                    (uint32_t)shape_.hidden, (uint32_t)shape_.hidden, (uint32_t)w0, (uint32_t)w1,
                                    (uint32_t)mid_w(), (uint32_t)shape_.hidden, static_cast<uint16_t*>(out_down), 0u);
                 else if (dn_form == Rad46RowsForm::Quad16 || dn_form == Rad46RowsForm::Quad8)
-                    R3_QUADDPP_LAUNCH(false, kQuadDppRB,
+                    hipLaunchKernelGGL((lane_moe_rows_w4_quaddpp<false, kQuadDppRB>),
                                    dim3(experts(), (uint32_t)(shape_.hidden / kQuadDppN)), dim3(128), 0, w.stream,
                                    static_cast<const uint8_t*>(w.d_mid.p), static_cast<const float*>(w.d_mid_s.p),
                                    static_cast<const int32_t*>(w.d_sorted.p), static_cast<const int32_t*>(w.d_off.p),
@@ -1248,7 +1238,6 @@ private:
     int gemv_wide_env_ = -1;    /* R3_MOE_WORKER_GEMV_WIDE as set: -1 unset, 0 off, 1 on */
     bool gemv_wide_ = false;    /* R3_MOE_WORKER_GEMV_WIDE: sixteen-byte FP8 loads in the decode GEMV (RAD14) */
     Rad46Sweep rad46_sweep_ = Rad46Sweep::Production; // replay-sweep overrides only between runs
-    uint32_t quad_opt_ = 0;   // replay-sweep quad_perm / quad_dppadd / quad_perm_dppadd: OPT bits of the quad kernel (RAD49)
     bool rows_ = false;         /* R3_MOE_WORKER_ROWS: few-rows-a-expert kernel on the large lane (RAD06) */
     uint32_t chunk_helper_ = UINT32_MAX;   /* R3_MOE_WORKER_COMBINE: this helper's index for the chunk words (RAD42) */
     bool trace_ = r3_serving::settings().trace > 0;   /* RAD40 stage stamps */
