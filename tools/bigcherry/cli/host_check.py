@@ -35,7 +35,7 @@ def findings(host: environment.Host) -> list[str]:
         files = gpu_power.targets(d.locator, driver, gpu_power.hwmon_of(d.locator), power_cmds._setting(d.power))
         if not all(os.access(p, os.W_OK) for p in files):
             out.append(f"GPU {d.index} ({d.locator}) has power settings configured that this user cannot apply; "
-                       "`bigcherry gpu-power apply` lists the setup steps still missing")
+                       "`bigcherry gpu-power apply --layout NAME --run-id ID` lists the setup steps still missing")
     return out
 
 

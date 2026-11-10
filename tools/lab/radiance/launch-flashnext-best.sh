@@ -72,8 +72,10 @@
 # --max-num-seqs N: sessions served at once (default 8; each costs per-sequence state in VRAM and checkpoint slots in pinned RAM).
 # --prefix-resume MODE: default nearest; off leaves the flag out (engines before 1.14.0 do not have it).
 # --gpu-power (or GPU_POWER=1): apply the cards' configured power settings ([host.*.devices.power]) for this run and
-# put back what the cards ran before at stop. Without write access it lists the setup steps still missing and runs
-# with the cards as they are.
+# put back what the cards ran before at stop. It is all or nothing and only for this layout's cards: a setting the cards
+# cannot take (outside the range the card reports, no write access, no gpu lease held) stops the launch with exit 97 before
+# anything starts, listing the setup steps still missing; the original values are journalled and restored after every
+# process has exited.
 # Serving manifest and plan check (RSC03 / RSC08 S3 / RSC11, mandatory, no way to skip it): every start of every layout asks bc-serve
 #   for the measured v1 manifest of the exact configuration it launches; the engine (and the helpers, with helpers) start from that
 #   one file (--manifest M --role ...), and the engine checks its live memory plan against the plan the manifest carries before it
@@ -280,10 +282,19 @@ stop_procs() {
 stop_all() {
   local rc=0
   stop_procs || rc=1
-  # power settings this launcher applied go back to what the cards ran before; attempted even when a process survived,
-  # and the failure of either is the result
+  # power settings this launcher applied go back to what the cards ran before, but only once every process that used the
+  # cards has exited (a survivor keeps the settings and the journal; that is reported, not papered over). The journal
+  # names the run; a failed restore keeps it.
   if [ -f "$RUN/gpu-power" ]; then
-    if PYTHONPATH=tools python3 -m bigcherry gpu-power restore >&2; then rm -f "$RUN/gpu-power"; else rc=1; fi
+    if [ "$rc" = 0 ]; then
+      if PYTHONPATH=tools python3 -m bigcherry gpu-power restore --run-id "$(cat "$RUN/gpu-power")" --processes-exited >&2; then
+        rm -f "$RUN/gpu-power"
+      else
+        rc=1
+      fi
+    else
+      echo "gpu-power: a serving process survived; power settings NOT restored (journal $(cat "$RUN/gpu-power"))" >&2
+    fi
   fi
   return $rc
 }
@@ -378,16 +389,19 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 trap 'exit 129' HUP
 
-# Optional per-run power settings (PWR04); when they cannot be written, gpu-power lists the missing setup steps and the run goes
-# ahead with the cards as they are.
+# Optional per-run power settings (PWR04/PWR09): an explicit request is all or nothing. gpu-power preflights every setting on the
+# cards of this layout only, verifies the gpu lease, journals the originals, applies and reads back; on any failure it rolls
+# back and this launch stops before an engine starts (never serves on half-applied or defaulted cards after being asked
+# for settings).
 if [ "$GPU_POWER" = 1 ]; then
   mkdir -p "$RUN"
-  # The marker comes first: apply records what ran before and then writes setting by setting, so an apply that fails part way
-  # may have changed a card. Restoring with nothing recorded is a no-op.
-  touch "$RUN/gpu-power"
-  if ! PYTHONPATH=tools python3 -m bigcherry gpu-power apply >&2; then
-    echo "gpu-power: the settings were not (fully) applied; putting back what ran before, then running with the cards as they are" >&2
-    PYTHONPATH=tools python3 -m bigcherry gpu-power restore >&2 && rm -f "$RUN/gpu-power"
+  POWER_RUN_ID="launch-$(date +%Y%m%d-%H%M%S)-$$"
+  # The marker comes first so the exit cleanup restores from the journal even when apply fails part way (a restore with no
+  # journal is a no-op).
+  echo "$POWER_RUN_ID" > "$RUN/gpu-power"
+  if ! PYTHONPATH=tools python3 -m bigcherry gpu-power apply --layout "$LAYOUT" --run-id "$POWER_RUN_ID" >&2; then
+    echo "RADIANCE_EXIT=97 gpu-power: the requested power settings were not applied (nothing was started)" >&2
+    exit 97
   fi
 fi
 
