@@ -39,6 +39,19 @@ Depth sweeps exist for the dual-XTX 27B (no speculation 51.9 tok/s, MTP3 114.3 t
 
 Per-depth tables over >=6 prompts with the policy state verified from each manifest; the MTP replay check (launcher) passes for every depth above 1.
 
+## Result 2026-11-11 (flashnext-4gpu, live policy OFF for every arm, 6 one-stream and 3 six-stream seeds)
+
+| Depth | 1-stream tok/s | acceptance | ms/step | 6-stream tok/s | acceptance |
+|---|---|---|---|---|---|
+| 0 | 51 | - | 19.4 | 225 | - |
+| 1 | 87 | 0.862 | 21.5 | 283 | 0.843 |
+| 2 | 110 | 0.774 | 23.1 | 322 | 0.749 |
+| 3 | 123 | 0.694 | 25.2 | 339 | 0.643 |
+| 4 | 129 | 0.606 | 26.5 | 343 | 0.604 |
+| 5 | 112 | 0.456 | 29.2 | 291 | 0.504 |
+
+Depth 5 is clearly worse. Depth 4 is +5% over depth 3 on one stream and +1% on six streams (inside run-to-run noise at six streams). The depth is part of the plan and calibration key, so moving the default from 3 to 4 invalidates the calibrated live-placement policy and needs a fresh calibration; the gain does not pay for that. **Decision: keep the default at 3.** Re-measure depth 4 only together with the next recalibration. The same depth-4 arm on the patched kernel (7.0.13-gfxoff) gave 129/339 tok/s, so the kernel change does not move decode.
+
 ## Effort & Risk
 
 
