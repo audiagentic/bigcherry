@@ -1,0 +1,22 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261110_141418_requested-gpu-power-settings-a_8366",
+  "files": [
+    "tools/bigcherry/cli/power_cmds.py",
+    "tools/lab/radiance/launch-flashnext-best.sh",
+    "tools/bigcherry/hardware/lease.py",
+    "tools/tests/cli/test_power_cmds.py",
+    "tools/tests/lab/test_launch_flashnext_cleanup.py",
+    "tools/tests/hardware/test_lease.py",
+    "tools/bigcherry/cli/host_check.py"
+  ],
+  "plan-item-ids": [
+    "PWR09",
+    "PWR04",
+    "RSC11"
+  ],
+  "status": "unreleased",
+  "technical-summary": "PWR09 slice 2: gpu-power apply/restore go through PowerTransaction (layout-scoped, lease-verified, journalled, all or nothing); positive lease ownership check; launcher exits 97 before starting anything when an explicit --gpu-power fails and restores only after every process has exited.",
+  "timestamp-utc": "2026-11-10T14:14:18.662061Z",
+  "user-summary-candidate": "Requested GPU power settings are now applied safely and all-or-nothing; a failed request stops the launch instead of serving at defaults."
+}
