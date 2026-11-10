@@ -2,7 +2,7 @@
 id: PWR07
 order: 0
 plan: run-power-efficiency
-state: pending
+state: in_progress
 created-at: '2026-11-10T13:12:56.453273+00:00'
 breadth: ''
 skill: intermediate
@@ -69,3 +69,8 @@ Scope narrowed to portability and observability: CPU probe (PR #810), GPU capabi
 ## Update 2026-11-10 (PWR06 R9700 GFXOFF finding)
 
 R9700 receipt fields (from PWR06): MES/KIQ/SMC firmware, kernel, amdgpu srcversion, measured idle watts, gpu_busy_percent, VDDGFX (GFXOFF-active proxy) and queue count where observable; observation only, kernel/firmware are host prerequisites.
+
+
+## Implementation status: 2026-11-10
+
+Merged: portable CPU probe #810, GPU OverDrive/capability probe #812; durable receipt and transaction infrastructure #815; gpu-power command and fail-closed shell launcher transaction adapter #816. Python supervisor receipt integration is the PWR09/RSC11 S12 card-free slice. Still open: receipts for every production serving/benchmark start, host read-only smoke, portability on additional real drivers and hardware validation. Observe-only starts require no supported controls and must never write hardware.

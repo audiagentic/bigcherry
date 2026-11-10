@@ -2,7 +2,7 @@
 id: PWR08
 order: 0
 plan: run-power-efficiency
-state: pending
+state: in_progress
 created-at: '2026-11-10T13:32:38.583551+00:00'
 breadth: ''
 skill: advanced
@@ -61,3 +61,8 @@ Depends on PWR07 (probe) and feeds PWR09. Challenged against GPT's proposal: kee
 ## Update 2026-11-10 (PWR06 R9700 GFXOFF finding)
 
 Kernel and firmware are host prerequisites, never manifest settings (PWR06: the GFXOFF fix is an amdgpu driver change). A proven runtime optimisation for the R9700 idle floor, if any, becomes a profile control here.
+
+
+## Implementation status: 2026-11-10
+
+Merged: #824 named profile file/reader with stock, efficient, quiet, performance and the data-only XTX -125 mV candidate; #825 inactive per-BDF resolver with qualified-selection and fresh-probe gates. Both are observe-first. The XTX -125 mV candidate needs a same-session A/B and explicit qualifying record before apply; no R9700 or 6900 XT optimum is validated. Still blocked: S9 v2 registry/generator, S10 C++ resolver/writer integration and S13 single active v2 migration. The Python supervisor S12 only consumes a validated v2 power plan and does not activate profiles.

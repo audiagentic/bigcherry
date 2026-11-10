@@ -96,3 +96,8 @@ Owner-run (root). Evidence: $BC_WORK_ROOT/runs/r9700-idle/result.txt; GPT R9700 
 
 - chg_20261102_014941_documented-the-r9700-idle-powe_8134
 - 2026-11-02T01:49:45.639845+00:00 (updated-by): Updated: section:ledger-events
+
+
+## Power programme status: 2026-11-10
+
+R9700 GFXOFF kernel fix is measured (3 x 60-second phases): HIP-context idle at 15.0 W, 0% busy and 29 mV on patched kernel versus stock 20.6 W, 3% and 612 mV. This is a kernel prerequisite, not a manifest profile setting. PWR06 stays in progress for deep-idle/BACO investigation; no new R9700 clock or voltage default is justified. PWR08/PWR09 must not encode the kernel patch as a control.
