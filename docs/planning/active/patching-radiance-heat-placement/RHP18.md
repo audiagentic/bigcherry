@@ -94,3 +94,11 @@ Hardware quality: pair policy-on and -off under RHP12 and RHP22; no startup ON s
 - 2026-11-10T03:10:34.325501+00:00 (created-by): Created by agent
 - 2026-11-10T04:35:32.723532+00:00 (updated-by): Updated: section:title, section:notes
 - 2026-11-10T05:24:00.607447+00:00 (updated-by): Updated: section:notes
+
+## 2026-11-11 acceptance/key finding (cross-link RHP19)
+
+runs/rhp18-acceptance/calib.log failed at the launcher policy-derived 240s bound with drift_window and drift_half_life_observations absent. RHP19 now includes the helper's measured drift horizon in a fixed finite deadline. No hardware re-test was done in this slice; calibration success and policy-ON acceptance are still open.
+
+The archived 2026-11-10 vs 2026-11-11 manifest comparison shows engine_identity unchanged (13714aee7c27...), owner map unchanged and helper budgets still 22528/22528/14336 MiB. The changed measurement-relevant input is memory.host_pool_mib, from the old literal 9216 MiB to RSC03's derived 2259 MiB (#821). The RSC03 plan key includes engine.host_pool_mib (plan_cache.cpp:plan_key_inputs) because the measured engine plan echoes/checks it; host pool changes also changed planned engine VRAM expert/kv placement. Thus the old 0667fa18... live calibration store key does not automatically apply to the new 7443c748... key, even with the same engine binary. Keep this key input and fail closed: no blind migration. The old record is evidence, not current-key calibration. Record the distinct v1 manifest identity vs RSC03 plan-store identity when reporting keys.
+
+Hardware pending: a fresh build must calibrate against the new exact key, then a plain start must prove startup ON, valid feed and committed migration epochs. The #827 startup reason writer must be in the selected build.

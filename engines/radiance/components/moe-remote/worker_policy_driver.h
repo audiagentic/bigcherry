@@ -431,8 +431,12 @@ public:
             const bool effect_waiting=missing.empty() && !effect_missing &&
                 !calibration_settled(m,false,false);
             std::string waiting;
-            if(calibration_progress_.observe(m,missing,now_ns,effect_waiting,&waiting))
+            if(calibration_progress_.observe(m,missing,now_ns,effect_waiting,&waiting)) {
                 std::fputs(calibration_report_line(waiting).c_str(),stderr);
+                // Observed drift ring size/gap: input to the finite launcher bound.
+                const auto drift_progress=calibration_drift_progress(m);
+                std::fprintf(stderr,"RHP19_DRIFT_PROGRESS_JSON %s\n",drift_progress.dump().c_str());
+            }
             const bool effect_stalled=calibration_progress_.effect_expired(
                 now_ns,m,settings_.cadence_ns,settings_.controls.max_heat_age_ns);
             const bool effect_absent=effect_missing || effect_stalled;
