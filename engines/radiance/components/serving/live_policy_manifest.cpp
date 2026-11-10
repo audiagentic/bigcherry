@@ -11,10 +11,21 @@
 namespace bc::serving {
 std::optional<DerivedLivePolicy> derive_manifest_live_policy(
     const ManifestInputs& in, const bc::experts::Container& container, std::string* skipped_reason) {
-    if (!in.measured || in.calibration_cache.empty()) return std::nullopt;
+    // An unmeasured manifest is never what a start uses (the measured one follows), so it carries no reason.
+    if (!in.measured) return std::nullopt;
+    if (in.calibration_cache.empty()) {
+        if (skipped_reason) *skipped_reason = "no calibration store was given (bc-serve --calibration)";
+        return std::nullopt;
+    }
     const std::string key = calibration_key(in.measured->key_inputs);
     const auto record = read_live_policy_record(in.calibration_cache, key);
-    if (!record) return std::nullopt;
+    if (!record) {
+        // Silence here once left every start of a layout without a policy after a plan-key change orphaned its record.
+        if (skipped_reason)
+            *skipped_reason = "no calibration record for key=" + key + " in " + in.calibration_cache.string() +
+                              " (a changed layout, helper budget or engine argument is a new key: calibrate again)";
+        return std::nullopt;
+    }
     const auto skip = [&](const std::string& why) -> std::optional<DerivedLivePolicy> {
         if (skipped_reason) *skipped_reason = "record key=" + key + ": " + why;
         return std::nullopt;

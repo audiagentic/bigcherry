@@ -1,4 +1,6 @@
 #include "live_policy.h"
+#include "manifest_writer.h"
+#include "experts.h"
 
 #include <cassert>
 #include <cmath>
@@ -290,7 +292,31 @@ static void calib5_regression(const sv::LivePolicyRecord& base,
     service.lane[1].time_ns+=window*57297ull; // a 9% row-normalised gain
     assert(gate.judge(service)==r3::policy::EffectVerdict::KEPT);
 }
+// A start that carries no live policy must say why: an unmeasured manifest is silent (it is never what a start uses), a missing
+// calibration store and a missing record for this configuration's key each give a reason. (A plan-key change once orphaned the
+// flashnext-4gpu record and every start ran without a policy, silently.)
+static void derive_says_why() {
+    bc::experts::Container container;
+    sv::ManifestInputs in;
+    std::string why;
+    assert(!sv::derive_manifest_live_policy(in, container, &why) && why.empty());   // unmeasured: no reason
+    sv::MeasuredPlan measured;
+    measured.key_inputs = Json{{"engine_build", "x"}, {"layout", "flashnext-4gpu"}};
+    in.measured = measured;
+    why.clear();
+    assert(!sv::derive_manifest_live_policy(in, container, &why));                   // no store given
+    assert(why.find("no calibration store") != std::string::npos);
+    const fs::path store = write_fixture("schema_version = 1\n");
+    in.calibration_cache = store;
+    why.clear();
+    assert(!sv::derive_manifest_live_policy(in, container, &why));                   // store without this key
+    assert(why.find("no calibration record for key=") != std::string::npos);
+    assert(why.find(store.string()) != std::string::npos);
+    fs::remove(store);
+}
+
 int main() {
+    derive_says_why();
     const std::string key(64, 'a');
     const fs::path file = write_fixture("schema_version = 1\n");
     assert(!sv::read_live_policy_record(file, key));

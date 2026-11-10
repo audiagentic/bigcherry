@@ -1,0 +1,16 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261110_083859_starting-the-server-now-tells_9694",
+  "files": [
+    "engines/radiance/components/serving/live_policy_manifest.cpp",
+    "engines/radiance/components/serving/live_policy_test.cpp",
+    "tools/lab/radiance/lib/plan-check.sh"
+  ],
+  "plan-item-ids": [
+    "RHP18"
+  ],
+  "status": "unreleased",
+  "technical-summary": "A start with no live placement policy now says why. derive_manifest_live_policy sets a skip reason for a missing calibration store and for a missing record under the configuration's calibration key (recorded on /spec/handoff/placement), and the launcher prints one 'live placement: ON (...)' or 'OFF -- reason' line read from the manifest it will use. A plan-key change that orphaned the flashnext-4gpu record had left every start without a policy silently. Test derive_says_why.",
+  "timestamp-utc": "2026-11-10T08:38:59.773280Z",
+  "user-summary-candidate": "Starting the server now tells you plainly whether live expert placement is on, and if not, why."
+}
