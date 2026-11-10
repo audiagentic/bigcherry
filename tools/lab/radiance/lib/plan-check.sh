@@ -128,28 +128,67 @@ SITE
 # plan_live_placement_report: one line, from the manifest this start will use, saying whether the live expert placement policy is on and why not.
 # (bc-serve's own "live policy calibration skipped" message goes to plan-check.err, which a successful start never shows.)
 plan_live_placement_report() {
-  [ "${LAYOUT_HELPER_COUNT:-1}" -gt 0 ] || return 0
-  python3 - "$PLAN_MANIFEST" <<'PY' >&2
-import json, sys
+  python3 - "$PLAN_MANIFEST" "${LAYOUT_HELPER_COUNT:-0}" <<'PY' >&2
+import json
+import os
+import sys
+
+manifest_path, helper_count = sys.argv[1], int(sys.argv[2])
+expected = os.environ.get("BC_EXPECT_LIVE_POLICY", "")
+if expected not in ("", "on", "off", "not_applicable"):
+    print("live placement: ERROR -- invalid BC_EXPECT_LIVE_POLICY (on|off|not_applicable)", file=sys.stderr)
+    sys.exit(2)
 try:
-    m = json.load(open(sys.argv[1]))
-    placement = m["spec"]["handoff"]["placement"]
-except (OSError, ValueError, KeyError, TypeError):
-    print("live placement: state unknown (the manifest could not be read for its placement section)")
-    sys.exit(0)
-if "live_policy" in placement:
+    with open(manifest_path, encoding="utf-8") as f:
+        m = json.load(f)
+    if not isinstance(m, dict) or not isinstance(m.get("spec"), dict):
+        raise ValueError("missing spec object")
+    spec = m["spec"]
+    if helper_count:
+        placement = spec["handoff"]["placement"]
+        if not isinstance(placement, dict):
+            raise ValueError("placement is not an object")
+except (OSError, ValueError, KeyError, TypeError) as e:
+    print(f"live placement: ERROR -- unreadable or invalid manifest: {e}", file=sys.stderr)
+    sys.exit(2)
+
+if not helper_count:
+    state, detail = "not_applicable", "layout has no helper-to-helper placement"
+elif "live_policy" in placement:
     p = placement["live_policy"]
-    print("live placement: ON (cadence %.1f s, margin %d ppm, min samples %d, effect gate %s, heat period %s s)" % (
-        p["cadence_ns"] / 1e9, p["margin_ppm"], p["min_samples"], p["effect_gate"],
-        m["spec"]["handoff"]["telemetry"]["period_s"]))
+    try:
+        cadence = p["cadence_ns"]
+        max_age = p["max_heat_age_ns"]
+        period = spec["handoff"]["telemetry"]["period_s"]
+        if (not isinstance(period, int) or isinstance(period, bool) or period <= 0 or
+            not isinstance(cadence, int) or isinstance(cadence, bool) or cadence <= 0 or
+            not isinstance(max_age, int) or isinstance(max_age, bool) or max_age <= 0):
+            raise ValueError("non-positive or non-integer heat timing")
+        if period * 1_000_000_000 > min(cadence, max_age):
+            raise ValueError(
+                f"histogram period {period}s exceeds policy cadence {cadence}ns "
+                f"or max heat age {max_age}ns"
+            )
+        detail = ("cadence %.1f s, margin %d ppm, min samples %d, "
+                  "effect gate %s, heat period %s s" %
+                  (cadence / 1e9, p["margin_ppm"], p["min_samples"],
+                   p["effect_gate"], period))
+    except (KeyError, TypeError, ValueError) as e:
+        print(f"live placement: ERROR -- policy/heat preflight failed: {e}", file=sys.stderr)
+        sys.exit(2)
+    state = "on"
 else:
     why = m.get("provenance", {}).get("/spec/handoff/placement", {}).get("source", "")
-    if not why.startswith("live policy disabled: "):
-        why = ("live policy disabled: not derived for this start (the lab service profile of an --experiment start derives none; "
-               "pass --live-policy FILE, or run without --experiment)")
-    print("live placement: OFF -- " + why[len("live policy disabled: "):] + " (docs/reference/engines/radiance/LIVE_PLACEMENT.md)")
+    if not isinstance(why, str) or not why.startswith("live policy disabled: "):
+        print("live placement: ERROR -- policy absent without a manifest reason", file=sys.stderr)
+        sys.exit(2)
+    state, detail = "off", why.removeprefix("live policy disabled: ")
+
+print(f"live placement: {state.upper()} -- {detail}", file=sys.stderr)
+if expected and state != expected:
+    print(f"live placement: ERROR -- expected {expected}, manifest says {state}", file=sys.stderr)
+    sys.exit(2)
 PY
-  return 0
 }
 
 # plan_manifest_prepare: sets PLAN_MANIFEST to the measured manifest this start uses. Returns non-zero (after saying why) if it
