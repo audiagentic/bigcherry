@@ -630,8 +630,9 @@ int main() {
         self.assertIn("did not shift an owned TP class", helper_main)
         self.assertNotIn("regular_slot", helper_main)
         component = (REPO / "engines" / "radiance" / "components" / "moe-remote" / "component.toml").read_text(encoding="utf-8")
-        self.assertIn("[setting.R3_MOE_WORKER_SHADOW]", component)
-        self.assertIn("[setting.R3_MOE_WORKER_MASK_ONLY]", component)
+        self.assertNotIn("[setting.R3_MOE_WORKER_SHADOW]", component)
+        self.assertNotIn("[setting.R3_MOE_WORKER_MASK_ONLY]", component)
+        self.assertIn("std::optional<bool> shadow;", (REPO / "engines/radiance/components/serving/generated/serving_types.h").read_text(encoding="utf-8"))
         self.assertIn('status = "diagnostic"', component)
 
     def test_missing_anchor_fails_closed_and_is_atomic(self):

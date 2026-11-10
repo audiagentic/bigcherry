@@ -10,13 +10,16 @@ not a patch to the engine itself.
 
 ## Outcome
 
-`production`: `R3_ATTN_NATIVE` defaults on with quality and speed evidence; see
-the [current model pages](../../../../docs/reference/engines/radiance/README.md#current-pin-throughput)
+Native gfx11 attention defaults on through the typed serving manifest's
+`spec.processes.engine.kernels.attn_native` setting. The former
+`R3_ATTN_NATIVE` environment switch is no longer read; see the
+[current model pages](../../../../docs/reference/engines/radiance/README.md#current-pin-throughput)
 for measured throughput.
 
 ## Detail
 
-See `component.toml` for the full runtime-setting table (status vocabulary:
+See `component.toml` for remaining environment-only lab/selftest settings and the
+serving manifest for engine kernel switches (status vocabulary:
 `production`/`experimental`/`evaluated`/`diagnostic`/`tuning`) and
 `docs/archive/radiance/PLATFORM_DESIGN.md` decision 2 for why this is
 a component rather than a patch. Native rewrite rules are written against

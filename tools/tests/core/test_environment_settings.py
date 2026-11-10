@@ -1,10 +1,8 @@
-"""RSC12: no environment settings. The manifest is the one place a serving setting is configured.
+"""RSC11 S1: serving configuration is typed, not a process environment carrier.
 
-A radiance component or patch may still call getenv on an R3_*, RAD_* or BC_* name, but only when the variable is a private
-carrier: rad0009 sets it from the manifest before the engine initialises. This test fails on any such read whose name is not
-(a) bound to a manifest field by the registry's env_setting, (b) one of the hand-off variables rad0009 sets from spec.handoff
-or helper_common (the list below is checked against the patch), (c) an in-process handshake between two of our own
-components, or (d) read only by the self-test tool, which is not a serving process.
+Only explicitly non-migrated RAD_*/BC_* settings may still be bridged by the
+registry. No R3_* handoff or kernel switch is set by rad0009 or read by the
+serving engine. GPU-runtime settings and selftest-only toggles are separate.
 """
 from __future__ import annotations
 
@@ -17,13 +15,16 @@ ROOT = Path(__file__).resolve().parents[3]
 REGISTRY = ROOT / "engines/radiance/components/serving/contract/serving-v1.toml"
 RAD0009 = ROOT / "engines/radiance/patches/rad0009_serving_manifest/patch.py"
 
-#: set by rad0009 from spec.handoff / spec.processes.helper_common (hand-written in the patch, not env_setting)
-HANDOFF_BRIDGED = {
-    "R3_MOE_WORKER", "R3_MOE_WORKER_SHM", "R3_MOE_WORKER_MAX_ROWS", "R3_MOE_WORKER_SKIP_OWNED",
-    "R3_MOE_WORKER_HISTOGRAM", "R3_MOE_WORKER_HISTOGRAM_PERIOD_S", "R3_MOE_WORKER_COMBINE",
+# The handoff is a typed snapshot consumed directly by the engine and plugin.
+TYPED_ENGINE_VARS = {
+    "R3_MOE_WORKER", "R3_MOE_WORKER_SHM", "R3_MOE_WORKER_MAX_ROWS",
+    "R3_MOE_WORKER_SKIP_OWNED", "R3_MOE_WORKER_HISTOGRAM",
+    "R3_MOE_WORKER_HISTOGRAM_PERIOD_S", "R3_MOE_WORKER_COMBINE",
+    "R3_MOE_REMOTE_MIN_ROWS", "R3_MOE_REMOTE_MAX_ROWS",
+    "R3_MOE_NATIVE", "R3_MOE_FP16", "R3_MOE_AHALF",
+    "R3_GEMV", "R3_DEC11", "R3_ATTN_NATIVE", "R3_AR_WIRE4",
+    "R3_MOE_WORKER_MASK_ONLY", "R3_MOE_WORKER_FUSESTAGE",
 }
-#: libr3moe tells the engine's step gate its row window once its segment is ready (same process, both ours): not configuration
-INTERNAL_HANDSHAKE = {"R3_MOE_REMOTE_MIN_ROWS", "R3_MOE_REMOTE_MAX_ROWS"}
 #: the self-test tool toggles these around a check; it is a test harness, never a serving process
 SELFTEST_FILE = "r4d_selftest.cpp.rw"
 
@@ -38,8 +39,9 @@ def _tracked(prefix: str) -> list[str]:
 
 class EnvironmentSettingsGuard(unittest.TestCase):
     def test_every_environment_read_is_a_manifest_carrier(self) -> None:
-        bound = set(re.findall(r'env_setting = "([^"]+)"', REGISTRY.read_text(encoding="utf-8")))
-        self.assertGreater(len(bound), 14)
+        bound = set(re.findall(r'env_setting = "([^"]+)"', REGISTRY.read_text(encoding="utf-8"))) - TYPED_ENGINE_VARS
+        self.assertTrue(bound, "the remaining non-migrated manifest carriers must be accounted for")
+        self.assertFalse(bound & TYPED_ENGINE_VARS)
         unexplained: dict[str, list[str]] = {}
         for rel in _tracked("engines"):
             if not rel.endswith((".cpp", ".hip", ".h", ".rw", ".py")) or rel.endswith("_test.cpp"):
@@ -48,7 +50,7 @@ class EnvironmentSettingsGuard(unittest.TestCase):
                 continue
             text = (ROOT / rel).read_text(encoding="utf-8", errors="replace")
             for name in _READ.findall(text):
-                if name in bound or name in HANDOFF_BRIDGED or name in INTERNAL_HANDSHAKE:
+                if name in bound:
                     continue
                 unexplained.setdefault(name, []).append(rel)
         self.assertEqual(
@@ -56,10 +58,17 @@ class EnvironmentSettingsGuard(unittest.TestCase):
             "an environment variable is read that no manifest field sets: give it an env_setting field in the registry "
             "(or stop reading it); see docs/design/serving-manifest-v1/spec.md amendment 14")
 
-    def test_hand_off_carriers_are_really_set_by_rad0009(self) -> None:
+    def test_typed_engine_settings_have_no_legacy_environment_bridge(self) -> None:
         patch = RAD0009.read_text(encoding="utf-8")
-        for name in sorted(HANDOFF_BRIDGED):
-            self.assertIn(f'"{name}"', patch, f"{name} is listed as set from the manifest but rad0009 does not set it")
+        self.assertIn("g_engine_settings = settings;", patch)
+        self.assertIn("bc_serving_remote_settings", patch)
+        self.assertIn("bc_serving_engine_settings", patch)
+        for name in ("R3_MOE_WORKER", "R3_MOE_WORKER_SHM", "R3_MOE_WORKER_MAX_ROWS",
+                     "R3_MOE_WORKER_SKIP_OWNED", "R3_MOE_WORKER_HISTOGRAM",
+                     "R3_MOE_WORKER_HISTOGRAM_PERIOD_S", "R3_MOE_WORKER_COMBINE",
+                     "R3_MOE_REMOTE_MIN_ROWS", "R3_MOE_REMOTE_MAX_ROWS"):
+            self.assertNotIn(f'setenv("{name}"', patch)
+        self.assertNotIn("HANDOFF_BRIDGED", patch)
 
     def test_every_bound_variable_is_declared_once(self) -> None:
         names = re.findall(r'env_setting = "([^"]+)"', REGISTRY.read_text(encoding="utf-8"))
