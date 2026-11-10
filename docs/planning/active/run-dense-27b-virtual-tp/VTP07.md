@@ -274,10 +274,62 @@ The real layout/relayout/unrelayout functions are exported outside the
 canonical gated-IQR numerical receipts **passed 36/36** on XTX0 and
 **36/36** on XTX1, no failures; see scratch
 `${BC_WORK_ROOT}/xtx27-prefill/iqr-layout-fix/canonical-oracle-runs/`
-for per-card binary/plugin SHA, argv and stdout. The earlier 1032
-narrow and 129 tiled checks per card used the *diagnostic relink*,
-not the complete new canonical plugin; repeat on canonical plugin
-for its full numerical gate. Production libraries have not been
+for per-card binary/plugin SHA, argv and stdout.
+The earlier 1032 narrow and 129 tiled checks per card used the
+*diagnostic relink*. These exact two suites have now also been
+repeated successfully with the complete canonical plugin, see the
+2026-11-10 follow-up below. Production libraries have not been
 installed or overwritten.
 ROCm occupancy warning messages from unrelated GEMM/MoE units are
 not proof of failure or runtime quality.
+
+### Canonical full gfx11 numerical qualification: all three families
+
+**Completed on both XTX cards**, with the full 205-MiB canonical
+gfx1100 libr3.so (SHA-256
+`d5715493f70bc08c8f37ec0aa1e005b1bfdb6c91e86e28e46664f36a0a1a75f2`)
+and matching full-build r3_selftest executable (SHA-256
+`f98d889c6eeb94a9c533e1b431dbc7da6932766e1f93404494fb5ea2412ba7fa`).
+
+| Canonical engine test | XTX0 | XTX1 |
+| --- | ---: | ---: |
+| gemm_iqr_gated | 36 pass / 0 fail | 36 pass / 0 fail |
+| gemm_iqr_nt_m64 | 1032 pass / 0 fail | 1032 pass / 0 fail |
+| gemm_iqr_tiled | 129 pass / 0 fail | 129 pass / 0 fail |
+| **Total** | **1197 / 0** | **1197 / 0** |
+
+All six independent invocations exited zero with selected numerical
+checks passing, and released the exclusive GPU lease. Full stdout,
+stderr, argv and object SHA-256 receipts are in
+`${BC_WORK_ROOT}/xtx27-prefill/iqr-layout-fix/canonical-oracle-runs/`.
+These checks qualify the new gfx11 IQ6R **kernel** implementation;
+they do not establish calibrated Qwen3.8-27B IQ6R checkpoint quality,
+production loading, mixed gfx11/gfx12 TP4 execution, resident FP8 KV
+or real multi-card throughput. No Q6 model was converted during VTP07.
+
+### Model-shaped IQ6R V4 timing, canonical gfx11 build
+
+The completed canonical gfx11 plugin (XTXs) and the pinned original
+full gfx1201 plugin (R9700) were independently timed with the
+exact VTP05 kernel wrapper and exclusive GPU leases. All six cases
+used capacity split, M=4, 9 iterations, and 256-MiB cold-weight
+flushing. Every receipt passed selected-row and N/K/M checks, but
+the perf mode itself does NOT test numerics (separate selftests above).
+
+| Physical GPU | Gate/up us | Down us | Sum of local kernel us |
+| --- | ---: | ---: | ---: |
+| XTX0 gfx1100 | 147.8 | 87.1 | 234.9 |
+| XTX1 gfx1100 | 139.4 | 88.4 | 227.8 |
+| R9700 gfx1201 | 97.9 | 54.2 | 152.1 |
+
+Two-stage **ideal FFN-only barrier** = max(147.8,139.4,97.9) +
+max(87.1,88.4,54.2) = **236.2 us**. This excludes physical
+three-way reductions, activation, attention, GDN, KV, graphs, CPU
+launch and all model runtime. Prior diagnostic 3-iteration 280.3-us
+result is NOT a valid matched A/B against these 9-iteration runs;
+clocking and build also differ. Likewise do NOT compare cold IQ6R
+to the 138.3-us warm W8A8 kernel barrier as if weights were matched.
+
+Scratch receipts: `${BC_WORK_ROOT}/xtx27-prefill/iqr-layout-fix/canonical-perf-runs/`
+(XTXs) and `${BC_WORK_ROOT}/xtx27-prefill/iqr-layout-fix/canonical-perf-r9700/`
+(R9700). No production models, services or kernel installations changed.
