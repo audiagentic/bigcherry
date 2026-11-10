@@ -2,7 +2,7 @@
 id: PWR09
 order: 0
 plan: run-power-efficiency
-state: pending
+state: in_progress
 created-at: '2026-11-10T13:32:42.998106+00:00'
 breadth: ''
 skill: advanced
@@ -61,3 +61,8 @@ Steps 1-7 do not need v2 and proceed first. Fake sysfs proves portability behavi
 ## Update 2026-11-10 (PWR06 R9700 GFXOFF finding)
 
 Any R9700 idle optimisation proven by PWR06 is applied only through this controller (capability check, lease, rollback, performance validation); nothing in the shell launcher or a global environment flag.
+
+
+## Implementation status: 2026-11-10
+
+Merged: #815 PowerTransaction, rollback, stale-journal and durable receipt core; #816 routes gpu-power CLI and shell launcher explicit writes through the transaction and aborts on failure; #820 supervisor S6 lifecycle skeleton. S12 card-free wiring adds single-manifest power-plan consumption, pre-start PowerTransaction apply, verified-exit-only restore and digest-bound phase receipts. Production execution remains fail-closed while S11 measured-plan adapter and S9/S10/S13 v2 cutover are pending. Observe-only means zero writes even when a stale explicit journal exists; explicit apply refuses stale journals. No GPU or live power change has been validated by this slice.

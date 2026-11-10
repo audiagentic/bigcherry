@@ -3,7 +3,7 @@
 The serving *plan* is provided by a separate step: future S11 supplies a
 measured, validated manifest and command specs. This module does not resolve a
 second layout, execute the old shell launcher, or infer a power setting.
-S12 will wire the live plan, readiness/canary and power policy into this owner.
+S11/S13 supplies the validated v2 plan, readiness and canary.
 """
 
 from __future__ import annotations
@@ -17,8 +17,15 @@ from typing import Protocol
 from ..engine_adapters.radiance_inventory import Layout
 from ..hardware import lease
 from ..hardware.gpu_power import Setting
-from ..hardware.power_receipt import read_json, write_json_atomic
+from ..hardware.power_probe import probe_host
+from ..hardware.power_receipt import (
+    Receipt,
+    manifest_binding,
+    read_json,
+    write_json_atomic,
+)
 from ..hardware.power_transaction import PowerTransaction
+from .manifest_power import read_manifest_power
 
 _RUN_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$")
 _UNRESOLVED = {"applying", "applied", "rollback_failed", "restore_failed"}
@@ -45,12 +52,11 @@ class ServingPlan:
 
     Specs are ordered helper0..helperN, then engine; no shell invocation.
     Manifest must already be produced and validated by the planning step.
-    The power map is BDF-keyed; an empty map means observe/no writes.
+    Power settings come ONLY from the validated v2 manifest; no second carrier.
     """
 
     manifest: Path
     processes: tuple[ProcessSpec, ...]
-    power: dict[str, Setting] = field(default_factory=dict)
 
 
 class ProcessLauncher(Protocol):
@@ -94,6 +100,7 @@ class Supervisor:
         lease_ok: Callable[[], bool] = lease.held_by_this_process,
         power_factory: Callable[[str, Callable[[], bool]], PowerOps] | None = None,
         power_recover: Callable[..., bool] = PowerTransaction.recover,
+        observe: Callable[[list[str]], dict] | None = None,
     ) -> None:
         self.resolve = resolve
         self.plan = plan
@@ -106,6 +113,15 @@ class Supervisor:
             lambda rid, ok: PowerTransaction(rid, self.journal_dir, lease_ok=ok)
         )
         self.power_recover = power_recover
+        self.observe = observe or (lambda bdfs: probe_host(bdfs).to_dict())
+
+    def _observation(self, receipt: Receipt, phase: str, selected: list[str]) -> None:
+        try:
+            receipt.observe(phase, self.observe(selected))
+        except Exception as exc:  # noqa: BLE001 - sensors do not govern safety
+            receipt.observe(
+                phase, {"status": "unavailable", "reason": type(exc).__name__}
+            )
 
     def _lease(self) -> None:
         if not self.lease_ok():
@@ -141,10 +157,6 @@ class Supervisor:
             raise ServeRefused(f"planner process order must be {want}")
         if any(not s.argv or not s.argv[0] for s in plan.processes):
             raise ServeRefused("planner supplied an empty process command")
-        if set(plan.power) - set(selected):
-            raise ServeRefused(
-                "planner power settings include a card outside the resolved layout"
-            )
         return selected
 
     def execute(self, *, name: str, run_id: str) -> dict:
@@ -158,6 +170,10 @@ class Supervisor:
         started: list[tuple[ProcessSpec, object]] = []
         power: PowerOps | None = None
         applied = False
+        receipt: Receipt | None = None
+        receipt_path = self.record_dir / f"{run_id}.power.json"
+        selected: list[str] = []
+        explicit_power = False
         failures: list[str] = []
         record: dict = {
             "schema_version": 1,
@@ -180,24 +196,53 @@ class Supervisor:
         try:
             self._lease()
             power = self.power_factory(run_id, self.lease_ok)
-            self._clean_journals(power)
             layout = self.resolve(name)
             self._lease()
             serving = self.plan(layout, run_id)
             selected = self._validate(layout, serving)
+            manifest_snapshot = serving.manifest.read_bytes()
+            policy = read_manifest_power(
+                serving.manifest,
+                engine_bdfs=layout.engine_bdfs,
+                helper_bdfs=layout.helper_bdfs,
+            )
+            if serving.manifest.read_bytes() != manifest_snapshot:
+                raise ServeRefused("manifest changed during power validation")
+            explicit_power = bool(policy.requested)
+            receipt = Receipt(
+                run_id=run_id,
+                manifest=manifest_binding(policy.manifest_digest),
+                request=policy.receipt_request(),
+            )
             record["manifest"] = str(serving.manifest)
+            record["power_receipt"] = str(receipt_path)
+            record["power_profile"] = policy.profile
+            record["profile_digest"] = policy.profile_digest
+            record["power"] = "observe" if policy.mode == "observe" else "apply_empty"
+            self._observation(receipt, "start", selected)
+            try:
+                receipt.save(receipt_path)
+            except OSError:
+                if explicit_power:
+                    raise  # cannot write power without a durable receipt
             record["engine_bdfs"] = list(layout.engine_bdfs)
             record["helper_bdfs"] = list(layout.helper_bdfs)
             event("planned")
-            if serving.power:
+            if policy.requested:
                 self._lease()
-                power.prepare(serving.power, selected)
+                self._clean_journals(power)
+                power.prepare(policy.requested, selected)
                 self._lease()
                 power.apply()
                 applied = True
                 record["power"] = "applied"
+                receipt.event("applied", journal=str(power.journal_path))
+                self._observation(receipt, "post_apply", selected)
+                receipt.save(receipt_path)
                 event("power_applied")
             for spec in serving.processes:
+                if serving.manifest.read_bytes() != manifest_snapshot:
+                    raise ServeRefused("manifest changed after power preflight")
                 self._lease()
                 process = self.launcher.start(spec)
                 started.append((spec, process))
@@ -238,6 +283,8 @@ class Supervisor:
             else:
                 exited = True
             if applied:
+                if receipt is not None:
+                    self._observation(receipt, "pre_restore", selected)
                 if not exited:
                     failures.append(
                         "power restoration REFUSED while a serving child may be alive"
@@ -260,6 +307,15 @@ class Supervisor:
                     except Exception as exc:  # noqa: BLE001 - fault-injection boundary must unwind any failure
                         failures.append(f"power restoration failed: {exc}")
                         record["power"] = "restore_failed"
+            if receipt is not None:
+                receipt.transaction["state"] = record["power"]
+                receipt.event("final", power=record["power"], errors=list(failures))
+                self._observation(receipt, "stop", selected)
+                try:
+                    receipt.save(receipt_path)
+                except Exception as exc:  # noqa: BLE001 - journal controls unresolved hardware
+                    if explicit_power:
+                        failures.append(f"durable power receipt failed: {exc}")
             record["errors"] = failures
             try:
                 event(

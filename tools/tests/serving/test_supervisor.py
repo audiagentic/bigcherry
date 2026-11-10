@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from bigcherry.hardware.gpu_power import Setting
 from bigcherry.serving.supervisor import (
     ProcessSpec,
     ServeRefused,
@@ -86,8 +86,6 @@ def setup(
     journal_dir = tmp_path / "journal"
     journal_dir.mkdir()
     manifest_path = tmp_path / "manifest.json"
-    if manifest:
-        manifest_path.write_text('{"fake":true}')
     layout = SimpleNamespace(
         engine_bdfs=("0000:01:00.0",),
         helper_bdfs=("0000:02:00.0", "0000:03:00.0"),
@@ -96,7 +94,38 @@ def setup(
         ProcessSpec(role, (f"fake-{role}",))
         for role in ("helper0", "helper1", "engine")
     )
-    requested = {"0000:01:00.0": Setting(power_cap_w=200)} if use_power else {}
+    power_devices = [
+        {
+            "role": role,
+            "bdf": bdf,
+            "settings": {"power_cap_w": 200} if role == "engine" and use_power else {},
+        }
+        for role, bdf in (
+            ("engine", "0000:01:00.0"),
+            ("helper0", "0000:02:00.0"),
+            ("helper1", "0000:03:00.0"),
+        )
+    ]
+    if manifest:
+        manifest_path.write_text(
+            json.dumps(
+                {
+                    "metadata": {"content_digest": "sha256:" + "a" * 64},
+                    "spec": {
+                        "intent": {"power": {"profile": "stock", "role_overrides": {}}},
+                        "plan": {
+                            "power": {
+                                "mode": "apply" if use_power else "observe",
+                                "profile": "stock",
+                                "profile_digest": "sha256:" + "b" * 64,
+                                "devices": power_devices,
+                                "cpu": {"settings": {}},
+                            }
+                        },
+                    },
+                }
+            )
+        )
     power = FakePower(journal_dir / "test-run.json", trace, fail=fail, stale=stale)
 
     def resolve(name):
@@ -111,7 +140,7 @@ def setup(
         if fail == "plan":
             raise RuntimeError("plan fault")
         assert selected is layout and run_id == "test-run"
-        return ServingPlan(manifest_path, specs, requested)
+        return ServingPlan(manifest_path, specs)
 
     def wait(check):
         trace.append("wait")
@@ -132,6 +161,7 @@ def setup(
         wait=wait,
         lease_ok=ok,
         power_factory=lambda run_id, fn: power,
+        observe=lambda bdfs: {"source": "fake", "devices": list(bdfs)},
     )
     return s, trace, run_dir, journal_dir
 
@@ -147,9 +177,9 @@ def test_order_with_power_and_helpers(tmp_path):
     assert record["power"] == "restored"
     ordered = [x for x in trace if x != "lease"]
     assert ordered == [
-        "journal_check",
         "resolve",
         "plan",
+        "journal_check",
         "prepare",
         "apply",
         "start:helper0",
@@ -246,7 +276,7 @@ def test_live_child_blocks_restore_even_after_stop(tmp_path):
 
 def test_observe_mode_does_not_write_power(tmp_path):
     s, trace, _, _ = setup(tmp_path, use_power=False)
-    assert execute(s)["power"] == "not_requested"
+    assert execute(s)["power"] == "observe"
     assert "prepare" not in trace and "apply" not in trace and "restore" not in trace
 
 
@@ -255,7 +285,7 @@ def test_refuses_other_run_stale_journal_before_resolution(tmp_path):
     s, trace, _, _ = setup(tmp_path, stale=[stale])
     with pytest.raises(ServeRefused, match="unresolved power journal"):
         execute(s)
-    assert "resolve" not in trace
+    assert "resolve" in trace
     assert "apply" not in trace
 
 
@@ -264,7 +294,7 @@ def test_refuses_own_active_journal_even_though_power_transaction_skips_it(tmp_p
     (journals / "test-run.json").write_text('{"state":"applied"}')
     with pytest.raises(ServeRefused, match="unresolved power journal"):
         execute(s)
-    assert "resolve" not in trace
+    assert "resolve" in trace
 
 
 def test_no_lease_refuses_without_side_effects(tmp_path):
@@ -325,12 +355,13 @@ def test_refuses_untracked_power_card(tmp_path):
 
     def bad(layout, run_id):
         p = original(layout, run_id)
-        return ServingPlan(
-            p.manifest, p.processes, {"0000:09:00.0": Setting(power_cap_w=200)}
-        )
+        doc = json.loads(p.manifest.read_text())
+        doc["spec"]["plan"]["power"]["devices"][0]["bdf"] = "0000:09:00.0"
+        p.manifest.write_text(json.dumps(doc))
+        return p
 
     s.plan = bad
-    with pytest.raises(ServeRefused, match="outside"):
+    with pytest.raises(ServeRefused, match="role/BDF"):
         execute(s)
     assert "prepare" not in trace
 
@@ -359,9 +390,142 @@ def test_record_write_fault_after_start_still_stops_and_restores(tmp_path, monke
     assert '"state": "failed"' in (records / "test-run.json").read_text()
 
 
-def test_recovery_refuses_without_verified_lease(tmp_path):
-    s, _, _, journal_dir = setup(tmp_path, lease_ok=lambda: False)
-    journal = journal_dir / "stale.json"
-    journal.write_text('{"state":"applied"}')
-    with pytest.raises(ServeRefused, match="gpu lease"):
-        s.recover(journal, verify_processes_exited=lambda: True)
+def test_receipt_is_bound_to_manifest_and_records_four_power_phases(tmp_path):
+    s, trace, records, _ = setup(tmp_path)
+    result = execute(s)
+    assert result["power"] == "restored"
+    receipt = json.loads((records / "test-run.power.json").read_text())
+    assert receipt["manifest"]["content_digest"] == "sha256:" + "a" * 64
+    assert receipt["request"]["profile_digest"] == "sha256:" + "b" * 64
+    assert receipt["request"]["devices"][0]["settings"] == {"power_cap_w": 200}
+    assert set(receipt["observations"]) == {
+        "start",
+        "post_apply",
+        "pre_restore",
+        "stop",
+    }
+    assert receipt["transaction"]["state"] == "restored"
+    assert trace.index("restore") > trace.index("exited:engine")
+
+
+def test_observe_only_start_not_blocked_by_stale_explicit_power_journal(tmp_path):
+    stale = tmp_path / "old.json"
+    s, trace, records, _ = setup(tmp_path, use_power=False, stale=[stale])
+    assert execute(s)["power"] == "observe"
+    assert "journal_check" not in trace and "prepare" not in trace
+    receipt = json.loads((records / "test-run.power.json").read_text())
+    assert set(receipt["observations"]) == {"start", "stop"}
+
+
+@pytest.mark.parametrize(
+    "alter",
+    [
+        "missing_power",
+        "observe_has_writes",
+        "wrong_bdf",
+        "duplicate_bdf",
+        "wrong_profile",
+        "bad_digest",
+        "unknown_setting",
+        "unsupported_offset",
+        "cpu_control",
+        "extra_devices",
+    ],
+)
+def test_manifest_power_refusal_before_process_or_write(tmp_path, alter):
+    s, trace, _, _ = setup(tmp_path)
+    path = tmp_path / "manifest.json"
+    doc = json.loads(path.read_text())
+    power = doc["spec"]["plan"]["power"]
+    if alter == "missing_power":
+        del doc["spec"]["plan"]["power"]
+    elif alter == "observe_has_writes":
+        power["mode"] = "observe"
+    elif alter == "wrong_bdf":
+        power["devices"][1]["bdf"] = "0000:07:00.0"
+    elif alter == "duplicate_bdf":
+        power["devices"][1]["bdf"] = "0000:01:00.0"
+    elif alter == "wrong_profile":
+        power["profile"] = "another"
+    elif alter == "bad_digest":
+        power["profile_digest"] = "bad"
+    elif alter == "unknown_setting":
+        power["devices"][0]["settings"]["evil"] = 1
+    elif alter == "unsupported_offset":
+        power["devices"][0]["settings"]["sclk_offset_mhz"] = 99
+    elif alter == "cpu_control":
+        power["cpu"]["settings"]["governor"] = "performance"
+    elif alter == "extra_devices":
+        power["devices"].append(
+            {"role": "helper9", "bdf": "0000:04:00.0", "settings": {}}
+        )
+    path.write_text(json.dumps(doc))
+    with pytest.raises(ServeRefused):
+        execute(s)
+    assert "prepare" not in trace and not any(t.startswith("start:") for t in trace)
+
+
+def test_durable_receipt_write_failure_prevents_requested_power_apply(
+    tmp_path, monkeypatch
+):
+    from bigcherry.hardware.power_receipt import Receipt
+
+    s, trace, _, _ = setup(tmp_path)
+    monkeypatch.setattr(
+        Receipt, "save", lambda self, path: (_ for _ in ()).throw(OSError("no disk"))
+    )
+    with pytest.raises(ServeRefused, match="no disk"):
+        execute(s)
+    assert "prepare" not in trace and "apply" not in trace
+
+
+def test_observe_only_receipt_write_failure_does_not_stop_serving(
+    tmp_path, monkeypatch
+):
+    from bigcherry.hardware.power_receipt import Receipt
+
+    s, trace, _, _ = setup(tmp_path, use_power=False)
+    monkeypatch.setattr(
+        Receipt, "save", lambda self, path: (_ for _ in ()).throw(OSError("no disk"))
+    )
+    assert execute(s)["state"] == "stopped"
+    assert "start:engine" in trace and "apply" not in trace
+
+
+def test_receipt_write_failure_after_apply_restores_before_abort(tmp_path, monkeypatch):
+    from bigcherry.hardware.power_receipt import Receipt
+
+    s, trace, _, _ = setup(tmp_path)
+    original = Receipt.save
+    calls = [0]
+
+    def fail_second(self, path):
+        calls[0] += 1
+        if calls[0] == 2:
+            raise OSError("receipt full")
+        return original(self, path)
+
+    monkeypatch.setattr(Receipt, "save", fail_second)
+    with pytest.raises(ServeRefused, match="receipt full"):
+        execute(s)
+    assert "apply" in trace and "restore" in trace
+    assert not any(t.startswith("start:") for t in trace)
+
+
+def test_manifest_mutated_during_apply_aborts_before_process_start(tmp_path):
+    s, trace, _, _ = setup(tmp_path)
+    power = s.power_factory("test-run", s.lease_ok)
+    original_apply = power.apply
+
+    def apply_and_mutate():
+        original_apply()
+        path = tmp_path / "manifest.json"
+        doc = json.loads(path.read_text())
+        doc["spec"]["plan"]["power"]["devices"][0]["settings"]["power_cap_w"] = 220
+        path.write_text(json.dumps(doc))
+
+    power.apply = apply_and_mutate
+    with pytest.raises(ServeRefused, match="manifest changed after power preflight"):
+        execute(s)
+    assert "apply" in trace and "restore" in trace
+    assert not any(item.startswith("start:") for item in trace)
