@@ -11,6 +11,8 @@ Three independent, bounded work items:
 - [VTP04](VTP04.md): fast local R9700 and three-physical-GPU microbench harnesses (compile-only and leased runs).
 - [VTP05](VTP05.md): actual Radiance IQ6R/W8A8 model-shaped GEMM screening on each physical GPU. Includes an offline preflight and resumable single-case benchmark campaign.
 - [VTP06](VTP06.md): separate Q6/Q8 model quality and resident-KV validation gate.
+- [VTP07](VTP07.md): actual Q6/Q8 M4 GPU results and the gfx11 IQ6R layout compatibility blocker.
+
 - [VTP03](VTP03.md): gated Q6/Q8 full-model prototype, 4+/long-context A/B benchmark and go/no-go.
 
 Dependencies only, not duplicated:

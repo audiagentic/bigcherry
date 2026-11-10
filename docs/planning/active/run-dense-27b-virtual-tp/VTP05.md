@@ -161,3 +161,12 @@ The original pilot-v1 manifest is intentionally invalidated by the
 new runner SHA and must not be reused. Recreate a distinct immutable
 **pilot-v2** manifest *after* committing/rebasing these safety changes,
 and never overwrite pilot-v1 or accept its receipts in pilot-v2.
+
+### Hardware screening update
+
+The first M4 runs were completed after the exclusive lease cleared.
+**W8A8 executes on gfx1100 and gfx1201**; **IQ6R-V4 fails at
+relayout on both gfx1100 cards** while working on gfx1201.
+The actual timings, source receipts, failure status and isolated
+remediation are recorded in [VTP07](VTP07.md). IQ6R cannot advance
+to 3-card virtual TP4 without fixing this gfx11 blocker.
