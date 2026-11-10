@@ -920,6 +920,9 @@ __global__ __launch_bounds__(128) void lane_moe_rows_w4_quaddpp(
                     // RAD49 TK04: exact E4M3 -> fp16, two codes a lane op. The seven magnitude bits placed as an fp16 exponent
                     // and mantissa read as 2^(e-15)(1+m/8) (the denormal m/8 2^-14 for e = 0); times 2^8 both are the code's
                     // value (bias 7, subnormal m 2^-9), and the sign moves to bit 15. All 256 codes match gemv_e4m3 bit for bit.
+                    // Relies on fp16 denormal inputs being preserved by v_pk_mul_f16 (the AMDGPU default; the codes 1..7 pass through
+                    // an fp16 denormal), and matches this file's gemv_e4m3 reading of 0x7F/0xFF as finite values, not other E4M3
+                    // encodings' NaN codes. Repeat the 256-code check before reusing it on another architecture or FP mode.
                     const uint32_t t01 = (qw[j] & 0xFFu) | ((qw[j] << 8) & 0x00FF0000u);
                     const uint32_t t23 = ((qw[j] >> 16) & 0xFFu) | ((qw[j] >> 8) & 0x00FF0000u);
                     const h2v k256 = {(_Float16)256.0f, (_Float16)256.0f};
