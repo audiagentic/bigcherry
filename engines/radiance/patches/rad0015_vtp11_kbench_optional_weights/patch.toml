@@ -1,0 +1,11 @@
+schema = 1
+id = "rad0015_vtp11_kbench_optional_weights"
+order = 15
+state = "untested"
+kind = "enhancement"
+origin = "local"
+backend = "agnostic"
+plan-ids = ["VTP11"]
+requires = []
+conflicts = []
+tags = ["gated-delta-net", "dispatch"]

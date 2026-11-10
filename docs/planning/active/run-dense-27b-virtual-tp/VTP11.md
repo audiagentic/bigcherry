@@ -197,3 +197,32 @@ prove, pointer provenance. The libref-only hang remains unresolved.
 They prove calibration plumbing, not representative 27B quality. VTP06
 owns the diverse corpus, bounded 64-layer runs, conversion and BF16
 quality comparison. The GPU lease was released; no KFD PIDs remained.
+
+
+## Independent GDN oracle — benchmark coverage correction (2026-11-10)
+
+The isolated build includes upstream \`rad-kbench\`, whose \`--op
+gdn_conv_prep --kernels libr4d:libref --ref libref\` is a suitable
+correctness ladder **only if checked GPU cases are nonzero**.
+The first R9700 test using existing original-model-derived W8A8
+RAD2 geometry completed with exit 0 but **0 checked / 28 skipped**.
+The precise skip was \`dt_bias is a weight and the declaration bound
+none to it\`. This is a **failed coverage gate**, NOT numerical success.
+Attempting to pass the original HF safetensors *directory* directly
+to rad-kbench refused \`mmap: No such device\` because it requires RAD2.
+
+The root cause is in the benchmark: it advances its fixed-weight
+cursor for absent optional schema weights. GDN's optional
+convolution bias is *between* convolution weight and A_log;
+the model declares only w/A_log/dt_bias. Upstream's op weight-position
+map is generated sequentially, so using it unmodified alone would
+not solve this missing-middle-slot geometry. Experimental
+rad0015_vtp11_kbench_optional_weights counts the **present** fixed
+weights before drawing, rejects ambiguous counts, and advances
+only on present fixed-weight slots. It is a test-harness-only patch,
+separate from production and the already passing rad0014 runtime.
+
+Three focused tests, pinned-source patch/idempotence check, Ruff and
+GCC 14 syntax passed. A numerical oracle result is **pending** an
+isolated benchmark build and nonzero checked GPU cases, on both
+gfx1201 and gfx1100. Do not interpret exit code alone as a pass.
