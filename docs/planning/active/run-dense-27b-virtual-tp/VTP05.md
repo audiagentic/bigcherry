@@ -170,3 +170,45 @@ relayout on both gfx1100 cards** while working on gfx1201.
 The actual timings, source receipts, failure status and isolated
 remediation are recorded in [VTP07](VTP07.md). IQ6R cannot advance
 to 3-card virtual TP4 without fixing this gfx11 blocker.
+
+## W8A8 three-physical-card screening: matched 9-iteration runs (2026-11-10)
+
+All 36 additional model-shaped W8A8 timing cases below passed the
+bench tool's N/K/M/kernel-row validation, using the pinned original
+libr3/libr4d build and exclusive per-case GPU leases. Receipts are
+under `BC_WORK_ROOT/xtx27-prefill/quant-shape/placement-w8a8-20261110/runs`.
+These are **warm-weight synthetic INT8 kernels only**, not Qwen3.8
+checkpoint conversion, numerical quality, complete 4-stream execution,
+KV allocation or end-to-end throughput.
+
+Physical GEMM split, FFN intermediate tiled to multiples of 256,
+gate/up and down projections run independently, M=4:
+
+| Logical ratios | Approx. physical weights | max(gate/up) us | max(down) us | ideal FFN-only barrier us |
+| --- | --- | ---: | ---: | ---: |
+| capacity 30/30/20/20 | 29.4/29.4/41.2% | 83.1 | 55.2 | **138.3** |
+| intermediate 35/35/15/15 | 35.3/35.3/29.4% | 83.6 | 65.6 | **149.2** |
+| bandwidth 37.5/37.5/12.5/12.5 | 38.2/38.2/23.5% | 97.3 | 76.3 | **173.6** |
+
+The original capacity split is the preferred **W8A8 kernel-only M4**
+starting point, *not* a validated runtime configuration. The R9700
+has useful compute headroom at this split; moving FFN weight off it
+makes the XTXs the slower barrier. Attention KV has a different
+physical-head allocation and may change the best feasible choice.
+
+Capacity split, all 3 GPUs and both FFN projections, 9 iterations:
+
+| Model rows M | Ideal FFN-only barrier | Physical summed kernel us XTX0 / XTX1 / R9700 |
+| --- | ---: | --- |
+| 1 | 138.6 us | 134.9 / 138.6 / 103.9 |
+| 4 | 138.3 us | 134.5 / 138.3 / 102.7 |
+| 8 | 138.6 us | 135.0 / 138.6 / 106.5 |
+| 64 | 314.5 us | 305.2 / 314.5 / 197.3 |
+
+M=64 uses the tiled kernel; M1/4/8 use the narrow decode kernel.
+Each sample is a short single benchmark, not a stable p95.
+**Only compare within the W8A8 warm-weight format**; IQ6R-V4's
+256-MiB cold-flush timing measures different weight residency.
+
+VTP07 records the gfx11 IQ6R host-source omission and corrective
+scratch build. Full 27B model/KV validation remains under VTP06.

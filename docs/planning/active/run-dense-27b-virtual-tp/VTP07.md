@@ -150,3 +150,110 @@ symbols and registration, run a correctly leased IQ6R relayout and
 numerical check on **both** XTX cards, and only then collect new
 timings against a matching gfx1201 control. A host-source build fix
 does not by itself prove that the gfx11 GPU kernel executes correctly.
+
+## Hardware validation of the gfx11 host-layout fix
+
+The isolated single-IQR-unit gfx11 `libr3.so` compiled successfully
+from the patched worktree. It exports real IQR layout symbols, but cannot
+run the *general-purpose* `r4d_selftest`, which probes unrelated
+tuning functions excluded by `R3_ONLY=r4d_gemm_iqr`. That failure is a
+diagnostic-build limitation, not an IQR kernel relayout failure.
+
+A second **scratch-only full-plugin relink** used all 114 precompiled
+gfx1100 object files from the unchanged pinned original build, added the
+new `r4d_iqr_layout.cpp.o`, and regenerated the stub table. Receipt:
+`${BC_WORK_ROOT}/xtx27-prefill/iqr-layout-fix/relink-full/receipt.json`.
+Original gfx11 plugin SHA-256:
+`9be0022d36623551750abad26fea2ab1ba7b446a7e6c1cc875f4416c0ff9d62d`;
+isolated full-plugin SHA-256:
+`7090903884f8b4998c6e5e3966d75cd19ef5b7cad0a9ff8eb23700345a7338bd`.
+The old plugin was unchanged. The newly linked plugin has real
+`r4d_rad_layout_iqr`, `r4d_rad_relayout_iqr` and
+`r4d_rad_unrelayout_iqr` symbols outside the stub address interval;
+the original IQR GEMM device object is unchanged.
+
+**Caveat:** the reused old GPU objects were compiled in a different
+worktree; an included prefill header differs. Therefore this relink is
+diagnostic proof of the *layout omission*, NOT a canonical complete
+same-source production build. Rebuild the full gfx11 plugin canonically
+and run an ABI/quality regression before merging the dispatch path.
+
+The two XTX cards then both executed real IQ6R V4 six-bit,
+`--perfiqr` M=4, 256-MiB cold-weight tests in the corrected full
+scratch package at the capacity split (FFN intermediate widths:
+5120/5120/3584/3584). Gate/up and down:
+
+| Card | Gate/up N×K | Gate/up cold us | Down N×K | Down cold us |
+| --- | --- | ---: | --- | ---: |
+| XTX0 gfx1100 | 10240×5120 | 176.2 | 5120×5120 | 104.1 |
+| XTX1 gfx1100 | 10240×5120 | 175.8 | 5120×5120 | 102.3 |
+| R9700 gfx1201 (original build) | 14336×5120 | 108.2 | 5120×7168 | 59.6 |
+
+The diagnostic IQ6R **ideal FFN-only barrier** is
+max(176.2,175.8,108.2) + max(104.1,102.3,59.6) =
+**280.3 µs** for cold M=4 kernel launches; excludes inter-GPU
+collectives, activation, graph, attention, KV, model quality and other
+runtime work. Do not compare directly to the 138.3-µs warm W8A8
+result. No virtual TP4 engine exists yet.
+
+To test numerics, use the gfx11-specific `r3_selftest` (built from
+the pinned selftest through the existing gfx11 source rewrite), not
+`r4d_selftest`, which deliberately skips its device phase without a
+gfx1200/1201 device. `r3_selftest --case gemm_iqr_gated`
+returned **36 "ok" and zero "fail"** checks on *each* XTX,
+including computed trellis B=6 cases at M=1,2,5,16 and wide
+gate/up B=4 cases; all test receipts are under
+`${BC_WORK_ROOT}/xtx27-prefill/iqr-layout-fix/oracle-runs/`.
+These are actual Radiance selftest numerical comparisons, not model
+KLD/accuracy nor an original-BF16 oracle.
+
+## Completed gfx11 IQ6R numerical suites: independent XTX runs
+
+The corrected *scratch-only full diagnostic plugin* was paired with the
+gfx11-specific `r3_selftest`. Every execution acquired its own GPU
+lease, reported the chosen device, and saved executable/plugin SHA-256
+in a separate receipt under
+`${BC_WORK_ROOT}/xtx27-prefill/iqr-layout-fix/oracle-runs/`.
+The first attempt with the gfx12-only `r4d_selftest` skipped gfx11
+tests, and a scratch wrapper initially misread Radiance's positive
+`ok` prefix as if it were `PASS`; neither false-negative was
+counted as a numerical result. The corrected wrapper has explicit
+`ok`/`fail` counts, nonzero exit detection, a 120-second bounded
+timeout and child-process-group termination on timeout.
+
+| Actual `r3_selftest --case` | XTX0 pass/fail | XTX1 pass/fail | Evidence |
+| --- | ---: | ---: | --- |
+| `gemm_iqr_gated` | 36 / 0 | 36 / 0 | Trellis B=2,3,4,6 and gated-fold parity |
+| `gemm_iqr_nt_m64` | 1032 / 0 | 1032 / 0 | Packed-code inverse, exact stored-bit checks and GEMM/reference comparison across varied small/mid shapes |
+| `gemm_iqr_tiled` | 129 / 0 | 129 / 0 | Tiled GEMM/reference parity cases |
+| **Total** | **1197 / 0** | **1197 / 0** | **2394 successful individual selftest checks** |
+
+Receipts specifically:
+- XTX0 gated: `20261110T053817039213Z-xtx0-gemm_iqr_gated`
+- XTX1 gated: `20261110T053820540178Z-xtx1-gemm_iqr_gated`
+- XTX0 narrow: `20261110T053846436824Z-xtx0-gemm_iqr_nt_m64`
+- XTX1 narrow: `20261110T054107331968Z-xtx1-gemm_iqr_nt_m64`
+- XTX0 tiled: `20261110T054253647381Z-xtx0-gemm_iqr_tiled`
+- XTX1 tiled: `20261110T054326868950Z-xtx1-gemm_iqr_tiled`
+
+All recorded cases returned zero exit with zero `fail` lines,
+and every lease was subsequently released. Counts include *several
+checks per shape*; **2394 is not the number of independent model-sized
+experiments**. The wide gating samples in the selftest use B=4;
+although B=6 appears in the narrow suite, a dedicated 27B-width
+B=6 production-quality check against original BF16 is outstanding.
+The background scratch scripts and full-object relink are diagnostic,
+not a replacement for the canonical mainline build and model conversion.
+
+### Follow-up gates after VTP07
+
+1. Build a **canonical full gfx11 libr3** including `r4d_iqr_layout.cpp`
+   in an isolated standard engine build, with matching full gfx12
+   backend; check no IQR hook falls in the stub region. Do not
+   overwrite the pinned shared original binary in place.
+2. Compare calibrated 27B IQ6R (and W8A8) against original BF16 for
+   top1/KLD, residual and per-operation numerical fidelity.
+3. Once the 3-card engine can actually run physical ranks, include
+   host-root collective, fused gate/down dependency, attention and
+   KV residence in the 4+ stream throughput/concurrency screen.
+   Microkernel-only results are not sufficient for rollout.
