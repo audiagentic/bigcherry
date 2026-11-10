@@ -430,3 +430,40 @@ F32 partial transport**, not native three-card W8A8/FP8 GEMM or
 an equal-work comparison: VTP12's simultaneous mixed quant GEMM,
 common activation/output ABI, attention/GDN and model quality
 acceptance remain OPEN. See VTP04/VTP13 for receipts and contracts.
+
+## 2026-11-11 — concurrent INT8 FFN pilot staged (card-free only)
+
+`xtx27_vtp13_chain.py` adds an opt-in experiment to VTP04's
+source-hashed compile/lease/receipt machinery, using
+`xtx27_vtp13_ffn.hip` (compiled card-free for gfx1100+gfx1201).
+Geometry is **5120/4864/7424**, full hidden size 5120. Three physical
+streams perform genuine INT8 GEMM gate/up, SwiGLU, requantisation,
+down GEMM, then three D2H packets, CPU F32 reduction, and H2D broadcast.
+An independent CPU oracle checks all output rows and physical ranks.
+The source BF16 values are *synthetic and exactly representable*;
+original model payload bytes and optimized Radiance GEMMs are **not** used.
+The timing will not compare directly with native VTP12 selftests.
+
+`python3 tools/lab/radiance/xtx27_vtp13_chain.py --phase gpu --run --rows 1,4 --iterations 3`
+automatically requires the exclusive lease and empty KFD inventory;
+a reversed-order fresh start is the immediate control. During staging
+another agent held an XTX power A/B lease and four KFD processes were
+present; **no VTP13 hardware execution** occurred.
+Next: GPU numerical proof, real BF16-checkpoint-derived shard weights,
+native INT8/FP8 ABI and R9700 attention/GDN head-local measurements.
+
+### Candidate source review: Spry.ai gfx1201 SGLang (not copied)
+
+Reviewed `Drgr33nSenior/Spry.ai-rdna4-serving` public `sglang-main`
+patches at 2026-11-11: 0022 register-fed prepacked MXFP4 Gluon
+verify GEMM (reported 18.6->12.1 ms per round, M<=16), 0018
+single-launch fused Split-K, 0019/0020 fused norm/SwiGLU + MXFP4
+quantisation, 0021 wider single-request long-context verify-attention.
+These suggest separate R9700 operator probes **after** the uniform INT8
+chain. Patch 0014 requires actual two-gfx1201 PCIe P2P and changes
+system-scope release/acquire flag ordering; BigCherry has **no usable
+P2P**, so it cannot replace the CPU-staged three-rank collective.
+The source's Nov 9 README says its current SGLang-main profile is
+unqualified and historical op234 runtime cannot be reproduced as
+documented. No MXFP4 quality, speed or production choice is imported.
+Source: https://github.com/Drgr33nSenior/Spry.ai-rdna4-serving .

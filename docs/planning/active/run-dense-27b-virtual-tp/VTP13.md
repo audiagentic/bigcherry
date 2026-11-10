@@ -188,3 +188,30 @@ nonuniform engine-rank dimensions, gfx11/gfx12 mixed kernel registry,
 GDN Q|K|V/conv repacking and recurrent state, attention Q+gate pairing,
 real three-GPU GEMM-to-collective numerical integration, and measured
 KV/VRAM admission. Production and quant defaults remain unchanged.
+
+## 2026-11-11 — VTP13 simultaneous INT8 chain: compile proven, GPU pending
+
+New `tools/lab/radiance/xtx27_vtp13_ffn.hip` is a 3-device
+5120/4864/7424 FFN + host-TP3 numerical microharness, called via
+`xtx27_vtp13_chain.py`. Unlike VTP12's separately timed native rows,
+the three physical GPU streams enqueue the **same dependency chain**
+before a single shared barrier, then perform 3 D2H transfers, CPU exact
+ordered F32 sum, and 3 H2D broadcasts. A CPU reference independently
+recomputes INT8 and BF16-source outputs; each GPU result is checked.
+The reference is synthetic BF16-representable data, **not Qwen checkpoint
+payloads**; the scalar-warp INT8 kernels are **not native optimized
+Radiance dispatch**. No end-to-end speed comparison is justified.
+
+The HIP file compiled under `hipcc -O3 -std=c++17` for gfx1100 and
+gfx1201. Card-free planning, source hashing and lease tests passed.
+No GPU case ran: the lease was held by another agent doing power tuning
+and `rocm-smi --showpids` listed four KFD processes. Start under lease
+with `python3 tools/lab/radiance/xtx27_vtp13_chain.py --phase gpu --run
+--rows 1,4 --iterations 3`; repeat reversed; use M8/M64 only after
+the cheap correctness gate. Receipts go outside Git under
+`BC_WORK_ROOT/xtx27-prefill/vtp13-ffn-chain/runs/`.
+
+Still open: checkpoint-BF16 numerical operator proof, native per-arch
+W8A8 (and optional common-ABI FP8), two-head full-attention and GDN
+Q|K|V/conv/recurrent state, VRAM admission, integrated Radiance TP3,
+matched TP2/TP4 and 4/6/8-stream full-model acceptance.

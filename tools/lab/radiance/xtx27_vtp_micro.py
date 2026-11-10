@@ -51,9 +51,11 @@ def compiler_path(configured: str | None) -> Path | None:
     return Path(found).resolve() if found else None
 
 
-def source_digest() -> str:
+def source_digest(sources: dict[str, Path] | None = None) -> str:
+    if sources is None:
+        sources = SOURCES
     h = hashlib.sha256()
-    for name, src in sorted(SOURCES.items()):
+    for name, src in sorted(sources.items()):
         h.update(name.encode())
         h.update(src.read_bytes())
     h.update(" ".join(BUILD_FLAGS).encode())
@@ -98,7 +100,10 @@ def plan(*, mib: tuple[int, ...], rows: tuple[int, ...], lanes: int, iterations:
     return result
 
 
-def build_binaries(hipcc: Path, scratch: Path, digest: str) -> dict[str, Path]:
+def build_binaries(hipcc: Path, scratch: Path, digest: str,
+                   sources: dict[str, Path] | None = None) -> dict[str, Path]:
+    if sources is None:
+        sources = SOURCES
     out = scratch / "build" / digest[:16]
     out.mkdir(parents=True, exist_ok=True)
     version = subprocess.run([str(hipcc), "--version"], check=True, text=True, capture_output=True).stdout
@@ -108,10 +113,10 @@ def build_binaries(hipcc: Path, scratch: Path, digest: str) -> dict[str, Path]:
         "compiler_version": version.strip(),
         "flags": list(BUILD_FLAGS),
         "sources": {name: hashlib.sha256(src.read_bytes()).hexdigest()
-                    for name, src in SOURCES.items()},
+                    for name, src in sources.items()},
     }
     receipt_path = out / "build-manifest.json"
-    binaries = {kind: out / f"vtp04-{kind}" for kind in SOURCES}
+    binaries = {kind: out / f"vtp04-{kind}" for kind in sources}
     reusable = False
     if receipt_path.exists() and all(p.is_file() for p in binaries.values()):
         try:
@@ -119,7 +124,7 @@ def build_binaries(hipcc: Path, scratch: Path, digest: str) -> dict[str, Path]:
         except (OSError, json.JSONDecodeError):
             reusable = False
     if not reusable:
-        for kind, src in SOURCES.items():
+        for kind, src in sources.items():
             binary = binaries[kind]
             temp = out / f".{binary.name}.new"
             result = subprocess.run(
@@ -137,6 +142,8 @@ def build_binaries(hipcc: Path, scratch: Path, digest: str) -> dict[str, Path]:
 
 def run_leased(
     *, scratch: Path, binaries: dict[str, Path], cases: list[dict], digest: str,
+    purpose: str = "VTP04: isolated virtual TP4 local/host microbench",
+    receipt_type: str = "VTP04_THREE_PHYSICAL_GPU_MICROBENCH",
 ) -> Path:
     if os.environ.get("VTP04_LEASED") != "1":
         raise RuntimeError("VTP04 GPU runner requires the exclusive lease wrapper")
@@ -146,7 +153,7 @@ def run_leased(
             raise RuntimeError(f"refusing inherited GPU mask: {key}")
     lease = subprocess.run(["agent-lease", "status"], check=True, text=True,
                            capture_output=True, timeout=8).stdout
-    if 'for "VTP04: isolated virtual TP4 local/host microbench"' not in lease:
+    if f'for "{purpose}"' not in lease:
         raise RuntimeError("VTP04 global GPU lease not owned by this pilot")
     show = subprocess.run(["rocm-smi", "--showpids"], check=True, text=True,
                           capture_output=True, timeout=8).stdout
@@ -158,7 +165,7 @@ def run_leased(
     entries: list[dict] = []
     receipt = {
         "status": "incomplete",
-        "type": "VTP04_THREE_PHYSICAL_GPU_MICROBENCH",
+        "type": receipt_type,
         "checkout": None,
         "source_digest": digest,
         "not_a_model_benchmark": True,
