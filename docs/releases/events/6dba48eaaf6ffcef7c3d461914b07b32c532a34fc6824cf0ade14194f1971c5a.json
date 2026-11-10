@@ -1,0 +1,14 @@
+{
+  "change-class": "tests",
+  "event-id": "chg_20261110_020331_a-new-lab-benchmark-shows-whet_8797",
+  "files": [
+    "tools/lab/radiance/host-link-duplex.hip"
+  ],
+  "plan-item-ids": [
+    "HL01"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Lab benchmark host-link-duplex: per card, pull (host->GPU) and push (GPU->host) alone, serial vs duplex by kernels and by hipMemcpyAsync, each beside a CU-bound compute stand-in. First run: tail 6900 XT link ~3.6 GB/s each way, copy-engine duplex 1.06x the slower direction and no slowdown of concurrent compute; kernel transfers add ~0.5 ms to concurrent compute.",
+  "timestamp-utc": "2026-11-10T02:03:31.008908Z",
+  "user-summary-candidate": "A new lab benchmark shows whether a graphics card's slow link can carry data in both directions at once without slowing its compute."
+}
