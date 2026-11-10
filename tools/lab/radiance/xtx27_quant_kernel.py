@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import mmap
 import os
 import re
 import subprocess
@@ -78,6 +79,20 @@ def parse_devices(show: str) -> dict[str, int]:
     return {"xtx0": x[0], "xtx1": x[1], "r9700": r[0]}
 
 
+MASK_VARIABLES = ("ROCR_VISIBLE_DEVICES", "HIP_VISIBLE_DEVICES",
+                  "CUDA_VISIBLE_DEVICES", "GPU_DEVICE_ORDINAL")
+
+
+def isolated_device_env(source: dict[str, str], physical_index: int) -> dict[str, str]:
+    """Restrict HIP through ROCr only (Linux); reject inherited GPU filters."""
+    inherited = [key for key in MASK_VARIABLES if key in source]
+    if inherited:
+        raise ValueError(f"cannot trust physical indices with inherited GPU masks: {inherited}")
+    if physical_index < 0:
+        raise ValueError("negative physical GPU index")
+    return {**source, "ROCR_VISIBLE_DEVICES": str(physical_index)}
+
+
 def sha256(path: Path) -> str:
     with path.open("rb") as f:
         return hashlib.file_digest(f, "sha256").hexdigest()
@@ -103,22 +118,40 @@ def extract_timing(stdout: str, *, quant: str, m: int) -> float:
     return us
 
 
+def extract_measured_shape(stdout: str, *, quant: str) -> tuple[int, int, int]:
+    if quant == "iq6r":
+        pattern = r"(?m)^N=(\d+) K=(\d+) M=(\d+)\s*$"
+    elif quant == "w8a8":
+        pattern = r"(?m)^8-bit trunk GEMMs\s+N=(\d+) K=(\d+) M=(\d+)\s+\d+ iters\s*$"
+    else:
+        raise ValueError("unknown quant mode")
+    matches = re.findall(pattern, stdout)
+    if len(matches) != 1:
+        raise ValueError("missing or ambiguous quantized GEMM shape header")
+    return tuple(int(v) for v in matches[0])
+
+
+def contains_file_tokens(path: Path, tokens: tuple[bytes, ...]) -> bool:
+    if path.stat().st_size == 0:
+        return False
+    with path.open("rb") as handle, mmap.mmap(handle.fileno(), 0, access=mmap.ACCESS_READ) as view:
+        return all(view.find(token) >= 0 for token in tokens)
+
+
 def build_paths(build: Path, gpu: str, quant: str) -> tuple[Path, Path]:
     exe = build / "bin" / "r4d_selftest"
     plugin = build / "radiance_home" / "kernels" / ("libr4d.so" if gpu == "r9700" else "libr3.so")
     if not exe.is_file() or not plugin.is_file():
         raise ValueError("matching prebuilt r4d_selftest and plugin required; no auto-build")
-    executable_bytes, plugin_bytes = exe.read_bytes(), plugin.read_bytes()
+    # Search hundreds-of-MiB GPU plugins through a read-only mapping, not a heap copy.
     if quant == "iq6r":
-        if b"--perfiqr" not in executable_bytes or any(
-            row not in plugin_bytes
-            for row in (b"gemm_iqr_nt_m64", b"gemm_iqr_tiled")
+        if not contains_file_tokens(exe, (b"--perfiqr",)) or not contains_file_tokens(
+            plugin, (b"gemm_iqr_nt_m64", b"gemm_iqr_tiled")
         ):
             raise ValueError("selected prebuilt binary/plugin lacks native IQR V4 timing rows")
     elif quant == "w8a8":
-        if b"--perfw8" not in executable_bytes or any(
-            row not in plugin_bytes
-            for row in (b"gemm_i8a8_nt_m16", b"gemm_i8a8_tiled")
+        if not contains_file_tokens(exe, (b"--perfw8",)) or not contains_file_tokens(
+            plugin, (b"gemm_i8a8_nt_m16", b"gemm_i8a8_tiled")
         ):
             raise ValueError("selected prebuilt binary/plugin lacks native W8A8 timing rows")
     else:
@@ -150,6 +183,8 @@ def execute_one(args: argparse.Namespace, geo: dict) -> Path:
     # The parent acquire command sets this and holds the global GPU lease.
     if not args._under_lease or os.environ.get("VTP05_LEASED") != "1":
         raise ValueError("GPU execution only inside exclusive lease")
+    # Physical GPU ordering must be unfiltered before rocm-smi resolves indices.
+    isolated_device_env(os.environ, 0)
     build = args.build_dir.expanduser().resolve()
     exe, plugin = build_paths(build, args.gpu, args.quant)
     device_info = subprocess.run(["rocm-smi", "--showproductname"], text=True,
@@ -162,9 +197,7 @@ def execute_one(args: argparse.Namespace, geo: dict) -> Path:
         args.quant + "-" + args.gpu
     )
     out.mkdir(parents=True, exist_ok=False)
-    env = os.environ.copy()
-    env["HIP_VISIBLE_DEVICES"] = str(device_id)
-    env["ROCR_VISIBLE_DEVICES"] = str(device_id)
+    env = isolated_device_env(os.environ.copy(), device_id)
     receipt = {
         "status": "INCOMPLETE",
         "kind": "VTP05_RADIANCE_KERNEL_TIMING_ONLY_NOT_MODEL_QUALITY",
@@ -197,6 +230,11 @@ def execute_one(args: argparse.Namespace, geo: dict) -> Path:
             receipt["status"] = "FAILED_SELFTEST"
         else:
             try:
+                observed = extract_measured_shape(run.stdout, quant=args.quant)
+                expected = (geo["N"], geo["K"], args.m)
+                if observed != expected:
+                    raise ValueError(f"GEMM shape differs: requested {expected}, observed {observed}")
+                receipt["observed_nkm"] = list(observed)
                 receipt["device_us"] = extract_timing(run.stdout, quant=args.quant, m=args.m)
                 receipt["status"] = "TIMING_OBTAINED_NUMERICAL_UNCHECKED"
             except ValueError as exc:
@@ -269,6 +307,7 @@ def main(argv: list[str] | None = None) -> int:
     if scratch == ROOT or ROOT in scratch.parents:
         parser.error("scratch must be outside repository")
     try:
+        isolated_device_env(os.environ, 0)
         build_paths(args.build_dir.expanduser().resolve(), args.gpu, args.quant)
     except ValueError as exc:
         parser.error(str(exc))

@@ -137,3 +137,27 @@ latency, interleaving speedup or tokens/s estimate.
 campaign tests and 9 VTP05 harness tests; Ruff clean. No
 new Q6/Q8 GPU timings were recorded during the active
 Flash-Next exclusive GPU lease.
+
+### GPU-free runner safety audit (2026-11-10)
+
+Before hardware access, the campaign runner was hardened: on Linux it
+uses **ROCR_VISIBLE_DEVICES alone**, rejects *any* inherited visibility
+mask (ROCR/HIP/CUDA/GPU_DEVICE_ORDINAL), and resolves the physical index
+from the full unmasked GPU inventory only after acquiring the lease.
+AMD ROCm 7.2 documentation recommends the ROCr mask on Linux; setting
+HIP_VISIBLE_DEVICES to the same physical ID after ROCr remapping is
+ambiguous. The selftest output must now include an exact N/K/M header
+matching the requested geometry as well as the selected timing row.
+Large plugin capability checks use read-only mapped-file searches
+rather than copying ~200 MiB of binary into the Python heap.
+
+Six new mock-GPU receipt/negative-case tests ensure target identity,
+strict output geometry and no accidental GPU access. The full XDP
+card-free suite passes **105 tests** and Ruff remains clean. These
+checks do not qualify numerical output or guarantee a successful live
+HIP run; actual hardware remains lease-blocked.
+
+The original pilot-v1 manifest is intentionally invalidated by the
+new runner SHA and must not be reused. Recreate a distinct immutable
+**pilot-v2** manifest *after* committing/rebasing these safety changes,
+and never overwrite pilot-v1 or accept its receipts in pilot-v2.
