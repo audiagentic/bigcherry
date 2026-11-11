@@ -1022,3 +1022,108 @@ per-GPU VRAM admission for 4/6/8 streams and long context.
 Only real end-to-end text generation, quality replay and
 matched TP2/TP3 throughput can qualify a production option.
 Neither VTP20 nor VTP23 constitutes full model inference.
+
+
+### 2026-11-11 — VTP24/VTP25: original-BF16 FFN after GDN, plus full-64-layer ownership lower bound (VTP26)
+
+The next **model execution blocker**, rather than another independent
+GDN microbenchmark, is full original-weight FFN and real residual handoff.
+VTP24 has packaged and executed the *original checkpoint* layer-0
+BF16 FFN gate/up/down using physical rank widths **5120/4864/7424**
+and original post_attention_layernorm. Its FFN input is the
+source-hashed, original-GDN CPU reference **post-residual** from
+VTP16 (M1 and M4), not a new synthetic generated activation.
+This verifies actual residual -> norm -> FFN placement but **not yet
+live GPU-to-GPU GDN/FFN forwarding**.
+
+VTP24 files:
+- tools/lab/radiance/xtx27_vtp24_ffn_pack.py: verified original
+  safetensors source offsets, original row-sharded gate/up and
+  input-column-sharded down; exact byte reconstruction of all
+  17408-wide original FFN source tensors. Original model layer-0
+  post-attention weighted RMSNorm, original VTP16 GDN residual
+  source verified by hashes. The output is immutable.
+- tools/lab/radiance/xtx27_vtp24_ffn_ref.cpp and
+  xtx27_vtp24_ffn_oracle.py: standalone C++ double-accumulation
+  original BF16 gate/up, BF16 SwiGLU and down projections,
+  ordered 3-device F32 reduction, BF16 residual and the resulting
+  **complete original layer-0 post-FFN hidden**, suitable as
+  layer-1 input. This CPU correctness reference is deliberately
+  separate from the GPU implementation.
+
+M1 source / CPU receipts:
+- $BC_WORK_ROOT/xtx27-prefill/vtp24-original-ffn/layer0-20261111T061700090195Z/summary.json
+- $BC_WORK_ROOT/xtx27-prefill/vtp24-original-ffn-cpu/layer0-m1-20261111T061945282150Z/summary.json
+
+M4 source / CPU receipts:
+- $BC_WORK_ROOT/xtx27-prefill/vtp24-original-ffn/layer0-20261111T061946347706Z/summary.json
+- $BC_WORK_ROOT/xtx27-prefill/vtp24-original-ffn-cpu/layer0-m4-20261111T062028159412Z/summary.json
+
+Both original-weight CPU references pass their declared source and
+execution checks. **Not a full-model-framework numerical parity
+qualification**; BF16 intermediate rounding boundaries remain
+independently chosen for this research oracle.
+
+VTP25 is a distinct new three-physical-GPU **original BF16 FFN**
+implementation under xtx27_vtp25_ffn_original.hip, supervised
+by xtx27_vtp25_ffn_gpu.py. Original checkpoint
+gate/up GEMVs -> BF16 SwiGLU -> original down projection,
+parallel one stream on each XTX0/XTX1/R9700 -> pinned async
+D2H and ordered F32 host reduction -> original BF16 residual
+and three-device broadcast. Every stage is checked
+against VTP24's source-hashed CPU oracle. Multiarch HIP
+compilation gfx1100+gfx1201 PASS and card-free checks
+PASS. **VTP25 has not yet run on GPU**, because the other
+agent's exclusive GPU lease is held for power/text identity.
+
+VTP25 hardware acceptance once GPUs are free:
+
+    python3 tools/lab/radiance/xtx27_vtp25_ffn_gpu.py --phase gpu --run --iterations 5 \
+      --packet-receipt "$BC_WORK_ROOT/xtx27-prefill/vtp24-original-ffn/layer0-20261111T061700090195Z/summary.json" \
+      --cpu-receipt "$BC_WORK_ROOT/xtx27-prefill/vtp24-original-ffn-cpu/layer0-m1-20261111T061945282150Z/summary.json"
+
+M4: replace the two receipts with
+layer0-20261111T061946347706Z/summary.json and
+layer0-m4-20261111T062028159412Z/summary.json.
+
+VTP26 exact-original-BF16 **64-layer tensor and state resource
+ledger** is now card-free:
+tools/lab/radiance/xtx27_vtp26_full_model_inventory.py.
+It consumes the original 18 safetensors headers, validates all
+640 sharded source tensors across 48 GDN, 16 gated causal attention
+and 64 5120/4864/7424 FFN blocks, including the real replicated
+input/post-attention and Q/K/GDN norms. It accounts for original
+source BF16 weights and per-request recurrent state, 3-row
+causal convolution history, and full causal attention KV
+retention. The first text-only correctness path leaves the
+original embeddings, full language head and final norm in
+host RAM (about 5.09 GB before workspace); visual/MTP
+tensors are intentionally excluded and separately counted.
+
+**Minimum BF16 physical GPU bytes, not launch admission:**
+
+| Resident target | XTX0 | XTX1 | R9700 |
+| --- | ---: | ---: | ---: |
+| 4 x 8192 tokens | 14,378,367,232 | 13,875,050,752 | 23,218,913,792 |
+| 1 x 262144 tokens | 18,021,005,568 | 17,517,689,088 | 30,504,190,464 |
+
+Immutable source-header-backed model ledger receipts:
+- $BC_WORK_ROOT/xtx27-prefill/vtp26-model-64-layer-4streams-8192-20261111.json
+- $BC_WORK_ROOT/xtx27-prefill/vtp26-model-64-layer-1stream-262144-20261111.json
+
+These are strictly **lower bounds**: allocator/graph/scratch,
+collective staging, conversion scales, fragmentation and
+measured safety reserve are absent. Neither 8K x4 nor 262K x1
+has been admitted or run, and headers alone are not a
+full-payload integrity proof. R9700 memory at 262K x1
+has little theoretical space left for those missing costs.
+
+**What is still genuinely open before real 27B TP3 inference:**
+numerically validate VTP25 on GPUs; wire actual VTP20 GPU
+post-GDN output directly to the FFN without a CPU-oracle
+reinjection; convert the per-layer operators into one real
+64-layer runtime with preserved GDN conv/recurrent and full-KV
+cache state, original embedding/head, per-layer norm, residual,
+sampling and measured memory admission; then quality and
+end-to-end TP2-vs-TP3 4/6/8-stream tests. Do not claim real
+model output or native 262K context from these staged proofs.
