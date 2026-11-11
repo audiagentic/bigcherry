@@ -1,9 +1,9 @@
 #pragma once
 /* One helper process's settings: a flat, immutable projection of the manifest the shared v1 reader verified
- * (v1::load_manifest, then v1::helper_view: helper_common, the role's patch and the lab experiment's shape, spec §2.2).
+ * (v2::load_manifest, then v2::helper_view: helper_common, the role's patch and the lab experiment's shape, spec §2.2).
  * Not a second schema: every value is read from a v1 field and nothing is defaulted here except the diagnostics that are
  * absent from a production manifest (their off state, which is the helper's unset behaviour). r3_moe_worker --manifest
- * FILE --role helperN loads it before any GPU work; a failure is a v1::ConfigError. */
+ * FILE --role helperN loads it before any GPU work; a failure is a v2::ConfigError. */
 #include "manifest.h"
 
 #include <cstdint>
@@ -13,7 +13,7 @@
 #include <string_view>
 #include <vector>
 
-namespace bc::serving {
+namespace bc::serving::v2 {
 
 struct WorkerHelper {
     uint32_t count = 0, index = 0, engine_ranks = 0;
@@ -52,16 +52,16 @@ struct HelperSettings {
     bool refusal_trace = false;
     bool sweep_fast = false;
     /* Live placement (spec.handoff.placement.live_policy): present when the manifest runs the policy. */
-    std::optional<v1::LivePolicy> live_policy;
+    std::optional<v2::LivePolicy> live_policy;
     /* The lab's forced schedule and no-op epoch cycle (spec.experiment.placement); 0 epoch_cycle_s = off. */
-    std::optional<v1::ForcedChurn> forced;
+    std::optional<v2::ForcedChurn> forced;
     uint32_t epoch_cycle_s = 0;
 };
 
 /* The settings of the helper with `role`, from a manifest that read_manifest accepted. BC_CFG_UNRESOLVED_REFERENCE when
  * no helper has the role. */
-v1::Result<HelperSettings> helper_settings(const v1::Manifest& m, std::string_view role);
+v2::Result<HelperSettings> helper_settings(const v2::Manifest& m, std::string_view role);
 /* load_manifest (for the start `use` names: serving, or the measuring start), then helper_settings. */
-v1::Result<HelperSettings> load_helper_settings(const std::filesystem::path& path, std::string_view role, v1::PlanUse use);
+v2::Result<HelperSettings> load_helper_settings(const std::filesystem::path& path, std::string_view role, v2::PlanUse use);
 
-}  // namespace bc::serving
+}  // namespace bc::serving::v2

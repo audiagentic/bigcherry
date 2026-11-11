@@ -2,13 +2,13 @@
 
 #include <algorithm>
 
-namespace bc::serving {
+namespace bc::serving::v2 {
 namespace {
-std::string join_formats(const std::vector<v1::ExpertFormat>& formats) {
+std::string join_formats(const std::vector<v2::ExpertFormat>& formats) {
     std::string out;
-    for (v1::ExpertFormat f : formats) {
+    for (v2::ExpertFormat f : formats) {
         if (!out.empty()) out += ",";
-        out += std::string(v1::kExpertFormatNames[static_cast<size_t>(f)]);
+        out += std::string(v2::kExpertFormatNames[static_cast<size_t>(f)]);
     }
     return out;
 }
@@ -16,30 +16,30 @@ template <class T>
 uint32_t u32(T v) { return static_cast<uint32_t>(v); }
 }  // namespace
 
-v1::Result<HelperSettings> helper_settings(const v1::Manifest& m, std::string_view role) {
-    auto view = v1::helper_view(m, role);
+v2::Result<HelperSettings> helper_settings(const v2::Manifest& m, std::string_view role) {
+    auto view = v2::helper_view(m, role);
     if (!view) return view.error();
-    const v1::HelperView& v = view.value();
-    const v1::HelperCommon& c = v.settings;
+    const v2::HelperView& v = view.value();
+    const v2::HelperCommon& c = v.settings;
     const auto& p = m.spec.processes;
-    const v1::Handoff& h = *m.spec.handoff;   // a helper exists, so the handoff does
+    const v2::Handoff& h = *m.spec.handoff;   // a helper exists, so the handoff does
 
     HelperSettings s;
     s.role = std::string(role);
     s.content_sha256 = m.metadata.content_digest;
     s.model = m.spec.intent.model;
-    s.plan_cache_key = v1::plan_cache_key(m);
+    s.plan_cache_key = v2::plan_cache_key(m);
     s.layout = m.spec.intent.layout;
-    s.objective = std::string(v1::kObjectiveNames[static_cast<size_t>(m.spec.intent.service.objective)]);
-    s.lab_profile = m.spec.intent.service.profile == v1::Profile::kLab;
+    s.objective = std::string(v2::kObjectiveNames[static_cast<size_t>(m.spec.intent.service.objective)]);
+    s.lab_profile = m.spec.intent.service.profile == v2::Profile::kLab;
     s.radiance_home = p.engine.runtime.radiance_home;
     s.helper = {u32(p.helpers.size()), u32(v.index), u32(p.engine.scheduler.tp), c.cpu.reference, c.runtime.power_save,
                 c.runtime.queue_warm, c.combine.enabled, u32(c.combine.min_rows), u32(c.combine.threads),
-                c.cpu.affinity == v1::Affinity::kAuto};
+                c.cpu.affinity == v2::Affinity::kAuto};
     s.handoff = {h.transport.shm,
                  h.placement.heat_file,
                  h.telemetry.histogram_file.value_or(""),
-                 std::string(v1::kPlacementStrategyNames[static_cast<size_t>(h.placement.strategy)]),
+                 std::string(v2::kPlacementStrategyNames[static_cast<size_t>(h.placement.strategy)]),
                  u32(h.transport.max_rows),
                  u32(h.transport.small_rows),
                  u32(h.transport.gemv_large_rows),
@@ -49,7 +49,7 @@ v1::Result<HelperSettings> helper_settings(const v1::Manifest& m, std::string_vi
     s.plugin_file = v.process.plugin_file;
     s.formats = join_formats(v.process.formats);
     s.budget_mib = static_cast<uint64_t>(v.process.vram_budget_mib);
-    for (const v1::HelperProcess& other : p.helpers) {
+    for (const v2::HelperProcess& other : p.helpers) {
         s.budgets_mib.push_back(static_cast<uint64_t>(other.vram_budget_mib));
         s.shares.push_back(static_cast<uint64_t>(other.share));
     }
@@ -79,12 +79,12 @@ v1::Result<HelperSettings> helper_settings(const v1::Manifest& m, std::string_vi
 
     s.live_policy = h.placement.live_policy;
     if (m.spec.experiment && m.spec.experiment->placement) {
-        const v1::ExperimentPlacement& e = *m.spec.experiment->placement;
+        const v2::ExperimentPlacement& e = *m.spec.experiment->placement;
         s.forced = e.forced;
         if (e.epoch_cycle_s) s.epoch_cycle_s = u32(*e.epoch_cycle_s);
     }
     if (m.spec.experiment && m.spec.experiment->diagnostics) {
-        const v1::Diagnostics& d = *m.spec.experiment->diagnostics;
+        const v2::Diagnostics& d = *m.spec.experiment->diagnostics;
         if (d.gemv) {
             if (d.gemv->probe_mode) s.moe_probe = u32(*d.gemv->probe_mode);
             if (d.gemv->refusal_trace) s.refusal_trace = *d.gemv->refusal_trace;
@@ -100,9 +100,9 @@ v1::Result<HelperSettings> helper_settings(const v1::Manifest& m, std::string_vi
             if (d.kernels->plugin_override && *d.kernels->plugin_override) s.plugin = **d.kernels->plugin_override;
             if (d.kernels->poison) {
                 switch (*d.kernels->poison) {
-                    case v1::Poison::kOff: s.poison = "0"; break;
-                    case v1::Poison::kZero: s.poison = "zero"; break;
-                    case v1::Poison::kOne: s.poison = "one"; break;
+                    case v2::Poison::kOff: s.poison = "0"; break;
+                    case v2::Poison::kZero: s.poison = "zero"; break;
+                    case v2::Poison::kOne: s.poison = "one"; break;
                 }
             }
             if (d.kernels->sweep_fast) s.sweep_fast = *d.kernels->sweep_fast;
@@ -111,10 +111,10 @@ v1::Result<HelperSettings> helper_settings(const v1::Manifest& m, std::string_vi
     return s;
 }
 
-v1::Result<HelperSettings> load_helper_settings(const std::filesystem::path& path, std::string_view role, v1::PlanUse use) {
-    auto m = v1::load_manifest(path, use);
+v2::Result<HelperSettings> load_helper_settings(const std::filesystem::path& path, std::string_view role, v2::PlanUse use) {
+    auto m = v2::load_manifest(path, use);
     if (!m) return m.error();
     return helper_settings(m.value(), role);
 }
 
-}  // namespace bc::serving
+}  // namespace bc::serving::v2

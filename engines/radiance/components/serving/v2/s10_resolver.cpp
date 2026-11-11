@@ -318,6 +318,46 @@ Status validate_s10_provenance(const Manifest &m) {
   return std::nullopt;
 }
 
+Status validate_s10_power_plan(const Manifest &m) {
+  const auto selected = targets(m);
+  if (!selected) return selected.error();
+  const PowerPlan &plan = m.spec.plan.power;
+  if (plan.profile.empty() || plan.profile != m.spec.intent.power.profile)
+    return fail(ConfigErrorCode::plan_mismatch, "spec.plan.power.profile",
+                "the plan's power profile differs from spec.intent.power.profile");
+  if (plan.profile == "stock" && plan.mode != PowerMode::kObserve)
+    return fail(ConfigErrorCode::invalid_value, "spec.plan.power.mode",
+                "stock is an empty observe-only plan");
+  std::set<std::string> roles;
+  for (const auto &t : selected.value()) roles.insert(t.role);
+  for (const auto &[role, patch_value] : m.spec.intent.power.role_overrides)
+    if (!roles.count(role) || !populated(patch_value))
+      return fail(ConfigErrorCode::invalid_value, "spec.intent.power.role_overrides",
+                  "unknown role or empty override: " + role);
+  if (plan.devices.size() != selected.value().size())
+    return fail(ConfigErrorCode::ownership_mismatch, "spec.plan.power.devices",
+                "the plan's devices are not exactly the engine TP and selected helper cards");
+  for (size_t i = 0; i < plan.devices.size(); ++i) {
+    const PowerDevice &dev = plan.devices[i];
+    const Target &target = selected.value()[i];
+    const std::string at = "spec.plan.power.devices[" + std::to_string(i) + "]";
+    if (dev.role != target.role || dev.bdf != target.bdf)
+      return fail(ConfigErrorCode::ownership_mismatch, at,
+                  "expected role " + target.role + " on " + target.bdf + ", is " + dev.role + " on " + dev.bdf);
+    if (auto error = valid_settings(dev.settings, at + ".settings")) return *error;
+    if (plan.mode == PowerMode::kObserve && populated(dev.settings))
+      return fail(ConfigErrorCode::invalid_value, at + ".settings",
+                  "an observe plan applies no settings");
+    if (target.arch == "gfx1100" && dev.settings.vddgfx_offset_mv && !dev.settings.sclk_max_mhz)
+      return fail(ConfigErrorCode::invalid_value, at + ".settings",
+                  "gfx1100 VDDGFX offset requires a paired SCLK maximum");
+    if (dev.settings.sclk_offset_mhz)
+      return fail(ConfigErrorCode::invalid_value, at + ".settings",
+                  "SCLK offset has no transaction/restore backend");
+  }
+  return std::nullopt;
+}
+
 Result<Manifest> resolve_s10(const Manifest &base, const S10Inputs &in) {
   if (base.api_version != "bigcherry/v2" || base.metadata.contract_version != 2)
     return fail(ConfigErrorCode::unsupported_version, "apiVersion",

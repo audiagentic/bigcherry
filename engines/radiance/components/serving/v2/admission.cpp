@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-namespace bc::serving::v1 {
+namespace bc::serving::v2 {
 namespace {
 
 constexpr int64_t kMaxBytes = (int64_t(1) << 53) - 1;
@@ -238,4 +238,4 @@ Status check_engine_plan(const EnginePlan& expected, const EnginePlan& live, int
     return std::nullopt;
 }
 
-}  // namespace bc::serving::v1
+}  // namespace bc::serving::v2

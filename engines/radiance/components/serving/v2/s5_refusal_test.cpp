@@ -6,7 +6,7 @@
 #include <cstdint>
 #include <string>
 
-namespace v1 = bc::serving::v1;
+namespace v2 = bc::serving::v2;
 using Json = nlohmann::json;
 
 constexpr int64_t MiB = 1024 * 1024;
