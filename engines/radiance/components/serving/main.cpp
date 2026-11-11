@@ -1,7 +1,7 @@
 #include "serving.h"
 #include "manifest_writer.h"
 #include "live_policy_ingest.h"
-#include "v1/manifest.h"
+#include "v2/manifest.h"
 #include "plan_cache.h"
 #include "sdk_check.h"
 #include "v2/p1_live_room.h"
@@ -149,11 +149,11 @@ int main(int argc, char** argv) {
             const auto plan = bc::serving::plan_cache_lookup(plan_dir, inputs);
             if (!plan)
                 throw std::runtime_error("calibration-ingest: exact measured plan is absent from cache");
-            const auto verified = bc::serving::v1::load_manifest(
-                manifest, bc::serving::v1::PlanUse::serving);
+            const auto verified = bc::serving::v2::load_manifest(
+                manifest, bc::serving::v2::PlanUse::serving);
             if (!verified)
                 throw std::runtime_error("calibration-ingest: strict lab manifest rejected: " +
-                    bc::serving::v1::render_human("bc-serve", verified.error()));
+                    bc::serving::v2::render_human("bc-serve", verified.error()));
             const auto& m = verified.value();
             if (!m.spec.plan.engine_memory ||
                 m.spec.intent.layout != values.at("layout").at("name").get<std::string>() ||

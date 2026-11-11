@@ -13,7 +13,7 @@
 #include <string_view>
 #include <vector>
 
-namespace bc::serving::v2 {
+namespace bc::serving {
 
 struct WorkerHelper {
     uint32_t count = 0, index = 0, engine_ranks = 0;
@@ -64,4 +64,4 @@ v2::Result<HelperSettings> helper_settings(const v2::Manifest& m, std::string_vi
 /* load_manifest (for the start `use` names: serving, or the measuring start), then helper_settings. */
 v2::Result<HelperSettings> load_helper_settings(const std::filesystem::path& path, std::string_view role, v2::PlanUse use);
 
-}  // namespace bc::serving::v2
+}  // namespace bc::serving

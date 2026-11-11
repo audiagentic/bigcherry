@@ -1,12 +1,12 @@
 """RSC03 / RSC08 A3: the engine's memory plan as the serving manifest v1 EnginePlan, measured (`--plan-memory FILE`) or
 checked at start-up against the expected one in the manifest the engine was started from (rad0009's
-bc_serving_expected_plan, from engine_view), through the shared v1 library bc_serving_v1 (components/serving), which
+bc_serving_expected_plan, from engine_view), through the shared v1 library bc_serving_v2 (components/serving), which
 radiance's core links."""
 from bigcherry.patcher import Edit, FilePatch
 
 _BC_PLAN_MEMORY_H = r"""/* bc_plan_memory.h -- BigCherry managed patch rad0011 (RSC03, RSC08 A3): the engine's memory plan.
  *
- * Engine::plan() records its sizes here as a serving manifest v1 EnginePlan (components/serving, bc_serving_v1).
+ * Engine::plan() records its sizes here as a serving manifest v1 EnginePlan (components/serving, bc_serving_v2).
  *   --plan-memory FILE                          start-up stops after plan(): FILE gets the plan (v1 JSON, written by
  *                                               the generated encoder) and the process exits before any weight loads.
  *   (a start from a measured manifest)         the manifest's own expected plan and kv_backing_floor_ppm (engine_view,
@@ -66,7 +66,7 @@ enum class Mode { none, measure, check };
  * "radiance: config: ...". */
 int take_flags(int* argc, char*** argv);
 /* Arms the check with an expected plan and floor (take_flags does it from rad0009's; the card-free test from the admission vectors). */
-int arm(const bc::serving::v1::EnginePlan& expected, int64_t floor_ppm);
+int arm(const bc::serving::v2::EnginePlan& expected, int64_t floor_ppm);
 /* MemAvailable in kB (/proc/meminfo; 0 when unreadable): at take_flags() (the process's first line) and now. */
 long long mem_available_kb_at_start();
 long long mem_available_kb_now();
@@ -74,9 +74,9 @@ Mode mode();
 const std::string& measure_out();
 const std::string& rank_measure_out();
 
-/* With a manifest's expected plan: checks `live` against the expected plan (bc::serving::v1::check_engine_plan) and prints the one
+/* With a manifest's expected plan: checks `live` against the expected plan (bc::serving::v2::check_engine_plan) and prints the one
  * start-up line, admitted with its margins or the refusal. 0 when admitted, else the refusal's exit code. */
-int check(const bc::serving::v1::EnginePlan& live);
+int check(const bc::serving::v2::EnginePlan& live);
 
 /* Re-evaluate live host room only at a terminal pre-weight admission.
  * Driver-only failures are not classified as a capacity shortage. */
@@ -104,25 +104,25 @@ _BC_PLAN_CHECK_CPP = r"""/* bc_plan_check.cpp -- see bc_plan_check.h (BigCherry 
 
 namespace bc_plan {
 namespace {
-namespace v1 = bc::serving::v1;
+namespace v2 = bc::serving::v2;
 Mode g_mode = Mode::none;
 std::string g_out;
 std::string g_rank_out;
-v1::EnginePlan g_expected;
+v2::EnginePlan g_expected;
 int64_t g_ppm = 0;
 std::vector<std::string> g_bdfs;
 
-int report(const v1::ConfigError& e) {
+int report(const v2::ConfigError& e) {
     if (e.room_refusal)
         std::fprintf(stderr, "BC_SERVING_ADMISSION_REFUSAL=%s\n",
-                     v1::room_refusal_json(*e.room_refusal).c_str());
-    std::fputs(v1::render_human("radiance", e).c_str(), stderr);
+                     v2::room_refusal_json(*e.room_refusal).c_str());
+    std::fputs(v2::render_human("radiance", e).c_str(), stderr);
     std::fflush(stderr);
-    return v1::exit_code_of(e);
+    return v2::exit_code_of(e);
 }
 
 int usage(const std::string& flag, const std::string& message) {
-    return report(v1::make_error(v1::ConfigErrorCode::invalid_value, flag, message, "--plan-memory FILE alone"));
+    return report(v2::make_error(v2::ConfigErrorCode::invalid_value, flag, message, "--plan-memory FILE alone"));
 }
 }  // namespace
 
@@ -139,8 +139,8 @@ long long mem_available_kb_now() {
 
 long long mem_available_kb_at_start() { return g_available_at_start_kb; }
 
-int arm(const v1::EnginePlan& expected, int64_t floor_ppm) {
-    if (v1::Status e = v1::check_kv_backing_floor_ppm(floor_ppm)) return report(*e);
+int arm(const v2::EnginePlan& expected, int64_t floor_ppm) {
+    if (v2::Status e = v2::check_kv_backing_floor_ppm(floor_ppm)) return report(*e);
     g_expected = expected;
     g_ppm = floor_ppm;
     g_bdfs = bc_serving_engine_bdfs();
@@ -153,7 +153,7 @@ int take_flags(int* argc, char*** argv) {
     g_available_at_start_kb = mem_available_kb_now();
     g_out.clear();
     g_rank_out.clear();
-    g_expected = v1::EnginePlan{};
+    g_expected = v2::EnginePlan{};
     g_ppm = 0;
     g_bdfs.clear();
     int w = 1;
@@ -181,7 +181,7 @@ int take_flags(int* argc, char*** argv) {
         return 0;
     }
     // a start from a measured manifest: its plan is the one to admit (rad0009 holds it; nothing else supplies one)
-    v1::EnginePlan expected;
+    v2::EnginePlan expected;
     int64_t floor_ppm = 0;
     if (bc_serving_expected_plan(&expected, &floor_ppm)) return arm(expected, floor_ppm);
     return 0;
@@ -196,20 +196,20 @@ int report_host_room_if_short(std::string_view resource, int64_t headroom_bytes,
     if (g_mode != Mode::check) return 0;
     const long long kb = mem_available_kb_now();
     if (kb <= 0 || kb > (9007199254740991LL / 1024)) return 0;
-    if (v1::Status e = v1::check_host_room(resource, kb * 1024, headroom_bytes, components))
+    if (v2::Status e = v2::check_host_room(resource, kb * 1024, headroom_bytes, components))
         if (e->room_refusal) return report(*e);
     return 0;
 }
 
 int report_exact_pool_shortfall(int64_t available_bytes, int64_t required_bytes) {
     if (g_mode != Mode::check || available_bytes < 0 || required_bytes <= available_bytes) return 0;
-    if (v1::Status e = v1::check_host_room("host_pool", available_bytes, 0,
+    if (v2::Status e = v2::check_host_room("host_pool", available_bytes, 0,
                                           {{"host_pool", required_bytes}}))
         if (e->room_refusal) return report(*e);
     return 0;
 }
 
-int check(const v1::EnginePlan& live) {
+int check(const v2::EnginePlan& live) {
     std::string binding_bdf;
     if (g_bdfs.size() == 1) {
         binding_bdf = g_bdfs.front();
@@ -219,8 +219,8 @@ int check(const v1::EnginePlan& live) {
             if (live.vram.cards[i].free < live.vram.cards[limiting].free) limiting = i;
         binding_bdf = g_bdfs[limiting];
     }
-    if (v1::Status e = v1::check_engine_plan(g_expected, live, g_ppm, binding_bdf)) return report(*e);
-    const v1::AdmissionMargins m = v1::admission_margins(g_expected, live, g_ppm);
+    if (v2::Status e = v2::check_engine_plan(g_expected, live, g_ppm, binding_bdf)) return report(*e);
+    const v2::AdmissionMargins m = v2::admission_margins(g_expected, live, g_ppm);
     std::fprintf(stderr,
                  "radiance: plan check: admitted: claimable %lld >= required %lld bytes (margin %lld); resolved KV %lld "
                  ">= kv_required %lld bytes (margin %lld)\n",
@@ -254,9 +254,9 @@ _BC_PLAN_MEMORY_CPP = r"""/* bc_plan_memory.cpp -- see bc_plan_memory.h (BigCher
 #include <string>
 
 namespace {
-namespace v1 = bc::serving::v1;
+namespace v2 = bc::serving::v2;
 std::string g_error;
-v1::EnginePlan g_plan;
+v2::EnginePlan g_plan;
 bool g_noted = false;
 nlohmann::json g_rank_gpu = nlohmann::json::array();
 bool g_rank_noted = false;
@@ -264,8 +264,8 @@ std::vector<rad::VramFacts> g_rank_facts;
 int64_t g_rank_stage = 0;
 long long g_taken_kb = 0;   /* MemAvailable fallen since this process's first line, at the end of the VRAM split (before any pool) */
 
-v1::PlanHostConsumer consumer(const char* name, int64_t bytes, const char* from, const char* remedy) {
-    return {name, bytes, v1::Residence::kPinned, from, remedy};
+v2::PlanHostConsumer consumer(const char* name, int64_t bytes, const char* from, const char* remedy) {
+    return {name, bytes, v2::Residence::kPinned, from, remedy};
 }
 }  // namespace
 
@@ -290,7 +290,7 @@ void bc_plan_memory_note(const rad::Config& cfg, const std::vector<rad::VramFact
     }
     const int64_t checkpoint_interval = geo.checkpoint_interval;
     using rad::TablePlacement;
-    v1::EnginePlan p;
+    v2::EnginePlan p;
     p.plan_version = 1;
     p.producer = "radiance --plan-memory (rad0011)";
     if (cfg.ngram_resolved == TablePlacement::Ram && ngram_bytes > 0)
@@ -398,7 +398,7 @@ int bc_plan_memory_done() {
     const std::string tmp = out_path + ".tmp";
     {
         std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
-        out << v1::encode(g_plan).dump(2) << '\n';
+        out << v2::encode(g_plan).dump(2) << '\n';
         if (!out) {
             std::fprintf(stderr, "radiance: --plan-memory: cannot write %s\n", tmp.c_str());
             std::fflush(nullptr);
@@ -462,10 +462,10 @@ PATCHES = (
              "Create the plan-memory extension-point header."),
     _created("core/bc_plan_memory.cpp", _BC_PLAN_MEMORY_CPP, r"^int bc_plan_memory_done\(\) \{$",
              "Create the record of plan()'s sizes as a v1 EnginePlan, the writer and the start-up check call."),
-    _created("core/bc_plan_check.h", _BC_PLAN_CHECK_H, r"^int check\(const bc::serving::v1::EnginePlan& live\);$",
+    _created("core/bc_plan_check.h", _BC_PLAN_CHECK_H, r"^int check\(const bc::serving::v2::EnginePlan& live\);$",
              "Create the engine-independent plan flags and check."),
     _created("core/bc_plan_check.cpp", _BC_PLAN_CHECK_CPP, r"^int take_flags\(int\* argc, char\*\*\* argv\) \{$",
-             "Create the plan flags, the expected-plan read and the check through bc_serving_v1."),
+             "Create the plan flags, the expected-plan read and the check through bc_serving_v2."),
     FilePatch(
         path="core/main.cpp",
         description="Take --plan-memory off the command line after rad0009's manifest reader has run and arm the check.",

@@ -711,23 +711,23 @@ class TestServingManifestPatch(unittest.TestCase):
         temp, root = self._applied()
         try:
             cmake = (root / "core/CMakeLists.txt").read_text(encoding="utf-8")
-            guard = cmake.index("if(NOT DEFINED BC_SERVING_V1_CMAKE)")
+            guard = cmake.index("if(NOT DEFINED BC_SERVING_V2_CMAKE)")
             self.assertLess(cmake.index("target_link_libraries(rad_core PUBLIC rad_abi"), guard)
             self.assertIn("message(FATAL_ERROR", cmake[guard:guard + 400])
-            self.assertLess(guard, cmake.index('include("${BC_SERVING_V1_CMAKE}")'))
-            self.assertLess(cmake.index('include("${BC_SERVING_V1_CMAKE}")'),
-                            cmake.index("target_link_libraries(rad_core PUBLIC bc_serving_v1)"))
+            self.assertLess(guard, cmake.index('include("${BC_SERVING_V2_CMAKE}")'))
+            self.assertLess(cmake.index('include("${BC_SERVING_V2_CMAKE}")'),
+                            cmake.index("target_link_libraries(rad_core PUBLIC bc_serving_v2)"))
             added = TestRadiancePatchPackages._added_lines(
                 (FIXTURE / "core/CMakeLists.txt").read_text(encoding="utf-8"), cmake)
             code = [line.strip() for line in added if line.strip() and not line.strip().startswith("#")]
             self.assertEqual(code, [
-                "if(NOT DEFINED BC_SERVING_V1_CMAKE)",
-                'message(FATAL_ERROR "rad0009: -DBC_SERVING_V1_CMAKE=<bigcherry>/engines/radiance/components/serving/bc_serving_v1.cmake "',
+                "if(NOT DEFINED BC_SERVING_V2_CMAKE)",
+                'message(FATAL_ERROR "rad0009: -DBC_SERVING_V2_CMAKE=<bigcherry>/engines/radiance/components/serving/bc_serving_v2.cmake "',
                 '"is required (the shared serving manifest v1 library); the BigCherry lane passes it")',
                 "endif()",
-                'set(BC_SERVING_V1_NLOHMANN_INCLUDE "${CMAKE_SOURCE_DIR}/vendor")',
-                'include("${BC_SERVING_V1_CMAKE}")',
-                "target_link_libraries(rad_core PUBLIC bc_serving_v1)",
+                'set(BC_SERVING_V2_NLOHMANN_INCLUDE "${CMAKE_SOURCE_DIR}/vendor")',
+                'include("${BC_SERVING_V2_CMAKE}")',
+                "target_link_libraries(rad_core PUBLIC bc_serving_v2)",
             ])
         finally:
             temp.cleanup()
@@ -792,7 +792,7 @@ class TestServingManifestPatch(unittest.TestCase):
 class TestPlanMemoryPatch(unittest.TestCase):
     """rad0011: the engine's memory plan as a serving manifest v1 EnginePlan: `--plan-memory FILE` measures it,
     a start from a measured manifest checks it at start-up against the manifest's own plan; thin hooks into core/bc_plan_*.* and a fail-closed
-    link of the shared bc_serving_v1 library into rad_core."""
+    link of the shared bc_serving_v2 library into rad_core."""
 
     SERVING = REPO / "engines" / "radiance" / "components" / "serving"
 
@@ -876,7 +876,7 @@ class TestPlanMemoryPatch(unittest.TestCase):
             assert source.count("bc_plan_memory_note_ranks(rank_cfg_);") == 1
             assert "--plan-memory-ranks" in flags
             assert 'g_store.push_back("--plan-memory-ranks");' in manifest
-            assert "out << v1::encode(g_plan).dump(2)" in plan
+            assert "out << v2::encode(g_plan).dump(2)" in plan
             assert (FIXTURE / "core/engine_bringup.cpp").read_text().find(
                 "if (ri == 0) bc_plan_memory_note_ranks(") == -1
             assert (FIXTURE / "core/engine_bringup.cpp").read_text().find(
@@ -903,22 +903,22 @@ class TestPlanMemoryPatch(unittest.TestCase):
                 source.write_text(original)
 
     def test_both_builds_compile_one_source_list(self):
-        """The serving component and radiance's core include the same bc_serving_v1.cmake: the library is defined there
+        """The serving component and radiance's core include the same bc_serving_v2.cmake: the library is defined there
         and nowhere else, and the lane hands the engine that file."""
         for cmake in (self.SERVING / "CMakeLists.txt", *self.SERVING.glob("*.cmake")):
             text = cmake.read_text(encoding="utf-8")
-            if cmake.name == "bc_serving_v1.cmake":
-                self.assertEqual(text.count("add_library(bc_serving_v1 "), 1)
+            if cmake.name == "bc_serving_v2.cmake":
+                self.assertEqual(text.count("add_library(bc_serving_v2 "), 1)
                 self.assertEqual(text.count("add_library(bc_jcs "), 1)
             else:
-                self.assertNotIn("add_library(bc_serving_v1", text, cmake.name)
+                self.assertNotIn("add_library(bc_serving_v2", text, cmake.name)
                 self.assertNotIn("add_library(bc_jcs", text, cmake.name)
-        self.assertIn('include("${CMAKE_CURRENT_SOURCE_DIR}/bc_serving_v1.cmake")',
+        self.assertIn('include("${CMAKE_CURRENT_SOURCE_DIR}/bc_serving_v2.cmake")',
                       (self.SERVING / "CMakeLists.txt").read_text(encoding="utf-8"))
         engine = tomllib.loads((REPO / "engines" / "radiance" / "engine.toml").read_text(encoding="utf-8"))
-        self.assertEqual(engine["build"]["repo-paths"]["BC_SERVING_V1_CMAKE"],
-                         "engines/radiance/components/serving/bc_serving_v1.cmake")
-        listed = re.findall(r'"\$\{_bc_v1_dir\}/([^"]+\.cpp)"', (self.SERVING / "bc_serving_v1.cmake").read_text(encoding="utf-8"))
+        self.assertEqual(engine["build"]["repo-paths"]["BC_SERVING_V2_CMAKE"],
+                         "engines/radiance/components/serving/bc_serving_v2.cmake")
+        listed = re.findall(r'"\$\{_bc_v1_dir\}/([^"]+\.cpp)"', (self.SERVING / "bc_serving_v2.cmake").read_text(encoding="utf-8"))
         self.assertTrue(listed and all((self.SERVING / f).is_file() for f in listed), listed)
 
     def test_second_apply_is_a_no_op(self):

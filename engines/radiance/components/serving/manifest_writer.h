@@ -2,7 +2,7 @@
 /* bc-serve's v1 manifest writer (RSC08 S2a): the resolver's output, the host facts, the measured plan and the planner's
  * owner map assembled into a serving manifest v1 document (docs/design/serving-manifest-v1), digested and checked.
  *
- * The result is accepted only when the document reads back through the shared strict reader (v1::read_manifest: strict
+ * The result is accepted only when the document reads back through the shared strict reader (v2::read_manifest: strict
  * JSON, identity, JCS digest, structure, provenance pointers and coverage, semantics) and its owner map equals the
  * planner's (verify_owner_map). A document that does not is an error carrying the reader's own message, never a file. */
 #include "plan_cache.h"

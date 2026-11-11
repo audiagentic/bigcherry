@@ -318,11 +318,11 @@ int main(int, char** argv) {
 
         // the armed check is the manifest's: its own expected plan is admitted by itself, and a drifted live plan is a plan mismatch
         const nlohmann::json measured = nlohmann::json::parse(slurp(example));
-        bc::serving::v1::EnginePlan expected;
-        CHECK(!bc::serving::v1::decode(measured.at("spec").at("plan").at("engine_memory").at("expected"), "", &expected));
+        bc::serving::v2::EnginePlan expected;
+        CHECK(!bc::serving::v2::decode(measured.at("spec").at("plan").at("engine_memory").at("expected"), "", &expected));
         std::fflush(stderr);
         CHECK(bc_plan::check(expected) == 0);
-        bc::serving::v1::EnginePlan drifted = expected;
+        bc::serving::v2::EnginePlan drifted = expected;
         drifted.vram.statics += 1;
         CHECK(bc_plan::check(drifted) == 2);
 

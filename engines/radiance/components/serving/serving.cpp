@@ -753,7 +753,7 @@ const std::vector<OptionField>& engine_option_fields() {
         std::vector<OptionField> out;
         // Amendment 14: a field that stands in for an environment variable is a resolver key like the flags are. It has no
         // flag; the engine sets the variable from it (rad0009).
-        for (const auto& b : v1::kEnvBindings) {
+        for (const auto& b : v2::kEnvBindings) {
             if (b.path.substr(0, kPrefix.size()) != kPrefix) continue;
             const std::string_view rest = b.path.substr(kPrefix.size());
             const auto slash = rest.find('/');
@@ -765,10 +765,10 @@ const std::vector<OptionField>& engine_option_fields() {
             o.path = std::string(b.path);
             o.kind = std::string(b.kind);
             o.env = std::string(b.env);
-            for (const auto& f : v1::kFields) if (f.path == b.path) o.doc = std::string(f.doc);
+            for (const auto& f : v2::kFields) if (f.path == b.path) o.doc = std::string(f.doc);
             out.push_back(std::move(o));
         }
-        for (const auto& f : v1::kFields) {
+        for (const auto& f : v2::kFields) {
             if (f.radiance_option.empty() || f.path.substr(0, kPrefix.size()) != kPrefix) continue;
             const std::string_view rest = f.path.substr(kPrefix.size());
             const auto slash = rest.find('/');

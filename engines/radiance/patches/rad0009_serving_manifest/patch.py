@@ -2,7 +2,7 @@
 BigCherry-owned extension point.
 
 All logic lives in the two files this patch creates (core/bc_serving_manifest.h, core/bc_serving_manifest.cpp):
-``--manifest PATH`` is read by the shared strict v1 reader (bc_serving_v1: the digest, the contract and every semantic
+``--manifest PATH`` is read by the shared strict v1 reader (bc_serving_v2: the digest, the contract and every semantic
 rule are checked exactly as bc-serve checks them), the fields the registry binds to a radiance option become the
 equivalent flags before config_parse, so radiance's own parser and validation still run, and the startup report's
 option sources are relabelled afterwards. core/main.cpp gains one include and two calls; core/CMakeLists.txt links the
@@ -29,7 +29,7 @@ _BC_SERVING_MANIFEST_H = r"""/* bc_serving_manifest.h -- BigCherry's start-up ex
 #include <string>
 #include <vector>
 
-namespace bc::serving::v1 { struct EnginePlan; }
+namespace bc::serving::v2 { struct EnginePlan; }
 
 /* The argv radiance should parse. Without --manifest, argv is left unchanged and true is returned. With it, *argc
  * and *argv are replaced by a synthetic argv (storage lives for the process). On a malformed manifest or a stray
@@ -46,7 +46,7 @@ bool bc_serving_mark_given(std::map<std::string, std::string>* given);
  * manifest's measured plan (engine_view; spec §5.2). True only when the engine was started from a measured manifest (a
  * serving start); false for a start without --manifest and for the measuring start (--plan-memory), which has no plan to
  * check. A serving start with no plan cannot get here: the strict reader refuses an unmeasured manifest for it. */
-bool bc_serving_expected_plan(bc::serving::v1::EnginePlan* expected, int64_t* floor_ppm);
+bool bc_serving_expected_plan(bc::serving::v2::EnginePlan* expected, int64_t* floor_ppm);
 /* BDFs are from the same strictly validated engine view, not device ordinals. */
 std::vector<std::string> bc_serving_engine_bdfs();
 
@@ -82,13 +82,13 @@ std::vector<std::string> config_option_names();
 }  // namespace rad
 
 namespace {
-namespace v1 = bc::serving::v1;
+namespace v2 = bc::serving::v2;
 
 std::vector<std::string> g_store;   /* the synthetic argv, kept for the life of the process */
 std::vector<char*> g_ptrs;
 std::vector<std::string> g_emitted;  /* the options the manifest produced, for bc_serving_mark_given */
 std::string g_label;                /* "manifest <12 hex>" once a manifest was loaded, else empty */
-v1::EnginePlan g_expected;          /* a serving start's expected plan, from the manifest's measured plan */
+v2::EnginePlan g_expected;          /* a serving start's expected plan, from the manifest's measured plan */
 int64_t g_floor_ppm = 0;
 bool g_have_expected = false;
 std::vector<std::string> g_engine_bdfs;
@@ -173,10 +173,10 @@ bool bc_serving_engine_argv(int* argc, char*** argv) {
     const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
     /* The shared strict reader: size, UTF-8, duplicate keys, integers, the contract identity, the content digest, the
      * generated structural decode, provenance and every semantic rule, with the same errors bc-serve gives. */
-    const v1::Result<v1::Manifest> manifest =
-        v1::read_manifest(text, path, plan_memory.empty() ? v1::PlanUse::serving : v1::PlanUse::measuring);
+    const v2::Result<v2::Manifest> manifest =
+        v2::read_manifest(text, path, plan_memory.empty() ? v2::PlanUse::serving : v2::PlanUse::measuring);
     if (!manifest.ok()) {
-        std::fputs(v1::render_human("radiance", manifest.error()).c_str(), stderr);
+        std::fputs(v2::render_human("radiance", manifest.error()).c_str(), stderr);
         return false;
     }
     const nlohmann::json doc = nlohmann::json::parse(text, nullptr, false);
@@ -191,9 +191,9 @@ bool bc_serving_engine_argv(int* argc, char*** argv) {
     }
     if (plan_memory.empty() && run_flags.empty()) {
         /* a serving start: the plan the manifest carries is the plan this engine must admit (rad0011 checks it) */
-        const v1::Result<v1::EngineView> view = v1::engine_view(manifest.value());
+        const v2::Result<v2::EngineView> view = v2::engine_view(manifest.value());
         if (!view.ok()) {
-            std::fputs(v1::render_human("radiance", view.error()).c_str(), stderr);
+            std::fputs(v2::render_human("radiance", view.error()).c_str(), stderr);
             return false;
         }
         g_expected = view.value().memory.expected;
@@ -210,7 +210,7 @@ bool bc_serving_engine_argv(int* argc, char*** argv) {
      * for radiance's own config_parse to reject, which makes main exit 2. */
     std::vector<std::pair<std::string, std::string>> flags;
     std::set<std::string> switches;   /* the flags above that take no value */
-    for (const v1::FieldInfo& f : v1::kFields) {
+    for (const v2::FieldInfo& f : v2::kFields) {
         if (f.radiance_option.empty() || f.path.rfind("/spec/", 0) != 0) continue;
         const nlohmann::json::json_pointer ptr{std::string(f.path)};
         if (!doc.contains(ptr)) continue;
@@ -300,7 +300,7 @@ bool bc_serving_engine_argv(int* argc, char*** argv) {
     g_engine_settings = settings;
     // The remaining non-migrated engine switches retain their original bridge
     // pending RSC11's separately-owned consumers (RAD_* and BC_GFX12_*).
-    for (const bc::serving::v1::EnvBinding& b : bc::serving::v1::kEnvBindings) {
+    for (const bc::serving::v2::EnvBinding& b : bc::serving::v2::kEnvBindings) {
         if (b.env == "R3_MOE_NATIVE" || b.env == "R3_MOE_FP16" || b.env == "R3_MOE_AHALF" ||
             b.env == "R3_GEMV" || b.env == "R3_DEC11" || b.env == "R3_MOE_WORKER_FUSESTAGE" ||
             b.env == "R3_MOE_WORKER_MASK_ONLY" || b.env == "R3_ATTN_NATIVE" ||
@@ -335,7 +335,7 @@ extern "C" int bc_serving_remote_settings(int64_t* rows, uint32_t* skip_owned,
     return 1;
 }
 
-bool bc_serving_expected_plan(v1::EnginePlan* expected, int64_t* floor_ppm) {
+bool bc_serving_expected_plan(v2::EnginePlan* expected, int64_t* floor_ppm) {
     if (!g_have_expected) return false;
     *expected = g_expected;
     *floor_ppm = g_floor_ppm;
@@ -365,14 +365,14 @@ bool bc_serving_mark_given(std::map<std::string, std::string>* given) {
 # The shared library comes from the BigCherry tree, never a copy: the lane passes its .cmake (components/serving).
 _CORE_LINK = r"""
 # BigCherry rad0009 (RSC08 S2b): the engine reads its manifest and (rad0011) checks its plan through the shared serving manifest v1 library, built here from
-# its one source list (BigCherry's components/serving/bc_serving_v1.cmake) with this tree's abi and vendored JSON.
-if(NOT DEFINED BC_SERVING_V1_CMAKE)
-  message(FATAL_ERROR "rad0009: -DBC_SERVING_V1_CMAKE=<bigcherry>/engines/radiance/components/serving/bc_serving_v1.cmake "
+# its one source list (BigCherry's components/serving/bc_serving_v2.cmake) with this tree's abi and vendored JSON.
+if(NOT DEFINED BC_SERVING_V2_CMAKE)
+  message(FATAL_ERROR "rad0009: -DBC_SERVING_V2_CMAKE=<bigcherry>/engines/radiance/components/serving/bc_serving_v2.cmake "
                       "is required (the shared serving manifest v1 library); the BigCherry lane passes it")
 endif()
-set(BC_SERVING_V1_NLOHMANN_INCLUDE "${CMAKE_SOURCE_DIR}/vendor")
-include("${BC_SERVING_V1_CMAKE}")
-target_link_libraries(rad_core PUBLIC bc_serving_v1)"""
+set(BC_SERVING_V2_NLOHMANN_INCLUDE "${CMAKE_SOURCE_DIR}/vendor")
+include("${BC_SERVING_V2_CMAKE}")
+target_link_libraries(rad_core PUBLIC bc_serving_v2)"""
 
 
 
@@ -410,7 +410,7 @@ PATCHES = (
             id="link-bc-serving-v1",
             anchor=r"^target_link_libraries\(rad_core PUBLIC rad_abi \$\{CMAKE_DL_LIBS\} Threads::Threads\)$",
             text=_CORE_LINK,
-            guard=r"include\(\"\$\{BC_SERVING_V1_CMAKE\}\"\)",
+            guard=r"include\(\"\$\{BC_SERVING_V2_CMAKE\}\"\)",
             max_span_lines=1,
             expect_matches=1,
             rationale="rad_core's unique link line; the shared library is included and linked right after it, failing "

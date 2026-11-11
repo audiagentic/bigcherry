@@ -26,21 +26,21 @@ extern "C" char** environ;
 
 namespace bc::serving {
 nlohmann::json parse_plan_json(const std::string& text, const std::string& source) {
-    v1::Result<nlohmann::json> parsed = v1::parse_strict_json(text, source);
+    v2::Result<nlohmann::json> parsed = v2::parse_strict_json(text, source);
     if (!parsed.ok()) {
-        const v1::ConfigError& e = parsed.error();
+        const v2::ConfigError& e = parsed.error();
         throw std::runtime_error(source + ": " + (e.path.empty() ? std::string() : e.path + ": ") + e.message);
     }
     return std::move(parsed.value());
 }
 
-v1::EnginePlan decode_engine_plan(const nlohmann::json& plan, const std::string& where) {
-    v1::EnginePlan p;
-    if (const v1::Status e = v1::decode(plan, "", &p))
+v2::EnginePlan decode_engine_plan(const nlohmann::json& plan, const std::string& where) {
+    v2::EnginePlan p;
+    if (const v2::Status e = v2::decode(plan, "", &p))
         throw std::runtime_error(where + ": engine plan" + (e->path.empty() ? std::string() : " " + e->path) + ": " +
                                  e->message);
     std::set<std::string> names;
-    for (const v1::PlanHostConsumer& c : p.host)
+    for (const v2::PlanHostConsumer& c : p.host)
         if (!names.insert(c.name).second) throw std::runtime_error(where + ": engine plan: duplicate consumer " + c.name);
     if (p.checkpoints.floor_slots > p.checkpoints.want_slots)
         throw std::runtime_error(where + ": engine plan.checkpoints: floor_slots exceeds want_slots");
@@ -135,7 +135,7 @@ Json plan_key_inputs(const Json& values, const Json& facts, const std::string& m
             {"engine", engine}};
 }
 
-void check_plan_for_configuration(const Json& values, const v1::EnginePlan& plan) {
+void check_plan_for_configuration(const Json& values, const v2::EnginePlan& plan) {
     const Json& engine = values.at("engine");
     if (plan.host_pool_mib != engine.at("host_pool_mib").get<int64_t>())
         throw std::runtime_error("the plan was measured with a " + std::to_string(plan.host_pool_mib) +
@@ -143,14 +143,14 @@ void check_plan_for_configuration(const Json& values, const v1::EnginePlan& plan
                                  std::to_string(engine.at("host_pool_mib").get<int64_t>()));
     // The expected host consumer list: the n-gram table is a pinned consumer exactly when the table lives in RAM.
     const bool has_table = std::any_of(plan.host.begin(), plan.host.end(),
-                                       [](const v1::PlanHostConsumer& c) { return c.name == "ngram_table"; });
+                                       [](const v2::PlanHostConsumer& c) { return c.name == "ngram_table"; });
     const std::string placement = engine.at("ngram_placement").get<std::string>();
     if (placement == "ram" && !has_table)
         throw std::runtime_error("this configuration keeps the n-gram table in RAM but the plan has no ngram_table consumer");
     if (placement != "ram" && has_table)
         throw std::runtime_error("this configuration places the n-gram table on " + placement +
                                  " but the plan holds an ngram_table consumer");
-    for (const v1::PlanHostConsumer& c : plan.host)
+    for (const v2::PlanHostConsumer& c : plan.host)
         if (c.name != "ngram_table" && c.name != "embedding" && c.name != "host_arenas")
             throw std::runtime_error("the plan holds an unknown host consumer " + c.name);
 }

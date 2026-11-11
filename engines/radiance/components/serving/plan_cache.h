@@ -1,6 +1,6 @@
 #pragma once
 #include "ledger.h"
-#include "serving_types.h"   // bc::serving::v1::EnginePlan, the generated v1 type
+#include "serving_types.h"   // bc::serving::v2::EnginePlan, the generated v1 type
 
 #include <filesystem>
 #include <optional>
@@ -35,7 +35,7 @@ std::string calibration_key(const nlohmann::json& key_inputs);
 
 /* rad0011's plan (radiance --plan-memory) through the shared v1 decoder, plus what a single plan must satisfy by itself:
  * each host consumer once, and the checkpoint floor within the want. Throws naming `where` and the decoder's path. */
-v1::EnginePlan decode_engine_plan(const nlohmann::json& plan, const std::string& where);
+v2::EnginePlan decode_engine_plan(const nlohmann::json& plan, const std::string& where);
 
 /* A plan or cache entry through the shared strict parser (size limit, UTF-8, duplicate members refused, depth bound) before
  * any decoding, as the engine reads it. Throws naming `source`. */
@@ -52,7 +52,7 @@ struct HostResident {
 };
 
 struct CachedPlan {
-    v1::EnginePlan plan;           // decoded by the shared v1 codec
+    v2::EnginePlan plan;           // decoded by the shared v1 codec
     nlohmann::json plan_json;   // as rad0011 wrote it
     std::string key, measured_at;
     HostResident resident;
@@ -61,7 +61,7 @@ struct CachedPlan {
 /* What a plan must agree with in the configuration it is stored for (values, as resolve() returns them): the host pool it
  * echoes, and the expected host consumer list (the n-gram table exactly when it is placed in RAM; embedding and host
  * arenas allowed; nothing else). Throws naming the disagreement. */
-void check_plan_for_configuration(const nlohmann::json& values, const v1::EnginePlan& plan);
+void check_plan_for_configuration(const nlohmann::json& values, const v2::EnginePlan& plan);
 
 /* The entry for `key_inputs` under `dir`, or nothing on a miss. An entry whose recorded key or key inputs differ, whose
  * version is unknown or whose plan fails the shared v1 decode (serving_codec) is refused (an error), never treated as a miss. */

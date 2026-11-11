@@ -41,7 +41,7 @@ struct WorkerConfig {
         if (s.forced) {
             force_schedule.repeat = uint32_t(s.forced->repeat);
             if (s.forced->pace_requests) force_schedule.pace_requests = uint32_t(*s.forced->pace_requests);
-            for (const bc::serving::v1::ForcedStep& st : s.forced->steps) force_schedule.steps.push_back(step_of(st));
+            for (const bc::serving::v2::ForcedStep& st : s.forced->steps) force_schedule.steps.push_back(step_of(st));
             force_enabled = true;
         }
         epoch_cycle_s = s.epoch_cycle_s;
@@ -49,8 +49,8 @@ struct WorkerConfig {
     }
 
 private:
-    static r3::forced::Step step_of(const bc::serving::v1::ForcedStep& st) {
-        using bc::serving::v1::ForcedKind;
+    static r3::forced::Step step_of(const bc::serving::v2::ForcedStep& st) {
+        using bc::serving::v2::ForcedKind;
         const uint32_t layer = uint32_t(st.a_layer), expert = uint32_t(st.a_expert);
         switch (st.kind) {
             case ForcedKind::kMove: return r3::forced::Step(r3::forced::Move{layer, expert, uint32_t(*st.destination)});

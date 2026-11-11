@@ -1,5 +1,5 @@
 #pragma once
-#include "../serving/v1/helper_settings.h"
+#include "../serving/v2/helper_settings.h"
 #include "bc_helper_config.h"
 #include <dlfcn.h>
 #include <cstdio>

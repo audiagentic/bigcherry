@@ -8,12 +8,12 @@
 #include "experts.h"
 #include "live_policy.h"
 #include "manifest_writer.h"
-#include "v1/manifest.h"
+#include "v2/manifest.h"
 #include "plan_cache.h"
 #include "sdk_check.h"
 #include "test_rad_fixture.h"
 #include "worker_footprint.h"
-#include "v1/helper_settings.h"
+#include "v2/helper_settings.h"
 #include "sha256.h"
 
 #undef NDEBUG   /* the checks below are assert()s: keep them live in Release component builds */
@@ -617,7 +617,7 @@ void host_ledger_plan() {
                           "expert_unit_max": 2537472}]},
       "host_pool_mib": 9216})json");
     const auto parsed = bc::serving::decode_engine_plan(plan, "test");
-    assert(parsed.host.size() == 1 && parsed.host[0].residence == bc::serving::v1::Residence::kPinned);
+    assert(parsed.host.size() == 1 && parsed.host[0].residence == bc::serving::v2::Residence::kPinned);
     assert(parsed.checkpoints.want_slots == 72 && parsed.checkpoints.floor_slots == 8);
     assert(parsed.kv_one_session.bytes == 4000000000ll && parsed.host_pool_mib == 9216);
     assert(parsed.vram.cards.size() == 1 && parsed.vram.kv_resolved == 22799187968ll);
@@ -906,7 +906,7 @@ void manifest_writer_step(Fixture& t) {
 
     const auto built = sv::build_manifest(in);
     // It is a v1 manifest a consumer accepts, and says what the resolver resolved.
-    const auto back = bc::serving::v1::read_manifest(built.text, "writer test", bc::serving::v1::PlanUse::serving);
+    const auto back = bc::serving::v2::read_manifest(built.text, "writer test", bc::serving::v2::PlanUse::serving);
     assert(back.ok());
     const Json& d = built.document;
     assert(d.at("metadata").at("content_digest") == built.digest && built.digest.rfind("sha256:", 0) == 0);
@@ -1007,9 +1007,9 @@ void manifest_writer_step(Fixture& t) {
             in2.resolved = r2;
             in2.measured->key_inputs = sv::plan_key_inputs(r2.values, t.facts, sv::container_identity(model), std::string(64, 'b'), "");
             const auto built2 = sv::build_manifest(in2);
-            const auto m2 = bc::serving::v1::read_manifest(built2.text, "floor test", bc::serving::v1::PlanUse::serving);
+            const auto m2 = bc::serving::v2::read_manifest(built2.text, "floor test", bc::serving::v2::PlanUse::serving);
             assert(m2.ok());
-            const auto view = bc::serving::v1::engine_view(m2.value());
+            const auto view = bc::serving::v2::engine_view(m2.value());
             assert(view.ok());
             return view.value().kv_backing_floor_ppm;
         };
@@ -1060,8 +1060,8 @@ void manifest_writer_step(Fixture& t) {
         const auto& pv = with_calibration.document.at("provenance");
         assert(pv.at("/spec/handoff/placement/live_policy/cadence_ns").at("origin") == "derived");
         assert(pv.at("/spec/handoff/placement/live_policy/margin_ppm").at("class") == "policy");
-        assert(bc::serving::v1::read_manifest(with_calibration.text, "calibrated policy",
-                                              bc::serving::v1::PlanUse::serving).ok());
+        assert(bc::serving::v2::read_manifest(with_calibration.text, "calibrated policy",
+                                              bc::serving::v2::PlanUse::serving).ok());
         assert(with_calibration.digest != built.digest);
         std::ifstream cal_input(calibrated.calibration_cache);
         const std::string cal_text((std::istreambuf_iterator<char>(cal_input)),
@@ -1101,8 +1101,8 @@ void manifest_writer_step(Fixture& t) {
             assert(diagnostic.find("serving without live_policy")!=std::string::npos &&
                    diagnostic.find(key)!=std::string::npos &&
                    diagnostic.find(reason)!=std::string::npos);
-            assert(bc::serving::v1::read_manifest(no_live.text,"fallback",
-                bc::serving::v1::PlanUse::serving).ok());
+            assert(bc::serving::v2::read_manifest(no_live.text,"fallback",
+                bc::serving::v2::PlanUse::serving).ok());
             sv::write_manifest_file(t.root / ("fallback-" + reason + ".json"),no_live.text);
         };
         auto replace_line=[&](std::string src,const std::string& name,
@@ -1132,8 +1132,8 @@ void manifest_writer_step(Fixture& t) {
         assert(gate_off.document.at("provenance")
             .at("/spec/handoff/placement/live_policy/effect_gate").at("source")
             .get<std::string>().find("cannot resolve predicted tail effect")!=std::string::npos);
-        assert(bc::serving::v1::read_manifest(gate_off.text,"unresolvable",
-            bc::serving::v1::PlanUse::serving).ok());
+        assert(bc::serving::v2::read_manifest(gate_off.text,"unresolvable",
+            bc::serving::v2::PlanUse::serving).ok());
         // Calib12-shaped: all planner measurements present, but no peer
         // reference on the tail LARGE lane and all effect fields absent.
         auto structural=cal_text;
@@ -1160,8 +1160,8 @@ void manifest_writer_step(Fixture& t) {
         assert(structural_manifest.document.at("provenance")
             .at("/spec/handoff/placement/live_policy/effect_gate").at("source")
             .get<std::string>().find("tail large lane has no peer reference")!=std::string::npos);
-        assert(bc::serving::v1::read_manifest(structural_manifest.text,"calib12",
-            bc::serving::v1::PlanUse::serving).ok());
+        assert(bc::serving::v2::read_manifest(structural_manifest.text,"calib12",
+            bc::serving::v2::PlanUse::serving).ok());
         auto incomplete=replace_line(cal_text,"copy_bytes_per_s","1");
         // A schema-valid but unusable positive reading is not a malformed file.
         no_policy(incomplete,"measured budget buys fewer");
@@ -1203,7 +1203,7 @@ void manifest_writer_step(Fixture& t) {
         const auto prod_path = t.root / "production-manifest.json";
         sv::write_manifest_file(cr_path, cr.text);
         sv::write_manifest_file(prod_path, built.text);
-        const auto cr_loaded = bc::serving::v1::load_manifest(cr_path, bc::serving::v1::PlanUse::serving);
+        const auto cr_loaded = bc::serving::v2::load_manifest(cr_path, bc::serving::v2::PlanUse::serving);
         assert(cr_loaded.ok());
         const auto& crm = cr_loaded.value();
         Json measured = {
@@ -1220,8 +1220,8 @@ void manifest_writer_step(Fixture& t) {
                 Json::array({uint64_t(32),uint64_t(16000)}),
                 Json::array({uint64_t(64),uint64_t(10000)})})},
             {"abort_quiescent_ns",1500000000ull}};
-        const Json row = {{"plan_cache_key", bc::serving::v1::plan_cache_key(crm)}, {"layout", crm.spec.intent.layout},
-            {"objective", std::string(bc::serving::v1::kObjectiveNames[static_cast<size_t>(crm.spec.intent.service.objective)])},
+        const Json row = {{"plan_cache_key", bc::serving::v2::plan_cache_key(crm)}, {"layout", crm.spec.intent.layout},
+            {"objective", std::string(bc::serving::v2::kObjectiveNames[static_cast<size_t>(crm.spec.intent.service.objective)])},
             {"seeded","2026-11-06"}, {"evidence","calibration-run ingest test"},
             {"measurements", measured}, {"absent", Json::object()}};
         const auto helper_log = t.root / "calibration-helper0.log";
@@ -1248,9 +1248,9 @@ void manifest_writer_step(Fixture& t) {
         assert(!us.at("resources").at("host").contains("checkpoint_slots") && us.at("plan").at("owner_map").at("helpers").size() == 3);
         assert(us.at("resources").at("host").at("pool_mib") == spec.at("resources").at("host").at("pool_mib"));
         assert(um.document.at("provenance").at("/spec/resources").at("inputs").size() == 2);
-        assert(!bc::serving::v1::read_manifest(um.text, "unmeasured", bc::serving::v1::PlanUse::serving).ok());
-        assert(bc::serving::v1::read_manifest(um.text, "unmeasured", bc::serving::v1::PlanUse::measuring).ok());
-        assert(!bc::serving::v1::read_manifest(built.text, "measured", bc::serving::v1::PlanUse::measuring).ok());
+        assert(!bc::serving::v2::read_manifest(um.text, "unmeasured", bc::serving::v2::PlanUse::serving).ok());
+        assert(bc::serving::v2::read_manifest(um.text, "unmeasured", bc::serving::v2::PlanUse::measuring).ok());
+        assert(!bc::serving::v2::read_manifest(built.text, "measured", bc::serving::v2::PlanUse::measuring).ok());
         assert(sv::build_manifest(u).text == um.text);   // deterministic, like the measured one
     }
     // A live policy and a lab experiment come from operator-supplied objects, are written verbatim with their own provenance
@@ -1308,7 +1308,7 @@ void manifest_writer_step(Fixture& t) {
         const Json& eng = set_built.document.at("spec").at("processes").at("engine");
         assert(eng.at("execution").at("tp_wire") == "wht6" && eng.at("execution").at("no_prefix_cache") == "on");
         assert(eng.at("device").at("headroom_mib") == 320);
-        assert(bc::serving::v1::read_manifest(set_built.text, "options test", bc::serving::v1::PlanUse::measuring).ok());
+        assert(bc::serving::v2::read_manifest(set_built.text, "options test", bc::serving::v2::PlanUse::measuring).ok());
         Options bad = opts;
         bad.sets = {"engine.tp_wire=\"lossy\""};
         try { (void)sv::resolve(bad, t.facts); assert(false); } catch (const std::runtime_error& e) {
@@ -1366,7 +1366,7 @@ void manifest_writer_step(Fixture& t) {
     sv::write_manifest_file(path, built.text);
     struct stat st{};
     assert(::stat(path.c_str(), &st) == 0 && (st.st_mode & 0777) == 0444 && !fs::exists(path.string() + ".tmp"));
-    assert(bc::serving::v1::load_manifest(path, bc::serving::v1::PlanUse::serving).ok());
+    assert(bc::serving::v2::load_manifest(path, bc::serving::v2::PlanUse::serving).ok());
     try { sv::write_manifest_file(path, built.text); assert(false); } catch (const std::runtime_error& e) {
         assert(std::string(e.what()).find("immutable") != std::string::npos);
     }
@@ -1464,11 +1464,11 @@ void engine_only_layout(Fixture& t) {
     assert(spec.at("processes").at("engine").at("execution").at("tp_wire") == "wht6");
     assert(spec.at("processes").at("engine").at("runtime").at("kernels") == Json::array({"libr3", "libref"}));
     assert(!built.document.at("provenance").contains("/spec/handoff/transport") && !built.document.at("provenance").contains("/spec/processes/helper_common"));
-    assert(bc::serving::v1::read_manifest(built.text, "engine-only", bc::serving::v1::PlanUse::measuring).ok());
+    assert(bc::serving::v2::read_manifest(built.text, "engine-only", bc::serving::v2::PlanUse::measuring).ok());
     // the sections tie to the helpers both ways, and an engine-only manifest refuses a helper-side experiment
     Json with_handoff = built.document;
     with_handoff["spec"]["handoff"] = Json::object();
-    assert(!bc::serving::v1::read_manifest(with_handoff.dump(), "x", bc::serving::v1::PlanUse::measuring).ok());
+    assert(!bc::serving::v2::read_manifest(with_handoff.dump(), "x", bc::serving::v2::PlanUse::measuring).ok());
     // Amendment 13: engine options with a field of their own are `section.name` keys and manifest leaves; a switch's one value is "on"
     {
         Options more = opts;
@@ -1484,7 +1484,7 @@ void engine_only_layout(Fixture& t) {
         assert(e.at("tuning").at("p2p") == "off" && e.at("vision").at("video_fps") == "2" && e.at("diagnostics").at("debug_placement") == "on");
         assert(e.at("kernels") == Json({{"moe_native", true}, {"dec11", false}}));   // amendment 14: environment settings are keys too
         assert(!e.contains("lora") && !e.contains("chat"));   // a section appears only with its members
-        assert(bc::serving::v1::read_manifest(with_options.text, "options", bc::serving::v1::PlanUse::measuring).ok());
+        assert(bc::serving::v2::read_manifest(with_options.text, "options", bc::serving::v2::PlanUse::measuring).ok());
         assert(bc::serving::engine_option_fields().size() == 89 /* 80 flags + 9 environment settings */);
         Options bad = opts;
         bad.sets = {"layout.name=\"qwen27b-2xtx\"", "sampling.no_such_option=1"};
@@ -1567,7 +1567,7 @@ void derived_budget_is_the_workers(Fixture& t) {
         in.profile = "lab";
         const auto built = sv::build_manifest(in);
         assert(built.document.at("spec").at("processes").at("helper_common").at("runtime").at("power_save") == power_save);
-        auto read = bc::serving::v1::read_manifest(built.text, "derived-budget", bc::serving::v1::PlanUse::measuring);
+        auto read = bc::serving::v2::read_manifest(built.text, "derived-budget", bc::serving::v2::PlanUse::measuring);
         assert(read.ok());
         const uint64_t card[2] = {32624, 16368}, reserve[2] = {2048, 1024};
         for (uint32_t i = 0; i < 2; ++i) {
@@ -1631,7 +1631,7 @@ void tp_engine_with_helper_layout(Fixture& t) {
     assert(spec.at("processes").at("engine").at("scheduler").at("tp") == 2);
     assert(spec.at("processes").at("engine").at("execution").at("tp_wire") == "exact");
     assert(spec.at("processes").at("helpers").size() == 1 && spec.contains("handoff"));
-    assert(bc::serving::v1::read_manifest(built.text, "tp-helper", bc::serving::v1::PlanUse::measuring).ok());
+    assert(bc::serving::v2::read_manifest(built.text, "tp-helper", bc::serving::v2::PlanUse::measuring).ok());
     // the transport is required with helpers too
     Options no_wire = opts;
     no_wire.sets.push_back("engine.tp_wire=\"wht6\"");
@@ -1674,7 +1674,7 @@ void tp_engine_with_two_helpers_layout(Fixture& t) {
     // against them with verify_owner_map), and the ones the worker sizes its arena from
     assert(spec.at("processes").at("helpers")[0].at("vram_budget_mib") == head &&
            spec.at("processes").at("helpers")[1].at("vram_budget_mib") == tail);
-    assert(bc::serving::v1::read_manifest(built.text, "tp-two-helper", bc::serving::v1::PlanUse::measuring).ok());
+    assert(bc::serving::v2::read_manifest(built.text, "tp-two-helper", bc::serving::v2::PlanUse::measuring).ok());
     // a helper count other than the cards the layout selects is refused (the slot bound, helpers x ranks <= kMaxSlots, is
     // checked on the same path; moe_remote_shm_test covers slots_fit)
     Options three = opts;

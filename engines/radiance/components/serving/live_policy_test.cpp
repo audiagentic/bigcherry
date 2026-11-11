@@ -149,7 +149,7 @@ static void calib5_regression(const sv::LivePolicyRecord& base,
     assert(p.at("effect_min_quiet_windows").get<uint64_t>()>=1);
     assert(p.at("effect_noise_multiplier_milli")==2576);
     assert(p.at("half_life_observations_milli")==15849692000ull);
-    bc::serving::v1::LivePolicy typed{};
+    bc::serving::v2::LivePolicy typed{};
     typed.effect_gate=p.at("effect_gate").get<bool>();
     typed.accept_unwatermarked_heat=p.at("accept_unwatermarked_heat").get<bool>();
 #define LOAD_POLICY(x) typed.x=p.at(#x).get<int64_t>();

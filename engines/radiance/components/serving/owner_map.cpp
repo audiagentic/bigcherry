@@ -8,10 +8,10 @@
 
 namespace bc::serving {
 namespace {
-using C = v1::ConfigErrorCode;
+using C = v2::ConfigErrorCode;
 
-v1::Status mismatch(const std::string& path, const std::string& message) {
-    return v1::make_error(C::ownership_mismatch, path, message);
+v2::Status mismatch(const std::string& path, const std::string& message) {
+    return v2::make_error(C::ownership_mismatch, path, message);
 }
 
 std::string join(const std::vector<std::string>& parts) {
@@ -21,21 +21,21 @@ std::string join(const std::vector<std::string>& parts) {
 }
 }  // namespace
 
-std::vector<bc::experts::OwnerPolicy> owner_policies(const v1::Manifest& m) {
+std::vector<bc::experts::OwnerPolicy> owner_policies(const v2::Manifest& m) {
     const auto& helpers = m.spec.processes.helpers;
     std::vector<std::string> shares;
-    for (const v1::HelperProcess& h : helpers) shares.push_back(std::to_string(h.share));
+    for (const v2::HelperProcess& h : helpers) shares.push_back(std::to_string(h.share));
     std::vector<bc::experts::OwnerPolicy> out;
     for (size_t i = 0; i < helpers.size(); ++i) {
-        const v1::HelperProcess& h = helpers[i];
+        const v2::HelperProcess& h = helpers[i];
         bc::experts::OwnerPolicy p;
         p.heat = m.spec.handoff->placement.heat_file;
-        p.placement = std::string(v1::kPlacementStrategyNames[static_cast<size_t>(m.spec.handoff->placement.strategy)]);
+        p.placement = std::string(v2::kPlacementStrategyNames[static_cast<size_t>(m.spec.handoff->placement.strategy)]);
         std::vector<std::string> formats;
-        for (v1::ExpertFormat f : h.formats) formats.push_back(std::string(v1::kExpertFormatNames[static_cast<size_t>(f)]));
+        for (v2::ExpertFormat f : h.formats) formats.push_back(std::string(v2::kExpertFormatNames[static_cast<size_t>(f)]));
         p.formats = join(formats);
         p.shares = join(shares);
-        const v1::HelperCommon settings = v1::effective_helper_settings(m, i);
+        const v2::HelperCommon settings = v2::effective_helper_settings(m, i);
         p.balance = settings.placement.balance;
         p.balance_speeds = {1.0, 1.0};
         if (p.balance && settings.placement.balance_speeds_milli) {
@@ -48,49 +48,49 @@ std::vector<bc::experts::OwnerPolicy> owner_policies(const v1::Manifest& m) {
     return out;
 }
 
-std::vector<std::string> helper_archs(const v1::Manifest& m) {
+std::vector<std::string> helper_archs(const v2::Manifest& m) {
     std::map<std::string, std::string> arch;
-    for (const v1::GpuFact& g : m.spec.facts.gpus) arch[g.bdf] = g.arch;
+    for (const v2::GpuFact& g : m.spec.facts.gpus) arch[g.bdf] = g.arch;
     std::vector<std::string> out;
-    for (const v1::HelperProcess& h : m.spec.processes.helpers) out.push_back(arch.count(h.gpu) ? arch.at(h.gpu) : std::string());
+    for (const v2::HelperProcess& h : m.spec.processes.helpers) out.push_back(arch.count(h.gpu) ? arch.at(h.gpu) : std::string());
     return out;
 }
 
-std::vector<uint64_t> helper_budgets(const v1::Manifest& m) {
+std::vector<uint64_t> helper_budgets(const v2::Manifest& m) {
     std::vector<uint64_t> out;
     // never wraps: a budget outside what 64 bits of bytes can count (negative or too large) is clamped to the range (verify_owner_map refuses it before it gets here)
-    for (const v1::HelperProcess& h : m.spec.processes.helpers)
+    for (const v2::HelperProcess& h : m.spec.processes.helpers)
         out.push_back(static_cast<uint64_t>(std::clamp<int64_t>(h.vram_budget_mib, 0, static_cast<int64_t>(UINT64_MAX >> 20))) << 20);
     return out;
 }
 
 namespace {
-v1::Status invalid(const std::string& path, const std::string& message) { return v1::make_error(C::invalid_value, path, message); }
+v2::Status invalid(const std::string& path, const std::string& message) { return v2::make_error(C::invalid_value, path, message); }
 
 /* What the verifier needs of the manifest before it plans anything: it is a public entry point for producers, so it does
  * not rely on the reader having run. Every refusal names the field that is wrong. */
-v1::Status preconditions(const v1::Manifest& m) {
+v2::Status preconditions(const v2::Manifest& m) {
     const auto& helpers = m.spec.processes.helpers;
     const auto& got = m.spec.plan.owner_map.helpers;
     if (got.size() != helpers.size())
         return mismatch("spec.plan.owner_map.helpers", std::to_string(got.size()) + " owned set(s) in the manifest, " +
                                                           std::to_string(helpers.size()) + " helper(s)");
     std::map<std::string, std::string> arch;
-    for (const v1::GpuFact& g : m.spec.facts.gpus) arch[g.bdf] = g.arch;
-    const bool tail = m.spec.handoff->placement.strategy == v1::PlacementStrategy::kTail;
+    for (const v2::GpuFact& g : m.spec.facts.gpus) arch[g.bdf] = g.arch;
+    const bool tail = m.spec.handoff->placement.strategy == v2::PlacementStrategy::kTail;
     if (tail && helpers.size() < 2)
         return invalid("spec.handoff.placement.strategy", "the tail strategy needs at least two helpers, not " + std::to_string(helpers.size()));
     std::set<std::string> used(m.spec.processes.engine.device.gpus.begin(), m.spec.processes.engine.device.gpus.end());
     uint64_t total_share = 0;
     bool any_balance = false;
-    const bool first_balance = v1::effective_helper_settings(m, 0).placement.balance;
+    const bool first_balance = v2::effective_helper_settings(m, 0).placement.balance;
     for (size_t i = 0; i < helpers.size(); ++i) {
-        const v1::HelperProcess& h = helpers[i];
+        const v2::HelperProcess& h = helpers[i];
         const std::string at = "spec.processes.helpers[" + std::to_string(i) + "]";
         if (!arch.count(h.gpu))
-            return v1::make_error(C::unresolved_reference, at + ".gpu", "GPU " + h.gpu + " is not among spec.facts.gpus");
+            return v2::make_error(C::unresolved_reference, at + ".gpu", "GPU " + h.gpu + " is not among spec.facts.gpus");
         if (!used.insert(h.gpu).second)
-            return v1::make_error(C::duplicate_field, at + ".gpu", "GPU " + h.gpu + " is already used by the engine or an earlier helper");
+            return v2::make_error(C::duplicate_field, at + ".gpu", "GPU " + h.gpu + " is already used by the engine or an earlier helper");
         if (h.vram_budget_mib <= 0)
             return invalid(at + ".vram_budget_mib", std::to_string(h.vram_budget_mib) + " MiB is not a budget");
         if (h.vram_budget_mib > static_cast<int64_t>(UINT64_MAX >> 20))
@@ -100,12 +100,12 @@ v1::Status preconditions(const v1::Manifest& m) {
             return invalid(at + ".share", std::to_string(h.share) + " is above 1000000, the largest share the ownership selector accepts");
         total_share += static_cast<uint64_t>(h.share);
         // the declared tier is the arrangement the placement strategy implies: tail gives the cold end to the last helper
-        const v1::HelperTier want = tail && i + 1 == helpers.size() && helpers.size() > 1 ? v1::HelperTier::kTail : v1::HelperTier::kHead;
+        const v2::HelperTier want = tail && i + 1 == helpers.size() && helpers.size() > 1 ? v2::HelperTier::kTail : v2::HelperTier::kHead;
         if (h.tier != want)
             return mismatch(at + ".tier", std::string("the placement strategy ") +
-                                              std::string(v1::kPlacementStrategyNames[static_cast<size_t>(m.spec.handoff->placement.strategy)]) +
-                                              " makes this helper a " + (want == v1::HelperTier::kTail ? "tail" : "head") + " helper");
-        const v1::HelperCommon effective = v1::effective_helper_settings(m, i);
+                                              std::string(v2::kPlacementStrategyNames[static_cast<size_t>(m.spec.handoff->placement.strategy)]) +
+                                              " makes this helper a " + (want == v2::HelperTier::kTail ? "tail" : "head") + " helper");
+        const v2::HelperCommon effective = v2::effective_helper_settings(m, i);
         // the reader's effective-setting invariants (spec 2.2): speeds absent when balance is off, one positive speed per helper when on
         const std::string speeds_at = at + " (effective) placement.balance_speeds_milli";
         if (!effective.placement.balance && effective.placement.balance_speeds_milli)
@@ -117,7 +117,7 @@ v1::Status preconditions(const v1::Manifest& m) {
             for (int64_t s : *speeds)
                 if (s < 1) return invalid(speeds_at, "a balance speed is at least 1 (1000 = 1.0), not " + std::to_string(s));
         }
-        if (effective.placement.balance != first_balance || effective.placement.balance_speeds_milli != v1::effective_helper_settings(m, 0).placement.balance_speeds_milli)
+        if (effective.placement.balance != first_balance || effective.placement.balance_speeds_milli != v2::effective_helper_settings(m, 0).placement.balance_speeds_milli)
             return invalid(at + " (effective) placement.balance", "balance and its speeds must be the same for every helper (set by helper_common, a role's settings or the experiment shape)");
         any_balance = any_balance || effective.placement.balance;
     }
@@ -140,9 +140,9 @@ v1::Status preconditions(const v1::Manifest& m) {
 }
 }  // namespace
 
-v1::Status verify_owner_map(const v1::Manifest& m, const bc::experts::Container& model) {
+v2::Status verify_owner_map(const v2::Manifest& m, const bc::experts::Container& model) {
     if (m.spec.processes.helpers.empty())   // engine-only: nothing to own, and the map must say so
-        return m.spec.plan.owner_map.helpers.empty() ? v1::Status{} : mismatch("spec.plan.owner_map.helpers", "owned sets for an engine-only configuration");
+        return m.spec.plan.owner_map.helpers.empty() ? v2::Status{} : mismatch("spec.plan.owner_map.helpers", "owned sets for an engine-only configuration");
     if (auto e = preconditions(m)) return e;
     bc::experts::OwnerMap planned;
     std::string why;

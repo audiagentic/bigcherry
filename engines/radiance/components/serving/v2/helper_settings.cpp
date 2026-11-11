@@ -2,7 +2,7 @@
 
 #include <algorithm>
 
-namespace bc::serving::v2 {
+namespace bc::serving {
 namespace {
 std::string join_formats(const std::vector<v2::ExpertFormat>& formats) {
     std::string out;
@@ -117,4 +117,4 @@ v2::Result<HelperSettings> load_helper_settings(const std::filesystem::path& pat
     return helper_settings(m.value(), role);
 }
 
-}  // namespace bc::serving::v2
+}  // namespace bc::serving

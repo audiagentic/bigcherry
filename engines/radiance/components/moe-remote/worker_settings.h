@@ -2,7 +2,7 @@
 // The one immutable, validated configuration of this helper process.
 // Installed at entry before queue setup, model access or HIP; deep helper
 // call sites use settings() and abort if accessed before installation.
-#include "../serving/v1/helper_settings.h"
+#include "../serving/v2/helper_settings.h"
 #include <cstdio>
 #include <cstdlib>
 #include <memory>

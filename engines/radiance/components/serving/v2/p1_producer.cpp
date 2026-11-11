@@ -95,8 +95,8 @@ json produce_p1_inputs(const bc::serving::Resolved& resolved, const json& facts,
   inputs.instance_id = bc::serving::new_instance_id();
   inputs.producer_sha256 = file_sha("/proc/self/exe");
   const bc::serving::BuiltManifest owned = bc::serving::build_manifest(inputs);
-  const auto checked = bc::serving::v1::read_manifest(
-      owned.text, "native P1 owner-plan", bc::serving::v1::PlanUse::measuring);
+  const auto checked = bc::serving::v2::read_manifest(
+      owned.text, "native P1 owner-plan", bc::serving::v2::PlanUse::measuring);
   if (!checked.ok()) refuse("owner_map", "actual selected owner-plan failed strict validation");
   const auto& manifest = checked.value();
   P1Native native{};
@@ -171,7 +171,7 @@ json produce_p1_inputs(const bc::serving::Resolved& resolved, const json& facts,
   const uint32_t rows = resolved.typed.handoff.max_rows;
   const uint32_t small = resolved.typed.handoff.small_rows;
   for (size_t i = 0; i < native.owner_map.helpers.size(); ++i) {
-    const auto effective = bc::serving::v1::effective_helper_settings(manifest, i);
+    const auto effective = bc::serving::v2::effective_helper_settings(manifest, i);
     std::vector<uint32_t> thresholds;
     for (const int64_t v : effective.lanes.small_lanes) {
       if (v <= 0 || v > std::numeric_limits<uint32_t>::max())
