@@ -1,5 +1,33 @@
 # Changelog
 
+## [1170.15.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.14.0...bc-radiance-1170.15.0) (2026-11-11)
+
+
+### New and changed
+
+* **radiance:** the tensor-parallel XTX layouts serve bf16 hyper-connection mixing matrices (RAD49) ([#779](https://github.com/audiagentic/bigcherry/issues/779)) ([d77c4f3](https://github.com/audiagentic/bigcherry/commit/d77c4f3be1c88b54aaed8090281e7da6de7d0265))
+* **rsc03:** prepare derived v2 serving resource budgets ([#821](https://github.com/audiagentic/bigcherry/issues/821)) ([e3298ee](https://github.com/audiagentic/bigcherry/commit/e3298eea5b35b6527acde4e31ab22e457cfc3902))
+* **rsc11:** scaffold inactive serving manifest v2 registry and codecs (S9) ([#845](https://github.com/audiagentic/bigcherry/issues/845)) ([1a3d95c](https://github.com/audiagentic/bigcherry/commit/1a3d95c35dc6380a274a54938bb812d8a353714a))
+* **rsc11:** structured pre-weight engine admission refusals (S5) ([#844](https://github.com/audiagentic/bigcherry/issues/844)) ([3609903](https://github.com/audiagentic/bigcherry/commit/3609903a6b69bb2c1ce10d77f62c362c1419e683))
+
+
+### Fixes
+
+* **moe-remote:** calibration report lines end in a real newline (RHP19) ([#801](https://github.com/audiagentic/bigcherry/issues/801)) ([7ac3a7b](https://github.com/audiagentic/bigcherry/commit/7ac3a7badd0a22bac314f868fa0fea8107c5a14f))
+* **radiance:** consume typed manifest for engine R3 configuration (RSC11 S1) ([#818](https://github.com/audiagentic/bigcherry/issues/818)) ([6c7cd43](https://github.com/audiagentic/bigcherry/commit/6c7cd43ef566009f53b8c6c73ece3a1b207f9ea0))
+* **rhp19:** bound adaptive drift growth by measured workload ([#836](https://github.com/audiagentic/bigcherry/issues/836)) ([a2cb88f](https://github.com/audiagentic/bigcherry/commit/a2cb88ff73d5b2da932377c84d57de709d3cdf64))
+* **rhp19:** bound calibration using measured helper drift horizon ([#833](https://github.com/audiagentic/bigcherry/issues/833)) ([0b937f6](https://github.com/audiagentic/bigcherry/commit/0b937f641f47f6e9851eefdfebfd0591eb8624f2))
+* **rhp20:** reject unsupported live-policy helper topology ([#830](https://github.com/audiagentic/bigcherry/issues/830)) ([780bc2d](https://github.com/audiagentic/bigcherry/commit/780bc2d39b7b095ea2beb281a95aac120f66ff41))
+* **serving:** no live placement policy on helper arrangements the planner is not built for (RHP20) ([#805](https://github.com/audiagentic/bigcherry/issues/805)) ([61a8cf3](https://github.com/audiagentic/bigcherry/commit/61a8cf36d46e1afac2ea3c5f1026e7cbd98cdfba))
+* **serving:** say why a start has no live placement policy (RHP18) ([#804](https://github.com/audiagentic/bigcherry/issues/804)) ([3a15d2c](https://github.com/audiagentic/bigcherry/commit/3a15d2c68f0ed27ef79ac8b4e80fd4398f6c7f14))
+* **serving:** the measured-plan key covers the helpers' budgets (a plan measured for one tail is never found for another) ([#790](https://github.com/audiagentic/bigcherry/issues/790)) ([856b91e](https://github.com/audiagentic/bigcherry/commit/856b91eb713728fedd1a3b61d3bda72b1c0cd292))
+
+
+### Performance
+
+* **moe-remote:** tail quad kernel decodes W4 in registers and uses v_add_f32_dpp (TK01/TK02) ([#794](https://github.com/audiagentic/bigcherry/issues/794)) ([2602d69](https://github.com/audiagentic/bigcherry/commit/2602d6970ab917444c542ae4695e2f728006ec52))
+* **moe-remote:** tail quad kernel widens E4M3 activations to fp16 two codes at a time (TK04) ([#797](https://github.com/audiagentic/bigcherry/issues/797)) ([9bd5d6f](https://github.com/audiagentic/bigcherry/commit/9bd5d6f2a086f8447a1ca45fb826ff957e65bbf2))
+
 ## [1170.14.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.13.0...bc-radiance-1170.14.0) (2026-11-09)
 
 
