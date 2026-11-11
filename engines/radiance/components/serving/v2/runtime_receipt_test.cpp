@@ -1,6 +1,8 @@
 #include "v2/runtime_receipt.h"
 
 #include <cassert>
+#include <cstdlib>
+#include <memory>
 #include <string>
 
 #include "../../moe-remote/moe_remote_shm.h"
@@ -62,7 +64,7 @@ int main() {
   {
     auto control = make_control();
     auto journal = make_journal();
-    auto ok = publish_runtime_receipt(make_startup(), digest, 7, 99, control, journal);
+    auto ok = publish_runtime_receipt("test-run", make_startup(), digest, 7, 99, control, journal);
     assert(ok);
     const auto& doc = ok.value();
     assert(doc.at("runtime_status") == "active");
@@ -80,7 +82,7 @@ int main() {
   {
     PlacementControl zero{};
     PlacementJournal zeroj{};
-    auto bad = publish_runtime_receipt(make_startup(), digest, 7, 99, zero, zeroj);
+    auto bad = publish_runtime_receipt("test-run", make_startup(), digest, 7, 99, zero, zeroj);
     assert(!bad);
   }
 
@@ -88,7 +90,7 @@ int main() {
   {
     auto control = make_control(7, 99, 5);
     auto journal = make_journal();
-    auto degraded = publish_runtime_receipt(make_startup(), digest, 7, 99, control, journal);
+    auto degraded = publish_runtime_receipt("test-run", make_startup(), digest, 7, 99, control, journal);
     assert(degraded);
     assert(degraded.value().at("runtime_status") == "degraded");
     assert(degraded.value().at("placement_stopped") == false);
@@ -106,7 +108,7 @@ int main() {
     j.entry[0].cleanup_actor = 3;
     j.entry[1].transaction_id = 9999;
     j.entry[1].cleanup_fault = 0;
-    auto stopped = publish_runtime_receipt(make_startup(), digest, 7, 99, control, j);
+    auto stopped = publish_runtime_receipt("test-run", make_startup(), digest, 7, 99, control, j);
     assert(stopped);
     assert(stopped.value().at("runtime_status") == "placement_stopped");
     assert(stopped.value().at("placement_stopped") == true);
@@ -122,7 +124,7 @@ int main() {
     j.entry[0].cleanup_fault = 0;
     j.entry[1].transaction_id = 9999;
     j.entry[1].cleanup_fault = 9;
-    auto ok = publish_runtime_receipt(make_startup(), digest, 7, 99, control, j);
+    auto ok = publish_runtime_receipt("test-run", make_startup(), digest, 7, 99, control, j);
     assert(ok);
     assert(ok.value().at("runtime_status") == "active");
     assert(ok.value().at("placement_stopped") == false);
@@ -132,7 +134,7 @@ int main() {
   {
     auto control = make_control(7, 99, 5);
     auto journal = make_journal();
-    auto degraded = publish_runtime_receipt(make_startup(), digest, 7, 99, control, journal);
+    auto degraded = publish_runtime_receipt("test-run", make_startup(), digest, 7, 99, control, journal);
     assert(degraded);
     assert(degraded.value().at("runtime_status") == "degraded");
     assert(degraded.value().at("placement_stopped") == false);
@@ -142,7 +144,7 @@ int main() {
   {
     auto control = make_control();
     auto journal = make_journal();
-    auto bad = publish_runtime_receipt(make_startup(), digest, 7, 100, control, journal);
+    auto bad = publish_runtime_receipt("test-run", make_startup(), digest, 7, 100, control, journal);
     assert(!bad);
   }
 
@@ -150,7 +152,7 @@ int main() {
   {
     auto control = make_control();
     auto journal = make_journal();
-    auto bad = publish_runtime_receipt(make_startup(), digest, 8, 99, control, journal);
+    auto bad = publish_runtime_receipt("test-run", make_startup(), digest, 8, 99, control, journal);
     assert(!bad);
   }
 
@@ -158,11 +160,11 @@ int main() {
   {
     auto control = make_control(7, 99);
     auto journal = make_journal();
-    auto bad = publish_runtime_receipt(make_startup(), digest, 7, 99, control, journal);
+    auto bad = publish_runtime_receipt("test-run", make_startup(), digest, 7, 99, control, journal);
     // mutate control active_digest mismatch by changing control copy
     PlacementControl c2 = control;
     c2.active_digest = 100;
-    auto bad2 = publish_runtime_receipt(make_startup(), digest, 7, 99, c2, journal);
+    auto bad2 = publish_runtime_receipt("test-run", make_startup(), digest, 7, 99, c2, journal);
     assert(!bad2);
   }
 
@@ -172,7 +174,7 @@ int main() {
     PlacementJournal j{};
     j.entry[0].transaction_id = 7; // mismatched
     j.entry[0].cleanup_fault = 0;
-    auto bad = publish_runtime_receipt(make_startup(), digest, 7, 99, control, j);
+    auto bad = publish_runtime_receipt("test-run", make_startup(), digest, 7, 99, control, j);
     assert(!bad);
   }
 
@@ -180,7 +182,7 @@ int main() {
   {
     auto control = make_control();
     auto journal = make_journal();
-    auto ok = publish_runtime_receipt(make_startup(false), digest, 7, 99, control, journal);
+    auto ok = publish_runtime_receipt("test-run", make_startup(false), digest, 7, 99, control, journal);
     assert(ok);
     assert(ok.value().at("startup_decision").at("requested") == "off");
     assert(ok.value().at("startup_decision").at("configured") == false);
@@ -192,7 +194,7 @@ int main() {
     bad_startup.configured = true;
     auto control = make_control();
     auto journal = make_journal();
-    auto bad = publish_runtime_receipt(bad_startup, digest, 7, 99, control, journal);
+    auto bad = publish_runtime_receipt("test-run", bad_startup, digest, 7, 99, control, journal);
     assert(!bad);
   }
 
@@ -200,7 +202,7 @@ int main() {
   {
     auto control = make_control();
     auto journal = make_journal();
-    auto bad = publish_runtime_receipt(make_startup(), std::string("sha256:") + std::string(63, 'a'), 7, 99, control, journal);
+    auto bad = publish_runtime_receipt("test-run", make_startup(), std::string("sha256:") + std::string(63, 'a'), 7, 99, control, journal);
     assert(!bad);
   }
 
@@ -209,10 +211,69 @@ int main() {
     auto control = make_control();
     auto journal = make_journal();
     control.state = static_cast<uint32_t>(r3::moe_shm::PlacementState::RESERVING);
-    auto in_flight = publish_runtime_receipt(make_startup(), digest, 7, 99, control, journal);
+    auto in_flight = publish_runtime_receipt("test-run", make_startup(), digest, 7, 99, control, journal);
     assert(in_flight);
     assert(in_flight.value().at("runtime_status") == "transitioning");
     assert(in_flight.value().at("degraded") == false);
+  }
+
+  // The production reader sees one coherent control/journal pair inside the
+  // worker seqlock. Synthetic segment uses the same validated v24 layout.
+  {
+    using namespace r3::moe_shm;
+    const LayoutShape shape{16, 1, 2, 16, 8, 16};
+    Layout layout{};
+    assert(layout_for(shape, 1, slots_for(1, 1), &layout));
+    void* mem = std::aligned_alloc(64, (layout.bytes + 63u) & ~uint64_t(63u));
+    assert(mem);
+    std::unique_ptr<void, decltype(&std::free)> owned(mem, &std::free);
+    assert(init(mem, 1, shape, 1, 1));
+    auto* hdr = static_cast<Header*>(mem);
+    hdr->helper_count = 1;
+    auto* control = placement_control(mem);
+    auto* generation = generation_header(mem, 0);
+    auto* journal = placement_journal(mem);
+    control->seq = 2;
+    control->transaction_id = 42;
+    control->active_epoch = 7;
+    control->journal_index = 0;
+    generation->epoch = 7;
+    generation->ready_helpers = 1;
+    journal->entry[0].transaction_id = 42;
+    journal->entry[0].before_epoch = 7;
+    journal->entry[0].before_digest = control->active_digest;
+    assert(valid_self(hdr, layout.bytes));
+    auto live = [&] {
+      return publish_live_runtime_receipt("test-run", make_startup(),
+                                           digest, mem, layout.bytes);
+    };
+    auto good = live();
+    assert(good);
+    assert(good.value().at("run_id") == "test-run");
+    assert(good.value().at("runtime_status") == "active");
+
+    journal->entry[0].before_epoch = 6;
+    assert(!live()); // stale journal epoch
+    journal->entry[0].before_epoch = 7;
+    journal->entry[0].before_digest += 1;
+    assert(!live()); // mismatched owner generation
+    journal->entry[0].before_digest = control->active_digest;
+    journal->entry[1] = journal->entry[0];
+    journal->entry[1].transaction_id = 123;
+    control->journal_index = 1;
+    assert(!live()); // stale alternate journal
+    control->journal_index = 0;
+    control->seq = 3;
+    assert(!live()); // publication in flight
+    control->seq = 2;
+    auto* map = generation_map(mem, 0);
+    const uint8_t old = map[0];
+    map[0] = 0;
+    assert(!live()); // control digest differs from owner bytes
+    map[0] = old;
+    assert(live());
+    hdr->version++;
+    assert(!live()); // invalid segment generation
   }
 
   return 0;

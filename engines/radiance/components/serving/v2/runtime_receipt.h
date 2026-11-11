@@ -10,6 +10,7 @@
 #include "../../moe-remote/moe_remote_shm.h"
 
 #include <cstdint>
+#include <cstddef>
 #include <string>
 #include <vector>
 #include <nlohmann/json.hpp>
@@ -36,11 +37,21 @@ struct RuntimeSnapshot {
 // aliases are accepted. Missing, zero, mismatched or stale telemetry fails
 // closed.
 Result<nlohmann::json> publish_runtime_receipt(
+    const std::string& run_id,
     const LivePolicyStartup& startup_decision,
     const std::string& manifest_content_digest,
     uint64_t epoch,
     uint64_t owner_generation_digest,
     const r3::moe_shm::PlacementControl& control,
     const r3::moe_shm::PlacementJournal& journal);
+
+// Read the actual worker transport. Its control seqlock encloses both control
+// and journal; a torn or unsealed observation must be refused.
+Result<nlohmann::json> publish_live_runtime_receipt(
+    const std::string& run_id,
+    const LivePolicyStartup& startup_decision,
+    const std::string& manifest_content_digest,
+    const void* mapping,
+    size_t mapped_bytes);
 
 } // namespace bc::serving::v2

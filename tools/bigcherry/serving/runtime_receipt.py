@@ -14,6 +14,7 @@ from typing import Any
 
 _MAX_WIRE = (1 << 53) - 1
 _DIGEST = re.compile(r"(?:sha256:)?[0-9a-f]{64}\Z")
+_MAX_DIGEST = (1 << 64) - 1
 _RUN_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$")
 
 _LIVE_POLICY_FIELDS = frozenset((
@@ -29,7 +30,7 @@ _SNAPSHOT_FIELDS = frozenset((
 ))
 _SNAPSHOT_REQUIRED = _SNAPSHOT_FIELDS - {"owner_generation_digest_hex"}
 _RECEIPT_FIELDS = frozenset((
-    "schema_version", "kind", "manifest", "startup_decision",
+    "schema_version", "kind", "run_id", "manifest", "startup_decision",
     "bounding", "runtime_status", "placement_stopped", "degraded",
     "bounded", "max_snapshots", "snapshot_count", "snapshots",
     "required_producer", "provenance",
@@ -105,6 +106,12 @@ def _int(value, name, *, positive=False, allow_zero=True):
     return value
 
 
+def _owner_digest(value, name):
+    if type(value) is not int or not (1 <= value <= _MAX_DIGEST):
+        raise RuntimeReceiptRefused(f"runtime receipt {name}: uint64 digest required")
+    return value
+
+
 def _bool(value, name):
     if type(value) is not bool:
         raise RuntimeReceiptRefused(f"runtime receipt {name}: boolean required")
@@ -117,16 +124,26 @@ def _object(raw, fields, where):
     return raw
 
 
-def decode_runtime_receipt(raw: Any, *, require_telemetry: bool = False) -> RuntimeReceipt:
+def decode_runtime_receipt(raw: Any, *, require_telemetry: bool = False,
+                           expected_run_id: str | None = None,
+                           expected_manifest_digest: str | None = None) -> RuntimeReceipt:
     if not isinstance(raw, dict) or not _RECEIPT_REQUIRED.issubset(raw) or not set(raw).issubset(_RECEIPT_FIELDS):
         raise RuntimeReceiptRefused("runtime receipt record: missing/unknown fields")
     record = raw
     if (record["schema_version"] != 1 or type(record["schema_version"]) is not int
             or record["kind"] != "bc_serve_v2_runtime_receipt"):
         raise RuntimeReceiptRefused("runtime receipt has wrong identity")
+    run_id = record["run_id"]
+    if not isinstance(run_id, str) or not _RUN_ID.fullmatch(run_id):
+        raise RuntimeReceiptRefused("runtime receipt run_id is invalid")
+    if expected_run_id is not None and run_id != expected_run_id:
+        raise RuntimeReceiptRefused("runtime receipt belongs to another run")
     manifest = _object(record["manifest"], frozenset(("content_digest",)), "manifest")
     manifest_digest = _digest(manifest["content_digest"], "manifest.content_digest")
 
+    if expected_manifest_digest is not None and manifest_digest != _digest(
+            expected_manifest_digest, "expected_manifest_digest"):
+        raise RuntimeReceiptRefused("runtime receipt belongs to another manifest")
     startup = record["startup_decision"]
     if not isinstance(startup, dict) or not set(startup).issubset(_LIVE_POLICY_FIELDS):
         raise RuntimeReceiptRefused("runtime receipt startup_decision is invalid")
@@ -157,8 +174,8 @@ def decode_runtime_receipt(raw: Any, *, require_telemetry: bool = False) -> Runt
     if bounding_manifest_digest != manifest_digest:
         raise RuntimeReceiptRefused("runtime receipt manifest digest disagrees between blocks")
     epoch = _int(bounding["epoch"], "bounding.epoch", positive=True)
-    owner_generation_digest = _int(bounding["owner_generation_digest"],
-                                  "bounding.owner_generation_digest", allow_zero=False)
+    owner_generation_digest = _owner_digest(bounding["owner_generation_digest"],
+                                           "bounding.owner_generation_digest")
 
     runtime_status = record["runtime_status"]
     if runtime_status not in ("active", "transitioning", "degraded", "placement_stopped", "missing_evidence"):
@@ -191,8 +208,8 @@ def decode_runtime_receipt(raw: Any, *, require_telemetry: bool = False) -> Runt
             # Snapshots are bounded to the same epoch; a differing epoch is a
             # different runtime generation and cannot be mixed into this receipt.
             raise RuntimeReceiptRefused("runtime receipt snapshot epoch differs from bounding epoch")
-        snap_owner = _int(snap["owner_generation_digest"], "snapshot.owner_generation_digest",
-                          allow_zero=False)
+        snap_owner = _owner_digest(snap["owner_generation_digest"],
+                                   "snapshot.owner_generation_digest")
         if snap_owner != owner_generation_digest:
             raise RuntimeReceiptRefused("runtime receipt snapshot owner-generation digest differs")
         snap_placement = _bool(snap["placement_stopped"], "snapshot.placement_stopped")
@@ -252,6 +269,7 @@ def decode_runtime_receipt(raw: Any, *, require_telemetry: bool = False) -> Runt
 
     return RuntimeReceipt(
         schema_version=1,
+        run_id=run_id,
         manifest_digest=manifest_digest,
         startup_decision=dict(startup),
         bounding_manifest_digest=bounding_manifest_digest,
@@ -268,13 +286,17 @@ def decode_runtime_receipt(raw: Any, *, require_telemetry: bool = False) -> Runt
     )
 
 
-def parse_runtime_receipt(text: str, *, require_telemetry: bool = False) -> RuntimeReceipt:
+def parse_runtime_receipt(text: str, *, require_telemetry: bool = False,
+                          expected_run_id: str | None = None,
+                          expected_manifest_digest: str | None = None) -> RuntimeReceipt:
     try:
         raw = json.loads(text, object_pairs_hook=_pairs, parse_float=_no_fraction,
                          parse_constant=_no_fraction)
     except (ValueError, TypeError) as exc:
         raise RuntimeReceiptRefused("runtime receipt invalid JSON") from exc
-    return decode_runtime_receipt(raw, require_telemetry=require_telemetry)
+    return decode_runtime_receipt(
+        raw, require_telemetry=require_telemetry, expected_run_id=expected_run_id,
+        expected_manifest_digest=expected_manifest_digest)
 
 
 def validate_runtime_receipt(raw: Any, *, require_telemetry: bool = False) -> None:
