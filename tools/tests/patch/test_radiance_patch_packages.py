@@ -871,6 +871,8 @@ class TestPlanMemoryPatch(unittest.TestCase):
             assert "f.n_queues * f.queue_bytes" in plan
             assert '"radiance_p1_rank_demand"' in plan
             assert "g_rank_gpu" in plan
+            assert "g_rank_facts = facts;" in plan
+            assert "void bc_plan_memory_note_ranks(" in plan
             assert "--plan-memory-ranks" in flags
             assert 'g_store.push_back("--plan-memory-ranks");' in manifest
             assert "out << v1::encode(g_plan).dump(2)" in plan
