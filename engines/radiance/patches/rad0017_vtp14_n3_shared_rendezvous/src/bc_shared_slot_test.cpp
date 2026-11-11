@@ -3,6 +3,7 @@
 #include "rad_test.h"
 
 #include "plugin/bc_shared_slot.h"
+#include "rad_abi.h"
 
 #include <dlfcn.h>
 
