@@ -26,6 +26,8 @@ class FakeDriver(FileOps):
         self.fail_on: callable | None = None  # (path, value) -> bool raises OSError
         self.ignore_cap_on: set[str] = set()   # bdfs whose cap write is silently dropped (readback mismatch)
         self.fail_restore = False
+        self.ignore_mclk_on: set[str] = set()
+        self.ignore_mclk_on: set[str] = set()
 
     def write(self, path: str, value: str) -> None:
         if self.fail_on and self.fail_on(path, value):
@@ -38,6 +40,12 @@ class FakeDriver(FileOps):
             m = re.match(r"s 1 (\d+)$", value)
             if m:
                 st["sclk"] = int(m.group(1))
+            m = re.match(r"m 1 (\d+)$", value)
+            if m:
+                st["mclk"] = int(m.group(1))
+            m = re.match(r"m 1 (\d+)$", value)
+            if m:
+                st["mclk"] = int(m.group(1))
             m = re.match(r"vo (-?\d+)$", value)
             if m:
                 st["off"] = int(m.group(1))
@@ -45,8 +53,13 @@ class FakeDriver(FileOps):
                 text = p.read_text()
                 if "sclk" in st:
                     text = re.sub(r"(1: )\d+(Mhz)", lambda mm: f"{mm.group(1)}{st['sclk']}{mm.group(2)}", text, count=1)
-                    if "off" not in st:  # a clock commit alone resets the offset on these cards
-                        text = re.sub(r"(OD_VDDGFX_OFFSET:\n)-?\d+mV", r"\g<1>0mV", text)
+                if "mclk" in st and bdf not in self.ignore_mclk_on:
+                    text = re.sub(
+                        r"(OD_MCLK:\n0:\s*\d+\s*MHz\n1:\s*)\d+(\s*MHz)",
+                        lambda mm: f"{mm.group(1)}{st['mclk']}{mm.group(2)}",
+                        text, count=1, flags=re.IGNORECASE)
+                if ("sclk" in st or "mclk" in st) and "off" not in st:
+                    text = re.sub(r"(OD_VDDGFX_OFFSET:\n)-?\d+mV", r"\g<1>0mV", text)
                 if "off" in st:
                     text = re.sub(r"(OD_VDDGFX_OFFSET:\n)-?\d+mV", lambda mm: f"{mm.group(1)}{st['off']}mV", text)
                 p.write_text(text)
@@ -89,6 +102,68 @@ class TxTest(unittest.TestCase):
         self.assertTrue(t.restore(processes_exited=True))
         self.assertEqual({b: self.state(b) for b in (A, B)}, before)
         self.assertEqual(read_json(t.journal_path)["state"], "restored")
+
+    def test_mclk_sclk_voltage_one_commit_and_exact_restore(self):
+        before = self.state(A)
+        t = self.tx()
+        t.prepare({A: self.S(sclk_max_mhz=2700, mclk_max_mhz=1400,
+                             vddgfx_offset_mv=-125)}, [A])
+        t.apply()
+        od = gpu_power._Amdgpu.od(A)
+        self.assertEqual([v for p, v in self.drv.log if p == od],
+                         ["s 1 2700", "m 1 1400", "vo -125", "c"])
+        self.assertEqual(self.state(A)["mclk_max_mhz"], 1400)
+        self.assertEqual(self.state(A)["vddgfx_offset_mv"], -125)
+        self.assertEqual(read_json(t.journal_path)["devices"][0]["before"]["mclk_max_mhz"],
+                         before["mclk_max_mhz"])
+        self.assertTrue(t.restore(processes_exited=True))
+        self.assertEqual(self.state(A), before)
+
+    def test_mclk_only_preserves_original_voltage_offset(self):
+        p = self.root / "sys/bus/pci/devices" / A / "pp_od_clk_voltage"
+        p.write_text(p.read_text().replace("OD_VDDGFX_OFFSET:\n0mV",
+                                             "OD_VDDGFX_OFFSET:\n-100mV"))
+        before = self.state(A)
+        t = self.tx()
+        t.prepare({A: self.S(mclk_max_mhz=1350)}, [A])
+        t.apply()
+        self.assertEqual(self.state(A)["vddgfx_offset_mv"], -100)
+        self.assertEqual([v for path, v in self.drv.log if path == gpu_power._Amdgpu.od(A)],
+                         ["m 1 1350", "vo -100", "c"])
+        self.assertTrue(t.restore(processes_exited=True))
+        self.assertEqual(self.state(A), before)
+
+    def test_mclk_uses_card_reported_range_and_fails_closed(self):
+        p = self.root / "sys/bus/pci/devices" / A / "pp_od_clk_voltage"
+        p.write_text(p.read_text().replace("MCLK:      97Mhz       1500Mhz",
+                                             "MCLK:     97Mhz       1250Mhz"))
+        with self.assertRaises(PowerRefused) as cm:
+            self.tx().prepare({A: self.S(mclk_max_mhz=1251)}, [A])
+        self.assertIn("mclk_max_mhz=1251 outside the device range 97..1250", str(cm.exception))
+        self.assertEqual(self.drv.log, [])
+        p.write_text(p.read_text().replace("MCLK:     97Mhz       1250Mhz", ""))
+        with self.assertRaises(PowerRefused):
+            self.tx().prepare({A: self.S(mclk_max_mhz=1200)}, [A])
+        self.assertEqual(self.drv.log, [])
+
+    def test_mclk_readback_failure_rolls_back_and_crash_recovery(self):
+        before = self.state(A)
+        self.drv.ignore_mclk_on.add(A)
+        t = self.tx()
+        t.prepare({A: self.S(mclk_max_mhz=1400)}, [A])
+        with self.assertRaises(PowerFailed) as cm:
+            t.apply()
+        self.assertTrue(cm.exception.rolled_back)
+        self.assertIn("max memory clock", str(cm.exception))
+        self.assertEqual(self.state(A), before)
+        self.drv.ignore_mclk_on.clear()
+        t = self.tx("recovery")
+        t.prepare({A: self.S(mclk_max_mhz=1400)}, [A])
+        t.apply()
+        self.assertTrue(PowerTransaction.recover(
+            t.journal_path, sysfs_root=self.root, fileops=self.drv,
+            lease_ok=lambda: True, processes_exited=True, platform_name="linux"))
+        self.assertEqual(self.state(A), before)
 
     def test_journal_is_durable_before_first_write(self):
         seen = {}

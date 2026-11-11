@@ -55,7 +55,7 @@ class DevicePowerConfigTests(unittest.TestCase):
 
     def test_unknown_key_fails_closed(self):
         with self.assertRaisesRegex(env.EnvironmentError_, "unknown key"):
-            _load('[host.h.devices.power]\nmclk-max-mhz = 1000\nevidence = "x"\n')
+            _load('[host.h.devices.power]\nnot-a-power-control = 1000\nevidence = "x"\n')
 
     def test_evidence_is_required(self):
         with self.assertRaisesRegex(env.EnvironmentError_, "evidence"):
@@ -69,6 +69,17 @@ class GpuPowerWritesTests(unittest.TestCase):
     def test_clock_then_offset_staged_then_committed(self):
         w = gpu_power.apply_writes(self.loc, "amdgpu", None, gpu_power.Setting(vddgfx_offset_mv=-125, sclk_max_mhz=2700))
         self.assertEqual(w, [(self.od, "s 1 2700"), (self.od, "vo -125"), (self.od, "c")])
+
+    def test_mclk_stages_after_sclk_before_voltage_and_single_commit(self):
+        w = gpu_power.apply_writes(
+            self.loc, "amdgpu", None,
+            gpu_power.Setting(sclk_max_mhz=2700, mclk_max_mhz=1200, vddgfx_offset_mv=-125))
+        self.assertEqual(w, [(self.od, "s 1 2700"), (self.od, "m 1 1200"),
+                             (self.od, "vo -125"), (self.od, "c")])
+        before = gpu_power.State(vddgfx_offset_mv=-100, sclk_max_mhz=2900, mclk_max_mhz=1250)
+        restored = gpu_power.restore_writes(
+            self.loc, "amdgpu", None, before, gpu_power.Setting(mclk_max_mhz=1200))
+        self.assertEqual(restored, [(self.od, "m 1 1250"), (self.od, "vo -100"), (self.od, "c")])
 
     def test_power_cap_in_microwatts_needs_hwmon(self):
         s = gpu_power.Setting(power_cap_w=250)
@@ -89,7 +100,9 @@ class GpuPowerWritesTests(unittest.TestCase):
         self.assertEqual(w, [("/h/power1_cap", "303000000")])
 
     def test_state_round_trips_through_json(self):
-        st = gpu_power.State(-125, 2800, 250_000_000, 303_000_000)
+        st = gpu_power.State(vddgfx_offset_mv=-125, sclk_max_mhz=2800,
+                             mclk_max_mhz=1200, power_cap_uw=250_000_000,
+                             power_cap_default_uw=303_000_000)
         self.assertEqual(gpu_power.State.from_json(st.to_json()), st)
 
     def test_card_without_a_backend_is_refused(self):
@@ -110,7 +123,9 @@ class GpuPowerWritesTests(unittest.TestCase):
         files = {self.od: od, "/h/power1_cap": "303000000\n", "/h/power1_cap_default": "303000000\n"}
         with mock.patch.object(gpu_power, "_read", files.get):
             st = gpu_power.read_state(self.loc, "amdgpu", "/h")
-        self.assertEqual(st, gpu_power.State(-125, 2700, 303_000_000, 303_000_000))
+        self.assertEqual(st, gpu_power.State(vddgfx_offset_mv=-125, sclk_max_mhz=2700,
+                                             mclk_max_mhz=1250, power_cap_uw=303_000_000,
+                                             power_cap_default_uw=303_000_000))
 
 
 class GpuPowerUdevTests(unittest.TestCase):

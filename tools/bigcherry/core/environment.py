@@ -96,11 +96,13 @@ class DevicePower:
 
     vddgfx_offset_mv: int | None = None   #: OverDrive graphics voltage offset; negative undervolts
     sclk_max_mhz: int | None = None       #: OverDrive maximum shader clock
+    mclk_max_mhz: int | None = None       #: OverDrive maximum memory clock
     power_cap_w: int | None = None        #: board power cap
     evidence: str = ""
 
 
-_POWER_LIMITS = {"vddgfx-offset-mv": (-500, 0), "sclk-max-mhz": (500, 5000), "power-cap-w": (1, 1000)}
+_POWER_LIMITS = {"vddgfx-offset-mv": (-500, 0), "sclk-max-mhz": (500, 5000),
+                 "mclk-max-mhz": (1, (1 << 53) - 1), "power-cap-w": (1, 1000)}
 
 
 def _device_power(raw: object, where: str) -> DevicePower | None:
@@ -120,6 +122,7 @@ def _device_power(raw: object, where: str) -> DevicePower | None:
     if not str(raw.get("evidence", "")).strip():
         raise EnvironmentError_(f"{where}.power: evidence (the run that validated these settings) is required")
     return DevicePower(vddgfx_offset_mv=values["vddgfx-offset-mv"], sclk_max_mhz=values["sclk-max-mhz"],
+                       mclk_max_mhz=values["mclk-max-mhz"],
                        power_cap_w=values["power-cap-w"], evidence=str(raw["evidence"]).strip())
 
 

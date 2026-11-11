@@ -171,6 +171,8 @@ class GpuProbeTest(unittest.TestCase):
         xtx, r9700, rdna2 = g["0000:03:00.0"].controls, g["0000:09:00.0"].controls, g["0000:17:00.0"].controls
         self.assertEqual((xtx["vddgfx_offset_mv"].minimum, xtx["vddgfx_offset_mv"].maximum), (-450, 0))
         self.assertEqual(xtx["sclk_max_mhz"].current.value, 3010)
+        self.assertEqual(xtx["mclk_max_mhz"].current.value, 1250)
+        self.assertEqual((xtx["mclk_max_mhz"].minimum, xtx["mclk_max_mhz"].maximum), (97, 1500))
         self.assertEqual(xtx["sclk_offset_mhz"].status, "unsupported")
         self.assertEqual((r9700["vddgfx_offset_mv"].minimum, r9700["vddgfx_offset_mv"].maximum), (-200, 0))
         self.assertEqual(r9700["sclk_offset_mhz"].maximum, 1000)
@@ -194,7 +196,7 @@ class GpuProbeTest(unittest.TestCase):
     def test_unknown_overdrive_format_enables_no_control(self):
         root = fx.gpu(self.root(), "0000:03:00.0", od="OD_NEWTHING:\n1: 2\n")
         g = pp.probe_gpus(["0000:03:00.0"], sysfs_root=root, platform_name="linux")[0]
-        for k in ("vddgfx_offset_mv", "sclk_max_mhz", "sclk_offset_mhz"):
+        for k in ("vddgfx_offset_mv", "sclk_max_mhz", "mclk_max_mhz", "sclk_offset_mhz"):
             self.assertEqual(g.controls[k].status, "unsupported", k)
 
     def test_missing_range_refuses_the_control(self):
@@ -202,6 +204,21 @@ class GpuProbeTest(unittest.TestCase):
         root = fx.gpu(self.root(), "0000:03:00.0", od=od)
         g = pp.probe_gpus(["0000:03:00.0"], sysfs_root=root, platform_name="linux")[0]
         self.assertEqual(g.controls["vddgfx_offset_mv"].status, "unsupported")
+
+    def test_mclk_range_is_not_inferred_from_current_or_other_clock(self):
+        root = self.root()
+        bdf = "0000:03:00.0"
+        od = fx.OD_RDNA3.replace("MCLK:      97Mhz       1500Mhz",
+                                 "MCLK:     97Mhz       1250Mhz")
+        fx.gpu(root, bdf, od=od)
+        g = pp.probe_gpus([bdf], sysfs_root=root, platform_name="linux")[0]
+        self.assertEqual((g.controls["mclk_max_mhz"].minimum,
+                          g.controls["mclk_max_mhz"].maximum), (97, 1250))
+        p = root / "sys/bus/pci/devices" / bdf / "pp_od_clk_voltage"
+        p.write_text(od.replace("MCLK:     97Mhz       1250Mhz", ""))
+        g = pp.probe_gpus([bdf], sysfs_root=root, platform_name="linux")[0]
+        self.assertEqual(g.controls["mclk_max_mhz"].status, "unsupported")
+        self.assertEqual(g.controls["sclk_max_mhz"].status, "supported")
 
     def test_multiple_hwmon_is_ambiguous_and_cap_refused(self):
         root = fx.gpu(self.root(), "0000:03:00.0", hwmons=("hwmon8", "hwmon9"))

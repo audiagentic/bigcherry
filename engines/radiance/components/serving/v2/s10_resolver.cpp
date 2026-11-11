@@ -20,25 +20,27 @@ ConfigError fail(ConfigErrorCode code, std::string path, std::string why) {
 }
 bool safe(int64_t v) { return v >= -kSafe && v <= kSafe; }
 bool populated(const PowerSettings &s) {
-  return s.vddgfx_offset_mv || s.sclk_max_mhz || s.sclk_offset_mhz ||
+  return s.vddgfx_offset_mv || s.sclk_max_mhz || s.mclk_max_mhz || s.sclk_offset_mhz ||
          s.power_cap_w;
 }
 PowerSettings patch(const PowerSettings &base, const PowerPatch &p) {
   PowerSettings result = base;
   if (p.vddgfx_offset_mv) result.vddgfx_offset_mv = p.vddgfx_offset_mv;
   if (p.sclk_max_mhz) result.sclk_max_mhz = p.sclk_max_mhz;
+  if (p.mclk_max_mhz) result.mclk_max_mhz = p.mclk_max_mhz;
   if (p.sclk_offset_mhz) result.sclk_offset_mhz = p.sclk_offset_mhz;
   if (p.power_cap_w) result.power_cap_w = p.power_cap_w;
   return result;
 }
 bool populated(const PowerPatch &p) {
-  return p.vddgfx_offset_mv || p.sclk_max_mhz || p.sclk_offset_mhz ||
+  return p.vddgfx_offset_mv || p.sclk_max_mhz || p.mclk_max_mhz || p.sclk_offset_mhz ||
          p.power_cap_w;
 }
 Status valid_settings(const PowerSettings &s, const std::string &path) {
   if ((s.vddgfx_offset_mv && !safe(*s.vddgfx_offset_mv)) ||
       (s.sclk_offset_mhz && !safe(*s.sclk_offset_mhz)) ||
       (s.sclk_max_mhz && (*s.sclk_max_mhz <= 0 || !safe(*s.sclk_max_mhz))) ||
+      (s.mclk_max_mhz && (*s.mclk_max_mhz <= 0 || !safe(*s.mclk_max_mhz))) ||
       (s.power_cap_w && (*s.power_cap_w <= 0 || !safe(*s.power_cap_w))) ||
       (s.sclk_offset_mhz && s.sclk_max_mhz))
     return fail(ConfigErrorCode::invalid_value, path,
@@ -49,6 +51,7 @@ json settings_json(const PowerSettings &s) {
   json j = json::object();
   if (s.vddgfx_offset_mv) j["vddgfx_offset_mv"] = *s.vddgfx_offset_mv;
   if (s.sclk_max_mhz) j["sclk_max_mhz"] = *s.sclk_max_mhz;
+  if (s.mclk_max_mhz) j["mclk_max_mhz"] = *s.mclk_max_mhz;
   if (s.sclk_offset_mhz) j["sclk_offset_mhz"] = *s.sclk_offset_mhz;
   if (s.power_cap_w) j["power_cap_w"] = *s.power_cap_w;
   return j;
@@ -124,13 +127,15 @@ Result<PowerPlan> power(const Manifest &m, const S10Inputs &in,
       if (rule.role == "helper*" && target.role != "engine" &&
           rule.arch == target.arch) {
         PowerPatch p{rule.settings.vddgfx_offset_mv, rule.settings.sclk_max_mhz,
-                     rule.settings.sclk_offset_mhz, rule.settings.power_cap_w};
+                     rule.settings.mclk_max_mhz, rule.settings.sclk_offset_mhz,
+                     rule.settings.power_cap_w};
         setting = patch(setting, p);
       }
     for (const auto &rule : in.profile.rules)
       if (rule.role == target.role && rule.arch == target.arch) {
         PowerPatch p{rule.settings.vddgfx_offset_mv, rule.settings.sclk_max_mhz,
-                     rule.settings.sclk_offset_mhz, rule.settings.power_cap_w};
+                     rule.settings.mclk_max_mhz, rule.settings.sclk_offset_mhz,
+                     rule.settings.power_cap_w};
         setting = patch(setting, p);
       }
     const auto [it, inserted] = resolved_roles.emplace(target.role, setting);

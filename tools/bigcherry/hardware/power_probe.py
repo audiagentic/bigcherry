@@ -364,7 +364,7 @@ class PowerProbe:
 
 
 #: the controls an amdgpu card can carry; every one is optional per card
-CONTROLS = ("vddgfx_offset_mv", "sclk_max_mhz", "sclk_offset_mhz", "power_cap_w")
+CONTROLS = ("vddgfx_offset_mv", "sclk_max_mhz", "mclk_max_mhz", "sclk_offset_mhz", "power_cap_w")
 
 
 def _no_control(reason: str, status: Status = "unsupported", unit: str = "") -> ControlCapability:
@@ -410,7 +410,7 @@ def _overdrive_controls(od_path: Path) -> dict:
     if obs.status != "supported":
         reason = "overdrive_absent" if obs.reason == "interface_absent" else (obs.reason or "unreadable")
         return {k: _no_control(reason, obs.status, u) for k, u in
-                (("vddgfx_offset_mv", "mV"), ("sclk_max_mhz", "MHz"), ("sclk_offset_mhz", "MHz"))}
+                (("vddgfx_offset_mv", "mV"), ("sclk_max_mhz", "MHz"), ("mclk_max_mhz", "MHz"), ("sclk_offset_mhz", "MHz"))}
     text = str(obs.value)
     src = str(od_path)
     out: dict = {}
@@ -438,6 +438,20 @@ def _overdrive_controls(od_path: Path) -> dict:
             "supported", Observation("supported", rows[1], "MHz", src), rng[0], rng[1], "MHz")
     else:
         out["sclk_max_mhz"] = _no_control("control_not_recognised", unit="MHz")
+
+    # Absolute memory clock, OD_MCLK rows 0/1 and the card's OD_RANGE MCLK bounds.
+    sec = _od_section(text, "OD_MCLK")
+    rng = _od_range(text, "MCLK", "mhz")
+    rows = {}
+    for line in sec or []:
+        m = _re.match(r"^(\d+):\s*(\d+)\s*MHz$", line, _re.IGNORECASE)
+        if m:
+            rows[int(m.group(1))] = int(m.group(2))
+    if 0 in rows and 1 in rows and rng and rng[0] <= rng[1]:
+        out["mclk_max_mhz"] = ControlCapability(
+            "supported", Observation("supported", rows[1], "MHz", src), rng[0], rng[1], "MHz")
+    else:
+        out["mclk_max_mhz"] = _no_control("control_not_recognised", unit="MHz")
 
     # newer cards: a signed offset instead of a table
     sec = _od_section(text, "OD_SCLK_OFFSET")

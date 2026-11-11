@@ -67,6 +67,8 @@ def test_digest_is_stable_and_sensitive_to_content():
         {"vddgfx_offset_mv": True},
         {"vddgfx_offset_mv": -(1 << 53)},
         {"power_cap_w": 0},
+        {"mclk_max_mhz": 0},
+        {"mclk_max_mhz": 1.5},
         {"new_control": 1},
         {"sclk_max_mhz": 2000, "sclk_offset_mhz": -100},
     ],
@@ -74,6 +76,13 @@ def test_digest_is_stable_and_sensitive_to_content():
 def test_invalid_power_settings_rejected(settings):
     with pytest.raises(ProfileError):
         validate_settings(settings)
+
+
+def test_mclk_is_typed_and_changes_profile_digest_without_device_defaults():
+    assert validate_settings({"mclk_max_mhz": 1400}) == {"mclk_max_mhz": 1400}
+    a = resolved_profile_digest("stock", {"helper0": {}})
+    b = resolved_profile_digest("stock", {"helper0": {"mclk_max_mhz": 1400}})
+    assert a != b
 
 
 def test_unknown_profile_refused():

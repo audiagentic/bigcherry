@@ -46,7 +46,8 @@ def _journal_dir() -> Path:
 
 
 def _setting(power: environment.DevicePower) -> gpu_power.Setting:
-    return gpu_power.Setting(power.vddgfx_offset_mv, power.sclk_max_mhz, power.power_cap_w)
+    return gpu_power.Setting(vddgfx_offset_mv=power.vddgfx_offset_mv, sclk_max_mhz=power.sclk_max_mhz,
+                             mclk_max_mhz=power.mclk_max_mhz, power_cap_w=power.power_cap_w)
 
 
 def _devices(args: Namespace) -> list[environment.Device]:
@@ -60,6 +61,8 @@ def _mismatches(want: gpu_power.Setting, have: gpu_power.State) -> list[str]:
         out.append(f"offset configured {want.vddgfx_offset_mv} mV, running {have.vddgfx_offset_mv}")
     if want.sclk_max_mhz is not None and have.sclk_max_mhz != want.sclk_max_mhz:
         out.append(f"sclk max configured {want.sclk_max_mhz} MHz, running {have.sclk_max_mhz}")
+    if want.mclk_max_mhz is not None and have.mclk_max_mhz != want.mclk_max_mhz:
+        out.append(f"mclk max configured {want.mclk_max_mhz} MHz, running {have.mclk_max_mhz}")
     if want.power_cap_w is not None and have.power_cap_uw != want.power_cap_w * 1_000_000:
         out.append(f"cap configured {want.power_cap_w} W, running {_w(have.power_cap_uw)}")
     return out
@@ -80,7 +83,7 @@ def cmd_status(args: Namespace) -> int:
             continue
         have = gpu_power.read_state(d.locator, driver, gpu_power.hwmon_of(d.locator))
         line = (f"{d.index} {d.arch} {d.locator}: offset {have.vddgfx_offset_mv} mV, sclk max {have.sclk_max_mhz} MHz, "
-                f"cap {_w(have.power_cap_uw)} (default {_w(have.power_cap_default_uw)})")
+                f"mclk max {have.mclk_max_mhz} MHz, cap {_w(have.power_cap_uw)} (default {_w(have.power_cap_default_uw)})")
         if d.power:
             bad = _mismatches(_setting(d.power), have)
             line += "; configured: " + ("applied" if not bad else "; ".join(bad))
