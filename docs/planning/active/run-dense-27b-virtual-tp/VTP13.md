@@ -675,3 +675,50 @@ kernel build, power settings and deterministic original weight
 inputs. Validate all full CPU oracles every arm and measure
 per-stage p95 as well as p50. VTP17 is opt-in research only,
 not a Radiance native collective or full inference.
+
+
+### 2026-11-11 — VTP18 proposed row-fused BF16 GEMV reuse, GPU acceptance pending
+
+A second strictly opt-in optimisation prototype
+(VTP18 xtx27_vtp18_gdn_output_rowreuse.hip and driver)
+builds on the already hardware-validated VTP17 pinned
+asynchronous host collective. The non-optimised VTP16/VTP17
+output GEMV launches separate per-row warps, rereading each
+original BF16 [5120,K_rank] weight shard for every input row.
+At M4, that is four matrix reads per physical rank, even
+though weights do not change across those rows. The VTP18
+template specializes M=2, M=4 and M=8. Each output-neuron
+warp now loads an original BF16 weight once, multiplies it
+against its 2/4/8 BF16 input rows and accumulates per-row
+FP32 results in registers, with static unrolled loops.
+M1, M3, M5, M6 and M7 deliberately keep the baseline kernel.
+
+**Hypothesis, NOT an observed speedup:** for M4/M8 this can
+reduce repeated output-GEMV weight loads by up to the number
+of batch rows and launches only one grid per output matrix.
+The actual speedup may be smaller or negative due to register
+pressure, fewer independent workgroups, GPU cache reuse
+and reduced occupancy. The original three-GPU 1536/1536/3072
+column partition, independent original BF16 CPU oracle,
+FP32 ordered host sum, BF16 residual and pinned-async
+broadcast are unchanged.
+
+HIP compiler acceptance on gfx1100+gfx1201 PASSED;
+source digest a12e0015a14d954c..., all card-free
+tests pass. **No GPU run has been conducted yet**
+because another agent holds the exclusive lease.
+
+After lease is free, run M4 and M1 with same original
+checkpoint/output references and compare against VTP17
+in a balanced ABBA or BAAB sequence. M4 VTP18 example:
+
+    python3 tools/lab/radiance/xtx27_vtp18_gdn_output_rowreuse_gpu.py --phase gpu --run --iterations 9 \
+      --packet-receipt "$BC_WORK_ROOT/xtx27-prefill/vtp16-gdn-output/layer0-20261111T014909377366Z/summary.json" \
+      --reference-receipt "$BC_WORK_ROOT/xtx27-prefill/vtp16-gdn-output-ref/layer0-20261111T014923805172Z/summary.json"
+
+Require all three per-rank original-weight outputs and final
+BF16 residual to agree against the independent source-hashed
+CPU oracle. Measure M1/M4/M8 p50 and p95, device kernel
+timings and all host stages. Reject or revert the variant
+if M4 or M8 fails numerical or latency gates; never
+enable either VTP17 or VTP18 as a production default.
