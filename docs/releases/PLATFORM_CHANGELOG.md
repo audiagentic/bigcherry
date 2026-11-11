@@ -1,5 +1,53 @@
 # Changelog
 
+## [1.29.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.28.0...bc-platform-1.29.0) (2026-11-11)
+
+
+### New and changed
+
+* **bench:** standardise serving workloads and index historical results ([#839](https://github.com/audiagentic/bigcherry/issues/839)) ([cdb7198](https://github.com/audiagentic/bigcherry/commit/cdb719878ea61a4df45d11ccb28113e0b5c6c83d))
+* **lab:** launcher --num-spec N for MTP depth sweeps (ENG02) ([#809](https://github.com/audiagentic/bigcherry/issues/809)) ([637146e](https://github.com/audiagentic/bigcherry/commit/637146e100de8c2ccd26db23916764704c70fa76))
+* **power:** bind supervisor transaction and receipts to v2 power plan ([#831](https://github.com/audiagentic/bigcherry/issues/831)) ([93d02fa](https://github.com/audiagentic/bigcherry/commit/93d02fabeb505ef204eb0ed76b0d79d15347a44b))
+* **power:** GPU capability probe from each card's OverDrive table (PWR07 slice 2) ([#812](https://github.com/audiagentic/bigcherry/issues/812)) ([9271259](https://github.com/audiagentic/bigcherry/commit/92712595e9e773ccf3a54fa2f40ace9cba5a8316))
+* **power:** gpu-power through the transaction; launcher stops on a failed power request (PWR09 slice 2) ([#816](https://github.com/audiagentic/bigcherry/issues/816)) ([2227370](https://github.com/audiagentic/bigcherry/commit/22273703ff0c24facc004b0550c3e79f10a89985))
+* **power:** observe-first named power profiles (PWR08) ([#824](https://github.com/audiagentic/bigcherry/issues/824)) ([146e542](https://github.com/audiagentic/bigcherry/commit/146e5423850a2fa3edc4cdf8870da4299ecaf46c))
+* **power:** portable read-only CPU power probe (PWR07 slice 1) ([#810](https://github.com/audiagentic/bigcherry/issues/810)) ([6d05a39](https://github.com/audiagentic/bigcherry/commit/6d05a397d77334b4be4add4a5bcb012efdfeba9c))
+* **power:** resolve observed per-BDF power plan with qualification gates ([#825](https://github.com/audiagentic/bigcherry/issues/825)) ([8c3aa89](https://github.com/audiagentic/bigcherry/commit/8c3aa895a83585e2ae6a108cfdbc3e11db091774))
+* **power:** transactional GPU power core and durable receipts (PWR09 slice 1) ([#815](https://github.com/audiagentic/bigcherry/issues/815)) ([d1235b8](https://github.com/audiagentic/bigcherry/commit/d1235b8752659d899b362c11b1c0b7af7ef23350))
+* **pwr06:** detect GFX12 loaded-idle GFXOFF from paired sysfs windows ([#841](https://github.com/audiagentic/bigcherry/issues/841)) ([76f0dca](https://github.com/audiagentic/bigcherry/commit/76f0dca3b4033e975e92bb36aa65cbc036b939c4))
+* **radiance:** the tensor-parallel XTX layouts serve bf16 hyper-connection mixing matrices (RAD49) ([#779](https://github.com/audiagentic/bigcherry/issues/779)) ([d77c4f3](https://github.com/audiagentic/bigcherry/commit/d77c4f3be1c88b54aaed8090281e7da6de7d0265))
+* **rhp20:** prepare forced tail-migration acceptance runs ([#843](https://github.com/audiagentic/bigcherry/issues/843)) ([76a96a3](https://github.com/audiagentic/bigcherry/commit/76a96a37e9d7aab85f4794f76a737932fd97a112))
+* **rsc03:** prepare derived v2 serving resource budgets ([#821](https://github.com/audiagentic/bigcherry/issues/821)) ([e3298ee](https://github.com/audiagentic/bigcherry/commit/e3298eea5b35b6527acde4e31ab22e457cfc3902))
+* **rsc11:** derive measured serving plans and refit room refusals ([#840](https://github.com/audiagentic/bigcherry/issues/840)) ([c625a9b](https://github.com/audiagentic/bigcherry/commit/c625a9b8805695de11a234987491a2f0725aefd5))
+* **rsc11:** scaffold inactive serving manifest v2 registry and codecs (S9) ([#845](https://github.com/audiagentic/bigcherry/issues/845)) ([1a3d95c](https://github.com/audiagentic/bigcherry/commit/1a3d95c35dc6380a274a54938bb812d8a353714a))
+* **rsc11:** structured pre-weight engine admission refusals (S5) ([#844](https://github.com/audiagentic/bigcherry/issues/844)) ([3609903](https://github.com/audiagentic/bigcherry/commit/3609903a6b69bb2c1ce10d77f62c362c1419e683))
+* **serving:** scaffold Python serve supervisor with fault-injected lifecycle tests ([#820](https://github.com/audiagentic/bigcherry/issues/820)) ([57ae41b](https://github.com/audiagentic/bigcherry/commit/57ae41b0faecea4ded8ff1574963e2f924418b3a))
+* **serving:** use bc-serve KFD/PCI inventory for Python layouts ([#817](https://github.com/audiagentic/bigcherry/issues/817)) ([ae5aa0f](https://github.com/audiagentic/bigcherry/commit/ae5aa0f530bec79837f5d763af8e065f7ce7c52b))
+
+
+### Fixes
+
+* **benchmark:** a serving arm's set takes flat arrays (memory.helper_budgets_mib) ([#791](https://github.com/audiagentic/bigcherry/issues/791)) ([ad44f7c](https://github.com/audiagentic/bigcherry/commit/ad44f7c65f32b7ec482ee4eea8da5fa644f3e2a9))
+* **lab:** launcher heat histogram period defaults to 1 s for the live placement policy (RHP18) ([#802](https://github.com/audiagentic/bigcherry/issues/802)) ([6b86750](https://github.com/audiagentic/bigcherry/commit/6b86750be7e940cd92b00e6c9581f66019881d3e))
+* **lab:** the Flash-Next launcher's --budget reaches the helpers' manifest ([#789](https://github.com/audiagentic/bigcherry/issues/789)) ([e82725e](https://github.com/audiagentic/bigcherry/commit/e82725eafb82aba505b9d4e3cf986f017009bb91))
+* **lab:** the Flash-Next launcher's MTP replay check skips a --profile-ops launch (per-op timing records no pass) ([#782](https://github.com/audiagentic/bigcherry/issues/782)) ([e7e3074](https://github.com/audiagentic/bigcherry/commit/e7e3074af86bb190c7a6ef60f2fa0fc808d5f096))
+* **moe-remote:** calibration report lines end in a real newline (RHP19) ([#801](https://github.com/audiagentic/bigcherry/issues/801)) ([7ac3a7b](https://github.com/audiagentic/bigcherry/commit/7ac3a7badd0a22bac314f868fa0fea8107c5a14f))
+* **radiance:** consume typed manifest for engine R3 configuration (RSC11 S1) ([#818](https://github.com/audiagentic/bigcherry/issues/818)) ([6c7cd43](https://github.com/audiagentic/bigcherry/commit/6c7cd43ef566009f53b8c6c73ece3a1b207f9ea0))
+* **rhp18:** fail closed on unverified live placement state ([#827](https://github.com/audiagentic/bigcherry/issues/827)) ([96b34fb](https://github.com/audiagentic/bigcherry/commit/96b34fbc723b348c13361438f5843660426e0509))
+* **rhp19:** bound adaptive drift growth by measured workload ([#836](https://github.com/audiagentic/bigcherry/issues/836)) ([a2cb88f](https://github.com/audiagentic/bigcherry/commit/a2cb88ff73d5b2da932377c84d57de709d3cdf64))
+* **rhp19:** bound calibration and validate complete records ([#828](https://github.com/audiagentic/bigcherry/issues/828)) ([b6327e0](https://github.com/audiagentic/bigcherry/commit/b6327e0b1850f11d8a8f8df04aaae39c6460e087))
+* **rhp19:** bound calibration using measured helper drift horizon ([#833](https://github.com/audiagentic/bigcherry/issues/833)) ([0b937f6](https://github.com/audiagentic/bigcherry/commit/0b937f641f47f6e9851eefdfebfd0591eb8624f2))
+* **rhp20:** reject unsupported live-policy helper topology ([#830](https://github.com/audiagentic/bigcherry/issues/830)) ([780bc2d](https://github.com/audiagentic/bigcherry/commit/780bc2d39b7b095ea2beb281a95aac120f66ff41))
+* **serving:** no live placement policy on helper arrangements the planner is not built for (RHP20) ([#805](https://github.com/audiagentic/bigcherry/issues/805)) ([61a8cf3](https://github.com/audiagentic/bigcherry/commit/61a8cf36d46e1afac2ea3c5f1026e7cbd98cdfba))
+* **serving:** say why a start has no live placement policy (RHP18) ([#804](https://github.com/audiagentic/bigcherry/issues/804)) ([3a15d2c](https://github.com/audiagentic/bigcherry/commit/3a15d2c68f0ed27ef79ac8b4e80fd4398f6c7f14))
+
+
+### Performance
+
+* **lab:** host-link-duplex benchmark of duplex transfers and compute contention (HL01) ([#795](https://github.com/audiagentic/bigcherry/issues/795)) ([7349d89](https://github.com/audiagentic/bigcherry/commit/7349d892f41de9f39c104ed74286cbb513ba3de5))
+* **moe-remote:** tail quad kernel decodes W4 in registers and uses v_add_f32_dpp (TK01/TK02) ([#794](https://github.com/audiagentic/bigcherry/issues/794)) ([2602d69](https://github.com/audiagentic/bigcherry/commit/2602d6970ab917444c542ae4695e2f728006ec52))
+* **moe-remote:** tail quad kernel widens E4M3 activations to fp16 two codes at a time (TK04) ([#797](https://github.com/audiagentic/bigcherry/issues/797)) ([9bd5d6f](https://github.com/audiagentic/bigcherry/commit/9bd5d6f2a086f8447a1ca45fb826ff957e65bbf2))
+
 ## [1.28.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.27.0...bc-platform-1.28.0) (2026-11-09)
 
 
