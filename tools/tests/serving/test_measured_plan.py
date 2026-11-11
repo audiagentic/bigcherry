@@ -350,6 +350,50 @@ def test_s5_wire_refuses_malformed_or_unretryable_payload(mutation):
         RoomRefusal.from_record(record)
 
 
+def test_s5_exit_requires_machine_payload_not_free_text(tmp_path):
+    """No grep-for-BC_CFG_ADMISSION_REFUSED compatibility path on exit 4."""
+    legacy = (
+        "radiance: config: BC_CFG_ADMISSION_REFUSED (RAD_E_NOMEM, -6) "
+        "claimable VRAM: live 33241708024 bytes fall short of required 33242744312"
+    )
+    with pytest.raises(MeasuredPlanRefused, match="text-only rejected"):
+        EngineRoomRefused.from_process_exit(4, legacy)
+    with pytest.raises(MeasuredPlanRefused, match="admission exit 4"):
+        EngineRoomRefused.from_process_exit(2, "BC_SERVING_ADMISSION_REFUSAL={}\n")
+    obj, source, _writer, _validator = planner(
+        tmp_path, [MeasuredPlanRefused("S5 admission exit has no unique machine refusal")]
+    )
+    with pytest.raises(MeasuredPlanRefused, match="no unique machine"):
+        obj(layout(), "hostile")
+    assert len(source.calls) == 1
+
+
+def test_s5_machine_exit_round_trip_and_hostile_field_rejections():
+    valid = room().to_record()
+    wire = "BC_SERVING_ADMISSION_REFUSAL=" + json.dumps(valid)
+    refused = EngineRoomRefused.from_process_exit(4, "engine startup\n" + wire + "\n")
+    assert refused.room == RoomRefusal.from_record(valid)
+    assert refused.room.shortfall_bytes == DEFICIT
+    with pytest.raises(MeasuredPlanRefused, match="unique machine"):
+        EngineRoomRefused.from_process_exit(4, wire + "\n" + wire)
+    with pytest.raises(MeasuredPlanRefused, match="not JSON"):
+        EngineRoomRefused.from_process_exit(4, "BC_SERVING_ADMISSION_REFUSAL={oops}")
+    for mutate in (
+        {"shortfall_bytes": DEFICIT + 1},
+        {"resource": "host_pool"},
+        {"component_breakdown": {"wrong_sum": 1}},
+        {"component_breakdown": {}},
+        {"may_change": ["gpu_elastic_kv", "host_pool"]},
+        {"device_bdf": 42},
+        {"device_bdf": "not-a-bdf"},
+        {"reason_code": ["gpu_room"]},
+        {"resource": ["vram"]},
+    ):
+        doc = {**valid, **mutate}
+        with pytest.raises(MeasuredPlanRefused):
+            RoomRefusal.from_record(doc)
+
+
 def test_non_s5_exception_never_triggers_a_retry(tmp_path):
     obj, source, _writer, _ = planner(tmp_path, [RuntimeError("model failed to load")])
     with pytest.raises(RuntimeError, match="model failed"):

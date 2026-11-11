@@ -49,6 +49,9 @@ _BC_PLAN_CHECK_H = r"""/* bc_plan_check.h -- BigCherry managed patch rad0011 (RS
 #include "serving_types.h"
 
 #include <string>
+#include <string_view>
+#include <utility>
+#include <vector>
 
 namespace bc_plan {
 
@@ -71,6 +74,12 @@ const std::string& measure_out();
 /* With a manifest's expected plan: checks `live` against the expected plan (bc::serving::v1::check_engine_plan) and prints the one
  * start-up line, admitted with its margins or the refusal. 0 when admitted, else the refusal's exit code. */
 int check(const bc::serving::v1::EnginePlan& live);
+
+/* Re-evaluate live host room only at a terminal pre-weight admission.
+ * Driver-only failures are not classified as a capacity shortage. */
+int report_host_room_if_short(std::string_view resource, int64_t headroom_bytes,
+                             const std::vector<std::pair<std::string, int64_t>>& components);
+int report_exact_pool_shortfall(int64_t available_bytes, int64_t required_bytes);
 
 }  // namespace bc_plan
 """
@@ -97,8 +106,12 @@ Mode g_mode = Mode::none;
 std::string g_out;
 v1::EnginePlan g_expected;
 int64_t g_ppm = 0;
+std::vector<std::string> g_bdfs;
 
 int report(const v1::ConfigError& e) {
+    if (e.room_refusal)
+        std::fprintf(stderr, "BC_SERVING_ADMISSION_REFUSAL=%s\n",
+                     v1::room_refusal_json(*e.room_refusal).c_str());
     std::fputs(v1::render_human("radiance", e).c_str(), stderr);
     std::fflush(stderr);
     return v1::exit_code_of(e);
@@ -126,6 +139,7 @@ int arm(const v1::EnginePlan& expected, int64_t floor_ppm) {
     if (v1::Status e = v1::check_kv_backing_floor_ppm(floor_ppm)) return report(*e);
     g_expected = expected;
     g_ppm = floor_ppm;
+    g_bdfs = bc_serving_engine_bdfs();
     g_mode = Mode::check;
     return 0;
 }
@@ -136,6 +150,7 @@ int take_flags(int* argc, char*** argv) {
     g_out.clear();
     g_expected = v1::EnginePlan{};
     g_ppm = 0;
+    g_bdfs.clear();
     int w = 1;
     for (int i = 1; i < *argc; ++i) {
         const char* a = (*argv)[i];
@@ -163,8 +178,35 @@ int take_flags(int* argc, char*** argv) {
 Mode mode() { return g_mode; }
 const std::string& measure_out() { return g_out; }
 
+int report_host_room_if_short(std::string_view resource, int64_t headroom_bytes,
+                             const std::vector<std::pair<std::string, int64_t>>& components) {
+    if (g_mode != Mode::check) return 0;
+    const long long kb = mem_available_kb_now();
+    if (kb <= 0 || kb > (9007199254740991LL / 1024)) return 0;
+    if (v1::Status e = v1::check_host_room(resource, kb * 1024, headroom_bytes, components))
+        if (e->room_refusal) return report(*e);
+    return 0;
+}
+
+int report_exact_pool_shortfall(int64_t available_bytes, int64_t required_bytes) {
+    if (g_mode != Mode::check || available_bytes < 0 || required_bytes <= available_bytes) return 0;
+    if (v1::Status e = v1::check_host_room("host_pool", available_bytes, 0,
+                                          {{"host_pool", required_bytes}}))
+        if (e->room_refusal) return report(*e);
+    return 0;
+}
+
 int check(const v1::EnginePlan& live) {
-    if (v1::Status e = v1::check_engine_plan(g_expected, live, g_ppm)) return report(*e);
+    std::string binding_bdf;
+    if (g_bdfs.size() == 1) {
+        binding_bdf = g_bdfs.front();
+    } else if (g_bdfs.size() == live.vram.cards.size() && !g_bdfs.empty()) {
+        size_t limiting = 0;
+        for (size_t i = 1; i < live.vram.cards.size(); ++i)
+            if (live.vram.cards[i].free < live.vram.cards[limiting].free) limiting = i;
+        binding_bdf = g_bdfs[limiting];
+    }
+    if (v1::Status e = v1::check_engine_plan(g_expected, live, g_ppm, binding_bdf)) return report(*e);
     const v1::AdmissionMargins m = v1::admission_margins(g_expected, live, g_ppm);
     std::fprintf(stderr,
                  "radiance: plan check: admitted: claimable %lld >= required %lld bytes (margin %lld); resolved KV %lld "
@@ -353,7 +395,7 @@ PATCHES = (
             Edit(
                 id="include-bc-plan-memory",
                 anchor=r'^#include "bc_serving_manifest\.h"$',
-                text='\n#include "bc_plan_memory.h"',
+                text='\n#include "bc_plan_memory.h"\n#include "bc_plan_check.h"',
                 guard=r'^#include "bc_plan_memory\.h"$',
                 max_span_lines=1,
                 expect_matches=1,
@@ -381,7 +423,7 @@ PATCHES = (
             Edit(
                 id="include-bc-plan-memory",
                 anchor=r'^#include "mem/vram_budget\.h"$',
-                text='\n#include "bc_plan_memory.h"',
+                text='\n#include "bc_plan_memory.h"\n#include "bc_plan_check.h"',
                 guard=r'^#include "bc_plan_memory\.h"$',
                 max_span_lines=1,
                 expect_matches=1,
@@ -396,6 +438,40 @@ PATCHES = (
                 expect_matches=1,
                 rationale="plan()'s only vram_budget_resolve call: every size plan() computes is final once it returns, "
                           "and the pools are configured after it (r->pools.configure), so the check precedes them.",
+            ),
+            Edit(
+                id="s5-exact-host-pool-shortfall",
+                anchor=r"^    for \(const Shortfall& f : pools.shortfalls\(\)\)",
+                text=("\n    for (const Shortfall& f : pools.shortfalls()) {"
+                      "\n        if (f.pool != \"host_pool\" || !f.refused.empty()) continue;"
+                      "\n        if (int rc = bc_plan::report_exact_pool_shortfall(f.available, f.wanted)) {"
+                      "\n            std::fflush(nullptr);"
+                      "\n            std::_Exit(rc);"
+                      "\n        }"
+                      "\n    }"),
+                guard=r'^    for \(const Shortfall& f : pools.shortfalls\(\)\) \{$',
+                max_span_lines=1, expect_matches=1,
+                rationale="A measured pool reservation has exactly wanted and available, unlike an opaque driver refusal.",
+            ),
+            Edit(
+                id="s5-embedding-terminal-host-room",
+                anchor=r"^            if \(emb_asked\) \{$",
+                text=('\n                if (int rc = bc_plan::report_host_room_if_short("host_ram", 0,'
+     '\n                    {{"pending_pools_and_host_kv", pools_still}, {"embedding", emb_pin}})) {'
+     ' std::fflush(nullptr); std::_Exit(rc); }'),
+                guard=r"pools_still\}, \{[^\n}]+, emb_pin\}\}",
+                max_span_lines=1, expect_matches=1,
+                rationale="Only an explicit RAM embedding that cannot fit is terminal; default placement may fall back.",
+            ),
+            Edit(
+                id="s5-ngram-terminal-host-room",
+                anchor=r"^            if \(!room\) \{$",
+                text=('\n                if (int rc = bc_plan::report_host_room_if_short("host_ram", 0,'
+     '\n                    {{"pending_pools_and_host_kv", still}, {"ngram", need}})) {'
+     ' std::fflush(nullptr); std::_Exit(rc); }'),
+                guard=r"still\}, \{[^\n}]+, need\}\}",
+                max_span_lines=1, expect_matches=1,
+                rationale="An explicit RAM n-gram refusal reports a measured shortage, not a guessed RLIMIT/copy failure.",
             ),
             Edit(
                 id="bc-plan-memory-done",

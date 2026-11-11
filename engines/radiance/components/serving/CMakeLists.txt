@@ -95,6 +95,9 @@ if(BUILD_TESTING)
   target_compile_definitions(bc_v1_test PRIVATE
     BC_CONTRACT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../../../docs/design/serving-manifest-v1")
   add_test(NAME bc_v1_test COMMAND bc_v1_test)
+  add_executable(bc_s5_refusal_test EXCLUDE_FROM_ALL v1/s5_refusal_test.cpp)
+  target_link_libraries(bc_s5_refusal_test PRIVATE bc_serving_v1)
+  add_test(NAME bc_s5_refusal_test COMMAND bc_s5_refusal_test)
   add_executable(bc_owner_map_test EXCLUDE_FROM_ALL owner_map_test.cpp)
   target_link_libraries(bc_owner_map_test PRIVATE bc_owner_map bc_jcs)
   target_compile_definitions(bc_owner_map_test PRIVATE

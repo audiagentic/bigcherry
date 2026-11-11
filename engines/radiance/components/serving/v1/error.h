@@ -8,6 +8,7 @@
 #include <string_view>
 #include <utility>
 #include <variant>
+#include <vector>
 
 namespace bc::serving::v1 {
 
@@ -32,6 +33,25 @@ enum class ConfigErrorCode : uint16_t {
     invalid_state
 };
 
+/* Engine-produced pre-weight S5 resource refusal. Figures are measured bytes.
+ * Wire JSON is consumed by S11, independently of human diagnostics. */
+struct RoomRefusal {
+    std::string reason_code;         // host_room | gpu_room | pin_room
+    std::string resource;            // host_ram | host_kv | host_pool | vram
+    std::optional<std::string> device_bdf;
+    int64_t available_bytes = 0;
+    int64_t allocations_still_to_come_bytes = 0;
+    int64_t headroom_bytes = 0;
+    std::vector<std::pair<std::string, int64_t>> component_breakdown;
+    std::vector<std::string> may_change;
+
+    int64_t required_bytes() const { return allocations_still_to_come_bytes + headroom_bytes; }
+    int64_t shortfall_bytes() const { return required_bytes() - available_bytes; }
+};
+
+std::string room_refusal_json(const RoomRefusal& room);
+std::string room_refusal_human(const RoomRefusal& room);
+
 struct ConfigError {
     ConfigErrorCode code = ConfigErrorCode::invalid_state;
     int status = 0;                           // status_of(code); set by make_error, never by a call site
@@ -41,6 +61,7 @@ struct ConfigError {
     std::optional<std::string> source_file;
     std::optional<uint32_t> line;
     std::optional<uint32_t> column;
+    std::optional<RoomRefusal> room_refusal;
 };
 
 /* The only way to build an error: the status follows from the code. */

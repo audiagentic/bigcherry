@@ -7,6 +7,8 @@ No GPU access, guessed resources, v1 path or production CLI activation here.
 
 from __future__ import annotations
 
+import json
+import re
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Literal, Protocol
@@ -30,10 +32,29 @@ class MeasuredPlanRefused(ServeRefused):
 
 RoomKind = Literal["host_room", "gpu_room", "pin_room"]
 
+# Stable S5-to-S11 retryable resource classification and the exact knobs
+# S11 can remeasure. A refusal claiming other knobs is not safe to retry.
+_ROOM_RESOURCES = {
+    "host_room": frozenset(("host_ram", "host_kv")),
+    "gpu_room": frozenset(("vram",)),
+    "pin_room": frozenset(("host_pool", "host_kv")),
+}
+_ROOM_DEFAULT_RESOURCE = {
+    "host_room": "host_ram",
+    "gpu_room": "vram",
+    "pin_room": "host_pool",
+}
+_ROOM_CHANGES = {
+    "host_room": ("host_ledger_margin", "host_kv"),
+    "gpu_room": ("gpu_elastic_kv",),
+    "pin_room": ("host_kv",),
+}
+S5_WIRE_PREFIX = "BC_SERVING_ADMISSION_REFUSAL="
+
 
 @dataclass(frozen=True)
 class RoomRefusal:
-    """S5 stable pre-weight refusal; never inferred from engine stderr."""
+    """Strict S5 pre-weight wire format. Extra diagnostics are never parsed from text."""
 
     reason_code: RoomKind
     available_bytes: int
@@ -41,22 +62,34 @@ class RoomRefusal:
     allocations_still_to_come_bytes: int
     headroom_bytes: int
     device_bdf: str | None = None
+    resource: str | None = None
+    component_breakdown: tuple[tuple[str, int], ...] = ()
+    may_change: tuple[str, ...] = ()
 
     @property
     def shortfall_bytes(self) -> int:
         return self.required_bytes - self.available_bytes
 
     def to_record(self) -> dict:
+        # Existing S11 fake constructors remain valid; the actual engine
+        # supplies a named measured component for every allocation.
+        components = self.component_breakdown or (
+            ("allocation", self.allocations_still_to_come_bytes),
+        )
         return {
             "schema_version": 1,
             "kind": "serving_admission_refusal",
             "phase": "before_weights",
             "reason_code": self.reason_code,
+            "resource": self.resource or _ROOM_DEFAULT_RESOURCE[self.reason_code],
             "device_bdf": self.device_bdf,
             "available_bytes": self.available_bytes,
             "required_bytes": self.required_bytes,
+            "shortfall_bytes": self.shortfall_bytes,
             "allocations_still_to_come_bytes": self.allocations_still_to_come_bytes,
             "headroom_bytes": self.headroom_bytes,
+            "component_breakdown": dict(components),
+            "may_change": list(self.may_change or _ROOM_CHANGES[self.reason_code]),
         }
 
     @classmethod
@@ -66,11 +99,15 @@ class RoomRefusal:
             "kind",
             "phase",
             "reason_code",
+            "resource",
             "device_bdf",
             "available_bytes",
             "required_bytes",
+            "shortfall_bytes",
             "allocations_still_to_come_bytes",
             "headroom_bytes",
+            "component_breakdown",
+            "may_change",
         }
         if not isinstance(raw, dict) or set(raw) != required:
             raise MeasuredPlanRefused("S5 refusal missing/unknown structured fields")
@@ -82,16 +119,23 @@ class RoomRefusal:
         ):
             raise MeasuredPlanRefused("S5 refusal lacks v1 pre-weight envelope")
         kind = raw["reason_code"]
-        if kind not in ("host_room", "gpu_room", "pin_room"):
+        if not isinstance(kind, str) or kind not in _ROOM_RESOURCES:
             raise MeasuredPlanRefused(f"unknown S5 admission reason {kind!r}")
+        resource = raw["resource"]
+        if not isinstance(resource, str) or resource not in _ROOM_RESOURCES[kind]:
+            raise MeasuredPlanRefused("S5 resource is not retryable under its reason")
         bdf = raw["device_bdf"]
-        if (kind == "gpu_room") != (isinstance(bdf, str) and bool(bdf)):
-            raise MeasuredPlanRefused(
-                "GPU refusals require a BDF; other domains require null"
-            )
+        if kind == "gpu_room":
+            if not isinstance(bdf, str) or re.fullmatch(
+                r"[0-9a-f]{4}:[0-9a-f]{2}:[0-1][0-9a-f]\.[0-7]", bdf
+            ) is None:
+                raise MeasuredPlanRefused("S5 GPU refusal needs a valid device BDF")
+        elif bdf is not None:
+            raise MeasuredPlanRefused("S5 host refusal must have a null device BDF")
         keys = (
             "available_bytes",
             "required_bytes",
+            "shortfall_bytes",
             "allocations_still_to_come_bytes",
             "headroom_bytes",
         )
@@ -105,6 +149,30 @@ class RoomRefusal:
             )
         if raw["required_bytes"] <= raw["available_bytes"]:
             raise MeasuredPlanRefused("S5 refusal has no measured shortfall")
+        if raw["shortfall_bytes"] != raw["required_bytes"] - raw["available_bytes"]:
+            raise MeasuredPlanRefused("S5 shortfall disagrees with measured bytes")
+        parts = raw["component_breakdown"]
+        if (
+            not isinstance(parts, dict)
+            or not parts
+            or any(
+                not isinstance(k, str)
+                or not k
+                or type(v) is not int
+                or v < 0
+                for k, v in parts.items()
+            )
+            or sum(parts.values()) != raw["allocations_still_to_come_bytes"]
+        ):
+            raise MeasuredPlanRefused(
+                "S5 component breakdown does not sum to remaining allocations"
+            )
+        changes = raw["may_change"]
+        if (
+            not isinstance(changes, list)
+            or changes != list(_ROOM_CHANGES[kind])
+        ):
+            raise MeasuredPlanRefused("S5 may_change differs from S11 refit controls")
         return cls(
             kind,
             raw["available_bytes"],
@@ -112,15 +180,40 @@ class RoomRefusal:
             raw["allocations_still_to_come_bytes"],
             raw["headroom_bytes"],
             bdf,
+            raw["resource"],
+            tuple(parts.items()),
+            tuple(changes),
         )
 
 
 class EngineRoomRefused(Exception):
-    """Raised ONLY for an authenticated S5 pre-weight refusal record."""
+    """Raised ONLY for one authenticated S5 pre-weight exit-4 refusal record."""
 
     def __init__(self, room: RoomRefusal):
         self.room = room
         super().__init__(str(room.to_record()))
+
+    @classmethod
+    def from_process_exit(cls, exit_code: int, stderr: str) -> EngineRoomRefused:
+        """S13 adapter entry: no substring/error-message inference or fallback."""
+        if exit_code != 4:
+            raise MeasuredPlanRefused(
+                f"S5 structured refusal requires admission exit 4, got {exit_code}"
+            )
+        lines = [
+            line[len(S5_WIRE_PREFIX):]
+            for line in stderr.splitlines()
+            if line.startswith(S5_WIRE_PREFIX)
+        ]
+        if len(lines) != 1:
+            raise MeasuredPlanRefused(
+                "S5 admission exit has no unique machine refusal (text-only rejected)"
+            )
+        try:
+            record = json.loads(lines[0])
+        except (ValueError, TypeError) as exc:
+            raise MeasuredPlanRefused("S5 admission record is not JSON") from exc
+        return cls(RoomRefusal.from_record(record))
 
 
 @dataclass(frozen=True)
