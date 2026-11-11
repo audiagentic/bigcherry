@@ -13,7 +13,7 @@ libr4d) needs each rank to select the rows its own card runs. This managed patch
 
 ## Outcome
 
-Untested (experimental, VTP14 N1). The ROCm lane build and the HIP unit tests pass. On cards, per-rank selection works (libr3 for the XTX rank, libr4d for the R9700 rank), but a mixed-library world stops at the N3 all-reduce rendezvous. The rendezvous is a prerequisite for serving.
+On cards (with rad0017), mixed XTX+R9700 TP2 serves Qwen3.8-27B fp8 correctly. The patch also makes the AQL backend register fat binaries that HIP gives no handle (HIP judges by device 0 only). Earlier status: Untested (experimental, VTP14 N1). The ROCm lane build and the HIP unit tests pass. On cards, per-rank selection works (libr3 for the XTX rank, libr4d for the R9700 rank), but a mixed-library world stops at the N3 all-reduce rendezvous. The rendezvous is a prerequisite for serving.
 
 ## Detail
 
@@ -44,6 +44,10 @@ Untested (experimental, VTP14 N1). The ROCm lane build and the HIP unit tests pa
   - `core/plugin/bc_rank_devices.{h,cpp}` hold the pure planning and agreement functions.
   - `tests/bc_rank_devices_test.cpp` tests them, plus per-rank selection and the unchanged legacy path. It uses
     radiance's `radtest_*` plugins with a code-runs probe, so it needs no card.
+
+### Code past device 0 (`core/device/aql.cpp`)
+
+HIP's `__hipRegisterFatBinary` returns no handle for a fat binary without code for device 0, even when a later card runs it. With two gfx1100 cards visible first, that covers every gfx1201-only libr4d binary. The AQL backend loads code objects from the bundle per device, so it issues its own handle for such a binary (in `own_handles`) and never passes that handle to HIP's register-function or unregister calls.
 
 ### Known limits (later VTP14 slices)
 

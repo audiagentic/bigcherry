@@ -323,3 +323,34 @@ the plan:
 - Select the ownership profile through typed config, not an environment variable.
 - The experimental VTP30 ownership patch in `wt-xtx27-prefill` (also numbered rad0016) is the starting reference,
   read-only. N2 will take a new patch number.
+
+## Milestone, 2026-11-11: mixed XTX + R9700 tensor parallelism serves natively
+
+- **Build:** build_plan_id b306fbef72b21fd746a02394852250f3, source radiance-vtp14-rank-code-selection (rad0016 + rad0017),
+  ROCm 7.2.4. Run under the gpu lease.
+- **Command:** `--tp 2 --rank-devices 0000:03:00.0,0000:09:00.0 --max-num-seqs 4 --max-model-len 4096`,
+  with qwen3.8-27b-fp8-df2.
+- **What the receipts show:**
+  - rank 0 is the gfx1100 card (libr3, 4425 device bands);
+  - rank 1 is the gfx1201 card (libr4d, 4425 device bands);
+  - both ranks issue 901 matching collective bands;
+  - the all-reduce rendezvous is "shared by libr3.so, libr4d.so".
+- **Output at temperature 0:** both answers are correct ("The capital of France is Paris." and
+  "1, 2, 3, 4, 5, 6, 7, 8, 9, 10"), at 43.1 and 45.5 tok/s single stream, with a TTFT of 0.26–0.30 s. The server
+  shuts down cleanly on SIGINT.
+- These are not benchmark numbers. They are not leased A/B measurements and there is no N0 TP2 baseline beside
+  them.
+
+**Two blockers fixed on the way**
+
+1. **N3 (rad0017):** the shared all-reduce rendezvous.
+2. **HIP gives no handle for code device 0 cannot run (fixed in rad0016, `core/device/aql.cpp`).**
+   - HIP's own `__hipRegisterFatBinary` returns no handle for a fat binary that has no code for device 0, even
+     when a later visible card runs it.
+   - Measured with an LD_PRELOAD probe while all four cards were visible: 109 of 109 libr4d binaries returned null,
+     as did libbcgfx12, spechub and libr2. Every libr3 binary got a handle.
+   - The AQL backend loads code objects from the bundle per device, so it now issues its own handle for such a
+     binary and never passes that handle to HIP.
+   - Production avoided the bug only by restricting `ROCR_VISIBLE_DEVICES` to one architecture.
+
+**Next:** N2 (6/6/12 ownership, required for TP3), then N0 (the TP2 baseline) and the leased TP3 run.

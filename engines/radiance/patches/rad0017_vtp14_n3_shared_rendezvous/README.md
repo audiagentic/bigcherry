@@ -10,7 +10,7 @@ every library built from the libr4d source share one rendezvous.
 
 ## Outcome
 
-Untested. The patch applies to v1.17.0 on top of rad0016 and is idempotent. libr3's `r3_rewrite.py --check` passes
+Untested (not promoted). On cards, with rad0016, mixed XTX+R9700 TP2 declares and serves Qwen3.8-27B fp8 correctly; the receipt shows the rendezvous shared by libr3.so and libr4d.so. The patch applies to v1.17.0 on top of rad0016 and is idempotent. libr3's `r3_rewrite.py --check` passes
 on the patched libr4d source. `bc_shared_slot_test` covers sharing, refusal and concurrency. The mixed-card
 all-reduce has not yet been run on hardware.
 
