@@ -179,10 +179,13 @@ def power_state(sys_root: Path = Path("/sys")) -> dict:
         # OD_SCLK formats differ across driver revisions: never infer a maximum if absent.
         sclk = re.search(r"OD_SCLK:[\s\S]*?(?=OD_[A-Z]+:|$)", od)
         freqs = re.findall(r"\b\d+:\s*(\d+)\s*M?Hz", sclk.group(0)) if sclk else []
+        mclk = re.search(r"OD_MCLK:[\s\S]*?(?=OD_[A-Z]+:|$)", od)
+        mclk_row = re.search(r"(?m)^\s*1:\s*(\d+)\s*MHz\s*$", mclk.group(0), re.IGNORECASE) if mclk else None
         result[bdf] = {
             "power1_cap_uw": int(cap) if cap and cap.isdecimal() else None,
             "vddgfx_offset_mv": int(vo.group(1)) if vo else None,
             "od_sclk_max_mhz": max(map(int, freqs)) if freqs else None,
+            "od_mclk_max_mhz": int(mclk_row.group(1)) if mclk_row else None,
             "perf_level": _read_text(dev / "power_dpm_force_performance_level"),
         }
     return result

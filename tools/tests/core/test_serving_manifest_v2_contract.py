@@ -105,6 +105,10 @@ class ServingManifestV2ContractTest(unittest.TestCase):
     def test_power_schema_only_enforces_inherent_integer_bounds(self):
         document = self.fixtures()[0]
         settings = document["spec"]["plan"]["power"]["devices"][0]["settings"]
+        settings["mclk_max_mhz"] = 0
+        with self.assertRaises(codec.ManifestV2Error):
+            codec.decode(json.dumps(document))
+        settings.pop("mclk_max_mhz")
         settings["power_cap_w"] = 0
         with self.assertRaises(codec.ManifestV2Error):
             codec.decode(json.dumps(document))

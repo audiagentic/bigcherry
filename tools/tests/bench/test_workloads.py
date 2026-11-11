@@ -55,11 +55,11 @@ class WorkloadsTest(unittest.TestCase):
             (dev / "hwmon/hwmon3/power1_cap").write_text("272000000\n")
             (dev / "power_dpm_force_performance_level").write_text("auto\n")
             (dev / "pp_od_clk_voltage").write_text(
-                "OD_SCLK:\n0: 500MHz\n1: 3040MHz\nOD_VDDGFX_OFFSET:\n-125mV\n"
+                "OD_SCLK:\n0: 500MHz\n1: 3040MHz\nOD_MCLK:\n0: 97Mhz\n1: 1250MHz\nOD_VDDGFX_OFFSET:\n-125mV\n"
             )
             self.assertEqual(w.power_state(root)["0000:03:00.0"], {
                 "power1_cap_uw": 272000000, "vddgfx_offset_mv": -125,
-                "od_sclk_max_mhz": 3040, "perf_level": "auto",
+                "od_sclk_max_mhz": 3040, "od_mclk_max_mhz": 1250, "perf_level": "auto",
             })
 
     def test_exact_manifest_options_and_unknown_without_proof(self):

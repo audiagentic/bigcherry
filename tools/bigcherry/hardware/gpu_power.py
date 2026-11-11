@@ -28,6 +28,7 @@ class Setting:
 
     vddgfx_offset_mv: int | None = None   #: OverDrive graphics voltage offset; negative undervolts
     sclk_max_mhz: int | None = None       #: OverDrive maximum shader clock
+    mclk_max_mhz: int | None = None       #: OverDrive maximum memory clock
     power_cap_w: int | None = None        #: board power cap
 
 
@@ -37,6 +38,7 @@ class State:
 
     vddgfx_offset_mv: int | None = None
     sclk_max_mhz: int | None = None
+    mclk_max_mhz: int | None = None
     power_cap_uw: int | None = None
     power_cap_default_uw: int | None = None
 
@@ -109,16 +111,18 @@ class _Amdgpu:
     def read(cls, locator: str, hwmon: str | None) -> State:
         od = _read(cls.od(locator)) or ""
         sclk = re.search(r"OD_SCLK:\s*\n\s*0:\s*\d+Mhz\s*\n\s*1:\s*(\d+)Mhz", od)
+        mclk = re.search(r"OD_MCLK:\s*\n\s*0:\s*\d+\s*MHz\s*\n\s*1:\s*(\d+)\s*MHz", od, re.IGNORECASE)
         off = re.search(r"OD_VDDGFX_OFFSET:\s*\n\s*(-?\d+)mV", od)
         return State(
             vddgfx_offset_mv=int(off.group(1)) if off else None,
             sclk_max_mhz=int(sclk.group(1)) if sclk else None,
+            mclk_max_mhz=int(mclk.group(1)) if mclk else None,
             power_cap_uw=_int(_read(f"{hwmon}/power1_cap")) if hwmon else None,
             power_cap_default_uw=_int(_read(f"{hwmon}/power1_cap_default")) if hwmon else None,
         )
 
     @classmethod
-    def writes(cls, locator: str, hwmon: str | None, sclk: int | None, offset: int | None,
+    def writes(cls, locator: str, hwmon: str | None, sclk: int | None, mclk: int | None, offset: int | None,
                cap_uw: int | None) -> list[tuple[str, str]]:
         od = cls.od(locator)
         out: list[tuple[str, str]] = []
@@ -126,6 +130,8 @@ class _Amdgpu:
         # and both are committed together.
         if sclk is not None:
             out.append((od, f"s 1 {sclk}"))
+        if mclk is not None:
+            out.append((od, f"m 1 {mclk}"))
         if offset is not None:
             out.append((od, f"vo {offset}"))
         if out:
@@ -164,7 +170,7 @@ def read_state(locator: str, driver: str | None, hwmon: str | None) -> State:
 def apply_writes(locator: str, driver: str | None, hwmon: str | None, setting: Setting) -> list[tuple[str, str]]:
     """The writes that put ``setting`` on the card, in order."""
     return backend(locator, driver).writes(
-        locator, hwmon, setting.sclk_max_mhz, setting.vddgfx_offset_mv,
+        locator, hwmon, setting.sclk_max_mhz, setting.mclk_max_mhz, setting.vddgfx_offset_mv,
         setting.power_cap_w * 1_000_000 if setting.power_cap_w is not None else None)
 
 
@@ -174,7 +180,8 @@ def restore_writes(locator: str, driver: str | None, hwmon: str | None, before: 
     return backend(locator, driver).writes(
         locator, hwmon,
         before.sclk_max_mhz if setting.sclk_max_mhz is not None or setting.vddgfx_offset_mv is not None else None,
-        before.vddgfx_offset_mv if setting.sclk_max_mhz is not None or setting.vddgfx_offset_mv is not None else None,
+        before.mclk_max_mhz if setting.mclk_max_mhz is not None else None,
+        before.vddgfx_offset_mv if any((setting.sclk_max_mhz is not None, setting.mclk_max_mhz is not None, setting.vddgfx_offset_mv is not None)) else None,
         before.power_cap_uw if setting.power_cap_w is not None else None)
 
 

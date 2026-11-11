@@ -745,6 +745,13 @@ optional = true
 doc = "Maximum shader clock in MHz."
 
 [[field]]
+path = "$defs/powerSettings/mclk_max_mhz"
+kind = "integer"
+minimum = 1
+optional = true
+doc = "Maximum memory clock in MHz."
+
+[[field]]
 path = "$defs/powerSettings/sclk_offset_mhz"
 kind = "integer"
 optional = true

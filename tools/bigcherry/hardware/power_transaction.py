@@ -72,6 +72,7 @@ def _state_from_probe(g: power_probe.GpuCapability) -> gpu_power.State:
 
     cap_default = None
     return gpu_power.State(vddgfx_offset_mv=cur("vddgfx_offset_mv"), sclk_max_mhz=cur("sclk_max_mhz"),
+                           mclk_max_mhz=cur("mclk_max_mhz"),
                            power_cap_uw=cur("power_cap_w"), power_cap_default_uw=cap_default)
 
 
@@ -144,7 +145,8 @@ class PowerTransaction:
                 continue
             c = g.controls
             for field, name, val in (("vddgfx_offset_mv", "vddgfx_offset_mv", s.vddgfx_offset_mv),
-                                     ("sclk_max_mhz", "sclk_max_mhz", s.sclk_max_mhz)):
+                                     ("sclk_max_mhz", "sclk_max_mhz", s.sclk_max_mhz),
+                                     ("mclk_max_mhz", "mclk_max_mhz", s.mclk_max_mhz)):
                 if val is None:
                     continue
                 cap = c[name]
@@ -162,11 +164,13 @@ class PowerTransaction:
                                    f"{cap.minimum // 1_000_000}..{cap.maximum // 1_000_000}")
             before = _state_from_probe(g)
             # an OverDrive commit couples the clock and the voltage offset: both originals must be readable to restore
-            if s.vddgfx_offset_mv is not None or s.sclk_max_mhz is not None:
+            if any((s.vddgfx_offset_mv is not None, s.sclk_max_mhz is not None, s.mclk_max_mhz is not None)):
                 if before.vddgfx_offset_mv is None and c["vddgfx_offset_mv"].status == "supported":
                     reasons.append(f"{bdf}: original voltage offset unreadable")
                 if c["sclk_max_mhz"].status == "supported" and before.sclk_max_mhz is None:
                     reasons.append(f"{bdf}: original clock unreadable")
+                if c["mclk_max_mhz"].status == "supported" and before.mclk_max_mhz is None:
+                    reasons.append(f"{bdf}: original memory clock unreadable")
             if s.power_cap_w is not None and before.power_cap_uw is None:
                 reasons.append(f"{bdf}: original power cap unreadable")
             devs.append(_Dev(bdf, _hwmon_path(g), s, before))
@@ -188,10 +192,12 @@ class PowerTransaction:
         g = power_probe.probe_gpus([d.bdf], sysfs_root=self.root, platform_name=self.platform)[0]
         now = _state_from_probe(g)
         bad = []
-        if which.vddgfx_offset_mv is not None and now.vddgfx_offset_mv != want.vddgfx_offset_mv:
+        if any((which.vddgfx_offset_mv is not None, which.sclk_max_mhz is not None, which.mclk_max_mhz is not None)) and now.vddgfx_offset_mv != want.vddgfx_offset_mv:
             bad.append(f"voltage offset {now.vddgfx_offset_mv} != {want.vddgfx_offset_mv}")
         if which.sclk_max_mhz is not None and now.sclk_max_mhz != want.sclk_max_mhz:
             bad.append(f"max clock {now.sclk_max_mhz} != {want.sclk_max_mhz}")
+        if which.mclk_max_mhz is not None and now.mclk_max_mhz != want.mclk_max_mhz:
+            bad.append(f"max memory clock {now.mclk_max_mhz} != {want.mclk_max_mhz}")
         if which.power_cap_w is not None and now.power_cap_uw != want.power_cap_uw:
             bad.append(f"power cap {now.power_cap_uw} != {want.power_cap_uw}")
         return bad
@@ -201,6 +207,7 @@ class PowerTransaction:
         return gpu_power.State(
             vddgfx_offset_mv=s.vddgfx_offset_mv if s.vddgfx_offset_mv is not None else d.before.vddgfx_offset_mv,
             sclk_max_mhz=s.sclk_max_mhz if s.sclk_max_mhz is not None else d.before.sclk_max_mhz,
+            mclk_max_mhz=s.mclk_max_mhz if s.mclk_max_mhz is not None else d.before.mclk_max_mhz,
             power_cap_uw=s.power_cap_w * 1_000_000 if s.power_cap_w is not None else d.before.power_cap_uw)
 
     def apply(self) -> None:
@@ -211,8 +218,16 @@ class PowerTransaction:
             for d in self.devs:
                 self.touched.append(d)
                 self._journal("applying")
-                self._write_all(gpu_power.apply_writes(d.bdf, "amdgpu", d.hwmon, d.setting))
-                bad = self._verify(d, self._target_state(d), d.setting)
+                # Both OverDrive clock writes reset gfx1100 VDDGFX. Preserve the
+                # measured original when no offset change was requested.
+                setting = d.setting
+                if (setting.sclk_max_mhz is not None or setting.mclk_max_mhz is not None) and setting.vddgfx_offset_mv is None:
+                    setting = gpu_power.Setting(vddgfx_offset_mv=d.before.vddgfx_offset_mv,
+                                                sclk_max_mhz=setting.sclk_max_mhz,
+                                                mclk_max_mhz=setting.mclk_max_mhz,
+                                                power_cap_w=setting.power_cap_w)
+                self._write_all(gpu_power.apply_writes(d.bdf, "amdgpu", d.hwmon, setting))
+                bad = self._verify(d, self._target_state(d), setting)
                 if bad:
                     raise OSError(f"{d.bdf}: readback mismatch: {'; '.join(bad)}")
                 self._event("applied", bdf=d.bdf)

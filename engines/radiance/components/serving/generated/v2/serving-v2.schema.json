@@ -3279,6 +3279,11 @@
           "type": "integer",
           "minimum": 1
         },
+        "mclk_max_mhz": {
+          "description": "Maximum memory clock in MHz.",
+          "type": "integer",
+          "minimum": 1
+        },
         "sclk_offset_mhz": {
           "description": "Signed shader clock offset in MHz.",
           "type": "integer"
@@ -3301,6 +3306,11 @@
         },
         "sclk_max_mhz": {
           "description": "Maximum shader clock in MHz.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "mclk_max_mhz": {
+          "description": "Maximum memory clock in MHz.",
           "type": "integer",
           "minimum": 1
         },
