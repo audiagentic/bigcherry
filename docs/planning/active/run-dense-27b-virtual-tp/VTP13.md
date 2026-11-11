@@ -13,6 +13,13 @@ work: L
 
 # Opt-in asymmetric physical TP3 runtime and full 27B performance A/B
 
+**Integration execution plan:** [VTP14](VTP14.md). Radiance v1.17.0 is the
+sole serving engine; VTP20–VTP29 remain proof harnesses, **not** a model
+runtime to extend. Implement native per-rank kernel eligibility and
+graph/source correctness before new all-layer HIP driver work or any
+claim of three-GPU serving. The older standalone-runner next-action notes
+below are historical and are superseded by VTP14's N0–N7 gates.
+
 ## Goal
 
 Provide a competing implementation to VTP03 virtual TP4: **one worker,

@@ -1,10 +1,10 @@
-# VTP27 — virtual four-way tensor sharding on three physical GPUs
+# Dense 27B — native Radiance three-GPU TP and alternatives
 
 Status: real 2-XTX Q8 engine and per-physical-GPU Q6/Q8 microkernel measurements exist (VTP05/VTP07/VTP09/VTP10); no virtual-rank TP4 runtime, three-card full-model benchmark, production layout or three-card memory admission exists.
 
 **Owner requirement:** dense 27B served at Q6 or Q8 (not Q4), maximise *resident* KV and sustain 4+ simultaneous streams. Physical hardware: gfx1100 RX 7900 XTX 24 GiB ×2 and gfx1201 R9700 32 GiB ×1. PCIe upstream: XTX Gen4 x8 each, R9700 Gen4 x4. No proven GPU-to-GPU P2P.
 
-Bounded work items (early feasibility, then competing engine paths):
+Bounded work items (native Radiance integration is the primary path; alternatives are comparative only):
 
 - [VTP01](VTP01.md): logical-rank/physical-executor contract, supported-geometry analysis and safe three-device collective design.
 - [VTP02](VTP02.md): Q6/Q8 + resident-KV feasibility, card-free ratio/capacity experiment and geometry gates.
@@ -17,7 +17,8 @@ Bounded work items (early feasibility, then competing engine paths):
 - [VTP10](VTP10.md): real native W8A8 TP2 prefill/concurrency control, source BF16 calibration debugging and IQ6R prerequisites.
 - [VTP11](VTP11.md): experimental GDN host/device activation guard and passing BF16 layer-0 Hessian smoke on R9700 TP1 and dual-XTX TP2; independent GDN numerical oracle remains open.
 - [VTP12](VTP12.md): native RDNA3 INT8 vs RDNA4 FP8 operator speed/quality, unequal 1/1/2-head ownership and concurrent three-GPU mixed-format collective feasibility.
-- [VTP13](VTP13.md): competing asymmetric *physical* TP3 engine (one worker/card) and matched whole-27B four-plus-stream serving/KV A/B.
+- [VTP13](VTP13.md): asymmetric *physical* TP3 requirements, original-BF16 operator evidence, native Radiance shard-ownership experiment, and matched whole-27B serving/KV A/B.
+- [VTP14](VTP14.md): **current Radiance-native implementation order** (N0–N7): single engine, heterogeneous per-rank kernel eligibility, native source/graph, existing no-P2P host-twin collectives, model correctness, admission, quantisation and matched end-to-end acceptance. **Start here for integration.**
 
 - [VTP03](VTP03.md): gated Q6/Q8 full-model prototype, 4+/long-context A/B benchmark and go/no-go.
 
