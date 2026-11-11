@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.39.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.38.1...bc-platform-1.39.0) (2026-11-11)
+
+
+### New and changed
+
+* **rsc11:** stage inactive bounded runtime policy receipts ([#883](https://github.com/audiagentic/bigcherry/issues/883)) ([ff23c8a](https://github.com/audiagentic/bigcherry/commit/ff23c8a444bacdfd4504131743b23047f44e81d1))
+
 ## [1.38.1](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.38.0...bc-platform-1.38.1) (2026-11-11)
 
 
