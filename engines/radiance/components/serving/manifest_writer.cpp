@@ -359,13 +359,6 @@ Json provenance_of(const ManifestInputs& in, const Json& derived_policy_provenan
     return p;
 }
 
-std::string digest_of(Json doc) {
-    doc["metadata"].erase("content_digest");
-    std::string bytes, why;
-    if (!jcs_canonicalize(doc, &bytes, &why)) fail("cannot canonicalize the manifest: " + why);
-    return "sha256:" + sha256_hex(bytes);
-}
-
 v2::Manifest checked_decode(const Json& doc, const char* step) {
     v2::Manifest m;
     if (const v2::Status e = v2::decode(doc, "", &m))
@@ -421,6 +414,7 @@ BuiltManifest build_manifest(const ManifestInputs& in) {
 
     Json spec = {{"intent",
                   {{"model", model}, {"layout", values.at("layout").at("name")},
+                   {"power", {{"profile", in.s10.power_profile}, {"role_overrides", Json::object()}}},
                    {"service",
                     {{"profile", in.profile}, {"objective", values.at("service").at("objective")},
                      {"max_sessions", values.at("service").at("max_sessions")},
@@ -431,9 +425,23 @@ BuiltManifest build_manifest(const ManifestInputs& in) {
                  {"resources", {{"host", resources_of(in, calibration)}}},
                  {"processes", {{"engine", engine_of(values)}, {"helpers", helpers_of(in.resolved)}}},
                  {"plan", {{"state", in.measured ? "measured" : "unmeasured"},
+                           // S10 replaces this draft plan with the resolved one before the document is written.
+                           {"power", {{"mode", "observe"}, {"profile", in.s10.power_profile},
+                                      {"profile_digest", "sha256:" + sha_hex_of_zero()}, {"devices", Json::array()},
+                                      {"cpu", {{"settings", Json::object()}}}}},
                            {"owner_map", {{"owner_map_sha256", sha_hex_of_zero()}, {"helpers", Json::array()}}}}}};
+    if (in.measured) {
+        if (!in.s10.p1_record.is_object() || !in.s10.p1_record.contains("resource_inputs"))
+            fail("a measured manifest needs the native P1 measurement record (--p1-record)");
+        spec["plan"]["resource_inputs"] = in.s10.p1_record.at("resource_inputs");
+    }
     if (!engine_only) {
         spec["handoff"] = handoff_of(values, live_policy);
+        // S10 decides the live policy at startup (live_policy_state); the draft carries a placeholder decision.
+        spec["handoff"]["placement"]["live_policy_state"] = {
+            {"requested", "off"}, {"configured", false}, {"reason_code", "draft"}, {"reason_detail", "draft"},
+            {"calibration_key", ""}, {"record_identity", ""}, {"effect_gate", false}, {"histogram_period_s", 0},
+            {"cadence_ns", 0}, {"max_heat_age_ns", 0}};
         spec["processes"]["helper_common"] = helper_common(values);
     }
     if (in.measured)
@@ -498,13 +506,21 @@ BuiltManifest build_manifest(const ManifestInputs& in) {
     // The plan cache key follows from the document (spec section 5.1), so it is computed last but one; the digest last.
     if (in.measured)
         doc["spec"]["plan"]["engine_memory"]["cache_key"] = v2::plan_cache_key(checked_decode(doc, "manifest with its owner map"));
-    const std::string digest = digest_of(doc);
-    doc["metadata"]["content_digest"] = digest;
-
+    // S10: the power plan, the S8 resource ledger and handoff (measured manifests), the live-policy startup decision.
+    const v2::Manifest draft = checked_decode(doc, "manifest draft");
+    auto s10_in = v2::s10_inputs(draft, in.resolved, in.s10);
+    if (!s10_in) fail(v2::render_human("bc-serve", s10_in.error()));
+    auto resolved = v2::resolve_s10(draft, s10_in.value());
+    if (!resolved) fail(v2::render_human("bc-serve", resolved.error()));
+    // The plan cache key follows from the document (spec section 5.1): S10 changed the budgets and the host ledger it covers.
+    if (resolved.value().spec.plan.engine_memory)
+        resolved.value().spec.plan.engine_memory->cache_key = v2::plan_cache_key(resolved.value());
+    auto written = v2::write_s10(resolved.value());
+    if (!written) fail(v2::render_human("bc-serve", written.error()));
     BuiltManifest out;
-    out.text = doc.dump(2) + "\n";
-    out.digest = digest;
-    out.document = std::move(doc);
+    out.document = Json::parse(written.value());
+    out.text = out.document.dump(2) + "\n";
+    out.digest = out.document.at("metadata").at("content_digest").get<std::string>();
     // The gate: what a consumer will do with these bytes.
     v2::Result<v2::Manifest> back = v2::read_manifest(out.text, "the manifest bc-serve built",
                                                       in.measured ? v2::PlanUse::serving : v2::PlanUse::measuring);
