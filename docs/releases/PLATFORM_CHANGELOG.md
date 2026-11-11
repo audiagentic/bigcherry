@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.34.1](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.34.0...bc-platform-1.34.1) (2026-11-11)
+
+
+### Fixes
+
+* **radiance:** observational RHP01 route coverage and RHP02 duplication audit ([#861](https://github.com/audiagentic/bigcherry/issues/861)) ([6d22500](https://github.com/audiagentic/bigcherry/commit/6d22500ab2e44f6f7ad138f9a6c047fdac04857e))
+
 ## [1.34.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.33.0...bc-platform-1.34.0) (2026-11-11)
 
 
