@@ -122,7 +122,7 @@ The 2026-11-04 2K production measurement above remains the only completed GPU ev
 
 ### Lease-holder hardware command (not executed in this slice)
 
-Run from the BigCherry repository root on Brutus. Build first, **outside the GPU lease**, using the current recipe/pin and ensure the source composition builds. Set `RHP01_BUILD` to the *exact build directory reported by that command*; never select an unrelated newest build. Obtain the exclusive GPU lease before the following starts and keep it through every stop. The explicit experiment files put both arms in the same lab service profile and differ only in `routing_evidence`.
+Run from the BigCherry repository root on the GPU lease host. Build first, **outside the GPU lease**, using the current recipe/pin and ensure the source composition builds. Set `RHP01_BUILD` to the *exact build directory reported by that command*; never select an unrelated newest build. Obtain the exclusive GPU lease before the following starts and keep it through every stop. The explicit experiment files put both arms in the same lab service profile and differ only in `routing_evidence`.
 
 ```sh
 # On the lease host, with tools/env/bigcherry-env.sh sourced:
