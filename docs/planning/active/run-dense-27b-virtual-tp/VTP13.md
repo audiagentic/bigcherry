@@ -776,3 +776,27 @@ Qwen3.8-27B serving on three physical GPUs. These
 standalone original-weight output-GEMV/host-collective
 experiments are NOT native mixed-architecture
 quantised Radiance kernels or end-to-end tok/s.
+
+### 2026-11-11 — VTP19 blocked by power sweep; VTP20 full original BF16 GDN block staged
+
+**VTP19 benchmark:** The stale manual lease was released and a new runner-managed lease attempted, but bigcherry-1 acquired the exclusive GPUs for an XTX power sweep first. The VTP19 request refused safely and produced no GPU benchmark receipt. The balanced original/pageable, pinned async and row-fused A/B/C/C/B/A GPU comparison is still pending, and VTP18 has no measured speedup.
+
+**VTP20 connected GDN block, staged:** The previously separate original BF16 input projection-to-GDN-core and GDN output projection now have one experimental three-physical-GPU execution chain, under tools/lab/radiance/xtx27_vtp20_gdn_full_block.hip and xtx27_vtp20_gdn_full_block_gpu.py. Each GPU performs original QKV/a/b/z GEMVs, 4-tap depthwise convolution, L2 Q/K normalization, original learned delta recurrence and gating, then *on-device* [head, token, 128] F32 to [token, head, 128] BF16 transpose/rounding and original BF16 out_proj column-shard GEMV (1536/1536/3072 input channels). The three streams are enqueued before the barrier; GPU F32 partials move to portable pinned host memory, combine in ordered XTX0->XTX1->R9700 F32, BF16-round and add the original BF16 residual, and broadcast to each GPU.
+
+The runner matches all original VTP15 and VTP16 checkpoint/source/output CPU receipts by SHA256, layer, and M1/M4 row count. GPU checks include all 12 projection results, original GDN core state/output, three out_proj F32 partials, host reduced output, final BF16 residual and each GPU's broadcast. Every input uses original checkpoint BF16 weights; the incoming hidden activation is synthetic. It fails closed on any missing or inconsistent reference.
+
+**Card-free gates PASS:** gfx1100 + gfx1201 compilation, read-only M1 plan, all 123 VTP-focused card-free tests, Ruff and Git diff checks. **VTP20 GPU execution PENDING** (the power sweep owns the lease). No text-generation, 64-layer, cache-continuation, long-context, native quantisation, real throughput or model-quality claim.
+
+M1 hardware acceptance once the exclusive GPU lease is genuinely free, in the experimental worktree:
+
+    python3 tools/lab/radiance/xtx27_vtp20_gdn_full_block_gpu.py --phase gpu --run --iterations 5 \
+      --weights-receipt "$BC_WORK_ROOT/xtx27-prefill/vtp15-gdn-projection/layer0-20261111T005819109215Z/summary.json" \
+      --projection-receipt "$BC_WORK_ROOT/xtx27-prefill/vtp15-gdn-ref/layer0-20261111T010143705406Z/summary.json" \
+      --core-receipt "$BC_WORK_ROOT/xtx27-prefill/vtp15-gdn-core/layer0-20261111T011811618321Z/summary.json" \
+      --learned-receipt "$BC_WORK_ROOT/xtx27-prefill/vtp14-gdn-reference/layer0-20261111T003313797426Z/summary.json" \
+      --output-packet "$BC_WORK_ROOT/xtx27-prefill/vtp16-gdn-output/layer0-20261111T014452115048Z/summary.json" \
+      --output-reference "$BC_WORK_ROOT/xtx27-prefill/vtp16-gdn-output-ref/layer0-20261111T015557796594Z/summary.json"
+
+M4 substitutes the VTP15 weight pack layer0-20261111T011938129228Z, projection CPU reference layer0-20261111T011953188932Z, core CPU reference layer0-20261111T012015196547Z, VTP16 output packet layer0-20261111T014909377366Z and VTP16 output CPU oracle layer0-20261111T014923805172Z; learned-parameter receipt remains the same.
+
+**Priority next:** First run VTP19 A/B/C once a free lease is available, then VTP20 M1 and M4 full-block numerical acceptance. Afterward stop isolated microbenchmarks: implement exact GDN/conv cache continuation and chunk-prefill KKT, full attention and model-wide 64-layer loading, real TP2/TP3 C4/C6/C8 text throughput and resident context tests. Only a full end-to-end run qualifies speedup.
