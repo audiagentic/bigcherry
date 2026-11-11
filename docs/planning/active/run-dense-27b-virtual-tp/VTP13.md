@@ -964,3 +964,61 @@ handoff, embed/head, persistent GDN/conv and KV
 state across decode/prefill, 64-layer original
 model and 4/6/8 stream TP2/TP3 tok/s. Do not
 enable experimental kernels as production defaults.
+
+
+### 2026-11-11 — VTP20/VTP23 original-BF16 physical-TP3 GPU acceptance (hardware measured)
+
+The previously staged full connected GDN (VTP20) and full
+causal-attention (VTP23) single-layer GPU paths have **now run**
+on the two gfx1100 XTX GPUs and one gfx1201 R9700 under
+separate exclusive, runner-managed leases. Each lease was
+cleanly released, with no remaining KFD process at the
+post-run inspection. All four single-layer cases passed their
+original-checkpoint, independent CPU-referenced **numeric
+tolerance** gates. The input hidden tensors are deterministic
+and synthetic, not preceding-layer model activations.
+Original BF16 checkpoint projection weights were used.
+
+| Test | Wall p50 | Wall p95 | Final exact BF16 | Largest final BF16 abs error |
+| --- | ---: | ---: | ---: | ---: |
+| VTP20 connected GDN M1 | 647.84 us | 772.49 us | 5,120/5,120 | 0 |
+| VTP20 connected GDN M4 | 1,110.39 us | 1,124.43 us | 20,371/20,480 | 0.001953125 |
+| VTP23 original full attention M1 | 471.03 us | 674.93 us | 5,119/5,120 | 0.0009765625 |
+| VTP23 original full attention M4 | 745.36 us | 853.02 us | 20,186/20,480 | 0.015625 |
+
+**These PASS results are not all bit-exact.** The GDN M4
+109 differing final BF16 outputs and full-attention M1/M4
+1/294 differing outputs remain within the *existing*
+stage-specific numerical tolerances; the GPU reference
+must not be described as fully BF16-bit-exact. In particular
+the full-attention M4 maximum observed final BF16
+absolute discrepancy was 0.015625. The VTP23 validator's
+bounds are relatively generous; promotion requires
+quality checks and independent full-framework parity.
+
+Immutable hardware receipts:
+
+- VTP20 M1: $BC_WORK_ROOT/xtx27-prefill/vtp20-full-gdn-block/runs/20261111T060113662007Z-f383946315/summary.json
+- VTP20 M4: $BC_WORK_ROOT/xtx27-prefill/vtp20-full-gdn-block/runs/20261111T060157393289Z-f383946315/summary.json
+- VTP23 M1: $BC_WORK_ROOT/xtx27-prefill/vtp23-original-attention-gpu/runs/20261111T060218973632Z-bf8430b140/summary.json
+- VTP23 M4: $BC_WORK_ROOT/xtx27-prefill/vtp23-original-attention-gpu/runs/20261111T060240861624Z-bf8430b140/summary.json
+
+Each receipt case has rc=0 and oracle_pass=true.
+Stdout gives p50/p95, per-device times, maximum numeric
+differences, exact value counts and explicit limitations.
+No GPU power cap, clock or undervolt was applied by
+these runners. A power sweep preceded these runs; wall
+timings are single-run observations and not matched
+stock-clock throughput benchmarks.
+
+The **next actual milestone** is no longer an independent
+GDN or full-attention kernel oracle. It is a model-wide
+physical-TP3 execution path wiring FFN plus 48 GDN
+and 16 full-attention operators with per-layer
+pre-/post-RMSNorm, residual handoff, real token embeddings,
+output head/logits and token sampling; persistent
+per-request recurrent/conv and KV state; and measured
+per-GPU VRAM admission for 4/6/8 streams and long context.
+Only real end-to-end text generation, quality replay and
+matched TP2/TP3 throughput can qualify a production option.
+Neither VTP20 nor VTP23 constitutes full model inference.
