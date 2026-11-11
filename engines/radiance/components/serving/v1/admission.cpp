@@ -28,7 +28,60 @@ ConfigError short_of(const std::string& at, const std::string& what, int64_t liv
                       kFree);
 }
 
+/* Build the S11 room payload from the same measured terms used by admission.
+ * An offline check without an authoritative manifest BDF retains the typed
+ * ConfigError but cannot advertise a retryable GPU refusal. */
+ConfigError gpu_room(const std::string& at, const std::string& what,
+                     int64_t available, int64_t statics, int64_t experts, int64_t stage,
+                     int64_t kv, std::string_view bdf) {
+    const int64_t required = statics + experts + stage + kv;
+    if (bdf.empty())
+        return short_of(at, what, available, required,
+                        "statics " + std::to_string(statics) + " + experts " +
+                            std::to_string(experts) + " + stage " + std::to_string(stage) +
+                            " + kv_required " + std::to_string(kv));
+    ConfigError e = make_error(ConfigErrorCode::admission_refused, at, "", kFree);
+    e.room_refusal = RoomRefusal{"gpu_room", "vram", std::string(bdf), available,
+                                required, 0,
+                                {{"statics", statics}, {"experts", experts},
+                                 {"stage", stage}, {"kv_required", kv}},
+                                {"gpu_elastic_kv"}};
+    return e;
+}
+
 }  // namespace
+
+Status check_host_room(std::string_view resource, int64_t available_bytes, int64_t headroom_bytes,
+                       const std::vector<std::pair<std::string, int64_t>>& components) {
+    const bool pin = resource == "host_pool";
+    if (!pin && resource != "host_ram" && resource != "host_kv")
+        return make_error(ConfigErrorCode::invalid_value, "host_room.resource",
+                          "unknown S5 host resource", "measure a supported host resource");
+    if (available_bytes < 0 || headroom_bytes < 0 || available_bytes > kMaxBytes ||
+        headroom_bytes > kMaxBytes || components.empty())
+        return make_error(ConfigErrorCode::invalid_value, "host_room",
+                          "host memory bound/components missing or invalid", kMeasure);
+    int64_t remaining = 0;
+    for (const auto& [key, bytes] : components) {
+        if (key.empty() || bytes < 0 || bytes > kMaxBytes - remaining)
+            return make_error(ConfigErrorCode::invalid_value, "host_room.components",
+                              "invalid host memory component", kMeasure);
+        remaining += bytes;
+    }
+    if (headroom_bytes > kMaxBytes - remaining)
+        return make_error(ConfigErrorCode::invalid_value, "host_room.headroom",
+                          "host memory requirement overflows the measured byte range", kMeasure);
+    if (remaining + headroom_bytes <= available_bytes) return std::nullopt;
+    ConfigError e = make_error(ConfigErrorCode::admission_refused, "host_room",
+                               "", "remeasure the host plan and release host KV; otherwise free the named shortfall");
+    e.room_refusal = RoomRefusal{pin ? "pin_room" : "host_room",
+                                std::string(resource), std::nullopt,
+                                available_bytes, remaining, headroom_bytes,
+                                components,
+                                pin ? std::vector<std::string>{"host_kv"}
+                                    : std::vector<std::string>{"host_ledger_margin", "host_kv"}};
+    return e;
+}
 
 int64_t kv_required(int64_t kv_ceiling, int64_t kv_one_session, int64_t ppm) {
     const int64_t floor = kv_ceiling / 1000000 * ppm + (kv_ceiling % 1000000 * ppm + 999999) / 1000000;
@@ -49,7 +102,8 @@ AdmissionMargins admission_margins(const EnginePlan& expected, const EnginePlan&
             live.vram.kv_resolved};
 }
 
-Status check_engine_plan(const EnginePlan& expected, const EnginePlan& live, int64_t ppm) {
+Status check_engine_plan(const EnginePlan& expected, const EnginePlan& live, int64_t ppm,
+                         std::string_view device_bdf) {
     if (auto e = check_kv_backing_floor_ppm(ppm)) return e;
     const PlanVram& ev = expected.vram;
     const PlanVram& lv = live.vram;
@@ -167,13 +221,20 @@ Status check_engine_plan(const EnginePlan& expected, const EnginePlan& live, int
                         "the experts the pinned host pool cannot hold");
     const int64_t total = ev.statics + lv.experts + lv.stage + need;
     if (lv.claimable < total)
-        return short_of(kAt + ".vram.claimable", "admission: claimable VRAM", lv.claimable, total,
-                        "statics " + std::to_string(ev.statics) + " + experts " + std::to_string(lv.experts) +
-                            " + stage " + std::to_string(lv.stage) + " + kv_required " + std::to_string(need));
-    if (lv.kv_resolved < need)
+        return gpu_room(kAt + ".vram.claimable", "admission: claimable VRAM", lv.claimable,
+                        ev.statics, lv.experts, lv.stage, need, device_bdf);
+    if (lv.kv_resolved < need) {
+        // The KV share after staging is the tighter binding constraint even if
+        // raw claimable VRAM fits. Express the effective allocation ceiling in
+        // the same units as total required, so S11's GPU refit is meaningful.
+        if (!device_bdf.empty())
+            return gpu_room(kAt + ".vram.kv_resolved", "admission: resolved KV",
+                            ev.statics + lv.experts + lv.stage + lv.kv_resolved,
+                            ev.statics, lv.experts, lv.stage, need, device_bdf);
         return short_of(kAt + ".vram.kv_resolved", "admission: resolved KV", lv.kv_resolved, need,
                         "kv_required " + std::to_string(need) +
                             ", the common KV budget after the staging split and MiB rounding");
+    }
     return std::nullopt;
 }
 

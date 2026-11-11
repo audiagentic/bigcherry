@@ -7,6 +7,8 @@
 #include "serving_types.h"
 
 #include <cstdint>
+#include <string_view>
+#include <vector>
 
 namespace bc::serving::v1 {
 
@@ -27,11 +29,19 @@ struct AdmissionMargins {
 };
 AdmissionMargins admission_margins(const EnginePlan& expected, const EnginePlan& live, int64_t kv_backing_floor_ppm);
 
+/* S5's host allocation admission, measured at the same pre-weight decision.
+ * No guessed RAM/pin cap or byte constants: call only with a readable bound
+ * and the remaining allocations actually requested. */
+Status check_host_room(std::string_view resource, int64_t available_bytes,
+                       int64_t headroom_bytes,
+                       const std::vector<std::pair<std::string, int64_t>>& components);
+
 /* Checks, in order: ppm in [0, 10^6) and every VRAM term a byte count (invalid value); stable facts by exact
  * equality - host consumers (name, bytes, residence, inventory), checkpoints, one session's KV, host_pool_mib, statics,
  * expert floor and ceiling, KV ceiling, card count and expert-plane geometry, card capacity as a minimum (plan
  * mismatch); then admission on the live split - experts >= expert_floor, claimable >= statics + experts + stage +
  * kv_required, kv_resolved >= kv_required (admission refused). */
-Status check_engine_plan(const EnginePlan& expected, const EnginePlan& live, int64_t kv_backing_floor_ppm);
+Status check_engine_plan(const EnginePlan& expected, const EnginePlan& live, int64_t kv_backing_floor_ppm,
+                         std::string_view device_bdf = {});
 
 }  // namespace bc::serving::v1
