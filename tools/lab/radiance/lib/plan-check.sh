@@ -177,6 +177,10 @@ elif "live_policy" in placement:
         print(f"live placement: ERROR -- policy/heat preflight failed: {e}", file=sys.stderr)
         sys.exit(2)
     state = "on"
+elif "experiment" in spec:
+    # A lab experiment (forced churn) is written under the lab profile, which never derives a live policy, so the
+    # writer records no reason; the experiment itself is the explicit decision.
+    state, detail = "off", "lab experiment: the lab profile never derives a live policy"
 else:
     why = m.get("provenance", {}).get("/spec/handoff/placement", {}).get("source", "")
     if not isinstance(why, str) or not why.startswith("live policy disabled: "):

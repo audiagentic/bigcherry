@@ -67,6 +67,13 @@ class LivePlacementManifestPreflight(unittest.TestCase):
         self.assertEqual(r.returncode, 2)
         self.assertIn("invalid BC_EXPECT_LIVE_POLICY", r.stderr)
 
+    def test_lab_experiment_is_explicit_off(self):
+        m = manifest(on=False, provenance=False)
+        m["spec"]["experiment"] = {"steps": []}
+        r = self.check(m, expected="off")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("lab experiment", r.stderr)
+
     def test_missing_reason_fails_closed(self):
         r = self.check(manifest(on=False, provenance=False))
         self.assertEqual(r.returncode, 2)
