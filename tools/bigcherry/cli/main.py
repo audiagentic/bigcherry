@@ -687,6 +687,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="PA36: baseline source (e.g., bigcherry-tuning)")
     patch_validate_cmd.set_defaults(func=cmd_patch_validate)
 
+    from . import workload
+    workload.register(sub)
+
     sources.register(sub)
 
     repin = sub.add_parser(
