@@ -722,3 +722,57 @@ CPU oracle. Measure M1/M4/M8 p50 and p95, device kernel
 timings and all host stages. Reject or revert the variant
 if M4 or M8 fails numerical or latency gates; never
 enable either VTP17 or VTP18 as a production default.
+
+
+### 2026-11-11 — VTP19 same-lease three-way A/B/C comparison scaffold
+
+The VTP19 runner xtx27_vtp19_output_abccba.py is the next gate
+for deciding whether VTP17 pinned transfers and VTP18
+batch-row weight reuse truly improve the original-BF16 GDN
+output stage. It compiles and pins all three exact sources
+from a single compiler build manifest: A=VTP16 pageable,
+B=VTP17 pinned asynchronous, C=VTP18 row-fused+pinned.
+For M1 and/or M4 original checkpoint output input packets
+it generates a strictly ordered A/B/C/C/B/A palindrome,
+using unique receipt filenames per arm under ONE fresh
+exclusive GPU lease. Each process has the same three
+physical GPUs, original source pack, BF16 residual, held
+CPU reference and 5120-wide F32 host-reduced output.
+Every arm must pass the original unsharded+residual CPU
+oracle, including exactly equal BF16 final outputs;
+failed/partial results remain incomplete and refuse
+performance admission.
+
+The card-free all-three-variant multiarchitecture
+compile PASSED for gfx1100+gfx1201 (digest
+946c6ad1f88fd5d6...), and the five VTP19 plan,
+ordering, missing-source, canonical output parsing,
+corruption and fail-closed checks PASS. Actual
+same-session hardware A/B/C is **NOT yet run**:
+another owner holds the GPU lease. VTP18 still has
+no hardware performance or numerical acceptance.
+
+Once the lease is free, run from the experimental worktree:
+
+    python3 tools/lab/radiance/xtx27_vtp19_output_abccba.py --phase gpu --run --iterations 9 \
+      --packet-receipt "$BC_WORK_ROOT/xtx27-prefill/vtp16-gdn-output/layer0-20261111T014452115048Z/summary.json" \
+      --reference-receipt "$BC_WORK_ROOT/xtx27-prefill/vtp16-gdn-output-ref/layer0-20261111T015557796594Z/summary.json" \
+      --packet-receipt "$BC_WORK_ROOT/xtx27-prefill/vtp16-gdn-output/layer0-20261111T014909377366Z/summary.json" \
+      --reference-receipt "$BC_WORK_ROOT/xtx27-prefill/vtp16-gdn-output-ref/layer0-20261111T014923805172Z/summary.json"
+
+The final receipt parses each arm's wall p50/p95,
+individual GPU kernel p50, max output/reduction
+numerical errors and exact BF16 residual count.
+It calculates per-variant median-of-two-arm wall
+latencies and indicative percentage changes. Power,
+thermal state and production graph execution are not
+enforced: separate fresh process starts within one
+lease only partially control clock drift. Compare
+the A/C numerical outputs against their original
+independent CPU oracle before any promotion.
+
+The acceleration objective remains real 4/6/8-stream
+Qwen3.8-27B serving on three physical GPUs. These
+standalone original-weight output-GEMV/host-collective
+experiments are NOT native mixed-architecture
+quantised Radiance kernels or end-to-end tok/s.
