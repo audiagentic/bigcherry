@@ -518,3 +518,53 @@ BF16-relative model quality, and matched dual-XTX TP2 vs TP3
 real 4/6/8-stream throughput and resident KV/GDN memory admission.
 The incoming hidden activation is still synthetic. Do not interpret
 the measured microkernel speed as 27B model throughput.
+
+
+## 2026-11-11 — integrated GDN hardware M1 PASS; VTP16 output and residual card-free PASS
+
+**VTP15 integrated three-physical-GPU GDN original BF16 M1 PASS:**
+one device stream per XTX0/XTX1/R9700, real original checkpoint BF16
+QKV/a/b/z GEMVs -> original BF16 causal convolution -> L2 Q/K
+normalization -> learned A_log/dt_bias delta recurrence -> gated
+RMSNorm, verified against independent CPU references at each stage.
+M1 GPU p50 wall 416.49 us; XTX0 387.04 us; XTX1 383.28 us;
+R9700 336.40 us. Max GEMV-to-reference FP32 error 9.54e-7;
+max GDN recurrent output absolute error 3.58e-7. All PASS.
+GPU immutable receipt: BC_WORK_ROOT/xtx27-prefill/vtp15-integrated/
+runs/20261111T014815593848Z-ed3dd929b3/summary.json.
+The M4 hardware follow-up was refused because another agent
+acquired the exclusive lease, and is still PENDING.
+
+**VTP16 GDN output projection output and residual CPU proof:**
+original checkpoint layer-0 out_proj.weight BF16 [5120,6144],
+original source 62,914,560 bytes, is validated and byte-exactly
+reconstructed from physical input-column shards [5120,1536] /
+[5120,1536] / [5120,3072]. The BF16 rank-local input tensor
+is derived from the independent original-weight GDN CPU-core
+reference, reordered [token, head, 128] and BF16-rounded once.
+A separate C++ double-accumulation control computes both the
+unsharded projection and the three rank-local partials, then
+performs explicitly ordered FP32 host reduction, BF16 projection
+rounding and BF16 residual add. No GPU is needed for this proof.
+
+| Original BF16 output and residual | M1 | M4 |
+| --- | ---: | ---: |
+| Max unsharded vs 3-rank projection FP32 abs | 1.49e-8 | 5.96e-8 |
+| Exact BF16 output-projection elements | 5120/5120 | 20480/20480 |
+| Exact BF16 post-residual elements | 5120/5120 | 20480/20480 |
+
+Original M1 source/output and CPU receipts:
+BC_WORK_ROOT/xtx27-prefill/vtp16-gdn-output/layer0-20261111T014452115048Z/summary.json
+BC_WORK_ROOT/xtx27-prefill/vtp16-gdn-output-ref/layer0-20261111T014742582287Z/summary.json.
+M4:
+BC_WORK_ROOT/xtx27-prefill/vtp16-gdn-output/layer0-20261111T014909377366Z/summary.json
+BC_WORK_ROOT/xtx27-prefill/vtp16-gdn-output-ref/layer0-20261111T014923805172Z/summary.json.
+
+**Caveats:** deterministic synthetic incoming hidden activation,
+not real prior-layer output. The core GPU M1 proof ends before
+out_proj and all_reduce; the VTP16 projection/allreduce/residual
+is currently an independently tested card-free oracle, not
+on-GPU or native Radiance runtime. Model-wide 64-layer GPU loading,
+long-context cache, prefill KKT, speculative rollback, real 4/6/8
+stream throughput and resident context are all open. No
+production default or vendor changes.
