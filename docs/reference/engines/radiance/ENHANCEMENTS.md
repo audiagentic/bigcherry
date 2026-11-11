@@ -9,7 +9,7 @@ different statuses. See [the engine overview](README.md) first.
 
 _Generated from package documentation and metadata by `tools/docs/generate_engine_enhancement_summaries.py`. Do not edit this section by hand._
 
-## Engine patches (15)
+## Engine patches (16)
 
 | Package | State | Summary |
 | --- | --- | --- |
@@ -28,6 +28,7 @@ _Generated from package documentation and metadata by `tools/docs/generate_engin
 | [rad0013_mtp_pass_replay](../../../../engines/radiance/patches/rad0013_mtp_pass_replay/SUMMARY.md) | `validated` | Restores recorded-pass replay for **fixed-shape decode MTP draft and speculative-verify passes** in the pinned Radiance v1.17.0 Qwen4-Exp architecture. It replaces the blanket draft/verify refusal with a guarded geometry fingerprint in `arch/qwen4exp_fp8/qwen4exp_fp8.cpp`. Does not change the core tape runtime, kernel selection or any GPU code. |
 | [rad0016_vtp14_rank_code_selection](../../../../engines/radiance/patches/rad0016_vtp14_rank_code_selection/SUMMARY.md) | `untested` | Lets each tensor-parallel rank select the kernels its own card runs, so XTX (libr3) and R9700 (libr4d) ranks can share one world when named explicitly with `--rank-devices`. |
 | [rad0017_vtp14_n3_shared_rendezvous](../../../../engines/radiance/patches/rad0017_vtp14_n3_shared_rendezvous/SUMMARY.md) | `untested` | Moves libr4d's all-reduce rendezvous, and with it libr3's, into one process-wide slot that the engine exports, so ranks running different kernel libraries meet at one barrier. A failed share or a timeout poisons the rendezvous and fails fast with the reason. |
+| [rad0018_vtp14_n2_tp_ownership](../../../../engines/radiance/patches/rad0018_vtp14_n2_tp_ownership/SUMMARY.md) | `untested` | Splits the dense Qwen3.8-27B unevenly over three ranks. Query heads go 6/6/12, KV heads 1/1/2, delta-net heads 4/4/8 (K) and 12/12/24 (V), and the feed-forward 5120/4864/7424. Each rank reads its own spans of the container's weights through radiance's shard-span ABI. |
 
 ## Components (6)
 
