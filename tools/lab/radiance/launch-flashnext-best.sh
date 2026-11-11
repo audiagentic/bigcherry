@@ -122,7 +122,7 @@ PREFIX_RESUME=nearest
 # cadence (about 5 s); a 60 s histogram period left it with a feed it called stale (26 'no_live_feed' lines, 6 evaluations and no move in 15
 # minutes of traffic, runs/histogram-period-default). Every calibration and on/off A/B ran at 1 s.
 RECORD_PERIOD=1
-LIVE_POLICY_FILE=""   # a JSON object with every spec.handoff.placement.live_policy member (docs/design/serving-manifest-v1)
+LIVE_POLICY_FILE=""   # a JSON object with every spec.handoff.placement.live_policy member (docs/design/serving-manifest-v2)
 EXPERIMENT_FILE=""    # a JSON object for spec.experiment (lab profile)
 CALIBRATE=0           # lab-only measurement run, never a serving hand-off
 CALIBRATION_PROMPTS_A=""

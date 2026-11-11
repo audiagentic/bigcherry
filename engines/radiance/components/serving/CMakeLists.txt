@@ -13,7 +13,7 @@ endif()
 set(BC_SERVING_V2_NLOHMANN_INCLUDE "${RADIANCE_SRC}/vendor")
 include("${CMAKE_CURRENT_SOURCE_DIR}/bc_serving_v2.cmake")
 
-# The serving manifest v1 contract (contract/README.md): the field registry contract/serving-v1.toml and its generator.
+# The serving manifest v2 contract (contract/README.md): the field registry contract/serving-v2.toml and its generator.
 # GPU-free and independent of bc_serving, whose typed model it generates (generated/, committed; bc_contract_check
 # fails CI when a committed file differs from the generator's output).
 add_library(bc_contract STATIC contract/registry.cpp)
@@ -95,7 +95,7 @@ if(BUILD_TESTING)
   add_executable(bc_jcs_test EXCLUDE_FROM_ALL jcs_test.cpp)
   target_link_libraries(bc_jcs_test PRIVATE bc_serving)
   target_compile_definitions(bc_jcs_test PRIVATE
-    BC_CONTRACT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../../../docs/design/serving-manifest-v1")
+    BC_CONTRACT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../../../docs/design/serving-manifest-v2")
   add_test(NAME bc_jcs_test COMMAND bc_jcs_test)
   add_executable(bc_experts_test EXCLUDE_FROM_ALL experts_test.cpp)
   target_link_libraries(bc_experts_test PRIVATE bc_experts bc_jcs)
@@ -107,7 +107,7 @@ if(BUILD_TESTING)
   add_executable(bc_contract_check EXCLUDE_FROM_ALL contract/contract_check.cpp)
   target_link_libraries(bc_contract_check PRIVATE bc_contract)
   target_compile_definitions(bc_contract_check PRIVATE BC_CONTRACT_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
-    BC_CONTRACT_DOCS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../../../docs/design/serving-manifest-v1"
+    BC_CONTRACT_DOCS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../../../docs/design/serving-manifest-v2"
     BC_CONTRACT_RADIANCE_SRC="${RADIANCE_SRC}")
   add_test(NAME bc_contract_check COMMAND bc_contract_check)
   # S9: compile and test the inactive generated v2 codec, never production linked.

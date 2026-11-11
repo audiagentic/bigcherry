@@ -2,7 +2,7 @@
 /* Start-up check of a live engine memory plan against the manifest's expected one (spec §5.2, amendment 5; RSC08
  * acceptance). Typed, structured: invalid input is BC_CFG_INVALID_VALUE, stable drift BC_CFG_PLAN_MISMATCH, and a
  * live split that cannot hold what the plan requires BC_CFG_ADMISSION_REFUSED. The shared vectors in
- * docs/design/serving-manifest-v1/admission-vectors.json are the cases it must reproduce. */
+ * docs/design/serving-manifest-v2/admission-vectors.json are the cases it must reproduce. */
 #include "error.h"
 #include "../generated/v2/serving_types.h"
 

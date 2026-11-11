@@ -99,7 +99,7 @@ if(BUILD_TESTING)
   target_link_libraries(r3_helper_settings_test PRIVATE bc_serving_v2)
   target_include_directories(r3_helper_settings_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
   target_compile_definitions(r3_helper_settings_test PRIVATE
-    BC_CONTRACT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../../../docs/design/serving-manifest-v1")
+    BC_CONTRACT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../../../docs/design/serving-manifest-v2")
   add_test(NAME r3_helper_settings_test COMMAND r3_helper_settings_test)
   # Exercise the real config ABI and both helper/engine access paths without HIP.
   add_library(r3_helper_plugin_fixture SHARED EXCLUDE_FROM_ALL helper_plugin_fixture.cpp)

@@ -88,7 +88,7 @@ class HelperProfileParityTests(unittest.TestCase):
 
     def test_the_table_covers_every_helper_common_leaf_once(self) -> None:
         import json
-        schema = json.loads((REPO / "docs/design/serving-manifest-v1/serving-manifest.v1.schema.json").read_text(encoding="utf-8"))
+        schema = json.loads((REPO / "docs/design/serving-manifest-v2/serving-manifest.v2.schema.json").read_text(encoding="utf-8"))
         props = schema["$defs"]["helperCommon"]["properties"]
         leaves = {f"{g}/{k}" for g, body in props.items() for k in body.get("properties", {}) if k != "balance_speeds_milli"}
         got = [r["leaf"] for r in self.rows]

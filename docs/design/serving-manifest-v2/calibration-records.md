@@ -26,11 +26,12 @@ PYTHONPATH=tools python -m bigcherry.serving.calibration_store emit \
 
 The generated record is an immutable JSON file addressed by the canonical
 SHA-256 of the supplied run. `select_records(store, scope=...,
-required_keys=..., now_unix_s=...)` requires one fresh, exactly matching
-scope for every requested S8 key; stale, future-dated, ambiguous, malformed
-and unmeasured records are rejected, with no fallback. Unknown scoped files
-are not used. The S13 bridge will map selected records to C++ `S8Calibration`
-and pass them into `resolve_s10`/`resolve_s8`. The native resolver remains
+required_keys=..., now_unix_s=...)` returns the usable records: exact scope and
+current, the newest per key. Stale, future-dated, malformed and other-scope
+records are skipped, and a key with no usable record is simply absent: records
+are evidence, never a precondition, and the setting keeps its site/layout value
+with that source recorded. bc-serve `--calibration-records` passes the selection
+to `resolve_s10`/`resolve_s8` (v2/s10_inputs.cpp). The native resolver remains
 responsible for applying the handoff/host admission rules.
 
 Every time the model, engine/helper builds, layout, inventory, owner map,

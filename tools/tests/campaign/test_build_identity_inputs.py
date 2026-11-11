@@ -22,7 +22,7 @@ RADIANCE = engines.load(ROOT, engines.RADIANCE)
 
 #: out-of-tree paths a component may name without declaring them: the manifest contract directory is passed to the component
 #: TESTS only (BC_CONTRACT_DIR / BC_CONTRACT_DOCS_DIR), and nothing built into a runtime reads it
-TEST_ONLY = ("docs/design/serving-manifest-v1",)
+TEST_ONLY = ("docs/design/serving-manifest-v2",)
 _PATH = re.compile(r"\$\{CMAKE_(?:CURRENT_SOURCE_DIR|CURRENT_LIST_DIR)\}/((?:\.\./)+[^\s\"')]*)")
 
 

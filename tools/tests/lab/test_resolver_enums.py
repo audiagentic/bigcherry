@@ -20,7 +20,7 @@ MAP = {
 class ResolverV1EnumTests(unittest.TestCase):
     def test_enum_choices_are_the_registry_values(self) -> None:
         cpp = (SERVING / "serving.cpp").read_text(encoding="utf-8")
-        registry = {f["path"]: f for f in tomllib.loads((SERVING / "contract" / "serving-v1.toml").read_text(encoding="utf-8"))["field"]}
+        registry = {f["path"]: f for f in tomllib.loads((SERVING / "contract" / "serving-v2.toml").read_text(encoding="utf-8"))["field"]}
         for key, path in MAP.items():
             with self.subTest(key=key):
                 m = re.search(r'add\("' + re.escape(key) + r'".*?\{((?:"[a-z_]+",?\s*)+)\}\);', cpp, re.S)

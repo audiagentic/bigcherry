@@ -5,7 +5,7 @@
 #include "experts.h"
 #include "worker_footprint.h"
 #include "sha256.h"
-#include "generated/serving_types.h"
+#include "generated/v2/serving_types.h"
 #include "third_party/toml.hpp"
 
 #include <algorithm>

@@ -89,7 +89,7 @@ and unavailable GPUs fail closed; layout/catalog generalization is later
 RSC05 work.
 
 The one document processes load is the serving manifest v1 (`--write-manifest`; spec in
-`docs/design/serving-manifest-v1/`), read by the shared strict reader. The resolver's own record (`--explain --json`,
+`docs/design/serving-manifest-v2/`), read by the shared strict reader. The resolver's own record (`--explain --json`,
 the hash `--validate` prints) is not a file any process reads. The engine starts from the v1 manifest (rad0009, shared
 `bc_serving_v1` library); helper-side manifest consumption and process supervision are still pending.
 This component does **not** start processes.

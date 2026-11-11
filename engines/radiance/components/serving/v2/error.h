@@ -1,5 +1,5 @@
 #pragma once
-/* The one configuration error of the serving manifest v2 (docs/design/serving-manifest-v1/errors.md §1-§5): a stable
+/* The one configuration error of the serving manifest v2 (docs/design/serving-manifest-v2/errors.md §1-§5): a stable
  * code, the Radiance status it maps to (computed, never supplied), a human dotted/indexed path, a stable message, an
  * actionable hint and an optional source location. The library returns errors and never prints them. */
 #include <cstdint>

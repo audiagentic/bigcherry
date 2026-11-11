@@ -1,5 +1,5 @@
 """The serving manifest v1 admission rule (spec §5.2, amendment 5) and a model of the engine's VRAM split, used to generate
-the shared admission vectors (docs/design/serving-manifest-v1/admission-vectors.json).
+the shared admission vectors (docs/design/serving-manifest-v2/admission-vectors.json).
 
 Two consumers read the same vectors, so they cannot drift apart:
 - the contract test (test_serving_manifest_v1_contract.py) regenerates them from this module and checks every verdict;
@@ -23,7 +23,7 @@ ALIGN = 4096                        # RAD_ALIGN_UNIT (abi/rad_format.h)
 MAX_BYTES = 2**53 - 1               # I-JSON: the v1 byte-count range
 PPM = 1_000_000
 STEP = 8192                         # the claimable reading's step between starts (RSC03 A3)
-VECTORS = Path(__file__).resolve().parents[3] / "docs/design/serving-manifest-v1/admission-vectors.json"
+VECTORS = Path(__file__).resolve().parents[3] / "docs/design/serving-manifest-v2/admission-vectors.json"
 
 
 def to_mib(b: int) -> int:

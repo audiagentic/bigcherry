@@ -4,7 +4,7 @@
 // the policy relies on; a policy that is absent from the manifest never constructs a Settings.
 #include "worker_policy_input.h"
 #include "worker_share.h"
-#include "../serving/generated/serving_types.h"
+#include "../serving/generated/v2/serving_types.h"
 #include <chrono>
 #include <cmath>
 #include <cstdint>

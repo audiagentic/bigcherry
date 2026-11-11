@@ -88,9 +88,9 @@ PIN_BLOBS = {
         "arch/common/rad_block_moe_fp8.h": ("177e79c", "86160d0"),
     },
     RAD0009: {
-        "core/bc_serving_manifest.h": (None, "c9fd765"),
-        "core/bc_serving_manifest.cpp": (None, "0713835"),
-        "core/CMakeLists.txt": ("921debd", "8750342"),
+        "core/bc_serving_manifest.h": (None, "3acdc94"),
+        "core/bc_serving_manifest.cpp": (None, "a5534eb"),
+        "core/CMakeLists.txt": ("921debd", "e763864"),
         "core/main.cpp": ("4cb6d43", "7feb7b6"),
     },
 }
@@ -632,7 +632,7 @@ int main() {
         component = (REPO / "engines" / "radiance" / "components" / "moe-remote" / "component.toml").read_text(encoding="utf-8")
         self.assertNotIn("[setting.R3_MOE_WORKER_SHADOW]", component)
         self.assertNotIn("[setting.R3_MOE_WORKER_MASK_ONLY]", component)
-        self.assertIn("std::optional<bool> shadow;", (REPO / "engines/radiance/components/serving/generated/serving_types.h").read_text(encoding="utf-8"))
+        self.assertIn("std::optional<bool> shadow;", (REPO / "engines/radiance/components/serving/generated/v2/serving_types.h").read_text(encoding="utf-8"))
         self.assertIn('status = "diagnostic"', component)
 
     def test_missing_anchor_fails_closed_and_is_atomic(self):
@@ -780,8 +780,8 @@ class TestServingManifestPatch(unittest.TestCase):
             # config_option_names() leaves out --help, as the engine does (core/config.cpp)
             options.write_text("".join(f"{n}\t{'-' if a == 'nullptr' else a.strip(chr(34))}\n"
                                        for n, a in rows if n != "--help"))
-            example = REPO / "docs" / "design" / "serving-manifest-v1" / "example.flashnext-4gpu.json"
-            lab_example = REPO / "docs" / "design" / "serving-manifest-v1" / "example.lab-experiment.json"
+            example = REPO / "docs" / "design" / "serving-manifest-v2" / "example.flashnext-4gpu.json"
+            lab_example = REPO / "docs" / "design" / "serving-manifest-v2" / "example.lab-experiment.json"
             run = subprocess.run([str(exe), str(scratch), str(example), str(options), str(lab_example)], capture_output=True, text=True)
             self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
             self.assertIn("ok", run.stdout)
@@ -911,14 +911,14 @@ class TestPlanMemoryPatch(unittest.TestCase):
                 self.assertEqual(text.count("add_library(bc_serving_v2 "), 1)
                 self.assertEqual(text.count("add_library(bc_jcs "), 1)
             else:
-                self.assertNotIn("add_library(bc_serving_v2", text, cmake.name)
+                self.assertNotIn("add_library(bc_serving_v2 ", text, cmake.name)
                 self.assertNotIn("add_library(bc_jcs", text, cmake.name)
         self.assertIn('include("${CMAKE_CURRENT_SOURCE_DIR}/bc_serving_v2.cmake")',
                       (self.SERVING / "CMakeLists.txt").read_text(encoding="utf-8"))
         engine = tomllib.loads((REPO / "engines" / "radiance" / "engine.toml").read_text(encoding="utf-8"))
         self.assertEqual(engine["build"]["repo-paths"]["BC_SERVING_V2_CMAKE"],
                          "engines/radiance/components/serving/bc_serving_v2.cmake")
-        listed = re.findall(r'"\$\{_bc_v1_dir\}/([^"]+\.cpp)"', (self.SERVING / "bc_serving_v2.cmake").read_text(encoding="utf-8"))
+        listed = re.findall(r'"\$\{_bc_v2_dir\}/([^"]+\.cpp)"', (self.SERVING / "bc_serving_v2.cmake").read_text(encoding="utf-8"))
         self.assertTrue(listed and all((self.SERVING / f).is_file() for f in listed), listed)
 
     def test_second_apply_is_a_no_op(self):
@@ -994,7 +994,7 @@ class TestPlanMemoryPatch(unittest.TestCase):
             exe = work / "plan_flags_test"
             link = subprocess.run([compiler, *map(str, objects), "-o", str(exe)], capture_output=True, text=True)
             self.assertEqual(link.returncode, 0, link.stderr)
-            vectors = REPO / "docs" / "design" / "serving-manifest-v1" / "admission-vectors.json"
+            vectors = REPO / "docs" / "design" / "serving-manifest-v2" / "admission-vectors.json"
             scratch = work / "scratch"
             scratch.mkdir()
             run = subprocess.run([str(exe), str(vectors), str(scratch)], capture_output=True, text=True)

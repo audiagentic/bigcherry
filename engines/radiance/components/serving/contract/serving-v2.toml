@@ -1,5 +1,5 @@
 # Serving manifest v2 field registry: the one authoritative description of the v1 contract
-# (docs/design/serving-manifest-v1/spec.md). contract/generate.cpp turns it into the JSON Schema, the typed model,
+# (docs/design/serving-manifest-v2/spec.md). contract/generate.cpp turns it into the JSON Schema, the typed model,
 # the field reference and the contract fingerprint (engines/radiance/components/serving/generated/); CI regenerates
 # them and byte-diffs the committed copies. v1 is closed (spec §8): a change that moves either fingerprint (what
 # validates, or a field's class or Radiance binding) is a bigcherry/v2 change; correcting a doc is not (README.md).

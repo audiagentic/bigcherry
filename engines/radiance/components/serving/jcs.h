@@ -4,7 +4,7 @@
 
 namespace bc::serving {
 
-/* RFC 8785 JSON Canonicalization Scheme for the serving manifest v1 subset (docs/design/serving-manifest-v1, spec §8):
+/* RFC 8785 JSON Canonicalization Scheme for the serving manifest v2 subset (docs/design/serving-manifest-v2, spec §8):
  * objects with members sorted by their names' UTF-16 code units, no whitespace, strings with JCS's escapes, and numbers
  * that are integers only (v1 has no non-integer number; one is refused, never formatted). Integers must be within
  * I-JSON's ±(2^53 − 1). On success `out` holds the canonical UTF-8 bytes; otherwise `why` names the first offending

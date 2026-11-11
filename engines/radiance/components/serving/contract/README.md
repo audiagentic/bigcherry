@@ -1,12 +1,12 @@
 # Serving manifest v1 contract registry
 
 `serving-v1.toml` is the one authoritative description of the serving manifest `bigcherry/v1` wire contract
-(specification: `docs/design/serving-manifest-v1/spec.md`). Everything else about the contract is generated from it by
+(specification: `docs/design/serving-manifest-v2/spec.md`). Everything else about the contract is generated from it by
 `generate.cpp` into `../generated/`, and committed:
 
 | Generated file | What |
 |---|---|
-| `serving-v1.schema.json` | JSON Schema 2020-12. Also committed as `docs/design/serving-manifest-v1/serving-manifest.v1.schema.json` (identical bytes). |
+| `serving-v1.schema.json` | JSON Schema 2020-12. Also committed as `docs/design/serving-manifest-v2/serving-manifest.v2.schema.json` (identical bytes). |
 | `serving_types.h` | The typed model (`bc::serving::v1`): one struct per object, enum classes with wire-name tables, `kFields` (every field's path, kind, class, requiredness, Radiance binding and doc), `kFingerprint`. |
 | `serving-fields.md` | The field reference. |
 | `serving_codec.h`, `serving_codec.cpp` | One strict decoder per struct (`v1/error.h` codes, human paths) and `apply()` for each patch def. |
@@ -37,7 +37,7 @@ cmake --build <serving build> --target bc_contract_gen
 <serving build>/bc_contract_gen engines/radiance/components/serving/contract/serving-v1.toml \
     engines/radiance/components/serving/generated
 cp engines/radiance/components/serving/generated/serving-v1.schema.json \
-    docs/design/serving-manifest-v1/serving-manifest.v1.schema.json
+    docs/design/serving-manifest-v2/serving-manifest.v2.schema.json
 ```
 
 CI runs `bc_contract_check` (a card-free component test): it regenerates in memory and fails, naming the file and the
