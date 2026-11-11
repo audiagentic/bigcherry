@@ -1,0 +1,47 @@
+# Change the version whenever the prompt, seed, repetition schedule, or metric definition changes.
+[workload.prefill-doc-44k]
+version = 1
+kind = "doc"
+description = "One /v1/completions request per document slice, 44k target characters-to-token estimate (~44-50k measured prompt tokens); no parallelism."
+reps = 10
+target_tokens = 44000
+chars_per_token = 3.9
+max_tokens = 1
+
+[workload.cold-27k-ttft]
+version = 1
+kind = "cold"
+description = "Eight successive fresh 27k-token chat requests, one stream, TTFT maximum; seed 501..508."
+reps = 8
+target_tokens = 27000
+max_tokens = 8
+seed_first = 501
+
+[workload.decode-1stream]
+version = 1
+kind = "stream"
+description = "stream-bench calibrated 900-token prompt, seed 7, 256 tokens, 2 reps at one stream."
+streams = 1
+reps = 2
+target_tokens = 900
+max_tokens = 256
+seed = 7
+
+[workload.decode-6stream]
+version = 1
+kind = "stream"
+description = "stream-bench calibrated 900-token prompt, seed 7, 256 tokens, 2 reps at six concurrent streams."
+streams = 6
+reps = 2
+target_tokens = 900
+max_tokens = 256
+seed = 7
+
+[workload.pwr-phases]
+version = 1
+kind = "power"
+description = "PWR01 idle/decode/prefill/idle; fixed lighthouse decode, unique-prefix fox prefill. Decode and prefill never combined."
+phase_seconds = 60
+idle_settle_seconds = 5
+decode_max_tokens = 1024
+prefill_max_tokens = 1

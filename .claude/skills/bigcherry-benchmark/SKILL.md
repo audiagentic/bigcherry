@@ -52,6 +52,8 @@ any run where hardware execution has not been explicitly authorized.
 
 Source of truth
 
+docs/reference/benchmarks/WORKLOADS.md -- canonical workload IDs/versions and one outside-Git JSONL results index. Every PR/plan performance claim must give an ID@version plus index row_id; compare only that identity and audit configuration warnings. Prefill and decode must be separate.
+
 docs/reference/testing/TEST.md -- "Comparative A/B benchmarking" is
 authoritative for this skill; read it before constructing any run.
 
