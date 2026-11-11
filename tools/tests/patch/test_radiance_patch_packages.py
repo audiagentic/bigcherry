@@ -89,7 +89,7 @@ PIN_BLOBS = {
     },
     RAD0009: {
         "core/bc_serving_manifest.h": (None, "c9fd765"),
-        "core/bc_serving_manifest.cpp": (None, "b8facc0"),
+        "core/bc_serving_manifest.cpp": (None, "0713835"),
         "core/CMakeLists.txt": ("921debd", "8750342"),
         "core/main.cpp": ("4cb6d43", "7feb7b6"),
     },
@@ -826,6 +826,7 @@ class TestPlanMemoryPatch(unittest.TestCase):
             for expected in (
                 ("bc_plan_memory_note(cfg_, facts, vb, emb_bytes, wfs, ngram_bytes, ck_slot, host_arenas, kv_floor, ctx, "
                  "ranks_[0]->program);"),
+                "if (ri == 0) bc_plan_memory_note_ranks(rank_cfg_);",
                 "RAD_TRY(bc_plan_memory_done());",
             ):
                 self.assertIn(expected, " ".join(added))
@@ -841,13 +842,65 @@ class TestPlanMemoryPatch(unittest.TestCase):
             bringup = (root / "core/engine_bringup.cpp").read_text(encoding="utf-8")
             self.assertIn("    RAD_TRY(plan());\n    RAD_TRY(bc_plan_memory_done());\n    RAD_TRY(load_weights());", bringup)
             resolve = bringup.index("RAD_TRY(vram_budget_resolve(cfg_, facts, &vb));")
+            split = bringup.index("vram_budget_rank_split(")
+            rank_cfg = bringup.index("const Config& rc = rank_cfg_[ri];")
             note = bringup.index("bc_plan_memory_note(cfg_, facts, vb,")
+            self.assertLess(split, rank_cfg)
+            self.assertLess(note, rank_cfg)
             self.assertLess(resolve, note)
+            rank_note = bringup.index("bc_plan_memory_note_ranks(rank_cfg_)")
+            self.assertLess(split, rank_note)
+            self.assertLess(rank_cfg, rank_note)
             # RSC08 S4: the live plan is checked right after the VRAM split, before any pool is configured
             self.assertLess(note, bringup.index("r->pools.configure("))
             self.assertLess(note, bringup.index("int Engine::start()"))
         finally:
             temp.cleanup()
+
+    def test_p1_native_rank_demand_is_post_split_and_v1_plan_is_unchanged(self):
+        temp, root = self._applied()
+        try:
+            source = (root / "core/engine_bringup.cpp").read_text()
+            plan = (root / "core/bc_plan_memory.cpp").read_text()
+            flags = (root / "core/bc_plan_check.cpp").read_text()
+            manifest = (root / "core/bc_serving_manifest.cpp").read_text()
+            assert source.index("bc_plan_memory_note(cfg_, facts, vb,") < source.index("vram_budget_rank_split(")
+            assert source.index("vram_budget_rank_split(") < source.index(
+                "if (ri == 0) bc_plan_memory_note_ranks(") < source.index("r->pools.configure(")
+            assert "c.vram_weights_mib + (__int128)c.vram_kv_mib" in plan
+            assert "f.n_queues * f.queue_bytes" in plan
+            assert '"radiance_p1_rank_demand"' in plan
+            assert "g_rank_gpu" in plan
+            assert "g_rank_facts = facts;" in plan
+            assert "void bc_plan_memory_note_ranks(" in plan
+            assert source.count("bc_plan_memory_note_ranks(rank_cfg_);") == 1
+            assert "--plan-memory-ranks" in flags
+            assert 'g_store.push_back("--plan-memory-ranks");' in manifest
+            assert "out << v1::encode(g_plan).dump(2)" in plan
+            assert (FIXTURE / "core/engine_bringup.cpp").read_text().find(
+                "if (ri == 0) bc_plan_memory_note_ranks(") == -1
+            assert (FIXTURE / "core/engine_bringup.cpp").read_text().find(
+                "g_rank_gpu") == -1
+        finally:
+            temp.cleanup()
+
+    def test_p1_rank_hook_fails_closed_on_missing_or_ambiguous_anchor(self):
+        patches = list(_load(RAD0011))
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            shutil.copytree(FIXTURE, root, dirs_exist_ok=True)
+            source = root / "core/engine_bringup.cpp"
+            original = source.read_text()
+            needle = "        const Config& rc = rank_cfg_[ri];"
+            assert original.count(needle) == 1
+            for changed in (original.replace(needle, ""),
+                            original.replace(needle, needle + "\\n" + needle)):
+                source.write_text(changed)
+                result = apply_all(list(_load(RAD0009)) + patches, root)
+                self.assertFalse(all(r.ok for r in result))
+                self.assertEqual(source.read_text(), changed)
+                self.assertFalse((root / "core/bc_plan_memory.cpp").exists())
+                source.write_text(original)
 
     def test_both_builds_compile_one_source_list(self):
         """The serving component and radiance's core include the same bc_serving_v1.cmake: the library is defined there

@@ -55,8 +55,35 @@ target_link_libraries(bc_serving PUBLIC radiance::abi)
 target_include_directories(bc_serving PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/third_party"
                            "${CMAKE_CURRENT_BINARY_DIR}/generated")
 
+# Inactive P1 native live-room publication. This option is linked into
+# bc-serve but does not generate or activate a v2 serving manifest.
+add_library(bc_serving_v2_p1_live STATIC v2/p1_live_room.cpp v2/error.cpp)
+target_link_libraries(bc_serving_v2_p1_live PUBLIC radiance::abi)
+target_compile_features(bc_serving_v2_p1_live PUBLIC cxx_std_20)
+target_include_directories(bc_serving_v2_p1_live PUBLIC
+  "${CMAKE_CURRENT_SOURCE_DIR}" "${RADIANCE_SRC}/vendor")
+
+# Inactive P1 native measurement publisher, callable only by explicit command.
+add_library(bc_serving_v2_generated STATIC generated/v2/serving_codec.cpp
+  v2/error.cpp v2/strict_json.cpp)
+target_link_libraries(bc_serving_v2_generated PUBLIC radiance::abi)
+target_compile_features(bc_serving_v2_generated PUBLIC cxx_std_20)
+target_include_directories(bc_serving_v2_generated PUBLIC
+  "${CMAKE_CURRENT_SOURCE_DIR}" "${RADIANCE_SRC}/vendor")
+add_library(bc_serving_v2_p1 STATIC v2/p1_measurement.cpp)
+target_link_libraries(bc_serving_v2_p1 PUBLIC bc_serving_v2_generated)
+target_include_directories(bc_serving_v2_p1 PUBLIC
+  "${CMAKE_CURRENT_SOURCE_DIR}/../moe-remote")
+target_compile_features(bc_serving_v2_p1 PUBLIC cxx_std_20)
+add_library(bc_serving_v2_p1_producer STATIC v2/p1_producer.cpp)
+target_link_libraries(bc_serving_v2_p1_producer PUBLIC
+  bc_serving bc_serving_v2_p1 bc_serving_v2_p1_live)
+target_include_directories(bc_serving_v2_p1_producer PUBLIC
+  "${CMAKE_CURRENT_SOURCE_DIR}/../moe-remote")
+target_compile_features(bc_serving_v2_p1_producer PUBLIC cxx_std_20)
+
 add_executable(bc-serve main.cpp)
-target_link_libraries(bc-serve PRIVATE bc_serving)
+target_link_libraries(bc-serve PRIVATE bc_serving_v2_p1_producer)
 set_target_properties(bc-serve PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/bin")
 install(TARGETS bc-serve RUNTIME DESTINATION radiance_home/bin)
 
@@ -91,12 +118,6 @@ if(BUILD_TESTING)
     BC_CONTRACT_RADIANCE_SRC="${RADIANCE_SRC}")
   add_test(NAME bc_contract_check COMMAND bc_contract_check)
   # S9: compile and test the inactive generated v2 codec, never production linked.
-  add_library(bc_serving_v2_generated STATIC EXCLUDE_FROM_ALL
-    generated/v2/serving_codec.cpp v2/error.cpp v2/strict_json.cpp)
-  target_link_libraries(bc_serving_v2_generated PUBLIC radiance::abi)
-  target_compile_features(bc_serving_v2_generated PUBLIC cxx_std_20)
-  target_include_directories(bc_serving_v2_generated PUBLIC
-    "${CMAKE_CURRENT_SOURCE_DIR}" "${RADIANCE_SRC}/vendor")
   # S8: inactive typed resource and handoff rules, linked only by card-free tests.
   add_library(bc_serving_v2_s8 STATIC EXCLUDE_FROM_ALL v2/s8_rules.cpp)
   target_link_libraries(bc_serving_v2_s8 PUBLIC bc_serving_v2_generated)
@@ -116,6 +137,57 @@ if(BUILD_TESTING)
   target_compile_definitions(bc_v2_s10_test PRIVATE
     BC_CONTRACT_V2_DOCS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../../../docs/design/serving-manifest-v2")
   add_test(NAME bc_v2_s10_test COMMAND bc_v2_s10_test)
+
+  # P1: inactive native measurement publication (no v1 activation).
+  add_executable(bc_v2_p1_test EXCLUDE_FROM_ALL v2/p1_measurement_test.cpp)
+  target_link_libraries(bc_v2_p1_test PRIVATE bc_serving_v2_p1)
+  add_test(NAME bc_v2_p1_test COMMAND bc_v2_p1_test)
+  add_executable(bc_v2_p1_producer_test EXCLUDE_FROM_ALL v2/p1_producer_test.cpp)
+  target_link_libraries(bc_v2_p1_producer_test PRIVATE bc_serving_v2_p1_producer)
+  add_test(NAME bc_v2_p1_producer_test COMMAND bc_v2_p1_producer_test)
+  # S13a: inactive live host/cgroup/GTT publisher, no production linkage.
+  add_executable(bc_v2_p1_live_test EXCLUDE_FROM_ALL v2/p1_live_room_test.cpp)
+  target_link_libraries(bc_v2_p1_live_test PRIVATE bc_serving_v2_p1_live)
+  add_test(NAME bc_v2_p1_live_test COMMAND bc_v2_p1_live_test)
+
+  # P1 native measurement: inactive card-free native publication.
+  add_library(bc_serving_v2_native_measurement STATIC EXCLUDE_FROM_ALL v2/native_measurement.cpp)
+  target_link_libraries(bc_serving_v2_native_measurement PUBLIC bc_serving_v2_generated)
+  target_include_directories(bc_serving_v2_native_measurement PUBLIC
+    "${CMAKE_CURRENT_SOURCE_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/../moe-remote"
+    "${RADIANCE_SRC}/vendor")
+  target_compile_features(bc_serving_v2_native_measurement PUBLIC cxx_std_20)
+  add_executable(bc_v2_native_measurement_test EXCLUDE_FROM_ALL v2/native_measurement_test.cpp)
+  target_link_libraries(bc_v2_native_measurement_test PRIVATE bc_serving_v2_native_measurement)
+  add_test(NAME bc_v2_native_measurement_test COMMAND bc_v2_native_measurement_test)
+  # S13b: inactive runtime receipts, no production linkage and no v2 activation.
+  add_library(bc_serving_v2_runtime_receipt STATIC EXCLUDE_FROM_ALL v2/runtime_receipt.cpp)
+  target_link_libraries(bc_serving_v2_runtime_receipt PUBLIC bc_serving_v2_generated)
+  target_include_directories(bc_serving_v2_runtime_receipt PUBLIC
+    "${CMAKE_CURRENT_SOURCE_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/../moe-remote" "${RADIANCE_SRC}/vendor")
+  target_compile_features(bc_serving_v2_runtime_receipt PUBLIC cxx_std_20)
+  # Explicit v2-only collector reads the actual worker shared-memory transport.
+  # Not installed, not built by default and never linked into v1 production.
+  add_executable(bc_v2_runtime_receipt_live EXCLUDE_FROM_ALL v2/runtime_receipt_live.cpp)
+  target_link_libraries(bc_v2_runtime_receipt_live PRIVATE
+    bc_serving_v2_runtime_receipt bc_jcs)
+  add_executable(bc_v2_runtime_receipt_test EXCLUDE_FROM_ALL v2/runtime_receipt_test.cpp)
+  target_link_libraries(bc_v2_runtime_receipt_test PRIVATE bc_serving_v2_runtime_receipt)
+  add_test(NAME bc_v2_runtime_receipt_test COMMAND bc_v2_runtime_receipt_test)
+  add_custom_target(bc_v2_runtime_receipt_check
+    COMMAND $<TARGET_FILE:bc_v2_runtime_receipt_test>
+    DEPENDS bc_v2_runtime_receipt_test)
+  add_executable(bc_v2_runtime_receipt_live_test EXCLUDE_FROM_ALL
+    v2/runtime_receipt_live_test.cpp)
+  target_link_libraries(bc_v2_runtime_receipt_live_test PRIVATE bc_serving_v2_runtime_receipt bc_jcs)
+  add_dependencies(bc_v2_runtime_receipt_live_test bc_v2_runtime_receipt_live)
+  target_compile_definitions(bc_v2_runtime_receipt_live_test PRIVATE
+    BC_CONTRACT_V2_DOCS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../../../docs/design/serving-manifest-v2")
+  add_test(NAME bc_v2_runtime_receipt_live_test
+    COMMAND bc_v2_runtime_receipt_live_test $<TARGET_FILE:bc_v2_runtime_receipt_live>)
+  add_custom_target(bc_v2_runtime_receipt_live_check
+    COMMAND $<TARGET_FILE:bc_v2_runtime_receipt_live_test> $<TARGET_FILE:bc_v2_runtime_receipt_live>
+    DEPENDS bc_v2_runtime_receipt_live_test bc_v2_runtime_receipt_live)
 
   add_executable(bc_v2_codec_test EXCLUDE_FROM_ALL contract/v2_codec_test.cpp)
   target_link_libraries(bc_v2_codec_test PRIVATE bc_serving_v2_generated bc_serving_v1)

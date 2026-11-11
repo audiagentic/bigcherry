@@ -1,5 +1,61 @@
 # Changelog
 
+## [1.39.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.38.1...bc-platform-1.39.0) (2026-11-11)
+
+
+### New and changed
+
+* **rsc11:** stage inactive bounded runtime policy receipts ([#883](https://github.com/audiagentic/bigcherry/issues/883)) ([ff23c8a](https://github.com/audiagentic/bigcherry/commit/ff23c8a444bacdfd4504131743b23047f44e81d1))
+
+## [1.38.1](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.38.0...bc-platform-1.38.1) (2026-11-11)
+
+
+### Fixes
+
+* **rsc11:** carry S8 evidence across runtime and kernel build bumps ([#877](https://github.com/audiagentic/bigcherry/issues/877)) ([8f07300](https://github.com/audiagentic/bigcherry/commit/8f073006635836be30c5c5380a6a0557b54a1e41))
+
+## [1.38.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.37.0...bc-platform-1.38.0) (2026-11-11)
+
+
+### New and changed
+
+* **rsc11:** stage v2 serve supervisor CLI and qualified power gate ([#875](https://github.com/audiagentic/bigcherry/issues/875)) ([0c97cf0](https://github.com/audiagentic/bigcherry/commit/0c97cf05a6566c136a5889e8eb62d853bc2d8665))
+
+## [1.37.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.36.0...bc-platform-1.37.0) (2026-11-11)
+
+
+### New and changed
+
+* **rsc11:** publish native live host room from bc-serve ([#872](https://github.com/audiagentic/bigcherry/issues/872)) ([1d1d151](https://github.com/audiagentic/bigcherry/commit/1d1d1517cd27cbad528c6292a57a31b1aa2b16fd))
+
+## [1.36.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.35.0...bc-platform-1.36.0) (2026-11-11)
+
+
+### New and changed
+
+* **rsc11:** audit S8 calibration rebinds and capture hardware run files ([#870](https://github.com/audiagentic/bigcherry/issues/870)) ([35c8f5f](https://github.com/audiagentic/bigcherry/commit/35c8f5f546bce631f1efaa1e7b386922a663ec92))
+
+## [1.35.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.34.1...bc-platform-1.35.0) (2026-11-11)
+
+
+### New and changed
+
+* **rsc11:** bind P1 measurements to qualified S8 calibration records ([#867](https://github.com/audiagentic/bigcherry/issues/867)) ([067aee8](https://github.com/audiagentic/bigcherry/commit/067aee8c0f54438c0a8d184841e52b52de3b9380))
+
+## [1.34.1](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.34.0...bc-platform-1.34.1) (2026-11-11)
+
+
+### Fixes
+
+* **radiance:** observational RHP01 route coverage and RHP02 duplication audit ([#861](https://github.com/audiagentic/bigcherry/issues/861)) ([6d22500](https://github.com/audiagentic/bigcherry/commit/6d22500ab2e44f6f7ad138f9a6c047fdac04857e))
+
+## [1.34.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.33.0...bc-platform-1.34.0) (2026-11-11)
+
+
+### New and changed
+
+* **rsc11:** inactive native measured inputs and strict S11 consumer (S13 P1) ([#862](https://github.com/audiagentic/bigcherry/issues/862)) ([14d4886](https://github.com/audiagentic/bigcherry/commit/14d488673ecde9b8679358f1d1690893732b5523))
+
 ## [1.33.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.32.0...bc-platform-1.33.0) (2026-11-11)
 
 

@@ -48,9 +48,9 @@ def test_explain_reuses_cpp_inventory_resolution(monkeypatch, capsys):
 def test_live_start_stop_refuse_before_shell_or_gpu(monkeypatch, capsys):
     monkeypatch.setattr(serve.layout_cmds, "_resolve", lambda a: 1 / 0)
     assert serve.cmd_serve(parse("start", "layout", "--run-id", "one")) == 2
-    assert "S6 is a card-free supervisor skeleton" in capsys.readouterr().err
+    assert "S13 v2 activation incomplete" in capsys.readouterr().err
     assert serve.cmd_serve(parse("stop", "one")) == 2
-    assert "cross-process stop is not activated" in capsys.readouterr().err
+    assert "no supervisor record" in capsys.readouterr().err
 
 
 def test_status_reports_records_without_claiming_live_state(

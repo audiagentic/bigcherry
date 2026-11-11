@@ -114,6 +114,30 @@ Steps:
 
 Validation: Exact-count synthetic oracle, bank-generation reuse, delayed events, duplicate rejection, overflow accounting, finite shutdown drain; at least 99% completed-report coverage or the loss documented; no mandatory GPU synchronisation or material throughput change.
 
+## Card-free implementation follow-up (2026-11-11)
+
+The managed package `rad0010_routing_evidence` already carries the counters required by step 2 (issued/produced/completed/credited/overwritten/in-flight/pending, pass weights, age, phase and source step). Do not create another GPU-side counter. This slice corrects a diagnostic-only semantic hazard: `core/runtime/ctx.cpp`'s original `if (!ok) continue;` and `route_[...].credited[bank] = true;` are now preserved verbatim, with observer calls alongside them. A tracking anomaly must be **reported, not used to suppress Radiance's histogram selection or HeatEngine credit**. Patch package output is pinned and idempotent against the included v1.16.0 fixture; its C++ oracle models 2,048/4,096/8,192-token chunks across 32K prefill, same-step MTP multiplicity, 64-output-token decode/verify phase classification, delayed events, ring wrap and pending shutdown. This is not v1.17.0 build or GPU evidence.
+
+The 2026-11-04 2K production measurement above remains the only completed GPU evidence. In particular neither the 4K/8K chunk cases nor a **confirmed 64-row** verification batch has been measured, and the synthetic four-bank wrap is not a GPU saturation test. No queue, backpressure, new GPU collector or per-layer wait has been added.
+
+### Lease-holder hardware command (not executed in this slice)
+
+Run from the BigCherry repository root on the GPU lease host. Build first, **outside the GPU lease**, using the current recipe/pin and ensure the source composition builds. Set `RHP01_BUILD` to the *exact build directory reported by that command*; never select an unrelated newest build. Obtain the exclusive GPU lease before the following starts and keep it through every stop. The explicit experiment files put both arms in the same lab service profile and differ only in `routing_evidence`.
+
+```sh
+# On the lease host, with tools/env/bigcherry-env.sh sourced:
+PYTHONPATH=tools python3 -m bigcherry build --lane radiance-routing-evidence:stock:linux-radiance
+# Record the exact resulting build directory from the successful build.
+agent-lease acquire gpu -- bash tools/lab/radiance/heat-placement/rhp01-coverage.sh \
+  ${BC_WORK_ROOT}/builds/REPLACE_WITH_EXACT_RECORDED_BUILD \
+  ${BC_WORK_ROOT}/runs/rhp01-coverage-lease
+```
+
+The lease-wrapped `rhp01-coverage.sh` runs each 32K prefill at 2K, 4K and 8K chunks both with diagnostics off and on, followed by 64-output-token MTP/mixed multi-stream and a 131K-token, 2K-chunk ring-wrap candidate; it stops every launch, including after a failing benchmark. It leaves the log/manifest provenance collection to the lease holder, since `stream-bench` output alone does not include the rank-local `RHP01` teardown counters.
+
+
+**Collection/gates:** retain model/pin/source digest, exact build path, manifest and run IDs, `--chunk`, helper logs, every `RHP01 rank=...` teardown line (each rank and each phase), throughput and output parity on matched off/on arms. The 131K-token prompt with 2K chunks issues at least 64 prefill steps if the request is actually served at that length, crossing the 32-bank index wrap; it does **not** guarantee GPU lag or overwrite. Record the server's actual accepted prompt length and step count. A 64-*output-token* test likewise does not prove a 64-*row* speculative verification batch: obtain a real 64-row verification trace if the scheduler admits one; otherwise mark that cell **not tested**. Compare `issued = credited + overwritten + pending` per phase/rank, `completed` as a status subset, weighted pass totals, oldest age, `upstream_dropped`, rejects and overflow; compare after finite stop/drain, not mid-flight. Require the RHP01 >=99% completed-report coverage gate (or a documented bounded loss), unchanged results/KLD, and no meaningful A/B throughput regression before promoting or removing RHP02's interim collector. If a real run overwrites banks, return to RHP01 step 4 with measured run-ahead depth; do not blindly enlarge the ring or introduce waits.
+
 ## Ledger-events
 
 
@@ -127,3 +151,15 @@ Validation: Exact-count synthetic oracle, bank-generation reuse, delayed events,
 - 2026-11-04T10:07:56.063649+00:00 (updated-by): Updated: section:notes
 - 2026-11-04T10:08:06.091603+00:00 (updated-by): Updated: section:ledger-events
 - 2026-11-04T14:19:00.419056+00:00 (updated-by): Updated: section:ledger-events
+
+## Hardware coverage result (2026-11-11, flashnext-4gpu, build 14dc3b12, lane radiance-routing-evidence)
+
+Runs: `runs/rhp01-coverage-lease` (stream-bench JSON), engine logs `flashnext/engine-1111-230604.log`, `-231347.log`, `-232242.log` (RHP01 lines).
+
+| Arm | Prefill histograms produced / credited / overwritten / lost | Decode produced / credited / pending at stop | Draft (MTP) credited / pending |
+|---|---|---|---|
+| 2K chunk, 32K prompt | 1056 / 1056 / 0 / 0 | 3360 / 3312 / 48 | 75 / 1 |
+| 4K chunk, 32K prompt | 672 / 672 / 0 / 0 | 3312 / 3264 / 48 | |
+| MTP 1/4/8 streams + 131K prompt (ring wrap, 32 banks) | 3840 / 3840 / 0 / 0 | 10656 / 10608 / 48 | 269 / 1 |
+
+No routing evidence is lost or overwritten; `upstream_dropped=0`, delay p95 2 steps. The 48 pending decode histograms are the final step's 48 layers, still in flight at shutdown, not loss. The earlier "~2% credited" reading counted banks still in flight. Diagnostics cost nothing measurable (decode engine tok/s off/on: 124.0/124.7 at 2K, 119.6/120.2 at 4K). The 8K-chunk arm cannot start on flashnext-4gpu (engine out of memory at the measuring start), so it is not measured. Conclusion: no lossless-staging change (Step 4) is needed.

@@ -91,3 +91,21 @@ Merged: S6 Python supervisor #820, S7 preparatory resource derivation #821, PWR0
 Owner-run `runs/pwr-sclk` (12 XTX SCLK/offset arms; `pwr-phases@1`, `prefill-doc-44k@1`, `decode-6stream@1` with indexed result IDs) shows **uncapped -125 mV remains withdrawn** as a current-build apply-profile saving, while **2700 MHz OD_SCLK max with -125 mV** is a **candidate**, *not qualified*. Candidate name `xtx-cap2700-uv125`, discovery row IDs `587b81b5fa3b4835` (power-phase), `b69a3764952f49b2` (doc prefill), `d9177d830ee64d89` (six-stream engine decode); control SCLK-only rows `9331ee86e4b34adc`, `8e2d6ec68b3f4196`, `706d606817fe4288`. These must **not** populate an active apply profile: all profile values in v2 must come from a **separate validating run** with two-XTX BDF identity, fresh probe, digest and immutable manifest/receipt, replicated control, stable thermal/health, output identity, 40-minute soak, host amdgpu error check and verified restoration. Soak and identity are pending; container `dmesg` inaccessible. Neither R9700 nor 6900 XT was tuned.
 
 The future supervisor/manifest must keep **decode and prefill** energy and speed as **distinct** workload-matched measurements. `pwr-phases@1` explicitly labels its power source `sysfs:power1_average` and CPU energy `not_sampled`; sum-of-board-median W / same-phase tok/s is only a GPU-only **proxy J/token**, not integrated energy and never to be paired with separate doc-44k or six-stream throughput. Stock and default power intent remain observe-only; S9/S10/S13 cutover gates and S15 hardware qualification do not advance because of these docs. Future hardware arms: XTX MCLK (device-reported 97–1250 MHz, re-probe), reversible pp_power_profile_mode study (BOOTUP_DEFAULT vs COMPUTE/POWER_SAVING), and separate R9700 power-cap experiment near reported 210 W minimum, with no default adopted. Detailed raw table, V/F CSV medians, sensor caveats and run links: `docs/reference/power-tuning-evidence-2026-11.md`.
+
+
+## S13 addendum preparation (12:05Z, 2026-11-11)
+
+The inactive P1/P2 calibration gate has been merged as PR #867. The
+follow-up slice in the S13 worktree provides
+`tools/bigcherry/serving/calibration_rebind.py` (immutable, audited
+old-to-new build scope rebinds) and
+`tools/bigcherry/serving/s8_lab.py` (GPU-lease-checked hardware candidate
+sweep producing `s8_calibration_measurement` files). Requirements, exact
+runner ABI, no-rebind conditions, and example commands are in
+`docs/design/serving-manifest-v2/s13-calibration-rebind-and-run.md`.
+Neither module activates v2 or treats synthetic tests as hardware evidence.
+Missing qualified records, missing rebinding proof, changed measured scope,
+unclassifiable source diffs, or unverified runner output still fail closed.
+The native hardware runner for applying these new v2 tunables and the final
+single active v2 production cutover remain S13 integration work; S15 hardware
+runs remain lead-owned.

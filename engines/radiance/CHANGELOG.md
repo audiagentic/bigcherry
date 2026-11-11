@@ -1,5 +1,46 @@
 # Changelog
 
+## [1170.22.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.21.0...bc-radiance-1170.22.0) (2026-11-11)
+
+
+### New and changed
+
+* **power:** support card-probed maximum memory clock ([#882](https://github.com/audiagentic/bigcherry/issues/882)) ([eec042d](https://github.com/audiagentic/bigcherry/commit/eec042d0a0418a03ed7cc3d6a243a4dbab8b1fa2))
+* **rsc11:** wire live placement telemetry into inactive v2 receipts (S13 receipts-b) ([#886](https://github.com/audiagentic/bigcherry/issues/886)) ([2aee5ae](https://github.com/audiagentic/bigcherry/commit/2aee5ae3b78035757b39afa9c3dd80c23f893628))
+
+## [1170.21.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.20.0...bc-radiance-1170.21.0) (2026-11-11)
+
+
+### New and changed
+
+* **rsc11:** stage inactive bounded runtime policy receipts ([#883](https://github.com/audiagentic/bigcherry/issues/883)) ([ff23c8a](https://github.com/audiagentic/bigcherry/commit/ff23c8a444bacdfd4504131743b23047f44e81d1))
+
+## [1170.20.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.19.0...bc-radiance-1170.20.0) (2026-11-11)
+
+
+### New and changed
+
+* **rsc11:** stage strict inactive native P1 measurement boundary ([#880](https://github.com/audiagentic/bigcherry/issues/880)) ([2bac0a8](https://github.com/audiagentic/bigcherry/commit/2bac0a87ba87df6f53a5de5e62aa515a5c7e7340))
+
+## [1170.19.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.18.0...bc-radiance-1170.19.0) (2026-11-11)
+
+
+### New and changed
+
+* **rsc11:** publish native live host room from bc-serve ([#872](https://github.com/audiagentic/bigcherry/issues/872)) ([1d1d151](https://github.com/audiagentic/bigcherry/commit/1d1d1517cd27cbad528c6292a57a31b1aa2b16fd))
+
+## [1170.18.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.17.0...bc-radiance-1170.18.0) (2026-11-11)
+
+
+### New and changed
+
+* **rsc11:** inactive native measured inputs and strict S11 consumer (S13 P1) ([#862](https://github.com/audiagentic/bigcherry/issues/862)) ([14d4886](https://github.com/audiagentic/bigcherry/commit/14d488673ecde9b8679358f1d1690893732b5523))
+
+
+### Fixes
+
+* **radiance:** observational RHP01 route coverage and RHP02 duplication audit ([#861](https://github.com/audiagentic/bigcherry/issues/861)) ([6d22500](https://github.com/audiagentic/bigcherry/commit/6d22500ab2e44f6f7ad138f9a6c047fdac04857e))
+
 ## [1170.17.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.16.0...bc-radiance-1170.17.0) (2026-11-11)
 
 

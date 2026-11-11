@@ -4,6 +4,8 @@
 #include "v1/manifest.h"
 #include "plan_cache.h"
 #include "sdk_check.h"
+#include "v2/p1_live_room.h"
+#include "v2/p1_producer.h"
 
 #include <filesystem>
 #include <fstream>
@@ -23,6 +25,10 @@ namespace fs = std::filesystem;
 void usage() {
     std::cout << "bc-serve (RSC01 read-only)\n"
                  "  --detect [--json] [--sys-root DIR]\n"
+                 "  --publish-v2-live-room [--site FILE] [--profile FILE] [--sys-root DIR]\n"
+                 "  --publish-v2-p1 FILE [--site FILE] [--profile FILE] [--sys-root DIR]\n"
+                 "      native P1-b producer: measuring-start paths, ownership, verified pin room; v2 inactive\n"
+                 "      publishes live host/cgroup/AMD pin bytes; v2 still inactive\n"
                  "  --schema\n"
                  "  --validate <site.toml> [profile.toml] [--set key=value]\n"
                  "  --explain [--json] [--site FILE] [--profile FILE] [--set key=value]\n"
@@ -177,6 +183,8 @@ int main(int argc, char** argv) {
         // policy and NO experiment, so the plan it measures is the production plan.
         bool calibration_run = false;
         bool unmeasured = false;
+        bool publish_v2_live_room = false;
+        std::string publish_v2_p1;
         std::vector<fs::path> positional;
         for (int i = 1; i < argc; ++i) {
             const std::string arg = argv[i];
@@ -188,6 +196,8 @@ int main(int argc, char** argv) {
             if (arg == "--help" || arg == "-h") { usage(); return 0; }
             if (arg == "--detect") detection = true;
             else if (arg == "--schema") schema = true;
+            else if (arg == "--publish-v2-live-room") publish_v2_live_room = true;
+            else if (arg == "--publish-v2-p1") publish_v2_p1 = need_arg("--publish-v2-p1");
             else if (arg == "--validate") validation = true;
             else if (arg == "--explain") explanation = true;
             else if (arg == "--json") json = true;
@@ -216,7 +226,8 @@ int main(int argc, char** argv) {
         if (const auto refusal = bc::serving::sdk_refusal("/proc/self/exe", bc::serving::current_sdk_environment()))
             throw std::runtime_error(*refusal);
         const int modes = int(detection) + int(schema) + int(validation) +
-                          int(explanation) + int(!write_manifest.empty());
+                          int(explanation) + int(!write_manifest.empty()) +
+                          int(publish_v2_live_room) + int(!publish_v2_p1.empty());
         const bool plan_mode = !write_manifest.empty();
         if (!plan_mode && (!plan_cache.empty() || !engine_binary.empty()))
             throw std::runtime_error("--plan-cache and --engine-binary go with --write-manifest");
@@ -238,6 +249,59 @@ int main(int argc, char** argv) {
         if (!measured_plan_file.empty() && (!helpers_resident_mib || !engine_resident_mib))
             throw std::runtime_error("--measured-plan needs both --helpers-resident-mib and --engine-resident-mib");
         if (modes != 1) throw std::runtime_error("choose one mode (see --help)");
+        if (!publish_v2_p1.empty()) {
+            if (!positional.empty() || !opts.calibration_cache.empty() || json ||
+                unmeasured || !measured_plan_file.empty() || !plan_extra.empty() ||
+                !live_policy_file.empty() || !experiment_file.empty() || calibration_run ||
+                helpers_resident_mib || engine_resident_mib)
+                throw std::runtime_error(
+                    "--publish-v2-p1 accepts only --site/--profile/--set/--sys-root");
+            std::ifstream in(publish_v2_p1, std::ios::binary);
+            if (!in) throw std::runtime_error("P1 cannot open request " + publish_v2_p1);
+            const std::string bytes((std::istreambuf_iterator<char>(in)), {});
+            const auto request = bc::serving::parse_plan_json(bytes, publish_v2_p1);
+            const auto facts = bc::serving::detect(opts.sys_root);
+            const auto resolved = bc::serving::resolve(opts, facts);
+            const auto record = bc::serving::v2::produce_p1_inputs(
+                resolved, facts, opts.sys_root, request);
+            std::cout << record.dump(2) << '\n';
+            return 0;
+        }
+        if (publish_v2_live_room) {
+            if (!positional.empty() || !opts.calibration_cache.empty() || json ||
+                unmeasured || !measured_plan_file.empty() || !plan_extra.empty() ||
+                !live_policy_file.empty() || !experiment_file.empty() || calibration_run)
+                throw std::runtime_error(
+                    "--publish-v2-live-room accepts only --site/--profile/--set/--sys-root");
+            // Native live-room publication is NOT a v2 startup manifest or a
+            // substitute for fresh engine/owner-map/worker measurements.
+            const auto facts = bc::serving::detect(opts.sys_root);
+            const auto resolved = bc::serving::resolve(opts, facts);
+            std::vector<std::string> selected = resolved.typed.layout.engine_cards;
+            selected.insert(selected.end(), resolved.typed.layout.helper_cards.begin(),
+                            resolved.typed.layout.helper_cards.end());
+            const auto measured = bc::serving::v2::measure_live_room(
+                facts, opts.sys_root, selected);
+            if (!measured)
+                throw std::runtime_error(
+                    "P1 live-room refusal: " + measured.error().path + ": " +
+                    measured.error().message);
+            const auto& room = measured.value();
+            Json record = {
+                {"schema_version", 1}, {"kind", "bc_serve_v2_live_room"},
+                {"layout", resolved.typed.layout.name},
+                {"engine_bdfs", resolved.typed.layout.engine_cards},
+                {"helper_bdfs", resolved.typed.layout.helper_cards},
+                {"resource_inputs", {
+                    {"mem_available_bytes", room.mem_available_bytes},
+                    {"cgroup_headroom_bytes", room.cgroup_headroom_bytes},
+                    {"pin_available_bytes", room.pin_available_bytes}
+                }},
+                {"provenance", room.evidence}
+            };
+            std::cout << record.dump(2) << '\n';
+            return 0;
+        }
         if (schema) {
             if (!positional.empty()) throw std::runtime_error("--schema takes no files");
             std::cout << bc::serving::json_schema().dump(2) << '\n';
