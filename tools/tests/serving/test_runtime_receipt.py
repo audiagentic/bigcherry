@@ -4,14 +4,12 @@ from __future__ import annotations
 import json
 
 import pytest
-
 from bigcherry.serving.runtime_receipt import (
     RuntimeReceiptRefused,
     decode_runtime_receipt,
     parse_runtime_receipt,
     validate_runtime_receipt,
 )
-
 
 DIGEST = "sha256:" + "a" * 64
 
@@ -197,8 +195,6 @@ def test_duplicate_json_member_fails():
     # inject duplicate by raw string replacement
     raw = json.dumps(obj)
     raw = raw.replace('"content_digest"', '"content_digest"\n, "content_digest"', 1)
-    # easier: duplicate top-level kind key via string
-    raw2 = raw.replace('"kind":', '"kind":', 1)
     # construct duplicate kind manually
     text = raw.replace('"kind": "bc_serve_v2_runtime_receipt"', '"kind": "bc_serve_v2_runtime_receipt", "kind": "x"', 1)
     with pytest.raises(RuntimeReceiptRefused):
