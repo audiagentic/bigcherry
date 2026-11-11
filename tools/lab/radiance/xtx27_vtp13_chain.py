@@ -16,6 +16,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+import xtx27_vtp13_checkpoint as checkpoint_source
 import xtx27_vtp_micro as micro
 
 ROOT = micro.ROOT
@@ -26,18 +27,23 @@ LEASE_PURPOSE = "VTP13: concurrent 27B-shaped synthetic BF16 INT8 FFN TP3"
 RECEIPT_TYPE = "VTP13_CONCURRENT_INT8_FFN_AND_PHYSICAL_TP3_COLLECTIVE"
 
 
-def cases(rows: tuple[int, ...], iterations: int, reverse: bool = False) -> list[dict]:
+def cases(rows: tuple[int, ...], iterations: int, reverse: bool = False,
+          checkpoint: dict | None = None) -> list[dict]:
     if not 1 <= iterations <= 30 or any(v > 64 for v in rows):
         raise ValueError("VTP13 bounded at 1..30 iterations and 1..64 rows")
     return [{
         "kind": "ffn_chain",
-        "label": f"ffn-int8-synthetic-bf16-{m}rows" + ("-reverse" if reverse else ""),
+        "label": (f"ffn-int8-checkpoint-bf16-layer{checkpoint['layer']}-{m}rows"
+                  if checkpoint else f"ffn-int8-synthetic-bf16-{m}rows")
+                 + ("-reverse" if reverse else ""),
         "args": ["--rows", str(m), "--iterations", str(iterations),
+                 *(checkpoint_source.hip_args(checkpoint) if checkpoint else ()),
                  *(["--reverse"] if reverse else [])],
-        "data_definition": "full asymmetric 5120/4864/7424 INT8 gate/up/SwiGLU/down,"
-                           " all 3 physical GPUs in flight before barrier,"
-                           " 3x D2H + CPU F32 sum + 3x H2D;"
-                           " independent synthetic BF16-source CPU oracle",
+        "data_definition": ("full asymmetric 5120/4864/7424 INT8 gate/up/SwiGLU/down,"
+                            " all 3 physical GPUs in flight before barrier,"
+                            " 3x D2H + CPU F32 sum + 3x H2D;"
+                            + (" independent CPU W8A8 oracle + BF16-weight reference"
+                               if checkpoint else " independent synthetic BF16-source CPU oracle")),
     } for m in rows]
 
 
@@ -51,6 +57,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--reverse-order", action="store_true")
     p.add_argument("--scratch", type=Path, default=SCRATCH)
     p.add_argument("--hipcc")
+    p.add_argument("--checkpoint", type=Path, help="opt-in original Qwen BF16 weights")
+    p.add_argument("--layer", type=int, default=0)
     a = p.parse_args(argv)
     if a.phase != "plan" and not a.run:
         p.error("--run required for compile and GPU")
@@ -58,25 +66,32 @@ def main(argv: list[str] | None = None) -> int:
         p.error("internal VTP13 GPU subprocess requires lease wrapper")
     try:
         rows = micro.csv_positive(a.rows, upper=64, name="rows")
-        work = cases(rows, a.iterations, a.reverse_order)
-    except ValueError as exc:
+        checkpoint = (checkpoint_source.descriptors(a.checkpoint, a.layer)
+                      if a.checkpoint else None)
+        if not a.checkpoint and a.layer != 0:
+            raise ValueError("--layer requires --checkpoint")
+        work = cases(rows, a.iterations, a.reverse_order, checkpoint)
+    except (ValueError, OSError, KeyError, TypeError) as exc:
         p.error(str(exc))
     digest = micro.source_digest(SOURCES)
     runner_hashes = {
         "driver_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
         "shared_runner_sha256": hashlib.sha256(Path(micro.__file__).read_bytes()).hexdigest(),
+        "checkpoint_reader_sha256": hashlib.sha256(Path(checkpoint_source.__file__).read_bytes()).hexdigest(),
     }
     if a.phase == "plan":
         print(json.dumps({
             "schema": "vtp13-concurrent-ffn-proof-v1",
             "phase": "card_free",
             "precision": "int8-int8-int32-f32, uniform three-card",
-            "checkpoint_payload": False,
-            "bf16_source": "exactly-representable synthetic BF16 values",
+            "checkpoint_payload": bool(checkpoint),
+            "checkpoint_descriptor": checkpoint,
+            "bf16_source": ("original BF16 FFN weights, synthetic BF16 input"
+                            if checkpoint else "exactly-representable synthetic BF16 values"),
             "not_native_radiance_gemm": True,
             "not_a_model_or_serving_benchmark": True,
-            "note": "GPU compute stage and collective are genuine, but synthetic weights"
-                    " and simple scalar-warp kernels cannot establish serving speed.",
+            "note": "GPU compute stage and collective use simple scalar-warp kernels;"
+                    " not qualified for real model serving or native operator speed.",
             "source_digest": digest,
             "runner_hashes": runner_hashes,
             "cases": work,
@@ -99,11 +114,18 @@ def main(argv: list[str] | None = None) -> int:
                  "--run", "--_under-lease", "--rows", a.rows,
                  "--iterations", str(a.iterations), "--scratch", str(scratch),
                  "--hipcc", str(hipcc),
+                 *(["--checkpoint", str(a.checkpoint), "--layer", str(a.layer)]
+                   if a.checkpoint else []),
                  *(["--reverse-order"] if a.reverse_order else [])]
         cmd = ["agent-lease", "acquire", "gpu", "--ttl", "30m",
                "--purpose", LEASE_PURPOSE, "--",
                "env", "VTP04_LEASED=1", *child]
         return subprocess.run(cmd, check=False).returncode
+    # Only the leased subprocess hashes full selected original BF16 payloads.
+    # This provenance is immutable and saved alongside the run receipt.
+    if checkpoint:
+        checkpoint = checkpoint_source.descriptors(a.checkpoint, a.layer, hash_payload=True)
+        work = cases(rows, a.iterations, a.reverse_order, checkpoint)
     out = micro.run_leased(
         scratch=scratch, binaries=binaries, cases=work, digest=digest,
         purpose=LEASE_PURPOSE, receipt_type=RECEIPT_TYPE,
@@ -113,8 +135,10 @@ def main(argv: list[str] | None = None) -> int:
     receipt.update({
         "schema": "vtp13-concurrent-ffn-proof-v1",
         "runner_hashes": runner_hashes,
-        "checkpoint_payload": False,
-        "bf16_source": "synthetic_bf16_exact",
+        "checkpoint_payload": bool(checkpoint),
+        "checkpoint_descriptor": checkpoint,
+        "bf16_source": ("original_bf16_weights_synthetic_bf16_input"
+                        if checkpoint else "synthetic_bf16_exact"),
         "not_native_radiance_gemm": True,
         "not_a_model_or_serving_benchmark": True,
     })

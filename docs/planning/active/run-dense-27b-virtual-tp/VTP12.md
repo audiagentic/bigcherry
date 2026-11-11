@@ -494,3 +494,23 @@ Nearest-rank p95 was repaired and compiled card-free as digest
 `49408233ba43eac2`, still awaiting a GPU re-run. A reversed-order
 start was correctly refused when the power agent reacquired the lease.
 No third matched start, native GEMM A/B or model text generation.
+
+## 2026-11-11 — follow-up: real checkpoint W8A8 and head-local staging
+
+The opt-in uniform-INT8 physical TP3 harness now loads actual
+Qwen3.8-27B layer-0 original BF16 gate/up/down tensors, validates
+index/header offsets and hashes complete selected payloads, then uses
+per-output-channel W8 scales and performs a concurrent 3-device
+FFN->host collective. Both M1 and reverse M4 passed independent CPU
+INT8 oracle (max abs 0) with BF16-weight RMSE ~0.00122/0.00128
+on deterministic BF16 input. These are not native Radiance GEMM or
+serving timings. Raw runs and details are in VTP13.
+
+`xtx27_vtp13_heads.py` stages actual head-local 1/1/2 GQA
+attention softmax and a simplified 4/4/8 key, 12/12/24 value
+recurrent state proof; the GPU experiments await an exclusive lease.
+Card-free original BF16 GDN QKV/conv rank pack reassembles exactly
+to the source hashes. **Still mandatory before FP8/TP3 promotion**:
+native gfx11/gfx12 optimized operator and common activation/scale ABI,
+full original GDN conv/decay/state correctness, matched TP2/TP4
+latency, real 4/6/8-stream throughput, KV admission and model quality.

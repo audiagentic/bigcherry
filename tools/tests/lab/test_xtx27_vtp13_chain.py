@@ -69,6 +69,34 @@ class ConcurrentInt8FfnTests(unittest.TestCase):
                                 chain.micro.source_digest(chain.SOURCES))
         self.assertEqual(chain.micro.source_digest(), before)
 
+    def test_checkpoint_original_bf16_view_is_explicit(self):
+        checkpoint = {
+            "layer": 0, "tensors": {
+                name: {"file": f"/checkpoint/{name}.safetensors", "offset": j * 1000}
+                for j, name in enumerate(("gate", "up", "down"))
+            },
+        }
+        cases = chain.cases((1, 4), 3, reverse=True, checkpoint=checkpoint)
+        self.assertEqual(len(cases), 2)
+        self.assertTrue(all("checkpoint-bf16-layer0" in case["label"] for case in cases))
+        self.assertTrue(all(case["args"][-1] == "--reverse" for case in cases))
+        self.assertEqual(cases[0]["args"].count("--gate-file"), 1)
+        self.assertEqual(cases[0]["args"].count("--down-byte"), 1)
+        self.assertIn("BF16-weight reference", cases[0]["data_definition"])
+
+    def test_checkpoint_kernel_has_original_bf16_and_per_channel_scales(self):
+        source = chain.SOURCE.read_text()
+        for token in (
+            "read_checkpoint_args(argc,argv)",
+            "load_checkpoint_weights(d,checkpoint)",
+            "load_bf16_projection(",
+            "bf16_to_float(",
+            "dev.hgate_scales[j]", "dev.hup_scales[j]", "dev.hdown_scales[j]",
+            "w_scales[output]*x_scales[row]",
+            "checkpoint_bf16_weights_int8_tp3",
+        ):
+            self.assertIn(token, source)
+
     def test_gpu_runner_owns_distinct_gpu_lease_and_refuses_other_owner(self):
         with (patch.dict(os.environ, {"VTP04_LEASED": "1"}),
               patch.object(chain.subprocess, "run", return_value=SimpleNamespace(

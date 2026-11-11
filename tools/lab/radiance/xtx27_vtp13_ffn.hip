@@ -14,6 +14,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <fstream>
 #include <limits>
 #include <stdexcept>
 #include <string>
@@ -27,6 +28,43 @@ constexpr int H = 5120;
 constexpr std::array<int,3> WIDTHS{5120,4864,7424};
 constexpr float W_SCALE = 1.0f / 64.0f;
 constexpr float X_SCALE = 1.0f / 16.0f;
+constexpr int INTERMEDIATE = 17408;
+struct Source { std::string path; uint64_t offset=0; };
+struct CheckpointWeights { bool enabled=false; std::array<Source,3> tensors{}; };
+static const char* argument(int argc,char** argv,const char* option) {
+  for(int i=1;i<argc;++i) if(std::strcmp(argv[i],option)==0) {
+    if(i+1>=argc) throw std::runtime_error(std::string("missing value: ")+option);
+    return argv[i+1];
+  }
+  return nullptr;
+}
+static CheckpointWeights read_checkpoint_args(int argc,char** argv) {
+  CheckpointWeights result;
+  constexpr const char* paths[]={"--gate-file","--up-file","--down-file"};
+  constexpr const char* offsets[]={"--gate-byte","--up-byte","--down-byte"};
+  if (!argument(argc,argv,paths[0])) {
+    for(int j=0;j<3;++j)
+      if(argument(argc,argv,paths[j]) || argument(argc,argv,offsets[j]))
+        throw std::runtime_error("partial BF16 source spec");
+    return result;
+  }
+  result.enabled=true;
+  for (int j=0;j<3;++j) {
+    const char* path=argument(argc,argv,paths[j]);
+    const char* offset=argument(argc,argv,offsets[j]);
+    if(!path || !offset) throw std::runtime_error("partial BF16 source spec");
+    char* end=nullptr;
+    const unsigned long long pos=std::strtoull(offset,&end,10);
+    if(!*offset || *offset=='-' || !end || *end)
+      throw std::runtime_error("invalid tensor absolute byte offset");
+    result.tensors[j]={path,static_cast<uint64_t>(pos)};
+  }
+  return result;
+}
+static float bf16_to_float(uint16_t v) {
+  uint32_t bits=static_cast<uint32_t>(v)<<16;
+  float f=0;std::memcpy(&f,&bits,sizeof(float));return f;
+}
 using Clock = std::chrono::steady_clock;
 static double us(Clock::time_point t) {
   return std::chrono::duration<double, std::micro>(Clock::now() - t).count();
@@ -81,7 +119,7 @@ __global__ void quant_x(const float* x, int8_t* q, int count) {
 // Each wave performs one true INT8 dot-product (integer multiply/accumulate).
 // Deliberately plain baseline, not a claim of a competitive Radiance row kernel.
 __global__ void dot_i8(const int8_t* w, const int8_t* x, const float* x_scales,
-                       float* y, int n, int k) {
+                       const float* w_scales, float* y, int n, int k) {
   const int lane=threadIdx.x%warpSize;
   const int output=blockIdx.x*(blockDim.x/warpSize)+threadIdx.x/warpSize;
   const int row=blockIdx.y;
@@ -95,7 +133,7 @@ __global__ void dot_i8(const int8_t* w, const int8_t* x, const float* x_scales,
   for (int offset=warpSize/2; offset>0; offset/=2)
     acc+=__shfl_down(acc, offset);
   if (lane==0 && output<n) y[static_cast<size_t>(row)*n+output] =
-    static_cast<float>(acc)*(W_SCALE*x_scales[row]);
+    static_cast<float>(acc)*(w_scales[output]*x_scales[row]);
 }
 __global__ void silu_mul(const float* gate,const float* up,float* out,int n) {
   for (int i=blockIdx.x*blockDim.x+threadIdx.x; i<n; i+=gridDim.x*blockDim.x) {
@@ -128,8 +166,12 @@ struct Device {
   hipEvent_t begin=nullptr, ready=nullptr;
   int8_t *wg=nullptr,*wu=nullptr,*wd=nullptr,*xq=nullptr,*midq=nullptr;
   float *x=nullptr,*xs=nullptr,*gate=nullptr,*up=nullptr,*mid=nullptr,
+        *wg_scales=nullptr,*wu_scales=nullptr,*wd_scales=nullptr,
         *mid_scales=nullptr,*partial=nullptr,*result=nullptr;
   std::vector<int8_t> hgate,hup,hdown;
+  std::vector<float> hgate_scales,hup_scales,hdown_scales;
+  std::vector<uint16_t> bgate,bup,bdown;
+  bool original_bf16=false;
   std::vector<double> gpu_us;
 };
 static void generate_weights(Device& d) {
@@ -137,12 +179,63 @@ static void generate_weights(Device& d) {
   d.hgate.resize(static_cast<size_t>(n)*H);
   d.hup.resize(static_cast<size_t>(n)*H);
   d.hdown.resize(static_cast<size_t>(H)*n);
+  d.hgate_scales.assign(n,W_SCALE);
+  d.hup_scales.assign(n,W_SCALE);
+  d.hdown_scales.assign(H,W_SCALE);
   for (int j=0; j<n; ++j) for (int k=0;k<H;++k) {
     d.hgate[static_cast<size_t>(j)*H+k]=bf16_source_weight(0,off+j,k);
     d.hup[static_cast<size_t>(j)*H+k]=bf16_source_weight(1,off+j,k);
   }
   for (int j=0; j<H; ++j) for (int k=0;k<n;++k)
     d.hdown[static_cast<size_t>(j)*n+k]=bf16_source_weight(2,j,off+k);
+}
+// Original BF16 source ranges are supplied by the metadata-verifying Python
+// wrapper. Per-output-channel scales are independent for every physical shard.
+static void load_bf16_projection(const Source& src, int global_rows,int full_k,
+                                 int local_rows,int local_k,int row_start,int col_start,
+                                 std::vector<int8_t>& quant,std::vector<float>& scales,
+                                 std::vector<uint16_t>& original) {
+  std::ifstream file(src.path,std::ios::binary|std::ios::ate);
+  if(!file) throw std::runtime_error("cannot open BF16 tensor shard");
+  const uint64_t expected_end=src.offset+
+      static_cast<uint64_t>(global_rows)*full_k*sizeof(uint16_t);
+  if(file.tellg()<0 || static_cast<uint64_t>(file.tellg())<expected_end)
+    throw std::runtime_error("truncated original BF16 tensor source");
+  const size_t count=static_cast<size_t>(local_rows)*local_k;
+  quant.resize(count); original.resize(count);scales.resize(local_rows);
+  for(int row=0;row<local_rows;++row) {
+    const uint64_t off=src.offset+
+        (static_cast<uint64_t>(row+row_start)*full_k+col_start)*sizeof(uint16_t);
+    file.seekg(static_cast<std::streamoff>(off),std::ios::beg);
+    const size_t base=static_cast<size_t>(row)*local_k;
+    file.read(reinterpret_cast<char*>(original.data()+base),
+              static_cast<std::streamsize>(local_k*sizeof(uint16_t)));
+    if(!file) throw std::runtime_error("truncated original BF16 row payload");
+    float maxabs=0.0f;
+    for(int k=0;k<local_k;++k) {
+      const float v=bf16_to_float(original[base+k]);
+      if(!std::isfinite(v)) throw std::runtime_error("nonfinite original BF16 tensor");
+      maxabs=std::max(maxabs,std::abs(v));
+    }
+    const float scale=maxabs>0.0f ? maxabs/127.0f : 1.0f;
+    scales[row]=scale;
+    for(int k=0;k<local_k;++k) {
+      const float value=nearbyintf(bf16_to_float(original[base+k])/scale);
+      quant[base+k]=static_cast<int8_t>(
+          std::max(-127.0f,std::min(127.0f,value)));
+    }
+  }
+}
+static void load_checkpoint_weights(Device& d,const CheckpointWeights& spec) {
+  if(!spec.enabled) throw std::runtime_error("no BF16 checkpoint sources");
+  const int n=d.width, off=d.offset;
+  load_bf16_projection(spec.tensors[0],INTERMEDIATE,H,n,H,off,0,
+                       d.hgate,d.hgate_scales,d.bgate);
+  load_bf16_projection(spec.tensors[1],INTERMEDIATE,H,n,H,off,0,
+                       d.hup,d.hup_scales,d.bup);
+  load_bf16_projection(spec.tensors[2],H,INTERMEDIATE,H,n,0,off,
+                       d.hdown,d.hdown_scales,d.bdown);
+  d.original_bf16=true;
 }
 static void init(Device& d,int rows,const std::vector<float>& input) {
   HC(hipSetDevice(d.id));
@@ -155,6 +248,9 @@ static void init(Device& d,int rows,const std::vector<float>& input) {
   HC(hipMalloc(reinterpret_cast<void**>(&d.wg),gw));
   HC(hipMalloc(reinterpret_cast<void**>(&d.wu),gw));
   HC(hipMalloc(reinterpret_cast<void**>(&d.wd),dw));
+  HC(hipMalloc(reinterpret_cast<void**>(&d.wg_scales),d.width*sizeof(float)));
+  HC(hipMalloc(reinterpret_cast<void**>(&d.wu_scales),d.width*sizeof(float)));
+  HC(hipMalloc(reinterpret_cast<void**>(&d.wd_scales),H*sizeof(float)));
   HC(hipMalloc(reinterpret_cast<void**>(&d.x),hbytes));
   HC(hipMalloc(reinterpret_cast<void**>(&d.xq),static_cast<size_t>(rows)*H));
   HC(hipMalloc(reinterpret_cast<void**>(&d.xs),rows*sizeof(float)));
@@ -168,6 +264,12 @@ static void init(Device& d,int rows,const std::vector<float>& input) {
   HC(hipMemcpyAsync(d.wg,d.hgate.data(),gw,hipMemcpyHostToDevice,d.stream));
   HC(hipMemcpyAsync(d.wu,d.hup.data(),gw,hipMemcpyHostToDevice,d.stream));
   HC(hipMemcpyAsync(d.wd,d.hdown.data(),dw,hipMemcpyHostToDevice,d.stream));
+  HC(hipMemcpyAsync(d.wg_scales,d.hgate_scales.data(),
+                    d.width*sizeof(float),hipMemcpyHostToDevice,d.stream));
+  HC(hipMemcpyAsync(d.wu_scales,d.hup_scales.data(),
+                    d.width*sizeof(float),hipMemcpyHostToDevice,d.stream));
+  HC(hipMemcpyAsync(d.wd_scales,d.hdown_scales.data(),
+                    H*sizeof(float),hipMemcpyHostToDevice,d.stream));
   HC(hipMemcpyAsync(d.x,input.data(),hbytes,hipMemcpyHostToDevice,d.stream));
   std::vector<float> ones(rows,X_SCALE);
   HC(hipMemcpyAsync(d.xs,ones.data(),rows*sizeof(float),hipMemcpyHostToDevice,d.stream));
@@ -180,12 +282,12 @@ static void launch(Device& d,int rows) {
   HC(hipEventRecord(d.begin,d.stream));
   quant_x<<<blocks(rows*H),256,0,d.stream>>>(d.x,d.xq,rows*H);
   const dim3 grid((n+7)/8,rows);
-  dot_i8<<<grid,256,0,d.stream>>>(d.wg,d.xq,d.xs,d.gate,n,H);
-  dot_i8<<<grid,256,0,d.stream>>>(d.wu,d.xq,d.xs,d.up,n,H);
+  dot_i8<<<grid,256,0,d.stream>>>(d.wg,d.xq,d.xs,d.wg_scales,d.gate,n,H);
+  dot_i8<<<grid,256,0,d.stream>>>(d.wu,d.xq,d.xs,d.wu_scales,d.up,n,H);
   silu_mul<<<blocks(rows*n),256,0,d.stream>>>(d.gate,d.up,d.mid,rows*n);
   quant_mid<<<rows,256,0,d.stream>>>(d.mid,d.midq,d.mid_scales,n);
   dot_i8<<<dim3((H+7)/8,rows),256,0,d.stream>>>(
-    d.wd,d.midq,d.mid_scales,d.partial,H,n);
+    d.wd,d.midq,d.mid_scales,d.wd_scales,d.partial,H,n);
   HC(hipGetLastError());
   HC(hipEventRecord(d.ready,d.stream));
 }
@@ -200,13 +302,22 @@ static std::vector<float> cpu_reference(const std::array<Device,3>& d,
     for (int row=0;row<rows;++row) {
       for (int j=0;j<n;++j) {
         int64_t ga=0,up=0;
+        double bf_gate=0.0,bf_up=0.0;
         for (int k=0;k<H;++k) {
           const int xq=static_cast<int>(nearbyintf(input[static_cast<size_t>(row)*H+k]/X_SCALE));
           ga+=static_cast<int>(dev.hgate[static_cast<size_t>(j)*H+k])*xq;
           up+=static_cast<int>(dev.hup[static_cast<size_t>(j)*H+k])*xq;
+          if(!down_quant && dev.original_bf16) {
+            bf_gate+=bf16_to_float(dev.bgate[static_cast<size_t>(j)*H+k])*
+                input[static_cast<size_t>(row)*H+k];
+            bf_up+=bf16_to_float(dev.bup[static_cast<size_t>(j)*H+k])*
+                input[static_cast<size_t>(row)*H+k];
+          }
         }
-        mid[j]=swiglu(static_cast<float>(ga)*(W_SCALE*X_SCALE),
-                      static_cast<float>(up)*(W_SCALE*X_SCALE));
+        mid[j]=(!down_quant && dev.original_bf16)
+            ? swiglu(static_cast<float>(bf_gate),static_cast<float>(bf_up))
+            : swiglu(static_cast<float>(ga)*(dev.hgate_scales[j]*X_SCALE),
+                     static_cast<float>(up)*(dev.hup_scales[j]*X_SCALE));
       }
       float scale=1.0f;
       if (down_quant) {
@@ -224,11 +335,18 @@ static std::vector<float> cpu_reference(const std::array<Device,3>& d,
         if (down_quant) {
           int64_t sum=0;
           for (int k=0;k<n;++k) sum+=static_cast<int>(w[k])*midq[k];
-          val=static_cast<float>(sum)*(W_SCALE*scale);
+          val=static_cast<float>(sum)*(dev.hdown_scales[j]*scale);
         } else {
           // BF16-source weights and BF16-source input, accumulated in F32;
           // SiLU intermediate is unquantized FP32. Reference, not BF16-model quality.
-          for (int k=0;k<n;++k) val+=static_cast<float>(w[k])*W_SCALE*mid[k];
+          if(dev.original_bf16) {
+            double reference=0.0;
+            for(int k=0;k<n;++k)
+              reference+=bf16_to_float(dev.bdown[static_cast<size_t>(j)*n+k])*mid[k];
+            val=static_cast<float>(reference);
+          } else {
+            for (int k=0;k<n;++k) val+=static_cast<float>(w[k])*W_SCALE*mid[k];
+          }
         }
         out[static_cast<size_t>(row)*H+j]+=val;
       }
@@ -239,6 +357,7 @@ static std::vector<float> cpu_reference(const std::array<Device,3>& d,
 static void destroy(Device& d) {
   HC(hipSetDevice(d.id)); HC(hipStreamSynchronize(d.stream));
   HC(hipFree(d.wg)); HC(hipFree(d.wu)); HC(hipFree(d.wd));
+  HC(hipFree(d.wg_scales));HC(hipFree(d.wu_scales));HC(hipFree(d.wd_scales));
   HC(hipFree(d.x)); HC(hipFree(d.xq)); HC(hipFree(d.xs));
   HC(hipFree(d.gate)); HC(hipFree(d.up)); HC(hipFree(d.mid));
   HC(hipFree(d.midq)); HC(hipFree(d.mid_scales));
@@ -251,6 +370,7 @@ int main(int argc,char** argv) {
     const int rows=positive_arg(argc,argv,"--rows",1);
     const int iterations=positive_arg(argc,argv,"--iterations",5);
     if (rows>64 || iterations>30) throw std::runtime_error("bounded to <=64 rows and <=30 iterations");
+    const CheckpointWeights checkpoint=read_checkpoint_args(argc,argv);
     bool reverse=false;
     for (int i=1;i<argc;++i) if (std::strcmp(argv[i],"--reverse")==0) reverse=true;
     const auto ids=physical_devices();
@@ -263,7 +383,11 @@ int main(int argc,char** argv) {
     std::vector<float> input(static_cast<size_t>(rows)*H);
     for (int r=0;r<rows;++r) for(int k=0;k<H;++k)
       input[static_cast<size_t>(r)*H+k]=bf16_source_input(r,k);
-    for (auto& d:dev) { generate_weights(d); init(d,rows,input); }
+    for (auto& d:dev) {
+      if(checkpoint.enabled) load_checkpoint_weights(d,checkpoint);
+      else generate_weights(d);
+      init(d,rows,input);
+    }
     // The oracle is computed separately from GPU outputs, before GPU timing.
     const auto expected=cpu_reference(dev,input,rows,true);
     const auto bf16ref=cpu_reference(dev,input,rows,false);
@@ -328,14 +452,17 @@ int main(int argc,char** argv) {
       }
     }
     std::printf("mode,rows,widths,wall_us_p50,wall_us_p95,compute_barrier_us_p50,d2h_us_p50,host_f32_sum_us_p50,h2d_us_p50,gpu0_us_p50,gpu1_us_p50,gpu2_us_p50,oracle_max_abs,oracle_max_rel,bf16_source_max_abs,bf16_source_rmse,packets,oracle\n");
-    std::printf("synthetic_bf16_w8a8_ffn_tp3,%d,5120/4864/7424,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.7g,%.7g,%.7g,%.7g,3,PASS\n",
+    std::printf("%s,%d,5120/4864/7424,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.7g,%.7g,%.7g,%.7g,3,PASS\n",
+      checkpoint.enabled ? "checkpoint_bf16_weights_int8_tp3"
+                         : "synthetic_bf16_w8a8_ffn_tp3",
       rows,percentile(total_times,.5),percentile(total_times,.95),
       percentile(barriers,.5),percentile(d2hs,.5),percentile(sums,.5),
       percentile(h2ds,.5),percentile(dev[0].gpu_us,.5),
       percentile(dev[1].gpu_us,.5),percentile(dev[2].gpu_us,.5),
       maxabs,maxrel,maxbf,std::sqrt(bfse/count));
-    std::printf("physical_device_ids=%d,%d,%d; checkpoints=synthetic_bf16_exact; actual_qwen_tensor_payloads=NO; radiance_native_gemm=NO; real_gemms=YES; collective=three_host_packets_f32\n",
-      ids[0],ids[1],ids[2]);
+    std::printf("physical_device_ids=%d,%d,%d; source=%s; actual_qwen_tensor_payloads=%s; radiance_native_gemm=NO; real_gemms=YES; collective=three_host_packets_f32\n",
+      ids[0],ids[1],ids[2],checkpoint.enabled ? "original_bf16_weights" : "synthetic_bf16_exact",
+      checkpoint.enabled ? "YES" : "NO");
     for (float* ptr:host) HC(hipHostFree(ptr));
     for (auto& d:dev) destroy(d);
     return 0;
