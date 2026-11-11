@@ -18,10 +18,10 @@ inline constexpr std::string_view kApiVersion = "bigcherry/v2";
 inline constexpr std::string_view kKind = "ServingManifest";
 inline constexpr int64_t kContractVersion = 2;
 // sha256 of the JCS validation schema without annotations (contract/README.md); the build pins it.
-inline constexpr std::string_view kFingerprint = "sha256:eee7337ae0291efc1731d8ed865223e06ff06178da967b6624d32a1068c597b0";
+inline constexpr std::string_view kFingerprint = "sha256:954a37362189cebc01b0c2ef762cbce7ca8fdbf3e39dff335274e7f22b61e75f";
 // sha256 of the schema plus the frozen semantics it does not express (classes, lifecycle, Radiance bindings,
 // reader error codes); README.md.
-inline constexpr std::string_view kSemanticFingerprint = "sha256:17c18b329942595e65e6ac5c1ef61590b309509d61242488055d9f9bac8500e4";
+inline constexpr std::string_view kSemanticFingerprint = "sha256:960fcc1276b8c0c0ae3519260e2906c054d64862d110679a9e5df5cb9ff16f31";
 // spec §11 amendment 8: the deepest container nesting a valid document can have (the root object is 1),
 // derived from the closed schema by the generator. The strict reader refuses anything deeper.
 inline constexpr size_t kMaxDepth = 9;
@@ -34,14 +34,26 @@ enum class CalibrationKey : uint8_t {
     kCheckpointShare,
     kHostKvTierTargetMib,
     kHostLedgerMarginMib,
+    kHandoffMaxRows,
+    kHandoffSmallRows,
+    kHandoffGemvLargeRows,
+    kHandoffMoeDownTile,
+    kHandoffHistogramPeriodS,
+    kHandoffLiveCadenceNs,
 };
-inline constexpr std::array<std::string_view, 6> kCalibrationKeyNames = {
+inline constexpr std::array<std::string_view, 12> kCalibrationKeyNames = {
     "host_reserve.floor_mib",
     "host_reserve.total_fraction_ppm",
     "kv_backing_floor.fraction_ppm",
     "checkpoint_share",
     "host_kv_tier.target_mib",
     "host_ledger_margin.mib",
+    "handoff.max_rows",
+    "handoff.small_rows",
+    "handoff.gemv_large_rows",
+    "handoff.moe_down_tile",
+    "handoff.histogram_period_s",
+    "handoff.live_cadence_ns",
 };
 
 // Affinity: Worker CPU affinity: `auto` or `all`.

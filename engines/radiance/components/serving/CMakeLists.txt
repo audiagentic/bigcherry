@@ -97,6 +97,15 @@ if(BUILD_TESTING)
   target_compile_features(bc_serving_v2_generated PUBLIC cxx_std_20)
   target_include_directories(bc_serving_v2_generated PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}" "${RADIANCE_SRC}/vendor")
+  # S8: inactive typed resource and handoff rules, linked only by card-free tests.
+  add_library(bc_serving_v2_s8 STATIC EXCLUDE_FROM_ALL v2/s8_rules.cpp)
+  target_link_libraries(bc_serving_v2_s8 PUBLIC bc_serving_v2_generated)
+  target_compile_features(bc_serving_v2_s8 PUBLIC cxx_std_20)
+  target_include_directories(bc_serving_v2_s8 PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
+  add_executable(bc_v2_s8_test EXCLUDE_FROM_ALL v2/s8_rules_test.cpp)
+  target_link_libraries(bc_v2_s8_test PRIVATE bc_serving_v2_s8)
+  add_test(NAME bc_v2_s8_test COMMAND bc_v2_s8_test)
+
   add_executable(bc_v2_codec_test EXCLUDE_FROM_ALL contract/v2_codec_test.cpp)
   target_link_libraries(bc_v2_codec_test PRIVATE bc_serving_v2_generated bc_serving_v1)
   target_compile_definitions(bc_v2_codec_test PRIVATE
