@@ -59,12 +59,13 @@ bool persist(const std::string& directory, const std::string& run_id,
 }
 
 int main(int argc, char** argv) {
-  if (argc != 11 || std::string(argv[1]) != "--manifest" ||
+  if (argc != 13 || std::string(argv[1]) != "--manifest" ||
       std::string(argv[3]) != "--run-id" ||
       std::string(argv[5]) != "--expected-dev" ||
       std::string(argv[7]) != "--expected-ino" ||
-      std::string(argv[9]) != "--record-dir")
-    return refuse("usage: --manifest V2.json --run-id RUN --expected-dev DEV --expected-ino INO --record-dir DIR");
+      std::string(argv[9]) != "--expected-manifest-digest" ||
+      std::string(argv[11]) != "--record-dir")
+    return refuse("usage: --manifest V2.json --run-id RUN --expected-dev DEV --expected-ino INO --expected-manifest-digest DIGEST --record-dir DIR");
   const std::string run_id = argv[4];
   uint64_t expected_dev = 0, expected_ino = 0;
   if (!decimal(argv[6], &expected_dev) || !decimal(argv[8], &expected_ino))
@@ -81,7 +82,7 @@ int main(int argc, char** argv) {
     return refuse("manifest is not a valid v2 contract");
   std::string digest, why;
   if (!bc::serving::manifest_content_digest(parsed.value(), &digest, &why) ||
-      digest != manifest.metadata.content_digest)
+      digest != manifest.metadata.content_digest || digest != argv[10])
     return refuse("manifest content digest does not verify");
   if (!manifest.spec.handoff)
     return refuse("manifest has no worker handoff");
@@ -113,7 +114,7 @@ int main(int argc, char** argv) {
   receipt["provenance"] = "worker-shm:" + shm_name + ";dev=" +
                           std::to_string(expected_dev) + ";ino=" +
                           std::to_string(expected_ino);
-  if (!persist(argv[10], run_id, receipt))
+  if (!persist(argv[12], run_id, receipt))
     return refuse("run receipt already exists or cannot be durably persisted");
   return 0;
 }
