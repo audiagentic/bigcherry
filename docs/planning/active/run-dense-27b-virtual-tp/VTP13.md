@@ -901,3 +901,66 @@ GPU path against these original-source CPU outputs and integrate
 GDN/attention/FFN with embedding, head and 64-layer residual
 handoff. VTP20 connected GDN block GPU acceptance remains
 pending due to another agent's exclusive power sweep lease.
+
+
+### 2026-11-11 — VTP23 original-BF16 full-attention GPU chain staged
+
+VTP23 is the actual original-checkpoint full-attention GPU
+counterpart to VTP22's layer-3 M1/M4 CPU reference, moving
+beyond the earlier synthetic VTP13 head-kernel microbenchmark.
+
+tools/lab/radiance/xtx27_vtp23_attention_original.hip runs on
+one stream on each *physical* XTX0/XTX1/R9700. All original
+BF16 Q/G, K, V and O projection tensors use the byte-exact
+checkpoint weight packs from VTP22. The chain performs:
+
+- Checkpoint BF16 Q/G (6/6/12 interleaved query/gate heads),
+  K/V (1/1/2 original KV heads) GEMVs with the same
+  original BF16 weighted pre-RMSNorm input on every GPU
+- Original replicated Q/K 256-wide zero-centred RMSNorm,
+  first-64-dimension partial RoPE for text-only positions,
+  causal six-query-per-KV grouped softmax with 12 R9700
+  query heads sharing TWO local KV groups in one launch
+- Actual sigmoid Q-projection output gate, original
+  BF16 O projection input-column shards 1536/1536/3072,
+  one F32 partial per physical GPU, pinned asynchronous D2H
+  host reduction in XTX0/XTX1/R9700 order, BF16 residual
+  addition and broadcast to all three devices
+
+The GPU runner xtx27_vtp23_attention_gpu.py enforces immutable
+real checkpoint/source payload fingerprints and independent
+VTP22 source-hashed CPU-oracle receipts before acquiring
+a fresh exclusive GPU lease. It compares stage outputs
+(Q/G raw, K/V raw, normalized/rotated Q/K, causal/gated
+attention, three O partials, reduced output and final
+BF16 residual) against original BF16 CPU tensors. It
+reports exact BF16 final residual matches, stage maximum
+errors, per-GPU and full wall p50/p95 and refuses on any
+numerical/lease failure.
+
+The source **compiles for gfx1100 and gfx1201**, digest
+bf8430b1407dec2e..., and card-free validation plus focused
+VTP tests pass. **GPU hardware acceptance is still pending**
+because the other agent owns the exclusive XTX power-sweep
+lease. VTP23 has NOT yet demonstrated real model output,
+correct physical KV retention, streaming text tokens,
+native quant kernels or full-model superiority over TP2.
+
+M1 GPU acceptance when owner releases the GPUs:
+
+    python3 tools/lab/radiance/xtx27_vtp23_attention_gpu.py --phase gpu --run --iterations 5 \
+      --packet-receipt "$BC_WORK_ROOT/xtx27-prefill/vtp22-original-full-attention/layer3-m1-20261111T041209305980Z/summary.json" \
+      --cpu-receipt "$BC_WORK_ROOT/xtx27-prefill/vtp22-original-full-attention-cpu/layer3-m1-20261111T041245628121Z/summary.json"
+
+For M4 use layer3-m4-20261111T041210935826Z packet and
+layer3-m4-20261111T041247681924Z CPU receipt.
+Both need numeric GPU PASS plus source receipt; no
+model-wide performance claims from this stage.
+
+After original full GDN block VTP20 and original
+full attention VTP23 pass GPU oracles, the next
+work is the actual model graph/engine: FFN, residual
+handoff, embed/head, persistent GDN/conv and KV
+state across decode/prefill, 64-layer original
+model and 4/6/8 stream TP2/TP3 tok/s. Do not
+enable experimental kernels as production defaults.
