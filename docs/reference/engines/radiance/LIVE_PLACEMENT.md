@@ -104,3 +104,14 @@ record atomically into the store and a plain start then carries the derived `liv
 - A transaction takes 1.5-2.0 s (p50/p95) and overlaps a decode step; two on-arm rounds in the long-context run were slowed by one.
 - Cold-prompt tail load measured with the policy off (HL04: tail 11.36 ms and 2,874 routes against XTX 3.5-3.7 ms per layer call) is the
   static layout; re-measure policy-on before using it as the tail's cost.
+
+## RHP20 forced-migration stress, 2026-11-11 (flashnext-2xtx-rdna2-tail, -tail-combine)
+
+Build `daf793f1.../a29e62ad...`, lab experiment with 1,002 scheduled AUTO_SWAP proposals, concurrent 6-stream decode (MTP 3) and `prefill-doc-44k@v1`. Runs: `runs/rhp20-tail-forced-1000`, `runs/rhp20-tail-combine-forced-1000`.
+
+| Cell | Helper 0 attempted / committed / aborted / inflight | Decode, 6 streams | 44k doc prefill |
+|---|---|---|---|
+| flashnext-2xtx-rdna2-tail | 1002 / 1002 / 0 / 0 | 245.4 tok/s aggregate | 2,806 tok/s |
+| flashnext-2xtx-rdna2-tail-combine | 1002 / 1002 / 0 / 0 (combine steps 14,476) | 251.3 tok/s aggregate | not recorded here |
+
+The swap-stress gate (>=1,000 committed, zero aborts, zero inflight) passed on both. The runner verdict is FAIL on both because the required per-expert same-ISA identity record cannot be produced: no per-expert output probe exists (RHP20 README). Not yet run: that probe, the cross-ISA KLD arms (`kld-config`), and zero-owner destinations. A forced-churn manifest has no live policy, so the launcher reports OFF "lab experiment" (#851); these runs are not live-policy or calibration evidence.
