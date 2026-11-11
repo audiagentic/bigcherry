@@ -455,3 +455,66 @@ norm/projections, KV/GDN cache admission, full causal prefill KKT,
 warm-history continuation, speculative replay and full-model serving
 are NOT validated. Do not compare these timings to old simplified
 GDN, native Radiance kernels, or tokens/s as if matched.
+
+## 2026-11-11 — VTP15 original BF16 GDN projection/core integration
+
+**Original checkpoint projection proof:** one Qwen3.8-27B GDN layer's
+original BF16 input_layernorm, QKV, a, b, z weights have now been
+index/header/payload validated, byte-exactly partitioned across the
+physical 4/4/8 key and 12/12/24 value head ownership, and computed
+concurrently on the two gfx1100 cards plus gfx1201 R9700. Exactly
+16,480/16,480 BF16 projection outputs matched an independent CPU
+double-accumulation reference, M1 maximum FP32 absolute error 9.54e-7.
+GPU wall p50 494.69 us; XTX0 293.68 us, XTX1 288.60 us,
+R9700 465.72 us. The R9700 was slower for its larger projection
+share with the **simple, unoptimised BF16 GEMV**. Immutable hardware
+receipt:
+BC_WORK_ROOT/xtx27-prefill/vtp15-gdn-gpu/runs/20261111T010538697678Z-1f43875bcd/summary.json.
+
+**Original-checkpoint GDN CPU integration:** the independent CPU
+reference now consumes the *real BF16 checkpoint projection outputs*,
+original BF16 convolution, learned A_log/dt_bias, and norm. It
+calculates width-4 causal convolution -> BF16 SiLU -> L2-normalised
+Q/K -> learned gated-delta recurrence -> gated RMSNorm with two
+independent global/rank state layouts; validates the source and
+projection byte hashes and rank ownership. M1 and M4 pass.
+M1 global/rank recurrent-output max abs 4.44e-16; M4 2.22e-15;
+convolution max difference 0. Immutable receipts:
+BC_WORK_ROOT/xtx27-prefill/vtp15-gdn-core/layer0-20261111T011811618321Z/summary.json
+BC_WORK_ROOT/xtx27-prefill/vtp15-gdn-core/layer0-20261111T012015196547Z/summary.json
+
+**Integrated HIP kernel compiled, hardware not yet run:** opt-in
+xtx27_vtp15_gdn_integrated.hip + xtx27_vtp15_gdn_integrated_gpu.py
+perform on *each* GPU in one dependent stream real checkpoint BF16
+QKV/a/b/z GEMVs -> original BF16 convolution -> Q/K norm ->
+learned delta recurrence -> gated RMSNorm. All three physical streams
+are launched before the barrier; no P2P or serial layers. Native
+compile passed for gfx1100+gfx1201 with source digest
+ed3dd929b34571fc.... The runner validates all independent CPU
+reference and source-receipt hashes, acquires its own exclusive GPU
+lease and refuses pre-existing KFD processes. A competing agent
+held a 6-stream/cold-TTFT lease at the last check, so the integrated
+GPU correctness gate is explicitly **PENDING**, not PASS.
+
+First acceptance command (only once GPU lease is available and KFD
+inventory empty), from the experimental worktree:
+
+    python3 tools/lab/radiance/xtx27_vtp15_gdn_integrated_gpu.py --phase gpu --run --iterations 3 \
+      --weights-receipt ${BC_WORK_ROOT}/xtx27-prefill/vtp15-gdn-projection/layer0-20261111T005819109215Z/summary.json \
+      --projection-receipt ${BC_WORK_ROOT}/xtx27-prefill/vtp15-gdn-ref/layer0-20261111T010143705406Z/summary.json \
+      --core-receipt ${BC_WORK_ROOT}/xtx27-prefill/vtp15-gdn-core/layer0-20261111T011811618321Z/summary.json \
+      --learned-receipt ${BC_WORK_ROOT}/xtx27-prefill/vtp14-gdn-reference/layer0-20261111T003313797426Z/summary.json
+
+Then the M4 matched controls: source projection pack
+vtp15-gdn-projection/layer0-20261111T011938129228Z,
+CPU projection reference vtp15-gdn-ref/layer0-20261111T011953188932Z,
+CPU GDN core vtp15-gdn-core/layer0-20261111T012015196547Z.
+
+**Remaining before any model serving/speed claim:** block output
+projection + residual, exact causal state/conv cache continuation,
+Qwen chunk-prefill KKT, full-attention, all-layer model loading,
+native optimised gfx1100/gfx1201 kernels, speculative rollback,
+BF16-relative model quality, and matched dual-XTX TP2 vs TP3
+real 4/6/8-stream throughput and resident KV/GDN memory admission.
+The incoming hidden activation is still synthetic. Do not interpret
+the measured microkernel speed as 27B model throughput.
