@@ -21,8 +21,8 @@ from bigcherry.patcher import apply_all
 from test_vtp14_n1_rank_code_selection import PIN_COMMIT, radiance_checkout
 
 PATCHES = REPO / "engines/radiance/patches"
-N1, N3, N2 = (PATCHES / n for n in ("rad0016_vtp14_rank_code_selection", "rad0017_vtp14_n3_shared_rendezvous",
-                                     "rad0018_vtp14_n2_tp_ownership"))
+N1, N3, N2, N2F = (PATCHES / n for n in ("rad0016_vtp14_rank_code_selection", "rad0017_vtp14_n3_shared_rendezvous",
+                                          "rad0018_vtp14_n2_tp_ownership", "rad0019_vtp14_n2_tp_ownership_fp8"))
 
 
 def load(package: Path):
@@ -60,6 +60,8 @@ class TpOwnershipTests(unittest.TestCase):
         with (REPO / "engines/radiance/recipes.toml").open("rb") as f:
             recipe = tomllib.load(f)
         self.assertEqual((meta["order"], meta["state"]), (18, "untested"))
+        self.assertEqual(recipe["patch-set"]["vtp14-tp-ownership"]["patches"],
+                         ["rad0018_vtp14_n2_tp_ownership", "rad0019_vtp14_n2_tp_ownership_fp8"])
         sets = recipe["source"]["radiance-vtp14-rank-code-selection"]["patch-sets"]
         self.assertEqual(sets[-3:], ["vtp14-rank-code-selection", "vtp14-shared-rendezvous", "vtp14-tp-ownership"])
         for prod in ("radiance", "radiance-native"):
@@ -69,7 +71,7 @@ class TpOwnershipTests(unittest.TestCase):
         checkout = radiance_checkout()
         if checkout is None:
             self.skipTest("no radiance checkout with the pinned v1.17.0 commit; set RADIANCE_SRC")
-        files = load(N1) + load(N3) + load(N2)
+        files = load(N1) + load(N3) + load(N2) + load(N2F)
         with tempfile.TemporaryDirectory() as d:
             root = Path(d) / "radiance"
             root.mkdir()
@@ -85,6 +87,10 @@ class TpOwnershipTests(unittest.TestCase):
             self.assertIn("rad_weight_shard_span(b, m.w_tok, g.vocab_off", qwen)
             self.assertIn("rad_weight_shard_span(b, m.w_lm_head, g.vocab_off", qwen)
             self.assertIn("const char* tp_ownership;\n} RadBuildCtx;", (root / "abi/rad_builder.h").read_text())
+            fp8 = (root / "arch/qwen35_fp8/qwen35_fp8.cpp").read_text()
+            self.assertIn("gc.k_first      = g.own_gdn_k_lo;", fp8)
+            self.assertIn("rad_weight_shard_span(b, m.w_lm_head, g.vocab_off", fp8)
+            self.assertIn("g.attn_world != g.world || g.tp_owned", (root / "arch/common/rad_block_attn_gated_fp8.h").read_text())
 
 
 if __name__ == "__main__":

@@ -68,7 +68,7 @@ patches = ["rad0017_vtp14_n3_shared_rendezvous"]
 required-state = "untested"
 
 [patch-set.vtp14-tp-ownership]
-patches = ["rad0018_vtp14_n2_tp_ownership"]
+patches = ["rad0018_vtp14_n2_tp_ownership", "rad0019_vtp14_n2_tp_ownership_fp8"]
 required-state = "untested"
 
 [source.radiance-vtp14-rank-code-selection]
