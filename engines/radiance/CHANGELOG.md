@@ -1,5 +1,13 @@
 # Changelog
 
+## [1170.22.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.21.0...bc-radiance-1170.22.0) (2026-11-11)
+
+
+### New and changed
+
+* **power:** support card-probed maximum memory clock ([#882](https://github.com/audiagentic/bigcherry/issues/882)) ([eec042d](https://github.com/audiagentic/bigcherry/commit/eec042d0a0418a03ed7cc3d6a243a4dbab8b1fa2))
+* **rsc11:** wire live placement telemetry into inactive v2 receipts (S13 receipts-b) ([#886](https://github.com/audiagentic/bigcherry/issues/886)) ([2aee5ae](https://github.com/audiagentic/bigcherry/commit/2aee5ae3b78035757b39afa9c3dd80c23f893628))
+
 ## [1170.21.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.20.0...bc-radiance-1170.21.0) (2026-11-11)
 
 
