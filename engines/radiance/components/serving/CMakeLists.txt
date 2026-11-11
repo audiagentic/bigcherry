@@ -183,7 +183,7 @@ if(BUILD_TESTING)
   add_executable(bc_v2_reader_test EXCLUDE_FROM_ALL v2/reader_test.cpp)
   target_link_libraries(bc_v2_reader_test PRIVATE bc_serving_v2)
   target_compile_definitions(bc_v2_reader_test PRIVATE
-    BC_CONTRACT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../../../docs/design/serving-manifest-v1")
+    BC_CONTRACT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../../../docs/design/serving-manifest-v2")
   add_test(NAME bc_v2_reader_test COMMAND bc_v2_reader_test)
   add_executable(bc_s5_refusal_test EXCLUDE_FROM_ALL v2/s5_refusal_test.cpp)
   target_link_libraries(bc_s5_refusal_test PRIVATE bc_serving_v2)
@@ -191,7 +191,7 @@ if(BUILD_TESTING)
   add_executable(bc_owner_map_test EXCLUDE_FROM_ALL owner_map_test.cpp)
   target_link_libraries(bc_owner_map_test PRIVATE bc_owner_map bc_jcs)
   target_compile_definitions(bc_owner_map_test PRIVATE
-    BC_CONTRACT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../../../docs/design/serving-manifest-v1")
+    BC_CONTRACT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../../../docs/design/serving-manifest-v2")
   add_test(NAME bc_owner_map_test COMMAND bc_owner_map_test)
   # Radiance's plugin module defaults CMAKE_BUILD_TYPE to RelWithDebInfo, which adds -DNDEBUG and turns every assert()
   # in these tests into a no-op. Test executables keep their assertions; the assert-based tests refuse to build without.

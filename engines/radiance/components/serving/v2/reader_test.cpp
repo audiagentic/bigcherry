@@ -14,7 +14,7 @@
 #include <string>
 
 #ifndef BC_CONTRACT_DIR
-#error "BC_CONTRACT_DIR must name docs/design/serving-manifest-v1"
+#error "BC_CONTRACT_DIR must name docs/design/serving-manifest-v2"
 #endif
 
 namespace {
@@ -72,6 +72,9 @@ Json without_plan(Json m) {
 Json unmeasured(Json m) {
     m = without_plan(std::move(m));
     m["spec"]["resources"]["host"].erase("checkpoint_slots");
+    m["spec"]["plan"].erase("resource_inputs");   // nothing is measured before the measuring start
+    for (auto it = m["provenance"].begin(); it != m["provenance"].end();)
+        it = it.key().rfind("/spec/plan/resource_inputs", 0) == 0 ? m["provenance"].erase(it) : std::next(it);
     m["spec"]["plan"]["state"] = "unmeasured";
     return rehashed(std::move(m));
 }
@@ -243,7 +246,7 @@ int main() {
         q["provenance"]["/spec/nothing_here"] = q["provenance"][""];
         expect(from(rehashed(q)), C::provenance_invalid, "names no value", "provenance for a value that does not exist");
         Json v = prod;
-        v["apiVersion"] = "bigcherry/v2";
+        v["apiVersion"] = "bigcherry/v1";
         expect(from(v), C::unsupported_version, "apiVersion", "another apiVersion");
         check(status_of(C::unsupported_version) == -18, "unsupported version: -18");
     }
