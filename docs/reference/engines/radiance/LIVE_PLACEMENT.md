@@ -115,3 +115,18 @@ Build `daf793f1.../a29e62ad...`, lab experiment with 1,002 scheduled AUTO_SWAP p
 | flashnext-2xtx-rdna2-tail-combine | 1002 / 1002 / 0 / 0 (combine steps 14,476) | 251.3 tok/s aggregate | not recorded here |
 
 The swap-stress gate (>=1,000 committed, zero aborts, zero inflight) passed on both. The runner verdict is FAIL on both because the required per-expert same-ISA identity record cannot be produced: no per-expert output probe exists (RHP20 README). Not yet run: that probe, the cross-ISA KLD arms (`kld-config`), and zero-owner destinations. A forced-churn manifest has no live policy, so the launcher reports OFF "lab experiment" (#851); these runs are not live-policy or calibration evidence.
+
+### RHP20 cross-ISA KLD, flashnext-2xtx-rdna2-tail (2026-11-11)
+
+`runs/rhp20-tail-kld` (one pair, 8,240 positions, 4-document corpus, reference `rad116-kld/reference`, same build as the stress cells). Static control vs forced-churn arm; 132 swaps committed while scoring (0 aborted, 0 in flight). Diagnostic evidence only: source provenance is not verified.
+
+| Metric | static | forced | delta | limit |
+|---|---|---|---|---|
+| KL mean | 0.0620 | 0.0688 | +0.0069 | +0.02 |
+| KL median | 0.0162 | 0.0155 | -0.0007 | +0.01 |
+| KL p99 | 0.672 | 0.785 | +0.112 | +0.2 |
+| KL p99.9 | 2.566 | 2.861 | +0.295 | +0.5 |
+| top-1 agreement | 0.8843 | 0.8851 | +0.07 pt | -1 pt |
+| ppl ratio | 1.0021 | 0.9944 | | +0.05 |
+
+All thresholds pass. The tail-combine KLD (`runs/rhp20-tail-combine-kld`) reproduced these numbers exactly because scoring batches are 64 rows and the combine engages only on 256+ row lanes (helper log: combine steps 0), so it is **not** combine evidence. Retries with `engine.max_num_batched_tokens` 512 and 256 stopped at engine start out of memory (engine card has no room for the larger activation arena). Combine numerics are therefore untested; the combine path itself was exercised only by the swap-stress cell (14,476 combine steps). Closing this needs a combine KLD config that frees engine VRAM (for example a smaller context) and shows a nonzero combine-step count.
