@@ -15,6 +15,7 @@ from pathlib import Path
 
 from ..core.context import resolve_work_root
 from ..engine_adapters.radiance_inventory import InventoryError
+from ..hardware import gfxoff
 from ..hardware.power_receipt import read_json
 from ..serving.supervisor import ProcessLauncher, ServeRefused, Supervisor, valid_run_id
 from . import layout_cmds
@@ -40,6 +41,7 @@ def start_with_services(
     wait: Callable,
     lease_ok: Callable,
     power_factory: Callable | None = None,
+    gfxoff_capture: Callable = gfxoff.sample_cards,
 ) -> dict:
     """Testable start entry: real integrations are supplied by S11/S12."""
     supervisor = Supervisor(
@@ -51,6 +53,7 @@ def start_with_services(
         record_dir=_record_dir(),
         journal_dir=_journal_dir(),
         power_factory=power_factory,
+        gfxoff_capture=gfxoff_capture,
     )
     return supervisor.execute(name=args.name, run_id=args.run_id)
 

@@ -80,6 +80,7 @@ def setup(
     use_power=True,
     lease_ok=None,
     manifest=True,
+    gfxoff_capture=None,
 ):
     trace = []
     run_dir = tmp_path / "runs"
@@ -162,6 +163,7 @@ def setup(
         lease_ok=ok,
         power_factory=lambda run_id, fn: power,
         observe=lambda bdfs: {"source": "fake", "devices": list(bdfs)},
+        gfxoff_capture=gfxoff_capture or (lambda bdfs, *, phase: {}),
     )
     return s, trace, run_dir, journal_dir
 
@@ -402,6 +404,7 @@ def test_receipt_is_bound_to_manifest_and_records_four_power_phases(tmp_path):
         "start",
         "post_apply",
         "pre_restore",
+        "gfxoff",
         "stop",
     }
     assert receipt["transaction"]["state"] == "restored"
@@ -414,7 +417,7 @@ def test_observe_only_start_not_blocked_by_stale_explicit_power_journal(tmp_path
     assert execute(s)["power"] == "observe"
     assert "journal_check" not in trace and "prepare" not in trace
     receipt = json.loads((records / "test-run.power.json").read_text())
-    assert set(receipt["observations"]) == {"start", "stop"}
+    assert set(receipt["observations"]) == {"start", "gfxoff", "stop"}
 
 
 @pytest.mark.parametrize(
@@ -529,3 +532,43 @@ def test_manifest_mutated_during_apply_aborts_before_process_start(tmp_path):
         execute(s)
     assert "apply" in trace and "restore" in trace
     assert not any(item.startswith("start:") for item in trace)
+
+
+def test_gfxoff_sampling_between_helpers_engine_and_first_request(tmp_path, capsys):
+    from bigcherry.hardware.gfxoff import Sample, Window
+
+    trace = []
+    def capture(bdfs, *, phase):
+        assert list(bdfs) == ["0000:01:00.0"]
+        trace.append(phase)
+        return {
+            "0000:01:00.0": Window(
+                "0000:01:00.0", phase, "measured", None,
+                {"kernel_release": "test", "amdgpu_srcversion": "same"},
+                {"power_uw": "fake/power", "vddgfx_mv": "fake/voltage", "busy_percent": "fake/busy"},
+                (Sample(15000000, 29, 0), Sample(15000000, 29, 0)),
+            )
+        }
+
+    s, stages, records, _ = setup(tmp_path, gfxoff_capture=capture)
+    # Tracing both clocks with a common trace avoids relying on wall time.
+    original = s.gfxoff_capture
+    s.gfxoff_capture = lambda bdfs, *, phase: (stages.append("gfxoff:" + phase), original(bdfs, phase=phase))[1]
+    record = execute(s)
+    assert trace == ["no_process", "engine_loaded_idle"]
+    assert stages.index("ready:helper1") < stages.index("gfxoff:no_process") < stages.index("start:engine")
+    assert stages.index("ready:engine") < stages.index("gfxoff:engine_loaded_idle") < stages.index("wait")
+    assert record["gfxoff"]["0000:01:00.0"]["status"] == "active"
+    assert "gfxoff: active on 0000:01:00.0" in capsys.readouterr().err
+    assert json.loads((records / "test-run.power.json").read_text())["observations"]["gfxoff"] == record["gfxoff"]
+
+
+def test_gfxoff_probe_failure_never_blocks_serving(tmp_path, capsys):
+    def broken(bdfs, *, phase):
+        raise OSError("sysfs masked")
+
+    s, _, records, _ = setup(tmp_path, gfxoff_capture=broken)
+    record = execute(s)
+    assert record["state"] == "stopped"
+    assert record["gfxoff"]["status"] == "unavailable"
+    assert "gfxoff: unavailable" in capsys.readouterr().err
