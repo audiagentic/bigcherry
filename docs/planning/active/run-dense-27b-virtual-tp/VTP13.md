@@ -821,3 +821,83 @@ Receipt: BC_WORK_ROOT/xtx27-prefill/vtp21-gdn-state-continuation/layer0-20261111
 **Limit:** synthetic incoming hidden, not the previous real model layer. CPU F64 cached state is the exact oracle, NOT the actual GPU FP32 state format, not decode-speed hardware acceptance, chunk-KKT prefill, KV residency, cancellation/rollback, model-wide 64 layers or actual tokens/sec. GPU acceptance must prove the same chunk boundaries with resident on-GPU FP32 state, then connect real previous-layer output and full attention.
 
 VTP19/VTP20 GPU acceptance remains blocked by another agent's exclusive XTX power sweep. Do not launch into it or claim a measured VTP18 row-reuse speedup.
+
+
+### 2026-11-11 — VTP19 balanced original-BF16 output-stage GPU ABCCBA PASS
+
+The VTP19 runner acquired a clean exclusive GPU lease and completed
+all 12 arms of the source-hashed balanced original/pageable (A),
+pinned-async (B) and row-reuse+pinned (C) comparison at M1 and M4.
+All arms passed original-BF16 output-projection numerical checks,
+including exact BF16 residual output and identical broadcasts to
+all three GPUs. The run captured read-only before/after GPU clock,
+temperature and power observations. Receipt:
+$BC_WORK_ROOT/xtx27-prefill/vtp19-original-BF16-output-abccba/runs/
+20261111T041059364071Z-946c6ad1f8/summary.json.
+
+Each value below is the median of two per-arm p50 wall latencies from
+one lease, with A/B/C/C/B/A order for each batch size:
+
+| Output-stage p50 (us) | Pageable A | Pinned B | Row-reuse+pinned C |
+| --- | ---: | ---: | ---: |
+| M1 | 233.34 | 188.745 | 188.96 |
+| M4 | 310.67 | 242.08 | **146.50** |
+
+M4 C saves **52.84%** relative to original A and **39.48%**
+relative to pinned B. M1 pinned B saves **19.11%**; row-reuse
+falls back to the baseline GEMV at M1 and does not improve speed.
+M1 row-reuse p95 across arms is **340.05 us** versus pinned
+192.73 us, so do not promote the row-reuse variant at M1.
+M4 row-reuse p95 155.545 us versus pinned 266.415 us.
+
+Candidate experimental selection: pinned asynchronous host transfer
+for all row counts; row-fused weight reuse only at supported M2/4/8
+after numerical parity, never assumed faster for M1.
+This is not a production default, native Radiance kernel or full
+model tok/s result. Power profile and clocks were not enforced
+during individual runs, and adjacent XTX power sweeps may matter.
+
+### 2026-11-11 — VTP22 original-BF16 full-attention layer-3 CPU oracle PASS
+
+The original Qwen3.8-27B has 48 GDN and 16 full-attention layers.
+VTP22 progresses to a missing full-model operator rather than
+continuing isolated GDN kernels.
+
+- xtx27_vtp22_attention_pack.py reads the REAL original
+  BF16 checkpoint layer-3 full-attention tensors with validated
+  safetensors shapes, offsets, config/index and SHA256. It
+  packs interleaved query/output-gate source rows into Q/G
+  3072/3072/6144, K/V 256/256/512, and O projection
+  columns 1536/1536/3072, reconstructing all original source
+  tensors byte-for-byte. Original 256-wide Q/K norms and
+  layer-3 input RMSNorm are replicated, not head-sliced.
+  M1 and M4 original payload packs PASS.
+- xtx27_vtp22_attention_ref.cpp and the Python CPU oracle
+  use original BF16 Q/K/V/O weights, head-local zero-centred
+  RMSNorm, first-64-dim partial RoPE at text-only position ids,
+  causal grouped-query 24Q:4KV softmax, per-head sigmoid output
+  gating, original BF16 output-projection column shards,
+  XTX0/XTX1/R9700 ordered F32 sum, BF16 residual.
+  Both real-checkpoint M1 and M4 CPU reference runs PASS.
+  This is a standalone numerical interpretation with explicit
+  BF16 rounding boundaries; full Transformers model numerical
+  parity is not claimed.
+
+Original weight packages:
+$BC_WORK_ROOT/xtx27-prefill/vtp22-original-full-attention/
+layer3-m1-20261111T041209305980Z/summary.json,
+layer3-m4-20261111T041210935826Z/summary.json.
+
+CPU original full-attention oracle receipts:
+$BC_WORK_ROOT/xtx27-prefill/vtp22-original-full-attention-cpu/
+layer3-m1-20261111T041245628121Z/summary.json,
+layer3-m4-20261111T041247681924Z/summary.json.
+
+All input activations remain explicitly deterministic synthetic BF16
+hidden states, not preceding-layer output. No GPU full-attention
+acceptance yet, and no native KV-cache implementation or real text
+generation. Next operator work: validate the physical full-attention
+GPU path against these original-source CPU outputs and integrate
+GDN/attention/FFN with embedding, head and 64-layer residual
+handoff. VTP20 connected GDN block GPU acceptance remains
+pending due to another agent's exclusive power sweep lease.
