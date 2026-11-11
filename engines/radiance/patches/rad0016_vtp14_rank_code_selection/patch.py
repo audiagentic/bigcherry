@@ -584,6 +584,91 @@ CONFIG_TEST = FilePatch(path="tests/config_test.cpp", language="none", descripti
     ),
 ))
 
+# ---------------------------------------------------------------- core/device/aql.cpp
+# HIP's own __hipRegisterFatBinary returns no handle for a fat binary without code for device 0, even when
+# another visible card runs it (measured: every gfx1201-only libr4d binary returns null with the two gfx1100
+# cards visible first). The AQL backend loads code objects itself from the bundle, per device, so the handle is
+# only its lookup key: it issues its own for such a binary and never hands that one to HIP.
+AQL = FilePatch(path="core/device/aql.cpp", language="none", description="VTP14 N1 code past device 0", edits=(
+    _edit(
+        "n1-aql-include",
+        "#include <unordered_map>\n",
+        "#include <unordered_map>\n"
+        "#include <unordered_set> /* BC_VTP14_N1_AQL_INCLUDE */\n",
+        guard="BC_VTP14_N1_AQL_INCLUDE",
+        max_span=2,
+    ),
+    _edit(
+        "n1-aql-own-handles",
+        "    std::unordered_map<void**, Module*> by_handle;\n"
+        "    std::unordered_map<const void*, Func*> by_stub;\n",
+        "    std::unordered_map<void**, Module*> by_handle;\n"
+        "    std::unordered_map<const void*, Func*> by_stub;\n"
+        "    /* BC_VTP14_N1_AQL_OWN_HANDLES: handles this backend issued for fat binaries HIP returned none\n"
+        "     * for; never passed to HIP. */\n"
+        "    std::unordered_set<void**> own_handles;\n",
+        guard="BC_VTP14_N1_AQL_OWN_HANDLES",
+    ),
+    _edit(
+        "n1-aql-register-fat",
+        "        if (!h) {\n"
+        "            Module* m = new Module();\n"
+        "            m->bundle = w->binary;\n"
+        "            r.order.push_back(m);\n"
+        "            return h;\n"
+        "        }\n",
+        "        if (!h) {\n"
+        "            /* BC_VTP14_N1_AQL_REGISTER_FAT: HIP judges a fat binary by device 0 alone, so code for a\n"
+        "             * later card of another architecture (an R9700 behind two RX 7900 XTX) gets no handle\n"
+        "             * either. This backend loads code objects from the bundle per device, so it issues its own\n"
+        "             * handle and records the functions; a card the bundle has no code for still fails\n"
+        "             * a_code_runs and the plugin loader drops the rows. */\n"
+        "            Module* m = new Module();\n"
+        "            m->bundle = w->binary;\n"
+        "            r.order.push_back(m);\n"
+        "            void** own = new void*(nullptr);\n"
+        "            r.own_handles.insert(own);\n"
+        "            r.by_handle[own] = m;\n"
+        "            return own;\n"
+        "        }\n",
+        guard="BC_VTP14_N1_AQL_REGISTER_FAT",
+    ),
+    _edit(
+        "n1-aql-register-fn",
+        "    if (real().reg_fn)\n"
+        "        real().reg_fn(modules, host_fn, device_fn, device_name, thread_limit, tid, bid, block_dim,\n"
+        "                      grid_dim, wsize);\n"
+        "    Registry& r = reg();\n"
+        "    std::lock_guard<std::mutex> lk(r.mu);\n",
+        "    Registry& r = reg();\n"
+        "    /* BC_VTP14_N1_AQL_REGISTER_FN: a handle this backend issued is unknown to HIP. */\n"
+        "    bool own = false;\n"
+        "    {\n"
+        "        std::lock_guard<std::mutex> lk(r.mu);\n"
+        "        own = r.own_handles.count(modules) != 0;\n"
+        "    }\n"
+        "    if (real().reg_fn && !own)\n"
+        "        real().reg_fn(modules, host_fn, device_fn, device_name, thread_limit, tid, bid, block_dim,\n"
+        "                      grid_dim, wsize);\n"
+        "    std::lock_guard<std::mutex> lk(r.mu);\n",
+        guard="BC_VTP14_N1_AQL_REGISTER_FN",
+    ),
+    _edit(
+        "n1-aql-unregister",
+        "    if (real().unreg_fat) real().unreg_fat(modules);\n",
+        "    /* BC_VTP14_N1_AQL_UNREGISTER: a handle this backend issued is unknown to HIP. */\n"
+        "    bool own = false;\n"
+        "    {\n"
+        "        Registry& r = reg();\n"
+        "        std::lock_guard<std::mutex> lk(r.mu);\n"
+        "        own = r.own_handles.count(modules) != 0;\n"
+        "    }\n"
+        "    if (real().unreg_fat && !own) real().unreg_fat(modules);\n",
+        guard="BC_VTP14_N1_AQL_UNREGISTER",
+        max_span=2,
+    ),
+))
+
 PATCHES = (
     RAD_CORE,
     REGISTRY_H,
@@ -595,6 +680,7 @@ PATCHES = (
     CONFIG,
     ENGINE,
     CONFIG_TEST,
+    AQL,
     _created("core/plugin/bc_rank_devices.h", "bc_rank_devices.h", "BC_VTP14_N1: an explicit, ordered rank"),
     _created("core/plugin/bc_rank_devices.cpp", "bc_rank_devices.cpp", "BC_VTP14_N1: see bc_rank_devices.h"),
     _created("tests/bc_rank_devices_test.cpp", "bc_rank_devices_test.cpp", "BC_VTP14_N1 (BigCherry managed patch rad0016)"),
