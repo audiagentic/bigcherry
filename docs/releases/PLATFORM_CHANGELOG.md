@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.37.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.36.0...bc-platform-1.37.0) (2026-11-11)
+
+
+### New and changed
+
+* **rsc11:** publish native live host room from bc-serve ([#872](https://github.com/audiagentic/bigcherry/issues/872)) ([1d1d151](https://github.com/audiagentic/bigcherry/commit/1d1d1517cd27cbad528c6292a57a31b1aa2b16fd))
+
 ## [1.36.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.35.0...bc-platform-1.36.0) (2026-11-11)
 
 
