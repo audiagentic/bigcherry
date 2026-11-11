@@ -149,4 +149,20 @@ MLP = FilePatch(path="arch/common/rad_block_mlp_fp8.h", language="none", descrip
     ),
 ))
 
-PATCHES = (QWEN, ATTN, MLP)
+LINEAR = FilePatch(path="arch/common/rad_fp8.h", language="none", description="VTP14 N2 span_parts covers MXFP4 wref", edits=(
+    _edit(
+        "n2f-span-parts-wref",
+        "        RAD_ARCH_TRY(rad_weight_shard_span_parts(b, w, lo, hi, total, n));\n"
+        "        if (!ws) return RAD_OK;\n",
+        "        RAD_ARCH_TRY(rad_weight_shard_span_parts(b, w, lo, hi, total, n));\n"
+        "        /* BC_VTP14_N2F_SPAN_PARTS_WREF: an MXFP4 linear's reference scale plane has the weight's rows\n"
+        "         * (as declare()'s single span already treats it); without its span an uneven head split\n"
+        "         * (the delta net's k_first) leaves it on the even shard and the load refuses it. */\n"
+        "        if (wref) RAD_ARCH_TRY(rad_weight_shard_span_parts(b, wref, lo, hi, total, n));\n"
+        "        if (!ws) return RAD_OK;\n",
+        guard="BC_VTP14_N2F_SPAN_PARTS_WREF",
+        max_span=2,
+    ),
+))
+
+PATCHES = (QWEN, ATTN, MLP, LINEAR)
