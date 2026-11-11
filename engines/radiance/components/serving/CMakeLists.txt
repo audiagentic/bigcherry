@@ -138,6 +138,17 @@ if(BUILD_TESTING)
   target_link_libraries(bc_v2_p1_live_test PRIVATE bc_serving_v2_p1_live)
   add_test(NAME bc_v2_p1_live_test COMMAND bc_v2_p1_live_test)
 
+  # P1 native measurement: inactive card-free native publication.
+  add_library(bc_serving_v2_native_measurement STATIC EXCLUDE_FROM_ALL v2/native_measurement.cpp)
+  target_link_libraries(bc_serving_v2_native_measurement PUBLIC bc_serving_v2_generated)
+  target_include_directories(bc_serving_v2_native_measurement PUBLIC
+    "${CMAKE_CURRENT_SOURCE_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/../moe-remote"
+    "${RADIANCE_SRC}/vendor")
+  target_compile_features(bc_serving_v2_native_measurement PUBLIC cxx_std_20)
+  add_executable(bc_v2_native_measurement_test EXCLUDE_FROM_ALL v2/native_measurement_test.cpp)
+  target_link_libraries(bc_v2_native_measurement_test PRIVATE bc_serving_v2_native_measurement)
+  add_test(NAME bc_v2_native_measurement_test COMMAND bc_v2_native_measurement_test)
+
   add_executable(bc_v2_codec_test EXCLUDE_FROM_ALL contract/v2_codec_test.cpp)
   target_link_libraries(bc_v2_codec_test PRIVATE bc_serving_v2_generated bc_serving_v1)
   target_compile_definitions(bc_v2_codec_test PRIVATE
