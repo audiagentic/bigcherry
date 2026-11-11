@@ -148,6 +148,15 @@ if(BUILD_TESTING)
   add_executable(bc_v2_native_measurement_test EXCLUDE_FROM_ALL v2/native_measurement_test.cpp)
   target_link_libraries(bc_v2_native_measurement_test PRIVATE bc_serving_v2_native_measurement)
   add_test(NAME bc_v2_native_measurement_test COMMAND bc_v2_native_measurement_test)
+  # S13b: inactive runtime receipts, no production linkage and no v2 activation.
+  add_library(bc_serving_v2_runtime_receipt STATIC EXCLUDE_FROM_ALL v2/runtime_receipt.cpp)
+  target_link_libraries(bc_serving_v2_runtime_receipt PUBLIC bc_serving_v2_generated)
+  target_include_directories(bc_serving_v2_runtime_receipt PUBLIC
+    "${CMAKE_CURRENT_SOURCE_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/../moe-remote" "${RADIANCE_SRC}/vendor")
+  target_compile_features(bc_serving_v2_runtime_receipt PUBLIC cxx_std_20)
+  add_executable(bc_v2_runtime_receipt_test EXCLUDE_FROM_ALL v2/runtime_receipt_test.cpp)
+  target_link_libraries(bc_v2_runtime_receipt_test PRIVATE bc_serving_v2_runtime_receipt)
+  add_test(NAME bc_v2_runtime_receipt_test COMMAND bc_v2_runtime_receipt_test)
 
   add_executable(bc_v2_codec_test EXCLUDE_FROM_ALL contract/v2_codec_test.cpp)
   target_link_libraries(bc_v2_codec_test PRIVATE bc_serving_v2_generated bc_serving_v1)
