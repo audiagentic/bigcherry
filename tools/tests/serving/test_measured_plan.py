@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -173,6 +174,66 @@ def planner(tmp_path, responses, *, source=None):
         record_dir=tmp_path / "records",
     )
     return obj, source, writer, check
+
+
+class ReboundSource(Source):
+    def __init__(self, *, alter_scope=False):
+        super().__init__()
+        self.alter_scope = alter_scope
+
+    def measure(self, selected, bounds):
+        m = super().measure(selected, bounds)
+        scope = {
+            "owner_map_digest": "f" * 64 if self.alter_scope else m.model.owner_map_digest,
+            "context_target_tokens": m.targets.context_tokens,
+            "retention_target_tokens": m.targets.retained_kv_tokens,
+            "kv_bytes_per_token": m.model.kv_bytes_per_token,
+        }
+        record = {
+            "key": "host_ledger_margin.mib", "value": 128,
+            "measured_candidates": [128],
+            "raw_run": "runs/xtx/host-room.json",
+            "evidence_id": "sha256:" + "d" * 64 + " | rebinds/proof.json",
+        }
+        return replace(m, scope=scope, calibration_records=(record,))
+
+
+def test_build_rebind_passes_after_bounded_s5_retry(tmp_path):
+    obj, source, writer, _ = planner(
+        tmp_path,
+        [EngineRoomRefused(room()), AdmissionReport(CLAIMABLE, CLAIMABLE)],
+        source=ReboundSource(),
+    )
+    assert obj(layout(), "rebound-success").manifest.name == "rebound-success-1.json"
+    assert len(source.calls) == len(writer.calls) == 2
+
+
+def test_build_rebind_terminal_s5_refusal_names_record_and_remeasurement(tmp_path):
+    obj, *_ = planner(
+        tmp_path,
+        [EngineRoomRefused(room()),
+         EngineRoomRefused(room(available=CLAIMABLE - 1, required=CLAIMABLE))],
+        source=ReboundSource(),
+    )
+    with pytest.raises(
+        MeasuredPlanRefused,
+        match=r"host_ledger_margin\.mib.*runs/xtx/host-room\.json.*re-measure on hardware",
+    ):
+        obj(layout(), "rebound-failed")
+    doc = json.loads((tmp_path / "records/rebound-failed.plan.json").read_text())
+    assert doc["state"] == "terminal_refusal"
+    assert doc["attempts"][0]["refusal"]["reason_code"] == "gpu_room"
+
+
+def test_build_rebind_native_measurement_outside_scope_names_record(tmp_path):
+    obj, source, writer, _ = planner(
+        tmp_path, [AdmissionReport(CLAIMABLE, CLAIMABLE)],
+        source=ReboundSource(alter_scope=True),
+    )
+    with pytest.raises(MeasuredPlanRefused, match="outside the recorded .* re-measure"):
+        obj(layout(), "rebound-scope")
+    assert len(source.calls) == 1
+    assert not writer.calls
 
 
 def test_fit_first_time_and_durable_measured_plan(tmp_path):

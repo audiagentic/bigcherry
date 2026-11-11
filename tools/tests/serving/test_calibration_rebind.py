@@ -165,7 +165,7 @@ def test_rebind_refuses_changed_model_inventory_owner_and_kv(tmp_path):
             )
 
 
-def test_rebind_refuses_runtime_changes_even_with_manual_reason(tmp_path):
+def test_rebind_accepts_runtime_kernel_and_helper_changes_with_audited_reason(tmp_path):
     store = tmp_path / "store"
     original = record(store)
     native = target(tmp_path)
@@ -173,15 +173,50 @@ def test_rebind_refuses_runtime_changes_even_with_manual_reason(tmp_path):
     p = repo / "engines" / "radiance" / "components" / "serving"
     p.mkdir(parents=True)
     (p / "serving.cpp").write_text("changed engine runtime\n")
+    (p / "kernels").mkdir()
+    (p / "kernels" / "gemv.hip").write_text("changed kernel\n")
+    helper = repo / "engines" / "radiance" / "components" / "moe-remote"
+    helper.mkdir(parents=True)
+    (helper / "r3_moe_worker.cpp").write_text("changed worker runtime\n")
     git("add", ".")
-    git("commit", "-qm", "changed serving semantics")
-    with pytest.raises(CalibrationInvalid, match="may affect S8 measurements"):
-        create_rebind(
-            original, native, store, repo=repo, old_ref=old,
-            new_ref=git("rev-parse", "HEAD"),
-            reason="Manual claim that unrelated runtime change is safe.",
-            now_unix_s=NOW,
-        )
+    git("commit", "-qm", "changed engine/kernel/helper source")
+    proof = create_rebind(
+        original, native, store, repo=repo, old_ref=old,
+        new_ref=git("rev-parse", "HEAD"),
+        reason="Scope is build-only; native P1 and S5 gate every changed build.",
+        now_unix_s=NOW,
+    )
+    receipt = json.loads(proof.read_text())
+    assert receipt["changed_paths"] == sorted((
+        "docs/note.md",
+        "engines/radiance/components/serving/serving.cpp",
+        "engines/radiance/components/serving/kernels/gemv.hip",
+        "engines/radiance/components/moe-remote/r3_moe_worker.cpp",
+    ))
+    assert len(select_with_rebind(
+        store, scope=scope("b", "c"),
+        required_keys=("host_ledger_margin.mib",), now_unix_s=NOW,
+    )) == 1
+
+
+def test_rebind_allows_empty_source_diff_for_build_metadata_only(tmp_path):
+    store = tmp_path / "store"
+    original = record(store)
+    native = target(tmp_path)
+    repo, _old, _new, git = source_repo(tmp_path)
+    # Different commit, identical tree (e.g. build flags/SDK change outside Git).
+    git("commit", "--allow-empty", "-qm", "rebuild with a changed toolchain")
+    proof = create_rebind(
+        original, native, store, repo=repo, old_ref=git("rev-parse", "HEAD~1"),
+        new_ref=git("rev-parse", "HEAD"),
+        reason="Toolchain-only binary change; fresh P1/S5 admission is the gate.",
+        now_unix_s=NOW,
+    )
+    assert json.loads(proof.read_text())["changed_paths"] == []
+    assert select_with_rebind(
+        store, scope=scope("b", "c"),
+        required_keys=("host_ledger_margin.mib",), now_unix_s=NOW,
+    )[0]["value"] == 9
 
 
 def test_tampered_rebind_is_rejected(tmp_path):
