@@ -151,3 +151,15 @@ The lease-wrapped `rhp01-coverage.sh` runs each 32K prefill at 2K, 4K and 8K chu
 - 2026-11-04T10:07:56.063649+00:00 (updated-by): Updated: section:notes
 - 2026-11-04T10:08:06.091603+00:00 (updated-by): Updated: section:ledger-events
 - 2026-11-04T14:19:00.419056+00:00 (updated-by): Updated: section:ledger-events
+
+## Hardware coverage result (2026-11-11, flashnext-4gpu, build 14dc3b12, lane radiance-routing-evidence)
+
+Runs: `runs/rhp01-coverage-lease` (stream-bench JSON), engine logs `flashnext/engine-1111-230604.log`, `-231347.log`, `-232242.log` (RHP01 lines).
+
+| Arm | Prefill histograms produced / credited / overwritten / lost | Decode produced / credited / pending at stop | Draft (MTP) credited / pending |
+|---|---|---|---|
+| 2K chunk, 32K prompt | 1056 / 1056 / 0 / 0 | 3360 / 3312 / 48 | 75 / 1 |
+| 4K chunk, 32K prompt | 672 / 672 / 0 / 0 | 3312 / 3264 / 48 | |
+| MTP 1/4/8 streams + 131K prompt (ring wrap, 32 banks) | 3840 / 3840 / 0 / 0 | 10656 / 10608 / 48 | 269 / 1 |
+
+No routing evidence is lost or overwritten; `upstream_dropped=0`, delay p95 2 steps. The 48 pending decode histograms are the final step's 48 layers, still in flight at shutdown, not loss. The earlier "~2% credited" reading counted banks still in flight. Diagnostics cost nothing measurable (decode engine tok/s off/on: 124.0/124.7 at 2K, 119.6/120.2 at 4K). The 8K-chunk arm cannot start on flashnext-4gpu (engine out of memory at the measuring start), so it is not measured. Conclusion: no lossless-staging change (Step 4) is needed.
