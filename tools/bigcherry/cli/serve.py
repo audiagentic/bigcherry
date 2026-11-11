@@ -1,8 +1,9 @@
-"""RSC11 S6 CLI surface; activation waits for S11/S12 and the S16 cutover.
+"""RSC11 S13 staged v2 supervisor CLI; v1 is the only production contract.
 
-Only 'explain' and durable run-record 'status' are operational without the
-injected supervisor services. 'start' and 'stop' deliberately refuse rather
-than silently invoking the shell launcher or bypassing lease/power checks.
+No serving start is permitted until the atomic v2 cutover installs genuine
+native measurement, strict S10 writer and pre-weight engine validator.
+Stop uses the owning supervisor's verified cross-process request, never PID
+signals or a different process's GPU power restoration.
 """
 
 from __future__ import annotations
@@ -15,8 +16,15 @@ from pathlib import Path
 
 from ..core.context import resolve_work_root
 from ..engine_adapters.radiance_inventory import InventoryError
-from ..hardware import gfxoff
+from ..hardware import gfxoff, lease
 from ..hardware.power_receipt import read_json
+from ..serving.activation import V2Bindings, production_v2_bindings
+from ..serving.runtime_adapters import (
+    LifecycleLimits,
+    StopLimits,
+    request_stop,
+    start_with_adapters,
+)
 from ..serving.supervisor import ProcessLauncher, ServeRefused, Supervisor, valid_run_id
 from . import layout_cmds
 
@@ -58,6 +66,62 @@ def start_with_services(
     return supervisor.execute(name=args.name, run_id=args.run_id)
 
 
+def _start_limits(args: Namespace) -> LifecycleLimits:
+    fields = ("readiness_s", "terminate_s", "poll_s", "stop_wait_s")
+    if any(getattr(args, field, None) is None for field in fields):
+        raise ServeRefused(
+            "v2 start requires explicit --readiness-s, --terminate-s, "
+            "--poll-s and --stop-wait-s; no guessed lifecycle intervals"
+        )
+    return LifecycleLimits(**{field: getattr(args, field) for field in fields})
+
+
+def start_v2_with_bindings(
+    args: Namespace,
+    bindings: V2Bindings,
+    *,
+    lease_ok: Callable = lease.held_by_this_process,
+    **adapter_options,
+) -> dict:
+    """Single S11/S12/P3 route; only real S13(c) may install bindings."""
+    if not isinstance(bindings, V2Bindings):
+        raise ServeRefused("v2 start missing strict native S10 planning services")
+    return start_with_adapters(
+        name=args.name,
+        run_id=args.run_id,
+        resolve=lambda name: layout_cmds._resolve(args),
+        source=bindings.source,
+        writer=bindings.writer,
+        validator=bindings.validator,
+        record_dir=_record_dir(),
+        journal_dir=_journal_dir(),
+        lease_ok=lease_ok,
+        limits=_start_limits(args),
+        explicit_power_profile=args.power_profile,
+        qualification_gate=bindings.qualification_gate,
+        **adapter_options,
+    )
+
+
+def _verified_v2_record(run_id: str) -> dict:
+    """Never send a supervisor stop request to a v1 or unknown run."""
+    if not valid_run_id(run_id):
+        raise ServeRefused("invalid run ID")
+    record_path = _record_dir() / f"{run_id}.json"
+    if not record_path.is_file():
+        raise ServeRefused(f"no supervisor record for {run_id}")
+    record = read_json(record_path)
+    manifest_name = record.get("manifest")
+    if record.get("run_id") != run_id or not isinstance(manifest_name, str):
+        raise ServeRefused("no authenticated v2 supervisor manifest in run record")
+    manifest = read_json(Path(manifest_name))
+    if manifest.get("apiVersion") != "bigcherry/v2":
+        raise ServeRefused("v2 stop refused: run manifest is not bigcherry/v2")
+    if "power_receipt" not in record:
+        raise ServeRefused("v2 stop refused: supervisor power-receipt identity missing")
+    return record
+
+
 def cmd_serve(args: Namespace) -> int:
     try:
         if args.serve_action == "explain":
@@ -92,15 +156,26 @@ def cmd_serve(args: Namespace) -> int:
             print(json.dumps(doc, indent=2))
             return 0
         if args.serve_action == "start":
-            raise ServeRefused(
-                "S6 is a card-free supervisor skeleton: the measured-plan and "
-                "verified process launcher are not connected (S11/S12); "
-                "the existing shell launcher remains in service until S16"
+            # This is deliberately fail-closed in the pre-cutover release:
+            # no v1 launcher, no inactive v2 writer, no implicit power plan.
+            record = start_v2_with_bindings(args, production_v2_bindings())
+            print(json.dumps(record, indent=2))
+            return 0
+        if args.serve_action == "stop":
+            _verified_v2_record(args.run_id)
+            if args.poll_s is None or args.stop_wait_s is None:
+                raise ServeRefused(
+                    "v2 stop requires --poll-s and --stop-wait-s; no hidden timeout"
+                )
+            record = request_stop(
+                args.run_id, _record_dir(),
+                limits=StopLimits(
+                    poll_s=args.poll_s, stop_wait_s=args.stop_wait_s
+                ),
             )
-        raise ServeRefused(
-            "cross-process stop is not activated until S11/S12; refusing "
-            "to claim a shutdown or restore power without verified child exit"
-        )
+            print(json.dumps(record, indent=2))
+            return 0
+        raise ServeRefused("unknown serve action")
     except (InventoryError, ServeRefused, OSError, ValueError) as exc:
         print(f"serve: {exc}", file=sys.stderr)
         return 2
@@ -124,8 +199,12 @@ def register(sub) -> None:
         )
         if action == "start":
             c.add_argument("--run-id", required=True)
+            for key in ("readiness", "terminate", "poll", "stop-wait"):
+                c.add_argument(f"--{key}-s", type=float)
     c = children.add_parser("stop")
     c.add_argument("run_id")
+    c.add_argument("--poll-s", type=float)
+    c.add_argument("--stop-wait-s", type=float)
     c = children.add_parser("status")
     c.add_argument("run_id")
     p.set_defaults(func=cmd_serve)

@@ -11,11 +11,12 @@ import subprocess
 import time
 import urllib.error
 import urllib.request
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
 
 from ..hardware.power_receipt import read_json, write_json_atomic
+from .activation import require_power_authorization
 from .manifest_power import read_manifest_power
 from .measured_plan import MeasuredPlanValidator
 from .supervisor import ProcessSpec, ServeRefused, ServingPlan, Supervisor, valid_run_id
@@ -38,6 +39,19 @@ class LifecycleLimits:
                for v in (self.readiness_s, self.terminate_s,
                          self.poll_s, self.stop_wait_s)):
             raise ServeRefused("all lifecycle intervals must be positive finite durations")
+
+
+@dataclass(frozen=True)
+class StopLimits:
+    """Operator-selected cross-process stop timeout, no hidden defaults."""
+
+    stop_wait_s: float
+    poll_s: float
+
+    def __post_init__(self):
+        if any(type(v) not in (float, int) or not (v > 0 and v < float("inf"))
+               for v in (self.stop_wait_s, self.poll_s)):
+            raise ServeRefused("stop polling and wait intervals must be positive finite durations")
 
 
 @dataclass
@@ -167,7 +181,7 @@ class StopRequestWait:
             self.sleep(self.poll_s)
 
 
-def request_stop(run_id: str, record_dir: Path, *, limits: LifecycleLimits,
+def request_stop(run_id: str, record_dir: Path, *, limits: LifecycleLimits | StopLimits,
                  clock: Callable = time.monotonic, sleep: Callable = time.sleep) -> dict:
     """Ask the owning supervisor to stop; return only after verified final state.
 
@@ -217,7 +231,9 @@ def start_with_adapters(*, name: str, run_id: str, resolve: Callable,
                         limits: LifecycleLimits, power_factory=None,
                         gfxoff_capture=None, observe=None,
                         popen: Callable = subprocess.Popen,
-                        health: Callable | None = None) -> dict:
+                        health: Callable | None = None,
+                        explicit_power_profile: str | None = None,
+                        qualification_gate: Callable | None = None) -> dict:
     """S13 hook assembling the actual S11 planner with the S12 supervisor.
 
     No second C++ resolver: S11's injected writer/engine validator own the
@@ -242,8 +258,14 @@ def start_with_adapters(*, name: str, run_id: str, resolve: Callable,
         policy = read_manifest_power(serving.manifest,
                                      engine_bdfs=layout.engine_bdfs,
                                      helper_bdfs=layout.helper_bdfs)
-        if policy.mode != "observe" or policy.requested:
-            raise ServeRefused("P3 pre-activation adapter requires observe-only power")
+        # The only power writes are those already authenticated by S10 and
+        # present in the one strict v2 manifest. A selected profile is not,
+        # by itself, power qualification. Observe remains write-free.
+        require_power_authorization(
+            policy, layout,
+            explicit_profile=explicit_power_profile,
+            qualification_gate=qualification_gate,
+        )
         health_target["url"] = f"http://127.0.0.1:{port}/health"
         return serving
 
