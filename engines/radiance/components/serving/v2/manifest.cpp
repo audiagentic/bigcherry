@@ -416,6 +416,10 @@ Status validate_semantics(const Manifest& m) {
                    s.plan.state == PlanState::kMeasured ? "spec.plan.engine_memory" : "spec.plan.state",
                    s.plan.state == PlanState::kMeasured ? "plan.state measured requires engine_memory"
                                                         : "plan.state unmeasured takes no engine_memory");
+    if ((s.plan.state == PlanState::kMeasured) != s.plan.resource_inputs.has_value())
+        return err(s.plan.state == PlanState::kMeasured ? C::missing_field : C::invalid_value, "spec.plan.resource_inputs",
+                   s.plan.state == PlanState::kMeasured ? "plan.state measured requires the engine-measured resource inputs"
+                                                        : "plan.state unmeasured takes no resource inputs (nothing is measured yet)");
     if ((s.plan.state == PlanState::kMeasured) != s.resources.host.checkpoint_slots.has_value())
         return err(s.plan.state == PlanState::kMeasured ? C::missing_field : C::invalid_value,
                    "spec.resources.host.checkpoint_slots",
