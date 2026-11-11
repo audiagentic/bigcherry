@@ -800,3 +800,24 @@ M1 hardware acceptance once the exclusive GPU lease is genuinely free, in the ex
 M4 substitutes the VTP15 weight pack layer0-20261111T011938129228Z, projection CPU reference layer0-20261111T011953188932Z, core CPU reference layer0-20261111T012015196547Z, VTP16 output packet layer0-20261111T014909377366Z and VTP16 output CPU oracle layer0-20261111T014923805172Z; learned-parameter receipt remains the same.
 
 **Priority next:** First run VTP19 A/B/C once a free lease is available, then VTP20 M1 and M4 full-block numerical acceptance. Afterward stop isolated microbenchmarks: implement exact GDN/conv cache continuation and chunk-prefill KKT, full attention and model-wide 64-layer loading, real TP2/TP3 C4/C6/C8 text throughput and resident context tests. Only a full end-to-end run qualifies speedup.
+
+
+### 2026-11-11 — VTP21 original-BF16 GDN conv/recurrent state continuation CPU PASS
+
+A new strictly card-free reference, tools/lab/radiance/xtx27_vtp21_gdn_state_continuation.py, consumes the independently validated original Qwen3.8-27B layer-0 BF16 projected QKV/a/b/z, original BF16 causal conv1d weights, learned A_log/dt_bias/norm gains, and the previous full M4 original-checkpoint CPU GDN oracle. On all three physical TP3 partitions (4/4/8 key heads, 12/12/24 value heads), it compares monolithic four-token execution with 1+3, 2+2, 3+1, and 1+1+1+1 token chunks. Every boundary round-trips the 3-row causal convolution BF16 projection history and a key-dimension-major, value-dimension-minor GDN recurrent state serialized as little-endian F64. This is a CPU reference-state handoff: the GPU state needs an explicit separate FP32 residency/transport contract.
+
+**PASS:** bit-identical final SHA256 hashes of the recurrent state and causal-convolution history on all five partitions of four tokens and all three cards; the original independent monolithic M4 output agrees to:
+
+| Physical rank | Maximum output difference |
+| --- | ---: |
+| XTX0 | 7.72e-8 |
+| XTX1 | 8.74e-8 |
+| R9700 | 5.24e-8 |
+
+A deliberate state reset at token four on the same projected input produces nontrivially different output (max abs differences XTX0 0.809, XTX1 0.770, R9700 0.319), proving the state carry is actually needed. Malformed snapshot geometry, nonfinite state, incomplete chunks and broken original provenance refuse.
+
+Receipt: BC_WORK_ROOT/xtx27-prefill/vtp21-gdn-state-continuation/layer0-20261111T033702426695Z/summary.json.
+
+**Limit:** synthetic incoming hidden, not the previous real model layer. CPU F64 cached state is the exact oracle, NOT the actual GPU FP32 state format, not decode-speed hardware acceptance, chunk-KKT prefill, KV residency, cancellation/rollback, model-wide 64 layers or actual tokens/sec. GPU acceptance must prove the same chunk boundaries with resident on-GPU FP32 state, then connect real previous-layer output and full attention.
+
+VTP19/VTP20 GPU acceptance remains blocked by another agent's exclusive XTX power sweep. Do not launch into it or claim a measured VTP18 row-reuse speedup.
