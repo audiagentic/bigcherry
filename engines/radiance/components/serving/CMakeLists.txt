@@ -55,8 +55,16 @@ target_link_libraries(bc_serving PUBLIC radiance::abi)
 target_include_directories(bc_serving PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/third_party"
                            "${CMAKE_CURRENT_BINARY_DIR}/generated")
 
+# Inactive P1 native live-room publication. This option is linked into
+# bc-serve but does not generate or activate a v2 serving manifest.
+add_library(bc_serving_v2_p1_live STATIC v2/p1_live_room.cpp v2/error.cpp)
+target_link_libraries(bc_serving_v2_p1_live PUBLIC radiance::abi)
+target_compile_features(bc_serving_v2_p1_live PUBLIC cxx_std_20)
+target_include_directories(bc_serving_v2_p1_live PUBLIC
+  "${CMAKE_CURRENT_SOURCE_DIR}" "${RADIANCE_SRC}/vendor")
+
 add_executable(bc-serve main.cpp)
-target_link_libraries(bc-serve PRIVATE bc_serving)
+target_link_libraries(bc-serve PRIVATE bc_serving bc_serving_v2_p1_live)
 set_target_properties(bc-serve PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/bin")
 install(TARGETS bc-serve RUNTIME DESTINATION radiance_home/bin)
 
@@ -125,6 +133,10 @@ if(BUILD_TESTING)
   add_executable(bc_v2_p1_test EXCLUDE_FROM_ALL v2/p1_measurement_test.cpp)
   target_link_libraries(bc_v2_p1_test PRIVATE bc_serving_v2_p1)
   add_test(NAME bc_v2_p1_test COMMAND bc_v2_p1_test)
+  # S13a: inactive live host/cgroup/GTT publisher, no production linkage.
+  add_executable(bc_v2_p1_live_test EXCLUDE_FROM_ALL v2/p1_live_room_test.cpp)
+  target_link_libraries(bc_v2_p1_live_test PRIVATE bc_serving_v2_p1_live)
+  add_test(NAME bc_v2_p1_live_test COMMAND bc_v2_p1_live_test)
 
   add_executable(bc_v2_codec_test EXCLUDE_FROM_ALL contract/v2_codec_test.cpp)
   target_link_libraries(bc_v2_codec_test PRIVATE bc_serving_v2_generated bc_serving_v1)
