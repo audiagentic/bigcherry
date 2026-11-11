@@ -19,12 +19,8 @@ _BDF = re.compile(r"^[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]$")
 _NAME = re.compile(r"^[a-z][a-z0-9_-]{0,31}$")
 _DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
 _ALLOWED = {"vddgfx_offset_mv", "sclk_max_mhz", "sclk_offset_mhz", "power_cap_w"}
-_RANGES = {
-    "vddgfx_offset_mv": (-500, 500),
-    "sclk_max_mhz": (1, 10000),
-    "sclk_offset_mhz": (-2000, 2000),
-    "power_cap_w": (1, 1000),
-}
+_IJSON_MAX = (1 << 53) - 1
+
 
 
 class PowerManifestRefused(ValueError):
@@ -55,9 +51,12 @@ def _settings(data: object) -> Setting | None:
     if keys := set(data) - _ALLOWED:
         raise PowerManifestRefused(f"unknown power setting(s): {sorted(keys)}")
     for key, value in data.items():
-        lo, hi = _RANGES[key]
-        if type(value) is not int or not lo <= value <= hi:
-            raise PowerManifestRefused(f"{key} is not an integer in {lo}..{hi}")
+        # S10 uses a fresh PWR07 per-BDF probe for hardware ranges; the
+        # S12 adapter enforces only the shared wire type/safe integer bounds.
+        if type(value) is not int or abs(value) > _IJSON_MAX or (
+            key in ("sclk_max_mhz", "power_cap_w") and value <= 0
+        ):
+            raise PowerManifestRefused(f"{key} is not a typed I-JSON-safe setting")
     if "sclk_max_mhz" in data and "sclk_offset_mhz" in data:
         raise PowerManifestRefused("both sclk controls requested simultaneously")
     if "sclk_offset_mhz" in data:

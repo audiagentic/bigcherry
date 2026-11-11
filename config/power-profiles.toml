@@ -25,3 +25,21 @@ role = "helper*"
 arch = "gfx1100"
 evidence = "${BC_WORK_ROOT}/runs/pwr01-baseline-10272216/summary.txt"
 settings = { vddgfx_offset_mv = -125 }
+
+# November 2026 power sweep candidate: XTX only. Observe by default.
+# Neither the sweep nor this rule grants per-BDF apply qualification.
+# An explicit apply requires fresh PWR07 probes and independent matching evidence.
+[profiles.xtx-sclk2700-uv125]
+default_mode = "observe"
+
+[[profiles.xtx-sclk2700-uv125.rules]]
+role = "engine"
+arch = "gfx1100"
+evidence = "docs/reference/power-tuning-evidence-2026-11.md"
+settings = { sclk_max_mhz = 2700, vddgfx_offset_mv = -125 }
+
+[[profiles.xtx-sclk2700-uv125.rules]]
+role = "helper*"
+arch = "gfx1100"
+evidence = "docs/reference/power-tuning-evidence-2026-11.md"
+settings = { sclk_max_mhz = 2700, vddgfx_offset_mv = -125 }

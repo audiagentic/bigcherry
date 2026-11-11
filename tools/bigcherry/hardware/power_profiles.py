@@ -22,12 +22,9 @@ from pathlib import Path
 _NAME = re.compile(r"^[a-z][a-z0-9_-]{0,31}$")
 _ROLE = re.compile(r"^(engine|helper\*|helper[0-9]+)$")
 _ARCH = re.compile(r"^gfx[0-9a-f]+$")
-_LIMITS = {
-    "vddgfx_offset_mv": (-500, 500),
-    "sclk_max_mhz": (1, 10000),
-    "sclk_offset_mhz": (-2000, 2000),
-    "power_cap_w": (1, 1000),
-}
+_CONTROLS = frozenset(("vddgfx_offset_mv", "sclk_max_mhz", "sclk_offset_mhz", "power_cap_w"))
+_IJSON_MAX = (1 << 53) - 1
+
 
 
 class ProfileError(ValueError):
@@ -55,12 +52,14 @@ def validate_settings(settings: object, *, empty_ok: bool = True) -> dict[str, i
         raise ProfileError("power settings must be an object")
     if not settings and not empty_ok:
         raise ProfileError("a profile rule needs at least one setting")
-    if unknown := set(settings) - set(_LIMITS):
+    if unknown := set(settings) - _CONTROLS:
         raise ProfileError(f"unknown power setting(s): {sorted(unknown)}")
     for k, v in settings.items():
-        low, high = _LIMITS[k]
-        if type(v) is not int or not low <= v <= high:
-            raise ProfileError(f"{k} must be an integer in {low}..{high}")
+        # Hardware-specific bounds come ONLY from the fresh PWR07 BDF probe.
+        if type(v) is not int or abs(v) > _IJSON_MAX or (
+            k in ("sclk_max_mhz", "power_cap_w") and v <= 0
+        ):
+            raise ProfileError(f"{k} must be a typed I-JSON-safe power setting")
     if "sclk_max_mhz" in settings and "sclk_offset_mhz" in settings:
         raise ProfileError("sclk_max_mhz and sclk_offset_mhz are mutually exclusive")
     return dict(settings)

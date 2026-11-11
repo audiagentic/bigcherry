@@ -168,6 +168,12 @@ def resolve_power_plan(
                 patch = validate_settings(overrides[role], empty_ok=False)
                 settings.update(patch)
                 settings = validate_settings(settings)
+            # Never emit a lone gfx1100 voltage offset: the November A/B
+            # found it increased power without a matching SCLK cap.
+            if arch == "gfx1100" and "vddgfx_offset_mv" in settings and "sclk_max_mhz" not in settings:
+                raise PowerPlanRefused(
+                    f"{bdf}: gfx1100 VDDGFX offset requires sclk_max_mhz"
+                )
             if mode == "observe":
                 settings = {}
             elif settings:
