@@ -364,3 +364,94 @@ optimized gfx1100/gfx1201 shape dispatch, (3) matched head-local
 M64/long-context ABBA and then full TP3-vs-TP4 operators,
 (4) only after quality and admission evidence enable engine TP3.
 No extrapolation to 262,144-token or 4/6/8-stream real serving.
+
+
+## 2026-11-11 — next bounded slice: original-BF16 GDN math, GPU pending
+
+New opt-in files tools/lab/radiance/xtx27_vtp14_gdn_exact.{py,hip}
+and xtx27_vtp14_gdn_gpu.py stage the Qwen GDN **decode**
+mathematics, based on pinned Radiance libref/ref_gdn.cpp and
+arch/common/rad_block_gdn.h. Production and vendor code are unchanged.
+
+Original layer-0 BF16 conv1d.weight, A_log, dt_bias and norm.weight
+are actually consumed, validated against checkpoint index and
+safetensors headers, and payload-SHA256 checked. The three physical
+rank convolution packs from VTP13 are checked against their original
+recorded hashes. Projected Q/K/V/a/b/z are still deterministic
+BF16-representable SYNTHETIC inputs, **not** original in_proj GEMMs.
+
+Card-free reference equations: width-4 causal conv -> SiLU -> BF16
+round; L2 q/k norm with 1/sqrt(128) query scale; learned
+g=-exp(A_log)*softplus(a+dt_bias), beta=sigmoid(b);
+S=exp(g)*S + beta*(v-(exp(g)*S)k)*k^T; o=Sq; and gated
+RMSNorm per 128-value head with the checkpoint gain times SiLU(z).
+Two independent CPU state orientations and original-vs-repacked
+convolution compare all rank outputs and recurrent states.
+
+Real layer-0 M2 and M4 card-free receipts PASS. Convolution comparison
+has max absolute 0, M2 state max 8.68e-19, output max 5.21e-18.
+M4 immutable receipt under
+BC_WORK_ROOT/xtx27-prefill/vtp14-gdn-reference/layer0-20261111T004006431113Z/summary.json.
+The independent oracle also exports per-rank FP32 reference binaries
+and original learned coefficients with SHA256 provenance.
+
+The actual HIP kernel compiled card-free for gfx1100 and gfx1201;
+source digest 304efc77dce14da1. It performs convolution,
+normalisation, learned decay/beta delta recurrence and gated norm
+simultaneously on three physical GPU streams, comparing every
+output with the independently created reference. It does not rely
+on P2P. **At initial staging, GPU execution was not yet proven**: an unrelated RHP19
+4-GPU calibration owns the exclusive lease and has live KFD processes.
+
+When hardware is free, run from the experimental worktree:
+python3 tools/lab/radiance/xtx27_vtp14_gdn_gpu.py --phase gpu --run
+--reference "$BC_WORK_ROOT/xtx27-prefill/vtp14-gdn-reference/layer0-20261111T004006431113Z/summary.json"
+--pack-receipt "$BC_WORK_ROOT/xtx27-prefill/vtp13-gdn-pack/layer0-20261111T000916481127Z/summary.json"
+--iterations 5
+
+The wrapper acquires its own exclusive lease, rejects inherited
+GPU masks/foreign processes and writes immutable GPU receipts.
+Require rc=0 and independent oracles on every GPU, then repeat
+M1 and M8 with separately generated reference receipts.
+
+Still required before engine/quality admission: actual QKV/a/b/z
+projection GEMMs, per-sequence warm convolution histories,
+exact KKT prefill, state-cache and speculative rollback contracts,
+native optimized gfx1100/gfx1201 dispatch, matched TP2/TP4
+4/6/8-stream real model throughput and resident KV admission.
+The result is NOT full model Qwen GDN, tokens/s or 262k context.
+
+
+### 2026-11-11 — VTP14 bounded GDN GPU hardware acceptance: PASS
+
+Following the prior card-free staging, the GPU lease became free and
+the KFD inventory empty. Three **fresh exclusive-lease GPU starts**
+ran the original-BF16-convolution + learned-decay Qwen GDN math on
+2x gfx1100 XTX and gfx1201 R9700 concurrently. All three oracles
+PASS (rc=0) against independently generated per-rank CPU FP32
+outputs; there was no rank serialisation, fourth physical endpoint
+or GPU P2P. Source digest: 304efc77dce14da1 (HIP ROCm 7.2.4).
+
+| Rows | End-to-end GPU-stage wall p50 | XTX0 device | XTX1 device | R9700 device | Max absolute GPU-to-CPU error |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| M1 (5 reps) | 123.01 us | 101.04 us | 98.56 us | 78.00 us | 6.99e-10 |
+| M4 (3 reps) | 302.79 us | 277.88 us | 276.92 us | 167.08 us | 2.10e-9 |
+| M8 (5 reps) | 571.97 us | 545.89 us | 543.36 us | 296.20 us | 6.52e-9 |
+
+Bounded receipts under BC_WORK_ROOT/xtx27-prefill/vtp14-gdn-gpu/runs:
+20261111T004542862724Z-304efc77dc (M1),
+20261111T004434800289Z-304efc77dc (M4),
+20261111T004613287331Z-304efc77dc (M8).
+The source, CPU reference, original BF16 packs, coefficient packet,
+driver and compiler metadata are recorded/checksummed. Every
+run released its lease and exited without residual KFD processes.
+
+**Result:** the R9700 can run 24 value heads + 8 key heads together
+with original BF16 convolution and learned Qwen GDN recurrence
+faster than either XTX's 12/4 in this specific *unoptimised*
+preprojected-input test. This is an operator correctness/relative
+latency result only. Actual original QKV/a/b/z GEMMs, input/output
+norm/projections, KV/GDN cache admission, full causal prefill KKT,
+warm-history continuation, speculative replay and full-model serving
+are NOT validated. Do not compare these timings to old simplified
+GDN, native Radiance kernels, or tokens/s as if matched.
