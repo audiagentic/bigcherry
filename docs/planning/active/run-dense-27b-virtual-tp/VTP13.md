@@ -568,3 +568,56 @@ on-GPU or native Radiance runtime. Model-wide 64-layer GPU loading,
 long-context cache, prefill KKT, speculative rollback, real 4/6/8
 stream throughput and resident context are all open. No
 production default or vendor changes.
+
+
+### 2026-11-11 — VTP16 original-BF16 out-proj three-GPU acceptance staged
+
+Opt-in xtx27_vtp16_gdn_output.hip and
+xtx27_vtp16_gdn_output_gpu.py are now compiled for gfx1100+gfx1201
+(source digest 0e579a3508054a90...). One physical GPU context
+per XTX0/XTX1/R9700 loads only its own exact-original BF16
+5120x1536/1536/3072 output-projection weight columns and
+the independently computed BF16 GDN-core output slice, launches
+all three physical GEMVs before one barrier, sends three
+[M,5120] F32 partials D2H, sums in explicit physical-rank order,
+BF16-rounds and adds the original BF16 residual, then broadcasts
+the result H2D to every GPU. All three output buffers are
+compared against the host result; every partial, reduced F32
+vector and final BF16 vector is numerically compared against
+the independent VTP16 original-BF16 whole-matrix CPU reference.
+This is pageable host staging; no P2P, no claimed production
+overlap, no GPU-layer-wide integration with VTP15 core yet.
+
+**Hardware status:** GPU acceptance PENDING, because another
+agent owns the exclusive 4-GPU lease for ongoing Flash-Next
+serving experiments. The harness is opt-in, obtains a fresh
+exclusive agent-lease, rejects pre-existing KFD processes and
+writes source-digested immutable receipt files. No attempt
+to run inside the competing lease.
+
+M1 when lease is free (using original CPU M1 oracle regenerated
+after the lint-only writer change):
+
+    python3 tools/lab/radiance/xtx27_vtp16_gdn_output_gpu.py --phase gpu --run --iterations 5 \
+      --packet-receipt "$BC_WORK_ROOT/xtx27-prefill/vtp16-gdn-output/layer0-20261111T014452115048Z/summary.json" \
+      --reference-receipt "$BC_WORK_ROOT/xtx27-prefill/vtp16-gdn-output-ref/layer0-20261111T015557796594Z/summary.json"
+
+For M4 substitute the matching original output packet at
+vtp16-gdn-output/layer0-20261111T014909377366Z/summary.json
+and CPU oracle receipt at
+vtp16-gdn-output-ref/layer0-20261111T014923805172Z/summary.json.
+Require rc=0, all three original-weight partials, host FP32
+reduction, BF16 residual and H2D broadcast numerical oracles
+PASS, no residual KFD process, per-GPU/wall timings recorded.
+Do not confuse this separated output-stage proof with the
+already passed VTP15 on-device input-to-recurrence M1 kernel,
+or claim all operations share a single live engine context.
+
+**Next graph integration:** feed each VTP15 GDN GPU recurrent
+BF16 output directly into this GPU output-GEMV and host
+collective, then attach BF16 residual. That makes the
+whole core block one GPU dependency graph; the subsequent
+gates remain original long-token recurrence history, exact
+prefill KKT, full attention, all 64 layers, native optimized
+quant GEMMs, serving/quality, and real 4/6/8-stream and
+resident context comparisons against TP2 and fused TP4.
