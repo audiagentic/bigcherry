@@ -38,6 +38,7 @@ def _receipt(**overrides):
     base = {
         "schema_version": 1,
         "kind": "bc_serve_v2_runtime_receipt",
+        "run_id": "test-run",
         "manifest": {"content_digest": DIGEST},
         "startup_decision": {
             "requested": "on",
@@ -254,3 +255,23 @@ def test_in_flight_transition_is_not_degraded():
     receipt["runtime_status"] = "active"
     with pytest.raises(RuntimeReceiptRefused, match="disagrees with telemetry"):
         decode_runtime_receipt(receipt)
+
+
+def test_run_and_manifest_binding():
+    receipt = _receipt()
+    assert decode_runtime_receipt(receipt, expected_run_id="test-run",
+                                  expected_manifest_digest=DIGEST).run_id == "test-run"
+    for changed in ("other-run", "../test-run", ""):
+        bad = _receipt(run_id=changed)
+        with pytest.raises(RuntimeReceiptRefused):
+            decode_runtime_receipt(bad, expected_run_id="test-run")
+    with pytest.raises(RuntimeReceiptRefused):
+        decode_runtime_receipt(_receipt(), expected_manifest_digest="sha256:" + "b" * 64)
+
+
+def test_real_worker_owner_digest_is_full_uint64():
+    value = (1 << 64) - 1
+    record = _receipt()
+    record["bounding"]["owner_generation_digest"] = value
+    record["snapshots"][0]["owner_generation_digest"] = value
+    assert decode_runtime_receipt(record).owner_generation_digest == value
