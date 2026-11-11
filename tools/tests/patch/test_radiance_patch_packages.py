@@ -89,7 +89,7 @@ PIN_BLOBS = {
     },
     RAD0009: {
         "core/bc_serving_manifest.h": (None, "c9fd765"),
-        "core/bc_serving_manifest.cpp": (None, "b8facc0"),
+        "core/bc_serving_manifest.cpp": (None, "0713835"),
         "core/CMakeLists.txt": ("921debd", "8750342"),
         "core/main.cpp": ("4cb6d43", "7feb7b6"),
     },
@@ -824,8 +824,9 @@ class TestPlanMemoryPatch(unittest.TestCase):
             ])
             added = self._added_code(root, "core/engine_bringup.cpp")
             for expected in (
-                ("if (ri == 0) bc_plan_memory_note(cfg_, facts, vb, emb_bytes, wfs, ngram_bytes, ck_slot, host_arenas, kv_floor, ctx, "
-                 "ranks_[0]->program, rank_cfg_);"),
+                ("bc_plan_memory_note(cfg_, facts, vb, emb_bytes, wfs, ngram_bytes, ck_slot, host_arenas, kv_floor, ctx, "
+                 "ranks_[0]->program);"),
+                "if (ri == 0) bc_plan_memory_note_ranks(rank_cfg_);",
                 "RAD_TRY(bc_plan_memory_done());",
             ):
                 self.assertIn(expected, " ".join(added))
@@ -845,8 +846,11 @@ class TestPlanMemoryPatch(unittest.TestCase):
             rank_cfg = bringup.index("const Config& rc = rank_cfg_[ri];")
             note = bringup.index("bc_plan_memory_note(cfg_, facts, vb,")
             self.assertLess(split, rank_cfg)
-            self.assertLess(rank_cfg, note)
+            self.assertLess(note, rank_cfg)
             self.assertLess(resolve, note)
+            rank_note = bringup.index("bc_plan_memory_note_ranks(rank_cfg_)")
+            self.assertLess(split, rank_note)
+            self.assertLess(rank_cfg, rank_note)
             # RSC08 S4: the live plan is checked right after the VRAM split, before any pool is configured
             self.assertLess(note, bringup.index("r->pools.configure("))
             self.assertLess(note, bringup.index("int Engine::start()"))
@@ -860,8 +864,9 @@ class TestPlanMemoryPatch(unittest.TestCase):
             plan = (root / "core/bc_plan_memory.cpp").read_text()
             flags = (root / "core/bc_plan_check.cpp").read_text()
             manifest = (root / "core/bc_serving_manifest.cpp").read_text()
+            assert source.index("bc_plan_memory_note(cfg_, facts, vb,") < source.index("vram_budget_rank_split(")
             assert source.index("vram_budget_rank_split(") < source.index(
-                "if (ri == 0) bc_plan_memory_note(") < source.index("r->pools.configure(")
+                "if (ri == 0) bc_plan_memory_note_ranks(") < source.index("r->pools.configure(")
             assert "c.vram_weights_mib + (__int128)c.vram_kv_mib" in plan
             assert "f.n_queues * f.queue_bytes" in plan
             assert '"radiance_p1_rank_demand"' in plan
@@ -870,7 +875,7 @@ class TestPlanMemoryPatch(unittest.TestCase):
             assert 'g_store.push_back("--plan-memory-ranks");' in manifest
             assert "out << v1::encode(g_plan).dump(2)" in plan
             assert (FIXTURE / "core/engine_bringup.cpp").read_text().find(
-                "if (ri == 0) bc_plan_memory_note(") == -1
+                "if (ri == 0) bc_plan_memory_note_ranks(") == -1
             assert (FIXTURE / "core/engine_bringup.cpp").read_text().find(
                 "g_rank_gpu") == -1
         finally:

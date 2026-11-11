@@ -36,7 +36,9 @@ int bc_plan_memory_take_flag(int* argc, char*** argv);
 void bc_plan_memory_note(const rad::Config& cfg, const std::vector<rad::VramFacts>& facts, const rad::VramBudget& vb,
                          const std::vector<int64_t>& emb_bytes, const std::vector<rad::WeightFootprint>& wfs,
                          int64_t ngram_bytes, int64_t ck_slot, int64_t host_arenas, int64_t kv_one, int64_t ctx,
-                         const rad::Program& prog, const std::vector<rad::Config>& rank_cfg);
+                         const rad::Program& prog);
+/* Publish rank demand only after the rank split, before configuring pools. */
+void bc_plan_memory_note_ranks(const std::vector<rad::Config>& rank_cfg);
 
 /* After plan(): with --plan-memory, writes the plan and exits (status 0, or 2 when nothing was recorded or FILE cannot be
  * written). Otherwise returns 0 and start-up goes on. */
@@ -258,6 +260,8 @@ v1::EnginePlan g_plan;
 bool g_noted = false;
 nlohmann::json g_rank_gpu = nlohmann::json::array();
 bool g_rank_noted = false;
+std::vector<rad::VramFacts> g_rank_facts;
+int64_t g_rank_stage = 0;
 long long g_taken_kb = 0;   /* MemAvailable fallen since this process's first line, at the end of the VRAM split (before any pool) */
 
 v1::PlanHostConsumer consumer(const char* name, int64_t bytes, const char* from, const char* remedy) {
@@ -270,7 +274,7 @@ int bc_plan_memory_take_flag(int* argc, char*** argv) { return bc_plan::take_fla
 void bc_plan_memory_note(const rad::Config& cfg, const std::vector<rad::VramFacts>& facts, const rad::VramBudget& vb,
                          const std::vector<int64_t>& emb_bytes, const std::vector<rad::WeightFootprint>& wfs,
                          int64_t ngram_bytes, int64_t ck_slot, int64_t host_arenas, int64_t kv_one, int64_t ctx,
-                         const rad::Program& prog, const std::vector<rad::Config>& rank_cfg) {
+                         const rad::Program& prog) {
     if (bc_plan::mode() == bc_plan::Mode::none) return;
     /* The checkpoint interval the store is sized with is the resolved chunk geometry's (configure_kv resolves it after
      * plan(); the same function is called here), not the raw flag: it rounds up to the step quantum. */
@@ -324,39 +328,9 @@ void bc_plan_memory_note(const rad::Config& cfg, const std::vector<rad::VramFact
         p.vram.cards.push_back({facts[i].capacity, facts[i].free, wf.experts, wf.expert_unit_max});
     }
     p.host_pool_mib = cfg.host_pool_mib;
-    /* Post vram_budget_rank_split: the common budget cannot describe a
-     * cheaper rank's KV/weight pools. All inputs here are the rank's own. */
     if (!bc_plan::rank_measure_out().empty()) {
-        const auto bdfs = bc_serving_engine_bdfs();
-        if (bdfs.size() != facts.size() || rank_cfg.size() != facts.size() ||
-            facts.empty()) {
-            g_error = "P1 rank/BDF/VRAM facts do not match the measured layout";
-            return;
-        }
-        constexpr int64_t wire_max = 9007199254740991LL; /* I-JSON integer limit */
-        constexpr int64_t mib = int64_t(1) << 20;
-        auto safe = [wire_max](__int128 n) { return n >= 0 && n <= wire_max; };
-        nlohmann::json gpu = nlohmann::json::array();
-        for (size_t i = 0; i < facts.size(); ++i) {
-            const auto& f = facts[i];
-            const auto& c = rank_cfg[i];
-            const __int128 overhead = (__int128)f.arena + f.staging +
-                (__int128)f.n_queues * f.queue_bytes + vb.stage;
-            const __int128 fixed = overhead + f.statics;
-            const __int128 required = overhead + (__int128)mib *
-                (c.vram_weights_mib + (__int128)c.vram_kv_mib);
-            if (bdfs[i].empty() || !safe(overhead) || !safe(fixed) ||
-                !safe(required) || required <= 0 || fixed > required || !safe(f.free)) {
-                g_error = "P1 rank demand is missing, overflows or disagrees with fixed VRAM";
-                return;
-            }
-            gpu.push_back({{"bdf", bdfs[i]}, {"required_bytes", (int64_t)required},
-                           {"fixed_bytes", (int64_t)fixed},
-                           {"claimable_bytes", f.free},
-                           {"evidence", "rad0011 rank_cfg and VramFacts after rank split"}});
-        }
-        g_rank_gpu = std::move(gpu);
-        g_rank_noted = true;
+        g_rank_facts = facts;
+        g_rank_stage = vb.stage;
     }
     if (bc_plan::mode() == bc_plan::Mode::check) {
         // before any pool is configured (Engine::plan() configures them after this call): RSC08 S4
@@ -374,6 +348,42 @@ void bc_plan_memory_note(const rad::Config& cfg, const std::vector<rad::VramFact
     g_taken_kb = bc_plan::mem_available_kb_at_start() - bc_plan::mem_available_kb_now();
     g_plan = std::move(p);
     g_noted = true;
+}
+
+void bc_plan_memory_note_ranks(const std::vector<rad::Config>& rank_cfg) {
+    /* Capture each rank's split only after vram_budget_rank_split. */
+    if (!bc_plan::rank_measure_out().empty()) {
+        const auto bdfs = bc_serving_engine_bdfs();
+        if (bdfs.size() != g_rank_facts.size() || rank_cfg.size() != g_rank_facts.size() ||
+            g_rank_facts.empty()) {
+            g_error = "P1 rank/BDF/VRAM g_rank_facts do not match the measured layout";
+            return;
+        }
+        constexpr int64_t wire_max = 9007199254740991LL; /* I-JSON integer limit */
+        constexpr int64_t mib = int64_t(1) << 20;
+        auto safe = [wire_max](__int128 n) { return n >= 0 && n <= wire_max; };
+        nlohmann::json gpu = nlohmann::json::array();
+        for (size_t i = 0; i < g_rank_facts.size(); ++i) {
+            const auto& f = g_rank_facts[i];
+            const auto& c = rank_cfg[i];
+            const __int128 overhead = (__int128)f.arena + f.staging +
+                (__int128)f.n_queues * f.queue_bytes + g_rank_stage;
+            const __int128 fixed = overhead + f.statics;
+            const __int128 required = overhead + (__int128)mib *
+                (c.vram_weights_mib + (__int128)c.vram_kv_mib);
+            if (bdfs[i].empty() || !safe(overhead) || !safe(fixed) ||
+                !safe(required) || required <= 0 || fixed > required || !safe(f.free)) {
+                g_error = "P1 rank demand is missing, overflows or disagrees with fixed VRAM";
+                return;
+            }
+            gpu.push_back({{"bdf", bdfs[i]}, {"required_bytes", (int64_t)required},
+                           {"fixed_bytes", (int64_t)fixed},
+                           {"claimable_bytes", f.free},
+                           {"evidence", "rad0011 rank_cfg and VramFacts after rank split"}});
+        }
+        g_rank_gpu = std::move(gpu);
+        g_rank_noted = true;
+    }
 }
 
 int bc_plan_memory_done() {
@@ -499,12 +509,21 @@ PATCHES = (
             ),
             Edit(
                 id="bc-plan-memory-note",
-                anchor=r"^        const Config& rc = rank_cfg_\[ri\];$",
-                text="\n        if (ri == 0) bc_plan_memory_note(cfg_, facts, vb, emb_bytes, wfs, ngram_bytes, ck_slot, host_arenas, kv_floor, ctx, ranks_[0]->program, rank_cfg_);",
-                guard=r"if \(ri == 0\) bc_plan_memory_note\(cfg_, facts, vb,",
+                anchor=r"^        RAD_TRY\(vram_budget_resolve\(cfg_, facts, &vb\)\);$",
+                text="\n        bc_plan_memory_note(cfg_, facts, vb, emb_bytes, wfs, ngram_bytes, ck_slot, host_arenas, kv_floor, ctx, ranks_[0]->program);",
+                guard=r"bc_plan_memory_note\(cfg_, facts, vb,",
                 max_span_lines=1,
                 expect_matches=1,
-                rationale="Unique rank_cfg_ declaration comes after all rank splits and before first rank pool configuration; note executes once.",
+                rationale="Record the v1 plan while its measured facts are in scope, before the rank split and before any pool.",
+            ),
+            Edit(
+                id="bc-plan-memory-ranks-post-split",
+                anchor=r"^        const Config& rc = rank_cfg_\[ri\];$",
+                text="\n        if (ri == 0) bc_plan_memory_note_ranks(rank_cfg_);",
+                guard=r"if \(ri == 0\) bc_plan_memory_note_ranks\(rank_cfg_\);",
+                max_span_lines=1,
+                expect_matches=1,
+                rationale="Unique rank config access occurs after the rank split and before any per-rank pool is configured.",
             ),
             Edit(
                 id="s5-exact-host-pool-shortfall",

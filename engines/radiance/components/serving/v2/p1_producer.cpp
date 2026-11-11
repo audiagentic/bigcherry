@@ -77,7 +77,7 @@ json produce_p1_inputs(const bc::serving::Resolved& resolved, const json& facts,
   const fs::path model_path = resolved.typed.engine.model;
   bc::experts::Container model;
   if (!model.open(model_path.c_str()) || !model.layers || !model.experts)
-    refuse("model", "readable actual .rad expert container with routed shape required");
+    refuse("model", "model container must be readable and have routed layers");
   const std::string model_id = bc::serving::container_identity(model_path);
   const fs::path engine_binary = nonempty(request.at("engine_binary"), "engine_binary");
   const std::string engine_id = bc::serving::engine_identity(
@@ -213,7 +213,7 @@ json produce_p1_inputs(const bc::serving::Resolved& resolved, const json& facts,
       native.owner_map.owner_map_sha256 + std::to_string(ctx) +
       std::to_string(native.retention_target_tokens) + ranks.dump() + plan.dump());
   native.provenance = run_id + "; " + room.value().evidence +
-      "; actual .rad container and verified owner planner; rad0011 post-rank-split";
+      "; verified container identity and owner planner; rank split";
   const auto published = publish_p1_measurement(native);
   if (!published) refuse(published.error().path, published.error().message);
   return published.value();

@@ -295,7 +295,10 @@ bool bc_serving_engine_argv(int* argc, char*** argv) {
     if (spec.experiment && spec.experiment->engine) {
         const auto& e = *spec.experiment->engine;
         settings.shadow = e.shadow.value_or(false) ? 1u : 0u;
-        settings.mask_only = static_cast<uint32_t>(e.m    // The remaining non-migrated engine switches retain their original bridge
+        settings.mask_only = static_cast<uint32_t>(e.mask_only.value_or(0));
+    }
+    g_engine_settings = settings;
+    // The remaining non-migrated engine switches retain their original bridge
     // pending RSC11's separately-owned consumers (RAD_* and BC_GFX12_*).
     for (const bc::serving::v1::EnvBinding& b : bc::serving::v1::kEnvBindings) {
         if (b.env == "R3_MOE_NATIVE" || b.env == "R3_MOE_FP16" || b.env == "R3_MOE_AHALF" ||
