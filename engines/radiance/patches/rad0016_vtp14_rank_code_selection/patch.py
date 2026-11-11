@@ -22,12 +22,29 @@ Source-pinned to radiance v1.17.0 (19d4e8fe); every anchor is exact upstream tex
 """
 from __future__ import annotations
 
+import hashlib
 import re
 from pathlib import Path
 
 from bigcherry.patcher import Edit, FilePatch
 
 SRC = Path(__file__).resolve().parent / "src"
+
+# The build identity hashes this file's bytes only (patch_implementation_digest), so the src/ files it
+# creates are pinned here: a src/ change must update these digests, which changes this file and the build.
+SRC_SHA256 = {
+    "bc_rank_devices.cpp": "bf47feaef6d24638809e4806a4c78dfac702012ecc33057ceadcef27283d1715",
+    "bc_rank_devices.h": "af3c44a839db1d135f26d3de05eb66c7b9482032eb625946cd27cf07499c41a5",
+    "bc_rank_devices_test.cpp": "13da3ce269c1645f9704a2556eb2337a17cae93642764554feb1f440e0ff84d2",
+}
+
+
+def _src_text(name: str) -> str:
+    data = (SRC / name).read_bytes()
+    got = hashlib.sha256(data).hexdigest()
+    if SRC_SHA256.get(name) != got:
+        raise RuntimeError(f"{name}: sha256 {got} is not the pinned {SRC_SHA256.get(name)}; update SRC_SHA256")
+    return data.decode("utf-8")
 
 
 def _edit(id: str, before: str, after: str, *, mode: str = "replace", guard: str, rationale: str = "",
@@ -45,7 +62,7 @@ def _edit(id: str, before: str, after: str, *, mode: str = "replace", guard: str
 
 
 def _created(path: str, source: str, guard: str) -> FilePatch:
-    text = (SRC / source).read_text(encoding="utf-8")
+    text = _src_text(source)
     return FilePatch(
         path=path,
         create=True,

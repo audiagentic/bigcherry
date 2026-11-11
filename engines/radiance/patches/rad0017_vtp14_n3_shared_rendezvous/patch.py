@@ -27,12 +27,29 @@ intact (the <condition_variable>/<cstdio> pair, ArInst's host/gate_ctr, align16,
 """
 from __future__ import annotations
 
+import hashlib
 import re
 from pathlib import Path
 
 from bigcherry.patcher import Edit, FilePatch
 
 SRC = Path(__file__).resolve().parent / "src"
+
+# The build identity hashes this file's bytes only (patch_implementation_digest), so the src/ files it
+# creates are pinned here: a src/ change must update these digests, which changes this file and the build.
+SRC_SHA256 = {
+    "bc_shared_slot.cpp": "58a1c4d2ec042d309db151a713dc738b6d6146a13b6b026cf68618b71a303f46",
+    "bc_shared_slot.h": "e1ca434a4ec14bddac2c91a5f924a5557c9a39220c9714506846fff85c4c9a46",
+    "bc_shared_slot_test.cpp": "e820233bf87f51ea8b038e07cb81612be4b226280e1d8424865d74fb62480492",
+}
+
+
+def _src_text(name: str) -> str:
+    data = (SRC / name).read_bytes()
+    got = hashlib.sha256(data).hexdigest()
+    if SRC_SHA256.get(name) != got:
+        raise RuntimeError(f"{name}: sha256 {got} is not the pinned {SRC_SHA256.get(name)}; update SRC_SHA256")
+    return data.decode("utf-8")
 
 RV_KEY_PREFIX = "libr4d.ar.rendezvous/v1"
 
@@ -60,7 +77,7 @@ def _created(path: str, source: str, guard: str) -> FilePatch:
             id="create-" + source.replace(".", "-").replace("_", "-"),
             anchor=r"\A",
             mode="insert_after",
-            text=(SRC / source).read_text(encoding="utf-8"),
+            text=_src_text(source),
             guard=re.escape(guard),
             max_span_lines=1,
             expect_matches=1,
