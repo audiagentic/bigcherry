@@ -209,3 +209,50 @@ commit 5dbe356f3, pinned engine v1.17.0. The
 reproducible **native TP2 hardware** acceptance is still
 pending and must be performed under an exclusive GPU lease
 before any TP3 comparative result.
+
+## N1 rework, 2026-11-11: applies to real v1.17.0, wired behind `--rank-devices`
+
+The first rad0016 did not apply to the pinned source. Applied to the real v1.17.0 source, edits to `rad_core.h`,
+`loader.cpp` and `select.cpp` failed, because they were anchored on text that v1.17.0 does not contain. Its test
+built its fixture from the patch's own anchors, so it could not catch this. The rewrite:
+
+- **Patch.** Every anchor is exact upstream text. The patch test now also applies the patch to the pinned commit
+  19d4e8fe when a radiance checkout is reachable.
+- **Row mask.** `KernelRow::code_ranks` is a `uint32_t` mask, read from the fat binaries the dlopen registered, for
+  each rank's card. Selection refuses a row whose code the asking rank's card cannot run, names the plugin, and
+  falls through to the next library. A question asked for no rank requires every rank's bit.
+- **Rank list.** `--rank-devices BDF,...` is an explicit, ordered list of PCI addresses. It is the only route to a
+  mixed-architecture world, and it is refused unless it names exactly `--tp` unique, discrete, visible cards.
+- **Startup checks.** Every rank passes the reference-kernel gate, every rank must issue the same collective
+  kernels in the same order, and each rank logs a receipt.
+- **Tests without a card.** `tests/bc_rank_devices_test.cpp` covers planning, refusals, per-rank selection, mask
+  forwarding through resolve and bands, and the unchanged legacy path.
+
+## N3 finding: the all-reduce rendezvous is per library (confirmed by source reading)
+
+**What blocks it**
+
+- `libr4d/r4d_ar_entry.hip` holds its peer rendezvous (`Rendezvous g_rv`, `rv_barrier(world)`) in static storage
+  of the kernel library.
+- In the target world, the XTX ranks select the all-reduce from libr3 (the gfx1100 rewrite of libr4d,
+  `engines/radiance/components/libr3`) and the R9700 rank selects it from libr4d. Each library therefore has its
+  own `g_rv`, and neither one ever counts `world` arrivals.
+- The first all-reduce waits until the 60 s collective timeout.
+- The N1 agreement check passes this world, because the kernel names and protocol constants are identical in both
+  libraries (`R4D_AR_WIDE_MAX_BLOCKS 64`, `NB_DESIGN 16`, `MAX_PEERS 7`, `R4D_AR_MAX_BLOCKS 512`). Only the
+  rendezvous storage is split.
+
+**Design (N3 patch)**
+
+- A managed core patch exports a process-wide `rad_bc_shared_slot(key, size, init)`: the engine allocates the
+  slot once under a mutex and keeps it for the life of the process.
+- A managed libr4d patch looks the slot up with `dlsym(RTLD_DEFAULT, …)` and keys it on the protocol version. When
+  the lookup fails, it falls back to its local `g_rv`, so the single-library behaviour is unchanged.
+- libr3 is generated from the patched libr4d source, so it inherits the change. Its `rewrites.txt` and `.rw`
+  anchors must keep matching; the libr3 build checks this.
+- The N1 agreement check is then extended to compare a protocol fingerprint as well as kernel names.
+
+**Acceptance (needs the GPU lease)**
+
+- one exact three-rank all-reduce on M1, M4 and M8 with `--p2p off`, matching the BF16 oracle;
+- no hang on abort or restart.

@@ -1,12 +1,17 @@
-"""N1: native Radiance per-rank code eligibility source-patch contract tests.
+"""VTP14 N1 (rad0016): per-rank kernel code eligibility and --rank-devices, as a managed source patch.
 
-Card-free; tests exact source anchored patch behaviour and production
-isolation, leaving device discovery/startup deliberately unchanged.
+Card-free. The contract tests run everywhere. The pinned-source test applies the patch to real radiance v1.17.0 when
+a radiance checkout carrying that tag is reachable (RADIANCE_SRC, or the workspace's vendor/radiance) and is skipped
+otherwise; it is what catches anchor drift against upstream, which a fixture built from the patch's own anchors cannot.
+The C++ behaviour (refusals, per-rank selection, legacy path unchanged) is tested by tests/bc_rank_devices_test.cpp,
+which the patch adds to radiance's own suite.
 """
 from __future__ import annotations
 
 import importlib.util
+import os
 import re
+import subprocess
 import sys
 import tempfile
 import tomllib
@@ -17,9 +22,9 @@ REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO / "tools"))
 from bigcherry.patcher import apply_all
 
-PACKAGE = (
-    REPO / "engines/radiance/patches/rad0016_vtp14_rank_code_selection"
-)
+PACKAGE = REPO / "engines/radiance/patches/rad0016_vtp14_rank_code_selection"
+PIN = "v1.17.0"
+PIN_COMMIT = "19d4e8fe0e18071b9b6300f15fc4ccf38dc4fa3d"
 
 
 def patch_files():
@@ -30,13 +35,29 @@ def patch_files():
 
 
 def original_literal(edit):
-    # The patch tool anchors exactly the upstream source (re.escape).
+    # Every upstream edit anchors exact upstream text (re.escape).
     return re.sub(r"\\(.)", r"\1", edit.anchor, flags=re.DOTALL)
 
 
+def radiance_checkout() -> Path | None:
+    candidates = [os.environ.get("RADIANCE_SRC")]
+    for parent in REPO.parents:
+        candidates.append(str(parent / "vendor" / "radiance"))
+    for c in candidates:
+        if not c or not (Path(c) / ".git").exists():
+            continue
+        r = subprocess.run(["git", "-C", c, "rev-parse", "--verify", "-q", PIN + "^{commit}"],
+                           capture_output=True, text=True)
+        if r.returncode == 0 and r.stdout.strip() == PIN_COMMIT:
+            return Path(c)
+    return None
+
+
 class NativeRankCodeEligibilityTests(unittest.TestCase):
-    def fixture(self, root: Path):
+    def anchored_fixture(self, root: Path):
         for f in patch_files():
+            if f.create:
+                continue
             dest = root / f.path
             dest.parent.mkdir(parents=True, exist_ok=True)
             dest.write_text("\n".join(original_literal(e) for e in f.edits) + "\n")
@@ -51,63 +72,91 @@ class NativeRankCodeEligibilityTests(unittest.TestCase):
         self.assertEqual(meta["plan-ids"], ["VTP14"])
         self.assertEqual(meta["tags"], ["tensor-parallel", "dispatch"])
         name = "vtp14-rank-code-selection"
-        self.assertEqual(recipe["patch-set"][name]["patches"],
-                         ["rad0016_vtp14_rank_code_selection"])
-        self.assertIn(name,
-                      recipe["source"]["radiance-vtp14-rank-code-selection"]["patch-sets"])
+        self.assertEqual(recipe["patch-set"][name]["patches"], ["rad0016_vtp14_rank_code_selection"])
+        self.assertIn(name, recipe["source"]["radiance-vtp14-rank-code-selection"]["patch-sets"])
         self.assertNotIn(name, recipe["source"]["radiance"]["patch-sets"])
         self.assertNotIn(name, recipe["source"]["radiance-native"]["patch-sets"])
         self.assertTrue((REPO / "docs/planning/active/run-dense-27b-virtual-tp/VTP14.md").exists())
 
-    def test_exact_source_is_idempotent_with_rank_code_contract(self):
-        edits = patch_files()
-        self.assertEqual(len(edits), 7)
+    def test_shape_guards_unique_and_created_files_from_src(self):
+        files = patch_files()
+        paths = [f.path for f in files]
+        self.assertEqual(len(paths), len(set(paths)))
+        created = {f.path for f in files if f.create}
+        self.assertEqual(created, {"core/plugin/bc_rank_devices.h", "core/plugin/bc_rank_devices.cpp",
+                                   "tests/bc_rank_devices_test.cpp"})
+        guards = [e.guard for f in files for e in f.edits]
+        self.assertEqual(len(guards), len(set(guards)))
+        for f in files:
+            if f.create:
+                src = (PACKAGE / "src" / Path(f.path).name).read_text()
+                self.assertEqual(f.edits[0].text, src)
+                self.assertTrue(re.search(f.edits[0].guard, src, re.MULTILINE), f.path)
+            else:
+                for e in f.edits:
+                    # A guard must recognise its own inserted text (idempotence) and not the upstream anchor.
+                    self.assertTrue(re.search(e.guard, e.text, re.MULTILINE), e.id)
+                    self.assertFalse(re.search(e.guard, original_literal(e), re.MULTILINE), e.id)
+
+    def test_anchored_fixture_applies_idempotently(self):
+        files = patch_files()
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)
-            self.fixture(root)
-            first = apply_all(edits, root)
+            self.anchored_fixture(root)
+            first = apply_all(files, root)
             self.assertTrue(all(f.ok for f in first), first)
             self.assertTrue(all(e.status == "applied" for f in first for e in f.results))
-            before = {f.path: (root / f.path).read_bytes() for f in edits}
-            again = apply_all(edits, root)
+            before = {f.path: (root / f.path).read_bytes() for f in files}
+            again = apply_all(files, root)
             self.assertTrue(all(f.ok for f in again), again)
             self.assertTrue(all(e.status == "already-applied" for f in again for e in f.results))
-            self.assertEqual(before, {f.path: (root / f.path).read_bytes() for f in edits})
-            loader = (root / "core/plugin/loader.cpp").read_text()
-            select = (root / "core/plugin/select.cpp").read_text()
-            registry = (root / "core/plugin/registry.h").read_text()
-            builder = (root / "core/build/rad_builder.cpp").read_text()
-            self.assertIn("int Registry::set_code_devices", loader)
-            self.assertIn("std::find(devices.begin(), devices.begin() + i", loader)
-            self.assertIn("rad::dev_code_runs(s.code_from, s.code_to, code_devices_[i]", loader)
-            self.assertIn("row.code_eligible_by_rank = code_mask", loader)
-            self.assertIn("if (rank < 0 || (size_t)rank >= code_devices_.size()", select)
-            self.assertIn("has no compatible device code", select)
-            self.assertIn("set_code_device(int device) { code_devices_.clear();", registry)
-            self.assertIn("reg_.build_bands", builder)
-            self.assertIn("oi.weights.empty() ? nullptr : &accept, rank_", builder)
-            self.assertNotIn("BC_VTP_NATIVE_TP3", "".join(
-                (root / f.path).read_text() for f in edits
-            ))
-            guards = [e.guard for f in edits for e in f.edits]
-            self.assertEqual(len(guards), len(set(guards)))
+            self.assertEqual(before, {f.path: (root / f.path).read_bytes() for f in files})
 
-    def test_source_drift_fails_without_rewriting_unrelated_files(self):
+    def test_source_drift_fails_closed(self):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)
-            self.fixture(root)
+            self.anchored_fixture(root)
             files = patch_files()
-            target = files[2]
+            target = next(f for f in files if f.path == "core/plugin/loader.cpp")
             path = root / target.path
-            old = original_literal(target.edits[0])
+            old = original_literal(next(e for e in target.edits if e.id == "n1-loader-ranks"))
             self.assertIn(old, path.read_text())
             path.write_text(path.read_text().replace(old, "upstream changed; no matching anchor"))
-            snapshot = {f.path: (root / f.path).read_bytes() for f in files}
+            snapshot = path.read_bytes()
             result = apply_all(files, root)
             self.assertTrue(any(not f.ok for f in result))
-            # Failure is atomic per file. Other files may be staged by the
-            # outer collection, so test the failing file's immutability.
-            self.assertEqual(path.read_bytes(), snapshot[target.path])
+            self.assertEqual(path.read_bytes(), snapshot)
+
+    def test_applies_to_pinned_radiance_source(self):
+        checkout = radiance_checkout()
+        if checkout is None:
+            self.skipTest(f"no radiance checkout with {PIN} ({PIN_COMMIT[:8]}); set RADIANCE_SRC")
+        files = patch_files()
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            for f in files:
+                if f.create:
+                    continue
+                blob = subprocess.run(["git", "-C", str(checkout), "show", f"{PIN_COMMIT}:{f.path}"],
+                                      capture_output=True, check=True).stdout
+                dest = root / f.path
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                dest.write_bytes(blob)
+            first = apply_all(files, root)
+            self.assertTrue(all(f.ok for f in first), first)
+            self.assertTrue(all(e.status == "applied" for f in first for e in f.results))
+            again = apply_all(files, root)
+            self.assertTrue(all(e.status == "already-applied" for f in again for e in f.results))
+            engine = (root / "core/engine_bringup.cpp").read_text()
+            loader = (root / "core/plugin/loader.cpp").read_text()
+            select = (root / "core/plugin/select.cpp").read_text()
+            # Inert without the flag: the upstream calls survive on the legacy branch.
+            self.assertIn("rad_tools_registry().set_code_device(devs[0]);", engine)
+            self.assertIn("rad_gate_reference_kernels(ranks_[0]->program", engine)
+            self.assertIn("rad::dev_code_runs(s.code_from, s.code_to, code_device_, &why) == 0", loader)
+            self.assertIn("rad::dev_code_runs(s.code_from, s.code_to, code_devices_[i], &why_i)", loader)
+            self.assertIn("if (need && (r->code_ranks & need) != need)", select)
+            self.assertIn("bc_rank_collectives_agree(colls, &why)", engine)
 
 
 if __name__ == "__main__":
