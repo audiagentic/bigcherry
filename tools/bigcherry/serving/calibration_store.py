@@ -10,7 +10,7 @@ import argparse
 import hashlib
 import json
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 SCOPE_DIGESTS = ("model_digest", "engine_build_digest", "helper_build_digest",
@@ -81,9 +81,10 @@ def validate_record(value, *, scope=None, now_unix_s=None):
     start, end = row["measured_at_unix_s"], row["valid_until_unix_s"]
     if not _int(start, True) or not _int(end, True) or end <= start:
         raise CalibrationInvalid("invalid measurement validity interval")
-    if now_unix_s is not None:
-        if not _int(now_unix_s, True) or start > now_unix_s or end <= now_unix_s:
-            raise CalibrationInvalid("stale or future-dated calibration")
+    if now_unix_s is not None and (
+        not _int(now_unix_s, True) or start > now_unix_s or end <= now_unix_s
+    ):
+        raise CalibrationInvalid("stale or future-dated calibration")
     try:
         date = datetime.strptime(row["recorded_date"], "%Y-%m-%d").date()
         if date.isoformat() != row["recorded_date"]:
@@ -138,7 +139,7 @@ def emit_from_run(run_file: Path, store: Path) -> Path:
         "valid_until_unix_s": run["valid_until_unix_s"],
         "measured_candidates": candidates, "method": run["method"],
         "source": run["source"], "recorded_date": datetime.fromtimestamp(
-            run["measured_at_unix_s"], timezone.utc).date().isoformat(),
+            run["measured_at_unix_s"], UTC).date().isoformat(),
     }
     validate_record(record)
     # The filename binds evidence to the unaltered input run bytes. Records
@@ -169,7 +170,10 @@ def select_records(store: Path, *, scope: dict, required_keys, now_unix_s: int):
             continue
         if record.get("scope") != scope:
             continue
-        validate_record(record, scope=scope, now_unix_s=now_unix_s)
+        try:
+            validate_record(record, scope=scope, now_unix_s=now_unix_s)
+        except CalibrationInvalid as exc:
+            raise CalibrationInvalid(f"{record['key']}: {exc}") from exc
         key = record["key"]
         if key in found:
             raise CalibrationInvalid(f"ambiguous calibration {key}")
