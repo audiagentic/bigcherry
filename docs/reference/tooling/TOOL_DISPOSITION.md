@@ -649,6 +649,9 @@ Radiance patches also use `bigcherry --engine radiance patch-promote <id> --evid
 | `tools/lab/radiance/xtx27_prefill.py` | **TRANSITIONAL** | XDP01 dual-XTX prefill measurement and fixture harness; lab-only. |
 | `tools/lab/radiance/xtx27_quant_plan.py` | **TRANSITIONAL** | XDP03 card-free quantization/precision budget and risk planner; experiment-only. |
 | `tools/lab/radiance/xtx27_quant_select.py` | **TRANSITIONAL** | XDP03 fail-closed mixed-precision candidate selector and evidence gate; experiment-only. |
+| `tools/lab/radiance/xtx27_w4a4.py` | **TRANSITIONAL** | XDP04–05 opt-in gfx1100 native INT4 research test launcher; standalone, never production routed. |
+| `tools/lab/radiance/xtx27_w4a4_probe.hip` | **TRANSITIONAL** | XDP04 isolated native gfx1100 IU4 correctness oracle fixture; no engine integration. |
+| `tools/lab/radiance/xtx27_w4a4_tiled.hip` | **TRANSITIONAL** | XDP05 isolated gfx1100 IU4 tiled performance and correctness probe; no engine integration. |
 | `tools/lab/rad42-bar-push/chunk_contract.py` | **TRANSITIONAL** | RAD42 CPU-only chunk-contract model and replay fixture; lab-only. |
 | `tools/lab/rad42-bar-push/critical_path_model.py` | **TRANSITIONAL** | RAD42 CPU-only stage/critical-path timing model; lab-only. |
 | `tools/lab/rad42-bar-push/test_chunk_contract.py` | **TRANSITIONAL** | RAD42 card-free chunk-contract regression checks; lab-only. |

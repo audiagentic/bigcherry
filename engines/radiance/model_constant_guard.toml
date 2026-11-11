@@ -502,3 +502,9 @@ path = "tools/lab/radiance/xtx27_quant_plan.py"
 anchor = 'model_path = output_dir / f"{stem}.rad"'
 category = "E"
 reason = "Generic filename suffix for the planning-only candidate artifact; not a model-specific shape, path, or runtime default."
+
+[[allow]]
+path = "tools/lab/radiance/xtx27_w4a4_tiled.hip"
+anchor = "{17, 65, 384, 61}, {33, 63, 512, 67}, {1, 1, 128, 71}"
+category = "B"
+reason = "Synthetic edge/tail test dimensions inside a standalone native IU4 CPU-oracle harness; not a production model shape."
