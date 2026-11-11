@@ -9,11 +9,10 @@ from __future__ import annotations
 import json
 import re
 import subprocess
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Sequence
 
 from ..engine_adapters.radiance_resources import MIB, HostLimits, ModelMemory, Targets
-from .measured_plan import (GpuDemand, MeasuredPlanRefused, PlanBounds,
-                            PlanMeasurement)
+from .measured_plan import GpuDemand, MeasuredPlanRefused, PlanBounds, PlanMeasurement
 
 _MAX_WIRE = (1 << 53) - 1
 _DIGEST = re.compile(r"[0-9a-f]{64}\Z")

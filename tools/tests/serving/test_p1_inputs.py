@@ -3,11 +3,13 @@ import json
 from types import SimpleNamespace
 
 import pytest
-
 from bigcherry.engine_adapters.radiance_resources import MIB
 from bigcherry.serving.measured_plan import MeasuredPlanRefused, PlanBounds
-from bigcherry.serving.p1_inputs import (P1MeasurementSource,
-                                          decode_p1_record, parse_p1_json)
+from bigcherry.serving.p1_inputs import (
+    P1MeasurementSource,
+    decode_p1_record,
+    parse_p1_json,
+)
 
 _SHA = "a" * 64
 _ENGINE = "0000:03:00.0"
