@@ -43,7 +43,7 @@
           "handoff.small_rows": 8,
           "handoff.histogram_period_s": 1,
           "engine.ngram_placement": "disk",
-          "engine.num_speculative_tokens": 3
+          "engine.num_speculative_tokens": 0
         },
         "heat": "${BC_WORK_ROOT}/heat/flashnext-mixed.hot-first",
         "histogram": "/dev/null"
@@ -70,7 +70,7 @@
           "handoff.small_rows": 8,
           "handoff.histogram_period_s": 1,
           "engine.ngram_placement": "disk",
-          "engine.num_speculative_tokens": 3
+          "engine.num_speculative_tokens": 0
         },
         "heat": "${BC_WORK_ROOT}/heat/flashnext-mixed.hot-first",
         "histogram": "/dev/null",

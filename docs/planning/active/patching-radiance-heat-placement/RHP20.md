@@ -173,9 +173,9 @@ has stopped):
 
 ```bash
 PYTHONPATH=tools python3 tools/lab/radiance/rhp20-forced-move.py kld-config --layout flashnext-2xtx-rdna2-tail --out ${BC_WORK_ROOT}/runs/rhp20-tail-kld/config.json
-PYTHONPATH=tools python3 -m bigcherry.campaign.benchmark --server-config ${BC_WORK_ROOT}/runs/rhp20-tail-kld/config.json --output ${BC_WORK_ROOT}/runs/rhp20-tail-kld/kld --pairs 2
+PYTHONPATH=tools python3 -m bigcherry ab-benchmark --server-config ${BC_WORK_ROOT}/runs/rhp20-tail-kld/config.json --output ${BC_WORK_ROOT}/runs/rhp20-tail-kld/kld --pairs 2
 PYTHONPATH=tools python3 tools/lab/radiance/rhp20-forced-move.py kld-config --layout flashnext-2xtx-rdna2-tail-combine --out ${BC_WORK_ROOT}/runs/rhp20-tail-combine-kld/config.json
-PYTHONPATH=tools python3 -m bigcherry.campaign.benchmark --server-config ${BC_WORK_ROOT}/runs/rhp20-tail-combine-kld/config.json --output ${BC_WORK_ROOT}/runs/rhp20-tail-combine-kld/kld --pairs 2
+PYTHONPATH=tools python3 -m bigcherry ab-benchmark --server-config ${BC_WORK_ROOT}/runs/rhp20-tail-combine-kld/config.json --output ${BC_WORK_ROOT}/runs/rhp20-tail-combine-kld/kld --pairs 2
 ```
 
 **Open gates (not to be marked PASS from preparation):** the harness

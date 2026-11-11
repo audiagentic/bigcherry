@@ -265,7 +265,7 @@ def quality_config(args) -> dict:
             arm["serving"]["experiment"] = str(experiment(args.layout))
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(config, indent=2) + "\n")
-    return {"kld_config": str(path), "command": f'PYTHONPATH=tools python3 -m bigcherry.campaign.benchmark --server-config "{path}" --output "{path.parent / "kld"}" --pairs 2'}
+    return {"kld_config": str(path), "command": f'PYTHONPATH=tools python3 -m bigcherry ab-benchmark --server-config "{path}" --output "{path.parent / "kld"}" --pairs 2'}
 
 
 def main() -> int:
