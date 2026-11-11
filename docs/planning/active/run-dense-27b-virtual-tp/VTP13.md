@@ -1277,3 +1277,64 @@ per-layer residual dispatch, physically resident weights
 and recurrent/KV state; only then actual tokens/s and
 resident context qualification. Keep previous exact
 VTP19/GDN/attention results separate from model output.
+
+
+## 2026-11-11 — Native Radiance integration, VTP30 opt-in source patch (VTP13)
+
+After the standalone original-BF16 VTP20/23/25/27 numerical
+prototypes, **stop constructing a separate Python/HIP serving
+runtime**. Radiance v1.17.0 already has the Qwen3.5/3.8 BF16
+64-layer graph (GDN, gated causal attention, SwiGLU FFN),
+embeddings/head/sampling, native residual forwarding, persistent
+KV/GDN/conv state, a per-rank scheduler and world-size-three exact
+all-reduce with ascending-rank F32 accumulation. The experiment
+must become a Radiance feature, not a competing engine.
+
+First native source patch:
+`engines/radiance/patches/rad0016_vtp30_native_tp3_ownership`,
+available **only** in the independent
+`source.radiance-vtp30-native-tp3` recipe and only with
+`BC_VTP_NATIVE_TP3=1`. Uses Radiance's already available
+`rad_weight_shard_span` /
+`rad_weight_shard_span_parts` interfaces to express exact
+original-Qwen BF16 physical ownership:
+
+- Attention: Q+gate heads 6/6/12 with interleaved query/gate,
+  K/V 1/1/2 heads, matching 1536/1536/3072 input columns
+  of the native attention output projection
+- GDN: key heads 4/4/8, value heads 12/12/24;
+  exact five fused Q|K|V|a|b row parts, 3-part convolution,
+  48-wide a/b/A_log/dt_bias heads, Z, and output columns
+- FFN: 5120/4864/7424 gate/up rows and down input columns;
+  the original full 17408-wide checkpoint is read by the
+  existing loader, not a VTP-produced weight package
+
+All other architectures and regular model deployments retain the
+existing source declaration. Wrong model geometry and non-3-rank
+activation refuse rather than quantise/slice incorrectly.
+No Radiance scheduler/state/cache/collective/kernel execution
+implementation is replaced.
+
+**Card-free**: managed patch matches the pinned v1.17.0 source,
+all eight edits apply idempotently and atomically to five files,
+the native patched Qwen BF16 C++ plugin passes C++23
+`g++ -fsyntax-only` and an isolated native C++23 `-fPIC -shared` plugin build against upstream headers (not installed), and targeted
+tests exercise the ownership/source-drift contract. No GPU
+source patch has been validated for mixed-architecture
+execution; patch remains `untested`.
+
+**Separate mandatory blocker before any TP3 hardware smoke**:
+the core `usable_devices` filter currently discards a card
+whose GPU architecture differs from the first one; core/plugin
+loader tests fatbinary code compatibility against only the
+first device. Removing the filter alone is **unsafe**: device
+kernels may be selected for a card with no compatible code.
+Next native slice must implement **per-rank device-code/kernel
+eligibility and fail-closed selection** across gfx1100/gfx1201,
+then compile a truly native experimental build and validate
+graph/kernel coverage, memory admission, startup, numerical
+quality and live token generation on all three physical GPUs.
+Only after real tokens and quality pass run matched TP2/TP3
+C4/C6/C8, resident KV and power A/B. Do not claim these
+from VTP19 microbench figures or the standalone VTP27 file
+handoff.

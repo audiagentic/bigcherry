@@ -68,6 +68,13 @@ required-state = "untested"
 patches = ["rad0015_vtp11_kbench_optional_weights"]
 required-state = "untested"
 
+# VTP30: original BF16 Qwen3.8-27B *native Radiance* unequal TP3
+# declaration. No production activation; mixed-gfx kernel dispatch
+# still requires a separate fail-closed integration gate.
+[patch-set.vtp30-native-tp3-ownership]
+patches = ["rad0016_vtp30_native_tp3_ownership"]
+required-state = "untested"
+
 [source.radiance-native]
 description = "radiance 1.14.0 as released: no overlay, no patches."
 overlay = false
@@ -97,6 +104,13 @@ patch-sets = ["serving-core", "host-compat", "serving-manifest", "helper-config"
 description = "Isolated VTP11 calibration guard plus benchmark-only optional-bias binding correction."
 overlay = false
 patch-sets = ["serving-core", "host-compat", "serving-manifest", "helper-config", "mtp-pass-replay", "vtp11-bf16-host-guard", "vtp11-gdn-kbench"]
+
+# Model geometry and shard declarations only. No native heterogeneous
+# GPU enablement until code eligibility is checked for EACH physical rank.
+[source.radiance-vtp30-native-tp3]
+description = "Experimental native Radiance Qwen3.8-27B asymmetric three-rank BF16 declarations; not heterogeneous launch eligible."
+overlay = false
+patch-sets = ["serving-core", "host-compat", "serving-manifest", "helper-config", "mtp-pass-replay", "vtp11-bf16-host-guard", "vtp30-native-tp3-ownership"]
 
 [build.stock]
 description = "radiance's own release build of the engine binary."

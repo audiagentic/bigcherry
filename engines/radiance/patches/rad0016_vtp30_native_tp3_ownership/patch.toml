@@ -1,0 +1,11 @@
+schema = 1
+id = "rad0016_vtp30_native_tp3_ownership"
+order = 16
+state = "untested"
+kind = "enhancement"
+origin = "local"
+backend = "agnostic"
+plan-ids = ["VTP13"]
+requires = []
+conflicts = []
+tags = ["tensor-parallel", "gated-delta-net", "dispatch"]
