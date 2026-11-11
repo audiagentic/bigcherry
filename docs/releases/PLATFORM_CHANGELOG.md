@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.32.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.31.0...bc-platform-1.32.0) (2026-11-11)
+
+
+### New and changed
+
+* **rsc11:** S13 P2 scoped calibration record store and emitter ([#855](https://github.com/audiagentic/bigcherry/issues/855)) ([3008f5e](https://github.com/audiagentic/bigcherry/commit/3008f5e5f55f8b42a4d9d291507c12adfa585130))
+
 ## [1.31.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.30.0...bc-platform-1.31.0) (2026-11-11)
 
 
