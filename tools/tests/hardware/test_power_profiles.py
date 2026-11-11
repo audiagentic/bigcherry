@@ -24,6 +24,7 @@ def test_builtin_profiles_observe_and_are_portable():
         "efficient",
         "performance",
         "xtx-soak-candidate",
+        "xtx-sclk2700-uv125",
     } <= profiles.keys()
     assert all(profile.default_mode == "observe" for profile in profiles.values())
     for name in ("stock", "quiet", "efficient", "performance"):
@@ -64,7 +65,7 @@ def test_digest_is_stable_and_sensitive_to_content():
     "settings",
     [
         {"vddgfx_offset_mv": True},
-        {"vddgfx_offset_mv": -501},
+        {"vddgfx_offset_mv": -(1 << 53)},
         {"power_cap_w": 0},
         {"new_control": 1},
         {"sclk_max_mhz": 2000, "sclk_offset_mhz": -100},

@@ -55,15 +55,15 @@ def layout():
 
 
 def candidate():
-    return load_profiles(ROOT / "config/power-profiles.toml")["xtx-soak-candidate"]
+    return load_profiles(ROOT / "config/power-profiles.toml")["xtx-sclk2700-uv125"]
 
 
 def qualified(bdf):
     return Qualification(
         bdf=bdf,
         arch="gfx1100",
-        profile="xtx-soak-candidate",
-        settings={"vddgfx_offset_mv": -125},
+        profile="xtx-sclk2700-uv125",
+        settings={"vddgfx_offset_mv": -125, "sclk_max_mhz": 2700},
         evidence="runs/PWR02/verified",
         build_id="build-fingerprint",
         driver_id="kernel-fingerprint",
@@ -75,7 +75,7 @@ def gpu_probe(bdf, *, min_mv=-200, status="supported"):
     good = Observation("supported", "amdgpu")
     val = Observation("supported", 0)
     ctl = ControlCapability(status, val, min_mv, 100, "mV")
-    return GpuCapability(bdf, good, good, good, {"vddgfx_offset_mv": ctl}, {}, good)
+    return GpuCapability(bdf, good, good, good, {"vddgfx_offset_mv": ctl, "sclk_max_mhz": ControlCapability("supported", Observation("supported", 2700), 2400, 3000, "MHz")}, {}, good)
 
 
 def test_observe_emits_every_selected_role_with_empty_settings_even_with_unsupported_probes():
@@ -102,8 +102,8 @@ def test_apply_requires_qualified_calibration_and_probes():
     )
     assert [d.settings for d in result.devices] == [
         {},
-        {"vddgfx_offset_mv": -125},
-        {"vddgfx_offset_mv": -125},
+        {"vddgfx_offset_mv": -125, "sclk_max_mhz": 2700},
+        {"vddgfx_offset_mv": -125, "sclk_max_mhz": 2700},
         {},
     ]
 
@@ -134,7 +134,7 @@ def test_apply_rejects_unqualified_or_unprobeable_card(fault):
             q.bdf,
             q.arch,
             q.profile,
-            {"vddgfx_offset_mv": -100} if fault == "mismatch" else q.settings,
+            {"vddgfx_offset_mv": -100, "sclk_max_mhz": 2700} if fault == "mismatch" else q.settings,
             q.evidence,
             "" if fault == "no_build" else q.build_id,
             q.driver_id,
@@ -152,7 +152,7 @@ def test_apply_rejects_unqualified_or_unprobeable_card(fault):
             g.vendor,
             g.device,
             g.driver,
-            {"vddgfx_offset_mv": bad},
+            {"vddgfx_offset_mv": bad, "sclk_max_mhz": g.controls["sclk_max_mhz"]},
             g.sensors,
             g.hwmon,
         )
@@ -176,7 +176,14 @@ def test_unknown_override_and_duplicate_bdf_refuse():
 def test_observe_digest_is_independent_of_probe_and_overrides():
     base = resolve_power_plan(candidate(), layout())
     changed = resolve_power_plan(
-        candidate(), layout(), role_overrides={"helper0": {"vddgfx_offset_mv": -100}}
+        candidate(), layout(), role_overrides={"helper0": {"vddgfx_offset_mv": -100, "sclk_max_mhz": 2700}}
     )
     assert base.profile_digest == changed.profile_digest
     assert all(not d.settings for d in changed.devices)
+
+def test_uncapped_xtx_offset_profile_fails_closed():
+    with pytest.raises(PowerPlanRefused, match="requires sclk_max_mhz"):
+        resolve_power_plan(
+            load_profiles(ROOT / "config/power-profiles.toml")["xtx-soak-candidate"],
+            layout(),
+        )
