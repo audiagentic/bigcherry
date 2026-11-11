@@ -354,3 +354,43 @@ the plan:
    - Production avoided the bug only by restricting `ROCR_VISIBLE_DEVICES` to one architecture.
 
 **Next:** N2 (6/6/12 ownership, required for TP3), then N0 (the TP2 baseline) and the leased TP3 run.
+
+## Milestone, 2026-11-11: native TP3 serves the full 64-layer Qwen3.8-27B (BF16, 6/6/12)
+
+- **Build:** build_plan_id 4d0658f6c48493cb971dbda684b95e84, source radiance-vtp14-rank-code-selection (rad0016, rad0017,
+  rad0018 and the libr3 fixes below), ROCm 7.2.4. Run under the gpu lease.
+- **Model:** `qwen3.8-27b-bf16.rad`, converted by rad-convert from the original HF checkpoint (51 GiB, 1024 weights,
+  2.5 min).
+- **Command:** `--tp 3 --rank-devices 0000:03:00.0,0000:06:00.0,0000:09:00.0 --tp-ownership qwen38-27b-6-6-12
+  --max-num-seqs 4 --max-model-len 4096`.
+  - Ranks 0 and 1 are the two gfx1100 cards (libr3); rank 2 is the gfx1201 card (libr4d).
+  - Each rank has 2470 device op bands and 389 matching collective bands.
+  - The all-reduce rendezvous is "shared by libr4d.so, libr3.so".
+- **Output at temperature 0:** the answers are correct and coherent ("The capital of France is Paris.", "1, ..., 10",
+  and a correct two-sentence Rayleigh-scattering explanation).
+  - Single stream: 23.2–23.4 tok/s, TTFT 0.10–0.11 s.
+  - Four concurrent streams: each correct, 20.0–21.7 tok/s per stream, no errors.
+  - The server shuts down cleanly.
+- These are smoke numbers. They are not N0/N7 measurements: no matched TP2 baseline, no ABBA, no power control.
+
+**libr3 blockers found and fixed (component, not an upstream patch)**
+
+1. **3/4/8-rank all-reduce never built.**
+   - The unit pattern `r4d_[a-z0-9_]+` never matched libr4d's `*_Nrank*` units (capital N). They were skipped without
+     a word ("0 left out") and stubbed, so libr3 had no 3/4/8-rank all-reduce.
+   - Visible symptom: `r4d_ar_wide_dims` was a stub, `max_peers` stayed 0, and every 3-rank init returned
+     RAD_E_SHAPE.
+   - libr3 now builds 111 units, up from 107. Configure fails if any libr4d unit line does not parse.
+2. **IQR layouts stubbed, and the wrong logits kernel selected.**
+   - libr3's hand-kept declaration list missed `r4d_iqr_layout.cpp`, so every IQR layout was a stub.
+   - A stub layout returns RAD_E_UNSUPPORTED, which the engine's weight check does not count as a refusal. So
+     `logits_gemm_iqr` was selected for a bf16 lm_head on gfx1100 and refused at issue on the first step.
+   - The list is now read from libr4d's own R4D_DECLARATION.
+   - A row is live only if none of its functions is a stub. libr3 now has no stubs at all.
+
+**Next**
+
+- **N0:** a matched native TP2 baseline (2× XTX) against TP3 at 4/6/8 streams, same model family and settings, under
+  the lease.
+- **N5:** admission and context, with per-rank KV/GDN state checked per rank.
+- **N6:** quantised TP3. qwen35_fp8 and w8a8 need the ownership spans too.

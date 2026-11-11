@@ -20,7 +20,7 @@ identical across ranks.
 
 ## Outcome
 
-Untested. The patch applies to v1.17.0 after rad0016 and is idempotent. It has not been compiled or run on hardware.
+Untested (not promoted). On cards, with rad0016 and rad0017, `--tp 3 --rank-devices <XTX>,<XTX>,<R9700> --tp-ownership qwen38-27b-6-6-12` serves the 64-layer BF16 model with correct output: 23.4 tok/s single stream, 4 concurrent streams correct (smoke numbers; see VTP14.md).
 
 ## Detail
 

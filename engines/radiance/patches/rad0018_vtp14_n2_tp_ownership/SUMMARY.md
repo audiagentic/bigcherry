@@ -14,8 +14,7 @@ through radiance's shard-span ABI.
 
 ## Outcome
 
-Card-free only so far. The patch applies to v1.17.0 after rad0016 and is idempotent. It has not been compiled or
-run on hardware yet.
+On cards, with rad0016 and rad0017, native TP3 serves the 64-layer Qwen3.8-27B BF16 correctly at the 6/6/12 split (XTX, XTX, R9700): about 23 tok/s single stream (smoke, not a benchmark).
 
 ## Detail
 
