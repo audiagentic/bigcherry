@@ -240,7 +240,7 @@ plan_check_measure() {
   local plan="$RUN/plan-measured.json" ranks="$RUN/plan-ranks.json" t0=$SECONDS
   echo "plan check: no measured plan for this configuration (cache miss); measuring it first (the helpers come up and the engine stops after its memory plan; about 1-2 minutes, once per configuration)" >&2
   rm -f "$plan" "$ranks" "$PLAN_MANIFEST"
-  PLAN_MEASURING_MANIFEST="$RUN/manifest-measuring-$STAMP-$$.json"
+  PLAN_MEASURING_MANIFEST="$RUN/manifest-measuring-$STAMP-$$-${PLAN_POOL_CHANGES:-0}.json"   # one per measuring start: manifests are immutable
   plan_manifest_write "$PLAN_MEASURING_MANIFEST" unmeasured || { echo "plan check: the unmeasured manifest was not written (above)" >&2; return 1; }
   PLAN_MEASURE_FILE="$plan" PLAN_RANKS_FILE="$ranks" plan_check_start_engine_measure || { echo "plan check: the measuring start failed; see $RUN/engine-measure.log" >&2; return 1; }
   local engine_mib
