@@ -161,7 +161,7 @@ LINEAR = FilePatch(path="arch/common/rad_fp8.h", language="none", description="V
         "        if (wref) RAD_ARCH_TRY(rad_weight_shard_span_parts(b, wref, lo, hi, total, n));\n"
         "        if (!ws) return RAD_OK;\n",
         guard="BC_VTP14_N2F_SPAN_PARTS_WREF",
-        max_span=2,
+        max_span=3,
     ),
 ))
 
