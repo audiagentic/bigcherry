@@ -554,6 +554,18 @@ ENGINE = FilePatch(path="core/engine_bringup.cpp", language="none", description=
     ),
 ))
 
+# ---------------------------------------------------------------- tests/config_test.cpp
+CONFIG_TEST = FilePatch(path="tests/config_test.cpp", language="none", description="VTP14 N1 option inventory", edits=(
+    _edit(
+        "n1-config-test-value",
+        "        { \"--max-source-pixels\", { \"1000000\" } },\n",
+        "        { \"--max-source-pixels\", { \"1000000\" } },\n"
+        "        { \"--rank-devices\", { \"0000:03:00.0,0000:07:00.0\", \"--tp\", \"2\" } }, /* BC_VTP14_N1_CONFIG_TEST */\n",
+        guard="BC_VTP14_N1_CONFIG_TEST",
+        max_span=2,
+    ),
+))
+
 PATCHES = (
     RAD_CORE,
     REGISTRY_H,
@@ -564,6 +576,7 @@ PATCHES = (
     BUILDER,
     CONFIG,
     ENGINE,
+    CONFIG_TEST,
     _created("core/plugin/bc_rank_devices.h", "bc_rank_devices.h", "BC_VTP14_N1: an explicit, ordered rank"),
     _created("core/plugin/bc_rank_devices.cpp", "bc_rank_devices.cpp", "BC_VTP14_N1: see bc_rank_devices.h"),
     _created("tests/bc_rank_devices_test.cpp", "bc_rank_devices_test.cpp", "BC_VTP14_N1 (BigCherry managed patch rad0016)"),

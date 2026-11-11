@@ -246,8 +246,12 @@ built its fixture from the patch's own anchors, so it could not catch this. The 
 
 - A managed core patch exports a process-wide `rad_bc_shared_slot(key, size, init)`: the engine allocates the
   slot once under a mutex and keeps it for the life of the process.
-- A managed libr4d patch looks the slot up with `dlsym(RTLD_DEFAULT, …)` and keys it on the protocol version. When
-  the lookup fails, it falls back to its local `g_rv`, so the single-library behaviour is unchanged.
+- A managed libr4d patch looks the slot up with `dlsym(RTLD_DEFAULT, …)` and keys it on the protocol version.
+- There is no fallback.
+  - The engine decides explicitly whether the world is single-library or mixed, from the per-rank receipt.
+  - A single-library world keeps the library's own `g_rv`.
+  - A mixed world requires the shared slot. A failed lookup or a protocol-fingerprint mismatch refuses startup with
+    the reason. Falling back silently would bring back the 60 s deadlock.
 - libr3 is generated from the patched libr4d source, so it inherits the change. Its `rewrites.txt` and `.rw`
   anchors must keep matching; the libr3 build checks this.
 - The N1 agreement check is then extended to compare a protocol fingerprint as well as kernel names.
