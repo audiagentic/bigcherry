@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.34.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.33.0...bc-platform-1.34.0) (2026-11-11)
+
+
+### New and changed
+
+* **rsc11:** inactive native measured inputs and strict S11 consumer (S13 P1) ([#862](https://github.com/audiagentic/bigcherry/issues/862)) ([14d4886](https://github.com/audiagentic/bigcherry/commit/14d488673ecde9b8679358f1d1690893732b5523))
+
 ## [1.33.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.32.0...bc-platform-1.33.0) (2026-11-11)
 
 
