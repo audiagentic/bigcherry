@@ -1,5 +1,13 @@
 # Changelog
 
+## [11552.5.0](https://github.com/audiagentic/bigcherry/compare/bc-llamacpp-11552.4.0...bc-llamacpp-11552.5.0) (2026-11-11)
+
+
+### New and changed
+
+* **patch:** evidence carries through audited re-anchors; nine llama.cpp records from historical evidence ([#670](https://github.com/audiagentic/bigcherry/issues/670)) ([7fac72a](https://github.com/audiagentic/bigcherry/commit/7fac72a3c23b2fc880d301ba0b4f22b355415df0))
+* **patch:** validation evidence is not invalidated by code, digest or pin changes ([#723](https://github.com/audiagentic/bigcherry/issues/723)) ([16b017f](https://github.com/audiagentic/bigcherry/commit/16b017fc715a8d35f3f6eb7a187ca602cc41a1f3))
+
 ## [11552.4.0](https://github.com/audiagentic/bigcherry/compare/bc-llamacpp-11552.3.0...bc-llamacpp-11552.4.0) (2026-11-04)
 
 
