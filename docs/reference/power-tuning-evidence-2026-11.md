@@ -184,3 +184,16 @@ A *same-benchmark* proxy is possible **only for `pwr-phases@1`**: `sum(all four 
 The planned 40-minute `2700 MHz/-125 mV` soak at `${BC_WORK_ROOT}/runs/pwr-sclk/soak27uv125/` has `start`, `out.log` and `txn.log` but **no completed status or result file at this review: pending**. Output identity is likewise **pending**. `out.log` reports CPU package energy unavailable. The container could **not** read `dmesg`; amdgpu errors/resets require a **host-side** kernel-log check. Reassess only when soak status/result, run ID, response identity, both XTX readbacks, clock/voltage and restoration/health evidence are available.
 
 **Next experiments (not run in this slice):** XTX `OD_MCLK` sweep (device-reported 97–1250 MHz range, recheck capability per BDF) for memory-bound decode, with separate prefill and identity gates; observe the current `pp_power_profile_mode=BOOTUP_DEFAULT`, then compare `COMPUTE` and `POWER_SAVING` only after a snapshot/rollback controller exists; separately trial R9700 power cap near its reported **210 W minimum** (baseline engine draw ~193–212 W, some sweep prefill samples reach 229 W), with a fresh cap capability probe; keep the 6900 XT stock. No new clocks, offsets, power profiles or caps are adopted by this evidence record.
+
+## R9700 power cap sweep, 2026-11-11 (flashnext-4gpu, stock XTX settings)
+
+Runs `runs/pwr-r9cap/{stock,cap250,cap210,stockb}`, one 40-min lease per arm, cap applied and restored through the lease-fenced `PowerTransaction` on 0000:09:00.0 (cap range 210-330 W, default 300 W). Watts are amd-smi board medians from `pwr-phases@1`; speeds from `prefill-doc-44k` and `decode-6stream` (engine-reported).
+
+| Arm | R9700 decode W | R9700 prefill W | doc prefill tok/s | 6-stream engine tok/s |
+|---|---|---|---|---|
+| stock 300 W | 198 | 223 | 3,712 | 337 |
+| 250 W | 201 | 215 | 3,717 | 340 |
+| 210 W | 200 | 205 | 3,706 | 357 |
+| stock 300 W (repeat) | 200 | 218 | 3,715 | 356 |
+
+The R9700 never reaches 250 W, so 250 W does not bind. At the 210 W minimum the cap binds only in prefill (-13 to -18 W against the stock arms) with doc prefill unchanged (within the 0.3% spread of the two stock arms); decode draw (200 W) is below the cap and unchanged. The 337 vs 356 tok/s difference between the two stock arms is run-to-run drift, so 6-stream decode shows no cap effect. Conclusion: the R9700 cap is a small prefill-only lever (about 15 W); a 210 W cap is free on this workload.
