@@ -376,7 +376,13 @@
                   "kv_backing_floor.fraction_ppm",
                   "checkpoint_share",
                   "host_kv_tier.target_mib",
-                  "host_ledger_margin.mib"
+                  "host_ledger_margin.mib",
+                  "handoff.max_rows",
+                  "handoff.small_rows",
+                  "handoff.gemv_large_rows",
+                  "handoff.moe_down_tile",
+                  "handoff.histogram_period_s",
+                  "handoff.live_cadence_ns"
                 ]
               },
               "value": {
@@ -532,6 +538,122 @@
                   "properties": {
                     "value": {
                       "$ref": "#/$defs/uint"
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "key": {
+                      "const": "handoff.max_rows"
+                    }
+                  },
+                  "required": [
+                    "key"
+                  ]
+                },
+                "then": {
+                  "properties": {
+                    "value": {
+                      "$ref": "#/$defs/positive"
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "key": {
+                      "const": "handoff.small_rows"
+                    }
+                  },
+                  "required": [
+                    "key"
+                  ]
+                },
+                "then": {
+                  "properties": {
+                    "value": {
+                      "$ref": "#/$defs/positive"
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "key": {
+                      "const": "handoff.gemv_large_rows"
+                    }
+                  },
+                  "required": [
+                    "key"
+                  ]
+                },
+                "then": {
+                  "properties": {
+                    "value": {
+                      "$ref": "#/$defs/positive"
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "key": {
+                      "const": "handoff.moe_down_tile"
+                    }
+                  },
+                  "required": [
+                    "key"
+                  ]
+                },
+                "then": {
+                  "properties": {
+                    "value": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 2
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "key": {
+                      "const": "handoff.histogram_period_s"
+                    }
+                  },
+                  "required": [
+                    "key"
+                  ]
+                },
+                "then": {
+                  "properties": {
+                    "value": {
+                      "$ref": "#/$defs/positive"
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "key": {
+                      "const": "handoff.live_cadence_ns"
+                    }
+                  },
+                  "required": [
+                    "key"
+                  ]
+                },
+                "then": {
+                  "properties": {
+                    "value": {
+                      "$ref": "#/$defs/positive"
                     }
                   }
                 }

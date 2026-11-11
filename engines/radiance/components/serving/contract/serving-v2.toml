@@ -194,6 +194,43 @@ value_kind = "ref"
 value_ref = "uint"
 doc = "Host memory the host ledger leaves unplanned beyond the reserve, for what the host loses between the manifest being written and the engine's own host-room check, MiB (amendment 11)."
 
+[[calibration_key]]
+key = "handoff.max_rows"
+value_kind = "ref"
+value_ref = "positive"
+doc = "Largest transport batch size, qualified against engine dispatch capacity and row-batch A/Bs."
+
+[[calibration_key]]
+key = "handoff.small_rows"
+value_kind = "ref"
+value_ref = "positive"
+doc = "Small lane threshold, measured with workload-matched row shape A/Bs."
+
+[[calibration_key]]
+key = "handoff.gemv_large_rows"
+value_kind = "ref"
+value_ref = "positive"
+doc = "Large GEMV crossover, measured with workload-matched row shape A/Bs."
+
+[[calibration_key]]
+key = "handoff.moe_down_tile"
+value_kind = "integer"
+value_minimum = 0
+value_maximum = 2
+doc = "Chosen MoE downprojection tile mode, measured with correctness and speed A/Bs."
+
+[[calibration_key]]
+key = "handoff.histogram_period_s"
+value_kind = "ref"
+value_ref = "positive"
+doc = "Histogram sample period, measured with coverage/overhead and heat-age evidence."
+
+[[calibration_key]]
+key = "handoff.live_cadence_ns"
+value_kind = "ref"
+value_ref = "positive"
+doc = "Placement cadence, measured against histogram period, migration cost and settle windows."
+
 # ---- shared types ($defs), in schema order ----
 
 [[def]]
