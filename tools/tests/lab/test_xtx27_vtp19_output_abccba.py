@@ -88,6 +88,24 @@ class BalancedOriginalOutputTimingTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 ab.extract_rows(receipt, base, cases)
 
+    def test_read_only_gpu_telemetry_is_observational_and_fail_safe(self):
+        from types import SimpleNamespace
+
+        with patch.object(ab.subprocess, "run", return_value=SimpleNamespace(
+            returncode=0, stdout="GPU[0]: sclk=0", stderr=""
+        )) as invoke:
+            r = ab.readonly_gpu_telemetry()
+        self.assertEqual(r["returncode"], 0)
+        self.assertIn("sclk", r["stdout"])
+        self.assertIn("captured_utc", r)
+        cmd = invoke.call_args.args[0]
+        self.assertEqual(cmd[0], "rocm-smi")
+        self.assertEqual(cmd[1:], ["--showclocks", "--showpower", "--showtemp"])
+        with patch.object(ab.subprocess, "run", side_effect=OSError("missing")):
+            absent = ab.readonly_gpu_telemetry()
+        self.assertIsNone(absent["returncode"])
+        self.assertIn("missing", absent["error"])
+
     def test_no_gpu_calls_in_default_plan(self):
         with (redirect_stdout(io.StringIO()) as out,
               patch.object(ab.subprocess, "run",

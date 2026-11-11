@@ -19,6 +19,7 @@ import os
 import statistics
 import subprocess
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
 
 import xtx27_vtp16_gdn_output_gpu as pageable
@@ -155,6 +156,29 @@ def extract_rows(receipt: dict, directory: Path, expected: list[dict]) -> dict:
     return summary
 
 
+def readonly_gpu_telemetry() -> dict:
+    """Best-effort read-only evidence of GPU clocks/power/thermal conditions.
+
+    Never adjusts clocks, undervolt, power caps or lease ownership.
+    Preserve even missing/failed command as explicit evidence rather
+    than assuming stock frequencies during an external power sweep.
+    """
+    now = datetime.now(UTC).isoformat()
+    cmd = ["rocm-smi", "--showclocks", "--showpower", "--showtemp"]
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=15,
+                           check=False)
+        return {
+            "captured_utc": now, "command": cmd,
+            "returncode": r.returncode, "stdout": r.stdout, "stderr": r.stderr,
+        }
+    except (OSError, subprocess.TimeoutExpired) as err:
+        return {
+            "captured_utc": now, "command": cmd,
+            "returncode": None, "error": repr(err),
+        }
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--phase", choices=("plan", "compile", "gpu"), default="plan")
@@ -192,6 +216,8 @@ def main(argv: list[str] | None = None) -> int:
         "not_native_kernel": True,
         "power_and_temperature_not_enforced": True,
         "numerical_oracle_required_on_every_arm": True,
+        "runner_source_sha256": pageable.oracle.sha(Path(__file__)),
+        "read_only_clock_power_thermal_telemetry": True,
     }
     if a.phase == "plan":
         print(json.dumps(origin, indent=2))
@@ -223,11 +249,17 @@ def main(argv: list[str] | None = None) -> int:
             "agent-lease", "acquire", "gpu", "--ttl", "30m",
             "--purpose", PURPOSE, "--", "env", "VTP04_LEASED=1", *forwarded,
         ], check=False).returncode
+    # Require the holder's intended lease before reading environmental
+    # evidence; run_leased additionally rejects any resident KFD PIDs.
+    # Telemetry is observational and never manipulates the other
+    # power-tuning agent's settings.
+    before = readonly_gpu_telemetry()
     out = micro.run_leased(
         scratch=scratch, binaries=binaries, cases=cases, digest=digest,
         purpose=PURPOSE,
         receipt_type="VTP19_ORIGINAL_BF16_GDN_OUT_PROJ_PAGEABLE_PINNED_ROWREUSE_ABCCBA",
     )
+    after = readonly_gpu_telemetry()
     file = out / "summary.json"
     r = json.loads(file.read_text())
     # Do not convert an incomplete or failed acceptance to PASS.
@@ -235,6 +267,7 @@ def main(argv: list[str] | None = None) -> int:
     r.update({
         **origin,
         "balanced_abccba": analysis,
+        "gpu_environment_observations": {"before": before, "after": after},
         "status": "VTP19_ALL_ARMS_ORACLE_PASS_3GPU_ABCCBA_NOT_MODEL",
         "fairness_limits": [
             "same GPU lease, compiler and original-weight workload",
