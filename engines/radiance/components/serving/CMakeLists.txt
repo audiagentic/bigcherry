@@ -106,6 +106,17 @@ if(BUILD_TESTING)
   target_link_libraries(bc_v2_s8_test PRIVATE bc_serving_v2_s8)
   add_test(NAME bc_v2_s8_test COMMAND bc_v2_s8_test)
 
+  # S10: all-v2 inactive resolver and writer; never linked by production.
+  add_library(bc_serving_v2_s10 STATIC EXCLUDE_FROM_ALL v2/s10_resolver.cpp)
+  target_link_libraries(bc_serving_v2_s10 PUBLIC bc_serving_v2_s8 bc_jcs)
+  target_compile_features(bc_serving_v2_s10 PUBLIC cxx_std_20)
+  target_include_directories(bc_serving_v2_s10 PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
+  add_executable(bc_v2_s10_test EXCLUDE_FROM_ALL v2/s10_resolver_test.cpp)
+  target_link_libraries(bc_v2_s10_test PRIVATE bc_serving_v2_s10)
+  target_compile_definitions(bc_v2_s10_test PRIVATE
+    BC_CONTRACT_V2_DOCS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../../../docs/design/serving-manifest-v2")
+  add_test(NAME bc_v2_s10_test COMMAND bc_v2_s10_test)
+
   add_executable(bc_v2_codec_test EXCLUDE_FROM_ALL contract/v2_codec_test.cpp)
   target_link_libraries(bc_v2_codec_test PRIVATE bc_serving_v2_generated bc_serving_v1)
   target_compile_definitions(bc_v2_codec_test PRIVATE
