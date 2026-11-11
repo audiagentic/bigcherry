@@ -219,6 +219,25 @@ def test_rebind_allows_empty_source_diff_for_build_metadata_only(tmp_path):
     )[0]["value"] == 9
 
 
+def test_rebind_allows_same_source_commit_for_toolchain_rebuild(tmp_path):
+    store = tmp_path / "store"
+    original = record(store)
+    native = target(tmp_path)
+    repo, old, _new, _git = source_repo(tmp_path)
+    proof = create_rebind(
+        original, native, store, repo=repo, old_ref=old, new_ref=old,
+        reason="Same source commit; engine/helper binary changed with toolchain.",
+        now_unix_s=NOW,
+    )
+    entry = json.loads(proof.read_text())
+    assert entry["old_commit"] == entry["new_commit"] == old
+    assert entry["changed_paths"] == []
+    assert select_with_rebind(
+        store, scope=scope("b", "c"),
+        required_keys=("host_ledger_margin.mib",), now_unix_s=NOW,
+    )[0]["value"] == 9
+
+
 def test_tampered_rebind_is_rejected(tmp_path):
     store, _, _, proof, *_ = rebound(tmp_path)
     parsed = json.loads(proof.read_text())

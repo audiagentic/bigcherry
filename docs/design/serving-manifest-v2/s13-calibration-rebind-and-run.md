@@ -119,8 +119,8 @@ python3 tools/lab/radiance/s8-rebind.py \
 The Git diff is an **audit record, not a source-path allowlist**. A
 build-only P1 scope change is explicitly re-bindable even when Radiance,
 helper, kernel, build tooling or other runtime sources changed. An empty
-changed-path set between different source revisions is also permitted (for
-example, a toolchain rebuild). The tool still records exact old/new
+changed-path set, including the **same source commit** with different engine
+or helper build digests, is also permitted (for example, a toolchain rebuild). The tool still records exact old/new
 build digests, source commits, **all** changed paths and a nonempty rationale,
 hashes the immutable proof and binds the exact source hardware record. The
 original evidence validity window is never extended.

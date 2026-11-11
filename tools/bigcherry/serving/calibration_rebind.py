@@ -71,8 +71,8 @@ def audit_unaffected(repo: Path, old_ref: str, new_ref: str):
     """Return audited source revisions and all changed paths (any category)."""
     old = _git(repo, "rev-parse", "--verify", old_ref + "^{commit}").decode().strip()
     new = _git(repo, "rev-parse", "--verify", new_ref + "^{commit}").decode().strip()
-    if old == new:
-        raise CalibrationInvalid("S13 rebind refused: identical source revisions")
+    # Identical source revisions are valid for a rebuild with different
+    # compiler, flags or SDK: the source diff is then simply empty.
     changed = _git(repo, "diff", "--name-only", "-z", old, new)
     paths = tuple(sorted({p.decode("utf-8") for p in changed.split(b"\0") if p}))
     if not all(_safe_path(path) for path in paths):
@@ -166,11 +166,10 @@ def validate_rebind(entry: object, *, source_record: dict,
     for ref in (entry["old_commit"], entry["new_commit"]):
         if not isinstance(ref, str) or len(ref) != 40 or any(ch not in "0123456789abcdef" for ch in ref):
             raise CalibrationInvalid("S13 rebind missing resolved Git commit identity")
-    if entry["old_commit"] == entry["new_commit"]:
-        raise CalibrationInvalid("S13 rebind source commits identical")
     paths = entry["changed_paths"]
     if (not isinstance(paths, list) or paths != sorted(set(paths)) or
-            not all(_safe_path(p) for p in paths)):
+            not all(_safe_path(p) for p in paths) or
+            (entry["old_commit"] == entry["new_commit"] and paths)):
         raise CalibrationInvalid("S13 rebind has invalid, duplicate or unsorted changed paths")
     if (not isinstance(entry["reason"], str) or len(entry["reason"].strip()) < 12 or
             type(entry["created_at_unix_s"]) is not int or
