@@ -319,6 +319,43 @@ class MeasuredPlanValidator:
         self.record_dir = Path(record_dir)
 
     @staticmethod
+    def _rebound_records(m: PlanMeasurement) -> tuple[str, ...]:
+        """Names retained evidence; a build-only rebind is never an admission waiver."""
+        return tuple(
+            f"{row['key']} ({row['raw_run']}; {row['evidence_id']})"
+            for row in m.calibration_records
+            if (isinstance(row, dict) and
+                isinstance(row.get("evidence_id"), str) and
+                " | rebinds/" in row["evidence_id"])
+        )
+
+    @classmethod
+    def _check_rebound_envelope(cls, m: PlanMeasurement) -> None:
+        """Compare fresh P1 geometry to the source record's immutable scope.
+
+        This is the available typed measured envelope: model/owner, context,
+        retention and KV geometry. Numeric handoff capacity and resource-room
+        bounds are further checked by S8 and S5/S11 on the *new* build.
+        """
+        records = cls._rebound_records(m)
+        if not records:
+            return
+        scope = m.scope
+        expected = {
+            "owner_map_digest": m.model.owner_map_digest,
+            "kv_bytes_per_token": m.model.kv_bytes_per_token,
+            "context_target_tokens": m.targets.context_tokens,
+            "retention_target_tokens": m.targets.retained_kv_tokens,
+        }
+        if (not isinstance(scope, dict) or
+                any(scope.get(name) != value for name, value in expected.items())):
+            raise MeasuredPlanRefused(
+                "S8 rebound calibration record(s) " + "; ".join(records) +
+                ": fresh native P1 inputs fall outside the recorded "
+                "owner/context/retention/KV envelope; re-measure on hardware"
+            )
+
+    @staticmethod
     def _measured(layout: Layout, m: PlanMeasurement, bounds: PlanBounds) -> None:
         if (
             not isinstance(m.planning_key, str)
@@ -422,6 +459,7 @@ class MeasuredPlanValidator:
         previous: tuple | None = None
         attempts: list[dict] = []
         refusals: list[RoomRefusal] = []
+        rebound_evidence: set[str] = set()
         receipt = self.record_dir / f"{run_id}.plan.json"
         if receipt.exists():
             raise MeasuredPlanRefused(f"measured-plan record already exists: {receipt}")
@@ -442,6 +480,8 @@ class MeasuredPlanValidator:
         try:
             for attempt_index in range(2):
                 m = self.source.measure(layout, bounds)
+                rebound_evidence.update(self._rebound_records(m))
+                self._check_rebound_envelope(m)
                 self._measured(layout, m, bounds)
                 if key is not None and (
                     key != m.planning_key or owner != m.model.owner_map_digest
@@ -540,6 +580,18 @@ class MeasuredPlanValidator:
         except Exception as exc:
             attempts.append({"terminal_refusal": str(exc)})
             persist("terminal_refusal")
+            # A changed runtime/kernel is rebindable, but failed *new-build*
+            # P1/S8 geometry and S5 admission remain authoritative. Preserve
+            # the original error and record identity in the durable receipt.
+            if rebound_evidence and (
+                refusals or isinstance(exc, (MeasuredPlanRefused, ResourceError, ValueError))
+            ):
+                raise MeasuredPlanRefused(
+                    "S8 rebound calibration record(s) " +
+                    "; ".join(sorted(rebound_evidence)) +
+                    ": new-build P1/S8/S5 measured-start gate refused: " +
+                    str(exc) + "; re-measure on hardware for this record"
+                ) from exc
             if isinstance(exc, MeasuredPlanRefused):
                 raise
             if isinstance(exc, (ResourceError, ValueError, OSError)):

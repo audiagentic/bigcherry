@@ -1,9 +1,11 @@
-"""Audited, immutable S8 evidence re-binding across unaffected build bumps.
+"""Audited, immutable S8 evidence re-binding across build-only scope bumps.
 
-No wildcard build scope: a rebind explicitly identifies an old record, exact
-old/new digests and commits, all changed paths and a reviewed reason. Unknown
-or measurement-affecting source changes require a new hardware measurement.
-A rebind never extends the original evidence's validity window.
+The Git diff is documented for audit, not a proxy for calibration validity:
+kernel, runtime, compiler or helper changes can be rebound when the new native
+P1 measurement preserves all non-build scope fields. Actual admission and
+measured-envelope gates run on each start; a failed gate names the original
+record and requires new hardware evidence, not another build-version exception.
+No wildcard scope and no extension of the original evidence's validity.
 """
 from __future__ import annotations
 
@@ -28,15 +30,6 @@ _REBIND_FIELDS = frozenset((
     "old_scope", "new_scope", "old_commit", "new_commit",
     "changed_paths", "reason", "created_at_unix_s",
 ))
-# Only changes that cannot change engine/helper code, kernel build,
-# measurement instrumentation or selected serving policy are automatically
-# known-unaffected. Unknown paths fail closed rather than taking an assertion
-# from a rebind submitter as proof.
-_SAFE_PREFIXES = ("docs/", "tools/tests/", "tests/", "engines/llamacpp/", ".github/ISSUE_TEMPLATE/")
-_SAFE_FILES = frozenset((
-    "README.md", "CHANGELOG.md", ".release-please-manifest.json",
-    "engines/radiance/CHANGELOG.md", "engines/radiance/README.md",
-))
 
 
 def _sha(data: object) -> str:
@@ -58,9 +51,10 @@ def _unchanged_measurement_scope(old: dict, new: dict) -> None:
 def _safe_path(path: str) -> bool:
     if not isinstance(path, str) or not path or path.startswith("/") or "\\" in path:
         return False
-    if any(p in ("", ".", "..") for p in path.split("/")):
-        return False
-    return path in _SAFE_FILES or any(path.startswith(prefix) for prefix in _SAFE_PREFIXES)
+    # All real source paths are auditable, including engine, kernel and
+    # helper sources. The *native measurement and S5/S11 admission*, not
+    # pathname categories, decide whether the calibration still holds.
+    return not any(part in ("", ".", "..") for part in path.split("/"))
 
 
 def _git(repo: Path, *args: str) -> bytes:
@@ -74,25 +68,17 @@ def _git(repo: Path, *args: str) -> bytes:
 
 
 def audit_unaffected(repo: Path, old_ref: str, new_ref: str):
-    """Return resolved source revisions and all changed paths, or refuse."""
+    """Return audited source revisions and all changed paths (any category)."""
     old = _git(repo, "rev-parse", "--verify", old_ref + "^{commit}").decode().strip()
     new = _git(repo, "rev-parse", "--verify", new_ref + "^{commit}").decode().strip()
-    if old == new:
-        raise CalibrationInvalid("S13 rebind refused: identical source revisions")
+    # Identical source revisions are valid for a rebuild with different
+    # compiler, flags or SDK: the source diff is then simply empty.
     changed = _git(repo, "diff", "--name-only", "-z", old, new)
     paths = tuple(sorted({p.decode("utf-8") for p in changed.split(b"\0") if p}))
-    unsafe = [path for path in paths if not _safe_path(path)]
-    if unsafe:
-        raise CalibrationInvalid(
-            "S13 rebind refused: changes may affect S8 measurements: " + ", ".join(unsafe)
-        )
-    # A build bump with no source change must be independently verified by
-    # build provenance; we do not certify changed compiler/flags/pin silently.
-    if not paths:
-        raise CalibrationInvalid(
-            "S13 rebind refused: no auditable non-runtime source changes; "
-            "verify build/toolchain/pin separately or remeasure"
-        )
+    if not all(_safe_path(path) for path in paths):
+        raise CalibrationInvalid("S13 rebind refused: invalid Git source path")
+    # Source revisions can differ only in commit metadata or build identity;
+    # that is an auditable empty change set, not a hardware remeasure trigger.
     return old, new, paths
 
 
@@ -180,11 +166,11 @@ def validate_rebind(entry: object, *, source_record: dict,
     for ref in (entry["old_commit"], entry["new_commit"]):
         if not isinstance(ref, str) or len(ref) != 40 or any(ch not in "0123456789abcdef" for ch in ref):
             raise CalibrationInvalid("S13 rebind missing resolved Git commit identity")
-    if entry["old_commit"] == entry["new_commit"]:
-        raise CalibrationInvalid("S13 rebind source commits identical")
     paths = entry["changed_paths"]
-    if not isinstance(paths, list) or not paths or paths != sorted(set(paths)) or not all(_safe_path(p) for p in paths):
-        raise CalibrationInvalid("S13 rebind includes unknown/measurement-affecting changes")
+    if (not isinstance(paths, list) or paths != sorted(set(paths)) or
+            not all(_safe_path(p) for p in paths) or
+            (entry["old_commit"] == entry["new_commit"] and paths)):
+        raise CalibrationInvalid("S13 rebind has invalid, duplicate or unsorted changed paths")
     if (not isinstance(entry["reason"], str) or len(entry["reason"].strip()) < 12 or
             type(entry["created_at_unix_s"]) is not int or
             entry["created_at_unix_s"] <= 0 or entry["created_at_unix_s"] > now_unix_s):
@@ -254,7 +240,7 @@ def main(argv=None) -> int:
     import argparse
 
     parser = argparse.ArgumentParser(
-        description="Audited S8 build-only evidence rebind (never a wildcard)"
+        description="Audited S8 build-scope rebind; measured admission remains mandatory"
     )
     parser.add_argument("--source-record", type=Path, required=True)
     parser.add_argument("--target-measurement", type=Path, required=True)

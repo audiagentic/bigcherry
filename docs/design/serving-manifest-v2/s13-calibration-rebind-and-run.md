@@ -113,26 +113,42 @@ python3 tools/lab/radiance/s8-rebind.py \
   --store ${BC_WORK_ROOT}/s8-calibration-records \
   --repo . \
   --old-rev "${OLD_SOURCE_COMMIT}" --new-rev "${NEW_SOURCE_COMMIT}" \
-  --reason "Review: only non-runtime documentation/release metadata changed"
+  --reason "Only engine/helper build digests changed; new P1 and S5/S11 admission must still pass"
 ```
 
-Only known-unaffected source paths (documentation, tests, release notes and
-version manifest) are auto-admissible. A changed Radiance engine, helper,
-kernel, manifest, layout, build input, or an unclassified path is
-**refused**, even if the operator writes that it is safe. A same-commit
-binary change is also refused because compiler, flags, SDK, or runtime
-effects cannot be audited by a source diff. Such changes require new
-hardware evidence or a separately audited tool extension. A change of
-model/layout/inventory/owner-map/context/retention/KV scope **always**
-requires remeasurement, irrespective of the reason string.
+The Git diff is an **audit record, not a source-path allowlist**. A
+build-only P1 scope change is explicitly re-bindable even when Radiance,
+helper, kernel, build tooling or other runtime sources changed. An empty
+changed-path set, including the **same source commit** with different engine
+or helper build digests, is also permitted (for example, a toolchain rebuild). The tool still records exact old/new
+build digests, source commits, **all** changed paths and a nonempty rationale,
+hashes the immutable proof and binds the exact source hardware record. The
+original evidence validity window is never extended.
+
+The safety authority is the mandatory fresh native P1 measurement and S8
+measured geometry check at **each** start, followed by S5 pre-weight
+admission and S11's bounded two-attempt refusal/refit. In particular, a
+calibrated handoff maximum cannot exceed the new engine's measured dispatch
+capacity; host/pin/GPU plans must fit new live measured room. If the fresh
+P1 owner/context/retention/KV measurements fall outside the record's
+original exact measured scope, or the S8 capacity or terminal S5/S11
+admission gate fails, startup **refuses**, naming the re-bound source record
+and asking for hardware re-measurement. A successful bounded S11 refit may
+proceed; a rejected attempt never permits a power or launch bypass. No new
+quantitative tolerance or previously unmeasured operating envelope is
+inferred from a filename or from the build bump.
+
+A change of model/layout/inventory/owner-map/context/retention/KV scope
+**always** requires new evidence, regardless of changed paths or rationale.
 
 `QualifiedP1MeasurementSource` reads the record store on *every* attempt.
 If a current-scope P2 record exists, it is selected directly; otherwise one
 exact, hash-verified rebind receipt can qualify a still-fresh original record.
 The emitted C++ S8 evidence ID retains the original raw run plus
 `rebinds/<receipt>` provenance. No receipt, multiple matches, expired
-original record, malformed proof, P1 margin mismatch, or unsupported change
-=> explicit refusal. The source has to provide this rebound evidence ID to
+original record, malformed proof, P1 margin mismatch or changed non-build
+scope => explicit refusal. Hardware start failures request re-measurement
+with the exact record identity; source path changes do not automatically do so. The source has to provide this rebound evidence ID to
 the native P1 margin publisher; no historical literal is inserted.
 
 **Cutover still pending:** native P1 publication from live bc-serve,
