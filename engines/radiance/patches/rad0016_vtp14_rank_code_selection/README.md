@@ -1,4 +1,6 @@
-# rad0016 — VTP14 N1: per-rank kernel code eligibility and `--rank-devices`
+# rad0016_vtp14_rank_code_selection
+
+## Summary
 
 Radiance v1.17.0 serves one card architecture per process:
 
@@ -9,7 +11,13 @@ A tensor-parallel world of two RX 7900 XTX cards (gfx1100, served by libr3) and 
 libr4d) needs each rank to select the rows its own card runs. This managed patch adds that. It does nothing unless
 `--rank-devices` is given.
 
-## What it changes
+## Outcome
+
+Untested (experimental, VTP14 N1). The ROCm lane build and the HIP unit tests pass. On cards, per-rank selection works (libr3 for the XTX rank, libr4d for the R9700 rank), but a mixed-library world stops at the N3 all-reduce rendezvous. The rendezvous is a prerequisite for serving.
+
+## Detail
+
+### What it changes
 
 - **Registry** (`core/plugin/registry.h`, `loader.cpp`)
   - `set_code_devices(ordered ordinals)` must be called before any library loads. It refuses an empty list, a list
@@ -37,7 +45,7 @@ libr4d) needs each rank to select the rows its own card runs. This managed patch
   - `tests/bc_rank_devices_test.cpp` tests them, plus per-rank selection and the unchanged legacy path. It uses
     radiance's `radtest_*` plugins with a code-runs probe, so it needs no card.
 
-## Known limits (later VTP14 slices)
+### Known limits (later VTP14 slices)
 
 - **N3 collective rendezvous.** The all-reduce rendezvous in `r4d_ar_entry.hip` is static per library, so libr3
   ranks and libr4d ranks never meet: the exchange deadlocks until the 60 s timeout.
@@ -48,7 +56,7 @@ libr4d) needs each rank to select the rows its own card runs. This managed patch
 - **KV tiers.** `runtime/tierexec.cpp` resolves gather and scatter without a rank, so in a mixed world it fails
   closed.
 
-## Validation
+### Validation
 
 - `tools/tests/patch/test_vtp14_n1_rank_code_selection.py` checks:
   - the contract;
@@ -56,5 +64,9 @@ libr4d) needs each rank to select the rows its own card runs. This managed patch
   - idempotence;
   - fail-closed behaviour on drift;
   - that the patch applies to the real pinned v1.17.0 source (19d4e8fe) when a checkout is reachable.
-- On a host-only build (RAD_WITH_HIP=OFF, GCC 14), the touched units compile without warnings, and
-  `bc_rank_devices_test` and `plugin_test` run.
+- The ROCm lane build (stock, linux-radiance, ROCm 7.2.4: libr4d for gfx1201, libr3 for gfx1100) succeeds.
+- In the HIP test build of the same tree, `bc_rank_devices_test`, `plugin_test` and `config_test` pass. Every other
+  failure also occurs on the production source.
+- On hardware, `--tp 2 --rank-devices 0000:03:00.0,0000:09:00.0` plans the ranks and masks the libraries per rank
+  (libr3 for the XTX, libr4d for the R9700).
+- Serving then stops at the N3 all-reduce rendezvous (see VTP14.md).

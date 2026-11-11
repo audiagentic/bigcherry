@@ -260,3 +260,66 @@ built its fixture from the patch's own anchors, so it could not catch this. The 
 
 - one exact three-rank all-reduce on M1, M4 and M8 with `--p2p off`, matching the BF16 oracle;
 - no hang on abort or restart.
+
+## N1 hardware smoke and N3 reproduced on cards, 2026-11-11
+
+All results below are from build_plan_id 2a68d91b0326be18a461da62fb58d294 (source
+radiance-vtp14-rank-code-selection, stock lane, ROCm 7.2.4), taken under the gpu lease.
+
+**Builds and tests**
+
+- **HIP test build** of the same materialised tree:
+  - `bc_rank_devices_test` (115 checks) passes.
+  - `plugin_test` and `config_test` pass.
+- **Pre-existing failures** (images_test, videos_test, glm5next_test and arch_test, the last two failing on
+  `bc_moe_remote_*` links) are identical on the production `radiance` source, so they are not caused by rad0016.
+
+**Mixed-card run**
+
+- Command: `--tp 2 --rank-devices 0000:03:00.0,0000:09:00.0 --debug-graph`, with qwen3.8-27b-fp8-df2. That puts
+  one XTX (gfx1100) and the R9700 (gfx1201) in one world.
+- The ranks are planned and libraries are masked per rank:
+  - libr3: 587 device rows, offered only to rank 0 (XTX).
+  - libr4d: 587 device rows, offered only to rank 1 (R9700).
+  - libbcgfx12 and spechub: offered only to the R9700.
+  - libr2 (gfx1030): dropped for both ranks.
+- p2p is off (0->2 and 2->0), so the collectives select the `*_host` twins.
+- **N3 reproduced:** declare then fails in all-reduce init. Every `ar_oneshot_2rank_exact_host` and
+  `ar_rmsnorm_quant_fp8_host` instance in both libraries is refused ("called in the wrong phase"): rank 0 in
+  libr3, rank 1 in libr4d. The process hangs and does not exit.
+- The per-library rendezvous therefore blocks the **two-rank family as well as the wide (3/4/8-rank) family**.
+  The N3 slot must cover every `g_rv` user.
+- **Consequence:** the shared-slot rendezvous is a prerequisite for *any* tensor-parallel world that mixes libraries
+  (libr3 + libr4d), TP2 included. Do not try a mixed XTX+R9700 TP2 as an interim step before N3 lands: it hangs in
+  declare.
+
+**Cosmetic issue**
+
+- Upstream's `usable_devices` note ("using 2 of 4 … ignoring gfx1201") is still printed before `--rank-devices`
+  overrides the choice. A small follow-up should suppress that note when the list is given.
+
+## Independent assessment (reviewer-gpt-agent, session ses_ad7d3f16e1f44251)
+
+The full text is in the task scratch folder (`vtp14/gpt-assessment-n2-n3.md`). These points are adopted into
+the plan:
+
+**N3**
+
+- Fail closed. Do not fall back to the local `g_rv` in a mixed world.
+- Share only `Rendezvous`. `ArInst`, `g_cache` and `g_ar8` stay local to each library.
+- The slot key must include the world/session identity and a layout fingerprint (sizeof and offsets).
+- Poison the rendezvous and wake every waiter on timeout. Never reuse a slot that is only partly initialised.
+- Assert `nm -D` exports `rad_bc_shared_slot`.
+- Run `r3_rewrite.py --check`.
+- The N1 agreement check must also compare launch geometry: world, transport, dtype, numel, variant and
+  **nblocks**. A per-rank tuned nblocks can strand spin blocks.
+
+**N2**
+
+- Use the existing `rad_weight_shard_span(_parts)` ABI. No new loader is needed.
+- Embedding and lm_head need explicit vocab spans (248320 % 3 != 0). The ragged vocab is
+  [0,82816), [82816,165632), [165632,248320).
+- Qwen BF16 calibration assumes uniform global widths. Fix it or refuse it under an asymmetric profile.
+- Select the ownership profile through typed config, not an environment variable.
+- The experimental VTP30 ownership patch in `wt-xtx27-prefill` (also numbered rad0016) is the starting reference,
+  read-only. N2 will take a new patch number.
