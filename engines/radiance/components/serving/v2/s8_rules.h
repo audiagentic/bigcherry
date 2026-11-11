@@ -112,6 +112,10 @@ Result<S8Resolution> resolve_s8(const S8Measured &measured,
                                 const std::vector<S8Calibration> &records,
                                 int64_t now_unix_s);
 
+// The pinned host pool S8 derives from the measured inputs: host embeddings, unowned experts, staging and the margin,
+// rounded up to whole MiB. A plan measured with another pool is re-measured with this one (bc-serve exit 11).
+std::optional<int64_t> derived_host_pool_mib(const MeasuredResourceInputs &inputs);
+
 // Reusable engine VRAM admission: no hidden tolerance (including the observed
 // 2026-11 R9700 1,036,288-byte shortfall).
 Status require_measured_vram(int64_t required_bytes, int64_t claimable_bytes,

@@ -8,6 +8,8 @@
 #include "sdk_check.h"
 #include "v2/p1_live_room.h"
 #include "v2/p1_producer.h"
+#include "v2/s8_rules.h"
+#include "generated/v2/serving_codec.h"
 
 #include <filesystem>
 #include <fstream>
@@ -443,6 +445,21 @@ int main(int argc, char** argv) {
                     {"margin", bc::serving::host_ledger_margin(r, opts.calibration_cache)},
                     {"run_id", "bc-serve --write-manifest " + write_manifest.filename().string()}};
                 s10.p1_record = bc::serving::v2::produce_p1(r, facts, opts.sys_root, sources);
+                // The plan echoes the host pool it was measured with; S8 derives the pool from what was measured. When they
+                // differ, the plan is for another pool: exit 11 with the derived one, and the launcher measures once more
+                // with it (that configuration has its own cache key, so this happens once per configuration).
+                bc::serving::v2::MeasuredResourceInputs measured_inputs;
+                if (const auto e = bc::serving::v2::decode(s10.p1_record.at("resource_inputs"), "p1.resource_inputs",
+                                                           &measured_inputs))
+                    throw std::runtime_error(e->message);
+                const auto derived = bc::serving::v2::derived_host_pool_mib(measured_inputs);
+                if (!derived) throw std::runtime_error("the derived host pool overflows");
+                if (*derived != plan->plan.host_pool_mib) {
+                    std::cerr << "bc-serve: the plan was measured with a " << plan->plan.host_pool_mib
+                              << " MiB host pool; the measured inputs need " << *derived << " MiB\n";
+                    std::cout << "derived_host_pool_mib=" << *derived << '\n';
+                    return 11;
+                }
             }
             bc::serving::ManifestInputs in;
             in.resolved = r;

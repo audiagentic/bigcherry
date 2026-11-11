@@ -63,6 +63,16 @@ ValueClass class_of(const std::string &path) {
 }
 } // namespace
 
+std::optional<int64_t> derived_host_pool_mib(const MeasuredResourceInputs &r) {
+  int64_t margin_bytes, pool_bytes;
+  if (!mul(r.host_pool_margin_calibration.mib, kMiB, &margin_bytes) ||
+      !add(r.host_embedding_bytes, r.unowned_expert_bytes, &pool_bytes) ||
+      !add(pool_bytes, r.staging_bytes, &pool_bytes) ||
+      !add(pool_bytes, margin_bytes, &pool_bytes))
+    return std::nullopt;
+  return ceil_mib(pool_bytes);
+}
+
 Status require_measured_vram(int64_t required, int64_t claimable,
                              const std::string &bdf) {
   if (!positive(required) || !positive(claimable))
@@ -192,16 +202,13 @@ Result<S8Resolution> resolve_s8(const S8Measured &m,
 
   // This is the S7 resource ledger's byte-exact host-pool/KV arithmetic,
   // now taking only the S9 typed, engine-measured resource inputs.
-  int64_t margin_bytes, pool_bytes, retained_bytes, committed, pinned;
-  if (!mul(cal.mib, kMiB, &margin_bytes) ||
-      !add(r.host_embedding_bytes, r.unowned_expert_bytes, &pool_bytes) ||
-      !add(pool_bytes, r.staging_bytes, &pool_bytes) ||
-      !add(pool_bytes, margin_bytes, &pool_bytes) ||
-      !mul(r.kv_bytes_per_token, r.retention_target_tokens, &retained_bytes)) {
+  int64_t retained_bytes, committed, pinned;
+  const auto pool = derived_host_pool_mib(r);
+  if (!pool || !mul(r.kv_bytes_per_token, r.retention_target_tokens, &retained_bytes)) {
     return fail(ConfigErrorCode::invalid_value, scope_path,
                 "derived host budget overflow");
   }
-  const int64_t pool_mib = ceil_mib(pool_bytes);
+  const int64_t pool_mib = *pool;
   const int64_t kv_mib = ceil_mib(retained_bytes);
   const int64_t reserve_mib = ceil_mib(m.host_reserve_bytes);
   int64_t reserve_rounded_bytes;
