@@ -7,6 +7,7 @@ from bigcherry.engine_adapters.radiance_resources import MIB
 from bigcherry.serving.measured_plan import MeasuredPlanRefused, PlanBounds
 from bigcherry.serving.p1_inputs import (
     P1MeasurementSource,
+    NativeP1Command,
     decode_p1_record,
     parse_p1_json,
 )
@@ -127,3 +128,39 @@ def test_source_remeasures_with_updated_bounds_and_no_record_fallback():
 
     with pytest.raises(MeasuredPlanRefused, match="failed"):
         P1MeasurementSource(command, run=rejected).measure(_LAYOUT, PlanBounds())
+
+
+def test_native_p1_command_passes_exact_bounds_to_fresh_requests():
+    created = []
+    def request(layout, bounds):
+        assert layout is _LAYOUT
+        created.append(bounds)
+        return f"/runs/P1/attempt-{len(created)}/input.json"
+
+    builder = NativeP1Command(
+        "bc-serve", request, "/etc/bc/site.toml", "/etc/bc/profile.toml",
+        "/sysroot", ("engine.tp=2",))
+    first = builder(_LAYOUT, PlanBounds())
+    second = builder(_LAYOUT, PlanBounds(retained_kv_tokens=192))
+    assert len(created) == 2
+    assert first != second
+    assert first == [
+        "bc-serve", "--publish-v2-p1", "/runs/P1/attempt-1/input.json",
+        "--site", "/etc/bc/site.toml", "--profile", "/etc/bc/profile.toml",
+        "--sys-root", "/sysroot", "--set", "engine.tp=2"]
+    assert second[2].endswith("attempt-2/input.json")
+    calls = []
+    def run(argv, **kwargs):
+        calls.append(tuple(argv))
+        return SimpleNamespace(returncode=0,stdout=json.dumps(sample()))
+    source = P1MeasurementSource(builder,run=run)
+    source.measure(_LAYOUT,PlanBounds())
+    source.measure(_LAYOUT,PlanBounds(retained_kv_tokens=192))
+    assert calls[0] != calls[1]
+
+
+def test_native_p1_command_refuses_missing_attempt_request():
+    builder = NativeP1Command("bc-serve",lambda layout,bounds: "",
+                              "site.toml","profile.toml","/")
+    with pytest.raises(MeasuredPlanRefused, match="missing"):
+        P1MeasurementSource(builder).measure(_LAYOUT, PlanBounds())

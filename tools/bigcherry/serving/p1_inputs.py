@@ -10,6 +10,7 @@ import json
 import re
 import subprocess
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 
 from ..engine_adapters.radiance_resources import MIB, HostLimits, ModelMemory, Targets
 from .measured_plan import GpuDemand, MeasuredPlanRefused, PlanBounds, PlanMeasurement
@@ -183,12 +184,46 @@ def decode_p1_record(raw: object, layout) -> PlanMeasurement:
                            tuple(gpu), dict(r), dict(scope))
 
 
+@dataclass(frozen=True)
+class NativeP1Command:
+    """Per-attempt P1-b bc-serve command, never a cached native measurement.
+
+    request_for_attempt must write a fresh engine --plan-memory plus
+    --plan-memory-ranks request from this attempt's exact PlanBounds. The
+    native command checks the model, verified owner map, and live pin room.
+    A missing source is a refusal, not a fallback to the previous record.
+    """
+
+    executable: str
+    request_for_attempt: Callable[[object, PlanBounds], str]
+    site: str
+    profile: str
+    sys_root: str
+    sets: tuple[str, ...] = ()
+
+    def __call__(self, layout: object, bounds: PlanBounds) -> list[str]:
+        source = self.request_for_attempt(layout, bounds)
+        if (not isinstance(source, str) or not source or
+                any(not isinstance(p, str) or not p
+                    for p in (self.executable, self.site, self.profile, self.sys_root))):
+            raise MeasuredPlanRefused(
+                "P1 native request/source missing for this planning attempt")
+        argv = [self.executable, "--publish-v2-p1", source,
+                "--site", self.site, "--profile", self.profile,
+                "--sys-root", self.sys_root]
+        for override in self.sets:
+            if not isinstance(override, str) or "=" not in override or override.startswith("="):
+                raise MeasuredPlanRefused("P1 invalid native resolver override")
+            argv.extend(("--set", override))
+        return argv
+
+
 class P1MeasurementSource:
     """S11 source adapter: a fresh native command for every bounded replan.
 
-    S13 must inject a command builder that points to bc-serve's P1 producer,
-    with model/layout/target identity and explicit PlanBounds. Never reuse a
-    captured record for a second attempt; it may be stale.
+    Connect NativeP1Command to bc-serve's --publish-v2-p1 command, with
+    a request_for_attempt that obtains a fresh engine plan and post-rank-split
+    sidecar for this layout and bounds. No stale record or v1 fallback.
     """
 
     def __init__(self, command: Callable[[object, PlanBounds], Sequence[str]],

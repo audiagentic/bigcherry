@@ -131,7 +131,7 @@ bool bc_serving_engine_argv(int* argc, char*** argv) {
         if (!std::strcmp((*argv)[i], "--manifest")) manifest_mode = true;
     if (!manifest_mode) return true;
 
-    std::string path, role, plan_memory;
+    std::string path, role, plan_memory, rank_out;
     std::vector<std::string> verbosity;
     /* Offline quality runs (the KL mode): which run to do and where its files are, not configuration. They name no manifest
      * field, so they pass through to config_parse unchanged beside the manifest's own flags. */
@@ -153,6 +153,10 @@ bool bc_serving_engine_argv(int* argc, char*** argv) {
             if (!plan_memory.empty()) return fail("--plan-memory given twice");
             if (i + 1 >= *argc || !*(*argv)[i + 1]) return fail("--plan-memory needs a path");
             plan_memory = (*argv)[++i];
+        } else if (a == "--plan-memory-ranks") {
+            if (!rank_out.empty()) return fail("--plan-memory-ranks given twice");
+            if (i + 1 >= *argc || !*(*argv)[i + 1]) return fail("--plan-memory-ranks needs a path");
+            rank_out = (*argv)[++i];
         } else if (a == "-v" || a == "-vv") {
             verbosity.push_back(a);
         } else if (kRunFlags.count(a)) {
@@ -163,6 +167,7 @@ bool bc_serving_engine_argv(int* argc, char*** argv) {
         }
     }
 
+    if (!rank_out.empty() && plan_memory.empty()) return fail("--plan-memory-ranks requires --plan-memory");
     std::ifstream in(path, std::ios::binary);
     if (!in) return fail("cannot read '" + path + "'");
     const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
@@ -179,6 +184,11 @@ bool bc_serving_engine_argv(int* argc, char*** argv) {
     g_have_expected = false;
     /* A quality run (the KL mode) scores the trunk's own rows and never serves: it holds no checkpoint slots and a smaller
      * static VRAM set, so the serving plan's admission check does not describe it and none is armed. */
+    /* Rank identities belong to the manifest even for a measuring start. */
+    if (!rank_out.empty()) {
+        g_engine_bdfs = doc.at("spec").at("processes").at("engine")
+                        .at("device").at("gpus").get<std::vector<std::string>>();
+    }
     if (plan_memory.empty() && run_flags.empty()) {
         /* a serving start: the plan the manifest carries is the plan this engine must admit (rad0011 checks it) */
         const v1::Result<v1::EngineView> view = v1::engine_view(manifest.value());
@@ -232,6 +242,10 @@ bool bc_serving_engine_argv(int* argc, char*** argv) {
     if (!plan_memory.empty()) {
         g_store.push_back("--plan-memory");
         g_store.push_back(plan_memory);
+    }
+    if (!rank_out.empty()) {
+        g_store.push_back("--plan-memory-ranks");
+        g_store.push_back(rank_out);
     }
     for (const auto& kv : run_flags) {
         g_store.push_back(kv.first);
