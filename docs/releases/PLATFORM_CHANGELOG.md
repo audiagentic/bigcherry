@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.38.1](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.38.0...bc-platform-1.38.1) (2026-11-11)
+
+
+### Fixes
+
+* **rsc11:** carry S8 evidence across runtime and kernel build bumps ([#877](https://github.com/audiagentic/bigcherry/issues/877)) ([8f07300](https://github.com/audiagentic/bigcherry/commit/8f073006635836be30c5c5380a6a0557b54a1e41))
+
 ## [1.38.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.37.0...bc-platform-1.38.0) (2026-11-11)
 
 
