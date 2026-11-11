@@ -1,6 +1,7 @@
 #include "v2/runtime_receipt.h"
 
 #include <algorithm>
+#include <cstring>
 #include <regex>
 #include <set>
 
@@ -9,6 +10,7 @@ namespace {
 using Json = nlohmann::json;
 using PC = r3::moe_shm::PlacementControl;
 using PJ = r3::moe_shm::PlacementJournal;
+namespace shm = r3::moe_shm;
 
 ConfigError fail(std::string field, std::string why) {
   return make_error(ConfigErrorCode::invalid_value,
@@ -38,6 +40,7 @@ Json snapshot_json(const RuntimeSnapshot& s) {
 } // namespace
 
 Result<Json> publish_runtime_receipt(
+    const std::string& run_id,
     const LivePolicyStartup& startup,
     const std::string& manifest_content_digest,
     uint64_t epoch,
@@ -45,6 +48,9 @@ Result<Json> publish_runtime_receipt(
     const PC& control,
     const PJ& journal) {
 
+  static const std::regex run_id_format("^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$");
+  if (!std::regex_match(run_id, run_id_format))
+    return fail("run_id", "valid run identity required");
   if (manifest_content_digest.empty() || !digest64(manifest_content_digest))
     return fail("manifest_content_digest",
                 "manifest content digest (sha256) is required to bound the receipt");
@@ -137,6 +143,7 @@ Result<Json> publish_runtime_receipt(
 
   Json out = Json::object();
   out["schema_version"] = 1;
+  out["run_id"] = run_id;
   out["kind"] = "bc_serve_v2_runtime_receipt";
   out["manifest"] = Json::object();
   out["manifest"]["content_digest"] = manifest_content_digest;
@@ -167,6 +174,46 @@ Result<Json> publish_runtime_receipt(
   out["required_producer"] =
       "r3_moe_worker/worker_epoch.h:PlacementControl+PlacementJournal control/journal flags";
   return out;
+}
+
+Result<Json> publish_live_runtime_receipt(
+    const std::string& run_id,
+    const LivePolicyStartup& startup,
+    const std::string& manifest_content_digest,
+    const void* mapping,
+    size_t mapped_bytes) {
+  if (!mapping || mapped_bytes < sizeof(shm::Header) ||
+      !shm::valid_self(static_cast<const shm::Header*>(mapping), mapped_bytes))
+    return fail("transport", "invalid worker shared-memory layout");
+  for (unsigned attempt = 0; attempt < 64; ++attempt) {
+    PC before{}, after{};
+    PJ journal{};
+    if (!shm::placement_snapshot(mapping, &before))
+      return fail("control", "worker control seqlock is unavailable");
+    if (before.seq < 2 || (before.seq & 1u))
+      return fail("control", "worker placement generation has not been sealed");
+    std::memcpy(&journal, shm::placement_journal(mapping), sizeof(journal));
+    if (!shm::placement_snapshot(mapping, &after))
+      return fail("control", "worker control changed during journal observation");
+    if (std::memcmp(&before, &after, sizeof(before)) != 0)
+      continue;
+    if (before.active_slot > 1 ||
+        shm::generation_digest(mapping, before.active_slot) != before.active_digest)
+      return fail("control.active_digest", "published owner digest disagrees with live owner map");
+    if (before.transaction_id && before.journal_index < 2) {
+      const auto& current = journal.entry[before.journal_index];
+      if (current.before_epoch != before.active_epoch &&
+          current.after_epoch != before.active_epoch)
+        return fail("journal", "stale journal epoch for live placement");
+      if (current.before_digest != before.active_digest &&
+          current.candidate_digest != before.active_digest)
+        return fail("journal", "stale journal owner generation for live placement");
+    }
+    return publish_runtime_receipt(run_id, startup, manifest_content_digest,
+                                   before.active_epoch, before.active_digest,
+                                   before, journal);
+  }
+  return fail("control", "worker placement changed throughout bounded observation");
 }
 
 } // namespace bc::serving::v2
