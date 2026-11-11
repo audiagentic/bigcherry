@@ -160,10 +160,12 @@ def build_reports() -> dict[str, dict[str, object]]:
     }
 
 
-def main(*, as_json: bool = False) -> int:
+def main(*, as_json: bool = False, gfxoff_report: dict | None = None) -> int:
     reports = build_reports()
     if as_json:
-        print(json.dumps({"schema_version": 2, "engines": reports}, indent=2, sort_keys=True))
+        print(json.dumps({"schema_version": 2, "engines": reports,
+                          "gfxoff": gfxoff_report if gfxoff_report is not None else {}},
+                         indent=2, sort_keys=True))
         return 0
     for name, report in reports.items():
         config_report = cast("dict[str, object]", report["config"])
@@ -182,4 +184,11 @@ def main(*, as_json: bool = False) -> int:
             f"Pin status: {verdict} "
             f"(pin {pin_status_report['pinned_ref']} vs vendor {vendor})"
         )
+    if gfxoff_report:
+        from .hardware.gfxoff import Verdict, format_verdict
+        for bdf, row in gfxoff_report.items():
+            if bdf == "unavailable":
+                print("gfxoff: unavailable (probe failed)")
+                continue
+            print(format_verdict(Verdict(**row)))
     return 0

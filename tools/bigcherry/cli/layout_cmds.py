@@ -73,7 +73,9 @@ def _run(args: Namespace) -> int:
         layout = _resolve(args)
         r = layout.resolved
         if args.layout_cmd == "env":
-            print("\n".join(_env_lines(r)))
+            print("\n".join(_env_lines(r) + [
+                "LAYOUT_ENGINE_BDFS=(" + " ".join(shlex.quote(b) for b in layout.engine_bdfs) + ")"
+            ]))
             return 0
         print(json.dumps({
             "layout": r.name, "model": r.model,

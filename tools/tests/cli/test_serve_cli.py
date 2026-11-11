@@ -122,6 +122,7 @@ def test_cli_test_seam_uses_one_supervisor(tmp_path, monkeypatch):
         wait=lambda check: check(),
         lease_ok=lambda: True,
         power_factory=lambda rid, ok: Power(),
+        gfxoff_capture=lambda bdfs, *, phase: {},
     )
     assert record["state"] == "stopped"
     assert launcher.roles == ["start", "ready", "stop", "exit"]

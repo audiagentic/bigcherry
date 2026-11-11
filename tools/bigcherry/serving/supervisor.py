@@ -9,13 +9,14 @@ S11/S13 supplies the validated v2 plan, readiness and canary.
 from __future__ import annotations
 
 import re
+import sys
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
 
 from ..engine_adapters.radiance_inventory import Layout
-from ..hardware import lease
+from ..hardware import gfxoff, lease
 from ..hardware.gpu_power import Setting
 from ..hardware.power_probe import probe_host
 from ..hardware.power_receipt import (
@@ -101,6 +102,7 @@ class Supervisor:
         power_factory: Callable[[str, Callable[[], bool]], PowerOps] | None = None,
         power_recover: Callable[..., bool] = PowerTransaction.recover,
         observe: Callable[[list[str]], dict] | None = None,
+        gfxoff_capture: Callable[..., dict[str, gfxoff.Window]] | None = None,
     ) -> None:
         self.resolve = resolve
         self.plan = plan
@@ -114,6 +116,7 @@ class Supervisor:
         )
         self.power_recover = power_recover
         self.observe = observe or (lambda bdfs: probe_host(bdfs).to_dict())
+        self.gfxoff_capture = gfxoff_capture or gfxoff.sample_cards
 
     def _observation(self, receipt: Receipt, phase: str, selected: list[str]) -> None:
         try:
@@ -175,6 +178,7 @@ class Supervisor:
         selected: list[str] = []
         explicit_power = False
         failures: list[str] = []
+        gfxoff_floor: dict[str, gfxoff.Window] = {}
         record: dict = {
             "schema_version": 1,
             "run_id": run_id,
@@ -241,6 +245,12 @@ class Supervisor:
                 receipt.save(receipt_path)
                 event("power_applied")
             for spec in serving.processes:
+                if spec.role == "engine":
+                    # After helpers, directly before engine start; no GPU writes.
+                    try:
+                        gfxoff_floor = self.gfxoff_capture(layout.engine_bdfs, phase="no_process")
+                    except Exception as exc:  # noqa: BLE001 - advisory only
+                        print(f"gfxoff: unavailable (floor: {type(exc).__name__})", file=sys.stderr)
                 if serving.manifest.read_bytes() != manifest_snapshot:
                     raise ServeRefused("manifest changed after power preflight")
                 self._lease()
@@ -253,6 +263,29 @@ class Supervisor:
                 self._lease()
                 self.launcher.ready(process, spec)
                 event("ready", role=spec.role)
+                if spec.role == "engine":
+                    # Post-health, pre-first-request, after the engine has a
+                    # resident HIP/KFD context. Advisory failures never abort.
+                    try:
+                        loaded = self.gfxoff_capture(layout.engine_bdfs, phase="engine_loaded_idle")
+                        verdicts = {
+                            b: gfxoff.evaluate(gfxoff_floor.get(b), loaded[b]).to_dict()
+                            for b in layout.engine_bdfs
+                        }
+                        record["gfxoff"] = verdicts
+                        for row in verdicts.values():
+                            if row["status"] != "not_applicable":
+                                print(gfxoff.format_verdict(gfxoff.Verdict(**row)), file=sys.stderr)
+                    except Exception as exc:  # noqa: BLE001 - diagnostic only
+                        record["gfxoff"] = {"status": "unavailable", "reason": type(exc).__name__}
+                        print(f"gfxoff: unavailable ({type(exc).__name__})", file=sys.stderr)
+                    try:
+                        if receipt is not None:
+                            receipt.observe("gfxoff", record["gfxoff"])
+                            receipt.save(receipt_path)
+                        write_json_atomic(path, record)
+                    except Exception as exc:  # noqa: BLE001 - nonblocking observation
+                        print(f"gfxoff: receipt unavailable ({type(exc).__name__})", file=sys.stderr)
             event("running")
             self.wait(self._lease)
         except KeyboardInterrupt:
