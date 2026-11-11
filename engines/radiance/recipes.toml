@@ -57,16 +57,20 @@ required-state = "untested"
 patches = ["rad0012_helper_kernel_config"]
 required-state = "untested"
 
-# VTP14 N1 first slice. Rank-specific kernel-code masks are inert until
-# ordered heterogeneous device admission is separately approved.
+# VTP14 native TP3 (experimental). N1: per-rank kernel code masks and --rank-devices, inert without the flag.
+# N3: one all-reduce rendezvous shared by libr3 and libr4d, without which a mixed-library world hangs in declare.
 [patch-set.vtp14-rank-code-selection]
 patches = ["rad0016_vtp14_rank_code_selection"]
 required-state = "untested"
 
+[patch-set.vtp14-shared-rendezvous]
+patches = ["rad0017_vtp14_n3_shared_rendezvous"]
+required-state = "untested"
+
 [source.radiance-vtp14-rank-code-selection]
-description = "Experimental native Radiance per-rank code-object eligibility; heterogeneous GPU launch is disabled."
+description = "Experimental native Radiance TP3 across RX 7900 XTX and R9700: per-rank kernel selection (--rank-devices) and a shared all-reduce rendezvous."
 overlay = false
-patch-sets = ["serving-core", "host-compat", "serving-manifest", "helper-config", "mtp-pass-replay", "vtp14-rank-code-selection"]
+patch-sets = ["serving-core", "host-compat", "serving-manifest", "helper-config", "mtp-pass-replay", "vtp14-rank-code-selection", "vtp14-shared-rendezvous"]
 
 [source.radiance-native]
 description = "radiance 1.14.0 as released: no overlay, no patches."
