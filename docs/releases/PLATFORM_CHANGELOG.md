@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.35.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.34.1...bc-platform-1.35.0) (2026-11-11)
+
+
+### New and changed
+
+* **rsc11:** bind P1 measurements to qualified S8 calibration records ([#867](https://github.com/audiagentic/bigcherry/issues/867)) ([067aee8](https://github.com/audiagentic/bigcherry/commit/067aee8c0f54438c0a8d184841e52b52de3b9380))
+
 ## [1.34.1](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.34.0...bc-platform-1.34.1) (2026-11-11)
 
 
