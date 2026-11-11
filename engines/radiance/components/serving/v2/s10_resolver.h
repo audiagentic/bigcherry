@@ -68,10 +68,6 @@ struct S10Inputs {
 // structured RoomRefusal; this module does not invent another error envelope.
 Result<Manifest> resolve_s10(const Manifest &base, const S10Inputs &input);
 
-// Checks all registry restrictions against effective (nearest ancestor)
-// provenance, including every array member; absence is not a measurement.
-Status validate_s10_provenance(const Manifest &manifest);
-
 // The plan's power section against the manifest it is part of: the named profile, the role overrides, exactly the
 // engine TP and selected helper cards in selection order, and the observe/apply and gfx1100 safety rules. Qualification
 // evidence and probes are inputs to resolve_s10 only; a reader cannot re-verify them and does not pretend to.

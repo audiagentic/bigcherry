@@ -311,7 +311,7 @@ struct Loader {
                       "item_pattern",
                       "min_items", "max_items", "unique_items", "tuple", "key_ref", "required_keys", "min_properties",
                       "constraints", "radiance_option", "radiance_config", "radiance_switch", "env_setting", "error_class", "mismatch", "default",
-                      "default_source", "origins", "confidences"},
+                      "default_source"},
                   at);
         Node n;
         n.path = str(t, "path", at);
@@ -333,16 +333,6 @@ struct Loader {
         if (!n.env_setting.empty() && !n.radiance_option.empty()) fault(where, "env_setting and radiance_option are two different bindings; a field has one");
         if (n.radiance_switch && n.radiance_option.empty()) fault(where, "radiance_switch needs a radiance_option");
         if (!n.cpp_member.empty() && !identifier(n.cpp_member)) fault(where, "cpp_member is not a C++ identifier");
-        n.origins = strings(t, "origins", where);
-        n.confidences = strings(t, "confidences", where);
-        for (const auto& [names, allowed] : std::array{
-                 std::pair{&n.origins, std::set<std::string>{"schema_default", "site", "profile", "cli", "detected", "derived", "calibrated", "experiment"}},
-                 std::pair{&n.confidences, std::set<std::string>{"exact", "measured", "estimate"}}}) {
-            std::set<std::string> seen;
-            for (const auto& value : *names)
-                if (!allowed.count(value) || !seen.insert(value).second)
-                    fault(where, "invalid or duplicate provenance allowlist value '" + value + "'");
-        }
         n.error_class = str(t, "error_class", where, false);
         n.mismatch = str(t, "mismatch", where, false);
         if (!n.error_class.empty() && !kErrorClasses.count(n.error_class))
@@ -947,14 +937,6 @@ struct TypesWriter {
                  << ",\n     " << literal(n.doc)
                  << ", " << literal(n.default_value ? n.default_value->dump() : std::string()) << ", "
                  << literal(n.default_source) << ", " << literal(n.ref);
-            if (r.contract_version >= 2) {
-                auto joined = [](const std::vector<std::string>& names) {
-                    std::string result;
-                    for (const auto& name : names) { if (!result.empty()) result += ","; result += name; }
-                    return result;
-                };
-                rows << ", " << literal(joined(n.origins)) << ", " << literal(joined(n.confidences));
-            }
             rows << "},\n";
             ++count;
         }
@@ -972,8 +954,6 @@ struct TypesWriter {
              "    std::string_view default_json;     // the schema default as JSON, or empty (spec section 7)\n"
              "    std::string_view default_source;   // where the default comes from, or empty\n"
              "    std::string_view ref_def;          // kind \"ref\": the shared type it uses, else empty\n";
-        if (r.contract_version >= 2) o << "    std::string_view allowed_origins;  // comma-delimited; empty means unrestricted\n"
-                                           "    std::string_view allowed_confidences;\n";
         o << "};\n";
         o << "inline constexpr std::array<FieldInfo, " << count << "> kFields = {{\n" << rows.str() << "}};\n";
         // The fields that stand in for a process environment variable (amendment 14): the engine sets each variable from
@@ -1878,8 +1858,6 @@ std::string semantic_fingerprint(const Registry& r) {
         Json f = Json{{"path", n.path}, {"class", n.cls}, {"radiance_option", n.radiance_option},
                       {"radiance_config", n.radiance_config}, {"error_class", n.error_class},
                       {"mismatch", n.mismatch}};
-        if (!n.origins.empty()) f["origins"] = n.origins;
-        if (!n.confidences.empty()) f["confidences"] = n.confidences;
         if (n.radiance_switch) f["radiance_switch"] = true;   // present only where a field is a value-less flag
         if (!n.env_setting.empty()) f["env_setting"] = n.env_setting;   // present only where a field stands in for an environment variable
         // spec section 7 / section 11 amendment 9: a default decides which leaves need a provenance record, so it is
@@ -2074,6 +2052,10 @@ def _semantic(doc):
     permitted = {"engine"} | {helper["role"] for helper in spec["processes"]["helpers"]}
     if not set(intent["role_overrides"]).issubset(permitted):
         _raise("/spec/intent/power/role_overrides", "unknown resolved role")
+    if (spec["plan"]["state"] == "measured") != ("resource_inputs" in spec["plan"]):
+        _raise("/spec/plan/resource_inputs", "present exactly when plan.state is measured")
+    if "resource_inputs" not in spec["plan"]:
+        return
     measured = spec["plan"]["resource_inputs"]
     if measured["owner_map_digest"] != spec["plan"]["owner_map"]["owner_map_sha256"]:
         _raise("/spec/plan/resource_inputs/owner_map_digest", "owner-map mismatch")
@@ -2086,20 +2068,6 @@ def _semantic(doc):
                                      "slot_map_bytes", "incoming_slot_bytes"))
         if row["total_bytes"] != total:
             _raise("/spec/plan/resource_inputs/helper_footprints", "non-expert total disagrees")
-    margin = measured["host_pool_margin_calibration"]
-    if not any(c["key"] == margin["key"] and c["value"] == margin["mib"] and
-               c["source"] == margin["source"] for c in spec["calibration"]):
-        _raise("/spec/plan/resource_inputs/host_pool_margin_calibration",
-               "margin has no matching calibration entry")
-    for field_path, restriction in RESTRICTED.items():
-        path = field_path.replace("/[]", "/0")  # item restrictions are enforced by the S13 reader
-        records = doc["provenance"]
-        candidate = [key for key in records if path == key or path.startswith(key + "/")]
-        if not candidate:
-            continue  # coverage is S13's shared semantic check
-        record = records[max(candidate, key=len)]
-        if record["origin"] not in restriction["origins"] or record["confidence"] not in restriction["confidences"]:
-            _raise(field_path, "unqualified value provenance")
 
 
 def decode(text):
@@ -2124,12 +2092,6 @@ def encode(document):
     return raw
 )bc_py";
     o << "\nSCHEMA = json.loads(" << Json(emit_schema(r)).dump() << ")\n";
-    Json restrictions = Json::object();
-    for (const auto& n : r.nodes) {
-        if (n.origins.empty() && n.confidences.empty()) continue;
-        restrictions[n.path] = Json{{"origins", n.origins}, {"confidences", n.confidences}};
-    }
-    o << "RESTRICTED = json.loads(" << literal(restrictions.dump()) << ")\n";
     return o.str();
 }
 

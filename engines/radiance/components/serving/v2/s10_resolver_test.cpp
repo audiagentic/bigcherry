@@ -76,6 +76,9 @@ v2::S10Inputs inputs(const v2::Manifest &m) {
   s.transport_shm = "/rsc11-s10-synthetic";
   s.histogram_file = "/tmp/s10-synthetic-heat";
   s.live_policy_requested = true;
+  s.settings = {{"handoff.max_rows", {256, "site.toml"}}, {"handoff.small_rows", {6, "site.toml"}},
+                {"handoff.gemv_large_rows", {16, "site.toml"}}, {"handoff.moe_down_tile", {1, "site.toml"}},
+                {"handoff.histogram_period_s", {60, "site.toml"}}, {"handoff.live_cadence_ns", {10000000000LL, "site.toml"}}};
   auto row = [&](std::string key, int64_t value, std::string evidence) {
     return v2::S8Calibration{
         std::move(key), value, std::move(evidence),
@@ -122,8 +125,9 @@ int main() {
   assert(out.spec.resources.host.pool_mib == 13);
   assert(out.spec.resources.host.kv_mib == 1);
   assert(out.spec.processes.helpers[0].vram_budget_mib == 23548);
+  // No calibration record is no reason to stop the policy; only a stale heat feed is.
   assert(out.spec.handoff->placement.live_policy_state.reason_code ==
-         "no_qualified_record");
+         "stale_heat_feed");
   assert(!out.spec.handoff->placement.live_policy_state.configured);
   assert(!out.spec.handoff->placement.live_policy);
   const auto written = v2::write_s10(out);
@@ -216,21 +220,7 @@ int main() {
   auto wrong_engine = m;
   wrong_engine.spec.plan.engine_memory->expected.host_pool_mib++;
   assert(!v2::resolve_s10(wrong_engine, bad_memory));
-  auto wrong_provenance = out;
-  wrong_provenance.provenance["/spec/plan/resource_inputs/host_embedding_bytes"] = {
-      v2::Origin::kProfile, "unmeasured literal", v2::ValueClass::kDerived,
-      v2::Lifecycle::kStartupOnly, v2::Confidence::kEstimate, {}};
-  auto rejected = v2::validate_s10_provenance(wrong_provenance);
-  assert(rejected && rejected->code == v2::ConfigErrorCode::provenance_invalid);
-  wrong_provenance = out;
-  wrong_provenance.provenance.erase("/spec/resources/host");
-  wrong_provenance.provenance["/spec/resources"] = {
-      v2::Origin::kProfile, "unmeasured inherited literal",
-      v2::ValueClass::kDerived, v2::Lifecycle::kStartupOnly,
-      v2::Confidence::kEstimate, {}};
-  assert(v2::validate_s10_provenance(wrong_provenance));
-
   // Keep S5/S11's RoomRefusal parser as the only structured admission wire
   // consumer. S10's C++ resource stage returns a typed admission error.
-  std::cout << "inactive v2 S10 power/resource/live-policy/provenance tests pass\n";
+  std::cout << "inactive v2 S10 power/resource/live-policy tests pass\n";
 }

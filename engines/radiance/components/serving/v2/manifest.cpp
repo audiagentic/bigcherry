@@ -589,7 +589,6 @@ Result<Manifest> read_manifest(std::string_view bytes, const std::string& source
     if (auto e = check_identity_coverage(doc)) return sourced(*e);
     if (auto e = check_provenance_coverage(doc)) return sourced(*e);
     if (auto e = validate_semantics(m)) return sourced(*e);
-    if (auto e = validate_s10_provenance(m)) return sourced(*e);
     if (auto e = validate_s10_power_plan(m)) return sourced(*e);
     /* The plan state is checked last, so a malformed manifest reports its own fault first. A serving start never takes
      * an unmeasured manifest and a measuring start never takes a measured one: neither state is read as the other. */

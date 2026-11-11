@@ -57,6 +57,12 @@ struct S8HelperRoom {
   int64_t owned_experts = 0; // actual owner-map set, never inferred by Python
 };
 
+// A setting's value when no calibration record applies, and where it came from (site.toml, layouts.toml, a seed).
+struct S8Setting {
+  int64_t value = 0;
+  std::string source;
+};
+
 struct S8Measured {
   MeasuredResourceInputs resource_inputs; // S9 typed v2 wire members
   S8Scope scope;
@@ -73,6 +79,7 @@ struct S8Measured {
   std::optional<std::string> histogram_file; // absent means disabled
   bool live_policy_requested =
       false; // no live cadence requirement when policy off
+  std::map<std::string, S8Setting> settings; // by calibration key: the value used when no record applies
 };
 
 struct S8HelperBudget {
@@ -96,11 +103,11 @@ struct S8Resolution {
   std::vector<CalibrationEntry>
       calibration_entries; // merge once into spec.calibration
   std::map<std::string, ProvenanceRecord> provenance_by_path;
+  std::vector<std::string> skipped_records; // records given but not used, and why
 };
 
-// Exactly the matching record is used. Unknown, duplicated, stale, incomplete
-// or out-of-scope records fail closed. now_unix_s is injected for replayable
-// tests.
+// A record replaces a setting's given value when it matches the measurement scope and is current; others are skipped
+// and reported, never refused. now_unix_s is injected for replayable tests.
 Result<S8Resolution> resolve_s8(const S8Measured &measured,
                                 const std::vector<S8Calibration> &records,
                                 int64_t now_unix_s);

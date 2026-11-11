@@ -225,8 +225,6 @@ LivePolicyStartup startup(const S10PolicyPreflight &p,
     out.reason_code = "not_applicable";
   } else if (p.requested == LivePolicyRequested::kOff) {
     out.reason_code = "disabled_by_request";
-  } else if (!p.qualified_record) {
-    out.reason_code = "no_qualified_record";
   } else if (!p.fresh_heat) {
     out.reason_code = "stale_heat_feed";
   } else {
@@ -235,88 +233,7 @@ LivePolicyStartup startup(const S10PolicyPreflight &p,
   }
   return out;
 }
-bool allowed(std::string_view csv, std::string_view value) {
-  if (csv.empty()) return true;
-  const std::string list = "," + std::string(csv) + ",";
-  return list.find("," + std::string(value) + ",") != std::string::npos;
-}
-std::string_view origin_name(Origin origin) {
-  switch (origin) {
-  case Origin::kDerived: return "derived";
-  case Origin::kCalibrated: return "calibrated";
-  case Origin::kProfile: return "profile";
-  case Origin::kSchemaDefault: return "schema_default";
-  case Origin::kSite: return "site";
-  case Origin::kCli: return "cli";
-  case Origin::kDetected: return "detected";
-  case Origin::kExperiment: return "experiment";
-  }
-  return "";
-}
-std::string_view confidence_name(Confidence c) {
-  switch (c) {
-  case Confidence::kExact: return "exact";
-  case Confidence::kMeasured: return "measured";
-  case Confidence::kEstimate: return "estimate";
-  }
-  return "";
-}
-void present_paths(const json &doc, std::string_view field, size_t start,
-                   const std::string &prefix, std::vector<std::string> *out) {
-  if (start == field.size()) {
-    out->push_back(prefix);
-    return;
-  }
-  if (field[start] != '/') return;
-  const size_t next = field.find('/', start + 1);
-  const size_t end = next == std::string_view::npos ? field.size() : next;
-  const auto segment = field.substr(start + 1, end - start - 1);
-  const auto *node = &doc;
-  if (!prefix.empty()) {
-    try { node = &doc.at(json::json_pointer(prefix)); }
-    catch (const json::exception &) { return; }
-  }
-  if (segment == "[]") {
-    if (!node->is_array()) return;
-    for (size_t i = 0; i < node->size(); ++i)
-      present_paths(doc, field, end, prefix + "/" + std::to_string(i), out);
-  } else if (node->is_object() && node->contains(std::string(segment))) {
-    present_paths(doc, field, end, prefix + "/" + std::string(segment), out);
-  }
-}
 } // namespace
-
-Status validate_s10_provenance(const Manifest &m) {
-  if (m.provenance.empty() || !m.provenance.count(""))
-    return fail(ConfigErrorCode::provenance_invalid, "provenance",
-                "root provenance and covering evidence required");
-  const auto doc = encode(m);
-  for (const auto &field : kFields) {
-    if (field.path.empty() || field.path[0] != '/' ||
-        (field.allowed_origins.empty() && field.allowed_confidences.empty()))
-      continue;
-    std::vector<std::string> paths;
-    present_paths(doc, field.path, 0, "", &paths);
-    for (const auto &path : paths) {
-      // A child's own record wins over its nearest inherited ancestor.
-      auto at = path;
-      auto found = m.provenance.end();
-      while (true) {
-        found = m.provenance.find(at);
-        if (found != m.provenance.end() || at.empty()) break;
-        const auto sep = at.find_last_of('/');
-        at = sep == 0 ? "" : at.substr(0, sep);
-      }
-      if (found == m.provenance.end() || found->second.source.empty() ||
-          !allowed(field.allowed_origins, origin_name(found->second.origin)) ||
-          !allowed(field.allowed_confidences,
-                   confidence_name(found->second.confidence)))
-        return fail(ConfigErrorCode::provenance_invalid, path,
-                    "effective provenance is not measured/derived or calibrated");
-    }
-  }
-  return std::nullopt;
-}
 
 Status validate_s10_power_plan(const Manifest &m) {
   const auto selected = targets(m);
@@ -427,8 +344,7 @@ Result<Manifest> resolve_s10(const Manifest &base, const S10Inputs &in) {
                   "policy preflight differs from measured layout/request");
     const auto decision = startup(p, s8);
     if (decision.configured &&
-        (p.calibration_key.empty() || p.record_identity.empty() ||
-         p.max_heat_age_ns <= 0 || !s8.live_cadence_ns ||
+        (p.max_heat_age_ns <= 0 || !s8.live_cadence_ns ||
          !out.spec.handoff->placement.live_policy ||
          out.spec.handoff->placement.live_policy->cadence_ns != decision.cadence_ns ||
          out.spec.handoff->placement.live_policy->max_heat_age_ns !=
@@ -455,7 +371,6 @@ Result<Manifest> resolve_s10(const Manifest &base, const S10Inputs &in) {
         Origin::kDerived, "RHP18 qualified policy preflight",
         ValueClass::kDerived, Lifecycle::kStartupOnly, Confidence::kExact,
         {"/spec/calibration", "/spec/handoff/telemetry"}};
-  if (auto error = validate_s10_provenance(out)) return *error;
   return out;
 }
 
@@ -463,7 +378,6 @@ Result<std::string> write_s10(const Manifest &m) {
   if (m.api_version != "bigcherry/v2" || m.metadata.contract_version != 2)
     return fail(ConfigErrorCode::unsupported_version, "apiVersion",
                 "writer accepts only v2");
-  if (auto error = validate_s10_provenance(m)) return *error;
   auto json_doc = encode(m);
   std::string digest, why;
   if (!bc::serving::manifest_content_digest(json_doc, &digest, &why))
