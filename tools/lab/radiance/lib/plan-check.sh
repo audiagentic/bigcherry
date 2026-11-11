@@ -205,10 +205,27 @@ plan_manifest_prepare() {
   plan_check_site "$site"
   plan_check_describe "$site" || return 1
   PLAN_MANIFEST="$RUN/manifest-$STAMP-$$.json"
-  plan_manifest_write "$PLAN_MANIFEST" 2> "$RUN/plan-check.err"
+  plan_manifest_write "$PLAN_MANIFEST" > "$RUN/plan-check.out" 2> "$RUN/plan-check.err"
   rc=$?
   if [ $rc = 10 ]; then
     plan_check_measure || return 1
+  elif [ $rc = 11 ]; then
+    # The plan was measured with another host pool than the measured inputs need: measure once more with the derived pool
+    # (a configuration of its own in the cache, so this happens once per configuration).
+    local pool
+    pool=$(sed -n 's/^derived_host_pool_mib=\([0-9][0-9]*\)$/\1/p' "$RUN/plan-check.out")
+    [ -n "$pool" ] || { echo "plan check: bc-serve asked for another host pool without naming it:" >&2; cat "$RUN/plan-check.err" >&2; return 1; }
+    echo "plan check: the measured inputs need a ${pool} MiB host pool; using it" >&2
+    PLAN_SET+=(--set "memory.host_pool_mib=$pool")
+    plan_manifest_write "$PLAN_MANIFEST" > "$RUN/plan-check.out" 2> "$RUN/plan-check.err"
+    rc=$?
+    if [ $rc = 10 ]; then
+      plan_check_measure || return 1
+    elif [ $rc != 0 ]; then
+      echo "plan check: bc-serve --write-manifest failed with the derived host pool (exit $rc):" >&2
+      cat "$RUN/plan-check.err" >&2
+      return 1
+    fi
   elif [ $rc != 0 ]; then
     echo "plan check: bc-serve --write-manifest failed (exit $rc):" >&2
     cat "$RUN/plan-check.err" >&2
