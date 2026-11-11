@@ -63,8 +63,28 @@ target_compile_features(bc_serving_v2_p1_live PUBLIC cxx_std_20)
 target_include_directories(bc_serving_v2_p1_live PUBLIC
   "${CMAKE_CURRENT_SOURCE_DIR}" "${RADIANCE_SRC}/vendor")
 
+# Inactive native P1-b publication. bc-serve links this only for the explicit
+# --publish-v2-p1 command; production continues to write/read v1 manifests.
+add_library(bc_serving_v2_generated STATIC generated/v2/serving_codec.cpp
+  v2/error.cpp v2/strict_json.cpp)
+target_link_libraries(bc_serving_v2_generated PUBLIC radiance::abi)
+target_compile_features(bc_serving_v2_generated PUBLIC cxx_std_20)
+target_include_directories(bc_serving_v2_generated PUBLIC
+  "${CMAKE_CURRENT_SOURCE_DIR}" "${RADIANCE_SRC}/vendor")
+add_library(bc_serving_v2_p1 STATIC v2/p1_measurement.cpp)
+target_link_libraries(bc_serving_v2_p1 PUBLIC bc_serving_v2_generated)
+target_include_directories(bc_serving_v2_p1 PUBLIC
+  "${CMAKE_CURRENT_SOURCE_DIR}/../moe-remote")
+target_compile_features(bc_serving_v2_p1 PUBLIC cxx_std_20)
+add_library(bc_serving_v2_p1_producer STATIC v2/p1_producer.cpp)
+target_link_libraries(bc_serving_v2_p1_producer PUBLIC
+  bc_serving bc_serving_v2_p1 bc_serving_v2_p1_live)
+target_include_directories(bc_serving_v2_p1_producer PUBLIC
+  "${CMAKE_CURRENT_SOURCE_DIR}/../moe-remote")
+target_compile_features(bc_serving_v2_p1_producer PUBLIC cxx_std_20)
+
 add_executable(bc-serve main.cpp)
-target_link_libraries(bc-serve PRIVATE bc_serving bc_serving_v2_p1_live)
+target_link_libraries(bc-serve PRIVATE bc_serving_v2_p1_producer)
 set_target_properties(bc-serve PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/bin")
 install(TARGETS bc-serve RUNTIME DESTINATION radiance_home/bin)
 
@@ -99,40 +119,15 @@ if(BUILD_TESTING)
     BC_CONTRACT_RADIANCE_SRC="${RADIANCE_SRC}")
   add_test(NAME bc_contract_check COMMAND bc_contract_check)
   # S9: compile and test the inactive generated v2 codec, never production linked.
-  add_library(bc_serving_v2_generated STATIC EXCLUDE_FROM_ALL
-    generated/v2/serving_codec.cpp v2/error.cpp v2/strict_json.cpp)
-  target_link_libraries(bc_serving_v2_generated PUBLIC radiance::abi)
-  target_compile_features(bc_serving_v2_generated PUBLIC cxx_std_20)
-  target_include_directories(bc_serving_v2_generated PUBLIC
-    "${CMAKE_CURRENT_SOURCE_DIR}" "${RADIANCE_SRC}/vendor")
   # S8: inactive typed resource and handoff rules, linked only by card-free tests.
   add_library(bc_serving_v2_s8 STATIC EXCLUDE_FROM_ALL v2/s8_rules.cpp)
   target_link_libraries(bc_serving_v2_s8 PUBLIC bc_serving_v2_generated)
   target_compile_features(bc_serving_v2_s8 PUBLIC cxx_std_20)
   target_include_directories(bc_serving_v2_s8 PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
   add_executable(bc_v2_s8_test EXCLUDE_FROM_ALL v2/s8_rules_test.cpp)
-  target_link_libraries(bc_v2_s8_test PRIVATE bc_serving_v2_s8)
-  add_test(NAME bc_v2_s8_test COMMAND bc_v2_s8_test)
-
-  # S10: all-v2 inactive resolver and writer; never linked by production.
-  add_library(bc_serving_v2_s10 STATIC EXCLUDE_FROM_ALL v2/s10_resolver.cpp)
-  target_link_libraries(bc_serving_v2_s10 PUBLIC bc_serving_v2_s8 bc_jcs)
-  target_compile_features(bc_serving_v2_s10 PUBLIC cxx_std_20)
-  target_include_directories(bc_serving_v2_s10 PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
-  add_executable(bc_v2_s10_test EXCLUDE_FROM_ALL v2/s10_resolver_test.cpp)
-  target_link_libraries(bc_v2_s10_test PRIVATE bc_serving_v2_s10)
-  target_compile_definitions(bc_v2_s10_test PRIVATE
-    BC_CONTRACT_V2_DOCS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../../../docs/design/serving-manifest-v2")
-  add_test(NAME bc_v2_s10_test COMMAND bc_v2_s10_test)
-
-  # P1: inactive native measurement publication (no v1 activation).
-  add_library(bc_serving_v2_p1 STATIC EXCLUDE_FROM_ALL v2/p1_measurement.cpp)
-  target_link_libraries(bc_serving_v2_p1 PUBLIC bc_serving_v2_generated)
-  target_include_directories(bc_serving_v2_p1 PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/../moe-remote")
-  target_compile_features(bc_serving_v2_p1 PUBLIC cxx_std_20)
-  add_executable(bc_v2_p1_test EXCLUDE_FROM_ALL v2/p1_measurement_test.cpp)
-  target_link_libraries(bc_v2_p1_test PRIVATE bc_serving_v2_p1)
-  add_test(NAME bc_v2_p1_test COMMAND bc_v2_p1_test)
+  target_link_libraries(b  add_executable(bc_v2_p1_producer_test EXCLUDE_FROM_ALL v2/p1_producer_test.cpp)
+  target_link_libraries(bc_v2_p1_producer_test PRIVATE bc_serving_v2_p1_producer)
+  add_test(NAME bc_v2_p1_producer_test COMMAND bc_v2_p1_producer_test)
   # S13a: inactive live host/cgroup/GTT publisher, no production linkage.
   add_executable(bc_v2_p1_live_test EXCLUDE_FROM_ALL v2/p1_live_room_test.cpp)
   target_link_libraries(bc_v2_p1_live_test PRIVATE bc_serving_v2_p1_live)

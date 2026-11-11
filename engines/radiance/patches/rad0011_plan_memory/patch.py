@@ -401,7 +401,7 @@ int bc_plan_memory_done() {
         std::_Exit(2);
     }
     if (!bc_plan::rank_measure_out().empty()) {
-        if (!g_rank_noted) {
+        if (!g_rank_noted || g_taken_kb < 0 || g_taken_kb > 9007199254740991LL / 1024) {
             std::fprintf(stderr, "radiance: --plan-memory-ranks: %s\n",
                          g_error.empty() ? "rank measurement missing" : g_error.c_str());
             std::fflush(nullptr);
@@ -411,7 +411,8 @@ int bc_plan_memory_done() {
         const std::string rank_tmp = rank_path + ".tmp";
         std::ofstream out(rank_tmp, std::ios::binary | std::ios::trunc);
         out << nlohmann::json{{"schema_version", 1}, {"kind", "radiance_p1_rank_demand"},
-                              {"gpu", g_rank_gpu}}.dump(2) << '\n';
+                              {"gpu", g_rank_gpu},
+                              {"resident_other_bytes", g_taken_kb * 1024}}.dump(2) << '\n';
         out.close();
         if (!out || std::rename(rank_tmp.c_str(), rank_path.c_str()) != 0) {
             std::fprintf(stderr, "radiance: --plan-memory-ranks: cannot publish %s\n", rank_path.c_str());
