@@ -117,7 +117,16 @@ int bc_rank_collectives_agree(const std::vector<std::vector<BcCollStep>>& per_ra
         const std::vector<BcCollStep>& got = per_rank[r];
         const size_t n = std::min(ref.size(), got.size());
         for (size_t i = 0; i < n; ++i) {
-            if (ref[i].op == got[i].op && ref[i].kernel == got[i].kernel) continue;
+            if (ref[i].op == got[i].op && ref[i].kernel == got[i].kernel) {
+                if (ref[i].geom.empty() || got[i].geom.empty() || ref[i].geom == got[i].geom) continue;
+                if (why)
+                    *why = "collective " + std::to_string(i) + " (" + ref[i].op + ", " + ref[i].kernel +
+                           "): rank 0 launches it as [" + ref[i].geom + "] (" + ref[i].plugin + "), rank " +
+                           std::to_string(r) + " as [" + got[i].geom + "] (" + got[i].plugin + "); a block whose "
+                           "twin on a peer is never launched spins forever, so every rank must use one launch "
+                           "geometry (check each library's tuned choice for this kernel)";
+                return RAD_E_STATE;
+            }
             if (why)
                 *why = "collective " + std::to_string(i) + ": rank 0 issues " + ref[i].op + " with " + ref[i].kernel +
                        " (" + ref[i].plugin + "), rank " + std::to_string(r) + " issues " + got[i].op + " with " +

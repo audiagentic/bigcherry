@@ -133,6 +133,17 @@ TEST(every_rank_must_issue_the_same_collectives) {
     CHECK_EQ(bc_rank_collectives_agree({ { a3 }, { a3, a3 } }, &why), RAD_E_STATE);
     CHECK(has(why, "waits forever"));
     CHECK_OK(bc_rank_collectives_agree({ { a3 } }, &why));
+
+    /* The launch geometry (with the tuned axes) must match too; an untuned rank's empty geometry is not compared. */
+    const BcCollStep g16 = { "all_reduce", "ar_twoshot_3rank_exact_host", "libr3", "M=64 nblocks=16 nthreads=1024" };
+    const BcCollStep g16b = { "all_reduce", "ar_twoshot_3rank_exact_host", "libr4d", "M=64 nblocks=16 nthreads=1024" };
+    const BcCollStep g8 = { "all_reduce", "ar_twoshot_3rank_exact_host", "libr4d", "M=64 nblocks=8 nthreads=1024" };
+    CHECK_OK(bc_rank_collectives_agree({ { g16 }, { g16 }, { g16b } }, &why));
+    CHECK_EQ(bc_rank_collectives_agree({ { g16 }, { g16 }, { g8 } }, &why), RAD_E_STATE);
+    CHECK(has(why, "nblocks=8"));
+    CHECK(has(why, "rank 2"));
+    CHECK(has(why, "spins forever"));
+    CHECK_OK(bc_rank_collectives_agree({ { g16 }, { a3 } }, &why));
 }
 
 /* ------------------------------------------------------------------ the registry */

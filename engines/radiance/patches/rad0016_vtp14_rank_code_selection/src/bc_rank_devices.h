@@ -40,17 +40,22 @@ int bc_rank_devices_plan(const std::vector<BcDeviceInfo>& inventory, const std::
 std::vector<std::string> bc_rank_archs(const std::vector<BcDeviceInfo>& inventory,
                                        const std::vector<int>& ordinals);
 
-/* One collective a rank's program issues: its op, the selected kernel and the library it came from.
- * Ranks of different architectures take a collective from different libraries (libr3 on gfx1100,
- * libr4d on gfx1201), so the library may differ; the protocol is the kernel, so its name may not. */
+/* One collective a rank's program issues: its op, the selected kernel, the library it came from and
+ * its frozen launch geometry (Resolved::geom, with the tuned axes -- nblocks, nthreads, drain, acq --
+ * folded in). Ranks of different architectures take a collective from different libraries (libr3 on
+ * gfx1100, libr4d on gfx1201), so the library may differ; the kernel is the protocol and the geometry
+ * is its launch shape, so neither may: a block whose twin on a peer is never launched spins forever.
+ * An empty geom is not compared. */
 struct BcCollStep {
     std::string op;
     std::string kernel;
     std::string plugin;
+    std::string geom;
 };
 
-/* RAD_OK when every rank issues the same collectives in the same order with the same kernels;
- * otherwise RAD_E_STATE with the first difference named (rank, position, op, kernel). A
+/* RAD_OK when every rank issues the same collectives in the same order with the same kernels and
+ * launch geometry; otherwise RAD_E_STATE with the first difference named (rank, position, op, kernel,
+ * geometry). A
  * collective's peers meet by arrival order, so any difference would hang or corrupt the exchange. */
 int bc_rank_collectives_agree(const std::vector<std::vector<BcCollStep>>& per_rank, std::string* why);
 
