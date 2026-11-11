@@ -57,6 +57,17 @@ required-state = "untested"
 patches = ["rad0012_helper_kernel_config"]
 required-state = "untested"
 
+# VTP14 N1 first slice. Rank-specific kernel-code masks are inert until
+# ordered heterogeneous device admission is separately approved.
+[patch-set.vtp14-rank-code-selection]
+patches = ["rad0016_vtp14_rank_code_selection"]
+required-state = "untested"
+
+[source.radiance-vtp14-rank-code-selection]
+description = "Experimental native Radiance per-rank code-object eligibility; heterogeneous GPU launch is disabled."
+overlay = false
+patch-sets = ["serving-core", "host-compat", "serving-manifest", "helper-config", "mtp-pass-replay", "vtp14-rank-code-selection"]
+
 [source.radiance-native]
 description = "radiance 1.14.0 as released: no overlay, no patches."
 overlay = false
