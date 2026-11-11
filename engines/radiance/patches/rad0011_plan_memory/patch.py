@@ -441,7 +441,7 @@ PATCHES = (
             ),
             Edit(
                 id="s5-exact-host-pool-shortfall",
-                anchor=r"^    for \(const Shortfall& f : pools.shortfalls\(\)\)",
+                anchor=r"^    for \(const Shortfall& f : pools.shortfalls\(\)\).*$",
                 text=("\n    for (const Shortfall& f : pools.shortfalls()) {"
                       "\n        if (f.pool != \"host_pool\" || !f.refused.empty()) continue;"
                       "\n        if (int rc = bc_plan::report_exact_pool_shortfall(f.available, f.wanted)) {"

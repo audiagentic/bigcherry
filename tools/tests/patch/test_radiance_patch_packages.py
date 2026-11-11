@@ -88,8 +88,8 @@ PIN_BLOBS = {
         "arch/common/rad_block_moe_fp8.h": ("177e79c", "86160d0"),
     },
     RAD0009: {
-        "core/bc_serving_manifest.h": (None, "ea567e5"),
-        "core/bc_serving_manifest.cpp": (None, "673b33b"),
+        "core/bc_serving_manifest.h": (None, "c9fd765"),
+        "core/bc_serving_manifest.cpp": (None, "b8facc0"),
         "core/CMakeLists.txt": ("921debd", "8750342"),
         "core/main.cpp": ("4cb6d43", "7feb7b6"),
     },
