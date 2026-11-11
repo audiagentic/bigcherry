@@ -1,0 +1,3374 @@
+# Serving manifest v2 field registry: the one authoritative description of the v1 contract
+# (docs/design/serving-manifest-v1/spec.md). contract/generate.cpp turns it into the JSON Schema, the typed model,
+# the field reference and the contract fingerprint (engines/radiance/components/serving/generated/); CI regenerates
+# them and byte-diffs the committed copies. v1 is closed (spec §8): a change that moves either fingerprint (what
+# validates, or a field's class or Radiance binding) is a bigcherry/v2 change; correcting a doc is not (README.md).
+#
+# Format (see contract/README.md): [contract] identity; [[def]] shared types ($defs); [[class_default]] provenance
+# class defaults by path prefix; [[calibration_key]] the calibrated keys and each value's type; [[field]] one entry per
+# schema node, parents before children, members in document order. Paths are JSON Pointers from the document root, or
+# from a def as "$defs/<name>/..."; "[]" is an array's item and "*" a map's value. Numbers are integers only.
+
+[contract]
+api_version = "bigcherry/v2"
+kind = "ServingManifest"
+contract_version = 2
+schema_dialect = "https://json-schema.org/draft/2020-12/schema"
+schema_id = "urn:bigcherry:serving-manifest:v2"
+title = "BigCherry ServingManifest v2 (wire)"
+namespace = "bc::serving::v2"
+lifecycle = "startup_only"
+
+# Provenance class of each subtree (the longest matching prefix wins). `envelope` marks the integrity fields that
+# identify the document; it is not a provenance record class and decides nothing about coverage (spec §7; README.md).
+
+[[class_default]]
+path = "/apiVersion"
+class = "envelope"
+
+[[class_default]]
+path = "/kind"
+class = "envelope"
+
+[[class_default]]
+path = "/metadata"
+class = "envelope"
+
+[[class_default]]
+path = "/provenance"
+class = "envelope"
+
+[[class_default]]
+path = "/spec/intent"
+class = "policy"
+
+[[class_default]]
+path = "/spec/facts"
+class = "fact"
+
+[[class_default]]
+path = "/spec/calibration"
+class = "tuned"
+
+[[class_default]]
+path = "/spec/resources"
+class = "derived"
+
+[[class_default]]
+path = "/spec/handoff"
+class = "derived"
+
+[[class_default]]
+path = "/spec/handoff/telemetry"
+class = "policy"
+
+[[class_default]]
+path = "/spec/handoff/placement/live_policy"
+class = "policy"
+
+[[class_default]]
+path = "/spec/processes/engine"
+class = "derived"
+
+[[class_default]]
+path = "/spec/processes/engine/runtime"
+class = "policy"
+
+[[class_default]]
+path = "/spec/processes/engine/server"
+class = "policy"
+
+[[class_default]]
+path = "/spec/processes/engine/execution"
+class = "policy"
+
+[[class_default]]
+path = "/spec/processes/engine/sampling"
+class = "policy"
+
+[[class_default]]
+path = "/spec/processes/engine/limits"
+class = "policy"
+
+[[class_default]]
+path = "/spec/processes/engine/chat"
+class = "policy"
+
+[[class_default]]
+path = "/spec/processes/engine/lora"
+class = "policy"
+
+[[class_default]]
+path = "/spec/processes/engine/vision"
+class = "policy"
+
+[[class_default]]
+path = "/spec/processes/engine/tuning"
+class = "policy"
+
+[[class_default]]
+path = "/spec/processes/engine/diagnostics"
+class = "policy"
+
+[[class_default]]
+path = "/spec/processes/engine/kernels"
+class = "policy"
+
+[[class_default]]
+path = "/spec/processes/helper_common"
+class = "policy"
+
+[[class_default]]
+path = "/spec/processes/helpers"
+class = "derived"
+
+[[class_default]]
+path = "/spec/processes/helpers/[]/settings"
+class = "policy"
+
+[[class_default]]
+path = "/spec/plan"
+class = "derived"
+
+[[class_default]]
+path = "/spec/plan/power/mode"
+class = "policy"
+
+[[class_default]]
+path = "/spec/plan/power/profile"
+class = "policy"
+
+[[class_default]]
+path = "/spec/handoff/placement/live_policy_state"
+class = "derived"
+
+[[class_default]]
+path = "/spec/experiment"
+class = "diagnostic"
+
+[[class_default]]
+path = "$defs/helperCommon"
+class = "policy"
+
+[[class_default]]
+path = "$defs/enginePlan"
+class = "derived"
+
+# Calibrated keys, in schema order; each value's type (spec §11, amendment 1: integers only).
+
+[[calibration_key]]
+key = "host_reserve.floor_mib"
+value_kind = "ref"
+value_ref = "uint"
+doc = "Smallest host reserve, MiB."
+
+[[calibration_key]]
+key = "host_reserve.total_fraction_ppm"
+value_kind = "integer"
+value_minimum = 0
+value_exclusive_maximum = 1000000
+doc = "Host reserve as a fraction of MemTotal, ppm."
+
+[[calibration_key]]
+key = "kv_backing_floor.fraction_ppm"
+value_kind = "integer"
+value_minimum = 0
+value_exclusive_maximum = 1000000
+doc = "KV backing floor as a fraction of the total KV ceiling, ppm (spec §5.2)."
+
+[[calibration_key]]
+key = "checkpoint_share"
+value_kind = "enum"
+value_values = ["tier_first", "want", "floor"]
+doc = "How checkpoint memory is shared with the KV tier."
+
+[[calibration_key]]
+key = "host_kv_tier.target_mib"
+value_kind = "ref"
+value_ref = "uint"
+doc = "Host KV tier target, MiB."
+
+[[calibration_key]]
+key = "host_ledger_margin.mib"
+value_kind = "ref"
+value_ref = "uint"
+doc = "Host memory the host ledger leaves unplanned beyond the reserve, for what the host loses between the manifest being written and the engine's own host-room check, MiB (amendment 11)."
+
+# ---- shared types ($defs), in schema order ----
+
+[[def]]
+name = "uint"
+kind = "integer"
+minimum = 0
+maximum = 9007199254740991
+doc = "Unsigned integer within I-JSON's safe range."
+
+[[def]]
+name = "positive"
+kind = "integer"
+minimum = 1
+maximum = 9007199254740991
+doc = "Positive integer within I-JSON's safe range."
+
+[[def]]
+name = "hex64"
+kind = "string"
+pattern = "^[0-9a-f]{64}$"
+max_length = 64
+doc = "64 lowercase hexadecimal digits."
+
+[[def]]
+name = "digest"
+kind = "string"
+pattern = "^sha256:[0-9a-f]{64}$"
+max_length = 71
+doc = "`sha256:` followed by 64 lowercase hexadecimal digits."
+
+[[def]]
+name = "bdf"
+kind = "string"
+pattern = "^[0-9a-f]{4}:[0-9a-f]{2}:[0-1][0-9a-f]\\.[0-7]$"
+max_length = 12
+doc = "PCI address, `dddd:bb:dd.f`, lowercase."
+
+[[def]]
+name = "jsonPointer"
+kind = "string"
+pattern = "^(|/(?:[^~/]|~[01])*(?:/(?:[^~/]|~[01])*)*)$"
+max_length = 1024
+doc = "RFC 6901 JSON Pointer; \"\" is the root."
+
+[[def]]
+name = "helperCommon"
+kind = "object"
+cpp = "HelperCommon"
+doc = "The seven helper concern groups (spec §2.1)."
+
+[[field]]
+path = "$defs/helperCommon/cpu"
+kind = "object"
+cpp = "HelperCpu"
+doc = "CPU paths."
+
+[[field]]
+path = "$defs/helperCommon/cpu/reference"
+kind = "boolean"
+doc = "Use the CPU reference path."
+
+[[field]]
+path = "$defs/helperCommon/cpu/affinity"
+kind = "enum"
+values = ["auto", "all"]
+cpp_type = "Affinity"
+doc = "Worker CPU affinity: `auto` or `all`."
+
+[[field]]
+path = "$defs/helperCommon/runtime"
+kind = "object"
+cpp = "HelperRuntime"
+doc = "Helper runtime behaviour."
+
+[[field]]
+path = "$defs/helperCommon/runtime/power_save"
+kind = "boolean"
+default = true
+default_source = "setting:R3_MOE_WORKER_POWER_SAVE"
+doc = "Let the helper idle its GPU between requests."
+
+[[field]]
+path = "$defs/helperCommon/runtime/queue_warm"
+kind = "boolean"
+doc = "Keep the helper's queues warm."
+
+[[field]]
+path = "$defs/helperCommon/gemv"
+kind = "object"
+cpp = "HelperGemv"
+doc = "GEMV kernels."
+
+[[field]]
+path = "$defs/helperCommon/gemv/mode"
+kind = "int_enum"
+values = [0, 1, 2]
+doc = "GEMV mode (0, 1 or 2)."
+
+[[field]]
+path = "$defs/helperCommon/gemv/wide"
+kind = "boolean"
+doc = "Use the wide GEMV kernel."
+
+[[field]]
+path = "$defs/helperCommon/gemv/h2"
+kind = "int_enum"
+values = [0, 1, 2, 4]
+default = 2
+default_source = "setting:R3_MOE_WORKER_GEMV_H2"
+doc = "Half-precision pair mode (0, 1, 2 or 4)."
+
+[[field]]
+path = "$defs/helperCommon/gemv/w4h2"
+kind = "boolean"
+default = true
+default_source = "setting:R3_MOE_WORKER_GEMV_W4H2"
+doc = "Use the W4 H2 kernel."
+
+[[field]]
+path = "$defs/helperCommon/gemv/mr"
+kind = "boolean"
+default = false
+default_source = "setting:R3_MOE_WORKER_GEMV_MR"
+doc = "Use the multi-row GEMV kernel."
+
+[[field]]
+path = "$defs/helperCommon/lanes"
+kind = "object"
+cpp = "HelperLanes"
+doc = "Request lanes."
+
+[[field]]
+path = "$defs/helperCommon/lanes/small_lanes"
+kind = "array"
+item_kind = "ref"
+item_ref = "positive"
+min_items = 0
+max_items = 4
+doc = "Up to four sorted small-lane row thresholds."
+
+[[field]]
+path = "$defs/helperCommon/lanes/rows"
+kind = "boolean"
+doc = "Use the rows kernel by policy (active also when the architecture requires it)."
+
+[[field]]
+path = "$defs/helperCommon/lanes/rows_small"
+kind = "boolean"
+doc = "Use the rows kernel for small lanes."
+
+[[field]]
+path = "$defs/helperCommon/combine"
+kind = "object"
+cpp = "HelperCombine"
+doc = "Helper-side combine."
+
+[[field]]
+path = "$defs/helperCommon/combine/enabled"
+kind = "boolean"
+doc = "Combine expert outputs on the helper."
+
+[[field]]
+path = "$defs/helperCommon/combine/min_rows"
+kind = "ref"
+ref = "positive"
+doc = "Fewest rows a combine is used for."
+
+[[field]]
+path = "$defs/helperCommon/combine/threads"
+kind = "ref"
+ref = "positive"
+doc = "Combine worker threads."
+
+[[field]]
+path = "$defs/helperCommon/kernels"
+kind = "object"
+cpp = "HelperKernels"
+doc = "Kernel choices."
+
+[[field]]
+path = "$defs/helperCommon/kernels/native"
+kind = "boolean"
+doc = "Use native kernels."
+
+[[field]]
+path = "$defs/helperCommon/kernels/fp16"
+kind = "boolean"
+doc = "Use fp16 kernels."
+
+[[field]]
+path = "$defs/helperCommon/kernels/ahalf"
+kind = "boolean"
+doc = "Use half-precision activations."
+
+[[field]]
+path = "$defs/helperCommon/kernels/moe_form"
+kind = "int_enum"
+values = [0, 1, 2]
+doc = "MoE kernel form (0, 1 or 2)."
+
+[[field]]
+path = "$defs/helperCommon/kernels/moe_long_rows"
+kind = "ref"
+ref = "uint"
+doc = "Row count from which the long-rows MoE kernel is used."
+
+[[field]]
+path = "$defs/helperCommon/kernels/fuseroute"
+kind = "boolean"
+doc = "Fuse routing into the MoE kernel."
+
+[[field]]
+path = "$defs/helperCommon/kernels/vecio"
+kind = "boolean"
+doc = "Vectorized I/O."
+
+[[field]]
+path = "$defs/helperCommon/kernels/sparse_act"
+kind = "boolean"
+doc = "Sparse activations."
+
+[[field]]
+path = "$defs/helperCommon/kernels/lane_quant"
+kind = "boolean"
+doc = "Quantize per lane."
+
+[[field]]
+path = "$defs/helperCommon/placement"
+kind = "object"
+cpp = "HelperPlacement"
+doc = "Load balancing across helpers."
+
+[[field]]
+path = "$defs/helperCommon/placement/balance"
+kind = "boolean"
+doc = "Balance load across helpers by speed."
+
+[[field]]
+path = "$defs/helperCommon/placement/balance_speeds_milli"
+optional = true
+kind = "array"
+item_kind = "integer"
+item_minimum = 1
+doc = "Per-helper relative speed in thousandths (1000 = 1.0); one value per helper, only when balance is true."
+
+[[def]]
+name = "helperPatch"
+kind = "patch"
+of = "helperCommon"
+cpp = "HelperPatch"
+doc = "A partial `helperCommon`: each present group is a nonempty partial field map (spec §2.2)."
+
+[[def]]
+name = "enginePlan"
+kind = "object"
+cpp = "EnginePlan"
+doc = "rad0011's measured memory plan, plan_version 1 (spec §5)."
+
+[[field]]
+path = "$defs/enginePlan/plan_version"
+mismatch = "unsupported_version"
+kind = "integer"
+const = 1
+doc = "Plan format; exactly 1."
+
+[[field]]
+path = "$defs/enginePlan/producer"
+kind = "string"
+const = "radiance --plan-memory (rad0011)"
+doc = "Plan producer; exactly `radiance --plan-memory (rad0011)`."
+
+[[field]]
+path = "$defs/enginePlan/host"
+kind = "array"
+item_kind = "object"
+min_items = 0
+doc = "Pinned host consumers."
+
+[[field]]
+path = "$defs/enginePlan/host/[]"
+kind = "object"
+cpp = "PlanHostConsumer"
+doc = "One host consumer."
+
+[[field]]
+path = "$defs/enginePlan/host/[]/name"
+kind = "string"
+min_length = 1
+doc = "Consumer name."
+
+[[field]]
+path = "$defs/enginePlan/host/[]/bytes"
+kind = "ref"
+ref = "uint"
+doc = "Bytes the consumer holds."
+
+[[field]]
+path = "$defs/enginePlan/host/[]/residence"
+kind = "enum"
+values = ["pinned", "mlocked", "pageable"]
+cpp_type = "Residence"
+doc = "`pinned`, `mlocked` or `pageable`."
+
+[[field]]
+path = "$defs/enginePlan/host/[]/from"
+kind = "string"
+min_length = 1
+doc = "Where the engine computes it."
+
+[[field]]
+path = "$defs/enginePlan/host/[]/remedy"
+kind = "string"
+doc = "What reduces it, or empty."
+
+[[field]]
+path = "$defs/enginePlan/checkpoints"
+kind = "object"
+cpp = "PlanCheckpoints"
+doc = "Prefix checkpoint store."
+
+[[field]]
+path = "$defs/enginePlan/checkpoints/slot_bytes"
+kind = "ref"
+ref = "uint"
+doc = "Bytes per checkpoint slot."
+
+[[field]]
+path = "$defs/enginePlan/checkpoints/floor_slots"
+kind = "ref"
+ref = "uint"
+doc = "Slots the store must have."
+
+[[field]]
+path = "$defs/enginePlan/checkpoints/want_slots"
+kind = "ref"
+ref = "uint"
+doc = "Slots the store would use."
+
+[[field]]
+path = "$defs/enginePlan/checkpoints/from"
+kind = "string"
+min_length = 1
+doc = "Where the engine computes it."
+
+[[field]]
+path = "$defs/enginePlan/kv_one_session"
+kind = "object"
+cpp = "PlanKvOneSession"
+doc = "KV of one full-length session."
+
+[[field]]
+path = "$defs/enginePlan/kv_one_session/bytes"
+kind = "ref"
+ref = "uint"
+doc = "Bytes."
+
+[[field]]
+path = "$defs/enginePlan/kv_one_session/from"
+kind = "string"
+min_length = 1
+doc = "Where the engine computes it."
+
+[[field]]
+path = "$defs/enginePlan/vram"
+kind = "object"
+cpp = "PlanVram"
+doc = "The engine card's VRAM split (vram_budget_resolve)."
+
+[[field]]
+path = "$defs/enginePlan/vram/claimable"
+kind = "ref"
+ref = "uint"
+doc = "VRAM claimable after fixed costs (live)."
+
+[[field]]
+path = "$defs/enginePlan/vram/statics"
+kind = "ref"
+ref = "uint"
+doc = "Static weights (stable)."
+
+[[field]]
+path = "$defs/enginePlan/vram/elastic"
+kind = "ref"
+ref = "uint"
+doc = "Claimable minus statics (live)."
+
+[[field]]
+path = "$defs/enginePlan/vram/experts"
+kind = "ref"
+ref = "uint"
+doc = "Expert residency (live)."
+
+[[field]]
+path = "$defs/enginePlan/vram/kv"
+kind = "ref"
+ref = "uint"
+doc = "KV share before MiB rounding (live; never an admission input)."
+
+[[field]]
+path = "$defs/enginePlan/vram/stage"
+kind = "ref"
+ref = "uint"
+doc = "Prefill staging region (live)."
+
+[[field]]
+path = "$defs/enginePlan/vram/kv_resolved"
+kind = "ref"
+ref = "uint"
+doc = "Common KV budget after the staging split and MiB rounding (live; spec §5.2)."
+
+[[field]]
+path = "$defs/enginePlan/vram/expert_floor"
+kind = "ref"
+ref = "uint"
+doc = "Expert residency the host pool cannot hold (stable)."
+
+[[field]]
+path = "$defs/enginePlan/vram/kv_ceiling"
+kind = "ref"
+ref = "uint"
+doc = "KV for every session at full length (stable)."
+
+[[field]]
+path = "$defs/enginePlan/vram/expert_ceiling"
+kind = "ref"
+ref = "uint"
+doc = "Every expert resident (stable)."
+
+[[field]]
+path = "$defs/enginePlan/vram/from"
+kind = "string"
+min_length = 1
+doc = "Where the engine computes it."
+
+[[field]]
+path = "$defs/enginePlan/vram/cards"
+kind = "array"
+item_kind = "object"
+min_items = 1
+doc = "Per-card facts, in rank order."
+
+[[field]]
+path = "$defs/enginePlan/vram/cards/[]"
+kind = "object"
+cpp = "PlanCard"
+doc = "One card."
+
+[[field]]
+path = "$defs/enginePlan/vram/cards/[]/capacity"
+kind = "ref"
+ref = "uint"
+doc = "Card VRAM (minimum bound)."
+
+[[field]]
+path = "$defs/enginePlan/vram/cards/[]/free"
+kind = "ref"
+ref = "uint"
+doc = "Free VRAM at measurement (live)."
+
+[[field]]
+path = "$defs/enginePlan/vram/cards/[]/engine_expert_plane"
+kind = "ref"
+ref = "uint"
+doc = "Engine expert plane bytes (stable)."
+
+[[field]]
+path = "$defs/enginePlan/vram/cards/[]/expert_unit_max"
+kind = "ref"
+ref = "uint"
+doc = "Largest expert unit (stable)."
+
+[[field]]
+path = "$defs/enginePlan/host_pool_mib"
+kind = "ref"
+ref = "uint"
+doc = "Receipt echo; equals `spec.resources.host.pool_mib`."
+
+# ---- the document ----
+
+
+[[def]]
+name = "powerProfileName"
+kind = "string"
+pattern = "^[a-z][a-z0-9_-]{0,31}$"
+max_length = 32
+doc = "Named power profile, independently selected from serving profile."
+
+[[def]]
+name = "powerRole"
+kind = "string"
+pattern = "^(engine|helper[0-9]+)$"
+max_length = 32
+doc = "Engine or indexed helper role."
+
+[[def]]
+name = "powerSettings"
+kind = "object"
+cpp = "PowerSettings"
+doc = "Resolved power settings; an empty object means no writes."
+
+[[field]]
+path = "$defs/powerSettings/vddgfx_offset_mv"
+kind = "integer"
+minimum = -500
+maximum = 500
+optional = true
+doc = "Signed VDDGFX offset in millivolts."
+
+[[field]]
+path = "$defs/powerSettings/sclk_max_mhz"
+kind = "integer"
+minimum = 1
+maximum = 10000
+optional = true
+doc = "Maximum shader clock in MHz."
+
+[[field]]
+path = "$defs/powerSettings/sclk_offset_mhz"
+kind = "integer"
+minimum = -2000
+maximum = 2000
+optional = true
+doc = "Signed shader clock offset in MHz."
+
+[[field]]
+path = "$defs/powerSettings/power_cap_w"
+kind = "integer"
+minimum = 1
+maximum = 1000
+optional = true
+doc = "Board power cap in watts."
+
+[[def]]
+name = "powerPatch"
+kind = "patch"
+of = "powerSettings"
+cpp = "PowerPatch"
+doc = "Nonempty role override of power settings."
+
+[[field]]
+path = ""
+kind = "object"
+cpp = "Manifest"
+doc = "A serving manifest v2 document."
+
+[[field]]
+path = "/apiVersion"
+mismatch = "unsupported_version"
+cpp_member = "api_version"
+kind = "string"
+const = "bigcherry/v2"
+doc = "Contract identity; exactly `bigcherry/v2`."
+
+[[field]]
+path = "/kind"
+mismatch = "unsupported_version"
+kind = "string"
+const = "ServingManifest"
+doc = "Document kind; exactly `ServingManifest`."
+
+[[field]]
+path = "/metadata"
+kind = "object"
+cpp = "Metadata"
+doc = "Identity of this resolved serving instance and its producer."
+
+[[field]]
+path = "/metadata/instance_id"
+kind = "string"
+pattern = "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+max_length = 36
+doc = "Canonical lowercase UUIDv4, created once per resolved serving instance; every process of one launch reads the same ID."
+
+[[field]]
+path = "/metadata/producer"
+kind = "object"
+cpp = "Producer"
+doc = "The executable that resolved this manifest."
+
+[[field]]
+path = "/metadata/producer/name"
+kind = "string"
+const = "bc-serve"
+doc = "Producer name; exactly `bc-serve`."
+
+[[field]]
+path = "/metadata/producer/build_sha256"
+kind = "ref"
+ref = "hex64"
+doc = "SHA-256 of the installed bc-serve executable (64 lowercase hex)."
+
+[[field]]
+path = "/metadata/contract_version"
+mismatch = "unsupported_version"
+kind = "integer"
+const = 2
+doc = "Contract version; exactly 2, matching the apiVersion suffix."
+
+[[field]]
+path = "/metadata/content_digest"
+kind = "ref"
+ref = "digest"
+doc = "`sha256:` + JCS SHA-256 of the manifest with this member removed (spec §8)."
+
+[[field]]
+path = "/spec"
+kind = "object"
+cpp = "Spec"
+constraints = '''
+[
+  {"if": {"properties": {"intent": {"properties": {"service": {"properties": {"profile": {"const": "production"}}, "required": ["profile"]}}, "required": ["service"]}}, "required": ["intent"]}, "then": {"not": {"required": ["experiment"]}}},
+  {"if": {"required": ["experiment"]}, "then": {"properties": {"intent": {"properties": {"service": {"properties": {"profile": {"const": "lab"}}}}}}}}
+]'''
+doc = "The resolved serving configuration. `experiment` is present only when the profile is `lab`."
+
+[[field]]
+path = "/spec/intent"
+kind = "object"
+cpp = "Intent"
+doc = "What the operator asked for: model, layout and service policy."
+
+[[field]]
+path = "/spec/intent/model"
+radiance_option = "--model"
+radiance_config = "Config.model"
+kind = "string"
+min_length = 1
+doc = "Model container path the engine loads (`--model`)."
+
+[[field]]
+path = "/spec/intent/layout"
+kind = "string"
+min_length = 1
+doc = "Named GPU layout (engines/radiance/layouts.toml)."
+
+
+[[field]]
+path = "/spec/intent/power"
+kind = "object"
+cpp = "PowerIntent"
+doc = "Operator-selected named power policy and role patches."
+
+[[field]]
+path = "/spec/intent/power/profile"
+kind = "ref"
+ref = "powerProfileName"
+doc = "Power profile name."
+
+[[field]]
+path = "/spec/intent/power/role_overrides"
+kind = "map"
+key_ref = "powerRole"
+doc = "Per-role nonempty power overrides; empty map is allowed."
+
+[[field]]
+path = "/spec/intent/power/role_overrides/*"
+kind = "ref"
+ref = "powerPatch"
+doc = "One nonempty override."
+
+[[field]]
+path = "/spec/intent/service"
+kind = "object"
+cpp = "Service"
+doc = "Service objective and policy."
+
+[[field]]
+path = "/spec/intent/service/profile"
+kind = "enum"
+values = ["production", "lab"]
+cpp_type = "Profile"
+doc = "`production`, or `lab`, which alone permits `spec.experiment`."
+
+[[field]]
+path = "/spec/intent/service/objective"
+kind = "enum"
+values = ["latency", "balanced", "throughput"]
+cpp_type = "Objective"
+doc = "Service objective that selects calibration and derivations."
+
+[[field]]
+path = "/spec/intent/service/max_sessions"
+radiance_option = "--max-num-seqs"
+radiance_config = "Config.max_seqs"
+kind = "ref"
+ref = "positive"
+default = 256
+default_source = "radiance:Config.max_seqs"
+doc = "Concurrent sessions served (`--max-num-seqs`)."
+
+[[field]]
+path = "/spec/intent/service/max_context_tokens"
+radiance_option = "--max-model-len"
+radiance_config = "Config.max_ctx"
+kind = "ref"
+ref = "positive"
+doc = "Longest session in tokens (`--max-model-len`)."
+
+[[field]]
+path = "/spec/intent/service/retention"
+kind = "enum"
+values = ["keep", "discard"]
+cpp_type = "Retention"
+doc = "Whether finished sessions' prefix state is kept for reuse."
+
+[[field]]
+path = "/spec/intent/service/quality"
+kind = "enum"
+values = ["baseline", "strict"]
+cpp_type = "Quality"
+doc = "Numerical quality policy: baseline, or strict reference-equivalent paths."
+
+[[field]]
+path = "/spec/facts"
+kind = "object"
+cpp = "Facts"
+doc = "Detected host and GPU facts the resolution used."
+
+[[field]]
+path = "/spec/facts/source"
+kind = "string"
+min_length = 1
+doc = "Detector that produced these facts."
+
+[[field]]
+path = "/spec/facts/host"
+kind = "object"
+cpp = "HostFacts"
+doc = "Host facts."
+
+[[field]]
+path = "/spec/facts/host/memory"
+kind = "object"
+cpp = "HostMemory"
+doc = "Host memory limits."
+
+[[field]]
+path = "/spec/facts/host/memory/total_mib"
+kind = "ref"
+ref = "positive"
+doc = "MemTotal, MiB."
+
+[[field]]
+path = "/spec/facts/host/memory/available_mib"
+kind = "ref"
+ref = "uint"
+doc = "MemAvailable at resolution, MiB."
+
+[[field]]
+path = "/spec/facts/host/memory/swap_total_mib"
+kind = "ref"
+ref = "uint"
+doc = "SwapTotal, MiB."
+
+[[field]]
+path = "/spec/facts/host/memory/shm_available_mib"
+kind = "ref"
+ref = "uint"
+doc = "Free space in /dev/shm, MiB."
+
+[[field]]
+path = "/spec/facts/host/memory/cgroup_limits"
+kind = "array"
+item_kind = "object"
+min_items = 0
+doc = "Memory limits of each enclosing cgroup, innermost first."
+
+[[field]]
+path = "/spec/facts/host/memory/cgroup_limits/[]"
+kind = "object"
+cpp = "CgroupLimit"
+doc = "One cgroup's memory limit."
+
+[[field]]
+path = "/spec/facts/host/memory/cgroup_limits/[]/path"
+kind = "string"
+min_length = 1
+doc = "cgroup path."
+
+[[field]]
+path = "/spec/facts/host/memory/cgroup_limits/[]/room_mib"
+kind = "ref"
+ref = "uint"
+doc = "Room left under that cgroup's limit, MiB."
+
+[[field]]
+path = "/spec/facts/host/memory/pin_cap_mib"
+kind = "ref"
+ref = "uint"
+nullable = true
+doc = "amdgpu pinned-memory cap, MiB; null when the driver sets none."
+
+[[field]]
+path = "/spec/facts/host/memory/memlock_limit_mib"
+kind = "ref"
+ref = "uint"
+nullable = true
+doc = "RLIMIT_MEMLOCK, MiB; null when unlimited."
+
+[[field]]
+path = "/spec/facts/host/cpu"
+kind = "object"
+cpp = "HostCpu"
+doc = "Host CPU facts."
+
+[[field]]
+path = "/spec/facts/host/cpu/count"
+kind = "ref"
+ref = "positive"
+doc = "Online CPUs."
+
+[[field]]
+path = "/spec/facts/gpus"
+kind = "array"
+item_kind = "object"
+min_items = 1
+max_items = 32
+doc = "Detected GPUs, in KFD order."
+
+[[field]]
+path = "/spec/facts/gpus/[]"
+kind = "object"
+cpp = "GpuFact"
+doc = "One detected GPU."
+
+[[field]]
+path = "/spec/facts/gpus/[]/bdf"
+kind = "ref"
+ref = "bdf"
+doc = "PCI address."
+
+[[field]]
+path = "/spec/facts/gpus/[]/arch"
+kind = "string"
+pattern = "^gfx[0-9a-f]+$"
+max_length = 32
+doc = "GPU architecture (gfx target)."
+
+[[field]]
+path = "/spec/facts/gpus/[]/hip_ordinal"
+kind = "ref"
+ref = "uint"
+doc = "HIP device ordinal (KFD node order)."
+
+[[field]]
+path = "/spec/facts/gpus/[]/vram"
+kind = "object"
+cpp = "GpuVram"
+doc = "VRAM facts."
+
+[[field]]
+path = "/spec/facts/gpus/[]/vram/total_mib"
+kind = "ref"
+ref = "positive"
+doc = "VRAM size, MiB."
+
+[[field]]
+path = "/spec/facts/gpus/[]/vram/available_mib"
+kind = "ref"
+ref = "uint"
+doc = "Unused VRAM at resolution, MiB."
+
+[[field]]
+path = "/spec/calibration"
+error_class = "calibration_invalid"
+kind = "array"
+item_kind = "object"
+min_items = 1
+max_items = 64
+doc = "Selected calibrated parameters, each with its evidence."
+
+[[field]]
+path = "/spec/calibration/[]"
+kind = "object"
+cpp = "CalibrationEntry"
+doc = "One calibrated parameter."
+
+[[field]]
+path = "/spec/calibration/[]/key"
+kind = "calibration_key"
+doc = "Calibrated parameter; its value's type is fixed per key (contract `calibration_key` table)."
+
+[[field]]
+path = "/spec/calibration/[]/value"
+kind = "calibration_value"
+doc = "The parameter's value: an unsigned integer, a string or a boolean, as its key requires."
+
+[[field]]
+path = "/spec/calibration/[]/source"
+kind = "enum"
+values = ["seed", "cache"]
+cpp_type = "CalibrationSource"
+doc = "`seed` (committed calibration) or `cache` (measured on this host)."
+
+[[field]]
+path = "/spec/calibration/[]/seeded"
+kind = "string"
+format = "date"
+doc = "Date the evidence was recorded (YYYY-MM-DD)."
+
+[[field]]
+path = "/spec/calibration/[]/evidence"
+kind = "string"
+min_length = 1
+doc = "Where the evidence for this value is recorded."
+
+[[field]]
+path = "/spec/resources"
+kind = "object"
+cpp = "Resources"
+doc = "Derived resource allocation."
+
+[[field]]
+path = "/spec/resources/host"
+kind = "object"
+cpp = "HostResources"
+doc = "Host memory allocation (RSC03 ledger)."
+
+[[field]]
+path = "/spec/resources/host/pool_mib"
+origins = ["derived", "calibrated"]
+confidences = ["exact", "measured"]
+radiance_option = "--host-pool-mib"
+radiance_config = "Config.host_pool_mib"
+kind = "ref"
+ref = "uint"
+doc = "Pinned host pool for experts and the KV tier, MiB (`--host-pool-mib`)."
+
+[[field]]
+path = "/spec/resources/host/kv_mib"
+origins = ["derived", "calibrated"]
+confidences = ["exact", "measured"]
+radiance_option = "--prefix-cache-mib"
+radiance_config = "Config.prefix_cache_mib"
+kind = "ref"
+ref = "uint"
+doc = "Host KV tier, MiB (`--prefix-cache-mib`)."
+
+[[field]]
+path = "/spec/resources/host/reserve_mib"
+origins = ["derived", "calibrated"]
+confidences = ["exact", "measured"]
+radiance_option = "--host-headroom-mib"
+radiance_config = "Config.host_headroom_mib"
+kind = "ref"
+ref = "positive"
+default = 4096
+default_source = "radiance:Config.host_headroom_mib"
+doc = "Host memory held back for the system, MiB (`--host-headroom-mib`)."
+
+[[field]]
+path = "/spec/resources/host/checkpoint_slots"
+origins = ["derived", "calibrated"]
+confidences = ["exact", "measured"]
+optional = true
+radiance_option = "--checkpoint-slots"
+radiance_config = "native checkpoint limit"
+kind = "ref"
+ref = "uint"
+doc = "Prefix checkpoint slots (`--checkpoint-slots`), derived from the measured plan: present when `plan.state` is `measured`, absent when it is `unmeasured`."
+
+[[field]]
+path = "/spec/handoff"
+optional = true
+kind = "object"
+cpp = "Handoff"
+doc = "The one shared remote-MoE handoff configuration. Present exactly when `processes.helpers` is not empty (amendment 12)."
+
+[[field]]
+path = "/spec/handoff/transport"
+kind = "object"
+cpp = "HandoffTransport"
+doc = "Shared-memory transport between the engine and helpers."
+
+[[field]]
+path = "/spec/handoff/transport/shm"
+kind = "string"
+pattern = "^/[A-Za-z0-9][A-Za-z0-9._-]*$"
+max_length = 255
+doc = "POSIX shared-memory name of the handoff segment."
+
+[[field]]
+path = "/spec/handoff/transport/max_rows"
+origins = ["derived", "calibrated"]
+confidences = ["exact", "measured"]
+kind = "ref"
+ref = "positive"
+doc = "Largest row batch a request carries."
+
+[[field]]
+path = "/spec/handoff/transport/small_rows"
+origins = ["derived", "calibrated"]
+confidences = ["exact", "measured"]
+kind = "ref"
+ref = "positive"
+doc = "Row count at or below which a request uses a small lane."
+
+[[field]]
+path = "/spec/handoff/transport/gemv_large_rows"
+origins = ["derived", "calibrated"]
+confidences = ["exact", "measured"]
+kind = "ref"
+ref = "positive"
+doc = "Row count from which helpers use the large GEMV path."
+
+[[field]]
+path = "/spec/handoff/transport/skip_owned"
+origins = ["derived", "calibrated"]
+confidences = ["exact", "measured"]
+kind = "boolean"
+doc = "The engine skips experts a helper owns."
+
+[[field]]
+path = "/spec/handoff/placement"
+kind = "object"
+cpp = "HandoffPlacement"
+doc = "Expert placement policy."
+
+[[field]]
+path = "/spec/handoff/placement/strategy"
+kind = "enum"
+values = ["tail", "roundrobin"]
+cpp_type = "PlacementStrategy"
+doc = "Owner assignment: `tail` (the tail helper takes the cold end) or `roundrobin`."
+
+[[field]]
+path = "/spec/handoff/placement/heat_file"
+kind = "string"
+min_length = 1
+doc = "Expert heat file the owner map is planned from."
+
+
+[[field]]
+path = "/spec/handoff/placement/live_policy_state"
+kind = "object"
+cpp = "LivePolicyStartup"
+doc = "Immutable RHP18 policy startup decision; runtime degradation belongs to receipts."
+
+[[field]]
+path = "/spec/handoff/placement/live_policy_state/requested"
+kind = "enum"
+values = ["on", "off", "not_applicable"]
+cpp_type = "LivePolicyRequested"
+doc = "Policy requested on, off or not applicable."
+
+[[field]]
+path = "/spec/handoff/placement/live_policy_state/configured"
+kind = "boolean"
+doc = "Whether requested policy was configured at startup."
+
+[[field]]
+path = "/spec/handoff/placement/live_policy_state/reason_code"
+kind = "string"
+min_length = 1
+doc = "Machine-readable reason code."
+
+[[field]]
+path = "/spec/handoff/placement/live_policy_state/reason_detail"
+kind = "string"
+min_length = 0
+doc = "Detailed startup reason."
+
+[[field]]
+path = "/spec/handoff/placement/live_policy_state/calibration_key"
+kind = "string"
+min_length = 0
+doc = "Exact matching calibration key, empty when not applicable."
+
+[[field]]
+path = "/spec/handoff/placement/live_policy_state/record_identity"
+kind = "string"
+min_length = 0
+doc = "Qualified calibration record identity, empty if none."
+
+[[field]]
+path = "/spec/handoff/placement/live_policy_state/effect_gate"
+kind = "boolean"
+doc = "Selected effect-gate mechanism."
+
+[[field]]
+path = "/spec/handoff/placement/live_policy_state/histogram_period_s"
+kind = "ref"
+ref = "positive"
+doc = "Heat histogram emission period in seconds."
+
+[[field]]
+path = "/spec/handoff/placement/live_policy_state/cadence_ns"
+kind = "ref"
+ref = "uint"
+doc = "Effective migration cadence in nanoseconds."
+
+[[field]]
+path = "/spec/handoff/placement/live_policy_state/max_heat_age_ns"
+kind = "ref"
+ref = "uint"
+doc = "Maximum accepted heat age in nanoseconds."
+
+[[field]]
+path = "/spec/handoff/placement/live_policy"
+optional = true
+kind = "object"
+cpp = "LivePolicy"
+doc = "Live expert placement from the runtime heat map (RHP). Present: the helper runs the policy; absent: no policy thread. Every member is explicit (no defaults); needs one engine rank and a live histogram file, and excludes `experiment.placement.forced`."
+
+[[field]]
+path = "/spec/handoff/placement/live_policy/effect_gate"
+kind = "boolean"
+doc = "A move must pass the measured effect gate before it stays."
+
+[[field]]
+path = "/spec/handoff/placement/live_policy/accept_unwatermarked_heat"
+kind = "boolean"
+doc = "Accept a histogram file heat source that carries no coherent observation watermark."
+
+[[field]]
+path = "/spec/handoff/placement/live_policy/cadence_ns"
+kind = "ref"
+ref = "positive"
+doc = "Time between policy evaluations, ns."
+
+[[field]]
+path = "/spec/handoff/placement/live_policy/max_moves"
+kind = "ref"
+ref = "positive"
+doc = "Most experts one policy epoch may move."
+
+[[field]]
+path = "/spec/handoff/placement/live_policy/max_moved_bytes"
+kind = "ref"
+ref = "positive"
+doc = "Most device bytes one policy epoch may move."
+
+[[field]]
+path = "/spec/handoff/placement/live_policy/min_residency_ns"
+kind = "ref"
+ref = "positive"
+doc = "Shortest time an expert stays where a move put it, ns."
+
+[[field]]
+path = "/spec/handoff/placement/live_policy/max_heat_age_ns"
+kind = "ref"
+ref = "positive"
+doc = "Oldest heat observation the policy accepts, ns."
+
+[[field]]
+path = "/spec/handoff/placement/live_policy/min_samples"
+kind = "ref"
+ref = "positive"
+doc = "Fewest observations an expert needs before it can move."
+
+[[field]]
+path = "/spec/handoff/placement/live_policy/abort_cooldown_ns"
+kind = "ref"
+ref = "positive"
+doc = "Quiet time after an aborted move, ns."
+
+[[field]]
+path = "/spec/handoff/placement/live_policy/learned_eligibility_ttl_ns"
+kind = "ref"
+ref = "positive"
+doc = "How long a learned eligibility answer is trusted, ns."
+
+[[field]]
+path = "/spec/handoff/placement/live_policy/effect_window_samples"
+kind = "ref"
+ref = "positive"
+doc = "Observations in one effect-gate window."
+
+[[field]]
+path = "/spec/handoff/placement/live_policy/effect_min_quiet_windows"
+kind = "ref"
+ref = "positive"
+doc = "Quiet windows the effect gate needs before it accepts a move."
+
+[[field]]
+path = "/spec/handoff/placement/live_policy/effect_revert_ttl_ns"
+kind = "ref"
+ref = "positive"
+doc = "How long a move can be reverted by the effect gate, ns."
+
+[[field]]
+path = "/spec/handoff/placement/live_policy/margin_ppm"
+kind = "integer"
+minimum = 1
+exclusive_maximum = 1000000
+doc = "Relative heat gain a move must show, ppm (0 < margin < 1)."
+
+[[field]]
+path = "/spec/handoff/placement/live_policy/half_life_observations_milli"
+kind = "ref"
+ref = "positive"
+doc = "Heat decay half-life in observations, thousandths."
+
+[[field]]
+path = "/spec/handoff/placement/live_policy/effect_noise_multiplier_milli"
+kind = "ref"
+ref = "positive"
+doc = "Effect-gate noise multiplier, thousandths."
+
+[[field]]
+path = "/spec/handoff/placement/live_policy/protected_layers"
+kind = "array"
+item_kind = "ref"
+item_ref = "uint"
+min_items = 0
+max_items = 512
+unique_items = true
+doc = "Model-global layer ids the policy never moves, strictly ascending; empty means none."
+
+[[field]]
+path = "/spec/handoff/telemetry"
+kind = "object"
+cpp = "HandoffTelemetry"
+doc = "Expert-use telemetry."
+
+[[field]]
+path = "/spec/handoff/telemetry/histogram_file"
+kind = "string"
+min_length = 1
+nullable = true
+doc = "Live expert histogram file; null disables it."
+
+[[field]]
+path = "/spec/handoff/telemetry/period_s"
+kind = "ref"
+ref = "uint"
+doc = "Histogram period, seconds."
+
+[[field]]
+path = "/spec/handoff/kernels"
+kind = "object"
+cpp = "HandoffKernels"
+doc = "Handoff kernel selection."
+
+[[field]]
+path = "/spec/handoff/kernels/moe_down_tile"
+origins = ["derived", "calibrated"]
+confidences = ["exact", "measured"]
+kind = "int_enum"
+values = [0, 1, 2]
+doc = "MoE down-projection tile mode (0, 1 or 2)."
+
+[[field]]
+path = "/spec/processes"
+kind = "object"
+cpp = "Processes"
+doc = "Per-process settings."
+
+[[field]]
+path = "/spec/processes/engine"
+kind = "object"
+cpp = "EngineProcess"
+doc = "Engine process settings."
+
+[[field]]
+path = "/spec/processes/engine/device"
+kind = "object"
+cpp = "EngineDevice"
+doc = "Engine GPUs."
+
+[[field]]
+path = "/spec/processes/engine/device/gpus"
+kind = "array"
+item_kind = "ref"
+item_ref = "bdf"
+min_items = 1
+doc = "Engine GPU addresses, in rank order."
+
+[[field]]
+path = "/spec/processes/engine/device/headroom_mib"
+optional = true
+radiance_option = "--gpu-headroom-mib"
+radiance_config = "Config.gpu_headroom_mib"
+kind = "ref"
+ref = "uint"
+default = 96
+default_source = "radiance:Config.gpu_headroom_mib"
+doc = "VRAM left unclaimed on every engine card, MiB (`--gpu-headroom-mib`; amendment 11)."
+
+[[field]]
+path = "/spec/processes/engine/runtime"
+kind = "object"
+cpp = "EngineRuntime"
+doc = "Engine runtime."
+
+[[field]]
+path = "/spec/processes/engine/runtime/radiance_home"
+radiance_option = "--radiance-home"
+radiance_config = "Config.radiance_home"
+kind = "string"
+min_length = 1
+doc = "Radiance install root (`--radiance-home`)."
+
+[[field]]
+path = "/spec/processes/engine/runtime/kernels"
+radiance_option = "--kernels"
+radiance_config = "Config.kernel_hierarchy"
+kind = "array"
+item_kind = "string"
+item_min_length = 1
+min_items = 1
+doc = "Kernel libraries in search order (`--kernels`)."
+
+[[field]]
+path = "/spec/processes/engine/server"
+kind = "object"
+cpp = "EngineServer"
+doc = "HTTP server."
+
+[[field]]
+path = "/spec/processes/engine/server/port"
+radiance_option = "--port"
+radiance_config = "native port"
+kind = "integer"
+minimum = 1
+maximum = 65535
+doc = "TCP port (`--port`)."
+
+[[field]]
+path = "/spec/processes/engine/scheduler"
+kind = "object"
+cpp = "EngineScheduler"
+doc = "Scheduler sizes."
+
+[[field]]
+path = "/spec/processes/engine/scheduler/tp"
+radiance_option = "--tp"
+radiance_config = "Config.tp"
+kind = "ref"
+ref = "positive"
+default = 1
+default_source = "radiance:Config.tp"
+doc = "Tensor-parallel ranks (`--tp`)."
+
+[[field]]
+path = "/spec/processes/engine/scheduler/max_num_batched_tokens"
+radiance_option = "--max-num-batched-tokens"
+radiance_config = "Config.max_tok"
+kind = "ref"
+ref = "positive"
+default = 2048
+default_source = "radiance:Config.max_tok"
+doc = "Tokens per step (`--max-num-batched-tokens`)."
+
+[[field]]
+path = "/spec/processes/engine/scheduler/checkpoint_interval"
+radiance_option = "--checkpoint-interval"
+radiance_config = "native interval"
+kind = "ref"
+ref = "uint"
+doc = "Tokens between prefix checkpoints (`--checkpoint-interval`)."
+
+[[field]]
+path = "/spec/processes/engine/execution"
+kind = "object"
+cpp = "EngineExecution"
+doc = "Execution choices."
+
+[[field]]
+path = "/spec/processes/engine/execution/placement"
+radiance_option = "--placement"
+radiance_config = "native placement mode"
+kind = "enum"
+values = ["expert_tiered", "all_vram", "layer_offload", "auto"]
+cpp_type = "WeightPlacement"
+doc = "Weight placement mode (`--placement`)."
+
+[[field]]
+path = "/spec/processes/engine/execution/ngram_placement"
+radiance_option = "--ngram-placement"
+radiance_config = "native table placement"
+kind = "enum"
+values = ["ram", "disk", "vram", "auto"]
+cpp_type = "NgramPlacement"
+doc = "N-gram table placement (`--ngram-placement`)."
+
+[[field]]
+path = "/spec/processes/engine/execution/kv_cache_dtype"
+radiance_option = "--kv-cache-dtype"
+radiance_config = "native dtype"
+kind = "enum"
+values = ["bf16", "fp8", "fp8_v4", "k6_v4"]
+cpp_type = "KvCacheDtype"
+doc = "KV cache data type (`--kv-cache-dtype`)."
+
+[[field]]
+path = "/spec/processes/engine/execution/num_speculative_tokens"
+radiance_option = "--num-speculative-tokens"
+radiance_config = "Config.n_spec"
+kind = "ref"
+ref = "uint"
+doc = "Speculative tokens per step (`--num-speculative-tokens`)."
+
+[[field]]
+path = "/spec/processes/engine/execution/rope_scaling"
+radiance_option = "--rope-scaling"
+radiance_config = "Config.rope_scaling"
+kind = "string"
+min_length = 1
+doc = "RoPE scaling specification (`--rope-scaling`)."
+
+[[field]]
+path = "/spec/processes/engine/execution/prefix_resume"
+radiance_option = "--prefix-resume"
+radiance_config = "Config.prefix_exact"
+kind = "enum"
+values = ["nearest", "exact"]
+cpp_type = "PrefixResume"
+doc = "Prefix resume policy (`--prefix-resume`)."
+
+[[field]]
+path = "/spec/processes/engine/execution/tp_wire"
+optional = true
+radiance_option = "--tp-wire"
+radiance_config = "Config.tp_wire_exact"
+kind = "enum"
+values = ["exact", "wht6"]
+cpp_type = "TpWire"
+doc = "Cross-rank all-reduce payload (`--tp-wire`; amendment 11): `exact`, or `wht6`, a lossy 6-bit transform."
+
+[[field]]
+path = "/spec/processes/engine/execution/no_prefix_cache"
+optional = true
+radiance_option = "--no-prefix-cache"
+radiance_config = "Config.prefix_cache"
+radiance_switch = true
+kind = "enum"
+values = ["on"]
+cpp_type = "NoPrefixCache"
+doc = "Present means prefix caching is disabled (`--no-prefix-cache`; amendment 11). Not the host KV tier size (`resources.host.kv_mib`, `--prefix-cache-mib`): that tier stays configurable with caching on."
+
+[[field]]
+path = "/spec/processes/engine/sampling"
+optional = true
+kind = "object"
+cpp = "EngineSampling"
+doc = "Default sampling for requests that set none (amendment 13). Every member is optional and binds to one engine flag; an absent member leaves the engine's own default."
+
+[[field]]
+path = "/spec/processes/engine/sampling/default_max_tokens"
+optional = true
+radiance_option = "--default-max-tokens"
+radiance_config = "Config.default_max_tokens"
+kind = "ref"
+ref = "uint"
+doc = "Engine flag `--default-max-tokens` (amendment 13)."
+
+[[field]]
+path = "/spec/processes/engine/sampling/dry_allowed_length"
+optional = true
+radiance_option = "--dry-allowed-length"
+radiance_config = "native option"
+kind = "ref"
+ref = "uint"
+doc = "Engine flag `--dry-allowed-length` (amendment 13)."
+
+[[field]]
+path = "/spec/processes/engine/sampling/dry_base"
+optional = true
+radiance_option = "--dry-base"
+radiance_config = "native option"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--dry-base` (amendment 13). Value text as the flag takes it (F)."
+
+[[field]]
+path = "/spec/processes/engine/sampling/dry_multiplier"
+optional = true
+radiance_option = "--dry-multiplier"
+radiance_config = "native option"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--dry-multiplier` (amendment 13). Value text as the flag takes it (F)."
+
+[[field]]
+path = "/spec/processes/engine/sampling/dry_penalty_last_n"
+optional = true
+radiance_option = "--dry-penalty-last-n"
+radiance_config = "native option"
+kind = "ref"
+ref = "uint"
+doc = "Engine flag `--dry-penalty-last-n` (amendment 13)."
+
+[[field]]
+path = "/spec/processes/engine/sampling/dry_sequence_breakers"
+optional = true
+radiance_option = "--dry-sequence-breakers"
+radiance_config = "native option"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--dry-sequence-breakers` (amendment 13). Value text as the flag takes it (JSON)."
+
+[[field]]
+path = "/spec/processes/engine/sampling/frequency_penalty"
+optional = true
+radiance_option = "--frequency-penalty"
+radiance_config = "native option"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--frequency-penalty` (amendment 13). Value text as the flag takes it (F)."
+
+[[field]]
+path = "/spec/processes/engine/sampling/generation_config"
+optional = true
+radiance_option = "--generation-config"
+radiance_config = "Config.generation_config"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--generation-config` (amendment 13). Value text as the flag takes it (PATH)."
+
+[[field]]
+path = "/spec/processes/engine/sampling/max_n"
+optional = true
+radiance_option = "--max-n"
+radiance_config = "native option"
+kind = "ref"
+ref = "uint"
+doc = "Engine flag `--max-n` (amendment 13)."
+
+[[field]]
+path = "/spec/processes/engine/sampling/max_tokens_cap"
+optional = true
+radiance_option = "--max-tokens-cap"
+radiance_config = "native option"
+kind = "ref"
+ref = "uint"
+doc = "Engine flag `--max-tokens-cap` (amendment 13)."
+
+[[field]]
+path = "/spec/processes/engine/sampling/min_p"
+optional = true
+radiance_option = "--min-p"
+radiance_config = "native option"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--min-p` (amendment 13). Value text as the flag takes it (F)."
+
+[[field]]
+path = "/spec/processes/engine/sampling/presence_penalty"
+optional = true
+radiance_option = "--presence-penalty"
+radiance_config = "native option"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--presence-penalty` (amendment 13). Value text as the flag takes it (F)."
+
+[[field]]
+path = "/spec/processes/engine/sampling/repeat_last_n"
+optional = true
+radiance_option = "--repeat-last-n"
+radiance_config = "native option"
+kind = "ref"
+ref = "uint"
+doc = "Engine flag `--repeat-last-n` (amendment 13)."
+
+[[field]]
+path = "/spec/processes/engine/sampling/repetition_penalty"
+optional = true
+radiance_option = "--repetition-penalty"
+radiance_config = "native option"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--repetition-penalty` (amendment 13). Value text as the flag takes it (F)."
+
+[[field]]
+path = "/spec/processes/engine/sampling/temp"
+optional = true
+radiance_option = "--temp"
+radiance_config = "native option"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--temp` (amendment 13). Value text as the flag takes it (F)."
+
+[[field]]
+path = "/spec/processes/engine/sampling/top_k"
+optional = true
+radiance_option = "--top-k"
+radiance_config = "native option"
+kind = "ref"
+ref = "uint"
+doc = "Engine flag `--top-k` (amendment 13)."
+
+[[field]]
+path = "/spec/processes/engine/sampling/top_p"
+optional = true
+radiance_option = "--top-p"
+radiance_config = "native option"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--top-p` (amendment 13). Value text as the flag takes it (F)."
+
+[[field]]
+path = "/spec/processes/engine/sampling/typical_p"
+optional = true
+radiance_option = "--typical-p"
+radiance_config = "native option"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--typical-p` (amendment 13). Value text as the flag takes it (F)."
+
+[[field]]
+path = "/spec/processes/engine/sampling/xtc_probability"
+optional = true
+radiance_option = "--xtc-probability"
+radiance_config = "native option"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--xtc-probability` (amendment 13). Value text as the flag takes it (F)."
+
+[[field]]
+path = "/spec/processes/engine/sampling/xtc_threshold"
+optional = true
+radiance_option = "--xtc-threshold"
+radiance_config = "native option"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--xtc-threshold` (amendment 13). Value text as the flag takes it (F)."
+
+[[field]]
+path = "/spec/processes/engine/limits"
+optional = true
+kind = "object"
+cpp = "EngineLimits"
+doc = "HTTP server identity, transport and request limits (amendment 13). Every member is optional and binds to one engine flag; an absent member leaves the engine's own default."
+
+[[field]]
+path = "/spec/processes/engine/limits/api_key"
+optional = true
+radiance_option = "--api-key"
+radiance_config = "Config.api_key"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--api-key` (amendment 13). Value text as the flag takes it (KEY)."
+
+[[field]]
+path = "/spec/processes/engine/limits/host"
+optional = true
+radiance_option = "--host"
+radiance_config = "Config.host"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--host` (amendment 13). Value text as the flag takes it (ADDR)."
+
+[[field]]
+path = "/spec/processes/engine/limits/http_threads"
+optional = true
+radiance_option = "--http-threads"
+radiance_config = "native option"
+kind = "ref"
+ref = "uint"
+doc = "Engine flag `--http-threads` (amendment 13)."
+
+[[field]]
+path = "/spec/processes/engine/limits/keep_alive_timeout"
+optional = true
+radiance_option = "--keep-alive-timeout"
+radiance_config = "native option"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--keep-alive-timeout` (amendment 13). Value text as the flag takes it (S)."
+
+[[field]]
+path = "/spec/processes/engine/limits/max_body_mib"
+optional = true
+radiance_option = "--max-body-mib"
+radiance_config = "Config.cors"
+kind = "ref"
+ref = "uint"
+doc = "Engine flag `--max-body-mib` (amendment 13)."
+
+[[field]]
+path = "/spec/processes/engine/limits/max_queued_requests"
+optional = true
+radiance_option = "--max-queued-requests"
+radiance_config = "native option"
+kind = "ref"
+ref = "uint"
+doc = "Engine flag `--max-queued-requests` (amendment 13)."
+
+[[field]]
+path = "/spec/processes/engine/limits/max_stop_bytes"
+optional = true
+radiance_option = "--max-stop-bytes"
+radiance_config = "native option"
+kind = "ref"
+ref = "uint"
+doc = "Engine flag `--max-stop-bytes` (amendment 13)."
+
+[[field]]
+path = "/spec/processes/engine/limits/max_stop_strings"
+optional = true
+radiance_option = "--max-stop-strings"
+radiance_config = "native option"
+kind = "ref"
+ref = "uint"
+doc = "Engine flag `--max-stop-strings` (amendment 13)."
+
+[[field]]
+path = "/spec/processes/engine/limits/no_cors"
+optional = true
+radiance_option = "--no-cors"
+radiance_config = "Config.cors"
+radiance_switch = true
+kind = "enum"
+values = ["on"]
+cpp_type = "OptNoCors"
+doc = "Engine flag `--no-cors` (amendment 13). Present means the flag is given."
+
+[[field]]
+path = "/spec/processes/engine/limits/read_timeout"
+optional = true
+radiance_option = "--read-timeout"
+radiance_config = "native option"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--read-timeout` (amendment 13). Value text as the flag takes it (S)."
+
+[[field]]
+path = "/spec/processes/engine/limits/retry_after"
+optional = true
+radiance_option = "--retry-after"
+radiance_config = "native option"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--retry-after` (amendment 13). Value text as the flag takes it (S)."
+
+[[field]]
+path = "/spec/processes/engine/limits/served_model_name"
+optional = true
+radiance_option = "--served-model-name"
+radiance_config = "Config.served_model_name"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--served-model-name` (amendment 13). Value text as the flag takes it (NAME)."
+
+[[field]]
+path = "/spec/processes/engine/limits/write_timeout"
+optional = true
+radiance_option = "--write-timeout"
+radiance_config = "native option"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--write-timeout` (amendment 13). Value text as the flag takes it (S)."
+
+[[field]]
+path = "/spec/processes/engine/chat"
+optional = true
+kind = "object"
+cpp = "EngineChat"
+doc = "Chat template and reasoning behaviour (amendment 13). Every member is optional and binds to one engine flag; an absent member leaves the engine's own default."
+
+[[field]]
+path = "/spec/processes/engine/chat/chat_template_kwargs"
+optional = true
+radiance_option = "--chat-template-kwargs"
+radiance_config = "native option"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--chat-template-kwargs` (amendment 13). Value text as the flag takes it (JSON)."
+
+[[field]]
+path = "/spec/processes/engine/chat/override_chat_template"
+optional = true
+radiance_option = "--override-chat-template"
+radiance_config = "Config.override_chat_template"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--override-chat-template` (amendment 13). Value text as the flag takes it (PATH)."
+
+[[field]]
+path = "/spec/processes/engine/chat/reasoning_effort"
+optional = true
+radiance_option = "--reasoning-effort"
+radiance_config = "Config.reasoning_effort"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--reasoning-effort` (amendment 13). Value text as the flag takes it (S)."
+
+[[field]]
+path = "/spec/processes/engine/chat/reasoning_effort_map"
+optional = true
+radiance_option = "--reasoning-effort-map"
+radiance_config = "native option"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--reasoning-effort-map` (amendment 13). Value text as the flag takes it (MAP)."
+
+[[field]]
+path = "/spec/processes/engine/chat/reasoning_format"
+optional = true
+radiance_option = "--reasoning-format"
+radiance_config = "Config.reasoning_format"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--reasoning-format` (amendment 13). Value text as the flag takes it (MODE)."
+
+[[field]]
+path = "/spec/processes/engine/chat/thinking_token_budget"
+optional = true
+radiance_option = "--thinking-token-budget"
+radiance_config = "Config.generation_config"
+kind = "ref"
+ref = "uint"
+doc = "Engine flag `--thinking-token-budget` (amendment 13)."
+
+[[field]]
+path = "/spec/processes/engine/lora"
+optional = true
+kind = "object"
+cpp = "EngineLora"
+doc = "LoRA adapters and control vectors (amendment 13). Every member is optional and binds to one engine flag; an absent member leaves the engine's own default."
+
+[[field]]
+path = "/spec/processes/engine/lora/control_vector"
+optional = true
+radiance_option = "--control-vector"
+radiance_config = "Config.control_vector"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--control-vector` (amendment 13). Value text as the flag takes it (MODE)."
+
+[[field]]
+path = "/spec/processes/engine/lora/lora_dir"
+optional = true
+radiance_option = "--lora-dir"
+radiance_config = "Config.lora.dir"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--lora-dir` (amendment 13). Value text as the flag takes it (DIR)."
+
+[[field]]
+path = "/spec/processes/engine/lora/lora_target_modules"
+optional = true
+radiance_option = "--lora-target-modules"
+radiance_config = "native option"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--lora-target-modules` (amendment 13). Value text as the flag takes it (LIST)."
+
+[[field]]
+path = "/spec/processes/engine/lora/max_lora_rank"
+optional = true
+radiance_option = "--max-lora-rank"
+radiance_config = "native option"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--max-lora-rank` (amendment 13). Value text as the flag takes it (R)."
+
+[[field]]
+path = "/spec/processes/engine/lora/max_loras"
+optional = true
+radiance_option = "--max-loras"
+radiance_config = "native option"
+kind = "ref"
+ref = "uint"
+doc = "Engine flag `--max-loras` (amendment 13)."
+
+[[field]]
+path = "/spec/processes/engine/vision"
+optional = true
+kind = "object"
+cpp = "EngineVision"
+doc = "Image and video input limits and placement (amendment 13). Every member is optional and binds to one engine flag; an absent member leaves the engine's own default."
+
+[[field]]
+path = "/spec/processes/engine/vision/image_max_pixels"
+optional = true
+radiance_option = "--image-max-pixels"
+radiance_config = "native option"
+kind = "ref"
+ref = "uint"
+doc = "Engine flag `--image-max-pixels` (amendment 13)."
+
+[[field]]
+path = "/spec/processes/engine/vision/image_min_pixels"
+optional = true
+radiance_option = "--image-min-pixels"
+radiance_config = "native option"
+kind = "ref"
+ref = "uint"
+doc = "Engine flag `--image-min-pixels` (amendment 13)."
+
+[[field]]
+path = "/spec/processes/engine/vision/image_tokens"
+optional = true
+radiance_option = "--image-tokens"
+radiance_config = "Config.image_tokens"
+kind = "ref"
+ref = "uint"
+doc = "Engine flag `--image-tokens` (amendment 13)."
+
+[[field]]
+path = "/spec/processes/engine/vision/max_source_pixels"
+optional = true
+radiance_option = "--max-source-pixels"
+radiance_config = "native option"
+kind = "ref"
+ref = "uint"
+doc = "Engine flag `--max-source-pixels` (amendment 13)."
+
+[[field]]
+path = "/spec/processes/engine/vision/mm_max_patches"
+optional = true
+radiance_option = "--mm-max-patches"
+radiance_config = "Config.mm_max_patches"
+kind = "ref"
+ref = "uint"
+doc = "Engine flag `--mm-max-patches` (amendment 13)."
+
+[[field]]
+path = "/spec/processes/engine/vision/video_fps"
+optional = true
+radiance_option = "--video-fps"
+radiance_config = "Config.video_fps"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--video-fps` (amendment 13). Value text as the flag takes it (F)."
+
+[[field]]
+path = "/spec/processes/engine/vision/video_max_frame_tokens"
+optional = true
+radiance_option = "--video-max-frame-tokens"
+radiance_config = "Config.kld_record"
+kind = "ref"
+ref = "uint"
+doc = "Engine flag `--video-max-frame-tokens` (amendment 13)."
+
+[[field]]
+path = "/spec/processes/engine/vision/video_max_frames"
+optional = true
+radiance_option = "--video-max-frames"
+radiance_config = "Config.kld_record"
+kind = "ref"
+ref = "uint"
+doc = "Engine flag `--video-max-frames` (amendment 13)."
+
+[[field]]
+path = "/spec/processes/engine/vision/video_max_pixels"
+optional = true
+radiance_option = "--video-max-pixels"
+radiance_config = "native option"
+kind = "ref"
+ref = "uint"
+doc = "Engine flag `--video-max-pixels` (amendment 13)."
+
+[[field]]
+path = "/spec/processes/engine/vision/video_min_frames"
+optional = true
+radiance_option = "--video-min-frames"
+radiance_config = "native option"
+kind = "ref"
+ref = "uint"
+doc = "Engine flag `--video-min-frames` (amendment 13)."
+
+[[field]]
+path = "/spec/processes/engine/vision/video_min_pixels"
+optional = true
+radiance_option = "--video-min-pixels"
+radiance_config = "native option"
+kind = "ref"
+ref = "uint"
+doc = "Engine flag `--video-min-pixels` (amendment 13)."
+
+[[field]]
+path = "/spec/processes/engine/vision/vision_tower_placement"
+optional = true
+radiance_option = "--vision-tower-placement"
+radiance_config = "Config.tower_placement"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--vision-tower-placement` (amendment 13). Value text as the flag takes it (WHERE)."
+
+[[field]]
+path = "/spec/processes/engine/tuning"
+optional = true
+kind = "object"
+cpp = "EngineTuning"
+doc = "Prefill, tensor-parallel, expert, draft and cache tuning (amendment 13). Every member is optional and binds to one engine flag; an absent member leaves the engine's own default."
+
+[[field]]
+path = "/spec/processes/engine/tuning/attn_prefill_fp8"
+optional = true
+radiance_option = "--attn-prefill-fp8"
+radiance_config = "Config.attn_prefill_fp8"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--attn-prefill-fp8` (amendment 13). Value text as the flag takes it (MODE)."
+
+[[field]]
+path = "/spec/processes/engine/tuning/busy_prefill_chunk"
+optional = true
+radiance_option = "--busy-prefill-chunk"
+radiance_config = "Config.busy_prefill_chunk"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--busy-prefill-chunk` (amendment 13). Value text as the flag takes it (MODE)."
+
+[[field]]
+path = "/spec/processes/engine/tuning/checkpoint_policy"
+optional = true
+radiance_option = "--checkpoint-policy"
+radiance_config = "Config.checkpoint_policy"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--checkpoint-policy` (amendment 13). Value text as the flag takes it (NAME)."
+
+[[field]]
+path = "/spec/processes/engine/tuning/draft_coupling"
+optional = true
+radiance_option = "--draft-coupling"
+radiance_config = "Config.draft_coupling"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--draft-coupling` (amendment 13). Value text as the flag takes it (MODE)."
+
+[[field]]
+path = "/spec/processes/engine/tuning/draft_expert_placement"
+optional = true
+radiance_option = "--draft-expert-placement"
+radiance_config = "Config.draft_expert_placement"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--draft-expert-placement` (amendment 13). Value text as the flag takes it (PLACEMENT)."
+
+[[field]]
+path = "/spec/processes/engine/tuning/draft_model"
+optional = true
+radiance_option = "--draft-model"
+radiance_config = "native option"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--draft-model` (amendment 13). Value text as the flag takes it (PATH)."
+
+[[field]]
+path = "/spec/processes/engine/tuning/draft_short_from"
+optional = true
+radiance_option = "--draft-short-from"
+radiance_config = "Config.draft_short_from"
+kind = "ref"
+ref = "uint"
+doc = "Engine flag `--draft-short-from` (amendment 13)."
+
+[[field]]
+path = "/spec/processes/engine/tuning/draft_window"
+optional = true
+radiance_option = "--draft-window"
+radiance_config = "Config.draft_window"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--draft-window` (amendment 13). Value text as the flag takes it (MODE)."
+
+[[field]]
+path = "/spec/processes/engine/tuning/embedding_placement"
+optional = true
+radiance_option = "--embedding-placement"
+radiance_config = "native option"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--embedding-placement` (amendment 13). Value text as the flag takes it (WHERE)."
+
+[[field]]
+path = "/spec/processes/engine/tuning/expert_pin_top"
+optional = true
+radiance_option = "--expert-pin-top"
+radiance_config = "Config.expert_pin_top"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--expert-pin-top` (amendment 13). Value text as the flag takes it (F)."
+
+[[field]]
+path = "/spec/processes/engine/tuning/expert_profile"
+optional = true
+radiance_option = "--expert-profile"
+radiance_config = "Config.expert_profile"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--expert-profile` (amendment 13). Value text as the flag takes it (FILE)."
+
+[[field]]
+path = "/spec/processes/engine/tuning/expert_stats"
+optional = true
+radiance_option = "--expert-stats"
+radiance_config = "Config.expert_stats"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--expert-stats` (amendment 13). Value text as the flag takes it (FILE)."
+
+[[field]]
+path = "/spec/processes/engine/tuning/live"
+optional = true
+radiance_option = "--live"
+radiance_config = "Config.live_view"
+radiance_switch = true
+kind = "enum"
+values = ["on"]
+cpp_type = "OptLive"
+doc = "Engine flag `--live` (amendment 13). Present means the flag is given."
+
+[[field]]
+path = "/spec/processes/engine/tuning/p2p"
+optional = true
+radiance_option = "--p2p"
+radiance_config = "Config.p2p"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--p2p` (amendment 13). Value text as the flag takes it (MODE)."
+
+[[field]]
+path = "/spec/processes/engine/tuning/prefill_interleave"
+optional = true
+radiance_option = "--prefill-interleave"
+radiance_config = "native option"
+kind = "ref"
+ref = "uint"
+doc = "Engine flag `--prefill-interleave` (amendment 13)."
+
+[[field]]
+path = "/spec/processes/engine/tuning/prefill_span"
+optional = true
+radiance_option = "--prefill-span"
+radiance_config = "Config.checkpoint_slots"
+kind = "ref"
+ref = "uint"
+doc = "Engine flag `--prefill-span` (amendment 13)."
+
+[[field]]
+path = "/spec/processes/engine/tuning/prefix_cache_ttl"
+optional = true
+radiance_option = "--prefix-cache-ttl"
+radiance_config = "Config.lora.dir"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--prefix-cache-ttl` (amendment 13). Value text as the flag takes it (S)."
+
+[[field]]
+path = "/spec/processes/engine/tuning/state_cache_dtype"
+optional = true
+radiance_option = "--state-cache-dtype"
+radiance_config = "Config.state_cache_dtype"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--state-cache-dtype` (amendment 13). Value text as the flag takes it (T)."
+
+[[field]]
+path = "/spec/processes/engine/tuning/tp_attn_split"
+optional = true
+radiance_option = "--tp-attn-split"
+radiance_config = "Config.tp_attn_rows"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--tp-attn-split` (amendment 13). Value text as the flag takes it (MODE)."
+
+[[field]]
+path = "/spec/processes/engine/tuning/tp_wire_min_kb"
+optional = true
+radiance_option = "--tp-wire-min-kb"
+radiance_config = "Config.busy_prefill_chunk"
+kind = "ref"
+ref = "uint"
+doc = "Engine flag `--tp-wire-min-kb` (amendment 13)."
+
+[[field]]
+path = "/spec/processes/engine/tuning/weight_prefetch"
+optional = true
+radiance_option = "--weight-prefetch"
+radiance_config = "Config.weight_prefetch"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--weight-prefetch` (amendment 13). Value text as the flag takes it (MODE)."
+
+[[field]]
+path = "/spec/processes/engine/tuning/weights_disk_tier"
+optional = true
+radiance_option = "--weights-disk-tier"
+radiance_config = "Config.weights_disk_tier"
+radiance_switch = true
+kind = "enum"
+values = ["on"]
+cpp_type = "OptWeightsDiskTier"
+doc = "Engine flag `--weights-disk-tier` (amendment 13). Present means the flag is given."
+
+[[field]]
+path = "/spec/processes/engine/diagnostics"
+optional = true
+kind = "object"
+cpp = "EngineDiagnostics"
+doc = "Debug switches that change what the engine does (amendment 13). Every member is optional and binds to one engine flag; an absent member leaves the engine's own default."
+
+[[field]]
+path = "/spec/processes/engine/diagnostics/debug_accept_reference_kernels"
+optional = true
+radiance_option = "--debug-accept-reference-kernels"
+radiance_config = "Config.accept_reference_kernels"
+radiance_switch = true
+kind = "enum"
+values = ["on"]
+cpp_type = "OptDebugAcceptReferenceKernels"
+doc = "Engine flag `--debug-accept-reference-kernels` (amendment 13). Present means the flag is given."
+
+[[field]]
+path = "/spec/processes/engine/diagnostics/debug_placement"
+optional = true
+radiance_option = "--debug-placement"
+radiance_config = "Config.debug_placement"
+radiance_switch = true
+kind = "enum"
+values = ["on"]
+cpp_type = "OptDebugPlacement"
+doc = "Engine flag `--debug-placement` (amendment 13). Present means the flag is given."
+
+[[field]]
+path = "/spec/processes/engine/kernels"
+optional = true
+kind = "object"
+cpp = "EngineKernels"
+doc = "Engine-process kernel switches that were environment variables (amendment 14). Every member is optional; an absent member leaves the kernel's own default. The engine sets the matching variable from the member at start (rad0009)."
+
+[[field]]
+path = "/spec/processes/engine/kernels/attn_native"
+optional = true
+kind = "boolean"
+env_setting = "R3_ATTN_NATIVE"
+doc = "Native gfx11 prefill attention (`R3_ATTN_NATIVE`)."
+
+[[field]]
+path = "/spec/processes/engine/kernels/moe_native"
+optional = true
+kind = "boolean"
+env_setting = "R3_MOE_NATIVE"
+doc = "Native w4nl64 MoE inner loop in the engine process (`R3_MOE_NATIVE`; an unset engine reads off)."
+
+[[field]]
+path = "/spec/processes/engine/kernels/moe_fp16"
+optional = true
+kind = "boolean"
+env_setting = "R3_MOE_FP16"
+doc = "Grouped MoE GEMM widens E4M3 operands to f16 in the engine process (`R3_MOE_FP16`)."
+
+[[field]]
+path = "/spec/processes/engine/kernels/moe_ahalf"
+optional = true
+kind = "boolean"
+env_setting = "R3_MOE_AHALF"
+doc = "Grouped MoE GEMM stages its activation tile as half in the engine process (`R3_MOE_AHALF`)."
+
+[[field]]
+path = "/spec/processes/engine/kernels/gfx12_moe_gemv"
+optional = true
+kind = "boolean"
+env_setting = "BC_GFX12_MOE_GEMV"
+doc = "gfx12 fp8a8 MoE decode GEMV on the packed-f16 form (`BC_GFX12_MOE_GEMV`)."
+
+[[field]]
+path = "/spec/processes/engine/kernels/all_reduce_wire4"
+optional = true
+kind = "boolean"
+env_setting = "R3_AR_WIRE4"
+doc = "4-bit cross-card all-reduce wire at M >= 512 (`R3_AR_WIRE4`; experimental, costs quality)."
+
+[[field]]
+path = "/spec/processes/engine/kernels/dec11"
+optional = true
+kind = "boolean"
+env_setting = "R3_DEC11"
+doc = "gfx11 MXFP4 decode GEMV form (`R3_DEC11`; experimental)."
+
+[[field]]
+path = "/spec/processes/engine/kernels/gemv"
+optional = true
+kind = "boolean"
+env_setting = "R3_GEMV"
+doc = "Decode GEMV selection (`R3_GEMV`)."
+
+[[field]]
+path = "/spec/processes/engine/kernels/fuse_stage"
+optional = true
+kind = "boolean"
+env_setting = "R3_MOE_WORKER_FUSESTAGE"
+doc = "Stage a decode-sized step (at most 16 rows) in the publish kernel itself (`R3_MOE_WORKER_FUSESTAGE`; amendment 15)."
+
+[[field]]
+path = "/spec/processes/helper_common"
+optional = true
+kind = "ref"
+ref = "helperCommon"
+doc = "Settings shared by every helper; per-role and lab patches apply on top (spec §2.2). Present exactly when `processes.helpers` is not empty (amendment 12)."
+
+[[field]]
+path = "/spec/processes/helpers"
+kind = "array"
+item_kind = "object"
+min_items = 0
+max_items = 4
+doc = "Helper processes, ordered helper0, helper1, ...; a helper's index is its position. Empty for an engine-only configuration (amendment 12)."
+
+[[field]]
+path = "/spec/processes/helpers/[]"
+kind = "object"
+cpp = "HelperProcess"
+doc = "One helper process."
+
+[[field]]
+path = "/spec/processes/helpers/[]/role"
+kind = "string"
+pattern = "^helper(?:0|[1-9][0-9]*)$"
+max_length = 32
+doc = "Role name, `helper<index>`."
+
+[[field]]
+path = "/spec/processes/helpers/[]/gpu"
+kind = "ref"
+ref = "bdf"
+doc = "The helper's GPU address."
+
+[[field]]
+path = "/spec/processes/helpers/[]/vram_budget_mib"
+origins = ["derived", "calibrated"]
+confidences = ["exact", "measured"]
+kind = "ref"
+ref = "positive"
+doc = "VRAM the helper may use, MiB."
+
+[[field]]
+path = "/spec/processes/helpers/[]/plugin_file"
+kind = "string"
+min_length = 1
+doc = "Kernel plugin library."
+
+[[field]]
+path = "/spec/processes/helpers/[]/formats"
+kind = "array"
+item_kind = "enum"
+item_values = ["w4nl64", "fp8_e4m3_block"]
+min_items = 1
+unique_items = true
+cpp_type = "ExpertFormat"
+doc = "Expert weight formats the helper serves."
+
+[[field]]
+path = "/spec/processes/helpers/[]/rows_kernel"
+kind = "boolean"
+doc = "The architecture requires the rows kernel."
+
+[[field]]
+path = "/spec/processes/helpers/[]/tier"
+kind = "enum"
+values = ["head", "tail"]
+cpp_type = "HelperTier"
+doc = "`head` or `tail` helper tier."
+
+[[field]]
+path = "/spec/processes/helpers/[]/share"
+kind = "ref"
+ref = "uint"
+doc = "Relative share of owned experts."
+
+[[field]]
+path = "/spec/processes/helpers/[]/settings"
+optional = true
+kind = "ref"
+ref = "helperPatch"
+doc = "This role's partial override of `helper_common`."
+
+[[field]]
+path = "/spec/plan"
+kind = "object"
+cpp = "Plan"
+doc = "Measured and planned state the engine and helpers verify at start-up."
+
+
+[[field]]
+path = "/spec/plan/power"
+kind = "object"
+cpp = "PowerPlan"
+doc = "S10-resolved immutable per-BDF power plan."
+
+[[field]]
+path = "/spec/plan/power/mode"
+kind = "enum"
+values = ["observe", "apply"]
+cpp_type = "PowerMode"
+doc = "Observe never writes; apply requires qualified settings."
+
+[[field]]
+path = "/spec/plan/power/profile"
+kind = "ref"
+ref = "powerProfileName"
+doc = "Echo of intent.power.profile; semantic equality is checked by S10."
+
+[[field]]
+path = "/spec/plan/power/profile_digest"
+kind = "ref"
+ref = "digest"
+doc = "Digest of immutable resolved named profile content."
+
+[[field]]
+path = "/spec/plan/power/devices"
+kind = "array"
+item_kind = "object"
+min_items = 1
+max_items = 32
+doc = "Selected engine BDFs (one per TP rank) and helper BDFs."
+
+[[field]]
+path = "/spec/plan/power/devices/[]"
+kind = "object"
+cpp = "PowerDevice"
+doc = "Resolved role/BDF assignment."
+
+[[field]]
+path = "/spec/plan/power/devices/[]/role"
+kind = "ref"
+ref = "powerRole"
+doc = "Device role."
+
+[[field]]
+path = "/spec/plan/power/devices/[]/bdf"
+kind = "ref"
+ref = "bdf"
+doc = "Device BDF."
+
+[[field]]
+path = "/spec/plan/power/devices/[]/settings"
+kind = "ref"
+ref = "powerSettings"
+doc = "Immutable resolved settings; empty when no power change applies."
+
+[[field]]
+path = "/spec/plan/power/cpu"
+kind = "object"
+cpp = "PowerCpu"
+doc = "Reserved CPU policy; observe-only until an owned CPU controller exists."
+
+[[field]]
+path = "/spec/plan/power/cpu/settings"
+kind = "object"
+cpp = "PowerCpuSettings"
+doc = "Closed empty CPU settings map; no CPU writes permitted by v2."
+
+[[field]]
+path = "/spec/plan/resource_inputs"
+origins = ["derived", "calibrated"]
+confidences = ["exact", "measured"]
+kind = "object"
+cpp = "MeasuredResourceInputs"
+doc = "S8/S10 engine-measured resource ledger input; each value must carry origin evidence."
+
+[[field]]
+path = "/spec/plan/resource_inputs/host_embedding_bytes"
+origins = ["derived", "calibrated"]
+confidences = ["exact", "measured"]
+kind = "ref"
+ref = "uint"
+doc = "Engine-measured host embedding footprint."
+
+[[field]]
+path = "/spec/plan/resource_inputs/unowned_expert_bytes"
+origins = ["derived", "calibrated"]
+confidences = ["exact", "measured"]
+kind = "ref"
+ref = "uint"
+doc = "Engine-measured unowned expert footprint."
+
+[[field]]
+path = "/spec/plan/resource_inputs/staging_bytes"
+origins = ["derived", "calibrated"]
+confidences = ["exact", "measured"]
+kind = "ref"
+ref = "uint"
+doc = "Measured staging allocation."
+
+[[field]]
+path = "/spec/plan/resource_inputs/ngram_bytes"
+origins = ["derived", "calibrated"]
+confidences = ["exact", "measured"]
+kind = "ref"
+ref = "uint"
+doc = "Measured n-gram allocation."
+
+[[field]]
+path = "/spec/plan/resource_inputs/checkpoint_bytes"
+origins = ["derived", "calibrated"]
+confidences = ["exact", "measured"]
+kind = "ref"
+ref = "uint"
+doc = "Measured checkpoint allocation."
+
+[[field]]
+path = "/spec/plan/resource_inputs/resident_other_bytes"
+origins = ["derived", "calibrated"]
+confidences = ["exact", "measured"]
+kind = "ref"
+ref = "uint"
+doc = "Other resident host allocation."
+
+[[field]]
+path = "/spec/plan/resource_inputs/kv_bytes_per_token"
+origins = ["derived", "calibrated"]
+confidences = ["exact", "measured"]
+kind = "ref"
+ref = "uint"
+doc = "Measured KV bytes per token."
+
+[[field]]
+path = "/spec/plan/resource_inputs/context_target_tokens"
+origins = ["derived", "calibrated"]
+confidences = ["exact", "measured"]
+kind = "ref"
+ref = "positive"
+doc = "Context admission target in tokens."
+
+[[field]]
+path = "/spec/plan/resource_inputs/retention_target_tokens"
+origins = ["derived", "calibrated"]
+confidences = ["exact", "measured"]
+kind = "ref"
+ref = "positive"
+doc = "Retention admission target in tokens."
+
+[[field]]
+path = "/spec/plan/resource_inputs/mem_available_bytes"
+origins = ["derived", "calibrated"]
+confidences = ["exact", "measured"]
+kind = "ref"
+ref = "uint"
+doc = "Live MemAvailable at plan resolution."
+
+[[field]]
+path = "/spec/plan/resource_inputs/cgroup_headroom_bytes"
+origins = ["derived", "calibrated"]
+confidences = ["exact", "measured"]
+kind = "ref"
+ref = "uint"
+doc = "Live effective cgroup headroom."
+
+[[field]]
+path = "/spec/plan/resource_inputs/pin_available_bytes"
+origins = ["derived", "calibrated"]
+confidences = ["exact", "measured"]
+kind = "ref"
+ref = "uint"
+doc = "Live pinnable memory headroom."
+
+[[field]]
+path = "/spec/plan/resource_inputs/owner_map_digest"
+origins = ["derived", "calibrated"]
+confidences = ["exact", "measured"]
+kind = "ref"
+ref = "hex64"
+doc = "Must equal the measured initial owner map digest."
+
+[[field]]
+path = "/spec/plan/resource_inputs/host_pool_margin_calibration"
+origins = ["derived", "calibrated"]
+confidences = ["exact", "measured"]
+kind = "object"
+cpp = "MarginCalibration"
+doc = "One host_ledger_margin.mib calibration, from seed or measured cache record."
+
+[[field]]
+path = "/spec/plan/resource_inputs/host_pool_margin_calibration/key"
+origins = ["derived", "calibrated"]
+confidences = ["exact", "measured"]
+kind = "string"
+const = "host_ledger_margin.mib"
+doc = "Host ledger calibration key."
+
+[[field]]
+path = "/spec/plan/resource_inputs/host_pool_margin_calibration/source"
+origins = ["derived", "calibrated"]
+confidences = ["exact", "measured"]
+kind = "enum"
+values = ["seed", "cache"]
+cpp_type = "MarginSource"
+doc = "Seed floor or cache-refit provenance."
+
+[[field]]
+path = "/spec/plan/resource_inputs/host_pool_margin_calibration/evidence"
+origins = ["derived", "calibrated"]
+confidences = ["exact", "measured"]
+kind = "string"
+min_length = 1
+doc = "Evidence record identity."
+
+[[field]]
+path = "/spec/plan/resource_inputs/host_pool_margin_calibration/mib"
+origins = ["derived", "calibrated"]
+confidences = ["exact", "measured"]
+kind = "ref"
+ref = "uint"
+doc = "Actual selected margin in MiB."
+
+[[field]]
+path = "/spec/plan/resource_inputs/helper_footprints"
+origins = ["derived", "calibrated"]
+confidences = ["exact", "measured"]
+kind = "array"
+item_kind = "object"
+min_items = 0
+max_items = 32
+doc = "Complete non-expert helper footprints read from worker_footprint.h."
+
+[[field]]
+path = "/spec/plan/resource_inputs/helper_footprints/[]"
+origins = ["derived", "calibrated"]
+confidences = ["exact", "measured"]
+kind = "object"
+cpp = "HelperFootprint"
+doc = "Per-BDF non-expert worker memory components."
+
+[[field]]
+path = "/spec/plan/resource_inputs/helper_footprints/[]/role"
+origins = ["derived", "calibrated"]
+confidences = ["exact", "measured"]
+kind = "ref"
+ref = "powerRole"
+doc = "Selected helper role."
+
+[[field]]
+path = "/spec/plan/resource_inputs/helper_footprints/[]/bdf"
+origins = ["derived", "calibrated"]
+confidences = ["exact", "measured"]
+kind = "ref"
+ref = "bdf"
+doc = "Selected helper BDF."
+
+[[field]]
+path = "/spec/plan/resource_inputs/helper_footprints/[]/lanes_bytes"
+origins = ["derived", "calibrated"]
+confidences = ["exact", "measured"]
+kind = "ref"
+ref = "uint"
+doc = "Lane allocation."
+
+[[field]]
+path = "/spec/plan/resource_inputs/helper_footprints/[]/pointer_banks_bytes"
+origins = ["derived", "calibrated"]
+confidences = ["exact", "measured"]
+kind = "ref"
+ref = "uint"
+doc = "Pointer bank allocation."
+
+[[field]]
+path = "/spec/plan/resource_inputs/helper_footprints/[]/slot_map_bytes"
+origins = ["derived", "calibrated"]
+confidences = ["exact", "measured"]
+kind = "ref"
+ref = "uint"
+doc = "Slot map allocation."
+
+[[field]]
+path = "/spec/plan/resource_inputs/helper_footprints/[]/incoming_slot_bytes"
+origins = ["derived", "calibrated"]
+confidences = ["exact", "measured"]
+kind = "ref"
+ref = "uint"
+doc = "Incoming slot allocation."
+
+[[field]]
+path = "/spec/plan/resource_inputs/helper_footprints/[]/total_bytes"
+origins = ["derived", "calibrated"]
+confidences = ["exact", "measured"]
+kind = "ref"
+ref = "uint"
+doc = "Total non-expert memory footprint."
+
+[[field]]
+path = "/spec/plan/owner_map"
+error_class = "ownership_mismatch"
+kind = "object"
+cpp = "OwnerMap"
+doc = "Initial expert ownership; the live mailbox epochs own later placement (spec §4)."
+
+[[field]]
+path = "/spec/plan/owner_map/owner_map_sha256"
+kind = "ref"
+ref = "hex64"
+doc = "Digest of all helpers' owned sets in helper order (spec §4)."
+
+[[field]]
+path = "/spec/plan/owner_map/helpers"
+kind = "array"
+item_kind = "object"
+min_items = 0
+max_items = 4
+doc = "Owned sets, aligned by index with `processes.helpers`; empty exactly when there are no helpers."
+
+[[field]]
+path = "/spec/plan/owner_map/helpers/[]"
+kind = "object"
+cpp = "OwnedSet"
+doc = "One helper's owned set."
+
+[[field]]
+path = "/spec/plan/owner_map/helpers/[]/owned_sha256"
+kind = "ref"
+ref = "hex64"
+doc = "Digest of this helper's owned set (spec §4)."
+
+[[field]]
+path = "/spec/plan/owner_map/helpers/[]/count"
+kind = "ref"
+ref = "uint"
+doc = "Number of owned experts; equals `experts.length`."
+
+[[field]]
+path = "/spec/plan/owner_map/helpers/[]/bytes"
+kind = "ref"
+ref = "uint"
+doc = "Device bytes of the owned experts."
+
+[[field]]
+path = "/spec/plan/owner_map/helpers/[]/experts"
+kind = "array"
+item_kind = "tuple"
+tuple = ["uint", "uint"]
+min_items = 0
+doc = "Owned `[layer, expert]` pairs in selection order."
+
+[[field]]
+path = "/spec/plan/state"
+kind = "enum"
+values = ["measured", "unmeasured"]
+cpp_type = "PlanState"
+doc = "`measured`: `engine_memory` is present and every start path accepts the manifest. `unmeasured`: the owner map and settings only, for the one measuring start that produces the plan (`engine_memory` absent); every serving start refuses it."
+
+[[field]]
+path = "/spec/plan/engine_memory"
+optional = true
+kind = "object"
+cpp = "EngineMemory"
+doc = "The engine's measured memory plan and its cache identity (spec §5)."
+
+[[field]]
+path = "/spec/plan/engine_memory/cache_version"
+mismatch = "unsupported_version"
+kind = "integer"
+const = 1
+doc = "Plan cache format; exactly 1."
+
+[[field]]
+path = "/spec/plan/engine_memory/cache_key"
+kind = "ref"
+ref = "hex64"
+doc = "Plan cache key (spec §5.1)."
+
+[[field]]
+path = "/spec/plan/engine_memory/model_identity"
+kind = "ref"
+ref = "hex64"
+doc = "Model container identity."
+
+[[field]]
+path = "/spec/plan/engine_memory/engine_identity"
+kind = "ref"
+ref = "hex64"
+doc = "Radiance binary and runtime identity."
+
+[[field]]
+path = "/spec/plan/engine_memory/expected"
+kind = "ref"
+ref = "enginePlan"
+doc = "The measured plan the live plan is checked against (spec §5.2)."
+
+[[field]]
+path = "/spec/experiment"
+optional = true
+kind = "object"
+cpp = "Experiment"
+min_properties = 1
+doc = "Lab-only experiments; forbidden when the profile is `production`."
+
+[[field]]
+path = "/spec/experiment/placement"
+optional = true
+kind = "object"
+cpp = "ExperimentPlacement"
+constraints = '''
+[
+  {"if": {"properties": {"mode": {"const": "forced_churn"}}, "required": ["mode"]}, "then": {"required": ["forced"]}},
+  {"if": {"properties": {"mode": {"const": "observe"}}, "required": ["mode"]}, "then": {"not": {"required": ["forced"]}}}
+]'''
+doc = "Live placement experiment."
+
+[[field]]
+path = "/spec/experiment/placement/mode"
+kind = "enum"
+values = ["observe", "forced_churn"]
+cpp_type = "PlacementMode"
+doc = "`observe` (no change) or `forced_churn` (requires `forced`)."
+
+[[field]]
+path = "/spec/experiment/placement/forced"
+optional = true
+kind = "object"
+cpp = "ForcedChurn"
+doc = "The forced placement schedule (RHP11 validation): one proposal per step, in order, the whole list `repeat` times. Required by mode `forced_churn`, forbidden by `observe`."
+
+[[field]]
+path = "/spec/experiment/placement/forced/repeat"
+kind = "integer"
+minimum = 1
+maximum = 1000000
+doc = "How many times the step list is issued."
+
+[[field]]
+path = "/spec/experiment/placement/forced/pace_requests"
+optional = true
+kind = "integer"
+minimum = 1
+maximum = 4294967295
+doc = "Pacing: a proposal is issued only once the helpers' completed lane requests (the sum over lanes of `done_sequence`) have advanced by at least this many since the previous proposal was issued; the first waits for this many after the serving gate opens. Spreads the schedule across a run's work. Absent: no pacing, each proposal is issued as soon as the previous transaction finished."
+
+[[field]]
+path = "/spec/experiment/placement/forced/steps"
+kind = "array"
+item_kind = "object"
+min_items = 1
+max_items = 1024
+doc = "Ordered placement steps."
+
+[[field]]
+path = "/spec/experiment/placement/forced/steps/[]"
+kind = "object"
+cpp = "ForcedStep"
+doc = "One placement proposal."
+
+[[field]]
+path = "/spec/experiment/placement/forced/steps/[]/kind"
+kind = "enum"
+values = ["move", "swap", "auto_swap"]
+cpp_type = "ForcedKind"
+doc = "`move` one expert to `destination`; `swap` two named experts; `auto_swap` the first eligible distinct pair, excluding the previous transaction (`a_layer`, `a_expert` carry its x, y)."
+
+[[field]]
+path = "/spec/experiment/placement/forced/steps/[]/a_layer"
+kind = "ref"
+ref = "uint"
+doc = "Layer of the first expert (for `auto_swap`, x)."
+
+[[field]]
+path = "/spec/experiment/placement/forced/steps/[]/a_expert"
+kind = "ref"
+ref = "uint"
+doc = "First expert (for `auto_swap`, y)."
+
+[[field]]
+path = "/spec/experiment/placement/forced/steps/[]/destination"
+optional = true
+kind = "ref"
+ref = "uint"
+doc = "Destination helper index of a `move`."
+
+[[field]]
+path = "/spec/experiment/placement/forced/steps/[]/b_layer"
+optional = true
+kind = "ref"
+ref = "uint"
+doc = "Layer of the second expert of a `swap`."
+
+[[field]]
+path = "/spec/experiment/placement/forced/steps/[]/b_expert"
+optional = true
+kind = "ref"
+ref = "uint"
+doc = "Second expert of a `swap`."
+
+[[field]]
+path = "/spec/experiment/placement/epoch_cycle_s"
+optional = true
+kind = "ref"
+ref = "positive"
+doc = "Helper 0 runs a no-op placement epoch cycle (close, drain, recommit the same placement, reopen) every this many seconds of burst (RHP11 validation); absent: off."
+
+[[field]]
+path = "/spec/experiment/shape"
+optional = true
+kind = "object"
+cpp = "ExperimentShape"
+min_properties = 1
+doc = "Lab overlay of helper settings, applied after the per-role patches."
+
+[[field]]
+path = "/spec/experiment/shape/helper_common"
+optional = true
+kind = "ref"
+ref = "helperPatch"
+doc = "Partial override for every helper."
+
+[[field]]
+path = "/spec/experiment/shape/helpers"
+optional = true
+kind = "array"
+item_kind = "object"
+min_items = 1
+max_items = 4
+doc = "Per-role partial overrides."
+
+[[field]]
+path = "/spec/experiment/shape/helpers/[]"
+kind = "object"
+cpp = "ShapePatch"
+doc = "One role's lab override."
+
+[[field]]
+path = "/spec/experiment/shape/helpers/[]/role"
+kind = "string"
+pattern = "^helper(?:0|[1-9][0-9]*)$"
+max_length = 32
+doc = "Role the override applies to."
+
+[[field]]
+path = "/spec/experiment/shape/helpers/[]/settings"
+kind = "ref"
+ref = "helperPatch"
+doc = "Partial helper settings for that role."
+
+[[field]]
+path = "/spec/experiment/diagnostics"
+optional = true
+kind = "object"
+cpp = "Diagnostics"
+min_properties = 1
+doc = "Lab diagnostics by concern."
+
+[[field]]
+path = "/spec/experiment/diagnostics/gemv"
+optional = true
+kind = "object"
+cpp = "GemvDiagnostics"
+min_properties = 1
+doc = "GEMV diagnostics."
+
+[[field]]
+path = "/spec/experiment/diagnostics/gemv/probe_mode"
+optional = true
+kind = "int_enum"
+values = [0, 1, 2]
+doc = "GEMV probe mode (0, 1 or 2)."
+
+[[field]]
+path = "/spec/experiment/diagnostics/gemv/refusal_trace"
+optional = true
+kind = "boolean"
+doc = "Trace GEMV path refusals."
+
+[[field]]
+path = "/spec/experiment/diagnostics/lanes"
+optional = true
+kind = "object"
+cpp = "LaneDiagnostics"
+min_properties = 1
+doc = "Lane diagnostics."
+
+[[field]]
+path = "/spec/experiment/diagnostics/lanes/capture_file"
+optional = true
+kind = "string"
+min_length = 1
+nullable = true
+doc = "Lane capture file; null disables capture."
+
+[[field]]
+path = "/spec/experiment/diagnostics/lanes/capture_every"
+optional = true
+kind = "ref"
+ref = "positive"
+doc = "Capture every Nth request."
+
+[[field]]
+path = "/spec/experiment/diagnostics/lanes/capture_max"
+optional = true
+kind = "ref"
+ref = "positive"
+doc = "Most requests captured."
+
+[[field]]
+path = "/spec/experiment/diagnostics/lanes/trace_level"
+optional = true
+kind = "ref"
+ref = "uint"
+doc = "Lane trace verbosity."
+
+[[field]]
+path = "/spec/experiment/diagnostics/lanes/test_stop_at"
+optional = true
+kind = "string"
+min_length = 1
+nullable = true
+doc = "Test hook stop point; null disables it."
+
+[[field]]
+path = "/spec/experiment/diagnostics/kernels"
+optional = true
+kind = "object"
+cpp = "KernelDiagnostics"
+min_properties = 1
+doc = "Kernel diagnostics."
+
+[[field]]
+path = "/spec/experiment/diagnostics/kernels/rows_kernel"
+kind = "boolean"
+optional = true
+doc = "RAD49 lab-only override of the helper rows-kernel capability; false forces the grouped-expert large lane."
+
+[[field]]
+path = "/spec/experiment/diagnostics/kernels/plugin_override"
+optional = true
+kind = "string"
+min_length = 1
+nullable = true
+doc = "Plugin library to load instead; null keeps the configured one."
+
+[[field]]
+path = "/spec/experiment/diagnostics/kernels/poison"
+optional = true
+kind = "enum"
+values = ["off", "zero", "one"]
+cpp_type = "Poison"
+doc = "Fill pattern for uninitialized outputs."
+
+[[field]]
+path = "/spec/experiment/diagnostics/kernels/sweep_fast"
+optional = true
+kind = "boolean"
+doc = "Shorten kernel sweeps."
+
+
+[[field]]
+path = "/spec/experiment/engine"
+optional = true
+kind = "object"
+cpp = "ExperimentEngine"
+min_properties = 1
+doc = "Lab-only engine diagnostics (amendment 11): flags the engine takes that are not serving configuration. Forbidden by the `production` profile with the rest of `spec.experiment`."
+
+[[field]]
+path = "/spec/experiment/engine/profile_ops"
+optional = true
+radiance_option = "--profile-ops"
+radiance_config = "Config.profile_ops"
+radiance_switch = true
+kind = "enum"
+values = ["on"]
+cpp_type = "ProfileOps"
+doc = "Present means per-op device timing (`--profile-ops`)."
+
+[[field]]
+path = "/spec/experiment/engine/debug_selection"
+optional = true
+radiance_option = "--debug-selection"
+radiance_config = "Config.debug_selection"
+radiance_switch = true
+kind = "enum"
+values = ["on"]
+cpp_type = "DebugSelection"
+doc = "Present means the engine prints its selection table (`--debug-selection`)."
+
+[[field]]
+path = "/spec/experiment/engine/deterministic"
+optional = true
+radiance_option = "--deterministic"
+radiance_config = "Config.deterministic"
+radiance_switch = true
+kind = "enum"
+values = ["on"]
+cpp_type = "Deterministic"
+doc = "Present pins placement to the plan the loader made (`--deterministic`)."
+
+[[field]]
+path = "/spec/experiment/engine/kv_resident"
+optional = true
+radiance_option = "--kv-resident"
+radiance_config = "Config.kv_resident"
+kind = "ref"
+ref = "positive"
+doc = "Stream the sparse attention group's KV from host memory, resident tokens (`--kv-resident`)."
+[[field]]
+path = "/spec/experiment/engine/mtp_full_head"
+optional = true
+kind = "boolean"
+env_setting = "RAD_MTP_FULL_HEAD"
+doc = "Draft through the trunk head instead of the 2-bit copy (`RAD_MTP_FULL_HEAD`, patch rad0003)."
+
+[[field]]
+path = "/spec/experiment/engine/hc_pf2_fp8_down"
+optional = true
+kind = "boolean"
+env_setting = "RAD_HC_PF2_FP8_DOWN"
+doc = "FP8 PF2 down-product (`RAD_HC_PF2_FP8_DOWN`, patch rad0007)."
+
+[[field]]
+path = "/spec/experiment/engine/routing_evidence"
+optional = true
+kind = "boolean"
+env_setting = "RAD_ROUTING_EVIDENCE"
+doc = "Record routing evidence (`RAD_ROUTING_EVIDENCE`, patch rad0010)."
+
+[[field]]
+path = "/spec/experiment/engine/freeze_promotion_after"
+optional = true
+kind = "integer"
+minimum = 0
+env_setting = "RAD_DIAG_FREEZE_PROMOTION_AFTER"
+doc = "Stop heat promotion after this many calls (`RAD_DIAG_FREEZE_PROMOTION_AFTER`, patch rad0006, diagnostic build)."
+
+[[field]]
+path = "/spec/experiment/engine/shadow"
+optional = true
+kind = "boolean"
+env_setting = "R3_MOE_WORKER_SHADOW"
+doc = "Publish owned routes and compare the helper's rows against the engine's (`R3_MOE_WORKER_SHADOW`, diagnostic build, patches rad0002 and rad0004)."
+
+[[field]]
+path = "/spec/experiment/engine/mask_only"
+optional = true
+kind = "int_enum"
+values = [0, 1, 2]
+env_setting = "R3_MOE_WORKER_MASK_ONLY"
+doc = "Mask and rescatter owned routes: 1 adds the engine's captured rows, 2 adds the helper's (`R3_MOE_WORKER_MASK_ONLY`, diagnostic build, patches rad0002 and rad0004)."
+
+[[field]]
+path = "/provenance"
+error_class = "provenance_invalid"
+kind = "map"
+key_ref = "jsonPointer"
+required_keys = [""]
+min_properties = 1
+doc = "Map from a JSON Pointer to the record of where that value (and its descendants) came from; the root \"\" record is required (spec §7)."
+
+[[field]]
+path = "/provenance/*"
+kind = "object"
+cpp = "ProvenanceRecord"
+doc = "Provenance of the value at the key's JSON Pointer."
+
+[[field]]
+path = "/provenance/*/origin"
+kind = "enum"
+values = ["schema_default", "site", "profile", "cli", "detected", "derived", "calibrated", "experiment"]
+cpp_type = "Origin"
+doc = "Input layer that set the value."
+
+[[field]]
+path = "/provenance/*/source"
+kind = "string"
+min_length = 1
+doc = "Human-readable source: file and key, detector or derivation."
+
+[[field]]
+path = "/provenance/*/class"
+cpp_member = "value_class"
+kind = "enum"
+values = ["policy", "fact", "derived", "tuned", "diagnostic"]
+cpp_type = "ValueClass"
+doc = "Kind of value: operator policy, detected fact, derived, tuned (calibrated) or diagnostic."
+
+[[field]]
+path = "/provenance/*/lifecycle"
+kind = "enum"
+values = ["startup_only", "step_boundary", "live"]
+cpp_type = "Lifecycle"
+doc = "When the value may change: only at start-up, at a step boundary, or live."
+
+[[field]]
+path = "/provenance/*/confidence"
+kind = "enum"
+values = ["exact", "measured", "estimate"]
+cpp_type = "Confidence"
+doc = "Exact, measured or estimated."
+
+[[field]]
+path = "/provenance/*/inputs"
+kind = "array"
+item_kind = "ref"
+item_ref = "jsonPointer"
+min_items = 0
+doc = "JSON Pointers of the values this one was derived from."

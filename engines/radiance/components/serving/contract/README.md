@@ -98,3 +98,11 @@ enumerator (from an enum value or a calibration key) is a C++ identifier and uni
 256 values; members are unique within their struct; the namespace is identifiers joined by `::`. Referenced defs fit
 their use: a map's `key_ref` is a string def, tuple elements are integer defs, a calibration value refers to an integer
 or string def. Counts are not negative. A tuple item takes no scalar `item_*` attribute.
+
+## Inactive v2 scaffold (RSC11 S9)
+
+`serving-v2.toml` is the **new**, single-source v2 registry. The production `bigcherry/v1` generator output, schema fingerprints, reader and writer remain unchanged until the one S13 activation. The version-specific generated C++ types/codec, Python codec, schema, field reference and fingerprints live under `../generated/v2/`; the documented copies are in `docs/design/serving-manifest-v2/`. V2 code has its own error types; it does not translate or accept v1 manifests.
+
+Regenerate by invoking `bc_contract_gen` with `contract/serving-v2.toml` and `generated/v2`, then copy `serving-v2.schema.json` and `serving-fields.md` to their documented v2 equivalents. `bc_contract_check` compares both v1 and v2 committed outputs against the registry, including the copies in docs; v2 generation never mutates a v1 output. `bc_v2_codec_test` checks the compiled C++ codec; `tools/tests/core/test_serving_manifest_v2_contract.py` checks the generated Python codec, synthetic fixtures, closed schema, duplicate rejection, role/BDF semantics and version isolation.
+
+V2-only `[[field]]` attributes `origins` and `confidences` declare permitted provenance source and evidence quality; omitted attributes mean unrestricted. Values are validated against the registry's v2 provenance enums, emitted in the C++ field table/Python constraints and included in the v2 semantic fingerprint. RSC03 resource budgets and RSC09 handoff fields must be derived or calibrated, never profile estimates. See `docs/design/serving-manifest-v2/spec.md` for all v2 additions and pending S8/S10/S13 obligations.

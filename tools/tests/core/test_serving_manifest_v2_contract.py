@@ -1,0 +1,142 @@
+"""Inactive v2 contract checks. Production remains pinned to the untouched v1 contract."""
+from __future__ import annotations
+
+import copy
+import hashlib
+import importlib.util
+import json
+import unittest
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[3]
+SERVING = ROOT / "engines/radiance/components/serving"
+GENERATED = SERVING / "generated/v2"
+DOCS = ROOT / "docs/design/serving-manifest-v2"
+V1 = ROOT / "docs/design/serving-manifest-v1"
+EXAMPLES = ("example.flashnext-4gpu.json", "example.lab-experiment.json")
+
+spec = importlib.util.spec_from_file_location("bc_serving_v2_codec", GENERATED / "serving_codec.py")
+assert spec and spec.loader
+codec = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(codec)
+
+
+class ServingManifestV2ContractTest(unittest.TestCase):
+    def fixtures(self):
+        return [json.loads((DOCS / name).read_text()) for name in EXAMPLES]
+
+    def test_generated_schema_matches_documentation_copy(self):
+        self.assertEqual((GENERATED / "serving-v2.schema.json").read_bytes(),
+                         (DOCS / "serving-manifest.v2.schema.json").read_bytes())
+        self.assertEqual(codec.SCHEMA["properties"]["apiVersion"]["const"], "bigcherry/v2")
+        self.assertEqual(codec.SCHEMA["properties"]["metadata"]["properties"]
+                         ["contract_version"]["const"], 2)
+        self.assertEqual(codec.SCHEMA["$defs"]["powerSettings"]["additionalProperties"], False)
+        self.assertEqual(codec.SCHEMA["properties"]["spec"]["properties"]["plan"]
+                         ["properties"]["power"]["properties"]["cpu"]["properties"]
+                         ["settings"]["additionalProperties"], False)
+
+    def test_v1_remains_pinned_and_unchanged(self):
+        expected = ("schema sha256:1caa05b448c850d9c733b45153850180e030b51909e32599370efcfeadd33636\n"
+                    "semantics sha256:4b6a06ae0818b71433a088b7c48c3d216a835b43ac67127155fcb0175d5cc507\n")
+        self.assertEqual((SERVING / "generated/contract.fingerprint").read_text(), expected)
+        self.assertEqual(json.loads((V1 / "serving-manifest.v1.schema.json").read_text())
+                         ["properties"]["apiVersion"]["const"], "bigcherry/v1")
+        self.assertNotEqual((GENERATED / "contract.fingerprint").read_text(), expected)
+
+    def test_roundtrip_and_independent_ascii_jcs_digest(self):
+        for name in EXAMPLES:
+            with self.subTest(name=name):
+                raw = (DOCS / name).read_text()
+                doc = codec.decode(raw)
+                self.assertEqual(codec.decode(codec.encode(doc)), doc)
+                mutable = copy.deepcopy(doc)
+                digest = mutable["metadata"].pop("content_digest")
+                canonical = json.dumps(mutable, sort_keys=True, ensure_ascii=False,
+                                       separators=(",", ":"))
+                self.assertTrue(canonical.isascii())
+                self.assertEqual(digest, "sha256:" + hashlib.sha256(canonical.encode()).hexdigest())
+                self.assertTrue(doc["spec"]["plan"]["power"]["devices"])
+                self.assertEqual(doc["spec"]["plan"]["power"]["mode"], "observe")
+                self.assertTrue(all(row["settings"] == {}
+                                    for row in doc["spec"]["plan"]["power"]["devices"]))
+
+    def test_version_isolation_no_fallback(self):
+        for name in EXAMPLES:
+            with self.subTest(name=name):
+                # v2 rejects v1 before schema validation.
+                with self.assertRaisesRegex(codec.ManifestV2Error, "unsupported_version"):
+                    codec.decode((V1 / name).read_text())
+                # v1's closed schema is explicitly pinned to its own identity.
+                v1_schema = json.loads((V1 / "serving-manifest.v1.schema.json").read_text())
+                self.assertNotEqual(v1_schema["properties"]["apiVersion"]["const"],
+                                    codec.decode((DOCS / name).read_text())["apiVersion"])
+                self.assertNotEqual(v1_schema["properties"]["metadata"]
+                                    ["properties"]["contract_version"]["const"], 2)
+
+    def test_reject_duplicate_json_members_and_non_integer_numbers(self):
+        raw = (DOCS / EXAMPLES[0]).read_text()
+        bad = raw.replace('"apiVersion": "bigcherry/v2",',
+                          '"apiVersion": "bigcherry/v2", "apiVersion": "bigcherry/v2",', 1)
+        with self.assertRaisesRegex(codec.ManifestV2Error, "duplicate JSON member"):
+            codec.decode(bad)
+        with self.assertRaisesRegex(codec.ManifestV2Error, "non-integer"):
+            codec.decode(raw.replace('"histogram_period_s": 60', '"histogram_period_s": 60.5'))
+
+    def test_unknown_members_and_type_faults_closed(self):
+        example = self.fixtures()[0]
+        paths = [
+            ("power intent", example["spec"]["intent"]["power"]),
+            ("power plan", example["spec"]["plan"]["power"]),
+            ("resolved settings", example["spec"]["plan"]["power"]["devices"][0]["settings"]),
+            ("measured resource ledger", example["spec"]["plan"]["resource_inputs"]),
+            ("RHP18 startup state", example["spec"]["handoff"]["placement"]["live_policy_state"]),
+        ]
+        for description, mapping in paths:
+            with self.subTest(description=description):
+                mapping["unknown_s9_member"] = "not allowed"
+                with self.assertRaises(codec.ManifestV2Error):
+                    codec.decode(json.dumps(example))
+                mapping.pop("unknown_s9_member")
+        example["spec"]["plan"]["power"]["devices"][0]["settings"]["vddgfx_offset_mv"] = -501
+        with self.assertRaises(codec.ManifestV2Error):
+            codec.decode(json.dumps(example))
+
+    def test_role_bdf_resolution_and_margin_fail_closed(self):
+        doc = self.fixtures()[0]
+        devs = doc["spec"]["plan"]["power"]["devices"]
+        devs[1]["bdf"] = devs[0]["bdf"]
+        with self.assertRaisesRegex(codec.ManifestV2Error, "role/BDF|duplicate BDF"):
+            codec.decode(json.dumps(doc))
+        doc = self.fixtures()[0]
+        doc["spec"]["intent"]["power"]["role_overrides"]["helper99"] = {"power_cap_w": 240}
+        with self.assertRaisesRegex(codec.ManifestV2Error, "unknown resolved role"):
+            codec.decode(json.dumps(doc))
+        doc = self.fixtures()[0]
+        doc["spec"]["plan"]["resource_inputs"]["host_pool_margin_calibration"]["mib"] += 1
+        with self.assertRaisesRegex(codec.ManifestV2Error, "margin"):
+            codec.decode(json.dumps(doc))
+
+    def test_provenance_origins_are_registry_semantics(self):
+        import tomllib
+        fields = {f["path"]: f for f in tomllib.loads(
+            (SERVING / "contract/serving-v2.toml").read_text())["field"]}
+        must_restrict = (
+            "/spec/resources/host/pool_mib",
+            "/spec/handoff/transport/max_rows",
+            "/spec/handoff/transport/small_rows",
+            "/spec/handoff/transport/gemv_large_rows",
+            "/spec/handoff/transport/skip_owned",
+            "/spec/handoff/kernels/moe_down_tile",
+            "/spec/plan/resource_inputs/kv_bytes_per_token",
+            "/spec/plan/resource_inputs/mem_available_bytes",
+        )
+        for path in must_restrict:
+            with self.subTest(path=path):
+                self.assertEqual(fields[path]["origins"], ["derived", "calibrated"])
+                self.assertEqual(fields[path]["confidences"], ["exact", "measured"])
+                self.assertEqual(codec.RESTRICTED[path]["origins"], ["derived", "calibrated"])
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -90,6 +90,19 @@ if(BUILD_TESTING)
     BC_CONTRACT_DOCS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../../../docs/design/serving-manifest-v1"
     BC_CONTRACT_RADIANCE_SRC="${RADIANCE_SRC}")
   add_test(NAME bc_contract_check COMMAND bc_contract_check)
+  # S9: compile and test the inactive generated v2 codec, never production linked.
+  add_library(bc_serving_v2_generated STATIC EXCLUDE_FROM_ALL
+    generated/v2/serving_codec.cpp v2/error.cpp v2/strict_json.cpp)
+  target_link_libraries(bc_serving_v2_generated PUBLIC radiance::abi)
+  target_compile_features(bc_serving_v2_generated PUBLIC cxx_std_20)
+  target_include_directories(bc_serving_v2_generated PUBLIC
+    "${CMAKE_CURRENT_SOURCE_DIR}" "${RADIANCE_SRC}/vendor")
+  add_executable(bc_v2_codec_test EXCLUDE_FROM_ALL contract/v2_codec_test.cpp)
+  target_link_libraries(bc_v2_codec_test PRIVATE bc_serving_v2_generated bc_serving_v1)
+  target_compile_definitions(bc_v2_codec_test PRIVATE
+    BC_CONTRACT_V2_DOCS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../../../docs/design/serving-manifest-v2")
+  add_test(NAME bc_v2_codec_test COMMAND bc_v2_codec_test)
+
   add_executable(bc_v1_test EXCLUDE_FROM_ALL v1/reader_test.cpp)
   target_link_libraries(bc_v1_test PRIVATE bc_serving_v1)
   target_compile_definitions(bc_v1_test PRIVATE
