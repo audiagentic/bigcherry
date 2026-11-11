@@ -1,5 +1,12 @@
 # Changelog
 
+## [1170.21.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.20.0...bc-radiance-1170.21.0) (2026-11-11)
+
+
+### New and changed
+
+* **rsc11:** stage inactive bounded runtime policy receipts ([#883](https://github.com/audiagentic/bigcherry/issues/883)) ([ff23c8a](https://github.com/audiagentic/bigcherry/commit/ff23c8a444bacdfd4504131743b23047f44e81d1))
+
 ## [1170.20.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.19.0...bc-radiance-1170.20.0) (2026-11-11)
 
 
