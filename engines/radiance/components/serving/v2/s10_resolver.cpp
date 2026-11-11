@@ -283,6 +283,29 @@ Result<Manifest> resolve_s10(const Manifest &base, const S10Inputs &in) {
   if (!selected) return selected.error();
   auto power_plan = power(base, in, selected.value());
   if (!power_plan) return power_plan.error();
+  if (base.spec.plan.state != PlanState::kMeasured) {
+    // The measuring start: nothing is measured yet, so no S8 ledger. The handoff keeps the resolver's values with their
+    // own provenance; the live policy does not run in the start that produces the plan.
+    Manifest out = base;
+    out.spec.plan.power = std::move(power_plan.value());
+    out.spec.plan.resource_inputs.reset();
+    if (out.spec.handoff) {
+      LivePolicyStartup off{};
+      off.requested = LivePolicyRequested::kOff;
+      off.configured = false;
+      off.reason_code = "measuring_start";
+      off.reason_detail = "the measuring start produces the plan; the live policy starts with a measured manifest";
+      out.spec.handoff->placement.live_policy_state = off;
+      out.spec.handoff->placement.live_policy.reset();
+      out.provenance["/spec/handoff/placement/live_policy_state"] = {
+          Origin::kDerived, "measuring start", ValueClass::kDerived, Lifecycle::kStartupOnly, Confidence::kExact, {}};
+    }
+    out.provenance["/spec/plan/power"] = {
+        Origin::kDerived, "PWR08 named profile + selected BDF inventory",
+        ValueClass::kDerived, Lifecycle::kStartupOnly, Confidence::kExact,
+        {"/spec/intent/power", "/spec/facts/gpus"}};
+    return out;
+  }
   if (base.spec.plan.owner_map.owner_map_sha256 !=
       in.measured.actual_owner_map_digest)
     return fail(ConfigErrorCode::ownership_mismatch, "spec.plan.owner_map",

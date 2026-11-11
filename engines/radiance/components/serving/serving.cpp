@@ -1292,4 +1292,6 @@ Resolved resolve(const Options& options, const Json& facts) {
     r.hash = sha256_hex(r.manifest.dump());
     return r;
 }
+uint64_t arch_reserve_mib(const std::string& arch) { return arch_info(arch).reserve_mib; }
+
 } // namespace bc::serving
