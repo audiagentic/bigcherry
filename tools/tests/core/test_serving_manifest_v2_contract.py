@@ -118,7 +118,7 @@ class ServingManifestV2ContractTest(unittest.TestCase):
         with self.assertRaisesRegex(codec.ManifestV2Error, "observe mode"):
             codec.decode(json.dumps(document))
 
-    def test_role_bdf_resolution_and_margin_fail_closed(self):
+    def test_role_bdf_resolution_fails_closed(self):
         doc = self.fixtures()[0]
         devs = doc["spec"]["plan"]["power"]["devices"]
         devs[1]["bdf"] = devs[0]["bdf"]
@@ -128,30 +128,12 @@ class ServingManifestV2ContractTest(unittest.TestCase):
         doc["spec"]["intent"]["power"]["role_overrides"]["helper99"] = {"power_cap_w": 240}
         with self.assertRaisesRegex(codec.ManifestV2Error, "unknown resolved role"):
             codec.decode(json.dumps(doc))
-        doc = self.fixtures()[0]
-        doc["spec"]["plan"]["resource_inputs"]["host_pool_margin_calibration"]["mib"] += 1
-        with self.assertRaisesRegex(codec.ManifestV2Error, "margin"):
-            codec.decode(json.dumps(doc))
 
-    def test_provenance_origins_are_registry_semantics(self):
+    def test_registry_records_provenance_without_origin_allowlists(self):
         import tomllib
-        fields = {f["path"]: f for f in tomllib.loads(
-            (SERVING / "contract/serving-v2.toml").read_text())["field"]}
-        must_restrict = (
-            "/spec/resources/host/pool_mib",
-            "/spec/handoff/transport/max_rows",
-            "/spec/handoff/transport/small_rows",
-            "/spec/handoff/transport/gemv_large_rows",
-            "/spec/handoff/transport/skip_owned",
-            "/spec/handoff/kernels/moe_down_tile",
-            "/spec/plan/resource_inputs/kv_bytes_per_token",
-            "/spec/plan/resource_inputs/mem_available_bytes",
-        )
-        for path in must_restrict:
-            with self.subTest(path=path):
-                self.assertEqual(fields[path]["origins"], ["derived", "calibrated"])
-                self.assertEqual(fields[path]["confidences"], ["exact", "measured"])
-                self.assertEqual(codec.RESTRICTED[path]["origins"], ["derived", "calibrated"])
+        fields = tomllib.loads((SERVING / "contract/serving-v2.toml").read_text())["field"]
+        self.assertFalse([f["path"] for f in fields if "origins" in f or "confidences" in f])
+        self.assertFalse(hasattr(codec, "RESTRICTED"))
 
 
 if __name__ == "__main__":

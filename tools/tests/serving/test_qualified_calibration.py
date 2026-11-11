@@ -7,7 +7,7 @@ from bigcherry.serving.calibration_store import CalibrationInvalid, emit_from_ru
 from bigcherry.serving.measured_plan import PlanBounds, PlanMeasurement
 from bigcherry.serving.qualified_calibration import (
     QualifiedP1MeasurementSource,
-    required_s8_records,
+    wanted_s8_records,
     select_for_measurement,
 )
 
@@ -61,7 +61,7 @@ def add_record(tmp_path, key, *, recorded_scope=None):
 
 
 def populate(tmp_path, *, live=False, histogram=False, helpers=1):
-    for key in required_s8_records(
+    for key in wanted_s8_records(
         helper_count=helpers, live_policy_requested=live,
         histogram_enabled=histogram,
     ):
@@ -84,7 +84,7 @@ def test_engine_only_requires_only_exact_margin(tmp_path):
 def test_selected_helper_requires_all_four_handoff_records(tmp_path):
     populate(tmp_path)
     assert [r["key"] for r in select(tmp_path)] == list(
-        required_s8_records(helper_count=1, histogram_enabled=False,
+        wanted_s8_records(helper_count=1, histogram_enabled=False,
                             live_policy_requested=False)
     )
 
@@ -101,46 +101,32 @@ def test_live_policy_requires_period_and_cadence_from_store(tmp_path):
 ])
 def test_refuse_invalid_policy_and_layout(live, hist, helpers):
     with pytest.raises(CalibrationInvalid):
-        required_s8_records(
+        wanted_s8_records(
             helper_count=helpers, histogram_enabled=hist,
             live_policy_requested=live,
         )
 
 
-def test_absent_margin_is_named_fail_closed_refusal(tmp_path):
-    with pytest.raises(CalibrationInvalid, match="host_margin_refused.*host_ledger_margin.mib"):
-        select(tmp_path)
+def test_no_records_still_starts(tmp_path):
+    assert select(tmp_path) == ()
 
 
-def test_absent_helper_calibration_is_named_refusal(tmp_path):
+def test_only_the_records_present_are_returned(tmp_path):
     add_record(tmp_path, "host_ledger_margin.mib")
-    with pytest.raises(CalibrationInvalid, match="handoff_refused.*handoff.max_rows"):
-        select(tmp_path)
+    assert [r["key"] for r in select(tmp_path)] == ["host_ledger_margin.mib"]
 
 
-def test_absent_live_cadence_is_not_implicitly_disabled(tmp_path):
+def test_absent_live_cadence_leaves_the_key_out(tmp_path):
     populate(tmp_path, histogram=True)
-    with pytest.raises(CalibrationInvalid, match="live_policy_refused.*live_cadence_ns"):
-        select(tmp_path, live=True, histogram=True)
+    assert "handoff.live_cadence_ns" not in [r["key"] for r in select(tmp_path, live=True, histogram=True)]
 
 
-def test_native_margin_must_equal_qualified_record(tmp_path):
+def test_expired_record_and_changed_scope_are_skipped(tmp_path):
     populate(tmp_path)
-    altered = measurement()
-    altered.resource_inputs["host_pool_margin_calibration"]["mib"] = 9216
-    with pytest.raises(CalibrationInvalid, match="host_margin_refused.*differs"):
-        select(tmp_path, observed=altered)
-
-
-def test_expired_record_and_changed_scope_refused(tmp_path):
-    populate(tmp_path)
-    with pytest.raises(CalibrationInvalid, match="refused.*stale"):
-        select(tmp_path, now=NOW + 101)
+    assert select(tmp_path, now=NOW + 101) == ()
     altered = measurement()
     altered.scope["inventory_digest"] = "b" * 64
-    with pytest.raises(CalibrationInvalid, match="host_margin_refused.*missing"):
-        select(tmp_path, observed=altered)
-
+    assert select(tmp_path, observed=altered) == ()
 
 def test_remeasure_and_reselect_on_every_bounded_retry(tmp_path):
     populate(tmp_path)
@@ -161,6 +147,6 @@ def test_remeasure_and_reselect_on_every_bounded_retry(tmp_path):
     )
     first = source.measure(LAYOUT, PlanBounds())
     assert len(first.calibration_records) == 5
-    with pytest.raises(CalibrationInvalid, match="missing"):
-        source.measure(LAYOUT, PlanBounds(retained_kv_tokens=50))
+    retry = source.measure(LAYOUT, PlanBounds(retained_kv_tokens=50))
+    assert retry.calibration_records == ()  # the new scope has no records yet; the start goes on without them
     assert len(calls) == 2

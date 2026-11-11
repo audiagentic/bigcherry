@@ -158,30 +158,31 @@ def emit_from_run(run_file: Path, store: Path) -> Path:
 
 
 def select_records(store: Path, *, scope: dict, required_keys, now_unix_s: int):
-    """Return one fresh exact-scope S8 record per mandatory key; no fallback."""
+    """The usable S8 records for these keys: exact scope and current, the newest per key.
+
+    Records are evidence, not a precondition: a key with no usable record is simply absent from the result (bc-serve then
+    uses the site/layout value and records that origin), and an invalid, stale or other-scope record is skipped.
+    """
     validate_scope(scope)
     keys = tuple(required_keys)
     if len(set(keys)) != len(keys) or any(key not in KEYS for key in keys):
-        raise CalibrationInvalid("invalid required calibration keys")
+        raise CalibrationInvalid("invalid calibration keys")
     found = {}
     for path in sorted(Path(store).glob("*.json")):
-        record = _read(path)
-        if not isinstance(record, dict) or record.get("key") not in keys:
+        try:
+            record = _read(path)
+        except CalibrationInvalid:
             continue
-        if record.get("scope") != scope:
+        if not isinstance(record, dict) or record.get("key") not in keys or record.get("scope") != scope:
             continue
         try:
             validate_record(record, scope=scope, now_unix_s=now_unix_s)
-        except CalibrationInvalid as exc:
-            raise CalibrationInvalid(f"{record['key']}: {exc}") from exc
+        except CalibrationInvalid:
+            continue
         key = record["key"]
-        if key in found:
-            raise CalibrationInvalid(f"ambiguous calibration {key}")
-        found[key] = record
-    missing = set(keys) - found.keys()
-    if missing:
-        raise CalibrationInvalid("missing S8 calibration: " + ", ".join(sorted(missing)))
-    return tuple(found[key] for key in keys)
+        if key not in found or record["measured_at_unix_s"] > found[key]["measured_at_unix_s"]:
+            found[key] = record
+    return tuple(found[key] for key in keys if key in found)
 
 
 def main(argv=None):
