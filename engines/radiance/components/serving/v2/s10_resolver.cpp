@@ -233,6 +233,15 @@ LivePolicyStartup startup(const S10PolicyPreflight &p,
   }
   return out;
 }
+// The resolved power plan's provenance, one record per class of leaf: the selection is policy, the rest derived from it.
+void power_provenance(Manifest *out) {
+  for (const char *leaf : {"/spec/plan/power/mode", "/spec/plan/power/profile"})
+    out->provenance[leaf] = {Origin::kCli, "bc-serve --power-profile (named profile)", ValueClass::kPolicy,
+                             Lifecycle::kStartupOnly, Confidence::kExact, {"/spec/intent/power"}};
+  for (const char *leaf : {"/spec/plan/power/profile_digest", "/spec/plan/power/devices", "/spec/plan/power/cpu"})
+    out->provenance[leaf] = {Origin::kDerived, "PWR08 named profile + selected BDF inventory", ValueClass::kDerived,
+                             Lifecycle::kStartupOnly, Confidence::kExact, {"/spec/intent/power", "/spec/facts/gpus"}};
+}
 } // namespace
 
 Status validate_s10_power_plan(const Manifest &m) {
@@ -300,10 +309,7 @@ Result<Manifest> resolve_s10(const Manifest &base, const S10Inputs &in) {
       out.provenance["/spec/handoff/placement/live_policy_state"] = {
           Origin::kDerived, "measuring start", ValueClass::kDerived, Lifecycle::kStartupOnly, Confidence::kExact, {}};
     }
-    out.provenance["/spec/plan/power"] = {
-        Origin::kDerived, "PWR08 named profile + selected BDF inventory",
-        ValueClass::kDerived, Lifecycle::kStartupOnly, Confidence::kExact,
-        {"/spec/intent/power", "/spec/facts/gpus"}};
+    power_provenance(&out);
     return out;
   }
   if (base.spec.plan.owner_map.owner_map_sha256 !=
@@ -385,10 +391,7 @@ Result<Manifest> resolve_s10(const Manifest &base, const S10Inputs &in) {
   }
   for (const auto &[path, record] : s8.provenance_by_path)
     out.provenance[path] = record; // measured evidence overrides inherited defaults
-  out.provenance["/spec/plan/power"] = {
-      Origin::kDerived, "PWR08 named profile + selected BDF inventory",
-      ValueClass::kDerived, Lifecycle::kStartupOnly, Confidence::kExact,
-      {"/spec/intent/power", "/spec/facts/gpus"}};
+  power_provenance(&out);
   if (out.spec.handoff)
     out.provenance["/spec/handoff/placement/live_policy_state"] = {
         Origin::kDerived, "RHP18 qualified policy preflight",

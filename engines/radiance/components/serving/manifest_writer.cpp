@@ -213,6 +213,17 @@ Json handoff_of(const Json& v, const Json& live_policy) {
     return out;
 }
 
+// The draft plan's devices: the engine TP cards and the selected helper cards, each with no settings. S10 resolves them.
+Json draft_power_devices(const Resolved& r) {
+    Json out = Json::array();
+    for (const Json& bdf : r.values.at("layout").at("engine_cards"))
+        out.push_back({{"role", "engine"}, {"bdf", bdf}, {"settings", Json::object()}});
+    const Json& ph = r.manifest.at("process_helpers");
+    for (size_t i = 0; i < ph.size(); ++i)
+        out.push_back({{"role", "helper" + std::to_string(i)}, {"bdf", ph[i].at("bdf")}, {"settings", Json::object()}});
+    return out;
+}
+
 Json engine_of(const Json& v) {
     const Json& e = v.at("engine");
     Json device = {{"gpus", v.at("layout").at("engine_cards")}};
@@ -256,6 +267,7 @@ Json static_provenance(bool measured, bool engine_only) {
     p["/spec/intent/model"] = record("site", "site.toml:engine.model", "policy", "exact");
     p["/spec/intent/layout"] = record("profile", "layout selection (layouts.toml)", "policy", "exact");
     p["/spec/intent/service"] = record("profile", "serving profile (bc-serve --profile)", "policy", "exact");
+    p["/spec/intent/power"] = record("cli", "bc-serve --power-profile", "policy", "exact");
     p["/spec/facts"] = record("detected", "bc-serve detect: kfd+sysfs+proc+statvfs+cgroup", "fact", "exact");
     p["/spec/calibration"] = record("calibrated", "calibration seeds and cache selected by layout and objective", "tuned", "measured",
                                     Json::array({"/spec/intent/layout", "/spec/intent/service/objective"}));
@@ -427,7 +439,7 @@ BuiltManifest build_manifest(const ManifestInputs& in) {
                  {"plan", {{"state", in.measured ? "measured" : "unmeasured"},
                            // S10 replaces this draft plan with the resolved one before the document is written.
                            {"power", {{"mode", "observe"}, {"profile", in.s10.power_profile},
-                                      {"profile_digest", "sha256:" + sha_hex_of_zero()}, {"devices", Json::array()},
+                                      {"profile_digest", "sha256:" + sha_hex_of_zero()}, {"devices", draft_power_devices(in.resolved)},
                                       {"cpu", {{"settings", Json::object()}}}}},
                            {"owner_map", {{"owner_map_sha256", sha_hex_of_zero()}, {"helpers", Json::array()}}}}}};
     if (in.measured) {

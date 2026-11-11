@@ -1298,8 +1298,8 @@ doc = "Selected effect-gate mechanism."
 [[field]]
 path = "/spec/handoff/placement/live_policy_state/histogram_period_s"
 kind = "ref"
-ref = "positive"
-doc = "Heat histogram emission period in seconds."
+ref = "uint"
+doc = "Heat histogram emission period in seconds; 0 when no histogram is written."
 
 [[field]]
 path = "/spec/handoff/placement/live_policy_state/cadence_ns"

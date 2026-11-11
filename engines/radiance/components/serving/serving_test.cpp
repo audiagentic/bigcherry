@@ -865,6 +865,36 @@ void sdk_environment_step(Fixture& t) {
     assert(!sv::sdk_refusal(build / "bin" / "bc-serve", {other.string(), "", ""}));
 }
 
+/* A native P1 measurement record (bc_serve_v2_measured_inputs) consistent with the manifest `unmeasured` describes: its
+ * owner map and helpers, a host pool that sums to `pool_mib` with the given margin, and live room far above the need.
+ * Test-only: real records come from bc-serve --publish-v2-p1 on the cards. */
+Json p1_record_for(const Json& unmeasured, int64_t pool_mib, int64_t margin_mib, int64_t reserve_mib) {
+    constexpr int64_t MiB = 1048576;
+    const Json& spec = unmeasured.at("spec");
+    const std::string owner = spec.at("plan").at("owner_map").at("owner_map_sha256");
+    Json footprints = Json::array();
+    for (const Json& h : spec.at("processes").at("helpers"))
+        footprints.push_back({{"role", h.at("role")}, {"bdf", h.at("gpu")}, {"lanes_bytes", MiB}, {"pointer_banks_bytes", MiB},
+                              {"slot_map_bytes", MiB}, {"incoming_slot_bytes", MiB}, {"total_bytes", 4 * MiB}});
+    const Json scope = {{"model_digest", std::string(64, '1')}, {"engine_build_digest", std::string(64, '2')},
+                        {"helper_build_digest", std::string(64, '3')}, {"layout_digest", std::string(64, '4')},
+                        {"inventory_digest", std::string(64, '5')}, {"owner_map_digest", owner},
+                        {"context_target_tokens", 4096}, {"retention_target_tokens", 4096}, {"kv_bytes_per_token", 1}};
+    const Json inputs = {{"host_embedding_bytes", (pool_mib - margin_mib) * MiB}, {"unowned_expert_bytes", 0},
+                         {"staging_bytes", 0}, {"ngram_bytes", MiB}, {"checkpoint_bytes", 0}, {"resident_other_bytes", 0},
+                         {"kv_bytes_per_token", 1}, {"context_target_tokens", 4096}, {"retention_target_tokens", 4096},
+                         {"mem_available_bytes", 92160 * MiB}, {"cgroup_headroom_bytes", 92160 * MiB},
+                         {"pin_available_bytes", 92160 * MiB}, {"owner_map_digest", owner},
+                         {"host_pool_margin_calibration",
+                          {{"key", "host_ledger_margin.mib"}, {"source", "cache"}, {"evidence", "test"}, {"mib", margin_mib}}},
+                         {"helper_footprints", footprints}};
+    return {{"schema_version", 1}, {"kind", "bc_serve_v2_measured_inputs"}, {"planning_key", std::string(64, '6')},
+            {"provenance", "serving_test synthetic record"}, {"resource_inputs", inputs},
+            {"gpu", Json::array({{{"bdf", spec.at("processes").at("engine").at("device").at("gpus")[0]},
+                                  {"required_bytes", 10}, {"fixed_bytes", 1}}})},
+            {"concurrent_sessions", 1}, {"host_reserve_bytes", reserve_mib * MiB}, {"scope", scope}};
+}
+
 void manifest_writer_step(Fixture& t) {
     namespace sv = bc::serving;
     // The container, its heat ranking and the measured plan this configuration's manifest is built from.
@@ -895,6 +925,15 @@ void manifest_writer_step(Fixture& t) {
     in.instance_id = "11111111-1111-4111-8111-111111111111";
     in.producer_sha256 = std::string(64, 'a');
     in.profile = "production";
+    in.s10.power_profile = "stock";
+    in.s10.now_unix_s = 1800000000;
+    in.s10.calibration_records = Json::array();
+    {
+        // The unmeasured manifest of the same configuration has the owner map the P1 record is measured against.
+        const auto unmeasured = sv::build_manifest(in);
+        in.s10.p1_record = p1_record_for(unmeasured.document, 9216, 1024,
+                                         r.values.at("memory").at("host_reserve_mib").get<int64_t>());
+    }
     {
         sv::MeasuredPlan measured;
         measured.plan.plan = sv::decode_engine_plan(plan, "writer plan");
@@ -1417,6 +1456,7 @@ void layout_manifests_golden(Fixture& t, bool write_golden, const char* dump_dir
         in.instance_id = "11111111-1111-4111-8111-111111111111";
         in.producer_sha256 = std::string(64, 'a');
         in.profile = "production";
+        in.s10.power_profile = "stock";
         const auto built = sv::build_manifest(in);
         if (dump_dir) write(fs::path(dump_dir) / (std::string(name) + ".json"), built.text);
         // Normalised to what the layout decides: not this run's directory, the host's free /dev/shm, or the digest they feed.
@@ -1456,6 +1496,7 @@ void engine_only_layout(Fixture& t) {
     in.instance_id = "11111111-1111-4111-8111-111111111111";
     in.producer_sha256 = std::string(64, 'a');
     in.profile = "production";
+    in.s10.power_profile = "stock";
     const auto built = sv::build_manifest(in);
     const Json& spec = built.document.at("spec");
     assert(!spec.contains("handoff") && !spec.at("processes").contains("helper_common"));
@@ -1565,6 +1606,7 @@ void derived_budget_is_the_workers(Fixture& t) {
         in.instance_id = "11111111-1111-4111-8111-111111111111";
         in.producer_sha256 = std::string(64, 'a');
         in.profile = "lab";
+        in.s10.power_profile = "stock";
         const auto built = sv::build_manifest(in);
         assert(built.document.at("spec").at("processes").at("helper_common").at("runtime").at("power_save") == power_save);
         auto read = bc::serving::v2::read_manifest(built.text, "derived-budget", bc::serving::v2::PlanUse::measuring);
@@ -1625,6 +1667,7 @@ void tp_engine_with_helper_layout(Fixture& t) {
     in.instance_id = "11111111-1111-4111-8111-111111111111";
     in.producer_sha256 = std::string(64, 'a');
     in.profile = "production";
+    in.s10.power_profile = "stock";
     const auto built = sv::build_manifest(in);
     const Json& spec = built.document.at("spec");
     assert(spec.at("processes").at("engine").at("device").at("gpus").size() == 2);
@@ -1666,6 +1709,7 @@ void tp_engine_with_two_helpers_layout(Fixture& t) {
     in.instance_id = "11111111-1111-4111-8111-111111111111";
     in.producer_sha256 = std::string(64, 'a');
     in.profile = "production";
+    in.s10.power_profile = "stock";
     const auto built = sv::build_manifest(in);
     const Json& spec = built.document.at("spec");
     assert(spec.at("processes").at("engine").at("scheduler").at("tp") == 2);

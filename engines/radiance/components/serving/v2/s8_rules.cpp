@@ -53,6 +53,14 @@ bool valid_scope(const S8Scope &s) {
          positive(s.retention_target_tokens) && positive(s.kv_bytes_per_token);
 }
 
+// The registry class of a leaf (contract [[class_default]]), so a record covers exactly its own class.
+ValueClass class_of(const std::string &path) {
+  for (const auto &f : kFields)
+    if (f.path == path)
+      for (size_t i = 0; i < kValueClassNames.size(); ++i)
+        if (kValueClassNames[i] == f.value_class) return static_cast<ValueClass>(i);
+  return ValueClass::kDerived;
+}
 } // namespace
 
 Status require_measured_vram(int64_t required, int64_t claimable,
@@ -340,10 +348,11 @@ Result<S8Resolution> resolve_s8(const S8Measured &m,
   const auto calibrated = [&](std::string path, std::string key,
                               Lifecycle when) {
     const Chosen &c = chosen.at(key);
+    const ValueClass leaf_class = class_of(path);
     out.provenance_by_path.emplace(
         std::move(path),
         ProvenanceRecord{c.row ? Origin::kCalibrated : Origin::kProfile, c.source,
-                         c.row ? ValueClass::kDerived : ValueClass::kTuned, when,
+                         leaf_class, when,
                          c.row ? Confidence::kMeasured : Confidence::kEstimate,
                          c.row ? std::vector<std::string>{"/spec/calibration", "/spec/plan/resource_inputs"}
                                : std::vector<std::string>{}});

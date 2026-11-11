@@ -825,8 +825,8 @@
                       "type": "boolean"
                     },
                     "histogram_period_s": {
-                      "description": "Heat histogram emission period in seconds.",
-                      "$ref": "#/$defs/positive"
+                      "description": "Heat histogram emission period in seconds; 0 when no histogram is written.",
+                      "$ref": "#/$defs/uint"
                     },
                     "cadence_ns": {
                       "description": "Effective migration cadence in nanoseconds.",

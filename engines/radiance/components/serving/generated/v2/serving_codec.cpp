@@ -1376,7 +1376,7 @@ Status d180(const Json& j, const std::string& at, bool* out) {  // /spec/handoff
 }
 
 Status d181(const Json& j, const std::string& at, int64_t* out) {  // /spec/handoff/placement/live_policy_state/histogram_period_s
-    return int_in(j, at, C::invalid_type, C::invalid_value, 1, 9007199254740991, std::nullopt, out);
+    return int_in(j, at, C::invalid_type, C::invalid_value, 0, 9007199254740991, std::nullopt, out);
 }
 
 Status d182(const Json& j, const std::string& at, int64_t* out) {  // /spec/handoff/placement/live_policy_state/cadence_ns

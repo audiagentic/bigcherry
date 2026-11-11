@@ -18,10 +18,10 @@ inline constexpr std::string_view kApiVersion = "bigcherry/v2";
 inline constexpr std::string_view kKind = "ServingManifest";
 inline constexpr int64_t kContractVersion = 2;
 // sha256 of the JCS validation schema without annotations (contract/README.md); the build pins it.
-inline constexpr std::string_view kFingerprint = "sha256:6d20ada40f44dfdcf60116dea913cd251868c8efa84535e82afa58f2b6da8aa1";
+inline constexpr std::string_view kFingerprint = "sha256:713650d5e42a090cb41ebff2a45fcc643c6a87c1db48e29ae3ce09238515c992";
 // sha256 of the schema plus the frozen semantics it does not express (classes, lifecycle, Radiance bindings,
 // reader error codes); README.md.
-inline constexpr std::string_view kSemanticFingerprint = "sha256:a87c5f878c294b38771cf51f2563c9ede70b47fd78a01bc8501649dfa9c1ed34";
+inline constexpr std::string_view kSemanticFingerprint = "sha256:aa71bbd96b8e41449680a8b22756ae7e7820a9896c079f5725601af8c468e0d5";
 // spec §11 amendment 8: the deepest container nesting a valid document can have (the root object is 1),
 // derived from the closed schema by the generator. The strict reader refuses anything deeper.
 inline constexpr size_t kMaxDepth = 9;
@@ -731,7 +731,7 @@ struct LivePolicyStartup {
     std::string record_identity;
     // Selected effect-gate mechanism.
     bool effect_gate;
-    // Heat histogram emission period in seconds.
+    // Heat histogram emission period in seconds; 0 when no histogram is written.
     int64_t histogram_period_s;
     // Effective migration cadence in nanoseconds.
     int64_t cadence_ns;
@@ -2025,7 +2025,7 @@ inline constexpr std::array<FieldInfo, 433> kFields = {{
      "Selected effect-gate mechanism.", "", "", ""},
     {"/spec/handoff/placement/live_policy_state/histogram_period_s", "ref", "derived", true, false,
      "", "", false,
-     "Heat histogram emission period in seconds.", "", "", "positive"},
+     "Heat histogram emission period in seconds; 0 when no histogram is written.", "", "", "uint"},
     {"/spec/handoff/placement/live_policy_state/cadence_ns", "ref", "derived", true, false,
      "", "", false,
      "Effective migration cadence in nanoseconds.", "", "", "uint"},
