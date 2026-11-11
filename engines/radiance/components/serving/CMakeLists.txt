@@ -117,6 +117,15 @@ if(BUILD_TESTING)
     BC_CONTRACT_V2_DOCS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../../../docs/design/serving-manifest-v2")
   add_test(NAME bc_v2_s10_test COMMAND bc_v2_s10_test)
 
+  # P1: inactive native measurement publication (no v1 activation).
+  add_library(bc_serving_v2_p1 STATIC EXCLUDE_FROM_ALL v2/p1_measurement.cpp)
+  target_link_libraries(bc_serving_v2_p1 PUBLIC bc_serving_v2_generated)
+  target_include_directories(bc_serving_v2_p1 PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/../moe-remote")
+  target_compile_features(bc_serving_v2_p1 PUBLIC cxx_std_20)
+  add_executable(bc_v2_p1_test EXCLUDE_FROM_ALL v2/p1_measurement_test.cpp)
+  target_link_libraries(bc_v2_p1_test PRIVATE bc_serving_v2_p1)
+  add_test(NAME bc_v2_p1_test COMMAND bc_v2_p1_test)
+
   add_executable(bc_v2_codec_test EXCLUDE_FROM_ALL contract/v2_codec_test.cpp)
   target_link_libraries(bc_v2_codec_test PRIVATE bc_serving_v2_generated bc_serving_v1)
   target_compile_definitions(bc_v2_codec_test PRIVATE
