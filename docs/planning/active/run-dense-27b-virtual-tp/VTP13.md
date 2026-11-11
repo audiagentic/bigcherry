@@ -1127,3 +1127,80 @@ cache state, original embedding/head, per-layer norm, residual,
 sampling and measured memory admission; then quality and
 end-to-end TP2-vs-TP3 4/6/8-stream tests. Do not claim real
 model output or native 262K context from these staged proofs.
+
+
+### 2026-11-11 — VTP27 first connected GPU GDN→FFN handoff staged (M1 only)
+
+The VTP20 full original BF16 GDN and VTP25 full original
+BF16 FFN kernels were previously tested or compiled in
+isolation. VTP27 stages the first execution path in which
+the actual GPU-produced BF16 post-GDN output is exported,
+checked, then consumed by the original checkpoint FFN.
+This is a real model hidden-state boundary, not a fresh
+synthetic FFN activation.
+
+Two **separate copies** of the accepted original-kernel
+HIP sources are added without changing their previous
+receipts: xtx27_vtp27_gdn_export.hip and
+xtx27_vtp27_ffn_import.hip. They retain VTP20/25
+original-weight CPU stage-oracle checks, adding
+fail-closed immutable BF16 output files, an exact
+GPU-produced GDN input check at the FFN boundary,
+and the FFN's post-layer0 output. They compile on
+gfx1100+gfx1201. Supervision:
+xtx27_vtp27_gpu_layer0_bridge.py:
+- Validates all original VTP15/VTP16 GDN checkpoint
+  sources, original VTP24 FFN checkpoint sources and
+  independent CPU reference receipts, requiring identical
+  GDN→FFN parent SHA-256 lineage
+- Under **one owned exclusive GPU lease**, runs the
+  full GDN GPU and full FFN GPU stages sequentially,
+  with no other resident KFD processes
+- Requires the produced M1 GDN BF16 residual to equal
+  the original source-verified CPU FFN input bit-for-bit,
+  so the previously computed original post-attention
+  normalized BF16 input is actually valid
+- Writes immutable post-FFN GPU BF16 and checks it
+  numerically against the independent original-source
+  VTP24 complete-layer CPU result. Failure marks an
+  incomplete receipt, never numerical success
+
+The **M1 restriction is intentional**: prior VTP20 M4
+GPU-versus-CPU BF16 residual had 109 differing values.
+It would be invalid to silently reuse the M4 FFN CPU
+input for that different GPU residual. General M4
+requires recomputing post-attention normalization
+and its original-weight FFN reference on the *actual*
+M4 GPU output, then requalifying the downstream
+numeric tolerance.
+
+The bridge stages **only layer 0** with synthetic
+initial hidden. Each original operator relaunches
+three GPU processes and hands off BF16 through
+a file, not a persistent GPU context/graph. It
+cannot generate text, reuse recurrent/KV state,
+or claim the full 64-layer model.
+
+VTP27 plan and dual-architecture compilation PASS;
+card-free exact-handoff tests PASS. **GPU execution
+still pending** because another agent owns the GPU
+lease for power/text identity controls.
+
+M1 acceptance when GPUs are free:
+
+    python3 tools/lab/radiance/xtx27_vtp27_gpu_layer0_bridge.py --phase gpu --run --iterations 5 \
+      --weights-receipt "$BC_WORK_ROOT/xtx27-prefill/vtp15-gdn-projection/layer0-20261111T005819109215Z/summary.json" \
+      --projection-receipt "$BC_WORK_ROOT/xtx27-prefill/vtp15-gdn-ref/layer0-20261111T010143705406Z/summary.json" \
+      --core-receipt "$BC_WORK_ROOT/xtx27-prefill/vtp15-gdn-core/layer0-20261111T011811618321Z/summary.json" \
+      --learned-receipt "$BC_WORK_ROOT/xtx27-prefill/vtp14-gdn-reference/layer0-20261111T003313797426Z/summary.json" \
+      --output-packet "$BC_WORK_ROOT/xtx27-prefill/vtp16-gdn-output/layer0-20261111T014452115048Z/summary.json" \
+      --output-reference "$BC_WORK_ROOT/xtx27-prefill/vtp16-gdn-output-ref/layer0-20261111T015557796594Z/summary.json" \
+      --ffn-packet "$BC_WORK_ROOT/xtx27-prefill/vtp24-original-ffn/layer0-20261111T061700090195Z/summary.json" \
+      --ffn-reference "$BC_WORK_ROOT/xtx27-prefill/vtp24-original-ffn-cpu/layer0-m1-20261111T061945282150Z/summary.json"
+
+Next after a passing VTP27: make GDN/FFN
+layer-agnostic and share one actual GPU context and
+resident weights/states, extend full attention with
+persistent causal KV cache, implement actual original
+embed/head, run all 64 layers then a full decoder
+step, and compare TP3/TP2 quality and throughput.
