@@ -154,9 +154,17 @@ if(BUILD_TESTING)
   target_include_directories(bc_serving_v2_runtime_receipt PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/../moe-remote" "${RADIANCE_SRC}/vendor")
   target_compile_features(bc_serving_v2_runtime_receipt PUBLIC cxx_std_20)
+  # Explicit v2-only collector reads the actual worker shared-memory transport.
+  # Not installed, not built by default and never linked into v1 production.
+  add_executable(bc_v2_runtime_receipt_live EXCLUDE_FROM_ALL v2/runtime_receipt_live.cpp)
+  target_link_libraries(bc_v2_runtime_receipt_live PRIVATE
+    bc_serving_v2_runtime_receipt bc_jcs)
   add_executable(bc_v2_runtime_receipt_test EXCLUDE_FROM_ALL v2/runtime_receipt_test.cpp)
   target_link_libraries(bc_v2_runtime_receipt_test PRIVATE bc_serving_v2_runtime_receipt)
   add_test(NAME bc_v2_runtime_receipt_test COMMAND bc_v2_runtime_receipt_test)
+  add_custom_target(bc_v2_runtime_receipt_check
+    COMMAND $<TARGET_FILE:bc_v2_runtime_receipt_test>
+    DEPENDS bc_v2_runtime_receipt_test)
 
   add_executable(bc_v2_codec_test EXCLUDE_FROM_ALL contract/v2_codec_test.cpp)
   target_link_libraries(bc_v2_codec_test PRIVATE bc_serving_v2_generated bc_serving_v1)
