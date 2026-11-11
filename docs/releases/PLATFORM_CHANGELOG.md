@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.33.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.32.0...bc-platform-1.33.0) (2026-11-11)
+
+
+### New and changed
+
+* **rsc11:** stage S13 P3 v2 serving start/stop adapters ([#857](https://github.com/audiagentic/bigcherry/issues/857)) ([fcd5b59](https://github.com/audiagentic/bigcherry/commit/fcd5b596ad273159cd81aba2c0b6b238b8c16fae))
+
 ## [1.32.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.31.0...bc-platform-1.32.0) (2026-11-11)
 
 
