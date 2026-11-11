@@ -247,6 +247,7 @@ class PlanMeasurement:
     gpu: tuple[GpuDemand, ...]
     resource_inputs: dict | None = None
     scope: dict | None = None
+    calibration_records: tuple[dict, ...] = ()  # exact-scoped P2 selections for S10
 
 
 @dataclass(frozen=True)
