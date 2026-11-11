@@ -41,6 +41,19 @@ int main() {
         if (!error || error->code != v2::ConfigErrorCode::unknown_field) {
             std::cerr << "v2 unknown property was not refused\n"; return 1;
         }
+        // A real committed v1 fixture must fail at the v2 identity boundary.
+        std::ifstream old_in(std::string(BC_CONTRACT_V2_DOCS_DIR) +
+                             "/../serving-manifest-v1/" + name);
+        if (!old_in) { std::cerr << "missing v1 fixture " << name << "\\n"; return 1; }
+        std::ostringstream old_ss;
+        old_ss << old_in.rdbuf();
+        const auto old_json = v2::parse_strict_json(old_ss.str(), name);
+        if (!old_json) { std::cerr << "invalid v1 fixture JSON\\n"; return 1; }
+        v2::Manifest old_as_v2;
+        const auto version_error = v2::decode(old_json.value(), "", &old_as_v2);
+        if (!version_error || version_error->code != v2::ConfigErrorCode::unsupported_version) {
+            std::cerr << "real v1 fixture accepted by v2 decoder\\n"; return 1;
+        }
         auto v1doc = doc;
         v1doc["apiVersion"] = "bigcherry/v1";
         error = v2::decode(v1doc, "", &decoded);
@@ -48,9 +61,9 @@ int main() {
             std::cerr << "v1 identity accepted in v2 reader\n"; return 1;
         }
         auto bad = doc;
-        bad["spec"]["plan"]["power"]["devices"][0]["settings"]["vddgfx_offset_mv"] = -501;
+        bad["spec"]["plan"]["power"]["devices"][0]["settings"]["vddgfx_offset_mv"] = "wrong-type";
         if (!v2::decode(bad, "", &decoded)) {
-            std::cerr << "out-of-bounds power offset accepted\n"; return 1;
+            std::cerr << "non-integer power offset accepted\n"; return 1;
         }
     }
     std::cout << "v2 generated codec roundtrip/negative tests pass\n";

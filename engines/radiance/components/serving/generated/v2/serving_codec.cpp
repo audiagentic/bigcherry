@@ -1037,35 +1037,35 @@ Status d16(const Json& j, const std::string& at, std::string* out) {  // $defs/p
 }
 
 Status d90(const Json& j, const std::string& at, int64_t* out) {  // $defs/powerSettings/vddgfx_offset_mv
-    return int_in(j, at, C::invalid_type, C::invalid_value, -500, 500, std::nullopt, out);
+    return int_in(j, at, C::invalid_type, C::invalid_value, std::nullopt, std::nullopt, std::nullopt, out);
 }
 
 Status d91(const Json& j, const std::string& at, int64_t* out) {  // $defs/powerSettings/sclk_max_mhz
-    return int_in(j, at, C::invalid_type, C::invalid_value, 1, 10000, std::nullopt, out);
+    return int_in(j, at, C::invalid_type, C::invalid_value, 1, std::nullopt, std::nullopt, out);
 }
 
 Status d92(const Json& j, const std::string& at, int64_t* out) {  // $defs/powerSettings/sclk_offset_mhz
-    return int_in(j, at, C::invalid_type, C::invalid_value, -2000, 2000, std::nullopt, out);
+    return int_in(j, at, C::invalid_type, C::invalid_value, std::nullopt, std::nullopt, std::nullopt, out);
 }
 
 Status d93(const Json& j, const std::string& at, int64_t* out) {  // $defs/powerSettings/power_cap_w
-    return int_in(j, at, C::invalid_type, C::invalid_value, 1, 1000, std::nullopt, out);
+    return int_in(j, at, C::invalid_type, C::invalid_value, 1, std::nullopt, std::nullopt, out);
 }
 
 Status d483(const Json& j, const std::string& at, int64_t* out) {  // $defs/powerPatch/vddgfx_offset_mv
-    return int_in(j, at, C::invalid_type, C::invalid_value, -500, 500, std::nullopt, out);
+    return int_in(j, at, C::invalid_type, C::invalid_value, std::nullopt, std::nullopt, std::nullopt, out);
 }
 
 Status d484(const Json& j, const std::string& at, int64_t* out) {  // $defs/powerPatch/sclk_max_mhz
-    return int_in(j, at, C::invalid_type, C::invalid_value, 1, 10000, std::nullopt, out);
+    return int_in(j, at, C::invalid_type, C::invalid_value, 1, std::nullopt, std::nullopt, out);
 }
 
 Status d485(const Json& j, const std::string& at, int64_t* out) {  // $defs/powerPatch/sclk_offset_mhz
-    return int_in(j, at, C::invalid_type, C::invalid_value, -2000, 2000, std::nullopt, out);
+    return int_in(j, at, C::invalid_type, C::invalid_value, std::nullopt, std::nullopt, std::nullopt, out);
 }
 
 Status d486(const Json& j, const std::string& at, int64_t* out) {  // $defs/powerPatch/power_cap_w
-    return int_in(j, at, C::invalid_type, C::invalid_value, 1, 1000, std::nullopt, out);
+    return int_in(j, at, C::invalid_type, C::invalid_value, 1, std::nullopt, std::nullopt, out);
 }
 
 Status d95(const Json& j, const std::string& at, std::string* out) {  // /apiVersion

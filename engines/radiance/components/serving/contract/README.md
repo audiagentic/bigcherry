@@ -106,3 +106,13 @@ or string def. Counts are not negative. A tuple item takes no scalar `item_*` at
 Regenerate by invoking `bc_contract_gen` with `contract/serving-v2.toml` and `generated/v2`, then copy `serving-v2.schema.json` and `serving-fields.md` to their documented v2 equivalents. `bc_contract_check` compares both v1 and v2 committed outputs against the registry, including the copies in docs; v2 generation never mutates a v1 output. `bc_v2_codec_test` checks the compiled C++ codec; `tools/tests/core/test_serving_manifest_v2_contract.py` checks the generated Python codec, synthetic fixtures, closed schema, duplicate rejection, role/BDF semantics and version isolation.
 
 V2-only `[[field]]` attributes `origins` and `confidences` declare permitted provenance source and evidence quality; omitted attributes mean unrestricted. Values are validated against the registry's v2 provenance enums, emitted in the C++ field table/Python constraints and included in the v2 semantic fingerprint. RSC03 resource budgets and RSC09 handoff fields must be derived or calibrated, never profile estimates. See `docs/design/serving-manifest-v2/spec.md` for all v2 additions and pending S8/S10/S13 obligations.
+
+## Inactive v2 successor (RSC11 S9)
+
+`serving-v2.toml` is the single v2 registry. `bc_contract_gen` produces committed `generated/v2/{serving-v2.schema.json,serving_types.h,serving_codec.h,serving_codec.cpp,serving_codec.py,serving-fields.md,contract.fingerprint}`; `bc_contract_check` byte-compares all generated artifacts and the v2 documentation mirrors. Regenerate with:
+
+```
+<serving build>/bc_contract_gen engines/radiance/components/serving/contract/serving-v2.toml engines/radiance/components/serving/generated/v2
+```
+
+Then copy the generated schema and field reference to `docs/design/serving-manifest-v2/` (schema destination: `serving-manifest.v2.schema.json`). The S8/S10 type interface and S5/S11 separate admission-refusal wire are documented in `docs/design/serving-manifest-v2/spec.md`. These artifacts are inactive until S13; v1 generation, its fingerprints, and production readers remain unchanged.

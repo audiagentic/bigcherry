@@ -12,6 +12,8 @@ The v2 wire identity is `apiVersion=bigcherry/v2`, `metadata.contract_version=2`
 
 `spec.intent.power` requires a named `profile` and `role_overrides` (an empty map is valid). Overrides are nonempty patches of the four settings `vddgfx_offset_mv`, `sclk_max_mhz`, `sclk_offset_mhz`, and `power_cap_w`. `spec.plan.power` requires `mode` (observe/apply), `profile`, `profile_digest`, `devices[]` with `role`, `bdf`, `settings`, and `cpu.settings` (a closed empty object, no CPU controller in v2). The C++ resolver S10 must match the plan's role/BDF multiset with the engine TP BDFs plus selected helper BDFs, disallow duplicate BDFs and unknown role overrides, ensure plan profile matches intent, and insist the stock observe plan has empty settings. The generated Python scaffold already checks these structural/semantic relationships. The full qualification, PWR07 probe ranges, profile digest construction, apply-vs-observe safety rules and provenance checks belong to S10/S12/S13.
 
+No static device power/clock ranges are invented in the manifest schema: signed offsets and positive setting integers are typed, while S10/PWR07 must use a fresh per-BDF capability probe and qualified plan limits. A schema bound is not evidence that a device can accept a setting.
+
 Named profile **selection** is policy; the per-BDF resolved settings are derived from a qualified profile. A profile file changing after manifest resolution cannot change the immutable plan. Live readings, power writes and actual values belong to PWR09 receipts, not the manifest. Memory geometry/cache identity does not change with power policy; performance comparisons must include the resolved power plan digest.
 
 ## Measured resource handoff (S8/S10)
@@ -23,6 +25,12 @@ The registry declares `origins=[derived,calibrated]` and `confidences=[exact,mea
 ## Live placement decision (RHP18)
 
 `spec.handoff.placement.live_policy_state` is a typed required startup decision, separate from the runtime placement snapshot: requested on/off/not_applicable, configured, reason_code, reason_detail, calibration_key, record_identity, effect_gate, histogram_period_s, cadence_ns and max_heat_age_ns. S10 must create this decision after the policy preflight and correctly distinguish no qualified calibration record, stale heat feed and not-applicable layouts. S13 must display it and compare it with runtime degraded/placement-stopped evidence in receipts.
+
+## S8/S10 integration interface and S5 refusal ownership
+
+S8/S10 consume the committed `generated/v2/serving_types.h` / `serving_codec.{h,cpp}` under `engines/radiance/components/serving/`, namespace `bc::serving::v2`. The concrete members are `Manifest.spec.plan.resource_inputs` (`MeasuredResourceInputs`), `Manifest.spec.plan.power` (`PowerPlan`), and `Manifest.spec.handoff.placement.live_policy_state` (`LivePolicyStartup`). Python exposes `generated/v2/serving_codec.py:decode(text)` and `encode(document)`, raising `ManifestV2Error`. S8 supplies measured bytes and qualified handoff settings; S10 builds and validates those sections. S13 is the sole production cutover.
+
+The admission refusal is an out-of-band S5/S11 wire protocol, **not a manifest field**. Its one authoritative consumer is `tools/bigcherry/serving/measured_plan.py:RoomRefusal.from_record` and `EngineRoomRefused.from_process_exit` (S11, #840). S5 (#844) emits `BC_SERVING_ADMISSION_REFUSAL=` followed by the JSON from `engines/radiance/components/serving/v1/error.cpp:room_refusal_json`, and exits 4. The `schema_version=1` on this error envelope is not the serving-manifest version. S10/S13 must reuse that exact contract, not clone the refusal schema in v2 or infer it from human error text.
 
 ## Validation, fixture limits and activation
 

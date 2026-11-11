@@ -98,9 +98,21 @@ class ServingManifestV2ContractTest(unittest.TestCase):
                 with self.assertRaises(codec.ManifestV2Error):
                     codec.decode(json.dumps(example))
                 mapping.pop("unknown_s9_member")
-        example["spec"]["plan"]["power"]["devices"][0]["settings"]["vddgfx_offset_mv"] = -501
+        example["spec"]["plan"]["power"]["devices"][0]["settings"]["vddgfx_offset_mv"] = "wrong-type"
         with self.assertRaises(codec.ManifestV2Error):
             codec.decode(json.dumps(example))
+
+    def test_power_schema_only_enforces_inherent_integer_bounds(self):
+        document = self.fixtures()[0]
+        settings = document["spec"]["plan"]["power"]["devices"][0]["settings"]
+        settings["power_cap_w"] = 0
+        with self.assertRaises(codec.ManifestV2Error):
+            codec.decode(json.dumps(document))
+        settings["power_cap_w"] = 1000000
+        # No device-specific upper cap is invented by the manifest schema.
+        # Observe-mode empty-settings semantics must still reject this.
+        with self.assertRaisesRegex(codec.ManifestV2Error, "observe mode"):
+            codec.decode(json.dumps(document))
 
     def test_role_bdf_resolution_and_margin_fail_closed(self):
         doc = self.fixtures()[0]

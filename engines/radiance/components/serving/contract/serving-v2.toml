@@ -697,8 +697,6 @@ doc = "Resolved power settings; an empty object means no writes."
 [[field]]
 path = "$defs/powerSettings/vddgfx_offset_mv"
 kind = "integer"
-minimum = -500
-maximum = 500
 optional = true
 doc = "Signed VDDGFX offset in millivolts."
 
@@ -706,15 +704,12 @@ doc = "Signed VDDGFX offset in millivolts."
 path = "$defs/powerSettings/sclk_max_mhz"
 kind = "integer"
 minimum = 1
-maximum = 10000
 optional = true
 doc = "Maximum shader clock in MHz."
 
 [[field]]
 path = "$defs/powerSettings/sclk_offset_mhz"
 kind = "integer"
-minimum = -2000
-maximum = 2000
 optional = true
 doc = "Signed shader clock offset in MHz."
 
@@ -722,7 +717,6 @@ doc = "Signed shader clock offset in MHz."
 path = "$defs/powerSettings/power_cap_w"
 kind = "integer"
 minimum = 1
-maximum = 1000
 optional = true
 doc = "Board power cap in watts."
 
