@@ -1734,7 +1734,6 @@
           "additionalProperties": false,
           "required": [
             "power",
-            "resource_inputs",
             "owner_map",
             "state"
           ],
@@ -1815,7 +1814,7 @@
               }
             },
             "resource_inputs": {
-              "description": "S8/S10 engine-measured resource ledger input; each value must carry origin evidence.",
+              "description": "S8/S10 engine-measured resource ledger input; each value must carry origin evidence. Present exactly when `plan.state` is `measured`: the measuring start has no engine measurement yet.",
               "type": "object",
               "additionalProperties": false,
               "required": [

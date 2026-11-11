@@ -18,10 +18,10 @@ inline constexpr std::string_view kApiVersion = "bigcherry/v2";
 inline constexpr std::string_view kKind = "ServingManifest";
 inline constexpr int64_t kContractVersion = 2;
 // sha256 of the JCS validation schema without annotations (contract/README.md); the build pins it.
-inline constexpr std::string_view kFingerprint = "sha256:3827ca142eb29de87baecfe204b802fc50aab8d3b06cdc714e7afaa96708c521";
+inline constexpr std::string_view kFingerprint = "sha256:6d20ada40f44dfdcf60116dea913cd251868c8efa84535e82afa58f2b6da8aa1";
 // sha256 of the schema plus the frozen semantics it does not express (classes, lifecycle, Radiance bindings,
 // reader error codes); README.md.
-inline constexpr std::string_view kSemanticFingerprint = "sha256:d776a8f97169c70b64a0b726d4a5d98aaf62b5d7bbd1dbeafd1a5c5ecc50c4c0";
+inline constexpr std::string_view kSemanticFingerprint = "sha256:1f317e3b4a544340e1f59a8afe100abf94ce0a21f386c83b2eea6665c1d82587";
 // spec §11 amendment 8: the deepest container nesting a valid document can have (the root object is 1),
 // derived from the closed schema by the generator. The strict reader refuses anything deeper.
 inline constexpr size_t kMaxDepth = 9;
@@ -1232,6 +1232,7 @@ struct HelperFootprint {
 };
 
 // /spec/plan/resource_inputs: S8/S10 engine-measured resource ledger input; each value must carry origin evidence.
+// Present exactly when `plan.state` is `measured`: the measuring start has no engine measurement yet.
 struct MeasuredResourceInputs {
     // Engine-measured host embedding footprint.
     int64_t host_embedding_bytes;
@@ -1303,8 +1304,9 @@ struct EngineMemory {
 struct Plan {
     // S10-resolved immutable per-BDF power plan.
     PowerPlan power;
-    // S8/S10 engine-measured resource ledger input; each value must carry origin evidence.
-    MeasuredResourceInputs resource_inputs;
+    // S8/S10 engine-measured resource ledger input; each value must carry origin evidence. Present exactly when
+    // `plan.state` is `measured`: the measuring start has no engine measurement yet.
+    std::optional<MeasuredResourceInputs> resource_inputs;
     // Initial expert ownership; the live mailbox epochs own later placement (spec §4).
     OwnerMap owner_map;
     // `measured`: `engine_memory` is present and every start path accepts the manifest. `unmeasured`: the owner map and
@@ -2533,9 +2535,9 @@ inline constexpr std::array<FieldInfo, 433> kFields = {{
     {"/spec/plan/power/cpu/settings", "object", "derived", true, false,
      "", "", false,
      "Closed empty CPU settings map; no CPU writes permitted by v2.", "", "", "", "", ""},
-    {"/spec/plan/resource_inputs", "object", "derived", true, false,
+    {"/spec/plan/resource_inputs", "object", "derived", false, false,
      "", "", false,
-     "S8/S10 engine-measured resource ledger input; each value must carry origin evidence.", "", "", "", "derived,calibrated", "exact,measured"},
+     "S8/S10 engine-measured resource ledger input; each value must carry origin evidence. Present exactly when `plan.state` is `measured`: the measuring start has no engine measurement yet.", "", "", "", "derived,calibrated", "exact,measured"},
     {"/spec/plan/resource_inputs/host_embedding_bytes", "ref", "derived", true, false,
      "", "", false,
      "Engine-measured host embedding footprint.", "", "", "uint", "derived,calibrated", "exact,measured"},

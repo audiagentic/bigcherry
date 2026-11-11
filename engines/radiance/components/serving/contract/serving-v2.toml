@@ -2673,11 +2673,12 @@ doc = "Closed empty CPU settings map; no CPU writes permitted by v2."
 
 [[field]]
 path = "/spec/plan/resource_inputs"
+optional = true
 origins = ["derived", "calibrated"]
 confidences = ["exact", "measured"]
 kind = "object"
 cpp = "MeasuredResourceInputs"
-doc = "S8/S10 engine-measured resource ledger input; each value must carry origin evidence."
+doc = "S8/S10 engine-measured resource ledger input; each value must carry origin evidence. Present exactly when `plan.state` is `measured`: the measuring start has no engine measurement yet."
 
 [[field]]
 path = "/spec/plan/resource_inputs/host_embedding_bytes"
