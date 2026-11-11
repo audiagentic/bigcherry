@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.36.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.35.0...bc-platform-1.36.0) (2026-11-11)
+
+
+### New and changed
+
+* **rsc11:** audit S8 calibration rebinds and capture hardware run files ([#870](https://github.com/audiagentic/bigcherry/issues/870)) ([35c8f5f](https://github.com/audiagentic/bigcherry/commit/35c8f5f546bce631f1efaa1e7b386922a663ec92))
+
 ## [1.35.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.34.1...bc-platform-1.35.0) (2026-11-11)
 
 
