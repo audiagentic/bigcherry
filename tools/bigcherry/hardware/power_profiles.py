@@ -22,7 +22,7 @@ from pathlib import Path
 _NAME = re.compile(r"^[a-z][a-z0-9_-]{0,31}$")
 _ROLE = re.compile(r"^(engine|helper\*|helper[0-9]+)$")
 _ARCH = re.compile(r"^gfx[0-9a-f]+$")
-_CONTROLS = frozenset(("vddgfx_offset_mv", "sclk_max_mhz", "sclk_offset_mhz", "power_cap_w"))
+_CONTROLS = frozenset(("vddgfx_offset_mv", "sclk_max_mhz", "mclk_max_mhz", "sclk_offset_mhz", "power_cap_w"))
 _IJSON_MAX = (1 << 53) - 1
 
 
@@ -57,7 +57,7 @@ def validate_settings(settings: object, *, empty_ok: bool = True) -> dict[str, i
     for k, v in settings.items():
         # Hardware-specific bounds come ONLY from the fresh PWR07 BDF probe.
         if type(v) is not int or abs(v) > _IJSON_MAX or (
-            k in ("sclk_max_mhz", "power_cap_w") and v <= 0
+            k in ("sclk_max_mhz", "mclk_max_mhz", "power_cap_w") and v <= 0
         ):
             raise ProfileError(f"{k} must be a typed I-JSON-safe power setting")
     if "sclk_max_mhz" in settings and "sclk_offset_mhz" in settings:

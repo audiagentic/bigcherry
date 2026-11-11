@@ -108,6 +108,26 @@ def test_apply_requires_qualified_calibration_and_probes():
     ]
 
 
+def test_mclk_override_requires_matching_evidence_and_fresh_device_bounds():
+    bdf = "0000:02:00.0"
+    quals = {b: qualified(b) for b in (bdf, "0000:03:00.0")}
+    probes = {b: gpu_probe(b) for b in quals}
+    base = quals[bdf]
+    from dataclasses import replace
+    quals[bdf] = replace(base, settings={**base.settings, "mclk_max_mhz": 1400})
+    probes[bdf].controls["mclk_max_mhz"] = ControlCapability(
+        "supported", Observation("supported", 1250), 97, 1500, "MHz")
+    overrides = {"helper0": {"mclk_max_mhz": 1400}}
+    plan = resolve_power_plan(candidate(), layout(), mode="apply",
+                              role_overrides=overrides, qualifications=quals, probes=probes)
+    assert plan.devices[1].settings["mclk_max_mhz"] == 1400
+    probes[bdf].controls["mclk_max_mhz"] = ControlCapability(
+        "supported", Observation("supported", 1250), 97, 1250, "MHz")
+    with pytest.raises(PowerPlanRefused, match="mclk_max_mhz outside probed device range"):
+        resolve_power_plan(candidate(), layout(), mode="apply",
+                           role_overrides=overrides, qualifications=quals, probes=probes)
+
+
 def test_missing_one_device_proof_refuses_whole_layout():
     bdf = "0000:02:00.0"
     with pytest.raises(PowerPlanRefused, match="qualified"):

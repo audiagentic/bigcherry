@@ -30,6 +30,7 @@ v2::S10Inputs inputs(const v2::Manifest &m) {
   in.profile.name = "xtx-sclk2700-uv125";
   v2::PowerSettings cap{};
   cap.sclk_max_mhz = 2700;
+  cap.mclk_max_mhz = 1400;
   cap.vddgfx_offset_mv = -125;
   in.profile.rules = {
       {"engine", "gfx1100", cap, "docs/reference/power-tuning-evidence-2026-11.md"},
@@ -175,19 +176,25 @@ int main() {
     if (h.gpu == "0000:44:00.0") continue; // gfx1030: untouched
     v2::PowerSettings settings{};
     settings.sclk_max_mhz = 2700;
+    settings.mclk_max_mhz = 1400;
     settings.vddgfx_offset_mv = -125;
     in.qualifications[h.gpu] = {h.gpu, "gfx1100", in.profile.name,
         settings, "separate hardware validation", "build-digest",
         "driver-digest", true};
     in.probes[h.gpu] = {h.gpu, "amdgpu",
         {{"sclk_max_mhz", {1000, 3000, true, true}},
+         {"mclk_max_mhz", {97, 1500, true, true}},
          {"vddgfx_offset_mv", {-150, 0, true, true}}}};
   }
   solved = v2::resolve_s10(m, in);
   assert(solved);
   assert(solved.value().spec.plan.power.devices[0].settings.sclk_max_mhz == std::nullopt);
   assert(solved.value().spec.plan.power.devices[1].settings.sclk_max_mhz == 2700);
+  assert(solved.value().spec.plan.power.devices[1].settings.mclk_max_mhz == 1400);
   assert(solved.value().spec.plan.power.devices[3].settings.sclk_max_mhz == std::nullopt);
+  in.probes.at("0000:41:00.0").controls.at("mclk_max_mhz").maximum = 1250;
+  assert(!v2::resolve_s10(m, in)); // MCLK range is supplied by the card probe
+  in.probes.at("0000:41:00.0").controls.at("mclk_max_mhz").maximum = 1500;
   in.probes.at("0000:41:00.0").controls.at("sclk_max_mhz").maximum = 2600;
   assert(!v2::resolve_s10(m, in));
   in.probes.at("0000:41:00.0").controls.at("sclk_max_mhz").maximum = 3000;
