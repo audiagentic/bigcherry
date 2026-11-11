@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.40.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.39.0...bc-platform-1.40.0) (2026-11-11)
+
+
+### New and changed
+
+* **power:** support card-probed maximum memory clock ([#882](https://github.com/audiagentic/bigcherry/issues/882)) ([eec042d](https://github.com/audiagentic/bigcherry/commit/eec042d0a0418a03ed7cc3d6a243a4dbab8b1fa2))
+* **rsc11:** publish inactive P1 native measurements ([#887](https://github.com/audiagentic/bigcherry/issues/887)) ([e31e059](https://github.com/audiagentic/bigcherry/commit/e31e05911537c0a6fdd356596ca57cb4fdf044de))
+* **rsc11:** wire live placement telemetry into inactive v2 receipts (S13 receipts-b) ([#886](https://github.com/audiagentic/bigcherry/issues/886)) ([2aee5ae](https://github.com/audiagentic/bigcherry/commit/2aee5ae3b78035757b39afa9c3dd80c23f893628))
+
 ## [1.39.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.38.1...bc-platform-1.39.0) (2026-11-11)
 
 
