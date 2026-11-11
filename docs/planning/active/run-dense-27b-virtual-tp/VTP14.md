@@ -394,3 +394,37 @@ the plan:
   the lease.
 - **N5:** admission and context, with per-rank KV/GDN state checked per rank.
 - **N6:** quantised TP3. qwen35_fp8 and w8a8 need the ownership spans too.
+
+## N0 correction and MXFP4 TP3, 2026-11-11
+
+**The first N0 attempt measured the wrong model.**
+
+- The attempt used qwen3.8-27b-fp8-df2, with speculation off.
+- It measured TP2 at 151 ms per decode step and a 10 s TTFT for 271 tokens.
+- A same-settings A/B gave exactly the same 6.5 tok/s on the production `radiance` build and on the vtp14 build. So
+  that fp8 container is simply slow on gfx1100, which has no fp8 hardware, and the patches are not the cause.
+- The XTX `power1_cap = 0` that was suspected first was not the cause either. It predates the power chain, and earlier
+  stock runs were unthrottled at that setting.
+- The production two-XTX layout (`layouts.toml` `qwen27b-2xtx`) serves the **MXFP4** container, so the two aborted
+  N0 runs are discarded.
+
+**Fix: an uneven delta-net split now works on MXFP4 (rad0019).**
+
+- `LinearFP8::span_parts` spanned an MXFP4 linear's codes and scales, but not its `wref` plane. The single-span path
+  already did.
+- As a result, TP3 refused `blk.0.ssm_inz.ref` (16384 rows over 3 ranks).
+- This is a latent upstream bug: nothing used an uneven head split on MXFP4 before.
+
+**Smoke results** (build 93dcced3bff30928b0f7fffc120a00e6, `--kv-cache-dtype fp8 --num-speculative-tokens 0
+--max-num-seqs 8`; untimed, with other CPU work running)
+
+| Configuration | Single-stream decode | TTFT | Output |
+|---|---|---|---|
+| TP2, two XTX (wht6 or exact) | about 50 tok/s | 0.06 s | correct |
+| TP3 6/6/12, XTX + XTX + R9700 | 64–65 tok/s | about 0.05 s | correct; rendezvous shared by libr3.so and libr4d.so |
+
+**Next: the timed N0 ABBA on MXFP4** (TP2, TP3, TP3, TP2 at 1/4/6/8 streams, quiet CPU, lease).
+
+- Speculation is off for both, because TP3 refuses a drafter under a profile.
+- This makes it the matched baseline, not the production best case. The production TP2 configuration with
+  speculation on is recorded separately as a reference.
