@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.30.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.29.0...bc-platform-1.30.0) (2026-11-11)
+
+
+### New and changed
+
+* **rsc11:** resolve measured v2 resources and handoff calibrations (S8) ([#847](https://github.com/audiagentic/bigcherry/issues/847)) ([b5f73b8](https://github.com/audiagentic/bigcherry/commit/b5f73b8f57cf8196e189a77f3da4e779fd1d6be6))
+
 ## [1.29.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.28.0...bc-platform-1.29.0) (2026-11-11)
 
 
