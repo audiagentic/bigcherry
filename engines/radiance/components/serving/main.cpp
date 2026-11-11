@@ -127,7 +127,23 @@ int main(int argc, char** argv) {
                 else if (arg == "--profile") ingest_opts.profile = argv[++i];
                 else if (arg == "--sys-root") ingest_opts.sys_root = argv[++i];
                 else if (arg == "--set") ingest_opts.sets.push_back(argv[++i]);
-                else throw std::runtime                values, facts, bc::serving::container_identity(
+                else throw std::runtime_error("calibration-ingest: unknown option " + arg);
+            }
+            if (log.empty() || cache.empty() || manifest.empty() || plan_dir.empty() ||
+                binary.empty() || ingest_opts.site.empty() || extra.empty())
+                throw std::runtime_error(
+                    "calibration-ingest: --from-log --calibration --manifest --plan-cache "
+                    "--engine-binary --site --plan-extra are required");
+            // Do not invent a plan key from a filename or trust a supplied
+            // raw key. Verify the exact resolved model, engine, and measured
+            // plan against the strict lab manifest.
+            if (fs::exists(cache)) ingest_opts.calibration_cache = cache;
+            const auto facts = bc::serving::detect(ingest_opts.sys_root);
+            const auto resolved = bc::serving::resolve(ingest_opts, facts);
+            const Json& values = resolved.values;
+            const fs::path home = values.at("engine").at("radiance_home").get<std::string>();
+            const Json inputs = bc::serving::plan_key_inputs(
+                values, facts, bc::serving::container_identity(
                     values.at("engine").at("model").get<std::string>()),
                 bc::serving::engine_identity(binary, home), extra);
             const auto plan = bc::serving::plan_cache_lookup(plan_dir, inputs);
@@ -234,7 +250,45 @@ int main(int argc, char** argv) {
             throw std::runtime_error("--measured-plan needs both --helpers-resident-mib and --engine-resident-mib");
         if (modes != 1) throw std::runtime_error("choose one mode (see --help)");
         if (!publish_v2_p1.empty()) {
-            if (!positional.empty() || !opts.calibration_cache.e                {"schema_version", 1}, {"kind", "bc_serve_v2_live_room"},
+            if (!positional.empty() || !opts.calibration_cache.empty() || json ||
+                unmeasured || !measured_plan_file.empty() || !plan_extra.empty() ||
+                !live_policy_file.empty() || !experiment_file.empty() || calibration_run ||
+                helpers_resident_mib || engine_resident_mib)
+                throw std::runtime_error(
+                    "--publish-v2-p1 accepts only --site/--profile/--set/--sys-root");
+            std::ifstream in(publish_v2_p1, std::ios::binary);
+            if (!in) throw std::runtime_error("P1 cannot open request " + publish_v2_p1);
+            const std::string bytes((std::istreambuf_iterator<char>(in)), {});
+            const auto request = bc::serving::parse_plan_json(bytes, publish_v2_p1);
+            const auto facts = bc::serving::detect(opts.sys_root);
+            const auto resolved = bc::serving::resolve(opts, facts);
+            const auto record = bc::serving::v2::produce_p1_inputs(
+                resolved, facts, opts.sys_root, request);
+            std::cout << record.dump(2) << '\n';
+            return 0;
+        }
+        if (publish_v2_live_room) {
+            if (!positional.empty() || !opts.calibration_cache.empty() || json ||
+                unmeasured || !measured_plan_file.empty() || !plan_extra.empty() ||
+                !live_policy_file.empty() || !experiment_file.empty() || calibration_run)
+                throw std::runtime_error(
+                    "--publish-v2-live-room accepts only --site/--profile/--set/--sys-root");
+            // Native live-room publication is NOT a v2 startup manifest or a
+            // substitute for fresh engine/owner-map/worker measurements.
+            const auto facts = bc::serving::detect(opts.sys_root);
+            const auto resolved = bc::serving::resolve(opts, facts);
+            std::vector<std::string> selected = resolved.typed.layout.engine_cards;
+            selected.insert(selected.end(), resolved.typed.layout.helper_cards.begin(),
+                            resolved.typed.layout.helper_cards.end());
+            const auto measured = bc::serving::v2::measure_live_room(
+                facts, opts.sys_root, selected);
+            if (!measured)
+                throw std::runtime_error(
+                    "P1 live-room refusal: " + measured.error().path + ": " +
+                    measured.error().message);
+            const auto& room = measured.value();
+            Json record = {
+                {"schema_version", 1}, {"kind", "bc_serve_v2_live_room"},
                 {"layout", resolved.typed.layout.name},
                 {"engine_bdfs", resolved.typed.layout.engine_cards},
                 {"helper_bdfs", resolved.typed.layout.helper_cards},
@@ -355,4 +409,28 @@ int main(int argc, char** argv) {
             if (has_handoff && !placement.contains("live_policy"))
                 std::cerr << "live policy: no calibration for key " << bc::serving::calibration_key(key_inputs)
                           << "; policy omitted (v1 cannot represent observe-only)\n";
-            else if (has_handoff) for (auto it = pro}
+            else if (has_handoff) for (auto it = prov.begin(); it != prov.end(); ++it) {
+                const std::string pointer = "/spec/handoff/placement/live_policy/";
+                if (it.key().rfind(pointer, 0) != 0) continue;
+                const std::string field = it.key().substr(pointer.size());
+                std::cerr << "live policy: " << field << "=" << placement.at("live_policy").at(field).dump()
+                          << " [" << it.value().at("origin") << "] "
+                          << it.value().at("source").get<std::string>() << '\n';
+            }
+            bc::serving::write_manifest_file(write_manifest, built.text);
+            std::cout << "manifest: " << write_manifest << '\n' << "digest: " << built.digest << '\n' << "no processes started\n";
+            return 0;
+        }
+        auto result = bc::serving::resolve(opts, bc::serving::detect(opts.sys_root));
+        if (validation) {
+            std::cout << "valid: " << result.hash << '\n';
+        } else {
+            if (json) std::cout << result.manifest.dump(2) << '\n';
+            else explain(result);
+        }
+        return 0;
+    } catch (const std::exception& error) {
+        std::cerr << "bc-serve: " << error.what() << '\n';
+        return 2;
+    }
+}
