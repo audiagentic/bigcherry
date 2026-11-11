@@ -168,6 +168,7 @@ if(BUILD_TESTING)
   add_executable(bc_v2_runtime_receipt_live_test EXCLUDE_FROM_ALL
     v2/runtime_receipt_live_test.cpp)
   target_link_libraries(bc_v2_runtime_receipt_live_test PRIVATE bc_serving_v2_runtime_receipt bc_jcs)
+  add_dependencies(bc_v2_runtime_receipt_live_test bc_v2_runtime_receipt_live)
   target_compile_definitions(bc_v2_runtime_receipt_live_test PRIVATE
     BC_CONTRACT_V2_DOCS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../../../docs/design/serving-manifest-v2")
   add_test(NAME bc_v2_runtime_receipt_live_test
