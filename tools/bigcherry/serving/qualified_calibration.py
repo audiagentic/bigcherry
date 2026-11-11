@@ -10,7 +10,8 @@ from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
 
-from .calibration_store import CalibrationInvalid, select_records, validate_scope
+from .calibration_rebind import select_with_rebind
+from .calibration_store import CalibrationInvalid, validate_scope
 from .measured_plan import PlanBounds, PlanMeasurement
 
 _HANDOFF = (
@@ -63,7 +64,7 @@ def select_for_measurement(
         live_policy_requested=live_policy_requested,
     )
     try:
-        records = select_records(
+        records = select_with_rebind(
             Path(store), scope=scope, required_keys=keys, now_unix_s=now_unix_s,
         )
     except CalibrationInvalid as exc:
