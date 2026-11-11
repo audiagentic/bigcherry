@@ -27,8 +27,8 @@ int main() {
   bad.erase("engine_plan_file");
   rejected(bad, "missing or unknown");
   bad = request;
-  bad["margin"]["source"] = "seed";
-  rejected(bad, "qualified P2 cache");
+  bad["margin"]["source"] = "guess";
+  rejected(bad, "seed or a calibration-cache value");
   bad = request;
   bad["margin"]["evidence"] = "";
   rejected(bad, "margin.evidence");

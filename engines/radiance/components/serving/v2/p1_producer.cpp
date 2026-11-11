@@ -64,8 +64,8 @@ json produce_p1_inputs(const bc::serving::Resolved& resolved, const json& facts,
                    "helper_binary", "retention_target_tokens", "margin", "run_id"}, "request");
   fields(request.at("margin"), {"key", "source", "evidence", "mib"}, "margin");
   const auto& margin = request.at("margin");
-  if (margin.at("key") != "host_ledger_margin.mib" || margin.at("source") != "cache")
-    refuse("margin", "qualified P2 cache calibration required");
+  if (margin.at("key") != "host_ledger_margin.mib" || (margin.at("source") != "cache" && margin.at("source") != "seed"))
+    refuse("margin", "the host-ledger margin is a seed or a calibration-cache value");
   const std::string evidence = nonempty(margin.at("evidence"), "margin.evidence");
   const int64_t margin_mib = integral(margin.at("mib"), "margin.mib");
   const std::string run_id = nonempty(request.at("run_id"), "run_id");
@@ -94,6 +94,7 @@ json produce_p1_inputs(const bc::serving::Resolved& resolved, const json& facts,
   inputs.profile = "production";
   inputs.instance_id = bc::serving::new_instance_id();
   inputs.producer_sha256 = file_sha("/proc/self/exe");
+  inputs.s10.power_profile = "stock";   // only the owner plan is read from this manifest
   const bc::serving::BuiltManifest owned = bc::serving::build_manifest(inputs);
   const auto checked = bc::serving::v2::read_manifest(
       owned.text, "native P1 owner-plan", bc::serving::v2::PlanUse::measuring);
@@ -202,7 +203,7 @@ json produce_p1_inputs(const bc::serving::Resolved& resolved, const json& facts,
   if (resolved.typed.memory.host_reserve_mib > uint64_t(kMax / kMiB))
     refuse("host_reserve", "resolved host reserve overflows bytes");
   native.host_reserve_bytes = static_cast<int64_t>(resolved.typed.memory.host_reserve_mib) * kMiB;
-  native.host_margin = {"host_ledger_margin.mib", MarginSource::kCache, evidence, margin_mib};
+  native.host_margin = {"host_ledger_margin.mib", margin.at("source") == "seed" ? MarginSource::kSeed : MarginSource::kCache, evidence, margin_mib};
   native.model_digest = model_id;
   native.engine_build_digest = engine_id;
   native.helper_build_digest = helper_id;
