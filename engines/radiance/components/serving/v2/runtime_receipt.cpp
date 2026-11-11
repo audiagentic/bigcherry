@@ -200,6 +200,11 @@ Result<Json> publish_live_runtime_receipt(
     if (before.active_slot > 1 ||
         shm::generation_digest(mapping, before.active_slot) != before.active_digest)
       return fail("control.active_digest", "published owner digest disagrees with live owner map");
+    PC verified{};
+    if (!shm::placement_snapshot(mapping, &verified))
+      return fail("control", "worker control changed during owner-map observation");
+    if (std::memcmp(&before, &verified, sizeof(before)) != 0)
+      continue;
     if (before.transaction_id && before.journal_index < 2) {
       const auto& current = journal.entry[before.journal_index];
       if (current.before_epoch != before.active_epoch &&
