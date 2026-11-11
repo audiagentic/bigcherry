@@ -245,6 +245,8 @@ class PlanMeasurement:
     host: HostLimits
     worker_footprints_bytes: dict[str, int]
     gpu: tuple[GpuDemand, ...]
+    resource_inputs: dict | None = None
+    scope: dict | None = None
 
 
 @dataclass(frozen=True)

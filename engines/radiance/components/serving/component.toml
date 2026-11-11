@@ -11,4 +11,4 @@ outputs = ["bin/bc-serve"]
 configure = { RADIANCE_SRC = "{engine_source}" }
 
 [test]
-targets = ["bc_serving_test", "bc_live_policy_test", "bc_live_policy_ingest_test", "bc_jcs_test", "bc_contract_test", "bc_contract_check", "bc_v1_test", "bc_s5_refusal_test", "bc_experts_test", "bc_owner_map_test", "bc_v2_codec_test", "bc_v2_s8_test", "bc_v2_s10_test"]
+targets = ["bc_serving_test", "bc_live_policy_test", "bc_live_policy_ingest_test", "bc_jcs_test", "bc_contract_test", "bc_contract_check", "bc_v1_test", "bc_s5_refusal_test", "bc_experts_test", "bc_owner_map_test", "bc_v2_codec_test", "bc_v2_s8_test", "bc_v2_s10_test", "bc_v2_p1_test"]
