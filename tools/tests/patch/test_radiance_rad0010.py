@@ -22,7 +22,7 @@ BEFORE = {
     "core/engine.cpp": "1178c60",
 }
 AFTER = {
-    "core/runtime/ctx.cpp": "32ec456",
+    "core/runtime/ctx.cpp": "e20a678",
     "core/engine.cpp": "e579ce6",
     "core/runtime/bc_moe_remote_evidence.h": "47f1e86",
 }
@@ -54,6 +54,11 @@ def test_package_pinned_apply_idempotent_and_thin():
         outputs = {rel: blob((root / rel).read_bytes()) for rel in AFTER}
         assert all(not expected or outputs[rel] == expected for rel, expected in AFTER.items()), outputs
         print("RHP01_PIN_BLOBS", {rel: blob((PIN / rel).read_bytes()) for rel in BEFORE}, outputs)
+        ctx_source = (root / "core/runtime/ctx.cpp").read_text()
+        assert "if (!ok) continue;\n        (void)bc_moe_remote_evidence_landed(" in ctx_source
+        assert "route_[(size_t)layer].credited[bank] = true;\n    (void)bc_moe_remote_evidence_credit(" in ctx_source
+        assert "if (bc_moe_remote_evidence_credit(" not in ctx_source
+        assert "if (!bc_moe_remote_evidence_landed(" not in ctx_source
         originals = {rel: (root / rel).read_bytes() for rel in AFTER}
         second = apply_all(list(ps), root)
         assert all(r.ok for r in second), second

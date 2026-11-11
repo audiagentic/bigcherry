@@ -143,6 +143,19 @@ counts (21,532,920 routes, 0 cells differing). 42K probe on the chunked-combine 
 histogram. On this build the old recording's time cost was itself small; the earlier 5-24% was measured before #497. Either
 way recording is now cheap enough to leave on, which stage A (heat-drift.py on live counts) needs.
 
+## Duplicate route collection still present (card-free audit, 2026-11-11)
+
+This is a **record only**, not the RHP02 ABI migration. Two independently collected feeds remain:
+
+| Path | File:line evidence | What it does |
+| --- | --- | --- |
+| Authoritative upstream Radiance histogram | `engines/radiance/tests/fixtures/769b4c6/core/runtime/ctx.cpp:621-695` (`route_report_impl`, bank + report count), `:596-607` (`route_flush`, asynchronous row transfer + event), `:734-760` (`next_histogram`, event query), `core/engine.cpp:266-293` (`tiering_dispatch`, `HeatEngine::observe` and credit) | Original model-global per-layer expert counts; asynchronous, banked, weighted by `last_histogram_reports`. The managed `rad0010_routing_evidence` package observes this same path without adding a GPU counter. Pin here is the package's v1.16.0 fixture; check the current engine pin at build time. |
+| Separate remote-helper GPU route count | `engines/radiance/components/moe-remote/moe_mailbox_ops.hip:167-171` (`step_heat` LDS array), `:236-248` (per-route count on `k == 0`), `:259-265` (accumulation into `heat`) | A distinct GPU-side route counter in the mailbox publish kernel; counts only admitted/published remote passes, not credited upstream histogram events. This is the collection RHP02 must eventually remove after parity, **not** extend in RHP01. |
+| Separate helper histogram storage/export | `engines/radiance/components/moe-remote/moe_remote_hook.cpp:60` (pinned `heat_host`), `:124` (snapshotter), `:831-849` (snapshot file and final device sync), `:853-867` (periodic snapshot thread), `:885-901` (final write/free) | Exports an independently accumulated cumulative uint32 histogram into `R3_MOE_WORKER_HISTOGRAM` rank files. The final device sync is at teardown, **not** a new per-layer wait. |
+| Current policy consumer | `engines/radiance/components/moe-remote/worker_heat_source.h:47-67` (`HistogramFileSource` and lack of completed watermark), `r3_moe_worker.cpp:639-649` (histogram requirement), `worker_policy_driver.h:479` (staleness warning) | Reads cumulative filesystem snapshots and computes deltas, rather than receiving per-step credited Radiance host observations. It cannot establish exact rank/step/phase/multiplicity parity from the file format alone. |
+
+**Remaining work:** RHP02 must introduce one versioned, bounded, nonblocking **CPU-side** observation of credited Radiance histogram rows and rewire the ownership policy to it; prove parity across model-global expert IDs, each layer (including MTP), rank/step, phase, report multiplicity and incomplete windows; then remove the mailbox-side GPU `step_heat`/heat accumulation, pinned cumulative array, file snapshot dependency and `R3_MOE_WORKER_HISTOGRAM`/`R3_MOE_WORKER_HEAT` production settings together, without a compatibility shim. Until the RHP01 heavier prefill/verification/ring-wrap lease evidence and full matched-window parity pass, none of this duplicated path is deleted or treated as the single authoritative feed.
+
 ## Change Log
 
 - 2026-11-01T22:52:30.560823+00:00 (updated-by): Updated: order=9, section:notes

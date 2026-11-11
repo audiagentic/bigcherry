@@ -11,6 +11,10 @@ Opt-in counters at the engine's existing per-layer routing-histogram producer an
 
 untested as a package on a card, but measured on the production four-GPU layout (RHP01): across decode, a 6-stream soak, 8K and 32K prefills and four concurrent 8K prefills at chunk sizes 2048 and 4096, every histogram was credited (0 overwritten, no engine drops, credit delay p50 1 and p95 2 steps) at no measurable decode cost (24.58 ms/step against 24.6).
 
+## 2026-11-11 card-free follow-up
+
+The anchored `ctx.cpp` reader/credit hooks are now **strictly observational**: they append evidence calls after the existing readiness check and original bank credit assignment rather than replacing them with diagnostic-dependent conditions. Thus tracker rejection cannot suppress Radiance's `HeatEngine` input or credit. The pinned v1.16.0 package output and idempotence tests, compiled tracker mutation tests, and an independent C++ synthetic oracle for 2K/4K/8K chunks, weighted MTP, delayed events, deliberate ring wrap and pending shutdown all pass card-free. No production patch set, GPU histogram producer, per-layer wait or buffer depth changed. The current v1.17.0 pin and 4K/8K/MTP/wrap hardware workloads require separate build and GPU-lease confirmation; see RHP01.
+
 ## Detail
 
 See below.
