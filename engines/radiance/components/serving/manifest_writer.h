@@ -59,6 +59,9 @@ BuiltManifest build_manifest(const ManifestInputs& in);
  * from the values): what the helpers run with unless an experiment patches a helper. */
 nlohmann::json helper_common_settings(const nlohmann::json& values);
 
+/* The host-ledger margin the calibration gives this layout and objective: {key, source, evidence, mib}. */
+nlohmann::json host_ledger_margin(const Resolved& resolved, const std::filesystem::path& calibration_cache);
+
 /* Atomically creates `path` read-only with `text`; refuses an existing path (a manifest is immutable and never replaced). */
 void write_manifest_file(const std::filesystem::path& path, const std::string& text);
 

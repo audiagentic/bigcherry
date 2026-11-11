@@ -92,20 +92,21 @@ plan_check_describe_engine_only() {
   PLAN_OBJECTS=()
 }
 
-# plan_manifest_write OUT [unmeasured | measured-plan FILE HELPERS_MIB ENGINE_MIB]: the v1 serving manifest the engine and the helpers start from,
+# plan_manifest_write OUT [unmeasured | measured-plan FILE RANKS HELPERS_MIB ENGINE_MIB]: the v2 serving manifest the engine and the helpers start from,
 # written once (bc-serve refuses an existing OUT). With `unmeasured`: the measuring start's manifest (owner map and settings,
 # no plan). Otherwise the measured one, from the plan the cache holds for this exact configuration (exit 10 when it holds none),
 # or, with `measured-plan FILE ...`, from the plan a measuring start just produced and the host memory the helpers and the engine
 # held in it (checked against the configuration, then stored in the cache under this configuration's key).
 plan_manifest_write() {
-  local out=$1 serve="$RAD_HOME/bin/bc-serve" extra=()
+  # the stock power profile observes the cards; a named profile is chosen explicitly, never implied
+  local out=$1 serve="$RAD_HOME/bin/bc-serve" extra=() power=(--power-profile stock)
   case "${2:-}" in
     unmeasured)
-      "$serve" --write-manifest "$out" --unmeasured "${PLAN_SITE[@]}" "${PLAN_SET[@]}" "${PLAN_OBJECTS[@]}" >&2
+      "$serve" --write-manifest "$out" --unmeasured "${power[@]}" "${PLAN_SITE[@]}" "${PLAN_SET[@]}" "${PLAN_OBJECTS[@]}" >&2
       return ;;
-    measured-plan) extra=(--measured-plan "$3" --helpers-resident-mib "$4" --engine-resident-mib "$5") ;;
+    measured-plan) extra=(--measured-plan "$3" --rank-demand "$4" --helpers-resident-mib "$5" --engine-resident-mib "$6") ;;
   esac
-  "$serve" --write-manifest "$out" --plan-cache "$RUN/plan-cache" --engine-binary "$RAD_BIN" "${PLAN_SITE[@]}" "${PLAN_EXTRA[@]}" \
+  "$serve" --write-manifest "$out" --plan-cache "$RUN/plan-cache" --engine-binary "$RAD_BIN" "${power[@]}" "${PLAN_SITE[@]}" "${PLAN_EXTRA[@]}" \
     "${PLAN_SET[@]}" "${PLAN_OBJECTS[@]}" "${extra[@]}" >&2
 }
 
@@ -219,17 +220,17 @@ plan_manifest_prepare() {
 # plan_check_measure: no measured plan exists for this configuration. Say so once, measure it with a start that brings the
 # helpers up and stops the engine after plan(), and let bc-serve write the measured manifest from that plan (and store it).
 plan_check_measure() {
-  local plan="$RUN/plan-measured.json" t0=$SECONDS
+  local plan="$RUN/plan-measured.json" ranks="$RUN/plan-ranks.json" t0=$SECONDS
   echo "plan check: no measured plan for this configuration (cache miss); measuring it first (the helpers come up and the engine stops after its memory plan; about 1-2 minutes, once per configuration)" >&2
-  rm -f "$plan" "$PLAN_MANIFEST"
+  rm -f "$plan" "$ranks" "$PLAN_MANIFEST"
   PLAN_MEASURING_MANIFEST="$RUN/manifest-measuring-$STAMP-$$.json"
   plan_manifest_write "$PLAN_MEASURING_MANIFEST" unmeasured || { echo "plan check: the unmeasured manifest was not written (above)" >&2; return 1; }
-  PLAN_MEASURE_FILE="$plan" plan_check_start_engine_measure || { echo "plan check: the measuring start failed; see $RUN/engine-measure.log" >&2; return 1; }
+  PLAN_MEASURE_FILE="$plan" PLAN_RANKS_FILE="$ranks" plan_check_start_engine_measure || { echo "plan check: the measuring start failed; see $RUN/engine-measure.log" >&2; return 1; }
   local engine_mib
   engine_mib=$(sed -n 's/.*--plan-memory: wrote .*; engine start-up took \([0-9][0-9]*\) MiB of MemAvailable;.*/\1/p' "$RUN/engine-measure.log" | tail -1)
   [ -n "$engine_mib" ] && [ -n "${PLAN_HELPERS_RESIDENT_MIB:-}" ] \
     || { echo "plan check: the measuring start did not report the resident host memory (helpers '${PLAN_HELPERS_RESIDENT_MIB:-}' MiB, engine '$engine_mib' MiB); see $RUN/engine-measure.log" >&2; return 1; }
-  plan_manifest_write "$PLAN_MANIFEST" measured-plan "$plan" "$PLAN_HELPERS_RESIDENT_MIB" "$engine_mib" \
+  plan_manifest_write "$PLAN_MANIFEST" measured-plan "$plan" "$ranks" "$PLAN_HELPERS_RESIDENT_MIB" "$engine_mib" \
     || { echo "plan check: the measured manifest was not written (above)" >&2; return 1; }
   echo "plan check: measured in $((SECONDS - t0)) s; plan stored in $RUN/plan-cache and the manifest written" >&2
 }

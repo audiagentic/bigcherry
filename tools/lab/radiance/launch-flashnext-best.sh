@@ -545,12 +545,12 @@ plan_check_start_engine_measure() {
   else
     PLAN_HELPERS_RESIDENT_MIB=0   # no helpers: the engine is alone
   fi
-  start_engine_manifest "$RUN/engine-measure.log" "$PLAN_MEASURING_MANIFEST" --plan-memory "$PLAN_MEASURE_FILE"
+  start_engine_manifest "$RUN/engine-measure.log" "$PLAN_MEASURING_MANIFEST" --plan-memory "$PLAN_MEASURE_FILE" --plan-memory-ranks "$PLAN_RANKS_FILE"
   local pid=$! rc=0
   echo $pid > "$PIDS/engine"
   wait $pid || rc=$?
   stop_procs || { echo "plan check: the measuring start's processes did not exit; not starting for real" >&2; return 1; }   # processes only: the power settings the real start still needs stay applied
-  [ $rc = 0 ] && [ -s "$PLAN_MEASURE_FILE" ]
+  [ $rc = 0 ] && [ -s "$PLAN_MEASURE_FILE" ] && [ -s "$PLAN_RANKS_FILE" ]
 }
 
 source "$(dirname "${BASH_SOURCE[0]}")/lib/plan-check.sh"

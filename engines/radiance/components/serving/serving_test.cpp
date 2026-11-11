@@ -720,7 +720,8 @@ void measured_plan_cache(Fixture& t) {
                "kv_ceiling": 9, "expert_ceiling": 0, "from": "engine plan (test)",
                "cards": [{"capacity": 10, "free": 10, "engine_expert_plane": 0, "expert_unit_max": 1}]},
       "host_pool_mib": 9216})json");
-    const auto stored = sv::plan_cache_store(dir, k, plan, sv::HostResident{2304, 1536});
+    const Json ranks = {{"schema_version", 1}, {"kind", "radiance_p1_rank_demand"}, {"gpu", Json::array()}, {"resident_other_bytes", 0}};
+    const auto stored = sv::plan_cache_store(dir, k, plan, ranks, sv::HostResident{2304, 1536});
     const auto found = sv::plan_cache_lookup(dir, k);
     assert(found && found->key == stored.key && found->plan.checkpoints.want_slots == 72 && !found->measured_at.empty());
     // A plan is stored only for the configuration it belongs to: the host pool it echoes and the expected host consumer
@@ -819,7 +820,7 @@ void measured_plan_cache(Fixture& t) {
     }
     Json bad = plan; bad.erase("vram");
     refused = false;
-    try { (void)sv::plan_cache_store(dir, k, bad, sv::HostResident{2304, 1536}); } catch (const std::exception& e) {
+    try { (void)sv::plan_cache_store(dir, k, bad, ranks, sv::HostResident{2304, 1536}); } catch (const std::exception& e) {
         refused = std::string(e.what()).find("vram: missing required member") != std::string::npos;
     }
     assert(refused);
@@ -1758,7 +1759,7 @@ int main(int argc, char** argv) {
         sdk_environment_step(t);
         std::cout << "PASS: fake KFD/PCI/proc detection; strict keys; types/ranges; required; "
                      "precedence/caps; provenance/hash; launcher engine/WorkerConfig parity; "
-                     "calibration store; calibrated host reserve; host ledger; measured plan cache; measuring step; v1 manifest writer\n";
+                     "calibration store; calibrated host reserve; host ledger; measured plan cache; measuring step; manifest writer\n";
         return 0;
     } catch (const std::exception& e) {
         std::cerr << "FAIL: " << e.what() << '\n';

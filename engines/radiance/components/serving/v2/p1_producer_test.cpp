@@ -32,5 +32,5 @@ int main() {
   bad = request;
   bad["margin"]["evidence"] = "";
   rejected(bad, "margin.evidence");
-  rejected(request, "layout");
+  rejected(request, "missing measuring-start artifact");   // the request names files that do not exist
 }

@@ -381,6 +381,14 @@ v2::Manifest checked_decode(const Json& doc, const char* step) {
 std::string sha_hex_of_zero() { return std::string(64, '0'); }
 }  // namespace
 
+Json host_ledger_margin(const Resolved& r, const fs::path& calibration_cache) {
+    for (const Json& e : calibration_entries(r, calibration_cache))
+        if (e.at("key") == "host_ledger_margin.mib")
+            return {{"key", "host_ledger_margin.mib"}, {"source", e.at("source")}, {"evidence", e.at("evidence")},
+                    {"mib", e.at("value")}};
+    fail("the calibration has no host_ledger_margin.mib for this layout and objective");
+}
+
 nlohmann::json helper_common_settings(const nlohmann::json& values) { return helper_common(values); }
 
 std::string new_instance_id() {

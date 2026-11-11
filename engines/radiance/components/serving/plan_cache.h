@@ -54,6 +54,7 @@ struct HostResident {
 struct CachedPlan {
     v2::EnginePlan plan;           // decoded by the shared v1 codec
     nlohmann::json plan_json;   // as rad0011 wrote it
+    nlohmann::json rank_demand; // the per-rank GPU demand rad0011 wrote with it (--plan-memory-ranks)
     std::string key, measured_at;
     HostResident resident;
 };
@@ -70,6 +71,7 @@ std::optional<CachedPlan> plan_cache_lookup(const std::filesystem::path& dir, co
 /* Records a measured plan (rad0011's JSON, decoded by the shared v1 codec first) under its key. Written to a temporary
  * file and renamed into place. */
 CachedPlan plan_cache_store(const std::filesystem::path& dir, const nlohmann::json& key_inputs,
-                            const nlohmann::json& plan_json, const HostResident& resident);
+                            const nlohmann::json& plan_json, const nlohmann::json& rank_demand,
+                            const HostResident& resident);
 
 }  // namespace bc::serving
