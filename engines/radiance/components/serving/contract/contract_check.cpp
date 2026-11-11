@@ -2,6 +2,7 @@
 // (docs/design/serving-manifest-v1/serving-manifest.v1.schema.json) are exactly what the registry generates. Run by
 // CI as a card-free component test; on a difference it names the file and the first differing line.
 #include "registry.h"
+#include "../generated/v2/serving_types.h"
 #include "../generated/serving_types.h"   // the committed model must compile, and match the registry
 
 #include <algorithm>
@@ -80,6 +81,41 @@ int main() {
         ++failures;
     }
     static_assert(bc::serving::v1::kContractVersion == 1);
+
+    // Inactive v2 regeneration is checked alongside the still-locked v1 contract.
+    std::string v2_text;
+    if (!read(src + "/contract/serving-v2.toml", &v2_text)) {
+        std::printf("FAIL: cannot read inactive v2 registry\n");
+        ++failures;
+    } else {
+        bc::contract::Registry v2;
+        if (!bc::contract::load_registry(v2_text, "contract/serving-v2.toml", &v2, &why)) {
+            std::printf("FAIL: v2 registry: %s\n", why.c_str());
+            ++failures;
+        } else {
+            if (!bc::contract::verify_defaults(v2, BC_CONTRACT_RADIANCE_SRC, components, &why)) {
+                std::printf("FAIL: v2 ungrounded default: %s\n", why.c_str());
+                ++failures;
+            }
+            const auto v2_files = bc::contract::generate_all(v2);
+            if (v2_files != bc::contract::generate_all(v2)) {
+                std::printf("FAIL: v2 generator is nondeterministic\n");
+                ++failures;
+            }
+            for (const auto& [name, content] : v2_files)
+                compare(src + "/generated/v2/" + name, content);
+            compare(src + "/../../../../docs/design/serving-manifest-v2/serving-manifest.v2.schema.json",
+                    v2_files.at("serving-v2.schema.json"));
+            compare(src + "/../../../../docs/design/serving-manifest-v2/serving-fields.md",
+                    v2_files.at("serving-fields.md"));
+            if (bc::serving::v2::kFingerprint != bc::contract::fingerprint(v2) ||
+                bc::serving::v2::kSemanticFingerprint != bc::contract::semantic_fingerprint(v2)) {
+                std::printf("FAIL: committed v2 type fingerprints differ\n");
+                ++failures;
+            }
+        }
+    }
+    static_assert(bc::serving::v2::kContractVersion == 2);
     if (failures) return 1;
     std::printf("ok %s\n", bc::contract::fingerprint(r).c_str());
     return 0;
