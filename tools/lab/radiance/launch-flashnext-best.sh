@@ -565,6 +565,15 @@ if [ "$LAYOUT_HELPER_COUNT" -gt 0 ] && [ ! -e "$SHM_DIR${SHM}" ]; then
   echo "RADIANCE_EXIT=1 the helpers are up but $SHM_DIR${SHM} does not exist; not starting the engine" >&2
   false
 fi
+# PWR06: paired read-only GFXOFF floor, after helpers and just before
+# starting the engine. The Python probe owns detection and receipts.
+GFXOFF_FLOOR="$RUN/gfxoff-floor-$STAMP.json"
+GFXOFF_RESULT="$RUN/gfxoff-$STAMP.json"
+GFXOFF_BDF_ARGS=()
+for bdf in "${LAYOUT_ENGINE_BDFS[@]}"; do GFXOFF_BDF_ARGS+=(--bdf "$bdf"); done
+if [ "${#GFXOFF_BDF_ARGS[@]}" -gt 0 ]; then
+  PYTHONPATH=tools python3 -m bigcherry gfxoff floor "${GFXOFF_BDF_ARGS[@]}" --output "$GFXOFF_FLOOR" >&2 || true
+fi
 LOG=$RUN/engine-$STAMP.log
 start_engine_manifest "$LOG" "$PLAN_MANIFEST"
 echo $! > "$PIDS/engine"
@@ -576,6 +585,11 @@ for _ in $(seq 180); do
   sleep 5
 done
 [ $up = 1 ] || { echo "RADIANCE_EXIT=1 engine did not come up; see $LOG"; tail -n 30 "$LOG"; false; }
+# PWR06: read loaded-but-idle sensors after health and before any canary/request.
+# Nonblocking even if sysfs/receipt is not available in this container.
+if [ -s "$GFXOFF_FLOOR" ]; then
+  PYTHONPATH=tools python3 -m bigcherry gfxoff check "${GFXOFF_BDF_ARGS[@]}" --floor "$GFXOFF_FLOOR" --output "$GFXOFF_RESULT" >&2 || true
+fi
 start_canary() {
   local body answer reply
   body=$(CANARY_PROMPT="$CANARY_PROMPT" python3 -c 'import json,os;print(json.dumps({"model":"default","prompt":os.environ["CANARY_PROMPT"],"max_tokens":24,"temperature":0}))')

@@ -68,7 +68,18 @@ def test_cli_test_seam_uses_one_supervisor(tmp_path, monkeypatch):
     monkeypatch.setattr(serve, "_record_dir", lambda: tmp_path / "runs")
     monkeypatch.setattr(serve, "_journal_dir", lambda: tmp_path / "journals")
     manifest = tmp_path / "manifest.json"
-    manifest.write_text("{}")
+    manifest.write_text(json.dumps({
+        "metadata": {"content_digest": "sha256:" + "a" * 64},
+        "spec": {
+            "intent": {"power": {"profile": "stock", "role_overrides": {}}},
+            "plan": {"power": {
+                "mode": "observe", "profile": "stock",
+                "profile_digest": "sha256:" + "b" * 64,
+                "devices": [{"role": "engine", "bdf": "0000:01:00.0", "settings": {}}],
+                "cpu": {"settings": {}},
+            }},
+        },
+    }))
     layout = SimpleNamespace(engine_bdfs=("0000:01:00.0",), helper_bdfs=())
     monkeypatch.setattr(serve.layout_cmds, "_resolve", lambda a: layout)
     from bigcherry.serving.supervisor import ProcessSpec, ServingPlan
@@ -111,6 +122,7 @@ def test_cli_test_seam_uses_one_supervisor(tmp_path, monkeypatch):
         wait=lambda check: check(),
         lease_ok=lambda: True,
         power_factory=lambda rid, ok: Power(),
+        gfxoff_capture=lambda bdfs, *, phase: {},
     )
     assert record["state"] == "stopped"
     assert launcher.roles == ["start", "ready", "stop", "exit"]

@@ -27,6 +27,7 @@ _BC_SERVING_MANIFEST_H = r"""/* bc_serving_manifest.h -- BigCherry's start-up ex
 #include <cstdint>
 #include <map>
 #include <string>
+#include <vector>
 
 namespace bc::serving::v1 { struct EnginePlan; }
 
@@ -46,6 +47,8 @@ bool bc_serving_mark_given(std::map<std::string, std::string>* given);
  * serving start); false for a start without --manifest and for the measuring start (--plan-memory), which has no plan to
  * check. A serving start with no plan cannot get here: the strict reader refuses an unmeasured manifest for it. */
 bool bc_serving_expected_plan(bc::serving::v1::EnginePlan* expected, int64_t* floor_ppm);
+/* BDFs are from the same strictly validated engine view, not device ordinals. */
+std::vector<std::string> bc_serving_engine_bdfs();
 
 #endif /* BC_SERVING_MANIFEST_H */
 """
@@ -88,6 +91,7 @@ std::string g_label;                /* "manifest <12 hex>" once a manifest was l
 v1::EnginePlan g_expected;          /* a serving start's expected plan, from the manifest's measured plan */
 int64_t g_floor_ppm = 0;
 bool g_have_expected = false;
+std::vector<std::string> g_engine_bdfs;
 BcEngineSettings g_engine_settings{};
 std::string g_shm;
 std::string g_histogram;
@@ -117,6 +121,7 @@ bool flag_text(const nlohmann::json& v, std::string* out) {
 }  // namespace
 
 bool bc_serving_engine_argv(int* argc, char*** argv) {
+    g_engine_bdfs.clear();
     g_have_expected = false;   /* each call starts from nothing: a start without --manifest holds no plan */
     g_engine_settings = BcEngineSettings{};
     g_shm.clear();
@@ -182,6 +187,7 @@ bool bc_serving_engine_argv(int* argc, char*** argv) {
             return false;
         }
         g_expected = view.value().memory.expected;
+        g_engine_bdfs = view.value().engine.device.gpus;
         g_floor_ppm = view.value().kv_backing_floor_ppm;
         g_have_expected = true;
     }
@@ -321,6 +327,8 @@ bool bc_serving_expected_plan(v1::EnginePlan* expected, int64_t* floor_ppm) {
     *floor_ppm = g_floor_ppm;
     return true;
 }
+
+std::vector<std::string> bc_serving_engine_bdfs() { return g_engine_bdfs; }
 
 bool bc_serving_mark_given(std::map<std::string, std::string>* given) {
     if (g_label.empty()) return true;

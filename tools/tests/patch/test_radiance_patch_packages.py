@@ -88,8 +88,8 @@ PIN_BLOBS = {
         "arch/common/rad_block_moe_fp8.h": ("177e79c", "86160d0"),
     },
     RAD0009: {
-        "core/bc_serving_manifest.h": (None, "ea567e5"),
-        "core/bc_serving_manifest.cpp": (None, "673b33b"),
+        "core/bc_serving_manifest.h": (None, "c9fd765"),
+        "core/bc_serving_manifest.cpp": (None, "b8facc0"),
         "core/CMakeLists.txt": ("921debd", "8750342"),
         "core/main.cpp": ("4cb6d43", "7feb7b6"),
     },
@@ -822,11 +822,16 @@ class TestPlanMemoryPatch(unittest.TestCase):
                 "if (int rc = bc_plan_memory_take_flag(&argc, &argv)) return rc;",
                 "if (!bc_serving_mark_given(&cfg.given)) return 2;",
             ])
-            self.assertEqual(self._added_code(root, "core/engine_bringup.cpp"), [
-                "bc_plan_memory_note(cfg_, facts, vb, emb_bytes, wfs, ngram_bytes, ck_slot, host_arenas, kv_floor, ctx, "
-                "ranks_[0]->program);",
+            added = self._added_code(root, "core/engine_bringup.cpp")
+            for expected in (
+                ("bc_plan_memory_note(cfg_, facts, vb, emb_bytes, wfs, ngram_bytes, ck_slot, host_arenas, kv_floor, ctx, "
+                 "ranks_[0]->program);"),
                 "RAD_TRY(bc_plan_memory_done());",
-            ])
+            ):
+                self.assertIn(expected, " ".join(added))
+            self.assertEqual(sum("report_exact_pool_shortfall" in line for line in added), 1)
+            self.assertEqual(sum("report_host_room_if_short" in line for line in added), 2)
+
         finally:
             temp.cleanup()
 

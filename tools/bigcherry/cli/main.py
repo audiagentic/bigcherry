@@ -687,6 +687,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="PA36: baseline source (e.g., bigcherry-tuning)")
     patch_validate_cmd.set_defaults(func=cmd_patch_validate)
 
+    from . import workload
+    workload.register(sub)
+
     sources.register(sub)
 
     repin = sub.add_parser(
@@ -1410,10 +1413,18 @@ def build_parser() -> argparse.ArgumentParser:
     )
     experiment_report.set_defaults(func=cmd_experiment_report)
 
+    from . import gfxoff_cmd
+    gfxoff_cmd.register(sub)
+
     doctor_cmd = sub.add_parser(
         "doctor", help="audit migration assumptions and identity inputs"
     )
     doctor_cmd.add_argument("--json", action="store_true")
+    doctor_cmd.add_argument("--gfxoff-sys-root", type=Path, default=Path("/sys"))
+    doctor_cmd.add_argument("--gfxoff-bdf", action="append")
+    doctor_cmd.add_argument("--gfxoff-floor", type=Path)
+    doctor_cmd.add_argument("--gfxoff-idle-context", action="store_true",
+                            help="attest a loaded but idle HIP/KFD context on selected cards")
     doctor_cmd.set_defaults(func=cmd_doctor)
 
     tune_journal_cmd = sub.add_parser(

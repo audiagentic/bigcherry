@@ -1,0 +1,26 @@
+{
+  "placement": {
+    "mode": "forced_churn",
+    "forced": {
+      "repeat": 334,
+      "pace_requests": 104,
+      "steps": [
+        {
+          "kind": "auto_swap",
+          "a_layer": 0,
+          "a_expert": 1
+        },
+        {
+          "kind": "auto_swap",
+          "a_layer": 0,
+          "a_expert": 2
+        },
+        {
+          "kind": "auto_swap",
+          "a_layer": 1,
+          "a_expert": 2
+        }
+      ]
+    }
+  }
+}

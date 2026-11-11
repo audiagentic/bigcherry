@@ -311,7 +311,7 @@ struct Loader {
                       "item_pattern",
                       "min_items", "max_items", "unique_items", "tuple", "key_ref", "required_keys", "min_properties",
                       "constraints", "radiance_option", "radiance_config", "radiance_switch", "env_setting", "error_class", "mismatch", "default",
-                      "default_source"},
+                      "default_source", "origins", "confidences"},
                   at);
         Node n;
         n.path = str(t, "path", at);
@@ -333,6 +333,16 @@ struct Loader {
         if (!n.env_setting.empty() && !n.radiance_option.empty()) fault(where, "env_setting and radiance_option are two different bindings; a field has one");
         if (n.radiance_switch && n.radiance_option.empty()) fault(where, "radiance_switch needs a radiance_option");
         if (!n.cpp_member.empty() && !identifier(n.cpp_member)) fault(where, "cpp_member is not a C++ identifier");
+        n.origins = strings(t, "origins", where);
+        n.confidences = strings(t, "confidences", where);
+        for (const auto& [names, allowed] : std::array{
+                 std::pair{&n.origins, std::set<std::string>{"schema_default", "site", "profile", "cli", "detected", "derived", "calibrated", "experiment"}},
+                 std::pair{&n.confidences, std::set<std::string>{"exact", "measured", "estimate"}}}) {
+            std::set<std::string> seen;
+            for (const auto& value : *names)
+                if (!allowed.count(value) || !seen.insert(value).second)
+                    fault(where, "invalid or duplicate provenance allowlist value '" + value + "'");
+        }
         n.error_class = str(t, "error_class", where, false);
         n.mismatch = str(t, "mismatch", where, false);
         if (!n.error_class.empty() && !kErrorClasses.count(n.error_class))
@@ -936,7 +946,16 @@ struct TypesWriter {
                  << literal(n.radiance_option) << ", " << literal(n.radiance_config) << ", " << (n.radiance_switch ? "true" : "false")
                  << ",\n     " << literal(n.doc)
                  << ", " << literal(n.default_value ? n.default_value->dump() : std::string()) << ", "
-                 << literal(n.default_source) << ", " << literal(n.ref) << "},\n";
+                 << literal(n.default_source) << ", " << literal(n.ref);
+            if (r.contract_version >= 2) {
+                auto joined = [](const std::vector<std::string>& names) {
+                    std::string result;
+                    for (const auto& name : names) { if (!result.empty()) result += ","; result += name; }
+                    return result;
+                };
+                rows << ", " << literal(joined(n.origins)) << ", " << literal(joined(n.confidences));
+            }
+            rows << "},\n";
             ++count;
         }
         o << "// Every registry field (patch copies excepted), in registry order: the metadata explain and provenance use.\n";
@@ -952,8 +971,10 @@ struct TypesWriter {
              "    std::string_view doc;\n"
              "    std::string_view default_json;     // the schema default as JSON, or empty (spec section 7)\n"
              "    std::string_view default_source;   // where the default comes from, or empty\n"
-             "    std::string_view ref_def;          // kind \"ref\": the shared type it uses, else empty\n"
-             "};\n";
+             "    std::string_view ref_def;          // kind \"ref\": the shared type it uses, else empty\n";
+        if (r.contract_version >= 2) o << "    std::string_view allowed_origins;  // comma-delimited; empty means unrestricted\n"
+                                           "    std::string_view allowed_confidences;\n";
+        o << "};\n";
         o << "inline constexpr std::array<FieldInfo, " << count << "> kFields = {{\n" << rows.str() << "}};\n";
         // The fields that stand in for a process environment variable (amendment 14): the engine sets each variable from
         // the field at start, so the manifest is the one place it is configured.
@@ -1857,6 +1878,8 @@ std::string semantic_fingerprint(const Registry& r) {
         Json f = Json{{"path", n.path}, {"class", n.cls}, {"radiance_option", n.radiance_option},
                       {"radiance_config", n.radiance_config}, {"error_class", n.error_class},
                       {"mismatch", n.mismatch}};
+        if (!n.origins.empty()) f["origins"] = n.origins;
+        if (!n.confidences.empty()) f["confidences"] = n.confidences;
         if (n.radiance_switch) f["radiance_switch"] = true;   // present only where a field is a value-less flag
         if (!n.env_setting.empty()) f["env_setting"] = n.env_setting;   // present only where a field stands in for an environment variable
         // spec section 7 / section 11 amendment 9: a default decides which leaves need a provenance record, so it is
@@ -1916,13 +1939,228 @@ std::string emit_fields_md(const Registry& r) {
 std::string emit_codec_h(const Registry& r) { return CodecWriter(r).header(); }
 std::string emit_codec_cpp(const Registry& r) { return CodecWriter(r).source(); }
 
+std::string emit_python_codec(const Registry& r) {
+    std::ostringstream o;
+    o << R"bc_py(# Generated from contract/serving-v2.toml by bc_contract_gen. Do not edit.
+"""Closed structural Python reader for the inactive bigcherry/v2 manifest."""
+from __future__ import annotations
+import json
+import re
+
+
+class ManifestV2Error(ValueError):
+    """Version, duplicate field, schema or role mismatch."""
+
+
+def _pairs(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ManifestV2Error("duplicate JSON member: " + key)
+        result[key] = value
+    return result
+
+
+def _fraction(value):
+    raise ManifestV2Error("non-integer JSON number: " + value)
+
+
+def _raise(path, detail):
+    raise ManifestV2Error(path + ": " + detail)
+
+
+def _conforms(value, rule):
+    try:
+        _check(value, rule, "$")
+        return True
+    except ManifestV2Error:
+        return False
+
+
+def _check(value, rule, path):
+    if rule is True:
+        return
+    if rule is False:
+        _raise(path, "forbidden value")
+    if "$ref" in rule:
+        ref = rule["$ref"]
+        if not ref.startswith("#/$defs/"):
+            _raise(path, "unknown schema reference")
+        _check(value, SCHEMA["$defs"][ref.split("/")[-1]], path)
+    if "const" in rule and (value != rule["const"] or type(value) is not type(rule["const"])):
+        _raise(path, "incorrect constant")
+    if "enum" in rule and not any(type(value) is type(item) and value == item for item in rule["enum"]):
+        _raise(path, "invalid enum")
+    expected = rule.get("type")
+    if expected:
+        expected_types = expected if isinstance(expected, list) else [expected]
+        good = any(
+            (kind == "object" and isinstance(value, dict)) or
+            (kind == "array" and isinstance(value, list)) or
+            (kind == "string" and isinstance(value, str)) or
+            (kind == "integer" and type(value) is int) or
+            (kind == "boolean" and type(value) is bool) or
+            (kind == "null" and value is None)
+            for kind in expected_types
+        )
+        if not good:
+            _raise(path, "incorrect type")
+    if type(value) is int:
+        if abs(value) > 9007199254740991:
+            _raise(path, "number outside I-JSON safe integer range")
+        if value < rule.get("minimum", -9007199254740991):
+            _raise(path, "below minimum")
+        if value > rule.get("maximum", 9007199254740991):
+            _raise(path, "above maximum")
+        if "exclusiveMaximum" in rule and value >= rule["exclusiveMaximum"]:
+            _raise(path, "above exclusive maximum")
+    if isinstance(value, str):
+        if len(value) < rule.get("minLength", 0) or len(value) > rule.get("maxLength", 1 << 30):
+            _raise(path, "invalid string length")
+        if "pattern" in rule and re.search(rule["pattern"], value) is None:
+            _raise(path, "invalid string pattern")
+    if isinstance(value, dict):
+        if len(value) < rule.get("minProperties", 0):
+            _raise(path, "missing object members")
+        for key in rule.get("required", []):
+            if key not in value:
+                _raise(path, "missing required member: " + key)
+        known = rule.get("properties", {})
+        for key, item in value.items():
+            if "propertyNames" in rule:
+                _check(key, rule["propertyNames"], path + "/<key>")
+            if key in known:
+                _check(item, known[key], path + "/" + key)
+            else:
+                extra = rule.get("additionalProperties", True)
+                _check(item, extra, path + "/" + key)
+    if isinstance(value, list):
+        if len(value) < rule.get("minItems", 0) or len(value) > rule.get("maxItems", 1 << 30):
+            _raise(path, "invalid array length")
+        if rule.get("uniqueItems") and len(set(json.dumps(x, sort_keys=True) for x in value)) != len(value):
+            _raise(path, "duplicate array entry")
+        prefix = rule.get("prefixItems", [])
+        for index, item in enumerate(value):
+            sub = prefix[index] if index < len(prefix) else rule.get("items", True)
+            _check(item, sub, path + "/" + str(index))
+    for sub in rule.get("allOf", []):
+        _check(value, sub, path)
+    if "anyOf" in rule and not any(_conforms(value, sub) for sub in rule["anyOf"]):
+        _raise(path, "no anyOf branch matched")
+    if "oneOf" in rule and sum(_conforms(value, sub) for sub in rule["oneOf"]) != 1:
+        _raise(path, "exactly one schema branch required")
+    if "not" in rule and _conforms(value, rule["not"]):
+        _raise(path, "forbidden schema branch")
+    if "if" in rule and _conforms(value, rule["if"]):
+        _check(value, rule.get("then", True), path)
+
+
+def _semantic(doc):
+    spec = doc["spec"]
+    power = spec["plan"]["power"]
+    intent = spec["intent"]["power"]
+    if power["profile"] != intent["profile"]:
+        _raise("/spec/plan/power/profile", "does not echo the intent profile")
+    expected = [( "engine", bdf) for bdf in spec["processes"]["engine"]["device"]["gpus"]]
+    expected.extend((helper["role"], helper["gpu"]) for helper in spec["processes"]["helpers"])
+    actual = [(row["role"], row["bdf"]) for row in power["devices"]]
+    if sorted(actual) != sorted(expected):
+        _raise("/spec/plan/power/devices", "resolved role/BDF set does not equal process devices")
+    bdfs = [bdf for _, bdf in actual]
+    if len(set(bdfs)) != len(bdfs):
+        _raise("/spec/plan/power/devices", "duplicate BDF")
+    if power["mode"] == "observe" and any(row["settings"] for row in power["devices"]):
+        _raise("/spec/plan/power/devices", "observe mode requires empty settings")
+    permitted = {"engine"} | {helper["role"] for helper in spec["processes"]["helpers"]}
+    if not set(intent["role_overrides"]).issubset(permitted):
+        _raise("/spec/intent/power/role_overrides", "unknown resolved role")
+    measured = spec["plan"]["resource_inputs"]
+    if measured["owner_map_digest"] != spec["plan"]["owner_map"]["owner_map_sha256"]:
+        _raise("/spec/plan/resource_inputs/owner_map_digest", "owner-map mismatch")
+    fp = measured["helper_footprints"]
+    if sorted((row["role"], row["bdf"]) for row in fp) != sorted(
+            (helper["role"], helper["gpu"]) for helper in spec["processes"]["helpers"]):
+        _raise("/spec/plan/resource_inputs/helper_footprints", "missing helper footprint")
+    for row in fp:
+        total = sum(row[k] for k in ("lanes_bytes", "pointer_banks_bytes",
+                                     "slot_map_bytes", "incoming_slot_bytes"))
+        if row["total_bytes"] != total:
+            _raise("/spec/plan/resource_inputs/helper_footprints", "non-expert total disagrees")
+    margin = measured["host_pool_margin_calibration"]
+    if not any(c["key"] == margin["key"] and c["value"] == margin["mib"] and
+               c["source"] == margin["source"] for c in spec["calibration"]):
+        _raise("/spec/plan/resource_inputs/host_pool_margin_calibration",
+               "margin has no matching calibration entry")
+    for field_path, restriction in RESTRICTED.items():
+        path = field_path.replace("/[]", "/0")  # item restrictions are enforced by the S13 reader
+        records = doc["provenance"]
+        candidate = [key for key in records if path == key or path.startswith(key + "/")]
+        if not candidate:
+            continue  # coverage is S13's shared semantic check
+        record = records[max(candidate, key=len)]
+        if record["origin"] not in restriction["origins"] or record["confidence"] not in restriction["confidences"]:
+            _raise(field_path, "unqualified value provenance")
+
+
+def decode(text):
+    """Return the validated manifest dictionary; no version fallback or coercion."""
+    try:
+        document = json.loads(text, object_pairs_hook=_pairs, parse_float=_fraction,
+                              parse_constant=_fraction)
+    except (TypeError, json.JSONDecodeError) as exc:
+        raise ManifestV2Error("malformed JSON") from exc
+    if not isinstance(document, dict) or document.get("apiVersion") != "bigcherry/v2":
+        raise ManifestV2Error("unsupported_version: v2 reader requires bigcherry/v2")
+    _check(document, SCHEMA, "$")
+    _semantic(document)
+    return document
+
+
+def encode(document):
+    """Validate then encode, without rewriting the immutable content digest."""
+    raw = json.dumps(document, separators=(",", ":"), ensure_ascii=False, sort_keys=True,
+                     allow_nan=False)
+    decode(raw)
+    return raw
+)bc_py";
+    o << "\nSCHEMA = json.loads(" << Json(emit_schema(r)).dump() << ")\n";
+    Json restrictions = Json::object();
+    for (const auto& n : r.nodes) {
+        if (n.origins.empty() && n.confidences.empty()) continue;
+        restrictions[n.path] = Json{{"origins", n.origins}, {"confidences", n.confidences}};
+    }
+    o << "RESTRICTED = json.loads(" << literal(restrictions.dump()) << ")\n";
+    return o.str();
+}
+
 std::map<std::string, std::string> generate_all(const Registry& r) {
-    return {{"serving-v1.schema.json", emit_schema(r)},
-            {"serving_codec.h", emit_codec_h(r)},
-            {"serving_codec.cpp", emit_codec_cpp(r)},
-            {"serving_types.h", emit_types(r)},
-            {"serving-fields.md", emit_fields_md(r)},
-            {"contract.fingerprint", "schema " + fingerprint(r) + "\nsemantics " + semantic_fingerprint(r) + "\n"}};
+    const std::string suffix = "v" + std::to_string(r.contract_version);
+    std::map<std::string, std::string> out = {
+        {"serving-" + suffix + ".schema.json", emit_schema(r)},
+        {"serving_codec.h", emit_codec_h(r)},
+        {"serving_codec.cpp", emit_codec_cpp(r)},
+        {"serving_types.h", emit_types(r)},
+        {"serving-fields.md", emit_fields_md(r)},
+        {"contract.fingerprint", "schema " + fingerprint(r) + "\nsemantics " + semantic_fingerprint(r) + "\n"}};
+    if (r.contract_version == 2) {
+        out["serving_codec.py"] = emit_python_codec(r);
+        for (auto& [name, content] : out) {
+            if (name == "contract.fingerprint" || name.ends_with(".schema.json")) continue;
+            auto replace_all = [&](const std::string& from, const std::string& to) {
+                size_t at = 0;
+                while ((at = content.find(from, at)) != std::string::npos) {
+                    content.replace(at, from.size(), to);
+                    at += to.size();
+                }
+            };
+            replace_all("serving-v1.toml", "serving-v2.toml");
+            replace_all("serving-manifest-v1", "serving-manifest-v2");
+            replace_all("a v1 manifest", "a v2 manifest");
+            replace_all("every v1 number", "every v2 number");
+            if (name == "serving_codec.h") replace_all("v1/error.h", "v2/error.h");
+        }
+    }
+    return out;
 }
 
 }  // namespace bc::contract

@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from .. import __version__, check, doctor
+from . import gfxoff_cmd
 from ..core import paths
 from ..source import audit as source_audit
 from ..release import records as releases
@@ -15,7 +16,14 @@ from ..release import records as releases
 
 def cmd_doctor(args: Namespace) -> int:
     """Report migration assumptions without modifying source or build state."""
-    return doctor.main(as_json=args.json)
+    try:
+        gfxoff_report = gfxoff_cmd.inspect(
+            sys_root=args.gfxoff_sys_root, floor_path=args.gfxoff_floor,
+            engine_idle=args.gfxoff_idle_context, bdfs=args.gfxoff_bdf,
+        )
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        gfxoff_report = {"unavailable": {"status": "unavailable", "reason": type(exc).__name__}}
+    return doctor.main(as_json=args.json, gfxoff_report=gfxoff_report)
 
 
 def cmd_status(args: Namespace) -> int:

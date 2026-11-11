@@ -36,11 +36,11 @@ The 2026-10-27 saving did **not** reproduce. Setting applied through the lease-f
 
 Speed is identical; power is not lower and is about 4 W higher with the offset. A short-protocol ABBA (1- and 6-stream decode, 8K prefill, whole-run power) agreed: 161-165 W stock against 167-170 W undervolted, speed within noise. A saturating single-card stress test (two repeats per arm) shows the mechanism: held near its power limit the undervolted card drew 288 W at 3158 MHz and 989 mV against 272 W at 2915 MHz and 1002 mV stock, so the voltage headroom is spent on clock, and measured voltage fell by only 13 mV. Under serving decode the cards now draw about 190 W (the October decode phase measured 154 W), i.e. they run harder than in the October soak, which used a different workload and build.
 
-Verdict: **-125 mV is not a validated saving on the current build.** It is withdrawn as the candidate profile value; no named profile may carry it until a power-saving mechanism is shown on the current build. Raw runs: run folder xtx-undervolt-ab (A1/B1/B2/A2 short protocol, C1/D1/D2/C2 sustained, stress-out).
+Verdict: **-125 mV is not a validated saving on the current build.** That **uncapped offset-only** setting is withdrawn as a current-build apply-profile value; a **fixed-SCLK plus offset** combination needs separate qualification. Raw runs: run folder xtx-undervolt-ab (A1/B1/B2/A2 short protocol, C1/D1/D2/C2 sustained, stress-out).
 
 ## Profile decision
 
-Historically, **-125 mV on the two named host XTX cards** had extended October testing; November explicitly withdraws it as a current-build saving or active profile candidate. Preserve it as historical device-specific evidence only; a new qualified A/B on the current driver/build is required before any opt-in apply candidate exists. Observe/no-write is the default for named profiles; no measured R9700/6900 XT power-control optimum can be populated. A calibrated candidate must never auto-activate from a cached observation. The v2 serving plan owns role/BDF/settings and content digest, while actual probe/apply/restore observations belong in a separate receipt (PWR07–PWR09). CPU EPP/governor controls remain out of scope.
+Historically, **-125 mV on the two named host XTX cards** had extended October testing; November withdraws the **uncapped offset-only** setting as a current-build apply-profile candidate; capped-clock plus offset is a separate, still-unqualified candidate. Preserve it as historical device-specific evidence only; a new qualified A/B on the current driver/build is required before any opt-in apply candidate exists. Observe/no-write is the default for named profiles; no measured R9700/6900 XT power-control optimum can be populated. A calibrated candidate must never auto-activate from a cached observation. The v2 serving plan owns role/BDF/settings and content digest, while actual probe/apply/restore observations belong in a separate receipt (PWR07–PWR09). CPU EPP/governor controls remain out of scope.
 
 ## Forensic XTX October-to-November reconciliation (2026-11-11, card-free)
 
@@ -135,3 +135,52 @@ All proposed work below is **lead-run**, *not performed by this change*. The onl
 **Power/throughput acceptance:** First diagnose how much of the old 154→190 W baseline shift disappears on the same load and sensor. For each new matched current-build A/B, require no material speed regression (**both** decode and prefill independently), unchanged output, per-BDF valid readbacks and verified restoration; calculate phase-isolated integrated J/token for XTX pair and CPU+all GPUs. The October PWR01 summary's median-W/tok/s is only a *proxy*; retain it for historical comparability alongside the new proper energy integral. No proposed control is an approved profile until repeated passing runs on both physical cards with a qualified plan/receipt.
 
 **Lease caveat:** An **exact 40-minute October -125 mV soak** would require `bash tools/lab/radiance/pwr01-baseline.sh 600` (600 seconds *each* of four phases) and **cannot be described as a short lease**. Use `40` for the first matched short-arm screen; schedule `600` for a separately approved long reliability/thermal soak only if a current-build winner survives the short gates.
+
+## XTX SCLK × VDDGFX sweep — 2026-11-11 (raw evidence; not qualified)
+
+**Scope and provenance.** Owner-run sweep: `${BC_WORK_ROOT}/runs/pwr-sclk/` arms `stock`, `stock2`, `stock3`, `s2900`, `s2800`, `s2700`, `uv75`, `uv125`, `c2900uv125`, `c2700uv125`, `c2700uv75`, `c2800uv100`. Each arm's `applied.txt` has both XTX OverDrive SCLK/voltage-offset readbacks; `wl.pwr-phases.log`, `wl.prefill-doc-44k.log`, and `wl.decode-6stream.log` link to each immutable `runs/workloads/<run-id>/result.json` and `results/index.jsonl` row. All 36 linked workload results exist. Fixed build `daf793f13be8d5762deecb73e3372641/a29e62ada0fe691746707b2b87c3e9f3` (build ID `b9e017fcffbd10fec20d16bdcbb88ef1`), layout `flashnext-4gpu`, kernel `7.0.13-gfxoff`, the two XTX helper BDFs (exact IDs in the raw result JSON; called A and B here in sorted BDF order). The R9700 engine and 6900 XT tail **had no settings changed** by these arms; their observed workload watts can nevertheless vary.
+
+`pwr-phases@1` measures separate ~60-second decode/prefill/idle phases, `prefill-doc-44k@1` has 10 repetitions and `decode-6stream@1` has two repetitions per registered run. Each arm has **one run of each workload** (P/D/S = 1/1/1). In the table the decode and prefill watts are **XTX sample medians from `pwr-phases@1`**, in BDF order A/B; the displayed throughput columns come from the **other** two workloads. The six-stream figure is **engine decode tok/s**, not aggregate stream throughput. Do not divide these speeds by phase watts measured under another load. Although the sweep was described operationally as AMD-SMI board-power sampling, the saved `pwr-phases@1` results explicitly say `power_sensor: sysfs:power1_average`. AMD-SMI sensor equivalence was not recorded. CPU is `not_sampled`, and sample median watts are **not integrated energy**.
+
+| Arm (SCLK max / VDDGFX offset) | XTX decode W A/B | XTX prefill W A/B | Doc-prefill tok/s | 6-stream engine tok/s | n runs P/D/S |
+|---|---:|---:|---:|---:|---:|
+| `stock` (stock / 0 mV) | 125 / 128 | 175.5 / 177 | 3709.6 | 342.1 | 1/1/1 |
+| `stock2` (stock / 0 mV) | 129 / 129 | 171 / 173 | 3728.3 | 346.3 | 1/1/1 |
+| `stock3` (stock / 0 mV) | 128 / 130 | 171 / 172 | 3587.6 | 340.5 | 1/1/1 |
+| `s2900` (2900 MHz / 0 mV) | 126 / 125 | 178.5 / 176 | 3701.3 | 333.9 | 1/1/1 |
+| `s2800` (2800 MHz / 0 mV) | 117 / 116 | 168 / 168.5 | 3678.1 | 320.1 | 1/1/1 |
+| `s2700` (2700 MHz / 0 mV) | 109 / 109 | 165 / 167 | 3645.1 | 351.2 | 1/1/1 |
+| `uv75` (stock / -75 mV) | 146 / 145 | 194 / 192 | 3790.5 | 351.6 | 1/1/1 |
+| `uv125` (stock / -125 mV) | 134 / 133 | 184 / 186 | 3794.1 | 352.1 | 1/1/1 |
+| `c2900uv125` (2900 MHz / -125 mV) | 100 / 101 | 148 / 149 | 3694.8 | 336.0 | 1/1/1 |
+| `c2700uv125` (2700 MHz / -125 mV) | 88 / 88 | 138.5 / 138 | 3658.1 | 349.8 | 1/1/1 |
+| `c2700uv75` (2700 MHz / -75 mV) | 95 / 95 | 148 / 148.5 | 3654.2 | 346.2 | 1/1/1 |
+| `c2800uv100` (2800 MHz / -100 mV) | 99 / 98 | 146 / 146 | 3692.1 | 333.9 | 1/1/1 |
+
+**Noise band and comparable arms.** The three stock runs give **up to 4 W decode spread per XTX** (use roughly ±4 W as a conservative short-run band), and a 4.5–5.5 W spread per XTX in prefill. Six-stream engine speed ranges **340.5–346.3 tok/s** (1.7% full range). Doc-prefill ranges **3587.6–3728.3 tok/s** (3.9% full range): it is **not** fully bounded by a presumed ~0.5–2% speed band. The stock phase-isolated decode rate also ranges from **76.0** on the first arm to **89.6/90.8 tok/s** on the repeats. At the *same* 2700 MHz ceiling, `s2700` vs `c2700uv125`: per-XTX decode **109/109 → 88/88 W**, prefill **165/167 → 138.5/138 W**, doc-prefill **3645.1 → 3658.1 tok/s**, six-stream engine **351.2 → 349.8 tok/s**. This is a promising **single matched-clock observation**, not a statistically qualified no-regression result.
+
+### Saturating V/F stress (only XTX helper A; not a serving benchmark)
+
+From `${BC_WORK_ROOT}/runs/pwr-sclk/vf/{samples.csv,readback.txt}`; values are medians **recomputed from the CSV**, with 30 samples per 30-second arm and 60 stock samples across first/return stock. `cap` in this local stress-script name is an **OD_SCLK maximum**, **not** a board-power cap.
+
+| Arm | n samples | Board W | VDDGFX mV | Effective SCLK MHz |
+|---|---:|---:|---:|---:|
+| Stock / 0 mV | 60 | 273 | 1000 | 2909 |
+| Stock / -125 mV | 30 | 289 | 988 | 3156 |
+| SCLK 2900 / 0 mV | 30 | 264 | 988.5 | 2872 |
+| SCLK 2900 / -125 mV | 30 | 194 | 874 | 2900.5 |
+| SCLK 2700 / 0 mV | 30 | 211 | 934 | 2684 |
+| SCLK 2700 / -125 mV | 30 | 154 | 816.5 | 2706.5 |
+| SCLK 2700 / -75 mV | 30 | 177 | 863 | 2704.5 |
+
+With **no SCLK ceiling**, -125 mV coincides with **+247 MHz** actual effective SCLK from the saved CSV (approximately +250 MHz; a rounded arm summary reported +252 MHz), **+16 W**, and only **-12 mV** observed voltage. This is consistent with extra voltage headroom becoming clock under boost/power/thermal constraints. With a fixed SCLK maximum, the same offset corresponds to **264 → 194 W, 988.5 → 874 mV** at 2900 MHz and **211 → 154 W, 934 → 816.5 mV** at 2700 MHz. The [Linux amdgpu OverDrive documentation](https://www.kernel.org/doc/html/latest/gpu/amdgpu/thermal.html) describes target voltage as **V/F-curve voltage + VDDGFX offset**; the measured pattern fits that control mechanism. The older October ~24 W saving at reported ~3050 MHz, plus the recorded third-party observation that a clock cap changes offset behaviour, are consistent with a clock-limited operating regime, **not proof** of that regime (October did not capture time-aligned SCLK/voltage traces).
+
+### GPU-only J/token proxy, decision and follow-up
+
+A *same-benchmark* proxy is possible **only for `pwr-phases@1`**: `sum(all four BDFs' median board_watts in the phase) / median phase_tps`. This gives GPU-only **proxy J/token**, **not integrated** watt-seconds/token, because independent medians are summed, CPU energy was not sampled, and phases and loads differ. Decode / prefill values: `stock` **6.838 / 0.233**, `stock2` **6.002 / 0.250**, `stock3` **5.900 / 0.252**, `s2700` **5.568 / 0.208**, `c2700uv125` **5.048 / 0.191**, `c2900uv125` **5.328 / 0.208**. The R9700/tail watts enter these whole-layout proxies even though their settings did not change. Do not combine a pwr-phases median with doc-prefill or six-stream throughput; report **decode and prefill separately**.
+
+**Qualification:** `-125 mV` **alone** (default/no SCLK cap) remains **withdrawn** as a current-build power-saving apply-profile value after the earlier negative sustained ABBA; `uv125` in this short sweep does not override that decision. Clock+offset is a **different candidate**. Proposed named `xtx-cap2700-uv125` is **candidate-only** for these two XTX BDFs, supported by `c2700uv125` registered row IDs **`587b81b5fa3b4835`** (phase), **`b69a3764952f49b2`** (doc), **`d9177d830ee64d89`** (six-stream), versus 2700-only control IDs **`9331ee86e4b34adc`**, **`8e2d6ec68b3f4196`**, **`706d606817fe4288`**. These are **discovery** run IDs, not validating IDs: do **not** put the numbers into an apply-enabled profile on this evidence. A real profile must take its values from an explicit validating run bound to current hardware/BDF, build/kernel/driver, repeat/rotated controls, separate decode/prefill non-regression, output identity, soak, thermals, amdgpu health and safe power restoration.
+
+The planned 40-minute `2700 MHz/-125 mV` soak at `${BC_WORK_ROOT}/runs/pwr-sclk/soak27uv125/` has `start`, `out.log` and `txn.log` but **no completed status or result file at this review: pending**. Output identity is likewise **pending**. `out.log` reports CPU package energy unavailable. The container could **not** read `dmesg`; amdgpu errors/resets require a **host-side** kernel-log check. Reassess only when soak status/result, run ID, response identity, both XTX readbacks, clock/voltage and restoration/health evidence are available.
+
+**Next experiments (not run in this slice):** XTX `OD_MCLK` sweep (device-reported 97–1250 MHz range, recheck capability per BDF) for memory-bound decode, with separate prefill and identity gates; observe the current `pp_power_profile_mode=BOOTUP_DEFAULT`, then compare `COMPUTE` and `POWER_SAVING` only after a snapshot/rollback controller exists; separately trial R9700 power cap near its reported **210 W minimum** (baseline engine draw ~193–212 W, some sweep prefill samples reach 229 W), with a fresh cap capability probe; keep the 6900 XT stock. No new clocks, offsets, power profiles or caps are adopted by this evidence record.

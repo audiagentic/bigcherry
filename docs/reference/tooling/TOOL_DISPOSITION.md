@@ -636,6 +636,10 @@ Radiance patches also use `bigcherry --engine radiance patch-promote <id> --evid
 | `tools/lab/vulkan/queue-vk-ar.sh` | **TRANSITIONAL** | `vulkan` lab topic file (see `tools/lab/vulkan/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/vulkan/queue-vk-first.sh` | **TRANSITIONAL** | `vulkan` lab topic file (see `tools/lab/vulkan/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/radiance/xtx27-PROGRESS.md` | **TRANSITIONAL** | XDP01-02 dual-XTX prefill and KV-budget lab progress ledger; experiment-only. |
+| `tools/lab/radiance/rhp20-forced-move.py` | **TRANSITIONAL** | RHP20 externally leased forced-move acceptance harness; lab-only, never enables live policy. |
+| `tools/lab/radiance/rhp20/tail.experiment.json` | **TRANSITIONAL** | RHP20 two-XTX plus RDNA2 tail forced-churn experiment; lab-only. |
+| `tools/lab/radiance/rhp20/tail-combine.experiment.json` | **TRANSITIONAL** | RHP20 RDNA2 tail with CPU combine forced-churn experiment; lab-only. |
+| `tools/lab/radiance/rhp20/kld.template.json` | **TRANSITIONAL** | RHP20 separate static-versus-forced numerical quality gate template; lab-only. |
 | `tools/lab/radiance/xtx27_kv_budget.py` | **TRANSITIONAL** | XDP02 card-free long-context KV and dual-XTX memory budget estimator; lab-only. |
 | `tools/lab/radiance/xtx27_prefill.py` | **TRANSITIONAL** | XDP01 dual-XTX prefill measurement and fixture harness; lab-only. |
 | `tools/lab/radiance/xtx27_quant_plan.py` | **TRANSITIONAL** | XDP03 card-free quantization/precision budget and risk planner; experiment-only. |

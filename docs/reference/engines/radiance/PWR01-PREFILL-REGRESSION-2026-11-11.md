@@ -75,3 +75,50 @@ If current-build toggles do not explain the gap, prioritize **Nov 10 → Nov 8 �
 No-regression **PASS** only after matched current stock-power runs attain the Oct prefill rate within a measured noise band, with retained decode quality/throughput and named configuration tradeoffs. Independent-regression **FAIL** only after matched builds with fixed chunk, heat, ownership, memory, clocks/power/kernel and request definitions produce a repeatable prefill loss, bracketed to a source/pin change. If a loss remains under controlled settings, ENG01 owns rank-0 per-op/CPU gaps/helper-lane attribution; diagnose engine vs PCIe handoff before changing kernels. Current result: **unqualified observation, not a measured 10% source regression**.
 
 **Evidence trail:** `tools/lab/radiance/{pwr01-baseline.sh,launch-flashnext-best.sh}`; historical `c37fe8c2:tools/lab/radiance/launch-flashnext-best.sh`; `engines/radiance/{layouts.toml,recipes.toml}`; `docs/reference/power-tuning-evidence-2026-11.md`; `docs/planning/FLASHNEXT_EXECUTION_STATUS.md`; `docs/planning/active/tuning-radiance-engine/ENG01.md`; `docs/planning/active/patching-radiance-heat-placement/RHP02.md`; `docs/archive/radiance/qwen3.8-flash-next-pre-v117-reference.md`; historical/current `runs/pwr01-baseline-*/summary.txt` and November `launch.log`; `runs/pwr-stock/{out2xtx.log,outold.log}`; both `bigcherry-build-metadata-radiance.json` files. No GPU/lease operations were performed.
+
+
+## 2026-11-11 addendum: November 10 prefill ≥3600 FOUND; prior bisect ordering superseded
+
+**Evidence correction.** A read-only scan of recent run directories found the user's Nov 10 report: `runs/policy-onoff-ab/on1.doc3.log` has **49,367 prompt tokens in 13.3 s = 3,708 tok/s**, and `off1.doc3.log` has **49,367 in 13.5 s = 3,667 tok/s**. The ABBA arm status reports 10 documents per arm, **roughly 3,612–3,708 tok/s** on all regular documents, and verifies policy ON/OFF/ OFF/ON from manifests. Specific examples: `on1.doc8.log` 3,651, `off1.warmdoc3.log` 3,654, `on1.warmdoc3.log` 3,685 tok/s. This was NOT PWR01's 800-repeated-sentence prompt and NOT the two-XTX layout.
+
+**Primary target, exact build/layout:** `flashnext-4gpu`, R9700 TP1 engine, two 22,528 MiB RX 7900 XTX heads, RX 6900 XT 14,336 MiB tail with CPU helper-row combine; `builds/f17f21fda44979e9abe84f13e96b8896/b43f943466729a2eb484e082dc45069f`; Radiance 1.17.0, binary SHA-256 `df7d79b2542856f052f72925e25c59d9bb9ebba61cfbcf2cbd69b21bd49defcd`. `on1.engine.log` and frozen `flashnext/manifest-1110-172210-1957336.json`: **2048 chunk**, checkpoint 4096, MTP3, FP8 KV, max 8 sessions, 262,144 context, host pool **9216 MiB**, host KV/prefix cache **12288 MiB**, nearest prefix resume, RAM n-gram, heat file `heat/flashnext-mixed.hot-first`, 1-second histogram period; policy ON for on1/on2, OFF for off1/off2. The Nov 10 run used pre-RSC03 derived-budget defaults.
+
+**Benchmark definition:** `runs/policy-onoff-ab/doc_prefill.py` takes arguments `18450 44000 K`, builds text from sorted **live** checkout `docs/**/*.md` files, selects approximately 171,600 characters starting at a K-dependent offset, prepends a doc-slice marker, sends a **single** completion request at temperature 0 with `max_tokens=1, ignore_eos=True`, and reports `usage.prompt_tokens / request wall time`. Effective requests are about 44K–57K tokens. It does NOT freeze or hash the doc text; changes in the checkout can change the slice even when K matches, and the exact Oct/Nov prompt payload cannot be proved identical. PWR01 instead sends back-to-back ~7K-token repeated sentences for 60 s and includes per-request/phase overhead. No comparison between the two rates is like-for-like.
+
+**Power:** The saved Nov 10 document runs contain no `--gpu-power` opt-in; the launcher defaults to off. No voltage, power-control, clock or firmware readback is captured with the document-prefill measurements. **Actual power state is unverified**; do not assert it was equivalent to the PWR01 arm or use the policy A/B to infer a power effect.
+
+### Other November 9–11 matches
+
+All entries below are **document-prefill observations on the four-GPU layout**, never 2-XTX PWR01 matches. The build token identifies `source_slice_id / build_plan_id` under `builds/` (prefixes are abbreviated in this overview; exact full paths are in each folder's launcher logs). **These digests are not Git commit SHAs.**
+
+| Date | Saved run folder | High document-prefill tok/s (observed range) | Build source / plan prefixes |
+|---|---|---|---|
+| Nov 9 | `rad49-hw1` | 3,624–3,728 | `ccb649e.../d7394b8...` (base 4GPU arm) |
+| Nov 9 | `rad49-hw2` | 3,637 | `ccb649e.../b108955...` (base 4GPU arm) |
+| Nov 9 | `rad49-4gpu-regress` | 3,626–3,722 | `ccb649e.../a4040b3...`; `f17f21f.../0dcf6a3...` |
+| Nov 9 | `rad49-4gpu-coldtail` | 3,669–3,712 | `f17f21f.../0dcf6a3...` |
+| Nov 10 | `rad49-4gpu-tailsweep` | 3,605–3,692 | `f17f21f.../0dcf6a3...` |
+| Nov 10 | `rad49-4gpu-longfill` | 3,622–3,679 | `f17f21f.../0dcf6a3...` |
+| Nov 10 | `rad49-tail-capture` | 3,715 | `f17f21f.../0dcf6a3...` |
+| Nov 10 | `hl04-combine-trace` | 3,711 | `f17f21f.../77561c1...` |
+| Nov 10 | `hl04-policy-on` | 3,604–3,705 | `f17f21f.../77561c1...` |
+| Nov 10 | `histogram-period-default` | 3,678–3,741 | `f17f21f.../08b5dd8...`; heat period **60 s** |
+| Nov 10 | `tk01-e2e-ab` | 3,600–3,685 | `f17f21f.../77561c1...`; `f17f21f.../c136e9d...` |
+| Nov 10 | `tk04-e2e` | 3,618–3,707 | `f17f21f.../08b5dd8...`; `f17f21f.../c136e9d...` |
+| **Nov 10** | **`policy-onoff-ab`** | **3,612–3,708** | **`f17f21f.../b43f943...`**, on/off policy A/B target |
+| Nov 10 | `policy-accept` | 3,652–3,696 | `f17f21f.../b43f943...` |
+| Nov 10 | `policy-lag` | 3,618–3,724 | `f17f21f.../b43f943...` |
+| **Nov 11** | **`pwr-stock/docpf.out`** | **3,704–3,723** | **`daf793f.../a29e62a...`**, current source, policy OFF |
+
+**Stronger same-day control:** Nov 11 `runs/pwr-stock/docpf.sh` used `builds/daf793f13be8d5762deecb73e3372641/a29e62ada0fe691746707b2b87c3e9f3`, `flashnext-4gpu` **policy OFF**, six document-prefill requests at **3719, 3716, 3704, 3711, 3723, 3715 tok/s**. Its `docpf.launch.log` reports derived XTX budgets **23074 MiB** each, tail **14882 MiB**, host pool **1033 MiB**, host KV **12288 MiB**, heat recording every 1 s. Crucially, its Radiance **binary SHA-256 `60acedbbe20941221c09b5d94b0f542f078a8f6673f9a50ce3eee2548a60bb80` is identical to the November 11 PWR01 two-XTX build** `builds/daf793f13be8d5762deecb73e3372641/41f15405cc38031fe6591674f460b8f1` (different build plan; same engine binary). Hence **Nov 11 3,700+ doc prefill and 2,963.8 PWR01 prefill coexist on the same engine binary**; it is untenable to call their difference a general kernel prefill regression.
+
+**Git commit provenance:** These run folders/metadata capture **source-slice digests, build-plan IDs and binary hashes but not a verifiable Git source commit SHA for each benchmark launch**. The linked reporting **commit `c9a8aced0` / PR #806** (merged Nov 10) documents the live-placement ABBA result *after the measurements*; it is **not** proof that this was the build source commit. `docs/planning/active/patching-radiance-heat-placement/RHP16.md` records the ABBA document-prefill effect (+0.6–1.1%) and `RHP17.md` the same run; `FLASHNEXT_EXECUTION_STATUS.md` has only the *older, different* natural 25/14/72K 2-XTX result (3297/3053/2998). `CURRENT_RELEASE_LEDGER.ndjson` stops at Nov 5, so it contains no Nov 9–11 3600+ event (although its Nov 4 policy record cites documentation prefill 3702→3687). No source commit should be invented.
+
+### Corrected lead-only bisect order
+
+1. **Use the Nov 10 run as the historical target**, not the October build: `f17f21fda44979e9abe84f13e96b8896/b43f943466729a2eb484e082dc45069f` on `flashnext-4gpu`, **2048 chunk, MTP3, FP8 KV, host pool 9216, host KV 12288, 22528/22528/14336 MiB helper budgets, 8 sessions, 262144 context, mixed heat, 1-s histogram**. Start with its documented **policy-OFF** arms (3612–3667), then the independently documented ON state (up to 3708). Use the saved manifests and compatible launcher rather than assuming current strict `bc-serve` can open all older plans. No GPU or power change in this audit.
+2. **Match exactly the *document* workload across builds and options** on the same four-GPU layout. Existing current-binary `pwr-stock/docpf.out` already attains **3704–3723**, so a broad Nov10→Nov11 prefill regression is *not supported*. A formal performance comparison must freeze the doc payload with SHA-256, use the same heat/owner map, KV/host pool, chunk, policy and power readbacks, and report prefill/decode separately. Changing live docs makes K-specific doc-prefill runs nonidentical.
+3. **Then do a same-workload PWR01 cross-build control**, first on this **same 4GPU** layout with the Nov 10 build versus the current build (same PWR01 prompt and 60-s phase), then only after that on **2-XTX vs 2-XTX**. This separates source change from 4GPU/2-XTX placement and from the very different PWR01 vs document workload.
+4. **Only if a matched PWR01 decline persists**, test 2048↔4096 chunks, histogram off, heat ranking, host pool and XTX budget one variable per arm (the original audit's toggles). Record runtime settings, actual power/clock/firmware readbacks, fixed prompt checksum, build SHA/source-slice, owner-map digest and both prefill/decode rates independently. No conclusion from unrelated stream-bench decode throughput.
+
+**Revised verdict:** The recalled November 10 3600+ figure **exists** and is a different workload/topology; a November 11 **3700+** record also exists on the **same Radiance executable** as the 2964 PWR01 record. There is **no demonstrated 3600→2964 like-for-like regression**. October→November PWR01 3312→2964 remains an observed but configuration-confounded gap, not a proven software regression.
