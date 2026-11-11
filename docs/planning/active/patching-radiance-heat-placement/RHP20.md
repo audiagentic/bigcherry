@@ -114,3 +114,76 @@ The card-free tests in worker_policy_config_test.cpp and worker_heat_test.cpp ve
 
 - 2026-11-10T04:36:03.059770+00:00 (created-by): Created by agent
 - 2026-11-10T05:24:04.600666+00:00 (updated-by): Updated: section:notes
+
+## RHP20 forced-move acceptance preparation (2026-11-11; card-free only)
+
+Prepared `tools/lab/radiance/rhp20-forced-move.py`, the two v1
+`rhp20/{tail,tail-combine}.experiment.json` files, KLD config generator,
+and card-free tests. Full derivation, exact gates, receipt formats,
+observability gaps and ag-planning ledger text are in
+`tools/lab/radiance/rhp20/README.md`.
+
+Most recent measured tail evidence:
+`${BC_WORK_ROOT}/flashnext/manifest-1111-131338-1271995.json`, owner map
+`28f43e45923dd6e0f78e9ad6e631c87af8675acf0a46b11223201a4bb09c1f4d`.
+The gfx1100 head helpers and gfx1030 tail have legal w4nl64 same-layer
+pairs, checked against the model's actual quantisation recipe and protected
+BF16 exclusions. The combine layout has **no previously measured manifest**;
+the runner uses ordinary tail evidence provisionally, then requires a new
+combine-specific measured manifest before accepting that run. These layouts'
+initial owner maps have no zero-owner helper: a true zero-owner move is
+still a separate hardware gap.
+
+The 3-step AUTO_SWAP pattern rotates helper pairs 0:1, 0:2, 1:2;
+`repeat=ceil(1000/3)=334` yields **1002 proposals**. The historical
+RHP06 paced-scoring evidence derives `pace_requests=104` from
+`floor(16849/(161+1))`, so the first 1,000 proposals require at least
+104,000 completed lane requests. Neither proposals nor eligible owners
+prove real commits; read helper0's exit receipt and require >=1,000
+committed, zero aborted, zero inflight, correlated per-transition lines,
+and all three pair types. The 6-stream 1024-token/12-repetition decode and
+10-repetition `prefill-doc-44k` run concurrently with MTP depth 3,
+bounded by the prior RHP06 5400-second campaign envelope.
+
+From the repository root, **with an external GPU lease already held**
+(the script never acquires or releases it), the exact independent cell
+commands are:
+
+```bash
+source tools/env/bigcherry-env.sh
+BUILD=${BC_WORK_ROOT}/builds/daf793f13be8d5762deecb73e3372641/a29e62ada0fe691746707b2b87c3e9f3
+PYTHONPATH=tools python3 tools/lab/radiance/rhp20-forced-move.py prepare --layout flashnext-2xtx-rdna2-tail
+PYTHONPATH=tools python3 tools/lab/radiance/rhp20-forced-move.py run --layout flashnext-2xtx-rdna2-tail --build "$BUILD" --port 36080 --out ${BC_WORK_ROOT}/runs/rhp20-tail-forced-1000 --lease-held --identity ${BC_WORK_ROOT}/runs/rhp20-tail-forced-1000/identity.json
+PYTHONPATH=tools python3 tools/lab/radiance/rhp20-forced-move.py prepare --layout flashnext-2xtx-rdna2-tail-combine
+PYTHONPATH=tools python3 tools/lab/radiance/rhp20-forced-move.py run --layout flashnext-2xtx-rdna2-tail-combine --build "$BUILD" --port 36080 --out ${BC_WORK_ROOT}/runs/rhp20-tail-combine-forced-1000 --lease-held --identity ${BC_WORK_ROOT}/runs/rhp20-tail-combine-forced-1000/identity.json
+```
+
+The corresponding launcher start arguments are `--layout
+flashnext-2xtx-rdna2-tail --experiment
+tools/lab/radiance/rhp20/tail.experiment.json` and `--layout
+flashnext-2xtx-rdna2-tail-combine --experiment
+tools/lab/radiance/rhp20/tail-combine.experiment.json`, each with
+`--build "$BUILD" --port 36080 --record-period 1`. Starts happen
+one at a time, and the runner always calls the launcher stop path.
+No live-policy JSON is passed to a forced arm; its digest is distinct
+from policy calibration.
+
+Separate numerical campaigns (same build/lease, after each serving arm
+has stopped):
+
+```bash
+PYTHONPATH=tools python3 tools/lab/radiance/rhp20-forced-move.py kld-config --layout flashnext-2xtx-rdna2-tail --out ${BC_WORK_ROOT}/runs/rhp20-tail-kld/config.json
+PYTHONPATH=tools python3 -m bigcherry ab-benchmark --server-config ${BC_WORK_ROOT}/runs/rhp20-tail-kld/config.json --output ${BC_WORK_ROOT}/runs/rhp20-tail-kld/kld --pairs 2
+PYTHONPATH=tools python3 tools/lab/radiance/rhp20-forced-move.py kld-config --layout flashnext-2xtx-rdna2-tail-combine --out ${BC_WORK_ROOT}/runs/rhp20-tail-combine-kld/config.json
+PYTHONPATH=tools python3 -m bigcherry ab-benchmark --server-config ${BC_WORK_ROOT}/runs/rhp20-tail-combine-kld/config.json --output ${BC_WORK_ROOT}/runs/rhp20-tail-combine-kld/kld --pairs 2
+```
+
+**Open gates (not to be marked PASS from preparation):** the harness
+refuses a missing same-ISA *per-expert contribution* bit-identity proof;
+it does not mislabel an API-text match as that proof. A suitable probe
+must still produce the before/after hashes from the actual moved expert.
+Cross-ISA moves require KLD rather than byte identity. Zero-owner,
+per-card epoch/MTP in-flight receipts, RHP12 latency, fresh KLD and
+the separate flashnext-4gpu stress arm remain hardware work.
+RHP20 stays in_progress; RHP11 stays in_progress; RHP06's old
+pending marker is progress-stale but must not be changed to done.
