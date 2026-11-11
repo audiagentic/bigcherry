@@ -337,12 +337,11 @@ Result<Manifest> resolve_s10(const Manifest &base, const S10Inputs &in) {
       *it = entry;
   }
   if (out.spec.plan.state == PlanState::kMeasured) {
+    // The plan echoes the host pool it was measured with; it must be the one S8 derives (bc-serve exit 11 otherwise).
     if (!out.spec.plan.engine_memory ||
-        out.spec.plan.engine_memory->expected.host_pool_mib != s8.host.pool_mib ||
-        out.spec.plan.engine_memory->expected.vram.claimable !=
-            in.measured.engine_vram_claimable_bytes)
-      return fail(ConfigErrorCode::plan_mismatch, "spec.plan.engine_memory.expected",
-                  "measured engine host-pool or live VRAM plan disagrees with S8");
+        out.spec.plan.engine_memory->expected.host_pool_mib != s8.host.pool_mib)
+      return fail(ConfigErrorCode::plan_mismatch, "spec.plan.engine_memory.expected.host_pool_mib",
+                  "the measured plan's host pool disagrees with S8's derived pool");
   }
   if (out.spec.processes.helpers.size() != s8.helpers.size())
     return fail(ConfigErrorCode::ownership_mismatch, "spec.processes.helpers",

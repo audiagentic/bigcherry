@@ -131,12 +131,21 @@ Result<S10Inputs> s10_inputs(const Manifest &m, const bc::serving::Resolved &r, 
   if (!integer(p1, "host_reserve_bytes")) return fail("p1.host_reserve_bytes", "missing integer");
   s.host_reserve_bytes = p1.at("host_reserve_bytes").get<int64_t>();
   s.host_reserve_evidence = setting(r, "memory.host_reserve_mib").source;
-  int64_t required = 0;
+  // Engine VRAM admission is per rank, each against its own live claimable room after the rank split: S8 checks the
+  // rank with the least headroom.
+  bool any_rank = false;
   if (p1.contains("gpu") && p1.at("gpu").is_array())
-    for (const json &g : p1.at("gpu"))
-      if (integer(g, "required_bytes")) required = std::max(required, g.at("required_bytes").get<int64_t>());
-  s.engine_vram_required_bytes = required;
-  s.engine_vram_claimable_bytes = m.spec.plan.engine_memory->expected.vram.claimable;
+    for (const json &g : p1.at("gpu")) {
+      if (!integer(g, "required_bytes") || !integer(g, "claimable_bytes"))
+        return fail("p1.gpu", "each engine rank needs its required and claimable bytes");
+      const int64_t required = g.at("required_bytes").get<int64_t>(), claimable = g.at("claimable_bytes").get<int64_t>();
+      if (!any_rank || claimable - required < s.engine_vram_claimable_bytes - s.engine_vram_required_bytes) {
+        s.engine_vram_required_bytes = required;
+        s.engine_vram_claimable_bytes = claimable;
+      }
+      any_rank = true;
+    }
+  if (!any_rank) return fail("p1.gpu", "the P1 record has no engine rank");
   s.checkpoint_slots = m.spec.resources.host.checkpoint_slots.value_or(0);
 
   if (has_helpers) {

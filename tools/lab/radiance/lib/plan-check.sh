@@ -205,32 +205,32 @@ plan_manifest_prepare() {
   plan_check_site "$site"
   plan_check_describe "$site" || return 1
   PLAN_MANIFEST="$RUN/manifest-$STAMP-$$.json"
-  plan_manifest_write "$PLAN_MANIFEST" > "$RUN/plan-check.out" 2> "$RUN/plan-check.err"
-  rc=$?
-  if [ $rc = 10 ]; then
-    plan_check_measure || return 1
-  elif [ $rc = 11 ]; then
-    # The plan was measured with another host pool than the measured inputs need: measure once more with the derived pool
-    # (a configuration of its own in the cache, so this happens once per configuration).
-    local pool
-    pool=$(sed -n 's/^derived_host_pool_mib=\([0-9][0-9]*\)$/\1/p' "$RUN/plan-check.out")
-    [ -n "$pool" ] || { echo "plan check: bc-serve asked for another host pool without naming it:" >&2; cat "$RUN/plan-check.err" >&2; return 1; }
-    echo "plan check: the measured inputs need a ${pool} MiB host pool; using it" >&2
-    PLAN_SET+=(--set "memory.host_pool_mib=$pool")
+  # 10: no measured plan for this configuration: measure it. 11: the plan was measured with another host pool than its
+  # measured inputs need: take the derived pool (a configuration of its own in the cache) and go round again. Each pool
+  # is measured once per configuration; two changes of pool without converging is an error.
+  local round pool
+  for round in 1 2 3 4 5; do
     plan_manifest_write "$PLAN_MANIFEST" > "$RUN/plan-check.out" 2> "$RUN/plan-check.err"
     rc=$?
-    if [ $rc = 10 ]; then
-      plan_check_measure || return 1
-    elif [ $rc != 0 ]; then
-      echo "plan check: bc-serve --write-manifest failed with the derived host pool (exit $rc):" >&2
-      cat "$RUN/plan-check.err" >&2
-      return 1
-    fi
-  elif [ $rc != 0 ]; then
-    echo "plan check: bc-serve --write-manifest failed (exit $rc):" >&2
-    cat "$RUN/plan-check.err" >&2
-    return 1
-  fi
+    case $rc in
+      0) break ;;
+      10) : > "$RUN/plan-check.err"
+          plan_check_measure > "$RUN/plan-check.out" 2> >(tee "$RUN/plan-check.err" >&2); rc=$?   # shown and kept
+          [ $rc = 0 ] && break
+          [ $rc = 11 ] || return 1 ;&
+      11) pool=$(cat "$RUN/plan-check.out" "$RUN/plan-check.err" 2>/dev/null | sed -n 's/^derived_host_pool_mib=\([0-9][0-9]*\)$/\1/p' | tail -1)
+          [ -n "$pool" ] || { echo "plan check: bc-serve asked for another host pool without naming it:" >&2; cat "$RUN/plan-check.err" >&2; return 1; }
+          [ "${PLAN_POOL_CHANGES:-0}" -lt 2 ] || { echo "plan check: the host pool did not converge (last asked for ${pool} MiB)" >&2; return 1; }
+          PLAN_POOL_CHANGES=$(( ${PLAN_POOL_CHANGES:-0} + 1 ))
+          echo "plan check: the measured inputs need a ${pool} MiB host pool; measuring with it" >&2
+          PLAN_SET+=(--set "memory.host_pool_mib=$pool")
+          rm -f "$PLAN_MANIFEST" ;;
+      *) echo "plan check: bc-serve --write-manifest failed (exit $rc):" >&2
+         cat "$RUN/plan-check.err" >&2
+         return 1 ;;
+    esac
+  done
+  [ $rc = 0 ] || { echo "plan check: no measured manifest after $round rounds" >&2; return 1; }
   plan_live_placement_report
 }
 
@@ -247,7 +247,9 @@ plan_check_measure() {
   engine_mib=$(sed -n 's/.*--plan-memory: wrote .*; engine start-up took \([0-9][0-9]*\) MiB of MemAvailable;.*/\1/p' "$RUN/engine-measure.log" | tail -1)
   [ -n "$engine_mib" ] && [ -n "${PLAN_HELPERS_RESIDENT_MIB:-}" ] \
     || { echo "plan check: the measuring start did not report the resident host memory (helpers '${PLAN_HELPERS_RESIDENT_MIB:-}' MiB, engine '$engine_mib' MiB); see $RUN/engine-measure.log" >&2; return 1; }
-  plan_manifest_write "$PLAN_MANIFEST" measured-plan "$plan" "$ranks" "$PLAN_HELPERS_RESIDENT_MIB" "$engine_mib" \
-    || { echo "plan check: the measured manifest was not written (above)" >&2; return 1; }
+  local rc=0
+  plan_manifest_write "$PLAN_MANIFEST" measured-plan "$plan" "$ranks" "$PLAN_HELPERS_RESIDENT_MIB" "$engine_mib" || rc=$?
+  [ $rc = 11 ] && return 11   # stored; the caller measures again with the derived host pool
+  [ $rc = 0 ] || { echo "plan check: the measured manifest was not written (above)" >&2; return 1; }
   echo "plan check: measured in $((SECONDS - t0)) s; plan stored in $RUN/plan-cache and the manifest written" >&2
 }

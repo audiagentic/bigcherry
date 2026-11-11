@@ -156,7 +156,7 @@ json produce_p1(const bc::serving::Resolved& resolved, const json& facts,
     const int64_t claimable = integral(g.at("claimable_bytes"), "GPU claimable", true);
     if (fixed > required || required > claimable)
       refuse("GPU", "native fixed/required demand exceeds measured claimable room");
-    native.gpu.push_back({selected.engine_cards[i], required, fixed});
+    native.gpu.push_back({selected.engine_cards[i], required, fixed, claimable});
   }
   if (native.engine_plan.vram.cards.size() != native.gpu.size())
     refuse("GPU", "engine plan rank count differs from demand sidecar");

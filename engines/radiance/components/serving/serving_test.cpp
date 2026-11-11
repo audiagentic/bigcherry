@@ -892,7 +892,7 @@ Json p1_record_for(const Json& unmeasured, int64_t pool_mib, int64_t margin_mib,
     return {{"schema_version", 1}, {"kind", "bc_serve_v2_measured_inputs"}, {"planning_key", std::string(64, '6')},
             {"provenance", "serving_test synthetic record"}, {"resource_inputs", inputs},
             {"gpu", Json::array({{{"bdf", spec.at("processes").at("engine").at("device").at("gpus")[0]},
-                                  {"required_bytes", 10}, {"fixed_bytes", 1}}})},
+                                  {"required_bytes", 10}, {"fixed_bytes", 1}, {"claimable_bytes", 10}}})},
             {"concurrent_sessions", 1}, {"host_reserve_bytes", reserve_mib * MiB}, {"scope", scope}};
 }
 
