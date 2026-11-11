@@ -621,3 +621,57 @@ gates remain original long-token recurrence history, exact
 prefill KKT, full attention, all 64 layers, native optimized
 quant GEMMs, serving/quality, and real 4/6/8-stream and
 resident context comparisons against TP2 and fused TP4.
+
+
+### 2026-11-11 — VTP16 hardware PASS and VTP17 pinned asynchronous host transport optimisation
+
+The previously card-free VTP16 original-BF16 GDN output-projection
+hardware proof has now passed M1 and M4 under fresh exclusive
+three-physical-GPU leases. Both use actual original BF16
+5120x6144 output projection weights column-sharded 1536/1536/3072,
+and check each GPU partial, ordered F32 D2H host sum, BF16 residual
+addition and H2D broadcast against the independent whole-matrix
+reference. All 5120/20480 BF16 final outputs matched exactly,
+with no P2P and clean process/lease release.
+
+Opt-in VTP17 uses the SAME original weights, oracle, kernel geometry,
+physical ranks and output protocol, but exchanges pageable host
+staging for persistent HIP portable pinned partial/final buffers.
+It queues D2H transfers behind each GPU GEMV on each GPU stream,
+waits only after all three transfers are enqueued, performs the
+same ordered host F32 combine, then queues H2D BF16 broadcast.
+Actual M1 and M4 leases both completed with numerical PASS.
+
+| Original BF16 output stage | VTP16 pageable p50 | VTP17 pinned async p50 | Indicative stage reduction |
+| --- | ---: | ---: | ---: |
+| M1 | 214.53 us | 193.40 us | 9.8% |
+| M4 | 309.59 us | 246.94 us | 20.2% |
+
+VTP17 M1 measured XTX0 kernel 66.44 us, XTX1 66.52 us,
+R9700 38.24 us, first-D2H-complete stage p50 98.83 us,
+host-reduce stage 15.89 us and H2D stage 78.16 us.
+M4 device kernels 173.60/172.24/113.80 us; first-D2H-complete
+stage 211.21 us, host reduce 11.60 us, H2D stage 20.90 us.
+The first stage includes kernel execution, enqueues and transfers:
+**never label it PCIe-only D2H time**. The 3 stage medians are
+independent marginal p50 values and do not add exactly to
+the total wall median. Timings are separated fresh-lease starts,
+not balanced/thermal-matched ABBA, and not model tok/s.
+Treat speedup as *preliminary*, not a production configuration.
+
+Immutable VTP16 GPU receipts:
+BC_WORK_ROOT/xtx27-prefill/vtp16-gdn-output-gpu/runs/
+20261111T020106329323Z-0e579a3508 (M1) and
+20261111T020201155538Z-0e579a3508 (M4).
+VTP17 pinned GPU receipts:
+BC_WORK_ROOT/xtx27-prefill/vtp17-gdn-output-pinned/runs/
+20261111T020414350676Z-950d69e809 (M1) and
+20261111T020439712421Z-950d69e809 (M4).
+
+Acceptance still needed before claiming a robust improvement:
+same-session ABBA or BAAB alternating VTP16/VTP17 M1 and M4
+with identical GPU inventory, no competing leases, equal
+kernel build, power settings and deterministic original weight
+inputs. Validate all full CPU oracles every arm and measure
+per-stage p95 as well as p50. VTP17 is opt-in research only,
+not a Radiance native collective or full inference.
