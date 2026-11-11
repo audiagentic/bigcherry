@@ -1,5 +1,12 @@
 # Changelog
 
+## [1170.20.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.19.0...bc-radiance-1170.20.0) (2026-11-11)
+
+
+### New and changed
+
+* **rsc11:** stage strict inactive native P1 measurement boundary ([#880](https://github.com/audiagentic/bigcherry/issues/880)) ([2bac0a8](https://github.com/audiagentic/bigcherry/commit/2bac0a87ba87df6f53a5de5e62aa515a5c7e7340))
+
 ## [1170.19.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.18.0...bc-radiance-1170.19.0) (2026-11-11)
 
 
