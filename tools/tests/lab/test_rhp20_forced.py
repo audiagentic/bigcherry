@@ -116,8 +116,8 @@ class RHP20Tests(unittest.TestCase):
         with self.assertRaisesRegex(GateError, "hashes differ"):
             receipt_evidence(sample_logs(), combine=False, identity=evidence)
 
-    @unittest.skipUnless(RECORD.is_file() and Path(MODEL).is_file(), "Brutus recorded manifest/model absent")
-    def test_recorded_tail_owner_map_from_brutus(self):
+    @unittest.skipUnless(RECORD.is_file() and Path(MODEL).is_file(), "recorded manifest/model absent")
+    def test_recorded_tail_owner_map_if_available(self):
         protected, _ = recipe_evidence(Path(MODEL))
         evidence = manifest_evidence(json.loads(RECORD.read_text()), TAIL, protected)
         self.assertEqual(evidence["owner_map_sha256"],
