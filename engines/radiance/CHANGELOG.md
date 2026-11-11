@@ -1,5 +1,17 @@
 # Changelog
 
+## [1170.18.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.17.0...bc-radiance-1170.18.0) (2026-11-11)
+
+
+### New and changed
+
+* **rsc11:** inactive native measured inputs and strict S11 consumer (S13 P1) ([#862](https://github.com/audiagentic/bigcherry/issues/862)) ([14d4886](https://github.com/audiagentic/bigcherry/commit/14d488673ecde9b8679358f1d1690893732b5523))
+
+
+### Fixes
+
+* **radiance:** observational RHP01 route coverage and RHP02 duplication audit ([#861](https://github.com/audiagentic/bigcherry/issues/861)) ([6d22500](https://github.com/audiagentic/bigcherry/commit/6d22500ab2e44f6f7ad138f9a6c047fdac04857e))
+
 ## [1170.17.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.16.0...bc-radiance-1170.17.0) (2026-11-11)
 
 
