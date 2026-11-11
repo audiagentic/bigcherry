@@ -873,6 +873,7 @@ class TestPlanMemoryPatch(unittest.TestCase):
             assert "g_rank_gpu" in plan
             assert "g_rank_facts = facts;" in plan
             assert "void bc_plan_memory_note_ranks(" in plan
+            assert source.count("bc_plan_memory_note_ranks(rank_cfg_);") == 1
             assert "--plan-memory-ranks" in flags
             assert 'g_store.push_back("--plan-memory-ranks");' in manifest
             assert "out << v1::encode(g_plan).dump(2)" in plan
