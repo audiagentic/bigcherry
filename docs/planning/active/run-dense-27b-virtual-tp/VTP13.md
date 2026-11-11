@@ -242,3 +242,125 @@ reverse-order attempt failed closed when the power A/B agent reacquired
 the lease. Next: a fresh reverse-order and repeated matched starts,
 checkpoint-BF16/native-W8A8 operator-oracle, then real R9700 two-KV-head
 attention and GDN key/value/conv/state execution, before engine TP3.
+
+## 2026-11-11 — checkpoint BF16 FFN and GDN packing: real payload evidence
+
+**VTP13 layer-0 FFN hardware proof (leased):** the extended
+`xtx27_vtp13_chain.py --checkpoint ${BC_CHECKPOINT}
+--layer 0` reads all 3 actual original BF16 gate/up/down source tensors
+(3 x 178,257,920 bytes), applies per-output-channel INT8 scales to the
+unequal 5120/4864/7424 shards, and computes the full FFN chain
+concurrently on 2 gfx1100 + gfx1201. The 3 D2H / CPU FP32 / 3 H2D
+physical collective passed the independent quantized CPU oracle with
+reported max-abs difference **0**. Against a separate *original BF16
+weights, synthetic BF16 activation* reference, M1 RMSE **0.001222** and
+max absolute difference **0.03611**; M4 reverse-order RMSE **0.001284**
+and max absolute difference **0.03611**. M1 chain p50 **669.17 us**,
+p95 **778.13 us** (3 samples); M4 reverse p50 **1932.68 us**,
+p95 **2119.10 us** (5 samples). These timings use simple warp-per-output
+INT8 kernels, **not native optimized Radiance dispatch**, and say
+nothing about real tokens/s or BF16 model-quality thresholds.
+
+Immutable run receipts:
+`BC_WORK_ROOT/xtx27-prefill/vtp13-ffn-chain/runs/
+20261110T235921961889Z-ecca30e678/` (M1) and
+`20261111T000158963464Z-ecca30e678/` (M4 reverse). Each records
+source/compiler fingerprints, full selected BF16 tensor payload
+SHA-256s, three physical endpoints and CPU/GPU checks.
+
+**VTP13 original-GDN Q|K|V+conv packing (card-free):**
+`xtx27_vtp13_gdn_pack.py --checkpoint $BC_CHECKPOINT --phase pack --run --layer 0` produced
+real BF16 rank-local files for all 10,240 GDN QKV rows
+(104,857,600 source bytes) and convolution
+(81,920 source bytes), preserving exact original bytes. XTX0 and
+XTX1 each own 2560 Q|K|V channels; R9700 owns 5120. For
+both source tensors, reconstructing the original Q|K|V ordered
+payload from all three rank files produced a *matching entire
+source SHA-256*. Receipt:
+`BC_WORK_ROOT/xtx27-prefill/vtp13-gdn-pack/
+layer0-20261111T000916481127Z/summary.json`.
+**This is pack/layout correctness, not a valid GDN recurrent compute
+or entire 48-layer converter.**
+
+New `xtx27_vtp13_heads.py` and `xtx27_vtp13_heads.hip`
+compile for gfx1100+gfx1201. The opt-in experiment stages:
+(1) actual 24Q/4KV GQA softmax with R9700 12Q/2KV in ONE launch,
+(2) original 16K/48V 128-dimensional GDN-shaped persistent
+128x128-per-value-head state, with R9700 8K/24V in ONE launch.
+Both have independent CPU numerical oracles and measure per-GPU
+wall/critical path, but use synthetic BF16-representable
+Q/K/V. **GDN deliberately uses a simplified recurrence and omits
+original conv, A_log and dt_bias, so full Qwen GDN correctness
+remains open.** Initial GPU runs were blocked by another agent's
+exclusive power-regression lease; these remain unmeasured, not a pass.
+
+Next: lease-bound attention/GDN head M1/M4 then M8/M64, original BF16
+GDN packed-producer/conv/state oracle, true native gfx11/gfx12
+INT8 GEMM/FP8 compatible ABI and M4/M8 serving admission; no
+FP8 variant loader or production path promoted.
+
+## 2026-11-11 — head-local R9700 attention and simplified GDN: GPU PASS
+
+The opt-in `xtx27_vtp13_heads.py` compiled for gfx1100 and gfx1201
+and completed **three separate exclusive-lease starts**, source digest
+`db658fc9cc0711ff`, all GPU/CPU numerical oracles passing:
+`BC_WORK_ROOT/xtx27-prefill/vtp13-head-ops/runs/`
+`20261111T001533333281Z-db658fc9cc` (M1/4; 256-token context),
+`20261111T001618569980Z-db658fc9cc` (M8/64; reverse order),
+`20261111T001704701578Z-db658fc9cc` (M1/4/8; context 1024).
+All tests used three physical contexts/streams and **no P2P**.
+
+**Actual GQA softmax compute**: XTX0 and XTX1 each execute 6 query/1
+KV heads; R9700 executes 12 query/2 KV heads **in one GPU kernel launch**,
+not two serial layers or separate physical workers. Q/K/V inputs are
+deterministic synthetic BF16-representable (no original attention
+projection weights). Per-GPU median kernel us:
+
+| Context, M | XTX0 | XTX1 | R9700 | Limiter |
+| --- | ---: | ---: | ---: | --- |
+| 256, 1 | 480 | 478 | 201 | XTX0 |
+| 256, 4 | 475 | 476 | 201 | XTX1 |
+| 256, 8 | 478 | 476 | 203 | XTX0 |
+| 256, 64 | 492 | 493 | 565 | **R9700** |
+| 1024, 1 | 1845 | 1838 | 841 | XTX0 |
+| 1024, 4 | 1845 | 1839 | 845 | XTX0 |
+| 1024, 8 | 1840 | 1850 | 841 | XTX1 |
+
+Independent CPU softmax maximum absolute error was <=
+`6.52e-9` at context 256 and <= `3.38e-9` at context 1024.
+**R9700 handles both KV heads concurrently and is not the slow
+participant at M1/M4/M8 for this kernel. At M64/256 it IS slower.**
+These are naive, synthetic Q/K/V kernels, NOT native gfx11/gfx12
+optimized Radiance registry rows, causal full-model attention, or
+long-context real KV admission.
+
+**Simplified GDN state update**: 4/4/8 key heads, 12/12/24
+value heads in one kernel per physical rank. Each value head owns
+a persistent 128x128 F32 state. R9700 state is 1,572,864 bytes
+(1.5 MiB) **per synthetic layer and request** in this prototype.
+XTXs are 0.75 MiB each. Measured per-GPU median us:
+
+| M | XTX0 | XTX1 | R9700 | Limiter |
+| --- | ---: | ---: | ---: | --- |
+| 1 | 41.36 | 41.36 | 61.52 | R9700 |
+| 4 | 95.80 | 95.36 | 107.92 | R9700 |
+| 8 | 165.40 | 165.32 | 172.08 | R9700 |
+| 64 | 1118.14 | 1120.35 | 1072.98 | XTX1 |
+
+All simplified state-update oracles passed (max absolute error
+<=`7.52e-6`). **Crucial limitation:** this is NOT the exact
+Qwen GDN state transition: convolution, learned A_log/dt_bias,
+normalisation and beta/z gating are not represented. The per-layer
+state figure cannot be used as a verified serving allocation budget.
+GDN numerical, topology, exact causal replay and long-sequence
+admission remain open. The real BF16 original QKV and conv rank packs
+are independently byte-validated but not yet consumed by this
+simplified GPU kernel.
+
+Next order: (1) actual original BF16 GDN packed input producer +
+convolution/recurrent state math checked against independent
+reference, (2) attention source Q/gate head pairing and native
+optimized gfx1100/gfx1201 shape dispatch, (3) matched head-local
+M64/long-context ABBA and then full TP3-vs-TP4 operators,
+(4) only after quality and admission evidence enable engine TP3.
+No extrapolation to 262,144-token or 4/6/8-stream real serving.
