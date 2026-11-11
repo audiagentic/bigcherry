@@ -1,5 +1,12 @@
 # Changelog
 
+## [1170.17.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.16.0...bc-radiance-1170.17.0) (2026-11-11)
+
+
+### New and changed
+
+* **rsc11:** implement inactive v2 S10 serving resolver ([#850](https://github.com/audiagentic/bigcherry/issues/850)) ([34b9ae1](https://github.com/audiagentic/bigcherry/commit/34b9ae149a9acad3ca43052c67573fd76ece8a61))
+
 ## [1170.16.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.15.0...bc-radiance-1170.16.0) (2026-11-11)
 
 
