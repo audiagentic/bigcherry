@@ -83,6 +83,7 @@ class MultiseqPipeTests(unittest.TestCase):
             ctx = (root / "core/runtime/ctx.cpp").read_text()
             self.assertIn("sizeof(RadBatch) == 480", ctx)
             self.assertIn("mix(cu_key);", ctx)
+            self.assertIn("uint64_t cu_key = 0;", ctx)
             again = apply_all(load(PKG), root)
             self.assertTrue(all(e.status == "already-applied" for f in again for e in f.results))
 

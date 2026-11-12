@@ -82,13 +82,13 @@ KEY = FilePatch(path="core/runtime/ctx.cpp", language="none", description="VTP31
         "msp-key-bounds",
         "    if (b->gen) return 0;\n",
         "    if (b->gen) return 0;\n"
-        "    /* BC_VTP31_MSP_KEY (rad0025): a plugin may cut a prefill pass of several sequences between\n"
+        "    /* BC_VTP31_MSP_KEY_BOUNDS (rad0025): a plugin may cut a prefill pass of several sequences between\n"
         "     * them by the host bounds, so passes with the same shape but different bounds differ. */\n"
         "    uint64_t cu_key = 0;\n"
         "    if (b->phase == RAD_PHASE_PREFILL && b->n_seq > 1 && b->cu_seqlens_h)\n"
         "        for (int i = 0; i <= b->n_seq; ++i)\n"
         "            cu_key = cu_key * 0x100000001b3ull + (uint64_t)(uint32_t)b->cu_seqlens_h[i];\n",
-        guard="BC_VTP31_MSP_KEY",
+        guard="BC_VTP31_MSP_KEY_BOUNDS",
     ),
     _edit(
         "msp-key-mix",
