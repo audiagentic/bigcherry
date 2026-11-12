@@ -254,6 +254,35 @@ managed patch:
 4. Same bits as the serial step (every row's arithmetic is unchanged); measure at 4/6/8 streams and with four 4096-token
    prompts, with a profile arm. Later: steps that mix decode rows with prefill.
 
+## Experiment 8 result: prefill pipelined between sequences (2026-11-12, rad0025, build 30146bef vs a08d17ff, logs e8-1223)
+
+rad0025 is the plan above as a managed patch. The scheduler gives the batch its host sequence bounds
+(`RadBatch::cu_seqlens_h`), and `pass_key` keys a recorded prefill pass of several sequences by them. 2x ABBA over
+the two builds, MXFP4 TP3 with the layout's settings, no other GPU process:
+
+| | rad0024 (mean of 4) | rad0025 (mean of 4) | change |
+|---|---|---|---|
+| four 4096-token prompts, slowest time to first token | 10460 ms | 9723 ms | -7.0% |
+| 1 stream | 115.7 tok/s | 115.5 tok/s | 0 |
+| 4 streams | 199.9 tok/s | 207.9 tok/s | +4.0% |
+| 6 streams | 195.3 tok/s | 197.5 tok/s | +1.2% |
+| 8 streams | 214.2 tok/s | 214.4 tok/s | 0 |
+
+The scheduler's "runs serially: more than one sequence" note is gone in every rad0025 arm. The 4-stream greedy texts
+differ only where the base build's own runs differ (the same two streams, from the same characters), so the output is
+unchanged. At 8 streams most steps carry decode rows and stay serial.
+
+Profile, four 4096-token prompts (`tp-profile.sh`, device time summed over both lanes):
+
+| build | rank | device ms | trunk | collectives | ffn_gate_up gemm |
+|---|---|---|---|---|---|
+| rad0024 | XTX / XTX / R9700 | 12502 / 12444 / 12515 | 30 / 29 / 25% | 70 / 70 / 75% | 1225 / 1184 / 1087 ms |
+| rad0025 | XTX / XTX / R9700 | 13793 / 13720 / 13965 | 35 / 35 / 34% | 64 / 64 / 66% | 1539 / 1399 / 1680 ms |
+
+Each piece's GEMMs run on half the rows and cost about 25% more in total. The overlap covers that and leaves 7% off
+the wall time. Collectives are still about two thirds of prefill device time, so the next gains are fewer all-reduce
+bytes in prefill and steps that mix decode rows with prefill.
+
 ## Steps
 
 1. Add a typed per-run selector for the all-reduce method (e.g. `tuning.allreduce_method`; contract amendment; engine option in a managed patch) so every method below is an A/B from the manifest.
