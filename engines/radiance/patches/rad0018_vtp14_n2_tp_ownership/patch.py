@@ -35,13 +35,17 @@ from bigcherry.patcher import Edit, FilePatch
 PROFILE = "qwen38-27b-6-6-12"
 # Per-rank shares, in --rank-devices order (XTX, XTX, R9700): query heads, KV heads, feed-forward rows, delta-net key
 # heads and value heads. First heads and rows are the prefix sums. 6-6-12 gives the R9700 half of the attention and
-# delta net and 43% of the feed-forward (its 32 GiB). A sweep of other splits on the MXFP4 container (VTP14.md, N2
-# rebalance) found none faster: the R9700's remaining lag is its x4 link in the all-reduces, not its compute share.
+# delta net and 43% of the feed-forward (its 32 GiB); a sweep of other splits on the MXFP4 container (VTP14.md, N2
+# rebalance) found none faster, its mxfp4a8 GEMMs emulating fp8 on gfx1100. int8 gives the XTX cards the larger delta
+# net and feed-forward shares: the w8a8 container's i8a8 GEMMs run natively on both, and the split sweep (VTP14.md, N6)
+# put 6/6/4 delta-net heads with 6656/6656/4096 feed-forward rows ahead of 6/6/12 at every stream count.
 # CUSTOM ("qwen38-27b:K0,K1,K2:F0,F1,F2") sets the delta-net key heads (value heads 3x) and feed-forward rows per rank,
 # with attention as 6-6-12, so a sweep (for another format, such as w8a8) needs no rebuild.
 PROFILES = {
     "qwen38-27b-6-6-12": {"qh": (6, 6, 12), "kvh": (1, 1, 2), "ff": (5120, 4864, 7424),
                           "gk": (4, 4, 8), "gv": (12, 12, 24)},
+    "qwen38-27b-int8":   {"qh": (6, 6, 12), "kvh": (1, 1, 2), "ff": (6656, 6656, 4096),
+                          "gk": (6, 6, 4), "gv": (18, 18, 12)},
 }
 CUSTOM = "qwen38-27b:"
 NAMES = ", ".join(PROFILES) + ", " + CUSTOM + "K0,K1,K2:F0,F1,F2"

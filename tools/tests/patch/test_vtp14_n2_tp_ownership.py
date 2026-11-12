@@ -47,6 +47,7 @@ class TpOwnershipTests(unittest.TestCase):
         t = self.owned_text()
         table = profiles()
         self.assertIn("qwen38-27b-6-6-12", table)
+        self.assertIn("qwen38-27b-int8", table)
         for name, p in table.items():
             for count, total in (("qh", 24), ("kvh", 4), ("ff", 17408), ("gk", 16), ("gv", 48)):
                 self.assertEqual(len(p[count]), 3, (name, count))
@@ -79,7 +80,8 @@ class TpOwnershipTests(unittest.TestCase):
         self.assertEqual(recipe["patch-set"]["vtp14-tp-ownership"]["patches"],
                          ["rad0018_vtp14_n2_tp_ownership", "rad0019_vtp14_n2_tp_ownership_fp8"])
         sets = recipe["source"]["radiance-vtp14-rank-code-selection"]["patch-sets"]
-        self.assertEqual(sets[-3:], ["vtp14-rank-code-selection", "vtp14-shared-rendezvous", "vtp14-tp-ownership"])
+        self.assertEqual(sets[-4:], ["vtp14-rank-code-selection", "vtp14-shared-rendezvous", "vtp14-tp-ownership",
+                                     "vtp14-overlap"])
         for prod in ("radiance", "radiance-native"):
             self.assertNotIn("vtp14-tp-ownership", recipe["source"][prod]["patch-sets"])
 

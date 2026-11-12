@@ -71,10 +71,15 @@ required-state = "untested"
 patches = ["rad0018_vtp14_n2_tp_ownership", "rad0019_vtp14_n2_tp_ownership_fp8"]
 required-state = "untested"
 
+# Pipelined prefill (the fp8 plugin's two-piece step, all-reduces beside the other piece's work) at TP3.
+[patch-set.vtp14-overlap]
+patches = ["rad0020_vtp14_tp3_pipelined_prefill"]
+required-state = "untested"
+
 [source.radiance-vtp14-rank-code-selection]
 description = "Experimental native Radiance TP3 across RX 7900 XTX and R9700: per-rank kernel selection (--rank-devices) and a shared all-reduce rendezvous."
 overlay = false
-patch-sets = ["serving-core", "host-compat", "serving-manifest", "helper-config", "mtp-pass-replay", "vtp14-rank-code-selection", "vtp14-shared-rendezvous", "vtp14-tp-ownership"]
+patch-sets = ["serving-core", "host-compat", "serving-manifest", "helper-config", "mtp-pass-replay", "vtp14-rank-code-selection", "vtp14-shared-rendezvous", "vtp14-tp-ownership", "vtp14-overlap"]
 
 [source.radiance-native]
 description = "radiance 1.14.0 as released: no overlay, no patches."
