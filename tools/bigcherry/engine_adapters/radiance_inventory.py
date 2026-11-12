@@ -228,9 +228,11 @@ def resolve(
             if any(h.placement == "tail" for h in helpers):
                 common["R3_MOE_WORKER_PLACEMENT"] = "tail"
             common.update(recipe.get("env", {}))
-        engine_arch = engine[0].arch
+        # rank order; a mixed world (several engine groups) names each architecture and plugin once
+        engine_arch = "+".join(dict.fromkeys(g.arch for g in engine))
+        engine_plugin = ",".join(dict.fromkeys(archs[g.arch].plugin for g in engine))
         selected = radiance_layout.Resolved(
-            name, tuple(g.ordinal for g in engine), engine_arch, archs[engine_arch].plugin,
+            name, tuple(g.ordinal for g in engine), engine_arch, engine_plugin,
             recipe["model"], values["engine"].get("tp_wire"), tuple(recipe.get("server-args", [])),
             tuple(helpers), common,
         )

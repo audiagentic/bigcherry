@@ -1664,6 +1664,34 @@ void derived_budget_is_the_workers(Fixture& t) {
     assert(budgets_off[0] < budgets_on[0] && budgets_off[1] < budgets_on[1]);
 }
 
+/* A world of two card types: engine groups in rank order, one plugin each, and every rank's card in the plan key. */
+void mixed_arch_engine_layout(Fixture& t) {
+    namespace sv = bc::serving;
+    const auto model = t.root / "mixed-model.rad";
+    bc::test::write_rad(model, 0, 0, 128, 128, {});
+    Options opts;
+    opts.site = t.file("mixed-site.toml", "[engine]\nmodel = \"" + model.string() + "\"\nradiance_home = \"/runtime\"\n");
+    opts.layouts = {t.file("mixed-layouts.toml",
+        "schema = 1\n[layout.mixed-tp3]\nmodel = \"m.rad\"\n"
+        "engine = [{ arch = \"gfx1100\", count = 2 }, { arch = \"gfx1201\", count = 1 }]\ntp-wire = \"exact\"\n"
+        "[layout.twice]\nmodel = \"m.rad\"\nengine = [{ arch = \"gfx1100\" }, { arch = \"gfx1100\" }]\ntp-wire = \"exact\"\n")};
+    opts.sets = {"layout.name=\"mixed-tp3\"", "service.max_sessions=4", "service.max_context=8192"};
+    const auto r = sv::resolve(opts, t.facts);
+    const auto& g = t.facts.at("gpus");
+    assert(r.typed.layout.engine_cards.size() == 3);
+    for (size_t i = 0; i < 3; ++i) assert(r.typed.layout.engine_cards[i] == g[i].at("bdf").get<std::string>());
+    assert(r.typed.engine.tp == 3 && r.typed.engine.kernels == "libr3,libr4d,libref");
+    const Json key = sv::plan_key_inputs(r.values, t.facts, "m", "e", "");
+    assert(key.contains("rank_cards") && key.at("rank_cards").size() == 3 && key.at("rank_cards")[2].at("arch") == "gfx1201");
+    opts.sets = {"layout.name=\"twice\""};
+    fail(opts, t.facts, "in two groups");
+    // a single-architecture world keys as before: no rank_cards member
+    Options dense = opts;
+    dense.layouts.clear();
+    dense.sets = {"layout.name=\"qwen27b-2xtx\"", "service.max_sessions=6", "service.max_context=8192"};
+    assert(!sv::plan_key_inputs(sv::resolve(dense, t.facts).values, t.facts, "m", "e", "").contains("rank_cards"));
+}
+
 void tp_engine_with_helper_layout(Fixture& t) {
     namespace sv = bc::serving;
     const auto model = t.root / "tp-helper-model.rad";
@@ -1779,6 +1807,7 @@ int main(int argc, char** argv) {
         engine_only_layout(t);
         tp_engine_with_helper_layout(t);
         tp_engine_with_two_helpers_layout(t);
+        mixed_arch_engine_layout(t);
         derived_budget_is_the_workers(t);
         sdk_environment_step(t);
         std::cout << "PASS: fake KFD/PCI/proc detection; strict keys; types/ranges; required; "

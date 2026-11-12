@@ -29,6 +29,9 @@ inventory by architecture, never by device index (the serving resolver refuses `
 ```
 [layout.NAME]                  description, model (relative to BC_MODEL_ROOT), engine
 engine = { arch = "gfx1201" }  the engine card(s); count = 2 makes two TP ranks
+engine = [{ arch = "gfx1100", count = 2 }, { arch = "gfx1201", count = 1 }]
+                               a world of more than one card type: groups in rank order, each arch once; each rank
+                               runs its own architecture's plugin (radiance --rank-devices, VTP14 rad0016/rad0017)
 tp-wire                        required for TP > 1 (host-memory transport, no P2P)
 server-args                    optional engine options, each one a manifest setting (context, sessions, chunk, KV
                                dtype, speculative tokens, checkpoint interval, host pool, host KV tier, n-gram

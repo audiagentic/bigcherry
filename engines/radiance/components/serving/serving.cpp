@@ -415,8 +415,11 @@ struct HelperGroup {
 };
 struct LayoutRecipe {
     std::string source;                   // the layout file's name (provenance; the full path is in errors)
-    std::string engine_arch;
-    size_t engine_count = 1;
+    std::string engine_arch;              // the first engine group's architecture
+    size_t engine_count = 1;              // every engine rank, over all groups
+    /* The engine's card groups in rank order: `engine = { arch, count }`, or a list of them for a world of more than one
+     * architecture (each rank runs its own architecture's kernel plugin; radiance --rank-devices). */
+    std::vector<std::pair<std::string, size_t>> engine_groups;
     std::optional<std::string> tp_wire;
     std::vector<HelperGroup> groups;
     bool combine = false, tail = false;
@@ -511,13 +514,27 @@ LayoutRecipe recipe_for(const std::string& name, const Options& options) {
     LayoutRecipe r;
     r.source = fs::path(layouts.at("source").at(name).get<std::string>()).filename().string();
     const Json& e = l.at("engine");
-    if (e.contains("devices"))
-        throw std::runtime_error(where + "engine.devices pins host device indices; the serving resolver selects by architecture only");
-    r.engine_arch = e.at("arch");
-    r.engine_count = e.value("count", 1);
-    const auto roles = arch_info(r.engine_arch).roles;
-    if (std::find(roles.begin(), roles.end(), "engine") == roles.end())
-        throw std::runtime_error(where + "architecture " + r.engine_arch + " cannot run the engine (archs.toml roles)");
+    const Json groups = e.is_array() ? e : Json::array({e});
+    if (groups.empty()) throw std::runtime_error(where + "engine names no card group");
+    r.engine_count = 0;
+    for (const Json& g : groups) {
+        if (!g.is_object() || g.contains("devices"))
+            throw std::runtime_error(where + "engine groups are { arch, count }; the serving resolver selects by architecture only");
+        for (auto it = g.begin(); it != g.end(); ++it)
+            if (it.key() != "arch" && it.key() != "count")
+                throw std::runtime_error(where + "engine: unknown key " + it.key() + " (arch, count)");
+        const std::string arch = g.at("arch");
+        const int64_t count = g.value("count", int64_t{1});
+        if (count < 1) throw std::runtime_error(where + "engine count must be at least 1");
+        const auto roles = arch_info(arch).roles;
+        if (std::find(roles.begin(), roles.end(), "engine") == roles.end())
+            throw std::runtime_error(where + "architecture " + arch + " cannot run the engine (archs.toml roles)");
+        for (const auto& [seen, n] : r.engine_groups)
+            if (seen == arch) throw std::runtime_error(where + "engine names " + arch + " in two groups; give one count");
+        r.engine_groups.emplace_back(arch, size_t(count));
+        r.engine_count += size_t(count);
+    }
+    r.engine_arch = r.engine_groups.front().first;
     if (l.contains("tp-wire")) r.tp_wire = l.at("tp-wire").get<std::string>();
     if (l.contains("env"))
         for (auto it = l.at("env").begin(); it != l.at("env").end(); ++it) {
@@ -1032,8 +1049,9 @@ Resolved resolve(const Options& options, const Json& facts) {
                                  "(no default layout)");
     const auto layout = recipe_for(name, options);
     std::set<std::string> used;
-    const ArchInfo engine_arch = arch_info(layout.engine_arch);
-    Json engine = choose(facts, layout.engine_arch, used, layout.engine_count);
+    Json engine = Json::array();
+    for (const auto& [arch, count] : layout.engine_groups)
+        for (const auto& g : choose(facts, arch, used, count)) engine.push_back(g);
     Json engine_cards = Json::array();
     for (const auto& g : engine) engine_cards.push_back(g.at("bdf"));
     Json cards = Json::array(), budgets = Json::array(), selected = Json::array(), group_of = Json::array();
@@ -1224,9 +1242,17 @@ Resolved resolve(const Options& options, const Json& facts) {
           "RSC03 memory/reserve projection: one reserve for the plan and the engine", "memory.host_reserve_mib");
     // The engine architecture's plugin (archs.toml), the mailbox plugin when helpers exist, then ref.
     {
-        const std::string stem = engine_arch.plugin.substr(0, engine_arch.plugin.rfind(".so"));
-        alias("engine.kernels", stem + (engine_only ? "" : ",libr3moe") + ",libref",
-              "engines/radiance/archs.toml " + layout.engine_arch + " plugin; launcher ENGINE_KERNELS",
+        // every engine group's plugin, in rank order and once each (a mixed world loads one plugin per architecture)
+        std::string stems, archs;
+        std::set<std::string> have;
+        for (const auto& [arch, count] : layout.engine_groups) {
+            const std::string plugin = arch_info(arch).plugin;
+            const std::string stem = plugin.substr(0, plugin.rfind(".so"));
+            archs += (archs.empty() ? "" : "+") + arch;
+            if (have.insert(stem).second) stems += (stems.empty() ? "" : ",") + stem;
+        }
+        alias("engine.kernels", stems + (engine_only ? "" : ",libr3moe") + ",libref",
+              "engines/radiance/archs.toml " + archs + " plugin; launcher ENGINE_KERNELS",
               "layout.engine_cards");
     }
 
