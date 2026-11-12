@@ -33,6 +33,29 @@ import re
 from bigcherry.patcher import Edit, FilePatch
 
 PROFILE = "qwen38-27b-6-6-12"
+# Per-rank shares, in --rank-devices order (XTX, XTX, R9700): query heads, KV heads, feed-forward rows, delta-net key
+# heads and value heads. First heads and rows are the prefix sums. 6-6-12 gives the R9700 half of the attention and
+# delta net and 43% of the feed-forward (its 32 GiB). bw weights the delta net and feed-forward by memory bandwidth
+# (960/960/640 GB/s, about 3:3:2); attention keeps 6/6/12 because 4 KV heads cannot split 3:3:2.
+PROFILES = {
+    "qwen38-27b-6-6-12": {"qh": (6, 6, 12), "kvh": (1, 1, 2), "ff": (5120, 4864, 7424),
+                          "gk": (4, 4, 8), "gv": (12, 12, 24)},
+    "qwen38-27b-bw":     {"qh": (6, 6, 12), "kvh": (1, 1, 2), "ff": (6656, 6656, 4096),
+                          "gk": (6, 6, 4), "gv": (18, 18, 12)},
+}
+NAMES = ", ".join(PROFILES)
+
+
+def _profile_rows() -> str:
+    rows = []
+    for name, t in PROFILES.items():
+        cols = ", ".join("{ " + ", ".join(str(x) for x in t[k]) + " }" for k in ("qh", "kvh", "ff", "gk", "gv"))
+        rows.append(f'            {{ "{name}", {cols} }},\n')
+    return "".join(rows)
+
+
+def _profile_match(var: str) -> str:
+    return " && ".join(f'std::strcmp({var}, "{n}") != 0' for n in PROFILES)
 
 
 def _edit(id: str, before: str, after: str, *, guard: str, max_span: int | None = None) -> Edit:
@@ -84,7 +107,7 @@ CONFIG = FilePatch(path="core/config.cpp", language="none", description="VTP14 N
         "n2-help",
         "    { \"--p2p\",                \"MODE\",   \"how the collectives reach the other cards: auto (default)\\n\"",
         "    { \"--tp-ownership\",       \"NAME\",   \"BigCherry VTP14: an asymmetric tensor-parallel ownership\\n\"\n"
-        "                                        \"profile instead of the even split; " + PROFILE + "\\n\"\n"
+        "                                        \"profile instead of the even split: " + NAMES + "\\n\"\n"
         "                                        \"(the dense Qwen3.8-27B on --tp 3)\" }, /* BC_VTP14_N2_HELP */\n"
         "    { \"--p2p\",                \"MODE\",   \"how the collectives reach the other cards: auto (default)\\n\"",
         guard="BC_VTP14_N2_HELP",
@@ -96,8 +119,8 @@ CONFIG = FilePatch(path="core/config.cpp", language="none", description="VTP14 N
         "            if (!(v = need(i))) return RAD_E_INVAL;",
         "        else if (S(\"--tp-ownership\")) { /* BC_VTP14_N2_PARSE */\n"
         "            if (!(v = need(i))) return RAD_E_INVAL;\n"
-        "            if (std::strcmp(v, \"" + PROFILE + "\") != 0) {\n"
-        "                RAD_ERR(\"--tp-ownership: '%s' is not a profile (" + PROFILE + ")\", v);\n"
+        "            if (" + _profile_match("v") + ") {\n"
+        "                RAD_ERR(\"--tp-ownership: '%s' is not a profile (" + NAMES + ")\", v);\n"
         "                return RAD_E_INVAL;\n"
         "            }\n"
         "            c->tp_ownership = v;\n"
@@ -169,17 +192,24 @@ RAD_ARCH = FilePatch(path="arch/common/rad_arch.h", language="none", description
         "                            \"spans; it serves only the even split\\n\", c->tp_ownership);\n"
         "            return RAD_E_UNSUPPORTED;\n"
         "        }\n"
-        "        if (std::strcmp(c->tp_ownership, \"" + PROFILE + "\") != 0) {\n"
+        "        struct BcOwnProfile { const char* name; int64_t qh[3], kvh[3], ff[3], gk[3], gv[3]; };\n"
+        "        static constexpr BcOwnProfile profiles[] = {\n"
+        + _profile_rows() +
+        "        };\n"
+        "        const BcOwnProfile* p = nullptr;\n"
+        "        for (const BcOwnProfile& q : profiles)\n"
+        "            if (std::strcmp(c->tp_ownership, q.name) == 0) p = &q;\n"
+        "        if (!p) {\n"
         "            fprintf(stderr, \"radiance: --tp-ownership '%s' is not a profile\\n\", c->tp_ownership);\n"
         "            return RAD_E_INVAL;\n"
         "        }\n"
         "        if (g.world != 3 || g.n_layer != 64 || g.n_embd != 5120 || g.head_dim != 256 ||\n"
         "            g.n_head_all != 24 || g.n_head_kv_all != 4 || g.n_ff_all != 17408 ||\n"
         "            g.n_vocab_all != 248320) {\n"
-        "            fprintf(stderr, \"radiance: --tp-ownership " + PROFILE + " is the dense Qwen3.8-27B \"\n"
+        "            fprintf(stderr, \"radiance: --tp-ownership %s is the dense Qwen3.8-27B \"\n"
         "                            \"(64 layers, 5120 wide, 24 Q / 4 KV heads of 256, 17408 FFN, 248320 \"\n"
         "                            \"vocabulary) on --tp 3; this is world %d, %lld layers, %lld wide, %lld/%lld \"\n"
-        "                            \"heads of %lld, %lld FFN, %lld vocabulary\\n\", g.world,\n"
+        "                            \"heads of %lld, %lld FFN, %lld vocabulary\\n\", p->name, g.world,\n"
         "                    (long long)g.n_layer, (long long)g.n_embd, (long long)g.n_head_all,\n"
         "                    (long long)g.n_head_kv_all, (long long)g.head_dim, (long long)g.n_ff_all,\n"
         "                    (long long)g.n_vocab_all);\n"
@@ -190,27 +220,27 @@ RAD_ARCH = FilePatch(path="arch/common/rad_arch.h", language="none", description
         "                            \"global widths; record calibration without a profile\\n\");\n"
         "            return RAD_E_UNSUPPORTED;\n"
         "        }\n"
-        "        static constexpr int64_t qh[3] = { 6, 6, 12 }, q_lo[3] = { 0, 6, 12 };\n"
-        "        static constexpr int64_t kvh[3] = { 1, 1, 2 }, kv_lo[3] = { 0, 1, 2 };\n"
-        "        static constexpr int64_t ff[3] = { 5120, 4864, 7424 }, ff_lo[3] = { 0, 5120, 9984 };\n"
-        "        static constexpr int64_t gk[3] = { 4, 4, 8 }, gk_lo[3] = { 0, 4, 8 };\n"
-        "        static constexpr int64_t gv[3] = { 12, 12, 24 }, gv_lo[3] = { 0, 12, 24 };\n"
         "        const int r = g.rank;\n"
+        "        const auto first = [r](const int64_t (&n)[3]) {  /* this rank's first head or row */\n"
+        "            int64_t lo = 0;\n"
+        "            for (int i = 0; i < r; ++i) lo += n[i];\n"
+        "            return lo;\n"
+        "        };\n"
         "        g.tp_owned   = true;\n"
         "        g.attn_world = g.world;\n"
         "        g.attn_rank  = r;\n"
         "        g.attn_zero  = false;\n"
-        "        g.n_head     = qh[r];\n"
-        "        g.n_head_kv  = kvh[r];\n"
-        "        g.kv_off     = kv_lo[r] * g.head_dim;\n"
-        "        g.n_ff       = ff[r];\n"
-        "        g.own_q_lo   = q_lo[r];\n"
-        "        g.own_kv_lo  = kv_lo[r];\n"
-        "        g.own_ff_lo  = ff_lo[r];\n"
-        "        g.own_gdn_k  = gk[r];\n"
-        "        g.own_gdn_v  = gv[r];\n"
-        "        g.own_gdn_k_lo = gk_lo[r];\n"
-        "        g.own_gdn_v_lo = gv_lo[r];\n"
+        "        g.n_head     = p->qh[r];\n"
+        "        g.n_head_kv  = p->kvh[r];\n"
+        "        g.kv_off     = first(p->kvh) * g.head_dim;\n"
+        "        g.n_ff       = p->ff[r];\n"
+        "        g.own_q_lo   = first(p->qh);\n"
+        "        g.own_kv_lo  = first(p->kvh);\n"
+        "        g.own_ff_lo  = first(p->ff);\n"
+        "        g.own_gdn_k  = p->gk[r];\n"
+        "        g.own_gdn_v  = p->gv[r];\n"
+        "        g.own_gdn_k_lo = first(p->gk);\n"
+        "        g.own_gdn_v_lo = first(p->gv);\n"
         "        g.own_gdn_k_all = 16;\n"
         "        g.own_gdn_v_all = 48;\n"
         "        g.n_vocab    = shard_extent(g.n_vocab_all, g.world, r);\n"

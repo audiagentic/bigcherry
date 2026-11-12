@@ -32,10 +32,11 @@ def load(package: Path):
     return list(module.PATCHES)
 
 
-def table(text: str, name: str) -> list[int]:
-    m = re.search(r"\b" + name + r"\[3\] = \{ ([0-9, ]+) \}", text)
-    assert m, name
-    return [int(x) for x in m.group(1).split(",")]
+def profiles() -> dict:
+    spec = importlib.util.spec_from_file_location("vtp14_n2_patch", N2 / "patch.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.PROFILES
 
 
 class TpOwnershipTests(unittest.TestCase):
@@ -44,15 +45,26 @@ class TpOwnershipTests(unittest.TestCase):
 
     def test_tables_cover_the_model_with_whole_contiguous_heads(self):
         t = self.owned_text()
-        for count, first, total in (("qh", "q_lo", 24), ("kvh", "kv_lo", 4), ("ff", "ff_lo", 17408),
-                                    ("gk", "gk_lo", 16), ("gv", "gv_lo", 48)):
-            n, lo = table(t, count), table(t, first)
-            self.assertEqual(sum(n), total, count)
-            self.assertEqual(lo, [0, n[0], n[0] + n[1]], first)
-        qh, kvh, gk, gv = table(t, "qh"), table(t, "kvh"), table(t, "gk"), table(t, "gv")
-        self.assertEqual([q // k for q, k in zip(qh, kvh)], [6, 6, 6])
-        self.assertTrue(all(q % k == 0 for q, k in zip(qh, kvh)))
-        self.assertEqual([v // k for v, k in zip(gv, gk)], [3, 3, 3])
+        table = profiles()
+        self.assertIn("qwen38-27b-6-6-12", table)
+        self.assertIn("qwen38-27b-bw", table)
+        for name, p in table.items():
+            for count, total in (("qh", 24), ("kvh", 4), ("ff", 17408), ("gk", 16), ("gv", 48)):
+                self.assertEqual(len(p[count]), 3, (name, count))
+                self.assertEqual(sum(p[count]), total, (name, count))
+                self.assertTrue(all(n > 0 for n in p[count]), (name, count))
+            # Feed-forward rows in 256-row tiles (the MXFP4/fp8 GEMM tiles); whole heads with Q:KV 6 and V:K 3.
+            self.assertTrue(all(n % 256 == 0 for n in p["ff"]), name)
+            self.assertEqual([q // k for q, k in zip(p["qh"], p["kvh"])], [6, 6, 6], name)
+            self.assertTrue(all(q % k == 0 for q, k in zip(p["qh"], p["kvh"])), name)
+            self.assertEqual([v // k for v, k in zip(p["gv"], p["gk"])], [3, 3, 3], name)
+            self.assertTrue(all(v % k == 0 for v, k in zip(p["gv"], p["gk"])), name)
+            # The C++ row is rendered from the same table.
+            cols = ", ".join("{ " + ", ".join(map(str, p[k])) + " }" for k in ("qh", "kvh", "ff", "gk", "gv"))
+            self.assertIn(f'{{ "{name}", {cols} }},', t)
+        # The parse accepts exactly the table's names.
+        parse = next(e.text for f in load(N2) for e in f.edits if e.id == "n2-parse")
+        self.assertEqual(re.findall(r'std::strcmp\(v, "([^"]+)"\)', parse), list(table))
 
     def test_metadata_and_recipe(self):
         with (N2 / "patch.toml").open("rb") as f:
