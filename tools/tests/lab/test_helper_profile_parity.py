@@ -33,7 +33,6 @@ LAB_HOST = SimpleNamespace(devices=(Device(0, "gfx1100", "x", 24560), Device(1, 
 OTHER_SECTIONS = {
     "R3_MOE_WORKER_COUNT": "processes.helpers (its length)",
     "R3_MOE_WORKER_ENGINE_RANKS": "processes.engine.scheduler.tp",
-    "R3_MOE_WORKER_MIBS": "processes.helpers[].vram_budget_mib",
     "R3_MOE_WORKER_PLACEMENT": "handoff.placement.strategy",
     "R3_MOE_WORKER_INDEX": "processes.helpers[].role",
     "R3_MOE_WORKER_PLUGIN_FILE": "processes.helpers[].plugin_file",
@@ -50,6 +49,13 @@ def _component_settings() -> dict[str, dict]:
         for name, body in tomllib.loads(toml.read_text(encoding="utf-8")).get("setting", {}).items():
             out[name] = body
     return out
+
+
+def _typed_manifest_env_settings() -> set[str]:
+    """Settings the typed manifest carries as fields (serving-v2.toml `env_setting`): since RSC11 S1 they are no longer
+    component.toml runtime settings, so they have no component default to compare against."""
+    fields = tomllib.loads((SERVING / "contract" / "serving-v2.toml").read_text(encoding="utf-8")).get("field", [])
+    return {f["env_setting"] for f in fields if "env_setting" in f}
 
 
 def _rows() -> list[dict]:
@@ -82,6 +88,7 @@ def _as_value(text: str):
 class HelperProfileParityTests(unittest.TestCase):
     def setUp(self) -> None:
         self.settings = _component_settings()
+        self.typed = _typed_manifest_env_settings()
         self.rows = _rows()
         self.launcher = _launcher_exports()
         self.layout_common, self.layout_helpers = _layout_exports()
@@ -121,9 +128,14 @@ class HelperProfileParityTests(unittest.TestCase):
     def test_every_row_names_a_setting_and_its_basis_holds(self) -> None:
         for r in self.rows:
             with self.subTest(leaf=r["leaf"]):
-                self.assertIn(r["setting"], self.settings, "the setting exists in a component.toml")
-                default = self.settings[r["setting"]].get("default")
                 value = r["value"]
+                if r["setting"] not in self.settings:
+                    # No component default to compare: the setting is a typed manifest field (its default is the engine's)
+                    # or a value the resolver derives from layouts.toml (a `from` key); either way the row must say so.
+                    self.assertTrue(r["setting"] in self.typed or ("from" in r and r["basis"] == "resolved"),
+                                    "the setting is a component.toml setting, a typed manifest field, or a resolved row")
+                    continue
+                default = self.settings[r["setting"]].get("default")
                 if r["basis"] == "component_default":
                     self.assertNotEqual(default, "", "a component default is not empty")
                     self.assertEqual(_as_value(default), value)

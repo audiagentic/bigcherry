@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.42.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.41.0...bc-platform-1.42.0) (2026-11-12)
+
+
+### New and changed
+
+* **launcher:** apply configured card power settings by default when the gpu lease is held ([#895](https://github.com/audiagentic/bigcherry/issues/895)) ([9d2a59c](https://github.com/audiagentic/bigcherry/commit/9d2a59c4f6d5ce5f70c4384ab851a0d62b6b9b80))
+
+
+### Fixes
+
+* **env:** per-card power evidence is optional provenance, not a load requirement ([#893](https://github.com/audiagentic/bigcherry/issues/893)) ([58587ad](https://github.com/audiagentic/bigcherry/commit/58587ad8fb936bcaaf3bae549c13eb9efccf6cb3))
+
 ## [1.41.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.40.0...bc-platform-1.41.0) (2026-11-12)
 
 
