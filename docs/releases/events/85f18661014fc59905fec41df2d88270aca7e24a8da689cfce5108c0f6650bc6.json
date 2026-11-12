@@ -1,0 +1,16 @@
+{
+  "change-class": "config",
+  "event-id": "chg_20261112_193110_new-three-card-layout-for-maxi_8374",
+  "files": [
+    "engines/radiance/layouts/qwen27b.toml",
+    "docs/planning/active/run-dense-27b-virtual-tp/VTP33.md"
+  ],
+  "plan-item-ids": [
+    "VTP33",
+    "VTP14"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Adds layout qwen27b-tp3-capacity (MXFP4 TP3, 7,7,2 delta-net, 7680/7680/2048 FFN, 262k context): 6.7 full-length sessions vs 5.5 (qwen27b-tp3) and 3.3 (TP2). Records w8a8 capacity with rad0029: TP2 1.9 sessions, qwen27b-tp3-int8 split 5.5 (2.9x) and fastest.",
+  "timestamp-utc": "2026-11-12T19:31:10.724529Z",
+  "user-summary-candidate": "New three-card layout for maximum resident context; int8 three-card serving holds nearly three times the context of two cards."
+}
