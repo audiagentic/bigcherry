@@ -322,3 +322,55 @@ checks, original BF16-vs-IQ6R KLD/top1/PPL and serving/KV/p95
 quality. The two-document pilot must never be fed to a production
 converter to claim calibrated quality. See tools/lab/radiance/README.md
 for explicit commands and restart rules.
+
+## 2026-11-11 — hardware qualification of VTP06 range runner (pipeline only)
+
+Two bounded two-layer runs were executed on original fully fingerprinted
+Qwen3.8-27B BF16, on the dual RX 7900 XTX (gfx1100) using TP2,
+exact TP wire, P2P off, 16,384 MiB host pool, BF16 KV, max context 512,
+batch 128 and layer_offload. Each run had its own exclusive GPU lease
+and no other KFD processes. Leases were explicitly released; the
+production serving configuration was never changed.
+
+Exact immutable campaign manifest and raw command/exit/memory/hash
+receipts are under:
+
+  BC_WORK_ROOT/xtx27-prefill/VTP06-pilot-two-doc-20261111/campaign/
+
+The corpus is the *same two-document smoke-only* 185-token input as VTP10:
+the bundle's metadata says PILOT_ONLY_NOT_QUALITY_QUALIFIED, and it has
+zero holdout examples. It cannot be used for representative GPTQ.
+
+| Calibration range | Exit | Documents / tokens | Hessians | Integrity | Output |
+| --- | ---: | --- | ---: | --- | ---: |
+| 0:2 (GDN layers 0,1) | 0 | 2 / 185 | 8 | PASS | ~1.5 GiB |
+| 2:4 (GDN 2, full-attention 3) | 0 | 2 / 185 | 8 | PASS | ~1.5 GiB |
+
+Both jobs reported **zero scheduler preemptions**. All 16
+full-width packed-F32 Hessians passed whole-file scans for expected
+schema, exactly four taps/layer, positive diagonal, no negative
+diagonal, no NaN or Inf, nonzero content, exact row counts and
+SHA-256. In particular layer 3 emitted the full-attention
+self_attn.o_proj.input tap, whereas the GDN layers emitted the
+linear_attn.out_proj.input tap. The independent campaign
+status --full-verify command rehashed every one of the 16 files and
+reported output_bytes_reverified=true, validated_layers=4, total_layers=64.
+
+The layer-0 four-output SHA-256 comparison against the earlier
+independently executed VTP11 dual-XTX TP2 0:1 smoke test yielded
+**4/4 byte-identical results**, even though this run recorded two
+layers in one calibration range. This is a useful deterministic
+replay check, not an independent BF16 mathematical reference.
+
+**Verdict: VTP06's resumable range pipeline is real-hardware validated
+for both GDN and full-attention layer layouts, and 4/64 layers are
+pilot-verified.** It is NOT calibrated IQ6R. There is no approved
+diverse corpus, native-token histogram, 64-layer Hessian set,
+converter output or BF16-vs-IQ6R KLD result yet. The first range of
+any *representative* campaign must be separately rerun from scratch
+with its own exact provenance and lease; pilot Hessians do not carry
+over to it.
+
+Full receipts:
+- 0:2: campaign/ranges/00-02/attempt-01/{receipt.json,validation.json,engine.log,hessians/}
+- 2:4: campaign/ranges/02-04/attempt-01/{receipt.json,validation.json,engine.log,hessians/}
