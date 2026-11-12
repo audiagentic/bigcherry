@@ -368,8 +368,41 @@ streams were decoding: `r4d_attn_decode_kernel<2,16,256,6,16,0,...>` read 1008 K
 embedding, with argument words such as `0x3d800000`. This is the fault VTP14 recorded for the lossy wire. The two
 `window-w8` arms of 2026-11-12 (w8a8, exact wire, a build before rad0025) show it too, so **it is not specific to the
 lossy wire, nor to rad0025-0027**. All three cases are int8 TP3. MXFP4 TP3 has run about 40 arms on the exact wire
-today without it. It is intermittent (1 arm in 8 here) and needs its own investigation before int8 TP3 counts as
-supported.
+today without it. It is intermittent (1 arm in 8 here). Experiment 13 found the cause (a cross-rank draft disagreement) and fixed it
+(rad0028).
+
+## Experiment 13 result: the int8 TP3 fault is a cross-rank draft disagreement, fixed by rad0028 (2026-11-12, logs fix-vtp31-int8-fault)
+
+Stress runs of the int8 (w8a8) TP3 layout (`--pipelined-prefill-min-rows 256`, three speculative tokens): per run, a
+4/8-stream bench of 512-token prompts, then 4 streams generating 1500 tokens with a 6144-token prompt beside them.
+
+| build | speculation | runs | runs that faulted |
+|---|---|---|---|
+| f6b0b5cf (rad0027), pass recording on | 3 | 12 | 5 |
+| f6b0b5cf, pass recording off (`--profile-ops`) | 3 | 10 | 6 |
+| f6b0b5cf | 0 | 10 | 0 |
+| f1076dbd (rad0028) | 3 | 12 | 0 |
+
+**What the fault is.** The faulting kernel is target attention layer 0 on the R9700, in a 4-sequence verify step. Its
+arguments are sane (0x3d800000 is the 1/16 softmax scale, not a corrupted pointer). It reads the KV pool base minus one
+block, so it read a block-table entry of -1 below `seqused`.
+
+**Why.** A diagnostic build (a temporary patch, not kept) copied every rank's step slots back beside rank 0's and
+compared them after each block draft. It found 166 rows where rank 2 differed from rank 0, and none for rank 1. The
+first difference is always a drafted token (1500 on rank 0, 4105 on rank 2, the other drafts equal). On the next step
+the ranks accept different counts, and rank 2's context runs one position ahead (641 against 640).
+
+Each rank runs the DFlash2 selector itself. Its candidates are merged from an all-gather, but its transition scores
+(`hp`) come from the rank's own drafter state. The gfx1201 card rounds that differently from the two gfx1100 cards, so
+on a near tie it selects another token. The drifted rank's decode then reads past the block table the host staged, into
+its -1 padding. Before the fault, the step's all-reduces already mixed partial sums of different tokens, so int8 TP3
+output with speculation could be wrong without faulting. MXFP4 runs the same selector; it has not shown the
+disagreement, but nothing prevented it.
+
+**Fix (rad0028).** The selected tokens are all-gathered after the selector, and the engine proposes from rank 0's
+slice, so every rank verifies the same draft. The cost is one all-gather of under 2 KiB a draft pass. With the fix and
+the diagnostic, 12 runs: no fault, no row where a rank differed. Throughput in those runs is unchanged (4 / 8 streams
+246.4 / 284.5 tok/s against 246.5 / 285.3 before).
 
 ## Steps
 

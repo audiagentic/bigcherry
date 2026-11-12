@@ -529,6 +529,9 @@ TTFT is also higher. Without speculation TP3 wins at every concurrency (N0 above
 - **Update 2026-11-12 (VTP31 experiment 12):** the same fault, in the same kernel on the R9700, also hits int8
   (w8a8) TP3 on the exact wire (three arms so far, intermittent). The wire is not the cause; int8 TP3 is the common
   factor. MXFP4 TP3 has not shown it.
+- **Fixed 2026-11-12 (VTP31 experiment 13, rad0028):** the R9700 (gfx1201) sometimes selected a different DFlash2
+  draft token from the gfx1100 ranks, accepted a different count, and its context drifted past the host's block table.
+  Every rank now verifies rank 0's draft. 0 of 12 stress runs fault (11 of 22 before).
 
 ### Draft-acceptance fix, 2026-11-12 00:24Z (build e783077b6879d6d060379d55aa157d7c)
 
