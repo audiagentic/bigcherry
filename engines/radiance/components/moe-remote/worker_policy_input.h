@@ -26,7 +26,7 @@ inline bool capture_owners(const void* map, OwnerSnapshot* out) {
     if (!map || !out) return false;
     const Header* h = static_cast<const Header*>(map);
     if (!h->layer_count || h->layer_count > kMaxLayers ||
-        !h->expert_count || h->expert_count > kExperts ||
+        !h->expert_count || h->layer_map_slot_bytes != uint64_t(kMaxLayers) * h->expert_count * sizeof(int32_t) ||
         !h->helper_count || h->helper_count > kMaxHelpers ||
         h->owner_map_bytes != uint64_t(h->layer_count) * h->expert_count)
         return false;
