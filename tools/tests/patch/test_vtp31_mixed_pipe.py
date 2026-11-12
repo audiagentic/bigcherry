@@ -56,7 +56,7 @@ class MixedPipeTests(unittest.TestCase):
         # the first piece issues the serial decode launches over [0, D)
         self.assertIn("praw(batch->cu_seqlens, RAD_I32, mD + 1)", edits["mxp-attn-seqs"])
         self.assertIn("msplit ? (int64_t)g.max_tok", edits["mxp-attn-seqs"])
-        gdn = edits["mxp-gdn-seqs"]
+        gdn = edits["mxp-gdn-dec"]
         self.assertIn("RAD_ISSUE_N(c, op_cr, qd,", gdn)
         self.assertIn("RAD_ISSUE_N(c, op_recur, qd,", gdn)
         self.assertIn("praw(batch->num_accepted, RAD_I32, mD)", gdn)
