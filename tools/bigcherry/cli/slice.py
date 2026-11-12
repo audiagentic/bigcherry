@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ..core import paths
+from . import worktree_record
 from typing import Callable, Sequence
 
 
@@ -196,7 +197,7 @@ def _leftover_matches_branch(
     actual: set[str] = set()
     for path in target.rglob("*"):
         rel = path.relative_to(target).as_posix()
-        if rel == ".git" or rel.startswith(".git/"):
+        if rel == ".git" or rel.startswith(".git/") or rel == worktree_record.RECORD_NAME:
             continue
         if path.is_file() or path.is_symlink():
             actual.add(rel)
@@ -306,10 +307,14 @@ def start_slice(
     remote: str = "origin",
     base: str = "main",
     carry: bool = False,
+    why: str,
     primary_root: Path | None = None,
     runner: Runner = _run_git,
 ) -> Path:
     validate_branch_name(branch)
+    if not why.strip():
+        raise ValueError("a slice needs a reason: pass --why with what the branch is for")
+    creator = worktree_record.creator_identity()
     root = (primary_root or paths.primary_root()).resolve()
     target = root / "worktrees" / branch
     if target.exists():
@@ -442,6 +447,7 @@ def start_slice(
         if patch_path is not None:
             patch_path.unlink(missing_ok=True)
 
+    worktree_record.write_record(target, root=root, branch=branch, base=f"{remote}/{base}", why=why, creator=creator)
     print(target)
     return target
 
@@ -863,8 +869,11 @@ def slice_status(
         if pr:
             number = int(pr["number"])
             state = "MERGED" if pr.get("mergedAt") else str(pr.get("state", "-")).upper()
+        record = worktree_record.read_record(worktree.path) if worktree.path != root else {}
         rows.append(
             {
+                "creator": (record or {}).get("creator", "-"),
+                "why": "NO RECORD" if record is None else (record or {}).get("why", "-"),
                 "worktree": str(worktree.path),
                 "branch": branch or "(detached)",
                 "pr": number,
@@ -875,11 +884,11 @@ def slice_status(
             }
         )
 
-    print("WORKTREE\tBRANCH\tPR\tSTATE\tAHEAD\tBEHIND\tDIRTY")
+    print("WORKTREE\tBRANCH\tPR\tSTATE\tAHEAD\tBEHIND\tDIRTY\tCREATOR\tWHY")
     for row in rows:
         print(
             f"{row['worktree']}\t{row['branch']}\t{row['pr']}\t{row['state']}\t"
-            f"{row['ahead']}\t{row['behind']}\t{'yes' if row['dirty'] else 'no'}"
+            f"{row['ahead']}\t{row['behind']}\t{'yes' if row['dirty'] else 'no'}\t{row['creator']}\t{row['why']}"
         )
     return rows
 
@@ -891,6 +900,7 @@ def cmd_slice_start(args) -> int:
             remote=args.remote,
             base=args.base,
             carry=args.carry,
+            why=args.why,
         )
     except (OSError, subprocess.CalledProcessError, RuntimeError, ValueError) as exc:
         print(f"slice start: {exc}", file=sys.stderr)
