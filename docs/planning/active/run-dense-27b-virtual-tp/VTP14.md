@@ -521,3 +521,34 @@ TTFT is also higher. Without speculation TP3 wins at every concurrency (N0 above
 - **Suspect:** the 3-rank ti8 all-reduce, which libr3 has built only since the Nrank fix and which is unvalidated on
   gfx1100, or its mixed-library scratch layout.
 - **Until this is fixed:** TP3 runs the exact wire only.
+
+### Draft-acceptance fix, 2026-11-12 00:24Z (build e783077b6879d6d060379d55aa157d7c)
+
+**Cause:** `vocab_head_sharded` required an equal vocabulary split. Under the ragged 82816/82816/82688 split the DFlash2
+draft head was replicated, so it **skipped `logit_rerank`** against the target's exact head, and its candidates came
+from the 2-bit head alone. That head's top-1 agrees with the exact head on 76% of draft rows.
+
+**Fix (rad0019):** a contiguous ragged split in whole 16-row tiles now counts as sharded, and the draft head spans its
+own rows. The merge reads global-id pairs formed from `vocab_off`.
+
+**Result** (matched pair, exact wire on both arms, MXFP4, DFlash2 depth 3; one pass per arm, so differences of a few
+percent are within noise):
+
+| streams | TP3 6/6/12 + drafter | TP2 + drafter | TP3 vs TP2 | step ms TP3 / TP2 | tokens per step TP3 / TP2 | TTFT max TP3 / TP2 |
+|---|---|---|---|---|---|---|
+| 1 | **104.9** | 83.1 | **+26%** | 22.3 / 29.5 | 3.42 / 3.12 | 0.39 / 0.33 s |
+| 4 | 178.9 | 181.5 | -1% | 35.1 / 37.2 | 13.3 / 12.8 | 1.50 / 1.29 s |
+| 6 | 174.5 | 176.4 | -1% | 47.0 / 57.4 | 16.7 / 18.3 | 2.20 / 1.90 s |
+| 8 | 186.0 | 196.8 | -5% | 57.2 / 61.3 | 23.2 / 24.0 | 2.95 / 2.53 s |
+
+**What this shows**
+
+- Acceptance recovered to TP2's level or better. The decode step is faster on TP3 at every concurrency.
+- The remaining aggregate gap at 6 and 8 streams is prefill: TTFT is 15–17% higher. The R9700 is on a Gen4 x4 link,
+  and the host-staged all-reduces of a prefill chunk are bandwidth-bound there.
+
+**Next**
+
+- Prefill: try `--tp-attn-split rows`, and look at the R9700 link (hardware or BIOS).
+- An ABBA on the spec-on pair.
+- The ti8 lossy-wire fault (under external review).
