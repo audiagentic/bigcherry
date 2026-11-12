@@ -506,6 +506,14 @@ static_assert(std::is_standard_layout_v<GenerationHeader> && std::is_trivially_c
 static_assert(std::is_standard_layout_v<PlacementAck> && std::is_trivially_copyable_v<PlacementAck>);
 static_assert(std::is_standard_layout_v<PlacementJournal> && std::is_trivially_copyable_v<PlacementJournal>);
 
+/* The activation slot's sub-regions and the route cap from the segment's own shape (Header::max_rows/hidden/top_k), the same sums
+ * layout_for() uses: BF16 reference rows, then the exact E4M3 q rows, then the F32 group scales. They replace the Flash-Next constants
+ * kActivationBf16Bytes/kActivationQBytes/kMaxRoutes wherever a segment is already open, so a model with another hidden width or top-k
+ * addresses its own slot rather than the 2560/10 one. */
+constexpr uint64_t seg_activation_q_off(const Header* h) { return uint64_t(h->max_rows) * h->hidden * sizeof(uint16_t); }
+constexpr uint64_t seg_activation_scale_off(const Header* h) { return seg_activation_q_off(h) + uint64_t(h->max_rows) * h->hidden; }
+constexpr uint32_t seg_max_routes(const Header* h) { return h->max_rows * h->top_k; }
+
 constexpr uint64_t align_page(uint64_t n) { return (n + kPage - 1) & ~(uint64_t(kPage) - 1); }
 constexpr uint32_t route_slot_bytes() { return kMaxRoutes * sizeof(Route); }
 constexpr uint32_t activation_slot_bytes() { return kActivationBf16Bytes + kActivationQBytes + kActivationScaleBytes; }

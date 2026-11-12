@@ -129,9 +129,9 @@ __global__ void mailbox_stage_kernel(
     /* One staging copy, in helper 0's slot for this rank: every helper's slot for the rank aliases it (init). */
     {
         const uint32_t slot = slot_of(0, rank, world);
-        uint8_t* staged_q = base + h->activation_offset[slot] + kActivationBf16Bytes;
+        uint8_t* staged_q = base + h->activation_offset[slot] + seg_activation_q_off(h);
         float* staged_s = reinterpret_cast<float*>(
-            base + h->activation_offset[slot] + kActivationBf16Bytes + kActivationQBytes);
+            base + h->activation_offset[slot] + seg_activation_scale_off(h));
         const uint64_t q16 = (uint64_t)rows * hidden / 16u;
         for (uint64_t i = t0; i < q16; i += stride)
             reinterpret_cast<uint4*>(staged_q)[i] = reinterpret_cast<const uint4*>(aq)[i];
@@ -214,9 +214,9 @@ __global__ void mailbox_publish_kernel(
      * request. The system fence below orders these stores before the release of each request, as it does the routes'. */
     if (st_aq && consume) {
         const uint32_t slot0 = slot_of(0, rank, world);
-        uint8_t* staged_q = base + h->activation_offset[slot0] + kActivationBf16Bytes;
+        uint8_t* staged_q = base + h->activation_offset[slot0] + seg_activation_q_off(h);
         float* staged_s = reinterpret_cast<float*>(
-            base + h->activation_offset[slot0] + kActivationBf16Bytes + kActivationQBytes);
+            base + h->activation_offset[slot0] + seg_activation_scale_off(h));
         for (uint32_t i = threadIdx.x; i < rows * hidden / 16u; i += blockDim.x)
             reinterpret_cast<uint4*>(staged_q)[i] = reinterpret_cast<const uint4*>(st_aq)[i];
         for (uint32_t i = threadIdx.x; i < rows * scale_cols; i += blockDim.x) staged_s[i] = st_as[i];
@@ -328,9 +328,9 @@ __global__ void mailbox_publish_kernel(
             q->row_base = (uint32_t)((qptr - qbase) / hidden);
             q->route_offset = h->route_offset[slot];
             q->activation_offset = h->activation_offset[slot];
-            q->activation_q_offset = h->activation_offset[slot] + kActivationBf16Bytes;
+            q->activation_q_offset = h->activation_offset[slot] + seg_activation_q_off(h);
             q->activation_s_offset =
-                h->activation_offset[slot] + kActivationBf16Bytes + kActivationQBytes;
+                h->activation_offset[slot] + seg_activation_scale_off(h);
             q->activation_stride = hidden * (uint32_t)sizeof(uint16_t);
             q->activation_q_stride = hidden;
             q->activation_s_stride = scale_cols * (uint32_t)sizeof(float);
