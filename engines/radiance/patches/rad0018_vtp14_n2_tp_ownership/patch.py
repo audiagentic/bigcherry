@@ -35,15 +35,19 @@ from bigcherry.patcher import Edit, FilePatch
 PROFILE = "qwen38-27b-6-6-12"
 # Per-rank shares, in --rank-devices order (XTX, XTX, R9700): query heads, KV heads, feed-forward rows, delta-net key
 # heads and value heads. First heads and rows are the prefix sums. 6-6-12 gives the R9700 half of the attention and
-# delta net and 43% of the feed-forward (its 32 GiB). bw weights the delta net and feed-forward by memory bandwidth
-# (960/960/640 GB/s, about 3:3:2); attention keeps 6/6/12 because 4 KV heads cannot split 3:3:2.
+# delta net and 43% of the feed-forward (its 32 GiB). mxfp4 gives it about 55% of the weights: per-op timing of the
+# MXFP4 container under 6-6-12 has the XTX ranks computing ~3.46 s against the R9700's 2.26 s for the same steps (its
+# mxfp4a8 GEMMs take fp8 activations, which gfx1100 emulates), so the R9700 waited in the collectives.
+# CUSTOM ("qwen38-27b:K0,K1,K2:F0,F1,F2") sets the delta-net key heads (value heads 3x) and feed-forward rows per rank,
+# with attention as 6-6-12, so a sweep needs no rebuild.
 PROFILES = {
     "qwen38-27b-6-6-12": {"qh": (6, 6, 12), "kvh": (1, 1, 2), "ff": (5120, 4864, 7424),
                           "gk": (4, 4, 8), "gv": (12, 12, 24)},
-    "qwen38-27b-bw":     {"qh": (6, 6, 12), "kvh": (1, 1, 2), "ff": (6656, 6656, 4096),
-                          "gk": (6, 6, 4), "gv": (18, 18, 12)},
+    "qwen38-27b-mxfp4":  {"qh": (6, 6, 12), "kvh": (1, 1, 2), "ff": (4096, 4096, 9216),
+                          "gk": (3, 3, 10), "gv": (9, 9, 30)},
 }
-NAMES = ", ".join(PROFILES)
+CUSTOM = "qwen38-27b:"
+NAMES = ", ".join(PROFILES) + ", " + CUSTOM + "K0,K1,K2:F0,F1,F2"
 
 
 def _profile_rows() -> str:
@@ -55,7 +59,8 @@ def _profile_rows() -> str:
 
 
 def _profile_match(var: str) -> str:
-    return " && ".join(f'std::strcmp({var}, "{n}") != 0' for n in PROFILES)
+    return " &&\n                ".join([f'std::strcmp({var}, "{n}") != 0' for n in PROFILES]
+                       + [f'std::strncmp({var}, "{CUSTOM}", {len(CUSTOM)}) != 0'])
 
 
 def _edit(id: str, before: str, after: str, *, guard: str, max_span: int | None = None) -> Edit:
@@ -199,6 +204,30 @@ RAD_ARCH = FilePatch(path="arch/common/rad_arch.h", language="none", description
         "        const BcOwnProfile* p = nullptr;\n"
         "        for (const BcOwnProfile& q : profiles)\n"
         "            if (std::strcmp(c->tp_ownership, q.name) == 0) p = &q;\n"
+        "        /* " + CUSTOM + "K0,K1,K2:F0,F1,F2: delta-net key heads and feed-forward rows per rank, attention as\n"
+        "         * the first profile; the totals, whole 256-row feed-forward tiles and non-empty shares are checked. */\n"
+        "        BcOwnProfile custom = profiles[0];\n"
+        "        if (!p && std::strncmp(c->tp_ownership, \"" + CUSTOM + "\", " + str(len(CUSTOM)) + ") == 0) {\n"
+        "            long long k[3], f[3];\n"
+        "            char tail = 0;\n"
+        "            const int n = std::sscanf(c->tp_ownership + " + str(len(CUSTOM)) + ", \"%lld,%lld,%lld:%lld,%lld,%lld%c\",\n"
+        "                                      &k[0], &k[1], &k[2], &f[0], &f[1], &f[2], &tail);\n"
+        "            bool ok = n == 6 && k[0] + k[1] + k[2] == 16 && f[0] + f[1] + f[2] == 17408;\n"
+        "            for (int i = 0; ok && i < 3; ++i) {\n"
+        "                ok = k[i] > 0 && f[i] > 0 && f[i] % 256 == 0;\n"
+        "                custom.gk[i] = k[i];\n"
+        "                custom.gv[i] = 3 * k[i];\n"
+        "                custom.ff[i] = f[i];\n"
+        "            }\n"
+        "            if (!ok) {\n"
+        "                fprintf(stderr, \"radiance: --tp-ownership '%s': " + CUSTOM + "K0,K1,K2:F0,F1,F2 takes three \"\n"
+        "                                \"delta-net key-head counts summing to 16 and three feed-forward widths in \"\n"
+        "                                \"256-row tiles summing to 17408, all non-zero\\n\", c->tp_ownership);\n"
+        "                return RAD_E_INVAL;\n"
+        "            }\n"
+        "            custom.name = c->tp_ownership;\n"
+        "            p = &custom;\n"
+        "        }\n"
         "        if (!p) {\n"
         "            fprintf(stderr, \"radiance: --tp-ownership '%s' is not a profile\\n\", c->tp_ownership);\n"
         "            return RAD_E_INVAL;\n"

@@ -47,7 +47,7 @@ class TpOwnershipTests(unittest.TestCase):
         t = self.owned_text()
         table = profiles()
         self.assertIn("qwen38-27b-6-6-12", table)
-        self.assertIn("qwen38-27b-bw", table)
+        self.assertIn("qwen38-27b-mxfp4", table)
         for name, p in table.items():
             for count, total in (("qh", 24), ("kvh", 4), ("ff", 17408), ("gk", 16), ("gv", 48)):
                 self.assertEqual(len(p[count]), 3, (name, count))
@@ -65,6 +65,11 @@ class TpOwnershipTests(unittest.TestCase):
         # The parse accepts exactly the table's names.
         parse = next(e.text for f in load(N2) for e in f.edits if e.id == "n2-parse")
         self.assertEqual(re.findall(r'std::strcmp\(v, "([^"]+)"\)', parse), list(table))
+        # ...and the custom split, which geom_from checks (totals, 256-row tiles, non-empty shares).
+        self.assertIn('std::strncmp(v, "qwen38-27b:", 11) != 0', parse)
+        self.assertIn('std::strncmp(c->tp_ownership, "qwen38-27b:", 11) == 0', t)
+        self.assertIn("k[0] + k[1] + k[2] == 16 && f[0] + f[1] + f[2] == 17408", t)
+        self.assertIn("f[i] % 256 == 0", t)
 
     def test_metadata_and_recipe(self):
         with (N2 / "patch.toml").open("rb") as f:
