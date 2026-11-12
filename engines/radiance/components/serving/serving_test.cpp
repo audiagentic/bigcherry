@@ -1550,7 +1550,7 @@ void engine_only_layout(Fixture& t) {
         assert(e.at("kernels") == Json({{"moe_native", true}, {"dec11", false}}));   // amendment 14: environment settings are keys too
         assert(!e.contains("lora") && !e.contains("chat"));   // a section appears only with its members
         assert(bc::serving::v2::read_manifest(with_options.text, "options", bc::serving::v2::PlanUse::measuring).ok());
-        assert(bc::serving::engine_option_fields().size() == 92 /* 83 flags (amendment 18: +3) + 9 environment settings */);
+        assert(bc::serving::engine_option_fields().size() == 93 /* 84 flags (amendment 18: +3, amendment 20: +1) + 9 environment settings */);
         Options bad = opts;
         bad.sets = {"layout.name=\"qwen27b-2xtx\"", "sampling.no_such_option=1"};
         fail(bad, t.facts, "no_such_option");
@@ -1675,6 +1675,7 @@ void mixed_arch_engine_layout(Fixture& t) {
         "schema = 1\n[layout.mixed-tp3]\nmodel = \"m.rad\"\n"
         "engine = [{ arch = \"gfx1100\", count = 2 }, { arch = \"gfx1201\", count = 1 }]\ntp-wire = \"exact\"\n"
         "[layout.mixed-tp3.settings]\ntuning.tp_ownership = \"kv=1,1,2;ffn=8,8,16\"\ntuning.pipelined_prefill = \"on\"\n"
+        "tuning.tune_pin = \"all_reduce:nblocks=4,nthreads=256\"\n"
         "[layout.badtuning]\nmodel = \"m.rad\"\nengine = { arch = \"gfx1201\" }\n[layout.badtuning.settings]\ntuning.no_such = 1\n"
         "[layout.twice]\nmodel = \"m.rad\"\nengine = [{ arch = \"gfx1100\" }, { arch = \"gfx1100\" }]\ntp-wire = \"exact\"\n")};
     opts.sets = {"layout.name=\"mixed-tp3\"", "service.max_sessions=4", "service.max_context=8192"};
@@ -1687,6 +1688,7 @@ void mixed_arch_engine_layout(Fixture& t) {
     assert(r.values.at("layout").at("rank_devices") == r.values.at("layout").at("engine_cards"));
     assert(r.values.at("tuning").at("tp_ownership") == "kv=1,1,2;ffn=8,8,16");
     assert(r.values.at("tuning").at("pipelined_prefill") == "on");
+    assert(r.values.at("tuning").at("tune_pin") == "all_reduce:nblocks=4,nthreads=256");
     assert(r.provenance.at("tuning.tp_ownership").at("source").get<std::string>().find("layout mixed-tp3") == 0);
     {
         Options over = opts;   // a profile (or --set) overrides the layout's tuning

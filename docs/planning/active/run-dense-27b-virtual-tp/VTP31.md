@@ -74,9 +74,29 @@ split, depth 3. Six arms, run forward then reversed; mean of the two passes. Pre
 | 16 x 1024 | 105.7 | 178.1 | 192.4 | 11.13 s | -0.3% / +1.9% / -0.2% |
 
 Greedy output identical on every arm. Fewer, narrower blocks win at every size: the cost is polling and occupancy,
-not payload (GPT's first hypothesis holds). The default grid is tuned for the two- and four-rank cases. Next: a 3x ABBA
-of TP2, TP3 default and TP3 4x256 (`n8-abba.sh`), then make the grid a typed per-run setting (step 1) rather than an
-environment pin, and try a three-rank narrow default in the selection row.
+not payload (GPT's first hypothesis holds). The default grid is tuned for the two- and four-rank cases.
+
+### Confirmed: 3x ABBA, TP2 against TP3 default and TP3 4x256 (2026-11-12, logs vtp14/logs/n8-0818)
+
+Same build and settings; per repeat TP2, TP3 4x256, TP3 default, TP3 default, TP3 4x256, TP2 (six runs an arm). Aggregate
+tok/s at 512-token prompts, 128 new; TTFT is one stream.
+
+| | 1 stream | 4 streams | 6 streams | 8 streams | TTFT 512 / 2048 / 8192 |
+|---|---|---|---|---|---|
+| TP2 (two XTX) | 83.0 | 182.0 | 176.9 | 196.1 | 320 / 859 / 2880 ms |
+| TP3 default grid | 105.9 | 176.4 | 177.4 | 188.5 | 359 / 1156 / 3413 ms |
+| TP3 4x256 | 107.8 | 188.2 | 183.6 | 199.3 | 347 / 1068 / 3023 ms |
+| 4x256 vs TP2 | +29.9% | +3.4% | +3.8% | +1.7% | +8.6% / +24.3% / +5.0% |
+| 4x256 vs default | +1.7% | +6.7% | +3.5% | +5.7% | -3.5% / -7.6% / -11.4% |
+
+Run-to-run spread is 1-2 tok/s. **TP3 is now above TP2 at 1, 4, 6 and 8 streams.** Prefill TTFT still trails TP2
+(the gap at 8192 tokens fell from +17% to +5%).
+
+The grid is a manifest setting: rad0022 adds `--tune-pin SPEC` (radiance's `RADIANCE_TUNE` text and checks), the
+contract field `tuning.tune_pin` (amendment 20), and the `qwen27b-tp3` layout sets
+`tuning.tune_pin = "all_reduce:nblocks=4,nthreads=256"`. The int8 layout is not measured with it yet. Next: a three-rank
+default in the selection row is not needed while the layout carries it; chained launches for the three-rank rows (the
+four-rank rows have them, r4d_chain.h) and the hierarchical exchange around the x4 link.
 
 ## Steps
 

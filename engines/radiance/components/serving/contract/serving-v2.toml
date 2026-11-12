@@ -2435,6 +2435,15 @@ ref = "uint"
 doc = "The narrowest pipelined prefill step, rows; 0 is the plugin's own (`--pipelined-prefill-min-rows`, BigCherry rad0020; amendment 18)."
 
 [[field]]
+path = "/spec/processes/engine/tuning/tune_pin"
+optional = true
+radiance_option = "--tune-pin"
+radiance_config = "Config.tune_pin"
+kind = "string"
+min_length = 1
+doc = "Kernel tune pin, radiance's `RADIANCE_TUNE` text: `op:key=value[,key=value][;op:...]` (`--tune-pin`, BigCherry rad0022; amendment 20). The engine refuses an axis or value a kernel does not offer."
+
+[[field]]
 path = "/spec/processes/engine/diagnostics"
 optional = true
 kind = "object"
