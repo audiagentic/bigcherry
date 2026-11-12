@@ -28,6 +28,14 @@ class RepoDataTests(unittest.TestCase):
                 self.assertEqual(r.engine_indices, (0, 1))
                 self.assertEqual(len(r.helpers), 0)
                 self.assertEqual(r.tp_wire, "wht6")
+            elif name == "qwen27b-r9700":
+                self.assertEqual(r.engine_indices, (2,))
+                self.assertEqual(len(r.helpers), 0)
+                self.assertIsNone(r.tp_wire)
+            elif name == "qwen27b-2xtx-exact":
+                self.assertEqual(r.engine_indices, (0, 1))
+                self.assertEqual(len(r.helpers), 0)
+                self.assertEqual(r.tp_wire, "exact")
             elif name == "flashnext-r9700":   # the R9700 alone, no helpers
                 self.assertEqual(r.engine_indices, (2,))
                 self.assertEqual(len(r.helpers), 0)

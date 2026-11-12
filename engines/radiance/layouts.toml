@@ -205,3 +205,32 @@ server-args = [
   "--kv-cache-dtype", "fp8",
   "--num-speculative-tokens", "3",
 ]
+
+
+# HD2701 experimental dense 27B control: single gfx1201 R9700.
+# Intentionally not a default, not a heterogeneous/tensor+layer engine.
+[layout.qwen27b-r9700]
+description = "HD2701 experimental Qwen3.8-27B MXFP4: single gfx1201 control; same model and serving capacity as dual-XTX control"
+model = "radiance/StillDeadcode/qwen3.8-27b-mxfp4/qwen3.8-27b-mxfp4.rad"
+engine = { arch = "gfx1201", count = 1 }
+server-args = [
+  "--max-model-len", "8192",
+  "--max-num-seqs", "6",
+  "--max-num-batched-tokens", "2048",
+  "--kv-cache-dtype", "fp8",
+  "--num-speculative-tokens", "3",
+]
+
+# HD2701 opt-in exact-wire TP2 quality control (the existing WHT6 layout stays unchanged).
+[layout.qwen27b-2xtx-exact]
+description = "HD2701 experimental Qwen3.8-27B MXFP4: two gfx1100 XTX ranks with exact host all-reduce"
+model = "radiance/StillDeadcode/qwen3.8-27b-mxfp4/qwen3.8-27b-mxfp4.rad"
+engine = { arch = "gfx1100", count = 2 }
+tp-wire = "exact"
+server-args = [
+  "--max-model-len", "8192",
+  "--max-num-seqs", "6",
+  "--max-num-batched-tokens", "2048",
+  "--kv-cache-dtype", "fp8",
+  "--num-speculative-tokens", "3",
+]
