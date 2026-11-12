@@ -532,6 +532,11 @@ TTFT is also higher. Without speculation TP3 wins at every concurrency (N0 above
 - **Fixed 2026-11-12 (VTP31 experiment 13, rad0028):** the R9700 (gfx1201) sometimes selected a different DFlash2
   draft token from the gfx1100 ranks, accepted a different count, and its context drifted past the host's block table.
   Every rank now verifies rank 0's draft. 0 of 12 stress runs fault (11 of 22 before).
+- **The lossy-wire fault had the same cause (2026-11-12, VTP31 logs wht6-*):** MXFP4 TP3 on `--tp-wire wht6`
+  (`--tp-wire-unvalidated`), stress runs alternating builds: before rad0028 3 of 6 faulted, with rad0028 0 of 6. The
+  lossy wire leaves each rank slightly different hidden rows, which makes the draft disagreement more likely. The
+  startup refusal can be lifted on correctness grounds, but the wire stays slower than exact at three ranks (about 195
+  against 285 tok/s at 8 streams in these runs), so the exact wire remains the TP3 setting.
 
 ### Draft-acceptance fix, 2026-11-12 00:24Z (build e783077b6879d6d060379d55aa157d7c)
 
