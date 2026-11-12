@@ -903,3 +903,34 @@ without it (e19e7d89), MXFP4 6/6/12 TP3, exact wire, depth 3, two reps a point:
 
 Decode steps are unchanged (one-shot messages are never weighted) and greedy output is byte-identical on all four arms.
 The XTX cards report Gen4 x8, not x16: their links, not only the R9700's, bound the host-staged all-reduces.
+
+## N7 matched ABBA, 2026-11-12 (build f8406b8e5d4fdcb8a28cb193cafcc4f1, logs vtp14/logs/n7-0638)
+
+**Setup:** MXFP4, exact wire on both arms, DFlash2 depth 3, fp8 KV, `--max-model-len 16384`, every card at its default
+power cap. TP2 on the two XTX; TP3 6/6/12 over (XTX, XTX, R9700) with rad0020 (pipelined prefill, auto) and rad0021
+(link-weighted two-shot). Three ABBA repeats (TP2, TP3, TP3, TP2), so six arms each; mean ± standard deviation.
+
+| streams | TP2 tok/s | TP3 tok/s | TP3 vs TP2 | step ms TP2 / TP3 | TTFT max ms TP2 / TP3 |
+|---|---|---|---|---|---|
+| 1 | 83.4 ± 0.1 | 107.4 ± 0.7 | **+28.8%** | 29.4 / 22.3 | 325 / 365 |
+| 4 | 184.1 ± 2.4 | 182.1 ± 2.0 | -1.1% | 36.8 / 34.7 | 1266 / 1395 |
+| 6 | 178.9 ± 0.9 | 181.8 ± 1.1 | +1.6% | 56.6 / 46.9 | 1863 / 2118 |
+| 8 | 203.3 ± 1.0 | 194.3 ± 1.4 | -4.4% | 59.3 / 57.1 | 2458 / 2771 |
+
+One-stream time to first token by prompt length:
+
+| prompt | TP2 TTFT ms | TP3 TTFT ms | TP3 vs TP2 |
+|---|---|---|---|
+| 512 | 312 ± 1 | 346 ± 6 | +10.9% |
+| 2048 | 857 ± 1 | 1105 ± 11 | +28.9% |
+| 8192 | 2877 ± 0 | 3361 ± 23 | +16.8% |
+
+**Status against the goal (beat TP2 at 4/6/8 streams, more KV and context)**
+
+- **Decode:** TP3's step is shorter at every concurrency (−4% to −24%), and one stream is +29%.
+- **Throughput with speculation:** parity at 4 and 6 streams, −4.4% at 8 (was −6.3% before rad0021). Without
+  speculation, the N0 ABBA had TP3 ahead by 13–17% at 4/6/8.
+- **Prefill** is the remaining gap: TTFT +11% to +29%. Every prefill all-reduce is host-staged, the R9700 sits on Gen4 x4
+  and the XTX cards on Gen4 x8.
+- **Capacity:** resident KV +6–9% and the same 262,144-token context (N5 first pass); bounded by the R9700, which holds
+  2 of the 4 KV heads.
