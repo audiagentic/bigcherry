@@ -32,6 +32,11 @@ KV capacity**. If the gains do not materialise, record NO-GO rather than
 keep building a separate runner. Full-length context up to the model's
 262,144-token limit is an *admission experiment*, not a promised capability.
 
+**Status, 2026-11-12:** the throughput half is met. MXFP4 TP3 with the all-reduce grid as a layout setting (rad0022,
+`tuning.tune_pin`) beats dual-XTX TP2 at 1/4/6/8 streams in a 3x ABBA (+29.9% / +3.4% / +3.8% / +1.7%; VTP31).
+Resident KV: TP3 holds 12.15 GiB (2.8 sessions at 8192 tokens) on the N5 first pass; the matched capacity comparison
+against TP2 is VTP33. Prefill TTFT still trails TP2 (+5% at 8192 tokens).
+
 This is the execution breakdown of VTP13 (experimental worktree, not yet in main), not a second
 competing implementation. VTP03 (experimental worktree) virtual TP4 remains an optional
 comparison **only** if native TP3 demonstrates a concrete bottleneck that
