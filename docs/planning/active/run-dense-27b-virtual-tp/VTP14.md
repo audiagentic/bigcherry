@@ -577,3 +577,36 @@ every card at its default power cap. Order: TP2, TP3, TP3, TP2. Logs: `vtp14/log
    is Gen5 x16. A CPU-attached slot would fix this; it is a hardware change, not code.
 2. **The lossy 3-rank wire.** Tiered int8 sends about half the bytes, but it currently faults (under review).
 3. `--tp-attn-split rows` is not an option: the qwen35_fp8 plugin refuses it for this model.
+
+### Lossy-wire fault: independent review and fail-closed gate, 2026-11-12
+
+Reviewer: reviewer-gpt-agent, session ses_2150e61a7b824108. The full assessment is
+`vtp14/gpt-assessment-ti8-fault.md` in the task scratch folder.
+
+**Findings**
+
+- **The `+120 = 0x3d800000` argument is the correct softmax scale** (0.0625 = 1/√256), not corruption. The fault
+  dump's address annotations also tag scalar words.
+- **The bad value is `+8`, the attention KV-cache base pointer.** It lies 1 MiB past the 809 MiB host pool, outside
+  every logged allocation. The fault address is 8 KiB below it, which is consistent with a −1 block id on KV head 1.
+- **Static reading finds no ti8 defect:**
+  - no out-of-bounds write;
+  - no staging-size mismatch;
+  - no libr3/libr4d divergence (the ti8 kernel and codec are byte-identical across the two libraries);
+  - no fused-op overflow (the fused AR norms refuse world ≠ 2).
+- **The cause is unproven.** The bad KV pointer only correlates with the lossy wire.
+- The review independently identified the replicated draft head that skipped the rerank, which is already fixed
+  above and confirmed on cards.
+
+**Action (rad0016):**
+
+- A `--rank-devices` world now refuses `--tp-wire wht6` at startup, naming `--tp-wire exact`.
+- The exact wire is never substituted silently.
+- Production sources are unaffected.
+
+**Before lifting the gate**, instrument a run on hardware:
+
+- KV operand provenance (resolver → `fill_paged_row`: rank, group, layer, base, and the extent of the allocation it
+  resolves to);
+- the block-table entry and KV head of the faulting tile;
+- ti8 mailbox ordering.
