@@ -1,0 +1,22 @@
+{
+  "change-class": "docs",
+  "event-id": "chg_20261112_220124_native-three-gpu-qwen38-27b-s_6009",
+  "files": [
+    "docs/planning/completed/run-dense-27b-virtual-tp/VTP14.md",
+    "docs/planning/completed/run-dense-27b-virtual-tp/VTP33.md",
+    "docs/planning/active/run-dense-27b-virtual-tp/VTP35.md",
+    "engines/radiance/patches/rad0016_vtp14_rank_code_selection/SUMMARY.md",
+    "engines/radiance/patches/rad0017_vtp14_n3_shared_rendezvous/SUMMARY.md",
+    "engines/radiance/patches/rad0018_vtp14_n2_tp_ownership/SUMMARY.md",
+    "tools/tests/patch/test_vtp14_n1_rank_code_selection.py"
+  ],
+  "plan-item-ids": [
+    "VTP14",
+    "VTP33",
+    "VTP35"
+  ],
+  "status": "unreleased",
+  "technical-summary": "VTP14 (native Radiance TP3) and VTP33 (TP3 capacity) completed with Validation and Acceptance filled: TP3 beats TP2 at 4/6/8 streams (MXFP4 +7-11%, int8 +7-10%), and holds 5.5 full-length 262k sessions against 3.3 (rad0029). The MXFP4 prefill gap (+24% TTFT at 2048 tokens, host-staged all-reduces) moves to new item VTP35. Links to VTP14.md updated to the completed path.",
+  "timestamp-utc": "2026-11-12T22:01:24.013531Z",
+  "user-summary-candidate": "Native three-GPU Qwen3.8-27B serving is complete: faster than two GPUs at 4-8 streams with two-thirds more context."
+}

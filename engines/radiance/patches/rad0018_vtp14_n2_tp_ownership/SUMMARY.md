@@ -20,4 +20,4 @@ benchmark).
 
 ## Detail
 
-See README.md and docs/planning/active/run-dense-27b-virtual-tp/VTP14.md.
+See README.md and docs/planning/completed/run-dense-27b-virtual-tp/VTP14.md.
