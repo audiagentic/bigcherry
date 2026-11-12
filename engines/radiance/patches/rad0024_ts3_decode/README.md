@@ -40,4 +40,5 @@ Source-pinned to radiance v1.17.0 (19d4e8fe), after rad0021.
 
 ## Outcome
 
-Untested. VTP31 experiment 3 measures it: ABBA at 1/4/6/8 streams and TTFT against `ts_min=0`, and the timeline.
+Measured in VTP31 experiment 3 (MXFP4 TP3, 2x ABBA against `ts_min=0`): +5.0% / +3.5% / +6.1% at 4/6/8 streams, one
+stream and TTFT unchanged, output bit-identical. State stays untested until promoted.

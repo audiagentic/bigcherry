@@ -162,6 +162,26 @@ four-rank one-shot already hands over to its two-shot from the row's `ts_min`; a
 three-rank host one-shot with the settled link weights, pinned on and off by `--tune-pin all_reduce:ts_min=N` for an
 A/B. Also worth a look: a push that writes each message once to host memory for both peers, which halves the XTX push.
 
+## Experiment 3 result: decode takes the weighted two-shot (2026-11-12, rad0024, build a08d17ff, logs e3-1056)
+
+rad0024 hands the three-rank host one-shot to the link-weighted exact two-shot from `ts_min` elements (row default
+32768), so at decode sizes the R9700 owns the smallest shard and reads about one message instead of two. 2x ABBA on
+MXFP4 TP3 6/6/12, both arms pinned `nblocks=4,nthreads=256`; "off" adds `ts_min=0`. Mean tok/s of four runs a mode:
+
+| | 1 stream | 4 streams | 6 streams | 8 streams | TTFT 512 / 2048 / 8192 |
+|---|---|---|---|---|---|
+| off (one-shot) | 107.7 | 187.8 | 184.3 | 200.0 | 346 / 1057 / 3966 ms |
+| on (rad0024) | 107.6* | 197.2 | 190.8 | 212.2 | 349 / 1072 / 3977 ms |
+| change | 0 | +5.0% | +3.5% | +6.1% | +0.8% / +1.4% / +0.3% |
+
+\* one of the four "on" runs measured 87.4 at one stream; the other three 107.5-107.7. One stream is 4 rows (20480
+elements), below `ts_min`, so it takes the one-shot either way; the outlier is left out of the mean.
+
+Every run gave the same greedy answer (same hash in all eight), as the same fold order requires. The timeline arms
+confirm the path: with the handover off the one-shot logs 10920 launch-ranks of 256-512 KiB at eight streams; with it
+on, none above 64 KiB (the decode messages left the one-shot). Prefill is unchanged (its messages were already above
+the two-shot's floor). Against TP2 (N8: 182.0 / 176.9 / 196.1 at 4/6/8 streams) TP3 is now +8.4% / +7.9% / +8.2%.
+
 ## Steps
 
 1. Add a typed per-run selector for the all-reduce method (e.g. `tuning.allreduce_method`; contract amendment; engine option in a managed patch) so every method below is an A/B from the manifest.
