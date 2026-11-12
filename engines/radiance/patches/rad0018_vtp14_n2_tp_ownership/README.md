@@ -15,8 +15,17 @@ brackets):
 | 1 | 6 (6) | 1 (1) | 4 (4) | 12 (12) | 4864 (5120) | [82816, 165632) |
 | 2 | 12 (12) | 2 (2) | 8 (8) | 24 (24) | 7424 (9984) | [165632, 248320) |
 
-Every rank keeps whole heads, with Q:KV = 6 and GDN V:K = 3. The all-reduces are M × 5120 on every rank, so they stay
-identical across ranks.
+`--tp-ownership qwen38-27b-bw` weights the delta net and feed-forward by memory bandwidth (960/960/640 GB/s, about
+3:3:2). Attention keeps 6/6/12 because 4 KV heads cannot split 3:3:2:
+
+| rank | Q heads | KV heads | GDN K heads | GDN V heads | FFN width | vocabulary rows |
+|---|---|---|---|---|---|---|
+| 0 | 6 (0) | 1 (0) | 6 (0) | 18 (0) | 6656 (0) | [0, 82816) |
+| 1 | 6 (6) | 1 (1) | 6 (6) | 18 (18) | 6656 (6656) | [82816, 165632) |
+| 2 | 12 (12) | 2 (2) | 4 (12) | 12 (36) | 4096 (13312) | [165632, 248320) |
+
+Both profiles come from one table (`PROFILES` in `patch.py`). Every rank keeps whole heads, with Q:KV = 6 and
+GDN V:K = 3. The all-reduces are M × 5120 on every rank, so they stay identical across ranks.
 
 ## Outcome
 
