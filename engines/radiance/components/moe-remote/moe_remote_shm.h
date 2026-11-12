@@ -101,6 +101,7 @@ constexpr uint32_t kHidden = 2560;
 constexpr uint32_t kTopK = 10;
 constexpr uint32_t kMaxTopK = 16;     /* capacity bound for per-token scratch (the model's own top-k is checked against it) */
 constexpr uint32_t kExperts = 512;
+constexpr uint32_t kMaxHeatLdsBytes = 64u * 1024u;   /* the LDS one block has: the per-step route counts (4 bytes per expert) must fit it */
 constexpr uint32_t kMaxRows = 4096;
 constexpr uint32_t kMaxRoutes = kMaxRows * kTopK;
 constexpr uint32_t kActGroup = 128;
