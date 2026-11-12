@@ -2,7 +2,7 @@
 id: VTP31
 order: 31
 plan: run-dense-27b-virtual-tp
-state: pending
+state: completed
 created-at: '2026-11-12T07:38:50.011623+00:00'
 breadth: ''
 skill: advanced
@@ -16,6 +16,112 @@ priority: P1
 ## Description
 
 Native TP3 (XTX, XTX, R9700; VTP14) loses to TP2 only on the all-reduce. Every collective is host-staged, and per call TP3's costs about twice TP2's. This item makes the all-reduce cheaper and overlaps it with compute, and makes the method selectable per run so alternatives can be A/B'd from the manifest.
+
+## Steps
+
+1. Add a typed per-run selector for the all-reduce method (e.g. `tuning.allreduce_method`; contract amendment; engine option in a managed patch) so every method below is an A/B from the manifest.
+2. Quantify the latency and per-layer wait split from the profile's wait column. Read GPT's analysis and pick the first two experiments.
+3. Overlap in decode and multi-sequence prefill: generalise rad0020's two-piece pipeline (split the step's rows in two; one piece's all-reduce on lane 1 beside the other's compute), as TokenWeave and NanoFlow do.
+4. A three-rank fused all_reduce + RMSNorm + fp8 quant, as the two-rank one, so TP3 drops the extra pass.
+5. A low-latency handshake for small decode messages: flag-in-data (LL-style, 8-byte data+flag units) and fewer blocks, so a message costs one host round trip.
+6. A CPU-assisted exact reduce: each GPU writes its partial once to pinned host memory, CPU threads sum in fp32 ascending rank order (reuse the helper-row combine pattern from moe-remote), and each GPU reads one plane. Use SDMA copies so transfers run beside compute.
+7. Push from the producing GEMM's epilogue into host-mapped scratch (FLUX-style), removing the separate push pass.
+
+## Detailed Solution & Technical Design
+
+
+
+## Code Samples & Guidance
+
+
+
+## Files
+
+
+
+## Validation
+
+- Per-method ABBA at 1/4/6/8 streams and 512/2048/8192-token prompts (n7-abba.sh pattern).
+- `--profile-ops` all-reduce ms per call before and after.
+- Greedy identity on every arm.
+- KLD against BF16 for any lossy option.
+
+## Effort & Risk
+
+
+
+## Standards
+
+
+
+## Acceptance Criteria
+
+- Each method is selectable per run from the manifest, and its default leaves today's selection unchanged.
+- Every exact method gives bit-identical greedy output against the current exact wire.
+- A matched ABBA (at least 3 repeats) shows TP3 at or above TP2 aggregate tok/s at 4, 6 and 8 streams with speculation on, and prefill TTFT gap reduced, with the change attributed per method.
+
+## Notes
+
+### GPT analysis (2026-11-12, from the six profwhere logs and the patched source)
+
+Corrected accounting: `prof_split.py` counts TP2's fused `ar_rmsnorm_quant_fp8` as compute; counted as a collective,
+the per-rank operation totals (ms, cumulative device events, not wall time) are:
+
+| workload | rank | collectives | other | lane idle |
+|---|---|---|---|---|
+| TP2 dec8 | XTX 0 / 1 | 2239 / 2176 | 4820 / 4855 | 2288 / 2320 |
+| TP3 dec8 | XTX 0 / XTX 1 / R9700 | 3941 / 3990 / 4781 | 3236 / 3205 / 2767 | 2801 / 2786 / 2368 |
+| TP2 pre4 | XTX 0 / 1 | 5357 / 5281 | 5917 / 5945 | 316 / 379 |
+| TP3 pre4 | XTX 0 / XTX 1 / R9700 | 8774 / 8904 / 9487 | 3727 / 3611 / 3399 | 599 / 588 / 194 |
+
+- TP3 pre4 is 74% collective on the R9700 (TP2 pre4: 48%). The profile's `wait us` is lane idle before an op starts;
+  waiting for a peer inside an all-reduce is part of that kernel's time, so the profile cannot separate peer wait,
+  flag polling and transfer.
+- Overlap reaches only some steps: TP3 pre1 has 1280 of 1738 ARs at `overlap=1`, pre4 only 256 of 1624, because
+  `step_pipelined` refuses `n_seq != 1`. Multi-sequence prefill is unserved by rad0020.
+- The three-rank selection has no narrow lane row (two- and four-rank have `tArLane`), so the TP3 pipeline's lane-1 AR
+  uses the full-width grid beside the compute.
+- Link floors: a 32-row decode AR is 320 KiB; one-shot puts 2S each way on the R9700's x4 (about 83 us per direction
+  at 7.88 GB/s) against a measured 440-570 us per call, so most of a decode AR is not the payload. A 2048-row prefill
+  AR (20 MiB, weighted two-shot 4,4,1) moves 22 MiB on the R9700 (about 3.0 ms floor) and 29 MiB per XTX (about
+  1.9 ms) against 5.7-6.3 ms measured: bandwidth is a large part.
+- Per-kind GEMM time: decode XTXs carry more attention and FFN time than the R9700 (the R9700 is not the slow compute
+  rank); pre1 the R9700 is the slowest (FFN 2578 ms); pre4 FFN is heavier on the XTXs and delta-net on the R9700.
+  The kinds pull different ways, so the split stays per kind (VTP32); expected gain from more rebalancing is 0-3%.
+
+Ranked proposals (gains are hypotheses):
+
+1. Launch geometry of the existing TP3 AR through `RADIANCE_TUNE=all_reduce:nblocks=N,nthreads=M` (no source change;
+   exact by construction). 0-8% decode.
+2. A tunable three-rank one-shot/two-shot crossover (today compiled at 524288 elements). 0-10% on mid-size messages.
+3. Multi-sequence pipelined prefill (generalise `ArPieces` and `step_pipelined`; every rank must decide the same).
+   5-15% pre4 TTFT, speculative.
+4. A three-rank fused AR + RMSNorm + fp8 quant. 0-3%: the separate norm kernel is about 106 ms of 12.5 s in pre4.
+5. GEMM epilogue publishing tiles to host staging (FLUX-style). 0-12% prefill, high regression risk.
+6. CPU-assisted exact reduce for short messages: halves the R9700's one-shot traffic (2S to S) but adds a CPU
+   wake/sum/publish boundary and must reproduce the GPU's fp32 order and bf16 rounding. 0-20%, highly uncertain.
+7. An LL-style flag protocol only after phase timings show polling dominates; never drop release/acquire.
+8. Per-kind ownership refinement (VTP32).
+
+Not prioritised: decode token splitting (8 rows into 2x4 doubles the AR boundaries), algebraic AR removal, three-rank
+lossy wire. Method selection belongs in a typed `tuning.allreduce_method` (`auto` keeps Radiance's selection; explicit
+methods fail closed), with the selected row recorded per size band in the run receipt.
+
+First two experiments: (1) the launch-geometry sweep above; (2) optional per-phase GPU timestamps in the exact one-shot
+and two-shot (push done, peer flags seen, local reduce done, phase-two arrival, assembly) over 8-64 row, crossover-size
+and 1024/2048-row messages, to decide which term (peer wait, polling, payload, reduce, idle CUs) the rewrites must beat.
+
+Evidence and scripts: ${BC_TASK_TMP}/vtp14/ (n7-abba.sh, prof-where.sh, ts3w-ab.sh, lossy3.sh, prefill-knobs.sh, notes-allreduce-analysis.md, p2p-finding.md). Code: libr4d r4d_ar_entry.hip, r4d_ar_oneshot_Nrank_exact.hip, r4d_ar_twoshot_Nrank_exact.hip, r4d_ar_seq.h, r4d_rows.cpp (selection rows and host twins); BigCherry patches rad0016-rad0021.
+
+
+### Completion (2026-11-13)
+
+Acceptance met:
+- Methods selectable per run from the manifest with today's selection as default: the all-reduce grid via rad0022 `tuning.tune_pin` (amendment 20); pipelined prefill via `--pipelined-prefill` / `pipelined_prefill_min_rows`; the decode two-shot handoff (rad0024) by size.
+- Exact methods bit-identical: grid arms (experiment 1), rad0024 greedy hashes; rad0025-0027 diverge only where the base build's own runs diverge.
+- TP3 at or above TP2 at 4/6/8 streams with speculation on: experiment 10 (+8.6 / +9.0 / +4.4%) and the VTP14 N7 refresh, 3x ABBA (+11.4 / +10.2 / +6.8%); four-prompt TTFT 10.5 -> 9.0 s, 2048-token gap +29% -> +24%, 8192-token +17% -> +5%; each change attributed per experiment.
+
+The untried steps (typed method selector, three-rank fused AR + norm, LL handshake, chained launches / hierarchical exchange, CPU-assisted reduce, epilogue push) move to VTP36, which owns TP3 performance from here.
 
 ## Results so far (2026-11-12, MXFP4 6/6/12, exact wire, DFlash2 depth 3)
 
@@ -181,6 +287,7 @@ Every run gave the same greedy answer (same hash in all eight), as the same fold
 confirm the path: with the handover off the one-shot logs 10920 launch-ranks of 256-512 KiB at eight streams; with it
 on, none above 64 KiB (the decode messages left the one-shot). Prefill is unchanged (its messages were already above
 the two-shot's floor). Against TP2 (N8: 182.0 / 176.9 / 196.1 at 4/6/8 streams) TP3 is now +8.4% / +7.9% / +8.2%.
+
 ## Experiment 4 result: decode alone scales; prefill is the gap (2026-11-12, build a08d17ff, logs e4-1107)
 
 The standard bench (512-token prompts, 128 new tokens) mixes prefill into its tok/s. With 128-token prompts and 1024
@@ -415,103 +522,9 @@ the diagnostic, 12 runs: no fault, no row where a rank differed. Throughput in t
 
 Within noise everywhere: the gather costs nothing measurable.
 
-## Steps
-
-1. Add a typed per-run selector for the all-reduce method (e.g. `tuning.allreduce_method`; contract amendment; engine option in a managed patch) so every method below is an A/B from the manifest.
-2. Quantify the latency and per-layer wait split from the profile's wait column. Read GPT's analysis and pick the first two experiments.
-3. Overlap in decode and multi-sequence prefill: generalise rad0020's two-piece pipeline (split the step's rows in two; one piece's all-reduce on lane 1 beside the other's compute), as TokenWeave and NanoFlow do.
-4. A three-rank fused all_reduce + RMSNorm + fp8 quant, as the two-rank one, so TP3 drops the extra pass.
-5. A low-latency handshake for small decode messages: flag-in-data (LL-style, 8-byte data+flag units) and fewer blocks, so a message costs one host round trip.
-6. A CPU-assisted exact reduce: each GPU writes its partial once to pinned host memory, CPU threads sum in fp32 ascending rank order (reuse the helper-row combine pattern from moe-remote), and each GPU reads one plane. Use SDMA copies so transfers run beside compute.
-7. Push from the producing GEMM's epilogue into host-mapped scratch (FLUX-style), removing the separate push pass.
-
-## Detailed Solution & Technical Design
-
-
-
-## Code Samples & Guidance
-
-
-
-## Files
-
-
-
-## Validation
-
-- Per-method ABBA at 1/4/6/8 streams and 512/2048/8192-token prompts (n7-abba.sh pattern).
-- `--profile-ops` all-reduce ms per call before and after.
-- Greedy identity on every arm.
-- KLD against BF16 for any lossy option.
-
-## Effort & Risk
-
-
-
-## Standards
-
-
-
-## Acceptance Criteria
-
-- Each method is selectable per run from the manifest, and its default leaves today's selection unchanged.
-- Every exact method gives bit-identical greedy output against the current exact wire.
-- A matched ABBA (at least 3 repeats) shows TP3 at or above TP2 aggregate tok/s at 4, 6 and 8 streams with speculation on, and prefill TTFT gap reduced, with the change attributed per method.
-
-## Notes
-
-### GPT analysis (2026-11-12, from the six profwhere logs and the patched source)
-
-Corrected accounting: `prof_split.py` counts TP2's fused `ar_rmsnorm_quant_fp8` as compute; counted as a collective,
-the per-rank operation totals (ms, cumulative device events, not wall time) are:
-
-| workload | rank | collectives | other | lane idle |
-|---|---|---|---|---|
-| TP2 dec8 | XTX 0 / 1 | 2239 / 2176 | 4820 / 4855 | 2288 / 2320 |
-| TP3 dec8 | XTX 0 / XTX 1 / R9700 | 3941 / 3990 / 4781 | 3236 / 3205 / 2767 | 2801 / 2786 / 2368 |
-| TP2 pre4 | XTX 0 / 1 | 5357 / 5281 | 5917 / 5945 | 316 / 379 |
-| TP3 pre4 | XTX 0 / XTX 1 / R9700 | 8774 / 8904 / 9487 | 3727 / 3611 / 3399 | 599 / 588 / 194 |
-
-- TP3 pre4 is 74% collective on the R9700 (TP2 pre4: 48%). The profile's `wait us` is lane idle before an op starts;
-  waiting for a peer inside an all-reduce is part of that kernel's time, so the profile cannot separate peer wait,
-  flag polling and transfer.
-- Overlap reaches only some steps: TP3 pre1 has 1280 of 1738 ARs at `overlap=1`, pre4 only 256 of 1624, because
-  `step_pipelined` refuses `n_seq != 1`. Multi-sequence prefill is unserved by rad0020.
-- The three-rank selection has no narrow lane row (two- and four-rank have `tArLane`), so the TP3 pipeline's lane-1 AR
-  uses the full-width grid beside the compute.
-- Link floors: a 32-row decode AR is 320 KiB; one-shot puts 2S each way on the R9700's x4 (about 83 us per direction
-  at 7.88 GB/s) against a measured 440-570 us per call, so most of a decode AR is not the payload. A 2048-row prefill
-  AR (20 MiB, weighted two-shot 4,4,1) moves 22 MiB on the R9700 (about 3.0 ms floor) and 29 MiB per XTX (about
-  1.9 ms) against 5.7-6.3 ms measured: bandwidth is a large part.
-- Per-kind GEMM time: decode XTXs carry more attention and FFN time than the R9700 (the R9700 is not the slow compute
-  rank); pre1 the R9700 is the slowest (FFN 2578 ms); pre4 FFN is heavier on the XTXs and delta-net on the R9700.
-  The kinds pull different ways, so the split stays per kind (VTP32); expected gain from more rebalancing is 0-3%.
-
-Ranked proposals (gains are hypotheses):
-
-1. Launch geometry of the existing TP3 AR through `RADIANCE_TUNE=all_reduce:nblocks=N,nthreads=M` (no source change;
-   exact by construction). 0-8% decode.
-2. A tunable three-rank one-shot/two-shot crossover (today compiled at 524288 elements). 0-10% on mid-size messages.
-3. Multi-sequence pipelined prefill (generalise `ArPieces` and `step_pipelined`; every rank must decide the same).
-   5-15% pre4 TTFT, speculative.
-4. A three-rank fused AR + RMSNorm + fp8 quant. 0-3%: the separate norm kernel is about 106 ms of 12.5 s in pre4.
-5. GEMM epilogue publishing tiles to host staging (FLUX-style). 0-12% prefill, high regression risk.
-6. CPU-assisted exact reduce for short messages: halves the R9700's one-shot traffic (2S to S) but adds a CPU
-   wake/sum/publish boundary and must reproduce the GPU's fp32 order and bf16 rounding. 0-20%, highly uncertain.
-7. An LL-style flag protocol only after phase timings show polling dominates; never drop release/acquire.
-8. Per-kind ownership refinement (VTP32).
-
-Not prioritised: decode token splitting (8 rows into 2x4 doubles the AR boundaries), algebraic AR removal, three-rank
-lossy wire. Method selection belongs in a typed `tuning.allreduce_method` (`auto` keeps Radiance's selection; explicit
-methods fail closed), with the selected row recorded per size band in the run receipt.
-
-First two experiments: (1) the launch-geometry sweep above; (2) optional per-phase GPU timestamps in the exact one-shot
-and two-shot (push done, peer flags seen, local reduce done, phase-two arrival, assembly) over 8-64 row, crossover-size
-and 1024/2048-row messages, to decide which term (peer wait, polling, payload, reduce, idle CUs) the rewrites must beat.
-
-Evidence and scripts: ${BC_TASK_TMP}/vtp14/ (n7-abba.sh, prof-where.sh, ts3w-ab.sh, lossy3.sh, prefill-knobs.sh, notes-allreduce-analysis.md, p2p-finding.md). Code: libr4d r4d_ar_entry.hip, r4d_ar_oneshot_Nrank_exact.hip, r4d_ar_twoshot_Nrank_exact.hip, r4d_ar_seq.h, r4d_rows.cpp (selection rows and host twins); BigCherry patches rad0016-rad0021.
-
 ## Change Log
 
 - 2026-11-12T07:38:50.011623+00:00 (created-by): Created by agent
 - 2026-11-12T07:39:30.275584+00:00 (updated-by): Updated: section:description, section:steps, section:validation, section:acceptance_criteria, section:notes
+- 2026-11-12T22:44:55.913166+00:00 (updated-by): Updated: section:notes
+- 2026-11-12T22:45:12.421202+00:00 (state-transition): State: pending → completed

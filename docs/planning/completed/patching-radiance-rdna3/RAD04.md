@@ -2,7 +2,7 @@
 id: RAD04
 order: 0
 plan: patching-radiance-rdna3
-state: pending
+state: superseded
 created-at: '2026-10-14T04:55:19.264169+00:00'
 breadth: ''
 skill: advanced
@@ -69,6 +69,9 @@ BACKLOG TRIAGE 2026-11-04 (CLOSE; revalidated against main 6eb31a708, verdict CO
 
 REOPENED 2026-11-04 (owner decision): Qwen3.8-27B is a live target, so this item is not obsolete. The triage closed it only because it is outside the Flash-Next four-card queue; that is a priority question, not a reason to close. It stays pending at its own priority and is not part of the core-first order (hot placement, RAD46).
 
+
+Superseded 2026-11-13: the two-half prefill with the all-reduce on the second lane is now upstream's pipelined prefill (two ranks, `--pipelined-prefill auto`), extended by rad0020 (three ranks) and rad0025-0027 (several sequences, mixed steps); see VTP31 experiments 7-11. Further 27B all-reduce and GEMM work is tracked in VTP36 (TP3) and RAD47 (gfx1100 GEMM rows).
+
 ## Change Log
 
 - 2026-10-14T04:55:19.264169+00:00 (created-by): Created by agent
@@ -78,3 +81,5 @@ REOPENED 2026-11-04 (owner decision): Qwen3.8-27B is a live target, so this item
 - 2026-11-04T04:08:52.630642+00:00 (state-transition): State: pending → deprecated
 - 2026-11-04T05:03:24.093263+00:00 (updated-by): Updated: section:notes
 - 2026-11-04T05:03:30.099114+00:00 (state-transition): State: deprecated → pending
+- 2026-11-12T22:45:03.965061+00:00 (updated-by): Updated: section:notes
+- 2026-11-12T22:45:20.515679+00:00 (state-transition): State: pending → superseded
