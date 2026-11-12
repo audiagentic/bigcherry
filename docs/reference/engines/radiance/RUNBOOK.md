@@ -53,7 +53,7 @@ Plans are cached under `$BC_WORK_ROOT/flashnext/plan-cache`. To force a fresh me
 
 ## Layouts and measurement
 
-Select a topology using `--layout NAME` or `FLASHNEXT_LAYOUT`; enumerate definitions with `bigcherry layout list` and `bigcherry layout show NAME` (from `engines/radiance/layouts.toml`). The default uses all available cards; `flashnext-2xtx` excludes the RX 6900 XT, while `flashnext-2xtx-rdna2-tail` includes the RDNA2 tail. `--budget ARCH=MIB` overrides a card group's memory budget. Missing cards or plugins fail the layout check.
+Select a topology using `--layout NAME` or `FLASHNEXT_LAYOUT`; enumerate definitions with `bigcherry layout list` and `bigcherry layout show NAME` (from the layout definitions in `BIGCHERRY_LAYOUTS`, default `engines/radiance/layouts/`). The default uses all available cards; `flashnext-2xtx` excludes the RX 6900 XT, while `flashnext-2xtx-rdna2-tail` includes the RDNA2 tail. `--budget ARCH=MIB` overrides a card group's memory budget. Missing cards or plugins fail the layout check.
 
 **RAD46 quality caveat:** putting experts on the RX 6900 XT tail has a known *worst-case quality cost*. Do not treat an improved throughput result as an unconditional quality win; evaluate the workload's output/quality and, when needed, compare with the two-XTX layout.
 

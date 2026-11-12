@@ -10,7 +10,7 @@ frequently used experts and the RDNA2 RX 6900 XT for colder experts.
 | File | Defines |
 | --- | --- |
 | `engines/radiance/archs.toml` | Architecture roles, kernel library, supported weight formats and VRAM reserve |
-| `engines/radiance/layouts.toml` | Named card groups, expert budgets, ownership order and head/tail placement |
+| `engines/radiance/layouts/*.toml` (or `BIGCHERRY_LAYOUTS`) | Named layouts, read at run time: engine card groups (several card types allowed), tuning, helper groups, expert budgets, ownership order and head/tail placement |
 | `engines/radiance/recipes.toml` | Pinned engine, patch selection and build/experiment source |
 
 The host inventory supplies the available GPU identities. Layouts do not

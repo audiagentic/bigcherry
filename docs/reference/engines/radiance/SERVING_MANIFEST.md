@@ -49,9 +49,15 @@ Inspect without writing: `bc-serve --explain [--json] --set ...` shows every res
 
 ## Layouts and engine-only manifests
 
-A layout (`engines/radiance/layouts.toml`, card types in `engines/radiance/archs.toml`; both compiled into `bc-serve`, so there is
-one copy) names which cards run the engine and which hold experts. `bc-serve` selects the cards by architecture from the host's
-detected GPUs; it never takes device indices.
+A layout names which cards run the engine and which hold experts, for one model. Layouts are run-time data: `bc-serve` reads
+them from `--layouts FILE|DIR` or `BIGCHERRY_LAYOUTS` (the `bigcherry` CLI and `lab-env.sh` default it to the repository's example
+directory `engines/radiance/layouts/`; format in its README), so a model, split or topology is defined without a rebuild. Only the
+card types (`engines/radiance/archs.toml`) are compiled in. `layout.name` is required; there is no default layout. `bc-serve`
+selects the cards by architecture from the host's detected GPUs; it never takes device indices. An engine may be a list of
+`{ arch, count }` groups in rank order, a world of more than one card type: the kernels are each group's plugin, and the engine
+gets its ranks' cards as `device.rank_devices` (`--rank-devices`, amendment 18). A layout's `[tuning]` table sets engine tuning
+fields (a policy layer under the site and profile): `tuning.tp_ownership` (`--tp-ownership SPEC`, an uneven split one count a
+rank, checked against the model), `tuning.pipelined_prefill` and `tuning.pipelined_prefill_min_rows` (amendment 18).
 
 | Layout shape | Manifest |
 |---|---|
@@ -114,7 +120,7 @@ the layout or another key.
 | `handoff.*` (`shm`, `max_rows`, `small_rows`, `gemv_large_rows`, `skip_owned`, `moe_down_tile`, `histogram`, `histogram_period_s`, `placement`, `heat`) | `/spec/handoff/...` | helper-side, no engine flag |
 | `helper.combine`, `helper.combine_min_rows`, `helper.combine_threads` | `/spec/processes/helper_common/combine/...` | helper-side, no engine flag |
 
-`engine.tp_wire` follows the layout when it names one (`tp-wire` in `layouts.toml`; required for two or more engine cards) and can be overridden; `engine.no_prefix_cache` and `engine.gpu_headroom_mib` have no default: an unset one is absent from the
+`engine.tp_wire` follows the layout when it names one (its `tp-wire`; required for two or more engine cards) and can be overridden; `engine.no_prefix_cache` and `engine.gpu_headroom_mib` have no default: an unset one is absent from the
 manifest and radiance keeps its own default. The four experiment flags have no `--set` key; they are fields of
 `spec.experiment` and come in through `--experiment`:
 
@@ -163,7 +169,7 @@ A campaign arm that serves from a manifest describes its configuration under `se
             "heat": "${BC_WORK_ROOT}/heat/flashnext-mixed.hot-first", "histogram": "/dev/null"}
 ```
 
-`layout` names an entry of `engines/radiance/layouts.toml` (required); `set` holds `bc-serve --set key=value` settings (strings, numbers,
+`layout` names a layout of the layout definitions (`BIGCHERRY_LAYOUTS`; required); `set` holds `bc-serve --set key=value` settings (strings, numbers,
 booleans); `heat` and `histogram` are the layout's route-heat inputs and are required exactly when the layout has helpers (`/dev/null`
 for no recording). `calibration` (a calibration store, from which bc-serve derives the live policy) (the policy is absent, silently, when the store has no record for this configuration's calibration key: see [live placement](LIVE_PLACEMENT.md)), `live_policy` and `experiment` (files)
 and `calibration_run` (true) are the matching `bc-serve --calibration`, `--live-policy`, `--experiment` and `--calibration-run`; they reach
@@ -199,7 +205,7 @@ that start a helper by hand (`fn-helper.sh`, `w4-replay-hash.sh`, `replay-kernel
 |---|---|
 | Engine and helpers read a manifest; the engine admits the plan it carries | done (RSC06, RSC08) |
 | `--set` for `tp_wire`, `no_prefix_cache`, `gpu_headroom_mib` | done (RSC11 A1) |
-| Resolver reads `layouts.toml` and `archs.toml`; engine-only and multi-card-engine layouts; kernels derived per architecture; contract amendment 12 | done (RSC11 A2) |
+| Resolver reads the layouts (run time) and `archs.toml`; engine-only and multi-card-engine layouts; kernels derived per architecture; contract amendment 12 | done (RSC11 A2) |
 | Dense models (containers without routed experts) get engine-only manifests | done (RSC11 A2b) |
 | Campaign arms describe a `serving` configuration; the harness makes each arm's measured manifest; `BC_SERVING_MANIFEST` and the helper environment settings removed | done in code (RSC11 A3/B); the measuring path is not yet run on hardware |
 | Lab job files and `layouts.toml` side channels moved or retired | pending (B) |
