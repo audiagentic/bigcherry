@@ -166,7 +166,7 @@ __global__ void mailbox_publish_kernel(
     __shared__ uint32_t step_nr[kMaxSlots], step_seq[kMaxSlots], gen;
     /* R3_MOE_WORKER_HISTOGRAM (RHP02): this step's routes are counted in LDS and added to the histogram (pinned host memory)
      * once an expert. This kernel is one block and a rank's steps run in order, so the adds are plain loads and stores. */
-    __shared__ uint32_t step_heat[kExperts];
+    extern __shared__ uint32_t step_heat[];   /* [h->expert_count]: dynamic LDS sized by the launch from the container's expert count */
 
     Header* h = reinterpret_cast<Header*>(base);
     /* Every published request takes its immutable epoch/slot from this play's
@@ -228,7 +228,7 @@ __global__ void mailbox_publish_kernel(
     }
 
     if (heat) {
-        for (uint32_t e = threadIdx.x; e < kExperts; e += blockDim.x) step_heat[e] = 0;
+        for (uint32_t e = threadIdx.x; e < h->expert_count; e += blockDim.x) step_heat[e] = 0;
         __syncthreads();
     }
     for (uint32_t k = 0; k < helpers; ++k) {
@@ -242,7 +242,7 @@ __global__ void mailbox_publish_kernel(
             const bool in_range = le >= 0 && (uint32_t)le < n_expert && (uint32_t)le < h->expert_count;
             /* R3_MOE_WORKER_HISTOGRAM: every route this step makes, owned or not, counted once (first slot), in LDS
              * (route_role's count_heat: every in-range route, on every rank). */
-            if (heat && k == 0 && in_range && (uint32_t)le < kExperts) atomicAdd(&step_heat[(uint32_t)le], 1u);
+            if (heat && k == 0 && in_range && (uint32_t)le < h->expert_count) atomicAdd(&step_heat[(uint32_t)le], 1u);
             if (!in_range || slot_map[(uint32_t)le] < 0 || !r3_moe_owner_has(own, layer, (uint32_t)le, h->expert_count))
                 continue;
             const RouteRole role = route_role(consume, true, true, shadow != 0u);   /* an owned route's role */
@@ -260,7 +260,7 @@ __global__ void mailbox_publish_kernel(
         __syncthreads();
     }
     if (heat)   /* the loop's last barrier ordered every LDS count before this */
-        for (uint32_t e = threadIdx.x; e < h->expert_count && e < kExperts; e += blockDim.x)
+        for (uint32_t e = threadIdx.x; e < h->expert_count; e += blockDim.x)
             if (const uint32_t c = step_heat[e]) {
                 uint32_t* p = heat + (size_t)layer * h->expert_count + e;
                 __hip_atomic_store(p, __hip_atomic_load(p, __ATOMIC_RELAXED, __HIP_MEMORY_SCOPE_SYSTEM) + c,
@@ -925,7 +925,10 @@ int publish_launch(const RadArgs* a, RadStream stream) {
                        static_cast<const float*>(a->t[4].data),
                        static_cast<const uint16_t*>(a->t[2].data), (uint32_t)rows, (uint32_t)hidden,
                        d->cpu_ref);
-    hipLaunchKernelGGL(mailbox_publish_kernel, dim3(1), dim3(256), 0, (hipStream_t)stream,
+    /* The route-count scratch is one LDS word per expert of the container, only when the histogram is on. */
+    const size_t heat_lds = d->heat ? size_t(d->experts) * sizeof(uint32_t) : 0;
+    if (heat_lds > r3::moe_shm::kMaxHeatLdsBytes) return reject("the route histogram of this expert count does not fit LDS");   /* refuse, never truncate */
+    hipLaunchKernelGGL(mailbox_publish_kernel, dim3(1), dim3(256), heat_lds, (hipStream_t)stream,
                        static_cast<uint8_t*>(d->mailbox), d->owner[0], d->owner[1], d->owner_binding,
                        d->ticket, d->stamps, d->consumed_capacity,
                        d->sequence, d->published, d->rank,

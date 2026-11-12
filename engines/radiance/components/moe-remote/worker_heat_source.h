@@ -79,7 +79,7 @@ public:
         };
         if (!out || !mono || !realtime || !layers_ ||
             layers_ > moe_shm::kMaxLayers || !experts_ ||
-            experts_ > moe_shm::kExperts || path_.empty())
+            size_t(experts_) * sizeof(uint32_t) > moe_shm::kMaxHeatLdsBytes || path_.empty())
             return invalid("histogram: invalid domain, timestamp or output");
         const size_t count = size_t(moe_shm::kMaxLayers) * experts_;
         const size_t bytes = count * sizeof(uint32_t);
