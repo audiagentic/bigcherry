@@ -47,10 +47,17 @@ s8::S8Measured fixture() {
   m.engine_vram_required_bytes = 33242744312LL;
   m.engine_vram_claimable_bytes = 33242744312LL;
   m.checkpoint_slots = 5;
+  m.checkpoint_slot_bytes = MiB / 2;   // 5 slots x 0.5 MiB: the 2 MiB (rounded) the resource inputs carry
   m.dispatch_row_capacity = 1024;
   m.transport_shm = "/rsc11-s8-fixture";
   m.histogram_file = std::string("/measured/histogram.csv");
   m.live_policy_requested = true;
+  m.settings = {{"handoff.max_rows", {256, "site.toml:handoff.max_rows"}},
+                {"handoff.small_rows", {6, "site.toml:handoff.small_rows"}},
+                {"handoff.gemv_large_rows", {16, "site.toml:handoff.gemv_large_rows"}},
+                {"handoff.moe_down_tile", {1, "site.toml:handoff.moe_down_tile"}},
+                {"handoff.histogram_period_s", {60, "site.toml:handoff.histogram_period_s"}},
+                {"handoff.live_cadence_ns", {10000000000LL, "site.toml:handoff.live_cadence_ns"}}};
   return m;
 }
 
@@ -100,7 +107,8 @@ int main() {
          result.transport->gemv_large_rows == 32);
   assert(result.kernels->moe_down_tile == 1 &&
          result.telemetry->period_s == 30);
-  assert(result.calibration_entries.size() == calibrated.size());
+  assert(result.calibration_entries.size() == calibrated.size() - 1); // the margin arrives in resource_inputs
+  assert(result.skipped_records.empty());
   assert(
       result.provenance_by_path.at("/spec/handoff/transport/max_rows").origin ==
       s8::Origin::kCalibrated);
@@ -117,8 +125,13 @@ int main() {
   changed = fixture_input;
   changed.resource_inputs.retention_target_tokens = 8192;
   changed.scope.retention_target_tokens = 8192;
-  assert(!s8::resolve_s8(changed, calibrated,
-                         now)); // scope invalidation, not stale reuse
+  // Records of another scope are skipped, not refused: the given settings apply and say where they came from.
+  solved = s8::resolve_s8(changed, calibrated, now);
+  assert(solved && solved.value().transport->max_rows == 256 &&
+         solved.value().skipped_records.size() == 6 &&
+         solved.value().calibration_entries.empty() &&
+         solved.value().provenance_by_path.at("/spec/handoff/transport/max_rows").origin == s8::Origin::kProfile &&
+         solved.value().evidence_by_path.at("/spec/handoff/transport/max_rows") == "site.toml:handoff.max_rows");
   auto updated = records(changed.scope);
   solved = s8::resolve_s8(changed, updated, now);
   assert(solved && solved.value().host.kv_mib == 1); // 8192x128 exactly 1 MiB
@@ -153,21 +166,30 @@ int main() {
   changed.resource_inputs.owner_map_digest = std::string(64, '0');
   assert(!s8::resolve_s8(changed, calibrated, now));
 
+  // An expired, out-of-scope or unknown record is skipped; the given value applies.
   auto bad_cal = calibrated;
   bad_cal[1].valid_until_unix_s = now;
-  assert(!s8::resolve_s8(fixture_input, bad_cal, now));
+  solved = s8::resolve_s8(fixture_input, bad_cal, now);
+  assert(solved && solved.value().transport->max_rows == 256 && solved.value().skipped_records.size() == 1);
   bad_cal = calibrated;
   bad_cal[1].scope.layout_digest = std::string(64, 'f');
-  assert(!s8::resolve_s8(fixture_input, bad_cal, now));
-  bad_cal = calibrated;
-  bad_cal[1].scope.inventory_digest = std::string(64, '0');
-  assert(!s8::resolve_s8(fixture_input, bad_cal, now));
+  solved = s8::resolve_s8(fixture_input, bad_cal, now);
+  assert(solved && solved.value().transport->max_rows == 256);
   bad_cal = calibrated;
   bad_cal[1].key = "unknown.rows";
-  assert(!s8::resolve_s8(fixture_input, bad_cal, now));
+  solved = s8::resolve_s8(fixture_input, bad_cal, now);
+  assert(solved && solved.value().transport->max_rows == 256 && solved.value().skipped_records.empty());
   bad_cal = calibrated;
   bad_cal.pop_back();
-  assert(!s8::resolve_s8(fixture_input, bad_cal, now));
+  solved = s8::resolve_s8(fixture_input, bad_cal, now);
+  assert(solved && solved.value().live_cadence_ns.value() == 10000000000LL);
+  bad_cal = {};
+  solved = s8::resolve_s8(fixture_input, bad_cal, now); // no records at all still starts
+  assert(solved && solved.value().transport->max_rows == 256 && solved.value().kernels->moe_down_tile == 1 &&
+         solved.value().telemetry->period_s == 60 && solved.value().calibration_entries.empty());
+  auto unset = fixture_input;
+  unset.settings.erase("handoff.max_rows");
+  assert(!s8::resolve_s8(unset, {}, now)); // a value must come from somewhere
   bad_cal = calibrated;
   bad_cal[1].value =
       4000; // cannot exceed measured row capacity / tested choices
@@ -240,7 +262,7 @@ int main() {
   assert(solved && solved.value().helpers.empty() &&
          !solved.value().transport && !solved.value().kernels &&
          !solved.value().telemetry && solved.value().host.pool_mib == 13);
-  assert(solved.value().calibration_entries.size() == 1);
+  assert(solved.value().calibration_entries.empty());
   changed.live_policy_requested = true;
   assert(!s8::resolve_s8(changed, bad_cal, now)); // no helper/live histogram
 

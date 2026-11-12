@@ -57,9 +57,10 @@ class DevicePowerConfigTests(unittest.TestCase):
         with self.assertRaisesRegex(env.EnvironmentError_, "unknown key"):
             _load('[host.h.devices.power]\nnot-a-power-control = 1000\nevidence = "x"\n')
 
-    def test_evidence_is_required(self):
-        with self.assertRaisesRegex(env.EnvironmentError_, "evidence"):
-            _load('[host.h.devices.power]\nvddgfx-offset-mv = -75\n')
+    def test_evidence_is_optional_provenance(self):
+        power = _load('[host.h.devices.power]\nvddgfx-offset-mv = -75\n').host().devices[0].power
+        self.assertEqual(power.vddgfx_offset_mv, -75)
+        self.assertEqual(power.evidence, "")
 
 
 class GpuPowerWritesTests(unittest.TestCase):

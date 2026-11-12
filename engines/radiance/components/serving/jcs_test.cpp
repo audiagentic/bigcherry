@@ -1,5 +1,5 @@
 // RFC 8785 (JCS) for the serving manifest v1 subset: known-answer vectors, refusals, and the committed examples'
-// content digests (docs/design/serving-manifest-v1, cross-checked there by an independent canonicaliser).
+// content digests (docs/design/serving-manifest-v2, cross-checked there by an independent canonicaliser).
 #include "jcs.h"
 
 #include <cstdio>
@@ -8,7 +8,7 @@
 #include <string>
 
 #ifndef BC_CONTRACT_DIR
-#error "BC_CONTRACT_DIR must name docs/design/serving-manifest-v1"
+#error "BC_CONTRACT_DIR must name docs/design/serving-manifest-v2"
 #endif
 
 namespace {

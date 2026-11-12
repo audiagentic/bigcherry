@@ -33,7 +33,7 @@ _SCOPE = frozenset(("model_digest", "engine_build_digest", "helper_build_digest"
                     "kv_bytes_per_token"))
 _HELPER = frozenset(("role", "bdf", "lanes_bytes", "pointer_banks_bytes",
                      "slot_map_bytes", "incoming_slot_bytes", "total_bytes"))
-_GPU = frozenset(("bdf", "required_bytes", "fixed_bytes"))
+_GPU = frozenset(("bdf", "required_bytes", "fixed_bytes", "claimable_bytes"))
 _MARGIN = frozenset(("key", "source", "evidence", "mib"))
 
 
@@ -152,8 +152,11 @@ def decode_p1_record(raw: object, layout) -> PlanMeasurement:
             raise MeasuredPlanRefused("P1 engine BDF is missing")
         required = _bytes("GPU required", item["required_bytes"], positive=True)
         fixed = _bytes("GPU fixed", item["fixed_bytes"])
+        claimable = _bytes("GPU claimable", item["claimable_bytes"], positive=True)
         if fixed > required:
             raise MeasuredPlanRefused("P1 fixed GPU bytes exceed required bytes")
+        if required > claimable:
+            raise MeasuredPlanRefused("P1 required GPU bytes exceed the rank's claimable room")
         gpu.append(GpuDemand(bdf, required, fixed))
     if tuple(g.bdf for g in gpu) != tuple(layout.engine_bdfs):
         raise MeasuredPlanRefused("P1 engine GPU rank/BDF order differs from layout")

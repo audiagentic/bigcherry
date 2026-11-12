@@ -39,9 +39,9 @@ int main() {
   in.engine_plan.producer = "radiance --plan-memory (rad0011)";
   in.engine_plan.kv_one_session.bytes = 1280;
   in.engine_plan.kv_one_session.from = "engine plan (rad0011:kv)";
-  in.engine_plan.host.push_back({"embedding", 512, bc::serving::v1::Residence::kPinned, "engine plan (rad0011:h)", ""});
-  in.engine_plan.host.push_back({"host_arenas", 256, bc::serving::v1::Residence::kPageable, "engine plan (rad0011:h)", ""});
-  in.engine_plan.host.push_back({"ngram_table", 64, bc::serving::v1::Residence::kPinned, "engine plan (rad0011:h)", ""});
+  in.engine_plan.host.push_back({"embedding", 512, bc::serving::v2::Residence::kPinned, "engine plan (rad0011:h)", ""});
+  in.engine_plan.host.push_back({"host_arenas", 256, bc::serving::v2::Residence::kPageable, "engine plan (rad0011:h)", ""});
+  in.engine_plan.host.push_back({"ngram_table", 64, bc::serving::v2::Residence::kPinned, "engine plan (rad0011:h)", ""});
   in.engine_plan.checkpoints = {32, 1, 3, "engine plan (rad0011:ckpt)"};
   in.engine_plan.vram.cards.push_back({});
 

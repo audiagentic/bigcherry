@@ -225,8 +225,6 @@ LivePolicyStartup startup(const S10PolicyPreflight &p,
     out.reason_code = "not_applicable";
   } else if (p.requested == LivePolicyRequested::kOff) {
     out.reason_code = "disabled_by_request";
-  } else if (!p.qualified_record) {
-    out.reason_code = "no_qualified_record";
   } else if (!p.fresh_heat) {
     out.reason_code = "stale_heat_feed";
   } else {
@@ -235,85 +233,53 @@ LivePolicyStartup startup(const S10PolicyPreflight &p,
   }
   return out;
 }
-bool allowed(std::string_view csv, std::string_view value) {
-  if (csv.empty()) return true;
-  const std::string list = "," + std::string(csv) + ",";
-  return list.find("," + std::string(value) + ",") != std::string::npos;
-}
-std::string_view origin_name(Origin origin) {
-  switch (origin) {
-  case Origin::kDerived: return "derived";
-  case Origin::kCalibrated: return "calibrated";
-  case Origin::kProfile: return "profile";
-  case Origin::kSchemaDefault: return "schema_default";
-  case Origin::kSite: return "site";
-  case Origin::kCli: return "cli";
-  case Origin::kDetected: return "detected";
-  case Origin::kExperiment: return "experiment";
-  }
-  return "";
-}
-std::string_view confidence_name(Confidence c) {
-  switch (c) {
-  case Confidence::kExact: return "exact";
-  case Confidence::kMeasured: return "measured";
-  case Confidence::kEstimate: return "estimate";
-  }
-  return "";
-}
-void present_paths(const json &doc, std::string_view field, size_t start,
-                   const std::string &prefix, std::vector<std::string> *out) {
-  if (start == field.size()) {
-    out->push_back(prefix);
-    return;
-  }
-  if (field[start] != '/') return;
-  const size_t next = field.find('/', start + 1);
-  const size_t end = next == std::string_view::npos ? field.size() : next;
-  const auto segment = field.substr(start + 1, end - start - 1);
-  const auto *node = &doc;
-  if (!prefix.empty()) {
-    try { node = &doc.at(json::json_pointer(prefix)); }
-    catch (const json::exception &) { return; }
-  }
-  if (segment == "[]") {
-    if (!node->is_array()) return;
-    for (size_t i = 0; i < node->size(); ++i)
-      present_paths(doc, field, end, prefix + "/" + std::to_string(i), out);
-  } else if (node->is_object() && node->contains(std::string(segment))) {
-    present_paths(doc, field, end, prefix + "/" + std::string(segment), out);
-  }
+// The resolved power plan's provenance, one record per class of leaf: the selection is policy, the rest derived from it.
+void power_provenance(Manifest *out) {
+  for (const char *leaf : {"/spec/plan/power/mode", "/spec/plan/power/profile"})
+    out->provenance[leaf] = {Origin::kCli, "bc-serve --power-profile (named profile)", ValueClass::kPolicy,
+                             Lifecycle::kStartupOnly, Confidence::kExact, {"/spec/intent/power"}};
+  for (const char *leaf : {"/spec/plan/power/profile_digest", "/spec/plan/power/devices", "/spec/plan/power/cpu"})
+    out->provenance[leaf] = {Origin::kDerived, "PWR08 named profile + selected BDF inventory", ValueClass::kDerived,
+                             Lifecycle::kStartupOnly, Confidence::kExact, {"/spec/intent/power", "/spec/facts/gpus"}};
 }
 } // namespace
 
-Status validate_s10_provenance(const Manifest &m) {
-  if (m.provenance.empty() || !m.provenance.count(""))
-    return fail(ConfigErrorCode::provenance_invalid, "provenance",
-                "root provenance and covering evidence required");
-  const auto doc = encode(m);
-  for (const auto &field : kFields) {
-    if (field.path.empty() || field.path[0] != '/' ||
-        (field.allowed_origins.empty() && field.allowed_confidences.empty()))
-      continue;
-    std::vector<std::string> paths;
-    present_paths(doc, field.path, 0, "", &paths);
-    for (const auto &path : paths) {
-      // A child's own record wins over its nearest inherited ancestor.
-      auto at = path;
-      auto found = m.provenance.end();
-      while (true) {
-        found = m.provenance.find(at);
-        if (found != m.provenance.end() || at.empty()) break;
-        const auto sep = at.find_last_of('/');
-        at = sep == 0 ? "" : at.substr(0, sep);
-      }
-      if (found == m.provenance.end() || found->second.source.empty() ||
-          !allowed(field.allowed_origins, origin_name(found->second.origin)) ||
-          !allowed(field.allowed_confidences,
-                   confidence_name(found->second.confidence)))
-        return fail(ConfigErrorCode::provenance_invalid, path,
-                    "effective provenance is not measured/derived or calibrated");
-    }
+Status validate_s10_power_plan(const Manifest &m) {
+  const auto selected = targets(m);
+  if (!selected) return selected.error();
+  const PowerPlan &plan = m.spec.plan.power;
+  if (plan.profile.empty() || plan.profile != m.spec.intent.power.profile)
+    return fail(ConfigErrorCode::plan_mismatch, "spec.plan.power.profile",
+                "the plan's power profile differs from spec.intent.power.profile");
+  if (plan.profile == "stock" && plan.mode != PowerMode::kObserve)
+    return fail(ConfigErrorCode::invalid_value, "spec.plan.power.mode",
+                "stock is an empty observe-only plan");
+  std::set<std::string> roles;
+  for (const auto &t : selected.value()) roles.insert(t.role);
+  for (const auto &[role, patch_value] : m.spec.intent.power.role_overrides)
+    if (!roles.count(role) || !populated(patch_value))
+      return fail(ConfigErrorCode::invalid_value, "spec.intent.power.role_overrides",
+                  "unknown role or empty override: " + role);
+  if (plan.devices.size() != selected.value().size())
+    return fail(ConfigErrorCode::ownership_mismatch, "spec.plan.power.devices",
+                "the plan's devices are not exactly the engine TP and selected helper cards");
+  for (size_t i = 0; i < plan.devices.size(); ++i) {
+    const PowerDevice &dev = plan.devices[i];
+    const Target &target = selected.value()[i];
+    const std::string at = "spec.plan.power.devices[" + std::to_string(i) + "]";
+    if (dev.role != target.role || dev.bdf != target.bdf)
+      return fail(ConfigErrorCode::ownership_mismatch, at,
+                  "expected role " + target.role + " on " + target.bdf + ", is " + dev.role + " on " + dev.bdf);
+    if (auto error = valid_settings(dev.settings, at + ".settings")) return *error;
+    if (plan.mode == PowerMode::kObserve && populated(dev.settings))
+      return fail(ConfigErrorCode::invalid_value, at + ".settings",
+                  "an observe plan applies no settings");
+    if (target.arch == "gfx1100" && dev.settings.vddgfx_offset_mv && !dev.settings.sclk_max_mhz)
+      return fail(ConfigErrorCode::invalid_value, at + ".settings",
+                  "gfx1100 VDDGFX offset requires a paired SCLK maximum");
+    if (dev.settings.sclk_offset_mhz)
+      return fail(ConfigErrorCode::invalid_value, at + ".settings",
+                  "SCLK offset has no transaction/restore backend");
   }
   return std::nullopt;
 }
@@ -326,6 +292,26 @@ Result<Manifest> resolve_s10(const Manifest &base, const S10Inputs &in) {
   if (!selected) return selected.error();
   auto power_plan = power(base, in, selected.value());
   if (!power_plan) return power_plan.error();
+  if (base.spec.plan.state != PlanState::kMeasured) {
+    // The measuring start: nothing is measured yet, so no S8 ledger. The handoff keeps the resolver's values with their
+    // own provenance; the live policy does not run in the start that produces the plan.
+    Manifest out = base;
+    out.spec.plan.power = std::move(power_plan.value());
+    out.spec.plan.resource_inputs.reset();
+    if (out.spec.handoff) {
+      LivePolicyStartup off{};
+      off.requested = LivePolicyRequested::kOff;
+      off.configured = false;
+      off.reason_code = "measuring_start";
+      off.reason_detail = "the measuring start produces the plan; the live policy starts with a measured manifest";
+      out.spec.handoff->placement.live_policy_state = off;
+      out.spec.handoff->placement.live_policy.reset();
+      out.provenance["/spec/handoff/placement/live_policy_state"] = {
+          Origin::kDerived, "measuring start", ValueClass::kDerived, Lifecycle::kStartupOnly, Confidence::kExact, {}};
+    }
+    power_provenance(&out);
+    return out;
+  }
   if (base.spec.plan.owner_map.owner_map_sha256 !=
       in.measured.actual_owner_map_digest)
     return fail(ConfigErrorCode::ownership_mismatch, "spec.plan.owner_map",
@@ -351,12 +337,11 @@ Result<Manifest> resolve_s10(const Manifest &base, const S10Inputs &in) {
       *it = entry;
   }
   if (out.spec.plan.state == PlanState::kMeasured) {
+    // The plan echoes the host pool it was measured with; it must be the one S8 derives (bc-serve exit 11 otherwise).
     if (!out.spec.plan.engine_memory ||
-        out.spec.plan.engine_memory->expected.host_pool_mib != s8.host.pool_mib ||
-        out.spec.plan.engine_memory->expected.vram.claimable !=
-            in.measured.engine_vram_claimable_bytes)
-      return fail(ConfigErrorCode::plan_mismatch, "spec.plan.engine_memory.expected",
-                  "measured engine host-pool or live VRAM plan disagrees with S8");
+        out.spec.plan.engine_memory->expected.host_pool_mib != s8.host.pool_mib)
+      return fail(ConfigErrorCode::plan_mismatch, "spec.plan.engine_memory.expected.host_pool_mib",
+                  "the measured plan's host pool disagrees with S8's derived pool");
   }
   if (out.spec.processes.helpers.size() != s8.helpers.size())
     return fail(ConfigErrorCode::ownership_mismatch, "spec.processes.helpers",
@@ -387,8 +372,7 @@ Result<Manifest> resolve_s10(const Manifest &base, const S10Inputs &in) {
                   "policy preflight differs from measured layout/request");
     const auto decision = startup(p, s8);
     if (decision.configured &&
-        (p.calibration_key.empty() || p.record_identity.empty() ||
-         p.max_heat_age_ns <= 0 || !s8.live_cadence_ns ||
+        (p.max_heat_age_ns <= 0 || !s8.live_cadence_ns ||
          !out.spec.handoff->placement.live_policy ||
          out.spec.handoff->placement.live_policy->cadence_ns != decision.cadence_ns ||
          out.spec.handoff->placement.live_policy->max_heat_age_ns !=
@@ -406,16 +390,12 @@ Result<Manifest> resolve_s10(const Manifest &base, const S10Inputs &in) {
   }
   for (const auto &[path, record] : s8.provenance_by_path)
     out.provenance[path] = record; // measured evidence overrides inherited defaults
-  out.provenance["/spec/plan/power"] = {
-      Origin::kDerived, "PWR08 named profile + selected BDF inventory",
-      ValueClass::kDerived, Lifecycle::kStartupOnly, Confidence::kExact,
-      {"/spec/intent/power", "/spec/facts/gpus"}};
+  power_provenance(&out);
   if (out.spec.handoff)
     out.provenance["/spec/handoff/placement/live_policy_state"] = {
         Origin::kDerived, "RHP18 qualified policy preflight",
         ValueClass::kDerived, Lifecycle::kStartupOnly, Confidence::kExact,
         {"/spec/calibration", "/spec/handoff/telemetry"}};
-  if (auto error = validate_s10_provenance(out)) return *error;
   return out;
 }
 
@@ -423,7 +403,6 @@ Result<std::string> write_s10(const Manifest &m) {
   if (m.api_version != "bigcherry/v2" || m.metadata.contract_version != 2)
     return fail(ConfigErrorCode::unsupported_version, "apiVersion",
                 "writer accepts only v2");
-  if (auto error = validate_s10_provenance(m)) return *error;
   auto json_doc = encode(m);
   std::string digest, why;
   if (!bc::serving::manifest_content_digest(json_doc, &digest, &why))

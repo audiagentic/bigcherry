@@ -1,9 +1,10 @@
 #include "manifest.h"
 
-#include "jcs.h"
-#include "serving_codec.h"
-#include "sha256.h"
+#include "../jcs.h"
+#include "../generated/v2/serving_codec.h"
+#include "../sha256.h"
 #include "strict_json.h"
+#include "s10_resolver.h"
 
 #include <algorithm>
 #include <fstream>
@@ -13,12 +14,12 @@
 #include <set>
 #include <sstream>
 
-namespace bc::serving::v1 {
+namespace bc::serving::v2 {
 namespace {
 
 using Json = nlohmann::json;
 using C = ConfigErrorCode;
-const char* const kHint = "regenerate the manifest with bc-serve; a v1 manifest is never edited by hand";
+const char* const kHint = "regenerate the manifest with bc-serve; a v2 manifest is never edited by hand";
 
 ConfigError err(C code, std::string path, std::string message, std::string hint = kHint) {
     return make_error(code, std::move(path), std::move(message), std::move(hint));
@@ -34,7 +35,7 @@ Status identity(const Json& doc) {
         return err(C::unsupported_version, "apiVersion",
                    "apiVersion must be \"" + std::string(kApiVersion) + "\"" +
                        (api == doc.end() ? std::string(", is absent") : ", is " + api->dump()),
-                   "this reader supports bigcherry/v1 only; resolve the manifest with the matching bc-serve");
+                   "this reader supports bigcherry/v2 only; resolve the manifest with the matching bc-serve");
     const auto kind = doc.find("kind");
     if (kind == doc.end() || !kind->is_string() || *kind != kKind)
         return err(C::unsupported_version, "kind", "kind must be \"" + std::string(kKind) + "\"");
@@ -415,6 +416,10 @@ Status validate_semantics(const Manifest& m) {
                    s.plan.state == PlanState::kMeasured ? "spec.plan.engine_memory" : "spec.plan.state",
                    s.plan.state == PlanState::kMeasured ? "plan.state measured requires engine_memory"
                                                         : "plan.state unmeasured takes no engine_memory");
+    if ((s.plan.state == PlanState::kMeasured) != s.plan.resource_inputs.has_value())
+        return err(s.plan.state == PlanState::kMeasured ? C::missing_field : C::invalid_value, "spec.plan.resource_inputs",
+                   s.plan.state == PlanState::kMeasured ? "plan.state measured requires the engine-measured resource inputs"
+                                                        : "plan.state unmeasured takes no resource inputs (nothing is measured yet)");
     if ((s.plan.state == PlanState::kMeasured) != s.resources.host.checkpoint_slots.has_value())
         return err(s.plan.state == PlanState::kMeasured ? C::missing_field : C::invalid_value,
                    "spec.resources.host.checkpoint_slots",
@@ -584,6 +589,7 @@ Result<Manifest> read_manifest(std::string_view bytes, const std::string& source
     if (auto e = check_identity_coverage(doc)) return sourced(*e);
     if (auto e = check_provenance_coverage(doc)) return sourced(*e);
     if (auto e = validate_semantics(m)) return sourced(*e);
+    if (auto e = validate_s10_power_plan(m)) return sourced(*e);
     /* The plan state is checked last, so a malformed manifest reports its own fault first. A serving start never takes
      * an unmeasured manifest and a measuring start never takes a measured one: neither state is read as the other. */
     if (use == PlanUse::serving && m.spec.plan.state == PlanState::kUnmeasured)
@@ -652,4 +658,4 @@ Result<HelperView> helper_view(const Manifest& m, std::string_view role) {
                "start the helper with a role the manifest defines");
 }
 
-}  // namespace bc::serving::v1
+}  // namespace bc::serving::v2

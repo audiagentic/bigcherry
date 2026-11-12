@@ -36,15 +36,6 @@ bool digest(const std::string &s) {
     return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f');
   });
 }
-bool iso_date(const std::string &d) {
-  if (d.size() != 10 || d[4] != '-' || d[7] != '-')
-    return false;
-  for (size_t i = 0; i < d.size(); ++i)
-    if (i != 4 && i != 7 && (d[i] < '0' || d[i] > '9'))
-      return false;
-  return d.substr(5, 2) >= "01" && d.substr(5, 2) <= "12" &&
-         d.substr(8, 2) >= "01" && d.substr(8, 2) <= "31";
-}
 bool valid_scope(const S8Scope &s) {
   return digest(s.model_digest) && digest(s.engine_build_digest) &&
          digest(s.helper_build_digest) && digest(s.layout_digest) &&
@@ -53,7 +44,25 @@ bool valid_scope(const S8Scope &s) {
          positive(s.retention_target_tokens) && positive(s.kv_bytes_per_token);
 }
 
+// The registry class of a leaf (contract [[class_default]]), so a record covers exactly its own class.
+ValueClass class_of(const std::string &path) {
+  for (const auto &f : kFields)
+    if (f.path == path)
+      for (size_t i = 0; i < kValueClassNames.size(); ++i)
+        if (kValueClassNames[i] == f.value_class) return static_cast<ValueClass>(i);
+  return ValueClass::kDerived;
+}
 } // namespace
+
+std::optional<int64_t> derived_host_pool_mib(const MeasuredResourceInputs &r) {
+  int64_t margin_bytes, pool_bytes;
+  if (!mul(r.host_pool_margin_calibration.mib, kMiB, &margin_bytes) ||
+      !add(r.host_embedding_bytes, r.unowned_expert_bytes, &pool_bytes) ||
+      !add(pool_bytes, r.staging_bytes, &pool_bytes) ||
+      !add(pool_bytes, margin_bytes, &pool_bytes))
+    return std::nullopt;
+  return ceil_mib(pool_bytes);
+}
 
 Status require_measured_vram(int64_t required, int64_t claimable,
                              const std::string &bdf) {
@@ -124,62 +133,52 @@ Result<S8Resolution> resolve_s8(const S8Measured &m,
                                      m.engine_vram_claimable_bytes, "engine"))
     return *e;
 
-  if (r.host_pool_margin_calibration.key != "host_ledger_margin.mib" ||
-      !count(r.host_pool_margin_calibration.mib) ||
-      r.host_pool_margin_calibration.evidence.empty()) {
-    return fail(ConfigErrorCode::calibration_invalid,
-                scope_path + ".host_pool_margin_calibration",
-                "a qualified host-ledger margin and evidence are mandatory");
-  }
   const auto &cal = r.host_pool_margin_calibration;
-  std::map<std::string, const S8Calibration *> by_key;
+  if (!count(cal.mib))
+    return fail(ConfigErrorCode::invalid_value,
+                scope_path + ".host_pool_margin_calibration.mib",
+                "host-ledger margin must be a non-negative integer");
+
+  // The settings S8 places: each has the caller's value and its source (site, layout, calibration seed). A calibration
+  // record replaces it when one matches this measurement's scope and is current; a record that does not is skipped and
+  // the skip is said in the provenance. Records are evidence, never a precondition: no record still starts.
+  std::set<std::string> wanted;
+  if (has_helpers)
+    wanted.insert({"handoff.max_rows", "handoff.small_rows",
+                   "handoff.gemv_large_rows", "handoff.moe_down_tile"});
+  if (telemetry_on)
+    wanted.insert("handoff.histogram_period_s");
+  if (m.live_policy_requested)
+    wanted.insert("handoff.live_cadence_ns");
+  struct Chosen {
+    int64_t value = 0;
+    std::string source;
+    const S8Calibration *row = nullptr;
+  };
+  std::map<std::string, Chosen> chosen;
+  for (const auto &key : wanted) {
+    const auto it = m.settings.find(key);
+    if (it == m.settings.end() || it->second.source.empty())
+      return fail(ConfigErrorCode::missing_field, "calibration." + key,
+                  "no value given for " + key + " (site, layout or calibration record)");
+    chosen[key] = {it->second.value, it->second.source, nullptr};
+  }
+  std::vector<std::string> skipped;
   for (const auto &row : records) {
-    if (row.key.empty() || !by_key.emplace(row.key, &row).second)
-      return fail(ConfigErrorCode::calibration_invalid, "calibration",
-                  "unknown or duplicated calibration key");
-    if (!(row.scope == m.scope) || row.evidence_id.empty() ||
-        row.raw_run.empty() || row.method.empty() ||
-        !iso_date(row.recorded_date) || row.measured_at_unix_s <= 0 ||
-        row.measured_at_unix_s > now || row.valid_until_unix_s <= now ||
-        row.valid_until_unix_s <= row.measured_at_unix_s || !count(row.value) ||
-        row.measured_candidates.empty() ||
-        std::find(row.measured_candidates.begin(),
-                  row.measured_candidates.end(),
-                  row.value) == row.measured_candidates.end() ||
-        !std::all_of(row.measured_candidates.begin(),
-                     row.measured_candidates.end(), count)) {
-      return fail(
-          ConfigErrorCode::calibration_invalid, "calibration." + row.key,
-          "missing, unmeasured, expired or out-of-scope calibration evidence");
+    const auto it = chosen.find(row.key);
+    if (it == chosen.end()) continue;   // a record for a setting this start does not place
+    std::string why;
+    if (!(row.scope == m.scope)) why = "measured for another scope";
+    else if (row.valid_until_unix_s <= now) why = "expired";
+    else if (!count(row.value)) why = "not a non-negative integer";
+    if (!why.empty()) {
+      skipped.push_back(row.key + " record " + row.evidence_id + ": " + why);
+      continue;
     }
+    if (!it->second.row) it->second = {row.value, row.evidence_id + " (" + row.raw_run + "; " + row.method + ")", &row};
   }
 
-  std::set<std::string> mandatory = {"host_ledger_margin.mib"};
-  if (has_helpers)
-    mandatory.insert({"handoff.max_rows", "handoff.small_rows",
-                      "handoff.gemv_large_rows", "handoff.moe_down_tile"});
-  if (telemetry_on)
-    mandatory.insert("handoff.histogram_period_s");
-  if (m.live_policy_requested)
-    mandatory.insert("handoff.live_cadence_ns");
-  const size_t expected = mandatory.size();
-  if (by_key.size() != expected)
-    return fail(ConfigErrorCode::calibration_invalid, "calibration",
-                "unknown calibration or missing required qualified record");
-  for (const auto &key : mandatory)
-    if (!by_key.count(key))
-      return fail(ConfigErrorCode::calibration_invalid, "calibration." + key,
-                  "missing handoff/host margin measurement");
-  if (by_key.at("host_ledger_margin.mib")->value != cal.mib ||
-      by_key.at("host_ledger_margin.mib")->evidence_id != cal.evidence ||
-      (by_key.at("host_ledger_margin.mib")->source ==
-       CalibrationSource::kSeed) != (cal.source == MarginSource::kSeed))
-    return fail(ConfigErrorCode::calibration_invalid,
-                scope_path + ".host_pool_margin_calibration",
-                "resource-input margin disagrees with the qualified "
-                "calibration record");
-
-  const auto choice = [&](const char *key) { return by_key.at(key)->value; };
+  const auto choice = [&](const char *key) { return chosen.at(key).value; };
   const int64_t max_rows = has_helpers ? choice("handoff.max_rows") : 0;
   const int64_t small_rows = has_helpers ? choice("handoff.small_rows") : 0;
   const int64_t gemv_rows = has_helpers ? choice("handoff.gemv_large_rows") : 0;
@@ -188,29 +187,27 @@ Result<S8Resolution> resolve_s8(const S8Measured &m,
       (!positive(max_rows) || max_rows > m.dispatch_row_capacity ||
        !positive(small_rows) || !positive(gemv_rows) ||
        small_rows >= gemv_rows || gemv_rows > max_rows || tile > 2)) {
-    return fail(ConfigErrorCode::calibration_invalid, "spec.handoff",
-                "calibrated rows/tile do not fit measured dispatch geometry");
+    return fail(ConfigErrorCode::invalid_value, "spec.handoff",
+                "handoff rows/tile do not fit the worker's dispatch geometry");
   }
 
   // This is the S7 resource ledger's byte-exact host-pool/KV arithmetic,
   // now taking only the S9 typed, engine-measured resource inputs.
-  int64_t margin_bytes, pool_bytes, retained_bytes, committed, pinned;
-  if (!mul(cal.mib, kMiB, &margin_bytes) ||
-      !add(r.host_embedding_bytes, r.unowned_expert_bytes, &pool_bytes) ||
-      !add(pool_bytes, r.staging_bytes, &pool_bytes) ||
-      !add(pool_bytes, margin_bytes, &pool_bytes) ||
-      !mul(r.kv_bytes_per_token, r.retention_target_tokens, &retained_bytes)) {
+  int64_t retained_bytes, committed, pinned, checkpoint_bytes;
+  const auto pool = derived_host_pool_mib(r);
+  if (!pool || !mul(r.kv_bytes_per_token, r.retention_target_tokens, &retained_bytes)) {
     return fail(ConfigErrorCode::invalid_value, scope_path,
                 "derived host budget overflow");
   }
-  const int64_t pool_mib = ceil_mib(pool_bytes);
+  const int64_t pool_mib = *pool;
   const int64_t kv_mib = ceil_mib(retained_bytes);
   const int64_t reserve_mib = ceil_mib(m.host_reserve_bytes);
   int64_t reserve_rounded_bytes;
   if (!mul(reserve_mib, kMiB, &reserve_rounded_bytes) ||
       !mul(pool_mib + kv_mib, kMiB, &pinned) ||
       !add(pinned, r.ngram_bytes, &committed) ||
-      !add(committed, r.checkpoint_bytes, &committed) ||
+      !mul(m.checkpoint_slot_bytes, m.checkpoint_slots, &checkpoint_bytes) ||
+      !add(committed, checkpoint_bytes, &committed) ||
       !add(committed, r.resident_other_bytes, &committed) ||
       !add(committed, reserve_rounded_bytes, &committed)) {
     return fail(ConfigErrorCode::invalid_value, scope_path,
@@ -289,15 +286,15 @@ Result<S8Resolution> resolve_s8(const S8Measured &m,
         m.histogram_file,
         telemetry_on ? choice("handoff.histogram_period_s") : 0};
     if (telemetry_on && !positive(out.telemetry->period_s))
-      return fail(ConfigErrorCode::calibration_invalid,
+      return fail(ConfigErrorCode::invalid_value,
                   "spec.handoff.telemetry",
-                  "histogram period must be a positive qualified measurement");
+                  "histogram period must be positive");
     if (m.live_policy_requested) {
       out.live_cadence_ns = choice("handoff.live_cadence_ns");
       if (!positive(*out.live_cadence_ns))
-        return fail(ConfigErrorCode::calibration_invalid,
+        return fail(ConfigErrorCode::invalid_value,
                     "spec.handoff.placement.live_policy_state.cadence_ns",
-                    "live cadence needs a positive qualified measurement");
+                    "live cadence must be positive");
     }
   }
 
@@ -312,9 +309,7 @@ Result<S8Resolution> resolve_s8(const S8Measured &m,
     out.evidence_by_path["/spec/handoff/transport/skip_owned"] =
         "derived from actual owned expert sets and matching owner-map digest";
   const auto record = [&](const char *key, const char *path) {
-    const auto *row = by_key.at(key);
-    out.evidence_by_path[path] =
-        row->evidence_id + " (" + row->raw_run + "; " + row->method + ")";
+    out.evidence_by_path[path] = chosen.at(key).source;
   };
   if (has_helpers) {
     record("handoff.max_rows", "/spec/handoff/transport/max_rows");
@@ -328,19 +323,19 @@ Result<S8Resolution> resolve_s8(const S8Measured &m,
       record("handoff.live_cadence_ns",
              "/spec/handoff/placement/live_policy_state/cadence_ns");
   }
-  // Convert qualified external records to the generated closed v2 calibration
-  // model. No new, unqualified calibration key is accepted by the wire codec.
-  for (const auto &[key, row] : by_key) {
+  // The records used enter spec.calibration; skipped ones are said in the calibration provenance.
+  for (const auto &[key, c] : chosen) {
+    if (!c.row) continue;
     auto pos = std::find(kCalibrationKeyNames.begin(),
                          kCalibrationKeyNames.end(), key);
     if (pos == kCalibrationKeyNames.end())
-      return fail(ConfigErrorCode::calibration_invalid, "spec.calibration",
-                  "S8 record does not exist in the v2 registry: " + key);
+      return fail(ConfigErrorCode::invalid_value, "spec.calibration",
+                  "S8 record key is not a v2 calibration key: " + key);
     out.calibration_entries.push_back(
         {static_cast<CalibrationKey>(pos - kCalibrationKeyNames.begin()),
-         CalibrationValue{row->value}, row->source, row->recorded_date,
-         row->evidence_id + " (" + row->raw_run + "; " + row->method + ")"});
+         CalibrationValue{c.row->value}, c.row->source, c.row->recorded_date, c.source});
   }
+  out.skipped_records = skipped;
   const auto derived = [&](std::string path, std::string source,
                            std::vector<std::string> inputs) {
     out.provenance_by_path.emplace(
@@ -351,15 +346,15 @@ Result<S8Resolution> resolve_s8(const S8Measured &m,
   };
   const auto calibrated = [&](std::string path, std::string key,
                               Lifecycle when) {
-    const auto *row = by_key.at(key);
+    const Chosen &c = chosen.at(key);
+    const ValueClass leaf_class = class_of(path);
     out.provenance_by_path.emplace(
         std::move(path),
-        ProvenanceRecord{Origin::kCalibrated,
-                         row->evidence_id + " (" + row->raw_run + ")",
-                         ValueClass::kDerived,
-                         when,
-                         Confidence::kMeasured,
-                         {"/spec/calibration", "/spec/plan/resource_inputs"}});
+        ProvenanceRecord{c.row ? Origin::kCalibrated : Origin::kProfile, c.source,
+                         leaf_class, when,
+                         c.row ? Confidence::kMeasured : Confidence::kEstimate,
+                         c.row ? std::vector<std::string>{"/spec/calibration", "/spec/plan/resource_inputs"}
+                               : std::vector<std::string>{}});
   };
   derived("/spec/plan/resource_inputs",
           out.evidence_by_path.at("/spec/plan/resource_inputs"),

@@ -1,7 +1,7 @@
-"""RSC11 S13 pre-cutover: bind each native P1 measurement to P2 evidence.
+"""RSC11 S13: attach the usable P2 calibration records to a native P1 measurement.
 
-Production still runs v1 until the complete atomic v2 cutover. No synthetic
-default, prior manifest or unqualified cache entry may authorize S8 values.
+Records are evidence, never a precondition: a setting without a usable record keeps its site/layout value, and bc-serve
+records which one it used.
 """
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ _HISTOGRAM = "handoff.histogram_period_s"
 _LIVE = "handoff.live_cadence_ns"
 
 
-def required_s8_records(*, helper_count: int, histogram_enabled: bool,
+def wanted_s8_records(*, helper_count: int, histogram_enabled: bool,
                         live_policy_requested: bool) -> tuple[str, ...]:
     """Compute requirements from selected roles and explicit policy."""
     if type(helper_count) is not int or helper_count < 0:
@@ -54,47 +54,24 @@ def select_for_measurement(
     live_policy_requested: bool,
     now_unix_s: int,
 ) -> tuple[dict, ...]:
-    """Select fresh exact-scope records and cross-check native margin provenance."""
+    """The usable exact-scope records for the settings this start places (possibly none)."""
     if not isinstance(measurement.scope, dict) or not isinstance(measurement.resource_inputs, dict):
         raise CalibrationInvalid("S13 native P1 scope and resource inputs required")
     scope = validate_scope(measurement.scope)
-    keys = required_s8_records(
+    keys = wanted_s8_records(
         helper_count=helper_count,
         histogram_enabled=histogram_enabled,
         live_policy_requested=live_policy_requested,
     )
-    try:
-        records = select_with_rebind(
-            Path(store), scope=scope, required_keys=keys, now_unix_s=now_unix_s,
-        )
-    except CalibrationInvalid as exc:
-        if _MARGIN in str(exc):
-            category = "host_margin_refused"
-        elif _LIVE in str(exc) or _HISTOGRAM in str(exc):
-            category = "live_policy_refused" if live_policy_requested else "histogram_refused"
-        else:
-            category = "handoff_refused"
-        raise CalibrationInvalid(f"S13 {category}: {exc}") from exc
-
-    selected = records[0]
-    expected = {
-        "key": _MARGIN,
-        "source": selected["source"],
-        "evidence": selected["evidence_id"],
-        "mib": selected["value"],
-    }
-    if measurement.resource_inputs.get("host_pool_margin_calibration") != expected:
-        raise CalibrationInvalid(
-            "S13 host_margin_refused: native P1 margin differs from "
-            "exact-scope P2 record (key/source/evidence/value)")
-    return records
+    return select_with_rebind(
+        Path(store), scope=scope, required_keys=keys, now_unix_s=now_unix_s,
+    )
 
 
 class QualifiedP1MeasurementSource:
-    """S11 source that cannot return an unqualified S8 measurement.
+    """S11 source: a fresh native measurement with the calibration records that apply to it.
 
-    S13 must inject the real native command and this gate. A bounded retry
-    remeasures and selects calibration anew, never reuses an old scope.
+    A bounded retry remeasures and selects records anew, never reusing an old scope.
     """
 
     def __init__(

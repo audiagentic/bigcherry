@@ -91,7 +91,7 @@ class Device:
 @dataclass(frozen=True)
 class DevicePower:
     """Power settings calibrated for one physical card (PWR02/PWR04). Every field is optional and per card: two cards
-    of the same model can need different values, so nothing here is derived from the model name. ``evidence`` names the
+    of the same model can need different values, so nothing here is derived from the model name. ``evidence`` (optional provenance) names the
     run that validated the setting (offset, soak, output identity, measured watts and tok/s)."""
 
     vddgfx_offset_mv: int | None = None   #: OverDrive graphics voltage offset; negative undervolts
@@ -119,11 +119,9 @@ def _device_power(raw: object, where: str) -> DevicePower | None:
         if v is not None and (not isinstance(v, int) or isinstance(v, bool) or not lo <= v <= hi):
             raise EnvironmentError_(f"{where}.power: {key} = {v!r} is not an integer in {lo}..{hi}")
         values[key] = v
-    if not str(raw.get("evidence", "")).strip():
-        raise EnvironmentError_(f"{where}.power: evidence (the run that validated these settings) is required")
     return DevicePower(vddgfx_offset_mv=values["vddgfx-offset-mv"], sclk_max_mhz=values["sclk-max-mhz"],
                        mclk_max_mhz=values["mclk-max-mhz"],
-                       power_cap_w=values["power-cap-w"], evidence=str(raw["evidence"]).strip())
+                       power_cap_w=values["power-cap-w"], evidence=str(raw.get("evidence", "")).strip())
 
 
 @dataclass(frozen=True)

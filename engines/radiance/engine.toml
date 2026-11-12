@@ -28,7 +28,7 @@ runtime-home = "radiance_home"
 # BigCherry source files radiance's CMake includes, as repository-relative paths the build passes as absolute -D values:
 # managed patch rad0011 links the shared serving manifest v1 library (one source list for the serving component and the
 # engine; it fails closed when this is not passed).
-repo-paths = { BC_SERVING_V1_CMAKE = "engines/radiance/components/serving/bc_serving_v1.cmake" }
+repo-paths = { BC_SERVING_V2_CMAKE = "engines/radiance/components/serving/bc_serving_v2.cmake" }
 # Repository files the components read at configure or build time from outside their own directories. A build's identity
 # (build_plan_id) covers each one's bytes, so a change to one is a new build, never "already built": archs.toml chooses
 # moe-remote's GPU targets and, with layouts.toml, is embedded in bc-serve (components/serving/CMakeLists.txt).

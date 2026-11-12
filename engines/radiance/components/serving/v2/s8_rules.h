@@ -57,6 +57,12 @@ struct S8HelperRoom {
   int64_t owned_experts = 0; // actual owner-map set, never inferred by Python
 };
 
+// A setting's value when no calibration record applies, and where it came from (site.toml, layouts.toml, a seed).
+struct S8Setting {
+  int64_t value = 0;
+  std::string source;
+};
+
 struct S8Measured {
   MeasuredResourceInputs resource_inputs; // S9 typed v2 wire members
   S8Scope scope;
@@ -67,12 +73,14 @@ struct S8Measured {
   std::string host_reserve_evidence;
   int64_t engine_vram_required_bytes = 0;
   int64_t engine_vram_claimable_bytes = 0;
-  int64_t checkpoint_slots = 0; // engine --plan-memory, not a guessed slot size
+  int64_t checkpoint_slots = 0; // the slots the host ledger fitted between the plan's floor and want
+  int64_t checkpoint_slot_bytes = 0; // one slot, from the engine's plan (--plan-memory)
   int64_t dispatch_row_capacity = 0; // engine/worker measured dispatch limit
   std::string transport_shm;
   std::optional<std::string> histogram_file; // absent means disabled
   bool live_policy_requested =
       false; // no live cadence requirement when policy off
+  std::map<std::string, S8Setting> settings; // by calibration key: the value used when no record applies
 };
 
 struct S8HelperBudget {
@@ -96,14 +104,18 @@ struct S8Resolution {
   std::vector<CalibrationEntry>
       calibration_entries; // merge once into spec.calibration
   std::map<std::string, ProvenanceRecord> provenance_by_path;
+  std::vector<std::string> skipped_records; // records given but not used, and why
 };
 
-// Exactly the matching record is used. Unknown, duplicated, stale, incomplete
-// or out-of-scope records fail closed. now_unix_s is injected for replayable
-// tests.
+// A record replaces a setting's given value when it matches the measurement scope and is current; others are skipped
+// and reported, never refused. now_unix_s is injected for replayable tests.
 Result<S8Resolution> resolve_s8(const S8Measured &measured,
                                 const std::vector<S8Calibration> &records,
                                 int64_t now_unix_s);
+
+// The pinned host pool S8 derives from the measured inputs: host embeddings, unowned experts, staging and the margin,
+// rounded up to whole MiB. A plan measured with another pool is re-measured with this one (bc-serve exit 11).
+std::optional<int64_t> derived_host_pool_mib(const MeasuredResourceInputs &inputs);
 
 // Reusable engine VRAM admission: no hidden tolerance (including the observed
 // 2026-11 R9700 1,036,288-byte shortfall).

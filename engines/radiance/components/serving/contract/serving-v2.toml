@@ -1,5 +1,5 @@
 # Serving manifest v2 field registry: the one authoritative description of the v1 contract
-# (docs/design/serving-manifest-v1/spec.md). contract/generate.cpp turns it into the JSON Schema, the typed model,
+# (docs/design/serving-manifest-v2/spec.md). contract/generate.cpp turns it into the JSON Schema, the typed model,
 # the field reference and the contract fingerprint (engines/radiance/components/serving/generated/); CI regenerates
 # them and byte-diffs the committed copies. v1 is closed (spec §8): a change that moves either fingerprint (what
 # validates, or a field's class or Radiance binding) is a bigcherry/v2 change; correcting a doc is not (README.md).
@@ -1152,8 +1152,6 @@ doc = "Host memory allocation (RSC03 ledger)."
 
 [[field]]
 path = "/spec/resources/host/pool_mib"
-origins = ["derived", "calibrated"]
-confidences = ["exact", "measured"]
 radiance_option = "--host-pool-mib"
 radiance_config = "Config.host_pool_mib"
 kind = "ref"
@@ -1162,8 +1160,6 @@ doc = "Pinned host pool for experts and the KV tier, MiB (`--host-pool-mib`)."
 
 [[field]]
 path = "/spec/resources/host/kv_mib"
-origins = ["derived", "calibrated"]
-confidences = ["exact", "measured"]
 radiance_option = "--prefix-cache-mib"
 radiance_config = "Config.prefix_cache_mib"
 kind = "ref"
@@ -1172,8 +1168,6 @@ doc = "Host KV tier, MiB (`--prefix-cache-mib`)."
 
 [[field]]
 path = "/spec/resources/host/reserve_mib"
-origins = ["derived", "calibrated"]
-confidences = ["exact", "measured"]
 radiance_option = "--host-headroom-mib"
 radiance_config = "Config.host_headroom_mib"
 kind = "ref"
@@ -1184,8 +1178,6 @@ doc = "Host memory held back for the system, MiB (`--host-headroom-mib`)."
 
 [[field]]
 path = "/spec/resources/host/checkpoint_slots"
-origins = ["derived", "calibrated"]
-confidences = ["exact", "measured"]
 optional = true
 radiance_option = "--checkpoint-slots"
 radiance_config = "native checkpoint limit"
@@ -1215,32 +1207,24 @@ doc = "POSIX shared-memory name of the handoff segment."
 
 [[field]]
 path = "/spec/handoff/transport/max_rows"
-origins = ["derived", "calibrated"]
-confidences = ["exact", "measured"]
 kind = "ref"
 ref = "positive"
 doc = "Largest row batch a request carries."
 
 [[field]]
 path = "/spec/handoff/transport/small_rows"
-origins = ["derived", "calibrated"]
-confidences = ["exact", "measured"]
 kind = "ref"
 ref = "positive"
 doc = "Row count at or below which a request uses a small lane."
 
 [[field]]
 path = "/spec/handoff/transport/gemv_large_rows"
-origins = ["derived", "calibrated"]
-confidences = ["exact", "measured"]
 kind = "ref"
 ref = "positive"
 doc = "Row count from which helpers use the large GEMV path."
 
 [[field]]
 path = "/spec/handoff/transport/skip_owned"
-origins = ["derived", "calibrated"]
-confidences = ["exact", "measured"]
 kind = "boolean"
 doc = "The engine skips experts a helper owns."
 
@@ -1314,8 +1298,8 @@ doc = "Selected effect-gate mechanism."
 [[field]]
 path = "/spec/handoff/placement/live_policy_state/histogram_period_s"
 kind = "ref"
-ref = "positive"
-doc = "Heat histogram emission period in seconds."
+ref = "uint"
+doc = "Heat histogram emission period in seconds; 0 when no histogram is written."
 
 [[field]]
 path = "/spec/handoff/placement/live_policy_state/cadence_ns"
@@ -1468,8 +1452,6 @@ doc = "Handoff kernel selection."
 
 [[field]]
 path = "/spec/handoff/kernels/moe_down_tile"
-origins = ["derived", "calibrated"]
-confidences = ["exact", "measured"]
 kind = "int_enum"
 values = [0, 1, 2]
 doc = "MoE down-projection tile mode (0, 1 or 2)."
@@ -2548,8 +2530,6 @@ doc = "The helper's GPU address."
 
 [[field]]
 path = "/spec/processes/helpers/[]/vram_budget_mib"
-origins = ["derived", "calibrated"]
-confidences = ["exact", "measured"]
 kind = "ref"
 ref = "positive"
 doc = "VRAM the helper may use, MiB."
@@ -2673,136 +2653,103 @@ doc = "Closed empty CPU settings map; no CPU writes permitted by v2."
 
 [[field]]
 path = "/spec/plan/resource_inputs"
-origins = ["derived", "calibrated"]
-confidences = ["exact", "measured"]
+optional = true
 kind = "object"
 cpp = "MeasuredResourceInputs"
-doc = "S8/S10 engine-measured resource ledger input; each value must carry origin evidence."
+doc = "S8/S10 engine-measured resource ledger input; each value must carry origin evidence. Present exactly when `plan.state` is `measured`: the measuring start has no engine measurement yet."
 
 [[field]]
 path = "/spec/plan/resource_inputs/host_embedding_bytes"
-origins = ["derived", "calibrated"]
-confidences = ["exact", "measured"]
 kind = "ref"
 ref = "uint"
 doc = "Engine-measured host embedding footprint."
 
 [[field]]
 path = "/spec/plan/resource_inputs/unowned_expert_bytes"
-origins = ["derived", "calibrated"]
-confidences = ["exact", "measured"]
 kind = "ref"
 ref = "uint"
 doc = "Engine-measured unowned expert footprint."
 
 [[field]]
 path = "/spec/plan/resource_inputs/staging_bytes"
-origins = ["derived", "calibrated"]
-confidences = ["exact", "measured"]
 kind = "ref"
 ref = "uint"
 doc = "Measured staging allocation."
 
 [[field]]
 path = "/spec/plan/resource_inputs/ngram_bytes"
-origins = ["derived", "calibrated"]
-confidences = ["exact", "measured"]
 kind = "ref"
 ref = "uint"
 doc = "Measured n-gram allocation."
 
 [[field]]
 path = "/spec/plan/resource_inputs/checkpoint_bytes"
-origins = ["derived", "calibrated"]
-confidences = ["exact", "measured"]
 kind = "ref"
 ref = "uint"
 doc = "Measured checkpoint allocation."
 
 [[field]]
 path = "/spec/plan/resource_inputs/resident_other_bytes"
-origins = ["derived", "calibrated"]
-confidences = ["exact", "measured"]
 kind = "ref"
 ref = "uint"
 doc = "Other resident host allocation."
 
 [[field]]
 path = "/spec/plan/resource_inputs/kv_bytes_per_token"
-origins = ["derived", "calibrated"]
-confidences = ["exact", "measured"]
 kind = "ref"
 ref = "uint"
 doc = "Measured KV bytes per token."
 
 [[field]]
 path = "/spec/plan/resource_inputs/context_target_tokens"
-origins = ["derived", "calibrated"]
-confidences = ["exact", "measured"]
 kind = "ref"
 ref = "positive"
 doc = "Context admission target in tokens."
 
 [[field]]
 path = "/spec/plan/resource_inputs/retention_target_tokens"
-origins = ["derived", "calibrated"]
-confidences = ["exact", "measured"]
 kind = "ref"
 ref = "positive"
 doc = "Retention admission target in tokens."
 
 [[field]]
 path = "/spec/plan/resource_inputs/mem_available_bytes"
-origins = ["derived", "calibrated"]
-confidences = ["exact", "measured"]
 kind = "ref"
 ref = "uint"
 doc = "Live MemAvailable at plan resolution."
 
 [[field]]
 path = "/spec/plan/resource_inputs/cgroup_headroom_bytes"
-origins = ["derived", "calibrated"]
-confidences = ["exact", "measured"]
 kind = "ref"
 ref = "uint"
 doc = "Live effective cgroup headroom."
 
 [[field]]
 path = "/spec/plan/resource_inputs/pin_available_bytes"
-origins = ["derived", "calibrated"]
-confidences = ["exact", "measured"]
 kind = "ref"
 ref = "uint"
 doc = "Live pinnable memory headroom."
 
 [[field]]
 path = "/spec/plan/resource_inputs/owner_map_digest"
-origins = ["derived", "calibrated"]
-confidences = ["exact", "measured"]
 kind = "ref"
 ref = "hex64"
 doc = "Must equal the measured initial owner map digest."
 
 [[field]]
 path = "/spec/plan/resource_inputs/host_pool_margin_calibration"
-origins = ["derived", "calibrated"]
-confidences = ["exact", "measured"]
 kind = "object"
 cpp = "MarginCalibration"
 doc = "One host_ledger_margin.mib calibration, from seed or measured cache record."
 
 [[field]]
 path = "/spec/plan/resource_inputs/host_pool_margin_calibration/key"
-origins = ["derived", "calibrated"]
-confidences = ["exact", "measured"]
 kind = "string"
 const = "host_ledger_margin.mib"
 doc = "Host ledger calibration key."
 
 [[field]]
 path = "/spec/plan/resource_inputs/host_pool_margin_calibration/source"
-origins = ["derived", "calibrated"]
-confidences = ["exact", "measured"]
 kind = "enum"
 values = ["seed", "cache"]
 cpp_type = "MarginSource"
@@ -2810,24 +2757,18 @@ doc = "Seed floor or cache-refit provenance."
 
 [[field]]
 path = "/spec/plan/resource_inputs/host_pool_margin_calibration/evidence"
-origins = ["derived", "calibrated"]
-confidences = ["exact", "measured"]
 kind = "string"
 min_length = 1
 doc = "Evidence record identity."
 
 [[field]]
 path = "/spec/plan/resource_inputs/host_pool_margin_calibration/mib"
-origins = ["derived", "calibrated"]
-confidences = ["exact", "measured"]
 kind = "ref"
 ref = "uint"
 doc = "Actual selected margin in MiB."
 
 [[field]]
 path = "/spec/plan/resource_inputs/helper_footprints"
-origins = ["derived", "calibrated"]
-confidences = ["exact", "measured"]
 kind = "array"
 item_kind = "object"
 min_items = 0
@@ -2836,64 +2777,48 @@ doc = "Complete non-expert helper footprints read from worker_footprint.h."
 
 [[field]]
 path = "/spec/plan/resource_inputs/helper_footprints/[]"
-origins = ["derived", "calibrated"]
-confidences = ["exact", "measured"]
 kind = "object"
 cpp = "HelperFootprint"
 doc = "Per-BDF non-expert worker memory components."
 
 [[field]]
 path = "/spec/plan/resource_inputs/helper_footprints/[]/role"
-origins = ["derived", "calibrated"]
-confidences = ["exact", "measured"]
 kind = "ref"
 ref = "powerRole"
 doc = "Selected helper role."
 
 [[field]]
 path = "/spec/plan/resource_inputs/helper_footprints/[]/bdf"
-origins = ["derived", "calibrated"]
-confidences = ["exact", "measured"]
 kind = "ref"
 ref = "bdf"
 doc = "Selected helper BDF."
 
 [[field]]
 path = "/spec/plan/resource_inputs/helper_footprints/[]/lanes_bytes"
-origins = ["derived", "calibrated"]
-confidences = ["exact", "measured"]
 kind = "ref"
 ref = "uint"
 doc = "Lane allocation."
 
 [[field]]
 path = "/spec/plan/resource_inputs/helper_footprints/[]/pointer_banks_bytes"
-origins = ["derived", "calibrated"]
-confidences = ["exact", "measured"]
 kind = "ref"
 ref = "uint"
 doc = "Pointer bank allocation."
 
 [[field]]
 path = "/spec/plan/resource_inputs/helper_footprints/[]/slot_map_bytes"
-origins = ["derived", "calibrated"]
-confidences = ["exact", "measured"]
 kind = "ref"
 ref = "uint"
 doc = "Slot map allocation."
 
 [[field]]
 path = "/spec/plan/resource_inputs/helper_footprints/[]/incoming_slot_bytes"
-origins = ["derived", "calibrated"]
-confidences = ["exact", "measured"]
 kind = "ref"
 ref = "uint"
 doc = "Incoming slot allocation."
 
 [[field]]
 path = "/spec/plan/resource_inputs/helper_footprints/[]/total_bytes"
-origins = ["derived", "calibrated"]
-confidences = ["exact", "measured"]
 kind = "ref"
 ref = "uint"
 doc = "Total non-expert memory footprint."

@@ -109,7 +109,7 @@ def _collect(args: argparse.Namespace) -> resources.ResourcePlan:
         # owner map. The measuring launch later creates its own manifest.
         unmeasured = temporary / "owner-map.json"
         cmd = [str(args.bc_serve), "--write-manifest", str(unmeasured),
-               "--unmeasured", "--site", str(site),
+               "--unmeasured", "--site", str(site), "--power-profile", "stock",
                "--set", f"layout.name={args.layout}",
                "--set", f"service.max_sessions={args.sessions}",
                "--set", f"service.max_context={args.context}"]

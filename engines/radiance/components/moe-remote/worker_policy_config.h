@@ -4,7 +4,7 @@
 // the policy relies on; a policy that is absent from the manifest never constructs a Settings.
 #include "worker_policy_input.h"
 #include "worker_share.h"
-#include "../serving/generated/serving_types.h"
+#include "../serving/generated/v2/serving_types.h"
 #include <chrono>
 #include <cmath>
 #include <cstdint>
@@ -53,7 +53,7 @@ struct Settings {
     /* The enabled policy of a manifest the shared reader accepted (ranges and exclusions were checked there). `shares` are
      * the helpers' shares: the live plan is the static placer's, so it reads the shares the launch placed with. False with
      * *error naming the member when an invariant the policy relies on does not hold. */
-    bool from_manifest(const bc::serving::v1::LivePolicy& p, const std::vector<uint32_t>& shares, std::string* error) {
+    bool from_manifest(const bc::serving::v2::LivePolicy& p, const std::vector<uint32_t>& shares, std::string* error) {
         if (!error) return false;
         auto positive = [&](int64_t v, const char* name) {
             if (v > 0) return true;

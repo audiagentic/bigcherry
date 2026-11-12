@@ -1,9 +1,9 @@
 // bc_v1_test: the shared v1 reader against the committed examples, every required error test of errors.md §6 and the
 // RSC08 slice 2 gates, and the typed admission check against the shared admission vectors.
 #include "admission.h"
-#include "jcs.h"
+#include "../jcs.h"
 #include "manifest.h"
-#include "serving_codec.h"
+#include "../generated/v2/serving_codec.h"
 #include "strict_json.h"
 
 #include <cstdio>
@@ -14,11 +14,11 @@
 #include <string>
 
 #ifndef BC_CONTRACT_DIR
-#error "BC_CONTRACT_DIR must name docs/design/serving-manifest-v1"
+#error "BC_CONTRACT_DIR must name docs/design/serving-manifest-v2"
 #endif
 
 namespace {
-using namespace bc::serving::v1;
+using namespace bc::serving::v2;
 using Json = nlohmann::json;
 using C = ConfigErrorCode;
 int failures = 0;
@@ -72,6 +72,9 @@ Json without_plan(Json m) {
 Json unmeasured(Json m) {
     m = without_plan(std::move(m));
     m["spec"]["resources"]["host"].erase("checkpoint_slots");
+    m["spec"]["plan"].erase("resource_inputs");   // nothing is measured before the measuring start
+    for (auto it = m["provenance"].begin(); it != m["provenance"].end();)
+        it = it.key().rfind("/spec/plan/resource_inputs", 0) == 0 ? m["provenance"].erase(it) : std::next(it);
     m["spec"]["plan"]["state"] = "unmeasured";
     return rehashed(std::move(m));
 }
@@ -217,8 +220,8 @@ int main() {
            "spec.intent", "duplicate in a nested object");
     expect(from_text(replace_once(compact, "\"calibration\":[{", "\"calibration\":[{\"key\":\"checkpoint_share\",", &ok)),
            C::duplicate_field, "spec.calibration[0]", "duplicate inside an array element");
-    expect(from_text(replace_once(compact, "\"apiVersion\":\"bigcherry/v1\"",
-                                  "\"apiVersion\":\"bigcherry/v1\",\"\\u0061piVersion\":\"bigcherry/v1\"", &ok)),
+    expect(from_text(replace_once(compact, "\"apiVersion\":\"bigcherry/v2\"",
+                                  "\"apiVersion\":\"bigcherry/v2\",\"\\u0061piVersion\":\"bigcherry/v2\"", &ok)),
            C::duplicate_field, "apiVersion", "escape-equivalent duplicate names");
     check(ok, "every duplicate fixture applied");
     {
@@ -243,7 +246,7 @@ int main() {
         q["provenance"]["/spec/nothing_here"] = q["provenance"][""];
         expect(from(rehashed(q)), C::provenance_invalid, "names no value", "provenance for a value that does not exist");
         Json v = prod;
-        v["apiVersion"] = "bigcherry/v2";
+        v["apiVersion"] = "bigcherry/v1";
         expect(from(v), C::unsupported_version, "apiVersion", "another apiVersion");
         check(status_of(C::unsupported_version) == -18, "unsupported version: -18");
     }

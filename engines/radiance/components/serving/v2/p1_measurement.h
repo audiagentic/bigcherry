@@ -25,6 +25,7 @@ struct P1Gpu {
   std::string bdf;
   int64_t required_bytes = 0;
   int64_t fixed_bytes = 0;
+  int64_t claimable_bytes = 0; // the rank's live claimable VRAM after the rank split
 };
 
 struct P1Native {

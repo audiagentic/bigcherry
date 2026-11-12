@@ -20,10 +20,10 @@ namespace bc::serving {
 /* One bc::experts::OwnerPolicy per helper, in manifest order, built only from the manifest: the heat file and strategy
  * from handoff.placement, the shares from each helper's `share`, and the formats from its `formats`; balance and its
  * speeds (milli, so 1000 is 1.0) from the helper's effective settings. */
-std::vector<bc::experts::OwnerPolicy> owner_policies(const v1::Manifest& m);
+std::vector<bc::experts::OwnerPolicy> owner_policies(const v2::Manifest& m);
 /* The helpers' cards (gfx targets, from spec.facts.gpus by address) and budgets in bytes, in manifest order. */
-std::vector<std::string> helper_archs(const v1::Manifest& m);
-std::vector<uint64_t> helper_budgets(const v1::Manifest& m);
+std::vector<std::string> helper_archs(const v2::Manifest& m);
+std::vector<uint64_t> helper_budgets(const v2::Manifest& m);
 
 /* Recomputes the owner map with the shared planner and compares it with the manifest's, helper by helper: the owned
  * experts and their order, the count, and the exact device bytes. BC_CFG_OWNERSHIP_MISMATCH naming the first
@@ -34,6 +34,6 @@ std::vector<uint64_t> helper_budgets(const v1::Manifest& m);
  * every other is head; roundrobin: all head), and a balance the selector cannot run (not exactly two helpers of equal
  * budget, or with the tail strategy). The digests are not rechecked here: the reader verifies them
  * against the document's own experts, so equal experts mean equal digests. */
-v1::Status verify_owner_map(const v1::Manifest& m, const bc::experts::Container& model);
+v2::Status verify_owner_map(const v2::Manifest& m, const bc::experts::Container& model);
 
 }  // namespace bc::serving

@@ -58,17 +58,17 @@ int main(int argc, char** argv) {
     }
     /* --measuring: the one start that takes an unmeasured manifest (it produces the plan); every other start takes only a
      * measured one. The flag is read here and nowhere else in the helper. */
-    bc::serving::v1::PlanUse use = bc::serving::v1::PlanUse::serving;
+    bc::serving::v2::PlanUse use = bc::serving::v2::PlanUse::serving;
     int first_arg = 5;
     if (argc > 5 && std::strcmp(argv[5], "--measuring") == 0) {
-        use = bc::serving::v1::PlanUse::measuring;
+        use = bc::serving::v2::PlanUse::measuring;
         first_arg = 6;
     }
     {
         auto loaded = bc::serving::load_helper_settings(argv[2], argv[4], use);
         if (!loaded) {
-            std::fputs(bc::serving::v1::render_human("r3_moe_worker", loaded.error()).c_str(), stderr);
-            return bc::serving::v1::exit_code_of(loaded.error());   // No HIP call, plugin loading or model access has happened.
+            std::fputs(bc::serving::v2::render_human("r3_moe_worker", loaded.error()).c_str(), stderr);
+            return bc::serving::v2::exit_code_of(loaded.error());   // No HIP call, plugin loading or model access has happened.
         }
         r3_serving::install(std::move(loaded.value()));
     }

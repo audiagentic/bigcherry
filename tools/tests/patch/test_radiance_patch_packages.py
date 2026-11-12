@@ -88,9 +88,9 @@ PIN_BLOBS = {
         "arch/common/rad_block_moe_fp8.h": ("177e79c", "86160d0"),
     },
     RAD0009: {
-        "core/bc_serving_manifest.h": (None, "c9fd765"),
-        "core/bc_serving_manifest.cpp": (None, "0713835"),
-        "core/CMakeLists.txt": ("921debd", "8750342"),
+        "core/bc_serving_manifest.h": (None, "3acdc94"),
+        "core/bc_serving_manifest.cpp": (None, "a5534eb"),
+        "core/CMakeLists.txt": ("921debd", "e763864"),
         "core/main.cpp": ("4cb6d43", "7feb7b6"),
     },
 }
@@ -632,7 +632,7 @@ int main() {
         component = (REPO / "engines" / "radiance" / "components" / "moe-remote" / "component.toml").read_text(encoding="utf-8")
         self.assertNotIn("[setting.R3_MOE_WORKER_SHADOW]", component)
         self.assertNotIn("[setting.R3_MOE_WORKER_MASK_ONLY]", component)
-        self.assertIn("std::optional<bool> shadow;", (REPO / "engines/radiance/components/serving/generated/serving_types.h").read_text(encoding="utf-8"))
+        self.assertIn("std::optional<bool> shadow;", (REPO / "engines/radiance/components/serving/generated/v2/serving_types.h").read_text(encoding="utf-8"))
         self.assertIn('status = "diagnostic"', component)
 
     def test_missing_anchor_fails_closed_and_is_atomic(self):
@@ -711,23 +711,23 @@ class TestServingManifestPatch(unittest.TestCase):
         temp, root = self._applied()
         try:
             cmake = (root / "core/CMakeLists.txt").read_text(encoding="utf-8")
-            guard = cmake.index("if(NOT DEFINED BC_SERVING_V1_CMAKE)")
+            guard = cmake.index("if(NOT DEFINED BC_SERVING_V2_CMAKE)")
             self.assertLess(cmake.index("target_link_libraries(rad_core PUBLIC rad_abi"), guard)
             self.assertIn("message(FATAL_ERROR", cmake[guard:guard + 400])
-            self.assertLess(guard, cmake.index('include("${BC_SERVING_V1_CMAKE}")'))
-            self.assertLess(cmake.index('include("${BC_SERVING_V1_CMAKE}")'),
-                            cmake.index("target_link_libraries(rad_core PUBLIC bc_serving_v1)"))
+            self.assertLess(guard, cmake.index('include("${BC_SERVING_V2_CMAKE}")'))
+            self.assertLess(cmake.index('include("${BC_SERVING_V2_CMAKE}")'),
+                            cmake.index("target_link_libraries(rad_core PUBLIC bc_serving_v2)"))
             added = TestRadiancePatchPackages._added_lines(
                 (FIXTURE / "core/CMakeLists.txt").read_text(encoding="utf-8"), cmake)
             code = [line.strip() for line in added if line.strip() and not line.strip().startswith("#")]
             self.assertEqual(code, [
-                "if(NOT DEFINED BC_SERVING_V1_CMAKE)",
-                'message(FATAL_ERROR "rad0009: -DBC_SERVING_V1_CMAKE=<bigcherry>/engines/radiance/components/serving/bc_serving_v1.cmake "',
+                "if(NOT DEFINED BC_SERVING_V2_CMAKE)",
+                'message(FATAL_ERROR "rad0009: -DBC_SERVING_V2_CMAKE=<bigcherry>/engines/radiance/components/serving/bc_serving_v2.cmake "',
                 '"is required (the shared serving manifest v1 library); the BigCherry lane passes it")',
                 "endif()",
-                'set(BC_SERVING_V1_NLOHMANN_INCLUDE "${CMAKE_SOURCE_DIR}/vendor")',
-                'include("${BC_SERVING_V1_CMAKE}")',
-                "target_link_libraries(rad_core PUBLIC bc_serving_v1)",
+                'set(BC_SERVING_V2_NLOHMANN_INCLUDE "${CMAKE_SOURCE_DIR}/vendor")',
+                'include("${BC_SERVING_V2_CMAKE}")',
+                "target_link_libraries(rad_core PUBLIC bc_serving_v2)",
             ])
         finally:
             temp.cleanup()
@@ -752,11 +752,11 @@ class TestServingManifestPatch(unittest.TestCase):
             scratch.mkdir()
             test = REPO / "engines" / "radiance" / "tests" / "serving_manifest" / "manifest_argv_test.cpp"
             flags = ["-std=c++20", "-O0", "-Wall", "-Wextra", "-Wno-unused-parameter", "-Wno-missing-field-initializers",
-                     "-Werror", f"-I{root / 'core'}", f"-I{root / 'abi'}", f"-I{serving}", f"-I{serving / 'v1'}",
-                     f"-I{serving / 'generated'}", f"-I{include}"]
+                     "-Werror", f"-I{root / 'core'}", f"-I{root / 'abi'}", f"-I{serving}", f"-I{serving / 'v2'}",
+                     f"-I{serving / 'generated' / 'v2'}", f"-I{include}"]
             sources = [root / "core" / "bc_serving_manifest.cpp", root / "core" / "bc_plan_check.cpp", test,
-                       *(serving / "v1" / n for n in ("error.cpp", "strict_json.cpp", "manifest.cpp", "admission.cpp")),
-                       serving / "generated" / "serving_codec.cpp", serving / "jcs.cpp", serving / "sha256.cpp"]
+                       *(serving / "v2" / n for n in ("error.cpp", "strict_json.cpp", "manifest.cpp", "admission.cpp", "s8_rules.cpp", "s10_resolver.cpp")),
+                       serving / "generated" / "v2" / "serving_codec.cpp", serving / "jcs.cpp", serving / "sha256.cpp"]
             objects, procs = [], []
             for index, source in enumerate(sources):
                 obj = work / f"{index}-{source.stem}.o"
@@ -780,8 +780,8 @@ class TestServingManifestPatch(unittest.TestCase):
             # config_option_names() leaves out --help, as the engine does (core/config.cpp)
             options.write_text("".join(f"{n}\t{'-' if a == 'nullptr' else a.strip(chr(34))}\n"
                                        for n, a in rows if n != "--help"))
-            example = REPO / "docs" / "design" / "serving-manifest-v1" / "example.flashnext-4gpu.json"
-            lab_example = REPO / "docs" / "design" / "serving-manifest-v1" / "example.lab-experiment.json"
+            example = REPO / "docs" / "design" / "serving-manifest-v2" / "example.flashnext-4gpu.json"
+            lab_example = REPO / "docs" / "design" / "serving-manifest-v2" / "example.lab-experiment.json"
             run = subprocess.run([str(exe), str(scratch), str(example), str(options), str(lab_example)], capture_output=True, text=True)
             self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
             self.assertIn("ok", run.stdout)
@@ -792,7 +792,7 @@ class TestServingManifestPatch(unittest.TestCase):
 class TestPlanMemoryPatch(unittest.TestCase):
     """rad0011: the engine's memory plan as a serving manifest v1 EnginePlan: `--plan-memory FILE` measures it,
     a start from a measured manifest checks it at start-up against the manifest's own plan; thin hooks into core/bc_plan_*.* and a fail-closed
-    link of the shared bc_serving_v1 library into rad_core."""
+    link of the shared bc_serving_v2 library into rad_core."""
 
     SERVING = REPO / "engines" / "radiance" / "components" / "serving"
 
@@ -876,7 +876,7 @@ class TestPlanMemoryPatch(unittest.TestCase):
             assert source.count("bc_plan_memory_note_ranks(rank_cfg_);") == 1
             assert "--plan-memory-ranks" in flags
             assert 'g_store.push_back("--plan-memory-ranks");' in manifest
-            assert "out << v1::encode(g_plan).dump(2)" in plan
+            assert "out << v2::encode(g_plan).dump(2)" in plan
             assert (FIXTURE / "core/engine_bringup.cpp").read_text().find(
                 "if (ri == 0) bc_plan_memory_note_ranks(") == -1
             assert (FIXTURE / "core/engine_bringup.cpp").read_text().find(
@@ -903,22 +903,22 @@ class TestPlanMemoryPatch(unittest.TestCase):
                 source.write_text(original)
 
     def test_both_builds_compile_one_source_list(self):
-        """The serving component and radiance's core include the same bc_serving_v1.cmake: the library is defined there
+        """The serving component and radiance's core include the same bc_serving_v2.cmake: the library is defined there
         and nowhere else, and the lane hands the engine that file."""
         for cmake in (self.SERVING / "CMakeLists.txt", *self.SERVING.glob("*.cmake")):
             text = cmake.read_text(encoding="utf-8")
-            if cmake.name == "bc_serving_v1.cmake":
-                self.assertEqual(text.count("add_library(bc_serving_v1 "), 1)
+            if cmake.name == "bc_serving_v2.cmake":
+                self.assertEqual(text.count("add_library(bc_serving_v2 "), 1)
                 self.assertEqual(text.count("add_library(bc_jcs "), 1)
             else:
-                self.assertNotIn("add_library(bc_serving_v1", text, cmake.name)
+                self.assertNotIn("add_library(bc_serving_v2 ", text, cmake.name)
                 self.assertNotIn("add_library(bc_jcs", text, cmake.name)
-        self.assertIn('include("${CMAKE_CURRENT_SOURCE_DIR}/bc_serving_v1.cmake")',
+        self.assertIn('include("${CMAKE_CURRENT_SOURCE_DIR}/bc_serving_v2.cmake")',
                       (self.SERVING / "CMakeLists.txt").read_text(encoding="utf-8"))
         engine = tomllib.loads((REPO / "engines" / "radiance" / "engine.toml").read_text(encoding="utf-8"))
-        self.assertEqual(engine["build"]["repo-paths"]["BC_SERVING_V1_CMAKE"],
-                         "engines/radiance/components/serving/bc_serving_v1.cmake")
-        listed = re.findall(r'"\$\{_bc_v1_dir\}/([^"]+\.cpp)"', (self.SERVING / "bc_serving_v1.cmake").read_text(encoding="utf-8"))
+        self.assertEqual(engine["build"]["repo-paths"]["BC_SERVING_V2_CMAKE"],
+                         "engines/radiance/components/serving/bc_serving_v2.cmake")
+        listed = re.findall(r'"\$\{_bc_v2_dir\}/([^"]+\.cpp)"', (self.SERVING / "bc_serving_v2.cmake").read_text(encoding="utf-8"))
         self.assertTrue(listed and all((self.SERVING / f).is_file() for f in listed), listed)
 
     def test_second_apply_is_a_no_op(self):
@@ -975,12 +975,12 @@ class TestPlanMemoryPatch(unittest.TestCase):
         try:
             work = Path(temp.name)
             flags = ["-std=c++20", "-O0", "-Wall", "-Wextra", "-Wno-unused-parameter", "-Wno-missing-field-initializers",
-                     "-Werror", f"-I{root / 'core'}", f"-I{root / 'abi'}", f"-I{self.SERVING}", f"-I{self.SERVING / 'v1'}",
-                     f"-I{self.SERVING / 'generated'}", f"-I{include}"]
+                     "-Werror", f"-I{root / 'core'}", f"-I{root / 'abi'}", f"-I{self.SERVING}", f"-I{self.SERVING / 'v2'}",
+                     f"-I{self.SERVING / 'generated' / 'v2'}", f"-I{include}"]
             sources = [root / "core" / "bc_plan_check.cpp", root / "core" / "bc_serving_manifest.cpp",
                        REPO / "engines" / "radiance" / "tests" / "plan_memory" / "plan_flags_test.cpp",
-                       *(self.SERVING / "v1" / n for n in ("error.cpp", "strict_json.cpp", "manifest.cpp", "admission.cpp")),
-                       self.SERVING / "generated" / "serving_codec.cpp", self.SERVING / "jcs.cpp", self.SERVING / "sha256.cpp"]
+                       *(self.SERVING / "v2" / n for n in ("error.cpp", "strict_json.cpp", "manifest.cpp", "admission.cpp", "s8_rules.cpp", "s10_resolver.cpp")),
+                       self.SERVING / "generated" / "v2" / "serving_codec.cpp", self.SERVING / "jcs.cpp", self.SERVING / "sha256.cpp"]
             objects = []
             procs = []
             for index, source in enumerate(sources):
@@ -994,7 +994,7 @@ class TestPlanMemoryPatch(unittest.TestCase):
             exe = work / "plan_flags_test"
             link = subprocess.run([compiler, *map(str, objects), "-o", str(exe)], capture_output=True, text=True)
             self.assertEqual(link.returncode, 0, link.stderr)
-            vectors = REPO / "docs" / "design" / "serving-manifest-v1" / "admission-vectors.json"
+            vectors = REPO / "docs" / "design" / "serving-manifest-v2" / "admission-vectors.json"
             scratch = work / "scratch"
             scratch.mkdir()
             run = subprocess.run([str(exe), str(vectors), str(scratch)], capture_output=True, text=True)

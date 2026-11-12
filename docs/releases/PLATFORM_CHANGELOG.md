@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.41.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.40.0...bc-platform-1.41.0) (2026-11-12)
+
+
+### New and changed
+
+* **rsc11:** switch serving to manifest v2 and delete v1 (S13) ([#891](https://github.com/audiagentic/bigcherry/issues/891)) ([5603c7b](https://github.com/audiagentic/bigcherry/commit/5603c7be5df8862023d6940f7e2d641eae981e8e))
+
 ## [1.40.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.39.0...bc-platform-1.40.0) (2026-11-11)
 
 

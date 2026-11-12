@@ -107,7 +107,8 @@ def write_manifest(
             objects += [flag, str(serving[key])]
     if serving.get("calibration_run"):
         objects.append("--calibration-run")
-    common = ["--site", str(site), *set_args, *objects]
+    # The stock power profile observes the cards; a named profile is chosen explicitly, never implied.
+    common = ["--site", str(site), "--power-profile", "stock", *set_args, *objects]
 
     def run(out: Path, *args: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run([str(bc_serve), "--write-manifest", str(out), *args], capture_output=True, text=True)
@@ -125,8 +126,10 @@ def write_manifest(
     if result.returncode:
         raise PlanError(f"{name}: the unmeasured manifest was not written ({result.returncode}): {result.stderr.strip()}")
     plan = run_dir / "plan-measured.json"
+    ranks = run_dir / "plan-ranks.json"
     log = run_dir / "engine-measure.log"
     plan.unlink(missing_ok=True)
+    ranks.unlink(missing_ok=True)
     specs = [dataclasses.replace(s, argv=(*s.argv, "--measuring")) for s in helper_specs(unmeasured)]
     helpers = SidecarSet(specs)
     try:
@@ -136,21 +139,21 @@ def write_manifest(
         for var, relative in serve.env_from_binary:
             engine_env[var] = str((binary.parent / relative).resolve())
         engine_env.update(env)
-        argv = [str(binary), *(a.replace("{manifest}", str(unmeasured)) for a in serve.manifest_args), "--plan-memory", str(plan)]
+        argv = [str(binary), *(a.replace("{manifest}", str(unmeasured)) for a in serve.manifest_args), "--plan-memory", str(plan), "--plan-memory-ranks", str(ranks)]
         with log.open("w", encoding="utf-8") as sink:
             engine = subprocess.run(argv, env=engine_env, stdout=sink, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
     except SidecarError as exc:
         raise PlanError(f"{name}: the measuring start's helpers did not come up: {exc}") from exc
     finally:
         records = helpers.stop()
-    if engine.returncode or not plan.is_file() or not plan.stat().st_size:
+    if engine.returncode or not plan.is_file() or not plan.stat().st_size or not ranks.is_file():
         raise PlanError(f"{name}: the measuring start failed (engine exit {engine.returncode}); see {log}")
     if any(r["killed"] for r in records):
         raise PlanError(f"{name}: the measuring start's helpers did not exit cleanly")
     found = _ENGINE_MIB.findall(log.read_text(encoding="utf-8", errors="replace"))
     if not found:
         raise PlanError(f"{name}: the measuring start did not report the engine's host memory; see {log}")
-    result = run(measured, *cached, *common, "--measured-plan", str(plan),
+    result = run(measured, *cached, *common, "--measured-plan", str(plan), "--rank-demand", str(ranks),
                  "--helpers-resident-mib", str(resident), "--engine-resident-mib", found[-1])
     if result.returncode:
         raise PlanError(f"{name}: the measured manifest was not written ({result.returncode}): {result.stderr.strip()}")

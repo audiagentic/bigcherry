@@ -16,10 +16,10 @@ class EngineRepoPathsTests(unittest.TestCase):
     def test_radiance_declares_the_shared_library_cmake(self) -> None:
         layout = engines.load(paths.REPO_ROOT, "radiance")
         self.assertEqual(dict(layout.repo_paths),
-                         {"BC_SERVING_V1_CMAKE": "engines/radiance/components/serving/bc_serving_v1.cmake"})
+                         {"BC_SERVING_V2_CMAKE": "engines/radiance/components/serving/bc_serving_v2.cmake"})
         options = layout.repo_path_options(paths.REPO_ROOT)
-        self.assertTrue(Path(options["BC_SERVING_V1_CMAKE"]).is_absolute())
-        self.assertTrue(Path(options["BC_SERVING_V1_CMAKE"]).is_file())
+        self.assertTrue(Path(options["BC_SERVING_V2_CMAKE"]).is_absolute())
+        self.assertTrue(Path(options["BC_SERVING_V2_CMAKE"]).is_file())
 
     def test_the_lane_configure_args_include_it(self) -> None:
         layout = engines.load(paths.REPO_ROOT, "radiance")
@@ -28,8 +28,8 @@ class EngineRepoPathsTests(unittest.TestCase):
         args = campaign_build.cmake_configure_args(
             build, platform, Path("/src"), Path("/build"), targets_option=layout.targets_option,
             rocm_paths=(), engine_options=layout.repo_path_options(paths.REPO_ROOT))
-        want = (paths.REPO_ROOT / "engines/radiance/components/serving/bc_serving_v1.cmake").resolve().as_posix()
-        self.assertIn(f"-DBC_SERVING_V1_CMAKE={want}", args)
+        want = (paths.REPO_ROOT / "engines/radiance/components/serving/bc_serving_v2.cmake").resolve().as_posix()
+        self.assertIn(f"-DBC_SERVING_V2_CMAKE={want}", args)
 
     def test_a_declared_file_that_is_missing_is_an_error(self) -> None:
         layout = engines.load(paths.REPO_ROOT, "radiance")

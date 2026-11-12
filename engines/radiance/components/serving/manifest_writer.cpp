@@ -9,7 +9,7 @@
 #include "serving_codec.h"
 #include "sha256.h"
 #include "third_party/toml.hpp"
-#include "v1/manifest.h"
+#include "v2/manifest.h"
 
 #include <fcntl.h>
 #include <linux/fs.h>
@@ -117,11 +117,11 @@ Json facts_of(const Json& f) {
             {"gpus", gpus}};
 }
 
-Residence residence_of(v1::Residence r) {
+Residence residence_of(v2::Residence r) {
     switch (r) {
-        case v1::Residence::kPinned: return Residence::pinned;
-        case v1::Residence::kMlocked: return Residence::mlocked;
-        case v1::Residence::kPageable: return Residence::pageable;
+        case v2::Residence::kPinned: return Residence::pinned;
+        case v2::Residence::kMlocked: return Residence::mlocked;
+        case v2::Residence::kPageable: return Residence::pageable;
     }
     return Residence::pageable;
 }
@@ -131,7 +131,7 @@ Json calibration_entries(const Resolved& r, const fs::path& cache) {
     const CalibrationMatch at{"", r.values.at("layout").at("name").get<std::string>(),
                               r.values.at("service").at("objective").get<std::string>()};
     Json out = Json::array();
-    for (std::string_view key : v1::kCalibrationKeyNames) {
+    for (std::string_view key : v2::kCalibrationKeyNames) {
         const auto c = cal.find("calibration." + std::string(key), at);
         if (!c) continue;   // a parameter the objective does not use (e.g. no KV backing floor for throughput)
         out.push_back({{"key", key}, {"value", c->value}, {"source", c->source}, {"seeded", c->seeded}, {"evidence", c->evidence}});
@@ -153,7 +153,7 @@ Json resources_of(const ManifestInputs& in, const Json& calibration) {
     LedgerInputs li;
     li.host_facts = in.resolved.facts.at("host");
     li.reserve_mib = mem.at("host_reserve_mib");
-    for (const v1::PlanHostConsumer& c : in.measured->plan.plan.host)
+    for (const v2::PlanHostConsumer& c : in.measured->plan.plan.host)
         li.consumers.push_back({c.name, static_cast<uint64_t>(c.bytes), residence_of(c.residence), c.from, c.remedy});
     // What the engine allocates and its neighbours hold besides the plan's own consumers (RSC08 S3: before this the ledger
     // planned slots the host could not hold, and the engine stopped at start): the host pool the launcher runs with (pinned;
@@ -213,6 +213,17 @@ Json handoff_of(const Json& v, const Json& live_policy) {
     return out;
 }
 
+// The draft plan's devices: the engine TP cards and the selected helper cards, each with no settings. S10 resolves them.
+Json draft_power_devices(const Resolved& r) {
+    Json out = Json::array();
+    for (const Json& bdf : r.values.at("layout").at("engine_cards"))
+        out.push_back({{"role", "engine"}, {"bdf", bdf}, {"settings", Json::object()}});
+    const Json& ph = r.manifest.at("process_helpers");
+    for (size_t i = 0; i < ph.size(); ++i)
+        out.push_back({{"role", "helper" + std::to_string(i)}, {"bdf", ph[i].at("bdf")}, {"settings", Json::object()}});
+    return out;
+}
+
 Json engine_of(const Json& v) {
     const Json& e = v.at("engine");
     Json device = {{"gpus", v.at("layout").at("engine_cards")}};
@@ -256,6 +267,7 @@ Json static_provenance(bool measured, bool engine_only) {
     p["/spec/intent/model"] = record("site", "site.toml:engine.model", "policy", "exact");
     p["/spec/intent/layout"] = record("profile", "layout selection (layouts.toml)", "policy", "exact");
     p["/spec/intent/service"] = record("profile", "serving profile (bc-serve --profile)", "policy", "exact");
+    p["/spec/intent/power"] = record("cli", "bc-serve --power-profile", "policy", "exact");
     p["/spec/facts"] = record("detected", "bc-serve detect: kfd+sysfs+proc+statvfs+cgroup", "fact", "exact");
     p["/spec/calibration"] = record("calibrated", "calibration seeds and cache selected by layout and objective", "tuned", "measured",
                                     Json::array({"/spec/intent/layout", "/spec/intent/service/objective"}));
@@ -359,22 +371,23 @@ Json provenance_of(const ManifestInputs& in, const Json& derived_policy_provenan
     return p;
 }
 
-std::string digest_of(Json doc) {
-    doc["metadata"].erase("content_digest");
-    std::string bytes, why;
-    if (!jcs_canonicalize(doc, &bytes, &why)) fail("cannot canonicalize the manifest: " + why);
-    return "sha256:" + sha256_hex(bytes);
-}
-
-v1::Manifest checked_decode(const Json& doc, const char* step) {
-    v1::Manifest m;
-    if (const v1::Status e = v1::decode(doc, "", &m))
+v2::Manifest checked_decode(const Json& doc, const char* step) {
+    v2::Manifest m;
+    if (const v2::Status e = v2::decode(doc, "", &m))
         fail(std::string(step) + ": " + (e->path.empty() ? std::string() : e->path + ": ") + e->message);
     return m;
 }
 
 std::string sha_hex_of_zero() { return std::string(64, '0'); }
 }  // namespace
+
+Json host_ledger_margin(const Resolved& r, const fs::path& calibration_cache) {
+    for (const Json& e : calibration_entries(r, calibration_cache))
+        if (e.at("key") == "host_ledger_margin.mib")
+            return {{"key", "host_ledger_margin.mib"}, {"source", e.at("source")}, {"evidence", e.at("evidence")},
+                    {"mib", e.at("value")}};
+    fail("the calibration has no host_ledger_margin.mib for this layout and objective");
+}
 
 nlohmann::json helper_common_settings(const nlohmann::json& values) { return helper_common(values); }
 
@@ -421,6 +434,7 @@ BuiltManifest build_manifest(const ManifestInputs& in) {
 
     Json spec = {{"intent",
                   {{"model", model}, {"layout", values.at("layout").at("name")},
+                   {"power", {{"profile", in.s10.power_profile}, {"role_overrides", Json::object()}}},
                    {"service",
                     {{"profile", in.profile}, {"objective", values.at("service").at("objective")},
                      {"max_sessions", values.at("service").at("max_sessions")},
@@ -431,9 +445,23 @@ BuiltManifest build_manifest(const ManifestInputs& in) {
                  {"resources", {{"host", resources_of(in, calibration)}}},
                  {"processes", {{"engine", engine_of(values)}, {"helpers", helpers_of(in.resolved)}}},
                  {"plan", {{"state", in.measured ? "measured" : "unmeasured"},
+                           // S10 replaces this draft plan with the resolved one before the document is written.
+                           {"power", {{"mode", "observe"}, {"profile", in.s10.power_profile},
+                                      {"profile_digest", "sha256:" + sha_hex_of_zero()}, {"devices", draft_power_devices(in.resolved)},
+                                      {"cpu", {{"settings", Json::object()}}}}},
                            {"owner_map", {{"owner_map_sha256", sha_hex_of_zero()}, {"helpers", Json::array()}}}}}};
+    if (in.measured) {
+        if (!in.s10.p1_record.is_object() || !in.s10.p1_record.contains("resource_inputs"))
+            fail("a measured manifest needs the native P1 measurement record (--p1-record)");
+        spec["plan"]["resource_inputs"] = in.s10.p1_record.at("resource_inputs");
+    }
     if (!engine_only) {
         spec["handoff"] = handoff_of(values, live_policy);
+        // S10 decides the live policy at startup (live_policy_state); the draft carries a placeholder decision.
+        spec["handoff"]["placement"]["live_policy_state"] = {
+            {"requested", "off"}, {"configured", false}, {"reason_code", "draft"}, {"reason_detail", "draft"},
+            {"calibration_key", ""}, {"record_identity", ""}, {"effect_gate", false}, {"histogram_period_s", 0},
+            {"cadence_ns", 0}, {"max_heat_age_ns", 0}};
         spec["processes"]["helper_common"] = helper_common(values);
     }
     if (in.measured)
@@ -445,10 +473,10 @@ BuiltManifest build_manifest(const ManifestInputs& in) {
         if (in.profile != "lab") fail("an experiment needs the lab profile");
         spec["experiment"] = in.experiment;
     }
-    Json doc = {{"apiVersion", v1::kApiVersion}, {"kind", v1::kKind},
+    Json doc = {{"apiVersion", v2::kApiVersion}, {"kind", v2::kKind},
                 {"metadata",
                  {{"instance_id", in.instance_id}, {"producer", {{"name", "bc-serve"}, {"build_sha256", in.producer_sha256}}},
-                  {"contract_version", v1::kContractVersion}, {"content_digest", "sha256:" + sha_hex_of_zero()}}},
+                  {"contract_version", v2::kContractVersion}, {"content_digest", "sha256:" + sha_hex_of_zero()}}},
                 {"spec", std::move(spec)}, {"provenance", provenance_of(in, derived_provenance, engine_only)}};
 
     // The owner map is the planner's answer for the placement this very document declares: decode a draft with an empty
@@ -462,14 +490,14 @@ BuiltManifest build_manifest(const ManifestInputs& in) {
         for (std::size_t i = 0; i < helper_count; ++i)
             empty.push_back({{"owned_sha256", sha_hex_of_zero()}, {"count", 0}, {"bytes", 0}, {"experts", Json::array()}});
         draft["spec"]["plan"]["owner_map"]["helpers"] = empty;
-        const v1::Manifest m = checked_decode(draft, "draft manifest");
+        const v2::Manifest m = checked_decode(draft, "draft manifest");
         // A derived budget (RAD49) was sized for the helper_common lanes and power save (worker_footprint.h). An experiment
         // that patches either for a helper would make that helper's lanes differ from the footprint its budget leaves room for,
         // so it needs the layout's explicit budgets.
         if (in.resolved.provenance.contains("memory.helper_budgets_mib") &&
             in.resolved.provenance.at("memory.helper_budgets_mib").at("origin") == "derived" && m.spec.processes.helper_common)
             for (std::size_t i = 0; i < helper_count; ++i) {
-                const auto eff = v1::effective_helper_settings(m, i);
+                const auto eff = v2::effective_helper_settings(m, i);
                 const auto& common = *m.spec.processes.helper_common;
                 if (eff.lanes.small_lanes != common.lanes.small_lanes || eff.runtime.power_save != common.runtime.power_save)
                     fail("helper " + std::to_string(i) + ": an experiment changes its small lanes or power save, but its budget "
@@ -488,7 +516,7 @@ BuiltManifest build_manifest(const ManifestInputs& in) {
                 experts.push_back(Json::array({l, e}));
                 pairs.push_back({static_cast<int64_t>(l), static_cast<int64_t>(e)});
             }
-            const std::string segment = v1::owner_segment(i, pairs);
+            const std::string segment = v2::owner_segment(i, pairs);
             all += segment;
             helpers.push_back({{"owned_sha256", sha256_hex(segment)}, {"count", experts.size()},
                                {"bytes", planned.helpers[i].bytes}, {"experts", experts}});
@@ -497,19 +525,27 @@ BuiltManifest build_manifest(const ManifestInputs& in) {
     }
     // The plan cache key follows from the document (spec section 5.1), so it is computed last but one; the digest last.
     if (in.measured)
-        doc["spec"]["plan"]["engine_memory"]["cache_key"] = v1::plan_cache_key(checked_decode(doc, "manifest with its owner map"));
-    const std::string digest = digest_of(doc);
-    doc["metadata"]["content_digest"] = digest;
-
+        doc["spec"]["plan"]["engine_memory"]["cache_key"] = v2::plan_cache_key(checked_decode(doc, "manifest with its owner map"));
+    // S10: the power plan, the S8 resource ledger and handoff (measured manifests), the live-policy startup decision.
+    const v2::Manifest draft = checked_decode(doc, "manifest draft");
+    auto s10_in = v2::s10_inputs(draft, in.resolved, in.s10);
+    if (!s10_in) fail(v2::render_human("bc-serve", s10_in.error()));
+    auto resolved = v2::resolve_s10(draft, s10_in.value());
+    if (!resolved) fail(v2::render_human("bc-serve", resolved.error()));
+    // The plan cache key follows from the document (spec section 5.1): S10 changed the budgets and the host ledger it covers.
+    if (resolved.value().spec.plan.engine_memory)
+        resolved.value().spec.plan.engine_memory->cache_key = v2::plan_cache_key(resolved.value());
+    auto written = v2::write_s10(resolved.value());
+    if (!written) fail(v2::render_human("bc-serve", written.error()));
     BuiltManifest out;
-    out.text = doc.dump(2) + "\n";
-    out.digest = digest;
-    out.document = std::move(doc);
+    out.document = Json::parse(written.value());
+    out.text = out.document.dump(2) + "\n";
+    out.digest = out.document.at("metadata").at("content_digest").get<std::string>();
     // The gate: what a consumer will do with these bytes.
-    v1::Result<v1::Manifest> back = v1::read_manifest(out.text, "the manifest bc-serve built",
-                                                      in.measured ? v1::PlanUse::serving : v1::PlanUse::measuring);
-    if (!back.ok()) fail(v1::render_human("bc-serve", back.error()));
-    if (const v1::Status e = verify_owner_map(back.value(), container)) fail(v1::render_human("bc-serve", *e));
+    v2::Result<v2::Manifest> back = v2::read_manifest(out.text, "the manifest bc-serve built",
+                                                      in.measured ? v2::PlanUse::serving : v2::PlanUse::measuring);
+    if (!back.ok()) fail(v2::render_human("bc-serve", back.error()));
+    if (const v2::Status e = verify_owner_map(back.value(), container)) fail(v2::render_human("bc-serve", *e));
     return out;
 }
 

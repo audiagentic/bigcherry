@@ -52,7 +52,7 @@ def sample():
                 "total_bytes": 140,
             }],
         },
-        "gpu": [{"bdf": _ENGINE, "required_bytes": 2048, "fixed_bytes": 512}],
+        "gpu": [{"bdf": _ENGINE, "required_bytes": 2048, "fixed_bytes": 512, "claimable_bytes": 4096}],
         "concurrent_sessions": 2,
         "host_reserve_bytes": 4096,
     }

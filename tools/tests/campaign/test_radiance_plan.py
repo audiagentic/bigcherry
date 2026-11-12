@@ -31,8 +31,9 @@ ENGINE = textwrap.dedent('''\
     #!/bin/bash
     echo "$@" >> "$FAKE_LOG/engine.args"
     [ -z "${FAKE_ENGINE_FAIL:-}" ] || exit 3
-    while [ $# -gt 0 ]; do [ "$1" = --plan-memory ] && plan=$2; shift; done
+    while [ $# -gt 0 ]; do [ "$1" = --plan-memory ] && plan=$2; [ "$1" = --plan-memory-ranks ] && ranks=$2; shift; done
     echo '{"plan_version": 1}' > "$plan"
+    echo '{"kind": "radiance_p1_rank_demand"}' > "$ranks"
     echo "radiance: --plan-memory: wrote $plan; engine start-up took 1536 MiB of MemAvailable; nothing loaded" >&2
 ''')
 

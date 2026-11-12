@@ -131,9 +131,9 @@ admission and S11's bounded two-attempt refusal/refit. In particular, a
 calibrated handoff maximum cannot exceed the new engine's measured dispatch
 capacity; host/pin/GPU plans must fit new live measured room. If the fresh
 P1 owner/context/retention/KV measurements fall outside the record's
-original exact measured scope, or the S8 capacity or terminal S5/S11
-admission gate fails, startup **refuses**, naming the re-bound source record
-and asking for hardware re-measurement. A successful bounded S11 refit may
+original exact measured scope, the record is skipped and the setting keeps
+its site/layout value (recorded in its provenance); only the S8 capacity or
+terminal S5/S11 admission gate refuses a start. A successful bounded S11 refit may
 proceed; a rejected attempt never permits a power or launch bypass. No new
 quantitative tolerance or previously unmeasured operating envelope is
 inferred from a filename or from the build bump.
@@ -145,9 +145,9 @@ A change of model/layout/inventory/owner-map/context/retention/KV scope
 If a current-scope P2 record exists, it is selected directly; otherwise one
 exact, hash-verified rebind receipt can qualify a still-fresh original record.
 The emitted C++ S8 evidence ID retains the original raw run plus
-`rebinds/<receipt>` provenance. No receipt, multiple matches, expired
-original record, malformed proof, P1 margin mismatch or changed non-build
-scope => explicit refusal. Hardware start failures request re-measurement
+`rebinds/<receipt>` provenance. No receipt, an expired original record,
+a malformed proof or a changed non-build scope => the record is not used
+(several matches: the newest measurement); the start goes on without it. Hardware start failures request re-measurement
 with the exact record identity; source path changes do not automatically do so. The source has to provide this rebound evidence ID to
 the native P1 margin publisher; no historical literal is inserted.
 

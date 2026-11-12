@@ -108,7 +108,7 @@ Result<Json> publish_p1_measurement(const P1Native& m) {
         g.fixed_bytes > g.required_bytes)
       return fail("gpu", "missing or duplicate measured engine rank demand");
     gpu.push_back({{"bdf", g.bdf}, {"required_bytes", g.required_bytes},
-                   {"fixed_bytes", g.fixed_bytes}});
+                   {"fixed_bytes", g.fixed_bytes}, {"claimable_bytes", g.claimable_bytes}});
   }
   if (gpu.empty())
     return fail("gpu", "engine pre-weight VRAM demand is required");

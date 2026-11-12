@@ -30,12 +30,14 @@ LAUNCHER = REPO / "tools" / "lab" / "radiance" / "launch-flashnext-best.sh"
 # A stand-in bc-serve: its "cache" is a directory of key files. The key is a hash of every --set argument, so any one
 # changed setting is a different key (as with the real plan key). Exit 10 on a miss, like the real one.
 FAKE_SERVE = r"""#!/bin/bash
-cache=""; sets=(); out=""; unmeasured=""; measured_plan=""; objects=(); helpers_mib=""; engine_mib=""
+cache=""; sets=(); out=""; unmeasured=""; measured_plan=""; objects=(); helpers_mib=""; engine_mib=""; rank_demand=""; power_profile=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --write-manifest) out=$2; shift 2 ;;
     --unmeasured) unmeasured=1; shift ;;
     --measured-plan) measured_plan=$2; shift 2 ;;
+    --rank-demand) rank_demand=$2; shift 2 ;;
+    --power-profile) power_profile=$2; shift 2 ;;
     --helpers-resident-mib) helpers_mib=$2; shift 2 ;;
     --engine-resident-mib) engine_mib=$2; shift 2 ;;
     --live-policy|--experiment) objects+=("$1=$2"); shift 2 ;;
@@ -47,6 +49,7 @@ while [ $# -gt 0 ]; do
   esac
 done
 [ -n "$out" ] || { echo "fake bc-serve: only --write-manifest is a mode" >&2; exit 2; }
+[ "$power_profile" = stock ] || { echo "fake bc-serve: --write-manifest needs --power-profile" >&2; exit 2; }
 # the manifest: written once (bc-serve refuses an existing OUT); a measured one needs a plan, from the cache or --measured-plan
 [ -e "$out" ] && { echo "bc-serve: refusing to replace $out" >&2; exit 2; }
 if [ -n "$unmeasured" ]; then state=unmeasured
@@ -56,6 +59,7 @@ else
   skey=$(printf '%s\n' "${sets[@]}" | grep -v -e '^engine.port=' -e '^memory.host_kv_mib=' | sha256sum | cut -c1-64)
   if [ -n "$measured_plan" ]; then
     [ -n "$helpers_mib" ] && [ -n "$engine_mib" ] || { echo "bc-serve: --measured-plan needs the resident host memory" >&2; exit 2; }
+    [ -s "$rank_demand" ] || { echo "bc-serve: --measured-plan needs --rank-demand" >&2; exit 2; }
     echo "resident $helpers_mib $engine_mib" >> "$(dirname "$out")/resident.log"
     [ -f "${FAKE_REFUSE_STORE:-/nonexistent}" ] && { echo "bc-serve: plan disagrees with the configuration" >&2; exit 2; }
     cp "$measured_plan" "$cache/$skey.plan"; echo "plan: stored $skey" >&2
@@ -65,10 +69,10 @@ else
 fi
 printf '%s\n' "${sets[@]}" >> "$(dirname "$out")/plan-cache/describe.log"
 port=$(printf '%s\n' "${sets[@]}" | sed -n 's/^engine\.port=//p')
-# The fake bc-serve emits a structurally valid v1-shaped manifest with a
+# The fake bc-serve emits a structurally valid v2-shaped manifest with a
 # provenance-backed policy absence. It never falsely claims calibration.
 printf '{"plan_state": "%s", "port": %s}\n' "$state" "${port:-0}" > "$out"
-# The fake now adds the closed v1 policy shape and its explicit OFF
+# The fake now adds the closed v2 policy shape and its explicit OFF
 # provenance, preserving the original manifest-write failure injection.
 python3 - "$out" <<'MANIFEST_POLICY'
 import json
@@ -135,6 +139,7 @@ plan_check_start_engine_measure() {{
   echo "measure: engine --manifest $PLAN_MEASURING_MANIFEST --plan-memory $PLAN_MEASURE_FILE $(cat "$PLAN_MEASURING_MANIFEST")" >> {shlex.quote(str(self.engine_calls))}
   [ -n "${{FAKE_MEASURE_FAIL:-}}" ] && return 1
   echo '{{"plan_version": 1}}' > "$PLAN_MEASURE_FILE"
+  echo '{{"kind": "radiance_p1_rank_demand"}}' > "$PLAN_RANKS_FILE"
 }}
 plan_manifest_prepare && printf 'MANIFEST:%s\\n' "$PLAN_MANIFEST"
 """

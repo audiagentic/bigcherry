@@ -81,4 +81,6 @@ struct Resolved {
 Json detect(const std::filesystem::path& root = "/");
 Json json_schema();
 Resolved resolve(const Options& options, const Json& facts);
+/* archs.toml reserve-mib of a card type: the VRAM a card of it keeps free. */
+uint64_t arch_reserve_mib(const std::string& arch);
 } // namespace bc::serving

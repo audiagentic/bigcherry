@@ -182,7 +182,7 @@ def select_with_rebind(
     store: Path, *, scope: dict, required_keys,
     now_unix_s: int,
 ) -> tuple[dict, ...]:
-    """Select true direct records first; otherwise require exact rebind proof.
+    """Select direct records first, else a record rebound to this build; a key with neither is absent.
 
     An original selected setting is not updated; only its build scope and
     evidence_id are bound to the new build via a named immutable receipt.
@@ -191,13 +191,9 @@ def select_with_rebind(
     store = Path(store)
     output = []
     for key in required_keys:
-        try:
-            selected = select_records(store, scope=scope, required_keys=(key,),
-                                      now_unix_s=now_unix_s)
-        except CalibrationInvalid as exc:
-            if not str(exc).startswith("missing S8 calibration:"):
-                raise
-        else:
+        selected = select_records(store, scope=scope, required_keys=(key,),
+                                  now_unix_s=now_unix_s)
+        if selected:
             output.extend(selected)
             continue
         candidates = []
@@ -218,9 +214,12 @@ def select_with_rebind(
                 if proof.get("key") != key or proof.get("new_scope") != scope:
                     continue
                 if proof_path.stem != _sha(proof):
-                    raise CalibrationInvalid(f"S13 {key}: tampered immutable rebind receipt")
-                validate_rebind(proof, source_record=record, new_scope=scope,
-                                now_unix_s=now_unix_s)
+                    continue  # a receipt whose name is not its digest is not the receipt it claims to be
+                try:
+                    validate_rebind(proof, source_record=record, new_scope=scope,
+                                    now_unix_s=now_unix_s)
+                except CalibrationInvalid:
+                    continue
                 # Preserve source run, original measurement date and validity.
                 # Use the rebind receipt as additional explicit evidence.
                 bound = {
@@ -229,10 +228,9 @@ def select_with_rebind(
                     "method": record["method"] + " | explicit rebind: " + proof["reason"],
                 }
                 candidates.append(bound)
-        if len(candidates) != 1:
-            qualifier = "missing" if not candidates else "ambiguous"
-            raise CalibrationInvalid(f"S13 {key}: {qualifier} exact-scope rebind evidence")
-        output.append(candidates[0])
+        # No usable record for this key is not an error: the key keeps its site/layout value.
+        if candidates:
+            output.append(max(candidates, key=lambda r: r["measured_at_unix_s"]))
     return tuple(output)
 
 

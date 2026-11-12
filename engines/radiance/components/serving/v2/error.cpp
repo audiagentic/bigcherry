@@ -37,6 +37,45 @@ Row row(ConfigErrorCode c) {
 }
 }  // namespace
 
+std::string room_refusal_json(const RoomRefusal& r) {
+    nlohmann::ordered_json j;
+    j["schema_version"] = 1;
+    j["kind"] = "serving_admission_refusal";
+    j["phase"] = "before_weights";
+    j["reason_code"] = r.reason_code;
+    j["resource"] = r.resource;
+    j["device_bdf"] = r.device_bdf ? nlohmann::ordered_json(*r.device_bdf) : nlohmann::ordered_json(nullptr);
+    j["available_bytes"] = r.available_bytes;
+    j["required_bytes"] = r.required_bytes();
+    j["shortfall_bytes"] = r.shortfall_bytes();
+    j["allocations_still_to_come_bytes"] = r.allocations_still_to_come_bytes;
+    j["headroom_bytes"] = r.headroom_bytes;
+    nlohmann::ordered_json terms = nlohmann::ordered_json::object();
+    for (const auto& [key, bytes] : r.component_breakdown) terms[key] = bytes;
+    j["component_breakdown"] = std::move(terms);
+    j["may_change"] = r.may_change;
+    return j.dump(-1, ' ', false, nlohmann::ordered_json::error_handler_t::replace);
+}
+
+std::string room_refusal_human(const RoomRefusal& r) {
+    std::string s = "admission: " + r.resource;
+    if (r.device_bdf) s += " on " + *r.device_bdf;
+    s += ": live " + std::to_string(r.available_bytes) +
+         " bytes fall short of the required " + std::to_string(r.required_bytes()) +
+         " bytes (shortfall " + std::to_string(r.shortfall_bytes()) + " bytes";
+    for (const auto& [key, bytes] : r.component_breakdown)
+        s += "; " + key + " " + std::to_string(bytes);
+    s += "; headroom " + std::to_string(r.headroom_bytes) + ")";
+    if (!r.may_change.empty()) {
+        s += "; replan ";
+        for (size_t i = 0; i < r.may_change.size(); ++i) {
+            if (i) s += ", ";
+            s += r.may_change[i];
+        }
+    }
+    return s;
+}
+
 ConfigError make_error(ConfigErrorCode code, std::string path, std::string message, std::string hint) {
     ConfigError e;
     e.code = code;
@@ -78,7 +117,7 @@ int exit_code_of(const ConfigError& e) {
 std::string render_human(std::string_view executable, const ConfigError& e) {
     std::string out = std::string(executable) + ": config: " + std::string(machine_name(e.code)) + " (" +
                       std::string(status_name(e.status)) + ", " + std::to_string(e.status) + ")\n";
-    out += "  " + (e.path.empty() ? std::string() : e.path + ": ") + e.message + "\n";
+    out += "  " + (e.path.empty() ? std::string() : e.path + ": ") + (e.room_refusal ? room_refusal_human(*e.room_refusal) : e.message) + "\n";
     if (e.source_file) {
         out += "  source: " + *e.source_file;
         if (e.line) out += ":" + std::to_string(*e.line);
@@ -94,11 +133,13 @@ std::string render_json(const ConfigError& e) {
     j["code"] = machine_name(e.code);
     j["status"] = e.status;
     j["path"] = e.path;
-    j["message"] = e.message;
+    j["message"] = e.room_refusal ? room_refusal_human(*e.room_refusal) : e.message;
     j["hint"] = e.hint;
     j["source_file"] = e.source_file ? nlohmann::ordered_json(*e.source_file) : nlohmann::ordered_json(nullptr);
     j["line"] = e.line ? nlohmann::ordered_json(*e.line) : nlohmann::ordered_json(nullptr);
     j["column"] = e.column ? nlohmann::ordered_json(*e.column) : nlohmann::ordered_json(nullptr);
+    if (e.room_refusal)
+        j["admission_refusal"] = nlohmann::ordered_json::parse(room_refusal_json(*e.room_refusal));
     return j.dump(-1, ' ', false, nlohmann::ordered_json::error_handler_t::replace);
 }
 

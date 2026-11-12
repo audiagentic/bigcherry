@@ -43,4 +43,4 @@ The [build and serving runbook](RUNBOOK.md) covers composition and
 measurement; [GPU layouts](LAYOUTS.md) covers helper card budgets;
 [serving manifest](SERVING_MANIFEST.md) covers writing a manifest, starting with one and the `--set` key to engine flag table.
 Manifest startup is still being integrated against the
-[v1 specification](../../../design/serving-manifest-v1/spec.md).
+[v1 specification](../../../design/serving-manifest-v2/spec.md).
