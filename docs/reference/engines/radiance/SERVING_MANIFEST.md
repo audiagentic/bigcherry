@@ -55,8 +55,8 @@ directory `engines/radiance/layouts/`; format in its README), so a model, split 
 card types (`engines/radiance/archs.toml`) are compiled in. `layout.name` is required; there is no default layout. `bc-serve`
 selects the cards by architecture from the host's detected GPUs; it never takes device indices. An engine may be a list of
 `{ arch, count }` groups in rank order, a world of more than one card type: the kernels are each group's plugin, and the engine
-gets its ranks' cards as `device.rank_devices` (`--rank-devices`, amendment 18). A layout's `[tuning]` table sets engine tuning
-fields (a policy layer under the site and profile): `tuning.tp_ownership` (`--tp-ownership SPEC`, an uneven split one count a
+gets its ranks' cards as `device.rank_devices` (`--rank-devices`, amendment 18). A layout's `[settings]` table sets resolver keys
+(a policy layer under the site and profile, checked like a profile; e.g. `helper.combine`): `tuning.tp_ownership` (`--tp-ownership SPEC`, an uneven split one count a
 rank, checked against the model), `tuning.pipelined_prefill` and `tuning.pipelined_prefill_min_rows` (amendment 18).
 
 | Layout shape | Manifest |

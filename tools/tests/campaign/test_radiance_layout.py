@@ -289,9 +289,10 @@ roles = ["helper"]
             "no head helper with a share": '[layout.t]\nengine = { arch = "gfx1201" }\n[[layout.t.helper]]\narch = "gfx1100"\nbudget-mib = 100\nshare = 0\n',
             "devices lists a card twice": '[layout.t]\nengine = { arch = "gfx1201" }\n[[layout.t.helper]]\ndevices = [0, 0]\nbudget-mib = 100\n',
             "devices alone": '[layout.t]\nengine = { arch = "gfx1201" }\n[[layout.t.helper]]\ndevices = [0]\ncount = 1\nbudget-mib = 100\n',
-            "decided by the cards": self.HEAD + '[layout.t.env]\nR3_MOE_WORKER_MIBS = "1"\n',
-            "must be an R3_MOE_WORKER": self.HEAD + '[layout.t.env]\nHOME = "/x"\n',
-            "silently off": '[layout.t]\nengine = { arch = "gfx1201" }\n[[layout.t.helper]]\ndevices = [0]\nbudget-mib = 1000\n[layout.t.env]\nR3_MOE_WORKER_COMBINE = "1"\n',
+            "env is not a layout key": self.HEAD + '[layout.t.env]\nR3_MOE_WORKER_COMBINE = "1"\n',
+            "tuning is not a layout key": self.HEAD + '[layout.t.tuning]\ntp_ownership = "kv=1"\n',
+            "true or false": self.HEAD + '[layout.t.settings]\nhelper.combine = "1"\n',
+            "silently off": '[layout.t]\nengine = { arch = "gfx1201" }\n[[layout.t.helper]]\ndevices = [0]\nbudget-mib = 1000\n[layout.t.settings]\nhelper.combine = true\n',
             "device 9 is not": '[layout.t]\nengine = { arch = "gfx1201" }\n[[layout.t.helper]]\ndevices = [9]\nbudget-mib = 100\n',
         }
         for why, text in bad.items():
@@ -302,8 +303,8 @@ roles = ["helper"]
         r = self.resolve('[layout.t]\nengine = { arch = "gfx1201" }\n[[layout.t.helper]]\narch = "gfx1100"\n')
         self.assertEqual([h.budget_mib for h in r.helpers], [24560 - 1024, 24560 - 1024])
 
-    def test_layout_env_reaches_the_common_settings_for_two_helpers(self):
-        r = self.resolve(self.HEAD + '[layout.t.env]\nR3_MOE_WORKER_COMBINE = "1"\n')
+    def test_layout_settings_combine_reaches_the_common_settings_for_two_helpers(self):
+        r = self.resolve(self.HEAD + '[layout.t.settings]\nhelper.combine = true\n')
         self.assertEqual(r.common_env["R3_MOE_WORKER_COMBINE"], "1")
         self.assertEqual(len(r.helpers), 2)
 

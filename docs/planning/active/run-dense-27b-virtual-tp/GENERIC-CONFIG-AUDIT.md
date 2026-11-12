@@ -14,7 +14,7 @@ A static, read-only audit of branch `feat/vtp14-n1-rank-code-eligibility` (GPT r
 - `--tp-ownership SPEC` is a generic split checked against the loaded model; no model or profile in the patches.
 - The pipelined prefill is a mode and a narrowest step, not fixed world and row gates.
 - Layouts are run-time data (`--layouts` / `BIGCHERRY_LAYOUTS`), not compiled into `bc-serve`; `layout.name` has no default.
-- A layout's engine may be several `{ arch, count }` groups (a mixed world); a layout carries a `[tuning]` table.
+- A layout's engine may be several `{ arch, count }` groups (a mixed world); a layout's `[settings]` table holds resolver keys.
 - Contract amendment 18: `tuning.tp_ownership`, `tuning.pipelined_prefill(_min_rows)`, `device.rank_devices`.
 - One build: the VTP14 patches are a patch set in the main `radiance` source, inert until their options are given
   (ABBA in VTP14.md).
@@ -34,7 +34,7 @@ A static, read-only audit of branch `feat/vtp14-n1-rank-code-eligibility` (GPT r
 | C09 | high | rad0008 defaults `RAD_HC_UPMIX_RT` to 128 (upstream 256) with no manifest field | `patches/rad0008_hc_upmix_rt_sweep` | upstream default when unset; a typed `tuning.hc_upmix_rt` | open (changes Flash-Next serving: needs an A/B) |
 | C10 | high | routing-heat scratch `step_heat[kExperts]` caps experts at 512 | `moe-remote/moe_mailbox_ops.hip` | size from the container's expert count | open |
 | C11 | medium-high | layouts and recipe runtime profiles carry raw `server-args`; Python allowlist and shell mapping repeat them | `layouts/*.toml`, `recipes.toml`, `radiance_layout.py`, launcher | typed service/execution/memory/tuning fields; one binding from `serving-v2.toml` | open |
-| C12 | medium-high | Python accepts any `R3_MOE_WORKER_*` layout env; C++ accepts only `R3_MOE_WORKER_COMBINE` | `radiance_layout.py`, `serving.cpp` | typed helper settings (`helper.combine`), one validator | open |
+| C12 | medium-high | Python accepts any `R3_MOE_WORKER_*` layout env; C++ accepts only `R3_MOE_WORKER_COMBINE` | `radiance_layout.py`, `serving.cpp` | typed helper settings (`helper.combine`), one validator | **fixed**: a layout's `[settings]` takes resolver keys (`helper.combine`, `tuning.*`); `env` and `tuning` tables are refused by both resolvers |
 | C13 | medium-high | diagnostics need separate sources and a `-DBC_MOE_REMOTE_DIAG` build | `recipes.toml`, `patches/rad0004` | diagnostic hooks in the common build behind typed `diagnostics.*` (keep `radiance-native` as the control) | open |
 | C14 | medium | calibration and helper-profile seeds compiled in; seeds match `flashnext-4gpu` | `serving/CMakeLists.txt`, `calibration.toml` | run-time records with provenance | open |
 | C15 | medium | Python layout resolver duplicates the C++ one (C04 and C12 are real divergences) | `radiance_layout.py`, `radiance_inventory.py`, `serving.cpp` | Python consumes `bc-serve --explain --json` only | open |

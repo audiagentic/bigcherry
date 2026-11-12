@@ -1674,8 +1674,8 @@ void mixed_arch_engine_layout(Fixture& t) {
     opts.layouts = {t.file("mixed-layouts.toml",
         "schema = 1\n[layout.mixed-tp3]\nmodel = \"m.rad\"\n"
         "engine = [{ arch = \"gfx1100\", count = 2 }, { arch = \"gfx1201\", count = 1 }]\ntp-wire = \"exact\"\n"
-        "[layout.mixed-tp3.tuning]\ntp_ownership = \"kv=1,1,2;ffn=8,8,16\"\npipelined_prefill = \"on\"\n"
-        "[layout.badtuning]\nmodel = \"m.rad\"\nengine = { arch = \"gfx1201\" }\n[layout.badtuning.tuning]\nno_such = 1\n"
+        "[layout.mixed-tp3.settings]\ntuning.tp_ownership = \"kv=1,1,2;ffn=8,8,16\"\ntuning.pipelined_prefill = \"on\"\n"
+        "[layout.badtuning]\nmodel = \"m.rad\"\nengine = { arch = \"gfx1201\" }\n[layout.badtuning.settings]\ntuning.no_such = 1\n"
         "[layout.twice]\nmodel = \"m.rad\"\nengine = [{ arch = \"gfx1100\" }, { arch = \"gfx1100\" }]\ntp-wire = \"exact\"\n")};
     opts.sets = {"layout.name=\"mixed-tp3\"", "service.max_sessions=4", "service.max_context=8192"};
     const auto r = sv::resolve(opts, t.facts);
@@ -1694,6 +1694,10 @@ void mixed_arch_engine_layout(Fixture& t) {
         assert(sv::resolve(over, t.facts).values.at("tuning").at("pipelined_prefill") == "off");
         over.sets = {"layout.name=\"badtuning\""};
         fail(over, t.facts, "unknown key tuning.no_such");
+        over.layouts = {t.file("oldenv.toml", "schema = 1\n[layout.oldenv]\nmodel = \"m.rad\"\nengine = { arch = \"gfx1201\" }\n"
+                                              "[layout.oldenv.env]\nR3_MOE_WORKER_COMBINE = \"1\"\n")};
+        over.sets = {"layout.name=\"oldenv\""};
+        fail(over, t.facts, "env is not a layout key");
     }
     const Json key = sv::plan_key_inputs(r.values, t.facts, "m", "e", "");
     assert(key.contains("rank_cards") && key.at("rank_cards").size() == 3 && key.at("rank_cards")[2].at("arch") == "gfx1201");

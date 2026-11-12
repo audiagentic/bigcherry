@@ -251,10 +251,17 @@ def resolve(name: str, host: environment.Host, *, budgets: dict[str, int] | None
         raise LayoutError(f"unknown layout {name!r}; known: {sorted(layouts)}")
     lay = layouts[name]
     where = f"layout.{name}"
-    _allow(lay, {"description", "model", "engine", "tp-wire", "server-args", "helper", "env", "tuning"}, where)
-    # [layout.NAME.tuning]: engine tuning fields (tuning.*; bc-serve checks each key and type against the contract)
-    if not isinstance(lay.get("tuning", {}), dict):
-        raise LayoutError(f"{where}.tuning must be a table of engine tuning fields")
+    for gone in ("env", "tuning"):
+        if gone in lay:
+            raise LayoutError(f"{where}: {gone} is not a layout key: give resolver keys in [{where}.settings] (helper.combine, tuning.*)")
+    _allow(lay, {"description", "model", "engine", "tp-wire", "server-args", "helper", "settings"}, where)
+    # [layout.NAME.settings]: resolver keys (bc-serve checks each key and type against the contract, as for a profile)
+    settings = lay.get("settings", {})
+    if not isinstance(settings, dict):
+        raise LayoutError(f"{where}.settings must be a table of resolver keys")
+    combine = (settings.get("helper") or {}).get("combine", False)
+    if not isinstance(combine, bool):
+        raise LayoutError(f"{where}.settings: helper.combine is true or false")
     model = lay.get("model")
     if not isinstance(model, str) or not model or model.startswith("/") or not model.endswith(".rad") or any(
         part in ("", ".", "..") for part in model.split("/")
@@ -302,8 +309,8 @@ def resolve(name: str, host: environment.Host, *, budgets: dict[str, int] | None
     if not groups:
         if budgets:
             raise LayoutError(f"{where}: budget overrides require remote-MoE helpers")
-        if lay.get("env"):
-            raise LayoutError(f"{where}: R3_MOE_WORKER_* settings require remote-MoE helpers")
+        if combine:
+            raise LayoutError(f"{where}: helper.combine requires remote-MoE helpers")
         return Resolved(name, tuple(d.index for d in engine), _engine_archs(engine),
                         _engine_plugins(engine, archs), model, tp_wire, tuple(server_args), (), {})
     helpers: list[HelperCard] = []
@@ -358,16 +365,9 @@ def resolve(name: str, host: environment.Host, *, budgets: dict[str, int] | None
     }
     if any(h.placement == "tail" for h in helpers):
         common["R3_MOE_WORKER_PLACEMENT"] = "tail"
-    # the layout's own settings for the engine and every helper (the helper-row combine, for one); never a name the cards above decide
-    env = lay.get("env", {})
-    if not isinstance(env, dict):
-        raise LayoutError(f"{where}.env must be a table of R3_MOE_WORKER_* settings")
-    for key, value in env.items():
-        if not re.fullmatch(r"R3_MOE_WORKER_[A-Z0-9_]+", key) or not isinstance(value, str):
-            raise LayoutError(f"{where}.env: {key!r} must be an R3_MOE_WORKER_* setting with a string value")
-        if key in common or key in {"R3_MOE_WORKER_LAYOUT", "R3_MOE_WORKER_DEVICES"}:
-            raise LayoutError(f"{where}.env: {key} is decided by the cards of the layout")
-        common[key] = value
+    # the helper-row combine (settings helper.combine), which the engine and every helper must agree on
+    if combine:
+        common["R3_MOE_WORKER_COMBINE"] = "1"
     if common.get("R3_MOE_WORKER_COMBINE") == "1" and len(helpers) < 2:
         # the combine adds the rows of two to kCombineHelpers (= kMaxHelpers, the bound checked above) helpers; one has nothing to add
         raise LayoutError(f"{where}: the helper-row combine needs at least two helpers; {len(helpers)} would run with it silently off")

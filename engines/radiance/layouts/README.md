@@ -38,9 +38,10 @@ server-args                    optional engine options, each one a manifest sett
                                placement); for a helper layout they are the launcher's defaults, which its own
                                command-line options override
 
-[layout.NAME.tuning]           engine tuning fields of the manifest contract (tuning.*): tp_ownership,
-                               pipelined_prefill, pipelined_prefill_min_rows, p2p, ... A policy layer under the site and
-                               profile, which override it (as does --set tuning.KEY=VALUE)
+[layout.NAME.settings]         the layout's own settings as resolver keys, checked like a profile's and layered under the
+                               site and profile (which override them, as does --set KEY=VALUE): tuning.tp_ownership,
+                               tuning.pipelined_prefill, helper.combine, service.max_context, ... Dotted keys:
+                               `tuning.tp_ownership = "kv=..;ffn=.."`, `helper.combine = true`
 
 [[layout.NAME.helper]]         a group of helper cards, in order (helper 0 first; helper 0 creates the shared segment)
   arch       architecture to take from the inventory
@@ -52,8 +53,6 @@ server-args                    optional engine options, each one a manifest sett
              that fit what the heads left. Only the last group may be tail, and only after a head group
   share      weight of each card in a head group (default 1; 0 owns nothing)
 
-[layout.NAME.env]              R3_MOE_WORKER_* settings for the engine and every helper (strings); not the ones the
-                               cards decide
 ```
 
 A tensor-parallel engine (count > 1) may have helpers (RAD49): one request slot a (helper, rank), at most the protocol's

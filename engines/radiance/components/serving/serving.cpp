@@ -426,8 +426,8 @@ struct LayoutRecipe {
     std::vector<std::pair<std::string, size_t>> engine_groups;
     std::optional<std::string> tp_wire;
     std::vector<HelperGroup> groups;
-    bool combine = false, tail = false;
-    Json tuning = Json::object();         // [layout.NAME.tuning]: engine tuning fields (tuning.*), layered as a profile
+    bool tail = false;
+    Json settings = Json::object();       // [layout.NAME.settings]: resolver keys, layered as a profile
 };
 
 Json embedded_toml(const char* text, const char* what) {
@@ -541,16 +541,16 @@ LayoutRecipe recipe_for(const std::string& name, const Options& options) {
     }
     r.engine_arch = r.engine_groups.front().first;
     if (l.contains("tp-wire")) r.tp_wire = l.at("tp-wire").get<std::string>();
-    if (l.contains("tuning")) {
-        if (!l.at("tuning").is_object()) throw std::runtime_error(where + "tuning is a table of engine tuning fields");
-        r.tuning = l.at("tuning");
+    // [layout.NAME.settings]: the layout's own settings as resolver keys (tuning.tp_ownership, helper.combine, ...), layered
+    // under the site and profile with a profile's checks.
+    if (l.contains("settings")) {
+        if (!l.at("settings").is_object()) throw std::runtime_error(where + "settings is a table of resolver keys");
+        r.settings = l.at("settings");
     }
-    if (l.contains("env"))
-        for (auto it = l.at("env").begin(); it != l.at("env").end(); ++it) {
-            if (it.key() != "R3_MOE_WORKER_COMBINE" || (it.value() != "1" && it.value() != "0"))
-                throw std::runtime_error(where + "env " + it.key() + ": only R3_MOE_WORKER_COMBINE = \"0\" or \"1\" is a serving setting");
-            r.combine = it.value() == "1";
-        }
+    for (const char* gone : {"env", "tuning"})
+        if (l.contains(gone))
+            throw std::runtime_error(where + gone + " is not a layout key: give resolver keys in [layout." + name +
+                                     ".settings] (helper.combine, tuning.*)");
     if (l.contains("helper"))
         for (const Json& h : l.at("helper")) {
             if (h.contains("devices"))
@@ -1104,13 +1104,10 @@ Resolved resolve(const Options& options, const Json& facts) {
     if (layout.tp_wire)
         put(values, provenance, *field_for("engine.tp_wire"), *layout.tp_wire, "discovered",
             "layout " + name + " (" + layout.source + ")" + " tp-wire", Json::array({"layout.name"}));
-    derived("helper.combine", layout.combine,
-            "layout " + name + " (" + layout.source + ")",
-            Json::array({"layout.name"}));
-    // The layout's own engine tuning (tp_ownership, pipelined_prefill, ...): a policy layer under the site and profile, which
-    // override it. Only tuning.* fields; the same strict key and type checks as a profile.
-    if (!layout.tuning.empty())
-        layer(values, provenance, Json{{"tuning", layout.tuning}}, "profile", "layout " + name + " (" + layout.source + ")");
+    // The layout's own settings (tuning.tp_ownership, service.*, ...): a policy layer under the site and profile, which
+    // override it, with the same strict key and type checks as a profile.
+    if (!layout.settings.empty())
+        layer(values, provenance, layout.settings, "profile", "layout " + name + " (" + layout.source + ")");
     const Json baseline_values = values;
     layer(values, provenance, site, "site", options.site.empty() ? "site" : options.site.string());
     layer(values, provenance, profile, "profile",

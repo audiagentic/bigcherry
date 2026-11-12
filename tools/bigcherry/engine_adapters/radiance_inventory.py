@@ -231,7 +231,9 @@ def resolve(
                 common["R3_MOE_WORKER_SHARES"] = ",".join(str(h.share if h.placement == "head" else 0) for h in helpers)
             if any(h.placement == "tail" for h in helpers):
                 common["R3_MOE_WORKER_PLACEMENT"] = "tail"
-            common.update(recipe.get("env", {}))
+            # the helper-row combine as bc-serve resolved it (a layout's settings, a profile or --set)
+            if values.get("helper", {}).get("combine"):
+                common["R3_MOE_WORKER_COMBINE"] = "1"
         # rank order; a mixed world (several engine groups) names each architecture and plugin once
         engine_arch = "+".join(dict.fromkeys(g.arch for g in engine))
         engine_plugin = ",".join(dict.fromkeys(archs[g.arch].plugin for g in engine))
