@@ -428,3 +428,44 @@ the plan:
 - Speculation is off for both, because TP3 refuses a drafter under a profile.
 - This makes it the matched baseline, not the production best case. The production TP2 configuration with
   speculation on is recorded separately as a reference.
+
+## N0 result, 2026-11-11 23:54Z: matched ABBA, native TP3 beats native TP2 at 4/6/8 streams
+
+**Setup**
+
+- **Build:** 93dcced3bff30928b0f7fffc120a00e6, used for both arms.
+- **Model:** qwen3.8-27b-mxfp4.rad, the container production serves on two XTX.
+- **Engine flags:** `--max-model-len 4096 --max-num-seqs 8 --kv-cache-dtype fp8 --num-speculative-tokens 0`, exact
+  all-reduce.
+- **Arms:**
+  - TP2: `--tp 2` on the two XTX.
+  - TP3: `--tp 3 --rank-devices 0000:03:00.0,0000:06:00.0,0000:09:00.0 --tp-ownership qwen38-27b-6-6-12`.
+- **Benchmark:** `bigcherry stream-bench`, 512-token target prompts (calibrated, 271 words), 128 generated tokens, 3 reps,
+  temperature 0, seed 7.
+- **Conditions:** run under the gpu lease. Every card was at its default power cap (303/303/300 W, checked by the
+  script before it ran). The CPU was quiet. The order was A1 TP2, B1 TP3, B2 TP3, A2 TP2.
+- **Logs:** `vtp14/logs/window-n0-2354` in the task scratch folder.
+
+**Results** (medians of 3 reps; aggregate is tokens over the batch's whole makespan, so prefill is included)
+
+| streams | TP2 aggregate tok/s (A1/A2) | TP3 aggregate tok/s (B1/B2) | aggregate gain | TP2 step ms | TP3 step ms | step gain | engine decode tok/s TP2 → TP3 |
+|---|---|---|---|---|---|---|---|
+| 1 | 44.2 / 44.1 | 54.5 / 54.4 | +23.4% | 20.27 | 15.35 | -24.2% | 49.3 → 65.1 |
+| 4 | 111.3 / 109.6 | 129.6 / 128.4 | **+16.8%** | 26.50 | 19.56 | -26.2% | 151.0 → 204.5 |
+| 6 | 130.7 / 130.4 | 147.0 / 147.4 | **+12.8%** | 31.38 | 23.54 | -25.0% | 191.2 → 254.9 |
+| 8 | 141.0 / 140.6 | 159.3 / 158.7 | **+12.9%** | 37.37 | 27.76 | -25.7% | 214.1 → 288.2 |
+
+**What this shows**
+
+- Drift is small: the A arms agree with each other within 1.5%, and so do the B arms.
+- The decode step is about 25% faster at every concurrency. The aggregate gain is smaller (13–17%) because prefill
+  counts in it, and TP3's TTFT is somewhat higher (1.46 s against 1.24 s at 4 streams).
+- **This meets the VTP14 throughput goal** (beat dual-XTX TP2 at 4, 6 and 8 streams) for the matched configuration.
+
+**What is still open**
+
+- Speculation is off on both arms, because TP3 refuses a drafter under a profile. Production TP2 with DFlash2 depth
+  3 is faster than both (about 97 tok/s at one stream on v1.16). The next slice is the drafter under an ownership
+  profile: replicate it per rank.
+- KV capacity and context (N5).
+- Quality evidence against an oracle (KLD/top-1, N7).
