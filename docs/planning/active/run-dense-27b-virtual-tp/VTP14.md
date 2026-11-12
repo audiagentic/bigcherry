@@ -647,3 +647,28 @@ The XTX ranks need half TP2's KV per card because each holds one KV head.
 - `--host-pool-mib`, so the cache can use host memory.
 - A KV-light ownership profile. With 4 KV heads over 3 ranks, a split other than 1/1/2 needs KV replication.
 - Long-context prefill is about 57% slower on TP3. This is the same x4-link limit seen in N0.
+
+## N7 quality evidence, first pass, 2026-11-12: KLD against an exact TP2 reference (build a0979ca2eb38035b67618a59795a3103)
+
+**Setup**
+
+- **Corpus:** `rad-kld-corpus.jsonl` (24 documents, 42,761 scored positions).
+- **Model:** the MXFP4 27B, `--max-model-len 8192 --max-num-seqs 4`, run under the lease.
+- **Reference:** recorded on TP2 (two XTX, exact wire) with `--kld-record --kld-top 64`.
+- **Runs scored with `--kld-ref`:** TP3 6/6/12 on the exact wire, and production TP2 on the wht6 lossy wire.
+- **Outputs:** `vtp14/kld/{tp3,tp2wht6}.json`, with every position in `.rows`.
+
+| against the TP2 exact reference | KLD mean | median | p99 | p99.9 | p99.99 | max | top-1 | PPL (ref 8.5620) |
+|---|---|---|---|---|---|---|---|---|
+| **TP3 6/6/12, exact** | **0.00307** | 0.00136 | 0.0227 | 0.084 | 0.445 | 3.62 | **96.80%** | 8.5564 (×0.9993) |
+| TP2, wht6 (production) | 0.00391 | 0.00168 | 0.0281 | 0.111 | 0.980 | 6.41 | 96.57% | 8.5581 (×0.9995) |
+
+**What this shows**
+
+- TP3 changes the model's output distribution less than the production TP2 lossy wire does, at every percentile.
+- The residual divergence is the expected effect of a different reduction order and partition over three ranks. The
+  weights and kernels are the same MXFP4 container.
+- This is equivalence evidence for the TP3 split, not a quality claim about MXFP4 itself.
+
+**Still to do:** a BF16 reference (the original checkpoint, `qwen3.8-27b-bf16.rad`) to score MXFP4 TP2 and TP3
+against original quality.
