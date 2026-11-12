@@ -1,16 +1,19 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from bigcherry.cli import slice as slice_cli  # noqa: E402
+from bigcherry.cli import worktree_record  # noqa: E402
 
 
 def _run(root: Path, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
@@ -36,6 +39,9 @@ def _gh(*, state: str, merged_at: str | None = None, branch: str = "feat/pa47-te
 
 class SliceCommandTests(unittest.TestCase):
     def setUp(self) -> None:
+        env = mock.patch.dict(os.environ, {"AGENT_INSTANCE": "bigcherry-test", "AGENT_HARNESS": "claude", "CLAUDE_CODE_SESSION_ID": ""})
+        env.start()
+        self.addCleanup(env.stop)
         self.temp = tempfile.TemporaryDirectory()
         root = Path(self.temp.name)
         self.origin = root / "origin.git"
@@ -55,7 +61,7 @@ class SliceCommandTests(unittest.TestCase):
         self.temp.cleanup()
 
     def _start(self, branch: str = "feat/pa47-test") -> Path:
-        return slice_cli.start_slice(branch, primary_root=self.primary)
+        return slice_cli.start_slice(branch, why="test slice", primary_root=self.primary)
 
     def test_start_uses_origin_main_and_rejects_bad_names_and_duplicates(self):
         remote_head = _run(self.primary, "rev-parse", "origin/main").stdout.strip()
@@ -68,14 +74,35 @@ class SliceCommandTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "already exists"):
             self._start()
         with self.assertRaises(ValueError):
-            slice_cli.start_slice("Bad Branch", primary_root=self.primary)
+            slice_cli.start_slice("Bad Branch", why="test slice", primary_root=self.primary)
 
+
+    def test_start_records_who_made_the_worktree_and_why(self):
+        worktree = self._start()
+        record = worktree_record.read_record(worktree)
+        self.assertEqual(record["creator"], "bigcherry-test (claude)")
+        self.assertEqual(record["why"], "test slice")
+        self.assertEqual(record["branch"], "feat/pa47-test")
+        # kept out of git, and written to the registry that outlives the worktree
+        self.assertEqual(_run(worktree, "status", "--porcelain").stdout, "")
+        registry = Path(self.primary / ".git" / worktree_record.REGISTRY_NAME).read_text(encoding="utf-8")
+        self.assertIn("feat/pa47-test", registry)
+        self.assertIn("bigcherry-test (claude)", registry)
+
+    def test_start_needs_a_reason_and_an_identifiable_creator(self):
+        with self.assertRaisesRegex(ValueError, "needs a reason"):
+            slice_cli.start_slice("feat/pa47-test", why="  ", primary_root=self.primary)
+        with mock.patch.dict(os.environ, {"AGENT_INSTANCE": "", "AGENT_HARNESS": ""}):
+            with self.assertRaisesRegex(RuntimeError, "cannot tell which agent"):
+                self._start()
+        self.assertFalse((self.primary / "worktrees" / "feat" / "pa47-test").exists())
 
     def test_start_carry_moves_tracked_changes_and_cleans_primary(self):
         (self.primary / "README.md").write_text("carried\n", encoding="utf-8")
 
         worktree = slice_cli.start_slice(
             "feat/pa47-test",
+            why="test slice",
             primary_root=self.primary,
             carry=True,
         )
@@ -108,6 +135,7 @@ class SliceCommandTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "synthetic apply failure"):
             slice_cli.start_slice(
                 "feat/pa47-test",
+                why="test slice",
                 primary_root=self.primary,
                 carry=True,
                 runner=runner,

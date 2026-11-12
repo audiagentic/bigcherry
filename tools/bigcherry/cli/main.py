@@ -210,6 +210,7 @@ def build_parser() -> argparse.ArgumentParser:
     slice_start.add_argument("branch")
     slice_start.add_argument("--remote", default="origin")
     slice_start.add_argument("--base", default="main")
+    slice_start.add_argument("--why", required=True, help="what the branch is for (recorded in WORKTREE.md)")
     slice_start.add_argument(
         "--carry",
         action="store_true",

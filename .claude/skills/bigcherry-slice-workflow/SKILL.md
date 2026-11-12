@@ -15,12 +15,16 @@ behind. Background agents start cold: give them this skill by name instead of re
 ```
 cd <primary checkout>            # this PC: H:/development/projects/bigcherry ; build server: ${BC_WORK_ROOT}/wt-main
 git pull --ff-only origin main
-PYTHONPATH=tools python -m bigcherry slice start <type>/<topic>     # e.g. feat/rad23-n-helpers
+PYTHONPATH=tools python -m bigcherry slice start <type>/<topic> --why "<what it is for>"     # e.g. feat/rad23-n-helpers
 cd worktrees/<type>/<topic>
 ```
 
 - `slice start` branches from current origin/main and creates the worktree at `<checkout>/worktrees/<branch>`.
   Never create ad-hoc `../wt-*` folders. One slice = one branch = one PR.
+- `--why` is required. `slice start` writes `WORKTREE.md` in the worktree (who created it, when, base, why; kept out of
+  git) and appends a line to `<git-common-dir>/bigcherry-worktrees.jsonl`, which outlives the worktree. `slice status`
+  shows creator and why per worktree and prints `NO RECORD` for a worktree made by hand. Before a branch with
+  experiment results is removed, land the evidence (docs/evidence or the plan) and tag it `archive/<branch>`.
 - Hardware work on the build server: `bigcherry slice lab` (a detached slice worktree there), not a hand-made clone.
 - Never `git stash` (shared multi-agent checkout); never commit to main.
 

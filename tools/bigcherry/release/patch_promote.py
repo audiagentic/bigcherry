@@ -739,7 +739,7 @@ def promote(
     from ..cli.slice import start_slice
 
     try:
-        worktree = start_slice(branch, primary_root=root)
+        worktree = start_slice(branch, why=f"patch promotion: {', '.join(patch_ids)}", primary_root=root)
     except RuntimeError as exc:
         raise PatchPromoteError(str(exc)) from exc
 
