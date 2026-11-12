@@ -17,7 +17,7 @@ work: S
 
 ## Scope
 
-Live Radiance 1.17.0 on Brutus under an exclusive GPU lease, using the
+Live Radiance 1.17.0 on the lab host under an exclusive GPU lease, using the
 pinned build at BC_WORK_ROOT/builds/f17f21fda44979e9abe84f13e96b8896/08b5dd81b4874390bf0cbf489db0d7df.
 Two RX 7900 XTX gfx1100 cards (inventory 0,1), TP2, pinned-host all-reduce
 (--p2p off), fp8 attention KV. R9700 gfx1201 was not used for

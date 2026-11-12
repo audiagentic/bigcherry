@@ -118,7 +118,7 @@ holds it; never launch an unleased test or serving process.
 - Any new tracked `tools/lab` file must appear exactly once in
   `docs/reference/tooling/TOOL_DISPOSITION.md`; the baseline
   inventory is immutable.
-- Brutus has no HTTPS Git push credentials. Publish distinct,
+- The lab host has no HTTPS Git push credentials. Publish distinct,
   reviewed slices via the connected GitHub API using source
   blob hashes and a base-tree-relative commit. Reject truncated
   uploads and stale branches. Do not bypass required CI checks.

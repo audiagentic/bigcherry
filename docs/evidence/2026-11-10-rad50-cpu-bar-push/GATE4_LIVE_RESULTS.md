@@ -1,6 +1,6 @@
 # RAD50 Gate 4 — cross-process GPU-already-waiting readiness
 
-Date: 2026-11-09. Hardware: RX 7900 XTX (gfx1100), Brutus. **Outcome: PARTIAL PASS for 1–256 rows; FAIL at 768 rows. Gate 4 is not approved.**
+Date: 2026-11-09. Hardware: RX 7900 XTX (gfx1100), lab host. **Outcome: PARTIAL PASS for 1–256 rows; FAIL at 768 rows. Gate 4 is not approved.**
 
 ## Tested protocol
 
