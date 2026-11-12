@@ -1,0 +1,14 @@
+{
+  "change-class": "docs",
+  "event-id": "chg_20261112_174358_native-three-card-tensor-paral_9837",
+  "files": [
+    "docs/planning/active/run-dense-27b-virtual-tp/VTP14.md"
+  ],
+  "plan-item-ids": [
+    "VTP14"
+  ],
+  "status": "unreleased",
+  "technical-summary": "VTP14 N7 refresh: matched ABBA x3 (MXFP4, exact wire, DFlash2 depth 3, fp8 KV) on build 8a6f2776 (rad0021-0028): TP3 vs TP2 +39.2/+11.4/+10.2/+6.8% at 1/4/6/8 streams, no faults; one-stream TTFT -13.5/+24.2/+5.1% at 512/2048/8192 tokens. PR #920.",
+  "timestamp-utc": "2026-11-12T17:43:58.014027Z",
+  "user-summary-candidate": "Native three-card tensor parallelism now beats two-card at 4, 6 and 8 streams."
+}
