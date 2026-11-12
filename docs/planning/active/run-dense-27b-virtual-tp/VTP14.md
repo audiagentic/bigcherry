@@ -870,3 +870,20 @@ Greedy output is byte-identical to the hand-flag runs: MXFP4 6/6/12 and w8a8 6,6
 Two refusals on the way, both in the measured-manifest path and blocking every dense engine-only layout (TP2 included),
 fixed generically: the P1 producer required routed experts (C23), and the retention target had to be positive though an
 engine-only layout has no host KV tier (C24, contract amendment 19).
+
+## The lossy wire at TP3 is slower, not faster (build e19e7d891f02debf6acc04b5f65f9c64)
+
+With rad0016's lab switch `--tp-wire-unvalidated`, MXFP4 6/6/12 TP3, speculation depth 3, stream-bench (512-token
+prompts, 128 new tokens, 2 reps), wht6 (the tiered int8 two-shot at three ranks) against the exact wire, same build:
+
+| wire | tok/s 1 / 4 / 8 streams | step 4 / 8 streams | TTFT max, 8 streams |
+|---|---|---|---|
+| exact | 104.3 / 177.1 / 188.1 | 35 / 56 ms | 2.96 s |
+| wht6 (tiered int8) | 83.7 / 121.3 / 131.3 | 43 / 73 ms | 4.83 s |
+
+- No fault this time (8 streams, 2 reps); the greedy text matches the exact wire's opening. The earlier fault stays
+  unexplained, so the default refusal stays.
+- The three-rank tiered int8 path costs more in round trips and coding than it saves in bytes on this host-staged
+  topology: every step is slower, and the one-stream rate falls as well. It is not a lever for TP3, so fixing the fault
+  buys no speed. TP3 serves the exact wire; the remaining collective lever is a cheaper exact reduce for the x4 R9700
+  link (fewer bytes through it), or a wider slot for the card.
