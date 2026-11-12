@@ -12,7 +12,8 @@ bits are the same for every table. Equal links keep the even split; decode-sized
 
 ## Outcome
 
-Untested (not promoted). The expected effect is shorter prefill all-reduces on the x4 R9700 at TP3.
+Untested (not promoted). On cards: weights 4,4,1; a 4096-token prompt's TTFT -11% at one stream, decode unchanged,
+output byte-identical (VTP14.md).
 
 ## Detail
 

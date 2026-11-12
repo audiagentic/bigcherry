@@ -887,3 +887,19 @@ prompts, 128 new tokens, 2 reps), wht6 (the tiered int8 two-shot at three ranks)
   topology: every step is slower, and the one-stream rate falls as well. It is not a lever for TP3, so fixing the fault
   buys no speed. TP3 serves the exact wire; the remaining collective lever is a cheaper exact reduce for the x4 R9700
   link (fewer bytes through it), or a wider slot for the card.
+
+## Link-weighted three-rank two-shot (rad0021), build f8406b8e5d4fdcb8a28cb193cafcc4f1
+
+The engine weights the exact eight-rank two-shot's shards by each card's slowest PCIe hop; rad0021 does the same at
+three ranks (same rule, same rendezvous, same bits). The links settle to `r0 16.0 GT/s x8 w4, r1 16.0 GT/s x8 w4,
+r2 16.0 GT/s x4 w1`: the R9700 reduces a ninth of each prefill message instead of a third. ABBA against the same build
+without it (e19e7d89), MXFP4 6/6/12 TP3, exact wire, depth 3, two reps a point:
+
+| workload | without | with | change |
+|---|---|---|---|
+| 4096-token prompt, 1 stream: TTFT max | 2516 ms | 2241 ms | **-11.0%** |
+| 4096-token prompts, 4 streams: TTFT max | 11429 ms | 11161 ms | -2.3% |
+| 512-token prompts, 1 / 4 / 6 / 8 streams: tok/s | 104.2 / 176.1 / 176.8 / 189.4 | 105.6 / 176.6 / 178.2 / 187.2 | within noise |
+
+Decode steps are unchanged (one-shot messages are never weighted) and greedy output is byte-identical on all four arms.
+The XTX cards report Gen4 x8, not x16: their links, not only the R9700's, bound the host-staged all-reduces.

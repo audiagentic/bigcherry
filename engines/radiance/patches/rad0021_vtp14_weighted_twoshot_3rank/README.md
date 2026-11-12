@@ -19,7 +19,10 @@ shard: it only pushes its input and gathers the result, N each way instead of 4/
 
 ## Outcome
 
-Untested (not promoted). To be measured: prefill (TTFT) and 8-stream throughput at TP3, against the even split.
+Untested (not promoted). On cards (MXFP4 6/6/12 TP3, exact wire, ABBA against the same build without it): the links
+settle to 4,4,1 (XTX at Gen4 x8, R9700 at x4). A 4096-token prompt's time to first token falls 2516 -> 2241 ms (-11%,
+one stream) and 11.4 -> 11.2 s (-2.3%, four streams); 512-token prompts and decode are within noise; greedy output is
+byte-identical (VTP14.md).
 
 ## Detail
 
