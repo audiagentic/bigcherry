@@ -1,0 +1,28 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261112_191330_three-card-serving-now-uses-th_9550",
+  "files": [
+    "engines/radiance/patches/rad0029_rank_own_split/patch.py",
+    "engines/radiance/patches/rad0029_rank_own_split/patch.toml",
+    "engines/radiance/patches/rad0029_rank_own_split/README.md",
+    "engines/radiance/patches/rad0029_rank_own_split/SUMMARY.md",
+    "engines/radiance/recipes.toml",
+    "tools/tests/patch/test_vtp33_rank_own_split.py",
+    "tools/tests/patch/test_vtp14_n1_rank_code_selection.py",
+    "tools/tests/patch/test_vtp14_n2_tp_ownership.py",
+    "tools/tests/patch/test_vtp14_n3_shared_rendezvous.py",
+    "tools/tests/patch/test_vtp14_tp3_pipelined_prefill.py",
+    "README.md",
+    "docs/reference/engines/radiance/ENHANCEMENTS.md",
+    "docs/planning/active/run-dense-27b-virtual-tp/VTP33.md",
+    "docs/planning/active/run-dense-27b-virtual-tp/VTP14.md"
+  ],
+  "plan-item-ids": [
+    "VTP33",
+    "VTP14"
+  ],
+  "status": "unreleased",
+  "technical-summary": "rad0029: in an uneven dense tensor-parallel world each rank gets its own VRAM split (weights pool = its own weights; KV pool = common pool + weights given back + free memory above the smallest card), the common token count becomes the least any rank pages in its own pool, and every KV pool is cut to the least MiB that pages it. TP3 (XTX, XTX, R9700) MXFP4 at 262k: 6/6/12 carves 1,435,072 tokens instead of 917,184 (5.5 vs TP2 3.3 sessions, +67%) at unchanged throughput; 7,7,2 reaches 6.7 sessions. 8x128k concurrent prompts run clean.",
+  "timestamp-utc": "2026-11-12T19:13:30.889048Z",
+  "user-summary-candidate": "Three-card serving now uses the larger R9700's full memory for the KV cache: two-thirds more resident context than two cards, at no speed cost."
+}

@@ -21,6 +21,35 @@ TP3 serves the full trained context (262,144 tokens), but its resident KV is onl
 
 - MXFP4 at 262k context: TP3 3.7 against TP2 3.4 full-length sessions (4 sequences); 3.5 against 3.3 (8 sequences). TTFT for a 26,624-token prompt is 20.0 s against 12.7 s; decode after it is 93.4 against 68.9 tok/s.
 - w8a8 at 262k, 8 sequences: kv 1,1,2 gives 12.15 GiB and 2.8 sessions; kv 2,1,1 gives 11.72 GiB and 2.7 sessions. The extra head stays on the R9700.
+- **2026-11-12, capacity splits without and with rad0029** (MXFP4, 262,144-token context, 8 sequences, depth 3, fp8
+  KV, exact wire; logs vtp33/logs/cap-1812 on build 8a6f2776, and cap-1839 on build 260b77b5, which adds rad0029).
+  Each cell is full-length sessions at 262k (tokens carved), then stream-bench tok/s at 4, 6 and 8 streams.
+
+  | split (K / FFN / KV heads 1,1,2) | without rad0029 | with rad0029 |
+  |---|---|---|
+  | TP2 (two XTX) | 3.3 (854,208); 200.8 / 192.6 / 224.9 | 3.3 (854,208); 209.5 / 195.8 / 225.6 |
+  | 4,4,8 / 5120,4864,7424 (6/6/12) | 3.5 (917,184); 219.7 / 217.3 / 239.5 | **5.5 (1,435,072)**; 219.8 / 219.3 / 242.3 |
+  | 5,5,6 / 5632,5632,6144 | 3.8 (1,005,296); 220.0 / 215.5 / 239.6 | 5.8 (1,520,368); 215.5 / 215.4 / 238.7 |
+  | 6,6,4 / 6656,6656,4096 | 3.9 (1,018,960); 209.6 / 196.0 / 223.7 | 6.2 (1,630,096); 211.2 / 200.8 / 222.7 |
+  | 7,7,2 / 7680,7680,2048 | 3.8 (993,536); 208.6 / 193.2 / 218.5 | **6.7 (1,743,616)**; 202.6 / 193.6 / 216.8 |
+
+  - **Without rad0029, splits stop paying beyond 6,6,4.** Every rank's weights pool was the largest rank's, and every
+    rank was budgeted as the smallest card. The R9700 holds 2 of the 4 KV heads and sets the token count, yet about 8
+    GiB of it stayed free: its card is 8 GB larger, and its weights pool had room left over (1.45 GiB at 6,6,4, 3.59
+    GiB at 7,7,2).
+  - **rad0029** gives each rank of an uneven dense world its own split. The weights pool holds exactly its own weights;
+    the KV pool takes what that gives back plus the free memory above the smallest card. Every pool is then cut to the
+    least whole MiB that pages the new common token count.
+  - **Result:** the throughput split (6/6/12) carves +56% more tokens with no throughput cost, which is **+67% resident
+    KV over TP2**. 7,7,2 reaches +103% at 3–8% less throughput than 6/6/12. TP2 is unchanged (its cards are alike).
+    Greedy answers are identical in every arm.
+  - **Long-context checks** (6/6/12 with rad0029; logs vtp33/logs/long-1844 and fill-1855). The server stayed up and
+    logged no errors.
+    - A passphrase in the middle of a 44,688-token prompt is answered correctly.
+    - 8 concurrent 128k-token prompts, 1,038,923 tokens resident at once, all complete. That is past the 917,184 tokens
+      the old split could carve. 8 × 160k timed out at the client (600 s) during prefill, with the server healthy.
+  - **Acceptance met:** +67% resident KV over TP2 at no throughput cost (target +25%), or +103% at 3–8% less
+    throughput.
 
 ## Steps
 

@@ -34,7 +34,13 @@ Each re-split rank logs one `kv: rank N's own split` line.
 
 ## Outcome
 
-Untested (not promoted). See VTP33.
+Untested (not promoted). VTP33, MXFP4 Qwen3.8-27B, 262,144-token context, 8 sequences:
+
+- **6/6/12 split:** 917,184 → 1,435,072 tokens carved, which is 3.5 → 5.5 full-length sessions. TP2 holds 3.3.
+  Throughput at 4/6/8 streams was unchanged.
+- **7,7,2 split:** 993,536 → 1,743,616 tokens, which is 6.7 sessions.
+- TP2 on two alike cards is unchanged. Greedy answers were identical.
+- 8 concurrent 128k-token prompts (1.04M tokens) ran without errors.
 
 ## Detail
 
