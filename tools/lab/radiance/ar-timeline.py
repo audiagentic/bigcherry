@@ -12,9 +12,11 @@ stamps for each of up to eight blocks: entry, pushed, peers seen, folded; -1 uns
   fold   = folded - seen         reading the peers' messages and storing the sum
   total  = folded - entry
 
-A launch's phase is the slowest block's. Entries are matched across ranks by (instance, seq): the smallest wait among
-a launch's ranks is the rank that arrived last, so it bounds the flag round trip; the others' extra wait is a peer
-arriving later than they did. Grouped by message size.
+A launch's phase is the slowest block's. The instance number in a file name counts rings across every rank of the
+process, so it does not name the same all-reduce on each rank; a rank's rings are matched by their order on that rank
+(its k-th ring is every rank's k-th), and an entry only joins a launch whose message size agrees. The smallest wait
+among a launch's ranks is the rank that arrived last, so it bounds the flag round trip; the others' extra wait is a
+peer arriving later than they did. Grouped by message size.
 """
 from __future__ import annotations
 
@@ -72,21 +74,30 @@ def main() -> int:
     ap.add_argument("--pid", type=int)
     a = ap.parse_args()
     pat = re.compile(r"ar-tl-r(\d+)-ws(\d+)-p(\d+)-i(\d+)\.bin$")
-    launches = defaultdict(dict)   # (pid-group, instance, seq) -> rank -> phases
-    sizes = {}
-    found = 0
+    files = defaultdict(list)       # (pid, ws, rank) -> [(instance, path)]
     for p in sorted(a.dir.glob("ar-tl-*.bin")):
         m = pat.search(p.name)
         if not m or (a.pid and int(m.group(3)) != a.pid):
             continue
-        found += 1
-        rank, ws, inst = int(m.group(1)), int(m.group(2)), int(m.group(4))
-        for seq, n16, r, ph in read(p):
-            launches[(ws, inst, seq)][rank] = ph
-            sizes[(ws, inst, seq)] = n16
-    if not found:
+        files[(int(m.group(3)), int(m.group(2)), int(m.group(1)))].append((int(m.group(4)), p))
+    if not files:
         print(f"no ar-tl-*.bin under {a.dir}", file=sys.stderr)
         return 1
+    launches = defaultdict(dict)   # (pid, ws, ordinal, seq) -> rank -> phases
+    sizes = {}
+    unmatched = 0
+    for (pid, ws, rank), insts in files.items():
+        for ordinal, (_, p) in enumerate(sorted(insts)):
+            for seq, n16, r, ph in read(p):
+                key = (pid, ws, ordinal, seq)
+                if sizes.setdefault(key, n16) != n16:
+                    unmatched += 1
+                    key = (pid, ws, ordinal, seq, rank)  # stands alone: counted per rank, not matched
+                    sizes[key] = n16
+                launches[key][rank] = ph
+    if unmatched:
+        print(f"{unmatched} entries disagree on size with the same launch on another rank; left unmatched",
+              file=sys.stderr)
     rows = defaultdict(lambda: defaultdict(list))
     for key, per in launches.items():
         b = band(sizes[key])
