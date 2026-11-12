@@ -1,0 +1,23 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261112_163243_fixed-intermittent-gpu-memory_5761",
+  "files": [
+    "engines/radiance/patches/rad0028_rank_consistent_block_drafts/patch.py",
+    "engines/radiance/patches/rad0028_rank_consistent_block_drafts/patch.toml",
+    "engines/radiance/patches/rad0028_rank_consistent_block_drafts/README.md",
+    "engines/radiance/patches/rad0028_rank_consistent_block_drafts/SUMMARY.md",
+    "engines/radiance/recipes.toml",
+    "engines/radiance/layouts/qwen27b.toml",
+    "tools/tests/patch/test_vtp31_rank_consistent_drafts.py",
+    "docs/planning/active/run-dense-27b-virtual-tp/VTP31.md",
+    "docs/planning/active/run-dense-27b-virtual-tp/VTP14.md"
+  ],
+  "plan-item-ids": [
+    "VTP31",
+    "VTP14"
+  ],
+  "status": "unreleased",
+  "technical-summary": "rad0028: under tensor parallelism the DFlash2 selector's chosen tokens are all-gathered and every rank proposes from rank 0's slice, so all ranks verify and accept the same draft. A gfx1201 rank rounded the selector's transition scores differently from gfx1100 ranks, picked another token on near ties, drifted, and read a -1 block-table entry (GPU memory fault). int8 TP3 layout gains the 256-row pipelined-prefill floor.",
+  "timestamp-utc": "2026-11-12T16:32:43.031856Z",
+  "user-summary-candidate": "Fixed intermittent GPU memory faults (and silently divergent speculative decoding) on mixed-architecture three-GPU Qwen3.8-27B int8 serving."
+}

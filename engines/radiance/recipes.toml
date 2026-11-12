@@ -75,6 +75,7 @@ patches = [
   "rad0025_multiseq_pipelined_prefill",
   "rad0026_mixed_pipelined_prefill",
   "rad0027_mixed_one_pipelined_prefill",
+  "rad0028_rank_consistent_block_drafts",
 ]
 required-state = "untested"
 

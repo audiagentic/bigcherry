@@ -1,0 +1,11 @@
+schema = 1
+id = "rad0028_rank_consistent_block_drafts"
+order = 28
+state = "untested"
+kind = "enhancement"
+origin = "local"
+backend = "agnostic"
+plan-ids = ["VTP31"]
+requires = ["rad0027_mixed_one_pipelined_prefill"]
+conflicts = []
+tags = ["tensor-parallel"]
