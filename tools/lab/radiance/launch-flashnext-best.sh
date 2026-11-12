@@ -289,7 +289,14 @@ stop_all() {
   # names the run; a failed restore keeps it.
   if [ -f "$RUN/gpu-power" ]; then
     if [ "$rc" = 0 ]; then
-      if PYTHONPATH=tools python3 -m bigcherry gpu-power restore --run-id "$(cat "$RUN/gpu-power")" --processes-exited >&2; then
+      # The restore needs the gpu lease (it must not change the cards under another holder's run). A launch started under
+      # its own lease that has since ended (the usual case: start and stop are separate invocations) queues for it here.
+      local restore=(env PYTHONPATH=tools python3 -m bigcherry gpu-power restore --run-id "$(cat "$RUN/gpu-power")" --processes-exited)
+      if ! PYTHONPATH=tools python3 -c 'import sys; from bigcherry.hardware.lease import held_by_this_process as h; sys.exit(0 if h() else 1)'; then
+        echo "gpu-power: restoring the cards' power settings needs the gpu lease; queueing for it" >&2
+        restore=(agent-lease acquire gpu --ttl 10m --est 1m --purpose "restore gpu power settings (launcher stop)" --wait -- "${restore[@]}")
+      fi
+      if "${restore[@]}" >&2; then
         rm -f "$RUN/gpu-power"
       else
         rc=1

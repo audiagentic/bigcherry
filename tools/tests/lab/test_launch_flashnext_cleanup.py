@@ -36,6 +36,13 @@ esac
 exec "$REAL_PYTHON" "$@"
 """
 
+FAKE_AGENT_LEASE = r"""#!/bin/bash
+# agent-lease acquire RES [flags] -- CMD...: the lease is free, so run the command (the launcher's stop takes it to restore power)
+while [ $# -gt 0 ] && [ "$1" != -- ]; do shift; done
+shift
+exec "$@"
+"""
+
 FAKE_HELPER = r"""#!/bin/bash
 # r3_moe_worker --manifest FILE --role helperN [--measuring]: the helper's whole configuration is the manifest, and its role is
 # the only thing that tells it apart from its siblings (no per-helper environment but the card it sees)
@@ -144,6 +151,7 @@ class LaunchCleanupTests(unittest.TestCase):
         self._exe(home / "helpers" / "r3_moe_worker", FAKE_HELPER)
         self._exe(home / "bin" / "bc-serve", FAKE_SERVE)
         self._exe(self.root / "fakebin" / "python3", FAKE_PYTHON)
+        self._exe(self.root / "fakebin" / "agent-lease", FAKE_AGENT_LEASE)
         (self.root / "layout.env").write_text(LAYOUT_ENV)
         self.build = build
         self.log = self.root / "events.log"
