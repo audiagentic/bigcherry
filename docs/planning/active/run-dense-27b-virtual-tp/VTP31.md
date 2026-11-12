@@ -404,6 +404,17 @@ slice, so every rank verifies the same draft. The cost is one all-gather of unde
 the diagnostic, 12 runs: no fault, no row where a rank differed. Throughput in those runs is unchanged (4 / 8 streams
 246.4 / 284.5 tok/s against 246.5 / 285.3 before).
 
+**Cost, 2x ABBA** (int8 TP3 layout settings, builds f6b0b5cf before and 8a6f2776 with rad0028, logs e13-1639):
+
+| | before (mean of 4) | rad0028 (mean of 4) | change |
+|---|---|---|---|
+| 1 / 4 / 6 / 8 streams | 83.4 / 189.6 / 179.9 / 213.4 tok/s | 83.8 / 188.5 / 179.8 / 212.8 tok/s | +0.4 / -0.6 / 0.0 / -0.3% |
+| four 4096-token prompts, slowest time to first token | 10154 ms | 10172 ms | +0.2% |
+| 6144-token prompt beside 4 generating streams | 4258 ms (3 runs) | 4248 ms | -0.2% |
+| runs that faulted | 2 of 4 (after their benchmarks) | 0 of 4 | |
+
+Within noise everywhere: the gather costs nothing measurable.
+
 ## Steps
 
 1. Add a typed per-run selector for the all-reduce method (e.g. `tuning.allreduce_method`; contract amendment; engine option in a managed patch) so every method below is an A/B from the manifest.
