@@ -2,7 +2,7 @@
 id: RAD48
 order: 0
 plan: patching-radiance-rdna3
-state: pending
+state: superseded
 created-at: '2026-11-04T18:09:26.044198+00:00'
 breadth: ''
 skill: advanced
@@ -51,6 +51,9 @@ rad-kbench --all-rows replay of the INT8 fixture against libref; end-to-end 27B 
 
 ## Notes
 
+
+Superseded 2026-11-13 by VTP37 (int8 TP3 decode and prefill, P0). The native gfx11 IU8 tile is on main (#601, `engines/radiance/components/libr3/native/r4d_gemm_8a8_prefill.h.rw`). Its open work - the M 33-64 crossover between `gemm_i8a8_nt_m16` and the tiled row, end-to-end int8 prefill and KLD - is VTP37 step 3.
+
 ## Change Log
 
 - 2026-11-04T18:09:26.044198+00:00 (created-by): Created by agent
@@ -59,3 +62,5 @@ rad-kbench --all-rows replay of the INT8 fixture against libref; end-to-end 27B 
 
 - chg_20261104_180932_qwen38-27b-int8-prefill-gemms_1345
 - 2026-11-04T18:09:36.325907+00:00 (updated-by): Updated: section:ledger-events
+- 2026-11-12T23:31:09.106167+00:00 (updated-by): Updated: section:notes
+- 2026-11-12T23:31:25.264698+00:00 (state-transition): State: pending → superseded

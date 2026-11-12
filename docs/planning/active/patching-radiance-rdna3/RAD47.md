@@ -61,6 +61,9 @@ Evidence (kept in the work root, not in git): libr3 gemm_nt_q all-rows timing re
 
 IMPLEMENTED AND MEASURED 2026-11-04 (this PR). Full band data (rad-kbench --all-rows, 27B MXFP4 fixture recorded at max_tok 2048, one 7900 XTX, cold weights): single-stream rows are right (M <= 8 gemv; decode is the fastest row at M = 9..16: 96-180 us), but from M = 17 the selected row is 4 to 17 times slower than tiled: N=34816 K=5120: M=18 gemv_wide 848 / decode 3581 / nt_m64 1645 vs tiled 345 us; M=32 gemv_wide 1380 / nt_m64 1629 vs tiled 353; M=33 nt_m64 2434 vs 443; M=64 nt_m64 3269 vs 530; M=65 decode 9363 vs 539; M=128 decode 3662 vs 571. Change (libr3 only, gfx11; gfx1201/libr4d untouched): rewrites.txt caps decode at M <= 16 and makes gemv_wide and decode_shortk unreachable; native/r4d_rows.cpp.rw lowers the nt_m64 row to R4D_PRIO_GEMM_TILED - 1 (derived, no new literal) so it only serves shapes tiled cannot (K a multiple of 32 but not 64). Verified: r3_rewrite --check clean on the pinned source; rad-kbench correctness on the changed gemm_nt_q rows 260 of 260 ok, worst rel_l2 0.00039; selected rows as designed (tiled from M = 17: 351 us at M=18, 349 at M=32, 533 at M=64, 588 at M=128 for N=34816 K=5120). End to end qwen27b-2xtx with 3 draft tokens, aggregate tok/s before -> after: 1 stream 96.7 -> 97.5, 2 streams 125.9 -> 125.5, 4 streams 168.1 -> 213.2 (+27%, step 52.8 -> 34.4 ms), 6 streams 156.7 -> 215.1 (+37%, step 81.8 -> 53.3 ms; engine-side 207 -> 329 tok/s); draft acceptance unchanged (0.67-0.74); cold prefill of a 6K-token prompt unchanged (2,785 vs 2,788 tok/s). Output identity: greedy single-stream output identical on 8 prompts x 160 tokens for old vs new and for old vs old; with 4 concurrent streams the OLD build already differs from itself between runs (run 1 vs 2: all four streams differ at characters 150, 2, 13, 296; run 1 vs 3: identical) because batch composition decides which rows run, and old vs new differs in the same way and at the same scale (characters 10 to 445). DECISION FOR THE OWNER: upstream keeps a row's bits independent of M in 1..64 (gemv and gemv_wide share one accumulation chain); this change gives rows of 17..64 the tiled chain, so a token's logits can differ at the bit level depending on how many rows share a step across the 16/17 boundary (decode and tiled already differ from gemv at 65 and 129). Measured effect: none on single-stream output, acceptance unchanged, concurrent-stream output no less reproducible than today. Not covered: a 27B KLD against the BF16 reference (offline KLD runs 2,048-row chunks and does not reach the changed rows) and the tiled kernel's behaviour for K not a multiple of 64 (falls back to nt_m64 by priority, untested on hardware).
 
+
+Status 2026-11-13: the change is on main (libr3 `rewrites.txt` caps decode at M <= 16; `native/r4d_rows.cpp.rw` lowers nt_m64 to R4D_PRIO_GEMM_TILED - 1). Acceptance items 1-2 are recorded above; item 3 still lacks the 27B KLD against BF16 at the changed rows (offline KLD runs 2048-row chunks). The int8 counterpart (gemm_i8a8 rows on gfx1100) is VTP37 step 3.
+
 ## Change Log
 
 - 2026-11-04T11:41:29.284540+00:00 (created-by): Created by agent
@@ -68,9 +71,9 @@ IMPLEMENTED AND MEASURED 2026-11-04 (this PR). Full band data (rad-kbench --all-
 
 ## Ledger-events
 
-
 - chg_20261104_114203_measured-that-qwen38-27b-on-t_7412
 - 2026-11-04T11:42:07.734096+00:00 (updated-by): Updated: section:ledger-events
 - 2026-11-04T14:17:26.585808+00:00 (updated-by): Updated: section:notes
 - chg_20261104_141923_qwen38-27b-on-the-two-7900-xt_4203
 - 2026-11-04T14:19:27.293810+00:00 (updated-by): Updated: section:ledger-events
+- 2026-11-12T23:31:13.174659+00:00 (updated-by): Updated: section:notes
