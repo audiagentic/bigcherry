@@ -162,6 +162,23 @@ four-rank one-shot already hands over to its two-shot from the row's `ts_min`; a
 three-rank host one-shot with the settled link weights, pinned on and off by `--tune-pin all_reduce:ts_min=N` for an
 A/B. Also worth a look: a push that writes each message once to host memory for both peers, which halves the XTX push.
 
+## Experiment 4 result: decode alone scales; prefill is the gap (2026-11-12, build a08d17ff, logs e4-1107)
+
+The standard bench (512-token prompts, 128 new tokens) mixes prefill into its tok/s. With 128-token prompts and 1024
+new tokens, so decode dominates, ABBA TP2 against TP3 (6/6/12, 4x256, rad0024), mean of two runs each:
+
+| | 1 stream | 4 streams | 8 streams |
+|---|---|---|---|
+| TP2 | 96.3 | 284.6 | 360.9 |
+| TP3 | 137.6 | 392.9 | 456.8 |
+| TP3 over TP2 | +42.8% | +38.1% | +26.6% |
+
+The third card's bandwidth is a third more than two XTX; TP3 gains more than that at 1 and 4 streams (TP2 pays its
+own host-staged all-reduce on fewer, larger shards). Decode is therefore not where TP3 falls short. The standard
+bench's +8% at 4-8 streams comes from prefill, where TP3 is 8-24% slower to the first token than TP2. The next lever
+is prefill: overlapping the prefill all-reduce with compute across sequences (multi-sequence pipelined prefill),
+a fused three-rank all-reduce with the following norm, and upstream's prefill interleave when v1.18.0 ships.
+
 ## Steps
 
 1. Add a typed per-run selector for the all-reduce method (e.g. `tuning.allreduce_method`; contract amendment; engine option in a managed patch) so every method below is an A/B from the manifest.
