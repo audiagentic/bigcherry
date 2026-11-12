@@ -101,7 +101,7 @@ BRINGUP = FilePatch(path="core/engine_bringup.cpp", language="none", description
         guard=re.escape("BC_VTP33_OWN_SPLIT"),
         expect_matches=1,
         max_span_lines=_ANCHOR.count("\n") + 1,
-        rationale="VTP33: the rank that sets the common token count uses its own card's memory",
+        rationale="long-anchor: the insertion closes the cheaper-rank loop and its block, so the anchor spans both closing braces and the next loop header. VTP33: the rank that sets the common token count uses its own card's memory",
     ),
 ))
 

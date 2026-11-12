@@ -1,7 +1,7 @@
 # rad0029_rank_own_split
 
 **Status:** untested
-**Plan item:** VTP33 (VTP14 capacity)
+**Plan item:** VTP33/VTP14
 
 Scope: tensor parallelism over cards of different size or with uneven weight shares, for dense models (no expert
 plane), on discrete cards.
