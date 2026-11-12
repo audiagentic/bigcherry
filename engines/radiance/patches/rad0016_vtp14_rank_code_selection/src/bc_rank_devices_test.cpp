@@ -20,7 +20,7 @@ std::string kernels_dir() { return home() + "/testkernels"; }
 std::string picked(const KernelRow* k) { return k ? k->info->name : std::string("<none>"); }
 
 /* Two XTX and one R9700, ordinals in KFD order, deliberately not in rank order below. */
-std::vector<BcDeviceInfo> brutus() {
+std::vector<BcDeviceInfo> mixed_inventory() {
     return {
         { 0, "0000:0c:00.0", "gfx1201", "AMD Radeon AI PRO R9700", false },
         { 1, "0000:03:00.0", "gfx1100", "Radeon RX 7900 XTX", false },
@@ -85,12 +85,12 @@ TEST(a_card_address_is_the_full_lower_case_bdf) {
 TEST(ranks_take_the_named_cards_in_the_named_order) {
     std::vector<int> ord;
     std::string why;
-    CHECK_OK(bc_rank_devices_plan(brutus(), { "0000:03:00.0", "0000:07:00.0", "0000:0c:00.0" }, 3, &ord, &why));
+    CHECK_OK(bc_rank_devices_plan(mixed_inventory(), { "0000:03:00.0", "0000:07:00.0", "0000:0c:00.0" }, 3, &ord, &why));
     REQUIRE_EQ(ord.size(), (size_t)3);
     CHECK_EQ(ord[0], 1);
     CHECK_EQ(ord[1], 2);
     CHECK_EQ(ord[2], 0);
-    const std::vector<std::string> archs = bc_rank_archs(brutus(), ord);
+    const std::vector<std::string> archs = bc_rank_archs(mixed_inventory(), ord);
     REQUIRE_EQ(archs.size(), (size_t)2);
     CHECK_EQ(archs[0], "gfx1100");
     CHECK_EQ(archs[1], "gfx1201");
@@ -99,19 +99,19 @@ TEST(ranks_take_the_named_cards_in_the_named_order) {
 TEST(a_wrong_assignment_is_refused_before_anything_loads) {
     std::vector<int> ord;
     std::string why;
-    CHECK_EQ(bc_rank_devices_plan(brutus(), { "0000:03:00.0", "0000:07:00.0" }, 3, &ord, &why), RAD_E_DEVICE);
+    CHECK_EQ(bc_rank_devices_plan(mixed_inventory(), { "0000:03:00.0", "0000:07:00.0" }, 3, &ord, &why), RAD_E_DEVICE);
     CHECK(has(why, "--tp 3"));
     CHECK(ord.empty());
 
-    CHECK_EQ(bc_rank_devices_plan(brutus(), { "0000:03:00.0", "0000:03:00.0", "0000:0c:00.0" }, 3, &ord, &why),
+    CHECK_EQ(bc_rank_devices_plan(mixed_inventory(), { "0000:03:00.0", "0000:03:00.0", "0000:0c:00.0" }, 3, &ord, &why),
              RAD_E_DEVICE);
     CHECK(has(why, "both name card 0000:03:00.0"));
 
-    CHECK_EQ(bc_rank_devices_plan(brutus(), { "0000:03:00.0", "0000:05:00.0", "0000:0c:00.0" }, 3, &ord, &why),
+    CHECK_EQ(bc_rank_devices_plan(mixed_inventory(), { "0000:03:00.0", "0000:05:00.0", "0000:0c:00.0" }, 3, &ord, &why),
              RAD_E_DEVICE);
     CHECK(has(why, "rank 1: no visible card at 0000:05:00.0"));
 
-    CHECK_EQ(bc_rank_devices_plan(brutus(), { "0000:03:00.0", "0000:7a:00.0" }, 2, &ord, &why), RAD_E_DEVICE);
+    CHECK_EQ(bc_rank_devices_plan(mixed_inventory(), { "0000:03:00.0", "0000:7a:00.0" }, 2, &ord, &why), RAD_E_DEVICE);
     CHECK(has(why, "integrated"));
 
     std::vector<BcDeviceInfo> host = { { 0, "", "cpu", "host", false } };
