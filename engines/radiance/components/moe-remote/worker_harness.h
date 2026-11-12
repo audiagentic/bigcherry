@@ -87,7 +87,7 @@ bool load_replay(const char* path, ReplayInput* out) {
     bool ok = std::fread(&out->hd, sizeof(out->hd), 1, f) == 1 && out->hd.magic == kCaptureMagic && out->hd.version == kCaptureVersion &&
               out->hd.hidden > 0 && out->hd.hidden <= 16384 && out->hd.experts > 0 && out->hd.experts <= 4096 && out->hd.top_k > 0 &&
               out->hd.top_k <= kMaxTopK && out->hd.act_group > 0 && out->hd.hidden % out->hd.act_group == 0 &&
-              out->hd.layer < kMaxLayers && out->hd.rows > 0 && out->hd.rows <= kMaxRows && out->hd.route_count <= kMaxRoutes;
+              out->hd.layer < kMaxLayers && out->hd.rows > 0 && out->hd.rows <= kMaxRows && out->hd.route_count <= uint64_t(kMaxRows) * out->hd.top_k;
     if (ok) {
         out->slots.resize(out->hd.experts);
         ok = std::fread(out->slots.data(), sizeof(int32_t), out->slots.size(), f) == out->slots.size();

@@ -179,24 +179,6 @@ category = "E"
 reason = "usage message names the container extension"
 
 [[allow]]
-path = "engines/radiance/components/moe-remote/worker_harness.h"
-anchor = "out->hd.layer < kMaxLayers && out->hd.rows > 0 && out->hd.rows <= kMaxRows && out->hd.route_count <="
-category = "A"
-reason = "bounded route capacity, the request is refused above it"
-
-[[allow]]
-path = "engines/radiance/components/moe-remote/worker_hostref.h"
-anchor = "q->route_count > kMaxRoutes || q->activation_stride != hid * 2)"
-category = "A"
-reason = "bounded route capacity, the request is refused above it"
-
-[[allow]]
-path = "engines/radiance/components/moe-remote/worker_hostref.h"
-anchor = "q->hidden != hid || q->route_count > kMaxRoutes || q->activation_stride != hid*2) return -EINVAL;"
-category = "A"
-reason = "bounded route capacity, the request is refused above it"
-
-[[allow]]
 path = "engines/radiance/components/moe-remote/worker_selftest.h"
 anchor = "const LaneShape lane_shape{kHidden, kTopK, kActGroup, experts, 1u};   // passed to the kernels as an arg"
 category = "B"
