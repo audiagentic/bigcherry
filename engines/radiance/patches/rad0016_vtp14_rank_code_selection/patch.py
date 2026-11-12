@@ -103,7 +103,10 @@ RAD_CORE = FilePatch(path="core/rad_core.h", language="none", description="VTP14
         "    int   p2p = RAD_P2P_AUTO;         /* --p2p auto|on|off */\n"
         "    /* BC_VTP14_N1_CONFIG: --rank-devices, rank i on the i-th card (canonical PCI addresses).\n"
         "     * Empty: radiance's own device choice, one architecture. */\n"
-        "    std::vector<std::string> rank_devices;\n",
+        "    std::vector<std::string> rank_devices;\n"
+        "    /* --tp-wire-unvalidated: allow the lossy wire across --rank-devices ranks it is not validated on\n"
+        "     * (lab diagnosis of the TP3 tiered-int8 fault only). */\n"
+        "    bool tp_wire_unvalidated = false;\n",
         guard="BC_VTP14_N1_CONFIG",
     ),
 ))
@@ -421,6 +424,8 @@ CONFIG = FilePatch(path="core/config.cpp", language="none", description="VTP14 N
         "    { \"--rank-devices\",       \"BDFS\",   \"BigCherry VTP14: rank i on the i-th card, by PCI address\\n\"\n"
         "                                        \"(0000:03:00.0,...), exactly --tp of them; the only way\\n\"\n"
         "                                        \"to serve on cards of different architectures\" }, /* BC_VTP14_N1_HELP */\n"
+        "    { \"--tp-wire-unvalidated\", nullptr, \"BigCherry VTP14, lab only: allow the lossy --tp-wire across\\n\"\n"
+        "                                        \"--rank-devices ranks it is not validated on (fault diagnosis)\" },\n"
         "    { \"--p2p\",                \"MODE\",   \"how the collectives reach the other cards: auto (default)\\n\"",
         guard="BC_VTP14_N1_HELP",
         max_span=1,
@@ -429,7 +434,8 @@ CONFIG = FilePatch(path="core/config.cpp", language="none", description="VTP14 N
         "n1-config-parse",
         "        else if (S(\"--p2p\")) {\n"
         "            if (!(v = need(i))) return RAD_E_INVAL;",
-        "        else if (S(\"--rank-devices\")) { /* BC_VTP14_N1_PARSE */\n"
+        "        else if (S(\"--tp-wire-unvalidated\")) c->tp_wire_unvalidated = true; /* BC_VTP14_N1_PARSE */\n"
+        "        else if (S(\"--rank-devices\")) {\n"
         "            if (!(v = need(i))) return RAD_E_INVAL;\n"
         "            std::string why;\n"
         "            if (!bc_parse_bdf_list(v, &c->rank_devices, &why)) {\n"
@@ -444,7 +450,9 @@ CONFIG = FilePatch(path="core/config.cpp", language="none", description="VTP14 N
     _edit(
         "n1-config-explain",
         "    { \"--p2p\",                [](const Config& c) {",
-        "    { \"--rank-devices\",       [](const Config& c) { /* BC_VTP14_N1_EXPLAIN */\n"
+        "    { \"--tp-wire-unvalidated\", [](const Config& c) { /* BC_VTP14_N1_EXPLAIN */\n"
+        "          return std::string(c.tp_wire_unvalidated ? \"on (lab diagnosis)\" : \"off\"); } },\n"
+        "    { \"--rank-devices\",       [](const Config& c) {\n"
         "          std::string s;\n"
         "          for (const std::string& d : c.rank_devices) s += (s.empty() ? \"\" : \",\") + d;\n"
         "          return s.empty() ? std::string(\"radiance's own choice, one architecture\") : s; } },\n"
@@ -482,11 +490,14 @@ ENGINE = FilePatch(path="core/engine_bringup.cpp", language="none", description=
         "        /* The lossy wire (tiered int8 at three ranks) faulted in a mixed-library TP3 world with an invalid\n"
         "         * KV operand; the cause is unproven (VTP14.md), so it is refused here until it is instrumented and\n"
         "         * validated. The exact wire is the validated contract; it is never substituted silently. */\n"
-        "        if (!cfg_.tp_wire_exact) {\n"
+        "        if (!cfg_.tp_wire_exact && !cfg_.tp_wire_unvalidated) {\n"
         "            RAD_ERR(\"--rank-devices: --tp-wire %s is not validated across these ranks (a 3-rank tiered int8 run \"\n"
         "                    \"faulted with an invalid KV operand); serve with --tp-wire exact\", \"wht6\");\n"
         "            return RAD_E_UNSUPPORTED;\n"
         "        }\n"
+        "        if (!cfg_.tp_wire_exact)   /* --tp-wire-unvalidated: a lab run reproducing the fault, never serving */\n"
+        "            RAD_WARN(\"--rank-devices: --tp-wire wht6 across these ranks is UNVALIDATED (--tp-wire-unvalidated); \"\n"
+        "                     \"a lab diagnosis only, not a serving configuration\");\n"
         "        std::vector<BcDeviceInfo> inv;\n"
         "        for (int i = 0, n = rad_dev_count(); i < n; ++i) {\n"
         "            RadDeviceProps p{};\n"
