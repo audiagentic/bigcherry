@@ -39,6 +39,9 @@ tuning.pipelined_prefill = "auto"
 # The all-reduce's launch grid (rad0022): four blocks of 256 threads beat the default (scaled with the message, 1024
 # threads) at every stream count and prompt size on this world, with identical output (VTP31 experiment 1).
 tuning.tune_pin = "all_reduce:nblocks=4,nthreads=256"
+# Pipeline a one-sequence prefill step from 256 rows rather than the plugin's 1024, so a 512-token prompt overlaps its
+# all-reduces too: +7.6% / +2.9% / +1.6% at 1/4/8 streams, identical output (VTP31 experiment 7; 128 measured the same).
+tuning.pipelined_prefill_min_rows = 256
 
 # The int8 container on the same three ranks: int8 runs natively on both card types, so the split the VTP14 sweep found
 # best gives the XTX ranks the larger delta-net and feed-forward shares.
