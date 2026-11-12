@@ -1,5 +1,13 @@
 # Changelog
 
+## [1170.23.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.22.0...bc-radiance-1170.23.0) (2026-11-12)
+
+
+### New and changed
+
+* **rsc11:** publish inactive P1 native measurements ([#887](https://github.com/audiagentic/bigcherry/issues/887)) ([e31e059](https://github.com/audiagentic/bigcherry/commit/e31e05911537c0a6fdd356596ca57cb4fdf044de))
+* **rsc11:** switch serving to manifest v2 and delete v1 (S13) ([#891](https://github.com/audiagentic/bigcherry/issues/891)) ([5603c7b](https://github.com/audiagentic/bigcherry/commit/5603c7be5df8862023d6940f7e2d641eae981e8e))
+
 ## [1170.22.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.21.0...bc-radiance-1170.22.0) (2026-11-11)
 
 
