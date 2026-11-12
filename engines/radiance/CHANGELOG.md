@@ -1,5 +1,15 @@
 # Changelog
 
+## [1170.24.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.23.0...bc-radiance-1170.24.0) (2026-11-12)
+
+
+### New and changed
+
+* **moe-remote:** size the route-heat scratch from the container's expert count (C10) ([#897](https://github.com/audiagentic/bigcherry/issues/897)) ([80731a1](https://github.com/audiagentic/bigcherry/commit/80731a144691ba47a8e44fe8b045f7afc7141fd8))
+* **radiance:** kernel tune pin as a manifest setting; TP3 all-reduce grid (rad0022) ([#904](https://github.com/audiagentic/bigcherry/issues/904)) ([94ca1a2](https://github.com/audiagentic/bigcherry/commit/94ca1a2401e9c93a3e8380acee3a37e2a9a0f434))
+* **radiance:** native mixed-architecture tensor parallelism (TP3 XTX+XTX+R9700) with layouts and splits as configuration ([#863](https://github.com/audiagentic/bigcherry/issues/863)) ([d3babe2](https://github.com/audiagentic/bigcherry/commit/d3babe2b7022e4d3e70ad43d6fb093344ed6a2ba))
+* **radiance:** the all-reduce grid on the int8 TP3 layout; VTP31 int8 and sweep results ([#905](https://github.com/audiagentic/bigcherry/issues/905)) ([79257a3](https://github.com/audiagentic/bigcherry/commit/79257a31e8922a2e8892927370eb1f2b1a5bb398))
+
 ## [1170.23.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.22.0...bc-radiance-1170.23.0) (2026-11-12)
 
 
