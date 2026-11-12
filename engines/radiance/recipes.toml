@@ -60,7 +60,7 @@ required-state = "untested"
 # Mixed-architecture tensor parallelism (VTP14), each patch inert until its option is given: per-rank kernel code
 # selection and --rank-devices (rad0016), one all-reduce rendezvous shared by libr3 and libr4d (rad0017), an uneven split
 # from --tp-ownership SPEC checked against the model (rad0018/rad0019), and the pipelined prefill's mode and narrowest
-# step as options (rad0020). One build serves every split and topology: the layout and the manifest choose them.
+# step as options (rad0020), and link-weighted shards for the three-rank exact two-shot (rad0021). One build serves every split and topology: the layout and the manifest choose them.
 [patch-set.vtp14-mixed-tp]
 patches = [
   "rad0016_vtp14_rank_code_selection",
@@ -68,6 +68,7 @@ patches = [
   "rad0018_vtp14_n2_tp_ownership",
   "rad0019_vtp14_n2_tp_ownership_fp8",
   "rad0020_vtp14_tp3_pipelined_prefill",
+  "rad0021_vtp14_weighted_twoshot_3rank",
 ]
 required-state = "untested"
 

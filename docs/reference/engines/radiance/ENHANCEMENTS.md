@@ -9,7 +9,7 @@ different statuses. See [the engine overview](README.md) first.
 
 _Generated from package documentation and metadata by `tools/docs/generate_engine_enhancement_summaries.py`. Do not edit this section by hand._
 
-## Engine patches (18)
+## Engine patches (19)
 
 | Package | State | Summary |
 | --- | --- | --- |
@@ -31,6 +31,7 @@ _Generated from package documentation and metadata by `tools/docs/generate_engin
 | [rad0018_vtp14_n2_tp_ownership](../../../../engines/radiance/patches/rad0018_vtp14_n2_tp_ownership/SUMMARY.md) | `untested` | Lets a layout put more heads and feed-forward rows on a larger card. Each rank reads its own spans of the container's weights through radiance's shard-span ABI; `geom_from` refuses a spec whose shares do not match the model. |
 | [rad0019_vtp14_n2_tp_ownership_fp8](../../../../engines/radiance/patches/rad0019_vtp14_n2_tp_ownership_fp8/SUMMARY.md) | `untested` | Gives the fp8 Qwen plugin rad0018's uneven split, checked against the model the same way. The patch uses the fp8 blocks' existing per-rank spans: attention by head, delta-net uneven heads (`k_first`/`v_first`), and LinearFP8 row and column spans. Every span is whole 128-row scale blocks. |
 | [rad0020_vtp14_tp3_pipelined_prefill](../../../../engines/radiance/patches/rad0020_vtp14_tp3_pipelined_prefill/SUMMARY.md) | `untested` | `qwen35_fp8` pipelines a wide one-sequence prefill step: the rows run as two pieces, and each block's all-reduce for one piece runs on the second lane beside the other piece's work. Upstream fixes it at two ranks from 1024 rows. This patch makes the mode and the narrowest step options; `auto` adds three ranks under `--tp-ownership`. |
+| [rad0021_vtp14_weighted_twoshot_3rank](../../../../engines/radiance/patches/rad0021_vtp14_weighted_twoshot_3rank/SUMMARY.md) | `untested` | A rank behind a slow PCIe link owns a smaller shard of the two-shot, or none, and so moves fewer bytes over it. The bits are the same for every table. Equal links keep the even split; decode-sized messages are unchanged. |
 
 ## Components (6)
 
