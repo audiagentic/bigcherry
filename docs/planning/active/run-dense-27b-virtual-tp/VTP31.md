@@ -58,6 +58,26 @@ The decode step is faster at every concurrency. Prefill TTFT is +11 to +29%. Wit
 
 **GPT deep analysis** of where the time goes and which options to try: request `req_vtp14-n1-rank-code-eligi_cb7d41d06315` (gateway); results go into Notes.
 
+## Experiment 1 result: launch geometry (2026-11-12, build f8406b8e, logs vtp14/logs/geo-0757)
+
+`RADIANCE_TUNE=all_reduce:nblocks=N,nthreads=M` on the existing TP3 exact all-reduce (no source change), MXFP4, N7
+split, depth 3. Six arms, run forward then reversed; mean of the two passes. Prefill is the worst TTFT of four
+4096-token prompts.
+
+| grid | 1 stream | 4 streams | 8 streams | prefill TTFT | vs default (4 / 8 / prefill) |
+|---|---|---|---|---|---|
+| default (scaled, 1024 threads) | 106.0 | 178.5 | 188.8 | 11.14 s | |
+| 2 x 256 | 107.6 | 185.2 | 198.6 | 10.51 s | +3.7% / +5.1% / -5.6% |
+| **4 x 256** | 107.7 | 189.9 | 197.6 | 10.52 s | **+6.4% / +4.6% / -5.6%** |
+| 8 x 256 | 106.7 | 181.8 | 195.9 | 10.95 s | +1.8% / +3.7% / -1.7% |
+| 8 x 1024 | 106.5 | 181.3 | 193.7 | 11.21 s | +1.6% / +2.6% / +0.6% |
+| 16 x 1024 | 105.7 | 178.1 | 192.4 | 11.13 s | -0.3% / +1.9% / -0.2% |
+
+Greedy output identical on every arm. Fewer, narrower blocks win at every size: the cost is polling and occupancy,
+not payload (GPT's first hypothesis holds). The default grid is tuned for the two- and four-rank cases. Next: a 3x ABBA
+of TP2, TP3 default and TP3 4x256 (`n8-abba.sh`), then make the grid a typed per-run setting (step 1) rather than an
+environment pin, and try a three-rank narrow default in the selection row.
+
 ## Steps
 
 1. Add a typed per-run selector for the all-reduce method (e.g. `tuning.allreduce_method`; contract amendment; engine option in a managed patch) so every method below is an A/B from the manifest.
@@ -102,6 +122,55 @@ The decode step is faster at every concurrency. Prefill TTFT is +11 to +29%. Wit
 - A matched ABBA (at least 3 repeats) shows TP3 at or above TP2 aggregate tok/s at 4, 6 and 8 streams with speculation on, and prefill TTFT gap reduced, with the change attributed per method.
 
 ## Notes
+
+### GPT analysis (2026-11-12, from the six profwhere logs and the patched source)
+
+Corrected accounting: `prof_split.py` counts TP2's fused `ar_rmsnorm_quant_fp8` as compute; counted as a collective,
+the per-rank operation totals (ms, cumulative device events, not wall time) are:
+
+| workload | rank | collectives | other | lane idle |
+|---|---|---|---|---|
+| TP2 dec8 | XTX 0 / 1 | 2239 / 2176 | 4820 / 4855 | 2288 / 2320 |
+| TP3 dec8 | XTX 0 / XTX 1 / R9700 | 3941 / 3990 / 4781 | 3236 / 3205 / 2767 | 2801 / 2786 / 2368 |
+| TP2 pre4 | XTX 0 / 1 | 5357 / 5281 | 5917 / 5945 | 316 / 379 |
+| TP3 pre4 | XTX 0 / XTX 1 / R9700 | 8774 / 8904 / 9487 | 3727 / 3611 / 3399 | 599 / 588 / 194 |
+
+- TP3 pre4 is 74% collective on the R9700 (TP2 pre4: 48%). The profile's `wait us` is lane idle before an op starts;
+  waiting for a peer inside an all-reduce is part of that kernel's time, so the profile cannot separate peer wait,
+  flag polling and transfer.
+- Overlap reaches only some steps: TP3 pre1 has 1280 of 1738 ARs at `overlap=1`, pre4 only 256 of 1624, because
+  `step_pipelined` refuses `n_seq != 1`. Multi-sequence prefill is unserved by rad0020.
+- The three-rank selection has no narrow lane row (two- and four-rank have `tArLane`), so the TP3 pipeline's lane-1 AR
+  uses the full-width grid beside the compute.
+- Link floors: a 32-row decode AR is 320 KiB; one-shot puts 2S each way on the R9700's x4 (about 83 us per direction
+  at 7.88 GB/s) against a measured 440-570 us per call, so most of a decode AR is not the payload. A 2048-row prefill
+  AR (20 MiB, weighted two-shot 4,4,1) moves 22 MiB on the R9700 (about 3.0 ms floor) and 29 MiB per XTX (about
+  1.9 ms) against 5.7-6.3 ms measured: bandwidth is a large part.
+- Per-kind GEMM time: decode XTXs carry more attention and FFN time than the R9700 (the R9700 is not the slow compute
+  rank); pre1 the R9700 is the slowest (FFN 2578 ms); pre4 FFN is heavier on the XTXs and delta-net on the R9700.
+  The kinds pull different ways, so the split stays per kind (VTP32); expected gain from more rebalancing is 0-3%.
+
+Ranked proposals (gains are hypotheses):
+
+1. Launch geometry of the existing TP3 AR through `RADIANCE_TUNE=all_reduce:nblocks=N,nthreads=M` (no source change;
+   exact by construction). 0-8% decode.
+2. A tunable three-rank one-shot/two-shot crossover (today compiled at 524288 elements). 0-10% on mid-size messages.
+3. Multi-sequence pipelined prefill (generalise `ArPieces` and `step_pipelined`; every rank must decide the same).
+   5-15% pre4 TTFT, speculative.
+4. A three-rank fused AR + RMSNorm + fp8 quant. 0-3%: the separate norm kernel is about 106 ms of 12.5 s in pre4.
+5. GEMM epilogue publishing tiles to host staging (FLUX-style). 0-12% prefill, high regression risk.
+6. CPU-assisted exact reduce for short messages: halves the R9700's one-shot traffic (2S to S) but adds a CPU
+   wake/sum/publish boundary and must reproduce the GPU's fp32 order and bf16 rounding. 0-20%, highly uncertain.
+7. An LL-style flag protocol only after phase timings show polling dominates; never drop release/acquire.
+8. Per-kind ownership refinement (VTP32).
+
+Not prioritised: decode token splitting (8 rows into 2x4 doubles the AR boundaries), algebraic AR removal, three-rank
+lossy wire. Method selection belongs in a typed `tuning.allreduce_method` (`auto` keeps Radiance's selection; explicit
+methods fail closed), with the selected row recorded per size band in the run receipt.
+
+First two experiments: (1) the launch-geometry sweep above; (2) optional per-phase GPU timestamps in the exact one-shot
+and two-shot (push done, peer flags seen, local reduce done, phase-two arrival, assembly) over 8-64 row, crossover-size
+and 1024/2048-row messages, to decide which term (peer wait, polling, payload, reduce, idle CUs) the rewrites must beat.
 
 Evidence and scripts: ${BC_TASK_TMP}/vtp14/ (n7-abba.sh, prof-where.sh, ts3w-ab.sh, lossy3.sh, prefill-knobs.sh, notes-allreduce-analysis.md, p2p-finding.md). Code: libr4d r4d_ar_entry.hip, r4d_ar_oneshot_Nrank_exact.hip, r4d_ar_twoshot_Nrank_exact.hip, r4d_ar_seq.h, r4d_rows.cpp (selection rows and host twins); BigCherry patches rad0016-rad0021.
 

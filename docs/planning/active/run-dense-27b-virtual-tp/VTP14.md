@@ -2,7 +2,7 @@
 id: VTP14
 order: 13
 plan: run-dense-27b-virtual-tp
-state: active
+state: in_progress
 created-at: '2026-11-11T00:00:00+00:00'
 breadth: ''
 skill: advanced
@@ -967,3 +967,39 @@ feed-forward 6656,6656,4096 throughout:
 | 2,1,1 (XTX two) | 11.72 GiB | 2.7 | 80.1 / 173.9 / 192.1 |
 
 The R9700 (32 GiB) is the better home for the extra head: more resident KV and slightly faster. `kv=1,1,2` stays.
+
+## Where TP3 time goes: per-op profile, 2026-11-12 (build f8406b8e, logs vtp14/logs/profwhere-0723)
+
+`--profile-ops`, MXFP4, exact wire, depth 3. TP2's all-reduce cost includes its fused `ar_rmsnorm_quant_fp8` (the
+fused AR norms refuse world != 2, so TP3 runs `all_reduce` and then `rmsnorm_quant_fp8`).
+
+| workload | TP2 all-reduce | TP3 all-reduce | TP3 compute per rank (TP2) |
+|---|---|---|---|
+| 8-stream decode | 2.24 s, 0.32 ms a call | 3.9-4.8 s, 0.55-0.67 ms a call | 2.8-3.2 s (~4.2 s) |
+| four 4096-token prompts | 5.36 s, 3.3 ms a call | 8.8-9.5 s, 5.8 ms a call | 3.4-3.7 s (~6 s) |
+
+- TP3 halves compute per rank but doubles the all-reduce per call. A decode message is ~320 KB, which a Gen4 x8 link
+  moves in about 40 us, so ~0.6 ms a call is latency and waiting, not bandwidth.
+- Each all-reduce waits for the slowest rank of that layer, and the per-layer-kind shares differ (attention 6/6/12,
+  delta-net 4/4/8, FFN 5120/4864/7424), so the waits add up across layers.
+
+Survey of other engines (for the analysis):
+- vLLM custom all-reduce: one-shot below a size, two-shot above, 16-byte vector loads.
+- AMD QuickReduce: quantized two-shot on MI300; slower than custom below ~512 KB.
+- NCCL LL/LL128: flag in the data word, no separate fence or flag round trip. LL128 needs 128-byte store atomicity,
+  which PCIe does not guarantee; LL works.
+- TokenWeave / NanoFlow: split the tokens into two and overlap one half's all-reduce with the other half's compute.
+- Collective matmul / FLUX: chunked or fused GEMM + communication.
+- Kraken: AR on a dedicated stream beside the QKV GEMM.
+
+## Peer access: not available on this host (2026-11-12)
+
+`--p2p on` refuses at TP2 (the XTX pair) and TP3: "the driver reports no peer-to-peer access between cards" in every
+direction. The usual causes are not it: Resizable BAR is on (BAR0 32 GiB on all three cards), the IOMMU is in
+passthrough (`intel_iommu=on iommu=pt`), amdgpu `pcie_p2p=Y`, and all three cards sit under one root complex
+(pci0000:00). KFD advertises no P2P link on any node. Each card is on its own CPU root port (00:01.0 x8, 00:01.1 x8,
+00:06.0 x4) of a consumer Alder Lake host bridge (8086:4668). Linux allows P2P DMA between root ports only through
+allow-listed host bridges, so the platform, not radiance or BigCherry, rules it out. Enabling it would take a host kernel
+change with no guarantee that the root complex forwards peer traffic; the host-staged transport stays.
+
+Follow-up work (all-reduce latency and overlap, per-kind split tuning, capacity, the generic-config audit) is in VTP31-VTP34.
