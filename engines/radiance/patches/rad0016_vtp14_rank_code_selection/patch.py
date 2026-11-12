@@ -35,7 +35,7 @@ SRC = Path(__file__).resolve().parent / "src"
 SRC_SHA256 = {
     "bc_rank_devices.cpp": "bf47feaef6d24638809e4806a4c78dfac702012ecc33057ceadcef27283d1715",
     "bc_rank_devices.h": "af3c44a839db1d135f26d3de05eb66c7b9482032eb625946cd27cf07499c41a5",
-    "bc_rank_devices_test.cpp": "13da3ce269c1645f9704a2556eb2337a17cae93642764554feb1f440e0ff84d2",
+    "bc_rank_devices_test.cpp": "9de7af026b77eb625da3a74d62f5589d3792ef5dd6d1b8c17c5706af5bae1b83",
 }
 
 
