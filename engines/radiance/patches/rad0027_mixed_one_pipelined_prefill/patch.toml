@@ -1,0 +1,11 @@
+schema = 1
+id = "rad0027_mixed_one_pipelined_prefill"
+order = 27
+state = "untested"
+kind = "enhancement"
+origin = "local"
+backend = "agnostic"
+plan-ids = ["VTP31"]
+requires = ["rad0026_mixed_pipelined_prefill"]
+conflicts = []
+tags = ["tensor-parallel", "prefill"]
