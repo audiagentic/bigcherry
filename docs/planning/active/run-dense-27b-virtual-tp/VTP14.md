@@ -469,3 +469,29 @@ the plan:
   profile: replicate it per rank.
 - KV capacity and context (N5).
 - Quality evidence against an oracle (KLD/top-1, N7).
+
+## DFlash2 drafter under the profile, 2026-11-12 00:06Z (rad0019, build 7b7cbf55def2d4dd19991f3f3c8bbcdf)
+
+The drafter now runs under the 6/6/12 profile. Its heads split 8/8/16 query and 2/2/4 KV, and it takes the target's
+feed-forward rows.
+
+**Correctness:** with depth 3 on MXFP4 and the other N0 settings unchanged, the answers are correct. Draft acceptance
+is 2.95 tokens per step at one stream, against 3.12 on TP2.
+
+**Throughput** (stream-bench, aggregate tok/s, 3 reps; lease held, every power cap at its default)
+
+| streams | TP3 6/6/12 + drafter, **exact** wire | TP2 + drafter, **wht6** wire (production) |
+|---|---|---|
+| 1 | 92.5 (step 22.8 ms) | 87.0 (step 29.4 ms) |
+| 4 | 164.4 (34.7 ms, 10.8 tok/step) | 201.0 (35.7 ms, 12.0 tok/step) |
+| 6 | 171.6 (50.1 ms) | 207.3 (56.1 ms) |
+| 8 | 176.4 (60.6 ms) | 227.4 (56.8 ms) |
+
+**This pair is not matched.** TP2 uses the lossy wire, which sends about 2.4× fewer bytes per all-reduce, and TP3
+uses the exact one. TP3 also loses on prefill: TTFT is about 40–50% higher. That is consistent with the R9700 sitting
+on a PCIe Gen4 x4 link (`link-below-max`: 0000:09:00.0 at 16 GT/s x4), which carries every host-staged all-reduce. Its
+per-step decode is still faster at 1, 4 and 6 streams.
+
+**Next:** the matched pair (TP3 on wht6, which is the tiered int8 wire at 3 ranks, and TP2 on the exact wire, both
+with the drafter). After that, prefill: `--tp-attn-split rows`, and the R9700 link. The link is a hardware or BIOS
+matter, not code.
