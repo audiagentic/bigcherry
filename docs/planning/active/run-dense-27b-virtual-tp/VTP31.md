@@ -304,6 +304,17 @@ time to first token from 10.5 to 9.0 s (-14%).
 Output: the 4-stream greedy texts diverge only at the characters where the base builds' own runs diverge (221, 227
 and 267), so nothing points at the patch. The run-to-run variation already exists without it.
 
+Profile, 8 streams (`tp-profile.sh dec8`, device time summed over both lanes, so the totals are not wall time):
+
+| build | rank | device ms | trunk | drafter | collectives |
+|---|---|---|---|---|---|
+| rad0025 | XTX / XTX / R9700 | 6893 / 6868 / 6987 | 45 / 45 / 36% | 4.3 / 4.2 / 1.6% | 50 / 51 / 63% |
+| rad0026 | XTX / XTX / R9700 | 7278 / 7216 / 7449 | 46 / 47 / 41% | 3.9 / 3.9 / 1.5% | 50 / 50 / 58% |
+
+As in experiment 8, the split pieces cost more device time, and the overlap more than pays for it. Collectives
+are still half of the XTX cards' time and 58% of the R9700's. The R9700's extra share is mostly waiting for the XTX
+cards at each all-reduce.
+
 ## Steps
 
 1. Add a typed per-run selector for the all-reduce method (e.g. `tuning.allreduce_method`; contract amendment; engine option in a managed patch) so every method below is an A/B from the manifest.
