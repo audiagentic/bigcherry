@@ -215,10 +215,15 @@ plan_manifest_prepare() {
     case $rc in
       0) break ;;
       10) : > "$RUN/plan-check.err"
-          plan_check_measure > "$RUN/plan-check.out" 2> >(tee "$RUN/plan-check.err" >&2); rc=$?   # shown and kept
+          plan_check_measure 2> >(tee "$RUN/plan-check.err" >&2); rc=$?   # shown and kept (the derived pool is read from it)
           [ $rc = 0 ] && break
           [ $rc = 11 ] || return 1 ;&
-      11) pool=$(cat "$RUN/plan-check.out" "$RUN/plan-check.err" 2>/dev/null | sed -n 's/^derived_host_pool_mib=\([0-9][0-9]*\)$/\1/p' | tail -1)
+      11) pool=""
+          for _ in $(seq 1 50); do   # the tee behind the measuring start's stderr may lag the exit by a moment
+            pool=$(cat "$RUN/plan-check.out" "$RUN/plan-check.err" 2>/dev/null | sed -n 's/^derived_host_pool_mib=\([0-9][0-9]*\)$/\1/p' | tail -1)
+            [ -n "$pool" ] && break
+            sleep 0.1
+          done
           [ -n "$pool" ] || { echo "plan check: bc-serve asked for another host pool without naming it:" >&2; cat "$RUN/plan-check.err" >&2; return 1; }
           [ "${PLAN_POOL_CHANGES:-0}" -lt 2 ] || { echo "plan check: the host pool did not converge (last asked for ${pool} MiB)" >&2; return 1; }
           PLAN_POOL_CHANGES=$(( ${PLAN_POOL_CHANGES:-0} + 1 ))

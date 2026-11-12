@@ -63,9 +63,9 @@ FAKE_ENGINE = r"""#!/bin/bash
 echo $$ >> "$FAKE_PIDS"
 printf '%s\n' "$@" > "$FAKE_ENGINE_ARGS"
 printf '%s|%s|%s\n' "$ROCR_VISIBLE_DEVICES" "$HIP_VISIBLE_DEVICES" "${R3_MOE_WORKER-unset}" > "$FAKE_ENGINE_ENV"
-plan=""; port=""; manifest=""
+plan=""; ranks=""; port=""; manifest=""
 while [ $# -gt 0 ]; do
-  case "$1" in --plan-memory) plan=$2; shift 2 ;; --port) port=$2; shift 2 ;; --manifest) manifest=$2; shift 2 ;; *) shift ;; esac
+  case "$1" in --plan-memory) plan=$2; shift 2 ;; --plan-memory-ranks) ranks=$2; shift 2 ;; --port) port=$2; shift 2 ;; --manifest) manifest=$2; shift 2 ;; *) shift ;; esac
 done
 # a manifest start: the port is the manifest's (the fake bc-serve records the --set engine.port it was given)
 [ -n "$manifest" ] && port=$(sed -n 's/.*"port": *\([0-9]*\).*/\1/p' "$manifest")
@@ -77,7 +77,7 @@ if [ -n "$plan" ]; then
   [ -n "${FAKE_MEASURE_HANG:-}" ] && exec "$REAL_PYTHON" -c 'import pathlib, signal, sys, time; signal.signal(signal.SIGINT, lambda *a: sys.exit(0)); signal.signal(signal.SIGTERM, lambda *a: sys.exit(0)); pathlib.Path(sys.argv[1]).touch(); time.sleep(600)' "$FAKE_MEASURING"
   touch "$FAKE_MEASURING"
   [ -n "${FAKE_MEASURE_FAIL:-}" ] && exit 1
-  echo '{"plan_version": 1}' > "$plan"; echo "radiance: --plan-memory: wrote $plan; engine start-up took 1536 MiB of MemAvailable; nothing loaded" >&2; exit 0
+  echo '{"plan_version": 1}' > "$plan"; echo '{"kind": "radiance_p1_rank_demand"}' > "$ranks"; echo "radiance: --plan-memory: wrote $plan; engine start-up took 1536 MiB of MemAvailable; nothing loaded" >&2; exit 0
 fi
 exec "$REAL_PYTHON" -c '
 import http.server, json, os, signal, sys
