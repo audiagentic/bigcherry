@@ -857,3 +857,16 @@ the commit before the fold (base) against the fold:
 
 On the same main build, the TP3 smoke repeats: w8a8 6/6/12 output byte-identical to the original TP3 run, the int8 split
 and MXFP4 serve, and a spec that does not match the model is refused.
+
+## TP3 from the layout alone (launcher, manifest)
+
+`launch-flashnext-best.sh start --layout qwen27b-tp3` (and `qwen27b-tp3-int8`): the launcher resolves the layout, `bc-serve`
+writes the unmeasured manifest, the engine's measuring start plans memory, `bc-serve` writes the measured manifest (a second
+round with the 3449 MiB host pool it derived), and the engine starts from the manifest alone. No engine flag was written by
+hand. The engine's option report shows every TP3 setting arriving from the manifest: `--tp 3`, `--kernels libr3,libr4d,libref`,
+`--rank-devices` (03, 06 gfx1100; 09 gfx1201), `--tp-ownership` (the layout's settings), `--pipelined-prefill auto`.
+Greedy output is byte-identical to the hand-flag runs: MXFP4 6/6/12 and w8a8 6,6,4.
+
+Two refusals on the way, both in the measured-manifest path and blocking every dense engine-only layout (TP2 included),
+fixed generically: the P1 producer required routed experts (C23), and the retention target had to be positive though an
+engine-only layout has no host KV tier (C24, contract amendment 19).
