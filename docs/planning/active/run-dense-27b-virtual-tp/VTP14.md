@@ -835,3 +835,25 @@ Smoke on the cards (three ranks: XTX, XTX, R9700; one greedy request each):
 
 Layouts are not added to `layouts.toml`: run definitions with model paths are to be external (pending the user's
 decision on the external-layout change).
+
+## One build, configuration as data
+
+- Layouts are run-time data (`--layouts` / `BIGCHERRY_LAYOUTS`; the repository's examples in `engines/radiance/layouts/`),
+  never compiled into `bc-serve`, and `layout.name` has no default. A layout's engine may be a list of `{ arch, count }`
+  groups in rank order (a mixed world), and a `[tuning]` table sets engine tuning fields.
+- Contract amendment 18: `tuning.tp_ownership`, `tuning.pipelined_prefill`, `tuning.pipelined_prefill_min_rows`, and
+  `device.rank_devices` (derived from the engine groups of a mixed world).
+- The TP3 setups are layouts, `qwen27b-tp3` (MXFP4) and `qwen27b-tp3-int8` (w8a8): on this host `bc-serve` resolves them
+  to the cards, rank order, kernels and split used by hand above.
+- The VTP14 patches (rad0016-rad0020) are one patch set in the main `radiance` build; the separate source is gone.
+
+Inertness of the fold (no VTP14 option given), ABBA on two XTX, `--tp 2 --tp-wire wht6`, spec off, main `radiance` lane at
+the commit before the fold (base) against the fold:
+
+| model | greedy text | 1 stream tok/s base / fold | 4 streams tok/s base / fold |
+|---|---|---|---|
+| MXFP4 | identical (4 arms) | 45.05 / 44.96 (−0.2%) | 117.39 / 118.14 (+0.6%) |
+| w8a8 | identical (4 arms) | 33.37 / 33.41 (+0.1%) | 105.48 / 105.63 (+0.1%) |
+
+On the same main build, the TP3 smoke repeats: w8a8 6/6/12 output byte-identical to the original TP3 run, the int8 split
+and MXFP4 serve, and a spec that does not match the model is refused.
