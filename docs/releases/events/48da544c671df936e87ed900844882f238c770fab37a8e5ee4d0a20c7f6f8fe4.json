@@ -1,0 +1,20 @@
+{
+  "change-class": "docs",
+  "event-id": "chg_20261112_224532_tp3-performance-work-now-has-o_3202",
+  "files": [
+    "docs/planning/active/run-dense-27b-virtual-tp/VTP36.md",
+    "docs/planning/completed/run-dense-27b-virtual-tp/VTP31.md",
+    "docs/planning/completed/run-dense-27b-virtual-tp/VTP35.md",
+    "docs/planning/completed/patching-radiance-rdna3/RAD04.md"
+  ],
+  "plan-item-ids": [
+    "VTP36",
+    "VTP31",
+    "VTP35",
+    "RAD04"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Consolidate TP3 performance planning: new VTP36 owns TP3 prefill/decode performance (baseline table, profile-first lever list: all-reduce methods, kernels RAD47/RAD48/RAD36, split solver VTP32, per-card layer formats, P2P re-check). VTP31 completed (acceptance met by experiment 10 and VTP14 N7 refresh); VTP35 superseded by VTP36; RAD04 superseded by upstream pipelined prefill plus rad0020/rad0025-0027.",
+  "timestamp-utc": "2026-11-12T22:45:32.479161Z",
+  "user-summary-candidate": "TP3 performance work now has one plan item (VTP36); the finished all-reduce item is closed and two overlapping items are superseded."
+}

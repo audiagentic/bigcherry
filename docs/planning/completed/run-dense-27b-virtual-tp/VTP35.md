@@ -2,7 +2,7 @@
 id: VTP35
 order: 0
 plan: run-dense-27b-virtual-tp
-state: pending
+state: superseded
 created-at: '2026-11-12T21:59:13.226732+00:00'
 breadth: ''
 skill: advanced
@@ -54,6 +54,10 @@ Follow-up from VTP14. Native TP3 (XTX, XTX, R9700) beats dual-XTX TP2 in decode 
 
 ## Notes
 
+Superseded 2026-11-13 by VTP36 (TP3 performance programme), which carries this item's acceptance (MXFP4 TP3 one-stream TTFT within 5% of TP2 at 2048 tokens, or a NO-GO) and its steps (peer-access re-check, prefill all-reduce profile and levers).
+
 ## Change Log
 
 - 2026-11-12T21:59:13.226732+00:00 (created-by): Created by agent
+- 2026-11-12T22:44:59.937252+00:00 (updated-by): Updated: section:notes
+- 2026-11-12T22:45:16.471480+00:00 (state-transition): State: pending → superseded
