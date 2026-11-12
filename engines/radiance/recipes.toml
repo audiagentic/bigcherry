@@ -72,6 +72,7 @@ patches = [
   "rad0022_tune_pin",
   "rad0023_ar_timeline",
   "rad0024_ts3_decode",
+  "rad0025_multiseq_pipelined_prefill",
 ]
 required-state = "untested"
 
