@@ -76,6 +76,7 @@ patches = [
   "rad0026_mixed_pipelined_prefill",
   "rad0027_mixed_one_pipelined_prefill",
   "rad0028_rank_consistent_block_drafts",
+  "rad0029_rank_own_split",
 ]
 required-state = "untested"
 

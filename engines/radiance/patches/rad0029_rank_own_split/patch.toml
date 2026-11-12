@@ -1,0 +1,11 @@
+schema = 1
+id = "rad0029_rank_own_split"
+order = 29
+state = "untested"
+kind = "enhancement"
+origin = "local"
+backend = "agnostic"
+plan-ids = ["VTP33", "VTP14"]
+requires = ["rad0028_rank_consistent_block_drafts"]
+conflicts = []
+tags = ["tensor-parallel"]

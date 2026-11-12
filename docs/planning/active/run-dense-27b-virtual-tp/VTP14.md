@@ -32,10 +32,15 @@ KV capacity**. If the gains do not materialise, record NO-GO rather than
 keep building a separate runner. Full-length context up to the model's
 262,144-token limit is an *admission experiment*, not a promised capability.
 
-**Status, 2026-11-12:** the throughput half is met. MXFP4 TP3 with the all-reduce grid as a layout setting (rad0022,
-`tuning.tune_pin`) beats dual-XTX TP2 at 1/4/6/8 streams in a 3x ABBA (+29.9% / +3.4% / +3.8% / +1.7%; VTP31).
-Resident KV: TP3 holds 12.15 GiB (2.8 sessions at 8192 tokens) on the N5 first pass; the matched capacity comparison
-against TP2 is VTP33. Prefill TTFT still trails TP2 (+5% at 8192 tokens).
+**Status, 2026-11-12 (current main plus rad0029):** both halves are met.
+
+- **Throughput:** MXFP4 TP3 beats dual-XTX TP2 at 4/6/8 streams by +11.4% / +10.2% / +6.8%, and one stream by +39%
+  (N7 refresh, 3x ABBA). int8 TP3 beats int8 TP2 at every concurrency, by +6.9% / +6.7% / +9.6% at 4/6/8 (N6 refresh).
+- **Capacity:** with rad0029, the throughput split holds 5.5 full-length 262k sessions against TP2's 3.3 (+67% resident
+  KV) at no throughput cost; a capacity split (7,7,2) holds 6.7 (+103%). See VTP33.
+- **Context:** both reach the model's 262,144 tokens. 8 concurrent 128k-token prompts (1.04M tokens) run on TP3.
+- **Open cost:** MXFP4 prefill. One-stream TTFT is +24% at 2048 tokens and +5% at 8192 against TP2, since every
+  all-reduce is host-staged without peer access. int8 TP3 prefill is 7–13% faster than int8 TP2.
 
 This is the execution breakdown of VTP13 (experimental worktree, not yet in main), not a second
 competing implementation. VTP03 (experimental worktree) virtual TP4 remains an optional

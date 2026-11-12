@@ -9,7 +9,7 @@ different statuses. See [the engine overview](README.md) first.
 
 _Generated from package documentation and metadata by `tools/docs/generate_engine_enhancement_summaries.py`. Do not edit this section by hand._
 
-## Engine patches (26)
+## Engine patches (27)
 
 | Package | State | Summary |
 | --- | --- | --- |
@@ -39,6 +39,7 @@ _Generated from package documentation and metadata by `tools/docs/generate_engin
 | [rad0026_mixed_pipelined_prefill](../../../../engines/radiance/patches/rad0026_mixed_pipelined_prefill/SUMMARY.md) | `untested` | A step that carries decode rows beside two or more prefill sequences is pipelined too. The first piece holds the decode sequences and the prefill sequences before the cut, the second the rest. Each block issues the serial path's own decode and prefill launches over its piece. Same bits as the serial step. |
 | [rad0027_mixed_one_pipelined_prefill](../../../../engines/radiance/patches/rad0027_mixed_one_pipelined_prefill/SUMMARY.md) | `untested` | A step that carries decode rows beside one prefill sequence is cut inside that sequence and pipelined. The first piece holds the decode rows and the sequence's first rows, the second the rest. Each block issues the serial path's decode launches, then rad0020's one-sequence prefill pieces at an offset row. |
 | [rad0028_rank_consistent_block_drafts](../../../../engines/radiance/patches/rad0028_rank_consistent_block_drafts/SUMMARY.md) | `untested` | Every rank verifies rank 0's draft. The selected draft tokens are all-gathered after the selector, and the engine proposes from rank 0's slice of the gathered buffer. Before this, a rank of another card architecture could select another token on a near tie, accept a different count, and drift: wrong partial sums in the step, and a GPU memory fault when the drifted rank's attention read past the host's block table. |
+| [rad0029_rank_own_split](../../../../engines/radiance/patches/rad0029_rank_own_split/SUMMARY.md) | `untested` | In an uneven dense world, every rank gets its own VRAM split. Each rank's weights pool holds its own weights, and its KV pool takes the free memory it has above the smallest card. Every rank then pages the least token count any rank can page in its own pool, instead of the common split's count. Before this, the rank that limits the token count kept the common split: the smallest card's memory and the largest rank's weights pool. |
 
 ## Components (6)
 
