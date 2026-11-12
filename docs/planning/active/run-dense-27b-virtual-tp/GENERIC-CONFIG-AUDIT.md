@@ -45,6 +45,8 @@ A static, read-only audit of branch `feat/vtp14-n1-rank-code-eligibility` (GPT r
 | C20 | low (dormant) | n-gram helper requires `n_embd = 160`, `n_vocab = 320001536` | `ngram-helper/r3_ngram_host.cpp` | model-derived sizes, or retire the plugin | open |
 | C21 | low-medium | power-plan check branches on `arch == "gfx1100"` | `serving/power_plan.py` | a typed card-type power capability | open |
 | C22 | conditional | llama.cpp 1217 turns graph optimisation on by default on RDNA3.5 | `engines/llamacpp/patches/1217_*` | upstream default unless opted in | open (selection in production not confirmed) |
+| C23 | critical | the P1 producer refused every container without routed experts: no dense layout could write a measured manifest | `serving/v2/p1_producer.cpp` | experts are read only for helpers; engine-only needs none | **fixed** (a14900fd0; found by the TP3 launcher run) |
+| C24 | critical | the retention target had to be positive everywhere (contract `ref positive`), so an engine-only layout without a host KV tier could not write a measured manifest | P1 producer, P1/native measurement, S8, `serving-v2.toml` | 0 tokens means no host KV tier (amendment 19) | **fixed** (613a612f1) |
 
 The model-constant guard (`engines/radiance/model_constant_guard.toml`) scans Flash-Next literals only. It misses the
 head-dim/GQA eligibility of C03, the 5931 tail count of C17, topology bounds, named defaults and duplicated
