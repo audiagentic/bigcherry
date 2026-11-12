@@ -179,6 +179,62 @@ bench's +8% at 4-8 streams comes from prefill, where TP3 is 8-24% slower to the 
 is prefill: overlapping the prefill all-reduce with compute across sequences (multi-sequence pipelined prefill),
 a fused three-rank all-reduce with the following norm, and upstream's prefill interleave when v1.18.0 ships.
 
+## Experiments 5-7: prefill (2026-11-12, build a08d17ff, logs e5-1116, e6-1120, e7-1125)
+
+**Experiment 5, one-prompt prefill.** Cold time to first token, one stream (first round of two; the second hits the
+prefix cache):
+
+| | 512 | 2048 | 8192 tokens |
+|---|---|---|---|
+| TP3 (6/6/12, 4x256, rad0024) | 311-315 ms | 944 ms | 3845 ms |
+| TP2 | 317 ms | 858 ms | 3791 ms |
+| TP3 `--pipelined-prefill off` | 314 ms | 1208 ms | 4915 ms |
+
+One prompt now prefills about as fast on TP3 as on TP2 except at 2048 tokens (+10%); the earlier gap (N8) averaged the
+cold and cached rounds. The one-sequence pipelined prefill (rad0020) is worth 22-28%. `--max-num-batched-tokens 4096`
+changes nothing (prefill chunks stay at the 2048-token checkpoint interval) and `--tp-attn-split rows` is refused for
+this model.
+
+**Experiment 6, multi-sequence prefill.** No scheduler option makes the 4-8 stream bench pipeline its prefill: its
+steps hold several sequences and `pipe_ready` refuses them ("runs serially: more than one sequence"). Options tried:
+`--busy-prefill-chunk off`, step caps of 512 and 1024 tokens, a 256-row pipeline floor.
+
+**Experiment 7, the pipeline floor.** 2x ABBA, `--pipelined-prefill-min-rows 256` against the plugin's 1024 (mean of
+four runs each): 117.1 / 207.2 / 221.9 against 108.8 / 201.4 / 218.4 tok/s at 1/4/8 streams, +7.6% / +2.9% / +1.6%,
+the same answer throughout; 128 measured the same as 256. A 512-token prompt now pipelines too. The TP3 layout sets
+`tuning.pipelined_prefill_min_rows = 256`; the int8 layout is not measured yet.
+
+### Where device time goes (profile of an earlier build, before rad0021/22/24; `tools/lab/radiance/tp-profile.sh`)
+
+| workload | rank | trunk | drafter | collectives |
+|---|---|---|---|---|
+| TP3, 8 streams | XTX | 41% | 3.9% | 55% |
+| TP3, 8 streams | R9700 | 35% | 1.6% | 63% |
+| TP2, 8 streams | XTX | 63% | 4.9% | 31% |
+| TP3, four 4096-token prompts | each | 26-29% | 0.4-0.8% | 70-74% |
+
+Profiled collectives include waiting for peers. Two conclusions: the drafter is 2-5% of device time, so moving
+DFlash2 to a separate card (the R9700 alone, or the RX 6900 XT) cannot pay for shipping the trunk's hidden states to
+it and its drafts back every step, and the next draft waits on the verify, so there is little to overlap. Unlike the
+llama.cpp setup, the drafter here is a small head on the trunk's own features, not a separate model. And a
+multi-sequence prefill step spends about 70% of its time in collectives, because it runs serially.
+
+### Next: pipelined prefill over several sequences
+
+`pipe_ready` pipelines only a one-sequence prefill step, split inside the sequence (attention reads the first piece's
+keys from the cache, the delta-net hands its state on). A step of several whole sequences can be split between
+sequences instead: the two pieces then share no attention or recurrent state, and each block's serial path already
+runs over a contiguous run of sequences (`[D, S)` in the delta-net). The change, in the `qwen35_fp8` plugin as a
+managed patch:
+
+1. `pipe_ready`: accept a pure prefill step (no decode rows) of two or more sequences, the cut at the sequence boundary
+   nearest half the rows; the piece table gains the per-piece sequence range.
+2. Attention and delta-net piece paths: for a sequence-boundary cut, run each piece over its own sequences' slice of
+   the step's per-sequence arrays (query bounds, seqused, block table rows, slots, positions; conv and state indices).
+3. The MLP bodies and boundaries are row ranges already and need no change.
+4. Same bits as the serial step (every row's arithmetic is unchanged); measure at 4/6/8 streams and with four 4096-token
+   prompts, with a profile arm. Later: steps that mix decode rows with prefill.
+
 ## Steps
 
 1. Add a typed per-run selector for the all-reduce method (e.g. `tuning.allreduce_method`; contract amendment; engine option in a managed patch) so every method below is an A/B from the manifest.
