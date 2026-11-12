@@ -9,7 +9,7 @@ distributed across cards. **llama.cpp** remains an active secondary engine.
 
 | Engine | Upstream pin | Catalogued changes | Main additions |
 | --- | --- | --- | --- |
-| [Radiance](docs/reference/engines/radiance/README.md) | **v1.17.0** | **22 patches**, 6 components | RDNA2/3/4 kernels, remote experts, placement and serving manifest |
+| [Radiance](docs/reference/engines/radiance/README.md) | **v1.17.0** | **24 patches**, 6 components | RDNA2/3/4 kernels, remote experts, placement and serving manifest |
 | [llama.cpp](docs/reference/engines/llamacpp/README.md) | **b11552** | **150 patches** | HIP kernel tuning, measured dispatch, multi-GPU reductions |
 
 **Radiance.** The `libr2`, `libr3` and `bc-gfx12` components add kernels

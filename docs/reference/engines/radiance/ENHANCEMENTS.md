@@ -9,7 +9,7 @@ different statuses. See [the engine overview](README.md) first.
 
 _Generated from package documentation and metadata by `tools/docs/generate_engine_enhancement_summaries.py`. Do not edit this section by hand._
 
-## Engine patches (22)
+## Engine patches (24)
 
 | Package | State | Summary |
 | --- | --- | --- |
@@ -35,6 +35,8 @@ _Generated from package documentation and metadata by `tools/docs/generate_engin
 | [rad0022_tune_pin](../../../../engines/radiance/patches/rad0022_tune_pin/SUMMARY.md) | `untested` | The same text and checks as `RADIANCE_TUNE` (an axis or value a kernel does not offer is an error), set before the plugins load. A different `RADIANCE_TUNE` already in the environment is refused. Without the option nothing changes. |
 | [rad0023_ar_timeline](../../../../engines/radiance/patches/rad0023_ar_timeline/SUMMARY.md) | `untested` | Each launch stamps, in its first eight blocks, entry, push drained, every peer's flag seen and fold done, into a pinned host ring indexed by the launch's device sequence number; each ring is written under DIR at exit. Unset, the kernel takes no stamp and does the same work. |
 | [rad0024_ts3_decode](../../../../engines/radiance/patches/rad0024_ts3_decode/SUMMARY.md) | `untested` | From the all-reduce row's `ts_min` elements, as upstream's four-rank one-shot does, the three-rank one-shot runs the link-weighted exact two-shot at any size, so the rank behind the slowest link reads about one message instead of two. Same bits; `--tune-pin all_reduce:ts_min=0` turns it off. |
+| [rad0025_multiseq_pipelined_prefill](../../../../engines/radiance/patches/rad0025_multiseq_pipelined_prefill/SUMMARY.md) | `untested` | A step that prefills several prompts at once is cut between sequences, at the boundary nearest half the rows, and runs as the pipelined step: each block's all-reduce for one piece beside the other piece's work. `RadBatch` gains a host copy of the step's bounds for the cut. Same bits as the serial step. |
+| [rad0026_mixed_pipelined_prefill](../../../../engines/radiance/patches/rad0026_mixed_pipelined_prefill/SUMMARY.md) | `untested` | A step that carries decode rows beside two or more prefill sequences is pipelined too. The first piece holds the decode sequences and the prefill sequences before the cut, the second the rest. Each block issues the serial path's own decode and prefill launches over its piece. Same bits as the serial step. |
 
 ## Components (6)
 

@@ -254,6 +254,84 @@ managed patch:
 4. Same bits as the serial step (every row's arithmetic is unchanged); measure at 4/6/8 streams and with four 4096-token
    prompts, with a profile arm. Later: steps that mix decode rows with prefill.
 
+## Experiment 8 result: prefill pipelined between sequences (2026-11-12, rad0025, build 30146bef vs a08d17ff, logs e8-1223)
+
+rad0025 is the plan above as a managed patch. The scheduler gives the batch its host sequence bounds
+(`RadBatch::cu_seqlens_h`), and `pass_key` keys a recorded prefill pass of several sequences by them. 2x ABBA over
+the two builds, MXFP4 TP3 with the layout's settings, no other GPU process:
+
+| | rad0024 (mean of 4) | rad0025 (mean of 4) | change |
+|---|---|---|---|
+| four 4096-token prompts, slowest time to first token | 10460 ms | 9723 ms | -7.0% |
+| 1 stream | 115.7 tok/s | 115.5 tok/s | 0 |
+| 4 streams | 199.9 tok/s | 207.9 tok/s | +4.0% |
+| 6 streams | 195.3 tok/s | 197.5 tok/s | +1.2% |
+| 8 streams | 214.2 tok/s | 214.4 tok/s | 0 |
+
+The scheduler's "runs serially: more than one sequence" note is gone in every rad0025 arm. The 4-stream greedy texts
+differ only where the base build's own runs differ (the same two streams, from the same characters), so the output is
+unchanged. At 8 streams most steps carry decode rows and stay serial.
+
+Profile, four 4096-token prompts (`tp-profile.sh`, device time summed over both lanes):
+
+| build | rank | device ms | trunk | collectives | ffn_gate_up gemm |
+|---|---|---|---|---|---|
+| rad0024 | XTX / XTX / R9700 | 12502 / 12444 / 12515 | 30 / 29 / 25% | 70 / 70 / 75% | 1225 / 1184 / 1087 ms |
+| rad0025 | XTX / XTX / R9700 | 13793 / 13720 / 13965 | 35 / 35 / 34% | 64 / 64 / 66% | 1539 / 1399 / 1680 ms |
+
+Each piece's GEMMs run on half the rows and cost about 25% more in total. The overlap covers that and leaves 7% off
+the wall time. Collectives are still about two thirds of prefill device time, so the next gains are fewer all-reduce
+bytes in prefill and steps that mix decode rows with prefill.
+
+## Experiment 9 result: mixed steps pipelined (2026-11-12, rad0026, build b667a40b vs 30146bef, logs e9-1328)
+
+rad0026 pipelines a step that carries decode rows beside two or more prefill sequences. The first piece holds the
+decode sequences and the prefill sequences before the cut. Each block issues the serial path's own decode and prefill
+launches over its piece. 2x ABBA against the rad0025 build, same settings as experiment 8:
+
+| | rad0025 (mean of 4) | rad0026 (mean of 4) | change |
+|---|---|---|---|
+| four 4096-token prompts, slowest time to first token | 9610 ms | 8969 ms | -6.7% |
+| 1 stream | 115.6 tok/s | 115.8 tok/s | 0 |
+| 4 streams | 208.7 tok/s | 224.4 tok/s | +7.5% |
+| 6 streams | 196.8 tok/s | 216.4 tok/s | +10.0% |
+| 8 streams | 216.7 tok/s | 239.7 tok/s | +10.6% |
+
+The four-prompt case gains as well: its 2048-row chunks put the later prompts' prefill beside the first prompts'
+first decode rows. Over experiments 8 and 9 together, 8 streams go from 214 to 240 tok/s (+12%) and the four-prompt
+time to first token from 10.5 to 9.0 s (-14%).
+
+Output: the 4-stream greedy texts diverge only at the characters where the base builds' own runs diverge (221, 227
+and 267), so nothing points at the patch. The run-to-run variation already exists without it.
+
+Profile, 8 streams (`tp-profile.sh dec8`, device time summed over both lanes, so the totals are not wall time):
+
+| build | rank | device ms | trunk | drafter | collectives |
+|---|---|---|---|---|---|
+| rad0025 | XTX / XTX / R9700 | 6893 / 6868 / 6987 | 45 / 45 / 36% | 4.3 / 4.2 / 1.6% | 50 / 51 / 63% |
+| rad0026 | XTX / XTX / R9700 | 7278 / 7216 / 7449 | 46 / 47 / 41% | 3.9 / 3.9 / 1.5% | 50 / 50 / 58% |
+
+As in experiment 8, the split pieces cost more device time, and the overlap more than pays for it. Collectives
+are still half of the XTX cards' time and 58% of the R9700's. The R9700's extra share is mostly waiting for the XTX
+cards at each all-reduce.
+
+## Experiment 10 result: TP2 against TP3 on the rad0026 build (2026-11-12, build b667a40b, logs e10-1345)
+
+2x ABBA on one build (both configurations get rad0025 and rad0026). TP2 on the two XTX cards; TP3 on XTX, XTX and
+R9700 with the layout's tuning. MXFP4, exact wire, DFlash2 depth 3, fp8 KV:
+
+| | TP2 (mean of 4) | TP3 (mean of 4) | TP3 over TP2 |
+|---|---|---|---|
+| 1 stream | 83.2 tok/s | 115.1 tok/s | +38% |
+| 4 streams | 203.2 tok/s | 220.7 tok/s | +8.6% |
+| 6 streams | 197.7 tok/s | 215.4 tok/s | +9.0% |
+| 8 streams | 228.7 tok/s | 238.8 tok/s | +4.4% |
+| four 4096-token prompts, slowest time to first token | 7868 ms | 9057 ms | 15% slower |
+
+TP3 beats TP2 at 1/4/6/8 streams on the standard bench. Its remaining deficit is long-prompt prefill: a three-rank
+host-staged all-reduce, with the R9700 on Gen4 x4, moves more bytes per row than TP2's, and prefill is where the bytes
+are. The decode-only margin (experiment 4: +27-43%) shows what the bench gives up to prefill.
+
 ## Steps
 
 1. Add a typed per-run selector for the all-reduce method (e.g. `tuning.allreduce_method`; contract amendment; engine option in a managed patch) so every method below is an A/B from the manifest.

@@ -129,7 +129,8 @@ class TpOwnershipTests(unittest.TestCase):
                          ["rad0016_vtp14_rank_code_selection", "rad0017_vtp14_n3_shared_rendezvous", "rad0018_vtp14_n2_tp_ownership",
                           "rad0019_vtp14_n2_tp_ownership_fp8", "rad0020_vtp14_tp3_pipelined_prefill",
                           "rad0021_vtp14_weighted_twoshot_3rank", "rad0022_tune_pin", "rad0023_ar_timeline",
-                          "rad0024_ts3_decode"])
+                          "rad0024_ts3_decode", "rad0025_multiseq_pipelined_prefill",
+                          "rad0026_mixed_pipelined_prefill"])
         self.assertEqual(recipe["source"]["radiance"]["patch-sets"][-1], "vtp14-mixed-tp")
         self.assertNotIn("vtp14-mixed-tp", recipe["source"]["radiance-native"]["patch-sets"])
         self.assertNotIn("radiance-vtp14-rank-code-selection", recipe["source"])
