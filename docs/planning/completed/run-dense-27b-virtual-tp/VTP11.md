@@ -2,7 +2,7 @@
 id: VTP11
 order: 10
 plan: run-dense-27b-virtual-tp
-state: in_progress
+state: superseded
 created-at: '2026-11-10T00:00:00+00:00'
 breadth: ''
 skill: advanced
@@ -280,3 +280,7 @@ Keep both patches in isolated experimental source until the remaining
 gates and integration/quality tests pass.
 
 The GPU lease was explicitly released and no KFD processes remained.
+
+## Change Log
+
+- 2026-11-12T22:13:46.872064+00:00 (state-transition): State: in_progress → superseded

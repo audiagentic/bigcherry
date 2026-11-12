@@ -2,7 +2,7 @@
 id: VTP04
 order: 3
 plan: run-dense-27b-virtual-tp
-state: in_progress
+state: superseded
 created-at: '2026-11-10T00:00:00+00:00'
 breadth: ''
 skill: advanced
@@ -216,3 +216,7 @@ chain. The measured transport alone (including 627us at M64)
 may dominate FFN microbench compute; never add isolated estimates
 and call them tokens/s. Prove p95 slowest-rank and KV/GDN memory
 headroom. No production engine modification or serving defaults.
+
+## Change Log
+
+- 2026-11-12T22:13:18.994008+00:00 (state-transition): State: in_progress → superseded

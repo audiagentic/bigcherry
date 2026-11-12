@@ -2,7 +2,7 @@
 id: VTP13
 order: 12
 plan: run-dense-27b-virtual-tp
-state: in_progress
+state: superseded
 created-at: '2026-11-11T00:00:00+00:00'
 breadth: ''
 skill: advanced
@@ -1347,3 +1347,7 @@ Only after real tokens and quality pass run matched TP2/TP3
 C4/C6/C8, resident KV and power A/B. Do not claim these
 from VTP19 microbench figures or the standalone VTP27 file
 handoff.
+
+## Change Log
+
+- 2026-11-12T22:13:54.852336+00:00 (state-transition): State: in_progress → superseded

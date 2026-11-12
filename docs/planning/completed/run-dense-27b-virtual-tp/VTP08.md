@@ -2,7 +2,7 @@
 id: VTP08
 order: 7
 plan: run-dense-27b-virtual-tp
-state: in_progress
+state: superseded
 created-at: '2026-11-10T00:00:00+00:00'
 breadth: ''
 skill: advanced
@@ -115,3 +115,7 @@ host-spill or another model.
   Report refusal if owner, replication, device code or real resident
   KV budget is unresolved, then benchmark the end-to-end three-way
   exact reduction versus the best genuinely feasible control.
+
+## Change Log
+
+- 2026-11-12T22:13:34.940667+00:00 (state-transition): State: in_progress → superseded

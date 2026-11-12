@@ -2,7 +2,7 @@
 id: VTP05
 order: 4
 plan: run-dense-27b-virtual-tp
-state: in_progress
+state: superseded
 created-at: '2026-11-10T00:00:00+00:00'
 breadth: ''
 skill: advanced
@@ -241,3 +241,7 @@ BF16-vs-quantised quality/accuracy comparison. We have not established
 KLD, maximum KV, multi-rank numerical or fused full-FFN parity;
 those gates remain in VTP06 and VTP03. IQ6R cold and W8A8 warm
 comparisons remain intentionally non-equivalent.
+
+## Change Log
+
+- 2026-11-12T22:13:22.974517+00:00 (state-transition): State: in_progress → superseded

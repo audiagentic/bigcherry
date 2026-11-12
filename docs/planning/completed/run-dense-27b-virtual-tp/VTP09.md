@@ -2,7 +2,7 @@
 id: VTP09
 order: 8
 plan: run-dense-27b-virtual-tp
-state: in_progress
+state: superseded
 created-at: '2026-11-10T00:00:00+00:00'
 breadth: ''
 skill: advanced
@@ -186,3 +186,7 @@ real mixed-architecture virtual TP4 runtime remain unavailable.
 Require an actual IQ6R model-format and end-to-end graph-selection
 trace, BF16 quality comparisons, and full runtime/VRAM/collective
 tests before production rollout.
+
+## Change Log
+
+- 2026-11-12T22:13:38.916756+00:00 (state-transition): State: in_progress → superseded

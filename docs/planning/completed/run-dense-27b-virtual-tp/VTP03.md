@@ -2,7 +2,7 @@
 id: VTP03
 order: 2
 plan: run-dense-27b-virtual-tp
-state: pending
+state: superseded
 created-at: '2026-11-10T00:00:00+00:00'
 breadth: ''
 skill: advanced
@@ -114,3 +114,7 @@ a negative conclusion rather than promising an unmeasured speedup.
 PENDING. No virtual-TP4 engine graph, production layout, model
 conversion or model-serving benchmark has been created. Small
 GPU experiments are independently scoped and leased under VTP04.
+
+## Change Log
+
+- 2026-11-12T22:13:15.023202+00:00 (state-transition): State: pending → superseded

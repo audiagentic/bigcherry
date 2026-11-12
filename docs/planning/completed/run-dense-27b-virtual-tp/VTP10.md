@@ -2,7 +2,7 @@
 id: VTP10
 order: 9
 plan: run-dense-27b-virtual-tp
-state: in_progress
+state: superseded
 created-at: '2026-11-10T00:00:00+00:00'
 breadth: ''
 skill: advanced
@@ -195,3 +195,7 @@ host-buffer correctness, produce a valid layer-0 Hessian smoke,
 then design 64-range representative calibration and VHEAD preparation.
 IQ6R-V4 GPTQ requires full, representative source Hessians, matched
 BF16 quality oracle and a real end-to-end model result.
+
+## Change Log
+
+- 2026-11-12T22:13:42.906591+00:00 (state-transition): State: in_progress → superseded

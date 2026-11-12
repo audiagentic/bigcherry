@@ -2,7 +2,7 @@
 id: VTP06
 order: 5
 plan: run-dense-27b-virtual-tp
-state: in_progress
+state: superseded
 created-at: '2026-11-10T00:00:00+00:00'
 breadth: ''
 skill: advanced
@@ -376,3 +376,7 @@ over to it.
 Full receipts:
 - 0:2: campaign/ranges/00-02/attempt-01/{receipt.json,validation.json,engine.log,hessians/}
 - 2:4: campaign/ranges/02-04/attempt-01/{receipt.json,validation.json,engine.log,hessians/}
+
+## Change Log
+
+- 2026-11-12T22:13:26.992807+00:00 (state-transition): State: in_progress → superseded

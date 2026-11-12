@@ -2,7 +2,7 @@
 id: VTP07
 order: 6
 plan: run-dense-27b-virtual-tp
-state: in_progress
+state: superseded
 created-at: '2026-11-10T00:00:00+00:00'
 breadth: ''
 skill: advanced
@@ -335,3 +335,7 @@ to the 138.3-us warm W8A8 kernel barrier as if weights were matched.
 Scratch receipts: `${BC_WORK_ROOT}/xtx27-prefill/iqr-layout-fix/canonical-perf-runs/`
 (XTXs) and `${BC_WORK_ROOT}/xtx27-prefill/iqr-layout-fix/canonical-perf-r9700/`
 (R9700). No production models, services or kernel installations changed.
+
+## Change Log
+
+- 2026-11-12T22:13:30.996805+00:00 (state-transition): State: in_progress → superseded

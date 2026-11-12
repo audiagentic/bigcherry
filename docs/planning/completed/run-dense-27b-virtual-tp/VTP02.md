@@ -2,7 +2,7 @@
 id: VTP02
 order: 1
 plan: run-dense-27b-virtual-tp
-state: in_progress
+state: superseded
 created-at: '2026-11-10T00:00:00+00:00'
 breadth: ''
 skill: advanced
@@ -123,3 +123,7 @@ own explicit quantization and physical-placement plan. This census
 does not make Q8 weights equal to BF16/2: actual scales, alignment,
 side tables, replicated tensors and MTP/vision handling must be
 accounted for by the real converted .rad artifact (VTP06).
+
+## Change Log
+
+- 2026-11-12T22:13:10.999603+00:00 (state-transition): State: in_progress → superseded

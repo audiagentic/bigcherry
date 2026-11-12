@@ -2,7 +2,7 @@
 id: VTP01
 order: 0
 plan: run-dense-27b-virtual-tp
-state: in_progress
+state: superseded
 created-at: '2026-11-10T00:00:00+00:00'
 breadth: ''
 skill: advanced
@@ -114,3 +114,7 @@ VTP03 physical three-way microbench lower-bound gate.
 Implementation is a **new opt-in engine architecture feature**, not a
 fake GPU inventory or just passing `--tp 4`. Reuse pinned managed patches,
 never edit `vendor/radiance` directly.
+
+## Change Log
+
+- 2026-11-12T22:12:52.637710+00:00 (state-transition): State: in_progress → superseded

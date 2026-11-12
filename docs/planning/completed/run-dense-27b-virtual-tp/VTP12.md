@@ -2,7 +2,7 @@
 id: VTP12
 order: 11
 plan: run-dense-27b-virtual-tp
-state: in_progress
+state: superseded
 created-at: '2026-11-11T00:00:00+00:00'
 breadth: ''
 skill: advanced
@@ -516,3 +516,7 @@ to the source hashes. **Still mandatory before FP8/TP3 promotion**:
 native gfx11/gfx12 optimized operator and common activation/scale ABI,
 full original GDN conv/decay/state correctness, matched TP2/TP4
 latency, real 4/6/8-stream throughput, KV admission and model quality.
+
+## Change Log
+
+- 2026-11-12T22:13:50.836885+00:00 (state-transition): State: in_progress → superseded
