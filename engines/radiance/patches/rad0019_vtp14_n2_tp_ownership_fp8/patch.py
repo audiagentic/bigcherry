@@ -60,11 +60,6 @@ QWEN = FilePatch(path="arch/qwen35_fp8/qwen35_fp8.cpp", language="none", descrip
         "                    (long long)g.own_gdn_v_all, (long long)n_head_k_all, (long long)n_head_v_all);\n"
         "            return RAD_E_SHAPE;\n"
         "        }\n"
-        "        if (ctx->max_spec > 0) {\n"
-        "            fprintf(stderr, \"radiance: qwen35: --tp-ownership declares no drafter geometry; run \"\n"
-        "                            \"without speculation (--num-speculative-tokens 0)\\n\");\n"
-        "            return RAD_E_UNSUPPORTED;\n"
-        "        }\n"
         "        gc.n_head_k     = g.own_gdn_k;\n"
         "        gc.n_head_v     = g.own_gdn_v;\n"
         "        gc.k_first      = g.own_gdn_k_lo;\n"
@@ -151,6 +146,30 @@ MLP = FilePatch(path="arch/common/rad_block_mlp_fp8.h", language="none", descrip
 
 LINEAR = FilePatch(path="arch/common/rad_fp8.h", language="none", description="VTP14 N2 span_parts covers MXFP4 wref", edits=(
     _edit(
+        "n2f-dense-span",
+        "    /* Rows [lo, hi) of the stored block-fp8 weight `src_wn` (codes and scale plane; mapped by\n",
+        "    /* BC_VTP14_N2F_DENSE_SPAN: this rank's uneven slice [lo, hi) of the split dimension (rows of each row\n"
+        "     * part for RAD_SHARD_ROW, columns for RAD_SHARD_COL), applied to every plane: block fp8's scale\n"
+        "     * blocks are 128 each way; MXFP4's scale and reference planes keep the rows and take K in 32s.\n"
+        "     * Call after declare(). */\n"
+        "    int span(RadBuilder* b, int shard, int64_t lo, int64_t hi) const {\n"
+        "        const bool rows = shard == RAD_SHARD_ROW;\n"
+        "        const int64_t div = (mx || m2x) ? (rows ? 1 : RAD_MX_GROUP) : RAD_FP8_BLOCK;\n"
+        "        if (lo < 0 || hi <= lo || lo % div || hi % div || ((mx || m2x) && rows && (lo % 16 || hi % 16))) {\n"
+        "            fprintf(stderr, \"radiance: a span [%lld, %lld) cuts this weight's scale blocks\\n\",\n"
+        "                    (long long)lo, (long long)hi);\n"
+        "            return RAD_E_INVAL;\n"
+        "        }\n"
+        "        RAD_ARCH_TRY(rad_weight_shard_span(b, w, lo, hi));\n"
+        "        if (s) RAD_ARCH_TRY(rad_weight_shard_span(b, s, lo / div, hi / div));\n"
+        "        if (ref) RAD_ARCH_TRY(rad_weight_shard_span(b, ref, lo / div, hi / div));\n"
+        "        return RAD_OK;\n"
+        "    }\n"
+        "    /* Rows [lo, hi) of the stored block-fp8 weight `src_wn` (codes and scale plane; mapped by\n",
+        guard="BC_VTP14_N2F_DENSE_SPAN",
+        max_span=2,
+    ),
+    _edit(
         "n2f-span-parts-wref",
         "        RAD_ARCH_TRY(rad_weight_shard_span_parts(b, w, lo, hi, total, n));\n"
         "        if (!ws) return RAD_OK;\n",
@@ -165,4 +184,61 @@ LINEAR = FilePatch(path="arch/common/rad_fp8.h", language="none", description="V
     ),
 ))
 
-PATCHES = (QWEN, ATTN, MLP, LINEAR)
+DRAFT_GEOM = FilePatch(path="arch/common/rad_arch.h", language="none", description="VTP14 N2 drafter ownership", edits=(
+    _edit(
+        "n2f-drafter-geom",
+        "    RAD_ARCH_TRY(divide_or_fail(dg.n_head_all,    dg.world, \"draft num_attention_heads\", &dg.n_head));\n"
+        "    RAD_ARCH_TRY(divide_or_fail(dg.n_head_kv_all, dg.world, \"draft num_key_value_heads\", &dg.n_head_kv));\n"
+        "    RAD_ARCH_TRY(divide_or_fail(dg.n_ff_all,      dg.world, \"draft intermediate_size\",   &dg.n_ff));\n",
+        "    if (target.tp_owned) {\n"
+        "        /* BC_VTP14_N2F_DRAFTER_GEOM: under --tp-ownership the drafter takes the profile's 1:1:2 shares of\n"
+        "         * its own heads (DFlash2 on the 27B: 8/8/16 query and 2/2/4 KV heads of 128) and the target's\n"
+        "         * feed-forward rows when its width is the target's, so every rank's share of each all-reduce\n"
+        "         * stays its own. Anything else is refused rather than split unevenly. */\n"
+        "        static constexpr int64_t share[3] = { 1, 1, 2 }, first[3] = { 0, 1, 2 };\n"
+        "        if (dg.world != 3 || dg.n_head_all % 4 || dg.n_head_kv_all % 4 || dg.n_ff_all != target.n_ff_all) {\n"
+        "            fprintf(stderr, \"radiance: --tp-ownership: the %s drafter (%lld/%lld heads, %lld FFN) does not \"\n"
+        "                            \"split 1:1:2 over three ranks like its target (%lld FFN)\\n\", what,\n"
+        "                    (long long)dg.n_head_all, (long long)dg.n_head_kv_all, (long long)dg.n_ff_all,\n"
+        "                    (long long)target.n_ff_all);\n"
+        "            return RAD_E_UNSUPPORTED;\n"
+        "        }\n"
+        "        const int r = dg.rank;\n"
+        "        const int64_t q4 = dg.n_head_all / 4, kv4 = dg.n_head_kv_all / 4;\n"
+        "        dg.n_head    = q4 * share[r];\n"
+        "        dg.n_head_kv = kv4 * share[r];\n"
+        "        dg.own_q_lo  = q4 * first[r];\n"
+        "        dg.own_kv_lo = kv4 * first[r];\n"
+        "        dg.kv_off    = dg.own_kv_lo * dg.head_dim;\n"
+        "        dg.n_ff      = target.n_ff;\n"
+        "        dg.own_ff_lo = target.own_ff_lo;\n"
+        "    } else {\n"
+        "        RAD_ARCH_TRY(divide_or_fail(dg.n_head_all,    dg.world, \"draft num_attention_heads\", &dg.n_head));\n"
+        "        RAD_ARCH_TRY(divide_or_fail(dg.n_head_kv_all, dg.world, \"draft num_key_value_heads\", &dg.n_head_kv));\n"
+        "        RAD_ARCH_TRY(divide_or_fail(dg.n_ff_all,      dg.world, \"draft intermediate_size\",   &dg.n_ff));\n"
+        "    }\n",
+        guard="BC_VTP14_N2F_DRAFTER_GEOM",
+    ),
+))
+
+DFLASH = FilePatch(path="arch/common/rad_block_dflash2.h", language="none", description="VTP14 N2 drafter spans", edits=(
+    _edit(
+        "n2f-dflash-spans",
+        "                                     { nm.ckpt(\"%s.layers.%d.mlp.down_proj.weight\", ck, i) }));\n",
+        "                                     { nm.ckpt(\"%s.layers.%d.mlp.down_proj.weight\", ck, i) }));\n"
+        "        /* BC_VTP14_N2F_DFLASH_SPANS: --tp-ownership (drafter_geom set this rank's first heads). */\n"
+        "        if (g.tp_owned) {\n"
+        "            const int64_t ql = g.own_q_lo * g.head_dim, kl = g.own_kv_lo * g.head_dim;\n"
+        "            RAD_ARCH_TRY(w_q[i].span(b, RAD_SHARD_ROW, ql, ql + qd));\n"
+        "            RAD_ARCH_TRY(w_k[i].span(b, RAD_SHARD_ROW, kl, kl + kvd));\n"
+        "            RAD_ARCH_TRY(w_v[i].span(b, RAD_SHARD_ROW, kl, kl + kvd));\n"
+        "            RAD_ARCH_TRY(w_o[i].span(b, RAD_SHARD_COL, ql, ql + qd));\n"
+        "            RAD_ARCH_TRY(w_gu[i].span(b, RAD_SHARD_ROW, g.own_ff_lo, g.own_ff_lo + g.n_ff));\n"
+        "            RAD_ARCH_TRY(w_dn[i].span(b, RAD_SHARD_COL, g.own_ff_lo, g.own_ff_lo + g.n_ff));\n"
+        "        }\n",
+        guard="BC_VTP14_N2F_DFLASH_SPANS",
+        max_span=2,
+    ),
+))
+
+PATCHES = (QWEN, ATTN, MLP, LINEAR, DRAFT_GEOM, DFLASH)
