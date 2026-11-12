@@ -1550,7 +1550,7 @@ void engine_only_layout(Fixture& t) {
         assert(e.at("kernels") == Json({{"moe_native", true}, {"dec11", false}}));   // amendment 14: environment settings are keys too
         assert(!e.contains("lora") && !e.contains("chat"));   // a section appears only with its members
         assert(bc::serving::v2::read_manifest(with_options.text, "options", bc::serving::v2::PlanUse::measuring).ok());
-        assert(bc::serving::engine_option_fields().size() == 89 /* 80 flags + 9 environment settings */);
+        assert(bc::serving::engine_option_fields().size() == 92 /* 83 flags (amendment 18: +3) + 9 environment settings */);
         Options bad = opts;
         bad.sets = {"layout.name=\"qwen27b-2xtx\"", "sampling.no_such_option=1"};
         fail(bad, t.facts, "no_such_option");
@@ -1674,6 +1674,8 @@ void mixed_arch_engine_layout(Fixture& t) {
     opts.layouts = {t.file("mixed-layouts.toml",
         "schema = 1\n[layout.mixed-tp3]\nmodel = \"m.rad\"\n"
         "engine = [{ arch = \"gfx1100\", count = 2 }, { arch = \"gfx1201\", count = 1 }]\ntp-wire = \"exact\"\n"
+        "[layout.mixed-tp3.tuning]\ntp_ownership = \"kv=1,1,2;ffn=8,8,16\"\npipelined_prefill = \"on\"\n"
+        "[layout.badtuning]\nmodel = \"m.rad\"\nengine = { arch = \"gfx1201\" }\n[layout.badtuning.tuning]\nno_such = 1\n"
         "[layout.twice]\nmodel = \"m.rad\"\nengine = [{ arch = \"gfx1100\" }, { arch = \"gfx1100\" }]\ntp-wire = \"exact\"\n")};
     opts.sets = {"layout.name=\"mixed-tp3\"", "service.max_sessions=4", "service.max_context=8192"};
     const auto r = sv::resolve(opts, t.facts);
@@ -1681,6 +1683,18 @@ void mixed_arch_engine_layout(Fixture& t) {
     assert(r.typed.layout.engine_cards.size() == 3);
     for (size_t i = 0; i < 3; ++i) assert(r.typed.layout.engine_cards[i] == g[i].at("bdf").get<std::string>());
     assert(r.typed.engine.tp == 3 && r.typed.engine.kernels == "libr3,libr4d,libref");
+    // a mixed world hands the engine its ranks' cards (--rank-devices); the layout's tuning is a policy layer
+    assert(r.values.at("layout").at("rank_devices") == r.values.at("layout").at("engine_cards"));
+    assert(r.values.at("tuning").at("tp_ownership") == "kv=1,1,2;ffn=8,8,16");
+    assert(r.values.at("tuning").at("pipelined_prefill") == "on");
+    assert(r.provenance.at("tuning.tp_ownership").at("source").get<std::string>().find("layout mixed-tp3") == 0);
+    {
+        Options over = opts;   // a profile (or --set) overrides the layout's tuning
+        over.sets.push_back("tuning.pipelined_prefill=\"off\"");
+        assert(sv::resolve(over, t.facts).values.at("tuning").at("pipelined_prefill") == "off");
+        over.sets = {"layout.name=\"badtuning\""};
+        fail(over, t.facts, "unknown key tuning.no_such");
+    }
     const Json key = sv::plan_key_inputs(r.values, t.facts, "m", "e", "");
     assert(key.contains("rank_cards") && key.at("rank_cards").size() == 3 && key.at("rank_cards")[2].at("arch") == "gfx1201");
     opts.sets = {"layout.name=\"twice\""};
@@ -1689,7 +1703,9 @@ void mixed_arch_engine_layout(Fixture& t) {
     Options dense = opts;
     dense.layouts.clear();
     dense.sets = {"layout.name=\"qwen27b-2xtx\"", "service.max_sessions=6", "service.max_context=8192"};
-    assert(!sv::plan_key_inputs(sv::resolve(dense, t.facts).values, t.facts, "m", "e", "").contains("rank_cards"));
+    const auto uniform = sv::resolve(dense, t.facts);
+    assert(!sv::plan_key_inputs(uniform.values, t.facts, "m", "e", "").contains("rank_cards"));
+    assert(!uniform.values.at("layout").contains("rank_devices"));   // a uniform world needs no --rank-devices
 }
 
 void tp_engine_with_helper_layout(Fixture& t) {

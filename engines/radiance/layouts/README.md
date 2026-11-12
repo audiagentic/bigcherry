@@ -38,6 +38,10 @@ server-args                    optional engine options, each one a manifest sett
                                placement); for a helper layout they are the launcher's defaults, which its own
                                command-line options override
 
+[layout.NAME.tuning]           engine tuning fields of the manifest contract (tuning.*): tp_ownership,
+                               pipelined_prefill, pipelined_prefill_min_rows, p2p, ... A policy layer under the site and
+                               profile, which override it (as does --set tuning.KEY=VALUE)
+
 [[layout.NAME.helper]]         a group of helper cards, in order (helper 0 first; helper 0 creates the shared segment)
   arch       architecture to take from the inventory
   count      how many of that arch ("all" or a number)

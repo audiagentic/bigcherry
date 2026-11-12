@@ -1030,6 +1030,14 @@
                       "description": "VRAM left unclaimed on every engine card, MiB (`--gpu-headroom-mib`; amendment 11).",
                       "$ref": "#/$defs/uint",
                       "default": 96
+                    },
+                    "rank_devices": {
+                      "description": "Engine GPU addresses in rank order, given to the engine when its world holds more than one card type, so each rank loads its own architecture's kernel code (`--rank-devices`, BigCherry rad0016; amendment 18). Derived from the layout's engine groups; absent for a uniform world.",
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/$defs/bdf"
+                      },
+                      "minItems": 2
                     }
                   }
                 },
@@ -1581,6 +1589,23 @@
                       "enum": [
                         "on"
                       ]
+                    },
+                    "tp_ownership": {
+                      "description": "Uneven tensor-parallel split, one count a rank in rank order: `kv=..;ffn=..[;q=..][;lk=..;lv=..]` (`--tp-ownership`, BigCherry rad0018; amendment 18). The engine checks it against the loaded model.",
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "pipelined_prefill": {
+                      "description": "Pipelined one-sequence prefill, all-reduces on the second lane (`--pipelined-prefill`, BigCherry rad0020; amendment 18): `auto` (the plugin's rule), `on`, `off`.",
+                      "enum": [
+                        "auto",
+                        "on",
+                        "off"
+                      ]
+                    },
+                    "pipelined_prefill_min_rows": {
+                      "description": "The narrowest pipelined prefill step, rows; 0 is the plugin's own (`--pipelined-prefill-min-rows`, BigCherry rad0020; amendment 18).",
+                      "$ref": "#/$defs/uint"
                     }
                   }
                 },

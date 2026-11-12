@@ -78,6 +78,10 @@ const std::vector<Field>& schema_fields() {
             "the named layout (--layouts / BIGCHERRY_LAYOUTS); required, no default");
         add("layout.engine_cards", "string_array", nullptr,
             "RSC05: selected PCI BDFs from KFD GPU nodes, in rank order", "discovered");
+        // present only when the layout's engine holds more than one card type (radiance --rank-devices; amendment 18)
+        f.push_back({"layout.rank_devices", "string_array",
+                     "the engine cards in rank order for a world of more than one card type (radiance --rank-devices)",
+                     "discovered", "startup-only", Json(), 0, std::numeric_limits<uint32_t>::max(), {}, true, true});
         add("layout.helper_cards", "string_array", nullptr,
             "RSC05: selected PCI BDFs from KFD GPU nodes; empty for an engine-only layout", "discovered", "step-boundary");
         add("memory.host_pool_mib", "integer", 9216,
@@ -423,6 +427,7 @@ struct LayoutRecipe {
     std::optional<std::string> tp_wire;
     std::vector<HelperGroup> groups;
     bool combine = false, tail = false;
+    Json tuning = Json::object();         // [layout.NAME.tuning]: engine tuning fields (tuning.*), layered as a profile
 };
 
 Json embedded_toml(const char* text, const char* what) {
@@ -536,6 +541,10 @@ LayoutRecipe recipe_for(const std::string& name, const Options& options) {
     }
     r.engine_arch = r.engine_groups.front().first;
     if (l.contains("tp-wire")) r.tp_wire = l.at("tp-wire").get<std::string>();
+    if (l.contains("tuning")) {
+        if (!l.at("tuning").is_object()) throw std::runtime_error(where + "tuning is a table of engine tuning fields");
+        r.tuning = l.at("tuning");
+    }
     if (l.contains("env"))
         for (auto it = l.at("env").begin(); it != l.at("env").end(); ++it) {
             if (it.key() != "R3_MOE_WORKER_COMBINE" || (it.value() != "1" && it.value() != "0"))
@@ -1074,6 +1083,9 @@ Resolved resolve(const Options& options, const Json& facts) {
             "KFD and PCI inventory, " + name, Json::array({"layout.name", "facts.gpus"}));
     derived("layout.helper_cards", cards, "KFD and PCI inventory, " + name,
             Json::array({"layout.name", "facts.gpus"}));
+    if (layout.engine_groups.size() > 1)
+        derived("layout.rank_devices", engine_cards, "KFD and PCI inventory, " + name + " engine groups",
+                Json::array({"layout.engine_cards"}));
     derived("memory.helper_budgets_mib", budgets,
             "layout " + name + " (" + layout.source + ")" + " (interim; RSC03)",
             Json::array({"layout.name", "facts.gpus"}));
@@ -1095,6 +1107,10 @@ Resolved resolve(const Options& options, const Json& facts) {
     derived("helper.combine", layout.combine,
             "layout " + name + " (" + layout.source + ")",
             Json::array({"layout.name"}));
+    // The layout's own engine tuning (tp_ownership, pipelined_prefill, ...): a policy layer under the site and profile, which
+    // override it. Only tuning.* fields; the same strict key and type checks as a profile.
+    if (!layout.tuning.empty())
+        layer(values, provenance, Json{{"tuning", layout.tuning}}, "profile", "layout " + name + " (" + layout.source + ")");
     const Json baseline_values = values;
     layer(values, provenance, site, "site", options.site.empty() ? "site" : options.site.string());
     layer(values, provenance, profile, "profile",

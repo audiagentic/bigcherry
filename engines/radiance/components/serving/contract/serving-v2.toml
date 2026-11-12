@@ -1494,6 +1494,17 @@ default_source = "radiance:Config.gpu_headroom_mib"
 doc = "VRAM left unclaimed on every engine card, MiB (`--gpu-headroom-mib`; amendment 11)."
 
 [[field]]
+path = "/spec/processes/engine/device/rank_devices"
+optional = true
+radiance_option = "--rank-devices"
+radiance_config = "Config.rank_devices"
+kind = "array"
+item_kind = "ref"
+item_ref = "bdf"
+min_items = 2
+doc = "Engine GPU addresses in rank order, given to the engine when its world holds more than one card type, so each rank loads its own architecture's kernel code (`--rank-devices`, BigCherry rad0016; amendment 18). Derived from the layout's engine groups; absent for a uniform world."
+
+[[field]]
 path = "/spec/processes/engine/runtime"
 kind = "object"
 cpp = "EngineRuntime"
@@ -2394,6 +2405,34 @@ kind = "enum"
 values = ["on"]
 cpp_type = "OptWeightsDiskTier"
 doc = "Engine flag `--weights-disk-tier` (amendment 13). Present means the flag is given."
+
+[[field]]
+path = "/spec/processes/engine/tuning/tp_ownership"
+optional = true
+radiance_option = "--tp-ownership"
+radiance_config = "Config.tp_ownership"
+kind = "string"
+min_length = 1
+doc = "Uneven tensor-parallel split, one count a rank in rank order: `kv=..;ffn=..[;q=..][;lk=..;lv=..]` (`--tp-ownership`, BigCherry rad0018; amendment 18). The engine checks it against the loaded model."
+
+[[field]]
+path = "/spec/processes/engine/tuning/pipelined_prefill"
+optional = true
+radiance_option = "--pipelined-prefill"
+radiance_config = "Config.pipelined_prefill"
+kind = "enum"
+values = ["auto", "on", "off"]
+cpp_type = "PipelinedPrefill"
+doc = "Pipelined one-sequence prefill, all-reduces on the second lane (`--pipelined-prefill`, BigCherry rad0020; amendment 18): `auto` (the plugin's rule), `on`, `off`."
+
+[[field]]
+path = "/spec/processes/engine/tuning/pipelined_prefill_min_rows"
+optional = true
+radiance_option = "--pipelined-prefill-min-rows"
+radiance_config = "Config.pipelined_prefill_min_rows"
+kind = "ref"
+ref = "uint"
+doc = "The narrowest pipelined prefill step, rows; 0 is the plugin's own (`--pipelined-prefill-min-rows`, BigCherry rad0020; amendment 18)."
 
 [[field]]
 path = "/spec/processes/engine/diagnostics"

@@ -251,7 +251,10 @@ def resolve(name: str, host: environment.Host, *, budgets: dict[str, int] | None
         raise LayoutError(f"unknown layout {name!r}; known: {sorted(layouts)}")
     lay = layouts[name]
     where = f"layout.{name}"
-    _allow(lay, {"description", "model", "engine", "tp-wire", "server-args", "helper", "env"}, where)
+    _allow(lay, {"description", "model", "engine", "tp-wire", "server-args", "helper", "env", "tuning"}, where)
+    # [layout.NAME.tuning]: engine tuning fields (tuning.*; bc-serve checks each key and type against the contract)
+    if not isinstance(lay.get("tuning", {}), dict):
+        raise LayoutError(f"{where}.tuning must be a table of engine tuning fields")
     model = lay.get("model")
     if not isinstance(model, str) or not model or model.startswith("/") or not model.endswith(".rad") or any(
         part in ("", ".", "..") for part in model.split("/")
