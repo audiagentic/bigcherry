@@ -1,0 +1,26 @@
+{
+  "change-class": "docs",
+  "event-id": "chg_20261112_233144_int8-tp3-performance-is-now-th_1346",
+  "files": [
+    "docs/planning/active/run-dense-27b-virtual-tp/VTP37.md",
+    "docs/planning/active/run-dense-27b-virtual-tp/VTP36.md",
+    "docs/planning/completed/run-dense-27b-virtual-tp/VTP31.md",
+    "docs/planning/completed/patching-radiance-rdna3/RAD48.md",
+    "docs/planning/active/patching-radiance-rdna3/RAD47.md",
+    "docs/planning/active/run-xtx27-prefill/XDP08.md",
+    "docs/evidence/2026-11-13-vtp36-gpt-review/REVIEW.md",
+    "docs/evidence/2026-11-13-vtp36-gpt-review/BRIEF.md"
+  ],
+  "plan-item-ids": [
+    "VTP37",
+    "VTP36",
+    "VTP31",
+    "RAD48",
+    "RAD47",
+    "XDP08"
+  ],
+  "status": "unreleased",
+  "technical-summary": "New P0 VTP37: int8 (w8a8) TP3 decode/prefill - pipelined prefill on rotated-int8 trunks (q8_fed currently disables it; step_plain writes the E4M3 pair), gfx1100 int8 GEMM row crossover, three-rank fused ar_rmsnorm_had_quant_i8g, int8 tile scale staging. VTP36 gets the GPT detailed review (pipeline-floor and x4-link explanation of the 2048-token gap, corrections, reordered steps). RAD48 superseded by VTP37; RAD47 status recorded; XDP08-A linked; VTP31 corrections (int8 experiment 12 never pipelined; R9700 shard 1/9). GPT review stored as evidence.",
+  "timestamp-utc": "2026-11-12T23:31:44.680882Z",
+  "user-summary-candidate": "int8 TP3 performance is now the first-priority plan item (VTP37); TP3 plans updated with the GPT review's findings and corrections."
+}

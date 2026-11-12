@@ -13,7 +13,46 @@ work: M
 
 # Apply gfx11 metadata-reuse findings to existing INT8, MXFP4 and MoE kernels
 
-> Archived 2026-11-12 from branch `exp/xtx27-prefill-opt` (git tag `archive/exp-xtx27-prefill-opt`), which never merged. Its lab programs and tests are in that tag.
+## Description
+
+
+
+## Steps
+
+
+
+## Detailed Solution & Technical Design
+
+
+
+## Code Samples & Guidance
+
+
+
+## Files
+
+
+
+## Validation
+
+
+
+## Effort & Risk
+
+
+
+## Standards
+
+
+
+## Acceptance Criteria
+
+
+
+## Notes
+
+
+2026-11-13: XDP08-A (per-row weight-scale LDS staging in native `gemm_i8a8_tiled`) is carried as VTP37 step 5 for the int8 TP3 world, measured end to end there.
 
 ## Goal and limits
 
@@ -265,3 +304,7 @@ equivalence and repeatable same-card
 speed-up are demonstrated.
 
 - 2026-11-09 follow-up: spotted and corrected an LDS producer/consumer race before merge. Added two-group ping-pong scale buffers; 67 XDP card-free tests and native drift checks pass. No GPU benchmark claim.
+
+## Change Log
+
+- 2026-11-12T23:31:17.236650+00:00 (updated-by): Updated: section:notes

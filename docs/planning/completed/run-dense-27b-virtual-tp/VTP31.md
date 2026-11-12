@@ -123,6 +123,12 @@ Acceptance met:
 
 The untried steps (typed method selector, three-rank fused AR + norm, LL handshake, chained launches / hierarchical exchange, CPU-assisted reduce, epilogue push) move to VTP36, which owns TP3 performance from here.
 
+
+### Corrections (2026-11-13, from the VTP36 GPT review, checked against the source)
+
+- Experiment 12: the int8 (w8a8) trunk never runs the pipelined prefill (`qwen35_fp8.cpp` keeps `pipe_on` false when `a_h.q8_fed`), so the 256-row floor cannot have caused the +0.3-1.3% / -1.7-2.2% differences; they are within noise. Enabling the pipeline on int8 is VTP37 step 2.
+- Where this record says the R9700 owns no shard and moves S: with the recorded weights 4,4,1 it owns 1/9 and moves 10S/9 each way.
+
 ## Results so far (2026-11-12, MXFP4 6/6/12, exact wire, DFlash2 depth 3)
 
 **Per-op profile** (`--profile-ops`, logs `vtp14/logs/profwhere-0723`). TP2's figure includes its fused `ar_rmsnorm_quant_fp8`. The fused AR norms refuse world != 2, so TP3 runs `all_reduce` and then `rmsnorm_quant_fp8`.
@@ -528,3 +534,4 @@ Within noise everywhere: the gather costs nothing measurable.
 - 2026-11-12T07:39:30.275584+00:00 (updated-by): Updated: section:description, section:steps, section:validation, section:acceptance_criteria, section:notes
 - 2026-11-12T22:44:55.913166+00:00 (updated-by): Updated: section:notes
 - 2026-11-12T22:45:12.421202+00:00 (state-transition): State: pending → completed
+- 2026-11-12T23:31:21.253788+00:00 (updated-by): Updated: section:notes
