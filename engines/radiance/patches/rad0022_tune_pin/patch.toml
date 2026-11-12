@@ -1,0 +1,11 @@
+schema = 1
+id = "rad0022_tune_pin"
+order = 22
+state = "untested"
+kind = "enhancement"
+origin = "local"
+backend = "agnostic"
+plan-ids = ["VTP31"]
+requires = []
+conflicts = []
+tags = ["tuning", "allreduce", "tensor-parallel"]

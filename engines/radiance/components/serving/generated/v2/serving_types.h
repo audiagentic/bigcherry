@@ -18,10 +18,10 @@ inline constexpr std::string_view kApiVersion = "bigcherry/v2";
 inline constexpr std::string_view kKind = "ServingManifest";
 inline constexpr int64_t kContractVersion = 2;
 // sha256 of the JCS validation schema without annotations (contract/README.md); the build pins it.
-inline constexpr std::string_view kFingerprint = "sha256:e4005932868cf541c4d11a93c5eb588c7bf96e8d504d6b7f2cccb551d09588fd";
+inline constexpr std::string_view kFingerprint = "sha256:0d528b5b80547f254c00543f9ec33f79cfba86080b45663a82e4e91baf19ac82";
 // sha256 of the schema plus the frozen semantics it does not express (classes, lifecycle, Radiance bindings,
 // reader error codes); README.md.
-inline constexpr std::string_view kSemanticFingerprint = "sha256:7439e8ba63582666a975c53fd86749a4140e2b1d0ce82a5792da2b82c6323b1b";
+inline constexpr std::string_view kSemanticFingerprint = "sha256:377c4642c404430bd62be61e7b64a98f9cb43832f485199a21783c8458786c9e";
 // spec §11 amendment 8: the deepest container nesting a valid document can have (the root object is 1),
 // derived from the closed schema by the generator. The strict reader refuses anything deeper.
 inline constexpr size_t kMaxDepth = 9;
@@ -1075,6 +1075,9 @@ struct EngineTuning {
     // The narrowest pipelined prefill step, rows; 0 is the plugin's own (`--pipelined-prefill-min-rows`, BigCherry
     // rad0020; amendment 18).
     std::optional<int64_t> pipelined_prefill_min_rows;
+    // Kernel tune pin, radiance's `RADIANCE_TUNE` text: `op:key=value[,key=value][;op:...]` (`--tune-pin`, BigCherry
+    // rad0022; amendment 20). The engine refuses an axis or value a kernel does not offer.
+    std::optional<std::string> tune_pin;
 };
 
 // /spec/processes/engine/diagnostics: Debug switches that change what the engine does (amendment 13). Every member is
@@ -1545,7 +1548,7 @@ struct FieldInfo {
     std::string_view default_source;   // where the default comes from, or empty
     std::string_view ref_def;          // kind "ref": the shared type it uses, else empty
 };
-inline constexpr std::array<FieldInfo, 437> kFields = {{
+inline constexpr std::array<FieldInfo, 438> kFields = {{
     {"$defs/uint", "integer", "", true, false,
      "", "", false,
      "Unsigned integer within I-JSON's safe range.", "", "", ""},
@@ -2452,6 +2455,9 @@ inline constexpr std::array<FieldInfo, 437> kFields = {{
     {"/spec/processes/engine/tuning/pipelined_prefill_min_rows", "ref", "policy", false, false,
      "--pipelined-prefill-min-rows", "Config.pipelined_prefill_min_rows", false,
      "The narrowest pipelined prefill step, rows; 0 is the plugin's own (`--pipelined-prefill-min-rows`, BigCherry rad0020; amendment 18).", "", "", "uint"},
+    {"/spec/processes/engine/tuning/tune_pin", "string", "policy", false, false,
+     "--tune-pin", "Config.tune_pin", false,
+     "Kernel tune pin, radiance's `RADIANCE_TUNE` text: `op:key=value[,key=value][;op:...]` (`--tune-pin`, BigCherry rad0022; amendment 20). The engine refuses an axis or value a kernel does not offer.", "", "", ""},
     {"/spec/processes/engine/diagnostics", "object", "policy", false, false,
      "", "", false,
      "Debug switches that change what the engine does (amendment 13). Every member is optional and binds to one engine flag; an absent member leaves the engine's own default.", "", "", ""},

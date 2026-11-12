@@ -1606,6 +1606,11 @@
                     "pipelined_prefill_min_rows": {
                       "description": "The narrowest pipelined prefill step, rows; 0 is the plugin's own (`--pipelined-prefill-min-rows`, BigCherry rad0020; amendment 18).",
                       "$ref": "#/$defs/uint"
+                    },
+                    "tune_pin": {
+                      "description": "Kernel tune pin, radiance's `RADIANCE_TUNE` text: `op:key=value[,key=value][;op:...]` (`--tune-pin`, BigCherry rad0022; amendment 20). The engine refuses an axis or value a kernel does not offer.",
+                      "type": "string",
+                      "minLength": 1
                     }
                   }
                 },
