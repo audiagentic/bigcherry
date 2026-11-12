@@ -934,3 +934,22 @@ One-stream time to first token by prompt length:
   and the XTX cards on Gen4 x8.
 - **Capacity:** resident KV +6–9% and the same 262,144-token context (N5 first pass); bounded by the R9700, which holds
   2 of the 4 KV heads.
+
+### TP3 prefill knobs (build f8406b8e, logs vtp14/logs/pknobs-0653)
+
+All are options of one build. Single arms, default first and last (the two defaults differ by up to 6%, so smaller
+changes are noise). One-stream TTFT in ms, and 8-stream aggregate tok/s:
+
+| arm | TTFT 2048 | TTFT 8192 | 8 streams |
+|---|---|---|---|
+| default (pipelined prefill auto, min 1024 rows, 2048-token chunks) | 1092 / 1163 | 3338 / 3431 | 195.5 / 189.1 |
+| `--pipelined-prefill off` | 1279 | 4139 | 197.1 |
+| `--pipelined-prefill-min-rows 512` | 1095 | 3352 | 194.7 |
+| `--max-num-batched-tokens 4096` | 1098 | 3352 | 194.4 |
+| `--tp-attn-split rows` | refused: qwen35_fp8 splits attention by heads only | | |
+
+- The pipelined prefill (rad0020) is worth 15–19% of TTFT at TP3; the defaults stand.
+- A smaller pipelining floor and a larger chunk change nothing measurable.
+- The remaining lever is the transport. Every all-reduce is host-staged because the cards have no peer access
+  (Resizable BAR, one root complex, IOMMU mode: a host and BIOS matter). With P2P the exact one-shot crosses each link
+  once instead of twice.
