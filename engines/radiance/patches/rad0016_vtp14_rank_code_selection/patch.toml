@@ -1,0 +1,11 @@
+schema = 1
+id = "rad0016_vtp14_rank_code_selection"
+order = 16
+state = "untested"
+kind = "enhancement"
+origin = "local"
+backend = "agnostic"
+plan-ids = ["VTP14"]
+requires = []
+conflicts = []
+tags = ["tensor-parallel", "dispatch"]

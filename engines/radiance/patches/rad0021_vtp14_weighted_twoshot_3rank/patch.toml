@@ -1,0 +1,11 @@
+schema = 1
+id = "rad0021_vtp14_weighted_twoshot_3rank"
+order = 21
+state = "untested"
+kind = "enhancement"
+origin = "local"
+backend = "agnostic"
+plan-ids = ["VTP14"]
+requires = ["rad0017_vtp14_n3_shared_rendezvous"]
+conflicts = []
+tags = ["tensor-parallel", "allreduce"]

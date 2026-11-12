@@ -1,27 +1,6 @@
-# How the cards of a host are used by the remote-MoE offload (RAD23): named layouts, no device indices and no host facts. A layout picks
-# cards from the host's inventory (config/environment.local.toml [[host.*.devices]]) by architecture, or by index with `devices`, and says what each
-# does. The card types themselves are engines/radiance/archs.toml. `bigcherry layout show NAME` resolves one against this host.
-#
-#   [layout.NAME]                  description, model (relative to BC_MODEL_ROOT), engine
-#   engine = { arch = "gfx1201" }  engine card(s); count = 2 makes two TP ranks; devices pins explicit indices
-#   tp-wire                         required for TP > 1 (host-memory transport, no P2P)
-#   server-args                     optional engine options, each one a manifest setting (context, sessions, chunk, KV dtype, speculative
-#                                   tokens, checkpoint interval, host pool, host KV tier, n-gram placement); for a helper layout they are the
-#                                   launcher's defaults, which its command-line options override
-#   A TP engine (count > 1) may have helpers (RAD49): one request slot a (helper, rank), at most the protocol's kMaxSlots (4), so two
-#                                   helpers behind two ranks. A helper computes each expert full width; a layer's consumer rank adds it once.
-#   [[layout.NAME.helper]]         a group of helper cards, in order (helper 0 first; helper 0 creates the shared segment)
-#     arch      architecture to take from the inventory         devices  explicit indices instead of arch
-#     count     how many of that arch ("all" or a number)       budget-mib  VRAM for experts on each card; omitted: derived by bc-serve, the
-#                                                               card's own VRAM (inventory / sysfs) less its archs.toml reserve-mib less
-#                                                               the helper's own lanes, pointer banks, slot map and incoming slot for
-#                                                               this model (moe-remote worker_footprint.h, which the helper checks its
-#                                                               lanes against) -- prefer that to a hand-picked number (a literal here is
-#                                                               an interim value, RSC03)
-#     placement "head": the group takes the heat ranking by `share` (round robin)  "tail": takes the coldest experts that fit what the heads
-#               left; only the last group may be tail, and only after a head group
-#     share     weight of each card in a head group (default 1; 0 owns nothing)
-#   [layout.NAME.env]              R3_MOE_WORKER_* settings for the engine and every helper (strings); not the ones the cards decide
+# Flash-Next (Qwen3.8-Next-Flash) layouts.
+# Layout definitions: run-time data that bc-serve (--layouts / BIGCHERRY_LAYOUTS) and the Python tools read; nothing is compiled
+# in. Format: README.md in this directory.
 schema = 1
 
 [layout.flashnext-2xtx]
@@ -87,8 +66,8 @@ engine = { arch = "gfx1201" }
 arch = "gfx1100"
 count = "all"
 placement = "head"
-[layout.flashnext-2xtx-combine.env]
-R3_MOE_WORKER_COMBINE = "1"
+[layout.flashnext-2xtx-combine.settings]
+helper.combine = true
 
 [layout.flashnext-2xtx-rdna2-tail-combine]
 model = "radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad"
@@ -102,8 +81,8 @@ placement = "head"
 arch = "gfx1030"
 count = 1
 placement = "tail"
-[layout.flashnext-2xtx-rdna2-tail-combine.env]
-R3_MOE_WORKER_COMBINE = "1"
+[layout.flashnext-2xtx-rdna2-tail-combine.settings]
+helper.combine = true
 
 [layout.flashnext-4gpu]
 model = "radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad"
@@ -117,8 +96,8 @@ placement = "head"
 arch = "gfx1030"
 count = 1
 placement = "tail"
-[layout.flashnext-4gpu.env]
-R3_MOE_WORKER_COMBINE = "1"
+[layout.flashnext-4gpu.settings]
+helper.combine = true
 
 # RAD49 step 2: the two XTX run the model tensor-parallel (attention by KV head, GDN by head, the trunk and every resident expert
 # split by width, ARCHITECTURES.md qwen4exp) and the R9700 is one remote-MoE helper behind both ranks (it computes each routed
@@ -183,24 +162,10 @@ placement = "head"
 arch = "gfx1030"
 count = 1
 placement = "tail"
-[layout.flashnext-tp2xtx.env]
+[layout.flashnext-tp2xtx.settings]
 # The combine serves only the steps whose helper rows the engine merges with
 # moe_mailbox_add (rows the fused MoE gather + reducing write does not take).
 # A step whose rows join the fused gather (moe_mailbox_inject) reads each
 # helper's own plane, so its publish never asks for the combine (RAD49).
-R3_MOE_WORKER_COMBINE = "1"
+helper.combine = true
 
-# Dense tensor-parallel lane: the model is sharded across both selected XTX
-# engine cards. There are no remote-MoE helper processes or route-heat inputs.
-[layout.qwen27b-2xtx]
-description = "Qwen3.8-27B MXFP4, two RDNA3 engine ranks with host-memory wht6 all-reduce"
-model = "radiance/StillDeadcode/qwen3.8-27b-mxfp4/qwen3.8-27b-mxfp4.rad"
-engine = { arch = "gfx1100", count = 2 }
-tp-wire = "wht6"
-server-args = [
-  "--max-model-len", "8192",
-  "--max-num-seqs", "6",
-  "--max-num-batched-tokens", "2048",
-  "--kv-cache-dtype", "fp8",
-  "--num-speculative-tokens", "3",
-]

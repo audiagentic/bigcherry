@@ -95,9 +95,15 @@ json produce_p1(const bc::serving::Resolved& resolved, const json& facts,
     refuse("layout", "selected engine ranks and service targets required");
 
   const fs::path model_path = resolved.typed.engine.model;
+  // The routed experts are read only to place them on helpers and to count what the engine keeps of them. A configuration
+  // with no helpers places none, so a dense model (no routed experts, which Container::open refuses) is a valid engine-only
+  // model, as for the manifest writer (contract amendment 12).
+  const bool engine_only = selected.helper_cards.empty();
   bc::experts::Container model;
-  if (!model.open(model_path.c_str()) || !model.layers || !model.experts)
+  const bool routed = model.open(model_path.c_str()) && model.layers && model.experts;
+  if (!routed && !engine_only)
     refuse("model", "model container must be readable and have routed layers");
+  if (!fs::is_regular_file(model_path)) refuse("model", "model container must be readable");
   const std::string model_id = bc::serving::container_identity(model_path);
   const fs::path engine_binary = nonempty(request.at("engine_binary"), "engine_binary");
   const std::string engine_id = bc::serving::engine_identity(
@@ -131,8 +137,9 @@ json produce_p1(const bc::serving::Resolved& resolved, const json& facts,
   const int64_t ctx = service.max_context;
   native.context_target_tokens = ctx;
   native.concurrent_sessions = service.max_sessions;
+  // 0: no host KV tier (an engine-only layout without one); retention is then nothing to admit (amendment 19)
   native.retention_target_tokens = integral(
-      request.at("retention_target_tokens"), "retention_target_tokens", true);
+      request.at("retention_target_tokens"), "retention_target_tokens", false);
   if (native.retention_target_tokens > ctx * native.concurrent_sessions)
     refuse("retention_target_tokens", "exceeds measured context times concurrency");
 
@@ -171,7 +178,7 @@ json produce_p1(const bc::serving::Resolved& resolved, const json& facts,
         refuse("owner_map", "expert owned by more than one helper");
     }
   int64_t unowned_bytes = 0;
-  for (uint32_t l = 0; l < model.layers; ++l)
+  for (uint32_t l = 0; routed && l < model.layers; ++l)
     for (uint32_t e = 0; e < model.experts; ++e) {
       const auto key = std::make_pair(l,e);
       const bool gate = model.weight(l,e,0) != nullptr;

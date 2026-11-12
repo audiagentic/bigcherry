@@ -69,6 +69,8 @@ struct Config {
 struct Options {
     std::filesystem::path sys_root = "/";
     std::filesystem::path site, profile;
+    // The layout definition files or directories (--layouts); empty: BIGCHERRY_LAYOUTS. Never compiled in.
+    std::vector<std::filesystem::path> layouts;
     // A calibration cache (RHP12 refits) layered over the compiled-in seeds; empty: seeds only.
     std::filesystem::path calibration_cache;
     std::vector<std::string> sets;
@@ -81,6 +83,10 @@ struct Resolved {
 Json detect(const std::filesystem::path& root = "/");
 Json json_schema();
 Resolved resolve(const Options& options, const Json& facts);
+/* The layout definition files (--layouts, else BIGCHERRY_LAYOUTS; a directory gives its *.toml), and every named layout
+ * in them with the file it came from: {"layout": {name: table}, "source": {name: path}}. A name defined twice is refused. */
+std::vector<std::filesystem::path> layout_sources(const Options& options);
+Json load_layouts(const Options& options);
 /* archs.toml reserve-mib of a card type: the VRAM a card of it keeps free. */
 uint64_t arch_reserve_mib(const std::string& arch);
 } // namespace bc::serving

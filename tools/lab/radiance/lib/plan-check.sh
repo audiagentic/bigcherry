@@ -34,7 +34,7 @@ plan_check_describe() {
   )
   [ "$PREFIX_RESUME" = off ] || PLAN_SET+=(--set "engine.prefix_resume=\"$PREFIX_RESUME\"")
   # --budget ARCH=MIB: the per-helper budgets `bigcherry layout env` resolved with the overrides applied (R3_MOE_WORKER_MIBS, helper
-  # order). Without this --set bc-serve derives them from layouts.toml again and the override would reach only the plan key.
+  # order). Without this --set bc-serve derives them from the layout again and the override would reach only the plan key.
   if [ "${#BUDGETS[@]}" -gt 0 ] && [ -n "${BUDGETS[0]}" ]; then
     local kv mibs=""
     for kv in "${LAYOUT_COMMON[@]}"; do case "$kv" in R3_MOE_WORKER_MIBS=*) mibs=${kv#R3_MOE_WORKER_MIBS=} ;; esac; done
@@ -61,7 +61,7 @@ plan_check_describe() {
 }
 
 # plan_check_describe_engine_only SITE: a helper-free layout. It has no hand-off and no route heat; what it is configured with is
-# the layout (cards, tp-wire, model) and its allowed engine options (layouts.toml server-args), each one a manifest setting. The
+# the layout (cards, tp-wire, model) and its allowed engine options (its server-args), each one a manifest setting. The
 # pool, the KV tier and the rest are what bc-serve derives. Tensor-parallel traffic goes through host memory, no P2P.
 plan_check_describe_engine_only() {
   # The pool and the KV tier default to 0 (the engine sizes them) and the n-gram table to disk: bc-serve's constants (a 9 GiB pool,

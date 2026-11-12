@@ -22,7 +22,7 @@ class ChangedPathsTests(unittest.TestCase):
             self.assertIsNone(changed_paths.first_match([path], RADIANCE), path)
 
     def test_source_build_files_and_data_still_trigger_it(self):
-        for path in ("engines/radiance/components/moe-remote/CMakeLists.txt", "engines/radiance/layouts.toml",
+        for path in ("engines/radiance/components/moe-remote/CMakeLists.txt", "engines/radiance/layouts/flashnext.toml",
                      "engines/radiance/components/libr3/native/r4d_moe.hip.rw",
                      "engines/radiance/patches/rad0002_moe_remote_handoff/patch.py", "tools/bigcherry/build/x.py"):
             self.assertEqual(changed_paths.first_match([path], RADIANCE), path)

@@ -1,0 +1,11 @@
+schema = 1
+id = "rad0020_vtp14_tp3_pipelined_prefill"
+order = 20
+state = "untested"
+kind = "enhancement"
+origin = "local"
+backend = "agnostic"
+plan-ids = ["VTP14"]
+requires = ["rad0019_vtp14_n2_tp_ownership_fp8"]
+conflicts = []
+tags = ["tensor-parallel", "allreduce"]

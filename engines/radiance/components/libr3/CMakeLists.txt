@@ -48,13 +48,21 @@ endif()
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/rewrites.txt)
 
 # The unit list and each unit's flags are libr4d's own, read from its build file: `"unit|flags"`.
-file(STRINGS ${RADIANCE_SRC}/libr4d/CMakeLists.txt unit_lines REGEX "^  \"r4d_[a-z0-9_]+\\|")
+file(STRINGS ${RADIANCE_SRC}/libr4d/CMakeLists.txt unit_lines REGEX "^  \"r4d_[A-Za-z0-9_]+\\|")
+# Unit names have capitals (r4d_ar_oneshot_Nrank_exact): a lowercase-only pattern once dropped the 3/4/8-rank
+# all-reduce units without a word, and their entry points became stubs. Every unit line must parse.
+file(STRINGS ${RADIANCE_SRC}/libr4d/CMakeLists.txt all_unit_lines REGEX "^  \"r4d_")
+list(LENGTH unit_lines n_parsed)
+list(LENGTH all_unit_lines n_listed)
+if(NOT n_parsed EQUAL n_listed)
+  message(FATAL_ERROR "libr3: parsed ${n_parsed} of libr4d's ${n_listed} unit lines; fix the unit pattern")
+endif()
 file(STRINGS ${CMAKE_CURRENT_SOURCE_DIR}/exclude.txt excluded REGEX "^r4d_")
 set(device "")
 set(built "")
 set(skipped "")
 foreach(line ${unit_lines})
-  string(REGEX MATCH "\"(r4d_[a-z0-9_]+)\\|([^\"]*)\"" _ "${line}")
+  string(REGEX MATCH "\"(r4d_[A-Za-z0-9_]+)\\|([^\"]*)\"" _ "${line}")
   set(unit ${CMAKE_MATCH_1})
   set(flags "${CMAKE_MATCH_2}")
   if(R3_ONLY AND NOT unit IN_LIST R3_ONLY)
@@ -82,7 +90,19 @@ if(NOT device)
   message(FATAL_ERROR "libr3: no unit to build")
 endif()
 
-set(declaration ${r4d}/r4d_rows.cpp ${r4d}/r4d_layout.cpp ${r4d}/r4d_fp8_layout.cpp ${r4d}/r4d_shapes.cpp ${r4d}/r4d_fuse.cpp)
+# The host declaration sources are libr4d's own list (R4D_DECLARATION), so one libr4d adds is built here too; a
+# hand-kept copy once missed r4d_iqr_layout.cpp and every IQR layout became a stub.
+file(READ ${RADIANCE_SRC}/libr4d/CMakeLists.txt r4d_cmake)
+string(REGEX MATCH "set\\(R4D_DECLARATION([^)]*)\\)" _ "${r4d_cmake}")
+string(REGEX REPLACE "[ \t\r\n]+" ";" r4d_decl "${CMAKE_MATCH_1}")
+list(FILTER r4d_decl INCLUDE REGEX "\\.cpp$")
+if(NOT "r4d_rows.cpp" IN_LIST r4d_decl)
+  message(FATAL_ERROR "libr3: could not read R4D_DECLARATION from ${RADIANCE_SRC}/libr4d/CMakeLists.txt")
+endif()
+set(declaration "")
+foreach(f ${r4d_decl})
+  list(APPEND declaration ${r4d}/${f})
+endforeach()
 # libr4d's registry exports become r4d_up_*; libr3's own (r3_registry.cpp) take their place
 set_source_files_properties(${r4d}/r4d_rows.cpp PROPERTIES COMPILE_DEFINITIONS
   "rad_plugin_info=r4d_up_plugin_info;rad_kernel_schema_count=r4d_up_kernel_schema_count;rad_kernel_schema_at=r4d_up_kernel_schema_at;rad_kernel_count=r4d_up_kernel_count;rad_kernel_at=r4d_up_kernel_at;rad_kernel_concurrent=r4d_up_kernel_concurrent;rad_kernel_collective=r4d_up_kernel_collective")

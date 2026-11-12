@@ -21,6 +21,21 @@ bool is_stub(const void* fn) {
     const char* p = static_cast<const char*>(fn);
     return p >= r3_stub_begin && p < r3_stub_end;
 }
+// A row is live only when no function it names is a stub: a stubbed layout returns RAD_E_UNSUPPORTED, which the
+// engine's weight check does not read as a refusal, so a row with a live launch but a stubbed layout (logits_gemm_iqr
+// while r4d_iqr_layout.cpp was not built) was selected for weights it cannot read and refused at issue.
+bool any_stub(const RadKernelInfo* k) {
+    const void* fns[] = {
+        reinterpret_cast<const void*>(k->launch),     reinterpret_cast<const void*>(k->init),
+        reinterpret_cast<const void*>(k->fini),       reinterpret_cast<const void*>(k->scratch),
+        reinterpret_cast<const void*>(k->layout),     reinterpret_cast<const void*>(k->relayout),
+        reinterpret_cast<const void*>(k->unrelayout), reinterpret_cast<const void*>(k->opd_shape),
+        reinterpret_cast<const void*>(k->replaces),   reinterpret_cast<const void*>(k->tune_valid),
+    };
+    for (const void* f : fns)
+        if (f && is_stub(f)) return true;
+    return false;
+}
 struct LiveRow { int upstream = -1; const RadKernelInfo* custom = nullptr; };
 const std::vector<LiveRow>& live() {
     static const std::vector<LiveRow> rows = [] {
@@ -28,7 +43,7 @@ const std::vector<LiveRow>& live() {
         const int n = r4d_up_kernel_count();
         for (int i = 0; i < n; ++i) {
             const RadKernelInfo* k = r4d_up_kernel_at(i);
-            if (k && k->launch && !is_stub(reinterpret_cast<const void*>(k->launch))) out.push_back({i, nullptr});
+            if (k && k->launch && !any_stub(k)) out.push_back({i, nullptr});
         }
         return out;
     }();

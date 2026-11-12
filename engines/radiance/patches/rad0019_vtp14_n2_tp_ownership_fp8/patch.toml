@@ -1,0 +1,11 @@
+schema = 1
+id = "rad0019_vtp14_n2_tp_ownership_fp8"
+order = 19
+state = "untested"
+kind = "enhancement"
+origin = "local"
+backend = "agnostic"
+plan-ids = ["VTP14"]
+requires = ["rad0018_vtp14_n2_tp_ownership"]
+conflicts = []
+tags = ["tensor-parallel"]

@@ -197,11 +197,15 @@ def resolve(
             inventory.check_power_overrides(host)
         engine = [inventory.by_bdf(b) for b in engine_bdfs]
         helper = [inventory.by_bdf(b) for b in helper_bdfs]
-        if len({g.arch for g in engine}) != 1:
-            raise InventoryError("bc-serve selected mixed-architecture engine ranks")
+        # a world of more than one card type is a layout's engine groups (bc-serve hands the engine its ranks' cards as
+        # layout.rank_devices); every rank's architecture must be a described card type
         archs = radiance_layout.load_archs()
-        if engine[0].arch not in archs:
-            raise InventoryError(f"unknown engine architecture {engine[0].arch}")
+        for g in engine:
+            if g.arch not in archs:
+                raise InventoryError(f"unknown engine architecture {g.arch}")
+        rank_devices = values["layout"].get("rank_devices")
+        if len({g.arch for g in engine}) > 1 and list(rank_devices or []) != list(engine_bdfs):
+            raise InventoryError("bc-serve selected a mixed-architecture engine without its rank devices in rank order")
         helpers = []
         for i, (gpu, rec) in enumerate(zip(helper, process_helpers)):
             if not isinstance(rec, dict) or rec.get("bdf") != gpu.bdf or rec.get("hip_ordinal") != gpu.ordinal or rec.get("arch") != gpu.arch:
@@ -227,10 +231,14 @@ def resolve(
                 common["R3_MOE_WORKER_SHARES"] = ",".join(str(h.share if h.placement == "head" else 0) for h in helpers)
             if any(h.placement == "tail" for h in helpers):
                 common["R3_MOE_WORKER_PLACEMENT"] = "tail"
-            common.update(recipe.get("env", {}))
-        engine_arch = engine[0].arch
+            # the helper-row combine as bc-serve resolved it (a layout's settings, a profile or --set)
+            if values.get("helper", {}).get("combine"):
+                common["R3_MOE_WORKER_COMBINE"] = "1"
+        # rank order; a mixed world (several engine groups) names each architecture and plugin once
+        engine_arch = "+".join(dict.fromkeys(g.arch for g in engine))
+        engine_plugin = ",".join(dict.fromkeys(archs[g.arch].plugin for g in engine))
         selected = radiance_layout.Resolved(
-            name, tuple(g.ordinal for g in engine), engine_arch, archs[engine_arch].plugin,
+            name, tuple(g.ordinal for g in engine), engine_arch, engine_plugin,
             recipe["model"], values["engine"].get("tp_wire"), tuple(recipe.get("server-args", [])),
             tuple(helpers), common,
         )

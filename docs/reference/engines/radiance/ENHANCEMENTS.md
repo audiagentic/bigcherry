@@ -9,7 +9,7 @@ different statuses. See [the engine overview](README.md) first.
 
 _Generated from package documentation and metadata by `tools/docs/generate_engine_enhancement_summaries.py`. Do not edit this section by hand._
 
-## Engine patches (13)
+## Engine patches (19)
 
 | Package | State | Summary |
 | --- | --- | --- |
@@ -26,6 +26,12 @@ _Generated from package documentation and metadata by `tools/docs/generate_engin
 | [rad0011_plan_memory](../../../../engines/radiance/patches/rad0011_plan_memory/SUMMARY.md) | `validated` | The engine's own memory plan (`Engine::plan()`) as a serving manifest v1 `EnginePlan`, measured or checked, through the shared v1 library `bc_serving_v1`. |
 | [rad0012_helper_kernel_config](../../../../engines/radiance/patches/rad0012_helper_kernel_config/SUMMARY.md) | `untested` | Gives the kernel library a mandatory, size-checked, install-once configuration interface, so the helper process hands it the settings it read from the serving manifest instead of the library reading the environment. The engine keeps its own environment read until RSC07. |
 | [rad0013_mtp_pass_replay](../../../../engines/radiance/patches/rad0013_mtp_pass_replay/SUMMARY.md) | `validated` | Restores recorded-pass replay for **fixed-shape decode MTP draft and speculative-verify passes** in the pinned Radiance v1.17.0 Qwen4-Exp architecture. It replaces the blanket draft/verify refusal with a guarded geometry fingerprint in `arch/qwen4exp_fp8/qwen4exp_fp8.cpp`. Does not change the core tape runtime, kernel selection or any GPU code. |
+| [rad0016_vtp14_rank_code_selection](../../../../engines/radiance/patches/rad0016_vtp14_rank_code_selection/SUMMARY.md) | `untested` | Lets each tensor-parallel rank select the kernels its own card runs, so XTX (libr3) and R9700 (libr4d) ranks can share one world when named explicitly with `--rank-devices`. |
+| [rad0017_vtp14_n3_shared_rendezvous](../../../../engines/radiance/patches/rad0017_vtp14_n3_shared_rendezvous/SUMMARY.md) | `untested` | Moves libr4d's all-reduce rendezvous, and with it libr3's, into one process-wide slot that the engine exports, so ranks running different kernel libraries meet at one barrier. A failed share or a timeout poisons the rendezvous and fails fast with the reason. |
+| [rad0018_vtp14_n2_tp_ownership](../../../../engines/radiance/patches/rad0018_vtp14_n2_tp_ownership/SUMMARY.md) | `untested` | Lets a layout put more heads and feed-forward rows on a larger card. Each rank reads its own spans of the container's weights through radiance's shard-span ABI; `geom_from` refuses a spec whose shares do not match the model. |
+| [rad0019_vtp14_n2_tp_ownership_fp8](../../../../engines/radiance/patches/rad0019_vtp14_n2_tp_ownership_fp8/SUMMARY.md) | `untested` | Gives the fp8 Qwen plugin rad0018's uneven split, checked against the model the same way. The patch uses the fp8 blocks' existing per-rank spans: attention by head, delta-net uneven heads (`k_first`/`v_first`), and LinearFP8 row and column spans. Every span is whole 128-row scale blocks. |
+| [rad0020_vtp14_tp3_pipelined_prefill](../../../../engines/radiance/patches/rad0020_vtp14_tp3_pipelined_prefill/SUMMARY.md) | `untested` | `qwen35_fp8` pipelines a wide one-sequence prefill step: the rows run as two pieces, and each block's all-reduce for one piece runs on the second lane beside the other piece's work. Upstream fixes it at two ranks from 1024 rows. This patch makes the mode and the narrowest step options; `auto` adds three ranks under `--tp-ownership`. |
+| [rad0021_vtp14_weighted_twoshot_3rank](../../../../engines/radiance/patches/rad0021_vtp14_weighted_twoshot_3rank/SUMMARY.md) | `untested` | A rank behind a slow PCIe link owns a smaller shard of the two-shot, or none, and so moves fewer bytes over it. The bits are the same for every table. Equal links keep the even split; decode-sized messages are unchanged. |
 
 ## Components (6)
 

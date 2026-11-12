@@ -1,6 +1,8 @@
-"""RAD23: card types (archs.toml) and layouts (layouts.toml) as data, resolved against a host's device inventory."""
+"""RAD23: card types (archs.toml) and layouts (layouts/*.toml, BIGCHERRY_LAYOUTS) as data, resolved against a host's device inventory."""
+import os
 import re
 import tempfile
+from unittest import mock
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -22,26 +24,23 @@ class RepoDataTests(unittest.TestCase):
     def test_the_shipped_files_load_and_every_layout_resolves_on_the_lab_host_shape(self):
         archs = rl.load_archs()
         self.assertEqual({"gfx1201", "gfx1100", "gfx1030"} <= set(archs), True)
-        for name in rl.names():
-            r = rl.resolve(name, host(*WITH_6900))
-            if name == "qwen27b-2xtx":
-                self.assertEqual(r.engine_indices, (0, 1))
-                self.assertEqual(len(r.helpers), 0)
-                self.assertEqual(r.tp_wire, "wht6")
-            elif name == "flashnext-r9700":   # the R9700 alone, no helpers
-                self.assertEqual(r.engine_indices, (2,))
-                self.assertEqual(len(r.helpers), 0)
-            elif name == "flashnext-tp2xtx-r9700":   # RAD49: the XTX pair tensor-parallel, the R9700 its one helper
-                self.assertEqual(r.engine_indices, (0, 1))
-                self.assertEqual([h.index for h in r.helpers], [2])
-                self.assertEqual(r.tp_wire, "exact")
-            elif name == "flashnext-tp2xtx":   # RAD49: the XTX pair tensor-parallel, the R9700 and the RX 6900 XT its helpers
-                self.assertEqual(r.engine_indices, (0, 1))
-                self.assertEqual([h.index for h in r.helpers], [2, 3])
-                self.assertEqual(r.tp_wire, "exact")
-            else:
-                self.assertEqual(r.engine_indices, (2,))
-                self.assertGreaterEqual(len(r.helpers), 2)
+        # Every shipped layout resolves on the lab host's shape to what it declares: no layout is named here, so a new
+        # model, split or topology needs only its layout file.
+        inventory = host(*WITH_6900)
+        by_index = {d.index: d for d in inventory.devices}
+        layouts = rl.load_layouts()
+        self.assertTrue(layouts)
+        for name, lay in layouts.items():
+            with self.subTest(layout=name):
+                r = rl.resolve(name, inventory)
+                groups = lay["engine"] if isinstance(lay["engine"], list) else [lay["engine"]]
+                self.assertEqual(len(r.engine_indices), sum(g.get("count", 1) for g in groups))
+                # ranks follow the groups' order, each group's cards of its architecture
+                arches = [by_index[i].arch for i in r.engine_indices]
+                self.assertEqual(arches, [g["arch"] for g in groups for _ in range(g.get("count", 1))])
+                self.assertEqual(r.tp_wire, lay.get("tp-wire"))
+                self.assertEqual(bool(r.helpers), bool(lay.get("helper")))
+                self.assertFalse(set(r.engine_indices) & {h.index for h in r.helpers}, "a card plays one part")
 
     def test_the_protocol_bound_is_read_from_the_header(self):
         header = (paths.REPO_ROOT / "engines/radiance/components/moe-remote/moe_remote_shm.h").read_text(encoding="utf-8")
@@ -117,6 +116,35 @@ class ResolveTests(unittest.TestCase):
                 root = FileRuleTests.roots(self, archs, 'schema = 1\n[layout.t]\nmodel = "m.rad"\n'+recipe+'\n')
                 with self.assertRaisesRegex(rl.LayoutError, expected):
                     rl.resolve("t", host(*WITH_6900), repo_root=root)
+
+    def test_a_mixed_architecture_engine_in_rank_order(self):
+        archs = FileRuleTests.ARCHS.replace('roles = ["helper"]', 'roles = ["engine", "helper"]', 1)
+        layout = ('schema = 1\n[layout.t]\nmodel = "m.rad"\ntp-wire = "exact"\n'
+                  'engine = [{ arch = "gfx1100", count = 2 }, { arch = "gfx1201", count = 1 }]\n')
+        root = FileRuleTests.roots(self, archs, layout)
+        r = rl.resolve("t", host(*WITH_6900), repo_root=root)
+        self.assertEqual(r.engine_indices, (0, 1, 2))
+        self.assertEqual((r.engine_arch, r.engine_plugin), ("gfx1100+gfx1201", "libr3.so,libr4d.so"))
+        for bad, expected in (('engine = [{ arch = "gfx1100" }, { arch = "gfx1100" }]', "named in two groups"),
+                              ('engine = [{ devices = [0] }, { arch = "gfx1201" }]', "unknown key")):
+            root = FileRuleTests.roots(self, archs, 'schema = 1\n[layout.t]\nmodel = "m.rad"\ntp-wire = "exact"\n' + bad + "\n")
+            with self.subTest(bad=bad), self.assertRaisesRegex(rl.LayoutError, expected):
+                rl.resolve("t", host(*WITH_6900), repo_root=root)
+
+    def test_bigcherry_layouts_names_the_sources_and_a_name_twice_is_refused(self):
+        with tempfile.TemporaryDirectory() as d:
+            one = Path(d) / "a.toml"
+            one.write_text('schema = 1\n[layout.solo]\nmodel = "m.rad"\nengine = { arch = "gfx1201" }\n')
+            two = Path(d) / "b.toml"
+            two.write_text(one.read_text())
+            with mock.patch.dict(os.environ, {"BIGCHERRY_LAYOUTS": str(one)}):
+                self.assertEqual(list(rl.load_layouts()), ["solo"])
+            with mock.patch.dict(os.environ, {"BIGCHERRY_LAYOUTS": os.pathsep.join((str(one), str(two)))}):
+                with self.assertRaisesRegex(rl.LayoutError, "defined in both"):
+                    rl.load_layouts()
+            with mock.patch.dict(os.environ, {"BIGCHERRY_LAYOUTS": d}):   # a directory gives its *.toml
+                with self.assertRaisesRegex(rl.LayoutError, "defined in both"):
+                    rl.load_layouts()
 
     def test_a_tensor_parallel_engine_with_its_one_helper(self):
         from bigcherry.cli.layout_cmds import _env_lines
@@ -209,7 +237,8 @@ class FileRuleTests(unittest.TestCase):
         root = Path(tmp.name)
         (root / "engines/radiance").mkdir(parents=True)
         (root / "engines/radiance/archs.toml").write_text(archs, encoding="utf-8")
-        (root / "engines/radiance/layouts.toml").write_text(layouts, encoding="utf-8")
+        (root / "engines/radiance/layouts").mkdir()
+        (root / "engines/radiance/layouts/test.toml").write_text(layouts, encoding="utf-8")
         hdr = root / "engines/radiance/components/moe-remote"
         hdr.mkdir(parents=True)
         (hdr / "moe_remote_shm.h").write_text("constexpr uint32_t kMaxHelpers = 2;\nconstexpr uint32_t kMaxSlots = 2;\n", encoding="utf-8")
@@ -260,9 +289,10 @@ roles = ["helper"]
             "no head helper with a share": '[layout.t]\nengine = { arch = "gfx1201" }\n[[layout.t.helper]]\narch = "gfx1100"\nbudget-mib = 100\nshare = 0\n',
             "devices lists a card twice": '[layout.t]\nengine = { arch = "gfx1201" }\n[[layout.t.helper]]\ndevices = [0, 0]\nbudget-mib = 100\n',
             "devices alone": '[layout.t]\nengine = { arch = "gfx1201" }\n[[layout.t.helper]]\ndevices = [0]\ncount = 1\nbudget-mib = 100\n',
-            "decided by the cards": self.HEAD + '[layout.t.env]\nR3_MOE_WORKER_MIBS = "1"\n',
-            "must be an R3_MOE_WORKER": self.HEAD + '[layout.t.env]\nHOME = "/x"\n',
-            "silently off": '[layout.t]\nengine = { arch = "gfx1201" }\n[[layout.t.helper]]\ndevices = [0]\nbudget-mib = 1000\n[layout.t.env]\nR3_MOE_WORKER_COMBINE = "1"\n',
+            "env is not a layout key": self.HEAD + '[layout.t.env]\nR3_MOE_WORKER_COMBINE = "1"\n',
+            "tuning is not a layout key": self.HEAD + '[layout.t.tuning]\ntp_ownership = "kv=1"\n',
+            "true or false": self.HEAD + '[layout.t.settings]\nhelper.combine = "1"\n',
+            "silently off": '[layout.t]\nengine = { arch = "gfx1201" }\n[[layout.t.helper]]\ndevices = [0]\nbudget-mib = 1000\n[layout.t.settings]\nhelper.combine = true\n',
             "device 9 is not": '[layout.t]\nengine = { arch = "gfx1201" }\n[[layout.t.helper]]\ndevices = [9]\nbudget-mib = 100\n',
         }
         for why, text in bad.items():
@@ -273,8 +303,8 @@ roles = ["helper"]
         r = self.resolve('[layout.t]\nengine = { arch = "gfx1201" }\n[[layout.t.helper]]\narch = "gfx1100"\n')
         self.assertEqual([h.budget_mib for h in r.helpers], [24560 - 1024, 24560 - 1024])
 
-    def test_layout_env_reaches_the_common_settings_for_two_helpers(self):
-        r = self.resolve(self.HEAD + '[layout.t.env]\nR3_MOE_WORKER_COMBINE = "1"\n')
+    def test_layout_settings_combine_reaches_the_common_settings_for_two_helpers(self):
+        r = self.resolve(self.HEAD + '[layout.t.settings]\nhelper.combine = true\n')
         self.assertEqual(r.common_env["R3_MOE_WORKER_COMBINE"], "1")
         self.assertEqual(len(r.helpers), 2)
 

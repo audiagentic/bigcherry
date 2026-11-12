@@ -18,10 +18,10 @@ inline constexpr std::string_view kApiVersion = "bigcherry/v2";
 inline constexpr std::string_view kKind = "ServingManifest";
 inline constexpr int64_t kContractVersion = 2;
 // sha256 of the JCS validation schema without annotations (contract/README.md); the build pins it.
-inline constexpr std::string_view kFingerprint = "sha256:713650d5e42a090cb41ebff2a45fcc643c6a87c1db48e29ae3ce09238515c992";
+inline constexpr std::string_view kFingerprint = "sha256:e4005932868cf541c4d11a93c5eb588c7bf96e8d504d6b7f2cccb551d09588fd";
 // sha256 of the schema plus the frozen semantics it does not express (classes, lifecycle, Radiance bindings,
 // reader error codes); README.md.
-inline constexpr std::string_view kSemanticFingerprint = "sha256:aa71bbd96b8e41449680a8b22756ae7e7820a9896c079f5725601af8c468e0d5";
+inline constexpr std::string_view kSemanticFingerprint = "sha256:7439e8ba63582666a975c53fd86749a4140e2b1d0ce82a5792da2b82c6323b1b";
 // spec §11 amendment 8: the deepest container nesting a valid document can have (the root object is 1),
 // derived from the closed schema by the generator. The strict reader refuses anything deeper.
 inline constexpr size_t kMaxDepth = 9;
@@ -133,6 +133,11 @@ inline constexpr std::array<std::string_view, 1> kOptLiveNames = {"on"};
 // OptWeightsDiskTier: Engine flag `--weights-disk-tier` (amendment 13). Present means the flag is given.
 enum class OptWeightsDiskTier : uint8_t { kOn };
 inline constexpr std::array<std::string_view, 1> kOptWeightsDiskTierNames = {"on"};
+
+// PipelinedPrefill: Pipelined one-sequence prefill, all-reduces on the second lane (`--pipelined-prefill`, BigCherry
+// rad0020; amendment 18): `auto` (the plugin's rule), `on`, `off`.
+enum class PipelinedPrefill : uint8_t { kAuto, kOn, kOff };
+inline constexpr std::array<std::string_view, 3> kPipelinedPrefillNames = {"auto", "on", "off"};
 
 // OptDebugAcceptReferenceKernels: Engine flag `--debug-accept-reference-kernels` (amendment 13). Present means the flag
 // is given.
@@ -826,6 +831,10 @@ struct EngineDevice {
     std::vector<std::string> gpus;
     // VRAM left unclaimed on every engine card, MiB (`--gpu-headroom-mib`; amendment 11).
     std::optional<int64_t> headroom_mib;
+    // Engine GPU addresses in rank order, given to the engine when its world holds more than one card type, so each
+    // rank loads its own architecture's kernel code (`--rank-devices`, BigCherry rad0016; amendment 18). Derived from
+    // the layout's engine groups; absent for a uniform world.
+    std::optional<std::vector<std::string>> rank_devices;
 };
 
 // /spec/processes/engine/runtime: Engine runtime.
@@ -1057,6 +1066,15 @@ struct EngineTuning {
     std::optional<std::string> weight_prefetch;
     // Engine flag `--weights-disk-tier` (amendment 13). Present means the flag is given.
     std::optional<OptWeightsDiskTier> weights_disk_tier;
+    // Uneven tensor-parallel split, one count a rank in rank order: `kv=..;ffn=..[;q=..][;lk=..;lv=..]`
+    // (`--tp-ownership`, BigCherry rad0018; amendment 18). The engine checks it against the loaded model.
+    std::optional<std::string> tp_ownership;
+    // Pipelined one-sequence prefill, all-reduces on the second lane (`--pipelined-prefill`, BigCherry rad0020;
+    // amendment 18): `auto` (the plugin's rule), `on`, `off`.
+    std::optional<PipelinedPrefill> pipelined_prefill;
+    // The narrowest pipelined prefill step, rows; 0 is the plugin's own (`--pipelined-prefill-min-rows`, BigCherry
+    // rad0020; amendment 18).
+    std::optional<int64_t> pipelined_prefill_min_rows;
 };
 
 // /spec/processes/engine/diagnostics: Debug switches that change what the engine does (amendment 13). Every member is
@@ -1250,7 +1268,7 @@ struct MeasuredResourceInputs {
     int64_t kv_bytes_per_token;
     // Context admission target in tokens.
     int64_t context_target_tokens;
-    // Retention admission target in tokens.
+    // Retention admission target in tokens; 0 when the configuration has no host KV tier (amendment 19).
     int64_t retention_target_tokens;
     // Live MemAvailable at plan resolution.
     int64_t mem_available_bytes;
@@ -1527,7 +1545,7 @@ struct FieldInfo {
     std::string_view default_source;   // where the default comes from, or empty
     std::string_view ref_def;          // kind "ref": the shared type it uses, else empty
 };
-inline constexpr std::array<FieldInfo, 433> kFields = {{
+inline constexpr std::array<FieldInfo, 437> kFields = {{
     {"$defs/uint", "integer", "", true, false,
      "", "", false,
      "Unsigned integer within I-JSON's safe range.", "", "", ""},
@@ -2116,6 +2134,9 @@ inline constexpr std::array<FieldInfo, 433> kFields = {{
     {"/spec/processes/engine/device/headroom_mib", "ref", "derived", false, false,
      "--gpu-headroom-mib", "Config.gpu_headroom_mib", false,
      "VRAM left unclaimed on every engine card, MiB (`--gpu-headroom-mib`; amendment 11).", "96", "radiance:Config.gpu_headroom_mib", "uint"},
+    {"/spec/processes/engine/device/rank_devices", "array", "derived", false, false,
+     "--rank-devices", "Config.rank_devices", false,
+     "Engine GPU addresses in rank order, given to the engine when its world holds more than one card type, so each rank loads its own architecture's kernel code (`--rank-devices`, BigCherry rad0016; amendment 18). Derived from the layout's engine groups; absent for a uniform world.", "", "", ""},
     {"/spec/processes/engine/runtime", "object", "policy", true, false,
      "", "", false,
      "Engine runtime.", "", "", ""},
@@ -2422,6 +2443,15 @@ inline constexpr std::array<FieldInfo, 433> kFields = {{
     {"/spec/processes/engine/tuning/weights_disk_tier", "enum", "policy", false, false,
      "--weights-disk-tier", "Config.weights_disk_tier", true,
      "Engine flag `--weights-disk-tier` (amendment 13). Present means the flag is given.", "", "", ""},
+    {"/spec/processes/engine/tuning/tp_ownership", "string", "policy", false, false,
+     "--tp-ownership", "Config.tp_ownership", false,
+     "Uneven tensor-parallel split, one count a rank in rank order: `kv=..;ffn=..[;q=..][;lk=..;lv=..]` (`--tp-ownership`, BigCherry rad0018; amendment 18). The engine checks it against the loaded model.", "", "", ""},
+    {"/spec/processes/engine/tuning/pipelined_prefill", "enum", "policy", false, false,
+     "--pipelined-prefill", "Config.pipelined_prefill", false,
+     "Pipelined one-sequence prefill, all-reduces on the second lane (`--pipelined-prefill`, BigCherry rad0020; amendment 18): `auto` (the plugin's rule), `on`, `off`.", "", "", ""},
+    {"/spec/processes/engine/tuning/pipelined_prefill_min_rows", "ref", "policy", false, false,
+     "--pipelined-prefill-min-rows", "Config.pipelined_prefill_min_rows", false,
+     "The narrowest pipelined prefill step, rows; 0 is the plugin's own (`--pipelined-prefill-min-rows`, BigCherry rad0020; amendment 18).", "", "", "uint"},
     {"/spec/processes/engine/diagnostics", "object", "policy", false, false,
      "", "", false,
      "Debug switches that change what the engine does (amendment 13). Every member is optional and binds to one engine flag; an absent member leaves the engine's own default.", "", "", ""},
@@ -2562,7 +2592,7 @@ inline constexpr std::array<FieldInfo, 433> kFields = {{
      "Context admission target in tokens.", "", "", "positive"},
     {"/spec/plan/resource_inputs/retention_target_tokens", "ref", "derived", true, false,
      "", "", false,
-     "Retention admission target in tokens.", "", "", "positive"},
+     "Retention admission target in tokens; 0 when the configuration has no host KV tier (amendment 19).", "", "", "uint"},
     {"/spec/plan/resource_inputs/mem_available_bytes", "ref", "derived", true, false,
      "", "", false,
      "Live MemAvailable at plan resolution.", "", "", "uint"},

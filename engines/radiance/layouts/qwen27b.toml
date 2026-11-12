@@ -1,0 +1,54 @@
+# Dense Qwen3.8-27B layouts.
+# Layout definitions: run-time data that bc-serve (--layouts / BIGCHERRY_LAYOUTS) and the Python tools read; nothing is compiled
+# in. Format: README.md in this directory.
+schema = 1
+
+# Dense tensor-parallel lane: the model is sharded across both selected XTX
+# engine cards. There are no remote-MoE helper processes or route-heat inputs.
+[layout.qwen27b-2xtx]
+description = "Qwen3.8-27B MXFP4, two RDNA3 engine ranks with host-memory wht6 all-reduce"
+model = "radiance/StillDeadcode/qwen3.8-27b-mxfp4/qwen3.8-27b-mxfp4.rad"
+engine = { arch = "gfx1100", count = 2 }
+tp-wire = "wht6"
+server-args = [
+  "--max-model-len", "8192",
+  "--max-num-seqs", "6",
+  "--max-num-batched-tokens", "2048",
+  "--kv-cache-dtype", "fp8",
+  "--num-speculative-tokens", "3",
+]
+
+# Native three-rank tensor parallelism over two card types (VTP14): both XTX ranks first, then the R9700, each rank on
+# its own architecture's kernels. The uneven split is a setting (tuning.tp_ownership, checked against the loaded model), so a
+# sweep is `--set tuning.tp_ownership=...` and needs no rebuild. Needs a build with the VTP14 patches (rad0016-rad0020).
+# The exact wire: the lossy three-rank wire is not usable yet.
+[layout.qwen27b-tp3]
+description = "Qwen3.8-27B MXFP4 over XTX, XTX, R9700 (native TP3): 6/6/12 query heads, the R9700 the largest share"
+model = "radiance/StillDeadcode/qwen3.8-27b-mxfp4/qwen3.8-27b-mxfp4.rad"
+engine = [{ arch = "gfx1100", count = 2 }, { arch = "gfx1201", count = 1 }]
+tp-wire = "exact"
+server-args = [
+  "--max-model-len", "8192",
+  "--max-num-seqs", "8",
+  "--kv-cache-dtype", "fp8",
+  "--num-speculative-tokens", "3",
+]
+[layout.qwen27b-tp3.settings]
+tuning.tp_ownership = "kv=1,1,2;ffn=5120,4864,7424;lk=4,4,8;lv=12,12,24"
+tuning.pipelined_prefill = "auto"
+
+# The int8 container on the same three ranks: int8 runs natively on both card types, so the split the VTP14 sweep found
+# best gives the XTX ranks the larger delta-net and feed-forward shares.
+[layout.qwen27b-tp3-int8]
+description = "Qwen3.8-27B w8a8 over XTX, XTX, R9700 (native TP3): delta-net 6/6/4, feed-forward 6656/6656/4096"
+model = "radiance/bigcherry/qwen3.8-27b-w8a8/qwen3.8-27b-w8a8-df2.rad"
+engine = [{ arch = "gfx1100", count = 2 }, { arch = "gfx1201", count = 1 }]
+tp-wire = "exact"
+server-args = [
+  "--max-model-len", "8192",
+  "--max-num-seqs", "8",
+  "--kv-cache-dtype", "fp8",
+  "--num-speculative-tokens", "3",
+]
+[layout.qwen27b-tp3-int8.settings]
+tuning.tp_ownership = "kv=1,1,2;ffn=6656,6656,4096;lk=6,6,4;lv=18,18,12"

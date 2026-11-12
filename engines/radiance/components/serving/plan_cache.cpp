@@ -112,17 +112,24 @@ std::string engine_identity(const fs::path& binary, const fs::path& radiance_hom
 
 Json plan_key_inputs(const Json& values, const Json& facts, const std::string& model_id, const std::string& engine_id,
                      const std::string& engine_args) {
-    // The ranks of one engine are one architecture (layouts.toml names an arch and a count); the first stands for them, and the
-    // rank count is part of the key through engine.tp.
-    const std::string card = values.at("layout").at("engine_cards").at(0).get<std::string>();
+    // When every rank is the same card type the first stands for them, and the rank count is part of the key through
+    // engine.tp. A world of more than one card type (a layout with several engine groups) keys every rank's card.
+    Json rank_cards = Json::array();
     const Json* gpu = nullptr;
-    for (const Json& g : facts.at("gpus"))
-        if (g.at("bdf") == card) gpu = &g;
-    if (!gpu) throw std::runtime_error("plan key: the engine card " + card + " is not among the detected GPUs");
+    for (const Json& bdf : values.at("layout").at("engine_cards")) {
+        const Json* found = nullptr;
+        for (const Json& g : facts.at("gpus"))
+            if (g.at("bdf") == bdf) found = &g;
+        if (!found) throw std::runtime_error("plan key: the engine card " + bdf.get<std::string>() + " is not among the detected GPUs");
+        if (!gpu) gpu = found;
+        rank_cards.push_back({{"arch", found->at("arch")}, {"vram_total_mib", found->at("vram_total_mib")}});
+    }
+    if (!gpu) throw std::runtime_error("plan key: no engine card");
+    const bool uniform = std::all_of(rank_cards.begin(), rank_cards.end(), [&](const Json& c) { return c == rank_cards.at(0); });
     Json engine = Json::object();
     for (auto it = values.at("engine").begin(); it != values.at("engine").end(); ++it)
         if (!kNonPlanEngineKeys.count(it.key())) engine[it.key()] = it.value();
-    return {{"cache_version", 2},
+    Json key = {{"cache_version", 2},
             {"model", model_id},
             {"engine_build", engine_id},
             {"card", {{"arch", gpu->at("arch")}, {"vram_total_mib", gpu->at("vram_total_mib")}}},
@@ -133,6 +140,8 @@ Json plan_key_inputs(const Json& values, const Json& facts, const std::string& m
                                        ? values.at("memory").at("helper_budgets_mib") : Json::array()},
             {"engine_args", engine_args},
             {"engine", engine}};
+    if (!uniform) key["rank_cards"] = rank_cards;
+    return key;
 }
 
 void check_plan_for_configuration(const Json& values, const v2::EnginePlan& plan) {

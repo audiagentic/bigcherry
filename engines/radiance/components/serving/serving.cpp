@@ -8,6 +8,7 @@
 #include "generated/v2/serving_types.h"
 #include "third_party/toml.hpp"
 
+#include <cstdlib>
 #include <algorithm>
 #include <array>
 #include <charconv>
@@ -73,10 +74,14 @@ const std::vector<Field>& schema_fields() {
         add("service.quality", "string", "baseline",
             "launcher: baseline fp8 KV policy", "policy", "startup-only",
             0, 0, {"baseline", "strict"});
-        add("layout.name", "string", "flashnext-4gpu",
-            "launcher LAYOUT default; named layouts in engines/radiance/layouts.toml");
+        add("layout.name", "string", nullptr,
+            "the named layout (--layouts / BIGCHERRY_LAYOUTS); required, no default");
         add("layout.engine_cards", "string_array", nullptr,
             "RSC05: selected PCI BDFs from KFD GPU nodes, in rank order", "discovered");
+        // present only when the layout's engine holds more than one card type (radiance --rank-devices; amendment 18)
+        f.push_back({"layout.rank_devices", "string_array",
+                     "the engine cards in rank order for a world of more than one card type (radiance --rank-devices)",
+                     "discovered", "startup-only", Json(), 0, std::numeric_limits<uint32_t>::max(), {}, true, true});
         add("layout.helper_cards", "string_array", nullptr,
             "RSC05: selected PCI BDFs from KFD GPU nodes; empty for an engine-only layout", "discovered", "step-boundary");
         add("memory.host_pool_mib", "integer", 9216,
@@ -90,10 +95,10 @@ const std::vector<Field>& schema_fields() {
             "MemTotal / 10^6)); a site hard_floors entry may only raise it", "derived", "startup-only",
             0, UINT32_MAX, {}, true);
         add("memory.tail_budget_mib", "integer", nullptr,
-            "layouts.toml tail budget; derive RSC03", "derived", "step-boundary",
+            "layout tail budget; derive RSC03", "derived", "step-boundary",
             0, UINT32_MAX, {}, true);
         add("memory.helper_budgets_mib", "integer_array", nullptr,
-            "layouts.toml per-helper budgets; derive RSC03", "derived", "step-boundary",
+            "layout per-helper budgets; derive RSC03", "derived", "step-boundary",
             0, UINT32_MAX);
         add("handoff.shm", "string", "/r3-moe-helper",
             "launcher COMMON R3_MOE_WORKER_SHM; per-instance identity RSC02");
@@ -115,7 +120,7 @@ const std::vector<Field>& schema_fields() {
         add("handoff.histogram_period_s", "integer", 60,
             "launcher RECORD_PERIOD=60; RHP02", "policy", "live", 0);
         add("handoff.placement", "string", nullptr,
-            "layouts.toml helper placement; tail or roundrobin", "derived",
+            "layout helper placement; tail or roundrobin", "derived",
             "step-boundary", 0, 0, {"tail", "roundrobin"}, true);
         add("helper.count", "integer", nullptr,
             "WorkerConfig helper_count; RSC05 selected helper count", "discovered",
@@ -124,13 +129,13 @@ const std::vector<Field>& schema_fields() {
             "WorkerConfig helper_index=0; RSC06 derives process ordinal", "derived",
             "startup-only", 0, 3);
         add("helper.engine_ranks", "integer", nullptr,
-            "layouts.toml engine count: the engine's TP ranks the helpers serve (WorkerConfig default 0 = unset)", "derived",
+            "layout engine count: the engine's TP ranks the helpers serve (WorkerConfig default 0 = unset)", "derived",
             "startup-only", 1, 4);
         add("helper.cpu", "boolean", false, "WorkerConfig cpu=false");
         add("helper.power_save", "boolean", true, "WorkerConfig power_save=true");
         add("helper.queue_warm", "boolean", false, "WorkerConfig queue_warm=false");
         add("helper.combine", "boolean", false,
-            "WorkerConfig combine=false, layouts.toml may enable combine");
+            "WorkerConfig combine=false, the layout may enable combine");
         add("helper.combine_min_rows", "integer", 256,
             "WorkerConfig combine_min_rows=256", "tuned", "startup-only", 1);
         add("helper.combine_threads", "integer", 8,
@@ -162,7 +167,7 @@ const std::vector<Field>& schema_fields() {
         add("engine.host_headroom_mib", "integer", nullptr,
             "derived from memory.host_reserve_mib: the engine keeps the plan's one reserve free when it "
             "sizes its checkpoint store and pins tables", "derived", "startup-only", 0, UINT32_MAX, {}, true);
-        add("engine.tp", "integer", nullptr, "layouts.toml engine count: one tensor-parallel rank per engine card",
+        add("engine.tp", "integer", nullptr, "layout engine count: one tensor-parallel rank per engine card",
             "derived", "startup-only", 1, 64, {}, true);
         add("engine.max_num_seqs", "integer", nullptr,
             "derived from service.max_sessions (launcher --max-num-seqs)", "derived",
@@ -392,12 +397,9 @@ Json parse_set(const std::string& key, const std::string& raw) {
     }
 }
 
-// engines/radiance/layouts.toml and archs.toml, embedded at build time (CMakeLists.txt writes layouts_seed.inc and
-// archs_seed.inc): the layout names which cards play which part, archs.toml what a card type is. Device choice comes
-// only from discovery. The numeric limits are interim RSC03 inputs.
-constexpr const char kLayoutsSeed[] =
-#include "layouts_seed.inc"
-    ;
+// archs.toml, embedded at build time (CMakeLists.txt writes archs_seed.inc): what a card type is. The layouts, which
+// cards play which part for which model, are run-time data (layout_sources): never compiled in, so a model or a run is
+// defined without a rebuild. Device choice comes only from discovery. The numeric limits are interim RSC03 inputs.
 constexpr const char kArchsSeed[] =
 #include "archs_seed.inc"
     ;
@@ -416,11 +418,16 @@ struct HelperGroup {
     bool tail = false;
 };
 struct LayoutRecipe {
-    std::string engine_arch;
-    size_t engine_count = 1;
+    std::string source;                   // the layout file's name (provenance; the full path is in errors)
+    std::string engine_arch;              // the first engine group's architecture
+    size_t engine_count = 1;              // every engine rank, over all groups
+    /* The engine's card groups in rank order: `engine = { arch, count }`, or a list of them for a world of more than one
+     * architecture (each rank runs its own architecture's kernel plugin; radiance --rank-devices). */
+    std::vector<std::pair<std::string, size_t>> engine_groups;
     std::optional<std::string> tp_wire;
     std::vector<HelperGroup> groups;
-    bool combine = false, tail = false;
+    bool tail = false;
+    Json settings = Json::object();       // [layout.NAME.settings]: resolver keys, layered as a profile
 };
 
 Json embedded_toml(const char* text, const char* what) {
@@ -442,28 +449,108 @@ ArchInfo arch_info(const std::string& arch) {
     return info;
 }
 
-LayoutRecipe recipe_for(const std::string& name) {
-    static const Json layouts = embedded_toml(kLayoutsSeed, "engines/radiance/layouts.toml");
-    if (!layouts.at("layout").contains(name))
-        throw std::runtime_error("layout.name: unknown named layout " + name + " (no fallback)");
-    const Json& l = layouts.at("layout").at(name);
-    const std::string where = "layouts.toml [layout." + name + "]: ";
-    LayoutRecipe r;
-    const Json& e = l.at("engine");
-    if (e.contains("devices"))
-        throw std::runtime_error(where + "engine.devices pins host device indices; the serving resolver selects by architecture only");
-    r.engine_arch = e.at("arch");
-    r.engine_count = e.value("count", 1);
-    const auto roles = arch_info(r.engine_arch).roles;
-    if (std::find(roles.begin(), roles.end(), "engine") == roles.end())
-        throw std::runtime_error(where + "architecture " + r.engine_arch + " cannot run the engine (archs.toml roles)");
-    if (l.contains("tp-wire")) r.tp_wire = l.at("tp-wire").get<std::string>();
-    if (l.contains("env"))
-        for (auto it = l.at("env").begin(); it != l.at("env").end(); ++it) {
-            if (it.key() != "R3_MOE_WORKER_COMBINE" || (it.value() != "1" && it.value() != "0"))
-                throw std::runtime_error(where + "env " + it.key() + ": only R3_MOE_WORKER_COMBINE = \"0\" or \"1\" is a serving setting");
-            r.combine = it.value() == "1";
+} // namespace
+
+/* The layout definition files: --layouts, else BIGCHERRY_LAYOUTS (a ':'-separated list), each a TOML file or a
+ * directory whose *.toml files are read in name order. There is no built-in table and no default. */
+std::vector<fs::path> layout_sources(const Options& options) {
+    std::vector<fs::path> given = options.layouts;
+    if (given.empty())
+        if (const char* env = std::getenv("BIGCHERRY_LAYOUTS"); env && *env) {
+            std::string s(env);
+            for (size_t at = 0; at <= s.size();) {
+                const size_t colon = std::min(s.find(':', at), s.size());
+                if (colon > at) given.emplace_back(s.substr(at, colon - at));
+                at = colon + 1;
+            }
         }
+    if (given.empty())
+        throw std::runtime_error("layout: no layout definitions: pass --layouts FILE|DIR or set BIGCHERRY_LAYOUTS");
+    std::vector<fs::path> files;
+    for (const auto& g : given) {
+        if (fs::is_directory(g)) {
+            std::vector<fs::path> in_dir;
+            for (const auto& e : fs::directory_iterator(g))
+                if (e.is_regular_file() && e.path().extension() == ".toml") in_dir.push_back(e.path());
+            std::sort(in_dir.begin(), in_dir.end());
+            if (in_dir.empty()) throw std::runtime_error("layout: " + g.string() + " holds no *.toml layout file");
+            files.insert(files.end(), in_dir.begin(), in_dir.end());
+        } else if (fs::is_regular_file(g)) {
+            files.push_back(g);
+        } else {
+            throw std::runtime_error("layout: " + g.string() + " is neither a layout file nor a directory");
+        }
+    }
+    return files;
+}
+
+/* Every named layout of the sources, and the file each came from. A name defined twice is refused. */
+Json load_layouts(const Options& options) {
+    Json out = {{"layout", Json::object()}, {"source", Json::object()}};
+    for (const auto& f : layout_sources(options)) {
+        Json doc;
+        try { doc = toml_to_json(toml::parse_file(f.string())); }
+        catch (const toml::parse_error& e) { throw std::runtime_error(f.string() + ": TOML parse error: " + e.what()); }
+        for (auto it = doc.begin(); it != doc.end(); ++it)
+            if (it.key() != "schema" && it.key() != "layout")
+                throw std::runtime_error(f.string() + ": unknown top-level key " + it.key() + " (schema, layout)");
+        if (doc.value("schema", 0) != 1) throw std::runtime_error(f.string() + ": schema = 1 is required");
+        if (!doc.contains("layout")) continue;
+        for (auto it = doc.at("layout").begin(); it != doc.at("layout").end(); ++it) {
+            if (out["layout"].contains(it.key()))
+                throw std::runtime_error("layout " + it.key() + " is defined in both " +
+                                         out["source"][it.key()].get<std::string>() + " and " + f.string());
+            out["layout"][it.key()] = it.value();
+            out["source"][it.key()] = f.string();
+        }
+    }
+    return out;
+}
+
+namespace {
+
+LayoutRecipe recipe_for(const std::string& name, const Options& options) {
+    const Json layouts = load_layouts(options);
+    if (!layouts.at("layout").contains(name))
+        throw std::runtime_error("layout.name: unknown named layout " + name + " (no fallback; sources: " +
+                                 layouts.at("source").dump() + ")");
+    const Json& l = layouts.at("layout").at(name);
+    const std::string where = layouts.at("source").at(name).get<std::string>() + " [layout." + name + "]: ";
+    LayoutRecipe r;
+    r.source = fs::path(layouts.at("source").at(name).get<std::string>()).filename().string();
+    const Json& e = l.at("engine");
+    const Json groups = e.is_array() ? e : Json::array({e});
+    if (groups.empty()) throw std::runtime_error(where + "engine names no card group");
+    r.engine_count = 0;
+    for (const Json& g : groups) {
+        if (!g.is_object() || g.contains("devices"))
+            throw std::runtime_error(where + "engine groups are { arch, count }; the serving resolver selects by architecture only");
+        for (auto it = g.begin(); it != g.end(); ++it)
+            if (it.key() != "arch" && it.key() != "count")
+                throw std::runtime_error(where + "engine: unknown key " + it.key() + " (arch, count)");
+        const std::string arch = g.at("arch");
+        const int64_t count = g.value("count", int64_t{1});
+        if (count < 1) throw std::runtime_error(where + "engine count must be at least 1");
+        const auto roles = arch_info(arch).roles;
+        if (std::find(roles.begin(), roles.end(), "engine") == roles.end())
+            throw std::runtime_error(where + "architecture " + arch + " cannot run the engine (archs.toml roles)");
+        for (const auto& [seen, n] : r.engine_groups)
+            if (seen == arch) throw std::runtime_error(where + "engine names " + arch + " in two groups; give one count");
+        r.engine_groups.emplace_back(arch, size_t(count));
+        r.engine_count += size_t(count);
+    }
+    r.engine_arch = r.engine_groups.front().first;
+    if (l.contains("tp-wire")) r.tp_wire = l.at("tp-wire").get<std::string>();
+    // [layout.NAME.settings]: the layout's own settings as resolver keys (tuning.tp_ownership, helper.combine, ...), layered
+    // under the site and profile with a profile's checks.
+    if (l.contains("settings")) {
+        if (!l.at("settings").is_object()) throw std::runtime_error(where + "settings is a table of resolver keys");
+        r.settings = l.at("settings");
+    }
+    for (const char* gone : {"env", "tuning"})
+        if (l.contains(gone))
+            throw std::runtime_error(where + gone + " is not a layout key: give resolver keys in [layout." + name +
+                                     ".settings] (helper.combine, tuning.*)");
     if (l.contains("helper"))
         for (const Json& h : l.at("helper")) {
             if (h.contains("devices"))
@@ -955,7 +1042,8 @@ Resolved resolve(const Options& options, const Json& facts) {
         throw std::runtime_error(options.profile.string() + ": hard_caps: site-only; profile cannot change hard caps");
     if (profile.contains("hard_floors"))
         throw std::runtime_error(options.profile.string() + ": hard_floors: site-only; profile cannot change hard floors");
-    std::string name = value_at(values, "layout.name").get<std::string>();
+    std::string name = exists(values, "layout.name") && value_at(values, "layout.name").is_string()
+                           ? value_at(values, "layout.name").get<std::string>() : std::string();
     name = selection_name(site, name);
     name = selection_name(profile, name);
     for (const auto& set : options.sets) {
@@ -965,10 +1053,14 @@ Resolved resolve(const Options& options, const Json& facts) {
         if (set.substr(0, eq) == "layout.name")
             name = parse_set("layout.name", set.substr(eq + 1)).get<std::string>();
     }
-    const auto layout = recipe_for(name);
+    if (name.empty())
+        throw std::runtime_error("layout.name is required: name a layout in the site or profile, or --set layout.name=NAME "
+                                 "(no default layout)");
+    const auto layout = recipe_for(name, options);
     std::set<std::string> used;
-    const ArchInfo engine_arch = arch_info(layout.engine_arch);
-    Json engine = choose(facts, layout.engine_arch, used, layout.engine_count);
+    Json engine = Json::array();
+    for (const auto& [arch, count] : layout.engine_groups)
+        for (const auto& g : choose(facts, arch, used, count)) engine.push_back(g);
     Json engine_cards = Json::array();
     for (const auto& g : engine) engine_cards.push_back(g.at("bdf"));
     Json cards = Json::array(), budgets = Json::array(), selected = Json::array(), group_of = Json::array();
@@ -991,27 +1083,31 @@ Resolved resolve(const Options& options, const Json& facts) {
             "KFD and PCI inventory, " + name, Json::array({"layout.name", "facts.gpus"}));
     derived("layout.helper_cards", cards, "KFD and PCI inventory, " + name,
             Json::array({"layout.name", "facts.gpus"}));
+    if (layout.engine_groups.size() > 1)
+        derived("layout.rank_devices", engine_cards, "KFD and PCI inventory, " + name + " engine groups",
+                Json::array({"layout.engine_cards"}));
     derived("memory.helper_budgets_mib", budgets,
-            "engines/radiance/layouts.toml " + name + " (interim; RSC03)",
+            "layout " + name + " (" + layout.source + ")" + " (interim; RSC03)",
             Json::array({"layout.name", "facts.gpus"}));
     derived("memory.tail_budget_mib", layout.tail ? layout.groups.back().budget_mib : 0,
-            "engines/radiance/layouts.toml " + name + " (interim; RSC03)",
+            "layout " + name + " (" + layout.source + ")" + " (interim; RSC03)",
             Json::array({"layout.name"}));
     derived("handoff.placement", layout.tail ? "tail" : "roundrobin",
-            "engines/radiance/layouts.toml " + name,
+            "layout " + name + " (" + layout.source + ")",
             Json::array({"layout.name"}));
     derived("helper.count", cards.size(), "RSC05 KFD selection",
             Json::array({"layout.helper_cards"}));
-    derived("helper.engine_ranks", engine_cards.size(), "layouts.toml engine count",
+    derived("helper.engine_ranks", engine_cards.size(), "layout engine count",
             Json::array({"layout.engine_cards"}));
     put(values, provenance, *field_for("engine.tp"), engine_cards.size(), "derived",
-        "layouts.toml engine count: one rank per engine card", Json::array({"layout.engine_cards"}));
+        "layout engine count: one rank per engine card", Json::array({"layout.engine_cards"}));
     if (layout.tp_wire)
         put(values, provenance, *field_for("engine.tp_wire"), *layout.tp_wire, "discovered",
-            "engines/radiance/layouts.toml " + name + " tp-wire", Json::array({"layout.name"}));
-    derived("helper.combine", layout.combine,
-            "engines/radiance/layouts.toml " + name,
-            Json::array({"layout.name"}));
+            "layout " + name + " (" + layout.source + ")" + " tp-wire", Json::array({"layout.name"}));
+    // The layout's own settings (tuning.tp_ownership, service.*, ...): a policy layer under the site and profile, which
+    // override it, with the same strict key and type checks as a profile.
+    if (!layout.settings.empty())
+        layer(values, provenance, layout.settings, "profile", "layout " + name + " (" + layout.source + ")");
     const Json baseline_values = values;
     layer(values, provenance, site, "site", options.site.empty() ? "site" : options.site.string());
     layer(values, provenance, profile, "profile",
@@ -1159,9 +1255,17 @@ Resolved resolve(const Options& options, const Json& facts) {
           "RSC03 memory/reserve projection: one reserve for the plan and the engine", "memory.host_reserve_mib");
     // The engine architecture's plugin (archs.toml), the mailbox plugin when helpers exist, then ref.
     {
-        const std::string stem = engine_arch.plugin.substr(0, engine_arch.plugin.rfind(".so"));
-        alias("engine.kernels", stem + (engine_only ? "" : ",libr3moe") + ",libref",
-              "engines/radiance/archs.toml " + layout.engine_arch + " plugin; launcher ENGINE_KERNELS",
+        // every engine group's plugin, in rank order and once each (a mixed world loads one plugin per architecture)
+        std::string stems, archs;
+        std::set<std::string> have;
+        for (const auto& [arch, count] : layout.engine_groups) {
+            const std::string plugin = arch_info(arch).plugin;
+            const std::string stem = plugin.substr(0, plugin.rfind(".so"));
+            archs += (archs.empty() ? "" : "+") + arch;
+            if (have.insert(stem).second) stems += (stems.empty() ? "" : ",") + stem;
+        }
+        alias("engine.kernels", stems + (engine_only ? "" : ",libr3moe") + ",libref",
+              "engines/radiance/archs.toml " + archs + " plugin; launcher ENGINE_KERNELS",
               "layout.engine_cards");
     }
 
@@ -1281,7 +1385,7 @@ Resolved resolve(const Options& options, const Json& facts) {
             {"plugin_file", arch.plugin},
             {"formats", arch.formats}, {"rows_kernel", arch.rows_kernel},
             {"placement", tail_card ? "tail" : "head"}, {"share", share},
-            {"provenance", {{"origin", "archs.toml + layouts.toml + KFD"},
+            {"provenance", {{"origin", "archs.toml + layout + KFD"},
                             {"inputs", Json::array({"layout.name", "facts.gpus"})},
                             {"lifecycle", "startup-only"}}}
         });

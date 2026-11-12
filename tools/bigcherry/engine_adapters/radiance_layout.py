@@ -1,7 +1,7 @@
 """How the cards of a host are used by radiance's remote-MoE offload (RAD23): card types and layouts as data.
 
 ``engines/radiance/archs.toml`` describes a card type (its kernel plugin, the weight formats it runs, whether it takes the few-rows
-kernel); ``engines/radiance/layouts.toml`` names which cards play which part. This module reads both, resolves a layout against a host's
+kernel); the layout definitions (``BIGCHERRY_LAYOUTS``, default ``engines/radiance/layouts/``) name which cards play which part. This module reads both, resolves a layout against a host's
 device inventory (``config/environment.local.toml``) and produces the environment each process needs. It checks everything that can be
 checked without a GPU, so an inconsistent layout is refused before a card is touched. No architecture, device index or budget is named in
 code: the helper, the launcher and the harness adapter get them from here.
@@ -9,6 +9,7 @@ code: the helper, the launcher and the harness adapter get them from here.
 
 from __future__ import annotations
 
+import os
 import re
 import tomllib
 from dataclasses import dataclass, field
@@ -56,8 +57,8 @@ class HelperCard:
 class Resolved:
     name: str
     engine_indices: tuple[int, ...]  # inventory indices, in TP-rank order
-    engine_arch: str
-    engine_plugin: str            # shared engine kernel plugin (archs.toml)
+    engine_arch: str              # the first rank's architecture ("+"-joined in rank order for a mixed world)
+    engine_plugin: str            # engine kernel plugin(s) (archs.toml), comma-joined in rank order for a mixed world
     model: str                    # portable path, relative to BC_MODEL_ROOT
     tp_wire: str | None
     server_args: tuple[str, ...]
@@ -151,11 +152,43 @@ def load_archs(repo_root: Path | None = None) -> dict[str, Arch]:
     return out
 
 
+def layout_sources(repo_root: Path | None = None) -> list[Path]:
+    """The layout definition files: BIGCHERRY_LAYOUTS (os.pathsep-separated files or directories of *.toml), else the
+    repository's example directory engines/radiance/layouts/. Layouts are run-time data; bc-serve reads the same list."""
+    # an explicit repository root (a test's, a checkout's) names its own example layouts; otherwise BIGCHERRY_LAYOUTS
+    env = "" if repo_root is not None else os.environ.get("BIGCHERRY_LAYOUTS", "")
+    given = [Path(x) for x in env.split(os.pathsep) if x] or [_root(repo_root) / "engines" / "radiance" / "layouts"]
+    files: list[Path] = []
+    for g in given:
+        if g.is_dir():
+            found = sorted(f for f in g.glob("*.toml") if f.is_file())
+            if not found:
+                raise LayoutError(f"{g}: holds no *.toml layout file")
+            files += found
+        elif g.is_file():
+            files.append(g)
+        else:
+            raise LayoutError(f"{g}: neither a layout file nor a directory")
+    return files
+
+
+def bc_serve_env(repo_root: Path | None = None) -> dict[str, str]:
+    """BIGCHERRY_LAYOUTS for a bc-serve child: the same sources this module reads."""
+    return {"BIGCHERRY_LAYOUTS": ":".join(str(f) for f in layout_sources(repo_root))}
+
+
 def load_layouts(repo_root: Path | None = None) -> dict[str, dict]:
-    path = _root(repo_root) / "engines" / "radiance" / "layouts.toml"
-    raw = _load(path)
-    _allow(raw, {"schema", "layout"}, str(path))
-    return dict(raw.get("layout") or {})
+    out: dict[str, dict] = {}
+    seen: dict[str, Path] = {}
+    for path in layout_sources(repo_root):
+        raw = _load(path)
+        _allow(raw, {"schema", "layout"}, str(path))
+        for name, table in (raw.get("layout") or {}).items():
+            if name in seen:
+                raise LayoutError(f"layout {name} is defined in both {seen[name]} and {path}")
+            seen[name] = path
+            out[name] = table
+    return out
 
 
 def names(repo_root: Path | None = None) -> list[str]:
@@ -202,6 +235,14 @@ def _pick(inventory, spec: dict, role: str, archs: dict[str, Arch], where: str, 
     return picked
 
 
+def _engine_archs(engine) -> str:
+    return "+".join(dict.fromkeys(d.arch for d in engine))
+
+
+def _engine_plugins(engine, archs: dict[str, Arch]) -> str:
+    return ",".join(dict.fromkeys(archs[d.arch].plugin for d in engine))
+
+
 def resolve(name: str, host: environment.Host, *, budgets: dict[str, int] | None = None, repo_root: Path | None = None) -> Resolved:
     """A named layout against a host's inventory. `budgets` overrides budget-mib per architecture (arch -> MiB)."""
     archs = load_archs(repo_root)
@@ -210,7 +251,17 @@ def resolve(name: str, host: environment.Host, *, budgets: dict[str, int] | None
         raise LayoutError(f"unknown layout {name!r}; known: {sorted(layouts)}")
     lay = layouts[name]
     where = f"layout.{name}"
-    _allow(lay, {"description", "model", "engine", "tp-wire", "server-args", "helper", "env"}, where)
+    for gone in ("env", "tuning"):
+        if gone in lay:
+            raise LayoutError(f"{where}: {gone} is not a layout key: give resolver keys in [{where}.settings] (helper.combine, tuning.*)")
+    _allow(lay, {"description", "model", "engine", "tp-wire", "server-args", "helper", "settings"}, where)
+    # [layout.NAME.settings]: resolver keys (bc-serve checks each key and type against the contract, as for a profile)
+    settings = lay.get("settings", {})
+    if not isinstance(settings, dict):
+        raise LayoutError(f"{where}.settings must be a table of resolver keys")
+    combine = (settings.get("helper") or {}).get("combine", False)
+    if not isinstance(combine, bool):
+        raise LayoutError(f"{where}.settings: helper.combine is true or false")
     model = lay.get("model")
     if not isinstance(model, str) or not model or model.startswith("/") or not model.endswith(".rad") or any(
         part in ("", ".", "..") for part in model.split("/")
@@ -219,14 +270,22 @@ def resolve(name: str, host: environment.Host, *, budgets: dict[str, int] | None
     budgets = dict(budgets or {})
     taken: set[int] = set()
     engine_spec = lay.get("engine")
-    if not isinstance(engine_spec, dict):
-        raise LayoutError(f"{where}: engine is required")
-    _allow(engine_spec, {"arch", "devices", "count"}, f"{where}.engine")
-    engine = _pick(host.devices, engine_spec, "engine", archs, f"{where}.engine", taken)
+    # one group { arch, count } (or devices), or a list of { arch, count } groups in rank order: a world of more than one
+    # card type, each rank running its own architecture's plugin (radiance --rank-devices)
+    specs = engine_spec if isinstance(engine_spec, list) else [engine_spec]
+    if not specs or not all(isinstance(s, dict) for s in specs):
+        raise LayoutError(f"{where}: engine is required: {{ arch, count }} or a list of them")
+    if isinstance(engine_spec, list) and len({s.get("arch") for s in specs}) != len(specs):
+        raise LayoutError(f"{where}.engine: an architecture is named in two groups; give one count")
+    engine = []
+    for si, spec in enumerate(specs):
+        swhere = f"{where}.engine" + (f"[{si}]" if isinstance(engine_spec, list) else "")
+        _allow(spec, {"arch", "count"} if isinstance(engine_spec, list) else {"arch", "devices", "count"}, swhere)
+        engine += _pick(host.devices, spec, "engine", archs, swhere, taken)
     if not engine:
         raise LayoutError(f"{where}.engine: at least one engine card is required")
-    # All ranks use the same plugin, chosen by the card architecture.
-    if len({d.arch for d in engine}) != 1:
+    # One group: every rank shares an architecture and its plugin. Several: a mixed world, one plugin per architecture.
+    if not isinstance(engine_spec, list) and len({d.arch for d in engine}) != 1:
         raise LayoutError(f"{where}.engine: all tensor-parallel ranks must share an architecture")
     groups = lay.get("helper") or []
     tp_wire = lay.get("tp-wire")
@@ -250,10 +309,10 @@ def resolve(name: str, host: environment.Host, *, budgets: dict[str, int] | None
     if not groups:
         if budgets:
             raise LayoutError(f"{where}: budget overrides require remote-MoE helpers")
-        if lay.get("env"):
-            raise LayoutError(f"{where}: R3_MOE_WORKER_* settings require remote-MoE helpers")
-        return Resolved(name, tuple(d.index for d in engine), engine[0].arch,
-                        archs[engine[0].arch].plugin, model, tp_wire, tuple(server_args), (), {})
+        if combine:
+            raise LayoutError(f"{where}: helper.combine requires remote-MoE helpers")
+        return Resolved(name, tuple(d.index for d in engine), _engine_archs(engine),
+                        _engine_plugins(engine, archs), model, tp_wire, tuple(server_args), (), {})
     helpers: list[HelperCard] = []
     used_overrides: set[str] = set()
     for gi, g in enumerate(groups):
@@ -306,18 +365,11 @@ def resolve(name: str, host: environment.Host, *, budgets: dict[str, int] | None
     }
     if any(h.placement == "tail" for h in helpers):
         common["R3_MOE_WORKER_PLACEMENT"] = "tail"
-    # the layout's own settings for the engine and every helper (the helper-row combine, for one); never a name the cards above decide
-    env = lay.get("env", {})
-    if not isinstance(env, dict):
-        raise LayoutError(f"{where}.env must be a table of R3_MOE_WORKER_* settings")
-    for key, value in env.items():
-        if not re.fullmatch(r"R3_MOE_WORKER_[A-Z0-9_]+", key) or not isinstance(value, str):
-            raise LayoutError(f"{where}.env: {key!r} must be an R3_MOE_WORKER_* setting with a string value")
-        if key in common or key in {"R3_MOE_WORKER_LAYOUT", "R3_MOE_WORKER_DEVICES"}:
-            raise LayoutError(f"{where}.env: {key} is decided by the cards of the layout")
-        common[key] = value
+    # the helper-row combine (settings helper.combine), which the engine and every helper must agree on
+    if combine:
+        common["R3_MOE_WORKER_COMBINE"] = "1"
     if common.get("R3_MOE_WORKER_COMBINE") == "1" and len(helpers) < 2:
         # the combine adds the rows of two to kCombineHelpers (= kMaxHelpers, the bound checked above) helpers; one has nothing to add
         raise LayoutError(f"{where}: the helper-row combine needs at least two helpers; {len(helpers)} would run with it silently off")
-    return Resolved(name, tuple(d.index for d in engine), engine[0].arch, archs[engine[0].arch].plugin,
+    return Resolved(name, tuple(d.index for d in engine), _engine_archs(engine), _engine_plugins(engine, archs),
                     model, tp_wire, tuple(server_args), tuple(helpers), {k: v for k, v in common.items() if v != ""})

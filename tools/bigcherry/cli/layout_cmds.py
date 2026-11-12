@@ -35,7 +35,7 @@ def _env_lines(r: radiance_layout.Resolved) -> list[str]:
         f"LAYOUT_ENGINE_DEVICE={r.engine_index}",
         "LAYOUT_ENGINE_DEVICES=" + q(",".join(map(str, r.engine_indices))),
         f"LAYOUT_ENGINE_RANKS={len(r.engine_indices)}",
-        "LAYOUT_ENGINE_PLUGIN=" + q(r.engine_plugin[:-3]),
+        "LAYOUT_ENGINE_PLUGIN=" + q(",".join(p[:-3] for p in r.engine_plugin.split(","))),
         "LAYOUT_MODEL=" + q(r.model),
         "LAYOUT_TP_WIRE=" + q(r.tp_wire or ""),
         "LAYOUT_SERVER_ARGS=(" + " ".join(q(arg) for arg in r.server_args) + ")",
@@ -102,7 +102,7 @@ def _run(args: Namespace) -> int:
 def register(sub) -> None:
     p = sub.add_parser("layout", help="layouts resolved by the bc-serve KFD/PCI detector (RSC11)")
     ls = p.add_subparsers(dest="layout_cmd", required=True)
-    ls.add_parser("list", help="the named layouts in engines/radiance/layouts.toml")
+    ls.add_parser("list", help="the named layouts in the layout definitions (BIGCHERRY_LAYOUTS; default engines/radiance/layouts/)")
     for name, helptext in (("show", "resolved role/BDF assignments (JSON)"),
                            ("env", "shell assignments from the serving resolver")):
         c = ls.add_parser(name, help=helptext)

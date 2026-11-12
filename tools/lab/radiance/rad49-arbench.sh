@@ -29,7 +29,7 @@ ROCM=$(sed -n 's#^CMAKE_HIP_COMPILER:[A-Z]*=\(.*\)/lib/llvm/bin/clang++$#\1#p' "
 [ -d "$ROCM/include/hip" ] || { echo "no recorded ROCm SDK in $B/CMakeCache.txt" >&2; exit 1; }
 [ -f "$LIB" ] && [ -f "$INC/rad_abi.h" ] || { echo "no libr3.so / ABI headers in $B" >&2; exit 1; }
 # The message shape is the served model's: n_embd and hc_count from its container (the layout's model), never a literal here.
-MODEL=${MODEL:-$BC_MODEL_ROOT/$(python3 -c "import tomllib,sys;print(tomllib.load(open(sys.argv[1],'rb'))['layout']['flashnext-tp2xtx-r9700']['model'])" engines/radiance/layouts.toml)}
+MODEL=${MODEL:-$BC_MODEL_ROOT/$(PYTHONPATH=tools python3 -c "from bigcherry.engine_adapters.radiance_layout import load_layouts;print(load_layouts()['flashnext-tp2xtx-r9700']['model'])")}
 read -r NEMBD HCN < <("$B/bin/rad-info" "$MODEL" | awk '$1=="n_embd"{n=$2} $1=="hc_count"{h=$2} END{print n, h}')
 [ -n "$NEMBD" ] && [ -n "$HCN" ] || { echo "no n_embd / hc_count in $MODEL" >&2; exit 1; }
 ROWS=${ROWS:-1,4,24,32,2048}

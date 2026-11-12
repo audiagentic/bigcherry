@@ -111,14 +111,18 @@ class HelperProfileParityTests(unittest.TestCase):
         froms = [r["from"] for r in self.rows if "from" in r]
         self.assertEqual(sorted(froms), sorted(set(froms)), "a resolver key feeds one leaf")
 
-    def test_the_resolver_reads_layouts_toml_and_keeps_no_copy_of_it(self) -> None:
-        # RSC11 A2: serving.cpp embeds engines/radiance/layouts.toml and archs.toml (CMakeLists.txt) and derives helper.combine,
-        # the cards, budgets and placement from them; a layout named in its source would be a second copy.
+    def test_the_resolver_reads_layouts_at_run_time_and_keeps_no_copy_of_them(self) -> None:
+        # serving.cpp reads the layouts at run time (--layouts / BIGCHERRY_LAYOUTS) and embeds only archs.toml; it derives
+        # helper.combine, the cards, budgets and placement from them. A layout named in its source would be a second copy.
         text = (SERVING / "serving.cpp").read_text(encoding="utf-8")
-        layouts = tomllib.loads((REPO / "engines" / "radiance" / "layouts.toml").read_text(encoding="utf-8"))["layout"]
+        layouts = {}
+        for f in sorted((REPO / "engines" / "radiance" / "layouts").glob("*.toml")):
+            layouts.update(tomllib.loads(f.read_text(encoding="utf-8"))["layout"])
+        self.assertTrue(layouts)
         for name in layouts:
-            self.assertNotIn(f'name == "{name}"', text, f"serving.cpp branches on the layout {name}")
-        self.assertIn("layouts_seed.inc", text)
+            self.assertNotIn(f'"{name}"', text, f"serving.cpp names the layout {name}")
+        self.assertNotIn("layouts_seed.inc", text)
+        self.assertIn("BIGCHERRY_LAYOUTS", text)
         self.assertIn("archs_seed.inc", text)
 
     def test_every_row_names_a_setting_and_its_basis_holds(self) -> None:

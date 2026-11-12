@@ -129,7 +129,7 @@ class EngineLayout:
     #: build passes each as an absolute path, so an engine tree never carries a copy
     repo_paths: tuple[tuple[str, str], ...] = ()
     #: repository-relative files outside every component directory that the components read at configure or build time
-    #: (radiance: archs.toml sets moe-remote's GPU targets, and serving embeds layouts.toml and archs.toml): their bytes
+    #: (radiance: archs.toml sets moe-remote's GPU targets, and serving embeds archs.toml; layouts are run-time data): their bytes
     #: are part of what a build produces, so they are part of its identity (see repo_input_hashes)
     repo_inputs: tuple[str, ...] = ()
     #: (name, repository-relative directory) of each component the engine builds, from [components]

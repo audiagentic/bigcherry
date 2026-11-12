@@ -1,7 +1,7 @@
 #!/bin/bash
 # Layout-driven Radiance launch. Flash-Next helper defaults below apply only to
 # layouts with helpers; helper-free dense TP uses model, rank count and serving
-# arguments resolved from engines/radiance/layouts.toml.
+# arguments resolved from the layout definitions (BIGCHERRY_LAYOUTS; default engines/radiance/layouts/).
 # Launch Qwen3.8-Flash-Next on dev in the current best layout, per
 # docs/reference/engines/radiance/models/qwen3.8-flash-next.md ("Current best layout and numbers") and the harness config
 # tools/lab/radiance/helper-ab.json, which this mirrors outside the harness.
@@ -18,7 +18,7 @@
 # Helper kernel settings are in the manifest. The libr3 native/FP16/activation-half
 # switches still need a typed plugin interface before their settings can take effect.
 #
-# Which cards play which part is a layout (engines/radiance/layouts.toml, `bigcherry layout list|show NAME`), resolved against this host's device
+# Which cards play which part is a layout (the layout definitions in BIGCHERRY_LAYOUTS, `bigcherry layout list|show NAME`), resolved against this host's device
 # inventory; card types (plugin, weight formats, few-rows kernel) are engines/radiance/archs.toml. --layout NAME (or FLASHNEXT_LAYOUT) picks one,
 # default flashnext-4gpu (all four cards; flashnext-2xtx leaves the RX 6900 XT out); --budget ARCH=MIB overrides the VRAM budget of the group using that architecture (e.g. --layout flashnext-2xtx-rdna2-tail
 # --budget gfx1030=4096). A layout that needs a card the host does not have, or a plugin the build lacks, stops here with the reason.
@@ -81,7 +81,7 @@
 #   for the measured v1 manifest of the exact configuration it launches; the engine (and the helpers, with helpers) start from that
 #   one file (--manifest M --role ...), and the engine checks its live memory plan against the plan the manifest carries before it
 #   allocates anything. This script exports no setting of its own: the process environment is only where the runtime lives. A
-#   helper-free layout takes its options from its server-args in layouts.toml (each one a manifest setting) and has no hand-off.
+#   helper-free layout takes its options from its server-args in its layout (each one a manifest setting) and has no hand-off.
 #   The first start of a configuration that has no measured plan (a cache miss, logged once with its reason)
 #   first MEASURES it: the helpers (if any) come up on their cards and the engine stops after its memory plan, about 1-2 minutes, then
 #   the real start goes ahead. That measuring start uses the GPUs exactly as a launch does, so the first launch of a new
@@ -360,7 +360,7 @@ if [ "$LAYOUT_HELPER_COUNT" -gt 0 ]; then
   unset -f layout_default
 fi
 if [ "$LAYOUT_HELPER_COUNT" = 0 ] && [ "${#CUSTOM_SERVE_OPTIONS[@]}" -ne 0 ]; then
-  echo "RADIANCE_EXIT=2 these options configure helper-offload serving, not the helper-free layout $LAYOUT: ${CUSTOM_SERVE_OPTIONS[*]}; use its server-args in layouts.toml" >&2
+  echo "RADIANCE_EXIT=2 these options configure helper-offload serving, not the helper-free layout $LAYOUT: ${CUSTOM_SERVE_OPTIONS[*]}; use its server-args in its layout" >&2
   exit 2
 fi
 if [ "$CALIBRATE" = 1 ] && [ "$LAYOUT_HELPER_COUNT" -eq 0 ]; then
@@ -427,7 +427,7 @@ if [ "$GPU_POWER" = 1 ]; then
 fi
 
 if [ "$LAYOUT_HELPER_COUNT" = 0 ] && [ -n "${MODEL:-}" ]; then
-  echo "RADIANCE_EXIT=2 the helper-free model is selected by layouts.toml; unset MODEL" >&2
+  echo "RADIANCE_EXIT=2 the helper-free model is selected by its layout; unset MODEL" >&2
   exit 2
 fi
 MODEL=${MODEL:-${BC_MODEL_ROOT:?set BC_MODEL_ROOT (source tools/env/bigcherry-env.sh)}/$LAYOUT_MODEL}
@@ -455,7 +455,11 @@ if [ "$LAYOUT_HELPER_COUNT" -gt 0 ]; then
 fi
 
 source "$(dirname "${BASH_SOURCE[0]}")/lab-env.sh"
-[ -f "$RAD_HOME/kernels/$LAYOUT_ENGINE_PLUGIN.so" ] || { echo "RADIANCE_EXIT=99 layout $LAYOUT requires kernels/$LAYOUT_ENGINE_PLUGIN.so"; exit 99; }
+# one plugin per engine architecture (a mixed world names several, comma-separated)
+IFS=, read -ra _engine_plugins <<< "$LAYOUT_ENGINE_PLUGIN"
+for _p in "${_engine_plugins[@]}"; do
+  [ -f "$RAD_HOME/kernels/$_p.so" ] || { echo "RADIANCE_EXIT=99 layout $LAYOUT requires kernels/$_p.so"; exit 99; }
+done
 HELPERS=(); for ((i = 0; i < LAYOUT_HELPER_COUNT; i++)); do HELPERS+=("$i"); done
 for ((i = 0; i < LAYOUT_HELPER_COUNT; i++)); do
   declare -n h="LAYOUT_HELPER_$i"

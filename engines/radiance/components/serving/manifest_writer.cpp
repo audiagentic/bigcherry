@@ -227,6 +227,7 @@ Json draft_power_devices(const Resolved& r) {
 Json engine_of(const Json& v) {
     const Json& e = v.at("engine");
     Json device = {{"gpus", v.at("layout").at("engine_cards")}};
+    if (v.at("layout").contains("rank_devices")) device["rank_devices"] = v.at("layout").at("rank_devices");   // amendment 18
     if (e.contains("gpu_headroom_mib")) device["headroom_mib"] = e.at("gpu_headroom_mib");
     Json execution = {{"placement", e.at("placement")}, {"ngram_placement", e.at("ngram_placement")},
                       {"kv_cache_dtype", e.at("kv_cache_dtype")}, {"num_speculative_tokens", e.at("num_speculative_tokens")},
@@ -265,7 +266,7 @@ Json static_provenance(bool measured, bool engine_only) {
     Json p = Json::object();
     p[""] = record("schema_default", "serving contract v1", "policy", "exact");
     p["/spec/intent/model"] = record("site", "site.toml:engine.model", "policy", "exact");
-    p["/spec/intent/layout"] = record("profile", "layout selection (layouts.toml)", "policy", "exact");
+    p["/spec/intent/layout"] = record("profile", "layout selection (layout definitions)", "policy", "exact");
     p["/spec/intent/service"] = record("profile", "serving profile (bc-serve --profile)", "policy", "exact");
     p["/spec/intent/power"] = record("cli", "bc-serve --power-profile", "policy", "exact");
     p["/spec/facts"] = record("detected", "bc-serve detect: kfd+sysfs+proc+statvfs+cgroup", "fact", "exact");

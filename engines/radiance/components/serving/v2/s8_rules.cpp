@@ -41,7 +41,7 @@ bool valid_scope(const S8Scope &s) {
          digest(s.helper_build_digest) && digest(s.layout_digest) &&
          digest(s.inventory_digest) && digest(s.owner_map_digest) &&
          positive(s.context_target_tokens) &&
-         positive(s.retention_target_tokens) && positive(s.kv_bytes_per_token);
+         s.retention_target_tokens >= 0 && positive(s.kv_bytes_per_token);   // 0: no host KV tier (amendment 19)
 }
 
 // The registry class of a leaf (contract [[class_default]]), so a record covers exactly its own class.

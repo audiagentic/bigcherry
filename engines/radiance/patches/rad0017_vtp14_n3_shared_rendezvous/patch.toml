@@ -1,0 +1,11 @@
+schema = 1
+id = "rad0017_vtp14_n3_shared_rendezvous"
+order = 17
+state = "untested"
+kind = "enhancement"
+origin = "local"
+backend = "agnostic"
+plan-ids = ["VTP14"]
+requires = ["rad0016_vtp14_rank_code_selection"]
+conflicts = []
+tags = ["tensor-parallel", "allreduce"]

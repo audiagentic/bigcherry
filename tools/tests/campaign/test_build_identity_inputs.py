@@ -1,8 +1,8 @@
 """A build's identity (build_plan_id) must cover every file its components read.
 
 Components are hashed by content (component.content_digest), but a component's CMake can also read a file from OUTSIDE its own
-directory: radiance's moe-remote reads archs.toml to choose its GPU targets, and serving embeds archs.toml and layouts.toml in
-bc-serve. If such a file changed while the plan id did not, two different bc-serve binaries would land in one
+directory: radiance's moe-remote reads archs.toml to choose its GPU targets, and serving embeds archs.toml in bc-serve (layouts are
+run-time data, never compiled in). If such a file changed while the plan id did not, two different bc-serve binaries would land in one
 builds/<slice>/<plan id> and the second would be silently "already built" (and a release bundle named by that id would collide
 with the earlier one). engine.toml [build] repo-inputs lists them, and the lane puts their bytes in the plan.
 """
@@ -22,7 +22,8 @@ RADIANCE = engines.load(ROOT, engines.RADIANCE)
 
 #: out-of-tree paths a component may name without declaring them: the manifest contract directory is passed to the component
 #: TESTS only (BC_CONTRACT_DIR / BC_CONTRACT_DOCS_DIR), and nothing built into a runtime reads it
-TEST_ONLY = ("docs/design/serving-manifest-v2",)
+# Read by tests only: the v2 contract docs, and the example layouts (run-time data the tests resolve; no binary embeds them).
+TEST_ONLY = ("docs/design/serving-manifest-v2", "engines/radiance/layouts")
 _PATH = re.compile(r"\$\{CMAKE_(?:CURRENT_SOURCE_DIR|CURRENT_LIST_DIR)\}/((?:\.\./)+[^\s\"')]*)")
 
 
@@ -42,7 +43,7 @@ def _out_of_tree_reads() -> list[tuple[str, str]]:
 
 class BuildIdentityInputsTests(unittest.TestCase):
     def test_radiance_declares_the_files_its_components_read_outside_their_directories(self) -> None:
-        self.assertEqual(set(RADIANCE.repo_inputs), {"engines/radiance/archs.toml", "engines/radiance/layouts.toml"})
+        self.assertEqual(set(RADIANCE.repo_inputs), {"engines/radiance/archs.toml"})
 
     def test_every_out_of_tree_read_is_a_component_a_declared_input_or_test_only(self) -> None:
         components = {f"engines/radiance/components/{name}" for name in (p.name for p in (ROOT / "engines/radiance/components").iterdir() if p.is_dir())}
@@ -63,21 +64,22 @@ class BuildIdentityInputsTests(unittest.TestCase):
     def test_the_scan_finds_the_reads_it_is_meant_to_guard(self) -> None:
         targets = {t for _, t in _out_of_tree_reads()}
         self.assertIn("engines/radiance/archs.toml", targets)
-        self.assertTrue(any(t.startswith("engines/radiance/${") or t == "engines/radiance/layouts.toml" for t in targets), targets)
+        # the layouts are read by tests only (TEST_ONLY), never by a build: they are not a build input
+        self.assertTrue(all(t.startswith("engines/radiance/layouts") for t in targets if "layouts" in t), targets)
 
     def test_a_declared_inputs_bytes_change_the_identity_and_nothing_else_does(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / "engines/radiance").mkdir(parents=True)
-            for name in ("archs.toml", "layouts.toml"):
-                (root / "engines/radiance" / name).write_text("a = 1\n")
+            (root / "engines/radiance/archs.toml").write_text("a = 1\n")
             before = RADIANCE.repo_input_hashes(root)
             self.assertEqual(before, RADIANCE.repo_input_hashes(root))
-            (root / "engines/radiance/layouts.toml").write_text("a = 2\n")
-            after = RADIANCE.repo_input_hashes(root)
-            self.assertNotEqual(before, after)
-            self.assertEqual(dict(before)["repo:engines/radiance/archs.toml"], dict(after)["repo:engines/radiance/archs.toml"])
-            (root / "engines/radiance/layouts.toml").unlink()
+            (root / "engines/radiance/layouts").mkdir()
+            (root / "engines/radiance/layouts/x.toml").write_text("a = 2\n")
+            self.assertEqual(before, RADIANCE.repo_input_hashes(root), "a layout file is not a build input")
+            (root / "engines/radiance/archs.toml").write_text("a = 2\n")
+            self.assertNotEqual(before, RADIANCE.repo_input_hashes(root))
+            (root / "engines/radiance/archs.toml").unlink()
             with self.assertRaises(engines.EngineError):
                 RADIANCE.repo_input_hashes(root)
 

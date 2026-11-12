@@ -121,7 +121,8 @@ struct Fixture {
         opts.site = file("site.toml", "[engine]\nmodel = \"" + (root / "model.rad").string() + "\"\n"
                                       "radiance_home = \"/runtime\"\n"
                                       "[handoff]\nheat = \"/heat.hot-first\"\n"
-                                      "histogram = \"/heat.live\"\n");
+                                      "histogram = \"/heat.live\"\n"
+                                      "[layout]\nname = \"flashnext-4gpu\"\n");
         return opts;
     }
 };
@@ -210,7 +211,8 @@ void unknown_keys(Fixture& t) {
     opts.site = t.file("unknown-site.toml",
                        "[engine]\nmodel = \"" + (t.root / "model.rad").string() + "\"\n"
                        "radiance_home = \"/runtime\"\n"
-                       "max_numm_seqs = 7\n");
+                       "max_numm_seqs = 7\n"
+                       "[layout]\nname = \"flashnext-4gpu\"\n");
     fail(opts, t.facts, "unknown-site.toml: unknown key engine.max_numm_seqs");
     fail(opts, t.facts, "engine.max_num_seqs");
     opts = t.standard();
@@ -221,9 +223,30 @@ void unknown_keys(Fixture& t) {
     fail(opts, t.facts, "nearest valid key: engine.port");
 }
 
+/* The layouts are run-time data: no default layout, no built-in table, and a name defined twice is refused. */
+void layout_sources(Fixture& t) {
+    auto opts = t.standard();
+    opts.site = t.file("nolayout-site.toml", "[engine]\nmodel = \"" + (t.root / "model.rad").string() + "\"\n"
+                                             "radiance_home = \"/runtime\"\n");
+    fail(opts, t.facts, "layout.name is required");
+    opts = t.standard();
+    opts.layouts = {t.root / "no-such-layouts"};
+    fail(opts, t.facts, "neither a layout file nor a directory");
+    const std::string one = "schema = 1\n[layout.solo]\nmodel = \"m.rad\"\nengine = { arch = \"gfx1201\" }\n";
+    opts.layouts = {t.file("a.toml", one), t.file("b.toml", one)};
+    opts.sets = {"layout.name=\"solo\""};
+    fail(opts, t.facts, "layout solo is defined in both");
+    opts.layouts = {t.file("noschema.toml", "[layout.solo]\nengine = { arch = \"gfx1201\" }\n")};
+    fail(opts, t.facts, "schema = 1 is required");
+    const Json all = bc::serving::load_layouts(Options{});   // BIGCHERRY_LAYOUTS: the repository's example layouts
+    assert(all.at("layout").contains("flashnext-4gpu") && all.at("layout").contains("qwen27b-2xtx"));
+}
+
 void type_range_required(Fixture& t) {
     Options opts;
+    opts.sets = {"layout.name=\"flashnext-4gpu\""};
     fail(opts, t.facts, "missing required key: engine.model");
+    opts.sets.clear();
     opts = t.standard();
     opts.profile = t.file("type.toml", "[service]\nmax_sessions = \"many\"\n");
     fail(opts, t.facts, "service.max_sessions: expected non-negative integer");
@@ -250,7 +273,7 @@ void precedence_and_caps(Fixture& t) {
     auto opts = t.standard();
     opts.site = t.file("precedence-site.toml",
         "[engine]\nmodel = \"" + (t.root / "model.rad").string() + "\"\nradiance_home = \"/runtime\"\nport = 4700\n"
-        "[handoff]\nheat = \"/heat.hot-first\"\nhistogram = \"/heat.live\"\n");
+        "[handoff]\nheat = \"/heat.hot-first\"\nhistogram = \"/heat.live\"\n" + std::string("[layout]\nname = \"flashnext-4gpu\"\n"));
     opts.profile = t.file("precedence-profile.toml", "[engine]\nport = 4800\n");
     opts.sets = {"engine.port=4900"};
     const auto r = bc::serving::resolve(opts, t.facts);
@@ -270,7 +293,7 @@ void precedence_and_caps(Fixture& t) {
         "[engine]\nmodel = \"" + (t.root / "model.rad").string() + "\"\nradiance_home = \"/runtime\"\n"
         "[memory]\nhost_pool_mib = 7000\n"
         "[hard_caps.memory]\nhost_pool_mib = 8000\n"
-        "[handoff]\nheat = \"/heat.hot-first\"\nhistogram = \"/heat.live\"\n");
+        "[handoff]\nheat = \"/heat.hot-first\"\nhistogram = \"/heat.live\"\n" + std::string("[layout]\nname = \"flashnext-4gpu\"\n"));
     auto good = bc::serving::resolve(opts, t.facts);
     assert(good.typed.memory.host_pool_mib == 7000);
     opts.profile = t.file("cap-profile.toml", "[memory]\nhost_pool_mib = 9000\n");
@@ -284,7 +307,7 @@ void precedence_and_caps(Fixture& t) {
     opts.site = t.file("overcap-site.toml",
         "[engine]\nmodel = \"" + (t.root / "model.rad").string() + "\"\nradiance_home = \"/runtime\"\n"
         "[hard_caps.memory]\nhost_pool_mib = 999999\n"
-        "[handoff]\nheat = \"/heat.hot-first\"\nhistogram = \"/heat.live\"\n");
+        "[handoff]\nheat = \"/heat.hot-first\"\nhistogram = \"/heat.live\"\n" + std::string("[layout]\nname = \"flashnext-4gpu\"\n"));
     fail(opts, t.facts, "exceeds detected RAM");
 }
 
@@ -461,18 +484,18 @@ void host_reserve(Fixture& t) {
     auto opts = t.standard();
     opts.site = t.file("floor-site.toml", "[engine]\nmodel = \"" + (t.root / "model.rad").string() + "\"\nradiance_home = \"/runtime\"\n"
                                           "[handoff]\nheat = \"/heat.hot-first\"\nhistogram = \"/heat.live\"\n"
-                                          "[hard_floors.memory]\nhost_reserve_mib = 8192\n");
+                                          "[hard_floors.memory]\nhost_reserve_mib = 8192\n" + std::string("[layout]\nname = \"flashnext-4gpu\"\n"));
     r = bc::serving::resolve(opts, t.facts);
     assert(r.values.at("memory").at("host_reserve_mib") == 8192);
     assert(r.provenance.at("memory.host_reserve_mib").at("origin") == "site");
     opts.site = t.file("low-floor-site.toml", "[engine]\nmodel = \"" + (t.root / "model.rad").string() + "\"\nradiance_home = \"/runtime\"\n"
                                               "[handoff]\nheat = \"/heat.hot-first\"\nhistogram = \"/heat.live\"\n"
-                                              "[hard_floors.memory]\nhost_reserve_mib = 1024\n");
+                                              "[hard_floors.memory]\nhost_reserve_mib = 1024\n" + std::string("[layout]\nname = \"flashnext-4gpu\"\n"));
     r = bc::serving::resolve(opts, t.facts);
     assert(r.values.at("memory").at("host_reserve_mib") == 6554);
     opts.site = t.file("bad-floor-site.toml", "[engine]\nmodel = \"" + (t.root / "model.rad").string() + "\"\nradiance_home = \"/runtime\"\n"
                                               "[handoff]\nheat = \"/heat.hot-first\"\nhistogram = \"/heat.live\"\n"
-                                              "[hard_floors.memory]\nhost_pool_mib = 1024\n");
+                                              "[hard_floors.memory]\nhost_pool_mib = 1024\n" + std::string("[layout]\nname = \"flashnext-4gpu\"\n"));
     fail(opts, t.facts, "unknown floor hard_floors.memory.host_pool_mib");
     opts = t.standard();
     opts.profile = t.file("floor-profile.toml", "[hard_floors.memory]\nhost_reserve_mib = 8192\n");
@@ -910,7 +933,7 @@ void manifest_writer_step(Fixture& t) {
     }
     Options opts;
     opts.site = t.file("writer-site.toml", "[engine]\nmodel = \"" + model.string() + "\"\nradiance_home = \"/runtime\"\n"
-                                          "[handoff]\nheat = \"" + heat.string() + "\"\nhistogram = \"/heat.live\"\n");
+                                          "[handoff]\nheat = \"" + heat.string() + "\"\nhistogram = \"/heat.live\"\n" + std::string("[layout]\nname = \"flashnext-4gpu\"\n"));
     const auto r = sv::resolve(opts, t.facts);
     const Json plan = Json::parse(R"json({
       "plan_version": 1, "producer": "radiance --plan-memory (rad0011)",
@@ -1450,7 +1473,7 @@ void layout_manifests_golden(Fixture& t, bool write_golden, const char* dump_dir
                              "flashnext-tp2xtx"}) {
         Options opts;
         opts.site = t.file("golden-site.toml", "[engine]\nmodel = \"" + model.string() + "\"\nradiance_home = \"/runtime\"\n"
-                                              "[handoff]\nheat = \"" + heat.string() + "\"\nhistogram = \"/heat.live\"\n");
+                                              "[handoff]\nheat = \"" + heat.string() + "\"\nhistogram = \"/heat.live\"\n" + std::string("[layout]\nname = \"flashnext-4gpu\"\n"));
         opts.sets = {std::string("layout.name=\"") + name + "\""};
         sv::ManifestInputs in;
         in.resolved = sv::resolve(opts, t.facts);
@@ -1485,7 +1508,7 @@ void engine_only_layout(Fixture& t) {
         assert(!refused.open(model.c_str()));
     }
     Options opts;
-    opts.site = t.file("dense-site.toml", "[engine]\nmodel = \"" + model.string() + "\"\nradiance_home = \"/runtime\"\n");
+    opts.site = t.file("dense-site.toml", "[engine]\nmodel = \"" + model.string() + "\"\nradiance_home = \"/runtime\"\n" + std::string("[layout]\nname = \"flashnext-4gpu\"\n"));
     opts.sets = {"layout.name=\"qwen27b-2xtx\"", "service.max_sessions=6", "service.max_context=8192"};
     const auto r = sv::resolve(opts, t.facts);   // no [handoff] heat/histogram: nothing here uses them
     assert(r.typed.layout.engine_cards.size() == 2 && r.typed.layout.helper_cards.empty());
@@ -1527,7 +1550,7 @@ void engine_only_layout(Fixture& t) {
         assert(e.at("kernels") == Json({{"moe_native", true}, {"dec11", false}}));   // amendment 14: environment settings are keys too
         assert(!e.contains("lora") && !e.contains("chat"));   // a section appears only with its members
         assert(bc::serving::v2::read_manifest(with_options.text, "options", bc::serving::v2::PlanUse::measuring).ok());
-        assert(bc::serving::engine_option_fields().size() == 89 /* 80 flags + 9 environment settings */);
+        assert(bc::serving::engine_option_fields().size() == 92 /* 83 flags (amendment 18: +3) + 9 environment settings */);
         Options bad = opts;
         bad.sets = {"layout.name=\"qwen27b-2xtx\"", "sampling.no_such_option=1"};
         fail(bad, t.facts, "no_such_option");
@@ -1542,7 +1565,7 @@ void engine_only_layout(Fixture& t) {
     // keep this test focused on the missing handoff inputs.
     helpers.site = t.file("helper-required-site.toml",
                           "[engine]\nmodel = \"" + (t.root / "model.rad").string() +
-                          "\"\nradiance_home = \"/runtime\"\n");
+                          "\"\nradiance_home = \"/runtime\"\n" + std::string("[layout]\nname = \"flashnext-4gpu\"\n"));
     helpers.sets = {"layout.name=\"flashnext-2xtx\""};
     fail(helpers, t.facts, "missing required key: handoff.heat");
     // a two-rank engine without its transport is refused
@@ -1600,7 +1623,7 @@ void derived_budget_is_the_workers(Fixture& t) {
     for (const bool power_save : {true, false}) {
         Options opts;
         opts.site = t.file("derived-budget-site.toml", "[engine]\nmodel = \"" + model.string() + "\"\nradiance_home = \"/runtime\"\n"
-                                                        "[handoff]\nheat = \"" + heat.string() + "\"\nhistogram = \"/heat.live\"\n");
+                                                        "[handoff]\nheat = \"" + heat.string() + "\"\nhistogram = \"/heat.live\"\n" + std::string("[layout]\nname = \"flashnext-4gpu\"\n"));
         opts.sets = {"layout.name=\"flashnext-tp2xtx\"", std::string("helper.power_save=") + (power_save ? "true" : "false")};
         sv::ManifestInputs in;
         in.resolved = sv::resolve(opts, t.facts);
@@ -1641,6 +1664,54 @@ void derived_budget_is_the_workers(Fixture& t) {
     assert(budgets_off[0] < budgets_on[0] && budgets_off[1] < budgets_on[1]);
 }
 
+/* A world of two card types: engine groups in rank order, one plugin each, and every rank's card in the plan key. */
+void mixed_arch_engine_layout(Fixture& t) {
+    namespace sv = bc::serving;
+    const auto model = t.root / "mixed-model.rad";
+    bc::test::write_rad(model, 0, 0, 128, 128, {});
+    Options opts;
+    opts.site = t.file("mixed-site.toml", "[engine]\nmodel = \"" + model.string() + "\"\nradiance_home = \"/runtime\"\n");
+    opts.layouts = {t.file("mixed-layouts.toml",
+        "schema = 1\n[layout.mixed-tp3]\nmodel = \"m.rad\"\n"
+        "engine = [{ arch = \"gfx1100\", count = 2 }, { arch = \"gfx1201\", count = 1 }]\ntp-wire = \"exact\"\n"
+        "[layout.mixed-tp3.settings]\ntuning.tp_ownership = \"kv=1,1,2;ffn=8,8,16\"\ntuning.pipelined_prefill = \"on\"\n"
+        "[layout.badtuning]\nmodel = \"m.rad\"\nengine = { arch = \"gfx1201\" }\n[layout.badtuning.settings]\ntuning.no_such = 1\n"
+        "[layout.twice]\nmodel = \"m.rad\"\nengine = [{ arch = \"gfx1100\" }, { arch = \"gfx1100\" }]\ntp-wire = \"exact\"\n")};
+    opts.sets = {"layout.name=\"mixed-tp3\"", "service.max_sessions=4", "service.max_context=8192"};
+    const auto r = sv::resolve(opts, t.facts);
+    const auto& g = t.facts.at("gpus");
+    assert(r.typed.layout.engine_cards.size() == 3);
+    for (size_t i = 0; i < 3; ++i) assert(r.typed.layout.engine_cards[i] == g[i].at("bdf").get<std::string>());
+    assert(r.typed.engine.tp == 3 && r.typed.engine.kernels == "libr3,libr4d,libref");
+    // a mixed world hands the engine its ranks' cards (--rank-devices); the layout's tuning is a policy layer
+    assert(r.values.at("layout").at("rank_devices") == r.values.at("layout").at("engine_cards"));
+    assert(r.values.at("tuning").at("tp_ownership") == "kv=1,1,2;ffn=8,8,16");
+    assert(r.values.at("tuning").at("pipelined_prefill") == "on");
+    assert(r.provenance.at("tuning.tp_ownership").at("source").get<std::string>().find("layout mixed-tp3") == 0);
+    {
+        Options over = opts;   // a profile (or --set) overrides the layout's tuning
+        over.sets.push_back("tuning.pipelined_prefill=\"off\"");
+        assert(sv::resolve(over, t.facts).values.at("tuning").at("pipelined_prefill") == "off");
+        over.sets = {"layout.name=\"badtuning\""};
+        fail(over, t.facts, "unknown key tuning.no_such");
+        over.layouts = {t.file("oldenv.toml", "schema = 1\n[layout.oldenv]\nmodel = \"m.rad\"\nengine = { arch = \"gfx1201\" }\n"
+                                              "[layout.oldenv.env]\nR3_MOE_WORKER_COMBINE = \"1\"\n")};
+        over.sets = {"layout.name=\"oldenv\""};
+        fail(over, t.facts, "env is not a layout key");
+    }
+    const Json key = sv::plan_key_inputs(r.values, t.facts, "m", "e", "");
+    assert(key.contains("rank_cards") && key.at("rank_cards").size() == 3 && key.at("rank_cards")[2].at("arch") == "gfx1201");
+    opts.sets = {"layout.name=\"twice\""};
+    fail(opts, t.facts, "in two groups");
+    // a single-architecture world keys as before: no rank_cards member
+    Options dense = opts;
+    dense.layouts.clear();
+    dense.sets = {"layout.name=\"qwen27b-2xtx\"", "service.max_sessions=6", "service.max_context=8192"};
+    const auto uniform = sv::resolve(dense, t.facts);
+    assert(!sv::plan_key_inputs(uniform.values, t.facts, "m", "e", "").contains("rank_cards"));
+    assert(!uniform.values.at("layout").contains("rank_devices"));   // a uniform world needs no --rank-devices
+}
+
 void tp_engine_with_helper_layout(Fixture& t) {
     namespace sv = bc::serving;
     const auto model = t.root / "tp-helper-model.rad";
@@ -1652,7 +1723,7 @@ void tp_engine_with_helper_layout(Fixture& t) {
     }
     Options opts;
     opts.site = t.file("tp-helper-site.toml", "[engine]\nmodel = \"" + model.string() + "\"\nradiance_home = \"/runtime\"\n"
-                                              "[handoff]\nheat = \"" + heat.string() + "\"\nhistogram = \"/heat.live\"\n");
+                                              "[handoff]\nheat = \"" + heat.string() + "\"\nhistogram = \"/heat.live\"\n" + std::string("[layout]\nname = \"flashnext-4gpu\"\n"));
     opts.sets = {"layout.name=\"flashnext-tp2xtx-r9700\"", "service.max_sessions=6", "service.max_context=65536"};
     const auto r = sv::resolve(opts, t.facts);
     assert(r.typed.layout.engine_cards.size() == 2 && r.typed.layout.helper_cards.size() == 1);
@@ -1695,7 +1766,7 @@ void tp_engine_with_two_helpers_layout(Fixture& t) {
     }
     Options opts;
     opts.site = t.file("tp-two-helper-site.toml", "[engine]\nmodel = \"" + model.string() + "\"\nradiance_home = \"/runtime\"\n"
-                                                  "[handoff]\nheat = \"" + heat.string() + "\"\nhistogram = \"/heat.live\"\n");
+                                                  "[handoff]\nheat = \"" + heat.string() + "\"\nhistogram = \"/heat.live\"\n" + std::string("[layout]\nname = \"flashnext-4gpu\"\n"));
     opts.sets = {"layout.name=\"flashnext-tp2xtx\""};
     const auto r = sv::resolve(opts, t.facts);
     assert(r.typed.layout.engine_cards.size() == 2 && r.typed.layout.helper_cards.size() == 2);
@@ -1743,6 +1814,7 @@ int main(int argc, char** argv) {
         detection(t);
         detection_limits(t);
         unknown_keys(t);
+        layout_sources(t);
         type_range_required(t);
         precedence_and_caps(t);
         provenance_hash_and_parity(t);
@@ -1755,6 +1827,7 @@ int main(int argc, char** argv) {
         engine_only_layout(t);
         tp_engine_with_helper_layout(t);
         tp_engine_with_two_helpers_layout(t);
+        mixed_arch_engine_layout(t);
         derived_budget_is_the_workers(t);
         sdk_environment_step(t);
         std::cout << "PASS: fake KFD/PCI/proc detection; strict keys; types/ranges; required; "
