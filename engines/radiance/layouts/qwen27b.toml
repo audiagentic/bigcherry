@@ -1,0 +1,19 @@
+# Dense Qwen3.8-27B layouts.
+# Layout definitions: run-time data that bc-serve (--layouts / BIGCHERRY_LAYOUTS) and the Python tools read; nothing is compiled
+# in. Format: README.md in this directory.
+schema = 1
+
+# Dense tensor-parallel lane: the model is sharded across both selected XTX
+# engine cards. There are no remote-MoE helper processes or route-heat inputs.
+[layout.qwen27b-2xtx]
+description = "Qwen3.8-27B MXFP4, two RDNA3 engine ranks with host-memory wht6 all-reduce"
+model = "radiance/StillDeadcode/qwen3.8-27b-mxfp4/qwen3.8-27b-mxfp4.rad"
+engine = { arch = "gfx1100", count = 2 }
+tp-wire = "wht6"
+server-args = [
+  "--max-model-len", "8192",
+  "--max-num-seqs", "6",
+  "--max-num-batched-tokens", "2048",
+  "--kv-cache-dtype", "fp8",
+  "--num-speculative-tokens", "3",
+]

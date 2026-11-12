@@ -9,6 +9,7 @@ code: the helper, the launcher and the harness adapter get them from here.
 
 from __future__ import annotations
 
+import os
 import re
 import tomllib
 from dataclasses import dataclass, field
@@ -151,11 +152,42 @@ def load_archs(repo_root: Path | None = None) -> dict[str, Arch]:
     return out
 
 
+def layout_sources(repo_root: Path | None = None) -> list[Path]:
+    """The layout definition files: BIGCHERRY_LAYOUTS (os.pathsep-separated files or directories of *.toml), else the
+    repository's example directory engines/radiance/layouts/. Layouts are run-time data; bc-serve reads the same list."""
+    env = os.environ.get("BIGCHERRY_LAYOUTS", "")
+    given = [Path(x) for x in env.split(os.pathsep) if x] or [_root(repo_root) / "engines" / "radiance" / "layouts"]
+    files: list[Path] = []
+    for g in given:
+        if g.is_dir():
+            found = sorted(f for f in g.glob("*.toml") if f.is_file())
+            if not found:
+                raise LayoutError(f"{g}: holds no *.toml layout file")
+            files += found
+        elif g.is_file():
+            files.append(g)
+        else:
+            raise LayoutError(f"{g}: neither a layout file nor a directory")
+    return files
+
+
+def bc_serve_env(repo_root: Path | None = None) -> dict[str, str]:
+    """BIGCHERRY_LAYOUTS for a bc-serve child: the same sources this module reads."""
+    return {"BIGCHERRY_LAYOUTS": ":".join(str(f) for f in layout_sources(repo_root))}
+
+
 def load_layouts(repo_root: Path | None = None) -> dict[str, dict]:
-    path = _root(repo_root) / "engines" / "radiance" / "layouts.toml"
-    raw = _load(path)
-    _allow(raw, {"schema", "layout"}, str(path))
-    return dict(raw.get("layout") or {})
+    out: dict[str, dict] = {}
+    seen: dict[str, Path] = {}
+    for path in layout_sources(repo_root):
+        raw = _load(path)
+        _allow(raw, {"schema", "layout"}, str(path))
+        for name, table in (raw.get("layout") or {}).items():
+            if name in seen:
+                raise LayoutError(f"layout {name} is defined in both {seen[name]} and {path}")
+            seen[name] = path
+            out[name] = table
+    return out
 
 
 def names(repo_root: Path | None = None) -> list[str]:

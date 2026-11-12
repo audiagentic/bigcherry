@@ -8,6 +8,7 @@
 #include "generated/v2/serving_types.h"
 #include "third_party/toml.hpp"
 
+#include <cstdlib>
 #include <algorithm>
 #include <array>
 #include <charconv>
@@ -392,12 +393,9 @@ Json parse_set(const std::string& key, const std::string& raw) {
     }
 }
 
-// engines/radiance/layouts.toml and archs.toml, embedded at build time (CMakeLists.txt writes layouts_seed.inc and
-// archs_seed.inc): the layout names which cards play which part, archs.toml what a card type is. Device choice comes
-// only from discovery. The numeric limits are interim RSC03 inputs.
-constexpr const char kLayoutsSeed[] =
-#include "layouts_seed.inc"
-    ;
+// archs.toml, embedded at build time (CMakeLists.txt writes archs_seed.inc): what a card type is. The layouts, which
+// cards play which part for which model, are run-time data (layout_sources): never compiled in, so a model or a run is
+// defined without a rebuild. Device choice comes only from discovery. The numeric limits are interim RSC03 inputs.
 constexpr const char kArchsSeed[] =
 #include "archs_seed.inc"
     ;
@@ -442,12 +440,73 @@ ArchInfo arch_info(const std::string& arch) {
     return info;
 }
 
-LayoutRecipe recipe_for(const std::string& name) {
-    static const Json layouts = embedded_toml(kLayoutsSeed, "engines/radiance/layouts.toml");
+} // namespace
+
+/* The layout definition files: --layouts, else BIGCHERRY_LAYOUTS (a ':'-separated list), each a TOML file or a
+ * directory whose *.toml files are read in name order. There is no built-in table and no default. */
+std::vector<fs::path> layout_sources(const Options& options) {
+    std::vector<fs::path> given = options.layouts;
+    if (given.empty())
+        if (const char* env = std::getenv("BIGCHERRY_LAYOUTS"); env && *env) {
+            std::string s(env);
+            for (size_t at = 0; at <= s.size();) {
+                const size_t colon = std::min(s.find(':', at), s.size());
+                if (colon > at) given.emplace_back(s.substr(at, colon - at));
+                at = colon + 1;
+            }
+        }
+    if (given.empty())
+        throw std::runtime_error("layout: no layout definitions: pass --layouts FILE|DIR or set BIGCHERRY_LAYOUTS");
+    std::vector<fs::path> files;
+    for (const auto& g : given) {
+        if (fs::is_directory(g)) {
+            std::vector<fs::path> in_dir;
+            for (const auto& e : fs::directory_iterator(g))
+                if (e.is_regular_file() && e.path().extension() == ".toml") in_dir.push_back(e.path());
+            std::sort(in_dir.begin(), in_dir.end());
+            if (in_dir.empty()) throw std::runtime_error("layout: " + g.string() + " holds no *.toml layout file");
+            files.insert(files.end(), in_dir.begin(), in_dir.end());
+        } else if (fs::is_regular_file(g)) {
+            files.push_back(g);
+        } else {
+            throw std::runtime_error("layout: " + g.string() + " is neither a layout file nor a directory");
+        }
+    }
+    return files;
+}
+
+/* Every named layout of the sources, and the file each came from. A name defined twice is refused. */
+Json load_layouts(const Options& options) {
+    Json out = {{"layout", Json::object()}, {"source", Json::object()}};
+    for (const auto& f : layout_sources(options)) {
+        Json doc;
+        try { doc = toml_to_json(toml::parse_file(f.string())); }
+        catch (const toml::parse_error& e) { throw std::runtime_error(f.string() + ": TOML parse error: " + e.what()); }
+        for (auto it = doc.begin(); it != doc.end(); ++it)
+            if (it.key() != "schema" && it.key() != "layout")
+                throw std::runtime_error(f.string() + ": unknown top-level key " + it.key() + " (schema, layout)");
+        if (doc.value("schema", 0) != 1) throw std::runtime_error(f.string() + ": schema = 1 is required");
+        if (!doc.contains("layout")) continue;
+        for (auto it = doc.at("layout").begin(); it != doc.at("layout").end(); ++it) {
+            if (out["layout"].contains(it.key()))
+                throw std::runtime_error("layout " + it.key() + " is defined in both " +
+                                         out["source"][it.key()].get<std::string>() + " and " + f.string());
+            out["layout"][it.key()] = it.value();
+            out["source"][it.key()] = f.string();
+        }
+    }
+    return out;
+}
+
+namespace {
+
+LayoutRecipe recipe_for(const std::string& name, const Options& options) {
+    const Json layouts = load_layouts(options);
     if (!layouts.at("layout").contains(name))
-        throw std::runtime_error("layout.name: unknown named layout " + name + " (no fallback)");
+        throw std::runtime_error("layout.name: unknown named layout " + name + " (no fallback; sources: " +
+                                 layouts.at("source").dump() + ")");
     const Json& l = layouts.at("layout").at(name);
-    const std::string where = "layouts.toml [layout." + name + "]: ";
+    const std::string where = layouts.at("source").at(name).get<std::string>() + " [layout." + name + "]: ";
     LayoutRecipe r;
     const Json& e = l.at("engine");
     if (e.contains("devices"))
@@ -965,7 +1024,7 @@ Resolved resolve(const Options& options, const Json& facts) {
         if (set.substr(0, eq) == "layout.name")
             name = parse_set("layout.name", set.substr(eq + 1)).get<std::string>();
     }
-    const auto layout = recipe_for(name);
+    const auto layout = recipe_for(name, options);
     std::set<std::string> used;
     const ArchInfo engine_arch = arch_info(layout.engine_arch);
     Json engine = choose(facts, layout.engine_arch, used, layout.engine_count);
