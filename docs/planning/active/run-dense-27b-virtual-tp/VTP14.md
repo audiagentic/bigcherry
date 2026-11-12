@@ -1018,6 +1018,45 @@ One-stream time to first token by prompt length:
 - **Wire:** keep the exact wire. The lossy wht6 wire no longer faults after rad0028, but it is slower at TP3 (see the
   lossy-wire section above).
 
+## N6 refresh: int8 matched ABBA on current main, 2026-11-12 (build 8a6f27761aa44294519202f0cddcba33, logs vtp14-n6r/logs/n6r-1745)
+
+**Setup:** the same as the N7 refresh: exact wire, DFlash2 depth 3, fp8 KV, `--max-model-len 16384`, 8 sequences,
+default power caps. Three configurations ran in the order (A, B, C, C, B, A), repeated twice, so each has four arms:
+
+- w8a8 TP2 on the two XTX;
+- w8a8 TP3 with its best split (`kv=1,1,2;ffn=6656,6656,4096;lk=6,6,4;lv=18,18,12`, the `qwen27b-tp3-int8` layout);
+- MXFP4 TP3 6/6/12.
+
+Both TP3 configurations also take the layouts' all-reduce pin and the 256-row pipelining floor. Every server was alive
+at the end, and no GPU memory fault occurred. Aggregate tok/s is a mean ± standard deviation over 8 rounds.
+
+| streams | w8a8 TP2 | w8a8 TP3 | MXFP4 TP3 | w8a8 TP3 vs TP2 | w8a8 TP3 vs MXFP4 TP3 | step ms (TP2 / TP3 / MXFP4) |
+|---|---|---|---|---|---|---|
+| 1 | 65.3 ± 0.1 | 83.6 ± 0.1 | 115.7 ± 0.7 | **+27.9%** | −27.7% | 32.6 / 28.6 / 22.3 |
+| 4 | 175.9 ± 1.4 | 188.0 ± 4.2 | 223.8 ± 4.5 | **+6.9%** | −16.0% | 37.4 / 32.6 / 29.9 |
+| 6 | 167.9 ± 2.3 | 179.2 ± 2.3 | 215.9 ± 3.4 | **+6.7%** | −17.0% | 60.2 / 53.0 / 42.7 |
+| 8 | 194.4 ± 1.8 | 213.1 ± 0.8 | 239.8 ± 2.1 | **+9.6%** | −11.2% | 60.4 / 53.4 / 47.4 |
+
+One-stream time to first token, in ms:
+
+| prompt | w8a8 TP2 | w8a8 TP3 | MXFP4 TP3 | w8a8 TP3 vs TP2 |
+|---|---|---|---|---|
+| 512 | 356 ± 1 | 331 ± 3 | 278 ± 4 | −7.1% |
+| 2048 | 1377 ± 3 | 1268 ± 1 | 1068 ± 9 | −7.9% |
+| 8192 | 4304 ± 3 | 3756 ± 5 | 3025 ± 9 | −12.7% |
+
+- **w8a8 TP3 beats w8a8 TP2 at every concurrency**: by 7–10% at 4 to 8 streams. The decode step is 11–13% shorter.
+  - In the first N6 ABBA (build 751f23dc, 6/6/12 split), TP3 was −14%, −0.5% and −9% behind at 4, 6 and 8 streams.
+  - This run combines the int8 split (6,6,4) with rad0021–0028.
+- **One stream is +28%,** but part of that is speculation. Draft acceptance at one stream was 0.56 on TP2 against 0.72
+  on TP3, while at 4 to 8 streams both are 0.71–0.74. The decode step alone is 12% shorter.
+- **Prefill:** unlike MXFP4, int8 TP3 has no TTFT gap. It is 7–13% faster than int8 TP2 at every prompt length. A likely reason is that int8
+  prefill spends more time computing than MXFP4 does, so the third card covers the cost of the host-staged all-reduces.
+- **MXFP4 TP3 stays the faster model,** by 11–17% at 4 to 8 streams, with half the weight bytes. w8a8 is the quality
+  option: it is about 20 times closer to BF16 by KLD (N6 above).
+- **N6 is complete.** The managed patch, build, smoke, split sweep and a matched ABBA against both int8 TP2 and MXFP4 TP3
+  are all on current main.
+
 ## Where TP3 time goes: per-op profile, 2026-11-12 (build f8406b8e, logs vtp14/logs/profwhere-0723)
 
 `--profile-ops`, MXFP4, exact wire, depth 3. TP2's all-reduce cost includes its fused `ar_rmsnorm_quant_fp8` (the
