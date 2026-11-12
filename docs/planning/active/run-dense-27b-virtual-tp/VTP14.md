@@ -610,3 +610,40 @@ Reviewer: reviewer-gpt-agent, session ses_2150e61a7b824108. The full assessment 
   resolves to);
 - the block-table entry and KV head of the faulting tile;
 - ti8 mailbox ordering.
+
+## N5 first pass, 2026-11-12: context and resident KV (build a0979ca2eb38035b67618a59795a3103)
+
+**Setup:** MXFP4, `--kv-cache-dtype fp8`, DFlash2 at depth 3, `--max-model-len 262144`. TP2 uses the wht6 wire
+(production) and TP3 the exact wire with 6/6/12. Run under the lease; the run is not timed.
+
+**Context.** Both configurations start at a 262,144-token context and answer a 26,624-token prompt correctly.
+
+| measure | TP2 | TP3 |
+|---|---|---|
+| TTFT, 26,624-token prompt | 12.7 s | 20.0 s |
+| decode after that prompt | 68.9 tok/s | 93.4 tok/s |
+| KV per card for one 262k session | 4.16 GiB | 2.08 GiB on XTX ranks 0 and 1 |
+
+The XTX ranks need half TP2's KV per card because each holds one KV head.
+
+**Resident KV capacity** ("full-length sessions" as reported by the engine; tokens carved by TP3):
+
+| sequences × 262k | TP2 | TP3 | TP3 tokens carved |
+|---|---|---|---|
+| 4 | 3.4 | **3.7 (+9%)** | 958,023 |
+| 8 | 3.3 | **3.5 (+6%)** | 920,015 |
+
+**What this shows**
+
+- **The R9700 is the bottleneck.** One block table serves every rank, so the carve is the smallest rank's share:
+  - the XTX ranks could page about 1.96M tokens each;
+  - rank 2 holds 2 of the 4 KV heads, which is twice the KV per token, on 1.33× the VRAM and alongside the
+    largest weight share.
+- **Increased capacity:** met (modest: +6–9% resident KV).
+- **Increased context length:** both reach 262k.
+
+**Levers not tried yet**
+
+- `--host-pool-mib`, so the cache can use host memory.
+- A KV-light ownership profile. With 4 KV heads over 3 ranks, a split other than 1/1/2 needs KV replication.
+- Long-context prefill is about 57% slower on TP3. This is the same x4-link limit seen in N0.
