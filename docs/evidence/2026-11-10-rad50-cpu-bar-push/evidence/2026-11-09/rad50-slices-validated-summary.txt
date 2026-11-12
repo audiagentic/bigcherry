@@ -1,0 +1,18 @@
+RAD50 experimental GPU-live slice results (same worktree; no serving speedup claim)
+RAD50 GPU-live slice results: complete, bit-checked, post-cleanup
+NOT an inference speedup or a general ROCm coherence proof.
+mode gpu rows iterations median_us p95_us median_cpu_combine_us median_arm_us median_ack_us median_post_ack_us
+PARALLEL 0 1 30 128.04 131.22 0.63 36.32 5.91 85.51
+PARALLEL 0 16 30 133.23 135.98 9.61 36.09 14.42 82.34
+PARALLEL 0 64 30 156.44 203.58 32.17 35.45 37.44 82.52
+PARALLEL 0 256 30 264.72 273.41 122.53 35.91 127.39 100.33
+PARALLEL 1 1 30 118.55 127.70 0.61 32.69 5.14 81.15
+PARALLEL 1 16 30 133.34 135.77 9.60 36.32 14.54 82.44
+PARALLEL 1 64 30 156.77 220.38 32.16 35.37 37.83 83.43
+PARALLEL 1 256 30 261.53 277.57 122.28 35.22 127.43 98.29
+PARALLEL 0 768 100 463.87 596.41 363.40 24.14 368.25 71.05
+RELAY 0 768 100 469.06 607.11 364.22 24.22 369.58 73.79
+PARALLEL 1 768 100 463.71 590.44 363.62 24.06 368.99 70.52
+RELAY 1 768 100 471.06 532.53 363.43 24.42 369.19 74.14
+Compact rows are sampled; all iterations are verified by the tester, and summary quantiles are computed over all generations.
+100 iterations still insufficient for a production p99 claim.

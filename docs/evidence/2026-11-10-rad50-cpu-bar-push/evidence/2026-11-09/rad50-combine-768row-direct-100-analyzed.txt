@@ -1,0 +1,8 @@
+RAD50 paired SERIAL A/B only: no inference or GPU-ready claim.
+Positive delta_us and speedup > 1.0 favour CPU BAR-push.
+device bytes style n pull_p50_us push_p50_us speedup delta_us push_sync_p50_us push_write_p50_us
+0 3932160 combine-direct 100 700.87 621.96 1.127 +78.91 0.39 363.45
+1 3932160 combine-direct 100 703.44 622.16 1.131 +81.28 0.45 362.76
+FASTEST_SUBMITTED_PUSH_METHOD device=0 bytes=3932160 workload=real-combine-synthetic-inputs style=combine-direct seq_p50_us=621.96 NOTE=synthetic_serial_only
+FASTEST_SUBMITTED_PUSH_METHOD device=1 bytes=3932160 workload=real-combine-synthetic-inputs style=combine-direct seq_p50_us=622.16 NOTE=synthetic_serial_only
+Gate 4 concurrent visibility, representative real MoE workload and paired inference tests remain required.
