@@ -332,6 +332,24 @@ TP3 beats TP2 at 1/4/6/8 streams on the standard bench. Its remaining deficit is
 host-staged all-reduce, with the R9700 on Gen4 x4, moves more bytes per row than TP2's, and prefill is where the bytes
 are. The decode-only margin (experiment 4: +27-43%) shows what the bench gives up to prefill.
 
+## Experiment 11 result: a long prompt beside generating streams (2026-11-12, rad0027, build f6b0b5cf vs b667a40b, logs e11-1421)
+
+rad0027 pipelines a mixed step of decode rows and one prefill sequence, cut inside the sequence. The build also has
+rad0026 with its delta-net decode half moved ahead of the piece branch, so that both cuts share it. 2x ABBA against
+the rad0026 build. The new workload is one 8192-token prompt sent while 4 streams generate (128-token prompts, 1500
+new tokens), timed to its first token:
+
+| | rad0026 (mean of 4) | rad0027 (mean of 4) | change |
+|---|---|---|---|
+| 8192-token prompt beside 4 generating streams, time to first token | 5860 ms | 4737 ms | -19.2% |
+| four 4096-token prompts, slowest time to first token | 8949 ms | 9077 ms | +1.4% (noise) |
+| 1 / 4 / 6 / 8 streams | 115.4 / 221.3 / 215.3 / 239.2 tok/s | 115.4 / 223.9 / 215.1 / 240.4 tok/s | 0 / +1.2 / 0 / +0.5% |
+
+The standard bench and the four-prompt case barely make this step shape, so they do not move. A server whose requests
+arrive one at a time makes it all the time: every chunk of a long prompt that lands while other streams generate.
+The 4-stream greedy texts diverge only at characters where the base build's own runs diverge (122, 221, 227, 267),
+and the long prompt's text matches across all eight arms.
+
 ## Steps
 
 1. Add a typed per-run selector for the all-reduce method (e.g. `tuning.allreduce_method`; contract amendment; engine option in a managed patch) so every method below is an A/B from the manifest.
