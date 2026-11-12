@@ -80,6 +80,9 @@ class MultiseqPipeTests(unittest.TestCase):
             self.assertNotIn("R = pipe_rows(T);\n    ArPieces", plugin)
             gdn = (root / "arch/common/rad_block_gdn_fp8.h").read_text()
             self.assertEqual(gdn.count("BC_VTP31_MSP_GDN_CLOSE"), 1)
+            ctx = (root / "core/runtime/ctx.cpp").read_text()
+            self.assertIn("sizeof(RadBatch) == 480", ctx)
+            self.assertIn("mix(cu_key);", ctx)
             again = apply_all(load(PKG), root)
             self.assertTrue(all(e.status == "already-applied" for f in again for e in f.results))
 

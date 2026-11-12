@@ -18,6 +18,7 @@ step's absolute row bounds, so each piece takes the same form.
 |---|---|
 | `abi/rad_runtime.h` | `RadBatch::cu_seqlens_h`, trailing: the step's bounds on the host, or null |
 | `core/sched/batch.cpp` | the scheduler's batch sets it from its host staging (`h_cu`), beside `positions_h` |
+| `core/runtime/ctx.cpp` | the RadBatch size check moves to 480 and `pass_key` mixes the host bounds of a prefill pass of several sequences, so a recorded pass never replays over a different cut |
 | `arch/common/rad_fp8.h` | `ArPieces::seq_cut`: the first piece is sequences `[0, seq_cut)` |
 | `qwen35_fp8.cpp` | `pipe_ready` takes a pure prefill step of two or more sequences, cut at the boundary nearest half the rows, both pieces at least 64 rows; the first piece's rows go through `step_pipelined` and the hand-off instead of `pipe_rows(T)` |
 | attention and delta-net blocks | each piece over its slice of the per-sequence arrays: query bounds, seqused and block-table rows; convolution and state indices and context lengths; launched as the serial path's prefill launch |

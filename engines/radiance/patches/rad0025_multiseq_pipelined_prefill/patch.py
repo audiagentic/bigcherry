@@ -68,6 +68,37 @@ CORE = FilePatch(path="core/sched/batch.cpp", language="none", description="VTP3
     ),
 ))
 
+
+KEY = FilePatch(path="core/runtime/ctx.cpp", language="none", description="VTP31 host cu_seqlens in the pass key",
+                edits=(
+    _edit(
+        "msp-key-size",
+        "static_assert(sizeof(void*) != 8 || sizeof(RadBatch) == 472,\n",
+        "/* BC_VTP31_MSP_KEY_SIZE (rad0025): RadBatch::cu_seqlens_h, keyed below. */\n"
+        "static_assert(sizeof(void*) != 8 || sizeof(RadBatch) == 480,\n",
+        guard="BC_VTP31_MSP_KEY_SIZE",
+    ),
+    _edit(
+        "msp-key-bounds",
+        "    if (b->gen) return 0;\n",
+        "    if (b->gen) return 0;\n"
+        "    /* BC_VTP31_MSP_KEY (rad0025): a plugin may cut a prefill pass of several sequences between\n"
+        "     * them by the host bounds, so passes with the same shape but different bounds differ. */\n"
+        "    uint64_t cu_key = 0;\n"
+        "    if (b->phase == RAD_PHASE_PREFILL && b->n_seq > 1 && b->cu_seqlens_h)\n"
+        "        for (int i = 0; i <= b->n_seq; ++i)\n"
+        "            cu_key = cu_key * 0x100000001b3ull + (uint64_t)(uint32_t)b->cu_seqlens_h[i];\n",
+        guard="BC_VTP31_MSP_KEY",
+    ),
+    _edit(
+        "msp-key-mix",
+        "    mix((uint64_t)b->rope_mixed);      ptr(b->rope_pos);  mix((uint64_t)b->score_only);\n",
+        "    mix((uint64_t)b->rope_mixed);      ptr(b->rope_pos);  mix((uint64_t)b->score_only);\n"
+        "    mix(cu_key); /* BC_VTP31_MSP_KEY_MIX (rad0025) */\n",
+        guard="BC_VTP31_MSP_KEY_MIX",
+    ),
+))
+
 PIECES = FilePatch(path="arch/common/rad_fp8.h", language="none", description="VTP31 sequence cut", edits=(
     _edit(
         "msp-pieces",
@@ -297,4 +328,4 @@ PLUGIN = FilePatch(path="arch/qwen35_fp8/qwen35_fp8.cpp", language="none", descr
     ),
 ))
 
-PATCHES = (ABI, CORE, PIECES, ATTN, GDN, PLUGIN)
+PATCHES = (ABI, CORE, KEY, PIECES, ATTN, GDN, PLUGIN)
