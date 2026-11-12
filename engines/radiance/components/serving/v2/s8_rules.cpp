@@ -36,15 +36,6 @@ bool digest(const std::string &s) {
     return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f');
   });
 }
-bool iso_date(const std::string &d) {
-  if (d.size() != 10 || d[4] != '-' || d[7] != '-')
-    return false;
-  for (size_t i = 0; i < d.size(); ++i)
-    if (i != 4 && i != 7 && (d[i] < '0' || d[i] > '9'))
-      return false;
-  return d.substr(5, 2) >= "01" && d.substr(5, 2) <= "12" &&
-         d.substr(8, 2) >= "01" && d.substr(8, 2) <= "31";
-}
 bool valid_scope(const S8Scope &s) {
   return digest(s.model_digest) && digest(s.engine_build_digest) &&
          digest(s.helper_build_digest) && digest(s.layout_digest) &&

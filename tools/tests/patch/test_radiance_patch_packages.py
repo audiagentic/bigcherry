@@ -752,11 +752,11 @@ class TestServingManifestPatch(unittest.TestCase):
             scratch.mkdir()
             test = REPO / "engines" / "radiance" / "tests" / "serving_manifest" / "manifest_argv_test.cpp"
             flags = ["-std=c++20", "-O0", "-Wall", "-Wextra", "-Wno-unused-parameter", "-Wno-missing-field-initializers",
-                     "-Werror", f"-I{root / 'core'}", f"-I{root / 'abi'}", f"-I{serving}", f"-I{serving / 'v1'}",
-                     f"-I{serving / 'generated'}", f"-I{include}"]
+                     "-Werror", f"-I{root / 'core'}", f"-I{root / 'abi'}", f"-I{serving}", f"-I{serving / 'v2'}",
+                     f"-I{serving / 'generated' / 'v2'}", f"-I{include}"]
             sources = [root / "core" / "bc_serving_manifest.cpp", root / "core" / "bc_plan_check.cpp", test,
-                       *(serving / "v1" / n for n in ("error.cpp", "strict_json.cpp", "manifest.cpp", "admission.cpp")),
-                       serving / "generated" / "serving_codec.cpp", serving / "jcs.cpp", serving / "sha256.cpp"]
+                       *(serving / "v2" / n for n in ("error.cpp", "strict_json.cpp", "manifest.cpp", "admission.cpp", "s8_rules.cpp", "s10_resolver.cpp")),
+                       serving / "generated" / "v2" / "serving_codec.cpp", serving / "jcs.cpp", serving / "sha256.cpp"]
             objects, procs = [], []
             for index, source in enumerate(sources):
                 obj = work / f"{index}-{source.stem}.o"
@@ -975,12 +975,12 @@ class TestPlanMemoryPatch(unittest.TestCase):
         try:
             work = Path(temp.name)
             flags = ["-std=c++20", "-O0", "-Wall", "-Wextra", "-Wno-unused-parameter", "-Wno-missing-field-initializers",
-                     "-Werror", f"-I{root / 'core'}", f"-I{root / 'abi'}", f"-I{self.SERVING}", f"-I{self.SERVING / 'v1'}",
-                     f"-I{self.SERVING / 'generated'}", f"-I{include}"]
+                     "-Werror", f"-I{root / 'core'}", f"-I{root / 'abi'}", f"-I{self.SERVING}", f"-I{self.SERVING / 'v2'}",
+                     f"-I{self.SERVING / 'generated' / 'v2'}", f"-I{include}"]
             sources = [root / "core" / "bc_plan_check.cpp", root / "core" / "bc_serving_manifest.cpp",
                        REPO / "engines" / "radiance" / "tests" / "plan_memory" / "plan_flags_test.cpp",
-                       *(self.SERVING / "v1" / n for n in ("error.cpp", "strict_json.cpp", "manifest.cpp", "admission.cpp")),
-                       self.SERVING / "generated" / "serving_codec.cpp", self.SERVING / "jcs.cpp", self.SERVING / "sha256.cpp"]
+                       *(self.SERVING / "v2" / n for n in ("error.cpp", "strict_json.cpp", "manifest.cpp", "admission.cpp", "s8_rules.cpp", "s10_resolver.cpp")),
+                       self.SERVING / "generated" / "v2" / "serving_codec.cpp", self.SERVING / "jcs.cpp", self.SERVING / "sha256.cpp"]
             objects = []
             procs = []
             for index, source in enumerate(sources):

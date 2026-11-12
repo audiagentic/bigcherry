@@ -126,7 +126,7 @@ int main(int, char** argv) {
     g_options.push_back("--plan-memory");
     g_takes_arg["--plan-memory"] = true;
     CHECK(g_options.size() > 100);
-    // A real v1 manifest (the design example for the production layout): the strict reader accepts it, and every field
+    // A real v2 manifest (the design example for the production layout): the strict reader accepts it, and every field
     // the registry binds to a radiance option becomes that flag, in registry order.
     const std::string example = argv[2];
     const std::string got = run({"--manifest", example});
@@ -138,7 +138,7 @@ int main(int, char** argv) {
                  "--ngram-placement ram --kv-cache-dtype fp8 --num-speculative-tokens 3 --rope-scaling none "
                  "--prefix-resume nearest");
     CHECK(bc_serving_mark_given(&g_given));
-    for (const auto& kv : g_given) CHECK(kv.second == "manifest 44bdbe1a071a");   // "manifest <first 12 hex of the digest>"
+    for (const auto& kv : g_given) CHECK(kv.second == "manifest 8000b66b1472");   // "manifest <first 12 hex of the digest>"
     CHECK(run({"--manifest", example, "--role", "engine", "-v"}).rfind("engine -v --model ", 0) == 0);
     CHECK(run({"--manifest", example}) == got);   // deterministic
 
@@ -203,6 +203,9 @@ int main(int, char** argv) {
         nlohmann::json doc = nlohmann::json::parse(slurp(example));
         doc["spec"]["plan"]["state"] = "unmeasured";
         doc["spec"]["plan"].erase("engine_memory");
+        doc["spec"]["plan"].erase("resource_inputs");   // nothing is measured before the measuring start
+        for (auto it = doc["provenance"].begin(); it != doc["provenance"].end();)
+            it = it.key().rfind("/spec/plan/resource_inputs", 0) == 0 ? doc["provenance"].erase(it) : std::next(it);
         doc["spec"]["resources"]["host"].erase("checkpoint_slots");
         doc["provenance"]["/spec/resources"]["inputs"] = nlohmann::json::array({"/spec/facts/host", "/spec/calibration"});
         std::string digest, why;
@@ -298,6 +301,9 @@ int main(int, char** argv) {
         nlohmann::json doc = nlohmann::json::parse(slurp(example));
         doc["spec"]["plan"]["state"] = "unmeasured";
         doc["spec"]["plan"].erase("engine_memory");
+        doc["spec"]["plan"].erase("resource_inputs");   // nothing is measured before the measuring start
+        for (auto it = doc["provenance"].begin(); it != doc["provenance"].end();)
+            it = it.key().rfind("/spec/plan/resource_inputs", 0) == 0 ? doc["provenance"].erase(it) : std::next(it);
         doc["spec"]["resources"]["host"].erase("checkpoint_slots");
         doc["provenance"]["/spec/resources"]["inputs"] = nlohmann::json::array({"/spec/facts/host", "/spec/calibration"});
         std::string digest, why;
