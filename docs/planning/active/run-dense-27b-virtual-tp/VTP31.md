@@ -181,6 +181,22 @@ Every run gave the same greedy answer (same hash in all eight), as the same fold
 confirm the path: with the handover off the one-shot logs 10920 launch-ranks of 256-512 KiB at eight streams; with it
 on, none above 64 KiB (the decode messages left the one-shot). Prefill is unchanged (its messages were already above
 the two-shot's floor). Against TP2 (N8: 182.0 / 176.9 / 196.1 at 4/6/8 streams) TP3 is now +8.4% / +7.9% / +8.2%.
+## Experiment 4 result: decode alone scales; prefill is the gap (2026-11-12, build a08d17ff, logs e4-1107)
+
+The standard bench (512-token prompts, 128 new tokens) mixes prefill into its tok/s. With 128-token prompts and 1024
+new tokens, so decode dominates, ABBA TP2 against TP3 (6/6/12, 4x256, rad0024), mean of two runs each:
+
+| | 1 stream | 4 streams | 8 streams |
+|---|---|---|---|
+| TP2 | 96.3 | 284.6 | 360.9 |
+| TP3 | 137.6 | 392.9 | 456.8 |
+| TP3 over TP2 | +42.8% | +38.1% | +26.6% |
+
+The third card's bandwidth is a third more than two XTX; TP3 gains more than that at 1 and 4 streams (TP2 pays its
+own host-staged all-reduce on fewer, larger shards). Decode is therefore not where TP3 falls short. The standard
+bench's +8% at 4-8 streams comes from prefill, where TP3 is 8-24% slower to the first token than TP2. The next lever
+is prefill: overlapping the prefill all-reduce with compute across sequences (multi-sequence pipelined prefill),
+a fused three-rank all-reduce with the following norm, and upstream's prefill interleave when v1.18.0 ships.
 
 ## Steps
 
