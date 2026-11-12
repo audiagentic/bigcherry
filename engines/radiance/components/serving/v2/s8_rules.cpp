@@ -202,7 +202,7 @@ Result<S8Resolution> resolve_s8(const S8Measured &m,
 
   // This is the S7 resource ledger's byte-exact host-pool/KV arithmetic,
   // now taking only the S9 typed, engine-measured resource inputs.
-  int64_t retained_bytes, committed, pinned;
+  int64_t retained_bytes, committed, pinned, checkpoint_bytes;
   const auto pool = derived_host_pool_mib(r);
   if (!pool || !mul(r.kv_bytes_per_token, r.retention_target_tokens, &retained_bytes)) {
     return fail(ConfigErrorCode::invalid_value, scope_path,
@@ -215,7 +215,8 @@ Result<S8Resolution> resolve_s8(const S8Measured &m,
   if (!mul(reserve_mib, kMiB, &reserve_rounded_bytes) ||
       !mul(pool_mib + kv_mib, kMiB, &pinned) ||
       !add(pinned, r.ngram_bytes, &committed) ||
-      !add(committed, r.checkpoint_bytes, &committed) ||
+      !mul(m.checkpoint_slot_bytes, m.checkpoint_slots, &checkpoint_bytes) ||
+      !add(committed, checkpoint_bytes, &committed) ||
       !add(committed, r.resident_other_bytes, &committed) ||
       !add(committed, reserve_rounded_bytes, &committed)) {
     return fail(ConfigErrorCode::invalid_value, scope_path,

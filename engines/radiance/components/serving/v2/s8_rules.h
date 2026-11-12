@@ -73,7 +73,8 @@ struct S8Measured {
   std::string host_reserve_evidence;
   int64_t engine_vram_required_bytes = 0;
   int64_t engine_vram_claimable_bytes = 0;
-  int64_t checkpoint_slots = 0; // engine --plan-memory, not a guessed slot size
+  int64_t checkpoint_slots = 0; // the slots the host ledger fitted between the plan's floor and want
+  int64_t checkpoint_slot_bytes = 0; // one slot, from the engine's plan (--plan-memory)
   int64_t dispatch_row_capacity = 0; // engine/worker measured dispatch limit
   std::string transport_shm;
   std::optional<std::string> histogram_file; // absent means disabled

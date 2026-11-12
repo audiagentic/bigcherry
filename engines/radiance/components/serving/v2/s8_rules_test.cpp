@@ -47,6 +47,7 @@ s8::S8Measured fixture() {
   m.engine_vram_required_bytes = 33242744312LL;
   m.engine_vram_claimable_bytes = 33242744312LL;
   m.checkpoint_slots = 5;
+  m.checkpoint_slot_bytes = MiB / 2;   // 5 slots x 0.5 MiB: the 2 MiB (rounded) the resource inputs carry
   m.dispatch_row_capacity = 1024;
   m.transport_shm = "/rsc11-s8-fixture";
   m.histogram_file = std::string("/measured/histogram.csv");

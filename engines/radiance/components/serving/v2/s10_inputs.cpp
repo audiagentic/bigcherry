@@ -147,6 +147,7 @@ Result<S10Inputs> s10_inputs(const Manifest &m, const bc::serving::Resolved &r, 
     }
   if (!any_rank) return fail("p1.gpu", "the P1 record has no engine rank");
   s.checkpoint_slots = m.spec.resources.host.checkpoint_slots.value_or(0);
+  s.checkpoint_slot_bytes = m.spec.plan.engine_memory->expected.checkpoints.slot_bytes;
 
   if (has_helpers) {
     const auto &handoff = *m.spec.handoff;

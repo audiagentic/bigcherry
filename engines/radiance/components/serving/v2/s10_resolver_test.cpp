@@ -72,6 +72,7 @@ v2::S10Inputs inputs(const v2::Manifest &m) {
   s.engine_vram_claimable_bytes = 100 * MiB;
   s.engine_vram_required_bytes = 80 * MiB;
   s.checkpoint_slots = 5;
+  s.checkpoint_slot_bytes = MiB / 2;
   s.dispatch_row_capacity = 1024;
   s.transport_shm = "/rsc11-s10-synthetic";
   s.histogram_file = "/tmp/s10-synthetic-heat";
