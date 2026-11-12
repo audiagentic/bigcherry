@@ -552,3 +552,28 @@ percent are within noise):
 - Prefill: try `--tp-attn-split rows`, and look at the R9700 link (hardware or BIOS).
 - An ABBA on the spec-on pair.
 - The ti8 lossy-wire fault (under external review).
+
+### Spec-on ABBA, 2026-11-12 00:37Z (build e783077b6879d6d060379d55aa157d7c)
+
+**Setup:** MXFP4, DFlash2 at depth 3, exact wire on both arms, all other settings as for N0. Run under the lease with
+every card at its default power cap. Order: TP2, TP3, TP3, TP2. Logs: `vtp14/logs/window-n0spec-0037`.
+
+| streams | TP2 aggregate tok/s (A1/A2) | TP3 aggregate tok/s (B1/B2) | TP3 vs TP2 | step ms TP2 / TP3 | tokens per step TP2 / TP3 | TTFT max ms TP2 / TP3 |
+|---|---|---|---|---|---|---|
+| 1 | 83.1 / 83.2 | 104.8 / 104.4 | **+25.8%** | 29.4 / 22.3 | 3.12 / 3.42 | 331 / 395 |
+| 4 | 179.5 / 182.6 | 175.7 / 175.6 | -3.0% | 37.0 / 34.9 | 12.55 / 12.71 | 1288 / 1500 |
+| 6 | 174.3 / 176.5 | 176.9 / 177.4 | +1.0% | 57.2 / 47.6 | 18.15 / 17.76 | 1920 / 2255 |
+| 8 | 200.1 / 199.9 | 188.5 / 186.4 | -6.3% | 62.0 / 56.6 | 25.00 / 23.57 | 2523 / 2982 |
+
+**Status against the goal**
+
+- **Without speculation (N0 above):** TP3 beats TP2 by +17%, +13% and +13% at 4, 6 and 8 streams.
+- **With speculation:** TP3 leads at one stream and is at parity at 4 and 6 streams, but 6% behind at 8. Its decode
+  step is faster at every concurrency (−6% to −17%). What it loses is prefill: TTFT is 17–18% higher.
+
+**What would close the 8-stream gap**
+
+1. **Faster prefill all-reduces.** The R9700's upstream root port 0000:00:06.0 is limited to Gen4 x4, while the card
+   is Gen5 x16. A CPU-attached slot would fix this; it is a hardware change, not code.
+2. **The lossy 3-rank wire.** Tiered int8 sends about half the bytes, but it currently faults (under review).
+3. `--tp-attn-split rows` is not an option: the qwen35_fp8 plugin refuses it for this model.
