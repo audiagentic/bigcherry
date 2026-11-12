@@ -20,8 +20,9 @@ device wall clock (100 MHz) four times in each of its first eight blocks:
 A ring of 16384 entries per all-reduce instance lives in mapped pinned host memory. An entry is 36 int64 words: seq,
 16-byte words, blocks, rank, then four stamps for each of eight blocks; -1 is unset. The kernel picks the entry from
 the sequence number it already takes on the device, so recorded and replayed passes record too. At exit each ring is
-written to `DIR/ar-tl-r<rank>-ws<world>-p<pid>-i<n>.bin`, n the instance's first-use order on its rank thread, which
-is the same on every rank. `tools/lab/radiance/ar-timeline.py` matches the ranks' entries by (instance, seq).
+written to `DIR/ar-tl-r<rank>-ws<world>-p<pid>-i<n>.bin`, n the ring's creation order across the whole process, so
+it does not name the same all-reduce on every rank. `tools/lab/radiance/ar-timeline.py` matches a rank's rings by
+their order on that rank, then entries by seq, and checks that the matched entries agree on size.
 
 Unset or empty, the launcher passes a null ring: no stamp, no store, the same work and the same bits. Card clocks are
 not aligned, so only differences within one card are meaningful; the smallest flag wait among a call's ranks bounds
