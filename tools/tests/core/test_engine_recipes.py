@@ -20,8 +20,7 @@ class EngineRecipesTests(unittest.TestCase):
         # the pin moves with every bump; what holds is that the release version beside it names the same release
         recipes = engines.load(paths.REPO_ROOT, engines.RADIANCE).recipes_path(paths.REPO_ROOT)
         self.assertEqual(cfg.pinned.lstrip("v"), tomllib.loads(recipes.read_text(encoding="utf-8"))["pinned-version"])
-        self.assertEqual(set(cfg.sources), {"radiance-native", "radiance", "radiance-diag", "radiance-routing-evidence",
-                                            "radiance-vtp14-rank-code-selection"})
+        self.assertEqual(set(cfg.sources), {"radiance-native", "radiance", "radiance-diag", "radiance-routing-evidence"})
         self.assertEqual(set(cfg.runtime_profiles), {"flashnext-2xtx", "qwen38-27b-2xtx"})
         flash = cfg.runtime_profiles["flashnext-2xtx"].server_args
         self.assertIn("exact", flash)

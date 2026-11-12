@@ -71,11 +71,13 @@ class NativeRankCodeEligibilityTests(unittest.TestCase):
         self.assertEqual(meta["order"], 16)
         self.assertEqual(meta["plan-ids"], ["VTP14"])
         self.assertEqual(meta["tags"], ["tensor-parallel", "dispatch"])
-        name = "vtp14-rank-code-selection"
-        self.assertEqual(recipe["patch-set"][name]["patches"], ["rad0016_vtp14_rank_code_selection"])
-        self.assertIn(name, recipe["source"]["radiance-vtp14-rank-code-selection"]["patch-sets"])
-        self.assertNotIn(name, recipe["source"]["radiance"]["patch-sets"])
-        self.assertNotIn(name, recipe["source"]["radiance-native"]["patch-sets"])
+        # one patch set in the main build, inert until its options are given; the as-released source stays unpatched
+        self.assertEqual(recipe["patch-set"]["vtp14-mixed-tp"]["patches"],
+                         ["rad0016_vtp14_rank_code_selection", "rad0017_vtp14_n3_shared_rendezvous", "rad0018_vtp14_n2_tp_ownership",
+                          "rad0019_vtp14_n2_tp_ownership_fp8", "rad0020_vtp14_tp3_pipelined_prefill"])
+        self.assertEqual(recipe["source"]["radiance"]["patch-sets"][-1], "vtp14-mixed-tp")
+        self.assertNotIn("vtp14-mixed-tp", recipe["source"]["radiance-native"]["patch-sets"])
+        self.assertNotIn("radiance-vtp14-rank-code-selection", recipe["source"])
         self.assertTrue((REPO / "docs/planning/active/run-dense-27b-virtual-tp/VTP14.md").exists())
 
     def test_shape_guards_unique_and_created_files_from_src(self):

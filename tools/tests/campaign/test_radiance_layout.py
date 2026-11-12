@@ -24,26 +24,23 @@ class RepoDataTests(unittest.TestCase):
     def test_the_shipped_files_load_and_every_layout_resolves_on_the_lab_host_shape(self):
         archs = rl.load_archs()
         self.assertEqual({"gfx1201", "gfx1100", "gfx1030"} <= set(archs), True)
-        for name in rl.names():
-            r = rl.resolve(name, host(*WITH_6900))
-            if name == "qwen27b-2xtx":
-                self.assertEqual(r.engine_indices, (0, 1))
-                self.assertEqual(len(r.helpers), 0)
-                self.assertEqual(r.tp_wire, "wht6")
-            elif name == "flashnext-r9700":   # the R9700 alone, no helpers
-                self.assertEqual(r.engine_indices, (2,))
-                self.assertEqual(len(r.helpers), 0)
-            elif name == "flashnext-tp2xtx-r9700":   # RAD49: the XTX pair tensor-parallel, the R9700 its one helper
-                self.assertEqual(r.engine_indices, (0, 1))
-                self.assertEqual([h.index for h in r.helpers], [2])
-                self.assertEqual(r.tp_wire, "exact")
-            elif name == "flashnext-tp2xtx":   # RAD49: the XTX pair tensor-parallel, the R9700 and the RX 6900 XT its helpers
-                self.assertEqual(r.engine_indices, (0, 1))
-                self.assertEqual([h.index for h in r.helpers], [2, 3])
-                self.assertEqual(r.tp_wire, "exact")
-            else:
-                self.assertEqual(r.engine_indices, (2,))
-                self.assertGreaterEqual(len(r.helpers), 2)
+        # Every shipped layout resolves on the lab host's shape to what it declares: no layout is named here, so a new
+        # model, split or topology needs only its layout file.
+        inventory = host(*WITH_6900)
+        by_index = {d.index: d for d in inventory.devices}
+        layouts = rl.load_layouts()
+        self.assertTrue(layouts)
+        for name, lay in layouts.items():
+            with self.subTest(layout=name):
+                r = rl.resolve(name, inventory)
+                groups = lay["engine"] if isinstance(lay["engine"], list) else [lay["engine"]]
+                self.assertEqual(len(r.engine_indices), sum(g.get("count", 1) for g in groups))
+                # ranks follow the groups' order, each group's cards of its architecture
+                arches = [by_index[i].arch for i in r.engine_indices]
+                self.assertEqual(arches, [g["arch"] for g in groups for _ in range(g.get("count", 1))])
+                self.assertEqual(r.tp_wire, lay.get("tp-wire"))
+                self.assertEqual(bool(r.helpers), bool(lay.get("helper")))
+                self.assertFalse(set(r.engine_indices) & {h.index for h in r.helpers}, "a card plays one part")
 
     def test_the_protocol_bound_is_read_from_the_header(self):
         header = (paths.REPO_ROOT / "engines/radiance/components/moe-remote/moe_remote_shm.h").read_text(encoding="utf-8")
