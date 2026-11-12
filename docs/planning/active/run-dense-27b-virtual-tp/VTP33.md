@@ -50,6 +50,22 @@ TP3 serves the full trained context (262,144 tokens), but its resident KV is onl
       the old split could carve. 8 × 160k timed out at the client (600 s) during prefill, with the server healthy.
   - **Acceptance met:** +67% resident KV over TP2 at no throughput cost (target +25%), or +103% at 3–8% less
     throughput.
+- **2026-11-12, w8a8 with rad0029** (build 260b77b5, logs vtp33/logs/capi8-1926, same setup as the MXFP4 sweep):
+
+  | split (K / FFN, KV heads 1,1,2) | full-length 262k sessions (tokens) | tok/s 4 / 6 / 8 streams |
+  |---|---|---|
+  | TP2 (two XTX) | 1.9 (489,344) | 175.5 / 167.3 / 195.0 |
+  | 4,4,8 / 5120,4864,7424 (6/6/12) | 4.2 (1,111,040) | 171.8 / 184.0 / 202.7 |
+  | 6,6,4 / 6656,6656,4096 (`qwen27b-tp3-int8`) | **5.5 (1,443,408)** | 189.4 / 182.2 / 212.8 |
+  | 7,7,2 / 7680,7680,2048 | 4.9 (1,280,464) | 174.0 / 163.1 / 193.3 |
+
+  - The int8 layout's own split is both the fastest and the largest: **2.9 times TP2's resident KV**.
+  - At 7,7,2 the XTX ranks run short instead, because int8 weights are twice MXFP4's.
+  - Greedy text differs between splits (6,6,4 and 7,7,2 begin "Sunlight is composed", the others "Sunlight contains").
+    Each answer is coherent. The reduction order changes with the split; N6 measured w8a8 quality at 6/6/12.
+- **Capacity layout:** `qwen27b-tp3-capacity` (MXFP4, 7,7,2, 262,144-token context) sits beside `qwen27b-tp3`. Its
+  settings are the 7,7,2 arm above: 6.7 sessions at 3–8% less throughput. The throughput layouts already get rad0029's
+  gain, since it needs no setting. The new layout's own launch was not run; its flags match the measured arm.
 
 ## Steps
 
