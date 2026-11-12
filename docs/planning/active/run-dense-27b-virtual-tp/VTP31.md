@@ -283,6 +283,27 @@ Each piece's GEMMs run on half the rows and cost about 25% more in total. The ov
 the wall time. Collectives are still about two thirds of prefill device time, so the next gains are fewer all-reduce
 bytes in prefill and steps that mix decode rows with prefill.
 
+## Experiment 9 result: mixed steps pipelined (2026-11-12, rad0026, build b667a40b vs 30146bef, logs e9-1328)
+
+rad0026 pipelines a step that carries decode rows beside two or more prefill sequences. The first piece holds the
+decode sequences and the prefill sequences before the cut. Each block issues the serial path's own decode and prefill
+launches over its piece. 2x ABBA against the rad0025 build, same settings as experiment 8:
+
+| | rad0025 (mean of 4) | rad0026 (mean of 4) | change |
+|---|---|---|---|
+| four 4096-token prompts, slowest time to first token | 9610 ms | 8969 ms | -6.7% |
+| 1 stream | 115.6 tok/s | 115.8 tok/s | 0 |
+| 4 streams | 208.7 tok/s | 224.4 tok/s | +7.5% |
+| 6 streams | 196.8 tok/s | 216.4 tok/s | +10.0% |
+| 8 streams | 216.7 tok/s | 239.7 tok/s | +10.6% |
+
+The four-prompt case gains as well: its 2048-row chunks put the later prompts' prefill beside the first prompts'
+first decode rows. Over experiments 8 and 9 together, 8 streams go from 214 to 240 tok/s (+12%) and the four-prompt
+time to first token from 10.5 to 9.0 s (-14%).
+
+Output: the 4-stream greedy texts diverge only at the characters where the base builds' own runs diverge (221, 227
+and 267), so nothing points at the patch. The run-to-run variation already exists without it.
+
 ## Steps
 
 1. Add a typed per-run selector for the all-reduce method (e.g. `tuning.allreduce_method`; contract amendment; engine option in a managed patch) so every method below is an A/B from the manifest.
