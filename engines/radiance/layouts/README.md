@@ -64,4 +64,4 @@ A tensor-parallel engine (count > 1) may have helpers (RAD49): one request slot 
 | File | Layouts |
 |---|---|
 | `flashnext.toml` | Flash-Next (Qwen3.8-Next-Flash MoE): the R9700 engine with XTX and RX 6900 XT helpers, and TP2 variants |
-| `qwen27b.toml` | dense Qwen3.8-27B: two-XTX TP2 |
+| `qwen27b.toml` | dense Qwen3.8-27B: two-XTX TP2, and native TP3 over XTX, XTX, R9700 (MXFP4 and w8a8) |
