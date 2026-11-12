@@ -1,10 +1,12 @@
 # rad0018_vtp14_n2_tp_ownership
 
 **Status:** untested
-**Plan item:** VTP14 (N2)
+**Plan item:** VTP14
 
 Scope: `--tp-ownership qwen38-27b-6-6-12`, an asymmetric three-rank ownership of the dense Qwen3.8-27B (BF16 plugin). It
 puts twice the heads and the largest feed-forward share on the 32 GiB R9700.
+`--tp-ownership qwen38-27b:K0,K1,K2:F0,F1,F2` sets the delta-net and feed-forward split per rank for sweeps; on
+MXFP4 none beat 6/6/12.
 
 ## Summary
 

@@ -1,7 +1,7 @@
 # rad0019_vtp14_n2_tp_ownership_fp8
 
 **Status:** untested
-**Plan item:** VTP14 (N2)
+**Plan item:** VTP14
 
 Scope: `--tp-ownership qwen38-27b-6-6-12` for the fp8 Qwen3.8 plugin (`qwen35_fp8`). That plugin serves the quantised
 27B containers, the ones that fit two RX 7900 XTX, so the matched TP2-vs-TP3 comparison needs it.

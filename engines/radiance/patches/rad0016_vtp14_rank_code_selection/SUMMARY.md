@@ -1,7 +1,7 @@
 # rad0016_vtp14_rank_code_selection
 
 **Status:** untested
-**Plan item:** VTP14 (N1)
+**Plan item:** VTP14
 
 Scope: per-rank kernel code eligibility for a mixed gfx1100+gfx1201 tensor-parallel world. Inert without
 `--rank-devices`. The ROCm lane build and the HIP unit tests pass. On cards, per-rank selection works, and serving
