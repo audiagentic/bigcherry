@@ -984,6 +984,40 @@ feed-forward 6656,6656,4096 throughout:
 
 The R9700 (32 GiB) is the better home for the extra head: more resident KV and slightly faster. `kv=1,1,2` stays.
 
+## N7 refresh, 2026-11-12 (build 8a6f27761aa44294519202f0cddcba33, logs vtp14-n7r/logs/n7r-1727)
+
+**Setup:** the same as N7 above, on current main, which adds rad0022–0028 (including the rank-consistent drafts fix,
+VTP31 experiment 13). TP3 also takes `--tune-pin all_reduce:nblocks=4,nthreads=256 --pipelined-prefill-min-rows 256`.
+Three ABBA repeats with six arms each; mean ± standard deviation. Every server was alive at the end, and no
+GPU memory fault occurred. Draft acceptance at 8 streams was 0.739 for TP2 and 0.741 for TP3.
+
+| streams | TP2 tok/s | TP3 tok/s | TP3 vs TP2 | step ms TP2 / TP3 | TTFT max ms TP2 / TP3 |
+|---|---|---|---|---|---|
+| 1 | 83.1 ± 0.2 | 115.6 ± 1.0 | **+39.2%** | 29.5 / 22.3 | 330 / 279 |
+| 4 | 199.9 ± 3.6 | 222.7 ± 3.1 | **+11.4%** | 37.1 / 29.9 | 1028 / 1085 |
+| 6 | 194.3 ± 3.3 | 214.2 ± 2.1 | **+10.2%** | 57.2 / 42.4 | 1553 / 1661 |
+| 8 | 224.2 ± 3.3 | 239.3 ± 1.9 | **+6.8%** | 61.9 / 47.4 | 1886 / 2189 |
+
+One-stream time to first token by prompt length:
+
+| prompt | TP2 TTFT ms | TP3 TTFT ms | TP3 vs TP2 |
+|---|---|---|---|
+| 512 | 321 ± 2 | 277 ± 3 | −13.5% |
+| 2048 | 859 ± 1 | 1067 ± 4 | +24.2% |
+| 8192 | 2878 ± 1 | 3024 ± 10 | +5.1% |
+
+**Verdict against the goal (beat TP2 at 4/6/8 streams, more KV and context): met for throughput and capacity.**
+
+- **Throughput:** TP3 now beats TP2 at 4, 6 and 8 streams, by 7–11% with speculation on. The first N7 had −1.1%, +1.6%
+  and −4.4%. Both arms gained from the shared changes, because TP2 also rose by 9–10% at 4 to 8 streams.
+- **Decode step:** shorter at every concurrency, by 19–26%.
+- **Capacity:** unchanged from N5. Resident KV is 6–9% higher, with the same 262,144-token context.
+- **Prefill** is still the open cost. Short prompts are now faster than on TP2 (−13.5% at 512). The gap is +24% at 2048
+  and +5% at 8192, and burst TTFT at 4 to 8 streams is 5–16% higher. The lever is still the transport, since every
+  all-reduce is host-staged without peer access.
+- **Wire:** keep the exact wire. The lossy wht6 wire no longer faults after rad0028, but it is slower at TP3 (see the
+  lossy-wire section above).
+
 ## Where TP3 time goes: per-op profile, 2026-11-12 (build f8406b8e, logs vtp14/logs/profwhere-0723)
 
 `--profile-ops`, MXFP4, exact wire, depth 3. TP2's all-reduce cost includes its fused `ar_rmsnorm_quant_fp8` (the
