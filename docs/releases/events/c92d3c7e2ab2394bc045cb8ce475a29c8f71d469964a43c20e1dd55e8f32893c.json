@@ -1,0 +1,19 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261112_200901_the-larger-three-card-kv-cache_3235",
+  "files": [
+    "engines/radiance/patches/rad0029_rank_own_split/patch.py",
+    "engines/radiance/patches/rad0029_rank_own_split/README.md",
+    "tools/tests/patch/test_vtp33_rank_own_split.py",
+    "docs/reference/engines/radiance/ENHANCEMENTS.md",
+    "docs/planning/active/run-dense-27b-virtual-tp/VTP33.md"
+  ],
+  "plan-item-ids": [
+    "VTP33",
+    "VTP14"
+  ],
+  "status": "unreleased",
+  "technical-summary": "rad0029 skipped worlds where the cheaper-rank re-split had run; the launcher's manifests select --placement expert_tiered, so layouts never got the own split. In a dense world that re-split frees nothing, so rad0029 now replaces it. qwen27b-tp3-capacity from the launcher: 993,536 -> 1,743,616 tokens (3.8 -> 6.7 sessions at 262k).",
+  "timestamp-utc": "2026-11-12T20:09:01.290608Z",
+  "user-summary-candidate": "The larger three-card KV cache now also applies when serving starts from a layout."
+}

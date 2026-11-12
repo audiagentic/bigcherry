@@ -64,8 +64,19 @@ TP3 serves the full trained context (262,144 tokens), but its resident KV is onl
   - Greedy text differs between splits (6,6,4 and 7,7,2 begin "Sunlight is composed", the others "Sunlight contains").
     Each answer is coherent. The reduction order changes with the split; N6 measured w8a8 quality at 6/6/12.
 - **Capacity layout:** `qwen27b-tp3-capacity` (MXFP4, 7,7,2, 262,144-token context) sits beside `qwen27b-tp3`. Its
-  settings are the 7,7,2 arm above: 6.7 sessions at 3–8% less throughput. The throughput layouts already get rad0029's
-  gain, since it needs no setting. The new layout's own launch was not run; its flags match the measured arm.
+  settings are the 7,7,2 arm above: 6.7 sessions at 3–8% less throughput.
+- **Launcher path, and a fix to rad0029** (logs vtp33/logs/layout-1942, layout2-*). The first launch of
+  `qwen27b-tp3-capacity` from the launcher (build 260b77b5) carved only 993,536 tokens (3.8 sessions), the same as
+  without rad0029.
+  - The launcher's manifests select `--placement expert_tiered`, so Radiance's cheaper-rank re-split ran first. In a
+    dense world it only shrinks the XTX ranks' KV pools (their weights pools stay 7465 MiB) and frees nothing.
+  - rad0029 skipped any world where that re-split had run. Now it replaces that re-split whenever every rank is dense.
+  - On the fixed build (9a5d8194), every launch logs rad0029's three `own split` lines and gives the same greedy answer
+    as the hand-flag runs:
+    - `qwen27b-tp3-capacity`: 1,743,616 tokens, 6.7 sessions at 262,144, the same as the hand-flag arm.
+    - `qwen27b-tp3` (8192 tokens): 493,184 tokens, 60 sessions.
+    - `qwen27b-tp3-int8` (8192 tokens): 99,376 tokens, 12 sessions.
+  - The launcher takes the context length from the layout, so the two throughput layouts ran at 8192 tokens.
 
 ## Steps
 
