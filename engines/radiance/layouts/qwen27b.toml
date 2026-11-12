@@ -62,3 +62,24 @@ tuning.tp_ownership = "kv=1,1,2;ffn=6656,6656,4096;lk=6,6,4;lv=18,18,12"
 tuning.tune_pin = "all_reduce:nblocks=4,nthreads=256"
 # The 256-row pipelining floor: +0.3-1.3% decode, -1.7% / -2.2% TTFT on int8 (VTP31 experiment 12).
 tuning.pipelined_prefill_min_rows = 256
+
+# The MXFP4 container on the same three ranks, for resident context rather than speed: the delta-net and feed-forward
+# shares move off the R9700, so with rad0029 (every rank its own VRAM split) its memory goes to the KV cache. At 262,144
+# tokens and 8 sequences it holds 6.7 full-length sessions against qwen27b-tp3's 5.5 and dual-XTX TP2's 3.3, at 3-8%
+# less throughput than qwen27b-tp3 (VTP33).
+[layout.qwen27b-tp3-capacity]
+description = "Qwen3.8-27B MXFP4 over XTX, XTX, R9700 (native TP3) for resident context: 7/7/2 delta-net, 7680/7680/2048 feed-forward"
+model = "radiance/StillDeadcode/qwen3.8-27b-mxfp4/qwen3.8-27b-mxfp4.rad"
+engine = [{ arch = "gfx1100", count = 2 }, { arch = "gfx1201", count = 1 }]
+tp-wire = "exact"
+server-args = [
+  "--max-model-len", "262144",
+  "--max-num-seqs", "8",
+  "--kv-cache-dtype", "fp8",
+  "--num-speculative-tokens", "3",
+]
+[layout.qwen27b-tp3-capacity.settings]
+tuning.tp_ownership = "kv=1,1,2;ffn=7680,7680,2048;lk=7,7,2;lv=21,21,6"
+tuning.pipelined_prefill = "auto"
+tuning.tune_pin = "all_reduce:nblocks=4,nthreads=256"
+tuning.pipelined_prefill_min_rows = 256
