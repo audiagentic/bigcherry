@@ -55,3 +55,5 @@ server-args = [
 ]
 [layout.qwen27b-tp3-int8.settings]
 tuning.tp_ownership = "kv=1,1,2;ffn=6656,6656,4096;lk=6,6,4;lv=18,18,12"
+# The same all-reduce grid as the MXFP4 layout: +1-5% decode, -3 to -7% TTFT on int8 too (VTP31).
+tuning.tune_pin = "all_reduce:nblocks=4,nthreads=256"

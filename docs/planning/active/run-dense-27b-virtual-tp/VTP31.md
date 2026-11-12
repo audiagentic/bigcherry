@@ -98,6 +98,36 @@ contract field `tuning.tune_pin` (amendment 20), and the `qwen27b-tp3` layout se
 default in the selection row is not needed while the layout carries it; chained launches for the three-rank rows (the
 four-rank rows have them, r4d_chain.h) and the hierarchical exchange around the x4 link.
 
+### int8 (w8a8) TP3 with the grid (2026-11-12, build 2cb05432, logs vtp14/logs/n9-0912)
+
+2x ABBA, `qwen27b-tp3-int8` split, `--tune-pin all_reduce:nblocks=4,nthreads=256` against the default grid:
+
+| | 1 stream | 4 streams | 6 streams | 8 streams | TTFT 512 / 2048 / 8192 |
+|---|---|---|---|---|---|
+| default grid | 82.8 | 176.7 | 170.1 | 195.2 | 342 / 1309 / 4053 ms |
+| 4x256 | 83.8 | 180.6 | 172.2 | 205.0 | 329 / 1274 / 3764 ms |
+| change | +1.1% | +2.2% | +1.2% | +5.1% | -3.9% / -2.7% / -7.1% |
+
+The int8 layout now sets it too.
+
+### Around 4x256: no further gain (logs vtp14/logs/geo2-0927)
+
+Against 4x256 (mean of a forward and a reversed pass): 4x512 -1.7% / -2.3% at 4/8 streams, +4.2% prefill TTFT; 2x512
+-0.7% / -0.7%; `drain=1` -0.8% / -0.6%; `acq=1` +2.7% / -0.1%. All within run-to-run spread; output identical. The grid
+and fence axes are exhausted; the next step is the phase breakdown (rad0023, experiment 2).
+
+### Corrections to the kernel plan
+
+- **Chained launches:** not for this model. Radiance measured no gain from them for Qwen3.8-27B with DFlash2 (4x
+  R9700), so its plugin leaves them off (`chained launches: off` in our logs), and the host-mailbox `_host` rows TP3
+  runs are not chainable.
+- **Routing around the x4 link:** prefill already moves the minimum over it (rad0021: the R9700 owns no two-shot shard,
+  N each way). The decode one-shot sends 2N each way, but a 32-row message is ~320 KiB, about 83 us at x4, against
+  440-570 us a call: decode is synchronisation-bound, not bandwidth-bound.
+- **Write once for the host mailbox:** in host mode every rank's slots are host memory, yet the one-shot pushes the
+  same message to each peer's slot ((ws-1) writes). Peers could read one copy. Worth it only if the timeline shows the
+  push matters.
+
 ## Steps
 
 1. Add a typed per-run selector for the all-reduce method (e.g. `tuning.allreduce_method`; contract amendment; engine option in a managed patch) so every method below is an A/B from the manifest.
