@@ -9,7 +9,7 @@ different statuses. See [the engine overview](README.md) first.
 
 _Generated from package documentation and metadata by `tools/docs/generate_engine_enhancement_summaries.py`. Do not edit this section by hand._
 
-## Engine patches (20)
+## Engine patches (21)
 
 | Package | State | Summary |
 | --- | --- | --- |
@@ -33,6 +33,7 @@ _Generated from package documentation and metadata by `tools/docs/generate_engin
 | [rad0020_vtp14_tp3_pipelined_prefill](../../../../engines/radiance/patches/rad0020_vtp14_tp3_pipelined_prefill/SUMMARY.md) | `untested` | `qwen35_fp8` pipelines a wide one-sequence prefill step: the rows run as two pieces, and each block's all-reduce for one piece runs on the second lane beside the other piece's work. Upstream fixes it at two ranks from 1024 rows. This patch makes the mode and the narrowest step options; `auto` adds three ranks under `--tp-ownership`. |
 | [rad0021_vtp14_weighted_twoshot_3rank](../../../../engines/radiance/patches/rad0021_vtp14_weighted_twoshot_3rank/SUMMARY.md) | `untested` | A rank behind a slow PCIe link owns a smaller shard of the two-shot, or none, and so moves fewer bytes over it. The bits are the same for every table. Equal links keep the even split; decode-sized messages are unchanged. |
 | [rad0022_tune_pin](../../../../engines/radiance/patches/rad0022_tune_pin/SUMMARY.md) | `untested` | The same text and checks as `RADIANCE_TUNE` (an axis or value a kernel does not offer is an error), set before the plugins load. A different `RADIANCE_TUNE` already in the environment is refused. Without the option nothing changes. |
+| [rad0023_ar_timeline](../../../../engines/radiance/patches/rad0023_ar_timeline/SUMMARY.md) | `untested` | Each launch stamps, in its first eight blocks, entry, push drained, every peer's flag seen and fold done, into a pinned host ring indexed by the launch's device sequence number; each ring is written under DIR at exit. Unset, the kernel takes no stamp and does the same work. |
 
 ## Components (6)
 

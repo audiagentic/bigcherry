@@ -128,6 +128,40 @@ and fence axes are exhausted; the next step is the phase breakdown (rad0023, exp
   same message to each peer's slot ((ws-1) writes). Peers could read one copy. Worth it only if the timeline shows the
   push matters.
 
+## Experiment 2 result: where the one-shot's time goes (2026-11-12, rad0023, build 9e3cf8c7, logs tl-1011)
+
+MXFP4 6/6/12, exact wire, one server per arm, 512-token prompts and 256 new tokens. Per rank and phase, median us of the
+slowest block (r0 and r1 the XTX, r2 the R9700 on the x4 link). Decode at 8 streams is the 320 KiB message (32 rows);
+at 1 stream, 40 KiB.
+
+| arm | message | rank | push | wait | fold | total |
+|---|---|---|---|---|---|---|
+| 8 streams, 4x256 | <= 512 KiB | XTX r0 / r1 | 46 / 46 | 26 / 2 | 49 / 72 | 120 / 121 |
+| | | R9700 r2 | 1 | 99 | 120 | 218 |
+| 8 streams, default | <= 512 KiB | XTX r0 / r1 | 51 / 51 | 45 / 26 | 55 / 82 | 144 / 147 |
+| | | R9700 r2 | 1 | 96 | 150 | 247 |
+| 1 stream, 4x256 | <= 64 KiB | XTX r0 / r1 | 6 / 6 | 3 / 2 | 7 / 9 | 15 / 16 |
+| | | R9700 r2 | 1 | 22 | 15 | 37 |
+
+Across ranks (launches matched by size), the flag round trip, the smallest wait of a launch, is 2 us at 8 streams with
+4x256 (25 us with the default grid) and 1.6 us at 1 stream. Synchronisation is not the cost.
+
+What it shows:
+
+- **The R9700's fold is the long phase.** It reads both peers' messages over its x4 link: 640 KiB in 120 us (about
+  5.3 GB/s) against 49-72 us on the XTX. Its own push is posted and costs nothing on its clock.
+- **The R9700 arrives first and waits** about 95 us for the XTX pushes (2 x 320 KiB each, 46 us), then folds. Its
+  critical chain per all-reduce is the XTX push plus its own fold, about 170 us of its 218 us.
+- **4x256 helps through the XTX push and fold** (51 to 46 us, 55 to 49 us) and the R9700 fold (150 to 120 us): fewer
+  blocks contend less on the host link. That is the 4-5% it gave at 8 streams.
+- At 1 stream the all-reduce is 15-37 us a call, so decode there is not all-reduce bound.
+
+Next (experiment 3): cut the bytes the R9700 reads at decode sizes. The three-rank weighted two-shot (rad0021) gives it
+the smallest shard, so it reads about one message instead of two, for one more handshake (2 us measured). Upstream's
+four-rank one-shot already hands over to its two-shot from the row's `ts_min`; a patch can do the same for the
+three-rank host one-shot with the settled link weights, pinned on and off by `--tune-pin all_reduce:ts_min=N` for an
+A/B. Also worth a look: a push that writes each message once to host memory for both peers, which halves the XTX push.
+
 ## Steps
 
 1. Add a typed per-run selector for the all-reduce method (e.g. `tuning.allreduce_method`; contract amendment; engine option in a managed patch) so every method below is an A/B from the manifest.

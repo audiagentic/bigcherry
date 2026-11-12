@@ -70,6 +70,7 @@ patches = [
   "rad0020_vtp14_tp3_pipelined_prefill",
   "rad0021_vtp14_weighted_twoshot_3rank",
   "rad0022_tune_pin",
+  "rad0023_ar_timeline",
 ]
 required-state = "untested"
 

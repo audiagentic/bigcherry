@@ -1,0 +1,11 @@
+schema = 1
+id = "rad0023_ar_timeline"
+order = 23
+state = "untested"
+kind = "diagnostic"
+origin = "local"
+backend = "agnostic"
+plan-ids = ["VTP31"]
+requires = []
+conflicts = []
+tags = ["allreduce", "tensor-parallel"]
