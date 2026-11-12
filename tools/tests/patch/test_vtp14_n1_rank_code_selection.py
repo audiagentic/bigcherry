@@ -78,7 +78,8 @@ class NativeRankCodeEligibilityTests(unittest.TestCase):
                           "rad0021_vtp14_weighted_twoshot_3rank", "rad0022_tune_pin", "rad0023_ar_timeline",
                           "rad0024_ts3_decode", "rad0025_multiseq_pipelined_prefill",
                           "rad0026_mixed_pipelined_prefill", "rad0027_mixed_one_pipelined_prefill",
-                          "rad0028_rank_consistent_block_drafts"])
+                          "rad0028_rank_consistent_block_drafts",
+                          "rad0029_rank_own_split"])
         self.assertEqual(recipe["source"]["radiance"]["patch-sets"][-1], "vtp14-mixed-tp")
         self.assertNotIn("vtp14-mixed-tp", recipe["source"]["radiance-native"]["patch-sets"])
         self.assertNotIn("radiance-vtp14-rank-code-selection", recipe["source"])
