@@ -2125,7 +2125,7 @@ Status d368(const Json& j, const std::string& at, int64_t* out) {  // /spec/plan
 }
 
 Status d369(const Json& j, const std::string& at, int64_t* out) {  // /spec/plan/resource_inputs/retention_target_tokens
-    return int_in(j, at, C::invalid_type, C::invalid_value, 1, 9007199254740991, std::nullopt, out);
+    return int_in(j, at, C::invalid_type, C::invalid_value, 0, 9007199254740991, std::nullopt, out);
 }
 
 Status d370(const Json& j, const std::string& at, int64_t* out) {  // /spec/plan/resource_inputs/mem_available_bytes

@@ -57,7 +57,9 @@ selects the cards by architecture from the host's detected GPUs; it never takes 
 `{ arch, count }` groups in rank order, a world of more than one card type: the kernels are each group's plugin, and the engine
 gets its ranks' cards as `device.rank_devices` (`--rank-devices`, amendment 18). A layout's `[settings]` table sets resolver keys
 (a policy layer under the site and profile, checked like a profile; e.g. `helper.combine`): `tuning.tp_ownership` (`--tp-ownership SPEC`, an uneven split one count a
-rank, checked against the model), `tuning.pipelined_prefill` and `tuning.pipelined_prefill_min_rows` (amendment 18).
+rank, checked against the model), `tuning.pipelined_prefill` and `tuning.pipelined_prefill_min_rows` (amendment 18). A configuration with no host KV tier
+(`memory.host_kv_mib = 0`, the engine-only default) has a retention target of 0 tokens (amendment 19), and a dense model is a valid
+engine-only model for the measured manifest.
 
 | Layout shape | Manifest |
 |---|---|

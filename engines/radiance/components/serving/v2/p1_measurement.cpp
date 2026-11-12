@@ -38,7 +38,7 @@ Result<Json> publish_p1_measurement(const P1Native& m) {
       !digest(m.owner_map.owner_map_sha256) || m.provenance.empty())
     return fail("identity", "complete model/build/layout/inventory/owner measurements required");
   int64_t service_capacity = 0;
-  if (!positive(m.context_target_tokens) || !positive(m.retention_target_tokens) ||
+  if (!positive(m.context_target_tokens) || m.retention_target_tokens < 0 ||   // 0: no host KV tier (amendment 19)
       !positive(m.concurrent_sessions) ||
       !product(m.context_target_tokens, m.concurrent_sessions, &service_capacity) ||
       m.retention_target_tokens > service_capacity)

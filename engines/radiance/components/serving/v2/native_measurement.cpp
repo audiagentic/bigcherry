@@ -64,7 +64,7 @@ Result<NativeMeasurementOutput> produce_native_measurement(const NativeMeasureme
     if (!digest(d)) return fail("scope", "all measured identity digests are mandatory");
 
   if (!positive(in.scope.context_target_tokens) ||
-      !positive(in.scope.retention_target_tokens) ||
+      in.scope.retention_target_tokens < 0 ||   // 0: no host KV tier (amendment 19)
       !positive(in.concurrent_sessions) ||
       in.scope.retention_target_tokens > in.scope.context_target_tokens * in.concurrent_sessions)
     return fail("targets", "invalid measured request context, concurrency or retained tokens");

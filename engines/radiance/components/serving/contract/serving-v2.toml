@@ -2748,8 +2748,8 @@ doc = "Context admission target in tokens."
 [[field]]
 path = "/spec/plan/resource_inputs/retention_target_tokens"
 kind = "ref"
-ref = "positive"
-doc = "Retention admission target in tokens."
+ref = "uint"
+doc = "Retention admission target in tokens; 0 when the configuration has no host KV tier (amendment 19)."
 
 [[field]]
 path = "/spec/plan/resource_inputs/mem_available_bytes"

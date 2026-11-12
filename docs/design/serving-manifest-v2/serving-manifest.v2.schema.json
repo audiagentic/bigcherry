@@ -1893,8 +1893,8 @@
                   "$ref": "#/$defs/positive"
                 },
                 "retention_target_tokens": {
-                  "description": "Retention admission target in tokens.",
-                  "$ref": "#/$defs/positive"
+                  "description": "Retention admission target in tokens; 0 when the configuration has no host KV tier (amendment 19).",
+                  "$ref": "#/$defs/uint"
                 },
                 "mem_available_bytes": {
                   "description": "Live MemAvailable at plan resolution.",

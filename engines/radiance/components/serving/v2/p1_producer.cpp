@@ -137,8 +137,9 @@ json produce_p1(const bc::serving::Resolved& resolved, const json& facts,
   const int64_t ctx = service.max_context;
   native.context_target_tokens = ctx;
   native.concurrent_sessions = service.max_sessions;
+  // 0: no host KV tier (an engine-only layout without one); retention is then nothing to admit (amendment 19)
   native.retention_target_tokens = integral(
-      request.at("retention_target_tokens"), "retention_target_tokens", true);
+      request.at("retention_target_tokens"), "retention_target_tokens", false);
   if (native.retention_target_tokens > ctx * native.concurrent_sessions)
     refuse("retention_target_tokens", "exceeds measured context times concurrency");
 
