@@ -526,6 +526,9 @@ TTFT is also higher. Without speculation TP3 wins at every concurrency (N0 above
 - **Suspect:** the 3-rank ti8 all-reduce, which libr3 has built only since the Nrank fix and which is unvalidated on
   gfx1100, or its mixed-library scratch layout.
 - **Until this is fixed:** TP3 runs the exact wire only.
+- **Update 2026-11-12 (VTP31 experiment 12):** the same fault, in the same kernel on the R9700, also hits int8
+  (w8a8) TP3 on the exact wire (three arms so far, intermittent). The wire is not the cause; int8 TP3 is the common
+  factor. MXFP4 TP3 has not shown it.
 
 ### Draft-acceptance fix, 2026-11-12 00:24Z (build e783077b6879d6d060379d55aa157d7c)
 

@@ -350,6 +350,27 @@ arrive one at a time makes it all the time: every chunk of a long prompt that la
 The 4-stream greedy texts diverge only at characters where the base build's own runs diverge (122, 221, 227, 267),
 and the long prompt's text matches across all eight arms.
 
+## Experiment 12 result: the int8 layout's pipeline floor, and an R9700 fault (2026-11-12, build f6b0b5cf, logs e12-1442)
+
+The int8 (w8a8) TP3 layout's settings with and without `--pipelined-prefill-min-rows 256`, 2x ABBA on the rad0027
+build, max-model-len 8192 (the long prompt beside 4 generating streams is 6144 tokens here):
+
+| | plugin default (mean of 4) | 256 rows (mean of 4) | change |
+|---|---|---|---|
+| 1 / 4 / 6 / 8 streams | 83.5 / 188.7 / 180.2 / 213.7 tok/s | 83.8 / 189.8 / 181.9 / 216.5 tok/s | +0.3 / +0.6 / +0.9 / +1.3% |
+| four 4096-token prompts, slowest time to first token | 10168 ms | 9994 ms | -1.7% |
+| 6144-token prompt beside 4 generating streams | 4254 ms | 4163 ms | -2.2% |
+
+The floor helps int8 a little (MXFP4 gained +2-8% in experiment 7), so it can go into the int8 layout too.
+
+**The last 256-row arm died with a GPU memory fault on the R9700** after its benchmarks, while the 4 background
+streams were decoding: `r4d_attn_decode_kernel<2,16,256,6,16,0,...>` read 1008 KiB past the end of the pinned token
+embedding, with argument words such as `0x3d800000`. This is the fault VTP14 recorded for the lossy wire. The two
+`window-w8` arms of 2026-11-12 (w8a8, exact wire, a build before rad0025) show it too, so **it is not specific to the
+lossy wire, nor to rad0025-0027**. All three cases are int8 TP3. MXFP4 TP3 has run about 40 arms on the exact wire
+today without it. It is intermittent (1 arm in 8 here) and needs its own investigation before int8 TP3 counts as
+supported.
+
 ## Steps
 
 1. Add a typed per-run selector for the all-reduce method (e.g. `tuning.allreduce_method`; contract amendment; engine option in a managed patch) so every method below is an A/B from the manifest.
