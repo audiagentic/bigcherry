@@ -197,11 +197,15 @@ def resolve(
             inventory.check_power_overrides(host)
         engine = [inventory.by_bdf(b) for b in engine_bdfs]
         helper = [inventory.by_bdf(b) for b in helper_bdfs]
-        if len({g.arch for g in engine}) != 1:
-            raise InventoryError("bc-serve selected mixed-architecture engine ranks")
+        # a world of more than one card type is a layout's engine groups (bc-serve hands the engine its ranks' cards as
+        # layout.rank_devices); every rank's architecture must be a described card type
         archs = radiance_layout.load_archs()
-        if engine[0].arch not in archs:
-            raise InventoryError(f"unknown engine architecture {engine[0].arch}")
+        for g in engine:
+            if g.arch not in archs:
+                raise InventoryError(f"unknown engine architecture {g.arch}")
+        rank_devices = values["layout"].get("rank_devices")
+        if len({g.arch for g in engine}) > 1 and list(rank_devices or []) != list(engine_bdfs):
+            raise InventoryError("bc-serve selected a mixed-architecture engine without its rank devices in rank order")
         helpers = []
         for i, (gpu, rec) in enumerate(zip(helper, process_helpers)):
             if not isinstance(rec, dict) or rec.get("bdf") != gpu.bdf or rec.get("hip_ordinal") != gpu.ordinal or rec.get("arch") != gpu.arch:

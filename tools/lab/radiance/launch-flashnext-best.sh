@@ -443,7 +443,11 @@ if [ "$LAYOUT_HELPER_COUNT" -gt 0 ]; then
 fi
 
 source "$(dirname "${BASH_SOURCE[0]}")/lab-env.sh"
-[ -f "$RAD_HOME/kernels/$LAYOUT_ENGINE_PLUGIN.so" ] || { echo "RADIANCE_EXIT=99 layout $LAYOUT requires kernels/$LAYOUT_ENGINE_PLUGIN.so"; exit 99; }
+# one plugin per engine architecture (a mixed world names several, comma-separated)
+IFS=, read -ra _engine_plugins <<< "$LAYOUT_ENGINE_PLUGIN"
+for _p in "${_engine_plugins[@]}"; do
+  [ -f "$RAD_HOME/kernels/$_p.so" ] || { echo "RADIANCE_EXIT=99 layout $LAYOUT requires kernels/$_p.so"; exit 99; }
+done
 HELPERS=(); for ((i = 0; i < LAYOUT_HELPER_COUNT; i++)); do HELPERS+=("$i"); done
 for ((i = 0; i < LAYOUT_HELPER_COUNT; i++)); do
   declare -n h="LAYOUT_HELPER_$i"
