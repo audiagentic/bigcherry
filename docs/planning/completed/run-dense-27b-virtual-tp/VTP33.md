@@ -2,7 +2,7 @@
 id: VTP33
 order: 33
 plan: run-dense-27b-virtual-tp
-state: pending
+state: completed
 created-at: '2026-11-12T07:38:58.014935+00:00'
 breadth: ''
 skill: intermediate
@@ -16,6 +16,47 @@ priority: P2
 ## Description
 
 TP3 serves the full trained context (262,144 tokens), but its resident KV is only 6-9% above TP2's. One block table serves every rank, so the carve is the smallest rank's share. The R9700 holds 2 of the 4 KV heads (twice the KV per token) and ~45% of the weights; the XTX ranks could page about 1.96M tokens each.
+
+## Steps
+
+1. Sweep capacity-oriented splits: move delta-net and feed-forward shares off the R9700 to free its VRAM for KV. Record resident KV, full-length sessions and tok/s at 4/6/8 streams.
+2. Report the throughput/capacity frontier per format.
+3. Ship a capacity layout (settings only) beside the throughput layout.
+
+## Detailed Solution & Technical Design
+
+
+
+## Code Samples & Guidance
+
+
+
+## Files
+
+
+
+## Validation
+
+- Engine KV report at 262k (pool, sessions).
+- stream-bench at 4/6/8 streams.
+- A long-context correctness check.
+
+## Effort & Risk
+
+
+
+## Standards
+
+
+
+## Acceptance Criteria
+
+- A layout with measurably more resident KV than TP2 (target +25% or more), with its throughput cost stated.
+- Met: with rad0029, qwen27b-tp3 holds 5.5 full-length 262k sessions against TP2's 3.3 (+67%) at unchanged throughput; qwen27b-tp3-capacity holds 6.7 (+103%) at 3-8% less throughput; int8 qwen27b-tp3-int8 holds 5.5 against 1.9. Verified from the launcher (#925) and with 8 concurrent 128k prompts.
+
+## Notes
+
+Data: VTP14.md (N5 first pass, KV head placement). Script pattern: ${BC_TASK_TMP}/vtp14/kvsplit.sh.
 
 ## Results so far
 
@@ -78,47 +119,9 @@ TP3 serves the full trained context (262,144 tokens), but its resident KV is onl
     - `qwen27b-tp3-int8` (8192 tokens): 99,376 tokens, 12 sessions.
   - The launcher takes the context length from the layout, so the two throughput layouts ran at 8192 tokens.
 
-## Steps
-
-1. Sweep capacity-oriented splits: move delta-net and feed-forward shares off the R9700 to free its VRAM for KV. Record resident KV, full-length sessions and tok/s at 4/6/8 streams.
-2. Report the throughput/capacity frontier per format.
-3. Ship a capacity layout (settings only) beside the throughput layout.
-
-## Detailed Solution & Technical Design
-
-
-
-## Code Samples & Guidance
-
-
-
-## Files
-
-
-
-## Validation
-
-- Engine KV report at 262k (pool, sessions).
-- stream-bench at 4/6/8 streams.
-- A long-context correctness check.
-
-## Effort & Risk
-
-
-
-## Standards
-
-
-
-## Acceptance Criteria
-
-- A layout with measurably more resident KV than TP2 (target +25% or more), with its throughput cost stated.
-
-## Notes
-
-Data: VTP14.md (N5 first pass, KV head placement). Script pattern: ${BC_TASK_TMP}/vtp14/kvsplit.sh.
-
 ## Change Log
 
 - 2026-11-12T07:38:58.014935+00:00 (created-by): Created by agent
 - 2026-11-12T07:40:17.937281+00:00 (updated-by): Updated: section:description, section:steps, section:validation, section:acceptance_criteria, section:notes
+- 2026-11-12T21:59:00.014890+00:00 (updated-by): Updated: section:acceptance_criteria
+- 2026-11-12T21:59:17.172934+00:00 (state-transition): State: pending → completed

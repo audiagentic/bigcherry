@@ -2,7 +2,7 @@
 id: VTP14
 order: 13
 plan: run-dense-27b-virtual-tp
-state: in_progress
+state: completed
 created-at: '2026-11-11T00:00:00+00:00'
 breadth: ''
 skill: advanced
@@ -12,6 +12,54 @@ work: L
 ---
 
 # Radiance-native three-GPU TP3 integration — build with Radiance, not beside it
+
+## Description
+
+
+
+## Steps
+
+
+
+## Detailed Solution & Technical Design
+
+
+
+## Code Samples & Guidance
+
+
+
+## Files
+
+
+
+## Validation
+
+- N7 refresh (build 8a6f2776, 3x ABBA, MXFP4, exact wire, DFlash2 depth 3, fp8 KV): TP3 vs dual-XTX TP2 +39.2% / +11.4% / +10.2% / +6.8% aggregate tok/s at 1/4/6/8 streams; no faults in 12 arms (#920).
+- N6 refresh (same build, ABCCBA x2): int8 TP3 (6,6,4) vs int8 TP2 +27.9% / +6.9% / +6.7% / +9.6%; one-stream TTFT -7% to -13% (#922).
+- Capacity (VTP33, rad0029 #923/#925): TP3 holds 5.5 full-length 262k sessions against TP2's 3.3 (+67%), int8 5.5 against 1.9; 8 concurrent 128k prompts (1.04M tokens) run clean; a 44,688-token needle is answered correctly.
+- Quality: N7 KLD first pass and N6 KLD against BF16 (w8a8 TP3 within TP2's median/p99/p99.9).
+- int8 TP3 rank-drift fault fixed (rad0028, VTP31 experiment 13): 0/12 faults against 11/22.
+- Launcher: qwen27b-tp3, qwen27b-tp3-int8 and qwen27b-tp3-capacity start from their layouts alone, with greedy output identical to hand-flag runs.
+
+## Effort & Risk
+
+
+
+## Standards
+
+
+
+## Acceptance Criteria
+
+- Met: a real Radiance process serves Qwen3.8-27B on XTX, XTX and R9700 (gfx1100, gfx1100, gfx1201) with all three ranks in every distributed layer, quality-qualified.
+- Met: defensible improvement over the best same-quality dual-XTX TP2 in 4/6/8-stream throughput (matched ABBA, both MXFP4 and int8).
+- Met: measured resident KV capacity above TP2 (+67% MXFP4 on the throughput layout, +103% on the capacity layout).
+- Open cost, carried to a follow-up item: MXFP4 one-stream prefill TTFT +24% at 2048 tokens against TP2 (host-staged all-reduces, no peer access).
+
+## Notes
+
+
 
 ## Decision and success condition
 
@@ -220,7 +268,7 @@ reproducible **native TP2 hardware** acceptance is still
 pending and must be performed under an exclusive GPU lease
 before any TP3 comparative result.
 
-## N1 rework, 2026-11-11: applies to real v1.17.0, wired behind `--rank-devices`
+## N1 rework, 2026-11-11: applies to real v1.17.0, wired behind
 
 The first rad0016 did not apply to the pinned source. Applied to the real v1.17.0 source, edits to `rad_core.h`,
 `loader.cpp` and `select.cpp` failed, because they were anchored on text that v1.17.0 does not contain. Its test
@@ -1097,3 +1145,8 @@ allow-listed host bridges, so the platform, not radiance or BigCherry, rules it 
 change with no guarantee that the root complex forwards peer traffic; the host-staged transport stays.
 
 Follow-up work (all-reduce latency and overlap, per-kind split tuning, capacity, the generic-config audit) is in VTP31-VTP34.
+
+## Change Log
+
+- 2026-11-12T21:58:56.053527+00:00 (updated-by): Updated: section:validation, section:acceptance_criteria
+- 2026-11-12T21:59:21.159583+00:00 (state-transition): State: in_progress → completed

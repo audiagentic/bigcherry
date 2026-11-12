@@ -83,7 +83,7 @@ class NativeRankCodeEligibilityTests(unittest.TestCase):
         self.assertEqual(recipe["source"]["radiance"]["patch-sets"][-1], "vtp14-mixed-tp")
         self.assertNotIn("vtp14-mixed-tp", recipe["source"]["radiance-native"]["patch-sets"])
         self.assertNotIn("radiance-vtp14-rank-code-selection", recipe["source"])
-        self.assertTrue((REPO / "docs/planning/active/run-dense-27b-virtual-tp/VTP14.md").exists())
+        self.assertTrue((REPO / "docs/planning/completed/run-dense-27b-virtual-tp/VTP14.md").exists())
 
     def test_shape_guards_unique_and_created_files_from_src(self):
         files = patch_files()
