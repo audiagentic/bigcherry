@@ -28,7 +28,7 @@
 # Lab: bigcherry build --lane radiance:stock:linux-radiance
 #
 # Usage:
-#   bash tools/lab/radiance/launch-flashnext-best.sh [start] [--release TAG|latest | --build DIR] [--port N] [--heat FILE] [--host-pool-mib N] [--host-kv-mib N] [--chunk TOKENS] [--ngram-placement ram|disk|vram] [--kv-dtype fp8|fp8_v4|k6_v4] [--ngram-device INDEX] [--max-model-len TOKENS] [--record-heat PREFIX|off [--record-period S]] [--live-policy FILE] [--experiment FILE] [--calibrate --calibration-prompts-a FILE --calibration-prompts-b FILE] [--gpu-power] [--layout NAME] [--budget ARCH=MIB] [--canary-prompt TEXT --canary-expect FACT]
+#   bash tools/lab/radiance/launch-flashnext-best.sh [start] [--release TAG|latest | --build DIR] [--port N] [--heat FILE] [--host-pool-mib N] [--host-kv-mib N] [--chunk TOKENS] [--ngram-placement ram|disk|vram] [--kv-dtype fp8|fp8_v4|k6_v4] [--ngram-device INDEX] [--max-model-len TOKENS] [--record-heat PREFIX|off [--record-period S]] [--live-policy FILE] [--experiment FILE] [--calibrate --calibration-prompts-a FILE --calibration-prompts-b FILE] [--gpu-power | --no-gpu-power] [--layout NAME] [--budget ARCH=MIB] [--canary-prompt TEXT --canary-expect FACT]
 
 #     (every start ends with a canary completion that must contain the fact, default 'The capital of France is' -> Paris; a failure stops the launch, exit 96)
 #   bash tools/lab/radiance/launch-flashnext-best.sh stop
@@ -71,7 +71,8 @@
 # --rope-scaling S: default none (contexts within the trained 262144); yarn:4 for the 1M stretch.
 # --max-num-seqs N: sessions served at once (default 8; each costs per-sequence state in VRAM and checkpoint slots in pinned RAM).
 # --prefix-resume MODE: default nearest; off leaves the flag out (engines before 1.14.0 do not have it).
-# --gpu-power (or GPU_POWER=1): apply the cards' configured power settings ([host.*.devices.power]) for this run and
+# Power settings: the default (auto) applies the cards' configured power settings when this launch holds the gpu lease and says so when it
+# does not; --no-gpu-power turns it off. --gpu-power (or GPU_POWER=1) requires it: apply the cards' configured power settings ([host.*.devices.power]) for this run and
 # put back what the cards ran before at stop. It is all or nothing and only for this layout's cards: a setting the cards
 # cannot take (outside the range the card reports, no write access, no gpu lease held) stops the launch with exit 97 before
 # anything starts, listing the setup steps still missing; the original values are journalled and restored after every
@@ -101,7 +102,7 @@ SHM_DIR=${SHM_DIR:-/dev/shm}   # where POSIX shared memory lives; a test points 
 PORT=36080
 HEAT=$WORK/heat/flashnext-mixed.hot-first
 BUILD=""
-GPU_POWER=${GPU_POWER:-0}
+GPU_POWER=${GPU_POWER:-auto}   # auto: apply the cards' configured power settings when this launch holds the gpu lease; 1: required; 0: off
 LAYOUT=${FLASHNEXT_LAYOUT:-flashnext-4gpu}
 BUDGETS=()
 RECORD=$RUN/heat.live   # RHP02: on by default; --record-heat off disables
@@ -144,6 +145,7 @@ while [ $# -gt 0 ]; do
     --port) PORT=$2; shift 2 ;;
     --heat) CUSTOM_SERVE_OPTIONS+=(--heat); HEAT=$2; shift 2 ;;
     --gpu-power) GPU_POWER=1; shift ;;
+    --no-gpu-power) GPU_POWER=0; shift ;;
     --layout) LAYOUT=$2; shift 2 ;;
     --budget) BUDGETS+=("$2"); shift 2 ;;
     --host-pool-mib) CUSTOM_SERVE_OPTIONS+=(--host-pool-mib); HOST_POOL_MIB=$2; shift 2 ;;
@@ -402,6 +404,16 @@ trap 'exit 129' HUP
 # cards of this layout only, verifies the gpu lease, journals the originals, applies and reads back; on any failure it rolls
 # back and this launch stops before an engine starts (never serves on half-applied or defaulted cards after being asked
 # for settings).
+# Default (auto): the configured settings are applied whenever this launch holds the gpu lease, and the launch says so when it
+# does not (cards stay at the driver defaults). A launch that does hold the lease and cannot apply still stops, as with 1.
+if [ "$GPU_POWER" = auto ]; then
+  if PYTHONPATH=tools python3 -c 'import sys; from bigcherry.hardware.lease import held_by_this_process as h; sys.exit(0 if h() else 1)'; then
+    GPU_POWER=1
+  else
+    echo "gpu-power: this launch does not hold the gpu lease; the cards stay at their driver defaults (take the lease, or pass --no-gpu-power to silence this)" >&2
+    GPU_POWER=0
+  fi
+fi
 if [ "$GPU_POWER" = 1 ]; then
   mkdir -p "$RUN"
   POWER_RUN_ID="launch-$(date +%Y%m%d-%H%M%S)-$$"
