@@ -495,3 +495,29 @@ per-step decode is still faster at 1, 4 and 6 streams.
 **Next:** the matched pair (TP3 on wht6, which is the tiered int8 wire at 3 ranks, and TP2 on the exact wire, both
 with the drafter). After that, prefill: `--tp-attn-split rows`, and the R9700 link. The link is a hardware or BIOS
 matter, not code.
+
+### Matched pair with speculation on (exact wire on both), 2026-11-12 00:14Z
+
+Same build, MXFP4, DFlash2 at depth 3, aggregate tok/s:
+
+| streams | TP3 6/6/12 + drafter, exact | TP2 + drafter, exact | TP3 vs TP2 | step ms, TP3 / TP2 | tokens per step, TP3 / TP2 |
+|---|---|---|---|---|---|
+| 1 | 92.5 | 83.4 | **+11%** | 22.8 / 29.4 | 2.95 / 3.12 |
+| 4 | 164.4 | 184.2 | -11% | 34.7 / 37.0 | 10.8 / 12.6 |
+| 6 | 171.6 | 178.2 | -4% | 50.1 / 57.1 | 17.3 / 18.4 |
+| 8 | 176.4 | 200.8 | -12% | 60.6 / 59.1 | 22.2 / 23.5 |
+
+With speculation on, the TP3 step is still faster up to 6 streams, but **its drafts are accepted less often**. Per
+stream, acceptance is 2.7 against 3.15 at 4 streams. The gap grows with concurrency, so it needs investigating
+before speculation counts as supported under the profile: suspect the drafter's per-rank state or spans.
+TTFT is also higher. Without speculation TP3 wins at every concurrency (N0 above).
+
+**Lossy wire at three ranks (`--tp-wire wht6`, the tiered int8 two-shot) faults on TP3.**
+
+- **Symptom:** a GPU memory fault on the R9700 during the 8-stream bench. `r4d_attn_decode_kernel<2,…>` received an
+  argument of `0x3d800000` and another 1 MiB past a host-mapped pool. Those look like corrupted values, not an
+  attention bug.
+- **Contrast:** the exact wire is clean on the same build.
+- **Suspect:** the 3-rank ti8 all-reduce, which libr3 has built only since the Nrank fix and which is unvalidated on
+  gfx1100, or its mixed-library scratch layout.
+- **Until this is fixed:** TP3 runs the exact wire only.
