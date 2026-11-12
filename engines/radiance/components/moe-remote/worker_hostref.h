@@ -155,7 +155,7 @@ int compute_host_engine(const Container& f, void* map, Request* q,
     const int64_t hdr_intermediate = static_cast<const Header*>(map)->intermediate;
     if (q->layer >= f.layers || !request_slot_valid(q->slot, q->world, q->consumer, q->layer, q->slot, static_cast<const Header*>(map)->rank_count) ||
         q->rows == 0 || q->rows > kMaxRows || q->hidden != hid ||
-        q->route_count > kMaxRoutes || q->activation_stride != hid * 2)
+        q->route_count > seg_max_routes(static_cast<const Header*>(map)) || q->activation_stride != hid * 2)
         return -EINVAL;
 
     const Route* routes = ptr<Route>(map, q->route_offset);
@@ -253,7 +253,7 @@ int compute_host_engine_fp8(const Container& f, void* map, Request* q,
     const int64_t hdr_intermediate = static_cast<const Header*>(map)->intermediate;
     if (q->layer >= f.layers || !request_slot_valid(q->slot, q->world, q->consumer, q->layer, q->slot, static_cast<const Header*>(map)->rank_count) ||
         q->rows == 0 || q->rows > kMaxRows || q->hidden != hid ||
-        q->route_count > kMaxRoutes || q->activation_stride != hid * 2)
+        q->route_count > seg_max_routes(static_cast<const Header*>(map)) || q->activation_stride != hid * 2)
         return -EINVAL;
 
     const Route* routes = ptr<Route>(map, q->route_offset);
@@ -357,7 +357,7 @@ int compute_host(const Container& f, void* map, Request* q) {
     const uint32_t hid = static_cast<const Header*>(map)->hidden, topk = static_cast<const Header*>(map)->top_k;
     const int64_t hdr_intermediate = static_cast<const Header*>(map)->intermediate;
     if (q->layer >= f.layers || !request_slot_valid(q->slot, q->world, q->consumer, q->layer, q->slot, static_cast<const Header*>(map)->rank_count) || q->rows > kMaxRows ||
-        q->hidden != hid || q->route_count > kMaxRoutes || q->activation_stride != hid*2) return -EINVAL;
+        q->hidden != hid || q->route_count > seg_max_routes(static_cast<const Header*>(map)) || q->activation_stride != hid*2) return -EINVAL;
     const Route* routes = ptr<Route>(map,q->route_offset);
     const uint16_t* act = ptr<uint16_t>(map,q->activation_offset);
     uint16_t* dst = ptr<uint16_t>(map,q->result_offset[q->consumer]);
