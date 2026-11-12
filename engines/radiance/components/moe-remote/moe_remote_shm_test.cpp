@@ -269,6 +269,14 @@ int main() {
     check(m != MAP_FAILED, "mmap"); check(init(m, 48, legacy_shape(), 1, 2), "init");
     ((Header*)m)->helper_count = 1;
     check(valid((Header*)m, l.bytes, legacy_shape()), "header valid");
+    {   /* the shape-derived activation offsets are the legacy constants for the legacy shape, and follow another shape's own hidden width */
+        const Header* hh = (const Header*)m;
+        check(seg_activation_q_off(hh) == kActivationBf16Bytes, "seg_activation_q_off matches the legacy constant");
+        check(seg_activation_scale_off(hh) == kActivationBf16Bytes + kActivationQBytes, "seg_activation_scale_off matches the legacy constants");
+        check(seg_max_routes(hh) == kMaxRoutes, "seg_max_routes matches the legacy constant");
+        Header other = *hh; other.hidden = 4096; other.top_k = 8;
+        check(seg_activation_q_off(&other) == uint64_t(kMaxRows) * 4096 * 2 && seg_max_routes(&other) == kMaxRows * 8u, "offsets follow the segment's own shape");
+    }
     {   // a segment of another protocol version (an engine and a helper from different builds) is rejected
         Header* hv = (Header*)m;
         const uint32_t ver = hv->version;

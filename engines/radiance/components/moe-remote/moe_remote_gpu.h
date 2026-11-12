@@ -553,9 +553,9 @@ public:
                       aqp, w.stream, w.scratch) < 0)
             return false;
         Header* h = static_cast<Header*>(host_map);
-        auto* hq = ptr<uint8_t>(host_map, h->activation_offset[rank] + kActivationBf16Bytes);
+        auto* hq = ptr<uint8_t>(host_map, h->activation_offset[rank] + seg_activation_q_off(h));
         auto* hs = ptr<float>(host_map,
-            h->activation_offset[rank] + kActivationBf16Bytes + kActivationQBytes);
+            h->activation_offset[rank] + seg_activation_scale_off(h));
         if (!hip_ok(hipMemcpyAsync(hq, w.d_aq.p, (size_t)rows * shape_.hidden,
                                    hipMemcpyDeviceToHost, w.stream),
                     "--compare stage exact q") ||
@@ -594,10 +594,10 @@ public:
             dev_at(ptr<Route>(host_map, hhost->route_offset[rank])));
         auto* act_q = static_cast<const uint8_t*>(
             dev_at(ptr<uint8_t>(host_map,
-                hhost->activation_offset[rank] + kActivationBf16Bytes)));
+                hhost->activation_offset[rank] + seg_activation_q_off(hhost))));
         auto* act_s = static_cast<const float*>(
             dev_at(ptr<float>(host_map,
-                hhost->activation_offset[rank] + kActivationBf16Bytes + kActivationQBytes)));
+                hhost->activation_offset[rank] + seg_activation_scale_off(hhost))));
         /* The slot's consumer plane (RAD49): fixed by the slot and the segment's engine width, so a pre-queued small lane
          * needs no request field. */
         auto* dst = static_cast<uint16_t*>(

@@ -306,9 +306,9 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
         q->row_base = 0;
         q->route_offset = h->route_offset[rank];
         q->activation_offset = h->activation_offset[rank];
-        q->activation_q_offset = h->activation_offset[rank] + kActivationBf16Bytes;
+        q->activation_q_offset = h->activation_offset[rank] + seg_activation_q_off(h);
         q->activation_s_offset =
-            h->activation_offset[rank] + kActivationBf16Bytes + kActivationQBytes;
+            h->activation_offset[rank] + seg_activation_scale_off(h);
         q->activation_stride = hid * sizeof(uint16_t);
         q->activation_q_stride = hid;
         q->activation_s_stride = (hid / kActGroup) * sizeof(float);
