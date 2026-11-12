@@ -1,0 +1,14 @@
+{
+  "change-class": "docs",
+  "event-id": "chg_20261112_180044_int8-qwen38-27b-on-three-card_4679",
+  "files": [
+    "docs/planning/active/run-dense-27b-virtual-tp/VTP14.md"
+  ],
+  "plan-item-ids": [
+    "VTP14"
+  ],
+  "status": "unreleased",
+  "technical-summary": "VTP14 N6 refresh: int8 matched ABBA (ABCCBA x2) on build 8a6f2776: w8a8 TP3 (6,6,4 split) vs w8a8 TP2 +27.9/+6.9/+6.7/+9.6% at 1/4/6/8 streams, TTFT -7 to -13%; vs MXFP4 TP3 -11 to -28%. No faults.",
+  "timestamp-utc": "2026-11-12T18:00:44.603527Z",
+  "user-summary-candidate": "Int8 Qwen3.8-27B on three cards now beats two cards at every concurrency and prompt length."
+}
