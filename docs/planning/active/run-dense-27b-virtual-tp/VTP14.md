@@ -693,3 +693,29 @@ against original quality.
   of quantisation (compare the 0.003 TP3-vs-TP2 KLD above with 0.044 for quantisation).
 - **TP3 also makes original-quality BF16 serving possible**, at 23 tok/s single stream in the N4 smoke. The dual-XTX
   TP2 cannot hold it.
+
+## N2 rebalance: per-rank timing, 2026-11-12 (build f1c9b765dbe4139fb17791b62313fa82)
+
+**Question:** would a different split offset the timing mismatch between the three cards?
+
+**Method:** `--profile-ops` on MXFP4 TP3 (one 256-token generation, DFlash2 at its default depth 7). The profile
+sums device time per op and rank. Compute is everything except `all_reduce` and `all_gather`. The collective rows
+include the time a rank waits for the slowest peer.
+
+| profile | XTX rank 0 compute | XTX rank 1 compute | R9700 compute | R9700 in collectives |
+|---|---|---|---|---|
+| 6/6/12 | 3468 ms | 3452 ms | 2263 ms | 1702 ms |
+| bandwidth-weighted (GDN 6/6/4, FFN 6656/6656/4096) | 3820 ms | 3821 ms | 1745 ms | 2438 ms |
+
+**What this shows**
+
+- Under 6/6/12 the XTX cards are the bottleneck, not the R9700. The R9700 holds about 45% of the weights, finishes in
+  65% of the XTX time, and then waits in the all-reduce.
+- The MXFP4 GEMMs are `mxfp4a8` (fp8 activations). gfx1100 has no fp8 and emulates it, so the XTX is compute-bound
+  and the R9700 does about 2.5× the work per unit of time. Weighting by memory bandwidth, which moves work to the XTX,
+  is the wrong direction (XTX compute +10%). That profile is dropped.
+- Next: `qwen38-27b-mxfp4` gives the R9700 about 55% of the weights (GDN 3/3/10, FFN 4096/4096/9216). Attention stays
+  6/6/12, because 4 KV heads allow no other whole-head split. The custom form `qwen38-27b:K0,K1,K2:F0,F1,F2` lets a
+  sweep run without a rebuild.
+- The balance depends on the format. A w8a8 (int8) container would run natively on both cards (int8 WMMA on gfx11 and
+  gfx12), so its best split would be closer to bandwidth.
