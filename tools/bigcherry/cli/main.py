@@ -2380,4 +2380,10 @@ def _configure_output() -> None:
 
 def main(argv: list[str] | None = None) -> int:
     """Run the existing parser/handler implementation through the new entrypoint."""
+    # bc-serve has no built-in layouts: its children read BIGCHERRY_LAYOUTS. Unset, it is the repository's example layouts
+    # (engines/radiance/layouts/), which a site or a run replaces by pointing it at its own files.
+    import os
+    from ..engine_adapters import radiance_layout
+    if not os.environ.get("BIGCHERRY_LAYOUTS"):
+        os.environ.update(radiance_layout.bc_serve_env())
     return int(_legacy_main(argv))

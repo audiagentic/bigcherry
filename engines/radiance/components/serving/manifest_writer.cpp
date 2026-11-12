@@ -265,7 +265,7 @@ Json static_provenance(bool measured, bool engine_only) {
     Json p = Json::object();
     p[""] = record("schema_default", "serving contract v1", "policy", "exact");
     p["/spec/intent/model"] = record("site", "site.toml:engine.model", "policy", "exact");
-    p["/spec/intent/layout"] = record("profile", "layout selection (layouts.toml)", "policy", "exact");
+    p["/spec/intent/layout"] = record("profile", "layout selection (layout definitions)", "policy", "exact");
     p["/spec/intent/service"] = record("profile", "serving profile (bc-serve --profile)", "policy", "exact");
     p["/spec/intent/power"] = record("cli", "bc-serve --power-profile", "policy", "exact");
     p["/spec/facts"] = record("detected", "bc-serve detect: kfd+sysfs+proc+statvfs+cgroup", "fact", "exact");

@@ -86,7 +86,7 @@ class ChangedPathsIntegration(unittest.TestCase):
 
     def test_layout_and_arch_data_build(self):
         # declared build inputs (engine.toml [build] repo-inputs): bc-serve embeds both, moe-remote reads archs.toml
-        for name in ("engines/radiance/layouts.toml", "engines/radiance/archs.toml"):
+        for name in ("engines/radiance/layouts/flashnext.toml", "engines/radiance/archs.toml"):
             self.assertEqual(self.check({name: name}), "run=true", name)
 
     def test_build_tooling_and_config_build(self):

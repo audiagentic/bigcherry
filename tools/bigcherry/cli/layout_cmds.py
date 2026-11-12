@@ -102,7 +102,7 @@ def _run(args: Namespace) -> int:
 def register(sub) -> None:
     p = sub.add_parser("layout", help="layouts resolved by the bc-serve KFD/PCI detector (RSC11)")
     ls = p.add_subparsers(dest="layout_cmd", required=True)
-    ls.add_parser("list", help="the named layouts in engines/radiance/layouts.toml")
+    ls.add_parser("list", help="the named layouts in the layout definitions (BIGCHERRY_LAYOUTS; default engines/radiance/layouts/)")
     for name, helptext in (("show", "resolved role/BDF assignments (JSON)"),
                            ("env", "shell assignments from the serving resolver")):
         c = ls.add_parser(name, help=helptext)

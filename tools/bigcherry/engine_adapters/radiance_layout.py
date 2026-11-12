@@ -1,7 +1,7 @@
 """How the cards of a host are used by radiance's remote-MoE offload (RAD23): card types and layouts as data.
 
 ``engines/radiance/archs.toml`` describes a card type (its kernel plugin, the weight formats it runs, whether it takes the few-rows
-kernel); ``engines/radiance/layouts.toml`` names which cards play which part. This module reads both, resolves a layout against a host's
+kernel); the layout definitions (``BIGCHERRY_LAYOUTS``, default ``engines/radiance/layouts/``) name which cards play which part. This module reads both, resolves a layout against a host's
 device inventory (``config/environment.local.toml``) and produces the environment each process needs. It checks everything that can be
 checked without a GPU, so an inconsistent layout is refused before a card is touched. No architecture, device index or budget is named in
 code: the helper, the launcher and the harness adapter get them from here.

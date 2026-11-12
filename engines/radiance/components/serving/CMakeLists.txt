@@ -200,5 +200,8 @@ if(BUILD_TESTING)
     if(TARGET ${_bc_test})
       target_compile_options(${_bc_test} PRIVATE -UNDEBUG)
     endif()
+    # The tests resolve the repository's example layouts; the binaries have no built-in layouts (BIGCHERRY_LAYOUTS).
+    set_property(TEST ${_bc_test} APPEND PROPERTY ENVIRONMENT
+                 "BIGCHERRY_LAYOUTS=${CMAKE_CURRENT_SOURCE_DIR}/../../layouts")
   endforeach()
 endif()

@@ -74,8 +74,8 @@ const std::vector<Field>& schema_fields() {
         add("service.quality", "string", "baseline",
             "launcher: baseline fp8 KV policy", "policy", "startup-only",
             0, 0, {"baseline", "strict"});
-        add("layout.name", "string", "flashnext-4gpu",
-            "launcher LAYOUT default; named layouts in engines/radiance/layouts.toml");
+        add("layout.name", "string", nullptr,
+            "the named layout (--layouts / BIGCHERRY_LAYOUTS); required, no default");
         add("layout.engine_cards", "string_array", nullptr,
             "RSC05: selected PCI BDFs from KFD GPU nodes, in rank order", "discovered");
         add("layout.helper_cards", "string_array", nullptr,
@@ -91,10 +91,10 @@ const std::vector<Field>& schema_fields() {
             "MemTotal / 10^6)); a site hard_floors entry may only raise it", "derived", "startup-only",
             0, UINT32_MAX, {}, true);
         add("memory.tail_budget_mib", "integer", nullptr,
-            "layouts.toml tail budget; derive RSC03", "derived", "step-boundary",
+            "layout tail budget; derive RSC03", "derived", "step-boundary",
             0, UINT32_MAX, {}, true);
         add("memory.helper_budgets_mib", "integer_array", nullptr,
-            "layouts.toml per-helper budgets; derive RSC03", "derived", "step-boundary",
+            "layout per-helper budgets; derive RSC03", "derived", "step-boundary",
             0, UINT32_MAX);
         add("handoff.shm", "string", "/r3-moe-helper",
             "launcher COMMON R3_MOE_WORKER_SHM; per-instance identity RSC02");
@@ -116,7 +116,7 @@ const std::vector<Field>& schema_fields() {
         add("handoff.histogram_period_s", "integer", 60,
             "launcher RECORD_PERIOD=60; RHP02", "policy", "live", 0);
         add("handoff.placement", "string", nullptr,
-            "layouts.toml helper placement; tail or roundrobin", "derived",
+            "layout helper placement; tail or roundrobin", "derived",
             "step-boundary", 0, 0, {"tail", "roundrobin"}, true);
         add("helper.count", "integer", nullptr,
             "WorkerConfig helper_count; RSC05 selected helper count", "discovered",
@@ -125,13 +125,13 @@ const std::vector<Field>& schema_fields() {
             "WorkerConfig helper_index=0; RSC06 derives process ordinal", "derived",
             "startup-only", 0, 3);
         add("helper.engine_ranks", "integer", nullptr,
-            "layouts.toml engine count: the engine's TP ranks the helpers serve (WorkerConfig default 0 = unset)", "derived",
+            "layout engine count: the engine's TP ranks the helpers serve (WorkerConfig default 0 = unset)", "derived",
             "startup-only", 1, 4);
         add("helper.cpu", "boolean", false, "WorkerConfig cpu=false");
         add("helper.power_save", "boolean", true, "WorkerConfig power_save=true");
         add("helper.queue_warm", "boolean", false, "WorkerConfig queue_warm=false");
         add("helper.combine", "boolean", false,
-            "WorkerConfig combine=false, layouts.toml may enable combine");
+            "WorkerConfig combine=false, the layout may enable combine");
         add("helper.combine_min_rows", "integer", 256,
             "WorkerConfig combine_min_rows=256", "tuned", "startup-only", 1);
         add("helper.combine_threads", "integer", 8,
@@ -163,7 +163,7 @@ const std::vector<Field>& schema_fields() {
         add("engine.host_headroom_mib", "integer", nullptr,
             "derived from memory.host_reserve_mib: the engine keeps the plan's one reserve free when it "
             "sizes its checkpoint store and pins tables", "derived", "startup-only", 0, UINT32_MAX, {}, true);
-        add("engine.tp", "integer", nullptr, "layouts.toml engine count: one tensor-parallel rank per engine card",
+        add("engine.tp", "integer", nullptr, "layout engine count: one tensor-parallel rank per engine card",
             "derived", "startup-only", 1, 64, {}, true);
         add("engine.max_num_seqs", "integer", nullptr,
             "derived from service.max_sessions (launcher --max-num-seqs)", "derived",
@@ -414,6 +414,7 @@ struct HelperGroup {
     bool tail = false;
 };
 struct LayoutRecipe {
+    std::string source;                   // the layout file's name (provenance; the full path is in errors)
     std::string engine_arch;
     size_t engine_count = 1;
     std::optional<std::string> tp_wire;
@@ -508,6 +509,7 @@ LayoutRecipe recipe_for(const std::string& name, const Options& options) {
     const Json& l = layouts.at("layout").at(name);
     const std::string where = layouts.at("source").at(name).get<std::string>() + " [layout." + name + "]: ";
     LayoutRecipe r;
+    r.source = fs::path(layouts.at("source").at(name).get<std::string>()).filename().string();
     const Json& e = l.at("engine");
     if (e.contains("devices"))
         throw std::runtime_error(where + "engine.devices pins host device indices; the serving resolver selects by architecture only");
@@ -1014,7 +1016,8 @@ Resolved resolve(const Options& options, const Json& facts) {
         throw std::runtime_error(options.profile.string() + ": hard_caps: site-only; profile cannot change hard caps");
     if (profile.contains("hard_floors"))
         throw std::runtime_error(options.profile.string() + ": hard_floors: site-only; profile cannot change hard floors");
-    std::string name = value_at(values, "layout.name").get<std::string>();
+    std::string name = exists(values, "layout.name") && value_at(values, "layout.name").is_string()
+                           ? value_at(values, "layout.name").get<std::string>() : std::string();
     name = selection_name(site, name);
     name = selection_name(profile, name);
     for (const auto& set : options.sets) {
@@ -1024,6 +1027,9 @@ Resolved resolve(const Options& options, const Json& facts) {
         if (set.substr(0, eq) == "layout.name")
             name = parse_set("layout.name", set.substr(eq + 1)).get<std::string>();
     }
+    if (name.empty())
+        throw std::runtime_error("layout.name is required: name a layout in the site or profile, or --set layout.name=NAME "
+                                 "(no default layout)");
     const auto layout = recipe_for(name, options);
     std::set<std::string> used;
     const ArchInfo engine_arch = arch_info(layout.engine_arch);
@@ -1051,25 +1057,25 @@ Resolved resolve(const Options& options, const Json& facts) {
     derived("layout.helper_cards", cards, "KFD and PCI inventory, " + name,
             Json::array({"layout.name", "facts.gpus"}));
     derived("memory.helper_budgets_mib", budgets,
-            "engines/radiance/layouts.toml " + name + " (interim; RSC03)",
+            "layout " + name + " (" + layout.source + ")" + " (interim; RSC03)",
             Json::array({"layout.name", "facts.gpus"}));
     derived("memory.tail_budget_mib", layout.tail ? layout.groups.back().budget_mib : 0,
-            "engines/radiance/layouts.toml " + name + " (interim; RSC03)",
+            "layout " + name + " (" + layout.source + ")" + " (interim; RSC03)",
             Json::array({"layout.name"}));
     derived("handoff.placement", layout.tail ? "tail" : "roundrobin",
-            "engines/radiance/layouts.toml " + name,
+            "layout " + name + " (" + layout.source + ")",
             Json::array({"layout.name"}));
     derived("helper.count", cards.size(), "RSC05 KFD selection",
             Json::array({"layout.helper_cards"}));
-    derived("helper.engine_ranks", engine_cards.size(), "layouts.toml engine count",
+    derived("helper.engine_ranks", engine_cards.size(), "layout engine count",
             Json::array({"layout.engine_cards"}));
     put(values, provenance, *field_for("engine.tp"), engine_cards.size(), "derived",
-        "layouts.toml engine count: one rank per engine card", Json::array({"layout.engine_cards"}));
+        "layout engine count: one rank per engine card", Json::array({"layout.engine_cards"}));
     if (layout.tp_wire)
         put(values, provenance, *field_for("engine.tp_wire"), *layout.tp_wire, "discovered",
-            "engines/radiance/layouts.toml " + name + " tp-wire", Json::array({"layout.name"}));
+            "layout " + name + " (" + layout.source + ")" + " tp-wire", Json::array({"layout.name"}));
     derived("helper.combine", layout.combine,
-            "engines/radiance/layouts.toml " + name,
+            "layout " + name + " (" + layout.source + ")",
             Json::array({"layout.name"}));
     const Json baseline_values = values;
     layer(values, provenance, site, "site", options.site.empty() ? "site" : options.site.string());
@@ -1340,7 +1346,7 @@ Resolved resolve(const Options& options, const Json& facts) {
             {"plugin_file", arch.plugin},
             {"formats", arch.formats}, {"rows_kernel", arch.rows_kernel},
             {"placement", tail_card ? "tail" : "head"}, {"share", share},
-            {"provenance", {{"origin", "archs.toml + layouts.toml + KFD"},
+            {"provenance", {{"origin", "archs.toml + layout + KFD"},
                             {"inputs", Json::array({"layout.name", "facts.gpus"})},
                             {"lifecycle", "startup-only"}}}
         });

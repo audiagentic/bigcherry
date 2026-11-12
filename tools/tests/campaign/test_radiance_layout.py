@@ -1,4 +1,4 @@
-"""RAD23: card types (archs.toml) and layouts (layouts.toml) as data, resolved against a host's device inventory."""
+"""RAD23: card types (archs.toml) and layouts (layouts/*.toml, BIGCHERRY_LAYOUTS) as data, resolved against a host's device inventory."""
 import re
 import tempfile
 import unittest
@@ -209,7 +209,8 @@ class FileRuleTests(unittest.TestCase):
         root = Path(tmp.name)
         (root / "engines/radiance").mkdir(parents=True)
         (root / "engines/radiance/archs.toml").write_text(archs, encoding="utf-8")
-        (root / "engines/radiance/layouts.toml").write_text(layouts, encoding="utf-8")
+        (root / "engines/radiance/layouts").mkdir()
+        (root / "engines/radiance/layouts/test.toml").write_text(layouts, encoding="utf-8")
         hdr = root / "engines/radiance/components/moe-remote"
         hdr.mkdir(parents=True)
         (hdr / "moe_remote_shm.h").write_text("constexpr uint32_t kMaxHelpers = 2;\nconstexpr uint32_t kMaxSlots = 2;\n", encoding="utf-8")
