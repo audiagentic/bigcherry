@@ -186,6 +186,23 @@ LINEAR = FilePatch(path="arch/common/rad_fp8.h", language="none", description="V
 
 DRAFT_GEOM = FilePatch(path="arch/common/rad_arch.h", language="none", description="VTP14 N2 drafter ownership", edits=(
     _edit(
+        "n2f-vocab-head-sharded",
+        "inline bool vocab_head_sharded(const Geom& g) {\n"
+        "    return g.world > 1 && g.n_vocab > 0 && (g.n_vocab % 16) == 0 &&\n",
+        "inline bool vocab_head_sharded(const Geom& g) {\n"
+        "    /* BC_VTP14_N2F_VOCAB_HEAD: under --tp-ownership the vocabulary is the ragged vocab_per_rank split\n"
+        "     * (82816/82816/82688 on the 27B). The candidate merge reads (global id, value) pairs, which\n"
+        "     * row_topk and logit_rerank form from vocab_off, so a contiguous split in whole 16-row tiles\n"
+        "     * shards the draft head as well as an equal one; replicated, it loses the exact rerank. */\n"
+        "    if (g.world > 1 && g.tp_owned)\n"
+        "        return g.n_vocab > 0 && (g.n_vocab % 16) == 0 && (g.vocab_off % 16) == 0 &&\n"
+        "               g.vocab_off == shard_begin(g.n_vocab_all, g.world, g.rank) &&\n"
+        "               g.n_vocab == shard_extent(g.n_vocab_all, g.world, g.rank);\n"
+        "    return g.world > 1 && g.n_vocab > 0 && (g.n_vocab % 16) == 0 &&\n",
+        guard="BC_VTP14_N2F_VOCAB_HEAD",
+        max_span=3,
+    ),
+    _edit(
         "n2f-drafter-geom",
         "    RAD_ARCH_TRY(divide_or_fail(dg.n_head_all,    dg.world, \"draft num_attention_heads\", &dg.n_head));\n"
         "    RAD_ARCH_TRY(divide_or_fail(dg.n_head_kv_all, dg.world, \"draft num_key_value_heads\", &dg.n_head_kv));\n"
@@ -222,6 +239,19 @@ DRAFT_GEOM = FilePatch(path="arch/common/rad_arch.h", language="none", descripti
 ))
 
 DFLASH = FilePatch(path="arch/common/rad_block_dflash2.h", language="none", description="VTP14 N2 drafter spans", edits=(
+    _edit(
+        "n2f-dflash-head-span",
+        "    if (!w_dh || !w_dhs) return RAD_E_INVAL;\n",
+        "    if (!w_dh || !w_dhs) return RAD_E_INVAL;\n"
+        "    /* BC_VTP14_N2F_DFLASH_HEAD_SPAN: a ragged --tp-ownership share is not 1/tp, so the sharded draft head\n"
+        "     * reads this rank's rows [vocab_off, +n_vocab) of the stored head and of its scale planes. */\n"
+        "    if (dh_shard && g.tp_owned) {\n"
+        "        RAD_ARCH_TRY(rad_weight_shard_span(b, w_dh, g.vocab_off, g.vocab_off + g.n_vocab));\n"
+        "        RAD_ARCH_TRY(rad_weight_shard_span(b, w_dhs, g.vocab_off, g.vocab_off + g.n_vocab));\n"
+        "    }\n",
+        guard="BC_VTP14_N2F_DFLASH_HEAD_SPAN",
+        max_span=2,
+    ),
     _edit(
         "n2f-dflash-spans",
         "                                     { nm.ckpt(\"%s.layers.%d.mlp.down_proj.weight\", ck, i) }));\n",
