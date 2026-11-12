@@ -815,3 +815,23 @@ three under an ownership profile. MXFP4, 4096-token prompts, 32 new tokens, 2048
 - TP3 prefill stays 47% slower than TP2. Prefill moves about 10 MiB per all-reduce, and the R9700 receives two partial
   sums over its Gen4 x4 link. Overlap hides part of that; a reduce centred on the XTX cards (the R9700 sending and
   receiving once) or a compressed wire would cut the bytes themselves.
+
+## Generic split spec and pipelined-prefill options (smoke)
+
+The named profiles (`qwen38-27b-6-6-12`, the int8 profile and the `qwen38-27b:K:F` form) are gone. `--tp-ownership`
+now takes a spec, one count a rank: `kv=..;ffn=..[;q=..][;lk=..;lv=..]`, checked against the loaded model at build
+(rad0018/rad0019). No model or split is built into the patches. The pipelined prefill is configuration:
+`--pipelined-prefill auto|on|off` and `--pipelined-prefill-min-rows N` (rad0020).
+
+Smoke on the cards (three ranks: XTX, XTX, R9700; one greedy request each):
+
+| arm | spec | result |
+|---|---|---|
+| w8a8 | `kv=1,1,2;ffn=5120,4864,7424;lk=4,4,8;lv=12,12,24` | served; output byte-identical to the named 6/6/12 profile |
+| w8a8 | `kv=1,1,2;ffn=6656,6656,4096;lk=6,6,4;lv=18,18,12` | served, coherent |
+| MXFP4 | 6/6/12 spec, `--pipelined-prefill auto` | served, coherent |
+| w8a8 | ffn shares summing to 16992 | refused: shares must sum to the model's heads and 17408 rows |
+| w8a8 | lv 12,16,20 (sum right, V:K wrong) | refused: each rank's value heads must be 3 a key head |
+
+Layouts are not added to `layouts.toml`: run definitions with model paths are to be external (pending the user's
+decision on the external-layout change).
