@@ -315,6 +315,23 @@ As in experiment 8, the split pieces cost more device time, and the overlap more
 are still half of the XTX cards' time and 58% of the R9700's. The R9700's extra share is mostly waiting for the XTX
 cards at each all-reduce.
 
+## Experiment 10 result: TP2 against TP3 on the rad0026 build (2026-11-12, build b667a40b, logs e10-1345)
+
+2x ABBA on one build (both configurations get rad0025 and rad0026). TP2 on the two XTX cards; TP3 on XTX, XTX and
+R9700 with the layout's tuning. MXFP4, exact wire, DFlash2 depth 3, fp8 KV:
+
+| | TP2 (mean of 4) | TP3 (mean of 4) | TP3 over TP2 |
+|---|---|---|---|
+| 1 stream | 83.2 tok/s | 115.1 tok/s | +38% |
+| 4 streams | 203.2 tok/s | 220.7 tok/s | +8.6% |
+| 6 streams | 197.7 tok/s | 215.4 tok/s | +9.0% |
+| 8 streams | 228.7 tok/s | 238.8 tok/s | +4.4% |
+| four 4096-token prompts, slowest time to first token | 7868 ms | 9057 ms | 15% slower |
+
+TP3 beats TP2 at 1/4/6/8 streams on the standard bench. Its remaining deficit is long-prompt prefill: a three-rank
+host-staged all-reduce, with the R9700 on Gen4 x4, moves more bytes per row than TP2's, and prefill is where the bytes
+are. The decode-only margin (experiment 4: +27-43%) shows what the bench gives up to prefill.
+
 ## Steps
 
 1. Add a typed per-run selector for the all-reduce method (e.g. `tuning.allreduce_method`; contract amendment; engine option in a managed patch) so every method below is an A/B from the manifest.
