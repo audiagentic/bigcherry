@@ -1,0 +1,11 @@
+schema = 1
+id = "rad0024_ts3_decode"
+order = 24
+state = "untested"
+kind = "enhancement"
+origin = "local"
+backend = "agnostic"
+plan-ids = ["VTP31"]
+requires = ["rad0021_vtp14_weighted_twoshot_3rank"]
+conflicts = []
+tags = ["allreduce", "tensor-parallel"]
