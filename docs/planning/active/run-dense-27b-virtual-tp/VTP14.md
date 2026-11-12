@@ -953,3 +953,17 @@ changes are noise). One-stream TTFT in ms, and 8-stream aggregate tok/s:
 - The remaining lever is the transport. Every all-reduce is host-staged because the cards have no peer access
   (Resizable BAR, one root complex, IOMMU mode: a host and BIOS matter). With P2P the exact one-shot crosses each link
   once instead of twice.
+
+### Where the extra KV head goes (w8a8, build f8406b8e)
+
+The split is per layer kind, not per layer: every rank holds all 64 layers. `kv`/`q` split the 16 attention layers'
+heads, `lk`/`lv` the 48 delta-net layers' heads, `ffn` every layer's feed-forward rows, each independently. Four KV heads
+over three ranks put two on one rank. w8a8, 262,144-token context, 8 sequences, depth 3, delta-net 6,6,4 and
+feed-forward 6656,6656,4096 throughout:
+
+| KV heads per rank | resident KV | full-length sessions | tok/s 1 / 4 / 8 streams |
+|---|---|---|---|
+| 1,1,2 (R9700 two) | 12.15 GiB | 2.8 | 83.0 / 176.6 / 193.7; repeat 82.9 / 174.5 / 192.1 |
+| 2,1,1 (XTX two) | 11.72 GiB | 2.7 | 80.1 / 173.9 / 192.1 |
+
+The R9700 (32 GiB) is the better home for the extra head: more resident KV and slightly faster. `kv=1,1,2` stays.
