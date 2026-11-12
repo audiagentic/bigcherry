@@ -48,7 +48,8 @@ class RankOwnSplitTests(unittest.TestCase):
 
     def test_own_split_rules(self):
         text = {e.id: e.text for f in load(PKG) for e in f.edits}["own-split"]
-        self.assertIn("kv_planned_tokens_ == 0 && cfg_.gpu_memory_mib <= 0", text)
+        self.assertIn("facts.size() == ranks_.size() &&\n                       cfg_.gpu_memory_mib <= 0;", text)
+        self.assertNotIn("kv_planned_tokens_ == 0", text)
         self.assertIn("own = own && f.experts == 0 && !f.unified;", text)
         self.assertIn("std::max<int64_t>(facts[i].free - free_min, 0) / kMiB", text)
         self.assertIn("if (own && T_own > T_common && T_common > 0) {", text)

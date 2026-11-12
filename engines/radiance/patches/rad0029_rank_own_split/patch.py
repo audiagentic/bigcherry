@@ -8,7 +8,8 @@ fewest tokens. Its card is 8 GB larger, and with a split that gives it fewer wei
 Both stayed unused: after a load, about 8 GiB of the R9700 sat free.
 
 When every rank's model is dense (no expert plane), its weights all fit the common weights pool and no card limit was
-given (--gpu-memory-mib) on a discrete card, each rank's weights pool becomes its own weights. Its KV pool takes the
+given (--gpu-memory-mib) on a discrete card (under any --placement; in a dense world it replaces the cheaper-rank
+re-split, which there only shrinks a KV pool and frees nothing), each rank's weights pool becomes its own weights. Its KV pool takes the
 common pool, plus what its weights pool gave back, plus the free memory it measured above the smallest card's. The
 common token count is then the least any rank pages in its own pool, and every rank's KV pool is cut to the least whole
 MiB that pages that count. When that count is no larger than the common split's, nothing changes.
@@ -32,14 +33,15 @@ _TEXT = """                         ? fmt(", and %lld MiB stay unclaimed", (long
                          : "");
         }
 
-        /* BC_VTP33_OWN_SPLIT (rad0029): an uneven dense world, where no cheaper rank was re-split,
-         * gives every rank its own split. Each weights pool holds its own rank's weights; each KV
+        /* BC_VTP33_OWN_SPLIT (rad0029): an uneven dense world gives every rank its own split. It
+         * replaces the cheaper-rank re-split above, which in a dense world only shrinks a cheaper
+         * rank's KV pool (its weights pool cannot grow past its weights) and frees nothing. Each weights pool holds its own rank's weights; each KV
          * pool takes the common pool, what its weights pool gave back and the free memory it
          * measured above the smallest card's. The common token count is the least any rank pages
          * in its own pool, and each KV pool is cut to the least whole MiB that pages it. */
         {
             bool own = ranks_.size() > 1 && facts.size() == ranks_.size() &&
-                       kv_planned_tokens_ == 0 && cfg_.gpu_memory_mib <= 0;
+                       cfg_.gpu_memory_mib <= 0;
             int64_t free_min = -1, statics_max = 0;
             for (const VramFacts& f : facts) {
                 own = own && f.experts == 0 && !f.unified;
@@ -62,6 +64,8 @@ _TEXT = """                         ? fmt(", and %lld MiB stay unclaimed", (long
                     own = false;
                     break;
                 }
+                /* The common split's count: what every rank pages in the common pool, which is
+                 * what the cheaper-rank re-split (if any) also settled on. */
                 const int64_t tc = own_kv[i]->paged_tokens(cfg_.vram_kv_mib * kMiB);
                 const int64_t to = own_kv[i]->paged_tokens(own_pool[i] * kMiB);
                 if (tc == KVManager::kUnboundedTokens || to == KVManager::kUnboundedTokens) continue;

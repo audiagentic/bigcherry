@@ -11,8 +11,7 @@ At TP3 over two RX 7900 XTX (24 GB) and an R9700 (32 GB), the R9700 holds 2 of t
 tokens. Its card is 8 GB larger, and with a split that gives it fewer weights, its weights pool also has room left over.
 None of that reached the cache: after a load, about 8 GiB of the R9700 sat free.
 
-This patch adds a second re-split, which runs when every rank's model is dense and no cheaper rank was re-split. Each rank
-gets:
+This patch adds a second re-split, which runs when every rank's model is dense, under any `--placement`. Each rank gets:
 
 - a weights pool of exactly its own weights;
 - a KV pool of the common pool, plus what its weights pool gave back, plus the free memory it measured above the smallest
@@ -25,7 +24,6 @@ common split's, nothing changes.
 It does not apply when:
 
 - any rank has an expert plane;
-- a cheaper rank was already re-split;
 - the device is unified memory;
 - `--gpu-memory-mib` was given;
 - a rank's weights do not all fit the common weights pool.
@@ -41,6 +39,11 @@ Untested (not promoted). VTP33, MXFP4 Qwen3.8-27B, 262,144-token context, 8 sequ
 - **7,7,2 split:** 993,536 → 1,743,616 tokens, which is 6.7 sessions.
 - TP2 on two alike cards is unchanged. Greedy answers were identical.
 - 8 concurrent 128k-token prompts (1.04M tokens) ran without errors.
+
+In a dense world it replaces the cheaper-rank re-split (`expert_tiered`, which the launcher's manifests select). That
+re-split can only shrink a cheaper rank's KV pool, since its weights pool cannot grow past its weights, so it frees
+nothing. The first version of this patch skipped any world where that re-split had run, which left the launcher path
+without the gain.
 
 ## Detail
 
