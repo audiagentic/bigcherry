@@ -1,0 +1,11 @@
+schema = 1
+id = "rad0030_int8_pipelined_prefill"
+order = 30
+state = "untested"
+kind = "enhancement"
+origin = "local"
+backend = "agnostic"
+plan-ids = ["VTP37"]
+requires = ["rad0029_rank_own_split"]
+conflicts = []
+tags = ["tensor-parallel", "allreduce"]
