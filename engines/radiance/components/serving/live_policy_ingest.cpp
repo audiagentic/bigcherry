@@ -1,6 +1,6 @@
 #include "live_policy_ingest.h"
 #include "live_policy.h"
-#include "v1/manifest.h"
+#include "v2/manifest.h"
 
 #include <nlohmann/json.hpp>
 #include <cerrno>
@@ -111,19 +111,19 @@ void ingest_live_policy_log(const fs::path& log, const fs::path& cache,
                              const std::string& target_store_key) {
     if (log.empty() || cache.empty() || manifest.empty())
         invalid("--from-log, --calibration and --manifest are all required");
-    const auto loaded = v1::load_manifest(manifest, v1::PlanUse::serving);
+    const auto loaded = v2::load_manifest(manifest, v2::PlanUse::serving);
     if (!loaded)
-        invalid("strict v1 serving manifest rejected: " + v1::render_human("calibration-ingest", loaded.error()));
+        invalid("strict v1 serving manifest rejected: " + v2::render_human("calibration-ingest", loaded.error()));
     const auto& m = loaded.value();
     // A calibration run (bc-serve --calibration-run) measures the production plan: lab profile, an explicit live
     // policy, and no lab experiment, so nothing but the policy separates it from the production start.
     // Amendment 12: an engine-only manifest has no handoff, so it has no live policy to calibrate.
-    if (m.spec.intent.service.profile != v1::Profile::kLab || m.spec.experiment ||
+    if (m.spec.intent.service.profile != v2::Profile::kLab || m.spec.experiment ||
         !m.spec.handoff || !m.spec.handoff->placement.live_policy)
         invalid("a calibration-run manifest (lab profile, explicit live policy, no experiment) is required");
-    const std::string key = v1::plan_cache_key(m);
+    const std::string key = v2::plan_cache_key(m);
     const std::string layout = m.spec.intent.layout;
-    const std::string objective(v1::kObjectiveNames[static_cast<size_t>(m.spec.intent.service.objective)]);
+    const std::string objective(v2::kObjectiveNames[static_cast<size_t>(m.spec.intent.service.objective)]);
     if (key.size() != 64) invalid("manifest has no measured plan-cache key");
     if (target_store_key.size() != 64 || target_store_key.find_first_not_of("0123456789abcdef") != std::string::npos)
         invalid("missing or invalid validated plan-store key");

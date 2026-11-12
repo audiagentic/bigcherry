@@ -121,8 +121,8 @@ class CmakeArgsTests(unittest.TestCase):
         build, platform = self._build_platform()
         args = cmake_configure_args(
             build, platform, Path("/src"), Path("/build"), targets_option="AMDGPU_TARGETS", rocm_paths=(),
-            engine_options={"BC_SERVING_V1_CMAKE": "/repo/engines/radiance/components/serving/bc_serving_v1.cmake"})
-        self.assertIn("-DBC_SERVING_V1_CMAKE=/repo/engines/radiance/components/serving/bc_serving_v1.cmake", args)
+            engine_options={"BC_SERVING_V2_CMAKE": "/repo/engines/radiance/components/serving/bc_serving_v2.cmake"})
+        self.assertIn("-DBC_SERVING_V2_CMAKE=/repo/engines/radiance/components/serving/bc_serving_v2.cmake", args)
 
     def test_unknown_backend_is_rejected(self):
         build, platform = self._build_platform()

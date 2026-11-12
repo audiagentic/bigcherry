@@ -44,7 +44,6 @@ struct Node {
     std::string env_setting;                     // the process environment variable the engine sets from this field at start (amendment 14), or empty
     bool radiance_switch = false;                // a bound flag that takes no value: present means on (enum with the one value "on")
     std::string cls;                             // provenance class (resolved from [[class_default]])
-    std::vector<std::string> origins, confidences;  // v2 allowlists; empty means any origin/confidence
     std::vector<size_t> children;                // object members in order; arrays: their one item; maps: the value
     bool patch = false;                          // inside a patch def: every member optional, objects nonempty
     size_t patch_of = SIZE_MAX;                  // patch nodes: the node they copy

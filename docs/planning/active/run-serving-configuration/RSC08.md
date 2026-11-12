@@ -15,13 +15,13 @@ work: L
 
 ## Description
 
-Replace the interim serving manifest with the locked v1 wire contract (docs/design/serving-manifest-v1: spec, errors, schema and examples, integer-only per the spec's §11 amendments). One C++ field registry generates the typed model, the strict reader and writer, the JSON Schema, the engine and helper bindings, the field docs and a contract fingerprint. One bc_serving library is linked into bc-serve, radiance and r3_moe_worker. The engine takes native typed configuration (no synthetic argv), helpers take typed role views, and the cutover happens once, in one release, with no shims. Source: GPT design review 2026-11-02 (req_main_c69d1519f282, gpt-response-1.md) and the owner's decisions: a curated engine option surface; the manifest owns the initial owner-map selection and digest while live protocol epochs own later placement; a one-release incompatible cutover.
+Replace the interim serving manifest with the locked v1 wire contract (docs/design/serving-manifest-v2: spec, errors, schema and examples, integer-only per the spec's §11 amendments). One C++ field registry generates the typed model, the strict reader and writer, the JSON Schema, the engine and helper bindings, the field docs and a contract fingerprint. One bc_serving library is linked into bc-serve, radiance and r3_moe_worker. The engine takes native typed configuration (no synthetic argv), helpers take typed role views, and the cutover happens once, in one release, with no shims. Source: GPT design review 2026-11-02 (req_main_c69d1519f282, gpt-response-1.md) and the owner's decisions: a curated engine option surface; the manifest owns the initial owner-map selection and digest while live protocol epochs own later placement; a one-release incompatible cutover.
 
 Fed by RSC01 (serving component, schema and loader), RSC02 (bc-serve as the only start-up path), RSC03 (resource plan: detection, calibration store, host ledger, owner map, measured-plan cache, rad0011), RSC06 (typed helper settings and plugin ABI) and RSC07 (the engine's manifest entry point).
 
 ## Steps
 
-1. Contract and generator: the canonical field registry, a C++ generator (rejects float types), the complete v1 schema (checked against the committed docs/design/serving-manifest-v1 copy), the typed model, a schema fingerprint and generated docs, plus the JCS encoder with RFC 8785 vectors. No serving behaviour changes. The contract documents landed in #528.
+1. Contract and generator: the canonical field registry, a C++ generator (rejects float types), the complete v1 schema (checked against the committed docs/design/serving-manifest-v2 copy), the typed model, a schema fingerprint and generated docs, plus the JCS encoder with RFC 8785 vectors. No serving behaviour changes. The contract documents landed in #528.
 2. Shared strict reader: size-limited open, duplicate-member rejection, apiVersion/kind check, JCS digest verification, structural and semantic validation, provenance coverage, typed engine and helper views, and structured ConfigError (BC_CFG_* on RAD_E_*, numerics checked against abi/rad_types.h).
 3. RSC03 resource core on v1: detection (cgroups, memlock, pin cap), the calibration matcher (integer seeds), the host ledger (tier_first), the owner map (spec.plan.owner_map) and the measured plan (spec.plan.engine_memory with the v1 cache key). Evidence-backed budgets only; the receipt echo expected.host_pool_mib is verified equal to resources.host.pool_mib.
 4. RSC06 helpers rebased onto v1: typed helper views replace WorkerConfig and manual extraction; the size- and version-checked plugin ABI is kept; helpers verify their initial owned set.
@@ -77,7 +77,7 @@ Slice 2 (shared strict reader) gates. Each is a required negative test, each fai
 Admission wiring (slice 5 / RSC03 A2; deferred from the #534 review, S3):
 - bc_plan_memory_check (rad0011) returns a structured result, not bool plus text, that separates invalid input (BC_CFG_CALIBRATION_INVALID or BC_CFG_INVALID_FORMAT for a bad ppm or byte count), stable-plan drift (BC_CFG_PLAN_MISMATCH, RAD_E_SCHEMA, exit 2) and resource refusal (BC_CFG_ADMISSION_REFUSED, RAD_E_NOMEM, exit 4).
 - A production caller runs it at engine start-up, before weights: it takes the expected plan from the validated manifest's spec.plan.engine_memory.expected, and kv_backing_floor_ppm only from the selected spec.calibration entry kv_backing_floor.fraction_ppm (0 when none is selected). The live plan comes from the same plan() call that sizes the engine.
-- The engine's check and the contract agree on docs/design/serving-manifest-v1/admission-vectors.json: every vector gives the same verdict and code class through the production entry point, not only through the card-free check test.
+- The engine's check and the contract agree on docs/design/serving-manifest-v2/admission-vectors.json: every vector gives the same verdict and code class through the production entry point, not only through the card-free check test.
 
 
 
@@ -85,7 +85,7 @@ Admission, from the #534 re-review (GPT, 2026-11-02; lead decisions):
 - Multi-rank (S1, hard criterion): kv_resolved is the common KV budget the admission checks guarantee. After vram_budget_rank_split, every rank's split KV must cover the same paged-token capacity, and the check refuses, naming the rank, when any rank's split falls short of kv_required's token count.
 - Placement and boundary (S4): the check runs after the final live budget is resolved and before Pools::configure() (Engine::plan() already configures the pools, so "after plan()" is too late). All input validation (ppm, byte-count ranges, calibration selection) precedes the stable-plan and admission comparisons.
 - Stable facts (S3): the host and checkpoint comparisons become the exact equalities §5.2 specifies, each with a negative test: a live host consumer with fewer bytes, a missing expected consumer, a changed residence, a changed checkpoints.want_slots and a changed host_pool_mib are each PLAN_MISMATCH. An automatic placement (ngram_placement = auto, embedding fallback) that resolves differently from the measured plan is PLAN_MISMATCH (S2).
-- Vectors (S1b, 2026-11-03): added to docs/design/serving-manifest-v1/admission-vectors.json (now 58): all_vram and layer_offload placements with no staging region (stage 0), and an uneven world of cards with different capacity, expert plane and unit (a per-card capacity minimum, per-card stable plane and unit, a card-count change, and one common resolved KV). Each is checked by the Python model, the C++ checker (bc_v1_test) and the engine's production entry point (plan_flags_test).
+- Vectors (S1b, 2026-11-03): added to docs/design/serving-manifest-v2/admission-vectors.json (now 58): all_vram and layer_offload placements with no staging region (stage 0), and an uneven world of cards with different capacity, expert plane and unit (a per-card capacity minimum, per-card stable plane and unit, a card-count change, and one common resolved KV). Each is checked by the Python model, the C++ checker (bc_v1_test) and the engine's production entry point (plan_flags_test).
 - Named gates still open (lead, 2026-11-03; production is tp=1, so none is exercised on hardware yet):
   - TP>1 hardware coverage of the admission check. The plan carries one common `kv_resolved` and no per-rank KV; adding a per-rank field would change what validates (a v2 change). The check for TP>1 must be per-rank paged-TOKEN capacity after `vram_budget_rank_split` (each rank's `probes[i]->paged_tokens(rank_cfg_[i].vram_kv_mib)` covering kv_required's token count, refusing naming the rank). It must NOT be a minimum over ranks of KV MiB: upstream re-splits a cheaper rank to FEWER MiB so that it pages the same token count, so a min over MiB would refuse a valid uneven world. The hook runs before the rank split today, so this needs the call moved after the split (engine_bringup.cpp, between the rank split and `Pools::configure`) and a TP=2 hardware run.
   - The kv_streams round-up of kv_one is the engine's computation (`VramFacts::kv_one`, reported as `kv_one_session.bytes`), not a checker rule; its coverage is an engine-side test, still to be written.
@@ -116,7 +116,7 @@ Open correctness item from the A3 hardware gate (2026-11-02, #538 at 296bda44b),
 ## Notes
 
 Feeds: RSC01, RSC02, RSC03, RSC06, RSC07.
-Slice 1's contract documents: PR #528 (docs/design/serving-manifest-v1 and tools/tests/core/test_serving_manifest_v1_contract.py); its ledger event was recorded against RSC01 before this item existed and is relinked here.
+Slice 1's contract documents: PR #528 (docs/design/serving-manifest-v2 and tools/tests/core/test_serving_manifest_v1_contract.py); its ledger event was recorded against RSC01 before this item existed and is relinked here.
 Decisions: v1 numbers are integers only (fractions as *_ppm / *_milli); one site-only, tighten-only `constraints` namespace in ServingInputV1; the engine binary resolves relative to bc-serve's installed location and the plan cache from the work root, neither a CLI flag; generated files are committed and CI regenerates and byte-diffs them.
 
 
@@ -132,7 +132,7 @@ Slice 2 (shared strict reader) requirement, from the lead's #530 review (2026-11
 
 
 
-- chg_20261102_121239_the-serving-manifest-v1-format_6543
+- chg_20261102_121239_the-serving-manifest-v2-format_6543
 - chg_20261102_121824_the-serving-component-can-prod_8129
 - 2026-11-02T12:18:29.161474+00:00 (updated-by): Updated: section:ledger-events
 - chg_20261102_124002_every-components-card-free-te_9438
@@ -142,7 +142,7 @@ Slice 2 (shared strict reader) requirement, from the lead's #530 review (2026-11
 - chg_20261102_162418_engine-start-up-admission-no-l_6822
 - 2026-11-02T16:24:22.385758+00:00 (updated-by): Updated: section:ledger-events
 - 2026-11-02T16:40:58.669519+00:00 (updated-by): Updated: section:acceptance_criteria
-- chg_20261102_170003_the-serving-manifest-v1-schema_4690
+- chg_20261102_170003_the-serving-manifest-v2-schema_4690
 - 2026-11-02T17:00:07.344057+00:00 (updated-by): Updated: section:ledger-events
 - chg_20261102_172348_bc-serve-the-engine-and-the-h_2822
 - 2026-11-02T17:23:52.577413+00:00 (updated-by): Updated: section:ledger-events

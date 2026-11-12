@@ -1376,7 +1376,7 @@ Status d180(const Json& j, const std::string& at, bool* out) {  // /spec/handoff
 }
 
 Status d181(const Json& j, const std::string& at, int64_t* out) {  // /spec/handoff/placement/live_policy_state/histogram_period_s
-    return int_in(j, at, C::invalid_type, C::invalid_value, 1, 9007199254740991, std::nullopt, out);
+    return int_in(j, at, C::invalid_type, C::invalid_value, 0, 9007199254740991, std::nullopt, out);
 }
 
 Status d182(const Json& j, const std::string& at, int64_t* out) {  // /spec/handoff/placement/live_policy_state/cadence_ns
@@ -5550,7 +5550,6 @@ Status decode(const Json& j, const std::string& at, Plan* out) {  // /spec/plan
         out->power = std::move(v);
     }
     if (const auto it = j.find("resource_inputs"); it == j.end()) {
-        return fault(C::missing_field, member(at, "resource_inputs"), "missing required member");
     } else {
         MeasuredResourceInputs v{};
         if (auto e = decode(*it, member(at, "resource_inputs"), &v)) return e;
@@ -6820,7 +6819,7 @@ nlohmann::json encode(const EngineMemory& value) {
 nlohmann::json encode(const Plan& value) {
     Json j = Json::object();
     j["power"] = encode(value.power);
-    j["resource_inputs"] = encode(value.resource_inputs);
+    if (value.resource_inputs) j["resource_inputs"] = encode(*value.resource_inputs);
     j["owner_map"] = encode(value.owner_map);
     j["state"] = Json(kPlanStateNames[static_cast<size_t>(value.state)]);
     if (value.engine_memory) j["engine_memory"] = encode(*value.engine_memory);

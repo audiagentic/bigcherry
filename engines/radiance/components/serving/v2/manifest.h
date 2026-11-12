@@ -1,5 +1,5 @@
 #pragma once
-/* The shared strict reader of serving manifest v1 (spec §8-§9, errors.md; RSC08 slice 2). One library, linked by
+/* The shared strict reader of serving manifest v2 (spec §8-§9, errors.md; RSC08 slice 2). One library, linked by
  * bc-serve, radiance and r3_moe_worker: every process reads the same bytes the same way and gets the same typed views.
  *
  * Order (errors.md §2): strict JSON (size, UTF-8, duplicates, integers) -> contract identity (apiVersion, kind,
@@ -7,7 +7,7 @@
  * A stale manifest whose hash and semantics are both wrong fails on the digest; a correctly rehashed one with wrong
  * semantics fails with its semantic code. */
 #include "error.h"
-#include "serving_types.h"
+#include "../generated/v2/serving_types.h"
 
 #include <cstdint>
 #include <filesystem>
@@ -16,7 +16,7 @@
 
 #include <nlohmann/json.hpp>
 
-namespace bc::serving::v1 {
+namespace bc::serving::v2 {
 
 /* What the caller starts: `serving` takes only a measured manifest, `measuring` (the one start that produces the plan)
  * only an unmeasured one. There is no default: every caller names its use, and the other state is BC_CFG_PLAN_MISMATCH. */
@@ -85,4 +85,4 @@ Status check_provenance_coverage(const nlohmann::json& doc);
 /* spec §4: the owner-map digest segment of helper i. */
 std::string owner_segment(size_t helper, const std::vector<std::array<int64_t, 2>>& experts);
 
-}  // namespace bc::serving::v1
+}  // namespace bc::serving::v2

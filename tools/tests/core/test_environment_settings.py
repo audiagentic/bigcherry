@@ -12,7 +12,7 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
-REGISTRY = ROOT / "engines/radiance/components/serving/contract/serving-v1.toml"
+REGISTRY = ROOT / "engines/radiance/components/serving/contract/serving-v2.toml"
 RAD0009 = ROOT / "engines/radiance/patches/rad0009_serving_manifest/patch.py"
 
 # The handoff is a typed snapshot consumed directly by the engine and plugin.
@@ -56,7 +56,7 @@ class EnvironmentSettingsGuard(unittest.TestCase):
         self.assertEqual(
             {}, unexplained,
             "an environment variable is read that no manifest field sets: give it an env_setting field in the registry "
-            "(or stop reading it); see docs/design/serving-manifest-v1/spec.md amendment 14")
+            "(or stop reading it); see docs/design/serving-manifest-v2/spec.md amendment 14")
 
     def test_typed_engine_settings_have_no_legacy_environment_bridge(self) -> None:
         patch = RAD0009.read_text(encoding="utf-8")

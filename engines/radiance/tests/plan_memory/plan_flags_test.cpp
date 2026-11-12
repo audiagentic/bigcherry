@@ -23,7 +23,7 @@ std::vector<std::string> config_option_names() { return {}; }
 }  // namespace rad::diag
 
 namespace {
-namespace v1 = bc::serving::v1;
+namespace v2 = bc::serving::v2;
 using Json = nlohmann::json;
 int failures = 0;
 
@@ -111,8 +111,8 @@ int main(int argc, char** argv) {
           "the retired --plan-check flags are not taken: they stay on argv for radiance to refuse as unknown options");
 
     // the floor is range-checked by the shared validator when the check is armed
-    v1::EnginePlan expected_plan;
-    check(!v1::decode(prod->at("expected"), "", &expected_plan), "the vector's expected plan decodes");
+    v2::EnginePlan expected_plan;
+    check(!v2::decode(prod->at("expected"), "", &expected_plan), "the vector's expected plan decodes");
     for (int64_t bad : {int64_t(-1), int64_t(1000000), int64_t(5000000)}) {
         err = captured(scratch, [&] { rc0 = bc_plan::arm(expected_plan, bad); });
         check(rc0 == 2 && err.find("kv_backing_floor_ppm must be in [0, 1000000)") != std::string::npos &&
@@ -124,29 +124,29 @@ int main(int argc, char** argv) {
 
     // the check: admitted prints one line with its margins; a refusal is the shared error with its exit code
     check(bc_plan::arm(expected_plan, 600000) == 0 && bc_plan::mode() == bc_plan::Mode::check, "a valid check is armed");
-    v1::EnginePlan live;
-    check(!v1::decode(prod->at("live"), "", &live), "the vector's live plan decodes");
+    v2::EnginePlan live;
+    check(!v2::decode(prod->at("live"), "", &live), "the vector's live plan decodes");
     int rc = -1;
     err = captured(scratch, [&] { rc = bc_plan::check(live); });
     check(rc == 0 && err.find("plan check: admitted") != std::string::npos && err.find("margin") != std::string::npos &&
               std::count(err.begin(), err.end(), '\n') == 1,
           "an admitted plan prints one line with margins: " + err);
 
-    v1::EnginePlan short_kv = live;
+    v2::EnginePlan short_kv = live;
     short_kv.vram.kv_resolved = 1;   // far below kv_required
     err = captured(scratch, [&] { rc = bc_plan::check(short_kv); });
     check(rc == 4 && err.find("radiance: config: BC_CFG_ADMISSION_REFUSED (RAD_E_NOMEM, -6)") != std::string::npos &&
               err.find("admission: resolved KV") != std::string::npos && err.find("kv_required") != std::string::npos,
           "a short resolved KV is refused, exit 4, naming kv_required: " + err);
 
-    v1::EnginePlan drifted = live;
+    v2::EnginePlan drifted = live;
     drifted.vram.statics += 1;   // a stable fact that moved
     err = captured(scratch, [&] { rc = bc_plan::check(drifted); });
     check(rc == 2 && err.find("BC_CFG_PLAN_MISMATCH") != std::string::npos && err.find("VRAM statics") != std::string::npos,
           "a drifted stable fact is a plan mismatch, exit 2: " + err);
 
     // one byte of drift in a host consumer is refused too
-    v1::EnginePlan host_drift = live;
+    v2::EnginePlan host_drift = live;
     host_drift.host[0].bytes += 1;
     err = captured(scratch, [&] { rc = bc_plan::check(host_drift); });
     check(rc == 2 && err.find("BC_CFG_PLAN_MISMATCH") != std::string::npos, "one byte of host drift is refused: " + err);
@@ -166,23 +166,23 @@ int main(int argc, char** argv) {
             const std::string needle = admit ? std::string() : v.at("verdict").at("needle").get<std::string>();
             ++ran;
             const int64_t vppm = v.at("ppm").get<int64_t>();
-            v1::EnginePlan expected, live_plan;
+            v2::EnginePlan expected, live_plan;
             // the strict reader first (it is what refuses a byte count past I-JSON's 2^53 - 1), then the generated decode
-            v1::Result<Json> strict = v1::parse_strict_json(v.at("expected").dump(), "vec-expected.json");
-            v1::Status decoded = strict ? v1::decode(strict.value(), "", &expected) : v1::Status{};
+            v2::Result<Json> strict = v2::parse_strict_json(v.at("expected").dump(), "vec-expected.json");
+            v2::Status decoded = strict ? v2::decode(strict.value(), "", &expected) : v2::Status{};
             int rc = 0;
             err = captured(scratch, [&] {
                 if (!strict) {
-                    std::fputs(v1::render_human("radiance", strict.error()).c_str(), stderr);
-                    rc = v1::exit_code_of(strict.error());
+                    std::fputs(v2::render_human("radiance", strict.error()).c_str(), stderr);
+                    rc = v2::exit_code_of(strict.error());
                 } else if (decoded) {
-                    std::fputs(v1::render_human("radiance", *decoded).c_str(), stderr);
-                    rc = v1::exit_code_of(*decoded);
+                    std::fputs(v2::render_human("radiance", *decoded).c_str(), stderr);
+                    rc = v2::exit_code_of(*decoded);
                 } else {
                     rc = bc_plan::arm(expected, vppm);
                 }
             });
-            const bool live_ok = !v1::decode(v.at("live"), "", &live_plan);
+            const bool live_ok = !v2::decode(v.at("live"), "", &live_plan);
             if (rc != 0) {
                 ++refused_at_flags;
                 check(!admit && cls == "input" && rc == 2, "vector " + name + ": refused before the check with exit 2, got " + std::to_string(rc) + " " + err);
@@ -198,9 +198,9 @@ int main(int argc, char** argv) {
             check(bc_plan::mode() == bc_plan::Mode::check, "vector " + name + ": the check is armed");
             if (!live_ok) {
                 ++live_undecodable;
-                const auto e = v1::decode(v.at("live"), "live", &live_plan);
-                check(!admit && cls == "input" && e && e->code == (name == "kv-resolved-missing" ? v1::ConfigErrorCode::missing_field
-                                                                                                   : v1::ConfigErrorCode::invalid_value),
+                const auto e = v2::decode(v.at("live"), "live", &live_plan);
+                check(!admit && cls == "input" && e && e->code == (name == "kv-resolved-missing" ? v2::ConfigErrorCode::missing_field
+                                                                                                   : v2::ConfigErrorCode::invalid_value),
                       "vector " + name + ": the live plan fails decoding with the vector's code");
                 continue;
             }

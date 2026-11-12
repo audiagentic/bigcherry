@@ -14,7 +14,7 @@
 static void check(bool b,const char* reason) {
     if(!b) {std::fprintf(stderr,"policy config FAIL: %s\n",reason);std::exit(1);}
 }
-using bc::serving::v1::LivePolicy;
+using bc::serving::v2::LivePolicy;
 static LivePolicy valid() {
     LivePolicy p{};
     p.effect_gate=true;p.accept_unwatermarked_heat=false;

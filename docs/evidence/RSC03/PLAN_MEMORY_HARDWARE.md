@@ -20,4 +20,4 @@ against the live claimable memory, not require equality between readings.
 
 A further measurement is needed before treating these checks as evidence
 for unrestricted rollout. The strict v1 manifest and memory-plan
-requirements are in [the serving-manifest specification](../../design/serving-manifest-v1/spec.md).
+requirements are in [the serving-manifest specification](../../design/serving-manifest-v2/spec.md).

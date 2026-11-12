@@ -1,4 +1,4 @@
-// bc_contract_test: the registry loader refuses what the v1 contract forbids, naming the fault, and the emitters keep
+// bc_contract_test: the registry loader refuses what the contract forbids, naming the fault, and the emitters keep
 // their promises (fingerprint ignores documentation, patch defs are partial, the real registry loads).
 #include "registry.h"
 
@@ -466,13 +466,13 @@ int main() {
         std::filesystem::remove_all(tmp);
     }
 
-    std::ifstream in(std::string(BC_CONTRACT_SOURCE_DIR) + "/contract/serving-v1.toml", std::ios::binary);
+    std::ifstream in(std::string(BC_CONTRACT_SOURCE_DIR) + "/contract/serving-v2.toml", std::ios::binary);
     std::ostringstream text;
     text << in.rdbuf();
     bc::contract::Registry real;
-    check(bc::contract::load_registry(text.str(), "serving-v1.toml", &real, &why), "the v1 registry loads: " + why);
+    check(bc::contract::load_registry(text.str(), "serving-v2.toml", &real, &why), "the v2 registry loads: " + why);
     if (failures) return 1;
-    check(bc::contract::generate_all(real).size() == 6, "six generated files");
+    check(bc::contract::generate_all(real).size() == 7, "seven generated files");
     std::printf("ok\n");
     return 0;
 }

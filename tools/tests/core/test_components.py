@@ -39,7 +39,7 @@ class Libr3ComponentTests(unittest.TestCase):
             self.assertEqual(read & moved, set(), f"{name}: a setting that became a manifest field is still read from the environment")
 
     def test_every_setting_that_became_a_manifest_field_names_a_registry_field(self):
-        registry = (paths.REPO_ROOT / "engines/radiance/components/serving/contract/serving-v1.toml").read_text(encoding="utf-8")
+        registry = (paths.REPO_ROOT / "engines/radiance/components/serving/contract/serving-v2.toml").read_text(encoding="utf-8")
         fields = set(re.findall(r'(?m)^path = "([^"]+)"', registry))
         moved = {s.name: s.manifest for c in components.load_all(paths.REPO_ROOT, engines.RADIANCE).values()
                  for s in c.settings.values() if s.manifest}
@@ -55,7 +55,7 @@ class Libr3ComponentTests(unittest.TestCase):
         self.assertEqual(production, set())
         for name in ("R3_ATTN_NATIVE", "R3_MOE_FP16", "R3_MOE_AHALF", "R3_GEMV", "R3_DEC11"):
             self.assertNotIn(name, self.libr3.settings)
-        registry = (paths.REPO_ROOT / "engines/radiance/components/serving/contract/serving-v1.toml").read_text()
+        registry = (paths.REPO_ROOT / "engines/radiance/components/serving/contract/serving-v2.toml").read_text()
         for field in ("attn_native", "moe_fp16", "moe_ahalf", "gemv", "dec11"):
             self.assertIn(f'/spec/processes/engine/kernels/{field}', registry)
 

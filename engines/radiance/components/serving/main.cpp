@@ -1,11 +1,15 @@
 #include "serving.h"
+
+#include <ctime>
 #include "manifest_writer.h"
 #include "live_policy_ingest.h"
-#include "v1/manifest.h"
+#include "v2/manifest.h"
 #include "plan_cache.h"
 #include "sdk_check.h"
 #include "v2/p1_live_room.h"
 #include "v2/p1_producer.h"
+#include "v2/s8_rules.h"
+#include "generated/v2/serving_codec.h"
 
 #include <filesystem>
 #include <fstream>
@@ -58,6 +62,9 @@ void usage() {
                  "      --experiment FILE    a JSON object for spec.experiment (lab profile: the manifest is then written with\n"
                  "                     profile lab; a production manifest never carries one).\n"
                  "  --plan-extra TEXT   (with --write-manifest) engine arguments the launcher passes through verbatim; part of the key\n"
+                 "  --power-profile NAME   (with --write-manifest) the named power profile; stock observes the cards\n"
+                 "  --rank-demand FILE     (with --measured-plan) the engine's --plan-memory-ranks record of the same start\n"
+                 "  --calibration-records FILE   (with --write-manifest) JSON array of P2 records; used where they match\n"
                  "No process is started by these commands.\n";
 }
 
@@ -149,11 +156,11 @@ int main(int argc, char** argv) {
             const auto plan = bc::serving::plan_cache_lookup(plan_dir, inputs);
             if (!plan)
                 throw std::runtime_error("calibration-ingest: exact measured plan is absent from cache");
-            const auto verified = bc::serving::v1::load_manifest(
-                manifest, bc::serving::v1::PlanUse::serving);
+            const auto verified = bc::serving::v2::load_manifest(
+                manifest, bc::serving::v2::PlanUse::serving);
             if (!verified)
                 throw std::runtime_error("calibration-ingest: strict lab manifest rejected: " +
-                    bc::serving::v1::render_human("bc-serve", verified.error()));
+                    bc::serving::v2::render_human("bc-serve", verified.error()));
             const auto& m = verified.value();
             if (!m.spec.plan.engine_memory ||
                 m.spec.intent.layout != values.at("layout").at("name").get<std::string>() ||
@@ -178,7 +185,8 @@ int main(int argc, char** argv) {
         std::optional<uint64_t> helpers_resident_mib, engine_resident_mib;
         std::string plan_extra;
         fs::path plan_cache, engine_binary;
-        fs::path write_manifest, live_policy_file, experiment_file;
+        fs::path write_manifest, live_policy_file, experiment_file, rank_demand_file, calibration_records_file;
+        std::string power_profile;
         // --calibration-run: the launcher's lab calibration start (--calibrate). A lab-profile manifest with an explicit live
         // policy and NO experiment, so the plan it measures is the production plan.
         bool calibration_run = false;
@@ -211,6 +219,9 @@ int main(int argc, char** argv) {
             else if (arg == "--calibration-run") calibration_run = true;
             else if (arg == "--experiment") experiment_file = need_arg("--experiment");
             else if (arg == "--plan-extra") plan_extra = need_arg("--plan-extra");
+            else if (arg == "--rank-demand") rank_demand_file = need_arg("--rank-demand");
+            else if (arg == "--calibration-records") calibration_records_file = need_arg("--calibration-records");
+            else if (arg == "--power-profile") power_profile = need_arg("--power-profile");
             else if (arg == "--measured-plan") measured_plan_file = need_arg("--measured-plan");
             else if (arg == "--helpers-resident-mib") helpers_resident_mib = parse_mib(need_arg("--helpers-resident-mib"), "--helpers-resident-mib", true);
             else if (arg == "--engine-resident-mib") engine_resident_mib = parse_mib(need_arg("--engine-resident-mib"), "--engine-resident-mib", false);
@@ -233,6 +244,10 @@ int main(int argc, char** argv) {
             throw std::runtime_error("--plan-cache and --engine-binary go with --write-manifest");
         if (!plan_mode && !plan_extra.empty())
             throw std::runtime_error("--plan-extra goes with --write-manifest");
+        if (write_manifest.empty() && (!calibration_records_file.empty() || !power_profile.empty()))
+            throw std::runtime_error("--calibration-records and --power-profile go with --write-manifest");
+        if (measured_plan_file.empty() != rank_demand_file.empty())
+            throw std::runtime_error("--measured-plan and --rank-demand go together (the engine's --plan-memory and --plan-memory-ranks)");
         if (!live_policy_file.empty() && experiment_file.empty() && !calibration_run)
             throw std::runtime_error("--live-policy is a lab override; supply --experiment for an explicit lab profile, or --calibration-run");
         if (calibration_run && (live_policy_file.empty() || !experiment_file.empty()))
@@ -346,6 +361,21 @@ int main(int argc, char** argv) {
                 throw std::runtime_error("--unmeasured has no plan: it takes no --plan-cache, --engine-binary or --plan-extra");
             if (!unmeasured && (plan_cache.empty() || engine_binary.empty()))
                 throw std::runtime_error("--write-manifest needs --plan-cache DIR and --engine-binary PATH");
+            if (power_profile.empty())
+                throw std::runtime_error("--write-manifest needs --power-profile NAME (stock observes the cards)");
+            bc::serving::v2::WriterInputs s10;
+            s10.power_profile = power_profile;
+            s10.now_unix_s = static_cast<int64_t>(std::time(nullptr));
+            s10.calibration_records = Json::array();
+            if (!calibration_records_file.empty()) {
+                std::ifstream rin(calibration_records_file, std::ios::binary);
+                if (!rin) throw std::runtime_error("--calibration-records: cannot read " + calibration_records_file.string());
+                std::ostringstream text;
+                text << rin.rdbuf();
+                s10.calibration_records = Json::parse(text.str(), nullptr, false);
+                if (!s10.calibration_records.is_array())
+                    throw std::runtime_error("--calibration-records: " + calibration_records_file.string() + " is not a JSON array");
+            }
             const auto facts = bc::serving::detect(opts.sys_root);
             const auto r = bc::serving::resolve(opts, facts);
             const auto& v = r.values;
@@ -353,6 +383,7 @@ int main(int argc, char** argv) {
             if (unmeasured) {
                 bc::serving::ManifestInputs in;
                 in.resolved = r;
+                in.s10 = s10;
                 in.profile = (experiment_file.empty() && !calibration_run) ? "production" : "lab";
                 in.instance_id = bc::serving::new_instance_id();
                 in.producer_sha256 = bc::serving::file_sha256("/proc/self/exe");
@@ -381,7 +412,10 @@ int main(int argc, char** argv) {
                 const Json measured = bc::serving::parse_plan_json(plan_text.str(), measured_plan_file.string());
                 bc::serving::check_plan_for_configuration(
                     v, bc::serving::decode_engine_plan(measured, measured_plan_file.string()));
-                bc::serving::plan_cache_store(plan_cache, key_inputs, measured,
+                Json ranks;
+                std::string ranks_from;
+                load_json_input(rank_demand_file, "--rank-demand", &ranks, &ranks_from);
+                bc::serving::plan_cache_store(plan_cache, key_inputs, measured, ranks,
                                               bc::serving::HostResident{*helpers_resident_mib, *engine_resident_mib});
                 std::cerr << "plan: stored " << bc::serving::plan_key(key_inputs) << '\n';
             }
@@ -392,6 +426,41 @@ int main(int argc, char** argv) {
                           << "); the launcher measures it on a start with the helpers up\n";
                 return 10;
             }
+            {
+                // P1: measure now, at every manifest written: the cached plan and per-rank demand, the owner map, and the
+                // host's live room. The retention target is the host KV tier the launcher runs with, over the measured KV
+                // density (one full session's KV over its context), at most every session at full context.
+                const int64_t ctx = v.at("service").at("max_context").get<int64_t>();
+                const int64_t sessions = v.at("service").at("max_sessions").get<int64_t>();
+                const int64_t per_token = plan->plan.kv_one_session.bytes / std::max<int64_t>(1, ctx);
+                if (per_token <= 0) throw std::runtime_error("the measured plan has no KV per token");
+                const int64_t retention = std::min<int64_t>(
+                    v.at("memory").at("host_kv_mib").get<int64_t>() * 1048576 / per_token, ctx * sessions);
+                const bool helpers = !r.manifest.at("process_helpers").empty();
+                const Json sources = {
+                    {"engine_plan", plan->plan_json}, {"rank_demand", plan->rank_demand},
+                    {"engine_binary", engine_binary.string()},
+                    {"helper_binary", helpers ? (home / "helpers" / "r3_moe_worker").string() : std::string()},
+                    {"retention_target_tokens", retention},
+                    {"margin", bc::serving::host_ledger_margin(r, opts.calibration_cache)},
+                    {"run_id", "bc-serve --write-manifest " + write_manifest.filename().string()}};
+                s10.p1_record = bc::serving::v2::produce_p1(r, facts, opts.sys_root, sources);
+                // The plan echoes the host pool it was measured with; S8 derives the pool from what was measured. When they
+                // differ, the plan is for another pool: exit 11 with the derived one, and the launcher measures once more
+                // with it (that configuration has its own cache key, so this happens once per configuration).
+                bc::serving::v2::MeasuredResourceInputs measured_inputs;
+                if (const auto e = bc::serving::v2::decode(s10.p1_record.at("resource_inputs"), "p1.resource_inputs",
+                                                           &measured_inputs))
+                    throw std::runtime_error(e->message);
+                const auto derived = bc::serving::v2::derived_host_pool_mib(measured_inputs);
+                if (!derived) throw std::runtime_error("the derived host pool overflows");
+                if (*derived != plan->plan.host_pool_mib) {
+                    std::cerr << "bc-serve: the plan was measured with a " << plan->plan.host_pool_mib
+                              << " MiB host pool; the measured inputs need " << *derived << " MiB\n";
+                    std::cout << "derived_host_pool_mib=" << *derived << '\n';
+                    return 11;
+                }
+            }
             bc::serving::ManifestInputs in;
             in.resolved = r;
             in.instance_id = bc::serving::new_instance_id();
@@ -399,6 +468,7 @@ int main(int argc, char** argv) {
             in.calibration_cache = opts.calibration_cache;
             in.profile = (experiment_file.empty() && !calibration_run) ? "production" : "lab";
             in.measured = bc::serving::MeasuredPlan{*plan, key_inputs};
+            in.s10 = s10;
             load_json_input(live_policy_file, "--live-policy", &in.live_policy, &in.live_policy_from);
             load_json_input(experiment_file, "--experiment", &in.experiment, &in.experiment_from);
             const auto built = bc::serving::build_manifest(in);
@@ -408,7 +478,8 @@ int main(int argc, char** argv) {
             const auto placement = has_handoff ? spec.at("handoff").at("placement") : bc::serving::Json::object();
             if (has_handoff && !placement.contains("live_policy"))
                 std::cerr << "live policy: no calibration for key " << bc::serving::calibration_key(key_inputs)
-                          << "; policy omitted (v1 cannot represent observe-only)\n";
+                          << "; " << placement.at("live_policy_state").at("reason_code").get<std::string>() << ": "
+                          << placement.at("live_policy_state").at("reason_detail").get<std::string>() << '\n';
             else if (has_handoff) for (auto it = prov.begin(); it != prov.end(); ++it) {
                 const std::string pointer = "/spec/handoff/placement/live_policy/";
                 if (it.key().rfind(pointer, 0) != 0) continue;

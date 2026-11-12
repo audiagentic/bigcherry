@@ -56,19 +56,39 @@ std::string file_sha(const fs::path& file) {
   if (!fs::is_regular_file(file)) refuse(file.string(), "source binary is not a regular file");
   return bc::serving::file_sha256(file);
 }
+void check_margin_and_run(const json& request) {
+  fields(request.at("margin"), {"key", "source", "evidence", "mib"}, "margin");
+  const auto& margin = request.at("margin");
+  if (margin.at("key") != "host_ledger_margin.mib" || (margin.at("source") != "cache" && margin.at("source") != "seed"))
+    refuse("margin", "the host-ledger margin is a seed or a calibration-cache value");
+  (void)nonempty(margin.at("evidence"), "margin.evidence");
+  (void)integral(margin.at("mib"), "margin.mib");
+  (void)nonempty(request.at("run_id"), "run_id");
+}
 } // namespace
 
 json produce_p1_inputs(const bc::serving::Resolved& resolved, const json& facts,
                        const fs::path& sys_root, const json& request) {
   fields(request, {"engine_plan_file", "rank_demand_file", "engine_binary",
                    "helper_binary", "retention_target_tokens", "margin", "run_id"}, "request");
-  fields(request.at("margin"), {"key", "source", "evidence", "mib"}, "margin");
+  check_margin_and_run(request);
+  json sources = request;
+  sources["engine_plan"] = read_strict(nonempty(request.at("engine_plan_file"), "engine_plan_file"));
+  sources["rank_demand"] = read_strict(nonempty(request.at("rank_demand_file"), "rank_demand_file"));
+  sources.erase("engine_plan_file");
+  sources.erase("rank_demand_file");
+  return produce_p1(resolved, facts, sys_root, sources);
+}
+
+json produce_p1(const bc::serving::Resolved& resolved, const json& facts,
+                const fs::path& sys_root, const json& request) {
+  fields(request, {"engine_plan", "rank_demand", "engine_binary",
+                   "helper_binary", "retention_target_tokens", "margin", "run_id"}, "sources");
   const auto& margin = request.at("margin");
-  if (margin.at("key") != "host_ledger_margin.mib" || margin.at("source") != "cache")
-    refuse("margin", "qualified P2 cache calibration required");
-  const std::string evidence = nonempty(margin.at("evidence"), "margin.evidence");
-  const int64_t margin_mib = integral(margin.at("mib"), "margin.mib");
-  const std::string run_id = nonempty(request.at("run_id"), "run_id");
+  check_margin_and_run(request);
+  const std::string evidence = margin.at("evidence").get<std::string>();
+  const int64_t margin_mib = margin.at("mib").get<int64_t>();
+  const std::string run_id = request.at("run_id").get<std::string>();
   const auto& selected = resolved.typed.layout;
   const auto& service = resolved.typed.service;
   if (selected.engine_cards.empty() || !service.max_context || !service.max_sessions)
@@ -94,9 +114,10 @@ json produce_p1_inputs(const bc::serving::Resolved& resolved, const json& facts,
   inputs.profile = "production";
   inputs.instance_id = bc::serving::new_instance_id();
   inputs.producer_sha256 = file_sha("/proc/self/exe");
+  inputs.s10.power_profile = "stock";   // only the owner plan is read from this manifest
   const bc::serving::BuiltManifest owned = bc::serving::build_manifest(inputs);
-  const auto checked = bc::serving::v1::read_manifest(
-      owned.text, "native P1 owner-plan", bc::serving::v1::PlanUse::measuring);
+  const auto checked = bc::serving::v2::read_manifest(
+      owned.text, "native P1 owner-plan", bc::serving::v2::PlanUse::measuring);
   if (!checked.ok()) refuse("owner_map", "actual selected owner-plan failed strict validation");
   const auto& manifest = checked.value();
   P1Native native{};
@@ -115,10 +136,10 @@ json produce_p1_inputs(const bc::serving::Resolved& resolved, const json& facts,
   if (native.retention_target_tokens > ctx * native.concurrent_sessions)
     refuse("retention_target_tokens", "exceeds measured context times concurrency");
 
-  const auto plan = read_strict(nonempty(request.at("engine_plan_file"), "engine_plan_file"));
+  const json& plan = request.at("engine_plan");
   if (const auto e = decode(plan, "rad0011 engine plan", &native.engine_plan))
     refuse("engine_plan", e->message);
-  const auto ranks = read_strict(nonempty(request.at("rank_demand_file"), "rank_demand_file"));
+  const json& ranks = request.at("rank_demand");
   fields(ranks, {"schema_version", "kind", "gpu", "resident_other_bytes"}, "rank demand");
   if (ranks.at("schema_version") != 1 || ranks.at("kind") != "radiance_p1_rank_demand" ||
       !ranks.at("gpu").is_array() || ranks.at("gpu").size() != selected.engine_cards.size())
@@ -135,7 +156,7 @@ json produce_p1_inputs(const bc::serving::Resolved& resolved, const json& facts,
     const int64_t claimable = integral(g.at("claimable_bytes"), "GPU claimable", true);
     if (fixed > required || required > claimable)
       refuse("GPU", "native fixed/required demand exceeds measured claimable room");
-    native.gpu.push_back({selected.engine_cards[i], required, fixed});
+    native.gpu.push_back({selected.engine_cards[i], required, fixed, claimable});
   }
   if (native.engine_plan.vram.cards.size() != native.gpu.size())
     refuse("GPU", "engine plan rank count differs from demand sidecar");
@@ -171,7 +192,7 @@ json produce_p1_inputs(const bc::serving::Resolved& resolved, const json& facts,
   const uint32_t rows = resolved.typed.handoff.max_rows;
   const uint32_t small = resolved.typed.handoff.small_rows;
   for (size_t i = 0; i < native.owner_map.helpers.size(); ++i) {
-    const auto effective = bc::serving::v1::effective_helper_settings(manifest, i);
+    const auto effective = bc::serving::v2::effective_helper_settings(manifest, i);
     std::vector<uint32_t> thresholds;
     for (const int64_t v : effective.lanes.small_lanes) {
       if (v <= 0 || v > std::numeric_limits<uint32_t>::max())
@@ -202,7 +223,7 @@ json produce_p1_inputs(const bc::serving::Resolved& resolved, const json& facts,
   if (resolved.typed.memory.host_reserve_mib > uint64_t(kMax / kMiB))
     refuse("host_reserve", "resolved host reserve overflows bytes");
   native.host_reserve_bytes = static_cast<int64_t>(resolved.typed.memory.host_reserve_mib) * kMiB;
-  native.host_margin = {"host_ledger_margin.mib", MarginSource::kCache, evidence, margin_mib};
+  native.host_margin = {"host_ledger_margin.mib", margin.at("source") == "seed" ? MarginSource::kSeed : MarginSource::kCache, evidence, margin_mib};
   native.model_digest = model_id;
   native.engine_build_digest = engine_id;
   native.helper_build_digest = helper_id;

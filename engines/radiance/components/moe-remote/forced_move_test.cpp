@@ -478,12 +478,12 @@ int main() {
     bc::serving::HelperSettings typed_settings;
     typed_settings.helper.count=kMaxHelpers;
     {
-        using bc::serving::v1::ForcedKind;
-        using bc::serving::v1::ForcedStep;
+        using bc::serving::v2::ForcedKind;
+        using bc::serving::v2::ForcedStep;
         auto move=[](int64_t destination) {
             ForcedStep s{};s.kind=ForcedKind::kMove;s.a_layer=0;s.a_expert=0;s.destination=destination;return s;
         };
-        bc::serving::v1::ForcedChurn churn{};
+        bc::serving::v2::ForcedChurn churn{};
         churn.repeat=250;
         churn.steps={move(1),move(0),move(2),move(0)};
         typed_settings.forced=churn;
@@ -496,12 +496,12 @@ int main() {
           "worker settings type a 1000-transaction move schedule from the manifest, unpaced");
     Schedule schedule=typed.force_schedule;
     {
-        using bc::serving::v1::ForcedKind;
-        using bc::serving::v1::ForcedStep;
+        using bc::serving::v2::ForcedKind;
+        using bc::serving::v2::ForcedStep;
         ForcedStep swap{};swap.kind=ForcedKind::kSwap;swap.a_layer=0;swap.a_expert=0;swap.b_layer=0;swap.b_expert=1;
         ForcedStep automatic{};automatic.kind=ForcedKind::kAutoSwap;automatic.a_layer=0;automatic.a_expert=2;
         bc::serving::HelperSettings mixed_settings;
-        bc::serving::v1::ForcedChurn churn{};
+        bc::serving::v2::ForcedChurn churn{};
         churn.repeat=2;
         churn.steps={swap,automatic};
         mixed_settings.forced=churn;

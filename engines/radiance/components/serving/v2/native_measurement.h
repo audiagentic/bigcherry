@@ -1,8 +1,7 @@
 #pragma once
 // RSC11 S13 P1 (inactive): native engine/owner/worker measurements to S8 and S11.
-// No v1 serving manifest translation or production cutover. The existing
-// rad0011 EnginePlan is an out-of-band *measurement*, not a startup manifest.
-#include "generated/serving_types.h"
+// The rad0011 EnginePlan is an out-of-band *measurement*, not a startup manifest.
+#include "generated/v2/serving_types.h"
 #include "v2/s8_rules.h"
 #include "worker_footprint.h"
 
@@ -31,7 +30,7 @@ struct NativeHelper {
 struct NativeMeasurement {
   std::string planning_key;
   // Produced by the real radiance --plan-memory, not a calibration target.
-  v1::EnginePlan engine_plan;
+  EnginePlan engine_plan;
   S8Scope scope;
   std::string actual_owner_map_digest; // exact bc::experts owner publisher digest
   int64_t unowned_expert_bytes = -1; // owner planner, NOT guessed by launcher

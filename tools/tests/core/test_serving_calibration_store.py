@@ -76,46 +76,43 @@ def test_refuse_unmeasured_evidence(tmp_path, changes):
         emit_from_run(output(tmp_path, case), tmp_path / "store")
 
 
-def test_refuse_expired_or_future_dated(tmp_path):
+def test_expired_or_future_dated_records_are_skipped(tmp_path):
     store = tmp_path / "store"
     emit_from_run(output(tmp_path), store)
     for when in (NOW - 101, NOW + 100):
-        with pytest.raises(CalibrationInvalid, match="stale or future"):
-            select_records(store, scope=scope(), required_keys=[
-                "host_ledger_margin.mib"], now_unix_s=when)
+        assert select_records(store, scope=scope(), required_keys=[
+            "host_ledger_margin.mib"], now_unix_s=when) == ()
 
 
-def test_refuse_scope_change_and_missing_key(tmp_path):
+def test_other_scope_and_absent_keys_are_left_out(tmp_path):
     store = tmp_path / "store"
     emit_from_run(output(tmp_path), store)
     altered = {**scope(), "owner_map_digest": "1" * 64}
-    with pytest.raises(CalibrationInvalid, match="missing"):
-        select_records(store, scope=altered, required_keys=[
-            "host_ledger_margin.mib"], now_unix_s=NOW)
-    with pytest.raises(CalibrationInvalid, match="missing"):
-        select_records(store, scope=scope(), required_keys=[
-            "handoff.max_rows"], now_unix_s=NOW)
+    assert select_records(store, scope=altered, required_keys=[
+        "host_ledger_margin.mib"], now_unix_s=NOW) == ()
+    assert select_records(store, scope=scope(), required_keys=[
+        "handoff.max_rows"], now_unix_s=NOW) == ()
 
 
-def test_refuse_ambiguous_records(tmp_path):
+def test_the_newest_of_several_records_is_used(tmp_path):
     store = tmp_path / "store"
     emit_from_run(output(tmp_path), store)
-    another = {**run(), "evidence_id": "different-run", "selected_value": 7}
-    emit_from_run(output(tmp_path, another), store)
-    with pytest.raises(CalibrationInvalid, match="ambiguous"):
-        select_records(store, scope=scope(), required_keys=[
-            "host_ledger_margin.mib"], now_unix_s=NOW)
+    newer = {**run(), "evidence_id": "different-run", "selected_value": 7,
+             "measured_at_unix_s": run()["measured_at_unix_s"] + 1}
+    emit_from_run(output(tmp_path, newer), store)
+    (chosen,) = select_records(store, scope=scope(), required_keys=[
+        "host_ledger_margin.mib"], now_unix_s=NOW)
+    assert chosen["evidence_id"] == "different-run"
 
 
-def test_refuse_invalid_store_record(tmp_path):
+def test_invalid_store_record_is_skipped(tmp_path):
     store = tmp_path / "store"
     path = emit_from_run(output(tmp_path), store)
     record = json.loads(path.read_text())
     record["method"] = ""
     path.write_text(json.dumps(record))
-    with pytest.raises(CalibrationInvalid, match="method"):
-        select_records(store, scope=scope(), required_keys=[
-            "host_ledger_margin.mib"], now_unix_s=NOW)
+    assert select_records(store, scope=scope(), required_keys=[
+        "host_ledger_margin.mib"], now_unix_s=NOW) == ()
 
 
 def test_refuse_duplicate_json_members(tmp_path):

@@ -825,8 +825,8 @@
                       "type": "boolean"
                     },
                     "histogram_period_s": {
-                      "description": "Heat histogram emission period in seconds.",
-                      "$ref": "#/$defs/positive"
+                      "description": "Heat histogram emission period in seconds; 0 when no histogram is written.",
+                      "$ref": "#/$defs/uint"
                     },
                     "cadence_ns": {
                       "description": "Effective migration cadence in nanoseconds.",
@@ -1734,7 +1734,6 @@
           "additionalProperties": false,
           "required": [
             "power",
-            "resource_inputs",
             "owner_map",
             "state"
           ],
@@ -1815,7 +1814,7 @@
               }
             },
             "resource_inputs": {
-              "description": "S8/S10 engine-measured resource ledger input; each value must carry origin evidence.",
+              "description": "S8/S10 engine-measured resource ledger input; each value must carry origin evidence. Present exactly when `plan.state` is `measured`: the measuring start has no engine measurement yet.",
               "type": "object",
               "additionalProperties": false,
               "required": [

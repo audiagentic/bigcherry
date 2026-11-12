@@ -4,7 +4,7 @@
 // Regenerate after editing the registry:
 //   bc_contract_gen engines/radiance/components/serving/contract/serving-v1.toml engines/radiance/components/serving/generated \\
 //       <radiance source tree> engines/radiance/components/{moe-remote,libr3,ngram-helper}/component.toml
-// and copy generated/serving-v1.schema.json to docs/design/serving-manifest-v1/serving-manifest.v1.schema.json.
+// and copy generated/v2/serving-v2.schema.json to docs/design/serving-manifest-v2/serving-manifest.v2.schema.json.
 // bc_contract_check (CI) fails when a committed copy differs from what this writes.
 #include "registry.h"
 

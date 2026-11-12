@@ -1,12 +1,14 @@
 #pragma once
-/* bc-serve's v1 manifest writer (RSC08 S2a): the resolver's output, the host facts, the measured plan and the planner's
- * owner map assembled into a serving manifest v1 document (docs/design/serving-manifest-v1), digested and checked.
+/* bc-serve's manifest writer: the resolver's output, the host facts, the measured plan and the planner's owner map
+ * assembled into a serving manifest v2 draft, resolved by S10 (power plan, S8 resource ledger and handoff, live-policy
+ * decision), digested and checked.
  *
- * The result is accepted only when the document reads back through the shared strict reader (v1::read_manifest: strict
+ * The result is accepted only when the document reads back through the shared strict reader (v2::read_manifest: strict
  * JSON, identity, JCS digest, structure, provenance pointers and coverage, semantics) and its owner map equals the
  * planner's (verify_owner_map). A document that does not is an error carrying the reader's own message, never a file. */
 #include "plan_cache.h"
 #include "serving.h"
+#include "v2/s10_inputs.h"
 
 #include <filesystem>
 #include <optional>
@@ -39,6 +41,9 @@ struct ManifestInputs {
     // spec.experiment, lab profile only; null = none. `experiment_from` as above.
     nlohmann::json experiment;
     std::string experiment_from;
+    // What S10 resolves the document with: the native P1 measurement (measured manifests), the usable calibration
+    // records and the named power profile.
+    v2::WriterInputs s10;
 };
 
 struct BuiltManifest {
@@ -53,6 +58,9 @@ BuiltManifest build_manifest(const ManifestInputs& in);
 /* spec.processes.helper_common as the manifest emits it for these resolved values (helper_profile.toml, resolved rows taken
  * from the values): what the helpers run with unless an experiment patches a helper. */
 nlohmann::json helper_common_settings(const nlohmann::json& values);
+
+/* The host-ledger margin the calibration gives this layout and objective: {key, source, evidence, mib}. */
+nlohmann::json host_ledger_margin(const Resolved& resolved, const std::filesystem::path& calibration_cache);
 
 /* Atomically creates `path` read-only with `text`; refuses an existing path (a manifest is immutable and never replaced). */
 void write_manifest_file(const std::filesystem::path& path, const std::string& text);

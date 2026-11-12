@@ -39,7 +39,7 @@ rank. Not every card can perform every role or weight format; check
 
 The named TOML layouts describe the existing launcher and benchmark
 configuration, not the final manifest-facing serving interface.
-The [v1 manifest contract](../../../design/serving-manifest-v1/spec.md)
+The [v1 manifest contract](../../../design/serving-manifest-v2/spec.md)
 and its C++ reader are in place; process-role configuration and resource
 planning are being integrated. Follow the schema and implementation,
 rather than copying launcher environment variables into new interfaces.
