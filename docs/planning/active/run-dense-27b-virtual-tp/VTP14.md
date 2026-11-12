@@ -714,8 +714,44 @@ include the time a rank waits for the slowest peer.
 - The MXFP4 GEMMs are `mxfp4a8` (fp8 activations). gfx1100 has no fp8 and emulates it, so the XTX is compute-bound
   and the R9700 does about 2.5× the work per unit of time. Weighting by memory bandwidth, which moves work to the XTX,
   is the wrong direction (XTX compute +10%). That profile is dropped.
-- Next: `qwen38-27b-mxfp4` gives the R9700 about 55% of the weights (GDN 3/3/10, FFN 4096/4096/9216). Attention stays
-  6/6/12, because 4 KV heads allow no other whole-head split. The custom form `qwen38-27b:K0,K1,K2:F0,F1,F2` lets a
-  sweep run without a rebuild.
-- The balance depends on the format. A w8a8 (int8) container would run natively on both cards (int8 WMMA on gfx11 and
-  gfx12), so its best split would be closer to bandwidth.
+- That single-stream, depth-7 profile overstated the R9700's lead. The sweeps below decide the split.
+
+### Split sweep, 2026-11-12 (build 751f23dc3bddff8c327f9dcb6e74d373)
+
+**Setup:** custom splits `qwen38-27b:K0,K1,K2:F0,F1,F2` (delta-net key heads, value heads 3×, and feed-forward rows
+per rank; attention 6/6/12 throughout).
+
+**Profiled, 4 concurrent streams, speculation off.** Per-stream tok/s and per-rank compute (profiled timings are not
+comparable with unprofiled runs, only with each other):
+
+| split (K / FFN) | tok/s a stream | XTX compute | R9700 compute | R9700 in collectives |
+|---|---|---|---|---|
+| 4,4,8 / 5120,4864,7424 (6/6/12) | 39.3–40.1 | 5808 ms | 5304 ms | 1775 ms |
+| 3,3,10 / 4608,4608,8192 | 37.8–38.5 | 5303 ms | 5939 ms | 1597 ms |
+| 3,3,10 / 4096,4096,9216 | 37.3 | 5149 ms | 6126 ms | 1562 ms |
+| 3,3,10 / 3584,3584,10240 | 35.5–36.0 | 4987 ms | 6351 ms | 1592 ms |
+| 2,2,12 / 3584,3584,10240 | 35.1 | 4696 ms | 6727 ms | 1559 ms |
+
+**Unprofiled, stream-bench (512-token prompts, 128 new tokens, 2 reps).** Decode step in ms (lower is better), with
+aggregate tok/s in brackets:
+
+| split (K / FFN) | off, 4 streams | off, 8 streams | depth 3, 4 streams | depth 3, 8 streams |
+|---|---|---|---|---|
+| 3,3,10 / 4096,4096,9216 | 21.51 (120.9) | **27.35** (160.3) | 37.35 (163.8) | 59.27 (181.2) |
+| 4,4,8 / 5120,4864,7424 (6/6/12) | **19.55** (127.9) | 27.75 (157.4) | **34.72** (175.7) | **56.59** (187.0) |
+| 4,4,8 / 5632,5632,6144 | 20.56 (126.4) | 29.24 (157.4) | 35.84 (172.7) | 58.67 (189.3) |
+| 5,5,6 / 5632,5632,6144 | 20.57 (126.3) | 29.41 (156.9) | 35.11 (177.9) | 57.70 (194.4) |
+| 6,6,4 / 6656,6656,4096 | 22.18 (123.6) | 31.85 (154.9) | 35.73 (180.3) | 62.71 (190.8) |
+
+**What this shows**
+
+- 6/6/12 has the shortest step in three of the four regimes. It is 1.4% behind the best in the fourth, within noise.
+  No split is faster in a way that holds across regimes. With speculation on, aggregate tok/s also moves with draft
+  acceptance (each split rounds slightly differently), so the step time is the cleaner comparison.
+- In batched decode, the R9700's compute about equals the XTXs'. It also carries about 1.6 s of collective time that
+  does not shrink as its share shrinks: that is the x4 link (PCIe Gen4 x4 root port) in the 129 all-reduces a step.
+  Moving work either way trades one bottleneck for the other.
+- The bandwidth-weighted and R9700-heavy named profiles are dropped; 6/6/12 stays the profile. The custom form stays
+  for formats with different per-card costs (w8a8 runs int8 natively on both cards).
+- The remaining lever is the link: an x8/x16 CPU-attached slot for the R9700, or fewer all-reduce round trips per step
+  (fusing the attention/feed-forward pairs).

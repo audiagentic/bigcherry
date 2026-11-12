@@ -47,7 +47,6 @@ class TpOwnershipTests(unittest.TestCase):
         t = self.owned_text()
         table = profiles()
         self.assertIn("qwen38-27b-6-6-12", table)
-        self.assertIn("qwen38-27b-mxfp4", table)
         for name, p in table.items():
             for count, total in (("qh", 24), ("kvh", 4), ("ff", 17408), ("gk", 16), ("gv", 48)):
                 self.assertEqual(len(p[count]), 3, (name, count))

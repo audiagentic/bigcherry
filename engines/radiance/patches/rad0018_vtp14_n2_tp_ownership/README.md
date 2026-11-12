@@ -15,23 +15,13 @@ brackets):
 | 1 | 6 (6) | 1 (1) | 4 (4) | 12 (12) | 4864 (5120) | [82816, 165632) |
 | 2 | 12 (12) | 2 (2) | 8 (8) | 24 (24) | 7424 (9984) | [165632, 248320) |
 
-`--tp-ownership qwen38-27b-mxfp4` gives the R9700 about 55% of the weights. Per-op timing of the MXFP4 container under
-6-6-12 has each XTX rank computing about 3.46 s against the R9700's 2.26 s over the same steps, with the R9700 waiting
-in the collectives: the `mxfp4a8` GEMMs take fp8 activations, which gfx1100 emulates. Weighting by memory bandwidth
-(more on the XTX cards) made it worse (XTX 3.82 s, R9700 1.75 s). Attention keeps 6/6/12, because 4 KV heads cannot
-split otherwise:
-
-| rank | Q heads | KV heads | GDN K heads | GDN V heads | FFN width | vocabulary rows |
-|---|---|---|---|---|---|---|
-| 0 | 6 (0) | 1 (0) | 3 (0) | 9 (0) | 4096 (0) | [0, 82816) |
-| 1 | 6 (6) | 1 (1) | 3 (3) | 9 (9) | 4096 (4096) | [82816, 165632) |
-| 2 | 12 (12) | 2 (2) | 10 (6) | 30 (18) | 9216 (8192) | [165632, 248320) |
-
 `--tp-ownership qwen38-27b:K0,K1,K2:F0,F1,F2` sets the delta-net key heads (value heads are three times as many) and
 the feed-forward rows per rank, with attention as 6-6-12, so that a sweep needs no rebuild. `geom_from` checks that the
-key heads sum to 16, the rows sum to 17408 in 256-row tiles, and no share is empty.
+key heads sum to 16, the rows sum to 17408 in 256-row tiles, and no share is empty. A sweep of five splits on the
+MXFP4 container (4 and 8 streams, speculation off and at depth 3) found none faster than 6-6-12: the R9700's
+remaining lag is its x4 link in the all-reduces, not its share of the compute (VTP14.md, N2 rebalance).
 
-The named profiles come from one table (`PROFILES` in `patch.py`). Every rank keeps whole heads, with Q:KV = 6 and
+The named profile comes from one table (`PROFILES` in `patch.py`). Every rank keeps whole heads, with Q:KV = 6 and
 GDN V:K = 3. The all-reduces are M × 5120 on every rank, so they stay identical across ranks.
 
 ## Outcome

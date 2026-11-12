@@ -35,16 +35,13 @@ from bigcherry.patcher import Edit, FilePatch
 PROFILE = "qwen38-27b-6-6-12"
 # Per-rank shares, in --rank-devices order (XTX, XTX, R9700): query heads, KV heads, feed-forward rows, delta-net key
 # heads and value heads. First heads and rows are the prefix sums. 6-6-12 gives the R9700 half of the attention and
-# delta net and 43% of the feed-forward (its 32 GiB). mxfp4 gives it about 55% of the weights: per-op timing of the
-# MXFP4 container under 6-6-12 has the XTX ranks computing ~3.46 s against the R9700's 2.26 s for the same steps (its
-# mxfp4a8 GEMMs take fp8 activations, which gfx1100 emulates), so the R9700 waited in the collectives.
+# delta net and 43% of the feed-forward (its 32 GiB). A sweep of other splits on the MXFP4 container (VTP14.md, N2
+# rebalance) found none faster: the R9700's remaining lag is its x4 link in the all-reduces, not its compute share.
 # CUSTOM ("qwen38-27b:K0,K1,K2:F0,F1,F2") sets the delta-net key heads (value heads 3x) and feed-forward rows per rank,
-# with attention as 6-6-12, so a sweep needs no rebuild.
+# with attention as 6-6-12, so a sweep (for another format, such as w8a8) needs no rebuild.
 PROFILES = {
     "qwen38-27b-6-6-12": {"qh": (6, 6, 12), "kvh": (1, 1, 2), "ff": (5120, 4864, 7424),
                           "gk": (4, 4, 8), "gv": (12, 12, 24)},
-    "qwen38-27b-mxfp4":  {"qh": (6, 6, 12), "kvh": (1, 1, 2), "ff": (4096, 4096, 9216),
-                          "gk": (3, 3, 10), "gv": (9, 9, 30)},
 }
 CUSTOM = "qwen38-27b:"
 NAMES = ", ".join(PROFILES) + ", " + CUSTOM + "K0,K1,K2:F0,F1,F2"
