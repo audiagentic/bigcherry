@@ -672,3 +672,24 @@ The XTX ranks need half TP2's KV per card because each holds one KV head.
 
 **Still to do:** a BF16 reference (the original checkpoint, `qwen3.8-27b-bf16.rad`) to score MXFP4 TP2 and TP3
 against original quality.
+
+### N7: MXFP4 against the original BF16, 2026-11-12
+
+**Setup**
+
+- **Reference:** `qwen3.8-27b-bf16.rad` (the original checkpoint, 51 GiB), recorded on TP3 6/6/12. It fits only on
+  three cards, not on two XTX.
+- **Corpus and flags:** the same corpus and flags as above, with `--kld-top 64`.
+- **Runs scored:** MXFP4 on each configuration, exact wire.
+
+| MXFP4, against BF16 | KLD mean | median | p99 | p99.9 | top-1 | PPL (BF16 8.3366) |
+|---|---|---|---|---|---|---|
+| TP3 6/6/12 | 0.04351 | 0.02031 | 0.317 | 1.16 | 87.07% | 8.5564 (+2.64%) |
+| TP2 | 0.04363 | 0.02029 | 0.314 | 1.26 | 87.09% | 8.5620 (+2.70%) |
+
+**What this shows**
+
+- MXFP4's divergence from the original model is the same on TP2 and on TP3. The split adds nothing measurable on top
+  of quantisation (compare the 0.003 TP3-vs-TP2 KLD above with 0.044 for quantisation).
+- **TP3 also makes original-quality BF16 serving possible**, at 23 tok/s single stream in the N4 smoke. The dual-XTX
+  TP2 cannot hold it.
