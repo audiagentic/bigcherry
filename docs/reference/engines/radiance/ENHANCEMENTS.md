@@ -9,7 +9,7 @@ different statuses. See [the engine overview](README.md) first.
 
 _Generated from package documentation and metadata by `tools/docs/generate_engine_enhancement_summaries.py`. Do not edit this section by hand._
 
-## Engine patches (21)
+## Engine patches (22)
 
 | Package | State | Summary |
 | --- | --- | --- |
@@ -34,6 +34,7 @@ _Generated from package documentation and metadata by `tools/docs/generate_engin
 | [rad0021_vtp14_weighted_twoshot_3rank](../../../../engines/radiance/patches/rad0021_vtp14_weighted_twoshot_3rank/SUMMARY.md) | `untested` | A rank behind a slow PCIe link owns a smaller shard of the two-shot, or none, and so moves fewer bytes over it. The bits are the same for every table. Equal links keep the even split; decode-sized messages are unchanged. |
 | [rad0022_tune_pin](../../../../engines/radiance/patches/rad0022_tune_pin/SUMMARY.md) | `untested` | The same text and checks as `RADIANCE_TUNE` (an axis or value a kernel does not offer is an error), set before the plugins load. A different `RADIANCE_TUNE` already in the environment is refused. Without the option nothing changes. |
 | [rad0023_ar_timeline](../../../../engines/radiance/patches/rad0023_ar_timeline/SUMMARY.md) | `untested` | Each launch stamps, in its first eight blocks, entry, push drained, every peer's flag seen and fold done, into a pinned host ring indexed by the launch's device sequence number; each ring is written under DIR at exit. Unset, the kernel takes no stamp and does the same work. |
+| [rad0024_ts3_decode](../../../../engines/radiance/patches/rad0024_ts3_decode/SUMMARY.md) | `untested` | From the all-reduce row's `ts_min` elements, as upstream's four-rank one-shot does, the three-rank one-shot runs the link-weighted exact two-shot at any size, so the rank behind the slowest link reads about one message instead of two. Same bits; `--tune-pin all_reduce:ts_min=0` turns it off. |
 
 ## Components (6)
 
