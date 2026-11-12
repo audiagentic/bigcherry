@@ -1,0 +1,35 @@
+RAD50 O2 four completed A/B sweeps, 30 repetitions each. Preliminary serial synthetic, no inference claim.
+RAD50 paired SERIAL A/B only: no inference or GPU-ready claim.
+Positive delta_us and speedup > 1.0 favour CPU BAR-push.
+device bytes style n pull_p50_us push_p50_us speedup delta_us push_sync_p50_us push_write_p50_us
+0 4096 direct-scalar 30 73.40 74.97 0.979 -1.57 0.29 0.65
+0 4096 staged-memcpy 30 72.15 73.63 0.980 -1.48 0.30 0.58
+0 65536 direct-scalar 30 82.26 77.22 1.065 +5.04 0.31 8.85
+0 65536 staged-memcpy 30 85.59 82.20 1.041 +3.39 0.33 6.22
+0 262144 direct-scalar 30 110.93 95.09 1.167 +15.84 0.31 35.11
+0 262144 staged-memcpy 30 137.84 132.51 1.040 +5.33 0.45 26.85
+0 1048576 direct-scalar 30 276.00 216.49 1.275 +59.51 0.31 139.20
+0 1048576 staged-memcpy 30 315.66 293.73 1.075 +21.93 0.48 98.32
+0 4194304 direct-scalar 30 1075.16 760.30 1.414 +314.86 0.50 539.64
+0 4194304 staged-memcpy 30 1218.11 1096.22 1.111 +121.89 0.84 385.97
+1 4096 direct-scalar 30 73.47 74.88 0.981 -1.41 0.29 0.63
+1 4096 staged-memcpy 30 76.38 77.05 0.991 -0.67 0.37 0.61
+1 65536 direct-scalar 30 83.29 78.91 1.056 +4.38 0.29 8.49
+1 65536 staged-memcpy 30 88.86 87.69 1.013 +1.17 0.34 8.11
+1 262144 direct-scalar 30 109.11 92.89 1.175 +16.22 0.30 33.68
+1 262144 staged-memcpy 30 128.02 123.01 1.041 +5.01 0.34 26.32
+1 1048576 direct-scalar 30 272.45 212.07 1.285 +60.38 0.32 134.44
+1 1048576 staged-memcpy 30 314.54 294.13 1.069 +20.41 0.42 98.16
+1 4194304 direct-scalar 30 1139.85 836.90 1.362 +302.95 0.67 558.71
+1 4194304 staged-memcpy 30 1211.53 1093.13 1.108 +118.40 0.74 385.17
+FASTEST_SUBMITTED_PUSH_METHOD device=0 bytes=4096 style=staged-memcpy seq_p50_us=73.63 NOTE=synthetic_serial_only
+FASTEST_SUBMITTED_PUSH_METHOD device=0 bytes=65536 style=direct-scalar seq_p50_us=77.22 NOTE=synthetic_serial_only
+FASTEST_SUBMITTED_PUSH_METHOD device=0 bytes=262144 style=direct-scalar seq_p50_us=95.09 NOTE=synthetic_serial_only
+FASTEST_SUBMITTED_PUSH_METHOD device=0 bytes=1048576 style=direct-scalar seq_p50_us=216.49 NOTE=synthetic_serial_only
+FASTEST_SUBMITTED_PUSH_METHOD device=0 bytes=4194304 style=direct-scalar seq_p50_us=760.30 NOTE=synthetic_serial_only
+FASTEST_SUBMITTED_PUSH_METHOD device=1 bytes=4096 style=direct-scalar seq_p50_us=74.88 NOTE=synthetic_serial_only
+FASTEST_SUBMITTED_PUSH_METHOD device=1 bytes=65536 style=direct-scalar seq_p50_us=78.91 NOTE=synthetic_serial_only
+FASTEST_SUBMITTED_PUSH_METHOD device=1 bytes=262144 style=direct-scalar seq_p50_us=92.89 NOTE=synthetic_serial_only
+FASTEST_SUBMITTED_PUSH_METHOD device=1 bytes=1048576 style=direct-scalar seq_p50_us=212.07 NOTE=synthetic_serial_only
+FASTEST_SUBMITTED_PUSH_METHOD device=1 bytes=4194304 style=direct-scalar seq_p50_us=836.90 NOTE=synthetic_serial_only
+Gate 4, measured combine and paired inference tests remain required.
