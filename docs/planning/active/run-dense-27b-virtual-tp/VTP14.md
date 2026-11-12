@@ -755,3 +755,63 @@ aggregate tok/s in brackets:
   for formats with different per-card costs (w8a8 runs int8 natively on both cards).
 - The remaining lever is the link: an x8/x16 CPU-attached slot for the R9700, or fewer all-reduce round trips per step
   (fusing the attention/feed-forward pairs).
+
+## N6: int8 (w8a8) on TP3, 2026-11-12 (build 751f23dc3bddff8c327f9dcb6e74d373)
+
+**Setup:** `qwen3.8-27b-w8a8-df2.rad` (`w8a8_fwht128`, served by `qwen35_w8a8`, which is `qwen35_fp8.cpp` built with
+`QWEN35_W8A8`). rad0019's opt-in and spans cover it without new code: the int8 linear takes row spans as is and column
+spans in whole 128-column scale groups, which every split here keeps. Smoke: TP3 6/6/12 and TP2 give the same greedy
+answer.
+
+**Split sweep (stream-bench, 512-token prompts, 128 new tokens), aggregate tok/s:**
+
+| split (K / FFN), w8a8 | off: 1 / 4 / 6 / 8 streams | depth 3: 1 / 4 / 6 / 8 streams |
+|---|---|---|
+| 4,4,8 / 5120,4864,7424 (6/6/12) | 36.1 / 101.9 / 127.4 / 142.2 | 68.7 / 151.0 / 166.6 / 176.8 |
+| 5,5,6 / 5632,5632,6144 | 39.1 / 112.1 / 137.6 / 157.3 | 81.8 / 164.0 / 173.6 / 186.2 |
+| 6,6,4 / 6656,6656,4096 | 38.2 / 111.1 / 138.6 / 160.7 | 80.7 / 174.6 / 164.9 / 189.7 |
+| 3,3,10 / 4096,4096,9216 | 31.8 / 91.0 / 113.4 / 129.1 | 71.5 / 143.0 / 159.7 / 165.3 |
+
+For int8 the best split is the opposite of MXFP4's: more delta-net and feed-forward work on the XTX cards. `i8a8` runs
+natively on gfx1100 and gfx1201, so memory bandwidth (960 against 640 GB/s) and the R9700's link set the balance.
+6/6/4 with 6656/6656/4096 is +13% at 8 streams with speculation off and +7% with it on, over 6/6/12.
+
+**Matched ABBA (6/6/12 split), aggregate tok/s, mean of the A and B pairs:**
+
+| arm | off: 1 / 4 / 6 / 8 | depth 3: 1 / 4 / 6 / 8 |
+|---|---|---|
+| w8a8 TP3 6/6/12 | 36.0 / 101.6 / 127.7 / 143.6 | 68.8 / 149.4 / 168.1 / 177.0 |
+| w8a8 TP2 | 32.9 / 99.6 / 129.3 / 149.9 | 65.6 / 173.7 / 168.9 / 194.8 |
+| MXFP4 TP3 6/6/12 | 54.5 / 128.9 / 147.2 / 158.4 | 104.3 / 173.6 / 176.3 / 185.6 |
+
+With its own best split (single sweep run, not an ABBA), w8a8 TP3 is +16% / +12% / +7% / +7% over w8a8 TP2 with
+speculation off, and +23% / 0% / −2% / −3% with it on. MXFP4 stays faster per token, carrying half the weight bytes.
+
+**Quality against the original BF16 (same corpus and reference as N7):**
+
+| model, split | KLD mean | median | p99 | p99.9 | top-1 | PPL against BF16 |
+|---|---|---|---|---|---|---|
+| w8a8 TP3 6/6/12 | 0.00199 | 0.00031 | 0.00646 | 0.0430 | 97.32% | +0.03% |
+| w8a8 TP2 | 0.00126 | 0.00030 | 0.00620 | 0.0431 | 97.33% | +0.03% |
+| MXFP4 TP3 6/6/12 | 0.04351 | 0.02031 | 0.317 | 1.16 | 87.07% | +2.64% |
+
+w8a8 is about 20 times closer to the original model than MXFP4. The TP3 mean is above TP2's only through a few positions
+in the far tail (p99.99 2.64 against 0.44); the median, p99 and p99.9 match.
+
+## Pipelined prefill at TP3 (rad0020), 2026-11-12 (builds 751f23dc without, a541fb4a with)
+
+qwen35_fp8 pipelines a prefill step of at least 1024 rows of one sequence: two pieces, each block's all-reduce for one
+piece on the second lane beside the other piece's work. Upstream enables it at two ranks only. rad0020 enables it at
+three under an ownership profile. MXFP4, 4096-token prompts, 32 new tokens, 2048-token chunks, ABBA:
+
+| arm | TTFT, 1 stream | TTFT max, 4 streams |
+|---|---|---|
+| TP3 6/6/12, serial (without rad0020) | 1392 / 1398 ms | 5769 / 5892 ms |
+| TP3 6/6/12, pipelined (rad0020) | 1324 / 1329 ms | 5763 / 5655 ms |
+| TP2 (pipelines upstream) | 901 / 903 ms | 5088 / 5069 ms |
+
+- Single-stream TTFT is 5% shorter with the pipeline. With several sequences in a step the pipeline does not engage
+  ("more than one sequence"), on TP2 as on TP3.
+- TP3 prefill stays 47% slower than TP2. Prefill moves about 10 MiB per all-reduce, and the R9700 receives two partial
+  sums over its Gen4 x4 link. Overlap hides part of that; a reduce centred on the XTX cards (the R9700 sending and
+  receiving once) or a compressed wire would cut the bytes themselves.
