@@ -3,7 +3,7 @@
 ## Summary
 
 VTP31 experiment 2 (rad0023) split the three-rank host-mailbox decode all-reduce into phases. On two RX 7900 XTX at
-x16 and an R9700 at Gen4 x4, at eight streams (a 320 KiB message), the R9700 spends 120 us of its 218 us call reading
+x8 and an R9700 at Gen4 x4, at eight streams (a 320 KiB message), the R9700 spends 120 us of its 218 us call reading
 its two peers' messages over its link; the flag round trip is 2 us. The one-shot is what decode always takes at
 three ranks: the two-shot row starts above `R4D_AR_WIDE_ONESHOT_MAX_ELEMS` (524288 elements), and the link weights
 rad0021 settled apply only from `R4D_AR8_MIN_ELEMS_DEFAULT` (262144).

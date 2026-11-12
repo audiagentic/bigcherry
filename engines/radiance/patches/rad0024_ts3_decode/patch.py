@@ -4,8 +4,8 @@ Upstream's four-rank exact one-shot already hands a message to the exact two-sho
 axis (r4d_rad_ar_oneshot_4rank_exact): the same fold per element, so the same bits, for fewer bytes a rank. The
 three-rank one-shot has no such handover, and its two-shot row starts above R4D_AR_WIDE_ONESHOT_MAX_ELEMS, so a
 decode all-reduce always takes the one-shot. Through the host mailbox that makes every rank read both peers' whole
-messages; a card behind a narrow link (an R9700 at Gen4 x4 beside two x16 cards) spends most of the call there
-(VTP31 experiment 2: 120 us of a 218 us call to read 640 KiB at eight streams).
+messages; a card behind a narrow link (an R9700 at Gen4 x4 beside two x8 cards) spends most of the call there
+(VTP31 experiment 2: over half of each call at eight streams).
 
 This patch gives the three-rank one-shot the four-rank rule on a host-mailbox instance whose link weights are settled
 (rad0021): from `ts_min` elements it runs the exact three-rank two-shot with the settled table at any size, rather
