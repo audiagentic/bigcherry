@@ -3,23 +3,20 @@
 **Status:** untested
 **Plan item:** VTP14
 
-Scope: the fp8 Qwen plugin's pipelined prefill at `--tp 3` under `--tp-ownership`.
+Scope: the fp8 Qwen plugin's pipelined prefill as configuration: `--pipelined-prefill auto|on|off` and
+`--pipelined-prefill-min-rows N`.
 
 ## Summary
 
-`qwen35_fp8` pipelines a prefill step of 1024 rows or more: the rows run as two pieces, and each block's all-reduce
-for one piece runs on the second lane beside the other piece's work. Upstream turns this on only at two ranks, so
-native TP3 prefilled serially while the TP2 baseline pipelined. This patch also turns it on at three ranks when an
-ownership profile is in force.
+`qwen35_fp8` pipelines a wide one-sequence prefill step: the rows run as two pieces, and each block's all-reduce for
+one piece runs on the second lane beside the other piece's work. Upstream fixes it at two ranks from 1024 rows. This
+patch makes the mode and the narrowest step options; `auto` adds three ranks under `--tp-ownership`.
 
 ## Outcome
 
-Untested (not promoted). The pipelined step computes the serial step's bytes, so output is unchanged; the effect to
-measure is time to first token on long prompts.
+Untested (not promoted). The pipelined step computes the serial step's bytes, so output is unchanged. MXFP4 TP3,
+4096-token prompts: time to first token −5% (VTP14.md).
 
 ## Detail
 
-- Two edits in `arch/qwen35_fp8/qwen35_fp8.cpp`: the `pipe_on` condition, and the note an int8 trunk prints when it
-  stays serial (its boundary norms write the E4M3 pair only).
-- The all-reduces keep their serial declaration at `overlap` 1; selection picks their kernels by world, size and
-  peer access, as for the serial step.
+See README.md.

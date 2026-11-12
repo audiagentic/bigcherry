@@ -3,20 +3,20 @@
 **Status:** untested
 **Plan item:** VTP14
 
-Scope: `--tp-ownership qwen38-27b-6-6-12`, an asymmetric three-rank ownership of the dense Qwen3.8-27B (BF16 plugin). It
-puts twice the heads and the largest feed-forward share on the 32 GiB R9700.
-`--tp-ownership qwen38-27b:K0,K1,K2:F0,F1,F2` sets the delta-net and feed-forward split per rank for sweeps; on
-MXFP4 none beat 6/6/12.
+Scope: `--tp-ownership SPEC` (`kv=..;ffn=..[;q=..][;lk=..;lv=..]`), an uneven tensor-parallel split, one count a
+rank, checked against the loaded model (BF16 Qwen plugin). No model or split is built in; the split is manifest
+configuration.
 
 ## Summary
 
-Splits the dense Qwen3.8-27B unevenly over three ranks. Query heads go 6/6/12, KV heads 1/1/2, delta-net heads 4/4/8
-(K) and 12/12/24 (V), and the feed-forward 5120/4864/7424. Each rank reads its own spans of the container's weights
-through radiance's shard-span ABI.
+Lets a layout put more heads and feed-forward rows on a larger card. Each rank reads its own spans of the container's
+weights through radiance's shard-span ABI; `geom_from` refuses a spec whose shares do not match the model.
 
 ## Outcome
 
-On cards, with rad0016 and rad0017, native TP3 serves the 64-layer Qwen3.8-27B BF16 correctly at the 6/6/12 split (XTX, XTX, R9700): about 23 tok/s single stream (smoke, not a benchmark).
+On cards, with rad0016 and rad0017, native TP3 serves the 64-layer Qwen3.8-27B BF16 correctly at
+`kv=1,1,2;ffn=5120,4864,7424;lk=4,4,8;lv=12,12,24` over (XTX, XTX, R9700): about 23 tok/s single stream (smoke, not a
+benchmark).
 
 ## Detail
 

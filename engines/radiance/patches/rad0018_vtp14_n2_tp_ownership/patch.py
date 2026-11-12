@@ -1,30 +1,34 @@
-"""rad0018 (VTP14 N2): an asymmetric tensor-parallel ownership profile for the dense Qwen3.8-27B.
+"""rad0018 (VTP14 N2): asymmetric tensor-parallel ownership, configured by a split spec rather than a built-in table.
 
-Radiance divides a model evenly over --tp ranks (arch/common/rad_arch.h geom_from). The 27B has 4 KV heads and a
-17408-wide feed-forward, which three ranks cannot split evenly, and its three cards are unequal: two RX 7900 XTX
-(24 GiB) and an R9700 (32 GiB). `--tp-ownership qwen38-27b-6-6-12` gives the three ranks, in --rank-devices order:
+Radiance divides a model evenly over --tp ranks (arch/common/rad_arch.h geom_from). Unequal cards (two RX 7900 XTX and an
+R9700) and widths that do not divide by the rank count (the dense Qwen3.8-27B's 4 KV heads and 17408-wide feed-forward
+over three ranks) need an uneven, whole-head split. `--tp-ownership SPEC` (the serving manifest's
+`scheduler.tp_ownership`) gives it, one count a rank in --rank-devices order:
 
-    rank   Q heads   KV heads   GDN K heads   GDN V heads   FFN width   vocabulary rows
-    0      6  (0)    1 (0)      4  (0)        12 (0)        5120 (0)    [0, 82816)
-    1      6  (6)    1 (1)      4  (4)        12 (12)       4864 (5120) [82816, 165632)
-    2      12 (12)   2 (2)      8  (8)        24 (24)       7424 (9984) [165632, 248320)
+    kv=1,1,2;ffn=5120,4864,7424;lk=4,4,8;lv=12,12,24      (query heads follow kv; q= may be given)
 
-(first head / first row in brackets). Every rank keeps whole heads and Q:KV = 6, GDN V:K = 3. The weights are the
-container's own, read through radiance's shard-span ABI (rad_weight_shard_span[_parts]); the residual stream, the
-all-reduces (M x 5120 on every rank), KV and GDN state, the loader and the sampler are radiance's.
+    kv   KV heads                 q    query heads (default: kv x the model's query group)
+    ffn  feed-forward rows        lk   delta-net key heads, lv  delta-net value heads (models with a delta net)
+
+Nothing about a model is built in: geom_from checks the shares against the loaded model's own totals (they must sum
+to its heads and rows, every share positive, each rank's query heads whole groups of its own KV heads), and the plugin
+checks the delta-net shares against the container's heads and its value:key ratio. The weights are the container's
+own, read through radiance's shard-span ABI (rad_weight_shard_span[_parts]); the residual stream, the all-reduces
+(M x n_embd on every rank), KV and delta-net state, the loader and the sampler are radiance's. The vocabulary keeps the
+even split, given as explicit spans because an uneven row split needs one.
 
 - abi: RadBuildCtx gains a trailing `tp_ownership` (null: even division, as upstream).
-- core: `--tp-ownership NAME` (config, help, explain, config_test value) into the build context.
-- rad_arch.h: Geom carries the profile's per-rank first heads and rows. geom_from refuses a profile for an
-  architecture that has not opted in (Geom::tp_owned_ok), an unknown profile, a model other than the original dense
-  27B, a world other than 3, and calibration (whose taps assume even global widths).
-- qwen35_bf16: opts in; the GDN heads, and explicit vocabulary spans for token_embd and output (248320 is not a
-  multiple of 3, and the loader refuses an uneven split without a span).
+- core: `--tp-ownership SPEC` (config, help, explain, config_test value) into the build context. The option only checks
+  the spec's form; the model checks happen at build, where the model is known.
+- rad_arch.h: Geom carries this rank's first heads and rows and every rank's KV and feed-forward shares (for a drafter
+  that follows the target's split). geom_from refuses a spec for an architecture that has not opted in
+  (Geom::tp_owned_ok), a malformed spec, shares that do not fit this model or world, and calibration (whose taps
+  assume even global widths). bc_own_linear_heads checks a plugin's delta-net heads.
+- qwen35_bf16: opts in; the delta-net heads through bc_own_linear_heads, and explicit vocabulary spans for token_embd
+  and output.
 - rad_block_attn_gated.h / rad_block_gdn.h / rad_block_mlp.h: the spans, under Geom::tp_owned only.
 
 Without --tp-ownership nothing changes. Source-pinned to radiance v1.17.0 (19d4e8fe), applied after rad0016.
-The span arithmetic follows the VTP30 experiment (wt-xtx27-prefill rad0016_vtp30_native_tp3_ownership); the profile
-is typed configuration instead of an environment variable, and vocabulary spans and the calibration refusal are added.
 """
 from __future__ import annotations
 
@@ -32,36 +36,9 @@ import re
 
 from bigcherry.patcher import Edit, FilePatch
 
-PROFILE = "qwen38-27b-6-6-12"
-# Per-rank shares, in --rank-devices order (XTX, XTX, R9700): query heads, KV heads, feed-forward rows, delta-net key
-# heads and value heads. First heads and rows are the prefix sums. 6-6-12 gives the R9700 half of the attention and
-# delta net and 43% of the feed-forward (its 32 GiB); a sweep of other splits on the MXFP4 container (VTP14.md, N2
-# rebalance) found none faster, its mxfp4a8 GEMMs emulating fp8 on gfx1100. int8 gives the XTX cards the larger delta
-# net and feed-forward shares: the w8a8 container's i8a8 GEMMs run natively on both, and the split sweep (VTP14.md, N6)
-# put 6/6/4 delta-net heads with 6656/6656/4096 feed-forward rows ahead of 6/6/12 at every stream count.
-# CUSTOM ("qwen38-27b:K0,K1,K2:F0,F1,F2") sets the delta-net key heads (value heads 3x) and feed-forward rows per rank,
-# with attention as 6-6-12, so a sweep (for another format, such as w8a8) needs no rebuild.
-PROFILES = {
-    "qwen38-27b-6-6-12": {"qh": (6, 6, 12), "kvh": (1, 1, 2), "ff": (5120, 4864, 7424),
-                          "gk": (4, 4, 8), "gv": (12, 12, 24)},
-    "qwen38-27b-int8":   {"qh": (6, 6, 12), "kvh": (1, 1, 2), "ff": (6656, 6656, 4096),
-                          "gk": (6, 6, 4), "gv": (18, 18, 12)},
-}
-CUSTOM = "qwen38-27b:"
-NAMES = ", ".join(PROFILES) + ", " + CUSTOM + "K0,K1,K2:F0,F1,F2"
-
-
-def _profile_rows() -> str:
-    rows = []
-    for name, t in PROFILES.items():
-        cols = ", ".join("{ " + ", ".join(str(x) for x in t[k]) + " }" for k in ("qh", "kvh", "ff", "gk", "gv"))
-        rows.append(f'            {{ "{name}", {cols} }},\n')
-    return "".join(rows)
-
-
-def _profile_match(var: str) -> str:
-    return " &&\n                ".join([f'std::strcmp({var}, "{n}") != 0' for n in PROFILES]
-                       + [f'std::strncmp({var}, "{CUSTOM}", {len(CUSTOM)}) != 0'])
+# The config_test inventory value: the 6/6/12 split of the dense Qwen3.8-27B over (XTX, XTX, R9700). Test data only.
+EXAMPLE = "kv=1,1,2;ffn=5120,4864,7424;lk=4,4,8;lv=12,12,24"
+KEYS = ("q", "kv", "ffn", "lk", "lv")
 
 
 def _edit(id: str, before: str, after: str, *, guard: str, max_span: int | None = None) -> Edit:
@@ -112,9 +89,10 @@ CONFIG = FilePatch(path="core/config.cpp", language="none", description="VTP14 N
     _edit(
         "n2-help",
         "    { \"--p2p\",                \"MODE\",   \"how the collectives reach the other cards: auto (default)\\n\"",
-        "    { \"--tp-ownership\",       \"NAME\",   \"BigCherry VTP14: an asymmetric tensor-parallel ownership\\n\"\n"
-        "                                        \"profile instead of the even split: " + NAMES + "\\n\"\n"
-        "                                        \"(the dense Qwen3.8-27B on --tp 3)\" }, /* BC_VTP14_N2_HELP */\n"
+        "    { \"--tp-ownership\",       \"SPEC\",   \"BigCherry VTP14: an uneven tensor-parallel split, one\\n\"\n"
+        "                                        \"count a rank: kv=..;ffn=..[;q=..][;lk=..;lv=..]\\n\"\n"
+        "                                        \"(KV heads, feed-forward rows, query heads, delta-net\\n\"\n"
+        "                                        \"key/value heads), checked against the model at load\" }, /* BC_VTP14_N2_HELP */\n"
         "    { \"--p2p\",                \"MODE\",   \"how the collectives reach the other cards: auto (default)\\n\"",
         guard="BC_VTP14_N2_HELP",
         max_span=1,
@@ -125,8 +103,10 @@ CONFIG = FilePatch(path="core/config.cpp", language="none", description="VTP14 N
         "            if (!(v = need(i))) return RAD_E_INVAL;",
         "        else if (S(\"--tp-ownership\")) { /* BC_VTP14_N2_PARSE */\n"
         "            if (!(v = need(i))) return RAD_E_INVAL;\n"
-        "            if (" + _profile_match("v") + ") {\n"
-        "                RAD_ERR(\"--tp-ownership: '%s' is not a profile (" + NAMES + ")\", v);\n"
+        "            /* The form only (keys, digits, separators); the shares are checked against the model\n"
+        "             * at build (rad_arch.h geom_from), where it is known. */\n"
+        "            if (!*v || std::strspn(v, \"abcdefghijklmnopqrstuvwxyz0123456789=,;\") != std::strlen(v)) {\n"
+        "                RAD_ERR(\"--tp-ownership: '%s' is not a split spec (kv=..;ffn=..[;q=..][;lk=..;lv=..])\", v);\n"
         "                return RAD_E_INVAL;\n"
         "            }\n"
         "            c->tp_ownership = v;\n"
@@ -151,7 +131,7 @@ CONFIG_TEST = FilePatch(path="tests/config_test.cpp", language="none", descripti
         "n2-config-test",
         "        { \"--max-source-pixels\", { \"1000000\" } },\n",
         "        { \"--max-source-pixels\", { \"1000000\" } },\n"
-        "        { \"--tp-ownership\", { \"" + PROFILE + "\" } }, /* BC_VTP14_N2_CONFIG_TEST */\n",
+        "        { \"--tp-ownership\", { \"" + EXAMPLE + "\" } }, /* BC_VTP14_N2_CONFIG_TEST */\n",
         guard="BC_VTP14_N2_CONFIG_TEST",
         max_span=2,
     ),
@@ -176,82 +156,146 @@ RAD_ARCH = FilePatch(path="arch/common/rad_arch.h", language="none", description
         "    int64_t n_ff       = 0;    /* per rank */\n",
         "    bool    attn_zero  = false;\n"
         "    /* BC_VTP14_N2_GEOM: --tp-ownership. `tp_owned_ok` is the plugin's opt-in, set before geom_from;\n"
-        "     * `tp_owned` says a profile is in force, and the own_* fields are this rank's first query head,\n"
+        "     * `tp_owned` says a split is in force, and the own_* fields are this rank's first query head,\n"
         "     * KV head, feed-forward row and delta-net key/value heads, with the delta net's per-rank heads\n"
-        "     * (own_gdn_k/v) and model totals (own_gdn_k_all/v_all) for the plugin to apply. */\n"
+        "     * (own_gdn_k/v) and totals (own_gdn_k_all/v_all, 0 when the spec gives none) for the plugin to\n"
+        "     * check (bc_own_linear_heads). own_kv_split / own_ff_split are every rank's KV heads and rows,\n"
+        "     * for a drafter that follows the target's split. */\n"
         "    bool    tp_owned_ok  = false;\n"
         "    bool    tp_owned     = false;\n"
         "    int64_t own_q_lo = 0, own_kv_lo = 0, own_ff_lo = 0;\n"
         "    int64_t own_gdn_k_lo = 0, own_gdn_v_lo = 0, own_gdn_k = 0, own_gdn_v = 0;\n"
         "    int64_t own_gdn_k_all = 0, own_gdn_v_all = 0;\n"
+        "    int64_t own_kv_split[MAX_RANKS] = {}, own_ff_split[MAX_RANKS] = {};\n"
         "    int64_t n_ff       = 0;    /* per rank */\n",
-        guard="BC_VTP14_N2_GEOM",
+        guard="BC_VTP14_N2_GEOM:",
+    ),
+    _edit(
+        "n2-spec-helpers",
+        "/* Fills `g` from model metadata and the build context.\n",
+        "/* BC_VTP14_N2_SPEC (rad0018): --tp-ownership's split spec, `key=n,n,..;key=..`, one count a rank. The\n"
+        " * keys are q, kv, ffn, lk and lv (rad0018 README); any other key, a repeated key, an empty or\n"
+        " * non-numeric count, or more than MAX_RANKS counts is refused. `n` is the count read, -1 when the key\n"
+        " * is absent. */\n"
+        "inline bool bc_own_spec_ok(const char* s) {\n"
+        "    static const char* const keys[] = { \"q\", \"kv\", \"ffn\", \"lk\", \"lv\" };\n"
+        "    for (const char* p = s; p; ) {\n"
+        "        const char* e = std::strchr(p, ';');\n"
+        "        const size_t len = e ? (size_t)(e - p) : std::strlen(p);\n"
+        "        const char* eq = (const char*)std::memchr(p, '=', len);\n"
+        "        if (!eq) return false;\n"
+        "        bool known = false;\n"
+        "        for (const char* k : keys)\n"
+        "            if (std::strlen(k) == (size_t)(eq - p) && std::strncmp(p, k, (size_t)(eq - p)) == 0) known = true;\n"
+        "        if (!known) return false;\n"
+        "        p = e ? e + 1 : nullptr;\n"
+        "    }\n"
+        "    return true;\n"
+        "}\n"
+        "inline bool bc_own_spec_get(const char* s, const char* key, int64_t* out, int* n) {\n"
+        "    *n = -1;\n"
+        "    const size_t kl = std::strlen(key);\n"
+        "    for (const char* p = s; p; ) {\n"
+        "        const char* e = std::strchr(p, ';');\n"
+        "        const char* end = e ? e : p + std::strlen(p);\n"
+        "        if ((size_t)(end - p) > kl && std::strncmp(p, key, kl) == 0 && p[kl] == '=') {\n"
+        "            if (*n >= 0) return false;\n"
+        "            int cnt = 0;\n"
+        "            for (const char* q = p + kl + 1; q < end; ) {\n"
+        "                if (cnt == MAX_RANKS || *q < '0' || *q > '9') return false;\n"
+        "                char* x = nullptr;\n"
+        "                const long long v = std::strtoll(q, &x, 10);\n"
+        "                if (x == q || x > end) return false;\n"
+        "                out[cnt++] = (int64_t)v;\n"
+        "                q = x;\n"
+        "                if (q < end && (*q != ',' || ++q == end)) return false;\n"
+        "            }\n"
+        "            if (cnt == 0) return false;\n"
+        "            *n = cnt;\n"
+        "        }\n"
+        "        p = e ? e + 1 : nullptr;\n"
+        "    }\n"
+        "    return true;\n"
+        "}\n"
+        "\n"
+        "/* BC_VTP14_N2_LINEAR_HEADS (rad0018): a plugin with a delta net checks its heads against the spec's lk/lv\n"
+        " * shares: they must be given, sum to the container's key and value heads, and keep the container's\n"
+        " * value:key ratio on every rank (each rank's value heads whole groups of its own key heads). */\n"
+        "inline int bc_own_linear_heads(const Geom& g, int64_t k_all, int64_t v_all, const char* who) {\n"
+        "    if (g.own_gdn_k_all <= 0 || g.own_gdn_v_all <= 0) {\n"
+        "        fprintf(stderr, \"radiance: %s: --tp-ownership: this model has a delta net (%lld key / %lld value \"\n"
+        "                        \"heads); give its split as lk=..;lv=..\\n\", who, (long long)k_all, (long long)v_all);\n"
+        "        return RAD_E_INVAL;\n"
+        "    }\n"
+        "    if (k_all != g.own_gdn_k_all || v_all != g.own_gdn_v_all || k_all <= 0 || v_all % k_all ||\n"
+        "        g.own_gdn_v != g.own_gdn_k * (v_all / k_all)) {\n"
+        "        fprintf(stderr, \"radiance: %s: --tp-ownership: lk/lv sum to %lld/%lld delta-net key/value heads with \"\n"
+        "                        \"%lld/%lld on rank %d; the container has %lld/%lld, and each rank's value heads must \"\n"
+        "                        \"be %lld a key head\\n\", who, (long long)g.own_gdn_k_all, (long long)g.own_gdn_v_all,\n"
+        "                (long long)g.own_gdn_k, (long long)g.own_gdn_v, g.rank, (long long)k_all, (long long)v_all,\n"
+        "                (long long)(k_all > 0 ? v_all / k_all : 0));\n"
+        "        return RAD_E_SHAPE;\n"
+        "    }\n"
+        "    return RAD_OK;\n"
+        "}\n"
+        "\n"
+        "/* Fills `g` from model metadata and the build context.\n",
+        guard="BC_VTP14_N2_SPEC",
+        max_span=2,
     ),
     _edit(
         "n2-geom-owned",
         "    int s;\n"
         "    /* The attention world (see Geom::attn_world): the world itself when it is at most the KV head",
-        "    /* BC_VTP14_N2_GEOM_OWNED: --tp-ownership replaces the even division below. */\n"
+        "    /* BC_VTP14_N2_GEOM_OWNED: --tp-ownership SPEC replaces the even division below. Every share is\n"
+        "     * checked against this model's own totals and this world; nothing about a model is assumed. */\n"
         "    if (c->tp_ownership && *c->tp_ownership) {\n"
+        "        const char* spec = c->tp_ownership;\n"
         "        if (!g.tp_owned_ok) {\n"
         "            fprintf(stderr, \"radiance: --tp-ownership %s: this architecture declares no ownership \"\n"
-        "                            \"spans; it serves only the even split\\n\", c->tp_ownership);\n"
-        "            return RAD_E_UNSUPPORTED;\n"
-        "        }\n"
-        "        struct BcOwnProfile { const char* name; int64_t qh[3], kvh[3], ff[3], gk[3], gv[3]; };\n"
-        "        static constexpr BcOwnProfile profiles[] = {\n"
-        + _profile_rows() +
-        "        };\n"
-        "        const BcOwnProfile* p = nullptr;\n"
-        "        for (const BcOwnProfile& q : profiles)\n"
-        "            if (std::strcmp(c->tp_ownership, q.name) == 0) p = &q;\n"
-        "        /* " + CUSTOM + "K0,K1,K2:F0,F1,F2: delta-net key heads and feed-forward rows per rank, attention as\n"
-        "         * the first profile; the totals, whole 256-row feed-forward tiles and non-empty shares are checked. */\n"
-        "        BcOwnProfile custom = profiles[0];\n"
-        "        if (!p && std::strncmp(c->tp_ownership, \"" + CUSTOM + "\", " + str(len(CUSTOM)) + ") == 0) {\n"
-        "            long long k[3], f[3];\n"
-        "            char tail = 0;\n"
-        "            const int n = std::sscanf(c->tp_ownership + " + str(len(CUSTOM)) + ", \"%lld,%lld,%lld:%lld,%lld,%lld%c\",\n"
-        "                                      &k[0], &k[1], &k[2], &f[0], &f[1], &f[2], &tail);\n"
-        "            bool ok = n == 6 && k[0] + k[1] + k[2] == 16 && f[0] + f[1] + f[2] == 17408;\n"
-        "            for (int i = 0; ok && i < 3; ++i) {\n"
-        "                ok = k[i] > 0 && f[i] > 0 && f[i] % 256 == 0;\n"
-        "                custom.gk[i] = k[i];\n"
-        "                custom.gv[i] = 3 * k[i];\n"
-        "                custom.ff[i] = f[i];\n"
-        "            }\n"
-        "            if (!ok) {\n"
-        "                fprintf(stderr, \"radiance: --tp-ownership '%s': " + CUSTOM + "K0,K1,K2:F0,F1,F2 takes three \"\n"
-        "                                \"delta-net key-head counts summing to 16 and three feed-forward widths in \"\n"
-        "                                \"256-row tiles summing to 17408, all non-zero\\n\", c->tp_ownership);\n"
-        "                return RAD_E_INVAL;\n"
-        "            }\n"
-        "            custom.name = c->tp_ownership;\n"
-        "            p = &custom;\n"
-        "        }\n"
-        "        if (!p) {\n"
-        "            fprintf(stderr, \"radiance: --tp-ownership '%s' is not a profile\\n\", c->tp_ownership);\n"
-        "            return RAD_E_INVAL;\n"
-        "        }\n"
-        "        if (g.world != 3 || g.n_layer != 64 || g.n_embd != 5120 || g.head_dim != 256 ||\n"
-        "            g.n_head_all != 24 || g.n_head_kv_all != 4 || g.n_ff_all != 17408 ||\n"
-        "            g.n_vocab_all != 248320) {\n"
-        "            fprintf(stderr, \"radiance: --tp-ownership %s is the dense Qwen3.8-27B \"\n"
-        "                            \"(64 layers, 5120 wide, 24 Q / 4 KV heads of 256, 17408 FFN, 248320 \"\n"
-        "                            \"vocabulary) on --tp 3; this is world %d, %lld layers, %lld wide, %lld/%lld \"\n"
-        "                            \"heads of %lld, %lld FFN, %lld vocabulary\\n\", p->name, g.world,\n"
-        "                    (long long)g.n_layer, (long long)g.n_embd, (long long)g.n_head_all,\n"
-        "                    (long long)g.n_head_kv_all, (long long)g.head_dim, (long long)g.n_ff_all,\n"
-        "                    (long long)g.n_vocab_all);\n"
+        "                            \"spans; it serves only the even split\\n\", spec);\n"
         "            return RAD_E_UNSUPPORTED;\n"
         "        }\n"
         "        if (c->calib_dir && *c->calib_dir) {\n"
         "            fprintf(stderr, \"radiance: --tp-ownership: calibration taps assume the even split's \"\n"
-        "                            \"global widths; record calibration without a profile\\n\");\n"
+        "                            \"global widths; record calibration without a split\\n\");\n"
         "            return RAD_E_UNSUPPORTED;\n"
         "        }\n"
+        "        int64_t q[MAX_RANKS] = {}, kv[MAX_RANKS] = {}, ff[MAX_RANKS] = {}, lk[MAX_RANKS] = {}, lv[MAX_RANKS] = {};\n"
+        "        int nq = -1, nkv = -1, nff = -1, nlk = -1, nlv = -1;\n"
+        "        const int W = g.world;\n"
+        "        const char* why = nullptr;\n"
+        "        if (!bc_own_spec_ok(spec) || !bc_own_spec_get(spec, \"q\", q, &nq) ||\n"
+        "            !bc_own_spec_get(spec, \"kv\", kv, &nkv) || !bc_own_spec_get(spec, \"ffn\", ff, &nff) ||\n"
+        "            !bc_own_spec_get(spec, \"lk\", lk, &nlk) || !bc_own_spec_get(spec, \"lv\", lv, &nlv))\n"
+        "            why = \"it is not kv=..;ffn=..[;q=..][;lk=..;lv=..] with whole counts\";\n"
+        "        else if (W < 2 || nkv != W || nff != W || (nq >= 0 && nq != W) || (nlk >= 0) != (nlv >= 0) ||\n"
+        "                 (nlk >= 0 && (nlk != W || nlv != W)))\n"
+        "            why = \"kv and ffn (and q, lk, lv when given) need one count a rank; lk and lv come together\";\n"
+        "        else if (g.n_head_kv_all <= 0 || g.n_head_all % g.n_head_kv_all)\n"
+        "            why = \"this model's query heads are not whole groups of its KV heads\";\n"
+        "        if (!why) {\n"
+        "            const int64_t grp = g.n_head_all / g.n_head_kv_all;\n"
+        "            int64_t sq = 0, skv = 0, sff = 0;\n"
+        "            for (int i = 0; i < W && !why; ++i) {\n"
+        "                if (nq < 0) q[i] = kv[i] * grp;\n"
+        "                if (q[i] <= 0 || kv[i] <= 0 || ff[i] <= 0 || (nlk >= 0 && (lk[i] <= 0 || lv[i] <= 0)))\n"
+        "                    why = \"every share must be positive\";\n"
+        "                else if (q[i] != kv[i] * grp)\n"
+        "                    why = \"each rank's query heads must be whole groups of its own KV heads\";\n"
+        "                sq += q[i]; skv += kv[i]; sff += ff[i];\n"
+        "            }\n"
+        "            if (!why && (sq != g.n_head_all || skv != g.n_head_kv_all || sff != g.n_ff_all))\n"
+        "                why = \"the shares must sum to this model's query heads, KV heads and feed-forward rows\";\n"
+        "        }\n"
+        "        if (why) {\n"
+        "            fprintf(stderr, \"radiance: --tp-ownership '%s': %s (this is world %d; the model has %lld query / \"\n"
+        "                            \"%lld KV heads and %lld feed-forward rows)\\n\", spec, why, W,\n"
+        "                    (long long)g.n_head_all, (long long)g.n_head_kv_all, (long long)g.n_ff_all);\n"
+        "            return RAD_E_INVAL;\n"
+        "        }\n"
         "        const int r = g.rank;\n"
-        "        const auto first = [r](const int64_t (&n)[3]) {  /* this rank's first head or row */\n"
+        "        const auto first = [r](const int64_t* n) {  /* this rank's first head or row */\n"
         "            int64_t lo = 0;\n"
         "            for (int i = 0; i < r; ++i) lo += n[i];\n"
         "            return lo;\n"
@@ -260,22 +304,31 @@ RAD_ARCH = FilePatch(path="arch/common/rad_arch.h", language="none", description
         "        g.attn_world = g.world;\n"
         "        g.attn_rank  = r;\n"
         "        g.attn_zero  = false;\n"
-        "        g.n_head     = p->qh[r];\n"
-        "        g.n_head_kv  = p->kvh[r];\n"
-        "        g.kv_off     = first(p->kvh) * g.head_dim;\n"
-        "        g.n_ff       = p->ff[r];\n"
-        "        g.own_q_lo   = first(p->qh);\n"
-        "        g.own_kv_lo  = first(p->kvh);\n"
-        "        g.own_ff_lo  = first(p->ff);\n"
-        "        g.own_gdn_k  = p->gk[r];\n"
-        "        g.own_gdn_v  = p->gv[r];\n"
-        "        g.own_gdn_k_lo = first(p->gk);\n"
-        "        g.own_gdn_v_lo = first(p->gv);\n"
-        "        g.own_gdn_k_all = 16;\n"
-        "        g.own_gdn_v_all = 48;\n"
+        "        g.n_head     = q[r];\n"
+        "        g.n_head_kv  = kv[r];\n"
+        "        g.kv_off     = first(kv) * g.head_dim;\n"
+        "        g.n_ff       = ff[r];\n"
+        "        g.own_q_lo   = first(q);\n"
+        "        g.own_kv_lo  = first(kv);\n"
+        "        g.own_ff_lo  = first(ff);\n"
+        "        for (int i = 0; i < W; ++i) {\n"
+        "            g.own_kv_split[i] = kv[i];\n"
+        "            g.own_ff_split[i] = ff[i];\n"
+        "        }\n"
+        "        if (nlk >= 0) {\n"
+        "            g.own_gdn_k    = lk[r];\n"
+        "            g.own_gdn_v    = lv[r];\n"
+        "            g.own_gdn_k_lo = first(lk);\n"
+        "            g.own_gdn_v_lo = first(lv);\n"
+        "            g.own_gdn_k_all = g.own_gdn_v_all = 0;\n"
+        "            for (int i = 0; i < W; ++i) {\n"
+        "                g.own_gdn_k_all += lk[i];\n"
+        "                g.own_gdn_v_all += lv[i];\n"
+        "            }\n"
+        "        }\n"
         "        g.n_vocab    = shard_extent(g.n_vocab_all, g.world, r);\n"
         "        g.vocab_off  = shard_begin (g.n_vocab_all, g.world, r);\n"
-        "        if (g.n_vocab <= 0 || g.n_head != 6 * g.n_head_kv) return RAD_E_SHAPE;\n"
+        "        if (g.n_vocab <= 0) return RAD_E_SHAPE;\n"
         "        return RAD_OK;\n"
         "    }\n"
         "\n"
@@ -304,12 +357,7 @@ QWEN = FilePatch(path="arch/qwen35_bf16/qwen35_bf16.cpp", language="none", descr
         "        return s;",
         "    int s;\n"
         "    if (g.tp_owned) { /* BC_VTP14_N2_QWEN_GDN_HEADS */\n"
-        "        if (n_head_k_all != g.own_gdn_k_all || n_head_v_all != g.own_gdn_v_all) {\n"
-        "            fprintf(stderr, \"radiance: qwen35: --tp-ownership expects %lld/%lld delta-net key/value \"\n"
-        "                            \"heads, the container has %lld/%lld\\n\", (long long)g.own_gdn_k_all,\n"
-        "                    (long long)g.own_gdn_v_all, (long long)n_head_k_all, (long long)n_head_v_all);\n"
-        "            return RAD_E_SHAPE;\n"
-        "        }\n"
+        "        if ((s = bc_own_linear_heads(g, n_head_k_all, n_head_v_all, \"qwen35\")) != RAD_OK) return s;\n"
         "        gc.n_head_k = g.own_gdn_k;\n"
         "        gc.n_head_v = g.own_gdn_v;\n"
         "    } else {\n"

@@ -1,17 +1,18 @@
-"""rad0019 (VTP14 N2, fp8): --tp-ownership qwen38-27b-6-6-12 for the fp8 Qwen3.8 plugin (qwen35_fp8).
+"""rad0019 (VTP14 N2, fp8): --tp-ownership for the fp8 Qwen3.8 plugin (qwen35_fp8, and qwen35_w8a8 built from it).
 
-rad0018 adds the profile, the Geom fields and the BF16 plugin. The fp8 plugin serves the block-fp8, w8a8 and other
-quantised 27B containers, the ones that fit two RX 7900 XTX, so the matched TP2-vs-TP3 comparison (VTP14 N0/N7)
-needs it. Its blocks already take per-rank spans: attention spans q|gate, k/v and the output by head
-(rad_block_attn_gated_fp8.h), the delta net takes uneven heads through Config::k_first / v_first
-(rad_block_gdn_fp8.h), and LinearFP8 takes a row or column span. Every span is whole 128-row scale blocks here
-(Q 3072/3072/6144 rows of q|gate, KV 256/256/512, FFN 5120/4864/7424, GDN K 512/512/1024, V 1536/1536/3072).
+rad0018 adds the split spec, the Geom fields and the BF16 plugin. The fp8 plugin serves the block-fp8, MXFP4, w8a8 and
+other quantised containers. Its blocks already take per-rank spans: attention spans q|gate, k/v and the output by head
+(rad_block_attn_gated_fp8.h), the delta net takes uneven heads through Config::k_first / v_first (rad_block_gdn_fp8.h),
+and LinearFP8 takes a row or column span (an int8 or block-fp8 linear refuses a span that cuts its scale groups).
 
-- qwen35_fp8: opts in (Geom::tp_owned_ok); delta-net heads and first heads from the profile; explicit vocabulary
-  spans for token_embd and output. Refused under a profile: a vocabulary-weighted head (output.k<B>, rows
-  whole 256-row classes of an even split), and a speculative drafter (its geometry is not owned).
-- rad_block_attn_gated_fp8.h / rad_block_mlp_fp8.h: the spans under Geom::tp_owned only. The blocks are shared by
-  eight plugins; only one that opted in can set tp_owned.
+- qwen35_fp8: opts in (Geom::tp_owned_ok); delta-net heads checked by bc_own_linear_heads and first heads from the
+  spec; explicit vocabulary spans for token_embd and output. Refused under a split: a vocabulary-weighted head
+  (output.k<B>, whose rows are whole classes of an even split).
+- The DFlash2 drafter follows its target's split: KV heads and feed-forward rows in the target's proportions
+  (Geom::own_kv_split / own_ff_split), query heads whole groups of its KV heads; a drafter that does not scale to
+  whole heads and rows is refused. Its draft head is sharded like the target's vocabulary.
+- rad_block_attn_gated_fp8.h / rad_block_mlp_fp8.h / rad_fp8.h / rad_block_dflash2.h: the spans under
+  Geom::tp_owned only. The blocks are shared by several plugins; only one that opted in can set tp_owned.
 
 Source-pinned to radiance v1.17.0 (19d4e8fe), applied after rad0018.
 """
@@ -54,12 +55,7 @@ QWEN = FilePatch(path="arch/qwen35_fp8/qwen35_fp8.cpp", language="none", descrip
         "        return s;",
         "    int s;\n"
         "    if (g.tp_owned) { /* BC_VTP14_N2F_GDN_HEADS: the delta net's uneven split (Config::k_first) */\n"
-        "        if (n_head_k_all != g.own_gdn_k_all || n_head_v_all != g.own_gdn_v_all) {\n"
-        "            fprintf(stderr, \"radiance: qwen35: --tp-ownership expects %lld/%lld delta-net key/value \"\n"
-        "                            \"heads, the container has %lld/%lld\\n\", (long long)g.own_gdn_k_all,\n"
-        "                    (long long)g.own_gdn_v_all, (long long)n_head_k_all, (long long)n_head_v_all);\n"
-        "            return RAD_E_SHAPE;\n"
-        "        }\n"
+        "        if ((s = bc_own_linear_heads(g, n_head_k_all, n_head_v_all, \"qwen35\")) != RAD_OK) return s;\n"
         "        gc.n_head_k     = g.own_gdn_k;\n"
         "        gc.n_head_v     = g.own_gdn_v;\n"
         "        gc.k_first      = g.own_gdn_k_lo;\n"
@@ -208,27 +204,42 @@ DRAFT_GEOM = FilePatch(path="arch/common/rad_arch.h", language="none", descripti
         "    RAD_ARCH_TRY(divide_or_fail(dg.n_head_kv_all, dg.world, \"draft num_key_value_heads\", &dg.n_head_kv));\n"
         "    RAD_ARCH_TRY(divide_or_fail(dg.n_ff_all,      dg.world, \"draft intermediate_size\",   &dg.n_ff));\n",
         "    if (target.tp_owned) {\n"
-        "        /* BC_VTP14_N2F_DRAFTER_GEOM: under --tp-ownership the drafter takes the profile's 1:1:2 shares of\n"
-        "         * its own heads (DFlash2 on the 27B: 8/8/16 query and 2/2/4 KV heads of 128) and the target's\n"
-        "         * feed-forward rows when its width is the target's, so every rank's share of each all-reduce\n"
-        "         * stays its own. Anything else is refused rather than split unevenly. */\n"
-        "        static constexpr int64_t share[3] = { 1, 1, 2 }, first[3] = { 0, 1, 2 };\n"
-        "        if (dg.world != 3 || dg.n_head_all % 4 || dg.n_head_kv_all % 4 || dg.n_ff_all != target.n_ff_all) {\n"
+        "        /* BC_VTP14_N2F_DRAFTER_GEOM: under --tp-ownership the drafter follows its target's split: its KV\n"
+        "         * heads in the target's KV proportions (target.own_kv_split), its query heads whole groups of them,\n"
+        "         * and its feed-forward rows in the target's proportions, so every rank's share of each all-reduce\n"
+        "         * stays its own. A drafter whose widths do not scale to whole heads and rows is refused rather than\n"
+        "         * split unevenly. */\n"
+        "        const int W = dg.world, r = dg.rank;\n"
+        "        int64_t kv[MAX_RANKS] = {}, ff[MAX_RANKS] = {};\n"
+        "        bool ok = W == target.world && target.n_head_kv_all > 0 && target.n_ff_all > 0 &&\n"
+        "                  dg.n_head_kv_all > 0 && dg.n_head_all % dg.n_head_kv_all == 0;\n"
+        "        for (int i = 0; ok && i < W; ++i) {\n"
+        "            const int64_t kvn = target.own_kv_split[i] * dg.n_head_kv_all;\n"
+        "            const int64_t ffn = target.own_ff_split[i] * dg.n_ff_all;\n"
+        "            ok = kvn % target.n_head_kv_all == 0 && ffn % target.n_ff_all == 0;\n"
+        "            kv[i] = kvn / target.n_head_kv_all;\n"
+        "            ff[i] = ffn / target.n_ff_all;\n"
+        "            ok = ok && kv[i] > 0 && ff[i] > 0;\n"
+        "        }\n"
+        "        if (!ok) {\n"
         "            fprintf(stderr, \"radiance: --tp-ownership: the %s drafter (%lld/%lld heads, %lld FFN) does not \"\n"
-        "                            \"split 1:1:2 over three ranks like its target (%lld FFN)\\n\", what,\n"
-        "                    (long long)dg.n_head_all, (long long)dg.n_head_kv_all, (long long)dg.n_ff_all,\n"
-        "                    (long long)target.n_ff_all);\n"
+        "                            \"split in its target's proportions into whole heads and rows\\n\", what,\n"
+        "                    (long long)dg.n_head_all, (long long)dg.n_head_kv_all, (long long)dg.n_ff_all);\n"
         "            return RAD_E_UNSUPPORTED;\n"
         "        }\n"
-        "        const int r = dg.rank;\n"
-        "        const int64_t q4 = dg.n_head_all / 4, kv4 = dg.n_head_kv_all / 4;\n"
-        "        dg.n_head    = q4 * share[r];\n"
-        "        dg.n_head_kv = kv4 * share[r];\n"
-        "        dg.own_q_lo  = q4 * first[r];\n"
-        "        dg.own_kv_lo = kv4 * first[r];\n"
+        "        const int64_t grp = dg.n_head_all / dg.n_head_kv_all;\n"
+        "        int64_t kv_lo = 0, ff_lo = 0;\n"
+        "        for (int i = 0; i < r; ++i) {\n"
+        "            kv_lo += kv[i];\n"
+        "            ff_lo += ff[i];\n"
+        "        }\n"
+        "        dg.n_head    = kv[r] * grp;\n"
+        "        dg.n_head_kv = kv[r];\n"
+        "        dg.own_q_lo  = kv_lo * grp;\n"
+        "        dg.own_kv_lo = kv_lo;\n"
         "        dg.kv_off    = dg.own_kv_lo * dg.head_dim;\n"
-        "        dg.n_ff      = target.n_ff;\n"
-        "        dg.own_ff_lo = target.own_ff_lo;\n"
+        "        dg.n_ff      = ff[r];\n"
+        "        dg.own_ff_lo = ff_lo;\n"
         "    } else {\n"
         "        RAD_ARCH_TRY(divide_or_fail(dg.n_head_all,    dg.world, \"draft num_attention_heads\", &dg.n_head));\n"
         "        RAD_ARCH_TRY(divide_or_fail(dg.n_head_kv_all, dg.world, \"draft num_key_value_heads\", &dg.n_head_kv));\n"

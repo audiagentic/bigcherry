@@ -1,4 +1,4 @@
-"""VTP14 (rad0020): the fp8 Qwen plugin's pipelined prefill at three ranks under --tp-ownership.
+"""VTP14 (rad0020): the fp8 Qwen plugin's pipelined prefill as configuration (--pipelined-prefill, --pipelined-prefill-min-rows).
 
 Card-free. The pinned-source test applies rad0018, rad0019 and rad0020 in order to radiance v1.17.0 when a checkout
 with that tag is reachable (RADIANCE_SRC, or the workspace's vendor/radiance), and is skipped otherwise.
@@ -6,6 +6,7 @@ with that tag is reachable (RADIANCE_SRC, or the workspace's vendor/radiance), a
 from __future__ import annotations
 
 import importlib.util
+import os
 import subprocess
 import sys
 import tempfile
@@ -43,9 +44,20 @@ class Tp3PipelinedPrefillTests(unittest.TestCase):
         for prod in ("radiance", "radiance-native"):
             self.assertNotIn("vtp14-overlap", recipe["source"][prod]["patch-sets"])
 
-    def test_gated_on_ownership_at_three_ranks(self):
-        text = "".join(e.text for f in load(PKG) for e in f.edits)
-        self.assertIn("m.pipe_on = (g.world == 2 || (g.world == 3 && g.tp_owned)) && g.max_tok >= kPipeMinRows;", text)
+    def test_mode_and_rows_are_configuration(self):
+        edits = {e.id: e.text for f in load(PKG) for e in f.edits}
+        self.assertIn("int32_t pipelined_prefill;", edits["pipe-ctx-fields"])
+        self.assertIn("int64_t pipelined_prefill_min_rows;", edits["pipe-ctx-fields"])
+        mode = edits["pipe-mode"]
+        self.assertIn("ctx->pipelined_prefill == BC_PIPE_OFF ? false", mode)
+        self.assertIn("ctx->pipelined_prefill == BC_PIPE_ON ? g.world >= 2", mode)
+        self.assertIn("(g.world == 2 || (g.world == 3 && g.tp_owned))", mode)
+        self.assertIn("ctx->pipelined_prefill_min_rows > 0 ? ctx->pipelined_prefill_min_rows : kPipeMinRows", mode)
+        self.assertIn("m.pipe_on = pipe_want && g.max_tok >= m.pipe_min_rows;", edits["pipe-on"])
+        self.assertIn("T < m.pipe_min_rows", edits["pipe-ready-rows"])
+        parse = edits["pipe-parse"]
+        for word in ('"auto"', '"on"', '"off"', "n != 0 && n < 128"):
+            self.assertIn(word, parse)
 
     def test_applies_to_pinned_radiance_source(self):
         checkout = radiance_checkout()
@@ -55,7 +67,7 @@ class Tp3PipelinedPrefillTests(unittest.TestCase):
         for name in ("rad0018_vtp14_n2_tp_ownership", "rad0019_vtp14_n2_tp_ownership_fp8",
                      "rad0020_vtp14_tp3_pipelined_prefill"):
             files += load(PATCHES / name)
-        with tempfile.TemporaryDirectory() as d:
+        with tempfile.TemporaryDirectory(dir=os.environ.get("TMPDIR")) as d:
             root = Path(d)
             for path in {f.path for f in files if not f.create}:
                 blob = subprocess.run(["git", "-C", str(checkout), "show", f"{PIN_COMMIT}:{path}"],
@@ -69,9 +81,12 @@ class Tp3PipelinedPrefillTests(unittest.TestCase):
             again = apply_all(load(PKG), root)
             self.assertTrue(all(e.status == "already-applied" for f in again for e in f.results))
             qwen = (root / "arch/qwen35_fp8/qwen35_fp8.cpp").read_text()
-            self.assertIn("BC_VTP14_PIPE3_ON", qwen)
-            self.assertIn("BC_VTP14_PIPE3_NOTE", qwen)
-            self.assertNotIn("        m.pipe_on = g.world == 2 && g.max_tok >= kPipeMinRows;\n", qwen)
+            for guard in ("BC_VTP14_PIPE_MODE", "BC_VTP14_PIPE_ON", "BC_VTP14_PIPE_READY", "BC_VTP14_PIPE_NOTE_ROWS"):
+                self.assertIn(guard, qwen)
+            # Only the default and the declaration still name the constant; every gate reads the configured rows.
+            self.assertNotIn("g.max_tok >= kPipeMinRows", qwen)
+            self.assertNotIn("T < kPipeMinRows", qwen)
+            self.assertIn("int64_t pipelined_prefill_min_rows;", (root / "abi/rad_builder.h").read_text())
 
 
 if __name__ == "__main__":
