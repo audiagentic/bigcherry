@@ -43,6 +43,8 @@ plan_check_describe() {
   fi
   # A TP engine's ranks exchange through host memory, never P2P (this host has none), as in the helper-free path below.
   [ "${LAYOUT_ENGINE_RANKS:-1}" -le 1 ] || PLAN_SET+=(--set 'tuning.p2p="off"')
+  # The operator's --set settings last, so they win over the layout's [settings] and the values above (bc-serve origin: cli).
+  PLAN_SET+=(${USER_SET[@]+"${USER_SET[@]}"})
   # What else decides the plan but is not a bc-serve setting: the route-heat file's contents (they decide which experts the
   # helpers own), the per-card budget overrides and the lab experiment. Passed to every bc-serve call as --plan-extra and
   # hashed into the key. (No raw engine flag and no n-gram card: a helper layout refuses both, they are not manifest fields.)
@@ -87,6 +89,8 @@ plan_check_describe_engine_only() {
   done
   PLAN_SET+=(--set "memory.host_pool_mib=$pool" --set "memory.host_kv_mib=$kv" --set "engine.ngram_placement=\"$ngram\"")
   [ "${LAYOUT_ENGINE_RANKS:-1}" -le 1 ] || PLAN_SET+=(--set 'tuning.p2p="off"')
+  # The operator's --set settings last, so they win over the layout's [settings] and the values above (bc-serve origin: cli).
+  PLAN_SET+=(${USER_SET[@]+"${USER_SET[@]}"})
   PLAN_SITE=(--site "$1")
   PLAN_EXTRA=(--plan-extra "budgets: ${BUDGETS[*]:-default}")
   PLAN_OBJECTS=()

@@ -28,7 +28,7 @@
 # Lab: bigcherry build --lane radiance:stock:linux-radiance
 #
 # Usage:
-#   bash tools/lab/radiance/launch-flashnext-best.sh [start] [--release TAG|latest | --build DIR] [--port N] [--heat FILE] [--host-pool-mib N] [--host-kv-mib N] [--chunk TOKENS] [--ngram-placement ram|disk|vram] [--kv-dtype fp8|fp8_v4|k6_v4] [--ngram-device INDEX] [--max-model-len TOKENS] [--record-heat PREFIX|off [--record-period S]] [--live-policy FILE] [--experiment FILE] [--calibrate --calibration-prompts-a FILE --calibration-prompts-b FILE] [--gpu-power | --no-gpu-power] [--layout NAME] [--budget ARCH=MIB] [--canary-prompt TEXT --canary-expect FACT]
+#   bash tools/lab/radiance/launch-flashnext-best.sh [start] [--release TAG|latest | --build DIR] [--port N] [--heat FILE] [--host-pool-mib N] [--host-kv-mib N] [--chunk TOKENS] [--ngram-placement ram|disk|vram] [--kv-dtype fp8|fp8_v4|k6_v4] [--ngram-device INDEX] [--max-model-len TOKENS] [--record-heat PREFIX|off [--record-period S]] [--live-policy FILE] [--experiment FILE] [--calibrate --calibration-prompts-a FILE --calibration-prompts-b FILE] [--gpu-power | --no-gpu-power] [--layout NAME] [--set KEY=VALUE ...] [--budget ARCH=MIB] [--canary-prompt TEXT --canary-expect FACT]
 
 #     (every start ends with a canary completion that must contain the fact, default 'The capital of France is' -> Paris; a failure stops the launch, exit 96)
 #   bash tools/lab/radiance/launch-flashnext-best.sh stop
@@ -114,6 +114,7 @@ NUM_SPEC=3                # the engine's --num-speculative-tokens (MTP depth); l
 NGRAM=ram
 KV_DTYPE=fp8
 CUSTOM_SERVE_OPTIONS=()
+USER_SET=()   # --set KEY=VALUE: bc-serve resolver settings over the layout's (e.g. tuning.tp_ownership), passed to every bc-serve call
 NGRAM_DEV=""
 MAX_LEN=262144
 ROPE=none
@@ -147,6 +148,7 @@ while [ $# -gt 0 ]; do
     --gpu-power) GPU_POWER=1; shift ;;
     --no-gpu-power) GPU_POWER=0; shift ;;
     --layout) LAYOUT=$2; shift 2 ;;
+    --set) [ $# -ge 2 ] || { echo "--set needs KEY=VALUE" >&2; exit 2; }; USER_SET+=(--set "$2"); shift 2 ;;
     --budget) BUDGETS+=("$2"); shift 2 ;;
     --host-pool-mib) CUSTOM_SERVE_OPTIONS+=(--host-pool-mib); HOST_POOL_MIB=$2; shift 2 ;;
     --host-kv-mib) CUSTOM_SERVE_OPTIONS+=(--host-kv-mib); HOST_KV_MIB=$2; shift 2 ;;

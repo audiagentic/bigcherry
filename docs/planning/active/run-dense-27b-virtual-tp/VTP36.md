@@ -267,8 +267,43 @@ of both arms' mean is one document (`kld-docs-22`, positions ~1270-1600, KLD up 
 the serial chunk change included (without it: 0.00136 / 0.049 / 96.90% and 0.00143 / 0.042 / 97.03%). The BF16
 values for gate 2 should be re-recorded on a kept reference.
 
-Kept as an opt-in layout, `qwen27b-tp3-int8-556` (launcher smoke: starts, 2048-token prompt, stops); `qwen27b-tp3-int8`
-stays the default until the owner chooses.
+Kept as an opt-in setting on `qwen27b-tp3-int8`, not a layout of its own: `--set tuning.tp_ownership='"kv=1,1,2;ffn=5632,5632,6144;lk=5,5,6;lv=15,15,18"'`
+(launcher `--set`, or bc-serve). The layout's own split stays the default until the owner chooses.
+The first launcher start with it was refused (BC_CFG_PLAN_MISMATCH): bc-serve's measured-plan cache key left out
+every `tuning.*` value, so the plan measured for the default split was reused. The key now includes the tuning section
+(serving `plan_key_inputs`); with it the start measures its own plan and the engine runs the 5,5,6 split (smoke 2026-11-14).
+
+### Copy-engine assemble for the narrow-link rank, in isolation (2026-11-14, `dmalane.hip`, `dmalane.txt`)
+
+The R9700's step under the duplex weights (its whole partial out, the whole result in, in pieces), 40 iterations, every
+word checked: A the fused kernel (rad0032), B a kernel that sends the pieces and raises a flag per piece while a second
+stream waits on each flag (`hipStreamWaitValue32`) and copies that piece in with the copy engine (the engine change the
+lead was offered), C a kernel out beside one copy in with no dependency (the link's ceiling).
+
+| R9700, 4 pieces | 1 MiB | 4 MiB | 10 MiB |
+|---|---|---|---|
+| A fused (now) | 330 us | 946 us | 1948 us |
+| B kernel out + flag-gated copy engine in | 335 us | 1129 us | 2579 us (+32%) |
+| C free duplex ceiling | 200 us | 757 us | 1773 us (-9%) |
+
+Gated per piece, the copy engine is slower than the fused loop (8 pieces: the same); with no gating at all it would win
+9% at 10 MiB. On an XTX B only ties A at 10 MiB. **NO-GO**: the engine change is not worth building.
+
+### TP3 against TP2 (2026-11-14, `tp2-vs-tp3-abba.md`)
+
+MXFP4, `qwen27b-2xtx` (A) against `qwen27b-tp3` (B), both started by the launcher on build
+`de5fae29d749178138275ba302404269` without the cards' power settings, 2x ABBA, n=8:
+
+| | TP2 | TP3 | change |
+|---|---|---|---|
+| 1 / 4 / 6 / 8 streams, tok/s | 86.5 / 220.2 / 218.2 / 184.9 | 122.4 / 256.4 / 246.1 / 277.4 | +41.5 / +16.4 / +12.8 / +50.1% |
+| one prompt, 522 / 2021 / 6059 tokens, time to first token | 251 / 733 / 2413 ms | 225 / 775 / 2217 ms | -10.5 / +5.7 / -8.1% |
+| four 4096-token prompts | 6275 ms | 6810 ms | +8.5% |
+| 6144-token prompt beside 4 streams | 2716 ms | 2551 ms | -6.1% |
+
+TP2's 8-stream row queues two streams (`--max-num-seqs 6`). The first acceptance criterion misses by 0.7 points: TTFT at
+2048 is 5.7% over TP2, whose own time on this build is 733 ms (859 ms recorded earlier). At 512 and 6144 tokens and
+beside streams TP3 is ahead; with four long prompts at once it is 8.5% behind.
 
 ### NO-GOs recorded
 
@@ -289,13 +324,11 @@ stays the default until the owner chooses.
   should wait). `qwen27b-tp3-capacity` keeps the grid alone: not measured.
 - For the lead:
   1. the int8 split 5,5,6 (table above): passes the quality gate against its own serial prefill and is nearer BF16;
-     opt-in layout `qwen27b-tp3-int8-556`, default pending the owner;
-  2. the copy-engine assemble for the rank behind the narrow link (technique 3): the largest remaining transport item,
-     an engine change (DMA lane beside a collective, link gate) rather than a kernel one;
+     opt-in by `--set tuning.tp_ownership=...` on `qwen27b-tp3-int8`, default pending the owner;
+  2. the copy-engine assemble for the rank behind the narrow link (technique 3): NO-GO in isolation (2026-11-14, above);
   3. r1's slow host read stays with the slot at root port 00:01.0 across the card swap (HL01): r1's reduce is the
      longest XTX phase in every pieced call, so whatever lifts it shortens the calls further;
-  4. acceptance: MXFP4 TP3 at 2048 tokens is 775 ms against TP2's recorded 859 ms; a matched TP2 arm on this build
-     would close the item's first criterion;
+  4. acceptance: the matched TP2 arm (2026-11-14, above) puts TP3 5.7% behind TP2 at 2048 tokens;
   5. rad0021's README still says the x4 card owns no shard under 4,4,1 (it owns 1/9); `ts_duplex` is what makes that true.
 
 ### Not done
@@ -353,7 +386,7 @@ link, to the extent the card overlaps directions: the fused loop gets about a th
 
 ## Acceptance Criteria
 
-- MXFP4 TP3 one-stream TTFT within 5% of TP2 at 2048 tokens (carried from VTP35), or a recorded NO-GO stating the transport limit with the profile that shows it.
+- MXFP4 TP3 one-stream TTFT within 5% of TP2 at 2048 tokens (carried from VTP35), or a recorded NO-GO stating the transport limit with the profile that shows it. *2026-11-14: +5.7% (775 against 733 ms, matched ABBA); not met.*
 - TP3 aggregate tok/s at 4/6/8 streams stays at or above the baseline table for both formats.
 - Every shipped lever is selectable per layout or run (no model or card constants), with its gain attributed by ABBA.
 - Every reordering change passes the reordering quality gate defined in VTP37 (noise floor against serial; no quality loss against BF16).
