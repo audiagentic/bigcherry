@@ -1,0 +1,18 @@
+[0/2] Re-checking globbed directories...
+[1/17] Building CXX object core/CMakeFiles/rad_core.dir/place/moe_remote.cpp.o
+[2/17] Building CXX object core/CMakeFiles/rad_core.dir/place/stager.cpp.o
+[3/17] Building CXX object core/CMakeFiles/rad_core.dir/engine_mm.cpp.o
+[4/17] Building CXX object core/CMakeFiles/rad_core.dir/engine_probe.cpp.o
+[5/17] Building CXX object core/CMakeFiles/rad_core.dir/engine_kld.cpp.o
+[6/17] Building CXX object core/CMakeFiles/rad_core.dir/runtime/oracle.cpp.o
+[7/17] Building CXX object core/CMakeFiles/rad_core.dir/runtime/issue.cpp.o
+[8/17] Building CXX object core/CMakeFiles/rad_core.dir/engine_draft.cpp.o
+[9/17] Building CXX object core/CMakeFiles/rad_core.dir/runtime/ctx.cpp.o
+[10/17] Building CXX object core/CMakeFiles/rad_core.dir/place/mover.cpp.o
+[11/17] Building CXX object core/CMakeFiles/rad_core.dir/engine_bringup.cpp.o
+[12/17] Building CXX object core/CMakeFiles/rad_core.dir/engine.cpp.o
+[13/17] Linking HIP static library core/librad_core.a
+[14/17] Linking HIP executable bin/rad-kbench
+[15/17] Linking HIP executable bin/rad-info
+[16/17] Linking HIP executable bin/rad-tune
+[17/17] Linking HIP executable bin/radiance

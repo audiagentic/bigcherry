@@ -34,3 +34,10 @@ Patch validation remains owned by `tools/bigcherry/patch/evidence.py` and the pa
 ## TR00 tooling rationalisation
 
 `tooling-rationalisation/TR00/` contains the immutable 383-row implementation-start disposition evidence. The maintained 385-row registry is [`../reference/tooling/TOOL_DISPOSITION.md`](../reference/tooling/TOOL_DISPOSITION.md); the two RA39 lab rows are current-only and are intentionally absent from the historical bundle.
+
+## Recovered local-only investigation state
+
+- [5 October 2026 QFP22 b11402 bisect](2026-10-05-qfp22-b11402-local-bisect/README.md): the exact eight unpublished, temporary pin-selection and release-record commits, captured as a patch series and provenance ledger. The authoritative measured findings remain in QFP22/BCOP27; the old commits must not be replayed onto the active pin.
+- [13 November 2026 RAD01 Radiance v1.3.0 prototype capture](2026-11-13-rad01-v13-remote-prototype/README.md): the previously uncommitted tracked diff, two untracked source files and historical build output, with links to the current managed successors. This is source-history preservation, not a production engine patch or new hardware qualification.
+
+These bundles close the local-only **source and Git-history** gaps identified in those two checkouts. They do not claim that all GPU run artifacts in the work root have been archived; the evidence rules above continue to govern other experiments.

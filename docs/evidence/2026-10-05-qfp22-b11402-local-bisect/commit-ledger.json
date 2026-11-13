@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "kind": "historical-local-bisect-commits",
+  "observed_on": "2026-11-13",
+  "source_checkout": "local BigCherry bisect clone (not canonical repository)",
+  "original_branch": "bisect-b11401",
+  "remote_tracking_ref": "origin/patch-refactor",
+  "base_revision": "185ff9fd466861b9ec49bf89e32ee2714ca508e7",
+  "head_revision": "8246eeeeea718e29de5bef63d6e7a536e335dc17",
+  "commit_sequence": [
+    {
+      "sha": "8bf1af331b506e7518b59446e54645a342736126",
+      "parent": "185ff9fd466861b9ec49bf89e32ee2714ca508e7",
+      "author_date": "2026-10-05T17:10:56+11:00",
+      "subject": "bisect: pin b11401 (local only, not pushed)"
+    },
+    {
+      "sha": "49b64d3a66cd0e7a8764b06bc387e0e739f7e581",
+      "parent": "8bf1af331b506e7518b59446e54645a342736126",
+      "author_date": "2026-10-05T17:11:09+11:00",
+      "subject": "bisect: b11401 release record (local only)"
+    },
+    {
+      "sha": "41e775488307f73437b5bb1386c8408ee06842b5",
+      "parent": "49b64d3a66cd0e7a8764b06bc387e0e739f7e581",
+      "author_date": "2026-10-05T17:28:59+11:00",
+      "subject": "bisect: pin 0eb6d9a81 (#29940, local only)"
+    },
+    {
+      "sha": "f6f5ec001a8e9161d746eeea6c38a5d874188f51",
+      "parent": "41e775488307f73437b5bb1386c8408ee06842b5",
+      "author_date": "2026-10-05T17:29:03+11:00",
+      "subject": "bisect: release record 0eb6d9a81 (local only)"
+    },
+    {
+      "sha": "8f1d00111652a32108749e37e68a41c43b04bc29",
+      "parent": "f6f5ec001a8e9161d746eeea6c38a5d874188f51",
+      "author_date": "2026-10-05T17:44:54+11:00",
+      "subject": "bisect: pin 2ca15f540 (#29612, local only)"
+    },
+    {
+      "sha": "6da86458b82b9bea6130f6c371854bfac378d95c",
+      "parent": "8f1d00111652a32108749e37e68a41c43b04bc29",
+      "author_date": "2026-10-05T17:44:57+11:00",
+      "subject": "bisect: release record 2ca15f540 (local only)"
+    },
+    {
+      "sha": "80fa53d9807f6e047d6478cbbd92f29118d9b924",
+      "parent": "6da86458b82b9bea6130f6c371854bfac378d95c",
+      "author_date": "2026-10-05T18:01:10+11:00",
+      "subject": "bisect: pin 0bb496dbd (#29622, local only)"
+    },
+    {
+      "sha": "8246eeeeea718e29de5bef63d6e7a536e335dc17",
+      "parent": "80fa53d9807f6e047d6478cbbd92f29118d9b924",
+      "author_date": "2026-10-05T18:01:13+11:00",
+      "subject": "bisect: release record 0bb496dbd (local only)"
+    }
+  ],
+  "claims": "The eight commits change temporary source pins and add four pulled-stage release records; performance claims are documented separately under QFP22/BCOP27.",
+  "status": "historical-only; do not merge or replay these commits onto current main"
+}
