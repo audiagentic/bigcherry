@@ -55,6 +55,7 @@ def _axes(table: str, tag: str) -> Edit:
         f'  /* BC_VTP36_TS3P_AXES_{tag.upper()} (rad0032): read by the three-rank exact two-shot only */\n'
         '  { "ts_pieces", kArTsPieces, NELEM(kArTsPieces), 1, "three-rank exact two-shot: pieces a block runs as a pipeline (both link directions at once); 1 = lockstep" },\n'
         '  { "ts_pieces_min", kArTsPiecesMin, NELEM(kArTsPiecesMin), 0, "three-rank exact two-shot: elements from which ts_pieces applies; 0 = the instance piece floor" },\n'
+        '  { "ts_fuse", kArTsDuplex, NELEM(kArTsDuplex), 0, "three-rank exact two-shot in pieces: 1 = a step sends the next piece and assembles the previous one in one loop, so both link directions carry bytes at once" },\n'
         '  { "ts_duplex", kArTsDuplex, NELEM(kArTsDuplex), 0, "three-rank exact two-shot: 1 = the duplex link weights where the settled ones apply" },\n',
         guard=f"BC_VTP36_TS3P_AXES_{tag.upper()} ",
     )
@@ -66,7 +67,7 @@ ROWS = FilePatch(path="libr4d/r4d_rows.cpp", language="none", description="VTP36
         "static const int64_t kArTsMin[]    = { 0, 16384, 32768, 65536, 131072, 262144 };\n",
         "static const int64_t kArTsMin[]    = { 0, 16384, 32768, 65536, 131072, 262144 };\n"
         "/* BC_VTP36_TS3P_VALUES (rad0032): the three-rank exact two-shot's piece count and weight rule. */\n"
-        "static const int64_t kArTsPieces[] = { 1, 2, 4, 8 };\n"
+        "static const int64_t kArTsPieces[] = { 1, 2, 4, 8, 16 };\n"
         "static const int64_t kArTsDuplex[] = { 0, 1 };\n"
         "static const int64_t kArTsPiecesMin[] = { 0, 524288, 1048576, 2097152, 4194304, 8388608 };\n",
         guard="BC_VTP36_TS3P_VALUES",
@@ -89,6 +90,9 @@ ROWS = FilePatch(path="libr4d/r4d_rows.cpp", language="none", description="VTP36
         'extern "C" long r4d_cfg_ar_ts_pieces_min(const RadArgs* a) {\n'
         '    return (long)tune_i(a, tAr, NELEM(tAr), "ts_pieces_min");\n'
         "}\n"
+        'extern "C" int r4d_cfg_ar_ts_fuse(const RadArgs* a) {\n'
+        '    return TUNE(a, tAr, "ts_fuse");\n'
+        "}\n"
         'extern "C" int r4d_cfg_ar_ts_duplex(const RadArgs* a) {\n'
         '    return TUNE(a, tAr, "ts_duplex");\n'
         "}\n",
@@ -101,9 +105,10 @@ ARGS = FilePatch(path="libr4d/r4d_args.h", language="none", description="VTP36 t
         "ts3p-cfg-decl",
         "long r4d_cfg_ar_ts_min(const RadArgs*);\n",
         "long r4d_cfg_ar_ts_min(const RadArgs*);\n"
-        "/* BC_VTP36_TS3P_ARGDECL (rad0032): the three-rank exact two-shot's `ts_pieces`, `ts_pieces_min` and `ts_duplex` axes. */\n"
+        "/* BC_VTP36_TS3P_ARGDECL (rad0032): the three-rank exact two-shot's `ts_pieces`, `ts_pieces_min`, `ts_fuse` and `ts_duplex` axes. */\n"
         "int  r4d_cfg_ar_ts_pieces(const RadArgs*);\n"
         "long r4d_cfg_ar_ts_pieces_min(const RadArgs*);\n"
+        "int  r4d_cfg_ar_ts_fuse(const RadArgs*);\n"
         "int  r4d_cfg_ar_ts_duplex(const RadArgs*);\n",
         guard="BC_VTP36_TS3P_ARGDECL",
     ),
@@ -172,24 +177,131 @@ ENTRY = FilePatch(path="libr4d/r4d_ar_entry.hip", language="none", description="
         "    const long ts_floor = r4d_cfg_ar_ts_pieces_min(a) > 0 ? r4d_cfg_ar_ts_pieces_min(a) : (long)in->pieces_min;\n"
         "    const long ts_pieces = c.numel >= ts_floor ? (long)r4d_cfg_ar_ts_pieces(a) : 1L;\n"
         "    if (ts_pieces < 1 || ts_pieces > R4D_AR_TS_MAX_PIECES) return RAD_E_INVAL;\n"
+        "    /* `ts_fuse` needs a step that both sends and assembles: three pieces or more. */\n"
+        "    const long ts_fuse = (ts_pieces > 2 && r4d_cfg_ar_ts_fuse(a) != 0) ? 1L : 0L;\n"
         '    R4D_TRY("ar_twoshot_3rank_exact",\n'
-        "        r4d_ar_twoshot_3rank_exact_wp(weights, ts_pieces, in->peer_scratch[0], in->peer_scratch[1],\n"
+        "        r4d_ar_twoshot_3rank_exact_wp(weights, ts_pieces, ts_fuse, in->peer_scratch[0], in->peer_scratch[1],\n"
         "                                   in->peer_flags[0], in->peer_flags[1],\n"
         "                                   in->my_scratch, in->my_flags, in->my_seq, in->slot16,\n"
         "                                   c.inp, c.out, c.numel, in->dtype, in->rank,\n"
         "                                   (long)(uintptr_t)s, c.nblocks, c.nthreads, c.drain, c.acq,\n"
         "                                   c.pub));\n",
         guard="BC_VTP36_TS3P_DUPLEX",
-        max_span=16,
+        max_span=18,
     ),
 ))
 
 KERNEL = FilePatch(path="libr4d/r4d_ar_twoshot_Nrank_exact.hip", language="none", description="VTP36 three-rank two-shot in pieces", edits=(
     _edit(
+        "ts3p-khelper",
+        "// PIECED false fixes pieces at 1, so the unpipelined launch keeps the straight-line kernel.\n",
+        "// BC_VTP36_TS3P_KHELPER (rad0032): a first hop and an assemble as one loop. Each pass loads one word from\n"
+        "// host or peer memory (the assemble) and stores one there (the first hop), so the link carries both\n"
+        "// directions at once; as two loops, or as two kernels, a card's stores keep its read requests off the\n"
+        "// link (R9700 at Gen4 x4: 7.0 GB/s out or 6.7 in alone, 7.6 together as two launches, 11.9 in this loop).\n"
+        "// The two word ranges are different pieces, so they do not overlap even reduced in place.\n"
+        "__device__ __forceinline__ void r4d_ts_push_assemble(\n"
+        "    const int4* __restrict__ s_in, int4* __restrict__ d_peer, const int4* __restrict__ s_b,\n"
+        "    int4* __restrict__ d_out, int ka, int la, int kb, int lb, int nt) {\n"
+        "  for (; ka < la && kb < lb; ka += nt, kb += nt) {\n"
+        "    const int4 vin = s_b[kb];\n"
+        "    d_peer[ka] = s_in[ka];\n"
+        "    d_out[kb] = vin;\n"
+        "  }\n"
+        "  for (; ka < la; ka += nt) d_peer[ka] = s_in[ka];\n"
+        "  for (; kb < lb; kb += nt) d_out[kb] = s_b[kb];\n"
+        "}\n"
+        "\n"
+        "// PIECED false fixes pieces at 1, so the unpipelined launch keeps the straight-line kernel.\n",
+        guard="BC_VTP36_TS3P_KHELPER",
+    ),
+    _edit(
+        "ts3p-kparam",
+        "    long long* tlring /* BC_VTP36_TSTL_KPARAM: null unless R4D_AR_TIMELINE */) {\n",
+        "    long long* tlring /* BC_VTP36_TSTL_KPARAM: null unless R4D_AR_TIMELINE */,\n"
+        "    int ts_fuse /* BC_VTP36_TS3P_KPARAM (rad0032): in pieces, a step's first hop and assemble as one loop */) {\n",
+        guard="BC_VTP36_TS3P_KPARAM",
+    ),
+    _edit(
+        "ts3p-kmacro",
+        "    unsigned int* gate_ctr, int pieces_arg, long long* tl_all, long long* tlring\n"
+        "/* BC_VTP36_TSTL_KMACRO: the ring rides behind upstream's timeline */\n"
+        "#define R4D_ARTS_ARGS in4, peers, my_base, my_flags, out4, seq_ctrs, sh, slot_stride16, rank,    \\\n"
+        "    drain, acq, pub, gate, gate_ctr, pieces_arg, tl_all, tlring\n",
+        "    unsigned int* gate_ctr, int pieces_arg, long long* tl_all, long long* tlring, int ts_fuse\n"
+        "/* BC_VTP36_TSTL_KMACRO: the ring rides behind upstream's timeline; BC_VTP36_TS3P_KMACRO: then rad0032's\n"
+        " * fused step */\n"
+        "#define R4D_ARTS_ARGS in4, peers, my_base, my_flags, out4, seq_ctrs, sh, slot_stride16, rank,    \\\n"
+        "    drain, acq, pub, gate, gate_ctr, pieces_arg, tl_all, tlring, ts_fuse\n",
+        guard="BC_VTP36_TS3P_KMACRO",
+    ),
+    _edit(
+        "ts3p-kfused",
+        "      for (int k = p0 + tid; k < lim; k += nt) dst[k] = srcB[k];\n"
+        "    }\n"
+        "  };\n",
+        "      for (int k = p0 + tid; k < lim; k += nt) dst[k] = srcB[k];\n"
+        "    }\n"
+        "  };\n"
+        "  // BC_VTP36_TS3P_KFUSED (rad0032): push1(jp) and assemble(ja) of the same block, peer by peer, in one loop\n"
+        "  // (r4d_ts_push_assemble). The same words go to the same places as in the two loops.\n"
+        "  auto ts_region_b = [&](int p, int owner) -> const int4* {\n"
+        "    return my_base + ((size_t)parity * WS + owner) * (size_t)slot_stride16 + sh_max;\n"
+        "  };\n"
+        "  auto push_assemble = [&](int jp, int ja) {\n"
+        "    const int a0 = w0 + jp * pw, a1 = a0 + pw < w1 ? a0 + pw : w1;\n"
+        "    const int b0 = w0 + ja * pw, b1 = b0 + pw < w1 ? b0 + pw : w1;\n"
+        "    for (int p = 0; p < NPEERS; ++p) {\n"
+        "      const int owner = peers.rank[p];\n"
+        "      const int len = R4D_TS_LEN(owner);\n"
+        "      r4d_ts_push_assemble(in4 + (size_t)R4D_TS_OFF(owner), pa[p], ts_region_b(p, owner),\n"
+        "                           out4 + (size_t)R4D_TS_OFF(owner), a0 + tid, a1 < len ? a1 : len, b0 + tid,\n"
+        "                           b1 < len ? b1 : len, nt);\n"
+        "    }\n"
+        "  };\n",
+        guard="BC_VTP36_TS3P_KFUSED",
+    ),
+    _edit(
+        "ts3p-kstep",
+        "    for (int j = 0; j < pieces; ++j) {\n"
+        "      if (j + 1 < pieces) push1(j + 1);\n"
+        "      reduce2(j);\n"
+        "      if (j > 0) assemble(j - 1);\n"
+        "      r4d_ar_handshake<WS>(peers, my_flags, b, rank, v0 + 1u + (unsigned int)j, drain, acq, pub,\n",
+        "    for (int j = 0; j < pieces; ++j) {\n"
+        "      /* BC_VTP36_TS3P_KSTEP (rad0032): a step that both sends piece j + 1 and assembles piece j - 1 can do\n"
+        "       * the two as one loop. The handshakes and what each vouches for are unchanged. */\n"
+        "      if (ts_fuse && j > 0 && j + 1 < pieces) {\n"
+        "        push_assemble(j + 1, j - 1);\n"
+        "        reduce2(j);\n"
+        "      } else {\n"
+        "        if (j + 1 < pieces) push1(j + 1);\n"
+        "        reduce2(j);\n"
+        "        if (j > 0) assemble(j - 1);\n"
+        "      }\n"
+        "      r4d_ar_handshake<WS>(peers, my_flags, b, rank, v0 + 1u + (unsigned int)j, drain, acq, pub,\n",
+        guard="BC_VTP36_TS3P_KSTEP",
+    ),
+    _edit(
+        "ts3p-launch-sig",
+        "                              long pieces, long timeline, long form, bool chain = false) {\n",
+        "                              long pieces, long timeline, long form, bool chain = false,\n"
+        "                              long ts_fuse = 0 /* BC_VTP36_TS3P_LAUNCH_SIG (rad0032) */) {\n",
+        guard="BC_VTP36_TS3P_LAUNCH_SIG",
+    ),
+    _edit(
+        "ts3p-launch-arg",
+        "      (unsigned int*)gate_ctr, np, (long long*)timeline, tlring)\n",
+        "      (unsigned int*)gate_ctr, np, (long long*)timeline, tlring,                      \\\n"
+        "      (int)ts_fuse /* BC_VTP36_TS3P_LAUNCH_ARG */)\n",
+        guard="BC_VTP36_TS3P_LAUNCH_ARG",
+    ),
+    _edit(
         "ts3p-wrapper",
         "/* BC_VTP14_TS3W_WRAPPER (rad0021): the three-rank two-shot with a shard table (null: the even split). */\n",
-        "/* BC_VTP36_TS3P_WRAPPER (rad0032): the three-rank two-shot with a shard table and a piece count. */\n"
-        "void r4d_ar_twoshot_3rank_exact_wp(const int* shard_weights, long pieces, long peer_scratch0,\n"
+        "/* BC_VTP36_TS3P_WRAPPER (rad0032): the three-rank two-shot with a shard table, a piece count and the fused\n"
+        " * step (`fuse` 1). */\n"
+        "void r4d_ar_twoshot_3rank_exact_wp(const int* shard_weights, long pieces, long fuse, long peer_scratch0,\n"
         "                                   long peer_scratch1, long peer_flags0, long peer_flags1, long my_scratch,\n"
         "                                   long my_flags, long seq_ctrs, long slot_stride16, long inp, long out,\n"
         "                                   long n_elem, long dtype, long rank, long stream, long nblocks,\n"
@@ -198,7 +310,7 @@ KERNEL = FilePatch(path="libr4d/r4d_ar_twoshot_Nrank_exact.hip", language="none"
         "  const long pf[2] = {peer_flags0, peer_flags1};\n"
         "  ar_twoshot_launch<3>(ps, pf, my_scratch, my_flags, seq_ctrs, slot_stride16, inp, out, n_elem,\n"
         "                       dtype, rank, stream, nblocks, nthreads, drain, acq, pub, 0L, 0L, shard_weights,\n"
-        "                       pieces, 0L, 0L);\n"
+        "                       pieces, 0L, 0L, false, fuse);\n"
         "}\n"
         "\n"
         "/* BC_VTP14_TS3W_WRAPPER (rad0021): the three-rank two-shot with a shard table (null: the even split). */\n",
@@ -210,8 +322,9 @@ HEADER = FilePatch(path="libr4d/r4d.h", language="none", description="VTP36 thre
     _edit(
         "ts3p-decl",
         "/* BC_VTP14_TS3W_DECL (rad0021): the same with a shard table (r4d_ar_shards.h); null is the even split. */\n",
-        "/* BC_VTP36_TS3P_DECL (rad0032): the same with a shard table and a piece count (1 to R4D_AR_TS_MAX_PIECES). */\n"
-        "void r4d_ar_twoshot_3rank_exact_wp(const int* shard_weights, long pieces, long peer_scratch0,\n"
+        "/* BC_VTP36_TS3P_DECL (rad0032): the same with a shard table, a piece count (1 to R4D_AR_TS_MAX_PIECES) and,\n"
+        " * with `fuse` 1, each middle step's first hop and assemble as one loop. */\n"
+        "void r4d_ar_twoshot_3rank_exact_wp(const int* shard_weights, long pieces, long fuse, long peer_scratch0,\n"
         "                                   long peer_scratch1, long peer_flags0, long peer_flags1, long my_scratch,\n"
         "                                   long my_flags, long seq_ctrs, long slot_stride16, long inp, long out,\n"
         "                                   long n_elem, long dtype, long rank, long stream, long nblocks,\n"

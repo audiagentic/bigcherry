@@ -85,15 +85,14 @@ ARGS = FilePatch(path="libr4d/r4d_args.h", language="none", description="VTP36 w
 ENTRY = FilePatch(path="libr4d/r4d_ar_entry.hip", language="none", description="VTP36 write-once second hop", edits=(
     _edit(
         "ts3o-entry",
-        "    if (ts_pieces < 1 || ts_pieces > R4D_AR_TS_MAX_PIECES) return RAD_E_INVAL;\n"
         '    R4D_TRY("ar_twoshot_3rank_exact",\n'
-        "        r4d_ar_twoshot_3rank_exact_wp(weights, ts_pieces, in->peer_scratch[0], in->peer_scratch[1],\n",
-        "    if (ts_pieces < 1 || ts_pieces > R4D_AR_TS_MAX_PIECES) return RAD_E_INVAL;\n"
+        "        r4d_ar_twoshot_3rank_exact_wp(weights, ts_pieces, ts_fuse, in->peer_scratch[0], in->peer_scratch[1],\n",
         "    /* BC_VTP36_TS3O_ENTRY (rad0033): through the host mailbox every card maps every rank's scratch, so the\n"
         "     * reduced shard is written once and read from its owner's scratch. Not over peer access. */\n"
         "    const long ts_once = (in->host && r4d_cfg_ar_ts_once(a) != 0) ? 1L : 0L;\n"
         '    R4D_TRY("ar_twoshot_3rank_exact",\n'
-        "        r4d_ar_twoshot_3rank_exact_wp(weights, ts_pieces, ts_once, in->peer_scratch[0], in->peer_scratch[1],\n",
+        "        r4d_ar_twoshot_3rank_exact_wp(weights, ts_pieces, ts_fuse, ts_once, in->peer_scratch[0],\n"
+        "                                   in->peer_scratch[1],\n",
         guard="BC_VTP36_TS3O_ENTRY",
     ),
 ))
@@ -101,36 +100,38 @@ ENTRY = FilePatch(path="libr4d/r4d_ar_entry.hip", language="none", description="
 KERNEL = FilePatch(path="libr4d/r4d_ar_twoshot_Nrank_exact.hip", language="none", description="VTP36 write-once second hop", edits=(
     _edit(
         "ts3o-kparam",
-        "    long long* tlring /* BC_VTP36_TSTL_KPARAM: null unless R4D_AR_TIMELINE */) {\n",
-        "    long long* tlring /* BC_VTP36_TSTL_KPARAM: null unless R4D_AR_TIMELINE */,\n"
+        "    int ts_fuse /* BC_VTP36_TS3P_KPARAM (rad0032): in pieces, a step's first hop and assemble as one loop */) {\n",
+        "    int ts_fuse /* BC_VTP36_TS3P_KPARAM (rad0032): in pieces, a step's first hop and assemble as one loop */,\n"
         "    int4* ts_self /* BC_VTP36_TS3O_KPARAM (rad0033): this rank's own scratch to write its reduced shard once\n"
         "                     into; null for upstream's copy per peer */) {\n",
         guard="BC_VTP36_TS3O_KPARAM",
     ),
     _edit(
         "ts3o-kmacro",
-        "    unsigned int* gate_ctr, int pieces_arg, long long* tl_all, long long* tlring\n"
-        "/* BC_VTP36_TSTL_KMACRO: the ring rides behind upstream's timeline */\n"
+        "    unsigned int* gate_ctr, int pieces_arg, long long* tl_all, long long* tlring, int ts_fuse\n"
+        "/* BC_VTP36_TSTL_KMACRO: the ring rides behind upstream's timeline; BC_VTP36_TS3P_KMACRO: then rad0032's\n"
+        " * fused step */\n"
         "#define R4D_ARTS_ARGS in4, peers, my_base, my_flags, out4, seq_ctrs, sh, slot_stride16, rank,    \\\n"
-        "    drain, acq, pub, gate, gate_ctr, pieces_arg, tl_all, tlring\n",
-        "    unsigned int* gate_ctr, int pieces_arg, long long* tl_all, long long* tlring, int4* ts_self\n"
-        "/* BC_VTP36_TSTL_KMACRO: the ring rides behind upstream's timeline; BC_VTP36_TS3O_KMACRO: and the rank's own\n"
-        " * scratch (rad0033) behind that */\n"
+        "    drain, acq, pub, gate, gate_ctr, pieces_arg, tl_all, tlring, ts_fuse\n",
+        "    unsigned int* gate_ctr, int pieces_arg, long long* tl_all, long long* tlring, int ts_fuse,   \\\n"
+        "    int4* ts_self\n"
+        "/* BC_VTP36_TSTL_KMACRO: the ring rides behind upstream's timeline; BC_VTP36_TS3P_KMACRO: then rad0032's\n"
+        " * fused step; BC_VTP36_TS3O_KMACRO: then the rank's own scratch (rad0033) */\n"
         "#define R4D_ARTS_ARGS in4, peers, my_base, my_flags, out4, seq_ctrs, sh, slot_stride16, rank,    \\\n"
-        "    drain, acq, pub, gate, gate_ctr, pieces_arg, tl_all, tlring, ts_self\n",
+        "    drain, acq, pub, gate, gate_ctr, pieces_arg, tl_all, tlring, ts_fuse, ts_self\n",
         guard="BC_VTP36_TS3O_KMACRO",
     ),
     _edit(
         "ts3o-launch-sig",
-        "                              long pieces, long timeline, long form, bool chain = false) {\n",
-        "                              long pieces, long timeline, long form, bool chain = false,\n"
+        "                              long ts_fuse = 0 /* BC_VTP36_TS3P_LAUNCH_SIG (rad0032) */) {\n",
+        "                              long ts_fuse = 0 /* BC_VTP36_TS3P_LAUNCH_SIG (rad0032) */,\n"
         "                              long ts_once = 0 /* BC_VTP36_TS3O_LAUNCH_SIG (rad0033) */) {\n",
         guard="BC_VTP36_TS3O_LAUNCH_SIG",
     ),
     _edit(
         "ts3o-launch-arg",
-        "      (unsigned int*)gate_ctr, np, (long long*)timeline, tlring)\n",
-        "      (unsigned int*)gate_ctr, np, (long long*)timeline, tlring,                      \\\n"
+        "      (int)ts_fuse /* BC_VTP36_TS3P_LAUNCH_ARG */)\n",
+        "      (int)ts_fuse /* BC_VTP36_TS3P_LAUNCH_ARG */,                                    \\\n"
         "      ts_once ? (int4*)my_scratch : nullptr /* BC_VTP36_TS3O_LAUNCH_ARG */)\n",
         guard="BC_VTP36_TS3O_LAUNCH_ARG",
     ),
@@ -140,9 +141,9 @@ KERNEL = FilePatch(path="libr4d/r4d_ar_twoshot_Nrank_exact.hip", language="none"
         "  int4* my_out = out4 + (size_t)R4D_TS_OFF(rank);\n"
         "  // BC_VTP36_TS3O_KSELF (rad0033): written once, the reduced shard goes to region B of this rank's own slot\n"
         "  // in its own scratch (a slot nothing else uses: a rank's own contribution comes from its input), which a\n"
-        "  // host-mailbox peer maps and assembles from. The pointer is its own kernel argument, not one derived from\n"
-        "  // my_base: a store through a pointer based on that restrict pointer makes every load of the fold wait for\n"
-        "  // the pending stores (measured: the reduce 13x slower on gfx1100).\n"
+        "  // host-mailbox peer maps and assembles from. The pointer is its own kernel argument and the once form its\n"
+        "  // own loop: a first form, which derived the pointer from the restrict my_base and chose the store inside\n"
+        "  // the fold's loop, made the upstream fold 13x slower on gfx1100 with the option off.\n"
         "  const bool ts_once = ts_self != nullptr;\n"
         "  int4* const ts_self_b = ts_self + ((size_t)parity * WS + rank) * (size_t)slot_stride16 + sh_max;\n",
         guard="BC_VTP36_TS3O_KSELF",
@@ -191,15 +192,22 @@ KERNEL = FilePatch(path="libr4d/r4d_ar_twoshot_Nrank_exact.hip", language="none"
     ),
     _edit(
         "ts3o-kstep",
-        "      if (j + 1 < pieces) push1(j + 1);\n"
-        "      reduce2(j);\n"
-        "      if (j > 0) assemble(j - 1);\n"
-        "      r4d_ar_handshake<WS>(peers, my_flags, b, rank, v0 + 1u + (unsigned int)j, drain, acq, pub,\n",
-        "      if (j + 1 < pieces) push1(j + 1);\n"
-        "      ts_reduce(j);  /* BC_VTP36_TS3O_KSTEP (rad0033): the once form where asked */\n"
-        "      if (j > 0) assemble(j - 1);\n"
-        "      r4d_ar_handshake<WS>(peers, my_flags, b, rank, v0 + 1u + (unsigned int)j, drain, acq, pub,\n",
+        "        push_assemble(j + 1, j - 1);\n"
+        "        reduce2(j);\n"
+        "      } else {\n"
+        "        if (j + 1 < pieces) push1(j + 1);\n"
+        "        reduce2(j);\n"
+        "        if (j > 0) assemble(j - 1);\n"
+        "      }\n",
+        "        push_assemble(j + 1, j - 1);\n"
+        "        ts_reduce(j);  /* BC_VTP36_TS3O_KSTEP (rad0033): the once form where asked */\n"
+        "      } else {\n"
+        "        if (j + 1 < pieces) push1(j + 1);\n"
+        "        ts_reduce(j);\n"
+        "        if (j > 0) assemble(j - 1);\n"
+        "      }\n",
         guard="BC_VTP36_TS3O_KSTEP",
+        max_span=8,
     ),
     _edit(
         "ts3o-kload",
@@ -210,16 +218,24 @@ KERNEL = FilePatch(path="libr4d/r4d_ar_twoshot_Nrank_exact.hip", language="none"
         guard="BC_VTP36_TS3O_KLOAD",
     ),
     _edit(
+        "ts3o-kload-fused",
+        "    return my_base + ((size_t)parity * WS + owner) * (size_t)slot_stride16 + sh_max;\n",
+        "    /* BC_VTP36_TS3O_KFUSED (rad0033): as the assemble's source above */\n"
+        "    return (ts_once ? (const int4*)peers.scratch[p] : my_base) +\n"
+        "           ((size_t)parity * WS + owner) * (size_t)slot_stride16 + sh_max;\n",
+        guard="BC_VTP36_TS3O_KFUSED",
+    ),
+    _edit(
         "ts3o-wrapper-sig",
-        "void r4d_ar_twoshot_3rank_exact_wp(const int* shard_weights, long pieces, long peer_scratch0,\n",
-        "void r4d_ar_twoshot_3rank_exact_wp(const int* shard_weights, long pieces,\n"
+        "void r4d_ar_twoshot_3rank_exact_wp(const int* shard_weights, long pieces, long fuse, long peer_scratch0,\n",
+        "void r4d_ar_twoshot_3rank_exact_wp(const int* shard_weights, long pieces, long fuse,\n"
         "                                   long once /* BC_VTP36_TS3O_WRAPPER_SIG (rad0033) */, long peer_scratch0,\n",
         guard="BC_VTP36_TS3O_WRAPPER_SIG",
     ),
     _edit(
         "ts3o-wrapper-call",
-        "                       pieces, 0L, 0L);\n",
-        "                       pieces, 0L, 0L, false, once /* BC_VTP36_TS3O_WRAPPER_CALL */);\n",
+        "                       pieces, 0L, 0L, false, fuse);\n",
+        "                       pieces, 0L, 0L, false, fuse, once /* BC_VTP36_TS3O_WRAPPER_CALL */);\n",
         guard="BC_VTP36_TS3O_WRAPPER_CALL",
     ),
 ))
@@ -227,10 +243,11 @@ KERNEL = FilePatch(path="libr4d/r4d_ar_twoshot_Nrank_exact.hip", language="none"
 HEADER = FilePatch(path="libr4d/r4d.h", language="none", description="VTP36 write-once second hop", edits=(
     _edit(
         "ts3o-decl",
-        "void r4d_ar_twoshot_3rank_exact_wp(const int* shard_weights, long pieces, long peer_scratch0,\n",
+        "void r4d_ar_twoshot_3rank_exact_wp(const int* shard_weights, long pieces, long fuse, long peer_scratch0,\n",
         "/* BC_VTP36_TS3O_DECL (rad0033): `once` 1, host mailbox only: a rank writes its reduced shard once, in its own\n"
         " * scratch, and its peers assemble from there. */\n"
-        "void r4d_ar_twoshot_3rank_exact_wp(const int* shard_weights, long pieces, long once, long peer_scratch0,\n",
+        "void r4d_ar_twoshot_3rank_exact_wp(const int* shard_weights, long pieces, long fuse, long once,\n"
+        "                                   long peer_scratch0,\n",
         guard="BC_VTP36_TS3O_DECL",
     ),
 ))
