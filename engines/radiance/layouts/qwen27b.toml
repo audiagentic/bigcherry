@@ -38,7 +38,10 @@ tuning.tp_ownership = "kv=1,1,2;ffn=5120,4864,7424;lk=4,4,8;lv=12,12,24"
 tuning.pipelined_prefill = "auto"
 # The all-reduce's launch grid (rad0022): four blocks of 256 threads beat the default (scaled with the message, 1024
 # threads) at every stream count and prompt size on this world, with identical output (VTP31 experiment 1).
-tuning.tune_pin = "all_reduce:nblocks=4,nthreads=256"
+# The two-shot's form (rad0032, rad0033): four pieces with the fused step, the duplex link weights (the R9700 owns no
+# shard) and the reduced shard written once. Against the grid alone: one-prompt time to first token -21 / -27 / -25% at
+# 512 / 2048 / 6144 tokens, 4/6/8 streams +13.6 / +13.5 / +16.7%, bit-identical output (VTP36).
+tuning.tune_pin = "all_reduce:nblocks=4,nthreads=256,ts_pieces=4,ts_fuse=1,ts_once=1,ts_duplex=1"
 # Pipeline a one-sequence prefill step from 256 rows rather than the plugin's 1024, so a 512-token prompt overlaps its
 # all-reduces too: +7.6% / +2.9% / +1.6% at 1/4/8 streams, identical output (VTP31 experiment 7; 128 measured the same).
 tuning.pipelined_prefill_min_rows = 256
@@ -62,8 +65,10 @@ tuning.tp_ownership = "kv=1,1,2;ffn=6656,6656,4096;lk=6,6,4;lv=18,18,12"
 # One-prompt time to first token -17% to -21%, four 4096-token prompts -16%, 4/6/8 streams +7.4% / +7.8% / +8.4%; KLD
 # against the serial prefill 0.0012 mean, top-1 99.3%, less than the serial prefill moves when its chunk is halved (VTP37).
 tuning.pipelined_prefill = "on"
-# The same all-reduce grid as the MXFP4 layout: +1-5% decode, -3 to -7% TTFT on int8 too (VTP31).
-tuning.tune_pin = "all_reduce:nblocks=4,nthreads=256"
+# The same all-reduce grid as the MXFP4 layout: +1-5% decode, -3 to -7% TTFT on int8 too (VTP31). The same two-shot
+# form (rad0032, rad0033): time to first token -13 / -24 / -22% at 512 / 2048 / 6144 tokens, 4/6/8 streams +7.6 / +10.9 /
+# +13.9%, bit-identical output (VTP36).
+tuning.tune_pin = "all_reduce:nblocks=4,nthreads=256,ts_pieces=4,ts_fuse=1,ts_once=1,ts_duplex=1"
 # The narrowest pipelined step, as in the MXFP4 layout. Before rad0030 the int8 trunk never pipelined, so the gain VTP31
 # experiment 12 recorded for this floor on int8 (+0.3-1.3% decode, about -2% TTFT) was run-to-run noise.
 tuning.pipelined_prefill_min_rows = 256
