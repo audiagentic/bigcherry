@@ -71,6 +71,9 @@ struct Options {
     std::filesystem::path site, profile;
     // The layout definition files or directories (--layouts); empty: BIGCHERRY_LAYOUTS. Never compiled in.
     std::vector<std::filesystem::path> layouts;
+    // RSC12 config files or directories (--configs); empty: BIGCHERRY_CONFIGS. When configs are given, their names are the
+    // named layouts, and layout files are read only when --layouts is given as well (never BIGCHERRY_LAYOUTS).
+    std::vector<std::filesystem::path> configs;
     // A calibration cache (RHP12 refits) layered over the compiled-in seeds; empty: seeds only.
     std::filesystem::path calibration_cache;
     std::vector<std::string> sets;
