@@ -60,8 +60,11 @@ the whole serving session: it starts the children in their own process groups, r
 holds the power journal, and on any child's exit or on a stop request stops the rest in order and restores power only
 after every child has exited. `bc-serve start CONFIG` is `serve` detached (`setsid`), returning once the canary passes;
 `stop` and `status` talk to the owner over a control socket in the session's run directory (never by signalling a
-recorded PID, which can be reused). In the lab the GPU lease wraps the owner (`agent-lease acquire gpu ... -- bc-serve
-serve CONFIG`), so it is held for the session's lifetime, not just the start.
+recorded PID, which can be reused). The GPU lease must cover the
+session, not the start: in the lab the lease wraps the foreground owner (`agent-lease acquire gpu ... -- bc-serve serve
+CONFIG`), itself run detached by the shell (`setsid nohup ...`) when the caller should not wait. `bc-serve start`
+(detached owner) takes no lease of its own and is for hosts with no lease system; a lease wrapped around `start` alone
+ends when `start` returns, so lab scripts use the wrapped `serve` form, never `start`.
 
 - Reuse what exists in C++: the SDK check (`sdk_check.cpp`, already called by `bc-serve`), the resolver, the plan cache,
   the manifest writer and reader, the host ledger and the power probes.

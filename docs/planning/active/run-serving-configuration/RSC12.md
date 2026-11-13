@@ -110,10 +110,12 @@ Rules:
 - Settings tables (`service`, `engine`, `tuning`, `memory`, `helper`) hold the resolver's registered setting keys,
   the same names `--set` and `bc-serve explain` use, and feed its layout-settings layer; there is no flag spelling.
 - Power intent (profile, role overrides) is its own `[config.NAME.power]` table mapped to `spec.intent.power`, not a
-  resolver setting.
-- What belongs to the machine (ports, model root, run root, the host's power profile choice) stays in the site file.
-- A config carries no derived values (host pool, host KV tier, checkpoint slots, helper budgets: RSC03; handoff
-  literals: RSC09).
+  resolver setting. The site file defines the host's power profiles and its default; a config may name one of those
+  profiles (it wins over the site default), and `--set` wins over both. A config never defines a profile's settings.
+- What belongs to the machine (ports, model root, run root, power profile definitions) stays in the site file.
+- A config carries no derived values: host pool, host KV tier and checkpoint slots come from the plan (RSC03), handoff
+  literals become fields or derived values (RSC09). A helper group's `budget_mib` may be given as an explicit override;
+  left out, it is derived (RSC03).
 
 The Python tools that read layouts today (`bigcherry layout show`, campaign) read configs through
 `bc-serve explain --json`, not a second parser.
@@ -138,10 +140,10 @@ every rank's card and every plan-affecting setting.
 ## Validation
 
 - Card-free: loader refusals (unknown key, wrong section, cycle, missing base, duplicate name), variant merge, explain
-  provenance, stored-manifest reuse and rewrite on each key input, golden manifest equality for all 13 converted
-  layouts.
-- Hardware (gpu lease): one dense config and one helper config start from configs through RSC02's `bc-serve start`
-  and match the layout start's manifest digest.
+  provenance, stored-manifest reuse and rewrite on each static-key input, semantic execution projection equality for
+  all 13 converted layouts (step 4), byte-for-byte replay of a stored manifest (`start --manifest`).
+- Hardware (gpu lease): one dense config and one helper config start from configs through RSC02's `bc-serve serve`
+  and give the same semantic execution projection as the layout start.
 
 ## Effort & Risk
 
@@ -158,8 +160,8 @@ Architecture standards: config over code (no model or layout named in code), one
 
 ## Acceptance Criteria
 
-- Every model this repository serves has one config file; each layout of today is a config or a variant, with an
-  unchanged manifest digest.
+- Every model this repository serves has one config file; each layout of today is a config or a variant with the same
+  semantic execution projection (exact digest equality only for the replay of the same stored manifest bytes).
 - A variant states only its differences; `bc-serve explain` shows where each effective value came from.
 - No config or launcher contains an engine flag spelling; `server-args` and `[layout.NAME.settings]` are gone.
 - A start of an unchanged config on an unchanged host reuses its stored manifest, and that file is the record of what
