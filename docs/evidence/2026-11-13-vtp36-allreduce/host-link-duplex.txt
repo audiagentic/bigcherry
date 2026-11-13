@@ -1,0 +1,45 @@
+device 2 0000:09:00.0 (AMD Radeon Graphics), 32 MiB a transfer, kernel grid 4 x 256
+  kernel out alone               4775 us    7.03 GB/s total
+  kernel in alone                4998 us    6.71 GB/s total
+  memcpy out alone               4830 us    6.95 GB/s total
+  memcpy in alone                4981 us    6.74 GB/s total
+  kernel out + kernel in         8867 us    7.57 GB/s total
+  memcpy out + kernel in         7844 us    8.56 GB/s total
+  kernel out + memcpy in         5334 us   12.58 GB/s total
+  memcpy out + memcpy in         6793 us    9.88 GB/s total
+  kernel out + kernel out        9457 us    7.10 GB/s total
+  kernel in + kernel in          9995 us    6.71 GB/s total
+  one kernel, in and out         5908 us   11.36 GB/s total
+  the same, no restrict          5910 us   11.36 GB/s total
+  one kernel, out and in fused     5718 us   11.74 GB/s total
+  the same, no restrict          5733 us   11.71 GB/s total
+device 0 0000:03:00.0 (AMD Radeon RX 7900 XTX), 32 MiB a transfer, kernel grid 4 x 256
+  kernel out alone               2369 us   14.16 GB/s total
+  kernel in alone                2603 us   12.89 GB/s total
+  memcpy out alone               2354 us   14.25 GB/s total
+  memcpy in alone                2522 us   13.30 GB/s total
+  kernel out + kernel in         2842 us   23.61 GB/s total
+  memcpy out + kernel in         2880 us   23.30 GB/s total
+  kernel out + memcpy in         2649 us   25.33 GB/s total
+  memcpy out + memcpy in         2881 us   23.30 GB/s total
+  kernel out + kernel out        4733 us   14.18 GB/s total
+  kernel in + kernel in          5027 us   13.35 GB/s total
+  one kernel, in and out         2618 us   25.63 GB/s total
+  the same, no restrict          2618 us   25.64 GB/s total
+  one kernel, out and in fused     2622 us   25.60 GB/s total
+  the same, no restrict          2627 us   25.55 GB/s total
+device 1 0000:06:00.0 (AMD Radeon RX 7900 XTX), 32 MiB a transfer, kernel grid 4 x 256
+  kernel out alone               2369 us   14.17 GB/s total
+  kernel in alone                2603 us   12.89 GB/s total
+  memcpy out alone               2355 us   14.25 GB/s total
+  memcpy in alone                2521 us   13.31 GB/s total
+  kernel out + kernel in         2841 us   23.62 GB/s total
+  memcpy out + kernel in         2879 us   23.31 GB/s total
+  kernel out + memcpy in         2645 us   25.37 GB/s total
+  memcpy out + memcpy in         3160 us   21.24 GB/s total
+  kernel out + kernel out        4728 us   14.20 GB/s total
+  kernel in + kernel in          5029 us   13.35 GB/s total
+  one kernel, in and out         2618 us   25.63 GB/s total
+  the same, no restrict          2618 us   25.63 GB/s total
+  one kernel, out and in fused     2618 us   25.64 GB/s total
+  the same, no restrict          2621 us   25.60 GB/s total

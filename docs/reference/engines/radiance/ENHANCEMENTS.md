@@ -9,7 +9,7 @@ different statuses. See [the engine overview](README.md) first.
 
 _Generated from package documentation and metadata by `tools/docs/generate_engine_enhancement_summaries.py`. Do not edit this section by hand._
 
-## Engine patches (28)
+## Engine patches (31)
 
 | Package | State | Summary |
 | --- | --- | --- |
@@ -41,6 +41,9 @@ _Generated from package documentation and metadata by `tools/docs/generate_engin
 | [rad0028_rank_consistent_block_drafts](../../../../engines/radiance/patches/rad0028_rank_consistent_block_drafts/SUMMARY.md) | `untested` | Every rank verifies rank 0's draft. The selected draft tokens are all-gathered after the selector, and the engine proposes from rank 0's slice of the gathered buffer. Before this, a rank of another card architecture could select another token on a near tie, accept a different count, and drift: wrong partial sums in the step, and a GPU memory fault when the drifted rank's attention read past the host's block table. |
 | [rad0029_rank_own_split](../../../../engines/radiance/patches/rad0029_rank_own_split/SUMMARY.md) | `untested` | In an uneven dense world, every rank gets its own VRAM split. Each rank's weights pool holds its own weights, and its KV pool takes the free memory it has above the smallest card. Every rank then pages the least token count any rank can page in its own pool, instead of the common split's count. Before this, the rank that limits the token count kept the common split: the smallest card's memory and the largest rank's weights pool. |
 | [rad0030_int8_pipelined_prefill](../../../../engines/radiance/patches/rad0030_int8_pipelined_prefill/SUMMARY.md) | `untested` | The pipelined prefill (two pieces a step, every block's all-reduce and the next norm on a second lane) now runs on a rotated-int8 trunk when `--pipelined-prefill on` is given. Before this such a trunk always prefilled serially, because the second lane's norm issued its op with the E4M3 code pair instead of the int8 pair the trunk reads. Under `auto` (the default) nothing changes. |
+| [rad0031_ts_timeline](../../../../engines/radiance/patches/rad0031_ts_timeline/SUMMARY.md) | `untested` | Each launch of the exact two-shot stamps, in its first four blocks, its start, each handshake's arrival and release, and its end, into a pinned host ring indexed by the launch's device sequence number; each ring is written under DIR at exit. Unset, the kernel takes no stamp and does the same work. rad0023 does the same for the one-shot, which no longer carries a three-rank world's prefill or multi-stream decode (rad0021, rad0024). |
+| [rad0032_ts3_duplex](../../../../engines/radiance/patches/rad0032_ts3_duplex/SUMMARY.md) | `untested` | The three-rank exact two-shot can now run each block's words as a pipeline of pieces, send one piece and assemble another in a single loop so that both directions of a link carry bytes at once, and take the duplex link weights, under which the rank behind a link of half the rate owns no shard. Before, a rank sent, waited for its peers to reduce, then received, one direction at a time. The defaults leave every launch as it was, and every setting gives the same bits. |
+| [rad0033_ts3_once](../../../../engines/radiance/patches/rad0033_ts3_once/SUMMARY.md) | `untested` | In the two-shot's second hop a rank now writes its reduced shard once, into its own host scratch, and each peer assembles it from there; before, it wrote one copy per peer. The default (0) leaves every launch as it was, and the setting gives the same bits. Over peer access the axis is ignored. |
 
 ## Components (6)
 

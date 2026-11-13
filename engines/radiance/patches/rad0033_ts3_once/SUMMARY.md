@@ -14,7 +14,8 @@ setting gives the same bits. Over peer access the axis is ignored.
 
 ## Outcome
 
-Untested (not promoted). See README.md for the measurements.
+Untested (not promoted). VTP36: with the duplex weights of rad0032 the XTX ranks' 32-row decode call falls from 81 to 65 us;
+the prefill gain is carried by rad0032. See README.md.
 
 ## Detail
 
