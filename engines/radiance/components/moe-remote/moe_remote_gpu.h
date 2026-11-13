@@ -4,6 +4,7 @@
 #include "moe_lane_common.h"
 #include "moe_lane_front.h"
 #include "moe_lane_gemm.h"
+#include "gemv_geometry.h"
 #include "moe_lane_rows_stock_replay.h"  // diagnostic-only baseline for --replay-sweep
 #include "rad46_rows_policy.h"
 #include "moe_lane_quant.h"
@@ -23,37 +24,118 @@ namespace r3_moe_gpu {
 class Runner : public r3::worker_moves::Operations {
 public:
     explicit Runner(const Container& model) : model_(model) {}
-    /* The decode GEMV for the weight format in use (W4 nonlinear nibbles or FP8 block-scaled). */
+    using GemvChoice = gemv_geometry::Choice;
+    using GemvVariant = gemv_geometry::Variant;
+    using GemvSelection = gemv_geometry::Gemv;
+
+    // Kernel identity and preference are resolved before touching the output.
+    // No fallback is attempted after a launch has been enqueued.
     template <bool TOKEN>
-    void launch_gemv(dim3 grid, hipStream_t stream, const uint8_t* aq, const float* as, const int32_t* sorted, const int32_t* off,
-                     uint32_t top_k, void* const* code0, void* const* scale0, void* const* code1, void* const* scale1, uint32_t n0,
-                     uint32_t n1, uint32_t k0, uint32_t k1, uint32_t a_stride, uint32_t out_stride, uint16_t* out, uint32_t part_pitch) {
-        /* R3_MOE_WORKER_GEMV_W4H2 is read each call (as FUSEROUTE is) so a replay sweep can compare the two W4 kernels in one process. */
-        const bool w4h2 = r3_serving::settings().gemv_w4h2;
-        if (weight_format_ == MOE_FMT_W4NL64 && w4h2 && !(k0 & 63u) && !(k1 & 63u))
-            hipLaunchKernelGGL((lane_moe_gemv_w4h2<TOKEN>), grid, dim3(256), 0, stream, aq, as, sorted, off, top_k, code0, scale0, code1,
-                               scale1, n0, n1, k0, k1, a_stride, out_stride, out, part_pitch, lane_shape_);
-        else if (weight_format_ == MOE_FMT_FP8_E4M3_BLOCK && gemv_mr_ && !(k0 & 15u) && !(k1 & 15u))
-            hipLaunchKernelGGL((lane_moe_gemv_mr<TOKEN>), dim3(experts(), (std::max(n0, n1) + kMrTile - 1) / kMrTile), dim3(256), 0, stream, aq, as, sorted, off, top_k, code0,
-                               scale0, code1, scale1, n0, n1, k0, k1, a_stride, out_stride, out, part_pitch);
-        else if (weight_format_ == MOE_FMT_FP8_E4M3_BLOCK && gemv_h2_ == 4 && !(k0 & 15u) && !(k1 & 15u))
-            hipLaunchKernelGGL((lane_moe_gemv_h2<TOKEN, 4>), grid, dim3(256), 0, stream, aq, as, sorted, off, top_k, code0, scale0, code1,
-                               scale1, n0, n1, k0, k1, a_stride, out_stride, out, part_pitch, lane_shape_);
-        else if (weight_format_ == MOE_FMT_FP8_E4M3_BLOCK && gemv_h2_ == 2 && !(k0 & 15u) && !(k1 & 15u))
-            hipLaunchKernelGGL((lane_moe_gemv_h2<TOKEN, 2>), grid, dim3(256), 0, stream, aq, as, sorted, off, top_k, code0, scale0, code1,
-                               scale1, n0, n1, k0, k1, a_stride, out_stride, out, part_pitch, lane_shape_);
-        else if (weight_format_ == MOE_FMT_FP8_E4M3_BLOCK && gemv_h2_ == 1 && !(k0 & 15u) && !(k1 & 15u))
-            hipLaunchKernelGGL((lane_moe_gemv_h2<TOKEN, 1>), grid, dim3(256), 0, stream, aq, as, sorted, off, top_k, code0, scale0, code1,
-                               scale1, n0, n1, k0, k1, a_stride, out_stride, out, part_pitch, lane_shape_);
-        else if (weight_format_ == MOE_FMT_FP8_E4M3_BLOCK && gemv_wide_ && !(k0 & 15u) && !(k1 & 15u))
-            hipLaunchKernelGGL((lane_moe_gemv_wide<TOKEN>), grid, dim3(256), 0, stream, aq, as, sorted, off, top_k, code0, scale0, code1,
-                               scale1, n0, n1, k0, k1, a_stride, out_stride, out, part_pitch, lane_shape_);
-        else if (weight_format_ == MOE_FMT_FP8_E4M3_BLOCK)
-            hipLaunchKernelGGL((lane_moe_gemv<TOKEN, true>), grid, dim3(256), 0, stream, aq, as, sorted, off, top_k, code0, scale0, code1,
-                               scale1, n0, n1, k0, k1, a_stride, out_stride, out, part_pitch, lane_shape_);
-        else
-            hipLaunchKernelGGL((lane_moe_gemv<TOKEN, false>), grid, dim3(256), 0, stream, aq, as, sorted, off, top_k, code0, scale0, code1,
-                               scale1, n0, n1, k0, k1, a_stride, out_stride, out, part_pitch, lane_shape_);
+    static const void* gemv_function(GemvVariant variant) {
+        switch (variant) {
+            case GemvVariant::GenericFp8: return (const void*)lane_moe_gemv<TOKEN, true>;
+            case GemvVariant::GenericW4: return (const void*)lane_moe_gemv<TOKEN, false>;
+            case GemvVariant::WideFp8: return (const void*)lane_moe_gemv_wide<TOKEN>;
+            case GemvVariant::H2Fp8R1: return (const void*)lane_moe_gemv_h2<TOKEN, 1>;
+            case GemvVariant::H2Fp8R2: return (const void*)lane_moe_gemv_h2<TOKEN, 2>;
+            case GemvVariant::H2Fp8R4: return (const void*)lane_moe_gemv_h2<TOKEN, 4>;
+            case GemvVariant::W4H2: return (const void*)lane_moe_gemv_w4h2<TOKEN>;
+            case GemvVariant::MultiRowFp8R4: return (const void*)lane_moe_gemv_mr<TOKEN>;
+            default: return nullptr;
+        }
+    }
+
+    template <bool TOKEN>
+    GemvChoice select_gemv(bool requested, uint32_t k0, uint32_t k1,
+                           uint32_t group, GemvVariant variant) const {
+        using namespace gemv_geometry;
+        Capabilities caps{block_lds_bytes_, 0u, 0u, 0u, false,
+                          moe_ && moe_->launch};
+        if (requested) {
+            const void* kernel = gemv_function<TOKEN>(variant);
+            const Geometry layout = required_lds_bytes(variant, std::max(k0, k1), group);
+            if (kernel && std::holds_alternative<LdsLayout>(layout)) {
+                const uint32_t dynamic_bytes = std::get<LdsLayout>(layout).dynamic_bytes;
+                hipFuncAttributes attrs{};
+                if (hipFuncGetAttributes(&attrs, kernel) == hipSuccess &&
+                    attrs.sharedSizeBytes <= std::numeric_limits<uint32_t>::max()) {
+                    // Opt-in is not assumed: only the reported normal block
+                    // reservation is offered to the geometry selector.
+                    caps.kernel_static_bytes = (uint32_t)attrs.sharedSizeBytes;
+                    caps.kernel_dynamic_lds_limit =
+                        attrs.maxDynamicSharedSizeBytes > 0
+                        ? (uint32_t)attrs.maxDynamicSharedSizeBytes : block_lds_bytes_;
+                    int active = 0;
+                    if (dynamic_bytes <= caps.kernel_dynamic_lds_limit &&
+                        (uint64_t)dynamic_bytes + attrs.sharedSizeBytes <= block_lds_bytes_ &&
+                        hipOccupancyMaxActiveBlocksPerMultiprocessor(
+                            &active, kernel, 256, dynamic_bytes) == hipSuccess) {
+                        caps.kernel_available = true;
+                        caps.active_blocks_per_cu = (uint32_t)std::max(active, 0);
+                    }
+                }
+            }
+        }
+        return choose_stage(requested, variant, k0, k1, group, caps);
+    }
+
+    template <bool TOKEN>
+    GemvChoice select_gemv(bool requested, uint32_t k0, uint32_t k1,
+                           uint32_t group) const {
+        const auto preferences = gemv_geometry::Preferences{
+            weight_format_ == MOE_FMT_FP8_E4M3_BLOCK,
+            r3_serving::settings().gemv_w4h2, gemv_mr_,
+            gemv_h2_ > 0 ? (uint32_t)gemv_h2_ : 0u, gemv_wide_};
+        return select_gemv<TOKEN>(requested, k0, k1, group,
+            gemv_geometry::preferred_variant(preferences, k0, k1));
+    }
+
+    // The selected variant was checked for both parities, actual device LDS,
+    // compiled static LDS and occupancy before this function can be called.
+    template <bool TOKEN>
+    int launch_gemv(const GemvSelection& selected, dim3 grid, hipStream_t stream,
+                    const uint8_t* aq, const float* as, const int32_t* sorted, const int32_t* off,
+                    uint32_t top_k, void* const* code0, void* const* scale0,
+                    void* const* code1, void* const* scale1, uint32_t n0,
+                    uint32_t n1, uint32_t k0, uint32_t k1, uint32_t a_stride,
+                    uint32_t out_stride, uint16_t* out, uint32_t part_pitch) {
+        const auto lds = selected.dynamic_lds;
+        switch (selected.variant) {
+            case GemvVariant::W4H2:
+                hipLaunchKernelGGL((lane_moe_gemv_w4h2<TOKEN>), grid, dim3(256), lds, stream, aq, as, sorted, off, top_k, code0, scale0, code1,
+                                   scale1, n0, n1, k0, k1, a_stride, out_stride, out, part_pitch, lane_shape_);
+                break;
+            case GemvVariant::MultiRowFp8R4:
+                hipLaunchKernelGGL((lane_moe_gemv_mr<TOKEN>), dim3(experts(), (std::max(n0, n1) + kMrTile - 1) / kMrTile), dim3(256), lds, stream, aq, as, sorted, off, top_k, code0,
+                                   scale0, code1, scale1, n0, n1, k0, k1, a_stride, out_stride, out, part_pitch);
+                break;
+            case GemvVariant::H2Fp8R4:
+                hipLaunchKernelGGL((lane_moe_gemv_h2<TOKEN, 4>), grid, dim3(256), lds, stream, aq, as, sorted, off, top_k, code0, scale0, code1,
+                                   scale1, n0, n1, k0, k1, a_stride, out_stride, out, part_pitch, lane_shape_);
+                break;
+            case GemvVariant::H2Fp8R2:
+                hipLaunchKernelGGL((lane_moe_gemv_h2<TOKEN, 2>), grid, dim3(256), lds, stream, aq, as, sorted, off, top_k, code0, scale0, code1,
+                                   scale1, n0, n1, k0, k1, a_stride, out_stride, out, part_pitch, lane_shape_);
+                break;
+            case GemvVariant::H2Fp8R1:
+                hipLaunchKernelGGL((lane_moe_gemv_h2<TOKEN, 1>), grid, dim3(256), lds, stream, aq, as, sorted, off, top_k, code0, scale0, code1,
+                                   scale1, n0, n1, k0, k1, a_stride, out_stride, out, part_pitch, lane_shape_);
+                break;
+            case GemvVariant::WideFp8:
+                hipLaunchKernelGGL((lane_moe_gemv_wide<TOKEN>), grid, dim3(256), lds, stream, aq, as, sorted, off, top_k, code0, scale0, code1,
+                                   scale1, n0, n1, k0, k1, a_stride, out_stride, out, part_pitch, lane_shape_);
+                break;
+            case GemvVariant::GenericFp8:
+                hipLaunchKernelGGL((lane_moe_gemv<TOKEN, true>), grid, dim3(256), lds, stream, aq, as, sorted, off, top_k, code0, scale0, code1,
+                                   scale1, n0, n1, k0, k1, a_stride, out_stride, out, part_pitch, lane_shape_);
+                break;
+            case GemvVariant::GenericW4:
+                hipLaunchKernelGGL((lane_moe_gemv<TOKEN, false>), grid, dim3(256), lds, stream, aq, as, sorted, off, top_k, code0, scale0, code1,
+                                   scale1, n0, n1, k0, k1, a_stride, out_stride, out, part_pitch, lane_shape_);
+                break;
+            default: return -EINVAL;
+        }
+        return hip_ok(hipGetLastError(), "lane GEMV launch") ? 0 : -EIO;
     }
     /* Routed experts per layer, from the container; and the thread count of the one-block routing kernels: a power of two, at least
      * kFuseMaxRoutes and the expert count (0 when the count is beyond what one block can scan). */
@@ -90,7 +172,7 @@ public:
         gemv_wide_ = gemv_wide_env_ < 0 ? true : gemv_wide_env_ > 0;
         gemv_h2_ = gemv_h2_env_ < 0 ? 2 : gemv_h2_env_;   /* FP8 default: packed f16 dot products, two rows a block */
         if (gemv_h2_) std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_GEMV_H2 on - packed f16 dot products in the FP8 decode GEMV, %d row(s) a block\n", gemv_h2_);
-        return true;
+        return !shape_.hidden || set_shape(shape_);
     }
     /* The engine width of the segment this runner serves (Header::rank_count), checked on every request at the lane boundary. */
     bool set_engine_world(uint32_t world) {
@@ -99,10 +181,28 @@ public:
         return true;
     }
     bool set_shape(const r3::moe_shm::LayoutShape& s) {
-        if (!s.hidden || !s.top_k || s.top_k > r3::moe_shm::kMaxTopK || !s.act_group || s.hidden % 16 || s.hidden % s.act_group ||
-            ((s.hidden / s.act_group) * 4) % 16 || s.hidden > kGemvMaxK) {
-            std::fprintf(stderr, "r3_moe_worker: lane kernels cannot run hidden %u, top-k %u, group %u\n", s.hidden, s.top_k, s.act_group);
+        if (!s.hidden || !s.intermediate || !s.top_k ||
+            s.top_k > r3::moe_shm::kMaxTopK ||
+            s.act_group != gemv_geometry::detail::kActivationScaleGroup ||
+            s.hidden % 16u || s.intermediate % 16u ||
+            s.hidden % s.act_group || s.intermediate % s.act_group) {
+            std::fprintf(stderr, "r3_moe_worker: invalid stage widths gate/up K=%u down K=%u group=%u\n",
+                         s.hidden, s.intermediate, s.act_group);
             return false;
+        }
+        if (block_lds_bytes_) {
+            const auto gu = select_gemv<true>(gemv_, s.hidden, s.hidden, s.act_group);
+            const auto dn = select_gemv<false>(gemv_, s.intermediate, s.intermediate, s.act_group);
+            if (const auto* failed = std::get_if<gemv_geometry::Refuse>(&gu)) {
+                std::fprintf(stderr, "r3_moe_worker: gate/up K=%u has no GEMV or grouped GEMM (reason=%u)\n",
+                             s.hidden, (unsigned)failed->reason);
+                return false;
+            }
+            if (const auto* failed = std::get_if<gemv_geometry::Refuse>(&dn)) {
+                std::fprintf(stderr, "r3_moe_worker: down K=%u has no GEMV or grouped GEMM (reason=%u)\n",
+                             s.intermediate, (unsigned)failed->reason);
+                return false;
+            }
         }
         shape_ = s;
         lane_shape_ = LaneShape{s.hidden, s.top_k, s.act_group, s.experts, lane_shape_.world};
@@ -166,6 +266,12 @@ public:
         if (!hip_ok(hipSetDevice(0), "hipSetDevice(0)")) return false;
         hipDeviceProp_t prop{};
         if (!hip_ok(hipGetDeviceProperties(&prop, 0), "hipGetDeviceProperties")) return false;
+        if (!prop.sharedMemPerBlock ||
+            prop.sharedMemPerBlock > std::numeric_limits<uint32_t>::max()) {
+            std::fprintf(stderr, "r3_moe_worker: no representable device LDS limit\n");
+            return false;
+        }
+        block_lds_bytes_ = (uint32_t)prop.sharedMemPerBlock;
         arch_ = prop.gcnArchName;
         const size_t colon = arch_.find(':');
         if (colon != std::string::npos) arch_.resize(colon);
@@ -760,6 +866,26 @@ public:
             const bool rows_small = r3_serving::settings().rows_small &&
                                     lane_is_small(lane) && rows <= 16u;
             const bool rowk = (rows_ && !lane_is_small(lane)) || rows_small;
+            // Resolve BOTH projection stages before any output writer executes.
+            // A post-launch fallback could overwrite a partially written result.
+            GemvChoice gu_choice = gemv_geometry::GenericGemm{gemv_geometry::Reason::KernelUnavailable};
+            GemvChoice dn_choice = gemv_geometry::GenericGemm{gemv_geometry::Reason::KernelUnavailable};
+            if (!rowk) {
+                gu_choice = select_gemv<true>(gemv, (uint32_t)shape_.hidden,
+                                              (uint32_t)shape_.hidden, (uint32_t)shape_.act_group);
+                dn_choice = select_gemv<false>(gemv, (uint32_t)w0, (uint32_t)w1,
+                                               (uint32_t)shape_.act_group);
+                if (const auto* failure = std::get_if<gemv_geometry::Refuse>(&gu_choice)) {
+                    std::fprintf(stderr, "r3_moe_worker: gate/up K=%u refused before launch (reason=%u)\n",
+                                 shape_.hidden, (unsigned)failure->reason);
+                    return -ENOTSUP;
+                }
+                if (const auto* failure = std::get_if<gemv_geometry::Refuse>(&dn_choice)) {
+                    std::fprintf(stderr, "r3_moe_worker: down K=%lld refused before launch (reason=%u)\n",
+                                 (long long)mid_w(), (unsigned)failure->reason);
+                    return -ENOTSUP;
+                }
+            }
             // Accurate W4 rows only. The historical inaccurate fp16-scaled
             // path is absent from production; unsupported tile geometry fails
             // closed instead of quietly restoring the precision regression.
@@ -861,8 +987,8 @@ public:
                                    (uint32_t)mid_w());
                 else return -EINVAL;
                 if (!hip_ok(hipGetLastError(), "lane gate/up rows")) return -EIO;
-            } else if (gemv) {
-                launch_gemv<true>(gemv_grid_gu, w.stream,
+            } else if (const auto* selected = std::get_if<GemvSelection>(&gu_choice)) {
+                if (launch_gemv<true>(*selected, gemv_grid_gu, w.stream,
                                    static_cast<const uint8_t*>(w.d_aq.p), static_cast<const float*>(w.d_as.p),
                                    static_cast<const int32_t*>(w.d_sorted.p), static_cast<const int32_t*>(w.d_off.p),
                                    (uint32_t)shape_.top_k,
@@ -870,8 +996,7 @@ public:
                                    static_cast<void* const*>(w.gu_code[1].p), static_cast<void* const*>(w.gu_scale[1].p),
                                    (uint32_t)(2 * w0), (uint32_t)(2 * w1), (uint32_t)shape_.hidden, (uint32_t)shape_.hidden,
                                    (uint32_t)shape_.hidden, (uint32_t)(2 * mid_w()), static_cast<uint16_t*>(w.d_gu.p),
-                                   (uint32_t)mid_w());
-                if (!hip_ok(hipGetLastError(), "lane gate/up GEMV")) return -EIO;
+                                   (uint32_t)mid_w()) < 0) return -EIO;
             } else if (launch_on(moe_,
                           { tensor(w.d_aq.p, RAD_F8E4M3, {rows, shape_.hidden}),
                             tensor(w.d_as.p, RAD_F32, {rows, shape_.hidden / kGroup}),
@@ -886,16 +1011,33 @@ public:
                 return -EIO;
 
             if (gemv_debug_ && weight_format_ == MOE_FMT_W4NL64 && lane_is_small(lane)) {
-                hipLaunchKernelGGL((lane_moe_gemv<true, false>), gemv_grid_gu, dim3(256), 0, w.stream,
-                                   static_cast<const uint8_t*>(w.d_aq.p), static_cast<const float*>(w.d_as.p),
-                                   static_cast<const int32_t*>(w.d_sorted.p), static_cast<const int32_t*>(w.d_off.p),
-                                   (uint32_t)shape_.top_k,
-                                   static_cast<void* const*>(w.gu_code[0].p), static_cast<void* const*>(w.gu_scale[0].p),
-                                   static_cast<void* const*>(w.gu_code[1].p), static_cast<void* const*>(w.gu_scale[1].p),
-                                   (uint32_t)(2 * w0), (uint32_t)(2 * w1), (uint32_t)shape_.hidden, (uint32_t)shape_.hidden,
-                                   (uint32_t)shape_.hidden, (uint32_t)(2 * mid_w()), static_cast<uint16_t*>(w.d_dbg.p),
-                                   (uint32_t)mid_w(), lane_shape_);
-                w.dbg_routes = routes;
+                const auto debug_choice = select_gemv<true>(
+                    true, (uint32_t)shape_.hidden, (uint32_t)shape_.hidden,
+                    (uint32_t)shape_.act_group, GemvVariant::GenericW4);
+                if (const auto* selected = std::get_if<GemvSelection>(&debug_choice)) {
+                    hipLaunchKernelGGL((lane_moe_gemv<true, false>), gemv_grid_gu,
+                                       dim3(256), selected->dynamic_lds, w.stream,
+                                       static_cast<const uint8_t*>(w.d_aq.p), static_cast<const float*>(w.d_as.p),
+                                       static_cast<const int32_t*>(w.d_sorted.p), static_cast<const int32_t*>(w.d_off.p),
+                                       (uint32_t)shape_.top_k,
+                                       static_cast<void* const*>(w.gu_code[0].p), static_cast<void* const*>(w.gu_scale[0].p),
+                                       static_cast<void* const*>(w.gu_code[1].p), static_cast<void* const*>(w.gu_scale[1].p),
+                                       (uint32_t)(2 * w0), (uint32_t)(2 * w1),
+                                       (uint32_t)shape_.hidden, (uint32_t)shape_.hidden,
+                                       (uint32_t)shape_.hidden, (uint32_t)(2 * mid_w()),
+                                       static_cast<uint16_t*>(w.d_dbg.p), (uint32_t)mid_w(), lane_shape_);
+                    if (!hip_ok(hipGetLastError(), "lane debug GEMV")) return -EIO;
+                    w.dbg_routes = routes;
+                } else {
+                    // Compare mode promises a GEMV result. Refuse rather than
+                    // publish an unchecked or missing diagnostic output.
+                    std::fprintf(stderr, "r3_moe_worker: W4 debug GEMV K=%u cannot launch (reason=%u)\n",
+                                 shape_.hidden,
+                                 (unsigned)(std::get_if<gemv_geometry::GenericGemm>(&debug_choice)
+                                    ? std::get<gemv_geometry::GenericGemm>(debug_choice).gemv_ineligible
+                                    : std::get<gemv_geometry::Refuse>(debug_choice).reason));
+                    return -ENOTSUP;
+                }
             }
             if (sampling && !hip_ok(hipEventRecord(w.stage[1], w.stream), "lane stage 1")) return -EIO;
             std::vector<RadParam> gqp = {
@@ -974,16 +1116,15 @@ public:
                                    (uint32_t)mid_w(), (uint32_t)shape_.hidden, static_cast<uint16_t*>(out_down), 0u);
                 else return -EINVAL;
                 if (!hip_ok(hipGetLastError(), "lane down rows")) return -EIO;
-            } else if (gemv) {
-                launch_gemv<false>(gemv_grid_dn, w.stream,
+            } else if (const auto* selected = std::get_if<GemvSelection>(&dn_choice)) {
+                if (launch_gemv<false>(*selected, gemv_grid_dn, w.stream,
                                    static_cast<const uint8_t*>(w.d_mid.p), static_cast<const float*>(w.d_mid_s.p),
                                    static_cast<const int32_t*>(w.d_sorted.p), static_cast<const int32_t*>(w.d_off.p),
                                    (uint32_t)shape_.top_k,
                                    static_cast<void* const*>(w.dn_code[0].p), static_cast<void* const*>(w.dn_scale[0].p),
                                    static_cast<void* const*>(w.dn_code[1].p), static_cast<void* const*>(w.dn_scale[1].p),
                                    (uint32_t)shape_.hidden, (uint32_t)shape_.hidden, (uint32_t)w0, (uint32_t)w1,
-                                   (uint32_t)mid_w(), (uint32_t)shape_.hidden, static_cast<uint16_t*>(out_down), 0u);
-                if (!hip_ok(hipGetLastError(), "lane down GEMV")) return -EIO;
+                                   (uint32_t)mid_w(), (uint32_t)shape_.hidden, static_cast<uint16_t*>(out_down), 0u) < 0) return -EIO;
             } else if (launch_on(moe_,
                           { tensor(w.d_mid.p, RAD_F8E4M3, {routes, mid_w()}),
                             tensor(w.d_mid_s.p, RAD_F32, {routes, mid_w() / kGroup}),
@@ -1163,6 +1304,7 @@ public:
 private:
     const Container& model_;
     std::string arch_;
+    uint32_t block_lds_bytes_ = 0;
     void* so_ = nullptr;
     void (*plugin_close_)() = nullptr;
     bool plugin_opened_ = false;
