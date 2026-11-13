@@ -235,3 +235,60 @@ def test_card_free_lifecycle_and_mutation_guards():
             assert header.count(old) == 1, name
             altered = header.replace(old, new)
             assert compile_and_run(Path(d), altered, name) != 0, f"{name}: survived mutation"
+
+
+# Exact unpatched source blobs from upstream Radiance v1.17.0 (19d4e8fe...).
+# Check these in rather than depending on a source cache in CI.
+PIN_V117 = REPO / "engines/radiance/tests/fixtures/19d4e8f"
+BEFORE_V117 = {"core/runtime/ctx.cpp": "39e36c9", "core/engine.cpp": "e08a85f"}
+AFTER_V117 = {
+    "core/runtime/ctx.cpp": "18781a1",
+    "core/engine.cpp": "ee718ac",
+    "core/runtime/bc_moe_remote_evidence.h": "47f1e86",
+}
+
+
+def test_current_v117_pin_exact_apply_idempotence_and_fail_closed():
+    """Verify the current upstream pin, not only the historical v1.16 fixture."""
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        for rel, expected in BEFORE_V117.items():
+            dest = root / rel
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(PIN_V117 / rel, dest)
+            assert blob(dest.read_bytes()) == expected, rel
+        edits = list(patches())
+        first = apply_all(edits, root)
+        assert all(item.ok for item in first), first
+        assert all(edit.status == "applied" for item in first for edit in item.results)
+        patched = {rel: (root / rel).read_bytes() for rel in AFTER_V117}
+        assert {rel: blob(data) for rel, data in patched.items()} == AFTER_V117
+        ctx = patched["core/runtime/ctx.cpp"].decode()
+        assert "if (!ok) continue;\n        (void)bc_moe_remote_evidence_landed(" in ctx
+        assert "route_[(size_t)layer].credited[bank] = true;\n    (void)bc_moe_remote_evidence_credit(" in ctx
+        assert "if (!bc_moe_remote_evidence_landed(" not in ctx
+        assert "if (bc_moe_remote_evidence_credit(" not in ctx
+        second = apply_all(edits, root)
+        assert all(item.ok for item in second), second
+        assert all(edit.status == "already-applied" for item in second for edit in item.results)
+        assert {rel: (root / rel).read_bytes() for rel in patched} == patched
+
+    # Anchor drift must fail without leaving the drifted source half-patched.
+    for rel, old, new in (
+        ("core/runtime/ctx.cpp", "const bool again = s.step[bank] == step;",
+         "const bool again = s.step[bank] != step;"),
+        ("core/engine.cpp", "XsTally* const xs = xstats_ ? xstats_->tally(r.index) : nullptr;",
+         "XsTally* const xs = xstats_ ? xstats_->tally(r.index) : 0;"),
+    ):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            for path in BEFORE_V117:
+                dest = root / path
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(PIN_V117 / path, dest)
+            source = (root / rel).read_text()
+            assert source.count(old) == 1, rel
+            (root / rel).write_text(source.replace(old, new))
+            result = apply_all(list(patches()), root)
+            assert not all(item.ok for item in result), (rel, result)
+            assert (root / rel).read_text() == source.replace(old, new), rel
