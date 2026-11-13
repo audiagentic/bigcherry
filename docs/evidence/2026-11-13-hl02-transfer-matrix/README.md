@@ -131,6 +131,8 @@ R9700. This supports advancing CPU push to the realistic concurrent
 producer/push experiment, but is not evidence of three-way aggregate BAR
 capacity or TP3 layer/TTFT improvement.
 
+**Follow-up (2026-11-14):** The unchanged RAD50 lab path was repeated for 100 generations at 3.93 MiB on each of XTX/XTX/R9700 idle and each affected receiver during the primary XTX's ~13.43 GB/s host-read contention. An additional 30-iteration 4 MiB pull-versus-CPU-push control replicated the bypass advantage. See [the managed HL02 live-verification receipts](../2026-11-14-hl02-live-verification/README.md). This remains separate from all-three simultaneous TP3 receive.
+
 ## What this evidence does not prove
 
 - No measured PCIe No-Snoop transaction attribute, CPU-internal queue

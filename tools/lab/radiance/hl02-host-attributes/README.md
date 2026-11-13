@@ -79,3 +79,33 @@ Next gates: actual PCIe transaction attributes if actionable, primary duty
 cycle, sustained three-destination CPU pushes simultaneous with GPU partial
 writes, 10 MiB GPU-live R9700 and XTX fault/lifetime correctness, and an exact
 TP3 CPU sum evaluated against the improved VTP36 GPU candidate.
+
+## 2026-11-14 follow-up: GPU-live generation and 30-iteration repeats
+
+Two bounded runners extend the original RAD50 proof without changing its
+existing CPU/GPU code. They require an independently acquired exclusive GPU
+lease and a no-foreign-KFD preflight:
+
+- `run_live_repeats.py --binary <rad50-tester> --output-dir
+  artifacts/HL02-live-idle --devices 0 1 2 --iterations 100 --rows 768`
+  runs the unchanged RAD50 `dmabuf-live-parallel` pre-armed GPU consumer
+  on each destination separately. It validates complete/verified counts,
+  0-status and tester exit, emits a digest of the exact binary, and retains
+  stdout/stderr and a machine-readable JSON summary.
+- `run_live_under_read.py --reader-binary <host_attributes> --rad50-binary
+  <rad50-tester> --output-dir artifacts/HL02-live-contended
+  --primary 0 --victims 1 2 --iterations 100` repeats the same test on
+  each victim while an independently running primary GPU actively reads
+  64 MiB of mapped host memory. The wrapper verifies source read rate,
+  owns and terminates only its child reader, and retains the background
+  and GPU verifier outputs. It does **not** push to both receivers
+  concurrently.
+- `run_push_control.py` with `--iterations 30` is the longer unchanged
+  RAD50 4 MiB **serial** direct pull-versus-CPU-push comparison, under
+  idle, primary reads and primary writes.
+
+Normalized results and provenance:
+`docs/evidence/2026-11-14-hl02-live-verification/README.md`.
+The original 4 MiB/768-row test is still below the planned 10 MiB TP3
+message, and 100 finite serial generations do not replace crash/restart,
+ring-wrap, three-way concurrency or exact production arithmetic tests.

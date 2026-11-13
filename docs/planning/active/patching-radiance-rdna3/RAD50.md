@@ -163,6 +163,8 @@ lease; do not bypass unavailable lease controls.
 
 ## Notes
 
+**2026-11-14 additional RAD50 safety repeat:** The unchanged `dmabuf-live-parallel` tester passed 100 pre-armed, exact-GPU-word generations at 3.93 MiB on each of XTX/XTX/R9700, plus 100 per affected XTX/R9700 under concurrent first-PEG XTX host reads ~13.431 GB/s. No mismatches or generation errors; CPU DMA-BUF ready/ACK remained GPU-visible at this size. A separate 30-iteration 4 MiB serial CPU BAR-push A/B held its contention bypass XTX 1.847× and R9700 2.315×. Receipts: `docs/evidence/2026-11-14-hl02-live-verification/README.md`. Fault/lifetime, 10 MiB and all-three simultaneous paths remain open; MoE serving and TP3 transport are **not** thereby qualified.
+
 **New isolated comparative control (2026-11-13):** Reused the existing RAD50 `dmabuf-ab` 4 MiB, 10-iteration exact GPU verifier under controlled primary-GPU read and write backgrounds in three separately leased sessions on XTX and R9700. Under primary read contention, serial synthetic CPU BAR-push vs mapped-host GPU pull speedups were XTX 1.85x, R9700 2.30x (session medians). Idle 1.38x/1.54x; primary write-only gave 1.35x/1.53x. Full measures in `docs/evidence/2026-11-13-hl02-transfer-matrix/README.md`. This strengthens a *transfer-method* result, not RAD50's unpassed fault/lifetime or VTP38's three-rank/10 MiB/production gates.
 
 **New repeat (2026-11-13):** Archived `rad50-tester` on R9700 passed the pre-armed `dmabuf-live-parallel` 768-row full-word check for 30/30 generations, zero mismatches, exit 0 (3,932,160 bytes), with GPU lease released; new managed evidence at `docs/evidence/2026-11-13-hl02-vtp38-consolidation/R9700-LIVE-2026-11-13.md`. Still not a 10 MiB three-way, crash/lifetime or inference test.
