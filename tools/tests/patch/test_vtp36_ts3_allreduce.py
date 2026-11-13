@@ -1,6 +1,7 @@
-"""VTP36 (rad0031, rad0032): the exact two-shot's timeline, and the three-rank two-shot's pieces and duplex weights.
+"""VTP36 (rad0031-rad0033): the exact two-shot's timeline; the three-rank two-shot's pieces, staggered steps and
+duplex weights; its second hop written once through the host mailbox.
 
-Card-free. The pinned-source test applies the vtp14-mixed-tp chain up to rad0032 to radiance v1.17.0 when a checkout
+Card-free. The pinned-source test applies the vtp14-mixed-tp chain up to rad0033 to radiance v1.17.0 when a checkout
 with that tag is reachable (RADIANCE_SRC, or the workspace's vendor/radiance), and is skipped otherwise.
 """
 from __future__ import annotations
@@ -23,6 +24,7 @@ from test_vtp14_n1_rank_code_selection import PIN_COMMIT, radiance_checkout
 PATCHES = REPO / "engines/radiance/patches"
 TL = PATCHES / "rad0031_ts_timeline"
 DX = PATCHES / "rad0032_ts3_duplex"
+ONCE = PATCHES / "rad0033_ts3_once"
 
 
 def load(pkg: Path):
@@ -32,7 +34,7 @@ def load(pkg: Path):
     return list(module.PATCHES)
 
 
-def chain(last: Path = DX):
+def chain(last: Path = ONCE):
     with (REPO / "engines/radiance/recipes.toml").open("rb") as f:
         names = tomllib.load(f)["patch-set"]["vtp14-mixed-tp"]["patches"]
     return names[: names.index(last.name) + 1]
@@ -46,7 +48,8 @@ class Ts3AllReduceTests(unittest.TestCase):
     def test_metadata_and_recipe(self):
         for pkg, order, kind, requires in (
                 (TL, 31, "diagnostic", ["rad0021_vtp14_weighted_twoshot_3rank"]),
-                (DX, 32, "enhancement", ["rad0024_ts3_decode", "rad0031_ts_timeline"])):
+                (DX, 32, "enhancement", ["rad0024_ts3_decode", "rad0031_ts_timeline"]),
+                (ONCE, 33, "enhancement", ["rad0032_ts3_duplex"])):
             with (pkg / "patch.toml").open("rb") as f:
                 meta = tomllib.load(f)
             self.assertEqual((meta["order"], meta["state"], meta["kind"]), (order, "untested", kind))
@@ -56,6 +59,7 @@ class Ts3AllReduceTests(unittest.TestCase):
         names = chain()
         for earlier in ("rad0021_vtp14_weighted_twoshot_3rank", "rad0024_ts3_decode", TL.name):
             self.assertLess(names.index(earlier), names.index(DX.name))
+        self.assertLess(names.index(DX.name), names.index(ONCE.name))
 
     def test_timeline_is_inert_without_the_variable(self):
         t = texts(TL)
@@ -75,6 +79,7 @@ class Ts3AllReduceTests(unittest.TestCase):
             axes = t[f"ts3p-axes-{tag}"]
             self.assertIn('{ "ts_pieces", kArTsPieces, NELEM(kArTsPieces), 1,', axes)
             self.assertIn('{ "ts_duplex", kArTsDuplex, NELEM(kArTsDuplex), 0,', axes)
+            self.assertIn('{ "ts_stagger", kArTsDuplex, NELEM(kArTsDuplex), 0,', axes)
         self.assertIn("kArTsPieces[] = { 1, 2, 4, 8 };", t["ts3p-values"])
         self.assertIn("kArTsDuplex[] = { 0, 1 };", t["ts3p-values"])
         launch = t["ts3p-launch"]
@@ -83,12 +88,27 @@ class Ts3AllReduceTests(unittest.TestCase):
         self.assertIn("c.in->shard_wd, off) * 16 <= c.in->slot_bytes)", launch)
         # pieces from the instance's piece floor; below it one piece, as now
         self.assertIn("c.numel >= in->pieces_min ? (long)r4d_cfg_ar_ts_pieces(a) : 1L;", launch)
+        # the staggered order means something only in pieces, and only odd blocks take it
+        self.assertIn("if (ts_pieces > 1 && r4d_cfg_ar_ts_stagger(a) != 0) ts_opts |= R4D_TS_OPT_STAGGER;", launch)
+        self.assertIn("(ts_opts & R4D_TS_OPT_STAGGER) != 0 && (b & 1) != 0;", t["ts3p-kstep"])
         # no model, card or world constant beyond the three-rank row this serves
         self.assertIn("r4d_ar_weights_duplex(gbs, world, wd)", t["ts3p-settle"])
         self.assertNotIn("64,64,0", t["ts3p-settle"])
 
+    def test_write_once_is_host_mailbox_only_and_off_by_default(self):
+        t = texts(ONCE)
+        for tag in ("ar", "ts4lane", "lane"):
+            self.assertIn('{ "ts_once", kArTsDuplex, NELEM(kArTsDuplex), 0,', t[f"ts3o-axis-{tag}"])
+        self.assertIn("if (in->host && r4d_cfg_ar_ts_once(a) != 0) ts_opts |= R4D_TS_OPT_ONCE;", t["ts3o-launch"])
+        # the writer's own slot in its own scratch; the reader takes the owner's scratch at the same slot index
+        self.assertIn("const_cast<int4*>(my_base) + ((size_t)parity * WS + rank) * (size_t)slot_stride16 +", t["ts3o-kself"])
+        self.assertIn("(ts_once ? (const int4*)peers.scratch[p] : my_base) +", t["ts3o-kload"])
+        self.assertIn("((size_t)parity * WS + owner) * (size_t)slot_stride16 + sh_max;", t["ts3o-kload"])
+        # off, the per-peer copies are the upstream stores
+        self.assertIn("for (int p = 0; p < NPEERS; ++p) pa[p][sh_max + k] = o;  // region B", t["ts3o-kstore"])
+
     def test_guards_are_unique_and_not_prefixes(self):
-        mine = [e.guard for pkg in (TL, DX) for f in load(pkg) for e in f.edits]
+        mine = [e.guard for pkg in (TL, DX, ONCE) for f in load(pkg) for e in f.edits]
         self.assertEqual(len(mine), len(set(mine)))
         for a in mine:
             for b in mine:
@@ -113,27 +133,31 @@ class Ts3AllReduceTests(unittest.TestCase):
             for f in files:
                 result = apply_all([f], root)
                 self.assertTrue(all(r.ok for r in result), result)
-            for pkg in (TL, DX):
-                for f in load(pkg):
-                    text = (root / f.path).read_text()
-                    for e in f.edits:
-                        self.assertIn(e.text, text, e.id)
+            for f in load(ONCE):
+                text = (root / f.path).read_text()
+                for e in f.edits:
+                    self.assertIn(e.text, text, e.id)
             kernel = (root / "libr4d/r4d_ar_twoshot_Nrank_exact.hip").read_text()
             entry = (root / "libr4d/r4d_ar_entry.hip").read_text()
             rows = (root / "libr4d/r4d_rows.cpp").read_text()
             # the kernel body, its parameter macro and its one launch macro all carry the ring
-            self.assertEqual(kernel.count("long long* tl_all, long long* tlring"), 1)
-            self.assertEqual(kernel.count("pieces_arg, tl_all, tlring"), 1)
-            self.assertEqual(kernel.count("(long long*)timeline, tlring)"), 1)
+            self.assertEqual(kernel.count("long long* tl_all, long long* tlring, int ts_opts\n"), 1)
+            self.assertEqual(kernel.count("pieces_arg, tl_all, tlring, ts_opts\n"), 1)
+            self.assertEqual(kernel.count("(long long*)timeline, tlring,"), 1)
+            self.assertEqual(kernel.count("(int)ts_opts /* BC_VTP36_TS3P_LAUNCH_ARG */)"), 1)
+            for guard in ("BC_VTP36_TSTL_KSTART", "BC_VTP36_TSTL_HOST", "BC_VTP36_TS3P_KSTEP", "BC_VTP36_TS3O_KSTORE",
+                          "BC_VTP36_TS3O_KLOAD"):
+                self.assertEqual(kernel.count(guard), 1, guard)
             # rad0021's wrapper is kept (its launch stays one piece); the entry calls the pieced one
             self.assertEqual(kernel.count("void r4d_ar_twoshot_3rank_exact_w("), 1)
             self.assertEqual(kernel.count("void r4d_ar_twoshot_3rank_exact_wp("), 1)
-            self.assertEqual(entry.count("r4d_ar_twoshot_3rank_exact_wp(weights, ts_pieces,"), 1)
+            self.assertEqual(entry.count("r4d_ar_twoshot_3rank_exact_wp(weights, ts_pieces, ts_opts,"), 1)
             self.assertNotIn("r4d_ar_twoshot_3rank_exact_w(weights,", entry)
             # every all-reduce tunable table that declares ts_min declares the two axes
             self.assertEqual(rows.count('{ "ts_pieces",'), rows.count('{ "ts_min",'))
-            self.assertEqual(rows.count('{ "ts_duplex",'), rows.count('{ "ts_min",'))
-            for pkg in (TL, DX):
+            for axis in ("ts_duplex", "ts_stagger", "ts_once"):
+                self.assertEqual(rows.count('{ "%s",' % axis), rows.count('{ "ts_min",'), axis)
+            for pkg in (TL, DX, ONCE):
                 again = apply_all(load(pkg), root)
                 self.assertTrue(all(e.status == "already-applied" for f in again for e in f.results))
 

@@ -1,0 +1,11 @@
+schema = 1
+id = "rad0033_ts3_once"
+order = 33
+state = "untested"
+kind = "enhancement"
+origin = "local"
+backend = "agnostic"
+plan-ids = ["VTP36"]
+requires = ["rad0032_ts3_duplex"]
+conflicts = []
+tags = ["allreduce", "tensor-parallel"]

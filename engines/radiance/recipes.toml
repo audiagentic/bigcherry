@@ -80,6 +80,7 @@ patches = [
   "rad0030_int8_pipelined_prefill",
   "rad0031_ts_timeline",
   "rad0032_ts3_duplex",
+  "rad0033_ts3_once",
 ]
 required-state = "untested"
 
