@@ -17,5 +17,13 @@
   "limitations": [
     "Original source modifications are not commit objects and original authorship/edit time is unknown",
     "Historical build output is not a measured benchmark or compatibility assertion for the current pin"
-  ]
+  ],
+  "capture_correction": {
+    "corrected_on": "2026-11-13",
+    "reason": "Initial PR #939 stored only 8000 of 16618 bytes of the tracked source diff due to truncated remote command stdout",
+    "prior_uncompressed_sha256": "48ffad42c66ac8c59b6ad519735797dab892de0a4aed50c12baa21639666c491",
+    "corrected_uncompressed_sha256": "7613342ebff2256b60bb7a8568e02c831bafe279f46f1cdd4e3b4828218127e0",
+    "corrected_uncompressed_bytes": 16618,
+    "verified_against_live_source": true
+  }
 }
