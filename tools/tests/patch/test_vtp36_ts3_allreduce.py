@@ -104,7 +104,13 @@ class Ts3AllReduceTests(unittest.TestCase):
             self.assertIn('{ "ts_once", kArTsDuplex, NELEM(kArTsDuplex), 0,', t[f"ts3o-axis-{tag}"])
         self.assertIn("if (in->host && r4d_cfg_ar_ts_once(a) != 0) ts_opts |= R4D_TS_OPT_ONCE;", t["ts3o-launch"])
         # the writer's own slot in its own scratch; the reader takes the owner's scratch at the same slot index
-        self.assertIn("const_cast<int4*>(my_base) + ((size_t)parity * WS + rank) * (size_t)slot_stride16 +", t["ts3o-kself"])
+        self.assertIn("ts_self + ((size_t)parity * WS + rank) * (size_t)slot_stride16 + sh_max;", t["ts3o-kself"])
+        # never a pointer derived from the restrict my_base: that made every fold load wait for pending stores
+        self.assertNotIn("const_cast", t["ts3o-kself"])
+        self.assertIn("(int4*)my_scratch /* BC_VTP36_TS3O_LAUNCH_ARG */)", t["ts3o-launch-arg"])
+        # the once form is a loop of its own, chosen outside it; the upstream loop keeps its text
+        self.assertIn("if (ts_once) reduce2_once(j);\n    else reduce2(j);", t["ts3o-kstore"])
+        self.assertEqual(t["ts3o-kstore"].count("ts_self_b[k] = o;"), 1)
         self.assertIn("(ts_once ? (const int4*)peers.scratch[p] : my_base) +", t["ts3o-kload"])
         self.assertIn("((size_t)parity * WS + owner) * (size_t)slot_stride16 + sh_max;", t["ts3o-kload"])
         # off, the per-peer copies are the upstream stores
@@ -144,10 +150,13 @@ class Ts3AllReduceTests(unittest.TestCase):
             entry = (root / "libr4d/r4d_ar_entry.hip").read_text()
             rows = (root / "libr4d/r4d_rows.cpp").read_text()
             # the kernel body, its parameter macro and its one launch macro all carry the ring
-            self.assertEqual(kernel.count("long long* tl_all, long long* tlring, int ts_opts\n"), 1)
-            self.assertEqual(kernel.count("pieces_arg, tl_all, tlring, ts_opts\n"), 1)
+            self.assertEqual(kernel.count("long long* tl_all, long long* tlring, int ts_opts,"), 1)
+            self.assertEqual(kernel.count("pieces_arg, tl_all, tlring, ts_opts, ts_self\n"), 1)
             self.assertEqual(kernel.count("(long long*)timeline, tlring,"), 1)
-            self.assertEqual(kernel.count("(int)ts_opts /* BC_VTP36_TS3P_LAUNCH_ARG */)"), 1)
+            self.assertEqual(kernel.count("(int)ts_opts /* BC_VTP36_TS3P_LAUNCH_ARG */,"), 1)
+            # the split form keeps upstream's reduce; the lockstep form's two orders take the chooser
+            self.assertEqual(kernel.count("ts_reduce(j);"), 2)
+            self.assertEqual(kernel.count("      reduce2(j);\n"), 1)
             for guard in ("BC_VTP36_TSTL_KSTART", "BC_VTP36_TSTL_HOST", "BC_VTP36_TS3P_KSTEP", "BC_VTP36_TS3O_KSTORE",
                           "BC_VTP36_TS3O_KLOAD"):
                 self.assertEqual(kernel.count(guard), 1, guard)
