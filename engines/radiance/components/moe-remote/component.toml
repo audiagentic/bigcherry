@@ -24,7 +24,7 @@ targets = ["r3_topology_v26_test", "r3_worker_topology_v26_test", "r3_gemv_geome
            "r3_moe_epoch_test", "r3_moe_fp8_ref_test", "r3_combine_f16_test", "r3_combine_pool_test",
            "r3_admission_ledger_test", "r3_mailbox_completion_test", "r3_owner_generation_test",
            "r3_worker_slot_pool_test", "r3_replay_bootstrap_test", "r3_rad46_rows_policy_test", "r3_combine_epoch_test",
-           "r3_forced_move_test", "r3_segment_version_test", "r3_helper_settings_test", "r3_helper_plugin_config_test", "r3_policy_calibration_test", "r3_replay_memory_test", "r3_tp_exactly_once_test", "r3_worker_footprint_test"]
+           "r3_forced_move_test", "r3_segment_version_test", "r3_helper_settings_test", "r3_helper_plugin_config_test", "r3_policy_calibration_test", "r3_replay_memory_test", "r3_tp_exactly_once_test", "r3_worker_footprint_test", "r3_credited_heat_source_test"]
 
 # Only active helper-side environment readers remain here. Engine-side
 # remote-MoE handoff, combine, telemetry, diagnostics and fuse-stage now
