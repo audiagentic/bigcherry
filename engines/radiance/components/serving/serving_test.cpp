@@ -1284,6 +1284,31 @@ void manifest_writer_step(Fixture& t) {
                 Json::array({uint64_t(32),uint64_t(16000)}),
                 Json::array({uint64_t(64),uint64_t(10000)})})},
             {"abort_quiescent_ns",1500000000ull}};
+        {   // the v2 plan key covers the engine tuning settings (a changed TP split is another plan) and, in a world of
+            // more than one card type, every rank's card; an absent or empty tuning section keeps the key
+            namespace v2 = bc::serving::v2;
+            auto a = crm;
+            a.spec.processes.engine.tuning.reset();
+            const std::string k0 = v2::plan_cache_key(a);
+            assert(!k0.empty());
+            auto b = a;
+            b.spec.processes.engine.tuning = v2::EngineTuning{};
+            assert(v2::plan_cache_key(b) == k0);
+            b.spec.processes.engine.tuning->tp_ownership = "kv=1,1,2;ffn=8,8,16";
+            const std::string k1 = v2::plan_cache_key(b);
+            assert(k1 != k0);
+            b.spec.processes.engine.tuning->tp_ownership = "kv=1,1,2;ffn=8,16,8";
+            assert(v2::plan_cache_key(b) != k1);
+            if (a.spec.processes.engine.device.gpus.size() == 1 && a.spec.facts.gpus.size() > 1) {
+                auto c = a;   // a second rank on another card type moves the key
+                for (const auto& g : c.spec.facts.gpus)
+                    if (g.arch != c.spec.facts.gpus.front().arch && g.bdf != c.spec.processes.engine.device.gpus[0]) {
+                        c.spec.processes.engine.device.gpus.push_back(g.bdf);
+                        break;
+                    }
+                if (c.spec.processes.engine.device.gpus.size() == 2) assert(v2::plan_cache_key(c) != k0);
+            }
+        }
         const Json row = {{"plan_cache_key", bc::serving::v2::plan_cache_key(crm)}, {"layout", crm.spec.intent.layout},
             {"objective", std::string(bc::serving::v2::kObjectiveNames[static_cast<size_t>(crm.spec.intent.service.objective)])},
             {"seeded","2026-11-06"}, {"evidence","calibration-run ingest test"},
