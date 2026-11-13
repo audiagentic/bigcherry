@@ -22,6 +22,10 @@ Source: GPT completion programme review 2026-11-10 (req_main_ac35b2590055), audi
 2. v2 content: spec.intent.power {profile, role_overrides}; spec.plan.power {mode observe|apply, profile, profile_digest, devices[{role,bdf,settings}], cpu{}}; host pool / helper budgets derived (RSC03), the five handoff fields derived or calibrated (RSC09, fields stay), host_ledger_margin.mib refit with provenance (RSC10, no second margin field), typed native config without R3_* (RSC06/07), manifest BDFs authoritative (RSC05). Receipts carry observations (not the manifest). Serving profile and power profile are distinct CLI options (--profile / --power-profile).
 3. Python supervisor `bigcherry serve start|stop|status|explain` is long-lived owner of the session: lease for the serving lifetime, ordered helpers, readiness, canary, MTP guard, plan measurement, one bounded retry, power transaction, restore only after verified child exit. It calls the C++ resolver/validator; no second resolver. The shell stop_all must not restore power while a process survives (current behaviour is unsafe).
 
+OWNER DECISION 2026-11-14 (replaces decision 3): the supervisor is `bc-serve start|stop|status|explain` in C++, not a
+Python `bigcherry serve`; one language for the start path. Inputs become readable per-model configs with named variants
+(RSC12). Scope: RSC02 (rescoped), RSC12 (new).
+
 ## Gaps by item (code-based)
 RSC01 partial (core delivered; client integration, remove duplicate paths) | RSC02 not started as the command | RSC03 partial (9,216 host pool fallback, 12,288 fallback+calibration, 22,528 in layouts.toml recipes) | RSC04 not started (release/install.py still emits the shell launcher) | RSC05 partial (Python layout_cmds._resolve uses environment inventory) | RSC06 partial (R3_* reads left in moe_remote_hook.cpp 130-161/1277-1307, libr3/r3_moe_settings.h, moe_mailbox_ops.hip 909-912; rad0009 patch setenv bridge; manifest_argv_test asserts it) | RSC07 partial (same bridge) | RSC08 partial (contract delivered; one-release cutover open) | RSC09 not started (five literals) | RSC10 not started as recovery path (structured host-room refusal + one retry).
 
