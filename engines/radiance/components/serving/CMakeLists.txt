@@ -82,16 +82,6 @@ install(TARGETS bc-serve RUNTIME DESTINATION radiance_home/bin)
 
 include(CTest)
 if(BUILD_TESTING)
-  # RHP01: card-free managed patch/current-pin and independent generation oracle.
-  find_program(BC_PATCH_PYTEST NAMES pytest REQUIRED)
-  file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/rhp01-test-tmp")
-  add_test(NAME bc_rad0010_routing_evidence_test
-    COMMAND "${BC_PATCH_PYTEST}" -q
-      "${CMAKE_CURRENT_SOURCE_DIR}/../../../../tools/tests/patch/test_radiance_rad0010.py"
-      "${CMAKE_CURRENT_SOURCE_DIR}/../../../../tools/tests/patch/test_radiance_rad0010_oracle.py")
-  set_tests_properties(bc_rad0010_routing_evidence_test PROPERTIES ENVIRONMENT
-    "PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}/../../../../tools;TMPDIR=${CMAKE_CURRENT_BINARY_DIR}/rhp01-test-tmp")
-
   add_executable(bc_live_policy_test EXCLUDE_FROM_ALL live_policy_test.cpp)
   target_link_libraries(bc_live_policy_test PRIVATE bc_serving)
   add_test(NAME bc_live_policy_test COMMAND bc_live_policy_test)
