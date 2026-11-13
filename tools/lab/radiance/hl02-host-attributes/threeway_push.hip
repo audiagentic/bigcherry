@@ -265,7 +265,7 @@ int main(int argc, char** argv) {
           verify_words<<<256, 256, 0, c.s>>>((const uint32_t*)c.gpu_va, words, gen, c.err);
           unsigned bad = 0; CK(hipMemcpyAsync(&bad, c.err, 4, hipMemcpyDeviceToHost, c.s)); CK(hipStreamSynchronize(c.s));
           bad_total += bad;
-          char buf[160]; snprintf(buf, sizeof buf, "%s{\"dev\":%d,\"mode\":\"%s\",\"us\":%.2f,\"gbs\":%.3f,\"bad\":%u}", d ? "," : "", d,
+          char buf[200]; snprintf(buf, sizeof buf, "%s{\"dev\":%d,\"mode\":\"%s\",\"us\":%.2f,\"gbs\":%.3f,\"bad\":%u}", d ? "," : "", d,
                                   mode[d] ? "cpu_push" : "gpu_pull", t1[d] - t0[d], S / (t1[d] - t0[d]) / 1e3, bad);
           per += buf;
         }
