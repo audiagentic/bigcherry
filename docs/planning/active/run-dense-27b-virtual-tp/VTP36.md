@@ -240,8 +240,35 @@ wait for the XTX from 146 to 69 us a call and the 8-stream cycle from 409 to 370
 | four 4096-token prompts | 7293 ms | 6905 ms | -5.3% |
 | 6144-token prompt beside 4 streams | 2618 ms | 2502 ms | -4.4% |
 
-Not changed in the layout: a split is a reordering change and has not had the quality gate (KLD floor against serial,
-no loss against BF16).
+The second split also lets the KV cache grow to ~228,000 tokens a card against ~56,000 (startup receipt).
+
+**Quality gate (2026-11-14, same build, 42,761 positions).** Scored against the 6,6,4 serial prefill, every split change
+lands at the floor's scale (feed-forward 5,5,6 alone 0.00214 / p99.9 0.078 / 97.65%; delta-net 5,5,6 alone 0.00218 /
+0.092 / 97.68%; feed-forward 6144/6144/5120 0.00260 / 0.070 / 97.66%; 5,5,6 0.00248 / 0.076 / 97.72%, the same in a repeat;
+floor variants: serial chunk 1024 0.00197 / 0.059 / 97.81%, chunk 512 0.00197 / 0.068 / 97.85%, pipelined chunk 1024
+0.00225 / 0.061 / 98.13%). A different partition is a different, equally exact rounding, not a nearer or further one,
+and no partial split does better. Scored as the gate is written, against a serial reference of the same layout:
+
+| 5,5,6, against its own serial prefill | KLD mean | p99.9 | top-1 | PPL ratio |
+|---|---|---|---|---|
+| serial again | 0 | 0 | 100% | 1.0000 |
+| serial, 1024-token chunks (the floor) | 0.00324 | 0.051 | 97.86% | 1.0004 |
+| pipelined (the layout) | **0.00054** | **0.022** | **99.34%** | 1.0005 |
+
+Against a BF16 reference recorded on this build (TP3, serial), 5,5,6 is the nearer of the two:
+
+| against BF16 | KLD mean | p99.9 | top-1 | PPL ratio |
+|---|---|---|---|---|
+| 6,6,4 pipelined (`qwen27b-tp3-int8`) | 0.00334 | 0.086 | 96.86% | 0.9996 |
+| 5,5,6 pipelined | 0.00251 | 0.054 | 97.00% | 1.0003 |
+
+Neither meets VTP14 N6's recorded values (0.00199 / 0.043 / 97.32%): that reference was not kept, and on this one most
+of both arms' mean is one document (`kld-docs-22`, positions ~1270-1600, KLD up to 19), which moves under every change,
+the serial chunk change included (without it: 0.00136 / 0.049 / 96.90% and 0.00143 / 0.042 / 97.03%). The BF16
+values for gate 2 should be re-recorded on a kept reference.
+
+Kept as an opt-in layout, `qwen27b-tp3-int8-556` (launcher smoke: starts, 2048-token prompt, stops); `qwen27b-tp3-int8`
+stays the default until the owner chooses.
 
 ### NO-GOs recorded
 
@@ -261,7 +288,8 @@ no loss against BF16).
 - Taken: `qwen27b-tp3` and `qwen27b-tp3-int8` set B in `tuning.tune_pin` (a commit of its own, to drop if the layouts
   should wait). `qwen27b-tp3-capacity` keeps the grid alone: not measured.
 - For the lead:
-  1. the int8 split 5,5,6 (table above), after the quality gate;
+  1. the int8 split 5,5,6 (table above): passes the quality gate against its own serial prefill and is nearer BF16;
+     opt-in layout `qwen27b-tp3-int8-556`, default pending the owner;
   2. the copy-engine assemble for the rank behind the narrow link (technique 3): the largest remaining transport item,
      an engine change (DMA lane beside a collective, link gate) rather than a kernel one;
   3. r1's slow host read stays with the slot at root port 00:01.0 across the card swap (HL01): r1's reduce is the

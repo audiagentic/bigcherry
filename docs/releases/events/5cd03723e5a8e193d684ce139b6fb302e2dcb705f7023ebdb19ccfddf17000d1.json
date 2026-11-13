@@ -1,0 +1,15 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261113_221006_a-new-opt-in-int8-three-gpu-la_8322",
+  "files": [
+    "engines/radiance/layouts/qwen27b.toml",
+    "docs/planning/active/run-dense-27b-virtual-tp/VTP36.md"
+  ],
+  "plan-item-ids": [
+    "VTP36"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Adds opt-in layout qwen27b-tp3-int8-556 (w8a8 TP3, delta-net 5/5/6, ffn 5632/5632/6144, VTP36 all-reduce pin, pipelined prefill on). ABBA vs qwen27b-tp3-int8: 1/4/6/8 streams +2.6/+2.3/+12.0/+5.4%, TTFT 6144 -4.3%; KV cache ~228k tokens/card vs ~56k. KLD vs its own serial prefill 0.00054 mean, p99.9 0.022, top-1 99.34% (floor 0.00324/0.051/97.86%); vs BF16 0.00251/0.054/97.00% (default layout 0.00334/0.086/96.86%). Records that any split change lands at floor scale against another split's serial reference.",
+  "timestamp-utc": "2026-11-13T22:10:06.160366Z",
+  "user-summary-candidate": "A new opt-in int8 three-GPU layout serves up to 12% more tokens and holds about four times the context, with output at least as close to the original model."
+}
