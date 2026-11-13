@@ -1,5 +1,5 @@
-"""VTP36 (rad0031-rad0033): the exact two-shot's timeline; the three-rank two-shot's pieces, staggered steps and
-duplex weights; its second hop written once through the host mailbox.
+"""VTP36 (rad0031-rad0033): the exact two-shot's timeline; the three-rank two-shot's pieces and duplex weights; its
+second hop written once through the host mailbox.
 
 Card-free. The pinned-source test applies the vtp14-mixed-tp chain up to rad0033 to radiance v1.17.0 when a checkout
 with that tag is reachable (RADIANCE_SRC, or the workspace's vendor/radiance), and is skipped otherwise.
@@ -79,7 +79,6 @@ class Ts3AllReduceTests(unittest.TestCase):
             axes = t[f"ts3p-axes-{tag}"]
             self.assertIn('{ "ts_pieces", kArTsPieces, NELEM(kArTsPieces), 1,', axes)
             self.assertIn('{ "ts_duplex", kArTsDuplex, NELEM(kArTsDuplex), 0,', axes)
-            self.assertIn('{ "ts_stagger", kArTsDuplex, NELEM(kArTsDuplex), 0,', axes)
             self.assertIn('{ "ts_pieces_min", kArTsPiecesMin, NELEM(kArTsPiecesMin), 0,', axes)
         self.assertIn("kArTsPieces[] = { 1, 2, 4, 8 };", t["ts3p-values"])
         self.assertIn("kArTsDuplex[] = { 0, 1 };", t["ts3p-values"])
@@ -91,9 +90,8 @@ class Ts3AllReduceTests(unittest.TestCase):
         self.assertIn("r4d_cfg_ar_ts_pieces_min(a) > 0 ? r4d_cfg_ar_ts_pieces_min(a) : (long)in->pieces_min;", launch)
         self.assertIn("c.numel >= ts_floor ? (long)r4d_cfg_ar_ts_pieces(a) : 1L;", launch)
         self.assertIn("kArTsPiecesMin[] = { 0, 524288, 1048576, 2097152, 4194304, 8388608 };", t["ts3p-values"])
-        # the staggered order means something only in pieces, and only odd blocks take it
-        self.assertIn("if (ts_pieces > 1 && r4d_cfg_ar_ts_stagger(a) != 0) ts_opts |= R4D_TS_OPT_STAGGER;", launch)
-        self.assertIn("(ts_opts & R4D_TS_OPT_STAGGER) != 0 && (b & 1) != 0;", t["ts3p-kstep"])
+        # rad0021's wrapper stays one piece; the new one hands the count to the shared launcher
+        self.assertIn("                       pieces, 0L, 0L);", t["ts3p-wrapper"])
         # no model, card or world constant beyond the three-rank row this serves
         self.assertIn("r4d_ar_weights_duplex(gbs, world, wd)", t["ts3p-settle"])
         self.assertNotIn("64,64,0", t["ts3p-settle"])
@@ -102,12 +100,14 @@ class Ts3AllReduceTests(unittest.TestCase):
         t = texts(ONCE)
         for tag in ("ar", "ts4lane", "lane"):
             self.assertIn('{ "ts_once", kArTsDuplex, NELEM(kArTsDuplex), 0,', t[f"ts3o-axis-{tag}"])
-        self.assertIn("if (in->host && r4d_cfg_ar_ts_once(a) != 0) ts_opts |= R4D_TS_OPT_ONCE;", t["ts3o-launch"])
+        self.assertIn("const long ts_once = (in->host && r4d_cfg_ar_ts_once(a) != 0) ? 1L : 0L;", t["ts3o-entry"])
+        # the kernel gets the rank's own scratch only when asked; null keeps upstream's copy per peer
+        self.assertIn("ts_once ? (int4*)my_scratch : nullptr", t["ts3o-launch-arg"])
+        self.assertIn("const bool ts_once = ts_self != nullptr;", t["ts3o-kself"])
         # the writer's own slot in its own scratch; the reader takes the owner's scratch at the same slot index
         self.assertIn("ts_self + ((size_t)parity * WS + rank) * (size_t)slot_stride16 + sh_max;", t["ts3o-kself"])
         # never a pointer derived from the restrict my_base: that made every fold load wait for pending stores
         self.assertNotIn("const_cast", t["ts3o-kself"])
-        self.assertIn("(int4*)my_scratch /* BC_VTP36_TS3O_LAUNCH_ARG */)", t["ts3o-launch-arg"])
         # the once form is a loop of its own, chosen outside it; the upstream loop keeps its text
         self.assertIn("if (ts_once) reduce2_once(j);\n    else reduce2(j);", t["ts3o-kstore"])
         self.assertEqual(t["ts3o-kstore"].count("ts_self_b[k] = o;"), 1)
@@ -150,24 +150,24 @@ class Ts3AllReduceTests(unittest.TestCase):
             entry = (root / "libr4d/r4d_ar_entry.hip").read_text()
             rows = (root / "libr4d/r4d_rows.cpp").read_text()
             # the kernel body, its parameter macro and its one launch macro all carry the ring
-            self.assertEqual(kernel.count("long long* tl_all, long long* tlring, int ts_opts,"), 1)
-            self.assertEqual(kernel.count("pieces_arg, tl_all, tlring, ts_opts, ts_self\n"), 1)
+            self.assertEqual(kernel.count("long long* tl_all, long long* tlring, int4* ts_self\n"), 1)
+            self.assertEqual(kernel.count("pieces_arg, tl_all, tlring, ts_self\n"), 1)
             self.assertEqual(kernel.count("(long long*)timeline, tlring,"), 1)
-            self.assertEqual(kernel.count("(int)ts_opts /* BC_VTP36_TS3P_LAUNCH_ARG */,"), 1)
-            # the split form keeps upstream's reduce; the lockstep form's two orders take the chooser
-            self.assertEqual(kernel.count("ts_reduce(j);"), 2)
+            # the split form keeps upstream's reduce; the lockstep form takes the chooser
+            self.assertEqual(kernel.count("ts_reduce(j);"), 1)
             self.assertEqual(kernel.count("      reduce2(j);\n"), 1)
-            for guard in ("BC_VTP36_TSTL_KSTART", "BC_VTP36_TSTL_HOST", "BC_VTP36_TS3P_KSTEP", "BC_VTP36_TS3O_KSTORE",
+            self.assertEqual(kernel.count("pieces, 0L, 0L, false, once"), 1)
+            for guard in ("BC_VTP36_TSTL_KSTART", "BC_VTP36_TSTL_HOST", "BC_VTP36_TS3O_KSTEP", "BC_VTP36_TS3O_KSTORE",
                           "BC_VTP36_TS3O_KLOAD"):
                 self.assertEqual(kernel.count(guard), 1, guard)
             # rad0021's wrapper is kept (its launch stays one piece); the entry calls the pieced one
             self.assertEqual(kernel.count("void r4d_ar_twoshot_3rank_exact_w("), 1)
             self.assertEqual(kernel.count("void r4d_ar_twoshot_3rank_exact_wp("), 1)
-            self.assertEqual(entry.count("r4d_ar_twoshot_3rank_exact_wp(weights, ts_pieces, ts_opts,"), 1)
+            self.assertEqual(entry.count("r4d_ar_twoshot_3rank_exact_wp(weights, ts_pieces, ts_once,"), 1)
             self.assertNotIn("r4d_ar_twoshot_3rank_exact_w(weights,", entry)
             # every all-reduce tunable table that declares ts_min declares the two axes
             self.assertEqual(rows.count('{ "ts_pieces",'), rows.count('{ "ts_min",'))
-            for axis in ("ts_pieces_min", "ts_duplex", "ts_stagger", "ts_once"):
+            for axis in ("ts_pieces_min", "ts_duplex", "ts_once"):
                 self.assertEqual(rows.count('{ "%s",' % axis), rows.count('{ "ts_min",'), axis)
             for pkg in (TL, DX, ONCE):
                 again = apply_all(load(pkg), root)
