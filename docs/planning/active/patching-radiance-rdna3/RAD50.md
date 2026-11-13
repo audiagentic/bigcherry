@@ -161,6 +161,8 @@ RAD49 (TP2 engine and remote experts). Start from the existing
 `exp/rad42-cpu-bar-push` lab worktree, not production sources.
 Do not claim CPU BAR push is faster without the complete comparison.
 
+**Ownership clarification (2026-11-13):** RAD50 remains the owner of generic CPU-accessible VRAM/DMA-BUF export, cross-process lifetime, GPU-live visibility, fault and MoE FP16 correctness canaries. HL02 owns the remaining matched multi-GPU contention transfer matrix using RAD50 lab assets. VTP38 owns TP3 production host reduction and RAD42/RAD51 own MoE integration. Do not treat a serial, GPU-later or idle result as full-size, GPU-already-waiting, live cross-process proof without exact receipts.
+
 ## Change Log
 
 - 2026-11-09 (updated-by): Prepared one fixed-mode RAD50 test executable
