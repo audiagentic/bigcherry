@@ -59,6 +59,9 @@ After cutover every worktree is created through the audiagentic command with a r
 
 Blocked on audiagentic's gap plan item (their user must approve it) and a runtime release at or above 0.97 that carries it. Do not start the cutover before then.
 
+Blocked on audiagentic DW03 (plan dev-workflow, docs PR #466; design in docs/planning/active/dev-workflow/DW03.md): required purpose (setting worktrees.require-purpose plus a purpose arg), append-only audit log under the user state dir (worktree audit), evidence hold (worktree evidence TARGET set REASON|clear; finish/tidy/prune refuse, no override), worktree adopt, post-checkout hook (worktree hook install|status|remove, never blocks git), archive/ tags before branch deletion (retire-branch). All state stays outside the worktree, so there is no WORKTREE.md; PR #928's WORKTREE.md and registry are removed at cutover. audiagentic ships it as separate PRs per slice and will message each runtime version (currently 0.98.2, likely 0.99.x for the first slice). Do not start the cutover before the slices and a runtime at or above them are released.
+
 ## Change Log
 
 - 2026-11-12T22:25:58.279269+00:00 (created-by): Created by bigcherry-1
+- 2026-11-12T22:27:51.929768+00:00 (updated-by): Updated: section:notes
