@@ -17,6 +17,10 @@ priority: P2
 
 ## Description
 
+**Ownership clarification 2026-11-13:** RAD50 remains pending as the reusable **isolated DMA-BUF/CPU-write proof and safety** owner, not the remaining cross-GPU transfer-method experiment owner. RAD40 is superseded, HL01 diagnosis is completed; **HL02** owns all outstanding contended pull/SDMA/CPU BAR and concurrent three-rank push measurements. **VTP38** owns any production TP3 host transport; RAD42/RAD51 retain MoE result-path integration only. Preserve RAD50's serial/live mapping, arithmetic, fault and lifetime gates as independently required for each consumer. Later R9700 DMA-BUF successes supersede neither the original inconclusive HSA-pool canary nor the unproven full-size TP3 concurrency.
+
+**Historical original scope:**
+
 RAD42 design B proposes CPU-writing the CPU-combined remote-MoE FP16 result
 plane into engine VRAM through a CPU-accessible BAR, then letting the GPU
 consume locally instead of pulling the result plane from host RAM. RAD40's
@@ -138,6 +142,10 @@ lease; do not bypass unavailable lease controls.
 
 ## Acceptance Criteria
 
+**Scope update:** Outstanding shared cross-GPU contention S6 is discharged by referenced HL02 receipts, not a duplicate RAD50 benchmark. RAD50 remains open for mapping/API-specific proof, live-ready publication, crash/restart, FD lifetime/reuse, correct MoE FP16 fallback and independent production admission. Do not count the 2026-11-09 synthetic serial gains as model performance, and do not treat the earlier gfx11 `clock64()` false timeouts as a live data-corruption proof.
+
+**Original laboratory acceptance gates (historical wording below):**
+
 1. Contract and GPU-accessibility gates explicitly passed or failed,
    with reproducible commands and evidence.
 2. CPU-written GPU-local data verified exactly by a GPU on required
@@ -154,6 +162,12 @@ lease; do not bypass unavailable lease controls.
    all acceptance criteria are met.
 
 ## Notes
+
+**New repeat (2026-11-13):** Archived `rad50-tester` on R9700 passed the pre-armed `dmabuf-live-parallel` 768-row full-word check for 30/30 generations, zero mismatches, exit 0 (3,932,160 bytes), with GPU lease released; new managed evidence at `docs/evidence/2026-11-13-hl02-vtp38-consolidation/R9700-LIVE-2026-11-13.md`. Still not a 10 MiB three-way, crash/lifetime or inference test.
+
+**Latest evidence reconciliation:** The 2026-11-09 GPU-live 768-row failures were diagnosed as a gfx11 `clock64()` false deadline; replacing it with HIP device-rate-scaled `wall_clock64()` enabled 100 live generations with a pre-armed GPU verifier on each XTX. On 2026-11-10 the R9700 *DMA-BUF* mapping, 4 KiB/4 MiB GPU-verification, 30-generation live and 100-iteration serial combine A/B succeeded, although the older R9700 **HSA-pool serial canary** remains inconclusive. Neither proves crash/restart/lifetime or 10 MiB three-way prefill safety. The 768-row R9700 direct serial numbers: 959.0 us GPU pull versus 770.4 us CPU push (~1.25x); one row 74.2 versus 76.7 us (push loses). See `docs/evidence/2026-11-10-rad50-cpu-bar-push/PROGRESS.md` 2026-11-09/10 entries and `docs/evidence/2026-11-13-hl02-vtp38-consolidation/README.md`. HL02 owns new contention S6, not RAD50.
+
+**History — original laboratory notes and gate log:**
 
 Related: RAD40 (link measurements), RAD42 (production design B),
 RAD51 (future production integration plan, blocked on RAD50),

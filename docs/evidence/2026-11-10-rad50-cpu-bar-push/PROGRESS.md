@@ -1,5 +1,9 @@
 # RAD50 — progress, gates and evidence
 
+**New bounded R9700 check (2026-11-13):** A fresh exclusive-lease `dmabuf-live-parallel` run with 768 rows (3,932,160 bytes) passed 30/30 pre-armed GPU-verified generations, 0 mismatches, exit 0; synthetic total p50 840.96 µs. Evidence: `docs/evidence/2026-11-13-hl02-vtp38-consolidation/R9700-LIVE-2026-11-13.md`. Lease released, no KFD processes afterward. No full 10 MiB/all-rank, lifetime or engine validation.
+
+**Current reconciliation (2026-11-13):** The Gate 4 768-row timeout was a false gfx11 `clock64()` watchdog; corrected `wall_clock64()` XTX live verification passed 100 generations. The R9700 later passed the distinct DMA-BUF CPU mapping, 4 KiB/4 MiB GPU verification and 30-generation GPU-live protocol despite the original inconclusive HSA-pool canary. Gate 4 still requires fault/restart/real-model proof; it is not a blanket production PASS. HL02 owns contention and simultaneous all-rank CPU push; RAD50 retains reusable lifetime/safety. The older gate table below is a historical snapshot; see latest 2026-11-09/10 entries.
+
 This is the **in-worktree experiment journal**, not an inference-performance
 claim. The authoritative plan item is
 `docs/planning/active/patching-radiance-rdna3/RAD50.md`; production design
