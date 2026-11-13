@@ -23,8 +23,9 @@ std::string container_identity(const std::filesystem::path& model);
 std::string engine_identity(const std::filesystem::path& binary, const std::filesystem::path& radiance_home);
 
 /* What the key covers: the cache version, the model and engine identities, the engine card's architecture and VRAM, and
- * the engine arguments the launcher passes through verbatim (they can change the plan, e.g. --kv-resident), and the engine arguments the launcher passes through verbatim (they can change the plan, e.g. --kv-resident), and the planning inputs: every engine.* value except the memory outputs the plan itself feeds (host pool, host KV tier,
- * host headroom), plus layout.name. Any change is a miss. */
+ * the engine arguments the launcher passes through verbatim (they can change the plan, e.g. --kv-resident), and the
+ * planning inputs: every engine.* value except the memory outputs the plan itself feeds (host pool, host KV tier,
+ * host headroom), every tuning.* value (e.g. tp_ownership), plus layout.name. Any change is a miss. */
 nlohmann::json plan_key_inputs(const nlohmann::json& values, const nlohmann::json& facts, const std::string& model_id,
                                const std::string& engine_id, const std::string& engine_args);
 std::string plan_key(const nlohmann::json& key_inputs);

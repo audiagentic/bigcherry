@@ -61,6 +61,10 @@ server-args = [
 ]
 [layout.qwen27b-tp3-int8.settings]
 tuning.tp_ownership = "kv=1,1,2;ffn=6656,6656,4096;lk=6,6,4;lv=18,18,12"
+# Alternative split, a setting rather than a layout: --set tuning.tp_ownership='"kv=1,1,2;ffn=5632,5632,6144;lk=5,5,6;lv=15,15,18"'
+# (launcher or bc-serve). Against this one (ABBA, n=8): 1/4/6/8 streams +2.6 / +2.3 / +12.0 / +5.4%, time to first token
+# -2.8 / -0.1 / -4.3% at 512 / 2048 / 6144 tokens, KV cache ~228,000 tokens a card against ~56,000; passes the reordering
+# quality gate against its own serial prefill and is nearer BF16 (VTP36).
 # The pipelined prefill on the int8 trunk is opt-in (rad0030): "on", not "auto", which keeps such a trunk serial.
 # One-prompt time to first token -17% to -21%, four 4096-token prompts -16%, 4/6/8 streams +7.4% / +7.8% / +8.4%; KLD
 # against the serial prefill 0.0012 mean, top-1 99.3%, less than the serial prefill moves when its chunk is halved (VTP37).
@@ -73,28 +77,6 @@ tuning.tune_pin = "all_reduce:nblocks=4,nthreads=256,ts_pieces=4,ts_fuse=1,ts_on
 # experiment 12 recorded for this floor on int8 (+0.3-1.3% decode, about -2% TTFT) was run-to-run noise.
 tuning.pipelined_prefill_min_rows = 256
 
-# The int8 layout with the delta-net and feed-forward shares moved toward the R9700 (5/5/6, 5632/5632/6144). Against
-# qwen27b-tp3-int8 on one build (ABBA, n=8): 1/4/6/8 streams +2.6 / +2.3 / +12.0 / +5.4%, one-prompt time to first token
-# -2.8 / -0.1 / -4.3% at 512 / 2048 / 6144 tokens, and the KV cache reaches ~228,000 tokens a card against ~56,000.
-# Quality: pipelined against its own serial prefill KLD 0.00054 mean, p99.9 0.022, top-1 99.3% (the floor, chunk 1024:
-# 0.0032 / 0.051 / 97.9%); against BF16 0.0025 / 0.054 / 97.0%, closer than qwen27b-tp3-int8 (0.0033 / 0.086 / 96.9%)
-# (VTP36). Opt-in until chosen as the default.
-[layout.qwen27b-tp3-int8-556]
-description = "Qwen3.8-27B w8a8 over XTX, XTX, R9700 (native TP3): delta-net 5/5/6, feed-forward 5632/5632/6144"
-model = "radiance/bigcherry/qwen3.8-27b-w8a8/qwen3.8-27b-w8a8-df2.rad"
-engine = [{ arch = "gfx1100", count = 2 }, { arch = "gfx1201", count = 1 }]
-tp-wire = "exact"
-server-args = [
-  "--max-model-len", "8192",
-  "--max-num-seqs", "8",
-  "--kv-cache-dtype", "fp8",
-  "--num-speculative-tokens", "3",
-]
-[layout.qwen27b-tp3-int8-556.settings]
-tuning.tp_ownership = "kv=1,1,2;ffn=5632,5632,6144;lk=5,5,6;lv=15,15,18"
-tuning.pipelined_prefill = "on"
-tuning.tune_pin = "all_reduce:nblocks=4,nthreads=256,ts_pieces=4,ts_fuse=1,ts_once=1,ts_duplex=1"
-tuning.pipelined_prefill_min_rows = 256
 
 # The MXFP4 container on the same three ranks, for resident context rather than speed: the delta-net and feed-forward
 # shares move off the R9700, so with rad0029 (every rank its own VRAM split) its memory goes to the KV cache. At 262,144
