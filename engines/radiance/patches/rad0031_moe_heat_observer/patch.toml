@@ -1,0 +1,12 @@
+schema = 1
+id = "rad0031_moe_heat_observer"
+order = 31
+state = "untested"
+kind = "enhancement"
+origin = "local"
+backend = "agnostic"
+plan-item = "RHP02"
+plan-ids = ["RHP02"]
+requires = []
+conflicts = []
+tags = ["moe-routing", "diagnostic"]

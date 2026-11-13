@@ -1,0 +1,11 @@
+# rad0031_moe_heat_observer
+
+**State:** untested; inactive diagnostic-only patch set (RHP02 slice A).
+
+Adds a versioned, explicit **read-only C observer** to Radiance's existing CPU route-bank credit path. No new GPU counter, device transfer, wait, remote helper integration, shared-memory transport, owner change or default runtime behaviour. The package registers one process-wide callback with exact V1/struct-size checks and synchronous unregister that waits for callbacks already in flight. Callbacks run on the engine's CPU rank threads and can overlap across ranks; they must copy borrowed counts before returning, must not block or call GPUs, and may not retain the pointer. Errors never veto heat credit. Registration is opt-in (no caller registers it in slice A).
+
+The existing `Ctx::route_report_impl` records a per-layer/bank generation, **issue-time** prefill/decode/mixed/draft phase and actual copied expert width. Repeated same-step draft passes share one bank, retain their true `reports` multiplicity and mark heterogeneous pass phases ambiguous; they are **not** summed into fictitious per-pass counts. The source step, rank, layer, model-global expert IDs beginning at zero, upstream ring-drop watermark and per-bank generation accompany the already-landed row. Incomplete source-width observations are marked, never silently zero-padded as complete. Run generation is local to the process; a later transport slice must pair it with the launch/model/manifest identity before cross-process use.
+
+One thin call **after the original `Ctx::mark_credited` assignment** covers both `HeatEngine` and `xstats_drain`. An observer-only static drain runs before RHP01's optional static drain and uses the original event-ready reader; it cannot make static/deterministic placement adaptive. No observer means it returns immediately, before any work or policy change. Source pin is Radiance v1.17.0; the ID is 31 because rad0030 is occupied by `rad0030_int8_pipelined_prefill`.
+
+This does **not** implement the SPSC CPU transport, helper attachment, shared-segment version, policy parity or removal of the old helper GPU/file collector. Those are separately gated RHP02 B–D tasks; until parity the legacy helper remains untouched.

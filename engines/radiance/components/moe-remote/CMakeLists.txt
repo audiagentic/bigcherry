@@ -79,6 +79,14 @@ add_dependencies(libr3moe r3_moe_worker)
 
 include(CTest)
 if(BUILD_TESTING)
+  # RHP02-A: no device or active helper code; compile the actual package registry on the host.
+  set(R3_HEAT_ABI_PACKAGE "${CMAKE_CURRENT_SOURCE_DIR}/../../patches/rad0031_moe_heat_observer")
+  add_executable(r3_heat_observer_abi_test EXCLUDE_FROM_ALL
+    heat_observer_abi_test.cpp ${R3_HEAT_ABI_PACKAGE}/bc_moe_heat_registry.cpp)
+  target_include_directories(r3_heat_observer_abi_test PRIVATE ${R3_HEAT_ABI_PACKAGE})
+  target_link_libraries(r3_heat_observer_abi_test PRIVATE Threads::Threads)
+  set_target_properties(r3_heat_observer_abi_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
+  add_test(NAME r3_heat_observer_abi_test COMMAND r3_heat_observer_abi_test)
   foreach(t moe_remote_topology_v26_test:r3_topology_v26_test gemv_geometry_test:r3_gemv_geometry_test moe_remote_shm_test:r3_moe_shm_test moe_backend_test:r3_moe_backend_test worker_share_test:r3_worker_share_test worker_heat_test:r3_worker_heat_test worker_heat_source_test:r3_heat_source_test worker_policy_input_test:r3_policy_input_test worker_policy_live_test:r3_policy_live_test worker_policy_config_test:r3_policy_config_test worker_policy_driver_test:r3_policy_driver_test worker_policy_effect_test:r3_policy_effect_test worker_policy_measure_test:r3_policy_measure_test worker_policy_calibration_test:r3_policy_calibration_test worker_policy_replay_test:r3_policy_replay_test worker_slot_pool_test:r3_worker_slot_pool_test replay_memory_test:r3_replay_memory_test replay_bootstrap_test:r3_replay_bootstrap_test moe_remote_epoch_test:r3_moe_epoch_test moe_fp8_ref_test:r3_moe_fp8_ref_test combine_f16_test:r3_combine_f16_test combine_pool_test:r3_combine_pool_test combine_epoch_test:r3_combine_epoch_test forced_move_test:r3_forced_move_test segment_version_test:r3_segment_version_test test_rad46_rows_policy:r3_rad46_rows_policy_test tp_exactly_once_test:r3_tp_exactly_once_test worker_footprint_test:r3_worker_footprint_test)
     string(REPLACE ":" ";" parts ${t})
     list(GET parts 0 src)
