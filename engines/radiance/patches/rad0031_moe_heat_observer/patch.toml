@@ -9,4 +9,4 @@ plan-item = "RHP02"
 plan-ids = ["RHP02"]
 requires = []
 conflicts = []
-tags = ["moe-routing", "diagnostic"]
+tags = ["moe-routing"]
