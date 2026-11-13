@@ -7,7 +7,8 @@ design, not an all-reduce implementation or an inference benchmark.
 
 - Harness: `tools/lab/radiance/hl02-host-attributes/threeway_push.hip`, runner `run_threeway.sh`, analyser
   `analyse_threeway.py` (rejects any incomplete session or verification error). Built with ROCm 7.2.4 hipcc
-  `-O2 -mavx2` for gfx1100 and gfx1201; executable SHA-256 `7f78ba155128f36e9d319a7f1dbcec01e6cabb36fe8d084f38a526db17edbc9d`.
+  `-O2 -mavx2` for gfx1100 and gfx1201; executable SHA-256 `7f78ba155128f36e9d319a7f1dbcec01e6cabb36fe8d084f38a526db17edbc9d`. The committed source differs from
+  the measured one only in one output buffer size (160 to 200 bytes, for the model-constant guard).
 - Device roles in this run (run metadata, not an engine constant): device 0 the XTX on the PEG half whose host reads
   halve the other cards' host traffic (HL01), device 1 the other XTX, device 2 the R9700 on the CPU x4 port.
 - Receive buffer: a card-local VMM allocation exported as a DMA-BUF and mapped by the CPU (RAD50's path, in one
