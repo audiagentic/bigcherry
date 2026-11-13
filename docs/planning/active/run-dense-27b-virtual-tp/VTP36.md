@@ -32,21 +32,15 @@ Where the time goes (VTP31): collectives are about two thirds of TP3 prefill dev
 
 ## Steps
 
-Each lever is one managed patch or one layout setting, selectable from the manifest, measured by matched ABBA against the current layout. Order by expected gain over cost; profile first.
+Each lever is a managed patch or validated layout setting with measured ABBA and explicit quality baseline. **VTP36 owns the TP3 programme, not a duplicate host transport (VTP38).**
 
-1. **Profile the current build** (rad0023 timeline + `--profile-ops`): MXFP4 2048- and 8192-token one-prompt prefill and 8-stream decode, per rank, per layer kind, per collective phase (push, wait, fold). Decide which of 2-6 attacks the critical chain.
-2. **All-reduce (from VTP31 steps 1, 4-7):**
-   a. typed per-run method selector (`tuning.allreduce_method`; contract amendment), so each method below is an A/B;
-   b. three-rank fused all_reduce + RMSNorm + fp8 quant (TP2 has it; removes TP3's extra pass);
-   c. low-latency handshake for decode-size messages (flag-in-data, LL-style 8-byte units, fewer blocks);
-   d. chained launches for the three-rank rows (the four-rank rows have r4d_chain.h) and a hierarchical exchange around the R9700's x4 link;
-   e. CPU-assisted host reduction is owned **exclusively by VTP38** (CPU receives partials and uses true CPU BAR/DMA-BUF push, not GPU-initiated SDMA H2D); VTP36 tracks the matched TP3 comparison, not a duplicate implementation;
-   f. push from the producing GEMM epilogue into host-mapped scratch (FLUX-style).
-3. **Kernels:** RAD47 crossover on gfx1100 (tiled MXFP4 row 4-17x faster than nt_m64/decode rows at M 9-128: prefill tail chunks, multi-stream verify); RAD48 native int8 tile end to end (3.1x on one XTX at M=2048); RAD36 MXFP4 GEMV at M=2-8 (drafter verify). Measure each on the TP3 layouts, not only TP2.
-4. **Split:** VTP32 solver from per-card, per-op-kind calibration; per-regime (prefill-weighted vs decode-weighted) layouts.
-5. **Layer formats (dynamic per-card layer management):** per-card weight format by layer kind (XDP03 mixed quantisation from BF16), e.g. int8 on the gfx1100 ranks (native int8, emulated fp8) beside MXFP4/fp8 on the R9700, gated by KLD.
-6. **Peer access:** re-check after any host/BIOS change (VTP35 step 1); if available, measure the exact one-shot over P2P.
-7. Fold the winners into the layouts and refresh the baseline table (ABBA vs TP2, 3 repeats).
+1. Finish the existing rad0031/rad0032/rad0033 GPU two-shot fused-pieces/write-once/duplex candidate, record build/split/tuning and phase timelines, complete 12-run int8/speculation stress and repeat 5,5,6 split 3x ABBA. Two already completed int8/MXFP4 ABBA comparisons with bit-identical logprobs are evidence, not final production approval.
+2. Profile 512/2048/8192 one-prompt prefill and 1/4/6/8-stream decode with rad0023/rad0031 push/barrier/reduce/assemble phases, per rank and per layer kind; keep summed `--profile-ops` device events distinct from wall time. Revisit pipeline row floor where relevant.
+3. Kernel owners: RAD47 gfx1100 MXFP4 crossover, RAD48 native gfx11 int8 (already on main), RAD36 low-row MXFP4 GEMV. Validate incremental complete-TP3 gain rather than double-count merged work.
+4. VTP32 split solver: per-rank/per-op calibration and prefill versus decode regimes; 5,5,6 split validation remains independent of transport.
+5. XDP03 mixed per-card/layer-kind formats through explicit KLD/quality; re-check P2P after justified host/BIOS changes only.
+6. Give VTP38 the best validated GPU baseline, arithmetic and phase evidence. HL02 owns host-link measurement; **VTP38 alone** implements generic per-rank CPU-push/host-reduce collective and fallback. Do not implement the same production path twice.
+7. Refresh accepted programme baseline with 3 final matched ABBA repeats versus proper TP2/TP3 exact-wire controls, full stress and VTP37 reordering gate.
 
 ## Detailed Solution & Technical Design
 
@@ -83,6 +77,10 @@ Each lever is one managed patch or one layout setting, selectable from the manif
 - Every reordering change passes the reordering quality gate defined in VTP37 (noise floor against serial; no quality loss against BF16).
 
 ## Notes
+
+**2026-11-13 VTP36 candidate receipt (not final production):** rad0032 fused pieces + rad0033 write-once + duplex weights, explicit `all_reduce:nblocks=4,nthreads=256,ts_pieces=4,ts_fuse=1,ts_once=1,ts_duplex=1`. Two completed ABBA comparisons report bit-identical logprobs: int8 2048 TTFT 1054.3→797.5 ms (-24.4%), 8 streams 233.2→265.6 tok/s (+13.9%); MXFP4 2048 TTFT 1064.4→774.7 ms (-27.2%), 8 streams 237.8→277.4 tok/s (+16.7%). Stress and 5,5,6 split validation were still outstanding. Evidence with sizes and sample counts in `docs/evidence/2026-11-13-hl02-vtp38-consolidation/README.md`; implementation lives in the separate unmerged VTP36 performance branch at this checkpoint. VTP38 must compare CPU host reduce against this improved reference, not the older ~4 ms rad0031 baseline.
+
+**History — earlier programme review and GPU timeline:**
 
 Consolidated 2026-11-13 from a read-only GPT sweep (tp3-perf-gather) and a review of the plan tree. Superseded into this item: VTP35. Completed: VTP31 (acceptance met by experiment 10 and the VTP14 N7 refresh). Superseded elsewhere: RAD04 (TP2 prefill all-reduce overlap; upstream pipelines prefill at two ranks and rad0020/rad0025-0027 extend it). Linked, kept separate: VTP32, RAD47, RAD48, RAD36, HL05, XDP03. Not applicable to dense TP3: the RHP heat-placement items (MoE expert placement), Flash-Next helper and tail items, llama.cpp/ggml collective items (PGC/PHC).
 

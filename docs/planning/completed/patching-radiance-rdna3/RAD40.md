@@ -2,7 +2,7 @@
 id: RAD40
 order: 0
 plan: patching-radiance-rdna3
-state: pending
+state: superseded
 created-at: '2026-11-01T11:26:10.176424+00:00'
 breadth: ''
 skill: intermediate
@@ -11,18 +11,21 @@ work: S
 priority: P1
 ---
 
-# Host-link transfer options harness: GPU pull, SDMA copy, CPU BAR push, write-combined memory, chunked overlap
+# Host-link transfer harness and historical measurements (remaining tests superseded by HL02)
 
 ## Description
 
-Quick, model-free answers on which transfer mechanism moves remote-MoE activations and result rows fastest on this host, alone and under the measured read contention (XTX 0 reading halves every other CPU-attached card's host reads; writes and CPU stores into a card's resizable BAR do not contend). Measured so far (tools/lab/radiance/host-link-bw.hip, 2026-11-01): kernel read/write of mapped host memory XTX 13.4/14.2 GB/s (Gen4 x8), R9700 6.7/7.1 (Gen4 x4), 6900 XT 3.6/3.6 (Gen3 x4 chipset); hipMemcpy H2D contends exactly like kernel reads; CPU push into R9700 VRAM through its BAR 5.6 GB/s and unaffected by XTX 0 reading (GPU pull drops to 3.4).
+**Superseded by HL02 for all remaining cross-GPU transfer-method and contention testing.** RAD40 preserves the 2026-11-01 host-link physics observations: GPU kernel read/write, SDMA, CPU BAR push, isolated coherent/non-coherent/write-combined host reads, asymmetric contention, helper activation rounds and chunked handoff. HL01 completed the diagnosis with a physical slot swap on 2026-11-13. The unfinished all-pair and mode matrix, contended non-coherent probe, CPU-push comparison, duty cycle and TP3 shapes all belong to `docs/planning/active/run-radiance-host-link/HL02.md`.
+
+This supersession does **not** mean the original all-mode/pair acceptance criteria were met. The historical evidence and harness remain reusable; production consumers are separate items (HL03, HL05, RAD42/RAD51 and VTP38).
 
 ## Steps
 
-1. One harness binary with modes: kernel pull (coherent / non-coherent / write-combined host memory), hipMemcpyAsync H2D/D2H on 1-2 streams, CPU BAR push (1-8 threads, NT stores), GPU write to host.
-2. Synchronised multi-card runs (common wall-clock start) for every pair and all four, both directions.
-3. Chunked overlap: producer writes 256-row chunks with a flag; consumer kernel starts on chunk k while k+1 arrives; measure end-to-end time for a 2048-row plane against whole-plane transfer.
-4. Table of GB/s and latency per (card, mechanism, contention) into the Flash-Next model page.
+1. **Historical:** Measure solo GPU pulls/writes, SDMA, CPU BAR push and host-memory attributes, plus competing-card transfers (2026-11-01).
+2. **Historical:** Measure 5.4 MB activation round and 10 MiB chunked producer/consumer handoff.
+3. **Closed elsewhere:** HL01's 2026-11-13 slot swap determined the asymmetry follows the first PEG half, not physical card/VBIOS.
+4. **Transferred to HL02:** remaining all-card/pair/method/contended-memory coverage, non-coherent mailbox, GPU-write trigger, CPU-push and TP3-sized overlap tests.
+5. No second active RAD40 transfer campaign.
 
 ## Detailed Solution & Technical Design
 
@@ -38,7 +41,7 @@ Quick, model-free answers on which transfer mechanism moves remote-MoE activatio
 
 ## Validation
 
-Every mode reproduces the 2026-11-01 numbers above within 5%; results for all four cards and all pairs recorded; the chunked mode reports both total time and time-to-first-chunk.
+Preserve observed 2026-11-01 figures and the negative 6900 XT device-flag test as History below. The outstanding original all-modes/all-pairs gate was **not passed**; HL02 owns completion. New production decisions must rely on matched contended shapes and the separate RAD50 safety results, not only this serial harness.
 
 ## Effort & Risk
 
@@ -50,9 +53,18 @@ Every mode reproduces the 2026-11-01 numbers above within 5%; results for all fo
 
 ## Acceptance Criteria
 
+- [x] Keep original physics measurements, chunked/activation timing, and negative device-flag evidence.
+- [x] Name HL01 as completed root-port diagnosis.
+- [x] Transfer every outstanding cross-GPU transfer method and contention measurement to HL02.
+- [x] Preserve separate production ownership for MoE activations/results, TP2 relay and TP3 transport.
 
+**State: superseded** (not 'all original experiments completed').
 
 ## Notes
+
+**Current disposition (2026-11-13):** The 2026-11-04 triage correctly rejected RAD41 as the owner of these experiments. HL02 now fills that ownership gap and supersedes the unfinished RAD40 campaign. RAD40's original harness and numbers below remain the historical source, not fresh performance gates. Equal *idle* host reads across coherence modes do not establish equality under contention.
+
+**History — retained original results/review:**
 
 No P2P on this host (memory no-p2p-on-dev-host). Feeds RAD41-RAD43.
 
@@ -62,11 +74,7 @@ BACKLOG TRIAGE 2026-11-04 (revalidated against main 6eb31a708): the proposed dis
 
 **Ownership clarification (2026-11-13):** HL02 now owns the new matched cross-GPU contention matrix and GPU-pull/CPU-BAR-push crossover for TP3, TP2 and MoE. Keep RAD40 for its historical link-physics receipts, reusable benchmark harness and distinct unfinished all-pair coverage; do not duplicate HL02's contention arms. The RAD40 idle coherent/non-coherent/write-combined equality is not a verified PCIe No Snoop or contended-coherence result. TP3 integration belongs to VTP38, not RAD40.
 
-## Change Log
-
-- 2026-11-01T11:26:10.176424+00:00 (created-by): Created by agent
-
-## Harness results (2026-11-01, , )
+### History — harness results (2026-11-01)
 
 Alone, 21 MiB a pass (GB/s): kernel pull from coherent, non-coherent and write-combined host memory are identical (XTX
 13.3, R9700 6.7, 6900 XT 3.6); SDMA H2D on one or two streams the same; SDMA D2H and GPU writes 14.2 / 6.9-7.1 / 3.6; CPU
@@ -84,7 +92,7 @@ result plane, producer XTX 0 or 1, consumer R9700: 128 rows 1.36x, 256 rows 1.27
 than write-then-read. A 6900 XT producer hung the device-flag variant (consumer never saw the flags): the host-mediated
 protocol first, as the review says.
 
-## Review (GPT, 2026-11-01) -- adopted
+### History — adopted 2026-11-01 review
 
 - One trace contract for every item: per layer-step publish, activation-ready per helper, compute start/end, result-write
   done, combine start/end, engine add start/end, bytes per endpoint; host monotonic clock across processes, HIP events
@@ -94,3 +102,7 @@ protocol first, as the review says.
   ports; swapping XTX 0 and XTX 1 physically separates slot from card.
 - Next: a complete per-layer critical-path trace of the engine and the three helpers before kernel or protocol work.
 - 2026-11-04T04:24:23.232307+00:00 (updated-by): Updated: section:notes
+
+## Change Log
+
+- 2026-11-01T11:26:10.176424+00:00 (created-by): Created by agent

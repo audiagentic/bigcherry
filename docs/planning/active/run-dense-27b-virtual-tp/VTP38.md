@@ -11,26 +11,39 @@ work: L
 priority: P1
 ---
 
-# Host-reduced TP3 prefill all-reduce: the CPU sums the partials and pushes the result, so no card pulls host memory
+# Production TP3 per-rank host transport: CPU push and optional ordered host reduction
 
 ## Description
 
-In TP3 prefill the all-reduce is 57-65% of device time (int8, 2048 tokens, pipelined). The rad0031 timeline (VTP36, 2026-11-13) shows two costs that the GPU-pulled two-shot cannot remove:
+**Single production owner** for the native Radiance TP3 host-staged all-reduce receive protocol. VTP36 owns programme performance, current GPU collective candidate and split/quality; HL02 owns contention, host-memory and concurrent transfer measurements; RAD50 owns reusable DMA-BUF publication and safety evidence.
 
-1. The x4 link floor. With message S and R9700 share w, every exact GPU scheme makes the R9700 send S (its partial minus its shard, plus its reduced shard) and receive (1+w)S. At 4,4,1 that is S out and 10/9 S in over ~6.7 GB/s; measured push 1334 us for ~8.9 MB. A one-shot (every rank reads all partials) is worse for prefill: the R9700 would receive 2S.
-2. XTX 0's host-read contention (HL01: no configuration cause; CPU-internal). While XTX 0 pulls, XTX 1 reads at ~6.8 GB/s instead of ~13 (reduce 1301 vs 889 us), and every rank waits ~400 us at the second barrier.
+The rad0031 weighted two-shot (~10 MiB, 2048-token pipelined prefill) measured ~4 ms per collective, including R9700 x4 link transfers and an XTX reduction skew of ~889 versus ~1301 us due to HL01 root-port contention. For that **specific two-shot protocol**, with message S and R9700 shard fraction w=1/9, it sends ~S and receives ~(1+w)S. A one-shot inbound read is ~2S. These are protocol-specific counts, not lower bounds on *every* exact GPU algorithm.
 
-A host-reduced all-reduce is intended to avoid GPU-initiated host reads: each card writes its partial to pinned host memory once (S out), the CPU sums the three partials in a fixed order, and the CPU writes the result straight into each card's VRAM through the BAR / DMA-BUF (S in). If the source-side GPU writes do not trigger HL01 contention and the CPU BAR path remains independent, this eliminates the GPU-pull slowdown and reduces R9700 receive traffic. Rank-consistent delivery is required but does not itself prove bit-exact equivalence to the current GPU reduction; that must be checked separately.
+**Preferred prefill end state:** one consistent CPU-fed receive path for **all** ranks. Every GPU publishes an S partial to pinned host memory; CPU reduces the three partials in the proven arithmetic order, and separate CPU workers push an S result to every GPU-local DMA-BUF destination. No rank GPU-pulls host memory on that collective. **Fallback:** CPU push to the contention-driving receiver only if measured CPU/memory bandwidth constrains all-rank push, with an explicitly compatible world-wide GPU reduction/receive schedule. Decode retains GPU one-shot absent a separate gain.
+
+**Current comparator:** The unmerged VTP36 rad0032 fused-pieces + rad0033 write-once + duplex-weights candidate, `nblocks=4,nthreads=256,ts_pieces=4,ts_fuse=1,ts_once=1,ts_duplex=1`, produced bit-identical logprobs and 2 completed ABBA comparisons: int8/MXFP4 TTFT 2048 -24.4%/-27.2%, 8-stream +13.9%/+16.7%. Stress and 5,5,6 split checks remained unfinished. Host reduction must beat the **validated improved GPU candidate**, not claim those previous gains again.
 
 ## Steps
 
-1. Gate: HL02 C **GPU-pull recovery** arm (XTX 1 pulls >=90% of its own idle baseline while XTX 0 is CPU-fed, not pulling), HL02 D **victim CPU BAR push under ongoing XTX 0 pull** arm, and HL02 E primary write-only trigger control; record these as distinct questions. Do not use a >=90%-of-idle GPU-pull threshold for CPU BAR push.
-2. Gate: R9700 and both XTX CPU-write paths pass full-size (4 KiB to 10 MiB), multi-generation full-word and **GPU-already-waiting** DMA-BUF verification, including cross-process mapping, ordering, timeouts and buffer reuse. Reconcile RAD50's historic R9700 failure with the latest receipts before saying this passes.
-3. Host-side microbench (no engine): 3 x S bf16 partials (S = 320 KiB .. 10 MiB) summed with AVX2 in the GPU kernel's order and precision, written to three DMA-BUF targets; measure CPU time, memory bandwidth (record actual 3S GPU-to-host partial writes, 3S CPU input reads, 3S CPU BAR target writes, and any S intermediate output, rather than assuming a fixed ~60 MB memory-traffic total) and per-card arrival, in pieces so writes and reads overlap. Estimate both the serial (~3.35 ms R9700 link-only at 10 MiB from RAD40 rates) and ideal overlapped (~1.87 ms) floors, adding measured reduction and visibility costs.
-4. Engine patch (opt-in, layout key, e.g. `tuning.all_reduce_host = prefill`): a host reducer thread per world, a GPU-side ready/done protocol reusing RAD50's corrected wall_clock64 waiter, and the existing two-shot as a **start-of-invocation** alternative; any in-flight timeout requires coordinated all-rank abort/drain before switching. Decode keeps the GPU one-shot (handshake-bound; RAD50 single-row push is slower).
-5. Measure: rad0031 timeline, 2x ABBA vs current (prefill 512/2048/6144, four 4096 prompts, long prompt beside 4 streams, 1/4/6/8 streams), then the VTP37 reordering quality gate (identical bits expected if the CPU sum matches the GPU order; otherwise KLD vs BF16).
+1. Pin the current VTP36 rad0032/rad0033 GPU collective, exact wire/split/tuning and rad0031 phase timing; finish its pending stress before promoting this baseline.
+2. HL02 Gate A: test non-coherent versus coherent mailbox traffic under contention. If the slowdown disappears safely, first A/B that cheaper GPU transport.
+3. HL02 Gate B: at 320 KiB–10 MiB compare all-three CPU push and push-to-one while GPUs concurrently publish partials. Record CPU memory bandwidth, P-core time, per-rank arrival and slowest collective completion; start one push thread per GPU and measure whether two per x8 help.
+4. HL02 Gate C: qualify XTX and R9700 actual CPU-write DMA-BUF paths to 10 MiB, repeated live-ready generations, pre-armed GPU full-word checks, fault, timeout and reuse. The original R9700 HSA-pool canary failure was not a DMA-BUF failure.
+5. Introduce generic validated per-rank `tuning.all_reduce_recv = ["cpu_push", "pull", "pull"]` with enum `pull|cpu_push|host_reduce`, world-size check, immutable generation protocol and optional measured host-profile selection. Mixed methods require a proven world-wide compatible reduction schedule; no BDF/device literal in engine code.
+6. Implement opt-in prefill host transport as a managed Radiance patch: persistent pinned host partials and GPU-local DMA-BUF targets, fixed-order CPU FP32 reduction with actual GPU BF16 rounding comparison, persistent CPU per-card push workers, GPU-local generation/ticket readiness and `wall_clock64()` bounded waiter.
+7. Pipeline GPU write piece k+1 / CPU reduce k / CPU push k-1 using existing VTP36 pieces. Evaluate measured all-rank and push-to-one schedules; hierarchical GPU exchange remains an optional tested fallback if CPU sum is limited.
+8. Choose fallback before invocation where unsupported. On in-flight timeout, coordinate all-rank abort/drain, invalidate the generation and only then retry the GPU two-shot on a fresh generation; never publish both paths or double-reduce.
+9. Run 2x exploratory, 3x final ABBA and VTP37 arithmetic/quality gate, 512/2048/6144 or 8192 TTFT, four 4096 prompts, long prefill beside 4 streams, 1/4/6/8-stream decode, 12-run int8 stress and fault cases.
 
 ## Detailed Solution & Technical Design
+
+**Typed per-rank contract.** `pull` consumes a qualified GPU host-pulled receive payload. `cpu_push` consumes CPU-delivered GPU-local data without automatically changing arithmetic. `host_reduce` participates in a globally defined ordered CPU reduction of all rank partials. The array is world-size matched and fixed for the whole generation. Mixed methods are rejected unless all ranks' producer, reduction, delivery, ACK and once-only semantics are proven compatible. The desired *uniform* `host_reduce`/CPU-push path eliminates rank GPU host pulls; push-to-one is a measured protocol alternative, not an arbitrary per-rank pointer substitution. Use a measured topology/profile to propose methods, not machine-specific constants.
+
+**Byte budget:** all-rank host sum requires 3S GPU writes to host, 3S CPU reads and 3S CPU BAR result writes, plus possible S temporary. For S=10 MiB, R9700 measured ~7.1 GB/s GPU write and ~5.6 GB/s CPU push imply ~1.48+1.87=3.35 ms *serial* link components, or ideal fully overlapped ~1.87 ms link-only floor before CPU sum, fences and arrivals. These are estimates, not a TP3 host-reduced measurement. CPU FP32 `(p0+p1)+p2` can differ from GPU two-shot if intermediate conversion/rounding is different: signed zero, NaN, inf, ties and subnormal oracles and VTP37 numerical checks decide whether bit identity is supportable.
+
+**Safety:** GPU partials must become CPU-visible before host read, and CPU DMA-BUF writes must be GPU-visible before local ready-ticket publication; CPU fences or `DMA_BUF_IOCTL_SYNC END` alone do not prove application-level happens-before. Reuse RAD50's device-scaled gfx11 `wall_clock64()` waiter and separate host timeout. Generation, slot, world/run, piece and layout identity remain bound through acknowledgment and retirement. Any failed in-flight generation requires global abort/drain before GPU fallback.
+
+**History — original design and alternatives:**
 
 Per piece of rows: each rank's GEMM epilogue (or a copy kernel) writes its partial to its pinned host slot and raises a flag. A CPU thread (one per piece stream, pinned to P-cores) waits for three flags, sums p0+p1+p2 in the GPU two-shot's order with fp32 accumulation over bf16 inputs, and streams the bf16 result with non-temporal stores into each rank's DMA-BUF-mapped VRAM receive buffer, then writes a ticket. Each rank's next kernel (norm/quant) waits on its ticket in VRAM (local polling, no PCIe reads). Pieces (as rad0032) **may** overlap GPU host writes, CPU sum and BAR pushes. For a 10 MiB message, RAD40's R9700 ~7.1 GB/s GPU write and ~5.6 GB/s CPU BAR push imply ~1.48 + ~1.87 = ~3.35 ms of serial link stages, or a best-case ~1.87 ms *fully overlapped* link floor, before CPU sum, visibility and handshakes. The current ~4 ms is a measured comparator, not proof that ~1.4-2 ms is achievable.
 
@@ -57,7 +70,7 @@ engines/radiance/patches (new package), libr4d r4d_ar_entry.hip / r4d_ar_twoshot
 
 ## Validation
 
-Timeline: no rank waits > 10% of the all-reduce at any barrier; R9700 link time within 20% of S / measured x4 rate per direction. 2x ABBA: prefill 2048 TTFT improves >= 10% with decode within noise. Quality: VTP37 reordering gate (noise floor vs serial, then mean/p99.9 KLD within +10%, top-1 within -0.2 points, PPL within +0.1% vs BF16). Stress: 12 clean runs, no stale tickets.
+HL02 coherent/non-coherent, true CPU-push and three-way concurrent gates; RAD50 cross-process live-ready full-size proof on all target GPUs. Independent exact-word and generation tests for posted-write completion, pre-armed consumer, ring wrap, faults, timeouts and cleanup. Compare against the validated VTP36 rad0032/rad0033 baseline using rad0031 phases and CPU memory/P-core measurements; report p50/p95/p99. At least 2 preliminary and 3 final matched ABBA trials. Exact logprobs only where the CPU sum reproduces GPU order/rounding; otherwise VTP37 reorder/KLD/top-1/PPL gate. Decode stays GPU one-shot unless separately justified; require 12 clean stress runs.
 
 ## Effort & Risk
 
@@ -69,9 +82,22 @@ L. Risks: CPU memory bandwidth (~60 MB of traffic per prefill all-reduce at 2048
 
 ## Acceptance Criteria
 
-Opt-in layout key, generic (no model or card constants); default unchanged until the ABBA and quality gate pass; fail closed on a protocol timeout and only select the GPU two-shot after a coordinated drain/restart or on a later clean invocation.
+- [ ] Generic per-rank `pull|cpu_push|host_reduce` layout/profile contract with no machine/card/BDF constants.
+- [ ] HL02 all-three CPU push and push-to-one concurrent producer/consumer capacity and critical-path matrix complete.
+- [ ] XTX/R9700 10 MiB GPU-live DMA-BUF safety, lifetime and bounded failure path passes.
+- [ ] Ordered host arithmetic is either bit-exact to current GPU two-shot **or** passes the explicit VTP37 reordering quality gate.
+- [ ] >=10% better 2048-token prefill TTFT against the **validated improved VTP36 GPU candidate**, or a measured NO-GO retaining the faster baseline.
+- [ ] Decode at GPU one-shot parity, 12 clean stress runs, no stale/duplicate generations.
+- [ ] Timeout aborts and drains all ranks before any fresh-generation GPU fallback; no unsafe mid-flight switch.
+- [ ] Default unchanged until repeated ABBA, quality, stress and explicit approval.
 
 ## Notes
+
+**New partial R9700 gate (2026-11-13):** Existing RAD50 GPU-live tester verified a 3,932,160-byte pre-armed R9700 DMA-BUF payload across 30/30 generations, no mismatches, exit 0; see `docs/evidence/2026-11-13-hl02-vtp38-consolidation/R9700-LIVE-2026-11-13.md`. This does **not** satisfy the all-rank 10 MiB Gate C or the CPU host-sum protocol.
+
+**2026-11-13 status:** The VTP36 rad0032/rad0033 two-ABBA GPU candidate is a measured starting point, *not* a merged production host-reduce improvement; stress and split validation remained. RAD50's apparent 768-row gfx11 `clock64()` live-waiter failure was fixed with `wall_clock64()`, and later R9700 DMA-BUF tests passed smaller sizes; full concurrent 10 MiB remains unproven. Proven/estimated quantities and source run names are indexed in `docs/evidence/2026-11-13-hl02-vtp38-consolidation/README.md`. No host-reduced TP3 engine hardware run has been performed by this item.
+
+**History — original plan and refinements:**
 
 Created 2026-11-13 from the VTP36 all-reduce timeline review and the HL01 lspci/IOMMU finding. This is the sole owner of TP3 CPU-reduced all-reduce integration; VTP36 retains programme-level A/B reporting, HL02 owns cross-GPU contention A/B, RAD40 the historical physical-link harness and RAD50 the generic DMA-BUF/visibility proof. Depends on HL02 and RAD50 gate 2 (R9700). Related: VTP36 (two-shot pieces/duplex, uneven XTX shares), RAD50/RAD51 (CPU BAR push lab), RAD40 (contention measurement), HL04 (different-layout no-go).
 

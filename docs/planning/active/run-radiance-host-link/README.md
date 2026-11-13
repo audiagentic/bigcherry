@@ -1,13 +1,12 @@
 # Run Radiance Host Link
 
-## Next actions and ownership (reconciled 2026-11-13)
+## Ownership and next tests (reconciled 2026-11-13)
 
-1. **HL01:** authoritative root-port/topology, slot-swap and contended-engine evidence. The PCIe configuration and IOMMU checks did not find a cause; the exact shared CPU-I/O mechanism remains inferred, not proven.
-2. **HL02:** *single owner* of matched cross-GPU contention and GPU-pull/true-CPU-BAR-push A/B, including read-vs-write trigger, duty cycle, memory/coherence controls, and TP3 shapes. Reuse RAD40's baselines and RAD50's DMA-BUF/GPU-live test machinery.
-3. **VTP38:** sole owner of the production CPU-reduced TP3 all-reduce, contingent on HL02 and real CPU-to-VRAM delivery on all ranks. VTP36 owns overall TP3 programme results, not a second implementation.
-4. **HL03 / HL05:** distinct production consumers: MoE helper-activation relay and TP2 two-XTX collective relay. RAD42/RAD51 own MoE result-plane integration. None should duplicate HL02's generic host-link tests.
-5. **HL04:** closed; its different-layout CPU-combine no-go is not a TP3 no-go.
+1. **[HL01](../../completed/run-radiance-host-link/HL01.md) — completed diagnosis:** verbose PCIe/IOMMU checks and physical XTX slot swap proved the halving follows the first PEG x8 root port, not a card/VBIOS. CPU-internal arbitration is supported; the particular coherent-snoop stage remains a hypothesis. No PCIe configuration fix is identified.
+2. **[HL02](HL02.md) — single laboratory experiment owner:** contended coherent/non-coherent mailbox test first, then true concurrent CPU push to one versus all three GPUs (320 KiB–10 MiB while GPUs publish partials), and R9700/full-size DMA-BUF live qualification. GPU-pull recovery, victim CPU BAR bypass and primary GPU write-only trigger are distinct controls.
+3. **[VTP38](../run-dense-27b-virtual-tp/VTP38.md) — production TP3 transport:** generic per-rank receive methods and optional ordered CPU reduction. Its reference is the improved VTP36 rad0032/rad0033 GPU candidate, not the earlier ~4 ms rad0031 baseline. No host-reduced TP3 inference gain has been measured.
+4. **[RAD40](../../completed/patching-radiance-rdna3/RAD40.md) — superseded:** retained historical transfer-physics/activation/chunk data; every remaining transfer-method/all-pair experiment moves to HL02. **[RAD50](../patching-radiance-rdna3/RAD50.md) — pending:** reusable DMA-BUF CPU-write, pre-armed GPU visibility, generation and crash/lifetime safety proof. Later R9700 DMA-BUF successes and the gfx11 `wall_clock64()` watchdog correction are preserved.
+5. **[HL03](HL03.md) / [HL05](HL05.md) / [RAD42](../patching-radiance-rdna3/RAD42.md) / [RAD51](../patching-radiance-rdna3/RAD51.md)** retain separate MoE activation, TP2 relay and MoE result production scope. They reuse HL02/RAD50 lab gates rather than duplicating them.
+6. **[HL04](../../completed/run-radiance-host-link/HL04.md) — completed:** ~0.1–0.2 ms exposed CPU combine, no MoE result-push integration. This is *not* a TP3 host-reduce NO-GO.
 
-RAD40 stays open for its historical link-physics harness and distinct outstanding all-pair coverage. RAD50 stays open for generic mapping, cross-process lifetime, GPU-live visibility, fault and MoE FP16 correctness gates. Do not retire either merely because HL02 reuses their evidence.
-
-See [Flash-Next execution status](../../FLASHNEXT_EXECUTION_STATUS.md) for plan-item states and evidence paths.
+Historical results and exact source references: [2026-11-13 slot swap, RAD50 and VTP36 candidate receipts](../../../evidence/2026-11-13-hl02-vtp38-consolidation/README.md). See also [Flash-Next execution status](../../FLASHNEXT_EXECUTION_STATUS.md); preserve original raw lab logs and pending experiments under their separate owners.
