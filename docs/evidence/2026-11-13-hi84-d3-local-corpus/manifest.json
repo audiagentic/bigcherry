@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "kind": "historical-synthetic-input-reconstruction",
+  "captured_on": "2026-11-13",
+  "original_inputs_created": "2026-10-02",
+  "plan_item_ids": [
+    "HI84",
+    "HI18"
+  ],
+  "source_checkout": "legacy local BigCherry bisect clone, ignored _scratch_hi84_d3_corpus",
+  "generator_path": "tools/bigcherry/tuning/reduction.py",
+  "generator_revision": "ad6e8e3201112d33df085ef17aec1e81f7b4e3ab",
+  "generator_sha256": "525c074b06719e96456f847a05adea0ed8da112b4eca49595f5cd8772999a2fa",
+  "generator_version": "hi18-f32-v1",
+  "patterns": [
+    "all_positive",
+    "alternating_signs",
+    "cancellation",
+    "mixed_magnitude",
+    "ordinary_signed",
+    "sparse_zeros"
+  ],
+  "seeds": [
+    1,
+    2,
+    3
+  ],
+  "case_count": 18,
+  "rank_file_count": 54,
+  "element_count_per_rank": 8192,
+  "device_count": 3,
+  "topology_key": "n3:peer100010001",
+  "slice_shape": [
+    4096,
+    2,
+    1,
+    1
+  ],
+  "validation": {
+    "type": "card-free generator byte comparison",
+    "identical_rank_files": 54,
+    "total_rank_files": 54,
+    "digest_matches": 54,
+    "failed": 0,
+    "source_manifest_archive_identical": 18
+  },
+  "limitations": [
+    "No GPU run or hardware correctness qualification was performed in this archive",
+    "Original scratch creation command and host/toolchain environment were not recoverable"
+  ]
+}
