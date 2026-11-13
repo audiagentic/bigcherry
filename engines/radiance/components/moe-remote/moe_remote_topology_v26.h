@@ -125,19 +125,35 @@ struct alignas(64) CombineDescriptor {
 struct alignas(64) CombineInput {
     uint32_t helper, consumer, lane, sequence;
 };
-// Prototype v26 request has one consumer result, not inline fixed-rank arrays.
-// The identity is on the first cache line; no code uses this on the GPU yet.
+// The v26 request keeps the v25 first cache line offsets used by GPU lane
+// kernels (sequence, layer, slot, world, generation, route and activation).
+// One validated full-width output plane replaces inline rank/plane arrays.
+// Host reference, helper kernels and GPU publisher must switch together.
 struct alignas(64) Request {
     uint32_t sequence, completion_sequence;
     int32_t status;
-    uint32_t layer, slot, world, consumer, helper, lane, lane_slot, rows;
-    uint32_t generation_slot;
-    uint64_t result_offset, result_stride;
-    uint64_t route_offset, activation_offset;
+    uint32_t layer, slot, world, rows, hidden, route_count, generation_slot;
+    uint64_t route_offset, activation_offset, activation_q_offset, activation_s_offset;
+    uint32_t activation_stride, activation_q_stride, activation_s_stride, result_stride;
+    uint64_t result_offset;
+    uint32_t consumer, combine_generation, row_base, completion_slot;
+    uint64_t trace[5];
+    uint64_t stage_trace[3];
     uint64_t placement_epoch, completion_epoch;
+    uint32_t helper, lane, lane_slot, reserved;
 };
-static_assert(sizeof(Request) == 128);
-static_assert(offsetof(Request, consumer) < 64 && offsetof(Request, layer) < 64);
+static_assert(sizeof(Request) == 256 && alignof(Request) == 64);
+static_assert(offsetof(Request, layer) == 12 &&
+              offsetof(Request, slot) == 16 &&
+              offsetof(Request, world) == 20 &&
+              offsetof(Request, generation_slot) == 36 &&
+              offsetof(Request, route_offset) == 40 &&
+              offsetof(Request, activation_offset) == 48 &&
+              offsetof(Request, activation_q_offset) == 56);
+static_assert(offsetof(Request, result_offset) > 64 &&
+              offsetof(Request, result_stride) > 64);
+static_assert(std::is_standard_layout_v<Request> &&
+              std::is_trivially_copyable_v<Request>);
 static_assert(sizeof(SlotDescriptor) == 64 && sizeof(HelperDescriptor) == 64);
 static_assert(sizeof(CombineDescriptor) == 64 && sizeof(CombineInput) == 64);
 
