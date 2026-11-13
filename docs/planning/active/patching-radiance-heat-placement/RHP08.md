@@ -13,10 +13,6 @@ work: M
 
 # Runtime tail-heat collector
 
-## Current evidence reconciliation (2026-11-10)
-
-The #807 and HL04 tail route evidence partially answers this item. Do not rebuild a duplicate collector: finish parity against coherent engine histograms under held-out workloads.
-
 ## Description
 
 Establish the actual route frequency and coverage of the experts the 6900 XT owns, including the MTP layer, from the RHP02 feed. The static profile gave the tail 0.68% of routes; natural text gave 1.7%, random-word prompts 14%.
@@ -58,6 +54,12 @@ Depends on: RHP02. Added by the 2026-10-31 GPT review of this plan.
 
 EVIDENCE 2026-11-10 (HL04 lane trace, flashnext-4gpu, routes per 2048-row layer call, tail = the 14 GiB 6900 XT helper): static placement (policy off) cold 27k prompt 2,874 tail routes (~14% of ~20,500 routes), document prefill 195 (~1%); policy on and warmed: cold 1,258 (~6%), document 388 (~2%). Matches the earlier static-profile 0.68%, natural text 1.7%, random-word 14% figures, and shows the tail's share is workload-dependent by 10x, which is what the live policy exploits. Still open from this item: the MTP-layer coverage from the RHP02 shared feed.
 
+2026-11-13: tail-route parity evidence is gathered inside RHP02 slice C (shadow parity); close this item with that evidence rather than a separate collector run.
+
+## Current evidence reconciliation (2026-11-10)
+
+The #807 and HL04 tail route evidence partially answers this item. Do not rebuild a duplicate collector: finish parity against coherent engine histograms under held-out workloads.
+
 ## First live measurement, 2026-10-31
 
 `R3_MOE_WORKER_HISTOGRAM_PERIOD_S` (RHP02, this change) rewrites the engine's cumulative route histogram `<path>.rank<r>` every N seconds while the engine runs (rename, private non-blocking stream); the file is `uint32[128][512]`, the same format `R3_MOE_WORKER_HEAT` and the launcher's `--heat` read, so a live snapshot can seed the next start. Run: Flash-Next, `flashnext-2xtx-rdna2-tail` with a 4 GiB tail, a documentation-text context sweep (8K, 32K) and three chat prompts (prose, code, French); 25.2 M routes, layer 48 (MTP) present.
@@ -89,3 +91,4 @@ Re-seeding the helpers' ownership from live heat changes nothing measurable: the
 ## Change Log
 
 - 2026-11-10T12:07:10.184829+00:00 (updated-by): Updated: section:notes
+- 2026-11-13T03:54:45.893911+00:00 (updated-by): Updated: section:notes

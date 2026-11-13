@@ -64,6 +64,20 @@ Depends on RHP01 and merged/verified RAD09. Does not implement ownership migrati
 
 STATUS 2026-11-01: recording is cheap and on by default (histogram in pinned host memory, #500; launcher --record-heat, #502), but the item's goal - one versioned observer feed shared by the engine HeatEngine and the helper ownership policy, retiring R3_MOE_WORKER_HISTOGRAM / _HEAT after parity - is not done. It is a stage 1 dependency of the live-placement roadmap: RHP04's stage 1 policy loop consumes coherent interval snapshots from this feed (the pinned-memory histogram is the interim source until parity).
 
+## Staged plan (GPT analysis 2026-11-13)
+
+Decision: a new read-only managed engine observer package (provisional `rad0030_moe_heat_observer`; recheck IDs) rather than growing `rad0002_moe_remote_handoff`. It adds `abi/rad_moe_heat.h` and thin anchored calls at the existing histogram credit/drain path (`tiering_dispatch`, `xstats_drain`); a single engine-side CPU callback copies a borrowed, already-landed row into a bounded versioned CPU-only SPSC region inside the existing engine/helper segment; helper 0 alone consumes it off the inference thread through the existing `worker_policy_input.h`/`worker_heat.h` policy. Observation must work when `HeatEngine::enabled()` is false without turning placement on.
+
+Hazards: the current helper GPU counter fires only on remote-admitted mailbox publishes while the upstream histogram counts all routed passes, so the old cumulative file (no step/phase watermark) cannot prove per-pass parity; MTP banks coalesce same-step passes into one histogram with `reports` multiplicity; rank-0 mirroring is not a universal invariant (the live mover is TP1 only); bootstrap owner ranking reads the heat file (`experts.cpp:151-171,192-210`, `owner_map.cpp`) and must move to the resolved owner map. Compare only identical admitted-step windows; if parity cannot be shown, RHP02 is not complete.
+
+Slices (each its own PR):
+A. Observer ABI + engine credit seam, inactive: package, `abi/rad_moe_heat.h`, registration, issue-time phase metadata, thin hooks, current-pin fail-closed/idempotent tests, ABI stubs; no consumer. Needs nothing else: can start now.
+B. CPU transport + helper source, inactive: shared-region version/shape/offset checks, per-rank SPSC producer in `moe_remote_hook.cpp`, `CreditedEngineSource`, helper-0 decoder; adds to the shm protocol, so it lands after RCS14 (v26) to avoid a second protocol bump.
+C. Shadow parity, diagnostic only: same-run observer vs legacy comparator on matched step windows (rank, step, layer, expert, weights, coverage, watermarks), unchanged live-policy input. Needs RHP01 coverage accepted. Folds the RHP08 tail-route parity evidence. If it fails, stop here and leave the old contract.
+D. Atomic production cutover and deletion: helper 0 uses `CreditedEngineSource`; bootstrap from the resolved `spec.plan.owner_map`; delete `step_heat`/GPU cumulative collector, `heat_host` snapshot thread and file writer (`moe_mailbox_ops.hip:153-170,230-267,928-945`, `moe_remote_hook.{h,cpp}`), `HistogramFileSource` and file watermark/unwatermarked exception, `histogram_file`/`histogram_period_s`, typed manifest fields `telemetry.histogram_file`, `telemetry.period_s`, `placement.heat_file` and regenerated v2 code, tests, tools and docs. One PR, no alias. Keep Radiance's own `--record-heat/--record-period` (the authoritative source) for RHP01 and offline calibration.
+
+Validation card-free: patch/ABI/mutation tests on v1.17; fake-`Ctx` source oracle (bank wrap, sparse layers, gap DMA, same-step multiplicity 1/2/4, phase captured at issue, xstats-only/static/deterministic paths, exactly one callback per true `mark_credited`); two independent mappings for transport (late producer, full queue never blocks the engine and yields a numbered gap, schema/digest/rank mismatch, restart, stale row vs new owner-map epoch); policy oracle (new vs old source on a matched window, rejection of regressing counts, mismatched sums, stale/incomplete/duplicate rows regardless of a forged completeness flag); bootstrap/manifest migration tests. Hardware (leases per arm): RHP01 gate, then shadow on `flashnext-4gpu` with small then 32K prefill, decode 1 and 6 streams, mixed, real 64-row verification, greedy/KLD (`helper-kld.json`) and `helper-ab.json` reported with decode ms/step and prefill TTFT separately. Pass: zero unclassified gaps, >= 99% settled coverage, exact per-expert and weight equality on matched windows, one GPU producer, unchanged quality, no regression beyond A/B/A/B spread.
+
 ## Implementation-grade notes (2026-10-15)
 
 ### ABI: proposed, NOT implemented
@@ -159,3 +173,4 @@ This is a **record only**, not the RHP02 ABI migration. Two independently collec
 ## Change Log
 
 - 2026-11-01T22:52:30.560823+00:00 (updated-by): Updated: order=9, section:notes
+- 2026-11-13T03:54:37.777943+00:00 (updated-by): Updated: section:notes

@@ -61,6 +61,15 @@ Source: model-constants audit 2026-11-04 (55 findings; report and findings.json 
 
 2026-11-04: step 1 STATIC half done. tools/bigcherry/model_constants.py scans engines/radiance/components, patch payloads and tools/lab/radiance for model-shaped literals (2560, 640, 384, 160, 49, .rad paths) and the symbols the audit found them behind (kActivationBf16Bytes, kActivationQBytes, kLegacyIntermediate, kExpertWidth, kRankWidth, kHidden, kMaxRoutes); engines/radiance/model_constant_guard.toml classifies the 99 current hits (94 entries, A/B/C/D/E). C and D entries name an OPEN plan item as owner and become invalid when it completes, so fixing a finding means deleting its entry in the same change. tools/tests/core/test_model_constants.py runs it on the real tree and mutation-checks the checker on a synthetic tree. NOT done: the DYNAMIC half (Container/fake geometry and layout_for at Flash-Next plus two synthetic shapes, a C++ card-free test), the getenv(R3_*) and numeric 512/10 scans (declared settings are audited by the component gate; the bare numbers are too ambiguous to scan without dataflow), and steps 2-7 (the fixes).
 
+## Execution staging (2026-11-13)
+
+Split out as separate items: GEMV K bound (step 3) -> [RCS13](RCS13.md); remote-MoE topology bounds (audit C05) -> [RCS14](RCS14.md). RHP01/RHP02 carry the heat-feed work; the shm protocol is shared, so order matters:
+
+1. Stage 1, parallel and ABI-free: RCS13 (kernel/dispatch, card-free then a short hardware identity) and RHP01 stage 1-2 (rad0010 current-pin tests, missing hardware cells); RHP02 slice A (inactive observer ABI and engine seam).
+2. Stage 2: RCS14 gates A-E card-free in order, then gate F hardware parity on Flash-Next helper layouts, then TP3 remote helpers.
+3. Stage 3: RHP02 slice B (transport on protocol v26), then slice C (shadow parity, needs RHP01 accepted; covers RHP08), then slice D (atomic cutover, deletes the duplicate collector).
+Each stage ends with the standard decode and prefill A/B and KLD; nothing in a later stage starts on hardware before the earlier stage's identity result. RCS13 and RCS14 both touch `moe_remote_gpu.h` and `moe_mailbox_ops.hip`: RCS13 lands first.
+
 ## Change Log
 
 - 2026-11-04T08:38:41.932631+00:00 (created-by): Created by agent
@@ -68,9 +77,9 @@ Source: model-constants audit 2026-11-04 (55 findings; report and findings.json 
 
 ## Ledger-events
 
-
 - chg_20261104_083930_a-plan-item-now-tracks-making_2415
 - 2026-11-04T08:39:34.906520+00:00 (updated-by): Updated: section:ledger-events
 - 2026-11-04T22:37:02.085119+00:00 (updated-by): Updated: section:notes
 - chg_20261104_223702_a-new-test-blocks-model-specif_4673
 - 2026-11-04T22:37:06.168768+00:00 (updated-by): Updated: section:ledger-events
+- 2026-11-13T03:54:41.818055+00:00 (updated-by): Updated: section:notes
