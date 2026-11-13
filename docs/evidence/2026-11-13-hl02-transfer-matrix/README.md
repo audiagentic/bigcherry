@@ -1,6 +1,6 @@
 # HL02 — three-session mapped-host contention and CPU BAR-push controls (2026-11-13)
 
-**Measured on Brutus under exclusive `gpu` leases.** This is new experimental
+**Measured on the target GPU host under exclusive `gpu` leases.** This is new experimental
 evidence following PR #951, not a TP3 host-reduced implementation or inference
 benchmark. See [HL01](../../planning/completed/run-radiance-host-link/HL01.md)
 for the physical slot-swap diagnosis and [HL02](../../planning/active/run-radiance-host-link/HL02.md)
