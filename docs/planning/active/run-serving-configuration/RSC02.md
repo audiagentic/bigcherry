@@ -11,22 +11,81 @@ priority: P0
 work: M
 ---
 
-# bc-serve: the only start-up path (detect, load, write manifest, start processes with --manifest only)
+# bc-serve start/stop/status: the only start-up path, in C++, from a named config or a stored manifest
 
 ## Description
 
-Replace tools/lab/radiance/launch-flashnext-best.sh with `bigcherry serve MODEL [--config serving.toml] [--profile ...] [--set key=value] [--explain --dry-run]`, driven by the RSC01 resolver. Layouts become optional constraints resolved against discovered hardware, not required hand-written topologies. Engine arguments and per-helper environments are generated from the effective manifest through an allowlist, so inherited stray R3_* variables cannot change a run. Unique shared-memory identity per instance, supervised helper processes, readiness checks, stop-everything-on-partial-failure, signal handling, conflict detection. The lab A/B runner resolves each arm through the same code. Raw --engine-arg pass-through is removed.
+Replace `tools/lab/radiance/launch-flashnext-best.sh` (749 lines of bash plus 292 in `lib/`) with start, stop and status
+commands in `bc-serve`, the C++20 serving component that already detects the host, resolves the configuration,
+measures and caches the memory plan and writes the manifest. Owner direction 2026-11-14: one language for the start
+path, radiance's (C++); the launcher is simple to read and run; it starts a named config (RSC12) or a stored manifest.
+
+```
+bc-serve start qwen27b/tp3-int8-556           # resolve (or reuse) the config's manifest, start, health, canary
+bc-serve start --manifest FILE                 # rerun exactly a stored manifest; refused when its key no longer holds
+bc-serve stop                                  # stop everything this start owns, then restore power
+bc-serve status                                # config, manifest digest, processes, port, power state
+bc-serve explain qwen27b/tp3-int8-556          # effective values and where each came from; starts nothing
+```
+
+What the bash launcher does today and the command keeps (inventory from origin/main, 2026-11-14): host site file and
+SDK check; plan check with the measuring start (helpers up, engine `--plan-memory`) and the host-pool round; helpers
+started in order and their resident memory read; engine started from the manifest only; `/health` wait; start canary
+(deterministic completion, configurable prompt and expectation); MTP replay guard; GPU power apply and restore; gfxoff
+floor; route-heat file and live heat recording; live placement policy report; lab calibration mode; cleanup of a
+partial start; `--release TAG` (start from a verified release). Every one becomes a config field, a host-file field or a
+step of `start`/`stop`, never a launcher option that rewrites settings.
 
 ## Steps
 
-1. `bc-serve [--profile p] [--layout l] [--set k=v]`: detect (RSC05), then load and validate (RSC01), then write the immutable v1 manifest (`--write-manifest`; the interim `--dry-run --out` format was deleted at RSC08 S2b) to the run directory, then start the helpers and the engine with only `--manifest <path> --role <role>`, then health-check, then record (manifest hash and process PIDs).
-2. Supervision: ordered start (helpers ready before the engine), graceful stop, PID files, and failure propagation (one process failing stops the set).
-3. Delete tools/lab/radiance/launch-flashnext-best.sh and every caller of it. Replace the RSC01 launcher-equivalence test with a manifest golden test.
-4. Lab runs use `serve` with experiment-namespace overrides, not separate scripts.
+1. **Session owner, engine-only (dense configs, today's layouts).** `bc-serve serve|start|stop|status`: resolve, plan
+   check and measuring start, engine from the manifest, `/health`, canary, control socket, ordered stop. Card-free tests
+   ported from the Python supervisor's fakes first; then one dense layout on hardware.
+2. **Helpers.** Ordered helper start and readiness, resource derivation in C++, measuring start with helpers up, any
+   child's failure stops the set.
+3. **Guards and lab modes.** MTP replay guard, live placement report, heat recording, lab calibration (refused by
+   production configs).
+4. **Power.** The manifest's power plan applied as one transaction by the owner, restored after verified exit (PWR09).
+5. **Configs and stored manifests** from RSC12: `serve CONFIG` on the new files; `start --manifest FILE` replays a
+   stored manifest without rewriting it (RSC12 step 5).
+6. **Acceptance and retirement in RSC11's order:** the coordinated v2 switch (S13) stays one change; hardware and release
+   acceptance (S15): same-session A/B against the bash launcher on one build, one dense and one helper config, RHP12
+   gates, equal semantic execution projection (RSC12); retirement (S16): switch the callers (16 lab scripts, the release
+   installer, tests) and delete `launch-flashnext-best.sh` and `lib/plan-check.sh` (RSC04).
 
 ## Detailed Solution & Technical Design
 
+**A session owner process (review 2026-11-14, P0).** `bc-serve serve CONFIG` is a foreground C++ process that owns
+the whole serving session: it starts the children in their own process groups, reaps them (`waitpid`), watches health,
+holds the power journal, and on any child's exit or on a stop request stops the rest in order and restores power only
+after every child has exited. `bc-serve start CONFIG` is `serve` detached (`setsid`), returning once the canary passes;
+`stop` and `status` talk to the owner over a control socket in the session's run directory (never by signalling a
+recorded PID, which can be reused). The GPU lease must cover the
+session, not the start: in the lab the lease wraps the foreground owner (`agent-lease acquire gpu ... -- bc-serve serve
+CONFIG`), itself run detached by the shell (`setsid nohup ...`) when the caller should not wait. `bc-serve start`
+(detached owner) takes no lease of its own and is for hosts with no lease system; a lease wrapped around `start` alone
+ends when `start` returns, so lab scripts use the wrapped `serve` form, never `start`.
 
+- Reuse what exists in C++: the SDK check (`sdk_check.cpp`, already called by `bc-serve`), the resolver, the plan cache,
+  the manifest writer and reader, the host ledger and the power probes.
+- The Python supervisor (`tools/bigcherry/serving/supervisor.py`, RSC11 S6/S11/S12) is the behavioural reference: its
+  fake-process, lease and power-transaction tests are ported as the C++ owner's acceptance tests; it is not on the start
+  path.
+- Options that change settings (`--max-model-len`, `--kv-dtype`, `--budget`, ...) do not exist: a setting is a config
+  value, a variant, or a `--set` experiment recorded in provenance. `--ngram-device` is not carried over (manifest
+  starts refuse it today; it needs a typed manifest field first).
+- Behaviour to keep, with the bash references (from the GPT review, req_rsc02-config-launcher_957d54878bcc):
+  release mode (verified tagged bundle; `--release` and `--build` exclusive); SDK and ROCm environment refusal;
+  a launch/stop lock (no concurrent measuring, plan storage or stop); stop order engine SIGINT then helpers, bounded
+  waits then SIGKILL, never success while a process survives, power journal kept on a failed restore; binary and kernel
+  library checks; BDF to HIP ordinal mapping, rank order, per-process GPU visibility; RSC03 resource derivation for
+  helper starts (today `bigcherry resources derive-launch`, moved into C++); the measuring start (helpers up first,
+  helper RssAnon + RssShmem recorded once, per-rank demand, exit 10 cache miss and exit 11 derived pool kept apart, no
+  silent fallback); heat file and lab experiment hashed, histogram path and period, live policy fail-closed; ordered
+  helper readiness from the fresh run, shared segment before the engine, `/health`, canary, MTP replay guard (depth > 1);
+  power applied before measuring and serving, restored after verified exit; gfxoff floor and loaded-idle check; lab
+  calibration (helper layouts only, two distinct prompt files, ABBA, strict ingestion); helper-free and helper layouts'
+  different allowed overrides.
 
 ## Code Samples & Guidance
 
@@ -38,7 +97,13 @@ Replace tools/lab/radiance/launch-flashnext-best.sh with `bigcherry serve MODEL 
 
 ## Validation
 
-The first version reproduces the current flashnext-4gpu baseline exactly (same manifest, RHP12 gate); lifecycle tests: engine or helper failure, partial start, repeated start/stop, IPC isolation, inherited-environment isolation; experimental settings refused by serve, allowed by the lab runner with evidence isolation.
+- Card-free lifecycle tests with fake processes (ported from the Python supervisor's): ordered start; a helper or the
+  engine failing during start and while serving; partial start cleaned up; repeated start/stop; stop of a dead set; a
+  second start refused while one runs; stop through the control socket only; power restored only after every child
+  exited, journal kept when restore fails; inherited environment ignored; `--manifest` refused when stale, naming why.
+- Hardware (gpu lease held by the owner for the session): one dense config (qwen27b TP3) and one helper config
+  (flashnext-4gpu) start, serve, survive a killed helper (set stopped, power restored), stop; same-session A/B against the
+  bash launcher on one build passes the RHP12 gates.
 
 ## Effort & Risk
 
@@ -50,7 +115,12 @@ The first version reproduces the current flashnext-4gpu baseline exactly (same m
 
 ## Acceptance Criteria
 
-One command starts Flash-Next on any supported layout. No process receives configuration through flags (other than --manifest/--role) or R3_* environment variables. The bash launcher is gone. A dry run prints the manifest and the process plan without starting anything.
+- `bc-serve start CONFIG` starts every configured model, dense and helper layouts alike; `bc-serve stop` stops it
+  and restores the host's power state.
+- `bc-serve start --manifest FILE` reruns a stored manifest exactly or refuses, naming the input that changed.
+- No process receives configuration through flags other than `--manifest`/`--role`, or through environment variables.
+- The bash launcher and `tools/lab/radiance/lib/plan-check.sh` are deleted; no caller references them.
+- `bc-serve explain` (dry run) prints the manifest and the process plan without starting anything.
 
 ## Notes
 
@@ -65,6 +135,10 @@ BACKLOG TRIAGE 2026-11-04 absorbed items (superseded into this one; their notes 
 
 
 CORRECTION 2026-11-04: the earlier note that MEN14, MEN18 were absorbed into this item is withdrawn. An independent revalidation found each either still has open scope of its own (reopened) or was delivered outright. This item's scope is unchanged.
+
+OWNER DIRECTION 2026-11-14: rescoped. The command is `bc-serve start|stop|status|explain` in C++ (radiance's language),
+not `bigcherry serve` in Python; it starts a named config from RSC12 (one readable file per model, named variants) or a
+stored manifest. Depends on RSC12 for configs; steps 1-4 can start on today's layouts. GPT is the backup reviewer.
 
 ## Change Log
 
