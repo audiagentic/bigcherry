@@ -109,3 +109,22 @@ Normalized results and provenance:
 The original 4 MiB/768-row test is still below the planned 10 MiB TP3
 message, and 100 finite serial generations do not replace crash/restart,
 ring-wrap, three-way concurrency or exact production arithmetic tests.
+
+## Gate B: concurrent CPU push versus GPU pull (`threeway_push.hip`)
+
+Every visible card receives the same message at once, by GPU pull from mapped host memory or by a CPU thread writing
+its GPU-local DMA-BUF; arms mix the two, optionally beside device-time-bounded GPU producers, plus a CPU three-partial
+BF16 sum. Every received word is verified on the GPU. Loop kernels stop on a device-time bound as well as the host flag:
+an unbounded one hung once and its kill left a card unable to reset until a host reboot.
+
+```sh
+hipcc -O2 -mavx2 --offload-arch=gfx1100 --offload-arch=gfx1201 \
+  tools/lab/radiance/hl02-host-attributes/threeway_push.hip \
+  -o "${BC_WORK_ROOT}/builds/hl02-attributes/threeway_push" -lpthread -lhsa-runtime64
+agent-lease acquire gpu --ttl 1h --purpose "HL02 Gate B" -- \
+  tools/lab/radiance/hl02-host-attributes/run_threeway.sh "${BC_WORK_ROOT}/builds/hl02-attributes/threeway_push" OUTDIR
+python3 tools/lab/radiance/hl02-host-attributes/analyse_threeway.py OUTDIR/session{1,2,3}.jsonl
+```
+
+`--push-one` and `--push-pair` take HIP ordinals of the run's observed topology, not engine constants.
+Evidence: `docs/evidence/2026-11-14-hl02-gate-b/README.md`.
