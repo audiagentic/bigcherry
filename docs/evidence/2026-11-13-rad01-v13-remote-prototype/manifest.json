@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "kind": "historical-source-snapshot",
+  "captured_on": "2026-11-13",
+  "origin": "local-only uncommitted Radiance experiment",
+  "repository": "https://codeberg.org/StillDeadcode/radiance.git",
+  "source_revision": "89cee7ce414486c717aa2085c99e1f522e4c0ea6",
+  "source_tag": "v1.3.0",
+  "observed_state": "detached HEAD; eight modified tracked files; two untracked source files",
+  "capture_method": "git diff --binary plus exact copies of two untracked source files and local build output",
+  "validation": "No new builds, tests, GPU workloads or source edits; historical build log only",
+  "managed_successors": [
+    "rad0001_drain_mover_before_arena_free",
+    "rad0002_moe_remote_handoff",
+    "rad0003_mtp_full_head_switch"
+  ],
+  "limitations": [
+    "Original source modifications are not commit objects and original authorship/edit time is unknown",
+    "Historical build output is not a measured benchmark or compatibility assertion for the current pin"
+  ]
+}
