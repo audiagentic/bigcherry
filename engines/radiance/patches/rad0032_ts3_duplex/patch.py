@@ -54,6 +54,7 @@ def _axes(table: str, tag: str) -> Edit:
         head +
         f'  /* BC_VTP36_TS3P_AXES_{tag.upper()} (rad0032): read by the three-rank exact two-shot only */\n'
         '  { "ts_pieces", kArTsPieces, NELEM(kArTsPieces), 1, "three-rank exact two-shot: pieces a block runs as a pipeline (both link directions at once); 1 = lockstep" },\n'
+        '  { "ts_pieces_min", kArTsPiecesMin, NELEM(kArTsPiecesMin), 0, "three-rank exact two-shot: elements from which ts_pieces applies; 0 = the instance piece floor" },\n'
         '  { "ts_duplex", kArTsDuplex, NELEM(kArTsDuplex), 0, "three-rank exact two-shot: 1 = the duplex link weights where the settled ones apply" },\n'
         '  { "ts_stagger", kArTsDuplex, NELEM(kArTsDuplex), 0, "three-rank exact two-shot in pieces: 1 = odd blocks assemble before they push, so a step loads both link directions at once" },\n',
         guard=f"BC_VTP36_TS3P_AXES_{tag.upper()} ",
@@ -67,7 +68,8 @@ ROWS = FilePatch(path="libr4d/r4d_rows.cpp", language="none", description="VTP36
         "static const int64_t kArTsMin[]    = { 0, 16384, 32768, 65536, 131072, 262144 };\n"
         "/* BC_VTP36_TS3P_VALUES (rad0032): the three-rank exact two-shot's piece count and weight rule. */\n"
         "static const int64_t kArTsPieces[] = { 1, 2, 4, 8 };\n"
-        "static const int64_t kArTsDuplex[] = { 0, 1 };\n",
+        "static const int64_t kArTsDuplex[] = { 0, 1 };\n"
+        "static const int64_t kArTsPiecesMin[] = { 0, 524288, 1048576, 2097152, 4194304, 8388608 };\n",
         guard="BC_VTP36_TS3P_VALUES",
     ),
     _axes("tAr", "ar"),
@@ -85,6 +87,9 @@ ROWS = FilePatch(path="libr4d/r4d_rows.cpp", language="none", description="VTP36
         'extern "C" int r4d_cfg_ar_ts_pieces(const RadArgs* a) {\n'
         '    return TUNE(a, tAr, "ts_pieces");\n'
         "}\n"
+        'extern "C" long r4d_cfg_ar_ts_pieces_min(const RadArgs* a) {\n'
+        '    return (long)tune_i(a, tAr, NELEM(tAr), "ts_pieces_min");\n'
+        "}\n"
         'extern "C" int r4d_cfg_ar_ts_duplex(const RadArgs* a) {\n'
         '    return TUNE(a, tAr, "ts_duplex");\n'
         "}\n"
@@ -100,8 +105,9 @@ ARGS = FilePatch(path="libr4d/r4d_args.h", language="none", description="VTP36 t
         "ts3p-cfg-decl",
         "long r4d_cfg_ar_ts_min(const RadArgs*);\n",
         "long r4d_cfg_ar_ts_min(const RadArgs*);\n"
-        "/* BC_VTP36_TS3P_ARGDECL (rad0032): the three-rank exact two-shot's `ts_pieces`, `ts_duplex` and `ts_stagger` axes. */\n"
+        "/* BC_VTP36_TS3P_ARGDECL (rad0032): the three-rank exact two-shot's `ts_pieces`, `ts_pieces_min`, `ts_duplex` and `ts_stagger` axes. */\n"
         "int  r4d_cfg_ar_ts_pieces(const RadArgs*);\n"
+        "long r4d_cfg_ar_ts_pieces_min(const RadArgs*);\n"
         "int  r4d_cfg_ar_ts_duplex(const RadArgs*);\n"
         "int  r4d_cfg_ar_ts_stagger(const RadArgs*);\n",
         guard="BC_VTP36_TS3P_ARGDECL",
@@ -166,8 +172,10 @@ ENTRY = FilePatch(path="libr4d/r4d_ar_entry.hip", language="none", description="
         "    const long sh_max = r4d_ar_shard_table(words16, c.in->world, weights, off);\n"
         "    if (2 * sh_max * 16 > c.in->slot_bytes) return RAD_E_SCRATCH;\n"
         "    const ArInst* in = c.in;\n"
-        "    /* BC_VTP36_TS3P_PIECES (rad0032): `ts_pieces` from the instance's piece floor, as the eight-rank row. */\n"
-        "    const long ts_pieces = c.numel >= in->pieces_min ? (long)r4d_cfg_ar_ts_pieces(a) : 1L;\n"
+        "    /* BC_VTP36_TS3P_PIECES (rad0032): `ts_pieces` from `ts_pieces_min` elements, by default the instance's\n"
+        "     * piece floor, as the eight-rank row. */\n"
+        "    const long ts_floor = r4d_cfg_ar_ts_pieces_min(a) > 0 ? r4d_cfg_ar_ts_pieces_min(a) : (long)in->pieces_min;\n"
+        "    const long ts_pieces = c.numel >= ts_floor ? (long)r4d_cfg_ar_ts_pieces(a) : 1L;\n"
         "    if (ts_pieces < 1 || ts_pieces > R4D_AR_TS_MAX_PIECES) return RAD_E_INVAL;\n"
         "    /* The kernel's option bits (R4D_TS_OPT_*): `ts_stagger` means something only in pieces. */\n"
         "    long ts_opts = 0;\n"
@@ -180,7 +188,7 @@ ENTRY = FilePatch(path="libr4d/r4d_ar_entry.hip", language="none", description="
         "                                   (long)(uintptr_t)s, c.nblocks, c.nthreads, c.drain, c.acq,\n"
         "                                   c.pub));\n",
         guard="BC_VTP36_TS3P_DUPLEX",
-        max_span=16,
+        max_span=18,
     ),
 ))
 

@@ -80,6 +80,7 @@ class Ts3AllReduceTests(unittest.TestCase):
             self.assertIn('{ "ts_pieces", kArTsPieces, NELEM(kArTsPieces), 1,', axes)
             self.assertIn('{ "ts_duplex", kArTsDuplex, NELEM(kArTsDuplex), 0,', axes)
             self.assertIn('{ "ts_stagger", kArTsDuplex, NELEM(kArTsDuplex), 0,', axes)
+            self.assertIn('{ "ts_pieces_min", kArTsPiecesMin, NELEM(kArTsPiecesMin), 0,', axes)
         self.assertIn("kArTsPieces[] = { 1, 2, 4, 8 };", t["ts3p-values"])
         self.assertIn("kArTsDuplex[] = { 0, 1 };", t["ts3p-values"])
         launch = t["ts3p-launch"]
@@ -87,7 +88,9 @@ class Ts3AllReduceTests(unittest.TestCase):
         self.assertIn("if (weights && c.in->shard_wd_ok && r4d_cfg_ar_ts_duplex(a) != 0 &&", launch)
         self.assertIn("c.in->shard_wd, off) * 16 <= c.in->slot_bytes)", launch)
         # pieces from the instance's piece floor; below it one piece, as now
-        self.assertIn("c.numel >= in->pieces_min ? (long)r4d_cfg_ar_ts_pieces(a) : 1L;", launch)
+        self.assertIn("r4d_cfg_ar_ts_pieces_min(a) > 0 ? r4d_cfg_ar_ts_pieces_min(a) : (long)in->pieces_min;", launch)
+        self.assertIn("c.numel >= ts_floor ? (long)r4d_cfg_ar_ts_pieces(a) : 1L;", launch)
+        self.assertIn("kArTsPiecesMin[] = { 0, 524288, 1048576, 2097152, 4194304, 8388608 };", t["ts3p-values"])
         # the staggered order means something only in pieces, and only odd blocks take it
         self.assertIn("if (ts_pieces > 1 && r4d_cfg_ar_ts_stagger(a) != 0) ts_opts |= R4D_TS_OPT_STAGGER;", launch)
         self.assertIn("(ts_opts & R4D_TS_OPT_STAGGER) != 0 && (b & 1) != 0;", t["ts3p-kstep"])
@@ -155,7 +158,7 @@ class Ts3AllReduceTests(unittest.TestCase):
             self.assertNotIn("r4d_ar_twoshot_3rank_exact_w(weights,", entry)
             # every all-reduce tunable table that declares ts_min declares the two axes
             self.assertEqual(rows.count('{ "ts_pieces",'), rows.count('{ "ts_min",'))
-            for axis in ("ts_duplex", "ts_stagger", "ts_once"):
+            for axis in ("ts_pieces_min", "ts_duplex", "ts_stagger", "ts_once"):
                 self.assertEqual(rows.count('{ "%s",' % axis), rows.count('{ "ts_min",'), axis)
             for pkg in (TL, DX, ONCE):
                 again = apply_all(load(pkg), root)
