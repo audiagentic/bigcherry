@@ -40,7 +40,7 @@ Each lever is one managed patch or one layout setting, selectable from the manif
    b. three-rank fused all_reduce + RMSNorm + fp8 quant (TP2 has it; removes TP3's extra pass);
    c. low-latency handshake for decode-size messages (flag-in-data, LL-style 8-byte units, fewer blocks);
    d. chained launches for the three-rank rows (the four-rank rows have r4d_chain.h) and a hierarchical exchange around the R9700's x4 link;
-   e. CPU-assisted exact reduce (partials to pinned host, CPU sums in fp32 rank order, SDMA copies; HL05 / RAD50 relay pattern);
+   e. CPU-assisted host reduction is owned **exclusively by VTP38** (CPU receives partials and uses true CPU BAR/DMA-BUF push, not GPU-initiated SDMA H2D); VTP36 tracks the matched TP3 comparison, not a duplicate implementation;
    f. push from the producing GEMM epilogue into host-mapped scratch (FLUX-style).
 3. **Kernels:** RAD47 crossover on gfx1100 (tiled MXFP4 row 4-17x faster than nt_m64/decode rows at M 9-128: prefill tail chunks, multi-stream verify); RAD48 native int8 tile end to end (3.1x on one XTX at M=2048); RAD36 MXFP4 GEMV at M=2-8 (drafter verify). Measure each on the TP3 layouts, not only TP2.
 4. **Split:** VTP32 solver from per-card, per-op-kind calibration; per-regime (prefill-weighted vs decode-weighted) layouts.
@@ -128,7 +128,7 @@ New cheap experiments for this item (in order, after rad0032/rad0033):
 1. Uneven XTX reduce shares for prefill, e.g. two-shot weights 4.5,3.5,1 (layout configuration), and the mirror 3.5,4.5,1 to confirm the skew follows XTX 0's pulls. Pass: wait2 on XTX 0 and the R9700 < 100 us, prefill 2048 TTFT better beyond noise.
 2. Split 5,5,6 3x ABBA for decode (held from VTP37).
 3. Hierarchical exchange only if VTP38's host reduce fails its CPU-bandwidth gate.
-The host-reduced all-reduce (CPU sums and pushes, no card pulls) is VTP38.
+The host-reduced all-reduce (CPU sums and pushes, no card pulls) is VTP38, including GPU-live DMA-BUF correctness, device-specific support, collective failure/abort protocol, and HL02's separately measured contention arms. Do not implement a second host reducer under this item.
 
 ## Change Log
 
