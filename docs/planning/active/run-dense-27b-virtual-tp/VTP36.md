@@ -111,8 +111,28 @@ Evidence: docs/planning/completed/run-dense-27b-virtual-tp/VTP14.md (N6/N7 refre
 
 Full review and brief: `docs/evidence/2026-11-13-vtp36-gpt-review/`.
 
+2026-11-13 all-reduce timeline review (rad0031, baseline, int8 TP3; medians per all-reduce; columns push / wait1 / reduce / wait2 / assemble / total, us):
+
+| Workload | XTX 0 | XTX 1 | R9700 |
+|---|---|---|---|
+| prefill 2048, ~1000 rows (~10 MB) | 386 / 1790 / 889 / 406 / 431 / 3995 | 399 / 1701 / 1301 / 2 / 453 / 3990 | 1334 / 20 / 188 / 1108 / 1254 / 3956 |
+| decode 8 streams, 32 rows (320 KiB) | 14 / 5 / 23 / 17 / 12 / 81 | 14 / 4 / 39 / 2 / 14 / 82 | 2 / 161 / 5 / 37 / 42 / 251 |
+
+Readings:
+- Prefill is bound by data over the R9700's x4 link. With share w the R9700 always sends S and receives (1+w)S in any exact scheme, so 4,4,1 is already near its floor (shrinking w saves at most S/9). Measured R9700 push ~6.7 GB/s vs XTX ~14 GB/s. The phases run serially (~4 ms) against a duplex floor of ~1.4-2 ms: overlap (rad0032 pieces/duplex) is the lever, not the shares.
+- A one-shot for prefill is worse (R9700 receives 2S); it stays right for decode (handshake-bound). Hierarchical exchange (XTX pair sums first, R9700 sends S and receives S) reaches the R9700 minimum; recorded as VTP38's fallback.
+- XTX 1 is the last reducer in every prefill all-reduce (1301 vs 889 us for identical work) at the HL01 contended rate; ~400 us of barrier wait (~10%). HL01 found no PCIe configuration cause (2026-11-13 lspci, IOMMU passthrough).
+- Decode: the R9700's 161 us at wait1 is idle time (it finishes its GEMMs first), not link time; give it more compute (split 5,5,6 candidate, +3-4% at 6/8 streams, needs 3x ABBA).
+
+New cheap experiments for this item (in order, after rad0032/rad0033):
+1. Uneven XTX reduce shares for prefill, e.g. two-shot weights 4.5,3.5,1 (layout configuration), and the mirror 3.5,4.5,1 to confirm the skew follows XTX 0's pulls. Pass: wait2 on XTX 0 and the R9700 < 100 us, prefill 2048 TTFT better beyond noise.
+2. Split 5,5,6 3x ABBA for decode (held from VTP37).
+3. Hierarchical exchange only if VTP38's host reduce fails its CPU-bandwidth gate.
+The host-reduced all-reduce (CPU sums and pushes, no card pulls) is VTP38.
+
 ## Change Log
 
 - 2026-11-12T22:44:13.590288+00:00 (created-by): Created by agent
 - 2026-11-12T22:44:40.981867+00:00 (updated-by): Updated: section:description, section:steps, section:validation, section:acceptance_criteria, section:notes
 - 2026-11-12T23:31:05.048072+00:00 (updated-by): Updated: section:notes
+- 2026-11-13T05:15:40.560777+00:00 (updated-by): Updated: section:notes

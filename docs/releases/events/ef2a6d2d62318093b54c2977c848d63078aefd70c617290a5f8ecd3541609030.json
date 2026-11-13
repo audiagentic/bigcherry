@@ -1,0 +1,20 @@
+{
+  "change-class": "docs",
+  "event-id": "chg_20261113_051559_recorded-that-the-pcie-content_1931",
+  "files": [
+    "docs/planning/active/run-radiance-host-link/HL01.md",
+    "docs/planning/active/run-radiance-host-link/HL02.md",
+    "docs/planning/active/run-dense-27b-virtual-tp/VTP36.md",
+    "docs/planning/active/run-dense-27b-virtual-tp/VTP38.md"
+  ],
+  "plan-item-ids": [
+    "HL01",
+    "HL02",
+    "VTP36",
+    "VTP38"
+  ],
+  "status": "unreleased",
+  "technical-summary": "HL01: recorded lspci -vv and IOMMU findings (identical PCIe settings on XTX 0/XTX 1/R9700 and their root ports, iommu=pt identity groups; no configuration cause for XTX 0's host-read contention) plus in-engine evidence from the rad0031 timeline (XTX 1 reduce 1301 vs 889 us, ~400 us barrier wait). HL02: TP3 all-reduce arm and pass criterion. VTP36: timeline table, x4 data-floor analysis (R9700 sends S, receives (1+w)S), one-shot vs hierarchical, decode R9700 idle, new experiments (uneven XTX shares, 5,5,6). New VTP38: host-reduced prefill all-reduce (CPU sums partials and pushes to VRAM so no card pulls host memory), gated on HL02 and RAD50 R9700 path.",
+  "timestamp-utc": "2026-11-13T05:15:59.767440Z",
+  "user-summary-candidate": "Recorded that the PCIe contention on the TP3 host has no settings cause, and planned a CPU-reduced all-reduce to work around it and the R9700's x4 link."
+}
