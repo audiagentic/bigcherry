@@ -14,7 +14,7 @@
 #include <vector>
 
 namespace r3::policy {
-enum class HeatProvenance : uint8_t { UNKNOWN, ENGINE_HISTOGRAM_FILE };
+enum class HeatProvenance : uint8_t { UNKNOWN, ENGINE_HISTOGRAM_FILE, CREDITED_ENGINE };
 struct HeatDelta {
     HeatProvenance provenance = HeatProvenance::UNKNOWN;
     uint32_t layers = 0, experts = 0;
