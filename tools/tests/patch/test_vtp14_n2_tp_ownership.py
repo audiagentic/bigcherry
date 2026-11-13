@@ -132,7 +132,8 @@ class TpOwnershipTests(unittest.TestCase):
                           "rad0024_ts3_decode", "rad0025_multiseq_pipelined_prefill",
                           "rad0026_mixed_pipelined_prefill", "rad0027_mixed_one_pipelined_prefill",
                           "rad0028_rank_consistent_block_drafts",
-                          "rad0029_rank_own_split", "rad0030_int8_pipelined_prefill"])
+                          "rad0029_rank_own_split", "rad0030_int8_pipelined_prefill", "rad0031_ts_timeline",
+                          "rad0032_ts3_duplex"])
         self.assertEqual(recipe["source"]["radiance"]["patch-sets"][-1], "vtp14-mixed-tp")
         self.assertNotIn("vtp14-mixed-tp", recipe["source"]["radiance-native"]["patch-sets"])
         self.assertNotIn("radiance-vtp14-rank-code-selection", recipe["source"])

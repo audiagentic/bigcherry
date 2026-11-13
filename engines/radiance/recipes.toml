@@ -78,6 +78,8 @@ patches = [
   "rad0028_rank_consistent_block_drafts",
   "rad0029_rank_own_split",
   "rad0030_int8_pipelined_prefill",
+  "rad0031_ts_timeline",
+  "rad0032_ts3_duplex",
 ]
 required-state = "untested"
 
