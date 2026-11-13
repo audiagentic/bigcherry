@@ -9,19 +9,6 @@ symbols = ["kActivationBf16Bytes", "kActivationQBytes", "kLegacyIntermediate", "
 test_patterns = ["_test\\.cpp$", "/test_[^/]*$", "/tests/", "_fixture\\.h$", "replay"]
 
 [[allow]]
-path = "engines/radiance/components/bc-gfx12/bc_gfx12_plugin.cpp"
-anchor = "\"M <= 16, K <= 2560, token-order activation (gate/up); otherwise as libr4d's moe_gemm_fp8a8\","
-category = "E"
-reason = "row description string"
-
-[[allow]]
-path = "engines/radiance/components/bc-gfx12/bc_moe_gemv.hip"
-anchor = "constexpr uint32_t kMaxK = 2560;    /* the activation row staged in LDS */"
-category = "C"
-reason = "GEMV activation row staged in LDS at K <= 2560 (audit MC-004..005)"
-owner = "RCS12"
-
-[[allow]]
 path = "engines/radiance/components/libr3/native/r4d_selftest.cpp.rw"
 anchor = "mxfp4a8_numeric(pl, \"gemm_mxfp4a8_decode\", 8, 272, 640, 0, false);"
 category = "B"
@@ -77,12 +64,6 @@ category = "C"
 reason = "lane widths fixed at expert width 640 and rank width 384 (audit MC-013)"
 owner = "RCS12"
 
-[[allow]]
-path = "engines/radiance/components/moe-remote/moe_lane_gemm.h"
-anchor = "constexpr uint32_t kGemvMaxK = 2560;"
-category = "C"
-reason = "GEMV K bound 2560 returns early after the dispatcher chose it by row count (audit MC-004..005)"
-owner = "RCS12"
 
 [[allow]]
 path = "engines/radiance/components/moe-remote/moe_mailbox_ops.hip"
