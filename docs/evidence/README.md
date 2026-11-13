@@ -41,3 +41,4 @@ Patch validation remains owned by `tools/bigcherry/patch/evidence.py` and the pa
 - [13 November 2026 RAD01 Radiance v1.3.0 prototype capture](2026-11-13-rad01-v13-remote-prototype/README.md): the previously uncommitted tracked diff, two untracked source files and historical build output, with links to the current managed successors. This is source-history preservation, not a production engine patch or new hardware qualification.
 
 These bundles close the local-only **source and Git-history** gaps identified in those two checkouts. They do not claim that all GPU run artifacts in the work root have been archived; the evidence rules above continue to govern other experiments.
+- [13 November 2026 HI84 D=3 frozen-input recovery](2026-11-13-hi84-d3-local-corpus/README.md): the original case manifests and 72-file checksum ledger, with a 54/54 byte-exact regeneration proof against the tracked HI18 generator. This is input reproducibility, not a GPU correctness result.
