@@ -80,6 +80,7 @@ Each lever is one managed patch or one layout setting, selectable from the manif
 - MXFP4 TP3 one-stream TTFT within 5% of TP2 at 2048 tokens (carried from VTP35), or a recorded NO-GO stating the transport limit with the profile that shows it.
 - TP3 aggregate tok/s at 4/6/8 streams stays at or above the baseline table for both formats.
 - Every shipped lever is selectable per layout or run (no model or card constants), with its gain attributed by ABBA.
+- Every reordering change passes the reordering quality gate defined in VTP37 (noise floor against serial; no quality loss against BF16).
 
 ## Notes
 

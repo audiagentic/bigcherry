@@ -213,7 +213,11 @@ then 4 streams generating 1500 tokens with a 6144-token prompt beside them.
 
 ## Acceptance Criteria
 
-- int8 TP3 runs the pipelined prefill (startup receipt shows pipe_on) with greedy output identical to serial and no stress faults.
+- int8 TP3 runs the pipelined prefill (startup receipt shows pipe_on) with no stress faults, and passes the **reordering quality gate** below.
+- **Reordering quality gate** (owner decision 2026-11-13; for any change that keeps the arithmetic exact but changes its order or partition: pipelining, chunking, collective method, split). Bit identity to serial is not required. Both checks must pass, on the same KLD corpus (42,761 positions):
+  1. *Noise floor*, against a serial reference of the same build and layout: KLD mean, KLD p99.9 and top-1 no worse than a serial run that changes only the prefill chunk size (2048 -> 1024 tokens). A serial-vs-serial repeat must show the reference deterministic. int8 TP3 floor (2026-11-13): mean 0.00197, p99.9 0.059, top-1 97.81%. rad0030: 0.00125 / 0.021 / 99.31% - pass.
+  2. *No quality loss against BF16*: KLD mean and p99.9 within +10%, top-1 within -0.2 points and PPL within +0.1% of the format's recorded values. int8 TP3 (VTP14 N6): mean 0.00199, p99.9 0.043, top-1 97.32%, PPL +0.03%. rad0030: not yet run (held 2026-11-13).
+  MXFP4 uses the same rule with its own floor (to be measured once) and its recorded BF16 values (VTP14: mean 0.0435, p99.9 1.16, top-1 87.07%, PPL +2.64%).
 - int8 TP3 one-prompt TTFT improves by at least 10% at 2048 tokens and 4/6/8-stream tok/s by at least 5% over the 2026-11-12 baseline, or each lever's NO-GO is recorded with its measurement.
 - Every change is a managed patch or layout setting (no model or card constants), selectable per run.
 
