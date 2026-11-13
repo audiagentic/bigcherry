@@ -35,73 +35,93 @@ config resolves to the same manifest its layout does today.
 
 ## Steps
 
-1. **Format and loader (card-free).** `engines/radiance/configs/<model>.toml`, one file per model; `bc-serve` reads it
-   in place of `--layouts` (`--configs FILE|DIR`, `BIGCHERRY_CONFIGS`). Strict: an unknown key, a key in the wrong
-   section, a cycle or a missing base refuses, naming the file and the key.
+1. **Format, loader and adapter (card-free, inactive).** `engines/radiance/configs/<model>.toml`, one file per model,
+   read by a strict `config_loader` in the serving component and translated by an adapter into the **existing** layout
+   recipe (engine groups, helper groups, rank order, wire, model) and resolver settings. No second resolver, no change
+   to the manifest contract; the active path is untouched until it is switched on. Strict: an unknown key, a key in the
+   wrong section, a cycle, a missing base or a duplicate name refuses, naming the file and the key.
 2. **Variants.** `[config.NAME] base = "OTHER"`: the variant inherits every value of its base and states only what it
-   changes; a chain is allowed (no cycles). Tables merge key by key; a scalar or a list replaces.
+   changes; a chain is allowed (no cycles). Tables merge key by key; a scalar or a list replaces (a variant that changes
+   the helper groups restates the whole list).
 3. **Explain.** `bc-serve explain CONFIG` prints the effective values and, for each, where it came from (base config,
    variant, host file, `--set`, derived, detected).
-4. **Convert the 13 layouts** into `configs/flashnext.toml` and `configs/qwen27b.toml`, with variants where a layout is
-   a derivative (e.g. qwen27b: `tp3` base; `tp3-capacity`, `tp3-int8`, `tp3-int8-556` variants). Golden test: each
-   converted config resolves to the same manifest digest as its layout did (fake facts, card-free).
-5. **Stored manifest.** `bc-serve` keeps the manifest it writes for a config under
-   `<run root>/manifests/<config>/<digest>.json` and reuses it while its key holds (config digest, host file digest,
-   detected cards, engine identity, model identity, plan cache key); otherwise it writes a new one (measuring when the
-   plan cache misses, as today). Free host memory is checked at every start against the manifest's ledger, not used as a
-   key.
-6. **Retire the old spellings.** `server-args`, `[layout.NAME.settings]` and the layout files go once every caller
-   reads configs (RSC04 tracks the callers). `--set` stays for one-off experiments and is recorded in the manifest's
-   provenance as `cli`; a setting worth keeping becomes a variant.
+4. **Convert the 13 layouts** into `configs/flashnext.toml` and `configs/qwen27b.toml`, with variants where a layout is a
+   derivative, keeping each layout's name as its config name until the v2 switch (S13) so `spec.intent.layout` and the
+   plan keys do not move. Parity test: under the same fake inventory and host facts, each config and its layout give
+   the same **semantic execution projection** (model, ordered engine and helper roles and cards, every effective setting,
+   resources, owner map, handoff, memory-plan requirements), and both manifests pass the strict reader. Not a full
+   manifest digest: every manifest carries a fresh `metadata.instance_id` and its provenance, both inside the digest.
+5. **Stored manifests, three separate things (review P0):**
+   - *static resolution key*: the canonical effective configuration (after variants, site, profile and `--set`) plus
+     the identities of what it was resolved against (engine, helper and kernel binaries, runtime home, `bc-serve` itself,
+     model artefact, heat file and lab experiment bytes, calibration records used, power profile, ordered cards with
+     arch and VRAM). Equal key: the stored manifest's resolved content is reused.
+   - *live admission on every start*: host MemAvailable, cgroup and memlock room, pin room, each rank's claimable VRAM,
+     calibration validity, power and lease preflight. A stored manifest never skips these.
+   - *execution record per start*: manifest digest, instance id, process identities, port, shared-memory namespace,
+     applied power, canary and guard results, start and stop receipts.
+   `start --manifest FILE` checks the stored bytes and digest without rewriting them, checks build, model and device
+   compatibility and current admission, refuses with the specific reason, and records the run separately.
+6. **Retire the old spellings** at RSC11 S16, not before: `server-args`, `[layout.NAME.settings]` and the layout files go
+   once every caller reads configs (RSC04). `--set` stays for one-off experiments, recorded in provenance as `cli`; a
+   setting worth keeping becomes a variant.
 
 ## Detailed Solution & Technical Design
 
-File shape (values illustrative):
+File shape (the real qwen27b-tp3-int8 values are copied from the layout at conversion; the example shows the shape):
 
 ```toml
 # engines/radiance/configs/qwen27b.toml
 schema = 1
 
-[config.tp3-int8]
+[config.qwen27b-tp3-int8]
 description = "Qwen3.8-27B int8, XTX + XTX + R9700, tensor parallel"
-model       = "radiance/bigcherry/qwen3.8-27b-w8a8/qwen3.8-27b-w8a8.rad"
-cards       = ["gfx1100", "gfx1100", "gfx1201"]   # rank order; picked by architecture, never by index
+model       = "<the layout's model path>"
+ranks       = [{ arch = "gfx1100", count = 2 }, { arch = "gfx1201", count = 1 }]   # engine ranks in order, by architecture
 tp_wire     = "exact"
 
-[config.tp3-int8.service]
+[config.qwen27b-tp3-int8.service]
 max_context  = 8192
 max_sessions = 8
 
-[config.tp3-int8.engine]
+[config.qwen27b-tp3-int8.engine]
 kv_cache_dtype         = "fp8"
 num_speculative_tokens = 3
 
-[config.tp3-int8.tuning]
-tp_ownership      = "kv=1,1,2;ffn=6144,6144,5120;lk=6,6,4;lv=18,18,12"
+[config.qwen27b-tp3-int8.tuning]
+tp_ownership      = "<the layout's split>"
 pipelined_prefill = "on"
+# ... every tuning value the layout sets today
 
-[config.tp3-int8-556]
-base        = "tp3-int8"
+[config.qwen27b-tp3-int8-556]
+base        = "qwen27b-tp3-int8"
 description = "5,5,6 split: about 4x the KV room per card; passes the VTP36 quality gate"
 
-[config.tp3-int8-556.tuning]
+[config.qwen27b-tp3-int8-556.tuning]
 tp_ownership = "kv=1,1,2;ffn=5632,5632,6144;lk=5,5,6;lv=15,15,18"
 ```
 
 Rules:
 
-- Section and key names are the resolver's own keys (`service.*`, `engine.*`, `tuning.*`, `memory.*`, `helper.*`,
-  `power.*`), the names `--set` and `bc-serve explain` use; no engine flag spelling appears in a config.
-- Helpers are `[[config.NAME.helper]]` groups with the fields layouts have today (arch, count, budget_mib, placement,
-  share). A budget left out is derived (RSC03).
-- What belongs to the machine (ports, power profile, model root, run root) stays in the host's site file, never in a
-  config, so a config is portable between hosts with the same card types.
-- A config carries no derived values: host pool, host KV tier, checkpoint slots and helper budgets come from the plan
-  (RSC03); the hand-picked handoff literals become config fields or derived values (RSC09).
+- Top-level config keys are the recipe: `description`, `model`, `ranks` (the engine's ordered `{arch, count}` groups), `tp_wire`,
+  and `[[config.NAME.helpers]]` hardware groups (arch, count or "all", budget_mib, placement, share). Plural
+  `helpers` for hardware groups, so it never collides with the `[config.NAME.helper]` settings table
+  (`helper.combine`, ...).
+- Settings tables (`service`, `engine`, `tuning`, `memory`, `helper`) hold the resolver's registered setting keys,
+  the same names `--set` and `bc-serve explain` use, and feed its layout-settings layer; there is no flag spelling.
+- Power intent (profile, role overrides) is its own `[config.NAME.power]` table mapped to `spec.intent.power`, not a
+  resolver setting.
+- What belongs to the machine (ports, model root, run root, the host's power profile choice) stays in the site file.
+- A config carries no derived values (host pool, host KV tier, checkpoint slots, helper budgets: RSC03; handoff
+  literals: RSC09).
 
-The loader lives in the serving component (C++20, `engines/radiance/components/serving`) beside the resolver it
-feeds. The Python tools that read layouts today (`bigcherry layout show`, campaign) read configs through
-`bc-serve explain --json`, not a second parser (RSC05's one-inventory rule).
+The Python tools that read layouts today (`bigcherry layout show`, campaign) read configs through
+`bc-serve explain --json`, not a second parser.
+
+Known gap to fix first (review P0): the v2 manifest's embedded plan key (`v2/manifest.cpp` `plan_cache_key`) omits the
+engine tuning settings and keys only the first engine card, so a changed `tuning.tp_ownership` on a helper-free TP
+layout leaves it unchanged; the native key was fixed in #959. One shared, versioned fingerprint for both keys, covering
+every rank's card and every plan-affecting setting.
 
 ## Code Samples & Guidance
 
@@ -125,9 +145,12 @@ feeds. The Python tools that read layouts today (`bigcherry layout show`, campai
 
 ## Effort & Risk
 
-M. Risks: two input formats side by side during the move (bounded by the golden test and by deleting layouts at
-step 6); a stored manifest reused when it should not be (every input that changes the plan or the processes is a key
-input; the plan-key gap fixed in #959 is the case to test against).
+M. Risks: two input formats side by side during the move (bounded by the projection parity test and by retiring
+layouts at S16); a stored manifest reused when it should not be (the three-way split above: anything that is not a
+static identity is checked live at every start); the model identity (`plan_cache.cpp` model_identity) hashes size,
+header and tables, not every tensor byte, so the static key uses a full artefact digest where exact weights matter;
+concurrent edits of `serving.cpp`, `manifest_writer.cpp` and the generated registry (RSC11's single integrator owns
+those; the loader and adapter land in their own files).
 
 ## Standards
 
@@ -144,9 +167,17 @@ Architecture standards: config over code (no model or layout named in code), one
 
 ## Notes
 
-Consumed by RSC02 (`bc-serve start CONFIG`). Independent of the v2 contract cutover (RSC11 S13): configs are inputs
-to the resolver; the manifest contract does not change. Owner direction 2026-11-14: one language for the start path
-(C++, radiance's standard), clean readable configs, variants as named configs; GPT as backup reviewer and helper.
+Consumed by RSC02 (`bc-serve serve|start CONFIG`); RSC02's engine-only lifecycle can start on today's layouts, so
+neither blocks the other. Independent of the manifest contract: configs are inputs to the resolver; nothing here
+activates v2 ahead of RSC11 S13.
+
+First PR (card-free): `config_loader` + variants + adapter + one dense example and its variant
+(`qwen27b-tp3-int8`, `-556`) + the projection parity test against the layout. No start/stop, no stored manifests, no
+caller migration, no layout deletion.
+
+Owner direction 2026-11-14: one language for the start path (C++, radiance's standard), clean readable configs,
+variants as named configs; GPT as backup reviewer and helper. GPT review 2026-11-14 (req_rsc02-config-launcher_957d54878bcc):
+three P0 (owner process lifetime, the two plan keys, digest-equality gate) folded in above and in RSC02.
 
 ## Change Log
 

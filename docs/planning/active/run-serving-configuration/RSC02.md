@@ -38,33 +38,51 @@ step of `start`/`stop`, never a launcher option that rewrites settings.
 
 ## Steps
 
-1. **Engine-only start (dense configs).** `bc-serve start CONFIG`: detect, resolve, reuse or write the manifest (plan
-   cache and measuring start as today), start `radiance --manifest M --role engine`, wait for `/health`, run the
-   canary, write a state file (config, manifest digest, PIDs, port, start time) under the run root. `stop` and
-   `status` read the state file; stop signals only the PIDs it recorded and waits for their exit.
-2. **Helpers.** Ordered helper start (helper 0 creates the shared segment), readiness, resident-memory reading for the
-   plan, failure of any process stops the set; the measuring start with helpers up.
-3. **Guards.** MTP replay guard, live placement report, heat recording; lab calibration stays a lab mode, refused
-   by production configs.
-4. **Power.** Apply the manifest's power plan as one transaction and restore it only after every child has exited
-   (PWR09's transactional core; until it lands, power stays observe-only from `bc-serve`).
-5. **Stored manifests.** `start --manifest FILE`, and reuse of a config's stored manifest (RSC12 step 5).
-6. **Parity and cutover.** Same-session A/B of `bc-serve start` against the bash launcher on one build for one dense
-   and one helper config (manifest digest identical; RHP12 gates). Then switch the callers (16 lab scripts, the release
-   installer, tests) and delete the bash launcher and `lib/plan-check.sh` (RSC04).
+1. **Session owner, engine-only (dense configs, today's layouts).** `bc-serve serve|start|stop|status`: resolve, plan
+   check and measuring start, engine from the manifest, `/health`, canary, control socket, ordered stop. Card-free tests
+   ported from the Python supervisor's fakes first; then one dense layout on hardware.
+2. **Helpers.** Ordered helper start and readiness, resource derivation in C++, measuring start with helpers up, any
+   child's failure stops the set.
+3. **Guards and lab modes.** MTP replay guard, live placement report, heat recording, lab calibration (refused by
+   production configs).
+4. **Power.** The manifest's power plan applied as one transaction by the owner, restored after verified exit (PWR09).
+5. **Configs and stored manifests** from RSC12: `serve CONFIG` on the new files; `start --manifest FILE` replays a
+   stored manifest without rewriting it (RSC12 step 5).
+6. **Acceptance and retirement in RSC11's order:** the coordinated v2 switch (S13) stays one change; hardware and release
+   acceptance (S15): same-session A/B against the bash launcher on one build, one dense and one helper config, RHP12
+   gates, equal semantic execution projection (RSC12); retirement (S16): switch the callers (16 lab scripts, the release
+   installer, tests) and delete `launch-flashnext-best.sh` and `lib/plan-check.sh` (RSC04).
 
 ## Detailed Solution & Technical Design
 
-- Process control in C++ (`posix_spawn`, process groups, `waitpid`, signal forwarding), one state file per start;
-  no daemon: `start` returns once the canary passes and the processes run on; `stop` finds them from the state file.
-- A start never kills a process it did not start (PIDs from its own state file only), never applies power it cannot
-  restore, and leaves the host as it found it after a failed start.
-- `bc-serve` takes no lease: the container's `agent-lease` wraps the command in the lab (`agent-lease acquire gpu ...
-  -- bc-serve start ...`), as it wraps the bash launcher today.
+**A session owner process (review 2026-11-14, P0).** `bc-serve serve CONFIG` is a foreground C++ process that owns
+the whole serving session: it starts the children in their own process groups, reaps them (`waitpid`), watches health,
+holds the power journal, and on any child's exit or on a stop request stops the rest in order and restores power only
+after every child has exited. `bc-serve start CONFIG` is `serve` detached (`setsid`), returning once the canary passes;
+`stop` and `status` talk to the owner over a control socket in the session's run directory (never by signalling a
+recorded PID, which can be reused). In the lab the GPU lease wraps the owner (`agent-lease acquire gpu ... -- bc-serve
+serve CONFIG`), so it is held for the session's lifetime, not just the start.
+
+- Reuse what exists in C++: the SDK check (`sdk_check.cpp`, already called by `bc-serve`), the resolver, the plan cache,
+  the manifest writer and reader, the host ledger and the power probes.
+- The Python supervisor (`tools/bigcherry/serving/supervisor.py`, RSC11 S6/S11/S12) is the behavioural reference: its
+  fake-process, lease and power-transaction tests are ported as the C++ owner's acceptance tests; it is not on the start
+  path.
 - Options that change settings (`--max-model-len`, `--kv-dtype`, `--budget`, ...) do not exist: a setting is a config
-  value, a variant, or a `--set` experiment recorded in provenance.
-- RSC11 decision 3 (a Python supervisor `bigcherry serve`) is replaced by this item (owner direction 2026-11-14): the
-  `bigcherry` Python CLI may call `bc-serve start/stop/status` but does not supervise processes itself.
+  value, a variant, or a `--set` experiment recorded in provenance. `--ngram-device` is not carried over (manifest
+  starts refuse it today; it needs a typed manifest field first).
+- Behaviour to keep, with the bash references (from the GPT review, req_rsc02-config-launcher_957d54878bcc):
+  release mode (verified tagged bundle; `--release` and `--build` exclusive); SDK and ROCm environment refusal;
+  a launch/stop lock (no concurrent measuring, plan storage or stop); stop order engine SIGINT then helpers, bounded
+  waits then SIGKILL, never success while a process survives, power journal kept on a failed restore; binary and kernel
+  library checks; BDF to HIP ordinal mapping, rank order, per-process GPU visibility; RSC03 resource derivation for
+  helper starts (today `bigcherry resources derive-launch`, moved into C++); the measuring start (helpers up first,
+  helper RssAnon + RssShmem recorded once, per-rank demand, exit 10 cache miss and exit 11 derived pool kept apart, no
+  silent fallback); heat file and lab experiment hashed, histogram path and period, live policy fail-closed; ordered
+  helper readiness from the fresh run, shared segment before the engine, `/health`, canary, MTP replay guard (depth > 1);
+  power applied before measuring and serving, restored after verified exit; gfxoff floor and loaded-idle check; lab
+  calibration (helper layouts only, two distinct prompt files, ABBA, strict ingestion); helper-free and helper layouts'
+  different allowed overrides.
 
 ## Code Samples & Guidance
 
@@ -76,11 +94,13 @@ step of `start`/`stop`, never a launcher option that rewrites settings.
 
 ## Validation
 
-- Card-free lifecycle tests with fake processes: ordered start, a helper or the engine failing during start, partial
-  start cleaned up, repeated start/stop, stop of a dead set, a second start refused while one runs on the same port,
-  inherited environment ignored, state file round trip, `--manifest` refused when stale.
-- Hardware (gpu lease): one dense config (qwen27b TP3) and one helper config (flashnext-4gpu) start, serve, stop;
-  same-session A/B against the bash launcher on one build passes the RHP12 gates with an identical manifest digest.
+- Card-free lifecycle tests with fake processes (ported from the Python supervisor's): ordered start; a helper or the
+  engine failing during start and while serving; partial start cleaned up; repeated start/stop; stop of a dead set; a
+  second start refused while one runs; stop through the control socket only; power restored only after every child
+  exited, journal kept when restore fails; inherited environment ignored; `--manifest` refused when stale, naming why.
+- Hardware (gpu lease held by the owner for the session): one dense config (qwen27b TP3) and one helper config
+  (flashnext-4gpu) start, serve, survive a killed helper (set stopped, power restored), stop; same-session A/B against the
+  bash launcher on one build passes the RHP12 gates.
 
 ## Effort & Risk
 

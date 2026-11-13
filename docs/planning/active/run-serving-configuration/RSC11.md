@@ -24,7 +24,10 @@ Source: GPT completion programme review 2026-11-10 (req_main_ac35b2590055), audi
 
 OWNER DECISION 2026-11-14 (replaces decision 3): the supervisor is `bc-serve start|stop|status|explain` in C++, not a
 Python `bigcherry serve`; one language for the start path. Inputs become readable per-model configs with named variants
-(RSC12). Scope: RSC02 (rescoped), RSC12 (new).
+(RSC12). Scope: RSC02 (rescoped), RSC12 (new). Slices S6 (supervisor skeleton), S11 (plan measurement and retry),
+S12 (power lifecycle) and S14 (campaign and benchmark integration) are implemented in the C++ session owner
+(`bc-serve serve`); the merged Python supervisor stays as the behavioural reference whose fake-process, lease and power
+tests the C++ owner must pass. S13 stays the one coordinated v2 switch; S15 acceptance and S16 retirement keep their order.
 
 ## Gaps by item (code-based)
 RSC01 partial (core delivered; client integration, remove duplicate paths) | RSC02 not started as the command | RSC03 partial (9,216 host pool fallback, 12,288 fallback+calibration, 22,528 in layouts.toml recipes) | RSC04 not started (release/install.py still emits the shell launcher) | RSC05 partial (Python layout_cmds._resolve uses environment inventory) | RSC06 partial (R3_* reads left in moe_remote_hook.cpp 130-161/1277-1307, libr3/r3_moe_settings.h, moe_mailbox_ops.hip 909-912; rad0009 patch setenv bridge; manifest_argv_test asserts it) | RSC07 partial (same bridge) | RSC08 partial (contract delivered; one-release cutover open) | RSC09 not started (five literals) | RSC10 not started as recovery path (structured host-room refusal + one retry).
