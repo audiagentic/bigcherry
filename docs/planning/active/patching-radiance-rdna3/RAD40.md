@@ -60,6 +60,8 @@ No P2P on this host (memory no-p2p-on-dev-host). Feeds RAD41-RAD43.
 
 BACKLOG TRIAGE 2026-11-04 (revalidated against main 6eb31a708): the proposed disposition "MERGE remaining transfer A/B into RAD41" was NOT applied; this item stays open. Why: PR #496 added stage stamps, and RAD40.md:59-80 records PCIe-mode, contention, BAR and chunk measurements; RAD42.md:22,57 still names RAD40 as a harness dependency. RAD41.md:14-31 is confined to result formats/sparse bytes, not RAD40's all-pair transfer-mode and CPU BAR versus GPU-pull validation, so its remaining acceptance criteria cannot be merged there unchanged. Active items that reference this one: RAD42. Keep the transfer-physics harness and missing mode/pair coverage until the transfer experiment's owner is explicitly designated.
 
+**Ownership clarification (2026-11-13):** HL02 now owns the new matched cross-GPU contention matrix and GPU-pull/CPU-BAR-push crossover for TP3, TP2 and MoE. Keep RAD40 for its historical link-physics receipts, reusable benchmark harness and distinct unfinished all-pair coverage; do not duplicate HL02's contention arms. The RAD40 idle coherent/non-coherent/write-combined equality is not a verified PCIe No Snoop or contended-coherence result. TP3 integration belongs to VTP38, not RAD40.
+
 ## Change Log
 
 - 2026-11-01T11:26:10.176424+00:00 (created-by): Created by agent
