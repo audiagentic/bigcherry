@@ -24,10 +24,10 @@ A static, read-only audit of branch `feat/vtp14-n1-rank-code-eligibility` (GPT r
 | ID | Impact | What is hardcoded or duplicated | Where | Generic replacement | Status |
 |---|---|---|---|---|---|
 | C01 | critical | remote-MoE shared-memory offsets from `kHidden = 2560`, `kTopK = 10`, `kExperts = 512` | `moe-remote/moe_remote_shm.h`, `moe_mailbox_ops.hip`, `moe_remote_gpu.h` | the negotiated `LayoutShape` (worker_shape.h) and its computed offsets everywhere; container-derived dims | open |
-| C02 | high | remote-MoE and gfx12 GEMV refuse `K > 2560` (fixed LDS arrays) | `moe-remote/moe_lane_gemm.h`, `bc-gfx12/bc_moe_gemv.hip` | shape-independent tiling, or dispatch to the generic GEMM | open |
+| C02 | high | remote-MoE and gfx12 GEMV refuse `K > 2560` (fixed LDS arrays) | `moe-remote/moe_lane_gemm.h`, `bc-gfx12/bc_moe_gemv.hip` | launch-sized dynamic LDS, checked per-variant fit, pre-launch dispatch to the generic GEMM (no K tiling) | open: planned as RCS13 |
 | C03 | high | MTP pass replay accepts head dim 256, GQA 6/12, KV block 4; reproduces the split-KV calculation | `patches/rad0013_mtp_pass_replay` | ask the attention planner for a replay-safe geometry | open |
 | C04 | critical | Python inventory adapter refused a mixed-architecture engine | `engine_adapters/radiance_inventory.py` | validate each rank; keep `rank_devices` order | **fixed** (4246c3ead) |
-| C05 | high | remote-MoE topology bounds compiled in (2 engine ranks, 4 helpers, 4 slots) | `moe-remote/moe_remote_shm.h` | size protocol tables and slots from validated run-time counts | open |
+| C05 | high | remote-MoE topology bounds compiled in (2 engine ranks, 4 helpers, 4 slots) | `moe-remote/moe_remote_shm.h` | size protocol tables and slots from validated run-time counts (shared-memory protocol v26) | open: planned as RCS14 |
 | C06 | medium-high | `archs.toml` compiled into `bc-serve` | `serving/CMakeLists.txt`, `serving.cpp` | load card-type descriptors at run time, digest in the manifest | open |
 | C07 | high | launcher checked one comma-joined plugin file for a mixed world | `lab/radiance/launch-flashnext-best.sh` | check each engine plugin | **fixed** (4246c3ead) |
 | C08 | high | n-gram GPU placement has no manifest field (`--ngram-device` refused) | launcher, `serving-v2.toml` | a typed device selector by BDF, bound to radiance's option | open |

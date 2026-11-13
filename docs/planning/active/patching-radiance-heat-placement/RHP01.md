@@ -65,6 +65,20 @@ P0 prerequisite for reusing Radiance heat as the remote ownership oracle. RHP02 
 
 MEASURED 2026-11-04 (production layout flashnext-4gpu: R9700 engine, two 7900 XTX head helpers, 6900 XT tail; radiance v1.16.0 with the rad0010 routing-evidence diagnostic, RAD_ROUTING_EVIDENCE=1; chunk 2048, prefix cache 2 GiB). Workloads: 4 single-stream decodes, one 6-stream soak (2048-token prompts), three 8K prefills (about 13.6K tokens each), one 32K prefill (about 54K tokens, 27 prefill steps) and four concurrent 8K prefills. Result, rank 0 counters at teardown: prefill issued 3696, credited 3696, overwritten 0; decode issued 26736, credited 26640, pending 96 (the in-flight tail at shutdown); mixed 960 of 960; draft 590 of 591 (pending 1); upstream_dropped 0, stale/duplicate/order rejects 0, counter overflow 0; histogram credit delay p50 1 step, p95 2 steps. So in this regime the existing asynchronous histogram path is complete: nothing was overwritten, and the bank ring (32 banks) is never close to being outrun. Cost of the diagnostics when on: 1-stream decode 24.58 ms/step against the usual 24.6 (no measurable cost); prefill about 2,300-2,400 tokens/s over the 8K and 32K prompts. Limits of this result: one chunk size (2048); rank 0 only; the 4096 and 8192 chunk sizes and a real 64-row verification batch from the plan are not yet exercised; the earlier note of about 2% of layer histograms credited in a long-prefill experiment came from a different regime (more host run-ahead), so it is not refuted, only not reproduced here. The code reading (pinned ctx.cpp route_report_impl) shows an uncredited bank CAN be recycled under enough run-ahead, so the remaining question is how much run-ahead the production layouts allow. Consequence for the plan: the placement policy (RHP02/04) may rely on the existing histogram feed in this regime, with the rad0010 counters kept as an on-demand coverage check; step 4 (lossless staging) stays deferred unless a heavier regime shows loss.
 
+## Staged plan (GPT analysis 2026-11-13)
+
+The diagnostics already exist: managed `rad0010_routing_evidence` (`patch.py`, `bc_moe_remote_evidence.h`) reports issued/produced/completed/credited/overwritten/pending, weighted pass counts, source step and phase, oldest-uncredited age in steps, delay p50/p95, ring high-water and stale/duplicate/order/overflow anomalies. Do not add a second counter, a stream wait, an unbounded queue or a new package. Keep the 32-bank ring and HeatEngine unchanged unless measured loss says otherwise.
+
+Measured 2026-11-11 (rank 0): 2K and 4K chunks and a 2K-chunk 131K prefill: zero overwrites. 8K chunk: engine OOM at measuring start (not measured). 64 output tokens do not prove a 64-row verification batch.
+
+Stage 1 (card-free, no lease): v1.17 pin golden/apply/idempotence tests (`test_radiance_rad0010*.py`); independent oracle over (rank, layer, step, phase, reports, bank_generation) for prefill/decode/MTP/mixed; adversarial run-ahead beyond bank depth, delayed/out-of-order/recycled events, gap layer in the contiguous DMA, duplicate credit, overflow, restart/teardown; `heat_mock.mjs`; mutation checks. Conservation: issued = credited + overwritten + pending, and passes likewise; raw per-call `produced` is not unique-bank `issued` under MTP.
+
+Stage 2 (hardware, one short lease per arm, build outside the lease from the exact returned build dir): the missing cells only: actual ~7K prefill, 8K only with a valid memory admission (native plan, not a hand-picked budget; a different layout is a different cohort), a scheduler trace showing real 64-row verification, rank 1+ on `flashnext-tp2xtx-r9700` with no mirrored double count, a deliberate host-ahead/late-DMA stress; matrix driver `rhp01-coverage.sh`, workloads via `bigcherry workload run`.
+
+Stage 3 (conditional, only after measured loss): late but ready -> drain more at the existing seam with real weights; overwritten -> earlier drain then a bounded retired-bank queue sized from layers, experts and the host budget; unavoidable loss -> backpressure at a legal step boundary only with strong evidence and a decode/prefill A/B. If coverage < 99%, RHP04 gates automatic proposals on measured completeness.
+
+Go/stop: completed/issued and credited/issued >= 0.99 after a finite drain on the accepted 7K and 32K arms (or a measured bounded-loss exception with RHP04 disabled); no per-layer GPU sync; unchanged output/KLD; on/off within A/B/A/B noise. Stop on 8K OOM, unverified verification batch, missing rank identity, anomalies, false upstream credit or measured slowdown. This item gates RHP02 slice C (shadow parity); RHP02 slices A and B do not wait for it.
+
 ## Implementation-grade notes (2026-10-15)
 
 ### Actual pinned call path, ownership and ordering
@@ -140,11 +154,11 @@ The lease-wrapped `rhp01-coverage.sh` runs each 32K prefill at 2K, 4K and 8K chu
 
 ## Ledger-events
 
-
 - chg_20261104_085322_a-diagnostic-build-option-now_9638
 - chg_20261104_100802_measured-that-the-expert-usage_9903
 
 - chg_20261104_141856_fixed-the-documentation-index_8382
+
 ## Change Log
 
 - 2026-11-04T08:53:26.797834+00:00 (updated-by): Updated: section:ledger-events
@@ -163,3 +177,4 @@ Runs: `runs/rhp01-coverage-lease` (stream-bench JSON), engine logs `flashnext/en
 | MTP 1/4/8 streams + 131K prompt (ring wrap, 32 banks) | 3840 / 3840 / 0 / 0 | 10656 / 10608 / 48 | 269 / 1 |
 
 No routing evidence is lost or overwritten; `upstream_dropped=0`, delay p95 2 steps. The 48 pending decode histograms are the final step's 48 layers, still in flight at shutdown, not loss. The earlier "~2% credited" reading counted banks still in flight. Diagnostics cost nothing measurable (decode engine tok/s off/on: 124.0/124.7 at 2K, 119.6/120.2 at 4K). The 8K-chunk arm cannot start on flashnext-4gpu (engine out of memory at the measuring start), so it is not measured. Conclusion: no lossless-staging change (Step 4) is needed.
+- 2026-11-13T03:54:33.664505+00:00 (updated-by): Updated: section:notes

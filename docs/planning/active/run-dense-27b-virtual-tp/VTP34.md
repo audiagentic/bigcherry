@@ -36,7 +36,7 @@ The audit (GPT, 2026-11-12) is in `GENERIC-CONFIG-AUDIT.md` in this plan: findin
 ## Steps
 
 1. bigcherry-2: C11, C15, C16, C17 in one PR off main; hardware identity of a Flash-Next helper layout and qwen27b-tp3 through the launcher.
-2. bigcherry-1: P0 and C09.
+2. bigcherry-1: P0 and C09. P0 is planned as RCS13 (C02) then RCS14 (C05); staging in RCS12.
 3. Then C03, C06/C14, C13, C18, C19-C22, each as its own PR.
 4. Extend the model-constant guard to topology bounds and named defaults.
 
