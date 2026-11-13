@@ -15,7 +15,9 @@ the second lane's norm issued its op with the E4M3 code pair instead of the int8
 
 ## Outcome
 
-Untested (not promoted). Built for VTP37; measurements are in the plan item.
+Untested (not promoted). VTP37, w8a8 Qwen3.8-27B on XTX, XTX and R9700 (TP3), 2x ABBA against the build without it:
+one-prompt time to first token -17% to -21%, four 4096-token prompts -16%, 4/6/8 streams +7.4% / +7.8% / +8.4%.
+A pipelined step is not bit-identical to the serial step at every prompt length (as on an E4M3 trunk): see README.md.
 
 ## Detail
 
