@@ -26,7 +26,7 @@ The rad0031 weighted two-shot (~10 MiB, 2048-token pipelined prefill) measured ~
 ## Steps
 
 1. Pin the current VTP36 rad0032/rad0033 GPU collective, exact wire/split/tuning and rad0031 phase timing; finish its pending stress before promoting this baseline.
-2. HL02 Gate A: test non-coherent versus coherent mailbox traffic under contention. If the slowdown disappears safely, first A/B that cheaper GPU transport.
+2. HL02 Gate A **HIP attribute NO-GO as of 2026-11-13:** contended mapped-host GPU reads/writes from coherent, non-coherent and write-combined allocations all retained the ~50% victim slowdown; no production benefit from changing those flags alone. PCIe No-Snoop bits were not observed. The preferred next comparison is still HL02's real concurrent CPU-push-all versus push-to-one, with the improved GPU collective as control.
 3. HL02 Gate B: at 320 KiB–10 MiB compare all-three CPU push and push-to-one while GPUs concurrently publish partials. Record CPU memory bandwidth, P-core time, per-rank arrival and slowest collective completion; start one push thread per GPU and measure whether two per x8 help.
 4. HL02 Gate C: qualify XTX and R9700 actual CPU-write DMA-BUF paths to 10 MiB, repeated live-ready generations, pre-armed GPU full-word checks, fault, timeout and reuse. The original R9700 HSA-pool canary failure was not a DMA-BUF failure.
 5. Introduce generic validated per-rank `tuning.all_reduce_recv = ["cpu_push", "pull", "pull"]` with enum `pull|cpu_push|host_reduce`, world-size check, immutable generation protocol and optional measured host-profile selection. Mixed methods require a proven world-wide compatible reduction schedule; no BDF/device literal in engine code.
@@ -92,6 +92,10 @@ L. Risks: CPU memory bandwidth (~60 MB of traffic per prefill all-reduce at 2048
 - [ ] Default unchanged until repeated ABBA, quality, stress and explicit approval.
 
 ## Notes
+
+**2026-11-14 host-write safety progress, not TP3 protocol qualification:** Archived RAD50 GPU-local DMA-BUF direct publication was independently repeated with pre-armed, full-word GPU verifier for 100 generations **per card idle** and 100 generations **per affected XTX/R9700 under active primary-XTX host reads at 13.431 GB/s**, all passing for 3.93 MiB payloads. The same 4 MiB serial GPU pull vs CPU BAR push comparison at 30 iterations showed XTX 1.847× and R9700 2.315× advantage under contention. Evidence: `docs/evidence/2026-11-14-hl02-live-verification/README.md`. This does not satisfy 10 MiB, parallel multi-destination CPU sum/push, lifetime/restart, generation-wide abort/drain or matched VTP36 A/B. No VTP38 production method change is authorized.
+
+**New HL02 lab measurement (2026-11-13):** Three-session mapped-host attribute/trigger matrix and 4 MiB RAD50 serial pull/push comparison are recorded in `docs/evidence/2026-11-13-hl02-transfer-matrix/README.md`. Coherent, non-coherent and write-combined HIP allocation flags all yielded ~half victim GPU host-transfer bandwidth under primary GPU reads. Primary GPU write-only controls showed no slowdown. Under primary reads, the serial 4 MiB CPU push retained approximately idle latency while GPU pull slowed (XTX push-vs-pull 1.85x, R9700 2.30x session-median speedup). No triple concurrent CPU BAR push or host sum was tested, so the production admission gate remains closed.
 
 **New partial R9700 gate (2026-11-13):** Existing RAD50 GPU-live tester verified a 3,932,160-byte pre-armed R9700 DMA-BUF payload across 30/30 generations, no mismatches, exit 0; see `docs/evidence/2026-11-13-hl02-vtp38-consolidation/R9700-LIVE-2026-11-13.md`. This does **not** satisfy the all-rank 10 MiB Gate C or the CPU host-sum protocol.
 

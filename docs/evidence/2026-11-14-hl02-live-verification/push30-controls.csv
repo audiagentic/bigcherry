@@ -1,0 +1,9 @@
+receiver,primary_action,bytes,iterations,method,pull_sequence_p50_us,push_sequence_p50_us,paired_speedup,delta_us,status
+1,idle,4194304,30,direct-scalar,1054.52,734.83,1.435,319.69,PASS
+1,write,4194304,30,direct-scalar,1084.33,783.76,1.383,300.57,PASS
+1,read,4194304,30,direct-scalar,1356.50,734.25,1.847,622.25,PASS
+1,idle,4194304,30,direct-scalar,1057.16,791.75,1.335,265.41,PASS
+2,idle,4194304,30,direct-scalar,1260.33,816.68,1.543,443.66,PASS
+2,read,4194304,30,direct-scalar,1885.32,814.50,2.315,1070.82,PASS
+2,write,4194304,30,direct-scalar,1258.43,815.74,1.543,442.69,PASS
+2,idle,4194304,30,direct-scalar,1246.82,814.38,1.531,432.44,PASS
