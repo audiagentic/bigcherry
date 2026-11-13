@@ -1,0 +1,23 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261113_034759_int8-w8a8-qwen38-27b-on-thr_7982",
+  "files": [
+    "engines/radiance/patches/rad0030_int8_pipelined_prefill/patch.py",
+    "engines/radiance/patches/rad0030_int8_pipelined_prefill/patch.toml",
+    "engines/radiance/patches/rad0030_int8_pipelined_prefill/README.md",
+    "engines/radiance/patches/rad0030_int8_pipelined_prefill/SUMMARY.md",
+    "engines/radiance/layouts/qwen27b.toml",
+    "engines/radiance/recipes.toml",
+    "tools/tests/patch/test_vtp37_int8_pipelined_prefill.py",
+    "docs/planning/active/run-dense-27b-virtual-tp/VTP37.md",
+    "docs/reference/engines/radiance/ENHANCEMENTS.md",
+    "README.md"
+  ],
+  "plan-item-ids": [
+    "VTP37"
+  ],
+  "status": "unreleased",
+  "technical-summary": "rad0030: qwen35_fp8 pipelined prefill (rad0020/rad0025-0027) on a rotated-int8 trunk (qwen35_w8a8, q8_fed): NormQuantFP8::step_plain writes the int8 pair step() writes, the lane-1 concurrent set names ActFP8::cq/cs, and such a trunk pipelines under --pipelined-prefill on (auto unchanged). Layout qwen27b-tp3-int8 sets tuning.pipelined_prefill = on. int8 TP3 2x ABBA: 1/4/6/8 streams +6.1/+7.4/+7.8/+8.4%, TTFT 512/2048/6144 -18.0/-17.0/-21.3%; KLD vs serial mean 0.00125, top-1 99.31% (below a serial 1024-chunk change, 0.00197); 12/12 stress runs clean.",
+  "timestamp-utc": "2026-11-13T03:47:59.597007Z",
+  "user-summary-candidate": "int8 (w8a8) Qwen3.8-27B on three GPUs now pipelines its prefill: first token 17-21% sooner and 6-8% more decode throughput, with output quality unchanged within measurement."
+}
