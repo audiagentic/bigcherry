@@ -1,0 +1,19 @@
+{
+  "change-class": "docs",
+  "event-id": "chg_20261113_231859_plan-one-readable-config-file_6148",
+  "files": [
+    "docs/planning/active/run-serving-configuration/RSC12.md",
+    "docs/planning/active/run-serving-configuration/RSC02.md",
+    "docs/planning/active/run-serving-configuration/RSC11.md",
+    "docs/planning/active/run-serving-configuration/README.md"
+  ],
+  "plan-item-ids": [
+    "RSC12",
+    "RSC02",
+    "RSC11"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Owner direction 2026-11-14: RSC12 (new) readable per-model configs with named variants, adapter onto the existing resolver, semantic-projection parity, stored manifests split into static key / live admission / execution record; RSC02 rescoped to a C++ bc-serve session owner (serve/start/stop/status/explain) replacing the bash launcher; RSC11 decision 3 (Python supervisor) replaced, slices S6/S11/S12/S14 in C++. Two GPT review passes folded in.",
+  "timestamp-utc": "2026-11-13T23:18:59.923429Z",
+  "user-summary-candidate": "Plan: one readable config file per model with named variants, and a C++ bc-serve launcher replacing the bash script."
+}
