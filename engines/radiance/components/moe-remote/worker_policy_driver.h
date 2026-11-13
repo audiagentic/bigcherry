@@ -411,6 +411,12 @@ public:
                     measured_.effect_window_noise_ladder=std::move(ladder);
                 }
                 next_window_noise_check_ns_=add_saturating(now_ns,settings_.cadence_ns);
+                // Calibration-only measured drift telemetry for the launcher deadline.
+                const auto progress=measured();
+                std::fprintf(stderr,"RHP19_CALIBRATION_PROGRESS accepted_heat_deltas=%llu drift_intervals=%zu drift_capacity=%zu drift_horizon_observations=%llu observation_rate_per_s=%.0f heat_gap_max_ns=%.0f\n",
+                    (unsigned long long)progress.accepted_heat_deltas, progress.drift_intervals,
+                    progress.drift_capacity, (unsigned long long)progress.drift_horizon_observations,
+                    progress.observation_rate_per_s, progress.delta_gap_ns.max());
             }
             const Measured m=measured();
             const bool heat_timing_ready=m.accepted_heat_deltas &&

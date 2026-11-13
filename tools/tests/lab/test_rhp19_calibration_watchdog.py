@@ -42,6 +42,51 @@ class CalibrationWatchdogTests(unittest.TestCase):
         with self.assertRaisesRegex(watch.CalibrationError, "positive"):
             watch.limits({**self.policy(), "cadence_ns": 0})
 
+    def test_real_workload_count_uses_transport_ceiling(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            a, b = Path(tmp) / "a", Path(tmp) / "b"
+            a.write_text("a\n\na\n")
+            b.write_text("b\nb\nb\n")
+            bound, report, prefeed, requests = watch.workload_limits(
+                self.policy(), a, b, 120)
+            self.assertEqual(requests, 2 * (2 + 3) * 120)
+            self.assertEqual(bound, prefeed + requests)
+            self.assertEqual(prefeed, watch.limits(self.policy())[0])
+            self.assertEqual(report, watch.limits(self.policy())[1])
+            b.with_name("empty").write_text("")
+            with self.assertRaisesRegex(watch.CalibrationError, "empty"):
+                watch.workload_limits(self.policy(), a, b.with_name("empty"), 120)
+
+    def test_measured_drift_window_includes_capacity_heat_gap_and_route_horizon(self):
+        # The helper reports observed ring capacity, not policy min_samples.
+        line = (watch.PROGRESS + "accepted_heat_deltas=48 drift_intervals=15 "
+                "drift_capacity=16 drift_horizon_observations=336121830 "
+                "observation_rate_per_s=1381865 heat_gap_max_ns=5035931069")
+        seconds, ready = watch.drift_evidence(self.policy(), line)
+        self.assertTrue(ready)
+        self.assertEqual(seconds, 244)  # measured observation horizon is the longer wait
+        increased = line.replace("heat_gap_max_ns=5035931069",
+                                 "heat_gap_max_ns=30000000000")
+        self.assertEqual(watch.drift_evidence(self.policy(), increased)[0], 480)
+        self.assertEqual(watch.drift_evidence(self.policy(), "") , (0, False))
+        self.assertEqual(watch.drift_evidence(
+            self.policy(), line.replace("observation_rate_per_s=1381865",
+                                        "observation_rate_per_s=0")), (0, False))
+
+    def test_helper_progress_malformed_fails_closed(self):
+        line = (watch.PROGRESS + "accepted_heat_deltas=5 drift_intervals=20 "
+                "drift_capacity=16 drift_horizon_observations=12 "
+                "observation_rate_per_s=2 heat_gap_max_ns=10")
+        with self.assertRaisesRegex(watch.CalibrationError, "exceed capacity"):
+            watch.drift_evidence(self.policy(), line)
+        with self.assertRaisesRegex(watch.CalibrationError, "incomplete"):
+            watch.drift_evidence(self.policy(), line.replace(" drift_capacity=16", ""))
+        source = (ROOT / "engines/radiance/components/moe-remote/worker_policy_driver.h").read_text()
+        self.assertIn("RHP19_CALIBRATION_PROGRESS", source)
+        self.assertIn("progress.drift_capacity", source)
+        self.assertIn("progress.delta_gap_ns.max()", source)
+
     def test_no_marker_is_waiting_not_success(self):
         self.assertIsNone(watch.record_in_log("calibration waiting: drift intervals\n"))
         self.assertIn("drift intervals", watch.waiting_reason("calibration waiting: drift intervals\n"))

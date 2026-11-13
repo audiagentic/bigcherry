@@ -614,26 +614,47 @@ if [ "$CALIBRATE" = 1 ]; then
   # Four measured-policy workload phases give a finite envelope. The helper
   # still controls convergence; a partial record never activates production.
   CAL_MONITOR=tools/lab/radiance/calibration_watchdog.py
-  calibration_limits=$(python3 "$CAL_MONITOR" limits "$LIVE_POLICY_FILE") || {
+  CALIBRATION_REQUEST_TIMEOUT_S=120  # same bound as the workload curl below
+  calibration_limits=$(python3 "$CAL_MONITOR" limits "$LIVE_POLICY_FILE" "$CALIBRATION_PROMPTS_A" "$CALIBRATION_PROMPTS_B" "$CALIBRATION_REQUEST_TIMEOUT_S") || {
     echo "calibration: cannot derive finite horizon from selected policy" >&2; exit 2;
   }
-  read -r calibration_limit_s calibration_report_s <<< "$calibration_limits"
+  read -r calibration_limit_s calibration_report_s calibration_prefeed_s calibration_request_budget_s <<< "$calibration_limits"
+  calibration_initial_limit_s=$calibration_limit_s
+  calibration_have_feed=0
   calibration_start_s=$SECONDS
   calibration_next_report_s=$calibration_report_s
   calibration_watch() {
     local elapsed=$((SECONDS - calibration_start_s))
     if [ "$elapsed" -ge "$calibration_next_report_s" ]; then
-      echo "calibration: COLLECTING elapsed=$elapsed bound=$calibration_limit_s; missing:" >&2
+      # The helper publishes its real drift capacity, accepted heat gaps and
+      # observed route horizon. No fixed ring size or guessed observation rate.
+      local drift_metrics measured_drift_s measured_ready drift_headroom_s candidate
+      drift_metrics=$(python3 "$CAL_MONITOR" drift "$LIVE_POLICY_FILE" "$helper_log") || return 1
+      read -r measured_drift_s measured_ready <<< "$drift_metrics"
+      if [ "$measured_ready" = 1 ]; then
+        calibration_have_feed=1
+        drift_headroom_s=$((measured_drift_s < calibration_request_budget_s ? measured_drift_s : calibration_request_budget_s))
+        candidate=$((calibration_initial_limit_s + drift_headroom_s))
+        if [ "$candidate" -gt "$calibration_limit_s" ]; then calibration_limit_s=$candidate; fi
+      fi
+      echo "calibration: COLLECTING elapsed=$elapsed bound=$calibration_limit_s measured_drift_s=$measured_drift_s feed=$measured_ready; missing:" >&2
       python3 "$CAL_MONITOR" waiting "$helper_log" >&2 || return 1
       calibration_next_report_s=$((elapsed + calibration_report_s))
     fi
+    # A missing/stale live heat stream may not consume the full workload
+    # budget. Feed evidence must arrive within the original policy envelope.
+    if [ "$elapsed" -ge "$calibration_prefeed_s" ] && [ "$calibration_have_feed" != 1 ]; then
+      echo "calibration: FAILED no measured heat gap/rate within policy envelope $calibration_prefeed_s s; missing:" >&2
+      python3 "$CAL_MONITOR" waiting "$helper_log" >&2 || true
+      return 1
+    fi
     if [ "$elapsed" -ge "$calibration_limit_s" ]; then
-      echo "calibration: FAILED policy-derived bound exhausted; missing:" >&2
+      echo "calibration: FAILED workload-and-measured-drift bound exhausted; missing:" >&2
       python3 "$CAL_MONITOR" waiting "$helper_log" >&2 || true
       return 1
     fi
   }
-  echo "calibration: finite bound $calibration_limit_s s; waiting report period $calibration_report_s s" >&2
+  echo "calibration: finite bound $calibration_limit_s s (policy prefeed $calibration_prefeed_s s, one A/B/B/A workload ceiling $calibration_request_budget_s s, plus bounded measured drift); waiting report period $calibration_report_s s" >&2
   helper_log="$RUN/helper0-$STAMP.log"
   [ -f "$helper_log" ] || { echo "calibration: helper 0 log absent" >&2; exit 1; }
   echo "calibration: running A->B then B->A until convergence" >&2
@@ -644,7 +665,7 @@ if [ "$CALIBRATE" = 1 ]; then
       while IFS= read -r calibration_prompt || [ -n "$calibration_prompt" ]; do
         [[ "$calibration_prompt" =~ [^[:space:]] ]] || continue
         body=$(CALIBRATION_PROMPT="$calibration_prompt" python3 -c 'import json,os;print(json.dumps({"model":"default","prompt":os.environ["CALIBRATION_PROMPT"],"max_tokens":24,"temperature":0}))')
-        curl -fsS --max-time 120 "http://127.0.0.1:$PORT/v1/completions" -H 'content-type: application/json' -d "$body" >/dev/null || {
+        curl -fsS --max-time "$CALIBRATION_REQUEST_TIMEOUT_S" "http://127.0.0.1:$PORT/v1/completions" -H 'content-type: application/json' -d "$body" >/dev/null || {
           echo "calibration: workload request failed" >&2; exit 1;
         }
         for proc in engine helper0; do

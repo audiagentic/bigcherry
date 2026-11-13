@@ -89,6 +89,14 @@ Set BUILD to the matching build directory, POLICY_JSON to the valid lab policy, 
 
 Hardware quality: pair policy-on and -off under RHP12 and RHP22; no startup ON state proves the policy has not degraded later.
 
+## Hardware acceptance finding: drift window and key provenance (2026-11-11)
+
+Read-only audit of `runs/rhp18-acceptance/calib.log`: a `flashnext-4gpu` launch on build `674f08546ca07ab7f9e9be15d1193217` reported **ON** with explicit lab policy, but the launcher terminated at 240 seconds with `drift_window` and `drift_half_life_observations` outstanding. This is **not** a successful calibration nor a policy-on plain-start acceptance. The helper log `${BC_WORK_ROOT}/flashnext/helper0-1111-093708.log` contains a complete marker near shutdown, but the launcher did not validate/ingest it: no store mutation or manifest-on claim may be inferred.
+
+The key mismatch is **not an unexplained build-code change**. Comparing actual `plan-cache/*.json` key inputs for `0667fa1810a7...` (the record used with f17f21) and `7443c74886a1...` (the new build) isolates `engine.host_pool_mib` **9216 -> 2259**, from RSC03 derived host-pool sizing; model, arch, helper budgets [22528,22528,14336], heat digest, layout, experiment and engine settings otherwise match. `plan_cache.cpp::calibration_key` already excludes `engine_build` and `cache_version`, so an engine binary hash did not cause the split. **Keep the host-pool field in v1's key:** it is a measured engine resource/plan input, and cross-pool reuse is not proven equivalent. Consider omitting it in a future canonical v2 *only* after verifying measured plan and all placement/heat-relevant invariants; never silently migrate or fall back.
+
+Card-free repair in this slice: launcher watchdog accounts for the real A/B/B/A workload and reads helper-reported drift capacity, heat gap and observation horizon, separately failing an absent feed. The missing-calibration/why-off path remains fail closed. **Hardware still pending**: rebuild the helper/launcher together, run the recorded calibration under the new key, verify strict ingest, then a plain start with manifest policy ON and live committed epochs. No GPU was used by this slice.
+
 ## Change Log
 
 - 2026-11-10T03:10:34.325501+00:00 (created-by): Created by agent

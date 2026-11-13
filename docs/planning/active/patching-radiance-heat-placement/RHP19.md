@@ -90,6 +90,16 @@ Set BUILD to the matching engine/component build, POLICY_JSON to the complete ex
 
 The first two commands are supported launcher entry points. The two fault-injection/harness rows are acceptance requirements, not executable production CLI flags: no safe completed forced-probe command exists yet, and inventing one would bypass RHP11's restoration gate.
 
+## 2026-11-11 hardware counterexample and derived-envelope repair
+
+Evidence: `runs/rhp18-acceptance/calib.log`, helper `${BC_WORK_ROOT}/flashnext/helper0-1111-093708.log`, and `runs/recalibrate-4gpu`. The supported four-card calibration (`--record-period 1 --calibrate --live-policy ... --calibration-prompts-a/b ...`) failed its **240-second** launcher envelope with exactly `drift_window` and `drift_half_life_observations` still pending. All transaction/tail-lane quantities had cleared by ~26 seconds. The earlier unbounded run emitted a complete record around +30 minutes; it did not hang on a missing tail move. The latest helper log also contains a marker near shutdown, but the failed launcher did not ingest it; do not treat it as accepted calibration.
+
+**Root cause:** `calibration_watchdog.py::limits` previously computed `4 * ((min_samples+1) * cadence_ns + max_heat_age_ns + min_residency_ns)`. This ignores (a) the selected prompt workload (20 A + 40 B long requests, repeated A/B/B/A) and the transport's per-request deadline; and (b) `DriftTracker`'s adaptive observation-spaced ring, whose capacity, measured accepted heat gap, observation rate and retained observation horizon are not functions of `min_samples`.
+
+**Card-free fix:** keep the policy-only envelope as an independent **early no-feed deadline**. The finite outer bound additionally covers the actual nonblank requests in one A/B/B/A traversal times the existing per-request curl timeout, and can extend by the helper's **measured** drift window, capped at another full traversal's request budget (no hard-coded ring size, heat rate, or extra wall-clock literal). The helper emits `RHP19_CALIBRATION_PROGRESS` at the policy cadence with accepted deltas, drift intervals/capacity, observation horizon, measured route rate and max accepted heat gap. The Python watchdog computes the maximum of `drift_capacity * max(measured_heat_gap, cadence, max_heat_age)` and `drift_horizon_observations / measured_rate`. A missing or malformed feed is not invented; incomplete markers never enter the store. The helper's existing per-condition measured-drift watchdog remains independent.
+
+**Acceptance outstanding:** card-free Python regression and launcher syntax checks are present; a rebuilt C++ helper and real lease-held four-card run must establish complete ingest under `7443c748...` and then a policy-ON plain start. Separately verify a suppressed-feed arm fails within the policy-only prefeed envelope, a structural/no-crossing arm produces an explicit partial/failure rather than an infinite run, and the two-card/tail layouts. Hardware was not used for this change.
+
 ## Change Log
 
 - 2026-11-10T04:35:36.821205+00:00 (created-by): Created by agent
