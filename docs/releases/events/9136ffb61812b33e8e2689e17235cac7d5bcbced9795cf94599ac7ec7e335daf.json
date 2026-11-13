@@ -1,0 +1,15 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261113_231808_a-changed-tp-split-or-other-tu_4753",
+  "files": [
+    "engines/radiance/components/serving/v2/manifest.cpp",
+    "engines/radiance/components/serving/serving_test.cpp"
+  ],
+  "plan-item-ids": [
+    "RSC12"
+  ],
+  "status": "unreleased",
+  "technical-summary": "v2 manifest plan_cache_key now covers the engine tuning settings (when present) and every rank's card in a mixed-architecture world, matching the native plan key fixed in #959; single-card and tuning-free configurations keep their keys, so stored live-policy calibration records (flashnext-4gpu, flashnext-2xtx-rdna2-tail) still match.",
+  "timestamp-utc": "2026-11-13T23:18:08.493131Z",
+  "user-summary-candidate": "A changed TP split or other tuning setting is no longer treated as the same memory plan by the v2 manifest key."
+}
