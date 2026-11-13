@@ -26,6 +26,15 @@ The actual measured findings and uncertainty are already recorded in [QFP22](../
 
 **Limitations:** the eight commits are test-input bookkeeping, not raw GPU result files or independently validated regression evidence. No local test or GPU run was executed during recovery. The patch-series includes unrelated line-ending normalization in the first pin commit, which can look like thousands of code changes. An ignore-EOL-whitespace comparison shows no substantive changes to `releases/patch-rebase.json`, `releases/pin-transition.json`, `releases/0504396140d1.json`, or `tools/tests/patch/test_1316_node_hash_trace.py` relative to the old base.
 
+## Recovered materialization receipts
+
+Four additional source-materialization receipts were identified under the old clone's ignored work cache. They correspond exactly to the four upstream revisions in this bisect. Because these receipts include content hashes and materialized source-tree identities, they are useful to distinguish the **actual build inputs** from a bare pin name.
+
+- `materialization-receipts.tar.gz` contains the four original `source-metadata.json` files, under their original hashed run-ID subdirectories, with exact bytes retained.
+- `materialization-ledger.json` maps those four run IDs to upstream commits, source-tree object IDs and materialization-plan identifiers, and records each original file's SHA-256.
+- All four tar members were compared byte-for-byte against the original ignored files on the development host on 13 November 2026.
+- These are **source-input receipts**, not benchmark output or a substitute for the QFP22 raw hardware measurements. Compiled copies are not part of this compact tracked bundle.
+
 ## Do not merge the experimental branch
 
 The current llama.cpp pin and release ledger have moved on. Replaying the eight commits would move the configured pin backward and overwrite newer metadata. Preserve this compact source/commit record as historical review material only. The production source of truth remains the managed QFP22/BCOP27 notes and today's release metadata.
