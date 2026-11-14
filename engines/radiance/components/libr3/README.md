@@ -14,7 +14,8 @@ Native gfx11 attention defaults on through the typed serving manifest's
 `spec.processes.engine.kernels.attn_native` setting. The former
 `R3_ATTN_NATIVE` environment switch is no longer read; see the
 [current model pages](../../../../docs/reference/engines/radiance/README.md#current-pin-throughput)
-for measured throughput.
+for measured throughput. The setting selects the native form for both the plain and the KV-split prefill
+launches (the split's partial store takes the accumulator converted to the gfx12 layout).
 
 ## Detail
 

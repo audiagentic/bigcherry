@@ -23,9 +23,9 @@
     constexpr int R3N   = (OPT & O_R3NATIVE) ? 1 : 0;
     static_assert(!R3N || F16, "gfx11 native attention uses the f16 operand form");
     static_assert(!R3N || !(OPT & (O_QK8 | O_PV8)), "gfx11 native attention has no e4m3 legs");
-    // The KV split stores the accumulator in the decode partial layout as it stands (gfx12); the native accumulator
-    // would need converting first, so the split launch stays upstream's form (r4d_attn_paged_h256_gqa6.hip.rw).
-    static_assert(!R3N || !(OPT & O_PSPLIT), "the KV-split store expects the gfx12 accumulator layout");
+    // O_PSPLIT is allowed: the KV split's partial store expects the gfx12 accumulator layout, and the epilogue
+    // below converts the native accumulator before it (the split rule at the end of this file). The partial's other
+    // two values, m_ref and l_i, are row quantities combined over both half-waves and do not depend on the layout.
 @@ end
 
 @@ find 1
@@ -302,4 +302,21 @@
                        | ((uint32_t)f32_to_bf16(ao[e + 1] * inv) << 16);
         *(uint4*)(op + dt * 16 + 8 * h) = make_uint4(tw[0], tw[1], tw[2], tw[3]);
     }
+@@ end
+
+// The KV split's epilogue store. Upstream's r4d_prefill_store_partial writes lane (c, h)'s acc[dt] as dims
+// 16 dt + 8 h .. + 7 of its row (the gfx12 accumulator layout), as the bf16 store above it does. The native
+// accumulator holds dim 2 e + h in element e, so it is converted once, in place (acc is dead afterwards, so no
+// second 128-register array), exactly as at the bf16 store. m_ref and l_i are unchanged by the layout: m_ref is the
+// row maximum over both half-waves (swap16), l_i the sum of the lane's own P values joined with its partner's.
+@@ find 1
+        r4d_prefill_store_partial<NKS, HEAD_DIM>(a, qoff + qpos, qhead, sp, acc, m_ref, l_i, h);
+        return;
+@@ replace
+        if constexpr (R3N) {
+            #pragma unroll
+            for (int dt = 0; dt < NKS; ++dt) acc[dt] = r3_acc_native_to_gfx12(acc[dt]);
+        }
+        r4d_prefill_store_partial<NKS, HEAD_DIM>(a, qoff + qpos, qhead, sp, acc, m_ref, l_i, h);
+        return;
 @@ end
