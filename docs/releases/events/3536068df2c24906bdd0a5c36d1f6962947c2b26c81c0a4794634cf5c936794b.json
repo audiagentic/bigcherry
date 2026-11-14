@@ -1,0 +1,37 @@
+{
+  "change-class": "docs",
+  "event-id": "chg_20261114_070033_plans-updated-with-measured-lo_6555",
+  "files": [
+    "docs/evidence/2026-11-14-tp3-long-context/README.md",
+    "docs/planning/active/patching-radiance-rdna3/RAD52.md",
+    "docs/planning/active/patching-radiance-rdna3/RAD53.md",
+    "docs/planning/active/run-dense-27b-virtual-tp/VTP39.md",
+    "docs/planning/active/run-dense-27b-virtual-tp/VTP40.md",
+    "docs/planning/active/run-dense-27b-virtual-tp/VTP36.md",
+    "docs/planning/active/run-dense-27b-virtual-tp/VTP37.md",
+    "docs/planning/active/run-dense-27b-virtual-tp/VTP38.md",
+    "docs/planning/active/run-dense-27b-virtual-tp/VTP32.md",
+    "docs/planning/active/run-serving-configuration/RSC12.md",
+    "docs/planning/active/patching-radiance-rdna3/RAD38.md",
+    "docs/planning/active/run-radiance-host-link/HL02.md",
+    "docs/planning/active/run-power-efficiency/PWR06.md"
+  ],
+  "plan-item-ids": [
+    "RAD52",
+    "RAD53",
+    "VTP39",
+    "VTP40",
+    "VTP36",
+    "VTP37",
+    "VTP38",
+    "VTP32",
+    "RSC12",
+    "RAD38",
+    "HL02",
+    "PWR06"
+  ],
+  "status": "unreleased",
+  "technical-summary": "TP3 int8 long-context evidence (per-op profiles, scheduler A/B arms, full-cache behaviour) and the plan proposals drawn from it: new RAD52 (prefill attention fill on one-KV-head ranks), RAD53 (gfx1100 direct E4M3 read), VTP39 (long-prompt scheduling), VTP40 (speculation window by load); notes and steps on VTP36/37/38/32, RSC12, RAD38, HL02, PWR06.",
+  "timestamp-utc": "2026-11-14T07:00:33.332856Z",
+  "user-summary-candidate": "Plans updated with measured long-context bottlenecks and proposals for faster prefill and decode on the 3-card int8 setup."
+}

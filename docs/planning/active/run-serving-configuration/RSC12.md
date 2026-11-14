@@ -189,6 +189,9 @@ values, the derived pool and KV tier given to both), resolve to the same values 
 both manifests pass the strict reader. Helper configs carry the launcher's 1 s histogram period (the resolver default is
 60 s) and, with TP ranks, `tuning.p2p = "off"`; the two pinned TP pools stay, marked interim (RSC03).
 
+**2026-11-14 candidate variants of `qwen27b-tp3-int8-556-long` (pending VTP36 step 9 / VTP39).** A lone-prefill wide-step variant (checkpoint interval, step budget, prefill span) and a decode-share variant (prefill interleave). Each must be expressible with the resolver's own keys; `prefill_span`, `prefill_interleave` and `busy_prefill_chunk` are not yet `engine.*` config fields (only `max_num_batched_tokens` and `checkpoint_interval` are), so adding them is part of taking either variant. No `--set` in a served start.
+
 ## Change Log
 
 - 2026-11-13T22:56:54.680645+00:00 (created-by): Created by agent
+- 2026-11-14T06:59:38.869898+00:00 (updated-by): Updated: section:notes
