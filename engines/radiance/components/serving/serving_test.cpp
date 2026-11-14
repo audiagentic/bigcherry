@@ -1881,7 +1881,7 @@ void converted_layout_parity(Fixture& t) {
     const Json layouts = sv::load_layouts(lo).at("layout");
     const auto set = sv::load_configs(sv::config_sources({configs}));
     // one config for every layout; a config that is no layout is a named variant, listed here
-    const std::set<std::string> variants = {"qwen27b-tp3-int8-556"};
+    const std::set<std::string> variants = {"qwen27b-tp3-int8-556", "qwen27b-tp3-int8-556-long", "qwen27b-tp3-int8-556-long-bf16"};
     for (auto it = layouts.begin(); it != layouts.end(); ++it)
         if (!set.config.contains(it.key())) throw std::runtime_error("layout " + it.key() + " has no config");
     for (auto it = set.config.begin(); it != set.config.end(); ++it)
@@ -2052,6 +2052,27 @@ void config_files(Fixture& t) {
         assert(o.at("tuning.tp_ownership") == "qwen27b-tp3-int8-556");
         assert(o.at("tuning.pipelined_prefill") == "qwen27b-tp3-int8" && o.at("ranks") == "qwen27b-tp3-int8");
         assert(set.chain.at("qwen27b-tp3-int8-556") == Json::array({"qwen27b-tp3-int8-556", "qwen27b-tp3-int8"}));
+    }
+    {   // the long-context variants: the 5,5,6 split at 262,144 tokens, fp8 and bf16 cache; nothing else moves
+        Options lv = config;
+        lv.sets = {"layout.name=\"qwen27b-tp3-int8-556-long\""};
+        const auto fp8 = sv::resolve(lv, t.facts);
+        lv.sets = {"layout.name=\"qwen27b-tp3-int8-556-long-bf16\""};
+        const auto bf16 = sv::resolve(lv, t.facts);
+        assert(fp8.values.at("service").at("max_context") == 262144 && fp8.values.at("engine").at("kv_cache_dtype") == "fp8");
+        assert(bf16.values.at("service").at("max_context") == 262144 && bf16.values.at("engine").at("kv_cache_dtype") == "bf16");
+        Json x = variant.values, y = fp8.values, z = bf16.values;
+        for (Json* j : {&x, &y, &z}) {
+            (*j)["layout"].erase("name");
+            (*j)["service"].erase("max_context");
+            (*j)["engine"].erase("max_model_len");
+            (*j)["engine"].erase("kv_cache_dtype");
+        }
+        if (!(x == y && y == z)) {
+            std::fprintf(stderr, "long variants differ beyond context and cache: %s / %s\n", Json::diff(x, y).dump().c_str(),
+                         Json::diff(y, z).dump().c_str());
+            assert(false);
+        }
     }
     // a profile and --set still override a config (config < site < profile < --set)
     config.sets.push_back("tuning.pipelined_prefill=\"off\"");
