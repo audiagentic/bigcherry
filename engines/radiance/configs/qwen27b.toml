@@ -133,6 +133,9 @@ p2p = "off"
 #   -556-long            1,253,943     91.6 / 225.2 / 274.4     782 ms     0.0022 / 0.0054
 #   -556-long-bf16         624,051     93.5 / 231.1 / 284.9     781 ms     0 (the reference)
 #
+# A 60,000-token prompt (bc-serve serve, one start each): time to first token 30.7 s with fp8 and 27.2 s with bf16, then a
+# decode step of 39.4 and 32.6 ms. The XTX cards have no native fp8, so an fp8 cache costs a conversion on every read.
+#
 # The fp8 cache (E4M3, its scales at 1.0) costs about what the int8 weights do on short text; on 25K-104K documents its
 # mean is 0.0054 and the tail is wide (two of five documents reach p99.9 of 4 and 8 late in the text). The bf16 cache has
 # no rounding and holds half as many tokens. Full-length sessions at once, as the engine counts them: 2.8 with fp8, 1.4
