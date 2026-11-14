@@ -29,6 +29,10 @@ The owner's KV rule is 8 bits at the least, 16 preferred, and K is the half that
 
 The change is one new row format and the code that reads and sizes it. Because upstream libr4d owns the attention kernels, the work is a patch series: (a) config and enum; (b) group declaration and sizing in both arch plugins; (c) the two to four attention kernels with the new row (reuse the `fp8` V path and the `bf16` K path already in `r4d_attn_*`); (d) selftest rows against a CPU reference at head_dim 256, gqa 12 and 6, as the 4-bit forms do (`r4d_selftest.cpp`); (e) the layout tables. The probe mechanism ("the engine asks only for a layout probe() offered") means a build lacking the kernels refuses the flag instead of running a wrong layout.
 
+## Code Samples & Guidance
+
+
+
 ## Files
 
 `core/rad_core.h`, `abi/rad_builder.h`, `core/config.cpp`, `core/engine_bringup.cpp`, `arch/qwen4exp_fp8/qwen4exp_fp8.cpp`, `arch/qwen35_fp8/qwen35_fp8.cpp`, `libr4d/r4d_attn_decode_h256_gqa6.hip`, `libr4d/r4d_attn_paged_gqa8.hip`, `libr4d/r4d_model_bf16.hip`, `libr4d/r4d_rows.cpp`, `libr4d/r4d_selftest.cpp`, `core/kvstream/*`, `tests/abi_layout_*.h`; a rad0003 patch and its fixture; the launcher's `--kv-dtype`.
@@ -40,3 +44,19 @@ Selftest rows for the new layout match the CPU reference; Flash-Next serves with
 ## Effort & Risk
 
 Large: engine kernels and two plugins on an upstream-pinned tree, re-done at every radiance bump. Risk: attention kernels at head_dim 256 are tuned for the byte layouts they have; a 3-byte-per-element row changes their memory access. Mitigation: step 1 first; if V at 8 bits costs nothing measurable against bf16, the plan is moot and bf16 is the answer where 0.84M tokens suffice. Depends on the baseline runs of 2026-10-31 (`rad23-base512`, `rad23-kvcap2`).
+
+## Standards
+
+
+
+## Acceptance Criteria
+
+
+
+## Notes
+
+**2026-11-14.** On gfx1100 every 8-bit KV plane is converted in software on each read (`r3_compat.h` `r3_e4m3_to_f32`); the dense 27B fp8 cache decodes at 39.4 ms a step at 60k against 32.6 ms for bf16. Step 1's K-only / V-only comparison should record speed per plane on gfx1100 as well as quality, and `k16_v8` should be costed after RAD53.
+
+## Change Log
+
+- 2026-11-14T06:59:42.927826+00:00 (updated-by): Updated: section:notes

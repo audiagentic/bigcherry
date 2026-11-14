@@ -42,6 +42,101 @@ Each lever is a managed patch or validated layout setting with measured ABBA and
 6. Give VTP38 the best validated GPU baseline, arithmetic and phase evidence. HL02 owns host-link measurement; **VTP38 alone** implements generic per-rank CPU-push/host-reduce collective and fallback. Do not implement the same production path twice.
 7. Refresh accepted programme baseline with 3 final matched ABBA repeats versus proper TP2/TP3 exact-wire controls, full stress and VTP37 reordering gate.
 
+8. **Long context (2026-11-14).** Add 30k / 60k / 100k one-prompt TTFT and the long-prompt-beside-4-streams arm at 100k to the workload for the `-long` configs, with decode chunks/s and gap p50/max during the prefill. Report TTFT as a linear and a quadratic term (two prompt lengths per arm).
+9. **Wide steps for a lone prefill (settings only).** Arms: 2048; 4096; `checkpoint_interval 2048` + `max_num_batched_tokens 4096` + `prefill_span 2`; the same with `prefill_interleave 2`; 8192 with `prefill_span 2`. 3x ABBA for the chosen pair, the VTP37 reordering gate at the chosen chunk, int8 stress. The winner becomes a named variant of `qwen27b-tp3-int8-556-long` (RSC12).
+10. **Report decode and prompt phase separately.** The multi-stream rows mix a 512-token prompt phase (~40% of the 8-stream round) with decode; record decode-only tok/s beside the round figure.
+11. **R9700 after-boundary GEMM time.** Explain the ~0.65 ms the R9700's first GEMM after each all-reduce costs in the pipelined prefill (VTP37 `prof-base` against `prof-on`) before any split or transport change that relies on the R9700's prefill compute.
+
+## Detailed Solution & Technical Design
+
+
+
+## Code Samples & Guidance
+
+
+
+## Files
+
+
+
+## Validation
+
+- Matched ABBA (at least 2x, 3x for the final refresh) per lever: 1/4/6/8-stream tok/s with speculation on, one-prompt TTFT at 512/2048/8192, four 4096-token prompts, an 8192-token prompt beside 4 generating streams.
+- Greedy identity against the exact wire for every exact method; KLD against BF16 for any lossy option or format change.
+- `--profile-ops` / rad0023 phase times before and after.
+- int8 stress (12 runs) for any change to the speculative or collective path (rad0028 regression guard).
+
+## Effort & Risk
+
+
+
+## Standards
+
+
+
+## Acceptance Criteria
+
+- MXFP4 TP3 one-stream TTFT within 5% of TP2 at 2048 tokens (carried from VTP35), or a recorded NO-GO stating the transport limit with the profile that shows it. *2026-11-14: +5.7% (775 against 733 ms, matched ABBA); not met.*
+- TP3 aggregate tok/s at 4/6/8 streams stays at or above the baseline table for both formats.
+- Every shipped lever is selectable per layout or run (no model or card constants), with its gain attributed by ABBA.
+- Every reordering change passes the reordering quality gate defined in VTP37 (noise floor against serial; no quality loss against BF16).
+
+## Notes
+
+**2026-11-13 VTP36 candidate receipt (not final production):** rad0032 fused pieces + rad0033 write-once + duplex weights, explicit `all_reduce:nblocks=4,nthreads=256,ts_pieces=4,ts_fuse=1,ts_once=1,ts_duplex=1`. Two completed ABBA comparisons report bit-identical logprobs: int8 2048 TTFT 1054.3→797.5 ms (-24.4%), 8 streams 233.2→265.6 tok/s (+13.9%); MXFP4 2048 TTFT 1064.4→774.7 ms (-27.2%), 8 streams 237.8→277.4 tok/s (+16.7%). Stress and 5,5,6 split validation were still outstanding. Evidence with sizes and sample counts in `docs/evidence/2026-11-13-hl02-vtp38-consolidation/README.md`; implementation lives in the separate unmerged VTP36 performance branch at this checkpoint. VTP38 must compare CPU host reduce against this improved reference, not the older ~4 ms rad0031 baseline.
+
+**History — earlier programme review and GPU timeline:**
+
+Consolidated 2026-11-13 from a read-only GPT sweep (tp3-perf-gather) and a review of the plan tree. Superseded into this item: VTP35. Completed: VTP31 (acceptance met by experiment 10 and the VTP14 N7 refresh). Superseded elsewhere: RAD04 (TP2 prefill all-reduce overlap; upstream pipelines prefill at two ranks and rad0020/rad0025-0027 extend it). Linked, kept separate: VTP32, RAD47, RAD48, RAD36, HL05, XDP03. Not applicable to dense TP3: the RHP heat-placement items (MoE expert placement), Flash-Next helper and tail items, llama.cpp/ggml collective items (PGC/PHC).
+
+Evidence: docs/planning/completed/run-dense-27b-virtual-tp/VTP14.md (N6/N7 refresh), VTP31.md (experiments 1-13), VTP33.md (capacity, rad0029); patches rad0020-rad0029; layouts engines/radiance/layouts/qwen27b.toml.
+
+
+### GPT detailed review (2026-11-13, gateway req_main_47cb7e059896) and changes to this item
+
+**Priority:** int8 TP3 decode and prefill now come first, in VTP37 (P0). This item keeps MXFP4 and the shared all-reduce work.
+
+**Leading explanation of the 2048-token MXFP4 gap (to be confirmed by experiment 1):**
+- The pipeline floors differ. TP2 uses the plugin default `kPipeMinRows` 1024 (512 tokens serial, 2048 pipelined); the TP3 layout sets 256 (both pipelined). TP2 gains the pipeline between 512 and 2048 and TP3 does not, which matches TP2 +49% vs TP3 +4% tok/s over that range.
+- The x4 link floor: with shard weights 4,4,1 the R9700 moves 10S/9 = 22.2 MiB each way per 2048-row all-reduce, a ~2.96 ms floor at Gen4 x4 against ~1.33 ms for TP2 over x8; x ~129 all-reduces = ~210 ms, the size of the measured 208 ms gap (an order-of-magnitude agreement, not proof that it is all exposed).
+- Not the cause: gfx1100 rows in M 9-128 (pieces are >= 256 rows, tiled regime) or a one-shot/two-shot switch (every piece is above the 524,288-element two-shot floor).
+
+**Corrections:**
+- Decode all-reduce cost is not mainly flag round trips: rad0023 showed ~2 us minimum flag wait, ~120 us R9700 fold and ~99 us waiting for XTX arrival (one-shot path, before rad0024). Arrival skew and data movement first.
+- The R9700 owns a 1/9 shard (4,4,1), so moves 10S/9, not S.
+- RAD47 (gfx1100 MXFP4 rows) is implemented and measured on main; it is not a new gain here. RAD48's native int8 tile is on main (#601).
+- `--profile-ops` totals are summed device events, not wall time.
+- The checked-in TP2 layout uses `tp-wire = wht6` and `--max-num-batched-tokens 2048`; ABBA receipts must record the exact-wire override.
+- Exactness invariant: a transport change is byte-identical against the current TP3 exact method with the same split, not against TP2.
+- rad0016-rad0029 SUMMARY status labels are stale relative to the hardware evidence (docs cleanup).
+
+**Reordered steps:** (1) matched profile at 512/2048/8192 with the pipeline floor at 256, 1024 and off, per-step chunk, cut, kernel rows and collective phases; (2) phase timestamps in the weighted three-rank two-shot (`r4d_ar_twoshot_Nrank_exact.hip`, extending rad0023) and a narrow TP3 overlap lane for it; (3) one transport intervention chosen by (2). Downgraded: LL handshake (~0.5% decode), three-rank fused AR + norm for fp8 (~0.85% prefill device time), chained launches. CPU reduce, epilogue push and per-card formats only if the profile justifies them. If the transfer floor leaves under 165 ms removable at 2048 tokens, record the NO-GO.
+
+Full review and brief: `docs/evidence/2026-11-13-vtp36-gpt-review/`.
+
+2026-11-13 all-reduce timeline review (rad0031, baseline, int8 TP3; medians per all-reduce; columns push / wait1 / reduce / wait2 / assemble / total, us):
+
+| Workload | XTX 0 | XTX 1 | R9700 |
+|---|---|---|---|
+| prefill 2048, ~1000 rows (~10 MB) | 386 / 1790 / 889 / 406 / 431 / 3995 | 399 / 1701 / 1301 / 2 / 453 / 3990 | 1334 / 20 / 188 / 1108 / 1254 / 3956 |
+| decode 8 streams, 32 rows (320 KiB) | 14 / 5 / 23 / 17 / 12 / 81 | 14 / 4 / 39 / 2 / 14 / 82 | 2 / 161 / 5 / 37 / 42 / 251 |
+
+Readings:
+- Prefill is bound by data over the R9700's x4 link. With share w the R9700 always sends S and receives (1+w)S in any exact scheme, so 4,4,1 is already near its floor (shrinking w saves at most S/9). Measured R9700 push ~6.7 GB/s vs XTX ~14 GB/s. The phases run serially (~4 ms) against a duplex floor of ~1.4-2 ms: overlap (rad0032 pieces/duplex) is the lever, not the shares.
+- A one-shot for prefill is worse (R9700 receives 2S); it stays right for decode (handshake-bound). Hierarchical exchange (XTX pair sums first, R9700 sends S and receives S) reaches the R9700 minimum; recorded as VTP38's fallback.
+- XTX 1 is the last reducer in every prefill all-reduce (1301 vs 889 us for identical work) at the HL01 contended rate; ~400 us of barrier wait (~10%). HL01 found no PCIe configuration cause (2026-11-13 lspci, IOMMU passthrough).
+- Decode: the R9700's 161 us at wait1 is idle time (it finishes its GEMMs first), not link time; give it more compute (split 5,5,6 candidate, +3-4% at 6/8 streams, needs 3x ABBA).
+
+New cheap experiments for this item (in order, after rad0032/rad0033):
+1. Uneven XTX reduce shares for prefill, e.g. two-shot weights 4.5,3.5,1 (layout configuration), and the mirror 3.5,4.5,1 to confirm the skew follows XTX 0's pulls. Pass: wait2 on XTX 0 and the R9700 < 100 us, prefill 2048 TTFT better beyond noise.
+2. Split 5,5,6 3x ABBA for decode (held from VTP37).
+3. Hierarchical exchange only if VTP38's host reduce fails its CPU-bandwidth gate.
+The host-reduced all-reduce (CPU sums and pushes, no card pulls) is VTP38, including GPU-live DMA-BUF correctness, device-specific support, collective failure/abort protocol, and HL02's separately measured contention arms. Do not implement a second host reducer under this item.
+
+**2026-11-14 long-context decomposition (bf16 cache, single runs; `docs/evidence/2026-11-14-tp3-long-context/README.md`).** One 100,366-token prompt: 53.8 s. TTFT fits a·N + b·N² with a = 3.49e-4 s/token (the all-reduce chain: 12,544 calls x 2.83 ms = 35.5 s) and b = 1.86e-9 (18.7 s at 100k). The quadratic term is attention on the XTX ranks: 13.5 ms a 1024-row call at ~23 TFLOP/s against the R9700's 9.0 ms for twice the heads; the XTX all-reduce lane idles 19.0 s behind it. `--max-num-batched-tokens 4096`: 44.7 s (-17%), a unchanged, b halved; 8k unchanged; beside 4 streams the long prompt 61.7 -> 51.3 s but decode gap max 1.55 -> 2.44 s. `--prefill-interleave 2`: decode during the prefill 5.0 -> 13.5 chunks/s for +8% long TTFT. `--busy-prefill-chunk 512`: gap max 0.68 s, long TTFT +46%. 4096 with interleave 2: 44.7 s alone; beside 4 streams 54.4 s, 11.1 chunks/s, gap max 2.41 s. `--tp-attn-split rows` is refused by the w8a8 plugin. Attention fill is RAD52; scheduling is VTP39. None of this is a default: no repeats yet.
+
+**2026-11-14 XTX compute against the chain.** Outside attention an XTX rank computes ~8.9 ms a layer-step (GEMM ~82 TOPS at M~1024, 57% of the iu8 roof; delta-net scan 1.2-1.3 ms a call, ~10x the R9700 per head) against the chain's 11.3 ms. A transport gain past ~20% needs XTX compute to fall with it.
+
 ## Results (2026-11-13): the all-reduce
 
 Worktree `perf/vtp36-tp3-performance`. Builds (all `radiance:stock:linux-radiance`, rad0016-rad0030 plus the patches
@@ -357,95 +452,10 @@ is 2.9 ms. The R9700 moves the message once each way (10 MiB each, `ts_duplex` a
 link, to the extent the card overlaps directions: the fused loop gets about a third of the possible overlap in situ
 (half the bytes are in fused steps, at 8.4 GB/s summed).
 
-## Detailed Solution & Technical Design
-
-
-
-## Code Samples & Guidance
-
-
-
-## Files
-
-
-
-## Validation
-
-- Matched ABBA (at least 2x, 3x for the final refresh) per lever: 1/4/6/8-stream tok/s with speculation on, one-prompt TTFT at 512/2048/8192, four 4096-token prompts, an 8192-token prompt beside 4 generating streams.
-- Greedy identity against the exact wire for every exact method; KLD against BF16 for any lossy option or format change.
-- `--profile-ops` / rad0023 phase times before and after.
-- int8 stress (12 runs) for any change to the speculative or collective path (rad0028 regression guard).
-
-## Effort & Risk
-
-
-
-## Standards
-
-
-
-## Acceptance Criteria
-
-- MXFP4 TP3 one-stream TTFT within 5% of TP2 at 2048 tokens (carried from VTP35), or a recorded NO-GO stating the transport limit with the profile that shows it. *2026-11-14: +5.7% (775 against 733 ms, matched ABBA); not met.*
-- TP3 aggregate tok/s at 4/6/8 streams stays at or above the baseline table for both formats.
-- Every shipped lever is selectable per layout or run (no model or card constants), with its gain attributed by ABBA.
-- Every reordering change passes the reordering quality gate defined in VTP37 (noise floor against serial; no quality loss against BF16).
-
-## Notes
-
-**2026-11-13 VTP36 candidate receipt (not final production):** rad0032 fused pieces + rad0033 write-once + duplex weights, explicit `all_reduce:nblocks=4,nthreads=256,ts_pieces=4,ts_fuse=1,ts_once=1,ts_duplex=1`. Two completed ABBA comparisons report bit-identical logprobs: int8 2048 TTFT 1054.3→797.5 ms (-24.4%), 8 streams 233.2→265.6 tok/s (+13.9%); MXFP4 2048 TTFT 1064.4→774.7 ms (-27.2%), 8 streams 237.8→277.4 tok/s (+16.7%). Stress and 5,5,6 split validation were still outstanding. Evidence with sizes and sample counts in `docs/evidence/2026-11-13-hl02-vtp38-consolidation/README.md`; implementation lives in the separate unmerged VTP36 performance branch at this checkpoint. VTP38 must compare CPU host reduce against this improved reference, not the older ~4 ms rad0031 baseline.
-
-**History — earlier programme review and GPU timeline:**
-
-Consolidated 2026-11-13 from a read-only GPT sweep (tp3-perf-gather) and a review of the plan tree. Superseded into this item: VTP35. Completed: VTP31 (acceptance met by experiment 10 and the VTP14 N7 refresh). Superseded elsewhere: RAD04 (TP2 prefill all-reduce overlap; upstream pipelines prefill at two ranks and rad0020/rad0025-0027 extend it). Linked, kept separate: VTP32, RAD47, RAD48, RAD36, HL05, XDP03. Not applicable to dense TP3: the RHP heat-placement items (MoE expert placement), Flash-Next helper and tail items, llama.cpp/ggml collective items (PGC/PHC).
-
-Evidence: docs/planning/completed/run-dense-27b-virtual-tp/VTP14.md (N6/N7 refresh), VTP31.md (experiments 1-13), VTP33.md (capacity, rad0029); patches rad0020-rad0029; layouts engines/radiance/layouts/qwen27b.toml.
-
-
-### GPT detailed review (2026-11-13, gateway req_main_47cb7e059896) and changes to this item
-
-**Priority:** int8 TP3 decode and prefill now come first, in VTP37 (P0). This item keeps MXFP4 and the shared all-reduce work.
-
-**Leading explanation of the 2048-token MXFP4 gap (to be confirmed by experiment 1):**
-- The pipeline floors differ. TP2 uses the plugin default `kPipeMinRows` 1024 (512 tokens serial, 2048 pipelined); the TP3 layout sets 256 (both pipelined). TP2 gains the pipeline between 512 and 2048 and TP3 does not, which matches TP2 +49% vs TP3 +4% tok/s over that range.
-- The x4 link floor: with shard weights 4,4,1 the R9700 moves 10S/9 = 22.2 MiB each way per 2048-row all-reduce, a ~2.96 ms floor at Gen4 x4 against ~1.33 ms for TP2 over x8; x ~129 all-reduces = ~210 ms, the size of the measured 208 ms gap (an order-of-magnitude agreement, not proof that it is all exposed).
-- Not the cause: gfx1100 rows in M 9-128 (pieces are >= 256 rows, tiled regime) or a one-shot/two-shot switch (every piece is above the 524,288-element two-shot floor).
-
-**Corrections:**
-- Decode all-reduce cost is not mainly flag round trips: rad0023 showed ~2 us minimum flag wait, ~120 us R9700 fold and ~99 us waiting for XTX arrival (one-shot path, before rad0024). Arrival skew and data movement first.
-- The R9700 owns a 1/9 shard (4,4,1), so moves 10S/9, not S.
-- RAD47 (gfx1100 MXFP4 rows) is implemented and measured on main; it is not a new gain here. RAD48's native int8 tile is on main (#601).
-- `--profile-ops` totals are summed device events, not wall time.
-- The checked-in TP2 layout uses `tp-wire = wht6` and `--max-num-batched-tokens 2048`; ABBA receipts must record the exact-wire override.
-- Exactness invariant: a transport change is byte-identical against the current TP3 exact method with the same split, not against TP2.
-- rad0016-rad0029 SUMMARY status labels are stale relative to the hardware evidence (docs cleanup).
-
-**Reordered steps:** (1) matched profile at 512/2048/8192 with the pipeline floor at 256, 1024 and off, per-step chunk, cut, kernel rows and collective phases; (2) phase timestamps in the weighted three-rank two-shot (`r4d_ar_twoshot_Nrank_exact.hip`, extending rad0023) and a narrow TP3 overlap lane for it; (3) one transport intervention chosen by (2). Downgraded: LL handshake (~0.5% decode), three-rank fused AR + norm for fp8 (~0.85% prefill device time), chained launches. CPU reduce, epilogue push and per-card formats only if the profile justifies them. If the transfer floor leaves under 165 ms removable at 2048 tokens, record the NO-GO.
-
-Full review and brief: `docs/evidence/2026-11-13-vtp36-gpt-review/`.
-
-2026-11-13 all-reduce timeline review (rad0031, baseline, int8 TP3; medians per all-reduce; columns push / wait1 / reduce / wait2 / assemble / total, us):
-
-| Workload | XTX 0 | XTX 1 | R9700 |
-|---|---|---|---|
-| prefill 2048, ~1000 rows (~10 MB) | 386 / 1790 / 889 / 406 / 431 / 3995 | 399 / 1701 / 1301 / 2 / 453 / 3990 | 1334 / 20 / 188 / 1108 / 1254 / 3956 |
-| decode 8 streams, 32 rows (320 KiB) | 14 / 5 / 23 / 17 / 12 / 81 | 14 / 4 / 39 / 2 / 14 / 82 | 2 / 161 / 5 / 37 / 42 / 251 |
-
-Readings:
-- Prefill is bound by data over the R9700's x4 link. With share w the R9700 always sends S and receives (1+w)S in any exact scheme, so 4,4,1 is already near its floor (shrinking w saves at most S/9). Measured R9700 push ~6.7 GB/s vs XTX ~14 GB/s. The phases run serially (~4 ms) against a duplex floor of ~1.4-2 ms: overlap (rad0032 pieces/duplex) is the lever, not the shares.
-- A one-shot for prefill is worse (R9700 receives 2S); it stays right for decode (handshake-bound). Hierarchical exchange (XTX pair sums first, R9700 sends S and receives S) reaches the R9700 minimum; recorded as VTP38's fallback.
-- XTX 1 is the last reducer in every prefill all-reduce (1301 vs 889 us for identical work) at the HL01 contended rate; ~400 us of barrier wait (~10%). HL01 found no PCIe configuration cause (2026-11-13 lspci, IOMMU passthrough).
-- Decode: the R9700's 161 us at wait1 is idle time (it finishes its GEMMs first), not link time; give it more compute (split 5,5,6 candidate, +3-4% at 6/8 streams, needs 3x ABBA).
-
-New cheap experiments for this item (in order, after rad0032/rad0033):
-1. Uneven XTX reduce shares for prefill, e.g. two-shot weights 4.5,3.5,1 (layout configuration), and the mirror 3.5,4.5,1 to confirm the skew follows XTX 0's pulls. Pass: wait2 on XTX 0 and the R9700 < 100 us, prefill 2048 TTFT better beyond noise.
-2. Split 5,5,6 3x ABBA for decode (held from VTP37).
-3. Hierarchical exchange only if VTP38's host reduce fails its CPU-bandwidth gate.
-The host-reduced all-reduce (CPU sums and pushes, no card pulls) is VTP38, including GPU-live DMA-BUF correctness, device-specific support, collective failure/abort protocol, and HL02's separately measured contention arms. Do not implement a second host reducer under this item.
-
 ## Change Log
 
 - 2026-11-12T22:44:13.590288+00:00 (created-by): Created by agent
 - 2026-11-12T22:44:40.981867+00:00 (updated-by): Updated: section:description, section:steps, section:validation, section:acceptance_criteria, section:notes
 - 2026-11-12T23:31:05.048072+00:00 (updated-by): Updated: section:notes
 - 2026-11-13T05:15:40.560777+00:00 (updated-by): Updated: section:notes
+- 2026-11-14T06:59:22.719204+00:00 (updated-by): Updated: section:steps, section:notes

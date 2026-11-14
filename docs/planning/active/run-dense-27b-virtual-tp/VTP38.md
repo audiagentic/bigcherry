@@ -91,6 +91,8 @@ L. Risks: CPU memory bandwidth (~60 MB of traffic per prefill all-reduce at 2048
 - [ ] Timeout aborts and drains all ranks before any fresh-generation GPU fallback; no unsafe mid-flight switch.
 - [ ] Default unchanged until repeated ABBA, quality, stress and explicit approval.
 
+- [ ] TTFT reported at 2048 tokens and at 60k / 100k with the linear and quadratic terms separated, and the XTX ranks' between-call compute against the call time, so a transport gain hidden by XTX compute is recorded as such.
+
 ## Notes
 
 **2026-11-14 HL02 Gate B result:** mixed receive (CPU push to the contention-triggering rank, GPU pull for the rest) is the only push arm that shortens the receive; push-to-all and push-to-pair are no faster than all-pull because concurrent CPU pushers each fall to ~5.5 GB/s. Next for this item: the same mixed receive inside the two-shot's assemble on a GPU partial-producer timeline, against the VTP36 pin.
@@ -107,7 +109,10 @@ L. Risks: CPU memory bandwidth (~60 MB of traffic per prefill all-reduce at 2048
 
 Created 2026-11-13 from the VTP36 all-reduce timeline review and the HL01 lspci/IOMMU finding. This is the sole owner of TP3 CPU-reduced all-reduce integration; VTP36 retains programme-level A/B reporting, HL02 owns cross-GPU contention A/B, RAD40 the historical physical-link harness and RAD50 the generic DMA-BUF/visibility proof. Depends on HL02 and RAD50 gate 2 (R9700). Related: VTP36 (two-shot pieces/duplex, uneven XTX shares), RAD50/RAD51 (CPU BAR push lab), RAD40 (contention measurement), HL04 (different-layout no-go).
 
+**2026-11-14 expected size at depth, and the ceiling** (`docs/evidence/2026-11-14-tp3-long-context/README.md`). In the 100k profile the all-reduce's device share (42% XTX, 56% R9700) is mostly waiting; the part a receive change can remove is the R9700's link time, ~2.83 ms a 1024-row call, which is the whole linear term of TTFT (35.1 s of 53.8 s at 100k). Gate B's -17% applied to the whole call would give about -15% TTFT at 2048 tokens and -11% at 100k; attention on the XTX ranks (18.7 s at 100k) is untouched by transport (RAD52). The XTX ranks' compute between calls is at ~80% of the chain, so a gain above ~20% on the call will not show in TTFT until XTX compute falls. Add 60k and 100k one-prompt TTFT to step 9 and record per-rank between-call time before and after.
+
 ## Change Log
 
 - 2026-11-13T05:14:45.261435+00:00 (created-by): Created by agent
 - 2026-11-13T05:15:16.842115+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:effort_risk, section:acceptance_criteria, section:notes
+- 2026-11-14T06:59:26.713769+00:00 (updated-by): Updated: section:acceptance_criteria, section:notes

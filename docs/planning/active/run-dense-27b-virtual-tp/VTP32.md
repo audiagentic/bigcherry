@@ -26,14 +26,6 @@ Instances of one kind have identical shapes, so per-instance shares would not he
 
 This item turns the hand sweeps into a solver. Measure each card's cost per op kind and per regime, then choose the shares that minimise the sum over layers of the slowest rank's time (compute plus its all-reduce wait). Each all-reduce waits for the slowest rank of that layer, so per-rank totals can balance while per-layer waits still add up.
 
-## Results so far
-
-- MXFP4, `--profile-ops`, one stream depth 7: XTX compute 3468 ms against R9700 2263 ms at 6/6/12. Bandwidth weighting (more on the XTX) made the XTX +10% slower.
-- MXFP4 sweep (4/8 streams, spec off and depth 3): 6/6/12 had the shortest step in 3 of 4 regimes.
-- w8a8 sweep: delta-net 6,6,4 and FFN 6656,6656,4096 is +13% at 8 streams (spec off) and +7% (spec on). Int8 favours more work on the XTX.
-- KV head placement (w8a8): 1,1,2 beats 2,1,1 on capacity (12.15 against 11.72 GiB) and speed.
-- The optimum differs by regime (decode against prefill) and by weight format. A single static split must compromise: the split is fixed at load because the weights are resident per rank.
-
 ## Steps
 
 1. A calibration run per card, op kind and regime: `--profile-ops` per-op ms and calls (and the wait column) at decode (1/4/8 streams) and prefill (2048/8192 tokens), MXFP4 and w8a8.
@@ -77,7 +69,18 @@ This item turns the hand sweeps into a solver. Measure each card's cost per op k
 
 Hand-sweep data: VTP14.md (N2 rebalance, split sweep, N6). Profile tooling: ${BC_TASK_TMP}/vtp14/prof_split.py, prof-where.sh. Spec form and checks: rad0018 README.
 
+**2026-11-14.** At 5,5,6 the R9700 still waits 69 us of a 370 us decode cycle (VTP36). Scaling compute by share balances near 4.5 / 4.5 / 7 sixteenths (+9% at 8 streams, derived) at ~-9% cache tokens, because the R9700's KV pool binds with the XTX's: the solver's objective needs a cache-capacity term or constraint. In prefill at depth the XTX ranks are critical through attention (KV heads, not movable) and the delta-net scan (~10x the R9700 per head); calibrate prefill at 50k-100k as well as 2048 / 8192. Solve after VTP37 step 3a (it moves the XTX's decode cost per share).
+
+## Results so far
+
+- MXFP4, `--profile-ops`, one stream depth 7: XTX compute 3468 ms against R9700 2263 ms at 6/6/12. Bandwidth weighting (more on the XTX) made the XTX +10% slower.
+- MXFP4 sweep (4/8 streams, spec off and depth 3): 6/6/12 had the shortest step in 3 of 4 regimes.
+- w8a8 sweep: delta-net 6,6,4 and FFN 6656,6656,4096 is +13% at 8 streams (spec off) and +7% (spec on). Int8 favours more work on the XTX.
+- KV head placement (w8a8): 1,1,2 beats 2,1,1 on capacity (12.15 against 11.72 GiB) and speed.
+- The optimum differs by regime (decode against prefill) and by weight format. A single static split must compromise: the split is fixed at load because the weights are resident per rank.
+
 ## Change Log
 
 - 2026-11-12T07:38:53.993312+00:00 (created-by): Created by agent
 - 2026-11-12T07:40:13.909697+00:00 (updated-by): Updated: section:description, section:steps, section:validation, section:acceptance_criteria, section:notes
+- 2026-11-14T06:59:34.819823+00:00 (updated-by): Updated: section:notes
