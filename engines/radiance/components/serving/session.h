@@ -147,9 +147,10 @@ struct ManifestRun {
 };
 /* Runs this bc-serve (`argv[0]` is its path) to completion and returns its exit and output. Injectable for tests. */
 using ManifestRunner = std::function<ManifestRun(const std::vector<std::string>& argv)>;
-/* Runs a bc-serve to completion, waiting through `wait` (the owner keeps answering its socket; a stop request
- * ends the child and throws PlanFailed). */
-ManifestRun run_to_completion(const std::vector<std::string>& argv, const Env& env, const Wait& wait = {});
+/* Runs a bc-serve to completion, waiting through `hooks.wait` (the owner keeps answering its socket; a stop request
+ * ends the child and throws PlanFailed) and registered through `hooks.started`/`ended` (an exit it cannot verify
+ * leaves the child the owner's to stop). */
+ManifestRun run_to_completion(const std::vector<std::string>& argv, const Env& env, const Hooks& hooks = {});
 
 struct EnginePlanInputs {
     Options options;                       // the resolver's inputs: site, profile, configs, layouts, model root, --set

@@ -168,7 +168,8 @@ int session_command(const std::string& cmd, int argc, char** argv) {
         if (reply->contains("port")) std::cout << "port     " << reply->at("port") << '\n';
         if (reply->contains("manifest")) std::cout << "manifest " << reply->at("manifest").get<std::string>() << '\n';
         for (const auto& p : reply->value("processes", Json::array()))
-            std::cout << "process  " << p.value("role", std::string()) << " pid " << p.value("pid", 0) << ", log "
+            if (!p.value("exited", false))
+                std::cout << "process  " << p.value("role", std::string()) << " pid " << p.value("pid", 0) << ", log "
                       << p.value("log", std::string()) << '\n';
         return 0;
     }

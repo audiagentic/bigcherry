@@ -19,6 +19,7 @@
 #include <netinet/in.h>
 #include <poll.h>
 #include <sys/file.h>
+#include <sys/resource.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/un.h>
@@ -152,13 +153,55 @@ void cloexec_above_stderr() {
 #define CLOSE_RANGE_CLOEXEC (1U << 2)
 #endif
     if (::syscall(SYS_close_range, 3U, ~0U, CLOSE_RANGE_CLOEXEC) == 0) return;
-    for (int fd = 3; fd < 1024; ++fd) {
+    struct rlimit lim{};
+    const long top = ::getrlimit(RLIMIT_NOFILE, &lim) == 0 && lim.rlim_cur != RLIM_INFINITY ? long(lim.rlim_cur) : 65536;
+    for (int fd = 3; fd < top; ++fd) {
         const int flags = ::fcntl(fd, F_GETFD);
         if (flags >= 0) ::fcntl(fd, F_SETFD, flags | FD_CLOEXEC);
     }
 }
 
-bool group_gone(pid_t pgid) { return ::kill(-pgid, 0) != 0 && errno == ESRCH; }
+// /proc/PID/stat: state (field 3), process group (5), start time (22).
+struct ProcStat {
+    char state = 0;
+    pid_t pgid = 0;
+    uint64_t start = 0;
+};
+std::optional<ProcStat> proc_stat(pid_t pid) {
+    std::ifstream in("/proc/" + std::to_string(pid) + "/stat");
+    std::string stat;
+    if (!std::getline(in, stat)) return std::nullopt;
+    const size_t close = stat.rfind(')');
+    if (close == std::string::npos) return std::nullopt;
+    std::istringstream rest(stat.substr(close + 2));
+    std::string field;
+    ProcStat p;
+    try {
+        for (int i = 3; i <= 22 && rest >> field; ++i) {
+            if (i == 3) p.state = field[0];
+            else if (i == 5) p.pgid = pid_t(std::stol(field));
+            else if (i == 22) p.start = std::stoull(field);
+        }
+    } catch (...) { return std::nullopt; }
+    return p;
+}
+
+// A process of the group that still runs (a zombie holds nothing and only waits for its parent to reap it).
+bool group_has_live_member(pid_t pgid) {
+    std::error_code ec;
+    for (const auto& e : fs::directory_iterator("/proc", ec)) {
+        const std::string name = e.path().filename().string();
+        if (name.empty() || name.find_first_not_of("0123456789") != std::string::npos) continue;
+        const auto p = proc_stat(pid_t(std::stol(name)));
+        if (p && p->pgid == pgid && p->state != 'Z') return true;
+    }
+    return false;
+}
+
+bool group_gone(pid_t pgid) {
+    if (::kill(-pgid, 0) != 0 && errno == ESRCH) return true;
+    return !group_has_live_member(pgid);
+}
 
 std::string lower(std::string s) {
     std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return char(std::tolower(c)); });
@@ -264,24 +307,21 @@ bool stop_child(pid_t pid, int first, std::chrono::milliseconds grace) {
 }
 
 std::optional<uint64_t> start_time(pid_t pid) {
-    std::ifstream in("/proc/" + std::to_string(pid) + "/stat");
-    std::string stat;
-    if (!std::getline(in, stat)) return std::nullopt;
-    const size_t close = stat.rfind(')');
-    if (close == std::string::npos) return std::nullopt;
-    std::istringstream rest(stat.substr(close + 2));
-    std::string field;
-    for (int i = 3; i <= 22 && rest >> field; ++i)
-        if (i == 22) try { return std::stoull(field); } catch (...) { return std::nullopt; }
-    return std::nullopt;
+    const auto p = proc_stat(pid);
+    if (!p || p->state == 'Z') return std::nullopt;
+    return p->start;
 }
 
 std::vector<Json> alive_recorded(const Json& record) {
     std::vector<Json> alive;
     for (const auto& p : record.value("processes", Json::array())) {
         if (!p.contains("pid") || !p.contains("start_time")) continue;
-        const auto t = start_time(p.at("pid").get<pid_t>());
-        if (t && *t == p.at("start_time").get<uint64_t>()) alive.push_back(p);
+        const pid_t pid = p.at("pid").get<pid_t>();
+        const auto t = start_time(pid);
+        // the process itself, or (its leader gone) a process left in its group: every child runs in a group of its own
+        // whose id is its PID, and that id is not reused while any member lives
+        if ((t && *t == p.at("start_time").get<uint64_t>()) || group_has_live_member(p.value("pgid", pid)))
+            alive.push_back(p);
     }
     return alive;
 }
@@ -404,6 +444,10 @@ public:
                    {"state", "created"}, {"events", Json::array()}, {"processes", Json::array()},
                    {"errors", Json::array()}};
         event("created");
+        if (save_failed_) {
+            std::cerr << "bc-serve: no session starts without its record (" << (s_.run_dir / "session.json").string() << ")\n";
+            return 1;
+        }
         listen_socket();
 
         struct sigaction sa{};
@@ -493,23 +537,30 @@ private:
     EngineStart plan_;
     Json record_;
 
-    // A record that cannot be written is reported, never a reason to skip stopping a child.
-    void save() {
+    // A record that cannot be written is reported, never a reason to skip stopping a child (but no process is started
+    // that the record cannot name: see track).
+    bool save() {
         try {
             write_atomic(s_.run_dir / "session.json", record_.dump(2) + "\n");
+            return true;
         } catch (const std::exception& e) {
             if (!save_failed_) std::cerr << "bc-serve: the session record cannot be written: " << e.what() << '\n';
             save_failed_ = true;
+            return false;
         }
     }
     bool save_failed_ = false;
 
     void track(const std::string& role, pid_t pid, const fs::path& log) {
         children_.push_back({role, pid, log});
-        Json p = {{"role", role}, {"pid", pid}, {"log", log.string()}};
+        Json p = {{"role", role}, {"pid", pid}, {"pgid", pid}, {"log", log.string()}};
         if (const auto t = start_time(pid)) p["start_time"] = *t;
         record_["processes"].push_back(p);
         event("started", {{"role", role}, {"pid", pid}});
+        // durable before anything else happens: an owner that dies must leave a record naming this process
+        if (!p.contains("start_time") || !save())
+            throw std::runtime_error("the session record cannot name " + role + " (pid " + std::to_string(pid) +
+                                     "); stopping it: no process runs that a later stop could not find");
     }
     void untrack(pid_t pid) {
         children_.erase(std::remove_if(children_.begin(), children_.end(), [&](const Child& c) { return c.pid == pid; }),
@@ -689,7 +740,8 @@ int start_detached(const std::vector<std::string>& self_argv, const fs::path& ru
 
 /* --- the engine-only plan step --------------------------------------------------------------------------------------- */
 
-ManifestRun run_to_completion(const std::vector<std::string>& argv, const Env& env, const Wait& wait) {
+ManifestRun run_to_completion(const std::vector<std::string>& argv, const Env& env, const Hooks& hooks) {
+    const Wait& wait = hooks.wait;
     const fs::path dir = fs::temp_directory_path();
     const std::string tag = stamp() + "-" + std::to_string(Clock::now().time_since_epoch().count());
     const fs::path out = dir / ("bc-serve-" + tag + ".out"), err = dir / ("bc-serve-" + tag + ".err");
@@ -723,18 +775,34 @@ ManifestRun run_to_completion(const std::vector<std::string>& argv, const Env& e
         ::setpgid(p, p);   // in both, so the group exists before any stop signals it
         return p;
     }();
-    // waited for through the owner (its control socket stays answered); a stop request ends the child
+    // waited for through the owner (its control socket stays answered) and registered with it: a writer whose exit is
+    // not verified here stays the owner's to stop, and the session is never reported stopped while it lives
+    if (hooks.started) hooks.started("manifest writer", pid, out);
+    auto finish = [&](bool exited) {
+        std::error_code ec;
+        fs::remove(out, ec);
+        fs::remove(err, ec);
+        if (!exited) throw std::runtime_error("plan: the manifest writer (pid " + std::to_string(pid) +
+                                              ") is still alive after SIGKILL");
+        if (hooks.ended) hooks.ended(pid);
+    };
     int st = 0;
-    while (running(pid, &st)) {
-        if (wait && !wait(100ms)) {
-            stop_child(pid, SIGTERM, 10s);
-            std::error_code ec;
-            fs::remove(out, ec);
-            fs::remove(err, ec);
-            throw PlanFailed("plan: stopped while bc-serve wrote a manifest");
+    try {
+        while (running(pid, &st)) {
+            if (wait && !wait(100ms)) {
+                finish(stop_child(pid, SIGTERM, 10s));
+                throw PlanFailed("plan: stopped while bc-serve wrote a manifest");
+            }
+            if (!wait) std::this_thread::sleep_for(20ms);
         }
-        if (!wait) std::this_thread::sleep_for(20ms);
+    } catch (const PlanFailed&) {
+        throw;
+    } catch (...) {
+        if (stop_child(pid, SIGTERM, 10s) && hooks.ended) hooks.ended(pid);
+        throw;
     }
+    if (!stop_child(pid, SIGKILL, 10s)) finish(false);   // the writer exited; nothing of its group may stay
+    if (hooks.ended) hooks.ended(pid);
     ManifestRun r;
     r.exit = WIFEXITED(st) ? WEXITSTATUS(st) : 128 + (WIFSIGNALED(st) ? WTERMSIG(st) : 0);
     r.out = read_file(out);
@@ -821,8 +889,8 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
     out.summary = {{"config", name}, {"source", layouts.at("source").value(name, "")},
                    {"model", v.at("engine").at("model")}, {"engine_cards", cards}, {"engine", engine.string()}};
 
-    const ManifestRunner runner = in.runner ? in.runner : [&wait](const std::vector<std::string>& argv) {
-        return run_to_completion(argv, child_environment(environ, {}), wait);
+    const ManifestRunner runner = in.runner ? in.runner : [&hooks](const std::vector<std::string>& argv) {
+        return run_to_completion(argv, child_environment(environ, {}), hooks);
     };
     const fs::path cache = run_dir / "plan-cache";
     fs::create_directories(cache);

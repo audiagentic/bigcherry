@@ -60,7 +60,6 @@ struct Case {
     int port = free_port();
     Json behaviour = Json::object();
     ss::Session session;
-    bool plan_called = false;
 
     explicit Case(const std::string& name) : run(g_root / (std::to_string(++g_case) + "-" + name)) {
         fs::create_directories(run);
@@ -334,16 +333,32 @@ void spawn_and_environment() {
     }
     assert(threw);
     // a manifest write is waited for through the owner: output kept, and a stop request ends a slow one at once
-    const auto echoed = ss::run_to_completion({"/bin/sh", "-c", "echo out; echo err >&2; exit 3"}, {{"PATH", "/bin"}},
-                                              [](std::chrono::milliseconds) { return true; });
+    std::vector<pid_t> registered, verified;
+    ss::Hooks hooks;
+    hooks.wait = [](std::chrono::milliseconds) { return true; };
+    hooks.started = [&](const std::string& role, pid_t pid, const fs::path&) { assert(role == "manifest writer"); registered.push_back(pid); };
+    hooks.ended = [&](pid_t pid) { verified.push_back(pid); };
+    const auto echoed = ss::run_to_completion({"/bin/sh", "-c", "echo out; echo err >&2; exit 3"}, {{"PATH", "/bin"}}, hooks);
     assert(echoed.exit == 3 && echoed.out == "out\n" && echoed.err == "err\n");
+    assert(registered.size() == 1 && registered == verified);   // registered with the owner, its exit verified
     int waits = 0;
+    hooks.wait = [&](std::chrono::milliseconds) { return ++waits < 3; };
     const auto t0 = std::chrono::steady_clock::now();
     bool stopped = false;
     try {
-        ss::run_to_completion({"/bin/sleep", "30"}, {}, [&](std::chrono::milliseconds) { return ++waits < 3; });
+        ss::run_to_completion({"/bin/sleep", "30"}, {}, hooks);
     } catch (const ss::PlanFailed&) { stopped = true; }
-    assert(stopped && waits == 3 && std::chrono::steady_clock::now() - t0 < 5s);
+    assert(stopped && waits == 3 && std::chrono::steady_clock::now() - t0 < 5s && verified.size() == 2);
+    // a writer that leaves a descendant ignoring SIGTERM: its whole group goes (SIGKILL after the grace) before it returns
+    const fs::path child_pid = g_root / "writer-descendant.pid";
+    waits = 0;
+    hooks.wait = [&](std::chrono::milliseconds d) { std::this_thread::sleep_for(d); return ++waits < 5; };
+    stopped = false;
+    try {
+        ss::run_to_completion({"/bin/sh", "-c", "trap '' TERM INT; /bin/sleep 60 & echo $! > " + child_pid.string() + "; wait"},
+                              {{"PATH", "/bin"}}, hooks);
+    } catch (const ss::PlanFailed&) { stopped = true; }
+    assert(stopped && verified.size() == 3 && gone(std::stoi(text(child_pid))));
     char a[] = "PATH=/bin", b[] = "RAD_X=1", c[] = "BC_Y=2", d[] = "ROCR_VISIBLE_DEVICES=1", e[] = "HOME=/h";
     char* inherited[] = {a, b, c, d, e, nullptr};
     const auto env = ss::child_environment(inherited, {{"ROCR_VISIBLE_DEVICES", "4"}});
@@ -419,8 +434,27 @@ void owner_killed_fails_closed() {
     bool planned = false;
     next.session.plan = [&](const fs::path&, const ss::Hooks&) -> ss::EngineStart { planned = true; return {}; };
     assert(exit_code(next.owner()) == 98 && !planned);
-    // the test cleans up its own orphan (a person does it by the PID the refusal names), then the cards are free
+    // its leader gone, a process left in its group still counts (a descendant the engine forked)
     ::kill(-engine, SIGKILL);
+    for (int i = 0; i < 100 && !gone(engine); ++i) std::this_thread::sleep_for(20ms);
+    {
+        Case d("descendant-left");
+        d.behaviour["descendant"] = (d.run / "descendant.pid").string();
+        const pid_t o = d.owner();
+        d.wait_state({"running"});
+        const int leader = d.engine_pid();
+        const int descendant = std::stoi(text(d.run / "descendant.pid"));
+        ::kill(o, SIGKILL);
+        exit_code(o);
+        ::kill(leader, SIGKILL);   // the leader only: the descendant stays in its group
+        for (int i = 0; i < 100 && !gone(leader); ++i) std::this_thread::sleep_for(20ms);
+        assert(gone(leader) && !gone(descendant));
+        const auto left = ss::alive_recorded(d.record());
+        assert(left.size() == 1 && left[0].at("pid") == leader);
+        ::kill(descendant, SIGKILL);
+        for (int i = 0; i < 100 && !gone(descendant); ++i) std::this_thread::sleep_for(20ms);
+        assert(ss::alive_recorded(d.record()).empty());
+    }
     for (int i = 0; i < 100 && !gone(engine); ++i) std::this_thread::sleep_for(20ms);
     assert(ss::alive_recorded(c.record()).empty());
     Case after("killed-after");
@@ -433,6 +467,14 @@ void owner_killed_fails_closed() {
     assert(after.record().value("owner_pid", 0) == again);
     assert(ss::control(c.run, "stop", 10s)->value("ok", false));
     assert(exit_code(again) == 0);
+}
+
+void no_record_no_session() {
+    // the record cannot be written at all: no session starts (nothing could find its processes later)
+    Case c("no-record");
+    fs::create_directories(c.run / "session.json.tmp");   // the atomic write's temporary is a directory: writes fail
+    assert(exit_code(c.owner()) == 1 && !fs::exists(c.run / "session.json"));
+    for (const auto& e : fs::directory_iterator(c.run)) assert(e.path().filename().string().rfind("engine-", 0) != 0);
 }
 
 void unwritable_record_still_stops() {
@@ -489,6 +531,7 @@ int main(int argc, char** argv) {
     inherited_descriptor_not_passed();
     owner_killed_fails_closed();
     unwritable_record_still_stops();
+    no_record_no_session();
     std::cout << "PASS: session owner lifecycle (start order, canary, failures at every stage, stop via socket and "
                  "signal, SIGKILL fallback, one owner per run directory, child environment, detached start)\n";
     return 0;
