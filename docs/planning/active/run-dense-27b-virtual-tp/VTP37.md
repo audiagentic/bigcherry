@@ -88,6 +88,8 @@ Consolidated 2026-11-13. Carries RAD48's open work (superseded into this item) a
 
 **2026-11-14.** The M 33-64 NO-GO stands (no arm reaches it). The M 17-32 band was not assessed: nt_m16 beats the tiled row there, but against its own 1-9-row time it is 1.6-1.8x, which matches the 6-stream dip present in every table since VTP14 (`docs/evidence/2026-11-14-tp3-long-context/README.md`).
 
+**2026-11-15 step 3a, wave-count sweep (gfx1100, `r3_selftest --perfw8 --cold 256`, one run a cell; selftest `--pin-mw/--pin-nt`).** M 17-24 runs slower than M 32 at every per-rank shape under the rule (5120x5120: 101 vs 83 us; 11264x5120: 140 vs 127 us): the row count, not the work, sets the cost, which is the 6-stream dip. The rule moves to mw 8 above M 16; on N = 5120 shapes mw 4 is 11% faster at M 17-24 and 33-48; at N 5120, K 1920 and M > 32 the rule (mw 16) loses 30-40% to mw 4/8. Next on cards: the token-tile (nt) sweep at M 17-32 and padding M 17-31 to 32, with repeats; any rule change keys on N, not on a model.
+
 ## Results (2026-11-13)
 
 Builds: base `9a5d8194a35fcffae6b8b43c2450d586` (main, rad0016-rad0029); with rad0030
@@ -234,3 +236,4 @@ then 4 streams generating 1500 tokens with a 6144-token prompt beside them.
 - 2026-11-12T23:29:57.750388+00:00 (created-by): Created by agent
 - 2026-11-12T23:30:35.740511+00:00 (updated-by): Updated: section:description, section:steps, section:validation, section:acceptance_criteria, section:notes
 - 2026-11-14T06:59:30.762472+00:00 (updated-by): Updated: section:steps, section:notes
+- 2026-11-14T23:11:20.472887+00:00 (updated-by): Updated: section:notes
