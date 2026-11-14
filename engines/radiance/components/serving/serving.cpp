@@ -180,7 +180,7 @@ const std::vector<Field>& schema_fields() {
             "launcher --checkpoint-interval 4096", "derived", "startup-only", 1);
         add("engine.kv_cache_dtype", "string", "fp8",
             "launcher KV_DTYPE=fp8", "policy", "startup-only", 0, 0,
-            {"fp8", "fp8_v4", "k6_v4"});
+            {"bf16", "fp8", "fp8_v4", "k6_v4"});   // the engine's --kv-cache-dtype values (bf16: 16-bit K and V)
         add("engine.num_speculative_tokens", "integer", 3,
             "launcher --num-speculative-tokens 3; model MTP depth",
             "derived", "startup-only", 0, 64);
