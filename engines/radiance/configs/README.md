@@ -5,8 +5,14 @@ differs from the resolver's defaults. One file per model; a variant of a config 
 it changes. Configs are run-time data: nothing compiles them in. Plan: RSC12
 (`docs/planning/active/run-serving-configuration/RSC12.md`).
 
-Configs replace the layout files in `../layouts/` one model at a time. Until the conversion is complete both exist;
-a converted config keeps its layout's name (until the v2 manifest switch), so the two are never read together.
+Configs replace the layout files in `../layouts/`: every layout has a config of the same name (until the v2 manifest
+switch), in `flashnext.toml` and `qwen27b.toml`. The layout files stay until the bash launcher that reads them is retired
+(RSC12 step 6); the two are never read together. A test resolves each config and its layout, started as the launcher
+starts it, and requires the same values and the same manifest spec.
+
+A config states what its start does not derive. Helper configs leave out the host pool and the host KV tier (the
+launch derives them) unless a layout pinned one, which the config keeps and marks interim; helper-free configs state
+the engine-only values (no pool, no KV tier, the n-gram table on disk, no P2P between ranks), as the launcher does.
 
 ## Where configs come from
 

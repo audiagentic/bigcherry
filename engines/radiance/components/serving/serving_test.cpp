@@ -36,6 +36,8 @@
 #include <functional>
 #include <fstream>
 #include <regex>
+#include <set>
+#include <map>
 #include <sstream>
 #include <iostream>
 #include <stdexcept>
@@ -1836,6 +1838,173 @@ void tp_engine_with_two_helpers_layout(Fixture& t) {
     assert(refused);
 }
 
+/* RSC12 step 4: every layout has a config of its name, and each config resolves exactly as its layout started the way the
+ * launcher starts it. Nothing about a layout or the launcher is copied here: the layouts (cards, model, server-args) come
+ * from the layouts files, the launcher's defaults from launch-flashnext-best.sh and the engine-only values from
+ * plan-check.sh, so a changed layout or launcher that its config does not follow fails this test.
+ *  - a helper layout: the launcher's defaults, its server-args over them, the 1 s histogram period and (TP ranks) no P2P;
+ *    the pool and KV tier are what the launch derives (given to both sides) unless its server-args pin them;
+ *  - a helper-free layout: its server-args and the engine-only values (plan_check_describe_engine_only).
+ * Both sides resolve to the same values and build the same manifest spec, and both manifests pass the strict reader.
+ * The site's model stands in for the container (both sides read it); the declared model paths are compared apart. */
+void converted_layout_parity(Fixture& t) {
+    namespace sv = bc::serving;
+    const char* env = std::getenv("BIGCHERRY_LAYOUTS");
+    if (!env || !fs::is_directory(env)) throw std::runtime_error("converted_layout_parity: BIGCHERRY_LAYOUTS must name the layouts directory");
+    // canonical: the test environment names it as components/serving/../../layouts
+    const fs::path layouts_dir = fs::canonical(env), configs = layouts_dir.parent_path() / "configs";
+    const fs::path lab = layouts_dir.parent_path().parent_path().parent_path() / "tools" / "lab" / "radiance";
+    auto read_text = [](const fs::path& p) {
+        std::ifstream in(p);
+        if (!in) throw std::runtime_error("converted_layout_parity: cannot read " + p.string());
+        std::stringstream ss;
+        ss << in.rdbuf();
+        return ss.str();
+    };
+    // the launcher's defaults: NAME=VALUE at the start of a line in launch-flashnext-best.sh
+    const std::string launcher = read_text(lab / "launch-flashnext-best.sh");
+    auto launcher_default = [&](const std::string& name) {
+        std::smatch m;
+        if (!std::regex_search(launcher, m, std::regex("(^|\n)" + name + "=([^ \t\n#]+)")))
+            throw std::runtime_error("converted_layout_parity: launch-flashnext-best.sh sets no " + name);
+        return m[2].str();
+    };
+    // the engine-only values: `local pool=P kv=K ngram=N` in plan-check.sh
+    const std::string plan_check = read_text(lab / "lib" / "plan-check.sh");
+    std::smatch eo;
+    if (!std::regex_search(plan_check, eo, std::regex("local pool=([0-9]+) kv=([0-9]+) ngram=([a-z]+)")))
+        throw std::runtime_error("converted_layout_parity: plan-check.sh has no engine-only pool/kv/ngram line");
+    const std::string eo_pool = eo[1], eo_kv = eo[2], eo_ngram = eo[3];
+
+    Options lo;
+    lo.layouts = {layouts_dir};
+    const Json layouts = sv::load_layouts(lo).at("layout");
+    const auto set = sv::load_configs(sv::config_sources({configs}));
+    // one config for every layout; a config that is no layout is a named variant, listed here
+    const std::set<std::string> variants = {"qwen27b-tp3-int8-556"};
+    for (auto it = layouts.begin(); it != layouts.end(); ++it)
+        if (!set.config.contains(it.key())) throw std::runtime_error("layout " + it.key() + " has no config");
+    for (auto it = set.config.begin(); it != set.config.end(); ++it)
+        if (!layouts.contains(it.key()) && !variants.count(it.key()))
+            throw std::runtime_error("config " + it.key() + " is neither a layout nor a listed variant");
+
+    const auto model = t.root / "parity-model.rad";
+    bc::test::write_rad(model, 4, 16, 128, 128, {});
+    const auto heat = t.root / "parity.hot-first";
+    {
+        std::vector<uint32_t> counts(128 * 16, 1);
+        std::ofstream(heat, std::ios::binary).write(reinterpret_cast<const char*>(counts.data()), counts.size() * 4);
+    }
+    const auto site = t.file("parity-site.toml", "[engine]\nmodel = \"" + model.string() + "\"\nradiance_home = \"/runtime\"\n"
+                                                 "[handoff]\nheat = \"" + heat.string() + "\"\nhistogram = \"/heat.live\"\n");
+    const std::string derived_pool = "7168", derived_kv = "10240";   // what a launch derived (resources derive-launch)
+    const std::string port = launcher_default("PORT");
+    size_t checked = 0;
+    for (auto it = layouts.begin(); it != layouts.end(); ++it) {
+        const std::string name = it.key();
+        const Json& layout = it.value();
+        // the declared model: the same path, the site's override aside
+        if (layout.at("model") != set.config.at(name).at("model")) {
+            std::fprintf(stderr, "%s: layout model %s, config model %s\n", name.c_str(), layout.at("model").dump().c_str(),
+                         set.config.at(name).at("model").dump().c_str());
+            assert(false);
+        }
+        size_t ranks = 0;
+        const Json engine = layout.at("engine").is_array() ? layout.at("engine") : Json::array({layout.at("engine")});
+        for (const auto& g : engine) ranks += g.value("count", 1);
+        const bool helpers = layout.contains("helper") && !layout.at("helper").empty();
+        std::map<std::string, std::string> args;   // the layout's server-args, flag -> value
+        const Json server_args = layout.value("server-args", Json::array());
+        for (size_t i = 0; i + 1 < server_args.size(); i += 2) args[server_args[i]] = server_args[i + 1];
+        auto arg = [&](const std::string& flag, const std::string& otherwise) {
+            return args.count(flag) ? args.at(flag) : otherwise;
+        };
+        const std::string sel = "layout.name=\"" + name + "\"";
+        std::vector<std::string> launch, derived = {sel};
+        if (helpers) {   // launch-flashnext-best.sh: its defaults, the layout's server-args over them; plan_check_describe
+            const std::string pool = arg("--host-pool-mib", derived_pool), kv = arg("--host-kv-mib", derived_kv);
+            launch = {sel,
+                      "service.max_sessions=" + arg("--max-num-seqs", launcher_default("SEQS")),
+                      "service.max_context=" + arg("--max-model-len", launcher_default("MAX_LEN")),
+                      "memory.host_pool_mib=" + pool, "memory.host_kv_mib=" + kv,
+                      "engine.max_num_batched_tokens=" + arg("--max-num-batched-tokens", launcher_default("CHUNK")),
+                      "engine.ngram_placement=\"" + arg("--ngram-placement", launcher_default("NGRAM")) + "\"",
+                      "engine.kv_cache_dtype=\"" + arg("--kv-cache-dtype", launcher_default("KV_DTYPE")) + "\"",
+                      "engine.rope_scaling=\"" + launcher_default("ROPE") + "\"",
+                      "engine.port=" + port,
+                      "engine.checkpoint_interval=" + arg("--checkpoint-interval", launcher_default("CKPT_INTERVAL")),
+                      "engine.num_speculative_tokens=" + arg("--num-speculative-tokens", launcher_default("NUM_SPEC")),
+                      "handoff.shm=\"" + launcher_default("SHM") + "\"",
+                      "handoff.histogram_period_s=" + launcher_default("RECORD_PERIOD"),
+                      "engine.prefix_resume=\"" + launcher_default("PREFIX_RESUME") + "\""};
+            // what the launch derives reaches the config the same way; a pool or tier the layout pins is the config's own
+            if (!args.count("--host-pool-mib")) derived.push_back("memory.host_pool_mib=" + derived_pool);
+            if (!args.count("--host-kv-mib")) derived.push_back("memory.host_kv_mib=" + derived_kv);
+        } else {         // plan_check_describe_engine_only
+            launch = {sel, "engine.port=" + port};
+            const std::map<std::string, std::string> key = {
+                {"--max-model-len", "service.max_context"}, {"--max-num-seqs", "service.max_sessions"},
+                {"--max-num-batched-tokens", "engine.max_num_batched_tokens"},
+                {"--kv-cache-dtype", "engine.kv_cache_dtype"}, {"--num-speculative-tokens", "engine.num_speculative_tokens"},
+                {"--checkpoint-interval", "engine.checkpoint_interval"}};
+            for (const auto& [flag, value] : args) {
+                if (flag == "--host-pool-mib" || flag == "--host-kv-mib" || flag == "--ngram-placement") continue;
+                if (!key.count(flag)) throw std::runtime_error("layout " + name + ": server-arg " + flag + " is not a manifest setting");
+                const bool text = flag == "--kv-cache-dtype";
+                launch.push_back(key.at(flag) + "=" + (text ? "\"" + value + "\"" : value));
+            }
+            launch.push_back("memory.host_pool_mib=" + arg("--host-pool-mib", eo_pool));
+            launch.push_back("memory.host_kv_mib=" + arg("--host-kv-mib", eo_kv));
+            launch.push_back("engine.ngram_placement=\"" + arg("--ngram-placement", eo_ngram) + "\"");
+        }
+        if (ranks > 1) launch.push_back("tuning.p2p=\"off\"");
+        // the layout's own [settings] reach both sides through the resolver (the layout table, the config's tables)
+        Options layout_opts;
+        layout_opts.site = site;
+        layout_opts.layouts = {layouts_dir};
+        layout_opts.sets = launch;
+        const auto from_layout = sv::resolve(layout_opts, t.facts);
+        Options config;
+        config.site = site;
+        config.configs = {configs};
+        config.model_root = t.root / "model-root";   // the site's model wins over the config's
+        config.sets = derived;
+        const auto from_config = sv::resolve(config, t.facts);
+        if (from_layout.values != from_config.values) {
+            std::fprintf(stderr, "%s values differ: %s\n", name.c_str(),
+                         Json::diff(from_layout.values, from_config.values).dump().c_str());
+            assert(false);
+        }
+        // the same execution projection: both manifests (same instance, producer and profile) have the same spec
+        // (model, roles and cards, settings, resources, owner map, handoff, memory-plan requirements) and pass the reader
+        auto manifest = [&](const sv::Resolved& r) {
+            sv::ManifestInputs in;
+            in.resolved = r;
+            in.instance_id = "11111111-1111-4111-8111-111111111111";
+            in.producer_sha256 = std::string(64, 'a');
+            in.profile = "production";
+            in.s10.power_profile = "stock";
+            const auto built = sv::build_manifest(in);
+            assert(bc::serving::v2::read_manifest(built.text, name, bc::serving::v2::PlanUse::measuring).ok());
+            return built.document.at("spec");
+        };
+        const Json spec_layout = manifest(from_layout), spec_config = manifest(from_config);
+        if (spec_layout != spec_config) {
+            std::fprintf(stderr, "%s manifest spec differs: %s\n", name.c_str(),
+                         Json::diff(spec_layout, spec_config).dump().c_str());
+            assert(false);
+        }
+        // the config side really is the config: some value comes from its file
+        const std::string file = "config " + fs::path(set.source.at(name).get<std::string>()).filename().string();
+        bool from_file = false;
+        for (auto p = from_config.provenance.begin(); p != from_config.provenance.end(); ++p)
+            if (p.value().value("source", std::string()).find(file) != std::string::npos) from_file = true;
+        assert(from_file);
+        ++checked;
+    }
+    assert(checked == layouts.size() && checked >= 13);
+}
+
 /* RSC12: a config resolves exactly as the layout it replaces (every effective value; only the provenance names the config
  * file), a variant changes only what it states, and the loader refuses what it does not know. */
 void config_files(Fixture& t) {
@@ -2205,6 +2374,7 @@ int main(int argc, char** argv) {
         tp_engine_with_two_helpers_layout(t);
         mixed_arch_engine_layout(t);
         config_files(t);
+        converted_layout_parity(t);
         session_engine_plan(t);
         derived_budget_is_the_workers(t);
         sdk_environment_step(t);
