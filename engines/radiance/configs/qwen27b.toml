@@ -18,8 +18,18 @@ max_sessions = 8
 [config.qwen27b-tp3-int8.engine]
 kv_cache_dtype = "fp8"
 num_speculative_tokens = 3
+# A dense model has no n-gram table to keep in RAM.
+ngram_placement = "disk"
+
+# No host expert pool and no host KV tier: the engine sizes its own memory. bc-serve's constants (a 9 GiB pool, a 12 GiB
+# tier) are measured for helper layouts.
+[config.qwen27b-tp3-int8.memory]
+host_pool_mib = 0
+host_kv_mib = 0
 
 [config.qwen27b-tp3-int8.tuning]
+# The ranks exchange through host memory: this host has no peer-to-peer path.
+p2p = "off"
 tp_ownership = "kv=1,1,2;ffn=6656,6656,4096;lk=6,6,4;lv=18,18,12"
 # The pipelined prefill on the int8 trunk is opt-in (rad0030): "on", not "auto", which keeps such a trunk serial.
 # One-prompt time to first token -17% to -21%, four 4096-token prompts -16%, 4/6/8 streams +7.4% / +7.8% / +8.4%; KLD

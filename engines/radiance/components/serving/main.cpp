@@ -6,6 +6,7 @@
 #include "v2/manifest.h"
 #include "plan_cache.h"
 #include "sdk_check.h"
+#include "session.h"
 #include "v2/p1_live_room.h"
 #include "v2/p1_producer.h"
 #include "v2/s8_rules.h"
@@ -71,7 +72,109 @@ void usage() {
                  "  --power-profile NAME   (with --write-manifest) the named power profile; stock observes the cards\n"
                  "  --rank-demand FILE     (with --measured-plan) the engine's --plan-memory-ranks record of the same start\n"
                  "  --calibration-records FILE   (with --write-manifest) JSON array of P2 records; used where they match\n"
-                 "No process is started by these commands.\n";
+                 "No process is started by these commands.\n"
+                 "\n"
+                 "Serving sessions (RSC02; engine-only configs for now):\n"
+                 "  serve  --run-dir DIR [--configs FILE|DIR] [--site FILE] [--profile FILE] [--model-root DIR] [--set k=v]\n"
+                 "         [--engine-binary PATH]   own one session in the foreground: measured manifest (measuring first on a\n"
+                 "         plan-cache miss), engine from it, /health, start canary, then serve until `stop`, a signal or a\n"
+                 "         child's exit; every child stopped and verified gone before it returns. Select the config with\n"
+                 "         --set layout.name='\"NAME\"' (or the site/profile). Exit 0 stopped, 96 canary, 97 plan, 98 busy\n"
+                 "  start  (serve's options)   serve detached; returns once the session runs (0) or has failed (1)\n"
+                 "  stop   --run-dir DIR       ask the owner to stop; 0 once every child has exited\n"
+                 "  status --run-dir DIR [--json]   the owner's record: state, config, port, manifest, processes\n";
+}
+
+// RSC02: serve | start | stop | status
+int session_command(const std::string& cmd, int argc, char** argv) {
+    namespace ss = bc::serving::session;
+    Options opts;
+    fs::path run_dir, engine_binary;
+    bool json = false;
+    std::vector<std::string> passed;   // the options as given, for `start` to hand to its detached `serve`
+    for (int i = 2; i < argc; ++i) {
+        const std::string arg = argv[i];
+        auto need = [&]() {
+            if (i + 1 >= argc) throw std::runtime_error(arg + " requires a value");
+            passed.push_back(arg);
+            passed.push_back(argv[i + 1]);
+            return std::string(argv[++i]);
+        };
+        const bool session_cmd = cmd == "serve" || cmd == "start";
+        if (arg == "--help" || arg == "-h") { usage(); return 0; }
+        else if (arg == "--run-dir") run_dir = need();
+        else if (arg == "--json" && cmd == "status") json = true;
+        else if (!session_cmd) throw std::runtime_error(cmd + ": unknown option " + arg + " (--run-dir" +
+                                                        (cmd == "status" ? ", --json)" : ")"));
+        else if (arg == "--sys-root") opts.sys_root = need();
+        else if (arg == "--site") opts.site = need();
+        else if (arg == "--profile") opts.profile = need();
+        else if (arg == "--layouts") opts.layouts.emplace_back(need());
+        else if (arg == "--configs") opts.configs.emplace_back(need());
+        else if (arg == "--model-root") opts.model_root = need();
+        else if (arg == "--calibration") opts.calibration_cache = need();
+        else if (arg == "--set") opts.sets.push_back(need());
+        else if (arg == "--engine-binary") engine_binary = need();
+        else throw std::runtime_error(cmd + ": unknown option " + arg);
+    }
+    if (run_dir.empty()) throw std::runtime_error(cmd + ": --run-dir DIR is required (the session's lock, socket, record, logs)");
+    run_dir = fs::absolute(run_dir);
+    if (cmd == "stop") {
+        const auto reply = ss::control(run_dir, "stop", std::chrono::minutes(10));
+        if (!reply) {
+            const auto r = ss::read_record(run_dir);
+            std::cout << "no session owner answers in " << run_dir.string()
+                      << (r ? " (last session: " + r->value("state", std::string("?")) + ")" : std::string()) << '\n';
+            return r && r->value("state", std::string()) == "exit_unverified" ? 1 : 0;
+        }
+        if (reply->value("ok", false)) { std::cout << "stopped\n"; return 0; }
+        std::cerr << "stop failed (" << reply->value("state", std::string("?")) << "):\n";
+        for (const auto& e : reply->value("errors", Json::array())) std::cerr << "  " << e.get<std::string>() << '\n';
+        return 1;
+    }
+    if (cmd == "status") {
+        const auto reply = ss::control(run_dir, "status", std::chrono::seconds(5));
+        if (json) { std::cout << (reply ? *reply : Json({{"ok", false}, {"state", "no_owner"}})).dump(2) << '\n'; return reply ? 0 : 3; }
+        if (!reply) {
+            const auto r = ss::read_record(run_dir);
+            std::cout << "no session running in " << run_dir.string()
+                      << (r ? " (last session: " + r->value("state", std::string("?")) + ")" : std::string()) << '\n';
+            return 3;
+        }
+        std::cout << "state    " << reply->value("state", std::string()) << '\n'
+                  << "owner    pid " << reply->value("owner_pid", 0) << ", since " << reply->value("started_at", std::string()) << '\n';
+        if (reply->contains("selection")) {
+            const Json& s = reply->at("selection");
+            std::cout << "config   " << s.value("config", std::string()) << " (" << s.value("source", std::string()) << ")\n"
+                      << "model    " << s.value("model", std::string()) << '\n'
+                      << "cards    " << s.value("engine_cards", Json::array()).dump() << '\n';
+        }
+        if (reply->contains("port")) std::cout << "port     " << reply->at("port") << '\n';
+        if (reply->contains("manifest")) std::cout << "manifest " << reply->at("manifest").get<std::string>() << '\n';
+        for (const auto& p : reply->value("processes", Json::array()))
+            std::cout << "process  " << p.value("role", std::string()) << " pid " << p.value("pid", 0) << ", log "
+                      << p.value("log", std::string()) << '\n';
+        return 0;
+    }
+    // serve and start: the build's SDK rule, as for every other mode
+    if (const auto refusal = bc::serving::sdk_refusal("/proc/self/exe", bc::serving::current_sdk_environment()))
+        throw std::runtime_error(*refusal);
+    const fs::path self = fs::read_symlink("/proc/self/exe");
+    if (cmd == "start") {
+        std::vector<std::string> child = {self.string(), "serve"};
+        child.insert(child.end(), passed.begin(), passed.end());
+        // --run-dir as an absolute path: the detached owner does not share this shell's directory assumptions
+        for (size_t i = 0; i + 1 < child.size(); ++i) if (child[i] == "--run-dir") child[i + 1] = run_dir.string();
+        return ss::start_detached(child, run_dir, std::chrono::minutes(45));
+    }
+    ss::EnginePlanInputs inputs;
+    inputs.options = opts;
+    inputs.self = self;
+    inputs.engine_binary = engine_binary;
+    ss::Session session;
+    session.run_dir = run_dir;
+    session.plan = [inputs](const fs::path& rd, const ss::Wait& wait) { return ss::plan_engine_only(inputs, rd, wait); };
+    return ss::serve(session);
 }
 
 void explain(const bc::serving::Resolved& result) {
@@ -119,6 +222,10 @@ static void load_json_input(const fs::path& path, const char* flag, Json* out, s
 
 int main(int argc, char** argv) {
     try {
+        if (argc > 1) {
+            const std::string cmd(argv[1]);
+            if (cmd == "serve" || cmd == "start" || cmd == "stop" || cmd == "status") return session_command(cmd, argc, argv);
+        }
         if (argc > 1 && std::string(argv[1]) == "calibration-ingest") {
             // The helper has only the *typed v1 manifest* cache key. It is
             // different from the RSC03 plan-store key used by the derivation
