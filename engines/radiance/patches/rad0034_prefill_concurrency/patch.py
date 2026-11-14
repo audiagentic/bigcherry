@@ -61,5 +61,6 @@ PATCHES = (
     )),
     FilePatch(path='tests/config_test.cpp', language='none', description='VTP39 card-free engine tests', edits=(
         _edit('config-test', '/* ================================================================== the shape of the call */', '/* BC_VTP39_PREFILL_CONFIG_TEST: the cap is an optional nonnegative engine flag. */\nTEST(vtp39_max_prefill_sequences_cli_is_explicit_and_zero_by_default) {\n    Config c;\n    CHECK_EQ(c.max_prefill_seqs, 0);\n    CHECK_OK(parse({ "--max-prefill-seqs", "2" }, &c));\n    CHECK_EQ(c.max_prefill_seqs, 2);\n    CHECK_OK(parse({ "--max-prefill-seqs", "0" }, &c));\n    CHECK_EQ(c.max_prefill_seqs, 0);\n    CHECK_EQ(parse_fresh({ "--max-prefill-seqs", "-1" }), RAD_E_INVAL);\n    CHECK_EQ(parse_fresh({ "--max-prefill-seqs", "garbage" }), RAD_E_INVAL);\n}\n\n/* ================================================================== the shape of the call */', 'BC_VTP39_PREFILL_CONFIG_TEST'),
+        _edit('config-inventory', '        { "--busy-prefill-chunk", { "256" } }, { "--prefill-interleave", { "2" } },', '        { "--busy-prefill-chunk", { "256" } }, { "--max-prefill-seqs", { "2" } }, /* BC_VTP39_PREFILL_CONFIG_INVENTORY */\n        { "--prefill-interleave", { "2" } },', 'BC_VTP39_PREFILL_CONFIG_INVENTORY'),
     )),
 )
