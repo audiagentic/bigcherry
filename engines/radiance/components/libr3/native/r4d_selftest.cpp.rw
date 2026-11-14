@@ -636,3 +636,38 @@ static void attn_split_scratch_case(const Plugin& pl, const SplitGeo& g, const c
 @@ replace
                                                                0.004f + 0.008f * std::fabs(want) + r3_element(r, c, false));
 @@ end
+
+
+# RAD52: the KV split at a TP3 rank's own geometry. Native TP3 gives each rank one KV head (gqa 6, 16-token
+# blocks), which is the launch that underfills a gfx1100 card and that the split now serves through the native
+# instantiation; radiance's gqa6 rows test two heads. Add that geometry for all four cache formats, plus the
+# production pieces: ArPieces' two 1024-row pieces of a 2048-token step and a whole 2048-row step, deep in context.
+@@ find 1
+    static const SplitGeo kSplitG2Kv2 = { 2, 2, 16, "r4d_attn_prefill_h256_gqa2" };
+@@ replace
+    static const SplitGeo kSplitG2Kv2 = { 2, 2, 16, "r4d_attn_prefill_h256_gqa2" };
+    static const SplitGeo kSplitG6Kv1 = { 6, 1, 16, "r4d_attn_prefill_h256_gqa6" };   // libr3 RAD52: a TP3 rank
+@@ end
+
+@@ find 1
+        { &kSplitG6, "attn_prefill_h256_gqa6_bf16kv", "bf16" },
+        { &kSplitG12, "attn_prefill_h256_gqa12_k6v4", "k6_v4" },
+@@ replace
+        { &kSplitG6, "attn_prefill_h256_gqa6_bf16kv", "bf16" },
+        { &kSplitG6Kv1, "attn_prefill_h256_gqa6_k6v4", "k6_v4" },
+        { &kSplitG6Kv1, "attn_prefill_h256_gqa6_fp8v4", "fp8_v4" },
+        { &kSplitG6Kv1, "attn_prefill_h256_gqa6_fp8kv", "fp8_e4m3" },
+        { &kSplitG6Kv1, "attn_prefill_h256_gqa6_bf16kv", "bf16" },
+        { &kSplitG12, "attn_prefill_h256_gqa12_k6v4", "k6_v4" },
+@@ end
+
+@@ find 1
+        attn_split_scratch_case(pl, g, n, kv);
+@@ replace
+        if (&g == &kSplitG6Kv1) {   /* libr3 RAD52: TP3's pipelined pieces and a whole step, deep in context */
+            attn_split_case(pl, g, n, kv, { { 1024, 50000 } }, 3, false, 0, 1024);
+            attn_split_case(pl, g, n, kv, { { 1024, 51024 } }, 3, false, 1024, 0);
+            attn_split_case(pl, g, n, kv, { { 2048, 100000 } }, 3, false);
+        }
+        attn_split_scratch_case(pl, g, n, kv);
+@@ end
