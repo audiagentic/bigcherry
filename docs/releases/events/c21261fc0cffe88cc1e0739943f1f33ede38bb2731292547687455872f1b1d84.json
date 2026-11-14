@@ -1,0 +1,22 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261113_235210_serving-configs-one-readable_2877",
+  "files": [
+    "engines/radiance/components/serving/config_loader.h",
+    "engines/radiance/components/serving/config_loader.cpp",
+    "engines/radiance/components/serving/serving.cpp",
+    "engines/radiance/components/serving/serving.h",
+    "engines/radiance/components/serving/main.cpp",
+    "engines/radiance/components/serving/CMakeLists.txt",
+    "engines/radiance/components/serving/serving_test.cpp",
+    "engines/radiance/configs/qwen27b.toml",
+    "engines/radiance/configs/README.md"
+  ],
+  "plan-item-ids": [
+    "RSC12"
+  ],
+  "status": "unreleased",
+  "technical-summary": "RSC12 slice 1: strict per-model config files with named variants (base inheritance, table merge, list replace, origin and chain tracking), translated into the existing layout recipe (no second resolver); bc-serve --configs / BIGCHERRY_CONFIGS; qwen27b-tp3-int8 and its 5,5,6 variant; parity test: the config resolves to exactly the layout's effective values.",
+  "timestamp-utc": "2026-11-13T23:52:10.825415Z",
+  "user-summary-candidate": "Serving configs: one readable file per model with named variants (first: qwen27b-tp3-int8 and its 5,5,6 split), selectable with bc-serve --configs."
+}

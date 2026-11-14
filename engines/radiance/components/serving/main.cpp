@@ -38,6 +38,10 @@ void usage() {
                  "  --explain [--json] [--site FILE] [--profile FILE] [--set key=value]\n"
                  "  --layouts FILE|DIR  layout definitions (repeatable; a directory gives its *.toml); default BIGCHERRY_LAYOUTS,\n"
                  "                     a ':'-separated list. Layouts are run-time data: none is compiled in\n"
+                 "  --configs FILE|DIR  RSC12 configs (repeatable; default BIGCHERRY_CONFIGS): one file per model, named configs and\n"
+                 "                     variants (base = ...); their names select as layout.name. Given configs, layout files are\n"
+                 "                     read only from --layouts\n"
+                 "  --model-root DIR    the directory a config's relative model path is under (none by default)\n"
                  "  --calibration FILE  calibration cache over seeds, including RHP16 per-plan measurement records\n"
                  "  calibration-ingest --from-log FILE --calibration FILE --manifest LAB_MANIFEST\n"
                  "      validates one settled helper record against the strict lab manifest and atomically appends it\n"
@@ -135,6 +139,8 @@ int main(int argc, char** argv) {
                 else if (arg == "--site") ingest_opts.site = argv[++i];
                 else if (arg == "--profile") ingest_opts.profile = argv[++i];
                 else if (arg == "--layouts") ingest_opts.layouts.emplace_back(argv[++i]);
+                else if (arg == "--configs") ingest_opts.configs.emplace_back(argv[++i]);
+                else if (arg == "--model-root") ingest_opts.model_root = argv[++i];
                 else if (arg == "--sys-root") ingest_opts.sys_root = argv[++i];
                 else if (arg == "--set") ingest_opts.sets.push_back(argv[++i]);
                 else throw std::runtime_error("calibration-ingest: unknown option " + arg);
@@ -216,6 +222,8 @@ int main(int argc, char** argv) {
             else if (arg == "--site") opts.site = need_arg("--site");
             else if (arg == "--profile") opts.profile = need_arg("--profile");
             else if (arg == "--layouts") opts.layouts.emplace_back(need_arg("--layouts"));
+            else if (arg == "--configs") opts.configs.emplace_back(need_arg("--configs"));
+            else if (arg == "--model-root") opts.model_root = need_arg("--model-root");
             else if (arg == "--calibration") opts.calibration_cache = need_arg("--calibration");
             else if (arg == "--write-manifest") write_manifest = need_arg("--write-manifest");
             else if (arg == "--unmeasured") unmeasured = true;

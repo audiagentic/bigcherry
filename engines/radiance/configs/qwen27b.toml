@@ -1,0 +1,43 @@
+# Dense Qwen3.8-27B serving configs (RSC12). Format: README.md in this directory.
+# Converted from engines/radiance/layouts/qwen27b.toml one config at a time; the names stay the layout names until the
+# v2 manifest switch (RSC11 S13), so the plan keys and live-policy records do not move.
+schema = 1
+
+# Native three-rank tensor parallelism over two card types, int8 (w8a8) weights: both XTX ranks first, then the R9700,
+# each rank on its own architecture's kernels. Exact wire: the lossy three-rank wire is not usable yet.
+[config.qwen27b-tp3-int8]
+description = "Qwen3.8-27B w8a8 over XTX, XTX, R9700 (native TP3): delta-net 6/6/4, feed-forward 6656/6656/4096"
+model = "radiance/bigcherry/qwen3.8-27b-w8a8/qwen3.8-27b-w8a8-df2.rad"
+ranks = [{ arch = "gfx1100", count = 2 }, { arch = "gfx1201", count = 1 }]
+tp_wire = "exact"
+
+[config.qwen27b-tp3-int8.service]
+max_context = 8192
+max_sessions = 8
+
+[config.qwen27b-tp3-int8.engine]
+kv_cache_dtype = "fp8"
+num_speculative_tokens = 3
+
+[config.qwen27b-tp3-int8.tuning]
+tp_ownership = "kv=1,1,2;ffn=6656,6656,4096;lk=6,6,4;lv=18,18,12"
+# The pipelined prefill on the int8 trunk is opt-in (rad0030): "on", not "auto", which keeps such a trunk serial.
+# One-prompt time to first token -17% to -21%, four 4096-token prompts -16%, 4/6/8 streams +7.4% / +7.8% / +8.4%; KLD
+# against the serial prefill 0.0012 mean, top-1 99.3%, less than the serial prefill moves when its chunk is halved (VTP37).
+pipelined_prefill = "on"
+# The all-reduce grid and two-shot form (rad0022, rad0032, rad0033): time to first token -13 / -24 / -22% at 512 / 2048 /
+# 6144 tokens, 4/6/8 streams +7.6 / +10.9 / +13.9%, bit-identical output (VTP31, VTP36).
+tune_pin = "all_reduce:nblocks=4,nthreads=256,ts_pieces=4,ts_fuse=1,ts_once=1,ts_duplex=1"
+# The narrowest pipelined step, as in the MXFP4 layout (VTP31 experiment 12).
+pipelined_prefill_min_rows = 256
+
+# The 5,5,6 split: the R9700 takes the largest share of heads and feed-forward, so each card keeps about 228,000 tokens of
+# KV cache against about 56,000. Against qwen27b-tp3-int8 (ABBA, n=8): 1/4/6/8 streams +2.6 / +2.3 / +12.0 / +5.4%, time to
+# first token -2.8 / -0.1 / -4.3% at 512 / 2048 / 6144 tokens; passes the reordering quality gate against its own serial
+# prefill and is nearer BF16 (VTP36). Not the default until the owner chooses.
+[config.qwen27b-tp3-int8-556]
+base = "qwen27b-tp3-int8"
+description = "qwen27b-tp3-int8 with the 5,5,6 split: about 4x the KV cache per card"
+
+[config.qwen27b-tp3-int8-556.tuning]
+tp_ownership = "kv=1,1,2;ffn=5632,5632,6144;lk=5,5,6;lv=15,15,18"

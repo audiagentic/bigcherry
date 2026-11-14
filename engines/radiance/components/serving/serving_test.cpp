@@ -3,6 +3,7 @@
 #endif
 #include "serving.h"
 #include "calibration.h"
+#include "config_loader.h"
 #include "ledger.h"
 #include "live_policy_ingest.h"
 #include "experts.h"
@@ -23,6 +24,7 @@
 
 #include <atomic>
 #include <cassert>
+#include <optional>
 #ifdef NDEBUG
 #error "assert-based test built with NDEBUG: its assertions would not run"
 #endif
@@ -1828,6 +1830,187 @@ void tp_engine_with_two_helpers_layout(Fixture& t) {
     assert(refused);
 }
 
+/* RSC12: a config resolves exactly as the layout it replaces (every effective value; only the provenance names the config
+ * file), a variant changes only what it states, and the loader refuses what it does not know. */
+void config_files(Fixture& t) {
+    namespace sv = bc::serving;
+    const char* env = std::getenv("BIGCHERRY_LAYOUTS");
+    if (!env || !fs::is_directory(env)) throw std::runtime_error("config_files: BIGCHERRY_LAYOUTS must name the layouts directory");
+    const fs::path configs = fs::path(env).parent_path() / "configs";
+    const auto model = t.root / "config-model.rad";
+    bc::test::write_rad(model, 0, 0, 128, 128, {});
+    const auto site = t.file("config-site.toml", "[engine]\nmodel = \"" + model.string() + "\"\nradiance_home = \"/runtime\"\n");
+    // the layout as the launcher resolves it: its server-args become --set (tools/lab/radiance/lib/plan-check.sh)
+    Options layout;
+    layout.site = site;
+    layout.sets = {"layout.name=\"qwen27b-tp3-int8\"", "service.max_context=8192", "service.max_sessions=8",
+                   "engine.kv_cache_dtype=\"fp8\"", "engine.num_speculative_tokens=3"};
+    const auto from_layout = sv::resolve(layout, t.facts);
+    Options config;
+    config.site = site;
+    config.configs = {configs};
+    config.model_root = t.root / "model-root";   // the site's model wins over the config's (config < site)
+    config.sets = {"layout.name=\"qwen27b-tp3-int8\""};
+    const auto from_config = sv::resolve(config, t.facts);
+    if (from_layout.values != from_config.values) {
+        std::fprintf(stderr, "layout: %s\nconfig: %s\n", from_layout.values.dump().c_str(), from_config.values.dump().c_str());
+        assert(false);
+    }
+    assert(from_config.provenance.at("tuning.tp_ownership").at("source").get<std::string>().find("config qwen27b.toml") !=
+           std::string::npos);
+    assert(from_config.provenance.at("service.max_context").at("source").get<std::string>().find("config qwen27b.toml") !=
+           std::string::npos);
+    // the variant: only the split differs
+    config.sets = {"layout.name=\"qwen27b-tp3-int8-556\""};
+    const auto variant = sv::resolve(config, t.facts);
+    Json a = from_config.values, b = variant.values;
+    assert(b.at("tuning").at("tp_ownership") == "kv=1,1,2;ffn=5632,5632,6144;lk=5,5,6;lv=15,15,18");
+    a["tuning"].erase("tp_ownership"); b["tuning"].erase("tp_ownership");
+    a["layout"].erase("name"); b["layout"].erase("name");
+    assert(a == b);
+    {   // where each value came from: the variant's own key, and the base's for the rest
+        const auto set = sv::load_configs(sv::config_sources({configs}));
+        const Json& o = set.origin.at("qwen27b-tp3-int8-556");
+        assert(o.at("tuning.tp_ownership") == "qwen27b-tp3-int8-556");
+        assert(o.at("tuning.pipelined_prefill") == "qwen27b-tp3-int8" && o.at("ranks") == "qwen27b-tp3-int8");
+        assert(set.chain.at("qwen27b-tp3-int8-556") == Json::array({"qwen27b-tp3-int8-556", "qwen27b-tp3-int8"}));
+    }
+    // a profile and --set still override a config (config < site < profile < --set)
+    config.sets.push_back("tuning.pipelined_prefill=\"off\"");
+    assert(sv::resolve(config, t.facts).values.at("tuning").at("pipelined_prefill") == "off");
+
+    const std::string head = "schema = 1\n[config.base]\ndescription = \"b\"\nmodel = \"m.rad\"\n"
+                             "ranks = [{ arch = \"gfx1201\" }]\n[config.base.service]\nmax_context = 8192\nmax_sessions = 4\n";
+    auto refuses = [&](const std::string& name, const std::string& text, const std::string& needle) {
+        const auto f = t.file(name.c_str(), text);
+        try { (void)sv::load_configs({f}); }
+        catch (const std::exception& e) {
+            if (std::string(e.what()).find(needle) == std::string::npos) {
+                std::fprintf(stderr, "config refusal %s: wanted '%s', got: %s\n", name.c_str(), needle.c_str(), e.what());
+                assert(false);
+            }
+            return;
+        }
+        std::fprintf(stderr, "config %s: not refused\n", name.c_str());
+        assert(false);
+    };
+    refuses("c-unknown.toml", head + "[config.v]\nbase = \"base\"\ndescription = \"v\"\ncontext = 1\n", "unknown key context");
+    refuses("c-flat-setting.toml", head + "[config.v]\nbase = \"base\"\ndescription = \"v\"\nmax_context = 1\n",
+            "unknown key max_context");
+    refuses("c-server-args.toml", head + "[config.v]\nbase = \"base\"\ndescription = \"v\"\nserver-args = [\"--max-model-len\"]\n",
+            "unknown key server-args");
+    refuses("c-nobase.toml", head + "[config.v]\nbase = \"gone\"\ndescription = \"v\"\n", "base gone is not a defined config");
+    refuses("c-cycle.toml", head + "[config.x]\nbase = \"y\"\ndescription = \"x\"\n[config.y]\nbase = \"x\"\ndescription = \"y\"\n",
+            "a cycle");
+    refuses("c-nodesc.toml", head + "[config.v]\nbase = \"base\"\n", "description is required");
+    refuses("c-nomodel.toml", "schema = 1\n[config.v]\ndescription = \"v\"\nranks = [{ arch = \"gfx1201\" }]\n",
+            "model is required");
+    refuses("c-rankkey.toml", "schema = 1\n[config.v]\ndescription = \"v\"\nmodel = \"m\"\nranks = [{ arch = \"gfx1201\", devices = [0] }]\n",
+            "ranks: unknown key devices");
+    refuses("c-schema.toml", "[config.v]\ndescription = \"v\"\n", "schema = 1 is required");
+    {   // a name defined in two files
+        const auto f1 = t.file("c-dup1.toml", head);
+        const auto f2 = t.file("c-dup2.toml", head);
+        bool refused = false;
+        try { (void)sv::load_configs({f1, f2}); } catch (const std::exception& e) {
+            refused = std::string(e.what()).find("defined in both") != std::string::npos;
+        }
+        assert(refused);
+    }
+    {   // tables merge key by key; a list replaces
+        const auto f = t.file("c-merge.toml", head +
+            "[config.v]\nbase = \"base\"\ndescription = \"v\"\nranks = [{ arch = \"gfx1100\", count = 2 }]\ntp_wire = \"exact\"\n"
+            "[config.v.service]\nmax_sessions = 2\n");
+        const auto set = sv::load_configs({f});
+        const Json& v = set.config.at("v");
+        assert(v.at("service").at("max_context") == 8192 && v.at("service").at("max_sessions") == 2);
+        assert(v.at("ranks").size() == 1 && v.at("ranks")[0].at("arch") == "gfx1100");
+        assert(set.origin.at("v").at("service.max_context") == "base" && set.origin.at("v").at("service.max_sessions") == "v");
+        assert(set.origin.at("v").at("ranks") == "v" && set.origin.at("base").at("ranks") == "base");   // a replaced list
+        const Json l = sv::config_as_layout(v);
+        assert(l.at("engine") == v.at("ranks") && l.at("tp-wire") == "exact" && !l.contains("server-args"));
+        assert(l.at("settings").at("service").at("max_sessions") == 2);
+    }
+    {   // the config's model: under the model root, the lowest engine.model; a site's model wins; relative with no root
+        // is refused when that config is selected
+        const auto root = t.root / "models";
+        fs::create_directories(root / "m");
+        bc::test::write_rad(root / "m" / "own.rad", 0, 0, 128, 128, {});
+        const auto own = t.file("c-model.toml", "schema = 1\n[config.own]\ndescription = \"o\"\nmodel = \"m/own.rad\"\n"
+                                                "ranks = [{ arch = \"gfx1201\" }]\n[config.own.service]\nmax_context = 8192\n"
+                                                "max_sessions = 4\n");
+        Options o;
+        o.site = t.file("c-nomodel-site.toml", "[engine]\nradiance_home = \"/runtime\"\n");
+        o.configs = {own};
+        o.model_root = root;
+        o.sets = {"layout.name=\"own\""};
+        const auto r = sv::resolve(o, t.facts);
+        assert(r.values.at("engine").at("model") == (root / "m" / "own.rad").string());
+        o.site = site;
+        assert(sv::resolve(o, t.facts).values.at("engine").at("model") == model.string());
+        o.model_root.clear();
+        fail(o, t.facts, "is relative and no model root is given");
+    }
+    refuses("c-placement.toml", head + "[config.v]\nbase = \"base\"\ndescription = \"v\"\n"
+            "[[config.v.helpers]]\narch = \"gfx1100\"\ncount = 1\nplacement = \"sideways\"\n", "placement is required");
+    refuses("c-helper-count.toml", head + "[config.v]\nbase = \"base\"\ndescription = \"v\"\n"
+            "[[config.v.helpers]]\narch = \"gfx1100\"\nplacement = \"head\"\n", "count is required");
+    refuses("c-budget.toml", head + "[config.v]\nbase = \"base\"\ndescription = \"v\"\n"
+            "[[config.v.helpers]]\narch = \"gfx1100\"\ncount = 1\nplacement = \"head\"\nbudget_mib = 1.5\n", "budget_mib");
+    refuses("c-frac.toml", "schema = 1\n[config.v]\ndescription = \"v\"\nmodel = \"m\"\nranks = [{ arch = \"gfx1100\", count = 2.5 }]\n",
+            "count is a whole number");
+    refuses("c-bool.toml", "schema = 1\n[config.v]\ndescription = \"v\"\nmodel = \"m\"\nranks = [{ arch = \"gfx1100\", count = true }]\n",
+            "count is a whole number");
+    refuses("c-schema-float.toml", "schema = 1.0\n", "schema = 1 is required");
+    refuses("c-date.toml", head + "[config.base.tuning]\nwhen = 2026-11-14\n", "unsupported TOML value");
+    refuses("c-config-scalar.toml", "schema = 1\nconfig = 3\n", "config is a table");
+    refuses("c-model-escape.toml", head + "[config.v]\nbase = \"base\"\ndescription = \"v\"\nmodel = \"../other.rad\"\n",
+            "leaves the model root");
+    refuses("c-engine-model.toml", head + "[config.base.engine]\nmodel = \"x\"\n", "give the model as `model`");
+    {   // dotted keys are tables: `tuning.x = ...` in the config table is the tuning table; three levels of bases;
+        // a scalar replaced by a table keeps no stale origin
+        const auto f = t.file("c-dotted.toml", head +
+            "[config.v1]\nbase = \"base\"\ndescription = \"1\"\ntuning.pipelined_prefill = \"on\"\n"
+            "[config.v2]\nbase = \"v1\"\ndescription = \"2\"\n[config.v2.service]\nmax_sessions = 2\n"
+            "[config.v3]\nbase = \"v2\"\ndescription = \"3\"\ntuning.tp_ownership = \"kv=1\"\n");
+        const auto set = sv::load_configs({f});
+        const Json& v3 = set.config.at("v3");
+        assert(v3.at("tuning").at("pipelined_prefill") == "on" && v3.at("tuning").at("tp_ownership") == "kv=1");
+        assert(v3.at("service").at("max_sessions") == 2 && v3.at("service").at("max_context") == 8192);
+        assert(set.origin.at("v3").at("tuning.pipelined_prefill") == "v1" && set.origin.at("v3").at("service.max_sessions") == "v2");
+        assert(set.chain.at("v3") == Json::array({"v3", "v2", "v1", "base"}));
+        const auto g = t.file("c-replace.toml", head + "[config.w]\nbase = \"base\"\ndescription = \"w\"\nmodel = { x = \"y\" }\n");
+        try { (void)sv::load_configs({g}); assert(false); }   // a model that is a table is not a string
+        catch (const std::exception& e) { assert(std::string(e.what()).find("model is a string") != std::string::npos); }
+    }
+    {   // --configs wins over BIGCHERRY_CONFIGS
+        const auto f = t.file("c-given.toml", head);
+        const char* before = std::getenv("BIGCHERRY_CONFIGS");
+        const std::optional<std::string> saved = before ? std::optional<std::string>(before) : std::nullopt;
+        ::setenv("BIGCHERRY_CONFIGS", (t.root / "no-such-dir").c_str(), 1);
+        assert(sv::config_sources({f}) == std::vector<fs::path>{f});
+        bool refused = false;
+        try { (void)sv::config_sources({}); } catch (const std::exception&) { refused = true; }
+        assert(refused);
+        ::unsetenv("BIGCHERRY_CONFIGS");
+        assert(sv::config_sources({}).empty());
+        if (saved) ::setenv("BIGCHERRY_CONFIGS", saved->c_str(), 1);
+    }
+    {   // the resolver checks the settings: an unknown tuning key is refused, naming the config file
+        Options bad;
+        bad.site = site;
+        bad.configs = {t.file("c-badtuning.toml", head + "[config.base.tuning]\nno_such = 1\n")};
+        bad.model_root = t.root;
+        bad.sets = {"layout.name=\"base\""};
+        fail(bad, t.facts, "unknown key tuning.no_such");
+        // with --layouts given as well, a config may not take a layout's name
+        bad.configs = {configs};
+        bad.layouts = {fs::path(env)};
+        bad.sets = {"layout.name=\"qwen27b-tp3-int8\""};
+        fail(bad, t.facts, "has the name of a layout");
+    }
+}
+
 int main(int argc, char** argv) {
     bool write_golden = false;
     const char* dump_dir = nullptr;
@@ -1856,6 +2039,7 @@ int main(int argc, char** argv) {
         tp_engine_with_helper_layout(t);
         tp_engine_with_two_helpers_layout(t);
         mixed_arch_engine_layout(t);
+        config_files(t);
         derived_budget_is_the_workers(t);
         sdk_environment_step(t);
         std::cout << "PASS: fake KFD/PCI/proc detection; strict keys; types/ranges; required; "
