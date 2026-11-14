@@ -188,13 +188,16 @@ std::optional<ProcStat> proc_stat(pid_t pid) {
     std::istringstream rest(stat.substr(close + 2));
     std::string field;
     ProcStat p;
+    int reached = 2;   // a stat cut short is no stat: every field up to the start time must be there
     try {
         for (int i = 3; i <= 22 && rest >> field; ++i) {
             if (i == 3) p.state = field[0];
             else if (i == 5) p.pgid = pid_t(std::stol(field));
             else if (i == 22) p.start = std::stoull(field);
+            reached = i;
         }
     } catch (...) { return std::nullopt; }
+    if (reached != 22) return std::nullopt;
     return p;
 }
 
