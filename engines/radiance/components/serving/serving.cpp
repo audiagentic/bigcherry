@@ -517,7 +517,7 @@ Json load_layouts(const Options& options) {
             if (out["layout"].contains(it.key()))
                 throw std::runtime_error("config " + it.key() + " (" + configs.source.at(it.key()).get<std::string>() +
                                          ") has the name of a layout in " + out["source"][it.key()].get<std::string>());
-            out["layout"][it.key()] = config_as_layout(it.value());
+            out["layout"][it.key()] = config_as_layout(it.value(), config_model_root(options.model_root));
             out["source"][it.key()] = configs.source.at(it.key());
             out["kind"][it.key()] = "config";
         }
@@ -536,7 +536,12 @@ LayoutRecipe recipe_for(const std::string& name, const Options& options) {
     const std::string where = layouts.at("source").at(name).get<std::string>() + " [layout." + name + "]: ";
     LayoutRecipe r;
     r.source = fs::path(layouts.at("source").at(name).get<std::string>()).filename().string();
-    if (layouts.at("kind").at(name) == "config") r.source = "config " + r.source;   // e.g. "config qwen27b.toml"
+    if (layouts.at("kind").at(name) == "config") {
+        r.source = "config " + r.source;
+        if (l.contains("model_unresolved"))
+            throw std::runtime_error(where + "model " + l.at("model_unresolved").get<std::string>() +
+                                     " is relative and no model root is given (--model-root or BC_MODEL_ROOT)");
+    }   // e.g. "config qwen27b.toml"
     const Json& e = l.at("engine");
     const Json groups = e.is_array() ? e : Json::array({e});
     if (groups.empty()) throw std::runtime_error(where + "engine names no card group");

@@ -74,6 +74,8 @@ struct Options {
     // RSC12 config files or directories (--configs); empty: BIGCHERRY_CONFIGS. When configs are given, their names are the
     // named layouts, and layout files are read only when --layouts is given as well (never BIGCHERRY_LAYOUTS).
     std::vector<std::filesystem::path> configs;
+    // The root a config's relative model path is under (--model-root); empty: BC_MODEL_ROOT.
+    std::filesystem::path model_root;
     // A calibration cache (RHP12 refits) layered over the compiled-in seeds; empty: seeds only.
     std::filesystem::path calibration_cache;
     std::vector<std::string> sets;

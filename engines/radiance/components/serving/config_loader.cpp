@@ -20,23 +20,28 @@ const std::set<std::string> kRecipeKeys = {"description", "base", "model", "rank
 const std::set<std::string> kRankKeys = {"arch", "count"};
 const std::set<std::string> kHelperKeys = {"arch", "count", "placement", "budget_mib", "share"};
 
-Json to_json(const toml::node& node) {
+// Exact TOML types: an integer stays an integer and a float a float (never converted), so a count of 2.5 or a schema of
+// 1.0 is refused by the checks below instead of being truncated. `where` names the key for errors.
+Json to_json(const toml::node& node, const std::string& where) {
     if (auto t = node.as_table()) {
         Json j = Json::object();
-        for (const auto& [k, v] : *t) j[std::string(k.str())] = to_json(v);
+        for (const auto& [k, v] : *t) j[std::string(k.str())] = to_json(v, where + "." + std::string(k.str()));
         return j;
     }
     if (auto a = node.as_array()) {
         Json j = Json::array();
-        for (const auto& item : *a) j.push_back(to_json(item));
+        size_t i = 0;
+        for (const auto& item : *a) j.push_back(to_json(item, where + "[" + std::to_string(i++) + "]"));
         return j;
     }
-    if (auto b = node.as_boolean()) return b->get();   // asked first: a boolean also reads as an integer
-    if (auto s = node.value<std::string>()) return *s;
-    if (auto n = node.value<int64_t>()) return *n;
-    if (auto d = node.value<double>()) return *d;
-    throw std::runtime_error("unsupported TOML value");
+    if (auto b = node.as_boolean()) return b->get();
+    if (auto s = node.as_string()) return s->get();
+    if (auto n = node.as_integer()) return n->get();
+    if (auto d = node.as_floating_point()) return d->get();
+    throw std::runtime_error(where + ": unsupported TOML value (dates and times are not settings)");
 }
+
+bool is_count(const Json& v) { return v.is_number_integer() && v.get<int64_t>() >= 1; }
 
 void check_list_of_tables(const Json& v, const std::set<std::string>& keys, const std::string& where) {
     if (!v.is_array() || v.empty()) throw std::runtime_error(where + " is a non-empty list of tables");
@@ -49,6 +54,25 @@ void check_list_of_tables(const Json& v, const std::set<std::string>& keys, cons
                 throw std::runtime_error(where + ": unknown key " + it.key() + " (" + allowed + ")");
             }
         if (!t.contains("arch") || !t.at("arch").is_string()) throw std::runtime_error(where + ": every group names its arch");
+    }
+}
+
+void check_ranks(const Json& ranks, const std::string& where) {
+    for (const Json& r : ranks)
+        if (r.contains("count") && !is_count(r.at("count")))
+            throw std::runtime_error(where + ": count is a whole number of at least 1 (" + r.at("count").dump() + ")");
+}
+
+void check_helpers(const Json& helpers, const std::string& where) {
+    for (const Json& h : helpers) {
+        if (!h.contains("count") || !(is_count(h.at("count")) || h.at("count") == "all"))
+            throw std::runtime_error(where + ": count is required, a whole number of at least 1 or \"all\"");
+        if (!h.contains("placement") || !(h.at("placement") == "head" || h.at("placement") == "tail"))
+            throw std::runtime_error(where + ": placement is required, \"head\" or \"tail\"");
+        if (h.contains("budget_mib") && !is_count(h.at("budget_mib")))
+            throw std::runtime_error(where + ": budget_mib is a whole number of MiB (leave it out to derive it)");
+        if (h.contains("share") && !(h.at("share").is_number_integer() && h.at("share").get<int64_t>() >= 0))
+            throw std::runtime_error(where + ": share is a whole number of at least 0");
     }
 }
 
@@ -70,8 +94,16 @@ void check_written(const Json& c, const std::string& where) {
     for (const char* s : {"description", "base", "model", "tp_wire"})
         if (c.contains(s) && !c.at(s).is_string()) throw std::runtime_error(where + s + " is a string");
     if (!c.contains("description")) throw std::runtime_error(where + "description is required (what this config is for)");
-    if (c.contains("ranks")) check_list_of_tables(c.at("ranks"), kRankKeys, where + "ranks");
-    if (c.contains("helpers")) check_list_of_tables(c.at("helpers"), kHelperKeys, where + "helpers");
+    if (c.contains("ranks")) {
+        check_list_of_tables(c.at("ranks"), kRankKeys, where + "ranks");
+        check_ranks(c.at("ranks"), where + "ranks");
+    }
+    if (c.contains("helpers")) {
+        check_list_of_tables(c.at("helpers"), kHelperKeys, where + "helpers");
+        check_helpers(c.at("helpers"), where + "helpers");
+    }
+    if (c.contains("engine") && c.at("engine").contains("model"))
+        throw std::runtime_error(where + "engine.model: give the model as `model`, the config's own key");
 }
 
 // Tables merge key by key; anything else (a scalar, a list) replaces. `who` records the config that set each leaf.
@@ -84,7 +116,7 @@ void merge(Json& into, const Json& from, Json& origin, const std::string& prefix
             into[it.key()] = it.value();
             // a replaced table or list: drop the origins recorded under it, then record its leaves
             for (auto o = origin.begin(); o != origin.end();)
-                o = o.key().rfind(key + ".", 0) == 0 ? origin.erase(o) : std::next(o);
+                o = o.key() == key || o.key().rfind(key + ".", 0) == 0 ? origin.erase(o) : std::next(o);
             if (it.value().is_object()) {
                 Json sub = Json::object();
                 merge(sub, it.value(), origin, key, who);
@@ -130,13 +162,15 @@ ConfigSet load_configs(const std::vector<fs::path>& files) {
     Json written = Json::object(), source = Json::object();
     for (const auto& f : files) {
         Json doc;
-        try { doc = to_json(toml::parse_file(f.string())); }
+        try { doc = to_json(toml::parse_file(f.string()), f.string()); }
         catch (const toml::parse_error& e) { throw std::runtime_error(f.string() + ": TOML parse error: " + e.what()); }
         for (auto it = doc.begin(); it != doc.end(); ++it)
             if (it.key() != "schema" && it.key() != "config")
                 throw std::runtime_error(f.string() + ": unknown top-level key " + it.key() + " (schema, config)");
-        if (doc.value("schema", 0) != 1) throw std::runtime_error(f.string() + ": schema = 1 is required");
+        if (!doc.contains("schema") || !doc.at("schema").is_number_integer() || doc.at("schema") != 1)
+            throw std::runtime_error(f.string() + ": schema = 1 is required");
         if (!doc.contains("config")) continue;
+        if (!doc.at("config").is_object()) throw std::runtime_error(f.string() + ": config is a table of named configs");
         for (auto it = doc.at("config").begin(); it != doc.at("config").end(); ++it) {
             if (written.contains(it.key()))
                 throw std::runtime_error("config " + it.key() + " is defined in both " + source[it.key()].get<std::string>() +
@@ -178,7 +212,7 @@ ConfigSet load_configs(const std::vector<fs::path>& files) {
     return out;
 }
 
-Json config_as_layout(const Json& c) {
+Json config_as_layout(const Json& c, const fs::path& model_root) {
     Json l = Json::object();
     l["description"] = c.at("description");
     l["model"] = c.at("model");
@@ -199,8 +233,20 @@ Json config_as_layout(const Json& c) {
     Json settings = Json::object();
     for (const auto& t : kSettingsTables)
         if (c.contains(t) && !c.at(t).empty()) settings[t] = c.at(t);
+    // The model is the config's lowest setting (engine.model; a site, profile or --set still wins). A relative path is
+    // under the model root; without one the config cannot be served, which the resolver says when it is selected.
+    const fs::path model = c.at("model").get<std::string>();
+    if (model.is_absolute()) settings["engine"]["model"] = model.string();
+    else if (!model_root.empty()) settings["engine"]["model"] = (model_root / model).string();
+    else l["model_unresolved"] = model.string();
     if (!settings.empty()) l["settings"] = settings;
     return l;
+}
+
+fs::path config_model_root(const fs::path& given) {
+    if (!given.empty()) return given;
+    if (const char* env = std::getenv("BC_MODEL_ROOT"); env && *env) return fs::path(env);
+    return {};
 }
 
 } // namespace bc::serving

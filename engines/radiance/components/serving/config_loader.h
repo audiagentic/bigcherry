@@ -33,7 +33,12 @@ struct ConfigSet {
 };
 ConfigSet load_configs(const std::vector<std::filesystem::path>& files);
 
-/* The layout table the resolver reads for one effective config ([layout.NAME] in a layouts file). */
-nlohmann::json config_as_layout(const nlohmann::json& effective);
+/* The layout table the resolver reads for one effective config ([layout.NAME] in a layouts file). The config's model
+ * becomes its lowest engine.model setting: an absolute path as given, a relative one under `model_root`; with no root a
+ * relative model is left unresolved (`model_unresolved`), and selecting that config is refused. */
+nlohmann::json config_as_layout(const nlohmann::json& effective, const std::filesystem::path& model_root = {});
+
+/* The model root a relative config model is under: `given` (--model-root), else BC_MODEL_ROOT, else empty. */
+std::filesystem::path config_model_root(const std::filesystem::path& given);
 
 } // namespace bc::serving
