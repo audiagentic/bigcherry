@@ -18,6 +18,26 @@ The config's `model` is its lowest `engine.model` setting: a relative path is un
 no environment variable for it); a site file, profile or `--set` that names a model wins. A config with a relative
 model and no root is refused when it is selected.
 
+## Serving a config
+
+`bc-serve` of the build that serves (`<build>/radiance_home/bin/bc-serve`; RSC02) owns the whole session: it makes the
+measured manifest (measuring first on a plan-cache miss), starts the engine from it, waits for `/health`, sends the
+start canary, and stops everything it started, verified, on `stop`, a signal or a child's exit. Engine-only configs for
+now; helper configs still start with the lab launcher.
+
+```
+agent-lease acquire gpu --ttl 4h --purpose "..." -- \
+  bc-serve serve --run-dir RUN --configs engines/radiance/configs --model-root MODELS --site SITE \
+                 --set layout.name='"qwen27b-tp3-int8-556"'      # in the foreground; the lease covers the session
+bc-serve start ...same options...                                # detached (hosts without a lease system)
+bc-serve status --run-dir RUN                                    # config, model, cards, port, manifest, processes
+bc-serve stop --run-dir RUN                                      # 0 once every process has exited
+```
+
+The run directory holds the session's lock, control socket, record (`session.json`), plan cache, manifests and logs.
+The site file names the machine's values (`engine.radiance_home`, the port); the engine gets no configuration but its
+manifest.
+
 ## Format
 
 ```toml
