@@ -1,4 +1,4 @@
-# libr3 runtime selector for the gfx1100 native prefill-attention instantiation.
+# libr3 runtime selector for the gfx1100 native prefill-attention instantiation, for the plain and the KV-split launch.
 @@ find 1
 #include <algorithm>
 using std::max;
@@ -13,9 +13,6 @@ using std::max;
                                                 KVP, P_OPT | XOPT>),
                        grid, dim3(P_NWARPS * 32), 0, s, *a);
 @@ replace
-    /* 1.13.0: the e4m3 legs (QK8/PV8) are gfx12 fp8 fragment maps, so those launches stay upstream's form; the
-     * KV-split launch above is a separate call and keeps upstream's form too. */
-    constexpr int R3X = (XOPT & (O_QK8 | O_PV8)) ? 0 : O_R3NATIVE;
     if (bc_engine_settings_snapshot().attn_native)
         hipLaunchKernelGGL((r4d_attn_prefill_kernel<P_NWARPS, P_TILE, A_HEAD_DIM, A_GQA, A_BLOCK_SIZE,
                                                     KVP, P_OPT | XOPT | R3X>),
@@ -24,4 +21,29 @@ using std::max;
         hipLaunchKernelGGL((r4d_attn_prefill_kernel<P_NWARPS, P_TILE, A_HEAD_DIM, A_GQA, A_BLOCK_SIZE,
                                                     KVP, P_OPT | XOPT>),
                            grid, dim3(P_NWARPS * 32), 0, s, *a);
+@@ end
+
+@@ find 1
+    constexpr bool CAN_SPLIT = !(XOPT & (O_QK8 | O_PV8));
+@@ replace
+    constexpr bool CAN_SPLIT = !(XOPT & (O_QK8 | O_PV8));
+    /* The e4m3 legs (QK8/PV8) are gfx12 fp8 fragment maps, so those launches keep upstream's form (they are never
+     * split either). The native form serves the plain and the KV-split launch alike: the kernel converts its
+     * accumulator to the layout the partial store expects (r4d_attn_prefill_h256_gqa6.hip.rw). */
+    constexpr int R3X = (XOPT & (O_QK8 | O_PV8)) ? 0 : O_R3NATIVE;
+@@ end
+
+@@ find 1
+            hipLaunchKernelGGL((r4d_attn_prefill_kernel<P_NWARPS, P_TILE, A_HEAD_DIM, A_GQA, A_BLOCK_SIZE,
+                                                        KVP, P_OPT | XOPT | O_PSPLIT>),
+                               grid, dim3(P_NWARPS * 32), 0, s, *a);
+@@ replace
+            if (bc_engine_settings_snapshot().attn_native)
+                hipLaunchKernelGGL((r4d_attn_prefill_kernel<P_NWARPS, P_TILE, A_HEAD_DIM, A_GQA, A_BLOCK_SIZE,
+                                                            KVP, P_OPT | XOPT | R3X | O_PSPLIT>),
+                                   grid, dim3(P_NWARPS * 32), 0, s, *a);
+            else
+                hipLaunchKernelGGL((r4d_attn_prefill_kernel<P_NWARPS, P_TILE, A_HEAD_DIM, A_GQA, A_BLOCK_SIZE,
+                                                            KVP, P_OPT | XOPT | O_PSPLIT>),
+                                   grid, dim3(P_NWARPS * 32), 0, s, *a);
 @@ end
