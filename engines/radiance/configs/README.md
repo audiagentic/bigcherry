@@ -14,6 +14,10 @@ a converted config keeps its layout's name (until the v2 manifest switch), so th
 `*.toml` files in name order). When configs are given, layout files are read only from an explicit `--layouts`. A config
 is selected like a layout, by `layout.name` (`--set layout.name='"qwen27b-tp3-int8-556"'`).
 
+The config's `model` is its lowest `engine.model` setting: a relative path is under `--model-root DIR`, else
+`BC_MODEL_ROOT`; a site file, profile or `--set` that names a model wins. A config with a relative model and no root is
+refused when it is selected.
+
 ## Format
 
 ```toml
@@ -21,7 +25,7 @@ schema = 1
 
 [config.NAME]
 description = "what this config is for"          # required
-model       = "radiance/.../model.rad"           # relative to BC_MODEL_ROOT
+model       = "radiance/.../model.rad"           # relative to the model root
 ranks       = [{ arch = "gfx1100", count = 2 }, { arch = "gfx1201", count = 1 }]   # engine ranks in order
 tp_wire     = "exact"                            # required when there is more than one rank
 
