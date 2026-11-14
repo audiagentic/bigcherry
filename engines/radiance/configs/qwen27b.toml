@@ -124,3 +124,33 @@ host_kv_mib = 0
 
 [config.qwen27b-2xtx.tuning]
 p2p = "off"
+
+# The 5,5,6 split at 262,144 tokens a session. The cache is sized from the context setting, not the cards: at 8 x 8192
+# the cards kept about 10 GiB each unused, and at 8 x 262,144 the cache takes them. 2026-11-14 (one start each):
+#
+#                     cache tokens   1 / 4 / 8 streams tok/s   TTFT 2048   KLD against a bf16 cache (short / long)
+#   -556 (8 x 8192)        320,167     91.4 / 226.0 / 275.5     777 ms     0.0022 / 0.0054
+#   -556-long            1,253,943     91.6 / 225.2 / 274.4     782 ms     0.0022 / 0.0054
+#   -556-long-bf16         624,051     93.5 / 231.1 / 284.9     781 ms     0 (the reference)
+#
+# A 60,000-token prompt (bc-serve serve, one start each): time to first token 30.7 s with fp8 and 27.2 s with bf16, then a
+# decode step of 39.4 and 32.6 ms. The XTX cards have no native fp8, so an fp8 cache costs a conversion on every read.
+#
+# The fp8 cache (E4M3, its scales at 1.0) costs about what the int8 weights do on short text; on 25K-104K documents its
+# mean is 0.0054 and the tail is wide (two of five documents reach p99.9 of 4 and 8 late in the text). The bf16 cache has
+# no rounding and holds half as many tokens. Sessions at the full 262,144 tokens that fit at once (the engine's "cache
+# can grow to" line, after each rank's own split): 4.8 with fp8, 2.4 with bf16; with all 8 sessions busy that is about
+# 157,000 and 78,000 tokens each. A session holds cache only for the tokens it has.
+[config.qwen27b-tp3-int8-556-long]
+base = "qwen27b-tp3-int8-556"
+description = "qwen27b-tp3-int8-556 at 262,144 tokens a session: about 1.25 M tokens of fp8 cache"
+
+[config.qwen27b-tp3-int8-556-long.service]
+max_context = 262144
+
+[config.qwen27b-tp3-int8-556-long-bf16]
+base = "qwen27b-tp3-int8-556-long"
+description = "qwen27b-tp3-int8-556-long with a 16-bit (bf16) cache: about 624,000 tokens, no cache rounding"
+
+[config.qwen27b-tp3-int8-556-long-bf16.engine]
+kv_cache_dtype = "bf16"
