@@ -1851,7 +1851,8 @@ void converted_layout_parity(Fixture& t) {
     namespace sv = bc::serving;
     const char* env = std::getenv("BIGCHERRY_LAYOUTS");
     if (!env || !fs::is_directory(env)) throw std::runtime_error("converted_layout_parity: BIGCHERRY_LAYOUTS must name the layouts directory");
-    const fs::path layouts_dir = env, configs = layouts_dir.parent_path() / "configs";
+    // canonical: the test environment names it as components/serving/../../layouts
+    const fs::path layouts_dir = fs::canonical(env), configs = layouts_dir.parent_path() / "configs";
     const fs::path lab = layouts_dir.parent_path().parent_path().parent_path() / "tools" / "lab" / "radiance";
     auto read_text = [](const fs::path& p) {
         std::ifstream in(p);
