@@ -181,6 +181,14 @@ Owner direction 2026-11-14: one language for the start path (C++, radiance's sta
 variants as named configs; GPT as backup reviewer and helper. GPT review 2026-11-14 (req_rsc02-config-launcher_957d54878bcc):
 three P0 (owner process lifetime, the two plan keys, digest-equality gate) folded in above and in RSC02.
 
+Step 4 (2026-11-14): the other 12 layouts converted (`configs/flashnext.toml`: 9, with `flashnext-2xtx` the base of the
+R9700-engine helper configs and `flashnext-tp2xtx-r9700` of `flashnext-tp2xtx`; `configs/qwen27b.toml`: `qwen27b-tp3`,
+`-capacity` as its variant, `qwen27b-2xtx`). `serving_test` `converted_layout_parity`: each config and its layout,
+started as the launcher starts it (`launch-flashnext-best.sh` defaults and server-args, `plan-check.sh` engine-only
+values, the derived pool and KV tier given to both), resolve to the same values and build the same manifest spec, and
+both manifests pass the strict reader. Helper configs carry the launcher's 1 s histogram period (the resolver default is
+60 s) and, with TP ranks, `tuning.p2p = "off"`; the two pinned TP pools stay, marked interim (RSC03).
+
 ## Change Log
 
 - 2026-11-13T22:56:54.680645+00:00 (created-by): Created by agent

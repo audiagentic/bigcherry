@@ -1836,6 +1836,125 @@ void tp_engine_with_two_helpers_layout(Fixture& t) {
     assert(refused);
 }
 
+/* RSC12 step 4: every Flash-Next config resolves exactly as the layout it replaces, started the way the launcher starts
+ * it (launch-flashnext-best.sh and plan-check.sh): a helper layout with the launcher's own values (its defaults, the
+ * layout's server-args over them) and the pool and KV tier it derived, a helper-free one with its server-args and the
+ * engine-only values. The derived pool and KV tier are given to the config the same way (the launch derives them; a
+ * config states only a pinned pool). */
+void converted_layout_parity(Fixture& t) {
+    namespace sv = bc::serving;
+    const char* env = std::getenv("BIGCHERRY_LAYOUTS");
+    if (!env || !fs::is_directory(env)) throw std::runtime_error("converted_layout_parity: BIGCHERRY_LAYOUTS must name the layouts directory");
+    const fs::path configs = fs::path(env).parent_path() / "configs";
+    const auto model = t.root / "fn-parity-model.rad";
+    bc::test::write_rad(model, 4, 16, 128, 128, {});
+    const auto heat = t.root / "fn-parity.hot-first";
+    {
+        std::vector<uint32_t> counts(128 * 16, 1);
+        std::ofstream(heat, std::ios::binary).write(reinterpret_cast<const char*>(counts.data()), counts.size() * 4);
+    }
+    const auto site = t.file("fn-parity-site.toml", "[engine]\nmodel = \"" + model.string() + "\"\nradiance_home = \"/runtime\"\n"
+                                                    "[handoff]\nheat = \"" + heat.string() + "\"\nhistogram = \"/heat.live\"\n");
+    const std::string pool = "memory.host_pool_mib=7168", kv = "memory.host_kv_mib=10240";   // what a launch derived
+    // the launcher's values for a helper layout: max_sessions, max_context, chunk, kv dtype, pool, KV tier in its server-args
+    // override them (its --set comes from the variables those server-args set)
+    struct Helper {
+        const char* name;
+        int sessions, context;
+        const char* pinned_pool;   // the layout's --host-pool-mib, or nothing (derived)
+        bool tp;
+    };
+    const Helper helpers[] = {
+        {"flashnext-2xtx", 8, 262144, nullptr, false},
+        {"flashnext-2xtx-combine", 8, 262144, nullptr, false},
+        {"flashnext-2xtx-rdna2-tail", 8, 262144, nullptr, false},
+        {"flashnext-2xtx-rdna2-head", 8, 262144, nullptr, false},
+        {"flashnext-2xtx-rdna2-tail-combine", 8, 262144, nullptr, false},
+        {"flashnext-4gpu", 8, 262144, nullptr, false},
+        {"flashnext-tp2xtx-r9700", 6, 65536, "4096", true},
+        {"flashnext-tp2xtx", 8, 131072, "2048", true},
+    };
+    auto same = [&](const std::string& name, const std::string& stated, const std::vector<std::string>& layout_sets, const std::vector<std::string>& config_sets) {
+        Options layout;
+        layout.site = site;
+        layout.sets = layout_sets;
+        const auto from_layout = sv::resolve(layout, t.facts);
+        Options config;
+        config.site = site;
+        config.configs = {configs};
+        config.model_root = t.root / "model-root";   // the site's model wins over the config's
+        config.sets = config_sets;
+        const auto from_config = sv::resolve(config, t.facts);
+        if (from_layout.values != from_config.values) {
+            std::fprintf(stderr, "%s\nlayout: %s\nconfig: %s\n", name.c_str(), from_layout.values.dump().c_str(),
+                         from_config.values.dump().c_str());
+            assert(false);
+        }
+        // a value the config states comes from the config file
+        // the same execution projection: both manifests (same instance, producer and profile) have the same spec
+        // (model, roles and cards, settings, resources, owner map, handoff, memory-plan requirements) and pass the reader
+        auto manifest = [&](const sv::Resolved& r) {
+            sv::ManifestInputs in;
+            in.resolved = r;
+            in.instance_id = "11111111-1111-4111-8111-111111111111";
+            in.producer_sha256 = std::string(64, 'a');
+            in.profile = "production";
+            in.s10.power_profile = "stock";
+            const auto built = sv::build_manifest(in);
+            assert(bc::serving::v2::read_manifest(built.text, name, bc::serving::v2::PlanUse::measuring).ok());
+            return built.document.at("spec");
+        };
+        const Json spec_layout = manifest(from_layout), spec_config = manifest(from_config);
+        if (spec_layout != spec_config) {
+            std::fprintf(stderr, "%s manifest spec differs: %s\n", name.c_str(),
+                         Json::diff(spec_layout, spec_config).dump().c_str());
+            assert(false);
+        }
+        const std::string file = std::string("config ") + (name.rfind("qwen27b", 0) == 0 ? "qwen27b" : "flashnext") + ".toml";
+        assert(from_config.provenance.at(stated).at("source").get<std::string>().find(file) != std::string::npos);
+    };
+    for (const auto& h : helpers) {
+        const std::string sel = "layout.name=\"" + std::string(h.name) + "\"";
+        std::vector<std::string> launcher = {
+            sel, "service.max_sessions=" + std::to_string(h.sessions), "service.max_context=" + std::to_string(h.context),
+            h.pinned_pool ? "memory.host_pool_mib=" + std::string(h.pinned_pool) : pool, kv,
+            "engine.max_num_batched_tokens=2048", "engine.ngram_placement=\"ram\"", "engine.kv_cache_dtype=\"fp8\"",
+            "engine.rope_scaling=\"none\"", "engine.port=36080", "engine.checkpoint_interval=4096",
+            "engine.num_speculative_tokens=3", "handoff.shm=\"/r3-moe-helper\"", "handoff.histogram_period_s=1",
+            "engine.prefix_resume=\"nearest\""};
+        if (h.tp) launcher.push_back("tuning.p2p=\"off\"");
+        std::vector<std::string> derived = {sel, kv};
+        if (!h.pinned_pool) derived.push_back(pool);
+        same(h.name, h.tp ? "tuning.p2p" : "handoff.histogram_period_s", launcher, derived);
+    }
+    // the helper-free ones: their server-args and the engine-only values (no pool, no KV tier, the n-gram table on disk,
+    // no P2P between ranks) unless the server-args say otherwise
+    const std::vector<std::string> engine_only = {"memory.host_pool_mib=0", "memory.host_kv_mib=0",
+                                                  "engine.ngram_placement=\"disk\"", "engine.port=36080"};
+    auto with = [&](std::vector<std::string> sets, bool tp) {
+        sets.insert(sets.end(), engine_only.begin(), engine_only.end());
+        if (tp) sets.push_back("tuning.p2p=\"off\"");
+        return sets;
+    };
+    same("flashnext-r9700", "service.max_context",
+         {"layout.name=\"flashnext-r9700\"", "engine.port=36080", "service.max_context=8192", "service.max_sessions=1",
+          "engine.max_num_batched_tokens=64", "engine.kv_cache_dtype=\"fp8\"", "memory.host_pool_mib=45056",
+          "memory.host_kv_mib=0", "engine.ngram_placement=\"disk\""},
+         {"layout.name=\"flashnext-r9700\""});
+    // the dense model's configs in qwen27b.toml (the same site model: the parity is of the settings, not the container)
+    for (const char* name : {"qwen27b-tp3", "qwen27b-tp3-capacity"}) {
+        const std::string context = std::string(name) == "qwen27b-tp3" ? "8192" : "262144";
+        same(name, "tuning.tp_ownership",
+             with({"layout.name=\"" + std::string(name) + "\"", "service.max_context=" + context, "service.max_sessions=8",
+                   "engine.kv_cache_dtype=\"fp8\"", "engine.num_speculative_tokens=3"}, true),
+             {"layout.name=\"" + std::string(name) + "\""});
+    }
+    same("qwen27b-2xtx", "service.max_sessions",
+         with({"layout.name=\"qwen27b-2xtx\"", "service.max_context=8192", "service.max_sessions=6",
+               "engine.max_num_batched_tokens=2048", "engine.kv_cache_dtype=\"fp8\"", "engine.num_speculative_tokens=3"}, true),
+         {"layout.name=\"qwen27b-2xtx\""});
+}
+
 /* RSC12: a config resolves exactly as the layout it replaces (every effective value; only the provenance names the config
  * file), a variant changes only what it states, and the loader refuses what it does not know. */
 void config_files(Fixture& t) {
@@ -2205,6 +2324,7 @@ int main(int argc, char** argv) {
         tp_engine_with_two_helpers_layout(t);
         mixed_arch_engine_layout(t);
         config_files(t);
+        converted_layout_parity(t);
         session_engine_plan(t);
         derived_budget_is_the_workers(t);
         sdk_environment_step(t);
