@@ -1,0 +1,47 @@
+# Native gfx11 form of the shared E4M3 to 16-bit fragment helper (fp8x8_to_16x4w), the one conversion every attention
+# kernel reaches for an fp8 K or V cache (prefill, decode, paged; see `grep fp8x8_to_16x4w` in libr4d).
+#
+# Why: gfx11 has no v_cvt_pk_f32_fp8, so r3_compat.h supplies it as r3_e4m3_to_f32, a branchy decode (an if/else on the
+# exponent and a subnormal normalisation) followed by v_cvt_pkrtz_f16_f32. For the f16 format the f32 detour is not
+# needed: every E4M3 value is exactly a binary16 value, and r3_e4m3_f16.h converts the bits directly, branch-free,
+# two codes a dword at a time.
+#
+# Native (the f16 instantiation, DT16<1>, only; the bf16 one keeps the upstream body and the compatibility layer):
+#   - w4[0] = codes 0,1 of raw.x; w4[1] = codes 2,3 of raw.x; w4[2], w4[3] = the same for raw.y, element 0 in the
+#     low half: the upstream order (q = 0 is raw.x, `false` is the low word, `true` the high word).
+#   - byte-identical to upstream for every non-NaN code: upstream decodes to f32 exactly (r3_e4m3_to_f32) and
+#     v_cvt_pkrtz_f16_f32 of an exactly representable f32 is that value; the direct conversion yields the same bits
+#     (r3_e4m3_f16_test checks all 256 codes against it, signed zeros and subnormals included).
+#   - the NaN code (S.1111.111): upstream gives f32 qNaN 0x7fc00000 with the sign, which the pkrtz conversion turns
+#     into the f16 qNaN 0x7e00 with the sign; the direct form gives 0x7e00 | sign as well. A NaN code is not a valid
+#     cache value in any case.
+
+@@ find 1
+template<class D>
+__device__ __forceinline__ void fp8x8_to_16x4w(uint2 raw, uint32_t* w4) {
+    #pragma unroll
+    for (int q = 0; q < 2; ++q) {
+        const int wv = (q == 0) ? (int)raw.x : (int)raw.y;
+        w4[q * 2 + 0] = D::pkv(__builtin_amdgcn_cvt_pk_f32_fp8(wv, false));
+        w4[q * 2 + 1] = D::pkv(__builtin_amdgcn_cvt_pk_f32_fp8(wv, true));
+    }
+}
+@@ replace
+#include <type_traits>
+#include "r3_e4m3_f16.h"  // libr3 native: direct E4M3 to f16
+
+template<class D>
+__device__ __forceinline__ void fp8x8_to_16x4w(uint2 raw, uint32_t* w4) {
+    if constexpr (std::is_same<D, DT16<1>>::value) {
+        // libr3 native: f16 fragments straight from the E4M3 bits (no f32 detour, no branches)
+        r3_e4m3x8_to_f16x4w(raw.x, raw.y, w4);
+    } else {
+    #pragma unroll
+    for (int q = 0; q < 2; ++q) {
+        const int wv = (q == 0) ? (int)raw.x : (int)raw.y;
+        w4[q * 2 + 0] = D::pkv(__builtin_amdgcn_cvt_pk_f32_fp8(wv, false));
+        w4[q * 2 + 1] = D::pkv(__builtin_amdgcn_cvt_pk_f32_fp8(wv, true));
+    }
+    }
+}
+@@ end
