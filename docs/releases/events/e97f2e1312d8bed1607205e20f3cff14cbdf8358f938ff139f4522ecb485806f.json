@@ -1,0 +1,18 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261114_025738_every-serving-layout-now-has-a_9039",
+  "files": [
+    "engines/radiance/configs/flashnext.toml",
+    "engines/radiance/configs/qwen27b.toml",
+    "engines/radiance/configs/README.md",
+    "engines/radiance/components/serving/serving_test.cpp",
+    "docs/planning/active/run-serving-configuration/RSC12.md"
+  ],
+  "plan-item-ids": [
+    "RSC12"
+  ],
+  "status": "unreleased",
+  "technical-summary": "RSC12 step 4: the 12 remaining layouts (9 Flash-Next, 3 Qwen3.8-27B) converted to configs with variants; converted_layout_parity checks each config against its layout as the launcher starts it (equal resolved values and manifest spec, strict reader).",
+  "timestamp-utc": "2026-11-14T02:57:38.131493Z",
+  "user-summary-candidate": "Every serving layout now has a readable config of the same name, checked against the layout it replaces."
+}
