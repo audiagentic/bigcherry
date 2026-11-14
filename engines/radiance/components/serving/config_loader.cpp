@@ -93,6 +93,12 @@ void check_written(const Json& c, const std::string& where) {
     }
     for (const char* s : {"description", "base", "model", "tp_wire"})
         if (c.contains(s) && !c.at(s).is_string()) throw std::runtime_error(where + s + " is a string");
+    if (c.contains("model")) {   // a relative model stays under the model root: no `..` component
+        const fs::path m = c.at("model").get<std::string>();
+        if (m.empty()) throw std::runtime_error(where + "model is empty");
+        for (const auto& part : m)
+            if (part == "..") throw std::runtime_error(where + "model " + m.string() + " leaves the model root (`..`)");
+    }
     if (!c.contains("description")) throw std::runtime_error(where + "description is required (what this config is for)");
     if (c.contains("ranks")) {
         check_list_of_tables(c.at("ranks"), kRankKeys, where + "ranks");

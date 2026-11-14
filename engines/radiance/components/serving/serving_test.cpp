@@ -24,6 +24,7 @@
 
 #include <atomic>
 #include <cassert>
+#include <optional>
 #ifdef NDEBUG
 #error "assert-based test built with NDEBUG: its assertions would not run"
 #endif
@@ -1925,6 +1926,7 @@ void config_files(Fixture& t) {
         assert(v.at("service").at("max_context") == 8192 && v.at("service").at("max_sessions") == 2);
         assert(v.at("ranks").size() == 1 && v.at("ranks")[0].at("arch") == "gfx1100");
         assert(set.origin.at("v").at("service.max_context") == "base" && set.origin.at("v").at("service.max_sessions") == "v");
+        assert(set.origin.at("v").at("ranks") == "v" && set.origin.at("base").at("ranks") == "base");   // a replaced list
         const Json l = sv::config_as_layout(v);
         assert(l.at("engine") == v.at("ranks") && l.at("tp-wire") == "exact" && !l.contains("server-args"));
         assert(l.at("settings").at("service").at("max_sessions") == 2);
@@ -1962,6 +1964,8 @@ void config_files(Fixture& t) {
     refuses("c-schema-float.toml", "schema = 1.0\n", "schema = 1 is required");
     refuses("c-date.toml", head + "[config.base.tuning]\nwhen = 2026-11-14\n", "unsupported TOML value");
     refuses("c-config-scalar.toml", "schema = 1\nconfig = 3\n", "config is a table");
+    refuses("c-model-escape.toml", head + "[config.v]\nbase = \"base\"\ndescription = \"v\"\nmodel = \"../other.rad\"\n",
+            "leaves the model root");
     refuses("c-engine-model.toml", head + "[config.base.engine]\nmodel = \"x\"\n", "give the model as `model`");
     {   // dotted keys are tables: `tuning.x = ...` in the config table is the tuning table; three levels of bases;
         // a scalar replaced by a table keeps no stale origin
@@ -1981,6 +1985,8 @@ void config_files(Fixture& t) {
     }
     {   // --configs wins over BIGCHERRY_CONFIGS
         const auto f = t.file("c-given.toml", head);
+        const char* before = std::getenv("BIGCHERRY_CONFIGS");
+        const std::optional<std::string> saved = before ? std::optional<std::string>(before) : std::nullopt;
         ::setenv("BIGCHERRY_CONFIGS", (t.root / "no-such-dir").c_str(), 1);
         assert(sv::config_sources({f}) == std::vector<fs::path>{f});
         bool refused = false;
@@ -1988,6 +1994,7 @@ void config_files(Fixture& t) {
         assert(refused);
         ::unsetenv("BIGCHERRY_CONFIGS");
         assert(sv::config_sources({}).empty());
+        if (saved) ::setenv("BIGCHERRY_CONFIGS", saved->c_str(), 1);
     }
     {   // the resolver checks the settings: an unknown tuning key is refused, naming the config file
         Options bad;
