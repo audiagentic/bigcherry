@@ -91,15 +91,27 @@ bool stripped(const std::string& name) {
     return false;
 }
 
-sockaddr_un socket_address(const fs::path& run_dir) {
-    const std::string path = (run_dir / "session.sock").string();
+// The control socket's address. sun_path holds at most 107 bytes; a longer run directory is reached through a descriptor
+// open on it (/proc/self/fd/N/session.sock), which bind and connect resolve like the real path.
+struct SocketAddress {
     sockaddr_un addr{};
-    addr.sun_family = AF_UNIX;
-    if (path.size() >= sizeof addr.sun_path)
-        throw std::runtime_error("the run directory's control socket path is too long (" + path + "): use a shorter --run-dir");
-    std::memcpy(addr.sun_path, path.c_str(), path.size() + 1);
-    return addr;
-}
+    std::string path;   // the real path, for messages and chmod
+    int dir = -1;
+    explicit SocketAddress(const fs::path& run_dir) : path((run_dir / "session.sock").string()) {
+        addr.sun_family = AF_UNIX;
+        std::string use = path;
+        if (use.size() >= sizeof addr.sun_path) {
+            dir = ::open(run_dir.c_str(), O_PATH | O_DIRECTORY | O_CLOEXEC);
+            if (dir < 0) throw std::runtime_error("control socket " + path + ": " + errno_text());
+            use = "/proc/self/fd/" + std::to_string(dir) + "/session.sock";
+        }
+        std::memcpy(addr.sun_path, use.c_str(), use.size() + 1);
+    }
+    ~SocketAddress() { if (dir >= 0) ::close(dir); }
+    SocketAddress(const SocketAddress&) = delete;
+    SocketAddress& operator=(const SocketAddress&) = delete;
+    const sockaddr* get() const { return reinterpret_cast<const sockaddr*>(&addr); }
+};
 
 // Read until EOF, a newline (when `line`), or the deadline.
 std::string read_until(int fd, Clock::time_point deadline, bool line) {
@@ -186,16 +198,71 @@ std::optional<ProcStat> proc_stat(pid_t pid) {
     return p;
 }
 
-// A process of the group that still runs (a zombie holds nothing and only waits for its parent to reap it).
+// A process of the group that still runs (a zombie holds nothing and only waits for its parent to reap it). Fails
+// closed: a /proc that cannot be listed, or a process whose stat exists but cannot be read, counts as a live member, so an
+// incomplete scan never verifies an exit.
 bool group_has_live_member(pid_t pgid) {
     std::error_code ec;
-    for (const auto& e : fs::directory_iterator("/proc", ec)) {
-        const std::string name = e.path().filename().string();
+    fs::directory_iterator it("/proc", ec), end;
+    if (ec) return true;
+    for (; it != end; it.increment(ec)) {
+        if (ec) return true;
+        const std::string name = it->path().filename().string();
         if (name.empty() || name.find_first_not_of("0123456789") != std::string::npos) continue;
-        const auto p = proc_stat(pid_t(std::stol(name)));
-        if (p && p->pgid == pgid && p->state != 'Z') return true;
+        const pid_t pid = pid_t(std::stol(name));
+        const auto p = proc_stat(pid);
+        if (!p) {
+            // gone since the listing (no such process) is the only reason not to count it
+            if (::kill(pid, 0) != 0 && errno == ESRCH) continue;
+            return true;
+        }
+        if (p->pgid == pgid && p->state != 'Z') return true;
     }
-    return false;
+    return !!ec;
+}
+
+// The start gate: a child forked behind it waits, before exec, until the parent has recorded it (release) and exits
+// without running anything when the parent closes the gate or dies first, so no process ever runs unrecorded.
+struct Gate {
+    int fd[2] = {-1, -1};
+    Gate() {
+        if (::pipe2(fd, O_CLOEXEC) != 0) throw std::runtime_error("pipe: " + errno_text());
+    }
+    ~Gate() { close_write(); if (fd[0] >= 0) ::close(fd[0]); }
+    Gate(const Gate&) = delete;
+    Gate& operator=(const Gate&) = delete;
+    // in the child: true once released
+    bool wait_in_child() {
+        ::close(fd[1]);
+        char go = 0;
+        ssize_t n;
+        do n = ::read(fd[0], &go, 1); while (n < 0 && errno == EINTR);
+        return n == 1;
+    }
+    // in the parent, after fork
+    void parent_side() { ::close(fd[0]); fd[0] = -1; }
+    void release() {
+        const char go = 1;
+        ssize_t n;
+        do n = ::write(fd[1], &go, 1); while (n < 0 && errno == EINTR);
+        close_write();
+    }
+    void close_write() { if (fd[1] >= 0) ::close(fd[1]); fd[1] = -1; }
+};
+
+// Record a just-forked child through `recorded`, then let it run; when recording fails, close the gate (the child exits
+// without exec), reap it and rethrow.
+void record_then_release(Gate& gate, pid_t pid, const std::function<void(pid_t)>& recorded) {
+    gate.parent_side();
+    try {
+        if (recorded) recorded(pid);
+    } catch (...) {
+        gate.close_write();
+        int st = 0;
+        while (::waitpid(pid, &st, 0) < 0 && errno == EINTR) {}
+        throw;
+    }
+    gate.release();
 }
 
 bool group_gone(pid_t pgid) {
@@ -225,7 +292,8 @@ Env child_environment(char** inherited, const Env& runtime) {
     return env;
 }
 
-pid_t spawn(const std::vector<std::string>& argv, const Env& env, const fs::path& log) {
+pid_t spawn(const std::vector<std::string>& argv, const Env& env, const fs::path& log,
+            const std::function<void(pid_t)>& recorded) {
     if (argv.empty() || argv[0].empty()) throw std::runtime_error("spawn: an empty command");
     std::vector<std::string> envs;
     for (const auto& [k, v] : env) envs.push_back(k + "=" + v);
@@ -241,6 +309,8 @@ pid_t spawn(const std::vector<std::string>& argv, const Env& env, const fs::path
         ::close(out);
         throw std::runtime_error("pipe: " + errno_text());
     }
+    std::optional<Gate> gate;
+    try { gate.emplace(); } catch (...) { ::close(out); ::close(report[0]); ::close(report[1]); throw; }
     const pid_t pid = ::fork();
     if (pid < 0) {
         ::close(out); ::close(report[0]); ::close(report[1]);
@@ -260,6 +330,7 @@ pid_t spawn(const std::vector<std::string>& argv, const Env& env, const fs::path
             ::_exit(127);
         }
         cloexec_above_stderr();
+        if (!gate->wait_in_child()) ::_exit(126);   // never recorded: run nothing
         ::execve(cargv[0], cargv.data(), cenv.data());
         const int e = errno;
         (void)!::write(report[1], &e, sizeof e);
@@ -267,6 +338,12 @@ pid_t spawn(const std::vector<std::string>& argv, const Env& env, const fs::path
     }
     ::close(out);
     ::close(report[1]);
+    try {
+        record_then_release(*gate, pid, recorded);
+    } catch (...) {
+        ::close(report[0]);
+        throw;
+    }
     int child_errno = 0;
     ssize_t n;
     do n = ::read(report[0], &child_errno, sizeof child_errno); while (n < 0 && errno == EINTR);
@@ -554,7 +631,9 @@ private:
     void track(const std::string& role, pid_t pid, const fs::path& log) {
         children_.push_back({role, pid, log});
         Json p = {{"role", role}, {"pid", pid}, {"pgid", pid}, {"log", log.string()}};
-        if (const auto t = start_time(pid)) p["start_time"] = *t;
+        // the child waits behind its start gate until this returns, so it cannot have exited yet; its start time is read
+        // whatever its state, so the record names it either way
+        if (const auto st = proc_stat(pid)) p["start_time"] = st->start;
         record_["processes"].push_back(p);
         event("started", {{"role", role}, {"pid", pid}});
         // durable before anything else happens: an owner that dies must leave a record naming this process
@@ -584,12 +663,12 @@ private:
     }
 
     void listen_socket() {
-        const sockaddr_un addr = socket_address(s_.run_dir);
+        const SocketAddress addr(s_.run_dir);
         listen_ = ::socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC | SOCK_NONBLOCK, 0);
         if (listen_ < 0) throw std::runtime_error("control socket: " + errno_text());
-        if (::bind(listen_, reinterpret_cast<const sockaddr*>(&addr), sizeof addr) != 0 || ::listen(listen_, 8) != 0)
-            throw std::runtime_error("control socket " + std::string(addr.sun_path) + ": " + errno_text());
-        ::chmod(addr.sun_path, 0600);
+        if (::bind(listen_, addr.get(), sizeof addr.addr) != 0 || ::listen(listen_, 8) != 0)
+            throw std::runtime_error("control socket " + addr.path + ": " + errno_text());
+        ::chmod(addr.path.c_str(), 0600);
     }
 
     // Wait up to `d` while answering the control socket; false once a stop is requested.
@@ -636,8 +715,8 @@ private:
 
     void start_engine() {
         const fs::path log = s_.run_dir / ("engine-" + stamp() + ".log");
-        const pid_t pid = spawn(plan_.argv, child_environment(environ, plan_.runtime), log);
-        track("engine", pid, log);
+        (void)spawn(plan_.argv, child_environment(environ, plan_.runtime), log,
+                    [&](pid_t pid) { track("engine", pid, log); });
     }
 
     std::optional<std::string> exited_child() {
@@ -683,11 +762,12 @@ std::optional<Json> read_record(const fs::path& run_dir) {
 }
 
 std::optional<Json> control(const fs::path& run_dir, const std::string& command, std::chrono::milliseconds timeout) {
-    const sockaddr_un addr = socket_address(run_dir);
+    std::optional<SocketAddress> addr;
+    try { addr.emplace(run_dir); } catch (const std::exception&) { return std::nullopt; }
     const int fd = ::socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
     if (fd < 0) return std::nullopt;
     struct Closer { int fd; ~Closer() { ::close(fd); } } closer{fd};
-    if (::connect(fd, reinterpret_cast<const sockaddr*>(&addr), sizeof addr) != 0) return std::nullopt;
+    if (::connect(fd, addr->get(), sizeof addr->addr) != 0) return std::nullopt;
     if (!write_all(fd, command + "\n")) return std::nullopt;
     const std::string reply = read_until(fd, Clock::now() + timeout, true);
     const Json j = Json::parse(reply.substr(0, reply.find('\n')), nullptr, false);
@@ -757,6 +837,7 @@ ManifestRun run_to_completion(const std::vector<std::string>& argv, const Env& e
         cargv.push_back(nullptr);
         for (const auto& s : envs) cenv.push_back(const_cast<char*>(s.c_str()));
         cenv.push_back(nullptr);
+        Gate gate;
         const pid_t p = ::fork();
         if (p == 0) {
             ::setpgid(0, 0);   // its own group: stop_child signals the group
@@ -766,6 +847,7 @@ ManifestRun run_to_completion(const std::vector<std::string>& argv, const Env& e
             ::dup2(o, 1);
             ::dup2(e, 2);
             cloexec_above_stderr();
+            if (!gate.wait_in_child()) ::_exit(126);   // never recorded: run nothing
             ::execve(cargv[0], cargv.data(), cenv.data());
             ::_exit(127);
         }
@@ -773,11 +855,12 @@ ManifestRun run_to_completion(const std::vector<std::string>& argv, const Env& e
         ::close(e);
         if (p < 0) throw std::runtime_error("fork: " + errno_text());
         ::setpgid(p, p);   // in both, so the group exists before any stop signals it
+        // registered with the owner before it runs (waited for through the owner, whose control socket stays answered):
+        // a writer whose exit is not verified here stays the owner's to stop, and the session is never reported stopped
+        // while it lives
+        record_then_release(gate, p, [&](pid_t q) { if (hooks.started) hooks.started("manifest writer", q, out); });
         return p;
     }();
-    // waited for through the owner (its control socket stays answered) and registered with it: a writer whose exit is
-    // not verified here stays the owner's to stop, and the session is never reported stopped while it lives
-    if (hooks.started) hooks.started("manifest writer", pid, out);
     auto finish = [&](bool exited) {
         std::error_code ec;
         fs::remove(out, ec);
@@ -925,10 +1008,10 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
             const fs::path log = run_dir / ("engine-measure-" + id + "-" + std::to_string(round) + ".log");
             const pid_t pid = spawn({engine.string(), "--manifest", measuring.string(), "--role", "engine",
                                      "--plan-memory", plan.string(), "--plan-memory-ranks", ranks.string()},
-                                    child_environment(environ, out.runtime), log);
-            // registered with the owner: should its exit not be verified here, the owner stops it and the session is never
-            // reported stopped while it lives
-            if (hooks.started) hooks.started("measuring engine", pid, log);
+                                    child_environment(environ, out.runtime), log,
+                                    // registered with the owner before it runs: should its exit not be verified here,
+                                    // the owner stops it and the session is never reported stopped while it lives
+                                    [&](pid_t p) { if (hooks.started) hooks.started("measuring engine", p, log); });
             int st = 0;
             const auto deadline = Clock::now() + std::chrono::minutes(30);
             bool stopped_early = false;

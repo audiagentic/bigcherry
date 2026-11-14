@@ -211,6 +211,22 @@ void serve_status_stop() {
     assert(exit_code(again) == 0);
 }
 
+// A run directory whose socket path is longer than sun_path (107 bytes) still serves, answers and stops: the address
+// goes through a descriptor open on the directory.
+void long_run_dir() {
+    Case c("long-" + std::string(120, 'd'));
+    assert((c.run / "session.sock").string().size() > 108);
+    const pid_t owner = c.owner();
+    c.wait_state({"running"});
+    const auto status = ss::control(c.run, "status", 2s);
+    assert(status && status->at("state") == "running" && status->at("owner_pid") == owner);
+    assert(fs::exists(c.run / "session.sock"));
+    const auto stopped = ss::control(c.run, "stop", 10s);
+    assert(stopped && stopped->value("ok", false) && stopped->at("state") == "stopped");
+    assert(exit_code(owner) == 0);
+    assert(!fs::exists(c.run / "session.sock"));
+}
+
 void canary_fails() {
     Case c("canary");
     c.behaviour["answer"] = "Lyon, of course.";
@@ -332,6 +348,37 @@ void spawn_and_environment() {
         threw = std::string(e.what()).find("/nonexistent/engine") != std::string::npos;
     }
     assert(threw);
+    // the start gate: the child runs nothing until it is recorded, and nothing at all when recording fails
+    {
+        const fs::path ran = g_root / "gate-ran";
+        bool ran_before_recorded = true;
+        const pid_t pid = ss::spawn({"/bin/sh", "-c", "touch " + ran.string()}, {{"PATH", "/bin:/usr/bin"}}, g_root / "spawn.log",
+                                    [&](pid_t) {
+                                        std::this_thread::sleep_for(200ms);
+                                        ran_before_recorded = fs::exists(ran);
+                                    });
+        int st = 0;
+        ::waitpid(pid, &st, 0);
+        assert(!ran_before_recorded && fs::exists(ran));
+        const fs::path never = g_root / "gate-never";
+        bool refused = false;
+        try {
+            ss::spawn({"/bin/sh", "-c", "touch " + never.string()}, {{"PATH", "/bin:/usr/bin"}}, g_root / "spawn.log",
+                      [](pid_t) { throw std::runtime_error("record failed"); });
+        } catch (const std::runtime_error& e) { refused = std::string(e.what()) == "record failed"; }
+        std::this_thread::sleep_for(200ms);
+        assert(refused && !fs::exists(never));
+        // a writer that exits at once is registered before it can exit (the gate), so registration never fails
+        std::vector<pid_t> seen;
+        ss::Hooks quick;
+        quick.wait = [](std::chrono::milliseconds) { return true; };
+        quick.started = [&](const std::string&, pid_t pid, const fs::path&) {
+            std::this_thread::sleep_for(100ms);
+            seen.push_back(pid);
+            assert(ss::start_time(pid));   // still waiting at the gate: alive, not a zombie
+        };
+        assert(ss::run_to_completion({"/bin/true"}, {}, quick).exit == 0 && seen.size() == 1);
+    }
     // a manifest write is waited for through the owner: output kept, and a stop request ends a slow one at once
     std::vector<pid_t> registered, verified;
     ss::Hooks hooks;
@@ -516,6 +563,7 @@ int main(int argc, char** argv) {
     fs::create_directories(g_root);
     spawn_and_environment();
     serve_status_stop();
+    long_run_dir();
     canary_fails();
     engine_fails_to_start();
     engine_never_healthy();

@@ -1541,6 +1541,11 @@ void engine_only_layout(Fixture& t) {
     opts.sets = {"layout.name=\"qwen27b-2xtx\"", "service.max_sessions=6", "service.max_context=8192"};
     const auto r = sv::resolve(opts, t.facts);   // no [handoff] heat/histogram: nothing here uses them
     assert(r.typed.layout.engine_cards.size() == 2 && r.typed.layout.helper_cards.empty());
+    {   // no helper, so no combine threads: a host with fewer CPUs than the combine default resolves it
+        Json few = t.facts;
+        few["host"]["cpu_count"] = 4;
+        (void)sv::resolve(opts, few);
+    }
     assert(r.typed.engine.tp == 2 && r.typed.engine.tp_wire == "wht6" && r.typed.engine.kernels == "libr3,libref");
     assert(r.typed.helper.count == 0 && r.manifest.at("process_helpers").empty());
     assert(r.provenance.at("engine.tp").at("origin") == "derived");

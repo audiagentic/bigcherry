@@ -39,8 +39,11 @@ using Env = std::map<std::string, std::string>;
 Env child_environment(char** inherited, const Env& runtime);
 
 /* Start argv[0] (a path, never searched) in a new session and process group with exactly `env`, stdin from /dev/null,
- * stdout and stderr appended to `log`. Throws, naming the program, when it cannot be started (exec failure included). */
-pid_t spawn(const std::vector<std::string>& argv, const Env& env, const std::filesystem::path& log);
+ * stdout and stderr appended to `log`. The child waits before exec until `recorded(pid)` has returned (the caller makes
+ * it durable there); when `recorded` throws, or this process dies first, the child exits without running anything and
+ * the exception is rethrown. Throws, naming the program, when it cannot be started (exec failure included). */
+pid_t spawn(const std::vector<std::string>& argv, const Env& env, const std::filesystem::path& log,
+            const std::function<void(pid_t)>& recorded = {});
 
 /* A child of this process: whether it is still running (reaps it when it has exited; its status goes to `status`). */
 bool running(pid_t pid, int* status = nullptr);
