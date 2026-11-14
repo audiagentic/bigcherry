@@ -600,7 +600,7 @@ int start_detached(const std::vector<std::string>& self_argv, const fs::path& ru
 
 /* --- the engine-only plan step --------------------------------------------------------------------------------------- */
 
-ManifestRun run_to_completion(const std::vector<std::string>& argv, const Env& env) {
+ManifestRun run_to_completion(const std::vector<std::string>& argv, const Env& env, const Wait& wait) {
     const fs::path dir = fs::temp_directory_path();
     const std::string tag = stamp() + "-" + std::to_string(Clock::now().time_since_epoch().count());
     const fs::path out = dir / ("bc-serve-" + tag + ".out"), err = dir / ("bc-serve-" + tag + ".err");
@@ -618,6 +618,7 @@ ManifestRun run_to_completion(const std::vector<std::string>& argv, const Env& e
         cenv.push_back(nullptr);
         const pid_t p = ::fork();
         if (p == 0) {
+            ::setpgid(0, 0);   // its own group: stop_child signals the group
             for (int s : {SIGINT, SIGTERM, SIGHUP, SIGPIPE}) ::signal(s, SIG_DFL);
             const int in = ::open("/dev/null", O_RDONLY);
             if (in >= 0) ::dup2(in, 0);
@@ -629,10 +630,21 @@ ManifestRun run_to_completion(const std::vector<std::string>& argv, const Env& e
         ::close(o);
         ::close(e);
         if (p < 0) throw std::runtime_error("fork: " + errno_text());
+        ::setpgid(p, p);   // in both, so the group exists before any stop signals it
         return p;
     }();
+    // waited for through the owner (its control socket stays answered); a stop request ends the child
     int st = 0;
-    while (::waitpid(pid, &st, 0) < 0 && errno == EINTR) {}
+    while (running(pid, &st)) {
+        if (wait && !wait(100ms)) {
+            stop_child(pid, SIGTERM, 10s);
+            std::error_code ec;
+            fs::remove(out, ec);
+            fs::remove(err, ec);
+            throw PlanFailed("plan: stopped while bc-serve wrote a manifest");
+        }
+        if (!wait) std::this_thread::sleep_for(20ms);
+    }
     ManifestRun r;
     r.exit = WIFEXITED(st) ? WEXITSTATUS(st) : 128 + (WIFSIGNALED(st) ? WTERMSIG(st) : 0);
     r.out = read_file(out);
@@ -708,8 +720,8 @@ EngineStart plan_engine_only(const EnginePlanInputs& in, const fs::path& run_dir
     out.summary = {{"config", name}, {"source", layouts.at("source").value(name, "")},
                    {"model", v.at("engine").at("model")}, {"engine_cards", cards}, {"engine", engine.string()}};
 
-    const ManifestRunner runner = in.runner ? in.runner : [](const std::vector<std::string>& argv) {
-        return run_to_completion(argv, child_environment(environ, {}));
+    const ManifestRunner runner = in.runner ? in.runner : [&wait](const std::vector<std::string>& argv) {
+        return run_to_completion(argv, child_environment(environ, {}), wait);
     };
     const fs::path cache = run_dir / "plan-cache";
     fs::create_directories(cache);

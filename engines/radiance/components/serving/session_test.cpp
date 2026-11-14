@@ -322,6 +322,17 @@ void spawn_and_environment() {
         threw = std::string(e.what()).find("/nonexistent/engine") != std::string::npos;
     }
     assert(threw);
+    // a manifest write is waited for through the owner: output kept, and a stop request ends a slow one at once
+    const auto echoed = ss::run_to_completion({"/bin/sh", "-c", "echo out; echo err >&2; exit 3"}, {{"PATH", "/bin"}},
+                                              [](std::chrono::milliseconds) { return true; });
+    assert(echoed.exit == 3 && echoed.out == "out\n" && echoed.err == "err\n");
+    int waits = 0;
+    const auto t0 = std::chrono::steady_clock::now();
+    bool stopped = false;
+    try {
+        ss::run_to_completion({"/bin/sleep", "30"}, {}, [&](std::chrono::milliseconds) { return ++waits < 3; });
+    } catch (const ss::PlanFailed&) { stopped = true; }
+    assert(stopped && waits == 3 && std::chrono::steady_clock::now() - t0 < 5s);
     char a[] = "PATH=/bin", b[] = "RAD_X=1", c[] = "BC_Y=2", d[] = "ROCR_VISIBLE_DEVICES=1", e[] = "HOME=/h";
     char* inherited[] = {a, b, c, d, e, nullptr};
     const auto env = ss::child_environment(inherited, {{"ROCR_VISIBLE_DEVICES", "4"}});
