@@ -122,10 +122,22 @@ int session_command(const std::string& cmd, int argc, char** argv) {
     if (cmd == "stop") {
         const auto reply = ss::control(run_dir, "stop", std::chrono::minutes(10));
         if (!reply) {
+            // No owner: nothing is stopped by a recorded PID (it can be reused). A process of the last session that is
+            // still the same process (PID and start time) means its owner died without stopping it: not stopped.
             const auto r = ss::read_record(run_dir);
+            const auto alive = r ? ss::alive_recorded(*r) : std::vector<Json>{};
+            if (!alive.empty()) {
+                std::cerr << "stop failed: no session owner answers in " << run_dir.string()
+                          << ", and its last session (" << r->value("state", std::string("?")) << ") left running:\n";
+                for (const auto& p : alive)
+                    std::cerr << "  " << p.value("role", std::string("?")) << " pid " << p.at("pid") << ", log "
+                              << p.value("log", std::string()) << '\n';
+                return 1;
+            }
             std::cout << "no session owner answers in " << run_dir.string()
-                      << (r ? " (last session: " + r->value("state", std::string("?")) + ")" : std::string()) << '\n';
-            return r && r->value("state", std::string()) == "exit_unverified" ? 1 : 0;
+                      << (r ? " (last session: " + r->value("state", std::string("?")) +
+                                  "; none of its processes is running)" : std::string()) << '\n';
+            return 0;
         }
         if (reply->value("ok", false)) { std::cout << "stopped\n"; return 0; }
         std::cerr << "stop failed (" << reply->value("state", std::string("?")) << "):\n";
@@ -139,6 +151,10 @@ int session_command(const std::string& cmd, int argc, char** argv) {
             const auto r = ss::read_record(run_dir);
             std::cout << "no session running in " << run_dir.string()
                       << (r ? " (last session: " + r->value("state", std::string("?")) + ")" : std::string()) << '\n';
+            if (r)
+                for (const auto& p : ss::alive_recorded(*r))
+                    std::cout << "  WARNING: its " << p.value("role", std::string("?")) << " pid " << p.at("pid")
+                              << " is still running without an owner\n";
             return 3;
         }
         std::cout << "state    " << reply->value("state", std::string()) << '\n'
@@ -173,7 +189,7 @@ int session_command(const std::string& cmd, int argc, char** argv) {
     inputs.engine_binary = engine_binary;
     ss::Session session;
     session.run_dir = run_dir;
-    session.plan = [inputs](const fs::path& rd, const ss::Wait& wait) { return ss::plan_engine_only(inputs, rd, wait); };
+    session.plan = [inputs](const fs::path& rd, const ss::Hooks& hooks) { return ss::plan_engine_only(inputs, rd, hooks); };
     return ss::serve(session);
 }
 

@@ -19,6 +19,8 @@
 #include <sys/socket.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#include <fcntl.h>
+#include <sys/stat.h>
 
 #ifndef BC_FAKE_ENGINE
 #error "BC_FAKE_ENGINE must name the fake engine binary"
@@ -68,7 +70,7 @@ struct Case {
         session.timing.canary_timeout = 5s;
         session.timing.stop_grace = 1s;
         session.timing.poll = 20ms;
-        session.plan = [this](const fs::path& rd, const ss::Wait&) {
+        session.plan = [this](const fs::path& rd, const ss::Hooks&) {
             Json m = behaviour;
             m["port"] = port;
             const fs::path manifest = rd / "fake-manifest.json";
@@ -129,7 +131,16 @@ int exit_code(pid_t pid, std::chrono::milliseconds limit = 15s) {
     return -1;
 }
 
-bool gone(int pid) { return pid > 0 && ::kill(pid, 0) != 0 && errno == ESRCH; }
+// gone: no such process, or a zombie only its new parent has still to reap
+bool gone(int pid) {
+    if (pid <= 0) return false;
+    if (::kill(pid, 0) != 0 && errno == ESRCH) return true;
+    std::ifstream in("/proc/" + std::to_string(pid) + "/stat");
+    std::string stat;
+    std::getline(in, stat);
+    const size_t close = stat.rfind(')');
+    return close != std::string::npos && close + 2 < stat.size() && stat[close + 2] == 'Z';
+}
 
 std::string text(const fs::path& p) {
     std::ifstream in(p);
@@ -181,7 +192,7 @@ void serve_status_stop() {
         Case second("second");
         second.session.run_dir = c.run;
         bool planned = false;
-        second.session.plan = [&](const fs::path&, const ss::Wait&) -> ss::EngineStart { planned = true; return {}; };
+        second.session.plan = [&](const fs::path&, const ss::Hooks&) -> ss::EngineStart { planned = true; return {}; };
         assert(exit_code(second.owner()) == 98 && !planned);
         assert(c.record().at("state") == "running" && c.record().at("owner_pid") == owner);
     }
@@ -253,7 +264,7 @@ void engine_ignores_sigint() {
 
 void plan_refused() {
     Case c("plan");
-    c.session.plan = [](const fs::path&, const ss::Wait&) -> ss::EngineStart {
+    c.session.plan = [](const fs::path&, const ss::Hooks&) -> ss::EngineStart {
         throw ss::PlanFailed("plan: no measured manifest (test)");
     };
     assert(exit_code(c.owner()) == 97);
@@ -276,8 +287,8 @@ void stop_while_waiting_for_health() {
 void stop_during_plan() {
     // a long plan step (a measuring start) waits through the owner, so a stop request ends it
     Case c("stop-plan");
-    c.session.plan = [](const fs::path&, const ss::Wait& wait) -> ss::EngineStart {
-        while (wait(50ms)) {}
+    c.session.plan = [](const fs::path&, const ss::Hooks& h) -> ss::EngineStart {
+        while (h.wait(50ms)) {}
         throw ss::PlanFailed("plan: stopped while measuring");
     };
     const pid_t owner = c.owner();
@@ -361,6 +372,82 @@ void start_detached_runs_and_stops() {
     assert(ss::start_detached({self[0], "--owner", f.run.string(), std::to_string(f.port)}, f.run, 20s) == 1);
 }
 
+void descendant_outliving_the_engine() {
+    // the engine exits on SIGINT but a process it forked ignores it: stop is not done until the whole group is gone
+    Case c("descendant");
+    c.behaviour["descendant"] = (c.run / "descendant.pid").string();
+    const pid_t owner = c.owner();
+    c.wait_state({"running"});
+    const int descendant = std::stoi(text(c.run / "descendant.pid"));
+    assert(!gone(descendant) && ::getpgid(descendant) == c.engine_pid());
+    const auto reply = ss::control(c.run, "stop", 10s);
+    assert(reply && reply->value("ok", false));
+    for (int i = 0; i < 100 && !gone(descendant); ++i) std::this_thread::sleep_for(20ms);
+    assert(gone(descendant) && exit_code(owner) == 0);
+}
+
+void inherited_descriptor_not_passed() {
+    // a descriptor the owner holds without close-on-exec never reaches the engine
+    Case c("fds");
+    const fs::path sentinel = c.run / "sentinel.txt";
+    const int fd = ::open(sentinel.c_str(), O_WRONLY | O_CREAT, 0600);   // inheritable on purpose
+    assert(fd > 2);
+    c.behaviour["fd_dump"] = (c.run / "engine.fds").string();
+    const pid_t owner = c.owner();
+    ::close(fd);
+    c.wait_state({"running"});
+    const std::string fds = text(c.run / "engine.fds");
+    assert(!fds.empty() && fds.find("sentinel.txt") == std::string::npos && fds.find("session.lock") == std::string::npos &&
+           fds.find("session.sock") == std::string::npos);
+    ss::control(c.run, "stop", 10s);
+    assert(exit_code(owner) == 0);
+}
+
+void owner_killed_fails_closed() {
+    // an owner killed with SIGKILL leaves its engine: stop says so (fails), status warns, a new owner refuses the cards
+    Case c("killed");
+    const pid_t owner = c.owner();
+    c.wait_state({"running"});
+    const int engine = c.engine_pid();
+    ::kill(owner, SIGKILL);
+    exit_code(owner);
+    assert(!gone(engine) && !ss::control(c.run, "status", 1s));
+    const auto alive = ss::alive_recorded(c.record());
+    assert(alive.size() == 1 && alive[0].at("pid") == engine);
+    Case next("killed-next");
+    next.session.run_dir = c.run;
+    bool planned = false;
+    next.session.plan = [&](const fs::path&, const ss::Hooks&) -> ss::EngineStart { planned = true; return {}; };
+    assert(exit_code(next.owner()) == 98 && !planned);
+    // the test cleans up its own orphan (a person does it by the PID the refusal names), then the cards are free
+    ::kill(-engine, SIGKILL);
+    for (int i = 0; i < 100 && !gone(engine); ++i) std::this_thread::sleep_for(20ms);
+    assert(ss::alive_recorded(c.record()).empty());
+    Case after("killed-after");
+    after.session.run_dir = after.run = c.run;
+    after.port = c.port;
+    const pid_t again = after.owner();
+    for (int i = 0; i < 500 && !(after.record().value("owner_pid", 0) == again &&
+                                 after.record().value("state", "") == "running"); ++i)
+        std::this_thread::sleep_for(20ms);   // the killed owner's record says running too: wait for this owner's
+    assert(after.record().value("owner_pid", 0) == again);
+    assert(ss::control(c.run, "stop", 10s)->value("ok", false));
+    assert(exit_code(again) == 0);
+}
+
+void unwritable_record_still_stops() {
+    // the record cannot be written any more (a full or read-only run directory): stopping goes ahead regardless
+    Case c("readonly");
+    const pid_t owner = c.owner();
+    c.wait_state({"running"});
+    const int engine = c.engine_pid();
+    ::chmod(c.run.c_str(), 0500);
+    const auto reply = ss::control(c.run, "stop", 10s);
+    ::chmod(c.run.c_str(), 0700);
+    assert(reply && reply->value("ok", false) && reply->at("state") == "stopped");
+    assert(gone(engine) && exit_code(owner) == 0);
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -372,7 +459,7 @@ int main(int argc, char** argv) {
         s.timing.stop_grace = 1s;
         s.timing.poll = 20ms;
         const int port = std::stoi(argv[3]);
-        s.plan = [port](const fs::path& rd, const ss::Wait&) {
+        s.plan = [port](const fs::path& rd, const ss::Hooks&) {
             ss::EngineStart e;
             e.manifest = rd / "fake-manifest.json";
             e.argv = {BC_FAKE_ENGINE, "--manifest", e.manifest.string(), "--role", "engine"};
@@ -398,6 +485,10 @@ int main(int argc, char** argv) {
     signal_stops();
     unknown_command_and_no_owner();
     start_detached_runs_and_stops();
+    descendant_outliving_the_engine();
+    inherited_descriptor_not_passed();
+    owner_killed_fails_closed();
+    unwritable_record_still_stops();
     std::cout << "PASS: session owner lifecycle (start order, canary, failures at every stage, stop via socket and "
                  "signal, SIGKILL fallback, one owner per run directory, child environment, detached start)\n";
     return 0;

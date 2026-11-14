@@ -1,5 +1,7 @@
 #include "session.h"
 
+#include "config_loader.h"
+
 #include <algorithm>
 #include <cerrno>
 #include <csignal>
@@ -20,6 +22,7 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/un.h>
+#include <sys/syscall.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -142,6 +145,21 @@ std::string dechunk(const std::string& body) {
     return out;
 }
 
+// In a forked child before exec: every descriptor above stderr closes at exec (an inherited socket, pipe or lock of the
+// owner never reaches an engine). Marks rather than closes, so the exec-failure report pipe still works until exec.
+void cloexec_above_stderr() {
+#ifndef CLOSE_RANGE_CLOEXEC
+#define CLOSE_RANGE_CLOEXEC (1U << 2)
+#endif
+    if (::syscall(SYS_close_range, 3U, ~0U, CLOSE_RANGE_CLOEXEC) == 0) return;
+    for (int fd = 3; fd < 1024; ++fd) {
+        const int flags = ::fcntl(fd, F_GETFD);
+        if (flags >= 0) ::fcntl(fd, F_SETFD, flags | FD_CLOEXEC);
+    }
+}
+
+bool group_gone(pid_t pgid) { return ::kill(-pgid, 0) != 0 && errno == ESRCH; }
+
 std::string lower(std::string s) {
     std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return char(std::tolower(c)); });
     return s;
@@ -198,6 +216,7 @@ pid_t spawn(const std::vector<std::string>& argv, const Env& env, const fs::path
             (void)!::write(report[1], &e, sizeof e);
             ::_exit(127);
         }
+        cloexec_above_stderr();
         ::execve(cargv[0], cargv.data(), cenv.data());
         const int e = errno;
         (void)!::write(report[1], &e, sizeof e);
@@ -227,19 +246,44 @@ bool running(pid_t pid, int* status) {
 }
 
 bool stop_child(pid_t pid, int first, std::chrono::milliseconds grace) {
-    auto wait_exit = [&](std::chrono::milliseconds limit) {
+    // gone means the child reaped AND no process left in its group (a descendant that outlived it included)
+    auto gone = [&] { return !running(pid) && group_gone(pid); };
+    auto settle = [&](std::chrono::milliseconds limit) {
         const auto deadline = Clock::now() + limit;
         do {
-            if (!running(pid)) return true;
+            if (gone()) return true;
             std::this_thread::sleep_for(20ms);
         } while (Clock::now() < deadline);
-        return !running(pid);
+        return gone();
     };
-    if (!running(pid)) return true;
+    if (gone()) return true;
     ::kill(-pid, first);
-    if (wait_exit(grace)) return true;
+    if (settle(grace)) return true;
     ::kill(-pid, SIGKILL);
-    return wait_exit(grace);
+    return settle(grace);
+}
+
+std::optional<uint64_t> start_time(pid_t pid) {
+    std::ifstream in("/proc/" + std::to_string(pid) + "/stat");
+    std::string stat;
+    if (!std::getline(in, stat)) return std::nullopt;
+    const size_t close = stat.rfind(')');
+    if (close == std::string::npos) return std::nullopt;
+    std::istringstream rest(stat.substr(close + 2));
+    std::string field;
+    for (int i = 3; i <= 22 && rest >> field; ++i)
+        if (i == 22) try { return std::stoull(field); } catch (...) { return std::nullopt; }
+    return std::nullopt;
+}
+
+std::vector<Json> alive_recorded(const Json& record) {
+    std::vector<Json> alive;
+    for (const auto& p : record.value("processes", Json::array())) {
+        if (!p.contains("pid") || !p.contains("start_time")) continue;
+        const auto t = start_time(p.at("pid").get<pid_t>());
+        if (t && *t == p.at("start_time").get<uint64_t>()) alive.push_back(p);
+    }
+    return alive;
 }
 
 /* --- HTTP ---------------------------------------------------------------------------------------------------------- */
@@ -336,7 +380,22 @@ public:
                       << "; `bc-serve stop` it first\n";
             return 98;
         }
-        // The lock is ours: an earlier record is history, and a socket file left by a crashed owner is stale.
+        // The lock is ours. An earlier owner that died without stopping its processes left them in its record: while any
+        // of them is still the same process, this run directory's cards are taken.
+        if (const auto r = read_record(s_.run_dir)) {
+            const auto alive = alive_recorded(*r);
+            if (!alive.empty()) {
+                std::cerr << "bc-serve: the last session in " << s_.run_dir.string() << " (owner pid "
+                          << r->value("owner_pid", Json()).dump() << ", " << r->value("state", std::string("?"))
+                          << ") left processes running:\n";
+                for (const auto& p : alive)
+                    std::cerr << "  " << p.value("role", std::string("?")) << " pid " << p.at("pid") << ", log "
+                              << p.value("log", std::string()) << '\n';
+                std::cerr << "  they hold the cards; stop them (by their PIDs above) before a new session\n";
+                return 98;
+            }
+        }
+        // An earlier record is history, and a socket file left by a crashed owner is stale.
         std::error_code ec;
         if (fs::exists(s_.run_dir / "session.json"))
             fs::rename(s_.run_dir / "session.json", s_.run_dir / "session.previous.json", ec);
@@ -358,8 +417,11 @@ public:
         std::vector<std::string> failures;
         try {
             event("planning");
-            const Wait wait = [this](std::chrono::milliseconds d) { return service(d); };
-            plan_ = s_.plan(s_.run_dir, wait);
+            Hooks hooks;
+            hooks.wait = [this](std::chrono::milliseconds d) { return service(d); };
+            hooks.started = [this](const std::string& role, pid_t pid, const fs::path& log) { track(role, pid, log); };
+            hooks.ended = [this](pid_t pid) { untrack(pid); };
+            plan_ = s_.plan(s_.run_dir, hooks);
             record_["manifest"] = plan_.manifest.string();
             record_["port"] = plan_.port;
             record_["selection"] = plan_.summary;
@@ -401,7 +463,10 @@ public:
                 if (!stop_child(it->pid, SIGINT, s_.timing.stop_grace)) {
                     exited = false;
                     failures.push_back(it->role + " (pid " + std::to_string(it->pid) +
-                                       ") is still alive after SIGKILL; not reporting stopped while it holds the cards");
+                                       ") or a process of its group is still alive after SIGKILL; not reporting stopped "
+                                       "while it holds the cards");
+                } else {
+                    for (auto& p : record_["processes"]) if (p.value("pid", 0) == it->pid) p["exited"] = true;
                 }
             }
         }
@@ -428,7 +493,30 @@ private:
     EngineStart plan_;
     Json record_;
 
-    void save() { write_atomic(s_.run_dir / "session.json", record_.dump(2) + "\n"); }
+    // A record that cannot be written is reported, never a reason to skip stopping a child.
+    void save() {
+        try {
+            write_atomic(s_.run_dir / "session.json", record_.dump(2) + "\n");
+        } catch (const std::exception& e) {
+            if (!save_failed_) std::cerr << "bc-serve: the session record cannot be written: " << e.what() << '\n';
+            save_failed_ = true;
+        }
+    }
+    bool save_failed_ = false;
+
+    void track(const std::string& role, pid_t pid, const fs::path& log) {
+        children_.push_back({role, pid, log});
+        Json p = {{"role", role}, {"pid", pid}, {"log", log.string()}};
+        if (const auto t = start_time(pid)) p["start_time"] = *t;
+        record_["processes"].push_back(p);
+        event("started", {{"role", role}, {"pid", pid}});
+    }
+    void untrack(pid_t pid) {
+        children_.erase(std::remove_if(children_.begin(), children_.end(), [&](const Child& c) { return c.pid == pid; }),
+                        children_.end());
+        for (auto& p : record_["processes"]) if (p.value("pid", 0) == pid) p["exited"] = true;
+        save();
+    }
 
     void event(const std::string& kind, const Json& detail = Json::object()) {
         Json e = {{"at", utc_now()}, {"kind", kind}};
@@ -498,9 +586,7 @@ private:
     void start_engine() {
         const fs::path log = s_.run_dir / ("engine-" + stamp() + ".log");
         const pid_t pid = spawn(plan_.argv, child_environment(environ, plan_.runtime), log);
-        children_.push_back({"engine", pid, log});
-        record_["processes"].push_back({{"role", "engine"}, {"pid", pid}, {"log", log.string()}});
-        event("started", {{"role", "engine"}, {"pid", pid}});
+        track("engine", pid, log);
     }
 
     std::optional<std::string> exited_child() {
@@ -573,7 +659,10 @@ int start_detached(const std::vector<std::string>& self_argv, const fs::path& ru
         const bool alive = running(pid, &st);
         if (const auto r = read_record(run_dir); r && r->value("owner_pid", 0) == pid) {
             const std::string state = r->value("state", "");
-            if (state == "running") {
+            if (state == "running" && alive && [&] {
+                    const auto answer = control(run_dir, "status", 2s);
+                    return answer && answer->value("owner_pid", 0) == pid && answer->value("state", "") == "running";
+                }()) {
                 std::cout << "running: owner pid " << pid << ", port " << r->value("port", 0) << ", manifest "
                           << r->value("manifest", "") << "\n";
                 return 0;
@@ -624,6 +713,7 @@ ManifestRun run_to_completion(const std::vector<std::string>& argv, const Env& e
             if (in >= 0) ::dup2(in, 0);
             ::dup2(o, 1);
             ::dup2(e, 2);
+            cloexec_above_stderr();
             ::execve(cargv[0], cargv.data(), cenv.data());
             ::_exit(127);
         }
@@ -674,7 +764,18 @@ std::string tail_text(const std::string& s, size_t n = 2000) { return s.size() >
 
 } // namespace
 
-EngineStart plan_engine_only(const EnginePlanInputs& in, const fs::path& run_dir, const Wait& wait) {
+EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_dir, const Hooks& hooks) {
+    const Wait& wait = hooks.wait;
+    // The sources as files, frozen: the manifest writer runs with BIGCHERRY_* removed from its environment, so configs
+    // or layouts that came from the environment are passed as arguments (load_layouts' rule: configs replace the layout
+    // files unless --layouts is given).
+    EnginePlanInputs in = given;
+    {
+        const auto configs = config_sources(given.options.configs);
+        in.options.configs = configs;
+        in.options.layouts = configs.empty() || !given.options.layouts.empty() ? layout_sources(given.options)
+                                                                             : std::vector<fs::path>{};
+    }
     const Json facts = detect(in.options.sys_root);
     const Resolved r = resolve(in.options, facts);
     const Json& v = r.values;
@@ -757,19 +858,34 @@ EngineStart plan_engine_only(const EnginePlanInputs& in, const fs::path& run_dir
             const pid_t pid = spawn({engine.string(), "--manifest", measuring.string(), "--role", "engine",
                                      "--plan-memory", plan.string(), "--plan-memory-ranks", ranks.string()},
                                     child_environment(environ, out.runtime), log);
+            // registered with the owner: should its exit not be verified here, the owner stops it and the session is never
+            // reported stopped while it lives
+            if (hooks.started) hooks.started("measuring engine", pid, log);
             int st = 0;
             const auto deadline = Clock::now() + std::chrono::minutes(30);
             bool stopped_early = false;
-            while (running(pid, &st)) {
-                if (Clock::now() > deadline || !wait(200ms)) {
-                    stopped_early = true;
-                    if (!stop_child(pid, SIGINT, 60s))
-                        throw std::runtime_error("plan: the measuring engine (pid " + std::to_string(pid) +
-                                                 ") is still alive after SIGKILL");
-                    break;
+            try {
+                while (running(pid, &st)) {
+                    if (Clock::now() > deadline || !wait(200ms)) {
+                        stopped_early = true;
+                        break;
+                    }
                 }
+            } catch (...) {
+                if (stop_child(pid, SIGINT, 60s) && hooks.ended) hooks.ended(pid);
+                throw;
             }
-            if (stopped_early) throw PlanFailed("plan: the measuring start was stopped (a stop request or 30 min)");
+            if (stopped_early) {
+                if (!stop_child(pid, SIGINT, 60s))
+                    throw std::runtime_error("plan: the measuring engine (pid " + std::to_string(pid) +
+                                             ") is still alive after SIGKILL");
+                if (hooks.ended) hooks.ended(pid);
+                throw PlanFailed("plan: the measuring start was stopped (a stop request or 30 min)");
+            }
+            // the engine exited by itself; anything it left in its group goes too
+            if (!stop_child(pid, SIGKILL, 10s))
+                throw std::runtime_error("plan: a process of the measuring engine's group is still alive after SIGKILL");
+            if (hooks.ended) hooks.ended(pid);
             if (!WIFEXITED(st) || WEXITSTATUS(st) != 0 || !fs::exists(plan) || fs::file_size(plan) == 0 ||
                 !fs::exists(ranks) || fs::file_size(ranks) == 0)
                 throw PlanFailed("plan: the measuring start failed; see " + log.string());

@@ -8,12 +8,15 @@
 //   ignore_sigint    true: SIGINT is ignored (only SIGKILL stops it)
 //   env_dump         write the environment, one NAME=VALUE a line, to this file
 //   engine_mib       with --plan-memory: the start-up MiB it reports (default 1234)
+//   descendant       fork a process that ignores SIGINT and SIGTERM, outlives this one, and writes its PID here
+//   fd_dump          write what each open descriptor points at, one a line, to this file
 // A manifest that is not such an object (a real one, from a test's fake bc-serve) gives the defaults with port 0.
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <poll.h>
 #include <sys/socket.h>
 #include <unistd.h>
+#include <dirent.h>
 
 #include <chrono>
 #include <csignal>
@@ -68,6 +71,27 @@ int main(int argc, char** argv) {
     if (m.contains("env_dump")) {
         std::ofstream out(m.at("env_dump").get<std::string>());
         for (char** e = environ; *e; ++e) out << *e << '\n';
+    }
+    if (m.contains("fd_dump")) {
+        std::ofstream out(m.at("fd_dump").get<std::string>());
+        if (DIR* d = ::opendir("/proc/self/fd")) {
+            while (const dirent* e = ::readdir(d)) {
+                char target[4096] = {};
+                const std::string link = std::string("/proc/self/fd/") + e->d_name;
+                if (::readlink(link.c_str(), target, sizeof target - 1) > 0) out << e->d_name << ' ' << target << '\n';
+            }
+            ::closedir(d);
+        }
+    }
+    if (m.contains("descendant")) {
+        const pid_t child = ::fork();
+        if (child == 0) {
+            std::signal(SIGINT, SIG_IGN);
+            std::signal(SIGTERM, SIG_IGN);
+            for (int i = 0; i < 600; ++i) ::usleep(100000);   // at most a minute, should the test fail to stop it
+            std::_Exit(0);
+        }
+        std::ofstream(m.at("descendant").get<std::string>()) << child << '\n';
     }
     const std::string plan = arg_after(argc, argv, "--plan-memory");
     if (!plan.empty()) {

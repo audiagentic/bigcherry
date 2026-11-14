@@ -46,8 +46,16 @@ pid_t spawn(const std::vector<std::string>& argv, const Env& env, const std::fil
 bool running(pid_t pid, int* status = nullptr);
 
 /* Stop a child's process group: `first` (SIGINT for the engine), up to `grace` for it to exit, then SIGKILL and up to
- * `grace` again. True only when the child has exited and been reaped. */
+ * `grace` again. True only when the child has exited and been reaped and no process is left in its group. */
 bool stop_child(pid_t pid, int first, std::chrono::milliseconds grace);
+
+/* A process's start time (clock ticks since boot, /proc/PID/stat field 22): with the PID, it names one process even
+ * after the PID is reused. Nothing when the process is gone. */
+std::optional<uint64_t> start_time(pid_t pid);
+
+/* The processes a session record lists that are still the same processes (PID and start time): an owner that died
+ * without stopping them leaves them here. */
+std::vector<nlohmann::json> alive_recorded(const nlohmann::json& record);
 
 /* --- the engine's HTTP endpoint ---------------------------------------------------------------------------------- */
 
@@ -91,6 +99,15 @@ struct Canary {
 /* Wait up to the given time while the owner answers its control socket; false once a stop is requested. */
 using Wait = std::function<bool(std::chrono::milliseconds)>;
 
+/* What the owner gives its plan step: `wait`, and where to register a process the step starts (a measuring engine), so
+ * the owner records it and, if the step cannot verify its exit, stops it itself and never reports the session stopped
+ * while it lives. */
+struct Hooks {
+    Wait wait;
+    std::function<void(const std::string& role, pid_t pid, const std::filesystem::path& log)> started;
+    std::function<void(pid_t pid)> ended;   // the step verified this process's exit
+};
+
 /* The plan step refused or could not make the manifest (the session ends with exit 97, nothing started for serving). */
 struct PlanFailed : std::runtime_error {
     using std::runtime_error::runtime_error;
@@ -101,8 +118,8 @@ struct Session {
     Timing timing;
     Canary canary;
     // The plan step: runs with the session lock held, before any serving process starts (it may run measuring starts
-    // of its own, which it stops before returning, waiting through `wait`). Throws to refuse.
-    std::function<EngineStart(const std::filesystem::path& run_dir, const Wait& wait)> plan;
+    // of its own, registered through the hooks and stopped before it returns). Throws to refuse.
+    std::function<EngineStart(const std::filesystem::path& run_dir, const Hooks& hooks)> plan;
 };
 
 /* The owner, in the foreground: 0 after a requested stop with every child exited; non-zero after a refusal, a failed
@@ -146,6 +163,6 @@ struct EnginePlanInputs {
  * it first on a cache miss (exit 10: the engine alone, --plan-memory against the unmeasured manifest) and once more with
  * the derived host pool when bc-serve asks for one (exit 11). The same plan-extra as the bash launcher's engine-only
  * start, so the two share the plan cache. */
-EngineStart plan_engine_only(const EnginePlanInputs& inputs, const std::filesystem::path& run_dir, const Wait& wait);
+EngineStart plan_engine_only(const EnginePlanInputs& inputs, const std::filesystem::path& run_dir, const Hooks& hooks);
 
 } // namespace bc::serving::session

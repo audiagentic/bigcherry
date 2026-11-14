@@ -2061,12 +2061,21 @@ void session_engine_plan(Fixture& t) {
         }
         return r;
     };
-    const ss::Wait wait = [](std::chrono::milliseconds) { return true; };
+    std::vector<std::string> started;
+    std::vector<pid_t> ended;
+    ss::Hooks wait;
+    wait.wait = [](std::chrono::milliseconds) { return true; };
+    wait.started = [&](const std::string& role, pid_t pid, const fs::path&) { started.push_back(role + " " + std::to_string(pid)); };
+    wait.ended = [&](pid_t pid) { ended.push_back(pid); };
     const ss::EngineStart s = ss::plan_engine_only(in, run, wait);
     assert(calls.size() == 4);
+    // the measuring engine was the owner's to know about, and its exit was verified
+    assert(started.size() == 1 && started[0].rfind("measuring engine ", 0) == 0 && ended.size() == 1 &&
+           started[0] == "measuring engine " + std::to_string(ended[0]));
     for (const auto& c : calls) {
         assert(c[0] == in.self.string() && c[1] == "--write-manifest" && has(c, "--power-profile", "stock"));
-        assert(has(c, "--site", site.string()) && has(c, "--configs", configs.string()) &&
+        assert(has(c, "--site", site.string()) && has(c, "--configs", (configs / "qwen27b.toml").string()) &&
+               !flag(c, "--layouts") &&
                has(c, "--set", "layout.name=\"qwen27b-tp3-int8\"") && has(c, "--sys-root", t.root.string()));
     }
     for (size_t i : {0, 2, 3})
@@ -2089,6 +2098,26 @@ void session_engine_plan(Fixture& t) {
     assert(s.runtime.at("ROCR_VISIBLE_DEVICES") == rocr && s.runtime.at("HIP_VISIBLE_DEVICES") == "0,1,2");
     assert(s.runtime.at("RADIANCE_HOME") == home.string() && s.runtime.size() == 3);
     assert(s.port == 36080 && s.summary.at("config") == "qwen27b-tp3-int8" && s.summary.at("manifest_digest") == "0123abcd");
+    {   // configs from BIGCHERRY_CONFIGS alone reach the manifest writer, whose environment has no BIGCHERRY_*: as files
+        ss::EnginePlanInputs env_only = in;
+        env_only.options.configs.clear();
+        const char* saved = std::getenv("BIGCHERRY_CONFIGS");
+        const std::optional<std::string> keep = saved ? std::optional<std::string>(saved) : std::nullopt;
+        ::setenv("BIGCHERRY_CONFIGS", configs.c_str(), 1);
+        calls.clear();
+        ended.clear();
+        auto old = in.runner;
+        env_only.runner = [&](const std::vector<std::string>& argv) {
+            calls.push_back(argv);
+            ss::ManifestRun r;
+            std::ofstream(argv[2]) << "{}";
+            return r;
+        };
+        ss::plan_engine_only(env_only, run, wait);
+        if (keep) ::setenv("BIGCHERRY_CONFIGS", keep->c_str(), 1); else ::unsetenv("BIGCHERRY_CONFIGS");
+        assert(calls.size() == 1 && has(calls[0], "--configs", (configs / "qwen27b.toml").string()) &&
+               !flag(calls[0], "--layouts"));
+    }
     // a failed manifest write and a layout (server-args are the bash launcher's) are refused before any engine starts
     calls.clear();
     in.runner = [&](const std::vector<std::string>& argv) {
