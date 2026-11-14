@@ -670,7 +670,20 @@ static bool load(Plugin* pl, const char* path) {
 @@ replace
         } else if (!std::strcmp(argv[i], "--pin-mw") || !std::strcmp(argv[i], "--pin-nt")) {
             if (i + 1 >= argc) { usage(); return 2; }   // libr3
-            (argv[i][6] == 'm' ? g_pin_mw_opt : g_pin_nt_opt) = (int)std::strtol(argv[i + 1], nullptr, 0);
+            const bool mw = argv[i][6] == 'm';
+            char* end = nullptr;
+            const long v = std::strtol(argv[i + 1], &end, 10);
+            /* The hooks take only these values and silently clear the pin otherwise; refuse here
+             * so a sweep never records an unpinned run under a pinned label. */
+            const bool okv = end && end != argv[i + 1] && !*end &&
+                             (mw ? (v == 0 || v == 1 || v == 2 || v == 4 || v == 8 || v == 16)
+                                 : (v >= 0 && v <= 4));
+            if (!okv) {
+                std::printf("%s: '%s' is not one of %s\n", argv[i], argv[i + 1],
+                            mw ? "0, 1, 2, 4, 8, 16" : "0..4");
+                return 2;
+            }
+            (mw ? g_pin_mw_opt : g_pin_nt_opt) = (int)v;
             ++i;
         } else if (!std::strcmp(argv[i], "--timeline")) {
 @@ end
@@ -679,7 +692,24 @@ static bool load(Plugin* pl, const char* path) {
                 "             its weights cold.\n"
 @@ replace
                 "             its weights cold.\n"
-                "  --pin-mw N, --pin-nt N:  pin the narrow 8-bit GEMM's wave count (4, 8, 16) and token-tile\n"
-                "             count (1..4, only where M <= 16 * N); 0 = the kernel's own rule. Printed as\n"
-                "             a `pins:` line; output bits do not change.\n"
+                "  --pin-mw N, --pin-nt N:  pin the narrow 8-bit GEMM's wave count (1, 2, 4, 8, 16) and\n"
+                "             token-tile count (1..4, only where M <= 16 * N); 0 = the kernel's own rule.\n"
+                "             Other values are refused. Printed as a `pins:` line, and --perfw8 prints\n"
+                "             the pins in effect at its M; output bits do not change.\n"
+@@ end
+
+# VTP37: --perfw8 says which pins hold at its shape (the token-tile pin is ignored where M > 16 * N), so each sweep
+# row carries the setting it ran at.
+@@ find 1
+    std::printf("\n8-bit trunk GEMMs  N=%lld K=%lld M=%lld  %d iters\n", (long long)N, (long long)K,
+                (long long)M, iters);
+@@ replace
+    std::printf("\n8-bit trunk GEMMs  N=%lld K=%lld M=%lld  %d iters\n", (long long)N, (long long)K,
+                (long long)M, iters);
+    if (g_pin_mw_opt || g_pin_nt_opt)   // libr3: --pin-mw, --pin-nt
+        std::printf("  narrow pins in effect: mw=%s nt=%s\n",
+                    g_pin_mw_opt ? std::to_string(g_pin_mw_opt).c_str() : "rule",
+                    !g_pin_nt_opt ? "rule"
+                    : M <= 16 * (int64_t)g_pin_nt_opt ? std::to_string(g_pin_nt_opt).c_str()
+                                                       : "rule (pin below ceil(M/16), ignored)");
 @@ end
