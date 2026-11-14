@@ -2,7 +2,7 @@
 id: RAD52
 order: 0
 plan: patching-radiance-rdna3
-state: pending
+state: in_progress
 created-at: '2026-11-14T06:57:44.790336+00:00'
 breadth: ''
 skill: advanced
@@ -59,7 +59,11 @@ M. A changed split count changes summation order (reordering gate, not bit ident
 
 Created 2026-11-14 from the TP3 long-context profile and A/B (`docs/evidence/2026-11-14-tp3-long-context/README.md`, sections 2b-2d). Related: VTP36 (programme), VTP39 (small chunks become affordable), RAD53 (fp8 read on the same kernel), VTP38 (attacks the linear term; the two add).
 
+**2026-11-15 step 3 done (`docs/evidence/2026-11-15-rad52-native-split-store/README.md`).** Cause: the split was taken in the compatibility form (libr3's native instantiation refused `O_PSPLIT`). libr3 now converts the native accumulator before the split store and the split launch takes the native form under `attn_native`; no law change (step 4 not needed so far). Selftest at the one-KV-head geometry, all four caches, production pieces: 2382 ok. Long-corpus KLD vs stock 0.00315 (p99 0.0057, top-1 98.70%) against a serial-prefill noise floor of 0.00283 (p99 0.0056, top-1 98.71%): at the floor. Stress 12/12 clean. ABBA 2x (served `-long-bf16` argv): TTFT 100k 53.75 -> 43.97 s (-18.2%), 60k -13.7%, 30k -8.6%, 8k unchanged; decode unchanged; 100k prompt beside 4 decoders -17%, their decode +20%, longest gap -25%. Open before completion: the third ABBA repeat, TTFT at 512 / 2048 tokens, and the per-row flatness matrix at one KV head (acceptance 1; `--perfpaged` runs two KV heads).
+
 ## Change Log
 
 - 2026-11-14T06:57:44.790336+00:00 (created-by): Created by agent
 - 2026-11-14T06:58:35.979256+00:00 (updated-by): Updated: section:description, section:steps, section:validation, section:effort_risk, section:acceptance_criteria, section:notes
+- 2026-11-14T19:53:49.420888+00:00 (updated-by): Updated: section:notes
+- 2026-11-14T19:53:53.428917+00:00 (state-transition): State: pending → in_progress
