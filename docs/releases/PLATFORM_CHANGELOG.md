@@ -1,5 +1,39 @@
 # Changelog
 
+## [1.44.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.43.0...bc-platform-1.44.0) (2026-11-14)
+
+
+### New and changed
+
+* **layout:** opt-in qwen27b-tp3-int8-556 (int8 TP3 split 5,5,6) with its KLD gate (VTP36) ([#957](https://github.com/audiagentic/bigcherry/issues/957)) ([493d020](https://github.com/audiagentic/bigcherry/commit/493d0206682e1e027e96878da255b7e1a7ad6d51))
+* **radiance:** bc-serve serve|start|stop|status, the engine-only session owner (RSC02 step 1) ([#963](https://github.com/audiagentic/bigcherry/issues/963)) ([30bc6ad](https://github.com/audiagentic/bigcherry/commit/30bc6ad8c887045920624f94489a56c1dd55a1dd))
+* **radiance:** every rank its own VRAM split in an uneven dense world (rad0029); VTP33 ([#923](https://github.com/audiagentic/bigcherry/issues/923)) ([1228236](https://github.com/audiagentic/bigcherry/commit/1228236da9bcaee26479c490552057428035ebaf))
+* **radiance:** inactive CreditedEngineSource and old-vs-new policy oracle (RHP02 B1) ([#955](https://github.com/audiagentic/bigcherry/issues/955)) ([18e5bd4](https://github.com/audiagentic/bigcherry/commit/18e5bd4b255b2bdb8fe81eea4c53b1a3c1ce49ff))
+* **radiance:** inactive v26 worker topology, epoch ACK proof and resource plan (RCS14 gate C subset) ([#947](https://github.com/audiagentic/bigcherry/issues/947)) ([08cba6b](https://github.com/audiagentic/bigcherry/commit/08cba6bd6fe2a0d9c8ff904a44d69a21eef126b1))
+* **radiance:** int8 TP3 pipelined prefill (rad0030); qwen27b-tp3-int8 turns it on (VTP37) ([#935](https://github.com/audiagentic/bigcherry/issues/935)) ([6764134](https://github.com/audiagentic/bigcherry/commit/676413450b81c8f710c1c0209b1da0c531bf164b))
+* **radiance:** pipeline TP3 prefill in mixed decode+prefill steps (rad0026); VTP31 experiment 9 ([#914](https://github.com/audiagentic/bigcherry/issues/914)) ([ccbe5c0](https://github.com/audiagentic/bigcherry/commit/ccbe5c098ff55027f527172be95e8a0142aa064a))
+* **radiance:** pipeline TP3 prefill of one prompt beside decode rows (rad0027); VTP31 experiment 11 ([#916](https://github.com/audiagentic/bigcherry/issues/916)) ([1b336b8](https://github.com/audiagentic/bigcherry/commit/1b336b8e4a14f670e37b976731b2ea7543bc5d89))
+* **radiance:** qwen27b-tp3-capacity layout; VTP33 int8 capacity with rad0029 ([#924](https://github.com/audiagentic/bigcherry/issues/924)) ([9bbc787](https://github.com/audiagentic/bigcherry/commit/9bbc787b005119fb38b05806ada048794b45f025))
+* **radiance:** qwen27b-tp3-int8-556 long-context configs, fp8 and bf16 cache ([#966](https://github.com/audiagentic/bigcherry/issues/966)) ([0897e97](https://github.com/audiagentic/bigcherry/commit/0897e973b79907a1246cb7aeeb7d6ce9f604f32d))
+* **radiance:** serving configs with named variants (RSC12 slice 1) ([#962](https://github.com/audiagentic/bigcherry/issues/962)) ([a75c8ae](https://github.com/audiagentic/bigcherry/commit/a75c8ae7cc19586b81fed9109566350021661c83))
+* **radiance:** the other 12 layouts as configs with parity tests (RSC12 step 4) ([#964](https://github.com/audiagentic/bigcherry/issues/964)) ([e29f631](https://github.com/audiagentic/bigcherry/commit/e29f6318f96d843cbe6d64524b16d8d51ed24b67))
+* **radiance:** TP3 layout pipelines prefill from 256 rows; tp-profile lab tool; VTP31 experiments 5-7 ([#910](https://github.com/audiagentic/bigcherry/issues/910)) ([b2add42](https://github.com/audiagentic/bigcherry/commit/b2add42ba5828c3c5f428e32da8110f29fdb4b25))
+* **radiance:** VTP36 fused four-piece two-shot all-reduce for TP3 (rad0031-rad0033) ([#954](https://github.com/audiagentic/bigcherry/issues/954)) ([7c41447](https://github.com/audiagentic/bigcherry/commit/7c41447f807d875beb1f528bfaf404e164898621))
+* **radiance:** weighted two-shot for three-rank host decode all-reduce (rad0024) ([#908](https://github.com/audiagentic/bigcherry/issues/908)) ([95b8837](https://github.com/audiagentic/bigcherry/commit/95b8837fd3bc1eac84765d9b6ca246aa2cb4e78b))
+* **slice:** slice start records who made a worktree and why (WORKTREE.md and registry) ([#928](https://github.com/audiagentic/bigcherry/issues/928)) ([8ac34db](https://github.com/audiagentic/bigcherry/commit/8ac34db16a8eb9536b5886ab6c657860838e3b42))
+
+
+### Fixes
+
+* **evidence:** restore complete Radiance prototype tracked diff ([#943](https://github.com/audiagentic/bigcherry/issues/943)) ([a0186dc](https://github.com/audiagentic/bigcherry/commit/a0186dc3b425dbd940e43ec1b8e4037473d373f3))
+* **launcher:** stop queues for the gpu lease to restore power settings ([#915](https://github.com/audiagentic/bigcherry/issues/915)) ([d056dfe](https://github.com/audiagentic/bigcherry/commit/d056dfe9022bedbf45ff02d1155f80e3fa2852c3))
+* **patch:** rad0002 evidence names the work root by variable, not a container path ([#931](https://github.com/audiagentic/bigcherry/issues/931)) ([192cb05](https://github.com/audiagentic/bigcherry/commit/192cb05c70345e60665ca8ddef5fa3e8f22c539a))
+* **radiance:** every rank verifies rank 0's DFlash2 draft (rad0028); VTP31 experiment 13 ([#917](https://github.com/audiagentic/bigcherry/issues/917)) ([2e35061](https://github.com/audiagentic/bigcherry/commit/2e35061f26aaee0cfe5bc3f5b0d64315bd474567))
+* **radiance:** plan cache key covers tuning settings; launcher --set; 5,5,6 as a setting; VTP36 DMA-lane NO-GO and TP2 ABBA ([#959](https://github.com/audiagentic/bigcherry/issues/959)) ([5b0d46a](https://github.com/audiagentic/bigcherry/commit/5b0d46a9fbf4f361266344caee0e27e2d8ca7ea9))
+* **radiance:** rad0029 applies under expert_tiered, the launcher's placement ([#925](https://github.com/audiagentic/bigcherry/issues/925)) ([a86efe6](https://github.com/audiagentic/bigcherry/commit/a86efe625824b44da58017a078af55c08d2b8ccc))
+* **radiance:** v2 manifest plan key covers engine tuning and every rank's card ([#960](https://github.com/audiagentic/bigcherry/issues/960)) ([a278c19](https://github.com/audiagentic/bigcherry/commit/a278c19d2aa250f2196a414565648ea67c6b5a32))
+* **test:** declare new moe-remote tests in the bump gate ([#948](https://github.com/audiagentic/bigcherry/issues/948)) ([9dfa79c](https://github.com/audiagentic/bigcherry/commit/9dfa79c020b5e0fa9baac7b6a416fdf80fa8b446))
+
 ## [1.43.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.42.0...bc-platform-1.43.0) (2026-11-12)
 
 
