@@ -60,6 +60,8 @@ M. Steps 2-3 are scheduler patches; a prefill cap trades the long prompts' fairn
 
 Created 2026-11-14 (`docs/evidence/2026-11-14-tp3-long-context/README.md`). Step 4 depends on RAD52. Related: VTP36 step 9 (lone-prefill wide steps), RSC12.
 
+Step 3 implementation: managed engine patch `rad0034_prefill_concurrency` introduces `--max-prefill-seqs N` (default 0, unlimited) and an optional inactive serving-v2 tuning field. Only unfinished RUNNING long prefills count; existing runners continue, preempted requests retain the whole-recompute gate, decoders are unaffected, and a short request which completes its prompt in the admission step can bypass a full cap, including after a prefix hit. The prefill-interleave hold, busy-chunk reserves, lone-prefill span and hard sequence/card limits keep their existing semantics. Patch state remains untested: next are G4 current-pin requalification, card-free scheduler and contract checks, then the full-cache eight-long-prompt ABBA of N=0/1/2 with short-request probes and the owner decision on a default; do not enable it in a serving config beforehand.
+
 ## Change Log
 
 - 2026-11-14T06:57:52.821543+00:00 (created-by): Created by agent

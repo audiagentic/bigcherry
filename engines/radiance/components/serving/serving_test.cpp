@@ -1586,7 +1586,7 @@ void engine_only_layout(Fixture& t) {
         assert(e.at("kernels") == Json({{"moe_native", true}, {"dec11", false}}));   // amendment 14: environment settings are keys too
         assert(!e.contains("lora") && !e.contains("chat"));   // a section appears only with its members
         assert(bc::serving::v2::read_manifest(with_options.text, "options", bc::serving::v2::PlanUse::measuring).ok());
-        assert(bc::serving::engine_option_fields().size() == 93 /* 84 flags (amendment 18: +3, amendment 20: +1) + 9 environment settings */);
+        assert(bc::serving::engine_option_fields().size() == 94 /* VTP39: +1 opt-in prefill cap (85 flags + 9 environment settings) */);
         Options bad = opts;
         bad.sets = {"layout.name=\"qwen27b-2xtx\"", "sampling.no_such_option=1"};
         fail(bad, t.facts, "no_such_option");
@@ -2038,6 +2038,25 @@ void config_files(Fixture& t) {
            std::string::npos);
     assert(from_config.provenance.at("service.max_context").at("source").get<std::string>().find("config qwen27b.toml") !=
            std::string::npos);
+    {   // VTP39: optional v2 tuning is recognized from a real config and can be overridden to zero.
+        Options cap = config;
+        cap.configs = {configs, t.file("vtp39-optin.toml",
+            "schema = 1\n[config.vtp39-probe]\ndescription = \"experimental concurrent prefills\"\n"
+            "base = \"qwen27b-tp3-int8\"\n"
+            "tuning.max_prefill_seqs = 2\n")};
+        cap.sets = {"layout.name=\"vtp39-probe\""};
+        const auto enabled = sv::resolve(cap, t.facts);
+        assert(enabled.values.at("tuning").at("max_prefill_seqs") == 2);
+        assert(enabled.provenance.at("tuning.max_prefill_seqs").at("source").get<std::string>().find("config vtp39-optin.toml") != std::string::npos);
+        const auto& options = bc::serving::engine_option_fields();
+        auto it = std::find_if(options.begin(), options.end(),
+            [](const auto& f) { return f.key == "tuning.max_prefill_seqs"; });
+        assert(it != options.end() && it->path == "/spec/processes/engine/tuning/max_prefill_seqs");
+        cap.sets.push_back("tuning.max_prefill_seqs=0");
+        assert(sv::resolve(cap, t.facts).values.at("tuning").at("max_prefill_seqs") == 0);
+        cap.sets.back() = "tuning.max_prefill_seqs=-1";
+        fail(cap, t.facts, "max_prefill_seqs");
+    }
     // the variant: only the split differs
     config.sets = {"layout.name=\"qwen27b-tp3-int8-556\""};
     const auto variant = sv::resolve(config, t.facts);
