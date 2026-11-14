@@ -138,8 +138,9 @@ p2p = "off"
 #
 # The fp8 cache (E4M3, its scales at 1.0) costs about what the int8 weights do on short text; on 25K-104K documents its
 # mean is 0.0054 and the tail is wide (two of five documents reach p99.9 of 4 and 8 late in the text). The bf16 cache has
-# no rounding and holds half as many tokens. Full-length sessions at once, as the engine counts them: 2.8 with fp8, 1.4
-# with bf16; with all 8 sessions busy that is about 157,000 and 78,000 tokens each.
+# no rounding and holds half as many tokens. Sessions at the full 262,144 tokens that fit at once (the engine's "cache
+# can grow to" line, after each rank's own split): 4.8 with fp8, 2.4 with bf16; with all 8 sessions busy that is about
+# 157,000 and 78,000 tokens each. A session holds cache only for the tokens it has.
 [config.qwen27b-tp3-int8-556-long]
 base = "qwen27b-tp3-int8-556"
 description = "qwen27b-tp3-int8-556 at 262,144 tokens a session: about 1.25 M tokens of fp8 cache"
