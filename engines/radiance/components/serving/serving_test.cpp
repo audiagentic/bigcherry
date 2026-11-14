@@ -2056,6 +2056,25 @@ void config_files(Fixture& t) {
     // a profile and --set still override a config (config < site < profile < --set)
     config.sets.push_back("tuning.pipelined_prefill=\"off\"");
     assert(sv::resolve(config, t.facts).values.at("tuning").at("pipelined_prefill") == "off");
+    {   // every cache format the engine offers is a setting, bf16 (16-bit K and V) included, and reaches the manifest
+        Options kv = config;
+        kv.sets = {"layout.name=\"qwen27b-tp3-int8\"", "engine.kv_cache_dtype=\"bf16\""};
+        const auto r = sv::resolve(kv, t.facts);
+        assert(r.values.at("engine").at("kv_cache_dtype") == "bf16");
+        sv::ManifestInputs in;
+        in.resolved = r;
+        in.instance_id = "11111111-1111-4111-8111-111111111111";
+        in.producer_sha256 = std::string(64, 'a');
+        in.profile = "production";
+        in.s10.power_profile = "stock";
+        const auto built = sv::build_manifest(in);
+        assert(built.document.at("spec").at("processes").at("engine").at("execution").at("kv_cache_dtype") == "bf16");
+        assert(bc::serving::v2::read_manifest(built.text, "qwen27b-tp3-int8", bc::serving::v2::PlanUse::measuring).ok());
+        kv.sets.back() = "engine.kv_cache_dtype=\"int8\"";
+        bool refused = false;
+        try { (void)sv::resolve(kv, t.facts); } catch (const std::exception&) { refused = true; }
+        assert(refused);   // not an engine format
+    }
 
     const std::string head = "schema = 1\n[config.base]\ndescription = \"b\"\nmodel = \"m.rad\"\n"
                              "ranks = [{ arch = \"gfx1201\" }]\n[config.base.service]\nmax_context = 8192\nmax_sessions = 4\n";
