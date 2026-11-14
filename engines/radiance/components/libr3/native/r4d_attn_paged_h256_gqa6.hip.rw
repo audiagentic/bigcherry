@@ -15,7 +15,7 @@ using std::max;
 @@ replace
     if (bc_engine_settings_snapshot().attn_native)
         hipLaunchKernelGGL((r4d_attn_prefill_kernel<P_NWARPS, P_TILE, A_HEAD_DIM, A_GQA, A_BLOCK_SIZE,
-                                                    KVP, P_OPT | XOPT | R3X>),
+                                                    KVP, (P_OPT & ~R3KL) | XOPT | R3X>),
                            grid, dim3(P_NWARPS * 32), 0, s, *a);
     else
         hipLaunchKernelGGL((r4d_attn_prefill_kernel<P_NWARPS, P_TILE, A_HEAD_DIM, A_GQA, A_BLOCK_SIZE,
@@ -31,6 +31,10 @@ using std::max;
      * split either). The native form serves the plain and the KV-split launch alike: the kernel converts its
      * accumulator to the layout the partial store expects (r4d_attn_prefill_h256_gqa6.hip.rw). */
     constexpr int R3X = (XOPT & (O_QK8 | O_PV8)) ? 0 : O_R3NATIVE;
+    /* RAD53: the native form drops O_KLATE. Its native fragments and accumulator leave no room for the next tile's
+     * wide K: on the fp8 and k6_v4 caches KLATE takes the spill from 336/376 to 816/832 bytes a lane (240 VGPRs,
+     * 6 waves either way). bf16 and fp8_v4 never take KLATE, so they compile unchanged. */
+    constexpr int R3KL = R3X ? O_KLATE : 0;
 @@ end
 
 @@ find 1
@@ -40,7 +44,7 @@ using std::max;
 @@ replace
             if (bc_engine_settings_snapshot().attn_native)
                 hipLaunchKernelGGL((r4d_attn_prefill_kernel<P_NWARPS, P_TILE, A_HEAD_DIM, A_GQA, A_BLOCK_SIZE,
-                                                            KVP, P_OPT | XOPT | R3X | O_PSPLIT>),
+                                                            KVP, (P_OPT & ~R3KL) | XOPT | R3X | O_PSPLIT>),
                                    grid, dim3(P_NWARPS * 32), 0, s, *a);
             else
                 hipLaunchKernelGGL((r4d_attn_prefill_kernel<P_NWARPS, P_TILE, A_HEAD_DIM, A_GQA, A_BLOCK_SIZE,
