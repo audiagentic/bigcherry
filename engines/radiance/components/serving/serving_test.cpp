@@ -1949,7 +1949,7 @@ void config_files(Fixture& t) {
         o.site = site;
         assert(sv::resolve(o, t.facts).values.at("engine").at("model") == model.string());
         o.model_root.clear();
-        if (!std::getenv("BC_MODEL_ROOT")) fail(o, t.facts, "is relative and no model root is given");
+        fail(o, t.facts, "is relative and no model root is given");
     }
     refuses("c-placement.toml", head + "[config.v]\nbase = \"base\"\ndescription = \"v\"\n"
             "[[config.v.helpers]]\narch = \"gfx1100\"\ncount = 1\nplacement = \"sideways\"\n", "placement is required");

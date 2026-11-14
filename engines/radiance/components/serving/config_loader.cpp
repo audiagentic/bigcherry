@@ -249,10 +249,4 @@ Json config_as_layout(const Json& c, const fs::path& model_root) {
     return l;
 }
 
-fs::path config_model_root(const fs::path& given) {
-    if (!given.empty()) return given;
-    if (const char* env = std::getenv("BC_MODEL_ROOT"); env && *env) return fs::path(env);
-    return {};
-}
-
 } // namespace bc::serving

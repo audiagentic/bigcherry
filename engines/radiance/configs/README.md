@@ -14,9 +14,9 @@ a converted config keeps its layout's name (until the v2 manifest switch), so th
 `*.toml` files in name order). When configs are given, layout files are read only from an explicit `--layouts`. A config
 is selected like a layout, by `layout.name` (`--set layout.name='"qwen27b-tp3-int8-556"'`).
 
-The config's `model` is its lowest `engine.model` setting: a relative path is under `--model-root DIR`, else
-`BC_MODEL_ROOT`; a site file, profile or `--set` that names a model wins. A config with a relative model and no root is
-refused when it is selected.
+The config's `model` is its lowest `engine.model` setting: a relative path is under `--model-root DIR` (bc-serve reads
+no environment variable for it); a site file, profile or `--set` that names a model wins. A config with a relative
+model and no root is refused when it is selected.
 
 ## Format
 

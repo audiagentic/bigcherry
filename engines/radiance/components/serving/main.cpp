@@ -41,7 +41,7 @@ void usage() {
                  "  --configs FILE|DIR  RSC12 configs (repeatable; default BIGCHERRY_CONFIGS): one file per model, named configs and\n"
                  "                     variants (base = ...); their names select as layout.name. Given configs, layout files are\n"
                  "                     read only from --layouts\n"
-                 "  --model-root DIR    the directory a config's relative model path is under (default BC_MODEL_ROOT)\n"
+                 "  --model-root DIR    the directory a config's relative model path is under (none by default)\n"
                  "  --calibration FILE  calibration cache over seeds, including RHP16 per-plan measurement records\n"
                  "  calibration-ingest --from-log FILE --calibration FILE --manifest LAB_MANIFEST\n"
                  "      validates one settled helper record against the strict lab manifest and atomically appends it\n"

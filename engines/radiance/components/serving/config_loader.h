@@ -38,7 +38,4 @@ ConfigSet load_configs(const std::vector<std::filesystem::path>& files);
  * relative model is left unresolved (`model_unresolved`), and selecting that config is refused. */
 nlohmann::json config_as_layout(const nlohmann::json& effective, const std::filesystem::path& model_root = {});
 
-/* The model root a relative config model is under: `given` (--model-root), else BC_MODEL_ROOT, else empty. */
-std::filesystem::path config_model_root(const std::filesystem::path& given);
-
 } // namespace bc::serving
