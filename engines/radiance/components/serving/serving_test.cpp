@@ -16,6 +16,7 @@
 #include "worker_footprint.h"
 #include "v2/helper_settings.h"
 #include "sha256.h"
+#include "session.h"
 
 #undef NDEBUG   /* the checks below are assert()s: keep them live in Release component builds */
 #include <sys/stat.h>
@@ -1540,6 +1541,11 @@ void engine_only_layout(Fixture& t) {
     opts.sets = {"layout.name=\"qwen27b-2xtx\"", "service.max_sessions=6", "service.max_context=8192"};
     const auto r = sv::resolve(opts, t.facts);   // no [handoff] heat/histogram: nothing here uses them
     assert(r.typed.layout.engine_cards.size() == 2 && r.typed.layout.helper_cards.empty());
+    {   // no helper, so no combine threads: a host with fewer CPUs than the combine default resolves it
+        Json few = t.facts;
+        few["host"]["cpu_count"] = 4;
+        (void)sv::resolve(opts, few);
+    }
     assert(r.typed.engine.tp == 2 && r.typed.engine.tp_wire == "wht6" && r.typed.engine.kernels == "libr3,libref");
     assert(r.typed.helper.count == 0 && r.manifest.at("process_helpers").empty());
     assert(r.provenance.at("engine.tp").at("origin") == "derived");
@@ -1840,11 +1846,14 @@ void config_files(Fixture& t) {
     const auto model = t.root / "config-model.rad";
     bc::test::write_rad(model, 0, 0, 128, 128, {});
     const auto site = t.file("config-site.toml", "[engine]\nmodel = \"" + model.string() + "\"\nradiance_home = \"/runtime\"\n");
-    // the layout as the launcher resolves it: its server-args become --set (tools/lab/radiance/lib/plan-check.sh)
+    // the layout as the launcher resolves it: its server-args become --set, and so do the launcher's own engine-only
+    // values (no host pool, no host KV tier, the n-gram table on disk, a TP engine with no P2P: plan-check.sh)
     Options layout;
     layout.site = site;
     layout.sets = {"layout.name=\"qwen27b-tp3-int8\"", "service.max_context=8192", "service.max_sessions=8",
-                   "engine.kv_cache_dtype=\"fp8\"", "engine.num_speculative_tokens=3"};
+                   "engine.kv_cache_dtype=\"fp8\"", "engine.num_speculative_tokens=3",
+                   "memory.host_pool_mib=0", "memory.host_kv_mib=0", "engine.ngram_placement=\"disk\"",
+                   "tuning.p2p=\"off\""};
     const auto from_layout = sv::resolve(layout, t.facts);
     Options config;
     config.site = site;
@@ -2011,6 +2020,162 @@ void config_files(Fixture& t) {
     }
 }
 
+#ifndef BC_FAKE_ENGINE
+#error "BC_FAKE_ENGINE must name the fake engine binary (session_fake_engine.cpp)"
+#endif
+// RSC02 step 1: the session owner's engine-only plan step against the fixture's cards: the qwen27b config resolved, its
+// engine's device visibility from the resolver's rank order, and the manifest rounds with bc-serve faked: a cache miss
+// measures with the engine alone (--plan-memory against the unmeasured manifest), the measured plan is stored with the
+// engine's reported start-up memory, a derived host pool goes round once more, and the plan-extra is the bash launcher's.
+void session_engine_plan(Fixture& t) {
+    namespace ss = bc::serving::session;
+    const fs::path configs = fs::path(std::getenv("BIGCHERRY_LAYOUTS")).parent_path() / "configs";
+    const auto model = t.root / "session-model.rad";
+    bc::test::write_rad(model, 0, 0, 128, 128, {});
+    const fs::path home = t.root / "session-build" / "radiance_home";
+    fs::create_directories(home);
+    const auto site = t.file("session-site.toml", "[engine]\nmodel = \"" + model.string() + "\"\nradiance_home = \"" +
+                                                      home.string() + "\"\n");
+    const fs::path run = t.root / "session-run";
+    fs::create_directories(run);
+    ss::EnginePlanInputs in;
+    in.options.sys_root = t.root;
+    in.options.site = site;
+    in.options.configs = {configs};
+    in.options.model_root = t.root / "model-root";   // the site's model wins; the root is still required
+    in.options.sets = {"layout.name=\"qwen27b-tp3-int8\""};
+    in.self = "/build/radiance_home/bin/bc-serve";
+    in.engine_binary = BC_FAKE_ENGINE;
+    std::vector<std::vector<std::string>> calls;
+    auto has = [](const std::vector<std::string>& argv, const std::string& flag, const std::string& value) {
+        for (size_t i = 0; i + 1 < argv.size(); ++i) if (argv[i] == flag && argv[i + 1] == value) return true;
+        return false;
+    };
+    auto flag = [](const std::vector<std::string>& argv, const std::string& f) {
+        return std::find(argv.begin(), argv.end(), f) != argv.end();
+    };
+    in.runner = [&](const std::vector<std::string>& argv) {
+        calls.push_back(argv);
+        ss::ManifestRun r;
+        switch (calls.size()) {
+        case 1: r.exit = 10; break;                                              // no measured plan
+        case 2: assert(flag(argv, "--unmeasured")); std::ofstream(argv[2]) << "{}"; break;
+        case 3: r.exit = 11; r.out = "derived_host_pool_mib=2048\n"; break;     // stored; another pool wanted
+        case 4: r.exit = 0; r.out = "manifest: x\ndigest: 0123abcd\n"; std::ofstream(argv[2]) << "{}"; break;
+        default: assert(!"unexpected bc-serve call");
+        }
+        return r;
+    };
+    std::vector<std::string> started;
+    std::vector<pid_t> ended;
+    ss::Hooks wait;
+    wait.wait = [](std::chrono::milliseconds) { return true; };
+    wait.started = [&](const std::string& role, pid_t pid, const fs::path&) { started.push_back(role + " " + std::to_string(pid)); };
+    wait.ended = [&](pid_t pid) { ended.push_back(pid); };
+    const ss::EngineStart s = ss::plan_engine_only(in, run, wait);
+    assert(calls.size() == 4);
+    // the measuring engine was the owner's to know about, and its exit was verified
+    assert(started.size() == 1 && started[0].rfind("measuring engine ", 0) == 0 && ended.size() == 1 &&
+           started[0] == "measuring engine " + std::to_string(ended[0]));
+    for (const auto& c : calls) {
+        assert(c[0] == in.self.string() && c[1] == "--write-manifest" && has(c, "--power-profile", "stock"));
+        assert(has(c, "--site", site.string()) && has(c, "--configs", (configs / "qwen27b.toml").string()) &&
+               !flag(c, "--layouts") &&
+               has(c, "--set", "layout.name=\"qwen27b-tp3-int8\"") && has(c, "--sys-root", t.root.string()));
+    }
+    for (size_t i : {0, 2, 3})
+        assert(has(calls[i], "--plan-extra", "budgets: default") && has(calls[i], "--engine-binary", BC_FAKE_ENGINE) &&
+               has(calls[i], "--plan-cache", (run / "plan-cache").string()));
+    assert(!flag(calls[1], "--plan-extra") && !flag(calls[1], "--plan-cache"));
+    // the measuring start's plan and its reported start-up memory are stored; the engine is alone
+    assert(has(calls[2], "--measured-plan", (run / "plan-measured.json").string()) &&
+           has(calls[2], "--rank-demand", (run / "plan-ranks.json").string()) &&
+           has(calls[2], "--engine-resident-mib", "1234") && has(calls[2], "--helpers-resident-mib", "0"));
+    assert(!flag(calls[2], "memory.host_pool_mib=2048") && has(calls[3], "--set", "memory.host_pool_mib=2048"));
+    // the engine: from the measured manifest only, its three ranks on the resolver's cards in rank order
+    assert(s.argv.size() == 5 && s.argv[0] == BC_FAKE_ENGINE && s.argv[1] == "--manifest" && s.argv[2] == calls[3][2] &&
+           s.argv[3] == "--role" && s.argv[4] == "engine" && s.manifest == calls[3][2]);
+    std::string rocr;
+    const Json resolved = bc::serving::resolve(in.options, bc::serving::detect(t.root)).values;
+    for (const Json& bdf : resolved.at("layout").at("engine_cards"))
+        for (const Json& g : t.facts.at("gpus"))
+            if (g.at("bdf") == bdf) rocr += (rocr.empty() ? "" : ",") + std::to_string(g.at("hip_ordinal").get<int>());
+    assert(s.runtime.at("ROCR_VISIBLE_DEVICES") == rocr && s.runtime.at("HIP_VISIBLE_DEVICES") == "0,1,2");
+    assert(s.runtime.at("RADIANCE_HOME") == home.string() && s.runtime.size() == 3);
+    assert(s.port == 36080 && s.summary.at("config") == "qwen27b-tp3-int8" && s.summary.at("manifest_digest") == "0123abcd");
+    {   // configs from BIGCHERRY_CONFIGS alone reach the manifest writer, whose environment has no BIGCHERRY_*: as files
+        ss::EnginePlanInputs env_only = in;
+        env_only.options.configs.clear();
+        const char* saved = std::getenv("BIGCHERRY_CONFIGS");
+        const std::optional<std::string> keep = saved ? std::optional<std::string>(saved) : std::nullopt;
+        ::setenv("BIGCHERRY_CONFIGS", configs.c_str(), 1);
+        calls.clear();
+        ended.clear();
+        auto old = in.runner;
+        env_only.runner = [&](const std::vector<std::string>& argv) {
+            calls.push_back(argv);
+            ss::ManifestRun r;
+            std::ofstream(argv[2]) << "{}";
+            return r;
+        };
+        ss::plan_engine_only(env_only, run, wait);
+        if (keep) ::setenv("BIGCHERRY_CONFIGS", keep->c_str(), 1); else ::unsetenv("BIGCHERRY_CONFIGS");
+        assert(calls.size() == 1 && has(calls[0], "--configs", (configs / "qwen27b.toml").string()) &&
+               !flag(calls[0], "--layouts"));
+    }
+    // a failed manifest write and a layout (server-args are the bash launcher's) are refused before any engine starts
+    calls.clear();
+    in.runner = [&](const std::vector<std::string>& argv) {
+        calls.push_back(argv);
+        return ss::ManifestRun{2, "", "bc-serve: no such thing"};
+    };
+    bool refused = false;
+    try { ss::plan_engine_only(in, run, wait); } catch (const ss::PlanFailed& e) {
+        refused = std::string(e.what()).find("exit 2") != std::string::npos;
+    }
+    assert(refused && calls.size() == 1);
+    ss::EnginePlanInputs layout = in;
+    layout.options.configs.clear();
+    layout.options.layouts = {fs::path(std::getenv("BIGCHERRY_LAYOUTS"))};
+    layout.options.sets = {"layout.name=\"qwen27b-tp3-int8\""};
+    refused = false;
+    calls.clear();
+    try { ss::plan_engine_only(layout, run, wait); } catch (const ss::PlanFailed& e) {
+        refused = std::string(e.what()).find("is a layout") != std::string::npos;
+    }
+    assert(refused && calls.empty());
+    {   // bc-serve inside a build serves only that build's engine and runtime home
+        const fs::path build = t.root / "session-build";
+        fs::create_directories(build / "bin");
+        std::ofstream(build / "bin" / "radiance") << "#!/bin/sh\n";
+        fs::permissions(build / "bin" / "radiance", fs::perms::owner_all);
+        ss::EnginePlanInputs own = in;
+        own.self = home / "bin" / "bc-serve";
+        calls.clear();
+        refused = false;
+        try { ss::plan_engine_only(own, run, wait); } catch (const ss::PlanFailed& e) {
+            refused = std::string(e.what()).find("is not this bc-serve's build") != std::string::npos;
+        }
+        assert(refused && calls.empty());
+    }
+    // the measuring start that fails is refused, naming its log
+    in.runner = [&](const std::vector<std::string>& argv) {
+        ss::ManifestRun r;
+        if (std::find(argv.begin(), argv.end(), "--unmeasured") != argv.end()) {
+            std::ofstream(argv[2]) << "{}";
+            return r;
+        }
+        r.exit = 10;
+        return r;
+    };
+    in.engine_binary = "/bin/false";
+    refused = false;
+    try { ss::plan_engine_only(in, run, wait); } catch (const ss::PlanFailed& e) {
+        refused = std::string(e.what()).find("measuring start failed") != std::string::npos;
+    }
+    assert(refused);
+}
+
 int main(int argc, char** argv) {
     bool write_golden = false;
     const char* dump_dir = nullptr;
@@ -2040,6 +2205,7 @@ int main(int argc, char** argv) {
         tp_engine_with_two_helpers_layout(t);
         mixed_arch_engine_layout(t);
         config_files(t);
+        session_engine_plan(t);
         derived_budget_is_the_workers(t);
         sdk_environment_step(t);
         std::cout << "PASS: fake KFD/PCI/proc detection; strict keys; types/ranges; required; "

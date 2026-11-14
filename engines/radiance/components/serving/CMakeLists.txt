@@ -46,7 +46,7 @@ file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/generated/helper_profile_seed.inc"
      "R\"bchp(${bc_helper_profile_seed})bchp\"\n")
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/helper_profile.toml")
 
-add_library(bc_serving STATIC serving.cpp config_loader.cpp calibration.cpp live_policy.cpp live_policy_manifest.cpp live_policy_ingest.cpp ledger.cpp plan_cache.cpp manifest_writer.cpp sdk_check.cpp v2/s10_inputs.cpp)
+add_library(bc_serving STATIC serving.cpp config_loader.cpp session.cpp calibration.cpp live_policy.cpp live_policy_manifest.cpp live_policy_ingest.cpp ledger.cpp plan_cache.cpp manifest_writer.cpp sdk_check.cpp v2/s10_inputs.cpp)
 
 target_link_libraries(bc_serving PUBLIC bc_jcs bc_serving_v2 bc_owner_map)
 target_compile_features(bc_serving PUBLIC cxx_std_20)
@@ -89,9 +89,20 @@ if(BUILD_TESTING)
   target_link_libraries(bc_live_policy_ingest_test PRIVATE bc_serving)
   add_test(NAME bc_live_policy_ingest_test COMMAND bc_live_policy_ingest_test)
 
+  # RSC02: a card-free stand-in for the engine (/health, /v1/completions, --plan-memory), for the session owner's tests.
+  add_executable(bc_fake_engine EXCLUDE_FROM_ALL session_fake_engine.cpp)
+  target_include_directories(bc_fake_engine PRIVATE "${RADIANCE_SRC}/vendor")
+  target_compile_features(bc_fake_engine PRIVATE cxx_std_20)
   add_executable(bc_serving_test EXCLUDE_FROM_ALL serving_test.cpp)
   target_link_libraries(bc_serving_test PRIVATE bc_serving)
+  add_dependencies(bc_serving_test bc_fake_engine)
+  target_compile_definitions(bc_serving_test PRIVATE BC_FAKE_ENGINE="$<TARGET_FILE:bc_fake_engine>")
   add_test(NAME bc_serving_test COMMAND bc_serving_test)
+  add_executable(bc_session_test EXCLUDE_FROM_ALL session_test.cpp)
+  target_link_libraries(bc_session_test PRIVATE bc_serving)
+  add_dependencies(bc_session_test bc_fake_engine)
+  target_compile_definitions(bc_session_test PRIVATE BC_FAKE_ENGINE="$<TARGET_FILE:bc_fake_engine>")
+  add_test(NAME bc_session_test COMMAND bc_session_test)
   add_executable(bc_jcs_test EXCLUDE_FROM_ALL jcs_test.cpp)
   target_link_libraries(bc_jcs_test PRIVATE bc_serving)
   target_compile_definitions(bc_jcs_test PRIVATE

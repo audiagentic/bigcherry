@@ -1,0 +1,24 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261114_022356_engine-only-models-can-be-star_1148",
+  "files": [
+    "engines/radiance/components/serving/session.h",
+    "engines/radiance/components/serving/session.cpp",
+    "engines/radiance/components/serving/session_test.cpp",
+    "engines/radiance/components/serving/session_fake_engine.cpp",
+    "engines/radiance/components/serving/main.cpp",
+    "engines/radiance/components/serving/serving_test.cpp",
+    "engines/radiance/components/serving/CMakeLists.txt",
+    "engines/radiance/components/serving/component.toml",
+    "engines/radiance/configs/qwen27b.toml",
+    "engines/radiance/configs/README.md",
+    "docs/planning/active/run-serving-configuration/RSC02.md"
+  ],
+  "plan-item-ids": [
+    "RSC02"
+  ],
+  "status": "unreleased",
+  "technical-summary": "bc-serve serve|start|stop|status: a C++ session owner for engine-only configs (RSC02 step 1). Session lock, control socket and record; the build's own --write-manifest with the measure (exit 10) and derived-pool (exit 11) rounds; engine from the manifest with a scrubbed environment; /health and canary; group-verified stop; orphan detection by process start time; same-build check. qwen27b config states the launcher's engine-only values.",
+  "timestamp-utc": "2026-11-14T02:23:56.534931Z",
+  "user-summary-candidate": "Engine-only models can be started, checked and stopped with bc-serve serve/start/status/stop from a named config, without the bash launcher."
+}

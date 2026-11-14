@@ -2,7 +2,7 @@
 id: RSC02
 order: 2
 plan: run-serving-configuration
-state: pending
+state: in_progress
 created-at: '2026-11-02T00:53:02.723581+00:00'
 breadth: ''
 skill: intermediate
@@ -139,6 +139,20 @@ CORRECTION 2026-11-04: the earlier note that MEN14, MEN18 were absorbed into thi
 OWNER DIRECTION 2026-11-14: rescoped. The command is `bc-serve start|stop|status|explain` in C++ (radiance's language),
 not `bigcherry serve` in Python; it starts a named config from RSC12 (one readable file per model, named variants) or a
 stored manifest. Depends on RSC12 for configs; steps 1-4 can start on today's layouts. GPT is the backup reviewer.
+
+STEP 1 2026-11-14 (feat/rsc02-session-owner): `bc-serve serve|start|stop|status` (components/serving/session.cpp),
+engine-only configs. Owner process with session lock, control socket and record; plan step runs the build's own
+`--write-manifest` (exit 10 measure with the engine alone, exit 11 derived pool), same plan-extra as the bash engine-only
+start; engine from the manifest with a scrubbed environment; /health, canary; stop SIGINT -> SIGKILL, verified for the
+whole process group; processes recorded with their start time, so an owner that died leaves a session `stop` refuses to
+call stopped and `serve` refuses to start over. Same-build check (an engine from another build is refused: the plan key
+is compiled into both). The qwen27b config now states the bash launcher's engine-only values (host pool 0, KV tier 0,
+n-gram on disk, p2p off); the parity test includes them. Card-free: 17 lifecycle cases (session_test.cpp) and the plan
+step (serving_test.cpp). Hardware (lease around serve): qwen27b-tp3-int8 and -556 measured on cache miss, served,
+canary, stopped clean; engine SIGKILLed while serving -> session failed, lease released, no KFD processes. A bc-serve
+newer than its engine was refused by the engine (BC_CFG_PLAN_MISMATCH): the reason for the same-build check. GPT review
+req_rsc02-session-owner_f98e1286bafc (2 P0, 5 P1, 1 P2, all fixed). Next: step 2 (helpers); the remaining layouts become
+configs first (owner order 2026-11-14).
 
 ## Change Log
 

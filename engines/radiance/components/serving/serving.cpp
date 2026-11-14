@@ -1327,7 +1327,8 @@ Resolved resolve(const Options& options, const Json& facts) {
     if (value_at(values, "helper.engine_ranks").get<size_t>() !=
         value_at(values, "engine.tp").get<size_t>())
         throw std::runtime_error("helper.engine_ranks must equal engine.tp");
-    if (value_at(values, "helper.combine_threads").get<uint64_t>() >
+    // the combine runs in a helper: an engine-only configuration starts no combine threads
+    if (!engine_only && value_at(values, "helper.combine_threads").get<uint64_t>() >
         facts.at("host").at("cpu_count").get<uint64_t>())
         throw std::runtime_error("helper.combine_threads exceeds discovered CPU count");
     if (value_at(values, "layout.engine_cards") != engine_cards ||
