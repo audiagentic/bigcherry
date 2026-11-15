@@ -1,6 +1,6 @@
 # rad0026_mixed_pipelined_prefill
 
-**Status:** untested
+**Status:** validated
 **Plan item:** VTP31
 
 Scope: `qwen35_fp8` and `qwen35_w8a8`'s pipelined prefill (rad0020, rad0025), for a mixed step of decode rows and

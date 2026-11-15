@@ -1,6 +1,6 @@
 # rad0020_vtp14_tp3_pipelined_prefill
 
-**Status:** untested
+**Status:** validated
 **Plan item:** VTP14
 
 Scope: the fp8 Qwen plugin's pipelined prefill as configuration: `--pipelined-prefill auto|on|off` and
