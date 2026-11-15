@@ -2,7 +2,7 @@
 id: RAD53
 order: 0
 plan: patching-radiance-rdna3
-state: pending
+state: in_progress
 created-at: '2026-11-14T06:57:48.801584+00:00'
 breadth: ''
 skill: advanced
@@ -56,7 +56,11 @@ S. Inferred from source and the step delta; not yet profiled per rank (step 1 co
 
 Created 2026-11-14 (`docs/evidence/2026-11-14-tp3-long-context/README.md`). RAD38 (`k16_v8`) depends on the result: on gfx1100 every 8-bit KV plane pays this conversion. No quality gate: the conversion is exact.
 
+**2026-11-15 (`docs/evidence/2026-11-15-rad53-fp8-prefill-attention/README.md`).** Step 2 done (direct E4M3 to f16, exhaustive host test). The larger fp8 cost on gfx1100 was in prefill, not the conversion: `O_KLATE` in the native prefill attention spilled the fp8 and k6_v4 kernels (816/832 vs 336/376 bytes a lane); the native form drops it. Identity against RAD52 alone: PPL equal to every digit, top-1 1.0, KLD max 2.7e-8. Kernel at 100k keys: fp8 512/1024/2048 rows 40.5/79.6/119.1 -> 10.2/20.3/55.7 ms (with RAD52). Engine ABBA on fp8 `-long`: TTFT 100k 65.18 -> 45.45 s (-30%), 60k -22% (now +2.7% from bf16), decode +1%; long prompt beside 4 decoders -27.5%, gap max -40%. Stress 12/12. Open: step 1 / acceptance 1 decode half (fp8 vs bf16 decode step at 60k).
+
 ## Change Log
 
 - 2026-11-14T06:57:48.801584+00:00 (created-by): Created by agent
 - 2026-11-14T06:58:40.011280+00:00 (updated-by): Updated: section:description, section:steps, section:validation, section:effort_risk, section:acceptance_criteria, section:notes
+- 2026-11-15T00:06:32.139723+00:00 (updated-by): Updated: section:notes
+- 2026-11-15T00:06:36.209057+00:00 (state-transition): State: pending → in_progress

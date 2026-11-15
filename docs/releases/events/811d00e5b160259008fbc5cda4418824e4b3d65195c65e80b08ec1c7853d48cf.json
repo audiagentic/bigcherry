@@ -1,0 +1,20 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261115_000636_on-the-tp3-fp8-cache-long-cont_6565",
+  "files": [
+    "engines/radiance/components/libr3/r3_e4m3_f16.h",
+    "engines/radiance/components/libr3/r3_e4m3_f16_test.cpp",
+    "engines/radiance/components/libr3/native/r4d_dt16.h.rw",
+    "engines/radiance/components/libr3/native/r4d_attn_paged_h256_gqa6.hip.rw",
+    "engines/radiance/components/libr3/CMakeLists.txt",
+    "engines/radiance/components/libr3/component.toml",
+    "docs/evidence/2026-11-15-rad53-fp8-prefill-attention/README.md"
+  ],
+  "plan-item-ids": [
+    "RAD53"
+  ],
+  "status": "unreleased",
+  "technical-summary": "libr3 gfx1100: exact direct E4M3-to-f16 KV widening; native prefill attention drops O_KLATE (removes fp8/k6_v4 register spill). Output identical to RAD52 alone.",
+  "timestamp-utc": "2026-11-15T00:06:36.249650Z",
+  "user-summary-candidate": "On the TP3 fp8-cache long-context config, a 100k-token prompt reaches its first token 30% sooner (65 s to 45 s); output is unchanged."
+}
