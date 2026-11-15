@@ -9,8 +9,9 @@ paths. The spec is `kind=K;key=value;...`:
 | key | meaning |
 |---|---|
 | `kind=arrival` | **default** (empty spec): priority, then arrival; no admission limit |
-| `kind=cap` | at most `max_seqs` prefills with more than `long_tokens` of prompt left run at once (`long_tokens=0`: one shared step); shorter prompts hold no slot |
-| `kind=budget` | prompt tokens left across running prefills stay within `factor` (default 1.5, at least 1) x the largest request (the context limit), and admitting must fit free KV; a lone prompt always runs; a prompt waiting past `age_ms` reserves: nothing behind it is admitted until it fits |
+| `kind=cap` | at most `max_seqs` long prefills run at once |
+| `kind=budget` | prompt tokens left across running prefills stay within `factor` (default 1.5, at least 1) x the largest request (the context limit), and admitting must fit free KV; a lone prompt always runs; a long prompt waiting past `age_ms` reserves: no other long prompt is admitted until it fits |
+| `long_tokens=N` | a prompt is long while more than N of it is left (**0**: one shared step); a short prompt is never held back by any kind or reservation and holds no cap slot |
 | `order=arrival\|remaining` | after priority, walk and admit by least prompt left; prefills behind the first keep one share between them |
 | `age_ms=T` | a prompt still waiting to start after T goes back to arrival order (and, under `budget`, reserves); a running prefill never ages |
 
@@ -25,8 +26,8 @@ Serving v2 field: `prefill_governor` (string). It replaces rad0034's `max_prefil
 | + `prefill_age_ms = 120000` | `;age_ms=120000` |
 
 The scheduler keeps four hooks: the queue order (`ahead_of`), the step walk's prefill shares, an admission gate in
-`admit_one` (after the prefix lookup, so a hit can make a prompt short; a refusal is a wait, or under a budget
-reservation the end of the step's admissions), and the overdue-recompute guard (no evicting decoders for a recompute
+`admit_one` (after the prefix lookup, so a hit can make a prompt short; a refusal is a wait, and a budget
+reservation also holds every later long prompt that step), and the overdue-recompute guard (no evicting decoders for a recompute
 the governor cannot admit). The `radiance:prefilling_sequences` gauge and
 `radiance:prefill_admissions_deferred_total` counter carry over from rad0034.
 
@@ -38,7 +39,7 @@ a backfill policy (plan item VTP42).
 
 Untested. Card-free (`tests/sched_test.cpp`, `tests/config_test.cpp`): rad0034's and rad0035's tests ported to
 spec strings; equivalent specs plan the same steps over 200 random schedules; the budget keeps a third 3000-token
-prompt waiting while a 900-token one fits, and an aged prompt's reservation stops later prompts passing it; bad
+prompt waiting while a 900-token one fits, and an aged prompt's reservation stops later long prompts passing it while short ones still pass; bad
 specs are refused at parse; a short prompt beside two long prefills running past the age reaches its first token
 in 5 steps (13 if running prefills aged).
 
