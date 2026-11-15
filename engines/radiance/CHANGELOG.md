@@ -1,5 +1,12 @@
 # Changelog
 
+## [1170.26.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.25.0...bc-radiance-1170.26.0) (2026-11-15)
+
+
+### New and changed
+
+* **radiance:** cap concurrent long prefills (rad0034, opt-in) and interleave 2 on the -long configs (VTP39) ([#974](https://github.com/audiagentic/bigcherry/issues/974)) ([4b2278a](https://github.com/audiagentic/bigcherry/commit/4b2278a606579a8f9d4e79a2fdd84c956e23ef4d))
+
 ## [1170.25.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.24.0...bc-radiance-1170.25.0) (2026-11-15)
 
 
