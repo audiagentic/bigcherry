@@ -1,7 +1,7 @@
 schema = 1
 id = "rad0016_vtp14_rank_code_selection"
 order = 16
-state = "untested"
+state = "validated"
 kind = "enhancement"
 origin = "local"
 backend = "agnostic"
