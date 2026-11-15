@@ -47,7 +47,12 @@ Change from rad0035: there, `age_ms` also put running prefills back in arrival o
 `-long-bf16`, eight 100k prompts plus mid-size waves at 30 s and 150 s) that made the 150 s wave's 4k / 8k / 16k
 requests wait 43-69 / 128-151 / 139-160 s against 4-7 / 11-13 / 20-23 s without the age, once the 100k prompts passed
 120 s, for no change in the 100k mean. A running prefill always keeps a share of the step, so it cannot starve; only
-a prompt not yet started needs the bound. Hardware for this patch: see the VTP42 evidence.
+a prompt not yet started needs the bound.
+
+Hardware (`docs/evidence/2026-11-16-vtp42-prefill-governor/README.md`, `-long-bf16`, eight 100k prompts plus
+mid-size waves): the `-long` cap spec reproduces the VTP41 options (100k mean 299 s, 4k-16k 3-27 s);
+`kind=budget;factor=1.5;long_tokens=16384;order=remaining;age_ms=120000` keeps those mid-size times and lowers the
+100k mean to 228 s (-24%) and the last 100k prompt 477 -> 390 s; no preemptions.
 
 ## Detail
 

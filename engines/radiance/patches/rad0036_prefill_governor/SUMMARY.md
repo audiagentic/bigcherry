@@ -15,7 +15,8 @@ rad0035's ordering, common to every kind.
 
 ## Outcome
 
-Untested. Card-free scheduler tests show each rad0034/rad0035 setting planned step for step by its spec equivalent;
+Untested. Card-free tests show each rad0034/rad0035 setting planned step for step by its spec equivalent; on the
+card the `-long` spec matches them and a 1.5x budget with mid-size prompts exempt cuts the 100k mean 24%;
 the `-long` tuning carries the same policy as one spec string. See README.md.
 
 ## Detail

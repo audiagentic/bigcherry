@@ -2,7 +2,7 @@
 id: VTP42
 order: 0
 plan: run-dense-27b-virtual-tp
-state: pending
+state: in_progress
 created-at: '2026-11-15T13:01:55.739115+00:00'
 breadth: ''
 skill: advanced
@@ -60,7 +60,11 @@ L. Interface refactor of admission/walk order is the risky part (identity test g
 
 **2026-11-16 step 1 + 3 (rad0036).** Owner: no legacy mechanisms in the main code path, so rad0034 (cap) and rad0035 (order/threshold/age) are superseded by one governor: `--prefill-governor SPEC` / serving `prefill_governor` (kind=arrival|cap|budget; order, age_ms, max_seqs, long_tokens, factor), policy in core/sched/prefill_governor.h, four scheduler hooks (queue order, step shares, admission gate, overdue-recompute guard). Four serving fields become one (97 -> 94 options). Card-free: rad0034/35 tests ported to specs; equivalent-spec plan identity over 200 random schedules; budget limit and reservation tests; running prefills do not age (fix found on the card, see VTP41). Budget governor implemented (factor x max request, KV fit, reservation on age); hardware A/B pending. Steps 2 (simulator) and 4 (backfill) remain.
 
+**2026-11-16 hardware** (`docs/evidence/2026-11-16-vtp42-prefill-governor/README.md`, -long-bf16 mixed workload, two starts an arm, no preemptions): -long cap spec = VTP41 options (100k mean 299 s, 4k-16k 3-27 s). Budget 1.5x without a short-prompt exemption held mid/short requests 39-49 s (220 s with the 120 s reservation), so `long_tokens` now exempts short prompts in every kind and from reservations. Budget 1.5x + long_tokens 16384 + remaining + age 120 s: mid-size unchanged, 100k mean 299 -> 228 s (-24%), last 100k 477 -> 390 s. Recommended as the -long default; owner to decide (cap spec kept until then). Remaining: simulator (step 2), backfill (step 4), decode beside the mix.
+
 ## Change Log
 
 - 2026-11-15T13:01:55.739115+00:00 (created-by): Created by agent
 - 2026-11-15T13:50:52.673132+00:00 (updated-by): Updated: section:notes
+- 2026-11-15T15:16:17.767179+00:00 (updated-by): Updated: section:notes
+- 2026-11-15T15:16:25.831934+00:00 (state-transition): State: pending → in_progress
