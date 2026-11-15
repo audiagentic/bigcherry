@@ -1,6 +1,6 @@
 # rad0035_prefill_order
 
-**Status:** superseded by rad0036_prefill_governor (VTP42)
+**Status:** superseded
 **Plan item:** VTP41
 
 Scope: generic Radiance prefill ordering and long-prefill threshold on top of rad0034, off by default.
