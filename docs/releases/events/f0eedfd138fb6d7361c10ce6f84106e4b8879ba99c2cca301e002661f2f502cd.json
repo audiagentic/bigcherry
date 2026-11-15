@@ -1,0 +1,18 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261115_074043_long-context-qwen27b-configs-n_8499",
+  "files": [
+    "engines/radiance/configs/qwen27b.toml",
+    "engines/radiance/components/serving/serving_test.cpp",
+    "docs/evidence/2026-11-15-vtp39-prefill-concurrency/README.md",
+    "engines/radiance/patches/rad0034_prefill_concurrency/README.md",
+    "engines/radiance/patches/rad0034_prefill_concurrency/SUMMARY.md"
+  ],
+  "plan-item-ids": [
+    "VTP39"
+  ],
+  "status": "unreleased",
+  "technical-summary": "qwen27b -long configs set max_prefill_seqs = 2 beside prefill_interleave = 2; serving config test expects the VTP39 tuning on the long variants. Cap 2 measured on the fixed rad0034 build: eight 100k prompts mean TTFT 434 -> 268 s, short requests 4.6-5.6 s, 0 preemptions.",
+  "timestamp-utc": "2026-11-15T07:40:43.365446Z",
+  "user-summary-candidate": "Long-context qwen27b configs now let at most two long prompts prefill at once, cutting the average wait when several arrive together by about 38% and letting short requests start in seconds."
+}
