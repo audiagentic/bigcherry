@@ -1,0 +1,11 @@
+schema = 1
+id = "rad0036_prefill_governor"
+order = 36
+state = "untested"
+kind = "enhancement"
+origin = "local"
+backend = "agnostic"
+plan-ids = ["VTP42"]
+requires = []
+conflicts = []
+tags = ["optimization", "prefill"]

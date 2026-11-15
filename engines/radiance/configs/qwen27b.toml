@@ -154,10 +154,13 @@ max_context = 262144
 # and eight 100k prompts at once, are unchanged. Interleave 4 / 8 gave 4.1x / 6.2x for +19% / +39%.
 [config.qwen27b-tp3-int8-556-long.tuning]
 prefill_interleave = 2
-# At most two long prompts prefill at once; prompts that fit one shared step bypass the cap (VTP39). Eight 100k prompts
-# into the 624k bf16 cache: mean first token 434 -> 265 s, 6 preemptions (4 forced) -> 0. Cap 1 gave 208 s but runs long
-# prompts strictly one after another. Evidence: docs/evidence/2026-11-15-vtp39-prefill-concurrency/README.md.
-max_prefill_seqs = 2
+# Prefill governor (VTP42): at most two prompts with more than 16k tokens left prefill at once (VTP39: eight 100k
+# prompts into the 624k bf16 cache, mean first token 434 -> 265 s, 6 preemptions -> 0; cap 1 gave 208 s but runs long
+# prompts strictly one after another). Prefill work goes to the prompt with least left, and a prompt waiting over
+# 120 s goes back to arrival order (VTP41: beside eight 100k prompts, 4k / 8k / 16k requests start in 4-8 / 11-15 /
+# 20-27 s instead of 317-433 s; the 100k prompts +10% on the mean). Evidence:
+# docs/evidence/2026-11-15-vtp39-prefill-concurrency/README.md, docs/evidence/2026-11-15-vtp41-prefill-order/README.md.
+prefill_governor = "kind=cap;max_seqs=2;long_tokens=16384;order=remaining;age_ms=120000"
 
 [config.qwen27b-tp3-int8-556-long-bf16]
 base = "qwen27b-tp3-int8-556-long"

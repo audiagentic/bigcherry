@@ -30,3 +30,17 @@ Ranges are both waves over both starts; repeat starts agree within 1 s.
 - **Both:** bypass plus least-left-first walking; a 16k request reaches its first token in 20-27 s, a 4k in 4-8 s.
   The 100k prompts pay 10% on the mean (first +19 s, last +2%) for the ~60k tokens of mid-size work done ahead of them.
 - Not measured here: `--prefill-age-ms` (card-free test only), fp8 `-long`, decode beside the mix.
+
+## Age limit on the card (2026-11-16)
+
+Same workload and engine; order VUUV, U = both options as above, V = U + `--prefill-age-ms 120000`.
+
+| arm | ~450 | ~4k | ~8k | ~16k | 100k mean |
+|---|---|---|---|---|---|
+| U (30 s / 150 s wave) | 5 / 2-5 s | 7 / 4-7 s | 14 / 11-13 s | 27-28 / 20-23 s | 299-300 s |
+| V (30 s / 150 s wave) | 4-5 / 3-10 s | 6-7 / 43-69 s | 13-14 / 128-151 s | 26-27 / 139-160 s | 296-309 s |
+
+Under rad0035 the age applied to running prefills as well: by 150 s every 100k prompt was older than 120 s, went back
+to arrival order and was walked ahead of the second wave, which then waited one to two and a half minutes. The 100k
+prompts gained nothing. A running prefill already keeps a share of every step and cannot starve, so rad0036 (VTP42)
+ages only prompts still waiting to start; see `engines/radiance/patches/rad0036_prefill_governor/README.md`.
