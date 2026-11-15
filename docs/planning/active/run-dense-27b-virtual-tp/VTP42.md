@@ -62,9 +62,12 @@ L. Interface refactor of admission/walk order is the risky part (identity test g
 
 **2026-11-16 hardware** (`docs/evidence/2026-11-16-vtp42-prefill-governor/README.md`, -long-bf16 mixed workload, two starts an arm, no preemptions): -long cap spec = VTP41 options (100k mean 299 s, 4k-16k 3-27 s). Budget 1.5x without a short-prompt exemption held mid/short requests 39-49 s (220 s with the 120 s reservation), so `long_tokens` now exempts short prompts in every kind and from reservations. Budget 1.5x + long_tokens 16384 + remaining + age 120 s: mid-size unchanged, 100k mean 299 -> 228 s (-24%), last 100k 477 -> 390 s. Recommended as the -long default; owner to decide (cap spec kept until then). Remaining: simulator (step 2), backfill (step 4), decode beside the mix.
 
+**2026-11-16 owner decision:** -long default switched to `kind=budget;factor=1.5;long_tokens=16384;order=remaining;age_ms=120000` (acceptance criterion 3: budget beats the VTP41 defaults on the 100k mean with mid-size waits unchanged).
+
 ## Change Log
 
 - 2026-11-15T13:01:55.739115+00:00 (created-by): Created by agent
 - 2026-11-15T13:50:52.673132+00:00 (updated-by): Updated: section:notes
 - 2026-11-15T15:16:17.767179+00:00 (updated-by): Updated: section:notes
 - 2026-11-15T15:16:25.831934+00:00 (state-transition): State: pending → in_progress
+- 2026-11-15T21:14:43.227715+00:00 (updated-by): Updated: section:notes

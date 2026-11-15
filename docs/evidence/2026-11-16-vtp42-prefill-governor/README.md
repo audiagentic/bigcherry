@@ -33,5 +33,5 @@ exempt from the budget (their rows are the case the exemption fixes).
   the bound that stops a waiting long prompt being passed by later long ones indefinitely.
 - Not measured: decode streams beside the mix, fp8 `-long`, a steady arrival stream.
 
-Recommendation to the owner: `-long` default `kind=budget;factor=1.5;long_tokens=16384;order=remaining;age_ms=120000`
-(X). This change keeps the approved cap spec until the owner decides.
+Owner decision (2026-11-16): the `-long` configs (fp8 and bf16) use X,
+`kind=budget;factor=1.5;long_tokens=16384;order=remaining;age_ms=120000`.
