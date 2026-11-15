@@ -62,7 +62,12 @@ Created 2026-11-14 (`docs/evidence/2026-11-14-tp3-long-context/README.md`). Step
 
 Step 3 implementation: managed engine patch `rad0034_prefill_concurrency` introduces `--max-prefill-seqs N` (default 0, unlimited) and an optional inactive serving-v2 tuning field. Only unfinished RUNNING long prefills count; existing runners continue, preempted requests retain the whole-recompute gate, decoders are unaffected, and a short request which completes its prompt in the admission step can bypass a full cap, including after a prefix hit. The prefill-interleave hold, busy-chunk reserves, lone-prefill span and hard sequence/card limits keep their existing semantics. Patch state remains untested: next are G4 current-pin requalification, card-free scheduler and contract checks, then the full-cache eight-long-prompt ABBA of N=0/1/2 with short-request probes and the owner decision on a default; do not enable it in a serving config beforehand.
 
+
+
+**2026-11-15 hardware (`docs/evidence/2026-11-15-vtp39-prefill-concurrency/README.md`, -long-bf16, two starts an arm).** Step 1 interleave: 4 decoders beside a 100k prompt 6.0 -> 16.0 / 24.4 / 37.5 chunks/s at 2 / 4 / 8 for +9.8 / +19 / +39% on its first token; 7 decoders at 2: 2.6x for +14%; a lone prompt and eight at once unchanged. Owner chose interleave 2 as the `-long` default. Step 3 cap: eight 100k prompts mean first token 434 s -> 208 s (cap 1, -52%) / 265 s (cap 2), preemptions 6 (4 forced) -> 0. A fix in rad0034: prompts whose remainder fits one shared step bypass the cap at any share (the first version made ~450-token requests wait ~45 s; now 3.6-4.5 s). Criteria: 1 not met by one setting (2.7x at +9.8%), 2 and 3 met with cap 1; cap default is the owner's decision. Step 2 (decode share by time) not built: the share/cost trade is linear, so it would move along the same line. Corrected: patch state `untested` needs no G4 record to merge (G4 applies when changing a patch that has evidence).
+
 ## Change Log
 
 - 2026-11-14T06:57:52.821543+00:00 (created-by): Created by agent
 - 2026-11-14T06:58:44.043856+00:00 (updated-by): Updated: section:description, section:steps, section:validation, section:effort_risk, section:acceptance_criteria, section:notes
+- 2026-11-15T05:59:26.035868+00:00 (updated-by): Updated: section:notes

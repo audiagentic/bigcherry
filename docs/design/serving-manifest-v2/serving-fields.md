@@ -212,7 +212,7 @@ Contract fingerprint `sha256:42ef75ae7fa826e2280c3c2260e3780b5817e6051e9442c135a
 | `/spec/processes/engine/tuning/expert_stats` | string, length ≥ 1 |  | policy | `--expert-stats` / Config.expert_stats | Engine flag `--expert-stats` (amendment 13). Value text as the flag takes it (FILE). |
 | `/spec/processes/engine/tuning/live` | one of `"on"` |  | policy | `--live` / Config.live_view | Engine flag `--live` (amendment 13). Present means the flag is given. |
 | `/spec/processes/engine/tuning/p2p` | string, length ≥ 1 |  | policy | `--p2p` / Config.p2p | Engine flag `--p2p` (amendment 13). Value text as the flag takes it (MODE). |
-| `/spec/processes/engine/tuning/max_prefill_seqs` | `uint` |  | policy | `--max-prefill-seqs` / Config.max_prefill_seqs | Maximum concurrent unfinished long prefills. Zero (default) leaves admission unlimited; one-step short prompts bypass the cap (VTP39). |
+| `/spec/processes/engine/tuning/max_prefill_seqs` | `uint` |  | policy | `--max-prefill-seqs` / Config.max_prefill_seqs | Maximum concurrent unfinished long prefills. Zero (default) leaves admission unlimited; a prompt whose remainder fits one shared step bypasses the cap (VTP39). |
 | `/spec/processes/engine/tuning/prefill_interleave` | `uint` |  | policy | `--prefill-interleave` / native option | Engine flag `--prefill-interleave` (amendment 13). |
 | `/spec/processes/engine/tuning/prefill_span` | `uint` |  | policy | `--prefill-span` / Config.checkpoint_slots | Engine flag `--prefill-span` (amendment 13). |
 | `/spec/processes/engine/tuning/prefix_cache_ttl` | string, length ≥ 1 |  | policy | `--prefix-cache-ttl` / Config.lora.dir | Engine flag `--prefix-cache-ttl` (amendment 13). Value text as the flag takes it (S). |

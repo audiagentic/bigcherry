@@ -1050,8 +1050,8 @@ struct EngineTuning {
     std::optional<OptLive> live;
     // Engine flag `--p2p` (amendment 13). Value text as the flag takes it (MODE).
     std::optional<std::string> p2p;
-    // Maximum concurrent unfinished long prefills. Zero (default) leaves admission unlimited; one-step short prompts
-    // bypass the cap (VTP39).
+    // Maximum concurrent unfinished long prefills. Zero (default) leaves admission unlimited; a prompt whose remainder
+    // fits one shared step bypasses the cap (VTP39).
     std::optional<int64_t> max_prefill_seqs;
     // Engine flag `--prefill-interleave` (amendment 13).
     std::optional<int64_t> prefill_interleave;
@@ -2427,7 +2427,7 @@ inline constexpr std::array<FieldInfo, 439> kFields = {{
      "Engine flag `--p2p` (amendment 13). Value text as the flag takes it (MODE).", "", "", ""},
     {"/spec/processes/engine/tuning/max_prefill_seqs", "ref", "policy", false, false,
      "--max-prefill-seqs", "Config.max_prefill_seqs", false,
-     "Maximum concurrent unfinished long prefills. Zero (default) leaves admission unlimited; one-step short prompts bypass the cap (VTP39).", "", "", "uint"},
+     "Maximum concurrent unfinished long prefills. Zero (default) leaves admission unlimited; a prompt whose remainder fits one shared step bypasses the cap (VTP39).", "", "", "uint"},
     {"/spec/processes/engine/tuning/prefill_interleave", "ref", "policy", false, false,
      "--prefill-interleave", "native option", false,
      "Engine flag `--prefill-interleave` (amendment 13).", "", "", "uint"},

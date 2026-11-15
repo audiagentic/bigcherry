@@ -2339,7 +2339,7 @@ radiance_option = "--max-prefill-seqs"
 radiance_config = "Config.max_prefill_seqs"
 kind = "ref"
 ref = "uint"
-doc = "Maximum concurrent unfinished long prefills. Zero (default) leaves admission unlimited; one-step short prompts bypass the cap (VTP39)."
+doc = "Maximum concurrent unfinished long prefills. Zero (default) leaves admission unlimited; a prompt whose remainder fits one shared step bypasses the cap (VTP39)."
 
 [[field]]
 path = "/spec/processes/engine/tuning/prefill_interleave"

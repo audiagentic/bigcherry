@@ -2,74 +2,51 @@
 
 ## Summary
 
-VTP39 step 3 adds the generic engine option `--max-prefill-seqs N` and the matching optional
-serving v2 tuning field `max_prefill_seqs`. A value of **0 (default)** imposes no limit; the
-existing scheduler step planner, priority order, token budgets and KV allocation decisions retain
-their previous control flow. Values above zero cap long-running prompt prefills in the RUNNING set.
-This controls admission, not the compute slices of already-running sequences.
+VTP39 step 3 adds the generic engine option `--max-prefill-seqs N` and the matching optional serving v2 tuning field
+`max_prefill_seqs`. **0 (default)** imposes no limit: the scheduler's step planner, priority order, token budgets and KV
+allocation keep their previous control flow. Above zero, at most N long prompt prefills are RUNNING at once; the rest
+wait in priority-then-arrival order. This controls admission, not the compute slices of sequences already running.
 
-The evidence motivating the option is in
-`docs/evidence/2026-11-14-tp3-long-context/README.md` and the follow-up
-`docs/planning/active/run-dense-27b-virtual-tp/VTP39.md`. This is not a new default or a production
-recommendation: the scheduler patch requires G4 requalification and hardware ABBA against the
-full-cache client before the owner selects a value.
-
-## Semantics
-
-- A RUNNING sequence counts while its prompt has uncomputed tokens, including after a preemption
-  when its KV is being recomputed. A preempted WAITING sequence is not RUNNING. Admission
-  rechecks the cap on each attempt, in the existing priority-then-arrival queue order.
-- `N=1` serialises the long-prefill admissions. If a candidate would exceed the cap,
-  `admit_one` returns `kAdmitWait`: the request retains its queue position and the next
-  candidate gets an admission attempt. A runner is not preempted because of this policy.
-- A request is **exempt** if its *actual remaining* prompt can be computed and produce its first
-  token in the admission step and the remaining work fits the normal shared-token step budget.
-  A cached prefix may make a previously long request eligible. The checkpoint split, busy-chunk
-  limit, current budget and KV allocation must still allow it to finish *in that step*; otherwise
-  it counts as a long prefill. An exempt short prefill can execute beside N longer prefills.
-- This patch limits **admission**, not KV reservation: it deliberately keeps the engine's
-  existing per-chunk KV growth and whole-recompute admission tests. It does not reserve the
-  entire future prompt up front. Whole-prompt reservation would be a separate KV allocator
-  change, potentially reducing short-prompt bypass and cache reuse; its benefit must be
-  evaluated separately rather than implied by this concurrency cap.
-- A decoding runner uses no prefill slot, may continue normally, and retains its existing
-  priority/arrival order in each step. `--max-num-seqs` and available card slots remain hard
-  independent limits; the exemption never creates a slot or increases the token budget.
-- `--prefill-interleave` still holds prefill rows **and admission** while decode-only steps
-  run. The cap is evaluated when the hold ends; it does not end or shorten the hold.
-- `--busy-prefill-chunk` still computes `behind_pf`, decode reserves, and `admit_waits`
-  from pending work. Deferred admissions may leave a reserve unused; existing capped-chunk
-  give-back remains in control. An admission must really finish under the busy cap to qualify
-  for the short exception.
-- `--prefill-span` still chooses wide steps only for a lone eligible prefill. The existing
-  `admit_possible` predicate is intentionally conservative: an available sequence/card slot
-  with any waiting request may keep the span disabled even if that wait is cap-blocked. This
-  preserves the short-bypass opportunity and the span's single-prefill guarantee.
-- An overdue preempted request still passes `preempted_can_prefill` (whole recompute plus
-  headroom) and `preempt_wait_overdue`; while the cap is occupied, its eviction fallback does
-  not force an unrelated decoder off for an admission that cannot proceed. Once a long runner
-  completes, the normal fallback may reclaim or force a permissible decoder victim. With no
-  running prefill, the cap cannot prevent an overdue request being considered, so it does not
-  introduce a parked idle engine.
-- Prefix hits are resolved before cap admission. A refused hit that carries a checkpoint slot
-  is undone/held by the existing failure cleanup; retries must not restore a stale snapshot.
-
-`radiance:prefilling_sequences` is a gauge of RUNNING prompts still in prefill/recompute.
-`radiance:prefill_admissions_deferred_total` counts cap deferral decisions (not distinct
-requests); `scheduler: --max-prefill-seqs` prints the resolved setting at startup.
+Motivation: `docs/evidence/2026-11-14-tp3-long-context/README.md`; plan item VTP39.
 
 ## Outcome
 
-**Untested (not promoted).** Host-only tests and the patch application check are required
-development checks, not G4 evidence or hardware approval. No serving configuration sets this
-option; production behaviour remains unlimited.
+Opt-in; no serving configuration sets it yet (the default is the owner's choice). Hardware results on
+`qwen27b-tp3-int8-556-long-bf16` (eight ~100k-token prompts at once into a 624k-token cache, four ~450-token requests
+behind them; two starts an arm; `docs/evidence/2026-11-15-vtp39-prefill-concurrency/README.md`):
 
-## Requalification and owner gate
+| `--max-prefill-seqs` | mean first token, long prompts | first / last | short requests | preemptions (forced) |
+|---|---|---|---|---|
+| 0 | 434 s | 377 / 530 s | 321-338 s | 6 (4) |
+| 1 | 208 s (-52%) | 50 / 368 s | 3.6-4.5 s | 0 (0) |
+| 2 | 265 s (-39%) | 82 / 440 s | 121-123 s (before the short-prompt fix) | 0 (0) |
 
-The owner must produce a qualification record for the pinned source/patch-set identity and
-pass G4 via `bigcherry patch-gates`, with the applicable compile/correctness evidence
-(including the changed scheduler and serving contract). Separately measure the VTP39 full-cache
-client at eight concurrent long prompts under `N=0`, `N=1`, `N=2`, with repeated ABBA
-order and an identical build/input set. Record each request's first-token latency, mean TTFT,
-preemptions, forced preemptions, KV occupancy, and short-request latency; retain command lines
-and machine-readable run artifacts in managed evidence, then record the owner's default choice.
+Card-free: `tests/sched_test.cpp` (195 cases, the eight `vtp39_*` ones among them) and the config parse test. The patch
+state is `untested` in the recipe; promotion is a separate step.
+
+## Detail
+
+- A RUNNING sequence holds a cap slot while more than one shared step (`ChunkGeometry::shared_tok`) of its prompt is
+  left, including a recompute after preemption. A preempted WAITING sequence is not RUNNING. Admission rechecks the cap
+  on each attempt in the existing queue order; a refused candidate returns `kAdmitWait`, keeps its queue position, and
+  the next candidate is tried. No runner is preempted because of the cap.
+- A **short** prompt, whose remaining tokens (after any prefix hit) fit one shared step, is exempt: it is admitted
+  beside N long prefills and holds no slot, even when a busy step leaves it only a share (an eighth of the budget) and
+  it takes two or three steps to finish. The first version exempted only prompts finished in the admission step itself,
+  so a ~450-token request beside a running 100k prefill (256-token share) waited for that whole prefill (about 45 s);
+  `vtp39_short_prompt_over_one_share_still_bypasses` covers it.
+- A long prefill stops holding a slot in its last shared step, so the next long prompt may start one step early.
+- Admission, not KV reservation: the engine's per-chunk KV growth and whole-recompute admission tests are unchanged; no
+  future prompt is reserved up front.
+- Decoding runners use no slot and keep their priority/arrival order. `--max-num-seqs` and card slots stay hard limits;
+  the exemption never creates a slot or adds budget.
+- `--prefill-interleave` still holds prefill rows and admission while decode-only steps run; the cap is evaluated when
+  the hold ends. `--busy-prefill-chunk` still computes its reserves from pending work; a deferred admission may leave a
+  reserve unused, which the existing give-back returns. `--prefill-span` still spans only a lone eligible prefill.
+- An overdue preempted request keeps `preempted_can_prefill` and `preempt_wait_overdue`; while every slot is held by a
+  long runner, the eviction fallback does not force a decoder off for an admission that cannot proceed. With no running
+  long prefill the cap cannot block it, so the engine is never parked idle.
+- Prefix hits are resolved before the cap check; a refused hit's checkpoint slot is undone by the existing cleanup.
+- Metrics: `radiance:prefilling_sequences` (RUNNING prompts holding a slot),
+  `radiance:prefill_admissions_deferred_total` (deferral decisions, not distinct requests); the startup log prints the
+  resolved setting.

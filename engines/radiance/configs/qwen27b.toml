@@ -148,6 +148,13 @@ description = "qwen27b-tp3-int8-556 at 262,144 tokens a session: about 1.25 M to
 [config.qwen27b-tp3-int8-556-long.service]
 max_context = 262144
 
+# Two decode-only steps after each prefill chunk while other sequences decode (VTP39, 2026-11-15, -long-bf16, two
+# starts an arm): beside a 100k-token prompt, 4 decoding streams get 6.0 -> 16.0 chunks/s (typical gap 847 -> 41 ms)
+# for +9.8% on that prompt's first token; 7 streams 10.3 -> 26.4 chunks/s for +14%. A prompt with nothing else running,
+# and eight 100k prompts at once, are unchanged. Interleave 4 / 8 gave 4.1x / 6.2x for +19% / +39%.
+[config.qwen27b-tp3-int8-556-long.tuning]
+prefill_interleave = 2
+
 [config.qwen27b-tp3-int8-556-long-bf16]
 base = "qwen27b-tp3-int8-556-long"
 description = "qwen27b-tp3-int8-556-long with a 16-bit (bf16) cache: about 624,000 tokens, no cache rounding"
