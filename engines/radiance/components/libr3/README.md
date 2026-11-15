@@ -17,8 +17,10 @@ Native gfx11 attention defaults on through the typed serving manifest's
 for measured throughput. The setting selects the native form for both the plain and the KV-split prefill
 launches (the split's partial store takes the accumulator converted to the gfx12 layout; RAD52). The native
 prefill attention runs without the late K prefetch (`O_KLATE`), which spilled the fp8 and k6_v4 kernels, and 8-bit
-KV widens to f16 through the exact direct conversion in `r3_e4m3_f16.h` (RAD53). Evidence:
-`docs/evidence/2026-11-15-rad52-native-split-store/` and `docs/evidence/2026-11-15-rad53-fp8-prefill-attention/`.
+KV widens to f16 through the exact direct conversion in `r3_e4m3_f16.h` (RAD53). The narrow 8-bit GEMM keeps its
+unguarded form when only the token count is ragged (17-31 rows: 5-7 decode streams at depth 3), guarding tokens
+always (VTP37 step 3a). Evidence: `docs/evidence/2026-11-15-rad52-native-split-store/`,
+`docs/evidence/2026-11-15-rad53-fp8-prefill-attention/` and `docs/evidence/2026-11-15-vtp37-narrow-gemm-ragged-m/`.
 
 ## Lab tools
 
