@@ -1145,7 +1145,8 @@
                         "bf16",
                         "fp8",
                         "fp8_v4",
-                        "k6_v4"
+                        "k6_v4",
+                        "bf16_fp8"
                       ]
                     },
                     "num_speculative_tokens": {

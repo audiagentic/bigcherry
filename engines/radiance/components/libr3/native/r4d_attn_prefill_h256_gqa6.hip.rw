@@ -66,7 +66,7 @@
                 const int blk = BTS ? blks[(kk - k0) / BS] : bt[kk / BS];
                 const size_t o = (size_t)blk * a.kv_block_stride
                                + (size_t)kvh * a.kv_head_stride
-                               + (size_t)(kk % BS) * ROWB + HEAD_DIM + d0;
+                               + (size_t)(kk % BS) * ROWB + VBOFF + d0;
                 const void* p = KVP ? (const void*)((const uint16_t*)a.kv + o)
                                     : (const void*)((const uint8_t*)a.kv + o);
                 vreg[r] = __builtin_bit_cast(uint4, load_tr_b128(p));
@@ -92,7 +92,7 @@
                     const int blk = BTS ? blks[(kk - k0) / BS] : bt[kk / BS];
                     const size_t o = (size_t)blk * a.kv_block_stride
                                    + (size_t)kvh * a.kv_head_stride
-                                   + (size_t)(kk % BS) * ROWB + HEAD_DIM + d0;
+                                   + (size_t)(kk % BS) * ROWB + VBOFF + d0;
                     vreg[r] = KVP ? *(const uint4*)((const uint16_t*)a.kv + o)
                                   : *(const uint4*)((const uint8_t*)a.kv + o);
                 }
@@ -108,7 +108,7 @@
                     const int blk = BTS ? blks[(kk - k0) / BS] : bt[kk / BS];
                     const size_t o = (size_t)blk * a.kv_block_stride
                                    + (size_t)kvh * a.kv_head_stride
-                                   + (size_t)(kk % BS) * ROWB + HEAD_DIM + d0;
+                                   + (size_t)(kk % BS) * ROWB + VBOFF + d0;
                     const void* p = KVP ? (const void*)((const uint16_t*)a.kv + o)
                                         : (const void*)((const uint8_t*)a.kv + o);
                     vreg[r] = __builtin_bit_cast(uint4, load_tr_b128(p));

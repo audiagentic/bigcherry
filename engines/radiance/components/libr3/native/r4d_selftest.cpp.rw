@@ -727,9 +727,12 @@ static bool load(Plugin* pl, const char* path) {
 
 @@ find 1
         { &kSplitG6, "attn_prefill_h256_gqa6_bf16kv", "bf16" },
+        { &kSplitG6, "attn_prefill_h256_gqa6_b16f8", "bf16_fp8" },
         { &kSplitG12, "attn_prefill_h256_gqa12_k6v4", "k6_v4" },
 @@ replace
         { &kSplitG6, "attn_prefill_h256_gqa6_bf16kv", "bf16" },
+        { &kSplitG6, "attn_prefill_h256_gqa6_b16f8", "bf16_fp8" },
+        { &kSplitG6Kv1, "attn_prefill_h256_gqa6_b16f8", "bf16_fp8" },
         { &kSplitG6Kv1, "attn_prefill_h256_gqa6_k6v4", "k6_v4" },
         { &kSplitG6Kv1, "attn_prefill_h256_gqa6_fp8v4", "fp8_v4" },
         { &kSplitG6Kv1, "attn_prefill_h256_gqa6_fp8kv", "fp8_e4m3" },
