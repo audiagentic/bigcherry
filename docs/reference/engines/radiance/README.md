@@ -4,21 +4,74 @@ Radiance **v1.17.0** is BigCherry's primary upstream target. The custom
 build uses RDNA2 and RDNA3 helpers alongside an RDNA4 engine GPU, with
 expert placement adapted to differing GPU memory and bandwidth.
 
-## Main additions and patches
+## Patches and extensions at a glance
 
-| Area | BigCherry change | Owning code or patches |
+BigCherry maintains **34 engine patch packages** and **6 components** for Radiance.
+Each description says what the package is for, not that it is enabled or
+performance-qualified. **Validated** means package-level evidence exists;
+**untested** means qualification is not established; **superseded** means a
+newer patch replaces it. See the [full catalogue](ENHANCEMENTS.md) and
+linked package pages for technical details and evidence.
+
+### Engine patches
+
+Patches modify upstream Radiance source.
+
+| Patch | Simple purpose | State |
 | --- | --- | --- |
-| AMD kernels | RDNA3 attention and GEMMs; RDNA2 expert-kernel subset; selected RDNA4 overrides | [libr3](../../../../engines/radiance/components/libr3/README.md), [libr2](../../../../engines/radiance/components/libr2/README.md), [bc-gfx12](../../../../engines/radiance/components/bc-gfx12/README.md) |
-| Remote MoE | Routed experts on helper GPUs, pinned-host mailbox, heat-ranked placement and GPU-side admission/owner generations; tensor-parallel helper rows can join the fused gather and HyperConn reduction on decode-sized steps | [moe-remote](../../../../engines/radiance/components/moe-remote/README.md), [remote hand-off patch](../../../../engines/radiance/patches/rad0002_moe_remote_handoff/SUMMARY.md) |
-| HyperConn tuning | Selectable PF2 up-mix launch shape on RDNA4 | [up-mix patch](../../../../engines/radiance/patches/rad0008_hc_upmix_rt_sweep/SUMMARY.md) |
-| Serving configuration | Strict TOML loader, manifest reader and engine memory plan; full manifest-driven process startup remains incomplete | [serving](../../../../engines/radiance/components/serving/README.md), [manifest patch](../../../../engines/radiance/patches/rad0009_serving_manifest/SUMMARY.md), [memory-plan patch](../../../../engines/radiance/patches/rad0011_plan_memory/SUMMARY.md) |
+| [rad0001_drain_mover_before_arena_free](../../../../engines/radiance/patches/rad0001_drain_mover_before_arena_free/SUMMARY.md) | Drain GPU transfers before freeing memory | `superseded` |
+| [rad0002_moe_remote_handoff](../../../../engines/radiance/patches/rad0002_moe_remote_handoff/SUMMARY.md) | Send expert work to helper GPUs | `validated` |
+| [rad0003_mtp_full_head_switch](../../../../engines/radiance/patches/rad0003_mtp_full_head_switch/SUMMARY.md) | Optionally draft with the full model head | `untested` |
+| [rad0004_moe_remote_diagnostics](../../../../engines/radiance/patches/rad0004_moe_remote_diagnostics/SUMMARY.md) | Diagnose remote expert routing | `untested` |
+| [rad0005_mp4_ffmpeg6_writer](../../../../engines/radiance/patches/rad0005_mp4_ffmpeg6_writer/SUMMARY.md) | Support FFmpeg 6 builds | `untested` |
+| [rad0006_heat_freeze_diagnostic](../../../../engines/radiance/patches/rad0006_heat_freeze_diagnostic/SUMMARY.md) | Freeze expert movement for diagnosis | `untested` |
+| [rad0007_hc_pf2_fp8_down](../../../../engines/radiance/patches/rad0007_hc_pf2_fp8_down/SUMMARY.md) | Unused experimental FP8 HyperConn kernels | `untested` |
+| [rad0008_hc_upmix_rt_sweep](../../../../engines/radiance/patches/rad0008_hc_upmix_rt_sweep/SUMMARY.md) | Tune HyperConn launch size | `validated` |
+| [rad0009_serving_manifest](../../../../engines/radiance/patches/rad0009_serving_manifest/SUMMARY.md) | Start engine from a serving manifest | `validated` |
+| [rad0010_routing_evidence](../../../../engines/radiance/patches/rad0010_routing_evidence/SUMMARY.md) | Record expert-routing counters | `untested` |
+| [rad0011_plan_memory](../../../../engines/radiance/patches/rad0011_plan_memory/SUMMARY.md) | Expose engine memory plan | `validated` |
+| [rad0012_helper_kernel_config](../../../../engines/radiance/patches/rad0012_helper_kernel_config/SUMMARY.md) | Pass settings to helper kernels | `untested` |
+| [rad0013_mtp_pass_replay](../../../../engines/radiance/patches/rad0013_mtp_pass_replay/SUMMARY.md) | Replay speculative draft and verify passes | `validated` |
+| [rad0016_vtp14_rank_code_selection](../../../../engines/radiance/patches/rad0016_vtp14_rank_code_selection/SUMMARY.md) | Select GPU-specific kernels per TP rank | `untested` |
+| [rad0017_vtp14_n3_shared_rendezvous](../../../../engines/radiance/patches/rad0017_vtp14_n3_shared_rendezvous/SUMMARY.md) | Synchronise mixed-GPU ranks | `untested` |
+| [rad0018_vtp14_n2_tp_ownership](../../../../engines/radiance/patches/rad0018_vtp14_n2_tp_ownership/SUMMARY.md) | Split model weights unevenly across GPUs | `untested` |
+| [rad0019_vtp14_n2_tp_ownership_fp8](../../../../engines/radiance/patches/rad0019_vtp14_n2_tp_ownership_fp8/SUMMARY.md) | Uneven FP8 weight splits | `untested` |
+| [rad0020_vtp14_tp3_pipelined_prefill](../../../../engines/radiance/patches/rad0020_vtp14_tp3_pipelined_prefill/SUMMARY.md) | Overlap computation and communication in prefill | `untested` |
+| [rad0021_vtp14_weighted_twoshot_3rank](../../../../engines/radiance/patches/rad0021_vtp14_weighted_twoshot_3rank/SUMMARY.md) | Reduce traffic on slow PCIe links | `untested` |
+| [rad0022_tune_pin](../../../../engines/radiance/patches/rad0022_tune_pin/SUMMARY.md) | Validate and pin kernel tuning | `untested` |
+| [rad0023_ar_timeline](../../../../engines/radiance/patches/rad0023_ar_timeline/SUMMARY.md) | Trace one-shot reduction timings | `untested` |
+| [rad0024_ts3_decode](../../../../engines/radiance/patches/rad0024_ts3_decode/SUMMARY.md) | Link-aware three-GPU decode reductions | `untested` |
+| [rad0025_multiseq_pipelined_prefill](../../../../engines/radiance/patches/rad0025_multiseq_pipelined_prefill/SUMMARY.md) | Pipeline multi-prompt prefill | `untested` |
+| [rad0026_mixed_pipelined_prefill](../../../../engines/radiance/patches/rad0026_mixed_pipelined_prefill/SUMMARY.md) | Pipeline mixed decode and multi-prompt prefill | `untested` |
+| [rad0027_mixed_one_pipelined_prefill](../../../../engines/radiance/patches/rad0027_mixed_one_pipelined_prefill/SUMMARY.md) | Pipeline decode alongside one prefill | `untested` |
+| [rad0028_rank_consistent_block_drafts](../../../../engines/radiance/patches/rad0028_rank_consistent_block_drafts/SUMMARY.md) | Keep draft decisions consistent across ranks | `untested` |
+| [rad0029_rank_own_split](../../../../engines/radiance/patches/rad0029_rank_own_split/SUMMARY.md) | Per-GPU weight and KV memory budgets | `untested` |
+| [rad0030_int8_pipelined_prefill](../../../../engines/radiance/patches/rad0030_int8_pipelined_prefill/SUMMARY.md) | Pipeline prefill for rotated INT8 | `untested` |
+| [rad0031_ts_timeline](../../../../engines/radiance/patches/rad0031_ts_timeline/SUMMARY.md) | Trace two-shot reduction timings | `untested` |
+| [rad0032_ts3_duplex](../../../../engines/radiance/patches/rad0032_ts3_duplex/SUMMARY.md) | Use both link directions in reductions | `untested` |
+| [rad0033_ts3_once](../../../../engines/radiance/patches/rad0033_ts3_once/SUMMARY.md) | Avoid duplicate reduction writes | `untested` |
+| [rad0034_prefill_concurrency](../../../../engines/radiance/patches/rad0034_prefill_concurrency/SUMMARY.md) | Earlier long-prefill concurrency limit | `superseded` |
+| [rad0035_prefill_order](../../../../engines/radiance/patches/rad0035_prefill_order/SUMMARY.md) | Earlier prefill ordering and ageing controls | `superseded` |
+| [rad0036_prefill_governor](../../../../engines/radiance/patches/rad0036_prefill_governor/SUMMARY.md) | Unified prefill admission and ordering | `untested` |
 
-There are **31 engine patch packages** and **6 components**, including
-**5 validated patches**. The validated MTP pass-replay patch restores draft/verify
-pass replay on v1.17.0; other packages include diagnostic and unfinished work. See the [full catalogue](ENHANCEMENTS.md)
-for states and evidence. Recipe inclusion is not proof of qualification. The tensor-parallel remote-MoE
-path is implemented, but matched current-pin end-to-end throughput and quality
-results for its newer layouts are not yet recorded here.
+### Components (extensions)
+
+Components are BigCherry-owned additions built alongside Radiance.
+
+| Component | Simple purpose |
+| --- | --- |
+| [bc-gfx12](../../../../engines/radiance/components/bc-gfx12/README.md) | Selected RDNA4-optimised kernels |
+| [libr2](../../../../engines/radiance/components/libr2/README.md) | RDNA2 expert computation and quantisation |
+| [libr3](../../../../engines/radiance/components/libr3/README.md) | RDNA3 matrix, attention and reduction kernels |
+| [moe-remote](../../../../engines/radiance/components/moe-remote/README.md) | Runs selected experts on helper GPUs |
+| [ngram-helper](../../../../engines/radiance/components/ngram-helper/README.md) | Optional n-gram work on a spare GPU; off by default |
+| [serving](../../../../engines/radiance/components/serving/README.md) | Serving configuration validation and manifests |
+
+Individual component settings have their own qualification states. The validated
+MTP replay patch supports fixed-shape draft and verify passes on v1.17.0.
+Mixed-GPU remote-MoE layouts lack matched current-pin end-to-end throughput
+and quality evidence here. Full manifest-driven serving startup remains under
+qualification.
 
 ## Current-pin throughput
 
