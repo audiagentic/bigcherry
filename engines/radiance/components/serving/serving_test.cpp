@@ -2076,7 +2076,7 @@ void config_files(Fixture& t) {
         for (const auto* r : {&fp8, &bf16}) {
             assert(r->values.at("tuning").at("prefill_interleave") == 2);
             assert(r->values.at("tuning").at("prefill_governor") ==
-                   "kind=cap;max_seqs=2;long_tokens=16384;order=remaining;age_ms=120000");
+                   "kind=budget;factor=1.5;long_tokens=16384;order=remaining;age_ms=120000");
         }
         Json x = variant.values, y = fp8.values, z = bf16.values;
         for (Json* j : {&x, &y, &z}) {
