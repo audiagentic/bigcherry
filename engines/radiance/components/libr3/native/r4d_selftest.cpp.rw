@@ -747,3 +747,42 @@ static bool load(Plugin* pl, const char* path) {
         }
         attn_split_scratch_case(pl, g, n, kv);
 @@ end
+
+# RAD52: --perfpaged-kv N times the paged prefill attention rows with N KV heads (default 2, the TP2 rank). A native
+# TP3 rank holds one KV head, the launch that underfilled gfx1100 before the split took the native form; N = 1 measures
+# that rank's cost per query row.
+@@ find 1
+static int g_pin_mw_opt = 0, g_pin_nt_opt = 0;   // libr3: --pin-mw, --pin-nt
+@@ replace
+static int g_pin_mw_opt = 0, g_pin_nt_opt = 0;   // libr3: --pin-mw, --pin-nt
+static int g_perfpaged_kv = 2;                   // libr3: --perfpaged-kv
+@@ end
+
+@@ find 1
+    const int64_t head_dim = 256, gqa = 6, kv_heads = 2, bs = 16, q_heads = kv_heads * gqa;
+@@ replace
+    const int64_t head_dim = 256, gqa = 6, kv_heads = g_perfpaged_kv, bs = 16, q_heads = kv_heads * gqa;   // libr3
+@@ end
+
+@@ find 1
+        } else if (!std::strcmp(argv[i], "--pin-mw") || !std::strcmp(argv[i], "--pin-nt")) {
+@@ replace
+        } else if (!std::strcmp(argv[i], "--perfpaged-kv")) {   // libr3
+            char* end = nullptr;
+            const long v = (i + 1 < argc) ? std::strtol(argv[i + 1], &end, 10) : 0;
+            if (i + 1 >= argc || !end || end == argv[i + 1] || *end || v < 1 || v > 8) {
+                std::printf("--perfpaged-kv: need a KV head count 1..8\n");
+                return 2;
+            }
+            g_perfpaged_kv = (int)v;
+            ++i;
+        } else if (!std::strcmp(argv[i], "--pin-mw") || !std::strcmp(argv[i], "--pin-nt")) {
+@@ end
+
+@@ find 1
+                "  --pin-mw N, --pin-nt N:  pin the narrow 8-bit GEMM's wave count (1, 2, 4, 8, 16) and\n"
+@@ replace
+                "  --perfpaged-kv N:  --perfpaged with N KV heads (1..8; default 2, a TP2 rank; 1 is a\n"
+                "             native TP3 rank).\n"
+                "  --pin-mw N, --pin-nt N:  pin the narrow 8-bit GEMM's wave count (1, 2, 4, 8, 16) and\n"
+@@ end
