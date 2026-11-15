@@ -84,6 +84,7 @@ required-state = "untested"
 # step as options (rad0020), and link-weighted shards for the three-rank exact two-shot (rad0021). One build serves every split and topology: the layout and the manifest choose them.
 [patch-set.vtp14-mixed-tp]
 patches = [
+  "rad0037_bf16_fp8_kv",
 ]
 required-state = "untested"
 
