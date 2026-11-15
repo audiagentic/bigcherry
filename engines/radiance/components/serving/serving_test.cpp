@@ -2072,7 +2072,7 @@ void config_files(Fixture& t) {
         assert(o.at("tuning.pipelined_prefill") == "qwen27b-tp3-int8" && o.at("ranks") == "qwen27b-tp3-int8");
         assert(set.chain.at("qwen27b-tp3-int8-556") == Json::array({"qwen27b-tp3-int8-556", "qwen27b-tp3-int8"}));
     }
-    {   // the long-context variants: the 5,5,6 split at 262,144 tokens, fp8 and bf16 cache; nothing else moves
+    {   // the long-context variants: the 5,5,6 split at 262,144 tokens, fp8 and bf16 cache, VTP39 prefill tuning; nothing else moves
         Options lv = config;
         lv.sets = {"layout.name=\"qwen27b-tp3-int8-556-long\""};
         const auto fp8 = sv::resolve(lv, t.facts);
@@ -2080,7 +2080,16 @@ void config_files(Fixture& t) {
         const auto bf16 = sv::resolve(lv, t.facts);
         assert(fp8.values.at("service").at("max_context") == 262144 && fp8.values.at("engine").at("kv_cache_dtype") == "fp8");
         assert(bf16.values.at("service").at("max_context") == 262144 && bf16.values.at("engine").at("kv_cache_dtype") == "bf16");
+        // VTP39 scheduling defaults for long prompts, inherited by -long-bf16
+        for (const auto* r : {&fp8, &bf16}) {
+            assert(r->values.at("tuning").at("prefill_interleave") == 2);
+            assert(r->values.at("tuning").at("max_prefill_seqs") == 2);
+        }
         Json x = variant.values, y = fp8.values, z = bf16.values;
+        for (Json* j : {&x, &y, &z}) {
+            (*j)["tuning"].erase("prefill_interleave");
+            (*j)["tuning"].erase("max_prefill_seqs");
+        }
         for (Json* j : {&x, &y, &z}) {
             (*j)["layout"].erase("name");
             (*j)["service"].erase("max_context");
