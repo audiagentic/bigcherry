@@ -1,0 +1,16 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261115_022604_decoding-5-to-7-conversations_6069",
+  "files": [
+    "engines/radiance/components/libr3/native/r4d_gemm_fp8a8.hip.rw",
+    "docs/evidence/2026-11-15-vtp37-narrow-gemm-ragged-m/README.md",
+    "engines/radiance/components/libr3/README.md"
+  ],
+  "plan-item-ids": [
+    "VTP37"
+  ],
+  "status": "unreleased",
+  "technical-summary": "libr3 gfx1100: the narrow 8-bit GEMM (gemm_i8a8_nt_m16 / fp8a8) keeps the token guard always and decides the unguarded Full form from N and K only, so 17-31 token rows no longer run the fully guarded kernel. Kernel M 17-31 = M 32 cost (-10 to -23%); engine decode-only +9.9/+11.3/+8.2% at 5/6/7 streams on qwen27b-tp3-int8-556-long, 1 stream -0.9%; KLD identical, stress 12/12.",
+  "timestamp-utc": "2026-11-15T02:26:04.195395Z",
+  "user-summary-candidate": "Decoding 5 to 7 conversations at once on the three-card int8 setup is 8-11% faster: the 6-stream dip is gone, with output unchanged."
+}

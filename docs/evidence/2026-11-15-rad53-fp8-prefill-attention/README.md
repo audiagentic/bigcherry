@@ -54,5 +54,13 @@ Engine, ABBA (2 starts per arm), fp8 `-long`, stock against RAD52 + RAD53:
 RAD52 alone measured -18.2% at 100k on the bf16 config, where RAD53 changes nothing. fp8 TTFT at 60k is now 24.77 s
 against 24.11 s for bf16 with RAD52 (+2.7%, separate runs on the same libr3 code for bf16).
 
-Not measured here: the fp8 decode step at 60k (the item's other premise, 39.4 vs 32.6 ms bf16); the direct conversion
-is on the decode K read too.
+Decode step at depth, main libr3 (RAD52 + RAD53), one stream decoding after a 59,545-token prompt, fresh start per
+run in the order fp8, bf16, bf16, fp8 (`decode_steps` from the engine's decode-step counters over the stream):
+
+| cache | ms per decode step | TTFT |
+|---|---|---|
+| fp8 `-long` | 32.83 / 32.53 (mean 32.68) | 24.37 / 24.37 s |
+| bf16 `-long-bf16` | 32.23 / 32.26 (mean 32.24) | 23.74 / 23.73 s |
+| fp8 against bf16 | +1.4% | +2.7% |
+
+The fp8 decode step at 60k was 39.4 ms before (32.6 ms bf16). Both are within the item's 3% bound.
