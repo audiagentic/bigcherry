@@ -38,7 +38,7 @@ class Vtp39PatchTests(unittest.TestCase):
         self.assertEqual(meta["kind"], "enhancement")
         self.assertEqual(meta["plan-ids"], ["VTP39"])
         chain = recipes["patch-set"]["vtp14-mixed-tp"]["patches"]
-        self.assertEqual(chain[-1], PKG.name)
+        self.assertEqual(chain[chain.index(PKG.name) - 1], "rad0033_ts3_once")
         self.assertEqual(chain.count(PKG.name), 1)
         self.assertIn("int64_t max_prefill_seqs = 0;", next(
             e.text for p in patch_files() for e in p.edits if e.id == "config-field"))

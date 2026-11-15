@@ -1,0 +1,11 @@
+schema = 1
+id = "rad0035_prefill_order"
+order = 35
+state = "untested"
+kind = "enhancement"
+origin = "local"
+backend = "agnostic"
+plan-ids = ["VTP41"]
+requires = ["rad0034_prefill_concurrency"]
+conflicts = []
+tags = ["optimization", "prefill"]

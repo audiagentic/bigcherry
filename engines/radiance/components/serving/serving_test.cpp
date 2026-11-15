@@ -2057,6 +2057,23 @@ void config_files(Fixture& t) {
         cap.sets.back() = "tuning.max_prefill_seqs=-1";
         fail(cap, t.facts, "max_prefill_seqs");
     }
+    {   // VTP41: threshold, order and age are optional tuning fields that reach the engine options
+        Options ord = config;
+        ord.sets = {"layout.name=\"qwen27b-tp3-int8\"", "tuning.long_prefill_tokens=16384",
+                    "tuning.prefill_order=\"remaining\"", "tuning.prefill_age_ms=30000"};
+        const auto r = sv::resolve(ord, t.facts);
+        assert(r.values.at("tuning").at("long_prefill_tokens") == 16384);
+        assert(r.values.at("tuning").at("prefill_order") == "remaining");
+        assert(r.values.at("tuning").at("prefill_age_ms") == 30000);
+        const auto& options = bc::serving::engine_option_fields();
+        for (const char* key : {"tuning.long_prefill_tokens", "tuning.prefill_order", "tuning.prefill_age_ms"})
+            assert(std::find_if(options.begin(), options.end(),
+                                [&](const auto& f) { return f.key == key; }) != options.end());
+        ord.sets.back() = "tuning.prefill_age_ms=-1";
+        fail(ord, t.facts, "prefill_age_ms");
+        ord.sets.back() = "tuning.prefill_order=\"shortest\"";
+        fail(ord, t.facts, "prefill_order");
+    }
     // the variant: only the split differs
     config.sets = {"layout.name=\"qwen27b-tp3-int8-556\""};
     const auto variant = sv::resolve(config, t.facts);
