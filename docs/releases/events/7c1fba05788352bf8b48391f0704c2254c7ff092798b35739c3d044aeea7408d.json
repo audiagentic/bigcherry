@@ -1,0 +1,17 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261115_122507_new-opt-in-scheduler-settings_1913",
+  "files": [
+    "engines/radiance/patches/rad0035_prefill_order/patch.py",
+    "engines/radiance/components/serving/contract/serving-v2.toml",
+    "engines/radiance/recipes.toml",
+    "docs/evidence/2026-11-15-vtp41-prefill-order/README.md"
+  ],
+  "plan-item-ids": [
+    "VTP41"
+  ],
+  "status": "unreleased",
+  "technical-summary": "rad0035: --long-prefill-tokens (cap threshold), --prefill-order arrival|remaining (least prompt left first, prefills behind keep one share), --prefill-age-ms; serving v2 tuning fields; defaults keep rad0034 step plans. Hardware: beside eight 100k prompts under cap 2, 4k-16k requests 317-433 s shipped vs 4-27 s with remaining + 16k threshold, 100k mean +10%.",
+  "timestamp-utc": "2026-11-15T12:25:07.598562Z",
+  "user-summary-candidate": "New opt-in scheduler settings let mid-size requests start in seconds instead of minutes when several long prompts are prefilling: order prefill work by what is left, and set what counts as a long prompt."
+}

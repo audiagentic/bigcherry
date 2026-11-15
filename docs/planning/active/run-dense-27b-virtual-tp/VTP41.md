@@ -58,6 +58,11 @@ M. Scheduler walk order and admission order; risk is interaction with interleave
 
 ## Notes
 
+
+
+**2026-11-15 implementation and hardware** (rad0035, PR #977; `docs/evidence/2026-11-15-vtp41-prefill-order/README.md`). -long-bf16 with the shipped cap 2 + interleave 2, eight 100k prompts plus 450/4k/8k/16k requests at 30 s and 150 s, two starts an arm: shipped 4k-16k requests wait 317-433 s (they count as long and queue behind all eight); `remaining` 53-73 s; threshold 16k 17-76 s; both 4-27 s with the 100k mean 270 -> 298 s (+10%). No preemptions. Correction recorded: with one long prefill running, arrival order already alternates the step via checkpoint-aligned chunks (a mid prompt gets about half), so ordering matters with several prefills running. Next: owner's choice of -long defaults; age limit measured on the card; real-time follow-ups proposed to the owner: cap from free KV, interleave from a target decode gap.
+
 ## Change Log
 
 - 2026-11-15T10:38:52.398726+00:00 (created-by): Created by agent
+- 2026-11-15T12:25:00.334441+00:00 (updated-by): Updated: section:notes

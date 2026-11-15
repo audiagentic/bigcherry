@@ -16,9 +16,20 @@ Motivation: VTP39 (`docs/evidence/2026-11-15-vtp39-prefill-concurrency/README.md
 
 ## Outcome
 
-Opt-in; no serving configuration sets them yet. Card-free: `tests/sched_test.cpp` (the five `vtp41_*` cases; with
+Opt-in; no serving configuration sets them yet. Hardware (`-long-bf16`, cap 2 + interleave 2 as shipped, eight 100k
+prompts plus 450 / 4k / 8k / 16k requests arriving mid-run, two starts an arm;
+`docs/evidence/2026-11-15-vtp41-prefill-order/README.md`):
+
+| | 4k | 8k | 16k | 100k mean |
+|---|---|---|---|---|
+| shipped | 317-388 s | 323-402 s | 327-433 s | 270 s |
+| `remaining` | 53-54 s | 60-62 s | 70-73 s | 288 s |
+| threshold 16k | 17-18 s | 31-39 s | 68-76 s | 289 s |
+| both | 4.3-7.6 s | 11-15 s | 20-27 s | 298 s (+10%) |
+
+Card-free: `tests/sched_test.cpp` (the five `vtp41_*` cases; with
 three 4000-token prefills running, a 1000-token prompt gets its first token at step 5 under `remaining` against more
-than 12 steps under `arrival`) and `tests/config_test.cpp`. Hardware A/B pending. The patch state is `untested`.
+than 12 steps under `arrival`) and `tests/config_test.cpp`. The patch state is `untested`.
 
 ## Detail
 
