@@ -58,11 +58,12 @@ M. Scheduler walk order and admission order; risk is interaction with interleave
 
 ## Notes
 
-
-
 **2026-11-15 implementation and hardware** (rad0035, PR #977; `docs/evidence/2026-11-15-vtp41-prefill-order/README.md`). -long-bf16 with the shipped cap 2 + interleave 2, eight 100k prompts plus 450/4k/8k/16k requests at 30 s and 150 s, two starts an arm: shipped 4k-16k requests wait 317-433 s (they count as long and queue behind all eight); `remaining` 53-73 s; threshold 16k 17-76 s; both 4-27 s with the 100k mean 270 -> 298 s (+10%). No preemptions. Correction recorded: with one long prefill running, arrival order already alternates the step via checkpoint-aligned chunks (a mid prompt gets about half), so ordering matters with several prefills running. Next: owner's choice of -long defaults; age limit measured on the card; real-time follow-ups proposed to the owner: cap from free KV, interleave from a target decode gap.
+
+**2026-11-16 defaults and age limit on the card.** Owner chose the -long defaults: remaining order, 16k threshold, 120 s age. Confirm A/B (VUUV): the age as built in rad0035 also aged running prefills, so the 150 s wave's 4k/8k/16k waited 43-69/128-151/139-160 s (vs 4-7/11-13/20-23 s) with no 100k gain. Fixed in rad0036 (VTP42): only prompts waiting to start age (card-free test 5 vs 13 steps). The +10% 100k mean exceeds the 5% criterion; the owner accepted it with the defaults. The defaults ship as the rad0036 governor spec `kind=cap;max_seqs=2;long_tokens=16384;order=remaining;age_ms=120000`; rad0035 is superseded by rad0036.
 
 ## Change Log
 
 - 2026-11-15T10:38:52.398726+00:00 (created-by): Created by agent
 - 2026-11-15T12:25:00.334441+00:00 (updated-by): Updated: section:notes
+- 2026-11-15T13:50:48.595963+00:00 (updated-by): Updated: section:notes
