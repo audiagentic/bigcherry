@@ -1,0 +1,16 @@
+{
+  "change-class": "docs",
+  "event-id": "chg_20261115_025432_confirmed-the-long-prompt-spee_6096",
+  "files": [
+    "docs/evidence/2026-11-15-rad52-native-split-store/README.md",
+    "docs/planning/completed/patching-radiance-rdna3/RAD52.md",
+    "engines/radiance/components/libr3/native/r4d_selftest.cpp.rw"
+  ],
+  "plan-item-ids": [
+    "RAD52"
+  ],
+  "status": "unreleased",
+  "technical-summary": "RAD52 closed: final ABBA x2 on -long-bf16 (TTFT 100k -18.6%, 512/2048/8k and decode level) and the one-KV-head per-row matrix (selftest --perfpaged-kv 1; spread 4-15% from 256 to 2048 rows, 2-4x below stock).",
+  "timestamp-utc": "2026-11-15T02:54:32.931824Z",
+  "user-summary-candidate": "Confirmed the long-prompt speed-up on the three-card setup: a 100,000-token prompt starts answering 18-19% sooner, with no change for short prompts or generation."
+}

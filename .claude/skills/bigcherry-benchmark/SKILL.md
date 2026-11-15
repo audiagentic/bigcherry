@@ -121,6 +121,32 @@ outliers named and excluded with a reason.
 - In a helper bisect, add components **cumulatively**, rather than comparing independent, differently composed variants.
 - Engine `--profile-ops` and host `perf` can distinguish device-kernel time from host scheduling/CPU overhead. Record the same arm's observations.
 
+## Radiance engine and libr3 A/B (served configs)
+
+- **Arms from the stored manifest.** A manifest start (`radiance --manifest M --role engine`) refuses extra flags, so an
+  A/B arm is the manifest's engine argv (each serving-v2 contract field's `radiance_option`) with one change merged in.
+  A libr3 change is an arm of `--radiance-home NEW:STOCK` (the new component first, the stock home behind it) on the
+  same engine binary; nothing else differs. Fresh engine start per run, ABBA order, at least two runs per arm; stop
+  only the engine PID the script started.
+- **Measure what the change can move, and what it must not.** For prefill work: TTFT at 512, 2k, 8k, 30k, 60k and 100k
+  tokens (a gain that grows with depth is attention; a flat one is the linear chain), decode at 1 and 8 streams, and a
+  100k prompt beside 4 decoding streams (long TTFT, decode chunks/s during it, largest gap). Stream chunks are not
+  tokens under speculation; take ms per decode step from the engine's `radiance:engine_step_seconds_decode_total` /
+  `radiance:engine_steps_decode_total` deltas over the decode window.
+- **Quality, by kind of change.** A change that only reorders a sum (a different KV split, a pipelined step) cannot be
+  bit-checked: record a long-corpus KLD reference from the stock build (`--kld-record DIR --kld-corpus FILE --kld-top 64`,
+  one sequence, no speculation), score the change against it (`--kld-ref DIR --kld-out FILE`), and score stock with
+  `--pipelined-prefill off` against the same reference as the noise floor. Compare per document too: a mean above the
+  floor carried by the documents that already hold the rare large divergences is noise. A change that must not alter
+  arithmetic (register pressure, prefetch timing, an exact conversion) gets an identity run against a reference from
+  the build just before it: PPL equal to every printed digit and top-1 1.0.
+- **Stress before merge.** Twelve fresh starts, each with 4/8-stream `stream-bench` runs and 4 decoding streams beside a
+  60k prompt; count fault lines in the engine log and require every bench `ok`.
+- **Kernel first, engine second.** `r3_selftest --perfpaged` / `--perfw8` (see the libr3 README) on one card finds and
+  sizes a kernel effect in minutes; an engine A/B then shows how much of it reaches TTFT. Compare kernel arms
+  interleaved (S R C C R S), and check register spill per instantiation with
+  `-Rpass-analysis=kernel-resource-usage` before guessing at a slow format.
+
 ## The five failure modes
 
 Every one of these produced a reported-then-retracted result. Check each

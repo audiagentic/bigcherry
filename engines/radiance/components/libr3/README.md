@@ -15,7 +15,28 @@ Native gfx11 attention defaults on through the typed serving manifest's
 `R3_ATTN_NATIVE` environment switch is no longer read; see the
 [current model pages](../../../../docs/reference/engines/radiance/README.md#current-pin-throughput)
 for measured throughput. The setting selects the native form for both the plain and the KV-split prefill
-launches (the split's partial store takes the accumulator converted to the gfx12 layout).
+launches (the split's partial store takes the accumulator converted to the gfx12 layout; RAD52). The native
+prefill attention runs without the late K prefetch (`O_KLATE`), which spilled the fp8 and k6_v4 kernels, and 8-bit
+KV widens to f16 through the exact direct conversion in `r3_e4m3_f16.h` (RAD53). The narrow 8-bit GEMM keeps its
+unguarded form when only the token count is ragged (17-31 rows: 5-7 decode streams at depth 3), guarding tokens
+always (VTP37 step 3a). Evidence: `docs/evidence/2026-11-15-rad52-native-split-store/`,
+`docs/evidence/2026-11-15-rad53-fp8-prefill-attention/` and `docs/evidence/2026-11-15-vtp37-narrow-gemm-ragged-m/`.
+
+## Lab tools
+
+`r3_selftest <libr3.so>` (target `r3_selftest`) checks and times kernels on one card; it needs no engine or model.
+An out-of-tree build of a branch's component (`cmake -S engines/radiance/components/libr3 -DRADIANCE_SRC=<source>
+-DCMAKE_PREFIX_PATH=<installed radiance>/runtime-prefix -DR3_TARGETS=gfx1100 -DR3_NATIVE=ON`) gives both the selftest
+and a `radiance_home/kernels/libr3.so` an engine can load first through `--radiance-home NEW:STOCK`.
+
+- `--case <row>`: correctness rows for one kernel row name (e.g. `attn_prefill_h256_gqa6_fp8kv`,
+  `attn_prefill_split`); count `ok` and `FAIL` lines over the whole output.
+- `--perfpaged Q CTX [iters]`: paged prefill attention, all four KV formats, Q query rows at the end of CTX keys;
+  `--perfpaged-kv N` sets the KV heads (default 2, a TP2 rank; 1 is a native TP3 rank).
+- `--perfw8 N K M [iters]`: the 8-bit trunk GEMMs at one shape; `--cold MIB` reads MIB through the caches before every
+  timed launch (256 empties the card's L2 and last-level cache: weights arrive cold, as in decode); `--pin-mw N` / `--pin-nt N` pin the narrow GEMM's wave and token-tile counts for a sweep.
+- Register pressure and spill per instantiation: compile one unit with
+  `--offload-device-only -Rpass-analysis=kernel-resource-usage` (VGPRs, `ScratchSize`, occupancy per template).
 
 ## Detail
 

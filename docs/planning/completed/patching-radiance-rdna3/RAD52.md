@@ -2,7 +2,7 @@
 id: RAD52
 order: 0
 plan: patching-radiance-rdna3
-state: in_progress
+state: completed
 created-at: '2026-11-14T06:57:44.790336+00:00'
 breadth: ''
 skill: advanced
@@ -39,7 +39,7 @@ In native TP3 an XTX rank holds one KV head (`kv=1,1,2`), so a prefill piece of 
 
 ## Validation
 
-Selftest identity where the split count is unchanged; the VTP37 reordering gate (noise floor against serial, no loss against BF16) for any changed split count; int8 stress (12 runs); 2x exploratory and 3x final ABBA.
+Selftest at the one-KV-head geometry, all four caches, production pieces: 2382 ok, 0 fail. Long-corpus KLD vs stock 0.00315 (p99 0.0057, top-1 98.70%) against a serial-prefill noise floor 0.00283 (p99 0.0056, top-1 98.71%): at the floor (reordering gate). Stress 12/12. Engine ABBA x2 twice (8 starts per arm in all) on `-long-bf16`, plus the per-row matrix at one KV head. Evidence: `docs/evidence/2026-11-15-rad52-native-split-store/README.md`.
 
 ## Effort & Risk
 
@@ -51,9 +51,9 @@ M. A changed split count changes summation order (reordering gate, not bit ident
 
 ## Acceptance Criteria
 
-- [ ] us per query row at 50k and 100k keys within 20% from 256- to 2048-row pieces on an XTX rank with one KV head, or a recorded NO-GO with the matrix that shows why.
-- [ ] TTFT at 100k at least 10% better at 2048-token steps against the same build without the change; no regression at 512 / 2048 / 8192 tokens or in decode.
-- [ ] No model, card or world constant: geometry from the rank's device properties and a per-layout axis.
+- [x] us per query row at 50k and 100k keys within 20% from 256- to 2048-row pieces on an XTX rank with one KV head, or a recorded NO-GO with the matrix that shows why. Main libr3, `--perfpaged-kv 1`: spread 7-15% at 50k and 4-5% at 100k over all four caches, 2-4x below stock.
+- [x] TTFT at 100k at least 10% better at 2048-token steps against the same build without the change; no regression at 512 / 2048 / 8192 tokens or in decode. -18.2% and -18.6% in two ABBA x2 sets; 512 / 2048 / 8k -0.2 / +0.9 / -1.0%; decode 1 / 8 streams -0.1 / -0.4%.
+- [x] No model, card or world constant: geometry from the rank's device properties and a per-layout axis. The split law is unchanged; the change is the native form of the existing split store, selected by `attn_native`.
 
 ## Notes
 
@@ -61,9 +61,16 @@ Created 2026-11-14 from the TP3 long-context profile and A/B (`docs/evidence/202
 
 **2026-11-15 step 3 done (`docs/evidence/2026-11-15-rad52-native-split-store/README.md`).** Cause: the split was taken in the compatibility form (libr3's native instantiation refused `O_PSPLIT`). libr3 now converts the native accumulator before the split store and the split launch takes the native form under `attn_native`; no law change (step 4 not needed so far). Selftest at the one-KV-head geometry, all four caches, production pieces: 2382 ok. Long-corpus KLD vs stock 0.00315 (p99 0.0057, top-1 98.70%) against a serial-prefill noise floor of 0.00283 (p99 0.0056, top-1 98.71%): at the floor. Stress 12/12 clean. ABBA 2x (served `-long-bf16` argv): TTFT 100k 53.75 -> 43.97 s (-18.2%), 60k -13.7%, 30k -8.6%, 8k unchanged; decode unchanged; 100k prompt beside 4 decoders -17%, their decode +20%, longest gap -25%. Open before completion: the third ABBA repeat, TTFT at 512 / 2048 tokens, and the per-row flatness matrix at one KV head (acceptance 1; `--perfpaged` runs two KV heads).
 
+
+
+**2026-11-15, closed.** Final ABBA x2 (4 starts per arm): TTFT 100k -18.6%, 60k -13.8%, 512 / 2048 tokens level, decode level. One-KV-head matrix flat within 15%. Steps 2 and 4 not needed; a 3x final ABBA was replaced by two consistent 2x sets.
+
 ## Change Log
 
 - 2026-11-14T06:57:44.790336+00:00 (created-by): Created by agent
 - 2026-11-14T06:58:35.979256+00:00 (updated-by): Updated: section:description, section:steps, section:validation, section:effort_risk, section:acceptance_criteria, section:notes
 - 2026-11-14T19:53:49.420888+00:00 (updated-by): Updated: section:notes
 - 2026-11-14T19:53:53.428917+00:00 (state-transition): State: pending → in_progress
+- 2026-11-15T02:54:16.399859+00:00 (updated-by): Updated: section:validation, section:acceptance_criteria
+- 2026-11-15T02:54:20.459261+00:00 (updated-by): Updated: section:notes
+- 2026-11-15T02:54:24.522336+00:00 (state-transition): State: in_progress → completed

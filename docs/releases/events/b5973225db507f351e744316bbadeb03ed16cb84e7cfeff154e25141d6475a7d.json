@@ -1,0 +1,11 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261115_020856_radiance-releases-once-again-c_2079",
+  "files": [
+    ".github/workflows/radiance-build.yml"
+  ],
+  "status": "unreleased",
+  "technical-summary": "radiance-build.yml bundle step: mark /src/tooling as a git safe directory and pass BC_WORK_ROOT=/src/work. The packaging tooling is its own checkout owned by the runner; git refused it inside the container, paths.primary_root() raised PrimaryRootError, and every bc-radiance release from r16 to r25 built and passed its component tests but attached no runtime bundle.",
+  "timestamp-utc": "2026-11-15T02:08:56.064827Z",
+  "user-summary-candidate": "Radiance releases once again come with an installable runtime bundle. Since release r16 the packaging step had been failing after a successful build, so no release after r15 could be installed as a runnable unit."
+}
