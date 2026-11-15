@@ -11,7 +11,7 @@ Motivation: `docs/evidence/2026-11-14-tp3-long-context/README.md`; plan item VTP
 
 ## Outcome
 
-Opt-in; no serving configuration sets it yet (the default is the owner's choice). Hardware results on
+Off by default in the engine; the `qwen27b-tp3-int8-556-long` configs (and `-long-bf16`) set `max_prefill_seqs = 2`, the owner's choice. Hardware results on
 `qwen27b-tp3-int8-556-long-bf16` (eight ~100k-token prompts at once into a 624k-token cache, four ~450-token requests
 behind them; two starts an arm; `docs/evidence/2026-11-15-vtp39-prefill-concurrency/README.md`):
 
@@ -19,7 +19,7 @@ behind them; two starts an arm; `docs/evidence/2026-11-15-vtp39-prefill-concurre
 |---|---|---|---|---|
 | 0 | 434 s | 377 / 530 s | 321-338 s | 6 (4) |
 | 1 | 208 s (-52%) | 50 / 368 s | 3.6-4.5 s | 0 (0) |
-| 2 | 265 s (-39%) | 82 / 440 s | 121-123 s (before the short-prompt fix) | 0 (0) |
+| 2 | 268 s (-38%) | 82 / 443 s | 4.6-5.6 s | 0 (0) |
 
 Card-free: `tests/sched_test.cpp` (195 cases, the eight `vtp39_*` ones among them) and the config parse test. The patch
 state is `untested` in the recipe; promotion is a separate step.

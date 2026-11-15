@@ -33,12 +33,13 @@ requests just behind them, then an over-length prompt and a burst of 80 tiny req
 | `--max-prefill-seqs` | interleave | mean first token, long | first / last | short requests | preemptions (forced) |
 |---|---|---|---|---|---|
 | 0 | 0 | 434 s | 377 / 530 s | 321-338 s | 6 (4) |
-| 2 | 0 | 265 s (-39%) | 82 / 440 s | 121-123 s * | 0 (0) |
+| 2 | 0 | 265 s * / 268 s (-38%) | 82 / 440-443 s | 88-123 s * / 4.6-5.6 s | 0 (0) |
+| 2 | 2 | 268 s (-38%) | 83 / 442 s | 4.5-5.5 s | 0 (0) |
 | 1 | 0 | 203 s * / 208 s (-52%) | 46-50 / 360-368 s | 44-45 s * / 3.6-4.5 s | 0 (0) |
 | 1 | 2 | 206 s | 49 / 363 s | 3.5-4.4 s | 0 (0) |
 | 0 | 2 | 433 s | 380 / 529 s | 320-335 s | 6 (4) |
 
-\* before the short-prompt fix. Every request completed with status 200 in every arm; the over-length prompt got a 400
+\* before the short-prompt fix (cap 2 after the fix: `fullcache3`, order PQQP, two starts an arm). Every request completed with status 200 in every arm; the over-length prompt got a 400
 and the burst past the admission queue 429s, as before.
 
 The first rad0034 build exempted from the cap only a prompt finished in its admission step. Beside a running 100k
@@ -51,7 +52,9 @@ requests then start in under 5 s, and the long prompts pay 2% (203 -> 208 s).
 1. 4 decoders beside a 100k prefill at 3x base with the long prompt within +10%: **not met by one setting**. Interleave 2
    gives 2.7x at +9.8%; 3x needs about +12%. Gap max recorded (1.15 s at every setting).
 2. Eight 100k prompts, mean first token at least 35% lower with no forced preemption: **met** by a cap of 1 (-52%, 0
-   preemptions) and of 2 (-39%).
+   preemptions) and of 2 (-38%).
 3. A short request beside long prefills gets its first token within a few steps: **met** with the cap and the fix
-   (3.5-4.5 s, a few 2048-token steps at depth); not met without the cap (5.5 minutes).
-4. Defaults unchanged until the owner's choice: interleave 2 chosen for `-long`; the cap stays off pending the owner.
+   (3.5-5.6 s, a few 2048-token steps at depth); not met without the cap (5.5 minutes).
+4. Defaults unchanged until the owner's choice. The owner chose interleave 2 and a cap of 2 for the `-long` configs
+   (2026-11-15): two long prompts prefill at once rather than one after another, at 268 s mean against 208 s for cap 1.
+   With the cap at 2, interleave 2 leaves the full-cache result unchanged (268 s both ways).
