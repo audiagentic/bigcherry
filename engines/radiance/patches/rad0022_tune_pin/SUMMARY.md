@@ -1,6 +1,6 @@
 # rad0022_tune_pin
 
-**Status:** untested
+**Status:** validated
 **Plan item:** VTP31
 
 Scope: radiance's kernel tune pin (`RADIANCE_TUNE`) as an engine option, `--tune-pin SPEC`, so a layout or manifest

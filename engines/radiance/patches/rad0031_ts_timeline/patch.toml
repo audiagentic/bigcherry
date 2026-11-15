@@ -1,7 +1,7 @@
 schema = 1
 id = "rad0031_ts_timeline"
 order = 31
-state = "untested"
+state = "validated"
 kind = "diagnostic"
 origin = "local"
 backend = "agnostic"
