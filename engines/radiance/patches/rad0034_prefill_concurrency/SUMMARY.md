@@ -1,6 +1,6 @@
 # rad0034_prefill_concurrency
 
-**Status:** untested
+**Status:** superseded by rad0036_prefill_governor (VTP42)
 **Plan item:** VTP39
 
 Scope: generic Radiance scheduler admission cap for unfinished long prefills, off by default.

@@ -18,10 +18,10 @@ inline constexpr std::string_view kApiVersion = "bigcherry/v2";
 inline constexpr std::string_view kKind = "ServingManifest";
 inline constexpr int64_t kContractVersion = 2;
 // sha256 of the JCS validation schema without annotations (contract/README.md); the build pins it.
-inline constexpr std::string_view kFingerprint = "sha256:78fa2ebb29000bf61234def10aecfc60d87369e2ecd443e7e8fbc65fcebe8560";
+inline constexpr std::string_view kFingerprint = "sha256:fe758c1ecfb394cbe9369ea02bb1db4135c772d5a57a366c13dc150909a8311f";
 // sha256 of the schema plus the frozen semantics it does not express (classes, lifecycle, Radiance bindings,
 // reader error codes); README.md.
-inline constexpr std::string_view kSemanticFingerprint = "sha256:239bb013f026fe4d4aecd6e2979a23802361ea0521732265f54544bd038ffcbc";
+inline constexpr std::string_view kSemanticFingerprint = "sha256:e52e534c9de998672eb510774206eac461d9e6f45f91fad251bd68cdee658ba2";
 // spec §11 amendment 8: the deepest container nesting a valid document can have (the root object is 1),
 // derived from the closed schema by the generator. The strict reader refuses anything deeper.
 inline constexpr size_t kMaxDepth = 9;
@@ -129,11 +129,6 @@ inline constexpr std::array<std::string_view, 1> kOptNoCorsNames = {"on"};
 // OptLive: Engine flag `--live` (amendment 13). Present means the flag is given.
 enum class OptLive : uint8_t { kOn };
 inline constexpr std::array<std::string_view, 1> kOptLiveNames = {"on"};
-
-// PrefillOrder: How running and waiting prefills share steps after priority: `arrival` (default) or `remaining`, least
-// prompt left first (VTP41).
-enum class PrefillOrder : uint8_t { kArrival, kRemaining };
-inline constexpr std::array<std::string_view, 2> kPrefillOrderNames = {"arrival", "remaining"};
 
 // OptWeightsDiskTier: Engine flag `--weights-disk-tier` (amendment 13). Present means the flag is given.
 enum class OptWeightsDiskTier : uint8_t { kOn };
@@ -1055,18 +1050,11 @@ struct EngineTuning {
     std::optional<OptLive> live;
     // Engine flag `--p2p` (amendment 13). Value text as the flag takes it (MODE).
     std::optional<std::string> p2p;
-    // Maximum concurrent unfinished long prefills. Zero (default) leaves admission unlimited; a prompt whose remainder
-    // fits one shared step (or `long_prefill_tokens`) bypasses the cap (VTP39).
-    std::optional<int64_t> max_prefill_seqs;
-    // Prompt tokens left above which a prefill counts toward `max_prefill_seqs`; zero (default) is one shared step
-    // (VTP41).
-    std::optional<int64_t> long_prefill_tokens;
-    // How running and waiting prefills share steps after priority: `arrival` (default) or `remaining`, least prompt
-    // left first (VTP41).
-    std::optional<PrefillOrder> prefill_order;
-    // With `prefill_order = "remaining"`, a prompt waiting longer than this goes ahead in arrival order; zero (default)
-    // never (VTP41).
-    std::optional<int64_t> prefill_age_ms;
+    // Prefill admission and order policy, `kind=arrival|cap|budget;key=value;...` (rad0036, VTP42). `cap`: `max_seqs`
+    // prefills with more than `long_tokens` left at once; `budget`: prompt left in flight within `factor` x the largest
+    // request; common `order=arrival|remaining` and `age_ms`. Unset is arrival, the engine's own order; the engine
+    // rejects an invalid spec at start.
+    std::optional<std::string> prefill_governor;
     // Engine flag `--prefill-interleave` (amendment 13).
     std::optional<int64_t> prefill_interleave;
     // Engine flag `--prefill-span` (amendment 13).
@@ -1565,7 +1553,7 @@ struct FieldInfo {
     std::string_view default_source;   // where the default comes from, or empty
     std::string_view ref_def;          // kind "ref": the shared type it uses, else empty
 };
-inline constexpr std::array<FieldInfo, 442> kFields = {{
+inline constexpr std::array<FieldInfo, 439> kFields = {{
     {"$defs/uint", "integer", "", true, false,
      "", "", false,
      "Unsigned integer within I-JSON's safe range.", "", "", ""},
@@ -2439,18 +2427,9 @@ inline constexpr std::array<FieldInfo, 442> kFields = {{
     {"/spec/processes/engine/tuning/p2p", "string", "policy", false, false,
      "--p2p", "Config.p2p", false,
      "Engine flag `--p2p` (amendment 13). Value text as the flag takes it (MODE).", "", "", ""},
-    {"/spec/processes/engine/tuning/max_prefill_seqs", "ref", "policy", false, false,
-     "--max-prefill-seqs", "Config.max_prefill_seqs", false,
-     "Maximum concurrent unfinished long prefills. Zero (default) leaves admission unlimited; a prompt whose remainder fits one shared step (or `long_prefill_tokens`) bypasses the cap (VTP39).", "", "", "uint"},
-    {"/spec/processes/engine/tuning/long_prefill_tokens", "ref", "policy", false, false,
-     "--long-prefill-tokens", "Config.long_prefill_tokens", false,
-     "Prompt tokens left above which a prefill counts toward `max_prefill_seqs`; zero (default) is one shared step (VTP41).", "", "", "uint"},
-    {"/spec/processes/engine/tuning/prefill_order", "enum", "policy", false, false,
-     "--prefill-order", "Config.prefill_order", false,
-     "How running and waiting prefills share steps after priority: `arrival` (default) or `remaining`, least prompt left first (VTP41).", "", "", ""},
-    {"/spec/processes/engine/tuning/prefill_age_ms", "ref", "policy", false, false,
-     "--prefill-age-ms", "Config.prefill_age_ms", false,
-     "With `prefill_order = \"remaining\"`, a prompt waiting longer than this goes ahead in arrival order; zero (default) never (VTP41).", "", "", "uint"},
+    {"/spec/processes/engine/tuning/prefill_governor", "string", "policy", false, false,
+     "--prefill-governor", "Config.prefill_governor", false,
+     "Prefill admission and order policy, `kind=arrival|cap|budget;key=value;...` (rad0036, VTP42). `cap`: `max_seqs` prefills with more than `long_tokens` left at once; `budget`: prompt left in flight within `factor` x the largest request; common `order=arrival|remaining` and `age_ms`. Unset is arrival, the engine's own order; the engine rejects an invalid spec at start.", "", "", ""},
     {"/spec/processes/engine/tuning/prefill_interleave", "ref", "policy", false, false,
      "--prefill-interleave", "native option", false,
      "Engine flag `--prefill-interleave` (amendment 13).", "", "", "uint"},
