@@ -81,7 +81,7 @@ class Vtp42PatchTests(unittest.TestCase):
             second = apply_all(mine, root)
             self.assertTrue(all(e.status == "already-applied" for f in second for e in f.results), second)
             scheduler = (root / "core/sched/scheduler.cpp").read_text()
-            for hook in ("gov_.gate(", "kAdmitBlock) break;", "gov_.full(prefill_load(false)"):
+            for hook in ("gov_.gate(", "gov_reserved_ = false;", "gov_.full(prefill_load(false)"):
                 self.assertIn(hook, scheduler)
             self.assertIn('"--prefill-governor"', (root / "core/config.cpp").read_text())
             self.assertIn("struct PrefillGovernor", (root / "core/sched/prefill_governor.h").read_text())
