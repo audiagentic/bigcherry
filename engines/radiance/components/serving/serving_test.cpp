@@ -1586,7 +1586,7 @@ void engine_only_layout(Fixture& t) {
         assert(e.at("kernels") == Json({{"moe_native", true}, {"dec11", false}}));   // amendment 14: environment settings are keys too
         assert(!e.contains("lora") && !e.contains("chat"));   // a section appears only with its members
         assert(bc::serving::v2::read_manifest(with_options.text, "options", bc::serving::v2::PlanUse::measuring).ok());
-        assert(bc::serving::engine_option_fields().size() == 93 /* 84 flags (amendment 18: +3, amendment 20: +1) + 9 environment settings */);
+        assert(bc::serving::engine_option_fields().size() == 94 /* VTP39: +1 opt-in prefill cap (85 flags + 9 environment settings) */);
         Options bad = opts;
         bad.sets = {"layout.name=\"qwen27b-2xtx\"", "sampling.no_such_option=1"};
         fail(bad, t.facts, "no_such_option");
@@ -2038,6 +2038,25 @@ void config_files(Fixture& t) {
            std::string::npos);
     assert(from_config.provenance.at("service.max_context").at("source").get<std::string>().find("config qwen27b.toml") !=
            std::string::npos);
+    {   // VTP39: optional v2 tuning is recognized from a real config and can be overridden to zero.
+        Options cap = config;
+        cap.configs = {configs, t.file("vtp39-optin.toml",
+            "schema = 1\n[config.vtp39-probe]\ndescription = \"experimental concurrent prefills\"\n"
+            "base = \"qwen27b-tp3-int8\"\n"
+            "tuning.max_prefill_seqs = 2\n")};
+        cap.sets = {"layout.name=\"vtp39-probe\""};
+        const auto enabled = sv::resolve(cap, t.facts);
+        assert(enabled.values.at("tuning").at("max_prefill_seqs") == 2);
+        assert(enabled.provenance.at("tuning.max_prefill_seqs").at("source").get<std::string>().find("config vtp39-optin.toml") != std::string::npos);
+        const auto& options = bc::serving::engine_option_fields();
+        auto it = std::find_if(options.begin(), options.end(),
+            [](const auto& f) { return f.key == "tuning.max_prefill_seqs"; });
+        assert(it != options.end() && it->path == "/spec/processes/engine/tuning/max_prefill_seqs");
+        cap.sets.push_back("tuning.max_prefill_seqs=0");
+        assert(sv::resolve(cap, t.facts).values.at("tuning").at("max_prefill_seqs") == 0);
+        cap.sets.back() = "tuning.max_prefill_seqs=-1";
+        fail(cap, t.facts, "max_prefill_seqs");
+    }
     // the variant: only the split differs
     config.sets = {"layout.name=\"qwen27b-tp3-int8-556\""};
     const auto variant = sv::resolve(config, t.facts);
@@ -2053,7 +2072,7 @@ void config_files(Fixture& t) {
         assert(o.at("tuning.pipelined_prefill") == "qwen27b-tp3-int8" && o.at("ranks") == "qwen27b-tp3-int8");
         assert(set.chain.at("qwen27b-tp3-int8-556") == Json::array({"qwen27b-tp3-int8-556", "qwen27b-tp3-int8"}));
     }
-    {   // the long-context variants: the 5,5,6 split at 262,144 tokens, fp8 and bf16 cache; nothing else moves
+    {   // the long-context variants: the 5,5,6 split at 262,144 tokens, fp8 and bf16 cache, VTP39 prefill tuning; nothing else moves
         Options lv = config;
         lv.sets = {"layout.name=\"qwen27b-tp3-int8-556-long\""};
         const auto fp8 = sv::resolve(lv, t.facts);
@@ -2061,7 +2080,16 @@ void config_files(Fixture& t) {
         const auto bf16 = sv::resolve(lv, t.facts);
         assert(fp8.values.at("service").at("max_context") == 262144 && fp8.values.at("engine").at("kv_cache_dtype") == "fp8");
         assert(bf16.values.at("service").at("max_context") == 262144 && bf16.values.at("engine").at("kv_cache_dtype") == "bf16");
+        // VTP39 scheduling defaults for long prompts, inherited by -long-bf16
+        for (const auto* r : {&fp8, &bf16}) {
+            assert(r->values.at("tuning").at("prefill_interleave") == 2);
+            assert(r->values.at("tuning").at("max_prefill_seqs") == 2);
+        }
         Json x = variant.values, y = fp8.values, z = bf16.values;
+        for (Json* j : {&x, &y, &z}) {
+            (*j)["tuning"].erase("prefill_interleave");
+            (*j)["tuning"].erase("max_prefill_seqs");
+        }
         for (Json* j : {&x, &y, &z}) {
             (*j)["layout"].erase("name");
             (*j)["service"].erase("max_context");

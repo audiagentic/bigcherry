@@ -2333,6 +2333,15 @@ min_length = 1
 doc = "Engine flag `--p2p` (amendment 13). Value text as the flag takes it (MODE)."
 
 [[field]]
+path = "/spec/processes/engine/tuning/max_prefill_seqs"
+optional = true
+radiance_option = "--max-prefill-seqs"
+radiance_config = "Config.max_prefill_seqs"
+kind = "ref"
+ref = "uint"
+doc = "Maximum concurrent unfinished long prefills. Zero (default) leaves admission unlimited; a prompt whose remainder fits one shared step bypasses the cap (VTP39)."
+
+[[field]]
 path = "/spec/processes/engine/tuning/prefill_interleave"
 optional = true
 radiance_option = "--prefill-interleave"

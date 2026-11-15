@@ -81,6 +81,7 @@ patches = [
   "rad0031_ts_timeline",
   "rad0032_ts3_duplex",
   "rad0033_ts3_once",
+  "rad0034_prefill_concurrency",
 ]
 required-state = "untested"
 

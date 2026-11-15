@@ -1552,6 +1552,10 @@
                       "type": "string",
                       "minLength": 1
                     },
+                    "max_prefill_seqs": {
+                      "description": "Maximum concurrent unfinished long prefills. Zero (default) leaves admission unlimited; a prompt whose remainder fits one shared step bypasses the cap (VTP39).",
+                      "$ref": "#/$defs/uint"
+                    },
                     "prefill_interleave": {
                       "description": "Engine flag `--prefill-interleave` (amendment 13).",
                       "$ref": "#/$defs/uint"
