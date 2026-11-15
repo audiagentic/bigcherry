@@ -1586,7 +1586,7 @@ void engine_only_layout(Fixture& t) {
         assert(e.at("kernels") == Json({{"moe_native", true}, {"dec11", false}}));   // amendment 14: environment settings are keys too
         assert(!e.contains("lora") && !e.contains("chat"));   // a section appears only with its members
         assert(bc::serving::v2::read_manifest(with_options.text, "options", bc::serving::v2::PlanUse::measuring).ok());
-        assert(bc::serving::engine_option_fields().size() == 94 /* VTP39: +1 opt-in prefill cap (85 flags + 9 environment settings) */);
+        assert(bc::serving::engine_option_fields().size() == 97 /* VTP41: +3 opt-in prefill order, threshold, age (88 flags + 9 environment settings) */);
         Options bad = opts;
         bad.sets = {"layout.name=\"qwen27b-2xtx\"", "sampling.no_such_option=1"};
         fail(bad, t.facts, "no_such_option");
@@ -2056,6 +2056,21 @@ void config_files(Fixture& t) {
         assert(sv::resolve(cap, t.facts).values.at("tuning").at("max_prefill_seqs") == 0);
         cap.sets.back() = "tuning.max_prefill_seqs=-1";
         fail(cap, t.facts, "max_prefill_seqs");
+    }
+    {   // VTP41: threshold, order and age are optional tuning fields that reach the engine options
+        Options ord = config;
+        ord.sets = {"layout.name=\"qwen27b-tp3-int8\"", "tuning.long_prefill_tokens=16384",
+                    "tuning.prefill_order=\"remaining\"", "tuning.prefill_age_ms=30000"};
+        const auto r = sv::resolve(ord, t.facts);
+        assert(r.values.at("tuning").at("long_prefill_tokens") == 16384);
+        assert(r.values.at("tuning").at("prefill_order") == "remaining");
+        assert(r.values.at("tuning").at("prefill_age_ms") == 30000);
+        const auto& options = bc::serving::engine_option_fields();
+        for (const char* key : {"tuning.long_prefill_tokens", "tuning.prefill_order", "tuning.prefill_age_ms"})
+            assert(std::find_if(options.begin(), options.end(),
+                                [&](const auto& f) { return f.key == key; }) != options.end());
+        ord.sets.back() = "tuning.prefill_age_ms=-1";
+        fail(ord, t.facts, "prefill_age_ms");
     }
     // the variant: only the split differs
     config.sets = {"layout.name=\"qwen27b-tp3-int8-556\""};

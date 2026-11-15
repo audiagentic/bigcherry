@@ -1553,7 +1553,22 @@
                       "minLength": 1
                     },
                     "max_prefill_seqs": {
-                      "description": "Maximum concurrent unfinished long prefills. Zero (default) leaves admission unlimited; a prompt whose remainder fits one shared step bypasses the cap (VTP39).",
+                      "description": "Maximum concurrent unfinished long prefills. Zero (default) leaves admission unlimited; a prompt whose remainder fits one shared step (or `long_prefill_tokens`) bypasses the cap (VTP39).",
+                      "$ref": "#/$defs/uint"
+                    },
+                    "long_prefill_tokens": {
+                      "description": "Prompt tokens left above which a prefill counts toward `max_prefill_seqs`; zero (default) is one shared step (VTP41).",
+                      "$ref": "#/$defs/uint"
+                    },
+                    "prefill_order": {
+                      "description": "How running and waiting prefills share steps after priority: `arrival` (default) or `remaining`, least prompt left first (VTP41).",
+                      "enum": [
+                        "arrival",
+                        "remaining"
+                      ]
+                    },
+                    "prefill_age_ms": {
+                      "description": "With `prefill_order = \"remaining\"`, a prompt waiting longer than this goes ahead in arrival order; zero (default) never (VTP41).",
                       "$ref": "#/$defs/uint"
                     },
                     "prefill_interleave": {

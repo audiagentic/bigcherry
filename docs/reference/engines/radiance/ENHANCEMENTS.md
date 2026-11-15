@@ -9,7 +9,7 @@ different statuses. See [the engine overview](README.md) first.
 
 _Generated from package documentation and metadata by `tools/docs/generate_engine_enhancement_summaries.py`. Do not edit this section by hand._
 
-## Engine patches (32)
+## Engine patches (33)
 
 | Package | State | Summary |
 | --- | --- | --- |
@@ -45,6 +45,7 @@ _Generated from package documentation and metadata by `tools/docs/generate_engin
 | [rad0032_ts3_duplex](../../../../engines/radiance/patches/rad0032_ts3_duplex/SUMMARY.md) | `untested` | The three-rank exact two-shot can now run each block's words as a pipeline of pieces, send one piece and assemble another in a single loop so that both directions of a link carry bytes at once, and take the duplex link weights, under which the rank behind a link of half the rate owns no shard. Before, a rank sent, waited for its peers to reduce, then received, one direction at a time. The defaults leave every launch as it was, and every setting gives the same bits. |
 | [rad0033_ts3_once](../../../../engines/radiance/patches/rad0033_ts3_once/SUMMARY.md) | `untested` | In the two-shot's second hop a rank now writes its reduced shard once, into its own host scratch, and each peer assembles it from there; before, it wrote one copy per peer. The default (0) leaves every launch as it was, and the setting gives the same bits. Over peer access the axis is ignored. |
 | [rad0034_prefill_concurrency](../../../../engines/radiance/patches/rad0034_prefill_concurrency/SUMMARY.md) | `untested` | `--max-prefill-seqs N` limits only long-prefill RUNNING admissions. A prompt whose remainder fits one shared-budget step (including after a prefix-cache hit) bypasses the cap, whatever share of a busy step it gets. Decoders, the interleave hold, the preemption whole-recompute gate and the other resource limits retain their existing rules. One gauge and one cumulative counter make the policy visible. Serving v2 exposes the optional tuning field; the `-long` qwen27b configs set it to 2. |
+| [rad0035_prefill_order](../../../../engines/radiance/patches/rad0035_prefill_order/SUMMARY.md) | `untested` | `--long-prefill-tokens N` sets what counts as a long prefill for `--max-prefill-seqs` (default one shared step). `--prefill-order remaining` walks and admits prefills by least prompt left (after priority), with those behind the first keeping one share between them; `--prefill-age-ms T` puts prompts waiting longer than T back in arrival order. Serving v2 exposes the three optional tuning fields; no configuration enables them. |
 
 ## Components (6)
 
