@@ -1,6 +1,6 @@
 # rad0018_vtp14_n2_tp_ownership
 
-**Status:** untested
+**Status:** validated
 **Plan item:** VTP14
 
 Scope: `--tp-ownership SPEC` (`kv=..;ffn=..[;q=..][;lk=..;lv=..]`), an uneven tensor-parallel split, one count a
