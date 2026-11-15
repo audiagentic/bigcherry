@@ -19,6 +19,10 @@ patches = [
   "rad0017_vtp14_n3_shared_rendezvous",
   "rad0018_vtp14_n2_tp_ownership",
   "rad0019_vtp14_n2_tp_ownership_fp8",
+  "rad0020_vtp14_tp3_pipelined_prefill",
+  "rad0025_multiseq_pipelined_prefill",
+  "rad0026_mixed_pipelined_prefill",
+  "rad0027_mixed_one_pipelined_prefill",
 ]
 
 # Host build compatibility for the pinned engine (rad0005: MP4 writer against FFmpeg 6). Enablers with no runtime path of
@@ -67,14 +71,10 @@ required-state = "untested"
 # step as options (rad0020), and link-weighted shards for the three-rank exact two-shot (rad0021). One build serves every split and topology: the layout and the manifest choose them.
 [patch-set.vtp14-mixed-tp]
 patches = [
-  "rad0020_vtp14_tp3_pipelined_prefill",
   "rad0021_vtp14_weighted_twoshot_3rank",
   "rad0022_tune_pin",
   "rad0023_ar_timeline",
   "rad0024_ts3_decode",
-  "rad0025_multiseq_pipelined_prefill",
-  "rad0026_mixed_pipelined_prefill",
-  "rad0027_mixed_one_pipelined_prefill",
   "rad0028_rank_consistent_block_drafts",
   "rad0029_rank_own_split",
   "rad0030_int8_pipelined_prefill",

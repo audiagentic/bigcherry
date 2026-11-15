@@ -1,7 +1,7 @@
 schema = 1
 id = "rad0020_vtp14_tp3_pipelined_prefill"
 order = 20
-state = "untested"
+state = "validated"
 kind = "enhancement"
 origin = "local"
 backend = "agnostic"
