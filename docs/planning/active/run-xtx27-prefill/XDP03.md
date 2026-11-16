@@ -198,3 +198,11 @@ dynamic hardware-specific execution.
   with optional FP8 suffix, dry-run provenance and card-free tests added. A measured-input-constrained, card-free
   quantization selector and selected-profile recipe integration are now present.
   Production runtime dynamic selection and converter GPU plan remain gated.
+
+## 2026-11-16 precision-retention and IQR decision
+
+**Preserve existing high-precision exceptions; do not keep whole BF16/F16 transformer layers by default.** The pinned `q38-27b-w8a8-df2.recipe` leaves delta-net a/b projections, normalization, embeddings and vision tensors at source BF16, while output normalization is declared FP32. Main projections use rotated INT8 and the head uses INT8; the drafter uses separate MXFP4 linears and a 2-bit head. Confirm actual per-tensor RAD2 encodings: unmatched weights retain source formats, which need not be BF16 in other checkpoints.
+
+Radiance already has Qwen3.8-27B IQR-V4 measured per-band/projection bit allocation, GPTQ calibration, and IQ6R-V4 recipes; assess them before inventing a mixed-precision converter. Use original BF16 with verified source hashes, representative Hessians and the prescribed vocabulary-head preparation. Preserve W8A8 and MXFP4 matched controls. Published IQR KL/top-1 is not local TP3 acceptance. VTP06/VTP11 own calibration/quality, VTP09 kernel qualification, VTP14 TP3 acceptance and XDP10 optional static variant loading.
+
+After IQ6R baseline qualification, rank single projections for **selective BF16/F16 promotion** using held-out BF16-reference KL, top-1, PPL, per-layer errors and long-context traces; consider final-layer gate/up/down, attention/GDN output and vocabulary head first, without presuming sensitivity. F16 requires its own range/accuracy test: it is not an automatic substitute for BF16. Test smallest promotion before an entire layer. For each candidate require `rad-convert --plan-only`, actual gfx1100 libr3 and gfx1201 libr4d layout/kernel and activation-ABI checks, TP shard agreement, physical VRAM/KV cost, numerical and end-to-end prefill/decode results. The `qwen35_w8a8` rotated INT8 activation trunk does not license arbitrary BF16/F16 or FP8 substitutions. Fail closed; no silent fallback or runtime switching. Promote only when measured quality improvement justifies measured latency and lost KV capacity.
