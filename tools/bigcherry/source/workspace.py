@@ -15,11 +15,50 @@ from ..patch.apply import PatchError, resolve_contained_target
 from ..patch import patchset
 from ..patch import registry as patch_registry
 from ..core.context import ProjectContext
+from ..core import paths
 from .identity import describe
 
 
 class WorkspaceError(RuntimeError):
     pass
+
+
+class VendorPinMismatchError(WorkspaceError):
+    """The vendor checkout differs from the pinned engine source revision."""
+
+
+def resolve_vendor_checkout_revision(engine: str, root: Path, recipes_path: Path) -> str:
+    """Resolve HEAD and the recipes pin in the same checkout, refusing drift.
+
+    The vendor working tree differs from the build's bare upstream cache: the
+    latter may have an unrelated default HEAD, and must not be checked here.
+    """
+    import tomllib
+
+    actual = _git(root, "rev-parse", "HEAD")
+    if engine != "radiance":
+        return actual
+    try:
+        pin = tomllib.loads(recipes_path.read_text(encoding="utf-8"))["pinned"]
+    except (OSError, ValueError, KeyError) as exc:
+        raise WorkspaceError(f"cannot read pinned revision from {recipes_path}: {exc}") from exc
+    if not isinstance(pin, str) or not pin:
+        raise WorkspaceError(f"{recipes_path}: pinned must be a nonempty tag")
+    try:
+        expected = _git(root, "rev-parse", f"{pin}^{{commit}}")
+    except WorkspaceError as exc:
+        raise WorkspaceError(f"vendor {root}: recipes pinned tag {pin!r} cannot resolve: {exc}") from exc
+    if actual != expected:
+        raise VendorPinMismatchError(
+            f"vendor HEAD {actual} != recipes pinned tag {pin!r} ({expected})"
+        )
+    return actual
+
+
+def require_production_vendor_pin(context: ProjectContext) -> None:
+    """Guard canonical Radiance builds, not isolated synthetic fixture projects."""
+    if context.engine == "radiance" and context.project_root.resolve() == paths.REPO_ROOT.resolve():
+        resolve_vendor_checkout_revision(context.engine, context.vendor_root, context.config_path)
 
 
 def _git(root: Path, *args: str) -> str:
@@ -177,6 +216,7 @@ def materialize(
 ) -> dict[str, object]:
     """Materialise one source plan and return external identity metadata."""
     require_clean_bigcherry(context, allow_dirty_bigcherry=allow_dirty_bigcherry)
+    require_production_vendor_pin(context)
     repository = UpstreamRepository(context.upstream_repo)
     repository.add_detached_worktree(plan.upstream_revision, destination)
     allowed_untracked: set[str] = set()

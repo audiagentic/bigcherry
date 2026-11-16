@@ -48,7 +48,7 @@ from ..core import engines, paths
 from .apply import PATCH_APPLICATION_SEMANTICS_VERSION
 from .apply import PatchError
 from ..release import records as releases
-from ..source.workspace import UpstreamRepository, WorkspaceError
+from ..source.workspace import UpstreamRepository, WorkspaceError, resolve_vendor_checkout_revision
 
 if TYPE_CHECKING:
     from ..campaign import resolution as campaign_resolution
@@ -1004,6 +1004,16 @@ def _recipes_path(engine: str) -> Path:
     return engines.load(paths.REPO_ROOT, engine).recipes_path(paths.REPO_ROOT)
 
 
+def _vendor_revision(engine: str, root: Path, *, freshness: bool = False) -> str:
+    """One pin-aware revision resolver for fresh and freshness checks."""
+    try:
+        return resolve_vendor_checkout_revision(engine, root, _recipes_path(engine))
+    except WorkspaceError as exc:
+        if freshness:
+            raise StaleRebaseReportError(str(exc)) from exc
+        raise RebaseCheckError(str(exc)) from exc
+
+
 def _previous_upstream_revision(engine: str, revision: str) -> str | None:
     try:
         marker = pin_transition.load(pin_transition.marker_path(engine))
@@ -1108,7 +1118,7 @@ def run_rebase_check(
     )
     identity = snapshot.identity
     repository = UpstreamRepository(root)
-    revision = _git(root, "rev-parse", "HEAD")
+    revision = _vendor_revision(engine, root)
     # Snapshot the overlay ONCE, up front: every probe round and the report's
     # own overlay_digest are computed from these exact same in-memory bytes,
     # rather than each re-reading the overlay at its own moment -- a concurrent
@@ -1330,7 +1340,7 @@ def _require_fresh(
             "report's patch_application_semantics_version no longer matches "
             "the live apply.py -- re-run patch-rebase-check"
         )
-    current_revision = _git(root, "rev-parse", "HEAD")
+    current_revision = _vendor_revision(engine, root, freshness=True)
     if report.get("upstream_revision") != current_revision:
         raise StaleRebaseReportError(
             f"report upstream_revision {report.get('upstream_revision')!r} != "

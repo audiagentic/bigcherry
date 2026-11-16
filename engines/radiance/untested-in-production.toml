@@ -1,0 +1,19 @@
+# Exceptions for patches physically included in source.radiance while PRQ03 qualification is pending.
+# An entry must be removed as soon as its patch state becomes validated or it leaves production.
+[[exception]]
+patch-id = "rad0005_mp4_ffmpeg6_writer"
+reason-type = "build-enabler"
+reason = "host-compat build enabler"
+plan-id = "PRQ03"
+
+[[exception]]
+patch-id = "rad0030_int8_pipelined_prefill"
+reason-type = "qualification-pending"
+reason = "INT8 pipelined prefill awaits production qualification"
+plan-id = "PRQ03"
+
+[[exception]]
+patch-id = "rad0036_prefill_governor"
+reason-type = "qualification-pending"
+reason = "prefill governor awaits production qualification"
+plan-id = "PRQ03"
