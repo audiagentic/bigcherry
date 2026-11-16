@@ -1,6 +1,6 @@
 # rad0033_ts3_once
 
-**Status:** untested
+**Status:** validated
 **Plan item:** VTP36
 
 Scope: the exact two-shot all-reduce of a three-rank host-staged world (no peer access), under the new `--tune-pin`

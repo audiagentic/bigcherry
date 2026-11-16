@@ -1,6 +1,6 @@
 # rad0032_ts3_duplex
 
-**Status:** untested
+**Status:** validated
 **Plan item:** VTP36
 
 Scope: the exact two-shot all-reduce of a three-rank world whose links differ, under new `--tune-pin` axes of the

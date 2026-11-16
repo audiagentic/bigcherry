@@ -1,7 +1,7 @@
 schema = 1
 id = "rad0024_ts3_decode"
 order = 24
-state = "untested"
+state = "validated"
 kind = "enhancement"
 origin = "local"
 backend = "agnostic"

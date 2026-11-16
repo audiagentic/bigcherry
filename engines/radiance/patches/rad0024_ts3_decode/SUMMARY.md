@@ -1,6 +1,6 @@
 # rad0024_ts3_decode
 
-**Status:** untested
+**Status:** validated
 **Plan item:** VTP31
 
 Scope: the exact three-rank one-shot all-reduce on a host mailbox with settled link weights (rad0021).
