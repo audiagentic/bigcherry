@@ -67,7 +67,7 @@ The public `StillDeadcode/qwen3.8-27b-quant-challenge` dataset includes 257 BF16
 
 Using these Hessians avoids duplicate GPU calibration collection but does not waive provenance or independent quality qualification. Require all 257 LFS SHA-256 checks, exact 64-layer input sites, consistent shapes and 10,259,331 rows, original BF16 shard hashes, and disjoint held-out prompts. Missing/altered inputs stop conversion. Keep the Q6 result experimental until numeric kernel and TP3 validation.
 
-A historical converter build failed to join IQR weight planes. A more complete installed build passed both gfx1100 `libr3,libref` and gfx1201 `libr4d,libref` layout preflights (1,032 weights; 293 quantized, 739 retained; ~21.02 GiB predicted). Pilot calibration paths were supplied for plan-only name resolution; no model data was written. Current managed-pin identity and complete calibration remain separate gates.
+A historical converter build failed to join IQR weight planes. A more complete installed build passed both gfx1100 `libr3,libref` and gfx1201 `libr4d,libref` layout preflights (1,032 weights; 293 quantized in total (292 GPTQ trellis plus one RTN embedding), 739 retained; ~21.02 GiB predicted). Pilot calibration paths were supplied for plan-only name resolution; no model data was written. Current managed-pin identity and complete calibration remain separate gates.
 
 ## Managed-release conversion checkpoint (2026-11-16)
 
@@ -92,3 +92,9 @@ The same isolated layer-23 calibrated IQ6R projection crashes at hipLaunchKernel
 ## ROCm SDK wrong-architecture regression gate (2026-11-16)
 
 The BigCherry vendor directory includes complete ROCm 10.1.0rc2. A controlled six-case kernel A/B built gfx1201-only binaries against installed ROCm 7.2.4 and vendored ROCm 10.1.0rc2. With correct device selection, both gfx1100 XTX cards segfault on ROCm 7.2.4 but return clean HIP error 200 on vendor 10.1.0rc2; the gfx1201 R9700 executes successfully on both SDKs. This verifies safer error handling, not production inference compatibility or gfx1100 quantizer capability. Retain the offload image guard, keep production ROCm 7.2.4 unchanged, and continue full IQ6R conversion on the R9700. See ROCM-VENDOR-ABI.md in the evidence folder for test source, complete results and reproduction instructions.
+
+## Full conversion and test programme checkpoint (2026-11-16)
+
+A fresh, bounded, exclusive-lease full-model conversion was started with the managed bc-radiance-1170.26.0 converter on physical GPU 2 (gfx1201 R9700), using local HIP ordinal 0 and the verified 64-layer calibration. The prior gfx1100 SIGSEGV receipt was preserved separately. This is an **active experiment**, not an assertion that a valid RAD exists; the final artifact, complete SHA and model inspection remain outstanding.
+
+The independently owned Q0-Q9 test matrix and explicit stop/go conditions are in the evidence directory at QUALIFICATION-TEST-PLAN.md. It separates conversion integrity, gfx1100/gfx1201 kernel numerics, isolated service, BF16-aligned held-out quality, exact TP3 admission, physical memory/capacity, paired ABBA throughput and optional draft-on validation. The card-free iq6r_v4_audit_artifact.py helper checks the immutable artifact/recipe/encoding contract after conversion exits successfully. Thresholds are proposed until the repeat-BF16 floor is frozen.
