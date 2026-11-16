@@ -33,7 +33,7 @@ def production_guard_errors(recipes: dict, exceptions: dict, patch_states: dict[
 
     allowed: set[str] = set()
     entries = exceptions.get("exception", [])
-    if set(exceptions) != {"exception"} or not isinstance(entries, list):
+    if not set(exceptions) <= {"exception"} or not isinstance(entries, list):
         return errors + ["exception file must contain only [[exception]] entries"]
     for entry in entries:
         if not isinstance(entry, dict) or set(entry) != EXCEPTION_FIELDS:
