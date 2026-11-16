@@ -128,6 +128,11 @@ patches = ["rad0003_mtp_full_head_switch"]
 
 # VTP43: packed KV caches with bf16 keys (--kv-cache-dtype bf16_fp8 / bf16_i8), opt-in and untested, so experiment-only.
 # bf16_i8 requires bf16_fp8. Evidence: docs/evidence/2026-11-16-vtp43-bf16-fp8-kv/README.md.
+# RHP02 slice A: the inactive read-only credit observer ABI. Nothing registers it yet, so there is no activation to show;
+# untested, therefore experiment-only until a consumer (RHP02 B) exercises it.
+[experiment.moe-heat-observer]
+patches = ["rad0039_moe_heat_observer"]
+
 [experiment.kv-bf16-packed]
 patches = ["rad0037_bf16_fp8_kv", "rad0038_bf16_i8_kv"]
 

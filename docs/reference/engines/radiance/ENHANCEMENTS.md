@@ -9,7 +9,7 @@ different statuses. See [the engine overview](README.md) first.
 
 _Generated from package documentation and metadata by `tools/docs/generate_engine_enhancement_summaries.py`. Do not edit this section by hand._
 
-## Engine patches (36)
+## Engine patches (37)
 
 | Package | State | Summary |
 | --- | --- | --- |
@@ -49,6 +49,7 @@ _Generated from package documentation and metadata by `tools/docs/generate_engin
 | [rad0036_prefill_governor](../../../../engines/radiance/patches/rad0036_prefill_governor/SUMMARY.md) | `validated` | `--prefill-governor SPEC` (serving v2 `prefill_governor`) chooses which waiting prompts may start prefilling and in what order prefill work is walked. `kind=arrival` (the empty spec) is the engine's own order; `kind=cap` is rad0034's concurrent long-prefill limit with rad0035's threshold; `kind=budget` holds the prompt left in flight within a factor of the largest request, with a reservation for a prompt waiting past `age_ms`. `order=remaining` and `age_ms` are rad0035's ordering, common to every kind. |
 | [rad0037_bf16_fp8_kv](../../../../engines/radiance/patches/rad0037_bf16_fp8_kv/SUMMARY.md) | `untested` | `--kv-cache-dtype bf16_fp8` stores a token's key as bf16 and its value as E4M3 (saturating, scale 1.0), 3 * head_dim bytes a token and head against 4 * head_dim for bf16 and 2 * head_dim for fp8. Keys keep bf16's quality; values take fp8's half size. It is served by libr4d's h256/gqa6 prefill (plain and KV-split) and decode kernels, a `kv_store` row and the fused `qk_norm_rope_gate_kv_store` row; the Qwen3.5 FP8 plugin declares it (`RAD_KVQ_B16F8`) and probes it for that geometry only. Other geometries, the e4m3 product legs (`prefill_fp8`), streaming and gfx11 non-native paths are refused at resolve or startup, never run on a wrong layout. |
 | [rad0038_bf16_i8_kv](../../../../engines/radiance/patches/rad0038_bf16_i8_kv/SUMMARY.md) | `untested` | `--kv-cache-dtype bf16_i8` stores a token's key as bf16 and its value as int8 with an f16 scale per 32 dims (the smallest f16 with 127 * scale >= the group's absmax; a zero group stores scale 0), 49 * head_dim / 16 bytes a token and head (784 at head_dim 256) against 4 * head_dim for bf16 and 3 * head_dim for `bf16_fp8`. It exists because the E4M3 value of `bf16_fp8` flips exact-copy tokens at long context (VTP43). It is served by libr4d's h256/gqa6 prefill (plain and KV-split) and decode kernels, a `kv_store` row and the fused `qk_norm_rope_gate_kv_store` row; the Qwen3.5 FP8 plugin declares it (`RAD_KVQ_B16I8`) and probes it for that geometry only. Other geometries, the e4m3 product legs, streaming and gfx11 non-native paths are refused at resolve or startup. |
+| [rad0039_moe_heat_observer](../../../../engines/radiance/patches/rad0039_moe_heat_observer/SUMMARY.md) | `untested` | Inactive observer-only patch (RHP02 slice A), experiment-only while untested. |
 
 ## Components (6)
 
