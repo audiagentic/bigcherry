@@ -8,4 +8,4 @@ backend = "agnostic"
 plan-ids = ["VTP42"]
 requires = []
 conflicts = []
-tags = ["optimization", "prefill"]
+tags = ["prefill"]
