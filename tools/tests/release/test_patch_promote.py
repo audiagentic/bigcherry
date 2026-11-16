@@ -173,6 +173,57 @@ class PatchPromoteTests(unittest.TestCase):
         self.assertEqual(recipes["experiment"]["demo"]["patches"], [])
         self.assertEqual(recipes["experiment"]["combo"]["patches"], ["1000_base"])
 
+    def test_diagnostic_tier_keeps_production_and_splits_mixed_patch_sets(self):
+        layout = engines.load(self.root, "radiance")
+        recipes_path = layout.recipes_path(self.root)
+        recipes_path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(_REPO / "engines/radiance/recipes.toml", recipes_path)
+
+        pp._update_diagnostic_recipes(self.root, layout, (
+            "rad0004_moe_remote_diagnostics", "rad0010_routing_evidence",
+        ))
+        parsed = tomllib.loads(recipes_path.read_text(encoding="utf-8"))
+        sets = parsed["patch-set"]
+        sources = parsed["source"]
+        self.assertEqual(sets["rad0004-diagnostic"]["patches"], ["rad0004_moe_remote_diagnostics"])
+        self.assertEqual(sets["rad0004-diagnostic"]["required-state"], "diagnostic")
+        self.assertEqual(sets["rad0010-diagnostic"]["patches"], ["rad0010_routing_evidence"])
+        self.assertEqual(sets["moe-remote-diag"]["patches"], ["rad0006_heat_freeze_diagnostic"])
+        self.assertEqual(sets["moe-remote-diag"]["required-state"], "untested")
+        self.assertEqual(sets["routing-evidence"]["patches"], [])
+        self.assertIn("rad0004-diagnostic", sources["radiance-diag"]["patch-sets"])
+        self.assertIn("rad0010-diagnostic", sources["radiance-routing-evidence"]["patch-sets"])
+        self.assertNotIn("rad0004-diagnostic", sources["radiance"]["patch-sets"])
+        self.assertNotIn("rad0010-diagnostic", sources["radiance"]["patch-sets"])
+        original = recipes_path.read_text(encoding="utf-8")
+        self.assertEqual(
+            pp._update_diagnostic_recipes(self.root, layout, ()) ,
+            recipes_path,
+        )
+        self.assertEqual(original, recipes_path.read_text(encoding="utf-8"))
+
+    def test_diagnostic_state_and_evidence_do_not_claim_ab_or_production(self):
+        info = pp._load_patch(self.root, self.layout, "1348_demo")
+        evidence = "Mechanics: patch tests pass\nActivation: own marker seen\n"
+        record = pp._profile_evidence(
+            self.root, self.layout, info, evidence, diagnostic=True,
+        )
+        self.assertEqual(record.tier, profile_evidence.DIAGNOSTIC_TIER)
+        self.assertEqual(set(record.checks), {"mechanics", "activation"})
+        self.assertEqual(record.models, ())
+        pp._set_state(info, target_state="diagnostic")
+        self.assertIn('state = "diagnostic"', (info.root / "patch.toml").read_text())
+        self.assertIn('STATE = "diagnostic"', (info.root / "patch.py").read_text())
+        self.assertIn("**Status:** diagnostic", (info.root / "SUMMARY.md").read_text())
+        pp._write_promotion_record(info, evidence, diagnostic=True)
+        self.assertIn("Tier: diagnostic", (info.root / "README.md").read_text())
+        with self.assertRaisesRegex(pp.PatchPromoteError, "Activation"):
+            pp._profile_evidence(self.root, self.layout, info, "Mechanics: passed",
+                                 diagnostic=True)
+        with self.assertRaisesRegex(pp.PatchPromoteError, "cannot be combined"):
+            pp.promote(self.root, "llamacpp", ("1348_demo",), "@" + str(self.evidence),
+                       diagnostic=True, default_on=True)
+
     def test_production_list_keeps_its_comments_and_layout(self):
         path = self.root / "config" / "recipes.toml"
         listed = (
@@ -251,7 +302,8 @@ class PatchPromoteTests(unittest.TestCase):
         self.addCleanup(lambda: shutil.rmtree(worktree, ignore_errors=True))
         seen = {}
 
-        def gate(root, layout, infos):
+        def gate(root, layout, infos, *, diagnostic=False):
+            self.assertFalse(diagnostic)
             # the gates see the candidate still unpromoted, with its evidence record already in the package
             seen["state"] = tomllib.loads((infos[0].root / "patch.toml").read_text(encoding="utf-8"))["state"]
             seen["record"] = profile_evidence.load(infos[0].root)

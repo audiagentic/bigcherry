@@ -58,7 +58,7 @@ VALIDATION_FRAMEWORK_VERSION = "2"
 # sessions with recorded results) but has not passed qualification, so it is
 # not "untested". It composes exactly like "untested" (experiments may select
 # it, qualification may still promote it; recipes requiring "validated" do not).
-STATES: tuple[str, ...] = ("validated", "rejected", "untested", "evaluated", "superseded")
+STATES: tuple[str, ...] = ("validated", "diagnostic", "rejected", "untested", "evaluated", "superseded")
 # Both are terminal/excluded from discovery (patch-rebase-check --all,
 # disposition coverage, composition prerequisites): "rejected" means the
 # patch failed our own validation as a candidate; "superseded" means it
@@ -66,6 +66,27 @@ STATES: tuple[str, ...] = ("validated", "rejected", "untested", "evaluated", "su
 # Kept distinct so a lifecycle/registry reader can tell "we rejected this"
 # from "this became unnecessary" instead of collapsing both into one code.
 RETIRED_STATES: tuple[str, ...] = ("rejected", "superseded")
+
+
+SOURCE_ALLOWED_STATES = {
+    "production": frozenset(("validated",)),
+    "diagnostic": frozenset(("validated", "diagnostic")),
+}
+EXPERIMENT_ALLOWED_STATES = frozenset(("validated", "diagnostic", "untested", "evaluated"))
+
+
+def where_it_builds(state: str) -> str:
+    """One lifecycle rule for source policy and reporting (before PRQ04 waivers)."""
+    if state not in STATES:
+        raise KeyError(state)
+    permitted = [
+        name for name, accepted in SOURCE_ALLOWED_STATES.items()
+        if state in accepted
+    ]
+    if state in EXPERIMENT_ALLOWED_STATES:
+        permitted.append("experiments")
+    return ", ".join(permitted) if permitted else "nowhere (retired)"
+
 PATCH_KINDS: tuple[str, ...] = ("framework", "diagnostic", "upstream-backport", "enhancement")
 PATCH_ORIGINS: tuple[str, ...] = ("local", "upstream-commit", "upstream-pr", "external-fork")
 PATCH_BACKENDS: tuple[str, ...] = ("hip", "vulkan", "agnostic")
