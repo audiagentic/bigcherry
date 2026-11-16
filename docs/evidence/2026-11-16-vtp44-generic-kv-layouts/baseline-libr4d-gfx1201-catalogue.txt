@@ -1,0 +1,1877 @@
+plugin  libr4d 0.5.0 (gfx1201)
+        the RDNA4 (gfx1201) kernel library: paged and dense attention, gated delta net, all-reduce over P2P or a host-memory mailbox, skinny and tiled quantised GEMM, and the rotate-and-quantise fusions
+
+op schemas (277)
+  embed_attn                     M head_dim gqa causal [max_seqlen] dtype [scale]
+                                   q:in k:in v:in cu_seqlens:in out:out
+  ministral_rope                 M head_dim n_head n_head_kv theta dtype [yarn_factor] [yarn_low] [yarn_high] [yarn_magnitude]
+                                   qkv:inout pos:in
+  pixtral_rope                   M head_dim n_head theta dtype
+                                   qkv:inout coord:in
+  pixtral_merge                  M n merge dtype
+                                   x:in coord:in y:out
+  position_scale                 M n original beta dtype
+                                   x:inout positions:in
+  rmsnorm                        M n eps dtype [wadd] [mult]
+                                   x:in w:w? y:out
+  rmsnorm_rows                   M n eps dtype [wadd] [mult]
+                                   x:in w:w? y:out
+  rmsnorm_p                      M n eps dtype
+                                   x:in y:out
+  add                            M n dtype [div]
+                                   a:in b:in y:out
+  mul                            M n dtype
+                                   a:in b:in y:out
+  mul_weight                     M n dtype [scalar]
+                                   x:in w:w y:out
+  mla_attn                       M latent_dim heads blocks block_size scale dtype
+                                   q:in kv:in bt:in length:in out:out
+  mla_attn_paged                 M heads latent_dim rope_dim block_size scale dtype
+                                   q:in q_rope:in? kv:in block_table:in seqused:in cu_seqlens:in gate:in? out:out
+  mla_project                    M heads head_dim latent_dim mode dtype
+                                   a:in b:w y:out
+  dsa_score                      M n heads blocks seqs dtype [row_part]
+                                   q:in q_scale:in gate:in k:in k_scale:in? bt:in cu:in nc:in score:out cu_part:out?
+  dsa_pool                       M n ratio dtype [block_size]
+                                   kg:in ape:w q:out scale:out page:in? cache:inout?
+  dsa_query                      M n dtype
+                                   x:in q:out scale:out
+  gemm_nt_f32                    M N K dtype
+                                   a:in b:w y:out
+  swiglu_step                    M n limit dtype
+                                   gate_up:in y:out
+  swiglu_clamped                 M n limit dtype
+                                   gate_up:in y:out
+  swiglu_clamped_quant_fp8       M n limit group dtype
+                                   gate_up:in q:out scale:out out_bf16:out?
+  silu_mul                       M n dtype
+                                   gate_up:in y:out
+  gelu_mul                       M n dtype
+                                   gate_up:in y:out
+  act_mul                        M n act dtype
+                                   a:in b:in y:out
+  seg_mean                       M n dtype
+                                   x:in cu_seqlens:in y:out
+  seg_softmax_pool               M n dtype
+                                   score:in v:in cu_seqlens:in y:out
+  seg_mean_bf16_sum              M n dtype
+                                   x:in cu_seqlens:in y:out
+  qk_norm_rope                   M head_dim n_head n_head_kv theta eps [scale] [mode] [rotary_dim] [wadd] [v_norm] [sections] [comps]
+                                   qkv:inout positions:in? q_w:w? k_w:w?
+  pool_rows                      M n k [mult] dtype
+                                   x:in y:out
+  pool_cols                      M n k [mult] dtype
+                                   x:in y:out
+  point_fourier                  M n freqs [pi] dtype
+                                   x:in y:out
+  sigmoid                        M n dtype
+                                   x:in y:out
+  relu                           M n dtype
+                                   x:in y:out
+  silu                           M n dtype
+                                   x:in y:out
+  gelu                           M n dtype
+                                   x:in y:out
+  clamp                          M n dtype
+                                   x:in lo:w hi:w y:out
+  conv2d                         M width cin cout kh kw stride pad [cu_div] [valid_stride] dtype [t_last] [act]
+                                   x:in w:w cu_seqlens:in valid:in? y:out b:w?
+  conv2d_unfold                  M width cin kh kw stride pad [cu_div] [valid_stride] [t_last] dtype
+                                   x:in cu_seqlens:in valid:in? y:out
+  conv1d_dw                      M n k [cu_div] dtype
+                                   x:in w:w cu_seqlens:in y:out b:w?
+  rel_sinusoid                   M n [max_timescale] dtype
+                                   y:out
+  seg_sinusoid                   M n period [max_timescale] [cu_div] dtype
+                                   cu_seqlens:in y:out
+  attn_local_rel                 M head_dim n_head left right softcap [cu_div] dtype
+                                   q:in k:in v:in relk:in pds:w cu_seqlens:in out:out
+  fill                           M n dtype [value]
+                                   y:out
+  logit_softcap                  M n cap dtype
+                                   x:in y:out
+  scale                          M n dtype
+                                   x:in s:w y:out
+  cast                           M n from to
+                                   x:in y:out
+  gather_rows                    M n dtype
+                                   x:in idx:in y:out
+  scatter_rows                   M n dtype
+                                   v:in idx:in x:inout
+  rope                           M head_dim n_head n_head_kv theta scale mode [rotary_dim] [sections] [yarn_factor] [yarn_low] [yarn_high] [yarn_magnitude] [ladder] [llama3_factor] [llama3_low] [llama3_high] [llama3_orig]
+                                   qkv:inout positions:in
+  rope_rows                      M head_dim n_head n_head_kv theta scale mode [rotary_dim] [sections] [yarn_factor] [yarn_low] [yarn_high] [yarn_magnitude] [ladder] [llama3_factor] [llama3_low] [llama3_high] [llama3_orig]
+                                   qkv:inout positions:in
+  layernorm                      M n eps dtype
+                                   x:in w:w b:w? y:out
+  grid_embed                     M n side dtype
+                                   x:inout table:w coord:in
+  grid_embed_aa                  M n side dtype
+                                   x:inout table:w coord:in
+  gemm_nt_bias                   M N K dtype [act]
+                                   a:in b:w bias:w res:in? y:out
+  kv_store                       M head_dim n_head_kv block_size kv_dtype [k_scale] [v_scale]
+                                   k:in v:in slot_mapping:in kv_cache:inout
+  kv_store_streamed              M head_dim n_head_kv block_size kv_dtype [k_scale] [v_scale]
+                                   k:in v:in slot_mapping:in kv_cache:inout res:in host:inout
+  embed_lookup                   M n_embd n_vocab dtype [vocab_offset] [wscale] [mult]
+                                   tokens:in wte:w x:out
+  embed_lookup_q                 M n_embd n_vocab dtype [vocab_offset] [wscale]
+                                   tokens:in wte:w scale:w? x:out ahead:in?
+  ple_gate                       M n hc eps dtype [wadd] [gate_eps]
+                                   k:in q:in v:in w_key:w w_query:w w_conv:w gv:out gvn:out
+  ple_conv                       M n width dilation dtype
+                                   x:in w:w conv_state:inout cu:in resid:in? cache_idx:in? has_init:in? num_accepted:in? y:out
+  causal_conv1d                  M n width dtype
+                                   x:in w:w conv_state:inout cu:in cache_idx:in? has_init:in? num_accepted:in? y:out
+  ngram_ids                      M heads ngram eos
+                                   tok:in state:inout cu:in mult:w vocab_sizes:w offsets:w cache_idx:in? has_init:in? num_accepted:in? ids:out ahead_ids:out?
+  logits_gemm_vocab              M n_vocab n_embd dtype vocab_offset rows0 [rows1] [rows2] [rows3]
+                                   x:in w0:w s0:w ids0:w w1:w? s1:w? ids1:w? w2:w? s2:w? ids2:w? w3:w? s3:w? ids3:w? vrow:w logits:out
+  logits_gemm                    M n_vocab n_embd dtype
+                                   x:in lm_head:w logits:out
+  sample_penalties               M n_vocab [vocab_off]
+                                   logits:inout params:in history:in
+  sample_dry                     M n_vocab [vocab_off]
+                                   logits:inout params:in history:in breakers:in?
+  sample_ngram_ban               M n_vocab [vocab_off]
+                                   logits:inout params:in history:in ngram:in whitelist:in?
+  sample_temp                    M n_vocab
+                                   logits:inout params:in
+  sample_mask                    M n_vocab
+                                   logits:inout params:in bitmask:in
+  sample_topk                    M n_vocab [vocab_off]
+                                   logits:in params:in cand_idx:out cand_val:out pairs:out?
+  sample_argmax                  M n_vocab
+                                   logits:in params:in token:out
+  sample_logprobs                M n_vocab k [vocab_off]
+                                   logits:in params:in stats:out
+  sample_topp                    M n_cand
+                                   cand_idx:inout cand_val:inout params:in
+  sample_minp                    M n_cand
+                                   cand_idx:inout cand_val:inout params:in
+  sample_typical                 M n_cand
+                                   cand_idx:inout cand_val:inout params:in
+  sample_xtc                     M n_cand
+                                   cand_idx:inout cand_val:inout params:in
+  sample_pick                    M n_cand
+                                   cand_idx:in cand_val:in params:in token:out
+  sample_merge_topk              M n_cand
+                                   gathered:in params:in cand_idx:out cand_val:out
+  attn_paged                     q_len head_dim gqa block_size causal window q_dtype kv_dtype [scale] [max_ctx] [n_head] [max_seqs] [prefill_fp8]
+                                   q:in kv_cache:in block_table:in seqused:in k_descale:in? v_descale:in? cu_seqlens:in? out:out
+  attn_paged_anchor_window       q_len head_dim gqa block_size causal window q_dtype kv_dtype [scale] [max_ctx] [n_head] [max_seqs] [prefill_fp8]
+                                   q:in kv_cache:in block_table:in seqused:in k_descale:in? v_descale:in? cu_seqlens:in? out:out
+  attn_paged_qrow                q_len head_dim gqa block_size causal window q_dtype kv_dtype [scale] [max_ctx] [n_head] [max_seqs] [prefill_fp8]
+                                   q:in kv_cache:in block_table:in seqused:in k_descale:in? v_descale:in? cu_seqlens:in? out:out
+  attn_paged_ahead               q_len head_dim gqa block_size causal window q_dtype kv_dtype [scale] [max_ctx] [n_head] [max_seqs] [prefill_fp8]
+                                   q:in kv_cache:in block_table:in seqused:in k_descale:in? v_descale:in? cu_seqlens:in? out:out
+  attn_paged_qrow_ahead          q_len head_dim gqa block_size causal window q_dtype kv_dtype [scale] [max_ctx] [n_head] [max_seqs] [prefill_fp8]
+                                   q:in kv_cache:in block_table:in seqused:in k_descale:in? v_descale:in? cu_seqlens:in? out:out
+  attn_paged_qrow_tree           q_len head_dim gqa block_size causal window q_dtype kv_dtype [scale] [max_ctx] [n_head] [max_seqs] [prefill_fp8]
+                                   q:in kv_cache:in block_table:in seqused:in k_descale:in? v_descale:in? cu_seqlens:in? out:out spec_parent:in
+  attn_paged_gate_quant          q_len head_dim gqa block_size causal window q_dtype kv_dtype [scale] [max_ctx] [n_head] [max_seqs] group act
+                                   q:in kv_cache:in block_table:in seqused:in k_descale:in? v_descale:in? cu_seqlens:in? out:out gate:in q8:out q8_scale:out
+  attn_dense                     M head_dim gqa causal dtype [scale] [max_seqlen] [window] [cu_div] [block] [window_right]
+                                   q:in k:in v:in cu_seqlens:in out:out
+  attn_cross                     M head_dim gqa causal dtype [scale]
+                                   q:in k:in v:in cu_seqlens:in cu_k:in out:out
+  attn_na3d                      M head_dim kt kh kw dtype [scale]
+                                   q:in k:in v:in geom:in out:out
+  sam_attn                       M head_dim n_head grid_h grid_w window scale dtype
+                                   q:in k:in v:in cu_seqlens:in out:out rel_pos_h:w rel_pos_w:w
+  qk_norm_rope_gate              M head_dim n_head n_head_kv rot q_dtype [eps] [wadd] [cs_f32] [pos_i64]
+                                   q_gate:in? k:in cos_sin:in positions:in q_w:w? k_w:w q_out:out? k_out:out gate_out:out?
+  qk_norm_rope_gate_kv_store     M head_dim n_head n_head_kv rot q_dtype [eps] [wadd] [cs_f32] [pos_i64] block_size kv_dtype [k_scale] [v_scale]
+                                   q_gate:in? k:in cos_sin:in positions:in q_w:w? k_w:w q_out:out? k_out:out gate_out:out? v:in slot_mapping:in kv_cache:inout
+  qk_norm_rope_gate_kv_store_streamed M head_dim n_head n_head_kv rot q_dtype [eps] [wadd] [cs_f32] [pos_i64] block_size kv_dtype [k_scale] [v_scale]
+                                   q_gate:in? k:in cos_sin:in positions:in q_w:w? k_w:w q_out:out? k_out:out gate_out:out? v:in slot_mapping:in kv_cache:inout res:in host:inout
+  rope_table                     M rot theta scale dtype [yarn_factor] [yarn_low] [yarn_high] [yarn_magnitude] [head_dim] [ladder]
+                                   positions:in cos_sin:out
+  gdn_conv_prep                  M head_k head_v chunk conv_width [l2_eps] [softplus_thr]
+                                   x:in w:w b:w? A_log:w dt_bias:w conv_state:inout cu:in a:in? b_gate:in? cache_idx:in? has_init:in? q:out k:out v:out g:out beta:out
+  gdn_conv_update                q_len head_k head_v conv_width [max_query_len]
+                                   x:in w:w b:w? conv_state:inout state_idx:in num_accepted:in cu:in q:out k:out v:out
+  gdn_kkt_solve                  M head_k chunk
+                                   k:in beta:in g:in cu:in A:out
+  gdn_chunk_scan                 M head_k head_v chunk [scale] [state_fp16]
+                                   q:in k:in v:in A:in g:in beta:in h0:in? cu:in o:out ht:out? state_idx:in?
+  gdn_recurrent_update           q_len head_k head_v [n_head_v] [scale] [eps] [l2_eps] [softplus_thr] [act] [state_fp16] [state_form]
+                                   q:in k:in v:in a:in b:in A_log:w dt_bias:w state:inout state_idx:in num_accepted:in cu:in z:in? norm_w:w? o:out o_q:out? o_scale:out?
+  gdn_conv_recurrent_update      q_len head_k head_v conv_width [n_head_v] [scale] [eps] [l2_eps] [softplus_thr] [act] [state_fp16] [state_form]
+                                   x:in conv_w:w conv_b:w? conv_state:inout conv_idx:in a:in b:in A_log:w dt_bias:w state:inout state_idx:in num_accepted:in cu:in z:in norm_w:w o:out o_q:out? o_scale:out?
+  gdn_conv_recurrent_update_had  q_len head_k head_v conv_width [n_head_v] [scale] [eps] [l2_eps] [softplus_thr] [act] [state_fp16] [state_form]
+                                   x:in conv_w:w conv_b:w? conv_state:inout conv_idx:in a:in b:in A_log:w dt_bias:w state:inout state_idx:in num_accepted:in cu:in z:in norm_w:w o:out o_q:out o_scale:out
+  hc_enter                       M n hc dtype
+                                   x:in h:out
+  mhc_pre                        M n hc iterations eps hc_eps dtype
+                                   h:in fn:w scale:w base:w x:out post:out comb:out
+  mhc_pre_partial                M n hc chunk first chunks dtype
+                                   h:in fn:w part:out
+  mhc_pre_finish                 M n hc iterations eps hc_eps chunk dtype
+                                   part:in h:in scale:w base:w x:out post:out comb:out
+  mhc_post                       M n hc dtype
+                                   x:in h:in post:in comb:in out:out
+  mhc_contract                   M n hc dtype
+                                   h:in x:out
+  kda_update                     M heads head_k head_v lower_bound scale l2_eps mode dtype [state_form]
+                                   q:in k:in v:in a:in b:in A_log:w dt_bias:w state:inout state_idx:in cu:in num_accepted:in? has_init:in? o:out
+  hc_read                        M n hc lowrank eps dtype [wadd] [inject] [group] [rotate] [mix]
+                                   h:in w:w mix_down:w mix_up:w inject_w:w? x:out inj:out? q:out? scale:out? rq:out? rscale:out?
+  hc_project                     M n hc scale dtype
+                                   h:inout v:in on:in
+  hc_write                       M n hc dtype
+                                   y:in inj:in h:inout
+  mtp_enter                      M n hc eps dtype [wadd] [ngroup] [fc]
+                                   h:in e:in w_h:w w_e:w fc_h:w fc_e:w x:out
+  gdn_gated_rmsnorm              M channels eps act
+                                   x:in z:in w:w o:out
+  dflash_conv                    T hidden_size taps group_size NG block_size dtype
+                                   x:in delta:in base:w out:out
+  dflash_select                  M steps top_k rank n_vocab [anchor_stride] dtype
+                                   cand:in unary:in hp:in? anchor:in pred:w succ:w tokens:out
+  dflash_markov_greedy           M steps rank n_vocab [anchor_stride] dtype
+                                   logits:in anchor:in pred:w succ:w tile_scores:out tile_tokens:out tokens:out
+  dflash_markov_greedy_f32       M steps rank n_vocab [anchor_stride] dtype
+                                   logits:in anchor:in pred:w succ:w tile_scores:out tile_tokens:out tokens:out
+  dflash_tree                    M steps top_k rank n_vocab [anchor_stride] nodes [temp] dtype
+                                   cand:in unary:in hp:in? anchor:in pred:w succ:w tokens:out parents:out
+  all_reduce                     world_size numel dtype exact [min_bytes] [hops] [overlap]
+                                   x:inout y:out?
+  all_gather                     world_size numel dtype [row]
+                                   x:in y:out
+  gemm_nt                        M N K dtype
+                                   a:in b:w y:out
+  gemm_nt_q                      M N K group dtype [pb1] [pb2] [split_n] [w_rb]
+                                   a:in a_scale:in? b:w b_scale:w y:out a_sum:in? b_ref:w?
+  gemm_nt_q_short                M N K group dtype [pb1] [pb2] [split_n] [w_rb]
+                                   a:in a_scale:in? b:w b_scale:w y:out a_sum:in? b_ref:w?
+  gemm_nt_q_bias                 M N K group dtype
+                                   a:in a_scale:in b:w b_scale:w bias:w y:out
+  dequant_w4                     N K group dtype twos
+                                   wq:w ws:w y:out
+  scale_rows                     M n act dtype
+                                   x:in s:in add:in? y:out
+  router_sigmoid_group_topk      M n_expert top_k n_group topk_group norm route_scale dtype
+                                   logits:in bias:w ids:out weights:out
+  router_sigmoid_topk            M n_expert top_k norm route_scale dtype
+                                   logits:in bias:w ids:out weights:out
+  router_sigmoid_topk_scatter    M n_expert [n_local] top_k norm route_scale dtype [expert_base] [protect]
+                                   logits:in bias:w ids:out weights:out sorted_tok:out expert_offset:out expert_count:out gate:out? inverse:out?
+  router_topk                    M n_expert top_k norm dtype
+                                   logits:in expert_ids:out expert_w:out
+  router_topk_scatter            M n_expert [n_local] top_k norm dtype [expert_base] [protect]
+                                   logits:in expert_ids:out expert_w:out sorted_tok:out expert_offset:out expert_count:out
+  router_gemm_topk_scatter       M K n_expert [n_local] top_k norm dtype [expert_base] [protect]
+                                   a:in b:w gate_b:w? logits:out expert_ids:out expert_w:out sorted_tok:out expert_offset:out expert_count:out gate:out?
+  moe_scatter                    M n_expert top_k [expert_base] [protect]
+                                   expert_ids:in sorted_tok:out expert_offset:out expert_count:out
+  moe_scatter_inv                M n_expert top_k [expert_base] [protect]
+                                   expert_ids:in sorted_tok:out expert_offset:out expert_count:out inverse:out
+  moe_gather_inv                 M n top_k dtype [act]
+                                   y_expert:in expert_w:in inverse:in shared:in? shared_gate:in? y:out
+  moe_gemm                       M N K n_expert top_k a_order dtype
+                                   a:in w:in sorted_tok:in expert_offset:in y:out
+  moe_gemm_q                     M N K n_expert top_k group a_order dtype [N_odd] [K_odd] [parts]
+                                   a:in a_scale:in? w:in w_scale:in sorted_tok:in expert_offset:in w_odd:in w_odd_scale:in y:out
+  moe_gemm_q_mod4                M N K n_expert top_k group a_order dtype [N_1] [K_1] [N_2] [K_2] [N_3] [K_3] [parts]
+                                   a:in a_scale:in? w:in w_scale:in sorted_tok:in expert_offset:in w_1:in w_1_scale:in w_2:in w_2_scale:in w_3:in w_3_scale:in y:out
+  moe_gather                     M n top_k dtype [act]
+                                   y_expert:in expert_w:in sorted_tok:in shared:in? shared_gate:in? y:out
+  row_topk                       M N R [vocab_off] dtype
+                                   x:in idx:out val:out pairs:out?
+  row_topk_merge                 M R world_size dtype
+                                   gathered:in idx:out val:out
+  logit_rerank                   M R n_vocab n_embd [vocab_off] dtype
+                                   x:in head:w idx_in:in idx:out val:out pairs:out?
+  rmsnorm_quant_fp8              M n eps group dtype [wadd]
+                                   x:in residual:inout? w:w q:out scale:out out_bf16:out?
+  rmsnorm_had_quant_i8g          M n eps group dtype [wadd]
+                                   x:in residual:inout? w:w q:out scale:out out_bf16:out?
+  rmsnorm_quant_i8               M n eps dtype [wadd]
+                                   x:in residual:inout? w:w q:out scale:out out_bf16:out? w_post:w? scalar:w?
+  rmsnorm_quant_i8g              M n eps dtype [wadd]
+                                   x:in residual:inout? w:w q:out scale:out out_bf16:out? w_post:w? scalar:w?
+  add_rmsnorm                    M n eps dtype [wadd] [mult]
+                                   x:inout a:in w:w y:out
+  kv_len_trim                    trim max_seqs
+                                   seqused:in tail:in out:out
+  prefetch                       bytes
+                                   w:w
+  qkv_norm_rope                  M head_dim n_head n_head_kv theta eps [scale] [mode] [rotary_dim] [ladder] [wadd] [v_from_k] [v_norm] dtype
+                                   q:inout k:inout v:inout positions:in q_w:w k_w:w
+  qkv_norm_rope_kv_store         M head_dim n_head n_head_kv theta eps [scale] [mode] [rotary_dim] [ladder] [wadd] [v_from_k] dtype [v_norm] block_size kv_dtype [k_scale] [v_scale]
+                                   q:inout k:inout v:inout positions:in q_w:w k_w:w slot_mapping:in kv_cache:inout
+  gelu_mul_quant_i8              M n dtype
+                                   gate_up:in q:out scale:out out_bf16:out?
+  gelu_mul_quant_i8g             M n dtype
+                                   gate_up:in q:out scale:out out_bf16:out?
+  ar_rmsnorm_quant_i8            M n eps world_size dtype [wadd] [sp]
+                                   x:inout residual:inout? w:w q:out scale:out out_bf16:out? w_post:w? scalar:w?
+  ar_rmsnorm_quant_i8g           M n eps world_size dtype [wadd]
+                                   x:inout residual:inout? w:w q:out scale:out out_bf16:out? w_post:w? scalar:w?
+  gated_quant_fp8                M n group dtype [act]
+                                   gate_up:in q:out scale:out out_bf16:out?
+  gated_had_quant_fp8            M n group dtype [act]
+                                   gate_up:in q:out scale:out out_bf16:out?
+  gated_had_quant_i8g            M n group dtype [act]
+                                   gate_up:in q:out scale:out out_bf16:out?
+  gemm_nt_q_gated                M N K group dtype act
+                                   a:in a_scale:in b:w b_scale:w q:out scale:out out_bf16:out?
+  gemm_nt_q_gated_wide           M N K group dtype act
+                                   a:in a_scale:in b:w b_scale:w q:out scale:out out_bf16:out?
+  gemm_nt_q_gated_mx             M N K group dtype act
+                                   a:in a_scale:in b:w b_scale:w b_ref:w q:out scale:out out_bf16:out?
+  gate_quant_fp8                 M n group dtype [act]
+                                   gate:in x:in q:out scale:out out_bf16:out?
+  gate_had_quant_i8g             M n group dtype [act]
+                                   gate:in x:in q:out scale:out out_bf16:out?
+  quant_act_fp8                  M n group dtype
+                                   x:in q:out scale:out
+  quant_act_i8g                  M n group dtype
+                                   x:in q:out scale:out
+  had_quant_act_i8g              M n group dtype
+                                   x:in q:out scale:out
+  givens_rotate                  M n group dtype stages parts
+                                   x:in pairs:w angle:w rscale:w y:out
+  givens_dense_quant             M n group dtype parts out
+                                   x:in tdense:w rscale:w q:out scale:out
+  had_quant_act_fp8              M n group dtype
+                                   x:in q:out scale:out
+  qsa_work                       M n ratio ring seqs work dtype
+                                   k:in pos:in cu:in state:in sidx:in bt:in rope:in? stage:out page:out bpos:out nc:out
+  qsa_tail_store                 M n ratio ring seqs dtype
+                                   k:in pos:in cu:in state:inout sidx:in
+  qsa_select                     M blocks topk ratio seqs [signed]
+                                   score:in bt:in nc:in pos:in cu:in sel:out nsel:out seqused:out
+  kv_resolve                     M blocks slots sel_pitch block_bytes
+                                   sel:inout nsel:in res:inout slot_block:inout slot_state:inout ctl:inout host:in kv_cache:inout
+  qsa_score                      M n heads blocks seqs dtype
+                                   q:in bk:in bt:in cu:in nc:in score:out
+  qsa_block_key                  M n ratio rotary_dim [pos0] [block_size] eps theta [scale] [wadd] dtype [mode] [sections] [yarn_factor] [yarn_low] [yarn_high] [yarn_magnitude]
+                                   k:in w:w page:in? pos:in? out:out
+  gram_accum                     M n group dtype [upper]
+                                   a:in a_scale:in? h:inout
+  sample_chain                   M n_vocab [temp] [p] [min_p] [k]
+                                   logits:in query:in? u:in draw:out
+  quant_act_i8                   M n group dtype
+                                   x:in q:out scale:out asum:out?
+  had_quant_act_i8               M n group dtype
+                                   x:in q:out scale:out
+  rmsnorm_had_quant_i8           M n eps group dtype [wadd]
+                                   x:in residual:inout? w:w q:out scale:out out_bf16:out?
+  gated_had_quant_i8             M n group dtype [act] [mode]
+                                   a:in b:in? q:out scale:out
+  gdn_gated_norm_had_quant_i8    M n head_dim group eps dtype [zgrp] [zblk]
+                                   x:in z:in w:w q:out scale:out
+  ar_ln_had_quant_i8             M n eps group world_size dtype [wadd] [wire]
+                                   x:in residual:inout? w:w q:out scale:out out_bf16:out?
+  ar_rmsnorm_post_quant_fp8      M n eps group world_size dtype [wadd] [wire]
+                                   x:inout residual:inout w:w q:out scale:out out_bf16:out? w_post:w
+  ar_rmsnorm_quant_fp8           M n eps group world_size dtype [wadd] [wire]
+                                   x:inout residual:inout? w:w q:out scale:out out_bf16:out?
+  ar_rmsnorm_had_quant_i8g       M n eps group world_size dtype [wadd] [wire]
+                                   x:inout residual:inout? w:w q:out scale:out out_bf16:out?
+  ar_hc_write                    M n hc world_size dtype [wire]
+                                   y:inout inj:in h:inout
+  ar_gather_hc_write             M n hc top_k world_size dtype [act] [wire]
+                                   y_expert:in expert_w:in sorted_tok:in shared:in? shared_gate:in? y:inout inj:in h:inout
+  pair_argmax                    M n dtype
+                                   pairs:in idx:out val:out?
+  norm_add_norm                  M n eps dtype
+                                   a:in w_a:w x:inout w_y:w y:out
+  norm_add_norm_route            M n eps dtype mult group
+                                   a:in w_a:w x:inout w_y:w y:out w_r:w r:out w_e:w q:out qs:out
+  join_add_scale                 M n eps dtype
+                                   d:in w_d:w r:in w_r:w w_j:w x:inout s:w w_n:w? y:out?
+  expert_scale                   M n_expert top_k dtype
+                                   ids:in w_e:w ew:inout
+  lora_shrink                    M K R S [group] dtype
+                                   a:in a_scale:in? slot:in lora_a:in t:out
+  lora_expand                    M N R S dtype
+                                   t:in slot:in lora_b:in scale:in y:inout
+  lora_expand_mm                 M N R S dtype
+                                   t:in slot:in lora_b:in scale:in y:inout
+  ln_mod                         M n eps dtype
+                                   x:in s:in cu_seqlens:in y:out
+  ln_mod_quant_fp8               M n eps group gated dtype
+                                   y:in? g:in? s:in cu_seqlens:in x:inout q:out scale:out z:out?
+  table_add                      M n L dtype
+                                   x:in t:w y:out
+  chan_stats                     M n mode [var] [eps] dtype
+                                   x:in mean:w s:w y:out
+  mix_rows                       M n k dtype
+                                   x:in w:w y:out
+  gate_add                       M n dtype [act]
+                                   y:in g:in cu_seqlens:in x:inout
+  timestep_embed                 M n scale max_period [round] [clamp_min] [curve] dtype
+                                   t:in y:out table:w?
+  gather_rows2                   M n dtype
+                                   a:in b:in idx:in y:out
+  lane_gather                    M n stride dtype
+                                   src:in lane:in cu_seqlens:in y:out
+  lane_store                     M n stride dtype
+                                   src:in lane:in dst:inout
+  randn_lanes                    M n stride dtype
+                                   flags:in seed:in lane:in cu_seqlens:in dst:inout
+  flow_euler                     M n stride dtype
+                                   v:in sigma:in sigma_next:in cfg:in pair:in lane:in flags:in seed:in cu_seqlens:in inp_lat:in? inp_mask:in? state:inout preview:inout?
+  kd_input                       M n stride dtype
+                                   sigma:in pair:in lane:in flags:in seed:in cu_seqlens:in state:inout y:out
+  kd_step                        M n stride pred dtype
+                                   out:in sigma:in sigma_next:in sigma_prev:in cfg:in pair:in lane:in flags:in seed:in sampler:in step:in cu_seqlens:in state:inout hist:inout preview:inout?
+  chan_affine                    M n mul add mode dtype [round]
+                                   x:in y:out
+  conv2d_nhwc                    M cin cout k stride pad up dtype
+                                   x:in w:w b:w y:out
+  im2col_nhwc                    M cin k stride pad up dtype
+                                   x:in y:out
+  l2norm_chan                    M n act dtype
+                                   x:in gamma:w y:out
+  d2s_add                        M cin cout ft dtype
+                                   x:in y:inout
+  s2d_avg_add                    M cin cout ft dtype
+                                   x:in y:inout
+  to_rgba8                       M n dtype
+                                   x:in y:out
+  gelu_tanh                      M n dtype
+                                   x:in y:out
+  gelu_quick                     M n dtype
+                                   x:in y:out
+  scatter_add_rows               M n dtype
+                                   v:in idx:in x:inout
+  attn_prefix_self               q_len head_dim gqa block_size causal q_dtype kv_dtype [scale] [max_ctx] [n_head] [max_seqs] [qk] [pv]
+                                   q:in k:in v:in kv_cache:in? block_table:in? seqused:in? cu_seqlens:in k_descale:in? v_descale:in? k_i8:in? k_scale:in? out:out v_scale:in?
+  conv1d                         M cin cout k dil [act] dtype [causal] [stride] [pad] [cu_div]
+                                   x:in w:w cu_seqlens:in res:in? y:out b:w?
+  conv_t1d                       M cin cout stride dtype [pad] [k]
+                                   x:in w:w b:w cu_seqlens:in y:out
+  snake                          M n dtype [log]
+                                   x:in alpha:w y:out beta:w?
+  cfg_topk_sample                M n_vocab k rep [cond_k] cfg [temp] stream dtype [sup_lo] [sup_hi] [penalty] [top_p]
+                                   logits:in seed:in frame:in ids:out cfg:in? lane:in? hist:inout?
+  rvq_embed                      M n_embd n_codes vocab off0 scale dtype [round] [clamp]
+                                   codes:in t0:w t1:w y:out
+  vq_encode                      M n dim bins dtype
+                                   x:inout in_w:w in_b:w cb:w out_w:w out_b:w codes:out
+  frame_mix_store                M n_embd L stride [rep] dtype
+                                   hid:in logits:w scale:w lane:in frame:in status:in dst:inout
+  end_status                     M end rep
+                                   ids:in lane:in status:inout
+  ras_pick                       M win lo hi [rep] [clear]
+                                   first:in alt:in lane:in hist:inout ids:out
+  frame_store                    M n_codes stride [rep] [skip]
+                                   codes:in lane:in frame:in status:in dst:inout
+  resample_nearest               M n dtype
+                                   x:in y:out
+  fourier_embed                  M n [round] dtype
+                                   t:in w:w y:out
+  win_input                      M n_lat n_zero n_cond stride dtype
+                                   lat:in cond:in lat_cu:in win_lane:in pair:in y:out
+  win_prep                       M n stride ov dtype
+                                   flags:in t:in seed:in win_index:in win_lane:in pair:in lat_cu:in prev:in noise:inout lat:inout
+  win_finish                     M n n_cond stride ov dtype
+                                   flags:in pair:in win_lane:in lat_cu:in cond:in lat:inout prev:inout prev_cond:inout
+  chan_split                     M n parts dtype
+                                   x:in y:out
+  interleave2                    M dtype
+                                   a:in b:in y:out
+  iota                           M start step [period]
+                                   y:out
+  cu_repeat                      M mult
+                                   len:in y:out
+  int_affine                     M src mul add
+                                   x:in y:out
+  sub_i32                        M
+                                   x:in s:in y:out
+  snake_aa                       M n ratio k [log] dtype
+                                   x:in alpha:w beta:w f_up:w f_down:w cu_seqlens:in y:out
+  rms_mod                        M n eps [gated] dtype [wadd] [norm_once] [norm]
+                                   y:in? g:in? s:in w:w? cu_seqlens:in x:inout z:out colmap:in?
+  rms_mod_quant_fp8              M n eps group gated dtype [wadd] [norm_once] [norm]
+                                   y:in? g:in? s:in w:w? cu_seqlens:in x:inout q:out scale:out z:out? colmap:in?
+  rms_mod_quant_i8               M n eps group gated dtype [wadd] [norm_once] [norm]
+                                   y:in? g:in? s:in w:w? cu_seqlens:in x:inout q:out scale:out z:out? colmap:in?
+  flow_x0_step                   M n dtype
+                                   v:in t:in sigma:in sigma_next:in x:inout
+  flow_res_multistep             M n dtype
+                                   v:in x0:inout sigma:in r:in hb1:in hb2:in order:in x:inout
+  patch_unfold                   M C pt ph pw mul add dtype
+                                   x:in geom:in y:out
+  vtile_gather                   M n tile overlap frames period n_reg dtype
+                                   x:in reg:w geom:in y:out
+  vtile_stitch                   M tile overlap scale pt skip keep blend period mean std
+                                   x:in geom:in prev:inout y:out
+  vtile_plan                     M tile overlap ratio
+                                   geom:in y:out
+  vtile_crop                     M tile overlap ratio dtype
+                                   x:in geom:in y:out
+  vtile_join                     M tile overlap n dtype
+                                   x:in geom:in y:out
+  grid_pos3                      M T H W period scale
+                                   y:out
+  conv3d_ndhwc                   M cin cout k kt dtype [stride] [stride_t] [causal] [pad] [reflect] [tpad] [tpre]
+                                   x:in w:w b:w geom:in res:in? y:out
+  group_norm                     M n groups eps act dtype
+                                   x:in w:w b:w mod:in? stats:inout y:out
+  tconv_dw                       M n k dtype
+                                   x:in w:w b:w geom:in y:out
+  resize_bilinear                M n dtype
+                                   x:in geom:in y:out
+  patch_fold                     M C pt ph pw mul add dtype
+                                   x:in geom:in y:out
+  flow_renoise                   M n stream dtype
+                                   sigma:in seed:in x:inout
+  cond_aug                       M n stream aug dtype
+                                   seed:in x:inout
+  rope_split                     M n_head head_dim dim n_dims theta max [head0] dtype
+                                   x:inout positions:in
+  head_gate                      M n_head head_dim dtype
+                                   g:in x:inout
+  ltx_guide                      M n dtype
+                                   vc:in vu:in? vs:in? vm:in? scales:in sched:in stats:inout x:inout
+  pixel_norm                     M n eps form [act] [ileave] dtype [mult]
+                                   x:in y:out
+  d2s3d                          M C st sh sw [drop] dtype
+                                   x:in geom:in y:out
+  s2d3d                          M C st sh sw [tpre] [group] mode [add] dtype
+                                   x:in geom:in y:inout
+  pix_patch                      M p C [order] dtype
+                                   x:in y:out
+  vol_index                      M
+                                   geom:in y:out
+  tile_grid                      M tile stride [rule] [min] [tile_t] [stride_t] [min_t] [tail]
+                                   geom:in y:out
+  tile_crop                      M C dtype
+                                   x:in geom:in box:in y:out
+  tile_stitch                    M tile stride [rule] [min] [tile_t] [stride_t] [min_t] scale [scale_t] p C [order] dtype
+                                   x:in geom:in first:in y:out
+  stft_logmel                    M hop nfft n_mel ch dtype
+                                   x:in basis:w mel:w y:out
+  bwe_up                         M ratio ch dtype
+                                   x:in res:in y:out
+  vsa_select                     M head_dim tile_t tile_h tile_w patch sparsity [scale]
+                                   q:in k:in v:in? segs:in geom:in sel:out coarse:out?
+  attn_vsa                       M head_dim tile_t tile_h tile_w patch sparsity [scale] [qk] [pv]
+                                   q:in k:in v:in segs:in geom:in sel:in coarse:in? gate:in? out:out k_i8:in? k_scale:in? v_scale:in?
+  quant_cols_fp8                 M n dtype
+                                   x:in y:out scale:out
+
+kernels (595)
+  gemm_bf16_pixtral_patch                      op=gemm_nt                      fam=gemm    prio=10  dom=device
+        dtype in {bf16}  K == 588  M >= 1  M <= 2147483647  N >= 1  N <= 2147483647  
+  position_scale_bf16                          op=position_scale               fam=attn    prio=50  dom=device scratch
+        dtype in {bf16}  M >= 1  M <= 2147483647  
+  pixtral_merge_bf16                           op=pixtral_merge                fam=vision  prio=50  dom=device scratch
+        dtype in {bf16}  M >= 1  M <= 2147483647  merge == 2  
+  ministral_rope_h64_bf16                      op=ministral_rope               fam=attn    prio=50  dom=device init scratch
+        dtype in {bf16}  M >= 1  M <= 2147483647  head_dim == 64  
+  ministral_rope_h128_bf16                     op=ministral_rope               fam=attn    prio=50  dom=device init scratch
+        dtype in {bf16}  M >= 1  M <= 2147483647  head_dim == 128  
+  pixtral_rope_h64_bf16                        op=pixtral_rope                 fam=attn    prio=50  dom=device init scratch
+        dtype in {bf16}  M >= 1  M <= 2147483647  head_dim == 64  
+  pixtral_rope_h128_bf16                       op=pixtral_rope                 fam=attn    prio=50  dom=device init scratch
+        dtype in {bf16}  M >= 1  M <= 2147483647  head_dim == 128  
+  embed_attn_h64_bf16                          op=embed_attn                   fam=attn    prio=50  dom=device scratch
+        dtype in {bf16}  M >= 1  M <= 2147483647  head_dim == 64  causal == 0  
+  embed_attn_h128_bf16                         op=embed_attn                   fam=attn    prio=50  dom=device scratch
+        dtype in {bf16}  M >= 1  M <= 2147483647  head_dim == 128  causal == 0  
+  embed_lookup_bf16                            op=embed_lookup                 fam=vocab   prio=50  dom=device layout
+        dtype in {bf16}  
+  embed_lookup_iqr                             op=embed_lookup                 fam=vocab   prio=50  dom=device layout relayout
+        dtype in {bf16}  
+  embed_lookup_q_bf16                          op=embed_lookup_q               fam=vocab   prio=50  dom=device layout
+        dtype in {bf16}  
+  ple_gate_bf16                                op=ple_gate                     fam=norm    prio=50  dom=device
+        dtype in {bf16}  n >= 1  n <= 4096  hc >= 2  
+  ple_conv_bf16                                op=ple_conv                     fam=norm    prio=50  dom=device
+        dtype in {bf16}  width >= 1  width <= 5  dilation >= 1  dilation <= 4  
+  causal_conv1d_bf16                           op=causal_conv1d                fam=conv    prio=50  dom=device
+        dtype in {bf16}  width >= 2  width <= 8  
+  ngram_ids_i32                                op=ngram_ids                    fam=vocab   prio=50  dom=device
+        ngram >= 2  ngram <= 8  heads >= 1  
+  gather_rows_bf16                             op=gather_rows                  fam=elem    prio=50  dom=device
+        dtype in {bf16}  
+  gather_rows_u8                               op=gather_rows                  fam=elem    prio=50  dom=device
+        dtype in {u8}  n % 4 == 0  
+  scatter_rows_u8                              op=scatter_rows                 fam=elem    prio=50  dom=device
+        dtype in {u8}  n % 4 == 0  
+  scatter_rows_bf16                            op=scatter_rows                 fam=elem    prio=50  dom=device
+        dtype in {bf16}  n % 2 == 0  
+  cast_bf16_bf16                               op=cast                         fam=elem    prio=50  dom=device
+        from in {bf16}  to in {bf16}  
+  cast_f32_f32                                 op=cast                         fam=elem    prio=50  dom=device
+        from in {f32}  to in {f32}  
+  cast_bf16_f32                                op=cast                         fam=elem    prio=50  dom=device
+        from in {bf16}  to in {f32}  
+  cast_bf16_f16                                op=cast                         fam=elem    prio=50  dom=device
+        from in {bf16}  to in {f16}  
+  cast_f32_bf16                                op=cast                         fam=elem    prio=50  dom=device
+        from in {f32}  to in {bf16}  
+  act_mul_bf16                                 op=act_mul                      fam=elem    prio=50  dom=device
+        dtype in {bf16}  
+  seg_mean_bf16_sum                            op=seg_mean_bf16_sum            fam=elem    prio=50  dom=device scratch
+        dtype in {bf16}  
+  seg_mean_bf16                                op=seg_mean                     fam=elem    prio=50  dom=device
+        dtype in {bf16}  
+  seg_softmax_pool_bf16                        op=seg_softmax_pool             fam=elem    prio=50  dom=device
+        dtype in {bf16}  
+  qk_norm_rope_bf16                            op=qk_norm_rope                 fam=attn    prio=50  dom=device
+        head_dim <= 1024  head_dim % 2 == 0  
+  relu_bf16                                    op=relu                         fam=elem    prio=50  dom=device
+        dtype in {bf16}  
+  silu_bf16                                    op=silu                         fam=elem    prio=50  dom=device
+        dtype in {bf16}  
+  silu_f32                                     op=silu                         fam=elem    prio=50  dom=device
+        dtype in {f32}  
+  gelu_bf16                                    op=gelu                         fam=elem    prio=50  dom=device
+        dtype in {bf16}  
+  clamp_bf16                                   op=clamp                        fam=elem    prio=50  dom=device
+        dtype in {bf16}  
+  conv2d_bf16                                  op=conv2d                       fam=elem    prio=50  dom=device
+        dtype in {bf16}  
+  conv2d_unfold_bf16                           op=conv2d_unfold                fam=elem    prio=50  dom=device
+        dtype in {bf16}  
+  conv1d_dw_bf16                               op=conv1d_dw                    fam=elem    prio=50  dom=device
+        dtype in {bf16}  
+  rel_sinusoid_bf16                            op=rel_sinusoid                 fam=elem    prio=50  dom=device
+        dtype in {bf16}  
+  seg_sinusoid_bf16                            op=seg_sinusoid                 fam=elem    prio=50  dom=device
+        dtype in {bf16}  
+  attn_local_rel_bf16                          op=attn_local_rel               fam=attn    prio=50  dom=device
+        dtype in {bf16}  left <= 63  right == 0  
+  pool_rows_bf16                               op=pool_rows                    fam=elem    prio=50  dom=device
+        dtype in {bf16}  
+  pool_cols_bf16                               op=pool_cols                    fam=elem    prio=50  dom=device
+        dtype in {bf16}  
+  point_fourier_f32                            op=point_fourier                fam=elem    prio=50  dom=device
+        dtype in {f32}  
+  rmsnorm_bf16                                 op=rmsnorm                      fam=norm    prio=50  dom=device
+        dtype in {bf16}  
+  rmsnorm_rows_bf16                            op=rmsnorm_rows                 fam=norm    prio=50  dom=device
+        dtype in {bf16}  
+  rmsnorm_p_bf16                               op=rmsnorm_p                    fam=norm    prio=50  dom=device
+        dtype in {bf16}  
+  layernorm_bf16                               op=layernorm                    fam=norm    prio=50  dom=device
+        n >= 1  dtype in {bf16}  
+  grid_embed_bf16                              op=grid_embed                   fam=elem    prio=50  dom=device
+        n >= 1  side >= 1  dtype in {bf16}  
+  grid_embed_aa_bf16                           op=grid_embed_aa                fam=elem    prio=50  dom=device
+        n >= 1  side >= 1  dtype in {bf16}  
+  gemm_bf16_nt_bias_tiled                      op=gemm_nt_bias                 fam=gemm    prio=50  dom=device
+        M >= 1  K % 8 == 0  dtype in {bf16}  
+  gemm_f32_nt_bias                             op=gemm_nt_bias                 fam=gemm    prio=50  dom=device
+        M >= 1  dtype in {f32}  
+  add_bf16                                     op=add                          fam=elem    prio=50  dom=device
+        dtype in {bf16}  
+  add_f32                                      op=add                          fam=elem    prio=50  dom=device
+        dtype in {f32}  
+  mul_bf16                                     op=mul                          fam=elem    prio=50  dom=device
+        dtype in {bf16}  
+  mul_weight_bf16                              op=mul_weight                   fam=elem    prio=50  dom=device
+        dtype in {bf16}  
+  mul_weight_f32                               op=mul_weight                   fam=elem    prio=50  dom=device
+        dtype in {f32}  
+  fill_bf16                                    op=fill                         fam=elem    prio=50  dom=device
+        dtype in {bf16}  
+  fill_f32                                     op=fill                         fam=elem    prio=50  dom=device
+        dtype in {f32}  
+  sigmoid_bf16                                 op=sigmoid                      fam=elem    prio=50  dom=device
+        dtype in {bf16}  
+  logit_softcap_bf16                           op=logit_softcap                fam=elem    prio=50  dom=device
+        dtype in {bf16}  
+  logit_softcap_f32                            op=logit_softcap                fam=elem    prio=50  dom=device
+        dtype in {f32}  
+  scale_bf16                                   op=scale                        fam=elem    prio=50  dom=device
+        dtype in {bf16}  
+  mla_attn_rows_bf16                           op=mla_attn                     fam=attn    prio=52  dom=device scratch
+        M >= 1  M <= 65535  latent_dim == 512  heads == 64  blocks >= 1  block_size == 4  dtype in {bf16}  
+  mla_attn_matrix_bf16                         op=mla_attn                     fam=attn    prio=51  dom=device scratch
+        M >= 1  M <= 65535  latent_dim == 512  heads >= 8  heads <= 64  heads % 8 == 0  blocks >= 1  block_size == 4  dtype in {bf16}  
+  mla_attn_bf16                                op=mla_attn                     fam=attn    prio=50  dom=device scratch
+        M >= 1  M <= 65535  latent_dim == 512  heads >= 1  heads <= 64  blocks >= 1  block_size == 4  dtype in {bf16}  
+  gemm_fp8a8_f32scale                          op=gemm_nt_q                    fam=gemm    prio=50  dom=device layout
+        M >= 1  N >= 128  N % 128 == 0  K >= 128  K % 128 == 0  group == 128  dtype in {fp8a8f32}  
+  moe_gemm_fp8a8_f32scale                      op=moe_gemm_q                   fam=moe     prio=50  dom=device layout
+        M >= 1  N >= 128  N % 128 == 0  K >= 128  K % 128 == 0  group == 128  dtype in {fp8a8f32}  
+  dsa_score_fp8                                op=dsa_score                    fam=attn    prio=50  dom=device
+        M >= 1  M <= 65535  n == 128  heads == 32  blocks >= 1  seqs >= 1  dtype in {fp8_e4m3}  
+  mla_attn_paged_bf16                          op=mla_attn_paged               fam=attn    prio=50  dom=device scratch
+        M >= 1  M <= 65535  latent_dim == 512  rope_dim == 64  heads >= 1  heads <= 64  block_size >= 1  block_size <= 256  dtype in {bf16}  
+  mla_project_bf16                             op=mla_project                  fam=attn    prio=50  dom=device
+        M >= 1  M <= 65535  heads >= 1  heads <= 64  head_dim in {128 256}  latent_dim == 512  mode in {absorb expand}  dtype in {bf16}  
+  dsa_query_fp8                                op=dsa_query                    fam=attn    prio=50  dom=device
+        M >= 1  M <= 2147483644  n == 128  dtype in {bf16}  
+  gemm_nt_f32_bf16                             op=gemm_nt_f32                  fam=gemm    prio=50  dom=device
+        M >= 1  M <= 65535  N >= 1  N <= 512  K >= 1  K <= 16384  dtype in {bf16}  
+  dsa_pool_fp8                                 op=dsa_pool                     fam=attn    prio=50  dom=device
+        M >= 1  n == 128  ratio == 4  dtype in {bf16}  
+  swiglu_step_bf16                             op=swiglu_step                  fam=elem    prio=50  dom=device
+        dtype in {bf16}  
+  swiglu_clamped_bf16                          op=swiglu_clamped               fam=elem    prio=50  dom=device
+        dtype in {bf16}  
+  swiglu_clamped_quant_fp8                     op=swiglu_clamped_quant_fp8     fam=quant   prio=50  dom=device
+        M >= 1  M <= 65535  n % 4 == 0  group == 128  dtype in {bf16}  
+  silu_mul_bf16                                op=silu_mul                     fam=elem    prio=50  dom=device
+        dtype in {bf16}  
+  gelu_mul_bf16                                op=gelu_mul                     fam=elem    prio=50  dom=device
+        dtype in {bf16}  
+  rope_bf16                                    op=rope                         fam=attn    prio=50  dom=device
+        head_dim >= 1  mode in {neox mrope gptj imrope axial}  
+  rope_rows_bf16                               op=rope_rows                    fam=attn    prio=50  dom=device
+        head_dim >= 1  mode in {neox mrope gptj imrope axial}  
+  kv_store_bf16                                op=kv_store                     fam=attn    prio=50  dom=device
+        block_size >= 1  kv_dtype in {bf16}  
+  kv_store_fp8                                 op=kv_store                     fam=attn    prio=50  dom=device
+        block_size >= 1  kv_dtype in {fp8_e4m3}  
+  kv_store_fp8v4                               op=kv_store                     fam=attn    prio=50  dom=device
+        block_size >= 1  head_dim % 32 == 0  kv_dtype in {fp8_v4}  
+  kv_store_b16f8                               op=kv_store                     fam=attn    prio=50  dom=device
+        block_size >= 1  head_dim % 8 == 0  kv_dtype in {bf16_fp8}  
+  kv_store_b16i8                               op=kv_store                     fam=attn    prio=50  dom=device
+        block_size >= 1  head_dim % 32 == 0  kv_dtype in {bf16_i8}  
+  kv_store_k6v4                                op=kv_store                     fam=attn    prio=50  dom=device
+        block_size >= 1  head_dim % 32 == 0  kv_dtype in {k6_v4}  
+  kv_store_streamed_fp8                        op=kv_store_streamed            fam=attn    prio=50  dom=device
+        block_size >= 1  kv_dtype in {fp8_e4m3}  head_dim % 4 == 0  
+  kv_store_streamed_bf16                       op=kv_store_streamed            fam=attn    prio=50  dom=device
+        block_size >= 1  kv_dtype in {bf16}  head_dim % 4 == 0  
+  logits_gemm_bf16                             op=logits_gemm                  fam=vocab   prio=50  dom=device
+        n_embd % 8 == 0  dtype in {bf16}  
+  logits_gemm_bf16_cols                        op=logits_gemm                  fam=vocab   prio=55  dom=device
+        n_embd == 4096  dtype in {bf16}  
+  logits_gemm_fp8                              op=logits_gemm                  fam=vocab   prio=60  dom=device layout relayout+inverse
+        n_embd % 128 == 0  dtype in {bf16}  
+  logits_gemm_i8                               op=logits_gemm                  fam=vocab   prio=60  dom=device layout relayout+inverse
+        n_embd % 128 == 0  dtype in {bf16}  
+  logits_gemm_vocab_iqr                        op=logits_gemm_vocab            fam=vocab   prio=60  dom=device scratch layout relayout+inverse
+        n_embd % 256 == 0  dtype in {bf16}  
+  logits_gemm_iqr                              op=logits_gemm                  fam=vocab   prio=60  dom=device layout relayout+inverse
+        n_embd % 128 == 0  dtype in {bf16}  
+  sample_penalties_f32                         op=sample_penalties             fam=sample  prio=50  dom=device
+        n_vocab >= 1  
+  sample_dry_f32                               op=sample_dry                   fam=sample  prio=50  dom=device
+        n_vocab >= 1  
+  sample_ngram_ban_f32                         op=sample_ngram_ban             fam=sample  prio=50  dom=device
+        n_vocab >= 1  
+  sample_temp_f32                              op=sample_temp                  fam=sample  prio=50  dom=device
+        n_vocab >= 1  
+  sample_mask_f32                              op=sample_mask                  fam=sample  prio=50  dom=device
+        n_vocab >= 1  
+  sample_topk_f32                              op=sample_topk                  fam=sample  prio=50  dom=device
+        n_vocab >= 1  
+  sample_argmax_f32                            op=sample_argmax                fam=sample  prio=50  dom=device
+        n_vocab >= 1  
+  sample_logprobs_f32                          op=sample_logprobs              fam=sample  prio=50  dom=device
+        n_vocab >= 1  k >= 1  k <= 64  
+  sample_topp_f32                              op=sample_topp                  fam=sample  prio=50  dom=device
+        n_cand >= 1  n_cand <= 4096  
+  sample_minp_f32                              op=sample_minp                  fam=sample  prio=50  dom=device
+        n_cand >= 1  n_cand <= 4096  
+  sample_typical_f32                           op=sample_typical               fam=sample  prio=50  dom=device
+        n_cand >= 1  n_cand <= 4096  
+  sample_xtc_f32                               op=sample_xtc                   fam=sample  prio=50  dom=device
+        n_cand >= 1  n_cand <= 4096  
+  sample_pick_f32                              op=sample_pick                  fam=sample  prio=50  dom=device
+        n_cand >= 1  n_cand <= 4096  
+  sample_merge_topk_f32                        op=sample_merge_topk            fam=sample  prio=50  dom=device
+        n_cand >= 1  n_cand <= 4096  
+  attn_prefill_h256_gqa6_fp8kv                 op=attn_paged                   fam=attn    prio=60  dom=device scratch
+        window == 0  head_dim == 256  gqa == 6  block_size == 16  causal == 1  q_dtype in {bf16}  kv_dtype in {fp8_e4m3}  
+  attn_prefill_h256_gqa6_fp8kv_qk8             op=attn_paged                   fam=attn    prio=61  dom=device
+        window == 0  head_dim == 256  gqa == 6  block_size == 16  causal == 1  q_dtype in {bf16}  kv_dtype in {fp8_e4m3}  prefill_fp8 == 1  
+  attn_prefill_h256_gqa6_fp8kv_pv8             op=attn_paged                   fam=attn    prio=61  dom=device
+        window == 0  head_dim == 256  gqa == 6  block_size == 16  causal == 1  q_dtype in {bf16}  kv_dtype in {fp8_e4m3}  prefill_fp8 == 2  
+  attn_prefill_h256_gqa6_fp8kv_qk8pv8          op=attn_paged                   fam=attn    prio=61  dom=device
+        window == 0  head_dim == 256  gqa == 6  block_size == 16  causal == 1  q_dtype in {bf16}  kv_dtype in {fp8_e4m3}  prefill_fp8 == 3  
+  attn_prefill_h256_gqa6_fp8v4                 op=attn_paged                   fam=attn    prio=60  dom=device scratch
+        window == 0  head_dim == 256  gqa == 6  block_size == 16  causal == 1  q_dtype in {bf16}  kv_dtype in {fp8_v4}  
+  attn_prefill_h256_gqa6_fp8v4_qk8             op=attn_paged                   fam=attn    prio=61  dom=device
+        window == 0  head_dim == 256  gqa == 6  block_size == 16  causal == 1  q_dtype in {bf16}  kv_dtype in {fp8_v4}  prefill_fp8 == 1  
+  attn_prefill_h256_gqa6_fp8v4_pv8             op=attn_paged                   fam=attn    prio=61  dom=device
+        window == 0  head_dim == 256  gqa == 6  block_size == 16  causal == 1  q_dtype in {bf16}  kv_dtype in {fp8_v4}  prefill_fp8 == 2  
+  attn_prefill_h256_gqa6_fp8v4_qk8pv8          op=attn_paged                   fam=attn    prio=61  dom=device
+        window == 0  head_dim == 256  gqa == 6  block_size == 16  causal == 1  q_dtype in {bf16}  kv_dtype in {fp8_v4}  prefill_fp8 == 3  
+  attn_prefill_h256_gqa6_k6v4                  op=attn_paged                   fam=attn    prio=60  dom=device scratch
+        window == 0  head_dim == 256  gqa == 6  block_size == 16  causal == 1  q_dtype in {bf16}  kv_dtype in {k6_v4}  
+  attn_prefill_h256_gqa6_k6v4_qk8              op=attn_paged                   fam=attn    prio=61  dom=device
+        window == 0  head_dim == 256  gqa == 6  block_size == 16  causal == 1  q_dtype in {bf16}  kv_dtype in {k6_v4}  prefill_fp8 == 1  
+  attn_prefill_h256_gqa6_k6v4_pv8              op=attn_paged                   fam=attn    prio=61  dom=device
+        window == 0  head_dim == 256  gqa == 6  block_size == 16  causal == 1  q_dtype in {bf16}  kv_dtype in {k6_v4}  prefill_fp8 == 2  
+  attn_prefill_h256_gqa6_k6v4_qk8pv8           op=attn_paged                   fam=attn    prio=61  dom=device
+        window == 0  head_dim == 256  gqa == 6  block_size == 16  causal == 1  q_dtype in {bf16}  kv_dtype in {k6_v4}  prefill_fp8 == 3  
+  attn_prefill_h256_gqa6_b16f8                 op=attn_paged                   fam=attn    prio=60  dom=device scratch
+        window == 0  head_dim == 256  gqa == 6  block_size == 16  causal == 1  q_dtype in {bf16}  kv_dtype in {bf16_fp8}  
+  attn_decode_h256_gqa6_b16f8                  op=attn_paged                   fam=attn    prio=70  dom=device scratch
+        window == 0  head_dim == 256  gqa == 6  block_size == 16  causal == 1  q_len <= 10  q_dtype in {bf16}  kv_dtype in {bf16_fp8}  
+        tunables(1): splits=0/5   space 5
+  attn_prefill_h256_gqa6_b16i8                 op=attn_paged                   fam=attn    prio=60  dom=device scratch
+        window == 0  head_dim == 256  gqa == 6  block_size == 16  causal == 1  q_dtype in {bf16}  kv_dtype in {bf16_i8}  
+  attn_decode_h256_gqa6_b16i8                  op=attn_paged                   fam=attn    prio=70  dom=device scratch
+        window == 0  head_dim == 256  gqa == 6  block_size == 16  causal == 1  q_len <= 10  q_dtype in {bf16}  kv_dtype in {bf16_i8}  
+        tunables(1): splits=0/5   space 5
+  attn_prefill_h256_gqa6_bf16kv                op=attn_paged                   fam=attn    prio=60  dom=device scratch
+        window == 0  head_dim == 256  gqa == 6  block_size == 16  causal == 1  q_dtype in {bf16}  kv_dtype in {bf16}  
+  attn_decode_h256_gqa6_fp8kv                  op=attn_paged                   fam=attn    prio=70  dom=device scratch
+        window == 0  head_dim == 256  gqa == 6  block_size == 16  causal == 1  q_len <= 10  q_dtype in {bf16}  kv_dtype in {fp8_e4m3}  
+        tunables(1): splits=0/5   space 5
+  attn_decode_h256_gqa6_fp8v4                  op=attn_paged                   fam=attn    prio=70  dom=device scratch
+        window == 0  head_dim == 256  gqa == 6  block_size == 16  causal == 1  q_len <= 10  q_dtype in {bf16}  kv_dtype in {fp8_v4}  
+        tunables(1): splits=0/5   space 5
+  attn_decode_h256_gqa6_k6v4                   op=attn_paged                   fam=attn    prio=70  dom=device scratch
+        window == 0  head_dim == 256  gqa == 6  block_size == 16  causal == 1  q_len <= 10  q_dtype in {bf16}  kv_dtype in {k6_v4}  
+        tunables(1): splits=0/5   space 5
+  attn_decode_h256_gqa6_bf16kv                 op=attn_paged                   fam=attn    prio=70  dom=device scratch
+        window == 0  head_dim == 256  gqa == 6  block_size == 16  causal == 1  q_len <= 10  q_dtype in {bf16}  kv_dtype in {bf16}  
+        tunables(1): splits=0/5   space 5
+  attn_decode_h128_gqa4_fp8kv                  op=attn_paged                   fam=attn    prio=70  dom=device scratch
+        window >= 0  head_dim == 128  gqa == 4  block_size == 16  causal >= 0  q_len <= 16  q_dtype in {bf16}  kv_dtype in {fp8_e4m3}  
+        tunables(1): splits=0/5   space 5
+  attn_decode_h128_gqa4_bf16kv                 op=attn_paged                   fam=attn    prio=70  dom=device scratch
+        window >= 0  head_dim == 128  gqa == 4  block_size == 16  causal >= 0  q_len <= 16  q_dtype in {bf16}  kv_dtype in {bf16}  
+        tunables(1): splits=0/5   space 5
+  attn_prefill_h256_gqa2_fp8kv                 op=attn_paged                   fam=attn    prio=60  dom=device scratch
+        window >= 0  head_dim == 256  gqa == 2  block_size == 16  causal == 1  q_dtype in {bf16}  kv_dtype in {fp8_e4m3}  
+  attn_prefill_h256_gqa2_bf16kv                op=attn_paged                   fam=attn    prio=60  dom=device scratch
+        window >= 0  head_dim == 256  gqa == 2  block_size == 16  causal == 1  q_dtype in {bf16}  kv_dtype in {bf16}  
+  attn_decode_h256_gqa2_fp8kv                  op=attn_paged                   fam=attn    prio=70  dom=device scratch
+        window >= 0  head_dim == 256  gqa == 2  block_size == 16  causal >= 0  q_len <= 32  q_dtype in {bf16}  kv_dtype in {fp8_e4m3}  
+        tunables(1): splits=0/5   space 5
+  attn_decode_h256_gqa2_bf16kv                 op=attn_paged                   fam=attn    prio=70  dom=device scratch
+        window >= 0  head_dim == 256  gqa == 2  block_size == 16  causal >= 0  q_len <= 32  q_dtype in {bf16}  kv_dtype in {bf16}  
+        tunables(1): splits=0/5   space 5
+  attn_prefill_h128_gqa2w_fp8kv                op=attn_paged                   fam=attn    prio=60  dom=device
+        window >= 1  head_dim == 128  gqa == 2  block_size == 16  causal == 1  q_dtype in {bf16}  kv_dtype in {fp8_e4m3}  
+  attn_prefill_h128_gqa2w_bf16kv               op=attn_paged                   fam=attn    prio=60  dom=device
+        window >= 1  head_dim == 128  gqa == 2  block_size == 16  causal == 1  q_dtype in {bf16}  kv_dtype in {bf16}  
+  attn_decode_h128_gqa2w_fp8kv                 op=attn_paged                   fam=attn    prio=70  dom=device scratch
+        window >= 1  head_dim == 128  gqa == 2  block_size == 16  causal >= 0  q_len <= 32  q_dtype in {bf16}  kv_dtype in {fp8_e4m3}  
+        tunables(1): splits=0/5   space 5
+  attn_decode_h128_gqa2w_bf16kv                op=attn_paged                   fam=attn    prio=70  dom=device scratch
+        window >= 1  head_dim == 128  gqa == 2  block_size == 16  causal >= 0  q_len <= 32  q_dtype in {bf16}  kv_dtype in {bf16}  
+        tunables(1): splits=0/5   space 5
+  attn_qrow_decode_h256_gqa2_fp8kv             op=attn_paged_qrow              fam=attn    prio=70  dom=device scratch
+        window >= 0  head_dim == 256  gqa == 2  block_size == 16  causal >= 0  q_len <= 32  q_dtype in {bf16}  kv_dtype in {fp8_e4m3}  
+        tunables(1): splits=0/5   space 5
+  attn_qrow_decode_h256_gqa2_bf16kv            op=attn_paged_qrow              fam=attn    prio=70  dom=device scratch
+        window >= 0  head_dim == 256  gqa == 2  block_size == 16  causal >= 0  q_len <= 32  q_dtype in {bf16}  kv_dtype in {bf16}  
+        tunables(1): splits=0/5   space 5
+  attn_qrow_tree_decode_h256_gqa2_fp8kv        op=attn_paged_qrow_tree         fam=attn    prio=70  dom=device scratch
+        window >= 0  head_dim == 256  gqa == 2  block_size == 16  causal == 1  q_len <= 32  q_dtype in {bf16}  kv_dtype in {fp8_e4m3}  
+        tunables(1): splits=0/5   space 5
+  attn_qrow_tree_decode_h256_gqa2_bf16kv       op=attn_paged_qrow_tree         fam=attn    prio=70  dom=device scratch
+        window >= 0  head_dim == 256  gqa == 2  block_size == 16  causal == 1  q_len <= 32  q_dtype in {bf16}  kv_dtype in {bf16}  
+        tunables(1): splits=0/5   space 5
+  attn_qrow_h128_gqa8_fp8kv                    op=attn_paged_qrow              fam=attn    prio=70  dom=device scratch
+        window >= 0  head_dim == 128  gqa == 8  block_size == 16  causal >= 0  q_len <= 16  q_dtype in {bf16}  kv_dtype in {fp8_e4m3}  
+        tunables(1): splits=0/5   space 5
+  attn_qrow_h128_gqa8_bf16kv                   op=attn_paged_qrow              fam=attn    prio=70  dom=device scratch
+        window >= 0  head_dim == 128  gqa == 8  block_size == 16  causal >= 0  q_len <= 16  q_dtype in {bf16}  kv_dtype in {bf16}  
+        tunables(1): splits=0/5   space 5
+  attn_prefill_h128_gqa1_fp8kv                 op=attn_paged                   fam=attn    prio=60  dom=device
+        window == 0  head_dim == 128  gqa == 1  block_size == 16  causal == 1  q_dtype in {bf16}  kv_dtype in {fp8_e4m3}  
+  attn_prefill_h128_gqa1_bf16kv                op=attn_paged                   fam=attn    prio=60  dom=device
+        window == 0  head_dim == 128  gqa == 1  block_size == 16  causal == 1  q_dtype in {bf16}  kv_dtype in {bf16}  
+  attn_decode_h128_gqa1_fp8kv                  op=attn_paged                   fam=attn    prio=70  dom=device scratch
+        window == 0  head_dim == 128  gqa == 1  block_size == 16  causal >= 0  q_len <= 64  q_dtype in {bf16}  kv_dtype in {fp8_e4m3}  
+        tunables(1): splits=0/5   space 5
+  attn_decode_h128_gqa1_bf16kv                 op=attn_paged                   fam=attn    prio=70  dom=device scratch
+        window == 0  head_dim == 128  gqa == 1  block_size == 16  causal >= 0  q_len <= 64  q_dtype in {bf16}  kv_dtype in {bf16}  
+        tunables(1): splits=0/5   space 5
+  attn_prefill_h256_gqa8_fp8kv                 op=attn_paged                   fam=attn    prio=60  dom=device scratch
+        window == 0  head_dim == 256  gqa == 8  block_size == 16  causal == 1  q_dtype in {bf16}  kv_dtype in {fp8_e4m3}  
+  attn_prefill_h256_gqa8_bf16kv                op=attn_paged                   fam=attn    prio=60  dom=device scratch
+        window == 0  head_dim == 256  gqa == 8  block_size == 16  causal == 1  q_dtype in {bf16}  kv_dtype in {bf16}  
+  attn_decode_h256_gqa8_fp8kv                  op=attn_paged                   fam=attn    prio=70  dom=device scratch
+        window == 0  head_dim == 256  gqa == 8  block_size == 16  causal >= 0  q_len <= 8  q_dtype in {bf16}  kv_dtype in {fp8_e4m3}  
+        tunables(1): splits=0/5   space 5
+  attn_decode_h256_gqa8_bf16kv                 op=attn_paged                   fam=attn    prio=70  dom=device scratch
+        window == 0  head_dim == 256  gqa == 8  block_size == 16  causal >= 0  q_len <= 8  q_dtype in {bf16}  kv_dtype in {bf16}  
+        tunables(1): splits=0/5   space 5
+  attn_prefill_h256_gqa4_fp8kv                 op=attn_paged                   fam=attn    prio=60  dom=device scratch
+        window == 0  head_dim == 256  gqa == 4  block_size == 16  causal == 1  q_dtype in {bf16}  kv_dtype in {fp8_e4m3}  
+  attn_prefill_h256_gqa4_bf16kv                op=attn_paged                   fam=attn    prio=60  dom=device scratch
+        window == 0  head_dim == 256  gqa == 4  block_size == 16  causal == 1  q_dtype in {bf16}  kv_dtype in {bf16}  
+  attn_decode_h256_gqa4_fp8kv                  op=attn_paged                   fam=attn    prio=70  dom=device scratch
+        window == 0  head_dim == 256  gqa == 4  block_size == 16  causal >= 0  q_len <= 16  q_dtype in {bf16}  kv_dtype in {fp8_e4m3}  
+        tunables(1): splits=0/5   space 5
+  attn_decode_h256_gqa4_bf16kv                 op=attn_paged                   fam=attn    prio=70  dom=device scratch
+        window == 0  head_dim == 256  gqa == 4  block_size == 16  causal >= 0  q_len <= 16  q_dtype in {bf16}  kv_dtype in {bf16}  
+        tunables(1): splits=0/5   space 5
+  attn_prefill_h64_gqa4_fp8kv                  op=attn_paged                   fam=attn    prio=60  dom=device
+        window == 0  head_dim == 64  gqa == 4  block_size == 16  causal == 1  q_dtype in {bf16}  kv_dtype in {fp8_e4m3}  
+  attn_prefill_h64_gqa4_bf16kv                 op=attn_paged                   fam=attn    prio=60  dom=device
+        window == 0  head_dim == 64  gqa == 4  block_size == 16  causal == 1  q_dtype in {bf16}  kv_dtype in {bf16}  
+  attn_window_h128_gqa1_bf16kv                 op=attn_paged                   fam=attn    prio=50  dom=device scratch
+        head_dim == 128  gqa == 1  block_size == 16  causal >= 0  window >= 0  q_dtype in {bf16}  kv_dtype in {bf16}  
+  attn_qrow_h128_gqa1_bf16kv                   op=attn_paged_qrow              fam=attn    prio=50  dom=device scratch
+        head_dim == 128  gqa == 1  block_size == 16  causal >= 0  window >= 0  q_dtype in {bf16}  kv_dtype in {bf16}  
+  attn_window_h128_gqa1_fp8kv                  op=attn_paged                   fam=attn    prio=50  dom=device scratch
+        head_dim == 128  gqa == 1  block_size == 16  causal >= 0  window >= 0  q_dtype in {bf16}  kv_dtype in {fp8_e4m3}  
+  attn_qrow_h128_gqa1_fp8kv                    op=attn_paged_qrow              fam=attn    prio=50  dom=device scratch
+        head_dim == 128  gqa == 1  block_size == 16  causal >= 0  window >= 0  q_dtype in {bf16}  kv_dtype in {fp8_e4m3}  
+  attn_window_h256_gqa1_bf16kv                 op=attn_paged                   fam=attn    prio=50  dom=device scratch
+        head_dim == 256  gqa == 1  block_size == 16  causal >= 0  window >= 0  q_dtype in {bf16}  kv_dtype in {bf16}  
+  attn_qrow_h256_gqa1_bf16kv                   op=attn_paged_qrow              fam=attn    prio=50  dom=device scratch
+        head_dim == 256  gqa == 1  block_size == 16  causal >= 0  window >= 0  q_dtype in {bf16}  kv_dtype in {bf16}  
+  attn_window_h256_gqa1_fp8kv                  op=attn_paged                   fam=attn    prio=50  dom=device scratch
+        head_dim == 256  gqa == 1  block_size == 16  causal >= 0  window >= 0  q_dtype in {bf16}  kv_dtype in {fp8_e4m3}  
+  attn_qrow_h256_gqa1_fp8kv                    op=attn_paged_qrow              fam=attn    prio=50  dom=device scratch
+        head_dim == 256  gqa == 1  block_size == 16  causal >= 0  window >= 0  q_dtype in {bf16}  kv_dtype in {fp8_e4m3}  
+  attn_window_h256_gqa2_bf16kv                 op=attn_paged                   fam=attn    prio=50  dom=device scratch
+        head_dim == 256  gqa == 2  block_size == 16  causal >= 0  window >= 0  q_dtype in {bf16}  kv_dtype in {bf16}  
+  attn_qrow_h256_gqa2_bf16kv                   op=attn_paged_qrow              fam=attn    prio=50  dom=device scratch
+        head_dim == 256  gqa == 2  block_size == 16  causal >= 0  window >= 0  q_dtype in {bf16}  kv_dtype in {bf16}  
+  attn_window_h256_gqa2_fp8kv                  op=attn_paged                   fam=attn    prio=50  dom=device scratch
+        head_dim == 256  gqa == 2  block_size == 16  causal >= 0  window >= 0  q_dtype in {bf16}  kv_dtype in {fp8_e4m3}  
+  attn_qrow_h256_gqa2_fp8kv                    op=attn_paged_qrow              fam=attn    prio=50  dom=device scratch
+        head_dim == 256  gqa == 2  block_size == 16  causal >= 0  window >= 0  q_dtype in {bf16}  kv_dtype in {fp8_e4m3}  
+  attn_window_h256_gqa4_bf16kv                 op=attn_paged                   fam=attn    prio=50  dom=device scratch
+        head_dim == 256  gqa == 4  block_size == 16  causal >= 0  window >= 1  q_dtype in {bf16}  kv_dtype in {bf16}  
+  attn_qrow_h256_gqa4_bf16kv                   op=attn_paged_qrow              fam=attn    prio=50  dom=device scratch
+        head_dim == 256  gqa == 4  block_size == 16  causal >= 0  window >= 1  q_dtype in {bf16}  kv_dtype in {bf16}  
+  attn_window_h256_gqa4_fp8kv                  op=attn_paged                   fam=attn    prio=50  dom=device scratch
+        head_dim == 256  gqa == 4  block_size == 16  causal >= 0  window >= 1  q_dtype in {bf16}  kv_dtype in {fp8_e4m3}  
+  attn_qrow_h256_gqa4_fp8kv                    op=attn_paged_qrow              fam=attn    prio=50  dom=device scratch
+        head_dim == 256  gqa == 4  block_size == 16  causal >= 0  window >= 1  q_dtype in {bf16}  kv_dtype in {fp8_e4m3}  
+  attn_window_h256_gqa8_bf16kv                 op=attn_paged                   fam=attn    prio=50  dom=device scratch
+        head_dim == 256  gqa == 8  block_size == 16  causal >= 0  window >= 1  q_dtype in {bf16}  kv_dtype in {bf16}  
+  attn_qrow_h256_gqa8_bf16kv                   op=attn_paged_qrow              fam=attn    prio=50  dom=device scratch
+        head_dim == 256  gqa == 8  block_size == 16  causal >= 0  window >= 1  q_dtype in {bf16}  kv_dtype in {bf16}  
+  attn_window_h256_gqa8_fp8kv                  op=attn_paged                   fam=attn    prio=50  dom=device scratch
+        head_dim == 256  gqa == 8  block_size == 16  causal >= 0  window >= 1  q_dtype in {bf16}  kv_dtype in {fp8_e4m3}  
+  attn_qrow_h256_gqa8_fp8kv                    op=attn_paged_qrow              fam=attn    prio=50  dom=device scratch
+        head_dim == 256  gqa == 8  block_size == 16  causal >= 0  window >= 1  q_dtype in {bf16}  kv_dtype in {fp8_e4m3}  
+  attn_window_h512_gqa1_bf16kv                 op=attn_paged                   fam=attn    prio=50  dom=device scratch
+        head_dim == 512  gqa == 1  block_size == 16  causal >= 0  window >= 0  q_dtype in {bf16}  kv_dtype in {bf16}  
+  attn_qrow_h512_gqa1_bf16kv                   op=attn_paged_qrow              fam=attn    prio=50  dom=device scratch
+        head_dim == 512  gqa == 1  block_size == 16  causal >= 0  window >= 0  q_dtype in {bf16}  kv_dtype in {bf16}  
+  attn_window_h512_gqa1_fp8kv                  op=attn_paged                   fam=attn    prio=50  dom=device scratch
+        head_dim == 512  gqa == 1  block_size == 16  causal >= 0  window >= 0  q_dtype in {bf16}  kv_dtype in {fp8_e4m3}  
+  attn_qrow_h512_gqa1_fp8kv                    op=attn_paged_qrow              fam=attn    prio=50  dom=device scratch
+        head_dim == 512  gqa == 1  block_size == 16  causal >= 0  window >= 0  q_dtype in {bf16}  kv_dtype in {fp8_e4m3}  
+  attn_window_h512_gqa2_bf16kv                 op=attn_paged                   fam=attn    prio=50  dom=device scratch
+        head_dim == 512  gqa == 2  block_size == 16  causal >= 0  window >= 0  q_dtype in {bf16}  kv_dtype in {bf16}  
+  attn_qrow_h512_gqa2_bf16kv                   op=attn_paged_qrow              fam=attn    prio=50  dom=device scratch
+        head_dim == 512  gqa == 2  block_size == 16  causal >= 0  window >= 0  q_dtype in {bf16}  kv_dtype in {bf16}  
+  attn_window_h512_gqa2_fp8kv                  op=attn_paged                   fam=attn    prio=50  dom=device scratch
+        head_dim == 512  gqa == 2  block_size == 16  causal >= 0  window >= 0  q_dtype in {bf16}  kv_dtype in {fp8_e4m3}  
+  attn_qrow_h512_gqa2_fp8kv                    op=attn_paged_qrow              fam=attn    prio=50  dom=device scratch
+        head_dim == 512  gqa == 2  block_size == 16  causal >= 0  window >= 0  q_dtype in {bf16}  kv_dtype in {fp8_e4m3}  
+  attn_window_h512_gqa4_bf16kv                 op=attn_paged                   fam=attn    prio=50  dom=device scratch
+        head_dim == 512  gqa == 4  block_size == 16  causal >= 0  window >= 0  q_dtype in {bf16}  kv_dtype in {bf16}  
+  attn_qrow_h512_gqa4_bf16kv                   op=attn_paged_qrow              fam=attn    prio=50  dom=device scratch
+        head_dim == 512  gqa == 4  block_size == 16  causal >= 0  window >= 0  q_dtype in {bf16}  kv_dtype in {bf16}  
+  attn_window_h512_gqa4_fp8kv                  op=attn_paged                   fam=attn    prio=50  dom=device scratch
+        head_dim == 512  gqa == 4  block_size == 16  causal >= 0  window >= 0  q_dtype in {bf16}  kv_dtype in {fp8_e4m3}  
+  attn_qrow_h512_gqa4_fp8kv                    op=attn_paged_qrow              fam=attn    prio=50  dom=device scratch
+        head_dim == 512  gqa == 4  block_size == 16  causal >= 0  window >= 0  q_dtype in {bf16}  kv_dtype in {fp8_e4m3}  
+  attn_window_h512_gqa8_bf16kv                 op=attn_paged                   fam=attn    prio=50  dom=device scratch
+        head_dim == 512  gqa == 8  block_size == 16  causal >= 0  window >= 0  q_dtype in {bf16}  kv_dtype in {bf16}  
+  attn_qrow_h512_gqa8_bf16kv                   op=attn_paged_qrow              fam=attn    prio=50  dom=device scratch
+        head_dim == 512  gqa == 8  block_size == 16  causal >= 0  window >= 0  q_dtype in {bf16}  kv_dtype in {bf16}  
+  attn_window_h512_gqa8_fp8kv                  op=attn_paged                   fam=attn    prio=50  dom=device scratch
+        head_dim == 512  gqa == 8  block_size == 16  causal >= 0  window >= 0  q_dtype in {bf16}  kv_dtype in {fp8_e4m3}  
+  attn_qrow_h512_gqa8_fp8kv                    op=attn_paged_qrow              fam=attn    prio=50  dom=device scratch
+        head_dim == 512  gqa == 8  block_size == 16  causal >= 0  window >= 0  q_dtype in {bf16}  kv_dtype in {fp8_e4m3}  
+  attn_window_h512_gqa16_bf16kv                op=attn_paged                   fam=attn    prio=50  dom=device scratch
+        head_dim == 512  gqa == 16  block_size == 16  causal >= 0  window >= 0  q_dtype in {bf16}  kv_dtype in {bf16}  
+  attn_qrow_h512_gqa16_bf16kv                  op=attn_paged_qrow              fam=attn    prio=50  dom=device scratch
+        head_dim == 512  gqa == 16  block_size == 16  causal >= 0  window >= 0  q_dtype in {bf16}  kv_dtype in {bf16}  
+  attn_window_h512_gqa16_fp8kv                 op=attn_paged                   fam=attn    prio=50  dom=device scratch
+        head_dim == 512  gqa == 16  block_size == 16  causal >= 0  window >= 0  q_dtype in {bf16}  kv_dtype in {fp8_e4m3}  
+  attn_qrow_h512_gqa16_fp8kv                   op=attn_paged_qrow              fam=attn    prio=50  dom=device scratch
+        head_dim == 512  gqa == 16  block_size == 16  causal >= 0  window >= 0  q_dtype in {bf16}  kv_dtype in {fp8_e4m3}  
+  attn_anchor_window_h128_gqa1_bf16kv          op=attn_paged_anchor_window     fam=attn    prio=50  dom=device scratch
+        head_dim == 128  gqa == 1  block_size == 16  causal >= 0  window >= 1  q_dtype in {bf16}  kv_dtype in {bf16}  
+  attn_anchor_window_h128_gqa1_fp8kv           op=attn_paged_anchor_window     fam=attn    prio=50  dom=device scratch
+        head_dim == 128  gqa == 1  block_size == 16  causal >= 0  window >= 1  q_dtype in {bf16}  kv_dtype in {fp8_e4m3}  
+  attn_anchor_window_h256_gqa1_bf16kv          op=attn_paged_anchor_window     fam=attn    prio=50  dom=device scratch
+        head_dim == 256  gqa == 1  block_size == 16  causal >= 0  window >= 1  q_dtype in {bf16}  kv_dtype in {bf16}  
+  attn_anchor_window_h256_gqa1_fp8kv           op=attn_paged_anchor_window     fam=attn    prio=50  dom=device scratch
+        head_dim == 256  gqa == 1  block_size == 16  causal >= 0  window >= 1  q_dtype in {bf16}  kv_dtype in {fp8_e4m3}  
+  attn_anchor_window_h256_gqa2_bf16kv          op=attn_paged_anchor_window     fam=attn    prio=50  dom=device scratch
+        head_dim == 256  gqa == 2  block_size == 16  causal >= 0  window >= 1  q_dtype in {bf16}  kv_dtype in {bf16}  
+  attn_anchor_window_h256_gqa2_fp8kv           op=attn_paged_anchor_window     fam=attn    prio=50  dom=device scratch
+        head_dim == 256  gqa == 2  block_size == 16  causal >= 0  window >= 1  q_dtype in {bf16}  kv_dtype in {fp8_e4m3}  
+  attn_anchor_window_h256_gqa4_bf16kv          op=attn_paged_anchor_window     fam=attn    prio=50  dom=device scratch
+        head_dim == 256  gqa == 4  block_size == 16  causal >= 0  window >= 1  q_dtype in {bf16}  kv_dtype in {bf16}  
+  attn_anchor_window_h256_gqa4_fp8kv           op=attn_paged_anchor_window     fam=attn    prio=50  dom=device scratch
+        head_dim == 256  gqa == 4  block_size == 16  causal >= 0  window >= 1  q_dtype in {bf16}  kv_dtype in {fp8_e4m3}  
+  attn_anchor_window_h256_gqa8_bf16kv          op=attn_paged_anchor_window     fam=attn    prio=50  dom=device scratch
+        head_dim == 256  gqa == 8  block_size == 16  causal >= 0  window >= 1  q_dtype in {bf16}  kv_dtype in {bf16}  
+  attn_anchor_window_h256_gqa8_fp8kv           op=attn_paged_anchor_window     fam=attn    prio=50  dom=device scratch
+        head_dim == 256  gqa == 8  block_size == 16  causal >= 0  window >= 1  q_dtype in {bf16}  kv_dtype in {fp8_e4m3}  
+  attn_anchor_window_h512_gqa1_bf16kv          op=attn_paged_anchor_window     fam=attn    prio=50  dom=device scratch
+        head_dim == 512  gqa == 1  block_size == 16  causal >= 0  window >= 1  q_dtype in {bf16}  kv_dtype in {bf16}  
+  attn_anchor_window_h512_gqa1_fp8kv           op=attn_paged_anchor_window     fam=attn    prio=50  dom=device scratch
+        head_dim == 512  gqa == 1  block_size == 16  causal >= 0  window >= 1  q_dtype in {bf16}  kv_dtype in {fp8_e4m3}  
+  attn_anchor_window_h512_gqa2_bf16kv          op=attn_paged_anchor_window     fam=attn    prio=50  dom=device scratch
+        head_dim == 512  gqa == 2  block_size == 16  causal >= 0  window >= 1  q_dtype in {bf16}  kv_dtype in {bf16}  
+  attn_anchor_window_h512_gqa2_fp8kv           op=attn_paged_anchor_window     fam=attn    prio=50  dom=device scratch
+        head_dim == 512  gqa == 2  block_size == 16  causal >= 0  window >= 1  q_dtype in {bf16}  kv_dtype in {fp8_e4m3}  
+  attn_anchor_window_h512_gqa4_bf16kv          op=attn_paged_anchor_window     fam=attn    prio=50  dom=device scratch
+        head_dim == 512  gqa == 4  block_size == 16  causal >= 0  window >= 1  q_dtype in {bf16}  kv_dtype in {bf16}  
+  attn_anchor_window_h512_gqa4_fp8kv           op=attn_paged_anchor_window     fam=attn    prio=50  dom=device scratch
+        head_dim == 512  gqa == 4  block_size == 16  causal >= 0  window >= 1  q_dtype in {bf16}  kv_dtype in {fp8_e4m3}  
+  attn_anchor_window_h512_gqa8_bf16kv          op=attn_paged_anchor_window     fam=attn    prio=50  dom=device scratch
+        head_dim == 512  gqa == 8  block_size == 16  causal >= 0  window >= 1  q_dtype in {bf16}  kv_dtype in {bf16}  
+  attn_anchor_window_h512_gqa8_fp8kv           op=attn_paged_anchor_window     fam=attn    prio=50  dom=device scratch
+        head_dim == 512  gqa == 8  block_size == 16  causal >= 0  window >= 1  q_dtype in {bf16}  kv_dtype in {fp8_e4m3}  
+  attn_ahead_h256_gqa1_bf16kv                  op=attn_paged_ahead             fam=attn    prio=50  dom=device scratch
+        head_dim == 256  gqa == 1  block_size == 16  causal == 0  window >= 1  q_dtype in {bf16}  kv_dtype in {bf16}  
+  attn_qrow_ahead_h256_gqa1_bf16kv             op=attn_paged_qrow_ahead        fam=attn    prio=50  dom=device scratch
+        head_dim == 256  gqa == 1  block_size == 16  causal == 0  window >= 1  q_dtype in {bf16}  kv_dtype in {bf16}  
+  attn_ahead_h256_gqa1_fp8kv                   op=attn_paged_ahead             fam=attn    prio=50  dom=device scratch
+        head_dim == 256  gqa == 1  block_size == 16  causal == 0  window >= 1  q_dtype in {bf16}  kv_dtype in {fp8_e4m3}  
+  attn_qrow_ahead_h256_gqa1_fp8kv              op=attn_paged_qrow_ahead        fam=attn    prio=50  dom=device scratch
+        head_dim == 256  gqa == 1  block_size == 16  causal == 0  window >= 1  q_dtype in {bf16}  kv_dtype in {fp8_e4m3}  
+  attn_ahead_h256_gqa2_bf16kv                  op=attn_paged_ahead             fam=attn    prio=50  dom=device scratch
+        head_dim == 256  gqa == 2  block_size == 16  causal == 0  window >= 1  q_dtype in {bf16}  kv_dtype in {bf16}  
+  attn_qrow_ahead_h256_gqa2_bf16kv             op=attn_paged_qrow_ahead        fam=attn    prio=50  dom=device scratch
+        head_dim == 256  gqa == 2  block_size == 16  causal == 0  window >= 1  q_dtype in {bf16}  kv_dtype in {bf16}  
+  attn_ahead_h256_gqa2_fp8kv                   op=attn_paged_ahead             fam=attn    prio=50  dom=device scratch
+        head_dim == 256  gqa == 2  block_size == 16  causal == 0  window >= 1  q_dtype in {bf16}  kv_dtype in {fp8_e4m3}  
+  attn_qrow_ahead_h256_gqa2_fp8kv              op=attn_paged_qrow_ahead        fam=attn    prio=50  dom=device scratch
+        head_dim == 256  gqa == 2  block_size == 16  causal == 0  window >= 1  q_dtype in {bf16}  kv_dtype in {fp8_e4m3}  
+  attn_ahead_h256_gqa4_bf16kv                  op=attn_paged_ahead             fam=attn    prio=50  dom=device scratch
+        head_dim == 256  gqa == 4  block_size == 16  causal == 0  window >= 1  q_dtype in {bf16}  kv_dtype in {bf16}  
+  attn_qrow_ahead_h256_gqa4_bf16kv             op=attn_paged_qrow_ahead        fam=attn    prio=50  dom=device scratch
+        head_dim == 256  gqa == 4  block_size == 16  causal == 0  window >= 1  q_dtype in {bf16}  kv_dtype in {bf16}  
+  attn_ahead_h256_gqa4_fp8kv                   op=attn_paged_ahead             fam=attn    prio=50  dom=device scratch
+        head_dim == 256  gqa == 4  block_size == 16  causal == 0  window >= 1  q_dtype in {bf16}  kv_dtype in {fp8_e4m3}  
+  attn_qrow_ahead_h256_gqa4_fp8kv              op=attn_paged_qrow_ahead        fam=attn    prio=50  dom=device scratch
+        head_dim == 256  gqa == 4  block_size == 16  causal == 0  window >= 1  q_dtype in {bf16}  kv_dtype in {fp8_e4m3}  
+  attn_ahead_h256_gqa8_bf16kv                  op=attn_paged_ahead             fam=attn    prio=50  dom=device scratch
+        head_dim == 256  gqa == 8  block_size == 16  causal == 0  window >= 1  q_dtype in {bf16}  kv_dtype in {bf16}  
+  attn_qrow_ahead_h256_gqa8_bf16kv             op=attn_paged_qrow_ahead        fam=attn    prio=50  dom=device scratch
+        head_dim == 256  gqa == 8  block_size == 16  causal == 0  window >= 1  q_dtype in {bf16}  kv_dtype in {bf16}  
+  attn_ahead_h256_gqa8_fp8kv                   op=attn_paged_ahead             fam=attn    prio=50  dom=device scratch
+        head_dim == 256  gqa == 8  block_size == 16  causal == 0  window >= 1  q_dtype in {bf16}  kv_dtype in {fp8_e4m3}  
+  attn_qrow_ahead_h256_gqa8_fp8kv              op=attn_paged_qrow_ahead        fam=attn    prio=50  dom=device scratch
+        head_dim == 256  gqa == 8  block_size == 16  causal == 0  window >= 1  q_dtype in {bf16}  kv_dtype in {fp8_e4m3}  
+  attn_qrow_tree_h256_gqa1_bf16kv              op=attn_paged_qrow_tree         fam=attn    prio=50  dom=device scratch
+        head_dim == 256  gqa == 1  block_size == 16  causal >= 0  window >= 0  q_dtype in {bf16}  kv_dtype in {bf16}  
+  attn_qrow_tree_h256_gqa1_fp8kv               op=attn_paged_qrow_tree         fam=attn    prio=50  dom=device scratch
+        head_dim == 256  gqa == 1  block_size == 16  causal >= 0  window >= 0  q_dtype in {bf16}  kv_dtype in {fp8_e4m3}  
+  attn_qrow_tree_h256_gqa2_bf16kv              op=attn_paged_qrow_tree         fam=attn    prio=50  dom=device scratch
+        head_dim == 256  gqa == 2  block_size == 16  causal >= 0  window >= 0  q_dtype in {bf16}  kv_dtype in {bf16}  
+  attn_qrow_tree_h256_gqa2_fp8kv               op=attn_paged_qrow_tree         fam=attn    prio=50  dom=device scratch
+        head_dim == 256  gqa == 2  block_size == 16  causal >= 0  window >= 0  q_dtype in {bf16}  kv_dtype in {fp8_e4m3}  
+  attn_qrow_tree_h256_gqa4_bf16kv              op=attn_paged_qrow_tree         fam=attn    prio=50  dom=device scratch
+        head_dim == 256  gqa == 4  block_size == 16  causal >= 0  window >= 1  q_dtype in {bf16}  kv_dtype in {bf16}  
+  attn_qrow_tree_h256_gqa4_fp8kv               op=attn_paged_qrow_tree         fam=attn    prio=50  dom=device scratch
+        head_dim == 256  gqa == 4  block_size == 16  causal >= 0  window >= 1  q_dtype in {bf16}  kv_dtype in {fp8_e4m3}  
+  attn_qrow_tree_h256_gqa8_bf16kv              op=attn_paged_qrow_tree         fam=attn    prio=50  dom=device scratch
+        head_dim == 256  gqa == 8  block_size == 16  causal >= 0  window >= 1  q_dtype in {bf16}  kv_dtype in {bf16}  
+  attn_qrow_tree_h256_gqa8_fp8kv               op=attn_paged_qrow_tree         fam=attn    prio=50  dom=device scratch
+        head_dim == 256  gqa == 8  block_size == 16  causal >= 0  window >= 1  q_dtype in {bf16}  kv_dtype in {fp8_e4m3}  
+  attn_qrow_tree_h512_gqa1_bf16kv              op=attn_paged_qrow_tree         fam=attn    prio=50  dom=device scratch
+        head_dim == 512  gqa == 1  block_size == 16  causal >= 0  window >= 0  q_dtype in {bf16}  kv_dtype in {bf16}  
+  attn_qrow_tree_h512_gqa1_fp8kv               op=attn_paged_qrow_tree         fam=attn    prio=50  dom=device scratch
+        head_dim == 512  gqa == 1  block_size == 16  causal >= 0  window >= 0  q_dtype in {bf16}  kv_dtype in {fp8_e4m3}  
+  attn_qrow_tree_h512_gqa2_bf16kv              op=attn_paged_qrow_tree         fam=attn    prio=50  dom=device scratch
+        head_dim == 512  gqa == 2  block_size == 16  causal >= 0  window >= 0  q_dtype in {bf16}  kv_dtype in {bf16}  
+  attn_qrow_tree_h512_gqa2_fp8kv               op=attn_paged_qrow_tree         fam=attn    prio=50  dom=device scratch
+        head_dim == 512  gqa == 2  block_size == 16  causal >= 0  window >= 0  q_dtype in {bf16}  kv_dtype in {fp8_e4m3}  
+  attn_qrow_tree_h512_gqa4_bf16kv              op=attn_paged_qrow_tree         fam=attn    prio=50  dom=device scratch
+        head_dim == 512  gqa == 4  block_size == 16  causal >= 0  window >= 0  q_dtype in {bf16}  kv_dtype in {bf16}  
+  attn_qrow_tree_h512_gqa4_fp8kv               op=attn_paged_qrow_tree         fam=attn    prio=50  dom=device scratch
+        head_dim == 512  gqa == 4  block_size == 16  causal >= 0  window >= 0  q_dtype in {bf16}  kv_dtype in {fp8_e4m3}  
+  attn_qrow_tree_h512_gqa8_bf16kv              op=attn_paged_qrow_tree         fam=attn    prio=50  dom=device scratch
+        head_dim == 512  gqa == 8  block_size == 16  causal >= 0  window >= 0  q_dtype in {bf16}  kv_dtype in {bf16}  
+  attn_qrow_tree_h512_gqa8_fp8kv               op=attn_paged_qrow_tree         fam=attn    prio=50  dom=device scratch
+        head_dim == 512  gqa == 8  block_size == 16  causal >= 0  window >= 0  q_dtype in {bf16}  kv_dtype in {fp8_e4m3}  
+  attn_prefill_h256_gqa12_fp8kv                op=attn_paged                   fam=attn    prio=60  dom=device scratch
+        window == 0  head_dim == 256  gqa == 12  block_size == 4  causal == 1  q_dtype in {bf16}  kv_dtype in {fp8_e4m3}  
+  attn_prefill_h256_gqa12_bf16kv               op=attn_paged                   fam=attn    prio=60  dom=device scratch
+        window == 0  head_dim == 256  gqa == 12  block_size == 4  causal == 1  q_dtype in {bf16}  kv_dtype in {bf16}  
+  attn_decode_h256_gqa12_fp8kv                 op=attn_paged                   fam=attn    prio=70  dom=device scratch
+        window == 0  head_dim == 256  gqa == 12  block_size == 4  causal >= 0  q_len <= 5  q_dtype in {bf16}  kv_dtype in {fp8_e4m3}  
+        tunables(1): splits=0/5   space 5
+  attn_decode_gq_h256_gqa12_fp8kv              op=attn_paged_gate_quant        fam=attn    prio=70  dom=device scratch
+        window == 0  head_dim == 256  gqa == 12  block_size == 4  causal >= 0  q_len <= 5  q_dtype in {bf16}  kv_dtype in {fp8_e4m3}  group == 128  act in {sigmoid}  
+        tunables(1): splits=0/5   space 5
+  attn_decode_h256_gqa12_bf16kv                op=attn_paged                   fam=attn    prio=70  dom=device scratch
+        window == 0  head_dim == 256  gqa == 12  block_size == 4  causal >= 0  q_len <= 5  q_dtype in {bf16}  kv_dtype in {bf16}  
+        tunables(1): splits=0/5   space 5
+  attn_decode_gq_h256_gqa12_bf16kv             op=attn_paged_gate_quant        fam=attn    prio=70  dom=device scratch
+        window == 0  head_dim == 256  gqa == 12  block_size == 4  causal >= 0  q_len <= 5  q_dtype in {bf16}  kv_dtype in {bf16}  group == 128  act in {sigmoid}  
+        tunables(1): splits=0/5   space 5
+  attn_prefill_h256_gqa6_bs4_fp8kv             op=attn_paged                   fam=attn    prio=60  dom=device scratch
+        window == 0  head_dim == 256  gqa == 6  block_size == 4  causal == 1  q_dtype in {bf16}  kv_dtype in {fp8_e4m3}  
+  attn_prefill_h256_gqa6_bs4_bf16kv            op=attn_paged                   fam=attn    prio=60  dom=device scratch
+        window == 0  head_dim == 256  gqa == 6  block_size == 4  causal == 1  q_dtype in {bf16}  kv_dtype in {bf16}  
+  attn_decode_h256_gqa6_bs4_fp8kv              op=attn_paged                   fam=attn    prio=70  dom=device scratch
+        window == 0  head_dim == 256  gqa == 6  block_size == 4  causal >= 0  q_len <= 10  q_dtype in {bf16}  kv_dtype in {fp8_e4m3}  
+        tunables(1): splits=0/5   space 5
+  attn_decode_h256_gqa6_bs4_bf16kv             op=attn_paged                   fam=attn    prio=70  dom=device scratch
+        window == 0  head_dim == 256  gqa == 6  block_size == 4  causal >= 0  q_len <= 10  q_dtype in {bf16}  kv_dtype in {bf16}  
+        tunables(1): splits=0/5   space 5
+  attn_decode_gq_h256_gqa6_bs4_fp8kv           op=attn_paged_gate_quant        fam=attn    prio=70  dom=device scratch
+        window == 0  head_dim == 256  gqa == 6  block_size == 4  causal >= 0  q_len <= 10  q_dtype in {bf16}  kv_dtype in {fp8_e4m3}  group == 128  act in {sigmoid}  
+        tunables(1): splits=0/5   space 5
+  attn_decode_gq_h256_gqa6_bs4_bf16kv          op=attn_paged_gate_quant        fam=attn    prio=70  dom=device scratch
+        window == 0  head_dim == 256  gqa == 6  block_size == 4  causal >= 0  q_len <= 10  q_dtype in {bf16}  kv_dtype in {bf16}  group == 128  act in {sigmoid}  
+        tunables(1): splits=0/5   space 5
+  attn_prefill_h256_gqa12_fp8v4                op=attn_paged                   fam=attn    prio=60  dom=device scratch
+        window == 0  head_dim == 256  gqa == 12  block_size == 4  causal == 1  q_dtype in {bf16}  kv_dtype in {fp8_v4}  
+  attn_decode_h256_gqa12_fp8v4                 op=attn_paged                   fam=attn    prio=70  dom=device scratch
+        window == 0  head_dim == 256  gqa == 12  block_size == 4  causal >= 0  q_len <= 5  q_dtype in {bf16}  kv_dtype in {fp8_v4}  
+        tunables(1): splits=0/5   space 5
+  attn_decode_gq_h256_gqa12_fp8v4              op=attn_paged_gate_quant        fam=attn    prio=70  dom=device scratch
+        window == 0  head_dim == 256  gqa == 12  block_size == 4  causal >= 0  q_len <= 5  q_dtype in {bf16}  kv_dtype in {fp8_v4}  group == 128  act in {sigmoid}  
+        tunables(1): splits=0/5   space 5
+  attn_prefill_h256_gqa12_k6v4                 op=attn_paged                   fam=attn    prio=60  dom=device scratch
+        window == 0  head_dim == 256  gqa == 12  block_size == 4  causal == 1  q_dtype in {bf16}  kv_dtype in {k6_v4}  
+  attn_decode_h256_gqa12_k6v4                  op=attn_paged                   fam=attn    prio=70  dom=device scratch
+        window == 0  head_dim == 256  gqa == 12  block_size == 4  causal >= 0  q_len <= 5  q_dtype in {bf16}  kv_dtype in {k6_v4}  
+        tunables(1): splits=0/5   space 5
+  attn_decode_gq_h256_gqa12_k6v4               op=attn_paged_gate_quant        fam=attn    prio=70  dom=device scratch
+        window == 0  head_dim == 256  gqa == 12  block_size == 4  causal >= 0  q_len <= 5  q_dtype in {bf16}  kv_dtype in {k6_v4}  group == 128  act in {sigmoid}  
+        tunables(1): splits=0/5   space 5
+  attn_prefill_h256_gqa6_bs4_fp8v4             op=attn_paged                   fam=attn    prio=60  dom=device scratch
+        window == 0  head_dim == 256  gqa == 6  block_size == 4  causal == 1  q_dtype in {bf16}  kv_dtype in {fp8_v4}  
+  attn_decode_h256_gqa6_bs4_fp8v4              op=attn_paged                   fam=attn    prio=70  dom=device scratch
+        window == 0  head_dim == 256  gqa == 6  block_size == 4  causal >= 0  q_len <= 10  q_dtype in {bf16}  kv_dtype in {fp8_v4}  
+        tunables(1): splits=0/5   space 5
+  attn_decode_gq_h256_gqa6_bs4_fp8v4           op=attn_paged_gate_quant        fam=attn    prio=70  dom=device scratch
+        window == 0  head_dim == 256  gqa == 6  block_size == 4  causal >= 0  q_len <= 10  q_dtype in {bf16}  kv_dtype in {fp8_v4}  group == 128  act in {sigmoid}  
+        tunables(1): splits=0/5   space 5
+  attn_prefill_h256_gqa6_bs4_k6v4              op=attn_paged                   fam=attn    prio=60  dom=device scratch
+        window == 0  head_dim == 256  gqa == 6  block_size == 4  causal == 1  q_dtype in {bf16}  kv_dtype in {k6_v4}  
+  attn_decode_h256_gqa6_bs4_k6v4               op=attn_paged                   fam=attn    prio=70  dom=device scratch
+        window == 0  head_dim == 256  gqa == 6  block_size == 4  causal >= 0  q_len <= 10  q_dtype in {bf16}  kv_dtype in {k6_v4}  
+        tunables(1): splits=0/5   space 5
+  attn_decode_gq_h256_gqa6_bs4_k6v4            op=attn_paged_gate_quant        fam=attn    prio=70  dom=device scratch
+        window == 0  head_dim == 256  gqa == 6  block_size == 4  causal >= 0  q_len <= 10  q_dtype in {bf16}  kv_dtype in {k6_v4}  group == 128  act in {sigmoid}  
+        tunables(1): splits=0/5   space 5
+  attn_prefill_h128_gqa8_fp8kv                 op=attn_paged                   fam=attn    prio=60  dom=device
+        window == 0  head_dim == 128  gqa == 8  block_size == 16  causal == 1  q_dtype in {bf16}  kv_dtype in {fp8_e4m3}  
+  attn_prefill_h128_gqa8_bf16kv                op=attn_paged                   fam=attn    prio=60  dom=device
+        window == 0  head_dim == 128  gqa == 8  block_size == 16  causal == 1  q_dtype in {bf16}  kv_dtype in {bf16}  
+  attn_decode_h128_gqa8_fp8kv                  op=attn_paged                   fam=attn    prio=70  dom=device scratch
+        window == 0  head_dim == 128  gqa == 8  block_size == 16  causal >= 0  q_len <= 8  q_dtype in {bf16}  kv_dtype in {fp8_e4m3}  
+        tunables(1): splits=0/5   space 5
+  attn_decode_h128_gqa8_bf16kv                 op=attn_paged                   fam=attn    prio=70  dom=device scratch
+        window == 0  head_dim == 128  gqa == 8  block_size == 16  causal >= 0  q_len <= 8  q_dtype in {bf16}  kv_dtype in {bf16}  
+        tunables(1): splits=0/5   space 5
+  attn_prefill_h128_gqa2_fp8kv                 op=attn_paged                   fam=attn    prio=60  dom=device
+        window == 0  head_dim == 128  gqa == 2  block_size == 16  causal == 1  q_dtype in {bf16}  kv_dtype in {fp8_e4m3}  
+  attn_prefill_h128_gqa2_bf16kv                op=attn_paged                   fam=attn    prio=60  dom=device
+        window == 0  head_dim == 128  gqa == 2  block_size == 16  causal == 1  q_dtype in {bf16}  kv_dtype in {bf16}  
+  attn_decode_h128_gqa2_fp8kv                  op=attn_paged                   fam=attn    prio=70  dom=device scratch
+        window == 0  head_dim == 128  gqa == 2  block_size == 16  causal >= 0  q_len <= 32  q_dtype in {bf16}  kv_dtype in {fp8_e4m3}  
+        tunables(1): splits=0/5   space 5
+  attn_decode_h128_gqa2_bf16kv                 op=attn_paged                   fam=attn    prio=70  dom=device scratch
+        window == 0  head_dim == 128  gqa == 2  block_size == 16  causal >= 0  q_len <= 32  q_dtype in {bf16}  kv_dtype in {bf16}  
+        tunables(1): splits=0/5   space 5
+  attn_vit_h72_bf16                            op=attn_dense                   fam=attn    prio=50  dom=device
+        head_dim == 72  gqa == 1  causal == 0  dtype in {bf16}  
+  sam_attn_bf16                                op=sam_attn                     fam=attn    prio=50  dom=device
+        head_dim == 64  dtype in {bf16}  
+  attn_dense_h64_bf16                          op=attn_dense                   fam=attn    prio=50  dom=device
+        head_dim == 64  gqa == 1  dtype in {bf16}  
+  attn_dense_h256_bf16                         op=attn_dense                   fam=attn    prio=50  dom=device
+        head_dim == 256  gqa == 1  max_seqlen >= 33  dtype in {bf16}  
+  attn_dense_h256_gqa2_bf16                    op=attn_dense                   fam=attn    prio=50  dom=device
+        head_dim == 256  gqa == 2  dtype in {bf16}  
+  attn_dense_h256_gqa4_bf16                    op=attn_dense                   fam=attn    prio=50  dom=device
+        head_dim == 256  gqa == 4  dtype in {bf16}  
+  attn_dense_h256_gqa8_bf16                    op=attn_dense                   fam=attn    prio=50  dom=device
+        head_dim == 256  gqa % 8 == 0  dtype in {bf16}  
+  attn_dense_h512_gqa2_bf16                    op=attn_dense                   fam=attn    prio=50  dom=device
+        head_dim == 512  gqa == 2  dtype in {bf16}  
+  attn_dense_h512_gqa4_bf16                    op=attn_dense                   fam=attn    prio=50  dom=device
+        head_dim == 512  gqa == 4  dtype in {bf16}  
+  attn_dense_h512_gqa8_bf16                    op=attn_dense                   fam=attn    prio=50  dom=device
+        head_dim == 512  gqa % 8 == 0  dtype in {bf16}  
+  gdn_chunk_scan_k128_v128_c64_bf16            op=gdn_chunk_scan               fam=gdn     prio=50  dom=device
+        head_k == 128  head_v == 128  chunk == 64  
+  gdn_conv_prep_w4_h128_bf16                   op=gdn_conv_prep                fam=gdn     prio=50  dom=device
+        conv_width == 4  head_k == 128  head_v == 128  chunk == 64  
+  gdn_conv_update_w4_h128_bf16                 op=gdn_conv_update              fam=gdn     prio=50  dom=device
+        conv_width == 4  head_k == 128  head_v == 128  
+  gdn_kkt_solve_k128_c64_bf16                  op=gdn_kkt_solve                fam=gdn     prio=50  dom=device
+        head_k == 128  chunk == 64  
+  gdn_recurrent_update_k128_v128_bf16_fp32state op=gdn_recurrent_update         fam=gdn     prio=50  dom=device
+        head_k == 128  head_v == 128  
+  gdn_conv_recurrent_update_k128_v128_bf16     op=gdn_conv_recurrent_update    fam=gdn     prio=50  dom=device
+        head_k == 128  head_v == 128  conv_width == 4  q_len >= 1  q_len <= 8  
+  gdn_conv_recurrent_update_had_k128_v128_bf16 op=gdn_conv_recurrent_update_had fam=gdn     prio=50  dom=device
+        head_k == 128  head_v == 128  conv_width == 4  q_len >= 1  q_len <= 8  
+  kda_update_k128_v128_bf16                    op=kda_update                   fam=gdn     prio=50  dom=device
+        M >= 1  heads >= 1  heads <= 65535  head_k == 128  head_v == 128  mode in {prefill verify}  dtype in {bf16}  
+  mhc_pre_bf16                                 op=mhc_pre                      fam=norm    prio=50  dom=device
+        M >= 1  M <= 65535  n >= 1  n <= 16384  hc >= 2  hc <= 8  dtype in {bf16}  iterations >= 1  iterations <= 256  
+  mhc_pre_partial_bf16                         op=mhc_pre_partial              fam=norm    prio=50  dom=device
+        M >= 1  M <= 65535  n == 4096  hc == 4  chunk == 2048  first >= 0  first <= 7  chunks >= 1  chunks <= 8  dtype in {bf16}  
+  mhc_pre_finish_bf16                          op=mhc_pre_finish               fam=norm    prio=50  dom=device
+        M >= 1  M <= 65535  n == 4096  hc == 4  chunk == 2048  dtype in {bf16}  iterations >= 1  iterations <= 256  
+  mhc_post_bf16                                op=mhc_post                     fam=norm    prio=50  dom=device
+        M >= 1  M <= 65535  n >= 1  n <= 16384  hc >= 2  hc <= 8  dtype in {bf16}  
+  mhc_contract_bf16                            op=mhc_contract                 fam=norm    prio=50  dom=device
+        M >= 1  M <= 65535  n >= 1  n <= 16384  hc >= 2  hc <= 8  dtype in {bf16}  
+  hc_enter_bf16                                op=hc_enter                     fam=norm    prio=50  dom=device
+        M >= 1  n >= 1  hc >= 2  hc <= 8  dtype in {bf16}  
+  hc_write_bf16                                op=hc_write                     fam=norm    prio=50  dom=device
+        M >= 1  n >= 1  hc >= 2  hc <= 8  dtype in {bf16}  
+  hc_project_bf16                              op=hc_project                   fam=norm    prio=50  dom=device
+        M >= 1  n >= 1  hc >= 2  hc <= 8  dtype in {bf16}  
+  mtp_enter_bf16                               op=mtp_enter                    fam=norm    prio=50  dom=device scratch
+        M >= 1  n >= 128  n <= 5734  hc >= 2  hc <= 4  dtype in {bf16}  fc in {bf16}  
+  mtp_enter_e4m3                               op=mtp_enter                    fam=norm    prio=50  dom=device scratch layout relayout+inverse
+        M >= 1  n % 128 == 0  n <= 5734  hc >= 2  hc <= 4  dtype in {bf16}  fc in {e4m3}  
+  hc_read_bf16                                 op=hc_read                      fam=norm    prio=50  dom=device scratch
+        M >= 1  n % 128 == 0  n <= 7552  hc >= 2  hc <= 4  lowrank >= 1  group <= 128  inject <= 1  dtype in {bf16}  mix in {bf16}  
+  hc_read_e4m3                                 op=hc_read                      fam=norm    prio=50  dom=device scratch layout relayout+inverse
+        M >= 1  n % 512 == 0  n <= 7552  hc >= 2  hc <= 4  lowrank % 64 == 0  lowrank <= 512  group <= 128  inject <= 1  dtype in {bf16}  mix in {e4m3}  
+  gdn_gated_rmsnorm_h128_bf16                  op=gdn_gated_rmsnorm            fam=gdn     prio=50  dom=device
+        channels == 128  
+  ar_twoshot_3rank_exact                       op=all_reduce                   fam=ar      prio=70  dom=device init
+        world_size == 3  exact == 1  dtype in {bf16 fp16 fp32}  numel >= 524289  numel <= 268435456  device.p2p == 1  
+        tunables(10): ts_once=0/2 ts_pieces=1/5 ts_pieces_min=0/6 ts_fuse=0/2 ts_duplex=0/2 nblocks=0/6 nthreads=1024/3 drain=3/2 acq=0/2 ts_min=32768/6   space 103680
+  ar_twoshot_4rank_exact                       op=all_reduce                   fam=ar      prio=70  dom=device init
+        world_size == 4  exact == 1  dtype in {bf16 fp16 fp32}  numel % 64 == 0  numel >= 524289  numel <= 268435456  device.p2p == 1  
+        tunables(10): ts_once=0/2 ts_pieces=1/5 ts_pieces_min=0/6 ts_fuse=0/2 ts_duplex=0/2 nblocks=0/6 nthreads=1024/3 drain=3/2 acq=0/2 ts_min=32768/6   space 103680
+  ar_twoshot_4rank_exact_lane                  op=all_reduce                   fam=ar      prio=71  dom=device init
+        world_size == 4  exact == 1  dtype in {bf16 fp16 fp32}  numel % 64 == 0  numel >= 524289  numel <= 268435456  overlap == 1  device.p2p == 1  
+        tunables(10): ts_once=0/2 ts_pieces=1/5 ts_pieces_min=0/6 ts_fuse=0/2 ts_duplex=0/2 nblocks=4/5 nthreads=1024/3 drain=3/2 acq=0/2 ts_min=32768/6   space 86400
+  ar_twoshot_8rank_exact                       op=all_reduce                   fam=ar      prio=70  dom=device init
+        world_size == 8  exact == 1  dtype in {bf16 fp16 fp32}  numel % 64 == 0  numel >= 8193  numel <= 268435456  device.p2p == 1  
+        tunables(10): ts_once=0/2 ts_pieces=1/5 ts_pieces_min=0/6 ts_fuse=0/2 ts_duplex=0/2 nblocks=0/6 nthreads=1024/3 drain=3/2 acq=0/2 ts_min=32768/6   space 103680
+  ar_gather_2rank                              op=all_gather                   fam=ar      prio=60  dom=device init
+        world_size == 2  dtype in {bf16 fp16 f16 fp32 f32}  device.p2p == 1  
+        tunables(10): ts_once=0/2 ts_pieces=1/5 ts_pieces_min=0/6 ts_fuse=0/2 ts_duplex=0/2 nblocks=0/6 nthreads=1024/3 drain=3/2 acq=0/2 ts_min=32768/6   space 103680
+  ar_gather_4rank                              op=all_gather                   fam=ar      prio=60  dom=device init
+        world_size == 4  dtype in {bf16 fp16 f16 fp32 f32}  device.p2p == 1  
+        tunables(10): ts_once=0/2 ts_pieces=1/5 ts_pieces_min=0/6 ts_fuse=0/2 ts_duplex=0/2 nblocks=0/6 nthreads=1024/3 drain=3/2 acq=0/2 ts_min=32768/6   space 103680
+  ar_gather_8rank                              op=all_gather                   fam=ar      prio=60  dom=device init
+        world_size == 8  dtype in {bf16 fp16 f16 fp32 f32}  device.p2p == 1  
+        tunables(10): ts_once=0/2 ts_pieces=1/5 ts_pieces_min=0/6 ts_fuse=0/2 ts_duplex=0/2 nblocks=0/6 nthreads=1024/3 drain=3/2 acq=0/2 ts_min=32768/6   space 103680
+  ar_oneshot_2rank_exact                       op=all_reduce                   fam=ar      prio=60  dom=device init
+        world_size == 2  exact == 1  dtype in {bf16 fp16 fp32}  device.p2p == 1  
+        tunables(10): ts_once=0/2 ts_pieces=1/5 ts_pieces_min=0/6 ts_fuse=0/2 ts_duplex=0/2 nblocks=0/6 nthreads=1024/3 drain=3/2 acq=0/2 ts_min=32768/6   space 103680
+  ar_oneshot_2rank_wht6                        op=all_reduce                   fam=ar      prio=60  dom=device init
+        world_size == 2  exact == 0  dtype in {bf16 fp16}  numel % 64 == 0  device.p2p == 1  
+        tunables(10): ts_once=0/2 ts_pieces=1/5 ts_pieces_min=0/6 ts_fuse=0/2 ts_duplex=0/2 nblocks=0/6 nthreads=1024/3 drain=3/2 acq=0/2 ts_min=32768/6   space 103680
+  ar_oneshot_2rank_exact_lane                  op=all_reduce                   fam=ar      prio=61  dom=device init
+        world_size == 2  exact == 1  dtype in {bf16 fp16 fp32}  overlap == 1  device.p2p == 1  
+        tunables(10): ts_once=0/2 ts_pieces=1/5 ts_pieces_min=0/6 ts_fuse=0/2 ts_duplex=0/2 nblocks=8/6 nthreads=256/3 drain=3/2 acq=0/2 ts_min=32768/6   space 103680
+  ar_oneshot_2rank_wht6_lane                   op=all_reduce                   fam=ar      prio=61  dom=device init
+        world_size == 2  exact == 0  dtype in {bf16 fp16}  numel % 64 == 0  overlap == 1  device.p2p == 1  
+        tunables(10): ts_once=0/2 ts_pieces=1/5 ts_pieces_min=0/6 ts_fuse=0/2 ts_duplex=0/2 nblocks=8/6 nthreads=256/3 drain=3/2 acq=0/2 ts_min=32768/6   space 103680
+  ar_gather_3rank                              op=all_gather                   fam=ar      prio=60  dom=device init
+        world_size == 3  dtype in {bf16 fp16 f16 fp32 f32}  device.p2p == 1  
+        tunables(10): ts_once=0/2 ts_pieces=1/5 ts_pieces_min=0/6 ts_fuse=0/2 ts_duplex=0/2 nblocks=0/6 nthreads=1024/3 drain=3/2 acq=0/2 ts_min=32768/6   space 103680
+  ar_oneshot_3rank_exact                       op=all_reduce                   fam=ar      prio=60  dom=device init
+        world_size == 3  exact == 1  dtype in {bf16 fp16 fp32}  device.p2p == 1  
+        tunables(10): ts_once=0/2 ts_pieces=1/5 ts_pieces_min=0/6 ts_fuse=0/2 ts_duplex=0/2 nblocks=0/6 nthreads=1024/3 drain=3/2 acq=0/2 ts_min=32768/6   space 103680
+  ar_oneshot_4rank_exact                       op=all_reduce                   fam=ar      prio=60  dom=device init
+        world_size == 4  exact == 1  dtype in {bf16 fp16 fp32}  device.p2p == 1  
+        tunables(10): ts_once=0/2 ts_pieces=1/5 ts_pieces_min=0/6 ts_fuse=0/2 ts_duplex=0/2 nblocks=0/6 nthreads=1024/3 drain=3/2 acq=0/2 ts_min=32768/6   space 103680
+  ar_oneshot_8rank_exact                       op=all_reduce                   fam=ar      prio=60  dom=device init
+        world_size == 8  exact == 1  dtype in {bf16 fp16 fp32}  device.p2p == 1  
+        tunables(10): ts_once=0/2 ts_pieces=1/5 ts_pieces_min=0/6 ts_fuse=0/2 ts_duplex=0/2 nblocks=0/6 nthreads=1024/3 drain=3/2 acq=0/2 ts_min=32768/6   space 103680
+  ar_twoshot_3rank_ti8                         op=all_reduce                   fam=ar      prio=60  dom=device init
+        world_size == 3  exact == 0  dtype in {bf16 fp16}  numel % 32 == 0  device.p2p == 1  
+        tunables(10): ts_once=0/2 ts_pieces=1/5 ts_pieces_min=0/6 ts_fuse=0/2 ts_duplex=0/2 nblocks=0/6 nthreads=1024/3 drain=3/2 acq=0/2 ts_min=32768/6   space 103680
+  ar_twoshot_4rank_ti8                         op=all_reduce                   fam=ar      prio=60  dom=device init
+        world_size == 4  exact == 0  dtype in {bf16 fp16}  numel % 128 == 0  device.p2p == 1  
+        tunables(10): ts_once=0/2 ts_pieces=1/5 ts_pieces_min=0/6 ts_fuse=0/2 ts_duplex=0/2 nblocks=0/6 nthreads=1024/3 drain=3/2 acq=0/2 ts_min=32768/6   space 103680
+  ar_twoshot_4rank_ti8_lane                    op=all_reduce                   fam=ar      prio=61  dom=device init
+        world_size == 4  exact == 0  dtype in {bf16 fp16}  numel % 128 == 0  overlap == 1  device.p2p == 1  
+        tunables(10): ts_once=0/2 ts_pieces=1/5 ts_pieces_min=0/6 ts_fuse=0/2 ts_duplex=0/2 nblocks=4/5 nthreads=1024/3 drain=3/2 acq=0/2 ts_min=32768/6   space 86400
+  gemm_bf16_nt_m16                             op=gemm_nt                      fam=gemm    prio=60  dom=device
+        M <= 16  K % 256 == 0  dtype in {bf16}  
+        tunables(5): wv=1/3 sk=0/10 mb=0/5 npw=1/3 nt=1/2   space 900 (pruned)
+  gemm_bf16_nt_m64                             op=gemm_nt                      fam=gemm    prio=50  dom=device
+        M <= 2147483647  K % 16 == 0  dtype in {bf16}  
+        tunables(5): wv=1/3 sk=0/10 mb=0/5 npw=1/3 nt=1/2   space 900 (pruned)
+  gemm_bf16_nt_tiled                           op=gemm_nt                      fam=gemm    prio=55  dom=device
+        M >= 65  M <= 2147483647  N >= 128  K % 64 == 0  dtype in {bf16}  
+        tunables(1): tile=0/3   space 3
+  gemm_w4a16_nt_m64                            op=gemm_nt_q                    fam=gemm    prio=50  dom=device layout relayout+inverse
+        M <= 64  K % 128 == 0  N % 16 == 0  group == 128  dtype in {w4a16}  
+        tunables(5): wv=1/3 sk=0/10 mb=0/5 npw=1/3 nt=1/2   space 900 (pruned)
+  gemm_w5a16_nt_m64                            op=gemm_nt_q                    fam=gemm    prio=50  dom=device layout relayout+inverse
+        M >= 1  K % 128 == 0  N % 16 == 0  group == 128  dtype in {w5a16}  
+        tunables(5): wv=1/3 sk=0/10 mb=0/5 npw=1/3 nt=1/2   space 900 (pruned)
+  gemm_w4a16_asym_nt_m64                       op=gemm_nt_q                    fam=gemm    prio=50  dom=device layout relayout+inverse
+        M >= 1  K % 128 == 0  N % 16 == 0  group == 128  dtype in {w4a16_asym}  
+        tunables(5): wv=1/3 sk=0/10 mb=0/5 npw=1/3 nt=1/2   space 900 (pruned)
+  gemm_w4a8i8_tiled                            op=gemm_nt_q                    fam=gemm    prio=50  dom=device scratch layout relayout+inverse
+        M >= 1  K % 128 == 0  N % 16 == 0  group == 128  dtype in {w4a8i8_asym}  
+  gemm_w5a8i8_tiled                            op=gemm_nt_q                    fam=gemm    prio=50  dom=device scratch layout relayout+inverse
+        M >= 1  K % 128 == 0  N % 16 == 0  group == 128  dtype in {w5a8i8}  
+  gemm_w8a16_nt_m64                            op=gemm_nt_q                    fam=gemm    prio=50  dom=device layout relayout
+        M <= 64  K % 128 == 0  N % 16 == 0  group == 128  dtype in {w8a16}  
+        tunables(5): wv=1/3 sk=0/10 mb=0/5 npw=1/3 nt=1/2   space 900 (pruned)
+  gemm_w4a8_nt_m64                             op=gemm_nt_q                    fam=gemm    prio=50  dom=device layout relayout+inverse
+        M <= 64  K % 128 == 0  N % 16 == 0  group == 128  dtype in {w4a8 w4a8_asym}  
+        tunables(5): wv=1/3 sk=0/10 mb=0/5 npw=1/3 nt=1/2   space 900 (pruned)
+  gemm_fp8a16_nt_m1                            op=gemm_nt_q                    fam=gemm    prio=60  dom=device layout
+        M <= 8  K % 128 == 0  group == 128  dtype in {fp8a16}  
+        tunables(1): rb=0/5   space 5
+  gemm_fp8a8_nt_m16                            op=gemm_nt_q                    fam=gemm    prio=60  dom=device scratch layout relayout+inverse
+        M <= 64  K % 128 == 0  N % 16 == 0  group == 128  dtype in {fp8a8}  
+  gemm_fp8a8_nt_m16_short                      op=gemm_nt_q_short              fam=gemm    prio=60  dom=device scratch layout relayout+inverse
+        M <= 64  K % 128 == 0  N % 16 == 0  group == 128  dtype in {fp8a8}  
+  gemm_fp8a8_gated_nt_m16                      op=gemm_nt_q_gated              fam=gemm    prio=50  dom=device layout relayout+inverse
+        M <= 64  K % 256 == 0  N % 256 == 0  N >= 2048  group == 128  dtype in {fp8a8}  act in {silu}  
+  gemm_fp8a8_gated_nt_wide                     op=gemm_nt_q_gated_wide         fam=gemm    prio=50  dom=device layout relayout+inverse
+        K % 256 == 0  N % 256 == 0  N >= 2048  group == 128  dtype in {fp8a8}  act in {silu}  
+  gemm_fp8a8_tiled                             op=gemm_nt_q                    fam=gemm    prio=40  dom=device layout relayout+inverse
+        K % 128 == 0  N % 128 == 0  group == 128  dtype in {fp8a8}  
+  gemm_fp8a8_bias_nt_m16                       op=gemm_nt_q_bias               fam=gemm    prio=50  dom=device layout relayout+inverse
+        M <= 64  K % 128 == 0  N % 16 == 0  group == 128  dtype in {fp8a8}  
+  gemm_i8a8_nt_m16                             op=gemm_nt_q                    fam=gemm    prio=60  dom=device scratch layout relayout+inverse
+        M <= 64  K % 128 == 0  N % 16 == 0  group == 128  dtype in {i8a8 i8a8h}  
+  gemm_i8a8_tiled                              op=gemm_nt_q                    fam=gemm    prio=40  dom=device layout relayout+inverse
+        K % 128 == 0  N % 128 == 0  group == 128  dtype in {i8a8 i8a8h}  
+  gemm_i8a8_rb8_tiled                          op=gemm_nt_q                    fam=gemm    prio=41  dom=device layout relayout+inverse
+        K % 128 == 0  N % 128 == 0  group == 128  dtype in {i8a8 i8a8h}  w_rb >= 8  w_rb % 8 == 0  
+  gemm_i8a8_rb32_tiled                         op=gemm_nt_q                    fam=gemm    prio=42  dom=device layout relayout+inverse
+        K % 128 == 0  N % 128 == 0  group == 128  dtype in {i8a8 i8a8h}  w_rb >= 32  w_rb % 32 == 0  
+  gemm_iqr_nt_m64                              op=gemm_nt_q                    fam=gemm    prio=60  dom=device scratch layout relayout+inverse
+        M <= 64  K % 256 == 0  N % 16 == 0  group == 128  dtype in {i8a8 i8a8h}  
+  gemm_iqr_gated                               op=gemm_nt_q_gated              fam=gemm    prio=50  dom=device scratch layout relayout+inverse
+        M <= 16  K % 256 == 0  N % 256 == 0  group == 128  dtype in {i8a8h}  act in {silu}  
+  gemm_iqr_tiled                               op=gemm_nt_q                    fam=gemm    prio=40  dom=device scratch layout relayout+inverse
+        K % 256 == 0  N % 128 == 0  group == 128  dtype in {i8a8 i8a8h}  
+  gemm_w8a8_nt_m64                             op=gemm_nt_q                    fam=gemm    prio=50  dom=device layout relayout
+        M <= 64  K % 128 == 0  N % 16 == 0  group == 128  dtype in {w8a8}  
+        tunables(5): wv=1/3 sk=0/10 mb=0/5 npw=1/3 nt=1/2   space 900 (pruned)
+  gemm_w2a8_nt                                 op=gemm_nt_q                    fam=gemm    prio=50  dom=device layout relayout
+        K % 128 == 0  N % 16 == 0  group == 128  dtype in {w2a8}  
+        tunables(5): wv=1/3 sk=0/10 mb=0/5 npw=1/3 nt=1/2   space 900 (pruned)
+  gemm_mxfp4a8_nt_m64                          op=gemm_nt_q                    fam=gemm    prio=50  dom=device layout relayout
+        M <= 64  K % 32 == 0  N % 16 == 0  dtype in {mxfp4a8}  
+        tunables(5): wv=1/3 sk=0/10 mb=0/5 npw=1/3 nt=1/2   space 900 (pruned)
+  gemm_mxfp4a8_gemv                            op=gemm_nt_q                    fam=gemm    prio=58  dom=device layout relayout
+        M <= 8  K % 64 == 0  N % 16 == 0  dtype in {mxfp4a8}  
+  gemm_mxfp4a8_gemv_wide                       op=gemm_nt_q                    fam=gemm    prio=58  dom=device layout relayout
+        M >= 9  M <= 64  K % 128 == 0  N % 16 == 0  dtype in {mxfp4a8}  
+  gemm_mxfp4a8_gated_gemv                      op=gemm_nt_q_gated_mx           fam=gemm    prio=50  dom=device scratch layout relayout
+        M <= 8  K % 128 == 0  N % 256 == 0  group == 32  dtype in {mxfp4a8}  act in {silu gelu_tanh}  
+  gemm_mxfp4a8_gated_gemv_wide                 op=gemm_nt_q_gated_mx           fam=gemm    prio=50  dom=device scratch layout relayout
+        M >= 9  M <= 64  K % 128 == 0  K >= 2688  N % 256 == 0  group == 32  dtype in {mxfp4a8}  act in {silu gelu_tanh}  
+  gemm_mxfp4a8_decode                          op=gemm_nt_q                    fam=gemm    prio=55  dom=device scratch layout relayout
+        M <= 128  N <= 36864  K % 64 == 0  N % 16 == 0  dtype in {mxfp4a8}  
+        tunables(3): ks=0/6 bk=0/3 nt=0/3   space 54
+  gemm_mxfp4a8_decode_shortk                   op=gemm_nt_q                    fam=gemm    prio=59  dom=device scratch layout relayout
+        M >= 33  M <= 64  N >= 8192  N <= 36864  K <= 2560  K % 64 == 0  N % 16 == 0  dtype in {mxfp4a8}  
+        tunables(3): ks=0/6 bk=0/3 nt=0/3   space 54
+  gemm_mxfp4a8_tiled                           op=gemm_nt_q                    fam=gemm    prio=30  dom=device scratch layout relayout
+        M >= 1  K % 64 == 0  N % 16 == 0  dtype in {mxfp4a8}  
+        tunables(1): tn=0/3   space 3
+  gemm_m2xfp4a8_decode                         op=gemm_nt_q                    fam=gemm    prio=55  dom=device scratch layout relayout
+        M <= 128  N <= 36864  K % 64 == 0  N % 16 == 0  dtype in {m2xfp4}  
+        tunables(3): ks=0/6 bk=0/3 nt=0/3   space 54
+  gemm_m2xfp4a8_tiled                          op=gemm_nt_q                    fam=gemm    prio=30  dom=device scratch layout relayout
+        M >= 1  K % 64 == 0  N % 16 == 0  dtype in {m2xfp4}  
+        tunables(1): tn=0/3   space 3
+  gemm_w4a8_prefill                            op=gemm_nt_q                    fam=gemm    prio=40  dom=device layout relayout+inverse
+        M >= 1  K % 128 == 0  N % 256 == 0  group == 128  dtype in {w4a8}  
+        tunables(1): tile=0/14   space 14
+  gemm_w4a8_tiled                              op=gemm_nt_q                    fam=gemm    prio=30  dom=device layout relayout+inverse
+        M >= 1  K % 128 == 0  N % 256 == 0  group == 128  dtype in {w4a8 w4a8_asym}  
+        tunables(1): tile=0/15   space 15
+  gemm_w8a8_tiled                              op=gemm_nt_q                    fam=gemm    prio=30  dom=device layout relayout
+        M >= 1  K % 128 == 0  N % 256 == 0  group == 128  dtype in {w8a8}  
+        tunables(1): tile=0/15   space 15
+  dequant_w4_bf16                              op=dequant_w4                   fam=gemm    prio=50  dom=device
+        N % 16 == 0  K % 64 == 0  dtype in {w4}  
+  scale_rows_bf16                              op=scale_rows                   fam=elem    prio=50  dom=device
+        M >= 1  n >= 1  dtype in {bf16}  
+  router_sigmoid_group_topk_f32                op=router_sigmoid_group_topk    fam=moe     prio=50  dom=device
+        M >= 1  M <= 65535  n_expert >= 1  n_expert <= 512  top_k >= 1  top_k <= 32  n_group >= 1  n_group <= 32  dtype in {f32}  
+  router_sigmoid_topk_f32                      op=router_sigmoid_topk          fam=moe     prio=50  dom=device
+        M >= 1  M <= 65535  n_expert >= 1  n_expert <= 512  top_k >= 1  top_k <= 32  dtype in {f32}  
+  router_sigmoid_topk_scatter_f32              op=router_sigmoid_topk_scatter  fam=moe     prio=50  dom=device
+        M >= 1  M <= 1024  n_expert >= 1  n_expert <= 512  top_k >= 1  top_k <= 32  dtype in {f32}  
+  router_topk_bf16                             op=router_topk                  fam=moe     prio=50  dom=device
+        M >= 1  n_expert >= 1  n_expert <= 512  top_k >= 1  top_k <= 32  dtype in {bf16}  
+  router_topk_scatter_bf16                     op=router_topk_scatter          fam=moe     prio=50  dom=device
+        M >= 1  n_expert >= 1  n_expert <= 512  top_k >= 1  top_k <= 32  dtype in {bf16}  
+  router_gemm_topk_scatter_bf16                op=router_gemm_topk_scatter     fam=moe     prio=50  dom=device init
+        M >= 1  M <= 64  K % 16 == 0  n_expert >= 1  n_expert <= 512  top_k >= 1  top_k <= 32  dtype in {bf16}  
+  moe_scatter_i32                              op=moe_scatter                  fam=moe     prio=50  dom=device scratch
+        M >= 1  n_expert >= 1  n_expert <= 512  top_k >= 1  
+  moe_scatter_inv_i32                          op=moe_scatter_inv              fam=moe     prio=50  dom=device scratch
+        M >= 1  n_expert >= 1  n_expert <= 512  top_k >= 1  
+  moe_gemm_mxfp4a8                             op=moe_gemm_q                   fam=moe     prio=50  dom=device layout
+        M >= 1  M <= 32767  N >= 1  K % 128 == 0  n_expert >= 2  n_expert <= 512  top_k >= 1  top_k <= 32  group == 128  dtype in {mxfp4a8}  
+  moe_gemm_fp8a8                               op=moe_gemm_q                   fam=moe     prio=50  dom=device scratch layout
+        M >= 1  N % 64 == 0  K % 128 == 0  n_expert >= 1  n_expert <= 65536  top_k >= 1  group == 128  dtype in {fp8a8}  
+  moe_gemm_w4a8                                op=moe_gemm_q                   fam=moe     prio=50  dom=device scratch layout relayout+inverse
+        M >= 1  N % 64 == 0  K % 128 == 0  n_expert >= 1  n_expert <= 65536  top_k >= 1  group == 128  dtype in {w4a8 w4a8h w4nla8h w4nl64a8h w4nl32a8h w5nl64a8h}  
+  moe_gemm_fp8a8_mod4                          op=moe_gemm_q_mod4              fam=moe     prio=50  dom=device scratch layout
+        M >= 1  N % 64 == 0  K % 128 == 0  n_expert >= 1  n_expert <= 65536  top_k >= 1  group == 128  dtype in {fp8a8}  
+  moe_gemm_w4a8_mod4                           op=moe_gemm_q_mod4              fam=moe     prio=50  dom=device scratch layout relayout+inverse
+        M >= 1  N % 64 == 0  K % 128 == 0  n_expert >= 1  n_expert <= 65536  top_k >= 1  group == 128  dtype in {w4a8 w4a8h w4nla8h w4nl64a8h w4nl32a8h w5nl64a8h}  
+  moe_gemm_bf16                                op=moe_gemm                     fam=moe     prio=50  dom=device scratch
+        M >= 1  N % 64 == 0  K % 64 == 0  n_expert >= 1  n_expert <= 65536  top_k >= 1  dtype in {bf16}  
+  moe_gather_bf16                              op=moe_gather                   fam=moe     prio=50  dom=device scratch
+        M >= 1  n >= 1  top_k >= 1  dtype in {bf16}  
+  moe_gather_inv_bf16                          op=moe_gather_inv               fam=moe     prio=50  dom=device
+        M >= 1  n >= 1  top_k >= 1  dtype in {bf16}  
+  rowtopk_bf16                                 op=row_topk                     fam=select  prio=50  dom=device scratch
+        N % 8 == 0  M >= 1  R >= 1  R <= 32  dtype in {bf16}  
+        tunables(2): nch=0/4 pt1=8/4   space 16
+  logit_rerank                                 op=logit_rerank                 fam=select  prio=50  dom=device layout relayout+inverse
+        M >= 1  R >= 1  R <= 32  n_vocab >= 1  n_embd >= 1  dtype in {bf16}  
+  logit_rerank_i8                              op=logit_rerank                 fam=select  prio=50  dom=device layout relayout+inverse
+        M >= 1  R >= 1  R <= 32  n_vocab >= 1  n_embd >= 1  dtype in {bf16}  
+  logit_rerank_iqr                             op=logit_rerank                 fam=select  prio=50  dom=device layout relayout+inverse
+        M >= 1  R >= 1  R <= 32  n_vocab >= 1  n_embd >= 1  dtype in {bf16}  
+  rowtopk_merge                                op=row_topk_merge               fam=select  prio=50  dom=device
+        M >= 1  R >= 1  R <= 32  world_size >= 1  dtype in {bf16}  
+  quant_act_fp8                                op=quant_act_fp8                fam=quant   prio=50  dom=device
+        n % 4 == 0  group == 128  dtype in {bf16}  
+  had_quant_act_fp8                            op=had_quant_act_fp8            fam=quant   prio=50  dom=device
+        n % 128 == 0  group == 128  dtype in {bf16}  
+  givens_dense_quant                           op=givens_dense_quant           fam=quant   prio=50  dom=device layout relayout
+        n % 128 == 0  group == 128  dtype in {bf16}  out in {i8 fp8}  
+  givens_rotate                                op=givens_rotate                fam=quant   prio=50  dom=device layout relayout+inverse
+        n % 128 == 0  group == 128  dtype in {bf16}  
+  quant_act_i8g                                op=quant_act_i8g                fam=quant   prio=50  dom=device
+        n % 4 == 0  group == 128  dtype in {bf16}  
+  had_quant_act_i8g                            op=had_quant_act_i8g            fam=quant   prio=50  dom=device
+        n % 128 == 0  group == 128  dtype in {bf16}  
+  qsa_work_bf16                                op=qsa_work                     fam=attn    prio=50  dom=device
+        n >= 1  ratio >= 1  seqs >= 1  work >= 1  dtype in {bf16}  
+  qsa_tail_store_bf16                          op=qsa_tail_store               fam=attn    prio=50  dom=device
+        n >= 1  ratio >= 1  seqs >= 1  dtype in {bf16}  
+  qsa_select_i32                               op=qsa_select                   fam=attn    prio=50  dom=device scratch
+        blocks >= 1  topk >= 1  ratio >= 1  
+  kv_resolve_i32                               op=kv_resolve                   fam=attn    prio=50  dom=device scratch
+        blocks >= 1  slots >= 1  sel_pitch >= 1  block_bytes >= 1  
+  qsa_score_bf16                               op=qsa_score                    fam=attn    prio=50  dom=device
+        n % 32 == 0  n >= 32  n <= 256  heads >= 1  heads <= 8  blocks >= 1  dtype in {bf16}  
+  qsa_block_key_bf16                           op=qsa_block_key                fam=attn    prio=50  dom=device
+        n >= 32  n <= 256  n % 32 == 0  ratio >= 1  rotary_dim >= 0  dtype in {bf16}  
+  gram_accum                                   op=gram_accum                   fam=quant   prio=50  dom=device
+        n % 4 == 0  group == 128  dtype in {fp8a8 i8a8}  
+  gram_accum_bf16                              op=gram_accum                   fam=quant   prio=50  dom=device
+        n % 4 == 0  dtype in {bf16}  
+  rmsnorm_quant_fp8                            op=rmsnorm_quant_fp8            fam=quant   prio=50  dom=device
+        n % 4 == 0  group == 128  dtype in {bf16}  
+  rmsnorm_had_quant_i8g                        op=rmsnorm_had_quant_i8g        fam=quant   prio=50  dom=device
+        n % 128 == 0  group == 128  dtype in {bf16}  
+  gated_quant_fp8                              op=gated_quant_fp8              fam=quant   prio=50  dom=device
+        n % 4 == 0  group == 128  dtype in {bf16}  
+  gated_had_quant_fp8                          op=gated_had_quant_fp8          fam=quant   prio=50  dom=device
+        n % 128 == 0  group == 128  dtype in {bf16}  
+  gated_had_quant_i8g                          op=gated_had_quant_i8g          fam=quant   prio=50  dom=device
+        n % 128 == 0  group == 128  dtype in {bf16}  
+  gate_quant_fp8                               op=gate_quant_fp8               fam=quant   prio=50  dom=device
+        n % 4 == 0  group == 128  dtype in {bf16}  
+  gate_had_quant_i8g                           op=gate_had_quant_i8g           fam=quant   prio=50  dom=device
+        n % 128 == 0  group == 128  dtype in {bf16}  
+  sample_chain_f32                             op=sample_chain                 fam=sample  prio=50  dom=device
+        n_vocab >= 1  
+  quant_act_i8                                 op=quant_act_i8                 fam=quant   prio=50  dom=device
+        n % 16 == 0  dtype in {bf16}  
+  rmsnorm_quant_i8                             op=rmsnorm_quant_i8             fam=quant   prio=50  dom=device
+        n % 16 == 0  n <= 30720  dtype in {bf16}  
+        tunables(1): reg=1/2   space 2
+  rmsnorm_quant_i8g                            op=rmsnorm_quant_i8g            fam=quant   prio=50  dom=device
+        n % 128 == 0  n <= 30720  dtype in {bf16}  
+        tunables(1): reg=1/2   space 2
+  qkv_norm_rope_bf16                           op=qkv_norm_rope                fam=attn    prio=50  dom=device
+        head_dim >= 256  head_dim <= 512  head_dim % 256 == 0  dtype in {bf16}  
+  qkv_norm_rope_h128_bf16                      op=qkv_norm_rope                fam=attn    prio=50  dom=device
+        head_dim == 128  dtype in {bf16}  
+  qkv_norm_rope_kv_store_fp8                   op=qkv_norm_rope_kv_store       fam=attn    prio=50  dom=device
+        head_dim >= 256  head_dim <= 512  head_dim % 256 == 0  dtype in {bf16}  block_size >= 1  kv_dtype in {fp8_e4m3}  
+  qkv_norm_rope_kv_store_bf16                  op=qkv_norm_rope_kv_store       fam=attn    prio=50  dom=device
+        head_dim >= 256  head_dim <= 512  head_dim % 256 == 0  dtype in {bf16}  block_size >= 1  kv_dtype in {bf16}  
+  qkv_norm_rope_kv_store_h128_bf16             op=qkv_norm_rope_kv_store       fam=attn    prio=50  dom=device
+        head_dim == 128  dtype in {bf16}  block_size >= 1  kv_dtype in {bf16}  
+  add_rmsnorm_bf16                             op=add_rmsnorm                  fam=norm    prio=50  dom=device
+        n >= 1  dtype in {bf16}  
+  kv_len_trim                                  op=kv_len_trim                  fam=misc    prio=50  dom=device
+        trim >= 0  max_seqs <= 64  
+  prefetch                                     op=prefetch                     fam=misc    prio=50  dom=device layout
+        bytes >= 1  
+        tunables(1): nb=64/7   space 7
+  gelu_mul_quant_i8                            op=gelu_mul_quant_i8            fam=quant   prio=50  dom=device
+        n % 16 == 0  n <= 30720  dtype in {bf16}  
+  gelu_mul_quant_i8g                           op=gelu_mul_quant_i8g           fam=quant   prio=50  dom=device
+        n % 128 == 0  n <= 30720  dtype in {bf16}  
+  ar_rmsnorm_quant_i8                          op=ar_rmsnorm_quant_i8          fam=quant   prio=50  dom=device init
+        n % 16 == 0  n <= 30720  dtype in {bf16}  world_size == 2  device.p2p == 1  
+        tunables(10): ts_once=0/2 ts_pieces=1/5 ts_pieces_min=0/6 ts_fuse=0/2 ts_duplex=0/2 nblocks=0/6 nthreads=1024/3 drain=3/2 acq=0/2 ts_min=32768/6   space 103680
+  ar_rmsnorm_quant_i8g                         op=ar_rmsnorm_quant_i8g         fam=quant   prio=50  dom=device init
+        n % 128 == 0  n <= 30720  dtype in {bf16}  world_size == 2  device.p2p == 1  
+        tunables(10): ts_once=0/2 ts_pieces=1/5 ts_pieces_min=0/6 ts_fuse=0/2 ts_duplex=0/2 nblocks=0/6 nthreads=1024/3 drain=3/2 acq=0/2 ts_min=32768/6   space 103680
+  ar_rmsnorm_quant_i8_4rank                    op=ar_rmsnorm_quant_i8          fam=quant   prio=50  dom=device init
+        n % 16 == 0  n <= 30720  dtype in {bf16}  world_size == 4  device.p2p == 1  
+        tunables(5): nblocks=0/6 nthreads=1024/3 drain=3/2 acq=0/2 tail=1/2   space 144
+  had_quant_act_i8                             op=had_quant_act_i8             fam=quant   prio=50  dom=device
+        n % 16 == 0  n % 128 == 0  group <= 512  dtype in {bf16}  
+  rmsnorm_had_quant_i8                         op=rmsnorm_had_quant_i8         fam=quant   prio=50  dom=device
+        n % 16 == 0  n % 128 == 0  group <= 512  dtype in {bf16}  
+  ar_ln_had_quant_i8                           op=ar_ln_had_quant_i8           fam=quant   prio=50  dom=device init
+        n % 16 == 0  n % 128 == 0  n <= 16256  group <= 512  dtype in {bf16}  world_size == 2  device.p2p == 1  
+        tunables(10): ts_once=0/2 ts_pieces=1/5 ts_pieces_min=0/6 ts_fuse=0/2 ts_duplex=0/2 nblocks=0/6 nthreads=1024/3 drain=3/2 acq=0/2 ts_min=32768/6   space 103680
+  ar_rmsnorm_quant_fp8                         op=ar_rmsnorm_quant_fp8         fam=quant   prio=50  dom=device init
+        n % 8 == 0  group == 128  dtype in {bf16}  world_size == 2  device.p2p == 1  
+        tunables(10): ts_once=0/2 ts_pieces=1/5 ts_pieces_min=0/6 ts_fuse=0/2 ts_duplex=0/2 nblocks=0/6 nthreads=1024/3 drain=3/2 acq=0/2 ts_min=32768/6   space 103680
+  ar_rmsnorm_had_quant_i8g                     op=ar_rmsnorm_had_quant_i8g     fam=quant   prio=50  dom=device init
+        n % 128 == 0  group == 128  dtype in {bf16}  world_size == 2  device.p2p == 1  
+        tunables(10): ts_once=0/2 ts_pieces=1/5 ts_pieces_min=0/6 ts_fuse=0/2 ts_duplex=0/2 nblocks=0/6 nthreads=1024/3 drain=3/2 acq=0/2 ts_min=32768/6   space 103680
+  ar_rmsnorm_post_quant_fp8                    op=ar_rmsnorm_post_quant_fp8    fam=quant   prio=50  dom=device init
+        n % 8 == 0  group == 128  dtype in {bf16}  world_size == 2  device.p2p == 1  
+        tunables(10): ts_once=0/2 ts_pieces=1/5 ts_pieces_min=0/6 ts_fuse=0/2 ts_duplex=0/2 nblocks=0/6 nthreads=1024/3 drain=3/2 acq=0/2 ts_min=32768/6   space 103680
+  ar_hc_write                                  op=ar_hc_write                  fam=norm    prio=50  dom=device init
+        M >= 1  n % 8 == 0  hc >= 2  hc <= 8  dtype in {bf16}  world_size == 2  device.p2p == 1  
+        tunables(10): ts_once=0/2 ts_pieces=1/5 ts_pieces_min=0/6 ts_fuse=0/2 ts_duplex=0/2 nblocks=0/6 nthreads=1024/3 drain=3/2 acq=0/2 ts_min=32768/6   space 103680
+  ar_hc_write_4rank                            op=ar_hc_write                  fam=norm    prio=50  dom=device init
+        M >= 1  n % 8 == 0  hc >= 2  hc <= 8  dtype in {bf16}  world_size == 4  wire == 0  device.p2p == 1  
+        tunables(10): ts_once=0/2 ts_pieces=1/5 ts_pieces_min=0/6 ts_fuse=0/2 ts_duplex=0/2 nblocks=0/6 nthreads=1024/3 drain=3/2 acq=0/2 ts_min=32768/6   space 103680
+  ar_gather_hc_write                           op=ar_gather_hc_write           fam=norm    prio=50  dom=device init scratch
+        M >= 1  n % 8 == 0  hc >= 2  hc <= 8  dtype in {bf16}  world_size == 2  top_k >= 1  top_k <= 64  device.p2p == 1  
+        tunables(10): ts_once=0/2 ts_pieces=1/5 ts_pieces_min=0/6 ts_fuse=0/2 ts_duplex=0/2 nblocks=0/6 nthreads=1024/3 drain=3/2 acq=0/2 ts_min=32768/6   space 103680
+  ar_gather_hc_write_4rank                     op=ar_gather_hc_write           fam=norm    prio=50  dom=device init scratch
+        M >= 1  n % 8 == 0  hc >= 2  hc <= 8  dtype in {bf16}  world_size == 4  wire == 0  top_k >= 1  top_k <= 64  device.p2p == 1  
+        tunables(10): ts_once=0/2 ts_pieces=1/5 ts_pieces_min=0/6 ts_fuse=0/2 ts_duplex=0/2 nblocks=0/6 nthreads=1024/3 drain=3/2 acq=0/2 ts_min=32768/6   space 103680
+  qk_norm_rope_gate                            op=qk_norm_rope_gate            fam=attn    prio=50  dom=device
+        q_dtype in {bf16}  head_dim <= 256  head_dim % 32 == 0  
+  qk_norm_rope_gate_kv_store_fp8               op=qk_norm_rope_gate_kv_store   fam=attn    prio=50  dom=device
+        q_dtype in {bf16}  head_dim <= 256  head_dim % 32 == 0  block_size >= 1  kv_dtype in {fp8_e4m3}  
+  qk_norm_rope_gate_kv_store_streamed_fp8      op=qk_norm_rope_gate_kv_store_streamed fam=attn    prio=50  dom=device
+        q_dtype in {bf16}  head_dim <= 256  head_dim % 32 == 0  block_size >= 1  kv_dtype in {fp8_e4m3}  
+  qk_norm_rope_gate_kv_store_streamed_bf16     op=qk_norm_rope_gate_kv_store_streamed fam=attn    prio=50  dom=device
+        q_dtype in {bf16}  head_dim <= 256  head_dim % 32 == 0  block_size >= 1  kv_dtype in {bf16}  
+  qk_norm_rope_gate_kv_store_fp8v4             op=qk_norm_rope_gate_kv_store   fam=attn    prio=50  dom=device
+        q_dtype in {bf16}  head_dim <= 256  head_dim % 32 == 0  block_size >= 1  kv_dtype in {fp8_v4}  
+  qk_norm_rope_gate_kv_store_b16f8             op=qk_norm_rope_gate_kv_store   fam=attn    prio=50  dom=device
+        q_dtype in {bf16}  head_dim <= 256  head_dim % 32 == 0  block_size >= 1  kv_dtype in {bf16_fp8}  
+  qk_norm_rope_gate_kv_store_b16i8             op=qk_norm_rope_gate_kv_store   fam=attn    prio=50  dom=device
+        q_dtype in {bf16}  head_dim <= 256  head_dim % 32 == 0  block_size >= 1  kv_dtype in {bf16_i8}  
+  qk_norm_rope_gate_kv_store_k6v4              op=qk_norm_rope_gate_kv_store   fam=attn    prio=50  dom=device
+        q_dtype in {bf16}  head_dim <= 256  head_dim % 32 == 0  block_size >= 1  kv_dtype in {k6_v4}  
+  qk_norm_rope_gate_kv_store_bf16              op=qk_norm_rope_gate_kv_store   fam=attn    prio=50  dom=device
+        q_dtype in {bf16}  head_dim <= 256  head_dim % 32 == 0  block_size >= 1  kv_dtype in {bf16}  
+  rope_table_f32                               op=rope_table                   fam=attn    prio=50  dom=device
+        M >= 1  rot >= 2  rot % 2 == 0  dtype in {f32 bf16}  
+  gated_had_quant_i8                           op=gated_had_quant_i8           fam=quant   prio=50  dom=device
+        n % 16 == 0  n % 128 == 0  group <= 512  dtype in {bf16}  
+  gdn_gated_norm_had_quant_i8                  op=gdn_gated_norm_had_quant_i8  fam=quant   prio=50  dom=device
+        n % 128 == 0  group <= 512  head_dim == 128  dtype in {bf16}  
+  dflash_conv_t2_g16_bf16                      op=dflash_conv                  fam=dflash  prio=50  dom=device
+        taps == 2  group_size == 16  hidden_size % 128 == 0  dtype in {bf16}  
+  dflash_markov_greedy_bf16                    op=dflash_markov_greedy         fam=dflash  prio=50  dom=device
+        steps >= 1  rank % 32 == 0  rank <= 512  n_vocab >= 1  dtype in {bf16}  
+  dflash_markov_greedy_f32                     op=dflash_markov_greedy_f32     fam=dflash  prio=50  dom=device
+        steps >= 1  rank % 32 == 0  rank <= 512  n_vocab >= 1  dtype in {bf16}  
+  dflash_select_bf16                           op=dflash_select                fam=dflash  prio=50  dom=device
+        steps >= 1  top_k >= 1  top_k <= 32  rank % 32 == 0  rank <= 512  dtype in {bf16}  
+  dflash_tree_bf16                             op=dflash_tree                  fam=dflash  prio=50  dom=device
+        steps >= 1  steps <= 63  top_k >= 1  top_k <= 32  rank % 32 == 0  rank <= 512  nodes >= 1  nodes <= 63  dtype in {bf16}  
+  pair_argmax_f32                              op=pair_argmax                  fam=select  prio=50  dom=device
+        n >= 1  dtype in {f32 fp32}  
+  norm_add_norm_bf16                           op=norm_add_norm                fam=norm    prio=50  dom=device
+        n >= 1  n <= 6144  dtype in {bf16}  
+  norm_add_norm_route_bf16                     op=norm_add_norm_route          fam=norm    prio=50  dom=device
+        n >= 128  n <= 6144  n % 128 == 0  group == 128  dtype in {bf16}  
+  join_add_scale_bf16                          op=join_add_scale               fam=norm    prio=50  dom=device
+        n >= 1  n <= 6144  dtype in {bf16}  
+  expert_scale_bf16                            op=expert_scale                 fam=moe     prio=50  dom=device
+        top_k >= 1  top_k <= 64  n_expert >= 1  dtype in {bf16}  
+  lora_shrink_scalar                           op=lora_shrink                  fam=gemm    prio=50  dom=device
+        R >= 1  R <= 65536  S >= 1  S <= 1048576  dtype in {bf16 f16 f32 fp8_e4m3 fp8_e5m2 i8}  
+  lora_expand_scalar                           op=lora_expand                  fam=gemm    prio=50  dom=device
+        R >= 1  R <= 65536  S >= 1  S <= 1048576  dtype in {bf16 f16 f32}  
+  lora_shrink_wmma                             op=lora_shrink                  fam=gemm    prio=60  dom=device scratch
+        R >= 1  R <= 65536  S >= 1  S <= 1048576  dtype in {bf16}  
+  lora_shrink_wmma_q                           op=lora_shrink                  fam=gemm    prio=60  dom=device scratch
+        R >= 1  R <= 65536  S >= 1  S <= 1048576  dtype in {fp8_e4m3 fp8_e5m2 i8}  group >= 32  group % 32 == 0  
+  lora_expand_tiled                            op=lora_expand                  fam=gemm    prio=60  dom=device
+        R >= 1  R <= 65536  S >= 1  S <= 1048576  dtype in {bf16 f16 f32}  
+  lora_expand_mm_wmma                          op=lora_expand_mm               fam=gemm    prio=60  dom=device
+        R >= 1  R <= 65536  S >= 1  S <= 1048576  dtype in {bf16 f16 f32}  
+  attn_prefix_self_h128_bf16                   op=attn_prefix_self             fam=attn    prio=50  dom=device
+        head_dim == 128  gqa <= 8  block_size == 16  q_dtype in {bf16}  kv_dtype in {bf16}  
+  attn_dense_h128_bf16                         op=attn_dense                   fam=attn    prio=50  dom=device
+        head_dim == 128  gqa <= 8  dtype in {bf16}  
+  attn_cross_h128_bf16                         op=attn_cross                   fam=attn    prio=50  dom=device
+        head_dim == 128  gqa <= 8  dtype in {bf16}  
+  attn_cross_h64_bf16                          op=attn_cross                   fam=attn    prio=50  dom=device
+        head_dim == 64  gqa <= 8  dtype in {bf16}  
+  attn_na3d_h64                                op=attn_na3d                    fam=attn    prio=50  dom=device
+        head_dim == 64  dtype in {bf16 f32}  
+  attn_dense_h384_bf16                         op=attn_dense                   fam=attn    prio=50  dom=device
+        head_dim == 384  gqa == 1  causal == 0  dtype in {bf16}  
+  attn_dense_h512_bf16                         op=attn_dense                   fam=attn    prio=50  dom=device
+        head_dim == 512  gqa == 1  causal == 0  dtype in {bf16}  
+  attn_dense_h768_bf16                         op=attn_dense                   fam=attn    prio=50  dom=device
+        head_dim == 768  gqa == 1  causal == 0  dtype in {bf16}  
+  attn_dense_h1152_bf16                        op=attn_dense                   fam=attn    prio=50  dom=device
+        head_dim == 1152  gqa == 1  causal == 0  dtype in {bf16}  
+  ln_mod_quant_fp8_bf16                        op=ln_mod_quant_fp8             fam=norm    prio=50  dom=device
+        dtype in {bf16}  n % 128 == 0  n <= 8192  group == 128  
+  ln_mod_bf16                                  op=ln_mod                       fam=norm    prio=50  dom=device
+        dtype in {bf16}  n % 8 == 0  
+  table_add_bf16                               op=table_add                    fam=elem    prio=50  dom=device
+        dtype in {bf16}  n % 8 == 0  
+  chan_stats_bf16                              op=chan_stats                   fam=elem    prio=50  dom=device
+        dtype in {bf16}  n % 8 == 0  
+  chan_stats_f32                               op=chan_stats                   fam=elem    prio=50  dom=device
+        dtype in {f32}  
+  mix_rows_bf16                                op=mix_rows                     fam=elem    prio=50  dom=device
+        dtype in {bf16}  n % 8 == 0  
+  gate_add_bf16                                op=gate_add                     fam=elem    prio=50  dom=device
+        dtype in {bf16}  n % 8 == 0  
+  timestep_embed_bf16                          op=timestep_embed               fam=elem    prio=50  dom=device
+        dtype in {bf16}  
+  timestep_embed_f32                           op=timestep_embed               fam=elem    prio=50  dom=device
+        dtype in {f32}  
+  gather_rows2_bf16                            op=gather_rows2                 fam=elem    prio=50  dom=device
+        dtype in {bf16}  n % 8 == 0  
+  lane_gather_w32                              op=lane_gather                  fam=elem    prio=50  dom=device
+        dtype in {bf16 f32}  
+  lane_store_w32                               op=lane_store                   fam=elem    prio=50  dom=device
+        dtype in {bf16 f32}  
+  randn_lanes_bf16                             op=randn_lanes                  fam=elem    prio=50  dom=device
+        dtype in {bf16}  
+  randn_lanes_f32                              op=randn_lanes                  fam=elem    prio=50  dom=device
+        dtype in {f32}  
+  flow_euler_bf16                              op=flow_euler                   fam=elem    prio=50  dom=device
+        dtype in {bf16}  
+  kd_input_bf16                                op=kd_input                     fam=elem    prio=50  dom=device
+        dtype in {bf16}  
+  kd_step_bf16                                 op=kd_step                      fam=elem    prio=50  dom=device
+        dtype in {bf16}  
+  chan_affine_bf16                             op=chan_affine                  fam=elem    prio=50  dom=device
+        dtype in {bf16}  n <= 64  
+  chan_affine_f32                              op=chan_affine                  fam=elem    prio=50  dom=device
+        dtype in {f32}  n <= 64  
+  l2norm_chan_bf16                             op=l2norm_chan                  fam=norm    prio=50  dom=device
+        dtype in {bf16}  n % 8 == 0  
+  d2s_add_bf16                                 op=d2s_add                      fam=elem    prio=50  dom=device
+        dtype in {bf16}  
+  s2d_avg_add_bf16                             op=s2d_avg_add                  fam=elem    prio=50  dom=device
+        dtype in {bf16}  
+  to_rgba8_bf16                                op=to_rgba8                     fam=elem    prio=50  dom=device
+        dtype in {bf16}  
+  gelu_tanh_bf16                               op=gelu_tanh                    fam=elem    prio=50  dom=device
+        dtype in {bf16}  n % 8 == 0  
+  gelu_quick_bf16                              op=gelu_quick                   fam=elem    prio=50  dom=device
+        dtype in {bf16 f32}  
+  scatter_add_rows_bf16                        op=scatter_add_rows             fam=elem    prio=50  dom=device
+        dtype in {bf16}  n % 8 == 0  
+  conv2d_nhwc_bf16                             op=conv2d_nhwc                  fam=conv    prio=50  dom=device layout relayout+inverse
+        dtype in {bf16}  
+  im2col_nhwc_bf16                             op=im2col_nhwc                  fam=elem    prio=50  dom=device
+        dtype in {bf16}  
+  conv1d_bf16                                  op=conv1d                       fam=conv    prio=50  dom=device layout relayout+inverse
+        dtype in {bf16}  
+  conv1d_f32                                   op=conv1d                       fam=conv    prio=50  dom=device layout relayout+inverse
+        dtype in {f32}  
+  conv_t1d_bf16                                op=conv_t1d                     fam=conv    prio=50  dom=device layout relayout+inverse
+        dtype in {bf16}  
+  conv_t1d_f32                                 op=conv_t1d                     fam=conv    prio=50  dom=device layout relayout+inverse
+        dtype in {f32}  
+  snake_bf16                                   op=snake                        fam=elem    prio=50  dom=device
+        dtype in {bf16}  
+  cfg_topk_sample                              op=cfg_topk_sample              fam=sample  prio=50  dom=device
+        dtype in {bf16 f32}  
+  rvq_embed_bf16                               op=rvq_embed                    fam=elem    prio=50  dom=device
+        dtype in {bf16}  
+  vq_encode                                    op=vq_encode                    fam=elem    prio=50  dom=device
+        dtype in {bf16 f32}  dim <= 32  
+  frame_mix_store_bf16                         op=frame_mix_store              fam=elem    prio=50  dom=device
+        dtype in {bf16}  
+  end_status                                   op=end_status                   fam=elem    prio=50  dom=device
+        
+  ras_pick                                     op=ras_pick                     fam=elem    prio=50  dom=device
+        
+  frame_store                                  op=frame_store                  fam=elem    prio=50  dom=device
+        
+  resample_nearest_bf16                        op=resample_nearest             fam=elem    prio=50  dom=device
+        dtype in {bf16}  
+  fourier_embed_bf16                           op=fourier_embed                fam=elem    prio=50  dom=device
+        dtype in {bf16}  
+  win_input_bf16                               op=win_input                    fam=elem    prio=50  dom=device
+        dtype in {bf16}  
+  win_prep_bf16                                op=win_prep                     fam=elem    prio=50  dom=device
+        dtype in {bf16}  
+  win_finish_bf16                              op=win_finish                   fam=elem    prio=50  dom=device
+        dtype in {bf16}  
+  chan_split_bf16                              op=chan_split                   fam=elem    prio=50  dom=device
+        dtype in {bf16}  
+  interleave2_bf16                             op=interleave2                  fam=elem    prio=50  dom=device
+        dtype in {bf16 f32}  
+  iota                                         op=iota                         fam=elem    prio=50  dom=device
+        
+  sub_i32                                      op=sub_i32                      fam=elem    prio=50  dom=device
+        
+  cu_repeat                                    op=cu_repeat                    fam=elem    prio=50  dom=device
+        
+  int_affine                                   op=int_affine                   fam=elem    prio=50  dom=device
+        
+  attn_dense_small_h256_bf16                   op=attn_dense                   fam=attn    prio=50  dom=device
+        head_dim == 256  gqa == 1  dtype in {bf16}  max_seqlen <= 32  
+  quant_cols_fp8_bf16                          op=quant_cols_fp8               fam=quant   prio=50  dom=device scratch
+        n % 8 == 0  dtype in {bf16}  
+  vsa_select_h128_bf16                         op=vsa_select                   fam=attn    prio=50  dom=device scratch
+        head_dim == 128  tile_t == 4  tile_h == 4  tile_w == 4  patch >= 1  
+  attn_vsa_h128_bf16                           op=attn_vsa                     fam=attn    prio=50  dom=device
+        head_dim == 128  tile_t == 4  tile_h == 4  tile_w == 4  patch >= 1  
+  rms_mod_bf16                                 op=rms_mod                      fam=norm    prio=50  dom=device
+        dtype in {bf16}  n % 8 == 0  n <= 8192  
+  rms_mod_quant_fp8_bf16                       op=rms_mod_quant_fp8            fam=norm    prio=50  dom=device
+        dtype in {bf16}  n % 128 == 0  n <= 8192  group == 128  
+  rms_mod_quant_i8_bf16                        op=rms_mod_quant_i8             fam=norm    prio=50  dom=device
+        dtype in {bf16}  n % 128 == 0  n <= 8192  group == 128  
+  flow_x0_step_f32                             op=flow_x0_step                 fam=elem    prio=50  dom=device
+        dtype in {f32}  
+  flow_res_multistep_f32                       op=flow_res_multistep           fam=elem    prio=50  dom=device
+        dtype in {f32}  
+  patch_unfold_f32                             op=patch_unfold                 fam=elem    prio=50  dom=device
+        dtype in {f32}  C <= 64  
+  vtile_gather                                 op=vtile_gather                 fam=elem    prio=50  dom=device
+        dtype in {bf16 f32}  
+  vtile_stitch                                 op=vtile_stitch                 fam=elem    prio=50  dom=device
+        
+  vtile_plan                                   op=vtile_plan                   fam=elem    prio=50  dom=device
+        
+  vtile_crop                                   op=vtile_crop                   fam=elem    prio=50  dom=device
+        
+  vtile_join                                   op=vtile_join                   fam=elem    prio=50  dom=device
+        
+  grid_pos3                                    op=grid_pos3                    fam=elem    prio=50  dom=device
+        
+  snake_aa_f32                                 op=snake_aa                     fam=elem    prio=50  dom=device
+        dtype in {f32}  k <= 32  
+  conv3d_ndhwc_bf16                            op=conv3d_ndhwc                 fam=conv    prio=50  dom=device layout relayout+inverse
+        dtype in {bf16}  k == 3  kt == 3  cin % 8 == 0  
+  group_norm                                   op=group_norm                   fam=norm    prio=50  dom=device
+        dtype in {bf16 f32}  n % 8 == 0  n <= 8192  groups <= 256  
+  tconv_dw_bf16                                op=tconv_dw                     fam=conv    prio=50  dom=device
+        dtype in {bf16}  k == 5  n % 8 == 0  
+  resize_bilinear                              op=resize_bilinear              fam=elem    prio=50  dom=device
+        dtype in {bf16 f32}  n % 8 == 0  
+  patch_fold_f32                               op=patch_fold                   fam=elem    prio=50  dom=device
+        dtype in {bf16 f32}  C <= 64  
+  flow_renoise_f32                             op=flow_renoise                 fam=elem    prio=50  dom=device
+        dtype in {f32}  
+  cond_aug_f32                                 op=cond_aug                     fam=elem    prio=50  dom=device
+        dtype in {f32}  
+  rope_split                                   op=rope_split                   fam=elem    prio=50  dom=device
+        dtype in {bf16 f32}  
+  head_gate                                    op=head_gate                    fam=elem    prio=50  dom=device
+        dtype in {bf16 f32}  
+  ltx_guide                                    op=ltx_guide                    fam=elem    prio=50  dom=device
+        dtype in {bf16 f32}  
+  pixel_norm                                   op=pixel_norm                   fam=norm    prio=50  dom=device
+        dtype in {bf16 f32}  
+  d2s3d                                        op=d2s3d                        fam=elem    prio=50  dom=device
+        dtype in {bf16 f32}  
+  s2d3d                                        op=s2d3d                        fam=elem    prio=50  dom=device
+        dtype in {bf16 f32}  
+  pix_patch                                    op=pix_patch                    fam=elem    prio=50  dom=device
+        dtype in {bf16 f32}  
+  vol_index                                    op=vol_index                    fam=elem    prio=50  dom=device
+        
+  tile_grid                                    op=tile_grid                    fam=elem    prio=50  dom=device
+        
+  tile_crop                                    op=tile_crop                    fam=elem    prio=50  dom=device
+        dtype in {bf16 f32}  
+  tile_stitch                                  op=tile_stitch                  fam=elem    prio=50  dom=device
+        dtype in {bf16 f32}  
+  stft_logmel                                  op=stft_logmel                  fam=elem    prio=50  dom=device
+        dtype in {bf16 f32}  
+  bwe_up                                       op=bwe_up                       fam=elem    prio=50  dom=device
+        dtype in {bf16 f32}  
+  ar_twoshot_3rank_exact_host                  op=all_reduce                   fam=ar      prio=70  dom=device init
+        world_size == 3  exact == 1  dtype in {bf16 fp16 fp32}  numel >= 524289  numel <= 268435456  device.p2p == 0  
+        tunables(10): ts_once=0/2 ts_pieces=1/5 ts_pieces_min=0/6 ts_fuse=0/2 ts_duplex=0/2 nblocks=0/6 nthreads=1024/3 drain=3/2 acq=0/2 ts_min=32768/6   space 103680
+  ar_twoshot_4rank_exact_host                  op=all_reduce                   fam=ar      prio=70  dom=device init
+        world_size == 4  exact == 1  dtype in {bf16 fp16 fp32}  numel % 64 == 0  numel >= 524289  numel <= 268435456  device.p2p == 0  
+        tunables(10): ts_once=0/2 ts_pieces=1/5 ts_pieces_min=0/6 ts_fuse=0/2 ts_duplex=0/2 nblocks=0/6 nthreads=1024/3 drain=3/2 acq=0/2 ts_min=32768/6   space 103680
+  ar_twoshot_4rank_exact_lane_host             op=all_reduce                   fam=ar      prio=71  dom=device init
+        world_size == 4  exact == 1  dtype in {bf16 fp16 fp32}  numel % 64 == 0  numel >= 524289  numel <= 268435456  overlap == 1  device.p2p == 0  
+        tunables(10): ts_once=0/2 ts_pieces=1/5 ts_pieces_min=0/6 ts_fuse=0/2 ts_duplex=0/2 nblocks=4/5 nthreads=1024/3 drain=3/2 acq=0/2 ts_min=32768/6   space 86400
+  ar_twoshot_8rank_exact_host                  op=all_reduce                   fam=ar      prio=70  dom=device init
+        world_size == 8  exact == 1  dtype in {bf16 fp16 fp32}  numel % 64 == 0  numel >= 8193  numel <= 268435456  device.p2p == 0  
+        tunables(10): ts_once=0/2 ts_pieces=1/5 ts_pieces_min=0/6 ts_fuse=0/2 ts_duplex=0/2 nblocks=0/6 nthreads=1024/3 drain=3/2 acq=0/2 ts_min=32768/6   space 103680
+  ar_gather_2rank_host                         op=all_gather                   fam=ar      prio=60  dom=device init
+        world_size == 2  dtype in {bf16 fp16 f16 fp32 f32}  device.p2p == 0  
+        tunables(10): ts_once=0/2 ts_pieces=1/5 ts_pieces_min=0/6 ts_fuse=0/2 ts_duplex=0/2 nblocks=0/6 nthreads=1024/3 drain=3/2 acq=0/2 ts_min=32768/6   space 103680
+  ar_gather_4rank_host                         op=all_gather                   fam=ar      prio=60  dom=device init
+        world_size == 4  dtype in {bf16 fp16 f16 fp32 f32}  device.p2p == 0  
+        tunables(10): ts_once=0/2 ts_pieces=1/5 ts_pieces_min=0/6 ts_fuse=0/2 ts_duplex=0/2 nblocks=0/6 nthreads=1024/3 drain=3/2 acq=0/2 ts_min=32768/6   space 103680
+  ar_gather_8rank_host                         op=all_gather                   fam=ar      prio=60  dom=device init
+        world_size == 8  dtype in {bf16 fp16 f16 fp32 f32}  device.p2p == 0  
+        tunables(10): ts_once=0/2 ts_pieces=1/5 ts_pieces_min=0/6 ts_fuse=0/2 ts_duplex=0/2 nblocks=0/6 nthreads=1024/3 drain=3/2 acq=0/2 ts_min=32768/6   space 103680
+  ar_oneshot_2rank_exact_host                  op=all_reduce                   fam=ar      prio=60  dom=device init
+        world_size == 2  exact == 1  dtype in {bf16 fp16 fp32}  device.p2p == 0  
+        tunables(10): ts_once=0/2 ts_pieces=1/5 ts_pieces_min=0/6 ts_fuse=0/2 ts_duplex=0/2 nblocks=0/6 nthreads=1024/3 drain=3/2 acq=0/2 ts_min=32768/6   space 103680
+  ar_oneshot_2rank_wht6_host                   op=all_reduce                   fam=ar      prio=60  dom=device init
+        world_size == 2  exact == 0  dtype in {bf16 fp16}  numel % 64 == 0  device.p2p == 0  
+        tunables(10): ts_once=0/2 ts_pieces=1/5 ts_pieces_min=0/6 ts_fuse=0/2 ts_duplex=0/2 nblocks=0/6 nthreads=1024/3 drain=3/2 acq=0/2 ts_min=32768/6   space 103680
+  ar_oneshot_2rank_exact_lane_host             op=all_reduce                   fam=ar      prio=61  dom=device init
+        world_size == 2  exact == 1  dtype in {bf16 fp16 fp32}  overlap == 1  device.p2p == 0  
+        tunables(10): ts_once=0/2 ts_pieces=1/5 ts_pieces_min=0/6 ts_fuse=0/2 ts_duplex=0/2 nblocks=8/6 nthreads=256/3 drain=3/2 acq=0/2 ts_min=32768/6   space 103680
+  ar_oneshot_2rank_wht6_lane_host              op=all_reduce                   fam=ar      prio=61  dom=device init
+        world_size == 2  exact == 0  dtype in {bf16 fp16}  numel % 64 == 0  overlap == 1  device.p2p == 0  
+        tunables(10): ts_once=0/2 ts_pieces=1/5 ts_pieces_min=0/6 ts_fuse=0/2 ts_duplex=0/2 nblocks=8/6 nthreads=256/3 drain=3/2 acq=0/2 ts_min=32768/6   space 103680
+  ar_gather_3rank_host                         op=all_gather                   fam=ar      prio=60  dom=device init
+        world_size == 3  dtype in {bf16 fp16 f16 fp32 f32}  device.p2p == 0  
+        tunables(10): ts_once=0/2 ts_pieces=1/5 ts_pieces_min=0/6 ts_fuse=0/2 ts_duplex=0/2 nblocks=0/6 nthreads=1024/3 drain=3/2 acq=0/2 ts_min=32768/6   space 103680
+  ar_oneshot_3rank_exact_host                  op=all_reduce                   fam=ar      prio=60  dom=device init
+        world_size == 3  exact == 1  dtype in {bf16 fp16 fp32}  device.p2p == 0  
+        tunables(10): ts_once=0/2 ts_pieces=1/5 ts_pieces_min=0/6 ts_fuse=0/2 ts_duplex=0/2 nblocks=0/6 nthreads=1024/3 drain=3/2 acq=0/2 ts_min=32768/6   space 103680
+  ar_oneshot_4rank_exact_host                  op=all_reduce                   fam=ar      prio=60  dom=device init
+        world_size == 4  exact == 1  dtype in {bf16 fp16 fp32}  device.p2p == 0  
+        tunables(10): ts_once=0/2 ts_pieces=1/5 ts_pieces_min=0/6 ts_fuse=0/2 ts_duplex=0/2 nblocks=0/6 nthreads=1024/3 drain=3/2 acq=0/2 ts_min=32768/6   space 103680
+  ar_oneshot_8rank_exact_host                  op=all_reduce                   fam=ar      prio=60  dom=device init
+        world_size == 8  exact == 1  dtype in {bf16 fp16 fp32}  device.p2p == 0  
+        tunables(10): ts_once=0/2 ts_pieces=1/5 ts_pieces_min=0/6 ts_fuse=0/2 ts_duplex=0/2 nblocks=0/6 nthreads=1024/3 drain=3/2 acq=0/2 ts_min=32768/6   space 103680
+  ar_twoshot_3rank_ti8_host                    op=all_reduce                   fam=ar      prio=60  dom=device init
+        world_size == 3  exact == 0  dtype in {bf16 fp16}  numel % 32 == 0  device.p2p == 0  
+        tunables(10): ts_once=0/2 ts_pieces=1/5 ts_pieces_min=0/6 ts_fuse=0/2 ts_duplex=0/2 nblocks=0/6 nthreads=1024/3 drain=3/2 acq=0/2 ts_min=32768/6   space 103680
+  ar_twoshot_4rank_ti8_host                    op=all_reduce                   fam=ar      prio=60  dom=device init
+        world_size == 4  exact == 0  dtype in {bf16 fp16}  numel % 128 == 0  device.p2p == 0  
+        tunables(10): ts_once=0/2 ts_pieces=1/5 ts_pieces_min=0/6 ts_fuse=0/2 ts_duplex=0/2 nblocks=0/6 nthreads=1024/3 drain=3/2 acq=0/2 ts_min=32768/6   space 103680
+  ar_twoshot_4rank_ti8_lane_host               op=all_reduce                   fam=ar      prio=61  dom=device init
+        world_size == 4  exact == 0  dtype in {bf16 fp16}  numel % 128 == 0  overlap == 1  device.p2p == 0  
+        tunables(10): ts_once=0/2 ts_pieces=1/5 ts_pieces_min=0/6 ts_fuse=0/2 ts_duplex=0/2 nblocks=4/5 nthreads=1024/3 drain=3/2 acq=0/2 ts_min=32768/6   space 86400
+  ar_rmsnorm_quant_i8_host                     op=ar_rmsnorm_quant_i8          fam=quant   prio=50  dom=device init
+        n % 16 == 0  n <= 30720  dtype in {bf16}  world_size == 2  device.p2p == 0  
+        tunables(10): ts_once=0/2 ts_pieces=1/5 ts_pieces_min=0/6 ts_fuse=0/2 ts_duplex=0/2 nblocks=0/6 nthreads=1024/3 drain=3/2 acq=0/2 ts_min=32768/6   space 103680
+  ar_rmsnorm_quant_i8g_host                    op=ar_rmsnorm_quant_i8g         fam=quant   prio=50  dom=device init
+        n % 128 == 0  n <= 30720  dtype in {bf16}  world_size == 2  device.p2p == 0  
+        tunables(10): ts_once=0/2 ts_pieces=1/5 ts_pieces_min=0/6 ts_fuse=0/2 ts_duplex=0/2 nblocks=0/6 nthreads=1024/3 drain=3/2 acq=0/2 ts_min=32768/6   space 103680
+  ar_rmsnorm_quant_i8_4rank_host               op=ar_rmsnorm_quant_i8          fam=quant   prio=50  dom=device init
+        n % 16 == 0  n <= 30720  dtype in {bf16}  world_size == 4  device.p2p == 0  
+        tunables(5): nblocks=0/6 nthreads=1024/3 drain=3/2 acq=0/2 tail=1/2   space 144
+  ar_ln_had_quant_i8_host                      op=ar_ln_had_quant_i8           fam=quant   prio=50  dom=device init
+        n % 16 == 0  n % 128 == 0  n <= 16256  group <= 512  dtype in {bf16}  world_size == 2  device.p2p == 0  
+        tunables(10): ts_once=0/2 ts_pieces=1/5 ts_pieces_min=0/6 ts_fuse=0/2 ts_duplex=0/2 nblocks=0/6 nthreads=1024/3 drain=3/2 acq=0/2 ts_min=32768/6   space 103680
+  ar_rmsnorm_quant_fp8_host                    op=ar_rmsnorm_quant_fp8         fam=quant   prio=50  dom=device init
+        n % 8 == 0  group == 128  dtype in {bf16}  world_size == 2  device.p2p == 0  
+        tunables(10): ts_once=0/2 ts_pieces=1/5 ts_pieces_min=0/6 ts_fuse=0/2 ts_duplex=0/2 nblocks=0/6 nthreads=1024/3 drain=3/2 acq=0/2 ts_min=32768/6   space 103680
+  ar_rmsnorm_had_quant_i8g_host                op=ar_rmsnorm_had_quant_i8g     fam=quant   prio=50  dom=device init
+        n % 128 == 0  group == 128  dtype in {bf16}  world_size == 2  device.p2p == 0  
+        tunables(10): ts_once=0/2 ts_pieces=1/5 ts_pieces_min=0/6 ts_fuse=0/2 ts_duplex=0/2 nblocks=0/6 nthreads=1024/3 drain=3/2 acq=0/2 ts_min=32768/6   space 103680
+  ar_rmsnorm_post_quant_fp8_host               op=ar_rmsnorm_post_quant_fp8    fam=quant   prio=50  dom=device init
+        n % 8 == 0  group == 128  dtype in {bf16}  world_size == 2  device.p2p == 0  
+        tunables(10): ts_once=0/2 ts_pieces=1/5 ts_pieces_min=0/6 ts_fuse=0/2 ts_duplex=0/2 nblocks=0/6 nthreads=1024/3 drain=3/2 acq=0/2 ts_min=32768/6   space 103680
+  ar_hc_write_host                             op=ar_hc_write                  fam=norm    prio=50  dom=device init
+        M >= 1  n % 8 == 0  hc >= 2  hc <= 8  dtype in {bf16}  world_size == 2  device.p2p == 0  
+        tunables(10): ts_once=0/2 ts_pieces=1/5 ts_pieces_min=0/6 ts_fuse=0/2 ts_duplex=0/2 nblocks=0/6 nthreads=1024/3 drain=3/2 acq=0/2 ts_min=32768/6   space 103680
+  ar_hc_write_4rank_host                       op=ar_hc_write                  fam=norm    prio=50  dom=device init
+        M >= 1  n % 8 == 0  hc >= 2  hc <= 8  dtype in {bf16}  world_size == 4  wire == 0  device.p2p == 0  
+        tunables(10): ts_once=0/2 ts_pieces=1/5 ts_pieces_min=0/6 ts_fuse=0/2 ts_duplex=0/2 nblocks=0/6 nthreads=1024/3 drain=3/2 acq=0/2 ts_min=32768/6   space 103680
+  ar_gather_hc_write_host                      op=ar_gather_hc_write           fam=norm    prio=50  dom=device init scratch
+        M >= 1  n % 8 == 0  hc >= 2  hc <= 8  dtype in {bf16}  world_size == 2  top_k >= 1  top_k <= 64  device.p2p == 0  
+        tunables(10): ts_once=0/2 ts_pieces=1/5 ts_pieces_min=0/6 ts_fuse=0/2 ts_duplex=0/2 nblocks=0/6 nthreads=1024/3 drain=3/2 acq=0/2 ts_min=32768/6   space 103680
+  ar_gather_hc_write_4rank_host                op=ar_gather_hc_write           fam=norm    prio=50  dom=device init scratch
+        M >= 1  n % 8 == 0  hc >= 2  hc <= 8  dtype in {bf16}  world_size == 4  wire == 0  top_k >= 1  top_k <= 64  device.p2p == 0  
+        tunables(10): ts_once=0/2 ts_pieces=1/5 ts_pieces_min=0/6 ts_fuse=0/2 ts_duplex=0/2 nblocks=0/6 nthreads=1024/3 drain=3/2 acq=0/2 ts_min=32768/6   space 103680
+
