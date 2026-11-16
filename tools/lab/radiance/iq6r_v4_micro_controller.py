@@ -17,6 +17,10 @@ import time
 from pathlib import Path
 
 from iq6r_v4_controller import WORK, stage_environment
+
+# The runner imports the NumPy-based calibration preparation module on import.
+# The controller must add the same pinned pydeps path as its subprocesses.
+sys.path.insert(0, str(WORK / "pydeps"))
 from iq6r_v4_micro_convert import (
     MICRO_ROOT,
     MICRO_STATUS,
