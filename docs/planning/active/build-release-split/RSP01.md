@@ -71,7 +71,7 @@ hardware are external prerequisites. Thus phase 1 can launch via the
 existing platform checkout but the archive is not a self-contained
 standalone distribution.
 
-### Phase 2: compatible platform + engine release pair (design only)
+### Phase 2: compatible platform and engine release pair (design only)
 
 **Status: not implemented.** Phase 1 (#1016) supplies an engine-scoped
 archive, but there is no platform release archive, pair-compatible receipt,

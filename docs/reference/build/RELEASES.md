@@ -95,7 +95,7 @@ engine release, not the platform release.
 ### RSP01 phase 2: paired platform and engine releases (proposal, not installed today)
 
 Phase 2 is a **design only**, described in
-[the RSP01 plan](../../planning/active/build-release-split/RSP01.md#phase-2-compatible-platform--engine-release-pair-design-only).
+[the RSP01 plan](../../planning/active/build-release-split/RSP01.md#phase-2-compatible-platform-and-engine-release-pair-design-only).
 No `bc-platform` runtime archive, compatibility-pair `install.json`, or
 worktree-free `release-install` is available yet. The supported behavior
 above remains: `release-install <tag|latest>` selects **one Radiance tag**,
