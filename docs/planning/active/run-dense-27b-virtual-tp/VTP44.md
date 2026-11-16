@@ -46,6 +46,8 @@ Patch B as built, rad0041_kv_b16_flashnext (2026-11-16): `RAD_KV_GEOMETRIES(X)` 
 
 Patch B2, rad0042_kv_b16_selftest (2026-11-17): the device cases for rad0041's rows, in `libr4d/r4d_selftest.cpp`. The Flash-Next QSA numeric cases take `bf16_fp8` and `bf16_i8` (gqa12 and gqa6 block-4: prefill 64 and 100 rows, decode at every wave count), the split-KV prefill and mixed-step tables gain both geometries, and the fused gate+quantiser byte-identity case builds a bf16-K cache with finite V bytes and f16 group scales (row sizes from `RAD_KVQ_*_ROW16`). It compiles and passes libr3's rewrite check; the device run is queued on the `gpu` lease (patched `r4d_selftest` against the corrected rad0038 baseline: 0 failures, 246 skipped, none in the b16 or gqa12 rows), so the new cases' first run is their evidence.
 
+Device result (2026-11-16, DEVICE-AB.md): r4d_selftest on the R9700 with rad0040/41/42 applied: 0 failures, 248 skipped (baseline 246, the two extra are the gqa6 block-4 fused rows with no smoke case, as for fp8v4 / k6v4); every baseline `ok` line still `ok`; 274 new `ok` lines for the new rows including the gqa12 fused byte-identity cases. Not yet: 27B KLD equality for patch A, libr3 gfx1100 device run, Flash-Next KLD / speed / identity.
+
 ## Files
 
 - `abi/rad_builder.h`, `core/config.cpp`, `core/rad_core.h`, `core/engine_bringup.cpp`, `core/kvstream/bringup.cpp`, `arch/qwen35_fp8/qwen35_fp8.cpp`, `libr4d/r4d_rows.cpp`, `tests/config_test.cpp` (through patch rad0040).
