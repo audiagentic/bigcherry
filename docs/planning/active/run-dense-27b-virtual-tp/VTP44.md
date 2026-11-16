@@ -2,7 +2,7 @@
 id: VTP44
 order: 0
 plan: run-dense-27b-virtual-tp
-state: pending
+state: in_progress
 created-at: '2026-11-16T07:45:37.732759+00:00'
 breadth: ''
 skill: advanced
@@ -31,11 +31,20 @@ GPT design review 1 (docs/evidence/2026-11-16-vtp44-generic-kv-layouts/design-re
 
 ## Code Samples & Guidance
 
+Patch A as built, rad0040_kv_layout_table (2026-11-16): `RAD_KV_LAYOUTS(X)` in `abi/rad_builder.h`, `X(id, name, row16, group)`, one line per packed layout. The `RAD_KVQ_*` enum (values unchanged; `RAD_KVQ_COUNT` appended), `rad_kvq_name`, `rad_kvq_from_name`, `rad_kvq_row16` and the `RAD_KV_LAYOUT_NAMES` string are generated from it; the flag parser (accepted names, refusal text, help line), `bc_kv_quant_of` and the qwen35_fp8 plugin read them. libr4d's bf16_fp8 / bf16_i8 attention rows come from one tuple list, `R4D_B16_ATTN_TUPLES` in `r4d_rows.cpp`: `X(tag, id, kv, kvdesc, head_dim, gqa, block, qlmax, geom, prefill_fn, prefill_scratch_fn, decode_fn, decode_scratch_fn)` generates the constraint arrays and the prefill and decode rows, and a `static_assert` ties each tuple's kv name to the table. Patch B adds gqa12 and block-4 as further tuples.
 
+Deviations from step 1 above, decided while building it:
+- Only the rows rad0037/38 own are generated. The upstream and fp8_v4 / k6_v4 rows are not rewritten: a textual patch cannot rewrite 30 upstream rows without making the patch as large as the file, and the proof of no change is cleaner for rows the patch already owns. They move onto the list when a change touches them.
+- The `head_dim 256, gqa 6` check in the qwen35_fp8 plugin stays. Patch B adds the second plugin (qwen4exp_fp8) that needs the same check; the shared helper is written then, from two real uses, not one.
+- The descriptor holds sizes and names only (id, name, row bytes per 16 dims, scale group). K/V element kinds and offsets stay documented in the ABI header comment and in the kernels: no kernel or plugin reads them as data yet, so a field would be speculative.
+
+Proof used for patch A: `libr4d/r4d_rows.cpp` compiles on the host alone in about a second, so the before and after objects are compared with `objdump -s` (all section bytes) and `objdump -r` (all relocations): identical. The device baseline waits for the corrected pinned selftest run (BASELINE-STATUS.md in the evidence folder): an unpinned `r4d_selftest` picks a gfx1100 card for gfx1201-only code and segfaults inside ROCm 7.2.4, on every row.
 
 ## Files
 
-
+- `abi/rad_builder.h`, `core/config.cpp`, `core/rad_core.h`, `core/engine_bringup.cpp`, `core/kvstream/bringup.cpp`, `arch/qwen35_fp8/qwen35_fp8.cpp`, `libr4d/r4d_rows.cpp`, `tests/config_test.cpp` (through patch rad0040).
+- `engines/radiance/patches/rad0040_kv_layout_table/`, `engines/radiance/recipes.toml` (experiment `kv-bf16-packed`).
+- `docs/evidence/2026-11-16-vtp44-generic-kv-layouts/` (design review, baseline catalogues, BASELINE-STATUS.md).
 
 ## Validation
 
@@ -68,3 +77,4 @@ Created 2026-11-16 from the VTP43 follow-up. Owner direction: move away from har
 
 - 2026-11-16T07:45:37.732759+00:00 (created-by): Created by agent
 - 2026-11-16T07:46:39.525612+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:validation, section:effort_risk, section:acceptance_criteria, section:notes
+- 2026-11-16T08:21:18.350003+00:00 (state-transition): State: pending → in_progress

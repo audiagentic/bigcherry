@@ -9,7 +9,7 @@ different statuses. See [the engine overview](README.md) first.
 
 _Generated from package documentation and metadata by `tools/docs/generate_engine_enhancement_summaries.py`. Do not edit this section by hand._
 
-## Engine patches (37)
+## Engine patches (38)
 
 | Package | State | Summary |
 | --- | --- | --- |
@@ -50,6 +50,7 @@ _Generated from package documentation and metadata by `tools/docs/generate_engin
 | [rad0037_bf16_fp8_kv](../../../../engines/radiance/patches/rad0037_bf16_fp8_kv/SUMMARY.md) | `untested` | `--kv-cache-dtype bf16_fp8` stores a token's key as bf16 and its value as E4M3 (saturating, scale 1.0), 3 * head_dim bytes a token and head against 4 * head_dim for bf16 and 2 * head_dim for fp8. Keys keep bf16's quality; values take fp8's half size. It is served by libr4d's h256/gqa6 prefill (plain and KV-split) and decode kernels, a `kv_store` row and the fused `qk_norm_rope_gate_kv_store` row; the Qwen3.5 FP8 plugin declares it (`RAD_KVQ_B16F8`) and probes it for that geometry only. Other geometries, the e4m3 product legs (`prefill_fp8`), streaming and gfx11 non-native paths are refused at resolve or startup, never run on a wrong layout. |
 | [rad0038_bf16_i8_kv](../../../../engines/radiance/patches/rad0038_bf16_i8_kv/SUMMARY.md) | `untested` | `--kv-cache-dtype bf16_i8` stores a token's key as bf16 and its value as int8 with an f16 scale per 32 dims (the smallest f16 with 127 * scale >= the group's absmax; a zero group stores scale 0), 49 * head_dim / 16 bytes a token and head (784 at head_dim 256) against 4 * head_dim for bf16 and 3 * head_dim for `bf16_fp8`. It exists because the E4M3 value of `bf16_fp8` flips exact-copy tokens at long context (VTP43). It is served by libr4d's h256/gqa6 prefill (plain and KV-split) and decode kernels, a `kv_store` row and the fused `qk_norm_rope_gate_kv_store` row; the Qwen3.5 FP8 plugin declares it (`RAD_KVQ_B16I8`) and probes it for that geometry only. Other geometries, the e4m3 product legs, streaming and gfx11 non-native paths are refused at resolve or startup. |
 | [rad0039_moe_heat_observer](../../../../engines/radiance/patches/rad0039_moe_heat_observer/SUMMARY.md) | `untested` | Inactive observer-only patch (RHP02 slice A), experiment-only while untested. |
+| [rad0040_kv_layout_table](../../../../engines/radiance/patches/rad0040_kv_layout_table/SUMMARY.md) | `untested` | `abi/rad_builder.h` gets `RAD_KV_LAYOUTS`, one line per packed `--kv-cache-dtype` layout (enum id, name, row bytes per 16 dims, scale group). The `RAD_KVQ_*` enum, `rad_kvq_name`, `rad_kvq_from_name` and `rad_kvq_row16` are generated from it, and the flag parser (accepted names, its refusal text and its help line), the core's name-to-layout map and the Qwen3.5 FP8 plugin's name and row size read it instead of keeping their own lists. libr4d's `bf16_fp8` and `bf16_i8` attention rows (constraints, names, descriptions) are generated from one tuple list in `r4d_rows.cpp`, with a compile-time check that each tuple names a table layout. A new layout or geometry of these is a line in a list, not a copied row. |
 
 ## Components (6)
 
