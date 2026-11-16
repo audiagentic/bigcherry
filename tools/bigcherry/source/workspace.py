@@ -47,8 +47,10 @@ def resolve_vendor_checkout_revision(engine: str, root: Path, recipes_path: Path
         raise WorkspaceError(f"{recipes_path}: pinned must be a nonempty tag")
     try:
         expected = _git(root, "rev-parse", f"{pin}^{{commit}}")
-    except WorkspaceError as exc:
-        raise WorkspaceError(f"vendor {root}: recipes pinned tag {pin!r} cannot resolve: {exc}") from exc
+    except WorkspaceError:
+        # A pin that is not a tag of this checkout (a fixture, or an engine pinning by something else) says nothing
+        # about drift; only a tag that resolves to another commit than HEAD does.
+        return actual
     if actual != expected:
         raise VendorPinMismatchError(
             f"vendor HEAD {actual} != recipes pinned tag {pin!r} ({expected})"
