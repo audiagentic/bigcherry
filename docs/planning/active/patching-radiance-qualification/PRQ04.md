@@ -67,3 +67,7 @@ Production serves only validated patches; every excluded patch is listed in PRQ0
 ## Revision 2026-11-16
 
 Splitting out the remaining untested patches would break layouts that use them (rad0030 by qwen27b-tp3-int8, rad0036 by the -long configs). The split is therefore replaced by qualifying them in place (PRQ03) and a guard: a test that every patch in source.radiance is validated or listed here with a reason, so an untested patch cannot enter production unnoticed, plus the vendor-pin guard from PRQ01.
+
+## Outcome 2026-11-16
+
+The guard is in main (#990): the vendor checkout must match the recipes pin, and source.radiance contains only validated patches or listed exceptions. PRQ01's cause (vendor drift) is guarded by the same pin check. The exception list is now empty and is superseded by the source-class rule of PRQ05.
