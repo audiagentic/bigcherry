@@ -140,6 +140,15 @@ def finish(data: dict, state: dict) -> None:
     atomic_json(CONTROLLER_STATUS, state)
 
 
+def stage_environment() -> dict[str, str]:
+    env = os.environ.copy()
+    deps = WORK / "pydeps"
+    if not (deps / "numpy").is_dir():
+        raise RuntimeError("experiment NumPy dependency directory is missing")
+    env["PYTHONPATH"] = str(deps) + os.pathsep + env.get("PYTHONPATH", "")
+    return env
+
+
 def lease_command(stage: int, stage_timeout: int) -> list[str]:
     script = Path(__file__).with_name("iq6r_v4_staged_convert.py")
     return [
@@ -215,7 +224,7 @@ def main() -> int:
                 command = lease_command(next_stage, args.stage_timeout)
                 # Agent-lease --wait queues behind any legitimate other owner.
                 # Do not retry a failed stage; leave the diagnostic output.
-                result = subprocess.run(command, check=False)
+                result = subprocess.run(command, check=False, env=stage_environment())
                 if result.returncode:
                     raise RuntimeError(
                         f"stage {next_stage} failed under lease (exit {result.returncode}); "

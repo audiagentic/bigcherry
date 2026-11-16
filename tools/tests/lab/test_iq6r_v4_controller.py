@@ -19,6 +19,16 @@ spec.loader.exec_module(controller)
 
 
 class ControllerTests(unittest.TestCase):
+    def test_stage_environment_includes_numpy(self):
+        from tempfile import TemporaryDirectory
+
+        with TemporaryDirectory() as tmp:
+            (Path(tmp) / "pydeps/numpy").mkdir(parents=True)
+            with patch.object(controller, "WORK", Path(tmp)):
+                value = controller.stage_environment()
+            self.assertEqual(value["PYTHONPATH"].split(controller.os.pathsep)[0],
+                             str(Path(tmp) / "pydeps"))
+
     def test_lease_command_uses_stage_limit_and_wait(self):
         command = controller.lease_command(2, 10800)
         self.assertEqual(command[:4], ["agent-lease", "acquire", "gpu", "--wait"])
