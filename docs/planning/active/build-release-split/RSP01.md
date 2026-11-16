@@ -11,35 +11,29 @@ work: L
 priority: P1
 ---
 
-# Release only what runs the model: separate run-side from build-side tooling
+# The radiance release is the engine runtime only; the platform release carries the rest
 
 ## Description
 
-Owner direction (2026-11-16): the BigCherry release must not carry build or worktree tooling; that is build work, not LLM model execution work.
+Owner direction (2026-11-16): a platform release and a bc-radiance release are both fine, but bc-radiance must be the engine, not build and platform binaries; the platform release may contain the rest.
 
-Today the release is wider than the runtime. The radiance runtime bundle (bin, radiance_home, runtime-prefix) is already run-side only, but the release tag is the whole repository: `bc-platform` is component `.`, and `release/install.py` installs by creating a detached git worktree of the tag. The same tag therefore carries the build, patch, campaign, source, slice and worktree tooling, and `release/ci_bundle.py` BUILD_INPUTS folds that tooling into the release identity (bundle reuse key).
+Today bc-radiance is wider than the engine. The runtime bundle packs the whole build `bin/` (RUN_DIRS in `release/runtime_assets.py`), which holds the engine and also tooling and test binaries (rad-tune, rad-kbench, rad-convert, rad-gbnf-check, rad-tokcheck, rad-schemas, rad-info, r4d_selftest) and, in some builds, the platform's bc-serve. The release also installs from a detached git worktree of the whole-repo tag, and `ci_bundle.BUILD_INPUTS` folds platform tooling (campaign, core, source, patch) into the bundle reuse key.
 
-Goal: a release contains and versions only what is needed to run and serve a model; build and development tooling is not part of it and does not change its identity.
-
+Goal: the radiance bundle holds exactly the engine runtime; the platform release holds launchers, serve, build and patch tooling; install composes the two.
 
 ## Steps
 
-1. Inventory: classify every module under `tools/bigcherry/` and every top-level path as run-side (serve, runtime, launchers, runtime-assets restore, serving config, engines' runtime data) or build-side (build, campaign, source, patch, slice, worktree, jobs, release tooling, lab). Record the table in this item; flag shared modules.
-2. Decide the boundary mechanically (a directory/package split or a manifest of run-side paths), not by convention; one test fails when a run-side module imports a build-side one.
-3. Change release-please components so `bc-platform` no longer releases `.`; release only the run-side paths (and keep bc-radiance/bc-llamacpp as the engine components).
-4. Change `release/install.py` to install the verified bundle plus serving config and launcher without a git worktree of the tag.
-5. Re-scope `ci_bundle.BUILD_INPUTS` so the bundle reuse key covers what shapes the binary (engine patches, recipes, build image) and nothing that is dev tooling or release ceremony; keep the safe side (a rebuild is allowed, a stale bundle is not).
-6. Migrate callers in the same change (no compatibility shims).
-
+1. Audit: list the contents of a current radiance bundle and classify each file as engine runtime, engine helper, tool/test binary or platform binary.
+2. Explicit run-side manifest for the bundle (replace the RUN_DIRS directory copy with a named list of what the engine needs: radiance, plugin libraries and kernels, helpers such as r3_moe_worker, runtime libraries). One test fails on any extra file (tool/test/platform binaries).
+3. Reuse key: BUILD_INPUTS limited to what shapes the engine binary (engine patches and components, recipes, build image, the adapter and source materialiser); the test pins this list.
+4. Install: compose the platform release (launcher, serving config) with the engine bundle; no git worktree of a whole-repo tag as the engine's installed form. Design note first, implementation after review.
+5. Consolidate while here: one place that names the run-side manifest and its consumers (bundle pack, restore verify, install verify); remove duplicated lists and legacy archive names that no release uses (migrate, no shims).
 
 ## Detailed Solution & Technical Design
 
-Open design points, to decide before step 3:
-- Where build-side tooling lives afterwards (a separate package in this repository that is not a release component, or a separate repository).
-- How a serving host reproduces a release: bundle + config pinned by tag, restored without git.
-- Which shared modules (core/, engine_adapters/) the runtime really needs, and whether they split.
-- Radiance tag naming and the release record (`releases/*.json`) are kept; only their contents' scope changes.
+Boundary: engine = files the radiance process loads or execs at run time. Platform = everything that drives it (serve, launchers, config, build, patch, campaign, slice, jobs, release tooling) and diagnostics or benchmark binaries. Tool binaries (rad-*, r4d_selftest) stay available as build outputs for development; they are not release payload.
 
+Open points to settle in the install design note: whether bc-serve ships in the platform release or with a serving component; how an installed host pins platform release + engine release together (a pair recorded in one place).
 
 ## Code Samples & Guidance
 
@@ -52,11 +46,10 @@ release-please-config.json; .release-please-manifest.json; tools/bigcherry/relea
 
 ## Validation
 
-- A CI test asserts the run-side manifest imports nothing from build-side modules.
-- Install a release on a clean host path with no git checkout of the repository and launch flashnext-4gpu.
-- Bundle reuse key is unchanged by edits to slice/worktree/patch-authoring tooling and changes when an engine patch or the build image changes.
-- Release notes list only run-side changes.
-
+- Bundle manifest test: pack from a fixture build containing extra tool and platform binaries; the bundle holds only the manifest files and restore verifies exactly them.
+- Reuse key unchanged by edits to slice/worktree/jobs/lab tooling; changes when an engine patch, recipe or the build image changes.
+- Restore a real current bundle and run the existing release-install smoke; engine launches.
+- Full patch/release/core suites and tools/tests/test_*.py pass.
 
 ## Effort & Risk
 
