@@ -75,7 +75,7 @@ class ControllerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / "stage-02-convert-stderr.log").write_text(
-                "libquant: GPTQ quantises 'output.k6.weight'\n"
+                "libquant: GPTQ quantises 'output.k6'\n"
                 "I --reuse: 1029 weight(s), 25 GiB, copied\n"
             )
             with (patch.object(controller, "STAGED", root),

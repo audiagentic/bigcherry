@@ -92,7 +92,7 @@ def validate_reuse(stage: int) -> dict:
     log = path.read_text(errors="replace")
     # All earlier explicit IQ6R tensors must be eligible for reuse. At stage
     # two the shared vocabulary head is the critical initial proof.
-    if re.search(r"GPTQ quantises 'output\.k[4-7]\.weight'", log):
+    if re.search(r"GPTQ quantises 'output\.k[4-7](?:\.weight)?'", log):
         raise RuntimeError("vocabulary-head GPTQ unexpectedly recomputed")
     matches = re.findall(r"--reuse: (\d+) weight\(s\)", log)
     if not matches or int(matches[-1]) < 4:
