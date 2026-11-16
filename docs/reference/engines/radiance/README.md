@@ -6,10 +6,11 @@ expert placement adapted to differing GPU memory and bandwidth.
 
 ## Patches and extensions at a glance
 
-BigCherry maintains **34 engine patch packages** and **6 components** for Radiance.
+BigCherry maintains **36 engine patch packages** and **6 components** for Radiance.
 Each description says what the package is for, not that it is enabled or
 performance-qualified. **Validated** means package-level evidence exists;
-**untested** means qualification is not established; **superseded** means a
+**untested** means qualification is not established; **diagnostic** is for
+observability rather than production; **superseded** means a
 newer patch replaces it. See the [full catalogue](ENHANCEMENTS.md) and
 linked package pages for technical details and evidence.
 
@@ -53,6 +54,9 @@ Patches modify upstream Radiance source.
 | [rad0034_prefill_concurrency](../../../../engines/radiance/patches/rad0034_prefill_concurrency/SUMMARY.md) | Earlier long-prefill concurrency limit | `superseded` |
 | [rad0035_prefill_order](../../../../engines/radiance/patches/rad0035_prefill_order/SUMMARY.md) | Earlier prefill ordering and ageing controls | `superseded` |
 | [rad0036_prefill_governor](../../../../engines/radiance/patches/rad0036_prefill_governor/SUMMARY.md) | Unified prefill admission and ordering | `validated` |
+
+| [rad0037_bf16_fp8_kv](../../../../engines/radiance/patches/rad0037_bf16_fp8_kv/SUMMARY.md) | Keep BF16 keys; compress cache values to FP8 | `untested` |
+| [rad0038_bf16_i8_kv](../../../../engines/radiance/patches/rad0038_bf16_i8_kv/SUMMARY.md) | Keep BF16 keys; quantise cache values to scaled INT8 | `untested` |
 
 ### Components (extensions)
 
