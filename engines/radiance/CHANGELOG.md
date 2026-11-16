@@ -1,5 +1,30 @@
 # Changelog
 
+## [1170.27.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.26.0...bc-radiance-1170.27.0) (2026-11-16)
+
+
+### New and changed
+
+* **patch:** diagnostic patch state and source classes; where-it-builds rule (PRQ05) ([#995](https://github.com/audiagentic/bigcherry/issues/995)) ([b82d843](https://github.com/audiagentic/bigcherry/commit/b82d843610a18454a4119e1ccf7634a7d4189247))
+* **patch:** promote rad0005_mp4_ffmpeg6_writer ([#993](https://github.com/audiagentic/bigcherry/issues/993)) ([9355240](https://github.com/audiagentic/bigcherry/commit/9355240770014f12543100913b4fb463f08347b6))
+* **patch:** promote rad0012_helper_kernel_config ([#987](https://github.com/audiagentic/bigcherry/issues/987)) ([c096864](https://github.com/audiagentic/bigcherry/commit/c096864722c2b8b801547d52d5a581d727b1b323))
+* **patch:** promote rad0016_vtp14_rank_code_selection, rad0017_vtp14_n3_shared_rendezvous, rad0018_vtp14_n2_tp_ownership, rad0019_vtp14_n2_tp_ownership_fp8 ([#983](https://github.com/audiagentic/bigcherry/issues/983)) ([33c8040](https://github.com/audiagentic/bigcherry/commit/33c8040300c4f210f6396f2a31d6e1fdbd444cdc))
+* **patch:** promote rad0020_vtp14_tp3_pipelined_prefill, rad0025_multiseq_pipelined_prefill, rad0026_mixed_pipelined_prefill, rad0027_mixed_one_pipelined_prefill ([#984](https://github.com/audiagentic/bigcherry/issues/984)) ([f80314d](https://github.com/audiagentic/bigcherry/commit/f80314d3581e9e3e2956bca3c49e5f62f1cd674e))
+* **patch:** promote rad0021_vtp14_weighted_twoshot_3rank, rad0022_tune_pin, rad0024_ts3_decode, rad0031_ts_timeline, rad0032_ts3_duplex, rad0033_ts3_once ([#985](https://github.com/audiagentic/bigcherry/issues/985)) ([0dbfcce](https://github.com/audiagentic/bigcherry/commit/0dbfcce858475a6311b4054ca3e3853908ef8bb7))
+* **patch:** promote rad0028_rank_consistent_block_drafts, rad0029_rank_own_split ([#986](https://github.com/audiagentic/bigcherry/issues/986)) ([5c828d8](https://github.com/audiagentic/bigcherry/commit/5c828d80e0e59257b9eaf0958b39d42e8a8dbb7e))
+* **patch:** promote rad0030_int8_pipelined_prefill, rad0036_prefill_governor ([#992](https://github.com/audiagentic/bigcherry/issues/992)) ([d9920ee](https://github.com/audiagentic/bigcherry/commit/d9920eef153c33f7dec68efbb718d5433e224e86))
+* **radiance:** -long configs use the token-budget prefill governor (VTP42) ([#980](https://github.com/audiagentic/bigcherry/issues/980)) ([e368ff1](https://github.com/audiagentic/bigcherry/commit/e368ff10f2f693ffd7ceaa02abb85012166eb230))
+* **radiance:** bf16_fp8 and bf16_i8 KV caches (rad0037, rad0038; VTP43) ([#994](https://github.com/audiagentic/bigcherry/issues/994)) ([9c6f658](https://github.com/audiagentic/bigcherry/commit/9c6f6586cc4ecdd3cf47a3fcac175d91d4b3633a))
+* **radiance:** prefill governor replaces the prefill cap, threshold and order options (rad0036; VTP42) ([#978](https://github.com/audiagentic/bigcherry/issues/978)) ([b384cc2](https://github.com/audiagentic/bigcherry/commit/b384cc24e0697ba7f64954a5e78c519d574ec2da))
+* **radiance:** prefill order by remaining work, long-prefill threshold and age limit (rad0035, opt-in; VTP41) ([#977](https://github.com/audiagentic/bigcherry/issues/977)) ([fc8c37e](https://github.com/audiagentic/bigcherry/commit/fc8c37e747db3c311e99588d0b57cc48af92a15b))
+* **radiance:** production source guard, validated-only and vendor on the pin (PRQ04) ([#990](https://github.com/audiagentic/bigcherry/issues/990)) ([c162ee6](https://github.com/audiagentic/bigcherry/commit/c162ee6426048c9c389d08b977004884ac9fd1ff))
+
+
+### Fixes
+
+* **patch:** promote rad0023_ar_timeline ([#988](https://github.com/audiagentic/bigcherry/issues/988)) ([2adbfee](https://github.com/audiagentic/bigcherry/commit/2adbfeeee50f8b480eb4032d9f87297e6c328503))
+* **radiance:** rad0036 prefill governor is not tagged optimization (no llama.cpp native arm applies) ([#991](https://github.com/audiagentic/bigcherry/issues/991)) ([4e7c47f](https://github.com/audiagentic/bigcherry/commit/4e7c47f27287bd020fb8e2e178b205f893133812))
+
 ## [1170.26.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.25.0...bc-radiance-1170.26.0) (2026-11-15)
 
 
