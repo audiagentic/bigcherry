@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "kind": "source-history-reconciliation",
+  "date": "2026-11-13",
+  "project": "bigcherry",
+  "source_commit": "523ac2fbd",
+  "scope": "RSC11 P1 and RHP19 unpublished branch disposition; no hardware verification",
+  "original_commits": [
+    {
+      "plan": "RSC11",
+      "original_commit": "006b7ce149c4b5f943acb6552c202a9bf2648f0c",
+      "tree_sha1": "7256e9879a7ba32626baa99cc075b7da4f44ace7",
+      "archive_commit": "e4f6c4bd79c153afd25d01a096b35afb3f134469",
+      "archive_branch": "archive/rsc11-s13-p1-engine-native-20261113",
+      "original_parent": "2bac0a87ba87df6f53a5de5e62aa515a5c7e7340"
+    },
+    {
+      "plan": "RHP19",
+      "original_commit": "1c486f28a1cc31ff7ebc1ad9c283edf8c77f7c16",
+      "tree_sha1": "a40d6def91720be616f6db80a4c42388a6c2f987",
+      "archive_commit": "e76e57daf63f7955d6b15cbddc91785213ca42c7",
+      "archive_branch": "archive/rhp19-drift-envelope-20261113",
+      "original_parent": "25e19de091c91c47bab8761353c991b3afb4564c"
+    }
+  ],
+  "checks": [
+    {
+      "name": "main_rhp19_watchdog_unittest",
+      "result": "15/15 pass",
+      "method": "python3 -B tools/tests/lab/test_rhp19_calibration_watchdog.py"
+    },
+    {
+      "name": "archived_rhp19_watchdog_unittest",
+      "result": "12/12 pass",
+      "method": "python3 -B tools/tests/lab/test_rhp19_calibration_watchdog.py in archived source tree"
+    }
+  ],
+  "not_performed": [
+    "GPU lease",
+    "hardware benchmark",
+    "current-pin Radiance build",
+    "full CI",
+    "production enablement"
+  ]
+}

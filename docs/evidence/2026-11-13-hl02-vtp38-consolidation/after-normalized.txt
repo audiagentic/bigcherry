@@ -1,0 +1,23 @@
+# Normalized source transcript; original PCI enumerations and card hashes replaced with observed physical roles. All numerical measurements preserved.
+# after 2026-11-13T10:21:18Z
+0 physical-XTX-B
+1 physical-XTX-A
+2 R9700
+solo dev0 r: primary-PEG gfx1100 read 64 MiB x 1000 in 5.00 s: 13.4 GB/s
+solo dev1 r: secondary-PEG gfx1100 read 64 MiB x 1000 in 5.00 s: 13.4 GB/s
+solo dev2 r: separate-CPU-x4 gfx1201 read 64 MiB x 504 in 5.02 s: 6.7 GB/s
+solo dev0 w: primary-PEG gfx1100 write 64 MiB x 1064 in 5.01 s: 14.3 GB/s
+solo dev1 w: secondary-PEG gfx1100 write 64 MiB x 1064 in 5.01 s: 14.3 GB/s
+solo dev2 w: separate-CPU-x4 gfx1201 write 64 MiB x 532 in 5.00 s: 7.1 GB/s
+bg dev0 read | dev1 r: secondary-PEG gfx1100 read 64 MiB x 504 in 5.03 s: 6.7 GB/s | bg: primary-PEG gfx1100 read 256 MiB x 604 in 12.07 s: 13.4 GB/s
+bg dev0 read | dev2 r: separate-CPU-x4 gfx1201 read 64 MiB x 252 in 5.01 s: 3.4 GB/s | bg: primary-PEG gfx1100 read 256 MiB x 604 in 12.08 s: 13.4 GB/s
+bg dev1 read | dev0 r: primary-PEG gfx1100 read 64 MiB x 1004 in 5.01 s: 13.4 GB/s | bg: secondary-PEG gfx1100 read 256 MiB x 476 in 12.02 s: 10.6 GB/s
+bg dev1 read | dev2 r: separate-CPU-x4 gfx1201 read 64 MiB x 504 in 5.03 s: 6.7 GB/s | bg: secondary-PEG gfx1100 read 256 MiB x 604 in 12.08 s: 13.4 GB/s
+bg dev2 read | dev0 r: primary-PEG gfx1100 read 64 MiB x 1000 in 5.00 s: 13.4 GB/s | bg: separate-CPU-x4 gfx1201 read 256 MiB x 240 in 12.05 s: 5.3 GB/s
+bg dev2 read | dev1 r: secondary-PEG gfx1100 read 64 MiB x 1000 in 5.00 s: 13.4 GB/s | bg: separate-CPU-x4 gfx1201 read 256 MiB x 304 in 12.11 s: 6.7 GB/s
+bg dev0 read | dev1 w: secondary-PEG gfx1100 write 64 MiB x 504 in 5.03 s: 6.7 GB/s | bg: primary-PEG gfx1100 read 256 MiB x 604 in 12.07 s: 13.4 GB/s
+bg dev0 read | dev2 w: separate-CPU-x4 gfx1201 write 64 MiB x 260 in 5.08 s: 3.4 GB/s | bg: primary-PEG gfx1100 read 256 MiB x 604 in 12.07 s: 13.4 GB/s
+bg dev1 read | dev0 w: primary-PEG gfx1100 write 64 MiB x 1064 in 5.01 s: 14.2 GB/s | bg: secondary-PEG gfx1100 read 256 MiB x 604 in 12.07 s: 13.4 GB/s
+bg dev1 read | dev2 w: separate-CPU-x4 gfx1201 write 64 MiB x 532 in 5.00 s: 7.1 GB/s | bg: secondary-PEG gfx1100 read 256 MiB x 604 in 12.07 s: 13.4 GB/s
+bg dev2 read | dev0 w: primary-PEG gfx1100 write 64 MiB x 1064 in 5.01 s: 14.3 GB/s | bg: separate-CPU-x4 gfx1201 read 256 MiB x 304 in 12.10 s: 6.7 GB/s
+bg dev2 read | dev1 w: secondary-PEG gfx1100 write 64 MiB x 1064 in 5.01 s: 14.3 GB/s | bg: separate-CPU-x4 gfx1201 read 256 MiB x 304 in 12.10 s: 6.7 GB/s

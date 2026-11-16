@@ -1,6 +1,6 @@
 # rad0025_multiseq_pipelined_prefill
 
-**Status:** untested
+**Status:** validated
 **Plan item:** VTP31
 
 Scope: `qwen35_fp8` and `qwen35_w8a8`'s pipelined prefill (rad0020), for a step of several whole prefill sequences.

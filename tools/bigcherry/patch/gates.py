@@ -20,6 +20,8 @@ from ..core import engines, paths
 from . import catalog as patch_catalog
 from . import docs as patch_docs
 from . import patchset
+from . import evidence as patch_evidence
+from . import profile_evidence
 from . import disposition as patch_disposition
 from . import rebase
 from . import validation_policy
@@ -107,10 +109,12 @@ class GateContext:
     coverage_report: Mapping[str, Any] | None = None
     recipe_patch_ids: frozenset[str] | None = None
     target_revision: str | None = None
+    promotion_state: str = "validated"
 
 
 # G4 detail line that says the evidence is the package's lightweight promotion record (QFP18, PA45)
 PROFILE_EVIDENCE_DETAIL = "tier: profile-evidence"
+DIAGNOSTIC_EVIDENCE_DETAIL = "tier: diagnostic"
 # Prefix of a G4 detail line carrying an evidence provenance note (a recorded digest or pin that differs from the
 # current one). Notes never fail a gate.
 EVIDENCE_NOTE_PREFIX = "note: "
@@ -473,6 +477,11 @@ def evaluate_rebase_gate(context: GateContext) -> GateResult:
 
 def evaluate_package_gate(context: GateContext) -> GateResult:
     """Evaluate the focal package policy without unrelated patch poisoning."""
+    if context.intent is GateIntent.PROMOTE and getattr(context, "promotion_state", "validated") == "diagnostic":
+        # Diagnostic qualification does not require a validation campaign;
+        # repository patch-lint is a mandatory separate promotion preflight.
+        return GateResult(GateId.G3, GateStatus.NA, "package", "patch.validation_policy")
+
     try:
         report = validation_policy.check_validation_packages(
             engine=context.descriptor.engine,
@@ -562,6 +571,34 @@ def evaluate_evidence_gate(context: GateContext) -> GateResult:
     rule; provenance notes (evidence recorded at another digest or pin) are
     reported as PASS detail lines, never as failures.
     """
+    if context.intent is GateIntent.PROMOTE and getattr(context, "promotion_state", "validated") == "diagnostic":
+        descriptor = context.descriptor
+        if descriptor.package_root is None:
+            return GateResult(GateId.G4, GateStatus.FAIL, "evidence", "patch.profile_evidence",
+                              ("diagnostic requires a packaged patch",))
+        try:
+            verdict = profile_evidence.verify(
+                context.patches_dir / descriptor.package_root,
+                patch_id=descriptor.patch_id,
+                pinned_ref=context.pinned_ref,
+                subject_digest=patch_evidence.patch_validation_subject_digest(
+                    context.patches_dir / descriptor.implementation_path
+                ),
+                tier=profile_evidence.DIAGNOSTIC_TIER,
+            )
+        except (OSError, ValueError) as exc:
+            return GateResult(GateId.G4, GateStatus.BLOCKED, "evidence",
+                              "patch.profile_evidence", (str(exc),))
+        if verdict is None:
+            return GateResult(GateId.G4, GateStatus.FAIL, "evidence",
+                              "patch.profile_evidence", ("diagnostic promotion record is missing",))
+        if verdict.problems:
+            return GateResult(GateId.G4, GateStatus.FAIL, "evidence",
+                              "patch.profile_evidence", verdict.problems)
+        return GateResult(GateId.G4, GateStatus.PASS, "evidence", "patch.profile_evidence",
+                          (DIAGNOSTIC_EVIDENCE_DETAIL,
+                           *(EVIDENCE_NOTE_PREFIX + note for note in verdict.notes)))
+
     try:
         framework_configuration = validation_policy.is_framework_configuration_patch(
             context.descriptor
@@ -929,6 +966,20 @@ def evaluate_lifecycle_gate(
         return GateResult(
             GateId.G5, GateStatus.BLOCKED, "lifecycle", "patch.gates", blocked
         )
+    if getattr(context, "promotion_state", "validated") == "diagnostic":
+        evidence_result = prior_results[GateId.G4]
+        failures = tuple(
+            f"{key.value}={prior_results[key].status.value}"
+            for key in (GateId.G0, GateId.G1, GateId.G2, GateId.G4)
+            if prior_results[key].status is not GateStatus.PASS
+        )
+        if prior_results[GateId.G3].status not in (GateStatus.PASS, GateStatus.NA):
+            failures += (f"G3={prior_results[GateId.G3].status.value}",)
+        if DIAGNOSTIC_EVIDENCE_DETAIL not in evidence_result.detail:
+            failures += ("G4 does not carry diagnostic-tier mechanics and activation evidence",)
+        if failures:
+            return GateResult(GateId.G5, GateStatus.FAIL, "lifecycle", "patch.gates", failures)
+        return GateResult(GateId.G5, GateStatus.PASS, "lifecycle", "patch.gates")
     # Profile-evidence tier: the promotion record in the package stands in for a validation package, so a patch
     # that has no package obligation (G3 = NA) may be promoted when G4 passed on that record. G3 FAIL still fails.
     profile_tier = (

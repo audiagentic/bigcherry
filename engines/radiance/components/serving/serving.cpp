@@ -1,5 +1,6 @@
 #include "serving.h"
 #include "calibration.h"
+#include "config_loader.h"
 #include "moe_remote_shm.h"
 #include "manifest_writer.h"
 #include "experts.h"
@@ -179,7 +180,7 @@ const std::vector<Field>& schema_fields() {
             "launcher --checkpoint-interval 4096", "derived", "startup-only", 1);
         add("engine.kv_cache_dtype", "string", "fp8",
             "launcher KV_DTYPE=fp8", "policy", "startup-only", 0, 0,
-            {"fp8", "fp8_v4", "k6_v4"});
+            {"bf16", "fp8", "fp8_v4", "k6_v4"});   // the engine's --kv-cache-dtype values (bf16: 16-bit K and V)
         add("engine.num_speculative_tokens", "integer", 3,
             "launcher --num-speculative-tokens 3; model MTP depth",
             "derived", "startup-only", 0, 64);
@@ -486,8 +487,12 @@ std::vector<fs::path> layout_sources(const Options& options) {
 
 /* Every named layout of the sources, and the file each came from. A name defined twice is refused. */
 Json load_layouts(const Options& options) {
-    Json out = {{"layout", Json::object()}, {"source", Json::object()}};
-    for (const auto& f : layout_sources(options)) {
+    Json out = {{"layout", Json::object()}, {"source", Json::object()}, {"kind", Json::object()}};
+    // RSC12: configs (--configs, BIGCHERRY_CONFIGS) replace the layout sources unless --layouts is given as well.
+    const auto config_files = config_sources(options.configs);
+    const std::vector<fs::path> layout_files =
+        config_files.empty() || !options.layouts.empty() ? layout_sources(options) : std::vector<fs::path>{};
+    for (const auto& f : layout_files) {
         Json doc;
         try { doc = toml_to_json(toml::parse_file(f.string())); }
         catch (const toml::parse_error& e) { throw std::runtime_error(f.string() + ": TOML parse error: " + e.what()); }
@@ -502,6 +507,19 @@ Json load_layouts(const Options& options) {
                                          out["source"][it.key()].get<std::string>() + " and " + f.string());
             out["layout"][it.key()] = it.value();
             out["source"][it.key()] = f.string();
+            out["kind"][it.key()] = "layout";
+        }
+    }
+    if (!config_files.empty()) {
+        // each config, variants applied, as the layout table the resolver reads: one resolver, its own checks
+        const ConfigSet configs = load_configs(config_files);
+        for (auto it = configs.config.begin(); it != configs.config.end(); ++it) {
+            if (out["layout"].contains(it.key()))
+                throw std::runtime_error("config " + it.key() + " (" + configs.source.at(it.key()).get<std::string>() +
+                                         ") has the name of a layout in " + out["source"][it.key()].get<std::string>());
+            out["layout"][it.key()] = config_as_layout(it.value(), options.model_root);
+            out["source"][it.key()] = configs.source.at(it.key());
+            out["kind"][it.key()] = "config";
         }
     }
     return out;
@@ -518,6 +536,12 @@ LayoutRecipe recipe_for(const std::string& name, const Options& options) {
     const std::string where = layouts.at("source").at(name).get<std::string>() + " [layout." + name + "]: ";
     LayoutRecipe r;
     r.source = fs::path(layouts.at("source").at(name).get<std::string>()).filename().string();
+    if (layouts.at("kind").at(name) == "config") {
+        r.source = "config " + r.source;
+        if (l.contains("model_unresolved"))
+            throw std::runtime_error(where + "model " + l.at("model_unresolved").get<std::string>() +
+                                     " is relative and no model root is given (--model-root)");
+    }   // e.g. "config qwen27b.toml"
     const Json& e = l.at("engine");
     const Json groups = e.is_array() ? e : Json::array({e});
     if (groups.empty()) throw std::runtime_error(where + "engine names no card group");
@@ -1303,7 +1327,8 @@ Resolved resolve(const Options& options, const Json& facts) {
     if (value_at(values, "helper.engine_ranks").get<size_t>() !=
         value_at(values, "engine.tp").get<size_t>())
         throw std::runtime_error("helper.engine_ranks must equal engine.tp");
-    if (value_at(values, "helper.combine_threads").get<uint64_t>() >
+    // the combine runs in a helper: an engine-only configuration starts no combine threads
+    if (!engine_only && value_at(values, "helper.combine_threads").get<uint64_t>() >
         facts.at("host").at("cpu_count").get<uint64_t>())
         throw std::runtime_error("helper.combine_threads exceeds discovered CPU count");
     if (value_at(values, "layout.engine_cards") != engine_cards ||

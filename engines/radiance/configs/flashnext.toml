@@ -1,0 +1,181 @@
+# Flash-Next (Qwen3.8-Next-Flash) serving configs (RSC12). Format: README.md in this directory.
+# Converted from engines/radiance/layouts/flashnext.toml; the names stay the layout names until the v2 manifest switch
+# (RSC11 S13), so the plan keys and live-policy records do not move.
+#
+# The helper configs leave out what each start derives: the host expert pool and the host KV tier (RSC03, from the
+# cards, the model, the route heat and the host's memory) and the helpers' expert budgets (each card less its arch
+# reserve and the helper's own lanes, worker_footprint.h). Where a config states a pool it is an interim pin, said so.
+schema = 1
+
+# The R9700 runs the model and both 7900 XTX cards hold the hottest experts (about 22 GiB each): Flash-Next as it has run
+# since RAD02, and the base of the R9700-engine helper configs.
+[config.flashnext-2xtx]
+description = "Flash-Next on the R9700, both 7900 XTX cards holding the hottest experts"
+model = "radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad"
+ranks = [{ arch = "gfx1201", count = 1 }]
+
+[[config.flashnext-2xtx.helpers]]
+arch = "gfx1100"
+count = "all"
+placement = "head"
+
+[config.flashnext-2xtx.handoff]
+# The route-heat histogram every second: the live placement policy (RHP16) judges heat younger than about 10 s and
+# evaluates about every 5 s, so the 60 s default leaves it with a feed it calls stale (no move in 15 minutes of traffic).
+histogram_period_s = 1
+
+# The helper-row combine (RAD18): the two XTX helpers' result rows are added on the CPU, so the R9700 reads one plane.
+# Prefill about 3,600 tok/s against about 3,200 without.
+[config.flashnext-2xtx-combine]
+base = "flashnext-2xtx"
+description = "flashnext-2xtx with the helper-row combine"
+
+[config.flashnext-2xtx-combine.helper]
+combine = true
+
+# The RX 6900 XT as a third helper holding a small tail of the coldest experts (RAD23: 2 GiB passes the KLD gate).
+[config.flashnext-2xtx-rdna2-tail]
+base = "flashnext-2xtx"
+description = "flashnext-2xtx plus the RX 6900 XT holding a tail of the coldest experts"
+
+[[config.flashnext-2xtx-rdna2-tail.helpers]]
+arch = "gfx1100"
+count = "all"
+placement = "head"
+
+[[config.flashnext-2xtx-rdna2-tail.helpers]]
+arch = "gfx1030"
+count = 1
+placement = "tail"
+
+# The RX 6900 XT as a head helper with a weighted share of the hottest experts, sized so it finishes with the XTX cards
+# (RAD23).
+[config.flashnext-2xtx-rdna2-head]
+base = "flashnext-2xtx"
+description = "flashnext-2xtx plus the RX 6900 XT as a head helper with a small share of the hottest experts"
+
+[[config.flashnext-2xtx-rdna2-head.helpers]]
+arch = "gfx1100"
+count = "all"
+placement = "head"
+share = 5
+
+[[config.flashnext-2xtx-rdna2-head.helpers]]
+arch = "gfx1030"
+count = 1
+placement = "head"
+share = 1
+
+# All four cards, the launcher's default (RAD23): the R9700 runs the model, both XTX cards hold the hottest experts, the
+# RX 6900 XT the coldest experts left (about 14 GiB, tail), and helper 0 combines all three helpers' rows on the CPU so
+# the R9700 reads one plane over its link. 8 sessions filling the cache (1.04M prompt tokens): 2,369 tok/s against 1,353
+# for flashnext-2xtx (+75%) and 2,003 with a 10 GiB tail; a 42K prefill 14.3 s against 16.7 s without the combine and the
+# dot2 tail kernel. Record route heat for the workload served: with stale heat the tail holds experts that are hot.
+[config.flashnext-4gpu]
+base = "flashnext-2xtx-rdna2-tail"
+description = "All four cards: the R9700 engine, the XTX pair (head) and the RX 6900 XT (tail) as helpers, with the combine"
+
+[config.flashnext-4gpu.helper]
+combine = true
+
+# The same cards and settings as flashnext-4gpu under its RAD23 experiment name (its own plan key).
+[config.flashnext-2xtx-rdna2-tail-combine]
+base = "flashnext-4gpu"
+description = "flashnext-2xtx-rdna2-tail with the helper-row combine over all three helpers (flashnext-4gpu's settings)"
+
+# Flash-Next on the R9700 alone (the engine-only isolation probe): no helpers, the experts in the pinned host pool and the
+# n-gram table on disk (its 47.7 GiB in RAM beside the pool does not fit 91 GiB). The engine's own pool default is 0, so
+# this config states one. Context and sessions are the KL arms'.
+# Known limit (2026-11-08): a serving start is refused by the plan check by about 1 MiB of VRAM, because the plan fills
+# the card with experts exactly and the real start has a little less free than the measuring start. A planner margin is
+# the fix; KL runs (no plan check) are unaffected.
+[config.flashnext-r9700]
+description = "Flash-Next on the R9700 alone: no helpers, the experts tiered to host memory"
+model = "radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad"
+ranks = [{ arch = "gfx1201", count = 1 }]
+
+[config.flashnext-r9700.service]
+max_context = 8192
+max_sessions = 1
+
+[config.flashnext-r9700.engine]
+max_num_batched_tokens = 64
+kv_cache_dtype = "fp8"
+ngram_placement = "disk"
+
+[config.flashnext-r9700.memory]
+host_pool_mib = 45056
+# No host KV tier: the engine-only start sizes its own memory.
+host_kv_mib = 0
+
+# RAD49 step 2: the two XTX run the model tensor-parallel (attention by KV head, GDN by head, the trunk and every resident
+# expert split by width; ARCHITECTURES.md qwen4exp) and the R9700 is one remote-MoE helper behind both ranks (it computes
+# each routed expert full width once; the layer's consumer rank, alternating by layer, adds it before the all-reduce).
+# The XTX pair holds the ~29 GiB of experts the R9700 cannot, so the sessions are few and short: 6 x 65536 bounds the KV
+# at about 2.7 GiB a rank (fp8, 7 KiB a token a rank), leaving ~14 GiB a rank for experts; the measured plan decides the
+# split. The lossy wht6 wire cost Flash-Next 0.075 KLD at 1.3.0, so the wire is exact.
+#
+# The tensor-parallel configs serve the container with its hyper-connection mixing matrices kept bf16 (native WMMA on
+# gfx1100; the served E4M3 rows run widened on gfx11): engines/radiance/model-recipes/qwen4exp-served-hcbf16.recipe, made with
+#   rad-convert <Qwen/Qwen3.8-Flash-Next checkpoint> --reuse <served .rad> --recipe qwen4exp-served-hcbf16.recipe -o <this .rad>
+# Against the E4M3 rows on flashnext-tp2xtx-r9700: decode -5.9% (1 stream) / -5.6% (6 streams), prefill flat.
+[config.flashnext-tp2xtx-r9700]
+description = "Flash-Next tensor-parallel on the two 7900 XTX, the R9700 the one remote-MoE helper; 6 sessions of up to 65,536 tokens"
+model = "radiance/bigcherry/qwen3.8-next-flash-hcbf16/qwen3.8-next-flash-hcbf16.rad"
+ranks = [{ arch = "gfx1100", count = 2 }]
+tp_wire = "exact"
+
+[[config.flashnext-tp2xtx-r9700.helpers]]
+arch = "gfx1201"
+count = 1
+placement = "head"
+
+[config.flashnext-tp2xtx-r9700.service]
+max_context = 65536
+max_sessions = 6
+
+[config.flashnext-tp2xtx-r9700.memory]
+# INTERIM (RSC03: to be derived per rank from the experts neither the helper nor the ranks' measured VRAM holds). Pinned
+# once per rank, so 8 GiB in all: the RAD49 estimate's shortfall is near zero with ~4 GiB a rank of slack, and beside the
+# n-gram table and the host KV tier it stays below what flashnext-4gpu pins. The plan check refuses it if it is wrong.
+host_pool_mib = 4096
+
+[config.flashnext-tp2xtx-r9700.handoff]
+histogram_period_s = 1   # as flashnext-2xtx
+
+[config.flashnext-tp2xtx-r9700.tuning]
+# The ranks exchange through host memory: this host has no peer-to-peer path.
+p2p = "off"
+
+# RAD49 steps 3-4: both other cards are remote-MoE helpers behind both ranks: the R9700 takes the hottest experts it holds,
+# the RX 6900 XT the coldest that fit what it left (tail), and helper 0 combines both helpers' rows on the CPU into the
+# consumer rank's plane. About 29.0 + 14.1 GiB of the 59.2 GiB of experts on the helpers; the ~16 GiB left split by width
+# (~8 GiB a rank) leaves ~8-9 GiB a rank for the KV and the GDN state: 8 x 131072 (the 1.05M tokens flashnext-4gpu
+# serves) is ~7.4 GiB of it; 8 x 262144 does not fit (~14.7 GiB). The measured plan decides the split.
+[config.flashnext-tp2xtx]
+base = "flashnext-tp2xtx-r9700"
+description = "Flash-Next tensor-parallel on the two 7900 XTX; the R9700 (head) and the RX 6900 XT (tail) as helpers with the combine; 8 sessions of up to 131,072 tokens"
+
+[[config.flashnext-tp2xtx.helpers]]
+arch = "gfx1201"
+count = 1
+placement = "head"
+
+[[config.flashnext-tp2xtx.helpers]]
+arch = "gfx1030"
+count = 1
+placement = "tail"
+
+[config.flashnext-tp2xtx.service]
+max_context = 131072
+max_sessions = 8
+
+[config.flashnext-tp2xtx.memory]
+# INTERIM (RSC03), as flashnext-tp2xtx-r9700: the estimate leaves ~1 GiB a rank of slack, and the pool (4 GiB in all)
+# covers an estimate error of that size instead of a start refused by the plan check.
+host_pool_mib = 2048
+
+[config.flashnext-tp2xtx.helper]
+# The combine serves only the steps whose helper rows the engine merges with moe_mailbox_add; a step whose rows join the
+# fused gather (moe_mailbox_inject) reads each helper's own plane and never asks for it (RAD49).
+combine = true

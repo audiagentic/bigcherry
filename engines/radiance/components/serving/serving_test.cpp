@@ -3,6 +3,7 @@
 #endif
 #include "serving.h"
 #include "calibration.h"
+#include "config_loader.h"
 #include "ledger.h"
 #include "live_policy_ingest.h"
 #include "experts.h"
@@ -15,6 +16,7 @@
 #include "worker_footprint.h"
 #include "v2/helper_settings.h"
 #include "sha256.h"
+#include "session.h"
 
 #undef NDEBUG   /* the checks below are assert()s: keep them live in Release component builds */
 #include <sys/stat.h>
@@ -23,6 +25,7 @@
 
 #include <atomic>
 #include <cassert>
+#include <optional>
 #ifdef NDEBUG
 #error "assert-based test built with NDEBUG: its assertions would not run"
 #endif
@@ -33,6 +36,8 @@
 #include <functional>
 #include <fstream>
 #include <regex>
+#include <set>
+#include <map>
 #include <sstream>
 #include <iostream>
 #include <stdexcept>
@@ -712,7 +717,8 @@ void measured_plan_cache(Fixture& t) {
             {"engine.max_num_batched_tokens", "1024"}, {"engine.checkpoint_interval", "2048"},
             {"engine.kv_cache_dtype", "fp8_v4"}, {"engine.num_speculative_tokens", "2"}, {"engine.rope_scaling", "yarn:4"},
             {"engine.ngram_placement", "disk"}, {"engine.prefix_resume", "exact"}, {"engine.tp", "2"},
-            {"memory.helper_budgets_mib", "[22528,22528,7168]"}};
+            {"memory.helper_budgets_mib", "[22528,22528,7168]"}, {"tuning.tp_ownership", "\"kv=1,1,2;ffn=8,8,16\""},
+            {"tuning.state_cache_dtype", "\"bf16\""}};
         for (const auto& [key, value] : changes) {
             auto opts = t.standard();
             opts.sets = {std::string(key) + "=" + value};
@@ -1283,6 +1289,31 @@ void manifest_writer_step(Fixture& t) {
                 Json::array({uint64_t(32),uint64_t(16000)}),
                 Json::array({uint64_t(64),uint64_t(10000)})})},
             {"abort_quiescent_ns",1500000000ull}};
+        {   // the v2 plan key covers the engine tuning settings (a changed TP split is another plan) and, in a world of
+            // more than one card type, every rank's card; an absent or empty tuning section keeps the key
+            namespace v2 = bc::serving::v2;
+            auto a = crm;
+            a.spec.processes.engine.tuning.reset();
+            const std::string k0 = v2::plan_cache_key(a);
+            assert(!k0.empty());
+            auto b = a;
+            b.spec.processes.engine.tuning = v2::EngineTuning{};
+            assert(v2::plan_cache_key(b) == k0);
+            b.spec.processes.engine.tuning->tp_ownership = "kv=1,1,2;ffn=8,8,16";
+            const std::string k1 = v2::plan_cache_key(b);
+            assert(k1 != k0);
+            b.spec.processes.engine.tuning->tp_ownership = "kv=1,1,2;ffn=8,16,8";
+            assert(v2::plan_cache_key(b) != k1);
+            if (a.spec.processes.engine.device.gpus.size() == 1 && a.spec.facts.gpus.size() > 1) {
+                auto c = a;   // a second rank on another card type moves the key
+                for (const auto& g : c.spec.facts.gpus)
+                    if (g.arch != c.spec.facts.gpus.front().arch && g.bdf != c.spec.processes.engine.device.gpus[0]) {
+                        c.spec.processes.engine.device.gpus.push_back(g.bdf);
+                        break;
+                    }
+                if (c.spec.processes.engine.device.gpus.size() == 2) assert(v2::plan_cache_key(c) != k0);
+            }
+        }
         const Json row = {{"plan_cache_key", bc::serving::v2::plan_cache_key(crm)}, {"layout", crm.spec.intent.layout},
             {"objective", std::string(bc::serving::v2::kObjectiveNames[static_cast<size_t>(crm.spec.intent.service.objective)])},
             {"seeded","2026-11-06"}, {"evidence","calibration-run ingest test"},
@@ -1512,6 +1543,11 @@ void engine_only_layout(Fixture& t) {
     opts.sets = {"layout.name=\"qwen27b-2xtx\"", "service.max_sessions=6", "service.max_context=8192"};
     const auto r = sv::resolve(opts, t.facts);   // no [handoff] heat/histogram: nothing here uses them
     assert(r.typed.layout.engine_cards.size() == 2 && r.typed.layout.helper_cards.empty());
+    {   // no helper, so no combine threads: a host with fewer CPUs than the combine default resolves it
+        Json few = t.facts;
+        few["host"]["cpu_count"] = 4;
+        (void)sv::resolve(opts, few);
+    }
     assert(r.typed.engine.tp == 2 && r.typed.engine.tp_wire == "wht6" && r.typed.engine.kernels == "libr3,libref");
     assert(r.typed.helper.count == 0 && r.manifest.at("process_helpers").empty());
     assert(r.provenance.at("engine.tp").at("origin") == "derived");
@@ -1550,7 +1586,7 @@ void engine_only_layout(Fixture& t) {
         assert(e.at("kernels") == Json({{"moe_native", true}, {"dec11", false}}));   // amendment 14: environment settings are keys too
         assert(!e.contains("lora") && !e.contains("chat"));   // a section appears only with its members
         assert(bc::serving::v2::read_manifest(with_options.text, "options", bc::serving::v2::PlanUse::measuring).ok());
-        assert(bc::serving::engine_option_fields().size() == 93 /* 84 flags (amendment 18: +3, amendment 20: +1) + 9 environment settings */);
+        assert(bc::serving::engine_option_fields().size() == 94 /* VTP42: four prefill options become one governor spec (85 flags + 9 environment settings) */);
         Options bad = opts;
         bad.sets = {"layout.name=\"qwen27b-2xtx\"", "sampling.no_such_option=1"};
         fail(bad, t.facts, "no_such_option");
@@ -1802,6 +1838,574 @@ void tp_engine_with_two_helpers_layout(Fixture& t) {
     assert(refused);
 }
 
+/* RSC12 step 4: every layout has a config of its name, and each config resolves exactly as its layout started the way the
+ * launcher starts it. Nothing about a layout or the launcher is copied here: the layouts (cards, model, server-args) come
+ * from the layouts files, the launcher's defaults from launch-flashnext-best.sh and the engine-only values from
+ * plan-check.sh, so a changed layout or launcher that its config does not follow fails this test.
+ *  - a helper layout: the launcher's defaults, its server-args over them, the 1 s histogram period and (TP ranks) no P2P;
+ *    the pool and KV tier are what the launch derives (given to both sides) unless its server-args pin them;
+ *  - a helper-free layout: its server-args and the engine-only values (plan_check_describe_engine_only).
+ * Both sides resolve to the same values and build the same manifest spec, and both manifests pass the strict reader.
+ * The site's model stands in for the container (both sides read it); the declared model paths are compared apart. */
+void converted_layout_parity(Fixture& t) {
+    namespace sv = bc::serving;
+    const char* env = std::getenv("BIGCHERRY_LAYOUTS");
+    if (!env || !fs::is_directory(env)) throw std::runtime_error("converted_layout_parity: BIGCHERRY_LAYOUTS must name the layouts directory");
+    // canonical: the test environment names it as components/serving/../../layouts
+    const fs::path layouts_dir = fs::canonical(env), configs = layouts_dir.parent_path() / "configs";
+    const fs::path lab = layouts_dir.parent_path().parent_path().parent_path() / "tools" / "lab" / "radiance";
+    auto read_text = [](const fs::path& p) {
+        std::ifstream in(p);
+        if (!in) throw std::runtime_error("converted_layout_parity: cannot read " + p.string());
+        std::stringstream ss;
+        ss << in.rdbuf();
+        return ss.str();
+    };
+    // the launcher's defaults: NAME=VALUE at the start of a line in launch-flashnext-best.sh
+    const std::string launcher = read_text(lab / "launch-flashnext-best.sh");
+    auto launcher_default = [&](const std::string& name) {
+        std::smatch m;
+        if (!std::regex_search(launcher, m, std::regex("(^|\n)" + name + "=([^ \t\n#]+)")))
+            throw std::runtime_error("converted_layout_parity: launch-flashnext-best.sh sets no " + name);
+        return m[2].str();
+    };
+    // the engine-only values: `local pool=P kv=K ngram=N` in plan-check.sh
+    const std::string plan_check = read_text(lab / "lib" / "plan-check.sh");
+    std::smatch eo;
+    if (!std::regex_search(plan_check, eo, std::regex("local pool=([0-9]+) kv=([0-9]+) ngram=([a-z]+)")))
+        throw std::runtime_error("converted_layout_parity: plan-check.sh has no engine-only pool/kv/ngram line");
+    const std::string eo_pool = eo[1], eo_kv = eo[2], eo_ngram = eo[3];
+
+    Options lo;
+    lo.layouts = {layouts_dir};
+    const Json layouts = sv::load_layouts(lo).at("layout");
+    const auto set = sv::load_configs(sv::config_sources({configs}));
+    // one config for every layout; a config that is no layout is a named variant, listed here
+    const std::set<std::string> variants = {"qwen27b-tp3-int8-556", "qwen27b-tp3-int8-556-long", "qwen27b-tp3-int8-556-long-bf16"};
+    for (auto it = layouts.begin(); it != layouts.end(); ++it)
+        if (!set.config.contains(it.key())) throw std::runtime_error("layout " + it.key() + " has no config");
+    for (auto it = set.config.begin(); it != set.config.end(); ++it)
+        if (!layouts.contains(it.key()) && !variants.count(it.key()))
+            throw std::runtime_error("config " + it.key() + " is neither a layout nor a listed variant");
+
+    const auto model = t.root / "parity-model.rad";
+    bc::test::write_rad(model, 4, 16, 128, 128, {});
+    const auto heat = t.root / "parity.hot-first";
+    {
+        std::vector<uint32_t> counts(128 * 16, 1);
+        std::ofstream(heat, std::ios::binary).write(reinterpret_cast<const char*>(counts.data()), counts.size() * 4);
+    }
+    const auto site = t.file("parity-site.toml", "[engine]\nmodel = \"" + model.string() + "\"\nradiance_home = \"/runtime\"\n"
+                                                 "[handoff]\nheat = \"" + heat.string() + "\"\nhistogram = \"/heat.live\"\n");
+    const std::string derived_pool = "7168", derived_kv = "10240";   // what a launch derived (resources derive-launch)
+    const std::string port = launcher_default("PORT");
+    size_t checked = 0;
+    for (auto it = layouts.begin(); it != layouts.end(); ++it) {
+        const std::string name = it.key();
+        const Json& layout = it.value();
+        // the declared model: the same path, the site's override aside
+        if (layout.at("model") != set.config.at(name).at("model")) {
+            std::fprintf(stderr, "%s: layout model %s, config model %s\n", name.c_str(), layout.at("model").dump().c_str(),
+                         set.config.at(name).at("model").dump().c_str());
+            assert(false);
+        }
+        size_t ranks = 0;
+        const Json engine = layout.at("engine").is_array() ? layout.at("engine") : Json::array({layout.at("engine")});
+        for (const auto& g : engine) ranks += g.value("count", 1);
+        const bool helpers = layout.contains("helper") && !layout.at("helper").empty();
+        std::map<std::string, std::string> args;   // the layout's server-args, flag -> value
+        const Json server_args = layout.value("server-args", Json::array());
+        for (size_t i = 0; i + 1 < server_args.size(); i += 2) args[server_args[i]] = server_args[i + 1];
+        auto arg = [&](const std::string& flag, const std::string& otherwise) {
+            return args.count(flag) ? args.at(flag) : otherwise;
+        };
+        const std::string sel = "layout.name=\"" + name + "\"";
+        std::vector<std::string> launch, derived = {sel};
+        if (helpers) {   // launch-flashnext-best.sh: its defaults, the layout's server-args over them; plan_check_describe
+            const std::string pool = arg("--host-pool-mib", derived_pool), kv = arg("--host-kv-mib", derived_kv);
+            launch = {sel,
+                      "service.max_sessions=" + arg("--max-num-seqs", launcher_default("SEQS")),
+                      "service.max_context=" + arg("--max-model-len", launcher_default("MAX_LEN")),
+                      "memory.host_pool_mib=" + pool, "memory.host_kv_mib=" + kv,
+                      "engine.max_num_batched_tokens=" + arg("--max-num-batched-tokens", launcher_default("CHUNK")),
+                      "engine.ngram_placement=\"" + arg("--ngram-placement", launcher_default("NGRAM")) + "\"",
+                      "engine.kv_cache_dtype=\"" + arg("--kv-cache-dtype", launcher_default("KV_DTYPE")) + "\"",
+                      "engine.rope_scaling=\"" + launcher_default("ROPE") + "\"",
+                      "engine.port=" + port,
+                      "engine.checkpoint_interval=" + arg("--checkpoint-interval", launcher_default("CKPT_INTERVAL")),
+                      "engine.num_speculative_tokens=" + arg("--num-speculative-tokens", launcher_default("NUM_SPEC")),
+                      "handoff.shm=\"" + launcher_default("SHM") + "\"",
+                      "handoff.histogram_period_s=" + launcher_default("RECORD_PERIOD"),
+                      "engine.prefix_resume=\"" + launcher_default("PREFIX_RESUME") + "\""};
+            // what the launch derives reaches the config the same way; a pool or tier the layout pins is the config's own
+            if (!args.count("--host-pool-mib")) derived.push_back("memory.host_pool_mib=" + derived_pool);
+            if (!args.count("--host-kv-mib")) derived.push_back("memory.host_kv_mib=" + derived_kv);
+        } else {         // plan_check_describe_engine_only
+            launch = {sel, "engine.port=" + port};
+            const std::map<std::string, std::string> key = {
+                {"--max-model-len", "service.max_context"}, {"--max-num-seqs", "service.max_sessions"},
+                {"--max-num-batched-tokens", "engine.max_num_batched_tokens"},
+                {"--kv-cache-dtype", "engine.kv_cache_dtype"}, {"--num-speculative-tokens", "engine.num_speculative_tokens"},
+                {"--checkpoint-interval", "engine.checkpoint_interval"}};
+            for (const auto& [flag, value] : args) {
+                if (flag == "--host-pool-mib" || flag == "--host-kv-mib" || flag == "--ngram-placement") continue;
+                if (!key.count(flag)) throw std::runtime_error("layout " + name + ": server-arg " + flag + " is not a manifest setting");
+                const bool text = flag == "--kv-cache-dtype";
+                launch.push_back(key.at(flag) + "=" + (text ? "\"" + value + "\"" : value));
+            }
+            launch.push_back("memory.host_pool_mib=" + arg("--host-pool-mib", eo_pool));
+            launch.push_back("memory.host_kv_mib=" + arg("--host-kv-mib", eo_kv));
+            launch.push_back("engine.ngram_placement=\"" + arg("--ngram-placement", eo_ngram) + "\"");
+        }
+        if (ranks > 1) launch.push_back("tuning.p2p=\"off\"");
+        // the layout's own [settings] reach both sides through the resolver (the layout table, the config's tables)
+        Options layout_opts;
+        layout_opts.site = site;
+        layout_opts.layouts = {layouts_dir};
+        layout_opts.sets = launch;
+        const auto from_layout = sv::resolve(layout_opts, t.facts);
+        Options config;
+        config.site = site;
+        config.configs = {configs};
+        config.model_root = t.root / "model-root";   // the site's model wins over the config's
+        config.sets = derived;
+        const auto from_config = sv::resolve(config, t.facts);
+        if (from_layout.values != from_config.values) {
+            std::fprintf(stderr, "%s values differ: %s\n", name.c_str(),
+                         Json::diff(from_layout.values, from_config.values).dump().c_str());
+            assert(false);
+        }
+        // the same execution projection: both manifests (same instance, producer and profile) have the same spec
+        // (model, roles and cards, settings, resources, owner map, handoff, memory-plan requirements) and pass the reader
+        auto manifest = [&](const sv::Resolved& r) {
+            sv::ManifestInputs in;
+            in.resolved = r;
+            in.instance_id = "11111111-1111-4111-8111-111111111111";
+            in.producer_sha256 = std::string(64, 'a');
+            in.profile = "production";
+            in.s10.power_profile = "stock";
+            const auto built = sv::build_manifest(in);
+            assert(bc::serving::v2::read_manifest(built.text, name, bc::serving::v2::PlanUse::measuring).ok());
+            return built.document.at("spec");
+        };
+        const Json spec_layout = manifest(from_layout), spec_config = manifest(from_config);
+        if (spec_layout != spec_config) {
+            std::fprintf(stderr, "%s manifest spec differs: %s\n", name.c_str(),
+                         Json::diff(spec_layout, spec_config).dump().c_str());
+            assert(false);
+        }
+        // the config side really is the config: some value comes from its file
+        const std::string file = "config " + fs::path(set.source.at(name).get<std::string>()).filename().string();
+        bool from_file = false;
+        for (auto p = from_config.provenance.begin(); p != from_config.provenance.end(); ++p)
+            if (p.value().value("source", std::string()).find(file) != std::string::npos) from_file = true;
+        assert(from_file);
+        ++checked;
+    }
+    assert(checked == layouts.size() && checked >= 13);
+}
+
+/* RSC12: a config resolves exactly as the layout it replaces (every effective value; only the provenance names the config
+ * file), a variant changes only what it states, and the loader refuses what it does not know. */
+void config_files(Fixture& t) {
+    namespace sv = bc::serving;
+    const char* env = std::getenv("BIGCHERRY_LAYOUTS");
+    if (!env || !fs::is_directory(env)) throw std::runtime_error("config_files: BIGCHERRY_LAYOUTS must name the layouts directory");
+    const fs::path configs = fs::path(env).parent_path() / "configs";
+    const auto model = t.root / "config-model.rad";
+    bc::test::write_rad(model, 0, 0, 128, 128, {});
+    const auto site = t.file("config-site.toml", "[engine]\nmodel = \"" + model.string() + "\"\nradiance_home = \"/runtime\"\n");
+    // the layout as the launcher resolves it: its server-args become --set, and so do the launcher's own engine-only
+    // values (no host pool, no host KV tier, the n-gram table on disk, a TP engine with no P2P: plan-check.sh)
+    Options layout;
+    layout.site = site;
+    layout.sets = {"layout.name=\"qwen27b-tp3-int8\"", "service.max_context=8192", "service.max_sessions=8",
+                   "engine.kv_cache_dtype=\"fp8\"", "engine.num_speculative_tokens=3",
+                   "memory.host_pool_mib=0", "memory.host_kv_mib=0", "engine.ngram_placement=\"disk\"",
+                   "tuning.p2p=\"off\""};
+    const auto from_layout = sv::resolve(layout, t.facts);
+    Options config;
+    config.site = site;
+    config.configs = {configs};
+    config.model_root = t.root / "model-root";   // the site's model wins over the config's (config < site)
+    config.sets = {"layout.name=\"qwen27b-tp3-int8\""};
+    const auto from_config = sv::resolve(config, t.facts);
+    if (from_layout.values != from_config.values) {
+        std::fprintf(stderr, "layout: %s\nconfig: %s\n", from_layout.values.dump().c_str(), from_config.values.dump().c_str());
+        assert(false);
+    }
+    assert(from_config.provenance.at("tuning.tp_ownership").at("source").get<std::string>().find("config qwen27b.toml") !=
+           std::string::npos);
+    assert(from_config.provenance.at("service.max_context").at("source").get<std::string>().find("config qwen27b.toml") !=
+           std::string::npos);
+    {   // VTP42: the prefill governor is one optional string field that reaches the engine options
+        Options gov = config;
+        gov.sets = {"layout.name=\"qwen27b-tp3-int8\"", "tuning.prefill_governor=\"kind=budget;factor=1.5\""};
+        assert(sv::resolve(gov, t.facts).values.at("tuning").at("prefill_governor") == "kind=budget;factor=1.5");
+        const auto& options = bc::serving::engine_option_fields();
+        auto it = std::find_if(options.begin(), options.end(),
+            [](const auto& f) { return f.key == "tuning.prefill_governor"; });
+        assert(it != options.end() && it->path == "/spec/processes/engine/tuning/prefill_governor");
+        gov.sets.back() = "tuning.prefill_governor=\"\"";
+        fail(gov, t.facts, "prefill_governor");
+    }
+    // the variant: only the split differs
+    config.sets = {"layout.name=\"qwen27b-tp3-int8-556\""};
+    const auto variant = sv::resolve(config, t.facts);
+    Json a = from_config.values, b = variant.values;
+    assert(b.at("tuning").at("tp_ownership") == "kv=1,1,2;ffn=5632,5632,6144;lk=5,5,6;lv=15,15,18");
+    a["tuning"].erase("tp_ownership"); b["tuning"].erase("tp_ownership");
+    a["layout"].erase("name"); b["layout"].erase("name");
+    assert(a == b);
+    {   // where each value came from: the variant's own key, and the base's for the rest
+        const auto set = sv::load_configs(sv::config_sources({configs}));
+        const Json& o = set.origin.at("qwen27b-tp3-int8-556");
+        assert(o.at("tuning.tp_ownership") == "qwen27b-tp3-int8-556");
+        assert(o.at("tuning.pipelined_prefill") == "qwen27b-tp3-int8" && o.at("ranks") == "qwen27b-tp3-int8");
+        assert(set.chain.at("qwen27b-tp3-int8-556") == Json::array({"qwen27b-tp3-int8-556", "qwen27b-tp3-int8"}));
+    }
+    {   // the long-context variants: the 5,5,6 split at 262,144 tokens, fp8 and bf16 cache, VTP39/VTP42 prefill tuning; nothing else moves
+        Options lv = config;
+        lv.sets = {"layout.name=\"qwen27b-tp3-int8-556-long\""};
+        const auto fp8 = sv::resolve(lv, t.facts);
+        lv.sets = {"layout.name=\"qwen27b-tp3-int8-556-long-bf16\""};
+        const auto bf16 = sv::resolve(lv, t.facts);
+        assert(fp8.values.at("service").at("max_context") == 262144 && fp8.values.at("engine").at("kv_cache_dtype") == "fp8");
+        assert(bf16.values.at("service").at("max_context") == 262144 && bf16.values.at("engine").at("kv_cache_dtype") == "bf16");
+        // VTP39/VTP42 scheduling defaults for long prompts, inherited by -long-bf16
+        for (const auto* r : {&fp8, &bf16}) {
+            assert(r->values.at("tuning").at("prefill_interleave") == 2);
+            assert(r->values.at("tuning").at("prefill_governor") ==
+                   "kind=budget;factor=1.5;long_tokens=16384;order=remaining;age_ms=120000");
+        }
+        Json x = variant.values, y = fp8.values, z = bf16.values;
+        for (Json* j : {&x, &y, &z}) {
+            (*j)["tuning"].erase("prefill_interleave");
+            (*j)["tuning"].erase("prefill_governor");
+        }
+        for (Json* j : {&x, &y, &z}) {
+            (*j)["layout"].erase("name");
+            (*j)["service"].erase("max_context");
+            (*j)["engine"].erase("max_model_len");
+            (*j)["engine"].erase("kv_cache_dtype");
+        }
+        if (!(x == y && y == z)) {
+            std::fprintf(stderr, "long variants differ beyond context and cache: %s / %s\n", Json::diff(x, y).dump().c_str(),
+                         Json::diff(y, z).dump().c_str());
+            assert(false);
+        }
+    }
+    // a profile and --set still override a config (config < site < profile < --set)
+    config.sets.push_back("tuning.pipelined_prefill=\"off\"");
+    assert(sv::resolve(config, t.facts).values.at("tuning").at("pipelined_prefill") == "off");
+    {   // every cache format the engine offers is a setting, bf16 (16-bit K and V) included, and reaches the manifest
+        Options kv = config;
+        kv.sets = {"layout.name=\"qwen27b-tp3-int8\"", "engine.kv_cache_dtype=\"bf16\""};
+        const auto r = sv::resolve(kv, t.facts);
+        assert(r.values.at("engine").at("kv_cache_dtype") == "bf16");
+        sv::ManifestInputs in;
+        in.resolved = r;
+        in.instance_id = "11111111-1111-4111-8111-111111111111";
+        in.producer_sha256 = std::string(64, 'a');
+        in.profile = "production";
+        in.s10.power_profile = "stock";
+        const auto built = sv::build_manifest(in);
+        assert(built.document.at("spec").at("processes").at("engine").at("execution").at("kv_cache_dtype") == "bf16");
+        assert(bc::serving::v2::read_manifest(built.text, "qwen27b-tp3-int8", bc::serving::v2::PlanUse::measuring).ok());
+        kv.sets.back() = "engine.kv_cache_dtype=\"int8\"";
+        bool refused = false;
+        try { (void)sv::resolve(kv, t.facts); } catch (const std::exception&) { refused = true; }
+        assert(refused);   // not an engine format
+    }
+
+    const std::string head = "schema = 1\n[config.base]\ndescription = \"b\"\nmodel = \"m.rad\"\n"
+                             "ranks = [{ arch = \"gfx1201\" }]\n[config.base.service]\nmax_context = 8192\nmax_sessions = 4\n";
+    auto refuses = [&](const std::string& name, const std::string& text, const std::string& needle) {
+        const auto f = t.file(name.c_str(), text);
+        try { (void)sv::load_configs({f}); }
+        catch (const std::exception& e) {
+            if (std::string(e.what()).find(needle) == std::string::npos) {
+                std::fprintf(stderr, "config refusal %s: wanted '%s', got: %s\n", name.c_str(), needle.c_str(), e.what());
+                assert(false);
+            }
+            return;
+        }
+        std::fprintf(stderr, "config %s: not refused\n", name.c_str());
+        assert(false);
+    };
+    refuses("c-unknown.toml", head + "[config.v]\nbase = \"base\"\ndescription = \"v\"\ncontext = 1\n", "unknown key context");
+    refuses("c-flat-setting.toml", head + "[config.v]\nbase = \"base\"\ndescription = \"v\"\nmax_context = 1\n",
+            "unknown key max_context");
+    refuses("c-server-args.toml", head + "[config.v]\nbase = \"base\"\ndescription = \"v\"\nserver-args = [\"--max-model-len\"]\n",
+            "unknown key server-args");
+    refuses("c-nobase.toml", head + "[config.v]\nbase = \"gone\"\ndescription = \"v\"\n", "base gone is not a defined config");
+    refuses("c-cycle.toml", head + "[config.x]\nbase = \"y\"\ndescription = \"x\"\n[config.y]\nbase = \"x\"\ndescription = \"y\"\n",
+            "a cycle");
+    refuses("c-nodesc.toml", head + "[config.v]\nbase = \"base\"\n", "description is required");
+    refuses("c-nomodel.toml", "schema = 1\n[config.v]\ndescription = \"v\"\nranks = [{ arch = \"gfx1201\" }]\n",
+            "model is required");
+    refuses("c-rankkey.toml", "schema = 1\n[config.v]\ndescription = \"v\"\nmodel = \"m\"\nranks = [{ arch = \"gfx1201\", devices = [0] }]\n",
+            "ranks: unknown key devices");
+    refuses("c-schema.toml", "[config.v]\ndescription = \"v\"\n", "schema = 1 is required");
+    {   // a name defined in two files
+        const auto f1 = t.file("c-dup1.toml", head);
+        const auto f2 = t.file("c-dup2.toml", head);
+        bool refused = false;
+        try { (void)sv::load_configs({f1, f2}); } catch (const std::exception& e) {
+            refused = std::string(e.what()).find("defined in both") != std::string::npos;
+        }
+        assert(refused);
+    }
+    {   // tables merge key by key; a list replaces
+        const auto f = t.file("c-merge.toml", head +
+            "[config.v]\nbase = \"base\"\ndescription = \"v\"\nranks = [{ arch = \"gfx1100\", count = 2 }]\ntp_wire = \"exact\"\n"
+            "[config.v.service]\nmax_sessions = 2\n");
+        const auto set = sv::load_configs({f});
+        const Json& v = set.config.at("v");
+        assert(v.at("service").at("max_context") == 8192 && v.at("service").at("max_sessions") == 2);
+        assert(v.at("ranks").size() == 1 && v.at("ranks")[0].at("arch") == "gfx1100");
+        assert(set.origin.at("v").at("service.max_context") == "base" && set.origin.at("v").at("service.max_sessions") == "v");
+        assert(set.origin.at("v").at("ranks") == "v" && set.origin.at("base").at("ranks") == "base");   // a replaced list
+        const Json l = sv::config_as_layout(v);
+        assert(l.at("engine") == v.at("ranks") && l.at("tp-wire") == "exact" && !l.contains("server-args"));
+        assert(l.at("settings").at("service").at("max_sessions") == 2);
+    }
+    {   // the config's model: under the model root, the lowest engine.model; a site's model wins; relative with no root
+        // is refused when that config is selected
+        const auto root = t.root / "models";
+        fs::create_directories(root / "m");
+        bc::test::write_rad(root / "m" / "own.rad", 0, 0, 128, 128, {});
+        const auto own = t.file("c-model.toml", "schema = 1\n[config.own]\ndescription = \"o\"\nmodel = \"m/own.rad\"\n"
+                                                "ranks = [{ arch = \"gfx1201\" }]\n[config.own.service]\nmax_context = 8192\n"
+                                                "max_sessions = 4\n");
+        Options o;
+        o.site = t.file("c-nomodel-site.toml", "[engine]\nradiance_home = \"/runtime\"\n");
+        o.configs = {own};
+        o.model_root = root;
+        o.sets = {"layout.name=\"own\""};
+        const auto r = sv::resolve(o, t.facts);
+        assert(r.values.at("engine").at("model") == (root / "m" / "own.rad").string());
+        o.site = site;
+        assert(sv::resolve(o, t.facts).values.at("engine").at("model") == model.string());
+        o.model_root.clear();
+        fail(o, t.facts, "is relative and no model root is given");
+    }
+    refuses("c-placement.toml", head + "[config.v]\nbase = \"base\"\ndescription = \"v\"\n"
+            "[[config.v.helpers]]\narch = \"gfx1100\"\ncount = 1\nplacement = \"sideways\"\n", "placement is required");
+    refuses("c-helper-count.toml", head + "[config.v]\nbase = \"base\"\ndescription = \"v\"\n"
+            "[[config.v.helpers]]\narch = \"gfx1100\"\nplacement = \"head\"\n", "count is required");
+    refuses("c-budget.toml", head + "[config.v]\nbase = \"base\"\ndescription = \"v\"\n"
+            "[[config.v.helpers]]\narch = \"gfx1100\"\ncount = 1\nplacement = \"head\"\nbudget_mib = 1.5\n", "budget_mib");
+    refuses("c-frac.toml", "schema = 1\n[config.v]\ndescription = \"v\"\nmodel = \"m\"\nranks = [{ arch = \"gfx1100\", count = 2.5 }]\n",
+            "count is a whole number");
+    refuses("c-bool.toml", "schema = 1\n[config.v]\ndescription = \"v\"\nmodel = \"m\"\nranks = [{ arch = \"gfx1100\", count = true }]\n",
+            "count is a whole number");
+    refuses("c-schema-float.toml", "schema = 1.0\n", "schema = 1 is required");
+    refuses("c-date.toml", head + "[config.base.tuning]\nwhen = 2026-11-14\n", "unsupported TOML value");
+    refuses("c-config-scalar.toml", "schema = 1\nconfig = 3\n", "config is a table");
+    refuses("c-model-escape.toml", head + "[config.v]\nbase = \"base\"\ndescription = \"v\"\nmodel = \"../other.rad\"\n",
+            "leaves the model root");
+    refuses("c-engine-model.toml", head + "[config.base.engine]\nmodel = \"x\"\n", "give the model as `model`");
+    {   // dotted keys are tables: `tuning.x = ...` in the config table is the tuning table; three levels of bases;
+        // a scalar replaced by a table keeps no stale origin
+        const auto f = t.file("c-dotted.toml", head +
+            "[config.v1]\nbase = \"base\"\ndescription = \"1\"\ntuning.pipelined_prefill = \"on\"\n"
+            "[config.v2]\nbase = \"v1\"\ndescription = \"2\"\n[config.v2.service]\nmax_sessions = 2\n"
+            "[config.v3]\nbase = \"v2\"\ndescription = \"3\"\ntuning.tp_ownership = \"kv=1\"\n");
+        const auto set = sv::load_configs({f});
+        const Json& v3 = set.config.at("v3");
+        assert(v3.at("tuning").at("pipelined_prefill") == "on" && v3.at("tuning").at("tp_ownership") == "kv=1");
+        assert(v3.at("service").at("max_sessions") == 2 && v3.at("service").at("max_context") == 8192);
+        assert(set.origin.at("v3").at("tuning.pipelined_prefill") == "v1" && set.origin.at("v3").at("service.max_sessions") == "v2");
+        assert(set.chain.at("v3") == Json::array({"v3", "v2", "v1", "base"}));
+        const auto g = t.file("c-replace.toml", head + "[config.w]\nbase = \"base\"\ndescription = \"w\"\nmodel = { x = \"y\" }\n");
+        try { (void)sv::load_configs({g}); assert(false); }   // a model that is a table is not a string
+        catch (const std::exception& e) { assert(std::string(e.what()).find("model is a string") != std::string::npos); }
+    }
+    {   // --configs wins over BIGCHERRY_CONFIGS
+        const auto f = t.file("c-given.toml", head);
+        const char* before = std::getenv("BIGCHERRY_CONFIGS");
+        const std::optional<std::string> saved = before ? std::optional<std::string>(before) : std::nullopt;
+        ::setenv("BIGCHERRY_CONFIGS", (t.root / "no-such-dir").c_str(), 1);
+        assert(sv::config_sources({f}) == std::vector<fs::path>{f});
+        bool refused = false;
+        try { (void)sv::config_sources({}); } catch (const std::exception&) { refused = true; }
+        assert(refused);
+        ::unsetenv("BIGCHERRY_CONFIGS");
+        assert(sv::config_sources({}).empty());
+        if (saved) ::setenv("BIGCHERRY_CONFIGS", saved->c_str(), 1);
+    }
+    {   // the resolver checks the settings: an unknown tuning key is refused, naming the config file
+        Options bad;
+        bad.site = site;
+        bad.configs = {t.file("c-badtuning.toml", head + "[config.base.tuning]\nno_such = 1\n")};
+        bad.model_root = t.root;
+        bad.sets = {"layout.name=\"base\""};
+        fail(bad, t.facts, "unknown key tuning.no_such");
+        // with --layouts given as well, a config may not take a layout's name
+        bad.configs = {configs};
+        bad.layouts = {fs::path(env)};
+        bad.sets = {"layout.name=\"qwen27b-tp3-int8\""};
+        fail(bad, t.facts, "has the name of a layout");
+    }
+}
+
+#ifndef BC_FAKE_ENGINE
+#error "BC_FAKE_ENGINE must name the fake engine binary (session_fake_engine.cpp)"
+#endif
+// RSC02 step 1: the session owner's engine-only plan step against the fixture's cards: the qwen27b config resolved, its
+// engine's device visibility from the resolver's rank order, and the manifest rounds with bc-serve faked: a cache miss
+// measures with the engine alone (--plan-memory against the unmeasured manifest), the measured plan is stored with the
+// engine's reported start-up memory, a derived host pool goes round once more, and the plan-extra is the bash launcher's.
+void session_engine_plan(Fixture& t) {
+    namespace ss = bc::serving::session;
+    const fs::path configs = fs::path(std::getenv("BIGCHERRY_LAYOUTS")).parent_path() / "configs";
+    const auto model = t.root / "session-model.rad";
+    bc::test::write_rad(model, 0, 0, 128, 128, {});
+    const fs::path home = t.root / "session-build" / "radiance_home";
+    fs::create_directories(home);
+    const auto site = t.file("session-site.toml", "[engine]\nmodel = \"" + model.string() + "\"\nradiance_home = \"" +
+                                                      home.string() + "\"\n");
+    const fs::path run = t.root / "session-run";
+    fs::create_directories(run);
+    ss::EnginePlanInputs in;
+    in.options.sys_root = t.root;
+    in.options.site = site;
+    in.options.configs = {configs};
+    in.options.model_root = t.root / "model-root";   // the site's model wins; the root is still required
+    in.options.sets = {"layout.name=\"qwen27b-tp3-int8\""};
+    in.self = "/build/radiance_home/bin/bc-serve";
+    in.engine_binary = BC_FAKE_ENGINE;
+    std::vector<std::vector<std::string>> calls;
+    auto has = [](const std::vector<std::string>& argv, const std::string& flag, const std::string& value) {
+        for (size_t i = 0; i + 1 < argv.size(); ++i) if (argv[i] == flag && argv[i + 1] == value) return true;
+        return false;
+    };
+    auto flag = [](const std::vector<std::string>& argv, const std::string& f) {
+        return std::find(argv.begin(), argv.end(), f) != argv.end();
+    };
+    in.runner = [&](const std::vector<std::string>& argv) {
+        calls.push_back(argv);
+        ss::ManifestRun r;
+        switch (calls.size()) {
+        case 1: r.exit = 10; break;                                              // no measured plan
+        case 2: assert(flag(argv, "--unmeasured")); std::ofstream(argv[2]) << "{}"; break;
+        case 3: r.exit = 11; r.out = "derived_host_pool_mib=2048\n"; break;     // stored; another pool wanted
+        case 4: r.exit = 0; r.out = "manifest: x\ndigest: 0123abcd\n"; std::ofstream(argv[2]) << "{}"; break;
+        default: assert(!"unexpected bc-serve call");
+        }
+        return r;
+    };
+    std::vector<std::string> started;
+    std::vector<pid_t> ended;
+    ss::Hooks wait;
+    wait.wait = [](std::chrono::milliseconds) { return true; };
+    wait.started = [&](const std::string& role, pid_t pid, const fs::path&) { started.push_back(role + " " + std::to_string(pid)); };
+    wait.ended = [&](pid_t pid) { ended.push_back(pid); };
+    const ss::EngineStart s = ss::plan_engine_only(in, run, wait);
+    assert(calls.size() == 4);
+    // the measuring engine was the owner's to know about, and its exit was verified
+    assert(started.size() == 1 && started[0].rfind("measuring engine ", 0) == 0 && ended.size() == 1 &&
+           started[0] == "measuring engine " + std::to_string(ended[0]));
+    for (const auto& c : calls) {
+        assert(c[0] == in.self.string() && c[1] == "--write-manifest" && has(c, "--power-profile", "stock"));
+        assert(has(c, "--site", site.string()) && has(c, "--configs", (configs / "qwen27b.toml").string()) &&
+               !flag(c, "--layouts") &&
+               has(c, "--set", "layout.name=\"qwen27b-tp3-int8\"") && has(c, "--sys-root", t.root.string()));
+    }
+    for (size_t i : {0, 2, 3})
+        assert(has(calls[i], "--plan-extra", "budgets: default") && has(calls[i], "--engine-binary", BC_FAKE_ENGINE) &&
+               has(calls[i], "--plan-cache", (run / "plan-cache").string()));
+    assert(!flag(calls[1], "--plan-extra") && !flag(calls[1], "--plan-cache"));
+    // the measuring start's plan and its reported start-up memory are stored; the engine is alone
+    assert(has(calls[2], "--measured-plan", (run / "plan-measured.json").string()) &&
+           has(calls[2], "--rank-demand", (run / "plan-ranks.json").string()) &&
+           has(calls[2], "--engine-resident-mib", "1234") && has(calls[2], "--helpers-resident-mib", "0"));
+    assert(!flag(calls[2], "memory.host_pool_mib=2048") && has(calls[3], "--set", "memory.host_pool_mib=2048"));
+    // the engine: from the measured manifest only, its three ranks on the resolver's cards in rank order
+    assert(s.argv.size() == 5 && s.argv[0] == BC_FAKE_ENGINE && s.argv[1] == "--manifest" && s.argv[2] == calls[3][2] &&
+           s.argv[3] == "--role" && s.argv[4] == "engine" && s.manifest == calls[3][2]);
+    std::string rocr;
+    const Json resolved = bc::serving::resolve(in.options, bc::serving::detect(t.root)).values;
+    for (const Json& bdf : resolved.at("layout").at("engine_cards"))
+        for (const Json& g : t.facts.at("gpus"))
+            if (g.at("bdf") == bdf) rocr += (rocr.empty() ? "" : ",") + std::to_string(g.at("hip_ordinal").get<int>());
+    assert(s.runtime.at("ROCR_VISIBLE_DEVICES") == rocr && s.runtime.at("HIP_VISIBLE_DEVICES") == "0,1,2");
+    assert(s.runtime.at("RADIANCE_HOME") == home.string() && s.runtime.size() == 3);
+    assert(s.port == 36080 && s.summary.at("config") == "qwen27b-tp3-int8" && s.summary.at("manifest_digest") == "0123abcd");
+    {   // configs from BIGCHERRY_CONFIGS alone reach the manifest writer, whose environment has no BIGCHERRY_*: as files
+        ss::EnginePlanInputs env_only = in;
+        env_only.options.configs.clear();
+        const char* saved = std::getenv("BIGCHERRY_CONFIGS");
+        const std::optional<std::string> keep = saved ? std::optional<std::string>(saved) : std::nullopt;
+        ::setenv("BIGCHERRY_CONFIGS", configs.c_str(), 1);
+        calls.clear();
+        ended.clear();
+        auto old = in.runner;
+        env_only.runner = [&](const std::vector<std::string>& argv) {
+            calls.push_back(argv);
+            ss::ManifestRun r;
+            std::ofstream(argv[2]) << "{}";
+            return r;
+        };
+        ss::plan_engine_only(env_only, run, wait);
+        if (keep) ::setenv("BIGCHERRY_CONFIGS", keep->c_str(), 1); else ::unsetenv("BIGCHERRY_CONFIGS");
+        assert(calls.size() == 1 && has(calls[0], "--configs", (configs / "qwen27b.toml").string()) &&
+               !flag(calls[0], "--layouts"));
+    }
+    // a failed manifest write and a layout (server-args are the bash launcher's) are refused before any engine starts
+    calls.clear();
+    in.runner = [&](const std::vector<std::string>& argv) {
+        calls.push_back(argv);
+        return ss::ManifestRun{2, "", "bc-serve: no such thing"};
+    };
+    bool refused = false;
+    try { ss::plan_engine_only(in, run, wait); } catch (const ss::PlanFailed& e) {
+        refused = std::string(e.what()).find("exit 2") != std::string::npos;
+    }
+    assert(refused && calls.size() == 1);
+    ss::EnginePlanInputs layout = in;
+    layout.options.configs.clear();
+    layout.options.layouts = {fs::path(std::getenv("BIGCHERRY_LAYOUTS"))};
+    layout.options.sets = {"layout.name=\"qwen27b-tp3-int8\""};
+    refused = false;
+    calls.clear();
+    try { ss::plan_engine_only(layout, run, wait); } catch (const ss::PlanFailed& e) {
+        refused = std::string(e.what()).find("is a layout") != std::string::npos;
+    }
+    assert(refused && calls.empty());
+    {   // bc-serve inside a build serves only that build's engine and runtime home
+        const fs::path build = t.root / "session-build";
+        fs::create_directories(build / "bin");
+        std::ofstream(build / "bin" / "radiance") << "#!/bin/sh\n";
+        fs::permissions(build / "bin" / "radiance", fs::perms::owner_all);
+        ss::EnginePlanInputs own = in;
+        own.self = home / "bin" / "bc-serve";
+        calls.clear();
+        refused = false;
+        try { ss::plan_engine_only(own, run, wait); } catch (const ss::PlanFailed& e) {
+            refused = std::string(e.what()).find("is not this bc-serve's build") != std::string::npos;
+        }
+        assert(refused && calls.empty());
+    }
+    // the measuring start that fails is refused, naming its log
+    in.runner = [&](const std::vector<std::string>& argv) {
+        ss::ManifestRun r;
+        if (std::find(argv.begin(), argv.end(), "--unmeasured") != argv.end()) {
+            std::ofstream(argv[2]) << "{}";
+            return r;
+        }
+        r.exit = 10;
+        return r;
+    };
+    in.engine_binary = "/bin/false";
+    refused = false;
+    try { ss::plan_engine_only(in, run, wait); } catch (const ss::PlanFailed& e) {
+        refused = std::string(e.what()).find("measuring start failed") != std::string::npos;
+    }
+    assert(refused);
+}
+
 int main(int argc, char** argv) {
     bool write_golden = false;
     const char* dump_dir = nullptr;
@@ -1830,6 +2434,9 @@ int main(int argc, char** argv) {
         tp_engine_with_helper_layout(t);
         tp_engine_with_two_helpers_layout(t);
         mixed_arch_engine_layout(t);
+        config_files(t);
+        converted_layout_parity(t);
+        session_engine_plan(t);
         derived_budget_is_the_workers(t);
         sdk_environment_step(t);
         std::cout << "PASS: fake KFD/PCI/proc detection; strict keys; types/ranges; required; "

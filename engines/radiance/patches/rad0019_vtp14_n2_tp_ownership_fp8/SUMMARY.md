@@ -1,6 +1,6 @@
 # rad0019_vtp14_n2_tp_ownership_fp8
 
-**Status:** untested
+**Status:** validated
 **Plan item:** VTP14
 
 Scope: `--tp-ownership SPEC` (rad0018) for the fp8 Qwen plugin (`qwen35_fp8`, and `qwen35_w8a8` built from it). That plugin serves the quantised

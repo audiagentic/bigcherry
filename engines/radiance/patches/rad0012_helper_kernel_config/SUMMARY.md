@@ -1,6 +1,6 @@
 # rad0012_helper_kernel_config
 
-**Status:** untested
+**Status:** validated
 **Plan item:** RSC06
 
 ## Summary

@@ -1,0 +1,26 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261115_135905_radiance-prefill-scheduling-is_8692",
+  "files": [
+    "engines/radiance/patches/rad0036_prefill_governor/patch.py",
+    "engines/radiance/patches/rad0036_prefill_governor/patch.toml",
+    "engines/radiance/patches/rad0036_prefill_governor/README.md",
+    "engines/radiance/patches/rad0036_prefill_governor/SUMMARY.md",
+    "engines/radiance/patches/rad0034_prefill_concurrency/patch.toml",
+    "engines/radiance/patches/rad0035_prefill_order/patch.toml",
+    "engines/radiance/recipes.toml",
+    "engines/radiance/components/serving/contract/serving-v2.toml",
+    "engines/radiance/components/serving/serving_test.cpp",
+    "engines/radiance/configs/qwen27b.toml",
+    "tools/tests/patch/test_vtp42_prefill_governor.py",
+    "docs/evidence/2026-11-15-vtp41-prefill-order/README.md"
+  ],
+  "plan-item-ids": [
+    "VTP41",
+    "VTP42"
+  ],
+  "status": "unreleased",
+  "technical-summary": "rad0036 adds --prefill-governor SPEC (serving v2 prefill_governor): kind=arrival|cap|budget with order=remaining, age_ms, max_seqs, long_tokens, factor; policy in core/sched/prefill_governor.h, four scheduler hooks. Supersedes rad0034/rad0035 and their four serving fields (97 -> 94 options). Age now applies only to prompts waiting to start (rad0035 aged running prefills, which pushed mid-size requests 43-160 s behind long prompts on the card). -long configs set kind=cap;max_seqs=2;long_tokens=16384;order=remaining;age_ms=120000.",
+  "timestamp-utc": "2026-11-15T13:59:05.789885Z",
+  "user-summary-candidate": "Radiance prefill scheduling is now one swappable governor setting (cap or token budget, with remaining-work order and a waiting-age limit); the -long configs start 4k-16k requests within seconds beside long prompts."
+}

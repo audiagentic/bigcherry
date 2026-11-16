@@ -1,6 +1,6 @@
 # rad0021_vtp14_weighted_twoshot_3rank
 
-**Status:** untested
+**Status:** validated
 **Plan item:** VTP14
 
 Scope: link-weighted shards for libr4d's exact three-rank two-shot all-reduce, as the engine already does at eight ranks.

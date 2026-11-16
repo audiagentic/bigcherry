@@ -22,6 +22,8 @@ from typing import NamedTuple
 
 SCHEMA = 1
 TIER = "profile-evidence"
+DIAGNOSTIC_TIER = "diagnostic"
+DIAGNOSTIC_CHECKS = ("mechanics", "activation")
 RECORD = Path("evidence") / "promotion.json"
 
 # every promotion states these, in words a reviewer can check against the run logs
@@ -38,11 +40,12 @@ class ProfileEvidence:
     default_on: bool
     models: tuple[str, ...]
     checks: dict[str, str]
+    tier: str = TIER
 
     def document(self) -> dict[str, object]:
         return {
             "schema": SCHEMA,
-            "tier": TIER,
+            "tier": self.tier,
             "patch-id": self.patch_id,
             "pinned": self.pinned,
             "subject-digest": self.subject_digest,
@@ -62,6 +65,17 @@ class Verdict(NamedTuple):
 def problems(evidence: ProfileEvidence) -> tuple[str, ...]:
     """What a record lacks. Empty means it qualifies on its own terms (identity is checked by ``verify``)."""
     found: list[str] = []
+    if evidence.tier == DIAGNOSTIC_TIER:
+        if evidence.default_on:
+            found.append("a diagnostic record cannot flip a default-on runtime gate")
+        if set(evidence.checks) != set(DIAGNOSTIC_CHECKS):
+            found.append("diagnostic record must contain only mechanics and activation checks")
+        for name in DIAGNOSTIC_CHECKS:
+            if not str(evidence.checks.get(name, "")).strip():
+                found.append(f"check {name!r} is missing")
+        return tuple(found)
+    if evidence.tier != TIER:
+        return (f"unknown promotion tier {evidence.tier!r}",)
     if not evidence.models or not all(isinstance(m, str) and m.strip() for m in evidence.models):
         found.append("at least one named model is required")
     for name in REQUIRED_CHECKS:
@@ -98,8 +112,8 @@ def load(package_dir: Path) -> ProfileEvidence | None:
         raw = json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
         raise ValueError(f"{path}: not valid JSON: {exc}") from exc
-    if not isinstance(raw, dict) or raw.get("schema") != SCHEMA or raw.get("tier") != TIER:
-        raise ValueError(f"{path}: not a schema-{SCHEMA} {TIER} record")
+    if not isinstance(raw, dict) or raw.get("schema") != SCHEMA or raw.get("tier") not in (TIER, DIAGNOSTIC_TIER):
+        raise ValueError(f"{path}: unrecognized schema or promotion tier")
     checks = raw.get("checks")
     models = raw.get("models")
     if not isinstance(checks, dict) or not isinstance(models, list) or not isinstance(raw.get("default-on"), bool):
@@ -111,10 +125,11 @@ def load(package_dir: Path) -> ProfileEvidence | None:
         default_on=raw["default-on"],
         models=tuple(str(m) for m in models),
         checks={str(k): str(v) for k, v in checks.items()},
+        tier=raw["tier"],
     )
 
 
-def verify(package_dir: Path, *, patch_id: str, pinned_ref: str, subject_digest: str) -> Verdict | None:
+def verify(package_dir: Path, *, patch_id: str, pinned_ref: str, subject_digest: str, tier: str = TIER) -> Verdict | None:
     """None when the package has no record; otherwise its verdict (no problems = it qualifies).
 
     ``pinned_ref`` and ``subject_digest`` are the current pin and patch digest; a record taken at another pin or
@@ -126,6 +141,8 @@ def verify(package_dir: Path, *, patch_id: str, pinned_ref: str, subject_digest:
     if evidence is None:
         return None
     found = list(problems(evidence))
+    if evidence.tier != tier:
+        found.append(f"record tier {evidence.tier!r} does not qualify for {tier!r}")
     if evidence.patch_id != patch_id:
         found.append(f"record is for {evidence.patch_id!r}")
     if not evidence.pinned.strip() or not evidence.subject_digest.strip():

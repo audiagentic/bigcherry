@@ -17,6 +17,10 @@ priority: P2
 
 ## Description
 
+**MoE combined-result serving integration only; still pending/blocked, not a TP3 CPU-reduction implementation.** RAD50's XTX CPU-only DMA-BUF path and corrected `wall_clock64()` pre-armed live-ready proof passed; later R9700 DMA-BUF serial/live results were also positive. The earlier 768-row `clock64()` timeout was a false watchdog deadline, not demonstrated memory corruption. Remaining blockers: real MoE critical path versus the shipped chunk overlap, crash/restart/FD lifetime, captured BF16/KL, multi-rank once-only and matched inference performance. HL04's measured CPU-combine no-go still applies unless new critical-path evidence justifies reconsideration. HL02 measures generic contention/push, RAD50 supplies safety, VTP38 alone owns the TP3 transport. Historical design follows.
+
+**History — original design:**
+
 **Design-only and blocked on RAD50.** RAD42's GPU-pull/chunked CPU-combine
 path already overlaps helper writes, the next CPU combine and the engine
 GPU's previous-chunk read. RAD40 found a contended CPU-BAR bandwidth
@@ -275,6 +279,10 @@ Honor the RAD49 and RAD42 test/quality gates.
    promoting this plan item from pending.
 
 ## Notes
+
+**Latest status supersedes older 'HARD STOP' entries below:** After the gfx11 timer correction, both XTXs passed 100 repeated GPU-live 768-row generations with `wall_clock64()` and exact FP16 checks. Earlier 768-row failure logs remain historical diagnostics, not a current proof of invalid GPU-visible flag ordering. R9700 DMA-BUF 4 KiB/4 MiB and smaller serial/live canaries passed 2026-11-10, with the original separate HSA-pool probe inconclusive. An engine-safe MoE protocol still requires crash/lifetime, correct production consumer, once-only and critical-path performance proof; no serving implementation is authorised. Reuse HL02 transfer tests, RAD50 safety, and respect HL04's closed decision.
+
+**History — older gate status and test details:**
 
 Blocked by RAD50. Related RAD40, RAD42 (existing design B), RAD49
 (merged v25 / TP2), and the existing no-P2P deployment constraints.

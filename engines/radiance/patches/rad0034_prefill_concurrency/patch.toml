@@ -1,0 +1,12 @@
+schema = 1
+id = "rad0034_prefill_concurrency"
+order = 34
+state = "superseded"
+kind = "enhancement"
+origin = "local"
+backend = "agnostic"
+retirement = "superseded by rad0036_prefill_governor (VTP42): the same policy as a --prefill-governor spec"
+plan-ids = ["VTP39"]
+requires = []
+conflicts = []
+tags = ["optimization", "prefill"]

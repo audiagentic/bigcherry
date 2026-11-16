@@ -1,6 +1,6 @@
 # rad0030_int8_pipelined_prefill
 
-**Status:** untested
+**Status:** validated
 **Plan item:** VTP37
 
 Scope: tensor-parallel prefill of a model whose trunk norms write rotated int8 codes (the w8a8 Qwen plugin on kernel

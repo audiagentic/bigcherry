@@ -15,6 +15,10 @@ priority: P2
 
 ## Description
 
+**MoE result-delivery owner, distinct from TP3 all-reduce.** Design A chunked combine is shipped (2026-11-01, +6.1% eight-session throughput) and its no-route-first-token deadlock was fixed (PR #520). Design B, CPU BAR/DMA-BUF output straight to engine VRAM, remains unimplemented. HL04 closed its flashnext-4gpu version because exposed CPU combine was only ~0.1–0.2 ms; new evidence must establish >=0.3 ms critical-path saving before reopening that path. HL02 owns shared contention/CPU-push measurements; RAD50 owns DMA-BUF mapping/live/fault proof; RAD51 is the separate optional MoE serving integration gate; VTP38 owns **TP3** host reduction. Historical design text follows.
+
+**History — original rationale:**
+
 Today the engine starts reading result rows only after every helper (or the combine) is done, then pulls ~10.5 MB over its x4 link (~1.6 ms a 2048-row layer with the combine). Two overlaps: (a) helpers and helper 0's combine publish per-chunk done words (e.g. every 256 tokens) and the engine's add kernel consumes chunks as they land; (b) the CPU combine writes its fp16 rows straight into a buffer in the engine's VRAM through the resizable BAR (posted writes, no read contention), shared to helper 0 by IPC, so the engine reads locally. Estimate on the current topology 1-4%; larger after the R9700 moves to an x8 slot.
 
 ## Steps
@@ -53,6 +57,10 @@ Engine-side transfer time a prefill layer reduced by the modelled amount; 8-sess
 
 
 ## Notes
+
+**2026-11-13 reconciliation:** Stop referencing RAD40 as an *active* harness dependency: it is superseded historical evidence. HL02 owns new host-link/push tests; RAD50 owns the cross-process safety proof; HL04 remains closed; RAD51 remains pending and blocked on a separately justified live MoE critical path. A RAD50 synthetic 1.25x R9700 serial result does not overturn HL04's measured ~0.1–0.2 ms exposed path.
+
+**History — earlier implementation/debug notes:**
 
 No P2P: only CPU stores into a BAR and host-memory chunks. Depends on RAD40.
 

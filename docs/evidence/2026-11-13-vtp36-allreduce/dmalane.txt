@@ -1,0 +1,33 @@
+device 2 <card>, 4 pieces, grid 4 x 256, 40 iterations (median of the last 36)
+    1048576 B  A fused        p50     330 us  p90     330 us    6.36 GB/s both ways  bad 0
+    1048576 B  B dmalane      p50     335 us  p90     340 us    6.27 GB/s both ways  bad 0
+    1048576 B  C free duplex  p50     200 us  p90     201 us   10.47 GB/s both ways  bad 0
+    4194304 B  A fused        p50     946 us  p90     975 us    8.87 GB/s both ways  bad 0
+    4194304 B  B dmalane      p50    1129 us  p90    1151 us    7.43 GB/s both ways  bad 0
+    4194304 B  C free duplex  p50     757 us  p90     768 us   11.09 GB/s both ways  bad 0
+   10485760 B  A fused        p50    1948 us  p90    1951 us   10.77 GB/s both ways  bad 0
+   10485760 B  B dmalane      p50    2579 us  p90    2797 us    8.13 GB/s both ways  bad 0
+   10485760 B  C free duplex  p50    1773 us  p90    1792 us   11.83 GB/s both ways  bad 0
+bad_words 0
+device 2 <card>, 8 pieces, grid 4 x 256, 40 iterations (median of the last 36)
+    1048576 B  A fused        p50     327 us  p90     328 us    6.41 GB/s both ways  bad 0
+    1048576 B  B dmalane      p50     385 us  p90     391 us    5.44 GB/s both ways  bad 0
+    1048576 B  C free duplex  p50     196 us  p90     202 us   10.69 GB/s both ways  bad 0
+    4194304 B  A fused        p50     933 us  p90     959 us    8.99 GB/s both ways  bad 0
+    4194304 B  B dmalane      p50    1125 us  p90    1160 us    7.46 GB/s both ways  bad 0
+    4194304 B  C free duplex  p50     747 us  p90     754 us   11.22 GB/s both ways  bad 0
+   10485760 B  A fused        p50    1976 us  p90    1983 us   10.61 GB/s both ways  bad 0
+   10485760 B  B dmalane      p50    2521 us  p90    2660 us    8.32 GB/s both ways  bad 0
+   10485760 B  C free duplex  p50    1787 us  p90    1796 us   11.73 GB/s both ways  bad 0
+bad_words 0
+device 0 <card>, 4 pieces, grid 4 x 256, 40 iterations (median of the last 36)
+    1048576 B  A fused        p50     146 us  p90     147 us   14.37 GB/s both ways  bad 0
+    1048576 B  B dmalane      p50     210 us  p90     221 us    9.98 GB/s both ways  bad 0
+    1048576 B  C free duplex  p50     115 us  p90     117 us   18.31 GB/s both ways  bad 0
+    4194304 B  A fused        p50     436 us  p90     448 us   19.22 GB/s both ways  bad 0
+    4194304 B  B dmalane      p50     478 us  p90     481 us   17.54 GB/s both ways  bad 0
+    4194304 B  C free duplex  p50     356 us  p90     357 us   23.59 GB/s both ways  bad 0
+   10485760 B  A fused        p50    1047 us  p90    1051 us   20.02 GB/s both ways  bad 0
+   10485760 B  B dmalane      p50    1032 us  p90    1034 us   20.33 GB/s both ways  bad 0
+   10485760 B  C free duplex  p50     846 us  p90     848 us   24.80 GB/s both ways  bad 0
+bad_words 0

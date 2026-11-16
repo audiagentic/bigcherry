@@ -1,0 +1,12 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261114_045711_two-long-context-int8-qwen38_5416",
+  "files": [
+    "engines/radiance/configs/qwen27b.toml",
+    "engines/radiance/components/serving/serving_test.cpp"
+  ],
+  "status": "unreleased",
+  "technical-summary": "qwen27b-tp3-int8-556-long (262,144 tokens, fp8 cache: 1,253,943 cache tokens) and -long-bf16 (bf16 cache: 624,051 tokens, no cache rounding); fp8 cache measured at KLD 0.0022 short / 0.0054 long against a bf16 cache.",
+  "timestamp-utc": "2026-11-14T04:57:11.884785Z",
+  "user-summary-candidate": "Two long-context int8 Qwen3.8-27B configs: about 1.25M cache tokens with fp8, or about 624K with a lossless 16-bit cache."
+}
