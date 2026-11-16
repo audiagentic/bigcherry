@@ -26,6 +26,7 @@ from . import disposition as patch_disposition
 from . import rebase
 from . import validation_policy
 from . import registry as patch_registry
+from . import source_policy
 
 
 class GateId(str, Enum):
@@ -189,43 +190,6 @@ def evaluate_summary_gate(context: GateContext) -> GateResult:
             GateId.G1, GateStatus.FAIL, "documentation", "patch.docs", problems
         )
     return GateResult(GateId.G1, GateStatus.PASS, "documentation", "patch.docs")
-
-
-#: Recipe names (source, patch set, experiment) that may carry a diagnostic-build patch end with this.
-DIAGNOSTIC_NAME_SUFFIX = "-diag"
-
-
-def diagnostic_build_problems(
-    registry: patch_registry.PatchRegistry, recipes: recipes_config.Config
-) -> list[str]:
-    """A patch that declares `diagnostic-build` exists for a diagnostic build only (its code is compiled out
-    without that macro), so no production source, patch set or experiment may include it. Production is every
-    recipe not named `*-diag`; a `*-diag` patch set may in turn only be used by `*-diag` sources."""
-    diagnostic = {d.patch_id for d in registry.descriptors if d.diagnostic_build}
-    problems: list[str] = []
-    diag_sets = {name for name in recipes.patch_sets if name.endswith(DIAGNOSTIC_NAME_SUFFIX)}
-    for name, patch_set in sorted(recipes.patch_sets.items()):
-        leaked = sorted(diagnostic & set(patch_set.patches))
-        if leaked and name not in diag_sets:
-            problems.append(
-                f"patch set {name!r} includes diagnostic-build patch(es) {', '.join(leaked)}; "
-                f"only a patch set named *{DIAGNOSTIC_NAME_SUFFIX} may"
-            )
-    for name, source in sorted(recipes.sources.items()):
-        used = sorted(diag_sets & set(source.patch_sets))
-        if used and not name.endswith(DIAGNOSTIC_NAME_SUFFIX):
-            problems.append(
-                f"source {name!r} uses diagnostic patch set(s) {', '.join(used)}; "
-                f"only a source named *{DIAGNOSTIC_NAME_SUFFIX} may"
-            )
-    for name, experiment in sorted(recipes.experiments.items()):
-        leaked = sorted(diagnostic & set(experiment.patches))
-        if leaked and not name.endswith(DIAGNOSTIC_NAME_SUFFIX):
-            problems.append(
-                f"experiment {name!r} includes diagnostic-build patch(es) {', '.join(leaked)}; "
-                f"only an experiment named *{DIAGNOSTIC_NAME_SUFFIX} may"
-            )
-    return problems
 
 
 def _evaluate_lint_summary(
@@ -411,12 +375,25 @@ def evaluate_repository_lint_gates(
             if scoped_result.result.status is GateStatus.BLOCKED:
                 problems.extend(scoped_result.result.detail)
 
-    problems.extend(
-        diagnostic_build_problems(
-            registry,
-            recipes_config.load(engines.load(paths.REPO_ROOT, engine).recipes_path(paths.REPO_ROOT)),
-        )
-    )
+    if engine == "radiance":
+        # PRQ05: one source-class/state authority, including inherited patch sets.
+        recipes = recipes_config.load(engines.load(paths.REPO_ROOT, engine).recipes_path(paths.REPO_ROOT))
+        records = {}
+        for descriptor in registry.descriptors:
+            if descriptor.state != "diagnostic":
+                continue
+            try:
+                record = profile_evidence.load(registry.root / descriptor.package_root)
+            except (OSError, ValueError) as exc:
+                problems.append(f"{descriptor.patch_id}: invalid diagnostic promotion record: {exc}")
+                continue
+            if record is not None:
+                records[descriptor.patch_id] = record
+        problems.extend(source_policy.source_state_problems(
+            recipes,
+            {descriptor.patch_id: descriptor.state for descriptor in registry.descriptors},
+            diagnostic_records=records,
+        ))
     return LintGateReport(
         tuple(results), tuple(problems), grandfathered, tuple(anchor_warnings)
     )

@@ -178,6 +178,11 @@ class PatchPromoteTests(unittest.TestCase):
         recipes_path = layout.recipes_path(self.root)
         recipes_path.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(_REPO / "engines/radiance/recipes.toml", recipes_path)
+        # Synthesize a pre-migration mixed untested set; real recipes are now diagnostic.
+        before = recipes_path.read_text(encoding="utf-8")
+        before = before.replace('  "rad0004_moe_remote_diagnostics",\n]\nrequired-state = "diagnostic"', '  "rad0004_moe_remote_diagnostics",\n  "rad0006_heat_freeze_diagnostic",\n]\nrequired-state = "untested"')
+        before = before.replace('patches = ["rad0010_routing_evidence"]\nrequired-state = "diagnostic"', 'patches = ["rad0010_routing_evidence"]\nrequired-state = "untested"')
+        recipes_path.write_text(before, encoding="utf-8")
 
         pp._update_diagnostic_recipes(self.root, layout, (
             "rad0004_moe_remote_diagnostics", "rad0010_routing_evidence",
