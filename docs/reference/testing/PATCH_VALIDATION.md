@@ -24,7 +24,7 @@ silently treated as a pass.
 | G2 Revision/apply | validate, promote, rebase, build | Rebase report is fresh against live source/BigCherry/overlay/selection/patch identities and the focal patch is known-good | `patch.gates.evaluate_rebase_gate()` -> `patch.rebase.require_fresh_report()` |
 | G3 Validation definition | lint, validate, promote | Static package/ValidationPlan policy passes; focal operational paths reach execution-package and optimization checks according to the live evaluator; a not-required focal package returns NA before those checks; repository LINT still performs its per-descriptor performance check | focal: `patch.gates.evaluate_package_gate()` -> `patch.validation_policy.check_validation_packages()`, `patch.validation_policy.require_execution_package()`, `patch.validation_policy.check_performance_evidence_for_patch()`; LINT: `patch.gates.evaluate_repository_lint_gates()` -> `patch.gates._evaluate_lint_package()` |
 | G4 Evidence qualification | promote, build | An intact focal record that says the patch passed satisfies identity, contract-id, architecture and status obligations; recorded digests and pin are provenance notes, never failures; tampered, ineligible or missing evidence fails closed | `patch.gates.evaluate_evidence_gate()` -> `patch.catalog.validation_evidence_statuses()` |
-| G5 Lifecycle promotion | promote | For an untested focal patch, G0-G4 must all PASS; the gate only derives eligibility and never edits metadata | `patch.gates.evaluate_lifecycle_gate()` |
+| G5 Lifecycle promotion | promote | Validated promotion requires G0-G4 qualification; diagnostic promotion requires mechanics, lint and an emitted activation marker, not performance or identity claims. The gate never edits metadata | `patch.gates.evaluate_lifecycle_gate()` |
 | G6 Disposition coverage | rebase, build | Fresh all-patches report plus exact revision/digest dispositions cover every non-retired patch; recipe-selected failures cannot be waived | `patch.gates.evaluate_disposition_gate()` -> `patch.disposition.compute_coverage()` and `patch.rebase.require_fresh_report()` |
 | G7 Production admission | build | Complete ordered production composition passes production admission; inactive/not-ready is BLOCKED at the PA21 gate evaluator, active rejection is FAIL, and malformed/unknown output is BLOCKED | `patch.gates.evaluate_admission_gate()` -> `patch_admission.admit()` |
 
@@ -105,9 +105,26 @@ change.
 
 | Axis | Authority | Valid values | Meaning |
 | --- | --- | --- | --- |
-| Package state | `patch.toml` | `untested`, `validated`, `rejected`, `superseded` | Whether the package is accepted for composition |
+| Package state | `patch.toml` | `untested`, `evaluated`, `diagnostic`, `validated`, `rejected`, `superseded` | Whether the package is accepted for composition |
 | Source status | `config/external-sources.toml` | `planned`, `ported-untested`, `ported-benched`, `ported-validated`, `deferred-hardware`, `superseded`, `excluded`, `evidence-only` | Progress and proof level of a tracked external change |
 | Run result | `evidence/validation.json` | `PASS`, `FAIL`, `BLOCKED`, `ERROR` plus named results | What this run established; it is not a metadata edit |
+
+### State-based source admission
+
+| Patch state | Production source | Diagnostic/evidence source | Experiment |
+| --- | --- | --- | --- |
+| validated | yes | yes | yes |
+| diagnostic | no | yes, with mechanics and emitted activation-marker evidence | yes |
+| untested / evaluated | no | no | yes |
+| rejected / superseded | no | no | no |
+
+The state says where a patch may build: production sources accept only validated patches, diagnostic sources accept validated or diagnostic patches, and untested/evaluated patches remain experiments only. Source classes are explicit in the engine recipe, never inferred from patch kind, tag, macro or source name. A diagnostic is retired as superseded when its question is answered; it is not a validated scientific result.
+
+PRQ05 migration is complete for Radiance: rad0004 and rad0010 are `diagnostic` with package-owned activation records, and rad0006 is `superseded` by the RAD14 root-cause finding and removed from all recipes. Repository patch-lint calls the strict per-source policy directly, with no untested-in-production exceptions, no naming convention or `diagnostic-build` metadata gate. The `BC_MOE_REMOTE_DIAG` build macro still determines whether rad0004's diagnostic code is compiled, independent of lifecycle admission. The rad0004 activation record cites historical 1.3-era output (not activation of the v1.17 port); the rad0010 record cites the v1.16.0 RHP01 counters (not a v1.17 reproduction). Neither record is performance or production qualification.
+
+### Diagnostic promotion record
+
+Use patch-promote --diagnostic --evidence @file with Mechanics: and Activation: lines that identify the passing offline patch tests/lint and the patch's own emitted counter/marker. It writes a diagnostic-tier evidence/promotion.json and matching README promotion record and SUMMARY/patch.toml state, but does not append to a validated production patch set or claim A/B performance and output identity. Diagnostic G5 accepts G3 = NA only when G0, G1, G2 and G4 pass and G4 verifies this two-check diagnostic tier. The full QFP18 profile-evidence tier for validated promotion still requires its existing identity/A-B checks and models.
 
 Validation readiness is determined by the evidence and contract, not by a
 status string alone:
@@ -133,7 +150,7 @@ Do not collapse these layers:
 
 | Layer | Values/meaning | Effect |
 | --- | --- | --- |
-| Package lifecycle | `untested`, `validated`, `rejected`, `superseded` | `patch.toml` state; controls composition |
+| Package lifecycle | `untested`, `evaluated`, `diagnostic`, `validated`, `rejected`, `superseded` | `patch.toml` state; controls composition |
 | Source tracking | `planned`, `ported-untested`, `ported-benched`, `ported-validated`, `deferred-hardware`, etc. | `external-sources.toml` status; tracks porting/proof progress |
 | Individual check | `pass`, `fail`, `blocked`, `error`, `not_applicable` | Result of that named check only |
 | Contract gate | Contract-specific gate results and promotion verdict | Whether scientific obligations passed |
@@ -535,12 +552,13 @@ does not promote or demote metadata.
 
 ## G5 — Lifecycle promotion
 
-G5 is PROMOTE-only. It applies when the focal package is still `untested` and
-derives eligibility only after G0-G4 all PASS. A focal package in another
+G5 is PROMOTE-only. It applies to untested or evaluated focal packages. For validated
+promotion, G0-G4 must qualify; for diagnostic promotion, G0/G1/G2/G4 must pass,
+G3 may be NA, and G4 must verify the diagnostic mechanics and activation tier. A focal package in another
 lifecycle state is `NA` for G5. G5 never edits `patch.toml`, `SUMMARY.md`,
 external source status, or the release ledger.
 
-There is no automatic patch-state promotion command. Before changing
+Patch promotion is an explicit patch-promote operation, never an automatic gate mutation. Before changing
 `patch.toml`, `SUMMARY.md`, or an external tracked status:
 
 1. Confirm the evidence verifier passes (read its provenance notes).

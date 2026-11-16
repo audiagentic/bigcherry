@@ -345,8 +345,23 @@ std::string plan_cache_key(const Manifest& m) {
           {"kernels", e.runtime.kernels},
           {"handoff_max_rows", s.handoff ? Json(s.handoff->transport.max_rows) : Json(nullptr)},
           {"helpers", helpers}}}};
+    // As the native plan key (plan_cache.cpp): the engine tuning settings change the plan (tp_ownership moves each rank's
+    // KV and weight shares), and a world of more than one card type keys every rank's card. Both are added only when
+    // present, so a single-card or uniform configuration without tuning keeps its key (and its calibration records).
+    Json keyed = inputs;
+    if (e.tuning) {
+        const Json tuning = encode(*e.tuning);
+        if (tuning.is_object() && !tuning.empty()) keyed["planning_options"]["tuning"] = tuning;
+    }
+    Json rank_cards = Json::array();
+    for (const std::string& bdf : e.device.gpus) {
+        const GpuFact* g = gpus.count(bdf) ? gpus.at(bdf) : nullptr;
+        rank_cards.push_back({{"arch", g ? g->arch : std::string()}, {"vram_total_mib", g ? g->vram.total_mib : 0}});
+    }
+    if (std::any_of(rank_cards.begin(), rank_cards.end(), [&](const Json& c) { return c != rank_cards.at(0); }))
+        keyed["rank_cards"] = rank_cards;
     std::string bytes, why;
-    if (!bc::serving::jcs_canonicalize(inputs, &bytes, &why)) return "";
+    if (!bc::serving::jcs_canonicalize(keyed, &bytes, &why)) return "";
     return bc::serving::sha256_hex(bytes);
 }
 

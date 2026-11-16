@@ -73,58 +73,58 @@ reason = "descriptive shape string of a declared op"
 
 [[allow]]
 path = "engines/radiance/components/moe-remote/moe_remote_shm.h"
-anchor = "constexpr uint32_t kHidden = 2560;"
+anchor = "constexpr uint32_t kHidden = 2560, kTopK = 10, kExperts = 512;"
 category = "C"
-reason = "segment constants fixed at Flash-Next hidden 2560 / top-k 10 (audit MC-001..011)"
+reason = "v26 model fixture dimensions; topology counts are validated from the segment (audit MC-001..011)"
 owner = "RCS12"
 
 [[allow]]
 path = "engines/radiance/components/moe-remote/moe_remote_shm.h"
 anchor = "constexpr uint32_t kMaxRoutes = kMaxRows * kTopK;"
 category = "C"
-reason = "segment constants fixed at Flash-Next hidden 2560 / top-k 10 (audit MC-001..011)"
+reason = "v26 model fixture dimensions; topology counts are validated from the segment (audit MC-001..011)"
 owner = "RCS12"
 
 [[allow]]
 path = "engines/radiance/components/moe-remote/moe_remote_shm.h"
 anchor = "constexpr uint32_t kActivationBf16Bytes = kMaxRows * kHidden * sizeof(uint16_t);"
 category = "C"
-reason = "segment constants fixed at Flash-Next hidden 2560 / top-k 10 (audit MC-001..011)"
+reason = "v26 model fixture dimensions; topology counts are validated from the segment (audit MC-001..011)"
 owner = "RCS12"
 
 [[allow]]
 path = "engines/radiance/components/moe-remote/moe_remote_shm.h"
 anchor = "constexpr uint32_t kActivationQBytes = kMaxRows * kHidden;"
 category = "C"
-reason = "segment constants fixed at Flash-Next hidden 2560 / top-k 10 (audit MC-001..011)"
+reason = "v26 model fixture dimensions; topology counts are validated from the segment (audit MC-001..011)"
 owner = "RCS12"
 
 [[allow]]
 path = "engines/radiance/components/moe-remote/moe_remote_shm.h"
 anchor = "kMaxRows * (kHidden / kActGroup) * sizeof(float);"
 category = "C"
-reason = "segment constants fixed at Flash-Next hidden 2560 / top-k 10 (audit MC-001..011)"
+reason = "v26 model fixture dimensions; topology counts are validated from the segment (audit MC-001..011)"
 owner = "RCS12"
 
 [[allow]]
 path = "engines/radiance/components/moe-remote/moe_remote_shm.h"
 anchor = "constexpr uint32_t route_slot_bytes() { return kMaxRoutes * sizeof(Route); }"
 category = "C"
-reason = "segment constants fixed at Flash-Next hidden 2560 / top-k 10 (audit MC-001..011)"
+reason = "v26 model fixture dimensions; topology counts are validated from the segment (audit MC-001..011)"
 owner = "RCS12"
 
 [[allow]]
 path = "engines/radiance/components/moe-remote/moe_remote_shm.h"
 anchor = "constexpr uint32_t activation_slot_bytes() { return kActivationBf16Bytes + kActivationQBytes + kActi"
 category = "C"
-reason = "segment constants fixed at Flash-Next hidden 2560 / top-k 10 (audit MC-001..011)"
+reason = "v26 model fixture dimensions; topology counts are validated from the segment (audit MC-001..011)"
 owner = "RCS12"
 
 [[allow]]
 path = "engines/radiance/components/moe-remote/moe_remote_shm.h"
 anchor = "constexpr uint32_t result_slot_bytes() { return kMaxRows * kHidden * sizeof(uint16_t); }"
 category = "C"
-reason = "segment constants fixed at Flash-Next hidden 2560 / top-k 10 (audit MC-001..011)"
+reason = "v26 model fixture dimensions; topology counts are validated from the segment (audit MC-001..011)"
 owner = "RCS12"
 
 [[allow]]
@@ -381,3 +381,81 @@ path = "tools/lab/radiance/xtx27_quant_plan.py"
 anchor = 'model_path = output_dir / f"{stem}.rad"'
 category = "E"
 reason = "Generic filename suffix for the planning-only candidate artifact; not a model-specific shape, path, or runtime default."
+
+[[allow]]
+path = "engines/radiance/patches/rad0037_bf16_fp8_kv/patch.py"
+anchor = "_edit('r4d_selftest_cpp-6', '    const int64_t q_heads = kv_heads * gq"
+category = "B"
+reason = "self-test numerics and test text at fixed shapes (same as the existing bf16kv cases)"
+
+[[allow]]
+path = "engines/radiance/patches/rad0037_bf16_fp8_kv/patch.py"
+anchor = "_edit('arch_test_cpp-1', '    CHECK(noted(b, \"kv cache k6_v4\"));\\n}\\n\\"
+category = "B"
+reason = "self-test numerics and test text at fixed shapes (same as the existing bf16kv cases)"
+
+[[allow]]
+path = "engines/radiance/patches/rad0038_bf16_i8_kv/patch.py"
+anchor = " row of 49 * head_dim / 16 bytes a t"
+category = "E"
+reason = "row size description (49 * head_dim / 16 bytes: bf16 K, int8 V, f16 scales), not an execution-path constant"
+
+[[allow]]
+path = "engines/radiance/patches/rad0038_bf16_i8_kv/patch.py"
+anchor = "_edit('rad_builder_h-0', \" *     [0, 2HD)           K, bf16 as the bf1"
+category = "E"
+reason = "row size description (49 * head_dim / 16 bytes: bf16 K, int8 V, f16 scales), not an execution-path constant"
+
+[[allow]]
+path = "engines/radiance/patches/rad0038_bf16_i8_kv/patch.py"
+anchor = "_edit('r4d_attn_paged_h256_gqa6_hip-3', '    return r4d_attn_decode_h2"
+category = "A"
+reason = "kernel row of the existing h256 gqa6 attention kernels (same geometry as the bf16kv rows); any other shape is refused"
+
+[[allow]]
+path = "engines/radiance/patches/rad0038_bf16_i8_kv/patch.py"
+anchor = "_edit('r4d_model_bf16_hip-2', \"                    (uint32_t)g.n_block"
+category = "E"
+reason = "row size description (49 * head_dim / 16 bytes: bf16 K, int8 V, f16 scales), not an execution-path constant"
+
+[[allow]]
+path = "engines/radiance/patches/rad0038_bf16_i8_kv/patch.py"
+anchor = "_edit('r4d_rows_cpp-0', '    C_EQ(\"window\", 0), C_EQ(\"head_dim\", 256),"
+category = "A"
+reason = "kernel row of the existing h256 gqa6 attention kernels (same geometry as the bf16kv rows); any other shape is refused"
+
+[[allow]]
+path = "engines/radiance/patches/rad0038_bf16_i8_kv/patch.py"
+anchor = "_edit('r4d_rows_cpp-3', '  nullptr, nullptr, r4d_rad_kv_store_b16f8, n"
+category = "A"
+reason = "kernel row of the existing h256 gqa6 attention kernels (same geometry as the bf16kv rows); any other shape is refused"
+
+[[allow]]
+path = "engines/radiance/patches/rad0038_bf16_i8_kv/patch.py"
+anchor = "_edit('r4d_rows_cpp-4', '  nullptr, nullptr,\\n  nullptr },\\n\\n{ \"attn_"
+category = "A"
+reason = "kernel row of the existing h256 gqa6 attention kernels (same geometry as the bf16kv rows); any other shape is refused"
+
+[[allow]]
+path = "engines/radiance/patches/rad0038_bf16_i8_kv/patch.py"
+anchor = "_edit('r4d_rows_cpp-5', '  nullptr, nullptr, r4d_rad_qk_norm_rope_gate"
+category = "A"
+reason = "kernel row of the existing h256 gqa6 attention kernels (same geometry as the bf16kv rows); any other shape is refused"
+
+[[allow]]
+path = "engines/radiance/patches/rad0038_bf16_i8_kv/patch.py"
+anchor = "_edit('r4d_selftest_cpp-7', '    const int64_t q_heads = kv_heads * gq"
+category = "B"
+reason = "self-test numerics and test text at fixed shapes (same as the existing bf16kv cases)"
+
+[[allow]]
+path = "engines/radiance/patches/rad0038_bf16_i8_kv/patch.py"
+anchor = "_edit('arch_test_cpp-1', '    CHECK(noted(b, \"kv cache bf16_fp8\"));\\n}"
+category = "B"
+reason = "self-test numerics and test text at fixed shapes (same as the existing bf16kv cases)"
+
+[[allow]]
+path = "engines/radiance/patches/rad0038_bf16_i8_kv/patch.py"
+anchor = "_edit('arch_test_cpp-2', '            CHECK_EQ(count_op(b, \"kv_store_s"
+category = "B"
+reason = "self-test numerics and test text at fixed shapes (same as the existing bf16kv cases)"

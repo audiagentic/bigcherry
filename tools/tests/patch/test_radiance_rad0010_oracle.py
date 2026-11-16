@@ -175,3 +175,294 @@ class TestRoutingEvidenceSyntheticOracle(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# A second, independently maintained generation ledger. The expected fates do
+# not read tracker slots or derive counters from its printed totals.
+CPP_RANKED = r"""
+int rad_event_query(int event) { return event == 1 ? 1 : 0; }
+#include "bc_moe_remote_evidence.h"
+#include <array>
+#include <cassert>
+#include <cstdint>
+#include <limits>
+#include <map>
+#include <set>
+#include <tuple>
+#include <utility>
+#include <vector>
+
+using T = BcMoeRemoteEvidence;
+struct Hist {
+    int rank, layer, step, bank, phase, passes;
+    uint64_t generation;
+    bool flushed = false, completed = false, credited = false, lost = false;
+};
+struct Ledger {
+    int rank, banks;
+    uint64_t next_generation = 0;
+    std::vector<Hist> history;
+    std::map<std::pair<int,int>, size_t> current;
+    std::map<int,int> last_credit;
+
+    Hist* at(int layer, int bank) {
+        auto it = current.find({layer,bank});
+        return it == current.end() ? nullptr : &history[it->second];
+    }
+    void issue(int layer, int step, int phase) {
+        const int bank = step % banks;
+        Hist* old = at(layer, bank);
+        if (old && old->step == step && !old->lost && !old->credited) {
+            assert(old->phase == phase);
+            ++old->passes;
+            old->flushed = old->completed = false;
+            return;
+        }
+        if (old && !old->lost && !old->credited) old->lost = true;
+        history.push_back({rank,layer,step,bank,phase,1,++next_generation});
+        current[{layer,bank}] = history.size() - 1;
+    }
+    void flush(int bank, int lo, int hi, int step) {
+        for (int layer = lo; layer <= hi; ++layer) {
+            Hist* row = at(layer,bank);
+            if (!row) continue;
+            if (row->step != step) {
+                if (!row->credited) row->lost = true;
+            } else if (!row->lost && !row->credited) row->flushed = true;
+        }
+    }
+    bool landed(int layer, int step, bool ready) {
+        if (!ready) return false;
+        Hist* row = at(layer,step % banks);
+        if (!row || row->step != step || !row->flushed || row->lost || row->credited)
+            return false;
+        row->completed = true;
+        for (const Hist& prior : history)
+            if (prior.layer == layer && prior.step < step &&
+                !prior.credited && !prior.lost) return false;
+        return true;
+    }
+    bool credit(int layer, int step, int passes) {
+        Hist* row = at(layer,step % banks);
+        if (!row || row->step != step || !row->completed || row->lost ||
+            row->credited || row->passes != passes) return false;
+        auto it = last_credit.find(layer);
+        if (it != last_credit.end() && it->second >= step) return false;
+        last_credit[layer] = step;
+        row->credited = true;
+        return true;
+    }
+    void verify(const T& t) const {
+        std::array<T::Counts, T::Phases> expected{};
+        uint64_t pending = 0;
+        std::set<std::tuple<int,int,int,uint64_t>> distinct;
+        for (const Hist& row : history) {
+            assert(distinct.insert({row.rank,row.layer,row.step,row.generation}).second);
+            T::Counts& c = expected[row.phase];
+            ++c.issued;
+            c.produced += row.passes;
+            c.produced_passes += row.passes;
+            c.completed += row.completed;
+            c.credited += row.credited;
+            c.overwritten += row.lost;
+            c.credited_passes += row.credited ? row.passes : 0;
+            c.lost_passes += row.lost ? row.passes : 0;
+            pending += !row.credited && !row.lost;
+        }
+        assert(t.outstanding == pending);
+        for (int phase = 0; phase < T::Phases; ++phase) {
+            const auto& got = t.count[phase];
+            const auto& want = expected[phase];
+            assert(got.issued == want.issued);
+            assert(got.produced == want.produced);
+            assert(got.completed == want.completed);
+            assert(got.credited == want.credited);
+            assert(got.overwritten == want.overwritten);
+            assert(got.produced_passes == want.produced_passes);
+            assert(got.credited_passes == want.credited_passes);
+            assert(got.lost_passes == want.lost_passes);
+            uint64_t phase_pending = 0, pass_pending = 0;
+            for (const Hist& row : history)
+                if (row.phase == phase && !row.credited && !row.lost) {
+                    ++phase_pending;
+                    pass_pending += row.passes;
+                }
+            assert(want.issued == want.credited + want.overwritten + phase_pending);
+            assert(want.produced_passes ==
+                   want.credited_passes + want.lost_passes + pass_pending);
+        }
+    }
+};
+struct Harness {
+    T t;
+    Ledger ledger;
+    Harness(int rank, int layers, int banks) : ledger{rank,banks} {
+        t.reset(layers,banks);
+    }
+    void verify() const { ledger.verify(t); }
+    void issue(int layer, int step, int phase, int passes) {
+        for (int pass = 0; pass < passes; ++pass) {
+            ledger.issue(layer,step,phase);
+            t.issue(layer,step % t.banks,step,phase);
+        }
+        verify();
+    }
+    void flush(int lo, int hi, int step) {
+        ledger.flush(step % t.banks,lo,hi,step);
+        t.flush(step % t.banks,lo,hi,step);
+        verify();
+    }
+    bool landed(int layer, int step, bool ready) {
+        const bool expected = ledger.landed(layer,step,ready);
+        const bool actual = t.landed(layer,step % t.banks,step,ready);
+        assert(actual == expected);
+        verify();
+        return actual;
+    }
+    bool credit(int layer, int step, int passes) {
+        const bool expected = ledger.credit(layer,step,passes);
+        const bool actual = t.credit(layer,step % t.banks,step,passes);
+        assert(actual == expected);
+        verify();
+        return actual;
+    }
+};
+
+int main() {
+    // Independent rank-local ledgers: 45 issuing steps outrun a real 32-bank
+    // ring. A stale ready event from the old bank generation never credits.
+    Harness head(0,1,32);
+    for (int step = 0; step < 45; ++step) {
+        head.issue(0,step,T::Prefill,1);
+        head.flush(0,0,step);
+    }
+    assert(head.t.count[T::Prefill].overwritten == 13);
+    assert(head.t.outstanding == 32 && head.t.high_water == 32);
+    assert(!head.landed(0,0,true)); // old generation despite a stale ready event
+    assert(!head.credit(0,0,1));
+    // The recycled bank has been re-recorded, but its own event is not
+    // complete yet; neither stale readiness nor an early credit may pass.
+    assert(!head.landed(0,32,false));
+    assert(!head.credit(0,32,1));
+    for (int step = 13; step < 45; ++step) {
+        assert(head.landed(0,step,true));
+        assert(head.credit(0,step,1));
+    }
+    head.verify();
+    assert(head.t.count[T::Prefill].credited == 32);
+    head.t.print(0,0);
+
+    // Rank 1 gets its own source steps. A later ready event cannot pass an
+    // earlier, delayed event; the completed count can lead credited count.
+    Harness helper(1,3,4);
+    helper.issue(1,7,T::Decode,1);
+    helper.flush(1,1,7);
+    helper.issue(1,8,T::Mixed,1);
+    helper.flush(1,1,8);
+    assert(!helper.landed(1,8,true));
+    assert(helper.t.count[T::Mixed].completed == 1);
+    assert(!helper.landed(1,7,false));
+    assert(helper.landed(1,7,true) && helper.credit(1,7,1));
+    assert(helper.landed(1,8,true) && helper.credit(1,8,1));
+    assert(!helper.credit(1,8,1)); // duplicate, no second heat weight
+    assert(helper.t.duplicate_rejected > 0);
+    helper.verify();
+
+    // DMA [lo,hi] overwrites a gap layer which did not report in the new
+    // generation. Its two passes count as lost, not pending or credited.
+    helper.issue(1,12,T::Prefill,2);
+    helper.flush(1,1,12);
+    helper.issue(0,16,T::Decode,1);
+    helper.issue(2,16,T::Decode,4);
+    helper.flush(0,2,16);
+    assert(!helper.landed(1,12,true));
+    assert(helper.t.last_loss_layer == 1);
+    assert(helper.t.count[T::Prefill].lost_passes == 2);
+    assert(helper.landed(0,16,true) && helper.credit(0,16,1));
+    assert(helper.landed(2,16,true) && helper.credit(2,16,4));
+
+    // Same-step draft MTP multiplicity is 1/2/4 raw producer calls but
+    // exactly one credit generation and one weighted HeatEngine observation.
+    Harness mtp(2,2,4);
+    for (int step = 0; step < 3; ++step) {
+        const int passes = 1 << step;
+        mtp.issue(0,step,T::Draft,passes);
+        mtp.issue(1,step,T::Mixed,1);
+        mtp.flush(0,1,step);
+        assert(!mtp.landed(0,step,false)); // unfinished DMA
+        assert(mtp.landed(0,step,true));
+        assert(mtp.landed(1,step,true));
+        assert(mtp.credit(0,step,passes));
+        assert(mtp.credit(1,step,1));
+    }
+    assert(mtp.t.count[T::Draft].issued == 3);
+    assert(mtp.t.count[T::Draft].produced == 7);
+    assert(mtp.t.count[T::Draft].credited_passes == 7);
+    mtp.verify();
+
+    // Finite simulated teardown: a late bank is pending (not overwritten);
+    // completion does not credit it until a bounded follow-up reader pass.
+    Harness tail(3,1,4);
+    tail.issue(0,21,T::Decode,4);
+    tail.flush(0,0,21);
+    assert(!tail.landed(0,21,false));
+    assert(tail.t.outstanding == 1);
+    tail.t.print(3,0);
+    assert(tail.landed(0,21,true));
+    assert(tail.credit(0,21,4));
+    assert(tail.t.outstanding == 0);
+    tail.verify();
+
+    // Counters and same-slot report multiplicity saturate, not wrap.
+    T saturated;
+    saturated.reset(1,4);
+    saturated.count[T::Draft].issued = std::numeric_limits<uint64_t>::max();
+    saturated.issue(0,0,0,T::Draft);
+    assert(saturated.count[T::Draft].issued == std::numeric_limits<uint64_t>::max());
+    auto* slot = saturated.slot(0,0);
+    assert(slot);
+    slot->passes = std::numeric_limits<int>::max();
+    saturated.issue(0,0,0,T::Draft);
+    assert(slot->passes == std::numeric_limits<int>::max());
+    assert(saturated.overflow >= 2);
+    saturated.reset(1,4);
+    assert(saturated.outstanding == 0 && saturated.overflow == 0);
+    assert(saturated.count[T::Draft].issued == 0);
+    assert(!saturated.landed(0,0,0,true)); // old event on restarted context
+    return 0;
+}
+"""
+
+
+def test_ranked_generation_conservation_adversarial():
+    with tempfile.TemporaryDirectory() as td:
+        source = Path(td) / "ranked.cpp"
+        binary = Path(td) / "ranked"
+        source.write_text(CPP_RANKED)
+        build = subprocess.run(
+            ["g++", "-std=c++20", "-O0", "-I", str(HEADER),
+             "-o", str(binary), str(source)],
+            capture_output=True, text=True, check=False,
+        )
+        assert build.returncode == 0, build.stderr
+        run = subprocess.run(
+            [str(binary)], capture_output=True, text=True,
+            env={**os.environ, "RAD_ROUTING_EVIDENCE": "1"}, check=False,
+            timeout=10,
+        )
+        assert run.returncode == 0, run.stderr
+        lines = [
+            dict(re.findall(r"(\w+)=([^\s]+)", line))
+            for line in run.stderr.splitlines()
+            if line.startswith("RHP01 rank=") and " phase=" in line
+        ]
+        assert len(lines) == 8, run.stderr
+        head = next(row for row in lines if row["rank"] == "0" and row["phase"] == "prefill")
+        assert (head["issued"], head["credited"], head["overwritten"], head["pending"]) == (
+            "45", "32", "13", "0"
+        )
+        late = next(row for row in lines if row["rank"] == "3" and row["phase"] == "decode")
+        assert (late["issued"], late["credited"], late["pending"], late["in_flight"]) == (
+            "1", "0", "1", "1"
+        )
+        assert late["produced_passes"] == "4"

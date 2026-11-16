@@ -91,7 +91,7 @@ def _load_patch(root: Path, layout: engines.EngineLayout, patch_id: str) -> Patc
     if raw.get("id") != patch_id:
         raise PatchPromoteError(f"{path}: id does not match directory")
     state = str(raw.get("state", ""))
-    if state not in {"untested", "validated"}:
+    if state not in {"untested", "evaluated", "validated"}:
         raise PatchPromoteError(
             f"{patch_id}: state {state!r} is not promotable"
         )
@@ -131,7 +131,7 @@ def _replace_once(text: str, pattern: str, replacement: str, *, label: str, flag
     return out
 
 
-def _set_state(info: PatchInfo) -> list[Path]:
+def _set_state(info: PatchInfo, *, target_state: str = "validated") -> list[Path]:
     changed: list[Path] = []
     toml_path = info.root / "patch.toml"
     py_path = info.root / "patch.py"
@@ -144,7 +144,7 @@ def _set_state(info: PatchInfo) -> list[Path]:
     text = _replace_once(
         text,
         r'(?m)^state[ \t]*=[ \t]*"[^"]+"[ \t]*$',
-        'state = "validated"',
+        f'state = "{target_state}"',
         label=f"{info.patch_id}/patch.toml state",
     )
     toml_path.write_text(text, encoding="utf-8", newline="\n")
@@ -158,7 +158,7 @@ def _set_state(info: PatchInfo) -> list[Path]:
             text = _replace_once(
                 text,
                 r'(?m)^STATE[ \t]*=[ \t]*"[^"]+"[ \t]*$',
-                'STATE = "validated"',
+                f'STATE = "{target_state}"',
                 label=f"{info.patch_id}/patch.py STATE",
             )
             py_path.write_text(text, encoding="utf-8", newline="\n")
@@ -168,7 +168,7 @@ def _set_state(info: PatchInfo) -> list[Path]:
     text = _replace_once(
         text,
         r"(?m)^\*\*Status:\*\*[ \t]+\S+[ \t]*$",
-        "**Status:** validated",
+        f"**Status:** {target_state}",
         label=f"{info.patch_id}/SUMMARY.md status",
     )
     summary_path.write_text(text, encoding="utf-8", newline="\n")
@@ -255,16 +255,17 @@ def _summary_paragraph(info: PatchInfo) -> str:
     return match.group(1).strip() if match else f"{info.patch_id}: see SUMMARY.md."
 
 
-def _write_promotion_record(info: PatchInfo, evidence: str) -> Path:
+def _write_promotion_record(info: PatchInfo, evidence: str, *, diagnostic: bool = False) -> Path:
     """Record the promotion evidence in the package README, keeping the README layout every package doc has
     (## Summary, ## Outcome, ## Detail; tools/tests/test_docs_catalog.py): a new README is created in that layout,
     an existing one gets the record appended under its Detail section."""
     readme = info.root / "README.md"
-    record = f"### Promotion record\n\n{evidence.strip()}\n"
+    target = "Diagnostic" if diagnostic else "Validated"
+    record = f"### Promotion record\n\nTier: {profile_evidence.DIAGNOSTIC_TIER if diagnostic else profile_evidence.TIER}\n\n{evidence.strip()}\n"
     if not readme.is_file():
         readme.write_text(
             f"# {info.patch_id}\n\n## Summary\n\n{_summary_paragraph(info)}\n\n## Outcome\n\n"
-            f"Validated on the promotion evidence below.\n\n## Detail\n\n{record}",
+            f"{target} on the promotion evidence below.\n\n## Detail\n\n{record}",
             encoding="utf-8", newline="\n",
         )
         return readme
@@ -276,7 +277,7 @@ def _write_promotion_record(info: PatchInfo, evidence: str) -> Path:
         title, _, body = existing.partition("\n")
         title = title if title.startswith("# ") else f"# {info.patch_id}"
         existing = (f"{title}\n\n## Summary\n\n{_summary_paragraph(info)}\n\n## Outcome\n\n"
-                    f"Validated on the promotion evidence below.\n\n## Detail\n\n{body.strip()}\n")
+                    f"{target} on the promotion evidence below.\n\n## Detail\n\n{body.strip()}\n")
     readme.write_text(existing.rstrip() + "\n\n" + record, encoding="utf-8", newline="\n")
     return readme
 
@@ -302,7 +303,7 @@ def _refresh_generated_docs(root: Path, engine: str) -> list[Path]:
     return [readme, *(c for c in catalogs if c.is_file())]
 
 
-def _replace_section_patches(text: str, section: str, patches: Iterable[str], recipes: str) -> str:
+def _replace_section_patches(text: str, section: str, patches: Iterable[str], recipes: str, *, field: str = "patches") -> str:
     section_re = re.compile(
         rf"(?ms)(^\[{re.escape(section)}\]\s*\n)(.*?)(?=^\[|\Z)"
     )
@@ -312,19 +313,19 @@ def _replace_section_patches(text: str, section: str, patches: Iterable[str], re
     body = match.group(2)
     rendered_items = list(patches)
     if len(rendered_items) <= 1:
-        rendered = "patches = [" + ", ".join(json.dumps(x) for x in rendered_items) + "]"
+        rendered = f"{field} = [" + ", ".join(json.dumps(x) for x in rendered_items) + "]"
     else:
-        rendered = "patches = [\n" + "".join(
+        rendered = f"{field} = [\n" + "".join(
             f"  {json.dumps(x)},\n" for x in rendered_items
         ) + "]"
     new_body, count = re.subn(
-        r"(?ms)^patches\s*=\s*\[.*?\]",
+        rf"(?ms)^{re.escape(field)}\s*=\s*\[.*?\]",
         rendered,
         body,
         count=1,
     )
     if count != 1:
-        raise PatchPromoteError(f"{recipes}: [{section}] has no patches array")
+        raise PatchPromoteError(f"{recipes}: [{section}] has no {field} array")
     return text[: match.start(2)] + new_body + text[match.end(2) :]
 
 
@@ -468,12 +469,13 @@ def _check_command(root: Path, args: list[str], label: str) -> None:
         raise PatchPromoteError(f"{label} failed:\n{detail[-1600:]}")
 
 
-def _run_checks(root: Path, layout: engines.EngineLayout, infos: tuple[PatchInfo, ...]) -> None:
+def _run_checks(root: Path, layout: engines.EngineLayout, infos: tuple[PatchInfo, ...], *, diagnostic: bool = False) -> None:
     for info in infos:
         package_test = root / "tools" / "tests" / "patch" / f"test_{info.patch_id}.py"
         if package_test.is_file():
             _check_command(root, [sys.executable, str(package_test)], f"{info.patch_id} tests")
-        _check_command(
+        if not diagnostic:
+            _check_command(
             root,
             [
                 sys.executable,
@@ -539,7 +541,7 @@ def _is_default_on(info: PatchInfo) -> bool:
 
 
 def _profile_evidence(root: Path, layout: engines.EngineLayout, info: PatchInfo,
-                      evidence: str) -> profile_evidence.ProfileEvidence:
+                      evidence: str, *, diagnostic: bool = False) -> profile_evidence.ProfileEvidence:
     """The lightweight promotion record for a patch, recording the current pin and its implementation's digest.
 
     Built after any default flip, so the digest is the one of the implementation that is promoted.
@@ -549,30 +551,77 @@ def _profile_evidence(root: Path, layout: engines.EngineLayout, info: PatchInfo,
         patch_id=info.patch_id,
         pinned=pinned,
         subject_digest=patch_evidence.patch_validation_subject_digest(info.root / "patch.py"),
-        default_on=_is_default_on(info),
-        models=_model_names(evidence),
-        checks=_evidence_checks(evidence),
+        default_on=False if diagnostic else _is_default_on(info),
+        models=() if diagnostic else _model_names(evidence),
+        checks=({key: value for key, value in _evidence_checks(evidence).items()
+                 if key in profile_evidence.DIAGNOSTIC_CHECKS}
+                if diagnostic else _evidence_checks(evidence)),
+        tier=profile_evidence.DIAGNOSTIC_TIER if diagnostic else profile_evidence.TIER,
     )
     lacking = profile_evidence.problems(record)
     if lacking:
-        raise PatchPromoteError(
-            f"{info.patch_id}: the evidence file does not meet the profile-evidence tier: " + "; ".join(lacking)
-            + ". It needs 'Model:', 'Mechanics:', 'Activation:', 'Identity:' and 'A/B:' lines, and for a "
+        guidance = (
+            "It needs only 'Mechanics:' and 'Activation:' lines (patch tests, lint and a marker/count)."
+            if diagnostic else
+            "It needs 'Model:', 'Mechanics:', 'Activation:', 'Identity:' and 'A/B:' lines, and for a "
             "default-on patch a 'No-regression:' line and a second 'Model:' line."
+        )
+        raise PatchPromoteError(
+            f"{info.patch_id}: the evidence file does not meet the {record.tier} tier: "
+            + "; ".join(lacking) + ". " + guidance
         )
     return record
 
 
-def _preflight(root: Path, layout: engines.EngineLayout, infos: tuple[PatchInfo, ...]) -> None:
+def _preflight(root: Path, layout: engines.EngineLayout, infos: tuple[PatchInfo, ...], *, diagnostic: bool = False) -> None:
     """Promotion gates for each patch, against a rebase report made now for exactly that patch over production."""
+    recipes = tomllib.loads(layout.recipes_path(root).read_text(encoding="utf-8"))
     for info in infos:
+        source = layout.promotion_source
+        overlay = True
+        if diagnostic:
+            candidates = [
+                name for name, config in recipes.get("source", {}).items()
+                if config.get("class") == "diagnostic"
+            ]
+            if not candidates:
+                raise PatchPromoteError("no declared diagnostic source for this engine")
+            source = next(
+                (name for name in candidates if any(
+                    info.patch_id in recipes["patch-set"][set_name]["patches"]
+                    for set_name in recipes["source"][name]["patch-sets"]
+                )), candidates[0]
+            )
+            overlay = not any(
+                info.patch_id in recipes["patch-set"][set_name]["patches"]
+                for set_name in recipes["source"][source]["patch-sets"]
+            )
+        if diagnostic:
+            # Confirm mechanics and repository lint BEFORE G5, rather than
+            # trusting only the declarative evidence text.
+            tests_root = root / "tools" / "tests" / "patch"
+            mechanics_tests = tuple(path for path in (
+                tests_root / f"test_{layout.name}_patch_packages.py",
+                tests_root / f"test_{layout.name}_{info.patch_id.split('_', 1)[0]}.py",
+                tests_root / f"test_{info.patch_id}.py",
+            ) if path.is_file())
+            if not mechanics_tests:
+                raise PatchPromoteError(f"{info.patch_id}: diagnostic mechanics test is missing")
+            _check_command(
+                root, ["pytest", "-q", *(str(path) for path in mechanics_tests)],
+                f"{info.patch_id} mechanics",
+            )
+            _check_command(
+                root, [sys.executable, "-m", "bigcherry", "patch-lint"],
+                f"{info.patch_id} repository lint",
+            )
         report = root / "artifacts" / "patch-promote" / f"{info.patch_id}-rebase.json"
         report.parent.mkdir(parents=True, exist_ok=True)
         _check_command(
             root,
             [
                 sys.executable, "-m", "bigcherry", "--engine", layout.name, "patch-rebase-check",
-                "--source", layout.promotion_source, "--focal-overlay", info.patch_id, "--json", str(report),
+                "--source", source, *(("--focal-overlay", info.patch_id) if overlay else ()), "--json", str(report),
             ],
             f"{info.patch_id} rebase check over production",
         )
@@ -589,14 +638,73 @@ def _preflight(root: Path, layout: engines.EngineLayout, infos: tuple[PatchInfo,
                 "--intent",
                 "promote",
                 "--source",
-                layout.promotion_source,
-                "--focal-overlay",
+                source,
+                *(("--focal-overlay",) if overlay else ()),
+                *(("--diagnostic",) if diagnostic else ()),
                 "--no-legacy-grandfather",
                 "--rebase-report",
                 str(report),
             ],
             f"{info.patch_id} promotion gates",
         )
+
+
+def _update_diagnostic_recipes(root: Path, layout: engines.EngineLayout,
+                               patch_ids: tuple[str, ...]) -> Path:
+    """Keep each patch set's exact required-state after diagnostic promotion.
+
+    A set may still contain untested patches, so isolate promoted members in
+    single-patch diagnostic sets and add them to the same diagnostic sources.
+    """
+    path = layout.recipes_path(root)
+    text = path.read_text(encoding="utf-8")
+    original = tomllib.loads(text)
+    sets = original.get("patch-set", {})
+    sources = original.get("source", {})
+    for patch_id in patch_ids:
+        containing = [name for name, data in sets.items() if patch_id in data["patches"]]
+        owners = [
+            name for name, data in sources.items()
+            if any(set_name in data["patch-sets"] for set_name in containing)
+        ]
+        if not owners:
+            raise PatchPromoteError(f"{patch_id}: must already belong to a diagnostic source")
+        for owner in owners:
+            if sources[owner].get("class") != "diagnostic":
+                raise PatchPromoteError(f"{patch_id}: non-diagnostic source {owner!r} selects it")
+        new_set = patch_id.split("_", 1)[0] + "-diagnostic"
+        if new_set in sets:
+            raise PatchPromoteError(f"{patch_id}: diagnostic patch set {new_set!r} already exists")
+        for name in containing:
+            text = _remove_section_patches(text, f"patch-set.{name}",
+                sets[name]["patches"], (patch_id,), layout.recipes)
+        section = (
+            f"[patch-set.{new_set}]\n"
+            f"patches = [{json.dumps(patch_id)}]\n"
+            'required-state = "diagnostic"\n\n'
+        )
+        # Insert before the first source so patch sets stay grouped.
+        first_source = re.search(r"(?m)^\[source\.", text)
+        if first_source is None:
+            raise PatchPromoteError(f"{layout.recipes}: no source definitions")
+        text = text[:first_source.start()] + section + text[first_source.start():]
+        for owner in owners:
+            patch_sets = sources[owner]["patch-sets"]
+            text = _replace_section_patches(
+                text, f"source.{owner}", (*patch_sets, new_set),
+                layout.recipes, field="patch-sets",
+            )
+            sources[owner]["patch-sets"] = (*patch_sets, new_set)
+    rendered = tomllib.loads(text)
+    for patch_id in patch_ids:
+        new_set = patch_id.split("_", 1)[0] + "-diagnostic"
+        if (
+            rendered["patch-set"][new_set]["patches"] != [patch_id]
+            or rendered["patch-set"][new_set]["required-state"] != "diagnostic"
+        ):
+            raise PatchPromoteError(f"{layout.recipes}: diagnostic set {new_set!r} was not preserved")
+    path.write_text(text, encoding="utf-8", newline="\n")
+    return path
 
 
 def _snapshot(paths: Iterable[Path]) -> dict[Path, bytes | None]:
@@ -702,26 +810,33 @@ def promote(
     default_on: bool = False,
     profile_only: bool = False,
     release: bool = False,
+    diagnostic: bool = False,
 ) -> PromotionResult:
     root = root.resolve()
     layout = _layout(root, engine)
     if not patch_ids:
         raise PatchPromoteError("at least one patch id is required")
     _, evidence = _read_evidence(evidence_spec)
-    if not profile_only and len(_named_models(evidence)) < 2:
+    if diagnostic and (default_on or release or profile_only):
+        raise PatchPromoteError(
+            "--diagnostic cannot be combined with --default-on, --release or --profile-only"
+        )
+    if not diagnostic and not profile_only and len(_named_models(evidence)) < 2:
         raise PatchPromoteError(
             "promotion requires evidence with at least two distinct "
             "'Model:' or 'Model-ID:' lines; use --profile-only only for "
             "an explicitly profile-scoped promotion"
         )
     infos = tuple(_load_patch(root, layout, patch_id) for patch_id in patch_ids)
-    if all(info.state == "validated" for info in infos):
+    if diagnostic and any(info.state not in {"untested", "evaluated"} for info in infos):
+        raise PatchPromoteError("--diagnostic accepts only untested or evaluated patches")
+    if not diagnostic and all(info.state == "validated" for info in infos):
         if not release:
             raise PatchPromoteError("all requested patches are already validated")
         bump = "minor" if any(i.kind == "enhancement" for i in infos) else "patch"
         _finish_release_if_ready(root, layout, bump)
         return PromotionResult("", _title(infos)[1], "", (), release_pending=True)
-    if any(info.state == "validated" for info in infos):
+    if not diagnostic and any(info.state == "validated" for info in infos):
         raise PatchPromoteError("cannot batch already-validated and unvalidated patches")
 
     if _git(root, "status", "--porcelain"):
@@ -734,7 +849,7 @@ def promote(
         raise PatchPromoteError("local main must exactly match origin/main")
 
     for info in infos:  # fail on an incomplete evidence file before anything is created
-        _profile_evidence(root, layout, info, evidence)
+        _profile_evidence(root, layout, info, evidence, diagnostic=diagnostic)
     branch = _branch_name(infos)
     from ..cli.slice import start_slice
 
@@ -751,20 +866,26 @@ def promote(
         for info in work_infos:
             if default_on:
                 changed.extend(_promote_default_on(info, evidence))
-            changed.append(profile_evidence.write(info.root, _profile_evidence(worktree, layout, info, evidence)))
-        _preflight(worktree, layout, work_infos)
+            changed.append(profile_evidence.write(info.root, _profile_evidence(worktree, layout, info, evidence, diagnostic=diagnostic)))
+        _preflight(worktree, layout, work_infos, diagnostic=diagnostic)
         for info in work_infos:
-            changed.extend(_set_state(info))
-            changed.append(_write_promotion_record(info, evidence))
-            changed.append(_write_release_evidence(worktree, info, evidence))
-        changed.append(_update_recipes(worktree, layout, patch_ids))
+            changed.extend(_set_state(info, target_state="diagnostic" if diagnostic else "validated"))
+            changed.append(_write_promotion_record(info, evidence, diagnostic=diagnostic))
+            if not diagnostic:
+                changed.append(_write_release_evidence(worktree, info, evidence))
+        changed.append(
+            _update_diagnostic_recipes(worktree, layout, patch_ids)
+            if diagnostic else _update_recipes(worktree, layout, patch_ids)
+        )
         changed.extend(_refresh_generated_docs(worktree, layout.name))
-        _run_checks(worktree, layout, work_infos)
+        _run_checks(worktree, layout, work_infos, diagnostic=diagnostic)
     except Exception:
         _discard_promotion_slice(root, worktree, branch)
         raise
 
     prefix, title = _title(work_infos)
+    if diagnostic:
+        prefix, title = "fix", f"fix(patch): classify {', '.join(patch_ids)} as diagnostic"
     relative = tuple(
         sorted({str(path.resolve().relative_to(worktree)).replace("\\", "/") for path in changed})
     )
@@ -784,6 +905,20 @@ def promote(
         "## Could not verify\n\n"
         "- hardware measurements were not rerun; the supplied evidence is recorded verbatim in the patch README.\n"
     )
+    if diagnostic:
+        pr_body = (
+            "## What this slice does\n\n"
+            f"Classifies {', '.join(patch_ids)} as diagnostic (not validated). "
+            "Records mechanics and emitted activation marker evidence, and "
+            "restricts the packages to diagnostic-class sources and experiments. "
+            "No production patch set or performance claim changes.\n\n"
+            "## Verified\n\n"
+            "- offline patch mechanics tests and patch-lint\n"
+            "- diagnostic G0-G5 qualification\n"
+            "- catalog, governance and recipe checks\n\n"
+            "## Not verified\n\n"
+            "- no GPU or performance/identity campaigns were run\n"
+        )
     made = _run(
         worktree,
         "gh",
@@ -828,6 +963,7 @@ def cmd_patch_promote(args) -> int:
             default_on=args.default_on,
             profile_only=args.profile_only,
             release=args.release,
+            diagnostic=args.diagnostic,
         )
     except PatchPromoteError as exc:
         print(f"patch-promote: {exc}", file=sys.stderr)

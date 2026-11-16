@@ -106,7 +106,7 @@ bool load_replay(const char* path, ReplayInput* out) {
 
 int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& owned,
                  uint32_t layer, uint32_t rows, const SmallClasses& classes, uint32_t lane_large_rows,
-                 bool synthetic_protect) {
+                 bool synthetic_protect, uint64_t manifest_digest) {
     /* the request is built for the model's own shape (the lane checks every request against it) */
     const uint32_t hid = gpu.shape_.hidden, topk = gpu.shape_.top_k;
     if (g_replay) {  // a captured real request replaces the synthetic layer, rows, routes and activations
@@ -233,7 +233,8 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
     PlacementControl active{};
     const char* bootstrap_error = nullptr;
     if (!r3::epoch::prepare_compare_bootstrap(
-            map, model.layers, shape, owned, layer, runtime_slot.data(),
+            map, lay.bytes, manifest_digest ? manifest_digest : shape_hash(shape),
+            model.layers, shape, owned, layer, runtime_slot.data(),
             classes.count, classes.rows.data(),
             [&](uint32_t l, const int32_t* slots) {
                 return gpu.load_layer(l, owned.expert, slots);
@@ -257,7 +258,7 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
     }
     /* One full-width request: the helper never computes a TP slice (RAD49), whatever the engine's width. The compare
      * segment is a one-rank segment, so the lanes check requests against world 1. */
-    if (!gpu.set_engine_world(h->rank_count)) {
+    if (!gpu.set_engine_world(h->rank_count, h->helper_count)) {
         std::fprintf(stderr, "r3_moe_worker: --compare segment engine width %u is invalid\n", h->rank_count);
         munmap(map, lay.bytes);
         return 1;
@@ -292,7 +293,7 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
     bool bad = false;
     constexpr uint32_t sequence = 1;
     for (const uint32_t rank : {0u}) {   /* the one request: slot 0, consumer 0 of a one-rank segment */
-        const uint32_t lane = lane_of(rank, step_class(h, rows));
+        const uint32_t lane = lane_of(rank, step_class(h, rows), h->slot_count);
         Request* q = lane_request(map, lane, sequence);
         q->completion_sequence = 0;
         q->status = 0;
@@ -312,10 +313,8 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
         q->activation_stride = hid * sizeof(uint16_t);
         q->activation_q_stride = hid;
         q->activation_s_stride = (hid / kActGroup) * sizeof(float);
-        for (uint32_t r = 0; r < kMaxEngineRanks; ++r) {
-            q->result_offset[r] = h->result_offset[result_index(rank, r)];
-            q->result_stride[r] = hid * sizeof(uint16_t);
-        }
+        q->result_offset = h->result_offset[rank];
+        q->result_stride = hid * sizeof(uint16_t);
         if (!r3::epoch::bind_compare_request(map, q, active)) {
             std::fprintf(stderr, "r3_moe_worker: --compare rank %u refused unsealed generation\n", rank);
             bad = true;
@@ -339,7 +338,7 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
 
         /* Queue the production lane before publishing the sequence, as the service worker does. */
         const int erc = gpu.enqueue_lane(map, dev_map, lane, sequence,
-                                         lane_is_small(lane) ? h->small_class_rows[lane_class(lane)] : rows, false);
+                                         lane_is_small(lane, h->slot_count) ? h->small_class_rows[lane_class(lane, h->slot_count)] : rows, false);
         if (erc != 0) {
             std::fprintf(stderr, "r3_moe_worker: --compare lane rank %u enqueue failed rc=%d\n",
                          rank, erc);

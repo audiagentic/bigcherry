@@ -24,9 +24,9 @@ struct Fixture {
     void* base = nullptr;
     uint64_t digest[2]{};
     Fixture() {
-        check(layout_for(shape, 2, slots_for(2, 1), &l), "shape layout");
+        check(v26::layout_for(shape, 2, {2,1}, &l) == Refusal::None, "shape layout");
         base = mmap(nullptr, l.bytes, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-        check(base != MAP_FAILED && init(base, 2, shape, 2, 1), "initialize shared segment");
+        check(base != MAP_FAILED && v26::init(base, l.bytes, shape, 2, {2,1}, 0x0A137E57ULL) == Refusal::None, "initialize shared segment");
         static_cast<Header*>(base)->helper_count = 2; /* helper bootstrap publication */
         uint8_t* b = generation_map(base, 1);
         struct Selected { std::vector<std::pair<uint32_t,uint32_t>> expert; };
@@ -103,10 +103,10 @@ static void V23EngineOwners_NoStepMixesGenerations() {
 static void V23EngineOwners_NonByteAlignedHelperStrides() {
     const LayoutShape shape{128,3,5,8,128,64};
     Layout layout{};
-    check(layout_for(shape,3,slots_for(3, 1),&layout),"odd bitmap layout");
+    check(v26::layout_for(shape,3,{3,1},&layout) == Refusal::None,"odd bitmap layout");
     void* map=mmap(nullptr,layout.bytes,PROT_READ|PROT_WRITE,
                    MAP_PRIVATE|MAP_ANONYMOUS,-1,0);
-    check(map!=MAP_FAILED && init(map,3,shape,3, 1),"odd bitmap segment");
+    check(map!=MAP_FAILED && v26::init(map,layout.bytes,shape,3,{3,1},0x0A137E57ULL) == Refusal::None,"odd bitmap segment");
     auto* h=static_cast<Header*>(map);
     h->helper_count=3;
     struct Selected { std::vector<std::pair<uint32_t,uint32_t>> expert; };
@@ -215,10 +215,10 @@ static void V23EngineOwners_RetirementUnlocksUpload() {
 static void V23EngineOwners_MeasuringStartWaitsForFinalSeal() {
     const LayoutShape shape{128, 2, 3, 8, 128, 64};
     Layout layout{};
-    check(layout_for(shape, 2, slots_for(3, 1), &layout), "startup segment layout");
+    check(v26::layout_for(shape,2,{3,1},&layout) == Refusal::None, "startup segment layout");
     void* map = mmap(nullptr, layout.bytes, PROT_READ | PROT_WRITE,
                      MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-    check(map != MAP_FAILED && init(map, 2, shape, 3, 1), "startup init");
+    check(map != MAP_FAILED && v26::init(map,layout.bytes,shape,2,{3,1},0x0A137E57ULL) == Refusal::None, "startup init");
     auto* h = static_cast<Header*>(map);
     h->helper_count = 3; // helper 0 publishes this last before engine registration
 

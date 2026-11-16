@@ -148,3 +148,11 @@ has been proved. **Defer loader implementation/promotion until
 optimised all-INT8 dispatch and cross-device numerical/transport
 are measured.** Preserve the static XDP10 artifact plan as a
 separate eventual option. See VTP12 hardware receipt matrix.
+
+## 2026-11-16 Q6 and high-precision retention gate
+
+**Retain the current source-precision exceptions, not entire BF16/F16 layers by default.** The W8A8 27B recipe leaves GDN a/b, norms, embedding and vision tensors at source BF16; output normalization is declared FP32. Actual RAD2 tensor encodings must be inventoried for each variant. F16 replacement is only an experiment after explicit numeric range and accuracy validation.
+
+First evaluate Radiance's existing sensitivity-allocated `q38-27b-iq6r-v4.recipe` (mixed 6/7-bit IQR projection/layer-band choices and special vocabulary head) against the same-source W8A8 and MXFP4 controls. Do not conflate generic GGUF Q6_K import with native IQR serving. Complete representative 64-layer BF16 calibration first (VTP06/VTP11); a first-layer smoke is insufficient. VTP09's gfx1100 microkernel tests are not an end-to-end TP3 gate. No IQ6R .rad artifact was found in the local Radiance inventory during this audit.
+
+Only after a real IQ6R baseline passes should XDP03 propose *minimal* BF16/F16 projection promotions guided by held-out BF16-reference KL/top-1/PPL and per-layer errors. XDP10 must reject any variant without converter `--plan-only` and resolved kernel/layout evidence on libr3/libr4d, correct activation producer/consumer ABI, same-layer TP-shard agreement, original checkpoint provenance, VRAM/KV accounting, and matched full-service performance. Do not assume `qwen35_w8a8` supports arbitrary mixed activation formats, do not duplicate unused variants in VRAM, and do not silently fall back. Whole-BF16 layers are an expensive negative control only. Defer new bit-allocation machinery and the heterogeneous loader until these gates and VTP12/VTP14 transport/graph proof.

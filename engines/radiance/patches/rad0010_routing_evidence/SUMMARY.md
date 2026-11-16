@@ -1,6 +1,6 @@
 # rad0010_routing_evidence
 
-**Status:** untested
+**Status:** diagnostic
 **Plan item:** RHP01
 
 ## Summary
@@ -9,7 +9,7 @@ Opt-in counters at the engine's existing per-layer routing-histogram producer an
 
 ## Outcome
 
-untested as a package on a card, but measured on the production four-GPU layout (RHP01): across decode, a 6-stream soak, 8K and 32K prefills and four concurrent 8K prefills at chunk sizes 2048 and 4096, every histogram was credited (0 overwritten, no engine drops, credit delay p50 1 and p95 2 steps) at no measurable decode cost (24.58 ms/step against 24.6).
+diagnostic (not production-qualified): measured on the production four-GPU layout (RHP01): across decode, a 6-stream soak, 8K and 32K prefills and four concurrent 8K prefills at chunk size 2048, every histogram was credited (0 overwritten, no engine drops, credit delay p50 1 and p95 2 steps) at no measurable decode cost (24.58 ms/step against 24.6).
 
 ## 2026-11-11 card-free follow-up
 
@@ -28,4 +28,4 @@ The existing device-to-host histogram is the only data producer. No new GPU tran
 
 HeatEngine still receives the existing histogram and exact `last_histogram_reports` multiplicity. If HeatEngine is static/deterministic/all-resident and `--expert-stats` is absent, an opt-in diagnostic-only drain calls the same `next_histogram`/ `mark_credited` methods without enabling adaptation or creating a collector. If `--expert-stats` is enabled, Radiance's normal shutdown drain applies the last landed rows before this report. Outputs are rank-local; do not sum identical mirrored tensor-parallel histograms into model-global totals.
 
-**Important limitations:** No GPU reproduction has been run. A 32-bank ring is lossy on sustained run-ahead; the new counters classify loss rather than prevent it. Rows can also be destroyed when a contiguous DMA [lo,hi] overwrites an unchanged layer's older bank. Step 4's possible bounded staging/retirement/backpressure is explicitly deferred. This package is not promoted to production or accepted as a source for remote-owner placement until hardware coverage, quality and performance are measured.
+**Important limitations:** No GPU reproduction on the current v1.17 pin has been run (the cited RHP01 diagnostic run was v1.16.0). A 32-bank ring is lossy on sustained run-ahead; the new counters classify loss rather than prevent it. Rows can also be destroyed when a contiguous DMA [lo,hi] overwrites an unchanged layer's older bank. Step 4's possible bounded staging/retirement/backpressure is explicitly deferred. This package is not promoted to production or accepted as a source for remote-owner placement until hardware coverage, quality and performance are measured.

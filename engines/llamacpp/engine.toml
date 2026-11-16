@@ -31,6 +31,7 @@ binary = "bin/llama-bench"
 [promotion]
 patch-set = "validated-enhancements"
 source = "bigcherry"
+source-states = "exempt"
 
 [release]
 version-source = "build-tag"

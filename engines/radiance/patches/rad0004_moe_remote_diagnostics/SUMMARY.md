@@ -1,6 +1,6 @@
 # rad0004_moe_remote_diagnostics
 
-**Status:** untested
+**Status:** diagnostic
 **Plan item:** MEN12
 
 ## Summary
@@ -9,7 +9,7 @@ Shadow-compare and mask-only diagnostics for the MoE remote hand-off, diagnostic
 
 ## Outcome
 
-untested: diagnostic-only, never in a production source.
+diagnostic: diagnostic-class sources and experiments only; no current-pin hardware run is claimed.
 
 ## Detail
 
@@ -26,7 +26,7 @@ The package creates `arch/common/bc_moe_remote_diag.h` (it `#error`s without `BC
 
 ## Build and recipes
 
-The macro is defined by `build.moe-diag` (`CMAKE_CXX_FLAGS=-DBC_MOE_REMOTE_DIAG`, which reaches the engine core and the arch plugins); the source is `radiance-diag` (the production patch sets plus `moe-remote-diag` = rad0002 + rad0004). `patch.toml` declares `diagnostic-build = "BC_MOE_REMOTE_DIAG"`, and patch-lint fails if this package enters any source, patch set or experiment whose name does not end `-diag`.
+The macro is defined by `build.moe-diag` (`CMAKE_CXX_FLAGS=-DBC_MOE_REMOTE_DIAG`, which reaches the engine core and the arch plugins); the source is `radiance-diag` (validated production patches plus `moe-remote-diag` containing rad0004; rad0002 is in serving-core). Patch-lint admits `diagnostic` only to declared diagnostic-class sources and experiments, regardless of recipe names. The macro still controls compilation.
 
 ## Why
 
@@ -34,7 +34,7 @@ The diagnostics were part of rad0002 on 1.3.0 (about 70 lines of core code). Pro
 
 ## Evidence
 
-Ported from the 1.3.0-era rad0002 shadow and mask-only edits, which were used to localise helper/engine disagreement (Flash-Next layers with protected experts; helper vs engine rel_l2 0.0011 at acceptance, RAD09). Not re-run on 1.7.0: no build or GPU run has exercised this port, so the package is `untested`. Only text-level application against the 1.7.0 fixtures is checked.
+Ported from the 1.3.0-era rad0002 shadow and mask-only edits, which were used to localise helper/engine disagreement (Flash-Next layers with protected experts; helper vs engine rel_l2 0.0011 at acceptance, RAD09). Not re-run on the current v1.17.0 pin: no build or GPU run has exercised this port. The diagnostic state cites historical 1.3-era activation; only card-free mechanics are checked for the port.
 
 ## Upstream
 

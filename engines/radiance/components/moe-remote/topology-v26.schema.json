@@ -1,0 +1,9 @@
+{
+  "wire_version": 26,
+  "owner_id_bits": 8,
+  "combine_mask_bits": 8,
+  "participant_mask_bits": 32,
+  "count_bits": 32,
+  "lane_classes": 5,
+  "ring_slots": 4
+}

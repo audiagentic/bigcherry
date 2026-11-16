@@ -518,6 +518,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="allow profile-scoped promotion evidence without a second model line",
     )
     patch_promote_cmd.add_argument(
+        "--diagnostic",
+        action="store_true",
+        help="qualify diagnostics on mechanics and activation only, without production admission",
+    )
+    patch_promote_cmd.add_argument(
         "--release",
         action="store_true",
         help="finish the release-please release when its PR exists; otherwise report pending",
@@ -593,6 +598,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--all-report",
         metavar="PATH",
         help="all-patches PA16 report used by the G6 disposition-coverage gate",
+    )
+    patch_gates_cmd.add_argument(
+        "--diagnostic",
+        action="store_true",
+        help="evaluate PROMOTE for diagnostic rather than validated lifecycle target",
     )
     patch_gates_cmd.add_argument(
         "--no-legacy-grandfather",

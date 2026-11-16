@@ -166,8 +166,8 @@ int main(int argc, char** argv) {
         plain.shares = "0,0";
         assert(!bc::experts::select_owned(f, plain, "gfx1100", true, layout, none, 0, 2, &own) && !layout_called);
         assert(!bc::experts::select_owned(f, plain, "gfx1100", true, layout, two, 0, 2, &own) && layout_called);
-        // more helpers than the runtime protocol holds
-        std::vector<bc::experts::OwnerPolicy> many(r3::moe_shm::kMaxHelpers + 1, policy("w4nl64"));
+        // more helpers than the uint8 combine contributor mask holds
+        std::vector<bc::experts::OwnerPolicy> many(r3::moe_shm::kCombineMaskBits + 1, policy("w4nl64"));
         assert(!bc::experts::plan_owners(f, many, std::vector<std::string>(many.size(), "gfx1100"),
                                          std::vector<uint64_t>(many.size(), 4 * e), &map, &why));
     }

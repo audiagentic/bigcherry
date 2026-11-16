@@ -28,7 +28,9 @@ no Python schema, shell launcher parser, or process starting.
 Build with `-DCMAKE_PREFIX_PATH=<installed radiance>` and
 `-DRADIANCE_SRC=<radiance source>`; build `bc-serve bc_serving_test`
 then run `ctest --output-on-failure`. Tests are CPU-only, including a
-synthetic KFD/PCI/proc/sysfs tree and launcher-value parity.
+synthetic KFD/PCI/proc/sysfs tree and launcher-value parity. ctest sets `BIGCHERRY_LAYOUTS` to the
+repository's `engines/radiance/layouts`; run `bc_serving_test` directly with the same variable set, or the
+layout cases fail with "no layout definitions".
 
 Commands: `--detect [--json]`, `--schema`, `--validate <site> [profile]`,
 `--explain [--json]`, `--write-manifest OUT` (the serving manifest v1; with `--plan-cache` and `--engine-binary`,

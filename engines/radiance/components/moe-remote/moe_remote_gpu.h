@@ -17,6 +17,7 @@
 #include "worker_generation_tables.h"
 #include "worker_footprint.h"
 #include <memory>
+#include <deque>
 #include "rad_abi_layout.h"
 
 namespace r3_moe_gpu {
@@ -175,9 +176,12 @@ public:
         return !shape_.hidden || set_shape(shape_);
     }
     /* The engine width of the segment this runner serves (Header::rank_count), checked on every request at the lane boundary. */
-    bool set_engine_world(uint32_t world) {
-        if (world < 1 || world > r3::moe_shm::kMaxEngineRanks) return false;
+    bool set_engine_world(uint32_t world, uint32_t helpers) {
+        r3::moe_shm::v26::Counts counts{};
+        if (r3::moe_shm::v26::counts_for({helpers, world}, &counts) != r3::moe_shm::Refusal::None) return false;
         lane_shape_.world = world;
+        lane_shape_.slots = counts.slots;
+        lane_.resize(counts.lanes);
         return true;
     }
     bool set_shape(const r3::moe_shm::LayoutShape& s) {
@@ -205,7 +209,7 @@ public:
             }
         }
         shape_ = s;
-        lane_shape_ = LaneShape{s.hidden, s.top_k, s.act_group, s.experts, lane_shape_.world};
+        lane_shape_ = LaneShape{s.hidden, s.top_k, s.act_group, s.experts, lane_shape_.world, lane_shape_.slots};
         return true;
     }
     // Only --replay-sweep calls this method; production never reads RAD46
@@ -545,7 +549,7 @@ public:
     /* Small lanes are sized to their class's rows and pre-queued; the large lane to large_rows, launched per request.
      * `count` small classes are enabled (ascending `sizes`); the other small lanes are left unprepared (cap_rows 0). */
     bool prepare_lanes(const std::array<uint32_t, r3::moe_shm::kSmallClasses>& sizes, uint32_t count, uint32_t large_rows,
-                       const std::array<bool, r3::moe_shm::kLanes>& open,
+                       const std::vector<bool>& open,
                        uint32_t dense_route_slots = 0) {
         using namespace r3::moe_shm;
         if (count == 0 || count > kSmallClasses || large_rows == 0 || large_rows > kMaxRows || !gu_code_dtype_)
@@ -558,13 +562,14 @@ public:
             return false;
         free_before_lanes_ = free_bytes;
         lane_free_sampled_ = true;
+        if (open.size() != lane_.size()) return false;
         class_count_ = count;
         class_rows_ = sizes;
         large_rows_ = large_rows;
         const size_t nclass = experts() / 2;
-        for (uint32_t lane = 0; lane < kLanes; ++lane) {
-            const uint32_t rank = lane % kMaxSlots;
-            const uint32_t cls = lane_class(lane);
+        for (uint32_t lane = 0; lane < lane_.size(); ++lane) {
+            const uint32_t rank = lane % lane_shape_.slots;
+            const uint32_t cls = lane_class(lane, lane_shape_.slots);
             LaneWork& w = lane_[lane];
             /* `open`: lanes that get a stream (a hardware queue); buffers only for an open lane of an enabled class. */
             if (open[lane] && !w.stream &&
@@ -590,7 +595,7 @@ public:
             w.cap_rows = cap;
             if (!ensure_lane_work(w, cap, routes, routes) ||
                 !w.d_stats.ensure(3 * sizeof(uint64_t)) || !w.d_publish_limit.ensure(sizeof(uint32_t)) ||
-                (cls == kSmallClasses && !w.d_chunk_cnt.ensure(kCombineChunks * sizeof(uint32_t))) ||
+                (cls == kSmallClasses && !w.d_chunk_cnt.ensure(((shape_.max_rows + kCombineChunkRows - 1u) / kCombineChunkRows) * sizeof(uint32_t))) ||
                 !hip_ok(hipMemset(w.d_publish_limit.p, 0xff, sizeof(uint32_t)), "lane publish limit"))
                 return false;
             for (uint32_t parity = 0; parity < 2; ++parity) {
@@ -640,9 +645,9 @@ public:
     bool stage_compare_activation(void* host_map, uint32_t lane,
                                   const uint16_t* activation, uint32_t rows) {
         using namespace r3::moe_shm;
-        if (!host_map || !activation || lane >= kLanes || rows == 0 || rows > lane_[lane].cap_rows)
+        if (!host_map || !activation || lane >= lane_.size() || rows == 0 || rows > lane_[lane].cap_rows)
             return false;
-        const uint32_t rank = lane % kMaxSlots;
+        const uint32_t rank = lane % lane_shape_.slots;
         LaneWork& w = lane_[lane];
         const size_t xbytes = (size_t)rows * shape_.hidden * sizeof(uint16_t);
         if (!hip_ok(hipMemcpyAsync(w.d_act.p, activation, xbytes,
@@ -677,10 +682,10 @@ public:
     int enqueue_lane(void* host_map, void* device_map, uint32_t lane, uint32_t sequence,
                      uint32_t rows, bool sample) {
         using namespace r3::moe_shm;
-        if (!host_map || !device_map || lane >= kLanes || sequence == 0 || rows == 0 ||
+        if (!host_map || !device_map || lane >= lane_.size() || sequence == 0 || rows == 0 ||
             rows > lane_[lane].cap_rows)
             return -EINVAL;
-        const uint32_t rank = lane % kMaxSlots;
+        const uint32_t rank = lane % lane_shape_.slots;
         LaneWork& w = lane_[lane];
         auto* hhost = static_cast<Header*>(host_map);
         auto* dbase = static_cast<uint8_t*>(device_map);
@@ -725,7 +730,7 @@ public:
         const uint32_t slots = routes;
         /* R3_MOE_WORKER_FUSEROUTE (default on): the small lane's routing prologue in one block (lane_route_small); 0 keeps
          * the memsets and the four routing kernels. Read each call so a replay sweep can compare. */
-        const bool fuse = lane_is_small(lane) && rows <= 8u && routes <= kFuseMaxRoutes &&
+        const bool fuse = lane_is_small(lane, lane_shape_.slots) && rows <= 8u && routes <= kFuseMaxRoutes &&
                           r3_serving::settings().fuseroute;
         /* No clear of the result slot: it is mapped host memory, and the merge reads only the tokens this
          * request's routes name, each of which the reduction writes. */
@@ -757,7 +762,7 @@ public:
         }
         if (fuse) {
             /* the activation copy is folded into lane_front_small below */
-        } else if (vecio && sparse_act && !lane_is_small(lane)) {
+        } else if (vecio && sparse_act && !lane_is_small(lane, lane_shape_.slots)) {
             if (!hip_ok(hipMemsetAsync(w.d_rowmask.p, 0, rows, w.stream), "clear row mask")) return -EIO;
             hipLaunchKernelGGL(lane_mark_rows, route_grid, block, 0, w.stream,
                                route, q, static_cast<uint8_t*>(w.d_rowmask.p),
@@ -858,14 +863,14 @@ public:
             const int64_t w0 = mid_w();
             const int64_t w1 = mid_w();
             /* Small lane, decode GEMV (RAD05): the step's routes, one block a (row, 64 outputs). */
-            const bool gemv = gemv_ && (lane_is_small(lane) || rows <= gemv_large_rows_);
+            const bool gemv = gemv_ && (lane_is_small(lane, lane_shape_.slots) || rows <= gemv_large_rows_);
             /* R3_MOE_WORKER_ROWS_SMALL (RAD06): the few-rows kernel on the small (decode) lane too. A decode request's 8 rows
              * send ~2.4 routes to each distinct expert (the hot experts are owned by the helpers), and the per-route GEMV
              * reads that expert's weights once a route; here they are read once for all the expert's rows. Read each
              * call so a replay sweep can compare; the rows accumulate in a different order, so it is not bit-exact. */
             const bool rows_small = r3_serving::settings().rows_small &&
-                                    lane_is_small(lane) && rows <= 16u;
-            const bool rowk = (rows_ && !lane_is_small(lane)) || rows_small;
+                                    lane_is_small(lane, lane_shape_.slots) && rows <= 16u;
+            const bool rowk = (rows_ && !lane_is_small(lane, lane_shape_.slots)) || rows_small;
             // Resolve BOTH projection stages before any output writer executes.
             // A post-launch fallback could overwrite a partially written result.
             GemvChoice gu_choice = gemv_geometry::GenericGemm{gemv_geometry::Reason::KernelUnavailable};
@@ -1010,7 +1015,7 @@ public:
                           gp, w.stream, w.scratch) < 0)
                 return -EIO;
 
-            if (gemv_debug_ && weight_format_ == MOE_FMT_W4NL64 && lane_is_small(lane)) {
+            if (gemv_debug_ && weight_format_ == MOE_FMT_W4NL64 && lane_is_small(lane, lane_shape_.slots)) {
                 const auto debug_choice = select_gemv<true>(
                     true, (uint32_t)shape_.hidden, (uint32_t)shape_.hidden,
                     (uint32_t)shape_.act_group, GemvVariant::GenericW4);
@@ -1147,8 +1152,8 @@ public:
                                static_cast<int32_t*>(w.d_inv.p), routes, slots);
         /* R3_MOE_WORKER_COMBINE, chunked (RAD42): the large lane publishes its rows chunk by chunk for helper 0's combine. */
         LaneChunks chunks{nullptr, nullptr, 0u};
-        if (chunk_helper_ < kCombineHelpers && !lane_is_small(lane)) {
-            if (!hip_ok(hipMemsetAsync(w.d_chunk_cnt.p, 0, kCombineChunks * sizeof(uint32_t), w.stream), "lane chunk counters"))
+        if (chunk_helper_ < kCombineMaskBits && !lane_is_small(lane, lane_shape_.slots)) {
+            if (!hip_ok(hipMemsetAsync(w.d_chunk_cnt.p, 0, ((shape_.max_rows + kCombineChunkRows - 1u) / kCombineChunkRows) * sizeof(uint32_t), w.stream), "lane chunk counters"))
                 return -EIO;
             chunks = LaneChunks{static_cast<uint32_t*>(w.d_chunk_cnt.p),
                                 static_cast<uint32_t*>(dev_at(&hhost->chunks[slot_consumer(rank, hhost->rank_count)].seq[chunk_helper_][0])),
@@ -1182,7 +1187,7 @@ public:
                              double* service_us = nullptr, uint64_t* service_rows = nullptr) {
         if (service_us) *service_us = 0;
         if (service_rows) *service_rows = 0;
-        if (lane >= r3::moe_shm::kLanes || !sampled_us || !samples) return false;
+        if (lane >= lane_.size() || !sampled_us || !samples) return false;
         LaneWork& w = lane_[lane];
         if (!w.sample_pending || r3::moe_shm::seq_after(w.sample_sequence, done_sequence))
             return true;
@@ -1229,7 +1234,7 @@ public:
 
     /* Sampled small-lane requests, per stage: activation+routes, gate/up GEMM, gated quant, down GEMM, reduce. */
     void stage_report(uint32_t lane, uint64_t samples) const {
-        if (lane >= r3::moe_shm::kLanes || !samples) return;
+        if (lane >= lane_.size() || !samples) return;
         const LaneWork& w = lane_[lane];
         std::fprintf(stderr, "r3_moe_worker: lane %u stages (us/request): routes %.1f gate_up %.1f quant %.1f "
                      "down %.1f reduce %.1f\n", lane, w.stage_us[0] / samples, w.stage_us[1] / samples,
@@ -1276,13 +1281,13 @@ public:
     }
 
     bool sync_lane(uint32_t lane) {
-        return lane < r3::moe_shm::kLanes &&
+        return lane < lane_.size() &&
                hip_ok(hipStreamSynchronize(lane_[lane].stream), "lane stream sync");
     }
 
     /* RAD20: a sample recorded on a pre-queued wait released at burst end timed no request; forget it. */
     void drop_lane_sample(uint32_t lane) {
-        if (lane < r3::moe_shm::kLanes) lane_[lane].sample_pending = false;
+        if (lane < lane_.size()) lane_[lane].sample_pending = false;
     }
 
     /* RAD20 park: lane_publish_done publishes no sequence above `limit` (the engine's last request) while the lane's
@@ -1290,13 +1295,13 @@ public:
     /* R3_MOE_WORKER_COMBINE (RAD42): this helper's index; its large lane then publishes Header::chunks.seq[k]. */
     void set_chunk_helper(uint32_t k) { chunk_helper_ = k; }
     bool set_publish_limit(uint32_t lane, uint32_t limit) {
-        return lane < r3::moe_shm::kLanes && lane_[lane].d_publish_limit.p &&
+        return lane < lane_.size() && lane_[lane].d_publish_limit.p &&
                hip_ok(hipMemcpy(lane_[lane].d_publish_limit.p, &limit, sizeof(limit), hipMemcpyHostToDevice),
                       "lane publish limit");
     }
 
     bool lane_stats(uint32_t lane, uint64_t out[3]) {
-        if (lane >= r3::moe_shm::kLanes || !out) return false;
+        if (lane >= lane_.size() || !out) return false;
         return hip_ok(hipMemcpy(out, lane_[lane].d_stats.p, 3 * sizeof(uint64_t),
                                 hipMemcpyDeviceToHost), "read lane stats");
     }
@@ -1308,7 +1313,7 @@ private:
     void* so_ = nullptr;
     void (*plugin_close_)() = nullptr;
     bool plugin_opened_ = false;
-    std::array<LaneWork, r3::moe_shm::kLanes> lane_{};
+    std::deque<LaneWork> lane_;
     uint32_t gu_code_dtype_ = 0, gu_scale_dtype_ = 0;
     uint32_t dn_code_dtype_ = 0, dn_scale_dtype_ = 0;
     const RadKernelInfo* moe_ = nullptr;

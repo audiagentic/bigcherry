@@ -1,0 +1,21 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261116_075046_experimental-bf16-key-packed-k_5503",
+  "files": [
+    "engines/radiance/patches/rad0037_bf16_fp8_kv/patch.py",
+    "engines/radiance/patches/rad0038_bf16_i8_kv/patch.py",
+    "engines/radiance/recipes.toml",
+    "engines/radiance/components/libr3/r3_rewrite.py",
+    "engines/radiance/components/libr3/native/r4d_selftest.cpp.rw",
+    "engines/radiance/components/libr3/native/r4d_attn_prefill_h256_gqa6.hip.rw",
+    "engines/radiance/components/serving/contract/serving-v2.toml",
+    "engines/radiance/model_constant_guard.toml"
+  ],
+  "plan-item-ids": [
+    "VTP43"
+  ],
+  "status": "unreleased",
+  "technical-summary": "VTP43: two opt-in packed KV cache types for paged attention, --kv-cache-dtype bf16_fp8 (bf16 K, E4M3 V, 768 B a token and head at head_dim 256) and bf16_i8 (bf16 K, int8 V with an f16 scale per 32 dims, 784 B), as patches rad0037 and rad0038 in the kv-bf16-packed experiment (state untested, not in the production source). Qwen3.8-27B long-corpus KLD against a same-build bf16 reference: fp8 0.00495, bf16_fp8 0.00323, bf16_i8 0.00269 mean; capacity 1.34x and 1.31x bf16; decode and TTFT within 3% of fp8. The per-document p99.9 <= 1 bar is not met (docs with far-repeated exact strings flip under any cache change, bf16 across builds included). libr3's rewrite tool gains `@@ find N or 0` block pairs so gfx1100 native rewrites can anchor on both production and patched text.",
+  "timestamp-utc": "2026-11-16T07:50:46.677958Z",
+  "user-summary-candidate": "Experimental bf16-key packed KV caches (bf16_fp8, bf16_i8) for the radiance engine: about 1.3x the cache capacity of bf16 with long-context quality between bf16 and fp8. Experiment-only until qualified on a second model."
+}

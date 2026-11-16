@@ -1,0 +1,22 @@
+{
+  "change-class": "tests",
+  "event-id": "chg_20261113_221728_measured-that-having-the-cpu-f_4903",
+  "files": [
+    "tools/lab/radiance/hl02-host-attributes/threeway_push.hip",
+    "tools/lab/radiance/hl02-host-attributes/run_threeway.sh",
+    "tools/lab/radiance/hl02-host-attributes/analyse_threeway.py",
+    "tools/lab/radiance/hl02-host-attributes/README.md",
+    "docs/evidence/2026-11-14-hl02-gate-b",
+    "docs/planning/active/run-radiance-host-link/HL02.md",
+    "docs/planning/active/run-dense-27b-virtual-tp/VTP38.md",
+    "docs/reference/tooling/TOOL_DISPOSITION.md"
+  ],
+  "plan-item-ids": [
+    "HL02",
+    "VTP38"
+  ],
+  "status": "unreleased",
+  "technical-summary": "HL02 Gate B lab harness and evidence: concurrent CPU DMA-BUF push vs GPU pull to three cards at 320 KiB-10 MiB, three sessions, every word GPU-verified, 0 errors. Push to the contention-triggering rank with others pulling cuts slowest-card completion 17% at 4-10 MiB and 10% at 1 MiB; concurrent CPU pushers each fall from 10.5 to ~5.5 GB/s, so push-to-all and push-to-pair give no gain. VTP38 revised to a per-rank mixed receive; push-all withdrawn. Producer kernels device-time bounded after an unbounded one hung and wedged a GPU reset.",
+  "timestamp-utc": "2026-11-13T22:17:28.563214Z",
+  "user-summary-candidate": "Measured that having the CPU feed only the card that slows the others is the one host-link transfer layout that helps (17% faster at large sizes); feeding every card from the CPU does not."
+}

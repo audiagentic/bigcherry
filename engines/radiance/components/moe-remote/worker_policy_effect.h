@@ -44,8 +44,10 @@ class LaneServiceSource final : public ServiceSource {
     struct alignas(64) Counter {
         std::atomic<uint64_t> sequence{0}, samples{0}, rows{0}, time_ns{0};
     };
-    std::array<Counter,r3::moe_shm::kLanes> counters_{};
+    std::vector<Counter> counters_;
+    uint32_t slots_;
 public:
+    explicit LaneServiceSource(uint32_t slots) : counters_(size_t(slots) * r3::moe_shm::kClasses), slots_(slots) {}
     void record(uint32_t lane,uint64_t routed_rows,double stage_us) {
         if(lane>=counters_.size() || !routed_rows || !std::isfinite(stage_us) ||
            stage_us<=0 || stage_us>double(std::numeric_limits<int64_t>::max()/1000))
@@ -76,7 +78,7 @@ public:
                 if(first==last && !(last&1)) {stable=true;break;}
             }
             if(!stable)return false; // no false verdict from a torn read
-            auto& dst=result.lane[r3::moe_shm::lane_is_small(lane)?0:1];
+            auto& dst=result.lane[r3::moe_shm::lane_is_small(lane, slots_)?0:1];
             if(UINT64_MAX-dst.samples<value.samples ||
                UINT64_MAX-dst.rows<value.rows ||
                UINT64_MAX-dst.time_ns<value.time_ns)return false;

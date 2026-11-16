@@ -1,0 +1,17 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261116_124908_radiance-engine-patches-that-w_9700",
+  "files": [
+    "engines/radiance/recipes.toml",
+    "engines/radiance/patches",
+    "docs/reference/testing/PATCH_VALIDATION.md"
+  ],
+  "plan-item-ids": [
+    "PRQ02",
+    "PRQ03"
+  ],
+  "status": "unreleased",
+  "technical-summary": "PRQ02/PRQ03: 20 radiance patches promoted to validated through the profile-evidence tier (rad0012, rad0016-rad0029, rad0023, rad0031-rad0033, rad0030 on a relative KLD gate, rad0036, rad0005 on FFmpeg 6) and moved into serving-core; source.radiance now contains only validated patches and applies cleanly.",
+  "timestamp-utc": "2026-11-16T12:49:08.627181Z",
+  "user-summary-candidate": "Radiance engine patches that were in production without qualification records are now qualified and recorded."
+}

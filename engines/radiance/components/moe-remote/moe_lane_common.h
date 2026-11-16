@@ -30,6 +30,7 @@ namespace r3_moe_gpu {
 struct LaneShape {
     uint32_t hidden, top_k, act_group, experts;
     uint32_t world;   /* the segment's engine width (Header::rank_count): a request of another width is refused (RAD49) */
+    uint32_t slots;   /* validated total helper/rank slots in this segment */
 };
 
 constexpr int64_t kExpertWidth = 640;
@@ -60,7 +61,7 @@ __device__ __forceinline__ bool lane_request_valid(
     /* The request is this lane's slot, for the consumer its slot and its layer both name (RAD49); it always asks for the
      * full expert width. */
     return q && q->sequence == sequence &&
-           request_lane_identity_valid(q->slot, q->world, q->layer, slot, shape.world) &&
+           request_lane_identity_valid(q->slot, q->world, q->layer, slot, shape.world, shape.slots) &&
            q->layer < layers && q->rows > 0 && q->rows <= max_rows &&
            q->hidden == shape.hidden && q->route_count > 0 &&
            q->route_count <= q->rows * shape.top_k &&

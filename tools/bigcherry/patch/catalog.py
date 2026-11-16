@@ -769,6 +769,7 @@ def render_explanation(info: PatchExplanation) -> str:
         f"patch:          {info.patch_id}",
         f"content hash:   {info.content_hash}",
         f"state:          {info.state}",
+        f"where it builds: {patchset.patch_registry.where_it_builds(info.state)}",
         f"kind:           {info.kind or 'unknown (not in engines/llamacpp/patches/catalog.toml)'}",
         f"origin:         {info.origin or 'unknown'}",
         f"backend:        {info.backend or 'unknown'}",

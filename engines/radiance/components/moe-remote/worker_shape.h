@@ -20,7 +20,7 @@ SmallClasses helper_small_classes() {   /* the one definition bc-serve sizes the
 
 /* The lanes this helper serves: its own slots, slot_of(helper_index, r, world) for every engine rank r (RAD49), and a
  * disabled small class (beyond `classes`) has none. Only these get a stream, a hardware queue, buffers and a worker thread. */
-std::array<bool, r3::moe_shm::kLanes> served_lanes(uint32_t helper_count, uint32_t helper_index, uint32_t world,
+std::vector<bool> served_lanes(uint32_t helper_count, uint32_t helper_index, uint32_t world,
                                                    uint32_t classes) {
     return r3::worker_footprint::served_lanes(helper_count, helper_index, world, classes);   /* bc-serve's footprint uses it */
 }
@@ -50,7 +50,7 @@ bool segment_shape(const Container& f, uint32_t helpers, uint32_t world, r3::moe
     *shape = r3::moe_shm::LayoutShape{cs.hidden, cs.top_k ? cs.top_k : r3::moe_shm::kTopK, cs.experts, r3::moe_shm::kMaxRows,
                                       r3::moe_shm::kActGroup, cs.intermediate};
     if (!r3::moe_shm::slots_fit(helpers, world) ||
-        !r3::moe_shm::layout_for(*shape, f.layers, r3::moe_shm::slots_for(helpers, world), lay)) {
+        r3::moe_shm::v26::layout_for(*shape, f.layers, {helpers, world}, lay) != r3::moe_shm::Refusal::None) {
         std::fprintf(stderr, "r3_moe_worker: the shared-memory layout for this shape is invalid\n");
         return false;
     }

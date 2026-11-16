@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "kind": "historical-bisect-source-materializations",
+  "captured_on": "2026-11-13",
+  "record_count": 4,
+  "records": [
+    {
+      "run_id": "95eb4b291b49-1e71e9b44e25",
+      "original_sha256": "e0794b4df7c2eeb83cdbd8946975a6eaaf08dce518eb7c2f02e2c5de45a3a834",
+      "upstream_revision": "0eb6d9a8137ff13deb1b3a755b01b1e5b7f89229",
+      "source_tree_oid": "35f655ca6b462a1e9498cfa72a6a1516c4a3e2ed",
+      "materialization_plan_id": "f7bce6bdc2b391065f6d71e4f7d88e4e",
+      "source_plan_id": "4c9141ca745584e97ab31565ffea9345"
+    },
+    {
+      "run_id": "a0783eff02b5-1e71e9b44e25",
+      "original_sha256": "4299094c8bb2eb918ef63dee93ebfb9c0e9599804895546e98b0abfebe8862b4",
+      "upstream_revision": "a7fb71fab83b474a0892b9a05aaa3a8ddca2729b",
+      "source_tree_oid": "21a23a5a90d21eb474701f8a653924bd7d0e9d9d",
+      "materialization_plan_id": "24036272e87b42f35325b68a707354e3",
+      "source_plan_id": "e2a2745e3ddc40534b40a4ea1d782d39"
+    },
+    {
+      "run_id": "a57e7bcba0df-1e71e9b44e25",
+      "original_sha256": "1002f2d3b9192eb35b2bd2a4d8fbf374869f25efa3c3c719f9ae645b0581f0dc",
+      "upstream_revision": "2ca15f5404760548c39e7b92bd43116a09414a1a",
+      "source_tree_oid": "ced8e120f8a418fd81e521291c5431ebf279f169",
+      "materialization_plan_id": "ceac59fbb1384ab5f24f74143c9bc6cb",
+      "source_plan_id": "2ccedd6d71724d94585c258b7939cc0b"
+    },
+    {
+      "run_id": "e49f5f53abf0-1e71e9b44e25",
+      "original_sha256": "c0a3135e065921021abf6389030376fa10bd610f43390fa000b5fd50b124737b",
+      "upstream_revision": "0bb496dbd3af0add77ff82c406a915b41e839d56",
+      "source_tree_oid": "668b780fc8be289c72a50b8e49287172ee4d2163",
+      "materialization_plan_id": "116fc8a6e8e8ed52636f7be1507bbf57",
+      "source_plan_id": "f7ad6c7e6b26e1975d1d6c3b8c7149d1"
+    }
+  ],
+  "limits": "These are source materialization receipts, not GPU performance results."
+}

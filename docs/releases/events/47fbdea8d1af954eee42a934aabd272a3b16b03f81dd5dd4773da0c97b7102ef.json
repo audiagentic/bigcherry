@@ -1,0 +1,14 @@
+{
+  "change-class": "docs",
+  "event-id": "chg_20261113_102450_confirmed-that-the-tp3-hosts_9846",
+  "files": [
+    "docs/planning/active/run-radiance-host-link/HL01.md"
+  ],
+  "plan-item-ids": [
+    "HL01"
+  ],
+  "status": "unreleased",
+  "technical-summary": "HL01: recorded the XTX slot-swap contention matrix before and after. The card on root port 00:01.0 (first half of the bifurcated PEG x16) halves every other card's GPU-initiated host reads and writes regardless of which physical card or VBIOS is there; the cause is CPU-internal arbitration with no configuration fix. Mitigation stays with HL02/VTP38/VTP36.",
+  "timestamp-utc": "2026-11-13T10:24:50.321352Z",
+  "user-summary-candidate": "Confirmed that the TP3 host's PCIe slowdown comes from the first graphics slot itself, not from a card, so it is handled in software."
+}

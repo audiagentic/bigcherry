@@ -6,11 +6,8 @@ source still matches. The shared slot itself is tested in C++ by tests/bc_shared
 """
 from __future__ import annotations
 
-import importlib.util
-import re
 import subprocess
 import sys
-import tempfile
 import tomllib
 import unittest
 from pathlib import Path
@@ -18,8 +15,8 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO / "tools"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from bigcherry.patcher import apply_all
-from test_vtp14_n1_rank_code_selection import PIN_COMMIT, radiance_checkout
+from _vtp_promotion_support import assert_focal_guards_unique, assert_promoted_recipe, load_patch_files, patched_pinned_source
+from test_vtp14_n1_rank_code_selection import radiance_checkout
 
 PATCHES = REPO / "engines/radiance/patches"
 N1 = PATCHES / "rad0016_vtp14_rank_code_selection"
@@ -28,10 +25,7 @@ LIBR3 = REPO / "engines/radiance/components/libr3"
 
 
 def load(package: Path):
-    spec = importlib.util.spec_from_file_location(package.name, package / "patch.py")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return list(module.PATCHES)
+    return load_patch_files(package.name)
 
 
 class SharedRendezvousTests(unittest.TestCase):
@@ -41,22 +35,14 @@ class SharedRendezvousTests(unittest.TestCase):
         with (REPO / "engines/radiance/recipes.toml").open("rb") as f:
             recipe = tomllib.load(f)
         self.assertEqual(meta["order"], 17)
-        self.assertEqual(meta["state"], "untested")
+        self.assertEqual(meta["state"], "validated")
         self.assertEqual(meta["requires"], ["rad0016_vtp14_rank_code_selection"])
         # one patch set in the main build, inert until its options are given; the as-released source stays unpatched
-        self.assertEqual(recipe["patch-set"]["vtp14-mixed-tp"]["patches"],
-                         ["rad0016_vtp14_rank_code_selection", "rad0017_vtp14_n3_shared_rendezvous", "rad0018_vtp14_n2_tp_ownership",
-                          "rad0019_vtp14_n2_tp_ownership_fp8", "rad0020_vtp14_tp3_pipelined_prefill",
-                          "rad0021_vtp14_weighted_twoshot_3rank", "rad0022_tune_pin", "rad0023_ar_timeline",
-                          "rad0024_ts3_decode", "rad0025_multiseq_pipelined_prefill",
-                          "rad0026_mixed_pipelined_prefill", "rad0027_mixed_one_pipelined_prefill",
-                          "rad0028_rank_consistent_block_drafts",
-                          "rad0029_rank_own_split", "rad0030_int8_pipelined_prefill"])
-        self.assertEqual(recipe["source"]["radiance"]["patch-sets"][-1], "vtp14-mixed-tp")
-        self.assertNotIn("vtp14-mixed-tp", recipe["source"]["radiance-native"]["patch-sets"])
+        assert_promoted_recipe(self, N1.name, N3.name)
         self.assertNotIn("radiance-vtp14-rank-code-selection", recipe["source"])
 
     def test_guards_unique_and_created_files_from_src(self):
+        assert_focal_guards_unique(self, N3.name)
         files = load(N3)
         guards = [e.guard for f in files for e in f.edits]
         self.assertEqual(len(guards), len(set(guards)))
@@ -68,15 +54,7 @@ class SharedRendezvousTests(unittest.TestCase):
         checkout = radiance_checkout()
         if checkout is None:
             self.skipTest("no radiance checkout with the pinned v1.17.0 commit; set RADIANCE_SRC")
-        n1, n3 = load(N1), load(N3)
-        with tempfile.TemporaryDirectory() as d:
-            root = Path(d) / "radiance"
-            root.mkdir()
-            subprocess.run(f"git -C {checkout} archive {PIN_COMMIT} | tar -x -C {root}", shell=True, check=True)
-            first = apply_all(n1 + n3, root)
-            self.assertTrue(all(f.ok for f in first), first)
-            again = apply_all(n1 + n3, root)
-            self.assertTrue(all(e.status == "already-applied" for f in again for e in f.results))
+        with patched_pinned_source(checkout, N3.name, full_checkout=True) as root:
             entry = (root / "libr4d/r4d_ar_entry.hip").read_text()
             self.assertIn('dlsym(RTLD_DEFAULT, "rad_bc_shared_slot")', entry)
             self.assertIn("#define g_rv (rv_slot())", entry)

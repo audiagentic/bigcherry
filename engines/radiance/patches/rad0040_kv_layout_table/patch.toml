@@ -1,0 +1,11 @@
+schema = 1
+id = "rad0040_kv_layout_table"
+order = 40
+state = "untested"
+kind = "enhancement"
+origin = "local"
+backend = "agnostic"
+plan-ids = ["VTP44"]
+requires = ["rad0038_bf16_i8_kv"]
+conflicts = []
+tags = ["kv-cache"]

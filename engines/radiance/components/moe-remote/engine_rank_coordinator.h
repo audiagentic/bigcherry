@@ -48,13 +48,14 @@ public:
         const auto state = PlacementState(c.state);
         const uint32_t ranks = c.expected_ranks;
         const uint32_t actual = ops.actual_ranks();
-        const bool current = actual && actual <= kMaxEngineRanks &&
+        const auto* h = static_cast<const Header*>(map);
+        const bool current = actual && actual == h->rank_count && slots_fit(h->helper_count,actual) &&
             ranks == ((1u << actual) - 1u) && placement_candidate_valid(map,c);
         auto fail = [&]() -> bool { ops.fatal(); return false; };
         auto fault_ranks = [&](AckPhase phase, FaultCode code) {
-            for (uint32_t rank=0; rank<kMaxEngineRanks; ++rank)
+            for (uint32_t rank=0; rank<actual; ++rank)
                 if (ranks & (1u<<rank))
-                    publish_fault_ack(map,kMaxHelpers+rank,c,phase,code);
+                    publish_fault_ack(map,h->helper_count+rank,c,phase,code);
         };
 
         if (state == PlacementState::RESERVING) {
@@ -65,19 +66,19 @@ public:
             if (closed_ || !current) {
                 fault_ranks(AckPhase::RESERVED,FaultCode::CHECKSUM);
             } else {
-                for (uint32_t rank=0; rank<kMaxEngineRanks; ++rank) {
+                for (uint32_t rank=0; rank<actual; ++rank) {
                     const uint32_t bit=1u<<rank;
                     if (!(ranks & bit) || (reserved_mask_ & bit)) continue;
                     const bool present = ops.registered(rank);
                     if (!present) continue; // bounded by controller reservation deadline
                     const RankResult result=ops.ready(rank,c.active_slot,c.active_epoch,c.active_digest);
                     if (result == RankResult::DeviceError) {
-                        publish_fault_ack(map,kMaxHelpers+rank,c,AckPhase::RESERVED,FaultCode::DEVICE);
+                        publish_fault_ack(map,h->helper_count+rank,c,AckPhase::RESERVED,FaultCode::DEVICE);
                     } else if (service_rank_reservation(map,c,rank,ranks,present,
                                                          result==RankResult::Ready)) {
                         reserved_mask_ |= bit;
                     } else if (result == RankResult::Pending) {
-                        publish_fault_ack(map,kMaxHelpers+rank,c,AckPhase::RESERVED,FaultCode::CHECKSUM);
+                        publish_fault_ack(map,h->helper_count+rank,c,AckPhase::RESERVED,FaultCode::CHECKSUM);
                     }
                 }
             }
@@ -89,7 +90,7 @@ public:
             if (closed_ || !current) {
                 fault_ranks(AckPhase::READY,FaultCode::CHECKSUM);
             } else {
-                for (uint32_t rank=0; rank<kMaxEngineRanks; ++rank) {
+                for (uint32_t rank=0; rank<actual; ++rank) {
                     const uint32_t bit=1u<<rank;
                     if (!(ranks & bit)) continue;
                     if (!(issued_mask_ & bit)) {
@@ -113,7 +114,7 @@ public:
                             rank_upload_prepared(c,rank,true,true,c.pending_epoch,
                                                  c.pending_digest,c.pending_slot)) {
                             ready_mask_ |= bit;
-                            publish_ack(map,kMaxHelpers+rank,c,AckPhase::READY);
+                            publish_ack(map,h->helper_count+rank,c,AckPhase::READY);
                         } else if (result == RankResult::DeviceError) {
                             fault_ranks(AckPhase::READY,FaultCode::DEVICE);
                             break;
@@ -126,9 +127,9 @@ public:
                 !ops.close_and_wait(c.deadline_ns,&cutoff_,&old_epoch_))
                 return fail();
             closed_ = c.transaction_id;
-            for (uint32_t rank=0; rank<kMaxEngineRanks; ++rank)
+            for (uint32_t rank=0; rank<actual; ++rank)
                 if (ranks & (1u<<rank))
-                    publish_ack(map,kMaxHelpers+rank,c,AckPhase::QUIESCED,cutoff_);
+                    publish_ack(map,h->helper_count+rank,c,AckPhase::QUIESCED,cutoff_);
         } else if (state == PlacementState::COMMIT && closed_ == c.transaction_id && closed_) {
             if (!current || uint64_t(old_epoch_)+1u != c.active_epoch ||
                 c.journal_index > 1 ||
@@ -137,9 +138,9 @@ public:
             // The helper must mark the new header ACTIVE before COMMITTED.
             const auto* active=generation_header(map,c.active_slot);
             if (active && active->state == uint32_t(GenerationState::ACTIVE)) {
-                for (uint32_t rank=0; rank<kMaxEngineRanks; ++rank)
+                for (uint32_t rank=0; rank<actual; ++rank)
                     if (ranks & (1u<<rank)) {
-                        publish_ack(map,kMaxHelpers+rank,c,AckPhase::COMMITTED,cutoff_);
+                        publish_ack(map,h->helper_count+rank,c,AckPhase::COMMITTED,cutoff_);
                         committed_mask_ |= 1u<<rank;
                     }
             }
@@ -156,9 +157,9 @@ public:
             } else {
                 // The ledger's active slot is still the OLD generation.
                 if (ops.can_replace(old_slot)) return fail();
-                for (uint32_t rank=0; rank<kMaxEngineRanks; ++rank)
+                for (uint32_t rank=0; rank<actual; ++rank)
                     if (ranks & (1u<<rank))
-                        publish_ack(map,kMaxHelpers+rank,c,AckPhase::RETIRED,cutoff_);
+                        publish_ack(map,h->helper_count+rank,c,AckPhase::RETIRED,cutoff_);
             }
         } else if (state == PlacementState::ACTIVE && closed_) {
             if (c.active_slot > 1) return fail();
@@ -166,7 +167,7 @@ public:
             const auto* retired=generation_header(map,old_slot);
             if (retired && retired->state == uint32_t(GenerationState::RETIRED)) {
                 bool events_ready=true;
-                for (uint32_t rank=0; rank<kMaxEngineRanks; ++rank)
+                for (uint32_t rank=0; rank<actual; ++rank)
                     if ((ranks & (1u<<rank)) &&
                         ops.ready(rank,c.active_slot,c.active_epoch,c.active_digest)!=RankResult::Ready)
                         events_ready=false;
@@ -189,20 +190,20 @@ public:
                 // An aborted bitmap upload may still be DMA-in-flight. Query
                 // its event before certifying that the inactive bank is reusable.
                 if (abort_faulted_==c.transaction_id) {
-                    publish_cleanup_fault_ack(map,kMaxHelpers+abort_fault_rank_,c,
+                    publish_cleanup_fault_ack(map,h->helper_count+abort_fault_rank_,c,
                                               FaultCode::DEVICE);
                     return true; // placement-only terminal; keep serving ACTIVE(N)
                 }
                 bool complete=true;
                 if (uploaded_==c.transaction_id) {
-                    for (uint32_t rank=0;rank<kMaxEngineRanks;++rank) {
+                    for (uint32_t rank=0;rank<actual;++rank) {
                         if (!(issued_mask_ & (1u<<rank))) continue;
                         const RankResult result=ops.abort_upload_done(
                             rank,j.new_slot,j.after_epoch,j.candidate_digest);
                         if (result==RankResult::DeviceError) {
                             abort_faulted_=c.transaction_id;
                             abort_fault_rank_=rank;
-                            publish_cleanup_fault_ack(map,kMaxHelpers+rank,c,
+                            publish_cleanup_fault_ack(map,h->helper_count+rank,c,
                                                       FaultCode::DEVICE);
                             return true; // never mark the inactive upload reusable
                         }
@@ -210,9 +211,9 @@ public:
                     }
                 }
                 if (complete) {
-                    for (uint32_t rank=0;rank<kMaxEngineRanks;++rank)
+                    for (uint32_t rank=0;rank<actual;++rank)
                         if (ranks & (1u<<rank))
-                            publish_cleanup_ack(map,kMaxHelpers+rank,c);
+                            publish_cleanup_ack(map,h->helper_count+rank,c);
                     issued_mask_ = ready_mask_ = committed_mask_ = 0;
                     uploaded_ = reserved_ = 0;
                 }

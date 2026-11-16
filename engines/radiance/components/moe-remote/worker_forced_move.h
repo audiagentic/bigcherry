@@ -55,7 +55,7 @@ using Source=std::function<bool(uint32_t,uint32_t)>;
 inline bool engine_serving(const void* map) {
     if(!map) return false;
     const auto* h=static_cast<const Header*>(map);
-    for(uint32_t lane=0;lane<kLanes;++lane)
+    for(uint32_t lane=0;lane<h->counts.lanes;++lane)
         if(load(&h->lane[lane].done_sequence)!=0) return true;
     return false;
 }
@@ -67,7 +67,7 @@ inline uint64_t completed_requests(const void* map) {
     if(!map) return 0;
     const auto* h=static_cast<const Header*>(map);
     uint64_t done=0;
-    for(uint32_t lane=0;lane<kLanes;++lane) done+=load(&h->lane[lane].done_sequence);
+    for(uint32_t lane=0;lane<h->counts.lanes;++lane) done+=load(&h->lane[lane].done_sequence);
     return done;
 }
 inline constexpr std::array<uint32_t,2> kNoPrevious{{UINT32_MAX,UINT32_MAX}};
@@ -302,7 +302,7 @@ public:
              (unsigned long long)pauses_.median(),(unsigned long long)pauses_.max);
         for(size_t i=0;i<faults_.size();++i)if(faults_[i])
             std::fprintf(stderr,"forced fault=%zu count=%llu\n",i,(unsigned long long)faults_[i]);
-        for(uint32_t i=0;i<kMaxHelpers+kMaxEngineRanks;++i) {
+        for(uint32_t i=0;i<static_cast<const Header*>(map)->counts.acks;++i) {
             auto a=r3::epoch::read_shared_ack(map,i);
             if(a.transaction_id)
                 std::fprintf(stderr,"forced ack_actor=%u txn=%llu phase=%u epoch=%llu slot=%u digest=%016llx consumed_step=%llu fault=%u\n",
