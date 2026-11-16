@@ -46,9 +46,15 @@ A build is eligible only if all of the following hold:
   prevents GC across all builds.
 - It is not held by a build-plan resource lock or an active work-root
   lease. No process holds it as executable, working directory, open
-  file descriptor, or memory mapping (scanned via Linux `/proc`).
-  An inaccessible surviving process is treated as **unknown**, so
-  candidates are protected rather than assuming the process is inactive.
+  file descriptor, or memory mapping (scanned via Linux `/proc`). Only
+  processes of the work root's owner inside this container's cgroup namespace
+  are in scope: builds are made and used by that user here, so other users'
+  processes (kernel threads, system daemons) and processes outside the
+  namespace (the host and other containers, whose cgroup path escapes ours
+  with a leading `/..`) cannot hold one and are not inspected. An
+  inaccessible surviving in-scope process, or one whose cgroup cannot be
+  read, is treated as unknown, so candidates are
+  protected rather than assuming the process is inactive.
 
 Example:
 
@@ -128,8 +134,8 @@ completed record. Inspect this journal after any apply,
 particularly if deletion is interrupted. The default run cleanup and
 legacy inventory remain non-destructive; source cache GC is not enabled.
 
-On multi-user systems `/proc` access may be restricted. When any surviving
-process cannot be inspected, the build inventory will show its protection
-reason and `--apply` will not remove those builds. Resolve process
-visibility through normal administration rather than bypassing the check.
+When any surviving in-scope process cannot be inspected, the
+build inventory shows its protection reason and `--apply` will not remove
+those builds. Resolve that through normal administration rather than
+bypassing the check.
 Never use `--apply` on the real work root solely as a validation test.

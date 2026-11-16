@@ -179,6 +179,33 @@ class CacheInventory(unittest.TestCase):
             self.assertIn("live process", " ".join(old["reasons"]))
         self.assertEqual(self.decisions()["old"]["action"], "candidate")
 
+    def test_scan_covers_only_the_work_root_owners_processes(self):
+        fake_proc = self.root / "fake-proc"
+        process = fake_proc / "4242"
+        process.mkdir(parents=True)
+        (process / "fd").write_text("not a directory")  # an unreadable surviving process
+        owner = fake_proc.stat().st_uid
+        _, errors = REAL_PROC_SCAN(fake_proc, owner)
+        self.assertTrue(errors, "the owner's unreadable process must fail the scan closed")
+        refs, errors = REAL_PROC_SCAN(fake_proc, owner + 1)
+        self.assertEqual((refs, errors), ([], []), "another user's process is out of scope")
+
+    def test_scan_skips_processes_outside_this_cgroup_namespace(self):
+        fake_proc = self.root / "fake-proc"
+        owner = self.root.stat().st_uid
+        for pid, cgroup in (("4301", "0::/../../user.slice/user-1000.slice/init.scope\n"),
+                            ("4302", "0::/\n"), ("4303", "")):
+            process = fake_proc / pid
+            process.mkdir(parents=True)
+            (process / "fd").write_text("not a directory")  # unreadable survivor
+            if cgroup:
+                (process / "cgroup").write_text(cgroup)
+        _, errors = REAL_PROC_SCAN(fake_proc, owner)
+        seen = " ".join(errors)
+        self.assertNotIn("4301", seen, "a process outside the cgroup namespace is out of scope")
+        self.assertIn("4302", seen, "a process in this cgroup namespace fails the scan closed")
+        self.assertIn("4303", seen, "an unreadable cgroup means unknown, so in scope")
+
     def test_uninspectable_proc_fails_closed(self):
         self.build("old")
         with patch.object(build_gc, "_proc_references", return_value=([], ["access denied to process maps"])):

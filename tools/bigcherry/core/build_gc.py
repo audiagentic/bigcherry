@@ -71,11 +71,29 @@ def _inside(path: str, directory: Path) -> bool:
     return normalized == base or normalized.startswith(base + os.sep)
 
 
-def _proc_references(proc_root: Path) -> tuple[list[tuple[str, str]], list[str]]:
+def _outside_cgroup_namespace(proc: Path) -> bool:
+    """True when the process lives outside this cgroup namespace (cgroup path
+    escapes ours with "/..", cgroup v1 or v2). Unreadable means unknown, so
+    in scope."""
+    try:
+        lines = (proc / "cgroup").read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return False
+    paths = [line.split(":", 2)[2] for line in lines if line.count(":") >= 2]
+    return bool(paths) and all(path == "/.." or path.startswith("/../") for path in paths)
+
+
+def _proc_references(proc_root: Path, owner_uid: int) -> tuple[list[tuple[str, str]], list[str]]:
     """One /proc scan for all builds, including open descriptors and mappings.
 
-    Disappearing PIDs are normal; unreadable *surviving* processes are not
-    proof of inactivity and fail closed.
+    Builds are made and used only by the work root's owner inside this
+    container, so only that user's processes in this cgroup namespace are in
+    scope. Other users' processes (kernel threads, daemons) and processes
+    outside the namespace (the host, other containers: their cgroup path
+    escapes ours with a leading "/..") cannot hold one and are not inspected.
+    Disappearing PIDs are normal; an unreadable *surviving* in-scope process
+    (or one whose cgroup cannot be read) is not proof of inactivity and
+    fails closed.
     """
     refs: list[tuple[str, str]] = []
     errors: list[str] = []
@@ -85,6 +103,13 @@ def _proc_references(proc_root: Path) -> tuple[list[tuple[str, str]], list[str]]
         return refs, [f"cannot enumerate {proc_root}: {exc}"]
     for proc in processes:
         pid = proc.name
+        try:
+            if proc.stat().st_uid != owner_uid:
+                continue
+        except OSError:
+            continue  # exited while scanning
+        if _outside_cgroup_namespace(proc):
+            continue
         for name in ("exe", "cwd"):
             try:
                 target = os.readlink(proc / name)
@@ -319,7 +344,7 @@ def inspect(root: Path, *, policy, now: float | None = None,
     except BuildGCError as exc:
         mounts = set()
         mount_error = str(exc)
-    proc_refs, proc_errors = _proc_references(proc_root)
+    proc_refs, proc_errors = _proc_references(proc_root, root.stat().st_uid)
     if proc_errors:
         proc_errors = [f"process scan incomplete ({len(proc_errors)} unreadable observations); e.g. {proc_errors[0]}"]
 
