@@ -68,17 +68,19 @@ L. Risks: the h256 bf16 kernels sit near the 256-VGPR bound (O_VF8 conversion ma
 ## Acceptance Criteria
 
 - [x] GPT design review 1 done; plan revised to option (b).
-- [ ] GPT design review 2 done and findings resolved before implementation.
+- [x] GPT design review 2 done and findings resolved before implementation.
 - [ ] `--kv-cache-dtype bf16_fp8` serves qwen27b at -long with 3HD bytes a token and head (capacity >= 1.3x bf16), refused clearly on other geometries, architectures and with KV streaming.
 - [ ] No bf16, fp8 or reference row resolves for `bf16_fp8` (test); a missing kernel is a refusal.
-- [ ] Selftest rows for the new attention and store kernels pass on all cards, including E4M3 edge values; no spill in the new instantiations.
-- [ ] KLD against bf16 well below fp8's on the long corpus (target <= half of 0.0054 mean, no p99.9 outliers like fp8's), or the result is recorded and the owner decides.
-- [ ] Decode and prefill speed no worse than fp8's.
+- [x] Selftest rows for the new attention and store kernels pass on all cards (gfx1201, gfx1100), including E4M3 edge values (bf16_fp8) and zero/floor/cap scale groups (bf16_i8); no spill in the new gfx1201 instantiations.
+- [ ] KLD against bf16 well below fp8's on the long corpus (target <= half of 0.0054 mean, no p99.9 outliers like fp8's), or the result is recorded and the owner decides. RECORDED, owner decides: bf16_i8 0.00269 mean / p99.9 0.186 against fp8 0.00495 / 0.591 (new reference); docs 00/02 p99.9 stay 1.9/3.3 and bf16 itself across builds shows 1.9/5.2, so the per-document < 1 bar is not reachable on this corpus.
+- [x] Decode and prefill speed no worse than fp8's (long argv: 1/4/8 streams and TTFT within 3% for both caches).
 - [ ] Serving enum and generated docs updated; GPT code review done and findings resolved; PR merged with evidence.
 
 ## Notes
 
 **2026-11-16 GPT design reviews.** Review 1 (revision 1, bf16-declared group): 5 blocking findings, all about a bf16 group being read as equal K/V halves and row collisions -> plan switched to E4M3-declared (option b). Review 2 (revision 2): row collisions and core sizing resolved; found name lists to edit (config, bringup, streaming, arch), stride units (bytes vs uint16 K path), V geometry must not follow KVP, descales, libr3 anchors, acceptance numbers. All resolved in revision 3 (this plan): `docs/evidence/2026-11-16-vtp43-bf16-fp8-kv/design-review-{1,2}.md`. Drafter verified: its group keeps dtype name fp8_e4m3 (rad_arch.h:1741), as for fp8_v4. Acceptance numbers set: long-corpus KLD mean <= 0.0027 and no document p99.9 above 1; decode/TTFT within 3% of fp8; capacity >= 1.3x bf16's 624,051 tokens. Implementation starts now (steps 3-6).
+
+**2026-11-16 results.** bf16_fp8 (rad0037) missed the long-corpus bar (0.00336 mean; docs 00/02 p99.9 3.3/4.0; 79% of the mass in 277 exact-copy tokens). Thinking E4M3 V precision was the cause, bf16_i8 (rad0038: int8 V, f16 scale per 32 dims, 784 B, 1.31x bf16) was built and gave 0.00309 against the same reference. The missing control (plain bf16 against the same older-build reference: 0.00315, same tail) showed the reference itself carried a cross-build floor; re-recorded with the current build, bf16 vs bf16 = 0 and bf16_i8 0.00269, bf16_fp8 0.00323, fp8 0.00495. bf16_i8 dominates bf16_fp8 (similar capacity, better quality, same speed); configs ship only -long-bf16i8. Details: `docs/evidence/2026-11-16-vtp43-bf16-fp8-kv/README.md`.
 
 ## Change Log
 
