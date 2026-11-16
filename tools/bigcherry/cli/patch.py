@@ -615,6 +615,9 @@ def cmd_patch_gates(args: Namespace) -> int:
     from ..campaign import resolution as campaign_resolution
 
     intent = patch_gates.GateIntent(args.intent)
+    if args.diagnostic and intent is not patch_gates.GateIntent.PROMOTE:
+        print("patch-gates: --diagnostic requires --intent promote", file=sys.stderr)
+        return 2
     ctx = _context(args)
     try:
         cfg = campaign_config.load(ctx.config_path)
@@ -732,6 +735,7 @@ def cmd_patch_gates(args: Namespace) -> int:
         composition=composition,
         pinned_ref=cfg.pinned,
         intent=intent,
+        promotion_state="diagnostic" if args.diagnostic else "validated",
         patch_context=patch_catalog.PatchContext(
             backend=backend,
             source=args.source,
