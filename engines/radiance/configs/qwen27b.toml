@@ -168,3 +168,22 @@ description = "qwen27b-tp3-int8-556-long with a 16-bit (bf16) cache: about 624,0
 
 [config.qwen27b-tp3-int8-556-long-bf16.engine]
 kv_cache_dtype = "bf16"
+
+# VTP43: bf16 keys and int8 values (one f16 scale per 32 value dims), 784 bytes a token and head against bf16's 1024.
+# 2026-11-16 (one start each, qwen27b-tp3-int8-556 argv, long corpus of three ~25K and two ~100K documents scored past
+# 4096, against a bf16 reference recorded by the same build (bf16 against itself is 0; against the reference an older
+# build recorded, 0.00315 with the same two documents' tail: the older rows above, 0.0054 for fp8, carry that floor):
+#
+#                  cache tokens   1 / 4 / 8 streams tok/s   TTFT 2048   KLD long mean / p99.9   short mean
+#   -long-bf16i8       818,896     93.3 / 227.0 / 285.3     778 ms     0.00269 / 0.186          0.00111
+#   -long (fp8)      1,253,936     92.1 / 225.6 / 279.2     776 ms     0.00495 / 0.591          0.00221
+#
+# The two documents with long identifiers and numbers repeated from far earlier (docs 00 and 02) keep a p99.9 of 1.9 and
+# 3.3 (fp8 3.9 and 6.1; bf16_fp8, not shipped as a config, 2.5 and 4.7): a handful of exact-copy tokens flip under any
+# numeric change, the bf16 cache included across builds. Evidence: docs/evidence/2026-11-16-vtp43-bf16-fp8-kv/README.md.
+[config.qwen27b-tp3-int8-556-long-bf16i8]
+base = "qwen27b-tp3-int8-556-long"
+description = "qwen27b-tp3-int8-556-long with bf16 keys and int8 values: about 819,000 tokens, long-corpus KLD 0.0027 against a bf16 cache"
+
+[config.qwen27b-tp3-int8-556-long-bf16i8.engine]
+kv_cache_dtype = "bf16_i8"
