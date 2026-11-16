@@ -80,7 +80,7 @@ add_dependencies(libr3moe r3_moe_worker)
 include(CTest)
 if(BUILD_TESTING)
   # RHP02-A: no device or active helper code; compile the actual package registry on the host.
-  set(R3_HEAT_ABI_PACKAGE "${CMAKE_CURRENT_SOURCE_DIR}/../../patches/rad0031_moe_heat_observer")
+  set(R3_HEAT_ABI_PACKAGE "${CMAKE_CURRENT_SOURCE_DIR}/../../patches/rad0039_moe_heat_observer")
   add_executable(r3_heat_observer_abi_test EXCLUDE_FROM_ALL
     heat_observer_abi_test.cpp ${R3_HEAT_ABI_PACKAGE}/bc_moe_heat_registry.cpp)
   target_include_directories(r3_heat_observer_abi_test PRIVATE ${R3_HEAT_ABI_PACKAGE})

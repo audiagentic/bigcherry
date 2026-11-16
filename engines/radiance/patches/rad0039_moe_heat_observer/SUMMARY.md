@@ -1,4 +1,4 @@
-# rad0031_moe_heat_observer
+# rad0039_moe_heat_observer
 
 **State:** untested; inactive diagnostic-only patch set (RHP02 slice A).
 

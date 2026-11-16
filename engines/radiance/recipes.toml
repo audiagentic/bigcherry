@@ -47,7 +47,7 @@ required-state = "untested"
 
 # RHP02 slice A: read-only CPU credit observer ABI; inactive until explicit registration.
 [patch-set.heat-observer]
-patches = ["rad0031_moe_heat_observer"]
+patches = ["rad0039_moe_heat_observer"]
 required-state = "untested"
 
 # Required by the helper and kernel ports; engine behavior remains unchanged until RSC07.

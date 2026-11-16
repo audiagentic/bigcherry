@@ -1,9 +1,9 @@
-/* Card-free ABI and fake-Ctx source oracle for rad0031 (RHP02 slice A). */
+/* Card-free ABI and fake-Ctx source oracle for rad0039 (RHP02 slice A). */
 #ifdef NDEBUG
 #undef NDEBUG
 #endif
-#include "../../patches/rad0031_moe_heat_observer/rad_moe_heat.h"
-#include "../../patches/rad0031_moe_heat_observer/bc_moe_heat_sidecar.h"
+#include "../../patches/rad0039_moe_heat_observer/rad_moe_heat.h"
+#include "../../patches/rad0039_moe_heat_observer/bc_moe_heat_sidecar.h"
 #include <atomic>
 #include <cassert>
 #include <cstdint>

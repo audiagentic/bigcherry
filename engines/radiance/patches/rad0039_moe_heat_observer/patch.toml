@@ -1,6 +1,6 @@
 schema = 1
-id = "rad0031_moe_heat_observer"
-order = 31
+id = "rad0039_moe_heat_observer"
+order = 39
 state = "untested"
 kind = "enhancement"
 origin = "local"
