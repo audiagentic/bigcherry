@@ -85,6 +85,7 @@ required-state = "untested"
 [patch-set.vtp14-mixed-tp]
 patches = [
   "rad0037_bf16_fp8_kv",
+  "rad0038_bf16_i8_kv",
 ]
 required-state = "untested"
 
