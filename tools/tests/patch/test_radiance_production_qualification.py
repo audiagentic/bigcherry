@@ -33,7 +33,7 @@ def production_guard_errors(recipes: dict, exceptions: dict, patch_states: dict[
 
     allowed: set[str] = set()
     entries = exceptions.get("exception", [])
-    if set(exceptions) != {"exception"} or not isinstance(entries, list):
+    if not set(exceptions) <= {"exception"} or not isinstance(entries, list):
         return errors + ["exception file must contain only [[exception]] entries"]
     for entry in entries:
         if not isinstance(entry, dict) or set(entry) != EXCEPTION_FIELDS:
@@ -103,8 +103,11 @@ class RadianceProductionQualificationTests(unittest.TestCase):
         )
 
     def test_guard_rejects_stale_or_unexplained_exceptions(self) -> None:
-        recipes, exceptions, states = _load_real_data()
-        patch_id = exceptions["exception"][0]["patch-id"]
+        recipes, _, states = _load_real_data()
+        patch_id = recipes["patch-set"]["serving-core"]["patches"][0]
+        exceptions = {"exception": [{"patch-id": patch_id, "reason-type": "qualification-pending",
+                                     "reason": "test entry", "plan-id": "PRQ03"}]}
+        states = {**states, patch_id: "untested"}
         validated_states = {**states, patch_id: "validated"}
         self.assertTrue(any("already validated" in err for err in
                             production_guard_errors(recipes, exceptions, validated_states)))
