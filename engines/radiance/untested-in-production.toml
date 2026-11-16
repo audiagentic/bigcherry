@@ -6,14 +6,3 @@ reason-type = "build-enabler"
 reason = "host-compat build enabler"
 plan-id = "PRQ03"
 
-[[exception]]
-patch-id = "rad0030_int8_pipelined_prefill"
-reason-type = "qualification-pending"
-reason = "INT8 pipelined prefill awaits production qualification"
-plan-id = "PRQ03"
-
-[[exception]]
-patch-id = "rad0036_prefill_governor"
-reason-type = "qualification-pending"
-reason = "prefill governor awaits production qualification"
-plan-id = "PRQ03"
