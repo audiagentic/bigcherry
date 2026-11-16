@@ -29,7 +29,7 @@ def _data():
     states = {d.patch_id: d.state for d in registry.load_registry("radiance", _PATCHES).descriptors}
     exceptions = frozenset(
         row["patch-id"]
-        for row in tomllib.loads(_EXCEPTIONS.read_text(encoding="utf-8"))["exception"]
+        for row in tomllib.loads(_EXCEPTIONS.read_text(encoding="utf-8")).get("exception", [])
     )
     return raw, config_recipes, states, exceptions
 
