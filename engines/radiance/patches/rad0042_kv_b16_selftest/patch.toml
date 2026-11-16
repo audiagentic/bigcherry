@@ -1,0 +1,11 @@
+schema = 1
+id = "rad0042_kv_b16_selftest"
+order = 42
+state = "untested"
+kind = "enhancement"
+origin = "local"
+backend = "agnostic"
+plan-ids = ["VTP44"]
+requires = ["rad0041_kv_b16_flashnext"]
+conflicts = []
+tags = ["kv-cache"]
