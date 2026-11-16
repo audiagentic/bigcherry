@@ -6,6 +6,7 @@ digest, every archived file's digest and current stock source identity.
 """
 from __future__ import annotations
 
+import fnmatch
 import gzip
 import hashlib
 import io
@@ -14,6 +15,7 @@ import os
 from pathlib import Path, PurePosixPath
 import re
 import shutil
+import stat
 import subprocess
 import tarfile
 import tempfile
@@ -24,20 +26,77 @@ SCHEMA = "bigcherry-radiance-runtime-v1"
 PLAN = re.compile(r"(?m)^(?:pin-bump lane build|release asset lane build): radiance:stock:linux-radiance build_plan_id=([0-9a-f]{32}) binary_sha256=([0-9a-f]{64})$")
 FILE_LIMIT = 10000
 BYTE_LIMIT = 16 * 1024**3
-#: BigCherry's own build of radiance, patched and extended, is not the upstream release: its assets are named bigcherryrad. Bundles a
-#: lab pin-release packed before this name existed are still called radiance-<plan>.tar.gz and still restore.
+#: The public bc-radiance-1170.0.0 record in releases/v1.17.0.json uses
+#: radiance-<plan>.tar.gz; keep accepting that *published* historical archive.
 PRODUCT = "bigcherryrad"
-CI_ARCHIVE = re.compile(r"bigcherryrad-[0-9a-f]{32}\.tar\.gz")
-ARCHIVE_NAME = re.compile(r"(?:bigcherryrad|radiance)-[0-9a-f]{32}\.tar\.gz")
+
+
+def _archive_pattern(*, allow_published_legacy: bool) -> re.Pattern[str]:
+    """CI names are product-only; install also recognizes the pinned legacy prefix."""
+    prefix = f"(?:{PRODUCT}|radiance)" if allow_published_legacy else PRODUCT
+    return re.compile(rf"{prefix}-[0-9a-f]{{32}}\.tar\.gz")
+
+
+CI_ARCHIVE = _archive_pattern(allow_published_legacy=False)
+ARCHIVE_NAME = _archive_pattern(allow_published_legacy=True)
 CI_RECEIPT_SUFFIX = ".receipt.json"
+# Immutable *policy* source of truth for allowed pre-scope assets, not read
+# from mutable release records at runtime. The test asserts exact parity with
+# releases/*.json so edits to published records cannot silently expand access.
+# Never grandfather a future unscoped bundle by filename alone.
+PUBLISHED_LEGACY_ASSETS = {
+    "bc-radiance-1170.0.0": {
+        "name": "radiance-e5c7cb3dcc920259656edb17ec57ffc0.tar.gz",
+        "sha256": "6e74fb9daa33ffe47b8ac181ba2a3563031b90174feea22a8c7fca5a2038686a",
+        "manifest_sha256": "02e6dc896389719136662bfb6ff36767bcbc1d1a3a4a8bbba1d1f37e77d5cb92",
+    },
+}
+
 #: The build's own record (rocm_root, plan identity, toolchain): the launcher's SDK check and the campaign tools read it from the
 #: build directory, so an installed build is not usable by them without it. It travels in the bundle like any file, digest included.
 BUILD_METADATA = "bigcherry-build-metadata-radiance.json"
-RUN_DIRS = ("bin", "radiance_home", "runtime-prefix/bin", "runtime-prefix/lib", "runtime-prefix/lib64")
+# The single run-side payload contract. Each (build-relative glob, required)
+# entry names files used by the engine, NOT build products/benchmarks or
+# platform tooling such as rad-* diagnostics. bc-serve is engine-coupled and
+# must match bin/radiance. Glob groups allow new plugin names to
+# ship without hard-coding a model architecture inventory. Required entries
+# must match at least one file in every newly packaged build.
+RUN_SCOPE = "engine-runtime"
+RUN_MANIFEST = (
+    ("bin/radiance", True),
+    ("radiance_home/bin/bc-serve", True),
+    (BUILD_METADATA, True),
+    ("radiance_home/helpers/r3_moe_worker", True),
+    ("radiance_home/helpers/*.so*", False),
+    ("radiance_home/kernels/*.so*", True),
+    ("radiance_home/architectures/*.so*", True),
+    ("radiance_home/quantizers/*.so*", True),
+    ("radiance_home/kernels.rkb", True),
+    ("radiance_home/kernels_moe.rkb", False),
+    ("radiance_home/vectors/*", False),
+    ("runtime-prefix/lib/*.so*", False),
+    ("runtime-prefix/lib/**/*.so*", False),
+    ("runtime-prefix/lib64/*.so*", False),
+    ("runtime-prefix/lib64/**/*.so*", False),
+)
+
+
+def payload_contract_key() -> str:
+    """Versioned payload schema and selection policy, including optional files."""
+    policy = {"schema": SCHEMA, "scope": RUN_SCOPE, "manifest": RUN_MANIFEST,
+              "build_metadata": BUILD_METADATA}
+    return hashlib.sha256(json.dumps(policy, sort_keys=True,
+                                      separators=(",", ":")).encode()).hexdigest()
 
 
 class BundleError(RuntimeError):
     pass
+
+
+def require_published_legacy_asset(asset: dict, tag: str | None) -> None:
+    published = PUBLISHED_LEGACY_ASSETS.get(tag)
+    if published is None or any(asset.get(key) != value for key, value in published.items()):
+        raise BundleError("unrecognized legacy unscoped runtime asset")
 
 
 def digest(path: Path) -> str:
@@ -66,6 +125,18 @@ def stock_identity(root: Path) -> dict[str, str]:
             "config_tree": git_tree(root, "config")}
 
 
+def source_tree_marker(asset: dict, sdk: Path) -> str:
+    """Exact build marker from the verified receipt and selected SDK.
+
+    No mutable installed-tree metadata contributes to the expected value.
+    """
+    version = sdk_version(sdk)
+    if asset.get("rocm_version") != version:
+        raise BundleError("source-tree marker SDK differs from release receipt")
+    return (f"{asset['engine_tree']} {asset['config_tree']} "
+            f"{sdk.resolve()} {version} ")
+
+
 def select_build(record: dict, work_root: Path) -> tuple[Path, str, str]:
     found = PLAN.findall(record.get("notes", ""))
     if not found:
@@ -92,27 +163,29 @@ def built_from(root: Path) -> dict[str, str]:
             "pinned": str(recipes.get("pinned", "")), "note": "BigCherry's patched build, not an upstream release"}
 
 
+def check_run_manifest(names: set[str]) -> None:
+    """A restored scoped bundle has exactly run-side files and every required kind."""
+    for name in names:
+        if not any(fnmatch.fnmatchcase(name, pattern) for pattern, _ in RUN_MANIFEST):
+            raise BundleError(f"non-runtime file in scoped bundle: {name}")
+    for pattern, required in RUN_MANIFEST:
+        if required and not any(fnmatch.fnmatchcase(name, pattern) for name in names):
+            raise BundleError(f"missing runtime requirement: {pattern}")
+
+
 def runtime_files(build: Path) -> dict[str, Path]:
+    """Select only manifest files, rejecting missing runtime components."""
     files: dict[str, Path] = {}
-    for dirname in RUN_DIRS:
-        base = build / dirname
-        if not base.is_dir():
-            continue
-        for item in sorted(base.rglob("*")):
+    root = build.resolve()
+    for pattern, _ in RUN_MANIFEST:
+        for item in sorted(build.glob(pattern)):
             if not item.is_file():
                 continue
             # Dereference only symlinks pointing to another file INSIDE this build.
-            if item.is_symlink() and not item.resolve().is_relative_to(build.resolve()):
+            if not item.resolve().is_relative_to(root):
                 raise BundleError(f"runtime symlink escapes build directory: {item}")
-            rel = item.relative_to(build).as_posix()
-            files[rel] = item
-    if (build / BUILD_METADATA).is_file():
-        files[BUILD_METADATA] = build / BUILD_METADATA
-    for required in ("bin/radiance", "radiance_home/helpers/r3_moe_worker"):
-        if required not in files:
-            raise BundleError(f"lane build does not contain runtime requirement {required}")
-    if not any(k.startswith("radiance_home/kernels/") and k.endswith(".so") for k in files):
-        raise BundleError("lane build has no Radiance kernel plugins")
+            files[item.relative_to(build).as_posix()] = item
+    check_run_manifest(set(files))
     if len(files) > FILE_LIMIT:
         raise BundleError("too many files in runtime bundle")
     if sum(p.stat().st_size for p in files.values()) > BYTE_LIMIT:
@@ -128,7 +201,7 @@ def pack(record: dict, root: Path, work_root: Path, sdk: Path, tag: str) -> dict
     identity = stock_identity(root)
     version = sdk_version(sdk)
     manifest = {
-        "schema": SCHEMA, "product": PRODUCT, "built_from": built_from(root), "release_tag": tag,
+        "schema": SCHEMA, "product": PRODUCT, "payload_scope": RUN_SCOPE, "built_from": built_from(root), "release_tag": tag,
         "plan_id": plan_id, "source_slice_id": build.parent.name,
         "binary_sha256": binary_sha,
         "rocm_version": version, **identity,
@@ -160,7 +233,8 @@ def pack(record: dict, root: Path, work_root: Path, sdk: Path, tag: str) -> dict
                         tar.addfile(info, f)
     sha = digest(staged)
     checksums = name + ".sha256"
-    asset = {"schema": SCHEMA, "product": PRODUCT, "name": name, "sha256": sha,
+    asset = {"schema": SCHEMA, "product": PRODUCT, "payload_scope": RUN_SCOPE,
+             "file_names": sorted(manifest["files"]), "name": name, "sha256": sha,
              "checksum_name": checksums, "manifest_sha256": hashlib.sha256(encoded).hexdigest(),
              "plan_id": plan_id, "source_slice_id": build.parent.name,
              "rocm_version": version, "binary_sha256": binary_sha, **identity}
@@ -171,6 +245,38 @@ def pack(record: dict, root: Path, work_root: Path, sdk: Path, tag: str) -> dict
     staged.replace(dest)
     (out / checksums).write_text(f"{sha}  {name}\n")
     return asset
+
+
+def verify_runtime_tree(target: Path, asset: dict, manifest: dict,
+                        *, metadata: tuple[str, ...] = ()) -> None:
+    checks = manifest.get("files")
+    if not isinstance(checks, dict):
+        raise BundleError("runtime manifest has no file map")
+    if manifest.get("payload_scope") != asset.get("payload_scope"):
+        raise BundleError("runtime manifest/record mismatch: payload_scope")
+    if asset.get("payload_scope") == RUN_SCOPE:
+        check_run_manifest(set(checks))
+        if asset.get("file_names") != sorted(checks):
+            raise BundleError("runtime receipt file set differs from manifest")
+    for key in ("schema", "plan_id", "source_slice_id", "binary_sha256",
+                "rocm_version", "engine_tree", "config_tree"):
+        if manifest.get(key) != asset.get(key):
+            raise BundleError(f"runtime manifest/record mismatch: {key}")
+    actual: set[str] = set()
+    for path in target.rglob("*"):
+        if path.is_symlink():
+            raise BundleError(f"runtime file symlink: {path}")
+        if path.is_file():
+            actual.add(path.relative_to(target).as_posix())
+    if actual != set(checks) | set(metadata):
+        raise BundleError("runtime file set differs from manifest")
+    for name, receipt in checks.items():
+        path = target.joinpath(*PurePosixPath(name).parts)
+        if (not path.is_file() or path.stat().st_size != receipt["size"]
+                or digest(path) != receipt["sha256"]):
+            raise BundleError(f"runtime file SHA-256 mismatch: {name}")
+        if stat.S_IMODE(path.stat().st_mode) != receipt["mode"]:
+            raise BundleError(f"runtime file mode mismatch: {name}")
 
 
 def checked_extract(archive: Path, asset: dict, target: Path) -> dict:
@@ -214,22 +320,31 @@ def checked_extract(archive: Path, asset: dict, target: Path) -> dict:
     checks = manifest.get("files")
     if not isinstance(checks, dict) or set(checks) != seen - {"bundle.json"}:
         raise BundleError("runtime archive files differ from manifest")
-    for name, receipt in checks.items():
-        path = target.joinpath(*PurePosixPath(name).parts)
-        if (not path.is_file() or path.stat().st_size != receipt["size"]
-            or digest(path) != receipt["sha256"]):
-            raise BundleError(f"runtime file SHA-256 mismatch: {name}")
-    for key in ("schema", "plan_id", "source_slice_id", "binary_sha256",
-                "rocm_version", "engine_tree", "config_tree"):
-        if manifest.get(key) != asset.get(key):
-            raise BundleError(f"runtime manifest/record mismatch: {key}")
+    verify_runtime_tree(target, asset, manifest)
+    (target / ".release-bundle.json").write_bytes(content)
     return manifest
 
 
+def verify_installed_tree(target: Path, asset: dict, sdk: Path) -> None:
+    stored = target / ".release-bundle.json"
+    if not stored.is_file() or digest(stored) != asset.get("manifest_sha256"):
+        raise BundleError("installed runtime manifest SHA-256 mismatch")
+    try:
+        manifest = json.loads(stored.read_bytes())
+    except ValueError as exc:
+        raise BundleError("invalid installed runtime manifest") from exc
+    verify_runtime_tree(target, asset, manifest,
+                        metadata=(".release-bundle.json", ".lab-source-tree"))
+    if (target / ".lab-source-tree").read_bytes() != source_tree_marker(asset, sdk).encode():
+        raise BundleError("installed source-tree marker differs from verified receipt and SDK")
+
+
 def restore(archive: Path, checksum: Path, asset: dict, root: Path, work_root: Path,
-            sdk: Path) -> Path:
-    if asset.get("schema") != SCHEMA:
-        raise BundleError("unsupported runtime asset schema")
+            sdk: Path, *, tag: str | None = None) -> Path:
+    if asset.get("payload_scope") is None:
+        require_published_legacy_asset(asset, tag)
+    if asset.get("schema") != SCHEMA or asset.get("payload_scope") not in (None, RUN_SCOPE):
+        raise BundleError("unsupported runtime asset schema or scope")
     if not ARCHIVE_NAME.fullmatch(asset.get("name", "")):
         raise BundleError("unsafe runtime asset name")
     if asset.get("checksum_name") != asset["name"] + ".sha256":
@@ -255,11 +370,10 @@ def restore(archive: Path, checksum: Path, asset: dict, root: Path, work_root: P
         checked_extract(archive, asset, stage)
         if digest(stage / "bin/radiance") != asset["binary_sha256"]:
             raise BundleError("release binary digest differs from recorded lane binary")
-        if not (stage / "radiance_home/helpers/r3_moe_worker").is_file():
-            raise BundleError("release missing remote MoE helper binary")
-        tree = stock_identity(root)
-        (stage / ".lab-source-tree").write_text(
-            f"{tree['engine_tree']} {tree['config_tree']} {sdk.resolve()} {sdk_version(sdk)} ")
+        # Historical pre-scope releases have no run-side membership contract.
+        if asset.get("payload_scope") is None and not (stage / "radiance_home/helpers/r3_moe_worker").is_file():
+            raise BundleError("legacy release missing remote MoE helper binary")
+        (stage / ".lab-source-tree").write_text(source_tree_marker(asset, sdk))
         stage.rename(dest)
     finally:
         if stage.exists():
@@ -393,7 +507,7 @@ def fetch(record: dict, root: Path, work_root: Path, sdk: Path,
     try:
         download(root, tag, (asset["name"], asset["checksum_name"]), stage)
         return restore(stage / asset["name"], stage / asset["checksum_name"],
-                       asset, root, work_root, sdk)
+                       asset, root, work_root, sdk, tag=tag)
     finally:
         shutil.rmtree(stage)
 

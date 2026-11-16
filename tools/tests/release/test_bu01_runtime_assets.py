@@ -35,9 +35,20 @@ class RuntimeAssetsTests(unittest.TestCase):
         (self.build / "radiance_home/kernels").mkdir(parents=True)
         (self.build / "bin/radiance").write_bytes(b"radiance engine")
         (self.build / "bin/radiance").chmod(0o755)
+        serving = self.build / "radiance_home/bin/bc-serve"
+        serving.parent.mkdir(parents=True)
+        serving.write_bytes(b"bc-serve")
+        serving.chmod(0o755)
         (self.build / "radiance_home/helpers/r3_moe_worker").write_bytes(b"worker")
         (self.build / "radiance_home/helpers/r3_moe_worker").chmod(0o755)
         (self.build / "radiance_home/kernels/libr3moe.so").write_bytes(b"plugin")
+        for rel in ("radiance_home/architectures/qwen35_fp8.so",
+                    "radiance_home/quantizers/libquant.so",
+                    "radiance_home/kernels.rkb", "radiance_home/kernels_moe.rkb",
+                    assets.BUILD_METADATA):
+            target = self.build / rel
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(b"runtime data")
         binary_sha = assets.digest(self.build / "bin/radiance")
         self.record = {"notes": f"pin-bump lane build: radiance:stock:linux-radiance "
                                 f"build_plan_id={PLAN} binary_sha256={binary_sha}"}
@@ -55,6 +66,16 @@ class RuntimeAssetsTests(unittest.TestCase):
         checksum = archive.parent / asset["checksum_name"]
         return asset, archive, checksum
 
+    def test_bc_serve_is_required_and_pack_includes_it(self):
+        self.assertIn(("radiance_home/bin/bc-serve", True), assets.RUN_MANIFEST)
+        asset, archive, checksum = self.packaged()
+        self.assertIn("radiance_home/bin/bc-serve", asset["file_names"])
+        with tarfile.open(archive, "r:gz") as tar:
+            self.assertIn("radiance_home/bin/bc-serve", tar.getnames())
+        (self.build / "radiance_home/bin/bc-serve").unlink()
+        with self.assertRaisesRegex(assets.BundleError, "missing runtime requirement"):
+            assets.pack(self.record, self.root, self.work, self.sdk, TAG)
+
     def test_pack_restore_stock_binary_without_compiler(self):
         asset, archive, checksum = self.packaged()
         restored = assets.restore(archive, checksum, asset, self.root,
@@ -66,6 +87,117 @@ class RuntimeAssetsTests(unittest.TestCase):
         self.assertEqual((restored / ".lab-source-tree").read_text(),
                          f"{TREE_ID['engine_tree']} {TREE_ID['config_tree']} {self.sdk.resolve()} 7.2.4 ")
         with self.assertRaisesRegex(assets.BundleError, "already exists"):
+            assets.restore(archive, checksum, asset, self.root,
+                           self.path / "other-work", self.sdk)
+
+    def test_scoped_manifest_excludes_tool_test_platform_and_build_files(self):
+        import tarfile
+        include = {
+            "radiance_home/helpers/libr3_ngram_helper.so": b"ngram",
+            "radiance_home/vectors/qwen4exp-control-vector.gguf": b"vector",
+            "runtime-prefix/lib/librad.so": b"shared library",
+        }
+        exclude = {
+            "bin/rad-tune", "bin/rad-kbench", "bin/rad-convert", "bin/rad-gbnf-check",
+            "bin/rad-tokcheck", "bin/rad-schemas", "bin/rad-info", "bin/r4d_selftest",
+            "radiance_home/testarch/radtest_arch.so",
+            "radiance_home/testkernels/radtest_base.so",
+            "radiance_home/kernels/rad-avx-bench", "radiance_home/kernels/rad-avx-check",
+            "runtime-prefix/bin/rad-convert", "runtime-prefix/bin/radiance",
+            "runtime-prefix/lib/cmake/radiance/radianceTargets.cmake",
+        }
+        for rel, data in include.items():
+            path = self.build / rel
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(data)
+        for rel in exclude:
+            path = self.build / rel
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b"must never ship")
+        asset, archive, checksum = self.packaged()
+        with tarfile.open(archive, "r:gz") as tar:
+            manifest = json.loads(tar.extractfile("bundle.json").read())
+            names = set(tar.getnames()) - {"bundle.json"}
+        expected = set(assets.runtime_files(self.build))
+        self.assertEqual(names, expected)
+        self.assertEqual(set(manifest["files"]), expected)
+        self.assertEqual(asset["payload_scope"], assets.RUN_SCOPE)
+        self.assertEqual(manifest["payload_scope"], assets.RUN_SCOPE)
+        self.assertEqual(asset["file_names"], sorted(expected))
+        self.assertTrue(set(include) <= names)
+        self.assertIn("radiance_home/bin/bc-serve", names)
+        self.assertTrue(exclude.isdisjoint(names))
+        restored = assets.restore(archive, checksum, asset, self.root,
+                                  self.path / "other-work", self.sdk)
+        self.assertTrue(all((restored / p).is_file() for p in include))
+        self.assertTrue(all(not (restored / p).exists() for p in exclude))
+
+    def test_runtime_files_rejects_leaf_and_ancestor_symlinks_outside_build(self):
+        external = self.path / "external"
+        external.mkdir()
+        (external / "libforeign.so").write_bytes(b"untrusted")
+        dest = self.build / "runtime-prefix/lib"
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.symlink_to(external, target_is_directory=True)
+        with self.assertRaisesRegex(assets.BundleError, "symlink escapes"):
+            assets.runtime_files(self.build)
+        dest.unlink()
+        dest.mkdir()
+        (dest / "libforeign.so").symlink_to(external / "libforeign.so")
+        with self.assertRaisesRegex(assets.BundleError, "symlink escapes"):
+            assets.runtime_files(self.build)
+
+    def test_only_published_legacy_asset_receipts_are_grandfathered(self):
+        published = assets.PUBLISHED_LEGACY_ASSETS["bc-radiance-1170.0.0"]
+        asset = {"schema": assets.SCHEMA, "name": published["name"],
+                 "sha256": published["sha256"], "manifest_sha256": published["manifest_sha256"]}
+        assets.require_published_legacy_asset(asset, "bc-radiance-1170.0.0")
+        for tag, changed in (("bc-radiance-1170.1.0", asset),
+                             ("bc-radiance-1170.0.0", {**asset, "sha256": "0" * 64})):
+            with self.subTest(tag=tag), self.assertRaisesRegex(assets.BundleError, "legacy"):
+                assets.require_published_legacy_asset(changed, tag)
+
+    def test_unpublished_unscoped_archive_is_rejected_before_extract(self):
+        asset, archive, checksum = self.packaged()
+        asset.pop("payload_scope")
+        asset.pop("file_names")
+        with mock.patch.object(assets, "checked_extract", side_effect=AssertionError("extracted")):
+            with self.assertRaisesRegex(assets.BundleError, "legacy"):
+                assets.restore(archive, checksum, asset, self.root,
+                               self.path / "other-work", self.sdk,
+                               tag="bc-radiance-1170.1.0")
+
+    def test_every_required_manifest_entry_fails_closed_if_missing(self):
+        for pattern, required in assets.RUN_MANIFEST:
+            if not required:
+                continue
+            members = list(self.build.glob(pattern))
+            self.assertTrue(members, pattern)
+            saved = [(item, item.read_bytes()) for item in members]
+            try:
+                for item, _ in saved:
+                    item.unlink()
+                with self.subTest(pattern=pattern), self.assertRaisesRegex(
+                    assets.BundleError, "missing runtime requirement"
+                ):
+                    assets.runtime_files(self.build)
+            finally:
+                for item, data in saved:
+                    item.write_bytes(data)
+
+    def test_restore_refuses_receipt_file_set_disagreeing_with_manifest(self):
+        asset, archive, checksum = self.packaged()
+        asset["file_names"].append("bin/rad-info")
+        with self.assertRaisesRegex(assets.BundleError, "receipt file set"):
+            assets.restore(archive, checksum, asset, self.root,
+                           self.path / "other-work", self.sdk)
+
+    def test_restore_rejects_extra_files_even_with_self_consistent_digests(self):
+        (self.build / "bin/rad-tune").write_bytes(b"not runtime")
+        with mock.patch.object(assets, "RUN_MANIFEST",
+                               assets.RUN_MANIFEST + (("bin/rad-tune", False),)):
+            asset, archive, checksum = self.packaged()
+        with self.assertRaisesRegex(assets.BundleError, "non-runtime file"):
             assets.restore(archive, checksum, asset, self.root,
                            self.path / "other-work", self.sdk)
 
@@ -120,6 +252,19 @@ class RuntimeAssetsTests(unittest.TestCase):
             assets.restore(archive, checksum, asset, self.root,
                            self.path / "other-work", self.sdk)
         self.assertFalse((self.path / "outside").exists())
+
+
+class PublishedLegacyRecordsTests(unittest.TestCase):
+    def test_unscoped_receipts_match_the_explicit_published_allowlist(self):
+        repo = Path(__file__).resolve().parents[3]
+        found = {}
+        for file in (repo / "releases").glob("*.json"):
+            record = json.loads(file.read_text())
+            for tag, asset in record.get("runtime_assets", {}).items():
+                if asset.get("payload_scope") is None:
+                    found[tag] = {key: asset[key] for key in
+                                  ("name", "sha256", "manifest_sha256")}
+        self.assertEqual(found, assets.PUBLISHED_LEGACY_ASSETS)
 
 
 if __name__ == "__main__":

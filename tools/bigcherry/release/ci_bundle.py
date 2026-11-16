@@ -11,36 +11,110 @@ compile flags can never reuse a stale bundle (it may rebuild when it did not nee
 from __future__ import annotations
 
 import argparse
+import ast
 import hashlib
 import json
 import re
 import shutil
 import subprocess
 import sys
+import tarfile
 import tempfile
 from pathlib import Path
 
 from . import runtime_assets as ra
 
-RECEIPT_SUFFIX = ".receipt.json"
 TAG = re.compile(r"bc-radiance-[0-9]+\.[0-9]+\.[0-9]+")
 DOCKERFILE = Path(".github/docker/radiance-build/Dockerfile")
-#: Paths whose content decides how the lane is built: the lane planner and compiler launchers, the campaign build code, the
-#: engine adapter and source materialiser, the patch applier, and the build image. Release notes, lab scripts and the rest of
-#: the CLI are not here, so editing them does not force a rebuild.
+#: Compile-affecting source only: build executor/compiler, Radiance adapter,
+#: source materialiser and patch applier. The engine's recipes, patches and
+#: components are already covered by stock_identity(engine_tree). Whole
+#: campaign/core/patch trees would also pull in jobs, release, slice and
+#: worktree ceremony, which must not invalidate an engine binary's reuse key.
+# Reviewed source of truth for build-key scope. The intentionally separate
+# literal test oracle catches policy drift; static import discovery tests catch
+# newly referenced modules without silently changing the runtime key.
 BUILD_INPUTS = (
-    "tools/bigcherry/build",
-    "tools/bigcherry/campaign",
-    "tools/bigcherry/core",
-    "tools/bigcherry/engine_adapters",
-    "tools/bigcherry/source",
-    "tools/bigcherry/patch",
     ".github/docker/radiance-build",
+    ".github/workflows/radiance-build.yml",
+    "tools/bigcherry/build",
+    "tools/bigcherry/campaign/build.py",
+    "tools/bigcherry/campaign/source.py",
+    "tools/bigcherry/core/config.py",
+    "tools/bigcherry/core/engines.py",
+    "tools/bigcherry/core/canonical.py",
+    "tools/bigcherry/engine_adapters/base.py",
+    "tools/bigcherry/engine_adapters/radiance.py",
+    "tools/bigcherry/engine_adapters/radiance_plan.py",
+    "tools/bigcherry/engine_adapters/radiance_inventory.py",
+    "tools/bigcherry/engine_adapters/radiance_resources.py",
+    "tools/bigcherry/engine_adapters/radiance_manifest.py",
+    "tools/bigcherry/source/identity.py",
+    "tools/bigcherry/source/sources.py",
+    "tools/bigcherry/source/upstream.py",
+    "tools/bigcherry/source/workspace.py",
+    "tools/bigcherry/patch/apply.py",
+    "tools/bigcherry/patch/overlay.py",
+    "tools/bigcherry/patch/patchset.py",
+    "tools/bigcherry/patch/selection.py",
+    "tools/bigcherry/patch/registry.py",
+    "tools/bigcherry/patch/catalog.py",
+    "tools/bigcherry/patch/pinned_source.py",
+    "tools/bigcherry/patch/source.py",
+    "tools/bigcherry/bin/bc-ccache",
+    "tools/bigcherry/campaign/resolution.py",
+    "tools/bigcherry/campaign/runtime_bundle.py",
+    "tools/bigcherry/core/artifacts.py",
+    "tools/bigcherry/core/components.py",
+    "tools/bigcherry/core/context.py",
+    "tools/bigcherry/core/csource.py",
+    "tools/bigcherry/core/environment.py",
+    "tools/bigcherry/core/paths.py",
+    "tools/bigcherry/core/process.py",
+    "tools/bigcherry/core/provenance.py",
+    "tools/bigcherry/engine_adapters/radiance_bump.py",
+    "tools/bigcherry/engine_adapters/radiance_layout.py",
+    "tools/bigcherry/patch/docs.py",
+    "tools/bigcherry/source/audit.py",
 )
 
 
 class CiBundleError(RuntimeError):
     pass
+
+
+def discover_compile_dependencies(root: Path) -> tuple[str, ...]:
+    base = root / "tools/bigcherry"
+    pending = ["campaign/build.py", "engine_adapters/radiance.py", "patch/apply.py"]
+    seen: set[str] = set()
+    allowed = {"build", "campaign", "patch", "source", "core", "engine_adapters"}
+    while pending:
+        rel = pending.pop()
+        if rel in seen:
+            continue
+        seen.add(rel)
+        module = "bigcherry." + rel[:-3].replace("/", ".")
+        package = module.rpartition(".")[0].split(".")
+        tree = ast.parse((base / rel).read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            names: list[str] = []
+            if isinstance(node, ast.ImportFrom):
+                if node.level:
+                    head = package[:len(package) - node.level + 1]
+                    prefix = ".".join(head + ([node.module] if node.module else []))
+                else:
+                    prefix = node.module or ""
+                names = [prefix] + [prefix + "." + alias.name for alias in node.names]
+            elif isinstance(node, ast.Import):
+                names = [alias.name for alias in node.names]
+            for name in names:
+                if not name.startswith("bigcherry."):
+                    continue
+                path = name[len("bigcherry."):].replace(".", "/") + ".py"
+                if path.split("/")[0] in allowed and (base / path).is_file():
+                    if path not in seen:
+                        pending.append(path)
+    return tuple("tools/bigcherry/" + item for item in sorted(seen))
 
 
 def image_rocm_version(root: Path) -> str:
@@ -61,7 +135,8 @@ def build_inputs_tree(root: Path) -> str:
 
 
 def runtime_key(root: Path, rocm_version: str) -> dict[str, str]:
-    return {**ra.stock_identity(root), "build_inputs": build_inputs_tree(root), "rocm_version": rocm_version}
+    return {**ra.stock_identity(root), "build_inputs": build_inputs_tree(root),
+            "payload_contract": ra.payload_contract_key(), "rocm_version": rocm_version}
 
 
 def lane_build(work_root: Path, plan_id: str | None = None) -> tuple[Path, str, str]:
@@ -81,8 +156,6 @@ def pack_and_verify(tag: str, *, root: Path, work_root: Path, sdk: Path, plan_id
     if not TAG.fullmatch(tag):
         raise CiBundleError(f"not a bc-radiance release tag: {tag}")
     build, plan, binary_sha = lane_build(work_root, plan_id)
-    if not (build / ra.BUILD_METADATA).is_file():
-        raise CiBundleError(f"the lane build has no {ra.BUILD_METADATA}: an installed bundle would not launch")
     record = {"notes": f"release asset lane build: radiance:stock:linux-radiance build_plan_id={plan} binary_sha256={binary_sha}"}
     asset = ra.pack(record, root, work_root, sdk, tag)
     out = work_root / "release-assets" / tag
@@ -93,7 +166,7 @@ def pack_and_verify(tag: str, *, root: Path, work_root: Path, sdk: Path, plan_id
     finally:
         shutil.rmtree(scratch)
     receipt = {**asset, "release_tag": tag, "runtime_key": runtime_key(root, asset["rocm_version"])}
-    (out / (asset["name"][: -len(".tar.gz")] + RECEIPT_SUFFIX)).write_text(json.dumps(receipt, sort_keys=True, indent=1) + "\n")
+    (out / (asset["name"][: -len(".tar.gz")] + ra.CI_RECEIPT_SUFFIX)).write_text(json.dumps(receipt, sort_keys=True, indent=1) + "\n")
     return receipt
 
 
@@ -102,6 +175,29 @@ def _gh(args: list[str], root: Path) -> str:
     if result.returncode:
         raise CiBundleError(f"gh {' '.join(args[:2])} failed: {result.stderr.strip()[-300:]}")
     return result.stdout
+
+
+def verify_reusable_archive(tag: str, root: Path, receipt: dict) -> None:
+    """Verify the actual published archive, not merely its asserted scope."""
+    name = receipt.get("name")
+    if not isinstance(name, str) or not ra.CI_ARCHIVE.fullmatch(name):
+        raise CiBundleError("unsafe reusable archive name")
+    checksum = receipt.get("checksum_name")
+    if checksum != name + ".sha256":
+        raise CiBundleError("unsafe reusable checksum name")
+    with tempfile.TemporaryDirectory() as tmp:
+        directory = Path(tmp)
+        _gh(["release", "download", tag, "-p", name, "-p", checksum,
+             "-D", tmp], root)
+        expected = f"{receipt['sha256']}  {name}"
+        if (directory / checksum).read_text().strip() != expected:
+            raise CiBundleError("reusable archive checksum differs from receipt")
+        ra.require_product("reusable receipt", receipt)
+        manifest = ra.checked_extract(directory / name, receipt, directory / "unpacked")
+        ra.require_product("reusable bundle", manifest)
+        if (receipt.get("release_tag") != tag or
+                manifest.get("release_tag") != receipt.get("reused_from", tag)):
+            raise CiBundleError("reusable archive source tag mismatch")
 
 
 def find_reusable(tag: str, *, root: Path, rocm_version: str, limit: int = 40) -> tuple[str, dict] | None:
@@ -113,14 +209,25 @@ def find_reusable(tag: str, *, root: Path, rocm_version: str, limit: int = 40) -
         if other == tag or not TAG.fullmatch(other):
             continue
         info = json.loads(_gh(["release", "view", other, "--json", "assets"], root))
-        names = [a["name"] for a in info.get("assets", []) if a["name"].endswith(RECEIPT_SUFFIX)]
+        names = [a["name"] for a in info.get("assets", []) if a["name"].endswith(ra.CI_RECEIPT_SUFFIX)]
         if not names:
             continue
         with tempfile.TemporaryDirectory() as tmp:
             _gh(["release", "download", other, "-p", names[0], "-D", tmp], root)
             receipt = json.loads((Path(tmp) / names[0]).read_text())
-        if receipt.get("runtime_key") == want and receipt.get("schema") == ra.SCHEMA:
-            return other, receipt
+        if (receipt.get("runtime_key") != want or receipt.get("schema") != ra.SCHEMA
+                or receipt.get("payload_scope") != ra.RUN_SCOPE):
+            continue
+        names = receipt.get("file_names")
+        if (not isinstance(names, list) or not all(isinstance(n, str) for n in names)
+                or names != sorted(set(names))):
+            continue
+        try:
+            ra.check_run_manifest(set(names))
+            verify_reusable_archive(other, root, receipt)
+        except (ra.BundleError, CiBundleError, OSError, ValueError, KeyError, tarfile.TarError):
+            continue
+        return other, receipt
     return None
 
 
@@ -141,7 +248,7 @@ def prune_plan(*, root: Path, keep: int = 10, limit: int = 200) -> dict:
     keep_tags, prune = [], []
     for position, tag in enumerate(tags):
         info = json.loads(_gh(["release", "view", tag, "--json", "assets,body"], root))
-        receipts = [a["name"] for a in info.get("assets", []) if a["name"].endswith(RECEIPT_SUFFIX)]
+        receipts = [a["name"] for a in info.get("assets", []) if a["name"].endswith(ra.CI_RECEIPT_SUFFIX)]
         if not receipts:
             continue
         with tempfile.TemporaryDirectory() as tmp:

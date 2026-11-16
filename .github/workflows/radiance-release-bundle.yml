@@ -1,11 +1,15 @@
 name: Radiance release bundle
 
-# Makes a bc-radiance-* GitHub release runnable: builds the tagged source in the ROCm 7.2.4 image, runs the card-free component
-# tests, packs the runtime (bin, radiance_home, runtime-prefix) into a verified bundle and attaches the archive, its checksum and
-# its receipt to the release. `bigcherry release-install <tag>` installs it on a lab host with the same ROCm version.
+# Produces a bc-radiance-* engine bundle from the tagged source with ROCm 7.2.4;
+# card-free component tests precede packaging. The verified engine runtime includes
+# bin/radiance, radiance_home/bin/bc-serve, helpers and plugins, but excludes rad-*
+# tools, r4d_selftest and launcher/layout/platform sources. Archive, checksum and
+# receipt are published together. A tagged release-install build can be launched
+# with tools/lab/radiance/launch-flashnext-best.sh and its platform tooling/layouts,
+# model and host SDK; the archive alone is not a self-contained launch environment.
 #
-# Most radiance releases change only documentation or tooling, so the runtime is keyed on the git trees of engines/radiance and
-# config plus the image's ROCm version (tools/bigcherry/release/ci_bundle.py). A release whose key equals an earlier release's
+# Most radiance releases change only documentation or platform tooling, so the runtime is keyed on engine/config trees,
+# compile-affecting build/source/patch inputs, payload manifest and ROCm image version (tools/bigcherry/release/ci_bundle.py). A release whose key equals an earlier release's
 # key gets that bundle attached again instead of a build (about 30-55 minutes).
 #
 # Runs when a bc-radiance-* release is published (release-please makes them with its personal token, so the event fires), and by hand

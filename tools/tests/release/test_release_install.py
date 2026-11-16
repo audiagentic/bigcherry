@@ -83,10 +83,16 @@ class ReleaseInstallTests(unittest.TestCase):
             (build / subdir).mkdir(parents=True)
         for name, value in (
             ("bin/radiance", b"tiny-radiance"),
+            ("radiance_home/bin/bc-serve", b"tiny-bc-serve"),
             ("radiance_home/helpers/r3_moe_worker", b"tiny-helper"),
             ("radiance_home/kernels/libp.so", b"tiny-plugin"),
+            ("radiance_home/architectures/arch.so", b"tiny-arch"),
+            ("radiance_home/quantizers/libquant.so", b"tiny-quant"),
+            ("radiance_home/kernels.rkb", b"tiny-catalog"),
+            (runtime_assets.BUILD_METADATA, b"{}"),
         ):
             target = build / name
+            target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(value)
             target.chmod(0o755)
         notes = (
@@ -340,6 +346,80 @@ class ReleaseInstallTests(unittest.TestCase):
         self.assertTrue(
             (self.install_work / "releases" / TAG / "install.json").exists()
         )
+
+    def test_existing_scoped_runtime_requires_every_manifest_file(self):
+        with mock.patch.dict(os.environ, self.env):
+            saved = self._install()
+            (Path(saved["build_dir"]) / "radiance_home/quantizers/libquant.so").unlink()
+            with self.assertRaisesRegex(
+                release_install.ReleaseInstallError, "runtime file set differs"
+            ):
+                self._install()
+
+    def test_existing_scoped_runtime_refuses_unrecorded_plugin(self):
+        with mock.patch.dict(os.environ, self.env):
+            saved = self._install()
+            (Path(saved["build_dir"]) / "radiance_home/kernels/unknown.so").write_bytes(b"extra")
+            with self.assertRaisesRegex(
+                release_install.ReleaseInstallError, "runtime file set differs"
+            ):
+                self._install()
+
+    def test_existing_runtime_refuses_tampered_helper_and_plugin_bytes(self):
+        with mock.patch.dict(os.environ, self.env):
+            saved = self._install()
+            for rel in ("radiance_home/helpers/r3_moe_worker",
+                        "radiance_home/kernels/libp.so",
+                        "radiance_home/bin/bc-serve"):
+                with self.subTest(rel=rel):
+                    file = Path(saved["build_dir"]) / rel
+                    original = file.read_bytes()
+                    try:
+                        file.write_bytes(b"tampered runtime bytes")
+                        with self.assertRaisesRegex(release_install.ReleaseInstallError, "SHA-256 mismatch"):
+                            self._install()
+                    finally:
+                        file.write_bytes(original)
+
+    def test_existing_runtime_refuses_forged_source_tree_marker(self):
+        with mock.patch.dict(os.environ, self.env):
+            saved = self._install()
+            marker = Path(saved["build_dir"]) / ".lab-source-tree"
+            original = marker.read_text()
+            self.assertEqual(
+                original,
+                f"{self.asset['engine_tree']} {self.asset['config_tree']} "
+                f"{self.sdk.resolve()} 7.2.4 ",
+            )
+            for forged in (
+                f"{'f' * 40} {'e' * 40} {self.sdk.resolve()} 7.2.4 ",
+                f"{self.asset['engine_tree']} {self.asset['config_tree']} /tmp/not-the-sdk 0.0 ",
+            ):
+                with self.subTest(forged=forged):
+                    marker.write_text(forged)
+                    with self.assertRaisesRegex(
+                        release_install.ReleaseInstallError, "source-tree marker"
+                    ):
+                        self._install()
+            marker.write_text(original)
+            self.assertEqual(self._install(), saved)
+
+    def test_existing_runtime_refuses_modified_executable_mode(self):
+        with mock.patch.dict(os.environ, self.env):
+            saved = self._install()
+            helper = Path(saved["build_dir"]) / "radiance_home/helpers/r3_moe_worker"
+            helper.chmod(0o644)
+            with self.assertRaisesRegex(release_install.ReleaseInstallError, "mode mismatch"):
+                self._install()
+
+    def test_existing_runtime_refuses_files_outside_receipt_even_if_not_selected(self):
+        with mock.patch.dict(os.environ, self.env):
+            saved = self._install()
+            extra = Path(saved["build_dir"]) / "bin/rad-info"
+            extra.parent.mkdir(parents=True, exist_ok=True)
+            extra.write_bytes(b"extra platform binary")
+            with self.assertRaisesRegex(release_install.ReleaseInstallError, "file set"):
+                self._install()
 
     def test_dirty_release_worktree_is_refused(self):
         with mock.patch.dict(os.environ, self.env):
