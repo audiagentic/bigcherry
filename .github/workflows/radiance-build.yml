@@ -223,8 +223,11 @@ jobs:
         env:
           BUNDLE_TAG: ${{ inputs.bundle_tag }}
         run: |
-          docker run --rm -e BUNDLE_TAG -v "$GITHUB_WORKSPACE:/src" -w /src '${{ needs.image.outputs.image }}' bash -euxo pipefail -c '
+          # /src/tooling is its own checkout, owned by the runner user, not the container's: git refuses it unless it is listed
+          # too, and the tooling resolves its work root through git (bc-radiance r16-r25 built but attached no bundle).
+          docker run --rm -e BUNDLE_TAG -e BC_WORK_ROOT=/src/work -v "$GITHUB_WORKSPACE:/src" -w /src '${{ needs.image.outputs.image }}' bash -euxo pipefail -c '
             git config --global --add safe.directory /src
+            git config --global --add safe.directory /src/tooling
             PYTHONPATH=/src/tooling/tools python3 -m bigcherry --engine radiance release-bundle "$BUNDLE_TAG" --root /src --work /src/work --sdk /opt/rocm-7.2.4
           '
 

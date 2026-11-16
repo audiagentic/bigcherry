@@ -19,9 +19,9 @@ priority: P1
 
 The rad0031 weighted two-shot (~10 MiB, 2048-token pipelined prefill) measured ~4 ms per collective, including R9700 x4 link transfers and an XTX reduction skew of ~889 versus ~1301 us due to HL01 root-port contention. For that **specific two-shot protocol**, with message S and R9700 shard fraction w=1/9, it sends ~S and receives ~(1+w)S. A one-shot inbound read is ~2S. These are protocol-specific counts, not lower bounds on *every* exact GPU algorithm.
 
-**Preferred prefill end state:** one consistent CPU-fed receive path for **all** ranks. Every GPU publishes an S partial to pinned host memory; CPU reduces the three partials in the proven arithmetic order, and separate CPU workers push an S result to every GPU-local DMA-BUF destination. No rank GPU-pulls host memory on that collective. **Fallback:** CPU push to the contention-driving receiver only if measured CPU/memory bandwidth constrains all-rank push, with an explicitly compatible world-wide GPU reduction/receive schedule. Decode retains GPU one-shot absent a separate gain.
+**Prefill receive (revised 2026-11-14 after HL02 Gate B):** a mixed per-rank receive. The CPU pushes the S result into the GPU-local DMA-BUF of the rank whose host reads trigger the contention, and the other ranks GPU-pull. Measured at 320 KiB-10 MiB with every word verified: slowest-card completion -17% at 4-10 MiB and -10% at 1 MiB against all-pull, even at 320 KiB. **Push to all ranks is withdrawn:** concurrent CPU pushers halve each other (one 10.5 GB/s, two or three ~5.5 GB/s each, also across root ports), so push-all equals all-pull and push-to-two loses the gain (`docs/evidence/2026-11-14-hl02-gate-b/README.md`). The receive method stays a per-rank layout choice from a measured host profile; nothing here names a card. The CPU sum of three partials is ~0.8 ms per 10 MiB at three threads, so a host reduce must overlap it with the transfers to compete. Decode retains GPU one-shot absent a separate gain.
 
-**Current comparator:** The unmerged VTP36 rad0032 fused-pieces + rad0033 write-once + duplex-weights candidate, `nblocks=4,nthreads=256,ts_pieces=4,ts_fuse=1,ts_once=1,ts_duplex=1`, produced bit-identical logprobs and 2 completed ABBA comparisons: int8/MXFP4 TTFT 2048 -24.4%/-27.2%, 8-stream +13.9%/+16.7%. Stress and 5,5,6 split checks remained unfinished. Host reduction must beat the **validated improved GPU candidate**, not claim those previous gains again.
+**Current comparator:** The VTP36 (merged, #954) rad0032 fused-pieces + rad0033 write-once + duplex-weights candidate, `nblocks=4,nthreads=256,ts_pieces=4,ts_fuse=1,ts_once=1,ts_duplex=1`, produced bit-identical logprobs and 2 completed ABBA comparisons: int8/MXFP4 TTFT 2048 -24.4%/-27.2%, 8-stream +13.9%/+16.7%. Stress and 5,5,6 split checks remained unfinished. Host reduction must beat the **validated improved GPU candidate**, not claim those previous gains again.
 
 ## Steps
 
@@ -91,7 +91,11 @@ L. Risks: CPU memory bandwidth (~60 MB of traffic per prefill all-reduce at 2048
 - [ ] Timeout aborts and drains all ranks before any fresh-generation GPU fallback; no unsafe mid-flight switch.
 - [ ] Default unchanged until repeated ABBA, quality, stress and explicit approval.
 
+- [ ] TTFT reported at 2048 tokens and at 60k / 100k with the linear and quadratic terms separated, and the XTX ranks' between-call compute against the call time, so a transport gain hidden by XTX compute is recorded as such.
+
 ## Notes
+
+**2026-11-14 HL02 Gate B result:** mixed receive (CPU push to the contention-triggering rank, GPU pull for the rest) is the only push arm that shortens the receive; push-to-all and push-to-pair are no faster than all-pull because concurrent CPU pushers each fall to ~5.5 GB/s. Next for this item: the same mixed receive inside the two-shot's assemble on a GPU partial-producer timeline, against the VTP36 pin.
 
 **2026-11-14 host-write safety progress, not TP3 protocol qualification:** Archived RAD50 GPU-local DMA-BUF direct publication was independently repeated with pre-armed, full-word GPU verifier for 100 generations **per card idle** and 100 generations **per affected XTX/R9700 under active primary-XTX host reads at 13.431 GB/s**, all passing for 3.93 MiB payloads. The same 4 MiB serial GPU pull vs CPU BAR push comparison at 30 iterations showed XTX 1.847× and R9700 2.315× advantage under contention. Evidence: `docs/evidence/2026-11-14-hl02-live-verification/README.md`. This does not satisfy 10 MiB, parallel multi-destination CPU sum/push, lifetime/restart, generation-wide abort/drain or matched VTP36 A/B. No VTP38 production method change is authorized.
 
@@ -105,7 +109,10 @@ L. Risks: CPU memory bandwidth (~60 MB of traffic per prefill all-reduce at 2048
 
 Created 2026-11-13 from the VTP36 all-reduce timeline review and the HL01 lspci/IOMMU finding. This is the sole owner of TP3 CPU-reduced all-reduce integration; VTP36 retains programme-level A/B reporting, HL02 owns cross-GPU contention A/B, RAD40 the historical physical-link harness and RAD50 the generic DMA-BUF/visibility proof. Depends on HL02 and RAD50 gate 2 (R9700). Related: VTP36 (two-shot pieces/duplex, uneven XTX shares), RAD50/RAD51 (CPU BAR push lab), RAD40 (contention measurement), HL04 (different-layout no-go).
 
+**2026-11-14 expected size at depth, and the ceiling** (`docs/evidence/2026-11-14-tp3-long-context/README.md`). In the 100k profile the all-reduce's device share (42% XTX, 56% R9700) is mostly waiting; the part a receive change can remove is the R9700's link time, ~2.83 ms a 1024-row call, which is the whole linear term of TTFT (35.1 s of 53.8 s at 100k). Gate B's -17% applied to the whole call would give about -15% TTFT at 2048 tokens and -11% at 100k; attention on the XTX ranks (18.7 s at 100k) is untouched by transport (RAD52). The XTX ranks' compute between calls is at ~80% of the chain, so a gain above ~20% on the call will not show in TTFT until XTX compute falls. Add 60k and 100k one-prompt TTFT to step 9 and record per-rank between-call time before and after.
+
 ## Change Log
 
 - 2026-11-13T05:14:45.261435+00:00 (created-by): Created by agent
 - 2026-11-13T05:15:16.842115+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:effort_risk, section:acceptance_criteria, section:notes
+- 2026-11-14T06:59:26.713769+00:00 (updated-by): Updated: section:acceptance_criteria, section:notes

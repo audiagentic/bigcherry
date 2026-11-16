@@ -1,0 +1,15 @@
+{
+  "change-class": "tests",
+  "event-id": "chg_20261114_231145_kernel-self-test-can-pin-the-n_1099",
+  "files": [
+    "engines/radiance/components/libr3/native/r4d_selftest.cpp.rw",
+    "docs/planning/active/run-dense-27b-virtual-tp/VTP37.md"
+  ],
+  "plan-item-ids": [
+    "VTP37"
+  ],
+  "status": "unreleased",
+  "technical-summary": "libr3 selftest --pin-mw/--pin-nt pin the narrow int8 GEMM's wave and token-tile counts for --perfw8 sweeps; values the hooks would drop are refused and the pins in effect are printed. VTP37 notes record the wave-count sweep.",
+  "timestamp-utc": "2026-11-14T23:11:45.386841Z",
+  "user-summary-candidate": "Kernel self-test can pin the narrow int8 GEMM's launch shape for tuning sweeps."
+}

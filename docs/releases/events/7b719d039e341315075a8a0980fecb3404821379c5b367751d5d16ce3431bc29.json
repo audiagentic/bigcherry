@@ -1,0 +1,15 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261115_055926_on-the-long-context-setups-co_8100",
+  "files": [
+    "engines/radiance/configs/qwen27b.toml",
+    "docs/evidence/2026-11-15-vtp39-prefill-concurrency/README.md"
+  ],
+  "plan-item-ids": [
+    "VTP39"
+  ],
+  "status": "unreleased",
+  "technical-summary": "qwen27b-tp3-int8-556-long (and -long-bf16): tuning.prefill_interleave = 2. 4 decoders beside a 100k prompt 6.0 -> 16.0 chunks/s (gap p50 847 -> 41 ms) for +9.8% on its TTFT; lone prompt and eight-at-once unchanged.",
+  "timestamp-utc": "2026-11-15T05:59:26.110153Z",
+  "user-summary-candidate": "On the long-context setups, conversations that are generating keep streaming smoothly while someone else's very long prompt is being read: 2.7 times the output rate, for about 10% longer wait on the long prompt."
+}

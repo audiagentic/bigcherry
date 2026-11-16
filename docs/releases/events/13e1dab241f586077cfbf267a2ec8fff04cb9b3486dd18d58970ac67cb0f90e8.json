@@ -1,0 +1,22 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261113_160110_three-gpu-27b-layouts-reach-fi_8877",
+  "files": [
+    "engines/radiance/patches/rad0031_ts_timeline",
+    "engines/radiance/patches/rad0032_ts3_duplex",
+    "engines/radiance/patches/rad0033_ts3_once",
+    "engines/radiance/layouts/qwen27b.toml",
+    "tools/lab/radiance/ar-ts-timeline.py",
+    "tools/tests/patch/test_vtp36_ts3_allreduce.py",
+    "docs/planning/active/run-dense-27b-virtual-tp/VTP36.md",
+    "docs/evidence/2026-11-13-vtp36-allreduce",
+    "docs/reference/engines/radiance/ENHANCEMENTS.md"
+  ],
+  "plan-item-ids": [
+    "VTP36"
+  ],
+  "status": "unreleased",
+  "technical-summary": "rad0031 adds two-shot phase timelines to R4D_AR_TIMELINE; rad0032 adds ts_pieces, ts_pieces_min, ts_fuse and ts_duplex tune-pin axes for the three-rank two-shot all-reduce; rad0033 adds ts_once (reduced shard written once in host scratch). qwen27b-tp3 and qwen27b-tp3-int8 pin nblocks=4,nthreads=256,ts_pieces=4,ts_fuse=1,ts_once=1,ts_duplex=1. Bit-identical logprobs; 2x ABBA: TTFT 2048 -24% int8 / -27% MXFP4, 8 streams +13.9% / +16.7%; int8 stress 12/12 clean.",
+  "timestamp-utc": "2026-11-13T16:01:10.898338Z",
+  "user-summary-candidate": "Three-GPU 27B layouts reach first token about a quarter faster and serve 14-17% more tokens at 8 streams, with identical output, from a faster all-reduce."
+}

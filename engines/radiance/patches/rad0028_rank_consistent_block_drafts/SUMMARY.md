@@ -1,6 +1,6 @@
 # rad0028_rank_consistent_block_drafts
 
-**Status:** untested
+**Status:** validated
 **Plan item:** VTP31
 
 Scope: `qwen35_fp8` and `qwen35_w8a8` with the DFlash2 block drafter at two or more ranks (chain proposals).

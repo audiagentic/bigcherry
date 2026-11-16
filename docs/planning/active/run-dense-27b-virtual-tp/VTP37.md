@@ -43,6 +43,57 @@ priority: P0
 5. **int8 tile weight-scale LDS staging** (XDP08-A) and decode GEMV, only if step 1 shows the kernel time dominates after steps 2-3.
 6. Fold winners into `qwen27b-tp3-int8`; refresh the baseline with 3x ABBA against int8 TP2 and MXFP4 TP3.
 
+3a. **gfx1100 int8 rows at 17-32 rows (2026-11-14).** `kbench-1/xtx.md`: `gemm_i8a8_nt_m16` is flat to M=9 (12288 x 5120: 91 us, ~691 GB/s) and costs 162 us at M=18 and 144 us at M=32; the R9700's row is flat to M=32 (105-108 us). Six and eight streams at depth 3 issue 24 and 32 rows, and the XTX ranks set the decode pace. Sweep every M from 10 to 32 at the TP3 per-rank shapes; if the band holds, a row that reads the weight once for up to 32 rows in libr3, gfx1201 untouched. ABBA at 4/6/8 streams with decode-only tok/s; KLD against BF16; stress. Expected decode-only +9% to +22% at 6-8 streams.
+
+## Detailed Solution & Technical Design
+
+
+
+## Code Samples & Guidance
+
+
+
+## Files
+
+
+
+## Validation
+
+- Greedy identity: pipelined vs serial on int8 TP3 (same build, same split).
+- int8 stress: 12 runs of the rad0028 guard (4/8 streams + 6144-token prompt beside 4 generating streams), zero faults.
+- KLD against BF16 for any kernel-row change (rows of a different accumulation order).
+- Matched ABBA (2x per lever, 3x for the final refresh): 1/4/6/8 streams with speculation, one-prompt TTFT 512/2048/8192, four 4096-token prompts, long prompt beside 4 streams.
+
+## Effort & Risk
+
+
+
+## Standards
+
+
+
+## Acceptance Criteria
+
+- int8 TP3 runs the pipelined prefill (startup receipt shows pipe_on) with no stress faults, and passes the **reordering quality gate** below.
+- **Reordering quality gate** (owner decision 2026-11-13; for any change that keeps the arithmetic exact but changes its order or partition: pipelining, chunking, collective method, split). Bit identity to serial is not required. Both checks must pass, on the same KLD corpus (42,761 positions):
+  1. *Noise floor*, against a serial reference of the same build and layout: KLD mean, KLD p99.9 and top-1 no worse than a serial run that changes only the prefill chunk size (2048 -> 1024 tokens). A serial-vs-serial repeat must show the reference deterministic. int8 TP3 floor (2026-11-13): mean 0.00197, p99.9 0.059, top-1 97.81%. rad0030: 0.00125 / 0.021 / 99.31% - pass.
+  2. *No quality loss against BF16*: KLD mean and p99.9 within +10%, top-1 within -0.2 points and PPL within +0.1% of the format's recorded values. int8 TP3 (VTP14 N6): mean 0.00199, p99.9 0.043, top-1 97.32%, PPL +0.03%. rad0030: not yet run (held 2026-11-13).
+  MXFP4 uses the same rule with its own floor (to be measured once) and its recorded BF16 values (VTP14: mean 0.0435, p99.9 1.16, top-1 87.07%, PPL +2.64%).
+- int8 TP3 one-prompt TTFT improves by at least 10% at 2048 tokens and 4/6/8-stream tok/s by at least 5% over the 2026-11-12 baseline, or each lever's NO-GO is recorded with its measurement.
+- Every change is a managed patch or layout setting (no model or card constants), selectable per run.
+
+## Notes
+
+Consolidated 2026-11-13. Carries RAD48's open work (superseded into this item) and XDP08-A (int8 weight-scale staging). Related: VTP36 (TP3 performance generally, MXFP4 2048-token gap), RAD47 (gfx1100 MXFP4 row selection, implemented), VTP32 (split solver). Patched source used for the assumptions: the current build's source tree (rad0016-rad0029 applied). Implementation and validation of the assumptions: handed to a Fable 5.2 agent (2026-11-13).
+
+**2026-11-14.** The M 33-64 NO-GO stands (no arm reaches it). The M 17-32 band was not assessed: nt_m16 beats the tiled row there, but against its own 1-9-row time it is 1.6-1.8x, which matches the 6-stream dip present in every table since VTP14 (`docs/evidence/2026-11-14-tp3-long-context/README.md`).
+
+**2026-11-15 step 3a, wave-count sweep (gfx1100, `r3_selftest --perfw8 --cold 256`, one run a cell; selftest `--pin-mw/--pin-nt`).** M 17-24 runs slower than M 32 at every per-rank shape under the rule (5120x5120: 101 vs 83 us; 11264x5120: 140 vs 127 us): the row count, not the work, sets the cost, which is the 6-stream dip. The rule moves to mw 8 above M 16; on N = 5120 shapes mw 4 is 11% faster at M 17-24 and 33-48; at N 5120, K 1920 and M > 32 the rule (mw 16) loses 30-40% to mw 4/8. Next on cards: the token-tile (nt) sweep at M 17-32 and padding M 17-31 to 32, with repeats; any rule change keys on N, not on a model.
+
+
+
+**2026-11-15 step 3a done (`docs/evidence/2026-11-15-vtp37-narrow-gemm-ragged-m/README.md`).** Token-tile pins gave nothing; the cost at M 17-31 was the guard form: libr4d's `Full` needs M to be whole tiles and drops the weight-row, K and token guards together. libr3 `native/r4d_gemm_fp8a8.hip.rw` keeps the token guard always and keys `Full` on N and K alone. Kernel (one XTX, cold weights): M 17-31 now costs what M 32 does (5120x5120 100-102 -> 83-84 us, 11264x5120 137-140 -> 125-127, 5120x1920 42-43 -> 33); +2 us at M <= 16 on 5120x1920. Engine, `qwen27b-tp3-int8-556-long`, R V V R x2: decode-only +9.9 / +11.3 / +8.2% at 5 / 6 / 7 streams, 4 and 8 level, 1 stream -0.9%. Identity: PPL equal, top-1 1.0, KLD max 2.7e-8 (M = 1, now the `Full` form); selftest narrow rows 0 FAIL; stress 12/12. The 6-stream dip is gone. Step 3a's expected +9-22% at 6-8 streams: met at 5-7, not at 8 (already whole tiles).
+
 ## Results (2026-11-13)
 
 Builds: base `9a5d8194a35fcffae6b8b43c2450d586` (main, rad0016-rad0029); with rad0030
@@ -184,48 +235,10 @@ then 4 streams generating 1500 tokens with a 6144-token prompt beside them.
 - KLD against BF16 with the pipeline on (the serial-reference KLD above stands in for it).
 - An 8192-token one-prompt arm (the layout's max-model-len is 8192, so 6144 was used).
 
-## Detailed Solution & Technical Design
-
-
-
-## Code Samples & Guidance
-
-
-
-## Files
-
-
-
-## Validation
-
-- Greedy identity: pipelined vs serial on int8 TP3 (same build, same split).
-- int8 stress: 12 runs of the rad0028 guard (4/8 streams + 6144-token prompt beside 4 generating streams), zero faults.
-- KLD against BF16 for any kernel-row change (rows of a different accumulation order).
-- Matched ABBA (2x per lever, 3x for the final refresh): 1/4/6/8 streams with speculation, one-prompt TTFT 512/2048/8192, four 4096-token prompts, long prompt beside 4 streams.
-
-## Effort & Risk
-
-
-
-## Standards
-
-
-
-## Acceptance Criteria
-
-- int8 TP3 runs the pipelined prefill (startup receipt shows pipe_on) with no stress faults, and passes the **reordering quality gate** below.
-- **Reordering quality gate** (owner decision 2026-11-13; for any change that keeps the arithmetic exact but changes its order or partition: pipelining, chunking, collective method, split). Bit identity to serial is not required. Both checks must pass, on the same KLD corpus (42,761 positions):
-  1. *Noise floor*, against a serial reference of the same build and layout: KLD mean, KLD p99.9 and top-1 no worse than a serial run that changes only the prefill chunk size (2048 -> 1024 tokens). A serial-vs-serial repeat must show the reference deterministic. int8 TP3 floor (2026-11-13): mean 0.00197, p99.9 0.059, top-1 97.81%. rad0030: 0.00125 / 0.021 / 99.31% - pass.
-  2. *No quality loss against BF16*: KLD mean and p99.9 within +10%, top-1 within -0.2 points and PPL within +0.1% of the format's recorded values. int8 TP3 (VTP14 N6): mean 0.00199, p99.9 0.043, top-1 97.32%, PPL +0.03%. rad0030: not yet run (held 2026-11-13).
-  MXFP4 uses the same rule with its own floor (to be measured once) and its recorded BF16 values (VTP14: mean 0.0435, p99.9 1.16, top-1 87.07%, PPL +2.64%).
-- int8 TP3 one-prompt TTFT improves by at least 10% at 2048 tokens and 4/6/8-stream tok/s by at least 5% over the 2026-11-12 baseline, or each lever's NO-GO is recorded with its measurement.
-- Every change is a managed patch or layout setting (no model or card constants), selectable per run.
-
-## Notes
-
-Consolidated 2026-11-13. Carries RAD48's open work (superseded into this item) and XDP08-A (int8 weight-scale staging). Related: VTP36 (TP3 performance generally, MXFP4 2048-token gap), RAD47 (gfx1100 MXFP4 row selection, implemented), VTP32 (split solver). Patched source used for the assumptions: the current build's source tree (rad0016-rad0029 applied). Implementation and validation of the assumptions: handed to a Fable 5.2 agent (2026-11-13).
-
 ## Change Log
 
 - 2026-11-12T23:29:57.750388+00:00 (created-by): Created by agent
 - 2026-11-12T23:30:35.740511+00:00 (updated-by): Updated: section:description, section:steps, section:validation, section:acceptance_criteria, section:notes
+- 2026-11-14T06:59:30.762472+00:00 (updated-by): Updated: section:steps, section:notes
+- 2026-11-14T23:11:20.472887+00:00 (updated-by): Updated: section:notes
+- 2026-11-15T02:25:50.279040+00:00 (updated-by): Updated: section:notes

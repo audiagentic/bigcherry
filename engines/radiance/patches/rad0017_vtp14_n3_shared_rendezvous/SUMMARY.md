@@ -1,6 +1,6 @@
 # rad0017_vtp14_n3_shared_rendezvous
 
-**Status:** untested
+**Status:** validated
 **Plan item:** VTP14
 
 Scope: the all-reduce rendezvous that a tensor-parallel world across libr3 (XTX) and libr4d (R9700) ranks needs.

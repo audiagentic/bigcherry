@@ -18,10 +18,10 @@ inline constexpr std::string_view kApiVersion = "bigcherry/v2";
 inline constexpr std::string_view kKind = "ServingManifest";
 inline constexpr int64_t kContractVersion = 2;
 // sha256 of the JCS validation schema without annotations (contract/README.md); the build pins it.
-inline constexpr std::string_view kFingerprint = "sha256:0d528b5b80547f254c00543f9ec33f79cfba86080b45663a82e4e91baf19ac82";
+inline constexpr std::string_view kFingerprint = "sha256:d439cbd13de35ccb7509691fb07fed93e44cdc15b0948556d1b2cf4e29e265c8";
 // sha256 of the schema plus the frozen semantics it does not express (classes, lifecycle, Radiance bindings,
 // reader error codes); README.md.
-inline constexpr std::string_view kSemanticFingerprint = "sha256:377c4642c404430bd62be61e7b64a98f9cb43832f485199a21783c8458786c9e";
+inline constexpr std::string_view kSemanticFingerprint = "sha256:d955b696c1508d799aaff6d539a9d68c2af36b6d1b7662323eee79a0e930106b";
 // spec §11 amendment 8: the deepest container nesting a valid document can have (the root object is 1),
 // derived from the closed schema by the generator. The strict reader refuses anything deeper.
 inline constexpr size_t kMaxDepth = 9;
@@ -106,8 +106,15 @@ enum class NgramPlacement : uint8_t { kRam, kDisk, kVram, kAuto };
 inline constexpr std::array<std::string_view, 4> kNgramPlacementNames = {"ram", "disk", "vram", "auto"};
 
 // KvCacheDtype: KV cache data type (`--kv-cache-dtype`).
-enum class KvCacheDtype : uint8_t { kBf16, kFp8, kFp8V4, kK6V4 };
-inline constexpr std::array<std::string_view, 4> kKvCacheDtypeNames = {"bf16", "fp8", "fp8_v4", "k6_v4"};
+enum class KvCacheDtype : uint8_t { kBf16, kFp8, kFp8V4, kK6V4, kBf16Fp8, kBf16I8 };
+inline constexpr std::array<std::string_view, 6> kKvCacheDtypeNames = {
+    "bf16",
+    "fp8",
+    "fp8_v4",
+    "k6_v4",
+    "bf16_fp8",
+    "bf16_i8",
+};
 
 // PrefixResume: Prefix resume policy (`--prefix-resume`).
 enum class PrefixResume : uint8_t { kNearest, kExact };
@@ -1050,6 +1057,11 @@ struct EngineTuning {
     std::optional<OptLive> live;
     // Engine flag `--p2p` (amendment 13). Value text as the flag takes it (MODE).
     std::optional<std::string> p2p;
+    // Prefill admission and order policy, `kind=arrival|cap|budget;key=value;...` (rad0036, VTP42). `cap`: `max_seqs`
+    // prefills with more than `long_tokens` left at once; `budget`: prompt left in flight within `factor` x the largest
+    // request; common `order=arrival|remaining` and `age_ms`. Unset is arrival, the engine's own order; the engine
+    // rejects an invalid spec at start.
+    std::optional<std::string> prefill_governor;
     // Engine flag `--prefill-interleave` (amendment 13).
     std::optional<int64_t> prefill_interleave;
     // Engine flag `--prefill-span` (amendment 13).
@@ -1548,7 +1560,7 @@ struct FieldInfo {
     std::string_view default_source;   // where the default comes from, or empty
     std::string_view ref_def;          // kind "ref": the shared type it uses, else empty
 };
-inline constexpr std::array<FieldInfo, 438> kFields = {{
+inline constexpr std::array<FieldInfo, 439> kFields = {{
     {"$defs/uint", "integer", "", true, false,
      "", "", false,
      "Unsigned integer within I-JSON's safe range.", "", "", ""},
@@ -2422,6 +2434,9 @@ inline constexpr std::array<FieldInfo, 438> kFields = {{
     {"/spec/processes/engine/tuning/p2p", "string", "policy", false, false,
      "--p2p", "Config.p2p", false,
      "Engine flag `--p2p` (amendment 13). Value text as the flag takes it (MODE).", "", "", ""},
+    {"/spec/processes/engine/tuning/prefill_governor", "string", "policy", false, false,
+     "--prefill-governor", "Config.prefill_governor", false,
+     "Prefill admission and order policy, `kind=arrival|cap|budget;key=value;...` (rad0036, VTP42). `cap`: `max_seqs` prefills with more than `long_tokens` left at once; `budget`: prompt left in flight within `factor` x the largest request; common `order=arrival|remaining` and `age_ms`. Unset is arrival, the engine's own order; the engine rejects an invalid spec at start.", "", "", ""},
     {"/spec/processes/engine/tuning/prefill_interleave", "ref", "policy", false, false,
      "--prefill-interleave", "native option", false,
      "Engine flag `--prefill-interleave` (amendment 13).", "", "", "uint"},

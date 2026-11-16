@@ -23,9 +23,9 @@
     constexpr int R3N   = (OPT & O_R3NATIVE) ? 1 : 0;
     static_assert(!R3N || F16, "gfx11 native attention uses the f16 operand form");
     static_assert(!R3N || !(OPT & (O_QK8 | O_PV8)), "gfx11 native attention has no e4m3 legs");
-    // The KV split stores the accumulator in the decode partial layout as it stands (gfx12); the native accumulator
-    // would need converting first, so the split launch stays upstream's form (r4d_attn_paged_h256_gqa6.hip.rw).
-    static_assert(!R3N || !(OPT & O_PSPLIT), "the KV-split store expects the gfx12 accumulator layout");
+    // O_PSPLIT is allowed: the KV split's partial store expects the gfx12 accumulator layout, and the epilogue
+    // below converts the native accumulator before it (the split rule at the end of this file). The partial's other
+    // two values, m_ref and l_i, are row quantities combined over both half-waves and do not depend on the layout.
 @@ end
 
 @@ find 1
@@ -53,7 +53,7 @@
                 qf[t] = D::mk(make_uint2(r4d_qcvt<D, FOLDQ, F16>(l0.x, mul),
 @@ end
 
-@@ find 1
+@@ find 1 or 0
     auto fetchV = [&](int k0, const int* blks) {
         #pragma unroll
         for (int r = 0; r < VREGS; ++r) {
@@ -109,6 +109,70 @@
                     const size_t o = (size_t)blk * a.kv_block_stride
                                    + (size_t)kvh * a.kv_head_stride
                                    + (size_t)(kk % BS) * ROWB + HEAD_DIM + d0;
+                    const void* p = KVP ? (const void*)((const uint16_t*)a.kv + o)
+                                        : (const void*)((const uint8_t*)a.kv + o);
+                    vreg[r] = __builtin_bit_cast(uint4, load_tr_b128(p));
+                }
+            }
+        }
+    };
+@@ end
+@@ find 1 or 0
+    auto fetchV = [&](int k0, const int* blks) {
+        #pragma unroll
+        for (int r = 0; r < VREGS; ++r) {
+            const int idx = warp + r * NWARPS;
+            if (NTR % NWARPS == 0 || idx < NTR) {
+                constexpr int DG = HEAD_DIM / (KVP ? 32 : 64);
+                const int kg = idx / DG, dg = idx - kg * DG;
+                const int kk = min(k0 + kg * 8 + vj, ctx - 1);
+                const int d0 = dg * (KVP ? 32 : 64) + vg * (KVP ? 8 : 16);
+                const int blk = BTS ? blks[(kk - k0) / BS] : bt[kk / BS];
+                const size_t o = (size_t)blk * a.kv_block_stride
+                               + (size_t)kvh * a.kv_head_stride
+                               + (size_t)(kk % BS) * ROWB + VBOFF + d0;
+                const void* p = KVP ? (const void*)((const uint16_t*)a.kv + o)
+                                    : (const void*)((const uint8_t*)a.kv + o);
+                vreg[r] = __builtin_bit_cast(uint4, load_tr_b128(p));
+            }
+        }
+    };
+@@ replace
+    auto fetchV = [&](int k0, const int* blks) {
+        if constexpr (R3N) {
+            // hipfire PR #762's useful gfx11 lesson is to keep the WMMA row native. For
+            // Radiance's paged KV, direct contiguous loads plus an LDS scatter are cheaper
+            // than emulating gfx12 global_load_tr_b128 (8 global reads + lane exchanges).
+            constexpr int VE = KVP ? 8 : 16;
+            constexpr int NITEM = TILE * (HEAD_DIM / VE);
+            #pragma unroll
+            for (int r = 0; r < VREGS; ++r) {
+                const int item = tid + r * NTHR;
+                if (item < NITEM) {
+                    const int key = item / (HEAD_DIM / VE);
+                    const int dg  = item - key * (HEAD_DIM / VE);
+                    const int kk  = min(k0 + key, ctx - 1);
+                    const int d0  = dg * VE;
+                    const int blk = BTS ? blks[(kk - k0) / BS] : bt[kk / BS];
+                    const size_t o = (size_t)blk * a.kv_block_stride
+                                   + (size_t)kvh * a.kv_head_stride
+                                   + (size_t)(kk % BS) * ROWB + VBOFF + d0;
+                    vreg[r] = KVP ? *(const uint4*)((const uint16_t*)a.kv + o)
+                                  : *(const uint4*)((const uint8_t*)a.kv + o);
+                }
+            }
+        } else {
+            for (int r = 0; r < VREGS; ++r) {
+                const int idx = warp + r * NWARPS;
+                if (NTR % NWARPS == 0 || idx < NTR) {
+                    constexpr int DG = HEAD_DIM / (KVP ? 32 : 64);
+                    const int kg = idx / DG, dg = idx - kg * DG;
+                    const int kk = min(k0 + kg * 8 + vj, ctx - 1);
+                    const int d0 = dg * (KVP ? 32 : 64) + vg * (KVP ? 8 : 16);
+                    const int blk = BTS ? blks[(kk - k0) / BS] : bt[kk / BS];
+                    const size_t o = (size_t)blk * a.kv_block_stride
+                                   + (size_t)kvh * a.kv_head_stride
+                                   + (size_t)(kk % BS) * ROWB + VBOFF + d0;
                     const void* p = KVP ? (const void*)((const uint16_t*)a.kv + o)
                                         : (const void*)((const uint8_t*)a.kv + o);
                     vreg[r] = __builtin_bit_cast(uint4, load_tr_b128(p));
@@ -302,4 +366,21 @@
                        | ((uint32_t)f32_to_bf16(ao[e + 1] * inv) << 16);
         *(uint4*)(op + dt * 16 + 8 * h) = make_uint4(tw[0], tw[1], tw[2], tw[3]);
     }
+@@ end
+
+// The KV split's epilogue store. Upstream's r4d_prefill_store_partial writes lane (c, h)'s acc[dt] as dims
+// 16 dt + 8 h .. + 7 of its row (the gfx12 accumulator layout), as the bf16 store above it does. The native
+// accumulator holds dim 2 e + h in element e, so it is converted once, in place (acc is dead afterwards, so no
+// second 128-register array), exactly as at the bf16 store. m_ref and l_i are unchanged by the layout: m_ref is the
+// row maximum over both half-waves (swap16), l_i the sum of the lane's own P values joined with its partner's.
+@@ find 1
+        r4d_prefill_store_partial<NKS, HEAD_DIM>(a, qoff + qpos, qhead, sp, acc, m_ref, l_i, h);
+        return;
+@@ replace
+        if constexpr (R3N) {
+            #pragma unroll
+            for (int dt = 0; dt < NKS; ++dt) acc[dt] = r3_acc_native_to_gfx12(acc[dt]);
+        }
+        r4d_prefill_store_partial<NKS, HEAD_DIM>(a, qoff + qpos, qhead, sp, acc, m_ref, l_i, h);
+        return;
 @@ end

@@ -1,0 +1,58 @@
+# libr3 (VTP37 step 3a): the narrow 8-bit GEMM keeps its unguarded (`Full`) form when only the token count is ragged.
+#
+# libr4d instantiates `Full` only when N, K and the token count M are all whole tiles. `Full` drops three guards at
+# once: the weight-row guard, the K-segment guard and the token guard. At 17-31 tokens (6-8 decode streams at
+# speculation depth 3, nt = 2) M is ragged, so the kernel ran fully guarded, and on gfx1100 that costs more than doing
+# 32 tokens unguarded: 5120 x 5120 int8 100-103 us at M 17-31 against 83 us at M 32; 11264 x 5120 136-140 against
+# 125 (`r3_selftest --perfw8 --cold 256`). Here the token guard is always kept (a scalar compare per staged row, per
+# scale and per output tile) and `Full` follows N and K alone, so a ragged token count no longer brings back the
+# weight-row and K guards. Output bits do not change: the same products are summed in the same order, and only rows
+# past M, which were never stored, are skipped.
+
+@@ find 1
+                            k_live && r < FN && (Full || (n0 + r) < nb));
+@@ replace
+                            k_live && r < FN && (n0 + r) < nb);   // libr3: the token guard always
+@@ end
+
+@@ find 1
+        return ((Full || tok < nb) && kb < nkb8) ? ((const float*)Sb)[(size_t)tok * sb_ld + kb]
+@@ replace
+        return (tok < nb && kb < nkb8) ? ((const float*)Sb)[(size_t)tok * sb_ld + kb]   // libr3
+@@ end
+
+@@ find 1
+                                        live && (Full || (n0 + r) < nb));
+@@ replace
+                                        live && (n0 + r) < nb);   // libr3: the token guard always
+@@ end
+
+@@ find 2
+                if (!Full && n0 + wn + j * 16u >= nb) continue;
+@@ replace
+                if (n0 + wn + j * 16u >= nb) continue;   // libr3: the token guard always
+@@ end
+
+@@ find 1
+                if (!Full && tok >= nb) continue;
+@@ replace
+                if (tok >= nb) continue;   // libr3: the token guard always
+@@ end
+
+@@ find 1
+            if (!Full && col >= nb) continue;
+@@ replace
+            if (col >= nb) continue;   // libr3: the token guard always
+@@ end
+
+@@ find 1
+    const bool full = ((uint32_t)N % fm == 0) && ((uint32_t)M % (nt * 16u) == 0) &&
+@@ replace
+    const bool full = ((uint32_t)N % fm == 0) &&   // libr3: tokens are always guarded, so M may be ragged
+@@ end
+
+@@ find 1
+    const bool full = ((uint32_t)M % (nt * 16u) == 0) && (K % (int)kBlock == 0);
+@@ replace
+    const bool full = (K % (int)kBlock == 0);   // libr3: tokens are always guarded, so M may be ragged
+@@ end

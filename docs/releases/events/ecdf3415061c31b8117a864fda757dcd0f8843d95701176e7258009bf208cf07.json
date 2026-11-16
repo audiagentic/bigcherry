@@ -1,0 +1,15 @@
+{
+  "change-class": "docs",
+  "event-id": "chg_20261115_022604_confirmed-the-8-bit-kv-cache-n_3060",
+  "files": [
+    "docs/evidence/2026-11-15-rad53-fp8-prefill-attention/README.md",
+    "docs/planning/completed/patching-radiance-rdna3/RAD53.md"
+  ],
+  "plan-item-ids": [
+    "RAD53"
+  ],
+  "status": "unreleased",
+  "technical-summary": "RAD53 closed: fp8 decode step at 60k 32.68 vs 32.24 ms bf16 (+1.4%), TTFT +2.7%, on main libr3.",
+  "timestamp-utc": "2026-11-15T02:26:04.205594Z",
+  "user-summary-candidate": "Confirmed the 8-bit KV cache now decodes at long context within 1.4% of the 16-bit cache (it was 21% slower)."
+}

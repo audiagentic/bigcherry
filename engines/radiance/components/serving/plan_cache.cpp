@@ -141,6 +141,11 @@ Json plan_key_inputs(const Json& values, const Json& facts, const std::string& m
             {"engine_args", engine_args},
             {"engine", engine}};
     if (!uniform) key["rank_cards"] = rank_cards;
+    // The tuning settings bind to engine flags, and several change what the plan measures (tp_ownership moves each rank's
+    // KV and weight shares; state_cache_dtype, embedding_placement, draft_model, ... move memory too), so all of them are
+    // inputs. Added only when present, so a configuration without tuning keeps its key.
+    if (values.contains("tuning") && values.at("tuning").is_object() && !values.at("tuning").empty())
+        key["tuning"] = values.at("tuning");
     return key;
 }
 

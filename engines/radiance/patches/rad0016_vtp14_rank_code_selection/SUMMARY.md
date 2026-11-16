@@ -1,6 +1,6 @@
 # rad0016_vtp14_rank_code_selection
 
-**Status:** untested
+**Status:** validated
 **Plan item:** VTP14
 
 Scope: per-rank kernel code eligibility for a mixed gfx1100+gfx1201 tensor-parallel world. Inert without

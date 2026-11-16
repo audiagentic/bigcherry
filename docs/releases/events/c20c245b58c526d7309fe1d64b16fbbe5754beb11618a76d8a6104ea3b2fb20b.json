@@ -1,0 +1,23 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261113_224320_launcher-accepts---set-manifes_8562",
+  "files": [
+    "engines/radiance/components/serving/plan_cache.cpp",
+    "engines/radiance/components/serving/plan_cache.h",
+    "engines/radiance/components/serving/serving_test.cpp",
+    "tools/lab/radiance/launch-flashnext-best.sh",
+    "tools/lab/radiance/lib/plan-check.sh",
+    "engines/radiance/layouts/qwen27b.toml",
+    "docs/planning/active/run-dense-27b-virtual-tp/VTP36.md",
+    "docs/evidence/2026-11-13-vtp36-allreduce/dmalane.hip",
+    "docs/evidence/2026-11-13-vtp36-allreduce/dmalane.txt",
+    "docs/evidence/2026-11-13-vtp36-allreduce/tp2-vs-tp3-abba.md"
+  ],
+  "plan-item-ids": [
+    "VTP36"
+  ],
+  "status": "unreleased",
+  "technical-summary": "bc-serve measured-plan cache key now includes the tuning section (tp_ownership, state_cache_dtype, ... change the plan); launcher gains --set KEY=VALUE passed to every bc-serve call; the duplicate qwen27b-tp3-int8-556 layout is replaced by a --set of tuning.tp_ownership; VTP36 records the copy-engine assemble NO-GO and the matched TP2/TP3 ABBA.",
+  "timestamp-utc": "2026-11-13T22:43:20.608077Z",
+  "user-summary-candidate": "Launcher accepts --set manifest settings; changing a tuning setting now measures its own memory plan instead of reusing a mismatched one."
+}
