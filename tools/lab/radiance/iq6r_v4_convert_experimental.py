@@ -14,6 +14,7 @@ import time
 from pathlib import Path
 
 from iq6r_v4_fetch_hessians import manifest_entries
+from iq6r_v4_offload import quantizer_offload_arches
 from iq6r_v4_prepare_grams import HEADER, MAGIC, ROWS, check_and_map
 from iq6r_v4_validate_hessians import audit
 
@@ -119,7 +120,7 @@ def arguments(build: Path, kernels: str, output: str, *, plan: bool) -> list[str
     if plan:
         cmd.append("--plan-only")
     else:
-        cmd += ["--gpus", "0,1"]
+        cmd += ["--gpus", "0"]
     return cmd
 
 
@@ -155,6 +156,7 @@ def main() -> int:
         "build_dir": str(build),
         "release_manifest": release,
     }
+    status["quantizer_offload_arches"] = quantizer_offload_arches(build / "radiance_home/quantizers/libquant.so", "gfx1201")
     started = time.monotonic()
     save(status)
     try:
@@ -185,8 +187,8 @@ def main() -> int:
             return 0
         status["stage"] = "converting_experimental"
         save(status)
-        env["HIP_VISIBLE_DEVICES"] = "0,1"
-        cmd = arguments(build, "libr3,libref", str(TEMP), plan=False)
+        env["HIP_VISIBLE_DEVICES"] = "2"
+        cmd = arguments(build, "libr4d,libref", str(TEMP), plan=False)
         status["conversion_cmd"] = cmd
         save(status)
         code = run_process(cmd, env, "conversion", 14400)
