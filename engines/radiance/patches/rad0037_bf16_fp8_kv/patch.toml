@@ -1,0 +1,11 @@
+schema = 1
+id = "rad0037_bf16_fp8_kv"
+order = 37
+state = "untested"
+kind = "enhancement"
+origin = "local"
+backend = "agnostic"
+plan-ids = ["VTP43"]
+requires = []
+conflicts = []
+tags = ["optimization", "kv-cache"]
